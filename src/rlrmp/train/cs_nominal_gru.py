@@ -23,14 +23,16 @@ import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
+import jax.tree_util as jtu
 import numpy as np
 import optax
 from jax_cookbook import save as fbx_save
-from feedbax.runtime.batch import BatchInfo
-from jax_cookbook.tree import filter_spec_leaves
-from feedbax.training.trainer import get_model_parameters
-from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
+from feedbax.runtime.batch import BatchInfo
+from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule
+from feedbax.training.trainer import get_model_parameters, init_task_trainer_history
+from jax_cookbook.tree import array_set as tree_set
+from jax_cookbook.tree import filter_spec_leaves
 
 from rlrmp.analysis.math.cs_game_card import (
     INIT_POS,
@@ -69,25 +71,35 @@ from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
     BROAD_EPSILON_PGD_TRAINING_MODE,
     BROAD_EPSILON_TRAINING_MODE,
+    EFFECTIVE_020A65B_PGD_RADIUS_15CM,
     LEGACY_PERTURBATION_TRAINING_MODE,
     PERTURBATION_TRAINING_MODE,
+    POLICY_ADVERSARY_ENERGY_MODE,
+    POLICY_ADVERSARY_PLAIN_MODE,
+    POLICY_ADVERSARY_TRAINING_MODE,
     TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
     TARGET_RELATIVE_MULTITARGET_TRAINING_MODE,
     BroadFullStateEpsilonTrainingConfig,
     FixedTargetPerturbationTrainingConfig,
     PgdFullStateEpsilonTrainingConfig,
+    PolicyFullStateEpsilonTrainingConfig,
     TargetRelativeMultiTargetTrainingConfig,
+    config_from_policy_adversary_hps,
     make_broad_epsilon_pgd_pre_step,
+    make_memoryless_policy_adversary,
+    make_policy_adversary_pre_step,
     planned_020a65b_h0_pgd_rows,
     planned_7c1f7ed_delayed_sisu_spectrum_rows,
     planned_e4800d6_sisu_spectrum_rows,
     planned_fixed_target_perturbation_rows,
     planned_target_relative_multitarget_h0_rows,
     planned_target_relative_multitarget_rows,
+    policy_adversary_objective,
     run_broad_epsilon_pgd_inner_maximizer,
     target_relative_validation_manifest,
     validation_bin_manifest,
 )
+from rlrmp.train.progress import batch_log_every, format_batch_line, should_log_batch
 from rlrmp.train.task_model import (
     CS_LSS_PLANT_BACKEND,
     LEGACY_CAUSAL_PLANT_BACKEND,
@@ -135,6 +147,8 @@ class TrainingState:
     completed_batches: int
     key: Any
     history: Any | None
+    adversary_policy: Any | None = None
+    adversary_optimizer_state: Any | None = None
 
 
 class GradientDiagnosticsState(NamedTuple):
@@ -316,6 +330,12 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
     perturbation = _dict_value(hps, "perturbation_training")
     broad = _dict_value(hps, "broad_epsilon_training")
     broad_pgd = _dict_value(hps, "broad_epsilon_pgd_training")
+    policy_adversary = _dict_value(hps, "policy_adversary_training")
+    policy_payload = _dict_value(policy_adversary, "policy")
+    policy_optimizer = _dict_value(policy_adversary, "inner_optimizer")
+    policy_objective = _dict_value(policy_adversary, "objective")
+    policy_budget = _dict_value(policy_adversary, "budget_contract")
+    policy_budget_source = _dict_value(policy_budget, "budget_source")
     broad_pgd_schedule = _dict_value(broad_pgd, "budget_schedule")
     broad_pgd_conditioning = _dict_value(broad_pgd_schedule, "conditioning_scalar")
     broad_pgd_max_radius_source = _dict_value(broad_pgd_schedule, "max_radius_source")
@@ -463,6 +483,31 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
         "broad_epsilon_pgd_sisu_max_radius_source": broad_pgd_max_radius_source.get(
             "key",
             broad_pgd.get("sisu_max_radius_source"),
+        ),
+        "policy_adversary_training": bool(policy_adversary.get("enabled", False)),
+        "policy_adversary_mode": str(
+            policy_adversary.get(
+                "row_mode",
+                policy_objective.get("active", POLICY_ADVERSARY_PLAIN_MODE),
+            )
+        ),
+        "policy_adversary_width": int(policy_payload.get("width", 64)),
+        "policy_adversary_depth": int(policy_payload.get("depth", 2)),
+        "policy_adversary_steps": int(
+            policy_optimizer.get("n_ascent_steps_per_controller_step", 5)
+        ),
+        "policy_adversary_lr": float(policy_optimizer.get("learning_rate", 3e-4)),
+        "policy_adversary_energy_gamma": float(
+            policy_objective.get("energy_penalty_gamma", 1.0)
+        ),
+        "policy_adversary_radius_15cm": float(
+            policy_budget.get(
+                "effective_l2_radius_15cm",
+                EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+            )
+        ),
+        "policy_adversary_radius_source": str(
+            policy_budget_source.get("key", "effective_020a65b_pgd_training_radius")
         ),
         "initial_hidden_encoder": bool(model.get("initial_hidden_encoder", False)),
         "full_train": (
@@ -759,6 +804,21 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         sisu_max_l2_radius_15cm=args.broad_epsilon_pgd_sisu_max_radius,
         sisu_max_radius_source=args.broad_epsilon_pgd_sisu_max_radius_source,
     )
+    policy_adversary_training = PolicyFullStateEpsilonTrainingConfig(
+        enabled=bool(args.policy_adversary_training),
+        mode=str(args.policy_adversary_mode),
+        width=int(args.policy_adversary_width),
+        depth=int(args.policy_adversary_depth),
+        n_steps=int(args.policy_adversary_steps),
+        learning_rate=float(args.policy_adversary_lr),
+        energy_penalty_gamma=float(args.policy_adversary_energy_gamma),
+        reference_l2_radius_15cm=float(args.policy_adversary_radius_15cm),
+        reach_length_scaling=bool(args.broad_epsilon_reach_scaling),
+        movement_epoch_only=delayed_reach,
+        epsilon_dim=int(plant.m_w),
+        state_feature_dim=int(plant.n),
+        budget_source=str(args.policy_adversary_radius_source),
+    )
     if (
         delayed_reach
         and broad_epsilon_pgd_training.enabled
@@ -773,14 +833,24 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         enabled=bool(args.target_relative_multitarget),
         force_filter_feedback=force_filter_feedback,
     )
-    if broad_epsilon_training.enabled and broad_epsilon_pgd_training.enabled:
+    enabled_broad_lanes = [
+        broad_epsilon_training.enabled,
+        broad_epsilon_pgd_training.enabled,
+        policy_adversary_training.enabled,
+    ]
+    if sum(bool(enabled) for enabled in enabled_broad_lanes) > 1:
         raise ValueError(
-            "--broad-epsilon-training and --broad-epsilon-pgd-training are separate "
-            "broad-epsilon lanes and cannot be combined in the same row."
+            "--broad-epsilon-training, --broad-epsilon-pgd-training, and "
+            "--policy-adversary-training are separate broad-epsilon lanes and cannot "
+            "be combined in the same row."
         )
     broad_epsilon_needs_target_relative = (
         broad_epsilon_training.enabled and broad_epsilon_training.reach_length_scaling
-    ) or (broad_epsilon_pgd_training.enabled and broad_epsilon_pgd_training.reach_length_scaling)
+    ) or (
+        broad_epsilon_pgd_training.enabled and broad_epsilon_pgd_training.reach_length_scaling
+    ) or (
+        policy_adversary_training.enabled and policy_adversary_training.reach_length_scaling
+    )
     if broad_epsilon_needs_target_relative and not target_relative_multitarget.enabled:
         raise ValueError(
             "Reach-scaled broad-epsilon training requires --target-relative-multitarget "
@@ -912,6 +982,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         "perturbation_training": perturbation_training.to_hps_dict(),
         "broad_epsilon_training": broad_epsilon_training.to_hps_dict(),
         "broad_epsilon_pgd_training": broad_epsilon_pgd_training.to_hps_dict(),
+        "policy_adversary_training": policy_adversary_training.to_hps_dict(),
         "target_relative_multitarget": target_relative_multitarget.to_hps_dict(),
         "loss": {
             "objective": str(args.loss_objective),
@@ -1234,7 +1305,11 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
         "nominal_only": _nominal_only(hps),
         "training_distribution": _training_distribution_metadata(hps),
         "delayed_reach": _plain(hps.delayed_reach),
-        "adversarial_phase": "none",
+        "adversarial_phase": (
+            "learned_memoryless_policy_adversary"
+            if _policy_adversary_training_enabled(hps)
+            else "none"
+        ),
         "certificate_lens": "input_output_map_certificate",
         "certificate_coordinate_claim": "not_same_coordinate_gain",
         "analytical_delay_augmented_state_input": False,
@@ -1269,7 +1344,11 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "method": str(hps.method),
         "nominal_only": _nominal_only(hps),
         "training_distribution": _training_distribution_metadata(hps),
-        "adversarial_phase": "none",
+        "adversarial_phase": (
+            "learned_memoryless_policy_adversary"
+            if _policy_adversary_training_enabled(hps)
+            else "none"
+        ),
         "certificate_lens": "input_output_map_certificate",
         "analytical_delay_augmented_state_input": False,
         "stochastic_runtime": _stochastic_runtime_contract(hps),
@@ -1392,7 +1471,11 @@ def build_run_spec(
         "training_distribution": _training_distribution_metadata(hps),
         "delayed_reach": _plain(hps.delayed_reach),
         "validation_bins": _validation_bins_metadata(hps),
-        "adversarial_phase": "none",
+        "adversarial_phase": (
+            "learned_memoryless_policy_adversary"
+            if _policy_adversary_training_enabled(hps)
+            else "none"
+        ),
         "modal_launch": "not_requested",
         "full_training_launch": "requested" if args.full_train else "not_requested",
         "seed": int(args.seed),
@@ -1414,6 +1497,11 @@ def build_run_spec(
             "training_mode": _training_mode(hps),
             "n_train_batches": int(args.n_train_batches),
             "n_adversary_batches": 0,
+            "n_policy_adversary_ascent_steps_per_controller_step": (
+                int(config_from_policy_adversary_hps(hps.policy_adversary_training).n_steps)
+                if _policy_adversary_training_enabled(hps)
+                else 0
+            ),
             "validation_bins": _validation_bins_metadata(hps),
             "training_diagnostics": _training_diagnostics_metadata(args, output_dir),
         },
@@ -1709,6 +1797,131 @@ def planned_246182c_post_movement_cost_tail_rows(
     ]
 
 
+def planned_e901a20_policy_adversary_rows(
+    *,
+    experiment: str = "e901a20",
+) -> list[dict[str, Any]]:
+    """Return the two H0 policy-adversary gate rows for e901a20."""
+
+    common_command = [
+        "env",
+        "PYTHONPATH=src",
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        "scripts/train_cs_nominal_gru.py",
+        "--issue",
+        experiment,
+        "--n-train-batches",
+        "12000",
+        "--stop-after-batches",
+        "1000",
+        "--batch-size",
+        "64",
+        "--controller-lr",
+        "0.003",
+        "--gradient-clip-norm",
+        "5",
+        "--lr-warmup-batches",
+        "500",
+        "--lr-warmup-init-fraction",
+        "0.1",
+        "--lr-cosine-alpha",
+        "0.01",
+        "--n-replicates",
+        "5",
+        "--hidden-size",
+        "180",
+        "--loss-objective",
+        CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+        "--target-relative-multitarget",
+        "--force-filter-feedback",
+        "--initial-hidden-encoder",
+        "--perturbation-training",
+        "--perturbation-calibrated-timing",
+        "--perturbation-physical-level",
+        "small",
+        "--policy-adversary-training",
+        "--policy-adversary-width",
+        "64",
+        "--policy-adversary-depth",
+        "2",
+        "--policy-adversary-steps",
+        "5",
+        "--policy-adversary-lr",
+        "0.0003",
+        "--policy-adversary-radius-15cm",
+        f"{EFFECTIVE_020A65B_PGD_RADIUS_15CM:.18g}",
+        "--policy-adversary-radius-source",
+        "effective_020a65b_pgd_training_radius",
+    ]
+    rows = []
+    for label in (POLICY_ADVERSARY_PLAIN_MODE, POLICY_ADVERSARY_ENERGY_MODE):
+        run = f"h0_policy_adversary__{label}"
+        command = [
+            *common_command,
+            "--policy-adversary-mode",
+            label,
+            "--output-dir",
+            f"_artifacts/{experiment}/runs/{run}",
+        ]
+        if label == POLICY_ADVERSARY_ENERGY_MODE:
+            command.extend(["--policy-adversary-energy-gamma", "1"])
+        rows.append(
+            {
+                "experiment": experiment,
+                "run": run,
+                "row": label,
+                "row_kind": "checkpoint_gate_contract",
+                "base_contract": "latest 020a65b H0 PGD row excluding PGD",
+                "adversarial_phase": "learned_memoryless_policy_adversary",
+                "policy_adversary_mode": label,
+                "policy_width": 64,
+                "policy_depth": 2,
+                "policy_output_dim": 8,
+                "policy_ascent_steps_per_controller_step": 5,
+                "policy_weights_persist_across_batches": True,
+                "h_infinity_style_energy_stabilizer": label == POLICY_ADVERSARY_ENERGY_MODE,
+                "formal_certificate": False,
+                "broad_epsilon_pgd_training": False,
+                "broad_epsilon_reach_scaling": True,
+                "effective_l2_radius_15cm": EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+                "radius_source": "effective_020a65b_pgd_training_radius",
+                "single_fixed_budget": True,
+                "sisu_modulation": False,
+                "force_filter_feedback": True,
+                "initial_hidden_encoder": True,
+                "perturbation_training": True,
+                "perturbation_calibrated_timing": True,
+                "perturbation_physical_level": "small",
+                "loss_objective": CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+                "batch_size": 64,
+                "controller_lr": 3e-3,
+                "gradient_clip_norm": 5.0,
+                "lr_schedule": "warmup_cosine",
+                "lr_warmup_batches": 500,
+                "lr_warmup_init_fraction": 0.1,
+                "lr_cosine_alpha": 0.01,
+                "n_replicates": 5,
+                "n_train_batches": 12000,
+                "stop_after_batches": 1000,
+                "gate_batches": "500-1000; planner command stops at 1000",
+                "diagnostics": [
+                    "policy_adversary_epsilon_norm_radius_ratio",
+                    "policy_adversary_epsilon_energy",
+                    "policy_adversary_boundary_fraction",
+                    "policy_adversary_adversary_objective",
+                    "policy_adversary_controller_loss",
+                    "policy_adversary_stabilizer_term",
+                ],
+                "spec_command": [*command, "--dry-run"],
+                "command": [*command, "--full-train", "--resume"],
+            }
+        )
+    return rows
+
+
 def run_full_training(
     args: argparse.Namespace,
     *,
@@ -1740,10 +1953,24 @@ def run_full_training(
     run_spec = json.loads(run_spec_path.read_text(encoding="utf-8"))
 
     hps = build_hps(args)
-    key_init, key_train = jr.split(jr.PRNGKey(int(args.seed)), 2)
+    key_init, key_train, key_adversary = jr.split(jr.PRNGKey(int(args.seed)), 3)
     pair = setup_task_model_pair(hps, key=key_init)
     trainer = _build_trainer(hps)
     pre_step_fn = make_broad_epsilon_pgd_pre_step(hps.broad_epsilon_pgd_training)
+    policy_adversary_enabled = _policy_adversary_training_enabled(hps)
+    policy_adversary_optimizer = None
+    adversary_policy_template = None
+    adversary_optimizer_state_template = None
+    if policy_adversary_enabled:
+        adversary_cfg = config_from_policy_adversary_hps(hps.policy_adversary_training)
+        adversary_policy_template = make_memoryless_policy_adversary(
+            adversary_cfg,
+            key=key_adversary,
+        )
+        policy_adversary_optimizer = optax.adam(float(adversary_cfg.learning_rate))
+        adversary_optimizer_state_template = policy_adversary_optimizer.init(
+            eqx.filter(adversary_policy_template, eqx.is_array)
+        )
     where_train = _where_train()
     template_state = _initial_training_state(
         model=pair.model,
@@ -1758,38 +1985,98 @@ def run_full_training(
             model_template=pair.model,
             optimizer_state_template=template_state.optimizer_state,
             history_template=None,
+            adversary_policy_template=adversary_policy_template,
+            adversary_optimizer_state_template=adversary_optimizer_state_template,
         )
         if args.resume and latest_checkpoint_path(checkpoint_root).exists()
         else template_state
     )
+    if policy_adversary_enabled:
+        if state.adversary_policy is None:
+            state = TrainingState(
+                model=state.model,
+                optimizer_state=state.optimizer_state,
+                completed_batches=state.completed_batches,
+                key=state.key,
+                history=state.history,
+                adversary_policy=adversary_policy_template,
+                adversary_optimizer_state=adversary_optimizer_state_template,
+            )
+        if state.adversary_optimizer_state is None:
+            state = TrainingState(
+                model=state.model,
+                optimizer_state=state.optimizer_state,
+                completed_batches=state.completed_batches,
+                key=state.key,
+                history=state.history,
+                adversary_policy=state.adversary_policy,
+                adversary_optimizer_state=adversary_optimizer_state_template,
+            )
 
     chunks: list[dict[str, float | int | str]] = []
     pgd_diagnostic_chunks: list[dict[str, np.ndarray]] = []
+    policy_adversary_diagnostic_chunks: list[dict[str, np.ndarray]] = []
     training_started = time.perf_counter()
     while state.completed_batches < int(args.n_train_batches):
+        if stop_after_batches is not None and state.completed_batches >= stop_after_batches:
+            break
         remaining = int(args.n_train_batches) - state.completed_batches
-        chunk_batches = min(int(args.checkpoint_interval_batches), remaining)
+        chunk_batches = min(
+            int(args.checkpoint_interval_batches),
+            remaining,
+        )
+        if stop_after_batches is not None:
+            chunk_batches = min(chunk_batches, stop_after_batches - state.completed_batches)
         key_chunk, key_next = jr.split(state.key, 2)
         chunk_started = time.perf_counter()
-        model, history_chunk, optimizer_state = trainer(
-            pair.task,
-            state.model,
-            n_batches=chunk_batches,
-            # Keep Feedbax's batch index local to the chunk: its PRNG key array
-            # is chunk-local. Passing the stable selector function avoids the
-            # dict-at-local-batch-0 path that would reinitialise optimizer state.
-            idx_start=0,
-            opt_state=state.optimizer_state,
-            key=key_chunk,
-            ensembled=True,
-            loss_func=pair.task.loss_func,
-            where_train=where_train[0],
-            batch_size=int(hps.batch_size),
-            log_step=max(1, int(args.log_step)),
-            disable_progress=bool(args.disable_progress),
-            verbose_progress=not bool(args.quiet_progress),
-            pre_step_fn=pre_step_fn,
-        )
+        policy_adversary_diagnostics = None
+        if policy_adversary_enabled:
+            if policy_adversary_optimizer is None:
+                raise ValueError("Policy adversary optimizer was not initialized.")
+            (
+                model,
+                history_chunk,
+                optimizer_state,
+                adversary_policy,
+                adversary_optimizer_state,
+                policy_adversary_diagnostics,
+            ) = _run_policy_adversary_training_chunk(
+                trainer=trainer,
+                task=pair.task,
+                model=state.model,
+                optimizer_state=state.optimizer_state,
+                adversary_policy=state.adversary_policy,
+                adversary_optimizer_state=state.adversary_optimizer_state,
+                adversary_optimizer=policy_adversary_optimizer,
+                hps=hps,
+                where_train=where_train[0],
+                key=key_chunk,
+                start_batch=state.completed_batches,
+                chunk_batches=chunk_batches,
+                log_progress=not bool(args.disable_progress),
+            )
+        else:
+            adversary_policy = state.adversary_policy
+            adversary_optimizer_state = state.adversary_optimizer_state
+            model, history_chunk, optimizer_state = trainer(
+                pair.task,
+                state.model,
+                n_batches=chunk_batches,
+                # Keep Feedbax's batch index local to the chunk: its PRNG key array
+                # is chunk-local. Passing the stable selector function avoids the
+                # dict-at-local-batch-0 path that would reinitialise optimizer state.
+                idx_start=0,
+                opt_state=state.optimizer_state,
+                key=key_chunk,
+                ensembled=True,
+                loss_func=pair.task.loss_func,
+                where_train=where_train[0],
+                batch_size=int(hps.batch_size),
+                log_step=max(1, int(args.log_step)),
+                disable_progress=bool(args.disable_progress),
+                verbose_progress=not bool(args.quiet_progress),
+                pre_step_fn=pre_step_fn,
+            )
         chunk_duration_seconds = time.perf_counter() - chunk_started
         completed = state.completed_batches + chunk_batches
         history = _append_history(state.history, history_chunk)
@@ -1804,6 +2091,14 @@ def run_full_training(
             )
             if pgd_diagnostics:
                 pgd_diagnostic_chunks.append(pgd_diagnostics)
+            if policy_adversary_diagnostics:
+                policy_adversary_diagnostic_chunks.append(
+                    _policy_adversary_diagnostics_arrays(
+                        policy_adversary_diagnostics,
+                        batch_index=completed - 1,
+                        chunk_batches=chunk_batches,
+                    )
+                )
         history_chunk_path = output_dir / "history_chunks" / f"history_{completed:07d}.eqx"
         history_chunk_path.parent.mkdir(parents=True, exist_ok=True)
         _save_pytree(history_chunk_path, history_chunk)
@@ -1813,6 +2108,8 @@ def run_full_training(
             completed_batches=completed,
             key=key_next,
             history=history,
+            adversary_policy=adversary_policy,
+            adversary_optimizer_state=adversary_optimizer_state,
         )
         checkpoint_path = save_training_checkpoint(
             checkpoint_root,
@@ -1836,9 +2133,12 @@ def run_full_training(
     training_duration_seconds = time.perf_counter() - training_started
 
     final_model_path = output_dir / "trained_model.eqx"
+    final_adversary_policy_path = output_dir / "trained_policy_adversary.eqx"
     final_history_path = output_dir / "training_history.eqx"
     final_summary_path = output_dir / "training_summary.json"
     _save_pytree(final_model_path, state.model, hyperparameters=run_spec)
+    if state.adversary_policy is not None:
+        _save_pytree(final_adversary_policy_path, state.adversary_policy, hyperparameters=run_spec)
     if state.history is not None:
         _save_pytree(final_history_path, state.history)
     diagnostics_metadata = write_training_diagnostics_sidecar(
@@ -1848,6 +2148,7 @@ def run_full_training(
         state=state,
         training_history_path=final_history_path,
         pgd_diagnostic_chunks=pgd_diagnostic_chunks,
+        policy_adversary_diagnostic_chunks=policy_adversary_diagnostic_chunks,
     )
     final_summary = {
         "schema_version": f"{SCHEMA_VERSION}.training.v1",
@@ -1867,6 +2168,9 @@ def run_full_training(
         "checkpoint_interval_batches": int(args.checkpoint_interval_batches),
         "latest_checkpoint": str(latest_checkpoint_path(checkpoint_root)),
         "final_model_path": str(final_model_path),
+        "final_adversary_policy_path": (
+            str(final_adversary_policy_path) if state.adversary_policy is not None else None
+        ),
         "training_history_path": str(final_history_path),
         "run_spec_path": str(run_spec_path),
         "graph_spec_path": spec_result["graph_spec_path"],
@@ -1878,6 +2182,9 @@ def run_full_training(
     return {
         **spec_result,
         "final_model_path": str(final_model_path),
+        "final_adversary_policy_path": (
+            str(final_adversary_policy_path) if state.adversary_policy is not None else None
+        ),
         "training_history_path": str(final_history_path),
         "training_summary_path": str(final_summary_path),
         "latest_checkpoint": str(latest_checkpoint_path(checkpoint_root)),
@@ -1904,6 +2211,13 @@ def save_training_checkpoint(
 
     eqx.tree_serialise_leaves(tmp / "model.eqx", state.model)
     eqx.tree_serialise_leaves(tmp / "optimizer_state.eqx", state.optimizer_state)
+    if state.adversary_policy is not None:
+        eqx.tree_serialise_leaves(tmp / "adversary_policy.eqx", state.adversary_policy)
+    if state.adversary_optimizer_state is not None:
+        eqx.tree_serialise_leaves(
+            tmp / "adversary_optimizer_state.eqx",
+            state.adversary_optimizer_state,
+        )
     if state.history is not None:
         _save_pytree(tmp / "history.eqx", state.history)
     metadata = {
@@ -1939,6 +2253,8 @@ def load_latest_checkpoint(
     model_template: Any,
     optimizer_state_template: Any,
     history_template: Any | None = None,
+    adversary_policy_template: Any | None = None,
+    adversary_optimizer_state_template: Any | None = None,
 ) -> TrainingState:
     """Load ``checkpoint_latest`` using explicit model and optimizer templates."""
 
@@ -1957,12 +2273,32 @@ def load_latest_checkpoint(
         if history_template is not None and history_path.exists()
         else None
     )
+    adversary_policy_path = checkpoint_path / "adversary_policy.eqx"
+    adversary_policy = (
+        eqx.tree_deserialise_leaves(adversary_policy_path, adversary_policy_template)
+        if adversary_policy_template is not None and adversary_policy_path.exists()
+        else None
+    )
+    adversary_optimizer_state_path = checkpoint_path / "adversary_optimizer_state.eqx"
+    adversary_optimizer_state = (
+        eqx.tree_deserialise_leaves(
+            adversary_optimizer_state_path,
+            adversary_optimizer_state_template,
+        )
+        if (
+            adversary_optimizer_state_template is not None
+            and adversary_optimizer_state_path.exists()
+        )
+        else None
+    )
     return TrainingState(
         model=model,
         optimizer_state=optimizer_state,
         completed_batches=int(metadata["completed_batches"]),
         key=jnp.asarray(metadata["next_prng_key"], dtype=jnp.uint32),
         history=history,
+        adversary_policy=adversary_policy,
+        adversary_optimizer_state=adversary_optimizer_state,
     )
 
 
@@ -2344,6 +2680,49 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--policy-adversary-training",
+        action="store_true",
+        help=(
+            "Enable learned memoryless full-state epsilon policy-adversary training. "
+            "This replaces PGD for issue e901a20 rows and keeps adversary weights "
+            "persistent across controller batches."
+        ),
+    )
+    parser.add_argument(
+        "--policy-adversary-mode",
+        choices=(POLICY_ADVERSARY_PLAIN_MODE, POLICY_ADVERSARY_ENERGY_MODE),
+        default=POLICY_ADVERSARY_PLAIN_MODE,
+        help=(
+            "plain uses hard projection only; energy adds an H-infinity-style "
+            "energy stabilizer to the adversary objective."
+        ),
+    )
+    parser.add_argument("--policy-adversary-width", type=int, default=64)
+    parser.add_argument("--policy-adversary-depth", type=int, default=2)
+    parser.add_argument("--policy-adversary-steps", type=int, default=5)
+    parser.add_argument("--policy-adversary-lr", type=float, default=3e-4)
+    parser.add_argument(
+        "--policy-adversary-energy-gamma",
+        type=float,
+        default=1.0,
+        help=(
+            "Multiplier on epsilon energy in energy mode. This is a stabilizer "
+            "term, not a formal H-infinity certificate parameter."
+        ),
+    )
+    parser.add_argument(
+        "--policy-adversary-radius-15cm",
+        type=float,
+        default=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+        help="15 cm L2 epsilon radius matched to the effective 020a65b H0 PGD row.",
+    )
+    parser.add_argument(
+        "--policy-adversary-radius-source",
+        type=str,
+        default="effective_020a65b_pgd_training_radius",
+        help="Metadata key/source for --policy-adversary-radius-15cm.",
+    )
+    parser.add_argument(
         "--initial-hidden-encoder",
         "--h0-encoder",
         action="store_true",
@@ -2372,6 +2751,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--planned-020a65b-h0-pgd-rows",
         action="store_true",
         help="Print the two planned local issue 020a65b H0 no-PGD/PGD gate rows and exit.",
+    )
+    parser.add_argument(
+        "--planned-e901a20-policy-adversary-rows",
+        action="store_true",
+        help="Print the two planned issue e901a20 H0 policy-adversary gate rows and exit.",
     )
     parser.add_argument(
         "--planned-e4800d6-sisu-spectrum-rows",
@@ -2455,6 +2839,9 @@ def main(
         return 0
     if args.planned_020a65b_h0_pgd_rows:
         print(_json_dumps({"planned_rows": planned_020a65b_h0_pgd_rows()}), end="")
+        return 0
+    if args.planned_e901a20_policy_adversary_rows:
+        print(_json_dumps({"planned_rows": planned_e901a20_policy_adversary_rows()}), end="")
         return 0
     if args.planned_e4800d6_sisu_spectrum_rows:
         print(_json_dumps({"planned_rows": planned_e4800d6_sisu_spectrum_rows()}), end="")
@@ -2716,6 +3103,8 @@ def _checkpoint_metadata(args: argparse.Namespace, output_dir: Path) -> dict[str
             "model.eqx",
             "optimizer_state.eqx",
             "history.eqx",
+            "adversary_policy.eqx when --policy-adversary-training is active",
+            "adversary_optimizer_state.eqx when --policy-adversary-training is active",
             "metadata.json",
         ],
     }
@@ -2804,11 +3193,16 @@ def _broad_epsilon_pgd_training_enabled(hps: TreeNamespace) -> bool:
     return bool(getattr(getattr(hps, "broad_epsilon_pgd_training", None), "enabled", False))
 
 
+def _policy_adversary_training_enabled(hps: TreeNamespace) -> bool:
+    return bool(getattr(getattr(hps, "policy_adversary_training", None), "enabled", False))
+
+
 def _nominal_only(hps: TreeNamespace) -> bool:
     return (
         not _perturbation_training_enabled(hps)
         and not _broad_epsilon_training_enabled(hps)
         and not _broad_epsilon_pgd_training_enabled(hps)
+        and not _policy_adversary_training_enabled(hps)
         and not _target_relative_multitarget_enabled(hps)
         and not _initial_hidden_encoder_enabled(hps)
         and not _delayed_reach_enabled(hps)
@@ -2828,6 +3222,8 @@ def _training_mode(hps: TreeNamespace) -> str:
             parts.append(BROAD_EPSILON_TRAINING_MODE)
         if _broad_epsilon_pgd_training_enabled(hps):
             parts.append(BROAD_EPSILON_PGD_TRAINING_MODE)
+        if _policy_adversary_training_enabled(hps):
+            parts.append(POLICY_ADVERSARY_TRAINING_MODE)
         if _perturbation_training_enabled(hps):
             parts.append(PERTURBATION_TRAINING_MODE)
         if _delayed_reach_enabled(hps):
@@ -2841,6 +3237,8 @@ def _training_mode(hps: TreeNamespace) -> str:
         parts.append(BROAD_EPSILON_TRAINING_MODE)
     if _broad_epsilon_pgd_training_enabled(hps):
         parts.append(BROAD_EPSILON_PGD_TRAINING_MODE)
+    if _policy_adversary_training_enabled(hps):
+        parts.append(POLICY_ADVERSARY_TRAINING_MODE)
     return "+".join(parts) if parts else "nominal"
 
 
@@ -2883,6 +3281,7 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
                 "calibrated_perturbation_training": _perturbation_training_enabled(hps),
                 "broad_full_state_epsilon_training": _broad_epsilon_training_enabled(hps),
                 "broad_full_state_epsilon_pgd_training": (_broad_epsilon_pgd_training_enabled(hps)),
+                "policy_adversary_training": _policy_adversary_training_enabled(hps),
                 "force_filter_feedback": bool(
                     getattr(target_config, "force_filter_feedback", False)
                 ),
@@ -2911,6 +3310,11 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
                 if _broad_epsilon_pgd_training_enabled(hps)
                 else {"enabled": False}
             ),
+            "policy_adversary_training": (
+                _plain(hps.policy_adversary_training)
+                if _policy_adversary_training_enabled(hps)
+                else {"enabled": False}
+            ),
             "perturbation_training": (
                 _plain(hps.perturbation_training)
                 if _perturbation_training_enabled(hps)
@@ -2925,12 +3329,17 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
             "checkpoint_selection_role": ("target_relative_multitarget_rollout_validation"),
             "nominal_quality_role": "original_anchor_and_seen_held_out_targets_reported",
             "controller_internal_mutation": False,
-            "adversarial_phase": "none",
+            "adversarial_phase": (
+                "learned_memoryless_policy_adversary"
+                if _policy_adversary_training_enabled(hps)
+                else "none"
+            ),
         }
     if (
         not bool(getattr(config, "enabled", False))
         and not _broad_epsilon_training_enabled(hps)
         and not _broad_epsilon_pgd_training_enabled(hps)
+        and not _policy_adversary_training_enabled(hps)
     ):
         return {
             "mode": "nominal",
@@ -2981,6 +3390,11 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
             if _broad_epsilon_pgd_training_enabled(hps)
             else {"enabled": False}
         ),
+        "policy_adversary_training": (
+            _plain(hps.policy_adversary_training)
+            if _policy_adversary_training_enabled(hps)
+            else {"enabled": False}
+        ),
         "perturbation_training": (
             _plain(hps.perturbation_training)
             if _perturbation_training_enabled(hps)
@@ -2989,7 +3403,11 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
         "checkpoint_selection_role": "generalized_held_out_perturbation_validation",
         "nominal_quality_role": "reported_quality_sidecar_gate",
         "controller_internal_mutation": False,
-        "adversarial_phase": "none",
+        "adversarial_phase": (
+            "learned_memoryless_policy_adversary"
+            if _policy_adversary_training_enabled(hps)
+            else "none"
+        ),
     }
 
 
@@ -3021,6 +3439,7 @@ def _training_diagnostics_metadata(
             "train_loss_terms",
             "validation_loss_terms",
             "pgd_broad_epsilon_inner_maximizer",
+            "policy_adversary_inner_optimizer",
         ],
     }
 
@@ -3055,6 +3474,7 @@ def write_training_diagnostics_sidecar(
     optimizer_diagnostic_chunks: list[dict[str, np.ndarray]] | None = None,
     history_diagnostic_chunks: list[dict[str, np.ndarray]] | None = None,
     pgd_diagnostic_chunks: list[dict[str, np.ndarray]] | None = None,
+    policy_adversary_diagnostic_chunks: list[dict[str, np.ndarray]] | None = None,
 ) -> dict[str, Any]:
     """Write compact training-process scalar sidecars for future optimizer audits."""
 
@@ -3085,6 +3505,8 @@ def write_training_diagnostics_sidecar(
         arrays.update(_history_diagnostics_arrays(state.history, state.completed_batches))
     if pgd_diagnostic_chunks:
         arrays.update(_combine_history_diagnostic_chunks(pgd_diagnostic_chunks))
+    if policy_adversary_diagnostic_chunks:
+        arrays.update(_combine_history_diagnostic_chunks(policy_adversary_diagnostic_chunks))
 
     npz_path = Path(metadata["sidecar_path"])
     manifest_path = Path(metadata["manifest_path"])
@@ -3268,6 +3690,354 @@ def _update_diagnostics_arrays(
             completed_batches,
         ),
     }
+
+
+def _make_policy_adversary_pre_step(policy: Any, config: Any) -> Callable:
+    """Return a stable PyTree hook applying the current learned policy adversary."""
+
+    return make_policy_adversary_pre_step(policy, config)
+
+
+def _run_policy_adversary_training_chunk(
+    *,
+    trainer: TaskTrainer,
+    task: Any,
+    model: Any,
+    optimizer_state: Any,
+    adversary_policy: Any,
+    adversary_optimizer_state: Any,
+    adversary_optimizer: optax.GradientTransformation,
+    hps: TreeNamespace,
+    where_train: Callable[[Any], Any],
+    key: Any,
+    start_batch: int,
+    chunk_batches: int,
+    log_progress: bool,
+) -> tuple[Any, Any, Any, Any, Any, dict[str, np.ndarray]]:
+    """Run a policy-adversary chunk without per-batch trainer re-entry."""
+
+    if chunk_batches < 1:
+        raise ValueError("chunk_batches must be positive")
+    n_replicates = int(getattr(getattr(hps, "model", hps), "n_replicates", 1))
+    batch_size = int(hps.batch_size)
+    where_train_spec = filter_spec_leaves(model, where_train)
+    flat_model, treedef_model = jtu.tree_flatten(model)
+    flat_opt_state, treedef_opt_state = jtu.tree_flatten(optimizer_state)
+
+    def _ensemble_in_axis(leaf):
+        if eqx.is_array(leaf) and leaf.ndim > 0 and leaf.shape[0] == n_replicates:
+            return 0
+        return None
+
+    flat_model_arr_spec = jt.map(_ensemble_in_axis, flat_model)
+    train_step = eqx.filter_vmap(
+        trainer._train_step,
+        in_axes=(
+            None,
+            None,
+            None,
+            flat_model_arr_spec,
+            None,
+            0,
+            None,
+            None,
+            None,
+            0,
+            None,
+            None,
+        ),
+        out_axes=(
+            eqx.if_array(0),
+            0,
+            flat_model_arr_spec,
+            eqx.if_array(0),
+            eqx.if_array(0),
+        ),
+    )
+    history = init_task_trainer_history(
+        task.loss_func,
+        chunk_batches,
+        n_replicates,
+        ensembled=True,
+        ensemble_random_trials=True,
+        start_batch=0,
+        task=task,
+        batch_size=batch_size,
+        model=model,
+        where_train=where_train,
+    )
+    keys = jr.split(key, chunk_batches)
+    progress_every = batch_log_every(int(hps.n_batches_condition))
+    chunk_started = time.perf_counter()
+    diagnostics: dict[str, np.ndarray] = {}
+
+    for local_batch in range(chunk_batches):
+        global_batch = start_batch + local_batch
+        key_adversary, key_controller, key_eval = jr.split(keys[local_batch], 3)
+        model_for_adversary = jtu.tree_unflatten(treedef_model, flat_model)
+        (
+            adversary_policy,
+            adversary_optimizer_state,
+            diagnostics,
+        ) = _advance_policy_adversary(
+            adversary_policy,
+            adversary_optimizer_state,
+            adversary_optimizer,
+            task,
+            model_for_adversary,
+            hps,
+            key=key_adversary,
+            batch_index=global_batch,
+        )
+        pre_step_fn = _make_policy_adversary_pre_step(
+            adversary_policy,
+            hps.policy_adversary_training,
+        )
+        batch_info = BatchInfo(
+            size=batch_size,
+            start=jnp.asarray(0),
+            current=jnp.asarray(local_batch),
+            total=jnp.asarray(chunk_batches),
+        )
+        key_train = jr.split(key_controller, n_replicates)
+        losses, _trial_specs, flat_model, flat_opt_state, _grads = train_step(
+            task,
+            task.loss_func,
+            batch_info,
+            flat_model,
+            treedef_model,
+            flat_opt_state,
+            treedef_opt_state,
+            where_train_spec,
+            [],
+            key_train,
+            None,
+            pre_step_fn,
+        )
+        history = eqx.tree_at(
+            lambda history: history.loss,
+            history,
+            tree_set(
+                history.loss,
+                losses.map(lambda arr: jnp.mean(arr, axis=-1)),
+                local_batch,
+            ),
+        )
+        opt_state_for_history = jtu.tree_unflatten(treedef_opt_state, flat_opt_state)
+        if (hyperparams := getattr(opt_state_for_history, "hyperparams", None)) is not None:
+            history = eqx.tree_at(
+                lambda history: history.learning_rate,
+                history,
+                history.learning_rate.at[local_batch].set(hyperparams["learning_rate"]),
+            )
+        if log_progress and should_log_batch(
+            global_batch,
+            int(hps.n_batches_condition),
+            every=progress_every,
+        ):
+            loss_mean = losses.map(jnp.mean)
+            print(
+                format_batch_line(
+                    "policy_adversary",
+                    global_batch,
+                    int(hps.n_batches_condition),
+                    loss=float(jax.device_get(loss_mean.total)),
+                    adv=float(np.asarray(diagnostics.get("adversary_objective", np.nan))),
+                    elapsed=time.perf_counter() - chunk_started,
+                ),
+                flush=True,
+            )
+
+    model = jtu.tree_unflatten(treedef_model, flat_model)
+    optimizer_state = jtu.tree_unflatten(treedef_opt_state, flat_opt_state)
+    states_validation, losses_validation = task.eval_ensemble_with_loss(
+        model,
+        n_replicates,
+        key_eval,
+        ensemble_random_trials=True,
+    )
+    del states_validation
+    history = eqx.tree_at(
+        lambda history: history.loss_validation,
+        history,
+        tree_set(
+            history.loss_validation,
+            losses_validation.map(lambda arr: jnp.mean(arr, axis=-1)),
+            chunk_batches - 1,
+        ),
+    )
+    return (
+        model,
+        history,
+        optimizer_state,
+        adversary_policy,
+        adversary_optimizer_state,
+        diagnostics,
+    )
+
+
+def _advance_policy_adversary(
+    policy: Any,
+    optimizer_state: Any,
+    optimizer: optax.GradientTransformation,
+    task: Any,
+    model: Any,
+    hps: TreeNamespace,
+    *,
+    key: Any,
+    batch_index: int,
+) -> tuple[Any, Any, dict[str, np.ndarray]]:
+    """Run the persistent policy-adversary ascent steps for one controller batch."""
+
+    policy, optimizer_state, diagnostics = _advance_policy_adversary_compiled(
+        policy,
+        optimizer_state,
+        optimizer,
+        task,
+        model,
+        hps,
+        key,
+        jnp.asarray(batch_index),
+    )
+    arrays = {
+        name: np.asarray(jax.device_get(value))
+        for name, value in diagnostics.items()
+        if eqx.is_array(value) or np.isscalar(value)
+    }
+    return policy, optimizer_state, arrays
+
+
+@eqx.filter_jit
+def _advance_policy_adversary_compiled(
+    policy: Any,
+    optimizer_state: Any,
+    optimizer: optax.GradientTransformation,
+    task: Any,
+    model: Any,
+    hps: TreeNamespace,
+    key: Any,
+    batch_index: Any,
+) -> tuple[Any, Any, dict[str, jnp.ndarray]]:
+    """Run the persistent policy-adversary ascent steps in one compiled update."""
+
+    cfg = config_from_policy_adversary_hps(hps.policy_adversary_training)
+
+    def loss_for_policy(candidate_policy):
+        objective, diagnostics = _policy_adversary_batch_objective(
+            candidate_policy,
+            task,
+            model,
+            hps,
+            key=key,
+            batch_index=batch_index,
+        )
+        return -objective, diagnostics
+
+    diagnostics = {}
+    for _ in range(int(cfg.n_steps)):
+        (_loss, diagnostics), grads = eqx.filter_value_and_grad(
+            loss_for_policy,
+            has_aux=True,
+        )(policy)
+        updates, optimizer_state = optimizer.update(
+            grads,
+            optimizer_state,
+            eqx.filter(policy, eqx.is_array),
+        )
+        policy = eqx.apply_updates(policy, updates)
+    diagnostics = {
+        **diagnostics,
+        "n_ascent_steps": jnp.asarray(cfg.n_steps, dtype=jnp.float32),
+        "learning_rate": jnp.asarray(cfg.learning_rate, dtype=jnp.float32),
+    }
+    return policy, optimizer_state, diagnostics
+
+
+def _policy_adversary_batch_objective(
+    policy: Any,
+    task: Any,
+    model: Any,
+    hps: TreeNamespace,
+    *,
+    key: Any,
+    batch_index: int,
+) -> tuple[jnp.ndarray, dict[str, jnp.ndarray]]:
+    n_replicates = int(getattr(getattr(hps, "model", hps), "n_replicates", 1))
+    batch_size = int(hps.batch_size)
+    batch_info = BatchInfo(
+        size=batch_size,
+        start=jnp.asarray(0),
+        current=jnp.asarray(batch_index),
+        total=jnp.asarray(hps.n_batches_condition),
+    )
+    keys = jr.split(key, n_replicates)
+    model_arrays, model_other = eqx.partition(
+        model,
+        lambda leaf: _is_replicate_axis_array(leaf, n_replicates),
+    )
+    objectives = []
+    diagnostics_by_replicate = []
+    for replicate_index, key_replicate in enumerate(keys):
+        key_trials, _, key_model = jr.split(key_replicate, 3)
+        keys_trials = jr.split(key_trials, batch_size)
+        keys_model = jr.split(key_model, batch_size)
+        trial_specs = eqx.filter_vmap(
+            partial(
+                task.get_train_trial_with_intervenor_params,
+                batch_info=batch_info,
+            )
+        )(keys_trials)
+        replicate_arrays = jt.map(
+            lambda leaf: None if leaf is None else leaf[replicate_index],
+            model_arrays,
+            is_leaf=lambda leaf: leaf is None,
+        )
+        model_replicate = eqx.combine(replicate_arrays, model_other)
+        model_replicate = _with_single_replicate_state_initializers(
+            model_replicate,
+            n_replicates=n_replicates,
+            replicate_index=replicate_index,
+        )
+        objective, diagnostics = policy_adversary_objective(
+            policy,
+            task,
+            model_replicate,
+            trial_specs,
+            task.loss_func,
+            keys_model,
+            hps.policy_adversary_training,
+        )
+        objectives.append(objective)
+        diagnostics_by_replicate.append(diagnostics)
+    objective = jnp.mean(jnp.stack(objectives))
+    diagnostics = jt.map(lambda *values: jnp.mean(jnp.stack(values)), *diagnostics_by_replicate)
+    return objective, diagnostics
+
+
+def _policy_adversary_diagnostics_arrays(
+    diagnostics: dict[str, np.ndarray],
+    *,
+    batch_index: int,
+    chunk_batches: int,
+) -> dict[str, np.ndarray]:
+    arrays: dict[str, np.ndarray] = {
+        "policy_adversary_diagnostic_sampled": np.zeros(chunk_batches, dtype=bool),
+        "policy_adversary_diagnostic_global_batch": np.full(
+            chunk_batches,
+            np.nan,
+            dtype=np.float32,
+        ),
+    }
+    arrays["policy_adversary_diagnostic_sampled"][-1] = True
+    arrays["policy_adversary_diagnostic_global_batch"][-1] = float(batch_index)
+    for name, value in diagnostics.items():
+        sampled = np.asarray(value)
+        if sampled.ndim == 0:
+            sampled = sampled.reshape((1,))
+        chunk = np.full((chunk_batches, *sampled.shape), np.nan, dtype=sampled.dtype)
+        chunk[-1] = sampled
+        arrays[f"policy_adversary_{name}"] = chunk
+    return arrays
 
 
 def _broad_epsilon_pgd_diagnostics_arrays(

@@ -37,6 +37,9 @@ TARGET_RELATIVE_MULTITARGET_TRAINING_MODE = "target_relative_multitarget_static"
 TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE = "target_relative_multitarget_static_h0"
 BROAD_EPSILON_TRAINING_MODE = "broad_full_state_epsilon_l2"
 BROAD_EPSILON_PGD_TRAINING_MODE = "broad_full_state_epsilon_pgd_l2"
+POLICY_ADVERSARY_TRAINING_MODE = "broad_full_state_epsilon_policy_l2"
+POLICY_ADVERSARY_PLAIN_MODE = "plain"
+POLICY_ADVERSARY_ENERGY_MODE = "energy"
 BROAD_EPSILON_PGD_FIXED_BUDGET_SCHEDULE = "fixed"
 BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE = "sisu_energy_fraction"
 DEFAULT_PGD_SISU_LEVELS: tuple[float, ...] = (0.0, 0.25, 0.5, 0.75, 1.0)
@@ -372,6 +375,166 @@ class PgdFullStateEpsilonTrainingConfig:
         """Return JSON-serializable PGD broad-epsilon metadata."""
 
         return self.to_hps_dict()
+
+
+@dataclass(frozen=True)
+class PolicyFullStateEpsilonTrainingConfig:
+    """Learned memoryless policy lane on the C&S full-state epsilon channel."""
+
+    enabled: bool = False
+    mode: str = POLICY_ADVERSARY_PLAIN_MODE
+    width: int = 64
+    depth: int = 2
+    n_steps: int = 5
+    learning_rate: float = 3e-4
+    energy_penalty_gamma: float = 1.0
+    reference_l2_radius_15cm: float = EFFECTIVE_020A65B_PGD_RADIUS_15CM
+    reach_length_scaling: bool = True
+    nominal_reach_length_m: float = BROAD_EPSILON_REFERENCE_REACH_M
+    movement_epoch_only: bool = False
+    epsilon_dim: int = BROAD_EPSILON_DIM
+    state_feature_dim: int = BROAD_EPSILON_DIM * 6
+    budget_source: str = "effective_020a65b_pgd_training_radius"
+
+    def __post_init__(self) -> None:
+        if self.mode not in (POLICY_ADVERSARY_PLAIN_MODE, POLICY_ADVERSARY_ENERGY_MODE):
+            raise ValueError("Policy adversary mode must be 'plain' or 'energy'.")
+        if int(self.width) < 1:
+            raise ValueError("Policy adversary width must be positive.")
+        if int(self.depth) < 0:
+            raise ValueError("Policy adversary depth must be non-negative.")
+        if int(self.n_steps) < 1:
+            raise ValueError("Policy adversary n_steps must be positive.")
+        if float(self.learning_rate) <= 0.0:
+            raise ValueError("Policy adversary learning_rate must be positive.")
+        if float(self.energy_penalty_gamma) < 0.0:
+            raise ValueError("Policy adversary energy_penalty_gamma must be non-negative.")
+        if float(self.reference_l2_radius_15cm) <= 0.0:
+            raise ValueError("Policy adversary reference_l2_radius_15cm must be positive.")
+        if float(self.nominal_reach_length_m) <= 0.0:
+            raise ValueError("Policy adversary nominal_reach_length_m must be positive.")
+        if int(self.epsilon_dim) < 1:
+            raise ValueError("Policy adversary epsilon_dim must be positive.")
+        if int(self.state_feature_dim) < 1:
+            raise ValueError("Policy adversary state_feature_dim must be positive.")
+
+    @property
+    def reference_l2_radius(self) -> float:
+        """Return the active 15 cm reference L2 radius."""
+
+        return float(self.reference_l2_radius_15cm)
+
+    def to_hps_dict(self) -> dict[str, Any]:
+        """Return TreeNamespace-compatible policy-adversary metadata."""
+
+        return {
+            "enabled": self.enabled,
+            "mode": POLICY_ADVERSARY_TRAINING_MODE if self.enabled else "disabled",
+            "row_mode": self.mode,
+            "policy": {
+                "kind": "memoryless_mlp",
+                "state_feature_key": "clean_rollout.states.mechanics.vector",
+                "state_feature_dim": int(self.state_feature_dim),
+                "width": int(self.width),
+                "depth": int(self.depth),
+                "output_dim": int(self.epsilon_dim),
+                "shared_across_replicates": True,
+            },
+            "inner_optimizer": {
+                "method": "adam",
+                "n_ascent_steps_per_controller_step": int(self.n_steps),
+                "learning_rate": float(self.learning_rate),
+                "weights_persist_across_batches": True,
+            },
+            "objective": {
+                "plain": "maximize controller loss under hard projected epsilon",
+                "energy": (
+                    "maximize controller loss minus energy_penalty_gamma * epsilon_energy; "
+                    "H-infinity-style stabilizer only, not a formal certificate"
+                ),
+                "active": self.mode,
+                "energy_penalty_gamma": float(self.energy_penalty_gamma),
+                "formal_certificate": False,
+            },
+            "epsilon_channel": {
+                "state_basis": _broad_epsilon_state_basis(int(self.epsilon_dim)),
+                "shape": ["batch", "time", int(self.epsilon_dim)],
+                "injection": (
+                    f"B_w[:{int(self.epsilon_dim)}, :] = I_{int(self.epsilon_dim)}; "
+                    f"B_w[{int(self.epsilon_dim)}:, :] = 0"
+                ),
+                "lag_history_direct_write": False,
+                "dt_scaling": "none",
+            },
+            "projection": (
+                "per_trial_flattened_movement_time_component_l2_ball"
+                if self.movement_epoch_only
+                else "per_trial_flattened_time_component_l2_ball"
+            ),
+            "time_mask": _epsilon_time_mask_contract(self.movement_epoch_only),
+            "budget_contract": {
+                "reference_reach_m": BROAD_EPSILON_REFERENCE_REACH_M,
+                "effective_l2_radius_15cm": float(self.reference_l2_radius_15cm),
+                "active_max_l2_radius_15cm": float(self.reference_l2_radius_15cm),
+                "budget_source": {
+                    "key": self.budget_source,
+                    **PGD_SISU_MAX_RADIUS_SOURCES.get(
+                        self.budget_source,
+                        {
+                            "source_kind": "caller_declared",
+                            "gamma_equivalent_analytical_anchor": False,
+                            "description": self.budget_source,
+                        },
+                    ),
+                },
+                "reach_length_scaling": bool(self.reach_length_scaling),
+                "reach_length_scaling_note": (
+                    "The 15 cm effective PGD radius is scaled by sampled reach length "
+                    "when target-relative multi-target training is active."
+                ),
+            },
+            "diagnostics": {
+                "epsilon_norm_radius_ratio": True,
+                "epsilon_energy": True,
+                "projection_boundary_fraction": True,
+                "adversary_objective_components": True,
+                "controller_loss": True,
+                "stabilizer_term": self.mode == POLICY_ADVERSARY_ENERGY_MODE,
+            },
+        }
+
+    def to_json(self) -> dict[str, Any]:
+        """Return JSON-serializable policy-adversary metadata."""
+
+        return self.to_hps_dict()
+
+
+class MemorylessFullStateEpsilonPolicy(eqx.Module):
+    """Small MLP mapping a single state feature vector to one epsilon vector."""
+
+    mlp: eqx.nn.MLP
+
+    def __init__(
+        self,
+        *,
+        state_feature_dim: int,
+        epsilon_dim: int,
+        width: int = 64,
+        depth: int = 2,
+        key: PRNGKeyArray,
+    ) -> None:
+        self.mlp = eqx.nn.MLP(
+            in_size=int(state_feature_dim),
+            out_size=int(epsilon_dim),
+            width_size=int(width),
+            depth=int(depth),
+            activation=jax.nn.tanh,
+            final_activation=lambda x: x,
+            key=key,
+        )
+
+    def __call__(self, state_features: jnp.ndarray) -> jnp.ndarray:
+        return self.mlp(state_features)
 
 
 def pgd_budget_schedule_contract(
@@ -1564,6 +1727,101 @@ def config_from_broad_epsilon_pgd_hps(config: Any) -> PgdFullStateEpsilonTrainin
     )
 
 
+def config_from_policy_adversary_hps(config: Any) -> PolicyFullStateEpsilonTrainingConfig:
+    """Normalize an hps policy-adversary payload to a dataclass."""
+
+    policy = _payload_get(config, "policy", None)
+    optimizer = _payload_get(config, "inner_optimizer", None)
+    objective = _payload_get(config, "objective", None)
+    budget = _payload_get(config, "budget_contract", None)
+    budget_source = _payload_get(budget, "budget_source", None)
+    return PolicyFullStateEpsilonTrainingConfig(
+        enabled=bool(_payload_get(config, "enabled", False)),
+        mode=str(
+            _first_payload_value(
+                (config, "row_mode"),
+                (objective, "active"),
+                (config, "mode"),
+                default=POLICY_ADVERSARY_PLAIN_MODE,
+            )
+        ),
+        width=int(_first_payload_value((policy, "width"), (config, "width"), default=64)),
+        depth=int(_first_payload_value((policy, "depth"), (config, "depth"), default=2)),
+        n_steps=int(
+            _first_payload_value(
+                (optimizer, "n_ascent_steps_per_controller_step"),
+                (config, "n_steps"),
+                default=5,
+            )
+        ),
+        learning_rate=float(
+            _first_payload_value(
+                (optimizer, "learning_rate"),
+                (config, "learning_rate"),
+                default=3e-4,
+            )
+        ),
+        energy_penalty_gamma=float(
+            _first_payload_value(
+                (objective, "energy_penalty_gamma"),
+                (config, "energy_penalty_gamma"),
+                default=1.0,
+            )
+        ),
+        reference_l2_radius_15cm=float(
+            _first_payload_value(
+                (budget, "effective_l2_radius_15cm"),
+                (budget, "active_max_l2_radius_15cm"),
+                (config, "reference_l2_radius_15cm"),
+                default=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+            )
+        ),
+        reach_length_scaling=bool(_payload_get(config, "reach_length_scaling", True)),
+        nominal_reach_length_m=float(
+            _payload_get(config, "nominal_reach_length_m", BROAD_EPSILON_REFERENCE_REACH_M)
+        ),
+        movement_epoch_only=bool(_payload_get(config, "movement_epoch_only", False)),
+        epsilon_dim=int(
+            _first_payload_value(
+                (policy, "output_dim"),
+                (config, "epsilon_dim"),
+                default=BROAD_EPSILON_DIM,
+            )
+        ),
+        state_feature_dim=int(
+            _first_payload_value(
+                (policy, "state_feature_dim"),
+                (config, "state_feature_dim"),
+                default=BROAD_EPSILON_DIM * 6,
+            )
+        ),
+        budget_source=str(
+            _first_payload_value(
+                (budget_source, "key"),
+                (config, "budget_source"),
+                default="effective_020a65b_pgd_training_radius",
+            )
+        ),
+    )
+
+
+def make_memoryless_policy_adversary(
+    config: Any,
+    *,
+    key: PRNGKeyArray,
+) -> MemorylessFullStateEpsilonPolicy:
+    """Initialize the memoryless full-state epsilon adversary policy."""
+
+    cfg = config_from_policy_adversary_hps(config)
+    return MemorylessFullStateEpsilonPolicy(
+        state_feature_dim=cfg.state_feature_dim,
+        epsilon_dim=cfg.epsilon_dim,
+        width=cfg.width,
+        depth=cfg.depth,
+        key=key,
+    )
+
+
 _MISSING = object()
 
 
@@ -1617,6 +1875,138 @@ def make_broad_epsilon_pgd_pre_step(config: Any) -> Callable | None:
         return specs
 
     return pre_step_fn
+
+
+class PolicyAdversaryPreStep(eqx.Module):
+    """Feedbax pre-step hook carrying policy weights as dynamic JAX leaves."""
+
+    policy: MemorylessFullStateEpsilonPolicy
+    config: Any = eqx.field(static=True)
+
+    def __call__(self, task, model, trial_specs, loss_func, keys_model):
+        del loss_func
+        updated, _diagnostics = policy_adversary_trial_specs(
+            self.policy,
+            task,
+            model,
+            trial_specs,
+            keys_model,
+            self.config,
+            stop_gradient_epsilon=True,
+        )
+        return updated
+
+
+def make_policy_adversary_pre_step(policy: Any, config: Any) -> PolicyAdversaryPreStep:
+    """Return a stable PyTree pre-step hook for learned policy-adversary training."""
+
+    return PolicyAdversaryPreStep(policy=policy, config=config)
+
+
+def policy_adversary_trial_specs(
+    policy: MemorylessFullStateEpsilonPolicy,
+    task: Any,
+    model: Any,
+    trial_specs: TaskTrialSpec,
+    keys_model: Any,
+    config: Any,
+    *,
+    stop_gradient_epsilon: bool = False,
+) -> tuple[TaskTrialSpec, dict[str, jnp.ndarray]]:
+    """Apply a learned policy adversary and return low-overhead diagnostics."""
+
+    cfg = config_from_policy_adversary_hps(config)
+    if not cfg.enabled:
+        return trial_specs, {}
+    specs = _ensure_broad_epsilon_input(trial_specs, epsilon_dim=cfg.epsilon_dim)
+    base_epsilon = jnp.asarray(specs.inputs["epsilon"])
+    clean_states = task.eval_trials(model, specs, keys_model)
+    state_features = jnp.asarray(clean_states.mechanics.vector)[..., : cfg.state_feature_dim]
+    raw_delta = _memoryless_policy_sequence(policy, state_features)
+    time_mask = _epsilon_time_mask(specs, base_epsilon, cfg.movement_epoch_only)
+    radius = _broad_epsilon_l2_radius(specs, cfg).astype(base_epsilon.dtype)
+    delta = _project_flattened_per_trial_l2_ball(raw_delta * time_mask, radius) * time_mask
+    if stop_gradient_epsilon:
+        delta = jax.lax.stop_gradient(delta)
+    updated = _set_input(specs, "epsilon", base_epsilon + delta)
+    diagnostics = policy_adversary_projection_diagnostics(delta, radius, mode=cfg.mode)
+    return updated, diagnostics
+
+
+def policy_adversary_objective(
+    policy: MemorylessFullStateEpsilonPolicy,
+    task: Any,
+    model: Any,
+    trial_specs: TaskTrialSpec,
+    loss_func: Any,
+    keys_model: Any,
+    config: Any,
+) -> tuple[jnp.ndarray, dict[str, jnp.ndarray]]:
+    """Return the adversary maximization objective and scalar diagnostics."""
+
+    cfg = config_from_policy_adversary_hps(config)
+    updated, diagnostics = policy_adversary_trial_specs(
+        policy,
+        task,
+        model,
+        trial_specs,
+        keys_model,
+        cfg,
+    )
+    states = task.eval_trials(model, updated, keys_model)
+    losses = loss_func(states, updated, model)
+    controller_loss = jnp.asarray(losses.total)
+    energy = diagnostics.get("epsilon_energy_mean", jnp.asarray(0.0, dtype=controller_loss.dtype))
+    stabilizer = (
+        jnp.asarray(cfg.energy_penalty_gamma, dtype=controller_loss.dtype) * energy
+        if cfg.mode == POLICY_ADVERSARY_ENERGY_MODE
+        else jnp.asarray(0.0, dtype=controller_loss.dtype)
+    )
+    objective = controller_loss - stabilizer
+    diagnostics = {
+        **diagnostics,
+        "controller_loss": controller_loss,
+        "adversary_objective": objective,
+        "energy_penalty_gamma": jnp.asarray(cfg.energy_penalty_gamma, dtype=jnp.float32),
+        "stabilizer_term": stabilizer,
+        "mode_is_energy": jnp.asarray(cfg.mode == POLICY_ADVERSARY_ENERGY_MODE),
+    }
+    return objective, diagnostics
+
+
+def policy_adversary_projection_diagnostics(
+    delta: jnp.ndarray,
+    radius: jnp.ndarray,
+    *,
+    mode: str,
+) -> dict[str, jnp.ndarray]:
+    """Return scalar projection diagnostics for a policy epsilon sequence."""
+
+    delta_norm = _flattened_per_trial_norm(delta).astype(radius.dtype)
+    energy = jnp.sum(jnp.square(delta), axis=tuple(range(max(delta.ndim - 2, 0), delta.ndim)))
+    ratio = delta_norm / jnp.maximum(radius, jnp.asarray(1e-12, dtype=radius.dtype))
+    boundary = ratio >= jnp.asarray(1.0 - 1e-4, dtype=ratio.dtype)
+    return {
+        "radius_mean": jnp.mean(radius),
+        "radius_max": jnp.max(radius),
+        "epsilon_norm_mean": jnp.mean(delta_norm),
+        "epsilon_norm_max": jnp.max(delta_norm),
+        "epsilon_norm_radius_ratio_mean": jnp.mean(ratio),
+        "epsilon_norm_radius_ratio_max": jnp.max(ratio),
+        "epsilon_energy_mean": jnp.mean(energy),
+        "epsilon_energy_max": jnp.max(energy),
+        "boundary_fraction": jnp.mean(boundary.astype(radius.dtype)),
+        "mode_is_plain": jnp.asarray(mode == POLICY_ADVERSARY_PLAIN_MODE),
+    }
+
+
+def _memoryless_policy_sequence(
+    policy: MemorylessFullStateEpsilonPolicy,
+    state_features: jnp.ndarray,
+) -> jnp.ndarray:
+    flat = state_features.reshape((-1, state_features.shape[-1]))
+    flat_epsilon = eqx.filter_vmap(policy)(flat)
+    return flat_epsilon.reshape((*state_features.shape[:-1], flat_epsilon.shape[-1]))
 
 
 def run_broad_epsilon_pgd_inner_maximizer(

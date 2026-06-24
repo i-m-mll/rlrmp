@@ -32,6 +32,7 @@ NOMINAL_GRU_TRAINING_MODES = frozenset(
         "fixed_target_perturbation_generalized",
         "broad_full_state_epsilon_l2",
         "broad_full_state_epsilon_pgd_l2",
+        "broad_full_state_epsilon_policy_l2",
         "target_relative_multitarget_static",
         "target_relative_multitarget_static_h0",
         "delayed_reach_target_visible_go_cue",

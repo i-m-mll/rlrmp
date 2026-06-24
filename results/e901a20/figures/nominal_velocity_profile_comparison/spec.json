@@ -1,0 +1,79 @@
+{
+  "data": "_artifacts/e901a20/figures/nominal_velocity_profile_comparison/nominal_forward_velocity_profiles.npz",
+  "evaluation_lens": "nominal_clean_validation_trials",
+  "figure": "_artifacts/e901a20/figures/nominal_velocity_profile_comparison/nominal_forward_velocity_profiles.html",
+  "figure_link": "results/e901a20/figures/nominal_velocity_profile_comparison/figure.html",
+  "inputs": [
+    {
+      "run_spec": "results/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/run.json",
+      "trained_model": "_artifacts/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/trained_model.eqx"
+    },
+    {
+      "run_spec": "results/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64/run.json",
+      "trained_model": "_artifacts/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64/trained_model.eqx"
+    },
+    {
+      "run_spec": "results/e901a20/runs/h0_policy_adversary__plain.json",
+      "trained_model": "_artifacts/e901a20/runs/h0_policy_adversary__plain/trained_model.eqx"
+    },
+    {
+      "run_spec": "results/e901a20/runs/h0_policy_adversary__energy.json",
+      "trained_model": "_artifacts/e901a20/runs/h0_policy_adversary__energy/trained_model.eqx"
+    }
+  ],
+  "manifest": "_artifacts/e901a20/figures/nominal_velocity_profile_comparison/manifest.json",
+  "runs": [
+    {
+      "experiment": "020a65b",
+      "label": "020a65b no-PGD H0",
+      "n_pooled_profiles": 100,
+      "n_replicates": 5,
+      "n_trials": 20,
+      "peak_mean_length_normalized_forward_velocity_1_s": 4.39022741039644,
+      "run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
+      "target_distance_max_m": 0.18000000710799857,
+      "target_distance_min_m": 0.09999999902641167,
+      "time_of_peak_mean_forward_velocity_s": 0.2
+    },
+    {
+      "experiment": "020a65b",
+      "label": "020a65b PGD H0",
+      "n_pooled_profiles": 100,
+      "n_replicates": 5,
+      "n_trials": 20,
+      "peak_mean_length_normalized_forward_velocity_1_s": 4.81105883208021,
+      "run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64",
+      "target_distance_max_m": 0.18000000710799857,
+      "target_distance_min_m": 0.09999999902641167,
+      "time_of_peak_mean_forward_velocity_s": 0.22
+    },
+    {
+      "experiment": "e901a20",
+      "label": "Policy adversary plain",
+      "n_pooled_profiles": 100,
+      "n_replicates": 5,
+      "n_trials": 20,
+      "peak_mean_length_normalized_forward_velocity_1_s": 4.710167451937189,
+      "run_id": "h0_policy_adversary__plain",
+      "target_distance_max_m": 0.18000000710799857,
+      "target_distance_min_m": 0.09999999902641167,
+      "time_of_peak_mean_forward_velocity_s": 0.2
+    },
+    {
+      "experiment": "e901a20",
+      "label": "Policy adversary energy",
+      "n_pooled_profiles": 100,
+      "n_replicates": 5,
+      "n_trials": 20,
+      "peak_mean_length_normalized_forward_velocity_1_s": 4.689660048686641,
+      "run_id": "h0_policy_adversary__energy",
+      "target_distance_max_m": 0.18000000710799857,
+      "target_distance_min_m": 0.09999999902641167,
+      "time_of_peak_mean_forward_velocity_s": 0.2
+    }
+  ],
+  "schema_version": "rlrmp.figure_spec.v1",
+  "source_script": "results/e901a20/scripts/materialize_nominal_velocity_profile_comparison.py",
+  "topic": "nominal_velocity_profile_comparison",
+  "velocity_definition": "effector velocity projected onto each trial's target direction, divided by that trial's reach length"
+}
