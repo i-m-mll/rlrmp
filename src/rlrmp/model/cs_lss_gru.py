@@ -176,8 +176,8 @@ class InitialHiddenStagedNetwork(Component):
     ) -> tuple[dict[str, PyTree], eqx.nn.State]:
         applied = state.get(self.h0_state_index)
         feedback = jnp.asarray(inputs["feedback"])
-        h0 = self.h0_encoder(feedback)
         net_state = state.get(self.net.state_index)
+        h0 = self.h0_encoder(feedback).astype(net_state.hidden.dtype)
         initial_net_state = NetworkState(
             input=net_state.input,
             hidden=jnp.where(applied, net_state.hidden, h0),
@@ -376,8 +376,7 @@ def build_cs_lss_gru_graph_spec(
         "population_structure": _population_structure_params(population_structure, hidden_size),
         "key": key_param,
     }
-    if trainable_dtype is not None:
-        net_params["trainable_dtype"] = str(jnp.dtype(trainable_dtype).name)
+    net_params["trainable_dtype"] = str(jnp.dtype(trainable_dtype or mechanics.A.dtype).name)
     if initial_hidden_encoder:
         net_params.update(
             {
@@ -583,8 +582,9 @@ def build_cs_lss_gru_graph(
         initial_hidden_encoder: If true, initialize the GRU hidden state on the
             first graph step from the first controller-visible feedback vector.
         trainable_dtype: Optional dtype for the controller trainable leaves
-            (hidden/readout and h0 encoder when present). If absent, preserve
-            the historical JAX-default construction dtype.
+            (hidden/readout and h0 encoder when present). If absent, use the
+            mechanics dtype so retained controller state and C&S LSS/channel
+            state updates remain dtype-compatible when x64 is enabled.
         key: PRNG key for network construction.
 
     Returns:
@@ -829,6 +829,7 @@ def _build_simple_staged_network(params: dict[str, Any]) -> SimpleStagedNetwork:
         hidden_type=_hidden_type_from_name(str(params.get("hidden_type", "GRUCell"))),
         population_structure=_population_structure_from_params(params.get("population_structure")),
         sisu_gating=str(params.get("sisu_gating", "additive")),
+        dtype=jnp.dtype(params.get("trainable_dtype", jnp.float32)),
         key=_key_from_params(params),
     )
     return _cast_trainable_component_dtype(net, _trainable_dtype_from_params(params))

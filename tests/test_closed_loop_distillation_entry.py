@@ -5,7 +5,10 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
+import jax.numpy as jnp
+from feedbax.training.train import TaskTrainer
 import pytest
 
 from rlrmp.train import closed_loop_distillation
@@ -27,7 +30,7 @@ def _default_spec_args(**overrides) -> argparse.Namespace:
         "lr_warmup_batches": 500,
         "lr_cosine_alpha": 0.01,
         "gradient_clip_norm": 5.0,
-        "trainable_dtype": "float32",
+        "trainable_dtype": closed_loop_distillation.DEFAULT_TRAINABLE_DTYPE,
         "kinematics_trajectory_weight": 1.0,
         "velocity_weight": 1.0,
         "endpoint_weight": 1.0,
@@ -37,9 +40,25 @@ def _default_spec_args(**overrides) -> argparse.Namespace:
         "input_output_jvp_weight": 0.25,
         "task_rollout_loss_weight": 0.0,
         "n_jvp_directions": 16,
+        "checkpoint_interval_batches": 500,
     }
     values.update(overrides)
     return argparse.Namespace(**values)
+
+
+def _toy_reference() -> closed_loop_distillation.ExtLQGClosedLoopReference:
+    plant_a = jnp.eye(6, dtype=jnp.float32)
+    plant_b = jnp.zeros((6, 2), dtype=jnp.float32)
+    gains = jnp.zeros((3, 2, 6), dtype=jnp.float32)
+    observation = jnp.eye(6, dtype=jnp.float32)
+    return closed_loop_distillation.ExtLQGClosedLoopReference(
+        plant_a=plant_a,
+        plant_b=plant_b,
+        controller_gains=gains,
+        observation_matrix=observation,
+        feedback_gains=gains,
+        state_dim=6,
+    )
 
 
 def test_closed_loop_distillation_builds_a378b34_contract() -> None:
@@ -53,8 +72,9 @@ def test_closed_loop_distillation_builds_a378b34_contract() -> None:
     )
     assert spec["training_entry"]["script"] == "scripts/train_closed_loop_distillation.py"
     assert spec["training_entry"]["full_train_status"] == (
-        "fail_closed_pending_feedbax_closed_loop_hook"
+        "implemented_no_launch_pending_user_approval"
     )
+    assert "TaskTrainer/train_pair" in spec["training_entry"]["trainer_path"]
     assert spec["teacher_contract"]["teacher_package"] == (
         "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers.npz"
     )
@@ -72,12 +92,15 @@ def test_closed_loop_distillation_builds_a378b34_contract() -> None:
     assert spec["student_contract"]["lr_cosine_alpha"] == pytest.approx(0.01)
     assert spec["student_contract"]["gradient_clip_norm"] == pytest.approx(5.0)
     assert spec["student_contract"]["broad_epsilon_pgd_training"] is False
-    assert spec["student_contract"]["trainable_dtype"] == "float32"
+    assert spec["student_contract"]["trainable_dtype"] == "float64"
     assert spec["closed_loop_semantics"]["student_actions_feed_future_observations"] is True
     assert spec["closed_loop_semantics"]["teacher_forced_feedback_bank_imitation"] is False
     assert spec["closed_loop_semantics"]["old_guided_trainer_is_main_path"] is False
     assert spec["loss_surface"]["weights"]["task_qr_rollout"] == 0.0
     assert spec["loss_surface"]["task_qr_rollout_loss_can_be_enabled_later"] is True
+    assert spec["execution_target"]["billable_launch_authorized"] is False
+    assert spec["checkpointing"]["interval_batches"] == 500
+    assert spec["locked_spec_summary"]["n_batches"] == 12000
     assert (
         "dense Jacobian materialization is forbidden"
         in (spec["loss_surface"]["components"]["directional_input_output_jvp"]["implementation"])
@@ -110,19 +133,88 @@ def test_closed_loop_distillation_cli_dry_run_smoke(
     assert written["run_id"] == "h0_extlqg_6d_closed_loop_distillation"
 
 
-def test_closed_loop_distillation_full_train_fails_closed() -> None:
+def test_closed_loop_distillation_smoke_train_uses_tasktrainer_train_pair() -> None:
+    spec = closed_loop_distillation.build_closed_loop_distillation_spec(_default_spec_args())
+    observed = {}
+
+    def fake_setup_pair(hps, *, key):
+        observed["hps"] = hps
+        observed["key_shape"] = tuple(key.shape)
+        return SimpleNamespace(task=object(), model=SimpleNamespace(nodes={"net": object()}))
+
+    def fake_train_pair(
+        trainer,
+        pair,
+        *,
+        n_batches,
+        key,
+        ensembled,
+        loss_func,
+        where_train,
+        batch_size,
+        **kwargs,
+    ):
+        del pair, key, where_train, kwargs
+        observed["trainer_is_tasktrainer"] = isinstance(trainer, TaskTrainer)
+        observed["n_batches"] = n_batches
+        observed["batch_size"] = batch_size
+        observed["ensembled"] = ensembled
+        observed["loss_type"] = type(loss_func).__name__
+        return object(), object()
+
+    result = closed_loop_distillation.run_closed_loop_distillation_training(
+        spec=spec,
+        n_batches=1,
+        batch_size=2,
+        n_replicates=1,
+        hidden_size=6,
+        smoke=True,
+        setup_pair_fn=fake_setup_pair,
+        train_pair_fn=fake_train_pair,
+        loss_factory=lambda spec: closed_loop_distillation.ClosedLoopDistillationLoss(
+            reference=_toy_reference(),
+            weights=closed_loop_distillation.ClosedLoopLossWeights(),
+        ),
+    )
+
+    assert result["mode"] == "smoke_train"
+    assert result["trainer_path"] == "Feedbax TaskTrainer/train_pair"
+    assert result["completed_batches"] == 1
+    assert observed["trainer_is_tasktrainer"] is True
+    assert observed["ensembled"] is True
+    assert observed["loss_type"] == "ClosedLoopDistillationLoss"
+    assert observed["hps"].model.hidden_size == 6
+
+
+def test_extlqg_reference_rollout_matches_shared_shapes() -> None:
+    reference = _toy_reference()
+    initial_vector = jnp.asarray([[0.0, 0.0, 0.1, 0.0, 0.2, 0.0]], dtype=jnp.float32)
+    target_pos = jnp.asarray([[0.15, 0.0]], dtype=jnp.float32)
+
+    rollout = reference.rollout(
+        initial_vector=initial_vector,
+        target_pos=target_pos,
+        n_steps=3,
+    )
+
+    assert rollout["position"].shape == (1, 3, 2)
+    assert rollout["velocity"].shape == (1, 3, 2)
+    assert rollout["force_filter"].shape == (1, 3, 2)
+    assert rollout["action"].shape == (1, 3, 2)
+
+
+def test_closed_loop_distillation_full_train_requires_approval() -> None:
     spec = closed_loop_distillation.build_closed_loop_distillation_spec(_default_spec_args())
 
-    with pytest.raises(closed_loop_distillation.ClosedLoopTrainingUnavailableError) as exc:
+    with pytest.raises(closed_loop_distillation.FullTrainingApprovalRequiredError) as exc:
         closed_loop_distillation.run_closed_loop_distillation_training(spec=spec)
 
     message = str(exc.value)
-    assert "not implemented in this preflight pass" in message
-    assert "Refusing to fall back" in message
-    assert "teacher-feedback-bank" in message
+    assert "requires explicit user launch approval" in message
+    assert "No Feedbax hook blocker" in message
 
 
-def test_closed_loop_distillation_cli_full_train_returns_fail_closed(
+def test_closed_loop_distillation_cli_full_train_returns_approval_guard(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -136,9 +228,9 @@ def test_closed_loop_distillation_cli_full_train_returns_fail_closed(
 
     payload = json.loads(capsys.readouterr().out)
     assert status == 2
-    assert payload["error"] == "closed_loop_training_unavailable"
+    assert payload["error"] == "full_training_requires_user_approval"
     assert payload["run_spec"]["run_id"] == "h0_extlqg_6d_closed_loop_distillation"
-    assert "Refusing to fall back" in payload["message"]
+    assert "No Feedbax hook blocker" in payload["message"]
 
 
 def test_tracked_a378b34_run_spec_parses_and_validates() -> None:
