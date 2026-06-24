@@ -20,6 +20,11 @@ from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     delayed_reach_fixed_rescore_bank_spec,
     plan_fixed_bank_checkpoint_rescore,
 )
+from rlrmp.train.cs_perturbation_training import (
+    TARGET_SUPPORT_PROFILE_020A65B,
+    TARGET_SUPPORT_PROFILE_CONST_BAND16,
+    target_relative_target_support_config,
+)
 
 
 def load_delayed_timing_velocity_materializer():
@@ -71,7 +76,7 @@ def test_uniform_delayed_eval_bank_preserves_historical_grid_contract() -> None:
     )
 
 
-def test_validation_target_direction_source_preserves_radii_angles_and_duplicates() -> None:
+def test_validation_target_direction_source_uses_default_band16_fixed_reach() -> None:
     bank = delayed_reach_eval_bank_spec(
         bank_role="catch",
         direction_source="validation_targets",
@@ -85,26 +90,50 @@ def test_validation_target_direction_source_preserves_radii_angles_and_duplicate
     assert payload["direction_source"] == "validation_targets"
     assert payload["direction_source_inferred_from_validation_targets"] is True
     assert payload["trial_count"] == 21 * 20
-    assert payload["duplicate_direction_count"] == 10
+    assert payload["duplicate_direction_count"] == 0
     assert payload["validation_target_provenance"]["n_target_conditions"] == 20
-    assert payload["validation_target_provenance"]["duplicate_direction_metadata"][
-        "duplicate_direction_count"
-    ] == 10
+    assert (
+        payload["validation_target_provenance"]["duplicate_direction_metadata"][
+            "duplicate_direction_count"
+        ]
+        == 0
+    )
+    assert payload["target_distribution"]["target_support_profile"] == (
+        TARGET_SUPPORT_PROFILE_CONST_BAND16
+    )
+    assert sorted(set(round(radius, 2) for radius in payload["target_radii_m"])) == [0.15]
+    assert payload["target_angles_rad"][:3] == pytest.approx([0.0, math.pi / 36.0, math.pi / 18.0])
+    roles = [
+        row["target_role"] for row in payload["validation_target_provenance"]["actual_targets"]
+    ]
+    assert roles[0] == "original_anchor"
+    assert "seen_training_support" in roles
+
+
+def test_validation_target_direction_source_preserves_explicit_old_profile() -> None:
+    bank = delayed_reach_eval_bank_spec(
+        bank_role="catch",
+        direction_source="validation_targets",
+        direction_count=20,
+        target_config=target_relative_target_support_config(
+            profile=TARGET_SUPPORT_PROFILE_020A65B,
+            enabled=True,
+        ),
+    )
+
+    payload = bank.to_json()
+
+    assert payload["duplicate_direction_count"] == 10
+    assert (
+        payload["target_distribution"]["target_support_profile"] == TARGET_SUPPORT_PROFILE_020A65B
+    )
     assert sorted(set(round(radius, 2) for radius in payload["target_radii_m"])) == [
         0.1,
         0.12,
         0.15,
         0.18,
     ]
-    assert payload["target_angles_rad"][:3] == pytest.approx(
-        [0.0, 0.0, math.pi / 3.0]
-    )
-    roles = [
-        row["target_role"]
-        for row in payload["validation_target_provenance"]["actual_targets"]
-    ]
-    assert roles[0] == "original_anchor"
-    assert "held_out_validation_support" in roles
+    assert payload["target_angles_rad"][:3] == pytest.approx([0.0, 0.0, math.pi / 3.0])
 
 
 def test_delayed_reach_fixed_rescore_bank_spec_carries_no_catch_and_catch_payloads() -> None:
@@ -118,9 +147,7 @@ def test_delayed_reach_fixed_rescore_bank_spec_carries_no_catch_and_catch_payloa
     assert payload["bank_identity"] == "delayed_reach_go_cue_grid_no_catch_catch"
     assert payload["scorer_identity"] == "feedbax_task_loss_mean_over_trials"
     assert payload["n_trials"] == 2 * 21 * 4
-    assert payload["validation_role"] == (
-        "fixed_delayed_reach_no_catch_catch_rollout_validation"
-    )
+    assert payload["validation_role"] == ("fixed_delayed_reach_no_catch_catch_rollout_validation")
     assert payload["selection_metric"] == "mean_task_loss_equal_weight_over_declared_banks"
     assert payload["bank_spec"]["selection_source"] == "delayed_reach_fixed_bank_rescore"
     assert payload["bank_spec"]["bank_kinds"] == ["no_catch", "catch"]

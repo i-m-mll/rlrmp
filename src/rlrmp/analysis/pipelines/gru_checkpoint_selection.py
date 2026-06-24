@@ -30,6 +30,7 @@ from rlrmp.train.cs_nominal_gru import (
 from rlrmp.train.cs_perturbation_training import (
     TargetRelativeMultiTargetTrainingConfig,
     target_relative_input_contract,
+    target_relative_target_support_config,
     target_relative_validation_bins,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path, run_spec_path
@@ -144,8 +145,10 @@ class DelayedReachEvalBankSpec:
     @property
     def bank_identity(self) -> str:
         catch_label = "catch" if self.bank_role == "catch" else "no-catch"
-        target_label = "target-relative-force-filter" if self.target_config.force_filter_feedback else (
-            "target-relative"
+        target_label = (
+            "target-relative-force-filter"
+            if self.target_config.force_filter_feedback
+            else ("target-relative")
         )
         return (
             "rlrmp.delayed-reach.fixed-eval-bank:"
@@ -249,9 +252,9 @@ class DelayedReachEvalBankSpec:
                 "schema": "rlrmp.target_relative_multitarget_validation_targets.v1",
                 "source": "target_config.original + seen_targets_m + held_out_targets_m",
                 "dedupe_policy": (
-                    "uniform_grid" if self.direction_source == "uniform_grid" else (
-                        "preserve_first_occurrence_by_cartesian_target"
-                    )
+                    "uniform_grid"
+                    if self.direction_source == "uniform_grid"
+                    else ("preserve_first_occurrence_by_cartesian_target")
                 ),
                 "duplicate_direction_metadata": _duplicate_target_metadata(
                     target_config,
@@ -306,9 +309,7 @@ class DelayedReachEvalBankSpec:
             scorer_version=scorer_version,
             validation_role="delayed_reach_fixed_bank_rollout_validation",
             selection_metric="aggregate_rollout_validation_objective",
-            nominal_quality_role=(
-                "reported_sidecar_for_target_geometry_and_catch_bank_quality"
-            ),
+            nominal_quality_role=("reported_sidecar_for_target_geometry_and_catch_bank_quality"),
             bank_spec=self.to_json(),
         )
 
@@ -339,7 +340,7 @@ def delayed_reach_eval_bank_spec(
         raise ValueError(f"Unsupported delayed-reach bank role {bank_role!r}")
     if p_catch_trial is None:
         p_catch_trial = 1.0 if bank_role == "catch" else 0.0
-    config = target_config or TargetRelativeMultiTargetTrainingConfig(
+    config = target_config or target_relative_target_support_config(
         enabled=True,
         force_filter_feedback=force_filter_feedback,
     )
@@ -563,15 +564,11 @@ def plan_fixed_bank_checkpoint_rescore(
         "selection_source": _fixed_bank_selection_source(validation_bank),
         "materialization_status": "planned",
         "validation_bank": validation_bank.to_json(),
-        "validation_role": (
-            validation_bank.validation_role or "fixed_bank_rollout_validation"
-        ),
+        "validation_role": (validation_bank.validation_role or "fixed_bank_rollout_validation"),
         "selection_metric": (
             validation_bank.selection_metric or "aggregate_rollout_validation_objective"
         ),
-        "nominal_quality_role": (
-            validation_bank.nominal_quality_role or "reported_sidecar"
-        ),
+        "nominal_quality_role": (validation_bank.nominal_quality_role or "reported_sidecar"),
         "checkpoint_lists": checkpoint_lists,
         "output_path": _repo_relative(output_path, repo_root=repo_root),
         "selection_policy": (
@@ -1071,10 +1068,14 @@ def load_materialized_fixed_bank_manifest(
 ) -> dict[str, Any] | None:
     """Load a fixed-bank rescore manifest only when it has materialized scores."""
 
-    candidate_paths = [manifest_path] if manifest_path is not None else [
-        fixed_bank_manifest_path(experiment, repo_root=repo_root),
-        repo_root / "results" / experiment / "notes" / "validation_selected_checkpoints.json",
-    ]
+    candidate_paths = (
+        [manifest_path]
+        if manifest_path is not None
+        else [
+            fixed_bank_manifest_path(experiment, repo_root=repo_root),
+            repo_root / "results" / experiment / "notes" / "validation_selected_checkpoints.json",
+        ]
+    )
     existing_path = next(
         (path for path in candidate_paths if path is not None and path.exists()),
         None,
@@ -1104,11 +1105,7 @@ def fixed_bank_manifest_for_runs(
     runs = manifest.get("runs", {})
     if not isinstance(runs, Mapping) or any(run_id not in runs for run_id in run_ids):
         return None
-    return {
-        key: value
-        for key, value in manifest.items()
-        if key not in {"runs", "output_path"}
-    } | {
+    return {key: value for key, value in manifest.items() if key not in {"runs", "output_path"}} | {
         "runs": {
             run_id: [
                 selection.to_json(repo_root=repo_root)
@@ -1155,8 +1152,7 @@ def _resolve_checkpoint_selection_manifest(
     missing = [run_id for run_id in run_ids if run_id not in runs]
     if missing:
         raise ValueError(
-            "fixed-bank checkpoint manifest is missing requested run(s): "
-            + ", ".join(missing)
+            "fixed-bank checkpoint manifest is missing requested run(s): " + ", ".join(missing)
         )
     return manifest
 
@@ -1370,9 +1366,7 @@ def _duplicate_target_metadata(
     for row in rows:
         key = round(float(row["target_angle_rad"]), 12)
         angle_counts[key] = angle_counts.get(key, 0) + 1
-    duplicate_angles = {
-        str(angle): count for angle, count in angle_counts.items() if count > 1
-    }
+    duplicate_angles = {str(angle): count for angle, count in angle_counts.items() if count > 1}
     return {
         "angle_rounding_decimals": 12,
         "duplicate_direction_count": sum(count - 1 for count in duplicate_angles.values()),

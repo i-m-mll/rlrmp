@@ -75,6 +75,7 @@ from rlrmp.train.cs_perturbation_training import (
     CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE,
     DEFAULT_PGD_SISU_EXACT_ZERO_MASS,
     DEFAULT_PGD_SISU_LEVELS,
+    DEFAULT_TARGET_SUPPORT_PROFILE,
     EFFECTIVE_020A65B_PGD_RADIUS_15CM,
     GRAPH_ADAPTER_SPECS,
     MILD_COMBINED_FAMILIES,
@@ -116,6 +117,7 @@ from rlrmp.train.cs_perturbation_training import (
     apply_validation_target_distribution,
     config_from_broad_epsilon_pgd_hps,
     config_from_policy_adversary_hps,
+    config_from_target_hps,
     graph_adapter_specs,
     make_memoryless_policy_adversary,
     planned_33b0dcb_target_support_rows,
@@ -182,6 +184,13 @@ def test_non_delayed_rows_keep_force_filter_and_perturbation_defaults_off() -> N
     assert hps.perturbation_training.calibrated_timing is False
     assert hps.perturbation_training.timing_basis.mode == "absolute_trial_time"
     assert hps.perturbation_training.physical_level == "moderate"
+
+
+def test_target_support_cli_default_is_band16_fixed_reach() -> None:
+    args = build_parser().parse_args([])
+
+    assert DEFAULT_TARGET_SUPPORT_PROFILE == TARGET_SUPPORT_PROFILE_CONST_BAND16
+    assert args.target_support_profile == TARGET_SUPPORT_PROFILE_CONST_BAND16
 
 
 def _where_train() -> dict[int, object]:
@@ -2050,6 +2059,12 @@ def test_target_relative_multitarget_setup_uses_target_input_and_anchor() -> Non
         0.15,
         0.0,
     ]
+    assert (
+        hps.target_relative_multitarget.target_distribution.target_support_profile
+        == TARGET_SUPPORT_PROFILE_CONST_BAND16
+    )
+    assert len(hps.target_relative_multitarget.target_distribution.seen_targets_m) == 56
+    assert len(hps.target_relative_multitarget.target_distribution.held_out_targets_m) == 16
     assert [row["bin"] for row in manifest["bins"][:3]] == [
         "original_target_nominal",
         "seen_multitarget_nominal",
@@ -3304,6 +3319,12 @@ def test_target_relative_multitarget_run_spec_and_planned_rows(tmp_path: Path) -
     assert distribution["fixed_target_only"] is False
     assert distribution["target_stream"]["status"] == "consumed_as_static_target_relative_feedback"
     assert distribution["original_target_anchor_m"] == [0.15, 0.0]
+    assert (
+        payload["hps"]["target_relative_multitarget"]["target_distribution"][
+            "target_support_profile"
+        ]
+        == TARGET_SUPPORT_PROFILE_CONST_BAND16
+    )
     assert payload["task_timing"]["extra_inputs"] == ["target", "epsilon"]
     assert payload["task_timing"]["target_relative_multitarget"]["enabled"] is True
     assert payload["validation_bins"]["validation_role"] == (
@@ -3688,6 +3709,10 @@ def test_020a65b_h0_pgd_planned_rows_cli(capsys: pytest.CaptureFixture[str]) -> 
 
 
 def test_33b0dcb_target_support_profiles() -> None:
+    default = target_relative_target_support_config(
+        enabled=True,
+        force_filter_feedback=True,
+    )
     old = target_relative_target_support_config(
         profile=TARGET_SUPPORT_PROFILE_020A65B,
         enabled=True,
@@ -3719,6 +3744,9 @@ def test_33b0dcb_target_support_profiles() -> None:
         force_filter_feedback=True,
     )
 
+    assert default.target_support_profile == TARGET_SUPPORT_PROFILE_CONST_BAND16
+    assert len(default.seen_targets_m) == 56
+    assert len(default.held_out_targets_m) == 16
     assert old.target_support_profile == TARGET_SUPPORT_PROFILE_020A65B
     assert len(old.seen_targets_m) == 12
     assert len(old.held_out_targets_m) == 8
@@ -3747,11 +3775,27 @@ def test_33b0dcb_target_support_profiles() -> None:
     assert len(band36.held_out_targets_m) > len(band16.held_out_targets_m)
     assert len(band16.held_out_targets_m) > len(band8.held_out_targets_m)
 
-    for config in (dense, sparse, band8, band16, band36):
+    for config in (default, dense, sparse, band8, band16, band36):
         all_targets = [*config.seen_targets_m, *config.held_out_targets_m]
         radii = np.linalg.norm(np.asarray(all_targets, dtype=np.float64), axis=1)
         assert np.allclose(radii, TARGET_SUPPORT_CONST_REACH_M)
         assert not set(config.seen_targets_m).intersection(set(config.held_out_targets_m))
+
+
+def test_target_hps_without_profile_normalizes_to_band16_default() -> None:
+    config = config_from_target_hps(
+        TreeNamespace(
+            enabled=True,
+            force_filter_feedback=True,
+            target_distribution=TreeNamespace(),
+        )
+    )
+
+    assert config.target_support_profile == TARGET_SUPPORT_PROFILE_CONST_BAND16
+    assert len(config.seen_targets_m) == 56
+    assert len(config.held_out_targets_m) == 16
+    assert config.seen_amplitudes_m == (TARGET_SUPPORT_CONST_REACH_M,)
+    assert config.held_out_amplitudes_m == (TARGET_SUPPORT_CONST_REACH_M,)
 
 
 def test_33b0dcb_target_support_planned_rows_and_specs(tmp_path: Path) -> None:

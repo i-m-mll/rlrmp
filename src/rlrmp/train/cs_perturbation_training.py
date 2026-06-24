@@ -62,6 +62,7 @@ TARGET_SUPPORT_PROFILE_CONST_SPARSE8 = "const_sparse8"
 TARGET_SUPPORT_PROFILE_CONST_BAND8 = "const_band8"
 TARGET_SUPPORT_PROFILE_CONST_BAND16 = "const_band16"
 TARGET_SUPPORT_PROFILE_CONST_BAND36 = "const_band36"
+DEFAULT_TARGET_SUPPORT_PROFILE = TARGET_SUPPORT_PROFILE_CONST_BAND16
 TARGET_SUPPORT_PROFILES: tuple[str, ...] = (
     TARGET_SUPPORT_PROFILE_020A65B,
     TARGET_SUPPORT_PROFILE_CONST_DENSE_ALL,
@@ -1041,7 +1042,7 @@ class TargetRelativeMultiTargetTrainingConfig:
 
 def target_relative_target_support_config(
     *,
-    profile: str,
+    profile: str = DEFAULT_TARGET_SUPPORT_PROFILE,
     enabled: bool = False,
     force_filter_feedback: bool = False,
 ) -> TargetRelativeMultiTargetTrainingConfig:
@@ -1713,6 +1714,7 @@ def perturbation_training_mixture_semantics(
 def config_from_target_hps(config: Any) -> TargetRelativeMultiTargetTrainingConfig:
     """Normalize an hps target-distribution payload to a dataclass."""
 
+    enabled = bool(getattr(config, "enabled", False))
     force_filter_feedback = getattr(config, "force_filter_feedback", False)
     if not isinstance(force_filter_feedback, bool):
         force_filter_feedback = bool(getattr(force_filter_feedback, "enabled", False))
@@ -1721,48 +1723,52 @@ def config_from_target_hps(config: Any) -> TargetRelativeMultiTargetTrainingConf
     def target_value(name: str, default: Any) -> Any:
         return getattr(config, name, getattr(target_distribution, name, default))
 
-    return TargetRelativeMultiTargetTrainingConfig(
-        enabled=bool(getattr(config, "enabled", False)),
+    profile = str(target_value("target_support_profile", DEFAULT_TARGET_SUPPORT_PROFILE))
+    default_config = target_relative_target_support_config(
+        profile=profile,
+        enabled=enabled,
         force_filter_feedback=bool(force_filter_feedback),
-        target_support_profile=str(
-            target_value("target_support_profile", TARGET_SUPPORT_PROFILE_020A65B)
-        ),
+    )
+    return TargetRelativeMultiTargetTrainingConfig(
+        enabled=enabled,
+        force_filter_feedback=bool(force_filter_feedback),
+        target_support_profile=profile,
         seen_directions_deg=tuple(
             float(x)
             for x in target_value(
                 "seen_directions_deg",
-                DEFAULT_SEEN_TARGET_DIRECTIONS_DEG,
+                default_config.seen_directions_deg,
             )
         ),
         held_out_directions_deg=tuple(
             float(x)
             for x in target_value(
                 "held_out_directions_deg",
-                DEFAULT_HELD_OUT_TARGET_DIRECTIONS_DEG,
+                default_config.held_out_directions_deg,
             )
         ),
         seen_amplitudes_m=tuple(
             float(x)
             for x in target_value(
                 "seen_amplitudes_m",
-                DEFAULT_SEEN_TARGET_AMPLITUDES_M,
+                default_config.seen_amplitudes_m,
             )
         ),
         held_out_amplitudes_m=tuple(
             float(x)
             for x in target_value(
                 "held_out_amplitudes_m",
-                DEFAULT_HELD_OUT_TARGET_AMPLITUDES_M,
+                default_config.held_out_amplitudes_m,
             )
         ),
         original_target_anchor_m=tuple(
             float(x)
             for x in target_value(
                 "original_target_anchor_m",
-                ORIGINAL_TARGET_ANCHOR_M,
+                default_config.original_target_anchor_m,
             )
         ),
-        support_metadata=target_value("support_metadata", {}),
+        support_metadata=target_value("support_metadata", default_config.support_metadata),
     )
 
 

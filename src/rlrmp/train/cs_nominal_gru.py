@@ -72,12 +72,12 @@ from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_TRAINING_MODE,
     BROAD_EPSILON_TRAINING_MODE,
     EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+    DEFAULT_TARGET_SUPPORT_PROFILE,
     LEGACY_PERTURBATION_TRAINING_MODE,
     PERTURBATION_TRAINING_MODE,
     POLICY_ADVERSARY_ENERGY_MODE,
     POLICY_ADVERSARY_PLAIN_MODE,
     POLICY_ADVERSARY_TRAINING_MODE,
-    TARGET_SUPPORT_PROFILE_020A65B,
     TARGET_SUPPORT_PROFILES,
     TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
     TARGET_RELATIVE_MULTITARGET_TRAINING_MODE,
@@ -468,7 +468,7 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
         "perturbation_physical_level": str(perturbation.get("physical_level", "moderate")),
         "target_relative_multitarget": bool(target_relative.get("enabled", False)),
         "target_support_profile": str(
-            target_distribution.get("target_support_profile", TARGET_SUPPORT_PROFILE_020A65B)
+            target_distribution.get("target_support_profile", DEFAULT_TARGET_SUPPORT_PROFILE)
         ),
         "delayed_reach": bool(delayed.get("enabled", False)),
         "delayed_reach_go_cue_min_step": int(
@@ -2571,10 +2571,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--target-support-profile",
         choices=TARGET_SUPPORT_PROFILES,
-        default=TARGET_SUPPORT_PROFILE_020A65B,
+        default=DEFAULT_TARGET_SUPPORT_PROFILE,
         help=(
             "Named finite target-support profile for --target-relative-multitarget. "
-            "The default preserves the old 020a65b seen/held-out target bank."
+            "Defaults to const_band16: fixed 0.15 m reaches on the dense validation "
+            "grid with 16 held-out angular-band directions. Pass old_020a65b to "
+            "replay the old seen/held-out target bank."
         ),
     )
     parser.add_argument(
