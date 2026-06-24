@@ -56,6 +56,27 @@ DEFAULT_SEEN_TARGET_DIRECTIONS_DEG: tuple[float, ...] = (0.0, 60.0, 120.0, 180.0
 DEFAULT_HELD_OUT_TARGET_DIRECTIONS_DEG: tuple[float, ...] = (30.0, 150.0, 210.0, 330.0)
 DEFAULT_SEEN_TARGET_AMPLITUDES_M: tuple[float, ...] = (0.10, 0.15)
 DEFAULT_HELD_OUT_TARGET_AMPLITUDES_M: tuple[float, ...] = (0.12, 0.18)
+TARGET_SUPPORT_PROFILE_020A65B = "old_020a65b"
+TARGET_SUPPORT_PROFILE_CONST_DENSE_ALL = "const_dense_all"
+TARGET_SUPPORT_PROFILE_CONST_SPARSE8 = "const_sparse8"
+TARGET_SUPPORT_PROFILE_CONST_BAND8 = "const_band8"
+TARGET_SUPPORT_PROFILE_CONST_BAND16 = "const_band16"
+TARGET_SUPPORT_PROFILE_CONST_BAND36 = "const_band36"
+TARGET_SUPPORT_PROFILES: tuple[str, ...] = (
+    TARGET_SUPPORT_PROFILE_020A65B,
+    TARGET_SUPPORT_PROFILE_CONST_DENSE_ALL,
+    TARGET_SUPPORT_PROFILE_CONST_SPARSE8,
+    TARGET_SUPPORT_PROFILE_CONST_BAND8,
+    TARGET_SUPPORT_PROFILE_CONST_BAND16,
+    TARGET_SUPPORT_PROFILE_CONST_BAND36,
+)
+TARGET_SUPPORT_CONST_REACH_M = 0.15
+TARGET_SUPPORT_DENSE_N_DIRECTIONS = 72
+TARGET_SUPPORT_SPARSE_N_DIRECTIONS = 8
+TARGET_SUPPORT_BAND_CENTERS_DEG: tuple[float, ...] = (45.0, 135.0, 225.0, 315.0)
+TARGET_SUPPORT_BAND8_HELD_OUT_DIRECTIONS = 8
+TARGET_SUPPORT_BAND16_HELD_OUT_DIRECTIONS = 16
+TARGET_SUPPORT_BAND36_HELD_OUT_DIRECTIONS = 36
 
 PerturbationBin = Literal[
     "nominal",
@@ -912,33 +933,48 @@ class TargetRelativeMultiTargetTrainingConfig:
 
     enabled: bool = False
     force_filter_feedback: bool = False
+    target_support_profile: str = TARGET_SUPPORT_PROFILE_020A65B
     seen_directions_deg: tuple[float, ...] = DEFAULT_SEEN_TARGET_DIRECTIONS_DEG
     held_out_directions_deg: tuple[float, ...] = DEFAULT_HELD_OUT_TARGET_DIRECTIONS_DEG
     seen_amplitudes_m: tuple[float, ...] = DEFAULT_SEEN_TARGET_AMPLITUDES_M
     held_out_amplitudes_m: tuple[float, ...] = DEFAULT_HELD_OUT_TARGET_AMPLITUDES_M
     original_target_anchor_m: tuple[float, float] = ORIGINAL_TARGET_ANCHOR_M
+    support_metadata: Any = ()
 
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "support_metadata", _freeze_target_support_metadata(self.support_metadata)
+        )
+        if self.target_support_profile not in TARGET_SUPPORT_PROFILES:
+            profiles = ", ".join(TARGET_SUPPORT_PROFILES)
+            raise ValueError(
+                f"Unknown target_support_profile {self.target_support_profile!r}; "
+                f"expected one of {profiles}."
+            )
         if len(self.original_target_anchor_m) != 2:
             raise ValueError("original_target_anchor_m must be a 2D target.")
         if not self.seen_directions_deg:
             raise ValueError("At least one seen target direction is required.")
-        if not self.held_out_directions_deg:
-            raise ValueError("At least one held-out target direction is required.")
         if not self.seen_amplitudes_m:
             raise ValueError("At least one seen target amplitude is required.")
-        if not self.held_out_amplitudes_m:
-            raise ValueError("At least one held-out target amplitude is required.")
+        if bool(self.held_out_directions_deg) != bool(self.held_out_amplitudes_m):
+            raise ValueError(
+                "Held-out directions and amplitudes must both be non-empty or both be empty."
+            )
         if any(float(value) <= 0.0 for value in self.seen_amplitudes_m):
             raise ValueError("Seen target amplitudes must be positive.")
         if any(float(value) <= 0.0 for value in self.held_out_amplitudes_m):
             raise ValueError("Held-out target amplitudes must be positive.")
         seen = _target_tuples(self.seen_directions_deg, self.seen_amplitudes_m)
+        held_out = _target_tuples(self.held_out_directions_deg, self.held_out_amplitudes_m)
         if tuple(float(x) for x in self.original_target_anchor_m) not in seen:
             raise ValueError(
                 "The structured seen target distribution must include the original "
                 "15 cm forward target anchor."
             )
+        overlap = set(seen).intersection(set(held_out))
+        if overlap:
+            raise ValueError(f"Seen and held-out target sets overlap: {sorted(overlap)!r}")
 
     @property
     def seen_targets_m(self) -> tuple[tuple[float, float], ...]:
@@ -979,6 +1015,8 @@ class TargetRelativeMultiTargetTrainingConfig:
             ),
             "target_distribution": {
                 "kind": "structured_static_targets",
+                "target_support_profile": self.target_support_profile,
+                "support_metadata": _target_support_metadata_to_json(self.support_metadata),
                 "original_target_anchor_m": list(self.original_target_anchor_m),
                 "seen_directions_deg": list(self.seen_directions_deg),
                 "seen_amplitudes_m": list(self.seen_amplitudes_m),
@@ -999,6 +1037,102 @@ class TargetRelativeMultiTargetTrainingConfig:
         """Return run-spec metadata."""
 
         return self.to_hps_dict()
+
+
+def target_relative_target_support_config(
+    *,
+    profile: str,
+    enabled: bool = False,
+    force_filter_feedback: bool = False,
+) -> TargetRelativeMultiTargetTrainingConfig:
+    """Return a target-relative config for a named finite target-support profile."""
+
+    profile = str(profile)
+    if profile == TARGET_SUPPORT_PROFILE_020A65B:
+        return TargetRelativeMultiTargetTrainingConfig(
+            enabled=enabled,
+            force_filter_feedback=force_filter_feedback,
+            target_support_profile=profile,
+            support_metadata={
+                "role": "exact_020a65b_no_pgd_h0_replay_target_support",
+                "reach_length_policy": "mixed_seen_0p10_0p15_held_out_0p12_0p18",
+                "direction_policy": "six_seen_spokes_plus_diagonal_held_out_validation",
+            },
+        )
+
+    if profile == TARGET_SUPPORT_PROFILE_CONST_DENSE_ALL:
+        return TargetRelativeMultiTargetTrainingConfig(
+            enabled=enabled,
+            force_filter_feedback=force_filter_feedback,
+            target_support_profile=profile,
+            seen_directions_deg=_uniform_directions_deg(TARGET_SUPPORT_DENSE_N_DIRECTIONS),
+            held_out_directions_deg=(),
+            seen_amplitudes_m=(TARGET_SUPPORT_CONST_REACH_M,),
+            held_out_amplitudes_m=(),
+            support_metadata={
+                "role": "fixed_reach_dense_all_angle_training",
+                "constant_reach_m": TARGET_SUPPORT_CONST_REACH_M,
+                "dense_n_directions": TARGET_SUPPORT_DENSE_N_DIRECTIONS,
+                "held_out_policy": "none",
+            },
+        )
+
+    if profile == TARGET_SUPPORT_PROFILE_CONST_SPARSE8:
+        seen = _uniform_directions_deg(TARGET_SUPPORT_SPARSE_N_DIRECTIONS)
+        held_out = _directions_not_in(
+            _uniform_directions_deg(TARGET_SUPPORT_DENSE_N_DIRECTIONS),
+            seen,
+        )
+        return TargetRelativeMultiTargetTrainingConfig(
+            enabled=enabled,
+            force_filter_feedback=force_filter_feedback,
+            target_support_profile=profile,
+            seen_directions_deg=seen,
+            held_out_directions_deg=held_out,
+            seen_amplitudes_m=(TARGET_SUPPORT_CONST_REACH_M,),
+            held_out_amplitudes_m=(TARGET_SUPPORT_CONST_REACH_M,),
+            support_metadata={
+                "role": "fixed_reach_sparse_8_direction_training_dense_validation",
+                "constant_reach_m": TARGET_SUPPORT_CONST_REACH_M,
+                "seen_n_directions": TARGET_SUPPORT_SPARSE_N_DIRECTIONS,
+                "validation_grid_n_directions": TARGET_SUPPORT_DENSE_N_DIRECTIONS,
+            },
+        )
+
+    band_counts = {
+        TARGET_SUPPORT_PROFILE_CONST_BAND8: TARGET_SUPPORT_BAND8_HELD_OUT_DIRECTIONS,
+        TARGET_SUPPORT_PROFILE_CONST_BAND16: TARGET_SUPPORT_BAND16_HELD_OUT_DIRECTIONS,
+        TARGET_SUPPORT_PROFILE_CONST_BAND36: TARGET_SUPPORT_BAND36_HELD_OUT_DIRECTIONS,
+    }
+    if profile in band_counts:
+        held_out_count = band_counts[profile]
+        seen, held_out, directions_per_band = _split_directions_by_held_out_band_count(
+            n_directions=TARGET_SUPPORT_DENSE_N_DIRECTIONS,
+            centers_deg=TARGET_SUPPORT_BAND_CENTERS_DEG,
+            held_out_count=held_out_count,
+        )
+        return TargetRelativeMultiTargetTrainingConfig(
+            enabled=enabled,
+            force_filter_feedback=force_filter_feedback,
+            target_support_profile=profile,
+            seen_directions_deg=seen,
+            held_out_directions_deg=held_out,
+            seen_amplitudes_m=(TARGET_SUPPORT_CONST_REACH_M,),
+            held_out_amplitudes_m=(TARGET_SUPPORT_CONST_REACH_M,),
+            support_metadata={
+                "role": "fixed_reach_dense_training_with_held_out_angular_bands",
+                "constant_reach_m": TARGET_SUPPORT_CONST_REACH_M,
+                "validation_grid_n_directions": TARGET_SUPPORT_DENSE_N_DIRECTIONS,
+                "held_out_direction_count": held_out_count,
+                "held_out_band_count": len(TARGET_SUPPORT_BAND_CENTERS_DEG),
+                "held_out_band_centers_deg": list(TARGET_SUPPORT_BAND_CENTERS_DEG),
+                "held_out_directions_per_band": directions_per_band,
+                "direction_grid_spacing_deg": 360.0 / TARGET_SUPPORT_DENSE_N_DIRECTIONS,
+            },
+        )
+
+    profiles = ", ".join(TARGET_SUPPORT_PROFILES)
+    raise ValueError(f"Unknown target support profile {profile!r}; expected one of {profiles}.")
 
 
 class TargetRelativeMultiTargetTrainingTaskAdapter(AbstractTask):
@@ -1582,49 +1716,53 @@ def config_from_target_hps(config: Any) -> TargetRelativeMultiTargetTrainingConf
     force_filter_feedback = getattr(config, "force_filter_feedback", False)
     if not isinstance(force_filter_feedback, bool):
         force_filter_feedback = bool(getattr(force_filter_feedback, "enabled", False))
+    target_distribution = getattr(config, "target_distribution", None)
+
+    def target_value(name: str, default: Any) -> Any:
+        return getattr(config, name, getattr(target_distribution, name, default))
+
     return TargetRelativeMultiTargetTrainingConfig(
         enabled=bool(getattr(config, "enabled", False)),
         force_filter_feedback=bool(force_filter_feedback),
+        target_support_profile=str(
+            target_value("target_support_profile", TARGET_SUPPORT_PROFILE_020A65B)
+        ),
         seen_directions_deg=tuple(
             float(x)
-            for x in getattr(
-                config,
+            for x in target_value(
                 "seen_directions_deg",
                 DEFAULT_SEEN_TARGET_DIRECTIONS_DEG,
             )
         ),
         held_out_directions_deg=tuple(
             float(x)
-            for x in getattr(
-                config,
+            for x in target_value(
                 "held_out_directions_deg",
                 DEFAULT_HELD_OUT_TARGET_DIRECTIONS_DEG,
             )
         ),
         seen_amplitudes_m=tuple(
             float(x)
-            for x in getattr(
-                config,
+            for x in target_value(
                 "seen_amplitudes_m",
                 DEFAULT_SEEN_TARGET_AMPLITUDES_M,
             )
         ),
         held_out_amplitudes_m=tuple(
             float(x)
-            for x in getattr(
-                config,
+            for x in target_value(
                 "held_out_amplitudes_m",
                 DEFAULT_HELD_OUT_TARGET_AMPLITUDES_M,
             )
         ),
         original_target_anchor_m=tuple(
             float(x)
-            for x in getattr(
-                config,
+            for x in target_value(
                 "original_target_anchor_m",
                 ORIGINAL_TARGET_ANCHOR_M,
             )
         ),
+        support_metadata=target_value("support_metadata", {}),
     )
 
 
@@ -3946,6 +4084,128 @@ def _target_tuples(
     return _dedupe_targets(tuple(rows))
 
 
+def _uniform_directions_deg(n_directions: int) -> tuple[float, ...]:
+    if int(n_directions) <= 0:
+        raise ValueError("n_directions must be positive.")
+    return tuple(round(360.0 * index / int(n_directions), 12) for index in range(n_directions))
+
+
+def _directions_not_in(
+    directions_deg: tuple[float, ...],
+    excluded_deg: tuple[float, ...],
+) -> tuple[float, ...]:
+    excluded = {_angle_key(direction) for direction in excluded_deg}
+    return tuple(direction for direction in directions_deg if _angle_key(direction) not in excluded)
+
+
+def _split_directions_by_held_out_band_count(
+    *,
+    n_directions: int,
+    centers_deg: tuple[float, ...],
+    held_out_count: int,
+) -> tuple[tuple[float, ...], tuple[float, ...], int]:
+    if not centers_deg:
+        raise ValueError("At least one held-out band center is required.")
+    directions = _uniform_directions_deg(n_directions)
+    held_out_count = int(held_out_count)
+    if not (0 < held_out_count < len(directions)):
+        raise ValueError("held_out_count must be between zero and n_directions.")
+    if held_out_count % len(centers_deg):
+        raise ValueError("held_out_count must divide evenly across held-out band centers.")
+
+    directions_per_band = held_out_count // len(centers_deg)
+    held_out_keys: set[float] = set()
+    for center in centers_deg:
+        selected_for_center = 0
+        candidates = sorted(
+            directions,
+            key=lambda direction: (
+                _circular_abs_delta_deg(direction, center),
+                _circular_signed_delta_deg(direction, center),
+            ),
+        )
+        for direction in candidates:
+            key = _angle_key(direction)
+            if key in held_out_keys:
+                continue
+            held_out_keys.add(key)
+            selected_for_center += 1
+            if selected_for_center >= directions_per_band:
+                break
+
+    if len(held_out_keys) != held_out_count:
+        raise ValueError(
+            f"Held-out band split produced {len(held_out_keys)} directions, "
+            f"expected {held_out_count}."
+        )
+    held_out = tuple(
+        direction for direction in directions if _angle_key(direction) in held_out_keys
+    )
+    seen = _directions_not_in(directions, held_out)
+    if not seen or not held_out:
+        raise ValueError("Held-out band split must produce non-empty seen and held-out sets.")
+    return seen, held_out, directions_per_band
+
+
+def _circular_abs_delta_deg(a: float, b: float) -> float:
+    return abs(((float(a) - float(b) + 180.0) % 360.0) - 180.0)
+
+
+def _circular_signed_delta_deg(a: float, b: float) -> float:
+    return ((float(a) - float(b) + 180.0) % 360.0) - 180.0
+
+
+def _angle_key(angle_deg: float) -> float:
+    return round(float(angle_deg) % 360.0, 12)
+
+
+def _freeze_target_support_metadata(value: Any) -> tuple[tuple[str, Any], ...]:
+    if value is None:
+        return ()
+    if isinstance(value, tuple) and all(_is_metadata_pair(item) for item in value):
+        return tuple((str(key), _freeze_metadata_value(item_value)) for key, item_value in value)
+    if isinstance(value, Mapping):
+        return tuple(
+            sorted(
+                (str(key), _freeze_metadata_value(item_value)) for key, item_value in value.items()
+            )
+        )
+    if hasattr(value, "__dict__"):
+        return tuple(
+            sorted(
+                (str(key), _freeze_metadata_value(item_value))
+                for key, item_value in vars(value).items()
+                if not key.startswith("_")
+            )
+        )
+    raise TypeError(f"Unsupported target support metadata type: {type(value).__name__}")
+
+
+def _freeze_metadata_value(value: Any) -> Any:
+    if isinstance(value, Mapping) or hasattr(value, "__dict__"):
+        return _freeze_target_support_metadata(value)
+    if isinstance(value, list | tuple):
+        return tuple(_freeze_metadata_value(item) for item in value)
+    return value
+
+
+def _target_support_metadata_to_json(value: Any) -> dict[str, Any]:
+    frozen = _freeze_target_support_metadata(value)
+    return {key: _metadata_value_to_json(item_value) for key, item_value in frozen}
+
+
+def _metadata_value_to_json(value: Any) -> Any:
+    if value and isinstance(value, tuple) and all(_is_metadata_pair(item) for item in value):
+        return {key: _metadata_value_to_json(item_value) for key, item_value in value}
+    if isinstance(value, tuple):
+        return [_metadata_value_to_json(item) for item in value]
+    return value
+
+
+def _is_metadata_pair(value: Any) -> bool:
+    return isinstance(value, tuple) and len(value) == 2 and isinstance(value[0], str)
+
+
 def _dedupe_targets(targets: tuple[tuple[float, float], ...]) -> tuple[tuple[float, float], ...]:
     seen: set[tuple[float, float]] = set()
     rows: list[tuple[float, float]] = []
@@ -4219,6 +4479,7 @@ def planned_020a65b_h0_pgd_rows(
 
     common_command = [
         "env",
+        "JAX_PLATFORM_NAME=cpu",
         "PYTHONPATH=src",
         "uv",
         "run",
@@ -4317,6 +4578,143 @@ def planned_020a65b_h0_pgd_rows(
     return rows
 
 
+def planned_33b0dcb_target_support_rows(
+    *,
+    experiment: str = "33b0dcb",
+) -> list[dict[str, Any]]:
+    """Return the no-PGD H0 target-support generalization rows."""
+
+    common_command = [
+        "env",
+        "PYTHONPATH=src",
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        "scripts/train_cs_nominal_gru.py",
+        "--issue",
+        experiment,
+        "--n-train-batches",
+        "12000",
+        "--batch-size",
+        "64",
+        "--controller-lr",
+        "0.003",
+        "--gradient-clip-norm",
+        "5",
+        "--lr-warmup-batches",
+        "500",
+        "--lr-warmup-init-fraction",
+        "0.1",
+        "--lr-cosine-alpha",
+        "0.01",
+        "--n-replicates",
+        "5",
+        "--loss-objective",
+        "full_analytical_qrf",
+        "--target-relative-multitarget",
+        "--initial-hidden-encoder",
+        "--force-filter-feedback",
+        "--perturbation-training",
+        "--perturbation-calibrated-timing",
+        "--perturbation-physical-level",
+        "small",
+    ]
+    row_specs = [
+        {
+            "row": "A",
+            "label": "old_replicate",
+            "target_support_profile": TARGET_SUPPORT_PROFILE_020A65B,
+            "purpose": "exact 020a65b no-PGD H0 target-support replay",
+        },
+        {
+            "row": "B",
+            "label": "const_dense_all",
+            "target_support_profile": TARGET_SUPPORT_PROFILE_CONST_DENSE_ALL,
+            "purpose": "fixed 0.15 m dense all-angle training with no held-out directions",
+        },
+        {
+            "row": "C",
+            "label": "const_sparse8",
+            "target_support_profile": TARGET_SUPPORT_PROFILE_CONST_SPARSE8,
+            "purpose": "fixed 0.15 m sparse 8-direction training with dense held-out validation",
+        },
+        {
+            "row": "D",
+            "label": "const_band8",
+            "target_support_profile": TARGET_SUPPORT_PROFILE_CONST_BAND8,
+            "purpose": "fixed 0.15 m dense training excluding eight directions in four angular bands",
+        },
+        {
+            "row": "E",
+            "label": "const_band16",
+            "target_support_profile": TARGET_SUPPORT_PROFILE_CONST_BAND16,
+            "purpose": "fixed 0.15 m dense training excluding 16 directions in four angular bands",
+        },
+        {
+            "row": "F",
+            "label": "const_band36",
+            "target_support_profile": TARGET_SUPPORT_PROFILE_CONST_BAND36,
+            "purpose": "fixed 0.15 m dense training excluding 36 directions in four angular bands",
+        },
+    ]
+
+    rows = []
+    for row_spec in row_specs:
+        run = f"h0_no_pgd_targetsupport__{row_spec['label']}_lr3e-3_clip5_b64"
+        config = target_relative_target_support_config(
+            profile=str(row_spec["target_support_profile"]),
+            enabled=True,
+            force_filter_feedback=True,
+        )
+        full_resume_command = [
+            *common_command,
+            "--target-support-profile",
+            str(row_spec["target_support_profile"]),
+            "--output-dir",
+            f"_artifacts/{experiment}/runs/{run}",
+            "--full-train",
+            "--resume",
+        ]
+        rows.append(
+            {
+                "experiment": experiment,
+                "issue": experiment,
+                "row": row_spec["row"],
+                "run": run,
+                "controller_lr": 3e-3,
+                "batch_size": 64,
+                "gradient_clip_norm": 5.0,
+                "n_replicates": 5,
+                "n_train_batches": 12000,
+                "stop_after_batches": 1000,
+                "loss_objective": "full_analytical_qrf",
+                "lr_schedule": "warmup_cosine",
+                "row_kind": "checkpoint_gate",
+                "remote_device": "runpod_secure_rtx_5090",
+                "training": TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
+                "force_filter_feedback": True,
+                "perturbation_training": CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE,
+                "perturbation_physical_level": "small",
+                "initial_hidden_encoder": "zero_affine_target_relative_feedback_plus_force_filter",
+                "broad_epsilon_pgd_training": False,
+                "target_support_profile": row_spec["target_support_profile"],
+                "target_support": config.to_json()["target_distribution"],
+                "seen_target_count": len(config.seen_targets_m),
+                "held_out_target_count": len(config.held_out_targets_m),
+                "purpose": row_spec["purpose"],
+                "checkpoint_selection": "target_relative_multitarget_rollout_validation",
+                "full_training_contract_command": full_resume_command,
+                "command": [
+                    *full_resume_command,
+                    "--stop-after-batches",
+                    "1000",
+                ],
+            }
+        )
+    return rows
+
+
 def planned_e4800d6_sisu_spectrum_rows(
     *,
     experiment: str = "e4800d6",
@@ -4386,10 +4784,7 @@ def planned_e4800d6_sisu_spectrum_rows(
 
     rows = []
     for row_spec in row_specs:
-        run = (
-            f"cs_gru_h0_sisu_spectrum_targetfix__"
-            f"{row_spec['label']}_lr3e-3_clip5_b64"
-        )
+        run = f"cs_gru_h0_sisu_spectrum_targetfix__{row_spec['label']}_lr3e-3_clip5_b64"
         full_resume_command = [
             *common_command,
             "--broad-epsilon-pgd-sisu-max-radius",
