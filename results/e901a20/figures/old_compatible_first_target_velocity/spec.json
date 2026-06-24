@@ -32,7 +32,7 @@
       "n_replicates": 5,
       "n_rollout_repeats_per_target_per_replicate": 64,
       "n_target_conditions": 1,
-      "peak_mean_velocity": 0.7111823967054381,
+      "peak_mean_velocity": 0.730893217576168,
       "run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
       "selected_checkpoints": [
         {
@@ -98,7 +98,7 @@
       ],
       "target_distance_max_m": 0.15000000596046448,
       "target_distance_min_m": 0.15000000596046448,
-      "time_of_peak_mean_velocity_s": 0.2
+      "time_of_peak_mean_velocity_s": 0.16
     },
     {
       "experiment": "020a65b",
@@ -107,7 +107,7 @@
       "n_replicates": 5,
       "n_rollout_repeats_per_target_per_replicate": 64,
       "n_target_conditions": 1,
-      "peak_mean_velocity": 0.7173981660758721,
+      "peak_mean_velocity": 0.7780454521013752,
       "run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64",
       "selected_checkpoints": [
         {
@@ -173,7 +173,7 @@
       ],
       "target_distance_max_m": 0.15000000596046448,
       "target_distance_min_m": 0.15000000596046448,
-      "time_of_peak_mean_velocity_s": 0.21
+      "time_of_peak_mean_velocity_s": 0.16
     },
     {
       "experiment": "e901a20",
@@ -182,7 +182,7 @@
       "n_replicates": 5,
       "n_rollout_repeats_per_target_per_replicate": 64,
       "n_target_conditions": 1,
-      "peak_mean_velocity": 0.7279896838966236,
+      "peak_mean_velocity": 0.782905991933847,
       "run_id": "h0_policy_adversary__plain",
       "selected_checkpoints": [
         {
@@ -248,7 +248,7 @@
       ],
       "target_distance_max_m": 0.15000000596046448,
       "target_distance_min_m": 0.15000000596046448,
-      "time_of_peak_mean_velocity_s": 0.19
+      "time_of_peak_mean_velocity_s": 0.16
     },
     {
       "experiment": "e901a20",
@@ -257,7 +257,7 @@
       "n_replicates": 5,
       "n_rollout_repeats_per_target_per_replicate": 64,
       "n_target_conditions": 1,
-      "peak_mean_velocity": 0.7270847136085659,
+      "peak_mean_velocity": 0.7856955073429706,
       "run_id": "h0_policy_adversary__energy",
       "selected_checkpoints": [
         {
@@ -323,9 +323,15 @@
       ],
       "target_distance_max_m": 0.15000000596046448,
       "target_distance_min_m": 0.15000000596046448,
-      "time_of_peak_mean_velocity_s": 0.19
+      "time_of_peak_mean_velocity_s": 0.16
     }
   ],
+  "runtime_provenance": {
+    "feedbax_commit": "3add27d7",
+    "feedbax_package": "feedbax",
+    "feedbax_runtime": "feedbax git archive",
+    "runtime_note": "Old-compatible velocity figures should be generated with pre-1e1c94f5 Feedbax network semantics for legacy MaskedLinear readout checkpoints."
+  },
   "schema_version": "rlrmp.figure_spec.v1",
   "source_script": "results/e901a20/scripts/materialize_nominal_velocity_profile_comparison.py",
   "stochastic_runtime_policy": "64 stochastic repeats per target condition per replicate, using jr.split(PRNGKey(0), n_replicates)",

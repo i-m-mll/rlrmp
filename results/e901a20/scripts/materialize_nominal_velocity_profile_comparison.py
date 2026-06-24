@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import equinox as eqx
+import feedbax
 import jax
 import jax.numpy as jnp
 import jax.random as jr
@@ -1700,6 +1701,20 @@ def write_old_compatible_outputs(
     )
 
     rows = [companion_profile_row(profile) for profile in profiles]
+    feedbax_commit = os.environ.get("RLRMP_COMPAT_FEEDBAX_COMMIT")
+    runtime_provenance = {
+        "feedbax_package": feedbax.__name__,
+        "feedbax_runtime": (
+            "feedbax git archive"
+            if feedbax_commit
+            else "current Python import path"
+        ),
+        "feedbax_commit": feedbax_commit,
+        "runtime_note": (
+            "Old-compatible velocity figures should be generated with pre-1e1c94f5 "
+            "Feedbax network semantics for legacy MaskedLinear readout checkpoints."
+        ),
+    }
     manifest = {
         "schema_version": f"rlrmp.e901a20.{topic}.v1",
         "figure": repo_relative(html_path),
@@ -1715,6 +1730,7 @@ def write_old_compatible_outputs(
             f"{OLD_COMPAT_N_ROLLOUT_REPEATS} stochastic repeats per target condition per "
             "replicate, using jr.split(PRNGKey(0), n_replicates)"
         ),
+        "runtime_provenance": runtime_provenance,
         "runs": rows,
     }
     manifest_path = figure_dir / "manifest.json"
@@ -1736,6 +1752,7 @@ def write_old_compatible_outputs(
         "band_definition": manifest["band_definition"],
         "checkpoint_policy": manifest["checkpoint_policy"],
         "stochastic_runtime_policy": manifest["stochastic_runtime_policy"],
+        "runtime_provenance": runtime_provenance,
         "runs": rows,
         "inputs": [
             {
@@ -1770,6 +1787,14 @@ def write_old_compatible_outputs(
             "All rows use validation-selected per-replicate checkpoints and 64 stochastic "
             "rollout repeats per target condition, matching the old pilot-figure checkpoint "
             "and repeat convention while keeping the requested target set for this panel.",
+            "",
+            "Runtime provenance: generated with "
+            f"`{runtime_provenance['feedbax_runtime']}`"
+            + (
+                f" at compatibility commit `{runtime_provenance['feedbax_commit']}`."
+                if runtime_provenance["feedbax_commit"]
+                else "."
+            ),
             "",
             *table_lines,
             "",
