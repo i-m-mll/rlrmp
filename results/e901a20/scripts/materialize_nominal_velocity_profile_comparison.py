@@ -6,7 +6,7 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import equinox as eqx
 import feedbax
@@ -57,6 +57,8 @@ OLD_COMPAT_FIRST_TARGET_TOPIC = "old_compatible_first_target_velocity"
 OLD_COMPAT_FIRST_TARGET_MARKER = "old_compatible_first_target_velocity"
 OLD_COMPAT_ALL_TARGET_TOPIC = "old_compatible_all_target_aligned_velocity"
 OLD_COMPAT_ALL_TARGET_MARKER = "old_compatible_all_target_aligned_velocity"
+OLD_COMPAT_SEEN_TARGET_TOPIC = "old_compatible_seen_target_aligned_velocity"
+OLD_COMPAT_SEEN_TARGET_MARKER = "old_compatible_seen_target_aligned_velocity"
 OLD_COMPAT_N_ROLLOUT_REPEATS = 64
 NUMERIC_SCALAR_TYPES = (bool, int, float, np.bool_, np.integer, np.floating)
 
@@ -734,6 +736,7 @@ def evaluate_validation_selected_stochastic_values(
     raw_x_velocity: bool,
     length_normalize: bool,
     n_rollout_repeats: int = OLD_COMPAT_N_ROLLOUT_REPEATS,
+    target_condition_mask_fn: Callable[[dict[str, Any], Any], np.ndarray] | None = None,
 ) -> CompanionProfile:
     """Evaluate one row with validation-selected checkpoints and repeated rollouts."""
 
@@ -744,6 +747,20 @@ def evaluate_validation_selected_stochastic_values(
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
     base_trials = nominalize_trial_specs(pair.task.validation_trials)
     base_trial_count = trial_count_from_specs(base_trials)
+    if target_condition_mask_fn is not None:
+        if first_target_only:
+            raise ValueError("target_condition_mask_fn is not supported with first_target_only")
+        base_target_mask = np.asarray(target_condition_mask_fn(run_spec, base_trials), dtype=np.bool_)
+        if base_target_mask.shape != (base_trial_count,):
+            raise ValueError(
+                "target_condition_mask_fn must return one boolean per base validation trial"
+            )
+        if not np.any(base_target_mask):
+            raise ValueError("target_condition_mask_fn selects no base validation trials")
+        if np.all(base_target_mask):
+            raise ValueError("target_condition_mask_fn selects all base validation trials")
+    else:
+        base_target_mask = None
     trial_specs = repeat_trial_axis(
         base_trials,
         n_rollout_repeats,
@@ -801,9 +818,18 @@ def evaluate_validation_selected_stochastic_values(
     )
     values_np = np.asarray(values, dtype=np.float64)
     target_distance = np.asarray(direction_norm[..., 0], dtype=np.float64)
+    if base_target_mask is not None:
+        repeated_target_mask = np.repeat(base_target_mask, n_rollout_repeats)
+        values_np = values_np[:, repeated_target_mask, :]
+        target_distance = target_distance[repeated_target_mask]
     dt = float(run_spec.get("game_card", {}).get("dt", getattr(hps, "dt", 0.01)))
     time_s = np.arange(values_np.shape[-1], dtype=np.float64) * dt
-    n_target_conditions = 1 if first_target_only else base_trial_count
+    if first_target_only:
+        n_target_conditions = 1
+    elif base_target_mask is not None:
+        n_target_conditions = int(np.count_nonzero(base_target_mask))
+    else:
+        n_target_conditions = base_trial_count
     return companion_profile_from_values(
         ref,
         time_s=time_s,
@@ -838,6 +864,48 @@ def evaluate_old_compatible_all_target_profiles() -> list[CompanionProfile]:
             first_target_only=False,
             raw_x_velocity=False,
             length_normalize=True,
+        )
+        for ref in RUNS
+    ]
+
+
+def non_held_out_direction_length_mask(run_spec: dict[str, Any], trial_specs: Any) -> np.ndarray:
+    """Select validation targets whose direction and reach length were not held out."""
+
+    distribution = (
+        run_spec.get("hps", {})
+        .get("target_relative_multitarget", {})
+        .get("target_distribution", {})
+    )
+    held_out_targets = np.asarray(distribution.get("held_out_targets_m"), dtype=np.float64)
+    if held_out_targets.ndim != 2 or held_out_targets.shape[1] != 2:
+        raise ValueError("Run spec does not contain a valid held_out_targets_m list")
+
+    goals = np.asarray(final_goal_position(trial_specs), dtype=np.float64)
+    target_lengths = np.linalg.norm(goals, axis=1)
+    target_angles = target_angle_deg(goals)
+    held_out_lengths = np.unique(np.round(np.linalg.norm(held_out_targets, axis=1), decimals=8))
+    held_out_angles = np.unique(np.round(target_angle_deg(held_out_targets), decimals=8))
+    seen_length = ~np.any(np.isclose(target_lengths[:, None], held_out_lengths[None, :]), axis=1)
+    seen_direction = ~np.any(np.isclose(target_angles[:, None], held_out_angles[None, :]), axis=1)
+    mask = seen_length & seen_direction
+    if not np.any(mask):
+        raise ValueError("Seen target mask selects no validation trials")
+    if np.all(mask):
+        raise ValueError("Seen target mask selects all validation trials")
+    return mask
+
+
+def evaluate_old_compatible_seen_target_profiles() -> list[CompanionProfile]:
+    """Evaluate aligned/scaled old-compatible profiles on seen directions and lengths."""
+
+    return [
+        evaluate_validation_selected_stochastic_values(
+            ref,
+            first_target_only=False,
+            raw_x_velocity=False,
+            length_normalize=True,
+            target_condition_mask_fn=non_held_out_direction_length_mask,
         )
         for ref in RUNS
     ]
@@ -1845,6 +1913,23 @@ def main() -> None:
         evaluation_lens="validation_selected_all_targets_stochastic_target_radial_length_normalized",
         unit_label="1/s",
     )
+    seen_target_manifest = write_old_compatible_outputs(
+        evaluate_old_compatible_seen_target_profiles(),
+        topic=OLD_COMPAT_SEEN_TARGET_TOPIC,
+        marker=OLD_COMPAT_SEEN_TARGET_MARKER,
+        title="Old-compatible seen-target aligned velocity profiles",
+        yaxis_title="Target-radial velocity / reach length (1/s)",
+        velocity_definition=(
+            "Nominal validation targets restricted to non-held-out directions and non-held-out "
+            "reach lengths, each repeated 64 times per replicate; curves show effector velocity "
+            "projected onto each trial's target direction and divided by that trial's reach length."
+        ),
+        evaluation_lens=(
+            "validation_selected_seen_direction_seen_length_targets_stochastic_target_radial_"
+            "length_normalized"
+        ),
+        unit_label="1/s",
+    )
     print(
         json.dumps(
             {
@@ -1853,6 +1938,7 @@ def main() -> None:
                 "first_target_old_compatible": first_target_manifest,
                 "no_pgd_crossed_target_grid": no_pgd_crossed_manifest,
                 "no_pgd_heldout_split": no_pgd_split_manifest,
+                "seen_target_aligned_old_compatible": seen_target_manifest,
             },
             indent=2,
             sort_keys=True,
