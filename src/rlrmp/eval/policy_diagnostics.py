@@ -481,19 +481,17 @@ def feedback_jacobian_sisu_modulation(
     if levels.ndim == 0:
         levels = levels[None]
 
-    jacobians = []
-    for level in levels:
+    def jacobian_at_level(level: Array) -> Array:
         level_values = dict(values)
         level_values[sisu_block] = jnp.broadcast_to(level, sisu_spec.shape)
-        jacobians.append(
-            policy_jacobian(
-                policy,
-                level_values,
-                schema=schema,
-                wrt_blocks=(feedback_block,),
-            ).block(feedback_block)
-        )
-    stacked = jnp.stack(jacobians, axis=0)
+        return policy_jacobian(
+            policy,
+            level_values,
+            schema=schema,
+            wrt_blocks=(feedback_block,),
+        ).block(feedback_block)
+
+    stacked = jax.vmap(jacobian_at_level)(levels)
     delta_from_reference = stacked - stacked[0]
     endpoint_delta = stacked[-1] - stacked[0]
     payload: dict[str, Any] = {
