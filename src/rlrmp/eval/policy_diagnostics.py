@@ -317,12 +317,40 @@ def policy_jacobian(
     )
 
 
+def policy_block_jacobian(
+    policy: PolicyCallable,
+    values: BlockValues,
+    block_name: str,
+    *,
+    schema: PolicyInputSchema | None = None,
+) -> Array:
+    """Compute a local policy Jacobian with respect to one input block only."""
+    schema = schema or PolicyInputSchema.from_values(values)
+    block = schema.block(block_name)
+    fixed_values = {
+        name: jnp.asarray(value)
+        for name, value in values.items()
+    }
+    if block_name not in fixed_values:
+        raise KeyError(f"Missing policy input block: {block_name!r}.")
+    flat0 = fixed_values[block_name].reshape(-1)
+
+    def policy_from_block(flat_block: Array) -> Array:
+        block_values = dict(fixed_values)
+        block_values[block_name] = flat_block.reshape(block.shape)
+        return jnp.asarray(policy(block_values))
+
+    raw_jacobian = jax.jacobian(policy_from_block)(flat0)
+    return matricize_block_in(raw_jacobian, flat0)
+
+
 def finite_difference_jacobian(
     policy: PolicyCallable,
     values: BlockValues,
     *,
     schema: PolicyInputSchema | None = None,
     epsilon: float = 1e-3,
+    batch_size: int | None = 128,
 ) -> Array:
     """Central finite-difference estimate of the dense policy Jacobian."""
     schema = schema or PolicyInputSchema.from_values(values)
@@ -331,18 +359,18 @@ def finite_difference_jacobian(
     if flat0.size == 0:
         return jnp.zeros((output0.size, 0), dtype=output0.dtype)
 
-    eye = jnp.eye(flat0.size, dtype=flat0.dtype)
-
     def output_from_flat(flat: Array) -> Array:
         return jnp.asarray(policy(schema.unflatten(flat))).reshape(-1)
 
-    def column(direction: Array) -> Array:
+    def column(index: Array) -> Array:
+        direction = jax.nn.one_hot(index, flat0.size, dtype=flat0.dtype)
         step = epsilon * direction
         return (output_from_flat(flat0 + step) - output_from_flat(flat0 - step)) / (
             2.0 * epsilon
         )
 
-    return jax.vmap(column)(eye).T
+    indices = jnp.arange(flat0.size, dtype=jnp.int32)
+    return jax.lax.map(column, indices, batch_size=batch_size).T
 
 
 def validate_policy_jacobian(
@@ -351,13 +379,20 @@ def validate_policy_jacobian(
     *,
     schema: PolicyInputSchema | None = None,
     epsilon: float = 1e-3,
+    finite_difference_batch_size: int | None = 128,
     atol: float = 1e-4,
     rtol: float = 1e-3,
 ) -> PolicyFiniteDifferenceValidation:
     """Compare autodiff and finite-difference local policy Jacobians."""
     schema = schema or PolicyInputSchema.from_values(values)
     analytic = policy_jacobian(policy, values, schema=schema).full
-    finite = finite_difference_jacobian(policy, values, schema=schema, epsilon=epsilon)
+    finite = finite_difference_jacobian(
+        policy,
+        values,
+        schema=schema,
+        epsilon=epsilon,
+        batch_size=finite_difference_batch_size,
+    )
     error = analytic - finite
     max_abs_error = float(jnp.max(jnp.abs(error))) if error.size else 0.0
     denom = jnp.maximum(jnp.linalg.norm(finite), jnp.asarray(1e-12, dtype=finite.dtype))
@@ -443,24 +478,27 @@ def directional_gain_summary(
     output_norm = jnp.linalg.norm(output, axis=1)
     valid = input_norm > epsilon
     gains = jnp.where(valid, output_norm / jnp.maximum(input_norm, epsilon), jnp.nan)
-    valid_gains = gains[valid]
-    if valid_gains.size == 0:
+    valid_count = int(jnp.sum(valid))
+    if valid_count == 0:
         return {
             "status": NOT_APPLICABLE,
             "reason": "all provided directions have zero norm",
             "shape": list(matrix.shape),
             "basis": basis,
         }
+    max_gain = jnp.max(jnp.where(valid, gains, -jnp.inf))
+    min_gain = jnp.min(jnp.where(valid, gains, jnp.inf))
+    mean_gain = jnp.sum(jnp.where(valid, gains, 0.0)) / valid_count
     return {
         "status": AVAILABLE,
         "shape": list(matrix.shape),
         "basis": basis,
         "gains": [float(value) for value in gains],
-        "max_gain": float(jnp.max(valid_gains)),
-        "mean_gain": float(jnp.mean(valid_gains)),
-        "min_gain": float(jnp.min(valid_gains)),
+        "max_gain": float(max_gain),
+        "mean_gain": float(mean_gain),
+        "min_gain": float(min_gain),
         "n_directions": int(direction_matrix.shape[0]),
-        "n_valid_directions": int(jnp.sum(valid)),
+        "n_valid_directions": valid_count,
     }
 
 
@@ -484,12 +522,12 @@ def feedback_jacobian_sisu_modulation(
     def jacobian_at_level(level: Array) -> Array:
         level_values = dict(values)
         level_values[sisu_block] = jnp.broadcast_to(level, sisu_spec.shape)
-        return policy_jacobian(
+        return policy_block_jacobian(
             policy,
             level_values,
+            feedback_block,
             schema=schema,
-            wrt_blocks=(feedback_block,),
-        ).block(feedback_block)
+        )
 
     stacked = jax.vmap(jacobian_at_level)(levels)
     delta_from_reference = stacked - stacked[0]
@@ -570,6 +608,7 @@ __all__ = [
     "directional_gain_summary",
     "feedback_jacobian_sisu_modulation",
     "finite_difference_jacobian",
+    "policy_block_jacobian",
     "policy_jacobian",
     "signed_pair_odd_even_summary",
     "singular_value_summary",

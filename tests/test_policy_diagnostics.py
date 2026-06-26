@@ -12,6 +12,8 @@ from rlrmp.eval.policy_diagnostics import (
     PolicyInputSchema,
     directional_gain_summary,
     feedback_jacobian_sisu_modulation,
+    finite_difference_jacobian,
+    policy_block_jacobian,
     policy_jacobian,
     signed_pair_odd_even_summary,
     singular_value_summary,
@@ -96,6 +98,49 @@ def test_policy_jacobian_and_finite_difference_validation() -> None:
     assert jac.full.shape == (2, 3)
     assert validation.passed
     assert validation.max_abs_error < 2e-5
+
+
+def test_policy_block_jacobian_restricts_to_named_input_block() -> None:
+    values = {
+        "feedback": jnp.asarray([0.2, -0.3], dtype=jnp.float32),
+        "sisu": jnp.asarray([0.7], dtype=jnp.float32),
+        "context": jnp.asarray([1.0], dtype=jnp.float32),
+    }
+    schema = PolicyInputSchema.from_values(values)
+
+    def policy(blocks):
+        return jnp.asarray(
+            [
+                2.0 * blocks["feedback"][0] + 5.0 * blocks["sisu"][0],
+                -3.0 * blocks["feedback"][1] + 7.0 * blocks["context"][0],
+            ],
+            dtype=jnp.float32,
+        )
+
+    feedback_jacobian = policy_block_jacobian(
+        policy,
+        values,
+        "feedback",
+        schema=schema,
+    )
+    finite_difference = finite_difference_jacobian(
+        policy,
+        values,
+        schema=schema,
+        epsilon=1e-2,
+        batch_size=2,
+    )
+
+    np.testing.assert_allclose(
+        np.asarray(feedback_jacobian),
+        np.asarray([[2.0, 0.0], [0.0, -3.0]], dtype=np.float32),
+    )
+    np.testing.assert_allclose(
+        np.asarray(finite_difference[:, schema.block_slice("feedback")]),
+        np.asarray(feedback_jacobian),
+        rtol=1e-5,
+        atol=1e-5,
+    )
 
 
 def test_singular_values_and_directional_gains() -> None:
