@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -11,6 +12,7 @@ from rlrmp.eval.recurrent_jacobians import (
     READOUT_STATE_POST_UPDATE,
     SISU,
     STORED_STATE_PRE_UPDATE,
+    compute_recurrent_jacobian_blocks,
     compute_recurrent_jacobian_bank,
 )
 
@@ -65,6 +67,7 @@ def test_recurrent_jacobian_bank_matches_known_hold_context_derivatives() -> Non
         feedback=jnp.array([1.0, -2.0], dtype=jnp.float32),
         sisu=jnp.array([0.7], dtype=jnp.float32),
         context=jnp.array([0.4, -0.6], dtype=jnp.float32),
+        finite_difference=True,
         finite_difference_epsilon=1e-2,
     )
 
@@ -76,6 +79,7 @@ def test_recurrent_jacobian_bank_matches_known_hold_context_derivatives() -> Non
     np.testing.assert_allclose(bank.K_y, W @ B_Y)
     np.testing.assert_allclose(bank.K_s, W @ B_S)
     np.testing.assert_allclose(bank.K_h, W @ A)
+    np.testing.assert_allclose(bank.K_c, W @ B_C)
 
     metadata = bank.metadata
     assert metadata["domains"][STORED_STATE_PRE_UPDATE]["symbol"] == "h_pre"
@@ -94,6 +98,8 @@ def test_recurrent_jacobian_bank_matches_known_hold_context_derivatives() -> Non
     assert matrix_summaries["W"]["codomain"] == "action_output"
     assert matrix_summaries["A"]["spectral_radius"] is not None
     assert len(matrix_summaries["A"]["singular_values"]) == 2
+    assert matrix_summaries["K_c"]["domain"] == CONTEXT
+    assert matrix_summaries["K_c"]["codomain"] == "action_output"
 
     context_norm = bank.summaries["input_block_norms"][CONTEXT]
     assert context_norm["status"] == "available"
@@ -118,10 +124,12 @@ def test_recurrent_jacobian_bank_marks_context_absent_not_applicable() -> None:
         feedback=jnp.array([0.8, 0.1], dtype=jnp.float32),
         sisu=jnp.array([1.2], dtype=jnp.float32),
         context=None,
+        finite_difference=True,
         finite_difference_epsilon=1e-2,
     )
 
     assert bank.B_c is None
+    assert bank.K_c is None
     np.testing.assert_allclose(bank.A, A)
     np.testing.assert_allclose(bank.B_y, B_Y)
     np.testing.assert_allclose(bank.B_s, B_S)
@@ -132,6 +140,7 @@ def test_recurrent_jacobian_bank_marks_context_absent_not_applicable() -> None:
         "not_applicable"
     )
     assert bank.summaries["matrix_summaries"]["B_c"]["status"] == "not_applicable"
+    assert bank.summaries["matrix_summaries"]["K_c"]["status"] == "not_applicable"
     assert bank.summaries["input_block_norms"][CONTEXT]["status"] == "not_applicable"
     assert (
         bank.summaries["output_potent_null_fractions"]["readout_state_maps"][
@@ -145,4 +154,29 @@ def test_recurrent_jacobian_bank_marks_context_absent_not_applicable() -> None:
     assert "arrays" not in compact
     expanded = bank.as_dict(include_arrays=True)
     assert expanded["arrays"]["B_c"] is None
+    assert expanded["arrays"]["K_c"] is None
     assert expanded["format"] == "rlrmp.recurrent_jacobian_bank.v1"
+
+
+def test_recurrent_jacobian_blocks_are_vmap_and_jit_friendly() -> None:
+    h_batch = jnp.asarray([[0.2, -0.3], [-0.1, 0.5]], dtype=jnp.float32)
+    feedback_batch = jnp.asarray([[1.0, -2.0], [0.8, 0.1]], dtype=jnp.float32)
+    sisu = jnp.asarray([0.7], dtype=jnp.float32)
+    context = jnp.asarray([0.4, -0.6], dtype=jnp.float32)
+
+    def one_row(h_pre, feedback):
+        return compute_recurrent_jacobian_blocks(
+            staged_update=_staged_update,
+            readout=_readout,
+            h_pre=h_pre,
+            feedback=feedback,
+            sisu=sisu,
+            context=context,
+        )
+
+    batched = jax.vmap(one_row)(h_batch, feedback_batch)
+    jitted = jax.jit(lambda h: one_row(h, feedback_batch[0]).K_c)(h_batch[0])
+
+    np.testing.assert_allclose(batched.A, jnp.broadcast_to(A, (2,) + A.shape))
+    np.testing.assert_allclose(batched.K_c, jnp.broadcast_to(W @ B_C, (2, 1, 2)))
+    np.testing.assert_allclose(jitted, W @ B_C)

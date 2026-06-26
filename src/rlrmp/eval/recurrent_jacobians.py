@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -37,6 +37,7 @@ BLOCK_LABELS = {
     "K_y": "du_dy",
     "K_s": "du_ds",
     "K_h": "du_dh_pre",
+    "K_c": "du_dc",
 }
 
 DOMAIN_SCHEMA = {
@@ -67,6 +68,22 @@ DOMAIN_SCHEMA = {
 }
 
 
+class RecurrentJacobianBlocks(NamedTuple):
+    """Pure array recurrent Jacobian blocks for JAX transforms."""
+
+    A: jax.Array
+    B_y: jax.Array
+    B_s: jax.Array
+    B_c: jax.Array | None
+    W: jax.Array
+    K_y: jax.Array
+    K_s: jax.Array
+    K_h: jax.Array
+    K_c: jax.Array | None
+    h_post: jax.Array
+    u: jax.Array
+
+
 @dataclass(frozen=True)
 class RecurrentJacobianBank:
     """Local staged recurrent derivative bank.
@@ -80,7 +97,8 @@ class RecurrentJacobianBank:
     - ``B_c`` has shape ``(hidden, context)`` when context is present, else
       ``None``.
     - ``W`` has shape ``(action, hidden)`` and equals ``du / dh_post``.
-    - ``K_y``, ``K_s``, and ``K_h`` are readout-composed output maps.
+    - ``K_y``, ``K_s``, ``K_h``, and optional ``K_c`` are readout-composed
+      output maps.
     """
 
     A: jax.Array
@@ -91,6 +109,7 @@ class RecurrentJacobianBank:
     K_y: jax.Array
     K_s: jax.Array
     K_h: jax.Array
+    K_c: jax.Array | None
     h_post: jax.Array
     u: jax.Array
     metadata: dict[str, Any]
@@ -124,10 +143,108 @@ class RecurrentJacobianBank:
                 "K_y": _array_to_list(self.K_y),
                 "K_s": _array_to_list(self.K_s),
                 "K_h": _array_to_list(self.K_h),
+                "K_c": None if self.K_c is None else _array_to_list(self.K_c),
                 "h_post": _array_to_list(self.h_post),
                 "u": _array_to_list(self.u),
             }
         return result
+
+
+def compute_recurrent_jacobian_blocks(
+    *,
+    staged_update: Callable[[jax.Array, jax.Array, jax.Array, jax.Array | None], jax.Array],
+    readout: Callable[[jax.Array], jax.Array],
+    h_pre: jax.Array,
+    feedback: jax.Array,
+    sisu: jax.Array,
+    context: jax.Array | None = None,
+) -> RecurrentJacobianBlocks:
+    """Compute exact staged recurrent derivative blocks without host summaries.
+
+    This function returns only JAX arrays and ``None`` for absent context blocks,
+    so it can be used inside ``jax.vmap``, ``jax.jit``, or ``jax.lax.scan`` over
+    sampled states or trajectory rows. Serialization, SVD/eigendecompositions,
+    and finite-difference checks are intentionally kept in
+    :func:`compute_recurrent_jacobian_bank`.
+    """
+
+    h_pre = jnp.asarray(h_pre)
+    feedback = jnp.asarray(feedback)
+    sisu = jnp.asarray(sisu)
+    context = None if context is None else jnp.asarray(context)
+
+    h_flat = jnp.ravel(h_pre)
+    feedback_flat = jnp.ravel(feedback)
+    sisu_flat = jnp.ravel(sisu)
+
+    if context is None:
+
+        def update_from_flats(
+            flat_h: jax.Array,
+            flat_feedback: jax.Array,
+            flat_sisu: jax.Array,
+        ) -> jax.Array:
+            return jnp.ravel(
+                staged_update(
+                    flat_h.reshape(h_pre.shape),
+                    flat_feedback.reshape(feedback.shape),
+                    flat_sisu.reshape(sisu.shape),
+                    None,
+                )
+            )
+
+        h_post = update_from_flats(h_flat, feedback_flat, sisu_flat)
+        A, B_y, B_s = jax.jacfwd(update_from_flats, argnums=(0, 1, 2))(
+            h_flat,
+            feedback_flat,
+            sisu_flat,
+        )
+        B_c = None
+    else:
+        context_flat = jnp.ravel(context)
+
+        def update_from_flats(
+            flat_h: jax.Array,
+            flat_feedback: jax.Array,
+            flat_sisu: jax.Array,
+            flat_context: jax.Array,
+        ) -> jax.Array:
+            return jnp.ravel(
+                staged_update(
+                    flat_h.reshape(h_pre.shape),
+                    flat_feedback.reshape(feedback.shape),
+                    flat_sisu.reshape(sisu.shape),
+                    flat_context.reshape(context.shape),
+                )
+            )
+
+        h_post = update_from_flats(h_flat, feedback_flat, sisu_flat, context_flat)
+        A, B_y, B_s, B_c = jax.jacfwd(update_from_flats, argnums=(0, 1, 2, 3))(
+            h_flat,
+            feedback_flat,
+            sisu_flat,
+            context_flat,
+        )
+
+    u = jnp.ravel(readout(h_post))
+    W = _jacobian_matrix(readout, h_post)
+    K_y = W @ B_y
+    K_s = W @ B_s
+    K_h = W @ A
+    K_c = None if B_c is None else W @ B_c
+    return RecurrentJacobianBlocks(
+        A=A,
+        B_y=B_y,
+        B_s=B_s,
+        B_c=B_c,
+        W=W,
+        K_y=K_y,
+        K_s=K_s,
+        K_h=K_h,
+        K_c=K_c,
+        h_post=h_post,
+        u=u,
+    )
 
 
 def compute_recurrent_jacobian_bank(
@@ -138,8 +255,9 @@ def compute_recurrent_jacobian_bank(
     feedback: jax.Array,
     sisu: jax.Array,
     context: jax.Array | None = None,
-    finite_difference: bool = True,
+    finite_difference: bool = False,
     finite_difference_epsilon: float = 1e-4,
+    finite_difference_batch_size: int | None = 128,
 ) -> RecurrentJacobianBank:
     """Compute local staged recurrent Jacobian diagnostics.
 
@@ -154,8 +272,11 @@ def compute_recurrent_jacobian_bank(
         context: Optional non-SISU context block ``c_t``. When absent, context
             derivative summaries are marked ``not_applicable``.
         finite_difference: Whether to include central finite-difference sanity
-            checks for each local block.
+            checks for each local block. Disabled by default because the exact
+            array kernel is the normal mapped/JIT path.
         finite_difference_epsilon: Step size for finite-difference checks.
+        finite_difference_batch_size: Batch size for finite-difference
+            ``lax.map`` coordinate sweeps.
 
     Returns:
         A :class:`RecurrentJacobianBank` with exact autodiff blocks, derived
@@ -163,52 +284,52 @@ def compute_recurrent_jacobian_bank(
         finite-difference checks.
     """
 
+    blocks = compute_recurrent_jacobian_blocks(
+        staged_update=staged_update,
+        readout=readout,
+        h_pre=h_pre,
+        feedback=feedback,
+        sisu=sisu,
+        context=context,
+    )
     h_pre = jnp.asarray(h_pre)
     feedback = jnp.asarray(feedback)
     sisu = jnp.asarray(sisu)
     context = None if context is None else jnp.asarray(context)
 
-    h_post = jnp.ravel(staged_update(h_pre, feedback, sisu, context))
-    u = jnp.ravel(readout(h_post))
-
-    A = _jacobian_matrix(lambda h: staged_update(h, feedback, sisu, context), h_pre)
-    B_y = _jacobian_matrix(lambda y: staged_update(h_pre, y, sisu, context), feedback)
-    B_s = _jacobian_matrix(lambda s: staged_update(h_pre, feedback, s, context), sisu)
-    B_c = (
-        None
-        if context is None
-        else _jacobian_matrix(lambda c: staged_update(h_pre, feedback, sisu, c), context)
-    )
-    W = _jacobian_matrix(readout, h_post)
-
-    K_y = W @ B_y
-    K_s = W @ B_s
-    K_h = W @ A
-
-    blocks = {
-        "A": A,
-        "B_y": B_y,
-        "B_s": B_s,
-        "W": W,
-        "K_y": K_y,
-        "K_s": K_s,
-        "K_h": K_h,
+    matrix_blocks = {
+        "A": blocks.A,
+        "B_y": blocks.B_y,
+        "B_s": blocks.B_s,
+        "W": blocks.W,
+        "K_y": blocks.K_y,
+        "K_s": blocks.K_s,
+        "K_h": blocks.K_h,
     }
-    if B_c is not None:
-        blocks["B_c"] = B_c
+    if blocks.B_c is not None:
+        matrix_blocks["B_c"] = blocks.B_c
+    if blocks.K_c is not None:
+        matrix_blocks["K_c"] = blocks.K_c
 
     summaries = {
-        "matrix_summaries": _matrix_summaries(blocks, context_present=context is not None),
-        "input_block_norms": _input_block_norms(B_y=B_y, B_s=B_s, B_c=B_c),
+        "matrix_summaries": _matrix_summaries(
+            matrix_blocks,
+            context_present=context is not None,
+        ),
+        "input_block_norms": _input_block_norms(
+            B_y=blocks.B_y,
+            B_s=blocks.B_s,
+            B_c=blocks.B_c,
+        ),
         "output_potent_null_fractions": _output_potent_null_fractions(
-            W=W,
+            W=blocks.W,
             maps={
-                "stored_state_pre_update_to_readout_state_post_update": A,
-                "controller_visible_feedback_to_readout_state_post_update": B_y,
-                "sisu_to_readout_state_post_update": B_s,
+                "stored_state_pre_update_to_readout_state_post_update": blocks.A,
+                "controller_visible_feedback_to_readout_state_post_update": blocks.B_y,
+                "sisu_to_readout_state_post_update": blocks.B_s,
                 **(
-                    {"context_to_readout_state_post_update": B_c}
-                    if B_c is not None
+                    {"context_to_readout_state_post_update": blocks.B_c}
+                    if blocks.B_c is not None
                     else {}
                 ),
             },
@@ -225,31 +346,39 @@ def compute_recurrent_jacobian_bank(
             feedback=feedback,
             sisu=sisu,
             context=context,
-            bank_blocks={"A": A, "B_y": B_y, "B_s": B_s, "B_c": B_c, "W": W},
+            bank_blocks={
+                "A": blocks.A,
+                "B_y": blocks.B_y,
+                "B_s": blocks.B_s,
+                "B_c": blocks.B_c,
+                "W": blocks.W,
+            },
             epsilon=finite_difference_epsilon,
+            batch_size=finite_difference_batch_size,
         )
         if finite_difference
         else {"status": "skipped"}
     )
 
     return RecurrentJacobianBank(
-        A=A,
-        B_y=B_y,
-        B_s=B_s,
-        B_c=B_c,
-        W=W,
-        K_y=K_y,
-        K_s=K_s,
-        K_h=K_h,
-        h_post=h_post,
-        u=u,
+        A=blocks.A,
+        B_y=blocks.B_y,
+        B_s=blocks.B_s,
+        B_c=blocks.B_c,
+        W=blocks.W,
+        K_y=blocks.K_y,
+        K_s=blocks.K_s,
+        K_h=blocks.K_h,
+        K_c=blocks.K_c,
+        h_post=blocks.h_post,
+        u=blocks.u,
         metadata=_metadata(
             h_pre=h_pre,
             feedback=feedback,
             sisu=sisu,
             context=context,
-            h_post=h_post,
-            u=u,
+            h_post=blocks.h_post,
+            u=blocks.u,
         ),
         summaries=summaries,
         finite_difference=fd_checks,
@@ -266,6 +395,7 @@ def finite_difference_sanity_checks(
     context: jax.Array | None,
     bank_blocks: Mapping[str, jax.Array | None],
     epsilon: float = 1e-4,
+    batch_size: int | None = 128,
 ) -> dict[str, Any]:
     """Return finite-difference sanity checks for local derivative blocks."""
 
@@ -276,24 +406,28 @@ def finite_difference_sanity_checks(
             h_pre,
             bank_blocks["A"],
             epsilon=epsilon,
+            batch_size=batch_size,
         ),
         "B_y": _finite_difference_check(
             lambda y: staged_update(h_pre, y, sisu, context),
             feedback,
             bank_blocks["B_y"],
             epsilon=epsilon,
+            batch_size=batch_size,
         ),
         "B_s": _finite_difference_check(
             lambda s: staged_update(h_pre, feedback, s, context),
             sisu,
             bank_blocks["B_s"],
             epsilon=epsilon,
+            batch_size=batch_size,
         ),
         "W": _finite_difference_check(
             readout,
             h_post,
             bank_blocks["W"],
             epsilon=epsilon,
+            batch_size=batch_size,
         ),
     }
     if context is None:
@@ -308,6 +442,7 @@ def finite_difference_sanity_checks(
             context,
             bank_blocks["B_c"],
             epsilon=epsilon,
+            batch_size=batch_size,
         )
     return checks
 
@@ -366,6 +501,12 @@ def _matrix_summaries(
             "reason": "context_absent",
             "domain": CONTEXT,
             "codomain": READOUT_STATE_POST_UPDATE,
+        }
+        summaries["K_c"] = {
+            "status": "not_applicable",
+            "reason": "context_absent",
+            "domain": CONTEXT,
+            "codomain": ACTION_OUTPUT,
         }
     return summaries
 
@@ -513,6 +654,7 @@ def _finite_difference_check(
     expected: jax.Array | None,
     *,
     epsilon: float,
+    batch_size: int | None,
 ) -> dict[str, Any]:
     if expected is None:
         return {
@@ -520,7 +662,7 @@ def _finite_difference_check(
             "reason": "block_absent",
             "epsilon": float(epsilon),
         }
-    fd = _finite_difference_matrix(func, x, epsilon=epsilon)
+    fd = _finite_difference_matrix(func, x, epsilon=epsilon, batch_size=batch_size)
     expected_arr = _to_numpy(expected)
     error = fd - expected_arr
     expected_norm = float(np.linalg.norm(expected_arr, ord="fro"))
@@ -542,6 +684,7 @@ def _finite_difference_matrix(
     x: jax.Array,
     *,
     epsilon: float,
+    batch_size: int | None,
 ) -> np.ndarray:
     x = jnp.asarray(x)
     x_flat = jnp.ravel(x)
@@ -549,15 +692,15 @@ def _finite_difference_matrix(
         output_size = int(jnp.ravel(func(x)).size)
         return np.zeros((output_size, 0), dtype=np.float64)
 
-    eye = jnp.eye(int(x_flat.size), dtype=x_flat.dtype)
-
-    def column(direction: jax.Array) -> jax.Array:
-        direction = epsilon * direction
-        plus = jnp.reshape(x_flat + direction, x.shape)
-        minus = jnp.reshape(x_flat - direction, x.shape)
+    def column(index: jax.Array) -> jax.Array:
+        direction = jax.nn.one_hot(index, x_flat.size, dtype=x_flat.dtype)
+        step = epsilon * direction
+        plus = jnp.reshape(x_flat + step, x.shape)
+        minus = jnp.reshape(x_flat - step, x.shape)
         return (jnp.ravel(func(plus)) - jnp.ravel(func(minus))) / (2.0 * epsilon)
 
-    return _to_numpy(jax.vmap(column)(eye).T)
+    indices = jnp.arange(x_flat.size, dtype=jnp.int32)
+    return _to_numpy(jax.lax.map(column, indices, batch_size=batch_size).T)
 
 
 def _jacobian_matrix(
@@ -583,6 +726,7 @@ def _block_domain(name: str) -> str:
         "K_y": CONTROLLER_VISIBLE_FEEDBACK,
         "K_s": SISU,
         "K_h": STORED_STATE_PRE_UPDATE,
+        "K_c": CONTEXT,
     }[name]
 
 
@@ -607,7 +751,9 @@ __all__ = [
     "READOUT_STATE_POST_UPDATE",
     "SISU",
     "STORED_STATE_PRE_UPDATE",
+    "RecurrentJacobianBlocks",
     "RecurrentJacobianBank",
+    "compute_recurrent_jacobian_blocks",
     "compute_recurrent_jacobian_bank",
     "finite_difference_sanity_checks",
 ]
