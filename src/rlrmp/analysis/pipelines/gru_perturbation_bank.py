@@ -381,21 +381,6 @@ def default_cs_perturbation_bank(
                     "insertion_point": "sensory.output -> net.feedback",
                 },
             ),
-            (
-                "delayed_observation",
-                "delayed_observation_offset",
-                "pre_noise_delayed_measurement_named_channel",
-                "Offset the clean pre-noise delayed measurement on "
-                "feedback.feedback -> sensory.input. This is not literal extra "
-                "observation delay.",
-                "pre_noise_delayed_measurement_offset",
-                {
-                    "compatibility_channel": "delayed_observation",
-                    "information_structure": "pre_noise_delayed_measurement_offset",
-                    "insertion_point": "feedback.feedback -> sensory.input",
-                    "not_literal_extra_delay": True,
-                },
-            ),
             ):
                 for feedback_quantity, units, amplitude, axes in (
                     ("position", "m", 0.01, ("x", "y")),
@@ -497,7 +482,6 @@ def default_cs_perturbation_bank(
                 "command_input",
                 "process_epsilon",
                 "sensory_feedback",
-                "delayed_observation",
                 "target_stream",
             ],
             "adapter_contract": (
@@ -521,13 +505,6 @@ def default_cs_perturbation_bank(
                     "Feedbax additive edge adapter on sensory.output -> net.feedback, "
                     "representing sensory_feedback after sensory noise and "
                     "before the controller feedback port."
-                ),
-                "delayed_observation_offset": (
-                    "Feedbax additive edge adapter on feedback.feedback -> sensory.input. "
-                    "This preserves the legacy "
-                    "delayed_observation channel name for compatibility, but the "
-                    "family semantics are a pre-noise delayed-measurement offset, "
-                    "not literal extra observation delay."
                 ),
                 "target_stream_jump": (
                     "Deferred: current fixed-target C&S GRU checkpoints do not consume "
@@ -860,18 +837,6 @@ def default_cs_calibrated_perturbation_bank(
                     {
                         "information_structure": "post_noise_controller_visible_feedback",
                         "insertion_point": "sensory.output -> net.feedback",
-                    },
-                ),
-                (
-                    "delayed_observation",
-                    "delayed_observation_offset",
-                    "pre_noise_delayed_measurement_named_channel",
-                    "pre_noise_delayed_measurement_offset",
-                    {
-                        "compatibility_channel": "delayed_observation",
-                        "information_structure": "pre_noise_delayed_measurement_offset",
-                        "insertion_point": "feedback.feedback -> sensory.input",
-                        "not_literal_extra_delay": True,
                     },
                 ),
             ):
@@ -1489,10 +1454,7 @@ def materialize_gru_perturbation_response(
         ),
         "bank": bank,
         "extlqg_comparator": {
-            "status": (
-                "available_for_initial_state_command_input_process_epsilon_"
-                "sensory_feedback_and_delayed_observation"
-            ),
+            "status": "available_for_initial_state_command_input_process_epsilon_and_sensory_feedback",
             "physical_dim": int(extlqg_physical_dim),
             "game_source": (
                 "rlrmp.analysis.math.cs_game_card.build_no_integrator_game"
@@ -1502,12 +1464,12 @@ def materialize_gru_perturbation_response(
             "reason": (
                 "Deterministic extLQG response rows are evaluated for perturbations "
                 "with clean analytical interfaces: initial_state, command_input, "
-                "process_epsilon, sensory_feedback, and delayed_observation. "
+                "process_epsilon, and sensory_feedback. "
                 "Command-input rows add an external pulse after the controller "
                 "command and before the plant input. Sensory-feedback rows offset "
-                "the post-noise measurement delivered to the estimator; delayed-"
-                "observation rows offset the clean delayed measurement before "
-                "sensory noise. Target-stream remains deferred for current "
+                "the post-noise measurement delivered to the estimator after "
+                "converting target-relative GRU feedback signs into raw analytical "
+                "observation signs. Target-stream remains deferred for current "
                 "fixed-target checkpoints."
             ),
             "checkpoint_selection_role": "audit_only_not_used_for_selection",
@@ -1518,9 +1480,9 @@ def materialize_gru_perturbation_response(
                 "The output-feedback robust analytical controller is replayed through "
                 "the same deterministic released-code plant/estimator lane for "
                 "initial-state, command-input, and process-epsilon rows. Sensory "
-                "false-feedback and delayed-observation offsets are marked "
-                "not_applicable until the robust released-forward helper exposes "
-                "the same measurement-offset ports as the extLQG lane."
+                "false-feedback offsets are marked not_applicable until the robust "
+                "released-forward helper exposes the same measurement-offset ports "
+                "as the extLQG lane."
             ),
             "gamma_factor": OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
             "checkpoint_selection_role": "audit_only_not_used_for_selection",
@@ -3548,6 +3510,32 @@ def _is_force_filter_feedback_row(perturbation: Mapping[str, Any]) -> bool:
     return False
 
 
+def _extlqg_observation_sign_multiplier(
+    perturbation: Mapping[str, Any],
+    *,
+    observation_index: int,
+) -> int:
+    """Map controller-visible GRU feedback signs into raw extLQG observation signs."""
+
+    if _is_force_filter_feedback_row(perturbation):
+        return 1
+
+    feedback_quantity = perturbation.get("feedback_quantity")
+    channel_provenance = perturbation.get("channel_provenance")
+    if feedback_quantity is None and isinstance(channel_provenance, Mapping):
+        feedback_quantity = channel_provenance.get("feedback_quantity")
+
+    axis = str(perturbation.get("axis", ""))
+    is_controller_visible_state_feedback = (
+        feedback_quantity in {"position", "velocity"}
+        or axis in {"x", "y", "vx", "vy"}
+        or observation_index < 4
+    )
+    if is_controller_visible_state_feedback:
+        return -1
+    return 1
+
+
 def _controller_visible_feedback_index(feedback_quantity: str, axis: str) -> int:
     axis_index = _axis_index(axis)
     if feedback_quantity in {"position", "velocity"}:
@@ -4023,7 +4011,14 @@ def _extlqg_observation_offset(
             f"observation-offset timing outside analytical horizon: {start=}, "
             f"{duration=}, {horizon=}"
         )
-    amount = float(perturbation["amplitude"]) * int(perturbation["sign"])
+    amount = (
+        float(perturbation["amplitude"])
+        * int(perturbation["sign"])
+        * _extlqg_observation_sign_multiplier(
+            perturbation,
+            observation_index=observation_index,
+        )
+    )
     offset = jnp.zeros((horizon, observation_dim), dtype=jnp.float64)
     return offset.at[start : start + duration, observation_index].set(amount)
 

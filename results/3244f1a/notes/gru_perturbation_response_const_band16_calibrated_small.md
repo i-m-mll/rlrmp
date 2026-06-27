@@ -11,7 +11,6 @@ v2 splits the former plant_force rows into command_input_pulse (post-controller 
 | Channel | Count |
 |---|---:|
 | `command_input` | 18 |
-| `delayed_observation` | 36 |
 | `initial_state` | 8 |
 | `process_epsilon` | 48 |
 | `sensory_feedback` | 36 |
@@ -20,7 +19,6 @@ v2 splits the former plant_force rows into command_input_pulse (post-controller 
 | Family | Count |
 |---|---:|
 | `command_input_pulse` | 12 |
-| `delayed_observation_offset` | 36 |
 | `initial_position_offset` | 4 |
 | `initial_velocity_offset` | 4 |
 | `process_epsilon_force_state_xy` | 12 |
@@ -35,7 +33,7 @@ v2 splits the former plant_force rows into command_input_pulse (post-controller 
 
 ### `h0_no_pgd_targetsupport__const_band16_lr3e-3_clip5_b64`
 
-- Evaluated: 146
+- Evaluated: 110
 - Blocked: 0
 - Not implemented: 0
 - Not applicable: 1
@@ -48,7 +46,6 @@ v2 splits the former plant_force rows into command_input_pulse (post-controller 
 |---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | `command_input/command_input_pulse` | 12 | evaluated=12 | 0.33792, 0.43121, 0.970616 | 0.084393 | 0.00193377 | 0.000438572 | 0.0183266 | 0.00256592 | 0.553673 | 0.0506358 | 0.385938 | NA | 0.000536746 | 0.00062063 | 77.4847 | NA | 1.48792 | no meaningful extLQG full-Q/R/Q_f denominator for this channel/family |
 | `command_input/target_aligned_lateral_command_load_pulse` | 6 | evaluated=6 | 0.33792, 0.43121, 0.970616 | 0.0834452 | 0.00192429 | 0.000431978 | 0.0183035 | 0.00258159 | 0.553643 | 0.0500671 | 0.384958 | NA | 0.00050595 | 0.000962739 | 78.1096 | NA | 1.49992 | no meaningful extLQG full-Q/R/Q_f denominator for this channel/family |
-| `delayed_observation/delayed_observation_offset` | 36 | evaluated=36 | 0.00766454, 0.0358548, 0.360532 | 0.0967339 | 0.00133448 | 0.000310231 | 0.0128976 | 0.00180615 | 0.493722 | 0.0580403 | 0.427514 | NA | 0.000233977 | 0.000139077 | 32.4318 | NA | NA | no meaningful extLQG full-Q/R/Q_f denominator for this channel/family; no meaningful robust analytical full-Q/R/Q_f denominator for this channel/family; robust output-feedback released-forward replay does not yet expose clean delayed-measurement offset ports; extLQG carries this row today (36) |
 | `initial_state/initial_position_offset` | 4 | evaluated=4 | 0.0075 | 0.101321 | 0.0075 | 0.00269484 | 0.0253059 | 0.00687301 | 0.30559 | 0.0607923 | 0.033125 | NA | 0.000655047 | 0.000151641 | 62.4617 | NA | 2.49955 | no meaningful extLQG full-Q/R/Q_f denominator for this channel/family |
 | `initial_state/initial_velocity_offset` | 4 | evaluated=4 | 0.0128725 | 0.0840161 | 0.00164646 | 0.000463056 | 0.0140305 | 0.0035428 | 0.284979 | 0.0504097 | 0.155688 | 0.28075 | 3.18953e-05 | 3.31046e-05 | 6.00463 | NA | 1.95418 | no meaningful extLQG full-Q/R/Q_f denominator for this channel/family |
 | `process_epsilon/process_epsilon_force_state_xy` | 12 | evaluated=12 | 0.0512, 0.0653349, 0.147063 | 0.0841405 | 0.00193274 | 0.000438661 | 0.0183273 | 0.00256313 | 0.55584 | 0.0504843 | 0.386188 | NA | 0.000525295 | 0.000659992 | 77.384 | NA | 1.48599 | no meaningful extLQG full-Q/R/Q_f denominator for this channel/family |
@@ -68,9 +65,6 @@ v2 splits the former plant_force rows into command_input_pulse (post-controller 
 | `command_input/target_aligned_lateral_command_load_pulse/early` | 2 | evaluated=2 | 0.33792 | 0.0498619 | 0.00135734 | 0.000451253 | 8.07322 | NA | 2.62603 | no meaningful extLQG full-Q/R/Q_f denominator for this channel/family |
 | `command_input/target_aligned_lateral_command_load_pulse/late` | 2 | evaluated=2 | 0.970616 | 0.137485 | 0.00291512 | 0.000421052 | 210.13 | NA | 1.45444 | no meaningful extLQG full-Q/R/Q_f denominator for this channel/family |
 | `command_input/target_aligned_lateral_command_load_pulse/mid` | 2 | evaluated=2 | 0.43121 | 0.0629888 | 0.00150041 | 0.000423627 | 16.1254 | NA | 1.85809 | no meaningful extLQG full-Q/R/Q_f denominator for this channel/family |
-| `delayed_observation/delayed_observation_offset/early_visible` | 12 | evaluated=12 | 0.00766454, 0.0358548, 0.360532 | 0.0904135 | 0.00152656 | 0.0004677 | 17.6091 | NA | NA | no meaningful extLQG full-Q/R/Q_f denominator for this channel/family; no meaningful robust analytical full-Q/R/Q_f denominator for this channel/family; robust output-feedback released-forward replay does not yet expose clean delayed-measurement offset ports; extLQG carries this row today (12) |
-| `delayed_observation/delayed_observation_offset/late_visible` | 12 | evaluated=12 | 0.00766454, 0.0358548, 0.360532 | 0.10907 | 0.00110709 | 0.00011509 | 58.0239 | NA | NA | no meaningful extLQG full-Q/R/Q_f denominator for this channel/family; no meaningful robust analytical full-Q/R/Q_f denominator for this channel/family; robust output-feedback released-forward replay does not yet expose clean delayed-measurement offset ports; extLQG carries this row today (12) |
-| `delayed_observation/delayed_observation_offset/mid_visible` | 12 | evaluated=12 | 0.00766454, 0.0358548, 0.360532 | 0.0907177 | 0.00136979 | 0.000347903 | 21.6624 | NA | NA | no meaningful extLQG full-Q/R/Q_f denominator for this channel/family; no meaningful robust analytical full-Q/R/Q_f denominator for this channel/family; robust output-feedback released-forward replay does not yet expose clean delayed-measurement offset ports; extLQG carries this row today (12) |
 | `initial_state/initial_position_offset/initial_condition` | 4 | evaluated=4 | 0.0075 | 0.101321 | 0.0075 | 0.00269484 | 62.4617 | NA | 2.49955 | no meaningful extLQG full-Q/R/Q_f denominator for this channel/family |
 | `initial_state/initial_velocity_offset/initial_condition` | 4 | evaluated=4 | 0.0128725 | 0.0840161 | 0.00164646 | 0.000463056 | 6.00463 | NA | 1.95418 | no meaningful extLQG full-Q/R/Q_f denominator for this channel/family |
 | `process_epsilon/process_epsilon_force_state_xy/early` | 4 | evaluated=4 | 0.0512 | 0.0504176 | 0.00139058 | 0.000467937 | 8.55736 | NA | 2.78352 | no meaningful extLQG full-Q/R/Q_f denominator for this channel/family |
@@ -92,5 +86,5 @@ v2 splits the former plant_force rows into command_input_pulse (post-controller 
 
 ## Residuals
 
-- ExtLQG comparator: available_for_initial_state_command_input_process_epsilon_sensory_feedback_and_delayed_observation - Deterministic extLQG response rows are evaluated for perturbations with clean analytical interfaces: initial_state, command_input, process_epsilon, sensory_feedback, and delayed_observation. Command-input rows add an external pulse after the controller command and before the plant input. Sensory-feedback rows offset the post-noise measurement delivered to the estimator; delayed-observation rows offset the clean delayed measurement before sensory noise. Target-stream remains deferred for current fixed-target checkpoints.
+- ExtLQG comparator: available_for_initial_state_command_input_process_epsilon_and_sensory_feedback - Deterministic extLQG response rows are evaluated for perturbations with clean analytical interfaces: initial_state, command_input, process_epsilon, and sensory_feedback. Command-input rows add an external pulse after the controller command and before the plant input. Sensory-feedback rows offset the post-noise measurement delivered to the estimator after converting target-relative GRU feedback signs into raw analytical observation signs. Target-stream remains deferred for current fixed-target checkpoints.
 - Full-Q/R/Q_f perturbation cost: available - Costs are rescored post hoc from states.mechanics.vector and states.net.output using the canonical C&S Q_t/R_t/Q_f schedule. They are audit-only perturbation diagnostics and are not used for checkpoint selection.

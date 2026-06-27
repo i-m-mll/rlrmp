@@ -2522,7 +2522,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--perturbation-process-epsilon-scale", type=float, default=0.01)
     parser.add_argument("--perturbation-command-input-pulse-n", type=float, default=1.0)
     parser.add_argument("--perturbation-sensory-feedback-offset-m", type=float, default=0.01)
-    parser.add_argument("--perturbation-delayed-observation-offset-m", type=float, default=0.01)
+    parser.add_argument(
+        "--perturbation-delayed-observation-offset-m",
+        type=float,
+        default=0.01,
+        help=(
+            "Legacy run-spec compatibility only; delayed_observation is no longer "
+            "sampled or validated in the active final perturbation bank."
+        ),
+    )
     parser.add_argument("--perturbation-pulse-start-step", type=int, default=20)
     parser.add_argument("--perturbation-pulse-duration-steps", type=int, default=5)
     parser.add_argument(
@@ -2531,9 +2539,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Use timing-bin calibrated perturbation training: plant process/command "
-            "pulses sample starts 5/15/35 uniformly, controller-visible sensory and "
-            "delayed-observation offsets sample starts 10/20/40 uniformly, all with "
-            "5-step pulses. Defaults to on for --delayed-reach perturbation training."
+            "pulses sample starts 5/15/35 uniformly and controller-visible sensory "
+            "feedback offsets sample starts 10/20/40 uniformly, all with 5-step "
+            "pulses. Defaults to on for --delayed-reach perturbation training."
         ),
     )
     parser.add_argument(
@@ -2543,7 +2551,7 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Index calibrated perturbation timing bins by movement age: plant "
             "process/command pulses use movement_start + 5/15/35, controller-visible "
-            "sensory/delayed-observation pulses use movement_start + 10/20/40, and "
+            "sensory-feedback pulses use movement_start + 10/20/40, and "
             "initial position/velocity diagnostics use movement-onset process-epsilon "
             "impulses. Requires --perturbation-calibrated-timing and defaults to on "
             "for --delayed-reach perturbation training."

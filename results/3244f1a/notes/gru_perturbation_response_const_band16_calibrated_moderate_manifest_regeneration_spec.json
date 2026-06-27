@@ -73,12 +73,12 @@
       "metadata": {
         "exists": true,
         "kind": "file",
-        "sha256": "e5e84eb45b0fce3bfbedeacab4e57ec2572a94ad8a818802b35182572796bb9b",
-        "size_bytes": 342141
+        "sha256": "adf5c7aeb361c7e2bbf25c40c5fed7dbc996154b39a3fc47b82835c97f258580",
+        "size_bytes": 233391
       },
       "role": "perturbation_response_manifest",
-      "sha256": "e5e84eb45b0fce3bfbedeacab4e57ec2572a94ad8a818802b35182572796bb9b",
-      "size_bytes": 342141,
+      "sha256": "adf5c7aeb361c7e2bbf25c40c5fed7dbc996154b39a3fc47b82835c97f258580",
+      "size_bytes": 233391,
       "storage_backend": "feedbax-local",
       "uri": "repo://results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_moderate_manifest.json"
     },
@@ -88,12 +88,12 @@
       "metadata": {
         "exists": true,
         "kind": "file",
-        "sha256": "ae2f85a6b3dbaf9cd21ccf4e08d8114a7e564294221d3384786675832a84c52a",
-        "size_bytes": 16414
+        "sha256": "a6a685f5d762402fd9cf9c701d160985789c7a0d47877f564a64c1796807bfab",
+        "size_bytes": 14339
       },
       "role": "perturbation_response_note",
-      "sha256": "ae2f85a6b3dbaf9cd21ccf4e08d8114a7e564294221d3384786675832a84c52a",
-      "size_bytes": 16414,
+      "sha256": "a6a685f5d762402fd9cf9c701d160985789c7a0d47877f564a64c1796807bfab",
+      "size_bytes": 14339,
       "storage_backend": "feedbax-local",
       "uri": "repo://results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_moderate.md"
     },
@@ -102,12 +102,12 @@
       "media_type": "application/octet-stream",
       "metadata": {
         "exists": true,
-        "file_count": 147,
-        "hash_file_count": 147,
+        "file_count": 111,
+        "hash_file_count": 111,
         "hash_truncated": false,
         "kind": "directory",
-        "sample_tree_sha256": "6eeda474bcfe7b304bf0b0461bfbe0633d8a62500b5c09051c1f4ad308988da3",
-        "total_bytes": 56984094
+        "sample_tree_sha256": "85f1e633b5297fc0e702414018d81aca4d2aeb9c4d3efd803d85f971de034659",
+        "total_bytes": 43356310
       },
       "role": "perturbation_response_bulk_dir",
       "storage_backend": "feedbax-local",
@@ -119,12 +119,12 @@
       "metadata": {
         "exists": true,
         "kind": "file",
-        "sha256": "68fb9da76445c203ebe860abec6062661ad6f652c1b7542eb18b2a03a8ea0cff",
-        "size_bytes": 8976346
+        "sha256": "58d106c5524389440327b81b5ccb818940f70161c2901c9a8598d83b229f5e83",
+        "size_bytes": 7145539
       },
       "role": "perturbation_response_detail_manifest",
-      "sha256": "68fb9da76445c203ebe860abec6062661ad6f652c1b7542eb18b2a03a8ea0cff",
-      "size_bytes": 8976346,
+      "sha256": "58d106c5524389440327b81b5ccb818940f70161c2901c9a8598d83b229f5e83",
+      "size_bytes": 7145539,
       "storage_backend": "feedbax-local",
       "uri": "repo://_artifacts/3244f1a/perturbation_response/gru_targetsupport_const_band16_calibrated_moderate/gru_perturbation_response_const_band16_calibrated_moderate_manifest_detail.json"
     }
@@ -160,17 +160,26 @@
     "issues": [],
     "metadata": {
       "status_porcelain": [
-        "M results/3244f1a/notes/gru_evaluation_diagnostics_const_band16_validation_selected_regeneration_spec.json",
+        "M results/3244f1a/figures/final_calibrated_bank_profiles/medium/spec.json",
+        " M results/3244f1a/figures/final_calibrated_bank_profiles/small/spec.json",
+        " M results/3244f1a/notes/final_calibrated_bank_profile_figures.md",
+        " M results/3244f1a/notes/gru_evaluation_diagnostics_const_band16_validation_selected_regeneration_spec.json",
+        " M results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_moderate.md",
+        " M results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_moderate_manifest.json",
+        " M results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_moderate_manifest_regeneration_spec.json",
+        " M results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_small.md",
+        " M results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_small_manifest.json",
         " M results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_small_manifest_regeneration_spec.json",
-        " M results/3244f1a/scripts/materialize_final_small_bank_profiles.py",
-        "?? results/3244f1a/figures/final_calibrated_bank_profiles/small/spec.json",
-        "?? results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_moderate.md",
-        "?? results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_moderate_manifest.json"
+        " M src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+        " M src/rlrmp/train/cs_nominal_gru.py",
+        " M src/rlrmp/train/cs_perturbation_training.py",
+        " M tests/test_cs_nominal_gru.py",
+        " M tests/test_gru_perturbation_response.py"
       ]
     },
     "parents": [],
     "source_branch": "feature/3244f1a-final-small-bank",
-    "source_commit": "7e7fd4d97b9b201e7c6fec632d8c4ff88bf80c28",
+    "source_commit": "d570c59ad2ba80ed4e91a9795c8f5a30783ecadc",
     "source_repo": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__3244f1a-final-small-bank"
   },
   "schema_id": "feedbax.spec.regeneration",
@@ -180,8 +189,8 @@
       "metadata": {},
       "path": "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
       "role": "source_file",
-      "sha256": "3e60092e919109c5742a09a80e2cc3da3e8d52e60541b0b5f2627a8a3e8fc91c",
-      "size_bytes": 212093
+      "sha256": "6183bfa0fa5db0be2a2e2da9fe0e57733666edd4958bae4b4144379e2af14997",
+      "size_bytes": 211185
     },
     {
       "metadata": {},

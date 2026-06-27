@@ -112,12 +112,26 @@
     "issues": [],
     "metadata": {
       "status_porcelain": [
-        "M results/3244f1a/scripts/materialize_final_small_bank_profiles.py"
+        "M results/3244f1a/figures/final_calibrated_bank_profiles/medium/spec.json",
+        " M results/3244f1a/figures/final_calibrated_bank_profiles/small/spec.json",
+        " M results/3244f1a/notes/final_calibrated_bank_profile_figures.md",
+        " M results/3244f1a/notes/gru_evaluation_diagnostics_const_band16_validation_selected_regeneration_spec.json",
+        " M results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_moderate.md",
+        " M results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_moderate_manifest.json",
+        " M results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_moderate_manifest_regeneration_spec.json",
+        " M results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_small.md",
+        " M results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_small_manifest.json",
+        " M results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_small_manifest_regeneration_spec.json",
+        " M src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+        " M src/rlrmp/train/cs_nominal_gru.py",
+        " M src/rlrmp/train/cs_perturbation_training.py",
+        " M tests/test_cs_nominal_gru.py",
+        " M tests/test_gru_perturbation_response.py"
       ]
     },
     "parents": [],
     "source_branch": "feature/3244f1a-final-small-bank",
-    "source_commit": "7e7fd4d97b9b201e7c6fec632d8c4ff88bf80c28",
+    "source_commit": "d570c59ad2ba80ed4e91a9795c8f5a30783ecadc",
     "source_repo": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__3244f1a-final-small-bank"
   },
   "schema_id": "feedbax.spec.regeneration",

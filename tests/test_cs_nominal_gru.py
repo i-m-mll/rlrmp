@@ -1495,7 +1495,14 @@ def test_randomized_perturbation_training_uses_prng_key_and_preserves_target() -
 
     assert jnp.allclose(first.inputs["effector_target"].pos, base.inputs["effector_target"].pos)
     assert jnp.any(first.inits["mechanics.vector"] != second.inits["mechanics.vector"])
-    assert jnp.any(first.inputs["epsilon"] != second.inputs["epsilon"])
+    active_input_keys = (
+        "epsilon",
+        GRAPH_ADAPTER_SPECS["command_input"].input_key,
+        GRAPH_ADAPTER_SPECS["sensory_feedback"].input_key,
+    )
+    assert any(bool(jnp.any(first.inputs[key] != second.inputs[key])) for key in active_input_keys)
+    assert jnp.all(first.inputs[GRAPH_ADAPTER_SPECS["delayed_observation"].input_key] == 0.0)
+    assert jnp.all(second.inputs[GRAPH_ADAPTER_SPECS["delayed_observation"].input_key] == 0.0)
 
     # Training trials are built inside Feedbax's vmapped training step, so per-trial
     # metadata must stay JAX-compatible. String/list provenance lives in the config
@@ -1618,9 +1625,8 @@ def test_calibrated_timing_sampler_uses_family_timing_bins() -> None:
     assert _nonzero_pulse_starts(process_delta).issubset(plant_starts)
     assert _nonzero_pulse_starts(command).issubset(plant_starts)
     assert _nonzero_pulse_starts(sensory).issubset(controller_visible_starts)
-    assert _nonzero_pulse_starts(delayed).issubset(controller_visible_starts)
+    assert not _nonzero_pulse_starts(delayed)
     assert _max_nonzero_pulse_width(sensory) <= 5
-    assert _max_nonzero_pulse_width(delayed) <= 5
     assert hps.perturbation_training.mode == CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE
 
 
@@ -1651,7 +1657,7 @@ def test_calibrated_movement_age_timing_preserves_undelayed_starts() -> None:
     assert hps.perturbation_training.timing_basis.mode == "movement_age"
     assert _nonzero_pulse_starts(command).issubset({5, 15, 35})
     assert _nonzero_pulse_starts(sensory).issubset({10, 20, 40})
-    assert _nonzero_pulse_starts(delayed).issubset({10, 20, 40})
+    assert not _nonzero_pulse_starts(delayed)
 
 
 def test_calibrated_movement_age_timing_shifts_by_delayed_go_cue() -> None:
@@ -1684,7 +1690,7 @@ def test_calibrated_movement_age_timing_shifts_by_delayed_go_cue() -> None:
     assert _nonzero_pulse_start_offsets(process_delta, go_steps).issubset({0, 5, 15, 35})
     assert _nonzero_pulse_start_offsets(command, go_steps).issubset({5, 15, 35})
     assert _nonzero_pulse_start_offsets(sensory, go_steps).issubset({10, 20, 40})
-    assert _nonzero_pulse_start_offsets(delayed, go_steps).issubset({10, 20, 40})
+    assert not _nonzero_pulse_start_offsets(delayed, go_steps)
     _assert_no_prep_pulse_support(process_delta, go_steps)
     _assert_no_prep_pulse_support(command, go_steps)
     _assert_no_prep_pulse_support(sensory, go_steps)
@@ -1799,6 +1805,8 @@ def test_calibrated_timing_sampler_consumes_calibrated_amplitudes() -> None:
         _unique_abs_nonzero(sensory_bin.inputs[GRAPH_ADAPTER_SPECS["sensory_feedback"].input_key]),
         sensory_expected,
     )
+    assert "delayed_observation" not in VALIDATION_BINS
+    assert "delayed_observation" not in hps.perturbation_training.single_family_bins
     delayed_bin = apply_validation_bin(base, hps.perturbation_training, "delayed_observation")
     _assert_values_close_to_expected(
         _unique_abs_nonzero(
@@ -1887,12 +1895,11 @@ def test_calibrated_timing_run_spec_exposes_family_timing_bins(tmp_path: Path) -
     assert timing["process_epsilon"]["start_time_indices"] == [5, 15, 35]
     assert timing["command_input"]["start_time_indices"] == [5, 15, 35]
     assert timing["sensory_feedback"]["start_time_indices"] == [10, 20, 40]
-    assert timing["delayed_observation"]["start_time_indices"] == [10, 20, 40]
     assert timing["initial_position"]["start_time_indices"] == [0]
-    assert (
-        "not literal extra temporal delay"
-        in (hps_config["timing_bins"]["controller_visible"]["delayed_observation_semantics"])
-    )
+    assert "delayed_observation" not in timing
+    assert "delayed_observation" not in hps_config["validation_bins"]
+    assert "delayed_observation" not in hps_config["families"]
+    assert hps_config["inactive_legacy_bins"]["bins"] == ["delayed_observation"]
     assert (
         hps_config["mixture_semantics"]["calibrated_levels"]["amplitude_wiring_status"]
         == "wired_in_sampler_when_calibrated_timing_true"
@@ -2076,6 +2083,8 @@ def test_target_relative_multitarget_setup_uses_target_input_and_anchor() -> Non
         and row["checkpoint_selection"] == "excluded_unless_comparator_defined"
         for row in manifest["bins"]
     )
+    assert all(row["bin"] != "delayed_observation_offsets" for row in manifest["bins"])
+    assert all("delayed_observation" not in row.get("families", ()) for row in manifest["bins"])
     perturbation_bins = [
         row for row in manifest["bins"] if row["target_role"] == "seen_and_held_out_static_targets"
     ]

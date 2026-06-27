@@ -92,7 +92,6 @@ def test_default_bank_is_json_serializable_with_required_channels() -> None:
         "command_input",
         "process_epsilon",
         "sensory_feedback",
-        "delayed_observation",
         "target_stream",
     }
     assert decoded["graphspec_alignment"]["named_channels"] == [
@@ -100,7 +99,6 @@ def test_default_bank_is_json_serializable_with_required_channels() -> None:
         "command_input",
         "process_epsilon",
         "sensory_feedback",
-        "delayed_observation",
         "target_stream",
     ]
     assert "plant_force" in decoded["legacy_migration"]
@@ -142,7 +140,7 @@ def test_default_bank_is_json_serializable_with_required_channels() -> None:
         row["channel_provenance"]["target_relative_axis_role"] == "tangential"
         for row in lateral_rows
     )
-    assert len(decoded["perturbations"]) == 147
+    assert len(decoded["perturbations"]) == 111
 
 
 def test_default_bank_emits_timing_bin_specific_rows() -> None:
@@ -171,19 +169,12 @@ def test_default_bank_emits_timing_bin_specific_rows() -> None:
     sensory_rows = [row for row in rows if row["family"] == "sensory_feedback_offset"]
     delayed_rows = [row for row in rows if row["family"] == "delayed_observation_offset"]
     assert len(sensory_rows) == 36
-    assert len(delayed_rows) == 36
+    assert delayed_rows == []
+    assert not any(row["channel"] == "delayed_observation" for row in rows)
     assert {
         (row["timing_bin"], row["timing"]["start_time_index"], row["timing"]["duration_steps"])
         for row in sensory_rows
     } == {("early_visible", 10, 5), ("mid_visible", 20, 5), ("late_visible", 40, 5)}
-    assert {
-        (row["timing_bin"], row["timing"]["start_time_index"], row["timing"]["duration_steps"])
-        for row in delayed_rows
-    } == {("early_visible", 10, 5), ("mid_visible", 20, 5), ("late_visible", 40, 5)}
-    assert {row["channel"] for row in delayed_rows} == {"delayed_observation"}
-    assert {row["semantic_family"] for row in delayed_rows} == {
-        "pre_noise_delayed_measurement_offset"
-    }
     assert {
         (
             row["channel_provenance"]["feedback_quantity"],
@@ -207,10 +198,10 @@ def test_default_bank_emits_timing_bin_specific_rows() -> None:
     }
     force_filter_rows = [
         row
-        for row in sensory_rows + delayed_rows
+        for row in sensory_rows
         if row["channel_provenance"]["feedback_quantity"] == "force_filter"
     ]
-    assert len(force_filter_rows) == 24
+    assert len(force_filter_rows) == 12
     assert {row["units"] for row in force_filter_rows} == {"N"}
     assert {row["channel_provenance"]["feedback_payload_index"] for row in force_filter_rows} == {
         4,
@@ -219,9 +210,6 @@ def test_default_bank_emits_timing_bin_specific_rows() -> None:
     assert all(
         row["channel_provenance"]["force_filter_feedback_only"] is True
         for row in force_filter_rows
-    )
-    assert all(
-        row["channel_provenance"]["not_literal_extra_delay"] is True for row in delayed_rows
     )
 
     initial_rows = [row for row in rows if row["channel"] == "initial_state"]
@@ -285,11 +273,10 @@ def test_calibrated_bank_includes_force_filter_feedback_rows() -> None:
     force_filter_rows = [
         row for row in rows if row.get("feedback_quantity") == "force_filter"
     ]
-    assert len(force_filter_rows) == 24
-    assert {row["channel"] for row in force_filter_rows} == {
-        "sensory_feedback",
-        "delayed_observation",
-    }
+    assert len(force_filter_rows) == 12
+    assert {row["channel"] for row in force_filter_rows} == {"sensory_feedback"}
+    assert not any(row["channel"] == "delayed_observation" for row in rows)
+    assert not any(row["family"] == "delayed_observation_offset" for row in rows)
     assert {row["units"] for row in force_filter_rows} == {"N"}
     assert {row["feedback_payload_index"] for row in force_filter_rows} == {4, 5}
     assert all(row["force_filter_feedback_only"] is True for row in force_filter_rows)
@@ -836,6 +823,51 @@ def test_extlqg_6d_context_skips_8d_only_process_epsilon_rows() -> None:
     assert result["status"] == "not_applicable"
     assert "epsilon_index 6" in result["reason"]
     assert "6 process disturbance dimensions" in result["reason"]
+
+
+def test_extlqg_observation_offset_flips_target_relative_position_and_velocity() -> None:
+    position_perturbation = {
+        "perturbation_id": "sensory_feedback_offset__position_small__early_t10_x_pos",
+        "channel": "sensory_feedback",
+        "family": "sensory_feedback_offset",
+        "amplitude": 0.25,
+        "axis": "x",
+        "sign": 1,
+        "timing": {"start_time_index": 1, "duration_steps": 2},
+        "channel_provenance": {
+            "feedback_quantity": "position",
+            "feedback_payload_index": 0,
+        },
+    }
+    velocity_perturbation = {
+        **position_perturbation,
+        "perturbation_id": "sensory_feedback_offset__velocity_small__early_t10_vx_neg",
+        "amplitude": 0.5,
+        "axis": "vx",
+        "sign": -1,
+        "channel_provenance": {
+            "feedback_quantity": "velocity",
+            "feedback_payload_index": 2,
+        },
+    }
+
+    position_offset = perturbation_bank._extlqg_observation_offset(
+        position_perturbation,
+        horizon=5,
+        observation_dim=6,
+    )
+    velocity_offset = perturbation_bank._extlqg_observation_offset(
+        velocity_perturbation,
+        horizon=5,
+        observation_dim=6,
+    )
+
+    np.testing.assert_allclose(np.asarray(position_offset)[1:3, 0], -0.25)
+    np.testing.assert_allclose(np.asarray(position_offset)[:1], 0.0)
+    np.testing.assert_allclose(np.asarray(position_offset)[3:], 0.0)
+    np.testing.assert_allclose(np.asarray(velocity_offset)[1:3, 2], 0.5)
+    np.testing.assert_allclose(np.asarray(velocity_offset)[:, :2], 0.0)
+    np.testing.assert_allclose(np.asarray(velocity_offset)[:, 3:], 0.0)
 
 
 def test_extlqg_observation_offset_uses_force_filter_feedback_payload_index() -> None:

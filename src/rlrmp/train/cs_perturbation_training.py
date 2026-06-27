@@ -90,6 +90,8 @@ PerturbationBin = Literal[
     "mild_combined",
 ]
 
+INACTIVE_LEGACY_PERTURBATION_BINS: tuple[PerturbationBin, ...] = ("delayed_observation",)
+
 VALIDATION_BINS: tuple[PerturbationBin, ...] = (
     "nominal",
     "initial_position",
@@ -97,7 +99,6 @@ VALIDATION_BINS: tuple[PerturbationBin, ...] = (
     "process_epsilon",
     "command_input",
     "sensory_feedback",
-    "delayed_observation",
     "mild_combined",
 )
 
@@ -107,19 +108,14 @@ SINGLE_FAMILY_BINS: tuple[PerturbationBin, ...] = (
     "process_epsilon",
     "command_input",
     "sensory_feedback",
-    "delayed_observation",
 )
 
 GRAPH_CHANNEL_BINS: tuple[PerturbationBin, ...] = (
     "command_input",
     "sensory_feedback",
-    "delayed_observation",
 )
 PLANT_TIMED_BINS: tuple[PerturbationBin, ...] = ("process_epsilon", "command_input")
-CONTROLLER_VISIBLE_TIMED_BINS: tuple[PerturbationBin, ...] = (
-    "sensory_feedback",
-    "delayed_observation",
-)
+CONTROLLER_VISIBLE_TIMED_BINS: tuple[PerturbationBin, ...] = ("sensory_feedback",)
 REACH_RELATIVE_LEVELS: dict[str, float] = {
     level.name: float(level.fraction_of_reach) for level in DEFAULT_REACH_RELATIVE_LEVELS
 }
@@ -734,6 +730,16 @@ def graph_adapter_specs(
     }
 
 
+def active_graph_adapter_specs(
+    *,
+    force_filter_feedback: bool = False,
+) -> dict[PerturbationBin, AdditiveGraphChannelAdapterSpec]:
+    """Return graph adapters for active final-bank perturbation families."""
+
+    specs = graph_adapter_specs(force_filter_feedback=force_filter_feedback)
+    return {bin_name: specs[bin_name] for bin_name in GRAPH_CHANNEL_BINS}
+
+
 def _widen_controller_visible_adapter(
     spec: AdditiveGraphChannelAdapterSpec,
 ) -> AdditiveGraphChannelAdapterSpec:
@@ -853,7 +859,7 @@ class FixedTargetPerturbationTrainingConfig:
                         spec.payload_shape[-1] if spec.payload_shape else None,
                     ),
                 }
-                for bin_name, spec in graph_adapter_specs(
+                for bin_name, spec in active_graph_adapter_specs(
                     force_filter_feedback=self.force_filter_feedback
                 ).items()
             },
@@ -862,6 +868,15 @@ class FixedTargetPerturbationTrainingConfig:
             "eval_only_physical_levels": list(EVAL_ONLY_REACH_RELATIVE_LEVELS),
             "single_family_bins": list(SINGLE_FAMILY_BINS),
             "validation_bins": list(VALIDATION_BINS),
+            "inactive_legacy_bins": {
+                "bins": list(INACTIVE_LEGACY_PERTURBATION_BINS),
+                "reason": (
+                    "delayed_observation offsets are redundant with sensory_feedback "
+                    "offsets in the current sensory stage and are not sampled or "
+                    "validated in the active final perturbation bank"
+                ),
+                "adapter_support": "preserved_for_legacy_manifests",
+            },
             "families": {
                 "initial_position": {
                     "channel": "initial_state",
@@ -893,12 +908,6 @@ class FixedTargetPerturbationTrainingConfig:
                     "amplitude": self.sensory_feedback_offset_m,
                     "units": "m_or_m_s_channel_units",
                 },
-                "delayed_observation": {
-                    "channel": "delayed_observation",
-                    "family": "delayed_observation_offset",
-                    "amplitude": self.delayed_observation_offset_m,
-                    "units": "m_or_m_s_channel_units",
-                },
             },
             "pulse": {
                 "start_step": self.pulse_start_step,
@@ -920,7 +929,9 @@ class FixedTargetPerturbationTrainingConfig:
         payload = self.to_hps_dict()
         payload["graph_adapter_inputs"] = {
             bin_name: additive_channel_provenance(
-                graph_adapter_specs(force_filter_feedback=self.force_filter_feedback)[bin_name],
+                active_graph_adapter_specs(force_filter_feedback=self.force_filter_feedback)[
+                    bin_name
+                ],
                 adapter="feedbax.additive_channel_adapter",
             )
             for bin_name in GRAPH_CHANNEL_BINS
@@ -1425,10 +1436,13 @@ def calibrated_timing_bins_manifest(movement_age_timing: bool = False) -> dict[s
         "controller_visible": {
             "families": list(CONTROLLER_VISIBLE_TIMED_BINS),
             "bins": visible_bins,
-            "delayed_observation_semantics": (
-                "offset to clean delayed measurement before sensory noise, not literal "
-                "extra temporal delay"
-            ),
+            "inactive_legacy_families": {
+                "families": list(INACTIVE_LEGACY_PERTURBATION_BINS),
+                "reason": (
+                    "delayed_observation offsets duplicate sensory_feedback offsets in "
+                    "the current sensory stage and are excluded from active training bins"
+                ),
+            },
         },
         "family_timing_bins": {
             "initial_position": {
@@ -1568,6 +1582,7 @@ def perturbation_training_mixture_semantics(
         },
         "single_family_bins": list(SINGLE_FAMILY_BINS),
         "mild_combined_families": list(MILD_COMBINED_FAMILIES),
+        "inactive_legacy_bins": list(INACTIVE_LEGACY_PERTURBATION_BINS),
         "amplitude_levels": list(AMPLITUDE_LEVELS),
         "families": {
             "initial_position": {
@@ -1670,30 +1685,6 @@ def perturbation_training_mixture_semantics(
                 ),
                 "randomized": [
                     "feedback_component",
-                    "timing_bin" if config.calibrated_timing else "start_time",
-                    "sign",
-                    "physical_level" if config.calibrated_timing else "amplitude_level",
-                ],
-                "duration_steps": (
-                    int(config.pulse_duration_steps) if config.calibrated_timing else "full_trial"
-                ),
-            },
-            "delayed_observation": {
-                "base_amplitude": float(config.delayed_observation_offset_m),
-                "units": "m_or_m_s_channel_units",
-                "emission": (
-                    "add an offset pulse on one random 4D delayed-observation component; "
-                    "calibrated timing mode uses controller-visible 5-step bins. "
-                    "This is an offset to clean delayed measurement before sensory "
-                    "noise, not literal extra temporal delay"
-                    if config.calibrated_timing
-                    else (
-                        "add an offset pulse on one random 4D delayed-observation "
-                        "component; current training uses full-trial duration"
-                    )
-                ),
-                "randomized": [
-                    "observation_component",
                     "timing_bin" if config.calibrated_timing else "start_time",
                     "sign",
                     "physical_level" if config.calibrated_timing else "amplitude_level",
@@ -2566,8 +2557,7 @@ def apply_training_perturbation_mixture(
         key_process,
         key_command,
         key_sensory,
-        key_delayed,
-    ) = jr.split(key, 8)
+    ) = jr.split(key, 7)
     mixture = jr.uniform(key_mix, batch_shape)
     single_mask = (
         (mixture >= float(cfg.nominal_fraction))
@@ -2660,13 +2650,6 @@ def apply_training_perturbation_mixture(
             active_mask=single_mask * _family_mask(family_index, "sensory_feedback"),
             key=key_sensory,
         )
-        trial_specs = _add_graph_channel_calibrated_random_pulse(
-            trial_specs,
-            cfg,
-            specs["delayed_observation"],
-            active_mask=single_mask * _family_mask(family_index, "delayed_observation"),
-            key=key_delayed,
-        )
     else:
         trial_specs = _offset_initial_random_components(
             trial_specs,
@@ -2713,14 +2696,6 @@ def apply_training_perturbation_mixture(
             duration=trial_specs.timeline.n_steps,
             key=key_sensory,
         )
-        trial_specs = _add_graph_channel_random_pulse(
-            trial_specs,
-            specs["delayed_observation"],
-            base_amount=cfg.delayed_observation_offset_m,
-            active_mask=single_mask * _family_mask(family_index, "delayed_observation"),
-            duration=trial_specs.timeline.n_steps,
-            key=key_delayed,
-        )
     # Train trials are produced inside Feedbax's vmap'd training step, so their
     # PyTree leaves must be JAX values. Keep string/list provenance in run specs
     # and validation sidecars rather than returning it through this dynamic path.
@@ -2764,7 +2739,7 @@ def apply_validation_bin(
             families=("initial_position", "command_input"),
             force_filter_feedback=cfg.force_filter_feedback,
         )
-    if bin_name not in SINGLE_FAMILY_BINS:
+    if bin_name not in (*SINGLE_FAMILY_BINS, *INACTIVE_LEGACY_PERTURBATION_BINS):
         raise ValueError(f"Unknown perturbation validation bin {bin_name!r}.")
     return _apply_single_bin(trial_specs, cfg, bin_name, 1.0)
 
@@ -2874,12 +2849,6 @@ def target_relative_validation_bins(
             "families": ["sensory_feedback"],
         },
         {
-            "bin": "delayed_observation_offsets",
-            "target_role": "seen_and_held_out_static_targets",
-            "targets_m": [list(row) for row in seen_held_out_targets],
-            "families": ["delayed_observation"],
-        },
-        {
             "bin": "process_load_epsilon",
             "target_role": "seen_and_held_out_static_targets",
             "targets_m": [list(row) for row in seen_held_out_targets],
@@ -2951,7 +2920,8 @@ def target_relative_perturbation_emphasis() -> dict[str, Any]:
     return {
         "nominal_multitarget_fraction": [0.50, 0.70],
         "initial_position_velocity_fraction": [0.10, 0.20],
-        "sensory_or_delayed_observation_fraction": [0.10, 0.20],
+        "sensory_feedback_fraction": [0.10, 0.20],
+        "inactive_legacy_families": list(INACTIVE_LEGACY_PERTURBATION_BINS),
         "process_or_load_fraction": [0.05, 0.15],
         "command_input": "optional_diagnostic_only",
     }

@@ -27,8 +27,8 @@
     "reach_length_m": 0.15
   },
   "coverage": {
-    "evaluated_gru_rows": 146,
-    "extlqg_available_rows": 134,
+    "evaluated_gru_rows": 110,
+    "extlqg_available_rows": 98,
     "extlqg_blocked_rows": 0,
     "extlqg_not_applicable_rows": 12
   },
@@ -60,45 +60,6 @@
       ],
       "title": "command input / target aligned lateral command load pulse / tangential",
       "trajectory_html": "_artifacts/3244f1a/figures/final_calibrated_bank_profiles/small/command_input__target_aligned_lateral_command_load_pulse__tangential__trajectory.html"
-    },
-    {
-      "extlqg_available_rows": 12,
-      "group_key": "delayed_observation__delayed_observation_offset__force_filter",
-      "n_rows": 12,
-      "residual_html": "_artifacts/3244f1a/figures/final_calibrated_bank_profiles/small/delayed_observation__delayed_observation_offset__force_filter__residual.html",
-      "timing_bins": [
-        "early_visible",
-        "mid_visible",
-        "late_visible"
-      ],
-      "title": "delayed observation / delayed observation offset / force filter",
-      "trajectory_html": "_artifacts/3244f1a/figures/final_calibrated_bank_profiles/small/delayed_observation__delayed_observation_offset__force_filter__trajectory.html"
-    },
-    {
-      "extlqg_available_rows": 12,
-      "group_key": "delayed_observation__delayed_observation_offset__position",
-      "n_rows": 12,
-      "residual_html": "_artifacts/3244f1a/figures/final_calibrated_bank_profiles/small/delayed_observation__delayed_observation_offset__position__residual.html",
-      "timing_bins": [
-        "early_visible",
-        "mid_visible",
-        "late_visible"
-      ],
-      "title": "delayed observation / delayed observation offset / position",
-      "trajectory_html": "_artifacts/3244f1a/figures/final_calibrated_bank_profiles/small/delayed_observation__delayed_observation_offset__position__trajectory.html"
-    },
-    {
-      "extlqg_available_rows": 12,
-      "group_key": "delayed_observation__delayed_observation_offset__velocity",
-      "n_rows": 12,
-      "residual_html": "_artifacts/3244f1a/figures/final_calibrated_bank_profiles/small/delayed_observation__delayed_observation_offset__velocity__residual.html",
-      "timing_bins": [
-        "early_visible",
-        "mid_visible",
-        "late_visible"
-      ],
-      "title": "delayed observation / delayed observation offset / velocity",
-      "trajectory_html": "_artifacts/3244f1a/figures/final_calibrated_bank_profiles/small/delayed_observation__delayed_observation_offset__velocity__trajectory.html"
     },
     {
       "extlqg_available_rows": 4,

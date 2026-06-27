@@ -73,12 +73,12 @@
       "metadata": {
         "exists": true,
         "kind": "file",
-        "sha256": "4de876b9f712c684bca1d989ac6c8b9bd1b05220fc960b79eb6c8e7ab843ffc7",
-        "size_bytes": 340229
+        "sha256": "f1ccdb7c2da6bd5f7e604b7996d9bf574cc7bb0f53c8df398b495091944c3f37",
+        "size_bytes": 231959
       },
       "role": "perturbation_response_manifest",
-      "sha256": "4de876b9f712c684bca1d989ac6c8b9bd1b05220fc960b79eb6c8e7ab843ffc7",
-      "size_bytes": 340229,
+      "sha256": "f1ccdb7c2da6bd5f7e604b7996d9bf574cc7bb0f53c8df398b495091944c3f37",
+      "size_bytes": 231959,
       "storage_backend": "feedbax-local",
       "uri": "repo://results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_small_manifest.json"
     },
@@ -88,12 +88,12 @@
       "metadata": {
         "exists": true,
         "kind": "file",
-        "sha256": "59c8d998a627a20f5e76ebac663f07d6e592a0121b6a1fd05a49ac768d72d914",
-        "size_bytes": 16506
+        "sha256": "d5b144a3bee23b4932b3cf04599fd9376a26cd5897ddc2c7775b07b298ad58b5",
+        "size_bytes": 14424
       },
       "role": "perturbation_response_note",
-      "sha256": "59c8d998a627a20f5e76ebac663f07d6e592a0121b6a1fd05a49ac768d72d914",
-      "size_bytes": 16506,
+      "sha256": "d5b144a3bee23b4932b3cf04599fd9376a26cd5897ddc2c7775b07b298ad58b5",
+      "size_bytes": 14424,
       "storage_backend": "feedbax-local",
       "uri": "repo://results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_small.md"
     },
@@ -102,12 +102,12 @@
       "media_type": "application/octet-stream",
       "metadata": {
         "exists": true,
-        "file_count": 147,
-        "hash_file_count": 147,
+        "file_count": 111,
+        "hash_file_count": 111,
         "hash_truncated": false,
         "kind": "directory",
-        "sample_tree_sha256": "4c7ac0a90c7f97c1acf01f77d9efa032eea1d4723ca8780fab5363199e47da95",
-        "total_bytes": 56658940
+        "sample_tree_sha256": "fe3ff6acc04064b40da12ff41f009efee99959c3118d1f167f94a2485c5e47c5",
+        "total_bytes": 43112323
       },
       "role": "perturbation_response_bulk_dir",
       "storage_backend": "feedbax-local",
@@ -119,12 +119,12 @@
       "metadata": {
         "exists": true,
         "kind": "file",
-        "sha256": "4e680fe9101a75bf120a843b7844d263273fe2f86da7811942b69ad8452e22f5",
-        "size_bytes": 8987642
+        "sha256": "82d72e3f20d499b68f8bca909b2ecf76645563fdde305dbfa0174a003c221788",
+        "size_bytes": 7154789
       },
       "role": "perturbation_response_detail_manifest",
-      "sha256": "4e680fe9101a75bf120a843b7844d263273fe2f86da7811942b69ad8452e22f5",
-      "size_bytes": 8987642,
+      "sha256": "82d72e3f20d499b68f8bca909b2ecf76645563fdde305dbfa0174a003c221788",
+      "size_bytes": 7154789,
       "storage_backend": "feedbax-local",
       "uri": "repo://_artifacts/3244f1a/perturbation_response/gru_targetsupport_const_band16_calibrated_small/gru_perturbation_response_const_band16_calibrated_small_manifest_detail.json"
     }
@@ -160,13 +160,26 @@
     "issues": [],
     "metadata": {
       "status_porcelain": [
-        "M results/3244f1a/notes/gru_evaluation_diagnostics_const_band16_validation_selected_regeneration_spec.json",
-        " M results/3244f1a/scripts/materialize_final_small_bank_profiles.py"
+        "M results/3244f1a/figures/final_calibrated_bank_profiles/medium/spec.json",
+        " M results/3244f1a/figures/final_calibrated_bank_profiles/small/spec.json",
+        " M results/3244f1a/notes/final_calibrated_bank_profile_figures.md",
+        " M results/3244f1a/notes/gru_evaluation_diagnostics_const_band16_validation_selected_regeneration_spec.json",
+        " M results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_moderate.md",
+        " M results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_moderate_manifest.json",
+        " M results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_moderate_manifest_regeneration_spec.json",
+        " M results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_small.md",
+        " M results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_small_manifest.json",
+        " M results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_small_manifest_regeneration_spec.json",
+        " M src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+        " M src/rlrmp/train/cs_nominal_gru.py",
+        " M src/rlrmp/train/cs_perturbation_training.py",
+        " M tests/test_cs_nominal_gru.py",
+        " M tests/test_gru_perturbation_response.py"
       ]
     },
     "parents": [],
     "source_branch": "feature/3244f1a-final-small-bank",
-    "source_commit": "7e7fd4d97b9b201e7c6fec632d8c4ff88bf80c28",
+    "source_commit": "d570c59ad2ba80ed4e91a9795c8f5a30783ecadc",
     "source_repo": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__3244f1a-final-small-bank"
   },
   "schema_id": "feedbax.spec.regeneration",
@@ -176,8 +189,8 @@
       "metadata": {},
       "path": "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
       "role": "source_file",
-      "sha256": "3e60092e919109c5742a09a80e2cc3da3e8d52e60541b0b5f2627a8a3e8fc91c",
-      "size_bytes": 212093
+      "sha256": "6183bfa0fa5db0be2a2e2da9fe0e57733666edd4958bae4b4144379e2af14997",
+      "size_bytes": 211185
     },
     {
       "metadata": {},
