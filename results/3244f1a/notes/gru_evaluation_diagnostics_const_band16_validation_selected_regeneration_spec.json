@@ -112,22 +112,12 @@
     "issues": [],
     "metadata": {
       "status_porcelain": [
-        "M .issue",
-        " M scripts/materialize_gru_perturbation_response.py",
-        " M src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
-        " M tests/test_gru_perturbation_response.py",
-        "?? results/3244f1a/figures/final_small_bank_profiles/spec.json",
-        "?? results/3244f1a/notes/final_small_bank_profile_figures.md",
-        "?? results/3244f1a/notes/gru_evaluation_diagnostics_const_band16_validation_selected_regeneration_spec.json",
-        "?? results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_small.md",
-        "?? results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_small_manifest.json",
-        "?? results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_small_manifest_regeneration_spec.json",
-        "?? results/3244f1a/scripts/materialize_final_small_bank_profiles.py"
+        "M results/3244f1a/scripts/materialize_final_small_bank_profiles.py"
       ]
     },
     "parents": [],
     "source_branch": "feature/3244f1a-final-small-bank",
-    "source_commit": "7d712529ab674d49b0005df75da0faac57c59802",
+    "source_commit": "7e7fd4d97b9b201e7c6fec632d8c4ff88bf80c28",
     "source_repo": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__3244f1a-final-small-bank"
   },
   "schema_id": "feedbax.spec.regeneration",

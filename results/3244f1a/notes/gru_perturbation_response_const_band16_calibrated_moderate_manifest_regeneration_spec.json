@@ -68,37 +68,37 @@
   },
   "outputs": [
     {
-      "logical_name": "results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_small_manifest.json",
+      "logical_name": "results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_moderate_manifest.json",
       "media_type": "application/json",
       "metadata": {
         "exists": true,
         "kind": "file",
-        "sha256": "4de876b9f712c684bca1d989ac6c8b9bd1b05220fc960b79eb6c8e7ab843ffc7",
-        "size_bytes": 340229
+        "sha256": "e5e84eb45b0fce3bfbedeacab4e57ec2572a94ad8a818802b35182572796bb9b",
+        "size_bytes": 342141
       },
       "role": "perturbation_response_manifest",
-      "sha256": "4de876b9f712c684bca1d989ac6c8b9bd1b05220fc960b79eb6c8e7ab843ffc7",
-      "size_bytes": 340229,
+      "sha256": "e5e84eb45b0fce3bfbedeacab4e57ec2572a94ad8a818802b35182572796bb9b",
+      "size_bytes": 342141,
       "storage_backend": "feedbax-local",
-      "uri": "repo://results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_small_manifest.json"
+      "uri": "repo://results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_moderate_manifest.json"
     },
     {
-      "logical_name": "results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_small.md",
+      "logical_name": "results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_moderate.md",
       "media_type": "text/markdown",
       "metadata": {
         "exists": true,
         "kind": "file",
-        "sha256": "59c8d998a627a20f5e76ebac663f07d6e592a0121b6a1fd05a49ac768d72d914",
-        "size_bytes": 16506
+        "sha256": "ae2f85a6b3dbaf9cd21ccf4e08d8114a7e564294221d3384786675832a84c52a",
+        "size_bytes": 16414
       },
       "role": "perturbation_response_note",
-      "sha256": "59c8d998a627a20f5e76ebac663f07d6e592a0121b6a1fd05a49ac768d72d914",
-      "size_bytes": 16506,
+      "sha256": "ae2f85a6b3dbaf9cd21ccf4e08d8114a7e564294221d3384786675832a84c52a",
+      "size_bytes": 16414,
       "storage_backend": "feedbax-local",
-      "uri": "repo://results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_small.md"
+      "uri": "repo://results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_moderate.md"
     },
     {
-      "logical_name": "_artifacts/3244f1a/perturbation_response/gru_targetsupport_const_band16_calibrated_small",
+      "logical_name": "_artifacts/3244f1a/perturbation_response/gru_targetsupport_const_band16_calibrated_moderate",
       "media_type": "application/octet-stream",
       "metadata": {
         "exists": true,
@@ -106,33 +106,33 @@
         "hash_file_count": 147,
         "hash_truncated": false,
         "kind": "directory",
-        "sample_tree_sha256": "4c7ac0a90c7f97c1acf01f77d9efa032eea1d4723ca8780fab5363199e47da95",
-        "total_bytes": 56658940
+        "sample_tree_sha256": "6eeda474bcfe7b304bf0b0461bfbe0633d8a62500b5c09051c1f4ad308988da3",
+        "total_bytes": 56984094
       },
       "role": "perturbation_response_bulk_dir",
       "storage_backend": "feedbax-local",
-      "uri": "repo://_artifacts/3244f1a/perturbation_response/gru_targetsupport_const_band16_calibrated_small"
+      "uri": "repo://_artifacts/3244f1a/perturbation_response/gru_targetsupport_const_band16_calibrated_moderate"
     },
     {
-      "logical_name": "_artifacts/3244f1a/perturbation_response/gru_targetsupport_const_band16_calibrated_small/gru_perturbation_response_const_band16_calibrated_small_manifest_detail.json",
+      "logical_name": "_artifacts/3244f1a/perturbation_response/gru_targetsupport_const_band16_calibrated_moderate/gru_perturbation_response_const_band16_calibrated_moderate_manifest_detail.json",
       "media_type": "application/json",
       "metadata": {
         "exists": true,
         "kind": "file",
-        "sha256": "4e680fe9101a75bf120a843b7844d263273fe2f86da7811942b69ad8452e22f5",
-        "size_bytes": 8987642
+        "sha256": "68fb9da76445c203ebe860abec6062661ad6f652c1b7542eb18b2a03a8ea0cff",
+        "size_bytes": 8976346
       },
       "role": "perturbation_response_detail_manifest",
-      "sha256": "4e680fe9101a75bf120a843b7844d263273fe2f86da7811942b69ad8452e22f5",
-      "size_bytes": 8987642,
+      "sha256": "68fb9da76445c203ebe860abec6062661ad6f652c1b7542eb18b2a03a8ea0cff",
+      "size_bytes": 8976346,
       "storage_backend": "feedbax-local",
-      "uri": "repo://_artifacts/3244f1a/perturbation_response/gru_targetsupport_const_band16_calibrated_small/gru_perturbation_response_const_band16_calibrated_small_manifest_detail.json"
+      "uri": "repo://_artifacts/3244f1a/perturbation_response/gru_targetsupport_const_band16_calibrated_moderate/gru_perturbation_response_const_band16_calibrated_moderate_manifest_detail.json"
     }
   ],
   "parameters": {
     "bank_mode": "calibrated",
     "calibration_level": [
-      "small"
+      "moderate"
     ],
     "calibration_reach": 0.15,
     "checkpoint_selection_mode": "sparse_history",
@@ -161,7 +161,11 @@
     "metadata": {
       "status_porcelain": [
         "M results/3244f1a/notes/gru_evaluation_diagnostics_const_band16_validation_selected_regeneration_spec.json",
-        " M results/3244f1a/scripts/materialize_final_small_bank_profiles.py"
+        " M results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_small_manifest_regeneration_spec.json",
+        " M results/3244f1a/scripts/materialize_final_small_bank_profiles.py",
+        "?? results/3244f1a/figures/final_calibrated_bank_profiles/small/spec.json",
+        "?? results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_moderate.md",
+        "?? results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_moderate_manifest.json"
       ]
     },
     "parents": [],

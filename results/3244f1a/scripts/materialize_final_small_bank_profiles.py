@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Materialize final-small perturbation-bank profile figures for issue 3244f1a."""
+"""Materialize calibrated perturbation-bank profile figures for issue 3244f1a."""
 
 from __future__ import annotations
 
@@ -37,22 +37,27 @@ DT = 0.01
 
 NOTES_DIR = REPO_ROOT / "results" / ISSUE / "notes"
 SCRIPTS_DIR = REPO_ROOT / "results" / ISSUE / "scripts"
-FIGURE_SPEC_DIR = REPO_ROOT / "results" / ISSUE / "figures" / "final_small_bank_profiles"
-FIGURE_BULK_DIR = REPO_ROOT / "_artifacts" / ISSUE / "figures" / "final_small_bank_profiles"
+FIGURE_SPEC_ROOT = REPO_ROOT / "results" / ISSUE / "figures" / "final_calibrated_bank_profiles"
+FIGURE_BULK_ROOT = REPO_ROOT / "_artifacts" / ISSUE / "figures" / "final_calibrated_bank_profiles"
 EVAL_BULK_DIR = REPO_ROOT / "_artifacts" / ISSUE / "evaluation_diagnostics"
-PERT_BULK_DIR = (
-    REPO_ROOT
-    / "_artifacts"
-    / ISSUE
-    / "perturbation_response"
-    / "gru_targetsupport_const_band16_calibrated_small"
-)
+PERT_BULK_ROOT = REPO_ROOT / "_artifacts" / ISSUE / "perturbation_response"
 
 EVAL_MANIFEST = NOTES_DIR / "gru_evaluation_diagnostics_const_band16_validation_selected.json"
-PERT_MANIFEST = NOTES_DIR / "gru_perturbation_response_const_band16_calibrated_small_manifest.json"
-PERT_NOTE = NOTES_DIR / "gru_perturbation_response_const_band16_calibrated_small.md"
-PROFILE_NOTE = NOTES_DIR / "final_small_bank_profile_figures.md"
-FIGURE_SPEC = FIGURE_SPEC_DIR / "spec.json"
+PROFILE_NOTE = NOTES_DIR / "final_calibrated_bank_profile_figures.md"
+FIGURE_README = FIGURE_SPEC_ROOT / "README.md"
+
+LEVEL_CONFIGS = {
+    "small": {
+        "display": "small",
+        "bank_level": "small",
+        "fraction_of_reach": 0.05,
+    },
+    "medium": {
+        "display": "medium",
+        "bank_level": "moderate",
+        "fraction_of_reach": 0.10,
+    },
+}
 
 SOURCE_COLORS = {
     "gru": "#2563eb",
@@ -83,15 +88,21 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--skip-materialization", action="store_true")
     parser.add_argument("--n-rollout-trials", type=int, default=N_ROLLOUT_TRIALS)
+    parser.add_argument(
+        "--level",
+        action="append",
+        choices=tuple(LEVEL_CONFIGS),
+        dest="levels",
+        help="Figure/data level to materialize. Defaults to small and medium.",
+    )
     args = parser.parse_args()
+    level_keys = tuple(args.levels or ("small", "medium"))
 
     NOTES_DIR.mkdir(parents=True, exist_ok=True)
-    FIGURE_SPEC_DIR.mkdir(parents=True, exist_ok=True)
-    FIGURE_BULK_DIR.mkdir(parents=True, exist_ok=True)
+    FIGURE_SPEC_ROOT.mkdir(parents=True, exist_ok=True)
+    FIGURE_BULK_ROOT.mkdir(parents=True, exist_ok=True)
 
-    if args.skip_materialization and PERT_MANIFEST.exists():
-        manifest = _read_json(PERT_MANIFEST)
-    else:
+    if not args.skip_materialization or not EVAL_MANIFEST.exists():
         materialize_gru_evaluation_diagnostics(
             experiment=SOURCE_EXPERIMENT,
             run_ids=(RUN_ID,),
@@ -102,44 +113,78 @@ def main() -> None:
             regeneration_spec_path=_regeneration_spec_path(EVAL_MANIFEST),
             repo_root=REPO_ROOT,
         )
-        manifest = materialize_gru_perturbation_response(
-            source_experiment=SOURCE_EXPERIMENT,
-            result_experiment=ISSUE,
-            run_ids=(RUN_ID,),
-            labels=(RUN_LABEL,),
-            n_rollout_trials=args.n_rollout_trials,
-            bank_mode="calibrated",
-            calibration_level=("small",),
-            calibration_reach=0.15,
-            output_path=PERT_MANIFEST,
-            note_path=PERT_NOTE,
-            bulk_dir=PERT_BULK_DIR,
-            regeneration_spec_path=_regeneration_spec_path(PERT_MANIFEST),
-            feedback_scale_manifest_path=EVAL_MANIFEST,
-            extlqg_physical_dim=6,
-            repo_root=REPO_ROOT,
+
+    extlqg_context = _build_extlqg_comparator_context(physical_dim=6)
+    extlqg_peak_velocity = _extlqg_nominal_peak_velocity(extlqg_context)
+    profile_specs = []
+    for level_key in level_keys:
+        paths = _level_paths(level_key)
+        for path in (paths["figure_spec_dir"], paths["figure_bulk_dir"], paths["pert_bulk_dir"]):
+            path.mkdir(parents=True, exist_ok=True)
+
+        if args.skip_materialization and paths["pert_manifest"].exists():
+            manifest = _read_json(paths["pert_manifest"])
+        else:
+            level = LEVEL_CONFIGS[level_key]
+            manifest = materialize_gru_perturbation_response(
+                source_experiment=SOURCE_EXPERIMENT,
+                result_experiment=ISSUE,
+                run_ids=(RUN_ID,),
+                labels=(RUN_LABEL,),
+                n_rollout_trials=args.n_rollout_trials,
+                bank_mode="calibrated",
+                calibration_level=(str(level["bank_level"]),),
+                calibration_reach=0.15,
+                output_path=paths["pert_manifest"],
+                note_path=paths["pert_note"],
+                bulk_dir=paths["pert_bulk_dir"],
+                regeneration_spec_path=_regeneration_spec_path(paths["pert_manifest"]),
+                feedback_scale_manifest_path=EVAL_MANIFEST,
+                extlqg_physical_dim=6,
+                repo_root=REPO_ROOT,
+            )
+
+        profile_spec = materialize_profile_figures(
+            manifest,
+            level_key=level_key,
+            extlqg_context=extlqg_context,
+            extlqg_peak_velocity=extlqg_peak_velocity,
         )
+        paths["figure_spec"].write_text(
+            json.dumps(profile_spec, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        profile_specs.append(profile_spec)
+        print(
+            f"Wrote {len(profile_spec['figures'])} {level_key} profile figure pair(s)."
+        )
+        print(f"Figure spec: {_repo_rel(paths['figure_spec'])}")
 
-    profile_spec = materialize_profile_figures(manifest)
-    FIGURE_SPEC.write_text(
-        json.dumps(profile_spec, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    write_profile_note(profile_spec, manifest)
-    print(f"Wrote {len(profile_spec['figures'])} profile figure pair(s).")
-    print(f"Figure spec: {_repo_rel(FIGURE_SPEC)}")
+    write_figure_readme(profile_specs)
+    write_profile_note(profile_specs)
 
 
-def materialize_profile_figures(manifest: Mapping[str, Any]) -> dict[str, Any]:
+def materialize_profile_figures(
+    manifest: Mapping[str, Any],
+    *,
+    level_key: str,
+    extlqg_context: Mapping[str, Any],
+    extlqg_peak_velocity: float,
+) -> dict[str, Any]:
+    paths = _level_paths(level_key)
+    level = LEVEL_CONFIGS[level_key]
     detail_manifest = _load_perturbation_detail_manifest(manifest)
     run = detail_manifest["runs"][RUN_ID]
     rows = [row for row in run["perturbations"] if row.get("status") == "evaluated"]
+    extlqg_statuses = [
+        row.get("extlqg_comparator", {}).get("status")
+        for row in rows
+    ]
     groups: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
     for row in rows:
         key = _figure_group_key(row)
         groups[key].append(row)
 
-    extlqg_context = _build_extlqg_comparator_context(physical_dim=6)
     figure_specs = []
     for key in sorted(groups):
         group_rows = groups[key]
@@ -148,19 +193,21 @@ def materialize_profile_figures(manifest: Mapping[str, Any]) -> dict[str, Any]:
             group_rows,
             run=run,
             extlqg_context=extlqg_context,
+            extlqg_peak_velocity=extlqg_peak_velocity,
             figure_kind="trajectory",
-            title=f"{title}: perturbed traces",
+            title=f"{title}: {level_key} perturbed traces",
         )
         residual = _build_family_figure(
             group_rows,
             run=run,
             extlqg_context=extlqg_context,
+            extlqg_peak_velocity=extlqg_peak_velocity,
             figure_kind="residual",
-            title=f"{title}: perturbed-minus-clean residuals",
+            title=f"{title}: {level_key} perturbed-minus-clean residuals",
         )
         stem = _safe_slug(key)
-        trajectory_path = FIGURE_BULK_DIR / f"{stem}__trajectory.html"
-        residual_path = FIGURE_BULK_DIR / f"{stem}__residual.html"
+        trajectory_path = paths["figure_bulk_dir"] / f"{stem}__trajectory.html"
+        residual_path = paths["figure_bulk_dir"] / f"{stem}__residual.html"
         trajectory.write_html(trajectory_path, include_plotlyjs="cdn")
         residual.write_html(residual_path, include_plotlyjs="cdn")
         figure_specs.append(
@@ -179,15 +226,29 @@ def materialize_profile_figures(manifest: Mapping[str, Any]) -> dict[str, Any]:
             }
         )
     return {
-        "schema_version": "rlrmp.final_small_bank_profile_figures.v1",
+        "schema_version": "rlrmp.final_calibrated_bank_profile_figures.v2",
         "issue": ISSUE,
         "source_experiment": SOURCE_EXPERIMENT,
         "run_id": RUN_ID,
-        "bank_manifest": _repo_rel(PERT_MANIFEST),
+        "level": level_key,
+        "calibration_level": str(level["bank_level"]),
+        "calibration_level_display": str(level["display"]),
+        "level_fraction_of_reach": float(level["fraction_of_reach"]),
+        "bank_manifest": _repo_rel(paths["pert_manifest"]),
         "bulk_detail_manifest": manifest.get("bulk_detail_manifest"),
         "evaluation_manifest": _repo_rel(EVAL_MANIFEST),
+        "figure_readme": _repo_rel(FIGURE_README),
+        "coverage": {
+            "evaluated_gru_rows": len(rows),
+            "extlqg_available_rows": sum(status == "available" for status in extlqg_statuses),
+            "extlqg_not_applicable_rows": sum(
+                status == "not_applicable" for status in extlqg_statuses
+            ),
+            "extlqg_blocked_rows": sum(status == "blocked" for status in extlqg_statuses),
+        },
         "coordinate_basis": {
             "reach_length_m": 0.15,
+            "nominal_extlqg_peak_velocity_m_s": float(extlqg_peak_velocity),
             "direction_source": (
                 "GRU target_position minus clean baseline start position for each "
                 "replicate/trial; analytical extLQG uses clean start-to-end direction "
@@ -204,7 +265,15 @@ def materialize_profile_figures(manifest: Mapping[str, Any]) -> dict[str, Any]:
                 "plot clean + sign-aligned residual so + and - rows do not cancel"
             ),
             "band": "central 80% interval across replicate/trial/component/sign rows",
-            "timing_display": "timing bins are separate columns with shaded pulse windows",
+            "timing_display": (
+                "timing bins are separate columns with shaded pulse windows and "
+                "dotted boundary lines"
+            ),
+            "residual_scaling": {
+                "position": "percent of fixed 0.15 m reach length",
+                "velocity": "percent of nominal 6D extLQG peak speed",
+                "command": "native command units",
+            },
         },
         "figures": figure_specs,
     }
@@ -215,6 +284,7 @@ def _build_family_figure(
     *,
     run: Mapping[str, Any],
     extlqg_context: Mapping[str, Any],
+    extlqg_peak_velocity: float,
     figure_kind: Literal["trajectory", "residual"],
     title: str,
 ) -> go.Figure:
@@ -245,10 +315,12 @@ def _build_family_figure(
                 fig.add_vrect(
                     x0=x0,
                     x1=x1,
-                    fillcolor="rgba(80,80,80,0.14)",
-                    line_width=0,
+                    fillcolor="rgba(234,179,8,0.18)",
+                    line={"color": "rgba(120,80,0,0.55)", "width": 1, "dash": "dot"},
+                    layer="below",
                     row=row_index,
                     col=col_index,
+                    exclude_empty_subplots=False,
                 )
         traces = _collect_traces_for_rows(
             timing_rows,
@@ -270,12 +342,18 @@ def _build_family_figure(
                             variant=variant,
                             quantity=quantity,
                             coord=coord,
+                            figure_kind=figure_kind,
+                            extlqg_peak_velocity=extlqg_peak_velocity,
                             row=row_index,
                             col=col_index,
                             showlegend=(source, variant, coord) not in legend_seen,
                         )
                         legend_seen.add((source, variant, coord))
-            fig.update_yaxes(title_text=unit, row=row_index, col=1)
+            fig.update_yaxes(
+                title_text=_axis_unit(quantity, figure_kind=figure_kind, native_unit=unit),
+                row=row_index,
+                col=1,
+            )
     fig.update_layout(
         title=title,
         template="plotly_white",
@@ -402,10 +480,18 @@ def _add_profile_trace(
     variant: str,
     quantity: str,
     coord: str,
+    figure_kind: Literal["trajectory", "residual"],
+    extlqg_peak_velocity: float,
     row: int,
     col: int,
     showlegend: bool,
 ) -> None:
+    samples = _scale_profile_samples(
+        samples,
+        quantity=quantity,
+        figure_kind=figure_kind,
+        extlqg_peak_velocity=extlqg_peak_velocity,
+    )
     mean, low, high = _mean_band(samples)
     time = np.arange(mean.shape[0], dtype=np.float64) * DT
     color = SOURCE_COLORS[source]
@@ -463,6 +549,35 @@ def _add_profile_trace(
         row=row,
         col=col,
     )
+
+
+def _scale_profile_samples(
+    samples: np.ndarray,
+    *,
+    quantity: str,
+    figure_kind: Literal["trajectory", "residual"],
+    extlqg_peak_velocity: float,
+) -> np.ndarray:
+    """Scale residual panels into the compact captioned units."""
+
+    if figure_kind != "residual":
+        return samples
+    if quantity == "position":
+        return 100.0 * samples / 0.15
+    if quantity == "velocity":
+        return 100.0 * samples / float(extlqg_peak_velocity)
+    return samples
+
+
+def _axis_unit(
+    quantity: str,
+    *,
+    figure_kind: Literal["trajectory", "residual"],
+    native_unit: str,
+) -> str:
+    if figure_kind == "residual" and quantity in {"position", "velocity"}:
+        return "%"
+    return native_unit
 
 
 def _mean_band(samples: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -587,51 +702,117 @@ def _band_color(source: str) -> str:
     return "rgba(37,99,235,0.10)"
 
 
-def write_profile_note(profile_spec: Mapping[str, Any], manifest: Mapping[str, Any]) -> None:
-    figures = profile_spec["figures"]
-    detail_manifest = _load_perturbation_detail_manifest(manifest)
+def _extlqg_nominal_peak_velocity(extlqg_context: Mapping[str, Any]) -> float:
+    base = extlqg_context["base_evaluation"]
+    speed = np.linalg.norm(np.asarray(base.velocity, dtype=np.float64), axis=-1)
+    peak = float(np.nanmax(speed))
+    if not np.isfinite(peak) or peak <= 0.0:
+        raise ValueError(f"nominal extLQG peak velocity must be positive; got {peak}")
+    return peak
+
+
+def _level_paths(level_key: str) -> dict[str, Path]:
+    level = LEVEL_CONFIGS[level_key]
+    bank_level = str(level["bank_level"])
+    return {
+        "figure_spec_dir": FIGURE_SPEC_ROOT / level_key,
+        "figure_bulk_dir": FIGURE_BULK_ROOT / level_key,
+        "figure_spec": FIGURE_SPEC_ROOT / level_key / "spec.json",
+        "pert_bulk_dir": (
+            PERT_BULK_ROOT
+            / f"gru_targetsupport_const_band16_calibrated_{bank_level}"
+        ),
+        "pert_manifest": (
+            NOTES_DIR
+            / f"gru_perturbation_response_const_band16_calibrated_{bank_level}_manifest.json"
+        ),
+        "pert_note": (
+            NOTES_DIR
+            / f"gru_perturbation_response_const_band16_calibrated_{bank_level}.md"
+        ),
+    }
+
+
+def write_figure_readme(profile_specs: Sequence[Mapping[str, Any]]) -> None:
     rows = [
-        "# Final Small Perturbation-Bank Profile Figures",
+        "# Final Calibrated Perturbation-Bank Profile Figures",
+        "",
+        "These figures compare the no-PGD `const_band16` GRU row with the 6D "
+        "no-integrator analytical extLQG comparator on calibrated perturbation "
+        "banks at fixed 15 cm reach length.",
+        "",
+        "For residual figures, position rows are shown as percent of the fixed "
+        "0.15 m reach length, and velocity rows are shown as percent of the "
+        "nominal 6D extLQG peak speed. Command residual rows remain in native "
+        "command units. Orthogonal traces are solid; along-reach traces are "
+        "dotted. Yellow bands mark the perturbation pulse window.",
+        "",
+        "| level | calibrated bank level | figure spec |",
+        "|---|---|---|",
+    ]
+    for spec in profile_specs:
+        rows.append(
+            "| {level} | `{bank_level}` | `{figure_spec}` |".format(
+                level=spec["level"],
+                bank_level=spec["calibration_level"],
+                figure_spec=_repo_rel(_level_paths(str(spec["level"]))["figure_spec"]),
+            )
+        )
+    update_marked_section(FIGURE_README, "caption", "\n".join(rows) + "\n")
+
+
+def write_profile_note(profile_specs: Sequence[Mapping[str, Any]]) -> None:
+    rows = [
+        "# Final Calibrated Perturbation-Bank Profile Figures",
         "",
         f"- Source row: `{SOURCE_EXPERIMENT}/{RUN_ID}`.",
         "- Analytical comparator: 6D no-integrator extLQG.",
-        "- Bank: calibrated physical `small`, fixed reach `0.15 m`.",
+        "- Banks: calibrated physical `small` and user-facing `medium` "
+        "(`moderate` in calibration manifests), fixed reach `0.15 m`.",
         "- Coordinates: orthogonal solid, along-reach dotted.",
         "- Residuals: sign-aligned perturbed-minus-clean profiles.",
-        f"- Figure spec: `{_repo_rel(FIGURE_SPEC)}`.",
-        f"- Perturbation manifest: `{_repo_rel(PERT_MANIFEST)}`.",
+        f"- Figure README: `{_repo_rel(FIGURE_README)}`.",
         "",
-        "| group | rows | extLQG rows | trajectory | residual |",
-        "|---|---:|---:|---|---|",
     ]
-    for figure in figures:
-        rows.append(
-            "| {title} | {n_rows} | {extlqg_available_rows} | `{trajectory}` | `{residual}` |".format(
-                title=figure["title"],
-                n_rows=figure["n_rows"],
-                extlqg_available_rows=figure["extlqg_available_rows"],
-                trajectory=figure["trajectory_html"],
-                residual=figure["residual_html"],
-            )
+    for spec in profile_specs:
+        rows.extend(
+            [
+                f"## {str(spec['level']).title()}",
+                "",
+                f"- Calibrated bank level: `{spec['calibration_level']}`.",
+                f"- Figure spec: `{_repo_rel(_level_paths(str(spec['level']))['figure_spec'])}`.",
+                f"- Perturbation manifest: `{spec['bank_manifest']}`.",
+                f"- Evaluated GRU rows: `{spec['coverage']['evaluated_gru_rows']}`.",
+                f"- 6D extLQG available rows: `{spec['coverage']['extlqg_available_rows']}`.",
+                f"- 6D extLQG not-applicable rows: `{spec['coverage']['extlqg_not_applicable_rows']}`.",
+                f"- 6D extLQG blocked rows: `{spec['coverage']['extlqg_blocked_rows']}`.",
+                "",
+                "| group | rows | extLQG rows | trajectory | residual |",
+                "|---|---:|---:|---|---|",
+            ]
         )
-    extlqg_rows = [
-        row.get("extlqg_comparator", {}).get("status")
-        for row in detail_manifest["runs"][RUN_ID]["perturbations"]
-        if row.get("status") == "evaluated"
-    ]
+        for figure in spec["figures"]:
+            rows.append(
+                "| {title} | {n_rows} | {extlqg_available_rows} | `{trajectory}` | `{residual}` |".format(
+                    title=figure["title"],
+                    n_rows=figure["n_rows"],
+                    extlqg_available_rows=figure["extlqg_available_rows"],
+                    trajectory=figure["trajectory_html"],
+                    residual=figure["residual_html"],
+                )
+            )
+        rows.append("")
     rows.extend(
         [
+            "## Units",
             "",
-            "## Comparator Coverage",
-            "",
-            f"- Evaluated GRU rows: `{len(extlqg_rows)}`.",
-            f"- 6D extLQG available rows: `{sum(status == 'available' for status in extlqg_rows)}`.",
-            f"- 6D extLQG not-applicable rows: `{sum(status == 'not_applicable' for status in extlqg_rows)}`.",
-            f"- 6D extLQG blocked rows: `{sum(status == 'blocked' for status in extlqg_rows)}`.",
+            "- Residual position panels: percent of fixed 0.15 m reach length.",
+            "- Residual velocity panels: percent of nominal 6D extLQG peak speed.",
+            "- Trajectory panels and residual command panels: native units.",
             "",
         ]
     )
-    update_marked_section(PROFILE_NOTE, "final_small_bank_profiles", "\n".join(rows) + "\n")
+    update_marked_section(PROFILE_NOTE, "final_calibrated_bank_profiles", "\n".join(rows) + "\n")
 
 
 def _read_json(path: Path) -> dict[str, Any]:
