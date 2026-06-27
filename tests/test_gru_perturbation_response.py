@@ -809,6 +809,83 @@ def test_delayed_observation_adapter_applies_force_filter_feedback_row_to_payloa
     assert result.adapter_provenance["payload_shape_source"] == "existing_trial_input"
 
 
+def test_extlqg_6d_context_skips_8d_only_process_epsilon_rows() -> None:
+    context = perturbation_bank._build_extlqg_comparator_context(physical_dim=6)
+
+    assert context["physical_dim"] == 6
+    assert context["plant"].n == 36
+    assert context["plant"].m_w == 6
+    assert context["config"].n_phys == 6
+    assert getattr(context["base_evaluation"], "mechanics_vector").shape[-1] == 36
+
+    result = evaluate_extlqg_perturbation_comparator(
+        {
+            "perturbation_id": "process_epsilon_pulse__integrator_x_pos",
+            "channel": "process_epsilon",
+            "family": "process_epsilon_pulse",
+            "amplitude": 0.01,
+            "axis": "x",
+            "sign": 1,
+            "timing": {"start_time_index": 0, "duration_steps": 1},
+            "epsilon_index": 6,
+        },
+        context=context,
+        gru_metrics={},
+    )
+
+    assert result["status"] == "not_applicable"
+    assert "epsilon_index 6" in result["reason"]
+    assert "6 process disturbance dimensions" in result["reason"]
+
+
+def test_extlqg_observation_offset_uses_force_filter_feedback_payload_index() -> None:
+    perturbation = {
+        "perturbation_id": "sensory_feedback_offset__force_filter__late_t40_y_pos",
+        "channel": "sensory_feedback",
+        "family": "sensory_feedback_offset",
+        "amplitude": 0.5,
+        "axis": "y",
+        "sign": 1,
+        "timing": {"start_time_index": 0, "duration_steps": 2},
+        "channel_provenance": {
+            "feedback_quantity": "force_filter",
+            "feedback_payload_index": 5,
+            "force_filter_feedback_only": True,
+        },
+    }
+
+    offset = perturbation_bank._extlqg_observation_offset(
+        perturbation,
+        horizon=4,
+        observation_dim=6,
+    )
+
+    np.testing.assert_allclose(np.asarray(offset)[:2, 5], 0.5)
+    np.testing.assert_allclose(np.asarray(offset)[:2, :5], 0.0)
+    np.testing.assert_allclose(np.asarray(offset)[2:], 0.0)
+
+
+def test_movement_start_indices_use_zero_for_single_movement_epoch() -> None:
+    trial_specs = TaskTrialSpec(
+        inits={},
+        targets={},
+        inputs={},
+        timeline=TrialTimeline(
+            n_steps=60,
+            epoch_bounds=np.asarray([[0, 60], [0, 60]], dtype=np.int32),
+            epoch_names=("movement",),
+        ),
+    )
+
+    starts = perturbation_bank._movement_start_indices(trial_specs, batch_size=2)
+
+    np.testing.assert_array_equal(starts, np.asarray([0, 0], dtype=np.int64))
+    assert (
+        perturbation_bank._movement_start_source(trial_specs)
+        == "trial_specs.timeline.epoch_bounds[..., 0]"
+    )
+
+
 def test_delayed_observation_adapter_uses_clean_pre_noise_graph_channel() -> None:
     trial_specs = TaskTrialSpec(
         inits={"mechanics.vector": np.zeros((2, 8), dtype=np.float64)},

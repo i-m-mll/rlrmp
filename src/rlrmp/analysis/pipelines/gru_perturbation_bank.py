@@ -22,6 +22,7 @@ from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     TARGET_POS,
     build_canonical_game,
+    build_no_integrator_game,
     materialize_reference,
 )
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
@@ -1412,6 +1413,7 @@ def materialize_gru_perturbation_response(
     calibration_level: str | Sequence[str] | None = None,
     calibration_reach: str | float | None = None,
     feedback_scale_manifest_path: Path | None = None,
+    extlqg_physical_dim: Literal[6, 8] = 8,
     preferred_checkpoint_manifest_path: Path | None = None,
     checkpoint_selection_mode: CheckpointSelectionMode = "sparse_history",
 ) -> dict[str, Any]:
@@ -1451,6 +1453,7 @@ def materialize_gru_perturbation_response(
                 n_rollout_trials=n_rollout_trials,
                 write_bulk_arrays=write_bulk_arrays,
                 bulk_dir=bulk_dir,
+                extlqg_physical_dim=extlqg_physical_dim,
                 preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
                 checkpoint_selection_mode=checkpoint_selection_mode,
                 repo_root=repo_root,
@@ -1489,6 +1492,12 @@ def materialize_gru_perturbation_response(
             "status": (
                 "available_for_initial_state_command_input_process_epsilon_"
                 "sensory_feedback_and_delayed_observation"
+            ),
+            "physical_dim": int(extlqg_physical_dim),
+            "game_source": (
+                "rlrmp.analysis.math.cs_game_card.build_no_integrator_game"
+                if int(extlqg_physical_dim) == 6
+                else "rlrmp.analysis.math.cs_game_card.build_canonical_game"
             ),
             "reason": (
                 "Deterministic extLQG response rows are evaluated for perturbations "
@@ -1704,6 +1713,7 @@ def evaluate_run_perturbation_bank(
     bulk_dir: Path,
     evaluation_backend: PerturbationEvaluationBackend = "serial",
     trial_spec_transform: Callable[[Any], Any] | None = None,
+    extlqg_physical_dim: Literal[6, 8] = 8,
     preferred_checkpoint_manifest_path: Path | None = None,
     checkpoint_selection_mode: CheckpointSelectionMode = "sparse_history",
     repo_root: Path = REPO_ROOT,
@@ -1733,7 +1743,7 @@ def evaluate_run_perturbation_bank(
         seed=0,
     )
     nominal_base_cost = full_qrf_cost_summary(nominal_base_evaluation, base_trial_specs)
-    extlqg_context = _build_extlqg_comparator_context()
+    extlqg_context = _build_extlqg_comparator_context(physical_dim=extlqg_physical_dim)
     robust_context = _build_robust_output_feedback_comparator_context()
     rows = []
     bulk_files: dict[str, str] = {}
@@ -2370,7 +2380,7 @@ def _constant_movement_start(trial_specs: Any) -> int | None:
     bounds = np.asarray(epoch_bounds)
     if bounds.ndim < 2 or bounds.shape[-1] < 2:
         return None
-    starts = np.unique(bounds[..., 1])
+    starts = np.unique(bounds[..., _movement_start_bound_column(bounds)])
     if starts.size != 1:
         return None
     return int(starts[0])
@@ -2386,7 +2396,10 @@ def _movement_start_indices(trial_specs: Any, *, batch_size: int) -> np.ndarray 
     bounds = np.asarray(epoch_bounds)
     if bounds.ndim < 2 or bounds.shape[-1] < 2:
         return None
-    starts = np.asarray(bounds[..., 1], dtype=np.int64).reshape(-1)
+    starts = np.asarray(
+        bounds[..., _movement_start_bound_column(bounds)],
+        dtype=np.int64,
+    ).reshape(-1)
     if starts.size == 1:
         return np.full((batch_size,), int(starts[0]), dtype=np.int64)
     if starts.size != batch_size:
@@ -2395,6 +2408,27 @@ def _movement_start_indices(trial_specs: Any, *, batch_size: int) -> np.ndarray 
             f"movement starts; got {starts.size} starts for batch size {batch_size}"
         )
     return starts
+
+
+def _movement_start_bound_column(bounds: np.ndarray) -> int:
+    """Return the epoch-bound column that denotes movement start.
+
+    A one-epoch movement-only timeline is encoded as ``[0, T]``; its movement
+    start is column 0, not the terminal bound. Older delayed/full-trial specs
+    keep their movement start in column 1.
+    """
+
+    return 0 if bounds.shape[-1] == 2 else 1
+
+
+def _movement_start_source(trial_specs: Any) -> str:
+    timeline = getattr(trial_specs, "timeline", None)
+    epoch_bounds = getattr(timeline, "epoch_bounds", None)
+    if epoch_bounds is None:
+        return "absent_timeline_assumed_zero_for_immediate_reach"
+    bounds = np.asarray(epoch_bounds)
+    column = _movement_start_bound_column(bounds)
+    return f"trial_specs.timeline.epoch_bounds[..., {column}]"
 
 
 def _is_movement_indexed_timing(perturbation: Mapping[str, Any]) -> bool:
@@ -2425,7 +2459,7 @@ def _movement_aligned_start_indices(
         movement_starts = np.zeros((batch_size,), dtype=np.int64)
         movement_start_source = "absent_timeline_assumed_zero_for_immediate_reach"
     else:
-        movement_start_source = "trial_specs.timeline.epoch_bounds[..., 1]"
+        movement_start_source = _movement_start_source(trial_specs)
     return (
         movement_starts + relative_start,
         {
@@ -2499,6 +2533,13 @@ def evaluate_extlqg_perturbation_comparator(
     }
     if channel not in supported_channels:
         return extlqg_comparator_status(perturbation, status="not_applicable")
+    inapplicable_reason = _extlqg_inapplicable_reason(perturbation, context=context)
+    if inapplicable_reason is not None:
+        return extlqg_comparator_status(
+            perturbation,
+            status="not_applicable",
+            reason=inapplicable_reason,
+        )
     required_context_keys = (
         "base_evaluation",
         "base_initial_state",
@@ -2554,10 +2595,51 @@ def evaluate_extlqg_perturbation_comparator(
         }
 
 
+def _extlqg_inapplicable_reason(
+    perturbation: Mapping[str, Any],
+    *,
+    context: Mapping[str, Any],
+) -> str | None:
+    """Return why a row has no analytical port in the selected extLQG basis."""
+
+    channel = str(perturbation["channel"])
+    if channel == "process_epsilon":
+        plant = context.get("plant")
+        if plant is None:
+            return None
+        epsilon_dim = int(getattr(plant, "m_w"))
+        epsilon_index_raw = perturbation.get("epsilon_index")
+        epsilon_index = (
+            _axis_index(str(perturbation["axis"]))
+            if epsilon_index_raw is None
+            else int(epsilon_index_raw)
+        )
+        if epsilon_index < 0 or epsilon_index >= epsilon_dim:
+            return (
+                f"process_epsilon row addresses epsilon_index {epsilon_index}, "
+                f"but selected extLQG comparator exposes {epsilon_dim} process "
+                "disturbance dimensions"
+            )
+    if channel in {"sensory_feedback", "delayed_observation"}:
+        config = context.get("config")
+        if config is None:
+            return None
+        observation_dim = int(getattr(config, "n_phys"))
+        observation_index = _graph_channel_payload_index(perturbation)
+        if observation_index < 0 or observation_index >= observation_dim:
+            return (
+                f"{channel} row addresses payload index {observation_index}, "
+                f"but selected extLQG comparator exposes {observation_dim} "
+                "controller-visible physical dimensions"
+            )
+    return None
+
+
 def extlqg_comparator_status(
     perturbation: Mapping[str, Any],
     *,
     status: str,
+    reason: str | None = None,
 ) -> dict[str, Any]:
     """Return a structured not-applicable comparator status for a row."""
 
@@ -2579,10 +2661,13 @@ def extlqg_comparator_status(
     return {
         "status": status,
         "lens": "deterministic_extlqg_same_declared_perturbation",
-        "reason": reasons.get(
-            channel,
-            "analytical comparator is only defined for evaluated rows with "
-            "supported external analytical adapters",
+        "reason": (
+            reason
+            or reasons.get(
+                channel,
+                "analytical comparator is only defined for evaluated rows with "
+                "supported external analytical adapters",
+            )
         ),
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
     }
@@ -3019,7 +3104,7 @@ def _apply_movement_onset_initial_state_process_impulse(
         movement_starts = np.zeros((batch_size,), dtype=np.int64)
         movement_start_source = "absent_timeline_assumed_zero_for_immediate_reach"
     else:
-        movement_start_source = "trial_specs.timeline.epoch_bounds[..., 1]"
+        movement_start_source = _movement_start_source(trial_specs)
     timing_error = _validate_timed_pulse_indices(
         movement_starts,
         1,
@@ -3149,12 +3234,17 @@ def _apply_named_graph_channel_offset(
             model=model,
             reason=str(exc),
         )
-    n_time = _infer_trial_n_time(trial_specs, int(np.max(start_indices)) + duration)
     existing_payload = getattr(trial_specs, "inputs", {}).get(effective_spec.input_key)
+    existing_payload_shape = np.shape(existing_payload)
+    n_time = (
+        int(existing_payload_shape[-2])
+        if existing_payload is not None and len(existing_payload_shape) >= 2
+        else _infer_trial_n_time(trial_specs, int(np.max(start_indices)) + duration)
+    )
     declared_payload_dim = additive_channel_payload_dim(effective_spec)
     payload_dim = (
-        int(np.shape(existing_payload)[-1])
-        if existing_payload is not None and len(np.shape(existing_payload)) >= 1
+        int(existing_payload_shape[-1])
+        if existing_payload is not None and len(existing_payload_shape) >= 1
         else declared_payload_dim
     )
     active_calibrated_components = _active_graph_channel_components(
@@ -3550,11 +3640,21 @@ def _evaluate_model_rollout_product(
     )
 
 
-def _build_extlqg_comparator_context() -> dict[str, Any]:
+def _build_extlqg_comparator_context(
+    *,
+    physical_dim: Literal[6, 8] = 8,
+) -> dict[str, Any]:
     """Build deterministic analytical comparator context for perturbation rows."""
 
-    plant, schedule = build_canonical_game()
-    config = OutputFeedbackConfig()
+    if physical_dim == 8:
+        plant, schedule = build_canonical_game()
+        game_source = "rlrmp.analysis.math.cs_game_card.build_canonical_game"
+    elif physical_dim == 6:
+        plant, schedule = build_no_integrator_game()
+        game_source = "rlrmp.analysis.math.cs_game_card.build_no_integrator_game"
+    else:
+        raise ValueError(f"unsupported extLQG physical_dim {physical_dim}; expected 6 or 8")
+    config = OutputFeedbackConfig(n_phys=int(physical_dim))
     covariances = default_cs_noise_covariances(plant, config)
     comparator = build_extlqg_comparator_path(
         plant,
@@ -3578,6 +3678,8 @@ def _build_extlqg_comparator_context() -> dict[str, Any]:
         "schedule": schedule,
         "config": config,
         "comparator": comparator,
+        "physical_dim": int(physical_dim),
+        "game_source": game_source,
         "base_initial_state": np.asarray(x0, dtype=np.float64),
         "base_evaluation": _evaluation_from_extlqg_rollout(base_rollout, initial_state=x0),
         "parity_status": comparator.parity_status,
@@ -3908,7 +4010,7 @@ def _extlqg_observation_offset(
     family = str(perturbation["family"])
     if family not in {"sensory_feedback_offset", "delayed_observation_offset"}:
         raise ValueError(f"unsupported analytical observation-offset family {family!r}")
-    observation_index = _axis_index(str(perturbation["axis"]))
+    observation_index = _graph_channel_payload_index(perturbation)
     if observation_index < 0 or observation_index >= observation_dim:
         raise ValueError(
             f"observation axis index {observation_index} outside analytical dim {observation_dim}"
@@ -3929,12 +4031,29 @@ def _extlqg_observation_offset(
 def _extlqg_cost_summary(evaluation: RolloutEvaluation, initial_state: Any) -> dict[str, Any]:
     """Return full-Q/R/Q_f summary for one analytical rollout."""
 
-    scored = score_full_qrf_rollout_cost(
-        states=getattr(evaluation, "mechanics_vector"),
-        commands=evaluation.command,
-        initial_states=np.asarray(initial_state, dtype=np.float64)[None, None, :],
-        target_pos=np.zeros((2,), dtype=np.float64),
-    )
+    mechanics_vector = getattr(evaluation, "mechanics_vector")
+    state_dim = int(np.asarray(mechanics_vector).shape[-1])
+    if state_dim != 48:
+        return {
+            "status": "not_available",
+            "reason": (
+                "canonical full-Q/R/Q_f scorer is defined on the 8D delayed "
+                f"state basis (48 states), but selected extLQG rollout has "
+                f"{state_dim} states"
+            ),
+        }
+    try:
+        scored = score_full_qrf_rollout_cost(
+            states=mechanics_vector,
+            commands=evaluation.command,
+            initial_states=np.asarray(initial_state, dtype=np.float64)[None, None, :],
+            target_pos=np.zeros((2,), dtype=np.float64),
+        )
+    except ValueError as exc:
+        return {
+            "status": "not_available",
+            "reason": str(exc),
+        }
     summary = _cost_arrays_to_summary(scored)
     summary["basis"]["state_transform"] = "analytical extLQG states are already target-centered"
     return summary
