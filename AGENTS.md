@@ -2,6 +2,12 @@
 
 <!-- CLAUDE.md is a symlink to this file; edit here. -->
 
+## What this project is about
+
+rlrmp is a neuroscience and behavior project about robust motor control. Its core question is how robustness can be induced in neural network controllers, whether the resulting behavior matches robust-control or H-infinity-like signatures observed in human reaching experiments such as Crevecoeur, Cluff, and Scott 2019, and what those trained controllers can then tell us about neural computation.
+
+The neural networks are not the endpoint as an ML benchmark. They are model systems: if a recurrent controller acquires human-like robust behavior under controlled training pressures, we can ask what internal mechanisms support that behavior, whether those mechanisms resemble analytical robust-control formalisms, and what predictions they suggest for brain activity, motor behavior, perturbation responses, or electrophysiology.
+
 ## Python/JAX Coding Conventions
 
 ### Coding Style & Naming
