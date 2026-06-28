@@ -2,6 +2,12 @@
 
 <!-- CLAUDE.md is a symlink to this file; edit here. -->
 
+## What this project is about
+
+rlrmp is a neuroscience and behavior project about robust motor control. Its core question is how robustness can be induced in neural network controllers, whether the resulting behavior matches robust-control or H-infinity-like signatures observed in human reaching experiments such as Crevecoeur, Cluff, and Scott 2019, and what those trained controllers can then tell us about neural computation.
+
+The neural networks are not the endpoint as an ML benchmark. They are model systems: if a recurrent controller acquires human-like robust behavior under controlled training pressures, we can ask what internal mechanisms support that behavior, whether those mechanisms resemble analytical robust-control formalisms, and what predictions they suggest for brain activity, motor behavior, perturbation responses, or electrophysiology.
+
 ## Python/JAX Coding Conventions
 
 ### Coding Style & Naming
@@ -454,6 +460,16 @@ recipe. If a run needs additional tracked sidecars, use
 - **`runs/<variant>/`** is optional tracked sidecar space for lightweight
   per-run notes, debug metadata, or historical `run.json` compatibility. Do not
   put new canonical recipes there.
+- **Run row labels are compact local identifiers, not full parameter
+  summaries.** They must be path-safe and unique within the experiment issue's
+  run set. Include only fields that distinguish sibling rows or prevent
+  ambiguity with existing rows in the same issue. Parameters that are constant
+  across the whole run batch belong in the spec lock table, `RUN_PLAN.md`, and
+  the run JSON, not repeated in every row label. For example, if every row uses
+  `gradient_clip_norm=5`, batch size 64, the same objective, and the same
+  schedule, do not add `clip5`, `b64`, the objective, or the schedule to every
+  label merely for completeness; use labels such as `lr1e-3` / `lr3e-3` or
+  `no_pgd` / `pgd_ofb` when those are the actual varying axes.
 - For complex sweeps where variant names balloon (~50+ chars), use `runs/<hash>.json` + `runs_index.json` mapping hash → human label + params.
 - Keep bulk arrays/checkpoints/logs under `_artifacts/<hash>/runs/<variant>/`;
   do not promote heavy run outputs into `results/<hash>/runs/<variant>/`.
