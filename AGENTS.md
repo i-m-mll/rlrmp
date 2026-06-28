@@ -454,6 +454,16 @@ recipe. If a run needs additional tracked sidecars, use
 - **`runs/<variant>/`** is optional tracked sidecar space for lightweight
   per-run notes, debug metadata, or historical `run.json` compatibility. Do not
   put new canonical recipes there.
+- **Run row labels are compact local identifiers, not full parameter
+  summaries.** They must be path-safe and unique within the experiment issue's
+  run set. Include only fields that distinguish sibling rows or prevent
+  ambiguity with existing rows in the same issue. Parameters that are constant
+  across the whole run batch belong in the spec lock table, `RUN_PLAN.md`, and
+  the run JSON, not repeated in every row label. For example, if every row uses
+  `gradient_clip_norm=5`, batch size 64, the same objective, and the same
+  schedule, do not add `clip5`, `b64`, the objective, or the schedule to every
+  label merely for completeness; use labels such as `lr1e-3` / `lr3e-3` or
+  `no_pgd` / `pgd_ofb` when those are the actual varying axes.
 - For complex sweeps where variant names balloon (~50+ chars), use `runs/<hash>.json` + `runs_index.json` mapping hash → human label + params.
 - Keep bulk arrays/checkpoints/logs under `_artifacts/<hash>/runs/<variant>/`;
   do not promote heavy run outputs into `results/<hash>/runs/<variant>/`.
