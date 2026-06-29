@@ -1,0 +1,2 @@
+run_id,trial_index,zero_loss,gradient_norm,radius,active_dimension,eigmax_largest_algebraic,lambda_star,hvp_evaluations,lanczos_residual_norm_estimate
+open_loop_small,0,4356.388046965824,357046.875,0.004545500036329031,360,501828786.74528,250914393.37264,2,49659824.516037785
