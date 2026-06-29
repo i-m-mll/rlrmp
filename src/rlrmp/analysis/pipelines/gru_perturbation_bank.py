@@ -2179,9 +2179,12 @@ def score_full_qrf_rollout_cost(
     """Score realized full analytical Q/R/Q_f costs with per-term arrays.
 
     Args:
-        states: Rollout mechanics vectors with shape ``(..., T, 48)``.
+        states: Rollout mechanics vectors with shape ``(..., T, 48)`` for the
+            canonical 8D delayed state, or ``(..., T, 36)`` for the 6D
+            no-integrator delayed state.
         commands: Controller commands with shape ``(..., T, 2)``.
-        initial_states: Initial mechanics vectors broadcastable to ``(..., 48)``.
+        initial_states: Initial mechanics vectors broadcastable to the rollout
+            state dimension.
         target_pos: Absolute target position subtracted from every physical
             delay block's x/y position coordinates before applying Q/Q_f.
 
@@ -2191,10 +2194,12 @@ def score_full_qrf_rollout_cost(
         not hidden.
     """
 
-    _plant, schedule = build_canonical_game()
     state_array = jnp.asarray(states, dtype=jnp.float64)
     command_array = jnp.asarray(commands, dtype=jnp.float64)
     initial_array = jnp.asarray(initial_states, dtype=jnp.float64)
+    _plant, schedule, physical_dim, schedule_source = _full_qrf_game_for_state_dim(
+        int(state_array.shape[-1])
+    )
     if state_array.shape[-1] != schedule.Q.shape[-1]:
         raise ValueError(
             f"Full-Q/R/Q_f scorer expected state dim {schedule.Q.shape[-1]}, "
@@ -2220,8 +2225,12 @@ def score_full_qrf_rollout_cost(
         (*state_array.shape[:-2], state_array.shape[-1]),
     )
     x_pre = jnp.concatenate([initial_array[..., None, :], state_array[..., :-1, :]], axis=-2)
-    x_pre = _goal_centered_vectors(x_pre, target_pos=target_pos)
-    x_terminal = _goal_centered_vectors(state_array[..., -1, :], target_pos=target_pos)
+    x_pre = _goal_centered_vectors(x_pre, target_pos=target_pos, physical_dim=physical_dim)
+    x_terminal = _goal_centered_vectors(
+        state_array[..., -1, :],
+        target_pos=target_pos,
+        physical_dim=physical_dim,
+    )
     q = jnp.asarray(schedule.Q, dtype=jnp.float64)
     r = jnp.asarray(schedule.R, dtype=jnp.float64)
     q_f = jnp.asarray(schedule.Q_f, dtype=jnp.float64)
@@ -2238,7 +2247,8 @@ def score_full_qrf_rollout_cost(
             "state_key": "states.mechanics.vector",
             "command_key": "states.net.output",
             "state_transform": "subtract TARGET_POS from each physical delay block x/y",
-            "schedule_source": "rlrmp.analysis.math.cs_game_card.build_canonical_game",
+            "physical_state_dim": physical_dim,
+            "schedule_source": schedule_source,
         },
         "total": total,
         "stage_state": stage_state,
@@ -4028,13 +4038,13 @@ def _extlqg_cost_summary(evaluation: RolloutEvaluation, initial_state: Any) -> d
 
     mechanics_vector = getattr(evaluation, "mechanics_vector")
     state_dim = int(np.asarray(mechanics_vector).shape[-1])
-    if state_dim != 48:
+    if state_dim not in {36, 48}:
         return {
             "status": "not_available",
             "reason": (
-                "canonical full-Q/R/Q_f scorer is defined on the 8D delayed "
-                f"state basis (48 states), but selected extLQG rollout has "
-                f"{state_dim} states"
+                "full-Q/R/Q_f scorer is defined on the 8D canonical delayed "
+                "state basis (48 states) and the 6D no-integrator delayed state "
+                f"basis (36 states), but selected analytical rollout has {state_dim} states"
             ),
         }
     try:
@@ -4081,16 +4091,43 @@ def _write_perturbation_bulk_arrays(
     return path
 
 
-def _goal_centered_vectors(values: Any, *, target_pos: Any) -> Any:
-    """Subtract target position from every 8D physical block's x/y entries."""
+def _full_qrf_game_for_state_dim(state_dim: int) -> tuple[Any, Any, int, str]:
+    """Return the C&S Q/R/Q_f schedule matching a delayed rollout state basis."""
+
+    if state_dim == 48:
+        plant, schedule = build_canonical_game()
+        return (
+            plant,
+            schedule,
+            8,
+            "rlrmp.analysis.math.cs_game_card.build_canonical_game",
+        )
+    if state_dim == 36:
+        plant, schedule = build_no_integrator_game()
+        return (
+            plant,
+            schedule,
+            6,
+            "rlrmp.analysis.math.cs_game_card.build_no_integrator_game",
+        )
+    raise ValueError(
+        "Full-Q/R/Q_f scorer expected canonical 48-state or no-integrator "
+        f"36-state delayed rollout basis, got {state_dim}."
+    )
+
+
+def _goal_centered_vectors(values: Any, *, target_pos: Any, physical_dim: int = 8) -> Any:
+    """Subtract target position from every physical block's x/y entries."""
 
     result = jnp.asarray(values, dtype=jnp.float64)
     target = jnp.asarray(target_pos, dtype=jnp.float64)
     if target.shape != (2,):
         raise ValueError(f"target_pos must have shape (2,), got {target.shape}")
-    if result.shape[-1] % 8 != 0:
-        raise ValueError(f"state dimension {result.shape[-1]} is not divisible by 8")
-    for start in range(0, result.shape[-1], 8):
+    if result.shape[-1] % physical_dim != 0:
+        raise ValueError(
+            f"state dimension {result.shape[-1]} is not divisible by {physical_dim}"
+        )
+    for start in range(0, result.shape[-1], physical_dim):
         result = result.at[..., start : start + 2].add(-target)
     return result
 

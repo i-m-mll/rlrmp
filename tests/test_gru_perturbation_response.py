@@ -14,7 +14,7 @@ from feedbax.objectives.loss import TargetSpec
 from feedbax.runtime.state import CartesianState
 
 import rlrmp.analysis.pipelines.gru_perturbation_bank as perturbation_bank
-from rlrmp.analysis.math.cs_game_card import build_canonical_game
+from rlrmp.analysis.math.cs_game_card import build_canonical_game, build_no_integrator_game
 from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import RolloutEvaluation
 from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     GRAPH_ADAPTER_INPUT_PREFIX,
@@ -1040,6 +1040,27 @@ def test_full_qrf_cost_scorer_keeps_internal_arrays_device_backed() -> None:
     assert summary["status"] == "available"
     assert summary["control"]["values"] == np.asarray(scored["control"]).tolist()
     np.testing.assert_allclose(summary["control"]["mean"], 2.0 * schedule.T)
+
+
+def test_full_qrf_cost_scorer_supports_no_integrator_6d_delayed_basis() -> None:
+    _plant, schedule = build_no_integrator_game()
+    states = np.zeros((1, schedule.T, schedule.Q.shape[-1]), dtype=np.float64)
+    initial = np.zeros((1, schedule.Q.shape[-1]), dtype=np.float64)
+    commands = np.ones((1, schedule.T, schedule.R.shape[-1]), dtype=np.float64)
+
+    scored = score_full_qrf_rollout_cost(
+        states=states,
+        commands=commands,
+        initial_states=initial,
+        target_pos=np.zeros((2,), dtype=np.float64),
+    )
+
+    assert scored["status"] == "available"
+    assert scored["basis"]["physical_state_dim"] == 6
+    assert scored["basis"]["schedule_source"].endswith("build_no_integrator_game")
+    np.testing.assert_allclose(scored["stage_state"], 0.0)
+    np.testing.assert_allclose(scored["terminal"], 0.0)
+    np.testing.assert_allclose(scored["control"], 2.0 * schedule.T)
 
 
 def test_full_qrf_cost_summary_slices_delayed_movement_window() -> None:

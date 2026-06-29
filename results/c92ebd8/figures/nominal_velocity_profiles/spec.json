@@ -1,0 +1,110 @@
+{
+  "analytical_comparator_contract": {
+    "extlqg": {
+      "disturbance_integrators_exposed": false,
+      "label": "6D extLQG",
+      "physical_dim": 6,
+      "source": "rlrmp.analysis.pipelines.gru_perturbation_bank._build_extlqg_comparator_context(physical_dim=6)",
+      "state_dim": 36
+    },
+    "output_feedback_hinf": {
+      "admissible": true,
+      "config": "rlrmp.analysis.math.output_feedback.OutputFeedbackConfig(n_phys=6)",
+      "control_dim": 2,
+      "delay_steps": 5,
+      "disturbance_dim": 6,
+      "disturbance_integrators_exposed": false,
+      "game_source": "rlrmp.analysis.math.cs_game_card.build_no_integrator_game",
+      "gamma": 12833.563799663352,
+      "gamma_factor": 1.4,
+      "gamma_star": 9166.831285473823,
+      "label": "6D output-feedback H-infinity",
+      "nominal_profile_convention": "zero-noise released-forward rollout, x[1:] velocity to match 60-step GRU diagnostics",
+      "physical_dim": 6,
+      "state_dim": 36
+    }
+  },
+  "figure_kind": "nominal_forward_velocity_profile_comparison",
+  "inputs": [
+    {
+      "path": "results/c92ebd8/notes/gru_evaluation_diagnostics_validation_selected_moderate.json",
+      "sha256": "c4a6c8ff074a689d46d2945dddfb49eb359254ad0a30a504327c179fc8d73440"
+    },
+    {
+      "path": "results/c92ebd8/runs/open_loop_small.json",
+      "sha256": "c02b0954399620175fef4db8b55d021578ae698d0d415de166ef9b9fd3986c4a"
+    },
+    {
+      "path": "results/c92ebd8/runs/open_loop_moderate.json",
+      "sha256": "b27db9c38fdcc4bc825cc3480bb872b0f6c9fcd9a715e637cdc7228bdb0df91a"
+    },
+    {
+      "path": "results/c92ebd8/runs/open_loop_stress.json",
+      "sha256": "57bc33302af9de2cbbadb4857c14f695173b0d1fbf9e8a3b643efb527be5f236"
+    },
+    {
+      "path": "results/c92ebd8/runs/closed_loop_small.json",
+      "sha256": "787d361e5e5a6787853cec3849d7398a84f8c16d36450b32f929103ebc3ab20e"
+    },
+    {
+      "path": "results/c92ebd8/runs/closed_loop_moderate.json",
+      "sha256": "aa633c2428ade97b4d2eebde8da959d451d5860ecab55ec1ed6783eb177d862e"
+    },
+    {
+      "path": "results/c92ebd8/runs/closed_loop_stress.json",
+      "sha256": "d85826f1edc8953738c0fe7047d06efcf22526ad912901d8bd3b36b341198eaf"
+    },
+    {
+      "path": "results/c92ebd8/runs/closed_loop_cmd_lateral_small.json",
+      "sha256": "6447ce1c8b9064dbc5977467a2cb9b3cdac0f9c4aa07b5c2bf26ce828a9ac3c6"
+    },
+    {
+      "path": "results/c92ebd8/runs/closed_loop_cmd_lateral_moderate.json",
+      "sha256": "de287bb88f4b370664cc13c392bf1544d62058031fd3fedc9825d9cc3b339939"
+    },
+    {
+      "path": "results/c92ebd8/runs/closed_loop_cmd_lateral_stress.json",
+      "sha256": "2bb7df774c7d7e3ff9231ae92759f6023f068d7fb0c1cdf6c89151eed8c91bd2"
+    }
+  ],
+  "issue": "c92ebd8",
+  "plot_kwargs": {
+    "disturbance_integrators_exposed": false,
+    "physical_state_dim": 6,
+    "rows": 9,
+    "shared_yaxes": "all",
+    "state_dim": 36
+  },
+  "schema_version": "rlrmp.c92_nominal_velocity_profiles.v1",
+  "timestamp": "2026-06-28T00:23:23.508459+00:00",
+  "transform": [
+    {
+      "kwargs": {
+        "analytical_comparators": [
+          "6d_output_feedback_extlqg",
+          "6d_output_feedback_hinf"
+        ],
+        "trained_rows": [
+          "open_loop_small",
+          "open_loop_moderate",
+          "open_loop_stress",
+          "closed_loop_small",
+          "closed_loop_moderate",
+          "closed_loop_stress",
+          "closed_loop_cmd_lateral_small",
+          "closed_loop_cmd_lateral_moderate",
+          "closed_loop_cmd_lateral_stress"
+        ]
+      },
+      "name": "forward_velocity_profile_mean_band"
+    }
+  ],
+  "versions": {
+    "equinox": "0.13.4",
+    "feedbax": "0.1.2",
+    "jax": "0.9.0",
+    "numpy": "2.4.1",
+    "plotly": "6.5.2",
+    "rlrmp": "0.1.0"
+  }
+}
