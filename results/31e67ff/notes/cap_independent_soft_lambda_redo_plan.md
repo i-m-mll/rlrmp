@@ -24,10 +24,9 @@ lambda_star_i = 0.5 * largest algebraic local curvature of J_i(epsilon_i)
 ```
 
 The implemented scale should then summarize the per-trial `lambda_star_i`
-distribution, for example with median, p75, p90, and max. The previous work
-centered the sweep on the p90 summary. Keeping p90 would preserve that cautious
-aggregation choice, but it still needs to be justified explicitly in the redo
-artifact; changing it requires the same level of justification.
+distribution with median, p75, p90, and max. The redo keeps p90 as the primary
+continuity summary because the previous corrected-objective work centered its
+sweep on p90, and the user confirmed that continuity choice for this redo.
 
 Then beta is just a multiplier around the chosen per-trial distribution summary:
 
@@ -35,10 +34,11 @@ Then beta is just a multiplier around the chosen per-trial distribution summary:
 lambda = beta^2 * lambda_star_summary
 ```
 
-Beta greater than 1 means a stronger penalty than the local estimate. Beta
-less than 1 means a weaker penalty than the local estimate; it is not forbidden,
-but it should be labelled as an instability probe unless evidence justifies it
-as a candidate training value.
+Beta greater than 1 means a stronger penalty than the local estimate. Beta less
+than 1 means a weaker penalty than the local estimate. The redo may include
+`beta = 0.95` as a user-approved diagnostic curiosity test; it should be
+labelled as a weaker-penalty instability probe, not as a launch candidate unless
+later evidence supports that.
 
 ## Evidence Already Fixed
 
@@ -90,39 +90,47 @@ cap-interiority.
 | Primary lambda scale | justified | Estimate per-trial `lambda_star_i` values from the largest algebraic Hessian eigenvalue of the corrected frozen-GRU objective at zero, then summarize the distribution. |
 | HVP/power or Lanczos | justified | The d55c5f0 spec says not to materialize the full Hessian and to use Hessian-vector products with power iteration or Lanczos. |
 | Per-trial first | justified | The corrected objective is separable across trials before averaging, so per-trial estimates are preferred first. |
-| Summary statistics | justified | Report median, p75, p90, max, and uncertainty. The selected quantile is a scientific choice and must be named. |
+| Summary statistics | justified | Report median, p75, p90, max, and uncertainty. Use p90 as the primary continuity summary for this redo. |
 | Largest algebraic eigenvalue | justified | Use the largest signed/algebraic Hessian eigenvalue. Do not use spectral radius if that means largest absolute eigenvalue of an indefinite Hessian. |
 | Finite-difference validation direction | justified | Validate selected estimates along the estimated top eigenvector. |
 | Cap handling | justified as diagnostic only | The hard cap may be reported as a sidecar norm diagnostic, not as a pass/fail criterion. |
 | Objective-level sweep fields | justified | Report finite optimizer behavior, nonzero perturbation, positive penalized gain over zero, energy, penalty/gain relation, and norm sidecars. |
 | First training beta after audit | partially justified | d55c5f0 names beta 1.4 as a first likely training ratio only after the audit shows it is neither zero nor cap-dominated. |
 | Later beta 1.05 and 1.8 rows | partially justified | d55c5f0 says these should wait until beta 1.4 is interpretable. |
+| Beta 0.95 | user-approved diagnostic | Include as a weaker-penalty curiosity test and instability probe, not as a launch candidate by default. |
+| Finite-difference validation step grid | user-approved diagnostic | Start with `h = 1e-7, 3e-7, 1e-6, 3e-6, 1e-5, 3e-5` along the unit top-eigenvector direction. Treat these as numerical validation probes only, not a training bound. |
 
-## What Is Not Yet Justified
+## Resolved Decisions
 
-These choices should block implementation until the user confirms or an
-artifact with stronger evidence is found.
+The following choices were explicitly resolved by the user after the first
+blocked plan:
 
 1. Finite-difference probe step sizes.
 
-   The d55c5f0 spec requires finite-difference probes along the top eigenvector,
-   but it does not name the step sizes. Here "radii" would mean small signed
-   step sizes along a unit top-eigenvector direction for validating local
-   curvature. They would not be a training hard bound. I have not found a
-   source that justifies exact values.
+   Use a geometric local-validation grid along the unit top-eigenvector
+   direction:
+
+   ```text
+   h = 1e-7, 3e-7, 1e-6, 3e-6, 1e-5, 3e-5
+   ```
+
+   These are finite-difference validation probes only. They are not hard caps
+   and are not a training perturbation budget. If this grid does not show a
+   stable curvature plateau, expand one notch smaller or larger and report that
+   the first grid was inconclusive.
 
 2. Whether to include beta below 1 in the first redo sweep.
 
-   Beta below 1 is conceptually allowed as a weaker-than-local penalty and may
-   expose instability, but I have not found a reviewer artifact that promotes
-   a specific below-1 beta value to a launch-facing candidate.
+   Include `beta = 0.95` as a diagnostic curiosity test. It probes a slightly
+   weaker penalty than the p90 local-curvature scale because
+   `0.95^2 = 0.9025`. It should be labelled as a weaker-penalty instability
+   probe, not as a launch candidate by default.
 
 3. Whether p75 or p90 is the launch-facing quantile.
 
-   The d55c5f0 spec says p75 or p90 can be used and that the choice is
-   scientific. The previous work centered on p90, so p90 is the continuity
-   default, but I have not found a source that makes p90 mandatory for the
-   cap-independent redo.
+   Keep p90 as the primary continuity summary for this redo. Still report
+   median, p75, p90, max, and uncertainty so the result shows how conservative
+   p90 is relative to the rest of the distribution.
 
 ## Proposed Work After User Decision
 
@@ -138,15 +146,15 @@ Implement or reuse a corrected estimator that:
 - records `lambda_star_i = 0.5 * eigmax_i` under the ordinary Hessian
   convention;
 - reports median, p75, p90, max, and uncertainty over the per-trial
-  `lambda_star_i` values;
+  `lambda_star_i` values, using p90 as the primary continuity summary;
 - validates representative estimates with finite-difference probes along the
-  top direction, once probe step sizes are approved;
+  top direction using `1e-7, 3e-7, 1e-6, 3e-6, 1e-5, 3e-5`;
 - writes tracked summaries under `results/31e67ff/` and bulky traces under
   `_artifacts/31e67ff/`.
 
 ### 2. Direct-epsilon objective sweep
 
-Redo direct-epsilon sweeps around the chosen per-trial distribution summary of
+Redo direct-epsilon sweeps around the p90 per-trial distribution summary of
 the corrected local estimate. The primary readout should be raw soft-objective
 behavior:
 
@@ -174,18 +182,16 @@ exist. Do not match Adam against the cap-conditioned 1697bdc rows.
 Regenerate a new no-launch spec only after the corrected chain is coherent. It
 must say plainly that no training is approved yet and must list:
 
-- the chosen quantile and why it was chosen;
+- p90 as the chosen continuity quantile, with median/p75/max sidecars;
 - the beta values and whether each is candidate, diagnostic, or instability
-  probe;
+  probe, including beta 0.95 as diagnostic only;
 - the optimizer evidence;
 - the cap sidecars as diagnostics only;
 - unresolved risks before any smoke or full training run.
 
-## Current Stop Point
+## Current Go Point
 
 I have not found a completed true HVP/Lanczos/power soft-lambda estimate in the
-tracked artifacts. I also have not found an artifact that fixes the
-finite-difference probe step sizes or chooses p75 versus p90 for the redo.
-
-Implementation should wait for user judgment on those choices, unless a later
-archaeology pass finds an already-justified source.
+tracked artifacts. The user has now approved the missing choices needed to
+start implementation: keep p90, include beta 0.95 as a diagnostic test, and use
+the finite-difference plateau grid above as local numerical validation.
