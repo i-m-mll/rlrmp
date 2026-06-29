@@ -252,6 +252,8 @@ results/**
 !results/**/migration_index.json
 # Analysis-note manifests:
 !results/**/notes/*manifest.json
+# Small tracked calibration tables:
+!results/**/notes/*calibration_table.json
 # Analysis regeneration specs / backfill indexes:
 !results/**/notes/*regeneration_spec.json
 !results/**/notes/diagnostic_regeneration_specs*.json

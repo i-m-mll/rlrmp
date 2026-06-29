@@ -107,9 +107,8 @@ def plan_gru_postrun_materialization(
             repo_root=repo_root,
             manifest_path=fixed_bank_rescore_manifest_path,
         )
-        fixed_bank_available = (
-            fixed_bank_manifest is not None
-            and all(run_id in fixed_bank_manifest.get("runs", {}) for run_id in run_ids)
+        fixed_bank_available = fixed_bank_manifest is not None and all(
+            run_id in fixed_bank_manifest.get("runs", {}) for run_id in run_ids
         )
     effective_checkpoint_policy = (
         str(fixed_bank_manifest.get("checkpoint_policy") or "fixed_bank_rescored_per_replicate")
@@ -134,8 +133,7 @@ def plan_gru_postrun_materialization(
             fixed_bank_rescore_manifest_path if use_validation_selected_checkpoints else None
         ),
         standard_note_path=notes_dir / f"gru_standard_certificates_{output_tag}.md",
-        standard_manifest_path=notes_dir
-        / f"gru_standard_certificates_{output_tag}_manifest.json",
+        standard_manifest_path=notes_dir / f"gru_standard_certificates_{output_tag}_manifest.json",
         evaluation_manifest_path=notes_dir / f"gru_evaluation_diagnostics_{output_tag}.json",
         evaluation_bulk_dir=artifact_dir / "evaluation_diagnostics" / f"gru_{output_tag}",
         figure_output_dir=artifact_dir / "figures" / f"gru_postrun_{output_tag}",
@@ -150,7 +148,7 @@ def plan_gru_postrun_materialization(
         perturbation_response_bulk_dir=(
             artifact_dir / "perturbation_response" / f"gru_{output_tag}"
         ),
-        feedback_ablation_json_path=notes_dir / f"gru_feedback_ablation_{output_tag}.json",
+        feedback_ablation_json_path=notes_dir / f"gru_feedback_ablation_{output_tag}_manifest.json",
         feedback_ablation_note_path=notes_dir / f"gru_feedback_ablation_{output_tag}.md",
         postrun_manifest_path=notes_dir / f"gru_postrun_materialization_{output_tag}.json",
         postrun_regeneration_spec_path=(
@@ -327,6 +325,7 @@ def materialize_gru_postrun_analysis(
             calibration_level=perturbation_calibration_level,
             calibration_reach=perturbation_calibration_reach,
             feedback_selection_level=feedback_selection_level,
+            feedback_scale_manifest_path=plan.evaluation_manifest_path,
             preferred_checkpoint_manifest_path=effective_checkpoint_manifest_path,
             regeneration_spec_path=_regeneration_spec_path(plan.feedback_ablation_json_path),
             repo_root=repo_root,
@@ -463,6 +462,7 @@ def materialize_optional_feedback_ablation(
     calibration_level: str | Sequence[str] | None = None,
     calibration_reach: str | float | None = None,
     feedback_selection_level: str = "small",
+    feedback_scale_manifest_path: Path | None = None,
     preferred_checkpoint_manifest_path: Path | None = None,
     regeneration_spec_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
@@ -494,6 +494,7 @@ def materialize_optional_feedback_ablation(
             calibration_level=calibration_level,
             calibration_reach=calibration_reach,
             feedback_selection_level=feedback_selection_level,
+            feedback_scale_manifest_path=feedback_scale_manifest_path,
             preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
             output_path=output_path,
             note_path=note_path,
@@ -512,14 +513,15 @@ def materialize_optional_feedback_ablation(
 
     runs = result.get("runs", {}) if isinstance(result, dict) else {}
     audit = (
-        result.get("feedback_checkpoint_selection_audit", {})
-        if isinstance(result, dict)
-        else {}
+        result.get("feedback_checkpoint_selection_audit", {}) if isinstance(result, dict) else {}
     )
     return {
         "status": "materialized",
         "json_path": _repo_relative(output_path, repo_root=repo_root),
         "note_path": _repo_relative(note_path, repo_root=repo_root),
+        "bulk_detail_manifest": (
+            result.get("bulk_detail_manifest") if isinstance(result, dict) else None
+        ),
         "regeneration_spec": (
             None
             if regeneration_spec_path is None
@@ -629,7 +631,10 @@ def _write_postrun_auxiliary_regeneration_specs(
         inputs=run_inputs + checkpoint_inputs,
         outputs=[
             {"role": "pilot_figure_dir", "path": plan.figure_output_dir},
-            {"role": "pilot_figure_summary", "path": plan.figure_output_dir / "figure_summary.json"},
+            {
+                "role": "pilot_figure_summary",
+                "path": plan.figure_output_dir / "figure_summary.json",
+            },
         ],
         source_files=["src/rlrmp/analysis/pipelines/gru_pilot_figures.py"],
         notes=["Postrun-owned regeneration spec for pilot loss/velocity figures."],
@@ -652,7 +657,10 @@ def _write_postrun_auxiliary_regeneration_specs(
             + checkpoint_inputs
             + [{"role": "standard_certificate_manifest", "path": plan.standard_manifest_path}],
             outputs=[
-                {"role": "objective_comparator_manifest", "path": plan.objective_comparator_json_path},
+                {
+                    "role": "objective_comparator_manifest",
+                    "path": plan.objective_comparator_json_path,
+                },
                 {"role": "objective_comparator_note", "path": plan.objective_comparator_note_path},
             ],
             source_files=[
@@ -681,9 +689,7 @@ def _write_postrun_auxiliary_regeneration_specs(
                 {"role": "map_decomposition_note", "path": plan.map_decomposition_note_path},
             ],
             source_files=["src/rlrmp/analysis/pipelines/gru_map_error_decomposition.py"],
-            notes=[
-                "Postrun-owned regeneration spec for target-relative map-error decomposition."
-            ],
+            notes=["Postrun-owned regeneration spec for target-relative map-error decomposition."],
             repo_root=repo_root,
         )
     write_regeneration_spec(
@@ -722,7 +728,10 @@ def _write_postrun_auxiliary_regeneration_specs(
             {"role": "pilot_figure_dir", "path": plan.figure_output_dir},
             {"role": "objective_comparator_manifest", "path": plan.objective_comparator_json_path},
             {"role": "map_decomposition_manifest", "path": plan.map_decomposition_json_path},
-            {"role": "perturbation_response_manifest", "path": plan.perturbation_response_json_path},
+            {
+                "role": "perturbation_response_manifest",
+                "path": plan.perturbation_response_json_path,
+            },
             {"role": "feedback_ablation_manifest", "path": plan.feedback_ablation_json_path},
         ],
         source_files=[

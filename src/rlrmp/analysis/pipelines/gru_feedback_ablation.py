@@ -62,8 +62,9 @@ DEFAULT_RUN_IDS = (
 )
 DEFAULT_NOTE_FILENAME = "gru_feedback_ablation_fixed_target_random_perturb_validation_selected.md"
 DEFAULT_OUTPUT_FILENAME = (
-    "gru_feedback_ablation_fixed_target_random_perturb_validation_selected.json"
+    "gru_feedback_ablation_fixed_target_random_perturb_validation_selected_manifest.json"
 )
+DEFAULT_BULK_SUBDIR = "feedback_ablation"
 
 AblationMode = Literal[
     "normal",
@@ -231,7 +232,10 @@ def selected_feedback_ablation_bins_for_bank(
         if isinstance(row, Mapping)
     }
     if str(bank.get("bank_id", "")).startswith("cs_standard_perturbation_response"):
-        return selected_feedback_ablation_bins()
+        return {
+            bin_id: perturbation_id if perturbation_id in rows else None
+            for bin_id, perturbation_id in selected_feedback_ablation_bins().items()
+        }
     return {
         "nominal": None,
         "initial_state": _select_representative_perturbation_id(
@@ -397,12 +401,8 @@ def summarize_ablation_delta(
     """Return compact per-ablation deltas against a normal-observation baseline."""
 
     return {
-        "baseline_action_norm": _summary_stats(
-            np.linalg.norm(baseline.rollout.command, axis=-1)
-        ),
-        "ablated_action_norm": _summary_stats(
-            np.linalg.norm(ablated.rollout.command, axis=-1)
-        ),
+        "baseline_action_norm": _summary_stats(np.linalg.norm(baseline.rollout.command, axis=-1)),
+        "ablated_action_norm": _summary_stats(np.linalg.norm(ablated.rollout.command, axis=-1)),
         "delta_action_norm": _summary_stats(
             np.linalg.norm(ablated.rollout.command - baseline.rollout.command, axis=-1)
         ),
@@ -666,9 +666,7 @@ def interpret_run_feedback_ablation(rows: Sequence[Mapping[str, Any]]) -> dict[s
     ]
     max_feedback_delta = max(perturb_sensitive) if perturb_sensitive else 0.0
     max_channel_delta = (
-        max(channel_position + channel_velocity)
-        if channel_position or channel_velocity
-        else 0.0
+        max(channel_position + channel_velocity) if channel_position or channel_velocity else 0.0
     )
     if max_feedback_delta >= 1e-2:
         return {
@@ -707,9 +705,11 @@ def materialize_gru_feedback_ablation(
     calibration_level: str | Sequence[str] | None = None,
     calibration_reach: str | float | None = None,
     feedback_selection_level: str = "small",
+    feedback_scale_manifest_path: Path | None = None,
     preferred_checkpoint_manifest_path: Path | None = None,
     output_path: Path | None = None,
     note_path: Path | None = None,
+    bulk_dir: Path | None = None,
     regeneration_spec_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
@@ -720,10 +720,15 @@ def materialize_gru_feedback_ablation(
     output_path = output_path or result_notes_dir / DEFAULT_OUTPUT_FILENAME
     note_path = note_path or result_notes_dir / DEFAULT_NOTE_FILENAME
     regeneration_spec_path = regeneration_spec_path or _regeneration_spec_path(output_path)
+    topic = _manifest_topic(output_path)
+    bulk_dir = (
+        bulk_dir or repo_root / "_artifacts" / result_experiment / DEFAULT_BULK_SUBDIR / topic
+    )
     bank = default_cs_perturbation_bank(
         mode=bank_mode,  # type: ignore[arg-type]
         calibration_level=calibration_level,
         calibration_reach=calibration_reach,
+        feedback_scale_manifest_path=feedback_scale_manifest_path,
     )
     evaluation_bins = selected_feedback_ablation_bins_for_bank(
         bank,
@@ -783,7 +788,18 @@ def materialize_gru_feedback_ablation(
         "runs": runs,
     }
     manifest["feedback_checkpoint_selection_audit"] = feedback_checkpoint_selection_audit(manifest)
-    output_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    detail_manifest_path = bulk_dir / f"{topic}_detail.json"
+    tracked_manifest = _slim_feedback_ablation_manifest(
+        manifest,
+        detail_manifest_path=detail_manifest_path,
+        repo_root=repo_root,
+    )
+    mkdir_p(detail_manifest_path.parent)
+    detail_manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    output_path.write_text(json.dumps(tracked_manifest, indent=2, sort_keys=True) + "\n")
     note_path.write_text(render_feedback_ablation_markdown(manifest))
     write_regeneration_spec(
         spec_path=regeneration_spec_path,
@@ -802,28 +818,36 @@ def materialize_gru_feedback_ablation(
             "calibration_level": calibration_level,
             "calibration_reach": calibration_reach,
             "feedback_selection_level": feedback_selection_level,
+            "bulk_dir": _repo_relative(bulk_dir, repo_root=repo_root),
+            "feedback_scale_manifest_path": (
+                None
+                if feedback_scale_manifest_path is None
+                else _repo_relative(feedback_scale_manifest_path, repo_root=repo_root)
+            ),
             "preferred_checkpoint_manifest_path": (
                 None
                 if preferred_checkpoint_manifest_path is None
                 else _repo_relative(preferred_checkpoint_manifest_path, repo_root=repo_root)
             ),
         },
-        inputs=[
-            {"role": "run_spec", "path": run.run_spec_path}
-            for run in run_inputs
-        ]
-        + [
-            {"role": "run_artifact_dir", "path": run.artifact_dir}
-            for run in run_inputs
-        ]
+        inputs=[{"role": "run_spec", "path": run.run_spec_path} for run in run_inputs]
+        + [{"role": "run_artifact_dir", "path": run.artifact_dir} for run in run_inputs]
         + (
             []
             if preferred_checkpoint_manifest_path is None
             else [{"role": "checkpoint_manifest", "path": preferred_checkpoint_manifest_path}]
+        )
+        + (
+            []
+            if feedback_scale_manifest_path is None
+            else [
+                {"role": "controller_feedback_scale_manifest", "path": feedback_scale_manifest_path}
+            ]
         ),
         outputs=[
             {"role": "feedback_ablation_manifest", "path": output_path},
             {"role": "feedback_ablation_note", "path": note_path},
+            {"role": "feedback_ablation_detail_manifest", "path": detail_manifest_path},
         ],
         source_files=[
             "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
@@ -832,15 +856,99 @@ def materialize_gru_feedback_ablation(
         ],
         notes=[
             "Feedback ablation and feedback-selected checkpoints are audit-only.",
-            "The spec records inputs for recomputing the ablation table.",
+            "The tracked manifest is intentionally slim and points to _artifacts detail bytes.",
         ],
         repo_root=repo_root,
     )
-    return manifest
+    return tracked_manifest
 
 
 def _regeneration_spec_path(path: Path) -> Path:
     return path.with_name(f"{path.stem}_regeneration_spec.json")
+
+
+def _manifest_topic(path: Path) -> str:
+    stem = path.stem
+    return stem[: -len("_manifest")] if stem.endswith("_manifest") else stem
+
+
+def _slim_feedback_ablation_manifest(
+    manifest: Mapping[str, Any],
+    *,
+    detail_manifest_path: Path,
+    repo_root: Path,
+) -> dict[str, Any]:
+    """Remove full ablation rows and checkpoint-score rows from tracked JSON."""
+
+    detail_ref = _repo_relative(detail_manifest_path, repo_root=repo_root)
+    slim = dict(manifest)
+    slim["manifest_role"] = "tracked_summary"
+    slim["bulk_detail_manifest"] = {
+        "path": detail_ref,
+        "format": "json",
+        "contains": (
+            "full per-run feedback-ablation rows plus full feedback checkpoint "
+            "rescore checkpoint-score details"
+        ),
+    }
+    slim_runs: dict[str, Any] = {}
+    for run_id, run_payload in dict(manifest.get("runs", {})).items():
+        run = dict(run_payload)
+        ablations = run.pop("ablations", [])
+        run["n_ablation_rows"] = len(ablations) if isinstance(ablations, Sequence) else 0
+        run["ablation_rows_detail_manifest"] = detail_ref
+        rescore = run.get("feedback_checkpoint_rescore")
+        if isinstance(rescore, Mapping):
+            run["feedback_checkpoint_rescore"] = _slim_feedback_checkpoint_rescore(
+                rescore,
+                detail_ref=detail_ref,
+            )
+        slim_runs[str(run_id)] = run
+    slim["runs"] = slim_runs
+    audit = slim.get("feedback_checkpoint_selection_audit")
+    if isinstance(audit, Mapping):
+        slim["feedback_checkpoint_selection_audit"] = _slim_feedback_checkpoint_selection_audit(
+            audit,
+            detail_ref=detail_ref,
+        )
+    return slim
+
+
+def _slim_feedback_checkpoint_rescore(
+    rescore: Mapping[str, Any],
+    *,
+    detail_ref: str,
+) -> dict[str, Any]:
+    slim = dict(rescore)
+    checkpoint_scores = slim.pop("checkpoint_scores", [])
+    slim["checkpoint_scores_detail_manifest"] = detail_ref
+    slim["n_checkpoint_candidates"] = int(
+        slim.get("n_checkpoint_candidates")
+        or (len(checkpoint_scores) if isinstance(checkpoint_scores, Sequence) else 0)
+    )
+    return slim
+
+
+def _slim_feedback_checkpoint_selection_audit(
+    audit: Mapping[str, Any],
+    *,
+    detail_ref: str,
+) -> dict[str, Any]:
+    slim = dict(audit)
+    runs = audit.get("runs")
+    if not isinstance(runs, Mapping):
+        return slim
+    slim_runs: dict[str, Any] = {}
+    for run_id, run_audit in runs.items():
+        if not isinstance(run_audit, Mapping):
+            continue
+        slim_runs[str(run_id)] = _slim_feedback_checkpoint_rescore(
+            run_audit,
+            detail_ref=detail_ref,
+        )
+    slim["runs"] = slim_runs
+    slim["checkpoint_scores_detail_manifest"] = detail_ref
+    return slim
 
 
 def _effective_checkpoint_policy_from_manifest(
@@ -1047,9 +1155,7 @@ def evaluate_run_feedback_ablation(
     )
     base_trial_specs = repeat_single_validation_trial(pair.task.validation_trials, n_rollout_trials)
     bank = bank or default_cs_perturbation_bank()
-    perturbations = {
-        str(row["perturbation_id"]): row for row in bank["perturbations"]
-    }
+    perturbations = {str(row["perturbation_id"]): row for row in bank["perturbations"]}
     evaluation_bins = evaluation_bins or selected_feedback_ablation_bins_for_bank(bank)
     nominal = _evaluate_model_on_trial_specs(
         model=model,
@@ -1975,8 +2081,7 @@ def render_feedback_ablation_markdown(manifest: Mapping[str, Any]) -> str:
             "## Feedback-Selected Checkpoint Audit",
             "",
             f"- Status: `{audit.get('status', 'not_available')}`",
-            "- Selection use: "
-            f"`{audit.get('selection_use', FEEDBACK_AUDIT_SELECTION_ROLE)}`",
+            f"- Selection use: `{audit.get('selection_use', FEEDBACK_AUDIT_SELECTION_ROLE)}`",
             "- Primary checkpoint policy: "
             f"`{audit.get('primary_checkpoint_policy', manifest.get('checkpoint_policy'))}`",
         ]
@@ -2083,9 +2188,7 @@ def _perturbation_rescue_index(
             )
             continue
         delta_total = _summary_mean(rollout_full_qrf.get("delta_cost", {}).get("total", {}))
-        perturbed_total = _summary_mean(
-            rollout_full_qrf.get("perturbed_cost", {}).get("total", {})
-        )
+        perturbed_total = _summary_mean(rollout_full_qrf.get("perturbed_cost", {}).get("total", {}))
         if delta_total is None:
             continue
         if perturbed_total is None or abs(perturbed_total) <= 1e-12:
@@ -2139,8 +2242,7 @@ def _correction_index_vs_open_loop(
         if closed_loop_delta is None:
             continue
         values.append(
-            (float(open_loop_delta) - float(closed_loop_delta))
-            / abs(float(open_loop_delta))
+            (float(open_loop_delta) - float(closed_loop_delta)) / abs(float(open_loop_delta))
         )
     if not values:
         return {
@@ -2220,9 +2322,7 @@ def _run_small_perturbation_component(
         if row.get("bin") == "nominal" or row.get("mode") != "normal":
             continue
         value = _summary_mean(
-            row.get("metrics", {})
-            .get("baseline_full_qrf_cost", {})
-            .get("total", {})
+            row.get("metrics", {}).get("baseline_full_qrf_cost", {}).get("total", {})
         )
         if value is not None:
             values.append(float(value))
@@ -2263,8 +2363,7 @@ def _run_sensory_delayed_stability_component(
     unstable = [
         bin_id
         for bin_id, endpoint, terminal_speed in values
-        if endpoint > NOMINAL_ENDPOINT_WARN_M
-        or terminal_speed > NOMINAL_TERMINAL_SPEED_WARN_M_S
+        if endpoint > NOMINAL_ENDPOINT_WARN_M or terminal_speed > NOMINAL_TERMINAL_SPEED_WARN_M_S
     ]
     return {
         "status": "warn" if unstable else "pass",
@@ -2433,10 +2532,9 @@ def _has_replicate_specific_trial_inputs(trial_specs: Any, n_replicates: int) ->
 def _select_replicate_trial_inputs(trial_specs: Any, replicate: int, n_replicates: int) -> Any:
     inputs = {}
     for key, value in trial_specs.inputs.items():
-        if (
-            key.startswith(f"{OBSERVATION_ABLATION_INPUT_PREFIX}:")
-            and getattr(value, "shape", ())[:1] == (n_replicates,)
-        ):
+        if key.startswith(f"{OBSERVATION_ABLATION_INPUT_PREFIX}:") and getattr(value, "shape", ())[
+            :1
+        ] == (n_replicates,):
             inputs[key] = value[replicate]
         else:
             inputs[key] = value
