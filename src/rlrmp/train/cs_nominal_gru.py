@@ -79,7 +79,9 @@ from rlrmp.train.cs_perturbation_training import (
     LEGACY_PERTURBATION_TRAINING_MODE,
     PERTURBATION_TRAINING_MODE,
     POLICY_ADVERSARY_ENERGY_MODE,
+    POLICY_ADVERSARY_MEMORYLESS_MLP,
     POLICY_ADVERSARY_PLAIN_MODE,
+    POLICY_ADVERSARY_POLICY_CLASSES,
     POLICY_ADVERSARY_TRAINING_MODE,
     TARGET_SUPPORT_PROFILES,
     TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
@@ -90,7 +92,7 @@ from rlrmp.train.cs_perturbation_training import (
     PolicyFullStateEpsilonTrainingConfig,
     config_from_policy_adversary_hps,
     make_broad_epsilon_pgd_pre_step,
-    make_memoryless_policy_adversary,
+    make_policy_adversary,
     make_policy_adversary_pre_step,
     planned_33b0dcb_target_support_rows,
     planned_020a65b_h0_pgd_rows,
@@ -586,6 +588,12 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
             broad_pgd.get("sisu_max_radius_source"),
         ),
         "policy_adversary_training": bool(policy_adversary.get("enabled", False)),
+        "policy_adversary_policy_class": str(
+            policy_adversary.get(
+                "policy_class",
+                policy_payload.get("kind", POLICY_ADVERSARY_MEMORYLESS_MLP),
+            )
+        ),
         "policy_adversary_mode": str(
             policy_adversary.get(
                 "row_mode",
@@ -917,6 +925,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
     )
     policy_adversary_training = PolicyFullStateEpsilonTrainingConfig(
         enabled=bool(args.policy_adversary_training),
+        policy_class=str(args.policy_adversary_policy_class),
         mode=str(args.policy_adversary_mode),
         width=int(args.policy_adversary_width),
         depth=int(args.policy_adversary_depth),
@@ -1415,11 +1424,7 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
         "nominal_only": _nominal_only(hps),
         "training_distribution": _training_distribution_metadata(hps),
         "delayed_reach": _plain(hps.delayed_reach),
-        "adversarial_phase": (
-            "learned_memoryless_policy_adversary"
-            if _policy_adversary_training_enabled(hps)
-            else "none"
-        ),
+        "adversarial_phase": _adversarial_phase(hps),
         "certificate_lens": "input_output_map_certificate",
         "certificate_coordinate_claim": "not_same_coordinate_gain",
         "analytical_delay_augmented_state_input": False,
@@ -1454,11 +1459,7 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "method": str(hps.method),
         "nominal_only": _nominal_only(hps),
         "training_distribution": _training_distribution_metadata(hps),
-        "adversarial_phase": (
-            "learned_memoryless_policy_adversary"
-            if _policy_adversary_training_enabled(hps)
-            else "none"
-        ),
+        "adversarial_phase": _adversarial_phase(hps),
         "certificate_lens": "input_output_map_certificate",
         "analytical_delay_augmented_state_input": False,
         "stochastic_runtime": _stochastic_runtime_contract(hps),
@@ -1645,11 +1646,7 @@ def build_run_spec(
             "training_summary.validation_bins": "$.validation_bins",
             "validation_bins": "$.validation_bins",
         },
-        "adversarial_phase": (
-            "learned_memoryless_policy_adversary"
-            if _policy_adversary_training_enabled(hps)
-            else "none"
-        ),
+        "adversarial_phase": _adversarial_phase(hps),
         "modal_launch": "not_requested",
         "full_training_launch": "requested" if args.full_train else "not_requested",
         "seed": int(args.seed),
@@ -2131,9 +2128,10 @@ def run_full_training(
     adversary_optimizer_state_template = None
     if policy_adversary_enabled:
         adversary_cfg = config_from_policy_adversary_hps(hps.policy_adversary_training)
-        adversary_policy_template = make_memoryless_policy_adversary(
+        adversary_policy_template = make_policy_adversary(
             adversary_cfg,
             key=key_adversary,
+            horizon=max(1, int(hps.task.n_steps) - 1),
         )
         policy_adversary_optimizer = optax.adam(float(adversary_cfg.learning_rate))
         adversary_optimizer_state_template = policy_adversary_optimizer.init(
@@ -2947,9 +2945,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--policy-adversary-training",
         action="store_true",
         help=(
-            "Enable learned memoryless full-state epsilon policy-adversary training. "
-            "This replaces PGD for issue e901a20 rows and keeps adversary weights "
+            "Enable learned full-state epsilon policy-adversary training. "
+            "This replaces PGD for policy-adversary rows and keeps adversary weights "
             "persistent across controller batches."
+        ),
+    )
+    parser.add_argument(
+        "--policy-adversary-policy-class",
+        choices=POLICY_ADVERSARY_POLICY_CLASSES,
+        default=POLICY_ADVERSARY_MEMORYLESS_MLP,
+        help=(
+            "Adversary policy parameterization: memoryless_mlp for the existing MLP lane, "
+            "or linear_no_bias/affine for finite time-varying policies optimized by Adam."
         ),
     )
     parser.add_argument(
@@ -3469,6 +3476,21 @@ def _policy_adversary_training_enabled(hps: TreeNamespace) -> bool:
     return bool(getattr(getattr(hps, "policy_adversary_training", None), "enabled", False))
 
 
+def _policy_adversary_policy_class(hps: TreeNamespace) -> str:
+    if not _policy_adversary_training_enabled(hps):
+        return "disabled"
+    return config_from_policy_adversary_hps(hps.policy_adversary_training).policy_class
+
+
+def _adversarial_phase(hps: TreeNamespace) -> str:
+    policy_class = _policy_adversary_policy_class(hps)
+    if policy_class == "disabled":
+        return "none"
+    if policy_class == POLICY_ADVERSARY_MEMORYLESS_MLP:
+        return "learned_memoryless_policy_adversary"
+    return f"learned_finite_{policy_class}_policy_adversary"
+
+
 def _nominal_only(hps: TreeNamespace) -> bool:
     return (
         not _perturbation_training_enabled(hps)
@@ -3601,11 +3623,7 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
             "checkpoint_selection_role": ("target_relative_multitarget_rollout_validation"),
             "nominal_quality_role": "original_anchor_and_seen_held_out_targets_reported",
             "controller_internal_mutation": False,
-            "adversarial_phase": (
-                "learned_memoryless_policy_adversary"
-                if _policy_adversary_training_enabled(hps)
-                else "none"
-            ),
+            "adversarial_phase": _adversarial_phase(hps),
         }
     if (
         not bool(getattr(config, "enabled", False))
@@ -3675,11 +3693,7 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
         "checkpoint_selection_role": "generalized_held_out_perturbation_validation",
         "nominal_quality_role": "reported_quality_sidecar_gate",
         "controller_internal_mutation": False,
-        "adversarial_phase": (
-            "learned_memoryless_policy_adversary"
-            if _policy_adversary_training_enabled(hps)
-            else "none"
-        ),
+        "adversarial_phase": _adversarial_phase(hps),
     }
 
 

@@ -75,3 +75,33 @@ def test_target_centered_full_state_features_zero_at_target_centered_state() -> 
     features = target_centered_full_state_features(mechanics, target_position=target)
 
     np.testing.assert_allclose(features, 0.0)
+
+
+def test_target_centered_full_state_features_supports_no_integrator_blocks() -> None:
+    target = jnp.asarray([0.12, 0.03], dtype=jnp.float32)
+    mechanics = jnp.zeros((2, 4, 12), dtype=jnp.float32)
+    mechanics = mechanics.at[..., 0:2].set(target)
+    mechanics = mechanics.at[..., 6:8].set(target)
+    mechanics = mechanics.at[..., 2].set(1.5)
+    mechanics = mechanics.at[..., 8].set(-2.0)
+
+    features = target_centered_full_state_features(mechanics, target_position=target)
+
+    np.testing.assert_allclose(np.asarray(features[..., 0:2]), 0.0)
+    np.testing.assert_allclose(np.asarray(features[..., 6:8]), 0.0)
+    np.testing.assert_allclose(np.asarray(features[..., 2]), 1.5)
+    np.testing.assert_allclose(np.asarray(features[..., 8]), -2.0)
+
+
+def test_target_centered_full_state_features_broadcasts_batched_targets() -> None:
+    target = jnp.asarray([[0.12, 0.03], [0.05, -0.02]], dtype=jnp.float32)
+    mechanics = jnp.zeros((2, 4, 12), dtype=jnp.float32)
+    mechanics = mechanics.at[0, ..., 0:2].set(target[0])
+    mechanics = mechanics.at[0, ..., 6:8].set(target[0])
+    mechanics = mechanics.at[1, ..., 0:2].set(target[1])
+    mechanics = mechanics.at[1, ..., 6:8].set(target[1])
+
+    features = target_centered_full_state_features(mechanics, target_position=target)
+
+    np.testing.assert_allclose(np.asarray(features[..., 0:2]), 0.0)
+    np.testing.assert_allclose(np.asarray(features[..., 6:8]), 0.0)

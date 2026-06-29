@@ -199,3 +199,41 @@ def test_active_optimizer_summary_prefers_enabled_broad_pgd_over_disabled_adam()
     assert summary["inactive_policy_adam_metadata"]["method"] == "adam"
     assert summary["inactive_policy_adam_metadata"]["enabled"] is False
     assert any("inactive metadata" in warning for warning in summary["warnings"])
+
+
+def test_active_optimizer_summary_reports_finite_policy_adam_lane() -> None:
+    run_spec = {
+        "hps": {
+            "broad_epsilon_pgd_training": {"enabled": False},
+            "policy_adversary_training": {
+                "enabled": True,
+                "row_mode": "energy",
+                "policy_class": AFFINE_POLICY,
+                "policy": {
+                    "kind": AFFINE_POLICY,
+                    "evaluation_semantics": "static_epsilon_materialized_from_clean_rollout_pre_step",
+                    "closed_loop_semantics_status": "not_live_rollout_hook",
+                },
+                "inner_optimizer": {
+                    "method": "adam",
+                    "learning_rate": 1e-3,
+                    "n_ascent_steps_per_controller_step": 5,
+                    "weights_persist_across_batches": True,
+                },
+            },
+        }
+    }
+
+    summary = summarize_active_broad_epsilon_optimizer(run_spec)
+
+    assert summary["active_lane"] == "policy_adversary_training.inner_optimizer"
+    assert summary["active_method"] == "adam"
+    assert summary["active_mechanism"] == AFFINE_POLICY
+    assert summary["active_mode"] == "energy"
+    assert summary["active_policy_evaluation_semantics"] == (
+        "static_epsilon_materialized_from_clean_rollout_pre_step"
+    )
+    assert summary["policy_adversary_training_enabled"] is True
+    assert summary["inactive_policy_adam_metadata"]["enabled"] is True
+    assert not any("inactive metadata" in warning for warning in summary["warnings"])
+    assert any("live rollout hook" in warning for warning in summary["warnings"])

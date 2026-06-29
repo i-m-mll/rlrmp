@@ -1,0 +1,1 @@
+Regenerated frozen-batch gate for issue 9bb676f. Tracked files record finite-policy Adam routing, checkpoint/batch provenance, and direct/linear/affine lambda diagnostics; bulk tensors live under `_artifacts/9bb676f/`.

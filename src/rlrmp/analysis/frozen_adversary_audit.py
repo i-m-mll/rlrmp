@@ -505,6 +505,7 @@ def summarize_active_broad_epsilon_optimizer(run_spec: Mapping[str, Any]) -> dic
     hps = _mapping(run_spec.get("hps"))
     broad = _mapping(hps.get("broad_epsilon_pgd_training"))
     policy = _mapping(hps.get("policy_adversary_training"))
+    policy_payload = _mapping(policy.get("policy"))
     inner = _mapping(broad.get("inner_maximizer"))
     objective = _mapping(broad.get("objective"))
     safety_cap = _mapping(broad.get("safety_cap"))
@@ -518,10 +519,13 @@ def summarize_active_broad_epsilon_optimizer(run_spec: Mapping[str, Any]) -> dic
     if broad_enabled:
         active_lane = "broad_epsilon_pgd_training.inner_maximizer"
         active_method = inner.get("method")
+        active_mechanism = broad.get("adversary_mechanism")
     elif policy_enabled:
         active_lane = "policy_adversary_training.inner_optimizer"
         active_method = policy_inner.get("method")
+        active_mechanism = policy.get("policy_class") or policy_payload.get("kind")
     else:
+        active_mechanism = None
         warnings.append("no finite/broad epsilon optimizer lane is enabled")
 
     if broad_enabled and policy_inner.get("method") is not None and not policy_enabled:
@@ -537,13 +541,28 @@ def summarize_active_broad_epsilon_optimizer(run_spec: Mapping[str, Any]) -> dic
         mechanism = _mapping(broad.get("mechanism"))
         if not mechanism.get("no_fake_open_loop_replay", False):
             warnings.append("finite mechanism metadata does not explicitly forbid open-loop replay")
+    if policy_enabled and active_method != "adam":
+        warnings.append("active policy-adversary finite path is not Adam")
+    if (
+        policy_enabled
+        and active_mechanism in {LINEAR_NO_BIAS_POLICY, AFFINE_POLICY}
+        and policy_payload.get("closed_loop_semantics_status") == "not_live_rollout_hook"
+    ):
+        warnings.append(
+            "finite policy uses Adam over finite parameters, but current training integration "
+            "materializes static epsilon from clean-rollout features instead of a live rollout hook"
+        )
 
     return {
         "active_lane": active_lane,
         "active_method": active_method,
         "active_enabled": bool(active_lane),
-        "active_mechanism": broad.get("adversary_mechanism"),
-        "active_mode": broad.get("mode"),
+        "active_mechanism": active_mechanism,
+        "active_mode": broad.get("mode") if broad_enabled else policy.get("row_mode"),
+        "active_policy_evaluation_semantics": policy_payload.get("evaluation_semantics"),
+        "active_policy_closed_loop_semantics_status": policy_payload.get(
+            "closed_loop_semantics_status"
+        ),
         "active_initialization": inner.get("initialization"),
         "active_n_steps": inner.get("n_steps"),
         "active_step_size_fraction_of_l2_radius": inner.get("step_size_fraction_of_l2_radius"),

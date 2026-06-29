@@ -82,8 +82,11 @@ from rlrmp.train.cs_perturbation_training import (
     DEFAULT_TARGET_SUPPORT_PROFILE,
     EFFECTIVE_020A65B_PGD_RADIUS_15CM,
     GRAPH_ADAPTER_SPECS,
+    AFFINE_POLICY,
+    LINEAR_NO_BIAS_POLICY,
     MILD_COMBINED_FAMILIES,
     PERTURBATION_TRAINING_MODE,
+    POLICY_ADVERSARY_MEMORYLESS_MLP,
     POLICY_ADVERSARY_ENERGY_MODE,
     POLICY_ADVERSARY_PLAIN_MODE,
     POLICY_ADVERSARY_TRAINING_MODE,
@@ -646,6 +649,8 @@ def test_policy_adversary_hps_declares_memoryless_policy_and_excludes_pgd() -> N
     assert cfg.state_feature_dim == 48
     assert cfg.reference_l2_radius == pytest.approx(EFFECTIVE_020A65B_PGD_RADIUS_15CM)
     assert hps.policy_adversary_training.mode == POLICY_ADVERSARY_TRAINING_MODE
+    assert hps.policy_adversary_training.policy_class == POLICY_ADVERSARY_MEMORYLESS_MLP
+    assert hps.policy_adversary_training.policy.kind == POLICY_ADVERSARY_MEMORYLESS_MLP
     assert hps.policy_adversary_training.objective.formal_certificate is False
     assert hps.broad_epsilon_pgd_training.enabled is False
     assert hps.broad_epsilon_training.enabled is False
@@ -658,6 +663,61 @@ def test_policy_adversary_hps_declares_memoryless_policy_and_excludes_pgd() -> N
                 broad_epsilon_pgd_training=True,
             )
         )
+
+
+@pytest.mark.parametrize("policy_class", [LINEAR_NO_BIAS_POLICY, AFFINE_POLICY])
+def test_finite_policy_adversary_hps_declares_active_adam_and_excludes_pgd(
+    policy_class: str,
+    tmp_path: Path,
+) -> None:
+    args = _args(
+        output_dir=str(tmp_path / "artifacts"),
+        spec_dir=str(tmp_path / "spec"),
+        dry_run=True,
+        issue="9bb676f",
+        target_relative_multitarget=True,
+        force_filter_feedback=True,
+        initial_hidden_encoder=True,
+        perturbation_training=True,
+        perturbation_calibrated_timing=True,
+        perturbation_physical_level="small",
+        policy_adversary_training=True,
+        policy_adversary_policy_class=policy_class,
+        policy_adversary_mode=POLICY_ADVERSARY_ENERGY_MODE,
+        policy_adversary_steps=7,
+        policy_adversary_lr=1e-3,
+        policy_adversary_radius_15cm=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+        broad_epsilon_reach_scaling=True,
+        loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+    )
+
+    hps = build_hps(args)
+    cfg = config_from_policy_adversary_hps(hps.policy_adversary_training)
+    payload = write_run_spec(args)["run_spec"]
+    policy = payload["hps"]["policy_adversary_training"]["policy"]
+    optimizer = payload["hps"]["policy_adversary_training"]["inner_optimizer"]
+    distribution = payload["training_distribution"]
+
+    assert cfg.enabled is True
+    assert cfg.policy_class == policy_class
+    assert cfg.mode == POLICY_ADVERSARY_ENERGY_MODE
+    assert hps.broad_epsilon_pgd_training.enabled is False
+    assert hps.broad_epsilon_training.enabled is False
+    assert payload["adversarial_phase"] == f"learned_finite_{policy_class}_policy_adversary"
+    assert policy["kind"] == policy_class
+    assert policy["parameterization"] == "shared_time_varying_finite_policy"
+    assert (
+        policy["evaluation_semantics"] == "static_epsilon_materialized_from_clean_rollout_pre_step"
+    )
+    assert policy["closed_loop_semantics_status"] == "not_live_rollout_hook"
+    assert policy["has_bias"] is (policy_class == AFFINE_POLICY)
+    assert optimizer["method"] == "adam"
+    assert optimizer["n_ascent_steps_per_controller_step"] == 7
+    assert optimizer["learning_rate"] == pytest.approx(1e-3)
+    assert optimizer["weights_persist_across_batches"] is True
+    assert distribution["training_axes"]["policy_adversary_training"] is True
+    assert distribution["broad_epsilon_pgd_training"]["enabled"] is False
+    assert distribution["policy_adversary_training"]["policy"]["kind"] == policy_class
 
 
 def test_policy_adversary_cli_run_spec_and_planned_rows(tmp_path: Path) -> None:
@@ -683,7 +743,7 @@ def test_policy_adversary_cli_run_spec_and_planned_rows(tmp_path: Path) -> None:
 
     payload = write_run_spec(args)["run_spec"]
     policy = payload["hps"]["policy_adversary_training"]
-    distribution = payload["training_summary"]["training_distribution"]
+    distribution = payload["training_distribution"]
 
     assert payload["adversarial_phase"] == "learned_memoryless_policy_adversary"
     assert policy["enabled"] is True
@@ -757,6 +817,15 @@ def test_policy_adversary_projection_reports_radius_energy_and_boundary() -> Non
     assert diagnostics["epsilon_norm_radius_ratio_max"] == pytest.approx(1.0)
     assert diagnostics["epsilon_energy_mean"] == pytest.approx((4.0 + 0.25) / 2.0)
     assert diagnostics["boundary_fraction"] == pytest.approx(0.5)
+
+
+def test_policy_projection_has_finite_gradient_at_zero_start() -> None:
+    raw = jnp.zeros((2, 3, 1), dtype=jnp.float32)
+    radius = jnp.asarray([1.0, 1.0], dtype=jnp.float32)
+
+    grad = jax.grad(lambda value: jnp.sum(_project_flattened_per_trial_l2_ball(value, radius)))(raw)
+
+    assert jnp.all(jnp.isfinite(grad))
 
 
 def test_policy_adversary_controller_prestep_detaches_projected_epsilon() -> None:
@@ -2090,9 +2159,7 @@ def test_perturbation_training_run_spec_and_planned_rows(tmp_path: Path) -> None
     assert payload["nominal_only"] is False
     assert payload["training_summary"]["training_mode"] == PERTURBATION_TRAINING_MODE
     assert payload["validation_bins"]["bins"][0]["bin"] == "nominal"
-    assert payload["validation_bins"]["selection_role"].startswith(
-        "aggregate rollout loss"
-    )
+    assert payload["validation_bins"]["selection_role"].startswith("aggregate rollout loss")
     assert payload["training_distribution"]["fixed_target_only"] is True
     assert payload["training_distribution"]["checkpoint_selection_role"] == (
         "generalized_held_out_perturbation_validation"
@@ -2201,10 +2268,7 @@ def test_movement_age_timing_run_spec_distinguishes_timing_basis(tmp_path: Path)
     assert movement_perturbation["timing_bins"]["start_time_indices_are"] == (
         "movement_start_relative_offsets"
     )
-    assert (
-        movement["training_distribution"]["perturbation_training"]["movement_age_timing"]
-        is True
-    )
+    assert movement["training_distribution"]["perturbation_training"]["movement_age_timing"] is True
 
     parser = build_parser()
     replay_args = resolve_run_spec_args(
@@ -3537,9 +3601,7 @@ def test_broad_epsilon_run_spec_exposes_budget_contract(tmp_path: Path) -> None:
         0.0012324305441740995
     )
     assert (
-        payload["training_distribution"]["training_axes"][
-            "broad_full_state_epsilon_training"
-        ]
+        payload["training_distribution"]["training_axes"]["broad_full_state_epsilon_training"]
         is True
     )
 
@@ -4168,7 +4230,10 @@ def test_c92ebd8_calibrated_perturb_matrix_spec_artifact(tmp_path: Path) -> None
     assert not any("medium" in row["run"] for row in rows)
     assert payload["basis"]["training_target_count"] == 56
     assert payload["basis"]["held_out_target_count"] == 16
-    assert payload["training_contract"]["target_support_profile"] == TARGET_SUPPORT_PROFILE_CONST_BAND16
+    assert (
+        payload["training_contract"]["target_support_profile"]
+        == TARGET_SUPPORT_PROFILE_CONST_BAND16
+    )
     assert payload["training_contract"]["process_state_dim"] == 6
     assert payload["training_contract"]["process_integrator_state_in_gru_channel"] is False
     assert payload["training_contract"]["n_train_batches_per_row"] == 12000
@@ -4210,10 +4275,7 @@ def test_c92ebd8_calibrated_perturb_matrix_spec_artifact(tmp_path: Path) -> None
     }
     assert len(table["unit_sensitivities"]) == 21
     assert len(table["rows"]) == 63
-    assert {
-        (row["family"], row["physical_level"])
-        for row in table["rows"]
-    } >= {
+    assert {(row["family"], row["physical_level"]) for row in table["rows"]} >= {
         ("sensory_feedback_offset", "small"),
         ("sensory_feedback_offset", "moderate"),
         ("sensory_feedback_offset", "stress"),
@@ -4248,8 +4310,7 @@ def test_c92ebd8_calibrated_perturb_matrix_spec_artifact(tmp_path: Path) -> None
         "--perturbation-closed-loop-calibration-table" in row["command"] for row in mixed_rows
     )
     assert not any(
-        "--perturbation-closed-loop-calibration-table" in row["command"]
-        for row in open_loop_rows
+        "--perturbation-closed-loop-calibration-table" in row["command"] for row in open_loop_rows
     )
     assert payload["known_blockers"] == [
         "Rows 1-9 require explicit user confirmation before any training launch.",
@@ -4433,6 +4494,61 @@ def test_policy_adversary_full_training_uses_checkpoint_sized_chunks(tmp_path: P
     assert diagnostics_manifest["arrays"]["policy_adversary_diagnostic_sampled"]["shape"] == [2]
     with np.load(output_dir / "training_diagnostics.npz") as diagnostics:
         assert diagnostics["policy_adversary_diagnostic_sampled"].tolist() == [False, True]
+
+
+def test_finite_affine_policy_adversary_full_training_persists_adam_state(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "bulk"
+    spec_dir = tmp_path / "spec"
+    args = _args(
+        output_dir=str(output_dir),
+        spec_dir=str(spec_dir),
+        n_train_batches=2,
+        batch_size=1,
+        n_replicates=1,
+        hidden_size=4,
+        full_train=True,
+        resume=True,
+        checkpoint_interval_batches=2,
+        controller_lr=1e-3,
+        lr_warmup_batches=1,
+        lr_warmup_init_fraction=0.1,
+        lr_cosine_alpha=0.01,
+        log_step=1,
+        disable_progress=True,
+        quiet_progress=True,
+        target_relative_multitarget=True,
+        force_filter_feedback=True,
+        initial_hidden_encoder=True,
+        perturbation_training=True,
+        perturbation_calibrated_timing=True,
+        perturbation_physical_level="small",
+        policy_adversary_training=True,
+        policy_adversary_policy_class=AFFINE_POLICY,
+        policy_adversary_steps=1,
+        policy_adversary_radius_15cm=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+        broad_epsilon_reach_scaling=True,
+        loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+    )
+
+    result = run_full_training(args)
+    run_spec = json.loads(Path(result["run_spec_path"]).read_text())
+    checkpoint_latest = output_dir / "checkpoints" / "checkpoint_latest"
+    metadata = json.loads((checkpoint_latest / "metadata.json").read_text())
+    diagnostics_manifest = json.loads((output_dir / "training_diagnostics.json").read_text())
+
+    assert result["completed_batches"] == 2
+    assert run_spec["adversarial_phase"] == "learned_finite_affine_policy_adversary"
+    assert run_spec["hps"]["policy_adversary_training"]["policy"]["kind"] == AFFINE_POLICY
+    assert run_spec["hps"]["policy_adversary_training"]["inner_optimizer"]["method"] == "adam"
+    assert metadata["run_spec"]["hps"]["policy_adversary_training"]["policy"]["kind"] == (
+        AFFINE_POLICY
+    )
+    assert (checkpoint_latest / "adversary_policy.eqx").exists()
+    assert (checkpoint_latest / "adversary_optimizer_state.eqx").exists()
+    assert (output_dir / "trained_policy_adversary.eqx").exists()
+    assert diagnostics_manifest["arrays"]["policy_adversary_diagnostic_sampled"]["shape"] == [2]
 
 
 def test_full_training_stop_after_batches_resumes_to_full_count(tmp_path: Path) -> None:

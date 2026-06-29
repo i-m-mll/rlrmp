@@ -32,6 +32,13 @@ from rlrmp.model.feedbax_channel_adapters import (
     additive_channel_provenance,
     materialize_additive_channel_adapters_on_graph,
 )
+from rlrmp.train.closed_loop_finite_adversary import (
+    AFFINE_POLICY,
+    LINEAR_NO_BIAS_POLICY,
+    target_centered_full_state_features,
+    zero_finite_affine_policy,
+    zero_finite_linear_no_bias_policy,
+)
 
 PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_randomized"
 CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_calibrated_timing"
@@ -41,8 +48,14 @@ TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE = "target_relative_multitarget_stat
 BROAD_EPSILON_TRAINING_MODE = "broad_full_state_epsilon_l2"
 BROAD_EPSILON_PGD_TRAINING_MODE = "broad_full_state_epsilon_pgd_l2"
 POLICY_ADVERSARY_TRAINING_MODE = "broad_full_state_epsilon_policy_l2"
+POLICY_ADVERSARY_MEMORYLESS_MLP = "memoryless_mlp"
 POLICY_ADVERSARY_PLAIN_MODE = "plain"
 POLICY_ADVERSARY_ENERGY_MODE = "energy"
+POLICY_ADVERSARY_POLICY_CLASSES = (
+    POLICY_ADVERSARY_MEMORYLESS_MLP,
+    LINEAR_NO_BIAS_POLICY,
+    AFFINE_POLICY,
+)
 BROAD_EPSILON_PGD_FIXED_BUDGET_SCHEDULE = "fixed"
 BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE = "sisu_energy_fraction"
 BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE = "hard_l2"
@@ -215,8 +228,7 @@ PGD_SISU_MAX_RADIUS_SOURCES: dict[str, dict[str, Any]] = {
         "disturbance_energy": 2.0657128682206633e-05,
         "gamma_equivalent_analytical_anchor": True,
         "description": (
-            "6D no-integrator C&S output-feedback H-infinity rollout L2 radius "
-            "for gamma_factor=1.4"
+            "6D no-integrator C&S output-feedback H-infinity rollout L2 radius for gamma_factor=1.4"
         ),
     },
     "ofb_6d_no_integrator_gamma_1p05_rollout_radius": {
@@ -544,9 +556,10 @@ class PgdFullStateEpsilonTrainingConfig:
 
 @dataclass(frozen=True)
 class PolicyFullStateEpsilonTrainingConfig:
-    """Learned memoryless policy lane on the C&S full-state epsilon channel."""
+    """Learned policy lane on the C&S full-state epsilon channel."""
 
     enabled: bool = False
+    policy_class: str = POLICY_ADVERSARY_MEMORYLESS_MLP
     mode: str = POLICY_ADVERSARY_PLAIN_MODE
     width: int = 64
     depth: int = 2
@@ -562,6 +575,11 @@ class PolicyFullStateEpsilonTrainingConfig:
     budget_source: str = "effective_020a65b_pgd_training_radius"
 
     def __post_init__(self) -> None:
+        if self.policy_class not in POLICY_ADVERSARY_POLICY_CLASSES:
+            raise ValueError(
+                "Policy adversary policy_class must be one of: "
+                f"{', '.join(POLICY_ADVERSARY_POLICY_CLASSES)}."
+            )
         if self.mode not in (POLICY_ADVERSARY_PLAIN_MODE, POLICY_ADVERSARY_ENERGY_MODE):
             raise ValueError("Policy adversary mode must be 'plain' or 'energy'.")
         if int(self.width) < 1:
@@ -592,19 +610,13 @@ class PolicyFullStateEpsilonTrainingConfig:
     def to_hps_dict(self) -> dict[str, Any]:
         """Return TreeNamespace-compatible policy-adversary metadata."""
 
+        policy = self._policy_metadata()
         return {
             "enabled": self.enabled,
             "mode": POLICY_ADVERSARY_TRAINING_MODE if self.enabled else "disabled",
             "row_mode": self.mode,
-            "policy": {
-                "kind": "memoryless_mlp",
-                "state_feature_key": "clean_rollout.states.mechanics.vector",
-                "state_feature_dim": int(self.state_feature_dim),
-                "width": int(self.width),
-                "depth": int(self.depth),
-                "output_dim": int(self.epsilon_dim),
-                "shared_across_replicates": True,
-            },
+            "policy_class": self.policy_class,
+            "policy": policy,
             "inner_optimizer": {
                 "method": "adam",
                 "n_ascent_steps_per_controller_step": int(self.n_steps),
@@ -666,6 +678,40 @@ class PolicyFullStateEpsilonTrainingConfig:
                 "controller_loss": True,
                 "stabilizer_term": self.mode == POLICY_ADVERSARY_ENERGY_MODE,
             },
+        }
+
+    def _policy_metadata(self) -> dict[str, Any]:
+        if self.policy_class == POLICY_ADVERSARY_MEMORYLESS_MLP:
+            return {
+                "kind": POLICY_ADVERSARY_MEMORYLESS_MLP,
+                "state_feature_key": "clean_rollout.states.mechanics.vector",
+                "state_feature_dim": int(self.state_feature_dim),
+                "width": int(self.width),
+                "depth": int(self.depth),
+                "output_dim": int(self.epsilon_dim),
+                "shared_across_replicates": True,
+            }
+        return {
+            "kind": self.policy_class,
+            "parameterization": "shared_time_varying_finite_policy",
+            "state_feature_key": (
+                "target_centered(clean_rollout.states.mechanics.vector, "
+                "trial_specs.targets['mechanics.effector.pos'])"
+            ),
+            "state_feature_dim": int(self.state_feature_dim),
+            "output_dim": int(self.epsilon_dim),
+            "shared_across_replicates": True,
+            "shared_across_trials_in_batch": True,
+            "time_varying": True,
+            "has_bias": self.policy_class == AFFINE_POLICY,
+            "initialization": "zero",
+            "evaluation_semantics": "static_epsilon_materialized_from_clean_rollout_pre_step",
+            "closed_loop_semantics_status": "not_live_rollout_hook",
+            "closed_loop_semantics_note": (
+                "Current Feedbax pre-step integration materializes epsilon before rollout. "
+                "The optimizer is Adam over finite-policy parameters, but the rollout does "
+                "not call the finite policy on perturbed live states at each time step."
+            ),
         }
 
     def to_json(self) -> dict[str, Any]:
@@ -2338,8 +2384,19 @@ def config_from_policy_adversary_hps(config: Any) -> PolicyFullStateEpsilonTrain
     objective = _payload_get(config, "objective", None)
     budget = _payload_get(config, "budget_contract", None)
     budget_source = _payload_get(budget, "budget_source", None)
+    policy_kind = str(
+        _first_payload_value(
+            (config, "policy_class"),
+            (policy, "kind"),
+            default=POLICY_ADVERSARY_MEMORYLESS_MLP,
+        )
+    )
+    if policy_kind == "closed_loop_finite_time_varying_epsilon_policy":
+        metadata = _payload_get(policy, "metadata", None)
+        policy_kind = str(_payload_get(metadata, "policy_class", LINEAR_NO_BIAS_POLICY))
     return PolicyFullStateEpsilonTrainingConfig(
         enabled=bool(_payload_get(config, "enabled", False)),
+        policy_class=policy_kind,
         mode=str(
             _first_payload_value(
                 (config, "row_mode"),
@@ -2425,6 +2482,35 @@ def make_memoryless_policy_adversary(
     )
 
 
+def make_policy_adversary(
+    config: Any,
+    *,
+    key: PRNGKeyArray,
+    horizon: int | None = None,
+) -> Any:
+    """Initialize the configured policy adversary."""
+
+    cfg = config_from_policy_adversary_hps(config)
+    if cfg.policy_class == POLICY_ADVERSARY_MEMORYLESS_MLP:
+        return make_memoryless_policy_adversary(cfg, key=key)
+    del key
+    if horizon is None:
+        raise ValueError("Finite policy adversaries require an explicit horizon.")
+    if cfg.policy_class == LINEAR_NO_BIAS_POLICY:
+        return zero_finite_linear_no_bias_policy(
+            horizon=int(horizon),
+            feature_dim=int(cfg.state_feature_dim),
+            epsilon_dim=int(cfg.epsilon_dim),
+        )
+    if cfg.policy_class == AFFINE_POLICY:
+        return zero_finite_affine_policy(
+            horizon=int(horizon),
+            feature_dim=int(cfg.state_feature_dim),
+            epsilon_dim=int(cfg.epsilon_dim),
+        )
+    raise ValueError(f"unknown policy adversary policy_class {cfg.policy_class!r}")
+
+
 _MISSING = object()
 
 
@@ -2483,7 +2569,7 @@ def make_broad_epsilon_pgd_pre_step(config: Any) -> Callable | None:
 class PolicyAdversaryPreStep(eqx.Module):
     """Feedbax pre-step hook carrying policy weights as dynamic JAX leaves."""
 
-    policy: MemorylessFullStateEpsilonPolicy
+    policy: Any
     config: Any = eqx.field(static=True)
 
     def __call__(self, task, model, trial_specs, loss_func, keys_model):
@@ -2507,7 +2593,7 @@ def make_policy_adversary_pre_step(policy: Any, config: Any) -> PolicyAdversaryP
 
 
 def policy_adversary_trial_specs(
-    policy: MemorylessFullStateEpsilonPolicy,
+    policy: Any,
     task: Any,
     model: Any,
     trial_specs: TaskTrialSpec,
@@ -2524,8 +2610,7 @@ def policy_adversary_trial_specs(
     specs = _ensure_broad_epsilon_input(trial_specs, epsilon_dim=cfg.epsilon_dim)
     base_epsilon = jnp.asarray(specs.inputs["epsilon"])
     clean_states = task.eval_trials(model, specs, keys_model)
-    state_features = jnp.asarray(clean_states.mechanics.vector)[..., : cfg.state_feature_dim]
-    raw_delta = _memoryless_policy_sequence(policy, state_features)
+    raw_delta = _policy_adversary_raw_delta(policy, clean_states, specs, cfg)
     time_mask = _epsilon_time_mask(specs, base_epsilon, cfg.movement_epoch_only)
     radius = _broad_epsilon_l2_radius(specs, cfg).astype(base_epsilon.dtype)
     delta = _project_flattened_per_trial_l2_ball(raw_delta * time_mask, radius) * time_mask
@@ -2537,7 +2622,7 @@ def policy_adversary_trial_specs(
 
 
 def policy_adversary_objective(
-    policy: MemorylessFullStateEpsilonPolicy,
+    policy: Any,
     task: Any,
     model: Any,
     trial_specs: TaskTrialSpec,
@@ -2575,6 +2660,20 @@ def policy_adversary_objective(
         "mode_is_energy": jnp.asarray(cfg.mode == POLICY_ADVERSARY_ENERGY_MODE),
     }
     return objective, diagnostics
+
+
+def _policy_adversary_raw_delta(
+    policy: Any,
+    clean_states: Any,
+    trial_specs: TaskTrialSpec,
+    cfg: PolicyFullStateEpsilonTrainingConfig,
+) -> jnp.ndarray:
+    mechanics = jnp.asarray(clean_states.mechanics.vector)[..., : cfg.state_feature_dim]
+    if cfg.policy_class == POLICY_ADVERSARY_MEMORYLESS_MLP:
+        return _memoryless_policy_sequence(policy, mechanics)
+    target = _trial_target_position_m(trial_specs)
+    state_features = target_centered_full_state_features(mechanics, target_position=target)
+    return policy(state_features)
 
 
 def policy_adversary_projection_diagnostics(
@@ -2770,7 +2869,9 @@ def run_broad_epsilon_pgd_inner_maximizer(
     selected_task_loss, selected_energy, selected_penalty, selected_objective = (
         objective_components(delta)
     )
-    final_task_loss, final_energy, final_penalty, final_objective = objective_components(final_delta)
+    final_task_loss, final_energy, final_penalty, final_objective = objective_components(
+        final_delta
+    )
     del zero_energy, selected_energy, final_energy
     objective_nonfinite_seen = jnp.logical_or(objective_nan_seen, objective_overflow_seen)
     diagnostics = {
@@ -2869,6 +2970,12 @@ def _flattened_per_trial_norm(x: jnp.ndarray) -> jnp.ndarray:
     return jnp.sqrt(jnp.sum(jnp.square(x), axis=axes))
 
 
+def _flattened_per_trial_safe_norm(x: jnp.ndarray) -> jnp.ndarray:
+    axes = tuple(range(max(x.ndim - 2, 0), x.ndim))
+    squared = jnp.sum(jnp.square(x), axis=axes)
+    return jnp.sqrt(jnp.maximum(squared, jnp.asarray(1e-24, dtype=x.dtype)))
+
+
 def _expand_radius(radius: jnp.ndarray, ndim: int) -> jnp.ndarray:
     while radius.ndim < ndim:
         radius = jnp.expand_dims(radius, axis=-1)
@@ -2876,7 +2983,7 @@ def _expand_radius(radius: jnp.ndarray, ndim: int) -> jnp.ndarray:
 
 
 def _normalize_flattened_per_trial(x: jnp.ndarray) -> jnp.ndarray:
-    norms = _expand_radius(_flattened_per_trial_norm(x), x.ndim)
+    norms = _expand_radius(_flattened_per_trial_safe_norm(x), x.ndim)
     return x / jnp.maximum(norms, jnp.asarray(1e-12, dtype=x.dtype))
 
 
@@ -2885,7 +2992,7 @@ def _project_flattened_per_trial_l2_ball(
     radius: jnp.ndarray,
 ) -> jnp.ndarray:
     radius_expanded = _expand_radius(radius.astype(x.dtype), x.ndim)
-    norms = _expand_radius(_flattened_per_trial_norm(x).astype(x.dtype), x.ndim)
+    norms = _expand_radius(_flattened_per_trial_safe_norm(x).astype(x.dtype), x.ndim)
     scale = jnp.minimum(
         1.0,
         radius_expanded / jnp.maximum(norms, jnp.asarray(1e-12, dtype=x.dtype)),
@@ -3146,7 +3253,8 @@ def apply_training_perturbation_mixture(
                 component_offset=0,
                 n_components=2,
                 active_mask=(
-                    single_mask * _family_mask(family_index, "initial_position", active_single_family_bins)
+                    single_mask
+                    * _family_mask(family_index, "initial_position", active_single_family_bins)
                     + combined_mask * float(cfg.combined_amplitude_scale)
                 ),
                 key=key_pos,
@@ -3160,7 +3268,8 @@ def apply_training_perturbation_mixture(
                 ),
                 component_offset=2,
                 n_components=2,
-                active_mask=single_mask * _family_mask(family_index, "initial_velocity", active_single_family_bins),
+                active_mask=single_mask
+                * _family_mask(family_index, "initial_velocity", active_single_family_bins),
                 key=key_vel,
             )
         else:
@@ -3174,7 +3283,8 @@ def apply_training_perturbation_mixture(
                 component_offset=0,
                 n_components=2,
                 active_mask=(
-                    single_mask * _family_mask(family_index, "initial_position", active_single_family_bins)
+                    single_mask
+                    * _family_mask(family_index, "initial_position", active_single_family_bins)
                     + combined_mask * float(cfg.combined_amplitude_scale)
                 ),
                 randomize_amplitude_level=False,
@@ -3189,14 +3299,16 @@ def apply_training_perturbation_mixture(
                 ),
                 component_offset=2,
                 n_components=2,
-                active_mask=single_mask * _family_mask(family_index, "initial_velocity", active_single_family_bins),
+                active_mask=single_mask
+                * _family_mask(family_index, "initial_velocity", active_single_family_bins),
                 randomize_amplitude_level=False,
                 key=key_vel,
             )
         trial_specs = _add_process_epsilon_calibrated_random_pulse(
             trial_specs,
             cfg,
-            active_mask=single_mask * _family_mask(family_index, "process_epsilon", active_single_family_bins),
+            active_mask=single_mask
+            * _family_mask(family_index, "process_epsilon", active_single_family_bins),
             key=key_process,
         )
         trial_specs = _add_graph_channel_calibrated_random_pulse(
@@ -3225,7 +3337,8 @@ def apply_training_perturbation_mixture(
             trial_specs,
             cfg,
             specs["sensory_feedback"],
-            active_mask=single_mask * _family_mask(family_index, "sensory_feedback", active_single_family_bins),
+            active_mask=single_mask
+            * _family_mask(family_index, "sensory_feedback", active_single_family_bins),
             key=key_sensory,
         )
     else:
@@ -3235,7 +3348,8 @@ def apply_training_perturbation_mixture(
             component_offset=0,
             n_components=2,
             active_mask=(
-                single_mask * _family_mask(family_index, "initial_position", active_single_family_bins)
+                single_mask
+                * _family_mask(family_index, "initial_position", active_single_family_bins)
                 + combined_mask * float(cfg.combined_amplitude_scale)
             ),
             key=key_pos,
@@ -3245,13 +3359,15 @@ def apply_training_perturbation_mixture(
             base_amount=cfg.initial_velocity_offset_m_s,
             component_offset=2,
             n_components=2,
-            active_mask=single_mask * _family_mask(family_index, "initial_velocity", active_single_family_bins),
+            active_mask=single_mask
+            * _family_mask(family_index, "initial_velocity", active_single_family_bins),
             key=key_vel,
         )
         trial_specs = _add_process_epsilon_random_pulse(
             trial_specs,
             base_amount=cfg.process_epsilon_scale,
-            active_mask=single_mask * _family_mask(family_index, "process_epsilon", active_single_family_bins),
+            active_mask=single_mask
+            * _family_mask(family_index, "process_epsilon", active_single_family_bins),
             duration=cfg.pulse_duration_steps,
             key=key_process,
         )
@@ -3270,7 +3386,8 @@ def apply_training_perturbation_mixture(
             trial_specs,
             specs["sensory_feedback"],
             base_amount=cfg.sensory_feedback_offset_m,
-            active_mask=single_mask * _family_mask(family_index, "sensory_feedback", active_single_family_bins),
+            active_mask=single_mask
+            * _family_mask(family_index, "sensory_feedback", active_single_family_bins),
             duration=trial_specs.timeline.n_steps,
             key=key_sensory,
         )
@@ -3907,9 +4024,7 @@ def _calibrated_timing_indexed_amounts(
             family=family,
             timing_labels=timing_labels,
             component=(
-                "random_force_pulse_cardinal_basis"
-                if family == "command_input_pulse"
-                else None
+                "random_force_pulse_cardinal_basis" if family == "command_input_pulse" else None
             ),
             reducer="mean" if family == "command_input_pulse" else "single",
         ).astype(dtype)
