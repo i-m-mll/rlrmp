@@ -60,6 +60,7 @@ from rlrmp.model.feedbax_channel_adapters import (
     find_materialized_additive_channel_adapter,
     materialize_additive_channel_adapter_on_graph,
 )
+from rlrmp.io import write_compact_json
 from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
@@ -1507,14 +1508,8 @@ def materialize_gru_perturbation_response(
     )
     if evaluate:
         mkdir_p(detail_manifest_path.parent)
-        detail_manifest_path.write_text(
-            json.dumps(manifest, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-    output_path.write_text(
-        json.dumps(tracked_manifest, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+        write_compact_json(detail_manifest_path, manifest)
+    write_compact_json(output_path, tracked_manifest)
     note_path.write_text(render_perturbation_response_markdown(manifest), encoding="utf-8")
     runs_for_spec = resolve_run_inputs(
         experiment=source_experiment,
@@ -1605,7 +1600,14 @@ def _slim_perturbation_response_manifest(
     """Remove per-row response payloads from the tracked response manifest."""
 
     slim = dict(manifest)
+    bank = slim.pop("bank", None)
     if detail_manifest_path is not None:
+        if isinstance(bank, Mapping):
+            slim["bank_summary"] = _slim_perturbation_bank_summary(
+                bank,
+                detail_manifest_path=detail_manifest_path,
+                repo_root=repo_root,
+            )
         slim["bulk_detail_manifest"] = {
             "path": _repo_relative(detail_manifest_path, repo_root=repo_root),
             "format": "json",
@@ -1616,9 +1618,12 @@ def _slim_perturbation_response_manifest(
         run = dict(run_payload)
         perturbations = run.pop("perturbations", [])
         robust_summary = run.pop("robust_response_summary", None)
+        bulk_files = run.pop("bulk_files", None)
         run["n_perturbation_rows"] = (
             len(perturbations) if isinstance(perturbations, Sequence) else 0
         )
+        if isinstance(bulk_files, Mapping):
+            run["bulk_files_count"] = len(bulk_files)
         if detail_manifest_path is not None:
             run["perturbation_rows_detail_manifest"] = _repo_relative(
                 detail_manifest_path,
@@ -1629,11 +1634,60 @@ def _slim_perturbation_response_manifest(
                     detail_manifest_path,
                     repo_root=repo_root,
                 )
+            if isinstance(bulk_files, Mapping):
+                run["bulk_files_detail_manifest"] = _repo_relative(
+                    detail_manifest_path,
+                    repo_root=repo_root,
+                )
         if isinstance(robust_summary, Mapping):
             run["robust_response_summary_status"] = robust_summary.get("status", "available")
         slim_runs[str(run_id)] = run
     slim["runs"] = slim_runs
     return slim
+
+
+def _slim_perturbation_bank_summary(
+    bank: Mapping[str, Any],
+    *,
+    detail_manifest_path: Path,
+    repo_root: Path,
+) -> dict[str, Any]:
+    """Return tracked bank metadata without the full perturbation row list."""
+
+    perturbations = bank.get("perturbations")
+    if not isinstance(perturbations, Sequence):
+        perturbations = []
+    families = sorted(
+        {
+            str(row.get("family"))
+            for row in perturbations
+            if isinstance(row, Mapping) and row.get("family") is not None
+        }
+    )
+    channels = sorted(
+        {
+            str(row.get("channel"))
+            for row in perturbations
+            if isinstance(row, Mapping) and row.get("channel") is not None
+        }
+    )
+    timing_bins = sorted(
+        {
+            str(row.get("timing_bin"))
+            for row in perturbations
+            if isinstance(row, Mapping) and row.get("timing_bin") is not None
+        }
+    )
+    return {
+        "bank_id": bank.get("bank_id"),
+        "schema_version": bank.get("schema_version"),
+        "n_perturbations": len(perturbations),
+        "families": families,
+        "channels": channels,
+        "timing_bins": timing_bins,
+        "detail_manifest": _repo_relative(detail_manifest_path, repo_root=repo_root),
+        "detail_contains": "full perturbation bank including per-row perturbation definitions",
+    }
 
 
 def _effective_checkpoint_policy_from_manifest(

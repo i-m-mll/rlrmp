@@ -21,6 +21,7 @@ from rlrmp.analysis.pipelines.hinf_phenotype_sidecar import (
     load_hinf_phenotype_sources,
     write_hinf_phenotype_sidecar,
 )
+from rlrmp.io import write_compact_json
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
@@ -154,7 +155,7 @@ def main() -> None:
         feedback=feedback,
         sidecar=sidecar,
     )
-    SUMMARY_JSON.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    write_compact_json(SUMMARY_JSON, summary)
     write_csv(rows)
     SUMMARY_MD.write_text(render_markdown(summary), encoding="utf-8")
     print(json.dumps({"summary": str(SUMMARY_JSON), "rows": rows}, indent=2))

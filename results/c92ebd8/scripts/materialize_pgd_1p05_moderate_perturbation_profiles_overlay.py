@@ -34,6 +34,7 @@ from materialize_post_training_figures import (
     timing_bins_for_rows,
     row_timing_label,
 )
+from rlrmp.io import write_compact_json
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     build_no_integrator_game,
@@ -267,7 +268,7 @@ def materialize_overlay_figures(
         "figures": figure_specs,
     }
     OVERLAY_SPEC.parent.mkdir(parents=True, exist_ok=True)
-    OVERLAY_SPEC.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_compact_json(OVERLAY_SPEC, spec)
     return spec
 
 

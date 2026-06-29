@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import csv
-import json
 import subprocess
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
@@ -43,7 +42,7 @@ from rlrmp.analysis.pipelines.gru_steady_state_perturbation_bank import (
     _feedback_dim,
     _target_position,
 )
-from rlrmp.io import update_marked_section
+from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.analysis.pipelines.sisu_spectrum_diagnostics import zero_disturbance_payload
@@ -183,8 +182,8 @@ def main() -> None:
     )
     summary["outputs"].update(figure_outputs["outputs"])
     detail["outputs"] = summary["outputs"]
-    json_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    detail_path.write_text(json.dumps(detail, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_compact_json(json_path, summary)
+    write_compact_json(detail_path, detail)
     write_csv(csv_path, summary["rows"])
     update_marked_section(md_path, MARKER, render_markdown(summary))
 
@@ -915,7 +914,7 @@ def materialize_stabilization_response_figures(
         "figures": figure_specs,
         "png_errors": png_errors,
     }
-    spec_path.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_compact_json(spec_path, spec)
     update_marked_section(note_path, FIGURE_MARKER, render_figure_note(spec))
     return {
         "outputs": {

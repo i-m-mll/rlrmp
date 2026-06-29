@@ -61,6 +61,7 @@ from rlrmp.loss import (
     CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
     CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
 )
+from rlrmp.io import compact_json_dumps, write_compact_json
 from rlrmp.paths import REPO_ROOT, mkdir_p, run_spec_path
 from rlrmp.runtime.run_specs import validate_nominal_gru_run_spec
 from rlrmp.model.stochastic_runtime import (
@@ -1465,9 +1466,31 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "loss_objective": str(hps.loss.objective),
         "initial_hidden_encoder": _initial_hidden_encoder_metadata(hps),
     }
+    model_structure = build_model_structure_summary(hps)
+    for key in (
+        "adversarial_phase",
+        "delayed_reach",
+        "loss_objective",
+        "nominal_only",
+        "stochastic_preset",
+        "stochastic_runtime",
+        "training_distribution",
+    ):
+        model_structure.pop(key, None)
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "execution_backend": EXECUTION_BACKEND,
+        "provenance_refs": {
+            "delayed_reach": "$.delayed_reach",
+            "loss_objective": "$.loss_objective",
+            "model_structure.delayed_reach": "$.delayed_reach",
+            "model_structure.stochastic_preset": "$.stochastic_preset",
+            "model_structure.stochastic_runtime": "$.stochastic_runtime",
+            "model_structure.training_distribution": "$.training_spec.training_distribution",
+            "stochastic_preset": "$.stochastic_preset",
+            "stochastic_runtime": "$.stochastic_runtime",
+            "training_distribution": "$.training_spec.training_distribution",
+        },
         "component_policy": {
             "rlrmp_component_types": [
                 "RLRMPSimpleStagedNetwork",
@@ -1491,7 +1514,7 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "loss_spec": loss_spec,
         "training_spec": training_spec,
         "game_card_provenance": build_loss_game_card_provenance(hps),
-        "model_structure": build_model_structure_summary(hps),
+        "model_structure": model_structure,
         "delayed_reach": _plain(hps.delayed_reach),
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
         "stochastic_runtime": _stochastic_runtime_contract(hps),
@@ -1569,6 +1592,39 @@ def build_run_spec(
     """Build the JSON payload for ``run.json``."""
 
     hps = build_hps(args)
+    training_distribution = _training_distribution_metadata(hps)
+    validation_bins = _validation_bins_metadata(hps)
+    delayed_reach = _plain(hps.delayed_reach)
+    model_summary = build_model_structure_summary(hps)
+    for key in (
+        "adversarial_phase",
+        "delayed_reach",
+        "nominal_only",
+        "stochastic_preset",
+        "training_distribution",
+    ):
+        model_summary.pop(key, None)
+    training_summary = {
+        **graph_bundle.training_spec,
+        "training_mode": _training_mode(hps),
+        "n_train_batches": int(args.n_train_batches),
+        "n_adversary_batches": 0,
+        "n_policy_adversary_ascent_steps_per_controller_step": (
+            int(config_from_policy_adversary_hps(hps.policy_adversary_training).n_steps)
+            if _policy_adversary_training_enabled(hps)
+            else 0
+        ),
+        "training_diagnostics": _training_diagnostics_metadata(args, output_dir),
+    }
+    for key in (
+        "adversarial_phase",
+        "loss_objective",
+        "nominal_only",
+        "stochastic_preset",
+        "stochastic_runtime",
+        "training_distribution",
+    ):
+        training_summary.pop(key, None)
     return {
         "schema_version": SCHEMA_VERSION,
         "issue": str(args.issue),
@@ -1577,9 +1633,18 @@ def build_run_spec(
         "artifact_output_dir": str(output_dir),
         "spec_dir": str(spec_dir),
         "nominal_only": _nominal_only(hps),
-        "training_distribution": _training_distribution_metadata(hps),
-        "delayed_reach": _plain(hps.delayed_reach),
-        "validation_bins": _validation_bins_metadata(hps),
+        "training_distribution": training_distribution,
+        "delayed_reach": delayed_reach,
+        "validation_bins": validation_bins,
+        "provenance_refs": {
+            "delayed_reach": "$.delayed_reach",
+            "loss_objective": "$.loss_objective",
+            "model_summary.training_distribution": "$.training_distribution",
+            "stochastic_preset": "$.stochastic_preset",
+            "training_summary.training_distribution": "$.training_distribution",
+            "training_summary.validation_bins": "$.validation_bins",
+            "validation_bins": "$.validation_bins",
+        },
         "adversarial_phase": (
             "learned_memoryless_policy_adversary"
             if _policy_adversary_training_enabled(hps)
@@ -1598,22 +1663,10 @@ def build_run_spec(
         "fidelity_status": _fidelity_status(hps),
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
         "game_card": build_loss_game_card_provenance(hps),
-        "model_summary": build_model_structure_summary(hps),
+        "model_summary": model_summary,
         "task_timing": graph_bundle.task_spec,
         "loss_summary": graph_bundle.loss_spec,
-        "training_summary": {
-            **graph_bundle.training_spec,
-            "training_mode": _training_mode(hps),
-            "n_train_batches": int(args.n_train_batches),
-            "n_adversary_batches": 0,
-            "n_policy_adversary_ascent_steps_per_controller_step": (
-                int(config_from_policy_adversary_hps(hps.policy_adversary_training).n_steps)
-                if _policy_adversary_training_enabled(hps)
-                else 0
-            ),
-            "validation_bins": _validation_bins_metadata(hps),
-            "training_diagnostics": _training_diagnostics_metadata(args, output_dir),
-        },
+        "training_summary": training_summary,
         "feedbax_graph": graph_bundle.to_run_metadata(),
         "hps": _plain(hps),
         "provenance": {
@@ -3677,10 +3730,7 @@ def _commit_volume(volume_commit: VolumeCommit | None) -> None:
 
 
 def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.tmp")
-    tmp.write_text(_json_dumps(payload), encoding="utf-8")
-    os.replace(tmp, path)
+    write_compact_json(path, payload, atomic=True)
 
 
 def write_training_diagnostics_sidecar(
@@ -5204,7 +5254,7 @@ def _plain(value: Any) -> Any:
 
 
 def _json_dumps(payload: dict[str, Any]) -> str:
-    return json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    return compact_json_dumps(payload)
 
 
 if __name__ == "__main__":

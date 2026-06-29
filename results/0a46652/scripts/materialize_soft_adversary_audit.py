@@ -18,6 +18,7 @@ from feedbax.runtime.batch import BatchInfo
 from jax.flatten_util import ravel_pytree
 from jax_cookbook import load_with_hyperparameters
 
+from rlrmp.io import write_compact_json
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.train import cs_nominal_gru as nominal
 from rlrmp.train.cs_perturbation_training import (
@@ -75,7 +76,7 @@ def main() -> int:
     output_json = REPO_ROOT / args.output_json
     output_md = REPO_ROOT / args.output_md
     mkdir_p(output_json.parent)
-    output_json.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    write_compact_json(output_json, payload)
     output_md.write_text(render_markdown(payload), encoding="utf-8")
     print(json.dumps({"json": str(output_json), "markdown": str(output_md)}, indent=2))
     return 0

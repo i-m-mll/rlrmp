@@ -538,7 +538,10 @@ def test_write_graph_spec_bundle_creates_companion_manifest(tmp_path) -> None:
     graph_path = write_graph_spec_bundle(bundle, tmp_path)
 
     graph_payload = json.loads(graph_path.read_text())
-    manifest_payload = json.loads((tmp_path / "model.graph.manifest.json").read_text())
+    manifest_text = (tmp_path / "model.graph.manifest.json").read_text()
+    manifest_payload = json.loads(manifest_text)
+    assert len(manifest_text.splitlines()) == 1
+    assert "\n  " not in manifest_text
     assert graph_payload["nodes"]["net"]["type"] == "RLRMPSimpleStagedNetwork"
     assert graph_payload == graph_spec_payload(bundle.graph_spec)
     round_tripped = GraphSpec.model_validate(graph_payload)

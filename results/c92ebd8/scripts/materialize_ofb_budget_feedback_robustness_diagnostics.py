@@ -22,7 +22,7 @@ from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import (
 )
 from rlrmp.analysis.pipelines.gru_feedback_ablation import materialize_gru_feedback_ablation
 from rlrmp.analysis.pipelines.gru_perturbation_bank import materialize_gru_perturbation_response
-from rlrmp.io import update_marked_section
+from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
@@ -176,7 +176,7 @@ def main() -> None:
         stabilization=stabilization,
         paths=paths,
     )
-    SUMMARY_JSON.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    write_compact_json(SUMMARY_JSON, summary)
     write_csv(rows)
     update_marked_section(SUMMARY_MD, MARKER, render_markdown(summary))
     print(json.dumps({"summary": repo_rel(SUMMARY_JSON), "rows": rows}, indent=2))
@@ -230,7 +230,7 @@ def materialize_stabilization(detail_path: Path) -> dict[str, Any]:
         "summary_rows": summary_rows,
         "rows": detail_rows,
     }
-    detail_path.write_text(json.dumps(detail, indent=2, sort_keys=True) + "\n")
+    write_compact_json(detail_path, detail)
     return detail
 
 

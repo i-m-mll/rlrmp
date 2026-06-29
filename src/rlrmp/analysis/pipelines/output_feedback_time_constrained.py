@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -53,6 +52,7 @@ from rlrmp.analysis.math.rerun_metadata import (
     DEFAULT_LANE,
     build_rerun_metadata,
 )
+from rlrmp.io import write_compact_json
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
@@ -544,7 +544,7 @@ def write_basic_outputs(
     summary["artifact_npz"] = _repo_relative(artifact_path)
     summary["artifact_npz_keys"] = sorted(arrays)
     note_path.write_text(render_markdown(summary), encoding="utf-8")
-    manifest_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_compact_json(manifest_path, summary)
 
 
 def render_markdown(summary: dict[str, Any]) -> str:

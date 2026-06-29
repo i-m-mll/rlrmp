@@ -37,7 +37,7 @@ from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     _simulate_robust_output_feedback_perturbed,
     materialize_gru_perturbation_response,
 )
-from rlrmp.io import update_marked_section
+from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.viz import profile_comparison_grid
 
@@ -277,7 +277,7 @@ def materialize_overlay_figures(
         "robust_output_feedback_unavailable": dict(robust_unavailable),
     }
     mkdir_p(FIGURE_SPEC.parent)
-    FIGURE_SPEC.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n")
+    write_compact_json(FIGURE_SPEC, spec)
     return {
         "status": "materialized",
         "topic": TOPIC,

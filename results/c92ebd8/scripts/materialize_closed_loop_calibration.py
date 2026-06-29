@@ -22,6 +22,7 @@ from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
     ReachRelativeLevel,
     TimingCalibrationBin,
 )
+from rlrmp.io import write_compact_json
 from rlrmp.paths import mkdir_p
 
 
@@ -121,7 +122,7 @@ def materialize_closed_loop_calibration(
         "row_summary": _row_summary(rows),
     }
     mkdir_p(output_path.parent)
-    output_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    write_compact_json(output_path, payload)
     return payload
 
 

@@ -26,7 +26,7 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
     resolve_run_inputs,
 )
 from rlrmp.analysis.pipelines.gru_perturbation_bank import _build_extlqg_comparator_context
-from rlrmp.io import update_marked_section
+from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT
 from rlrmp.viz import profile_comparison_grid
 
@@ -451,7 +451,7 @@ def append_png_export_to_spec(png_export: Mapping[str, Any]) -> None:
 
     spec = json.loads(SPEC_PATH.read_text())
     spec["png_export"] = dict(png_export)
-    SPEC_PATH.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n")
+    write_compact_json(SPEC_PATH, spec)
 
 
 def write_note(output: Mapping[str, Any]) -> None:

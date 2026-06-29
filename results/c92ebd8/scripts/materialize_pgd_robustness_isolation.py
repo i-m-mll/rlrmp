@@ -58,7 +58,7 @@ from rlrmp.analysis.pipelines.gru_steady_state_perturbation_bank import (
     washin_diagnostics,
 )
 from rlrmp.analysis.pipelines.sisu_spectrum_diagnostics import zero_disturbance_payload
-from rlrmp.io import update_marked_section
+from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.train.task_model import setup_task_model_pair
 
@@ -180,15 +180,9 @@ def main() -> None:
     detail_path = artifact_dir / "stabilization_020a65b_detail.json"
     reach_detail_path = artifact_dir / "matched_reach_context.json"
 
-    summary_json.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    detail_path.write_text(
-        json.dumps(stabilization_020["detail"], indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    reach_detail_path.write_text(
-        json.dumps(reach_context, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    write_compact_json(summary_json, summary)
+    write_compact_json(detail_path, stabilization_020["detail"])
+    write_compact_json(reach_detail_path, reach_context)
     write_summary_csv(summary_csv, summary)
     write_reach_csv(reach_csv, reach_context["family_rows"])
     update_marked_section(note_path, OUTPUT_STEM, render_markdown(summary))
@@ -759,7 +753,7 @@ def materialize_stabilization_figures(
         "png_errors": png_errors,
         "path": repo_relative(spec_path, repo_root),
     }
-    spec_path.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_compact_json(spec_path, spec)
     return spec
 
 

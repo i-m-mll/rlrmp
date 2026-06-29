@@ -1370,10 +1370,13 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     run_path = Path(result["run_spec_path"])
     graph_path = result["graph_spec_path"]
     manifest_path = Path(result["graph_manifest_path"])
-    payload = json.loads(run_path.read_text())
+    run_spec_text = run_path.read_text()
+    payload = json.loads(run_spec_text)
     manifest = json.loads(manifest_path.read_text())
 
     assert run_path == spec_path
+    assert len(run_spec_text.splitlines()) == 1
+    assert "\n  " not in run_spec_text
     assert not (spec_dir / "run.json").exists()
     assert graph_path is None
     assert manifest_path == spec_dir / "model.graph.manifest.json"
@@ -1386,6 +1389,10 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     assert payload["model_summary"]["exact_cs_linear_state_space"] is True
     assert payload["feedbax_graph"]["graph_spec_path"] is None
     assert payload["feedbax_graph"]["graph_export_status"] == "unavailable"
+    assert "training_distribution" not in payload["model_summary"]
+    assert "training_distribution" not in payload["training_summary"]
+    assert "validation_bins" not in payload["training_summary"]
+    assert payload["provenance_refs"]["training_summary.validation_bins"] == "$.validation_bins"
     assert manifest["graph_export"]["status"] == "unavailable"
     assert payload["stochastic_preset"]["name"] == DEFAULT_STOCHASTIC_PRESET
     assert payload["stochastic_preset"]["source_contract"]["contract"] == (
@@ -2082,12 +2089,12 @@ def test_perturbation_training_run_spec_and_planned_rows(tmp_path: Path) -> None
     assert payload["issue"] == "aacb9ed"
     assert payload["nominal_only"] is False
     assert payload["training_summary"]["training_mode"] == PERTURBATION_TRAINING_MODE
-    assert payload["training_summary"]["validation_bins"]["bins"][0]["bin"] == "nominal"
-    assert payload["training_summary"]["validation_bins"]["selection_role"].startswith(
+    assert payload["validation_bins"]["bins"][0]["bin"] == "nominal"
+    assert payload["validation_bins"]["selection_role"].startswith(
         "aggregate rollout loss"
     )
-    assert payload["model_summary"]["training_distribution"]["fixed_target_only"] is True
-    assert payload["model_summary"]["training_distribution"]["checkpoint_selection_role"] == (
+    assert payload["training_distribution"]["fixed_target_only"] is True
+    assert payload["training_distribution"]["checkpoint_selection_role"] == (
         "generalized_held_out_perturbation_validation"
     )
     semantics = payload["hps"]["perturbation_training"]["mixture_semantics"]
@@ -2123,7 +2130,7 @@ def test_calibrated_timing_run_spec_exposes_family_timing_bins(tmp_path: Path) -
 
     result = write_run_spec(args)
     payload = json.loads(Path(result["run_spec_path"]).read_text())
-    training = payload["model_summary"]["training_distribution"]
+    training = payload["training_distribution"]
     hps_config = payload["hps"]["perturbation_training"]
     timing = hps_config["timing_bins"]["family_timing_bins"]
 
@@ -2195,9 +2202,7 @@ def test_movement_age_timing_run_spec_distinguishes_timing_basis(tmp_path: Path)
         "movement_start_relative_offsets"
     )
     assert (
-        movement["model_summary"]["training_distribution"]["perturbation_training"][
-            "movement_age_timing"
-        ]
+        movement["training_distribution"]["perturbation_training"]["movement_age_timing"]
         is True
     )
 
@@ -3532,7 +3537,7 @@ def test_broad_epsilon_run_spec_exposes_budget_contract(tmp_path: Path) -> None:
         0.0012324305441740995
     )
     assert (
-        payload["model_summary"]["training_distribution"]["training_axes"][
+        payload["training_distribution"]["training_axes"][
             "broad_full_state_epsilon_training"
         ]
         is True
@@ -3566,7 +3571,7 @@ def test_target_relative_multitarget_run_spec_and_planned_rows(tmp_path: Path) -
         f"{TARGET_RELATIVE_MULTITARGET_TRAINING_MODE}+{PERTURBATION_TRAINING_MODE}"
     )
     assert payload["model_summary"]["feedback"]["basis"] == "target_relative_delayed_feedback"
-    distribution = payload["model_summary"]["training_distribution"]
+    distribution = payload["training_distribution"]
     assert distribution["fixed_target_only"] is False
     assert distribution["target_stream"]["status"] == "consumed_as_static_target_relative_feedback"
     assert distribution["original_target_anchor_m"] == [0.15, 0.0]

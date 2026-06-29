@@ -36,7 +36,7 @@ from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     _build_extlqg_comparator_context,
     _simulate_extlqg_perturbed,
 )
-from rlrmp.io import update_marked_section
+from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT
 from rlrmp.viz import profile_comparison_grid
 
@@ -196,7 +196,7 @@ def materialize_moderate_profiles(*, extlqg_context: Mapping[str, Any]) -> dict[
         "figures": figure_specs,
     }
     PERT_FIGURE_SPEC.parent.mkdir(parents=True, exist_ok=True)
-    PERT_FIGURE_SPEC.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n")
+    write_compact_json(PERT_FIGURE_SPEC, spec)
     return {
         "status": "materialized",
         "spec": repo_rel(PERT_FIGURE_SPEC),

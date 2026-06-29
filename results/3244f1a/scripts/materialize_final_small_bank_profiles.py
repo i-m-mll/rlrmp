@@ -23,7 +23,7 @@ from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     _simulate_extlqg_perturbed,
     materialize_gru_perturbation_response,
 )
-from rlrmp.io import update_marked_section
+from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT
 from rlrmp.viz import profile_comparison_grid
 
@@ -150,10 +150,7 @@ def main() -> None:
             extlqg_context=extlqg_context,
             extlqg_peak_velocity=extlqg_peak_velocity,
         )
-        paths["figure_spec"].write_text(
-            json.dumps(profile_spec, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
+        write_compact_json(paths["figure_spec"], profile_spec)
         profile_specs.append(profile_spec)
         print(
             f"Wrote {len(profile_spec['figures'])} {level_key} profile figure pair(s)."

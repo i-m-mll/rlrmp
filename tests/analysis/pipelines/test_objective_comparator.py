@@ -108,19 +108,21 @@ def _unit_split_lenses() -> dict[str, object]:
     return {
         lens: {
             "status": "available",
-            "gru_vs_extlqg": {
-                "terms": {
-                    term: {
-                        "gru_mean": 2.0,
-                        "extlqg_mean": 1.0,
-                        "delta_mean": 1.0,
-                        "ratio_to_extlqg": 2.0,
-                    }
-                    for term in ("total", *objective_comparator.FULL_QRF_TERM_NAMES)
-                }
-            },
+            "gru_vs_extlqg": {"terms": _unit_comparator_terms()},
         }
         for lens in objective_comparator._STANDARD_SPLIT_BANK_LENSES
+    }
+
+
+def _unit_comparator_terms() -> dict[str, object]:
+    return {
+        term: {
+            "gru_mean": 2.0,
+            "extlqg_mean": 1.0,
+            "delta_mean": 1.0,
+            "ratio_to_extlqg": 2.0,
+        }
+        for term in ("total", *objective_comparator.FULL_QRF_TERM_NAMES)
     }
 
 
@@ -678,6 +680,28 @@ def test_write_objective_comparator_sidecar_serializes_json_and_markdown(tmp_pat
             "run_a": _full_qrf_run_metadata(),
             "run_b": _full_qrf_run_metadata(),
         },
+        shared_rollout_comparator={
+            "status": "available",
+            "bank": {"bank_id": "unit-bank", "seed": 7, "n_trials": 2},
+            "noise_comparability": {"limitation": "unit limitation"},
+            "runs": {
+                "run_a": {
+                    "status": "available",
+                    "gru_vs_extlqg": {"terms": _unit_comparator_terms()},
+                },
+                "run_b": {
+                    "status": "available",
+                    "gru_vs_extlqg": {"terms": _unit_comparator_terms()},
+                },
+            },
+            "standard_split_bank_comparator": {
+                "status": "available",
+                "runs": {
+                    "run_a": {"status": "available", "lenses": _unit_split_lenses()},
+                    "run_b": {"status": "available", "lenses": _unit_split_lenses()},
+                },
+            },
+        },
     )
     json_path = tmp_path / "sidecar.json"
     markdown_path = tmp_path / "sidecar.md"
@@ -692,6 +716,13 @@ def test_write_objective_comparator_sidecar_serializes_json_and_markdown(tmp_pat
     markdown = markdown_path.read_text(encoding="utf-8")
 
     assert reloaded["schema_version"] == SCHEMA_VERSION
+    assert "shared_rollout_comparator" not in reloaded["rows"][0]
+    assert "standard_split_bank_comparator" not in reloaded["rows"][0]
+    assert (
+        reloaded["rows"][0]["shared_rollout_comparator_ref"]
+        == "/shared_rollout_comparator/runs/run_a"
+    )
+    assert "\n  " not in json_path.read_text(encoding="utf-8")
     assert render_objective_comparator_markdown(sidecar) == markdown
     assert "Scope: unit scope." in markdown
     assert "not directly comparable to GRU validation values" in markdown

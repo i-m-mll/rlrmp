@@ -24,7 +24,7 @@ from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     _simulate_extlqg_perturbed,
     _simulate_robust_output_feedback_perturbed,
 )
-from rlrmp.io import update_marked_section
+from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
@@ -103,18 +103,9 @@ def main() -> None:
         detail_path=output_dirs["detail_path"],
     )
 
-    output_dirs["detail_path"].write_text(
-        json.dumps(detail, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    output_dirs["summary_path"].write_text(
-        json.dumps(summary, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    output_dirs["spec_path"].write_text(
-        json.dumps(spec, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    write_compact_json(output_dirs["detail_path"], detail)
+    write_compact_json(output_dirs["summary_path"], summary)
+    write_compact_json(output_dirs["spec_path"], spec)
     update_marked_section(output_dirs["note_path"], MARKER, render_note(spec))
     validate_spec(base=base, spec=spec)
     print(json.dumps(spec, indent=2, sort_keys=True))

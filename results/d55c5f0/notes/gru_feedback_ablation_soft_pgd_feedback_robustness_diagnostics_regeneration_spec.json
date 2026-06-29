@@ -1,5 +1,1 @@
-{
-  "replacement_regeneration_spec": "results/d55c5f0/notes/gru_feedback_ablation_soft_pgd_feedback_robustness_diagnostics_manifest_regeneration_spec.json",
-  "schema_version": "rlrmp.compatibility_pointer.v1",
-  "status": "superseded_by_manifest_regeneration_spec"
-}
+{"replacement_regeneration_spec":"results/d55c5f0/notes/gru_feedback_ablation_soft_pgd_feedback_robustness_diagnostics_manifest_regeneration_spec.json","schema_version":"rlrmp.compatibility_pointer.v1","status":"superseded_by_manifest_regeneration_spec"}
