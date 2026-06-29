@@ -1,0 +1,475 @@
+#!/usr/bin/env python
+"""Materialize PGD 1.05 nominal velocity profiles for c92."""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Mapping, Sequence
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import plotly.graph_objects as go
+from feedbax.plot import save_figure
+
+from rlrmp.analysis.math.cs_game_card import (
+    OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
+    build_no_integrator_game,
+)
+from rlrmp.analysis.math.cs_released_simulation import (
+    simulate_robust_released_forward,
+    zero_forward_noise_draws,
+    zero_noise_covariances,
+)
+from rlrmp.analysis.math.hinf_riccati import find_gamma_star, solve_hinf_riccati
+from rlrmp.analysis.math.output_feedback import (
+    OutputFeedbackConfig,
+    make_cs_output_feedback_initial_state,
+    robust_estimator_covariances,
+    robust_output_feedback_gains,
+)
+from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import evaluate_run_rollouts
+from rlrmp.analysis.pipelines.gru_pilot_figures import (
+    DEFAULT_N_ROLLOUT_TRIALS,
+    resolve_run_inputs,
+)
+from rlrmp.analysis.pipelines.gru_perturbation_bank import _build_extlqg_comparator_context
+from rlrmp.io import update_marked_section
+from rlrmp.paths import REPO_ROOT
+from rlrmp.viz import profile_comparison_grid
+
+
+ISSUE = "c92ebd8"
+TOPIC = "pgd_1p05_nominal_velocity_profiles"
+NOTE_PATH = REPO_ROOT / "results" / ISSUE / "notes" / f"{TOPIC}.md"
+DT = 0.01
+PHYSICAL_LEVELS = ("small", "moderate", "stress")
+PGD_RUNS = {
+    "small": "small",
+    "moderate": "moderate",
+    "stress": "stress",
+}
+NO_PGD_RUNS = {
+    "small": "open_loop_small",
+    "moderate": "open_loop_moderate",
+    "stress": "open_loop_stress",
+}
+SOURCE_COLORS = {
+    "pgd": "#2563eb",
+    "no_pgd": "#f97316",
+    "extlqg6d": "#c2410c",
+    "robust_output_feedback6d": "#15803d",
+}
+
+
+def main() -> None:
+    """CLI entry point."""
+
+    extlqg_context = _build_extlqg_comparator_context(physical_dim=6)
+    robust_context = build_robust_output_feedback_6d_context()
+    run_profiles = evaluate_requested_run_profiles()
+    output = materialize_figure(
+        run_profiles=run_profiles,
+        extlqg_context=extlqg_context,
+        robust_context=robust_context,
+    )
+    write_note(output)
+    print(json.dumps(output, indent=2, sort_keys=True))
+
+
+def evaluate_requested_run_profiles() -> dict[str, np.ndarray]:
+    """Evaluate final-checkpoint nominal forward velocity for the requested rows."""
+
+    run_ids = tuple(PGD_RUNS.values()) + tuple(NO_PGD_RUNS.values())
+    runs = resolve_run_inputs(
+        experiment=ISSUE,
+        run_ids=run_ids,
+        labels=None,
+        repo_root=REPO_ROOT,
+    )
+    profiles: dict[str, np.ndarray] = {}
+    for run in runs:
+        evaluation, _model = evaluate_run_rollouts(
+            run,
+            experiment=ISSUE,
+            n_rollout_trials=DEFAULT_N_ROLLOUT_TRIALS,
+            use_validation_selected_checkpoints=False,
+            repo_root=REPO_ROOT,
+        )
+        profiles[run.run_id] = forward_velocity_profile(evaluation.velocity)
+    return profiles
+
+
+def materialize_figure(
+    *,
+    run_profiles: Mapping[str, np.ndarray],
+    extlqg_context: Mapping[str, Any],
+    robust_context: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Build and save the PGD-vs-no-PGD nominal velocity profile figure."""
+
+    fig = profile_comparison_grid(
+        n_panels=len(PHYSICAL_LEVELS),
+        rows=len(PHYSICAL_LEVELS),
+        cols=1,
+        subplot_titles=[level for level in PHYSICAL_LEVELS],
+        vertical_spacing=0.075,
+    )
+    ext_profile = forward_velocity_profile(extlqg_context["base_evaluation"].velocity)
+    robust_profile = forward_velocity_profile(robust_context["velocity"])
+
+    for row_index, level in enumerate(PHYSICAL_LEVELS, start=1):
+        add_mean_band(
+            fig,
+            run_profiles[PGD_RUNS[level]],
+            row=row_index,
+            col=1,
+            name="PGD 1.05 GRU",
+            color=SOURCE_COLORS["pgd"],
+            showlegend=row_index == 1,
+        )
+        add_mean_band(
+            fig,
+            run_profiles[NO_PGD_RUNS[level]],
+            row=row_index,
+            col=1,
+            name="No-PGD GRU",
+            color=SOURCE_COLORS["no_pgd"],
+            showlegend=row_index == 1,
+        )
+        add_line(
+            fig,
+            ext_profile,
+            row=row_index,
+            col=1,
+            name="6D extLQG",
+            color=SOURCE_COLORS["extlqg6d"],
+            dash="dash",
+            showlegend=row_index == 1,
+            width=2.8,
+        )
+        add_line(
+            fig,
+            robust_profile,
+            row=row_index,
+            col=1,
+            name="6D output-feedback H-infinity",
+            color=SOURCE_COLORS["robust_output_feedback6d"],
+            dash="dot",
+            showlegend=row_index == 1,
+            width=2.8,
+        )
+        fig.update_yaxes(title_text="m/s", row=row_index, col=1)
+    fig.update_xaxes(title_text="time from movement onset (s)", row=len(PHYSICAL_LEVELS), col=1)
+    fig.update_layout(
+        title="c92 PGD 1.05 nominal forward velocity profiles",
+        template="plotly_white",
+        width=1040,
+        height=760,
+        legend_title_text="profile",
+        margin={"l": 78, "r": 24, "t": 90, "b": 70},
+    )
+
+    spec = {
+        "schema_version": "rlrmp.c92_pgd_1p05_nominal_velocity_profiles.v1",
+        "issue": ISSUE,
+        "figure_kind": "pgd_1p05_nominal_forward_velocity_profile_comparison",
+        "analytical_comparator_contract": {
+            "extlqg": {
+                "label": "6D extLQG",
+                "state_dim": 36,
+                "physical_dim": 6,
+                "disturbance_integrators_exposed": False,
+                "source": (
+                    "rlrmp.analysis.pipelines.gru_perturbation_bank."
+                    "_build_extlqg_comparator_context(physical_dim=6)"
+                ),
+            },
+            "output_feedback_hinf": robust_context["contract"],
+        },
+        "inputs": [
+            {"role": "run_spec", "path": f"results/{ISSUE}/runs/{run_id}.json"}
+            for run_id in tuple(PGD_RUNS.values()) + tuple(NO_PGD_RUNS.values())
+        ],
+        "transform": [
+            {
+                "name": "final_checkpoint_forward_velocity_profile_mean_band",
+                "kwargs": {
+                    "physical_levels": list(PHYSICAL_LEVELS),
+                    "pgd_runs": PGD_RUNS,
+                    "no_pgd_runs": NO_PGD_RUNS,
+                    "n_rollout_trials": DEFAULT_N_ROLLOUT_TRIALS,
+                    "analytical_comparators": [
+                        "6d_output_feedback_extlqg",
+                        "6d_output_feedback_hinf",
+                    ],
+                },
+            }
+        ],
+        "plot_kwargs": {
+            "grid_helper": "rlrmp.viz.profile_comparison_grid",
+            "shared_yaxes": "all",
+            "rows": len(PHYSICAL_LEVELS),
+            "physical_state_dim": 6,
+            "state_dim": 36,
+            "disturbance_integrators_exposed": False,
+        },
+    }
+    saved = save_figure(
+        fig=fig,
+        spec=spec,
+        package="rlrmp",
+        experiment=ISSUE,
+        topic=TOPIC,
+        extra_packages=["rlrmp"],
+    )
+    return {
+        "status": "materialized",
+        "topic": TOPIC,
+        "save_result": json_safe(saved),
+        "spec": f"results/{ISSUE}/figures/{TOPIC}/spec.json",
+        "html": f"results/{ISSUE}/figures/{TOPIC}/figure.html",
+        "bulk_html": f"_artifacts/{ISSUE}/figures/{TOPIC}/figure.html",
+        "run_pairs": [
+            {
+                "physical_level": level,
+                "pgd_run": PGD_RUNS[level],
+                "no_pgd_run": NO_PGD_RUNS[level],
+            }
+            for level in PHYSICAL_LEVELS
+        ],
+        "analytical_comparator_contract": {
+            "extlqg": spec["analytical_comparator_contract"]["extlqg"],
+            "output_feedback_hinf": robust_context["contract"],
+        },
+    }
+
+
+def build_robust_output_feedback_6d_context() -> dict[str, Any]:
+    """Build the requested 6D no-integrator output-feedback H-infinity path."""
+
+    plant, schedule = build_no_integrator_game()
+    config = OutputFeedbackConfig(n_phys=6)
+    gamma_star = find_gamma_star(plant, schedule)
+    solution = solve_hinf_riccati(
+        plant,
+        schedule,
+        OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR * gamma_star,
+    )
+    covariances = robust_estimator_covariances(
+        plant,
+        schedule,
+        solution.gamma,
+        config,
+    )
+    gains = robust_output_feedback_gains(
+        plant,
+        schedule,
+        solution,
+        covariances,
+        config,
+    )
+    x0 = make_cs_output_feedback_initial_state(plant, config)
+    rollout = simulate_robust_released_forward(
+        plant,
+        schedule,
+        solution,
+        x0,
+        draws=zero_forward_noise_draws(T=schedule.T, plant=plant, config=config),
+        covariances=zero_noise_covariances(plant, config),
+        gains=gains,
+        config=config,
+    )
+    contract = {
+        "label": "6D output-feedback H-infinity",
+        "state_dim": int(plant.n),
+        "physical_dim": int(config.n_phys),
+        "disturbance_dim": int(plant.m_w),
+        "control_dim": int(plant.m_u),
+        "delay_steps": int(config.delay_steps),
+        "disturbance_integrators_exposed": False,
+        "game_source": "rlrmp.analysis.math.cs_game_card.build_no_integrator_game",
+        "config": "rlrmp.analysis.math.output_feedback.OutputFeedbackConfig(n_phys=6)",
+        "gamma_factor": float(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR),
+        "gamma_star": float(gamma_star),
+        "gamma": float(solution.gamma),
+        "admissible": bool(solution.admissible),
+        "nominal_profile_convention": (
+            "zero-noise released-forward rollout, x[1:] velocity to match "
+            "60-step GRU diagnostics"
+        ),
+    }
+    if contract["state_dim"] != 36 or contract["physical_dim"] != 6:
+        raise ValueError(f"unexpected 6D H-infinity contract: {contract}")
+    return {
+        "velocity": np.asarray(rollout.x[1:, 2:4], dtype=np.float64)[None, None, :, :],
+        "contract": contract,
+    }
+
+
+def forward_velocity_profile(velocity: Any) -> np.ndarray:
+    """Return samples x time forward velocity profiles."""
+
+    samples = as_samples(np.asarray(velocity, dtype=np.float64))
+    return samples[..., 0]
+
+
+def as_samples(values: np.ndarray) -> np.ndarray:
+    """Flatten leading dimensions into a sample axis for time-by-xy arrays."""
+
+    array = np.asarray(values, dtype=np.float64)
+    if array.ndim < 3 or array.shape[-1] != 2:
+        raise ValueError(f"expected array with trailing shape (time, 2), got {array.shape}")
+    return array.reshape((-1, array.shape[-2], 2))
+
+
+def add_mean_band(
+    fig: go.Figure,
+    samples: np.ndarray,
+    *,
+    row: int,
+    col: int,
+    name: str,
+    color: str,
+    showlegend: bool,
+) -> None:
+    """Add a mean line and central 80 percent band."""
+
+    mean, low, high = mean_band(samples)
+    time = np.arange(mean.shape[0], dtype=np.float64) * DT
+    fig.add_trace(
+        go.Scatter(
+            x=time,
+            y=high,
+            mode="lines",
+            line={"color": "rgba(0,0,0,0)", "width": 0},
+            hoverinfo="skip",
+            showlegend=False,
+            legendgroup=name,
+        ),
+        row=row,
+        col=col,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=time,
+            y=low,
+            mode="lines",
+            fill="tonexty",
+            fillcolor=band_color(color),
+            line={"color": "rgba(0,0,0,0)", "width": 0},
+            hoverinfo="skip",
+            showlegend=False,
+            legendgroup=name,
+        ),
+        row=row,
+        col=col,
+    )
+    add_line(
+        fig,
+        mean,
+        row=row,
+        col=col,
+        name=name,
+        color=color,
+        dash="solid",
+        showlegend=showlegend,
+    )
+
+
+def add_line(
+    fig: go.Figure,
+    profile: np.ndarray,
+    *,
+    row: int,
+    col: int,
+    name: str,
+    color: str,
+    dash: str,
+    showlegend: bool,
+    width: float = 2.1,
+) -> None:
+    """Add a single profile line to a subplot."""
+
+    line_profile = np.asarray(profile, dtype=np.float64)
+    if line_profile.ndim == 2:
+        line_profile = np.nanmean(line_profile, axis=0)
+    if line_profile.ndim != 1:
+        raise ValueError(f"expected a 1D profile line, got shape {line_profile.shape}")
+    time = np.arange(line_profile.shape[0], dtype=np.float64) * DT
+    fig.add_trace(
+        go.Scatter(
+            x=time,
+            y=line_profile,
+            mode="lines",
+            name=name,
+            legendgroup=name,
+            showlegend=showlegend,
+            line={"color": color, "dash": dash, "width": width},
+        ),
+        row=row,
+        col=col,
+    )
+
+
+def mean_band(samples: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return mean and central 80 percent interval over sample rows."""
+
+    array = np.asarray(samples, dtype=np.float64)
+    mean = np.nanmean(array, axis=0)
+    if array.shape[0] <= 1:
+        return mean, mean, mean
+    return mean, np.nanpercentile(array, 10.0, axis=0), np.nanpercentile(array, 90.0, axis=0)
+
+
+def band_color(color: str) -> str:
+    """Return a transparent fill color matching the supported line palette."""
+
+    if color == SOURCE_COLORS["pgd"]:
+        return "rgba(37,99,235,0.12)"
+    if color == SOURCE_COLORS["no_pgd"]:
+        return "rgba(249,115,22,0.12)"
+    return "rgba(0,0,0,0.08)"
+
+
+def write_note(output: Mapping[str, Any]) -> None:
+    """Write a concise regenerable note for the nominal profile figure."""
+
+    lines = [
+        "# PGD 1.05 Nominal Velocity Profiles",
+        "",
+        "- Scope: nominal velocity profiles only for the PGD 1.05 mini-matrix.",
+        "- Rows: `small`, `moderate`, and `stress`, each paired with its no-PGD open-loop row.",
+        "- Checkpoint policy: final trained checkpoint for all six GRU traces.",
+        "- Analytical comparators: 6D no-integrator extLQG and 6D no-integrator "
+        "output-feedback H-infinity.",
+        f"- Figure spec: `{output['spec']}`.",
+        f"- Navigable HTML link: `{output['html']}`.",
+        "",
+    ]
+    update_marked_section(NOTE_PATH, TOPIC, "\n".join(lines) + "\n")
+
+
+def repo_rel(path: Path) -> str:
+    """Return a repository-relative path."""
+
+    return str(path.relative_to(REPO_ROOT))
+
+
+def json_safe(value: Any) -> Any:
+    """Convert common path/container values to JSON-safe objects."""
+
+    if isinstance(value, Path):
+        try:
+            return repo_rel(value)
+        except ValueError:
+            return str(value)
+    if isinstance(value, Mapping):
+        return {str(key): json_safe(item) for key, item in value.items()}
+    if isinstance(value, Sequence) and not isinstance(value, str | bytes):
+        return [json_safe(item) for item in value]
+    return value
+
+
+if __name__ == "__main__":
+    main()

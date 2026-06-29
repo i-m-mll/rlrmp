@@ -14,7 +14,7 @@ from feedbax.objectives.loss import TargetSpec
 from feedbax.runtime.state import CartesianState
 
 import rlrmp.analysis.pipelines.gru_perturbation_bank as perturbation_bank
-from rlrmp.analysis.math.cs_game_card import build_canonical_game
+from rlrmp.analysis.math.cs_game_card import build_canonical_game, build_no_integrator_game
 from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import RolloutEvaluation
 from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     GRAPH_ADAPTER_INPUT_PREFIX,
@@ -92,7 +92,6 @@ def test_default_bank_is_json_serializable_with_required_channels() -> None:
         "command_input",
         "process_epsilon",
         "sensory_feedback",
-        "delayed_observation",
         "target_stream",
     }
     assert decoded["graphspec_alignment"]["named_channels"] == [
@@ -100,7 +99,6 @@ def test_default_bank_is_json_serializable_with_required_channels() -> None:
         "command_input",
         "process_epsilon",
         "sensory_feedback",
-        "delayed_observation",
         "target_stream",
     ]
     assert "plant_force" in decoded["legacy_migration"]
@@ -142,7 +140,7 @@ def test_default_bank_is_json_serializable_with_required_channels() -> None:
         row["channel_provenance"]["target_relative_axis_role"] == "tangential"
         for row in lateral_rows
     )
-    assert len(decoded["perturbations"]) == 147
+    assert len(decoded["perturbations"]) == 111
 
 
 def test_default_bank_emits_timing_bin_specific_rows() -> None:
@@ -171,19 +169,12 @@ def test_default_bank_emits_timing_bin_specific_rows() -> None:
     sensory_rows = [row for row in rows if row["family"] == "sensory_feedback_offset"]
     delayed_rows = [row for row in rows if row["family"] == "delayed_observation_offset"]
     assert len(sensory_rows) == 36
-    assert len(delayed_rows) == 36
+    assert delayed_rows == []
+    assert not any(row["channel"] == "delayed_observation" for row in rows)
     assert {
         (row["timing_bin"], row["timing"]["start_time_index"], row["timing"]["duration_steps"])
         for row in sensory_rows
     } == {("early_visible", 10, 5), ("mid_visible", 20, 5), ("late_visible", 40, 5)}
-    assert {
-        (row["timing_bin"], row["timing"]["start_time_index"], row["timing"]["duration_steps"])
-        for row in delayed_rows
-    } == {("early_visible", 10, 5), ("mid_visible", 20, 5), ("late_visible", 40, 5)}
-    assert {row["channel"] for row in delayed_rows} == {"delayed_observation"}
-    assert {row["semantic_family"] for row in delayed_rows} == {
-        "pre_noise_delayed_measurement_offset"
-    }
     assert {
         (
             row["channel_provenance"]["feedback_quantity"],
@@ -207,10 +198,10 @@ def test_default_bank_emits_timing_bin_specific_rows() -> None:
     }
     force_filter_rows = [
         row
-        for row in sensory_rows + delayed_rows
+        for row in sensory_rows
         if row["channel_provenance"]["feedback_quantity"] == "force_filter"
     ]
-    assert len(force_filter_rows) == 24
+    assert len(force_filter_rows) == 12
     assert {row["units"] for row in force_filter_rows} == {"N"}
     assert {row["channel_provenance"]["feedback_payload_index"] for row in force_filter_rows} == {
         4,
@@ -219,9 +210,6 @@ def test_default_bank_emits_timing_bin_specific_rows() -> None:
     assert all(
         row["channel_provenance"]["force_filter_feedback_only"] is True
         for row in force_filter_rows
-    )
-    assert all(
-        row["channel_provenance"]["not_literal_extra_delay"] is True for row in delayed_rows
     )
 
     initial_rows = [row for row in rows if row["channel"] == "initial_state"]
@@ -285,11 +273,10 @@ def test_calibrated_bank_includes_force_filter_feedback_rows() -> None:
     force_filter_rows = [
         row for row in rows if row.get("feedback_quantity") == "force_filter"
     ]
-    assert len(force_filter_rows) == 24
-    assert {row["channel"] for row in force_filter_rows} == {
-        "sensory_feedback",
-        "delayed_observation",
-    }
+    assert len(force_filter_rows) == 12
+    assert {row["channel"] for row in force_filter_rows} == {"sensory_feedback"}
+    assert not any(row["channel"] == "delayed_observation" for row in rows)
+    assert not any(row["family"] == "delayed_observation_offset" for row in rows)
     assert {row["units"] for row in force_filter_rows} == {"N"}
     assert {row["feedback_payload_index"] for row in force_filter_rows} == {4, 5}
     assert all(row["force_filter_feedback_only"] is True for row in force_filter_rows)
@@ -809,6 +796,128 @@ def test_delayed_observation_adapter_applies_force_filter_feedback_row_to_payloa
     assert result.adapter_provenance["payload_shape_source"] == "existing_trial_input"
 
 
+def test_extlqg_6d_context_skips_8d_only_process_epsilon_rows() -> None:
+    context = perturbation_bank._build_extlqg_comparator_context(physical_dim=6)
+
+    assert context["physical_dim"] == 6
+    assert context["plant"].n == 36
+    assert context["plant"].m_w == 6
+    assert context["config"].n_phys == 6
+    assert getattr(context["base_evaluation"], "mechanics_vector").shape[-1] == 36
+
+    result = evaluate_extlqg_perturbation_comparator(
+        {
+            "perturbation_id": "process_epsilon_pulse__integrator_x_pos",
+            "channel": "process_epsilon",
+            "family": "process_epsilon_pulse",
+            "amplitude": 0.01,
+            "axis": "x",
+            "sign": 1,
+            "timing": {"start_time_index": 0, "duration_steps": 1},
+            "epsilon_index": 6,
+        },
+        context=context,
+        gru_metrics={},
+    )
+
+    assert result["status"] == "not_applicable"
+    assert "epsilon_index 6" in result["reason"]
+    assert "6 process disturbance dimensions" in result["reason"]
+
+
+def test_extlqg_observation_offset_flips_target_relative_position_and_velocity() -> None:
+    position_perturbation = {
+        "perturbation_id": "sensory_feedback_offset__position_small__early_t10_x_pos",
+        "channel": "sensory_feedback",
+        "family": "sensory_feedback_offset",
+        "amplitude": 0.25,
+        "axis": "x",
+        "sign": 1,
+        "timing": {"start_time_index": 1, "duration_steps": 2},
+        "channel_provenance": {
+            "feedback_quantity": "position",
+            "feedback_payload_index": 0,
+        },
+    }
+    velocity_perturbation = {
+        **position_perturbation,
+        "perturbation_id": "sensory_feedback_offset__velocity_small__early_t10_vx_neg",
+        "amplitude": 0.5,
+        "axis": "vx",
+        "sign": -1,
+        "channel_provenance": {
+            "feedback_quantity": "velocity",
+            "feedback_payload_index": 2,
+        },
+    }
+
+    position_offset = perturbation_bank._extlqg_observation_offset(
+        position_perturbation,
+        horizon=5,
+        observation_dim=6,
+    )
+    velocity_offset = perturbation_bank._extlqg_observation_offset(
+        velocity_perturbation,
+        horizon=5,
+        observation_dim=6,
+    )
+
+    np.testing.assert_allclose(np.asarray(position_offset)[1:3, 0], -0.25)
+    np.testing.assert_allclose(np.asarray(position_offset)[:1], 0.0)
+    np.testing.assert_allclose(np.asarray(position_offset)[3:], 0.0)
+    np.testing.assert_allclose(np.asarray(velocity_offset)[1:3, 2], 0.5)
+    np.testing.assert_allclose(np.asarray(velocity_offset)[:, :2], 0.0)
+    np.testing.assert_allclose(np.asarray(velocity_offset)[:, 3:], 0.0)
+
+
+def test_extlqg_observation_offset_uses_force_filter_feedback_payload_index() -> None:
+    perturbation = {
+        "perturbation_id": "sensory_feedback_offset__force_filter__late_t40_y_pos",
+        "channel": "sensory_feedback",
+        "family": "sensory_feedback_offset",
+        "amplitude": 0.5,
+        "axis": "y",
+        "sign": 1,
+        "timing": {"start_time_index": 0, "duration_steps": 2},
+        "channel_provenance": {
+            "feedback_quantity": "force_filter",
+            "feedback_payload_index": 5,
+            "force_filter_feedback_only": True,
+        },
+    }
+
+    offset = perturbation_bank._extlqg_observation_offset(
+        perturbation,
+        horizon=4,
+        observation_dim=6,
+    )
+
+    np.testing.assert_allclose(np.asarray(offset)[:2, 5], 0.5)
+    np.testing.assert_allclose(np.asarray(offset)[:2, :5], 0.0)
+    np.testing.assert_allclose(np.asarray(offset)[2:], 0.0)
+
+
+def test_movement_start_indices_use_zero_for_single_movement_epoch() -> None:
+    trial_specs = TaskTrialSpec(
+        inits={},
+        targets={},
+        inputs={},
+        timeline=TrialTimeline(
+            n_steps=60,
+            epoch_bounds=np.asarray([[0, 60], [0, 60]], dtype=np.int32),
+            epoch_names=("movement",),
+        ),
+    )
+
+    starts = perturbation_bank._movement_start_indices(trial_specs, batch_size=2)
+
+    np.testing.assert_array_equal(starts, np.asarray([0, 0], dtype=np.int64))
+    assert (
+        perturbation_bank._movement_start_source(trial_specs)
+        == "trial_specs.timeline.epoch_bounds[..., 0]"
+    )
+
+
 def test_delayed_observation_adapter_uses_clean_pre_noise_graph_channel() -> None:
     trial_specs = TaskTrialSpec(
         inits={"mechanics.vector": np.zeros((2, 8), dtype=np.float64)},
@@ -931,6 +1040,27 @@ def test_full_qrf_cost_scorer_keeps_internal_arrays_device_backed() -> None:
     assert summary["status"] == "available"
     assert summary["control"]["values"] == np.asarray(scored["control"]).tolist()
     np.testing.assert_allclose(summary["control"]["mean"], 2.0 * schedule.T)
+
+
+def test_full_qrf_cost_scorer_supports_no_integrator_6d_delayed_basis() -> None:
+    _plant, schedule = build_no_integrator_game()
+    states = np.zeros((1, schedule.T, schedule.Q.shape[-1]), dtype=np.float64)
+    initial = np.zeros((1, schedule.Q.shape[-1]), dtype=np.float64)
+    commands = np.ones((1, schedule.T, schedule.R.shape[-1]), dtype=np.float64)
+
+    scored = score_full_qrf_rollout_cost(
+        states=states,
+        commands=commands,
+        initial_states=initial,
+        target_pos=np.zeros((2,), dtype=np.float64),
+    )
+
+    assert scored["status"] == "available"
+    assert scored["basis"]["physical_state_dim"] == 6
+    assert scored["basis"]["schedule_source"].endswith("build_no_integrator_game")
+    np.testing.assert_allclose(scored["stage_state"], 0.0)
+    np.testing.assert_allclose(scored["terminal"], 0.0)
+    np.testing.assert_allclose(scored["control"], 2.0 * schedule.T)
 
 
 def test_full_qrf_cost_summary_slices_delayed_movement_window() -> None:

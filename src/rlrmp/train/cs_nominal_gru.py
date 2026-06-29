@@ -61,6 +61,7 @@ from rlrmp.loss import (
     CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
     CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
 )
+from rlrmp.io import compact_json_dumps, write_compact_json
 from rlrmp.paths import REPO_ROOT, mkdir_p, run_spec_path
 from rlrmp.runtime.run_specs import validate_nominal_gru_run_spec
 from rlrmp.model.stochastic_runtime import (
@@ -69,6 +70,8 @@ from rlrmp.model.stochastic_runtime import (
 )
 from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
+    BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE,
+    BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
     BROAD_EPSILON_PGD_TRAINING_MODE,
     BROAD_EPSILON_TRAINING_MODE,
     EFFECTIVE_020A65B_PGD_RADIUS_15CM,
@@ -377,6 +380,11 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
     broad_pgd_schedule = _dict_value(broad_pgd, "budget_schedule")
     broad_pgd_conditioning = _dict_value(broad_pgd_schedule, "conditioning_scalar")
     broad_pgd_max_radius_source = _dict_value(broad_pgd_schedule, "max_radius_source")
+    broad_pgd_budget = _dict_value(broad_pgd, "budget_contract")
+    broad_pgd_budget_source = _dict_value(broad_pgd_budget, "budget_source")
+    broad_pgd_objective = _dict_value(broad_pgd, "objective")
+    broad_pgd_safety_cap = _dict_value(broad_pgd, "safety_cap")
+    broad_pgd_safety_cap_source = _dict_value(broad_pgd_safety_cap, "source")
     target_relative = _dict_value(hps, "target_relative_multitarget")
     target_distribution = _dict_value(target_relative, "target_distribution")
     delayed = _dict_value(hps, "delayed_reach")
@@ -466,6 +474,13 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
         "perturbation_calibrated_timing": bool(perturbation.get("calibrated_timing", False)),
         "perturbation_movement_age_timing": bool(perturbation.get("movement_age_timing", False)),
         "perturbation_physical_level": str(perturbation.get("physical_level", "moderate")),
+        "perturbation_calibration_regime": str(
+            perturbation.get("calibration_regime", "open_loop_all")
+        ),
+        "perturbation_closed_loop_calibration_table": perturbation.get(
+            "closed_loop_calibration_table_path",
+            None,
+        ),
         "target_relative_multitarget": bool(target_relative.get("enabled", False)),
         "target_support_profile": str(
             target_distribution.get("target_support_profile", DEFAULT_TARGET_SUPPORT_PROFILE)
@@ -511,6 +526,50 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
         ),
         "broad_epsilon_pgd_budget_schedule": str(
             broad_pgd_schedule.get("mode", broad_pgd.get("budget_schedule_mode", "fixed"))
+        ),
+        "broad_epsilon_pgd_fixed_radius_15cm": broad_pgd_budget.get(
+            "effective_l2_radius_15cm",
+            broad_pgd.get("fixed_l2_radius_15cm"),
+        ),
+        "broad_epsilon_pgd_fixed_radius_source": broad_pgd_budget_source.get(
+            "key",
+            broad_pgd.get("fixed_radius_source"),
+        ),
+        "broad_epsilon_pgd_objective": str(
+            broad_pgd_objective.get(
+                "kind",
+                broad_pgd.get("objective_kind", BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE),
+            )
+        ),
+        "broad_epsilon_pgd_energy_gamma_star": broad_pgd_objective.get(
+            "gamma_star",
+            broad_pgd.get("energy_gamma_star"),
+        ),
+        "broad_epsilon_pgd_energy_gamma_factor": broad_pgd_objective.get(
+            "gamma_factor",
+            broad_pgd.get("energy_gamma_factor"),
+        ),
+        "broad_epsilon_pgd_energy_gamma": broad_pgd_objective.get(
+            "gamma",
+            broad_pgd.get("energy_gamma"),
+        ),
+        "broad_epsilon_pgd_energy_penalty_scale": float(
+            broad_pgd_objective.get(
+                "penalty_scale_c",
+                broad_pgd.get("energy_penalty_scale", 1.0),
+            )
+        ),
+        "broad_epsilon_pgd_energy_lambda": broad_pgd_objective.get(
+            "lambda",
+            broad_pgd.get("energy_lambda"),
+        ),
+        "broad_epsilon_pgd_safety_cap_15cm": broad_pgd_safety_cap.get(
+            "l2_radius_15cm",
+            broad_pgd.get("safety_cap_l2_radius_15cm"),
+        ),
+        "broad_epsilon_pgd_safety_cap_source": broad_pgd_safety_cap_source.get(
+            "key",
+            broad_pgd.get("safety_cap_source"),
         ),
         "broad_epsilon_pgd_sisu_condition_input": str(
             broad_pgd_conditioning.get(
@@ -817,6 +876,8 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         movement_age_timing=perturbation_movement_age_timing,
         physical_level=perturbation_physical_level,
         force_filter_feedback=force_filter_feedback,
+        calibration_regime=str(args.perturbation_calibration_regime),
+        closed_loop_calibration_table_path=args.perturbation_closed_loop_calibration_table,
     )
     if perturbation_movement_age_timing and not perturbation_calibrated_timing:
         raise ValueError(
@@ -843,6 +904,16 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         sisu_condition_input=str(args.broad_epsilon_pgd_sisu_condition_input),
         sisu_max_l2_radius_15cm=args.broad_epsilon_pgd_sisu_max_radius,
         sisu_max_radius_source=args.broad_epsilon_pgd_sisu_max_radius_source,
+        fixed_l2_radius_15cm=args.broad_epsilon_pgd_fixed_radius_15cm,
+        fixed_radius_source=args.broad_epsilon_pgd_fixed_radius_source,
+        objective_kind=str(args.broad_epsilon_pgd_objective),
+        energy_gamma_star=args.broad_epsilon_pgd_energy_gamma_star,
+        energy_gamma_factor=args.broad_epsilon_pgd_energy_gamma_factor,
+        energy_gamma=args.broad_epsilon_pgd_energy_gamma,
+        energy_penalty_scale=float(args.broad_epsilon_pgd_energy_penalty_scale),
+        energy_lambda=args.broad_epsilon_pgd_energy_lambda,
+        safety_cap_l2_radius_15cm=args.broad_epsilon_pgd_safety_cap_15cm,
+        safety_cap_source=args.broad_epsilon_pgd_safety_cap_source,
     )
     policy_adversary_training = PolicyFullStateEpsilonTrainingConfig(
         enabled=bool(args.policy_adversary_training),
@@ -1395,9 +1466,31 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "loss_objective": str(hps.loss.objective),
         "initial_hidden_encoder": _initial_hidden_encoder_metadata(hps),
     }
+    model_structure = build_model_structure_summary(hps)
+    for key in (
+        "adversarial_phase",
+        "delayed_reach",
+        "loss_objective",
+        "nominal_only",
+        "stochastic_preset",
+        "stochastic_runtime",
+        "training_distribution",
+    ):
+        model_structure.pop(key, None)
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "execution_backend": EXECUTION_BACKEND,
+        "provenance_refs": {
+            "delayed_reach": "$.delayed_reach",
+            "loss_objective": "$.loss_objective",
+            "model_structure.delayed_reach": "$.delayed_reach",
+            "model_structure.stochastic_preset": "$.stochastic_preset",
+            "model_structure.stochastic_runtime": "$.stochastic_runtime",
+            "model_structure.training_distribution": "$.training_spec.training_distribution",
+            "stochastic_preset": "$.stochastic_preset",
+            "stochastic_runtime": "$.stochastic_runtime",
+            "training_distribution": "$.training_spec.training_distribution",
+        },
         "component_policy": {
             "rlrmp_component_types": [
                 "RLRMPSimpleStagedNetwork",
@@ -1421,7 +1514,7 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "loss_spec": loss_spec,
         "training_spec": training_spec,
         "game_card_provenance": build_loss_game_card_provenance(hps),
-        "model_structure": build_model_structure_summary(hps),
+        "model_structure": model_structure,
         "delayed_reach": _plain(hps.delayed_reach),
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
         "stochastic_runtime": _stochastic_runtime_contract(hps),
@@ -1499,6 +1592,39 @@ def build_run_spec(
     """Build the JSON payload for ``run.json``."""
 
     hps = build_hps(args)
+    training_distribution = _training_distribution_metadata(hps)
+    validation_bins = _validation_bins_metadata(hps)
+    delayed_reach = _plain(hps.delayed_reach)
+    model_summary = build_model_structure_summary(hps)
+    for key in (
+        "adversarial_phase",
+        "delayed_reach",
+        "nominal_only",
+        "stochastic_preset",
+        "training_distribution",
+    ):
+        model_summary.pop(key, None)
+    training_summary = {
+        **graph_bundle.training_spec,
+        "training_mode": _training_mode(hps),
+        "n_train_batches": int(args.n_train_batches),
+        "n_adversary_batches": 0,
+        "n_policy_adversary_ascent_steps_per_controller_step": (
+            int(config_from_policy_adversary_hps(hps.policy_adversary_training).n_steps)
+            if _policy_adversary_training_enabled(hps)
+            else 0
+        ),
+        "training_diagnostics": _training_diagnostics_metadata(args, output_dir),
+    }
+    for key in (
+        "adversarial_phase",
+        "loss_objective",
+        "nominal_only",
+        "stochastic_preset",
+        "stochastic_runtime",
+        "training_distribution",
+    ):
+        training_summary.pop(key, None)
     return {
         "schema_version": SCHEMA_VERSION,
         "issue": str(args.issue),
@@ -1507,9 +1633,18 @@ def build_run_spec(
         "artifact_output_dir": str(output_dir),
         "spec_dir": str(spec_dir),
         "nominal_only": _nominal_only(hps),
-        "training_distribution": _training_distribution_metadata(hps),
-        "delayed_reach": _plain(hps.delayed_reach),
-        "validation_bins": _validation_bins_metadata(hps),
+        "training_distribution": training_distribution,
+        "delayed_reach": delayed_reach,
+        "validation_bins": validation_bins,
+        "provenance_refs": {
+            "delayed_reach": "$.delayed_reach",
+            "loss_objective": "$.loss_objective",
+            "model_summary.training_distribution": "$.training_distribution",
+            "stochastic_preset": "$.stochastic_preset",
+            "training_summary.training_distribution": "$.training_distribution",
+            "training_summary.validation_bins": "$.validation_bins",
+            "validation_bins": "$.validation_bins",
+        },
         "adversarial_phase": (
             "learned_memoryless_policy_adversary"
             if _policy_adversary_training_enabled(hps)
@@ -1528,22 +1663,10 @@ def build_run_spec(
         "fidelity_status": _fidelity_status(hps),
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
         "game_card": build_loss_game_card_provenance(hps),
-        "model_summary": build_model_structure_summary(hps),
+        "model_summary": model_summary,
         "task_timing": graph_bundle.task_spec,
         "loss_summary": graph_bundle.loss_spec,
-        "training_summary": {
-            **graph_bundle.training_spec,
-            "training_mode": _training_mode(hps),
-            "n_train_batches": int(args.n_train_batches),
-            "n_adversary_batches": 0,
-            "n_policy_adversary_ascent_steps_per_controller_step": (
-                int(config_from_policy_adversary_hps(hps.policy_adversary_training).n_steps)
-                if _policy_adversary_training_enabled(hps)
-                else 0
-            ),
-            "validation_bins": _validation_bins_metadata(hps),
-            "training_diagnostics": _training_diagnostics_metadata(args, output_dir),
-        },
+        "training_summary": training_summary,
         "feedbax_graph": graph_bundle.to_run_metadata(),
         "hps": _plain(hps),
         "provenance": {
@@ -2522,7 +2645,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--perturbation-process-epsilon-scale", type=float, default=0.01)
     parser.add_argument("--perturbation-command-input-pulse-n", type=float, default=1.0)
     parser.add_argument("--perturbation-sensory-feedback-offset-m", type=float, default=0.01)
-    parser.add_argument("--perturbation-delayed-observation-offset-m", type=float, default=0.01)
+    parser.add_argument(
+        "--perturbation-delayed-observation-offset-m",
+        type=float,
+        default=0.01,
+        help=(
+            "Legacy run-spec compatibility only; delayed_observation is no longer "
+            "sampled or validated in the active final perturbation bank."
+        ),
+    )
     parser.add_argument("--perturbation-pulse-start-step", type=int, default=20)
     parser.add_argument("--perturbation-pulse-duration-steps", type=int, default=5)
     parser.add_argument(
@@ -2531,9 +2662,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Use timing-bin calibrated perturbation training: plant process/command "
-            "pulses sample starts 5/15/35 uniformly, controller-visible sensory and "
-            "delayed-observation offsets sample starts 10/20/40 uniformly, all with "
-            "5-step pulses. Defaults to on for --delayed-reach perturbation training."
+            "pulses sample starts 5/15/35 uniformly and controller-visible sensory "
+            "feedback offsets sample starts 10/20/40 uniformly, all with 5-step "
+            "pulses. Defaults to on for --delayed-reach perturbation training."
         ),
     )
     parser.add_argument(
@@ -2543,7 +2674,7 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Index calibrated perturbation timing bins by movement age: plant "
             "process/command pulses use movement_start + 5/15/35, controller-visible "
-            "sensory/delayed-observation pulses use movement_start + 10/20/40, and "
+            "sensory-feedback pulses use movement_start + 10/20/40, and "
             "initial position/velocity diagnostics use movement-onset process-epsilon "
             "impulses. Requires --perturbation-calibrated-timing and defaults to on "
             "for --delayed-reach perturbation training."
@@ -2557,6 +2688,29 @@ def build_parser() -> argparse.ArgumentParser:
             "Declared reach-relative perturbation level for calibrated screens. "
             "Small/moderate are training rows; stress is reserved for evaluation. "
             "Defaults to small for --delayed-reach and moderate otherwise."
+        ),
+    )
+    parser.add_argument(
+        "--perturbation-calibration-regime",
+        choices=(
+            "open_loop_all",
+            "closed_loop_sensory",
+            "closed_loop_sensory_command_lateral",
+        ),
+        default="open_loop_all",
+        help=(
+            "Select how calibrated perturbation families resolve amplitudes: all "
+            "families from open-loop calibration, sensory feedback from the "
+            "closed-loop table, or sensory plus command/random force plus "
+            "target-aligned lateral loads from the closed-loop table."
+        ),
+    )
+    parser.add_argument(
+        "--perturbation-closed-loop-calibration-table",
+        default=None,
+        help=(
+            "Path to a closed-loop calibration table used by mixed "
+            "perturbation-calibration regimes."
         ),
     )
     parser.add_argument(
@@ -2688,6 +2842,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--broad-epsilon-budget-scale", type=float, default=1.0)
     parser.add_argument(
+        "--broad-epsilon-pgd-fixed-radius-15cm",
+        type=float,
+        default=None,
+        help=(
+            "Override the fixed broad-epsilon PGD L2 radius at the 15 cm reference reach. "
+            "Use with --broad-epsilon-pgd-fixed-radius-source for provenance."
+        ),
+    )
+    parser.add_argument(
+        "--broad-epsilon-pgd-fixed-radius-source",
+        default=None,
+        help="Provenance key for --broad-epsilon-pgd-fixed-radius-15cm.",
+    )
+    parser.add_argument(
         "--broad-epsilon-reach-scaling",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -2702,6 +2870,46 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.25,
         help="PGD ascent step size as a fraction of each trial's L2 radius.",
+    )
+    parser.add_argument(
+        "--broad-epsilon-pgd-objective",
+        choices=(BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE, BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE),
+        default=BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE,
+        help=(
+            "Inner PGD objective. hard_l2 preserves the existing projected objective; "
+            "soft_energy maximizes task_loss - lambda * epsilon_energy with an explicit "
+            "stabilization cap."
+        ),
+    )
+    parser.add_argument("--broad-epsilon-pgd-energy-gamma-star", type=float, default=None)
+    parser.add_argument("--broad-epsilon-pgd-energy-gamma-factor", type=float, default=None)
+    parser.add_argument("--broad-epsilon-pgd-energy-gamma", type=float, default=None)
+    parser.add_argument(
+        "--broad-epsilon-pgd-energy-penalty-scale",
+        type=float,
+        default=1.0,
+        help="Soft-energy c multiplier in lambda = c * gamma^2 unless lambda is explicit.",
+    )
+    parser.add_argument(
+        "--broad-epsilon-pgd-energy-lambda",
+        type=float,
+        default=None,
+        help="Explicit soft-energy lambda; otherwise derived as c * gamma^2.",
+    )
+    parser.add_argument(
+        "--broad-epsilon-pgd-safety-cap-15cm",
+        type=float,
+        default=None,
+        help=(
+            "Optional 15 cm L2 trust-region cap for soft-energy PGD stabilization. "
+            "This cap is metadata-marked as not the scientific hard-budget constraint."
+        ),
+    )
+    parser.add_argument(
+        "--broad-epsilon-pgd-safety-cap-source",
+        type=str,
+        default=None,
+        help="Provenance key/source for --broad-epsilon-pgd-safety-cap-15cm.",
     )
     parser.add_argument(
         "--broad-epsilon-pgd-budget-schedule",
@@ -3522,10 +3730,7 @@ def _commit_volume(volume_commit: VolumeCommit | None) -> None:
 
 
 def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.tmp")
-    tmp.write_text(_json_dumps(payload), encoding="utf-8")
-    os.replace(tmp, path)
+    write_compact_json(path, payload, atomic=True)
 
 
 def write_training_diagnostics_sidecar(
@@ -5049,7 +5254,7 @@ def _plain(value: Any) -> Any:
 
 
 def _json_dumps(payload: dict[str, Any]) -> str:
-    return json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    return compact_json_dumps(payload)
 
 
 if __name__ == "__main__":

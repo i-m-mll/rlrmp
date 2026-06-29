@@ -9,6 +9,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
+from rlrmp.io import write_compact_json
+
 
 SCHEMA_VERSION = "rlrmp.raw_rollout_cleanup.v1"
 
@@ -146,8 +148,7 @@ def cleanup_raw_perturbation_rollouts(
             raise CleanupPreconditionError(
                 f"cleanup manifest already exists: {manifest_out}; pass overwrite to replace it"
             )
-        manifest_out.parent.mkdir(parents=True, exist_ok=True)
-        manifest_out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        write_compact_json(manifest_out, payload)
     return payload
 
 

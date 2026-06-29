@@ -10,6 +10,7 @@ from rlrmp.analysis.pipelines.hinf_phenotype_sidecar import (
     DEFAULT_OUTPUT_MARKDOWN,
     DEFAULT_REGENERATION_SPEC,
     DEFAULT_SCOPE,
+    ISSUE_ID,
     build_hinf_phenotype_sidecar,
     load_hinf_phenotype_sources,
     write_hinf_phenotype_sidecar,
@@ -21,6 +22,7 @@ def main() -> None:
     """Run the sidecar materializer."""
 
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--issue", default=ISSUE_ID)
     parser.add_argument("--scope", default=DEFAULT_SCOPE)
     parser.add_argument("--standard-certificate", type=Path)
     parser.add_argument("--objective-comparator", type=Path)
@@ -63,6 +65,7 @@ def main() -> None:
     )
     sidecar = build_hinf_phenotype_sidecar(
         sources=sources,
+        issue=args.issue,
         scope=args.scope,
         paired_run_ids=dict(args.paired_run),
     )

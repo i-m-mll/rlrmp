@@ -46,6 +46,13 @@ def main() -> None:
             "Required for calibrated force/filter feedback rows."
         ),
     )
+    parser.add_argument(
+        "--extlqg-physical-dim",
+        type=int,
+        choices=(6, 8),
+        default=8,
+        help="Analytical extLQG physical-state dimension to use for comparator rows.",
+    )
     args = parser.parse_args()
 
     manifest = materialize_gru_perturbation_response(
@@ -63,6 +70,7 @@ def main() -> None:
         note_path=args.note_path,
         bulk_dir=args.bulk_dir,
         feedback_scale_manifest_path=args.feedback_scale_manifest,
+        extlqg_physical_dim=args.extlqg_physical_dim,
         repo_root=REPO_ROOT,
     )
     print(

@@ -13,6 +13,7 @@ import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
+from rlrmp.io import write_compact_json
 from rlrmp.paths import REPO_ROOT, run_spec_path
 
 
@@ -848,8 +849,54 @@ def write_objective_comparator_sidecar(
 
     json_path.parent.mkdir(parents=True, exist_ok=True)
     markdown_path.parent.mkdir(parents=True, exist_ok=True)
-    json_path.write_text(json.dumps(sidecar, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_compact_json(json_path, _slim_objective_comparator_sidecar(sidecar))
     markdown_path.write_text(render_objective_comparator_markdown(sidecar), encoding="utf-8")
+
+
+def _slim_objective_comparator_sidecar(sidecar: Mapping[str, Any]) -> dict[str, Any]:
+    """Replace row-level duplicate comparator blocks with top-level refs."""
+
+    slim = dict(sidecar)
+    slim_rows: list[Any] = []
+    for row_payload in sidecar.get("rows", ()):
+        if not isinstance(row_payload, Mapping):
+            slim_rows.append(row_payload)
+            continue
+        row = dict(row_payload)
+        run_id = row.get("run_id")
+        if isinstance(run_id, str) and _top_level_comparator_has_run(
+            sidecar,
+            "shared_rollout_comparator",
+            run_id,
+        ):
+            row.pop("shared_rollout_comparator", None)
+            row["shared_rollout_comparator_ref"] = (
+                f"/shared_rollout_comparator/runs/{run_id}"
+            )
+        if isinstance(run_id, str) and _top_level_comparator_has_run(
+            sidecar,
+            "standard_split_bank_comparator",
+            run_id,
+        ):
+            row.pop("standard_split_bank_comparator", None)
+            row["standard_split_bank_comparator_ref"] = (
+                f"/standard_split_bank_comparator/runs/{run_id}"
+            )
+        slim_rows.append(row)
+    slim["rows"] = slim_rows
+    return slim
+
+
+def _top_level_comparator_has_run(
+    sidecar: Mapping[str, Any],
+    comparator_key: str,
+    run_id: str,
+) -> bool:
+    comparator = sidecar.get(comparator_key)
+    if not isinstance(comparator, Mapping):
+        return False
+    runs = comparator.get("runs")
+    return isinstance(runs, Mapping) and run_id in runs
 
 
 def compute_default_extlqg_cost_decomposition() -> ExtLQGCostDecomposition:

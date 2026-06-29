@@ -10,6 +10,7 @@ import numpy as np
 import rlrmp.analysis.pipelines.gru_worst_case_epsilon_audit as audit
 from rlrmp.analysis.pipelines.gru_worst_case_epsilon_audit import (
     declared_epsilon_l2_radius,
+    frozen_batch_adversary_audit_report,
     optimize_epsilon_sequence,
     project_l2_ball,
 )
@@ -131,6 +132,49 @@ def test_optimize_epsilon_sequence_improves_quadratic_objective() -> None:
     assert result.objective > result.initial_objective
     assert result.l2_norm <= 1.0 + 1e-12
     np.testing.assert_allclose(result.epsilon, np.asarray(target), atol=0.21)
+
+
+def test_frozen_batch_adversary_audit_report_exposes_parent_fields() -> None:
+    epsilon = np.asarray(
+        [
+            [[3.0, 4.0], [0.0, 0.0]],
+            [[0.3, 0.4], [0.0, 0.0]],
+        ],
+        dtype=np.float64,
+    )
+
+    report = frozen_batch_adversary_audit_report(
+        selected_epsilon=epsilon,
+        selected_objective=12.5,
+        zero_objective=10.0,
+        safety_cap_l2_radius=5.0,
+        batch_size=2,
+        reference_batch_size=4,
+    )
+
+    assert report["selected_epsilon_energy"] == 25.25
+    assert report["selected_epsilon_l2_norm"] == np.sqrt(25.25)
+    assert report["selected_epsilon_l2_norm_max_per_sample"] == 5.0
+    assert report["accepted_objective_gain_over_zero"] == 2.5
+    assert report["cap_bound_fraction"] == 0.5
+    assert report["nan_overflow_status"]["status"] == "finite"
+    assert report["batch_size_scaling"]["batch_size"] == 2
+    assert report["batch_size_scaling"]["reference_batch_size"] == 4
+    assert report["batch_size_scaling"]["accepted_objective_gain_per_batch_item"] == 1.25
+    assert report["batch_size_scaling"]["reference_scaled_objective_gain"] == 5.0
+
+
+def test_frozen_batch_adversary_audit_report_flags_nonfinite_values() -> None:
+    report = frozen_batch_adversary_audit_report(
+        selected_epsilon=np.asarray([[np.nan, np.inf]], dtype=np.float64),
+        selected_objective=float("inf"),
+        zero_objective=0.0,
+    )
+
+    assert report["nan_overflow_status"]["status"] == "nonfinite"
+    assert report["nan_overflow_status"]["epsilon_has_nan"] is True
+    assert report["nan_overflow_status"]["epsilon_has_inf"] is True
+    assert report["nan_overflow_status"]["objective_has_inf"] is True
 
 
 def test_staged_optimizer_matches_serial_with_multiple_restarts() -> None:

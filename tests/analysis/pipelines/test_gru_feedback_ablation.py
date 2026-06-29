@@ -17,6 +17,7 @@ from rlrmp.analysis.pipelines.gru_feedback_ablation import (
     SCHEMA_VERSION,
     _per_replicate_command_penalty_metrics,
     _per_replicate_cost_delta_values,
+    _slim_feedback_ablation_manifest,
     build_observation_ablation_spec,
     build_observation_tape,
     default_ablation_modes,
@@ -25,6 +26,7 @@ from rlrmp.analysis.pipelines.gru_feedback_ablation import (
     interpret_run_feedback_ablation,
     render_feedback_ablation_markdown,
     selected_feedback_ablation_bins,
+    selected_feedback_ablation_bins_for_bank,
     summarize_normalized_feedback_use,
 )
 from rlrmp.analysis.pipelines.gru_perturbation_bank import default_cs_perturbation_bank
@@ -60,12 +62,10 @@ def test_standard_modes_and_bins_are_json_serializable() -> None:
 
 
 def test_selected_feedback_ablation_bins_exist_in_current_bank() -> None:
-    perturbations = {
-        str(row["perturbation_id"])
-        for row in default_cs_perturbation_bank()["perturbations"]
-    }
+    bank = default_cs_perturbation_bank()
+    perturbations = {str(row["perturbation_id"]) for row in bank["perturbations"]}
 
-    for perturbation_id in selected_feedback_ablation_bins().values():
+    for perturbation_id in selected_feedback_ablation_bins_for_bank(bank).values():
         if perturbation_id is not None:
             assert perturbation_id in perturbations
 
@@ -100,11 +100,14 @@ def test_observation_tape_modes_transform_expected_axes() -> None:
     np.testing.assert_allclose(shuffled[:, 0], feedback[:, -1])
     np.testing.assert_allclose(lagged[:, :, 0], feedback[:, :, 0])
     np.testing.assert_allclose(lagged[:, :, 1:], feedback[:, :, :-1])
-    assert build_observation_tape(
-        "position_only_observation",
-        bin_feedback=feedback,
-        nominal_feedback=nominal,
-    ) is None
+    assert (
+        build_observation_tape(
+            "position_only_observation",
+            bin_feedback=feedback,
+            nominal_feedback=nominal,
+        )
+        is None
+    )
 
 
 def test_observation_tape_preserves_jax_array_boundary() -> None:
@@ -291,6 +294,73 @@ def test_feedback_checkpoint_selection_audit_has_legacy_run_fallback() -> None:
     assert audit["primary_checkpoint_policy"] == "validation_selected_per_replicate"
     assert audit["selected_candidate"]["run_id"] == "run_b"
     assert audit["candidate_granularity"] == "run_legacy_fallback"
+
+
+def test_slim_feedback_manifest_points_full_rows_to_bulk_detail(tmp_path) -> None:
+    detail_path = (
+        tmp_path
+        / "_artifacts"
+        / "abc1234"
+        / "feedback_ablation"
+        / "gru_feedback_ablation_test"
+        / "gru_feedback_ablation_test_detail.json"
+    )
+    manifest = {
+        "schema_version": SCHEMA_VERSION,
+        "issue": "abc1234",
+        "runs": {
+            "run_a": {
+                "label": "A",
+                "status_counts": {"evaluated": 1},
+                "interpretation": {"label": "feedback_sensitive"},
+                "normalized_feedback_use": {"status": "available", "score": 1.0},
+                "feedback_pass_audit": {"status": "pass"},
+                "ablations": [{"bin": "nominal", "mode": "normal"}],
+                "feedback_checkpoint_rescore": {
+                    "status": "materialized",
+                    "n_checkpoint_candidates": 2,
+                    "checkpoint_scores": [{"checkpoint_batches": 500}],
+                    "feedback_selected_checkpoints": [
+                        {"replicate": 0, "feedback_selected_checkpoint_batches": 500}
+                    ],
+                },
+            }
+        },
+        "feedback_checkpoint_selection_audit": {
+            "status": "materialized",
+            "runs": {
+                "run_a": {
+                    "status": "materialized",
+                    "checkpoint_scores": [{"checkpoint_batches": 500}],
+                    "feedback_selected_checkpoints": [
+                        {"replicate": 0, "feedback_selected_checkpoint_batches": 500}
+                    ],
+                }
+            },
+        },
+    }
+
+    slim = _slim_feedback_ablation_manifest(
+        manifest,
+        detail_manifest_path=detail_path,
+        repo_root=tmp_path,
+    )
+
+    detail_ref = (
+        "_artifacts/abc1234/feedback_ablation/gru_feedback_ablation_test/"
+        "gru_feedback_ablation_test_detail.json"
+    )
+    run = slim["runs"]["run_a"]
+    assert slim["manifest_role"] == "tracked_summary"
+    assert slim["bulk_detail_manifest"]["path"] == detail_ref
+    assert run["n_ablation_rows"] == 1
+    assert run["ablation_rows_detail_manifest"] == detail_ref
+    assert "ablations" not in run
+    assert "checkpoint_scores" not in run["feedback_checkpoint_rescore"]
+    assert run["feedback_checkpoint_rescore"]["checkpoint_scores_detail_manifest"] == detail_ref
+    audit_run = slim["feedback_checkpoint_selection_audit"]["runs"]["run_a"]
+    assert "checkpoint_scores" not in audit_run
+    assert audit_run["feedback_selected_checkpoints"][0]["replicate"] == 0
 
 
 def test_per_replicate_cost_delta_values_reduces_trials_only() -> None:
