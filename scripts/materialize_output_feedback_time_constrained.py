@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -26,6 +25,7 @@ from rlrmp.analysis.pipelines.output_feedback_time_constrained import (
     timed_run,
     write_basic_outputs,
 )
+from rlrmp.io import write_compact_json
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
@@ -295,7 +295,7 @@ def write_result(
     # callers; rewrite here so the final manifest always includes them.
     mkdir_p(note_path.parent)
     note_path.write_text(render_markdown(summary), encoding="utf-8")
-    manifest_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_compact_json(manifest_path, summary)
 
 
 def _row_entries(summary: dict[str, Any]) -> list[dict[str, Any]]:

@@ -107,6 +107,74 @@ def epsilon_energy(epsilon: Any) -> float:
     return float(np.sum(np.square(eps)))
 
 
+def frozen_batch_adversary_audit_report(
+    *,
+    selected_epsilon: Any,
+    selected_objective: float,
+    zero_objective: float,
+    safety_cap_l2_radius: float | None = None,
+    batch_size: int | None = None,
+    reference_batch_size: int | None = None,
+    cap_tolerance: float = 1e-4,
+) -> dict[str, Any]:
+    """Return compact frozen-batch adversary audit fields.
+
+    The helper is mechanism-agnostic: callers may pass direct open-loop
+    epsilon, closed-loop linear-no-bias policy epsilon, or affine-policy
+    epsilon after evaluating the selected candidate on the frozen batch.
+    """
+
+    eps = np.asarray(selected_epsilon, dtype=np.float64)
+    if eps.ndim < 2:
+        raise ValueError("selected_epsilon must include time and epsilon dimensions")
+    if batch_size is not None and int(batch_size) < 1:
+        raise ValueError("batch_size must be positive when provided")
+    if reference_batch_size is not None and int(reference_batch_size) < 1:
+        raise ValueError("reference_batch_size must be positive when provided")
+    if safety_cap_l2_radius is not None and float(safety_cap_l2_radius) < 0.0:
+        raise ValueError("safety_cap_l2_radius must be non-negative when provided")
+
+    norms = _candidate_flattened_l2_norms(eps)
+    selected_energy = float(np.sum(np.square(eps)))
+    selected_norm = float(np.linalg.norm(eps))
+    objective_gain = float(selected_objective) - float(zero_objective)
+    nonfinite = _nonfinite_status(eps, selected_objective, zero_objective)
+    if safety_cap_l2_radius is None:
+        cap_bound_fraction = None
+    else:
+        cap = float(safety_cap_l2_radius)
+        cap_bound_fraction = float(np.mean(norms >= cap * (1.0 - float(cap_tolerance))))
+
+    batch_scaling = {
+        "batch_size": None if batch_size is None else int(batch_size),
+        "reference_batch_size": (
+            None if reference_batch_size is None else int(reference_batch_size)
+        ),
+        "objective_reduction": "caller_supplied_objective_values",
+        "accepted_objective_gain_per_batch_item": (
+            None if batch_size is None else objective_gain / float(batch_size)
+        ),
+        "selected_epsilon_energy_per_batch_item": (
+            None if batch_size is None else selected_energy / float(batch_size)
+        ),
+    }
+    if batch_size is not None and reference_batch_size is not None:
+        batch_scaling["reference_scaled_objective_gain"] = (
+            objective_gain * float(reference_batch_size) / float(batch_size)
+        )
+
+    return {
+        "selected_epsilon_energy": selected_energy,
+        "selected_epsilon_l2_norm": selected_norm,
+        "selected_epsilon_l2_norm_max_per_sample": float(np.max(norms)) if norms.size else 0.0,
+        "accepted_objective_gain_over_zero": objective_gain,
+        "cap_bound_fraction": cap_bound_fraction,
+        "cap_tolerance": float(cap_tolerance),
+        "nan_overflow_status": nonfinite,
+        "batch_size_scaling": batch_scaling,
+    }
+
+
 def declared_epsilon_l2_radius(
     run_spec: Mapping[str, Any],
     *,
@@ -968,6 +1036,36 @@ def _epsilon_summary(epsilon: Any, *, budget_radius: float | None = None) -> dic
     }
 
 
+def _candidate_flattened_l2_norms(epsilon: np.ndarray) -> np.ndarray:
+    """Return one flattened time/component L2 norm per leading sample."""
+
+    eps = np.asarray(epsilon, dtype=np.float64)
+    if eps.ndim <= 2:
+        return np.asarray([np.linalg.norm(eps)], dtype=np.float64)
+    return np.linalg.norm(eps.reshape((-1, eps.shape[-2] * eps.shape[-1])), axis=-1)
+
+
+def _nonfinite_status(
+    epsilon: np.ndarray,
+    selected_objective: float,
+    zero_objective: float,
+) -> dict[str, Any]:
+    values = np.asarray(epsilon, dtype=np.float64)
+    scalar_values = np.asarray([selected_objective, zero_objective], dtype=np.float64)
+    return {
+        "status": (
+            "nonfinite"
+            if np.any(~np.isfinite(values)) or np.any(~np.isfinite(scalar_values))
+            else "finite"
+        ),
+        "epsilon_has_nan": bool(np.any(np.isnan(values))),
+        "epsilon_has_inf": bool(np.any(np.isinf(values))),
+        "objective_has_nan": bool(np.any(np.isnan(scalar_values))),
+        "objective_has_inf": bool(np.any(np.isinf(scalar_values))),
+        "epsilon_max_abs": float(np.nanmax(np.abs(values))) if values.size else 0.0,
+    }
+
+
 def _endpoint_terminal_summary(evaluation: Any) -> dict[str, Any]:
     endpoint = np.linalg.norm(
         evaluation.position[:, :, -1, :] - evaluation.target_position[None, :, -1, :],
@@ -1163,6 +1261,7 @@ __all__ = [
     "SCHEMA_VERSION",
     "declared_epsilon_l2_radius",
     "epsilon_energy",
+    "frozen_batch_adversary_audit_report",
     "materialize_gru_worst_case_epsilon_audit",
     "optimize_epsilon_sequence",
     "project_l2_ball",

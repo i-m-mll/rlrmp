@@ -37,6 +37,7 @@ from feedbax.contracts.graphs.serialization import spec_to_graph
 from equinox.nn import StateIndex
 
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
+from rlrmp.io import compact_json_dumps
 from rlrmp.model.stochastic_runtime import (
     PLANT_PROCESS_FORCE_NOISE_LABEL,
     graphspec_noise_contract,
@@ -1652,6 +1653,4 @@ def _plain(value: Any) -> Any:
 
 
 def _json_dumps(payload: dict[str, Any]) -> str:
-    import json
-
-    return json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    return compact_json_dumps(payload)

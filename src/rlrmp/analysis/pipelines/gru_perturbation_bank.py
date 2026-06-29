@@ -22,6 +22,7 @@ from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     TARGET_POS,
     build_canonical_game,
+    build_no_integrator_game,
     materialize_reference,
 )
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
@@ -59,6 +60,7 @@ from rlrmp.model.feedbax_channel_adapters import (
     find_materialized_additive_channel_adapter,
     materialize_additive_channel_adapter_on_graph,
 )
+from rlrmp.io import write_compact_json
 from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
@@ -380,21 +382,6 @@ def default_cs_perturbation_bank(
                     "insertion_point": "sensory.output -> net.feedback",
                 },
             ),
-            (
-                "delayed_observation",
-                "delayed_observation_offset",
-                "pre_noise_delayed_measurement_named_channel",
-                "Offset the clean pre-noise delayed measurement on "
-                "feedback.feedback -> sensory.input. This is not literal extra "
-                "observation delay.",
-                "pre_noise_delayed_measurement_offset",
-                {
-                    "compatibility_channel": "delayed_observation",
-                    "information_structure": "pre_noise_delayed_measurement_offset",
-                    "insertion_point": "feedback.feedback -> sensory.input",
-                    "not_literal_extra_delay": True,
-                },
-            ),
             ):
                 for feedback_quantity, units, amplitude, axes in (
                     ("position", "m", 0.01, ("x", "y")),
@@ -496,7 +483,6 @@ def default_cs_perturbation_bank(
                 "command_input",
                 "process_epsilon",
                 "sensory_feedback",
-                "delayed_observation",
                 "target_stream",
             ],
             "adapter_contract": (
@@ -520,13 +506,6 @@ def default_cs_perturbation_bank(
                     "Feedbax additive edge adapter on sensory.output -> net.feedback, "
                     "representing sensory_feedback after sensory noise and "
                     "before the controller feedback port."
-                ),
-                "delayed_observation_offset": (
-                    "Feedbax additive edge adapter on feedback.feedback -> sensory.input. "
-                    "This preserves the legacy "
-                    "delayed_observation channel name for compatibility, but the "
-                    "family semantics are a pre-noise delayed-measurement offset, "
-                    "not literal extra observation delay."
                 ),
                 "target_stream_jump": (
                     "Deferred: current fixed-target C&S GRU checkpoints do not consume "
@@ -859,18 +838,6 @@ def default_cs_calibrated_perturbation_bank(
                     {
                         "information_structure": "post_noise_controller_visible_feedback",
                         "insertion_point": "sensory.output -> net.feedback",
-                    },
-                ),
-                (
-                    "delayed_observation",
-                    "delayed_observation_offset",
-                    "pre_noise_delayed_measurement_named_channel",
-                    "pre_noise_delayed_measurement_offset",
-                    {
-                        "compatibility_channel": "delayed_observation",
-                        "information_structure": "pre_noise_delayed_measurement_offset",
-                        "insertion_point": "feedback.feedback -> sensory.input",
-                        "not_literal_extra_delay": True,
                     },
                 ),
             ):
@@ -1412,6 +1379,7 @@ def materialize_gru_perturbation_response(
     calibration_level: str | Sequence[str] | None = None,
     calibration_reach: str | float | None = None,
     feedback_scale_manifest_path: Path | None = None,
+    extlqg_physical_dim: Literal[6, 8] = 8,
     preferred_checkpoint_manifest_path: Path | None = None,
     checkpoint_selection_mode: CheckpointSelectionMode = "sparse_history",
 ) -> dict[str, Any]:
@@ -1451,6 +1419,7 @@ def materialize_gru_perturbation_response(
                 n_rollout_trials=n_rollout_trials,
                 write_bulk_arrays=write_bulk_arrays,
                 bulk_dir=bulk_dir,
+                extlqg_physical_dim=extlqg_physical_dim,
                 preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
                 checkpoint_selection_mode=checkpoint_selection_mode,
                 repo_root=repo_root,
@@ -1486,19 +1455,22 @@ def materialize_gru_perturbation_response(
         ),
         "bank": bank,
         "extlqg_comparator": {
-            "status": (
-                "available_for_initial_state_command_input_process_epsilon_"
-                "sensory_feedback_and_delayed_observation"
+            "status": "available_for_initial_state_command_input_process_epsilon_and_sensory_feedback",
+            "physical_dim": int(extlqg_physical_dim),
+            "game_source": (
+                "rlrmp.analysis.math.cs_game_card.build_no_integrator_game"
+                if int(extlqg_physical_dim) == 6
+                else "rlrmp.analysis.math.cs_game_card.build_canonical_game"
             ),
             "reason": (
                 "Deterministic extLQG response rows are evaluated for perturbations "
                 "with clean analytical interfaces: initial_state, command_input, "
-                "process_epsilon, sensory_feedback, and delayed_observation. "
+                "process_epsilon, and sensory_feedback. "
                 "Command-input rows add an external pulse after the controller "
                 "command and before the plant input. Sensory-feedback rows offset "
-                "the post-noise measurement delivered to the estimator; delayed-"
-                "observation rows offset the clean delayed measurement before "
-                "sensory noise. Target-stream remains deferred for current "
+                "the post-noise measurement delivered to the estimator after "
+                "converting target-relative GRU feedback signs into raw analytical "
+                "observation signs. Target-stream remains deferred for current "
                 "fixed-target checkpoints."
             ),
             "checkpoint_selection_role": "audit_only_not_used_for_selection",
@@ -1509,9 +1481,9 @@ def materialize_gru_perturbation_response(
                 "The output-feedback robust analytical controller is replayed through "
                 "the same deterministic released-code plant/estimator lane for "
                 "initial-state, command-input, and process-epsilon rows. Sensory "
-                "false-feedback and delayed-observation offsets are marked "
-                "not_applicable until the robust released-forward helper exposes "
-                "the same measurement-offset ports as the extLQG lane."
+                "false-feedback offsets are marked not_applicable until the robust "
+                "released-forward helper exposes the same measurement-offset ports "
+                "as the extLQG lane."
             ),
             "gamma_factor": OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
             "checkpoint_selection_role": "audit_only_not_used_for_selection",
@@ -1536,14 +1508,8 @@ def materialize_gru_perturbation_response(
     )
     if evaluate:
         mkdir_p(detail_manifest_path.parent)
-        detail_manifest_path.write_text(
-            json.dumps(manifest, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-    output_path.write_text(
-        json.dumps(tracked_manifest, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+        write_compact_json(detail_manifest_path, manifest)
+    write_compact_json(output_path, tracked_manifest)
     note_path.write_text(render_perturbation_response_markdown(manifest), encoding="utf-8")
     runs_for_spec = resolve_run_inputs(
         experiment=source_experiment,
@@ -1634,7 +1600,14 @@ def _slim_perturbation_response_manifest(
     """Remove per-row response payloads from the tracked response manifest."""
 
     slim = dict(manifest)
+    bank = slim.pop("bank", None)
     if detail_manifest_path is not None:
+        if isinstance(bank, Mapping):
+            slim["bank_summary"] = _slim_perturbation_bank_summary(
+                bank,
+                detail_manifest_path=detail_manifest_path,
+                repo_root=repo_root,
+            )
         slim["bulk_detail_manifest"] = {
             "path": _repo_relative(detail_manifest_path, repo_root=repo_root),
             "format": "json",
@@ -1645,9 +1618,12 @@ def _slim_perturbation_response_manifest(
         run = dict(run_payload)
         perturbations = run.pop("perturbations", [])
         robust_summary = run.pop("robust_response_summary", None)
+        bulk_files = run.pop("bulk_files", None)
         run["n_perturbation_rows"] = (
             len(perturbations) if isinstance(perturbations, Sequence) else 0
         )
+        if isinstance(bulk_files, Mapping):
+            run["bulk_files_count"] = len(bulk_files)
         if detail_manifest_path is not None:
             run["perturbation_rows_detail_manifest"] = _repo_relative(
                 detail_manifest_path,
@@ -1658,11 +1634,60 @@ def _slim_perturbation_response_manifest(
                     detail_manifest_path,
                     repo_root=repo_root,
                 )
+            if isinstance(bulk_files, Mapping):
+                run["bulk_files_detail_manifest"] = _repo_relative(
+                    detail_manifest_path,
+                    repo_root=repo_root,
+                )
         if isinstance(robust_summary, Mapping):
             run["robust_response_summary_status"] = robust_summary.get("status", "available")
         slim_runs[str(run_id)] = run
     slim["runs"] = slim_runs
     return slim
+
+
+def _slim_perturbation_bank_summary(
+    bank: Mapping[str, Any],
+    *,
+    detail_manifest_path: Path,
+    repo_root: Path,
+) -> dict[str, Any]:
+    """Return tracked bank metadata without the full perturbation row list."""
+
+    perturbations = bank.get("perturbations")
+    if not isinstance(perturbations, Sequence):
+        perturbations = []
+    families = sorted(
+        {
+            str(row.get("family"))
+            for row in perturbations
+            if isinstance(row, Mapping) and row.get("family") is not None
+        }
+    )
+    channels = sorted(
+        {
+            str(row.get("channel"))
+            for row in perturbations
+            if isinstance(row, Mapping) and row.get("channel") is not None
+        }
+    )
+    timing_bins = sorted(
+        {
+            str(row.get("timing_bin"))
+            for row in perturbations
+            if isinstance(row, Mapping) and row.get("timing_bin") is not None
+        }
+    )
+    return {
+        "bank_id": bank.get("bank_id"),
+        "schema_version": bank.get("schema_version"),
+        "n_perturbations": len(perturbations),
+        "families": families,
+        "channels": channels,
+        "timing_bins": timing_bins,
+        "detail_manifest": _repo_relative(detail_manifest_path, repo_root=repo_root),
+        "detail_contains": "full perturbation bank including per-row perturbation definitions",
+    }
 
 
 def _effective_checkpoint_policy_from_manifest(
@@ -1704,6 +1729,7 @@ def evaluate_run_perturbation_bank(
     bulk_dir: Path,
     evaluation_backend: PerturbationEvaluationBackend = "serial",
     trial_spec_transform: Callable[[Any], Any] | None = None,
+    extlqg_physical_dim: Literal[6, 8] = 8,
     preferred_checkpoint_manifest_path: Path | None = None,
     checkpoint_selection_mode: CheckpointSelectionMode = "sparse_history",
     repo_root: Path = REPO_ROOT,
@@ -1733,7 +1759,7 @@ def evaluate_run_perturbation_bank(
         seed=0,
     )
     nominal_base_cost = full_qrf_cost_summary(nominal_base_evaluation, base_trial_specs)
-    extlqg_context = _build_extlqg_comparator_context()
+    extlqg_context = _build_extlqg_comparator_context(physical_dim=extlqg_physical_dim)
     robust_context = _build_robust_output_feedback_comparator_context()
     rows = []
     bulk_files: dict[str, str] = {}
@@ -2207,9 +2233,12 @@ def score_full_qrf_rollout_cost(
     """Score realized full analytical Q/R/Q_f costs with per-term arrays.
 
     Args:
-        states: Rollout mechanics vectors with shape ``(..., T, 48)``.
+        states: Rollout mechanics vectors with shape ``(..., T, 48)`` for the
+            canonical 8D delayed state, or ``(..., T, 36)`` for the 6D
+            no-integrator delayed state.
         commands: Controller commands with shape ``(..., T, 2)``.
-        initial_states: Initial mechanics vectors broadcastable to ``(..., 48)``.
+        initial_states: Initial mechanics vectors broadcastable to the rollout
+            state dimension.
         target_pos: Absolute target position subtracted from every physical
             delay block's x/y position coordinates before applying Q/Q_f.
 
@@ -2219,10 +2248,12 @@ def score_full_qrf_rollout_cost(
         not hidden.
     """
 
-    _plant, schedule = build_canonical_game()
     state_array = jnp.asarray(states, dtype=jnp.float64)
     command_array = jnp.asarray(commands, dtype=jnp.float64)
     initial_array = jnp.asarray(initial_states, dtype=jnp.float64)
+    _plant, schedule, physical_dim, schedule_source = _full_qrf_game_for_state_dim(
+        int(state_array.shape[-1])
+    )
     if state_array.shape[-1] != schedule.Q.shape[-1]:
         raise ValueError(
             f"Full-Q/R/Q_f scorer expected state dim {schedule.Q.shape[-1]}, "
@@ -2248,8 +2279,12 @@ def score_full_qrf_rollout_cost(
         (*state_array.shape[:-2], state_array.shape[-1]),
     )
     x_pre = jnp.concatenate([initial_array[..., None, :], state_array[..., :-1, :]], axis=-2)
-    x_pre = _goal_centered_vectors(x_pre, target_pos=target_pos)
-    x_terminal = _goal_centered_vectors(state_array[..., -1, :], target_pos=target_pos)
+    x_pre = _goal_centered_vectors(x_pre, target_pos=target_pos, physical_dim=physical_dim)
+    x_terminal = _goal_centered_vectors(
+        state_array[..., -1, :],
+        target_pos=target_pos,
+        physical_dim=physical_dim,
+    )
     q = jnp.asarray(schedule.Q, dtype=jnp.float64)
     r = jnp.asarray(schedule.R, dtype=jnp.float64)
     q_f = jnp.asarray(schedule.Q_f, dtype=jnp.float64)
@@ -2266,7 +2301,8 @@ def score_full_qrf_rollout_cost(
             "state_key": "states.mechanics.vector",
             "command_key": "states.net.output",
             "state_transform": "subtract TARGET_POS from each physical delay block x/y",
-            "schedule_source": "rlrmp.analysis.math.cs_game_card.build_canonical_game",
+            "physical_state_dim": physical_dim,
+            "schedule_source": schedule_source,
         },
         "total": total,
         "stage_state": stage_state,
@@ -2370,7 +2406,7 @@ def _constant_movement_start(trial_specs: Any) -> int | None:
     bounds = np.asarray(epoch_bounds)
     if bounds.ndim < 2 or bounds.shape[-1] < 2:
         return None
-    starts = np.unique(bounds[..., 1])
+    starts = np.unique(bounds[..., _movement_start_bound_column(bounds)])
     if starts.size != 1:
         return None
     return int(starts[0])
@@ -2386,7 +2422,10 @@ def _movement_start_indices(trial_specs: Any, *, batch_size: int) -> np.ndarray 
     bounds = np.asarray(epoch_bounds)
     if bounds.ndim < 2 or bounds.shape[-1] < 2:
         return None
-    starts = np.asarray(bounds[..., 1], dtype=np.int64).reshape(-1)
+    starts = np.asarray(
+        bounds[..., _movement_start_bound_column(bounds)],
+        dtype=np.int64,
+    ).reshape(-1)
     if starts.size == 1:
         return np.full((batch_size,), int(starts[0]), dtype=np.int64)
     if starts.size != batch_size:
@@ -2395,6 +2434,27 @@ def _movement_start_indices(trial_specs: Any, *, batch_size: int) -> np.ndarray 
             f"movement starts; got {starts.size} starts for batch size {batch_size}"
         )
     return starts
+
+
+def _movement_start_bound_column(bounds: np.ndarray) -> int:
+    """Return the epoch-bound column that denotes movement start.
+
+    A one-epoch movement-only timeline is encoded as ``[0, T]``; its movement
+    start is column 0, not the terminal bound. Older delayed/full-trial specs
+    keep their movement start in column 1.
+    """
+
+    return 0 if bounds.shape[-1] == 2 else 1
+
+
+def _movement_start_source(trial_specs: Any) -> str:
+    timeline = getattr(trial_specs, "timeline", None)
+    epoch_bounds = getattr(timeline, "epoch_bounds", None)
+    if epoch_bounds is None:
+        return "absent_timeline_assumed_zero_for_immediate_reach"
+    bounds = np.asarray(epoch_bounds)
+    column = _movement_start_bound_column(bounds)
+    return f"trial_specs.timeline.epoch_bounds[..., {column}]"
 
 
 def _is_movement_indexed_timing(perturbation: Mapping[str, Any]) -> bool:
@@ -2425,7 +2485,7 @@ def _movement_aligned_start_indices(
         movement_starts = np.zeros((batch_size,), dtype=np.int64)
         movement_start_source = "absent_timeline_assumed_zero_for_immediate_reach"
     else:
-        movement_start_source = "trial_specs.timeline.epoch_bounds[..., 1]"
+        movement_start_source = _movement_start_source(trial_specs)
     return (
         movement_starts + relative_start,
         {
@@ -2499,6 +2559,13 @@ def evaluate_extlqg_perturbation_comparator(
     }
     if channel not in supported_channels:
         return extlqg_comparator_status(perturbation, status="not_applicable")
+    inapplicable_reason = _extlqg_inapplicable_reason(perturbation, context=context)
+    if inapplicable_reason is not None:
+        return extlqg_comparator_status(
+            perturbation,
+            status="not_applicable",
+            reason=inapplicable_reason,
+        )
     required_context_keys = (
         "base_evaluation",
         "base_initial_state",
@@ -2554,10 +2621,51 @@ def evaluate_extlqg_perturbation_comparator(
         }
 
 
+def _extlqg_inapplicable_reason(
+    perturbation: Mapping[str, Any],
+    *,
+    context: Mapping[str, Any],
+) -> str | None:
+    """Return why a row has no analytical port in the selected extLQG basis."""
+
+    channel = str(perturbation["channel"])
+    if channel == "process_epsilon":
+        plant = context.get("plant")
+        if plant is None:
+            return None
+        epsilon_dim = int(getattr(plant, "m_w"))
+        epsilon_index_raw = perturbation.get("epsilon_index")
+        epsilon_index = (
+            _axis_index(str(perturbation["axis"]))
+            if epsilon_index_raw is None
+            else int(epsilon_index_raw)
+        )
+        if epsilon_index < 0 or epsilon_index >= epsilon_dim:
+            return (
+                f"process_epsilon row addresses epsilon_index {epsilon_index}, "
+                f"but selected extLQG comparator exposes {epsilon_dim} process "
+                "disturbance dimensions"
+            )
+    if channel in {"sensory_feedback", "delayed_observation"}:
+        config = context.get("config")
+        if config is None:
+            return None
+        observation_dim = int(getattr(config, "n_phys"))
+        observation_index = _graph_channel_payload_index(perturbation)
+        if observation_index < 0 or observation_index >= observation_dim:
+            return (
+                f"{channel} row addresses payload index {observation_index}, "
+                f"but selected extLQG comparator exposes {observation_dim} "
+                "controller-visible physical dimensions"
+            )
+    return None
+
+
 def extlqg_comparator_status(
     perturbation: Mapping[str, Any],
     *,
     status: str,
+    reason: str | None = None,
 ) -> dict[str, Any]:
     """Return a structured not-applicable comparator status for a row."""
 
@@ -2579,10 +2687,13 @@ def extlqg_comparator_status(
     return {
         "status": status,
         "lens": "deterministic_extlqg_same_declared_perturbation",
-        "reason": reasons.get(
-            channel,
-            "analytical comparator is only defined for evaluated rows with "
-            "supported external analytical adapters",
+        "reason": (
+            reason
+            or reasons.get(
+                channel,
+                "analytical comparator is only defined for evaluated rows with "
+                "supported external analytical adapters",
+            )
         ),
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
     }
@@ -3019,7 +3130,7 @@ def _apply_movement_onset_initial_state_process_impulse(
         movement_starts = np.zeros((batch_size,), dtype=np.int64)
         movement_start_source = "absent_timeline_assumed_zero_for_immediate_reach"
     else:
-        movement_start_source = "trial_specs.timeline.epoch_bounds[..., 1]"
+        movement_start_source = _movement_start_source(trial_specs)
     timing_error = _validate_timed_pulse_indices(
         movement_starts,
         1,
@@ -3149,12 +3260,17 @@ def _apply_named_graph_channel_offset(
             model=model,
             reason=str(exc),
         )
-    n_time = _infer_trial_n_time(trial_specs, int(np.max(start_indices)) + duration)
     existing_payload = getattr(trial_specs, "inputs", {}).get(effective_spec.input_key)
+    existing_payload_shape = np.shape(existing_payload)
+    n_time = (
+        int(existing_payload_shape[-2])
+        if existing_payload is not None and len(existing_payload_shape) >= 2
+        else _infer_trial_n_time(trial_specs, int(np.max(start_indices)) + duration)
+    )
     declared_payload_dim = additive_channel_payload_dim(effective_spec)
     payload_dim = (
-        int(np.shape(existing_payload)[-1])
-        if existing_payload is not None and len(np.shape(existing_payload)) >= 1
+        int(existing_payload_shape[-1])
+        if existing_payload is not None and len(existing_payload_shape) >= 1
         else declared_payload_dim
     )
     active_calibrated_components = _active_graph_channel_components(
@@ -3458,6 +3574,32 @@ def _is_force_filter_feedback_row(perturbation: Mapping[str, Any]) -> bool:
     return False
 
 
+def _extlqg_observation_sign_multiplier(
+    perturbation: Mapping[str, Any],
+    *,
+    observation_index: int,
+) -> int:
+    """Map controller-visible GRU feedback signs into raw extLQG observation signs."""
+
+    if _is_force_filter_feedback_row(perturbation):
+        return 1
+
+    feedback_quantity = perturbation.get("feedback_quantity")
+    channel_provenance = perturbation.get("channel_provenance")
+    if feedback_quantity is None and isinstance(channel_provenance, Mapping):
+        feedback_quantity = channel_provenance.get("feedback_quantity")
+
+    axis = str(perturbation.get("axis", ""))
+    is_controller_visible_state_feedback = (
+        feedback_quantity in {"position", "velocity"}
+        or axis in {"x", "y", "vx", "vy"}
+        or observation_index < 4
+    )
+    if is_controller_visible_state_feedback:
+        return -1
+    return 1
+
+
 def _controller_visible_feedback_index(feedback_quantity: str, axis: str) -> int:
     axis_index = _axis_index(axis)
     if feedback_quantity in {"position", "velocity"}:
@@ -3550,11 +3692,21 @@ def _evaluate_model_rollout_product(
     )
 
 
-def _build_extlqg_comparator_context() -> dict[str, Any]:
+def _build_extlqg_comparator_context(
+    *,
+    physical_dim: Literal[6, 8] = 8,
+) -> dict[str, Any]:
     """Build deterministic analytical comparator context for perturbation rows."""
 
-    plant, schedule = build_canonical_game()
-    config = OutputFeedbackConfig()
+    if physical_dim == 8:
+        plant, schedule = build_canonical_game()
+        game_source = "rlrmp.analysis.math.cs_game_card.build_canonical_game"
+    elif physical_dim == 6:
+        plant, schedule = build_no_integrator_game()
+        game_source = "rlrmp.analysis.math.cs_game_card.build_no_integrator_game"
+    else:
+        raise ValueError(f"unsupported extLQG physical_dim {physical_dim}; expected 6 or 8")
+    config = OutputFeedbackConfig(n_phys=int(physical_dim))
     covariances = default_cs_noise_covariances(plant, config)
     comparator = build_extlqg_comparator_path(
         plant,
@@ -3578,6 +3730,8 @@ def _build_extlqg_comparator_context() -> dict[str, Any]:
         "schedule": schedule,
         "config": config,
         "comparator": comparator,
+        "physical_dim": int(physical_dim),
+        "game_source": game_source,
         "base_initial_state": np.asarray(x0, dtype=np.float64),
         "base_evaluation": _evaluation_from_extlqg_rollout(base_rollout, initial_state=x0),
         "parity_status": comparator.parity_status,
@@ -3908,7 +4062,7 @@ def _extlqg_observation_offset(
     family = str(perturbation["family"])
     if family not in {"sensory_feedback_offset", "delayed_observation_offset"}:
         raise ValueError(f"unsupported analytical observation-offset family {family!r}")
-    observation_index = _axis_index(str(perturbation["axis"]))
+    observation_index = _graph_channel_payload_index(perturbation)
     if observation_index < 0 or observation_index >= observation_dim:
         raise ValueError(
             f"observation axis index {observation_index} outside analytical dim {observation_dim}"
@@ -3921,7 +4075,14 @@ def _extlqg_observation_offset(
             f"observation-offset timing outside analytical horizon: {start=}, "
             f"{duration=}, {horizon=}"
         )
-    amount = float(perturbation["amplitude"]) * int(perturbation["sign"])
+    amount = (
+        float(perturbation["amplitude"])
+        * int(perturbation["sign"])
+        * _extlqg_observation_sign_multiplier(
+            perturbation,
+            observation_index=observation_index,
+        )
+    )
     offset = jnp.zeros((horizon, observation_dim), dtype=jnp.float64)
     return offset.at[start : start + duration, observation_index].set(amount)
 
@@ -3929,12 +4090,29 @@ def _extlqg_observation_offset(
 def _extlqg_cost_summary(evaluation: RolloutEvaluation, initial_state: Any) -> dict[str, Any]:
     """Return full-Q/R/Q_f summary for one analytical rollout."""
 
-    scored = score_full_qrf_rollout_cost(
-        states=getattr(evaluation, "mechanics_vector"),
-        commands=evaluation.command,
-        initial_states=np.asarray(initial_state, dtype=np.float64)[None, None, :],
-        target_pos=np.zeros((2,), dtype=np.float64),
-    )
+    mechanics_vector = getattr(evaluation, "mechanics_vector")
+    state_dim = int(np.asarray(mechanics_vector).shape[-1])
+    if state_dim not in {36, 48}:
+        return {
+            "status": "not_available",
+            "reason": (
+                "full-Q/R/Q_f scorer is defined on the 8D canonical delayed "
+                "state basis (48 states) and the 6D no-integrator delayed state "
+                f"basis (36 states), but selected analytical rollout has {state_dim} states"
+            ),
+        }
+    try:
+        scored = score_full_qrf_rollout_cost(
+            states=mechanics_vector,
+            commands=evaluation.command,
+            initial_states=np.asarray(initial_state, dtype=np.float64)[None, None, :],
+            target_pos=np.zeros((2,), dtype=np.float64),
+        )
+    except ValueError as exc:
+        return {
+            "status": "not_available",
+            "reason": str(exc),
+        }
     summary = _cost_arrays_to_summary(scored)
     summary["basis"]["state_transform"] = "analytical extLQG states are already target-centered"
     return summary
@@ -3967,16 +4145,43 @@ def _write_perturbation_bulk_arrays(
     return path
 
 
-def _goal_centered_vectors(values: Any, *, target_pos: Any) -> Any:
-    """Subtract target position from every 8D physical block's x/y entries."""
+def _full_qrf_game_for_state_dim(state_dim: int) -> tuple[Any, Any, int, str]:
+    """Return the C&S Q/R/Q_f schedule matching a delayed rollout state basis."""
+
+    if state_dim == 48:
+        plant, schedule = build_canonical_game()
+        return (
+            plant,
+            schedule,
+            8,
+            "rlrmp.analysis.math.cs_game_card.build_canonical_game",
+        )
+    if state_dim == 36:
+        plant, schedule = build_no_integrator_game()
+        return (
+            plant,
+            schedule,
+            6,
+            "rlrmp.analysis.math.cs_game_card.build_no_integrator_game",
+        )
+    raise ValueError(
+        "Full-Q/R/Q_f scorer expected canonical 48-state or no-integrator "
+        f"36-state delayed rollout basis, got {state_dim}."
+    )
+
+
+def _goal_centered_vectors(values: Any, *, target_pos: Any, physical_dim: int = 8) -> Any:
+    """Subtract target position from every physical block's x/y entries."""
 
     result = jnp.asarray(values, dtype=jnp.float64)
     target = jnp.asarray(target_pos, dtype=jnp.float64)
     if target.shape != (2,):
         raise ValueError(f"target_pos must have shape (2,), got {target.shape}")
-    if result.shape[-1] % 8 != 0:
-        raise ValueError(f"state dimension {result.shape[-1]} is not divisible by 8")
-    for start in range(0, result.shape[-1], 8):
+    if result.shape[-1] % physical_dim != 0:
+        raise ValueError(
+            f"state dimension {result.shape[-1]} is not divisible by {physical_dim}"
+        )
+    for start in range(0, result.shape[-1], physical_dim):
         result = result.at[..., start : start + 2].add(-target)
     return result
 

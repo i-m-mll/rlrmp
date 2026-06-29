@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any
@@ -35,6 +36,20 @@ RUN_DETAIL_PAYLOAD_KEYS = frozenset(
     }
 )
 MAX_SCALAR_VALUES = 16
+MAX_TRACKED_RESULTS_JSON_BYTES = 500 * 1024
+HISTORICAL_SIZE_EXCEPTIONS: dict[Path, tuple[int, str]] = {
+    Path("results/40e1911/notes/perturbation_response_npz_deletion_manifest.json"): (
+        600 * 1024,
+        "Historical raw-rollout deletion inventory; the payload is a durable list "
+        "of deleted paths, not duplicated diagnostic provenance."
+    ),
+    Path("results/d6d25d6/notes/phase_modulated_recurrent_manifest.json"): (
+        700 * 1024,
+        "Historical phase-modulated recurrent certificate matrix; the compact "
+        "payload is dominated by row-level certificate components rather than "
+        "duplicated provenance or bulk arrays.",
+    ),
+}
 
 
 def test_steady_state_summary_is_slim_and_points_to_bulk_detail() -> None:
@@ -98,15 +113,47 @@ def test_all_tracked_perturbation_response_manifests_avoid_inline_run_detail() -
     failures: list[str] = []
     for manifest_path in manifest_paths:
         payload = _load_json(manifest_path)
+        if "bank" in payload:
+            failures.append(f"{manifest_path.relative_to(REPO_ROOT)}:bank")
+        if "bank_summary" in payload:
+            summary = payload["bank_summary"]
+            if not isinstance(summary, Mapping) or "detail_manifest" not in summary:
+                failures.append(f"{manifest_path.relative_to(REPO_ROOT)}:bank_summary")
         runs = payload.get("runs")
         if not isinstance(runs, Mapping):
             continue
         for run_id, run_payload in runs.items():
             if not isinstance(run_payload, Mapping):
                 continue
+            if "bulk_files" in run_payload:
+                failures.append(f"{manifest_path.relative_to(REPO_ROOT)}:{run_id}.bulk_files")
             for key in RUN_DETAIL_PAYLOAD_KEYS:
                 if key in run_payload:
                     failures.append(f"{manifest_path.relative_to(REPO_ROOT)}:{run_id}.{key}")
+
+    assert failures == []
+
+
+def test_tracked_results_json_files_stay_within_size_budget() -> None:
+    paths = _tracked_results_json_paths()
+
+    failures: list[str] = []
+    for path in paths:
+        relpath = path.relative_to(REPO_ROOT)
+        size = path.stat().st_size
+        if relpath in HISTORICAL_SIZE_EXCEPTIONS:
+            max_exception_bytes, reason = HISTORICAL_SIZE_EXCEPTIONS[relpath]
+            if size > max_exception_bytes:
+                failures.append(
+                    f"{relpath} is {size} bytes, above historical exception budget "
+                    f"{max_exception_bytes}: {reason}"
+                )
+            continue
+        if size > MAX_TRACKED_RESULTS_JSON_BYTES:
+            failures.append(
+                f"{relpath} is {size} bytes, above tracked JSON budget "
+                f"{MAX_TRACKED_RESULTS_JSON_BYTES}"
+            )
 
     assert failures == []
 
@@ -149,6 +196,20 @@ def _load_json(path: Path) -> dict[str, Any]:
         payload = json.load(stream)
     assert isinstance(payload, dict), path
     return payload
+
+
+def _tracked_results_json_paths() -> list[Path]:
+    result = subprocess.run(
+        ["git", "ls-files", "-z", "results"],
+        cwd=REPO_ROOT,
+        check=True,
+        stdout=subprocess.PIPE,
+    )
+    return sorted(
+        REPO_ROOT / relpath.decode("utf-8")
+        for relpath in result.stdout.split(b"\0")
+        if relpath and relpath.endswith(b".json")
+    )
 
 
 def _require_bulk_detail_pointer(payload: Mapping[str, Any]) -> str:

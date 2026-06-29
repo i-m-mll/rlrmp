@@ -8,8 +8,11 @@ without disturbing hand-edited preambles or appended commentary.
 
 from __future__ import annotations
 
+import json
+import os
 import re
 from pathlib import Path
+from typing import Any, Callable
 
 
 # ---------------------------------------------------------------------------
@@ -21,6 +24,46 @@ _MARKER_CLOSE_PATTERN = r"<!-- /AUTO-GENERATED -->"
 
 _MARKER_OPEN_RE = re.compile(r"<!-- AUTO-GENERATED: (\S+) -->")
 _MARKER_CLOSE_LITERAL = "<!-- /AUTO-GENERATED -->"
+
+
+def compact_json_dumps(
+    payload: Any,
+    *,
+    default: Callable[[Any], Any] | None = None,
+) -> str:
+    """Return stable compact machine JSON with one trailing newline."""
+
+    return json.dumps(
+        payload,
+        default=default,
+        separators=(",", ":"),
+        sort_keys=True,
+    ) + "\n"
+
+
+def write_compact_json(
+    path: Path,
+    payload: Any,
+    *,
+    default: Callable[[Any], Any] | None = None,
+    atomic: bool = False,
+) -> None:
+    """Write stable compact machine JSON.
+
+    Markdown remains the human-readable surface for generated interpretation;
+    tracked JSON should be optimized for deterministic diffs and compact
+    machine reads.
+    """
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    encoded = compact_json_dumps(payload, default=default)
+    if not atomic:
+        path.write_text(encoded, encoding="utf-8")
+        return
+
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(encoded, encoding="utf-8")
+    os.replace(tmp, path)
 
 
 def _open_marker(name: str) -> str:
