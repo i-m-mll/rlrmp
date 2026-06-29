@@ -70,9 +70,13 @@ from rlrmp.train.cs_nominal_gru import (
 )
 from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
+    BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE,
+    BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
     BROAD_EPSILON_PGD_TRAINING_MODE,
     BROAD_EPSILON_TRAINING_MODE,
     CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE,
+    CLOSED_LOOP_SENSORY_CALIBRATION_REGIME,
+    CLOSED_LOOP_SENSORY_COMMAND_LATERAL_CALIBRATION_REGIME,
     DEFAULT_PGD_SISU_EXACT_ZERO_MASS,
     DEFAULT_PGD_SISU_LEVELS,
     DEFAULT_TARGET_SUPPORT_PROFILE,
@@ -83,6 +87,7 @@ from rlrmp.train.cs_perturbation_training import (
     POLICY_ADVERSARY_ENERGY_MODE,
     POLICY_ADVERSARY_PLAIN_MODE,
     POLICY_ADVERSARY_TRAINING_MODE,
+    OPEN_LOOP_ALL_CALIBRATION_REGIME,
     TARGET_SUPPORT_CONST_REACH_M,
     TARGET_SUPPORT_DENSE_N_DIRECTIONS,
     TARGET_SUPPORT_PROFILE_020A65B,
@@ -101,7 +106,11 @@ from rlrmp.train.cs_perturbation_training import (
     PolicyFullStateEpsilonTrainingConfig,
     TargetRelativeMultiTargetTrainingConfig,
     TargetRelativeMultiTargetTrainingTaskAdapter,
+    FixedTargetPerturbationTrainingConfig,
     _broad_epsilon_l2_radius,
+    _active_single_family_bins,
+    _closed_loop_amplitudes_by_timing,
+    _command_input_direction_pulse,
     _ensure_broad_epsilon_input,
     _epsilon_time_mask,
     _expand_bool_like,
@@ -110,6 +119,8 @@ from rlrmp.train.cs_perturbation_training import (
     _normalize_flattened_per_trial,
     _project_flattened_per_trial_l2_ball,
     _set_input,
+    _target_aligned_lateral_direction_pulse,
+    calibration_regime_manifest,
     apply_broad_epsilon_training,
     apply_training_perturbation_mixture,
     apply_training_target_distribution,
@@ -390,6 +401,124 @@ def test_pgd_sisu_budget_schedule_metadata_and_parser_round_trip() -> None:
     assert parsed.sisu_exact_zero_mass == pytest.approx(DEFAULT_PGD_SISU_EXACT_ZERO_MASS)
     assert parsed.sisu_max_l2_radius == pytest.approx(EFFECTIVE_020A65B_PGD_RADIUS_15CM)
     assert parsed.sisu_max_radius_source == "effective_020a65b_pgd_training_radius"
+
+
+def test_pgd_fixed_radius_metadata_and_parser_round_trip() -> None:
+    radius = 0.004545011406169036
+    source = "ofb_6d_no_integrator_gamma_1p4_rollout_radius"
+    cfg = PgdFullStateEpsilonTrainingConfig(
+        enabled=True,
+        level="moderate",
+        budget_scale=1.0,
+        fixed_l2_radius_15cm=radius,
+        fixed_radius_source=source,
+    )
+    payload = cfg.to_hps_dict()
+    budget = payload["budget_contract"]
+
+    assert cfg.reference_l2_radius == pytest.approx(radius)
+    assert budget["effective_l2_radius_15cm"] == pytest.approx(radius)
+    assert budget["active_max_l2_radius_15cm"] == pytest.approx(radius)
+    assert budget["budget_source"]["key"] == source
+    assert budget["budget_source"]["source_kind"] == "output_feedback_rollout_budget"
+    assert budget["budget_source"]["gamma_factor"] == pytest.approx(1.4)
+    assert budget["budget_source"]["epsilon_dim"] == 6
+
+    parsed = config_from_broad_epsilon_pgd_hps(payload)
+    assert parsed.fixed_l2_radius_15cm == pytest.approx(radius)
+    assert parsed.fixed_radius_source == source
+    assert parsed.reference_l2_radius == pytest.approx(radius)
+
+
+def test_pgd_soft_energy_metadata_lambda_mapping_and_parser_round_trip() -> None:
+    gamma_star = 9166.831285473823
+    gamma_factor = 1.4
+    cap_radius = 0.004545011406169036
+    cap_source = "ofb_6d_no_integrator_gamma_1p4_rollout_radius"
+    cfg = PgdFullStateEpsilonTrainingConfig(
+        enabled=True,
+        objective_kind=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+        energy_gamma_star=gamma_star,
+        energy_gamma_factor=gamma_factor,
+        energy_penalty_scale=1.0,
+        safety_cap_l2_radius_15cm=cap_radius,
+        safety_cap_source=cap_source,
+    )
+    payload = cfg.to_hps_dict()
+    objective = payload["objective"]
+    safety_cap = payload["safety_cap"]
+
+    assert objective["kind"] == BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE
+    assert objective["gamma_star"] == pytest.approx(gamma_star)
+    assert objective["gamma_factor"] == pytest.approx(gamma_factor)
+    assert objective["gamma"] == pytest.approx(gamma_star * gamma_factor)
+    assert objective["penalty_scale_c"] == pytest.approx(1.0)
+    assert objective["lambda"] == pytest.approx((gamma_star * gamma_factor) ** 2)
+    assert objective["hard_l2_projection_is_scientific_constraint"] is False
+    assert safety_cap["enabled"] is True
+    assert safety_cap["l2_radius_15cm"] == pytest.approx(cap_radius)
+    assert safety_cap["source"]["key"] == cap_source
+    assert safety_cap["hard_budget_scientific_constraint"] is False
+    assert payload["budget_contract"]["scientific_constraint"] == "soft_energy_penalty"
+
+    parsed = config_from_broad_epsilon_pgd_hps(payload)
+    assert parsed.objective_kind == BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE
+    assert parsed.soft_energy_gamma == pytest.approx(gamma_star * gamma_factor)
+    assert parsed.soft_energy_lambda == pytest.approx((gamma_star * gamma_factor) ** 2)
+    assert parsed.safety_cap_l2_radius == pytest.approx(cap_radius)
+    assert parsed.safety_cap_source == cap_source
+
+
+def test_pgd_hard_l2_default_metadata_preserves_existing_projection_contract() -> None:
+    cfg = PgdFullStateEpsilonTrainingConfig(enabled=True)
+    payload = cfg.to_hps_dict()
+
+    assert cfg.objective_kind == BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE
+    assert payload["objective"]["kind"] == BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE
+    assert payload["objective"]["hard_l2_projection_is_scientific_constraint"] is True
+    assert payload["safety_cap"]["enabled"] is False
+    assert payload["inner_maximizer"]["projection"] == "per_trial_flattened_time_component_l2_ball"
+    assert payload["budget_contract"]["scientific_constraint"] == "hard_l2_projection"
+
+
+def test_pgd_soft_energy_cli_and_run_spec_metadata(tmp_path: Path) -> None:
+    gamma_star = 9166.831285473823
+    gamma_factor = 1.05
+    cap_radius = 0.004545011406169036
+    output_dir = tmp_path / "bulk"
+    spec_dir = tmp_path / "spec"
+    args = _args(
+        output_dir=str(output_dir),
+        spec_dir=str(spec_dir),
+        issue="c92ebd8",
+        target_relative_multitarget=True,
+        force_filter_feedback=True,
+        broad_epsilon_pgd_training=True,
+        no_integrator_state=True,
+        broad_epsilon_pgd_steps=10,
+        broad_epsilon_pgd_objective=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+        broad_epsilon_pgd_energy_gamma_star=gamma_star,
+        broad_epsilon_pgd_energy_gamma_factor=gamma_factor,
+        broad_epsilon_pgd_energy_penalty_scale=1.0,
+        broad_epsilon_pgd_safety_cap_15cm=cap_radius,
+        broad_epsilon_pgd_safety_cap_source="ofb_6d_no_integrator_gamma_1p4_rollout_radius",
+    )
+
+    result = write_run_spec(args)
+    payload = json.loads(Path(result["run_spec_path"]).read_text())
+    pgd = payload["hps"]["broad_epsilon_pgd_training"]
+    objective = pgd["objective"]
+
+    assert objective["kind"] == BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE
+    assert objective["gamma"] == pytest.approx(gamma_star * gamma_factor)
+    assert objective["lambda"] == pytest.approx((gamma_star * gamma_factor) ** 2)
+    assert pgd["safety_cap"]["l2_radius_15cm"] == pytest.approx(cap_radius)
+    replay_args = resolve_run_spec_args(_args(run_spec=result["run_spec_path"]))
+    assert replay_args.broad_epsilon_pgd_objective == BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE
+    assert replay_args.broad_epsilon_pgd_energy_lambda == pytest.approx(
+        (gamma_star * gamma_factor) ** 2
+    )
+    assert replay_args.broad_epsilon_pgd_safety_cap_15cm == pytest.approx(cap_radius)
 
 
 def test_pgd_sisu_budget_radius_uses_sqrt_energy_fraction() -> None:
@@ -1495,7 +1624,14 @@ def test_randomized_perturbation_training_uses_prng_key_and_preserves_target() -
 
     assert jnp.allclose(first.inputs["effector_target"].pos, base.inputs["effector_target"].pos)
     assert jnp.any(first.inits["mechanics.vector"] != second.inits["mechanics.vector"])
-    assert jnp.any(first.inputs["epsilon"] != second.inputs["epsilon"])
+    active_input_keys = (
+        "epsilon",
+        GRAPH_ADAPTER_SPECS["command_input"].input_key,
+        GRAPH_ADAPTER_SPECS["sensory_feedback"].input_key,
+    )
+    assert any(bool(jnp.any(first.inputs[key] != second.inputs[key])) for key in active_input_keys)
+    assert jnp.all(first.inputs[GRAPH_ADAPTER_SPECS["delayed_observation"].input_key] == 0.0)
+    assert jnp.all(second.inputs[GRAPH_ADAPTER_SPECS["delayed_observation"].input_key] == 0.0)
 
     # Training trials are built inside Feedbax's vmapped training step, so per-trial
     # metadata must stay JAX-compatible. String/list provenance lives in the config
@@ -1618,9 +1754,8 @@ def test_calibrated_timing_sampler_uses_family_timing_bins() -> None:
     assert _nonzero_pulse_starts(process_delta).issubset(plant_starts)
     assert _nonzero_pulse_starts(command).issubset(plant_starts)
     assert _nonzero_pulse_starts(sensory).issubset(controller_visible_starts)
-    assert _nonzero_pulse_starts(delayed).issubset(controller_visible_starts)
+    assert not _nonzero_pulse_starts(delayed)
     assert _max_nonzero_pulse_width(sensory) <= 5
-    assert _max_nonzero_pulse_width(delayed) <= 5
     assert hps.perturbation_training.mode == CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE
 
 
@@ -1651,7 +1786,7 @@ def test_calibrated_movement_age_timing_preserves_undelayed_starts() -> None:
     assert hps.perturbation_training.timing_basis.mode == "movement_age"
     assert _nonzero_pulse_starts(command).issubset({5, 15, 35})
     assert _nonzero_pulse_starts(sensory).issubset({10, 20, 40})
-    assert _nonzero_pulse_starts(delayed).issubset({10, 20, 40})
+    assert not _nonzero_pulse_starts(delayed)
 
 
 def test_calibrated_movement_age_timing_shifts_by_delayed_go_cue() -> None:
@@ -1684,7 +1819,7 @@ def test_calibrated_movement_age_timing_shifts_by_delayed_go_cue() -> None:
     assert _nonzero_pulse_start_offsets(process_delta, go_steps).issubset({0, 5, 15, 35})
     assert _nonzero_pulse_start_offsets(command, go_steps).issubset({5, 15, 35})
     assert _nonzero_pulse_start_offsets(sensory, go_steps).issubset({10, 20, 40})
-    assert _nonzero_pulse_start_offsets(delayed, go_steps).issubset({10, 20, 40})
+    assert not _nonzero_pulse_start_offsets(delayed, go_steps)
     _assert_no_prep_pulse_support(process_delta, go_steps)
     _assert_no_prep_pulse_support(command, go_steps)
     _assert_no_prep_pulse_support(sensory, go_steps)
@@ -1786,10 +1921,10 @@ def test_calibrated_timing_sampler_consumes_calibrated_amplitudes() -> None:
         target_peak_delta_x
         / DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT["command_input_pulse"]["early"]
     }
-    _assert_values_close_to_expected(
-        _unique_abs_nonzero(command),
-        command_full,
-    )
+    command_xy = np.asarray(command[..., 5, :2])
+    command_norm = np.linalg.norm(command_xy, axis=-1)
+    nonzero_norm = command_norm[command_norm > 1e-7]
+    _assert_values_close_to_expected(np.unique(np.round(nonzero_norm, 8)), command_full)
 
     sensory_expected = {
         target_peak_delta_x,
@@ -1799,6 +1934,8 @@ def test_calibrated_timing_sampler_consumes_calibrated_amplitudes() -> None:
         _unique_abs_nonzero(sensory_bin.inputs[GRAPH_ADAPTER_SPECS["sensory_feedback"].input_key]),
         sensory_expected,
     )
+    assert "delayed_observation" not in VALIDATION_BINS
+    assert "delayed_observation" not in hps.perturbation_training.single_family_bins
     delayed_bin = apply_validation_bin(base, hps.perturbation_training, "delayed_observation")
     _assert_values_close_to_expected(
         _unique_abs_nonzero(
@@ -1806,6 +1943,119 @@ def test_calibrated_timing_sampler_consumes_calibrated_amplitudes() -> None:
         ),
         sensory_expected,
     )
+
+
+def test_command_input_training_sampler_uses_random_2d_vector_norm() -> None:
+    pulse = _command_input_direction_pulse(
+        batch_shape=(256,),
+        n_steps=20,
+        width=2,
+        amount=jnp.ones((256,), dtype=jnp.float32),
+        duration=5,
+        start=5,
+        key=jr.PRNGKey(2),
+        dtype=jnp.float32,
+    )
+    pulse_xy = np.asarray(pulse[:, 5, :2])
+    norms = np.linalg.norm(pulse_xy, axis=-1)
+
+    assert np.all(np.count_nonzero(np.abs(pulse_xy) > 1e-7, axis=-1) == 2)
+    assert np.allclose(norms, 1.0, rtol=5e-5, atol=5e-7)
+    assert np.allclose(np.asarray(pulse[:, :5, :]), 0.0)
+    assert np.allclose(np.asarray(pulse[:, 10:, :]), 0.0)
+
+
+def test_mixed_calibration_regime_loads_closed_loop_table_and_manifest() -> None:
+    table_path = "results/c92ebd8/notes/closed_loop_calibration_table.json"
+    open_cfg = FixedTargetPerturbationTrainingConfig(
+        enabled=True,
+        calibrated_timing=True,
+        physical_level="moderate",
+        calibration_regime=OPEN_LOOP_ALL_CALIBRATION_REGIME,
+    )
+    sensory_cfg = FixedTargetPerturbationTrainingConfig(
+        enabled=True,
+        calibrated_timing=True,
+        physical_level="moderate",
+        calibration_regime=CLOSED_LOOP_SENSORY_CALIBRATION_REGIME,
+        closed_loop_calibration_table_path=table_path,
+    )
+    full_cfg = FixedTargetPerturbationTrainingConfig(
+        enabled=True,
+        calibrated_timing=True,
+        physical_level="moderate",
+        calibration_regime=CLOSED_LOOP_SENSORY_COMMAND_LATERAL_CALIBRATION_REGIME,
+        closed_loop_calibration_table_path=table_path,
+    )
+
+    sensory_manifest = calibration_regime_manifest(sensory_cfg)
+    full_manifest = calibration_regime_manifest(full_cfg)
+    command_amplitudes = _closed_loop_amplitudes_by_timing(
+        full_cfg,
+        family="command_input_pulse",
+        timing_labels=("early", "mid", "late"),
+        component="random_force_pulse_cardinal_basis",
+        reducer="mean",
+    )
+    lateral_amplitudes = _closed_loop_amplitudes_by_timing(
+        full_cfg,
+        family="target_aligned_lateral_command_load_pulse",
+        timing_labels=("early", "mid", "late"),
+        component="target_aligned_lateral_load",
+        axis="y",
+    )
+
+    assert "target_aligned_lateral_load" not in _active_single_family_bins(open_cfg)
+    assert "target_aligned_lateral_load" not in _active_single_family_bins(sensory_cfg)
+    assert "target_aligned_lateral_load" in _active_single_family_bins(full_cfg)
+    assert sensory_manifest["closed_loop_families"] == ["sensory_feedback_offset"]
+    assert full_manifest["closed_loop_families"] == [
+        "sensory_feedback_offset",
+        "command_input_pulse",
+        "target_aligned_lateral_command_load_pulse",
+    ]
+    assert np.all(np.asarray(command_amplitudes) > 0.0)
+    assert np.all(np.asarray(lateral_amplitudes) > 0.0)
+
+
+def test_mixed_calibration_regime_requires_closed_loop_table() -> None:
+    with pytest.raises(ValueError, match="closed_loop_calibration_table_path"):
+        FixedTargetPerturbationTrainingConfig(
+            enabled=True,
+            calibrated_timing=True,
+            calibration_regime=CLOSED_LOOP_SENSORY_CALIBRATION_REGIME,
+        )
+
+
+def test_target_aligned_lateral_load_uses_trial_reach_direction() -> None:
+    trial = _manual_movement_age_trial(jnp.asarray([5, 5]), n_steps=20)
+    target = jnp.asarray(
+        [
+            [[0.15, 0.0]] * 20,
+            [[0.0, 0.15]] * 20,
+        ],
+        dtype=jnp.float32,
+    )
+    trial = eqx.tree_at(
+        lambda ts: ts.targets["mechanics.effector.pos"].value,
+        trial,
+        target,
+    )
+    pulse = _target_aligned_lateral_direction_pulse(
+        trial,
+        batch_shape=(2,),
+        n_steps=20,
+        width=2,
+        amount=jnp.ones((2,), dtype=jnp.float32),
+        duration=5,
+        start=5,
+        dtype=jnp.float32,
+    )
+
+    assert np.allclose(np.asarray(pulse[0, 5, :2]), [0.0, 1.0])
+    assert np.allclose(np.asarray(pulse[1, 5, :2]), [-1.0, 0.0])
+    assert np.allclose(np.asarray(pulse[:, :5, :]), 0.0)
+    assert np.allclose(np.asarray(pulse[:, 10:, :]), 0.0)
 
 
 def test_perturbation_training_run_spec_and_planned_rows(tmp_path: Path) -> None:
@@ -1887,12 +2137,11 @@ def test_calibrated_timing_run_spec_exposes_family_timing_bins(tmp_path: Path) -
     assert timing["process_epsilon"]["start_time_indices"] == [5, 15, 35]
     assert timing["command_input"]["start_time_indices"] == [5, 15, 35]
     assert timing["sensory_feedback"]["start_time_indices"] == [10, 20, 40]
-    assert timing["delayed_observation"]["start_time_indices"] == [10, 20, 40]
     assert timing["initial_position"]["start_time_indices"] == [0]
-    assert (
-        "not literal extra temporal delay"
-        in (hps_config["timing_bins"]["controller_visible"]["delayed_observation_semantics"])
-    )
+    assert "delayed_observation" not in timing
+    assert "delayed_observation" not in hps_config["validation_bins"]
+    assert "delayed_observation" not in hps_config["families"]
+    assert hps_config["inactive_legacy_bins"]["bins"] == ["delayed_observation"]
     assert (
         hps_config["mixture_semantics"]["calibrated_levels"]["amplitude_wiring_status"]
         == "wired_in_sampler_when_calibrated_timing_true"
@@ -2076,6 +2325,8 @@ def test_target_relative_multitarget_setup_uses_target_input_and_anchor() -> Non
         and row["checkpoint_selection"] == "excluded_unless_comparator_defined"
         for row in manifest["bins"]
     )
+    assert all(row["bin"] != "delayed_observation_offsets" for row in manifest["bins"])
+    assert all("delayed_observation" not in row.get("families", ()) for row in manifest["bins"])
     perturbation_bins = [
         row for row in manifest["bins"] if row["target_role"] == "seen_and_held_out_static_targets"
     ]
@@ -3868,6 +4119,167 @@ def test_33b0dcb_target_support_planned_rows_script_cli() -> None:
     assert [row["experiment"] for row in payload["planned_rows"]] == ["33b0dcb"] * 6
 
 
+def test_c92ebd8_calibrated_perturb_matrix_spec_artifact(tmp_path: Path) -> None:
+    spec_path = (
+        Path.cwd()
+        / "results"
+        / "c92ebd8"
+        / "notes"
+        / "no_pgd_calibrated_perturb_matrix_regeneration_spec.json"
+    )
+    payload = json.loads(spec_path.read_text())
+    rows = payload["rows"]
+    table_path = Path.cwd() / payload["perturbation_contract"]["closed_loop_calibration_table"]
+    table = json.loads(table_path.read_text())
+
+    assert payload["issue"] == "c92ebd8"
+    assert payload["status"] == "pre_run_spec_only"
+    assert payload["launch_status"]["training_launched"] is False
+    assert payload["launch_status"]["pod_acquired"] is False
+    assert len(rows) == 9
+    assert [row["row"] for row in rows] == list(range(1, 10))
+    assert all("level" not in row for row in rows)
+    assert [row["physical_level"] for row in rows] == [
+        "small",
+        "moderate",
+        "stress",
+    ] * 3
+    assert {row["substrate"] for row in rows} == {
+        "open_loop_all",
+        "closed_loop_sensory",
+        "closed_loop_sensory_command_lateral",
+    }
+    assert [row["calibration_regime"] for row in rows] == [
+        "open_loop_all",
+        "open_loop_all",
+        "open_loop_all",
+        "closed_loop_sensory",
+        "closed_loop_sensory",
+        "closed_loop_sensory",
+        "closed_loop_sensory_command_lateral",
+        "closed_loop_sensory_command_lateral",
+        "closed_loop_sensory_command_lateral",
+    ]
+    assert not any("medium" in row["run"] for row in rows)
+    assert payload["basis"]["training_target_count"] == 56
+    assert payload["basis"]["held_out_target_count"] == 16
+    assert payload["training_contract"]["target_support_profile"] == TARGET_SUPPORT_PROFILE_CONST_BAND16
+    assert payload["training_contract"]["process_state_dim"] == 6
+    assert payload["training_contract"]["process_integrator_state_in_gru_channel"] is False
+    assert payload["training_contract"]["n_train_batches_per_row"] == 12000
+    assert payload["training_contract"]["pgd_training"] is False
+    assert payload["training_contract"]["policy_adversary_training"] is False
+    assert payload["training_contract"]["broad_epsilon_training"] is False
+    assert (
+        payload["perturbation_contract"]["command_input_training_direction_policy"]
+        == "uniform_random_2d_vector_norm"
+    )
+    assert (
+        payload["perturbation_contract"]["closed_loop_training_selector_status"]
+        == "wired_generic_run_spec_consumable"
+    )
+    selector = payload["perturbation_contract"]["training_selector"]
+    assert selector["cli_arg"] == "--perturbation-calibration-regime"
+    assert selector["table_path_cli_arg"] == "--perturbation-closed-loop-calibration-table"
+    assert payload["calibration_artifact_status"]["closed_loop"]["status"] == (
+        "materialized_table_available"
+    )
+    assert table["schema_version"] == "rlrmp.c92ebd8.closed_loop_perturbation_calibration.v1"
+    assert table["issue"] == "c92ebd8"
+    assert table["status"] == "materialized"
+    assert table["source"]["comparator"] == "6D extLQG deterministic released-forward rollout"
+    assert table["target_rule"]["reach_length_m"] == 0.15
+    assert [level["name"] for level in table["physical_levels"]] == [
+        "small",
+        "moderate",
+        "stress",
+    ]
+    assert table["row_summary"] == {
+        "count": 63,
+        "by_family": {
+            "command_input_pulse": 18,
+            "sensory_feedback_offset": 36,
+            "target_aligned_lateral_command_load_pulse": 9,
+        },
+        "by_physical_level": {"moderate": 21, "small": 21, "stress": 21},
+    }
+    assert len(table["unit_sensitivities"]) == 21
+    assert len(table["rows"]) == 63
+    assert {
+        (row["family"], row["physical_level"])
+        for row in table["rows"]
+    } >= {
+        ("sensory_feedback_offset", "small"),
+        ("sensory_feedback_offset", "moderate"),
+        ("sensory_feedback_offset", "stress"),
+        ("command_input_pulse", "moderate"),
+        ("target_aligned_lateral_command_load_pulse", "moderate"),
+    }
+    assert all(row["amplitude"] > 0.0 for row in table["rows"])
+    assert all(
+        row["row_kind"] == "closed_loop_reach_relative_calibrated_amplitude"
+        for row in table["rows"]
+    )
+
+    open_loop_rows = [row for row in rows if row["substrate"] == "open_loop_all"]
+    mixed_rows = [row for row in rows if row["substrate"] != "open_loop_all"]
+    assert len(open_loop_rows) == 3
+    assert len(mixed_rows) == 6
+    assert all(row["launch_status"] == "launchable_after_user_confirmation" for row in rows)
+    assert all(row["command_status"] == "materialized_selector_command" for row in rows)
+    assert all(isinstance(row["command"], list) for row in rows)
+    assert all("--perturbation-calibration-regime" in row["command"] for row in rows)
+    assert all("--no-integrator-state" in row["command"] for row in rows)
+    assert all("--no-integrator-state" in row["spec_command"] for row in rows)
+    assert all(
+        row["calibration_table_status"] == "open_loop_source_defaults_available"
+        for row in open_loop_rows
+    )
+    assert all(
+        row["calibration_table_status"] == "mixed_open_loop_closed_loop_selector_wired"
+        for row in mixed_rows
+    )
+    assert all(
+        "--perturbation-closed-loop-calibration-table" in row["command"] for row in mixed_rows
+    )
+    assert not any(
+        "--perturbation-closed-loop-calibration-table" in row["command"]
+        for row in open_loop_rows
+    )
+    assert payload["known_blockers"] == [
+        "Rows 1-9 require explicit user confirmation before any training launch.",
+        (
+            "No pod acquisition, training launch, push, auth request, or issue closure is "
+            "authorized by this pre-run spec."
+        ),
+    ]
+
+    for row in rows:
+        parsed = _parse_planned_training_command(row["spec_command"])
+        parsed.output_dir = str(tmp_path / "artifacts" / row["run"])
+        parsed.spec_dir = str(tmp_path / "specs" / row["run"])
+        assert parsed.dry_run is True
+        assert parsed.issue == "c92ebd8"
+        assert parsed.no_integrator_state is True
+        assert parsed.target_support_profile == TARGET_SUPPORT_PROFILE_CONST_BAND16
+        assert parsed.perturbation_physical_level == row["physical_level"]
+        assert parsed.perturbation_calibration_regime == row["calibration_regime"]
+        payload = write_run_spec(parsed)["run_spec"]
+        assert payload["hps"]["model"]["no_integrator_state"] is True
+        assert payload["hps"]["model"]["physical_state_dim"] == 6
+        assert payload["model_summary"]["physical_state_dim"] == 6
+        perturbation = payload["hps"]["perturbation_training"]
+        assert perturbation["calibration_regime"] == row["calibration_regime"]
+        if row["calibration_regime"] == "open_loop_all":
+            assert perturbation["closed_loop_calibration_table_path"] is None
+        else:
+            assert perturbation["closed_loop_calibration_table_path"] == (
+                "results/c92ebd8/notes/closed_loop_calibration_table.json"
+            )
+        if row["calibration_regime"] == "closed_loop_sensory_command_lateral":
+            assert "target_aligned_lateral_load" in perturbation["single_family_bins"]
+
+
 def test_resume_training_diagnostics_stitches_replicate_major_current_chunk(
     tmp_path: Path,
 ) -> None:
@@ -4316,6 +4728,161 @@ def test_pgd_broad_epsilon_value_and_grad_matches_reference_ascent() -> None:
     np.testing.assert_allclose(updated.inputs["epsilon"], reference_updated.inputs["epsilon"])
     for key, expected in reference_diagnostics.items():
         np.testing.assert_allclose(diagnostics[key], expected, rtol=1e-6, atol=1e-8)
+
+
+def test_pgd_soft_energy_objective_penalizes_epsilon_energy() -> None:
+    class EchoTask:
+        def eval_trials(self, model, trial_specs, keys_model):
+            del model, keys_model
+            return trial_specs.inputs["epsilon"]
+
+    class LinearLoss:
+        def __call__(self, states, trial_specs, model):
+            del trial_specs, model
+            return TreeNamespace(total=jnp.sum(states))
+
+    trial_specs = TaskTrialSpec(
+        inits=WhereDict({}),
+        targets=WhereDict(
+            {
+                "mechanics.effector.pos": TargetSpec(
+                    value=jnp.zeros((1, 1, 1), dtype=jnp.float32),
+                )
+            }
+        ),
+        inputs={"epsilon": jnp.zeros((1, 1, 1), dtype=jnp.float32)},
+        timeline=TrialTimeline(n_steps=1),
+    )
+
+    hard_updated, hard_diagnostics = run_broad_epsilon_pgd_inner_maximizer(
+        EchoTask(),
+        model=None,
+        trial_specs=trial_specs,
+        loss_func=LinearLoss(),
+        keys_model=None,
+        config={
+            "enabled": True,
+            "reach_length_scaling": False,
+            "fixed_l2_radius_15cm": 1.0,
+            "n_steps": 1,
+            "step_size_fraction": 1.0,
+            "epsilon_dim": 1,
+        },
+        return_diagnostics=True,
+    )
+    soft_updated, soft_diagnostics = run_broad_epsilon_pgd_inner_maximizer(
+        EchoTask(),
+        model=None,
+        trial_specs=trial_specs,
+        loss_func=LinearLoss(),
+        keys_model=None,
+        config={
+            "enabled": True,
+            "reach_length_scaling": False,
+            "objective": {
+                "kind": BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+                "lambda": 10.0,
+            },
+            "safety_cap": {
+                "l2_radius_15cm": 1.0,
+                "source": {"key": "unit_test_cap"},
+            },
+            "n_steps": 1,
+            "step_size_fraction": 1.0,
+            "epsilon_dim": 1,
+        },
+        return_diagnostics=True,
+    )
+
+    assert hard_updated.inputs["epsilon"][0, 0, 0] == pytest.approx(1.0)
+    assert soft_updated.inputs["epsilon"][0, 0, 0] == pytest.approx(0.0)
+    assert bool(hard_diagnostics["objective_kind_is_soft_energy"]) is False
+    assert bool(soft_diagnostics["objective_kind_is_soft_energy"]) is True
+    assert soft_diagnostics["energy_lambda"] == pytest.approx(10.0)
+    assert hard_diagnostics["energy_penalty_term_selected"] == pytest.approx(0.0)
+    assert hard_diagnostics["penalized_objective_selected"] == pytest.approx(
+        hard_diagnostics["raw_task_loss_selected"]
+    )
+    assert hard_diagnostics["selected_objective_gain_over_zero"] == pytest.approx(
+        hard_diagnostics["inner_objective_improvement"]
+    )
+    assert soft_diagnostics["raw_task_loss_final_endpoint"] == pytest.approx(1.0)
+    assert soft_diagnostics["energy_penalty_term_final_endpoint"] == pytest.approx(10.0)
+    assert soft_diagnostics["selected_vs_final_objective_gap"] == pytest.approx(9.0)
+    assert soft_diagnostics["cap_boundary_fraction"] == pytest.approx(0.0)
+    assert bool(soft_diagnostics["inner_objective_nonfinite_seen"]) is False
+
+
+def test_pgd_soft_energy_objective_is_batch_size_invariant() -> None:
+    class EchoTask:
+        def eval_trials(self, model, trial_specs, keys_model):
+            del model, keys_model
+            return trial_specs.inputs["epsilon"]
+
+    class MeanLinearLoss:
+        def __call__(self, states, trial_specs, model):
+            del trial_specs, model
+            per_trial = jnp.sum(states, axis=tuple(range(1, states.ndim)))
+            return TreeNamespace(total=jnp.mean(per_trial))
+
+    def run(batch_size: int):
+        trial_specs = TaskTrialSpec(
+            inits=WhereDict({}),
+            targets=WhereDict(
+                {
+                    "mechanics.effector.pos": TargetSpec(
+                        value=jnp.zeros((batch_size, 1, 1), dtype=jnp.float32),
+                    )
+                }
+            ),
+            inputs={"epsilon": jnp.zeros((batch_size, 1, 1), dtype=jnp.float32)},
+            timeline=TrialTimeline(n_steps=1),
+        )
+        return run_broad_epsilon_pgd_inner_maximizer(
+            EchoTask(),
+            model=None,
+            trial_specs=trial_specs,
+            loss_func=MeanLinearLoss(),
+            keys_model=None,
+            config={
+                "enabled": True,
+                "reach_length_scaling": False,
+                "objective": {
+                    "kind": BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+                    "lambda": 0.1,
+                },
+                "safety_cap": {
+                    "l2_radius_15cm": 1.0,
+                    "source": {"key": "unit_test_cap"},
+                },
+                "n_steps": 1,
+                "step_size_fraction": 1.0,
+                "epsilon_dim": 1,
+            },
+            return_diagnostics=True,
+        )
+
+    single_updated, single_diagnostics = run(batch_size=1)
+    batch_updated, batch_diagnostics = run(batch_size=4)
+
+    np.testing.assert_allclose(single_updated.inputs["epsilon"], 1.0)
+    np.testing.assert_allclose(batch_updated.inputs["epsilon"], 1.0)
+    for key in (
+        "raw_task_loss_selected",
+        "epsilon_energy_mean",
+        "epsilon_energy_max",
+        "energy_penalty_term_selected",
+        "penalized_objective_selected",
+        "selected_objective_gain_over_zero",
+        "inner_objective_after",
+        "inner_objective_improvement",
+    ):
+        assert batch_diagnostics[key] == pytest.approx(single_diagnostics[key])
+
+    assert single_diagnostics["raw_task_loss_selected"] == pytest.approx(1.0)
+    assert single_diagnostics["epsilon_energy_mean"] == pytest.approx(1.0)
+    assert single_diagnostics["energy_penalty_term_selected"] == pytest.approx(0.1)
+    assert single_diagnostics["penalized_objective_selected"] == pytest.approx(0.9)
 
 
 def test_pgd_broad_epsilon_full_training_emits_inner_diagnostics(tmp_path: Path) -> None:

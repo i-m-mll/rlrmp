@@ -1,0 +1,2620 @@
+{
+  "figure_count": 96,
+  "figures": [
+    {
+      "figure_kind": "trajectory",
+      "group_key": "command_input__command_input_pulse",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/command_input__command_input_pulse__trajectory.html",
+      "n_rows": 12,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 12,
+        "no_pgd_gru": 12,
+        "pgd_gru": 12,
+        "robust_output_feedback6d": 12
+      },
+      "title": "open_loop_small vs small: command input / command input pulse"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "command_input__command_input_pulse",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/command_input__command_input_pulse__residual.html",
+      "n_rows": 12,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 12,
+        "no_pgd_gru": 12,
+        "pgd_gru": 12,
+        "robust_output_feedback6d": 12
+      },
+      "title": "open_loop_small vs small: command input / command input pulse"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "command_input__target_aligned_lateral_command_load_pulse__tangential",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/command_input__target_aligned_lateral_command_load_pulse__tangential__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_small vs small: command input / target aligned lateral command load pulse / tangential"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "command_input__target_aligned_lateral_command_load_pulse__tangential",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/command_input__target_aligned_lateral_command_load_pulse__tangential__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_small vs small: command input / target aligned lateral command load pulse / tangential"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "initial_state__initial_position_offset",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/initial_state__initial_position_offset__trajectory.html",
+      "n_rows": 4,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 4,
+        "no_pgd_gru": 4,
+        "pgd_gru": 4,
+        "robust_output_feedback6d": 4
+      },
+      "title": "open_loop_small vs small: initial state / initial position offset"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "initial_state__initial_position_offset",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/initial_state__initial_position_offset__residual.html",
+      "n_rows": 4,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 4,
+        "no_pgd_gru": 4,
+        "pgd_gru": 4,
+        "robust_output_feedback6d": 4
+      },
+      "title": "open_loop_small vs small: initial state / initial position offset"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "initial_state__initial_velocity_offset",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/initial_state__initial_velocity_offset__trajectory.html",
+      "n_rows": 4,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 4,
+        "no_pgd_gru": 4,
+        "pgd_gru": 4,
+        "robust_output_feedback6d": 4
+      },
+      "title": "open_loop_small vs small: initial state / initial velocity offset"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "initial_state__initial_velocity_offset",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/initial_state__initial_velocity_offset__residual.html",
+      "n_rows": 4,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 4,
+        "no_pgd_gru": 4,
+        "pgd_gru": 4,
+        "robust_output_feedback6d": 4
+      },
+      "title": "open_loop_small vs small: initial state / initial velocity offset"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "process_epsilon__process_epsilon_force_state_xy__force_state_x",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/process_epsilon__process_epsilon_force_state_xy__force_state_x__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_small vs small: process epsilon / process epsilon force state xy / force state x"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "process_epsilon__process_epsilon_force_state_xy__force_state_x",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/process_epsilon__process_epsilon_force_state_xy__force_state_x__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_small vs small: process epsilon / process epsilon force state xy / force state x"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "process_epsilon__process_epsilon_force_state_xy__tangential__force_state_y",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/process_epsilon__process_epsilon_force_state_xy__tangential__force_state_y__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_small vs small: process epsilon / process epsilon force state xy / tangential / force state y"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "process_epsilon__process_epsilon_force_state_xy__tangential__force_state_y",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/process_epsilon__process_epsilon_force_state_xy__tangential__force_state_y__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_small vs small: process epsilon / process epsilon force state xy / tangential / force state y"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "process_epsilon__process_epsilon_position_xy__position_x",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/process_epsilon__process_epsilon_position_xy__position_x__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_small vs small: process epsilon / process epsilon position xy / position x"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "process_epsilon__process_epsilon_position_xy__position_x",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/process_epsilon__process_epsilon_position_xy__position_x__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_small vs small: process epsilon / process epsilon position xy / position x"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "process_epsilon__process_epsilon_position_xy__position_y",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/process_epsilon__process_epsilon_position_xy__position_y__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_small vs small: process epsilon / process epsilon position xy / position y"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "process_epsilon__process_epsilon_position_xy__position_y",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/process_epsilon__process_epsilon_position_xy__position_y__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_small vs small: process epsilon / process epsilon position xy / position y"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "process_epsilon__process_epsilon_velocity_xy__velocity_x",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/process_epsilon__process_epsilon_velocity_xy__velocity_x__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_small vs small: process epsilon / process epsilon velocity xy / velocity x"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "process_epsilon__process_epsilon_velocity_xy__velocity_x",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/process_epsilon__process_epsilon_velocity_xy__velocity_x__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_small vs small: process epsilon / process epsilon velocity xy / velocity x"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "process_epsilon__process_epsilon_velocity_xy__velocity_y",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/process_epsilon__process_epsilon_velocity_xy__velocity_y__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_small vs small: process epsilon / process epsilon velocity xy / velocity y"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "process_epsilon__process_epsilon_velocity_xy__velocity_y",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/process_epsilon__process_epsilon_velocity_xy__velocity_y__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_small vs small: process epsilon / process epsilon velocity xy / velocity y"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "sensory_feedback__sensory_feedback_offset__force_filter__radial",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/sensory_feedback__sensory_feedback_offset__force_filter__radial__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__early_visible_t10_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__early_visible_t10_x_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__mid_visible_t20_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__mid_visible_t20_x_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__late_visible_t40_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__late_visible_t40_x_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_small vs small: sensory feedback / sensory feedback offset / force filter / radial"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "sensory_feedback__sensory_feedback_offset__force_filter__radial",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/sensory_feedback__sensory_feedback_offset__force_filter__radial__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__early_visible_t10_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__early_visible_t10_x_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__mid_visible_t20_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__mid_visible_t20_x_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__late_visible_t40_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__late_visible_t40_x_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_small vs small: sensory feedback / sensory feedback offset / force filter / radial"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "sensory_feedback__sensory_feedback_offset__force_filter__tangential",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/sensory_feedback__sensory_feedback_offset__force_filter__tangential__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__early_visible_t10_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__early_visible_t10_y_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__mid_visible_t20_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__mid_visible_t20_y_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__late_visible_t40_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__late_visible_t40_y_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_small vs small: sensory feedback / sensory feedback offset / force filter / tangential"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "sensory_feedback__sensory_feedback_offset__force_filter__tangential",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/sensory_feedback__sensory_feedback_offset__force_filter__tangential__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__early_visible_t10_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__early_visible_t10_y_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__mid_visible_t20_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__mid_visible_t20_y_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__late_visible_t40_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__late_visible_t40_y_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_small vs small: sensory feedback / sensory feedback offset / force filter / tangential"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "sensory_feedback__sensory_feedback_offset__position__radial",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/sensory_feedback__sensory_feedback_offset__position__radial__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__early_visible_t10_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__early_visible_t10_x_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__mid_visible_t20_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__mid_visible_t20_x_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__late_visible_t40_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__late_visible_t40_x_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_small vs small: sensory feedback / sensory feedback offset / position / radial"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "sensory_feedback__sensory_feedback_offset__position__radial",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/sensory_feedback__sensory_feedback_offset__position__radial__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__early_visible_t10_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__early_visible_t10_x_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__mid_visible_t20_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__mid_visible_t20_x_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__late_visible_t40_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__late_visible_t40_x_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_small vs small: sensory feedback / sensory feedback offset / position / radial"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "sensory_feedback__sensory_feedback_offset__position__tangential",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/sensory_feedback__sensory_feedback_offset__position__tangential__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__early_visible_t10_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__early_visible_t10_y_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__mid_visible_t20_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__mid_visible_t20_y_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__late_visible_t40_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__late_visible_t40_y_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_small vs small: sensory feedback / sensory feedback offset / position / tangential"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "sensory_feedback__sensory_feedback_offset__position__tangential",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/sensory_feedback__sensory_feedback_offset__position__tangential__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__early_visible_t10_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__early_visible_t10_y_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__mid_visible_t20_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__mid_visible_t20_y_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__late_visible_t40_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__late_visible_t40_y_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_small vs small: sensory feedback / sensory feedback offset / position / tangential"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "sensory_feedback__sensory_feedback_offset__velocity__radial",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/sensory_feedback__sensory_feedback_offset__velocity__radial__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__early_visible_t10_vx_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__early_visible_t10_vx_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__mid_visible_t20_vx_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__mid_visible_t20_vx_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__late_visible_t40_vx_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__late_visible_t40_vx_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_small vs small: sensory feedback / sensory feedback offset / velocity / radial"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "sensory_feedback__sensory_feedback_offset__velocity__radial",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/sensory_feedback__sensory_feedback_offset__velocity__radial__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__early_visible_t10_vx_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__early_visible_t10_vx_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__mid_visible_t20_vx_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__mid_visible_t20_vx_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__late_visible_t40_vx_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__late_visible_t40_vx_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_small vs small: sensory feedback / sensory feedback offset / velocity / radial"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "sensory_feedback__sensory_feedback_offset__velocity__tangential",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/sensory_feedback__sensory_feedback_offset__velocity__tangential__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__early_visible_t10_vy_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__early_visible_t10_vy_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__mid_visible_t20_vy_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__mid_visible_t20_vy_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__late_visible_t40_vy_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__late_visible_t40_vy_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_small vs small: sensory feedback / sensory feedback offset / velocity / tangential"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "sensory_feedback__sensory_feedback_offset__velocity__tangential",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_small/sensory_feedback__sensory_feedback_offset__velocity__tangential__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_small",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "small",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__early_visible_t10_vy_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__early_visible_t10_vy_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__mid_visible_t20_vy_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__mid_visible_t20_vy_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__late_visible_t40_vy_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__late_visible_t40_vy_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_small vs small: sensory feedback / sensory feedback offset / velocity / tangential"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "command_input__command_input_pulse",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/command_input__command_input_pulse__trajectory.html",
+      "n_rows": 12,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 12,
+        "no_pgd_gru": 12,
+        "pgd_gru": 12,
+        "robust_output_feedback6d": 12
+      },
+      "title": "open_loop_moderate vs moderate: command input / command input pulse"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "command_input__command_input_pulse",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/command_input__command_input_pulse__residual.html",
+      "n_rows": 12,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 12,
+        "no_pgd_gru": 12,
+        "pgd_gru": 12,
+        "robust_output_feedback6d": 12
+      },
+      "title": "open_loop_moderate vs moderate: command input / command input pulse"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "command_input__target_aligned_lateral_command_load_pulse__tangential",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/command_input__target_aligned_lateral_command_load_pulse__tangential__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_moderate vs moderate: command input / target aligned lateral command load pulse / tangential"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "command_input__target_aligned_lateral_command_load_pulse__tangential",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/command_input__target_aligned_lateral_command_load_pulse__tangential__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_moderate vs moderate: command input / target aligned lateral command load pulse / tangential"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "initial_state__initial_position_offset",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/initial_state__initial_position_offset__trajectory.html",
+      "n_rows": 4,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 4,
+        "no_pgd_gru": 4,
+        "pgd_gru": 4,
+        "robust_output_feedback6d": 4
+      },
+      "title": "open_loop_moderate vs moderate: initial state / initial position offset"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "initial_state__initial_position_offset",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/initial_state__initial_position_offset__residual.html",
+      "n_rows": 4,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 4,
+        "no_pgd_gru": 4,
+        "pgd_gru": 4,
+        "robust_output_feedback6d": 4
+      },
+      "title": "open_loop_moderate vs moderate: initial state / initial position offset"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "initial_state__initial_velocity_offset",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/initial_state__initial_velocity_offset__trajectory.html",
+      "n_rows": 4,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 4,
+        "no_pgd_gru": 4,
+        "pgd_gru": 4,
+        "robust_output_feedback6d": 4
+      },
+      "title": "open_loop_moderate vs moderate: initial state / initial velocity offset"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "initial_state__initial_velocity_offset",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/initial_state__initial_velocity_offset__residual.html",
+      "n_rows": 4,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 4,
+        "no_pgd_gru": 4,
+        "pgd_gru": 4,
+        "robust_output_feedback6d": 4
+      },
+      "title": "open_loop_moderate vs moderate: initial state / initial velocity offset"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "process_epsilon__process_epsilon_force_state_xy__force_state_x",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/process_epsilon__process_epsilon_force_state_xy__force_state_x__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_moderate vs moderate: process epsilon / process epsilon force state xy / force state x"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "process_epsilon__process_epsilon_force_state_xy__force_state_x",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/process_epsilon__process_epsilon_force_state_xy__force_state_x__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_moderate vs moderate: process epsilon / process epsilon force state xy / force state x"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "process_epsilon__process_epsilon_force_state_xy__tangential__force_state_y",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/process_epsilon__process_epsilon_force_state_xy__tangential__force_state_y__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_moderate vs moderate: process epsilon / process epsilon force state xy / tangential / force state y"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "process_epsilon__process_epsilon_force_state_xy__tangential__force_state_y",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/process_epsilon__process_epsilon_force_state_xy__tangential__force_state_y__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_moderate vs moderate: process epsilon / process epsilon force state xy / tangential / force state y"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "process_epsilon__process_epsilon_position_xy__position_x",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/process_epsilon__process_epsilon_position_xy__position_x__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_moderate vs moderate: process epsilon / process epsilon position xy / position x"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "process_epsilon__process_epsilon_position_xy__position_x",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/process_epsilon__process_epsilon_position_xy__position_x__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_moderate vs moderate: process epsilon / process epsilon position xy / position x"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "process_epsilon__process_epsilon_position_xy__position_y",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/process_epsilon__process_epsilon_position_xy__position_y__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_moderate vs moderate: process epsilon / process epsilon position xy / position y"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "process_epsilon__process_epsilon_position_xy__position_y",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/process_epsilon__process_epsilon_position_xy__position_y__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_moderate vs moderate: process epsilon / process epsilon position xy / position y"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "process_epsilon__process_epsilon_velocity_xy__velocity_x",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/process_epsilon__process_epsilon_velocity_xy__velocity_x__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_moderate vs moderate: process epsilon / process epsilon velocity xy / velocity x"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "process_epsilon__process_epsilon_velocity_xy__velocity_x",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/process_epsilon__process_epsilon_velocity_xy__velocity_x__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_moderate vs moderate: process epsilon / process epsilon velocity xy / velocity x"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "process_epsilon__process_epsilon_velocity_xy__velocity_y",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/process_epsilon__process_epsilon_velocity_xy__velocity_y__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_moderate vs moderate: process epsilon / process epsilon velocity xy / velocity y"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "process_epsilon__process_epsilon_velocity_xy__velocity_y",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/process_epsilon__process_epsilon_velocity_xy__velocity_y__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_moderate vs moderate: process epsilon / process epsilon velocity xy / velocity y"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "sensory_feedback__sensory_feedback_offset__force_filter__radial",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/sensory_feedback__sensory_feedback_offset__force_filter__radial__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__early_visible_t10_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__early_visible_t10_x_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__mid_visible_t20_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__mid_visible_t20_x_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__late_visible_t40_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__late_visible_t40_x_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_moderate vs moderate: sensory feedback / sensory feedback offset / force filter / radial"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "sensory_feedback__sensory_feedback_offset__force_filter__radial",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/sensory_feedback__sensory_feedback_offset__force_filter__radial__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__early_visible_t10_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__early_visible_t10_x_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__mid_visible_t20_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__mid_visible_t20_x_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__late_visible_t40_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__late_visible_t40_x_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_moderate vs moderate: sensory feedback / sensory feedback offset / force filter / radial"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "sensory_feedback__sensory_feedback_offset__force_filter__tangential",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/sensory_feedback__sensory_feedback_offset__force_filter__tangential__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__early_visible_t10_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__early_visible_t10_y_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__mid_visible_t20_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__mid_visible_t20_y_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__late_visible_t40_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__late_visible_t40_y_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_moderate vs moderate: sensory feedback / sensory feedback offset / force filter / tangential"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "sensory_feedback__sensory_feedback_offset__force_filter__tangential",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/sensory_feedback__sensory_feedback_offset__force_filter__tangential__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__early_visible_t10_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__early_visible_t10_y_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__mid_visible_t20_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__mid_visible_t20_y_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__late_visible_t40_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__late_visible_t40_y_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_moderate vs moderate: sensory feedback / sensory feedback offset / force filter / tangential"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "sensory_feedback__sensory_feedback_offset__position__radial",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/sensory_feedback__sensory_feedback_offset__position__radial__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__early_visible_t10_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__early_visible_t10_x_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__mid_visible_t20_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__mid_visible_t20_x_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__late_visible_t40_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__late_visible_t40_x_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_moderate vs moderate: sensory feedback / sensory feedback offset / position / radial"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "sensory_feedback__sensory_feedback_offset__position__radial",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/sensory_feedback__sensory_feedback_offset__position__radial__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__early_visible_t10_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__early_visible_t10_x_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__mid_visible_t20_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__mid_visible_t20_x_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__late_visible_t40_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__late_visible_t40_x_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_moderate vs moderate: sensory feedback / sensory feedback offset / position / radial"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "sensory_feedback__sensory_feedback_offset__position__tangential",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/sensory_feedback__sensory_feedback_offset__position__tangential__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__early_visible_t10_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__early_visible_t10_y_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__mid_visible_t20_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__mid_visible_t20_y_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__late_visible_t40_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__late_visible_t40_y_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_moderate vs moderate: sensory feedback / sensory feedback offset / position / tangential"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "sensory_feedback__sensory_feedback_offset__position__tangential",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/sensory_feedback__sensory_feedback_offset__position__tangential__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__early_visible_t10_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__early_visible_t10_y_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__mid_visible_t20_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__mid_visible_t20_y_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__late_visible_t40_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__late_visible_t40_y_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_moderate vs moderate: sensory feedback / sensory feedback offset / position / tangential"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "sensory_feedback__sensory_feedback_offset__velocity__radial",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/sensory_feedback__sensory_feedback_offset__velocity__radial__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__early_visible_t10_vx_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__early_visible_t10_vx_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__mid_visible_t20_vx_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__mid_visible_t20_vx_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__late_visible_t40_vx_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__late_visible_t40_vx_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_moderate vs moderate: sensory feedback / sensory feedback offset / velocity / radial"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "sensory_feedback__sensory_feedback_offset__velocity__radial",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/sensory_feedback__sensory_feedback_offset__velocity__radial__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__early_visible_t10_vx_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__early_visible_t10_vx_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__mid_visible_t20_vx_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__mid_visible_t20_vx_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__late_visible_t40_vx_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__late_visible_t40_vx_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_moderate vs moderate: sensory feedback / sensory feedback offset / velocity / radial"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "sensory_feedback__sensory_feedback_offset__velocity__tangential",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/sensory_feedback__sensory_feedback_offset__velocity__tangential__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__early_visible_t10_vy_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__early_visible_t10_vy_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__mid_visible_t20_vy_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__mid_visible_t20_vy_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__late_visible_t40_vy_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__late_visible_t40_vy_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_moderate vs moderate: sensory feedback / sensory feedback offset / velocity / tangential"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "sensory_feedback__sensory_feedback_offset__velocity__tangential",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_moderate/sensory_feedback__sensory_feedback_offset__velocity__tangential__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_moderate",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "moderate",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__early_visible_t10_vy_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__early_visible_t10_vy_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__mid_visible_t20_vy_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__mid_visible_t20_vy_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__late_visible_t40_vy_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__late_visible_t40_vy_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_moderate vs moderate: sensory feedback / sensory feedback offset / velocity / tangential"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "command_input__command_input_pulse",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/command_input__command_input_pulse__trajectory.html",
+      "n_rows": 12,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 12,
+        "no_pgd_gru": 12,
+        "pgd_gru": 12,
+        "robust_output_feedback6d": 12
+      },
+      "title": "open_loop_stress vs stress: command input / command input pulse"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "command_input__command_input_pulse",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/command_input__command_input_pulse__residual.html",
+      "n_rows": 12,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 12,
+        "no_pgd_gru": 12,
+        "pgd_gru": 12,
+        "robust_output_feedback6d": 12
+      },
+      "title": "open_loop_stress vs stress: command input / command input pulse"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "command_input__target_aligned_lateral_command_load_pulse__tangential",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/command_input__target_aligned_lateral_command_load_pulse__tangential__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_stress vs stress: command input / target aligned lateral command load pulse / tangential"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "command_input__target_aligned_lateral_command_load_pulse__tangential",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/command_input__target_aligned_lateral_command_load_pulse__tangential__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_stress vs stress: command input / target aligned lateral command load pulse / tangential"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "initial_state__initial_position_offset",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/initial_state__initial_position_offset__trajectory.html",
+      "n_rows": 4,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 4,
+        "no_pgd_gru": 4,
+        "pgd_gru": 4,
+        "robust_output_feedback6d": 4
+      },
+      "title": "open_loop_stress vs stress: initial state / initial position offset"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "initial_state__initial_position_offset",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/initial_state__initial_position_offset__residual.html",
+      "n_rows": 4,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 4,
+        "no_pgd_gru": 4,
+        "pgd_gru": 4,
+        "robust_output_feedback6d": 4
+      },
+      "title": "open_loop_stress vs stress: initial state / initial position offset"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "initial_state__initial_velocity_offset",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/initial_state__initial_velocity_offset__trajectory.html",
+      "n_rows": 4,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 4,
+        "no_pgd_gru": 4,
+        "pgd_gru": 4,
+        "robust_output_feedback6d": 4
+      },
+      "title": "open_loop_stress vs stress: initial state / initial velocity offset"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "initial_state__initial_velocity_offset",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/initial_state__initial_velocity_offset__residual.html",
+      "n_rows": 4,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 4,
+        "no_pgd_gru": 4,
+        "pgd_gru": 4,
+        "robust_output_feedback6d": 4
+      },
+      "title": "open_loop_stress vs stress: initial state / initial velocity offset"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "process_epsilon__process_epsilon_force_state_xy__force_state_x",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/process_epsilon__process_epsilon_force_state_xy__force_state_x__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_stress vs stress: process epsilon / process epsilon force state xy / force state x"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "process_epsilon__process_epsilon_force_state_xy__force_state_x",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/process_epsilon__process_epsilon_force_state_xy__force_state_x__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_stress vs stress: process epsilon / process epsilon force state xy / force state x"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "process_epsilon__process_epsilon_force_state_xy__tangential__force_state_y",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/process_epsilon__process_epsilon_force_state_xy__tangential__force_state_y__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_stress vs stress: process epsilon / process epsilon force state xy / tangential / force state y"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "process_epsilon__process_epsilon_force_state_xy__tangential__force_state_y",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/process_epsilon__process_epsilon_force_state_xy__tangential__force_state_y__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_stress vs stress: process epsilon / process epsilon force state xy / tangential / force state y"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "process_epsilon__process_epsilon_position_xy__position_x",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/process_epsilon__process_epsilon_position_xy__position_x__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_stress vs stress: process epsilon / process epsilon position xy / position x"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "process_epsilon__process_epsilon_position_xy__position_x",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/process_epsilon__process_epsilon_position_xy__position_x__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_stress vs stress: process epsilon / process epsilon position xy / position x"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "process_epsilon__process_epsilon_position_xy__position_y",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/process_epsilon__process_epsilon_position_xy__position_y__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_stress vs stress: process epsilon / process epsilon position xy / position y"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "process_epsilon__process_epsilon_position_xy__position_y",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/process_epsilon__process_epsilon_position_xy__position_y__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_stress vs stress: process epsilon / process epsilon position xy / position y"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "process_epsilon__process_epsilon_velocity_xy__velocity_x",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/process_epsilon__process_epsilon_velocity_xy__velocity_x__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_stress vs stress: process epsilon / process epsilon velocity xy / velocity x"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "process_epsilon__process_epsilon_velocity_xy__velocity_x",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/process_epsilon__process_epsilon_velocity_xy__velocity_x__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_stress vs stress: process epsilon / process epsilon velocity xy / velocity x"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "process_epsilon__process_epsilon_velocity_xy__velocity_y",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/process_epsilon__process_epsilon_velocity_xy__velocity_y__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_stress vs stress: process epsilon / process epsilon velocity xy / velocity y"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "process_epsilon__process_epsilon_velocity_xy__velocity_y",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/process_epsilon__process_epsilon_velocity_xy__velocity_y__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 6
+      },
+      "title": "open_loop_stress vs stress: process epsilon / process epsilon velocity xy / velocity y"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "sensory_feedback__sensory_feedback_offset__force_filter__radial",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/sensory_feedback__sensory_feedback_offset__force_filter__radial__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__early_visible_t10_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__early_visible_t10_x_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__mid_visible_t20_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__mid_visible_t20_x_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__late_visible_t40_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__late_visible_t40_x_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_stress vs stress: sensory feedback / sensory feedback offset / force filter / radial"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "sensory_feedback__sensory_feedback_offset__force_filter__radial",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/sensory_feedback__sensory_feedback_offset__force_filter__radial__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__early_visible_t10_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__early_visible_t10_x_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__mid_visible_t20_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__mid_visible_t20_x_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__late_visible_t40_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__late_visible_t40_x_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_stress vs stress: sensory feedback / sensory feedback offset / force filter / radial"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "sensory_feedback__sensory_feedback_offset__force_filter__tangential",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/sensory_feedback__sensory_feedback_offset__force_filter__tangential__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__early_visible_t10_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__early_visible_t10_y_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__mid_visible_t20_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__mid_visible_t20_y_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__late_visible_t40_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__late_visible_t40_y_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_stress vs stress: sensory feedback / sensory feedback offset / force filter / tangential"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "sensory_feedback__sensory_feedback_offset__force_filter__tangential",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/sensory_feedback__sensory_feedback_offset__force_filter__tangential__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__early_visible_t10_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__early_visible_t10_y_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__mid_visible_t20_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__mid_visible_t20_y_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__late_visible_t40_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__force_filter_moderate__late_visible_t40_y_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_stress vs stress: sensory feedback / sensory feedback offset / force filter / tangential"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "sensory_feedback__sensory_feedback_offset__position__radial",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/sensory_feedback__sensory_feedback_offset__position__radial__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__early_visible_t10_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__early_visible_t10_x_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__mid_visible_t20_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__mid_visible_t20_x_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__late_visible_t40_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__late_visible_t40_x_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_stress vs stress: sensory feedback / sensory feedback offset / position / radial"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "sensory_feedback__sensory_feedback_offset__position__radial",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/sensory_feedback__sensory_feedback_offset__position__radial__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__early_visible_t10_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__early_visible_t10_x_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__mid_visible_t20_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__mid_visible_t20_x_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__late_visible_t40_x_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__late_visible_t40_x_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_stress vs stress: sensory feedback / sensory feedback offset / position / radial"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "sensory_feedback__sensory_feedback_offset__position__tangential",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/sensory_feedback__sensory_feedback_offset__position__tangential__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__early_visible_t10_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__early_visible_t10_y_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__mid_visible_t20_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__mid_visible_t20_y_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__late_visible_t40_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__late_visible_t40_y_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_stress vs stress: sensory feedback / sensory feedback offset / position / tangential"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "sensory_feedback__sensory_feedback_offset__position__tangential",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/sensory_feedback__sensory_feedback_offset__position__tangential__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__early_visible_t10_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__early_visible_t10_y_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__mid_visible_t20_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__mid_visible_t20_y_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__late_visible_t40_y_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__position_moderate__late_visible_t40_y_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_stress vs stress: sensory feedback / sensory feedback offset / position / tangential"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "sensory_feedback__sensory_feedback_offset__velocity__radial",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/sensory_feedback__sensory_feedback_offset__velocity__radial__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__early_visible_t10_vx_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__early_visible_t10_vx_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__mid_visible_t20_vx_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__mid_visible_t20_vx_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__late_visible_t40_vx_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__late_visible_t40_vx_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_stress vs stress: sensory feedback / sensory feedback offset / velocity / radial"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "sensory_feedback__sensory_feedback_offset__velocity__radial",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/sensory_feedback__sensory_feedback_offset__velocity__radial__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__early_visible_t10_vx_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__early_visible_t10_vx_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__mid_visible_t20_vx_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__mid_visible_t20_vx_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__late_visible_t40_vx_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__late_visible_t40_vx_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_stress vs stress: sensory feedback / sensory feedback offset / velocity / radial"
+    },
+    {
+      "figure_kind": "trajectory",
+      "group_key": "sensory_feedback__sensory_feedback_offset__velocity__tangential",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/sensory_feedback__sensory_feedback_offset__velocity__tangential__trajectory.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__early_visible_t10_vy_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__early_visible_t10_vy_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__mid_visible_t20_vy_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__mid_visible_t20_vy_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__late_visible_t40_vy_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__late_visible_t40_vy_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_stress vs stress: sensory feedback / sensory feedback offset / velocity / tangential"
+    },
+    {
+      "figure_kind": "residual",
+      "group_key": "sensory_feedback__sensory_feedback_offset__velocity__tangential",
+      "html": "_artifacts/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/open_loop_stress/sensory_feedback__sensory_feedback_offset__velocity__tangential__residual.html",
+      "n_rows": 6,
+      "open_loop_run_id": "open_loop_stress",
+      "pgd_missing_rows": [],
+      "pgd_run_id": "stress",
+      "robust_hinf_unsupported_rows": [
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__early_visible_t10_vy_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__early_visible_t10_vy_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__mid_visible_t20_vy_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__mid_visible_t20_vy_pos"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__late_visible_t40_vy_neg"
+        },
+        {
+          "channel": "sensory_feedback",
+          "perturbation_id": "sensory_feedback_offset__velocity_moderate__late_visible_t40_vy_pos"
+        }
+      ],
+      "source_counts": {
+        "extlqg6d": 6,
+        "no_pgd_gru": 6,
+        "pgd_gru": 6,
+        "robust_output_feedback6d": 0
+      },
+      "title": "open_loop_stress vs stress: sensory feedback / sensory feedback offset / velocity / tangential"
+    }
+  ],
+  "issue": "c92ebd8",
+  "missing_pgd_row_count": 0,
+  "missing_pgd_rows": [],
+  "pgd_bulk_detail_manifest": {
+    "contains": "full per-run perturbation rows and row-level metric summaries",
+    "format": "json",
+    "path": "_artifacts/c92ebd8/perturbation_response/pgd_1p05_moderate_perturbation_profiles_overlay/perturbation_response/gru_perturbation_response_pgd_1p05_moderate_profile_overlay_manifest_detail.json"
+  },
+  "pgd_manifest": "results/c92ebd8/notes/gru_perturbation_response_pgd_1p05_moderate_profile_overlay_manifest.json",
+  "physical_level": "moderate",
+  "plot_contract": {
+    "band": "central 80% interval across replicate/trial/component/sign rows",
+    "comparator_contract": {
+      "extlqg": {
+        "disturbance_integrators_exposed": false,
+        "physical_dim": 6,
+        "source": "rlrmp.analysis.pipelines.gru_perturbation_bank._build_extlqg_comparator_context(physical_dim=6)",
+        "state_dim": 36
+      },
+      "output_feedback_hinf": {
+        "admissible": true,
+        "config": "rlrmp.analysis.math.output_feedback.OutputFeedbackConfig(n_phys=6)",
+        "control_dim": 2,
+        "delay_steps": 5,
+        "disturbance_dim": 6,
+        "disturbance_integrators_exposed": false,
+        "game_source": "rlrmp.analysis.math.cs_game_card.build_no_integrator_game",
+        "gamma": 12833.563799663352,
+        "gamma_factor": 1.4,
+        "gamma_star": 9166.831285473823,
+        "label": "6D output-feedback H-infinity",
+        "physical_dim": 6,
+        "state_dim": 36,
+        "supported_perturbation_channels": [
+          "command_input",
+          "initial_state",
+          "process_epsilon"
+        ],
+        "unsupported_perturbation_channels": "sensory_feedback, delayed_observation, and target_stream are not replayed by the current robust analytical perturbation API."
+      }
+    },
+    "grid_helper": "rlrmp.viz.profile_comparison_grid",
+    "residual_scaling": {
+      "command": "native command units",
+      "position": "percent of fixed 0.15 m reach length",
+      "velocity": "percent of nominal 6D extLQG peak speed"
+    },
+    "shared_yaxes": "rows",
+    "sign_handling": "perturbation sign is multiplied into residuals; trajectory figures plot clean + sign-aligned residual so + and - rows do not cancel",
+    "source_traces": {
+      "extlqg6d": {
+        "color": "#c2410c",
+        "label": "6D extLQG"
+      },
+      "no_pgd_gru": {
+        "color": "#2563eb",
+        "label": "No-PGD GRU"
+      },
+      "pgd_gru": {
+        "color": "#15803d",
+        "label": "PGD 1.05 GRU"
+      },
+      "robust_output_feedback6d": {
+        "color": "#7c3aed",
+        "label": "6D output-feedback H-infinity"
+      }
+    },
+    "timing_band": "trace x values are sample centers (sample i at i*dt); perturbation shading uses sample-interval edges [start_i-0.5, start_i+duration-0.5]*dt, clamped at zero for initial-condition rows"
+  },
+  "run_pairings": {
+    "open_loop_moderate": "moderate",
+    "open_loop_small": "small",
+    "open_loop_stress": "stress"
+  },
+  "schema_version": "rlrmp.c92_pgd_1p05_moderate_perturbation_profiles_overlay.v1",
+  "source_bulk_detail_manifest": {
+    "contains": "full per-run perturbation rows and row-level metric summaries",
+    "format": "json",
+    "path": "_artifacts/c92ebd8/perturbation_response/gru_validation_selected_moderate/gru_perturbation_response_validation_selected_moderate_manifest_detail.json"
+  },
+  "source_figure_spec": "results/c92ebd8/figures/moderate_perturbation_profiles/spec.json",
+  "source_manifest": "results/c92ebd8/notes/gru_perturbation_response_validation_selected_moderate_manifest.json",
+  "source_topic": "moderate_perturbation_profiles"
+}

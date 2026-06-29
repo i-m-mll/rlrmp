@@ -1,0 +1,290 @@
+{
+  "figure_count": 2,
+  "figure_topic": "pgd_robustness_isolation_stabilization_responses",
+  "figures": [
+    {
+      "coverage": [
+        {
+          "family": "command_input_pulse",
+          "n_evaluated_probes": 4,
+          "physical_level": "small",
+          "row": "command",
+          "run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
+          "status": "evaluated",
+          "training_key": "no_pgd"
+        },
+        {
+          "family": "command_input_pulse",
+          "n_evaluated_probes": 4,
+          "physical_level": "small",
+          "row": "command",
+          "run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64",
+          "status": "evaluated",
+          "training_key": "pgd"
+        },
+        {
+          "physical_level": "moderate",
+          "row": "command",
+          "status": "missing_level"
+        },
+        {
+          "physical_level": "stress",
+          "row": "command",
+          "status": "missing_level"
+        },
+        {
+          "family": "feedback_position",
+          "n_evaluated_probes": 4,
+          "physical_level": "small",
+          "row": "position",
+          "run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
+          "status": "evaluated",
+          "training_key": "no_pgd"
+        },
+        {
+          "family": "feedback_position",
+          "n_evaluated_probes": 4,
+          "physical_level": "small",
+          "row": "position",
+          "run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64",
+          "status": "evaluated",
+          "training_key": "pgd"
+        },
+        {
+          "physical_level": "moderate",
+          "row": "position",
+          "status": "missing_level"
+        },
+        {
+          "physical_level": "stress",
+          "row": "position",
+          "status": "missing_level"
+        },
+        {
+          "family": "feedback_velocity",
+          "n_evaluated_probes": 4,
+          "physical_level": "small",
+          "row": "velocity",
+          "run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
+          "status": "evaluated",
+          "training_key": "no_pgd"
+        },
+        {
+          "family": "feedback_velocity",
+          "n_evaluated_probes": 4,
+          "physical_level": "small",
+          "row": "velocity",
+          "run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64",
+          "status": "evaluated",
+          "training_key": "pgd"
+        },
+        {
+          "physical_level": "moderate",
+          "row": "velocity",
+          "status": "missing_level"
+        },
+        {
+          "physical_level": "stress",
+          "row": "velocity",
+          "status": "missing_level"
+        }
+      ],
+      "html": "_artifacts/c92ebd8/stabilization_diagnostics/pgd_robustness_isolation/stabilization_responses/020a65b_h0.html",
+      "png": "_artifacts/c92ebd8/stabilization_diagnostics/pgd_robustness_isolation/stabilization_responses/020a65b_h0.png",
+      "png_status": "written",
+      "slug": "020a65b_h0",
+      "title": "020a65b H0 stabilization task response"
+    },
+    {
+      "coverage": [
+        {
+          "family": "command_input_pulse",
+          "n_evaluated_probes": 4,
+          "physical_level": "small",
+          "row": "command",
+          "run_id": "open_loop_small",
+          "status": "evaluated",
+          "training_key": "no_pgd"
+        },
+        {
+          "family": "command_input_pulse",
+          "n_evaluated_probes": 4,
+          "physical_level": "small",
+          "row": "command",
+          "run_id": "small",
+          "status": "evaluated",
+          "training_key": "pgd"
+        },
+        {
+          "family": "command_input_pulse",
+          "n_evaluated_probes": 4,
+          "physical_level": "moderate",
+          "row": "command",
+          "run_id": "open_loop_moderate",
+          "status": "evaluated",
+          "training_key": "no_pgd"
+        },
+        {
+          "family": "command_input_pulse",
+          "n_evaluated_probes": 4,
+          "physical_level": "moderate",
+          "row": "command",
+          "run_id": "moderate",
+          "status": "evaluated",
+          "training_key": "pgd"
+        },
+        {
+          "family": "command_input_pulse",
+          "n_evaluated_probes": 4,
+          "physical_level": "stress",
+          "row": "command",
+          "run_id": "open_loop_stress",
+          "status": "evaluated",
+          "training_key": "no_pgd"
+        },
+        {
+          "family": "command_input_pulse",
+          "n_evaluated_probes": 4,
+          "physical_level": "stress",
+          "row": "command",
+          "run_id": "stress",
+          "status": "evaluated",
+          "training_key": "pgd"
+        },
+        {
+          "family": "feedback_position",
+          "n_evaluated_probes": 4,
+          "physical_level": "small",
+          "row": "position",
+          "run_id": "open_loop_small",
+          "status": "evaluated",
+          "training_key": "no_pgd"
+        },
+        {
+          "family": "feedback_position",
+          "n_evaluated_probes": 4,
+          "physical_level": "small",
+          "row": "position",
+          "run_id": "small",
+          "status": "evaluated",
+          "training_key": "pgd"
+        },
+        {
+          "family": "feedback_position",
+          "n_evaluated_probes": 4,
+          "physical_level": "moderate",
+          "row": "position",
+          "run_id": "open_loop_moderate",
+          "status": "evaluated",
+          "training_key": "no_pgd"
+        },
+        {
+          "family": "feedback_position",
+          "n_evaluated_probes": 4,
+          "physical_level": "moderate",
+          "row": "position",
+          "run_id": "moderate",
+          "status": "evaluated",
+          "training_key": "pgd"
+        },
+        {
+          "family": "feedback_position",
+          "n_evaluated_probes": 4,
+          "physical_level": "stress",
+          "row": "position",
+          "run_id": "open_loop_stress",
+          "status": "evaluated",
+          "training_key": "no_pgd"
+        },
+        {
+          "family": "feedback_position",
+          "n_evaluated_probes": 4,
+          "physical_level": "stress",
+          "row": "position",
+          "run_id": "stress",
+          "status": "evaluated",
+          "training_key": "pgd"
+        },
+        {
+          "family": "feedback_velocity",
+          "n_evaluated_probes": 4,
+          "physical_level": "small",
+          "row": "velocity",
+          "run_id": "open_loop_small",
+          "status": "evaluated",
+          "training_key": "no_pgd"
+        },
+        {
+          "family": "feedback_velocity",
+          "n_evaluated_probes": 4,
+          "physical_level": "small",
+          "row": "velocity",
+          "run_id": "small",
+          "status": "evaluated",
+          "training_key": "pgd"
+        },
+        {
+          "family": "feedback_velocity",
+          "n_evaluated_probes": 4,
+          "physical_level": "moderate",
+          "row": "velocity",
+          "run_id": "open_loop_moderate",
+          "status": "evaluated",
+          "training_key": "no_pgd"
+        },
+        {
+          "family": "feedback_velocity",
+          "n_evaluated_probes": 4,
+          "physical_level": "moderate",
+          "row": "velocity",
+          "run_id": "moderate",
+          "status": "evaluated",
+          "training_key": "pgd"
+        },
+        {
+          "family": "feedback_velocity",
+          "n_evaluated_probes": 4,
+          "physical_level": "stress",
+          "row": "velocity",
+          "run_id": "open_loop_stress",
+          "status": "evaluated",
+          "training_key": "no_pgd"
+        },
+        {
+          "family": "feedback_velocity",
+          "n_evaluated_probes": 4,
+          "physical_level": "stress",
+          "row": "velocity",
+          "run_id": "stress",
+          "status": "evaluated",
+          "training_key": "pgd"
+        }
+      ],
+      "html": "_artifacts/c92ebd8/stabilization_diagnostics/pgd_robustness_isolation/stabilization_responses/c92ebd8_pgd_1p05.html",
+      "png": "_artifacts/c92ebd8/stabilization_diagnostics/pgd_robustness_isolation/stabilization_responses/c92ebd8_pgd_1p05.png",
+      "png_status": "written",
+      "slug": "c92ebd8_pgd_1p05",
+      "title": "c92ebd8 PGD 1.05 stabilization task response"
+    }
+  ],
+  "issue": "c92ebd8",
+  "layout_contract": {
+    "columns": [
+      "small",
+      "moderate",
+      "stress"
+    ],
+    "missing_levels_policy": "explicit annotation; no fabricated traces",
+    "png_required": true,
+    "rows": [
+      "command",
+      "position",
+      "velocity"
+    ]
+  },
+  "path": "results/c92ebd8/figures/pgd_robustness_isolation_stabilization_responses/spec.json",
+  "png_count": 2,
+  "png_errors": {},
+  "schema_version": "rlrmp.c92ebd8.pgd_robustness_isolation_stabilization.v1",
+  "task_label": "stabilization task"
+}

@@ -1,0 +1,105 @@
+{
+  "analytical_comparator_contract": {
+    "extlqg": {
+      "disturbance_integrators_exposed": false,
+      "game_contract": "6D no-integrator C&S comparator",
+      "label": "6D extLQG",
+      "physical_dim": 6,
+      "source": "rlrmp.analysis.pipelines.gru_perturbation_bank._build_extlqg_comparator_context(physical_dim=6)",
+      "state_dim": 36
+    },
+    "output_feedback_hinf": {
+      "admissible": true,
+      "config": "rlrmp.analysis.math.output_feedback.OutputFeedbackConfig(n_phys=6)",
+      "control_dim": 2,
+      "delay_steps": 5,
+      "disturbance_dim": 6,
+      "disturbance_integrators_exposed": false,
+      "game_source": "rlrmp.analysis.math.cs_game_card.build_no_integrator_game",
+      "gamma": 12833.563799663352,
+      "gamma_factor": 1.4,
+      "gamma_star": 9166.831285473823,
+      "label": "6D output-feedback H-infinity",
+      "nominal_profile_convention": "zero-noise released-forward rollout, x[1:] velocity to match 60-step GRU diagnostics",
+      "physical_dim": 6,
+      "state_dim": 36
+    }
+  },
+  "figure_kind": "pgd_output_feedback_budget_nominal_forward_velocity_profiles",
+  "inputs": [
+    {
+      "label": "No-PGD moderate",
+      "path": "results/c92ebd8/runs/open_loop_moderate.json",
+      "pgd_budget": null,
+      "role": "run_spec",
+      "sha256": "0906857b15c2a616e57ddf109652941a49c0dbb6decba75fdafee2100e550780",
+      "training": "no_pgd_open_loop"
+    },
+    {
+      "label": "OFB gamma 1.05 budget",
+      "path": "results/c92ebd8/runs/moderate_pgd_ofb1p05.json",
+      "pgd_budget": "ofb_6d_no_integrator_gamma_1p05_rollout_radius",
+      "role": "run_spec",
+      "sha256": "8ee39cffee8ff8443fdcbdde8055509a1ff377fd652c8cc737a419845f0a1f98",
+      "training": "pgd_output_feedback_budget"
+    },
+    {
+      "label": "OFB gamma 1.4 budget",
+      "path": "results/c92ebd8/runs/moderate_pgd_ofb1p4.json",
+      "pgd_budget": "ofb_6d_no_integrator_gamma_1p4_rollout_radius",
+      "role": "run_spec",
+      "sha256": "ece6a174d3c5a1c7f0ed1081c0194cb10c006db3643a2a07fc0edf4b1d23a8c9",
+      "training": "pgd_output_feedback_budget"
+    }
+  ],
+  "issue": "c92ebd8",
+  "outputs": {
+    "html": "_artifacts/c92ebd8/figures/pgd_ofb_budget_moderate_nominal_velocity_profiles/figure.html",
+    "png": "_artifacts/c92ebd8/figures/pgd_ofb_budget_moderate_nominal_velocity_profiles/figure.png"
+  },
+  "plot_kwargs": {
+    "disturbance_integrators_exposed": false,
+    "grid_helper": "rlrmp.viz.profile_comparison_grid",
+    "physical_state_dim": 6,
+    "rows": 3,
+    "shared_yaxes": "all",
+    "state_dim": 36
+  },
+  "png_export": {
+    "bytes": 96938,
+    "errors": {
+      "kaleido": "ValueError: Transform failed. Error stream:\n\n"
+    },
+    "path": "_artifacts/c92ebd8/figures/pgd_ofb_budget_moderate_nominal_velocity_profiles/figure.png",
+    "renderer": "chrome_headless_html_screenshot_after_kaleido_block",
+    "status": "written"
+  },
+  "schema_version": "rlrmp.c92_pgd_ofb_budget_nominal_velocity_profiles.v1",
+  "timestamp": "2026-06-28T17:52:10.107140+00:00",
+  "transform": [
+    {
+      "kwargs": {
+        "analytical_comparators": [
+          "6d_output_feedback_extlqg",
+          "6d_output_feedback_hinf"
+        ],
+        "n_rollout_trials": 64,
+        "row_labels": {
+          "moderate_pgd_ofb1p05": "OFB gamma 1.05 budget",
+          "moderate_pgd_ofb1p4": "OFB gamma 1.4 budget",
+          "open_loop_moderate": "No-PGD moderate"
+        },
+        "use_validation_selected_checkpoints": false
+      },
+      "name": "final_checkpoint_forward_velocity_profile_mean_band"
+    }
+  ],
+  "versions": {
+    "equinox": "0.13.4",
+    "feedbax": "0.1.2",
+    "jax": "0.9.0",
+    "numpy": "2.4.1",
+    "plotly": "6.5.2",
+    "rlrmp": "0.1.0"
+  }
+}
