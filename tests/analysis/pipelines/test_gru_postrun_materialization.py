@@ -8,7 +8,12 @@ from typing import Any
 
 import rlrmp
 from feedbax.analysis.bundles import execute_staged_analysis_bundle, load_analysis_bundle
-from feedbax.contracts.manifest import TrainingRunManifest, load_manifest, spec_payload, write_manifest
+from feedbax.contracts.manifest import (
+    TrainingRunManifest,
+    load_manifest,
+    spec_payload,
+    write_manifest,
+)
 from feedbax.plugins.registry import ExperimentRegistry
 
 from rlrmp.analysis import declarative_materialization as dm
@@ -48,11 +53,7 @@ def test_plan_gru_postrun_materialization_routes_tracked_and_bulk_outputs(
         / "gru_evaluation_diagnostics_fullqrf_validation_selected.json"
     )
     assert plan.figure_output_dir == (
-        tmp_path
-        / "_artifacts"
-        / "5f70333"
-        / "figures"
-        / "gru_postrun_fullqrf_validation_selected"
+        tmp_path / "_artifacts" / "5f70333" / "figures" / "gru_postrun_fullqrf_validation_selected"
     )
     assert plan.evaluation_bulk_dir == (
         tmp_path
@@ -101,7 +102,7 @@ def test_plan_gru_postrun_materialization_routes_tracked_and_bulk_outputs(
         / "results"
         / "5f70333"
         / "notes"
-        / "gru_feedback_ablation_fullqrf_validation_selected.json"
+        / "gru_feedback_ablation_fullqrf_validation_selected_manifest.json"
     )
     assert plan.feedback_ablation_note_path == (
         tmp_path
@@ -168,12 +169,10 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         return {
             "status": "materialized",
             "json_path": (
-                "results/5f70333/notes/"
-                "objective_comparator_fullqrf_validation_selected.json"
+                "results/5f70333/notes/objective_comparator_fullqrf_validation_selected.json"
             ),
             "note_path": (
-                "results/5f70333/notes/"
-                "objective_comparator_fullqrf_validation_selected.md"
+                "results/5f70333/notes/objective_comparator_fullqrf_validation_selected.md"
             ),
             "result": {
                 "schema_version": "rlrmp.objective_comparator_sidecar.v6",
@@ -186,12 +185,10 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         return {
             "status": "materialized",
             "json_path": (
-                "results/5f70333/notes/"
-                "gru_map_error_decomposition_fullqrf_validation_selected.json"
+                "results/5f70333/notes/gru_map_error_decomposition_fullqrf_validation_selected.json"
             ),
             "note_path": (
-                "results/5f70333/notes/"
-                "gru_map_error_decomposition_fullqrf_validation_selected.md"
+                "results/5f70333/notes/gru_map_error_decomposition_fullqrf_validation_selected.md"
             ),
             "selection_role": "audit_only_not_used_for_checkpoint_selection",
             "result": {
@@ -209,8 +206,7 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
                 "gru_perturbation_response_fullqrf_validation_selected_manifest.json"
             ),
             "note_path": (
-                "results/5f70333/notes/"
-                "gru_perturbation_response_fullqrf_validation_selected.md"
+                "results/5f70333/notes/gru_perturbation_response_fullqrf_validation_selected.md"
             ),
             "selection_role": "audit_only_not_used_for_checkpoint_selection",
             "result": {
@@ -226,11 +222,10 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
             "status": "materialized",
             "json_path": (
                 "results/5f70333/notes/"
-                "gru_feedback_ablation_fullqrf_validation_selected.json"
+                "gru_feedback_ablation_fullqrf_validation_selected_manifest.json"
             ),
             "note_path": (
-                "results/5f70333/notes/"
-                "gru_feedback_ablation_fullqrf_validation_selected.md"
+                "results/5f70333/notes/gru_feedback_ablation_fullqrf_validation_selected.md"
             ),
             "selection_role": "audit_only_not_used_for_checkpoint_selection",
             "result": {
@@ -324,7 +319,7 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         / "results"
         / "5f70333"
         / "notes"
-        / "gru_feedback_ablation_fullqrf_validation_selected.json"
+        / "gru_feedback_ablation_fullqrf_validation_selected_manifest.json"
     )
     assert calls["map"]["output_path"] == (
         tmp_path
@@ -368,14 +363,10 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         / "results"
         / "5f70333"
         / "notes"
-        / "gru_feedback_ablation_fullqrf_validation_selected_regeneration_spec.json"
+        / "gru_feedback_ablation_fullqrf_validation_selected_manifest_regeneration_spec.json"
     )
     assert calls["figures"]["output_dir"] == (
-        tmp_path
-        / "_artifacts"
-        / "5f70333"
-        / "figures"
-        / "gru_postrun_fullqrf_validation_selected"
+        tmp_path / "_artifacts" / "5f70333" / "figures" / "gru_postrun_fullqrf_validation_selected"
     )
     assert manifest["checkpoint_policy"] == "validation_selected_per_replicate"
     assert manifest["labels"] == ["A", "B"]
@@ -415,10 +406,7 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         "split_stress_bank_objective_comparator"
         in manifest["selection_leakage_guard"]["audit_only_metrics"]
     )
-    assert (
-        "perturbation_response_bank"
-        in manifest["selection_leakage_guard"]["audit_only_metrics"]
-    )
+    assert "perturbation_response_bank" in manifest["selection_leakage_guard"]["audit_only_metrics"]
     assert "feedback_ablation" in manifest["selection_leakage_guard"]["audit_only_metrics"]
     assert (
         "feedback_selected_checkpoint_audit"
@@ -446,9 +434,7 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         / "gru_postrun_materialization_fullqrf_validation_selected_regeneration_spec.json"
     )
     assert postrun_spec.exists()
-    assert json.loads(postrun_spec.read_text(encoding="utf-8"))["metadata"][
-        "diagnostic_name"
-    ] == (
+    assert json.loads(postrun_spec.read_text(encoding="utf-8"))["metadata"]["diagnostic_name"] == (
         "gru_postrun_materialization_bundle"
     )
 
@@ -571,8 +557,7 @@ def test_materialize_gru_postrun_analysis_prefers_provided_fixed_bank_manifest(
     assert manifest["checkpoint_selection_source"] == "fixed_bank_rescore"
     assert manifest["outputs"]["fixed_bank_rescore_manifest"]["status"] == "materialized"
     assert (
-        manifest["outputs"]["fixed_bank_rescore_manifest"]["selection_use"]
-        == "fixed_bank_rescore"
+        manifest["outputs"]["fixed_bank_rescore_manifest"]["selection_use"] == "fixed_bank_rescore"
     )
 
 
@@ -710,9 +695,7 @@ def test_gru_postrun_bundle_executes_with_stage_artifact_roles(
             plan.perturbation_response_json_path: {
                 "schema_version": "rlrmp.gru_perturbation_bank.v3"
             },
-            plan.feedback_ablation_json_path: {
-                "schema_version": "rlrmp.gru_feedback_ablation.v1"
-            },
+            plan.feedback_ablation_json_path: {"schema_version": "rlrmp.gru_feedback_ablation.v1"},
             plan.postrun_regeneration_spec_path: {
                 "metadata": {
                     "diagnostic_name": "gru_postrun_materialization_bundle",
@@ -754,12 +737,10 @@ def test_gru_postrun_bundle_executes_with_stage_artifact_roles(
                 "map_decomposition": {
                     "status": "materialized",
                     "json_path": (
-                        "results/5f70333/notes/"
-                        "gru_map_error_decomposition_validation_selected.json"
+                        "results/5f70333/notes/gru_map_error_decomposition_validation_selected.json"
                     ),
                     "note_path": (
-                        "results/5f70333/notes/"
-                        "gru_map_error_decomposition_validation_selected.md"
+                        "results/5f70333/notes/gru_map_error_decomposition_validation_selected.md"
                     ),
                 },
                 "perturbation_response": {
@@ -769,13 +750,15 @@ def test_gru_postrun_bundle_executes_with_stage_artifact_roles(
                         "gru_perturbation_response_validation_selected_manifest.json"
                     ),
                     "note_path": (
-                        "results/5f70333/notes/"
-                        "gru_perturbation_response_validation_selected.md"
+                        "results/5f70333/notes/gru_perturbation_response_validation_selected.md"
                     ),
                 },
                 "feedback_ablation": {
                     "status": "materialized",
-                    "json_path": "results/5f70333/notes/gru_feedback_ablation_validation_selected.json",
+                    "json_path": (
+                        "results/5f70333/notes/"
+                        "gru_feedback_ablation_validation_selected_manifest.json"
+                    ),
                     "note_path": "results/5f70333/notes/gru_feedback_ablation_validation_selected.md",
                 },
             },

@@ -1,0 +1,429 @@
+{
+  "command": {
+    "argv": [
+      "unknown"
+    ],
+    "cwd": ".",
+    "metadata": {
+      "materializer": "rlrmp.analysis.pipelines.gru_pilot_figures.materialize_gru_pilot_figures",
+      "status": "not_recorded"
+    }
+  },
+  "inputs": [
+    {
+      "logical_name": "results/c92ebd8/runs/open_loop_small.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "c02b0954399620175fef4db8b55d021578ae698d0d415de166ef9b9fd3986c4a",
+        "size_bytes": 678663
+      },
+      "role": "run_spec",
+      "sha256": "c02b0954399620175fef4db8b55d021578ae698d0d415de166ef9b9fd3986c4a",
+      "size_bytes": 678663,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/c92ebd8/runs/open_loop_small.json"
+    },
+    {
+      "logical_name": "_artifacts/c92ebd8/runs/open_loop_small",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 126,
+        "hash_file_count": 126,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "4e22e6e6ec93581bd8399d85905c91fd0640053baa580efc3d11a7597d9b9d87",
+        "total_bytes": 223384050
+      },
+      "role": "run_artifact_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/c92ebd8/runs/open_loop_small"
+    },
+    {
+      "logical_name": "results/c92ebd8/runs/open_loop_moderate.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "b27db9c38fdcc4bc825cc3480bb872b0f6c9fcd9a715e637cdc7228bdb0df91a",
+        "size_bytes": 678737
+      },
+      "role": "run_spec",
+      "sha256": "b27db9c38fdcc4bc825cc3480bb872b0f6c9fcd9a715e637cdc7228bdb0df91a",
+      "size_bytes": 678737,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/c92ebd8/runs/open_loop_moderate.json"
+    },
+    {
+      "logical_name": "_artifacts/c92ebd8/runs/open_loop_moderate",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 126,
+        "hash_file_count": 126,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "2061e1291d33bab9b7b7a148f914e31a17f9e6773c25661e3e968d2816a83ee0",
+        "total_bytes": 223406346
+      },
+      "role": "run_artifact_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/c92ebd8/runs/open_loop_moderate"
+    },
+    {
+      "logical_name": "results/c92ebd8/runs/open_loop_stress.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "57bc33302af9de2cbbadb4857c14f695173b0d1fbf9e8a3b643efb527be5f236",
+        "size_bytes": 678693
+      },
+      "role": "run_spec",
+      "sha256": "57bc33302af9de2cbbadb4857c14f695173b0d1fbf9e8a3b643efb527be5f236",
+      "size_bytes": 678693,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/c92ebd8/runs/open_loop_stress.json"
+    },
+    {
+      "logical_name": "_artifacts/c92ebd8/runs/open_loop_stress",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 126,
+        "hash_file_count": 126,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "bc2c385ba8db0211e411bd1ec3b13990dda7f4f5e2d34df2ae81f3652f00ccb3",
+        "total_bytes": 223429130
+      },
+      "role": "run_artifact_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/c92ebd8/runs/open_loop_stress"
+    },
+    {
+      "logical_name": "results/c92ebd8/runs/closed_loop_small.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "787d361e5e5a6787853cec3849d7398a84f8c16d36450b32f929103ebc3ab20e",
+        "size_bytes": 680111
+      },
+      "role": "run_spec",
+      "sha256": "787d361e5e5a6787853cec3849d7398a84f8c16d36450b32f929103ebc3ab20e",
+      "size_bytes": 680111,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/c92ebd8/runs/closed_loop_small.json"
+    },
+    {
+      "logical_name": "_artifacts/c92ebd8/runs/closed_loop_small",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 126,
+        "hash_file_count": 126,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "42a8c740876b64922c05129b19d0c65779ed83a3b0fe4778e9a42d8f475c99a3",
+        "total_bytes": 223433555
+      },
+      "role": "run_artifact_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/c92ebd8/runs/closed_loop_small"
+    },
+    {
+      "logical_name": "results/c92ebd8/runs/closed_loop_moderate.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "aa633c2428ade97b4d2eebde8da959d451d5860ecab55ec1ed6783eb177d862e",
+        "size_bytes": 680185
+      },
+      "role": "run_spec",
+      "sha256": "aa633c2428ade97b4d2eebde8da959d451d5860ecab55ec1ed6783eb177d862e",
+      "size_bytes": 680185,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/c92ebd8/runs/closed_loop_moderate.json"
+    },
+    {
+      "logical_name": "_artifacts/c92ebd8/runs/closed_loop_moderate",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 126,
+        "hash_file_count": 126,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "411d6901dd36b3835f6207cac977864ac36cf19c18951be4a51fddef82b6ae77",
+        "total_bytes": 223451555
+      },
+      "role": "run_artifact_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/c92ebd8/runs/closed_loop_moderate"
+    },
+    {
+      "logical_name": "results/c92ebd8/runs/closed_loop_stress.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "d85826f1edc8953738c0fe7047d06efcf22526ad912901d8bd3b36b341198eaf",
+        "size_bytes": 680141
+      },
+      "role": "run_spec",
+      "sha256": "d85826f1edc8953738c0fe7047d06efcf22526ad912901d8bd3b36b341198eaf",
+      "size_bytes": 680141,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/c92ebd8/runs/closed_loop_stress.json"
+    },
+    {
+      "logical_name": "_artifacts/c92ebd8/runs/closed_loop_stress",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 126,
+        "hash_file_count": 126,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "7aa2fa6be366af5c37465ac0c08fd1c50b08af0d45e3cdbe4c8788b5ac7de202",
+        "total_bytes": 223468047
+      },
+      "role": "run_artifact_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/c92ebd8/runs/closed_loop_stress"
+    },
+    {
+      "logical_name": "results/c92ebd8/runs/closed_loop_cmd_lateral_small.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "6447ce1c8b9064dbc5977467a2cb9b3cdac0f9c4aa07b5c2bf26ce828a9ac3c6",
+        "size_bytes": 684791
+      },
+      "role": "run_spec",
+      "sha256": "6447ce1c8b9064dbc5977467a2cb9b3cdac0f9c4aa07b5c2bf26ce828a9ac3c6",
+      "size_bytes": 684791,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/c92ebd8/runs/closed_loop_cmd_lateral_small.json"
+    },
+    {
+      "logical_name": "_artifacts/c92ebd8/runs/closed_loop_cmd_lateral_small",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 126,
+        "hash_file_count": 126,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "ab3243c8f19d776eda6c2081cb2e20c87078c3698ad73e9aaae3243353f2a718",
+        "total_bytes": 223562675
+      },
+      "role": "run_artifact_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/c92ebd8/runs/closed_loop_cmd_lateral_small"
+    },
+    {
+      "logical_name": "results/c92ebd8/runs/closed_loop_cmd_lateral_moderate.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "de287bb88f4b370664cc13c392bf1544d62058031fd3fedc9825d9cc3b339939",
+        "size_bytes": 684865
+      },
+      "role": "run_spec",
+      "sha256": "de287bb88f4b370664cc13c392bf1544d62058031fd3fedc9825d9cc3b339939",
+      "size_bytes": 684865,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/c92ebd8/runs/closed_loop_cmd_lateral_moderate.json"
+    },
+    {
+      "logical_name": "_artifacts/c92ebd8/runs/closed_loop_cmd_lateral_moderate",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 126,
+        "hash_file_count": 126,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "92dafa8f8213d5c7ce06b098fa1440ff2651e523dc139f122a6a2c21d2a9a037",
+        "total_bytes": 223582575
+      },
+      "role": "run_artifact_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/c92ebd8/runs/closed_loop_cmd_lateral_moderate"
+    },
+    {
+      "logical_name": "results/c92ebd8/runs/closed_loop_cmd_lateral_stress.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "2bb7df774c7d7e3ff9231ae92759f6023f068d7fb0c1cdf6c89151eed8c91bd2",
+        "size_bytes": 684821
+      },
+      "role": "run_spec",
+      "sha256": "2bb7df774c7d7e3ff9231ae92759f6023f068d7fb0c1cdf6c89151eed8c91bd2",
+      "size_bytes": 684821,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/c92ebd8/runs/closed_loop_cmd_lateral_stress.json"
+    },
+    {
+      "logical_name": "_artifacts/c92ebd8/runs/closed_loop_cmd_lateral_stress",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 126,
+        "hash_file_count": 126,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "7c81f94869068af9f171a590eefc24bfecefb8a4a90af1ba6e783902ed502796",
+        "total_bytes": 223598057
+      },
+      "role": "run_artifact_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/c92ebd8/runs/closed_loop_cmd_lateral_stress"
+    }
+  ],
+  "metadata": {
+    "diagnostic_name": "gru_pilot_figures",
+    "materializer": "rlrmp.analysis.pipelines.gru_pilot_figures.materialize_gru_pilot_figures",
+    "notes": [
+      "Postrun-owned regeneration spec for pilot loss/velocity figures."
+    ],
+    "schema_boundary": "rlrmp diagnostic payload; Feedbax regeneration custody"
+  },
+  "outputs": [
+    {
+      "logical_name": "_artifacts/c92ebd8/figures/gru_postrun_validation_selected_moderate",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 6,
+        "hash_file_count": 6,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "6a20704963a443a3c78e9a801134a89cb168681b624b6af0748e645e4236dd3e",
+        "total_bytes": 43490007
+      },
+      "role": "pilot_figure_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/c92ebd8/figures/gru_postrun_validation_selected_moderate"
+    },
+    {
+      "logical_name": "_artifacts/c92ebd8/figures/gru_postrun_validation_selected_moderate/figure_summary.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "27f3e78908430acb8f79463b102c8e198825b1eaaa6d8b74a1af2e6822404baa",
+        "size_bytes": 82029
+      },
+      "role": "pilot_figure_summary",
+      "sha256": "27f3e78908430acb8f79463b102c8e198825b1eaaa6d8b74a1af2e6822404baa",
+      "size_bytes": 82029,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/c92ebd8/figures/gru_postrun_validation_selected_moderate/figure_summary.json"
+    }
+  ],
+  "parameters": {
+    "experiment": "c92ebd8",
+    "include_reference": true,
+    "labels": null,
+    "n_rollout_trials": 64,
+    "preferred_checkpoint_manifest_path": null,
+    "run_ids": [
+      "open_loop_small",
+      "open_loop_moderate",
+      "open_loop_stress",
+      "closed_loop_small",
+      "closed_loop_moderate",
+      "closed_loop_stress",
+      "closed_loop_cmd_lateral_small",
+      "closed_loop_cmd_lateral_moderate",
+      "closed_loop_cmd_lateral_stress"
+    ],
+    "use_validation_selected_checkpoints": true
+  },
+  "provenance": {
+    "dirty": true,
+    "entrypoint": {
+      "kind": "rlrmp-diagnostic-materializer",
+      "metadata": {},
+      "name": "rlrmp.analysis.pipelines.gru_pilot_figures.materialize_gru_pilot_figures"
+    },
+    "issues": [],
+    "metadata": {
+      "status_porcelain": [
+        "M .gitignore",
+        " M .issue",
+        " M src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
+        " M src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+        " M src/rlrmp/analysis/pipelines/gru_postrun_materialization.py",
+        " M src/rlrmp/train/cs_nominal_gru.py",
+        " M src/rlrmp/train/cs_perturbation_training.py",
+        " M tests/test_cs_nominal_gru.py",
+        " M tests/test_gru_perturbation_response.py",
+        "?? results/c92ebd8/README.md",
+        "?? results/c92ebd8/RUN_PLAN.md",
+        "?? results/c92ebd8/notes/closed_loop_calibration_table.json",
+        "?? results/c92ebd8/notes/gru_evaluation_diagnostics_validation_selected_moderate_regeneration_spec.json",
+        "?? results/c92ebd8/notes/gru_feedback_ablation_validation_selected_moderate.md",
+        "?? results/c92ebd8/notes/gru_feedback_ablation_validation_selected_moderate_regeneration_spec.json",
+        "?? results/c92ebd8/notes/gru_map_error_decomposition_validation_selected_moderate.md",
+        "?? results/c92ebd8/notes/gru_map_error_decomposition_validation_selected_moderate_regeneration_spec.json",
+        "?? results/c92ebd8/notes/gru_perturbation_response_validation_selected_moderate.md",
+        "?? results/c92ebd8/notes/gru_perturbation_response_validation_selected_moderate_manifest.json",
+        "?? results/c92ebd8/notes/gru_perturbation_response_validation_selected_moderate_manifest_regeneration_spec.json",
+        "?? results/c92ebd8/notes/gru_pilot_figures_validation_selected_moderate_regeneration_spec.json",
+        "?? results/c92ebd8/notes/gru_postrun_materialization_validation_selected_moderate_regeneration_spec.json",
+        "?? results/c92ebd8/notes/gru_standard_certificates_validation_selected_moderate.md",
+        "?? results/c92ebd8/notes/gru_standard_certificates_validation_selected_moderate_manifest.json",
+        "?? results/c92ebd8/notes/gru_standard_certificates_validation_selected_moderate_manifest_regeneration_spec.json",
+        "?? results/c92ebd8/notes/no_pgd_calibrated_perturb_matrix_regeneration_spec.json",
+        "?? results/c92ebd8/notes/objective_comparator_validation_selected_moderate.md",
+        "?? results/c92ebd8/notes/objective_comparator_validation_selected_moderate_regeneration_spec.json",
+        "?? results/c92ebd8/runs/closed_loop_moderate.json",
+        "?? results/c92ebd8/runs/closed_loop_moderate/model.graph.manifest.json",
+        "?? results/c92ebd8/runs/closed_loop_cmd_lateral_moderate.json",
+        "?? results/c92ebd8/runs/closed_loop_cmd_lateral_moderate/model.graph.manifest.json",
+        "?? results/c92ebd8/runs/closed_loop_cmd_lateral_small.json",
+        "?? results/c92ebd8/runs/closed_loop_cmd_lateral_small/model.graph.manifest.json",
+        "?? results/c92ebd8/runs/closed_loop_cmd_lateral_stress.json",
+        "?? results/c92ebd8/runs/closed_loop_cmd_lateral_stress/model.graph.manifest.json",
+        "?? results/c92ebd8/runs/closed_loop_small.json",
+        "?? results/c92ebd8/runs/closed_loop_small/model.graph.manifest.json",
+        "?? results/c92ebd8/runs/closed_loop_stress.json",
+        "?? results/c92ebd8/runs/closed_loop_stress/model.graph.manifest.json",
+        "?? results/c92ebd8/runs/open_loop_moderate.json",
+        "?? results/c92ebd8/runs/open_loop_moderate/model.graph.manifest.json",
+        "?? results/c92ebd8/runs/open_loop_small.json",
+        "?? results/c92ebd8/runs/open_loop_small/model.graph.manifest.json",
+        "?? results/c92ebd8/runs/open_loop_stress.json",
+        "?? results/c92ebd8/runs/open_loop_stress/model.graph.manifest.json",
+        "?? results/c92ebd8/scripts/materialize_closed_loop_calibration.py"
+      ]
+    },
+    "parents": [],
+    "source_branch": "feature/c92ebd8-calibrated-perturb-matrix",
+    "source_commit": "8b0ada16f6bb1fd7beea63de5a022b52e06e54ea",
+    "source_repo": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__c92ebd8-calibrated-perturb-matrix"
+  },
+  "schema_id": "feedbax.spec.regeneration",
+  "schema_version": "feedbax.spec.regeneration.v1",
+  "source_files": [
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/gru_pilot_figures.py",
+      "role": "source_file",
+      "sha256": "90cf3ec30fa39bffe493ebbfc07d2f619143e5fcf326cb6fd04114969f18b2db",
+      "size_bytes": 39137
+    }
+  ],
+  "source_trees": []
+}

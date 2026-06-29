@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
 from typing import Any, Callable, Literal, Mapping
 
 import equinox as eqx
@@ -42,6 +45,8 @@ POLICY_ADVERSARY_PLAIN_MODE = "plain"
 POLICY_ADVERSARY_ENERGY_MODE = "energy"
 BROAD_EPSILON_PGD_FIXED_BUDGET_SCHEDULE = "fixed"
 BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE = "sisu_energy_fraction"
+BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE = "hard_l2"
+BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE = "soft_energy"
 DEFAULT_PGD_SISU_LEVELS: tuple[float, ...] = (0.0, 0.25, 0.5, 0.75, 1.0)
 DEFAULT_PGD_SISU_EXACT_ZERO_MASS = 0.30
 RAW_STRONG_GAMMA_1P05_RADIUS_15CM = 0.0023284905801002004
@@ -86,9 +91,36 @@ PerturbationBin = Literal[
     "process_epsilon",
     "command_input",
     "sensory_feedback",
+    "target_aligned_lateral_load",
     "delayed_observation",
     "mild_combined",
 ]
+TrainingCalibrationRegime = Literal[
+    "open_loop_all",
+    "closed_loop_sensory",
+    "closed_loop_sensory_command_lateral",
+]
+OPEN_LOOP_ALL_CALIBRATION_REGIME: TrainingCalibrationRegime = "open_loop_all"
+CLOSED_LOOP_SENSORY_CALIBRATION_REGIME: TrainingCalibrationRegime = "closed_loop_sensory"
+CLOSED_LOOP_SENSORY_COMMAND_LATERAL_CALIBRATION_REGIME: TrainingCalibrationRegime = (
+    "closed_loop_sensory_command_lateral"
+)
+TRAINING_CALIBRATION_REGIMES: tuple[TrainingCalibrationRegime, ...] = (
+    OPEN_LOOP_ALL_CALIBRATION_REGIME,
+    CLOSED_LOOP_SENSORY_CALIBRATION_REGIME,
+    CLOSED_LOOP_SENSORY_COMMAND_LATERAL_CALIBRATION_REGIME,
+)
+TRAINING_CALIBRATION_CLOSED_LOOP_FAMILIES: dict[TrainingCalibrationRegime, tuple[str, ...]] = {
+    OPEN_LOOP_ALL_CALIBRATION_REGIME: (),
+    CLOSED_LOOP_SENSORY_CALIBRATION_REGIME: ("sensory_feedback_offset",),
+    CLOSED_LOOP_SENSORY_COMMAND_LATERAL_CALIBRATION_REGIME: (
+        "sensory_feedback_offset",
+        "command_input_pulse",
+        "target_aligned_lateral_command_load_pulse",
+    ),
+}
+
+INACTIVE_LEGACY_PERTURBATION_BINS: tuple[PerturbationBin, ...] = ("delayed_observation",)
 
 VALIDATION_BINS: tuple[PerturbationBin, ...] = (
     "nominal",
@@ -97,7 +129,6 @@ VALIDATION_BINS: tuple[PerturbationBin, ...] = (
     "process_epsilon",
     "command_input",
     "sensory_feedback",
-    "delayed_observation",
     "mild_combined",
 )
 
@@ -107,19 +138,15 @@ SINGLE_FAMILY_BINS: tuple[PerturbationBin, ...] = (
     "process_epsilon",
     "command_input",
     "sensory_feedback",
-    "delayed_observation",
 )
+TARGET_ALIGNED_LATERAL_LOAD_BIN: PerturbationBin = "target_aligned_lateral_load"
 
 GRAPH_CHANNEL_BINS: tuple[PerturbationBin, ...] = (
     "command_input",
     "sensory_feedback",
-    "delayed_observation",
 )
 PLANT_TIMED_BINS: tuple[PerturbationBin, ...] = ("process_epsilon", "command_input")
-CONTROLLER_VISIBLE_TIMED_BINS: tuple[PerturbationBin, ...] = (
-    "sensory_feedback",
-    "delayed_observation",
-)
+CONTROLLER_VISIBLE_TIMED_BINS: tuple[PerturbationBin, ...] = ("sensory_feedback",)
 REACH_RELATIVE_LEVELS: dict[str, float] = {
     level.name: float(level.fraction_of_reach) for level in DEFAULT_REACH_RELATIVE_LEVELS
 }
@@ -136,6 +163,9 @@ PROCESS_EPSILON_COMPONENT_FAMILIES: tuple[str, ...] = (
     "process_epsilon_integrator_xy",
 )
 TIMING_LABELS_PLANT = tuple(bin_.label for bin_ in DEFAULT_PLANT_TIMING_BINS)
+TIMING_LABELS_CONTROLLER_VISIBLE = tuple(
+    bin_.label for bin_ in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS
+)
 BROAD_EPSILON_DIM = 8
 BROAD_EPSILON_REFERENCE_REACH_M = 0.15
 BROAD_EPSILON_LEVELS: dict[str, dict[str, Any]] = {
@@ -172,6 +202,36 @@ PGD_SISU_MAX_RADIUS_SOURCES: dict[str, dict[str, Any]] = {
         "gamma_equivalent_analytical_anchor": False,
         "description": (
             "effective 020a65b PGD training radius; not a new gamma-equivalent analytical anchor"
+        ),
+    },
+    "ofb_6d_no_integrator_gamma_1p4_rollout_radius": {
+        "source_kind": "output_feedback_rollout_budget",
+        "source_issue": "c92ebd8",
+        "source_note": "6D no-integrator output-feedback robust-estimator rollout",
+        "gamma_factor": 1.4,
+        "gamma_star": 9166.831285473823,
+        "gamma": 12833.563799663352,
+        "epsilon_dim": 6,
+        "disturbance_energy": 2.0657128682206633e-05,
+        "gamma_equivalent_analytical_anchor": True,
+        "description": (
+            "6D no-integrator C&S output-feedback H-infinity rollout L2 radius "
+            "for gamma_factor=1.4"
+        ),
+    },
+    "ofb_6d_no_integrator_gamma_1p05_rollout_radius": {
+        "source_kind": "output_feedback_rollout_budget",
+        "source_issue": "c92ebd8",
+        "source_note": "6D no-integrator output-feedback robust-estimator rollout",
+        "gamma_factor": 1.05,
+        "gamma_star": 9166.831285473823,
+        "gamma": 9625.172849747514,
+        "epsilon_dim": 6,
+        "disturbance_energy": 3.0671655167860113e-06,
+        "gamma_equivalent_analytical_anchor": True,
+        "description": (
+            "6D no-integrator C&S output-feedback H-infinity rollout L2 radius "
+            "for gamma_factor=1.05"
         ),
     },
 }
@@ -285,6 +345,16 @@ class PgdFullStateEpsilonTrainingConfig:
     sisu_condition_input: str = "auto"
     sisu_max_l2_radius_15cm: float | None = None
     sisu_max_radius_source: str | None = None
+    fixed_l2_radius_15cm: float | None = None
+    fixed_radius_source: str | None = None
+    objective_kind: str = BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE
+    energy_gamma_star: float | None = None
+    energy_gamma_factor: float | None = None
+    energy_gamma: float | None = None
+    energy_penalty_scale: float = 1.0
+    energy_lambda: float | None = None
+    safety_cap_l2_radius_15cm: float | None = None
+    safety_cap_source: str | None = None
 
     def __post_init__(self) -> None:
         if self.level not in BROAD_EPSILON_LEVELS:
@@ -317,6 +387,36 @@ class PgdFullStateEpsilonTrainingConfig:
                 raise ValueError("SISU PGD budget condition input must be auto, input, or sisu.")
             if self.sisu_max_l2_radius_15cm is not None and self.sisu_max_l2_radius_15cm <= 0.0:
                 raise ValueError("SISU PGD max L2 radius must be positive when provided.")
+            if self.fixed_l2_radius_15cm is not None:
+                raise ValueError("fixed PGD L2 radius is only valid for the fixed budget schedule.")
+        if self.fixed_l2_radius_15cm is not None and self.fixed_l2_radius_15cm <= 0.0:
+            raise ValueError("fixed PGD L2 radius must be positive when provided.")
+        if self.objective_kind not in (
+            BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE,
+            BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+        ):
+            raise ValueError("PGD objective_kind must be 'hard_l2' or 'soft_energy'.")
+        if self.energy_penalty_scale <= 0.0:
+            raise ValueError("PGD soft-energy penalty scale must be positive.")
+        if self.energy_gamma_star is not None and self.energy_gamma_star <= 0.0:
+            raise ValueError("PGD soft-energy gamma_star must be positive when provided.")
+        if self.energy_gamma_factor is not None and self.energy_gamma_factor <= 0.0:
+            raise ValueError("PGD soft-energy gamma_factor must be positive when provided.")
+        if self.energy_gamma is not None and self.energy_gamma <= 0.0:
+            raise ValueError("PGD soft-energy gamma must be positive when provided.")
+        if self.energy_lambda is not None and self.energy_lambda <= 0.0:
+            raise ValueError("PGD soft-energy lambda must be positive when provided.")
+        if self.safety_cap_l2_radius_15cm is not None and self.safety_cap_l2_radius_15cm <= 0.0:
+            raise ValueError("PGD soft-energy safety cap radius must be positive when provided.")
+        if self.objective_kind == BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE:
+            if self.soft_energy_lambda is None:
+                raise ValueError(
+                    "PGD soft-energy objective requires energy_lambda or gamma metadata."
+                )
+            if self.safety_cap_l2_radius_15cm is None:
+                raise ValueError(
+                    "PGD soft-energy objective requires an explicit safety-cap radius."
+                )
 
     @property
     def level_contract(self) -> dict[str, Any]:
@@ -328,6 +428,8 @@ class PgdFullStateEpsilonTrainingConfig:
     def reference_l2_radius(self) -> float:
         """Return the 15 cm reference L2 radius after the explicit budget scale."""
 
+        if self.fixed_l2_radius_15cm is not None:
+            return float(self.fixed_l2_radius_15cm)
         return float(self.level_contract["closed_loop_epsilon_l2_15cm"]) * float(self.budget_scale)
 
     @property
@@ -337,6 +439,35 @@ class PgdFullStateEpsilonTrainingConfig:
         if self.sisu_max_l2_radius_15cm is not None:
             return float(self.sisu_max_l2_radius_15cm)
         return self.reference_l2_radius
+
+    @property
+    def soft_energy_gamma(self) -> float | None:
+        """Return the soft-energy gamma value when enough metadata is available."""
+
+        if self.energy_gamma is not None:
+            return float(self.energy_gamma)
+        if self.energy_gamma_star is not None and self.energy_gamma_factor is not None:
+            return float(self.energy_gamma_star) * float(self.energy_gamma_factor)
+        return None
+
+    @property
+    def soft_energy_lambda(self) -> float | None:
+        """Return the soft-energy penalty lambda."""
+
+        if self.energy_lambda is not None:
+            return float(self.energy_lambda)
+        gamma = self.soft_energy_gamma
+        if gamma is None:
+            return None
+        return float(self.energy_penalty_scale) * float(gamma) ** 2
+
+    @property
+    def safety_cap_l2_radius(self) -> float:
+        """Return the 15 cm trust-region cap used for soft-energy stabilization."""
+
+        if self.safety_cap_l2_radius_15cm is None:
+            return self.reference_l2_radius
+        return float(self.safety_cap_l2_radius_15cm)
 
     def to_hps_dict(self) -> dict[str, Any]:
         """Return TreeNamespace-compatible PGD broad-epsilon training metadata."""
@@ -353,6 +484,7 @@ class PgdFullStateEpsilonTrainingConfig:
             "movement_epoch_only": bool(self.movement_epoch_only),
             "epsilon_dim": int(self.epsilon_dim),
             "budget_schedule": budget_schedule,
+            "objective": pgd_objective_contract(self),
             "epsilon_channel": {
                 "state_basis": _broad_epsilon_state_basis(int(self.epsilon_dim)),
                 "shape": ["batch", "time", int(self.epsilon_dim)],
@@ -376,6 +508,7 @@ class PgdFullStateEpsilonTrainingConfig:
                 "time_mask": _epsilon_time_mask_contract(self.movement_epoch_only),
                 "differentiated_through_outer_update": False,
             },
+            "safety_cap": pgd_safety_cap_contract(self),
             "time_mask": _epsilon_time_mask_contract(self.movement_epoch_only),
             "budget_contract": {
                 **contract,
@@ -389,6 +522,16 @@ class PgdFullStateEpsilonTrainingConfig:
                 "reach_length_scaling_note": (
                     "Reach scaling is an explicit multi-target normalization choice; "
                     "the original analytical game card reports the 15 cm budget."
+                ),
+                "budget_source": (
+                    _pgd_sisu_max_radius_source(self)
+                    if self.budget_schedule == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE
+                    else _pgd_fixed_radius_source(self)
+                ),
+                "scientific_constraint": (
+                    "soft_energy_penalty"
+                    if self.objective_kind == BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE
+                    else "hard_l2_projection"
                 ),
             },
         }
@@ -602,6 +745,58 @@ def pgd_budget_schedule_contract(
     }
 
 
+def pgd_objective_contract(
+    config: PgdFullStateEpsilonTrainingConfig,
+) -> dict[str, Any]:
+    """Return metadata for the active PGD inner objective."""
+
+    if config.objective_kind == BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE:
+        return {
+            "kind": BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE,
+            "formula": "maximize task_loss under hard per-trial L2 projection",
+            "hard_l2_projection_is_scientific_constraint": True,
+            "soft_energy_penalty": False,
+        }
+    gamma = config.soft_energy_gamma
+    return {
+        "kind": BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+        "formula": "maximize task_loss - lambda * epsilon_energy",
+        "hard_l2_projection_is_scientific_constraint": False,
+        "soft_energy_penalty": True,
+        "gamma_star": config.energy_gamma_star,
+        "gamma_factor": config.energy_gamma_factor,
+        "gamma": gamma,
+        "penalty_scale_c": float(config.energy_penalty_scale),
+        "lambda": config.soft_energy_lambda,
+        "lambda_mapping": "lambda = c * gamma^2 unless lambda is explicitly supplied",
+        "formal_certificate": False,
+    }
+
+
+def pgd_safety_cap_contract(
+    config: PgdFullStateEpsilonTrainingConfig,
+) -> dict[str, Any]:
+    """Return metadata for the optional soft-PGD trust-region cap."""
+
+    if config.objective_kind != BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE:
+        return {
+            "enabled": False,
+            "role": "not_used_for_hard_l2_objective",
+        }
+    return {
+        "enabled": True,
+        "role": "numerical_stabilization_trust_region_only",
+        "hard_budget_scientific_constraint": False,
+        "l2_radius_15cm": config.safety_cap_l2_radius,
+        "reach_length_scaling": bool(config.reach_length_scaling),
+        "source": _pgd_safety_cap_source(config),
+        "activation_diagnostics": {
+            "epsilon_norm_cap_ratio": True,
+            "cap_boundary_fraction": True,
+        },
+    }
+
+
 def _sisu_level_probabilities(
     levels: tuple[float, ...],
     exact_zero_mass: float,
@@ -651,6 +846,61 @@ def _pgd_sisu_max_radius_source(
         "gamma_factor": config.level_contract.get("gamma_factor"),
         "gamma_equivalent_analytical_anchor": True,
         "description": f"{config.level} analytical broad-epsilon radius after budget_scale",
+    }
+
+
+def _pgd_fixed_radius_source(
+    config: PgdFullStateEpsilonTrainingConfig,
+) -> dict[str, Any]:
+    """Return provenance for a fixed PGD L2 radius."""
+
+    source_key = config.fixed_radius_source
+    if source_key is not None:
+        return {
+            "key": source_key,
+            **PGD_SISU_MAX_RADIUS_SOURCES.get(
+                source_key,
+                {
+                    "source_kind": "caller_declared",
+                    "gamma_equivalent_analytical_anchor": False,
+                    "description": source_key,
+                },
+            ),
+        }
+    return {
+        "key": f"analytical_broad_epsilon_level:{config.level}",
+        "source_kind": "analytical_broad_epsilon_anchor",
+        "source_issue": config.level_contract.get("source_issue"),
+        "source_note": config.level_contract.get("source_note"),
+        "gamma_factor": config.level_contract.get("gamma_factor"),
+        "gamma_equivalent_analytical_anchor": True,
+        "description": f"{config.level} analytical broad-epsilon radius after budget_scale",
+    }
+
+
+def _pgd_safety_cap_source(
+    config: PgdFullStateEpsilonTrainingConfig,
+) -> dict[str, Any]:
+    """Return provenance for a soft-PGD stabilization cap."""
+
+    source_key = config.safety_cap_source
+    if source_key is not None:
+        return {
+            "key": source_key,
+            **PGD_SISU_MAX_RADIUS_SOURCES.get(
+                source_key,
+                {
+                    "source_kind": "caller_declared",
+                    "gamma_equivalent_analytical_anchor": False,
+                    "description": source_key,
+                },
+            ),
+        }
+    return {
+        "key": "caller_declared_soft_pgd_safety_cap",
+        "source_kind": "caller_declared",
+        "gamma_equivalent_analytical_anchor": False,
+        "description": "explicit soft-PGD trust-region cap",
     }
 
 
@@ -734,6 +984,16 @@ def graph_adapter_specs(
     }
 
 
+def active_graph_adapter_specs(
+    *,
+    force_filter_feedback: bool = False,
+) -> dict[PerturbationBin, AdditiveGraphChannelAdapterSpec]:
+    """Return graph adapters for active final-bank perturbation families."""
+
+    specs = graph_adapter_specs(force_filter_feedback=force_filter_feedback)
+    return {bin_name: specs[bin_name] for bin_name in GRAPH_CHANNEL_BINS}
+
+
 def _widen_controller_visible_adapter(
     spec: AdditiveGraphChannelAdapterSpec,
 ) -> AdditiveGraphChannelAdapterSpec:
@@ -771,6 +1031,8 @@ class FixedTargetPerturbationTrainingConfig:
     movement_age_timing: bool = False
     physical_level: str = "moderate"
     force_filter_feedback: bool = False
+    calibration_regime: TrainingCalibrationRegime = OPEN_LOOP_ALL_CALIBRATION_REGIME
+    closed_loop_calibration_table_path: str | None = None
 
     def __post_init__(self) -> None:
         total = self.nominal_fraction + self.single_fraction + self.combined_fraction
@@ -792,6 +1054,20 @@ class FixedTargetPerturbationTrainingConfig:
             )
         if self.movement_age_timing and not self.calibrated_timing:
             raise ValueError("Movement-age perturbation timing requires calibrated_timing.")
+        if self.calibration_regime not in TRAINING_CALIBRATION_REGIMES:
+            regimes = ", ".join(TRAINING_CALIBRATION_REGIMES)
+            raise ValueError(
+                f"Unknown perturbation calibration regime {self.calibration_regime!r}; "
+                f"expected one of {regimes}."
+            )
+        if self.calibration_regime != OPEN_LOOP_ALL_CALIBRATION_REGIME:
+            if not self.calibrated_timing:
+                raise ValueError("Mixed calibration regimes require calibrated_timing.")
+            if not self.closed_loop_calibration_table_path:
+                raise ValueError(
+                    "Mixed calibration regimes require closed_loop_calibration_table_path."
+                )
+            _load_closed_loop_calibration_table(str(self.closed_loop_calibration_table_path))
 
     @property
     def mode(self) -> str:
@@ -844,6 +1120,9 @@ class FixedTargetPerturbationTrainingConfig:
             "movement_age_timing": self.movement_age_timing,
             "physical_level": self.physical_level,
             "force_filter_feedback": self.force_filter_feedback,
+            "calibration_regime": self.calibration_regime,
+            "closed_loop_calibration_table_path": self.closed_loop_calibration_table_path,
+            "calibration_sources": calibration_regime_manifest(self),
             "graph_adapter_payloads": {
                 bin_name: {
                     "input_key": spec.input_key,
@@ -853,52 +1132,85 @@ class FixedTargetPerturbationTrainingConfig:
                         spec.payload_shape[-1] if spec.payload_shape else None,
                     ),
                 }
-                for bin_name, spec in graph_adapter_specs(
+                for bin_name, spec in active_graph_adapter_specs(
                     force_filter_feedback=self.force_filter_feedback
                 ).items()
             },
             "physical_level_fraction_of_reach": REACH_RELATIVE_LEVELS[self.physical_level],
             "training_physical_levels": list(TRAINING_REACH_RELATIVE_LEVELS),
             "eval_only_physical_levels": list(EVAL_ONLY_REACH_RELATIVE_LEVELS),
-            "single_family_bins": list(SINGLE_FAMILY_BINS),
+            "single_family_bins": list(_active_single_family_bins(self)),
             "validation_bins": list(VALIDATION_BINS),
+            "inactive_legacy_bins": {
+                "bins": list(INACTIVE_LEGACY_PERTURBATION_BINS),
+                "reason": (
+                    "delayed_observation offsets are redundant with sensory_feedback "
+                    "offsets in the current sensory stage and are not sampled or "
+                    "validated in the active final perturbation bank"
+                ),
+                "adapter_support": "preserved_for_legacy_manifests",
+            },
             "families": {
                 "initial_position": {
                     "channel": "initial_state",
                     "family": "initial_position_offset",
                     "amplitude": self.initial_position_offset_m,
                     "units": "m",
+                    "calibration_source": "open_loop",
                 },
                 "initial_velocity": {
                     "channel": "initial_state",
                     "family": "initial_velocity_offset",
                     "amplitude": self.initial_velocity_offset_m_s,
                     "units": "m/s",
+                    "calibration_source": "open_loop",
                 },
                 "process_epsilon": {
                     "channel": "process_epsilon",
                     "family": "process_epsilon_pulse",
                     "amplitude": self.process_epsilon_scale,
                     "units": "epsilon",
+                    "calibration_source": "open_loop",
                 },
                 "command_input": {
                     "channel": "command_input",
                     "family": "command_input_pulse",
                     "amplitude": self.command_input_pulse_n,
                     "units": "N",
+                    "calibration_source": (
+                        "closed_loop"
+                        if _calibration_uses_closed_loop(self, "command_input_pulse")
+                        else "open_loop"
+                    ),
                 },
                 "sensory_feedback": {
                     "channel": "sensory_feedback",
                     "family": "sensory_feedback_offset",
                     "amplitude": self.sensory_feedback_offset_m,
                     "units": "m_or_m_s_channel_units",
+                    "calibration_source": (
+                        "closed_loop"
+                        if _calibration_uses_closed_loop(self, "sensory_feedback_offset")
+                        else "open_loop"
+                    ),
                 },
-                "delayed_observation": {
-                    "channel": "delayed_observation",
-                    "family": "delayed_observation_offset",
-                    "amplitude": self.delayed_observation_offset_m,
-                    "units": "m_or_m_s_channel_units",
-                },
+                **(
+                    {
+                        "target_aligned_lateral_load": {
+                            "channel": "command_input",
+                            "family": "target_aligned_lateral_command_load_pulse",
+                            "amplitude": "closed_loop_table_by_timing_and_physical_level",
+                            "units": "N",
+                            "direction": "perpendicular_to_trial_target_direction",
+                            "calibration_source": "closed_loop",
+                        }
+                    }
+                    if _calibration_uses_closed_loop(
+                        self,
+                        "target_aligned_lateral_command_load_pulse",
+                    )
+                    else {}
+                ),
             },
             "pulse": {
                 "start_step": self.pulse_start_step,
@@ -920,7 +1232,9 @@ class FixedTargetPerturbationTrainingConfig:
         payload = self.to_hps_dict()
         payload["graph_adapter_inputs"] = {
             bin_name: additive_channel_provenance(
-                graph_adapter_specs(force_filter_feedback=self.force_filter_feedback)[bin_name],
+                active_graph_adapter_specs(force_filter_feedback=self.force_filter_feedback)[
+                    bin_name
+                ],
                 adapter="feedbax.additive_channel_adapter",
             )
             for bin_name in GRAPH_CHANNEL_BINS
@@ -1352,7 +1666,48 @@ def config_from_hps(config: Any) -> FixedTargetPerturbationTrainingConfig:
         movement_age_timing=bool(getattr(config, "movement_age_timing", False)),
         physical_level=str(getattr(config, "physical_level", "moderate")),
         force_filter_feedback=bool(getattr(config, "force_filter_feedback", False)),
+        calibration_regime=str(
+            getattr(config, "calibration_regime", OPEN_LOOP_ALL_CALIBRATION_REGIME)
+        ),
+        closed_loop_calibration_table_path=getattr(
+            config,
+            "closed_loop_calibration_table_path",
+            None,
+        ),
     )
+
+
+def calibration_regime_manifest(
+    config: FixedTargetPerturbationTrainingConfig,
+) -> dict[str, Any]:
+    """Return the open-loop/closed-loop calibration-source selector contract."""
+
+    closed_loop_families = TRAINING_CALIBRATION_CLOSED_LOOP_FAMILIES[config.calibration_regime]
+    all_families = (
+        "initial_position_offset",
+        "initial_velocity_offset",
+        "process_epsilon_pulse",
+        "command_input_pulse",
+        "sensory_feedback_offset",
+        "target_aligned_lateral_command_load_pulse",
+    )
+    return {
+        "schema_version": "rlrmp.cs_perturbation_training_calibration_regime.v1",
+        "regime": config.calibration_regime,
+        "closed_loop_calibration_table_path": config.closed_loop_calibration_table_path,
+        "closed_loop_families": list(closed_loop_families),
+        "open_loop_families": [
+            family for family in all_families if family not in closed_loop_families
+        ],
+        "target_aligned_lateral_load_training": (
+            "enabled_as_single_family_bin"
+            if _calibration_uses_closed_loop(
+                config,
+                "target_aligned_lateral_command_load_pulse",
+            )
+            else "not_sampled"
+        ),
+    }
 
 
 def calibrated_timing_basis_manifest(
@@ -1425,10 +1780,13 @@ def calibrated_timing_bins_manifest(movement_age_timing: bool = False) -> dict[s
         "controller_visible": {
             "families": list(CONTROLLER_VISIBLE_TIMED_BINS),
             "bins": visible_bins,
-            "delayed_observation_semantics": (
-                "offset to clean delayed measurement before sensory noise, not literal "
-                "extra temporal delay"
-            ),
+            "inactive_legacy_families": {
+                "families": list(INACTIVE_LEGACY_PERTURBATION_BINS),
+                "reason": (
+                    "delayed_observation offsets duplicate sensory_feedback offsets in "
+                    "the current sensory stage and are excluded from active training bins"
+                ),
+            },
         },
         "family_timing_bins": {
             "initial_position": {
@@ -1519,11 +1877,25 @@ def calibrated_amplitude_policy_manifest(
         ),
         "controller_visible_velocity_scale_m_s": DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S,
         "open_loop_peak_delta_x_per_unit": DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT,
+        "calibration_regime": calibration_regime_manifest(config),
+        "command_input_training_direction_policy": {
+            "distribution": "uniform_random_2d_direction",
+            "amplitude_interpretation": "calibrated value is the 2D vector norm",
+            "applies_to": "randomized training sampler only",
+            "deterministic_bank_rows": (
+                "validation and diagnostic banks may still enumerate cardinal or "
+                "target-aligned lateral directions for interpretability"
+            ),
+        },
         "amplitude_level_randomization": (
             "disabled in calibrated_timing mode; the declared physical_level fixes the "
             "effect-size target"
         ),
-        "artifact_dependency": "none_at_runtime",
+        "artifact_dependency": (
+            config.closed_loop_calibration_table_path
+            if config.calibration_regime != OPEN_LOOP_ALL_CALIBRATION_REGIME
+            else "none_at_runtime"
+        ),
     }
 
 
@@ -1566,8 +1938,9 @@ def perturbation_training_mixture_semantics(
                 "combined_amplitude_scale; the other families are inactive"
             ),
         },
-        "single_family_bins": list(SINGLE_FAMILY_BINS),
+        "single_family_bins": list(_active_single_family_bins(config)),
         "mild_combined_families": list(MILD_COMBINED_FAMILIES),
+        "inactive_legacy_bins": list(INACTIVE_LEGACY_PERTURBATION_BINS),
         "amplitude_levels": list(AMPLITUDE_LEVELS),
         "families": {
             "initial_position": {
@@ -1640,18 +2013,18 @@ def perturbation_training_mixture_semantics(
                 "base_amplitude": float(config.command_input_pulse_n),
                 "units": "N",
                 "emission": (
-                    "add a duration-limited pulse to one random command-channel "
-                    "component over a calibrated timing bin"
+                    "add a duration-limited pulse in one uniform random 2D command "
+                    "direction over a calibrated timing bin; calibrated amount is "
+                    "the vector norm"
                     if config.calibrated_timing
                     else (
-                        "add a duration-limited pulse to one random command-channel "
-                        "component over a random start time"
+                        "add a duration-limited pulse in one uniform random 2D command "
+                        "direction over a random start time; base amount is the vector norm"
                     )
                 ),
                 "randomized": [
-                    "axis",
+                    "command_direction",
                     "timing_bin" if config.calibrated_timing else "start_time",
-                    "sign",
                     "physical_level" if config.calibrated_timing else "amplitude_level",
                 ],
                 "duration_steps": int(config.pulse_duration_steps),
@@ -1678,30 +2051,31 @@ def perturbation_training_mixture_semantics(
                     int(config.pulse_duration_steps) if config.calibrated_timing else "full_trial"
                 ),
             },
-            "delayed_observation": {
-                "base_amplitude": float(config.delayed_observation_offset_m),
-                "units": "m_or_m_s_channel_units",
-                "emission": (
-                    "add an offset pulse on one random 4D delayed-observation component; "
-                    "calibrated timing mode uses controller-visible 5-step bins. "
-                    "This is an offset to clean delayed measurement before sensory "
-                    "noise, not literal extra temporal delay"
-                    if config.calibrated_timing
-                    else (
-                        "add an offset pulse on one random 4D delayed-observation "
-                        "component; current training uses full-trial duration"
-                    )
-                ),
-                "randomized": [
-                    "observation_component",
-                    "timing_bin" if config.calibrated_timing else "start_time",
-                    "sign",
-                    "physical_level" if config.calibrated_timing else "amplitude_level",
-                ],
-                "duration_steps": (
-                    int(config.pulse_duration_steps) if config.calibrated_timing else "full_trial"
-                ),
-            },
+            **(
+                {
+                    "target_aligned_lateral_load": {
+                        "base_amplitude": "closed_loop_table_by_timing_and_physical_level",
+                        "units": "N",
+                        "emission": (
+                            "add a target-relative lateral command-channel pulse over a "
+                            "calibrated timing bin; direction is perpendicular to the "
+                            "trial reach vector and sign is randomized"
+                        ),
+                        "randomized": [
+                            "timing_bin",
+                            "sign",
+                            "physical_level",
+                            "target_direction",
+                        ],
+                        "duration_steps": int(config.pulse_duration_steps),
+                    }
+                }
+                if _calibration_uses_closed_loop(
+                    config,
+                    "target_aligned_lateral_command_load_pulse",
+                )
+                else {}
+            ),
         },
         "validation_difference": (
             "Validation bins are deterministic family-separated probes, not a replay "
@@ -1793,6 +2167,40 @@ def config_from_broad_epsilon_pgd_hps(config: Any) -> PgdFullStateEpsilonTrainin
 
     inner = _payload_get(config, "inner_maximizer", None)
     schedule = _payload_get(config, "budget_schedule", None)
+    objective = _payload_get(config, "objective", None)
+    safety_cap = _payload_get(config, "safety_cap", None)
+    budget_schedule = str(
+        _first_payload_value(
+            (schedule, "mode"),
+            (config, "budget_schedule_mode"),
+            (config, "budget_schedule"),
+            default=BROAD_EPSILON_PGD_FIXED_BUDGET_SCHEDULE,
+        )
+    )
+    budget_contract = _payload_get(config, "budget_contract", None)
+    budget_source = _payload_get(budget_contract, "budget_source", None)
+    fixed_l2_radius_15cm = (
+        None
+        if budget_schedule != BROAD_EPSILON_PGD_FIXED_BUDGET_SCHEDULE
+        else _optional_float(
+            _first_payload_value(
+                (budget_contract, "effective_l2_radius_15cm"),
+                (config, "fixed_l2_radius_15cm"),
+                default=None,
+            )
+        )
+    )
+    fixed_radius_source = (
+        None
+        if budget_schedule != BROAD_EPSILON_PGD_FIXED_BUDGET_SCHEDULE
+        else _optional_str(
+            _first_payload_value(
+                (budget_source, "key"),
+                (config, "fixed_radius_source"),
+                default=None,
+            )
+        )
+    )
     return PgdFullStateEpsilonTrainingConfig(
         enabled=bool(_payload_get(config, "enabled", False)),
         level=str(_payload_get(config, "level", "moderate")),
@@ -1822,14 +2230,7 @@ def config_from_broad_epsilon_pgd_hps(config: Any) -> PgdFullStateEpsilonTrainin
         ),
         movement_epoch_only=bool(_payload_get(config, "movement_epoch_only", False)),
         epsilon_dim=int(_payload_get(config, "epsilon_dim", BROAD_EPSILON_DIM)),
-        budget_schedule=str(
-            _first_payload_value(
-                (schedule, "mode"),
-                (config, "budget_schedule_mode"),
-                (config, "budget_schedule"),
-                default=BROAD_EPSILON_PGD_FIXED_BUDGET_SCHEDULE,
-            )
-        ),
+        budget_schedule=budget_schedule,
         sisu_levels=tuple(
             float(x)
             for x in _first_payload_value(
@@ -1865,6 +2266,64 @@ def config_from_broad_epsilon_pgd_hps(config: Any) -> PgdFullStateEpsilonTrainin
                 (schedule, "max_radius_source_key"),
                 (_payload_get(schedule, "max_radius_source", None), "key"),
                 (config, "sisu_max_radius_source"),
+                default=None,
+            )
+        ),
+        fixed_l2_radius_15cm=fixed_l2_radius_15cm,
+        fixed_radius_source=fixed_radius_source,
+        objective_kind=str(
+            _first_payload_value(
+                (objective, "kind"),
+                (config, "objective_kind"),
+                default=BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE,
+            )
+        ),
+        energy_gamma_star=_optional_float(
+            _first_payload_value(
+                (objective, "gamma_star"),
+                (config, "energy_gamma_star"),
+                default=None,
+            )
+        ),
+        energy_gamma_factor=_optional_float(
+            _first_payload_value(
+                (objective, "gamma_factor"),
+                (config, "energy_gamma_factor"),
+                default=None,
+            )
+        ),
+        energy_gamma=_optional_float(
+            _first_payload_value(
+                (objective, "gamma"),
+                (config, "energy_gamma"),
+                default=None,
+            )
+        ),
+        energy_penalty_scale=float(
+            _first_payload_value(
+                (objective, "penalty_scale_c"),
+                (config, "energy_penalty_scale"),
+                default=1.0,
+            )
+        ),
+        energy_lambda=_optional_float(
+            _first_payload_value(
+                (objective, "lambda"),
+                (config, "energy_lambda"),
+                default=None,
+            )
+        ),
+        safety_cap_l2_radius_15cm=_optional_float(
+            _first_payload_value(
+                (safety_cap, "l2_radius_15cm"),
+                (config, "safety_cap_l2_radius_15cm"),
+                default=None,
+            )
+        ),
+        safety_cap_source=_optional_str(
+            _first_payload_value(
+                (_payload_get(safety_cap, "source", None), "key"),
+                (config, "safety_cap_source"),
                 default=None,
             )
         ),
@@ -2168,14 +2627,25 @@ def run_broad_epsilon_pgd_inner_maximizer(
     cfg = config_from_broad_epsilon_pgd_hps(config)
     specs = _ensure_broad_epsilon_input(trial_specs, epsilon_dim=cfg.epsilon_dim)
     base_epsilon = jnp.asarray(specs.inputs["epsilon"])
-    radius = _broad_epsilon_l2_radius(specs, cfg).astype(base_epsilon.dtype)
+    radius = _broad_epsilon_pgd_trust_radius(specs, cfg).astype(base_epsilon.dtype)
     time_mask = _epsilon_time_mask(specs, base_epsilon, cfg.movement_epoch_only)
     delta = jnp.zeros_like(base_epsilon)
 
-    def objective(delta_candidate):
-        candidate = _set_input(specs, "epsilon", base_epsilon + delta_candidate * time_mask)
+    def objective_components(delta_candidate):
+        masked_delta = delta_candidate * time_mask
+        candidate = _set_input(specs, "epsilon", base_epsilon + masked_delta)
         candidate_states = task.eval_trials(model, candidate, keys_model)
-        return loss_func(candidate_states, candidate, model).total
+        task_loss = jnp.asarray(loss_func(candidate_states, candidate, model).total)
+        energy_per_trial = _epsilon_energy_per_trial(masked_delta)
+        energy_mean = jnp.mean(energy_per_trial)
+        if cfg.objective_kind != BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE:
+            penalty = jnp.asarray(0.0, dtype=task_loss.dtype)
+        else:
+            penalty = jnp.asarray(cfg.soft_energy_lambda, dtype=task_loss.dtype) * energy_mean
+        return task_loss, energy_per_trial, penalty, task_loss - penalty
+
+    def objective(delta_candidate):
+        return objective_components(delta_candidate)[-1]
 
     def objective_and_grad(delta_candidate):
         return jax.value_and_grad(objective)(delta_candidate)
@@ -2196,7 +2666,10 @@ def run_broad_epsilon_pgd_inner_maximizer(
         )
 
     def select_best(best_delta, best_objective, candidate_delta, candidate_objective):
-        improved = candidate_objective > best_objective
+        improved = jnp.logical_and(
+            jnp.isfinite(candidate_objective),
+            candidate_objective > best_objective,
+        )
         best_delta = jnp.where(
             _expand_bool_like(improved, candidate_delta),
             candidate_delta,
@@ -2206,35 +2679,77 @@ def run_broad_epsilon_pgd_inner_maximizer(
         return best_delta, best_objective
 
     def body(_, state):
-        delta_current, _current_objective, grad_current, best_delta, best_objective = state
+        (
+            delta_current,
+            _current_objective,
+            grad_current,
+            best_delta,
+            best_objective,
+            objective_nan_seen,
+            objective_overflow_seen,
+        ) = state
         proposal = proposal_from_gradient(delta_current, grad_current)
         proposal_objective, proposal_grad = objective_and_grad(proposal)
         proposal_grad = proposal_grad * time_mask
+        objective_nan_seen = jnp.logical_or(objective_nan_seen, jnp.isnan(proposal_objective))
+        objective_overflow_seen = jnp.logical_or(
+            objective_overflow_seen,
+            jnp.isinf(proposal_objective),
+        )
         best_delta, best_objective = select_best(
             best_delta,
             best_objective,
             proposal,
             proposal_objective,
         )
-        return proposal, proposal_objective, proposal_grad, best_delta, best_objective
+        return (
+            proposal,
+            proposal_objective,
+            proposal_grad,
+            best_delta,
+            best_objective,
+            objective_nan_seen,
+            objective_overflow_seen,
+        )
 
     delta_current = zero_delta
     current_objective = objective_initial
     grad_current = grad_initial
     best_delta = zero_delta
     objective_best = objective_initial
+    objective_nan_seen = jnp.isnan(objective_initial)
+    objective_overflow_seen = jnp.isinf(objective_initial)
     if int(cfg.n_steps) > 1:
-        delta_current, current_objective, grad_current, best_delta, objective_best = (
-            jax.lax.fori_loop(
-                0,
-                int(cfg.n_steps) - 1,
-                body,
-                (delta_current, current_objective, grad_current, best_delta, objective_best),
-            )
+        (
+            delta_current,
+            current_objective,
+            grad_current,
+            best_delta,
+            objective_best,
+            objective_nan_seen,
+            objective_overflow_seen,
+        ) = jax.lax.fori_loop(
+            0,
+            int(cfg.n_steps) - 1,
+            body,
+            (
+                delta_current,
+                current_objective,
+                grad_current,
+                best_delta,
+                objective_best,
+                objective_nan_seen,
+                objective_overflow_seen,
+            ),
         )
 
     final_delta = proposal_from_gradient(delta_current, grad_current)
     objective_final_endpoint = objective(final_delta)
+    objective_nan_seen = jnp.logical_or(objective_nan_seen, jnp.isnan(objective_final_endpoint))
+    objective_overflow_seen = jnp.logical_or(
+        objective_overflow_seen,
+        jnp.isinf(objective_final_endpoint),
+    )
     best_delta, objective_best = select_best(
         best_delta,
         objective_best,
@@ -2248,13 +2763,23 @@ def run_broad_epsilon_pgd_inner_maximizer(
 
     objective_selected = objective_best
     delta_norm = _flattened_per_trial_norm(delta).astype(radius.dtype)
+    delta_energy = _epsilon_energy_per_trial(delta)
     ratio = delta_norm / jnp.maximum(radius, jnp.asarray(1e-12, dtype=radius.dtype))
     boundary = ratio >= jnp.asarray(1.0 - 1e-4, dtype=ratio.dtype)
+    zero_task_loss, zero_energy, zero_penalty, zero_objective = objective_components(zero_delta)
+    selected_task_loss, selected_energy, selected_penalty, selected_objective = (
+        objective_components(delta)
+    )
+    final_task_loss, final_energy, final_penalty, final_objective = objective_components(final_delta)
+    del zero_energy, selected_energy, final_energy
+    objective_nonfinite_seen = jnp.logical_or(objective_nan_seen, objective_overflow_seen)
     diagnostics = {
         "radius_mean": jnp.mean(radius),
         "radius_max": jnp.max(radius),
         "epsilon_norm_mean": jnp.mean(delta_norm),
         "epsilon_norm_max": jnp.max(delta_norm),
+        "epsilon_energy_mean": jnp.mean(delta_energy),
+        "epsilon_energy_max": jnp.max(delta_energy),
         "epsilon_norm_radius_ratio_mean": jnp.mean(ratio),
         "epsilon_norm_radius_ratio_max": jnp.max(ratio),
         "inner_objective_before": jnp.asarray(objective_initial),
@@ -2265,14 +2790,44 @@ def run_broad_epsilon_pgd_inner_maximizer(
         "inner_objective_final_endpoint_gap": jnp.asarray(
             objective_best - objective_final_endpoint
         ),
+        "raw_task_loss_zero": jnp.asarray(zero_task_loss),
+        "raw_task_loss_selected": jnp.asarray(selected_task_loss),
+        "raw_task_loss_final_endpoint": jnp.asarray(final_task_loss),
+        "energy_penalty_term_zero": jnp.asarray(zero_penalty),
+        "energy_penalty_term_selected": jnp.asarray(selected_penalty),
+        "energy_penalty_term_final_endpoint": jnp.asarray(final_penalty),
+        "penalized_objective_zero": jnp.asarray(zero_objective),
+        "penalized_objective_selected": jnp.asarray(selected_objective),
+        "penalized_objective_final_endpoint": jnp.asarray(final_objective),
+        "selected_objective_gain_over_zero": jnp.asarray(objective_selected - zero_objective),
+        "selected_vs_final_objective_gap": jnp.asarray(objective_best - objective_final_endpoint),
         "boundary_fraction": jnp.mean(boundary.astype(radius.dtype)),
+        "cap_boundary_fraction": jnp.mean(boundary.astype(radius.dtype)),
+        "safety_cap_boundary_fraction": jnp.mean(boundary.astype(radius.dtype)),
+        "inner_objective_nan_seen": objective_nan_seen,
+        "inner_objective_overflow_seen": objective_overflow_seen,
+        "inner_objective_nonfinite_seen": objective_nonfinite_seen,
         "n_steps": jnp.asarray(cfg.n_steps, dtype=jnp.float32),
         "step_size_fraction_of_l2_radius": jnp.asarray(
             cfg.step_size_fraction,
             dtype=jnp.float32,
         ),
+        "objective_kind_is_soft_energy": jnp.asarray(
+            cfg.objective_kind == BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE
+        ),
+        "energy_lambda": jnp.asarray(
+            cfg.soft_energy_lambda or 0.0,
+            dtype=jnp.float32,
+        ),
     }
     return updated, diagnostics
+
+
+def _epsilon_energy_per_trial(epsilon: jnp.ndarray) -> jnp.ndarray:
+    """Return squared-L2 epsilon energy per leading trial entry."""
+
+    energy_axes = tuple(range(max(epsilon.ndim - 2, 0), epsilon.ndim))
+    return jnp.sum(jnp.square(epsilon), axis=energy_axes)
 
 
 def _expand_bool_like(mask: jnp.ndarray | bool, values: jnp.ndarray) -> jnp.ndarray:
@@ -2566,7 +3121,7 @@ def apply_training_perturbation_mixture(
         key_process,
         key_command,
         key_sensory,
-        key_delayed,
+        key_lateral,
     ) = jr.split(key, 8)
     mixture = jr.uniform(key_mix, batch_shape)
     single_mask = (
@@ -2576,7 +3131,8 @@ def apply_training_perturbation_mixture(
     combined_mask = (mixture >= float(cfg.nominal_fraction + cfg.single_fraction)).astype(
         jnp.float32
     )
-    family_index = jr.randint(key_family, batch_shape, 0, len(SINGLE_FAMILY_BINS))
+    active_single_family_bins = _active_single_family_bins(cfg)
+    family_index = jr.randint(key_family, batch_shape, 0, len(active_single_family_bins))
 
     if cfg.calibrated_timing:
         if cfg.movement_age_timing:
@@ -2590,7 +3146,7 @@ def apply_training_perturbation_mixture(
                 component_offset=0,
                 n_components=2,
                 active_mask=(
-                    single_mask * _family_mask(family_index, "initial_position")
+                    single_mask * _family_mask(family_index, "initial_position", active_single_family_bins)
                     + combined_mask * float(cfg.combined_amplitude_scale)
                 ),
                 key=key_pos,
@@ -2604,7 +3160,7 @@ def apply_training_perturbation_mixture(
                 ),
                 component_offset=2,
                 n_components=2,
-                active_mask=single_mask * _family_mask(family_index, "initial_velocity"),
+                active_mask=single_mask * _family_mask(family_index, "initial_velocity", active_single_family_bins),
                 key=key_vel,
             )
         else:
@@ -2618,7 +3174,7 @@ def apply_training_perturbation_mixture(
                 component_offset=0,
                 n_components=2,
                 active_mask=(
-                    single_mask * _family_mask(family_index, "initial_position")
+                    single_mask * _family_mask(family_index, "initial_position", active_single_family_bins)
                     + combined_mask * float(cfg.combined_amplitude_scale)
                 ),
                 randomize_amplitude_level=False,
@@ -2633,14 +3189,14 @@ def apply_training_perturbation_mixture(
                 ),
                 component_offset=2,
                 n_components=2,
-                active_mask=single_mask * _family_mask(family_index, "initial_velocity"),
+                active_mask=single_mask * _family_mask(family_index, "initial_velocity", active_single_family_bins),
                 randomize_amplitude_level=False,
                 key=key_vel,
             )
         trial_specs = _add_process_epsilon_calibrated_random_pulse(
             trial_specs,
             cfg,
-            active_mask=single_mask * _family_mask(family_index, "process_epsilon"),
+            active_mask=single_mask * _family_mask(family_index, "process_epsilon", active_single_family_bins),
             key=key_process,
         )
         trial_specs = _add_graph_channel_calibrated_random_pulse(
@@ -2648,24 +3204,29 @@ def apply_training_perturbation_mixture(
             cfg,
             specs["command_input"],
             active_mask=(
-                single_mask * _family_mask(family_index, "command_input")
+                single_mask * _family_mask(family_index, "command_input", active_single_family_bins)
                 + combined_mask * float(cfg.combined_amplitude_scale)
             ),
             key=key_command,
+        )
+        trial_specs = _add_target_aligned_lateral_calibrated_random_pulse(
+            trial_specs,
+            cfg,
+            specs["command_input"],
+            active_mask=single_mask
+            * _family_mask(
+                family_index,
+                TARGET_ALIGNED_LATERAL_LOAD_BIN,
+                active_single_family_bins,
+            ),
+            key=key_lateral,
         )
         trial_specs = _add_graph_channel_calibrated_random_pulse(
             trial_specs,
             cfg,
             specs["sensory_feedback"],
-            active_mask=single_mask * _family_mask(family_index, "sensory_feedback"),
+            active_mask=single_mask * _family_mask(family_index, "sensory_feedback", active_single_family_bins),
             key=key_sensory,
-        )
-        trial_specs = _add_graph_channel_calibrated_random_pulse(
-            trial_specs,
-            cfg,
-            specs["delayed_observation"],
-            active_mask=single_mask * _family_mask(family_index, "delayed_observation"),
-            key=key_delayed,
         )
     else:
         trial_specs = _offset_initial_random_components(
@@ -2674,7 +3235,7 @@ def apply_training_perturbation_mixture(
             component_offset=0,
             n_components=2,
             active_mask=(
-                single_mask * _family_mask(family_index, "initial_position")
+                single_mask * _family_mask(family_index, "initial_position", active_single_family_bins)
                 + combined_mask * float(cfg.combined_amplitude_scale)
             ),
             key=key_pos,
@@ -2684,13 +3245,13 @@ def apply_training_perturbation_mixture(
             base_amount=cfg.initial_velocity_offset_m_s,
             component_offset=2,
             n_components=2,
-            active_mask=single_mask * _family_mask(family_index, "initial_velocity"),
+            active_mask=single_mask * _family_mask(family_index, "initial_velocity", active_single_family_bins),
             key=key_vel,
         )
         trial_specs = _add_process_epsilon_random_pulse(
             trial_specs,
             base_amount=cfg.process_epsilon_scale,
-            active_mask=single_mask * _family_mask(family_index, "process_epsilon"),
+            active_mask=single_mask * _family_mask(family_index, "process_epsilon", active_single_family_bins),
             duration=cfg.pulse_duration_steps,
             key=key_process,
         )
@@ -2699,7 +3260,7 @@ def apply_training_perturbation_mixture(
             specs["command_input"],
             base_amount=cfg.command_input_pulse_n,
             active_mask=(
-                single_mask * _family_mask(family_index, "command_input")
+                single_mask * _family_mask(family_index, "command_input", active_single_family_bins)
                 + combined_mask * float(cfg.combined_amplitude_scale)
             ),
             duration=cfg.pulse_duration_steps,
@@ -2709,17 +3270,9 @@ def apply_training_perturbation_mixture(
             trial_specs,
             specs["sensory_feedback"],
             base_amount=cfg.sensory_feedback_offset_m,
-            active_mask=single_mask * _family_mask(family_index, "sensory_feedback"),
+            active_mask=single_mask * _family_mask(family_index, "sensory_feedback", active_single_family_bins),
             duration=trial_specs.timeline.n_steps,
             key=key_sensory,
-        )
-        trial_specs = _add_graph_channel_random_pulse(
-            trial_specs,
-            specs["delayed_observation"],
-            base_amount=cfg.delayed_observation_offset_m,
-            active_mask=single_mask * _family_mask(family_index, "delayed_observation"),
-            duration=trial_specs.timeline.n_steps,
-            key=key_delayed,
         )
     # Train trials are produced inside Feedbax's vmap'd training step, so their
     # PyTree leaves must be JAX values. Keep string/list provenance in run specs
@@ -2764,7 +3317,7 @@ def apply_validation_bin(
             families=("initial_position", "command_input"),
             force_filter_feedback=cfg.force_filter_feedback,
         )
-    if bin_name not in SINGLE_FAMILY_BINS:
+    if bin_name not in (*SINGLE_FAMILY_BINS, *INACTIVE_LEGACY_PERTURBATION_BINS):
         raise ValueError(f"Unknown perturbation validation bin {bin_name!r}.")
     return _apply_single_bin(trial_specs, cfg, bin_name, 1.0)
 
@@ -2874,12 +3427,6 @@ def target_relative_validation_bins(
             "families": ["sensory_feedback"],
         },
         {
-            "bin": "delayed_observation_offsets",
-            "target_role": "seen_and_held_out_static_targets",
-            "targets_m": [list(row) for row in seen_held_out_targets],
-            "families": ["delayed_observation"],
-        },
-        {
             "bin": "process_load_epsilon",
             "target_role": "seen_and_held_out_static_targets",
             "targets_m": [list(row) for row in seen_held_out_targets],
@@ -2951,7 +3498,8 @@ def target_relative_perturbation_emphasis() -> dict[str, Any]:
     return {
         "nominal_multitarget_fraction": [0.50, 0.70],
         "initial_position_velocity_fraction": [0.10, 0.20],
-        "sensory_or_delayed_observation_fraction": [0.10, 0.20],
+        "sensory_feedback_fraction": [0.10, 0.20],
+        "inactive_legacy_families": list(INACTIVE_LEGACY_PERTURBATION_BINS),
         "process_or_load_fraction": [0.05, 0.15],
         "command_input": "optional_diagnostic_only",
     }
@@ -3104,10 +3652,39 @@ def _single_bin_amount(
         ]
         return target_peak_delta_x / sensitivity
     if bin_name == "command_input":
+        if _calibration_uses_closed_loop(config, "command_input_pulse"):
+            reach_scale = _trial_reach_length_m(trial_specs) / jnp.asarray(
+                _closed_loop_table_reach_m(config),
+                dtype=jnp.float32,
+            )
+            amount = _closed_loop_amplitudes_by_timing(
+                config,
+                family="command_input_pulse",
+                timing_labels=(TIMING_LABELS_PLANT[0],),
+                component="random_force_pulse_cardinal_basis",
+                reducer="mean",
+            )[0]
+            return amount * reach_scale
         sensitivity = DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT["command_input_pulse"][
             TIMING_LABELS_PLANT[0]
         ]
         return target_peak_delta_x / sensitivity
+    if bin_name == "sensory_feedback" and _calibration_uses_closed_loop(
+        config,
+        "sensory_feedback_offset",
+    ):
+        reach_scale = _trial_reach_length_m(trial_specs) / jnp.asarray(
+            _closed_loop_table_reach_m(config),
+            dtype=jnp.float32,
+        )
+        amount = _closed_loop_amplitudes_by_timing(
+            config,
+            family="sensory_feedback_offset",
+            timing_labels=(TIMING_LABELS_CONTROLLER_VISIBLE[0],),
+            component="position",
+            axis="x",
+        )[0]
+        return amount * reach_scale
     if bin_name in {"sensory_feedback", "delayed_observation"}:
         return target_peak_delta_x
     raise ValueError(f"Unsupported perturbation bin {bin_name!r}.")
@@ -3131,8 +3708,14 @@ def _cycle_amplitude(
     )
 
 
-def _family_mask(family_index: jnp.ndarray, bin_name: PerturbationBin) -> jnp.ndarray:
-    return (family_index == SINGLE_FAMILY_BINS.index(bin_name)).astype(jnp.float32)
+def _family_mask(
+    family_index: jnp.ndarray,
+    bin_name: PerturbationBin,
+    active_bins: tuple[PerturbationBin, ...] = SINGLE_FAMILY_BINS,
+) -> jnp.ndarray:
+    if bin_name not in active_bins:
+        return jnp.zeros_like(family_index, dtype=jnp.float32)
+    return (family_index == active_bins.index(bin_name)).astype(jnp.float32)
 
 
 def _calibrated_initial_amount(
@@ -3158,6 +3741,87 @@ def _target_peak_delta_x_m(
         REACH_RELATIVE_LEVELS[config.physical_level],
         dtype=jnp.float32,
     )
+
+
+def _active_single_family_bins(
+    config: FixedTargetPerturbationTrainingConfig,
+) -> tuple[PerturbationBin, ...]:
+    if _calibration_uses_closed_loop(config, "target_aligned_lateral_command_load_pulse"):
+        return (*SINGLE_FAMILY_BINS, TARGET_ALIGNED_LATERAL_LOAD_BIN)
+    return SINGLE_FAMILY_BINS
+
+
+def _calibration_uses_closed_loop(
+    config: FixedTargetPerturbationTrainingConfig,
+    family: str,
+) -> bool:
+    return family in TRAINING_CALIBRATION_CLOSED_LOOP_FAMILIES[config.calibration_regime]
+
+
+@lru_cache(maxsize=8)
+def _load_closed_loop_calibration_table(path: str) -> dict[str, Any]:
+    table_path = Path(path).expanduser()
+    if not table_path.is_absolute():
+        table_path = Path.cwd() / table_path
+    try:
+        payload = json.loads(table_path.read_text())
+    except FileNotFoundError as exc:
+        raise ValueError(f"Closed-loop calibration table not found: {path}") from exc
+    rows = payload.get("rows")
+    if not isinstance(rows, list):
+        raise ValueError(f"Closed-loop calibration table {path!r} has no rows list.")
+    return payload
+
+
+def _closed_loop_table_reach_m(config: FixedTargetPerturbationTrainingConfig) -> float:
+    table = _closed_loop_table(config)
+    target_rule = table.get("target_rule", {})
+    reach = float(target_rule.get("reach_length_m", TARGET_SUPPORT_CONST_REACH_M))
+    if reach <= 0.0:
+        raise ValueError("Closed-loop calibration table reach_length_m must be positive.")
+    return reach
+
+
+def _closed_loop_table(config: FixedTargetPerturbationTrainingConfig) -> dict[str, Any]:
+    if not config.closed_loop_calibration_table_path:
+        raise ValueError("Closed-loop calibration table path is required for this regime.")
+    return _load_closed_loop_calibration_table(config.closed_loop_calibration_table_path)
+
+
+def _closed_loop_amplitudes_by_timing(
+    config: FixedTargetPerturbationTrainingConfig,
+    *,
+    family: str,
+    timing_labels: tuple[str, ...],
+    component: str | None = None,
+    axis: str | None = None,
+    reducer: Literal["single", "mean"] = "single",
+) -> jnp.ndarray:
+    rows = _closed_loop_table(config)["rows"]
+    values: list[float] = []
+    for timing_label in timing_labels:
+        matches = [
+            row
+            for row in rows
+            if row.get("family") == family
+            and row.get("physical_level") == config.physical_level
+            and row.get("timing_bin") == timing_label
+            and (component is None or row.get("component") == component)
+            and (axis is None or row.get("axis") == axis)
+        ]
+        if not matches:
+            raise ValueError(
+                "Closed-loop calibration table has no row for "
+                f"family={family!r}, physical_level={config.physical_level!r}, "
+                f"timing_bin={timing_label!r}, component={component!r}, axis={axis!r}."
+            )
+        if reducer == "single" and len(matches) != 1:
+            raise ValueError(
+                "Closed-loop calibration table lookup expected one row for "
+                f"family={family!r}, timing_bin={timing_label!r}, got {len(matches)}."
+            )
+        values.append(float(np.mean([float(row["amplitude"]) for row in matches])))
+    return jnp.asarray(values, dtype=jnp.float32)
 
 
 def _broad_epsilon_l2_radius(
@@ -3189,13 +3853,25 @@ def _broad_epsilon_l2_radius(
     return scaled_radius
 
 
+def _broad_epsilon_pgd_trust_radius(
+    trial_specs: TaskTrialSpec,
+    config: PgdFullStateEpsilonTrainingConfig,
+) -> jnp.ndarray:
+    """Return the projection radius or soft-PGD stabilization cap."""
+
+    if config.objective_kind != BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE:
+        return _broad_epsilon_l2_radius(trial_specs, config)
+    radius = jnp.asarray(config.safety_cap_l2_radius, dtype=jnp.float32)
+    if not config.reach_length_scaling:
+        return jnp.broadcast_to(radius, _batch_shape(trial_specs))
+    reach_length = _trial_reach_length_m(trial_specs)
+    return radius * (
+        reach_length / jnp.asarray(config.nominal_reach_length_m, dtype=reach_length.dtype)
+    )
+
+
 def _trial_reach_length_m(trial_specs: TaskTrialSpec) -> jnp.ndarray:
-    target_spec = trial_specs.targets["mechanics.effector.pos"]
-    target = jnp.asarray(target_spec.value)
-    if target.ndim >= 2:
-        target_pos = target[..., -1, :]
-    else:
-        target_pos = target
+    target_pos = _trial_target_position_m(trial_specs)
     init_vector = jnp.asarray(trial_specs.inits["mechanics.vector"])
     init_pos = init_vector[..., :2]
     try:
@@ -3205,13 +3881,39 @@ def _trial_reach_length_m(trial_specs: TaskTrialSpec) -> jnp.ndarray:
     return jnp.linalg.norm(delta, axis=-1)
 
 
+def _trial_target_position_m(trial_specs: TaskTrialSpec) -> jnp.ndarray:
+    target_spec = trial_specs.targets["mechanics.effector.pos"]
+    target = jnp.asarray(target_spec.value)
+    if target.ndim >= 2:
+        return target[..., -1, :]
+    return target
+
+
 def _calibrated_timing_indexed_amounts(
     *,
+    config: FixedTargetPerturbationTrainingConfig,
     family: str,
     timing_labels: tuple[str, ...],
     target_peak_delta_x: jnp.ndarray,
     dtype: Any,
 ) -> jnp.ndarray:
+    if _calibration_uses_closed_loop(config, family):
+        reach_scale = _trial_reach_length_m_from_peak(target_peak_delta_x, config) / jnp.asarray(
+            _closed_loop_table_reach_m(config),
+            dtype=dtype,
+        )
+        amplitudes = _closed_loop_amplitudes_by_timing(
+            config,
+            family=family,
+            timing_labels=timing_labels,
+            component=(
+                "random_force_pulse_cardinal_basis"
+                if family == "command_input_pulse"
+                else None
+            ),
+            reducer="mean" if family == "command_input_pulse" else "single",
+        ).astype(dtype)
+        return jnp.expand_dims(jnp.asarray(reach_scale, dtype=dtype), -1) * amplitudes
     sensitivities = jnp.asarray(
         [
             DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT[family][timing_label]
@@ -3220,6 +3922,16 @@ def _calibrated_timing_indexed_amounts(
         dtype=dtype,
     )
     return jnp.expand_dims(jnp.asarray(target_peak_delta_x, dtype=dtype), -1) / sensitivities
+
+
+def _trial_reach_length_m_from_peak(
+    target_peak_delta_x: jnp.ndarray,
+    config: FixedTargetPerturbationTrainingConfig,
+) -> jnp.ndarray:
+    return jnp.asarray(target_peak_delta_x, dtype=jnp.float32) / jnp.asarray(
+        REACH_RELATIVE_LEVELS[config.physical_level],
+        dtype=jnp.float32,
+    )
 
 
 def _process_epsilon_sensitivity_table(dtype: Any) -> jnp.ndarray:
@@ -3457,6 +4169,34 @@ def _add_graph_channel_random_pulse(
     starts: tuple[int, ...] | None = None,
     key: PRNGKeyArray,
 ) -> TaskTrialSpec:
+    if spec.label == GRAPH_ADAPTER_SPECS["command_input"].label:
+        key_start, key_direction, key_level = jr.split(key, 3)
+        payload = _zero_graph_payload(trial_specs, spec)
+        batch_shape = _batch_shape(trial_specs)
+        amount = (
+            jnp.asarray(base_amount, dtype=payload.dtype)
+            * _random_amplitude_level(key_level, batch_shape)
+            * active_mask
+        )
+        start, _start_index = _sample_pulse_start(
+            batch_shape=batch_shape,
+            n_steps=payload.shape[-2],
+            duration=duration,
+            starts=starts,
+            key=key_start,
+        )
+        updated = payload + _command_input_direction_pulse(
+            batch_shape=batch_shape,
+            n_steps=payload.shape[-2],
+            width=payload.shape[-1],
+            amount=amount,
+            duration=duration,
+            start=start,
+            key=key_direction,
+            dtype=payload.dtype,
+        )
+        return _set_input(trial_specs, spec.input_key, updated)
+
     key_component, key_start, key_sign, key_level = jr.split(key, 4)
     payload = _zero_graph_payload(trial_specs, spec)
     batch_shape = _batch_shape(trial_specs)
@@ -3489,15 +4229,9 @@ def _add_graph_channel_calibrated_random_pulse(
     active_mask: jnp.ndarray,
     key: PRNGKeyArray,
 ) -> TaskTrialSpec:
-    key_component, key_start, key_sign = jr.split(key, 3)
+    key_component, key_start, key_sign, key_direction = jr.split(key, 4)
     payload = _zero_graph_payload(trial_specs, spec)
     batch_shape = _batch_shape(trial_specs)
-    component = jr.randint(
-        key_component,
-        batch_shape,
-        0,
-        _randomized_payload_width(spec, config, payload.shape[-1]),
-    )
     starts = (
         _plant_timing_starts()
         if spec.label == GRAPH_ADAPTER_SPECS["command_input"].label
@@ -3514,6 +4248,7 @@ def _add_graph_channel_calibrated_random_pulse(
     if spec.label == GRAPH_ADAPTER_SPECS["command_input"].label:
         target_peak_delta_x = _target_peak_delta_x_m(trial_specs, config)
         amount_by_timing = _calibrated_timing_indexed_amounts(
+            config=config,
             family="command_input_pulse",
             timing_labels=TIMING_LABELS_PLANT,
             target_peak_delta_x=target_peak_delta_x,
@@ -3524,10 +4259,29 @@ def _add_graph_channel_calibrated_random_pulse(
             jnp.expand_dims(start_index, axis=-1),
             axis=-1,
         )[..., 0]
+        amount = amount * active_mask
+        updated = payload + _command_input_direction_pulse(
+            batch_shape=batch_shape,
+            n_steps=payload.shape[-2],
+            width=payload.shape[-1],
+            amount=amount,
+            duration=config.pulse_duration_steps,
+            start=start,
+            key=key_direction,
+            dtype=payload.dtype,
+        )
+        return _set_input(trial_specs, spec.input_key, updated)
     else:
+        component = jr.randint(
+            key_component,
+            batch_shape,
+            0,
+            _randomized_payload_width(spec, config, payload.shape[-1]),
+        )
         amount_by_component = _controller_visible_component_amounts(
             trial_specs,
             config,
+            timing_index=start_index,
             dtype=payload.dtype,
         )
         amount = jnp.take_along_axis(
@@ -3549,13 +4303,189 @@ def _add_graph_channel_calibrated_random_pulse(
     return _set_input(trial_specs, spec.input_key, updated)
 
 
+def _command_input_direction_pulse(
+    *,
+    batch_shape: tuple[int, ...],
+    n_steps: int,
+    width: int,
+    amount: jnp.ndarray,
+    duration: int,
+    start: int | jnp.ndarray,
+    key: PRNGKeyArray,
+    dtype: Any,
+) -> jnp.ndarray:
+    if int(width) < 2:
+        raise ValueError("command-input random-direction pulses require at least two components.")
+    direction = jr.normal(key, (*batch_shape, 2), dtype=dtype)
+    direction_norm = jnp.linalg.norm(direction, axis=-1, keepdims=True)
+    direction = direction / jnp.maximum(direction_norm, jnp.asarray(1e-12, dtype=dtype))
+    amount = jnp.asarray(amount, dtype=dtype)
+    pulse_x = _pulse_tensor_from_start(
+        batch_shape=batch_shape,
+        n_steps=n_steps,
+        width=width,
+        component=jnp.zeros(batch_shape, dtype=jnp.int32),
+        amount=amount * direction[..., 0],
+        duration=duration,
+        start=start,
+        dtype=dtype,
+    )
+    pulse_y = _pulse_tensor_from_start(
+        batch_shape=batch_shape,
+        n_steps=n_steps,
+        width=width,
+        component=jnp.ones(batch_shape, dtype=jnp.int32),
+        amount=amount * direction[..., 1],
+        duration=duration,
+        start=start,
+        dtype=dtype,
+    )
+    return pulse_x + pulse_y
+
+
+def _add_target_aligned_lateral_calibrated_random_pulse(
+    trial_specs: TaskTrialSpec,
+    config: FixedTargetPerturbationTrainingConfig,
+    spec: AdditiveGraphChannelAdapterSpec,
+    *,
+    active_mask: jnp.ndarray,
+    key: PRNGKeyArray,
+) -> TaskTrialSpec:
+    if not _calibration_uses_closed_loop(
+        config,
+        "target_aligned_lateral_command_load_pulse",
+    ):
+        return trial_specs
+    key_start, key_sign = jr.split(key)
+    payload = _zero_graph_payload(trial_specs, spec)
+    batch_shape = _batch_shape(trial_specs)
+    start, start_index = _sample_pulse_start(
+        batch_shape=batch_shape,
+        n_steps=payload.shape[-2],
+        duration=config.pulse_duration_steps,
+        starts=_plant_timing_starts(),
+        timing_basis=_calibrated_timing_basis(trial_specs, config, batch_shape=batch_shape),
+        key=key_start,
+    )
+    target_peak_delta_x = _target_peak_delta_x_m(trial_specs, config)
+    reach_scale = _trial_reach_length_m_from_peak(target_peak_delta_x, config) / jnp.asarray(
+        _closed_loop_table_reach_m(config),
+        dtype=payload.dtype,
+    )
+    amount_by_timing = _closed_loop_amplitudes_by_timing(
+        config,
+        family="target_aligned_lateral_command_load_pulse",
+        timing_labels=TIMING_LABELS_PLANT,
+        component="target_aligned_lateral_load",
+        axis="y",
+    ).astype(payload.dtype)
+    amount = jnp.take_along_axis(
+        jnp.broadcast_to(amount_by_timing, (*batch_shape, len(amount_by_timing))),
+        jnp.expand_dims(start_index, axis=-1),
+        axis=-1,
+    )[..., 0]
+    amount = amount * reach_scale.astype(payload.dtype) * _random_sign(key_sign, batch_shape)
+    amount = amount * active_mask
+    updated = payload + _target_aligned_lateral_direction_pulse(
+        trial_specs,
+        batch_shape=batch_shape,
+        n_steps=payload.shape[-2],
+        width=payload.shape[-1],
+        amount=amount,
+        duration=config.pulse_duration_steps,
+        start=start,
+        dtype=payload.dtype,
+    )
+    return _set_input(trial_specs, spec.input_key, updated)
+
+
+def _target_aligned_lateral_direction_pulse(
+    trial_specs: TaskTrialSpec,
+    *,
+    batch_shape: tuple[int, ...],
+    n_steps: int,
+    width: int,
+    amount: jnp.ndarray,
+    duration: int,
+    start: int | jnp.ndarray,
+    dtype: Any,
+) -> jnp.ndarray:
+    if int(width) < 2:
+        raise ValueError("target-aligned lateral command loads require at least two components.")
+    target = _trial_target_position_m(trial_specs)
+    init_pos = jnp.asarray(trial_specs.inits["mechanics.vector"])[..., :2]
+    reach = target - init_pos
+    reach_norm = jnp.linalg.norm(reach, axis=-1, keepdims=True)
+    safe_reach = reach / jnp.maximum(reach_norm, jnp.asarray(1e-12, dtype=reach.dtype))
+    fallback = jnp.broadcast_to(jnp.asarray([0.0, 1.0], dtype=dtype), (*batch_shape, 2))
+    lateral = jnp.stack([-safe_reach[..., 1], safe_reach[..., 0]], axis=-1)
+    lateral = jnp.where(reach_norm > 1e-12, lateral, fallback)
+    amount = jnp.asarray(amount, dtype=dtype)
+    pulse_x = _pulse_tensor_from_start(
+        batch_shape=batch_shape,
+        n_steps=n_steps,
+        width=width,
+        component=jnp.zeros(batch_shape, dtype=jnp.int32),
+        amount=amount * lateral[..., 0],
+        duration=duration,
+        start=start,
+        dtype=dtype,
+    )
+    pulse_y = _pulse_tensor_from_start(
+        batch_shape=batch_shape,
+        n_steps=n_steps,
+        width=width,
+        component=jnp.ones(batch_shape, dtype=jnp.int32),
+        amount=amount * lateral[..., 1],
+        duration=duration,
+        start=start,
+        dtype=dtype,
+    )
+    return pulse_x + pulse_y
+
+
 def _controller_visible_component_amounts(
     trial_specs: TaskTrialSpec,
     config: FixedTargetPerturbationTrainingConfig,
     *,
+    timing_index: jnp.ndarray | None = None,
     dtype: Any,
 ) -> jnp.ndarray:
     position_amount = _target_peak_delta_x_m(trial_specs, config)
+    if _calibration_uses_closed_loop(config, "sensory_feedback_offset"):
+        if timing_index is None:
+            raise ValueError("Closed-loop sensory calibration requires a timing index.")
+        component_values = []
+        for component, axis in (
+            ("position", "x"),
+            ("position", "y"),
+            ("velocity", "vx"),
+            ("velocity", "vy"),
+        ):
+            values = _closed_loop_amplitudes_by_timing(
+                config,
+                family="sensory_feedback_offset",
+                timing_labels=TIMING_LABELS_CONTROLLER_VISIBLE,
+                component=component,
+                axis=axis,
+            )
+            selected = jnp.take_along_axis(
+                jnp.broadcast_to(values.astype(dtype), (*jnp.shape(position_amount), len(values))),
+                jnp.expand_dims(timing_index, axis=-1),
+                axis=-1,
+            )[..., 0]
+            component_values.append(selected)
+        if config.force_filter_feedback:
+            zero = jnp.zeros_like(jnp.asarray(position_amount, dtype=dtype))
+            component_values.extend([zero, zero])
+        reach_scale = _trial_reach_length_m(trial_specs) / jnp.asarray(
+            _closed_loop_table_reach_m(config),
+            dtype=dtype,
+        )
+        return jnp.stack(component_values, axis=-1) * jnp.expand_dims(
+            jnp.asarray(reach_scale, dtype=dtype),
+            axis=-1,
+        )
     velocity_amount = jnp.asarray(
         DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S
         * REACH_RELATIVE_LEVELS[config.physical_level],
