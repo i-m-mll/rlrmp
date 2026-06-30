@@ -23,6 +23,8 @@ from rlrmp.analysis.frozen_adversary_audit import (
     LINEAR_NO_BIAS_POLICY,
     finite_policy_epsilon_from_parameters,
     realized_epsilon_energy,
+    shared_policy_energy_metric_blocks,
+    support_whitened_generalized_curvature,
 )
 from rlrmp.analysis.frozen_policy_gate import (
     DIRECT_EPSILON_MECHANISM,
@@ -34,6 +36,11 @@ from rlrmp.analysis.frozen_policy_gate import (
     selected_epsilon_invariance,
     sha256_file,
     sha256_json,
+    validate_direct_hvp_lambda_source,
+)
+from rlrmp.analysis.lambda_recommendations import (
+    LambdaScaleCandidate,
+    launch_lambda_recommendation,
 )
 from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT
@@ -91,7 +98,8 @@ def main() -> None:
 
     lambda_source_path = REPO_ROOT / "results" / "06a4dc8" / "canonical_soft_lambda_hvp.json"
     lambda_source = json.loads(lambda_source_path.read_text(encoding="utf-8"))
-    lambda_input = _candidate_lambda(lambda_source, beta=1.05)
+    direct_lambda_source = validate_direct_hvp_lambda_source(lambda_source, beta=1.05)
+    lambda_input = float(direct_lambda_source["candidate_lambda"])
     source_root = REPO_ROOT / "_artifacts" / SOURCE_ISSUE / "runs" / SOURCE_RUN / "checkpoints"
 
     descriptors: list[dict[str, Any]] = []
@@ -110,10 +118,26 @@ def main() -> None:
         rows.extend(result["rows"])
 
     payload = {
-        "schema_version": "rlrmp.frozen_policy_adam_lambda_gate.v1",
+        "schema_version": "rlrmp.frozen_policy_adam_lambda_gate.v2",
         "issue": ISSUE,
         "source_issue": SOURCE_ISSUE,
         "source_run": SOURCE_RUN,
+        "launch_status": "cap_independent_corrected",
+        "cap_or_trust_radius_used_as_lambda_criterion": False,
+        "cap_or_trust_radius_used_as_readiness_criterion": False,
+        "supersedes_invalidated_artifact": {
+            "commit": "7ea17b8d739264fced953fe95174846c162a7120",
+            "invalid_fields": [
+                "mechanism_lambda_recommendations.*.recommended_lambda_floor",
+                "mechanism_lambda_recommendations.*.max_gradient_pressure_scale",
+                "readiness.ready_for_no_launch_spec",
+            ],
+            "reason": (
+                "The previous launch-facing floors promoted cap/trust-radius gradient "
+                "pressure into lambda recommendations. This v2 artifact keeps those "
+                "quantities diagnostic-only and uses cap-independent HVP bases."
+            ),
+        },
         "checkpoint_policy": {
             "selected": list(args.checkpoint_batches),
             "reason": (
@@ -124,9 +148,7 @@ def main() -> None:
         "lambda_source": {
             "path": _repo_relative(lambda_source_path),
             "sha256": sha256_file(lambda_source_path),
-            "beta": 1.05,
-            "lambda": lambda_input,
-            "mapping": "beta^2 * pooled p90 lambda_star from 06a4dc8",
+            **direct_lambda_source,
         },
         "optimizer": FrozenOptimizerConfig(
             method="adam",
@@ -135,7 +157,11 @@ def main() -> None:
         ).to_json(),
         "descriptors": descriptors,
         "rows": rows,
-        "mechanism_lambda_recommendations": _lambda_recommendations(rows, lambda_input),
+        "mechanism_lambda_candidates": _mechanism_lambda_candidates(
+            rows,
+            direct_source=direct_lambda_source,
+            lambda_input=lambda_input,
+        ),
         "readiness": _readiness(rows),
     }
 
@@ -258,11 +284,10 @@ def _audit_mechanism(
     checkpoint_batches: int,
     artifact_dir: Path,
 ) -> dict[str, Any]:
-    del row_key
     zero_params = _zero_params(mechanism, base_epsilon, features)
     time_mask_vector = np.asarray(time_mask[0, :, 0]) if time_mask.ndim == 3 else None
 
-    def params_to_delta(params):
+    def params_to_delta_uncapped(params):
         if mechanism == DIRECT_EPSILON_MECHANISM:
             raw_delta = jnp.asarray(params)
         elif mechanism == LINEAR_NO_BIAS_POLICY:
@@ -280,20 +305,33 @@ def _audit_mechanism(
             )
         else:
             raise ValueError(f"unknown mechanism {mechanism!r}")
-        return _project_flattened_per_trial_l2_ball(raw_delta * time_mask, radius) * time_mask
+        return raw_delta * time_mask
+
+    def params_to_delta_capped(params):
+        raw_delta = params_to_delta_uncapped(params)
+        return _project_flattened_per_trial_l2_ball(raw_delta, radius) * time_mask
 
     def task_loss_for_params(params):
-        delta = params_to_delta(params)
+        delta = params_to_delta_uncapped(params)
         candidate = _set_input(specs, "epsilon", base_epsilon + delta)
         states = task.eval_trials(model, candidate, keys_model)
         return jnp.asarray(task.loss_func(states, candidate, model).total)
 
     def energy_for_params(params):
-        return realized_epsilon_energy(params_to_delta(params), time_mask=time_mask_vector)
+        return realized_epsilon_energy(params_to_delta_uncapped(params), time_mask=time_mask_vector)
 
-    def objective_for_params(params):
-        task_loss = task_loss_for_params(params)
-        energy = energy_for_params(params)
+    def capped_task_loss_for_params(params):
+        delta = params_to_delta_capped(params)
+        candidate = _set_input(specs, "epsilon", base_epsilon + delta)
+        states = task.eval_trials(model, candidate, keys_model)
+        return jnp.asarray(task.loss_func(states, candidate, model).total)
+
+    def capped_energy_for_params(params):
+        return realized_epsilon_energy(params_to_delta_capped(params), time_mask=time_mask_vector)
+
+    def capped_objective_for_params(params):
+        task_loss = capped_task_loss_for_params(params)
+        energy = capped_energy_for_params(params)
         return task_loss - jnp.asarray(lambda_input, dtype=task_loss.dtype) * energy
 
     zero_task_loss, grad = jax.value_and_grad(task_loss_for_params)(zero_params)
@@ -309,20 +347,24 @@ def _audit_mechanism(
         radius=float(np.mean(np.asarray(radius))),
         time_mask=time_mask_vector,
     )
-    curvature = _directional_hvp(
-        task_loss_for_params,
-        energy_for_params,
-        zero_params,
-        grad,
+    curvature = _curvature_summary(
+        mechanism,
+        task_loss_for_params=task_loss_for_params,
+        energy_for_params=energy_for_params,
+        zero_params=zero_params,
+        grad=grad,
+        features=features,
+        time_mask=time_mask_vector,
+        seed=int(jr.randint(row_key, (), 0, 2**31 - 1)),
     )
     selected_params, selected_objective, nonfinite = _run_adam(
-        objective_for_params,
+        capped_objective_for_params,
         zero_params,
         n_steps=adam_steps,
         learning_rate=adam_lr,
     )
-    selected_delta = params_to_delta(selected_params)
-    selected_energy = energy_for_params(selected_params)
+    selected_delta = params_to_delta_capped(selected_params)
+    selected_energy = capped_energy_for_params(selected_params)
     tensor_path = (
         artifact_dir / f"checkpoint_{int(checkpoint_batches):07d}" / f"{mechanism}_tensors.npz"
     )
@@ -338,6 +380,19 @@ def _audit_mechanism(
         radius=np.asarray(jax.device_get(radius)),
     )
 
+    optimizer = FrozenOptimizerConfig(
+        method="adam",
+        learning_rate=adam_lr,
+        n_steps=adam_steps,
+    ).to_json()
+    optimizer.update(
+        {
+            "role": "cap_conditioned_diagnostic_sidecar",
+            "cap_conditioned": True,
+            "used_as_lambda_criterion": False,
+            "used_as_readiness_criterion": False,
+        }
+    )
     row = FrozenAuditRow(
         mechanism=mechanism,  # type: ignore[arg-type]
         lambda_input=float(lambda_input),
@@ -347,14 +402,12 @@ def _audit_mechanism(
         gradient_pressure_scale=float(pressure),
         metric_geometry=metric_summary,
         curvature=curvature,
-        optimizer=FrozenOptimizerConfig(
-            method="adam",
-            learning_rate=adam_lr,
-            n_steps=adam_steps,
-        ).to_json(),
+        optimizer=optimizer,
         selected_energy=float(np.asarray(selected_energy)),
         selected_objective=float(np.asarray(selected_objective)),
-        accepted_objective_gain=float(np.asarray(selected_objective - objective_zero)),
+        accepted_objective_gain=float(
+            np.asarray(selected_objective - capped_objective_for_params(zero_params))
+        ),
         cap_behavior=_cap_behavior(selected_delta, radius),
         nonfinite=nonfinite,
         batch_size_invariance=selected_epsilon_invariance(
@@ -418,6 +471,44 @@ def _run_adam(
     return best_params, best_objective, {"nan_seen": nan_seen, "overflow_seen": inf_seen}
 
 
+def _curvature_summary(
+    mechanism: str,
+    *,
+    task_loss_for_params: Any,
+    energy_for_params: Any,
+    zero_params: jnp.ndarray,
+    grad: jnp.ndarray,
+    features: jnp.ndarray,
+    time_mask: np.ndarray | None,
+    seed: int,
+) -> dict[str, Any]:
+    if mechanism in {LINEAR_NO_BIAS_POLICY, AFFINE_POLICY}:
+        policy_class = AFFINE_POLICY if mechanism == AFFINE_POLICY else LINEAR_NO_BIAS_POLICY
+        metric_blocks = shared_policy_energy_metric_blocks(
+            features,
+            policy_class=policy_class,
+            time_mask=time_mask,
+        )
+
+        def hvp(vector):
+            return jax.jvp(jax.grad(task_loss_for_params), (zero_params,), (vector,))[1]
+
+        return support_whitened_generalized_curvature(
+            hvp=hvp,
+            zero_params=zero_params,
+            metric_blocks=metric_blocks,
+            epsilon_dim=int(zero_params.shape[1]),
+            lanczos_steps=min(16, int(np.size(zero_params))),
+            seed=seed,
+        ).to_json()
+    return _directional_hvp(
+        task_loss_for_params,
+        energy_for_params,
+        zero_params,
+        grad,
+    )
+
+
 def _directional_hvp(
     task_loss_for_params: Any,
     energy_for_params: Any,
@@ -450,6 +541,9 @@ def _cap_behavior(delta: jnp.ndarray, radius: jnp.ndarray) -> dict[str, Any]:
         "selected_norm_radius_ratio_max": float(np.max(np.asarray(ratio))),
         "boundary_fraction": float(np.mean(np.asarray(boundary, dtype=np.float32))),
         "trust_region": "per_trial_flattened_time_component_l2_cap",
+        "role": "diagnostic_only",
+        "used_as_lambda_criterion": False,
+        "used_as_readiness_criterion": False,
     }
 
 
@@ -472,24 +566,33 @@ def _replicate_model(model: Any, hps: Any, replicate_index: int) -> Any:
     )
 
 
-def _candidate_lambda(lambda_source: dict[str, Any], *, beta: float) -> float:
-    for row in lambda_source["pooled_beta_mapping"]:
-        if float(row["beta"]) == float(beta):
-            return float(row["lambda"])
-    raise ValueError(f"no lambda row for beta={beta}")
-
-
 def _readiness(rows: list[dict[str, Any]]) -> dict[str, Any]:
     blockers = []
-    if any(row["nonfinite"]["nan_seen"] or row["nonfinite"]["overflow_seen"] for row in rows):
-        blockers.append("nonfinite objective seen in at least one frozen optimizer row")
-    if any(row["accepted_objective_gain"] < -1e-9 for row in rows):
-        blockers.append("at least one frozen optimizer row selected an objective below zero")
     if any(not row["batch_size_invariance"]["mean_reduction_invariant"] for row in rows):
         blockers.append("mean-reduced energy failed duplicated-batch invariance")
+    for row in rows:
+        if row["mechanism"] in {LINEAR_NO_BIAS_POLICY, AFFINE_POLICY}:
+            status = row["curvature"].get("status")
+            if status != "finite":
+                blockers.append(
+                    f"{row['mechanism']} finite generalized curvature status is {status!r}"
+                )
     return {
         "ready_for_no_launch_spec": not blockers,
         "blockers": blockers,
+        "criteria": [
+            "validated direct-epsilon source did not use cap/interiority as criterion",
+            "finite mechanisms produced support-whitened generalized HVP/Lanczos curvature",
+            "mean-reduced energy passed duplicated-batch invariance",
+        ],
+        "excluded_criteria": [
+            "safety cap",
+            "trust radius",
+            "cap boundary fraction",
+            "selected norm/radius ratio",
+            "gradient pressure with radius",
+            "cap-conditioned Adam objective gain",
+        ],
         "caveat": (
             "Finite production rows now use Adam over finite parameters, but current "
             "training integration materializes static epsilon from a clean rollout pre-step. "
@@ -499,27 +602,113 @@ def _readiness(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _lambda_recommendations(
+def _mechanism_lambda_candidates(
     rows: list[dict[str, Any]],
+    *,
+    direct_source: dict[str, Any],
     lambda_input: float,
 ) -> dict[str, Any]:
-    recommendations: dict[str, Any] = {}
+    candidates: dict[str, Any] = {}
+    direct_candidate = float(direct_source["candidate_lambda"])
     for mechanism in MECHANISMS:
         mechanism_rows = [row for row in rows if row["mechanism"] == mechanism]
-        pressures = [float(row["gradient_pressure_scale"]) for row in mechanism_rows]
-        max_pressure = max(pressures) if pressures else math.nan
-        recommendations[mechanism] = {
+        pressure_values = [
+            float(row["gradient_pressure_scale"])
+            for row in mechanism_rows
+            if _finite_number(row.get("gradient_pressure_scale"))
+        ]
+        pressure_diagnostic = max(pressure_values) if pressure_values else None
+        diagnostic_candidates = []
+        if pressure_diagnostic is not None:
+            diagnostic_candidates.append(
+                LambdaScaleCandidate(
+                    name="max_gradient_pressure_scale",
+                    value=pressure_diagnostic,
+                    basis="gradient_pressure_with_radius",
+                    diagnostic_only=True,
+                    details={
+                        "mechanism": mechanism,
+                        "source": "regenerated frozen-batch trust-radius pressure",
+                    },
+                )
+            )
+        if mechanism == DIRECT_EPSILON_MECHANISM:
+            recommendation = launch_lambda_recommendation(
+                direct_candidate,
+                lambda_input_basis="fixed_hvp_p90",
+                candidates=diagnostic_candidates,
+                rationale=(
+                    "Use the validated 06a4dc8 direct-epsilon HVP/p90 beta mapping. "
+                    "Radius pressure is recorded only as a diagnostic sidecar."
+                ),
+            )
+            candidates[mechanism] = {
+                "candidate_lambda_basis": "fixed_hvp_p90",
+                "source": "validated_06a4dc8_direct_epsilon_hvp_p90_beta_mapping",
+                "lambda_input": float(lambda_input),
+                "lambda_input_basis": "fixed_hvp_p90",
+                "lambda_star_p90": direct_source["lambda_star_p90"],
+                "candidate_lambda": recommendation["recommended_lambda_floor"],
+                "launch_recommendation": recommendation,
+                "cap_or_radius_used_as_lambda_criterion": False,
+                "gradient_pressure_used_as_lambda_criterion": False,
+                "max_gradient_pressure_scale_diagnostic": pressure_diagnostic,
+            }
+            continue
+
+        lambda_stars = []
+        statuses = []
+        for row in mechanism_rows:
+            curvature = row.get("curvature", {})
+            statuses.append(curvature.get("status"))
+            value = curvature.get("lambda_star")
+            if _finite_number(value):
+                lambda_stars.append(float(value))
+        max_lambda_star = max(lambda_stars) if lambda_stars else math.nan
+        launch_candidates = list(diagnostic_candidates)
+        if lambda_stars:
+            launch_candidates.append(
+                LambdaScaleCandidate(
+                    name="max_finite_policy_lambda_star",
+                    value=max_lambda_star,
+                    basis="hvp_generalized_eigen",
+                    details={
+                        "mechanism": mechanism,
+                        "source": "support_whitened_finite_policy_generalized_hvp_lanczos",
+                    },
+                )
+            )
+            recommendation = launch_lambda_recommendation(
+                lambda_input,
+                lambda_input_basis="fixed_hvp_p90",
+                candidates=launch_candidates,
+                rationale=(
+                    "Use the larger of the validated direct-epsilon fixed HVP/p90 input "
+                    "and this mechanism's cap-independent finite-policy generalized "
+                    "HVP/Lanczos curvature. Radius pressure is diagnostic-only."
+                ),
+            )
+            candidate_lambda = recommendation["recommended_lambda_floor"]
+            candidate_basis = recommendation["recommended_lambda_floor_basis"]
+        else:
+            recommendation = None
+            candidate_lambda = math.nan
+            candidate_basis = "blocked_no_finite_generalized_curvature"
+        candidates[mechanism] = {
+            "candidate_lambda_basis": candidate_basis,
+            "source": "support_whitened_finite_policy_generalized_hvp_lanczos",
             "lambda_input": float(lambda_input),
-            "max_gradient_pressure_scale": max_pressure,
-            "recommended_lambda_floor": max(float(lambda_input), max_pressure),
-            "basis": (
-                "Use the larger of the pooled beta=1.05 HVP lambda input and the "
-                "regenerated frozen-batch gradient-pressure scale across selected "
-                "checkpoints. Directional HVP values are retained as diagnostic "
-                "curvature sidecars, not as the training lambda gate."
-            ),
+            "lambda_input_basis": "fixed_hvp_p90",
+            "max_lambda_star": max_lambda_star,
+            "max_lambda_star_basis": "hvp_generalized_eigen",
+            "candidate_lambda": candidate_lambda,
+            "launch_recommendation": recommendation,
+            "curvature_statuses": statuses,
+            "cap_or_radius_used_as_lambda_criterion": False,
+            "gradient_pressure_used_as_lambda_criterion": False,
+            "max_gradient_pressure_scale_diagnostic": pressure_diagnostic,
         }
-    return recommendations
+    return candidates
 
 
 def _write_readme(results_dir: Path) -> None:
@@ -535,27 +724,46 @@ def _write_readme(results_dir: Path) -> None:
 
 
 def _write_markdown(path: Path, payload: dict[str, Any]) -> None:
+    superseded = payload["supersedes_invalidated_artifact"]
     lines = [
         "# Frozen Policy Adam Lambda Gate",
         "",
+        f"This regenerated v2 artifact supersedes the cap-conditioned `7ea17b8` closeout. "
+        f"The old `recommended_lambda_floor` values are invalid for launch planning because "
+        f"{superseded['reason'][0].lower() + superseded['reason'][1:]}",
+        "",
         f"- Source run: `{payload['source_issue']}/{payload['source_run']}`",
         f"- Checkpoints: `{payload['checkpoint_policy']['selected']}`",
-        f"- Lambda input: `{payload['lambda_source']['lambda']:.6g}` from "
-        f"`{payload['lambda_source']['path']}` beta `{payload['lambda_source']['beta']}`",
+        f"- Direct-epsilon launch anchor: `{payload['lambda_source']['candidate_lambda']:.6g}` from "
+        f"`{payload['lambda_source']['path']}` beta `{payload['lambda_source']['beta']}` "
+        f"({payload['lambda_source']['summary_scope']})",
+        "- Direct source note: `06a4dc8` also carries per-substrate beta mappings; "
+        "use those row-specific values in a substrate-indexed run spec.",
+        "- Launch/readiness cap use: `False`",
         f"- Ready for no-launch spec: `{payload['readiness']['ready_for_no_launch_spec']}`",
         f"- Caveat: {payload['readiness']['caveat']}",
         "",
-        "## Lambda Floors",
+        "## Cap-Independent Lambda Candidates",
         "",
-        "| mechanism | lambda input | max grad pressure | recommended floor |",
-        "|---|---:|---:|---:|",
+        "| mechanism | candidate basis | lambda input | lambda* / source | candidate lambda | grad pressure diagnostic |",
+        "|---|---|---:|---:|---:|---:|",
     ]
-    for mechanism, recommendation in payload["mechanism_lambda_recommendations"].items():
+    for mechanism, recommendation in payload["mechanism_lambda_candidates"].items():
+        lambda_star = recommendation.get("max_lambda_star", recommendation.get("lambda_star_p90"))
         lines.append(
-            f"| {mechanism} | {_fmt(recommendation['lambda_input'])} | "
-            f"{_fmt(recommendation['max_gradient_pressure_scale'])} | "
-            f"{_fmt(recommendation['recommended_lambda_floor'])} |"
+            f"| {mechanism} | {recommendation['candidate_lambda_basis']} | "
+            f"{_fmt(recommendation['lambda_input'])} | "
+            f"{_fmt(lambda_star)} | "
+            f"{_fmt(recommendation['candidate_lambda'])} | "
+            f"{_fmt(recommendation['max_gradient_pressure_scale_diagnostic'])} |"
         )
+    lines.extend(
+        [
+            "",
+            "Gradient pressure, trust-radius, and cap-boundary quantities are diagnostic-only; "
+            "they are not lambda or readiness criteria.",
+        ]
+    )
     lines.extend(
         [
             "",
@@ -565,8 +773,8 @@ def _write_markdown(path: Path, payload: dict[str, Any]) -> None:
     )
     lines.extend(
         [
-            "| checkpoint | mechanism | grad pressure | directional lambda* | selected energy | objective gain | boundary frac | nonfinite |",
-            "|---|---:|---:|---:|---:|---:|---:|---|",
+            "| checkpoint | mechanism | grad pressure diagnostic | curvature lambda* | curvature status | selected energy | objective gain | boundary frac | nonfinite |",
+            "|---|---|---:|---:|---|---:|---:|---:|---|",
         ]
     )
     for descriptor in payload["descriptors"]:
@@ -578,10 +786,12 @@ def _write_markdown(path: Path, payload: dict[str, Any]) -> None:
         ]:
             curvature = row["curvature"]
             nonfinite = row["nonfinite"]
+            lambda_star = curvature.get("lambda_star", curvature.get("lambda_star_directional"))
             lines.append(
                 f"| {checkpoint} | {row['mechanism']} | "
                 f"{_fmt(row['gradient_pressure_scale'])} | "
-                f"{_fmt(curvature['lambda_star_directional'])} | "
+                f"{_fmt(lambda_star)} | "
+                f"{curvature['status']} | "
                 f"{_fmt(row['selected_energy'])} | "
                 f"{_fmt(row['accepted_objective_gain'])} | "
                 f"{_fmt(row['cap_behavior']['boundary_fraction'])} | "
@@ -591,6 +801,13 @@ def _write_markdown(path: Path, payload: dict[str, Any]) -> None:
         lines.extend(["", "## Blockers", ""])
         lines.extend(f"- {blocker}" for blocker in payload["readiness"]["blockers"])
     update_marked_section(path, "frozen_policy_adam_lambda_gate", "\n".join(lines) + "\n")
+
+
+def _finite_number(value: Any) -> bool:
+    try:
+        return math.isfinite(float(value))
+    except (TypeError, ValueError):
+        return False
 
 
 def _fmt(value: Any) -> str:

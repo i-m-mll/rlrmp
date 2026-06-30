@@ -195,9 +195,13 @@ def metric_geometry_summary(
                 "nullity": 0,
                 "condition_number": 1.0,
                 "quadratic_form_g_Gplus_g": _json_float(quadratic),
+                "gradient_pressure_role": "diagnostic_only",
+                "used_as_lambda_criterion": False,
+                "used_as_readiness_criterion": False,
                 "assumption": (
                     "Direct epsilon pressure treats the per-trial trust-region radius "
-                    "as a shared energy radius for the mean-reduced batch metric."
+                    "as a shared energy radius for the mean-reduced batch metric. It is "
+                    "not a launch-facing lambda or readiness criterion."
                 ),
             },
             float(pressure),
@@ -218,6 +222,9 @@ def metric_geometry_summary(
             "nullity": int(q_summary.nullity),
             "condition_number": _json_float_or_none(q_summary.condition_number),
             "quadratic_form": q_summary.to_json(),
+            "gradient_pressure_role": "diagnostic_only",
+            "used_as_lambda_criterion": False,
+            "used_as_readiness_criterion": False,
         },
         float(pressure),
     )
@@ -238,11 +245,60 @@ def directional_curvature_summary(
         "lambda_star_directional": _json_float(0.5 * ratio),
         "n_hvp": int(n_hvp),
         "status": "directional_approximation",
+        "cap_or_radius_used_as_criterion": False,
+        "used_as_lambda_criterion": False,
+        "used_as_readiness_criterion": False,
         "assumption": (
             "This is a gradient-direction HVP diagnostic, not a dense generalized "
             "eigen solve. Trust it as a local scale check; use Lanczos/dense support "
             "eigensolve if this value gates a final training lambda."
         ),
+    }
+
+
+def validate_direct_hvp_lambda_source(
+    payload: dict[str, Any],
+    *,
+    beta: float,
+) -> dict[str, Any]:
+    """Validate and extract the direct-epsilon launch anchor from 06a4dc8."""
+
+    estimator = _dict(payload.get("estimator"))
+    if estimator.get("cap_or_interiority_used_as_criterion") is not False:
+        raise ValueError("direct HVP source used cap/interiority as a criterion")
+    objective_contract = _dict(payload.get("objective_contract"))
+    safety_cap_role = objective_contract.get("safety_cap_role")
+    if safety_cap_role is not None:
+        role_text = str(safety_cap_role).lower()
+        if "not used" not in role_text and "provenance only" not in role_text:
+            raise ValueError("direct HVP source safety cap role is not provenance-only")
+
+    pooled = _dict(payload.get("pooled_summary"))
+    lambda_star_p90 = float(pooled["lambda_star_p90"])
+    selected = None
+    for row in payload.get("pooled_beta_mapping", []):
+        if float(row["beta"]) == float(beta):
+            selected = row
+            break
+    if selected is None:
+        raise ValueError(f"direct HVP source has no beta={beta} mapping")
+    candidate_lambda = float(selected["lambda"])
+    return {
+        "schema_version": payload.get("schema_version"),
+        "issue": payload.get("issue"),
+        "summary_scope": "pooled",
+        "beta": float(beta),
+        "lambda_star_p90": _json_float(lambda_star_p90),
+        "candidate_lambda": _json_float(candidate_lambda),
+        "launch_basis": "fixed_hvp_p90",
+        "mapping": selected.get("mapping", "lambda = beta^2 * p90(lambda_star_i)"),
+        "role": selected.get("role"),
+        "estimator_method": estimator.get("method"),
+        "cap_or_interiority_used_as_criterion": False,
+        "safety_cap_role": safety_cap_role,
+        "cap_or_radius_used_as_lambda_criterion": False,
+        "used_as_lambda_criterion": True,
+        "per_substrate_beta_mapping_available": bool(payload.get("rows")),
     }
 
 
@@ -259,3 +315,7 @@ def _json_float_or_none(value: float | None) -> float | str | None:
     if value is None:
         return None
     return _json_float(value)
+
+
+def _dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}

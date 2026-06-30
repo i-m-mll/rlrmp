@@ -106,6 +106,50 @@ class GeneralizedCurvatureSummary:
         }
 
 
+@dataclass(frozen=True)
+class SupportWhitenedCurvatureSummary:
+    """HVP/Lanczos estimate of ``lambda_star = 0.5 * lambda_max(H, G)``."""
+
+    lambda_star: float
+    max_generalized_eigenvalue: float
+    status: Literal["finite", "empty_support"]
+    rank: int
+    nullity: int
+    cutoff: float
+    condition_number: float | None
+    lanczos_steps: int
+    hvp_evaluations: int
+    residual_norm_estimate: float
+    ritz_values: list[float]
+    method: str = "support_whitened_hvp_lanczos"
+
+    def to_json(self) -> dict[str, Any]:
+        """Return a JSON-serializable representation."""
+
+        return {
+            "method": self.method,
+            "lambda_star": _json_float(self.lambda_star),
+            "max_generalized_eigenvalue": _json_float(self.max_generalized_eigenvalue),
+            "status": self.status,
+            "rank": int(self.rank),
+            "nullity": int(self.nullity),
+            "cutoff": _json_float(self.cutoff),
+            "condition_number": _json_float_or_none(self.condition_number),
+            "lanczos_steps": int(self.lanczos_steps),
+            "hvp_evaluations": int(self.hvp_evaluations),
+            "residual_norm_estimate": _json_float(self.residual_norm_estimate),
+            "ritz_values": [_json_float(value) for value in self.ritz_values],
+            "full_hessian_materialized": False,
+            "cap_or_radius_used_as_criterion": False,
+            "used_as_lambda_criterion": True,
+            "singular_metric_handling": (
+                "Lanczos runs in the support-whitened realized-epsilon metric. "
+                "G-null parameter directions are not searched because they do not change "
+                "realized epsilon on this frozen support by construction."
+            ),
+        }
+
+
 def realized_epsilon_energy(
     epsilon: Float[Array, "batch time epsilon_dim"],
     *,
@@ -499,6 +543,75 @@ def generalized_curvature_lambda_star(
     )
 
 
+def support_whitened_generalized_curvature(
+    *,
+    hvp: Any,
+    zero_params: Any,
+    metric_blocks: Float[Array, "time feature_dim feature_dim"],
+    epsilon_dim: int,
+    lanczos_steps: int = 16,
+    seed: int = 0,
+    rcond: float = 1e-10,
+) -> SupportWhitenedCurvatureSummary:
+    """Estimate finite-policy generalized curvature with support-whitened HVPs.
+
+    The metric ``G`` is the realized-epsilon energy metric for shared finite
+    policy parameters. This routine builds a support-whitening map ``W`` from
+    metric eigenspaces and applies Lanczos to ``z -> W.T @ H(Wz)``. It never
+    materializes the dense Hessian.
+    """
+
+    zero = jnp.asarray(zero_params)
+    basis, support = _support_whitening_basis(
+        metric_blocks,
+        epsilon_dim=int(epsilon_dim),
+        rcond=float(rcond),
+        flat_dim=int(zero.size),
+    )
+    if support.rank == 0:
+        return SupportWhitenedCurvatureSummary(
+            lambda_star=0.0,
+            max_generalized_eigenvalue=0.0,
+            status="empty_support",
+            rank=0,
+            nullity=support.nullity,
+            cutoff=support.cutoff,
+            condition_number=None,
+            lanczos_steps=0,
+            hvp_evaluations=0,
+            residual_norm_estimate=0.0,
+            ritz_values=[],
+        )
+
+    basis_jax = jnp.asarray(basis, dtype=zero.dtype)
+
+    def operator(vector: jnp.ndarray) -> jnp.ndarray:
+        params = (basis_jax @ vector).reshape(zero.shape)
+        hessian_params = jnp.asarray(hvp(params))
+        return basis_jax.T @ hessian_params.reshape(-1)
+
+    estimate = _lanczos_largest_algebraic(
+        operator=operator,
+        size=support.rank,
+        steps=min(max(int(lanczos_steps), 1), support.rank),
+        seed=int(seed),
+        dtype=zero.dtype,
+    )
+    return SupportWhitenedCurvatureSummary(
+        lambda_star=0.5 * estimate["eigmax"],
+        max_generalized_eigenvalue=estimate["eigmax"],
+        status="finite",
+        rank=support.rank,
+        nullity=support.nullity,
+        cutoff=support.cutoff,
+        condition_number=support.condition_number,
+        lanczos_steps=estimate["steps"],
+        hvp_evaluations=estimate["hvp_evaluations"],
+        residual_norm_estimate=estimate["residual_norm_estimate"],
+        ritz_values=estimate["ritz_values"],
+    )
+
+
 def summarize_active_broad_epsilon_optimizer(run_spec: Mapping[str, Any]) -> dict[str, Any]:
     """Summarize the actually active broad-epsilon optimizer lane in a run spec."""
 
@@ -626,6 +739,129 @@ def _trial_weights(
 
 def _symmetrize(matrix: np.ndarray) -> np.ndarray:
     return 0.5 * (matrix + matrix.T)
+
+
+@dataclass(frozen=True)
+class _SupportBasisSummary:
+    rank: int
+    nullity: int
+    cutoff: float
+    condition_number: float | None
+
+
+def _support_whitening_basis(
+    metric_blocks: Any,
+    *,
+    epsilon_dim: int,
+    rcond: float,
+    flat_dim: int,
+) -> tuple[np.ndarray, _SupportBasisSummary]:
+    blocks = np.asarray(metric_blocks, dtype=np.float64)
+    if blocks.ndim != 3 or blocks.shape[1] != blocks.shape[2]:
+        raise ValueError(
+            f"metric_blocks must have shape (time, feature_dim, feature_dim); got {blocks.shape}"
+        )
+    if epsilon_dim < 1:
+        raise ValueError("epsilon_dim must be positive")
+    horizon, parameter_dim, _ = blocks.shape
+    expected_flat_dim = horizon * int(epsilon_dim) * parameter_dim
+    if int(flat_dim) != expected_flat_dim:
+        raise ValueError(
+            f"zero_params has {flat_dim} values but metric implies {expected_flat_dim}"
+        )
+
+    columns: list[np.ndarray] = []
+    retained: list[float] = []
+    max_cutoff = 0.0
+    for time_index, block in enumerate(blocks):
+        evals, evecs = np.linalg.eigh(_symmetrize(block))
+        max_eval = float(np.max(np.abs(evals))) if evals.size else 0.0
+        cutoff = float(rcond) * max_eval
+        max_cutoff = max(max_cutoff, cutoff)
+        keep = evals > cutoff
+        for epsilon_index in range(int(epsilon_dim)):
+            offset = (time_index * int(epsilon_dim) + epsilon_index) * parameter_dim
+            for eval_value, evec in zip(evals[keep], evecs[:, keep].T):
+                column = np.zeros((expected_flat_dim,), dtype=np.float64)
+                column[offset : offset + parameter_dim] = evec / math.sqrt(float(eval_value))
+                columns.append(column)
+                retained.append(float(eval_value))
+
+    rank = len(columns)
+    nullity = expected_flat_dim - rank
+    basis = np.stack(columns, axis=1) if columns else np.zeros((expected_flat_dim, 0))
+    condition = None
+    if retained:
+        condition = float(max(retained) / min(retained))
+    return basis, _SupportBasisSummary(
+        rank=rank,
+        nullity=nullity,
+        cutoff=max_cutoff,
+        condition_number=condition,
+    )
+
+
+def _lanczos_largest_algebraic(
+    *,
+    operator: Any,
+    size: int,
+    steps: int,
+    seed: int,
+    dtype: Any,
+) -> dict[str, Any]:
+    vectors: list[jnp.ndarray] = []
+    alphas: list[float] = []
+    betas: list[float] = []
+    rng = np.random.default_rng(int(seed))
+    initial = jnp.asarray(rng.normal(size=(int(size),)), dtype=dtype)
+    v = _normalize(initial)
+    beta_prev = jnp.asarray(0.0, dtype=dtype)
+    v_prev = jnp.zeros_like(v)
+    terminal_beta = 0.0
+    for step_index in range(max(int(steps), 1)):
+        vectors.append(v)
+        w = jnp.asarray(operator(v), dtype=dtype)
+        alpha = _dot(v, w)
+        w = w - alpha * v - beta_prev * v_prev
+        for basis in vectors:
+            w = w - _dot(basis, w) * basis
+        beta = _norm(w)
+        alphas.append(float(alpha))
+        terminal_beta = float(beta)
+        if step_index == int(steps) - 1 or float(beta) < 1e-10:
+            break
+        betas.append(float(beta))
+        v_prev = v
+        v = w / jnp.maximum(beta, jnp.asarray(1e-30, dtype=dtype))
+        beta_prev = beta
+
+    tmat = np.diag(np.asarray(alphas, dtype=np.float64))
+    if betas:
+        offdiag = np.asarray(betas, dtype=np.float64)
+        tmat = tmat + np.diag(offdiag, k=1) + np.diag(offdiag, k=-1)
+    ritz_values, ritz_vectors = np.linalg.eigh(tmat)
+    top_index = int(np.argmax(ritz_values))
+    coeffs = ritz_vectors[:, top_index]
+    residual = terminal_beta * abs(float(coeffs[-1])) if len(coeffs) else float("nan")
+    return {
+        "eigmax": float(ritz_values[top_index]),
+        "steps": len(alphas),
+        "hvp_evaluations": len(alphas),
+        "residual_norm_estimate": float(residual),
+        "ritz_values": [float(value) for value in ritz_values],
+    }
+
+
+def _dot(left: jnp.ndarray, right: jnp.ndarray) -> jnp.ndarray:
+    return jnp.vdot(left.reshape(-1), right.reshape(-1)).real
+
+
+def _norm(value: jnp.ndarray) -> jnp.ndarray:
+    return jnp.sqrt(jnp.maximum(_dot(value, value), jnp.asarray(0.0, dtype=value.dtype)))
+
+
+def _normalize(value: jnp.ndarray) -> jnp.ndarray:
+    return value / jnp.maximum(_norm(value), jnp.asarray(1e-30, dtype=value.dtype))
 
 
 def _mapping(value: Any) -> Mapping[str, Any]:
