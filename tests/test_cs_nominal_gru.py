@@ -72,9 +72,11 @@ from rlrmp.train.cs_nominal_gru import (
     write_run_spec,
 )
 from rlrmp.train.cs_perturbation_training import (
+    BROAD_EPSILON_PGD_ADAM,
     BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM,
     BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
     BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE,
+    BROAD_EPSILON_PGD_PROJECTED_GRADIENT_ASCENT,
     BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
     BROAD_EPSILON_PGD_TRAINING_MODE,
     BROAD_EPSILON_TRAINING_MODE,
@@ -541,6 +543,46 @@ def test_pgd_soft_energy_metadata_lambda_mapping_and_parser_round_trip() -> None
     assert parsed.safety_cap_source == cap_source
 
 
+def test_pgd_inner_optimizer_metadata_and_parser_round_trip() -> None:
+    cfg = PgdFullStateEpsilonTrainingConfig(
+        enabled=True,
+        adversary_mechanism=LINEAR_NO_BIAS_POLICY,
+        objective_kind=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+        energy_lambda=3.0,
+        safety_cap_l2_radius_15cm=1.0,
+        inner_optimizer_method=BROAD_EPSILON_PGD_ADAM,
+        adam_learning_rate=1e-3,
+        adam_b1=0.8,
+        adam_b2=0.95,
+        adam_eps=1e-6,
+    )
+    payload = cfg.to_hps_dict()
+    optimizer = payload["inner_maximizer"]
+
+    assert optimizer["method"] == BROAD_EPSILON_PGD_ADAM
+    assert optimizer["learning_rate"] == pytest.approx(1e-3)
+    assert optimizer["adam"]["b1"] == pytest.approx(0.8)
+    assert optimizer["adam"]["b2"] == pytest.approx(0.95)
+    assert optimizer["adam"]["eps"] == pytest.approx(1e-6)
+
+    parsed = config_from_broad_epsilon_pgd_hps(payload)
+    assert parsed.inner_optimizer_method == BROAD_EPSILON_PGD_ADAM
+    assert parsed.adam_learning_rate == pytest.approx(1e-3)
+    assert parsed.adam_b1 == pytest.approx(0.8)
+    assert parsed.adam_b2 == pytest.approx(0.95)
+    assert parsed.adam_eps == pytest.approx(1e-6)
+
+
+def test_direct_epsilon_accepts_adam_inner_optimizer() -> None:
+    cfg = PgdFullStateEpsilonTrainingConfig(
+        enabled=True,
+        adversary_mechanism=BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM,
+        inner_optimizer_method=BROAD_EPSILON_PGD_ADAM,
+    )
+
+    assert cfg.inner_optimizer_method == BROAD_EPSILON_PGD_ADAM
+
+
 def test_pgd_hard_l2_default_metadata_preserves_existing_projection_contract() -> None:
     cfg = PgdFullStateEpsilonTrainingConfig(enabled=True)
     payload = cfg.to_hps_dict()
@@ -554,6 +596,7 @@ def test_pgd_hard_l2_default_metadata_preserves_existing_projection_contract() -
     assert payload["objective"]["kind"] == BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE
     assert payload["objective"]["hard_l2_projection_is_scientific_constraint"] is True
     assert payload["safety_cap"]["enabled"] is False
+    assert payload["inner_maximizer"]["method"] == BROAD_EPSILON_PGD_PROJECTED_GRADIENT_ASCENT
     assert payload["inner_maximizer"]["projection"] == "per_trial_flattened_time_component_l2_ball"
     assert payload["budget_contract"]["scientific_constraint"] == "hard_l2_projection"
 
@@ -701,6 +744,58 @@ def test_pgd_mechanism_run_spec_for_affine_lists_bias_input(tmp_path: Path) -> N
     ]
 
 
+@pytest.mark.parametrize("policy_class", [LINEAR_NO_BIAS_POLICY, AFFINE_POLICY])
+def test_live_finite_pgd_run_spec_replays_adam_inner_optimizer(
+    policy_class: str,
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "bulk"
+    spec_dir = tmp_path / "spec"
+    args = _args(
+        output_dir=str(output_dir),
+        spec_dir=str(spec_dir),
+        issue="9bb676f",
+        target_relative_multitarget=True,
+        force_filter_feedback=True,
+        broad_epsilon_pgd_training=True,
+        broad_epsilon_pgd_mechanism=policy_class,
+        broad_epsilon_pgd_inner_optimizer_method=BROAD_EPSILON_PGD_ADAM,
+        broad_epsilon_pgd_adam_lr=2e-3,
+        broad_epsilon_pgd_adam_b1=0.85,
+        broad_epsilon_pgd_adam_b2=0.97,
+        broad_epsilon_pgd_adam_eps=1e-6,
+        broad_epsilon_pgd_objective=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+        broad_epsilon_pgd_energy_lambda=10.0,
+        broad_epsilon_pgd_safety_cap_15cm=1.0,
+        broad_epsilon_pgd_safety_cap_source="unit_test_cap",
+    )
+
+    result = write_run_spec(args)
+    payload = json.loads(Path(result["run_spec_path"]).read_text())
+    pgd = payload["hps"]["broad_epsilon_pgd_training"]
+    optimizer = pgd["inner_maximizer"]
+    replay_args = resolve_run_spec_args(_args(run_spec=result["run_spec_path"]))
+
+    assert pgd["adversary_mechanism"] == policy_class
+    assert pgd["mechanism"]["live_evaluation"]["implementation"] == "graph_component"
+    assert payload["hps"]["policy_adversary_training"]["enabled"] is False
+    assert optimizer["method"] == BROAD_EPSILON_PGD_ADAM
+    assert optimizer["learning_rate"] == pytest.approx(2e-3)
+    assert optimizer["adam"]["b1"] == pytest.approx(0.85)
+    assert optimizer["adam"]["b2"] == pytest.approx(0.97)
+    assert optimizer["adam"]["eps"] == pytest.approx(1e-6)
+    assert (
+        payload["training_distribution"]["broad_epsilon_pgd_training"]["inner_maximizer"]["method"]
+        == BROAD_EPSILON_PGD_ADAM
+    )
+    assert replay_args.broad_epsilon_pgd_mechanism == policy_class
+    assert replay_args.broad_epsilon_pgd_inner_optimizer_method == BROAD_EPSILON_PGD_ADAM
+    assert replay_args.broad_epsilon_pgd_adam_lr == pytest.approx(2e-3)
+    assert replay_args.broad_epsilon_pgd_adam_b1 == pytest.approx(0.85)
+    assert replay_args.broad_epsilon_pgd_adam_b2 == pytest.approx(0.97)
+    assert replay_args.broad_epsilon_pgd_adam_eps == pytest.approx(1e-6)
+
+
 def test_finite_epsilon_component_uses_live_6d_target_centered_state() -> None:
     component = CsLssFiniteEpsilonPolicy(
         policy_class=AFFINE_POLICY,
@@ -820,7 +915,86 @@ def test_finite_pgd_inner_maximizer_installs_policy_inputs_before_rollout() -> N
     np.testing.assert_allclose(np.asarray(updated.inputs["epsilon"]), 0.0)
 
 
-def test_direct_epsilon_pgd_does_not_install_finite_policy_inputs() -> None:
+def test_finite_adam_inner_maximizer_uses_live_policy_inputs() -> None:
+    class FiniteInputOnlyTask:
+        def __init__(self) -> None:
+            self.n_eval_calls = 0
+
+        def eval_trials(self, model, trial_specs, keys_model):
+            del model, keys_model
+            self.n_eval_calls += 1
+            assert FINITE_POLICY_GAINS_INPUT in trial_specs.inputs
+            assert FINITE_POLICY_BIAS_INPUT not in trial_specs.inputs
+            np.testing.assert_allclose(np.asarray(trial_specs.inputs["epsilon"]), 0.0)
+            gains = jnp.asarray(trial_specs.inputs[FINITE_POLICY_GAINS_INPUT])
+            return TreeNamespace(
+                mechanics=TreeNamespace(
+                    vector=jnp.sum(gains, axis=-2),
+                )
+            )
+
+    class SumVectorLoss:
+        def __call__(self, states, trial_specs, model):
+            del trial_specs, model
+            return TreeNamespace(total=jnp.sum(states.mechanics.vector))
+
+    cfg = PgdFullStateEpsilonTrainingConfig(
+        enabled=True,
+        adversary_mechanism=LINEAR_NO_BIAS_POLICY,
+        reach_length_scaling=False,
+        n_steps=2,
+        epsilon_dim=2,
+        objective_kind=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+        energy_lambda=1e-6,
+        safety_cap_l2_radius_15cm=1.0,
+        inner_optimizer_method=BROAD_EPSILON_PGD_ADAM,
+        adam_learning_rate=1e-2,
+    )
+    trial_specs = TaskTrialSpec(
+        inits=WhereDict({"mechanics.vector": jnp.zeros((1, 4), dtype=jnp.float32)}),
+        targets=WhereDict(
+            {
+                "mechanics.effector.pos": TargetSpec(
+                    value=jnp.zeros((1, 2, 2), dtype=jnp.float32),
+                )
+            }
+        ),
+        inputs={"epsilon": jnp.zeros((1, 2, 2), dtype=jnp.float32)},
+        timeline=TrialTimeline(n_steps=2),
+    )
+    task = FiniteInputOnlyTask()
+
+    updated, diagnostics = run_broad_epsilon_pgd_inner_maximizer(
+        task,
+        model=None,
+        trial_specs=trial_specs,
+        loss_func=SumVectorLoss(),
+        keys_model=None,
+        config=cfg,
+        return_diagnostics=True,
+    )
+
+    assert task.n_eval_calls > 0
+    assert diagnostics["inner_optimizer_method_is_adam"].tolist() is True
+    assert diagnostics["adam_learning_rate"] == pytest.approx(1e-2)
+    assert diagnostics["inner_objective_after"] > diagnostics["inner_objective_before"]
+    assert FINITE_POLICY_GAINS_INPUT in updated.inputs
+    assert FINITE_POLICY_BIAS_INPUT not in updated.inputs
+    assert np.linalg.norm(np.asarray(updated.inputs[FINITE_POLICY_GAINS_INPUT])) > 0.0
+    np.testing.assert_allclose(np.asarray(updated.inputs["epsilon"]), 0.0)
+
+
+@pytest.mark.parametrize(
+    ("inner_optimizer_method", "expected_adam"),
+    [
+        (BROAD_EPSILON_PGD_PROJECTED_GRADIENT_ASCENT, False),
+        (BROAD_EPSILON_PGD_ADAM, True),
+    ],
+)
+def test_direct_epsilon_pgd_does_not_install_finite_policy_inputs(
+    inner_optimizer_method: str,
+    expected_adam: bool,
+) -> None:
     class DirectEpsilonTask:
         def eval_trials(self, model, trial_specs, keys_model):
             del model, keys_model
@@ -841,6 +1015,7 @@ def test_direct_epsilon_pgd_does_not_install_finite_policy_inputs() -> None:
     cfg = PgdFullStateEpsilonTrainingConfig(
         enabled=True,
         adversary_mechanism=BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM,
+        inner_optimizer_method=inner_optimizer_method,
         reach_length_scaling=False,
         n_steps=1,
         epsilon_dim=2,
@@ -871,6 +1046,7 @@ def test_direct_epsilon_pgd_does_not_install_finite_policy_inputs() -> None:
     assert FINITE_POLICY_GAINS_INPUT not in updated.inputs
     assert FINITE_POLICY_BIAS_INPUT not in updated.inputs
     assert "finite_policy_delta_zero_energy_mean" not in diagnostics
+    assert diagnostics["inner_optimizer_method_is_adam"].tolist() is expected_adam
     assert updated.inputs["epsilon"].shape == (1, 2, 2)
 
 

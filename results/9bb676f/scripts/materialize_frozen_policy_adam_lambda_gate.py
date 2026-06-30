@@ -593,11 +593,13 @@ def _readiness(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "gradient pressure with radius",
             "cap-conditioned Adam objective gain",
         ],
-        "caveat": (
-            "Finite production rows now use Adam over finite parameters, but current "
-            "training integration materializes static epsilon from a clean rollout pre-step. "
-            "Do not describe the next spec as a true live-perturbed closed-loop finite-policy "
-            "run until a Feedbax live rollout hook exists."
+        "implementation_note": (
+            "Launch-facing finite rows should use broad_epsilon_pgd_training with "
+            "mechanism linear_no_bias or affine and inner_maximizer.method=adam. "
+            "That route optimizes finite-policy parameters and evaluates them through "
+            "the live graph-component rollout. The older policy_adversary_training "
+            "finite path remains a legacy/static-clean-rollout lane and should not be "
+            "used for the live finite-policy rows."
         ),
     }
 
@@ -741,7 +743,7 @@ def _write_markdown(path: Path, payload: dict[str, Any]) -> None:
         "use those row-specific values in a substrate-indexed run spec.",
         "- Launch/readiness cap use: `False`",
         f"- Ready for no-launch spec: `{payload['readiness']['ready_for_no_launch_spec']}`",
-        f"- Caveat: {payload['readiness']['caveat']}",
+        f"- Implementation note: {payload['readiness']['implementation_note']}",
         "",
         "## Cap-Independent Lambda Candidates",
         "",
