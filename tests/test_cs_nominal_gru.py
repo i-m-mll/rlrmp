@@ -181,7 +181,9 @@ def _parse_planned_training_command(command: list[str]) -> argparse.Namespace:
 
 
 class _ScalarLoss:
-    def __init__(self, value: np.ndarray | None = None, children: dict[str, "_ScalarLoss"] | None = None):
+    def __init__(
+        self, value: np.ndarray | None = None, children: dict[str, "_ScalarLoss"] | None = None
+    ):
         self.value = value
         self.weight = 1.0
         self._children = children or {}
@@ -190,7 +192,9 @@ class _ScalarLoss:
     def flatten(self) -> dict[str, np.ndarray]:
         if self.value is not None:
             return {"self": self.value}
-        return {name: child.value for name, child in self._children.items() if child.value is not None}
+        return {
+            name: child.value for name, child in self._children.items() if child.value is not None
+        }
 
 
 def test_progress_defaults_enabled_unless_disabled() -> None:
@@ -565,6 +569,14 @@ def test_pgd_finite_mechanism_serializes_live_graph_contract() -> None:
     assert payload["mechanism"]["required_policy_contract"]["live_feature_source"] == (
         "live_perturbed_rollout_state"
     )
+    assert payload["mechanism"]["required_policy_contract"]["feature_source_detail"] == (
+        "pre_mechanics_state"
+    )
+    assert payload["mechanism"]["live_evaluation"]["implementation"] == "graph_component"
+    assert payload["mechanism"]["live_evaluation"]["component"] == (
+        CS_LSS_FINITE_EPSILON_POLICY_COMPONENT
+    )
+    assert payload["mechanism"]["live_evaluation"]["static_clean_rollout_materialization"] is False
     assert payload["mechanism"]["no_fake_open_loop_replay"] is True
     assert payload["mechanism"]["runtime_inputs"]["gains"] == (
         f"TaskTrialSpec.inputs[{FINITE_POLICY_GAINS_INPUT!r}]"
@@ -609,6 +621,8 @@ def test_pgd_soft_energy_cli_and_run_spec_metadata(tmp_path: Path) -> None:
     assert pgd["safety_cap"]["l2_radius_15cm"] == pytest.approx(cap_radius)
     assert pgd["adversary_mechanism"] == BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM
     assert pgd["mechanism"]["implementation_status"] == "implemented"
+    assert payload["adversarial_phase"] == "broad_epsilon_pgd_direct_epsilon"
+    assert payload["task_timing"]["extra_inputs"] == ["target", "epsilon"]
     replay_args = resolve_run_spec_args(_args(run_spec=result["run_spec_path"]))
     assert replay_args.broad_epsilon_pgd_objective == BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE
     assert replay_args.broad_epsilon_pgd_mechanism == BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM
@@ -638,9 +652,51 @@ def test_pgd_mechanism_cli_run_spec_and_replay_for_linear_no_bias(tmp_path: Path
     assert pgd["adversary_mechanism"] == LINEAR_NO_BIAS_POLICY
     assert pgd["mechanism"]["implementation_status"] == "implemented"
     assert pgd["mechanism"]["graph_component"] == CS_LSS_FINITE_EPSILON_POLICY_COMPONENT
+    assert pgd["mechanism"]["live_evaluation"]["implementation"] == "graph_component"
+    assert pgd["mechanism"]["live_evaluation"]["hook"] is None
+    assert pgd["mechanism"]["live_evaluation"]["input_keys"] == [
+        "epsilon",
+        FINITE_POLICY_GAINS_INPUT,
+    ]
     assert pgd["mechanism"]["runtime_inputs"]["base_epsilon"] == "TaskTrialSpec.inputs['epsilon']"
+    assert payload["adversarial_phase"] == "broad_epsilon_pgd_live_finite_policy_linear_no_bias"
+    assert payload["training_summary"]["adversarial_phase"] == (
+        "broad_epsilon_pgd_live_finite_policy_linear_no_bias"
+    )
+    assert payload["training_summary"]["training_distribution"]["adversarial_phase"] == (
+        "broad_epsilon_pgd_live_finite_policy_linear_no_bias"
+    )
+    assert payload["task_timing"]["extra_inputs"][-1] == FINITE_POLICY_GAINS_INPUT
     replay_args = resolve_run_spec_args(_args(run_spec=result["run_spec_path"]))
     assert replay_args.broad_epsilon_pgd_mechanism == LINEAR_NO_BIAS_POLICY
+
+
+def test_pgd_mechanism_run_spec_for_affine_lists_bias_input(tmp_path: Path) -> None:
+    output_dir = tmp_path / "bulk"
+    spec_dir = tmp_path / "spec"
+    args = _args(
+        output_dir=str(output_dir),
+        spec_dir=str(spec_dir),
+        issue="ae9f30f",
+        target_relative_multitarget=True,
+        force_filter_feedback=True,
+        broad_epsilon_pgd_training=True,
+        broad_epsilon_pgd_mechanism=AFFINE_POLICY,
+    )
+
+    payload = write_run_spec(args)["run_spec"]
+    pgd = payload["hps"]["broad_epsilon_pgd_training"]
+
+    assert pgd["mechanism"]["live_evaluation"]["input_keys"] == [
+        "epsilon",
+        FINITE_POLICY_GAINS_INPUT,
+        FINITE_POLICY_BIAS_INPUT,
+    ]
+    assert payload["adversarial_phase"] == "broad_epsilon_pgd_live_finite_policy_affine"
+    assert payload["task_timing"]["extra_inputs"][-2:] == [
+        FINITE_POLICY_GAINS_INPUT,
+        FINITE_POLICY_BIAS_INPUT,
+    ]
 
 
 def test_finite_epsilon_component_uses_live_6d_target_centered_state() -> None:
@@ -648,8 +704,10 @@ def test_finite_epsilon_component_uses_live_6d_target_centered_state() -> None:
         policy_class=AFFINE_POLICY,
         physical_block_size=6,
     )
-    state = jnp.zeros((36,), dtype=jnp.float32).at[0:6].set(
-        jnp.array([0.20, -0.05, 0.3, -0.4, 0.01, -0.02], dtype=jnp.float32)
+    state = (
+        jnp.zeros((36,), dtype=jnp.float32)
+        .at[0:6]
+        .set(jnp.array([0.20, -0.05, 0.3, -0.4, 0.01, -0.02], dtype=jnp.float32))
     )
     gains = jnp.zeros((6, 36), dtype=jnp.float32)
     gains = gains.at[0, 0].set(2.0).at[1, 2].set(-3.0)
@@ -696,6 +754,122 @@ def test_finite_pgd_graph_wires_policy_inputs_to_mechanics_epsilon() -> None:
         and wire.target_port == "epsilon"
         for wire in spec.wires
     )
+
+
+def test_finite_pgd_inner_maximizer_installs_policy_inputs_before_rollout() -> None:
+    class FiniteInputOnlyTask:
+        def __init__(self) -> None:
+            self.n_eval_calls = 0
+
+        def eval_trials(self, model, trial_specs, keys_model):
+            del model, keys_model
+            self.n_eval_calls += 1
+            assert FINITE_POLICY_GAINS_INPUT in trial_specs.inputs
+            np.testing.assert_allclose(np.asarray(trial_specs.inputs["epsilon"]), 0.0)
+            gains = jnp.asarray(trial_specs.inputs[FINITE_POLICY_GAINS_INPUT])
+            return TreeNamespace(
+                mechanics=TreeNamespace(
+                    vector=jnp.sum(gains, axis=-2),
+                )
+            )
+
+    class SumVectorLoss:
+        def __call__(self, states, trial_specs, model):
+            del trial_specs, model
+            return TreeNamespace(total=jnp.sum(states.mechanics.vector))
+
+    cfg = PgdFullStateEpsilonTrainingConfig(
+        enabled=True,
+        adversary_mechanism=LINEAR_NO_BIAS_POLICY,
+        reach_length_scaling=False,
+        n_steps=1,
+        epsilon_dim=2,
+        objective_kind=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+        energy_lambda=1.0,
+        safety_cap_l2_radius_15cm=1.0,
+    )
+    trial_specs = TaskTrialSpec(
+        inits=WhereDict({"mechanics.vector": jnp.zeros((1, 4), dtype=jnp.float32)}),
+        targets=WhereDict(
+            {
+                "mechanics.effector.pos": TargetSpec(
+                    value=jnp.zeros((1, 2, 2), dtype=jnp.float32),
+                )
+            }
+        ),
+        inputs={"epsilon": jnp.zeros((1, 2, 2), dtype=jnp.float32)},
+        timeline=TrialTimeline(n_steps=2),
+    )
+    task = FiniteInputOnlyTask()
+
+    updated, diagnostics = run_broad_epsilon_pgd_inner_maximizer(
+        task,
+        model=None,
+        trial_specs=trial_specs,
+        loss_func=SumVectorLoss(),
+        keys_model=None,
+        config=cfg,
+        return_diagnostics=True,
+    )
+
+    assert task.n_eval_calls > 0
+    assert FINITE_POLICY_GAINS_INPUT in updated.inputs
+    assert "finite_policy_delta_zero_energy_mean" in diagnostics
+    np.testing.assert_allclose(np.asarray(updated.inputs["epsilon"]), 0.0)
+
+
+def test_direct_epsilon_pgd_does_not_install_finite_policy_inputs() -> None:
+    class DirectEpsilonTask:
+        def eval_trials(self, model, trial_specs, keys_model):
+            del model, keys_model
+            assert FINITE_POLICY_GAINS_INPUT not in trial_specs.inputs
+            assert FINITE_POLICY_BIAS_INPUT not in trial_specs.inputs
+            epsilon = jnp.asarray(trial_specs.inputs["epsilon"])
+            return TreeNamespace(
+                mechanics=TreeNamespace(
+                    vector=epsilon,
+                )
+            )
+
+    class SumVectorLoss:
+        def __call__(self, states, trial_specs, model):
+            del trial_specs, model
+            return TreeNamespace(total=jnp.sum(states.mechanics.vector))
+
+    cfg = PgdFullStateEpsilonTrainingConfig(
+        enabled=True,
+        adversary_mechanism=BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM,
+        reach_length_scaling=False,
+        n_steps=1,
+        epsilon_dim=2,
+    )
+    trial_specs = TaskTrialSpec(
+        inits=WhereDict({"mechanics.vector": jnp.zeros((1, 2), dtype=jnp.float32)}),
+        targets=WhereDict(
+            {
+                "mechanics.effector.pos": TargetSpec(
+                    value=jnp.zeros((1, 2, 2), dtype=jnp.float32),
+                )
+            }
+        ),
+        inputs={"epsilon": jnp.zeros((1, 2, 2), dtype=jnp.float32)},
+        timeline=TrialTimeline(n_steps=2),
+    )
+
+    updated, diagnostics = run_broad_epsilon_pgd_inner_maximizer(
+        DirectEpsilonTask(),
+        model=None,
+        trial_specs=trial_specs,
+        loss_func=SumVectorLoss(),
+        keys_model=None,
+        config=cfg,
+        return_diagnostics=True,
+    )
+
+    assert FINITE_POLICY_GAINS_INPUT not in updated.inputs
+    assert FINITE_POLICY_BIAS_INPUT not in updated.inputs
+    assert "finite_policy_delta_zero_energy_mean" not in diagnostics
+    assert updated.inputs["epsilon"].shape == (1, 2, 2)
 
 
 def test_pgd_sisu_budget_radius_uses_sqrt_energy_fraction() -> None:
@@ -865,6 +1039,10 @@ def test_policy_adversary_cli_run_spec_and_planned_rows(tmp_path: Path) -> None:
     assert payload["adversarial_phase"] == "learned_memoryless_policy_adversary"
     assert policy["enabled"] is True
     assert policy["row_mode"] == POLICY_ADVERSARY_PLAIN_MODE
+    assert policy["policy"]["kind"] == "memoryless_mlp"
+    assert policy["policy"]["closed_loop_finite_policy"] is False
+    assert policy["policy"]["live_rollout_hook"] is False
+    assert policy["policy"]["materialization"] == "legacy_clean_rollout_open_loop_epsilon_sequence"
     assert policy["inner_optimizer"]["n_ascent_steps_per_controller_step"] == 5
     assert policy["budget_contract"]["effective_l2_radius_15cm"] == pytest.approx(
         EFFECTIVE_020A65B_PGD_RADIUS_15CM
@@ -2269,9 +2447,7 @@ def test_perturbation_training_run_spec_and_planned_rows(tmp_path: Path) -> None
     assert payload["nominal_only"] is False
     assert payload["training_summary"]["training_mode"] == PERTURBATION_TRAINING_MODE
     assert payload["validation_bins"]["bins"][0]["bin"] == "nominal"
-    assert payload["validation_bins"]["selection_role"].startswith(
-        "aggregate rollout loss"
-    )
+    assert payload["validation_bins"]["selection_role"].startswith("aggregate rollout loss")
     assert payload["training_distribution"]["fixed_target_only"] is True
     assert payload["training_distribution"]["checkpoint_selection_role"] == (
         "generalized_held_out_perturbation_validation"
@@ -2380,10 +2556,7 @@ def test_movement_age_timing_run_spec_distinguishes_timing_basis(tmp_path: Path)
     assert movement_perturbation["timing_bins"]["start_time_indices_are"] == (
         "movement_start_relative_offsets"
     )
-    assert (
-        movement["training_distribution"]["perturbation_training"]["movement_age_timing"]
-        is True
-    )
+    assert movement["training_distribution"]["perturbation_training"]["movement_age_timing"] is True
 
     parser = build_parser()
     replay_args = resolve_run_spec_args(
@@ -3716,9 +3889,7 @@ def test_broad_epsilon_run_spec_exposes_budget_contract(tmp_path: Path) -> None:
         0.0012324305441740995
     )
     assert (
-        payload["training_distribution"]["training_axes"][
-            "broad_full_state_epsilon_training"
-        ]
+        payload["training_distribution"]["training_axes"]["broad_full_state_epsilon_training"]
         is True
     )
 
@@ -4347,7 +4518,10 @@ def test_c92ebd8_calibrated_perturb_matrix_spec_artifact(tmp_path: Path) -> None
     assert not any("medium" in row["run"] for row in rows)
     assert payload["basis"]["training_target_count"] == 56
     assert payload["basis"]["held_out_target_count"] == 16
-    assert payload["training_contract"]["target_support_profile"] == TARGET_SUPPORT_PROFILE_CONST_BAND16
+    assert (
+        payload["training_contract"]["target_support_profile"]
+        == TARGET_SUPPORT_PROFILE_CONST_BAND16
+    )
     assert payload["training_contract"]["process_state_dim"] == 6
     assert payload["training_contract"]["process_integrator_state_in_gru_channel"] is False
     assert payload["training_contract"]["n_train_batches_per_row"] == 12000
@@ -4389,10 +4563,7 @@ def test_c92ebd8_calibrated_perturb_matrix_spec_artifact(tmp_path: Path) -> None
     }
     assert len(table["unit_sensitivities"]) == 21
     assert len(table["rows"]) == 63
-    assert {
-        (row["family"], row["physical_level"])
-        for row in table["rows"]
-    } >= {
+    assert {(row["family"], row["physical_level"]) for row in table["rows"]} >= {
         ("sensory_feedback_offset", "small"),
         ("sensory_feedback_offset", "moderate"),
         ("sensory_feedback_offset", "stress"),
@@ -4427,8 +4598,7 @@ def test_c92ebd8_calibrated_perturb_matrix_spec_artifact(tmp_path: Path) -> None
         "--perturbation-closed-loop-calibration-table" in row["command"] for row in mixed_rows
     )
     assert not any(
-        "--perturbation-closed-loop-calibration-table" in row["command"]
-        for row in open_loop_rows
+        "--perturbation-closed-loop-calibration-table" in row["command"] for row in open_loop_rows
     )
     assert payload["known_blockers"] == [
         "Rows 1-9 require explicit user confirmation before any training launch.",

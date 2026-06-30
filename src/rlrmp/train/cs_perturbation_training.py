@@ -233,8 +233,7 @@ PGD_SISU_MAX_RADIUS_SOURCES: dict[str, dict[str, Any]] = {
         "disturbance_energy": 2.0657128682206633e-05,
         "gamma_equivalent_analytical_anchor": True,
         "description": (
-            "6D no-integrator C&S output-feedback H-infinity rollout L2 radius "
-            "for gamma_factor=1.4"
+            "6D no-integrator C&S output-feedback H-infinity rollout L2 radius for gamma_factor=1.4"
         ),
     },
     "ofb_6d_no_integrator_gamma_1p05_rollout_radius": {
@@ -626,6 +625,9 @@ class PolicyFullStateEpsilonTrainingConfig:
             "policy": {
                 "kind": "memoryless_mlp",
                 "state_feature_key": "clean_rollout.states.mechanics.vector",
+                "closed_loop_finite_policy": False,
+                "live_rollout_hook": False,
+                "materialization": "legacy_clean_rollout_open_loop_epsilon_sequence",
                 "state_feature_dim": int(self.state_feature_dim),
                 "width": int(self.width),
                 "depth": int(self.depth),
@@ -835,9 +837,23 @@ def pgd_adversary_mechanism_contract(
         "required_policy_contract": {
             "feature_basis": "target_centered_full_state",
             "live_feature_source": "live_perturbed_rollout_state",
+            "feature_source_detail": "pre_mechanics_state",
             "time_varying": True,
             "shared_across_trials_in_batch": True,
             "has_bias": mechanism == AFFINE_POLICY,
+        },
+        "live_evaluation": {
+            "implementation": "graph_component",
+            "component": "RLRMPCsLssFiniteEpsilonPolicy",
+            "hook": None,
+            "input_keys": [
+                "epsilon",
+                FINITE_POLICY_GAINS_INPUT,
+                *([FINITE_POLICY_BIAS_INPUT] if mechanism == AFFINE_POLICY else []),
+            ],
+            "time_indexing": "policy row t is evaluated before mechanics step t",
+            "target_centering": True,
+            "static_clean_rollout_materialization": False,
         },
         "graph_component": "RLRMPCsLssFiniteEpsilonPolicy",
         "no_fake_open_loop_replay": True,
@@ -2860,7 +2876,9 @@ def run_broad_epsilon_pgd_inner_maximizer(
     selected_task_loss, selected_energy, selected_penalty, selected_objective = (
         objective_components(delta)
     )
-    final_task_loss, final_energy, final_penalty, final_objective = objective_components(final_delta)
+    final_task_loss, final_energy, final_penalty, final_objective = objective_components(
+        final_delta
+    )
     del zero_energy, selected_energy, final_energy
     objective_nonfinite_seen = jnp.logical_or(objective_nan_seen, objective_overflow_seen)
     diagnostics = {
@@ -2987,8 +3005,12 @@ def _run_finite_broad_epsilon_pgd_inner_maximizer(
     def proposal_from_gradient(params_current, grad_current):
         grad_norm = _finite_policy_tree_norm(grad_current)
         scaled = jax.tree.map(
-            lambda param, grad: param
-            + step_size * grad / jnp.maximum(grad_norm, jnp.asarray(1e-12, dtype=step_size.dtype)),
+            lambda param, grad: (
+                param
+                + step_size
+                * grad
+                / jnp.maximum(grad_norm, jnp.asarray(1e-12, dtype=step_size.dtype))
+            ),
             params_current,
             grad_current,
         )
@@ -3090,8 +3112,8 @@ def _run_finite_broad_epsilon_pgd_inner_maximizer(
         return updated, {}
 
     objective_selected = objective_best
-    zero_task_loss, _zero_energy, zero_penalty, zero_objective, zero_delta = (
-        objective_components(zero_params)
+    zero_task_loss, _zero_energy, zero_penalty, zero_objective, zero_delta = objective_components(
+        zero_params
     )
     selected_task_loss, _selected_energy, selected_penalty, selected_objective, delta = (
         objective_components(best_params)
@@ -3566,7 +3588,8 @@ def apply_training_perturbation_mixture(
                 component_offset=0,
                 n_components=2,
                 active_mask=(
-                    single_mask * _family_mask(family_index, "initial_position", active_single_family_bins)
+                    single_mask
+                    * _family_mask(family_index, "initial_position", active_single_family_bins)
                     + combined_mask * float(cfg.combined_amplitude_scale)
                 ),
                 key=key_pos,
@@ -3580,7 +3603,8 @@ def apply_training_perturbation_mixture(
                 ),
                 component_offset=2,
                 n_components=2,
-                active_mask=single_mask * _family_mask(family_index, "initial_velocity", active_single_family_bins),
+                active_mask=single_mask
+                * _family_mask(family_index, "initial_velocity", active_single_family_bins),
                 key=key_vel,
             )
         else:
@@ -3594,7 +3618,8 @@ def apply_training_perturbation_mixture(
                 component_offset=0,
                 n_components=2,
                 active_mask=(
-                    single_mask * _family_mask(family_index, "initial_position", active_single_family_bins)
+                    single_mask
+                    * _family_mask(family_index, "initial_position", active_single_family_bins)
                     + combined_mask * float(cfg.combined_amplitude_scale)
                 ),
                 randomize_amplitude_level=False,
@@ -3609,14 +3634,16 @@ def apply_training_perturbation_mixture(
                 ),
                 component_offset=2,
                 n_components=2,
-                active_mask=single_mask * _family_mask(family_index, "initial_velocity", active_single_family_bins),
+                active_mask=single_mask
+                * _family_mask(family_index, "initial_velocity", active_single_family_bins),
                 randomize_amplitude_level=False,
                 key=key_vel,
             )
         trial_specs = _add_process_epsilon_calibrated_random_pulse(
             trial_specs,
             cfg,
-            active_mask=single_mask * _family_mask(family_index, "process_epsilon", active_single_family_bins),
+            active_mask=single_mask
+            * _family_mask(family_index, "process_epsilon", active_single_family_bins),
             key=key_process,
         )
         trial_specs = _add_graph_channel_calibrated_random_pulse(
@@ -3645,7 +3672,8 @@ def apply_training_perturbation_mixture(
             trial_specs,
             cfg,
             specs["sensory_feedback"],
-            active_mask=single_mask * _family_mask(family_index, "sensory_feedback", active_single_family_bins),
+            active_mask=single_mask
+            * _family_mask(family_index, "sensory_feedback", active_single_family_bins),
             key=key_sensory,
         )
     else:
@@ -3655,7 +3683,8 @@ def apply_training_perturbation_mixture(
             component_offset=0,
             n_components=2,
             active_mask=(
-                single_mask * _family_mask(family_index, "initial_position", active_single_family_bins)
+                single_mask
+                * _family_mask(family_index, "initial_position", active_single_family_bins)
                 + combined_mask * float(cfg.combined_amplitude_scale)
             ),
             key=key_pos,
@@ -3665,13 +3694,15 @@ def apply_training_perturbation_mixture(
             base_amount=cfg.initial_velocity_offset_m_s,
             component_offset=2,
             n_components=2,
-            active_mask=single_mask * _family_mask(family_index, "initial_velocity", active_single_family_bins),
+            active_mask=single_mask
+            * _family_mask(family_index, "initial_velocity", active_single_family_bins),
             key=key_vel,
         )
         trial_specs = _add_process_epsilon_random_pulse(
             trial_specs,
             base_amount=cfg.process_epsilon_scale,
-            active_mask=single_mask * _family_mask(family_index, "process_epsilon", active_single_family_bins),
+            active_mask=single_mask
+            * _family_mask(family_index, "process_epsilon", active_single_family_bins),
             duration=cfg.pulse_duration_steps,
             key=key_process,
         )
@@ -3690,7 +3721,8 @@ def apply_training_perturbation_mixture(
             trial_specs,
             specs["sensory_feedback"],
             base_amount=cfg.sensory_feedback_offset_m,
-            active_mask=single_mask * _family_mask(family_index, "sensory_feedback", active_single_family_bins),
+            active_mask=single_mask
+            * _family_mask(family_index, "sensory_feedback", active_single_family_bins),
             duration=trial_specs.timeline.n_steps,
             key=key_sensory,
         )
@@ -4327,9 +4359,7 @@ def _calibrated_timing_indexed_amounts(
             family=family,
             timing_labels=timing_labels,
             component=(
-                "random_force_pulse_cardinal_basis"
-                if family == "command_input_pulse"
-                else None
+                "random_force_pulse_cardinal_basis" if family == "command_input_pulse" else None
             ),
             reducer="mean" if family == "command_input_pulse" else "single",
         ).astype(dtype)
