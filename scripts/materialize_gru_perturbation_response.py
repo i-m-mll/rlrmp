@@ -73,9 +73,11 @@ def main() -> None:
         extlqg_physical_dim=args.extlqg_physical_dim,
         repo_root=REPO_ROOT,
     )
+    bank_summary = manifest.get("bank_summary", {})
+    n_bank_rows = bank_summary.get("n_perturbations", "unknown")
     print(
         f"Wrote perturbation-response manifest for {len(manifest['runs'])} run(s) "
-        f"with {len(manifest['bank']['perturbations'])} bank row(s)."
+        f"with {n_bank_rows} bank row(s)."
     )
 
 

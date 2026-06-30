@@ -1,0 +1,5356 @@
+{
+  "checkpoint_policy": "final_checkpoint",
+  "format": "rlrmp.gru_map_error_decomposition.v1",
+  "issue": "ddf7f43",
+  "rows": [
+    {
+      "decomposition": {
+        "alignment": {
+          "alignment_basis": "raw_cartesian",
+          "direction_vectors": null,
+          "frame_source": "raw_cartesian_observation_action_basis",
+          "moving_target": {
+            "status": "not_applicable"
+          },
+          "sign_convention": "raw ux/uy and px/py/vx/vy Cartesian channels",
+          "target_time_convention": "not_applicable_static_or_raw",
+          "target_velocity_used": false
+        },
+        "basis": {
+          "action_channels": [
+            "ux",
+            "uy"
+          ],
+          "action_dim": 2,
+          "action_time_count": 60,
+          "candidate_observation_basis": {
+            "candidate_feedback_basis": "target_relative_delayed_feedback",
+            "reference_converted_to_candidate_basis": true,
+            "reference_feedback_basis": "raw_delayed_position_velocity",
+            "reference_observation_from_candidate_transform": [
+              [
+                -1.0,
+                -0.0,
+                -0.0,
+                -0.0
+              ],
+              [
+                -0.0,
+                -1.0,
+                -0.0,
+                -0.0
+              ],
+              [
+                -0.0,
+                -0.0,
+                -1.0,
+                -0.0
+              ],
+              [
+                -0.0,
+                -0.0,
+                -0.0,
+                -1.0
+              ]
+            ],
+            "sign_convention": "candidate feedback is [target_x - delayed_x, target_y - delayed_y, -delayed_vx, -delayed_vy]; analytical reference input derivatives are therefore multiplied by -1 before comparison"
+          },
+          "input": "flattened_observation_history",
+          "observation_channels": [
+            "px",
+            "py",
+            "vx",
+            "vy"
+          ],
+          "observation_dim": 4,
+          "observation_time_count": 60,
+          "output": "action_history"
+        },
+        "decision_rule_annotations": [
+          "wrong_timing_or_channel",
+          "unexcited_directions"
+        ],
+        "energy_decomposition": {
+          "by_action_channel": [
+            {
+              "energy": 43825292.07171254,
+              "fraction": 0.4867885093421308,
+              "index": 0,
+              "label": "ux"
+            },
+            {
+              "energy": 46204138.02091666,
+              "fraction": 0.5132114906578693,
+              "index": 1,
+              "label": "uy"
+            }
+          ],
+          "by_action_time": [
+            {
+              "energy": 2039301.7461068425,
+              "fraction": 0.022651501225861945,
+              "index": 0,
+              "label": "t0"
+            },
+            {
+              "energy": 837372.9919577923,
+              "fraction": 0.00930110288487041,
+              "index": 1,
+              "label": "t1"
+            },
+            {
+              "energy": 411960.50863736845,
+              "fraction": 0.004575842679593904,
+              "index": 2,
+              "label": "t2"
+            },
+            {
+              "energy": 324733.23317585315,
+              "fraction": 0.003606967553185027,
+              "index": 3,
+              "label": "t3"
+            },
+            {
+              "energy": 324156.31999483693,
+              "fraction": 0.0036005595021685686,
+              "index": 4,
+              "label": "t4"
+            },
+            {
+              "energy": 308857.0329994118,
+              "fraction": 0.0034306229938547424,
+              "index": 5,
+              "label": "t5"
+            },
+            {
+              "energy": 5217849.798662376,
+              "fraction": 0.05795715682409464,
+              "index": 6,
+              "label": "t6"
+            },
+            {
+              "energy": 1832563.7467870256,
+              "fraction": 0.020355163249412368,
+              "index": 7,
+              "label": "t7"
+            },
+            {
+              "energy": 1230116.5184983648,
+              "fraction": 0.013663493340263583,
+              "index": 8,
+              "label": "t8"
+            },
+            {
+              "energy": 1226826.975013597,
+              "fraction": 0.013626954805238055,
+              "index": 9,
+              "label": "t9"
+            },
+            {
+              "energy": 1301542.429341858,
+              "fraction": 0.014456855141732334,
+              "index": 10,
+              "label": "t10"
+            },
+            {
+              "energy": 1327943.375461556,
+              "fraction": 0.014750103095124182,
+              "index": 11,
+              "label": "t11"
+            },
+            {
+              "energy": 1325412.713991125,
+              "fraction": 0.014721993826101516,
+              "index": 12,
+              "label": "t12"
+            },
+            {
+              "energy": 1315329.4475384431,
+              "fraction": 0.014609994156190161,
+              "index": 13,
+              "label": "t13"
+            },
+            {
+              "energy": 1216950.037359445,
+              "fraction": 0.013517246928113987,
+              "index": 14,
+              "label": "t14"
+            },
+            {
+              "energy": 1194487.7016608901,
+              "fraction": 0.013267747007083233,
+              "index": 15,
+              "label": "t15"
+            },
+            {
+              "energy": 1359043.3431652104,
+              "fraction": 0.015095545331864505,
+              "index": 16,
+              "label": "t16"
+            },
+            {
+              "energy": 1610700.570933883,
+              "fraction": 0.017890822692942416,
+              "index": 17,
+              "label": "t17"
+            },
+            {
+              "energy": 1774958.7033847554,
+              "fraction": 0.01971531644217387,
+              "index": 18,
+              "label": "t18"
+            },
+            {
+              "energy": 1773227.1992076356,
+              "fraction": 0.019696083795967642,
+              "index": 19,
+              "label": "t19"
+            },
+            {
+              "energy": 1650468.0813842635,
+              "fraction": 0.018332539478325423,
+              "index": 20,
+              "label": "t20"
+            },
+            {
+              "energy": 1510946.3810823893,
+              "fraction": 0.016782805128587524,
+              "index": 21,
+              "label": "t21"
+            },
+            {
+              "energy": 1452713.3827820614,
+              "fraction": 0.01613598332553475,
+              "index": 22,
+              "label": "t22"
+            },
+            {
+              "energy": 1506879.035878962,
+              "fraction": 0.016737627177341553,
+              "index": 23,
+              "label": "t23"
+            },
+            {
+              "energy": 1621033.0969716024,
+              "fraction": 0.01800559100844867,
+              "index": 24,
+              "label": "t24"
+            },
+            {
+              "energy": 1702648.9545338708,
+              "fraction": 0.01891213742863922,
+              "index": 25,
+              "label": "t25"
+            },
+            {
+              "energy": 1695248.9458825877,
+              "fraction": 0.018829941988285224,
+              "index": 26,
+              "label": "t26"
+            },
+            {
+              "energy": 1631302.3616641997,
+              "fraction": 0.01811965664989538,
+              "index": 27,
+              "label": "t27"
+            },
+            {
+              "energy": 1612176.2991340817,
+              "fraction": 0.017907214312868035,
+              "index": 28,
+              "label": "t28"
+            },
+            {
+              "energy": 1718287.8458935472,
+              "fraction": 0.019085846085281674,
+              "index": 29,
+              "label": "t29"
+            },
+            {
+              "energy": 1924289.8992752903,
+              "fraction": 0.02137400955771277,
+              "index": 30,
+              "label": "t30"
+            },
+            {
+              "energy": 2106692.3307951214,
+              "fraction": 0.02340004072698888,
+              "index": 31,
+              "label": "t31"
+            },
+            {
+              "energy": 2147648.3239053264,
+              "fraction": 0.023854958558503156,
+              "index": 32,
+              "label": "t32"
+            },
+            {
+              "energy": 2036530.8101806173,
+              "fraction": 0.022620723113378347,
+              "index": 33,
+              "label": "t33"
+            },
+            {
+              "energy": 1872677.1976168393,
+              "fraction": 0.02080072256027929,
+              "index": 34,
+              "label": "t34"
+            },
+            {
+              "energy": 1766257.2453193655,
+              "fraction": 0.01961866517984291,
+              "index": 35,
+              "label": "t35"
+            },
+            {
+              "energy": 1744462.326348911,
+              "fraction": 0.019376578576073115,
+              "index": 36,
+              "label": "t36"
+            },
+            {
+              "energy": 1744567.3452166654,
+              "fraction": 0.019377745070936477,
+              "index": 37,
+              "label": "t37"
+            },
+            {
+              "energy": 1691118.929780495,
+              "fraction": 0.018784067921351295,
+              "index": 38,
+              "label": "t38"
+            },
+            {
+              "energy": 1572478.539736228,
+              "fraction": 0.01746627228583299,
+              "index": 39,
+              "label": "t39"
+            },
+            {
+              "energy": 1449447.1717901437,
+              "fraction": 0.016099703955682505,
+              "index": 40,
+              "label": "t40"
+            },
+            {
+              "energy": 1395408.8288135508,
+              "fraction": 0.01549947419835766,
+              "index": 41,
+              "label": "t41"
+            },
+            {
+              "energy": 1430649.4431024685,
+              "fraction": 0.0158909085799,
+              "index": 42,
+              "label": "t42"
+            },
+            {
+              "energy": 1508435.9954252723,
+              "fraction": 0.016754921072734522,
+              "index": 43,
+              "label": "t43"
+            },
+            {
+              "energy": 1561323.0699611886,
+              "fraction": 0.017342363140084076,
+              "index": 44,
+              "label": "t44"
+            },
+            {
+              "energy": 1559063.7036975054,
+              "fraction": 0.0173172672768607,
+              "index": 45,
+              "label": "t45"
+            },
+            {
+              "energy": 1528192.4118743856,
+              "fraction": 0.016974365052650715,
+              "index": 46,
+              "label": "t46"
+            },
+            {
+              "energy": 1511917.9485044668,
+              "fraction": 0.016793596793280702,
+              "index": 47,
+              "label": "t47"
+            },
+            {
+              "energy": 1522634.6447028455,
+              "fraction": 0.01691263227076126,
+              "index": 48,
+              "label": "t48"
+            },
+            {
+              "energy": 1544722.6518117837,
+              "fraction": 0.017157974344860945,
+              "index": 49,
+              "label": "t49"
+            },
+            {
+              "energy": 1552337.6619462045,
+              "fraction": 0.01724255790966399,
+              "index": 50,
+              "label": "t50"
+            },
+            {
+              "energy": 1526756.0088774986,
+              "fraction": 0.01695841023659324,
+              "index": 51,
+              "label": "t51"
+            },
+            {
+              "energy": 1480463.3601829312,
+              "fraction": 0.016444215615490587,
+              "index": 52,
+              "label": "t52"
+            },
+            {
+              "energy": 1431216.8417384333,
+              "fraction": 0.015897210948307542,
+              "index": 53,
+              "label": "t53"
+            },
+            {
+              "energy": 1367514.946908665,
+              "fraction": 0.015189643492152072,
+              "index": 54,
+              "label": "t54"
+            },
+            {
+              "energy": 1280332.8460786736,
+              "fraction": 0.014221270142012105,
+              "index": 55,
+              "label": "t55"
+            },
+            {
+              "energy": 1117372.9935354423,
+              "fraction": 0.012411197009531251,
+              "index": 56,
+              "label": "t56"
+            },
+            {
+              "energy": 916969.6069312912,
+              "fraction": 0.01018522061050306,
+              "index": 57,
+              "label": "t57"
+            },
+            {
+              "energy": 833135.1248708351,
+              "fraction": 0.009254030865391925,
+              "index": 58,
+              "label": "t58"
+            },
+            {
+              "energy": 849773.1046149153,
+              "fraction": 0.009438836875237392,
+              "index": 59,
+              "label": "t59"
+            }
+          ],
+          "by_observation_channel": [
+            {
+              "energy": 22929023.123254757,
+              "fraction": 0.2546836417787341,
+              "index": 0,
+              "label": "px"
+            },
+            {
+              "energy": 25160850.9509333,
+              "fraction": 0.27947362240376156,
+              "index": 1,
+              "label": "py"
+            },
+            {
+              "energy": 20875925.094554037,
+              "fraction": 0.23187889863431638,
+              "index": 2,
+              "label": "vx"
+            },
+            {
+              "energy": 21063630.923887067,
+              "fraction": 0.23396383718318758,
+              "index": 3,
+              "label": "vy"
+            }
+          ],
+          "by_observation_lag": [
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -59
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -58
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -57
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -56
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -55
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -54
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -53
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -52
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -51
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -50
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -49
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -48
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -47
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -46
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -45
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -44
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -43
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -42
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -41
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -40
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -39
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -38
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -37
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -36
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -35
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -34
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -33
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -32
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -31
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -30
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -29
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -28
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -27
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -26
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -25
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -24
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -23
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -22
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -21
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -20
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -19
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -18
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -17
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -16
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -15
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -14
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -13
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -12
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -11
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -10
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -9
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -8
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -7
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -6
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -5
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -4
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -3
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -2
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -1
+            },
+            {
+              "energy": 17152902.08289986,
+              "fraction": 0.1905254988868822,
+              "lag": 0
+            },
+            {
+              "energy": 21797972.059815843,
+              "fraction": 0.24212051589561784,
+              "lag": 1
+            },
+            {
+              "energy": 3792505.206833716,
+              "fraction": 0.0421251717680729,
+              "lag": 2
+            },
+            {
+              "energy": 1988119.8210221224,
+              "fraction": 0.022082999070155082,
+              "lag": 3
+            },
+            {
+              "energy": 1908883.6169328787,
+              "fraction": 0.021202884600834113,
+              "lag": 4
+            },
+            {
+              "energy": 2158529.278559024,
+              "fraction": 0.023975818533319197,
+              "lag": 5
+            },
+            {
+              "energy": 3366461.7736779083,
+              "fraction": 0.037392903300778796,
+              "lag": 6
+            },
+            {
+              "energy": 3657644.7418101034,
+              "fraction": 0.04062721199108822,
+              "lag": 7
+            },
+            {
+              "energy": 2396913.0597341214,
+              "fraction": 0.026623661365711114,
+              "lag": 8
+            },
+            {
+              "energy": 784551.1108568072,
+              "fraction": 0.008714384952227297,
+              "lag": 9
+            },
+            {
+              "energy": 881695.4877273525,
+              "fraction": 0.009793414073822266,
+              "lag": 10
+            },
+            {
+              "energy": 1888620.8841123052,
+              "fraction": 0.020977816722477827,
+              "lag": 11
+            },
+            {
+              "energy": 2746351.7178630633,
+              "fraction": 0.03050504390661371,
+              "lag": 12
+            },
+            {
+              "energy": 3311572.033954719,
+              "fraction": 0.03678321667200958,
+              "lag": 13
+            },
+            {
+              "energy": 3099737.5598219354,
+              "fraction": 0.034430269708835066,
+              "lag": 14
+            },
+            {
+              "energy": 1931591.1065616563,
+              "fraction": 0.02145510756398532,
+              "lag": 15
+            },
+            {
+              "energy": 785544.1562371446,
+              "fraction": 0.008725415182889822,
+              "lag": 16
+            },
+            {
+              "energy": 521187.2054563356,
+              "fraction": 0.005789075915732202,
+              "lag": 17
+            },
+            {
+              "energy": 906218.924196298,
+              "fraction": 0.010065807628282334,
+              "lag": 18
+            },
+            {
+              "energy": 1332537.1164807961,
+              "fraction": 0.014801127976815799,
+              "lag": 19
+            },
+            {
+              "energy": 1376154.6574482152,
+              "fraction": 0.015285608895139307,
+              "lag": 20
+            },
+            {
+              "energy": 916626.4192360089,
+              "fraction": 0.010181408660400418,
+              "lag": 21
+            },
+            {
+              "energy": 311248.6670680936,
+              "fraction": 0.003457188018938441,
+              "lag": 22
+            },
+            {
+              "energy": 118884.51214245023,
+              "fraction": 0.0013205072165860953,
+              "lag": 23
+            },
+            {
+              "energy": 546488.3435905474,
+              "fraction": 0.006070107775071754,
+              "lag": 24
+            },
+            {
+              "energy": 1257426.5436202765,
+              "fraction": 0.013966838869540098,
+              "lag": 25
+            },
+            {
+              "energy": 1681065.0589586755,
+              "fraction": 0.018672394762791086,
+              "lag": 26
+            },
+            {
+              "energy": 1506671.9249211608,
+              "fraction": 0.01673532669673662,
+              "lag": 27
+            },
+            {
+              "energy": 917018.8916790838,
+              "fraction": 0.010185768039801922,
+              "lag": 28
+            },
+            {
+              "energy": 376716.83151044196,
+              "fraction": 0.004184374277642841,
+              "lag": 29
+            },
+            {
+              "energy": 207947.9465802846,
+              "fraction": 0.002309777440180747,
+              "lag": 30
+            },
+            {
+              "energy": 353690.584882241,
+              "fraction": 0.003928610727829077,
+              "lag": 31
+            },
+            {
+              "energy": 508823.8997791321,
+              "fraction": 0.005651750758120039,
+              "lag": 32
+            },
+            {
+              "energy": 444531.4290021036,
+              "fraction": 0.004937623492059603,
+              "lag": 33
+            },
+            {
+              "energy": 205900.563231122,
+              "fraction": 0.0022870361727190284,
+              "lag": 34
+            },
+            {
+              "energy": 26767.694647922355,
+              "fraction": 0.0002973216049505333,
+              "lag": 35
+            },
+            {
+              "energy": 83319.80877057562,
+              "fraction": 0.0009254730223755698,
+              "lag": 36
+            },
+            {
+              "energy": 332546.8316125538,
+              "fraction": 0.0036937569333761644,
+              "lag": 37
+            },
+            {
+              "energy": 567945.7732193801,
+              "fraction": 0.006308445723082261,
+              "lag": 38
+            },
+            {
+              "energy": 612140.0642247964,
+              "fraction": 0.006799332880314577,
+              "lag": 39
+            },
+            {
+              "energy": 457440.37030849094,
+              "fraction": 0.005081009285939511,
+              "lag": 40
+            },
+            {
+              "energy": 240527.9073051193,
+              "fraction": 0.0026716586682559882,
+              "lag": 41
+            },
+            {
+              "energy": 101700.03863491495,
+              "fraction": 0.0011296310387645255,
+              "lag": 42
+            },
+            {
+              "energy": 72905.35222638464,
+              "fraction": 0.0008097946654929839,
+              "lag": 43
+            },
+            {
+              "energy": 87193.91605683007,
+              "fraction": 0.0009685045875234162,
+              "lag": 44
+            },
+            {
+              "energy": 73916.67606693957,
+              "fraction": 0.0008210279237676882,
+              "lag": 45
+            },
+            {
+              "energy": 29866.90979955723,
+              "fraction": 0.0003317460720214252,
+              "lag": 46
+            },
+            {
+              "energy": 2161.006559810351,
+              "fraction": 2.4003334882681604e-05,
+              "lag": 47
+            },
+            {
+              "energy": 19192.986610386328,
+              "fraction": 0.00021318569484044393,
+              "lag": 48
+            },
+            {
+              "energy": 54837.96020013572,
+              "fraction": 0.0006091114888066515,
+              "lag": 49
+            },
+            {
+              "energy": 66748.39842067889,
+              "fraction": 0.0007414064306749805,
+              "lag": 50
+            },
+            {
+              "energy": 45235.66387571724,
+              "fraction": 0.0005024541844725144,
+              "lag": 51
+            },
+            {
+              "energy": 14838.302714737189,
+              "fraction": 0.00016481613511793204,
+              "lag": 52
+            },
+            {
+              "energy": 1367.8125302062772,
+              "fraction": 1.519294889236738e-05,
+              "lag": 53
+            },
+            {
+              "energy": 10.95187469306947,
+              "fraction": 1.2164771766078426e-07,
+              "lag": 54
+            },
+            {
+              "energy": 6.282529471969028,
+              "fraction": 6.9783063888165e-08,
+              "lag": 55
+            },
+            {
+              "energy": 6.335630550137615,
+              "fraction": 7.037288299636054e-08,
+              "lag": 56
+            },
+            {
+              "energy": 5.932238015670974,
+              "fraction": 6.589220890954692e-08,
+              "lag": 57
+            },
+            {
+              "energy": 6.043749840833647,
+              "fraction": 6.713082416067027e-08,
+              "lag": 58
+            },
+            {
+              "energy": 5.854617661076261,
+              "fraction": 6.503004245447939e-08,
+              "lag": 59
+            }
+          ],
+          "by_observation_time": [
+            {
+              "energy": 2988688.345324982,
+              "fraction": 0.03319679289594513,
+              "index": 0,
+              "label": "obs_t0"
+            },
+            {
+              "energy": 153686.45380770043,
+              "fraction": 0.0017070690511933263,
+              "index": 1,
+              "label": "obs_t1"
+            },
+            {
+              "energy": 245506.7211190041,
+              "fraction": 0.0027269607379099025,
+              "index": 2,
+              "label": "obs_t2"
+            },
+            {
+              "energy": 289120.4245350776,
+              "fraction": 0.0032113990307126045,
+              "index": 3,
+              "label": "obs_t3"
+            },
+            {
+              "energy": 312840.14334310987,
+              "fraction": 0.003474865308169072,
+              "index": 4,
+              "label": "obs_t4"
+            },
+            {
+              "energy": 13369358.06804166,
+              "fraction": 0.14849986337008061,
+              "index": 5,
+              "label": "obs_t5"
+            },
+            {
+              "energy": 4845955.130571368,
+              "fraction": 0.05382634462514621,
+              "index": 6,
+              "label": "obs_t6"
+            },
+            {
+              "energy": 3188706.53071065,
+              "fraction": 0.03541849068054595,
+              "index": 7,
+              "label": "obs_t7"
+            },
+            {
+              "energy": 2766810.8317634338,
+              "fraction": 0.030732293083680817,
+              "index": 8,
+              "label": "obs_t8"
+            },
+            {
+              "energy": 2611308.958462163,
+              "fraction": 0.029005059298669863,
+              "index": 9,
+              "label": "obs_t9"
+            },
+            {
+              "energy": 2471051.3338194783,
+              "fraction": 0.027447150684804633,
+              "index": 10,
+              "label": "obs_t10"
+            },
+            {
+              "energy": 2289388.0699793356,
+              "fraction": 0.02542932980497419,
+              "index": 11,
+              "label": "obs_t11"
+            },
+            {
+              "energy": 2054259.8938684794,
+              "fraction": 0.022817648537316066,
+              "index": 12,
+              "label": "obs_t12"
+            },
+            {
+              "energy": 2003070.5923832376,
+              "fraction": 0.02224906444839565,
+              "index": 13,
+              "label": "obs_t13"
+            },
+            {
+              "energy": 1981636.007639612,
+              "fraction": 0.022010980249466787,
+              "index": 14,
+              "label": "obs_t14"
+            },
+            {
+              "energy": 1925896.0771735515,
+              "fraction": 0.02139185014491419,
+              "index": 15,
+              "label": "obs_t15"
+            },
+            {
+              "energy": 1827868.66055247,
+              "fraction": 0.02030301267787454,
+              "index": 16,
+              "label": "obs_t16"
+            },
+            {
+              "energy": 1708237.4133677892,
+              "fraction": 0.018974211117522607,
+              "index": 17,
+              "label": "obs_t17"
+            },
+            {
+              "energy": 1590539.7325995315,
+              "fraction": 0.017666886605447376,
+              "index": 18,
+              "label": "obs_t18"
+            },
+            {
+              "energy": 1486383.5363577378,
+              "fraction": 0.016509973847756588,
+              "index": 19,
+              "label": "obs_t19"
+            },
+            {
+              "energy": 1399701.1250676299,
+              "fraction": 0.015547150788664438,
+              "index": 20,
+              "label": "obs_t20"
+            },
+            {
+              "energy": 1336246.7129566092,
+              "fraction": 0.014842332241598952,
+              "index": 21,
+              "label": "obs_t21"
+            },
+            {
+              "energy": 1291795.9689362538,
+              "fraction": 0.014348596537900493,
+              "index": 22,
+              "label": "obs_t22"
+            },
+            {
+              "energy": 1263093.0542701203,
+              "fraction": 0.014029779517326204,
+              "index": 23,
+              "label": "obs_t23"
+            },
+            {
+              "energy": 1247461.8029568759,
+              "fraction": 0.0138561557223387,
+              "index": 24,
+              "label": "obs_t24"
+            },
+            {
+              "energy": 1240442.0831355455,
+              "fraction": 0.013778184332159866,
+              "index": 25,
+              "label": "obs_t25"
+            },
+            {
+              "energy": 1238248.5051149454,
+              "fraction": 0.013753819210461959,
+              "index": 26,
+              "label": "obs_t26"
+            },
+            {
+              "energy": 1236250.2856067647,
+              "fraction": 0.013731624029329247,
+              "index": 27,
+              "label": "obs_t27"
+            },
+            {
+              "energy": 1230600.1743943298,
+              "fraction": 0.013668865537949021,
+              "index": 28,
+              "label": "obs_t28"
+            },
+            {
+              "energy": 1216767.884432112,
+              "fraction": 0.013515223668307217,
+              "index": 29,
+              "label": "obs_t29"
+            },
+            {
+              "energy": 1191447.5277898556,
+              "fraction": 0.01323397833979403,
+              "index": 30,
+              "label": "obs_t30"
+            },
+            {
+              "energy": 1153866.7112096339,
+              "fraction": 0.012816550210552785,
+              "index": 31,
+              "label": "obs_t31"
+            },
+            {
+              "energy": 1107308.6694830912,
+              "fraction": 0.01229940774193291,
+              "index": 32,
+              "label": "obs_t32"
+            },
+            {
+              "energy": 1057849.2542004134,
+              "fraction": 0.011750038327600394,
+              "index": 33,
+              "label": "obs_t33"
+            },
+            {
+              "energy": 1011493.8525139098,
+              "fraction": 0.011235146678960504,
+              "index": 34,
+              "label": "obs_t34"
+            },
+            {
+              "energy": 975347.6851309449,
+              "fraction": 0.01083365388548425,
+              "index": 35,
+              "label": "obs_t35"
+            },
+            {
+              "energy": 960076.8780801569,
+              "fraction": 0.010664033717556093,
+              "index": 36,
+              "label": "obs_t36"
+            },
+            {
+              "energy": 980044.4900093577,
+              "fraction": 0.010885823546822552,
+              "index": 37,
+              "label": "obs_t37"
+            },
+            {
+              "energy": 1048899.7991418235,
+              "fraction": 0.011650632443886791,
+              "index": 38,
+              "label": "obs_t38"
+            },
+            {
+              "energy": 1170113.250680593,
+              "fraction": 0.012997008305802788,
+              "index": 39,
+              "label": "obs_t39"
+            },
+            {
+              "energy": 1320448.4758914222,
+              "fraction": 0.014666853655886119,
+              "index": 40,
+              "label": "obs_t40"
+            },
+            {
+              "energy": 1412487.4776847053,
+              "fraction": 0.015689174931257807,
+              "index": 41,
+              "label": "obs_t41"
+            },
+            {
+              "energy": 1402568.8549283042,
+              "fraction": 0.015579004037737812,
+              "index": 42,
+              "label": "obs_t42"
+            },
+            {
+              "energy": 1346959.0153632266,
+              "fraction": 0.014961318915129994,
+              "index": 43,
+              "label": "obs_t43"
+            },
+            {
+              "energy": 1269368.8686572937,
+              "fraction": 0.014099487993551325,
+              "index": 44,
+              "label": "obs_t44"
+            },
+            {
+              "energy": 1155066.3647625446,
+              "fraction": 0.012829875337143906,
+              "index": 45,
+              "label": "obs_t45"
+            },
+            {
+              "energy": 1029522.403075669,
+              "fraction": 0.011435398424897473,
+              "index": 46,
+              "label": "obs_t46"
+            },
+            {
+              "energy": 953483.6839822936,
+              "fraction": 0.010590799952874036,
+              "index": 47,
+              "label": "obs_t47"
+            },
+            {
+              "energy": 920503.01443272,
+              "fraction": 0.010224467859961301,
+              "index": 48,
+              "label": "obs_t48"
+            },
+            {
+              "energy": 876530.8075863322,
+              "fraction": 0.009736047497851424,
+              "index": 49,
+              "label": "obs_t49"
+            },
+            {
+              "energy": 819622.6937997277,
+              "fraction": 0.009103941821651397,
+              "index": 50,
+              "label": "obs_t50"
+            },
+            {
+              "energy": 778519.3357494483,
+              "fraction": 0.008647387137166677,
+              "index": 51,
+              "label": "obs_t51"
+            },
+            {
+              "energy": 717421.8484522994,
+              "fraction": 0.007968748082867577,
+              "index": 52,
+              "label": "obs_t52"
+            },
+            {
+              "energy": 616316.2547406207,
+              "fraction": 0.006845719828577247,
+              "index": 53,
+              "label": "obs_t53"
+            },
+            {
+              "energy": 540712.9881805955,
+              "fraction": 0.00600595813640349,
+              "index": 54,
+              "label": "obs_t54"
+            },
+            {
+              "energy": 467264.50147807616,
+              "fraction": 0.005190130616147615,
+              "index": 55,
+              "label": "obs_t55"
+            },
+            {
+              "energy": 332325.62031109043,
+              "fraction": 0.0036912998335007596,
+              "index": 56,
+              "label": "obs_t56"
+            },
+            {
+              "energy": 227532.37026172955,
+              "fraction": 0.0025273110140498142,
+              "index": 57,
+              "label": "obs_t57"
+            },
+            {
+              "energy": 204198.41348678025,
+              "fraction": 0.0022681295802570917,
+              "index": 58,
+              "label": "obs_t58"
+            },
+            {
+              "energy": 171208.4592729727,
+              "fraction": 0.001901694358131783,
+              "index": 59,
+              "label": "obs_t59"
+            }
+          ]
+        },
+        "format": "rlrmp.gru_map_error_decomposition.v1",
+        "map_shape": [
+          80,
+          60,
+          2,
+          240
+        ],
+        "sample_shape": [
+          80
+        ],
+        "summary": {
+          "aggregate_delta_ratio": 1.1970184121489411,
+          "best_scalar_gain": 0.10083348674940133,
+          "best_scalar_residual_frobenius": 5405.643537809398,
+          "best_scalar_residual_ratio": 0.3885179935977021,
+          "candidate_frobenius": 5475.918721452476,
+          "candidate_reference_cosine": 0.15969437789246038,
+          "candidate_reference_norm_ratio": 0.6314153828089271,
+          "delta_frobenius": 9488.383955797171,
+          "reference_frobenius": 8672.450609442227
+        },
+        "top_singular_directions": [
+          {
+            "covariance_projection": {
+              "covariance_metadata": {
+                "audit_only": true,
+                "basis": "flattened_delayed_position_velocity_observation_history",
+                "centering": "sample_mean_subtracted",
+                "estimator": "unbiased_sample_covariance",
+                "future_lenses": {
+                  "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                  "sensory_noise_covariance": "missing_same_basis_contract"
+                },
+                "history_dim": 360,
+                "horizon": 60,
+                "normalization": "expected_squared_output_energy_ratio",
+                "observation_dim": 6,
+                "original_covariance_shape": [
+                  360,
+                  360
+                ],
+                "projected_covariance_shape": [
+                  240,
+                  240
+                ],
+                "projection": "first_four_pos_vel_channels_from_6d_proprioceptive_feedback",
+                "regularization": {
+                  "diagonal_jitter": 0.0,
+                  "eigenvalue_floor": 0.0,
+                  "ratio_denominator_floor": 1e-12,
+                  "type": "none"
+                },
+                "sample_count": 80,
+                "source": "empirical_validation_observation_history",
+                "source_priority": 1,
+                "status": "available"
+              },
+              "status": "available",
+              "trace_fraction": 0.002484808145200263,
+              "variance": 2.522145864865439e-05
+            },
+            "delta_energy_fraction": 0.11690888678830402,
+            "dominant_action_channel": "ux",
+            "dominant_action_time": 6,
+            "dominant_observation_channel": "px",
+            "dominant_observation_time": 5,
+            "rank": 1,
+            "singular_value": 3244.262697488402
+          },
+          {
+            "covariance_projection": {
+              "covariance_metadata": {
+                "audit_only": true,
+                "basis": "flattened_delayed_position_velocity_observation_history",
+                "centering": "sample_mean_subtracted",
+                "estimator": "unbiased_sample_covariance",
+                "future_lenses": {
+                  "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                  "sensory_noise_covariance": "missing_same_basis_contract"
+                },
+                "history_dim": 360,
+                "horizon": 60,
+                "normalization": "expected_squared_output_energy_ratio",
+                "observation_dim": 6,
+                "original_covariance_shape": [
+                  360,
+                  360
+                ],
+                "projected_covariance_shape": [
+                  240,
+                  240
+                ],
+                "projection": "first_four_pos_vel_channels_from_6d_proprioceptive_feedback",
+                "regularization": {
+                  "diagonal_jitter": 0.0,
+                  "eigenvalue_floor": 0.0,
+                  "ratio_denominator_floor": 1e-12,
+                  "type": "none"
+                },
+                "sample_count": 80,
+                "source": "empirical_validation_observation_history",
+                "source_priority": 1,
+                "status": "available"
+              },
+              "status": "available",
+              "trace_fraction": 0.0015334130520360536,
+              "variance": 1.556454729027671e-05
+            },
+            "delta_energy_fraction": 0.11568590002513007,
+            "dominant_action_channel": "uy",
+            "dominant_action_time": 6,
+            "dominant_observation_channel": "py",
+            "dominant_observation_time": 5,
+            "rank": 2,
+            "singular_value": 3227.2489288890224
+          },
+          {
+            "covariance_projection": {
+              "covariance_metadata": {
+                "audit_only": true,
+                "basis": "flattened_delayed_position_velocity_observation_history",
+                "centering": "sample_mean_subtracted",
+                "estimator": "unbiased_sample_covariance",
+                "future_lenses": {
+                  "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                  "sensory_noise_covariance": "missing_same_basis_contract"
+                },
+                "history_dim": 360,
+                "horizon": 60,
+                "normalization": "expected_squared_output_energy_ratio",
+                "observation_dim": 6,
+                "original_covariance_shape": [
+                  360,
+                  360
+                ],
+                "projected_covariance_shape": [
+                  240,
+                  240
+                ],
+                "projection": "first_four_pos_vel_channels_from_6d_proprioceptive_feedback",
+                "regularization": {
+                  "diagonal_jitter": 0.0,
+                  "eigenvalue_floor": 0.0,
+                  "ratio_denominator_floor": 1e-12,
+                  "type": "none"
+                },
+                "sample_count": 80,
+                "source": "empirical_validation_observation_history",
+                "source_priority": 1,
+                "status": "available"
+              },
+              "status": "available",
+              "trace_fraction": 0.0016381819084258964,
+              "variance": 1.6627978841001226e-05
+            },
+            "delta_energy_fraction": 0.07968176955010495,
+            "dominant_action_channel": "ux",
+            "dominant_action_time": 34,
+            "dominant_observation_channel": "vx",
+            "dominant_observation_time": 8,
+            "rank": 3,
+            "singular_value": 2678.3771768308075
+          },
+          {
+            "covariance_projection": {
+              "covariance_metadata": {
+                "audit_only": true,
+                "basis": "flattened_delayed_position_velocity_observation_history",
+                "centering": "sample_mean_subtracted",
+                "estimator": "unbiased_sample_covariance",
+                "future_lenses": {
+                  "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                  "sensory_noise_covariance": "missing_same_basis_contract"
+                },
+                "history_dim": 360,
+                "horizon": 60,
+                "normalization": "expected_squared_output_energy_ratio",
+                "observation_dim": 6,
+                "original_covariance_shape": [
+                  360,
+                  360
+                ],
+                "projected_covariance_shape": [
+                  240,
+                  240
+                ],
+                "projection": "first_four_pos_vel_channels_from_6d_proprioceptive_feedback",
+                "regularization": {
+                  "diagonal_jitter": 0.0,
+                  "eigenvalue_floor": 0.0,
+                  "ratio_denominator_floor": 1e-12,
+                  "type": "none"
+                },
+                "sample_count": 80,
+                "source": "empirical_validation_observation_history",
+                "source_priority": 1,
+                "status": "available"
+              },
+              "status": "available",
+              "trace_fraction": 0.0019848287532422825,
+              "variance": 2.0146535828634714e-05
+            },
+            "delta_energy_fraction": 0.07901078474656753,
+            "dominant_action_channel": "uy",
+            "dominant_action_time": 34,
+            "dominant_observation_channel": "vy",
+            "dominant_observation_time": 8,
+            "rank": 4,
+            "singular_value": 2667.0762872300593
+          },
+          {
+            "covariance_projection": {
+              "covariance_metadata": {
+                "audit_only": true,
+                "basis": "flattened_delayed_position_velocity_observation_history",
+                "centering": "sample_mean_subtracted",
+                "estimator": "unbiased_sample_covariance",
+                "future_lenses": {
+                  "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                  "sensory_noise_covariance": "missing_same_basis_contract"
+                },
+                "history_dim": 360,
+                "horizon": 60,
+                "normalization": "expected_squared_output_energy_ratio",
+                "observation_dim": 6,
+                "original_covariance_shape": [
+                  360,
+                  360
+                ],
+                "projected_covariance_shape": [
+                  240,
+                  240
+                ],
+                "projection": "first_four_pos_vel_channels_from_6d_proprioceptive_feedback",
+                "regularization": {
+                  "diagonal_jitter": 0.0,
+                  "eigenvalue_floor": 0.0,
+                  "ratio_denominator_floor": 1e-12,
+                  "type": "none"
+                },
+                "sample_count": 80,
+                "source": "empirical_validation_observation_history",
+                "source_priority": 1,
+                "status": "available"
+              },
+              "status": "available",
+              "trace_fraction": 0.0016563581346335206,
+              "variance": 1.681247233542642e-05
+            },
+            "delta_energy_fraction": 0.027734099848920713,
+            "dominant_action_channel": "ux",
+            "dominant_action_time": 6,
+            "dominant_observation_channel": "px",
+            "dominant_observation_time": 5,
+            "rank": 5,
+            "singular_value": 1580.1535379609181
+          }
+        ]
+      },
+      "evaluation_metadata": {
+        "candidate_map_projection": {
+          "excluded_channels": [
+            "delayed_force_filter_x",
+            "delayed_force_filter_y"
+          ],
+          "original_candidate_feedback_basis": "target_relative_delayed_feedback_plus_force_filter",
+          "original_feedback_dim": 6,
+          "projected_candidate_feedback_basis": "target_relative_delayed_feedback",
+          "projected_feedback_dim": 4,
+          "reason": "The standard map-error decomposition compares to the extLQG 4D position/velocity observation-history map.",
+          "status": "projected"
+        },
+        "checkpoint_selection": "final_checkpoint",
+        "io_response_map": {
+          "input_channel": "6D delayed position/velocity plus force-filter feedback",
+          "map_shape": [
+            80,
+            60,
+            2,
+            360
+          ],
+          "n_rollout_trials_per_replicate": 16,
+          "status": "evaluated_controller_local_jacobian_on_stochastic_histories"
+        },
+        "n_replicates": 5,
+        "n_trials": 72,
+        "noise": "feedbax Channel noise disabled; plant-process force noise disabled if present",
+        "observation_history_covariance": {
+          "audit_only": true,
+          "basis": "flattened_delayed_position_velocity_observation_history",
+          "centering": "sample_mean_subtracted",
+          "estimator": "unbiased_sample_covariance",
+          "future_lenses": {
+            "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+            "sensory_noise_covariance": "missing_same_basis_contract"
+          },
+          "history_dim": 360,
+          "horizon": 60,
+          "normalization": "expected_squared_output_energy_ratio",
+          "observation_dim": 6,
+          "original_covariance_shape": [
+            360,
+            360
+          ],
+          "projected_covariance_shape": [
+            240,
+            240
+          ],
+          "projection": "first_four_pos_vel_channels_from_6d_proprioceptive_feedback",
+          "regularization": {
+            "diagonal_jitter": 0.0,
+            "eigenvalue_floor": 0.0,
+            "ratio_denominator_floor": 1e-12,
+            "type": "none"
+          },
+          "sample_count": 80,
+          "source": "empirical_validation_observation_history",
+          "source_priority": 1,
+          "status": "available"
+        },
+        "selected_checkpoints": [],
+        "status": "evaluated_clean_feedbax_rollout"
+      },
+      "reference_metadata": {
+        "action_dim": 2,
+        "controller": "analytical_lqr_kalman_output_feedback",
+        "controller_variant": "cs_released_extlqg_stochastic_fixed_point",
+        "extlqg_expected_cost": 12201.42433801687,
+        "extlqg_iterations": 6,
+        "gamma_factor": 1.4,
+        "history_dim": 240,
+        "map_shape": [
+          60,
+          2,
+          240
+        ],
+        "observation_channel": "delayed_position_velocity",
+        "observation_dim": 4,
+        "parity_status": "fixed_point: local port of extLQG/computeOFC/computeExtKalman"
+      },
+      "run_id": "direct_epsilon_b1p05__nominal_clean",
+      "source_run_id": "direct_epsilon_b1p05",
+      "standard_certificate_row": {
+        "observation_history_to_action_map_mismatch": {
+          "reason": "Response-map components are blocked: the ae9f30f Feedbax GraphSpec (None) feeds the GRU 6D delayed position/velocity plus force-filter feedback (6D), while the current C&S output-feedback reference uses delayed_observation_matrix over the full physical block (8D). No approved 6D-to-8D projection or 6D analytical reference response-map contract is present.",
+          "status": "missing",
+          "summary": {}
+        },
+        "run_id": "direct_epsilon_b1p05__nominal_clean",
+        "status": "partial_standard_certificate_blocked"
+      }
+    },
+    {
+      "decomposition": {
+        "alignment": {
+          "alignment_basis": "raw_cartesian",
+          "direction_vectors": null,
+          "frame_source": "raw_cartesian_observation_action_basis",
+          "moving_target": {
+            "status": "not_applicable"
+          },
+          "sign_convention": "raw ux/uy and px/py/vx/vy Cartesian channels",
+          "target_time_convention": "not_applicable_static_or_raw",
+          "target_velocity_used": false
+        },
+        "basis": {
+          "action_channels": [
+            "ux",
+            "uy"
+          ],
+          "action_dim": 2,
+          "action_time_count": 60,
+          "candidate_observation_basis": {
+            "candidate_feedback_basis": "target_relative_delayed_feedback",
+            "reference_converted_to_candidate_basis": true,
+            "reference_feedback_basis": "raw_delayed_position_velocity",
+            "reference_observation_from_candidate_transform": [
+              [
+                -1.0,
+                -0.0,
+                -0.0,
+                -0.0
+              ],
+              [
+                -0.0,
+                -1.0,
+                -0.0,
+                -0.0
+              ],
+              [
+                -0.0,
+                -0.0,
+                -1.0,
+                -0.0
+              ],
+              [
+                -0.0,
+                -0.0,
+                -0.0,
+                -1.0
+              ]
+            ],
+            "sign_convention": "candidate feedback is [target_x - delayed_x, target_y - delayed_y, -delayed_vx, -delayed_vy]; analytical reference input derivatives are therefore multiplied by -1 before comparison"
+          },
+          "input": "flattened_observation_history",
+          "observation_channels": [
+            "px",
+            "py",
+            "vx",
+            "vy"
+          ],
+          "observation_dim": 4,
+          "observation_time_count": 60,
+          "output": "action_history"
+        },
+        "decision_rule_annotations": [
+          "wrong_timing_or_channel",
+          "unexcited_directions"
+        ],
+        "energy_decomposition": {
+          "by_action_channel": [
+            {
+              "energy": 42047471.88538234,
+              "fraction": 0.48974374041591984,
+              "index": 0,
+              "label": "ux"
+            },
+            {
+              "energy": 43808596.12617222,
+              "fraction": 0.51025625958408,
+              "index": 1,
+              "label": "uy"
+            }
+          ],
+          "by_action_time": [
+            {
+              "energy": 1957777.601328428,
+              "fraction": 0.022803019596296315,
+              "index": 0,
+              "label": "t0"
+            },
+            {
+              "energy": 821602.3969212986,
+              "fraction": 0.009569532077927524,
+              "index": 1,
+              "label": "t1"
+            },
+            {
+              "energy": 395718.13415837963,
+              "fraction": 0.004609087549934427,
+              "index": 2,
+              "label": "t2"
+            },
+            {
+              "energy": 291703.80107109476,
+              "fraction": 0.0033975909662184514,
+              "index": 3,
+              "label": "t3"
+            },
+            {
+              "energy": 275460.82882322615,
+              "fraction": 0.0032084025649317467,
+              "index": 4,
+              "label": "t4"
+            },
+            {
+              "energy": 253781.61270480743,
+              "fraction": 0.002955896054669698,
+              "index": 5,
+              "label": "t5"
+            },
+            {
+              "energy": 5192095.879919788,
+              "fraction": 0.06047441957417654,
+              "index": 6,
+              "label": "t6"
+            },
+            {
+              "energy": 1768228.6657723463,
+              "fraction": 0.02059526725046827,
+              "index": 7,
+              "label": "t7"
+            },
+            {
+              "energy": 1161020.5156748192,
+              "fraction": 0.0135228708065057,
+              "index": 8,
+              "label": "t8"
+            },
+            {
+              "energy": 1163988.0446158806,
+              "fraction": 0.013557434804249716,
+              "index": 9,
+              "label": "t9"
+            },
+            {
+              "energy": 1248770.2576393397,
+              "fraction": 0.014544927185243089,
+              "index": 10,
+              "label": "t10"
+            },
+            {
+              "energy": 1285933.8904566315,
+              "fraction": 0.014977786896595005,
+              "index": 11,
+              "label": "t11"
+            },
+            {
+              "energy": 1291678.9612267073,
+              "fraction": 0.015044702036120176,
+              "index": 12,
+              "label": "t12"
+            },
+            {
+              "energy": 1286717.3433225807,
+              "fraction": 0.014986912085811026,
+              "index": 13,
+              "label": "t13"
+            },
+            {
+              "energy": 1188237.455747821,
+              "fraction": 0.013839877404913385,
+              "index": 14,
+              "label": "t14"
+            },
+            {
+              "energy": 1161230.3972910824,
+              "fraction": 0.013525315381724717,
+              "index": 15,
+              "label": "t15"
+            },
+            {
+              "energy": 1317633.6940646397,
+              "fraction": 0.015347007201486466,
+              "index": 16,
+              "label": "t16"
+            },
+            {
+              "energy": 1559985.9526393332,
+              "fraction": 0.01816978099240917,
+              "index": 17,
+              "label": "t17"
+            },
+            {
+              "energy": 1716551.6649984496,
+              "fraction": 0.019993364531525424,
+              "index": 18,
+              "label": "t18"
+            },
+            {
+              "energy": 1710852.3785820187,
+              "fraction": 0.019926982660698728,
+              "index": 19,
+              "label": "t19"
+            },
+            {
+              "energy": 1587718.0889345228,
+              "fraction": 0.018492788287495843,
+              "index": 20,
+              "label": "t20"
+            },
+            {
+              "energy": 1450703.0193268084,
+              "fraction": 0.016896918912377535,
+              "index": 21,
+              "label": "t21"
+            },
+            {
+              "energy": 1398848.6373316902,
+              "fraction": 0.01629295016332954,
+              "index": 22,
+              "label": "t22"
+            },
+            {
+              "energy": 1460699.3630482024,
+              "fraction": 0.017013350330131825,
+              "index": 23,
+              "label": "t23"
+            },
+            {
+              "energy": 1580727.3778746855,
+              "fraction": 0.018411364676774507,
+              "index": 24,
+              "label": "t24"
+            },
+            {
+              "energy": 1663854.6035793084,
+              "fraction": 0.019379580757825827,
+              "index": 25,
+              "label": "t25"
+            },
+            {
+              "energy": 1655106.093030374,
+              "fraction": 0.019277683352650492,
+              "index": 26,
+              "label": "t26"
+            },
+            {
+              "energy": 1589159.062586084,
+              "fraction": 0.01850957188456632,
+              "index": 27,
+              "label": "t27"
+            },
+            {
+              "energy": 1568562.7508804952,
+              "fraction": 0.01826967839558407,
+              "index": 28,
+              "label": "t28"
+            },
+            {
+              "energy": 1674049.167017342,
+              "fraction": 0.019498320919984914,
+              "index": 29,
+              "label": "t29"
+            },
+            {
+              "energy": 1880187.6850807227,
+              "fraction": 0.021899298775570362,
+              "index": 30,
+              "label": "t30"
+            },
+            {
+              "energy": 2062974.8763033357,
+              "fraction": 0.024028294377814962,
+              "index": 31,
+              "label": "t31"
+            },
+            {
+              "energy": 2104175.8919272013,
+              "fraction": 0.024508179103240785,
+              "index": 32,
+              "label": "t32"
+            },
+            {
+              "energy": 1992902.9619627744,
+              "fraction": 0.023212138735430654,
+              "index": 33,
+              "label": "t33"
+            },
+            {
+              "energy": 1828407.763726251,
+              "fraction": 0.021296197299417237,
+              "index": 34,
+              "label": "t34"
+            },
+            {
+              "energy": 1720926.3986466937,
+              "fraction": 0.020044318805924007,
+              "index": 35,
+              "label": "t35"
+            },
+            {
+              "energy": 1698135.0949332523,
+              "fraction": 0.019778859366174517,
+              "index": 36,
+              "label": "t36"
+            },
+            {
+              "energy": 1697987.2456839252,
+              "fraction": 0.019777137306770314,
+              "index": 37,
+              "label": "t37"
+            },
+            {
+              "energy": 1645628.04141707,
+              "fraction": 0.019167288690597854,
+              "index": 38,
+              "label": "t38"
+            },
+            {
+              "energy": 1529889.6141282846,
+              "fraction": 0.01781923688751261,
+              "index": 39,
+              "label": "t39"
+            },
+            {
+              "energy": 1411188.83397661,
+              "fraction": 0.01643668137453827,
+              "index": 40,
+              "label": "t40"
+            },
+            {
+              "energy": 1360764.502131701,
+              "fraction": 0.015849368992166848,
+              "index": 41,
+              "label": "t41"
+            },
+            {
+              "energy": 1395783.968245439,
+              "fraction": 0.016257254735420605,
+              "index": 42,
+              "label": "t42"
+            },
+            {
+              "energy": 1468297.4620492677,
+              "fraction": 0.017101848431396408,
+              "index": 43,
+              "label": "t43"
+            },
+            {
+              "energy": 1511014.2346151897,
+              "fraction": 0.017599387784819547,
+              "index": 44,
+              "label": "t44"
+            },
+            {
+              "energy": 1492760.4026313585,
+              "fraction": 0.01738677809506093,
+              "index": 45,
+              "label": "t45"
+            },
+            {
+              "energy": 1440770.3424233035,
+              "fraction": 0.01678122904754273,
+              "index": 46,
+              "label": "t46"
+            },
+            {
+              "energy": 1403251.5943067132,
+              "fraction": 0.01634423316611544,
+              "index": 47,
+              "label": "t47"
+            },
+            {
+              "energy": 1398592.9920273903,
+              "fraction": 0.01628997256011266,
+              "index": 48,
+              "label": "t48"
+            },
+            {
+              "energy": 1410621.5226419822,
+              "fraction": 0.01643007367227835,
+              "index": 49,
+              "label": "t49"
+            },
+            {
+              "energy": 1411420.9143412074,
+              "fraction": 0.01643938450746728,
+              "index": 50,
+              "label": "t50"
+            },
+            {
+              "energy": 1382957.8478229279,
+              "fraction": 0.016107863775415482,
+              "index": 51,
+              "label": "t51"
+            },
+            {
+              "energy": 1335377.261762538,
+              "fraction": 0.01555367363880235,
+              "index": 52,
+              "label": "t52"
+            },
+            {
+              "energy": 1282691.3982168008,
+              "fraction": 0.0149400202912178,
+              "index": 53,
+              "label": "t53"
+            },
+            {
+              "energy": 1214848.1669789276,
+              "fraction": 0.014149823013271846,
+              "index": 54,
+              "label": "t54"
+            },
+            {
+              "energy": 1124754.1769148672,
+              "fraction": 0.013100462238306756,
+              "index": 55,
+              "label": "t55"
+            },
+            {
+              "energy": 950507.142045205,
+              "fraction": 0.011070937256494032,
+              "index": 56,
+              "label": "t56"
+            },
+            {
+              "energy": 735173.6313866735,
+              "fraction": 0.00856286164057424,
+              "index": 57,
+              "label": "t57"
+            },
+            {
+              "energy": 638143.1813671612,
+              "fraction": 0.0074327091392221625,
+              "index": 58,
+              "label": "t58"
+            },
+            {
+              "energy": 647535.2212915928,
+              "fraction": 0.007542101988696327,
+              "index": 59,
+              "label": "t59"
+            }
+          ],
+          "by_observation_channel": [
+            {
+              "energy": 20755633.88339712,
+              "fraction": 0.24174917817810868,
+              "index": 0,
+              "label": "px"
+            },
+            {
+              "energy": 22153812.340316314,
+              "fraction": 0.25803432248184066,
+              "index": 1,
+              "label": "py"
+            },
+            {
+              "energy": 21308094.666854832,
+              "fraction": 0.24818391012254573,
+              "index": 2,
+              "label": "vx"
+            },
+            {
+              "energy": 21638527.120986205,
+              "fraction": 0.2520325892175038,
+              "index": 3,
+              "label": "vy"
+            }
+          ],
+          "by_observation_lag": [
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -59
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -58
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -57
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -56
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -55
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -54
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -53
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -52
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -51
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -50
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -49
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -48
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -47
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -46
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -45
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -44
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -43
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -42
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -41
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -40
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -39
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -38
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -37
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -36
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -35
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -34
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -33
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -32
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -31
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -30
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -29
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -28
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -27
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -26
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -25
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -24
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -23
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -22
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -21
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -20
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -19
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -18
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -17
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -16
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -15
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -14
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -13
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -12
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -11
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -10
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -9
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -8
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -7
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -6
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -5
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -4
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -3
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -2
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -1
+            },
+            {
+              "energy": 13766506.238404961,
+              "fraction": 0.1603440101234575,
+              "lag": 0
+            },
+            {
+              "energy": 22638357.57549044,
+              "fraction": 0.2636780148427454,
+              "lag": 1
+            },
+            {
+              "energy": 3799444.101977849,
+              "fraction": 0.044253646713316955,
+              "lag": 2
+            },
+            {
+              "energy": 1362349.2322733095,
+              "fraction": 0.015867826978635494,
+              "lag": 3
+            },
+            {
+              "energy": 1698318.5581593136,
+              "fraction": 0.019780996235825205,
+              "lag": 4
+            },
+            {
+              "energy": 2241645.5658097914,
+              "fraction": 0.026109343436367356,
+              "lag": 5
+            },
+            {
+              "energy": 3143356.761482405,
+              "fraction": 0.03661193476807452,
+              "lag": 6
+            },
+            {
+              "energy": 3341610.9232216896,
+              "fraction": 0.03892108036873961,
+              "lag": 7
+            },
+            {
+              "energy": 2328817.5433381014,
+              "fraction": 0.027124670361385377,
+              "lag": 8
+            },
+            {
+              "energy": 772816.0462832235,
+              "fraction": 0.009001297918502597,
+              "lag": 9
+            },
+            {
+              "energy": 758304.6990214543,
+              "fraction": 0.00883227844675348,
+              "lag": 10
+            },
+            {
+              "energy": 1779644.624971642,
+              "fraction": 0.020728233498092833,
+              "lag": 11
+            },
+            {
+              "energy": 2699680.062558347,
+              "fraction": 0.03144425461220775,
+              "lag": 12
+            },
+            {
+              "energy": 3270751.1682821913,
+              "fraction": 0.03809574843145637,
+              "lag": 13
+            },
+            {
+              "energy": 3071024.6629761215,
+              "fraction": 0.035769453855758,
+              "lag": 14
+            },
+            {
+              "energy": 1917937.5995930808,
+              "fraction": 0.022338987144565756,
+              "lag": 15
+            },
+            {
+              "energy": 777291.63010442,
+              "fraction": 0.009053426835244908,
+              "lag": 16
+            },
+            {
+              "energy": 543419.5817192598,
+              "fraction": 0.006329425447786941,
+              "lag": 17
+            },
+            {
+              "energy": 937704.2126740523,
+              "fraction": 0.010921816411949536,
+              "lag": 18
+            },
+            {
+              "energy": 1335853.1885654072,
+              "fraction": 0.015559216948831469,
+              "lag": 19
+            },
+            {
+              "energy": 1378986.7743780008,
+              "fraction": 0.016061611093026246,
+              "lag": 20
+            },
+            {
+              "energy": 931548.6490053952,
+              "fraction": 0.010850120097277536,
+              "lag": 21
+            },
+            {
+              "energy": 319731.5269214082,
+              "fraction": 0.0037240411112046093,
+              "lag": 22
+            },
+            {
+              "energy": 121037.3965932488,
+              "fraction": 0.0014097710202260777,
+              "lag": 23
+            },
+            {
+              "energy": 549230.4755662106,
+              "fraction": 0.006397107255043345,
+              "lag": 24
+            },
+            {
+              "energy": 1261867.0820104412,
+              "fraction": 0.014697471142524466,
+              "lag": 25
+            },
+            {
+              "energy": 1686218.6966110806,
+              "fraction": 0.019640064303715236,
+              "lag": 26
+            },
+            {
+              "energy": 1511582.0238118991,
+              "fraction": 0.01760600105293046,
+              "lag": 27
+            },
+            {
+              "energy": 920900.2931821045,
+              "fraction": 0.010726094433513645,
+              "lag": 28
+            },
+            {
+              "energy": 379025.0845752758,
+              "fraction": 0.004414656917717992,
+              "lag": 29
+            },
+            {
+              "energy": 208479.2214727935,
+              "fraction": 0.0024282409653879817,
+              "lag": 30
+            },
+            {
+              "energy": 352688.5852003867,
+              "fraction": 0.00410790516464045,
+              "lag": 31
+            },
+            {
+              "energy": 506960.791381776,
+              "fraction": 0.005904775319008889,
+              "lag": 32
+            },
+            {
+              "energy": 442652.1446388666,
+              "fraction": 0.005155746761886348,
+              "lag": 33
+            },
+            {
+              "energy": 204686.04693965917,
+              "fraction": 0.002384060342853255,
+              "lag": 34
+            },
+            {
+              "energy": 26511.746130765496,
+              "fraction": 0.0003087929222101987,
+              "lag": 35
+            },
+            {
+              "energy": 83891.72288774284,
+              "fraction": 0.0009771204858397735,
+              "lag": 36
+            },
+            {
+              "energy": 333525.0108192804,
+              "fraction": 0.003884699340929454,
+              "lag": 37
+            },
+            {
+              "energy": 568924.3864704022,
+              "fraction": 0.006626490120579899,
+              "lag": 38
+            },
+            {
+              "energy": 612981.8377148705,
+              "fraction": 0.007139644895365753,
+              "lag": 39
+            },
+            {
+              "energy": 458190.27304789115,
+              "fraction": 0.005336725564769954,
+              "lag": 40
+            },
+            {
+              "energy": 241101.39900783403,
+              "fraction": 0.0028082045287164377,
+              "lag": 41
+            },
+            {
+              "energy": 101942.10655603434,
+              "fraction": 0.0011873605316087257,
+              "lag": 42
+            },
+            {
+              "energy": 72877.59366942456,
+              "fraction": 0.0008488345128921656,
+              "lag": 43
+            },
+            {
+              "energy": 87122.21957819432,
+              "fraction": 0.0010147473742504647,
+              "lag": 44
+            },
+            {
+              "energy": 73914.3826394227,
+              "fraction": 0.0008609104091451667,
+              "lag": 45
+            },
+            {
+              "energy": 29880.102235454397,
+              "fraction": 0.0003480255144159771,
+              "lag": 46
+            },
+            {
+              "energy": 2160.9796656856925,
+              "fraction": 2.516979539984135e-05,
+              "lag": 47
+            },
+            {
+              "energy": 19246.924346629687,
+              "fraction": 0.00022417663413189877,
+              "lag": 48
+            },
+            {
+              "energy": 54970.34347221532,
+              "fraction": 0.0006402615999700495,
+              "lag": 49
+            },
+            {
+              "energy": 66877.14915182792,
+              "fraction": 0.0007789449330806479,
+              "lag": 50
+            },
+            {
+              "energy": 45287.06015637252,
+              "fraction": 0.0005274765221053189,
+              "lag": 51
+            },
+            {
+              "energy": 14835.574875416458,
+              "fraction": 0.0001727958805826034,
+              "lag": 52
+            },
+            {
+              "energy": 1363.2432512936955,
+              "fraction": 1.587823997612177e-05,
+              "lag": 53
+            },
+            {
+              "energy": 11.635373184009826,
+              "fraction": 1.3552185015558748e-07,
+              "lag": 54
+            },
+            {
+              "energy": 5.641209954273339,
+              "fraction": 6.570543101873873e-08,
+              "lag": 55
+            },
+            {
+              "energy": 4.929177411642834,
+              "fraction": 5.741210290435688e-08,
+              "lag": 56
+            },
+            {
+              "energy": 4.6457551178603556,
+              "fraction": 5.411096996935763e-08,
+              "lag": 57
+            },
+            {
+              "energy": 4.3089744347739005,
+              "fraction": 5.018835050999535e-08,
+              "lag": 58
+            },
+            {
+              "energy": 4.026192075559481,
+              "fraction": 4.689467114913338e-08,
+              "lag": 59
+            }
+          ],
+          "by_observation_time": [
+            {
+              "energy": 2964908.650277564,
+              "fraction": 0.034533478168119046,
+              "index": 0,
+              "label": "obs_t0"
+            },
+            {
+              "energy": 128920.4453637314,
+              "fraction": 0.0015015880455459618,
+              "index": 1,
+              "label": "obs_t1"
+            },
+            {
+              "energy": 209696.81880561853,
+              "fraction": 0.0024424228090366004,
+              "index": 2,
+              "label": "obs_t2"
+            },
+            {
+              "energy": 244547.20062385846,
+              "fraction": 0.0028483391598011117,
+              "index": 3,
+              "label": "obs_t3"
+            },
+            {
+              "energy": 262625.21415669355,
+              "fraction": 0.0030589010216651113,
+              "index": 4,
+              "label": "obs_t4"
+            },
+            {
+              "energy": 13348284.381004289,
+              "fraction": 0.15547281269866525,
+              "index": 5,
+              "label": "obs_t5"
+            },
+            {
+              "energy": 4790523.342880977,
+              "fraction": 0.055797143449852205,
+              "index": 6,
+              "label": "obs_t6"
+            },
+            {
+              "energy": 3127331.0086923866,
+              "fraction": 0.03642527640878578,
+              "index": 7,
+              "label": "obs_t7"
+            },
+            {
+              "energy": 2705893.7427399377,
+              "fraction": 0.03151662783317513,
+              "index": 8,
+              "label": "obs_t8"
+            },
+            {
+              "energy": 2555626.2907055165,
+              "fraction": 0.029766402653817997,
+              "index": 9,
+              "label": "obs_t9"
+            },
+            {
+              "energy": 2422142.466713572,
+              "fraction": 0.02821166311026028,
+              "index": 10,
+              "label": "obs_t10"
+            },
+            {
+              "energy": 2245314.4616065384,
+              "fraction": 0.026152076534699475,
+              "index": 11,
+              "label": "obs_t11"
+            },
+            {
+              "energy": 2011831.0795956724,
+              "fraction": 0.023432602100120853,
+              "index": 12,
+              "label": "obs_t12"
+            },
+            {
+              "energy": 1960435.1813433312,
+              "fraction": 0.022833973494797065,
+              "index": 13,
+              "label": "obs_t13"
+            },
+            {
+              "energy": 1938924.691994534,
+              "fraction": 0.02258343221277723,
+              "index": 14,
+              "label": "obs_t14"
+            },
+            {
+              "energy": 1883142.6101453444,
+              "fraction": 0.021933715970919025,
+              "index": 15,
+              "label": "obs_t15"
+            },
+            {
+              "energy": 1786271.1640946998,
+              "fraction": 0.020805415452455872,
+              "index": 16,
+              "label": "obs_t16"
+            },
+            {
+              "energy": 1667358.4136178726,
+              "fraction": 0.019420391036233785,
+              "index": 17,
+              "label": "obs_t17"
+            },
+            {
+              "energy": 1547257.3966746246,
+              "fraction": 0.01802152640470786,
+              "index": 18,
+              "label": "obs_t18"
+            },
+            {
+              "energy": 1437781.7847771193,
+              "fraction": 0.016746420120050474,
+              "index": 19,
+              "label": "obs_t19"
+            },
+            {
+              "energy": 1350768.7545482048,
+              "fraction": 0.015732944517869343,
+              "index": 20,
+              "label": "obs_t20"
+            },
+            {
+              "energy": 1289300.2350813134,
+              "fraction": 0.015016996060287766,
+              "index": 21,
+              "label": "obs_t21"
+            },
+            {
+              "energy": 1246515.2716464733,
+              "fraction": 0.014518662460511427,
+              "index": 22,
+              "label": "obs_t22"
+            },
+            {
+              "energy": 1219886.5511522526,
+              "fraction": 0.014208507091054758,
+              "index": 23,
+              "label": "obs_t23"
+            },
+            {
+              "energy": 1205833.9504283876,
+              "fraction": 0.014044830823909914,
+              "index": 24,
+              "label": "obs_t24"
+            },
+            {
+              "energy": 1199770.9918480108,
+              "fraction": 0.013974213117779221,
+              "index": 25,
+              "label": "obs_t25"
+            },
+            {
+              "energy": 1197888.269066953,
+              "fraction": 0.013952284291725781,
+              "index": 26,
+              "label": "obs_t26"
+            },
+            {
+              "energy": 1195630.7463088676,
+              "fraction": 0.013925990020273917,
+              "index": 27,
+              "label": "obs_t27"
+            },
+            {
+              "energy": 1189309.6929679592,
+              "fraction": 0.013852366181128875,
+              "index": 28,
+              "label": "obs_t28"
+            },
+            {
+              "energy": 1174291.7673139754,
+              "fraction": 0.013677446388016958,
+              "index": 29,
+              "label": "obs_t29"
+            },
+            {
+              "energy": 1147133.2174480439,
+              "fraction": 0.013361119883729847,
+              "index": 30,
+              "label": "obs_t30"
+            },
+            {
+              "energy": 1107448.243130191,
+              "fraction": 0.012898893098402198,
+              "index": 31,
+              "label": "obs_t31"
+            },
+            {
+              "energy": 1058759.9866218024,
+              "fraction": 0.012331801480581592,
+              "index": 32,
+              "label": "obs_t32"
+            },
+            {
+              "energy": 1008045.9204536711,
+              "fraction": 0.011741114446541013,
+              "index": 33,
+              "label": "obs_t33"
+            },
+            {
+              "energy": 962502.1405204645,
+              "fraction": 0.011210647806407001,
+              "index": 34,
+              "label": "obs_t34"
+            },
+            {
+              "energy": 932113.816799355,
+              "fraction": 0.010856702832861045,
+              "index": 35,
+              "label": "obs_t35"
+            },
+            {
+              "energy": 931031.4366745466,
+              "fraction": 0.010844095918173747,
+              "index": 36,
+              "label": "obs_t36"
+            },
+            {
+              "energy": 970548.0430434773,
+              "fraction": 0.01130436165458754,
+              "index": 37,
+              "label": "obs_t37"
+            },
+            {
+              "energy": 1046653.4800108402,
+              "fraction": 0.012190792150765406,
+              "index": 38,
+              "label": "obs_t38"
+            },
+            {
+              "energy": 1147811.970048223,
+              "fraction": 0.013369025587029557,
+              "index": 39,
+              "label": "obs_t39"
+            },
+            {
+              "energy": 1252397.011175156,
+              "fraction": 0.014587169435788833,
+              "index": 40,
+              "label": "obs_t40"
+            },
+            {
+              "energy": 1280553.5773763326,
+              "fraction": 0.014915120235927818,
+              "index": 41,
+              "label": "obs_t41"
+            },
+            {
+              "energy": 1212506.2221282532,
+              "fraction": 0.014122545443905878,
+              "index": 42,
+              "label": "obs_t42"
+            },
+            {
+              "energy": 1125773.6486421854,
+              "fraction": 0.013112336433700621,
+              "index": 43,
+              "label": "obs_t43"
+            },
+            {
+              "energy": 1039503.8283953452,
+              "fraction": 0.012107517295754194,
+              "index": 44,
+              "label": "obs_t44"
+            },
+            {
+              "energy": 935335.6578438965,
+              "fraction": 0.010894228905498193,
+              "index": 45,
+              "label": "obs_t45"
+            },
+            {
+              "energy": 838187.7416399084,
+              "fraction": 0.009762708228463299,
+              "index": 46,
+              "label": "obs_t46"
+            },
+            {
+              "energy": 785745.3165531651,
+              "fraction": 0.009151890306080858,
+              "index": 47,
+              "label": "obs_t47"
+            },
+            {
+              "energy": 761618.9788042264,
+              "fraction": 0.008870881190386301,
+              "index": 48,
+              "label": "obs_t48"
+            },
+            {
+              "energy": 729346.6136083113,
+              "fraction": 0.008494992031432832,
+              "index": 49,
+              "label": "obs_t49"
+            },
+            {
+              "energy": 693348.7258137704,
+              "fraction": 0.008075710219112983,
+              "index": 50,
+              "label": "obs_t50"
+            },
+            {
+              "energy": 661222.691862529,
+              "fraction": 0.0077015254387557235,
+              "index": 51,
+              "label": "obs_t51"
+            },
+            {
+              "energy": 601744.7054431249,
+              "fraction": 0.0070087615165667925,
+              "index": 52,
+              "label": "obs_t52"
+            },
+            {
+              "energy": 518520.0531144352,
+              "fraction": 0.006039410668616369,
+              "index": 53,
+              "label": "obs_t53"
+            },
+            {
+              "energy": 459922.9237513857,
+              "fraction": 0.00535690644124873,
+              "index": 54,
+              "label": "obs_t54"
+            },
+            {
+              "energy": 381087.3194382795,
+              "fraction": 0.004438676592864612,
+              "index": 55,
+              "label": "obs_t55"
+            },
+            {
+              "energy": 255277.76810096606,
+              "fraction": 0.0029733223756136912,
+              "index": 56,
+              "label": "obs_t56"
+            },
+            {
+              "energy": 184935.56653746244,
+              "fraction": 0.002154018589723602,
+              "index": 57,
+              "label": "obs_t57"
+            },
+            {
+              "energy": 172675.5143737155,
+              "fraction": 0.0020112208533761026,
+              "index": 58,
+              "label": "obs_t58"
+            },
+            {
+              "energy": 146303.3160252011,
+              "fraction": 0.0017040533000592514,
+              "index": 59,
+              "label": "obs_t59"
+            }
+          ]
+        },
+        "format": "rlrmp.gru_map_error_decomposition.v1",
+        "map_shape": [
+          80,
+          60,
+          2,
+          240
+        ],
+        "sample_shape": [
+          80
+        ],
+        "summary": {
+          "aggregate_delta_ratio": 1.141529987458585,
+          "best_scalar_gain": 0.08483476492572915,
+          "best_scalar_residual_frobenius": 4781.679570340826,
+          "best_scalar_residual_ratio": 0.30400257997003927,
+          "candidate_frobenius": 4837.9490740805895,
+          "candidate_reference_cosine": 0.1520738018355115,
+          "candidate_reference_norm_ratio": 0.5578525946072519,
+          "delta_frobenius": 9265.854953082018,
+          "reference_frobenius": 8672.450609442227
+        },
+        "top_singular_directions": [
+          {
+            "covariance_projection": {
+              "covariance_metadata": {
+                "audit_only": true,
+                "basis": "flattened_delayed_position_velocity_observation_history",
+                "centering": "sample_mean_subtracted",
+                "estimator": "unbiased_sample_covariance",
+                "future_lenses": {
+                  "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                  "sensory_noise_covariance": "missing_same_basis_contract"
+                },
+                "history_dim": 360,
+                "horizon": 60,
+                "normalization": "expected_squared_output_energy_ratio",
+                "observation_dim": 6,
+                "original_covariance_shape": [
+                  360,
+                  360
+                ],
+                "projected_covariance_shape": [
+                  240,
+                  240
+                ],
+                "projection": "first_four_pos_vel_channels_from_6d_proprioceptive_feedback",
+                "regularization": {
+                  "diagonal_jitter": 0.0,
+                  "eigenvalue_floor": 0.0,
+                  "ratio_denominator_floor": 1e-12,
+                  "type": "none"
+                },
+                "sample_count": 80,
+                "source": "empirical_validation_observation_history",
+                "source_priority": 1,
+                "status": "available"
+              },
+              "status": "available",
+              "trace_fraction": 0.002713245741173077,
+              "variance": 2.5124098218369763e-05
+            },
+            "delta_energy_fraction": 0.12376316897420633,
+            "dominant_action_channel": "ux",
+            "dominant_action_time": 6,
+            "dominant_observation_channel": "px",
+            "dominant_observation_time": 5,
+            "rank": 1,
+            "singular_value": 3259.7268371406476
+          },
+          {
+            "covariance_projection": {
+              "covariance_metadata": {
+                "audit_only": true,
+                "basis": "flattened_delayed_position_velocity_observation_history",
+                "centering": "sample_mean_subtracted",
+                "estimator": "unbiased_sample_covariance",
+                "future_lenses": {
+                  "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                  "sensory_noise_covariance": "missing_same_basis_contract"
+                },
+                "history_dim": 360,
+                "horizon": 60,
+                "normalization": "expected_squared_output_energy_ratio",
+                "observation_dim": 6,
+                "original_covariance_shape": [
+                  360,
+                  360
+                ],
+                "projected_covariance_shape": [
+                  240,
+                  240
+                ],
+                "projection": "first_four_pos_vel_channels_from_6d_proprioceptive_feedback",
+                "regularization": {
+                  "diagonal_jitter": 0.0,
+                  "eigenvalue_floor": 0.0,
+                  "ratio_denominator_floor": 1e-12,
+                  "type": "none"
+                },
+                "sample_count": 80,
+                "source": "empirical_validation_observation_history",
+                "source_priority": 1,
+                "status": "available"
+              },
+              "status": "available",
+              "trace_fraction": 0.0016428615738575344,
+              "variance": 1.5212560703379827e-05
+            },
+            "delta_energy_fraction": 0.12283529067502685,
+            "dominant_action_channel": "uy",
+            "dominant_action_time": 6,
+            "dominant_observation_channel": "py",
+            "dominant_observation_time": 5,
+            "rank": 2,
+            "singular_value": 3247.4844218893754
+          },
+          {
+            "covariance_projection": {
+              "covariance_metadata": {
+                "audit_only": true,
+                "basis": "flattened_delayed_position_velocity_observation_history",
+                "centering": "sample_mean_subtracted",
+                "estimator": "unbiased_sample_covariance",
+                "future_lenses": {
+                  "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                  "sensory_noise_covariance": "missing_same_basis_contract"
+                },
+                "history_dim": 360,
+                "horizon": 60,
+                "normalization": "expected_squared_output_energy_ratio",
+                "observation_dim": 6,
+                "original_covariance_shape": [
+                  360,
+                  360
+                ],
+                "projected_covariance_shape": [
+                  240,
+                  240
+                ],
+                "projection": "first_four_pos_vel_channels_from_6d_proprioceptive_feedback",
+                "regularization": {
+                  "diagonal_jitter": 0.0,
+                  "eigenvalue_floor": 0.0,
+                  "ratio_denominator_floor": 1e-12,
+                  "type": "none"
+                },
+                "sample_count": 80,
+                "source": "empirical_validation_observation_history",
+                "source_priority": 1,
+                "status": "available"
+              },
+              "status": "available",
+              "trace_fraction": 0.001778096662945484,
+              "variance": 1.646480984884302e-05
+            },
+            "delta_energy_fraction": 0.08449970846519697,
+            "dominant_action_channel": "ux",
+            "dominant_action_time": 34,
+            "dominant_observation_channel": "vx",
+            "dominant_observation_time": 8,
+            "rank": 3,
+            "singular_value": 2693.4759544025037
+          },
+          {
+            "covariance_projection": {
+              "covariance_metadata": {
+                "audit_only": true,
+                "basis": "flattened_delayed_position_velocity_observation_history",
+                "centering": "sample_mean_subtracted",
+                "estimator": "unbiased_sample_covariance",
+                "future_lenses": {
+                  "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                  "sensory_noise_covariance": "missing_same_basis_contract"
+                },
+                "history_dim": 360,
+                "horizon": 60,
+                "normalization": "expected_squared_output_energy_ratio",
+                "observation_dim": 6,
+                "original_covariance_shape": [
+                  360,
+                  360
+                ],
+                "projected_covariance_shape": [
+                  240,
+                  240
+                ],
+                "projection": "first_four_pos_vel_channels_from_6d_proprioceptive_feedback",
+                "regularization": {
+                  "diagonal_jitter": 0.0,
+                  "eigenvalue_floor": 0.0,
+                  "ratio_denominator_floor": 1e-12,
+                  "type": "none"
+                },
+                "sample_count": 80,
+                "source": "empirical_validation_observation_history",
+                "source_priority": 1,
+                "status": "available"
+              },
+              "status": "available",
+              "trace_fraction": 0.002069020976235891,
+              "variance": 1.9158709229317055e-05
+            },
+            "delta_energy_fraction": 0.08397614680419174,
+            "dominant_action_channel": "uy",
+            "dominant_action_time": 34,
+            "dominant_observation_channel": "vy",
+            "dominant_observation_time": 8,
+            "rank": 4,
+            "singular_value": 2685.118576779985
+          },
+          {
+            "covariance_projection": {
+              "covariance_metadata": {
+                "audit_only": true,
+                "basis": "flattened_delayed_position_velocity_observation_history",
+                "centering": "sample_mean_subtracted",
+                "estimator": "unbiased_sample_covariance",
+                "future_lenses": {
+                  "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                  "sensory_noise_covariance": "missing_same_basis_contract"
+                },
+                "history_dim": 360,
+                "horizon": 60,
+                "normalization": "expected_squared_output_energy_ratio",
+                "observation_dim": 6,
+                "original_covariance_shape": [
+                  360,
+                  360
+                ],
+                "projected_covariance_shape": [
+                  240,
+                  240
+                ],
+                "projection": "first_four_pos_vel_channels_from_6d_proprioceptive_feedback",
+                "regularization": {
+                  "diagonal_jitter": 0.0,
+                  "eigenvalue_floor": 0.0,
+                  "ratio_denominator_floor": 1e-12,
+                  "type": "none"
+                },
+                "sample_count": 80,
+                "source": "empirical_validation_observation_history",
+                "source_priority": 1,
+                "status": "available"
+              },
+              "status": "available",
+              "trace_fraction": 0.0018741839284508067,
+              "variance": 1.735455818953204e-05
+            },
+            "delta_energy_fraction": 0.028516137938850612,
+            "dominant_action_channel": "ux",
+            "dominant_action_time": 6,
+            "dominant_observation_channel": "px",
+            "dominant_observation_time": 5,
+            "rank": 5,
+            "singular_value": 1564.699165432393
+          }
+        ]
+      },
+      "evaluation_metadata": {
+        "candidate_map_projection": {
+          "excluded_channels": [
+            "delayed_force_filter_x",
+            "delayed_force_filter_y"
+          ],
+          "original_candidate_feedback_basis": "target_relative_delayed_feedback_plus_force_filter",
+          "original_feedback_dim": 6,
+          "projected_candidate_feedback_basis": "target_relative_delayed_feedback",
+          "projected_feedback_dim": 4,
+          "reason": "The standard map-error decomposition compares to the extLQG 4D position/velocity observation-history map.",
+          "status": "projected"
+        },
+        "checkpoint_selection": "final_checkpoint",
+        "io_response_map": {
+          "input_channel": "6D delayed position/velocity plus force-filter feedback",
+          "map_shape": [
+            80,
+            60,
+            2,
+            360
+          ],
+          "n_rollout_trials_per_replicate": 16,
+          "status": "evaluated_controller_local_jacobian_on_stochastic_histories"
+        },
+        "n_replicates": 5,
+        "n_trials": 72,
+        "noise": "feedbax Channel noise disabled; plant-process force noise disabled if present",
+        "observation_history_covariance": {
+          "audit_only": true,
+          "basis": "flattened_delayed_position_velocity_observation_history",
+          "centering": "sample_mean_subtracted",
+          "estimator": "unbiased_sample_covariance",
+          "future_lenses": {
+            "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+            "sensory_noise_covariance": "missing_same_basis_contract"
+          },
+          "history_dim": 360,
+          "horizon": 60,
+          "normalization": "expected_squared_output_energy_ratio",
+          "observation_dim": 6,
+          "original_covariance_shape": [
+            360,
+            360
+          ],
+          "projected_covariance_shape": [
+            240,
+            240
+          ],
+          "projection": "first_four_pos_vel_channels_from_6d_proprioceptive_feedback",
+          "regularization": {
+            "diagonal_jitter": 0.0,
+            "eigenvalue_floor": 0.0,
+            "ratio_denominator_floor": 1e-12,
+            "type": "none"
+          },
+          "sample_count": 80,
+          "source": "empirical_validation_observation_history",
+          "source_priority": 1,
+          "status": "available"
+        },
+        "selected_checkpoints": [],
+        "status": "evaluated_clean_feedbax_rollout"
+      },
+      "reference_metadata": {
+        "action_dim": 2,
+        "controller": "analytical_lqr_kalman_output_feedback",
+        "controller_variant": "cs_released_extlqg_stochastic_fixed_point",
+        "extlqg_expected_cost": 12201.42433801687,
+        "extlqg_iterations": 6,
+        "gamma_factor": 1.4,
+        "history_dim": 240,
+        "map_shape": [
+          60,
+          2,
+          240
+        ],
+        "observation_channel": "delayed_position_velocity",
+        "observation_dim": 4,
+        "parity_status": "fixed_point: local port of extLQG/computeOFC/computeExtKalman"
+      },
+      "run_id": "direct_epsilon_b1p4__nominal_clean",
+      "source_run_id": "direct_epsilon_b1p4",
+      "standard_certificate_row": {
+        "observation_history_to_action_map_mismatch": {
+          "reason": "Response-map components are blocked: the ae9f30f Feedbax GraphSpec (None) feeds the GRU 6D delayed position/velocity plus force-filter feedback (6D), while the current C&S output-feedback reference uses delayed_observation_matrix over the full physical block (8D). No approved 6D-to-8D projection or 6D analytical reference response-map contract is present.",
+          "status": "missing",
+          "summary": {}
+        },
+        "run_id": "direct_epsilon_b1p4__nominal_clean",
+        "status": "partial_standard_certificate_blocked"
+      }
+    },
+    {
+      "decomposition": {
+        "alignment": {
+          "alignment_basis": "raw_cartesian",
+          "direction_vectors": null,
+          "frame_source": "raw_cartesian_observation_action_basis",
+          "moving_target": {
+            "status": "not_applicable"
+          },
+          "sign_convention": "raw ux/uy and px/py/vx/vy Cartesian channels",
+          "target_time_convention": "not_applicable_static_or_raw",
+          "target_velocity_used": false
+        },
+        "basis": {
+          "action_channels": [
+            "ux",
+            "uy"
+          ],
+          "action_dim": 2,
+          "action_time_count": 60,
+          "candidate_observation_basis": {
+            "candidate_feedback_basis": "target_relative_delayed_feedback",
+            "reference_converted_to_candidate_basis": true,
+            "reference_feedback_basis": "raw_delayed_position_velocity",
+            "reference_observation_from_candidate_transform": [
+              [
+                -1.0,
+                -0.0,
+                -0.0,
+                -0.0
+              ],
+              [
+                -0.0,
+                -1.0,
+                -0.0,
+                -0.0
+              ],
+              [
+                -0.0,
+                -0.0,
+                -1.0,
+                -0.0
+              ],
+              [
+                -0.0,
+                -0.0,
+                -0.0,
+                -1.0
+              ]
+            ],
+            "sign_convention": "candidate feedback is [target_x - delayed_x, target_y - delayed_y, -delayed_vx, -delayed_vy]; analytical reference input derivatives are therefore multiplied by -1 before comparison"
+          },
+          "input": "flattened_observation_history",
+          "observation_channels": [
+            "px",
+            "py",
+            "vx",
+            "vy"
+          ],
+          "observation_dim": 4,
+          "observation_time_count": 60,
+          "output": "action_history"
+        },
+        "decision_rule_annotations": [
+          "wrong_timing_or_channel",
+          "unexcited_directions"
+        ],
+        "energy_decomposition": {
+          "by_action_channel": [
+            {
+              "energy": 59323710.53173491,
+              "fraction": 0.5103739995079491,
+              "index": 0,
+              "label": "ux"
+            },
+            {
+              "energy": 56912051.06452357,
+              "fraction": 0.489626000492051,
+              "index": 1,
+              "label": "uy"
+            }
+          ],
+          "by_action_time": [
+            {
+              "energy": 2057813.954944875,
+              "fraction": 0.01770379379534357,
+              "index": 0,
+              "label": "t0"
+            },
+            {
+              "energy": 723831.5766720525,
+              "fraction": 0.006227270908124304,
+              "index": 1,
+              "label": "t1"
+            },
+            {
+              "energy": 364496.89389269636,
+              "fraction": 0.0031358412323977,
+              "index": 2,
+              "label": "t2"
+            },
+            {
+              "energy": 267552.52520968387,
+              "fraction": 0.00230180902620159,
+              "index": 3,
+              "label": "t3"
+            },
+            {
+              "energy": 249960.19742193184,
+              "fraction": 0.002150458636733171,
+              "index": 4,
+              "label": "t4"
+            },
+            {
+              "energy": 224228.8469475001,
+              "fraction": 0.001929086572567507,
+              "index": 5,
+              "label": "t5"
+            },
+            {
+              "energy": 5337788.457768203,
+              "fraction": 0.045922084429651316,
+              "index": 6,
+              "label": "t6"
+            },
+            {
+              "energy": 1944289.5831817272,
+              "fraction": 0.016727120435921953,
+              "index": 7,
+              "label": "t7"
+            },
+            {
+              "energy": 1328769.230862591,
+              "fraction": 0.011431673115181472,
+              "index": 8,
+              "label": "t8"
+            },
+            {
+              "energy": 1297638.0922570056,
+              "fraction": 0.011163845570731612,
+              "index": 9,
+              "label": "t9"
+            },
+            {
+              "energy": 1341907.9293148778,
+              "fraction": 0.011544708021752857,
+              "index": 10,
+              "label": "t10"
+            },
+            {
+              "energy": 1350110.200201394,
+              "fraction": 0.011615273833632738,
+              "index": 11,
+              "label": "t11"
+            },
+            {
+              "energy": 1331642.3594624056,
+              "fraction": 0.011456391227407504,
+              "index": 12,
+              "label": "t12"
+            },
+            {
+              "energy": 1306962.6268272582,
+              "fraction": 0.011244066446322733,
+              "index": 13,
+              "label": "t13"
+            },
+            {
+              "energy": 1192005.7578414953,
+              "fraction": 0.01025506902068481,
+              "index": 14,
+              "label": "t14"
+            },
+            {
+              "energy": 1153895.81999582,
+              "fraction": 0.009927201440842652,
+              "index": 15,
+              "label": "t15"
+            },
+            {
+              "energy": 1305676.118699025,
+              "fraction": 0.011232998354105968,
+              "index": 16,
+              "label": "t16"
+            },
+            {
+              "energy": 1549869.0938150487,
+              "fraction": 0.013333840399295305,
+              "index": 17,
+              "label": "t17"
+            },
+            {
+              "energy": 1710856.897149988,
+              "fraction": 0.014718851355683456,
+              "index": 18,
+              "label": "t18"
+            },
+            {
+              "energy": 1705242.1092241704,
+              "fraction": 0.014670546188248668,
+              "index": 19,
+              "label": "t19"
+            },
+            {
+              "energy": 1573180.6132480842,
+              "fraction": 0.013534394162723184,
+              "index": 20,
+              "label": "t20"
+            },
+            {
+              "energy": 1420759.376793419,
+              "fraction": 0.012223083131062412,
+              "index": 21,
+              "label": "t21"
+            },
+            {
+              "energy": 1349458.844667134,
+              "fraction": 0.01160967008892186,
+              "index": 22,
+              "label": "t22"
+            },
+            {
+              "energy": 1393690.3546372382,
+              "fraction": 0.011990202804178125,
+              "index": 23,
+              "label": "t23"
+            },
+            {
+              "energy": 1500340.992603472,
+              "fraction": 0.01290774002767636,
+              "index": 24,
+              "label": "t24"
+            },
+            {
+              "energy": 1574110.8831734648,
+              "fraction": 0.013542397464913536,
+              "index": 25,
+              "label": "t25"
+            },
+            {
+              "energy": 1558119.863575006,
+              "fraction": 0.013404823456890057,
+              "index": 26,
+              "label": "t26"
+            },
+            {
+              "energy": 1486287.6653076801,
+              "fraction": 0.012786836382336936,
+              "index": 27,
+              "label": "t27"
+            },
+            {
+              "energy": 1462898.4563665725,
+              "fraction": 0.012585614240201805,
+              "index": 28,
+              "label": "t28"
+            },
+            {
+              "energy": 1567049.7088154517,
+              "fraction": 0.01348164873955533,
+              "index": 29,
+              "label": "t29"
+            },
+            {
+              "energy": 1772393.94992211,
+              "fraction": 0.015248267190595514,
+              "index": 30,
+              "label": "t30"
+            },
+            {
+              "energy": 1954392.417654093,
+              "fraction": 0.016814037184550983,
+              "index": 31,
+              "label": "t31"
+            },
+            {
+              "energy": 1994298.844395882,
+              "fraction": 0.017157360325327595,
+              "index": 32,
+              "label": "t32"
+            },
+            {
+              "energy": 1881950.9379894035,
+              "fraction": 0.01619080833768101,
+              "index": 33,
+              "label": "t33"
+            },
+            {
+              "energy": 1715413.6089350772,
+              "fraction": 0.014758053677950822,
+              "index": 34,
+              "label": "t34"
+            },
+            {
+              "energy": 1606061.7128002294,
+              "fraction": 0.01381727697865342,
+              "index": 35,
+              "label": "t35"
+            },
+            {
+              "energy": 1582922.3285961165,
+              "fraction": 0.013618204129761297,
+              "index": 36,
+              "label": "t36"
+            },
+            {
+              "energy": 1586928.319581733,
+              "fraction": 0.013652668488497392,
+              "index": 37,
+              "label": "t37"
+            },
+            {
+              "energy": 1550453.5490606446,
+              "fraction": 0.013338868587157366,
+              "index": 38,
+              "label": "t38"
+            },
+            {
+              "energy": 1476031.2107959958,
+              "fraction": 0.012698598009130334,
+              "index": 39,
+              "label": "t39"
+            },
+            {
+              "energy": 1434235.0050232336,
+              "fraction": 0.01233901671333309,
+              "index": 40,
+              "label": "t40"
+            },
+            {
+              "energy": 1500031.4389337555,
+              "fraction": 0.012905076874224571,
+              "index": 41,
+              "label": "t41"
+            },
+            {
+              "energy": 1676832.386928297,
+              "fraction": 0.014426131544203458,
+              "index": 42,
+              "label": "t42"
+            },
+            {
+              "energy": 1889412.0649899608,
+              "fraction": 0.016254997937319656,
+              "index": 43,
+              "label": "t43"
+            },
+            {
+              "energy": 2113014.3699603546,
+              "fraction": 0.01817869424127704,
+              "index": 44,
+              "label": "t44"
+            },
+            {
+              "energy": 2358305.643906408,
+              "fraction": 0.02028898517564598,
+              "index": 45,
+              "label": "t45"
+            },
+            {
+              "energy": 2562416.2325034365,
+              "fraction": 0.022044990262152838,
+              "index": 46,
+              "label": "t46"
+            },
+            {
+              "energy": 2670757.3440641128,
+              "fraction": 0.02297707097528995,
+              "index": 47,
+              "label": "t47"
+            },
+            {
+              "energy": 2657109.4389045183,
+              "fraction": 0.0228596552594021,
+              "index": 48,
+              "label": "t48"
+            },
+            {
+              "energy": 2589747.4116257383,
+              "fraction": 0.022280125978966357,
+              "index": 49,
+              "label": "t49"
+            },
+            {
+              "energy": 2563433.404957783,
+              "fraction": 0.022053741204551093,
+              "index": 50,
+              "label": "t50"
+            },
+            {
+              "energy": 2623645.5650713984,
+              "fraction": 0.0225717587172918,
+              "index": 51,
+              "label": "t51"
+            },
+            {
+              "energy": 2731637.3114128853,
+              "fraction": 0.023500833770084873,
+              "index": 52,
+              "label": "t52"
+            },
+            {
+              "energy": 2885193.806433203,
+              "fraction": 0.02482191166308042,
+              "index": 53,
+              "label": "t53"
+            },
+            {
+              "energy": 3104177.780340149,
+              "fraction": 0.02670587552153201,
+              "index": 54,
+              "label": "t54"
+            },
+            {
+              "energy": 3352052.7407884654,
+              "fraction": 0.02883839443863863,
+              "index": 55,
+              "label": "t55"
+            },
+            {
+              "energy": 3632845.6607436715,
+              "fraction": 0.03125411328539538,
+              "index": 56,
+              "label": "t56"
+            },
+            {
+              "energy": 4039148.234173069,
+              "fraction": 0.034749617318316654,
+              "index": 57,
+              "label": "t57"
+            },
+            {
+              "energy": 4677585.96842847,
+              "fraction": 0.0402422275570915,
+              "index": 58,
+              "label": "t58"
+            },
+            {
+              "energy": 5422897.876460996,
+              "fraction": 0.046654298143606394,
+              "index": 59,
+              "label": "t59"
+            }
+          ],
+          "by_observation_channel": [
+            {
+              "energy": 32721023.925198942,
+              "fraction": 0.2815056526136463,
+              "index": 0,
+              "label": "px"
+            },
+            {
+              "energy": 31787164.382773355,
+              "fraction": 0.2734714682146201,
+              "index": 1,
+              "label": "py"
+            },
+            {
+              "energy": 26456358.63254392,
+              "fraction": 0.22760945744425296,
+              "index": 2,
+              "label": "vx"
+            },
+            {
+              "energy": 25271214.65574237,
+              "fraction": 0.21741342172748176,
+              "index": 3,
+              "label": "vy"
+            }
+          ],
+          "by_observation_lag": [
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -59
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -58
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -57
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -56
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -55
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -54
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -53
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -52
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -51
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -50
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -49
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -48
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -47
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -46
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -45
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -44
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -43
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -42
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -41
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -40
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -39
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -38
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -37
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -36
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -35
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -34
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -33
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -32
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -31
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -30
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -29
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -28
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -27
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -26
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -25
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -24
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -23
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -22
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -21
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -20
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -19
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -18
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -17
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -16
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -15
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -14
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -13
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -12
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -11
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -10
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -9
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -8
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -7
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -6
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -5
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -4
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -3
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -2
+            },
+            {
+              "energy": 0.0,
+              "fraction": 0.0,
+              "lag": -1
+            },
+            {
+              "energy": 11236228.454338547,
+              "fraction": 0.09666756856953594,
+              "lag": 0
+            },
+            {
+              "energy": 20723234.92690169,
+              "fraction": 0.17828622312368242,
+              "lag": 1
+            },
+            {
+              "energy": 5216540.834673851,
+              "fraction": 0.04487896636143147,
+              "lag": 2
+            },
+            {
+              "energy": 1278288.7181054736,
+              "fraction": 0.010997378952491164,
+              "lag": 3
+            },
+            {
+              "energy": 1184062.4276783825,
+              "fraction": 0.010186730928741096,
+              "lag": 4
+            },
+            {
+              "energy": 2020574.6466319042,
+              "fraction": 0.01738341641921108,
+              "lag": 5
+            },
+            {
+              "energy": 3315730.1211302737,
+              "fraction": 0.028525903522251317,
+              "lag": 6
+            },
+            {
+              "energy": 6039756.507228786,
+              "fraction": 0.051961258947205116,
+              "lag": 7
+            },
+            {
+              "energy": 4741142.41349893,
+              "fraction": 0.04078901663643888,
+              "lag": 8
+            },
+            {
+              "energy": 1732155.5783367946,
+              "fraction": 0.014902088260525076,
+              "lag": 9
+            },
+            {
+              "energy": 2571777.5826795786,
+              "fraction": 0.022125527869921592,
+              "lag": 10
+            },
+            {
+              "energy": 4563137.92238223,
+              "fraction": 0.0392576076391374,
+              "lag": 11
+            },
+            {
+              "energy": 4660821.918289299,
+              "fraction": 0.040098003009422595,
+              "lag": 12
+            },
+            {
+              "energy": 4083521.805146602,
+              "fraction": 0.03513137221340362,
+              "lag": 13
+            },
+            {
+              "energy": 4926962.665174999,
+              "fraction": 0.04238766621832497,
+              "lag": 14
+            },
+            {
+              "energy": 4529081.319983436,
+              "fraction": 0.03896461173210245,
+              "lag": 15
+            },
+            {
+              "energy": 2090375.9526058733,
+              "fraction": 0.017983931312522676,
+              "lag": 16
+            },
+            {
+              "energy": 2195566.1366465273,
+              "fraction": 0.018888903952578404,
+              "lag": 17
+            },
+            {
+              "energy": 3948273.313966419,
+              "fraction": 0.03396780181714326,
+              "lag": 18
+            },
+            {
+              "energy": 2870173.323980652,
+              "fraction": 0.024692687384370703,
+              "lag": 19
+            },
+            {
+              "energy": 1854013.03506018,
+              "fraction": 0.015950452852023633,
+              "lag": 20
+            },
+            {
+              "energy": 3230790.463824681,
+              "fraction": 0.02779515030018677,
+              "lag": 21
+            },
+            {
+              "energy": 3235627.983192414,
+              "fraction": 0.027836768467446996,
+              "lag": 22
+            },
+            {
+              "energy": 962214.8457788627,
+              "fraction": 0.008278130865792302,
+              "lag": 23
+            },
+            {
+              "energy": 762868.6223903173,
+              "fraction": 0.006563114586370752,
+              "lag": 24
+            },
+            {
+              "energy": 2038435.8793589901,
+              "fraction": 0.017537080252800666,
+              "lag": 25
+            },
+            {
+              "energy": 2357548.7748273327,
+              "fraction": 0.020282473676356248,
+              "lag": 26
+            },
+            {
+              "energy": 1767188.747811152,
+              "fraction": 0.015203485773590323,
+              "lag": 27
+            },
+            {
+              "energy": 961268.8111732823,
+              "fraction": 0.008269991936838007,
+              "lag": 28
+            },
+            {
+              "energy": 414068.3348301364,
+              "fraction": 0.0035623144645310686,
+              "lag": 29
+            },
+            {
+              "energy": 261098.0421899511,
+              "fraction": 0.002246279790352883,
+              "lag": 30
+            },
+            {
+              "energy": 387970.26001199527,
+              "fraction": 0.003337787395927242,
+              "lag": 31
+            },
+            {
+              "energy": 520173.6566516546,
+              "fraction": 0.004475160221846893,
+              "lag": 32
+            },
+            {
+              "energy": 447357.2709889092,
+              "fraction": 0.0038487059820951804,
+              "lag": 33
+            },
+            {
+              "energy": 208983.76425635887,
+              "fraction": 0.0017979300121270586,
+              "lag": 34
+            },
+            {
+              "energy": 30032.292330550037,
+              "fraction": 0.0002583739454890512,
+              "lag": 35
+            },
+            {
+              "energy": 85370.83752361222,
+              "fraction": 0.0007344627535555309,
+              "lag": 36
+            },
+            {
+              "energy": 333575.59851792787,
+              "fraction": 0.0028698190121263455,
+              "lag": 37
+            },
+            {
+              "energy": 568389.9564687082,
+              "fraction": 0.004889974898112633,
+              "lag": 38
+            },
+            {
+              "energy": 612274.1947185899,
+              "fraction": 0.005267519963824099,
+              "lag": 39
+            },
+            {
+              "energy": 457598.58245357627,
+              "fraction": 0.003936814076575088,
+              "lag": 40
+            },
+            {
+              "energy": 240853.4700583008,
+              "fraction": 0.0020721116010311725,
+              "lag": 41
+            },
+            {
+              "energy": 102042.80544600758,
+              "fraction": 0.0008778950991042697,
+              "lag": 42
+            },
+            {
+              "energy": 73047.1339955446,
+              "fraction": 0.0006284394147927701,
+              "lag": 43
+            },
+            {
+              "energy": 87215.86933159512,
+              "fraction": 0.0007503359390764515,
+              "lag": 44
+            },
+            {
+              "energy": 73991.8478268882,
+              "fraction": 0.0006365669808565176,
+              "lag": 45
+            },
+            {
+              "energy": 29988.00678771422,
+              "fraction": 0.0002579929479180142,
+              "lag": 46
+            },
+            {
+              "energy": 2194.6666286973295,
+              "fraction": 1.888116530195277e-05,
+              "lag": 47
+            },
+            {
+              "energy": 19104.436158536144,
+              "fraction": 0.0001643593666542561,
+              "lag": 48
+            },
+            {
+              "energy": 54755.52604906477,
+              "fraction": 0.00047107297527981535,
+              "lag": 49
+            },
+            {
+              "energy": 66757.56847608858,
+              "fraction": 0.0005743289978859436,
+              "lag": 50
+            },
+            {
+              "energy": 45271.8751430353,
+              "fraction": 0.00038948318934998544,
+              "lag": 51
+            },
+            {
+              "energy": 14844.310122373421,
+              "fraction": 0.0001277086321672215,
+              "lag": 52
+            },
+            {
+              "energy": 1369.2006280069493,
+              "fraction": 1.1779512683564873e-05,
+              "lag": 53
+            },
+            {
+              "energy": 18.512314258245176,
+              "fraction": 1.5926522099581677e-07,
+              "lag": 54
+            },
+            {
+              "energy": 8.979878368341868,
+              "fraction": 7.725572788461795e-08,
+              "lag": 55
+            },
+            {
+              "energy": 8.897764112011885,
+              "fraction": 7.654928216427927e-08,
+              "lag": 56
+            },
+            {
+              "energy": 12.309656250670717,
+              "fraction": 1.0590248716593736e-07,
+              "lag": 57
+            },
+            {
+              "energy": 10.59876333106441,
+              "fraction": 9.118332590170403e-08,
+              "lag": 58
+            },
+            {
+              "energy": 9.057490854023353,
+              "fraction": 7.792344395250993e-08,
+              "lag": 59
+            }
+          ],
+          "by_observation_time": [
+            {
+              "energy": 2944026.0042466186,
+              "fraction": 0.025328057078273444,
+              "index": 0,
+              "label": "obs_t0"
+            },
+            {
+              "energy": 123804.63833608553,
+              "fraction": 0.0010651165926551704,
+              "index": 1,
+              "label": "obs_t1"
+            },
+            {
+              "energy": 199451.27172391737,
+              "fraction": 0.0017159200317085335,
+              "index": 2,
+              "label": "obs_t2"
+            },
+            {
+              "energy": 219724.4118775359,
+              "fraction": 0.0018903339975587052,
+              "index": 3,
+              "label": "obs_t3"
+            },
+            {
+              "energy": 227601.47196304187,
+              "fraction": 0.00195810195448806,
+              "index": 4,
+              "label": "obs_t4"
+            },
+            {
+              "energy": 13583830.202541128,
+              "fraction": 0.11686446594400239,
+              "index": 5,
+              "label": "obs_t5"
+            },
+            {
+              "energy": 5005300.902963525,
+              "fraction": 0.04306162607984014,
+              "index": 6,
+              "label": "obs_t6"
+            },
+            {
+              "energy": 3297284.0689965137,
+              "fraction": 0.02836720836784753,
+              "index": 7,
+              "label": "obs_t7"
+            },
+            {
+              "energy": 2821553.0979828425,
+              "fraction": 0.02427439764866363,
+              "index": 8,
+              "label": "obs_t8"
+            },
+            {
+              "energy": 2628668.59027467,
+              "fraction": 0.02261497282914766,
+              "index": 9,
+              "label": "obs_t9"
+            },
+            {
+              "energy": 2467948.815942767,
+              "fraction": 0.021232267781021778,
+              "index": 10,
+              "label": "obs_t10"
+            },
+            {
+              "energy": 2269708.910230929,
+              "fraction": 0.019526769378555776,
+              "index": 11,
+              "label": "obs_t11"
+            },
+            {
+              "energy": 2021069.1156448675,
+              "fraction": 0.0173876704371327,
+              "index": 12,
+              "label": "obs_t12"
+            },
+            {
+              "energy": 1958726.6535844647,
+              "fraction": 0.01685132550159601,
+              "index": 13,
+              "label": "obs_t13"
+            },
+            {
+              "energy": 1928619.8884654336,
+              "fraction": 0.01659231085149542,
+              "index": 14,
+              "label": "obs_t14"
+            },
+            {
+              "energy": 1866178.1456503652,
+              "fraction": 0.016055111783346683,
+              "index": 15,
+              "label": "obs_t15"
+            },
+            {
+              "energy": 1764970.8853511245,
+              "fraction": 0.015184405049813323,
+              "index": 16,
+              "label": "obs_t16"
+            },
+            {
+              "energy": 1642361.9892649755,
+              "fraction": 0.014129575671983568,
+              "index": 17,
+              "label": "obs_t17"
+            },
+            {
+              "energy": 1518520.6977553756,
+              "fraction": 0.013064143744589666,
+              "index": 18,
+              "label": "obs_t18"
+            },
+            {
+              "energy": 1407422.1723565992,
+              "fraction": 0.012108340436958112,
+              "index": 19,
+              "label": "obs_t19"
+            },
+            {
+              "energy": 1316514.444835365,
+              "fraction": 0.01132624268775594,
+              "index": 20,
+              "label": "obs_t20"
+            },
+            {
+              "energy": 1247407.493820947,
+              "fraction": 0.010731701471994313,
+              "index": 21,
+              "label": "obs_t21"
+            },
+            {
+              "energy": 1195792.3333719405,
+              "fraction": 0.010287645703440998,
+              "index": 22,
+              "label": "obs_t22"
+            },
+            {
+              "energy": 1157334.8578109536,
+              "fraction": 0.009956788185643956,
+              "index": 23,
+              "label": "obs_t23"
+            },
+            {
+              "energy": 1129161.0349782621,
+              "fraction": 0.009714403032866685,
+              "index": 24,
+              "label": "obs_t24"
+            },
+            {
+              "energy": 1110742.0149822002,
+              "fraction": 0.009555940441465256,
+              "index": 25,
+              "label": "obs_t25"
+            },
+            {
+              "energy": 1105217.9979411338,
+              "fraction": 0.009508416194493365,
+              "index": 26,
+              "label": "obs_t26"
+            },
+            {
+              "energy": 1117520.74241729,
+              "fraction": 0.009614259218251315,
+              "index": 27,
+              "label": "obs_t27"
+            },
+            {
+              "energy": 1150531.2054560238,
+              "fraction": 0.009898254974681204,
+              "index": 28,
+              "label": "obs_t28"
+            },
+            {
+              "energy": 1201167.8753102648,
+              "fraction": 0.010333892588775616,
+              "index": 29,
+              "label": "obs_t29"
+            },
+            {
+              "energy": 1270151.7357226037,
+              "fraction": 0.01092737483094436,
+              "index": 30,
+              "label": "obs_t30"
+            },
+            {
+              "energy": 1409984.497675983,
+              "fraction": 0.012130384645076127,
+              "index": 31,
+              "label": "obs_t31"
+            },
+            {
+              "energy": 1728127.010071803,
+              "fraction": 0.014867429664842752,
+              "index": 32,
+              "label": "obs_t32"
+            },
+            {
+              "energy": 2293274.145455463,
+              "fraction": 0.019729505910763365,
+              "index": 33,
+              "label": "obs_t33"
+            },
+            {
+              "energy": 3021384.235221795,
+              "fraction": 0.025993585740991528,
+              "index": 34,
+              "label": "obs_t34"
+            },
+            {
+              "energy": 3846618.3412324996,
+              "fraction": 0.033093243322082036,
+              "index": 35,
+              "label": "obs_t35"
+            },
+            {
+              "energy": 4902503.765444778,
+              "fraction": 0.04217724130782988,
+              "index": 36,
+              "label": "obs_t36"
+            },
+            {
+              "energy": 5306805.119362638,
+              "fraction": 0.04565552844051275,
+              "index": 37,
+              "label": "obs_t37"
+            },
+            {
+              "energy": 4782397.62953986,
+              "fraction": 0.041143943687067495,
+              "index": 38,
+              "label": "obs_t38"
+            },
+            {
+              "energy": 4484192.646633398,
+              "fraction": 0.03857842530605263,
+              "index": 39,
+              "label": "obs_t39"
+            },
+            {
+              "energy": 4525870.878695063,
+              "fraction": 0.03893699164991532,
+              "index": 40,
+              "label": "obs_t40"
+            },
+            {
+              "energy": 3709262.929882238,
+              "fraction": 0.031911546661226815,
+              "index": 41,
+              "label": "obs_t41"
+            },
+            {
+              "energy": 2589789.8081654417,
+              "fraction": 0.02228049072505759,
+              "index": 42,
+              "label": "obs_t42"
+            },
+            {
+              "energy": 1883168.8960486017,
+              "fraction": 0.01620128667965143,
+              "index": 43,
+              "label": "obs_t43"
+            },
+            {
+              "energy": 1311447.1409220258,
+              "fraction": 0.011282647637112744,
+              "index": 44,
+              "label": "obs_t44"
+            },
+            {
+              "energy": 933594.2117114706,
+              "fraction": 0.008031901704694661,
+              "index": 45,
+              "label": "obs_t45"
+            },
+            {
+              "energy": 760409.3687389793,
+              "fraction": 0.006541957124866951,
+              "index": 46,
+              "label": "obs_t46"
+            },
+            {
+              "energy": 725385.4743589981,
+              "fraction": 0.0062406394073332054,
+              "index": 47,
+              "label": "obs_t47"
+            },
+            {
+              "energy": 729666.8874588737,
+              "fraction": 0.00627747327877758,
+              "index": 48,
+              "label": "obs_t48"
+            },
+            {
+              "energy": 707608.3839816864,
+              "fraction": 0.006087699467566132,
+              "index": 49,
+              "label": "obs_t49"
+            },
+            {
+              "energy": 661409.7668216772,
+              "fraction": 0.005690243327342448,
+              "index": 50,
+              "label": "obs_t50"
+            },
+            {
+              "energy": 615078.3301278313,
+              "fraction": 0.005291644513538682,
+              "index": 51,
+              "label": "obs_t51"
+            },
+            {
+              "energy": 520718.840581149,
+              "fraction": 0.004479850550554749,
+              "index": 52,
+              "label": "obs_t52"
+            },
+            {
+              "energy": 390135.0806106642,
+              "fraction": 0.0033564117897363385,
+              "index": 53,
+              "label": "obs_t53"
+            },
+            {
+              "energy": 353887.5651763906,
+              "fraction": 0.0030445670103286175,
+              "index": 54,
+              "label": "obs_t54"
+            },
+            {
+              "energy": 311601.56376150856,
+              "fraction": 0.002680771902573732,
+              "index": 55,
+              "label": "obs_t55"
+            },
+            {
+              "energy": 252187.70475367992,
+              "fraction": 0.0021696223373117007,
+              "index": 56,
+              "label": "obs_t56"
+            },
+            {
+              "energy": 245277.61576006503,
+              "fraction": 0.0021101734302049805,
+              "index": 57,
+              "label": "obs_t57"
+            },
+            {
+              "energy": 209908.20470300416,
+              "fraction": 0.0018058831621210881,
+              "index": 58,
+              "label": "obs_t58"
+            },
+            {
+              "energy": 125751.88156114522,
+              "fraction": 0.0010818691238754965,
+              "index": 59,
+              "label": "obs_t59"
+            }
+          ]
+        },
+        "format": "rlrmp.gru_map_error_decomposition.v1",
+        "map_shape": [
+          80,
+          60,
+          2,
+          240
+        ],
+        "sample_shape": [
+          80
+        ],
+        "summary": {
+          "aggregate_delta_ratio": 1.5454540436135384,
+          "best_scalar_gain": 0.09874723303944696,
+          "best_scalar_residual_frobenius": 7425.955134641149,
+          "best_scalar_residual_ratio": 0.7331974936594856,
+          "candidate_frobenius": 7475.172053190617,
+          "candidate_reference_cosine": 0.11456331643739998,
+          "candidate_reference_norm_ratio": 0.8619446094108556,
+          "delta_frobenius": 10781.269016041593,
+          "reference_frobenius": 8672.450609442227
+        },
+        "top_singular_directions": [
+          {
+            "covariance_projection": {
+              "covariance_metadata": {
+                "audit_only": true,
+                "basis": "flattened_delayed_position_velocity_observation_history",
+                "centering": "sample_mean_subtracted",
+                "estimator": "unbiased_sample_covariance",
+                "future_lenses": {
+                  "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                  "sensory_noise_covariance": "missing_same_basis_contract"
+                },
+                "history_dim": 360,
+                "horizon": 60,
+                "normalization": "expected_squared_output_energy_ratio",
+                "observation_dim": 6,
+                "original_covariance_shape": [
+                  360,
+                  360
+                ],
+                "projected_covariance_shape": [
+                  240,
+                  240
+                ],
+                "projection": "first_four_pos_vel_channels_from_6d_proprioceptive_feedback",
+                "regularization": {
+                  "diagonal_jitter": 0.0,
+                  "eigenvalue_floor": 0.0,
+                  "ratio_denominator_floor": 1e-12,
+                  "type": "none"
+                },
+                "sample_count": 80,
+                "source": "empirical_validation_observation_history",
+                "source_priority": 1,
+                "status": "available"
+              },
+              "status": "available",
+              "trace_fraction": 0.0028709915633022462,
+              "variance": 2.4394862925000868e-05
+            },
+            "delta_energy_fraction": 0.09838725564811894,
+            "dominant_action_channel": "ux",
+            "dominant_action_time": 59,
+            "dominant_observation_channel": "px",
+            "dominant_observation_time": 37,
+            "rank": 1,
+            "singular_value": 3381.7329273058926
+          },
+          {
+            "covariance_projection": {
+              "covariance_metadata": {
+                "audit_only": true,
+                "basis": "flattened_delayed_position_velocity_observation_history",
+                "centering": "sample_mean_subtracted",
+                "estimator": "unbiased_sample_covariance",
+                "future_lenses": {
+                  "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                  "sensory_noise_covariance": "missing_same_basis_contract"
+                },
+                "history_dim": 360,
+                "horizon": 60,
+                "normalization": "expected_squared_output_energy_ratio",
+                "observation_dim": 6,
+                "original_covariance_shape": [
+                  360,
+                  360
+                ],
+                "projected_covariance_shape": [
+                  240,
+                  240
+                ],
+                "projection": "first_four_pos_vel_channels_from_6d_proprioceptive_feedback",
+                "regularization": {
+                  "diagonal_jitter": 0.0,
+                  "eigenvalue_floor": 0.0,
+                  "ratio_denominator_floor": 1e-12,
+                  "type": "none"
+                },
+                "sample_count": 80,
+                "source": "empirical_validation_observation_history",
+                "source_priority": 1,
+                "status": "available"
+              },
+              "status": "available",
+              "trace_fraction": 0.003137041694049915,
+              "variance": 2.6655495298055555e-05
+            },
+            "delta_energy_fraction": 0.09478381211794322,
+            "dominant_action_channel": "ux",
+            "dominant_action_time": 6,
+            "dominant_observation_channel": "px",
+            "dominant_observation_time": 5,
+            "rank": 2,
+            "singular_value": 3319.2271071027662
+          },
+          {
+            "covariance_projection": {
+              "covariance_metadata": {
+                "audit_only": true,
+                "basis": "flattened_delayed_position_velocity_observation_history",
+                "centering": "sample_mean_subtracted",
+                "estimator": "unbiased_sample_covariance",
+                "future_lenses": {
+                  "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                  "sensory_noise_covariance": "missing_same_basis_contract"
+                },
+                "history_dim": 360,
+                "horizon": 60,
+                "normalization": "expected_squared_output_energy_ratio",
+                "observation_dim": 6,
+                "original_covariance_shape": [
+                  360,
+                  360
+                ],
+                "projected_covariance_shape": [
+                  240,
+                  240
+                ],
+                "projection": "first_four_pos_vel_channels_from_6d_proprioceptive_feedback",
+                "regularization": {
+                  "diagonal_jitter": 0.0,
+                  "eigenvalue_floor": 0.0,
+                  "ratio_denominator_floor": 1e-12,
+                  "type": "none"
+                },
+                "sample_count": 80,
+                "source": "empirical_validation_observation_history",
+                "source_priority": 1,
+                "status": "available"
+              },
+              "status": "available",
+              "trace_fraction": 0.002029621230744864,
+              "variance": 1.7245725256239655e-05
+            },
+            "delta_energy_fraction": 0.09333099741105395,
+            "dominant_action_channel": "uy",
+            "dominant_action_time": 6,
+            "dominant_observation_channel": "py",
+            "dominant_observation_time": 5,
+            "rank": 3,
+            "singular_value": 3293.690872655216
+          },
+          {
+            "covariance_projection": {
+              "covariance_metadata": {
+                "audit_only": true,
+                "basis": "flattened_delayed_position_velocity_observation_history",
+                "centering": "sample_mean_subtracted",
+                "estimator": "unbiased_sample_covariance",
+                "future_lenses": {
+                  "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                  "sensory_noise_covariance": "missing_same_basis_contract"
+                },
+                "history_dim": 360,
+                "horizon": 60,
+                "normalization": "expected_squared_output_energy_ratio",
+                "observation_dim": 6,
+                "original_covariance_shape": [
+                  360,
+                  360
+                ],
+                "projected_covariance_shape": [
+                  240,
+                  240
+                ],
+                "projection": "first_four_pos_vel_channels_from_6d_proprioceptive_feedback",
+                "regularization": {
+                  "diagonal_jitter": 0.0,
+                  "eigenvalue_floor": 0.0,
+                  "ratio_denominator_floor": 1e-12,
+                  "type": "none"
+                },
+                "sample_count": 80,
+                "source": "empirical_validation_observation_history",
+                "source_priority": 1,
+                "status": "available"
+              },
+              "status": "available",
+              "trace_fraction": 0.003173404048824695,
+              "variance": 2.6964466829598725e-05
+            },
+            "delta_energy_fraction": 0.07963389915145293,
+            "dominant_action_channel": "ux",
+            "dominant_action_time": 57,
+            "dominant_observation_channel": "px",
+            "dominant_observation_time": 39,
+            "rank": 4,
+            "singular_value": 3042.417939197172
+          },
+          {
+            "covariance_projection": {
+              "covariance_metadata": {
+                "audit_only": true,
+                "basis": "flattened_delayed_position_velocity_observation_history",
+                "centering": "sample_mean_subtracted",
+                "estimator": "unbiased_sample_covariance",
+                "future_lenses": {
+                  "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                  "sensory_noise_covariance": "missing_same_basis_contract"
+                },
+                "history_dim": 360,
+                "horizon": 60,
+                "normalization": "expected_squared_output_energy_ratio",
+                "observation_dim": 6,
+                "original_covariance_shape": [
+                  360,
+                  360
+                ],
+                "projected_covariance_shape": [
+                  240,
+                  240
+                ],
+                "projection": "first_four_pos_vel_channels_from_6d_proprioceptive_feedback",
+                "regularization": {
+                  "diagonal_jitter": 0.0,
+                  "eigenvalue_floor": 0.0,
+                  "ratio_denominator_floor": 1e-12,
+                  "type": "none"
+                },
+                "sample_count": 80,
+                "source": "empirical_validation_observation_history",
+                "source_priority": 1,
+                "status": "available"
+              },
+              "status": "available",
+              "trace_fraction": 0.002662716759428081,
+              "variance": 2.2625148462518207e-05
+            },
+            "delta_energy_fraction": 0.07416596807764617,
+            "dominant_action_channel": "uy",
+            "dominant_action_time": 59,
+            "dominant_observation_channel": "py",
+            "dominant_observation_time": 40,
+            "rank": 5,
+            "singular_value": 2936.109293611018
+          }
+        ]
+      },
+      "evaluation_metadata": {
+        "candidate_map_projection": {
+          "excluded_channels": [
+            "delayed_force_filter_x",
+            "delayed_force_filter_y"
+          ],
+          "original_candidate_feedback_basis": "target_relative_delayed_feedback_plus_force_filter",
+          "original_feedback_dim": 6,
+          "projected_candidate_feedback_basis": "target_relative_delayed_feedback",
+          "projected_feedback_dim": 4,
+          "reason": "The standard map-error decomposition compares to the extLQG 4D position/velocity observation-history map.",
+          "status": "projected"
+        },
+        "checkpoint_selection": "final_checkpoint",
+        "io_response_map": {
+          "input_channel": "6D delayed position/velocity plus force-filter feedback",
+          "map_shape": [
+            80,
+            60,
+            2,
+            360
+          ],
+          "n_rollout_trials_per_replicate": 16,
+          "status": "evaluated_controller_local_jacobian_on_stochastic_histories"
+        },
+        "n_replicates": 5,
+        "n_trials": 72,
+        "noise": "feedbax Channel noise disabled; plant-process force noise disabled if present",
+        "observation_history_covariance": {
+          "audit_only": true,
+          "basis": "flattened_delayed_position_velocity_observation_history",
+          "centering": "sample_mean_subtracted",
+          "estimator": "unbiased_sample_covariance",
+          "future_lenses": {
+            "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+            "sensory_noise_covariance": "missing_same_basis_contract"
+          },
+          "history_dim": 360,
+          "horizon": 60,
+          "normalization": "expected_squared_output_energy_ratio",
+          "observation_dim": 6,
+          "original_covariance_shape": [
+            360,
+            360
+          ],
+          "projected_covariance_shape": [
+            240,
+            240
+          ],
+          "projection": "first_four_pos_vel_channels_from_6d_proprioceptive_feedback",
+          "regularization": {
+            "diagonal_jitter": 0.0,
+            "eigenvalue_floor": 0.0,
+            "ratio_denominator_floor": 1e-12,
+            "type": "none"
+          },
+          "sample_count": 80,
+          "source": "empirical_validation_observation_history",
+          "source_priority": 1,
+          "status": "available"
+        },
+        "selected_checkpoints": [],
+        "status": "evaluated_clean_feedbax_rollout"
+      },
+      "reference_metadata": {
+        "action_dim": 2,
+        "controller": "analytical_lqr_kalman_output_feedback",
+        "controller_variant": "cs_released_extlqg_stochastic_fixed_point",
+        "extlqg_expected_cost": 12201.42433801687,
+        "extlqg_iterations": 6,
+        "gamma_factor": 1.4,
+        "history_dim": 240,
+        "map_shape": [
+          60,
+          2,
+          240
+        ],
+        "observation_channel": "delayed_position_velocity",
+        "observation_dim": 4,
+        "parity_status": "fixed_point: local port of extLQG/computeOFC/computeExtKalman"
+      },
+      "run_id": "linear_no_bias_b1p05__nominal_clean",
+      "source_run_id": "linear_no_bias_b1p05",
+      "standard_certificate_row": {
+        "observation_history_to_action_map_mismatch": {
+          "reason": "Response-map components are blocked: the ae9f30f Feedbax GraphSpec (None) feeds the GRU 6D delayed position/velocity plus force-filter feedback (6D), while the current C&S output-feedback reference uses delayed_observation_matrix over the full physical block (8D). No approved 6D-to-8D projection or 6D analytical reference response-map contract is present.",
+          "status": "missing",
+          "summary": {}
+        },
+        "run_id": "linear_no_bias_b1p05__nominal_clean",
+        "status": "partial_standard_certificate_blocked"
+      }
+    }
+  ],
+  "selection_role": "audit_only_not_used_for_checkpoint_selection",
+  "source_issue": "ae9f30f",
+  "source_standard_manifest": "results/ae9f30f/notes/gru_standard_certificates_soft_lambda_wave1_trained_final_manifest.json"
+}

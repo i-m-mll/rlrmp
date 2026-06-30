@@ -46,6 +46,13 @@ from rlrmp.model.feedbax_graph import (
     resolve_registered_graph_component_migrations,
 )
 from rlrmp.model.trainable import staged_network_trainable_parts
+from rlrmp.train.closed_loop_finite_adversary import (
+    AFFINE_POLICY,
+    FINITE_POLICY_BIAS_INPUT,
+    FINITE_POLICY_GAINS_INPUT,
+    LINEAR_NO_BIAS_POLICY,
+    finite_policy_step_epsilon,
+)
 
 
 CS_PHYSICAL_STATE_DIM = 8
@@ -69,6 +76,8 @@ CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT = (
     "RLRMPCsLssTargetRelativeDelayedProprioceptiveFeedback"
 )
 CS_LSS_INITIAL_HIDDEN_NET_COMPONENT = "RLRMPCsLssInitialHiddenStagedNetwork"
+CS_LSS_FINITE_EPSILON_POLICY_COMPONENT = "RLRMPCsLssFiniteEpsilonPolicy"
+CS_LSS_PASSTHROUGH_COMPONENT = "RLRMPCsLssPassthrough"
 FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT = "StateFeedbackSelector"
 CS_LSS_UNSUPPORTED_STOCHASTIC_COMPONENTS = frozenset(
     {
@@ -211,6 +220,66 @@ class CsLssGruState(Module):
     efferent: ChannelState
 
 
+class CsLssFiniteEpsilonPolicy(Component):
+    """Closed-loop finite epsilon policy evaluated from live LSS state."""
+
+    input_ports = ("base_epsilon", "state", "target", "gains", "bias")
+    output_ports = ("epsilon",)
+
+    policy_class: str = field(static=True)
+    physical_block_size: int = field(static=True)
+
+    def __init__(
+        self,
+        *,
+        policy_class: str,
+        physical_block_size: int = CS_PHYSICAL_STATE_DIM,
+    ) -> None:
+        if policy_class not in (LINEAR_NO_BIAS_POLICY, AFFINE_POLICY):
+            raise ValueError(
+                f"Unknown finite epsilon policy class {policy_class!r}; expected "
+                f"{LINEAR_NO_BIAS_POLICY!r} or {AFFINE_POLICY!r}."
+            )
+        self.policy_class = str(policy_class)
+        self.physical_block_size = int(physical_block_size)
+
+    def __call__(
+        self,
+        inputs: dict[str, PyTree],
+        state: eqx.nn.State,
+        *,
+        key: PRNGKeyArray,
+    ) -> tuple[dict[str, PyTree], eqx.nn.State]:
+        del key
+        base = jnp.asarray(inputs["base_epsilon"])
+        bias = inputs.get("bias") if self.policy_class == AFFINE_POLICY else None
+        delta = finite_policy_step_epsilon(
+            inputs["state"],
+            target_position=inputs["target"],
+            gain_t=inputs["gains"],
+            bias_t=bias,
+            physical_block_size=self.physical_block_size,
+        )
+        return {"epsilon": base + delta.astype(base.dtype)}, state
+
+
+class CsLssPassthrough(Component):
+    """RLRMP-local graph fan-out node for external inputs."""
+
+    input_ports = ("input",)
+    output_ports = ("output",)
+
+    def __call__(
+        self,
+        inputs: dict[str, PyTree],
+        state: eqx.nn.State,
+        *,
+        key: PRNGKeyArray,
+    ) -> tuple[dict[str, PyTree], eqx.nn.State]:
+        del key
+        return {"output": inputs["input"]}, state
+
+
 def _cs_lss_gru_state_view(node_states: dict[str, PyTree]) -> CsLssGruState:
     mechanics_state = node_states["mechanics"]
     vector = mechanics_state.vector
@@ -242,6 +311,26 @@ def register_cs_lss_graph_components(component_registry: Any | None = None) -> A
         input_ports=["input", "feedback"],
         output_ports=["output", "hidden"],
         output_prototype_fn=_staged_network_output_prototype,
+        provenance="rlrmp",
+    )
+    registry.register_component_type(
+        CS_LSS_FINITE_EPSILON_POLICY_COMPONENT,
+        _build_finite_epsilon_policy_component,
+        category="RLRMP",
+        description="Closed-loop finite policy that adds live-state epsilon to base epsilon.",
+        input_ports=["base_epsilon", "state", "target", "gains", "bias"],
+        output_ports=["epsilon"],
+        output_prototype_fn=_finite_epsilon_policy_output_prototype,
+        provenance="rlrmp",
+    )
+    registry.register_component_type(
+        CS_LSS_PASSTHROUGH_COMPONENT,
+        _build_passthrough_component,
+        category="RLRMP",
+        description="RLRMP passthrough node used to fan out graph inputs.",
+        input_ports=["input"],
+        output_ports=["output"],
+        output_prototype_fn=_passthrough_output_prototype,
         provenance="rlrmp",
     )
     register_cs_lss_graph_migration_pack(registry)
@@ -314,6 +403,7 @@ def build_cs_lss_gru_graph_spec(
     additive_motor_noise_std: float = 0.0,
     signal_dependent_motor_noise_std: float = 0.0,
     bind_epsilon_input: bool = False,
+    finite_epsilon_policy: str | None = None,
     target_relative_feedback: bool = False,
     force_filter_feedback: bool = False,
     initial_hidden_encoder: bool = False,
@@ -354,6 +444,19 @@ def build_cs_lss_gru_graph_spec(
     feedback_dim = (
         CS_PROPRIOCEPTIVE_FEEDBACK_DIM if bool(force_filter_feedback) else CS_FEEDBACK_DIM
     )
+    finite_epsilon_policy = (
+        None if finite_epsilon_policy is None else str(finite_epsilon_policy)
+    )
+    if finite_epsilon_policy is not None:
+        if finite_epsilon_policy not in (LINEAR_NO_BIAS_POLICY, AFFINE_POLICY):
+            raise ValueError(
+                f"Unknown finite_epsilon_policy {finite_epsilon_policy!r}; expected "
+                f"{LINEAR_NO_BIAS_POLICY!r}, {AFFINE_POLICY!r}, or None."
+            )
+        if not bind_epsilon_input:
+            raise ValueError("finite_epsilon_policy requires bind_epsilon_input=True.")
+        if not target_relative_feedback:
+            raise ValueError("finite_epsilon_policy requires target_relative_feedback=True.")
     feedback_type, feedback_params, feedback_ports = _feedback_component_contract(
         target_relative_feedback=target_relative_feedback,
         force_filter_feedback=force_filter_feedback,
@@ -450,6 +553,22 @@ def build_cs_lss_gru_graph_spec(
             output_ports=["effector", "state"],
         ),
     }
+    if finite_epsilon_policy is not None:
+        nodes["target_source"] = ComponentSpec(
+            type=CS_LSS_PASSTHROUGH_COMPONENT,
+            params={},
+            input_ports=["input"],
+            output_ports=["output"],
+        )
+        nodes["finite_epsilon_policy"] = ComponentSpec(
+            type=CS_LSS_FINITE_EPSILON_POLICY_COMPONENT,
+            params={
+                "policy_class": finite_epsilon_policy,
+                "physical_block_size": physical_state_dim,
+            },
+            input_ports=["base_epsilon", "state", "target", "gains", "bias"],
+            output_ports=["epsilon"],
+        )
     wires = [
         WireSpec(
             source_node="feedback",
@@ -483,15 +602,55 @@ def build_cs_lss_gru_graph_spec(
             temporality="recurrent",
         ),
     ]
+    if finite_epsilon_policy is not None:
+        wires.extend(
+            [
+                WireSpec(
+                    source_node="mechanics",
+                    source_port="state",
+                    target_node="finite_epsilon_policy",
+                    target_port="state",
+                    temporality="recurrent",
+                ),
+                WireSpec(
+                    source_node="finite_epsilon_policy",
+                    source_port="epsilon",
+                    target_node="mechanics",
+                    target_port="epsilon",
+                ),
+                WireSpec(
+                    source_node="target_source",
+                    source_port="output",
+                    target_node="feedback",
+                    target_port="target",
+                ),
+                WireSpec(
+                    source_node="target_source",
+                    source_port="output",
+                    target_node="finite_epsilon_policy",
+                    target_port="target",
+                ),
+            ]
+        )
     input_ports = ["input"] if input_size > 0 else []
     input_bindings = {"input": ("net", "input")} if input_size > 0 else {}
     if target_relative_feedback:
         input_ports.append("target")
-        input_bindings["target"] = ("feedback", "target")
+        if finite_epsilon_policy is None:
+            input_bindings["target"] = ("feedback", "target")
+        else:
+            input_bindings["target"] = ("target_source", "input")
     if bind_epsilon_input:
         input_ports.append("epsilon")
-        input_bindings["epsilon"] = ("mechanics", "epsilon")
-
+        if finite_epsilon_policy is None:
+            input_bindings["epsilon"] = ("mechanics", "epsilon")
+        else:
+            input_bindings["epsilon"] = ("finite_epsilon_policy", "base_epsilon")
+            input_ports.append(FINITE_POLICY_GAINS_INPUT)
+            input_bindings[FINITE_POLICY_GAINS_INPUT] = ("finite_epsilon_policy", "gains")
+            if finite_epsilon_policy == AFFINE_POLICY:
+                input_ports.append(FINITE_POLICY_BIAS_INPUT)
+                input_bindings[FINITE_POLICY_BIAS_INPUT] = ("finite_epsilon_policy", "bias")
     return GraphSpec(
         nodes=nodes,
         wires=wires,
@@ -552,6 +711,7 @@ def build_cs_lss_gru_graph(
     additive_motor_noise_std: float = 0.0,
     signal_dependent_motor_noise_std: float = 0.0,
     bind_epsilon_input: bool = False,
+    finite_epsilon_policy: str | None = None,
     target_relative_feedback: bool = False,
     force_filter_feedback: bool = False,
     initial_hidden_encoder: bool = False,
@@ -614,6 +774,7 @@ def build_cs_lss_gru_graph(
         additive_motor_noise_std=additive_motor_noise_std,
         signal_dependent_motor_noise_std=signal_dependent_motor_noise_std,
         bind_epsilon_input=bind_epsilon_input,
+        finite_epsilon_policy=finite_epsilon_policy,
         target_relative_feedback=target_relative_feedback,
         force_filter_feedback=force_filter_feedback,
         initial_hidden_encoder=initial_hidden_encoder,
@@ -806,6 +967,37 @@ def _build_initial_hidden_staged_network(
         h0_initialization=str(params.get("h0_initialization", CS_H0_ENCODER_INIT)),
     )
     return _cast_trainable_component_dtype(component, _trainable_dtype_from_params(params))
+
+
+def _build_finite_epsilon_policy_component(
+    params: dict[str, Any],
+) -> CsLssFiniteEpsilonPolicy:
+    return CsLssFiniteEpsilonPolicy(
+        policy_class=str(params["policy_class"]),
+        physical_block_size=int(params.get("physical_block_size", CS_PHYSICAL_STATE_DIM)),
+    )
+
+
+def _build_passthrough_component(params: dict[str, Any]) -> CsLssPassthrough:
+    del params
+    return CsLssPassthrough()
+
+
+def _finite_epsilon_policy_output_prototype(
+    params: dict[str, Any],
+    inputs: dict[str, Any],
+) -> dict[str, Any]:
+    del params
+    base = inputs.get("base_epsilon", jnp.zeros(CS_EPSILON_DIM))
+    return {"epsilon": jnp.zeros_like(jnp.asarray(base))}
+
+
+def _passthrough_output_prototype(
+    params: dict[str, Any],
+    inputs: dict[str, Any],
+) -> dict[str, Any]:
+    del params
+    return {"output": inputs.get("input", jnp.zeros(1))}
 
 
 def _cast_trainable_component_dtype(component: Any, dtype: jnp.dtype | None) -> Any:

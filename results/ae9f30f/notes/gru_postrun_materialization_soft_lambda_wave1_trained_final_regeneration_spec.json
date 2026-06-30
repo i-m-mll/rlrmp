@@ -1,0 +1,343 @@
+{
+  "command": {
+    "argv": [
+      "unknown"
+    ],
+    "cwd": ".",
+    "metadata": {
+      "materializer": "rlrmp.analysis.pipelines.gru_postrun_materialization.materialize_gru_postrun_analysis",
+      "status": "not_recorded"
+    }
+  },
+  "inputs": [
+    {
+      "logical_name": "results/ae9f30f/runs/direct_epsilon_b1p05.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "3eea0e5f85db2a243ce2e22d4cf12ec59e0149b3156b68b30302259c33a3a0a7",
+        "size_bytes": 277867
+      },
+      "role": "run_spec",
+      "sha256": "3eea0e5f85db2a243ce2e22d4cf12ec59e0149b3156b68b30302259c33a3a0a7",
+      "size_bytes": 277867,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/ae9f30f/runs/direct_epsilon_b1p05.json"
+    },
+    {
+      "logical_name": "_artifacts/ae9f30f/runs/direct_epsilon_b1p05",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 130,
+        "hash_file_count": 130,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "13bf10b111df6435bbbbd8303bb725f60efe7e68e686fc6d8f09ec4f6060e0d5",
+        "total_bytes": 212424586
+      },
+      "role": "run_artifact_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/ae9f30f/runs/direct_epsilon_b1p05"
+    },
+    {
+      "logical_name": "results/ae9f30f/runs/direct_epsilon_b1p4.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "19c916b840f51531c335bf660262d2b4f24b6d489604f72eea36ab87d7bd3e46",
+        "size_bytes": 277857
+      },
+      "role": "run_spec",
+      "sha256": "19c916b840f51531c335bf660262d2b4f24b6d489604f72eea36ab87d7bd3e46",
+      "size_bytes": 277857,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/ae9f30f/runs/direct_epsilon_b1p4.json"
+    },
+    {
+      "logical_name": "_artifacts/ae9f30f/runs/direct_epsilon_b1p4",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 130,
+        "hash_file_count": 130,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "9526edb753efb12a0e4e08e5d1266aa27ab7c0e5ba1336e5961995c4469478af",
+        "total_bytes": 212429217
+      },
+      "role": "run_artifact_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/ae9f30f/runs/direct_epsilon_b1p4"
+    },
+    {
+      "logical_name": "results/ae9f30f/runs/linear_no_bias_b1p05.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "cad21a34668f688e95a23b480e31c3e2ec721324392eb6e6c15f872f524e85b9",
+        "size_bytes": 279502
+      },
+      "role": "run_spec",
+      "sha256": "cad21a34668f688e95a23b480e31c3e2ec721324392eb6e6c15f872f524e85b9",
+      "size_bytes": 279502,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/ae9f30f/runs/linear_no_bias_b1p05.json"
+    },
+    {
+      "logical_name": "_artifacts/ae9f30f/runs/linear_no_bias_b1p05",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 130,
+        "hash_file_count": 130,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "148bed7cb6a79c9ffcc6d015e7494fae45e5cb7b850406046a2415600fbc4094",
+        "total_bytes": 212456592
+      },
+      "role": "run_artifact_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/ae9f30f/runs/linear_no_bias_b1p05"
+    }
+  ],
+  "metadata": {
+    "diagnostic_name": "gru_postrun_materialization_bundle",
+    "materializer": "rlrmp.analysis.pipelines.gru_postrun_materialization.materialize_gru_postrun_analysis",
+    "notes": [
+      "Compatibility index for active GRU postrun diagnostics.",
+      "The primary run contract is the Feedbax analysis bundle `rlrmp/gru_postrun` when bundle manifests are available."
+    ],
+    "schema_boundary": "rlrmp diagnostic payload; Feedbax regeneration custody"
+  },
+  "outputs": [
+    {
+      "logical_name": "results/ae9f30f/notes/gru_postrun_materialization_soft_lambda_wave1_trained_final.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "a2ea84b9c9bebc2123d188e677c1b64e7d8ce228a535934ed9d9465efb8b29fa",
+        "size_bytes": 10461
+      },
+      "role": "postrun_manifest",
+      "sha256": "a2ea84b9c9bebc2123d188e677c1b64e7d8ce228a535934ed9d9465efb8b29fa",
+      "size_bytes": 10461,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/ae9f30f/notes/gru_postrun_materialization_soft_lambda_wave1_trained_final.json"
+    },
+    {
+      "logical_name": "results/ae9f30f/notes/gru_standard_certificates_soft_lambda_wave1_trained_final_manifest.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "09d43aa7de9acf6c11e681cc0539a8411bd03a748b35be97305d75833bb58390",
+        "size_bytes": 69780
+      },
+      "role": "standard_certificate_manifest",
+      "sha256": "09d43aa7de9acf6c11e681cc0539a8411bd03a748b35be97305d75833bb58390",
+      "size_bytes": 69780,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/ae9f30f/notes/gru_standard_certificates_soft_lambda_wave1_trained_final_manifest.json"
+    },
+    {
+      "logical_name": "results/ae9f30f/notes/gru_evaluation_diagnostics_soft_lambda_wave1_trained_final.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "ebe1b2f4e10fedcc494ab8250229ca2afced29ad51fbb37748ad9566ec6799db",
+        "size_bytes": 127090
+      },
+      "role": "evaluation_diagnostics_manifest",
+      "sha256": "ebe1b2f4e10fedcc494ab8250229ca2afced29ad51fbb37748ad9566ec6799db",
+      "size_bytes": 127090,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/ae9f30f/notes/gru_evaluation_diagnostics_soft_lambda_wave1_trained_final.json"
+    },
+    {
+      "logical_name": "_artifacts/ae9f30f/figures/gru_postrun_soft_lambda_wave1_trained_final",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 6,
+        "hash_file_count": 6,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "f5bbcc230ec740708bb03f5151508d13821649c8e5ec10f65e773846ddda9d0b",
+        "total_bytes": 30628158
+      },
+      "role": "pilot_figure_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/ae9f30f/figures/gru_postrun_soft_lambda_wave1_trained_final"
+    },
+    {
+      "logical_name": "results/ae9f30f/notes/objective_comparator_soft_lambda_wave1_trained_final.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": false
+      },
+      "role": "objective_comparator_manifest",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/ae9f30f/notes/objective_comparator_soft_lambda_wave1_trained_final.json"
+    },
+    {
+      "logical_name": "results/ae9f30f/notes/gru_map_error_decomposition_soft_lambda_wave1_trained_final.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "23b99edafe15201be29cfd6b3c264a0e3caa3c767e0cd1d3aa2a848b88e7e3bd",
+        "size_bytes": 163726
+      },
+      "role": "map_decomposition_manifest",
+      "sha256": "23b99edafe15201be29cfd6b3c264a0e3caa3c767e0cd1d3aa2a848b88e7e3bd",
+      "size_bytes": 163726,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/ae9f30f/notes/gru_map_error_decomposition_soft_lambda_wave1_trained_final.json"
+    },
+    {
+      "logical_name": "results/ae9f30f/notes/gru_perturbation_response_soft_lambda_wave1_trained_final_manifest.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": false
+      },
+      "role": "perturbation_response_manifest",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/ae9f30f/notes/gru_perturbation_response_soft_lambda_wave1_trained_final_manifest.json"
+    },
+    {
+      "logical_name": "results/ae9f30f/notes/gru_feedback_ablation_soft_lambda_wave1_trained_final_manifest.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": false
+      },
+      "role": "feedback_ablation_manifest",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/ae9f30f/notes/gru_feedback_ablation_soft_lambda_wave1_trained_final_manifest.json"
+    }
+  ],
+  "parameters": {
+    "effective_checkpoint_manifest_path": null,
+    "experiment": "ae9f30f",
+    "feedback_selection_level": "small",
+    "include_feedback_ablation": true,
+    "include_map_decomposition": true,
+    "include_objective_comparator": true,
+    "include_perturbation_response": true,
+    "include_reference": true,
+    "labels": [
+      "direct_epsilon_b1p05",
+      "direct_epsilon_b1p4",
+      "linear_no_bias_b1p05"
+    ],
+    "n_rollout_trials": 8,
+    "output_tag": "soft_lambda_wave1_trained_final",
+    "perturbation_bank_mode": "calibrated",
+    "perturbation_calibration_level": [
+      "small",
+      "moderate",
+      "stress"
+    ],
+    "perturbation_calibration_reach": "canonical_15cm",
+    "run_ids": [
+      "direct_epsilon_b1p05",
+      "direct_epsilon_b1p4",
+      "linear_no_bias_b1p05"
+    ],
+    "use_validation_selected_checkpoints": false,
+    "write_perturbation_bulk_arrays": false
+  },
+  "provenance": {
+    "dirty": true,
+    "entrypoint": {
+      "kind": "rlrmp-diagnostic-materializer",
+      "metadata": {},
+      "name": "rlrmp.analysis.pipelines.gru_postrun_materialization.materialize_gru_postrun_analysis"
+    },
+    "issues": [],
+    "metadata": {
+      "status_porcelain": [
+        "M .issue",
+        " M src/rlrmp/model/cs_lss_gru.py",
+        " M src/rlrmp/train/closed_loop_finite_adversary.py",
+        " M src/rlrmp/train/cs_nominal_gru.py",
+        " M src/rlrmp/train/cs_perturbation_training.py",
+        " M src/rlrmp/train/task_model.py",
+        " M tests/test_cs_nominal_gru.py",
+        "?? results/ae9f30f/RUN_PLAN.md",
+        "?? results/ae9f30f/notes/gru_evaluation_diagnostics_soft_lambda_wave1_trained_final_regeneration_spec.json",
+        "?? results/ae9f30f/notes/gru_map_error_decomposition_soft_lambda_wave1_trained_final.md",
+        "?? results/ae9f30f/notes/gru_map_error_decomposition_soft_lambda_wave1_trained_final_regeneration_spec.json",
+        "?? results/ae9f30f/notes/gru_pilot_figures_soft_lambda_wave1_trained_final_regeneration_spec.json",
+        "?? results/ae9f30f/notes/gru_standard_certificates_soft_lambda_wave1_trained_final.md",
+        "?? results/ae9f30f/notes/gru_standard_certificates_soft_lambda_wave1_trained_final_manifest.json",
+        "?? results/ae9f30f/notes/gru_standard_certificates_soft_lambda_wave1_trained_final_manifest_regeneration_spec.json",
+        "?? results/ae9f30f/notes/objective_comparator_soft_lambda_wave1_trained_final_regeneration_spec.json",
+        "?? results/ae9f30f/runs/direct_epsilon_b1p05.json",
+        "?? results/ae9f30f/runs/direct_epsilon_b1p05/model.graph.manifest.json",
+        "?? results/ae9f30f/runs/direct_epsilon_b1p4.json",
+        "?? results/ae9f30f/runs/direct_epsilon_b1p4/model.graph.manifest.json",
+        "?? results/ae9f30f/runs/linear_no_bias_b1p05.json",
+        "?? results/ae9f30f/runs/linear_no_bias_b1p05/model.graph.manifest.json",
+        "?? results/ae9f30f/runs/linear_no_bias_b1p4.json",
+        "?? results/ae9f30f/runs/linear_no_bias_b1p4/model.graph.manifest.json"
+      ]
+    },
+    "parents": [],
+    "source_branch": "feature/ae9f30f-corrected-soft-lambda-smoke",
+    "source_commit": "fabb3bc72cc4e976d1d35bf4b7205ec00d0e1c7e",
+    "source_repo": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__ae9f30f-corrected-soft-lambda-smoke"
+  },
+  "schema_id": "feedbax.spec.regeneration",
+  "schema_version": "feedbax.spec.regeneration.v1",
+  "source_files": [
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/gru_postrun_materialization.py",
+      "role": "source_file",
+      "sha256": "48799aec17df4f1efda2bd0378cf8dd7578cce306a83b2633732387198797f36",
+      "size_bytes": 48011
+    },
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py",
+      "role": "source_file",
+      "sha256": "009f11e6aaac4942cfb6e7a19ed9798dda03b591470be2990d82b2976cfd4808",
+      "size_bytes": 48428
+    },
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py",
+      "role": "source_file",
+      "sha256": "4aee7fbd1a4f168b1c8b257a53aa35ff0d5f9f5d403dfcbf50709678b15ada65",
+      "size_bytes": 35885
+    },
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/gru_pilot_figures.py",
+      "role": "source_file",
+      "sha256": "90cf3ec30fa39bffe493ebbfc07d2f619143e5fcf326cb6fd04114969f18b2db",
+      "size_bytes": 39137
+    },
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+      "role": "source_file",
+      "sha256": "38e54c26178ad29104c4b18984796d323b244b44b92cb2d2176fa91544b53bc1",
+      "size_bytes": 214331
+    },
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
+      "role": "source_file",
+      "sha256": "d7c8be4bd7e7695fb1e76318ace40fdabb109176bfff2a97a1bfe693f8cd3505",
+      "size_bytes": 102435
+    }
+  ],
+  "source_trees": []
+}

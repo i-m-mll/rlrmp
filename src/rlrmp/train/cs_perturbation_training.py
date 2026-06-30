@@ -12,6 +12,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
+from jax.flatten_util import ravel_pytree
 import numpy as np
 from feedbax import AbstractTask, TaskTrialSpec, WhereDict
 from feedbax.contracts.graph import (
@@ -34,7 +35,10 @@ from rlrmp.model.feedbax_channel_adapters import (
 )
 from rlrmp.train.closed_loop_finite_adversary import (
     AFFINE_POLICY,
+    FINITE_POLICY_BIAS_INPUT,
+    FINITE_POLICY_GAINS_INPUT,
     LINEAR_NO_BIAS_POLICY,
+    finite_policy_step_epsilon,
     target_centered_full_state_features,
     zero_finite_affine_policy,
     zero_finite_linear_no_bias_policy,
@@ -60,6 +64,16 @@ BROAD_EPSILON_PGD_FIXED_BUDGET_SCHEDULE = "fixed"
 BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE = "sisu_energy_fraction"
 BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE = "hard_l2"
 BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE = "soft_energy"
+BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM = "direct_epsilon"
+BROAD_EPSILON_PGD_MECHANISMS: tuple[str, ...] = (
+    BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM,
+    LINEAR_NO_BIAS_POLICY,
+    AFFINE_POLICY,
+)
+BROAD_EPSILON_PGD_FINITE_POLICY_MECHANISMS: tuple[str, ...] = (
+    LINEAR_NO_BIAS_POLICY,
+    AFFINE_POLICY,
+)
 DEFAULT_PGD_SISU_LEVELS: tuple[float, ...] = (0.0, 0.25, 0.5, 0.75, 1.0)
 DEFAULT_PGD_SISU_EXACT_ZERO_MASS = 0.30
 RAW_STRONG_GAMMA_1P05_RADIUS_15CM = 0.0023284905801002004
@@ -342,6 +356,7 @@ class PgdFullStateEpsilonTrainingConfig:
     """Training-time PGD lane on the C&S full-state epsilon channel."""
 
     enabled: bool = False
+    adversary_mechanism: str = BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM
     level: str = "moderate"
     budget_scale: float = 1.0
     reach_length_scaling: bool = True
@@ -369,6 +384,12 @@ class PgdFullStateEpsilonTrainingConfig:
     safety_cap_source: str | None = None
 
     def __post_init__(self) -> None:
+        if self.adversary_mechanism not in BROAD_EPSILON_PGD_MECHANISMS:
+            mechanisms = ", ".join(BROAD_EPSILON_PGD_MECHANISMS)
+            raise ValueError(
+                f"Unknown PGD adversary mechanism {self.adversary_mechanism!r}; "
+                f"expected one of {mechanisms}."
+            )
         if self.level not in BROAD_EPSILON_LEVELS:
             levels = ", ".join(BROAD_EPSILON_LEVELS)
             raise ValueError(
@@ -489,6 +510,7 @@ class PgdFullStateEpsilonTrainingConfig:
         return {
             "enabled": self.enabled,
             "mode": BROAD_EPSILON_PGD_TRAINING_MODE if self.enabled else "disabled",
+            "adversary_mechanism": self.adversary_mechanism,
             "level": self.level,
             "budget_scale": float(self.budget_scale),
             "reach_length_scaling": bool(self.reach_length_scaling),
@@ -497,6 +519,7 @@ class PgdFullStateEpsilonTrainingConfig:
             "epsilon_dim": int(self.epsilon_dim),
             "budget_schedule": budget_schedule,
             "objective": pgd_objective_contract(self),
+            "mechanism": pgd_adversary_mechanism_contract(self),
             "epsilon_channel": {
                 "state_basis": _broad_epsilon_state_basis(int(self.epsilon_dim)),
                 "shape": ["batch", "time", int(self.epsilon_dim)],
@@ -685,6 +708,9 @@ class PolicyFullStateEpsilonTrainingConfig:
             return {
                 "kind": POLICY_ADVERSARY_MEMORYLESS_MLP,
                 "state_feature_key": "clean_rollout.states.mechanics.vector",
+                "closed_loop_finite_policy": False,
+                "live_rollout_hook": False,
+                "materialization": "legacy_clean_rollout_open_loop_epsilon_sequence",
                 "state_feature_dim": int(self.state_feature_dim),
                 "width": int(self.width),
                 "depth": int(self.depth),
@@ -816,6 +842,64 @@ def pgd_objective_contract(
         "lambda": config.soft_energy_lambda,
         "lambda_mapping": "lambda = c * gamma^2 unless lambda is explicitly supplied",
         "formal_certificate": False,
+    }
+
+
+def pgd_adversary_mechanism_contract(
+    config: PgdFullStateEpsilonTrainingConfig,
+) -> dict[str, Any]:
+    """Return metadata for the selected broad-epsilon PGD adversary mechanism."""
+
+    mechanism = str(config.adversary_mechanism)
+    if mechanism == BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM:
+        return {
+            "name": mechanism,
+            "kind": "open_loop_direct_epsilon_sequence",
+            "implementation_status": "implemented",
+            "matches_legacy_default": True,
+            "semantics": (
+                "The inner maximizer writes a full T x epsilon_dim epsilon sequence into "
+                "TaskTrialSpec.inputs['epsilon'] before controller rollout."
+            ),
+        }
+    return {
+        "name": mechanism,
+        "kind": "closed_loop_finite_time_varying_epsilon_policy",
+        "implementation_status": "implemented",
+        "policy_class": mechanism,
+        "supported_objectives": [BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE],
+        "runtime_inputs": {
+            "base_epsilon": "TaskTrialSpec.inputs['epsilon']",
+            "gains": f"TaskTrialSpec.inputs[{FINITE_POLICY_GAINS_INPUT!r}]",
+            "bias": (
+                f"TaskTrialSpec.inputs[{FINITE_POLICY_BIAS_INPUT!r}]"
+                if mechanism == AFFINE_POLICY
+                else None
+            ),
+        },
+        "required_policy_contract": {
+            "feature_basis": "target_centered_full_state",
+            "live_feature_source": "live_perturbed_rollout_state",
+            "feature_source_detail": "pre_mechanics_state",
+            "time_varying": True,
+            "shared_across_trials_in_batch": True,
+            "has_bias": mechanism == AFFINE_POLICY,
+        },
+        "live_evaluation": {
+            "implementation": "graph_component",
+            "component": "RLRMPCsLssFiniteEpsilonPolicy",
+            "hook": None,
+            "input_keys": [
+                "epsilon",
+                FINITE_POLICY_GAINS_INPUT,
+                *([FINITE_POLICY_BIAS_INPUT] if mechanism == AFFINE_POLICY else []),
+            ],
+            "time_indexing": "policy row t is evaluated before mechanics step t",
+            "target_centering": True,
+            "static_clean_rollout_materialization": False,
+        },
+        "graph_component": "RLRMPCsLssFiniteEpsilonPolicy",
+        "no_fake_open_loop_replay": True,
     }
 
 
@@ -2212,6 +2296,7 @@ def config_from_broad_epsilon_pgd_hps(config: Any) -> PgdFullStateEpsilonTrainin
     """Normalize an hps PGD broad-epsilon payload to a dataclass."""
 
     inner = _payload_get(config, "inner_maximizer", None)
+    mechanism = _payload_get(config, "mechanism", None)
     schedule = _payload_get(config, "budget_schedule", None)
     objective = _payload_get(config, "objective", None)
     safety_cap = _payload_get(config, "safety_cap", None)
@@ -2249,6 +2334,14 @@ def config_from_broad_epsilon_pgd_hps(config: Any) -> PgdFullStateEpsilonTrainin
     )
     return PgdFullStateEpsilonTrainingConfig(
         enabled=bool(_payload_get(config, "enabled", False)),
+        adversary_mechanism=str(
+            _first_payload_value(
+                (config, "adversary_mechanism"),
+                (mechanism, "name"),
+                (mechanism, "policy_class"),
+                default=BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM,
+            )
+        ),
         level=str(_payload_get(config, "level", "moderate")),
         budget_scale=float(_payload_get(config, "budget_scale", 1.0)),
         reach_length_scaling=bool(_payload_get(config, "reach_length_scaling", True)),
@@ -2724,6 +2817,16 @@ def run_broad_epsilon_pgd_inner_maximizer(
     """Run the PGD inner maximizer and optionally return compact scalar diagnostics."""
 
     cfg = config_from_broad_epsilon_pgd_hps(config)
+    if cfg.adversary_mechanism in BROAD_EPSILON_PGD_FINITE_POLICY_MECHANISMS:
+        return _run_finite_broad_epsilon_pgd_inner_maximizer(
+            task,
+            model,
+            trial_specs,
+            loss_func,
+            keys_model,
+            cfg,
+            return_diagnostics=return_diagnostics,
+        )
     specs = _ensure_broad_epsilon_input(trial_specs, epsilon_dim=cfg.epsilon_dim)
     base_epsilon = jnp.asarray(specs.inputs["epsilon"])
     radius = _broad_epsilon_pgd_trust_radius(specs, cfg).astype(base_epsilon.dtype)
@@ -2922,6 +3025,340 @@ def run_broad_epsilon_pgd_inner_maximizer(
         ),
     }
     return updated, diagnostics
+
+
+def _run_finite_broad_epsilon_pgd_inner_maximizer(
+    task: Any,
+    model: Any,
+    trial_specs: TaskTrialSpec,
+    loss_func: Any,
+    keys_model: Any,
+    cfg: PgdFullStateEpsilonTrainingConfig,
+    *,
+    return_diagnostics: bool = False,
+) -> tuple[TaskTrialSpec, dict[str, jnp.ndarray]]:
+    """Run PGD over finite closed-loop policy inputs for broad epsilon."""
+
+    if cfg.objective_kind != BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE:
+        raise ValueError(
+            "Finite broad-epsilon PGD mechanisms currently require "
+            "--broad-epsilon-pgd-objective soft_energy; hard-L2 projection is only "
+            "defined for the direct_epsilon sequence mechanism."
+        )
+    specs = _ensure_broad_epsilon_input(trial_specs, epsilon_dim=cfg.epsilon_dim)
+    base_epsilon = jnp.asarray(specs.inputs["epsilon"])
+    radius = _broad_epsilon_pgd_trust_radius(specs, cfg).astype(base_epsilon.dtype)
+    time_mask = _epsilon_time_mask(specs, base_epsilon, cfg.movement_epoch_only)
+    horizon = int(base_epsilon.shape[-2])
+    feature_dim = int(jnp.asarray(specs.inits["mechanics.vector"]).shape[-1])
+    policy_mask = _shared_policy_time_mask(time_mask)
+    zero_params = _zero_finite_policy_params(
+        cfg,
+        horizon=horizon,
+        feature_dim=feature_dim,
+        dtype=base_epsilon.dtype,
+    )
+    zero_params = _mask_finite_policy_params(zero_params, policy_mask)
+
+    def candidate_specs(params):
+        masked = _mask_finite_policy_params(params, policy_mask)
+        candidate = _set_input(
+            specs,
+            FINITE_POLICY_GAINS_INPUT,
+            _broadcast_finite_policy_params_to_batch(masked["gains"], base_epsilon),
+        )
+        if cfg.adversary_mechanism == AFFINE_POLICY:
+            candidate = _set_input(
+                candidate,
+                FINITE_POLICY_BIAS_INPUT,
+                _broadcast_finite_policy_params_to_batch(masked["bias"], base_epsilon),
+            )
+        return candidate
+
+    def objective_components(params):
+        candidate = candidate_specs(params)
+        candidate_states = task.eval_trials(model, candidate, keys_model)
+        task_loss = jnp.asarray(loss_func(candidate_states, candidate, model).total)
+        epsilon_delta = _finite_policy_epsilon_from_rollout(
+            candidate_states,
+            candidate,
+            cfg,
+        )
+        energy_per_trial = _epsilon_energy_per_trial(epsilon_delta)
+        energy_mean = jnp.mean(energy_per_trial)
+        penalty = jnp.asarray(cfg.soft_energy_lambda, dtype=task_loss.dtype) * energy_mean
+        return task_loss, energy_per_trial, penalty, task_loss - penalty, epsilon_delta
+
+    def objective(params):
+        return objective_components(params)[-2]
+
+    def objective_and_grad(params):
+        return jax.value_and_grad(objective)(params)
+
+    objective_initial, grad_initial = objective_and_grad(zero_params)
+    step_size = jnp.asarray(cfg.step_size_fraction, dtype=base_epsilon.dtype) * jnp.mean(radius)
+
+    def proposal_from_gradient(params_current, grad_current):
+        grad_norm = _finite_policy_tree_norm(grad_current)
+        scaled = jax.tree.map(
+            lambda param, grad: (
+                param
+                + step_size
+                * grad
+                / jnp.maximum(grad_norm, jnp.asarray(1e-12, dtype=step_size.dtype))
+            ),
+            params_current,
+            grad_current,
+        )
+        return _mask_finite_policy_params(scaled, policy_mask)
+
+    def select_best(best_params, best_objective, candidate_params, candidate_objective):
+        improved = jnp.logical_and(
+            jnp.isfinite(candidate_objective),
+            candidate_objective > best_objective,
+        )
+        best_params = jax.tree.map(
+            lambda best, candidate: jnp.where(improved, candidate, best),
+            best_params,
+            candidate_params,
+        )
+        best_objective = jnp.where(improved, candidate_objective, best_objective)
+        return best_params, best_objective
+
+    def body(_, state):
+        (
+            params_current,
+            _current_objective,
+            grad_current,
+            best_params,
+            best_objective,
+            objective_nan_seen,
+            objective_overflow_seen,
+        ) = state
+        proposal = proposal_from_gradient(params_current, grad_current)
+        proposal_objective, proposal_grad = objective_and_grad(proposal)
+        objective_nan_seen = jnp.logical_or(objective_nan_seen, jnp.isnan(proposal_objective))
+        objective_overflow_seen = jnp.logical_or(
+            objective_overflow_seen,
+            jnp.isinf(proposal_objective),
+        )
+        best_params, best_objective = select_best(
+            best_params,
+            best_objective,
+            proposal,
+            proposal_objective,
+        )
+        return (
+            proposal,
+            proposal_objective,
+            proposal_grad,
+            best_params,
+            best_objective,
+            objective_nan_seen,
+            objective_overflow_seen,
+        )
+
+    params_current = zero_params
+    current_objective = objective_initial
+    grad_current = grad_initial
+    best_params = zero_params
+    objective_best = objective_initial
+    objective_nan_seen = jnp.isnan(objective_initial)
+    objective_overflow_seen = jnp.isinf(objective_initial)
+    if int(cfg.n_steps) > 1:
+        (
+            params_current,
+            current_objective,
+            grad_current,
+            best_params,
+            objective_best,
+            objective_nan_seen,
+            objective_overflow_seen,
+        ) = jax.lax.fori_loop(
+            0,
+            int(cfg.n_steps) - 1,
+            body,
+            (
+                params_current,
+                current_objective,
+                grad_current,
+                best_params,
+                objective_best,
+                objective_nan_seen,
+                objective_overflow_seen,
+            ),
+        )
+
+    final_params = proposal_from_gradient(params_current, grad_current)
+    objective_final_endpoint = objective(final_params)
+    objective_nan_seen = jnp.logical_or(objective_nan_seen, jnp.isnan(objective_final_endpoint))
+    objective_overflow_seen = jnp.logical_or(
+        objective_overflow_seen,
+        jnp.isinf(objective_final_endpoint),
+    )
+    best_params, objective_best = select_best(
+        best_params,
+        objective_best,
+        final_params,
+        objective_final_endpoint,
+    )
+    best_params = jax.tree.map(jax.lax.stop_gradient, best_params)
+    updated = candidate_specs(best_params)
+    if not return_diagnostics:
+        return updated, {}
+
+    objective_selected = objective_best
+    zero_task_loss, _zero_energy, zero_penalty, zero_objective, zero_delta = objective_components(
+        zero_params
+    )
+    selected_task_loss, _selected_energy, selected_penalty, selected_objective, delta = (
+        objective_components(best_params)
+    )
+    final_task_loss, _final_energy, final_penalty, final_objective, final_delta = (
+        objective_components(final_params)
+    )
+    delta_norm = _flattened_per_trial_norm(delta).astype(radius.dtype)
+    delta_energy = _epsilon_energy_per_trial(delta)
+    ratio = delta_norm / jnp.maximum(radius, jnp.asarray(1e-12, dtype=radius.dtype))
+    boundary = ratio >= jnp.asarray(1.0 - 1e-4, dtype=ratio.dtype)
+    objective_nonfinite_seen = jnp.logical_or(objective_nan_seen, objective_overflow_seen)
+    diagnostics = {
+        "radius_mean": jnp.mean(radius),
+        "radius_max": jnp.max(radius),
+        "epsilon_norm_mean": jnp.mean(delta_norm),
+        "epsilon_norm_max": jnp.max(delta_norm),
+        "epsilon_energy_mean": jnp.mean(delta_energy),
+        "epsilon_energy_max": jnp.max(delta_energy),
+        "epsilon_norm_radius_ratio_mean": jnp.mean(ratio),
+        "epsilon_norm_radius_ratio_max": jnp.max(ratio),
+        "inner_objective_before": jnp.asarray(objective_initial),
+        "inner_objective_after": jnp.asarray(objective_selected),
+        "inner_objective_improvement": jnp.asarray(objective_selected - objective_initial),
+        "inner_objective_best": jnp.asarray(objective_best),
+        "inner_objective_final_endpoint": jnp.asarray(objective_final_endpoint),
+        "inner_objective_final_endpoint_gap": jnp.asarray(
+            objective_best - objective_final_endpoint
+        ),
+        "raw_task_loss_zero": jnp.asarray(zero_task_loss),
+        "raw_task_loss_selected": jnp.asarray(selected_task_loss),
+        "raw_task_loss_final_endpoint": jnp.asarray(final_task_loss),
+        "energy_penalty_term_zero": jnp.asarray(zero_penalty),
+        "energy_penalty_term_selected": jnp.asarray(selected_penalty),
+        "energy_penalty_term_final_endpoint": jnp.asarray(final_penalty),
+        "penalized_objective_zero": jnp.asarray(zero_objective),
+        "penalized_objective_selected": jnp.asarray(selected_objective),
+        "penalized_objective_final_endpoint": jnp.asarray(final_objective),
+        "selected_objective_gain_over_zero": jnp.asarray(objective_selected - zero_objective),
+        "selected_vs_final_objective_gap": jnp.asarray(objective_best - objective_final_endpoint),
+        "boundary_fraction": jnp.mean(boundary.astype(radius.dtype)),
+        "cap_boundary_fraction": jnp.mean(boundary.astype(radius.dtype)),
+        "safety_cap_boundary_fraction": jnp.mean(boundary.astype(radius.dtype)),
+        "inner_objective_nan_seen": objective_nan_seen,
+        "inner_objective_overflow_seen": objective_overflow_seen,
+        "inner_objective_nonfinite_seen": objective_nonfinite_seen,
+        "n_steps": jnp.asarray(cfg.n_steps, dtype=jnp.float32),
+        "step_size_fraction_of_l2_radius": jnp.asarray(
+            cfg.step_size_fraction,
+            dtype=jnp.float32,
+        ),
+        "objective_kind_is_soft_energy": jnp.asarray(True),
+        "energy_lambda": jnp.asarray(
+            cfg.soft_energy_lambda or 0.0,
+            dtype=jnp.float32,
+        ),
+        "finite_policy_class_is_affine": jnp.asarray(cfg.adversary_mechanism == AFFINE_POLICY),
+        "finite_policy_delta_zero_energy_mean": jnp.mean(_epsilon_energy_per_trial(zero_delta)),
+        "finite_policy_final_endpoint_energy_mean": jnp.mean(
+            _epsilon_energy_per_trial(final_delta)
+        ),
+    }
+    return updated, diagnostics
+
+
+def _zero_finite_policy_params(
+    cfg: PgdFullStateEpsilonTrainingConfig,
+    *,
+    horizon: int,
+    feature_dim: int,
+    dtype: Any,
+) -> dict[str, jnp.ndarray]:
+    params = {
+        "gains": jnp.zeros((int(horizon), int(cfg.epsilon_dim), int(feature_dim)), dtype=dtype)
+    }
+    if cfg.adversary_mechanism == AFFINE_POLICY:
+        params["bias"] = jnp.zeros((int(horizon), int(cfg.epsilon_dim)), dtype=dtype)
+    return params
+
+
+def _mask_finite_policy_params(
+    params: dict[str, jnp.ndarray],
+    policy_mask: jnp.ndarray,
+) -> dict[str, jnp.ndarray]:
+    masked = {"gains": params["gains"] * policy_mask[:, None, None]}
+    if "bias" in params:
+        masked["bias"] = params["bias"] * policy_mask[:, None]
+    return masked
+
+
+def _shared_policy_time_mask(time_mask: jnp.ndarray) -> jnp.ndarray:
+    mask = jnp.asarray(time_mask)
+    time_axis = mask.ndim - 2
+    reduce_axes = tuple(axis for axis in range(mask.ndim) if axis != time_axis)
+    if not reduce_axes:
+        return mask
+    return jnp.max(mask, axis=reduce_axes)
+
+
+def _broadcast_finite_policy_params_to_batch(
+    values: jnp.ndarray,
+    base_epsilon: jnp.ndarray,
+) -> jnp.ndarray:
+    batch_shape = base_epsilon.shape[:-2]
+    if not batch_shape:
+        return values
+    return jnp.broadcast_to(values, (*batch_shape, *values.shape))
+
+
+def _finite_policy_tree_norm(tree: Any) -> jnp.ndarray:
+    flat, _ = ravel_pytree(tree)
+    return jnp.linalg.norm(flat)
+
+
+def _finite_policy_epsilon_from_rollout(
+    states: Any,
+    trial_specs: TaskTrialSpec,
+    cfg: PgdFullStateEpsilonTrainingConfig,
+) -> jnp.ndarray:
+    vectors = jnp.asarray(states.mechanics.vector)
+    gains = jnp.asarray(trial_specs.inputs[FINITE_POLICY_GAINS_INPUT], dtype=vectors.dtype)
+    horizon = int(gains.shape[-3])
+    init = jnp.asarray(trial_specs.inits["mechanics.vector"], dtype=vectors.dtype)
+    while init.ndim < vectors.ndim - 1:
+        init = jnp.expand_dims(init, axis=0)
+    init = jnp.broadcast_to(init, (*vectors.shape[:-2], vectors.shape[-1]))
+    pre_step_vectors = jnp.concatenate(
+        [init[..., None, :], vectors[..., : max(horizon - 1, 0), :]],
+        axis=-2,
+    )
+    target = jnp.asarray(
+        trial_specs.inputs.get(
+            "target",
+            trial_specs.targets["mechanics.effector.pos"].value,
+        ),
+        dtype=vectors.dtype,
+    )[..., :horizon, :]
+    bias = (
+        jnp.asarray(trial_specs.inputs[FINITE_POLICY_BIAS_INPUT], dtype=vectors.dtype)
+        if cfg.adversary_mechanism == AFFINE_POLICY
+        else None
+    )
+    return finite_policy_step_epsilon(
+        pre_step_vectors,
+        target_position=target,
+        gain_t=gains,
+        bias_t=bias,
+        physical_block_size=int(cfg.epsilon_dim),
+    )
 
 
 def _epsilon_energy_per_trial(epsilon: jnp.ndarray) -> jnp.ndarray:
@@ -4890,7 +5327,7 @@ def _with_static_target(
         key: (
             value
             if key in {"target", "effector_target", "task"}
-            else _broadcast_trial_array(value, batch_shape)
+            else _broadcast_trial_input_array(key, value, batch_shape)
         )
         for key, value in inputs.items()
     }
@@ -5052,6 +5489,34 @@ def _broadcast_trial_array(value: Any, batch_shape: tuple[int, ...]) -> Any:
     tail = array.shape[-1:] if array.ndim <= 2 else array.shape[-2:]
     try:
         return jnp.broadcast_to(array, (*batch_shape, *tail))
+    except ValueError:
+        return value
+
+
+def _broadcast_trial_input_array(key: str, value: Any, batch_shape: tuple[int, ...]) -> Any:
+    if key == FINITE_POLICY_GAINS_INPUT:
+        return _broadcast_trial_array_with_suffix_rank(value, batch_shape, suffix_rank=3)
+    if key == FINITE_POLICY_BIAS_INPUT:
+        return _broadcast_trial_array_with_suffix_rank(value, batch_shape, suffix_rank=2)
+    return _broadcast_trial_array(value, batch_shape)
+
+
+def _broadcast_trial_array_with_suffix_rank(
+    value: Any,
+    batch_shape: tuple[int, ...],
+    *,
+    suffix_rank: int,
+) -> Any:
+    if not batch_shape or not eqx.is_array(value):
+        return value
+    array = jnp.asarray(value)
+    if array.ndim < int(suffix_rank):
+        return value
+    if array.shape[: len(batch_shape)] == batch_shape:
+        return value
+    suffix = array.shape[-int(suffix_rank) :]
+    try:
+        return jnp.broadcast_to(array, (*batch_shape, *suffix))
     except ValueError:
         return value
 

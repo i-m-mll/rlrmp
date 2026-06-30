@@ -14,6 +14,8 @@ FiniteAdversaryPolicyClass = Literal["linear_no_bias", "affine"]
 LINEAR_NO_BIAS_POLICY: FiniteAdversaryPolicyClass = "linear_no_bias"
 AFFINE_POLICY: FiniteAdversaryPolicyClass = "affine"
 TARGET_CENTERED_FULL_STATE_FEATURES = "target_centered_full_state"
+FINITE_POLICY_GAINS_INPUT = "epsilon_policy_gains"
+FINITE_POLICY_BIAS_INPUT = "epsilon_policy_bias"
 
 
 @dataclass(frozen=True)
@@ -201,33 +203,65 @@ def target_centered_full_state_features(
     mechanics_vector: Any,
     *,
     target_position: Any,
+    physical_block_size: int = 8,
 ) -> Float[Array, "... state_dim"]:
     """Return target/error-centered features from a live mechanics state.
 
-    The C&S mechanics vector is treated as one or more 8D integrator-state
-    blocks or 6D no-integrator-state blocks. In each block, the first two
-    coordinates are position-like coordinates and are shifted by
-    ``target_position``. All other coordinates are already target-centered
-    dynamics/features and pass through unchanged.
+    The C&S mechanics vector is treated as one or more physical state blocks. In
+    each block, the first two coordinates are position-like coordinates and are
+    shifted by ``target_position``. All other coordinates are already
+    target-centered dynamics/features and pass through unchanged.
     """
 
     values = jnp.asarray(mechanics_vector)
     target = jnp.asarray(target_position, dtype=values.dtype)
-    if values.shape[-1] % 8 == 0:
-        block_dim = 8
-    elif values.shape[-1] % 6 == 0:
-        block_dim = 6
-    else:
-        raise ValueError(f"expected state dimension divisible by 8 or 6; got {values.shape[-1]}")
+    block_size = int(physical_block_size)
+    if block_size < 2:
+        raise ValueError(f"physical_block_size must be at least 2, got {block_size}")
+    if values.shape[-1] % block_size != 0:
+        if block_size == 8 and values.shape[-1] % 6 == 0:
+            block_size = 6
+        else:
+            raise ValueError(
+                f"expected state dimension divisible by {block_size}, got {values.shape[-1]}"
+            )
     if target.shape[-1] != 2:
         raise ValueError(f"target_position must end in dimension 2, got {target.shape}")
-    reshaped = values.reshape((*values.shape[:-1], values.shape[-1] // block_dim, block_dim))
+    reshaped = values.reshape((*values.shape[:-1], values.shape[-1] // block_size, block_size))
     target = target[..., None, :]
     while target.ndim < len(reshaped.shape):
         target = jnp.expand_dims(target, axis=-3)
     target = jnp.broadcast_to(target, (*reshaped.shape[:-1], 2))
     centered = reshaped.at[..., 0:2].add(-target)
     return centered.reshape(values.shape)
+
+
+def finite_policy_step_epsilon(
+    mechanics_vector: Any,
+    *,
+    target_position: Any,
+    gain_t: Any,
+    bias_t: Any | None = None,
+    physical_block_size: int = 8,
+) -> Float[Array, "... epsilon_dim"]:
+    """Evaluate one finite epsilon-policy step from live mechanics state."""
+
+    features = target_centered_full_state_features(
+        mechanics_vector,
+        target_position=target_position,
+        physical_block_size=physical_block_size,
+    )
+    gains = jnp.asarray(gain_t, dtype=features.dtype)
+    if gains.ndim == 2:
+        epsilon = jnp.einsum("...f,ef->...e", features, gains)
+    elif gains.ndim >= 3:
+        epsilon = jnp.einsum("...f,...ef->...e", features, gains)
+    else:
+        raise ValueError(f"gain_t must end with (epsilon_dim, feature_dim), got {gains.shape}")
+    if bias_t is None:
+        return epsilon
+    bias = jnp.asarray(bias_t, dtype=epsilon.dtype)
+    return epsilon + bias
 
 
 def finite_policy_contract(metadata: FiniteAdversaryPolicyMetadata) -> dict[str, Any]:
