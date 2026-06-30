@@ -9,7 +9,7 @@
       "id": "direct_epsilon",
       "mechanism": "direct_epsilon",
       "beta": 1.4,
-      "lambda": 452578932.66011757,
+      "lambda": 550824678.4684843,
       "run_spec": "results/b413bb0/runs/direct_epsilon.json",
       "artifact_output_dir": "_artifacts/b413bb0/runs/direct_epsilon",
       "command": "PYTHONPATH=src uv run --no-sync python scripts/train_cs_nominal_gru.py --run-spec results/b413bb0/runs/direct_epsilon.json"
@@ -18,7 +18,7 @@
       "id": "linear_no_bias",
       "mechanism": "linear_no_bias",
       "beta": 1.4,
-      "lambda": 705034449.3625335,
+      "lambda": 704889898.0081824,
       "run_spec": "results/b413bb0/runs/linear_no_bias.json",
       "artifact_output_dir": "_artifacts/b413bb0/runs/linear_no_bias",
       "command": "PYTHONPATH=src uv run --no-sync python scripts/train_cs_nominal_gru.py --run-spec results/b413bb0/runs/linear_no_bias.json"
@@ -27,7 +27,7 @@
       "id": "affine",
       "mechanism": "affine",
       "beta": 1.4,
-      "lambda": 705123804.979113,
+      "lambda": 704817601.4292752,
       "run_spec": "results/b413bb0/runs/affine.json",
       "artifact_output_dir": "_artifacts/b413bb0/runs/affine",
       "command": "PYTHONPATH=src uv run --no-sync python scripts/train_cs_nominal_gru.py --run-spec results/b413bb0/runs/affine.json"

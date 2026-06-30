@@ -179,10 +179,17 @@
       },
       "epsilon_dim": 6,
       "inner_maximizer": {
+        "adam": {
+          "b1": 0.9,
+          "b2": 0.999,
+          "eps": 1E-8,
+          "learning_rate": 0.001
+        },
         "differentiated_through_outer_update": false,
         "initialization": "zero",
-        "method": "projected_gradient_ascent",
-        "n_steps": 10,
+        "learning_rate": 0.001,
+        "method": "adam",
+        "n_steps": 8,
         "projection": "per_trial_flattened_time_component_l2_ball",
         "step_size_fraction_of_l2_radius": 0.25,
         "time_mask": {
@@ -209,7 +216,7 @@
         "gamma_star": null,
         "hard_l2_projection_is_scientific_constraint": false,
         "kind": "soft_energy",
-        "lambda": 452578932.66011757,
+        "lambda": 550824678.4684843,
         "lambda_mapping": "lambda = c * gamma^2 unless lambda is explicitly supplied",
         "penalty_scale_c": 1.0,
         "soft_energy_penalty": true
@@ -4380,10 +4387,17 @@
         },
         "epsilon_dim": 6,
         "inner_maximizer": {
+          "adam": {
+            "b1": 0.9,
+            "b2": 0.999,
+            "eps": 1E-8,
+            "learning_rate": 0.001
+          },
           "differentiated_through_outer_update": false,
           "initialization": "zero",
-          "method": "projected_gradient_ascent",
-          "n_steps": 10,
+          "learning_rate": 0.001,
+          "method": "adam",
+          "n_steps": 8,
           "projection": "per_trial_flattened_time_component_l2_ball",
           "step_size_fraction_of_l2_radius": 0.25,
           "time_mask": {
@@ -4410,7 +4424,7 @@
           "gamma_star": null,
           "hard_l2_projection_is_scientific_constraint": false,
           "kind": "soft_energy",
-          "lambda": 452578932.66011757,
+          "lambda": 550824678.4684843,
           "lambda_mapping": "lambda = c * gamma^2 unless lambda is explicitly supplied",
           "penalty_scale_c": 1.0,
           "soft_energy_penalty": true
@@ -8313,7 +8327,7 @@
     },
     "git": {
       "rlrmp_branch": "feature/b413bb0-beta1p4-run-lock",
-      "rlrmp_commit": "cd5b1a6c7371eaa3729a5f0e6991e5e639ee62cf"
+      "rlrmp_commit": "de76b5d55a7141663b4fc015720ae8abe594354e"
     },
     "gpu": {
       "device_count": 1,
@@ -8436,10 +8450,17 @@
       },
       "epsilon_dim": 6,
       "inner_maximizer": {
+        "adam": {
+          "b1": 0.9,
+          "b2": 0.999,
+          "eps": 1E-8,
+          "learning_rate": 0.001
+        },
         "differentiated_through_outer_update": false,
         "initialization": "zero",
-        "method": "projected_gradient_ascent",
-        "n_steps": 10,
+        "learning_rate": 0.001,
+        "method": "adam",
+        "n_steps": 8,
         "projection": "per_trial_flattened_time_component_l2_ball",
         "step_size_fraction_of_l2_radius": 0.25,
         "time_mask": {
@@ -8466,7 +8487,7 @@
         "gamma_star": null,
         "hard_l2_projection_is_scientific_constraint": false,
         "kind": "soft_energy",
-        "lambda": 452578932.66011757,
+        "lambda": 550824678.4684843,
         "lambda_mapping": "lambda = c * gamma^2 unless lambda is explicitly supplied",
         "penalty_scale_c": 1.0,
         "soft_energy_penalty": true
@@ -11494,10 +11515,17 @@
       },
       "epsilon_dim": 6,
       "inner_maximizer": {
+        "adam": {
+          "b1": 0.9,
+          "b2": 0.999,
+          "eps": 1E-8,
+          "learning_rate": 0.001
+        },
         "differentiated_through_outer_update": false,
         "initialization": "zero",
-        "method": "projected_gradient_ascent",
-        "n_steps": 10,
+        "learning_rate": 0.001,
+        "method": "adam",
+        "n_steps": 8,
         "projection": "per_trial_flattened_time_component_l2_ball",
         "step_size_fraction_of_l2_radius": 0.25,
         "time_mask": {
@@ -11524,7 +11552,7 @@
         "gamma_star": null,
         "hard_l2_projection_is_scientific_constraint": false,
         "kind": "soft_energy",
-        "lambda": 452578932.66011757,
+        "lambda": 550824678.4684843,
         "lambda_mapping": "lambda = c * gamma^2 unless lambda is explicitly supplied",
         "penalty_scale_c": 1.0,
         "soft_energy_penalty": true
@@ -15543,10 +15571,17 @@
         },
         "epsilon_dim": 6,
         "inner_maximizer": {
+          "adam": {
+            "b1": 0.9,
+            "b2": 0.999,
+            "eps": 1E-8,
+            "learning_rate": 0.001
+          },
           "differentiated_through_outer_update": false,
           "initialization": "zero",
-          "method": "projected_gradient_ascent",
-          "n_steps": 10,
+          "learning_rate": 0.001,
+          "method": "adam",
+          "n_steps": 8,
           "projection": "per_trial_flattened_time_component_l2_ball",
           "step_size_fraction_of_l2_radius": 0.25,
           "time_mask": {
@@ -15573,7 +15608,7 @@
           "gamma_star": null,
           "hard_l2_projection_is_scientific_constraint": false,
           "kind": "soft_energy",
-          "lambda": 452578932.66011757,
+          "lambda": 550824678.4684843,
           "lambda_mapping": "lambda = c * gamma^2 unless lambda is explicitly supplied",
           "penalty_scale_c": 1.0,
           "soft_energy_penalty": true

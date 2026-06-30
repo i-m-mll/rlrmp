@@ -19,6 +19,7 @@
     "replicates": 5,
     "fixed_perturbation_training": "calibrated timing, moderate physical level",
     "loss_objective": "full_analytical_qrf",
+    "adversary_lane": "broad-epsilon PGD soft-energy with Adam inner optimizer",
     "n_train_batches": 12000,
     "batch_size": 64,
     "controller_lr": 0.003,
@@ -33,26 +34,27 @@
   },
   "lambda_provenance": {
     "direct_epsilon": {
-      "lambda": 452578932.66011757,
-      "source": "results/06a4dc8/canonical_soft_lambda_hvp.json",
-      "scope": "open_loop_moderate beta=1.4 mapping",
-      "mapping": "lambda = beta^2 * p90(lambda_star_i)"
+      "lambda": 550824678.4684843,
+      "source": "results/9bb676f/frozen_policy_adam_lambda_gate.json",
+      "basis": "direct cap-independent fixed-HVP/p90 candidate scaled by beta^2",
+      "unscaled_candidate": 281032999.21861446
     },
     "linear_no_bias": {
-      "lambda": 705034449.3625335,
+      "lambda": 704889898.0081824,
       "source": "results/9bb676f/frozen_policy_adam_lambda_gate.json",
       "basis": "support-whitened generalized-HVP/Lanczos candidate scaled by beta^2",
-      "unscaled_candidate": 359711453.7563946
+      "unscaled_candidate": 359637703.06539917
     },
     "affine": {
-      "lambda": 705123804.979113,
+      "lambda": 704817601.4292752,
       "source": "results/9bb676f/frozen_policy_adam_lambda_gate.json",
       "basis": "support-whitened generalized-HVP/Lanczos candidate scaled by beta^2",
-      "unscaled_candidate": 359757043.3566903
+      "unscaled_candidate": 359600817.05575264
     }
   },
   "caveats": [
-    "The finite Adam rows materialize epsilon from clean-rollout pre-step features; they are not yet true live-perturbed closed-loop finite-policy training.",
+    "The launch-facing finite rows use broad_epsilon_pgd_training with inner_maximizer.method=adam and live graph-component finite-policy rollout.",
+    "The older policy_adversary_training finite path remains legacy/static-clean-rollout and is not used by this lock.",
     "Cap, trust-radius, boundary, selected norm/radius, and radius-gradient-pressure quantities are diagnostic-only.",
     "The invalid 7ea17b8 cap/trust-radius-derived ~4.13e8 floors must not be used for launch planning."
   ]

@@ -1,5 +1,5 @@
 {
-  "adversarial_phase": "learned_finite_affine_policy_adversary",
+  "adversarial_phase": "broad_epsilon_pgd_live_finite_policy_affine",
   "artifact_output_dir": "_artifacts/b413bb0/runs/affine",
   "batch_size": 64,
   "checkpointing": {
@@ -136,7 +136,7 @@
   "hps": {
     "batch_size": 64,
     "broad_epsilon_pgd_training": {
-      "adversary_mechanism": "direct_epsilon",
+      "adversary_mechanism": "affine",
       "budget_contract": {
         "active_max_l2_radius_15cm": 0.0012324305441740995,
         "budget_source": {
@@ -155,7 +155,7 @@
         "gamma_factor": 1.4,
         "reach_length_scaling_note": "Reach scaling is an explicit multi-target normalization choice; the original analytical game card reports the 15 cm budget.",
         "reference_reach_m": 0.15,
-        "scientific_constraint": "hard_l2_projection",
+        "scientific_constraint": "soft_energy_penalty",
         "source_issue": "cb98e58",
         "source_note": "results/cb98e58/notes/analytical_game_card_manifest.json"
       },
@@ -165,7 +165,7 @@
         "mapping_rule": "epsilon_l2_radius = fixed_l2_radius",
         "mode": "fixed"
       },
-      "enabled": false,
+      "enabled": true,
       "epsilon_channel": {
         "dt_scaling": "none",
         "injection": "B_w[:6, :] = I_6; B_w[6:, :] = 0",
@@ -179,10 +179,17 @@
       },
       "epsilon_dim": 6,
       "inner_maximizer": {
+        "adam": {
+          "b1": 0.9,
+          "b2": 0.999,
+          "eps": 1E-8,
+          "learning_rate": 0.001
+        },
         "differentiated_through_outer_update": false,
         "initialization": "zero",
-        "method": "projected_gradient_ascent",
-        "n_steps": 3,
+        "learning_rate": 0.001,
+        "method": "adam",
+        "n_steps": 8,
         "projection": "per_trial_flattened_time_component_l2_ball",
         "step_size_fraction_of_l2_radius": 0.25,
         "time_mask": {
@@ -192,25 +199,75 @@
       },
       "level": "moderate",
       "mechanism": {
+        "graph_component": "RLRMPCsLssFiniteEpsilonPolicy",
         "implementation_status": "implemented",
-        "kind": "open_loop_direct_epsilon_sequence",
-        "matches_legacy_default": true,
-        "name": "direct_epsilon",
-        "semantics": "The inner maximizer writes a full T x epsilon_dim epsilon sequence into TaskTrialSpec.inputs['epsilon'] before controller rollout."
+        "kind": "closed_loop_finite_time_varying_epsilon_policy",
+        "live_evaluation": {
+          "component": "RLRMPCsLssFiniteEpsilonPolicy",
+          "hook": null,
+          "implementation": "graph_component",
+          "input_keys": [
+            "epsilon",
+            "epsilon_policy_gains",
+            "epsilon_policy_bias"
+          ],
+          "static_clean_rollout_materialization": false,
+          "target_centering": true,
+          "time_indexing": "policy row t is evaluated before mechanics step t"
+        },
+        "name": "affine",
+        "no_fake_open_loop_replay": true,
+        "policy_class": "affine",
+        "required_policy_contract": {
+          "feature_basis": "target_centered_full_state",
+          "feature_source_detail": "pre_mechanics_state",
+          "has_bias": true,
+          "live_feature_source": "live_perturbed_rollout_state",
+          "shared_across_trials_in_batch": true,
+          "time_varying": true
+        },
+        "runtime_inputs": {
+          "base_epsilon": "TaskTrialSpec.inputs['epsilon']",
+          "bias": "TaskTrialSpec.inputs['epsilon_policy_bias']",
+          "gains": "TaskTrialSpec.inputs['epsilon_policy_gains']"
+        },
+        "supported_objectives": [
+          "soft_energy"
+        ]
       },
-      "mode": "disabled",
+      "mode": "broad_full_state_epsilon_pgd_l2",
       "movement_epoch_only": false,
       "nominal_reach_length_m": 0.15,
       "objective": {
-        "formula": "maximize task_loss under hard per-trial L2 projection",
-        "hard_l2_projection_is_scientific_constraint": true,
-        "kind": "hard_l2",
-        "soft_energy_penalty": false
+        "formal_certificate": false,
+        "formula": "maximize task_loss - lambda * epsilon_energy",
+        "gamma": null,
+        "gamma_factor": null,
+        "gamma_star": null,
+        "hard_l2_projection_is_scientific_constraint": false,
+        "kind": "soft_energy",
+        "lambda": 704817601.4292752,
+        "lambda_mapping": "lambda = c * gamma^2 unless lambda is explicitly supplied",
+        "penalty_scale_c": 1.0,
+        "soft_energy_penalty": true
       },
       "reach_length_scaling": false,
       "safety_cap": {
-        "enabled": false,
-        "role": "not_used_for_hard_l2_objective"
+        "activation_diagnostics": {
+          "cap_boundary_fraction": true,
+          "epsilon_norm_cap_ratio": true
+        },
+        "enabled": true,
+        "hard_budget_scientific_constraint": false,
+        "l2_radius_15cm": 0.0012324305441740995,
+        "reach_length_scaling": false,
+        "role": "numerical_stabilization_trust_region_only",
+        "source": {
+          "description": "broad_epsilon_moderate_closed_loop_epsilon_l2_15cm_numeric_trust_region",
+          "gamma_equivalent_analytical_anchor": false,
+          "key": "broad_epsilon_moderate_closed_loop_epsilon_l2_15cm_numeric_trust_region",
+          "source_kind": "caller_declared"
+        }
       },
       "time_mask": {
         "mode": "full_trial",
@@ -1044,14 +1101,16 @@
     },
     "policy_adversary_training": {
       "budget_contract": {
-        "active_max_l2_radius_15cm": 0.0012324305441740995,
+        "active_max_l2_radius_15cm": 0.004545500088363065,
         "budget_source": {
-          "description": "broad_epsilon_moderate_closed_loop_epsilon_l2_15cm_numeric_trust_region",
+          "description": "effective 020a65b PGD training radius; not a new gamma-equivalent analytical anchor",
           "gamma_equivalent_analytical_anchor": false,
-          "key": "broad_epsilon_moderate_closed_loop_epsilon_l2_15cm_numeric_trust_region",
-          "source_kind": "caller_declared"
+          "key": "effective_020a65b_pgd_training_radius",
+          "source_issue": "020a65b",
+          "source_kind": "effective_pgd_training_radius",
+          "source_note": "020a65b broad-epsilon PGD local training contract"
         },
-        "effective_l2_radius_15cm": 0.0012324305441740995,
+        "effective_l2_radius_15cm": 0.004545500088363065,
         "reach_length_scaling": false,
         "reach_length_scaling_note": "The 15 cm effective PGD radius is scaled by sampled reach length when target-relative multi-target training is active.",
         "reference_reach_m": 0.15
@@ -1062,9 +1121,9 @@
         "epsilon_energy": true,
         "epsilon_norm_radius_ratio": true,
         "projection_boundary_fraction": true,
-        "stabilizer_term": true
+        "stabilizer_term": false
       },
-      "enabled": true,
+      "enabled": false,
       "epsilon_channel": {
         "dt_scaling": "none",
         "injection": "B_w[:6, :] = I_6; B_w[6:, :] = 0",
@@ -1077,37 +1136,34 @@
         "state_basis": "C&S 36D delay-augmented LinearStateSpace state"
       },
       "inner_optimizer": {
-        "learning_rate": 0.001,
+        "learning_rate": 0.0003,
         "method": "adam",
-        "n_ascent_steps_per_controller_step": 8,
+        "n_ascent_steps_per_controller_step": 5,
         "weights_persist_across_batches": true
       },
-      "mode": "broad_full_state_epsilon_policy_l2",
+      "mode": "disabled",
       "objective": {
-        "active": "energy",
+        "active": "plain",
         "energy": "maximize controller loss minus energy_penalty_gamma * epsilon_energy; H-infinity-style stabilizer only, not a formal certificate",
-        "energy_penalty_gamma": 705123804.979113,
+        "energy_penalty_gamma": 1.0,
         "formal_certificate": false,
         "plain": "maximize controller loss under hard projected epsilon"
       },
       "policy": {
-        "closed_loop_semantics_note": "Current Feedbax pre-step integration materializes epsilon before rollout. The optimizer is Adam over finite-policy parameters, but the rollout does not call the finite policy on perturbed live states at each time step.",
-        "closed_loop_semantics_status": "not_live_rollout_hook",
-        "evaluation_semantics": "static_epsilon_materialized_from_clean_rollout_pre_step",
-        "has_bias": true,
-        "initialization": "zero",
-        "kind": "affine",
+        "closed_loop_finite_policy": false,
+        "depth": 2,
+        "kind": "memoryless_mlp",
+        "live_rollout_hook": false,
+        "materialization": "legacy_clean_rollout_open_loop_epsilon_sequence",
         "output_dim": 6,
-        "parameterization": "shared_time_varying_finite_policy",
         "shared_across_replicates": true,
-        "shared_across_trials_in_batch": true,
         "state_feature_dim": 36,
-        "state_feature_key": "target_centered(clean_rollout.states.mechanics.vector, trial_specs.targets['mechanics.effector.pos'])",
-        "time_varying": true
+        "state_feature_key": "clean_rollout.states.mechanics.vector",
+        "width": 64
       },
-      "policy_class": "affine",
+      "policy_class": "memoryless_mlp",
       "projection": "per_trial_flattened_time_component_l2_ball",
-      "row_mode": "energy",
+      "row_mode": "plain",
       "time_mask": {
         "mode": "full_trial",
         "movement_epoch_only": false
@@ -4168,7 +4224,7 @@
   "modal_launch": "not_requested",
   "mode": "full_train",
   "model_summary": {
-    "adversarial_phase": "learned_finite_affine_policy_adversary",
+    "adversarial_phase": "broad_epsilon_pgd_live_finite_policy_affine",
     "analytical_delay_augmented_state_input": false,
     "certificate_claim": "I/O map certificate framing only; the output-feedback GRU is not fed the 48D delay-augmented analytical state and is not claimed to share same-coordinate gains with the analytical controller.",
     "certificate_coordinate_claim": "not_same_coordinate_gain",
@@ -4316,9 +4372,145 @@
       "nodes.net.h0_encoder"
     ],
     "training_distribution": {
-      "adversarial_phase": "learned_finite_affine_policy_adversary",
+      "adversarial_phase": "broad_epsilon_pgd_live_finite_policy_affine",
       "broad_epsilon_pgd_training": {
-        "enabled": false
+        "adversary_mechanism": "affine",
+        "budget_contract": {
+          "active_max_l2_radius_15cm": 0.0012324305441740995,
+          "budget_source": {
+            "description": "moderate analytical broad-epsilon radius after budget_scale",
+            "gamma_equivalent_analytical_anchor": true,
+            "gamma_factor": 1.4,
+            "key": "analytical_broad_epsilon_level:moderate",
+            "source_issue": "cb98e58",
+            "source_kind": "analytical_broad_epsilon_anchor",
+            "source_note": "results/cb98e58/notes/analytical_game_card_manifest.json"
+          },
+          "closed_loop_epsilon_energy_15cm": 0.000001518885046213267,
+          "closed_loop_epsilon_l2_15cm": 0.0012324305441740995,
+          "delta_v_percent": 4.041729916548296,
+          "effective_l2_radius_15cm": 0.0012324305441740995,
+          "gamma_factor": 1.4,
+          "reach_length_scaling_note": "Reach scaling is an explicit multi-target normalization choice; the original analytical game card reports the 15 cm budget.",
+          "reference_reach_m": 0.15,
+          "scientific_constraint": "soft_energy_penalty",
+          "source_issue": "cb98e58",
+          "source_note": "results/cb98e58/notes/analytical_game_card_manifest.json"
+        },
+        "budget_scale": 1.0,
+        "budget_schedule": {
+          "conditioned": false,
+          "mapping_rule": "epsilon_l2_radius = fixed_l2_radius",
+          "mode": "fixed"
+        },
+        "enabled": true,
+        "epsilon_channel": {
+          "dt_scaling": "none",
+          "injection": "B_w[:6, :] = I_6; B_w[6:, :] = 0",
+          "lag_history_direct_write": false,
+          "shape": [
+            "batch",
+            "time",
+            6
+          ],
+          "state_basis": "C&S 36D delay-augmented LinearStateSpace state"
+        },
+        "epsilon_dim": 6,
+        "inner_maximizer": {
+          "adam": {
+            "b1": 0.9,
+            "b2": 0.999,
+            "eps": 1E-8,
+            "learning_rate": 0.001
+          },
+          "differentiated_through_outer_update": false,
+          "initialization": "zero",
+          "learning_rate": 0.001,
+          "method": "adam",
+          "n_steps": 8,
+          "projection": "per_trial_flattened_time_component_l2_ball",
+          "step_size_fraction_of_l2_radius": 0.25,
+          "time_mask": {
+            "mode": "full_trial",
+            "movement_epoch_only": false
+          }
+        },
+        "level": "moderate",
+        "mechanism": {
+          "graph_component": "RLRMPCsLssFiniteEpsilonPolicy",
+          "implementation_status": "implemented",
+          "kind": "closed_loop_finite_time_varying_epsilon_policy",
+          "live_evaluation": {
+            "component": "RLRMPCsLssFiniteEpsilonPolicy",
+            "hook": null,
+            "implementation": "graph_component",
+            "input_keys": [
+              "epsilon",
+              "epsilon_policy_gains",
+              "epsilon_policy_bias"
+            ],
+            "static_clean_rollout_materialization": false,
+            "target_centering": true,
+            "time_indexing": "policy row t is evaluated before mechanics step t"
+          },
+          "name": "affine",
+          "no_fake_open_loop_replay": true,
+          "policy_class": "affine",
+          "required_policy_contract": {
+            "feature_basis": "target_centered_full_state",
+            "feature_source_detail": "pre_mechanics_state",
+            "has_bias": true,
+            "live_feature_source": "live_perturbed_rollout_state",
+            "shared_across_trials_in_batch": true,
+            "time_varying": true
+          },
+          "runtime_inputs": {
+            "base_epsilon": "TaskTrialSpec.inputs['epsilon']",
+            "bias": "TaskTrialSpec.inputs['epsilon_policy_bias']",
+            "gains": "TaskTrialSpec.inputs['epsilon_policy_gains']"
+          },
+          "supported_objectives": [
+            "soft_energy"
+          ]
+        },
+        "mode": "broad_full_state_epsilon_pgd_l2",
+        "movement_epoch_only": false,
+        "nominal_reach_length_m": 0.15,
+        "objective": {
+          "formal_certificate": false,
+          "formula": "maximize task_loss - lambda * epsilon_energy",
+          "gamma": null,
+          "gamma_factor": null,
+          "gamma_star": null,
+          "hard_l2_projection_is_scientific_constraint": false,
+          "kind": "soft_energy",
+          "lambda": 704817601.4292752,
+          "lambda_mapping": "lambda = c * gamma^2 unless lambda is explicitly supplied",
+          "penalty_scale_c": 1.0,
+          "soft_energy_penalty": true
+        },
+        "reach_length_scaling": false,
+        "safety_cap": {
+          "activation_diagnostics": {
+            "cap_boundary_fraction": true,
+            "epsilon_norm_cap_ratio": true
+          },
+          "enabled": true,
+          "hard_budget_scientific_constraint": false,
+          "l2_radius_15cm": 0.0012324305441740995,
+          "reach_length_scaling": false,
+          "role": "numerical_stabilization_trust_region_only",
+          "source": {
+            "description": "broad_epsilon_moderate_closed_loop_epsilon_l2_15cm_numeric_trust_region",
+            "gamma_equivalent_analytical_anchor": false,
+            "key": "broad_epsilon_moderate_closed_loop_epsilon_l2_15cm_numeric_trust_region",
+            "source_kind": "caller_declared"
+          }
+        },
+        "time_mask": {
+          "mode": "full_trial",
+          "movement_epoch_only": false
+        }
       },
       "broad_epsilon_training": {
         "enabled": false
@@ -4417,7 +4609,7 @@
         "separate_hidden_width": null,
         "teacher_or_jacobian_supervision": false
       },
-      "mode": "target_relative_multitarget_static_h0+broad_full_state_epsilon_policy_l2+fixed_target_perturbation_randomized",
+      "mode": "target_relative_multitarget_static_h0+broad_full_state_epsilon_pgd_l2+fixed_target_perturbation_randomized",
       "nominal_quality_role": "original_anchor_and_seen_held_out_targets_reported",
       "original_target_anchor_m": [
         0.15,
@@ -5094,75 +5286,7 @@
         ]
       },
       "policy_adversary_training": {
-        "budget_contract": {
-          "active_max_l2_radius_15cm": 0.0012324305441740995,
-          "budget_source": {
-            "description": "broad_epsilon_moderate_closed_loop_epsilon_l2_15cm_numeric_trust_region",
-            "gamma_equivalent_analytical_anchor": false,
-            "key": "broad_epsilon_moderate_closed_loop_epsilon_l2_15cm_numeric_trust_region",
-            "source_kind": "caller_declared"
-          },
-          "effective_l2_radius_15cm": 0.0012324305441740995,
-          "reach_length_scaling": false,
-          "reach_length_scaling_note": "The 15 cm effective PGD radius is scaled by sampled reach length when target-relative multi-target training is active.",
-          "reference_reach_m": 0.15
-        },
-        "diagnostics": {
-          "adversary_objective_components": true,
-          "controller_loss": true,
-          "epsilon_energy": true,
-          "epsilon_norm_radius_ratio": true,
-          "projection_boundary_fraction": true,
-          "stabilizer_term": true
-        },
-        "enabled": true,
-        "epsilon_channel": {
-          "dt_scaling": "none",
-          "injection": "B_w[:6, :] = I_6; B_w[6:, :] = 0",
-          "lag_history_direct_write": false,
-          "shape": [
-            "batch",
-            "time",
-            6
-          ],
-          "state_basis": "C&S 36D delay-augmented LinearStateSpace state"
-        },
-        "inner_optimizer": {
-          "learning_rate": 0.001,
-          "method": "adam",
-          "n_ascent_steps_per_controller_step": 8,
-          "weights_persist_across_batches": true
-        },
-        "mode": "broad_full_state_epsilon_policy_l2",
-        "objective": {
-          "active": "energy",
-          "energy": "maximize controller loss minus energy_penalty_gamma * epsilon_energy; H-infinity-style stabilizer only, not a formal certificate",
-          "energy_penalty_gamma": 705123804.979113,
-          "formal_certificate": false,
-          "plain": "maximize controller loss under hard projected epsilon"
-        },
-        "policy": {
-          "closed_loop_semantics_note": "Current Feedbax pre-step integration materializes epsilon before rollout. The optimizer is Adam over finite-policy parameters, but the rollout does not call the finite policy on perturbed live states at each time step.",
-          "closed_loop_semantics_status": "not_live_rollout_hook",
-          "evaluation_semantics": "static_epsilon_materialized_from_clean_rollout_pre_step",
-          "has_bias": true,
-          "initialization": "zero",
-          "kind": "affine",
-          "output_dim": 6,
-          "parameterization": "shared_time_varying_finite_policy",
-          "shared_across_replicates": true,
-          "shared_across_trials_in_batch": true,
-          "state_feature_dim": 36,
-          "state_feature_key": "target_centered(clean_rollout.states.mechanics.vector, trial_specs.targets['mechanics.effector.pos'])",
-          "time_varying": true
-        },
-        "policy_class": "affine",
-        "projection": "per_trial_flattened_time_component_l2_ball",
-        "row_mode": "energy",
-        "time_mask": {
-          "mode": "full_trial",
-          "movement_epoch_only": false
-        }
+        "enabled": false
       },
       "seen_targets_m": [
         [
@@ -6108,13 +6232,13 @@
         "status": "consumed_as_static_target_relative_feedback"
       },
       "training_axes": {
-        "broad_full_state_epsilon_pgd_training": false,
+        "broad_full_state_epsilon_pgd_training": true,
         "broad_full_state_epsilon_training": false,
         "calibrated_perturbation_training": true,
         "delayed_reach": false,
         "force_filter_feedback": true,
         "initial_hidden_encoder": true,
-        "policy_adversary_training": true,
+        "policy_adversary_training": false,
         "target_relative_multitarget": true
       },
       "validation_bins": [
@@ -8263,7 +8387,7 @@
     },
     "git": {
       "rlrmp_branch": "feature/b413bb0-beta1p4-run-lock",
-      "rlrmp_commit": "cd5b1a6c7371eaa3729a5f0e6991e5e639ee62cf"
+      "rlrmp_commit": "de76b5d55a7141663b4fc015720ae8abe594354e"
     },
     "gpu": {
       "device_count": 1,
@@ -8343,7 +8467,143 @@
   },
   "task_timing": {
     "broad_epsilon_pgd_training": {
-      "enabled": false
+      "adversary_mechanism": "affine",
+      "budget_contract": {
+        "active_max_l2_radius_15cm": 0.0012324305441740995,
+        "budget_source": {
+          "description": "moderate analytical broad-epsilon radius after budget_scale",
+          "gamma_equivalent_analytical_anchor": true,
+          "gamma_factor": 1.4,
+          "key": "analytical_broad_epsilon_level:moderate",
+          "source_issue": "cb98e58",
+          "source_kind": "analytical_broad_epsilon_anchor",
+          "source_note": "results/cb98e58/notes/analytical_game_card_manifest.json"
+        },
+        "closed_loop_epsilon_energy_15cm": 0.000001518885046213267,
+        "closed_loop_epsilon_l2_15cm": 0.0012324305441740995,
+        "delta_v_percent": 4.041729916548296,
+        "effective_l2_radius_15cm": 0.0012324305441740995,
+        "gamma_factor": 1.4,
+        "reach_length_scaling_note": "Reach scaling is an explicit multi-target normalization choice; the original analytical game card reports the 15 cm budget.",
+        "reference_reach_m": 0.15,
+        "scientific_constraint": "soft_energy_penalty",
+        "source_issue": "cb98e58",
+        "source_note": "results/cb98e58/notes/analytical_game_card_manifest.json"
+      },
+      "budget_scale": 1.0,
+      "budget_schedule": {
+        "conditioned": false,
+        "mapping_rule": "epsilon_l2_radius = fixed_l2_radius",
+        "mode": "fixed"
+      },
+      "enabled": true,
+      "epsilon_channel": {
+        "dt_scaling": "none",
+        "injection": "B_w[:6, :] = I_6; B_w[6:, :] = 0",
+        "lag_history_direct_write": false,
+        "shape": [
+          "batch",
+          "time",
+          6
+        ],
+        "state_basis": "C&S 36D delay-augmented LinearStateSpace state"
+      },
+      "epsilon_dim": 6,
+      "inner_maximizer": {
+        "adam": {
+          "b1": 0.9,
+          "b2": 0.999,
+          "eps": 1E-8,
+          "learning_rate": 0.001
+        },
+        "differentiated_through_outer_update": false,
+        "initialization": "zero",
+        "learning_rate": 0.001,
+        "method": "adam",
+        "n_steps": 8,
+        "projection": "per_trial_flattened_time_component_l2_ball",
+        "step_size_fraction_of_l2_radius": 0.25,
+        "time_mask": {
+          "mode": "full_trial",
+          "movement_epoch_only": false
+        }
+      },
+      "level": "moderate",
+      "mechanism": {
+        "graph_component": "RLRMPCsLssFiniteEpsilonPolicy",
+        "implementation_status": "implemented",
+        "kind": "closed_loop_finite_time_varying_epsilon_policy",
+        "live_evaluation": {
+          "component": "RLRMPCsLssFiniteEpsilonPolicy",
+          "hook": null,
+          "implementation": "graph_component",
+          "input_keys": [
+            "epsilon",
+            "epsilon_policy_gains",
+            "epsilon_policy_bias"
+          ],
+          "static_clean_rollout_materialization": false,
+          "target_centering": true,
+          "time_indexing": "policy row t is evaluated before mechanics step t"
+        },
+        "name": "affine",
+        "no_fake_open_loop_replay": true,
+        "policy_class": "affine",
+        "required_policy_contract": {
+          "feature_basis": "target_centered_full_state",
+          "feature_source_detail": "pre_mechanics_state",
+          "has_bias": true,
+          "live_feature_source": "live_perturbed_rollout_state",
+          "shared_across_trials_in_batch": true,
+          "time_varying": true
+        },
+        "runtime_inputs": {
+          "base_epsilon": "TaskTrialSpec.inputs['epsilon']",
+          "bias": "TaskTrialSpec.inputs['epsilon_policy_bias']",
+          "gains": "TaskTrialSpec.inputs['epsilon_policy_gains']"
+        },
+        "supported_objectives": [
+          "soft_energy"
+        ]
+      },
+      "mode": "broad_full_state_epsilon_pgd_l2",
+      "movement_epoch_only": false,
+      "nominal_reach_length_m": 0.15,
+      "objective": {
+        "formal_certificate": false,
+        "formula": "maximize task_loss - lambda * epsilon_energy",
+        "gamma": null,
+        "gamma_factor": null,
+        "gamma_star": null,
+        "hard_l2_projection_is_scientific_constraint": false,
+        "kind": "soft_energy",
+        "lambda": 704817601.4292752,
+        "lambda_mapping": "lambda = c * gamma^2 unless lambda is explicitly supplied",
+        "penalty_scale_c": 1.0,
+        "soft_energy_penalty": true
+      },
+      "reach_length_scaling": false,
+      "safety_cap": {
+        "activation_diagnostics": {
+          "cap_boundary_fraction": true,
+          "epsilon_norm_cap_ratio": true
+        },
+        "enabled": true,
+        "hard_budget_scientific_constraint": false,
+        "l2_radius_15cm": 0.0012324305441740995,
+        "reach_length_scaling": false,
+        "role": "numerical_stabilization_trust_region_only",
+        "source": {
+          "description": "broad_epsilon_moderate_closed_loop_epsilon_l2_15cm_numeric_trust_region",
+          "gamma_equivalent_analytical_anchor": false,
+          "key": "broad_epsilon_moderate_closed_loop_epsilon_l2_15cm_numeric_trust_region",
+          "source_kind": "caller_declared"
+        }
+      },
+      "time_mask": {
+        "mode": "full_trial",
+        "movement_epoch_only": false
+      }
     },
     "broad_epsilon_training": {
       "enabled": false
@@ -8369,7 +8629,9 @@
     "eval_reach_length": 0.15,
     "extra_inputs": [
       "target",
-      "epsilon"
+      "epsilon",
+      "epsilon_policy_gains",
+      "epsilon_policy_bias"
     ],
     "fixed_init_pos": [
       0.0,
@@ -11300,9 +11562,145 @@
     "source": "optimizer_state plus Feedbax TaskTrainer history; no raw gradients, batches, or activations are persisted"
   },
   "training_distribution": {
-    "adversarial_phase": "learned_finite_affine_policy_adversary",
+    "adversarial_phase": "broad_epsilon_pgd_live_finite_policy_affine",
     "broad_epsilon_pgd_training": {
-      "enabled": false
+      "adversary_mechanism": "affine",
+      "budget_contract": {
+        "active_max_l2_radius_15cm": 0.0012324305441740995,
+        "budget_source": {
+          "description": "moderate analytical broad-epsilon radius after budget_scale",
+          "gamma_equivalent_analytical_anchor": true,
+          "gamma_factor": 1.4,
+          "key": "analytical_broad_epsilon_level:moderate",
+          "source_issue": "cb98e58",
+          "source_kind": "analytical_broad_epsilon_anchor",
+          "source_note": "results/cb98e58/notes/analytical_game_card_manifest.json"
+        },
+        "closed_loop_epsilon_energy_15cm": 0.000001518885046213267,
+        "closed_loop_epsilon_l2_15cm": 0.0012324305441740995,
+        "delta_v_percent": 4.041729916548296,
+        "effective_l2_radius_15cm": 0.0012324305441740995,
+        "gamma_factor": 1.4,
+        "reach_length_scaling_note": "Reach scaling is an explicit multi-target normalization choice; the original analytical game card reports the 15 cm budget.",
+        "reference_reach_m": 0.15,
+        "scientific_constraint": "soft_energy_penalty",
+        "source_issue": "cb98e58",
+        "source_note": "results/cb98e58/notes/analytical_game_card_manifest.json"
+      },
+      "budget_scale": 1.0,
+      "budget_schedule": {
+        "conditioned": false,
+        "mapping_rule": "epsilon_l2_radius = fixed_l2_radius",
+        "mode": "fixed"
+      },
+      "enabled": true,
+      "epsilon_channel": {
+        "dt_scaling": "none",
+        "injection": "B_w[:6, :] = I_6; B_w[6:, :] = 0",
+        "lag_history_direct_write": false,
+        "shape": [
+          "batch",
+          "time",
+          6
+        ],
+        "state_basis": "C&S 36D delay-augmented LinearStateSpace state"
+      },
+      "epsilon_dim": 6,
+      "inner_maximizer": {
+        "adam": {
+          "b1": 0.9,
+          "b2": 0.999,
+          "eps": 1E-8,
+          "learning_rate": 0.001
+        },
+        "differentiated_through_outer_update": false,
+        "initialization": "zero",
+        "learning_rate": 0.001,
+        "method": "adam",
+        "n_steps": 8,
+        "projection": "per_trial_flattened_time_component_l2_ball",
+        "step_size_fraction_of_l2_radius": 0.25,
+        "time_mask": {
+          "mode": "full_trial",
+          "movement_epoch_only": false
+        }
+      },
+      "level": "moderate",
+      "mechanism": {
+        "graph_component": "RLRMPCsLssFiniteEpsilonPolicy",
+        "implementation_status": "implemented",
+        "kind": "closed_loop_finite_time_varying_epsilon_policy",
+        "live_evaluation": {
+          "component": "RLRMPCsLssFiniteEpsilonPolicy",
+          "hook": null,
+          "implementation": "graph_component",
+          "input_keys": [
+            "epsilon",
+            "epsilon_policy_gains",
+            "epsilon_policy_bias"
+          ],
+          "static_clean_rollout_materialization": false,
+          "target_centering": true,
+          "time_indexing": "policy row t is evaluated before mechanics step t"
+        },
+        "name": "affine",
+        "no_fake_open_loop_replay": true,
+        "policy_class": "affine",
+        "required_policy_contract": {
+          "feature_basis": "target_centered_full_state",
+          "feature_source_detail": "pre_mechanics_state",
+          "has_bias": true,
+          "live_feature_source": "live_perturbed_rollout_state",
+          "shared_across_trials_in_batch": true,
+          "time_varying": true
+        },
+        "runtime_inputs": {
+          "base_epsilon": "TaskTrialSpec.inputs['epsilon']",
+          "bias": "TaskTrialSpec.inputs['epsilon_policy_bias']",
+          "gains": "TaskTrialSpec.inputs['epsilon_policy_gains']"
+        },
+        "supported_objectives": [
+          "soft_energy"
+        ]
+      },
+      "mode": "broad_full_state_epsilon_pgd_l2",
+      "movement_epoch_only": false,
+      "nominal_reach_length_m": 0.15,
+      "objective": {
+        "formal_certificate": false,
+        "formula": "maximize task_loss - lambda * epsilon_energy",
+        "gamma": null,
+        "gamma_factor": null,
+        "gamma_star": null,
+        "hard_l2_projection_is_scientific_constraint": false,
+        "kind": "soft_energy",
+        "lambda": 704817601.4292752,
+        "lambda_mapping": "lambda = c * gamma^2 unless lambda is explicitly supplied",
+        "penalty_scale_c": 1.0,
+        "soft_energy_penalty": true
+      },
+      "reach_length_scaling": false,
+      "safety_cap": {
+        "activation_diagnostics": {
+          "cap_boundary_fraction": true,
+          "epsilon_norm_cap_ratio": true
+        },
+        "enabled": true,
+        "hard_budget_scientific_constraint": false,
+        "l2_radius_15cm": 0.0012324305441740995,
+        "reach_length_scaling": false,
+        "role": "numerical_stabilization_trust_region_only",
+        "source": {
+          "description": "broad_epsilon_moderate_closed_loop_epsilon_l2_15cm_numeric_trust_region",
+          "gamma_equivalent_analytical_anchor": false,
+          "key": "broad_epsilon_moderate_closed_loop_epsilon_l2_15cm_numeric_trust_region",
+          "source_kind": "caller_declared"
+        }
+      },
+      "time_mask": {
+        "mode": "full_trial",
+        "movement_epoch_only": false
+      }
     },
     "broad_epsilon_training": {
       "enabled": false
@@ -11401,7 +11799,7 @@
       "separate_hidden_width": null,
       "teacher_or_jacobian_supervision": false
     },
-    "mode": "target_relative_multitarget_static_h0+broad_full_state_epsilon_policy_l2+fixed_target_perturbation_randomized",
+    "mode": "target_relative_multitarget_static_h0+broad_full_state_epsilon_pgd_l2+fixed_target_perturbation_randomized",
     "nominal_quality_role": "original_anchor_and_seen_held_out_targets_reported",
     "original_target_anchor_m": [
       0.15,
@@ -12078,75 +12476,7 @@
       ]
     },
     "policy_adversary_training": {
-      "budget_contract": {
-        "active_max_l2_radius_15cm": 0.0012324305441740995,
-        "budget_source": {
-          "description": "broad_epsilon_moderate_closed_loop_epsilon_l2_15cm_numeric_trust_region",
-          "gamma_equivalent_analytical_anchor": false,
-          "key": "broad_epsilon_moderate_closed_loop_epsilon_l2_15cm_numeric_trust_region",
-          "source_kind": "caller_declared"
-        },
-        "effective_l2_radius_15cm": 0.0012324305441740995,
-        "reach_length_scaling": false,
-        "reach_length_scaling_note": "The 15 cm effective PGD radius is scaled by sampled reach length when target-relative multi-target training is active.",
-        "reference_reach_m": 0.15
-      },
-      "diagnostics": {
-        "adversary_objective_components": true,
-        "controller_loss": true,
-        "epsilon_energy": true,
-        "epsilon_norm_radius_ratio": true,
-        "projection_boundary_fraction": true,
-        "stabilizer_term": true
-      },
-      "enabled": true,
-      "epsilon_channel": {
-        "dt_scaling": "none",
-        "injection": "B_w[:6, :] = I_6; B_w[6:, :] = 0",
-        "lag_history_direct_write": false,
-        "shape": [
-          "batch",
-          "time",
-          6
-        ],
-        "state_basis": "C&S 36D delay-augmented LinearStateSpace state"
-      },
-      "inner_optimizer": {
-        "learning_rate": 0.001,
-        "method": "adam",
-        "n_ascent_steps_per_controller_step": 8,
-        "weights_persist_across_batches": true
-      },
-      "mode": "broad_full_state_epsilon_policy_l2",
-      "objective": {
-        "active": "energy",
-        "energy": "maximize controller loss minus energy_penalty_gamma * epsilon_energy; H-infinity-style stabilizer only, not a formal certificate",
-        "energy_penalty_gamma": 705123804.979113,
-        "formal_certificate": false,
-        "plain": "maximize controller loss under hard projected epsilon"
-      },
-      "policy": {
-        "closed_loop_semantics_note": "Current Feedbax pre-step integration materializes epsilon before rollout. The optimizer is Adam over finite-policy parameters, but the rollout does not call the finite policy on perturbed live states at each time step.",
-        "closed_loop_semantics_status": "not_live_rollout_hook",
-        "evaluation_semantics": "static_epsilon_materialized_from_clean_rollout_pre_step",
-        "has_bias": true,
-        "initialization": "zero",
-        "kind": "affine",
-        "output_dim": 6,
-        "parameterization": "shared_time_varying_finite_policy",
-        "shared_across_replicates": true,
-        "shared_across_trials_in_batch": true,
-        "state_feature_dim": 36,
-        "state_feature_key": "target_centered(clean_rollout.states.mechanics.vector, trial_specs.targets['mechanics.effector.pos'])",
-        "time_varying": true
-      },
-      "policy_class": "affine",
-      "projection": "per_trial_flattened_time_component_l2_ball",
-      "row_mode": "energy",
-      "time_mask": {
-        "mode": "full_trial",
-        "movement_epoch_only": false
-      }
+      "enabled": false
     },
     "seen_targets_m": [
       [
@@ -13092,13 +13422,13 @@
       "status": "consumed_as_static_target_relative_feedback"
     },
     "training_axes": {
-      "broad_full_state_epsilon_pgd_training": false,
+      "broad_full_state_epsilon_pgd_training": true,
       "broad_full_state_epsilon_training": false,
       "calibrated_perturbation_training": true,
       "delayed_reach": false,
       "force_filter_feedback": true,
       "initial_hidden_encoder": true,
-      "policy_adversary_training": true,
+      "policy_adversary_training": false,
       "target_relative_multitarget": true
     },
     "validation_bins": [
@@ -15201,7 +15531,7 @@
   },
   "training_script": "scripts/train_cs_nominal_gru.py",
   "training_summary": {
-    "adversarial_phase": "learned_finite_affine_policy_adversary",
+    "adversarial_phase": "broad_epsilon_pgd_live_finite_policy_affine",
     "analytical_delay_augmented_state_input": false,
     "batch_size": 64,
     "certificate_lens": "input_output_map_certificate",
@@ -15228,7 +15558,7 @@
     "loss_objective": "full_analytical_qrf",
     "method": "nominal-cs-gru",
     "n_adversary_batches": 0,
-    "n_policy_adversary_ascent_steps_per_controller_step": 8,
+    "n_policy_adversary_ascent_steps_per_controller_step": 0,
     "n_replicates": 5,
     "n_train_batches": 12000,
     "nominal_only": false,
@@ -15318,9 +15648,145 @@
       "source": "optimizer_state plus Feedbax TaskTrainer history; no raw gradients, batches, or activations are persisted"
     },
     "training_distribution": {
-      "adversarial_phase": "learned_finite_affine_policy_adversary",
+      "adversarial_phase": "broad_epsilon_pgd_live_finite_policy_affine",
       "broad_epsilon_pgd_training": {
-        "enabled": false
+        "adversary_mechanism": "affine",
+        "budget_contract": {
+          "active_max_l2_radius_15cm": 0.0012324305441740995,
+          "budget_source": {
+            "description": "moderate analytical broad-epsilon radius after budget_scale",
+            "gamma_equivalent_analytical_anchor": true,
+            "gamma_factor": 1.4,
+            "key": "analytical_broad_epsilon_level:moderate",
+            "source_issue": "cb98e58",
+            "source_kind": "analytical_broad_epsilon_anchor",
+            "source_note": "results/cb98e58/notes/analytical_game_card_manifest.json"
+          },
+          "closed_loop_epsilon_energy_15cm": 0.000001518885046213267,
+          "closed_loop_epsilon_l2_15cm": 0.0012324305441740995,
+          "delta_v_percent": 4.041729916548296,
+          "effective_l2_radius_15cm": 0.0012324305441740995,
+          "gamma_factor": 1.4,
+          "reach_length_scaling_note": "Reach scaling is an explicit multi-target normalization choice; the original analytical game card reports the 15 cm budget.",
+          "reference_reach_m": 0.15,
+          "scientific_constraint": "soft_energy_penalty",
+          "source_issue": "cb98e58",
+          "source_note": "results/cb98e58/notes/analytical_game_card_manifest.json"
+        },
+        "budget_scale": 1.0,
+        "budget_schedule": {
+          "conditioned": false,
+          "mapping_rule": "epsilon_l2_radius = fixed_l2_radius",
+          "mode": "fixed"
+        },
+        "enabled": true,
+        "epsilon_channel": {
+          "dt_scaling": "none",
+          "injection": "B_w[:6, :] = I_6; B_w[6:, :] = 0",
+          "lag_history_direct_write": false,
+          "shape": [
+            "batch",
+            "time",
+            6
+          ],
+          "state_basis": "C&S 36D delay-augmented LinearStateSpace state"
+        },
+        "epsilon_dim": 6,
+        "inner_maximizer": {
+          "adam": {
+            "b1": 0.9,
+            "b2": 0.999,
+            "eps": 1E-8,
+            "learning_rate": 0.001
+          },
+          "differentiated_through_outer_update": false,
+          "initialization": "zero",
+          "learning_rate": 0.001,
+          "method": "adam",
+          "n_steps": 8,
+          "projection": "per_trial_flattened_time_component_l2_ball",
+          "step_size_fraction_of_l2_radius": 0.25,
+          "time_mask": {
+            "mode": "full_trial",
+            "movement_epoch_only": false
+          }
+        },
+        "level": "moderate",
+        "mechanism": {
+          "graph_component": "RLRMPCsLssFiniteEpsilonPolicy",
+          "implementation_status": "implemented",
+          "kind": "closed_loop_finite_time_varying_epsilon_policy",
+          "live_evaluation": {
+            "component": "RLRMPCsLssFiniteEpsilonPolicy",
+            "hook": null,
+            "implementation": "graph_component",
+            "input_keys": [
+              "epsilon",
+              "epsilon_policy_gains",
+              "epsilon_policy_bias"
+            ],
+            "static_clean_rollout_materialization": false,
+            "target_centering": true,
+            "time_indexing": "policy row t is evaluated before mechanics step t"
+          },
+          "name": "affine",
+          "no_fake_open_loop_replay": true,
+          "policy_class": "affine",
+          "required_policy_contract": {
+            "feature_basis": "target_centered_full_state",
+            "feature_source_detail": "pre_mechanics_state",
+            "has_bias": true,
+            "live_feature_source": "live_perturbed_rollout_state",
+            "shared_across_trials_in_batch": true,
+            "time_varying": true
+          },
+          "runtime_inputs": {
+            "base_epsilon": "TaskTrialSpec.inputs['epsilon']",
+            "bias": "TaskTrialSpec.inputs['epsilon_policy_bias']",
+            "gains": "TaskTrialSpec.inputs['epsilon_policy_gains']"
+          },
+          "supported_objectives": [
+            "soft_energy"
+          ]
+        },
+        "mode": "broad_full_state_epsilon_pgd_l2",
+        "movement_epoch_only": false,
+        "nominal_reach_length_m": 0.15,
+        "objective": {
+          "formal_certificate": false,
+          "formula": "maximize task_loss - lambda * epsilon_energy",
+          "gamma": null,
+          "gamma_factor": null,
+          "gamma_star": null,
+          "hard_l2_projection_is_scientific_constraint": false,
+          "kind": "soft_energy",
+          "lambda": 704817601.4292752,
+          "lambda_mapping": "lambda = c * gamma^2 unless lambda is explicitly supplied",
+          "penalty_scale_c": 1.0,
+          "soft_energy_penalty": true
+        },
+        "reach_length_scaling": false,
+        "safety_cap": {
+          "activation_diagnostics": {
+            "cap_boundary_fraction": true,
+            "epsilon_norm_cap_ratio": true
+          },
+          "enabled": true,
+          "hard_budget_scientific_constraint": false,
+          "l2_radius_15cm": 0.0012324305441740995,
+          "reach_length_scaling": false,
+          "role": "numerical_stabilization_trust_region_only",
+          "source": {
+            "description": "broad_epsilon_moderate_closed_loop_epsilon_l2_15cm_numeric_trust_region",
+            "gamma_equivalent_analytical_anchor": false,
+            "key": "broad_epsilon_moderate_closed_loop_epsilon_l2_15cm_numeric_trust_region",
+            "source_kind": "caller_declared"
+          }
+        },
+        "time_mask": {
+          "mode": "full_trial",
+          "movement_epoch_only": false
+        }
       },
       "broad_epsilon_training": {
         "enabled": false
@@ -15419,7 +15885,7 @@
         "separate_hidden_width": null,
         "teacher_or_jacobian_supervision": false
       },
-      "mode": "target_relative_multitarget_static_h0+broad_full_state_epsilon_policy_l2+fixed_target_perturbation_randomized",
+      "mode": "target_relative_multitarget_static_h0+broad_full_state_epsilon_pgd_l2+fixed_target_perturbation_randomized",
       "nominal_quality_role": "original_anchor_and_seen_held_out_targets_reported",
       "original_target_anchor_m": [
         0.15,
@@ -16096,75 +16562,7 @@
         ]
       },
       "policy_adversary_training": {
-        "budget_contract": {
-          "active_max_l2_radius_15cm": 0.0012324305441740995,
-          "budget_source": {
-            "description": "broad_epsilon_moderate_closed_loop_epsilon_l2_15cm_numeric_trust_region",
-            "gamma_equivalent_analytical_anchor": false,
-            "key": "broad_epsilon_moderate_closed_loop_epsilon_l2_15cm_numeric_trust_region",
-            "source_kind": "caller_declared"
-          },
-          "effective_l2_radius_15cm": 0.0012324305441740995,
-          "reach_length_scaling": false,
-          "reach_length_scaling_note": "The 15 cm effective PGD radius is scaled by sampled reach length when target-relative multi-target training is active.",
-          "reference_reach_m": 0.15
-        },
-        "diagnostics": {
-          "adversary_objective_components": true,
-          "controller_loss": true,
-          "epsilon_energy": true,
-          "epsilon_norm_radius_ratio": true,
-          "projection_boundary_fraction": true,
-          "stabilizer_term": true
-        },
-        "enabled": true,
-        "epsilon_channel": {
-          "dt_scaling": "none",
-          "injection": "B_w[:6, :] = I_6; B_w[6:, :] = 0",
-          "lag_history_direct_write": false,
-          "shape": [
-            "batch",
-            "time",
-            6
-          ],
-          "state_basis": "C&S 36D delay-augmented LinearStateSpace state"
-        },
-        "inner_optimizer": {
-          "learning_rate": 0.001,
-          "method": "adam",
-          "n_ascent_steps_per_controller_step": 8,
-          "weights_persist_across_batches": true
-        },
-        "mode": "broad_full_state_epsilon_policy_l2",
-        "objective": {
-          "active": "energy",
-          "energy": "maximize controller loss minus energy_penalty_gamma * epsilon_energy; H-infinity-style stabilizer only, not a formal certificate",
-          "energy_penalty_gamma": 705123804.979113,
-          "formal_certificate": false,
-          "plain": "maximize controller loss under hard projected epsilon"
-        },
-        "policy": {
-          "closed_loop_semantics_note": "Current Feedbax pre-step integration materializes epsilon before rollout. The optimizer is Adam over finite-policy parameters, but the rollout does not call the finite policy on perturbed live states at each time step.",
-          "closed_loop_semantics_status": "not_live_rollout_hook",
-          "evaluation_semantics": "static_epsilon_materialized_from_clean_rollout_pre_step",
-          "has_bias": true,
-          "initialization": "zero",
-          "kind": "affine",
-          "output_dim": 6,
-          "parameterization": "shared_time_varying_finite_policy",
-          "shared_across_replicates": true,
-          "shared_across_trials_in_batch": true,
-          "state_feature_dim": 36,
-          "state_feature_key": "target_centered(clean_rollout.states.mechanics.vector, trial_specs.targets['mechanics.effector.pos'])",
-          "time_varying": true
-        },
-        "policy_class": "affine",
-        "projection": "per_trial_flattened_time_component_l2_ball",
-        "row_mode": "energy",
-        "time_mask": {
-          "mode": "full_trial",
-          "movement_epoch_only": false
-        }
+        "enabled": false
       },
       "seen_targets_m": [
         [
@@ -17110,13 +17508,13 @@
         "status": "consumed_as_static_target_relative_feedback"
       },
       "training_axes": {
-        "broad_full_state_epsilon_pgd_training": false,
+        "broad_full_state_epsilon_pgd_training": true,
         "broad_full_state_epsilon_training": false,
         "calibrated_perturbation_training": true,
         "delayed_reach": false,
         "force_filter_feedback": true,
         "initial_hidden_encoder": true,
-        "policy_adversary_training": true,
+        "policy_adversary_training": false,
         "target_relative_multitarget": true
       },
       "validation_bins": [
@@ -19217,7 +19615,7 @@
         }
       ]
     },
-    "training_mode": "target_relative_multitarget_static_h0+broad_full_state_epsilon_policy_l2+fixed_target_perturbation_randomized"
+    "training_mode": "target_relative_multitarget_static_h0+broad_full_state_epsilon_pgd_l2+fixed_target_perturbation_randomized"
   },
   "validation_bins": {
     "bins": [

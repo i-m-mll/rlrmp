@@ -9,18 +9,16 @@ explicitly approves the locked spec.
 
 ## Readiness Status
 
-Protected `main` now contains the corrected 9bb finite-policy Adam/lambda-gate
-work and the earlier finite-policy graph-component clarification. No additional
-RLRMP implementation is required before a no-launch lock. The remaining gate is
-user approval of the shared run details and the finite-row caveat below.
+Protected `main` contains the corrected 9bb lambda gate and the compositional
+finite-adversary implementation merged at `3b35ef2`. No additional RLRMP
+implementation is required before this no-launch lock. The remaining gate is
+explicit user approval of the shared run details and launch budget.
 
-Important caveat: current `policy_adversary_training` finite rows optimize
-finite parameters with Adam and persist the adversary state, but the training
-integration materializes epsilon from clean-rollout pre-step features. Do not
-describe the `linear_no_bias` or `affine` Adam rows as true live-perturbed
-closed-loop finite-policy training until a Feedbax live rollout hook exists.
-The broad-PGD finite graph-component path exists separately; it is not the Adam
-finite-policy lane used by these two rows.
+The launch-facing finite rows now use `broad_epsilon_pgd_training` with
+`inner_maximizer.method=adam`. For `linear_no_bias` and `affine`, that route
+optimizes finite-policy parameters and evaluates them through the live
+graph-component rollout. The older `policy_adversary_training` finite path is a
+legacy/static-clean-rollout lane and is not used by this lock.
 
 ## Shared Training Contract
 
@@ -36,7 +34,8 @@ finite-policy lane used by these two rows.
 | feedback / encoder | force-filter feedback, initial hidden encoder |
 | fixed perturbation training | enabled, calibrated timing, `--perturbation-physical-level moderate` |
 | loss objective | `full_analytical_qrf` |
-| reach scaling | disabled for broad-epsilon / policy-adversary radius scaling |
+| adversary lane | broad-epsilon PGD soft-energy with Adam inner optimizer |
+| reach scaling | disabled for broad-epsilon radius scaling |
 | batches | 12000 |
 | batch size | 64 |
 | outer optimizer | AdamW, weight decay 0 |
@@ -60,30 +59,28 @@ success, readiness, or row recommendations.
 
 | row id | mechanism | training lane | beta | lambda / gamma | lambda provenance |
 |---|---|---|---:|---:|---|
-| `direct_epsilon` | `direct_epsilon` | broad-epsilon PGD soft-energy | 1.4 | `452578932.66011757` | `06a4dc8` open-loop-moderate beta mapping, `lambda = beta^2 * p90(lambda_star_i)` |
-| `linear_no_bias` | `linear_no_bias` | finite policy Adam, energy mode | 1.4 | `705034449.3625335` | `9bb676f` support-whitened generalized-HVP/Lanczos candidate `359711453.7563946` scaled by `1.4^2` |
-| `affine` | `affine` | finite policy Adam, energy mode | 1.4 | `705123804.979113` | `9bb676f` support-whitened generalized-HVP/Lanczos candidate `359757043.3566903` scaled by `1.4^2` |
+| `direct_epsilon` | `direct_epsilon` | broad-epsilon direct sequence, Adam | 1.4 | `550824678.4684843` | `9bb676f` direct cap-independent fixed-HVP/p90 candidate `281032999.21861446` scaled by `1.4^2` |
+| `linear_no_bias` | `linear_no_bias` | broad-epsilon live finite policy, Adam | 1.4 | `704889898.0081824` | current merged `9bb676f` support-whitened generalized-HVP/Lanczos candidate `359637703.06539917` scaled by `1.4^2` |
+| `affine` | `affine` | broad-epsilon live finite policy, Adam | 1.4 | `704817601.4292752` | current merged `9bb676f` support-whitened generalized-HVP/Lanczos candidate `359600817.05575264` scaled by `1.4^2` |
 
-For the direct row, this lock uses the `open_loop_moderate` per-substrate
-mapping from `06a4dc8` because the shared contract is the calibrated moderate
-substrate. It does not use the pooled direct beta-1.4 value.
-
-For finite rows, the 9bb cap-independent finite-policy candidates are treated as
-lambda-star candidates under the current beta convention. The old `~4.13e8`
-cap/trust-radius floors from `7ea17b8` are invalid for launch planning and are
-diagnostic-only.
+The finite-row unscaled candidates differ slightly from the pre-compositional
+lock because the merged 9bb artifact was regenerated after the compositional
+implementation. The old `~4.13e8` cap/trust-radius floors from `7ea17b8` remain
+invalid for launch planning and are diagnostic-only.
 
 ## Row Mechanics
 
-`direct_epsilon` uses broad-epsilon PGD with zero start, 10 ascent steps, step
-size fraction `0.25`, soft-energy objective, and the moderate safety radius
-`0.0012324305441740995` at 15 cm from
-`broad_epsilon_moderate_closed_loop_epsilon_l2_15cm_numeric_trust_region`.
+All three rows use `--broad-epsilon-pgd-training`,
+`--broad-epsilon-pgd-inner-optimizer-method adam`,
+`--broad-epsilon-pgd-adam-lr 0.001`, 8 ascent steps, step size fraction `0.25`,
+and `--broad-epsilon-pgd-objective soft_energy`.
 
-`linear_no_bias` and `affine` use `policy_adversary_training` with Adam,
-energy mode, 8 ascent steps per controller update, inner learning rate `0.001`,
-and the same reference radius as a projection/diagnostic sidecar. Adam state is
-checkpointed with the model.
+`direct_epsilon` optimizes the direct epsilon sequence. `linear_no_bias` and
+`affine` install finite-policy inputs into `TaskTrialSpec.inputs` and evaluate
+them through the live graph-component rollout. The moderate safety radius is
+`0.0012324305441740995` at 15 cm from
+`broad_epsilon_moderate_closed_loop_epsilon_l2_15cm_numeric_trust_region`; it
+is a projection and diagnostic sidecar, not a lambda or readiness criterion.
 
 ## Approval Questions
 
@@ -95,7 +92,8 @@ launch:
 - keep the c92 6D no-integrator H0 GRU target-relative `const_band16` moderate contract;
 - use RunPod secure cloud RTX 5090, or choose a different GPU/cloud tier;
 - launch all three rows together or stage direct first as a control;
-- keep the finite Adam caveat acceptable for this beta-1.4 comparison;
+- accept the current compositional broad-PGD Adam implementation as the
+  launch-facing finite-policy path;
 - use the validation/evaluation packet described below as the post-run standard.
 
 ## Monitoring And Stop Criteria
@@ -106,11 +104,10 @@ descending, poll every 30 minutes. Stop a row if it produces nonfinite values,
 obvious divergence, or adversary diagnostics that are implausible relative to
 the other rows after first checking for a command or implementation mismatch.
 
-The 500-1000 batch gate should inspect total loss plus adversary diagnostics:
-direct PGD `adv_penalty`, `adv_energy`, `adv_objective`, `adv_gain`,
-`adv_radius_ratio`, and `adv_nonfinite`; finite Adam
-`policy_adversary_*` optimizer/objective/energy/projection diagnostics where
-available. Cap-boundary and norm/radius quantities are diagnostic only.
+The 500-1000 batch gate should inspect total loss plus broad-epsilon adversary
+diagnostics: `adv_penalty`, `adv_energy`, `adv_objective`, `adv_gain`,
+`adv_radius_ratio`, `adv_nonfinite`, and Adam/finite-policy diagnostic fields
+where available. Cap-boundary and norm/radius quantities are diagnostic only.
 
 ## Expected Artifacts
 
