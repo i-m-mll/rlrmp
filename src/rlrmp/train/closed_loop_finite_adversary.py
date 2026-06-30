@@ -85,9 +85,7 @@ class FiniteAdversaryPolicyMetadata:
             "gain_shape": list(self.gain_shape),
             "bias_shape": None if self.bias_shape is None else list(self.bias_shape),
             "zero_feature_behavior": (
-                "zero_epsilon"
-                if self.policy_class == LINEAR_NO_BIAS_POLICY
-                else "bias_epsilon"
+                "zero_epsilon" if self.policy_class == LINEAR_NO_BIAS_POLICY else "bias_epsilon"
             ),
             "semantics": (
                 "epsilon_t is evaluated from live perturbed rollout features at time t; "
@@ -111,8 +109,7 @@ class FiniteLinearNoBiasPolicy(eqx.Module):
         gain_array = jnp.asarray(gains)
         if gain_array.ndim != 3:
             raise ValueError(
-                "gains must have shape (time, epsilon_dim, feature_dim); "
-                f"got {gain_array.shape}"
+                f"gains must have shape (time, epsilon_dim, feature_dim); got {gain_array.shape}"
             )
         self.gains = gain_array
         self.metadata = FiniteAdversaryPolicyMetadata(
@@ -149,8 +146,7 @@ class FiniteAffinePolicy(eqx.Module):
         bias_array = jnp.asarray(bias, dtype=gain_array.dtype)
         if gain_array.ndim != 3:
             raise ValueError(
-                "gains must have shape (time, epsilon_dim, feature_dim); "
-                f"got {gain_array.shape}"
+                f"gains must have shape (time, epsilon_dim, feature_dim); got {gain_array.shape}"
             )
         if bias_array.shape != gain_array.shape[:2]:
             raise ValueError(
@@ -223,13 +219,19 @@ def target_centered_full_state_features(
     if block_size < 2:
         raise ValueError(f"physical_block_size must be at least 2, got {block_size}")
     if values.shape[-1] % block_size != 0:
-        raise ValueError(
-            f"expected state dimension divisible by {block_size}, got {values.shape[-1]}"
-        )
+        if block_size == 8 and values.shape[-1] % 6 == 0:
+            block_size = 6
+        else:
+            raise ValueError(
+                f"expected state dimension divisible by {block_size}, got {values.shape[-1]}"
+            )
     if target.shape[-1] != 2:
         raise ValueError(f"target_position must end in dimension 2, got {target.shape}")
     reshaped = values.reshape((*values.shape[:-1], values.shape[-1] // block_size, block_size))
-    target = jnp.broadcast_to(target[..., None, :], (*reshaped.shape[:-1], 2))
+    target = target[..., None, :]
+    while target.ndim < len(reshaped.shape):
+        target = jnp.expand_dims(target, axis=-3)
+    target = jnp.broadcast_to(target, (*reshaped.shape[:-1], 2))
     centered = reshaped.at[..., 0:2].add(-target)
     return centered.reshape(values.shape)
 
@@ -286,7 +288,5 @@ def _validate_live_features(
         raise ValueError("live_features must have at least time and feature dimensions")
     expected = (int(metadata.horizon), int(metadata.feature_dim))
     if features.shape[-2:] != expected:
-        raise ValueError(
-            f"live_features must end with shape {expected}; got {features.shape[-2:]}"
-        )
+        raise ValueError(f"live_features must end with shape {expected}; got {features.shape[-2:]}")
     return features

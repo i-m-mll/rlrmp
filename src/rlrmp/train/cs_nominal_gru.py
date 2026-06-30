@@ -81,7 +81,9 @@ from rlrmp.train.cs_perturbation_training import (
     LEGACY_PERTURBATION_TRAINING_MODE,
     PERTURBATION_TRAINING_MODE,
     POLICY_ADVERSARY_ENERGY_MODE,
+    POLICY_ADVERSARY_MEMORYLESS_MLP,
     POLICY_ADVERSARY_PLAIN_MODE,
+    POLICY_ADVERSARY_POLICY_CLASSES,
     POLICY_ADVERSARY_TRAINING_MODE,
     FINITE_POLICY_BIAS_INPUT,
     FINITE_POLICY_GAINS_INPUT,
@@ -94,7 +96,7 @@ from rlrmp.train.cs_perturbation_training import (
     PolicyFullStateEpsilonTrainingConfig,
     config_from_policy_adversary_hps,
     make_broad_epsilon_pgd_pre_step,
-    make_memoryless_policy_adversary,
+    make_policy_adversary,
     make_policy_adversary_pre_step,
     planned_33b0dcb_target_support_rows,
     planned_020a65b_h0_pgd_rows,
@@ -597,6 +599,12 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
             broad_pgd.get("sisu_max_radius_source"),
         ),
         "policy_adversary_training": bool(policy_adversary.get("enabled", False)),
+        "policy_adversary_policy_class": str(
+            policy_adversary.get(
+                "policy_class",
+                policy_payload.get("kind", POLICY_ADVERSARY_MEMORYLESS_MLP),
+            )
+        ),
         "policy_adversary_mode": str(
             policy_adversary.get(
                 "row_mode",
@@ -929,6 +937,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
     )
     policy_adversary_training = PolicyFullStateEpsilonTrainingConfig(
         enabled=bool(args.policy_adversary_training),
+        policy_class=str(args.policy_adversary_policy_class),
         mode=str(args.policy_adversary_mode),
         width=int(args.policy_adversary_width),
         depth=int(args.policy_adversary_depth),
@@ -2104,9 +2113,10 @@ def run_full_training(
     adversary_optimizer_state_template = None
     if policy_adversary_enabled:
         adversary_cfg = config_from_policy_adversary_hps(hps.policy_adversary_training)
-        adversary_policy_template = make_memoryless_policy_adversary(
+        adversary_policy_template = make_policy_adversary(
             adversary_cfg,
             key=key_adversary,
+            horizon=max(1, int(hps.task.n_steps) - 1),
         )
         policy_adversary_optimizer = optax.adam(float(adversary_cfg.learning_rate))
         adversary_optimizer_state_template = policy_adversary_optimizer.init(
@@ -2940,9 +2950,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--policy-adversary-training",
         action="store_true",
         help=(
-            "Enable learned memoryless full-state epsilon policy-adversary training. "
-            "This replaces PGD for issue e901a20 rows and keeps adversary weights "
+            "Enable learned full-state epsilon policy-adversary training. "
+            "This replaces PGD for policy-adversary rows and keeps adversary weights "
             "persistent across controller batches."
+        ),
+    )
+    parser.add_argument(
+        "--policy-adversary-policy-class",
+        choices=POLICY_ADVERSARY_POLICY_CLASSES,
+        default=POLICY_ADVERSARY_MEMORYLESS_MLP,
+        help=(
+            "Adversary policy parameterization: memoryless_mlp for the existing MLP lane, "
+            "or linear_no_bias/affine for finite time-varying policies optimized by Adam."
         ),
     )
     parser.add_argument(
@@ -3462,6 +3481,12 @@ def _policy_adversary_training_enabled(hps: TreeNamespace) -> bool:
     return bool(getattr(getattr(hps, "policy_adversary_training", None), "enabled", False))
 
 
+def _policy_adversary_policy_class(hps: TreeNamespace) -> str:
+    if not _policy_adversary_training_enabled(hps):
+        return "disabled"
+    return config_from_policy_adversary_hps(hps.policy_adversary_training).policy_class
+
+
 def _broad_epsilon_pgd_mechanism(hps: TreeNamespace) -> str:
     pgd = getattr(hps, "broad_epsilon_pgd_training", None)
     return str(getattr(pgd, "adversary_mechanism", BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM))
@@ -3485,7 +3510,10 @@ def _broad_epsilon_pgd_finite_policy_inputs(hps: TreeNamespace) -> list[str]:
 
 def _adversarial_phase(hps: TreeNamespace) -> str:
     if _policy_adversary_training_enabled(hps):
-        return "learned_memoryless_policy_adversary"
+        policy_class = _policy_adversary_policy_class(hps)
+        if policy_class == POLICY_ADVERSARY_MEMORYLESS_MLP:
+            return "learned_memoryless_policy_adversary"
+        return f"learned_finite_{policy_class}_policy_adversary"
     if _broad_epsilon_pgd_training_enabled(hps):
         mechanism = _broad_epsilon_pgd_mechanism(hps)
         if mechanism == BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM:
