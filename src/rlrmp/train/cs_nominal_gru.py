@@ -69,10 +69,13 @@ from rlrmp.model.stochastic_runtime import (
     stochastic_runtime_config_from_model,
 )
 from rlrmp.train.cs_perturbation_training import (
+    BROAD_EPSILON_PGD_ADAM,
     BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
     BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM,
     BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE,
+    BROAD_EPSILON_PGD_INNER_OPTIMIZER_METHODS,
     BROAD_EPSILON_PGD_MECHANISMS,
+    BROAD_EPSILON_PGD_PROJECTED_GRADIENT_ASCENT,
     BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
     BROAD_EPSILON_PGD_TRAINING_MODE,
     BROAD_EPSILON_TRAINING_MODE,
@@ -537,6 +540,30 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
                 broad_pgd.get("step_size_fraction", 0.25),
             )
         ),
+        "broad_epsilon_pgd_inner_optimizer_method": str(
+            pgd_inner.get(
+                "method",
+                broad_pgd.get(
+                    "inner_optimizer_method",
+                    BROAD_EPSILON_PGD_PROJECTED_GRADIENT_ASCENT,
+                ),
+            )
+        ),
+        "broad_epsilon_pgd_adam_lr": float(
+            _dict_value(pgd_inner, "adam").get(
+                "learning_rate",
+                pgd_inner.get("learning_rate", broad_pgd.get("adam_learning_rate", 3e-4)),
+            )
+        ),
+        "broad_epsilon_pgd_adam_b1": float(
+            _dict_value(pgd_inner, "adam").get("b1", broad_pgd.get("adam_b1", 0.9))
+        ),
+        "broad_epsilon_pgd_adam_b2": float(
+            _dict_value(pgd_inner, "adam").get("b2", broad_pgd.get("adam_b2", 0.999))
+        ),
+        "broad_epsilon_pgd_adam_eps": float(
+            _dict_value(pgd_inner, "adam").get("eps", broad_pgd.get("adam_eps", 1e-8))
+        ),
         "broad_epsilon_pgd_budget_schedule": str(
             broad_pgd_schedule.get("mode", broad_pgd.get("budget_schedule_mode", "fixed"))
         ),
@@ -918,6 +945,11 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         reach_length_scaling=bool(args.broad_epsilon_reach_scaling),
         n_steps=int(args.broad_epsilon_pgd_steps),
         step_size_fraction=float(args.broad_epsilon_pgd_step_size_fraction),
+        inner_optimizer_method=str(args.broad_epsilon_pgd_inner_optimizer_method),
+        adam_learning_rate=float(args.broad_epsilon_pgd_adam_lr),
+        adam_b1=float(args.broad_epsilon_pgd_adam_b1),
+        adam_b2=float(args.broad_epsilon_pgd_adam_b2),
+        adam_eps=float(args.broad_epsilon_pgd_adam_eps),
         movement_epoch_only=delayed_reach,
         epsilon_dim=int(plant.m_w),
         budget_schedule=str(args.broad_epsilon_pgd_budget_schedule),
@@ -2865,13 +2897,37 @@ def build_parser() -> argparse.ArgumentParser:
         help="PGD ascent step size as a fraction of each trial's L2 radius.",
     )
     parser.add_argument(
+        "--broad-epsilon-pgd-inner-optimizer-method",
+        choices=BROAD_EPSILON_PGD_INNER_OPTIMIZER_METHODS,
+        default=BROAD_EPSILON_PGD_PROJECTED_GRADIENT_ASCENT,
+        help=(
+            "Inner optimizer for broad-epsilon adversary selection. "
+            f"{BROAD_EPSILON_PGD_PROJECTED_GRADIENT_ASCENT} preserves the historical "
+            "normalized projected-gradient ascent behavior; "
+            f"{BROAD_EPSILON_PGD_ADAM} runs Adam ascent over live finite-policy "
+            "graph-component parameters."
+        ),
+    )
+    parser.add_argument(
+        "--broad-epsilon-pgd-adam-lr",
+        type=float,
+        default=3e-4,
+        help=(
+            "Adam ascent learning rate for broad-epsilon direct-epsilon sequences "
+            "or live finite-policy mechanisms."
+        ),
+    )
+    parser.add_argument("--broad-epsilon-pgd-adam-b1", type=float, default=0.9)
+    parser.add_argument("--broad-epsilon-pgd-adam-b2", type=float, default=0.999)
+    parser.add_argument("--broad-epsilon-pgd-adam-eps", type=float, default=1e-8)
+    parser.add_argument(
         "--broad-epsilon-pgd-mechanism",
         choices=BROAD_EPSILON_PGD_MECHANISMS,
         default=BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM,
         help=(
             "Adversary mechanism for broad-epsilon PGD. direct_epsilon preserves the "
-            "existing exogenous epsilon-sequence path; finite closed-loop mechanisms "
-            "are serialized but blocked until the live rollout injection contract exists."
+            "existing exogenous epsilon-sequence path; finite mechanisms install live "
+            "graph-component policy inputs for closed-loop rollout evaluation."
         ),
     )
     parser.add_argument(
