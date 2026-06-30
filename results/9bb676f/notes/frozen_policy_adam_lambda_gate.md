@@ -9,15 +9,15 @@ This regenerated v2 artifact supersedes the cap-conditioned `7ea17b8` closeout. 
 - Direct source note: `06a4dc8` also carries per-substrate beta mappings; use those row-specific values in a substrate-indexed run spec.
 - Launch/readiness cap use: `False`
 - Ready for no-launch spec: `True`
-- Caveat: Finite production rows now use Adam over finite parameters, but current training integration materializes static epsilon from a clean rollout pre-step. Do not describe the next spec as a true live-perturbed closed-loop finite-policy run until a Feedbax live rollout hook exists.
+- Implementation note: Launch-facing finite rows should use broad_epsilon_pgd_training with mechanism linear_no_bias or affine and inner_maximizer.method=adam. That route optimizes finite-policy parameters and evaluates them through the live graph-component rollout. The older policy_adversary_training finite path remains a legacy/static-clean-rollout lane and should not be used for the live finite-policy rows.
 
 ## Cap-Independent Lambda Candidates
 
 | mechanism | candidate basis | lambda input | lambda* / source | candidate lambda | grad pressure diagnostic |
 |---|---|---:|---:|---:|---:|
-| direct_epsilon | fixed_hvp_p90 | 2.81e+08 | 2.549e+08 | 2.81e+08 | 4.13e+08 |
-| linear_no_bias | hvp_generalized_eigen | 2.81e+08 | 3.597e+08 | 3.597e+08 | 4.13e+08 |
-| affine | hvp_generalized_eigen | 2.81e+08 | 3.598e+08 | 3.598e+08 | 4.13e+08 |
+| direct_epsilon | fixed_hvp_p90 | 2.81e+08 | 2.549e+08 | 2.81e+08 | 3.926e+08 |
+| linear_no_bias | hvp_generalized_eigen | 2.81e+08 | 3.596e+08 | 3.596e+08 | 3.926e+08 |
+| affine | hvp_generalized_eigen | 2.81e+08 | 3.596e+08 | 3.596e+08 | 3.926e+08 |
 
 Gradient pressure, trust-radius, and cap-boundary quantities are diagnostic-only; they are not lambda or readiness criteria.
 
@@ -25,10 +25,10 @@ Gradient pressure, trust-radius, and cap-boundary quantities are diagnostic-only
 
 | checkpoint | mechanism | grad pressure diagnostic | curvature lambda* | curvature status | selected energy | objective gain | boundary frac | nonfinite |
 |---|---|---:|---:|---|---:|---:|---:|---|
-| 500 | direct_epsilon | 4.13e+08 | 2.715e+08 | directional_approximation | 1.519e-06 | 1041 | 1 | nan=False, inf=False |
-| 500 | linear_no_bias | 4.13e+08 | 3.597e+08 | finite | 1.519e-06 | 270.5 | 1 | nan=False, inf=False |
-| 500 | affine | 4.13e+08 | 3.598e+08 | finite | 1.519e-06 | 303.1 | 1 | nan=False, inf=False |
-| 12000 | direct_epsilon | 1.793e+08 | 2.033e+08 | directional_approximation | 1.519e-06 | 382.1 | 1 | nan=False, inf=False |
-| 12000 | linear_no_bias | 1.793e+08 | 2.368e+08 | finite | 0 | 0 | 0 | nan=False, inf=False |
-| 12000 | affine | 1.793e+08 | 2.368e+08 | finite | 0 | 0 | 0 | nan=False, inf=False |
+| 500 | direct_epsilon | 3.926e+08 | 2.587e+08 | directional_approximation | 1.519e-06 | 990.2 | 1 | nan=False, inf=False |
+| 500 | linear_no_bias | 3.926e+08 | 3.596e+08 | finite | 1.519e-06 | 164.1 | 1 | nan=False, inf=False |
+| 500 | affine | 3.926e+08 | 3.596e+08 | finite | 1.519e-06 | 206.7 | 1 | nan=False, inf=False |
+| 12000 | direct_epsilon | 1.757e+08 | 2.063e+08 | directional_approximation | 1.519e-06 | 361.4 | 1 | nan=False, inf=False |
+| 12000 | linear_no_bias | 1.757e+08 | 2.376e+08 | finite | 0 | 0 | 0 | nan=False, inf=False |
+| 12000 | affine | 1.757e+08 | 2.376e+08 | finite | 0 | 0 | 0 | nan=False, inf=False |
 <!-- /AUTO-GENERATED -->
