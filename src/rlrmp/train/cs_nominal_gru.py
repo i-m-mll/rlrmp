@@ -70,7 +70,9 @@ from rlrmp.model.stochastic_runtime import (
 )
 from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
+    BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM,
     BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE,
+    BROAD_EPSILON_PGD_MECHANISMS,
     BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
     BROAD_EPSILON_PGD_TRAINING_MODE,
     BROAD_EPSILON_TRAINING_MODE,
@@ -383,6 +385,7 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
     broad_pgd_budget = _dict_value(broad_pgd, "budget_contract")
     broad_pgd_budget_source = _dict_value(broad_pgd_budget, "budget_source")
     broad_pgd_objective = _dict_value(broad_pgd, "objective")
+    broad_pgd_mechanism = _dict_value(broad_pgd, "mechanism")
     broad_pgd_safety_cap = _dict_value(broad_pgd, "safety_cap")
     broad_pgd_safety_cap_source = _dict_value(broad_pgd_safety_cap, "source")
     target_relative = _dict_value(hps, "target_relative_multitarget")
@@ -510,6 +513,12 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
         "force_filter_feedback": bool(model.get("force_filter_feedback", False)),
         "broad_epsilon_training": bool(broad.get("enabled", False)),
         "broad_epsilon_pgd_training": bool(broad_pgd.get("enabled", False)),
+        "broad_epsilon_pgd_mechanism": str(
+            broad_pgd.get(
+                "adversary_mechanism",
+                broad_pgd_mechanism.get("name", BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM),
+            )
+        ),
         "broad_epsilon_level": str(broad_pgd.get("level", broad.get("level", "moderate"))),
         "broad_epsilon_budget_scale": float(
             broad_pgd.get("budget_scale", broad.get("budget_scale", 1.0))
@@ -893,6 +902,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
     )
     broad_epsilon_pgd_training = PgdFullStateEpsilonTrainingConfig(
         enabled=bool(args.broad_epsilon_pgd_training),
+        adversary_mechanism=str(args.broad_epsilon_pgd_mechanism),
         level=str(args.broad_epsilon_level),
         budget_scale=float(args.broad_epsilon_budget_scale),
         reach_length_scaling=bool(args.broad_epsilon_reach_scaling),
@@ -1467,16 +1477,6 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "initial_hidden_encoder": _initial_hidden_encoder_metadata(hps),
     }
     model_structure = build_model_structure_summary(hps)
-    for key in (
-        "adversarial_phase",
-        "delayed_reach",
-        "loss_objective",
-        "nominal_only",
-        "stochastic_preset",
-        "stochastic_runtime",
-        "training_distribution",
-    ):
-        model_structure.pop(key, None)
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "execution_backend": EXECUTION_BACKEND,
@@ -1596,14 +1596,6 @@ def build_run_spec(
     validation_bins = _validation_bins_metadata(hps)
     delayed_reach = _plain(hps.delayed_reach)
     model_summary = build_model_structure_summary(hps)
-    for key in (
-        "adversarial_phase",
-        "delayed_reach",
-        "nominal_only",
-        "stochastic_preset",
-        "training_distribution",
-    ):
-        model_summary.pop(key, None)
     training_summary = {
         **graph_bundle.training_spec,
         "training_mode": _training_mode(hps),
@@ -1616,15 +1608,6 @@ def build_run_spec(
         ),
         "training_diagnostics": _training_diagnostics_metadata(args, output_dir),
     }
-    for key in (
-        "adversarial_phase",
-        "loss_objective",
-        "nominal_only",
-        "stochastic_preset",
-        "stochastic_runtime",
-        "training_distribution",
-    ):
-        training_summary.pop(key, None)
     return {
         "schema_version": SCHEMA_VERSION,
         "issue": str(args.issue),
@@ -2197,6 +2180,7 @@ def run_full_training(
             chunk_batches = min(chunk_batches, stop_after_batches - state.completed_batches)
         key_chunk, key_next = jr.split(state.key, 2)
         chunk_started = time.perf_counter()
+        pgd_diagnostics: dict[str, np.ndarray] = {}
         policy_adversary_diagnostics = None
         if policy_adversary_enabled:
             if policy_adversary_optimizer is None:
@@ -2267,6 +2251,15 @@ def run_full_training(
                         chunk_batches=chunk_batches,
                     )
                 )
+        if not bool(args.disable_progress):
+            _emit_checkpoint_progress(
+                history_chunk,
+                pgd_diagnostics,
+                chunk_batches=chunk_batches,
+                completed_batches=completed,
+                total_batches=int(args.n_train_batches),
+                elapsed_seconds=time.perf_counter() - training_started,
+            )
         history_chunk_path = output_dir / "history_chunks" / f"history_{completed:07d}.eqx"
         history_chunk_path.parent.mkdir(parents=True, exist_ok=True)
         _save_pytree(history_chunk_path, history_chunk)
@@ -2872,6 +2865,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="PGD ascent step size as a fraction of each trial's L2 radius.",
     )
     parser.add_argument(
+        "--broad-epsilon-pgd-mechanism",
+        choices=BROAD_EPSILON_PGD_MECHANISMS,
+        default=BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM,
+        help=(
+            "Adversary mechanism for broad-epsilon PGD. direct_epsilon preserves the "
+            "existing exogenous epsilon-sequence path; finite closed-loop mechanisms "
+            "are serialized but blocked until the live rollout injection contract exists."
+        ),
+    )
+    parser.add_argument(
         "--broad-epsilon-pgd-objective",
         choices=(BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE, BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE),
         default=BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE,
@@ -3078,7 +3081,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_CHECKPOINT_INTERVAL_BATCHES,
     )
     parser.add_argument("--log-step", type=int, default=100)
-    parser.add_argument("--disable-progress", action="store_true", default=True)
+    parser.add_argument("--disable-progress", action="store_true", default=False)
     parser.add_argument("--quiet-progress", action="store_true", default=True)
     parser.add_argument(
         "--dry-run",
@@ -4307,6 +4310,98 @@ def _policy_adversary_diagnostics_arrays(
         chunk[-1] = sampled
         arrays[f"policy_adversary_{name}"] = chunk
     return arrays
+
+
+def _emit_checkpoint_progress(
+    history_chunk: Any,
+    pgd_diagnostics: dict[str, np.ndarray],
+    *,
+    chunk_batches: int,
+    completed_batches: int,
+    total_batches: int,
+    elapsed_seconds: float,
+) -> None:
+    """Emit one compact host-side progress line at a checkpoint boundary."""
+
+    extras: dict[str, float | int] = {"completed": int(completed_batches)}
+    loss_scalars = _latest_loss_scalars(history_chunk, chunk_batches=chunk_batches)
+    loss = loss_scalars.pop("total", None)
+    extras.update(loss_scalars)
+    extras.update(_latest_pgd_progress_scalars(pgd_diagnostics))
+    print(
+        format_batch_line(
+            "checkpoint",
+            max(0, int(completed_batches) - 1),
+            int(total_batches),
+            loss=loss,
+            elapsed=elapsed_seconds,
+            **extras,
+        ),
+        flush=True,
+    )
+
+
+def _latest_loss_scalars(
+    history_chunk: Any,
+    *,
+    chunk_batches: int,
+    max_terms: int = 8,
+) -> dict[str, float]:
+    loss_tree = getattr(history_chunk, "loss", None)
+    arrays = _loss_tree_arrays(
+        loss_tree,
+        prefix="train_loss",
+        completed_batches=int(chunk_batches),
+    )
+    scalars: dict[str, float] = {}
+    total = _latest_scalar(arrays.get("train_loss__total"))
+    if total is not None:
+        scalars["total"] = total
+    terms: list[tuple[str, float]] = []
+    for name, values in arrays.items():
+        if name == "train_loss__total":
+            continue
+        value = _latest_scalar(values)
+        if value is None:
+            continue
+        terms.append((f"loss_{name.removeprefix('train_loss__')}", value))
+    for name, value in sorted(terms)[:max_terms]:
+        scalars[name] = value
+    return scalars
+
+
+def _latest_pgd_progress_scalars(
+    pgd_diagnostics: dict[str, np.ndarray],
+) -> dict[str, float]:
+    key_map = {
+        "pgd_broad_epsilon_raw_task_loss_selected": "adv_task_loss",
+        "pgd_broad_epsilon_energy_penalty_term_selected": "adv_penalty",
+        "pgd_broad_epsilon_penalized_objective_selected": "adv_objective",
+        "pgd_broad_epsilon_epsilon_energy_mean": "adv_energy",
+        "pgd_broad_epsilon_selected_objective_gain_over_zero": "adv_gain",
+        "pgd_broad_epsilon_epsilon_norm_radius_ratio_mean": "adv_radius_ratio",
+        "pgd_broad_epsilon_inner_objective_nonfinite_seen": "adv_nonfinite",
+    }
+    scalars: dict[str, float] = {}
+    for source, target in key_map.items():
+        value = _latest_scalar(pgd_diagnostics.get(source))
+        if value is not None:
+            scalars[target] = value
+    return scalars
+
+
+def _latest_scalar(values: Any) -> float | None:
+    if values is None:
+        return None
+    array = np.asarray(values)
+    if array.size == 0:
+        return None
+    latest = array.reshape((1,)) if array.ndim == 0 else array[-1]
+    latest = np.asarray(latest, dtype=np.float64)
+    finite = latest[np.isfinite(latest)]
+    if finite.size == 0:
+        return None
+    return float(np.mean(finite))
 
 
 def _broad_epsilon_pgd_diagnostics_arrays(

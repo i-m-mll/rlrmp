@@ -1,0 +1,216 @@
+{
+  "command": {
+    "argv": [
+      "unknown"
+    ],
+    "cwd": ".",
+    "metadata": {
+      "materializer": "rlrmp.analysis.pipelines.cs_gru_standard_materialization.write_gru_standard_result",
+      "status": "not_recorded"
+    }
+  },
+  "inputs": [
+    {
+      "logical_name": "results/ae9f30f/runs/direct_epsilon_b1p05.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "3eea0e5f85db2a243ce2e22d4cf12ec59e0149b3156b68b30302259c33a3a0a7",
+        "size_bytes": 277867
+      },
+      "role": "run_spec",
+      "sha256": "3eea0e5f85db2a243ce2e22d4cf12ec59e0149b3156b68b30302259c33a3a0a7",
+      "size_bytes": 277867,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/ae9f30f/runs/direct_epsilon_b1p05.json"
+    },
+    {
+      "logical_name": "results/ae9f30f/runs/direct_epsilon_b1p4.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "19c916b840f51531c335bf660262d2b4f24b6d489604f72eea36ab87d7bd3e46",
+        "size_bytes": 277857
+      },
+      "role": "run_spec",
+      "sha256": "19c916b840f51531c335bf660262d2b4f24b6d489604f72eea36ab87d7bd3e46",
+      "size_bytes": 277857,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/ae9f30f/runs/direct_epsilon_b1p4.json"
+    },
+    {
+      "logical_name": "results/ae9f30f/runs/linear_no_bias_b1p05.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "cad21a34668f688e95a23b480e31c3e2ec721324392eb6e6c15f872f524e85b9",
+        "size_bytes": 279502
+      },
+      "role": "run_spec",
+      "sha256": "cad21a34668f688e95a23b480e31c3e2ec721324392eb6e6c15f872f524e85b9",
+      "size_bytes": 279502,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/ae9f30f/runs/linear_no_bias_b1p05.json"
+    },
+    {
+      "logical_name": "_artifacts/ae9f30f/runs/direct_epsilon_b1p05/trained_model.eqx",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "e754c7bf7032ca4516fd7599b0794a8c88f4f9453054bc5596e4b95cbfb9e989",
+        "size_bytes": 2421700
+      },
+      "role": "model_or_checkpoint_artifact",
+      "sha256": "e754c7bf7032ca4516fd7599b0794a8c88f4f9453054bc5596e4b95cbfb9e989",
+      "size_bytes": 2421700,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/ae9f30f/runs/direct_epsilon_b1p05/trained_model.eqx"
+    },
+    {
+      "logical_name": "_artifacts/ae9f30f/runs/direct_epsilon_b1p4/trained_model.eqx",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "85be1e49b5746bf7c88b6948ffe0aa04e20ad778f3a06e953f0b2dc536a4c014",
+        "size_bytes": 2421690
+      },
+      "role": "model_or_checkpoint_artifact",
+      "sha256": "85be1e49b5746bf7c88b6948ffe0aa04e20ad778f3a06e953f0b2dc536a4c014",
+      "size_bytes": 2421690,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/ae9f30f/runs/direct_epsilon_b1p4/trained_model.eqx"
+    },
+    {
+      "logical_name": "_artifacts/ae9f30f/runs/linear_no_bias_b1p05/trained_model.eqx",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "0dc26e59c6d9e8210d72f4adb3638a0ad6c3098e340b2cdee74333172bbf60d1",
+        "size_bytes": 2423445
+      },
+      "role": "model_or_checkpoint_artifact",
+      "sha256": "0dc26e59c6d9e8210d72f4adb3638a0ad6c3098e340b2cdee74333172bbf60d1",
+      "size_bytes": 2423445,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/ae9f30f/runs/linear_no_bias_b1p05/trained_model.eqx"
+    }
+  ],
+  "metadata": {
+    "diagnostic_name": "gru_standard_certificate",
+    "materializer": "rlrmp.analysis.pipelines.cs_gru_standard_materialization.write_gru_standard_result",
+    "notes": [
+      "Standard certificate is in scope for regeneration specs.",
+      "This spec records materialization provenance only; certificate values remain in the manifest."
+    ],
+    "schema_boundary": "rlrmp diagnostic payload; Feedbax regeneration custody"
+  },
+  "outputs": [
+    {
+      "logical_name": "results/ae9f30f/notes/gru_standard_certificates_soft_lambda_wave1_trained_final_manifest.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "09d43aa7de9acf6c11e681cc0539a8411bd03a748b35be97305d75833bb58390",
+        "size_bytes": 69780
+      },
+      "role": "standard_certificate_manifest",
+      "sha256": "09d43aa7de9acf6c11e681cc0539a8411bd03a748b35be97305d75833bb58390",
+      "size_bytes": 69780,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/ae9f30f/notes/gru_standard_certificates_soft_lambda_wave1_trained_final_manifest.json"
+    },
+    {
+      "logical_name": "results/ae9f30f/notes/gru_standard_certificates_soft_lambda_wave1_trained_final.md",
+      "media_type": "text/markdown",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "820493f4ef977ed00cb7dd5312d901cc9d4b8b4da4c70b02eedf698f521f67cc",
+        "size_bytes": 1692
+      },
+      "role": "standard_certificate_note",
+      "sha256": "820493f4ef977ed00cb7dd5312d901cc9d4b8b4da4c70b02eedf698f521f67cc",
+      "size_bytes": 1692,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/ae9f30f/notes/gru_standard_certificates_soft_lambda_wave1_trained_final.md"
+    }
+  ],
+  "parameters": {
+    "checkpoint_policy": "final_checkpoint",
+    "experiment": "ae9f30f",
+    "materializer_issue_id": "e6a32b8",
+    "run_ids": [
+      "direct_epsilon_b1p05",
+      "direct_epsilon_b1p4",
+      "linear_no_bias_b1p05"
+    ]
+  },
+  "provenance": {
+    "dirty": true,
+    "entrypoint": {
+      "kind": "rlrmp-diagnostic-materializer",
+      "metadata": {},
+      "name": "rlrmp.analysis.pipelines.cs_gru_standard_materialization.write_gru_standard_result"
+    },
+    "issues": [],
+    "metadata": {
+      "status_porcelain": [
+        "M .issue",
+        " M src/rlrmp/model/cs_lss_gru.py",
+        " M src/rlrmp/train/closed_loop_finite_adversary.py",
+        " M src/rlrmp/train/cs_nominal_gru.py",
+        " M src/rlrmp/train/cs_perturbation_training.py",
+        " M src/rlrmp/train/task_model.py",
+        " M tests/test_cs_nominal_gru.py",
+        "?? results/ae9f30f/RUN_PLAN.md",
+        "?? results/ae9f30f/notes/gru_standard_certificates_soft_lambda_wave1_trained_final.md",
+        "?? results/ae9f30f/notes/gru_standard_certificates_soft_lambda_wave1_trained_final_manifest.json",
+        "?? results/ae9f30f/runs/direct_epsilon_b1p05.json",
+        "?? results/ae9f30f/runs/direct_epsilon_b1p05/model.graph.manifest.json",
+        "?? results/ae9f30f/runs/direct_epsilon_b1p4.json",
+        "?? results/ae9f30f/runs/direct_epsilon_b1p4/model.graph.manifest.json",
+        "?? results/ae9f30f/runs/linear_no_bias_b1p05.json",
+        "?? results/ae9f30f/runs/linear_no_bias_b1p05/model.graph.manifest.json",
+        "?? results/ae9f30f/runs/linear_no_bias_b1p4.json",
+        "?? results/ae9f30f/runs/linear_no_bias_b1p4/model.graph.manifest.json"
+      ]
+    },
+    "parents": [],
+    "source_branch": "feature/ae9f30f-corrected-soft-lambda-smoke",
+    "source_commit": "fabb3bc72cc4e976d1d35bf4b7205ec00d0e1c7e",
+    "source_repo": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__ae9f30f-corrected-soft-lambda-smoke"
+  },
+  "schema_id": "feedbax.spec.regeneration",
+  "schema_version": "feedbax.spec.regeneration.v1",
+  "source_files": [
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py",
+      "role": "source_file",
+      "sha256": "009f11e6aaac4942cfb6e7a19ed9798dda03b591470be2990d82b2976cfd4808",
+      "size_bytes": 48428
+    },
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/bridge_certificates.py",
+      "role": "source_file",
+      "sha256": "91ea1a5fafa36d8ee6c77c338720f07041e43545a79bcbca07492763f2de2926",
+      "size_bytes": 62529
+    },
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/standard_certificate_materialization.py",
+      "role": "source_file",
+      "sha256": "e6cf1fcb633cd15e47afdcdd788483061c17fe30038c804b882cea0968bb03ba",
+      "size_bytes": 3976
+    }
+  ],
+  "source_trees": []
+}

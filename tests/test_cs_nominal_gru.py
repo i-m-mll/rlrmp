@@ -35,8 +35,10 @@ from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
     DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT,
 )
 from rlrmp.model.cs_lss_gru import (
+    CS_LSS_FINITE_EPSILON_POLICY_COMPONENT,
     CS_EPSILON_DIM,
     CS_REDUCED_EPSILON_DIM,
+    CsLssFiniteEpsilonPolicy,
     build_cs_lss_gru_graph_spec,
 )
 from rlrmp.loss import (
@@ -60,6 +62,7 @@ from rlrmp.train.cs_nominal_gru import (
     derive_spec_dir,
     derive_spec_path,
     main,
+    _emit_checkpoint_progress,
     _prepend_existing_training_diagnostics,
     planned_246182c_post_movement_cost_tail_rows,
     planned_e901a20_policy_adversary_rows,
@@ -69,6 +72,7 @@ from rlrmp.train.cs_nominal_gru import (
     write_run_spec,
 )
 from rlrmp.train.cs_perturbation_training import (
+    BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM,
     BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
     BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE,
     BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
@@ -130,6 +134,7 @@ from rlrmp.train.cs_perturbation_training import (
     config_from_policy_adversary_hps,
     config_from_target_hps,
     graph_adapter_specs,
+    make_broad_epsilon_pgd_pre_step,
     make_memoryless_policy_adversary,
     planned_33b0dcb_target_support_rows,
     planned_020a65b_h0_pgd_rows,
@@ -155,6 +160,12 @@ from rlrmp.train.task_model import (
     _cs_lss_process_epsilon_factor,
     setup_task_model_pair,
 )
+from rlrmp.train.closed_loop_finite_adversary import LINEAR_NO_BIAS_POLICY
+from rlrmp.train.closed_loop_finite_adversary import (
+    AFFINE_POLICY,
+    FINITE_POLICY_BIAS_INPUT,
+    FINITE_POLICY_GAINS_INPUT,
+)
 
 
 def _args(**overrides) -> argparse.Namespace:
@@ -167,6 +178,62 @@ def _args(**overrides) -> argparse.Namespace:
 def _parse_planned_training_command(command: list[str]) -> argparse.Namespace:
     script_index = command.index("scripts/train_cs_nominal_gru.py")
     return build_parser().parse_args(command[script_index + 1 :])
+
+
+class _ScalarLoss:
+    def __init__(self, value: np.ndarray | None = None, children: dict[str, "_ScalarLoss"] | None = None):
+        self.value = value
+        self.weight = 1.0
+        self._children = children or {}
+        self.children = tuple(self._children.values())
+
+    def flatten(self) -> dict[str, np.ndarray]:
+        if self.value is not None:
+            return {"self": self.value}
+        return {name: child.value for name, child in self._children.items() if child.value is not None}
+
+
+def test_progress_defaults_enabled_unless_disabled() -> None:
+    parser = build_parser()
+
+    assert parser.parse_args([]).disable_progress is False
+    assert parser.parse_args(["--disable-progress"]).disable_progress is True
+
+
+def test_checkpoint_progress_includes_loss_terms_and_pgd_penalty(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    history = argparse.Namespace(
+        loss=_ScalarLoss(
+            children={
+                "control": _ScalarLoss(np.array([1.0, 2.0], dtype=np.float32)),
+                "effector_pos_running": _ScalarLoss(np.array([3.0, 4.0], dtype=np.float32)),
+            }
+        )
+    )
+    pgd_diagnostics = {
+        "pgd_broad_epsilon_energy_penalty_term_selected": np.array([np.nan, 0.25]),
+        "pgd_broad_epsilon_penalized_objective_selected": np.array([np.nan, 1.75]),
+        "pgd_broad_epsilon_epsilon_energy_mean": np.array([np.nan, 0.5]),
+    }
+
+    _emit_checkpoint_progress(
+        history,
+        pgd_diagnostics,
+        chunk_batches=2,
+        completed_batches=2,
+        total_batches=1000,
+        elapsed_seconds=12.3,
+    )
+
+    line = capsys.readouterr().out.strip()
+    assert line.startswith("BATCH phase=checkpoint batch=1/1000")
+    assert "loss=6" in line
+    assert "loss_control=2" in line
+    assert "loss_effector_pos_running=4" in line
+    assert "adv_penalty=0.25" in line
+    assert "adv_energy=0.5" in line
+    assert "adv_objective=1.75" in line
 
 
 def test_delayed_reach_resolves_force_filter_and_perturbation_defaults() -> None:
@@ -473,12 +540,39 @@ def test_pgd_hard_l2_default_metadata_preserves_existing_projection_contract() -
     cfg = PgdFullStateEpsilonTrainingConfig(enabled=True)
     payload = cfg.to_hps_dict()
 
+    assert cfg.adversary_mechanism == BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM
+    assert payload["adversary_mechanism"] == BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM
+    assert payload["mechanism"]["name"] == BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM
+    assert payload["mechanism"]["implementation_status"] == "implemented"
+    assert payload["mechanism"]["matches_legacy_default"] is True
     assert cfg.objective_kind == BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE
     assert payload["objective"]["kind"] == BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE
     assert payload["objective"]["hard_l2_projection_is_scientific_constraint"] is True
     assert payload["safety_cap"]["enabled"] is False
     assert payload["inner_maximizer"]["projection"] == "per_trial_flattened_time_component_l2_ball"
     assert payload["budget_contract"]["scientific_constraint"] == "hard_l2_projection"
+
+
+def test_pgd_finite_mechanism_serializes_live_graph_contract() -> None:
+    cfg = PgdFullStateEpsilonTrainingConfig(
+        enabled=True,
+        adversary_mechanism=LINEAR_NO_BIAS_POLICY,
+    )
+    payload = cfg.to_hps_dict()
+
+    assert payload["adversary_mechanism"] == LINEAR_NO_BIAS_POLICY
+    assert payload["mechanism"]["implementation_status"] == "implemented"
+    assert payload["mechanism"]["required_policy_contract"]["live_feature_source"] == (
+        "live_perturbed_rollout_state"
+    )
+    assert payload["mechanism"]["no_fake_open_loop_replay"] is True
+    assert payload["mechanism"]["runtime_inputs"]["gains"] == (
+        f"TaskTrialSpec.inputs[{FINITE_POLICY_GAINS_INPUT!r}]"
+    )
+    parsed = config_from_broad_epsilon_pgd_hps(payload)
+    assert parsed.adversary_mechanism == LINEAR_NO_BIAS_POLICY
+
+    assert make_broad_epsilon_pgd_pre_step(payload) is not None
 
 
 def test_pgd_soft_energy_cli_and_run_spec_metadata(tmp_path: Path) -> None:
@@ -513,12 +607,95 @@ def test_pgd_soft_energy_cli_and_run_spec_metadata(tmp_path: Path) -> None:
     assert objective["gamma"] == pytest.approx(gamma_star * gamma_factor)
     assert objective["lambda"] == pytest.approx((gamma_star * gamma_factor) ** 2)
     assert pgd["safety_cap"]["l2_radius_15cm"] == pytest.approx(cap_radius)
+    assert pgd["adversary_mechanism"] == BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM
+    assert pgd["mechanism"]["implementation_status"] == "implemented"
     replay_args = resolve_run_spec_args(_args(run_spec=result["run_spec_path"]))
     assert replay_args.broad_epsilon_pgd_objective == BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE
+    assert replay_args.broad_epsilon_pgd_mechanism == BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM
     assert replay_args.broad_epsilon_pgd_energy_lambda == pytest.approx(
         (gamma_star * gamma_factor) ** 2
     )
     assert replay_args.broad_epsilon_pgd_safety_cap_15cm == pytest.approx(cap_radius)
+
+
+def test_pgd_mechanism_cli_run_spec_and_replay_for_linear_no_bias(tmp_path: Path) -> None:
+    output_dir = tmp_path / "bulk"
+    spec_dir = tmp_path / "spec"
+    args = _args(
+        output_dir=str(output_dir),
+        spec_dir=str(spec_dir),
+        issue="ae9f30f",
+        target_relative_multitarget=True,
+        force_filter_feedback=True,
+        broad_epsilon_pgd_training=True,
+        broad_epsilon_pgd_mechanism=LINEAR_NO_BIAS_POLICY,
+    )
+
+    result = write_run_spec(args)
+    payload = json.loads(Path(result["run_spec_path"]).read_text())
+    pgd = payload["hps"]["broad_epsilon_pgd_training"]
+
+    assert pgd["adversary_mechanism"] == LINEAR_NO_BIAS_POLICY
+    assert pgd["mechanism"]["implementation_status"] == "implemented"
+    assert pgd["mechanism"]["graph_component"] == CS_LSS_FINITE_EPSILON_POLICY_COMPONENT
+    assert pgd["mechanism"]["runtime_inputs"]["base_epsilon"] == "TaskTrialSpec.inputs['epsilon']"
+    replay_args = resolve_run_spec_args(_args(run_spec=result["run_spec_path"]))
+    assert replay_args.broad_epsilon_pgd_mechanism == LINEAR_NO_BIAS_POLICY
+
+
+def test_finite_epsilon_component_uses_live_6d_target_centered_state() -> None:
+    component = CsLssFiniteEpsilonPolicy(
+        policy_class=AFFINE_POLICY,
+        physical_block_size=6,
+    )
+    state = jnp.zeros((36,), dtype=jnp.float32).at[0:6].set(
+        jnp.array([0.20, -0.05, 0.3, -0.4, 0.01, -0.02], dtype=jnp.float32)
+    )
+    gains = jnp.zeros((6, 36), dtype=jnp.float32)
+    gains = gains.at[0, 0].set(2.0).at[1, 2].set(-3.0)
+    bias = jnp.arange(6, dtype=jnp.float32) * 0.1
+
+    outputs, _ = component(
+        {
+            "base_epsilon": jnp.ones((6,), dtype=jnp.float32),
+            "state": state,
+            "target": jnp.array([0.15, 0.05], dtype=jnp.float32),
+            "gains": gains,
+            "bias": bias,
+        },
+        None,
+        key=jr.PRNGKey(0),
+    )
+
+    assert outputs["epsilon"].shape == (6,)
+    assert outputs["epsilon"][0] == pytest.approx(1.0 + 2.0 * 0.05)
+    assert outputs["epsilon"][1] == pytest.approx(1.0 - 3.0 * 0.3 + 0.1)
+
+
+def test_finite_pgd_graph_wires_policy_inputs_to_mechanics_epsilon() -> None:
+    spec = build_cs_lss_gru_graph_spec(
+        hidden_size=4,
+        target_relative_feedback=True,
+        bind_epsilon_input=True,
+        finite_epsilon_policy=LINEAR_NO_BIAS_POLICY,
+        no_integrator_state=True,
+        key=jr.PRNGKey(0),
+    )
+
+    assert spec.nodes["finite_epsilon_policy"].type == CS_LSS_FINITE_EPSILON_POLICY_COMPONENT
+    assert spec.input_bindings["epsilon"] == ("finite_epsilon_policy", "base_epsilon")
+    assert spec.input_bindings[FINITE_POLICY_GAINS_INPUT] == (
+        "finite_epsilon_policy",
+        "gains",
+    )
+    assert FINITE_POLICY_BIAS_INPUT not in spec.input_bindings
+    assert any(
+        wire.source_node == "finite_epsilon_policy"
+        and wire.source_port == "epsilon"
+        and wire.target_node == "mechanics"
+        and wire.target_port == "epsilon"
+        for wire in spec.wires
+    )
 
 
 def test_pgd_sisu_budget_radius_uses_sqrt_energy_fraction() -> None:
@@ -1389,8 +1566,10 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     assert payload["model_summary"]["exact_cs_linear_state_space"] is True
     assert payload["feedbax_graph"]["graph_spec_path"] is None
     assert payload["feedbax_graph"]["graph_export_status"] == "unavailable"
-    assert "training_distribution" not in payload["model_summary"]
-    assert "training_distribution" not in payload["training_summary"]
+    assert payload["model_summary"]["training_distribution"]["mode"] == "nominal"
+    assert payload["model_summary"]["training_distribution"]["fixed_target_only"] is True
+    assert payload["training_summary"]["training_distribution"]["mode"] == "nominal"
+    assert payload["training_summary"]["training_distribution"]["fixed_target_only"] is True
     assert "validation_bins" not in payload["training_summary"]
     assert payload["provenance_refs"]["training_summary.validation_bins"] == "$.validation_bins"
     assert manifest["graph_export"]["status"] == "unavailable"
@@ -4890,7 +5069,10 @@ def test_pgd_soft_energy_objective_is_batch_size_invariant() -> None:
     assert single_diagnostics["penalized_objective_selected"] == pytest.approx(0.9)
 
 
-def test_pgd_broad_epsilon_full_training_emits_inner_diagnostics(tmp_path: Path) -> None:
+def test_pgd_broad_epsilon_full_training_emits_inner_diagnostics(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     output_dir = tmp_path / "bulk"
     spec_dir = tmp_path / "spec"
     args = _args(
@@ -4915,16 +5097,23 @@ def test_pgd_broad_epsilon_full_training_emits_inner_diagnostics(tmp_path: Path)
         lr_warmup_init_fraction=0.1,
         lr_cosine_alpha=0.01,
         log_step=1,
-        disable_progress=True,
         quiet_progress=True,
     )
 
     result = run_full_training(args)
+    progress = capsys.readouterr().out
     run_spec_path = Path(result["run_spec_path"])
     run_spec = json.loads(run_spec_path.read_text())
     diagnostics_manifest = json.loads((output_dir / "training_diagnostics.json").read_text())
+    checkpoint_lines = [
+        line for line in progress.splitlines() if line.startswith("BATCH phase=checkpoint")
+    ]
 
     assert result["completed_batches"] == 2
+    assert checkpoint_lines
+    assert any("adv_penalty=" in line for line in checkpoint_lines)
+    assert any("adv_energy=" in line for line in checkpoint_lines)
+    assert any("adv_objective=" in line for line in checkpoint_lines)
     assert run_spec_path == spec_dir.with_suffix(".json")
     assert not (spec_dir / "run.json").exists()
     assert BROAD_EPSILON_PGD_TRAINING_MODE in run_spec["training_summary"]["training_mode"]
@@ -4955,7 +5144,10 @@ def test_pgd_broad_epsilon_full_training_emits_inner_diagnostics(tmp_path: Path)
         assert np.any(diagnostics["pgd_broad_epsilon_epsilon_norm_mean"] > 0.0)
 
 
-def test_full_training_smoke_can_disable_diagnostics(tmp_path: Path) -> None:
+def test_full_training_smoke_can_disable_diagnostics(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     output_dir = tmp_path / "bulk"
     spec_dir = tmp_path / "spec"
     args = _args(
@@ -4973,11 +5165,13 @@ def test_full_training_smoke_can_disable_diagnostics(tmp_path: Path) -> None:
     )
 
     result = run_full_training(args)
+    progress = capsys.readouterr().out
     run_spec_path = Path(result["run_spec_path"])
     run_spec = json.loads(run_spec_path.read_text())
     summary = json.loads((output_dir / "training_summary.json").read_text())
 
     assert result["completed_batches"] == 1
+    assert "BATCH phase=checkpoint" not in progress
     assert run_spec_path == spec_dir.with_suffix(".json")
     assert not (spec_dir / "run.json").exists()
     assert run_spec["training_diagnostics"]["enabled"] is False

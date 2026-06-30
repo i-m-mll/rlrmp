@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "issue": "ae9f30f",
+  "umbrella": "54389a4",
+  "user_confirmed": true,
+  "confirmation_source": "user approved four-row first wave in Codex thread on 2026-06-29",
+  "branch": "feature/ae9f30f-corrected-soft-lambda-smoke",
+  "task": "target-relative multitarget, const_band16",
+  "state": "6D C&S process state without integrators",
+  "loss": "full_analytical_qrf with broad-epsilon PGD soft_energy",
+  "fixed_perturbation_training": "calibrated timing, moderate physical level",
+  "lambda_source": "open_loop_moderate corrected HVP/Lanczos p90",
+  "n_batches": 12000,
+  "batch_size": 64,
+  "n_replicates": 5,
+  "hidden_size": 180,
+  "seed": 42,
+  "outer_optimizer": "AdamW",
+  "peak_controller_lr": 0.003,
+  "lr_schedule": "warmup_cosine",
+  "lr_warmup_batches": 500,
+  "lr_warmup_init_fraction": 0.1,
+  "lr_cosine_alpha": 0.01,
+  "final_controller_lr": 0.00003,
+  "gradient_clip_norm": 5,
+  "checkpoint_interval_batches": 500,
+  "log_step": 100,
+  "inner_optimizer_surface": "broad-epsilon PGD",
+  "inner_pgd_steps": 10,
+  "inner_pgd_step_size_fraction": 0.25,
+  "soft_energy_safety_cap_15cm": 0.0012324305441740995,
+  "soft_energy_safety_cap_source": "broad_epsilon_moderate_closed_loop_epsilon_l2_15cm_numeric_trust_region",
+  "soft_energy_safety_cap_role": "numerical trust region only; not a pass/fail criterion",
+  "old_hard_cap_ratios": "diagnostic sidecars only",
+  "gpu": "NVIDIA GeForce RTX 5090",
+  "cloud": "RunPod secure cloud",
+  "max_parallel_rows": 4,
+  "rows": [
+    {
+      "id": "direct_epsilon_b1p05",
+      "mechanism": "direct_epsilon",
+      "beta": 1.05,
+      "lambda": 254575649.62131616
+    },
+    {
+      "id": "direct_epsilon_b1p4",
+      "mechanism": "direct_epsilon",
+      "beta": 1.4,
+      "lambda": 452578932.66011757
+    },
+    {
+      "id": "linear_no_bias_b1p05",
+      "mechanism": "linear_no_bias",
+      "beta": 1.05,
+      "lambda": 254575649.62131616
+    },
+    {
+      "id": "linear_no_bias_b1p4",
+      "mechanism": "linear_no_bias",
+      "beta": 1.4,
+      "lambda": 452578932.66011757
+    }
+  ],
+  "monitor_gate": "inspect diagnostics at batch 1000; stop affected rows only after command/implementation check if losses or adversary terms are implausible"
+}

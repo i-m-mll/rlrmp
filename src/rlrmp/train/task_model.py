@@ -35,6 +35,11 @@ from rlrmp.model.cs_lss_gru import (
     CS_REDUCED_PHYSICAL_STATE_DIM,
     build_cs_lss_gru_graph,
 )
+from rlrmp.train.closed_loop_finite_adversary import (
+    AFFINE_POLICY,
+    FINITE_POLICY_BIAS_INPUT,
+    FINITE_POLICY_GAINS_INPUT,
+)
 from rlrmp.disturbance import (
     PLANT_INTERVENOR_LABEL,
     get_gusts_fn,
@@ -47,9 +52,11 @@ from rlrmp.model import (
 )
 from rlrmp.task import TASK_TYPES
 from rlrmp.train.cs_perturbation_training import (
+    BROAD_EPSILON_PGD_FINITE_POLICY_MECHANISMS,
     BroadFullStateEpsilonTrainingTaskAdapter,
     FixedTargetPerturbationTrainingTaskAdapter,
     TargetRelativeMultiTargetTrainingTaskAdapter,
+    config_from_broad_epsilon_pgd_hps,
     config_from_broad_epsilon_hps,
     config_from_hps,
     config_from_target_hps,
@@ -304,6 +311,7 @@ def setup_task_model_pair(
         )
         delayed_reach = _cs_delayed_reach_enabled(hps)
         sisu_conditioned_pgd = _sisu_conditioned_pgd_budget_enabled(hps)
+        finite_epsilon_policy = _finite_epsilon_policy_mechanism(hps)
         task = _add_cs_lss_task_inputs(
             _CsLssTaskAdapter(
                 task_base,
@@ -317,6 +325,7 @@ def setup_task_model_pair(
             scalar_input_fn=_sisu_conditioned_pgd_budget_input_fn(hps)
             if sisu_conditioned_pgd
             else None,
+            finite_epsilon_policy=finite_epsilon_policy,
             physical_state_dim=physical_state_dim,
             dtype=runtime_dtype,
         )
@@ -491,9 +500,13 @@ class _CsLssTaskAdapter(AbstractTask):
             physical_state_dim=self.physical_state_dim,
             dtype=self.dtype,
         )
+        inputs = _broadcast_finite_policy_inputs_to_lss_batch(
+            trial_spec.inputs,
+            batch_shape=lss_vector.shape[:-1],
+        )
         return TaskTrialSpec(
             inits=WhereDict({"mechanics.vector": lss_vector}),
-            inputs=trial_spec.inputs,
+            inputs=inputs,
             targets=trial_spec.targets,
             intervene=trial_spec.intervene,
             extra=trial_spec.extra,
@@ -535,6 +548,7 @@ def _add_cs_lss_task_inputs(
     scalar_input: bool = False,
     scalar_input_name: str = "input",
     scalar_input_fn: Callable | None = None,
+    finite_epsilon_policy: str | None = None,
     physical_state_dim: int = CS_PHYSICAL_STATE_DIM,
     dtype=jnp.float32,
 ) -> _CsLssTaskAdapter:
@@ -563,7 +577,7 @@ def _add_cs_lss_task_inputs(
             name="input",
             input_fn=SISU_FNS["nominal-cs-gru"],
         )
-    return task.add_input(
+    task = task.add_input(
         name="epsilon",
         input_fn=lambda trial_spec, key: _sample_cs_lss_process_epsilon(
             trial_spec,
@@ -572,6 +586,28 @@ def _add_cs_lss_task_inputs(
             dtype=dtype,
         ),
     )
+    if finite_epsilon_policy is None:
+        return task
+    state_dim = 6 * int(physical_state_dim)
+    task = task.add_input(
+        name=FINITE_POLICY_GAINS_INPUT,
+        input_fn=lambda trial_spec, key: _zero_finite_policy_gains_input(
+            trial_spec,
+            epsilon_dim=int(physical_state_dim),
+            feature_dim=state_dim,
+            dtype=dtype,
+        ),
+    )
+    if str(finite_epsilon_policy) == AFFINE_POLICY:
+        task = task.add_input(
+            name=FINITE_POLICY_BIAS_INPUT,
+            input_fn=lambda trial_spec, key: _zero_finite_policy_bias_input(
+                trial_spec,
+                epsilon_dim=int(physical_state_dim),
+                dtype=dtype,
+            ),
+        )
+    return task
 
 
 def _cs_delayed_reach_enabled(hps: TreeNamespace) -> bool:
@@ -696,6 +732,68 @@ def _sample_cs_lss_process_epsilon(
     return draws @ factor.T
 
 
+def _zero_finite_policy_gains_input(
+    trial_spec: TaskTrialSpec,
+    *,
+    epsilon_dim: int,
+    feature_dim: int,
+    dtype=jnp.float32,
+) -> jax.Array:
+    target = trial_spec.targets["mechanics.effector.pos"].value
+    batch_shape = _trial_batch_shape_from_init(trial_spec)
+    n_steps = int(target.shape[-2])
+    return jnp.zeros((*batch_shape, n_steps, int(epsilon_dim), int(feature_dim)), dtype=dtype)
+
+
+def _zero_finite_policy_bias_input(
+    trial_spec: TaskTrialSpec,
+    *,
+    epsilon_dim: int,
+    dtype=jnp.float32,
+) -> jax.Array:
+    target = trial_spec.targets["mechanics.effector.pos"].value
+    batch_shape = _trial_batch_shape_from_init(trial_spec)
+    n_steps = int(target.shape[-2])
+    return jnp.zeros((*batch_shape, n_steps, int(epsilon_dim)), dtype=dtype)
+
+
+def _trial_batch_shape_from_init(trial_spec: TaskTrialSpec) -> tuple[int, ...]:
+    if "mechanics.vector" in trial_spec.inits:
+        return jnp.asarray(trial_spec.inits["mechanics.vector"]).shape[:-1]
+    effector = trial_spec.inits["mechanics.effector"]
+    return jnp.asarray(effector.pos).shape[:-1]
+
+
+def _broadcast_finite_policy_inputs_to_lss_batch(
+    inputs: Mapping,
+    *,
+    batch_shape: tuple[int, ...],
+) -> Mapping:
+    if not batch_shape or FINITE_POLICY_GAINS_INPUT not in inputs:
+        return inputs
+    updated = dict(inputs)
+    for name in (FINITE_POLICY_GAINS_INPUT, FINITE_POLICY_BIAS_INPUT):
+        if name not in updated:
+            continue
+        values = jnp.asarray(updated[name])
+        suffix_rank = 3 if name == FINITE_POLICY_GAINS_INPUT else 2
+        suffix = values.shape[-suffix_rank:]
+        prefix = values.shape[:-suffix_rank]
+        if prefix == batch_shape:
+            continue
+        if prefix == ():
+            updated[name] = jnp.broadcast_to(values, (*batch_shape, *suffix))
+            continue
+        try:
+            updated[name] = jnp.broadcast_to(values, (*batch_shape, *suffix))
+        except ValueError as exc:
+            raise ValueError(
+                f"Cannot broadcast finite policy input {name!r} from batch prefix "
+                f"{prefix} to C&S LSS batch shape {batch_shape}."
+            ) from exc
+    return WhereDict(updated) if isinstance(inputs, WhereDict) else updated
+
+
 def _cs_lss_process_epsilon_factor(
     *,
     physical_state_dim: int = CS_PHYSICAL_STATE_DIM,
@@ -749,6 +847,7 @@ def _create_cs_lss_gru_ensemble(
             getattr(hps, "target_relative_multitarget", TreeNamespace(enabled=False))
         )
         no_integrator_state = bool(getattr(hps.model, "no_integrator_state", False))
+        finite_epsilon_policy = _finite_epsilon_policy_mechanism(hps)
         delayed_reach = _cs_delayed_reach_enabled(hps)
         scalar_input_count = int(delayed_reach or not target_training.enabled)
         if _sisu_conditioned_pgd_budget_enabled(hps):
@@ -765,6 +864,7 @@ def _create_cs_lss_gru_ensemble(
             additive_motor_noise_std=float(hps.model.additive_motor_noise_std),
             signal_dependent_motor_noise_std=float(hps.model.signal_dependent_motor_noise_std),
             bind_epsilon_input=True,
+            finite_epsilon_policy=finite_epsilon_policy,
             target_relative_feedback=target_training.enabled,
             force_filter_feedback=target_training.force_filter_feedback,
             initial_hidden_encoder=bool(getattr(hps.model, "initial_hidden_encoder", False)),
@@ -787,3 +887,15 @@ def _create_cs_lss_gru_ensemble(
         *models,
         is_leaf=lambda leaf: isinstance(leaf, eqx.nn.StateIndex),
     )
+
+
+def _finite_epsilon_policy_mechanism(hps: TreeNamespace) -> str | None:
+    cfg = config_from_broad_epsilon_pgd_hps(
+        getattr(hps, "broad_epsilon_pgd_training", TreeNamespace(enabled=False))
+    )
+    if not cfg.enabled:
+        return None
+    mechanism = str(cfg.adversary_mechanism)
+    if mechanism in BROAD_EPSILON_PGD_FINITE_POLICY_MECHANISMS:
+        return mechanism
+    return None
