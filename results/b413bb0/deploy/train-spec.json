@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "status": "prepared_not_authorized",
+  "issue": "b413bb0",
+  "branch": "feature/b413bb0-beta1p4-run-lock",
+  "approval_gate": "No launch, pod acquisition, push, protected auth request, merge, or issue closure is authorized by this prepared spec.",
+  "rows": [
+    "direct_epsilon",
+    "linear_no_bias",
+    "affine"
+  ],
+  "shared_contract": {
+    "script": "scripts/train_cs_nominal_gru.py",
+    "task": "target-relative multitarget",
+    "target_support": "const_band16",
+    "plant_state": "6D C&S process state without integrators",
+    "controller": "C&S nominal GRU",
+    "hidden_size": 180,
+    "replicates": 5,
+    "fixed_perturbation_training": "calibrated timing, moderate physical level",
+    "loss_objective": "full_analytical_qrf",
+    "n_train_batches": 12000,
+    "batch_size": 64,
+    "controller_lr": 0.003,
+    "lr_warmup_batches": 500,
+    "lr_warmup_init_fraction": 0.1,
+    "lr_cosine_alpha": 0.01,
+    "gradient_clip_norm": 5,
+    "checkpoint_interval_batches": 500,
+    "log_step": 100,
+    "seed": 42,
+    "gpu_cloud": "RunPod secure cloud RTX 5090, pending user confirmation"
+  },
+  "lambda_provenance": {
+    "direct_epsilon": {
+      "lambda": 452578932.66011757,
+      "source": "results/06a4dc8/canonical_soft_lambda_hvp.json",
+      "scope": "open_loop_moderate beta=1.4 mapping",
+      "mapping": "lambda = beta^2 * p90(lambda_star_i)"
+    },
+    "linear_no_bias": {
+      "lambda": 705034449.3625335,
+      "source": "results/9bb676f/frozen_policy_adam_lambda_gate.json",
+      "basis": "support-whitened generalized-HVP/Lanczos candidate scaled by beta^2",
+      "unscaled_candidate": 359711453.7563946
+    },
+    "affine": {
+      "lambda": 705123804.979113,
+      "source": "results/9bb676f/frozen_policy_adam_lambda_gate.json",
+      "basis": "support-whitened generalized-HVP/Lanczos candidate scaled by beta^2",
+      "unscaled_candidate": 359757043.3566903
+    }
+  },
+  "caveats": [
+    "The finite Adam rows materialize epsilon from clean-rollout pre-step features; they are not yet true live-perturbed closed-loop finite-policy training.",
+    "Cap, trust-radius, boundary, selected norm/radius, and radius-gradient-pressure quantities are diagnostic-only.",
+    "The invalid 7ea17b8 cap/trust-radius-derived ~4.13e8 floors must not be used for launch planning."
+  ]
+}
