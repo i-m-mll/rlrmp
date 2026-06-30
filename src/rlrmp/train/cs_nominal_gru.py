@@ -83,6 +83,8 @@ from rlrmp.train.cs_perturbation_training import (
     POLICY_ADVERSARY_ENERGY_MODE,
     POLICY_ADVERSARY_PLAIN_MODE,
     POLICY_ADVERSARY_TRAINING_MODE,
+    FINITE_POLICY_BIAS_INPUT,
+    FINITE_POLICY_GAINS_INPUT,
     TARGET_SUPPORT_PROFILES,
     TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
     TARGET_RELATIVE_MULTITARGET_TRAINING_MODE,
@@ -1425,11 +1427,7 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
         "nominal_only": _nominal_only(hps),
         "training_distribution": _training_distribution_metadata(hps),
         "delayed_reach": _plain(hps.delayed_reach),
-        "adversarial_phase": (
-            "learned_memoryless_policy_adversary"
-            if _policy_adversary_training_enabled(hps)
-            else "none"
-        ),
+        "adversarial_phase": _adversarial_phase(hps),
         "certificate_lens": "input_output_map_certificate",
         "certificate_coordinate_claim": "not_same_coordinate_gain",
         "analytical_delay_augmented_state_input": False,
@@ -1464,11 +1462,7 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "method": str(hps.method),
         "nominal_only": _nominal_only(hps),
         "training_distribution": _training_distribution_metadata(hps),
-        "adversarial_phase": (
-            "learned_memoryless_policy_adversary"
-            if _policy_adversary_training_enabled(hps)
-            else "none"
-        ),
+        "adversarial_phase": _adversarial_phase(hps),
         "certificate_lens": "input_output_map_certificate",
         "analytical_delay_augmented_state_input": False,
         "stochastic_runtime": _stochastic_runtime_contract(hps),
@@ -1628,11 +1622,7 @@ def build_run_spec(
             "training_summary.validation_bins": "$.validation_bins",
             "validation_bins": "$.validation_bins",
         },
-        "adversarial_phase": (
-            "learned_memoryless_policy_adversary"
-            if _policy_adversary_training_enabled(hps)
-            else "none"
-        ),
+        "adversarial_phase": _adversarial_phase(hps),
         "modal_launch": "not_requested",
         "full_training_launch": "requested" if args.full_train else "not_requested",
         "seed": int(args.seed),
@@ -3472,6 +3462,38 @@ def _policy_adversary_training_enabled(hps: TreeNamespace) -> bool:
     return bool(getattr(getattr(hps, "policy_adversary_training", None), "enabled", False))
 
 
+def _broad_epsilon_pgd_mechanism(hps: TreeNamespace) -> str:
+    pgd = getattr(hps, "broad_epsilon_pgd_training", None)
+    return str(getattr(pgd, "adversary_mechanism", BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM))
+
+
+def _broad_epsilon_pgd_finite_policy_inputs(hps: TreeNamespace) -> list[str]:
+    if not _broad_epsilon_pgd_training_enabled(hps):
+        return []
+    mechanism = _broad_epsilon_pgd_mechanism(hps)
+    if mechanism == BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM:
+        return []
+    keys = [FINITE_POLICY_GAINS_INPUT]
+    mechanism_payload = getattr(getattr(hps, "broad_epsilon_pgd_training", None), "mechanism", None)
+    has_bias = bool(
+        getattr(getattr(mechanism_payload, "required_policy_contract", None), "has_bias", False)
+    )
+    if has_bias:
+        keys.append(FINITE_POLICY_BIAS_INPUT)
+    return keys
+
+
+def _adversarial_phase(hps: TreeNamespace) -> str:
+    if _policy_adversary_training_enabled(hps):
+        return "learned_memoryless_policy_adversary"
+    if _broad_epsilon_pgd_training_enabled(hps):
+        mechanism = _broad_epsilon_pgd_mechanism(hps)
+        if mechanism == BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM:
+            return "broad_epsilon_pgd_direct_epsilon"
+        return f"broad_epsilon_pgd_live_finite_policy_{mechanism}"
+    return "none"
+
+
 def _nominal_only(hps: TreeNamespace) -> bool:
     return (
         not _perturbation_training_enabled(hps)
@@ -3604,11 +3626,7 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
             "checkpoint_selection_role": ("target_relative_multitarget_rollout_validation"),
             "nominal_quality_role": "original_anchor_and_seen_held_out_targets_reported",
             "controller_internal_mutation": False,
-            "adversarial_phase": (
-                "learned_memoryless_policy_adversary"
-                if _policy_adversary_training_enabled(hps)
-                else "none"
-            ),
+            "adversarial_phase": _adversarial_phase(hps),
         }
     if (
         not bool(getattr(config, "enabled", False))
@@ -3678,11 +3696,7 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
         "checkpoint_selection_role": "generalized_held_out_perturbation_validation",
         "nominal_quality_role": "reported_quality_sidecar_gate",
         "controller_internal_mutation": False,
-        "adversarial_phase": (
-            "learned_memoryless_policy_adversary"
-            if _policy_adversary_training_enabled(hps)
-            else "none"
-        ),
+        "adversarial_phase": _adversarial_phase(hps),
     }
 
 
@@ -4713,6 +4727,26 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
             "transition/control-cost stages and one position target per transition; "
             "delayed-reach epoch masks are not used."
         )
+    if (
+        plant_backend == CS_LSS_PLANT_BACKEND
+        and target_relative
+        and delayed_reach
+        and sisu_conditioned_pgd_budget
+    ):
+        extra_inputs = ["input", "sisu", "target", "epsilon"]
+    elif (
+        plant_backend == CS_LSS_PLANT_BACKEND
+        and target_relative
+        and (delayed_reach or sisu_conditioned_pgd_budget)
+    ):
+        extra_inputs = ["input", "target", "epsilon"]
+    elif plant_backend == CS_LSS_PLANT_BACKEND and target_relative:
+        extra_inputs = ["target", "epsilon"]
+    elif plant_backend == CS_LSS_PLANT_BACKEND:
+        extra_inputs = ["input", "epsilon"]
+    else:
+        extra_inputs = ["sisu", f"intervene:{GRAPH_PLANT_INTERVENOR_NODE}"]
+    extra_inputs = [*extra_inputs, *_broad_epsilon_pgd_finite_policy_inputs(hps)]
     return {
         "type": str(hps.task.type),
         "preset": _plain(getattr(hps.task, "preset", None)),
@@ -4739,26 +4773,7 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
         ),
         "time_axis_contract": time_axis_contract,
         "movement_window": movement_window,
-        "extra_inputs": (
-            ["input", "sisu", "target", "epsilon"]
-            if (
-                plant_backend == CS_LSS_PLANT_BACKEND
-                and target_relative
-                and delayed_reach
-                and sisu_conditioned_pgd_budget
-            )
-            else ["input", "target", "epsilon"]
-            if (
-                plant_backend == CS_LSS_PLANT_BACKEND
-                and target_relative
-                and (delayed_reach or sisu_conditioned_pgd_budget)
-            )
-            else ["target", "epsilon"]
-            if plant_backend == CS_LSS_PLANT_BACKEND and target_relative
-            else ["input", "epsilon"]
-            if plant_backend == CS_LSS_PLANT_BACKEND
-            else ["sisu", f"intervene:{GRAPH_PLANT_INTERVENOR_NODE}"]
-        ),
+        "extra_inputs": extra_inputs,
         "delayed_reach": _plain(hps.delayed_reach),
         "target_relative_multitarget": (
             _plain(hps.target_relative_multitarget) if target_relative else {"enabled": False}
