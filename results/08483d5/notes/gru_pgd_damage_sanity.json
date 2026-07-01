@@ -1,0 +1,839 @@
+{
+  "adversary": {
+    "base_epsilon": {
+      "boundary_fraction": null,
+      "energy_mean_per_trial": 0.0030585379489366273,
+      "energy_total": 0.19574642873194414,
+      "l2_norm_max_per_trial": 0.05530405002291087,
+      "l2_norm_mean_per_trial": 0.055304050022910875,
+      "max_abs": 0.014234956353902817,
+      "shape": [
+        64,
+        60,
+        6
+      ]
+    },
+    "budget_source": {
+      "description": "6D no-integrator C&S output-feedback H-infinity rollout L2 radius for gamma_factor=1.4",
+      "disturbance_energy": 2.0657128682206633e-05,
+      "epsilon_dim": 6,
+      "gamma": 12833.563799663352,
+      "gamma_equivalent_analytical_anchor": true,
+      "gamma_factor": 1.4,
+      "gamma_star": 9166.831285473823,
+      "key": "ofb_6d_no_integrator_gamma_1p4_rollout_radius",
+      "source_issue": "c92ebd8",
+      "source_kind": "output_feedback_rollout_budget",
+      "source_note": "6D no-integrator output-feedback robust-estimator rollout"
+    },
+    "epsilon_dim": 6,
+    "history": [
+      {
+        "best_objective": 4683.29988852009,
+        "epsilon_l2_max": 0.0,
+        "epsilon_l2_mean": 0.0,
+        "objective": 4683.29988852009,
+        "step": 0
+      },
+      {
+        "best_objective": 4970.594009587301,
+        "epsilon_l2_max": 0.0011362528966928913,
+        "epsilon_l2_mean": 0.0011362528966928909,
+        "gradient_l2_mean": 3237.3506984310466,
+        "objective": 4970.594009587301,
+        "pre_step_objective": 4683.29988852009,
+        "step": 1
+      },
+      {
+        "best_objective": 5417.522833572301,
+        "epsilon_l2_max": 0.002266424998406607,
+        "epsilon_l2_mean": 0.0022470237381425518,
+        "gradient_l2_mean": 4889.605649684498,
+        "objective": 5417.522833572301,
+        "pre_step_objective": 4970.594009587301,
+        "step": 2
+      },
+      {
+        "best_objective": 6109.330520360709,
+        "epsilon_l2_max": 0.0033893315604075834,
+        "epsilon_l2_mean": 0.0033205884378387134,
+        "gradient_l2_mean": 7675.867112426007,
+        "objective": 6109.330520360709,
+        "pre_step_objective": 5417.522833572301,
+        "step": 3
+      },
+      {
+        "best_objective": 7115.831455259276,
+        "epsilon_l2_max": 0.004502084882078774,
+        "epsilon_l2_mean": 0.004368564237478484,
+        "gradient_l2_mean": 11567.070829834392,
+        "objective": 7115.831455259276,
+        "pre_step_objective": 6109.330520360709,
+        "step": 4
+      },
+      {
+        "best_objective": 7497.04498467923,
+        "epsilon_l2_max": 0.004545011586771564,
+        "epsilon_l2_mean": 0.0045450115867715635,
+        "gradient_l2_mean": 16259.103795539795,
+        "objective": 7497.04498467923,
+        "pre_step_objective": 7115.831455259276,
+        "step": 5
+      },
+      {
+        "best_objective": 7682.015372648265,
+        "epsilon_l2_max": 0.004545011586771564,
+        "epsilon_l2_mean": 0.0045450115867715635,
+        "gradient_l2_mean": 18288.602443672327,
+        "objective": 7682.015372648265,
+        "pre_step_objective": 7497.04498467923,
+        "step": 6
+      },
+      {
+        "best_objective": 7843.150033779485,
+        "epsilon_l2_max": 0.004545011586771564,
+        "epsilon_l2_mean": 0.0045450115867715635,
+        "gradient_l2_mean": 19503.5082241037,
+        "objective": 7843.150033779485,
+        "pre_step_objective": 7682.015372648265,
+        "step": 7
+      },
+      {
+        "best_objective": 7979.172027138279,
+        "epsilon_l2_max": 0.004545011586771565,
+        "epsilon_l2_mean": 0.0045450115867715635,
+        "gradient_l2_mean": 20538.49371796618,
+        "objective": 7979.172027138279,
+        "pre_step_objective": 7843.150033779485,
+        "step": 8
+      },
+      {
+        "best_objective": 8090.951121710212,
+        "epsilon_l2_max": 0.004545011586771564,
+        "epsilon_l2_mean": 0.0045450115867715635,
+        "gradient_l2_mean": 21399.80123963528,
+        "objective": 8090.951121710212,
+        "pre_step_objective": 7979.172027138279,
+        "step": 9
+      },
+      {
+        "best_objective": 8180.753039313909,
+        "epsilon_l2_max": 0.004545011586771565,
+        "epsilon_l2_mean": 0.0045450115867715635,
+        "gradient_l2_mean": 22103.366368478448,
+        "objective": 8180.753039313909,
+        "pre_step_objective": 8090.951121710212,
+        "step": 10
+      }
+    ],
+    "horizon": 60,
+    "l2_radius_per_trial": 0.0045450115867715635,
+    "mechanism": "direct_epsilon_open_loop_sequence_per_trial",
+    "n_steps": 10,
+    "optimizer": "projected_gradient_ascent",
+    "selected_epsilon": {
+      "boundary_fraction": 1.0,
+      "budget_energy_per_trial": 2.0657130323887765e-05,
+      "budget_l2_radius_per_trial": 0.0045450115867715635,
+      "energy_mean_per_trial": 2.0657130323887765e-05,
+      "energy_total": 0.001322056340728817,
+      "l2_norm_max_per_trial": 0.004545011586771564,
+      "l2_norm_mean_per_trial": 0.0045450115867715635,
+      "max_abs": 0.0008807442674988022,
+      "shape": [
+        64,
+        60,
+        6
+      ]
+    },
+    "step_size_fraction_of_l2_radius": 0.25
+  },
+  "batch": {
+    "construction": "repeat_single_validation_trial(pair.task.validation_trials, 64), which repeats the fixed +x 15 cm nominal validation reach.",
+    "initial_position_m": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ]
+    ],
+    "n_replicates": 5,
+    "n_trials": 64,
+    "paired_rollout_keys": true,
+    "seed": 42,
+    "target_position_m": [
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ],
+      [
+        0.15000000596046448,
+        0.0
+      ]
+    ]
+  },
+  "costs": {
+    "adversarial": {
+      "control": {
+        "max": 2085.4496732474704,
+        "mean": 1843.0280052551668,
+        "min": 1670.3120091085314,
+        "n": 320,
+        "std": 78.52957754936672
+      },
+      "stage_state": {
+        "max": 6911.877228543231,
+        "mean": 6058.976447575071,
+        "min": 4888.340875718774,
+        "n": 320,
+        "std": 382.99231928617263
+      },
+      "terminal": {
+        "max": 503.0862849457303,
+        "mean": 278.7485864836703,
+        "min": 61.449505483467625,
+        "n": 320,
+        "std": 68.26582982493824
+      },
+      "total": {
+        "max": 9160.844648434797,
+        "mean": 8180.753039313908,
+        "min": 6911.55479537517,
+        "n": 320,
+        "std": 416.2648936269637
+      }
+    },
+    "clean": {
+      "control": {
+        "max": 2129.9620654352248,
+        "mean": 1915.0920700212985,
+        "min": 1729.8849026496387,
+        "n": 320,
+        "std": 86.29785172087658
+      },
+      "stage_state": {
+        "max": 3150.438895188502,
+        "mean": 2761.6983956278245,
+        "min": 2494.723672426855,
+        "n": 320,
+        "std": 146.08442923442473
+      },
+      "terminal": {
+        "max": 32.67119858915407,
+        "mean": 6.509422870968197,
+        "min": 0.14242592693313058,
+        "n": 320,
+        "std": 4.837543865575505
+      },
+      "total": {
+        "max": 5000.380896042157,
+        "mean": 4683.2998885200905,
+        "min": 4484.536370962701,
+        "n": 320,
+        "std": 99.18941432986074
+      }
+    },
+    "comparison_to_target": {
+      "damage_minus_target": -2634.237525706183,
+      "damage_over_target": 0.5703896910843814
+    },
+    "lens": "full no-integrator C&S Q/R/Q_f task cost; no disturbance penalty",
+    "paired_damage": {
+      "control": {
+        "mean": -72.06406476613165,
+        "note": "mean(adversarial cost) - mean(clean cost)"
+      },
+      "stage_state": {
+        "mean": 3297.2780519472462,
+        "note": "mean(adversarial cost) - mean(clean cost)"
+      },
+      "terminal": {
+        "mean": 272.2391636127021,
+        "note": "mean(adversarial cost) - mean(clean cost)"
+      },
+      "total": {
+        "mean": 3497.4531507938173,
+        "note": "mean(adversarial cost) - mean(clean cost)"
+      }
+    },
+    "target_damage_reference": {
+      "paired_nominal_noise_damage": 6131.6906765,
+      "source": "Mandible issue 08483d5 first no-launch output-feedback check"
+    }
+  },
+  "schema_version": "rlrmp.08483d5_gru_damage_sanity.v1",
+  "selected_model": {
+    "artifact_dir": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p4",
+    "checkpoint_policy": "validation_selected_per_replicate",
+    "checkpoint_selection": [
+      {
+        "best_logged_validation_batch": 4701,
+        "best_logged_validation_objective": 4695.7944493703235,
+        "checkpoint_batches": 4000,
+        "checkpoint_path": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p4/checkpoints/checkpoint_0004000",
+        "final_validation_objective": 4748.993271099257,
+        "final_vs_selected_validation_degradation": 50.38484613174387,
+        "replicate": 0,
+        "scoring_validation_log_batch": 4000,
+        "scoring_validation_objective": 4698.608424967513,
+        "selection_source": "sparse_history_fallback"
+      },
+      {
+        "best_logged_validation_batch": 5601,
+        "best_logged_validation_objective": 4686.970776492235,
+        "checkpoint_batches": 3500,
+        "checkpoint_path": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p4/checkpoints/checkpoint_0003500",
+        "final_validation_objective": 4732.346655519682,
+        "final_vs_selected_validation_degradation": 35.61182931023632,
+        "replicate": 1,
+        "scoring_validation_log_batch": 3500,
+        "scoring_validation_objective": 4696.734826209446,
+        "selection_source": "sparse_history_fallback"
+      },
+      {
+        "best_logged_validation_batch": 4701,
+        "best_logged_validation_objective": 4686.893664522397,
+        "checkpoint_batches": 3500,
+        "checkpoint_path": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p4/checkpoints/checkpoint_0003500",
+        "final_validation_objective": 4730.583735083687,
+        "final_vs_selected_validation_degradation": 9.020211272554661,
+        "replicate": 2,
+        "scoring_validation_log_batch": 3500,
+        "scoring_validation_objective": 4721.563523811133,
+        "selection_source": "sparse_history_fallback"
+      },
+      {
+        "best_logged_validation_batch": 8701,
+        "best_logged_validation_objective": 4681.7826021800975,
+        "checkpoint_batches": 7500,
+        "checkpoint_path": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p4/checkpoints/checkpoint_0007500",
+        "final_validation_objective": 4733.297614014284,
+        "final_vs_selected_validation_degradation": 27.31810850507827,
+        "replicate": 3,
+        "scoring_validation_log_batch": 7500,
+        "scoring_validation_objective": 4705.979505509205,
+        "selection_source": "sparse_history_fallback"
+      },
+      {
+        "best_logged_validation_batch": 3501,
+        "best_logged_validation_objective": 4670.347461475584,
+        "checkpoint_batches": 5000,
+        "checkpoint_path": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p4/checkpoints/checkpoint_0005000",
+        "final_validation_objective": 4750.501719543622,
+        "final_vs_selected_validation_degradation": 52.305339398815704,
+        "replicate": 4,
+        "scoring_validation_log_batch": 5000,
+        "scoring_validation_objective": 4698.196380144806,
+        "selection_source": "sparse_history_fallback"
+      }
+    ],
+    "issue": "c92ebd8",
+    "row_rationale": "6D no-integrator H0 no-hold c92 row trained with the gamma 1.4 output-feedback rollout PGD budget; existing diagnostics show reach-context attenuation but not a clean across-task robustness win.",
+    "run_id": "moderate_pgd_ofb1p4",
+    "run_spec_path": "results/c92ebd8/runs/moderate_pgd_ofb1p4.json"
+  },
+  "uncertainties": [
+    "This is a small local frozen-batch diagnostic, not a training run.",
+    "The adversary is the training-style per-trial direct-epsilon PGD inner loop, not a stored training adversary.",
+    "The selected c92 row has empirical reach-context attenuation but existing notes do not claim a clean H-infinity certificate or across-task robustness win."
+  ]
+}
