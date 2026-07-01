@@ -84,7 +84,9 @@ BROAD_EPSILON_PGD_INNER_OPTIMIZER_METHODS: tuple[str, ...] = (
 DEFAULT_PGD_SISU_LEVELS: tuple[float, ...] = (0.0, 0.25, 0.5, 0.75, 1.0)
 DEFAULT_PGD_SISU_EXACT_ZERO_MASS = 0.30
 RAW_STRONG_GAMMA_1P05_RADIUS_15CM = 0.0023284905801002004
-EFFECTIVE_020A65B_PGD_RADIUS_15CM = 0.004545500088363065
+# Historical replay/provenance value only. New living rows must pass any radius
+# explicitly with caller-owned provenance instead of inheriting this constant.
+HISTORICAL_020A65B_PGD_RADIUS_15CM = 0.004545500088363065
 MILD_COMBINED_FAMILIES: tuple["PerturbationBin", ...] = (
     "initial_position",
     "command_input",
@@ -230,12 +232,13 @@ PGD_SISU_MAX_RADIUS_SOURCES: dict[str, dict[str, Any]] = {
         "description": "raw strong gamma-1.05 analytical radius",
     },
     "effective_020a65b_pgd_training_radius": {
-        "source_kind": "effective_pgd_training_radius",
+        "source_kind": "historical_replay_effective_pgd_training_radius",
         "source_issue": "020a65b",
         "source_note": "020a65b broad-epsilon PGD local training contract",
         "gamma_equivalent_analytical_anchor": False,
         "description": (
-            "effective 020a65b PGD training radius; not a new gamma-equivalent analytical anchor"
+            "historical 020a65b PGD replay radius; not a current default or "
+            "new gamma-equivalent analytical anchor"
         ),
     },
     "ofb_6d_no_integrator_gamma_1p4_rollout_radius": {
@@ -443,10 +446,14 @@ class PgdFullStateEpsilonTrainingConfig:
                 raise ValueError("SISU PGD budget condition input must be auto, input, or sisu.")
             if self.sisu_max_l2_radius_15cm is not None and self.sisu_max_l2_radius_15cm <= 0.0:
                 raise ValueError("SISU PGD max L2 radius must be positive when provided.")
+            if self.sisu_max_l2_radius_15cm is not None and self.sisu_max_radius_source is None:
+                raise ValueError("SISU PGD max L2 radius requires explicit provenance.")
             if self.fixed_l2_radius_15cm is not None:
                 raise ValueError("fixed PGD L2 radius is only valid for the fixed budget schedule.")
         if self.fixed_l2_radius_15cm is not None and self.fixed_l2_radius_15cm <= 0.0:
             raise ValueError("fixed PGD L2 radius must be positive when provided.")
+        if self.fixed_l2_radius_15cm is not None and self.fixed_radius_source is None:
+            raise ValueError("fixed PGD L2 radius requires explicit provenance.")
         if self.objective_kind not in (
             BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE,
             BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
@@ -464,6 +471,8 @@ class PgdFullStateEpsilonTrainingConfig:
             raise ValueError("PGD soft-energy lambda must be positive when provided.")
         if self.safety_cap_l2_radius_15cm is not None and self.safety_cap_l2_radius_15cm <= 0.0:
             raise ValueError("PGD soft-energy safety cap radius must be positive when provided.")
+        if self.safety_cap_l2_radius_15cm is not None and self.safety_cap_source is None:
+            raise ValueError("PGD soft-energy safety cap radius requires explicit provenance.")
         if self.objective_kind == BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE:
             if self.soft_energy_lambda is None:
                 raise ValueError(
@@ -522,7 +531,7 @@ class PgdFullStateEpsilonTrainingConfig:
         """Return the 15 cm trust-region cap used for soft-energy stabilization."""
 
         if self.safety_cap_l2_radius_15cm is None:
-            return self.reference_l2_radius
+            raise ValueError("PGD soft-energy safety-cap radius must be explicit.")
         return float(self.safety_cap_l2_radius_15cm)
 
     def to_hps_dict(self) -> dict[str, Any]:
@@ -619,13 +628,13 @@ class PolicyFullStateEpsilonTrainingConfig:
     n_steps: int = 5
     learning_rate: float = 3e-4
     energy_penalty_gamma: float = 1.0
-    reference_l2_radius_15cm: float = EFFECTIVE_020A65B_PGD_RADIUS_15CM
+    reference_l2_radius_15cm: float | None = None
     reach_length_scaling: bool = True
     nominal_reach_length_m: float = BROAD_EPSILON_REFERENCE_REACH_M
     movement_epoch_only: bool = False
     epsilon_dim: int = BROAD_EPSILON_DIM
     state_feature_dim: int = BROAD_EPSILON_DIM * 6
-    budget_source: str = "effective_020a65b_pgd_training_radius"
+    budget_source: str | None = None
 
     def __post_init__(self) -> None:
         if self.policy_class not in POLICY_ADVERSARY_POLICY_CLASSES:
@@ -645,8 +654,17 @@ class PolicyFullStateEpsilonTrainingConfig:
             raise ValueError("Policy adversary learning_rate must be positive.")
         if float(self.energy_penalty_gamma) < 0.0:
             raise ValueError("Policy adversary energy_penalty_gamma must be non-negative.")
-        if float(self.reference_l2_radius_15cm) <= 0.0:
+        if self.reference_l2_radius_15cm is not None and self.reference_l2_radius_15cm <= 0.0:
             raise ValueError("Policy adversary reference_l2_radius_15cm must be positive.")
+        if self.budget_source is not None and not self.budget_source.strip():
+            raise ValueError("Policy adversary budget_source must be non-empty when provided.")
+        if self.enabled:
+            if self.reference_l2_radius_15cm is None:
+                raise ValueError(
+                    "Policy adversary training requires explicit reference_l2_radius_15cm."
+                )
+            if self.budget_source is None:
+                raise ValueError("Policy adversary training requires explicit budget_source.")
         if float(self.nominal_reach_length_m) <= 0.0:
             raise ValueError("Policy adversary nominal_reach_length_m must be positive.")
         if int(self.epsilon_dim) < 1:
@@ -658,12 +676,32 @@ class PolicyFullStateEpsilonTrainingConfig:
     def reference_l2_radius(self) -> float:
         """Return the active 15 cm reference L2 radius."""
 
+        if self.reference_l2_radius_15cm is None:
+            raise ValueError("Policy adversary reference_l2_radius_15cm must be explicit.")
         return float(self.reference_l2_radius_15cm)
 
     def to_hps_dict(self) -> dict[str, Any]:
         """Return TreeNamespace-compatible policy-adversary metadata."""
 
         policy = self._policy_metadata()
+        reference_l2_radius_15cm = (
+            None if self.reference_l2_radius_15cm is None else float(self.reference_l2_radius_15cm)
+        )
+        budget_source = (
+            None
+            if self.budget_source is None
+            else {
+                "key": self.budget_source,
+                **PGD_SISU_MAX_RADIUS_SOURCES.get(
+                    self.budget_source,
+                    {
+                        "source_kind": "caller_declared",
+                        "gamma_equivalent_analytical_anchor": False,
+                        "description": self.budget_source,
+                    },
+                ),
+            }
+        )
         return {
             "enabled": self.enabled,
             "mode": POLICY_ADVERSARY_TRAINING_MODE if self.enabled else "disabled",
@@ -704,19 +742,9 @@ class PolicyFullStateEpsilonTrainingConfig:
             "time_mask": _epsilon_time_mask_contract(self.movement_epoch_only),
             "budget_contract": {
                 "reference_reach_m": BROAD_EPSILON_REFERENCE_REACH_M,
-                "effective_l2_radius_15cm": float(self.reference_l2_radius_15cm),
-                "active_max_l2_radius_15cm": float(self.reference_l2_radius_15cm),
-                "budget_source": {
-                    "key": self.budget_source,
-                    **PGD_SISU_MAX_RADIUS_SOURCES.get(
-                        self.budget_source,
-                        {
-                            "source_kind": "caller_declared",
-                            "gamma_equivalent_analytical_anchor": False,
-                            "description": self.budget_source,
-                        },
-                    ),
-                },
+                "effective_l2_radius_15cm": reference_l2_radius_15cm,
+                "active_max_l2_radius_15cm": reference_l2_radius_15cm,
+                "budget_source": budget_source,
                 "reach_length_scaling": bool(self.reach_length_scaling),
                 "reach_length_scaling_note": (
                     "The 15 cm effective PGD radius is scaled by sampled reach length "
@@ -2588,12 +2616,12 @@ def config_from_policy_adversary_hps(config: Any) -> PolicyFullStateEpsilonTrain
                 default=1.0,
             )
         ),
-        reference_l2_radius_15cm=float(
+        reference_l2_radius_15cm=_optional_float(
             _first_payload_value(
                 (budget, "effective_l2_radius_15cm"),
                 (budget, "active_max_l2_radius_15cm"),
                 (config, "reference_l2_radius_15cm"),
-                default=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+                default=None,
             )
         ),
         reach_length_scaling=bool(_payload_get(config, "reach_length_scaling", True)),
@@ -2615,11 +2643,11 @@ def config_from_policy_adversary_hps(config: Any) -> PolicyFullStateEpsilonTrain
                 default=BROAD_EPSILON_DIM * 6,
             )
         ),
-        budget_source=str(
+        budget_source=_optional_str(
             _first_payload_value(
                 (budget_source, "key"),
                 (config, "budget_source"),
-                default="effective_020a65b_pgd_training_radius",
+                default=None,
             )
         ),
     )
@@ -6604,7 +6632,7 @@ def planned_e4800d6_sisu_spectrum_rows(
         {
             "row": "B",
             "label": "effective_020a65b_pgd_radius",
-            "max_l2_radius_15cm": EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+            "max_l2_radius_15cm": HISTORICAL_020A65B_PGD_RADIUS_15CM,
             "max_radius_source": "effective_020a65b_pgd_training_radius",
         },
     ]
@@ -6769,7 +6797,7 @@ def planned_7c1f7ed_delayed_sisu_spectrum_rows(
         {
             "row": "B",
             "label": "effective_020a65b_pgd_radius",
-            "max_l2_radius_15cm": EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+            "max_l2_radius_15cm": HISTORICAL_020A65B_PGD_RADIUS_15CM,
             "max_radius_source": "effective_020a65b_pgd_training_radius",
         },
     ]
