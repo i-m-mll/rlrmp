@@ -1,0 +1,110 @@
+{
+  "analytical_provenance": {
+    "analytical_builders": [
+      "rlrmp.analysis.math.cs_game_card.build_no_integrator_game",
+      "rlrmp.analysis.math.cs_released_simulation",
+      "rlrmp.analysis.math.output_feedback"
+    ]
+  },
+  "inputs": [
+    {
+      "path": "results/e148f33/runs/adaptive_curriculum_3500to1000.json",
+      "role": "adaptive_run_spec",
+      "sha256": "b947687d1d9e3a31364f7cc34418a04cdd3bf8b7706cd5455d22072738615958"
+    },
+    {
+      "path": "_artifacts/e148f33/runs/adaptive_curriculum_3500to1000/checkpoints/checkpoint_0019500/model.eqx",
+      "role": "adaptive_checkpoint_model",
+      "sha256": "8e14c98480164852c44b6117de289680e1b78f82d5cb78fb32d7cffdded94006"
+    },
+    {
+      "path": "_artifacts/e148f33/runs/adaptive_curriculum_3500to1000/checkpoints/checkpoint_0019500/metadata.json",
+      "role": "adaptive_checkpoint_metadata",
+      "sha256": "f5015a1d43c5014f7246905f289b15328ff862cb26fe2b113c7ca52545c27ed4"
+    },
+    {
+      "path": "results/08483d5/runs/h0_6d_no_pgd_const_band16_cpu.json",
+      "role": "baseline_run_spec",
+      "sha256": "d5149d87beb01f6dbb01daa0a8a8dd468865f990357dcb841ee5d23224c32972"
+    },
+    {
+      "path": "_artifacts/08483d5/runs/h0_6d_no_pgd_const_band16_cpu/checkpoints/checkpoint_0012000/model.eqx",
+      "role": "baseline_checkpoint_model",
+      "sha256": "71f188c000dd06ab2148f1bde4c1833a3630b5d3b8f91dbd105c10b1b41ceee8"
+    },
+    {
+      "path": "_artifacts/08483d5/runs/h0_6d_no_pgd_const_band16_cpu/checkpoints/checkpoint_0012000/metadata.json",
+      "role": "baseline_checkpoint_metadata",
+      "sha256": "c3a1315c327a9f51010f2c953518e5e9a8696eab8bdbe2df147acc933f3037fb"
+    }
+  ],
+  "issue": "e148f33",
+  "materializer": "results/e148f33/scripts/materialize_nominal_velocity_profile_comparison.py",
+  "no_training_or_remote_gpu": true,
+  "plot_contract": {
+    "analytical_seed": 376023,
+    "bands": "mean +/- 1 SD",
+    "condition": "nominal fixed +x validation reach",
+    "gru_rollout_seed": 0,
+    "gru_rollout_trials_per_replicate": 64,
+    "quantity": "target-axis forward velocity",
+    "time_axis": "0.00s through 0.60s, including initial state sample"
+  },
+  "profile_summaries": {
+    "08483d5 no-PGD 12k baseline": {
+      "checkpoint": "_artifacts/08483d5/runs/h0_6d_no_pgd_const_band16_cpu/checkpoints/checkpoint_0012000",
+      "kind": "gru_no_pgd_pre_adversary_checkpoint",
+      "n_samples": 320,
+      "parity_status": null,
+      "peak_mean_forward_velocity_m_s": 0.7317650897428394,
+      "run_spec": "results/08483d5/runs/h0_6d_no_pgd_const_band16_cpu.json",
+      "source": "gru_checkpoint_nominal_rollout",
+      "terminal_position_error_m": null,
+      "time_of_peak_mean_forward_velocity_s": 0.16
+    },
+    "6D analytical extLQG nominal": {
+      "checkpoint": null,
+      "kind": "analytical_extlqg_6d_output_feedback",
+      "n_samples": 320,
+      "parity_status": "fixed_point: local port of extLQG/computeOFC/computeExtKalman",
+      "peak_mean_forward_velocity_m_s": 0.7314752118871354,
+      "run_spec": null,
+      "source": "rlrmp.analysis.math.cs_released_simulation",
+      "terminal_position_error_m": 0.0032472050706235933,
+      "time_of_peak_mean_forward_velocity_s": 0.16
+    },
+    "adaptive_curriculum_3500to1000 final": {
+      "checkpoint": "_artifacts/e148f33/runs/adaptive_curriculum_3500to1000/checkpoints/checkpoint_0019500",
+      "kind": "gru_adaptive_curriculum_final_checkpoint",
+      "n_samples": 320,
+      "parity_status": null,
+      "peak_mean_forward_velocity_m_s": 0.7549013387411833,
+      "run_spec": "results/e148f33/runs/adaptive_curriculum_3500to1000.json",
+      "source": "gru_checkpoint_nominal_rollout",
+      "terminal_position_error_m": null,
+      "time_of_peak_mean_forward_velocity_s": 0.16
+    },
+    "output-feedback H-infinity nominal": {
+      "checkpoint": null,
+      "kind": "analytical_hinf_6d_output_feedback",
+      "n_samples": 320,
+      "parity_status": "6D no-integrator output-feedback robust estimator/controller; gamma_factor=1.4",
+      "peak_mean_forward_velocity_m_s": 0.7606623391882253,
+      "run_spec": null,
+      "source": "rlrmp.analysis.math.cs_released_simulation",
+      "terminal_position_error_m": 0.0012944997802664606,
+      "time_of_peak_mean_forward_velocity_s": 0.16
+    }
+  },
+  "schema_version": "rlrmp.e148f33.figure_spec.v1",
+  "timestamp": "2026-07-01T19:50:44.070042+00:00",
+  "topic": "nominal_velocity_profile_comparison",
+  "versions": {
+    "equinox": "0.13.4",
+    "feedbax": "0.1.2",
+    "jax": "0.9.0",
+    "numpy": "2.4.1",
+    "plotly": "6.5.2",
+    "rlrmp": "0.1.0"
+  }
+}
