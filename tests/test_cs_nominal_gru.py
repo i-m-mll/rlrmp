@@ -86,7 +86,7 @@ from rlrmp.train.cs_perturbation_training import (
     DEFAULT_PGD_SISU_EXACT_ZERO_MASS,
     DEFAULT_PGD_SISU_LEVELS,
     DEFAULT_TARGET_SUPPORT_PROFILE,
-    EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+    HISTORICAL_020A65B_PGD_RADIUS_15CM,
     GRAPH_ADAPTER_SPECS,
     AFFINE_POLICY,
     LINEAR_NO_BIAS_POLICY,
@@ -449,7 +449,7 @@ def test_pgd_sisu_budget_schedule_metadata_and_parser_round_trip() -> None:
         budget_schedule=BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
         reach_length_scaling=False,
         sisu_condition_input="input",
-        sisu_max_l2_radius_15cm=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+        sisu_max_l2_radius_15cm=HISTORICAL_020A65B_PGD_RADIUS_15CM,
         sisu_max_radius_source="effective_020a65b_pgd_training_radius",
     )
     payload = cfg.to_hps_dict()
@@ -460,12 +460,15 @@ def test_pgd_sisu_budget_schedule_metadata_and_parser_round_trip() -> None:
     assert schedule["probabilities"] == pytest.approx([0.30, 0.175, 0.175, 0.175, 0.175])
     assert schedule["exact_zero_mass"] == pytest.approx(DEFAULT_PGD_SISU_EXACT_ZERO_MASS)
     assert schedule["mapping_rule"] == "epsilon_l2_radius = max_l2_radius_15cm * sqrt(SISU)"
-    assert schedule["max_l2_radius_15cm"] == pytest.approx(EFFECTIVE_020A65B_PGD_RADIUS_15CM)
+    assert schedule["max_l2_radius_15cm"] == pytest.approx(HISTORICAL_020A65B_PGD_RADIUS_15CM)
     assert schedule["conditioning_scalar"]["input_key"] == "input"
-    assert schedule["max_radius_source"]["source_kind"] == "effective_pgd_training_radius"
+    assert (
+        schedule["max_radius_source"]["source_kind"]
+        == "historical_replay_effective_pgd_training_radius"
+    )
     assert schedule["max_radius_source"]["gamma_equivalent_analytical_anchor"] is False
     assert payload["budget_contract"]["active_max_l2_radius_15cm"] == pytest.approx(
-        EFFECTIVE_020A65B_PGD_RADIUS_15CM
+        HISTORICAL_020A65B_PGD_RADIUS_15CM
     )
 
     parsed = config_from_broad_epsilon_pgd_hps(payload)
@@ -473,7 +476,7 @@ def test_pgd_sisu_budget_schedule_metadata_and_parser_round_trip() -> None:
     assert parsed.sisu_condition_input == "input"
     assert parsed.sisu_levels == DEFAULT_PGD_SISU_LEVELS
     assert parsed.sisu_exact_zero_mass == pytest.approx(DEFAULT_PGD_SISU_EXACT_ZERO_MASS)
-    assert parsed.sisu_max_l2_radius == pytest.approx(EFFECTIVE_020A65B_PGD_RADIUS_15CM)
+    assert parsed.sisu_max_l2_radius == pytest.approx(HISTORICAL_020A65B_PGD_RADIUS_15CM)
     assert parsed.sisu_max_radius_source == "effective_020a65b_pgd_training_radius"
 
 
@@ -543,6 +546,39 @@ def test_pgd_soft_energy_metadata_lambda_mapping_and_parser_round_trip() -> None
     assert parsed.safety_cap_source == cap_source
 
 
+def test_pgd_explicit_radius_and_safety_cap_require_provenance() -> None:
+    with pytest.raises(ValueError, match="fixed PGD L2 radius requires explicit provenance"):
+        PgdFullStateEpsilonTrainingConfig(
+            enabled=True,
+            fixed_l2_radius_15cm=1.0,
+        )
+
+    with pytest.raises(ValueError, match="SISU PGD max L2 radius requires explicit provenance"):
+        PgdFullStateEpsilonTrainingConfig(
+            enabled=True,
+            budget_schedule=BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
+            sisu_max_l2_radius_15cm=1.0,
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="PGD soft-energy safety cap radius requires explicit provenance",
+    ):
+        PgdFullStateEpsilonTrainingConfig(
+            enabled=True,
+            objective_kind=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+            energy_lambda=1.0,
+            safety_cap_l2_radius_15cm=1.0,
+        )
+
+    with pytest.raises(ValueError, match="requires an explicit safety-cap radius"):
+        PgdFullStateEpsilonTrainingConfig(
+            enabled=True,
+            objective_kind=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+            energy_lambda=1.0,
+        )
+
+
 def test_pgd_inner_optimizer_metadata_and_parser_round_trip() -> None:
     cfg = PgdFullStateEpsilonTrainingConfig(
         enabled=True,
@@ -550,6 +586,7 @@ def test_pgd_inner_optimizer_metadata_and_parser_round_trip() -> None:
         objective_kind=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
         energy_lambda=3.0,
         safety_cap_l2_radius_15cm=1.0,
+        safety_cap_source="unit_test_cap",
         inner_optimizer_method=BROAD_EPSILON_PGD_ADAM,
         adam_learning_rate=1e-3,
         adam_b1=0.8,
@@ -884,6 +921,7 @@ def test_finite_pgd_inner_maximizer_installs_policy_inputs_before_rollout() -> N
         objective_kind=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
         energy_lambda=1.0,
         safety_cap_l2_radius_15cm=1.0,
+        safety_cap_source="unit_test_cap",
     )
     trial_specs = TaskTrialSpec(
         inits=WhereDict({"mechanics.vector": jnp.zeros((1, 4), dtype=jnp.float32)}),
@@ -947,6 +985,7 @@ def test_finite_adam_inner_maximizer_uses_live_policy_inputs() -> None:
         objective_kind=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
         energy_lambda=1e-6,
         safety_cap_l2_radius_15cm=1.0,
+        safety_cap_source="unit_test_cap",
         inner_optimizer_method=BROAD_EPSILON_PGD_ADAM,
         adam_learning_rate=1e-2,
     )
@@ -1056,7 +1095,8 @@ def test_pgd_sisu_budget_radius_uses_sqrt_energy_fraction() -> None:
         budget_schedule=BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
         reach_length_scaling=False,
         sisu_condition_input="input",
-        sisu_max_l2_radius_15cm=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+        sisu_max_l2_radius_15cm=HISTORICAL_020A65B_PGD_RADIUS_15CM,
+        sisu_max_radius_source="effective_020a65b_pgd_training_radius",
         epsilon_dim=1,
     )
     trial_specs = TaskTrialSpec(
@@ -1085,8 +1125,8 @@ def test_pgd_sisu_budget_radius_uses_sqrt_energy_fraction() -> None:
         np.asarray(
             [
                 0.0,
-                0.5 * EFFECTIVE_020A65B_PGD_RADIUS_15CM,
-                EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+                0.5 * HISTORICAL_020A65B_PGD_RADIUS_15CM,
+                HISTORICAL_020A65B_PGD_RADIUS_15CM,
             ],
             dtype=np.float32,
         ),
@@ -1105,7 +1145,7 @@ def test_pgd_sisu_budget_cli_and_run_spec_metadata(tmp_path: Path) -> None:
         broad_epsilon_reach_scaling=False,
         broad_epsilon_pgd_budget_schedule=BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
         broad_epsilon_pgd_sisu_condition_input="input",
-        broad_epsilon_pgd_sisu_max_radius=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+        broad_epsilon_pgd_sisu_max_radius=HISTORICAL_020A65B_PGD_RADIUS_15CM,
         broad_epsilon_pgd_sisu_max_radius_source="effective_020a65b_pgd_training_radius",
     )
 
@@ -1122,10 +1162,10 @@ def test_pgd_sisu_budget_cli_and_run_spec_metadata(tmp_path: Path) -> None:
         [0.30, 0.175, 0.175, 0.175, 0.175]
     )
     assert pgd["budget_schedule"]["max_l2_radius_15cm"] == pytest.approx(
-        EFFECTIVE_020A65B_PGD_RADIUS_15CM
+        HISTORICAL_020A65B_PGD_RADIUS_15CM
     )
     assert pgd["budget_schedule"]["max_radius_source"]["source_kind"] == (
-        "effective_pgd_training_radius"
+        "historical_replay_effective_pgd_training_radius"
     )
     assert (
         pgd["budget_schedule"]["max_radius_source"]["gamma_equivalent_analytical_anchor"] is False
@@ -1160,7 +1200,8 @@ def test_policy_adversary_hps_declares_memoryless_policy_and_excludes_pgd() -> N
             policy_adversary_training=True,
             policy_adversary_mode=POLICY_ADVERSARY_ENERGY_MODE,
             policy_adversary_steps=5,
-            policy_adversary_radius_15cm=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+            policy_adversary_radius_15cm=HISTORICAL_020A65B_PGD_RADIUS_15CM,
+            policy_adversary_radius_source="effective_020a65b_pgd_training_radius",
             broad_epsilon_reach_scaling=True,
             loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
         )
@@ -1173,7 +1214,7 @@ def test_policy_adversary_hps_declares_memoryless_policy_and_excludes_pgd() -> N
     assert cfg.width == 64
     assert cfg.epsilon_dim == 8
     assert cfg.state_feature_dim == 48
-    assert cfg.reference_l2_radius == pytest.approx(EFFECTIVE_020A65B_PGD_RADIUS_15CM)
+    assert cfg.reference_l2_radius == pytest.approx(HISTORICAL_020A65B_PGD_RADIUS_15CM)
     assert hps.policy_adversary_training.mode == POLICY_ADVERSARY_TRAINING_MODE
     assert hps.policy_adversary_training.policy_class == POLICY_ADVERSARY_MEMORYLESS_MLP
     assert hps.policy_adversary_training.policy.kind == POLICY_ADVERSARY_MEMORYLESS_MLP
@@ -1186,9 +1227,63 @@ def test_policy_adversary_hps_declares_memoryless_policy_and_excludes_pgd() -> N
             _args(
                 target_relative_multitarget=True,
                 policy_adversary_training=True,
+                policy_adversary_radius_15cm=HISTORICAL_020A65B_PGD_RADIUS_15CM,
+                policy_adversary_radius_source="effective_020a65b_pgd_training_radius",
                 broad_epsilon_pgd_training=True,
             )
         )
+
+
+def test_policy_adversary_defaults_do_not_inherit_historical_radius() -> None:
+    defaults = build_parser().parse_args([])
+    assert defaults.policy_adversary_radius_15cm is None
+    assert defaults.policy_adversary_radius_source is None
+
+    hps = build_hps(defaults)
+    policy = hps.policy_adversary_training
+    assert policy.enabled is False
+    assert policy.budget_contract.effective_l2_radius_15cm is None
+    assert policy.budget_contract.active_max_l2_radius_15cm is None
+    assert policy.budget_contract.budget_source is None
+
+
+def test_policy_adversary_training_requires_explicit_radius_and_source() -> None:
+    required_args = dict(
+        target_relative_multitarget=True,
+        force_filter_feedback=True,
+        initial_hidden_encoder=True,
+        perturbation_training=True,
+        perturbation_calibrated_timing=True,
+        perturbation_physical_level="small",
+        policy_adversary_training=True,
+        loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+    )
+
+    with pytest.raises(ValueError, match="explicit reference_l2_radius_15cm"):
+        build_hps(_args(**required_args))
+
+    with pytest.raises(ValueError, match="explicit budget_source"):
+        build_hps(
+            _args(
+                **required_args,
+                policy_adversary_radius_15cm=HISTORICAL_020A65B_PGD_RADIUS_15CM,
+            )
+        )
+
+
+def test_policy_adversary_historical_spec_with_explicit_radius_and_source_parses() -> None:
+    parsed = config_from_policy_adversary_hps(
+        {
+            "enabled": True,
+            "budget_contract": {
+                "effective_l2_radius_15cm": HISTORICAL_020A65B_PGD_RADIUS_15CM,
+                "budget_source": {"key": "effective_020a65b_pgd_training_radius"},
+            },
+        }
+    )
+
+    assert parsed.reference_l2_radius == pytest.approx(HISTORICAL_020A65B_PGD_RADIUS_15CM)
+    assert parsed.budget_source == "effective_020a65b_pgd_training_radius"
 
 
 @pytest.mark.parametrize("policy_class", [LINEAR_NO_BIAS_POLICY, AFFINE_POLICY])
@@ -1212,7 +1307,8 @@ def test_finite_policy_adversary_hps_declares_active_adam_and_excludes_pgd(
         policy_adversary_mode=POLICY_ADVERSARY_ENERGY_MODE,
         policy_adversary_steps=7,
         policy_adversary_lr=1e-3,
-        policy_adversary_radius_15cm=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+        policy_adversary_radius_15cm=HISTORICAL_020A65B_PGD_RADIUS_15CM,
+        policy_adversary_radius_source="effective_020a65b_pgd_training_radius",
         broad_epsilon_reach_scaling=True,
         loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
     )
@@ -1261,7 +1357,8 @@ def test_policy_adversary_cli_run_spec_and_planned_rows(tmp_path: Path) -> None:
         policy_adversary_training=True,
         policy_adversary_mode=POLICY_ADVERSARY_PLAIN_MODE,
         policy_adversary_steps=5,
-        policy_adversary_radius_15cm=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+        policy_adversary_radius_15cm=HISTORICAL_020A65B_PGD_RADIUS_15CM,
+        policy_adversary_radius_source="effective_020a65b_pgd_training_radius",
         n_train_batches=12000,
         stop_after_batches=1000,
         loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
@@ -1280,7 +1377,7 @@ def test_policy_adversary_cli_run_spec_and_planned_rows(tmp_path: Path) -> None:
     assert policy["policy"]["materialization"] == "legacy_clean_rollout_open_loop_epsilon_sequence"
     assert policy["inner_optimizer"]["n_ascent_steps_per_controller_step"] == 5
     assert policy["budget_contract"]["effective_l2_radius_15cm"] == pytest.approx(
-        EFFECTIVE_020A65B_PGD_RADIUS_15CM
+        HISTORICAL_020A65B_PGD_RADIUS_15CM
     )
     assert distribution["training_axes"]["policy_adversary_training"] is True
     assert distribution["broad_epsilon_pgd_training"]["enabled"] is False
@@ -1300,7 +1397,7 @@ def test_policy_adversary_cli_run_spec_and_planned_rows(tmp_path: Path) -> None:
         assert parsed.policy_adversary_steps == 5
         assert parsed.policy_adversary_width == 64
         assert parsed.policy_adversary_radius_15cm == pytest.approx(
-            EFFECTIVE_020A65B_PGD_RADIUS_15CM
+            HISTORICAL_020A65B_PGD_RADIUS_15CM
         )
         assert row["lr_cosine_alpha"] == pytest.approx(0.01)
         assert parsed.lr_cosine_alpha == pytest.approx(0.01)
@@ -1314,6 +1411,7 @@ def test_policy_adversary_projection_reports_radius_energy_and_boundary() -> Non
         epsilon_dim=2,
         state_feature_dim=4,
         reference_l2_radius_15cm=2.0,
+        budget_source="unit_test_radius",
         reach_length_scaling=False,
     )
     trial_specs = TaskTrialSpec(
@@ -1375,6 +1473,7 @@ def test_policy_adversary_controller_prestep_detaches_projected_epsilon() -> Non
         width=2,
         depth=0,
         reference_l2_radius_15cm=10.0,
+        budget_source="unit_test_radius",
         reach_length_scaling=False,
     )
     policy = make_memoryless_policy_adversary(cfg, key=jr.PRNGKey(0))
@@ -1434,7 +1533,7 @@ def test_e4800d6_sisu_spectrum_planned_rows_parse_to_sisu_pgd_args() -> None:
 
     assert [row["row"] for row in rows] == ["A", "B"]
     assert [row["max_l2_radius_15cm"] for row in rows] == pytest.approx(
-        [0.0023284905801002004, EFFECTIVE_020A65B_PGD_RADIUS_15CM]
+        [0.0023284905801002004, HISTORICAL_020A65B_PGD_RADIUS_15CM]
     )
     assert [row["max_radius_source"] for row in rows] == [
         "raw_strong_gamma_1p05_radius",
@@ -1498,7 +1597,8 @@ def test_delayed_sisu_rejects_overloaded_input_condition_key() -> None:
                 broad_epsilon_pgd_training=True,
                 broad_epsilon_pgd_budget_schedule=BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
                 broad_epsilon_pgd_sisu_condition_input="input",
-                broad_epsilon_pgd_sisu_max_radius=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+                broad_epsilon_pgd_sisu_max_radius=HISTORICAL_020A65B_PGD_RADIUS_15CM,
+                broad_epsilon_pgd_sisu_max_radius_source=("effective_020a65b_pgd_training_radius"),
                 broad_epsilon_reach_scaling=False,
             )
         )
@@ -1516,7 +1616,8 @@ def test_delayed_sisu_uses_separate_budget_key_and_composite_controller_input() 
             broad_epsilon_pgd_training=True,
             broad_epsilon_pgd_budget_schedule=BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
             broad_epsilon_pgd_sisu_condition_input="sisu",
-            broad_epsilon_pgd_sisu_max_radius=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+            broad_epsilon_pgd_sisu_max_radius=HISTORICAL_020A65B_PGD_RADIUS_15CM,
+            broad_epsilon_pgd_sisu_max_radius_source="effective_020a65b_pgd_training_radius",
             broad_epsilon_reach_scaling=False,
             loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
             hidden_size=8,
@@ -1539,7 +1640,7 @@ def test_delayed_sisu_uses_separate_budget_key_and_composite_controller_input() 
         trial,
         config_from_broad_epsilon_pgd_hps(hps.broad_epsilon_pgd_training),
     )
-    expected_radius = EFFECTIVE_020A65B_PGD_RADIUS_15CM * jnp.sqrt(jnp.mean(trial.inputs["sisu"]))
+    expected_radius = HISTORICAL_020A65B_PGD_RADIUS_15CM * jnp.sqrt(jnp.mean(trial.inputs["sisu"]))
     assert radius == pytest.approx(float(expected_radius))
 
     spec = build_graph_bundle(hps).task_spec
@@ -1560,7 +1661,8 @@ def test_delayed_sisu_catch_trials_preserve_hold_targets_with_sisu_present() -> 
             broad_epsilon_pgd_training=True,
             broad_epsilon_pgd_budget_schedule=BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
             broad_epsilon_pgd_sisu_condition_input="sisu",
-            broad_epsilon_pgd_sisu_max_radius=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+            broad_epsilon_pgd_sisu_max_radius=HISTORICAL_020A65B_PGD_RADIUS_15CM,
+            broad_epsilon_pgd_sisu_max_radius_source="effective_020a65b_pgd_training_radius",
             broad_epsilon_reach_scaling=False,
             hidden_size=8,
             n_replicates=1,
@@ -1591,7 +1693,7 @@ def test_7c1f7ed_delayed_sisu_planned_rows_parse_and_dry_run_specs(tmp_path: Pat
 
     assert [row["row"] for row in rows] == ["A", "B"]
     assert [row["max_l2_radius_15cm"] for row in rows] == pytest.approx(
-        [0.0023284905801002004, EFFECTIVE_020A65B_PGD_RADIUS_15CM]
+        [0.0023284905801002004, HISTORICAL_020A65B_PGD_RADIUS_15CM]
     )
     assert [row["run"] for row in rows] == [
         "delayed_sisu_spectrum__raw_strong_gamma_1p05_radius_lr1e-2_clip5_b64",
@@ -2949,7 +3051,8 @@ def test_sisu_conditioned_input_does_not_trigger_catch_target_rewrite() -> None:
             broad_epsilon_pgd_training=True,
             broad_epsilon_pgd_budget_schedule=BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
             broad_epsilon_pgd_sisu_condition_input="input",
-            broad_epsilon_pgd_sisu_max_radius=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+            broad_epsilon_pgd_sisu_max_radius=HISTORICAL_020A65B_PGD_RADIUS_15CM,
+            broad_epsilon_pgd_sisu_max_radius_source="effective_020a65b_pgd_training_radius",
             broad_epsilon_reach_scaling=False,
             loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
             hidden_size=8,
@@ -5006,7 +5109,8 @@ def test_policy_adversary_full_training_uses_checkpoint_sized_chunks(tmp_path: P
         policy_adversary_training=True,
         policy_adversary_steps=1,
         policy_adversary_width=4,
-        policy_adversary_radius_15cm=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+        policy_adversary_radius_15cm=HISTORICAL_020A65B_PGD_RADIUS_15CM,
+        policy_adversary_radius_source="effective_020a65b_pgd_training_radius",
         broad_epsilon_reach_scaling=True,
         loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
     )
@@ -5059,7 +5163,8 @@ def test_finite_affine_policy_adversary_full_training_persists_adam_state(
         policy_adversary_training=True,
         policy_adversary_policy_class=AFFINE_POLICY,
         policy_adversary_steps=1,
-        policy_adversary_radius_15cm=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+        policy_adversary_radius_15cm=HISTORICAL_020A65B_PGD_RADIUS_15CM,
+        policy_adversary_radius_source="effective_020a65b_pgd_training_radius",
         broad_epsilon_reach_scaling=True,
         loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
     )
@@ -5417,6 +5522,7 @@ def test_pgd_soft_energy_objective_penalizes_epsilon_energy() -> None:
             "enabled": True,
             "reach_length_scaling": False,
             "fixed_l2_radius_15cm": 1.0,
+            "fixed_radius_source": "unit_test_fixed_radius",
             "n_steps": 1,
             "step_size_fraction": 1.0,
             "epsilon_dim": 1,

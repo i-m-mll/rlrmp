@@ -79,7 +79,7 @@ from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
     BROAD_EPSILON_PGD_TRAINING_MODE,
     BROAD_EPSILON_TRAINING_MODE,
-    EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+    HISTORICAL_020A65B_PGD_RADIUS_15CM,
     DEFAULT_TARGET_SUPPORT_PROFILE,
     LEGACY_PERTURBATION_TRAINING_MODE,
     PERTURBATION_TRAINING_MODE,
@@ -645,15 +645,11 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
         ),
         "policy_adversary_lr": float(policy_optimizer.get("learning_rate", 3e-4)),
         "policy_adversary_energy_gamma": float(policy_objective.get("energy_penalty_gamma", 1.0)),
-        "policy_adversary_radius_15cm": float(
-            policy_budget.get(
-                "effective_l2_radius_15cm",
-                EFFECTIVE_020A65B_PGD_RADIUS_15CM,
-            )
+        "policy_adversary_radius_15cm": policy_budget.get(
+            "effective_l2_radius_15cm",
+            policy_budget.get("active_max_l2_radius_15cm"),
         ),
-        "policy_adversary_radius_source": str(
-            policy_budget_source.get("key", "effective_020a65b_pgd_training_radius")
-        ),
+        "policy_adversary_radius_source": policy_budget_source.get("key"),
         "initial_hidden_encoder": bool(model.get("initial_hidden_encoder", False)),
         "full_train": (
             run_spec.get("mode") == "full_train"
@@ -976,12 +972,12 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         n_steps=int(args.policy_adversary_steps),
         learning_rate=float(args.policy_adversary_lr),
         energy_penalty_gamma=float(args.policy_adversary_energy_gamma),
-        reference_l2_radius_15cm=float(args.policy_adversary_radius_15cm),
+        reference_l2_radius_15cm=args.policy_adversary_radius_15cm,
         reach_length_scaling=bool(args.broad_epsilon_reach_scaling),
         movement_epoch_only=delayed_reach,
         epsilon_dim=int(plant.m_w),
         state_feature_dim=int(plant.n),
-        budget_source=str(args.policy_adversary_radius_source),
+        budget_source=args.policy_adversary_radius_source,
     )
     if (
         delayed_reach
@@ -2034,7 +2030,7 @@ def planned_e901a20_policy_adversary_rows(
         "--policy-adversary-lr",
         "0.0003",
         "--policy-adversary-radius-15cm",
-        f"{EFFECTIVE_020A65B_PGD_RADIUS_15CM:.18g}",
+        f"{HISTORICAL_020A65B_PGD_RADIUS_15CM:.18g}",
         "--policy-adversary-radius-source",
         "effective_020a65b_pgd_training_radius",
     ]
@@ -2068,7 +2064,7 @@ def planned_e901a20_policy_adversary_rows(
                 "formal_certificate": False,
                 "broad_epsilon_pgd_training": False,
                 "broad_epsilon_reach_scaling": True,
-                "effective_l2_radius_15cm": EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+                "effective_l2_radius_15cm": HISTORICAL_020A65B_PGD_RADIUS_15CM,
                 "radius_source": "effective_020a65b_pgd_training_radius",
                 "single_fixed_budget": True,
                 "sisu_modulation": False,
@@ -3045,14 +3041,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--policy-adversary-radius-15cm",
         type=float,
-        default=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
-        help="15 cm L2 epsilon radius matched to the effective 020a65b H0 PGD row.",
+        default=None,
+        help=(
+            "Explicit 15 cm L2 epsilon radius for policy-adversary training. "
+            "Required when --policy-adversary-training is enabled."
+        ),
     )
     parser.add_argument(
         "--policy-adversary-radius-source",
         type=str,
-        default="effective_020a65b_pgd_training_radius",
-        help="Metadata key/source for --policy-adversary-radius-15cm.",
+        default=None,
+        help=(
+            "Metadata key/source for --policy-adversary-radius-15cm. Required when "
+            "--policy-adversary-training is enabled."
+        ),
     )
     parser.add_argument(
         "--initial-hidden-encoder",
