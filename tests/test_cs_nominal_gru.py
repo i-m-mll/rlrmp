@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import subprocess
 import sys
 import warnings
@@ -21,6 +22,7 @@ import pytest
 from feedbax import TaskTrialSpec, TrialTimeline, WhereDict
 from feedbax.objectives.loss import AbstractLoss, TargetSpec
 from feedbax.mechanics import LinearStateSpace
+from feedbax.runtime.batch import BatchInfo
 from feedbax.runtime.state_feedback import StateFeedbackSelector
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
 from feedbax.config.namespace import TreeNamespace
@@ -68,6 +70,8 @@ from rlrmp.train.cs_nominal_gru import (
     _emit_checkpoint_progress,
     _initial_adaptive_epsilon_state,
     _prepend_existing_training_diagnostics,
+    _sample_adaptive_epsilon_damage_eval_batch,
+    _sample_adaptive_epsilon_training_batch,
     _update_adaptive_epsilon_state,
     planned_246182c_post_movement_cost_tail_rows,
     planned_e901a20_policy_adversary_rows,
@@ -710,6 +714,149 @@ def test_adaptive_epsilon_schedules_and_lambda_update_are_conservative() -> None
     assert diagnostics["lambda_updated"] == np.asarray(True)
     assert state.lambda_value > 10.0
     assert state.update_count == 1
+
+
+def test_adaptive_epsilon_lambda_update_uses_clipped_log_ratio() -> None:
+    hps = build_hps(
+        _args(
+            broad_epsilon_pgd_training=True,
+            broad_epsilon_pgd_objective=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+            broad_epsilon_pgd_energy_lambda=10.0,
+            adaptive_epsilon_curriculum=True,
+            target_relative_multitarget=True,
+            adaptive_epsilon_update_interval_batches=1,
+            adaptive_epsilon_ema_alpha=1.0,
+        )
+    )
+    cfg = hps.adaptive_epsilon_curriculum
+    base_state = _initial_adaptive_epsilon_state(hps)
+    assert base_state is not None
+
+    high_state, high_diagnostics = _update_adaptive_epsilon_state(
+        base_state,
+        cfg,
+        batch_index=0,
+        target_damage=100.0,
+        measured_damage=200.0,
+    )
+    low_state, low_diagnostics = _update_adaptive_epsilon_state(
+        base_state,
+        cfg,
+        batch_index=0,
+        target_damage=100.0,
+        measured_damage=50.0,
+    )
+
+    assert high_diagnostics["lambda_log_step"] == pytest.approx(
+        -float(low_diagnostics["lambda_log_step"])
+    )
+    assert high_diagnostics["lambda_log_step"] == pytest.approx(0.1 * math.log(2.0))
+    assert high_state.lambda_value / base_state.lambda_value == pytest.approx(
+        base_state.lambda_value / low_state.lambda_value
+    )
+
+    clipped_state, clipped_diagnostics = _update_adaptive_epsilon_state(
+        base_state,
+        cfg,
+        batch_index=0,
+        target_damage=100.0,
+        measured_damage=1.0e9,
+    )
+    assert clipped_diagnostics["lambda_log_step"] == pytest.approx(
+        cfg.lambda_update.max_log_step
+    )
+    assert clipped_state.lambda_value == pytest.approx(
+        base_state.lambda_value * math.exp(cfg.lambda_update.max_log_step)
+    )
+
+    zero_target_state, zero_target_diagnostics = _update_adaptive_epsilon_state(
+        base_state,
+        cfg,
+        batch_index=0,
+        target_damage=0.0,
+        measured_damage=1.0e9,
+    )
+    assert zero_target_diagnostics["update_due"] == np.asarray(True)
+    assert zero_target_diagnostics["lambda_updated"] == np.asarray(False)
+    assert zero_target_diagnostics["lambda_log_step"] == pytest.approx(0.0)
+    assert zero_target_state.lambda_value == pytest.approx(base_state.lambda_value)
+
+
+def test_adaptive_epsilon_damage_eval_batch_is_nominal_when_training_batch_is_perturbed() -> None:
+    class ContaminatingPerturbationTask:
+        seed_validation = 123
+
+        @staticmethod
+        def _trial(marker: float, *, contaminated: bool) -> TaskTrialSpec:
+            intervene = (
+                {"perturbation_bank": TreeNamespace(marker=jnp.asarray(marker, dtype=jnp.float32))}
+                if contaminated
+                else {}
+            )
+            return TaskTrialSpec(
+                inits=WhereDict({}),
+                targets=WhereDict(
+                    {
+                        "mechanics.effector.pos": TargetSpec(
+                            value=jnp.zeros((1, 1), dtype=jnp.float32),
+                        )
+                    }
+                ),
+                inputs={
+                    "epsilon": jnp.zeros((1, 1), dtype=jnp.float32),
+                    "perturbation_marker": jnp.asarray([[marker]], dtype=jnp.float32),
+                },
+                intervene=intervene,
+                timeline=TrialTimeline(n_steps=1),
+            )
+
+        def get_train_trial(self, key, batch_info=None):
+            del key, batch_info
+            return self._trial(0.0, contaminated=False)
+
+        def get_train_trial_with_intervenor_params(self, key, batch_info=None):
+            del key, batch_info
+            return self._trial(1.0, contaminated=True)
+
+    task = ContaminatingPerturbationTask()
+    batch_info = BatchInfo(
+        size=4,
+        start=jnp.asarray(0),
+        current=jnp.asarray(17),
+        total=jnp.asarray(100),
+    )
+    keys_trials = jr.split(jr.PRNGKey(1), 4)
+
+    training_specs = _sample_adaptive_epsilon_training_batch(
+        task,
+        batch_info=batch_info,
+        keys_trials=keys_trials,
+    )
+    eval_specs, first_keys_init, first_keys_model = _sample_adaptive_epsilon_damage_eval_batch(
+        task,
+        jr.PRNGKey(2),
+        batch_info=batch_info,
+        batch_size=4,
+    )
+    eval_specs_again, second_keys_init, second_keys_model = (
+        _sample_adaptive_epsilon_damage_eval_batch(
+            task,
+            jr.PRNGKey(2),
+            batch_info=batch_info,
+            batch_size=4,
+        )
+    )
+
+    np.testing.assert_allclose(training_specs.inputs["perturbation_marker"], 1.0)
+    assert "perturbation_bank" in training_specs.intervene
+    np.testing.assert_allclose(eval_specs.inputs["perturbation_marker"], 0.0)
+    assert eval_specs.intervene == {}
+    np.testing.assert_allclose(
+        eval_specs.inputs["perturbation_marker"],
+        eval_specs_again.inputs["perturbation_marker"],
+    )
+    np.testing.assert_array_equal(first_keys_init, second_keys_init)
+    np.testing.assert_array_equal(first_keys_model, second_keys_model)
 
 
 def test_pgd_inner_optimizer_metadata_and_parser_round_trip() -> None:

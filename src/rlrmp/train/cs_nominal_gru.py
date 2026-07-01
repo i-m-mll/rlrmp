@@ -26,6 +26,7 @@ import jax.tree as jt
 import jax.tree_util as jtu
 import numpy as np
 import optax
+from feedbax import TaskTrialSpec
 from jax_cookbook import save as fbx_save
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 from feedbax.intervene.schedule import TimeSeriesParam
@@ -4380,6 +4381,39 @@ def _run_adaptive_epsilon_training_chunk(
         where_train=where_train,
     )
     keys = jr.split(key, chunk_batches)
+    eval_batch_info = BatchInfo(
+        size=batch_size,
+        start=jnp.asarray(0),
+        current=jnp.asarray(0),
+        total=jnp.asarray(hps.n_batches_condition),
+    )
+    eval_keys = jr.split(
+        jr.fold_in(jr.PRNGKey(int(getattr(task, "seed_validation", 0))), 847503),
+        n_replicates,
+    )
+    eval_trial_specs, eval_keys_init, eval_keys_model = eqx.filter_vmap(
+        partial(
+            _sample_adaptive_epsilon_damage_eval_batch,
+            task,
+            batch_info=eval_batch_info,
+            batch_size=batch_size,
+        )
+    )(eval_keys)
+    damage_eval_step = eqx.filter_vmap(
+        _adaptive_epsilon_damage_eval_step,
+        in_axes=(
+            None,
+            None,
+            flat_model_arr_spec,
+            None,
+            None,
+            0,
+            0,
+            0,
+            None,
+        ),
+        out_axes=eqx.if_array(0),
+    )
     progress_every = batch_log_every(int(hps.n_batches_condition))
     chunk_started = time.perf_counter()
     diagnostic_series: dict[str, list[np.ndarray]] = {}
@@ -4417,19 +4451,39 @@ def _run_adaptive_epsilon_training_chunk(
             jnp.asarray(adaptive_state.lambda_value, dtype=jnp.float32),
             jnp.asarray(outer_weight, dtype=jnp.float32),
         )
-        damage_raw = float(np.asarray(jax.device_get(jnp.mean(diagnostics["damage_raw"]))))
+        eval_diagnostics = damage_eval_step(
+            task,
+            task.loss_func,
+            flat_model,
+            treedef_model,
+            hps.broad_epsilon_pgd_training,
+            eval_trial_specs,
+            eval_keys_init,
+            eval_keys_model,
+            jnp.asarray(adaptive_state.lambda_value, dtype=jnp.float32),
+        )
+        adaptive_update_damage_raw = float(
+            np.asarray(jax.device_get(jnp.mean(eval_diagnostics["adaptive_update_damage_raw"])))
+        )
         adaptive_state, update_diagnostics = _update_adaptive_epsilon_state(
             adaptive_state,
             hps.adaptive_epsilon_curriculum,
             batch_index=global_batch,
             target_damage=target_damage,
-            measured_damage=damage_raw,
+            measured_damage=adaptive_update_damage_raw,
         )
         host_diagnostics = {
             name: np.asarray(jax.device_get(value))
             for name, value in diagnostics.items()
             if eqx.is_array(value) or np.isscalar(value)
         }
+        host_diagnostics.update(
+            {
+                name: np.asarray(jax.device_get(value))
+                for name, value in eval_diagnostics.items()
+                if eqx.is_array(value) or np.isscalar(value)
+            }
+        )
         host_diagnostics.update(update_diagnostics)
         host_diagnostics["target_damage"] = np.asarray(target_damage, dtype=np.float32)
         host_diagnostics["outer_weight"] = np.asarray(outer_weight, dtype=np.float32)
@@ -4468,7 +4522,7 @@ def _run_adaptive_epsilon_training_chunk(
                     global_batch,
                     int(hps.n_batches_condition),
                     loss=float(jax.device_get(loss_mean.total)),
-                    damage=damage_raw,
+                    damage=adaptive_update_damage_raw,
                     target=target_damage,
                     lambda_value=float(adaptive_state.lambda_value),
                     outer=outer_weight,
@@ -4524,12 +4578,11 @@ def _adaptive_epsilon_train_step(
     keys_trials = jr.split(key_trials, batch_info.size)
     keys_init = jr.split(key_init, batch_info.size)
     keys_model = jr.split(key_model, batch_info.size)
-    trial_specs = eqx.filter_vmap(
-        partial(
-            task.get_train_trial_with_intervenor_params,
-            batch_info=batch_info,
-        )
-    )(keys_trials)
+    trial_specs = _sample_adaptive_epsilon_training_batch(
+        task,
+        batch_info=batch_info,
+        keys_trials=keys_trials,
+    )
     model = jtu.tree_unflatten(treedef_model, flat_model)
     adv_specs, inner_diagnostics = run_broad_epsilon_pgd_inner_maximizer(
         task,
@@ -4570,10 +4623,10 @@ def _adaptive_epsilon_train_step(
         adv_losses = loss_func(adv_states, adv_specs, current_model)
         weighted_losses = _weighted_loss_tree(clean_losses, adv_losses, outer_weight)
         diagnostics = {
-            "damage_raw": jnp.asarray(adv_losses.total - clean_losses.total),
-            "clean_loss_total": jnp.asarray(clean_losses.total),
-            "adversarial_loss_total": jnp.asarray(adv_losses.total),
-            "weighted_loss_total": jnp.asarray(weighted_losses.total),
+            "training_batch_damage_raw": jnp.asarray(adv_losses.total - clean_losses.total),
+            "training_batch_clean_loss_total": jnp.asarray(clean_losses.total),
+            "training_batch_adversarial_loss_total": jnp.asarray(adv_losses.total),
+            "training_batch_weighted_loss_total": jnp.asarray(weighted_losses.total),
             "energy_lambda_used": jnp.asarray(energy_lambda, dtype=jnp.float32),
             "outer_weight_used": jnp.asarray(outer_weight, dtype=jnp.float32),
         }
@@ -4590,6 +4643,101 @@ def _adaptive_epsilon_train_step(
     flat_model = jtu.tree_leaves(model)
     flat_opt_state = jtu.tree_leaves(opt_state)
     return losses, adv_specs, flat_model, flat_opt_state, grads, diagnostics
+
+
+def _sample_adaptive_epsilon_training_batch(
+    task: Any,
+    *,
+    batch_info: BatchInfo,
+    keys_trials: Any,
+) -> "TaskTrialSpec":
+    """Sample the live stochastic controller-training batch, including interventions."""
+
+    return eqx.filter_vmap(
+        partial(
+            task.get_train_trial_with_intervenor_params,
+            batch_info=batch_info,
+        )
+    )(keys_trials)
+
+
+def _sample_adaptive_epsilon_damage_eval_batch(
+    task: Any,
+    key: Any,
+    *,
+    batch_info: BatchInfo,
+    batch_size: int,
+) -> tuple["TaskTrialSpec", Any, Any]:
+    """Sample the fixed nominal batch used only for adaptive lambda damage updates."""
+
+    key_trials, key_init, key_model = jr.split(key, 3)
+    keys_trials = jr.split(key_trials, batch_size)
+    trial_specs = eqx.filter_vmap(
+        partial(
+            task.get_train_trial,
+            batch_info=batch_info,
+        )
+    )(keys_trials)
+    return trial_specs, jr.split(key_init, batch_size), jr.split(key_model, batch_size)
+
+
+@eqx.filter_jit
+def _adaptive_epsilon_damage_eval_step(
+    task: Any,
+    loss_func: Any,
+    flat_model: Any,
+    treedef_model: Any,
+    pgd_config: Any,
+    trial_specs: "TaskTrialSpec",
+    keys_init: Any,
+    keys_model: Any,
+    energy_lambda: Any,
+) -> dict[str, jnp.ndarray]:
+    """Measure paired clean/adversarial damage on the fixed nominal update batch."""
+
+    model = jtu.tree_unflatten(treedef_model, flat_model)
+    adv_specs, inner_diagnostics = run_broad_epsilon_pgd_inner_maximizer(
+        task,
+        model,
+        trial_specs,
+        loss_func,
+        keys_model,
+        config=pgd_config,
+        soft_energy_lambda_override=energy_lambda,
+        return_diagnostics=True,
+    )
+    adv_specs = jt.map(
+        lambda value: jax.lax.stop_gradient(value) if eqx.is_array(value) else value,
+        adv_specs,
+    )
+    init_states = eqx.filter_vmap(lambda _: init_state_from_component(model))(keys_init)
+    init_states = eqx.filter_vmap(
+        lambda state, trial_spec: _apply_trial_spec_initial_state(model, state, trial_spec)
+    )(init_states, trial_specs)
+    clean_states = _eval_trial_specs_for_training(
+        model,
+        trial_specs,
+        init_states,
+        keys_model,
+    )
+    adv_states = _eval_trial_specs_for_training(
+        model,
+        adv_specs,
+        init_states,
+        keys_model,
+    )
+    clean_losses = loss_func(clean_states, trial_specs, model)
+    adv_losses = loss_func(adv_states, adv_specs, model)
+    diagnostics = {
+        "adaptive_update_damage_raw": jnp.asarray(adv_losses.total - clean_losses.total),
+        "adaptive_update_clean_loss_total": jnp.asarray(clean_losses.total),
+        "adaptive_update_adversarial_loss_total": jnp.asarray(adv_losses.total),
+        "adaptive_update_energy_lambda_used": jnp.asarray(energy_lambda, dtype=jnp.float32),
+    }
+    diagnostics.update(
+        {f"adaptive_update_inner_{name}": value for name, value in inner_diagnostics.items()}
+    )
+    return diagnostics
 
 
 def _weighted_loss_tree(clean_losses: Any, adv_losses: Any, outer_weight: Any) -> Any:
@@ -4699,8 +4847,10 @@ def _update_adaptive_epsilon_state(
     interval = int(update_cfg.interval_batches)
     update_due = completed_batches % interval == 0
     target = float(target_damage)
-    relative_error = (
-        (damage_ema - target) / max(target, 1e-12)
+    ratio_eps = 1e-12
+    relative_error = (damage_ema - target) / max(target, ratio_eps) if target > 0.0 else 0.0
+    log_ratio_error = (
+        math.log(max(damage_ema, ratio_eps) / max(target, ratio_eps))
         if target > 0.0
         else 0.0
     )
@@ -4711,7 +4861,7 @@ def _update_adaptive_epsilon_state(
     if update_due and target > 0.0 and abs(relative_error) > deadband:
         eta = float(update_cfg.eta)
         max_log_step = float(update_cfg.max_log_step)
-        log_step = max(-max_log_step, min(max_log_step, eta * relative_error))
+        log_step = max(-max_log_step, min(max_log_step, eta * log_ratio_error))
         lambda_value *= math.exp(log_step)
         lambda_value = max(lambda_value, float(update_cfg.lambda_min))
         lambda_max = getattr(update_cfg, "lambda_max", None)
@@ -4727,6 +4877,7 @@ def _update_adaptive_epsilon_state(
     return next_state, {
         "damage_ema": np.asarray(damage_ema, dtype=np.float32),
         "relative_error": np.asarray(relative_error, dtype=np.float32),
+        "log_ratio_error": np.asarray(log_ratio_error, dtype=np.float32),
         "lambda_updated": np.asarray(updated, dtype=bool),
         "lambda_log_step": np.asarray(log_step, dtype=np.float32),
         "update_due": np.asarray(update_due, dtype=bool),
