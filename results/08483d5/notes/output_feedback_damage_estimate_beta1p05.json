@@ -1,0 +1,229 @@
+{
+  "contract": {
+    "adversary_application": "Matched optimal fixed policy F_t from robust_estimator_fixed_adversary_policy; applied each step as epsilon_t = F_t @ concat([x_t, xhat_t]) through plant.Bw. The clean condition uses the same controller/estimator with epsilon_t=0.",
+    "controller_gain_shape": [
+      60,
+      2,
+      36
+    ],
+    "cost_contract": "C&S Eq. 15 no-integrator 6D schedule: Q shape (60, 36, 36), R shape (60, 2, 2), Qf shape (36, 36).",
+    "dt_s": 0.01,
+    "estimator_covariance_shape": [
+      61,
+      36,
+      36
+    ],
+    "gamma": 9625.172849747514,
+    "gamma_factor": 1.05,
+    "gamma_star": 9166.831285473823,
+    "horizon_steps": 60,
+    "plant_shapes": {
+      "A": [
+        36,
+        36
+      ],
+      "B": [
+        36,
+        2
+      ],
+      "Bw": [
+        36,
+        6
+      ],
+      "observation_matrix": [
+        6,
+        36
+      ]
+    },
+    "policy_shape": [
+      60,
+      6,
+      72
+    ],
+    "state_basis": "36D delay-augmented state = 6 delayed physical blocks of [x, y, vx, vy, force_x, force_y]; no disturbance-integrator coordinates; observation is the oldest delayed 6D physical block.",
+    "target_convention": "goal-centered C&S state with INIT_POS=[0,0], TARGET_POS=[0.15,0]; x0 repeats [-0.15, 0, 0, 0, 0, 0] across all six delay blocks."
+  },
+  "rollouts": {
+    "deterministic_noise_off": {
+      "adversarial": {
+        "control_effort_sum_u2": 1996.7394117989118,
+        "cost": {
+          "control_stage": 1996.7394117989118,
+          "disturbance_energy": 3.0671655167860113e-06,
+          "h_infinity_objective": 4734.029853861309,
+          "state_stage": 3020.6273797483695,
+          "terminal_state": 0.8173984157842689,
+          "total_without_disturbance_penalty": 5018.184189963065
+        },
+        "disturbance_l2": 0.0017513324974961241,
+        "peak_forward_velocity_idx": 16,
+        "peak_forward_velocity_m_s": 0.7930023686712477,
+        "terminal_position_error_m": 0.001033866886676199
+      },
+      "clean": {
+        "control_effort_sum_u2": 2066.544519612465,
+        "cost": {
+          "control_stage": 2066.544519612465,
+          "disturbance_energy": 0.0,
+          "h_infinity_objective": 4570.293787596199,
+          "state_stage": 2503.749193779759,
+          "terminal_state": 7.420397463501951e-05,
+          "total_without_disturbance_penalty": 4570.293787596199
+        },
+        "disturbance_l2": 0.0,
+        "peak_forward_velocity_idx": 16,
+        "peak_forward_velocity_m_s": 0.7852043593906778,
+        "terminal_position_error_m": 9.631122517422819e-06
+      },
+      "epsilon_shape": [
+        60,
+        6
+      ],
+      "max_abs_epsilon": 0.0003621001807770168,
+      "mode": "deterministic_noise_off",
+      "noise_available": false,
+      "noise_paired": "not_applicable",
+      "paired_damage": 447.8904023668665,
+      "paired_h_infinity_objective_delta": 163.7360662651099
+    },
+    "nominal_noise_paired": {
+      "adversarial": {
+        "control_effort_sum_u2": 3589.033709937194,
+        "cost": {
+          "control_stage": 3589.033709937194,
+          "disturbance_energy": 2.0462107308246424e-05,
+          "h_infinity_objective": 6472.679045968869,
+          "state_stage": 4575.7838568684365,
+          "terminal_state": 203.5519743766776,
+          "total_without_disturbance_penalty": 8368.369541182308
+        },
+        "disturbance_l2": 0.004523506085797434,
+        "peak_forward_velocity_idx": 16,
+        "peak_forward_velocity_m_s": 0.7935542611894825,
+        "terminal_position_error_m": 0.016282025860545002
+      },
+      "clean": {
+        "control_effort_sum_u2": 3682.0419545567406,
+        "cost": {
+          "control_stage": 3682.04195455674,
+          "disturbance_energy": 0.0,
+          "h_infinity_objective": 6456.476444035366,
+          "state_stage": 2771.127584047941,
+          "terminal_state": 3.3069054306839987,
+          "total_without_disturbance_penalty": 6456.476444035366
+        },
+        "disturbance_l2": 0.0,
+        "peak_forward_velocity_idx": 16,
+        "peak_forward_velocity_m_s": 0.7858361113783445,
+        "terminal_position_error_m": 0.0018572749770885838
+      },
+      "epsilon_shape": [
+        60,
+        6
+      ],
+      "max_abs_epsilon": 0.0012229593487771344,
+      "mode": "nominal_noise_paired",
+      "noise_available": true,
+      "noise_covariance_contract": {
+        "motor_shape": [
+          36,
+          36
+        ],
+        "process_shape": [
+          36,
+          36
+        ],
+        "sensory_shape": [
+          6,
+          6
+        ],
+        "signal_dependent_state_shape": [
+          36,
+          2,
+          2
+        ]
+      },
+      "noise_energy": {
+        "adversarial_signal_dependent_state": 0.01801325104226352,
+        "clean_signal_dependent_state": 0.01841068880177501,
+        "motor_state": 2.507854116201502e-10,
+        "process_state": 0.0023752657230909314,
+        "sensory": 0.00787789982626495,
+        "signal_dependent_standard": 93.71583061030836
+      },
+      "noise_paired": true,
+      "noise_seed": 376023,
+      "paired_damage": 1911.8930971469426,
+      "paired_h_infinity_objective_delta": 16.2026019335035
+    }
+  },
+  "schema_version": "rlrmp.local_analytical_damage.v1",
+  "source": {
+    "controller_reference": "6D output-feedback H-infinity analytical teacher at beta 1.05",
+    "materializer": "results/376d023/scripts/materialize_6d_analytical_velocity_profiles.py",
+    "script": "results/08483d5/scripts/compute_output_feedback_rollout_damage_beta1p05.py",
+    "teacher_manifest": "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers_manifest.json",
+    "teacher_package": "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers.npz"
+  },
+  "teacher_package_verification": {
+    "checks": {
+      "gamma_star": {
+        "allclose": true,
+        "max_abs_error": 0.0
+      },
+      "observation_matrix": {
+        "allclose": true,
+        "max_abs_error": 0.0
+      },
+      "plant_A": {
+        "allclose": true,
+        "max_abs_error": 0.0
+      },
+      "plant_B": {
+        "allclose": true,
+        "max_abs_error": 0.0
+      },
+      "plant_Bw": {
+        "allclose": true,
+        "max_abs_error": 0.0
+      },
+      "schedule_Q": {
+        "allclose": true,
+        "max_abs_error": 0.0
+      },
+      "schedule_Q_f": {
+        "allclose": true,
+        "max_abs_error": 0.0
+      },
+      "schedule_R": {
+        "allclose": true,
+        "max_abs_error": 0.0
+      },
+      "x0": {
+        "allclose": true,
+        "max_abs_error": 0.0
+      }
+    },
+    "manifest": "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers_manifest.json",
+    "note": "The stored package is the beta-1.4 teacher. For beta 1.05, only the shared plant/schedule/x0/gamma_star/observation geometry is compared; gamma, Riccati P, estimator covariances, controller gains, and adversary policy are recomputed live.",
+    "path": "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers.npz",
+    "recomputed_beta_specific_shapes": {
+      "hinf_P": [
+        61,
+        36,
+        36
+      ],
+      "hinf_controller_gains": [
+        60,
+        2,
+        36
+      ],
+      "hinf_estimator_covariances": [
+        61,
+        36,
+        36
+      ]
+    },
+    "status": "checked_beta_invariant_geometry_only"
+  }
+}
