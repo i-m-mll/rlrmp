@@ -756,7 +756,13 @@ def test_adaptive_epsilon_continuation_schedule_is_relative_to_resume_start() ->
 
 
 def test_resume_optimizer_diagnostics_resize_pads_cross_length_buffers() -> None:
+    adam_state = optax.ScaleByAdamState(
+        count=jnp.asarray(7, dtype=jnp.int32),
+        mu={"w": jnp.asarray([1.0, 2.0], dtype=jnp.float32)},
+        nu={"w": jnp.asarray([3.0, 4.0], dtype=jnp.float32)},
+    )
     optimizer_state = {
+        "adam": adam_state,
         "gradient": GradientDiagnosticsState(
             count=jnp.asarray(2, dtype=jnp.int32),
             gradient_norm_pre_clip=jnp.asarray([1.0, 2.0], dtype=jnp.float32),
@@ -780,6 +786,9 @@ def test_resume_optimizer_diagnostics_resize_pads_cross_length_buffers() -> None
     assert np.isnan(np.asarray(resized["update"].update_norm[2:])).all()
     assert int(resized["gradient"].count) == 2
     assert int(resized["update"].count) == 2
+    assert int(resized["adam"].count) == 7
+    np.testing.assert_allclose(resized["adam"].mu["w"], [1.0, 2.0])
+    np.testing.assert_allclose(resized["adam"].nu["w"], [3.0, 4.0])
 
     shrunk = _resize_optimizer_diagnostics_for_batches(resized, 1)
     assert shrunk["gradient"].gradient_norm_pre_clip.shape == (1,)
@@ -5423,6 +5432,69 @@ def test_resume_training_diagnostics_stitches_replicate_major_current_chunk(
     assert stitched["train_loss__total"].shape == (12000,)
 
 
+def test_resume_training_diagnostics_stitches_replicate_major_prior_and_current(
+    tmp_path: Path,
+) -> None:
+    npz_path = tmp_path / "training_diagnostics.npz"
+    np.savez_compressed(
+        npz_path,
+        batch_index=np.arange(500),
+        history_learning_rate=np.ones((5, 500), dtype=np.float32),
+    )
+
+    stitched = _prepend_existing_training_diagnostics(
+        npz_path,
+        {
+            "batch_index": np.arange(7500),
+            "history_learning_rate": np.full((5, 7000), 2.0, dtype=np.float32),
+        },
+        completed_batches=7500,
+    )
+
+    assert stitched["history_learning_rate"].shape == (5, 7500)
+    assert np.all(stitched["history_learning_rate"][:, :500] == 1.0)
+    assert np.all(stitched["history_learning_rate"][:, 500:] == 2.0)
+
+
+def test_resume_training_diagnostics_stitch_is_idempotent_for_checkpoint_sidecars(
+    tmp_path: Path,
+) -> None:
+    npz_path = tmp_path / "training_diagnostics.npz"
+    prior = np.concatenate(
+        [
+            np.ones((5, 500), dtype=np.float32),
+            np.full((5, 500), 2.0, dtype=np.float32),
+        ],
+        axis=1,
+    )
+    np.savez_compressed(
+        npz_path,
+        batch_index=np.arange(1000),
+        history_learning_rate=prior,
+    )
+    continuation = np.concatenate(
+        [
+            np.full((5, 500), 2.0, dtype=np.float32),
+            np.full((5, 500), 3.0, dtype=np.float32),
+        ],
+        axis=1,
+    )
+
+    stitched = _prepend_existing_training_diagnostics(
+        npz_path,
+        {
+            "batch_index": np.arange(1500),
+            "history_learning_rate": continuation,
+        },
+        completed_batches=1500,
+    )
+
+    assert stitched["history_learning_rate"].shape == (5, 1500)
+    assert np.all(stitched["history_learning_rate"][:, :500] == 1.0)
+    assert np.all(stitched["history_learning_rate"][:, 500:1000] == 2.0)
+    assert np.all(stitched["history_learning_rate"][:, 1000:] == 3.0)
+
+
 def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Path) -> None:
     output_dir = tmp_path / "bulk"
     spec_dir = tmp_path / "spec"
@@ -5636,6 +5708,14 @@ def test_full_training_stop_after_batches_resumes_to_full_count(tmp_path: Path) 
     assert partial_summary["stopped_early_for_checkpoint_gate"] is True
     assert partial_summary["stop_after_batches"] == 2
     assert (output_dir / "checkpoints" / "checkpoint_0000002").exists()
+    partial_diagnostics_manifest = json.loads(
+        (output_dir / "training_diagnostics.json").read_text()
+    )
+    assert partial_diagnostics_manifest["completed_batches"] == 2
+    assert (output_dir / "training_diagnostics.npz").exists()
+    with np.load(output_dir / "training_diagnostics.npz") as partial_diagnostics:
+        assert partial_diagnostics["batch_index"].tolist() == [0, 1]
+        assert partial_diagnostics["optimizer_learning_rate"].shape == (2, 2)
 
     resumed_args = _args(
         output_dir=str(output_dir),

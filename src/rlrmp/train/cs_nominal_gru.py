@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import math
 import os
 import subprocess
@@ -134,6 +135,8 @@ from rlrmp.train.task_model import (
     setup_task_model_pair,
 )
 from rlrmp.model.trainable import staged_network_trainable_parts, staged_network_trainable_paths
+
+logger = logging.getLogger(__name__)
 
 ISSUE_ID = "30f2313"
 SCHEMA_VERSION = "rlrmp.cs_stochastic_gru.v1"
@@ -2426,6 +2429,17 @@ def run_full_training(
             args=args,
             run_spec=run_spec,
         )
+        if _training_diagnostics_enabled(args):
+            write_training_diagnostics_sidecar(
+                output_dir,
+                args=args,
+                run_spec=run_spec,
+                state=state,
+                training_history_path=output_dir / "training_history.eqx",
+                pgd_diagnostic_chunks=pgd_diagnostic_chunks,
+                policy_adversary_diagnostic_chunks=policy_adversary_diagnostic_chunks,
+                adaptive_epsilon_diagnostic_chunks=adaptive_epsilon_diagnostic_chunks,
+            )
         _commit_volume(volume_commit)
         if adaptive_epsilon_enabled and adaptive_epsilon_diagnostics:
             adaptive_epsilon_zero_adversary_guard = _update_adaptive_epsilon_zero_guard(
@@ -5695,6 +5709,73 @@ def _combine_history_diagnostic_chunks(
     return combined
 
 
+def _axis_removed_shape(shape: tuple[int, ...], axis: int) -> tuple[int, ...]:
+    return (*shape[:axis], *shape[axis + 1 :])
+
+
+def _slice_axis(array: np.ndarray, axis: int, start: int) -> np.ndarray:
+    slices = [slice(None)] * array.ndim
+    slices[axis] = slice(start, None)
+    return array[tuple(slices)]
+
+
+def _has_time_axis(array: np.ndarray, completed_batches: int) -> bool:
+    return any(dim == int(completed_batches) for dim in array.shape)
+
+
+def _stitch_training_diagnostic_array(
+    previous: np.ndarray,
+    current: np.ndarray,
+    *,
+    completed_batches: int,
+) -> np.ndarray | None:
+    """Stitch one diagnostic array while preserving its non-time axes.
+
+    Resumed diagnostics can be time-major, e.g. ``(batch, replicate)``, or
+    replicate-major, e.g. ``(replicate, batch)``.  Repeated checkpoint-cadence
+    sidecar writes also mean ``previous`` may already contain a prefix of the
+    in-memory continuation.  Infer the append axis from the only dimension pair
+    that can produce ``completed_batches`` after removing any overlap.
+    """
+
+    completed = int(completed_batches)
+    candidates: list[tuple[int, int, int, int]] = []
+    for previous_axis in range(previous.ndim):
+        previous_len = int(previous.shape[previous_axis])
+        for current_axis in range(current.ndim):
+            if _axis_removed_shape(previous.shape, previous_axis) != _axis_removed_shape(
+                current.shape,
+                current_axis,
+            ):
+                continue
+            current_len = int(current.shape[current_axis])
+            continuation_start = completed - current_len
+            if continuation_start < 0:
+                continue
+            overlap = previous_len - continuation_start
+            if 0 <= overlap <= current_len and previous_len + current_len - overlap == completed:
+                same_axis = int(previous_axis != current_axis)
+                nonzero_overlap = int(overlap > 0)
+                candidates.append((same_axis, nonzero_overlap, previous_axis, current_axis))
+
+    if not candidates:
+        return None
+
+    _, _, previous_axis, current_axis = sorted(candidates)[0]
+    aligned_current = (
+        current
+        if current_axis == previous_axis
+        else np.moveaxis(current, current_axis, previous_axis)
+    )
+    overlap = int(previous.shape[previous_axis]) - (
+        int(completed_batches) - int(aligned_current.shape[previous_axis])
+    )
+    current_suffix = _slice_axis(aligned_current, previous_axis, max(0, overlap))
+    if current_suffix.shape[previous_axis] == 0:
+        return previous
+    return np.concatenate([previous, current_suffix], axis=previous_axis)
+
+
 def _prepend_existing_training_diagnostics(
     npz_path: Path,
     arrays: dict[str, np.ndarray],
@@ -5711,35 +5792,41 @@ def _prepend_existing_training_diagnostics(
     for name, current in arrays.items():
         if name == "batch_index" or current.ndim == 0:
             continue
-        if current.shape[0] == int(completed_batches):
+        if _has_time_axis(current, completed_batches):
             continue
         previous = prior.get(name)
         if previous is None:
-            raise ValueError(
-                f"Cannot stitch resumed training diagnostics for {name!r}: "
-                "no prior array is available."
+            logger.warning(
+                "Cannot stitch resumed training diagnostics for %r: no prior array is "
+                "available; writing continuation-only array with shape %s.",
+                name,
+                current.shape,
             )
-        if (
-            previous.ndim == current.ndim
-            and previous.shape[1:] == current.shape[:-1]
-            and previous.shape[0] + current.shape[-1] == int(completed_batches)
-        ):
-            current = np.moveaxis(current, -1, 0)
-        if previous.ndim != current.ndim or previous.shape[1:] != current.shape[1:]:
-            raise ValueError(
-                f"Cannot stitch resumed training diagnostics for {name!r}: "
-                f"prior shape {previous.shape} and current shape {current.shape} differ."
+            continue
+        stitched_array = _stitch_training_diagnostic_array(
+            previous,
+            current,
+            completed_batches=completed_batches,
+        )
+        if stitched_array is None:
+            if _has_time_axis(previous, completed_batches):
+                stitched[name] = previous
+                continue
+            logger.warning(
+                "Cannot stitch resumed training diagnostics for %r: prior shape %s "
+                "and current shape %s are not axis-compatible for %d completed batches; "
+                "writing continuation-only array.",
+                name,
+                previous.shape,
+                current.shape,
+                int(completed_batches),
             )
-        if previous.shape[0] + current.shape[0] != int(completed_batches):
-            raise ValueError(
-                f"Cannot stitch resumed training diagnostics for {name!r}: "
-                f"{previous.shape[0]} + {current.shape[0]} != {completed_batches}."
-            )
-        stitched[name] = np.concatenate([previous, current], axis=0)
+            continue
+        stitched[name] = stitched_array
     for name, previous in prior.items():
         if name in stitched or name == "batch_index" or previous.ndim == 0:
             continue
-        if previous.shape[0] == int(completed_batches):
+        if _has_time_axis(previous, completed_batches):
             stitched[name] = previous
     return stitched
 
