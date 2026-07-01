@@ -2,145 +2,138 @@
 
 ## Status
 
-This is a run lock, not launch approval. No local training, remote training,
-pod acquisition, push, protected auth request, merge, issue closure, or comment
-on `2e60620` is authorized by this artifact.
+This is a no-launch planning packet for issue `08483d5`. It does not authorize
+local training, remote training, pod acquisition, push, protected auth request,
+merge, issue closure, or any comment on `2e60620`.
 
-The planned row is not currently runnable with existing training flags. Current
-training code supports broad-epsilon direct-epsilon PGD and a static
-soft-energy lambda, but the live training path still requires a safety-cap
-radius for `soft_energy`, projects every inner proposal onto a per-trial L2
-ball, and has no stateful adaptive-lambda update at a 50-batch cadence.
+The adaptive soft-epsilon implementation is present on local `main` at commit
+`95c14a87339d67bf54241bcceb88e01ba578b87e`, merged from
+`feature/08483d5-adaptive-curriculum` via auth request
+`8cf3442b-c8c2-4fd6-8bd4-f04fa384db52`.
 
-## Objective
+## Locked Initial Trial
 
-Test whether a cap-free direct-epsilon soft adversary can stay active during
-controller training while matching the conservative beta 1.05 output-feedback
-damage scale from the latest frozen replay. The scientific question is whether
-adaptive lambda can keep adversarial pressure finite and behaviorally meaningful
-without inherited cap, radius, projection, or trust-region values defining the
-effect.
+Recommended row label: `adaptive_curriculum_3500to1000`.
 
-## Row
+The initial launch-facing trial should continue from the clean 6D no-PGD H0
+`const_band16` baseline and add 7,500 controller batches of cap-free
+`direct_epsilon` soft-energy training. The damage target ramps from `0` to
+`3500` over the first 2,500 additional batches, then cosine-anneals to `1000`
+over the next 5,000 batches. The outer adversarial weight independently ramps
+from `0` to `1` over the first 2,500 additional batches and then holds at `1`.
 
-| Row | Role | Status | Controller-driving target | Diagnostic target |
-| --- | --- | --- | --- | --- |
-| `adaptive_pn_b1p05` | primary | `implementation_required_no_launch` | beta 1.05 paired-noise output-feedback damage, `1911.8930971469426` | beta 1.05 deterministic output-feedback damage, `447.8904023668665` |
+Use `max_log_step=0.1` for this first trial. The merged default is `0.25`, but
+the earlier no-launch replays were oscillatory, and this curriculum deliberately
+starts with an aggressive high-damage ramp. A `0.1` cap limits a 50-batch update
+to about a 10.5% multiplicative lambda change while still allowing adaptation
+over the 150 update opportunities in the run.
 
-No comparator row is locked here. The deterministic beta 1.05 value is retained
-as a secondary diagnostic target because the conservative replay showed the
-paired-noise target was already inside the 10% deadband at the initial lambda.
+## Operational Checkpoint Contract
 
-## Baseline Task And Controller Contract
+The current training CLI resumes only from
+`<output-dir>/checkpoints/checkpoint_latest`; it does not expose a first-class
+`--init-checkpoint` or `--continue-from` source flag. Therefore the future run
+manager must stage the baseline checkpoint into the new output directory before
+launch, or add a supported source-checkpoint flag first. Do not run the new row
+inside the baseline output directory.
 
-- Baseline source: `results/08483d5/runs/h0_6d_no_pgd_const_band16_cpu.json`.
-- Initial checkpoint: `_artifacts/08483d5/runs/h0_6d_no_pgd_const_band16_cpu/checkpoints/checkpoint_latest/model.eqx`.
-- Task support: target-relative `const_band16`, fixed 15 cm reach, 72 normal
-  validation targets, directions may vary.
-- Controller: GRU, 5 replicates, hidden size 180, 6D no-integrator physical
-  state, 36D delay-augmented C&S LSS state, force-filter feedback included.
-- Loss: full analytical Q/R/Qf (`full_analytical_qrf`).
-- Training scale for the planned row: batch size 64, seed 42, controller
-  gradient clip 5, 12000 controller batches unless a later launch spec changes
-  this explicitly.
-- Perturbation baseline: keep the existing 08483d5 moderate randomized
-  perturbation-training contract from the baseline row.
+Baseline source:
 
-## Adversary Mechanism
+- tracked recipe: `results/08483d5/runs/h0_6d_no_pgd_const_band16_cpu.json`
+- checkpoint tree:
+  `_artifacts/08483d5/runs/h0_6d_no_pgd_const_band16_cpu/checkpoints/`
+- latest checkpoint:
+  `_artifacts/08483d5/runs/h0_6d_no_pgd_const_band16_cpu/checkpoints/checkpoint_latest`
+  -> `checkpoint_0012000`
 
-- Mechanism: direct-epsilon sequence over shape `batch x 60 x 6`.
-- Inner objective: `mean(task_cost) - lambda * mean(sum_t,d epsilon[t,d]^2)`.
-- Inner optimizer controls from the conservative replay: cap-free Adam ascent,
-  12 steps, learning rate `2e-5`, Adam `b1=0.9`, `b2=0.999`, `eps=1e-8`,
-  gradient L2 clipping at `1e6`, zero epsilon initialization, select the best
-  finite soft objective encountered.
-- Guardrail: no projection, safety cap, inherited radius, trust region, or hard
-  budget is part of the planned scientific run. Epsilon norm and energy may be
-  logged as diagnostics only.
+Future output paths after explicit launch approval:
 
-## Lambda Initialization And Target
+- tracked run recipe:
+  `results/08483d5/runs/adaptive_curriculum_3500to1000.json`
+- graph sidecar dir:
+  `results/08483d5/runs/adaptive_curriculum_3500to1000/`
+- bulk output dir:
+  `_artifacts/08483d5/runs/adaptive_curriculum_3500to1000/`
 
-- Lambda source: `results/06a4dc8/canonical_soft_lambda_hvp.json`.
-- Source value: `lambda_star_p90 = 254905214.71076143`.
-- Initial lambda: beta 1.05 candidate `lambda0 = 281032999.21861446`.
-- Primary damage target source:
-  `results/08483d5/notes/output_feedback_damage_estimate_beta1p05.json`.
-- Primary damage target: beta 1.05 paired nominal-noise output-feedback damage
-  `1911.8930971469426`.
-- Secondary diagnostic target: beta 1.05 deterministic output-feedback damage
-  `447.8904023668665`.
+## Candidate Command Shape
 
-## Adaptive Rule
+This command shape was dry-run validated with an explicit `--spec-dir` so the
+future run recipe lands at the intended flat path:
 
-- Update cadence: once every 50 controller batches.
-- Evaluation batch: batch size 64 drawn from the normal fixed-15-cm validation
-  trials. Do not use repeated singleton +x trials; directions may vary unless
-  later implementation deliberately selects a named target subset.
-- Replicate handling: aggregate paired damage over all 5 checkpoint replicates
-  and all evaluation trials.
-- Damage estimate: mean adversarial total cost minus mean clean total cost,
-  using paired clean/adversarial rollout keys.
-- EMA: initialize from the first aggregate damage; alpha `0.1`.
-- Lambda update outside deadband:
-  `log(lambda_next) = log(lambda) + clip(0.1 * log(EMA_damage / target), -0.1, 0.1)`.
-- Deadband: if EMA damage is within +/-10% of target, lambda is unchanged.
-- Lambda state must persist across checkpoints and resumes.
+```bash
+PYTHONPATH=src uv run --no-sync python scripts/train_cs_nominal_gru.py \
+  --run-spec results/08483d5/runs/h0_6d_no_pgd_const_band16_cpu.json \
+  --output-dir _artifacts/08483d5/runs/adaptive_curriculum_3500to1000 \
+  --spec-dir results/08483d5/runs/adaptive_curriculum_3500to1000 \
+  --issue 08483d5 \
+  --n-train-batches 19500 \
+  --broad-epsilon-pgd-training \
+  --broad-epsilon-pgd-objective soft_energy \
+  --broad-epsilon-pgd-energy-lambda 281032999.21861446 \
+  --broad-epsilon-pgd-inner-optimizer-method adam \
+  --broad-epsilon-pgd-adam-lr 2e-5 \
+  --broad-epsilon-pgd-steps 12 \
+  --adaptive-epsilon-curriculum \
+  --adaptive-epsilon-damage-start 0 \
+  --adaptive-epsilon-damage-peak 3500 \
+  --adaptive-epsilon-damage-final 1000 \
+  --adaptive-epsilon-damage-ramp-batches 2500 \
+  --adaptive-epsilon-damage-anneal-batches 5000 \
+  --adaptive-epsilon-update-interval-batches 50 \
+  --adaptive-epsilon-ema-alpha 0.1 \
+  --adaptive-epsilon-eta 0.1 \
+  --adaptive-epsilon-deadband-frac 0.1 \
+  --adaptive-epsilon-max-log-step 0.1 \
+  --adaptive-epsilon-outer-weight-start 0 \
+  --adaptive-epsilon-outer-weight-final 1 \
+  --adaptive-epsilon-outer-weight-ramp-batches 2500 \
+  --checkpoint-interval-batches 500 \
+  --log-step 100 \
+  --resume
+```
 
-## Stopping, Checkpoints, And Logging
+`--n-train-batches 19500` means "resume from the staged 12,000-batch baseline
+checkpoint and stop after 7,500 additional batches." Without a staged checkpoint
+in the new output directory, `--resume` would initialize from scratch.
 
-- This artifact stops at no-launch planning.
-- A future approved run should stop normally at 12000 controller batches.
-- Abort conditions for the future implementation: nonfinite controller loss,
-  nonfinite adversary objective, nonfinite lambda, failed checkpoint write, or
-  repeated zero/nonzero adversary status inconsistent with the locked rule.
-- Checkpoints: keep the repo baseline cadence of every 500 batches unless a
-  later spec changes it. Include adaptive-lambda state in checkpoints.
-- Logging: keep batch progress lines, add one adaptive-lambda record every 50
-  batches, and include the evaluation batch provenance and target source in the
-  tracked run spec.
+## Post-Run Plan
 
-## Post-Run Diagnostics
+After the run completes, use `scripts/post_run.sh` from the owning feature
+worktree and then materialize a review packet. The first analysis should report:
 
-Post-run analysis should report:
+- Adaptive trajectory: lambda, EMA damage, raw damage, target damage, deadband
+  decisions, and outer adversarial weight. This checks whether the scheduler is
+  controlling damage rather than merely producing finite epsilons.
+- Clean/adversarial cost decomposition: total, running state, control, and
+  terminal components where available. This distinguishes useful damage from
+  blow-up-like trajectory degradation.
+- Epsilon diagnostics: energy, norm, max absolute epsilon, nonfinite flags, and
+  confirmation that no cap, radius, projection, or trust-region guard was active.
+  These are sidecars, not pass criteria.
+- Nominal phenotype: validation loss, endpoint quality, peak velocity,
+  time-to-peak, forward-velocity RMSE, and pre-go drift where applicable. This
+  tests whether robustness pressure damages baseline reach quality.
+- Baseline comparisons: the source no-PGD H0 baseline, beta 1.05 output-feedback
+  deterministic and paired-noise damage values, beta 1.4 output-feedback values
+  as context, and older PGD rows only as historical sidecars.
+- Perturbation-bank behavior: moderate randomized perturbation-bank metrics
+  should remain interpretable as an orthogonal training axis, not as something
+  weighted by the adaptive outer adversarial schedule.
 
-- Lambda trajectory, EMA damage trajectory, raw damage trajectory, and deadband
-  decisions.
-- Clean and adversarial task cost decompositions on the same evaluation batch.
-- Epsilon energy, epsilon norm, max absolute epsilon, and per-replicate damage
-  as diagnostic sidecars only.
-- Nominal movement quality: validation loss, endpoint quality, peak velocity,
-  time-to-peak, forward-velocity RMSE, and pre-go drift where applicable.
-- Replay against beta 1.05 paired-noise and deterministic targets, plus beta
-  1.4 paired-noise/deterministic targets as context only.
-- Confirmation that no cap, radius, projection, or trust-region guard was active.
+## Residual Uncertainties
 
-## Expected Artifacts
-
-- Lock artifact: `results/08483d5/runs/adaptive_pn_b1p05_lock.json`.
-- Future tracked run recipe after implementation and explicit launch approval:
-  `results/08483d5/runs/adaptive_pn_b1p05.json`.
-- Future bulk outputs:
-  `_artifacts/08483d5/runs/adaptive_pn_b1p05/`.
-- Future notes:
-  `results/08483d5/notes/adaptive_pn_b1p05.md`.
-
-## Implementation Prerequisites
-
-1. Add a cap-free direct-epsilon soft-energy inner maximizer for live training.
-   The current `PgdFullStateEpsilonTrainingConfig` rejects `soft_energy` without
-   a safety-cap radius and the runtime path projects onto an L2 radius.
-2. Add stateful adaptive-lambda training support with lambda, EMA damage, update
-   cadence, target source, and checkpoint/resume persistence.
-3. Add fixed validation-batch damage evaluation every 50 batches, using all 5
-   replicates and paired clean/adversarial rollouts.
-4. Extend run-spec metadata and validation so the planned adaptive-lambda
-   contract is recorded without pretending old cap/radius fields are active.
-5. Add lightweight tests or dry-run checks proving that the no-cap adaptive
-   config is accepted and that attempts to set a cap/radius/projection for this
-   row are absent or diagnostic-only.
-
-## Launch Gate
-
-After implementation, a fresh launch-facing spec must still be presented to the
-user and explicitly approved before any training launch or billable resource is
-created.
+- Resume staging is operational, not first-class CLI support. Add a
+  source-checkpoint flag before launch if the run manager should avoid copying
+  checkpoint directories.
+- The merged adaptive lambda update tracks damage on the live stochastic
+  training batch. It does not use a separate fixed held-out damage-evaluation
+  batch at the 50-batch cadence. Treat damage tracking as training-batch control
+  evidence, and use fixed held-out replay post-run for the scientific report.
+- The merged lambda update uses a clipped log-lambda step based on linear
+  relative error, `eta * (EMA - target) / target`, not the older log-ratio
+  formula. This lock accepts the merged behavior for the first trial.
+- The starting lambda remains the beta 1.05 candidate
+  `281032999.21861446`, used as a cap-independent soft-energy initialization.
+  It is not a radius, cap, trust-region, or hard budget.
+- The narrow beta spike near `1.342` remains stress-test context only and is not
+  a curriculum target.

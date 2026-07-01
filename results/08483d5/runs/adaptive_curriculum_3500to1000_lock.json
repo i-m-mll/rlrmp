@@ -1,0 +1,107 @@
+{
+  "schema_version": "rlrmp.08483d5.no_launch_run_lock.v2",
+  "issue": "08483d5",
+  "run_id": "adaptive_curriculum_3500to1000",
+  "created_date": "2026-07-01",
+  "lock_status": "no_launch_spec_locked",
+  "launch_authorized": false,
+  "training_authorized": false,
+  "code": {
+    "branch": "main",
+    "commit": "95c14a87339d67bf54241bcceb88e01ba578b87e",
+    "merged_branch": "feature/08483d5-adaptive-curriculum",
+    "auth_request": "8cf3442b-c8c2-4fd6-8bd4-f04fa384db52"
+  },
+  "baseline": {
+    "source_run_spec": "results/08483d5/runs/h0_6d_no_pgd_const_band16_cpu.json",
+    "source_checkpoint_latest": "_artifacts/08483d5/runs/h0_6d_no_pgd_const_band16_cpu/checkpoints/checkpoint_latest",
+    "source_checkpoint_resolved": "checkpoint_0012000",
+    "completed_batches": 12000,
+    "task_contract": "target-relative const_band16, 6D C&S no-integrator state, h0/initial-hidden encoder, full analytical Q/R/Qf, calibrated moderate perturbation-training baseline"
+  },
+  "training": {
+    "additional_batches": 7500,
+    "n_train_batches_total": 19500,
+    "batch_size": 64,
+    "seed": 42,
+    "controller_lr": 0.003,
+    "lr_warmup_batches": 500,
+    "lr_warmup_init_fraction": 0.1,
+    "lr_cosine_alpha": 0.01,
+    "gradient_clip_norm": 5.0,
+    "checkpoint_interval_batches": 500,
+    "log_step": 100
+  },
+  "adversary": {
+    "mechanism": "direct_epsilon",
+    "objective": "soft_energy",
+    "initial_lambda": 281032999.21861446,
+    "inner_optimizer": {
+      "method": "adam",
+      "steps": 12,
+      "learning_rate": 0.00002,
+      "b1": 0.9,
+      "b2": 0.999,
+      "eps": 0.00000001,
+      "initialization": "zero"
+    },
+    "forbidden_active_controls": {
+      "projection": false,
+      "safety_cap": false,
+      "inherited_radius": false,
+      "trust_region": false,
+      "hard_budget": false
+    }
+  },
+  "adaptive_schedule": {
+    "damage_target": {
+      "kind": "linear_ramp_then_cosine_anneal",
+      "start": 0.0,
+      "peak": 3500.0,
+      "final": 1000.0,
+      "ramp_batches": 2500,
+      "anneal_batches": 5000
+    },
+    "outer_adversarial_weight": {
+      "kind": "linear_ramp_then_hold",
+      "start": 0.0,
+      "final": 1.0,
+      "ramp_batches": 2500,
+      "applies_to": "optimized_direct_epsilon_loss_only",
+      "perturbation_bank_policy": "orthogonal_unweighted_by_outer_adversarial_weight"
+    },
+    "lambda_update": {
+      "interval_batches": 50,
+      "ema_alpha": 0.1,
+      "eta": 0.1,
+      "deadband_frac": 0.1,
+      "lambda_min": 0.000000000001,
+      "lambda_max": null,
+      "max_log_step": 0.1,
+      "implemented_formula": "log_step = clip(eta * (ema_damage - target_damage) / max(target_damage, 1e-12), -max_log_step, max_log_step)"
+    }
+  },
+  "future_paths_after_launch_approval": {
+    "tracked_run_recipe": "results/08483d5/runs/adaptive_curriculum_3500to1000.json",
+    "tracked_graph_sidecar_dir": "results/08483d5/runs/adaptive_curriculum_3500to1000/",
+    "bulk_output_dir": "_artifacts/08483d5/runs/adaptive_curriculum_3500to1000/",
+    "post_run_note": "results/08483d5/notes/adaptive_curriculum_3500to1000.md"
+  },
+  "validated_dry_run": {
+    "would_write": [
+      "results/08483d5/runs/adaptive_curriculum_3500to1000.json",
+      "results/08483d5/runs/adaptive_curriculum_3500to1000/model.graph.manifest.json"
+    ],
+    "cap_free_metadata_confirmed": true,
+    "effective_l2_radius_15cm": null,
+    "radius_bound_mode": false,
+    "safety_cap_enabled": false,
+    "projection": "none_cap_free_direct_soft_energy"
+  },
+  "residual_uncertainties": [
+    "Current CLI resumes only from output_dir/checkpoints/checkpoint_latest; stage the baseline checkpoint tree into the new output directory or add a source-checkpoint flag before launch.",
+    "Adaptive damage is measured on the live stochastic training batch, not a fixed held-out damage-evaluation batch.",
+    "Merged lambda update uses relative error rather than the older log-ratio formula.",
+    "The beta ~1.342 spike is stress-test context only and is not a curriculum target."
+  ]
+}
