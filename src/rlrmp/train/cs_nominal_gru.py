@@ -2224,18 +2224,42 @@ def run_full_training(
             adaptive_epsilon_state=_initial_adaptive_epsilon_state(hps),
         )
     checkpoint_root = output_dir / "checkpoints"
+    checkpoint_path = latest_checkpoint_path(checkpoint_root)
+    resume_from_checkpoint = bool(args.resume and checkpoint_path.exists())
+    checkpoint_completed_batches = None
+    optimizer_state_template = template_state.optimizer_state
+    if resume_from_checkpoint:
+        checkpoint_metadata = json.loads(
+            (checkpoint_path / "metadata.json").read_text(encoding="utf-8")
+        )
+        checkpoint_completed_batches = int(checkpoint_metadata.get("completed_batches", 0))
+        checkpoint_diagnostic_batches = int(
+            checkpoint_metadata.get("n_train_batches", checkpoint_completed_batches)
+        )
+        optimizer_state_template = _resize_optimizer_diagnostics_for_batches(
+            optimizer_state_template,
+            checkpoint_diagnostic_batches,
+        )
     state = (
         load_latest_checkpoint(
             checkpoint_root,
             model_template=pair.model,
-            optimizer_state_template=template_state.optimizer_state,
+            optimizer_state_template=optimizer_state_template,
             history_template=None,
             adversary_policy_template=adversary_policy_template,
             adversary_optimizer_state_template=adversary_optimizer_state_template,
         )
-        if args.resume and latest_checkpoint_path(checkpoint_root).exists()
+        if resume_from_checkpoint
         else template_state
     )
+    if resume_from_checkpoint and checkpoint_completed_batches is not None:
+        state = replace(
+            state,
+            optimizer_state=_resize_optimizer_diagnostics_for_batches(
+                state.optimizer_state,
+                max(int(args.n_train_batches), checkpoint_completed_batches),
+            ),
+        )
     if policy_adversary_enabled:
         if state.adversary_policy is None:
             state = replace(
@@ -3488,6 +3512,62 @@ def _update_diagnostics_transform(*, n_batches: int) -> optax.GradientTransforma
         return updates, new_state
 
     return optax.GradientTransformation(init_fn, update_fn)
+
+
+def _resize_optimizer_diagnostics_for_batches(optimizer_state: Any, n_batches: int) -> Any:
+    """Resize host-side optimizer diagnostic buffers for cross-length checkpoint resume."""
+
+    target_batches = max(0, int(n_batches))
+
+    def resize_leaf(leaf: Any) -> Any:
+        if isinstance(leaf, GradientDiagnosticsState):
+            return GradientDiagnosticsState(
+                count=leaf.count,
+                gradient_norm_pre_clip=_resize_diagnostic_series(
+                    leaf.gradient_norm_pre_clip,
+                    target_batches,
+                ),
+                gradient_clipped=_resize_diagnostic_series(
+                    leaf.gradient_clipped,
+                    target_batches,
+                ),
+                learning_rate=_resize_diagnostic_series(leaf.learning_rate, target_batches),
+            )
+        if isinstance(leaf, UpdateDiagnosticsState):
+            return UpdateDiagnosticsState(
+                count=leaf.count,
+                update_norm=_resize_diagnostic_series(leaf.update_norm, target_batches),
+                parameter_norm=_resize_diagnostic_series(leaf.parameter_norm, target_batches),
+                update_parameter_norm_ratio=_resize_diagnostic_series(
+                    leaf.update_parameter_norm_ratio,
+                    target_batches,
+                ),
+            )
+        return leaf
+
+    return jt.map(
+        resize_leaf,
+        optimizer_state,
+        is_leaf=lambda leaf: isinstance(leaf, (GradientDiagnosticsState, UpdateDiagnosticsState)),
+    )
+
+
+def _resize_diagnostic_series(series: Any, n_batches: int) -> Any:
+    target_batches = max(0, int(n_batches))
+    values = jnp.asarray(series)
+    if values.ndim < 1:
+        return values
+    current_batches = int(values.shape[-1])
+    if current_batches == target_batches:
+        return values
+    if current_batches > target_batches:
+        return values[..., :target_batches]
+    pad_shape = (*values.shape[:-1], target_batches - current_batches)
+    if jnp.issubdtype(values.dtype, jnp.floating):
+        pad = jnp.full(pad_shape, jnp.nan, dtype=values.dtype)
+    else:
+        pad = jnp.zeros(pad_shape, dtype=values.dtype)
+    return jnp.concatenate([values, pad], axis=-1)
 
 
 def _build_trainer(hps: TreeNamespace) -> TaskTrainer:
