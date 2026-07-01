@@ -1,0 +1,176 @@
+{
+  "schema_version": "rlrmp.08483d5.no_launch_run_lock.v1",
+  "issue": "08483d5",
+  "run_id": "adaptive_pn_b1p05",
+  "lock_status": "implementation_required_no_launch",
+  "created_date": "2026-07-01",
+  "is_runnable": false,
+  "launch_authorized": false,
+  "training_authorized": false,
+  "objective": {
+    "question": "Can a cap-free direct-epsilon soft adversary remain active during controller training while matching the conservative beta 1.05 output-feedback damage scale?",
+    "primary_row": "adaptive_pn_b1p05",
+    "comparator_rows": [],
+    "diagnostic_targets_only": [
+      "diag_det_b1p05"
+    ]
+  },
+  "baseline_contract": {
+    "source_run_spec": "results/08483d5/runs/h0_6d_no_pgd_const_band16_cpu.json",
+    "source_checkpoint": "_artifacts/08483d5/runs/h0_6d_no_pgd_const_band16_cpu/checkpoints/checkpoint_latest/model.eqx",
+    "task_support": "target-relative const_band16 fixed 15 cm reach",
+    "validation_trial_count": 72,
+    "batch_size": 64,
+    "seed": 42,
+    "n_train_batches": 12000,
+    "controller_gradient_clip_norm": 5.0,
+    "loss_objective": "full_analytical_qrf",
+    "model": {
+      "controller_kind": "gru",
+      "n_replicates": 5,
+      "hidden_size": 180,
+      "physical_state_dim": 6,
+      "state_dim": 36,
+      "no_integrator_state": true,
+      "plant_backend": "cs_lss",
+      "feedback_basis": "target_relative_delayed_feedback_plus_force_filter"
+    },
+    "perturbation_training": "preserve existing 08483d5 moderate randomized perturbation-training contract"
+  },
+  "adversary": {
+    "mechanism": "direct_epsilon",
+    "epsilon_shape": [
+      "batch",
+      60,
+      6
+    ],
+    "objective": "mean(task_cost) - lambda * mean(sum_t,d epsilon[t,d]^2)",
+    "inner_optimizer": {
+      "method": "cap_free_adam_ascent",
+      "n_steps": 12,
+      "learning_rate": 0.00002,
+      "adam_b1": 0.9,
+      "adam_b2": 0.999,
+      "adam_eps": 0.00000001,
+      "gradient_clip_l2": 1000000.0,
+      "initialization": "zero_epsilon",
+      "selection": "best finite soft objective encountered"
+    },
+    "forbidden_active_controls": {
+      "projection": false,
+      "safety_cap": false,
+      "inherited_radius": false,
+      "trust_region": false,
+      "hard_budget": false
+    },
+    "diagnostic_only": [
+      "epsilon_energy",
+      "epsilon_norm",
+      "max_abs_epsilon"
+    ]
+  },
+  "lambda": {
+    "source_path": "results/06a4dc8/canonical_soft_lambda_hvp.json",
+    "source_summary": "cap-independent HVP p90 direct-epsilon lambda source",
+    "lambda_star_p90": 254905214.71076143,
+    "initial_lambda_beta_1p05": 281032999.21861446,
+    "source_energy_convention": "sum_t,d delta_epsilon_i,t,d^2 over active mask"
+  },
+  "targets": [
+    {
+      "row": "adaptive_pn_b1p05",
+      "role": "controller_driving",
+      "label": "beta1p05_paired_nominal_noise_output_feedback",
+      "damage_ref": 1911.8930971469426,
+      "source_path": "results/08483d5/notes/output_feedback_damage_estimate_beta1p05.json"
+    },
+    {
+      "row": "diag_det_b1p05",
+      "role": "diagnostic_only",
+      "label": "beta1p05_deterministic_output_feedback",
+      "damage_ref": 447.8904023668665,
+      "source_path": "results/08483d5/notes/output_feedback_damage_estimate_beta1p05.json"
+    }
+  ],
+  "adaptive_rule": {
+    "update_cadence_batches": 50,
+    "evaluation_batch": {
+      "source": "normal fixed-15-cm validation trials",
+      "batch_size": 64,
+      "available_validation_trials": 72,
+      "repeated_singleton_trials": false,
+      "direction_policy": "directions may vary unless implementation deliberately selects a named subset"
+    },
+    "replicate_handling": "aggregate over all 5 replicates and all evaluation trials",
+    "damage_estimate": "mean adversarial total cost minus mean clean total cost with paired rollout keys",
+    "ema": {
+      "initialization": "first aggregate damage",
+      "alpha": 0.1
+    },
+    "eta": 0.1,
+    "max_log_step": 0.1,
+    "deadband_fraction": 0.1,
+    "deadband_action": "leave lambda unchanged",
+    "update_formula": "log(lambda_next)=log(lambda)+clip(eta*log(max(ema_damage, eps)/target), -max_log_step, max_log_step)"
+  },
+  "stopping_and_logging": {
+    "normal_stop_batches": 12000,
+    "checkpoint_interval_batches": 500,
+    "adaptive_log_interval_batches": 50,
+    "abort_conditions": [
+      "nonfinite controller loss",
+      "nonfinite adversary objective",
+      "nonfinite lambda",
+      "checkpoint write failure",
+      "adaptive state cannot be restored on resume"
+    ],
+    "required_checkpoint_state": [
+      "lambda",
+      "ema_damage",
+      "last_update_batch",
+      "target_label",
+      "target_damage",
+      "evaluation_batch_provenance"
+    ]
+  },
+  "post_run_diagnostics": [
+    "lambda trajectory",
+    "EMA and raw damage trajectory",
+    "deadband decisions",
+    "clean/adversarial task-cost decomposition",
+    "per-replicate damage",
+    "epsilon energy and norm sidecars",
+    "nominal movement quality",
+    "beta 1.05 deterministic diagnostic replay",
+    "beta 1.4 paired and deterministic context replays",
+    "confirmation that no cap/radius/projection/trust-region guard was active"
+  ],
+  "expected_future_artifacts": {
+    "tracked_run_recipe_after_implementation": "results/08483d5/runs/adaptive_pn_b1p05.json",
+    "bulk_output_dir_after_launch_approval": "_artifacts/08483d5/runs/adaptive_pn_b1p05/",
+    "post_run_note": "results/08483d5/notes/adaptive_pn_b1p05.md"
+  },
+  "implementation_prerequisites": [
+    {
+      "surface": "src/rlrmp/train/cs_perturbation_training.py",
+      "need": "cap-free soft-energy direct-epsilon inner maximizer without safety-cap validation and without L2 projection"
+    },
+    {
+      "surface": "src/rlrmp/train/cs_nominal_gru.py",
+      "need": "stateful adaptive lambda/EMA update every 50 controller batches with checkpoint and resume persistence"
+    },
+    {
+      "surface": "src/rlrmp/train/cs_nominal_gru.py",
+      "need": "paired clean/adversarial fixed validation-batch damage evaluation across all 5 replicates"
+    },
+    {
+      "surface": "src/rlrmp/runtime/run_specs.py",
+      "need": "run-spec metadata and validation for adaptive-lambda contracts that do not encode cap/radius/projection as active controls"
+    },
+    {
+      "surface": "scripts/train_cs_nominal_gru.py and Modal/RunPod wrapper surfaces",
+      "need": "dry-run and remote command plumbing for the adaptive-lambda config after implementation"
+    }
+  ],
+  "non_launch_statement": "This lock is intentionally not a runnable training recipe. A later implementation pass and explicit user launch approval are required before any training run."
+}

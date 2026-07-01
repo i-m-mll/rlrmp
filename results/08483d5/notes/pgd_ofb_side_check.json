@@ -1,0 +1,1078 @@
+{
+  "batch_contract": {
+    "construction": "repeat_single_validation_trial(pair.task.validation_trials, 64), the fixed +x nominal 15 cm validation reach",
+    "n_trials": 64,
+    "paired_clean_and_adversarial_keys": true,
+    "rollout_key_seed": 42
+  },
+  "checkpoint_policy": "validation_selected_per_replicate using sparse history, matching the prior moderate_pgd_ofb1p4 sanity check",
+  "cost_definition": "full no-integrator C&S Q/R/Q_f task cost for 6D PGD rows; disturbance penalty is not subtracted",
+  "created_by": "results/08483d5/scripts/compute_pgd_ofb_side_check.py",
+  "damage_rows": [
+    {
+      "adversary": {
+        "base_epsilon": {
+          "boundary_fraction": null,
+          "energy_mean_per_trial": 0.0030585379489366273,
+          "energy_total": 0.19574642873194414,
+          "l2_norm_max_per_trial": 0.05530405002291087,
+          "l2_norm_mean_per_trial": 0.055304050022910875,
+          "max_abs": 0.014234956353902817,
+          "shape": [
+            64,
+            60,
+            6
+          ]
+        },
+        "budget_contract": {
+          "active_max_l2_radius_15cm": 0.0017513324974961241,
+          "budget_source": {
+            "description": "6D no-integrator C&S output-feedback H-infinity rollout L2 radius for gamma_factor=1.05",
+            "disturbance_energy": 3.0671655167860113e-06,
+            "epsilon_dim": 6,
+            "gamma": 9625.172849747514,
+            "gamma_equivalent_analytical_anchor": true,
+            "gamma_factor": 1.05,
+            "gamma_star": 9166.831285473823,
+            "key": "ofb_6d_no_integrator_gamma_1p05_rollout_radius",
+            "source_issue": "c92ebd8",
+            "source_kind": "output_feedback_rollout_budget",
+            "source_note": "6D no-integrator output-feedback robust-estimator rollout"
+          },
+          "effective_l2_radius_15cm": 0.0017513324974961241,
+          "gamma_factor": 1.05
+        },
+        "history": [
+          {
+            "best_objective": 4515.512999302996,
+            "epsilon_l2_max": 0.0,
+            "epsilon_l2_mean": 0.0,
+            "objective": 4515.512999302996,
+            "step": 0
+          },
+          {
+            "best_objective": 4616.164695687385,
+            "epsilon_l2_max": 0.0004378331417719564,
+            "epsilon_l2_mean": 0.00043783314177195604,
+            "gradient_l2_mean": 3242.6290312361475,
+            "objective": 4616.164695687385,
+            "pre_step_objective": 4515.512999302996,
+            "step": 1
+          },
+          {
+            "best_objective": 4744.28936093003,
+            "epsilon_l2_max": 0.0008748646290964502,
+            "epsilon_l2_mean": 0.00087101227349805,
+            "gradient_l2_mean": 4028.3307140002808,
+            "objective": 4744.28936093003,
+            "pre_step_objective": 4616.164695687385,
+            "step": 2
+          },
+          {
+            "best_objective": 4911.475800559495,
+            "epsilon_l2_max": 0.0013094811692892178,
+            "epsilon_l2_mean": 0.001296006590284244,
+            "gradient_l2_mean": 5215.947691978146,
+            "objective": 4911.475800559495,
+            "pre_step_objective": 4744.28936093003,
+            "step": 3
+          },
+          {
+            "best_objective": 5127.793876019314,
+            "epsilon_l2_max": 0.0017386953764966756,
+            "epsilon_l2_mean": 0.0017132560267289327,
+            "gradient_l2_mean": 6801.494680681917,
+            "objective": 5127.793876019314,
+            "pre_step_objective": 4911.475800559495,
+            "step": 4
+          },
+          {
+            "best_objective": 5175.512710994992,
+            "epsilon_l2_max": 0.0017513325670878257,
+            "epsilon_l2_mean": 0.0017513325670878242,
+            "gradient_l2_mean": 8698.750080365893,
+            "objective": 5175.512710994992,
+            "pre_step_objective": 5127.793876019314,
+            "step": 5
+          },
+          {
+            "best_objective": 5198.752995457228,
+            "epsilon_l2_max": 0.0017513325670878257,
+            "epsilon_l2_mean": 0.0017513325670878242,
+            "gradient_l2_mean": 9317.348339703603,
+            "objective": 5198.752995457228,
+            "pre_step_objective": 5175.512710994992,
+            "step": 6
+          },
+          {
+            "best_objective": 5217.768473419872,
+            "epsilon_l2_max": 0.001751332567087826,
+            "epsilon_l2_mean": 0.0017513325670878242,
+            "gradient_l2_mean": 9723.124013620174,
+            "objective": 5217.768473419872,
+            "pre_step_objective": 5198.752995457228,
+            "step": 7
+          },
+          {
+            "best_objective": 5232.9686999757505,
+            "epsilon_l2_max": 0.001751332567087826,
+            "epsilon_l2_mean": 0.0017513325670878242,
+            "gradient_l2_mean": 10063.334439620936,
+            "objective": 5232.9686999757505,
+            "pre_step_objective": 5217.768473419872,
+            "step": 8
+          },
+          {
+            "best_objective": 5244.885617274477,
+            "epsilon_l2_max": 0.0017513325670878257,
+            "epsilon_l2_mean": 0.0017513325670878242,
+            "gradient_l2_mean": 10344.826634409463,
+            "objective": 5244.885617274477,
+            "pre_step_objective": 5232.9686999757505,
+            "step": 9
+          },
+          {
+            "best_objective": 5254.076259931525,
+            "epsilon_l2_max": 0.001751332567087826,
+            "epsilon_l2_mean": 0.0017513325670878242,
+            "gradient_l2_mean": 10575.479211775151,
+            "objective": 5254.076259931525,
+            "pre_step_objective": 5244.885617274477,
+            "step": 10
+          }
+        ],
+        "l2_radius_per_trial": 0.0017513325670878252,
+        "mechanism": "direct_epsilon_open_loop_sequence_per_trial",
+        "n_steps": 10,
+        "optimizer": "projected_gradient_ascent",
+        "selected_epsilon": {
+          "boundary_fraction": 1.0,
+          "budget_energy_per_trial": 3.0671657605424318e-06,
+          "budget_l2_radius_per_trial": 0.0017513325670878252,
+          "energy_mean_per_trial": 3.0671657605424318e-06,
+          "energy_total": 0.00019629860867471563,
+          "l2_norm_max_per_trial": 0.0017513325670878257,
+          "l2_norm_mean_per_trial": 0.0017513325670878255,
+          "max_abs": 0.0003247596881697761,
+          "shape": [
+            64,
+            60,
+            6
+          ]
+        },
+        "step_size_fraction_of_l2_radius": 0.25
+      },
+      "adversary_recomputed": true,
+      "artifact_dir": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p05",
+      "checkpoint_policy": "validation_selected_per_replicate",
+      "checkpoint_selection": [
+        {
+          "best_logged_validation_batch": 10001,
+          "best_logged_validation_objective": 4512.852256202498,
+          "checkpoint_batches": 8500,
+          "checkpoint_path": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p05/checkpoints/checkpoint_0008500",
+          "final_validation_objective": 4541.787320814061,
+          "final_vs_selected_validation_degradation": 13.61784963631635,
+          "replicate": 0,
+          "scoring_validation_log_batch": 8500,
+          "scoring_validation_objective": 4528.1694711777445,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 2201,
+          "best_logged_validation_objective": 4488.846544753891,
+          "checkpoint_batches": 10000,
+          "checkpoint_path": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p05/checkpoints/checkpoint_0010000",
+          "final_validation_objective": 4531.360812780345,
+          "final_vs_selected_validation_degradation": 9.675192153925309,
+          "replicate": 1,
+          "scoring_validation_log_batch": 10000,
+          "scoring_validation_objective": 4521.68562062642,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 3901,
+          "best_logged_validation_objective": 4495.071511448039,
+          "checkpoint_batches": 5500,
+          "checkpoint_path": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p05/checkpoints/checkpoint_0005500",
+          "final_validation_objective": 4526.202129699189,
+          "final_vs_selected_validation_degradation": 9.83587747864658,
+          "replicate": 2,
+          "scoring_validation_log_batch": 5500,
+          "scoring_validation_objective": 4516.366252220542,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 2801,
+          "best_logged_validation_objective": 4499.087243661983,
+          "checkpoint_batches": 10000,
+          "checkpoint_path": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p05/checkpoints/checkpoint_0010000",
+          "final_validation_objective": 4531.990985609787,
+          "final_vs_selected_validation_degradation": 8.766851052508173,
+          "replicate": 3,
+          "scoring_validation_log_batch": 10000,
+          "scoring_validation_objective": 4523.224134557278,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 8201,
+          "best_logged_validation_objective": 4505.540657746658,
+          "checkpoint_batches": 8500,
+          "checkpoint_path": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p05/checkpoints/checkpoint_0008500",
+          "final_validation_objective": 4534.4889992012495,
+          "final_vs_selected_validation_degradation": 23.22514252635665,
+          "replicate": 4,
+          "scoring_validation_log_batch": 8500,
+          "scoring_validation_objective": 4511.263856674893,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "costs": {
+        "adversarial": {
+          "control": {
+            "max": 1964.0491711991856,
+            "mean": 1821.7547168893993,
+            "min": 1693.6299003906868,
+            "n": 320,
+            "std": 47.96296517683538
+          },
+          "stage_state": {
+            "max": 3646.6283965820994,
+            "mean": 3384.5207234129584,
+            "min": 3171.58166946518,
+            "n": 320,
+            "std": 84.02131456267475
+          },
+          "terminal": {
+            "max": 92.0857333754804,
+            "mean": 47.80081962916707,
+            "min": 11.340182788382208,
+            "n": 320,
+            "std": 15.10377576286352
+          },
+          "total": {
+            "max": 5547.484372879115,
+            "mean": 5254.076259931525,
+            "min": 5050.370636166656,
+            "n": 320,
+            "std": 77.91914232341297
+          }
+        },
+        "clean": {
+          "control": {
+            "max": 1991.3560889757578,
+            "mean": 1849.0089484742318,
+            "min": 1716.748494697892,
+            "n": 320,
+            "std": 48.59357823288822
+          },
+          "stage_state": {
+            "max": 2896.6898237417704,
+            "mean": 2664.1030732073204,
+            "min": 2488.142303685431,
+            "n": 320,
+            "std": 71.20634912537453
+          },
+          "terminal": {
+            "max": 8.719574771753356,
+            "mean": 2.400977621442087,
+            "min": 0.18203382946856833,
+            "n": 320,
+            "std": 1.555443494679385
+          },
+          "total": {
+            "max": 4713.953773199593,
+            "mean": 4515.512999302994,
+            "min": 4398.367865896107,
+            "n": 320,
+            "std": 53.62057065142557
+          }
+        },
+        "damage_over_target": 0.12045018243648689,
+        "paired_damage": {
+          "control": {
+            "mean": -27.254231584832496,
+            "note": "mean(adversarial cost) - mean(clean cost)"
+          },
+          "stage_state": {
+            "mean": 720.417650205638,
+            "note": "mean(adversarial cost) - mean(clean cost)"
+          },
+          "terminal": {
+            "mean": 45.399842007724985,
+            "note": "mean(adversarial cost) - mean(clean cost)"
+          },
+          "total": {
+            "mean": 738.5632606285308,
+            "note": "mean(adversarial cost) - mean(clean cost)"
+          }
+        }
+      },
+      "experiment": "c92ebd8",
+      "label": "c92 moderate PGD OFB gamma 1.05",
+      "model_identity": {
+        "broad_epsilon_pgd_enabled": true,
+        "broad_epsilon_pgd_level": "strong",
+        "broad_epsilon_pgd_mode": "broad_full_state_epsilon_pgd_l2",
+        "hidden_size": 180,
+        "hidden_type": "equinox.nn._rnn.GRUCell",
+        "initial_hidden_encoder": true,
+        "loss_objective": "full_analytical_qrf",
+        "n_replicates": 5,
+        "no_integrator_state": true,
+        "physical_state_dim": 6,
+        "state_dim": 36,
+        "target_distance_m": 0.15
+      },
+      "run_id": "moderate_pgd_ofb1p05",
+      "run_spec_path": "results/c92ebd8/runs/moderate_pgd_ofb1p05.json"
+    },
+    {
+      "adversary": {
+        "base_epsilon": {
+          "boundary_fraction": null,
+          "energy_mean_per_trial": 0.0030585379489366273,
+          "energy_total": 0.19574642873194414,
+          "l2_norm_max_per_trial": 0.05530405002291087,
+          "l2_norm_mean_per_trial": 0.055304050022910875,
+          "max_abs": 0.014234956353902817,
+          "shape": [
+            64,
+            60,
+            6
+          ]
+        },
+        "budget_contract": {
+          "active_max_l2_radius_15cm": 0.004545011406169036,
+          "budget_source": {
+            "description": "6D no-integrator C&S output-feedback H-infinity rollout L2 radius for gamma_factor=1.4",
+            "disturbance_energy": 2.0657128682206633e-05,
+            "epsilon_dim": 6,
+            "gamma": 12833.563799663352,
+            "gamma_equivalent_analytical_anchor": true,
+            "gamma_factor": 1.4,
+            "gamma_star": 9166.831285473823,
+            "key": "ofb_6d_no_integrator_gamma_1p4_rollout_radius",
+            "source_issue": "c92ebd8",
+            "source_kind": "output_feedback_rollout_budget",
+            "source_note": "6D no-integrator output-feedback robust-estimator rollout"
+          },
+          "effective_l2_radius_15cm": 0.004545011406169036,
+          "gamma_factor": 1.4
+        },
+        "history": [
+          {
+            "best_objective": 4683.29988852009,
+            "epsilon_l2_max": 0.0,
+            "epsilon_l2_mean": 0.0,
+            "objective": 4683.29988852009,
+            "step": 0
+          },
+          {
+            "best_objective": 4970.594009587301,
+            "epsilon_l2_max": 0.0011362528966928913,
+            "epsilon_l2_mean": 0.0011362528966928909,
+            "gradient_l2_mean": 3237.3506984310466,
+            "objective": 4970.594009587301,
+            "pre_step_objective": 4683.29988852009,
+            "step": 1
+          },
+          {
+            "best_objective": 5417.522833572301,
+            "epsilon_l2_max": 0.002266424998406607,
+            "epsilon_l2_mean": 0.0022470237381425518,
+            "gradient_l2_mean": 4889.605649684498,
+            "objective": 5417.522833572301,
+            "pre_step_objective": 4970.594009587301,
+            "step": 2
+          },
+          {
+            "best_objective": 6109.330520360709,
+            "epsilon_l2_max": 0.0033893315604075834,
+            "epsilon_l2_mean": 0.0033205884378387134,
+            "gradient_l2_mean": 7675.867112426007,
+            "objective": 6109.330520360709,
+            "pre_step_objective": 5417.522833572301,
+            "step": 3
+          },
+          {
+            "best_objective": 7115.831455259276,
+            "epsilon_l2_max": 0.004502084882078774,
+            "epsilon_l2_mean": 0.004368564237478484,
+            "gradient_l2_mean": 11567.070829834392,
+            "objective": 7115.831455259276,
+            "pre_step_objective": 6109.330520360709,
+            "step": 4
+          },
+          {
+            "best_objective": 7497.04498467923,
+            "epsilon_l2_max": 0.004545011586771564,
+            "epsilon_l2_mean": 0.0045450115867715635,
+            "gradient_l2_mean": 16259.103795539795,
+            "objective": 7497.04498467923,
+            "pre_step_objective": 7115.831455259276,
+            "step": 5
+          },
+          {
+            "best_objective": 7682.015372648265,
+            "epsilon_l2_max": 0.004545011586771564,
+            "epsilon_l2_mean": 0.0045450115867715635,
+            "gradient_l2_mean": 18288.602443672327,
+            "objective": 7682.015372648265,
+            "pre_step_objective": 7497.04498467923,
+            "step": 6
+          },
+          {
+            "best_objective": 7843.150033779485,
+            "epsilon_l2_max": 0.004545011586771564,
+            "epsilon_l2_mean": 0.0045450115867715635,
+            "gradient_l2_mean": 19503.5082241037,
+            "objective": 7843.150033779485,
+            "pre_step_objective": 7682.015372648265,
+            "step": 7
+          },
+          {
+            "best_objective": 7979.172027138279,
+            "epsilon_l2_max": 0.004545011586771565,
+            "epsilon_l2_mean": 0.0045450115867715635,
+            "gradient_l2_mean": 20538.49371796618,
+            "objective": 7979.172027138279,
+            "pre_step_objective": 7843.150033779485,
+            "step": 8
+          },
+          {
+            "best_objective": 8090.951121710212,
+            "epsilon_l2_max": 0.004545011586771564,
+            "epsilon_l2_mean": 0.0045450115867715635,
+            "gradient_l2_mean": 21399.80123963528,
+            "objective": 8090.951121710212,
+            "pre_step_objective": 7979.172027138279,
+            "step": 9
+          },
+          {
+            "best_objective": 8180.753039313909,
+            "epsilon_l2_max": 0.004545011586771565,
+            "epsilon_l2_mean": 0.0045450115867715635,
+            "gradient_l2_mean": 22103.366368478448,
+            "objective": 8180.753039313909,
+            "pre_step_objective": 8090.951121710212,
+            "step": 10
+          }
+        ],
+        "l2_radius_per_trial": 0.0045450115867715635,
+        "mechanism": "direct_epsilon_open_loop_sequence_per_trial",
+        "n_steps": 10,
+        "optimizer": "projected_gradient_ascent",
+        "selected_epsilon": {
+          "boundary_fraction": 1.0,
+          "budget_energy_per_trial": 2.0657130323887765e-05,
+          "budget_l2_radius_per_trial": 0.0045450115867715635,
+          "energy_mean_per_trial": 2.0657130323887765e-05,
+          "energy_total": 0.001322056340728817,
+          "l2_norm_max_per_trial": 0.004545011586771564,
+          "l2_norm_mean_per_trial": 0.0045450115867715635,
+          "max_abs": 0.0008807442674988022,
+          "shape": [
+            64,
+            60,
+            6
+          ]
+        },
+        "step_size_fraction_of_l2_radius": 0.25
+      },
+      "adversary_recomputed": true,
+      "artifact_dir": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p4",
+      "checkpoint_policy": "validation_selected_per_replicate",
+      "checkpoint_selection": [
+        {
+          "best_logged_validation_batch": 4701,
+          "best_logged_validation_objective": 4695.7944493703235,
+          "checkpoint_batches": 4000,
+          "checkpoint_path": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p4/checkpoints/checkpoint_0004000",
+          "final_validation_objective": 4748.993271099257,
+          "final_vs_selected_validation_degradation": 50.38484613174387,
+          "replicate": 0,
+          "scoring_validation_log_batch": 4000,
+          "scoring_validation_objective": 4698.608424967513,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 5601,
+          "best_logged_validation_objective": 4686.970776492235,
+          "checkpoint_batches": 3500,
+          "checkpoint_path": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p4/checkpoints/checkpoint_0003500",
+          "final_validation_objective": 4732.346655519682,
+          "final_vs_selected_validation_degradation": 35.61182931023632,
+          "replicate": 1,
+          "scoring_validation_log_batch": 3500,
+          "scoring_validation_objective": 4696.734826209446,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 4701,
+          "best_logged_validation_objective": 4686.893664522397,
+          "checkpoint_batches": 3500,
+          "checkpoint_path": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p4/checkpoints/checkpoint_0003500",
+          "final_validation_objective": 4730.583735083687,
+          "final_vs_selected_validation_degradation": 9.020211272554661,
+          "replicate": 2,
+          "scoring_validation_log_batch": 3500,
+          "scoring_validation_objective": 4721.563523811133,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 8701,
+          "best_logged_validation_objective": 4681.7826021800975,
+          "checkpoint_batches": 7500,
+          "checkpoint_path": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p4/checkpoints/checkpoint_0007500",
+          "final_validation_objective": 4733.297614014284,
+          "final_vs_selected_validation_degradation": 27.31810850507827,
+          "replicate": 3,
+          "scoring_validation_log_batch": 7500,
+          "scoring_validation_objective": 4705.979505509205,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 3501,
+          "best_logged_validation_objective": 4670.347461475584,
+          "checkpoint_batches": 5000,
+          "checkpoint_path": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p4/checkpoints/checkpoint_0005000",
+          "final_validation_objective": 4750.501719543622,
+          "final_vs_selected_validation_degradation": 52.305339398815704,
+          "replicate": 4,
+          "scoring_validation_log_batch": 5000,
+          "scoring_validation_objective": 4698.196380144806,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "costs": {
+        "adversarial": {
+          "control": {
+            "max": 2085.4496732474704,
+            "mean": 1843.0280052551668,
+            "min": 1670.3120091085314,
+            "n": 320,
+            "std": 78.52957754936672
+          },
+          "stage_state": {
+            "max": 6911.877228543231,
+            "mean": 6058.976447575071,
+            "min": 4888.340875718774,
+            "n": 320,
+            "std": 382.99231928617263
+          },
+          "terminal": {
+            "max": 503.0862849457303,
+            "mean": 278.7485864836703,
+            "min": 61.449505483467625,
+            "n": 320,
+            "std": 68.26582982493824
+          },
+          "total": {
+            "max": 9160.844648434797,
+            "mean": 8180.753039313908,
+            "min": 6911.55479537517,
+            "n": 320,
+            "std": 416.2648936269637
+          }
+        },
+        "clean": {
+          "control": {
+            "max": 2129.9620654352248,
+            "mean": 1915.0920700212985,
+            "min": 1729.8849026496387,
+            "n": 320,
+            "std": 86.29785172087658
+          },
+          "stage_state": {
+            "max": 3150.438895188502,
+            "mean": 2761.6983956278245,
+            "min": 2494.723672426855,
+            "n": 320,
+            "std": 146.08442923442473
+          },
+          "terminal": {
+            "max": 32.67119858915407,
+            "mean": 6.509422870968197,
+            "min": 0.14242592693313058,
+            "n": 320,
+            "std": 4.837543865575505
+          },
+          "total": {
+            "max": 5000.380896042157,
+            "mean": 4683.2998885200905,
+            "min": 4484.536370962701,
+            "n": 320,
+            "std": 99.18941432986074
+          }
+        },
+        "damage_over_target": 0.5703896910843814,
+        "paired_damage": {
+          "control": {
+            "mean": -72.06406476613165,
+            "note": "mean(adversarial cost) - mean(clean cost)"
+          },
+          "stage_state": {
+            "mean": 3297.2780519472462,
+            "note": "mean(adversarial cost) - mean(clean cost)"
+          },
+          "terminal": {
+            "mean": 272.2391636127021,
+            "note": "mean(adversarial cost) - mean(clean cost)"
+          },
+          "total": {
+            "mean": 3497.4531507938173,
+            "note": "mean(adversarial cost) - mean(clean cost)"
+          }
+        }
+      },
+      "experiment": "c92ebd8",
+      "label": "c92 moderate PGD OFB gamma 1.4",
+      "model_identity": {
+        "broad_epsilon_pgd_enabled": true,
+        "broad_epsilon_pgd_level": "moderate",
+        "broad_epsilon_pgd_mode": "broad_full_state_epsilon_pgd_l2",
+        "hidden_size": 180,
+        "hidden_type": "equinox.nn._rnn.GRUCell",
+        "initial_hidden_encoder": true,
+        "loss_objective": "full_analytical_qrf",
+        "n_replicates": 5,
+        "no_integrator_state": true,
+        "physical_state_dim": 6,
+        "state_dim": 36,
+        "target_distance_m": 0.15
+      },
+      "run_id": "moderate_pgd_ofb1p4",
+      "run_spec_path": "results/c92ebd8/runs/moderate_pgd_ofb1p4.json"
+    }
+  ],
+  "damage_target_reference": {
+    "paired_nominal_noise_damage": 6131.6906765,
+    "source": "08483d5 output-feedback paired nominal-noise damage check"
+  },
+  "existing_evidence_paths": {
+    "c92_final_checkpoint_velocity_figure_spec": "results/c92ebd8/figures/pgd_ofb_budget_moderate_nominal_velocity_profiles/spec.json",
+    "c92_ofb_budget_diagnostics": "results/c92ebd8/notes/output_feedback_budget_diagnostics.md",
+    "c92_ofb_budget_diagnostics_json": "results/c92ebd8/notes/output_feedback_budget_diagnostics.json",
+    "prior_ofb1p4_damage": "results/08483d5/notes/gru_pgd_damage_sanity.json"
+  },
+  "issue": "08483d5",
+  "noise_convention": "GRU stochastic rollout noise from Task.eval_trials with identical PRNG keys for paired clean/adversarial damage; peak velocity uses the same repeated nominal validation trial convention pooled across replicates and stochastic trials",
+  "schema_version": "rlrmp.08483d5_pgd_ofb_side_check.v1",
+  "uncertainties": [
+    "The c92 rows are 6D no-integrator GRUs; the 33b0dcb const_band16 baseline is 8D and is reported only as baseline-context provenance.",
+    "The adversaries here were recomputed by a local 10-step projected-gradient ascent on the frozen nominal batch; they are not stored training adversaries.",
+    "Both PGD damage estimates are small frozen-batch diagnostics, not new training runs or launch recommendations.",
+    "The historical OFB radii are reported only as provenance for these older rows, not as recommended defaults."
+  ],
+  "velocity_rows": [
+    {
+      "artifact_dir": "_artifacts/c92ebd8/runs/open_loop_moderate",
+      "checkpoint_policy": "validation_selected_per_replicate",
+      "checkpoint_selection": [
+        {
+          "best_logged_validation_batch": 10500,
+          "best_logged_validation_objective": 4390.18210544184,
+          "checkpoint_batches": 10500,
+          "checkpoint_path": "_artifacts/c92ebd8/runs/open_loop_moderate/checkpoints/checkpoint_0010500",
+          "final_validation_objective": 4393.90383270809,
+          "final_vs_selected_validation_degradation": 3.7217272662501273,
+          "replicate": 0,
+          "scoring_validation_log_batch": 10500,
+          "scoring_validation_objective": 4390.18210544184,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11500,
+          "best_logged_validation_objective": 4391.139719762192,
+          "checkpoint_batches": 11500,
+          "checkpoint_path": "_artifacts/c92ebd8/runs/open_loop_moderate/checkpoints/checkpoint_0011500",
+          "final_validation_objective": 4392.430871915169,
+          "final_vs_selected_validation_degradation": 1.2911521529767924,
+          "replicate": 1,
+          "scoring_validation_log_batch": 11500,
+          "scoring_validation_objective": 4391.139719762192,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11201,
+          "best_logged_validation_objective": 4390.715532559387,
+          "checkpoint_batches": 12000,
+          "checkpoint_path": "_artifacts/c92ebd8/runs/open_loop_moderate/checkpoints/checkpoint_0012000",
+          "final_validation_objective": 4393.200777460399,
+          "final_vs_selected_validation_degradation": 0.0,
+          "replicate": 2,
+          "scoring_validation_log_batch": 12000,
+          "scoring_validation_objective": 4393.200777460399,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11701,
+          "best_logged_validation_objective": 4388.942257886316,
+          "checkpoint_batches": 12000,
+          "checkpoint_path": "_artifacts/c92ebd8/runs/open_loop_moderate/checkpoints/checkpoint_0012000",
+          "final_validation_objective": 4392.4256129441665,
+          "final_vs_selected_validation_degradation": 0.0,
+          "replicate": 3,
+          "scoring_validation_log_batch": 12000,
+          "scoring_validation_objective": 4392.4256129441665,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10000,
+          "best_logged_validation_objective": 4395.3109171272245,
+          "checkpoint_batches": 10000,
+          "checkpoint_path": "_artifacts/c92ebd8/runs/open_loop_moderate/checkpoints/checkpoint_0010000",
+          "final_validation_objective": 4395.546620301943,
+          "final_vs_selected_validation_degradation": 0.23570317471876479,
+          "replicate": 4,
+          "scoring_validation_log_batch": 10000,
+          "scoring_validation_objective": 4395.3109171272245,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "experiment": "c92ebd8",
+      "label": "c92 6D no-PGD moderate",
+      "mean_profile_source": "peak of pooled mean forward velocity profile",
+      "model_identity": {
+        "broad_epsilon_pgd_enabled": false,
+        "broad_epsilon_pgd_level": "moderate",
+        "broad_epsilon_pgd_mode": "disabled",
+        "hidden_size": 180,
+        "hidden_type": "equinox.nn._rnn.GRUCell",
+        "initial_hidden_encoder": true,
+        "loss_objective": "full_analytical_qrf",
+        "n_replicates": 5,
+        "no_integrator_state": true,
+        "physical_state_dim": 6,
+        "state_dim": 36,
+        "target_distance_m": 0.15
+      },
+      "n_replicates": 5,
+      "n_rollout_trials_per_replicate": 64,
+      "peak_forward_velocity_m_s": 0.7310860821977258,
+      "relative_to_6d_baseline": {
+        "delta_m_s": 0.0,
+        "percent_delta": 0.0,
+        "ratio": 1.0
+      },
+      "replicate_peak_mean_m_s": {
+        "max": 0.7319414736703038,
+        "mean": 0.7310860821977258,
+        "min": 0.7302634501829743,
+        "n": 5,
+        "std": 0.0006732706514230328
+      },
+      "role": "baseline_6d_no_pgd",
+      "run_id": "open_loop_moderate",
+      "run_spec_path": "results/c92ebd8/runs/open_loop_moderate.json",
+      "time_of_peak_forward_velocity_s": 0.16
+    },
+    {
+      "artifact_dir": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p05",
+      "checkpoint_policy": "validation_selected_per_replicate",
+      "checkpoint_selection": [
+        {
+          "best_logged_validation_batch": 10001,
+          "best_logged_validation_objective": 4512.852256202498,
+          "checkpoint_batches": 8500,
+          "checkpoint_path": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p05/checkpoints/checkpoint_0008500",
+          "final_validation_objective": 4541.787320814061,
+          "final_vs_selected_validation_degradation": 13.61784963631635,
+          "replicate": 0,
+          "scoring_validation_log_batch": 8500,
+          "scoring_validation_objective": 4528.1694711777445,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 2201,
+          "best_logged_validation_objective": 4488.846544753891,
+          "checkpoint_batches": 10000,
+          "checkpoint_path": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p05/checkpoints/checkpoint_0010000",
+          "final_validation_objective": 4531.360812780345,
+          "final_vs_selected_validation_degradation": 9.675192153925309,
+          "replicate": 1,
+          "scoring_validation_log_batch": 10000,
+          "scoring_validation_objective": 4521.68562062642,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 3901,
+          "best_logged_validation_objective": 4495.071511448039,
+          "checkpoint_batches": 5500,
+          "checkpoint_path": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p05/checkpoints/checkpoint_0005500",
+          "final_validation_objective": 4526.202129699189,
+          "final_vs_selected_validation_degradation": 9.83587747864658,
+          "replicate": 2,
+          "scoring_validation_log_batch": 5500,
+          "scoring_validation_objective": 4516.366252220542,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 2801,
+          "best_logged_validation_objective": 4499.087243661983,
+          "checkpoint_batches": 10000,
+          "checkpoint_path": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p05/checkpoints/checkpoint_0010000",
+          "final_validation_objective": 4531.990985609787,
+          "final_vs_selected_validation_degradation": 8.766851052508173,
+          "replicate": 3,
+          "scoring_validation_log_batch": 10000,
+          "scoring_validation_objective": 4523.224134557278,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 8201,
+          "best_logged_validation_objective": 4505.540657746658,
+          "checkpoint_batches": 8500,
+          "checkpoint_path": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p05/checkpoints/checkpoint_0008500",
+          "final_validation_objective": 4534.4889992012495,
+          "final_vs_selected_validation_degradation": 23.22514252635665,
+          "replicate": 4,
+          "scoring_validation_log_batch": 8500,
+          "scoring_validation_objective": 4511.263856674893,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "experiment": "c92ebd8",
+      "label": "c92 moderate PGD OFB gamma 1.05",
+      "mean_profile_source": "peak of pooled mean forward velocity profile",
+      "model_identity": {
+        "broad_epsilon_pgd_enabled": true,
+        "broad_epsilon_pgd_level": "strong",
+        "broad_epsilon_pgd_mode": "broad_full_state_epsilon_pgd_l2",
+        "hidden_size": 180,
+        "hidden_type": "equinox.nn._rnn.GRUCell",
+        "initial_hidden_encoder": true,
+        "loss_objective": "full_analytical_qrf",
+        "n_replicates": 5,
+        "no_integrator_state": true,
+        "physical_state_dim": 6,
+        "state_dim": 36,
+        "target_distance_m": 0.15
+      },
+      "n_replicates": 5,
+      "n_rollout_trials_per_replicate": 64,
+      "peak_forward_velocity_m_s": 0.7579009175300598,
+      "relative_to_6d_baseline": {
+        "delta_m_s": 0.026814835332334086,
+        "percent_delta": 3.667808208265396,
+        "ratio": 1.036678082082654
+      },
+      "replicate_peak_mean_m_s": {
+        "max": 0.7605070052668452,
+        "mean": 0.7579009175300598,
+        "min": 0.7551070982590318,
+        "n": 5,
+        "std": 0.00216948251669137
+      },
+      "role": "older_pgd_row",
+      "run_id": "moderate_pgd_ofb1p05",
+      "run_spec_path": "results/c92ebd8/runs/moderate_pgd_ofb1p05.json",
+      "time_of_peak_forward_velocity_s": 0.16
+    },
+    {
+      "artifact_dir": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p4",
+      "checkpoint_policy": "validation_selected_per_replicate",
+      "checkpoint_selection": [
+        {
+          "best_logged_validation_batch": 4701,
+          "best_logged_validation_objective": 4695.7944493703235,
+          "checkpoint_batches": 4000,
+          "checkpoint_path": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p4/checkpoints/checkpoint_0004000",
+          "final_validation_objective": 4748.993271099257,
+          "final_vs_selected_validation_degradation": 50.38484613174387,
+          "replicate": 0,
+          "scoring_validation_log_batch": 4000,
+          "scoring_validation_objective": 4698.608424967513,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 5601,
+          "best_logged_validation_objective": 4686.970776492235,
+          "checkpoint_batches": 3500,
+          "checkpoint_path": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p4/checkpoints/checkpoint_0003500",
+          "final_validation_objective": 4732.346655519682,
+          "final_vs_selected_validation_degradation": 35.61182931023632,
+          "replicate": 1,
+          "scoring_validation_log_batch": 3500,
+          "scoring_validation_objective": 4696.734826209446,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 4701,
+          "best_logged_validation_objective": 4686.893664522397,
+          "checkpoint_batches": 3500,
+          "checkpoint_path": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p4/checkpoints/checkpoint_0003500",
+          "final_validation_objective": 4730.583735083687,
+          "final_vs_selected_validation_degradation": 9.020211272554661,
+          "replicate": 2,
+          "scoring_validation_log_batch": 3500,
+          "scoring_validation_objective": 4721.563523811133,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 8701,
+          "best_logged_validation_objective": 4681.7826021800975,
+          "checkpoint_batches": 7500,
+          "checkpoint_path": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p4/checkpoints/checkpoint_0007500",
+          "final_validation_objective": 4733.297614014284,
+          "final_vs_selected_validation_degradation": 27.31810850507827,
+          "replicate": 3,
+          "scoring_validation_log_batch": 7500,
+          "scoring_validation_objective": 4705.979505509205,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 3501,
+          "best_logged_validation_objective": 4670.347461475584,
+          "checkpoint_batches": 5000,
+          "checkpoint_path": "_artifacts/c92ebd8/runs/moderate_pgd_ofb1p4/checkpoints/checkpoint_0005000",
+          "final_validation_objective": 4750.501719543622,
+          "final_vs_selected_validation_degradation": 52.305339398815704,
+          "replicate": 4,
+          "scoring_validation_log_batch": 5000,
+          "scoring_validation_objective": 4698.196380144806,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "experiment": "c92ebd8",
+      "label": "c92 moderate PGD OFB gamma 1.4",
+      "mean_profile_source": "peak of pooled mean forward velocity profile",
+      "model_identity": {
+        "broad_epsilon_pgd_enabled": true,
+        "broad_epsilon_pgd_level": "moderate",
+        "broad_epsilon_pgd_mode": "broad_full_state_epsilon_pgd_l2",
+        "hidden_size": 180,
+        "hidden_type": "equinox.nn._rnn.GRUCell",
+        "initial_hidden_encoder": true,
+        "loss_objective": "full_analytical_qrf",
+        "n_replicates": 5,
+        "no_integrator_state": true,
+        "physical_state_dim": 6,
+        "state_dim": 36,
+        "target_distance_m": 0.15
+      },
+      "n_replicates": 5,
+      "n_rollout_trials_per_replicate": 64,
+      "peak_forward_velocity_m_s": 0.7653437372297048,
+      "relative_to_6d_baseline": {
+        "delta_m_s": 0.034257655031979084,
+        "percent_delta": 4.685857912791443,
+        "ratio": 1.0468585791279144
+      },
+      "replicate_peak_mean_m_s": {
+        "max": 0.7745332019403577,
+        "mean": 0.7653437372297048,
+        "min": 0.7587927207350731,
+        "n": 5,
+        "std": 0.005207695876563078
+      },
+      "role": "older_pgd_row",
+      "run_id": "moderate_pgd_ofb1p4",
+      "run_spec_path": "results/c92ebd8/runs/moderate_pgd_ofb1p4.json",
+      "time_of_peak_forward_velocity_s": 0.16
+    },
+    {
+      "artifact_dir": "_artifacts/33b0dcb/runs/h0_no_pgd_targetsupport__const_band16_lr3e-3_clip5_b64",
+      "checkpoint_policy": "validation_selected_per_replicate",
+      "checkpoint_selection": [
+        {
+          "best_logged_validation_batch": 6201,
+          "best_logged_validation_objective": 4444.277580777984,
+          "checkpoint_batches": 7500,
+          "checkpoint_path": "_artifacts/33b0dcb/runs/h0_no_pgd_targetsupport__const_band16_lr3e-3_clip5_b64/checkpoints/checkpoint_0007500",
+          "final_validation_objective": 4458.722523496944,
+          "final_vs_selected_validation_degradation": 10.505411624090812,
+          "replicate": 0,
+          "scoring_validation_log_batch": 7500,
+          "scoring_validation_objective": 4448.217111872853,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 9001,
+          "best_logged_validation_objective": 4451.613654434585,
+          "checkpoint_batches": 6000,
+          "checkpoint_path": "_artifacts/33b0dcb/runs/h0_no_pgd_targetsupport__const_band16_lr3e-3_clip5_b64/checkpoints/checkpoint_0006000",
+          "final_validation_objective": 4463.530645892384,
+          "final_vs_selected_validation_degradation": 7.570676785326214,
+          "replicate": 1,
+          "scoring_validation_log_batch": 6000,
+          "scoring_validation_objective": 4455.959969107058,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 9801,
+          "best_logged_validation_objective": 4450.561014982226,
+          "checkpoint_batches": 11000,
+          "checkpoint_path": "_artifacts/33b0dcb/runs/h0_no_pgd_targetsupport__const_band16_lr3e-3_clip5_b64/checkpoints/checkpoint_0011000",
+          "final_validation_objective": 4463.5100899033005,
+          "final_vs_selected_validation_degradation": 0.0,
+          "replicate": 2,
+          "scoring_validation_log_batch": 11000,
+          "scoring_validation_objective": 4463.5100899033005,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10701,
+          "best_logged_validation_objective": 4449.200515991944,
+          "checkpoint_batches": 10500,
+          "checkpoint_path": "_artifacts/33b0dcb/runs/h0_no_pgd_targetsupport__const_band16_lr3e-3_clip5_b64/checkpoints/checkpoint_0010500",
+          "final_validation_objective": 4457.977624619323,
+          "final_vs_selected_validation_degradation": 2.7047948550871297,
+          "replicate": 3,
+          "scoring_validation_log_batch": 10500,
+          "scoring_validation_objective": 4455.272829764236,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 8201,
+          "best_logged_validation_objective": 4451.041768097024,
+          "checkpoint_batches": 9500,
+          "checkpoint_path": "_artifacts/33b0dcb/runs/h0_no_pgd_targetsupport__const_band16_lr3e-3_clip5_b64/checkpoints/checkpoint_0009500",
+          "final_validation_objective": 4468.854146179542,
+          "final_vs_selected_validation_degradation": 15.183158615299362,
+          "replicate": 4,
+          "scoring_validation_log_batch": 9500,
+          "scoring_validation_objective": 4453.670987564243,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "experiment": "33b0dcb",
+      "label": "33b0dcb H0 const_band16 no-PGD",
+      "mean_profile_source": "peak of pooled mean forward velocity profile",
+      "model_identity": {
+        "broad_epsilon_pgd_enabled": false,
+        "broad_epsilon_pgd_level": "moderate",
+        "broad_epsilon_pgd_mode": "disabled",
+        "hidden_size": 180,
+        "hidden_type": "equinox.nn._rnn.GRUCell",
+        "initial_hidden_encoder": true,
+        "loss_objective": "full_analytical_qrf",
+        "n_replicates": 5,
+        "no_integrator_state": false,
+        "physical_state_dim": 8,
+        "state_dim": 48,
+        "target_distance_m": 0.15
+      },
+      "n_replicates": 5,
+      "n_rollout_trials_per_replicate": 64,
+      "peak_forward_velocity_m_s": 0.7298272039741278,
+      "relative_to_6d_baseline": {
+        "delta_m_s": -0.0012588782235979368,
+        "percent_delta": -0.1721928859339805,
+        "ratio": 0.9982780711406603
+      },
+      "replicate_peak_mean_m_s": {
+        "max": 0.7334636300802231,
+        "mean": 0.7298272039741278,
+        "min": 0.7240505954250693,
+        "n": 5,
+        "std": 0.0032490764081889996
+      },
+      "role": "baseline_8d_context",
+      "run_id": "h0_no_pgd_targetsupport__const_band16_lr3e-3_clip5_b64",
+      "run_spec_path": "results/33b0dcb/runs/h0_no_pgd_targetsupport__const_band16_lr3e-3_clip5_b64.json",
+      "time_of_peak_forward_velocity_s": 0.16
+    }
+  ]
+}

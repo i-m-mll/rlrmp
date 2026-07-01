@@ -1,0 +1,226 @@
+{
+  "contract": {
+    "adversary_application": "Matched optimal fixed policy F_t from robust_estimator_fixed_adversary_policy; applied each step as epsilon_t = F_t @ concat([x_t, xhat_t]) through plant.Bw. The clean condition uses the same controller/estimator with epsilon_t=0.",
+    "controller_gain_shape": [
+      60,
+      2,
+      36
+    ],
+    "cost_contract": "C&S Eq. 15 no-integrator 6D schedule: Q shape (60, 36, 36), R shape (60, 2, 2), Qf shape (36, 36).",
+    "dt_s": 0.01,
+    "estimator_covariance_shape": [
+      61,
+      36,
+      36
+    ],
+    "gamma": 12833.563799663352,
+    "gamma_factor": 1.4,
+    "gamma_star": 9166.831285473823,
+    "horizon_steps": 60,
+    "plant_shapes": {
+      "A": [
+        36,
+        36
+      ],
+      "B": [
+        36,
+        2
+      ],
+      "Bw": [
+        36,
+        6
+      ],
+      "observation_matrix": [
+        6,
+        36
+      ]
+    },
+    "policy_shape": [
+      60,
+      6,
+      72
+    ],
+    "state_basis": "36D delay-augmented state = 6 delayed physical blocks of [x, y, vx, vy, force_x, force_y]; no disturbance-integrator coordinates; observation is the oldest delayed 6D physical block.",
+    "target_convention": "goal-centered C&S state with INIT_POS=[0,0], TARGET_POS=[0.15,0]; x0 repeats [-0.15, 0, 0, 0, 0, 0] across all six delay blocks."
+  },
+  "rollouts": {
+    "deterministic_noise_off": {
+      "adversarial": {
+        "control_effort_sum_u2": 1828.6854866971082,
+        "cost": {
+          "control_stage": 1828.6854866971082,
+          "disturbance_energy": 2.0657128682206633e-05,
+          "h_infinity_objective": 4744.217417081744,
+          "state_stage": 5940.359146316014,
+          "terminal_state": 377.4093104635676,
+          "total_without_disturbance_penalty": 8146.453943476689
+        },
+        "disturbance_l2": 0.004545011406169036,
+        "peak_forward_velocity_idx": 16,
+        "peak_forward_velocity_m_s": 0.7649707394607226,
+        "terminal_position_error_m": 0.022046166173230325
+      },
+      "clean": {
+        "control_effort_sum_u2": 1874.5159405164163,
+        "cost": {
+          "control_stage": 1874.5159405164163,
+          "disturbance_energy": 0.0,
+          "h_infinity_objective": 4441.490674655703,
+          "state_stage": 2566.5528145819935,
+          "terminal_state": 0.421919557293546,
+          "total_without_disturbance_penalty": 4441.490674655703
+        },
+        "disturbance_l2": 0.0,
+        "peak_forward_velocity_idx": 16,
+        "peak_forward_velocity_m_s": 0.7607690419629585,
+        "terminal_position_error_m": 0.000729680612190281
+      },
+      "epsilon_shape": [
+        60,
+        6
+      ],
+      "max_abs_epsilon": 0.0008746262371401402,
+      "mode": "deterministic_noise_off",
+      "noise_available": false,
+      "noise_paired": "not_applicable",
+      "paired_damage": 3704.9632688209867,
+      "paired_h_infinity_objective_delta": 302.7267424260417
+    },
+    "nominal_noise_paired": {
+      "adversarial": {
+        "control_effort_sum_u2": 2044.970367466287,
+        "cost": {
+          "control_stage": 2044.970367466287,
+          "disturbance_energy": 3.426663489691894e-05,
+          "h_infinity_objective": 5243.400254083019,
+          "state_stage": 8208.085320845701,
+          "terminal_state": 634.0716624298333,
+          "total_without_disturbance_penalty": 10887.127350741821
+        },
+        "disturbance_l2": 0.005853770997990863,
+        "peak_forward_velocity_idx": 16,
+        "peak_forward_velocity_m_s": 0.7655534653792524,
+        "terminal_position_error_m": 0.02849311037901242
+      },
+      "clean": {
+        "control_effort_sum_u2": 2090.997534940425,
+        "cost": {
+          "control_stage": 2090.9975349404244,
+          "disturbance_energy": 0.0,
+          "h_infinity_objective": 4755.436674245373,
+          "state_stage": 2661.702352452141,
+          "terminal_state": 2.7367868528069423,
+          "total_without_disturbance_penalty": 4755.436674245373
+        },
+        "disturbance_l2": 0.0,
+        "peak_forward_velocity_idx": 16,
+        "peak_forward_velocity_m_s": 0.7613945215539062,
+        "terminal_position_error_m": 0.0015868051092507362
+      },
+      "epsilon_shape": [
+        60,
+        6
+      ],
+      "max_abs_epsilon": 0.0011217449962287573,
+      "mode": "nominal_noise_paired",
+      "noise_available": true,
+      "noise_covariance_contract": {
+        "motor_shape": [
+          36,
+          36
+        ],
+        "process_shape": [
+          36,
+          36
+        ],
+        "sensory_shape": [
+          6,
+          6
+        ],
+        "signal_dependent_state_shape": [
+          36,
+          2,
+          2
+        ]
+      },
+      "noise_energy": {
+        "adversarial_signal_dependent_state": 0.010310914526442831,
+        "clean_signal_dependent_state": 0.010682939285050664,
+        "motor_state": 2.507854116201502e-10,
+        "process_state": 0.0023752657230909314,
+        "sensory": 0.00787789982626495,
+        "signal_dependent_standard": 93.71583061030836
+      },
+      "noise_paired": true,
+      "noise_seed": 376023,
+      "paired_damage": 6131.690676496448,
+      "paired_h_infinity_objective_delta": 487.96357983764574
+    }
+  },
+  "schema_version": "rlrmp.local_analytical_damage.v1",
+  "source": {
+    "controller_reference": "6D output-feedback H-infinity analytical teacher",
+    "materializer": "results/376d023/scripts/materialize_6d_analytical_velocity_profiles.py",
+    "teacher_manifest": "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers_manifest.json",
+    "teacher_package": "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers.npz"
+  },
+  "teacher_package_verification": {
+    "checks": {
+      "gamma_star": {
+        "allclose": true,
+        "max_abs_error": 0.0
+      },
+      "hinf_P": {
+        "allclose": true,
+        "max_abs_error": 0.0
+      },
+      "hinf_controller_gains": {
+        "allclose": true,
+        "max_abs_error": 0.0
+      },
+      "hinf_estimator_covariances": {
+        "allclose": true,
+        "max_abs_error": 0.0
+      },
+      "hinf_gamma": {
+        "allclose": true,
+        "max_abs_error": 0.0
+      },
+      "observation_matrix": {
+        "allclose": true,
+        "max_abs_error": 0.0
+      },
+      "plant_A": {
+        "allclose": true,
+        "max_abs_error": 0.0
+      },
+      "plant_B": {
+        "allclose": true,
+        "max_abs_error": 0.0
+      },
+      "plant_Bw": {
+        "allclose": true,
+        "max_abs_error": 0.0
+      },
+      "schedule_Q": {
+        "allclose": true,
+        "max_abs_error": 0.0
+      },
+      "schedule_Q_f": {
+        "allclose": true,
+        "max_abs_error": 0.0
+      },
+      "schedule_R": {
+        "allclose": true,
+        "max_abs_error": 0.0
+      },
+      "x0": {
+        "allclose": true,
+        "max_abs_error": 0.0
+      }
+    },
+    "manifest": "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers_manifest.json",
+    "path": "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers.npz",
+    "status": "checked"
+  }
+}
