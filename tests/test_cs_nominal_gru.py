@@ -979,7 +979,12 @@ def test_adaptive_epsilon_damage_eval_batch_is_nominal_when_training_batch_is_pe
         @staticmethod
         def _trial(marker: float, *, contaminated: bool) -> TaskTrialSpec:
             intervene = (
-                {"perturbation_bank": TreeNamespace(marker=jnp.asarray(marker, dtype=jnp.float32))}
+                {
+                    "perturbation_bank": TreeNamespace(
+                        active=jnp.asarray(True),
+                        marker=jnp.asarray(marker, dtype=jnp.float32),
+                    )
+                }
                 if contaminated
                 else {}
             )
@@ -1040,7 +1045,8 @@ def test_adaptive_epsilon_damage_eval_batch_is_nominal_when_training_batch_is_pe
     np.testing.assert_allclose(training_specs.inputs["perturbation_marker"], 1.0)
     assert "perturbation_bank" in training_specs.intervene
     np.testing.assert_allclose(eval_specs.inputs["perturbation_marker"], 0.0)
-    assert eval_specs.intervene == {}
+    assert "perturbation_bank" in eval_specs.intervene
+    np.testing.assert_allclose(eval_specs.intervene["perturbation_bank"].active, False)
     np.testing.assert_allclose(
         eval_specs.inputs["perturbation_marker"],
         eval_specs_again.inputs["perturbation_marker"],

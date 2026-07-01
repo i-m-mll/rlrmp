@@ -115,6 +115,8 @@ from rlrmp.train.cs_perturbation_training import (
     make_broad_epsilon_pgd_pre_step,
     make_policy_adversary,
     make_policy_adversary_pre_step,
+    _batch_shape,
+    add_zero_graph_channel_inputs,
     planned_33b0dcb_target_support_rows,
     planned_020a65b_h0_pgd_rows,
     planned_7c1f7ed_delayed_sisu_spectrum_rows,
@@ -4528,6 +4530,7 @@ def _run_adaptive_epsilon_training_chunk(
             0,
             None,
             None,
+            None,
         ),
         out_axes=(
             eqx.if_array(0),
@@ -4569,6 +4572,7 @@ def _run_adaptive_epsilon_training_chunk(
             batch_size=batch_size,
         )
     )(eval_keys)
+    eval_trial_specs_arr_spec = jt.map(_ensemble_in_axis, eval_trial_specs)
     damage_eval_step = eqx.filter_vmap(
         _adaptive_epsilon_damage_eval_step,
         in_axes=(
@@ -4577,7 +4581,8 @@ def _run_adaptive_epsilon_training_chunk(
             flat_model_arr_spec,
             None,
             None,
-            0,
+            None,
+            eval_trial_specs_arr_spec,
             0,
             0,
             None,
@@ -4621,6 +4626,7 @@ def _run_adaptive_epsilon_training_chunk(
             key_train,
             jnp.asarray(adaptive_state.lambda_value, dtype=jnp.float32),
             jnp.asarray(outer_weight, dtype=jnp.float32),
+            bool(getattr(hps.model, "force_filter_feedback", False)),
         )
         eval_diagnostics = damage_eval_step(
             task,
@@ -4628,6 +4634,7 @@ def _run_adaptive_epsilon_training_chunk(
             flat_model,
             treedef_model,
             hps.broad_epsilon_pgd_training,
+            bool(getattr(hps.model, "force_filter_feedback", False)),
             eval_trial_specs,
             eval_keys_init,
             eval_keys_model,
@@ -4745,6 +4752,7 @@ def _adaptive_epsilon_train_step(
     key: Any,
     energy_lambda: Any,
     outer_weight: Any,
+    force_filter_feedback: bool,
 ) -> tuple[Any, Any, Any, Any, Any, dict[str, jnp.ndarray]]:
     key_trials, key_init, key_model = jr.split(key, 3)
     keys_trials = jr.split(key_trials, batch_info.size)
@@ -4756,6 +4764,11 @@ def _adaptive_epsilon_train_step(
         keys_trials=keys_trials,
     )
     model = jtu.tree_unflatten(treedef_model, flat_model)
+    trial_specs = add_zero_graph_channel_inputs(
+        trial_specs,
+        force_filter_feedback=force_filter_feedback,
+    )
+    trial_specs = _with_default_intervention_inputs(model, trial_specs)
     adv_specs, inner_diagnostics = run_broad_epsilon_pgd_inner_maximizer(
         task,
         model,
@@ -4846,11 +4859,45 @@ def _sample_adaptive_epsilon_damage_eval_batch(
     keys_trials = jr.split(key_trials, batch_size)
     trial_specs = eqx.filter_vmap(
         partial(
-            task.get_train_trial,
+            _sample_nominal_trial_with_inactive_interventions,
+            task,
             batch_info=batch_info,
         )
     )(keys_trials)
     return trial_specs, jr.split(key_init, batch_size), jr.split(key_model, batch_size)
+
+
+def _sample_nominal_trial_with_inactive_interventions(
+    task: Any,
+    key: Any,
+    *,
+    batch_info: BatchInfo,
+) -> "TaskTrialSpec":
+    trial_spec = task.get_train_trial(key, batch_info=batch_info)
+    intervention_trial_spec = task.get_train_trial_with_intervenor_params(
+        key,
+        batch_info=batch_info,
+    )
+    if not intervention_trial_spec.intervene:
+        return trial_spec
+    return replace(
+        trial_spec,
+        intervene=_inactive_interventions(intervention_trial_spec.intervene),
+    )
+
+
+def _inactive_interventions(intervene: Any) -> Any:
+    def inactive_params(params: Any) -> Any:
+        if not hasattr(params, "active"):
+            return params
+        active = getattr(params, "active")
+        if isinstance(active, TimeSeriesParam):
+            inactive = TimeSeriesParam(jnp.zeros_like(jnp.asarray(active.value), dtype=bool))
+        else:
+            inactive = jnp.zeros_like(jnp.asarray(active), dtype=bool)
+        return eqx.tree_at(lambda item: item.active, params, inactive)
+
+    return {label: inactive_params(params) for label, params in intervene.items()}
 
 
 @eqx.filter_jit
@@ -4860,6 +4907,7 @@ def _adaptive_epsilon_damage_eval_step(
     flat_model: Any,
     treedef_model: Any,
     pgd_config: Any,
+    force_filter_feedback: bool,
     trial_specs: "TaskTrialSpec",
     keys_init: Any,
     keys_model: Any,
@@ -4868,6 +4916,11 @@ def _adaptive_epsilon_damage_eval_step(
     """Measure paired clean/adversarial damage on the fixed nominal update batch."""
 
     model = jtu.tree_unflatten(treedef_model, flat_model)
+    trial_specs = add_zero_graph_channel_inputs(
+        trial_specs,
+        force_filter_feedback=force_filter_feedback,
+    )
+    trial_specs = _with_default_intervention_inputs(model, trial_specs)
     adv_specs, inner_diagnostics = run_broad_epsilon_pgd_inner_maximizer(
         task,
         model,
@@ -4910,6 +4963,35 @@ def _adaptive_epsilon_damage_eval_step(
         {f"adaptive_update_inner_{name}": value for name, value in inner_diagnostics.items()}
     )
     return diagnostics
+
+
+def _with_default_intervention_inputs(model: Any, trial_specs: "TaskTrialSpec") -> "TaskTrialSpec":
+    if not hasattr(model, "intervention_state_indices"):
+        return trial_specs
+    intervention_indices = model.intervention_state_indices()
+    if not intervention_indices:
+        return trial_specs
+
+    inputs = dict(trial_specs.inputs)
+    batch_shape = _batch_shape(trial_specs)
+    n_steps = int(trial_specs.timeline.n_steps)
+    init_state = init_state_from_component(model)
+    changed = False
+    for label, idx in intervention_indices.items():
+        input_key = f"intervene:{label}"
+        if input_key in inputs:
+            continue
+        params = init_state.get(idx)
+
+        def broadcast_leaf(leaf: Any) -> jnp.ndarray:
+            arr = jnp.asarray(leaf)
+            return jnp.broadcast_to(arr, (*batch_shape, n_steps, *arr.shape))
+
+        inputs[input_key] = jt.map(broadcast_leaf, params)
+        changed = True
+    if not changed:
+        return trial_specs
+    return replace(trial_specs, inputs=inputs)
 
 
 def _weighted_loss_tree(clean_losses: Any, adv_losses: Any, outer_weight: Any) -> Any:
