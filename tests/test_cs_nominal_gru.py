@@ -50,6 +50,7 @@ from rlrmp.loss import (
     get_reach_loss,
 )
 from rlrmp.paths import REPO_ROOT, run_artifact_dir, run_spec_dir
+import rlrmp.train.cs_perturbation_training as cs_perturbation_training
 from rlrmp.train.cs_nominal_gru import (
     CS_DELAYED_REACH_TASK_TYPE,
     DEFAULT_DELAYED_P_CATCH_TRIAL,
@@ -61,9 +62,13 @@ from rlrmp.train.cs_nominal_gru import (
     build_parser,
     derive_spec_dir,
     derive_spec_path,
+    _adaptive_epsilon_damage_target,
+    _adaptive_epsilon_outer_weight,
     main,
     _emit_checkpoint_progress,
+    _initial_adaptive_epsilon_state,
     _prepend_existing_training_diagnostics,
+    _update_adaptive_epsilon_state,
     planned_246182c_post_movement_cost_tail_rows,
     planned_e901a20_policy_adversary_rows,
     planned_ef9c882_start_pos_hold_rows,
@@ -571,12 +576,140 @@ def test_pgd_explicit_radius_and_safety_cap_require_provenance() -> None:
             safety_cap_l2_radius_15cm=1.0,
         )
 
-    with pytest.raises(ValueError, match="requires an explicit safety-cap radius"):
+    cfg = PgdFullStateEpsilonTrainingConfig(
+        enabled=True,
+        objective_kind=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+        energy_lambda=1.0,
+    )
+    payload = cfg.to_hps_dict()
+
+    assert cfg.adversary_mechanism == BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM
+    assert cfg.safety_cap_l2_radius_15cm is None
+    assert payload["inner_maximizer"]["projection"] == "none_cap_free_direct_soft_energy"
+    assert payload["inner_maximizer"]["step_size_reference"] == (
+        "absolute_normalized_gradient_step"
+    )
+    assert payload["safety_cap"]["enabled"] is False
+    assert payload["safety_cap"]["role"] == "cap_free_soft_energy_no_trust_region"
+    assert payload["budget_contract"]["effective_l2_radius_15cm"] is None
+    assert payload["budget_contract"]["active_max_l2_radius_15cm"] is None
+    assert payload["budget_contract"]["radius_bound_mode"] is False
+    assert payload["budget_contract"]["budget_source"] is None
+    assert payload["budget_contract"]["scientific_constraint"] == "soft_energy_penalty_cap_free"
+
+    parsed = config_from_broad_epsilon_pgd_hps(payload)
+    assert parsed.objective_kind == BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE
+    assert parsed.soft_energy_lambda == pytest.approx(1.0)
+    assert parsed.safety_cap_l2_radius_15cm is None
+
+    with pytest.raises(ValueError, match="Finite-policy PGD soft-energy objectives require"):
         PgdFullStateEpsilonTrainingConfig(
             enabled=True,
+            adversary_mechanism=LINEAR_NO_BIAS_POLICY,
             objective_kind=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
             energy_lambda=1.0,
         )
+
+
+def test_adaptive_epsilon_curriculum_hps_contract() -> None:
+    hps = build_hps(
+        _args(
+            broad_epsilon_pgd_training=True,
+            broad_epsilon_pgd_objective=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+            broad_epsilon_pgd_energy_lambda=2.5,
+            adaptive_epsilon_curriculum=True,
+            target_relative_multitarget=True,
+        )
+    )
+
+    cfg = hps.adaptive_epsilon_curriculum
+    assert cfg.enabled is True
+    assert cfg.damage_schedule.peak == pytest.approx(3500.0)
+    assert cfg.damage_schedule.final == pytest.approx(1000.0)
+    assert cfg.damage_schedule.ramp_batches == 2500
+    assert cfg.damage_schedule.anneal_batches == 5000
+    assert cfg.lambda_update.interval_batches == 50
+    assert cfg.lambda_update.eta == pytest.approx(0.1)
+    assert cfg.lambda_update.deadband_frac == pytest.approx(0.10)
+    assert cfg.outer_adversarial_weight.ramp_batches == 2500
+    assert cfg.outer_adversarial_weight.applies_to == "optimized_direct_epsilon_loss_only"
+    adaptive_state = _initial_adaptive_epsilon_state(hps)
+    assert adaptive_state is not None
+    assert adaptive_state.lambda_value == pytest.approx(2.5)
+
+
+def test_adaptive_epsilon_curriculum_requires_soft_direct_pgd() -> None:
+    with pytest.raises(ValueError, match="requires --broad-epsilon-pgd-training"):
+        build_hps(_args(adaptive_epsilon_curriculum=True))
+
+    with pytest.raises(ValueError, match="applies only to direct_epsilon"):
+        build_hps(
+            _args(
+                broad_epsilon_pgd_training=True,
+                broad_epsilon_pgd_mechanism=LINEAR_NO_BIAS_POLICY,
+                broad_epsilon_pgd_objective=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+                broad_epsilon_pgd_energy_lambda=1.0,
+                broad_epsilon_pgd_safety_cap_15cm=1.0,
+                broad_epsilon_pgd_safety_cap_source="unit_test_cap",
+                adaptive_epsilon_curriculum=True,
+                target_relative_multitarget=True,
+            )
+        )
+
+    with pytest.raises(ValueError, match="requires --broad-epsilon-pgd-objective soft_energy"):
+        build_hps(
+            _args(
+                broad_epsilon_pgd_training=True,
+                adaptive_epsilon_curriculum=True,
+                target_relative_multitarget=True,
+            )
+        )
+
+
+def test_adaptive_epsilon_schedules_and_lambda_update_are_conservative() -> None:
+    hps = build_hps(
+        _args(
+            broad_epsilon_pgd_training=True,
+            broad_epsilon_pgd_objective=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+            broad_epsilon_pgd_energy_lambda=10.0,
+            adaptive_epsilon_curriculum=True,
+            target_relative_multitarget=True,
+        )
+    )
+    cfg = hps.adaptive_epsilon_curriculum
+
+    assert _adaptive_epsilon_damage_target(cfg, 0) == pytest.approx(0.0)
+    assert _adaptive_epsilon_damage_target(cfg, 1250) == pytest.approx(1750.0)
+    assert _adaptive_epsilon_damage_target(cfg, 2500) == pytest.approx(3500.0)
+    assert _adaptive_epsilon_damage_target(cfg, 7500) == pytest.approx(1000.0)
+    assert _adaptive_epsilon_outer_weight(cfg, 0) == pytest.approx(0.0)
+    assert _adaptive_epsilon_outer_weight(cfg, 1250) == pytest.approx(0.5)
+    assert _adaptive_epsilon_outer_weight(cfg, 2500) == pytest.approx(1.0)
+
+    state = _initial_adaptive_epsilon_state(hps)
+    assert state is not None
+    state, diagnostics = _update_adaptive_epsilon_state(
+        state,
+        cfg,
+        batch_index=48,
+        target_damage=1000.0,
+        measured_damage=1200.0,
+    )
+    assert diagnostics["update_due"] == np.asarray(False)
+    assert diagnostics["lambda_updated"] == np.asarray(False)
+    assert state.lambda_value == pytest.approx(10.0)
+
+    state, diagnostics = _update_adaptive_epsilon_state(
+        state,
+        cfg,
+        batch_index=49,
+        target_damage=1000.0,
+        measured_damage=1200.0,
+    )
+    assert diagnostics["update_due"] == np.asarray(True)
+    assert diagnostics["lambda_updated"] == np.asarray(True)
+    assert state.lambda_value > 10.0
+    assert state.update_count == 1
 
 
 def test_pgd_inner_optimizer_metadata_and_parser_round_trip() -> None:
@@ -5570,6 +5703,203 @@ def test_pgd_soft_energy_objective_penalizes_epsilon_energy() -> None:
     assert soft_diagnostics["selected_vs_final_objective_gap"] == pytest.approx(9.0)
     assert soft_diagnostics["cap_boundary_fraction"] == pytest.approx(0.0)
     assert bool(soft_diagnostics["inner_objective_nonfinite_seen"]) is False
+
+
+def test_pgd_cap_free_soft_energy_direct_epsilon_does_not_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class EchoTask:
+        def eval_trials(self, model, trial_specs, keys_model):
+            del model, keys_model
+            return trial_specs.inputs["epsilon"]
+
+    class LinearLoss:
+        def __call__(self, states, trial_specs, model):
+            del trial_specs, model
+            return TreeNamespace(total=jnp.sum(states))
+
+    def fail_projection(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("cap-free direct-epsilon soft-energy must not project")
+
+    monkeypatch.setattr(
+        cs_perturbation_training,
+        "_project_flattened_per_trial_l2_ball",
+        fail_projection,
+    )
+
+    trial_specs = TaskTrialSpec(
+        inits=WhereDict({}),
+        targets=WhereDict(
+            {
+                "mechanics.effector.pos": TargetSpec(
+                    value=jnp.zeros((1, 1, 1), dtype=jnp.float32),
+                )
+            }
+        ),
+        inputs={"epsilon": jnp.zeros((1, 1, 1), dtype=jnp.float32)},
+        timeline=TrialTimeline(n_steps=1),
+    )
+
+    updated, diagnostics = run_broad_epsilon_pgd_inner_maximizer(
+        EchoTask(),
+        model=None,
+        trial_specs=trial_specs,
+        loss_func=LinearLoss(),
+        keys_model=None,
+        config={
+            "enabled": True,
+            "reach_length_scaling": False,
+            "objective": {
+                "kind": BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+                "lambda": 0.1,
+            },
+            "n_steps": 1,
+            "step_size_fraction": 1.0,
+            "epsilon_dim": 1,
+        },
+        return_diagnostics=True,
+    )
+
+    assert updated.inputs["epsilon"][0, 0, 0] == pytest.approx(1.0)
+    assert bool(diagnostics["cap_free_soft_energy"]) is True
+    assert bool(diagnostics["projection_active"]) is False
+    assert bool(diagnostics["radius_bound_mode"]) is False
+    assert bool(diagnostics["safety_cap_enabled"]) is False
+    assert bool(diagnostics["step_size_uses_radius"]) is False
+    assert bool(diagnostics["energy_lambda_override_active"]) is False
+    assert np.isnan(diagnostics["radius_mean"])
+    assert np.isnan(diagnostics["epsilon_norm_radius_ratio_mean"])
+    assert diagnostics["cap_boundary_fraction"] == pytest.approx(0.0)
+    assert diagnostics["energy_lambda"] == pytest.approx(0.1)
+
+
+def test_pgd_cap_free_soft_energy_lambda_override_is_jittable() -> None:
+    class EchoTask:
+        def eval_trials(self, model, trial_specs, keys_model):
+            del model, keys_model
+            return trial_specs.inputs["epsilon"]
+
+    class LinearLoss:
+        def __call__(self, states, trial_specs, model):
+            del trial_specs, model
+            return TreeNamespace(total=jnp.sum(states))
+
+    trial_specs = TaskTrialSpec(
+        inits=WhereDict({}),
+        targets=WhereDict(
+            {
+                "mechanics.effector.pos": TargetSpec(
+                    value=jnp.zeros((1, 1, 1), dtype=jnp.float32),
+                )
+            }
+        ),
+        inputs={"epsilon": jnp.zeros((1, 1, 1), dtype=jnp.float32)},
+        timeline=TrialTimeline(n_steps=1),
+    )
+    config = {
+        "enabled": True,
+        "reach_length_scaling": False,
+        "objective": {
+            "kind": BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+            "lambda": 10.0,
+        },
+        "n_steps": 1,
+        "step_size_fraction": 1.0,
+        "epsilon_dim": 1,
+    }
+
+    def run_with_override(lambda_value):
+        updated, diagnostics = run_broad_epsilon_pgd_inner_maximizer(
+            EchoTask(),
+            model=None,
+            trial_specs=trial_specs,
+            loss_func=LinearLoss(),
+            keys_model=None,
+            config=config,
+            soft_energy_lambda_override=lambda_value,
+            return_diagnostics=True,
+        )
+        return (
+            updated.inputs["epsilon"][0, 0, 0],
+            diagnostics["energy_lambda"],
+            diagnostics["energy_penalty_term_final_endpoint"],
+            diagnostics["energy_lambda_override_active"],
+        )
+
+    jitted_run = jax.jit(run_with_override)
+
+    low_epsilon, low_lambda, low_final_penalty, low_override = jitted_run(
+        jnp.asarray(0.1, dtype=jnp.float32)
+    )
+    high_epsilon, high_lambda, high_final_penalty, high_override = jitted_run(
+        jnp.asarray(10.0, dtype=jnp.float32)
+    )
+
+    assert low_epsilon == pytest.approx(1.0)
+    assert low_lambda == pytest.approx(0.1)
+    assert low_final_penalty == pytest.approx(0.1)
+    assert bool(low_override) is True
+    assert high_epsilon == pytest.approx(0.0)
+    assert high_lambda == pytest.approx(10.0)
+    assert high_final_penalty == pytest.approx(10.0)
+    assert bool(high_override) is True
+
+
+def test_pgd_soft_energy_lambda_override_rejects_non_direct_soft_modes() -> None:
+    trial_specs = TaskTrialSpec(
+        inits=WhereDict({"mechanics.vector": jnp.zeros((1, 4), dtype=jnp.float32)}),
+        targets=WhereDict(
+            {
+                "mechanics.effector.pos": TargetSpec(
+                    value=jnp.zeros((1, 1, 1), dtype=jnp.float32),
+                )
+            }
+        ),
+        inputs={"epsilon": jnp.zeros((1, 1, 1), dtype=jnp.float32)},
+        timeline=TrialTimeline(n_steps=1),
+    )
+
+    with pytest.raises(ValueError, match="only valid for soft-energy PGD"):
+        run_broad_epsilon_pgd_inner_maximizer(
+            task=None,
+            model=None,
+            trial_specs=trial_specs,
+            loss_func=None,
+            keys_model=None,
+            config={
+                "enabled": True,
+                "reach_length_scaling": False,
+                "fixed_l2_radius_15cm": 1.0,
+                "fixed_radius_source": "unit_test_fixed_radius",
+                "epsilon_dim": 1,
+            },
+            soft_energy_lambda_override=jnp.asarray(1.0, dtype=jnp.float32),
+        )
+
+    with pytest.raises(ValueError, match="only supported for the direct_epsilon"):
+        run_broad_epsilon_pgd_inner_maximizer(
+            task=None,
+            model=None,
+            trial_specs=trial_specs,
+            loss_func=None,
+            keys_model=None,
+            config={
+                "enabled": True,
+                "adversary_mechanism": LINEAR_NO_BIAS_POLICY,
+                "reach_length_scaling": False,
+                "objective": {
+                    "kind": BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+                    "lambda": 1.0,
+                },
+                "safety_cap": {
+                    "l2_radius_15cm": 1.0,
+                    "source": {"key": "unit_test_cap"},
+                },
+                "epsilon_dim": 1,
+            },
+            soft_energy_lambda_override=jnp.asarray(1.0, dtype=jnp.float32),
+        )
 
 
 def test_pgd_soft_energy_objective_is_batch_size_invariant() -> None:
