@@ -478,9 +478,13 @@ class PgdFullStateEpsilonTrainingConfig:
                 raise ValueError(
                     "PGD soft-energy objective requires energy_lambda or gamma metadata."
                 )
-            if self.safety_cap_l2_radius_15cm is None:
+            if (
+                self.safety_cap_l2_radius_15cm is None
+                and self.adversary_mechanism != BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM
+            ):
                 raise ValueError(
-                    "PGD soft-energy objective requires an explicit safety-cap radius."
+                    "Finite-policy PGD soft-energy objectives require an explicit "
+                    "safety-cap radius."
                 )
 
     @property
@@ -566,6 +570,11 @@ class PgdFullStateEpsilonTrainingConfig:
                 "method": self.inner_optimizer_method,
                 "n_steps": int(self.n_steps),
                 "step_size_fraction_of_l2_radius": float(self.step_size_fraction),
+                "step_size_reference": (
+                    "absolute_normalized_gradient_step"
+                    if _pgd_cap_free_direct_soft_energy(self)
+                    else "fraction_of_active_l2_radius"
+                ),
                 "learning_rate": float(self.adam_learning_rate),
                 "adam": {
                     "learning_rate": float(self.adam_learning_rate),
@@ -574,11 +583,7 @@ class PgdFullStateEpsilonTrainingConfig:
                     "eps": float(self.adam_eps),
                 },
                 "initialization": self.init,
-                "projection": (
-                    "per_trial_flattened_movement_time_component_l2_ball"
-                    if self.movement_epoch_only
-                    else "per_trial_flattened_time_component_l2_ball"
-                ),
+                "projection": _pgd_inner_projection_contract(self),
                 "time_mask": _epsilon_time_mask_contract(self.movement_epoch_only),
                 "differentiated_through_outer_update": False,
             },
@@ -587,23 +592,24 @@ class PgdFullStateEpsilonTrainingConfig:
             "budget_contract": {
                 **contract,
                 "reference_reach_m": BROAD_EPSILON_REFERENCE_REACH_M,
-                "effective_l2_radius_15cm": self.reference_l2_radius,
-                "active_max_l2_radius_15cm": (
-                    self.sisu_max_l2_radius
-                    if self.budget_schedule == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE
-                    else self.reference_l2_radius
+                "effective_l2_radius_15cm": (
+                    None if _pgd_cap_free_direct_soft_energy(self) else self.reference_l2_radius
                 ),
+                "active_max_l2_radius_15cm": _pgd_active_max_l2_radius_15cm(self),
+                "radius_bound_mode": _pgd_uses_projection_radius(self),
                 "reach_length_scaling_note": (
                     "Reach scaling is an explicit multi-target normalization choice; "
                     "the original analytical game card reports the 15 cm budget."
                 ),
                 "budget_source": (
-                    _pgd_sisu_max_radius_source(self)
-                    if self.budget_schedule == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE
-                    else _pgd_fixed_radius_source(self)
+                    None if _pgd_cap_free_direct_soft_energy(self) else _pgd_budget_source(self)
                 ),
                 "scientific_constraint": (
-                    "soft_energy_penalty"
+                    (
+                        "soft_energy_penalty_cap_free"
+                        if _pgd_cap_free_direct_soft_energy(self)
+                        else "soft_energy_penalty"
+                    )
                     if self.objective_kind == BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE
                     else "hard_l2_projection"
                 ),
@@ -971,6 +977,16 @@ def pgd_safety_cap_contract(
             "enabled": False,
             "role": "not_used_for_hard_l2_objective",
         }
+    if config.safety_cap_l2_radius_15cm is None:
+        return {
+            "enabled": False,
+            "role": "cap_free_soft_energy_no_trust_region",
+            "hard_budget_scientific_constraint": False,
+            "activation_diagnostics": {
+                "epsilon_norm_cap_ratio": False,
+                "cap_boundary_fraction": False,
+            },
+        }
     return {
         "enabled": True,
         "role": "numerical_stabilization_trust_region_only",
@@ -1008,6 +1024,40 @@ def _sisu_level_probabilities(
         float(exact_zero_mass) if np.isclose(level, 0.0) else float(nonzero_probability)
         for level in levels
     )
+
+
+def _pgd_cap_free_direct_soft_energy(config: PgdFullStateEpsilonTrainingConfig) -> bool:
+    return (
+        config.adversary_mechanism == BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM
+        and config.objective_kind == BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE
+        and config.safety_cap_l2_radius_15cm is None
+    )
+
+
+def _pgd_uses_projection_radius(config: PgdFullStateEpsilonTrainingConfig) -> bool:
+    return not _pgd_cap_free_direct_soft_energy(config)
+
+
+def _pgd_inner_projection_contract(config: PgdFullStateEpsilonTrainingConfig) -> str:
+    if _pgd_cap_free_direct_soft_energy(config):
+        return "none_cap_free_direct_soft_energy"
+    if config.movement_epoch_only:
+        return "per_trial_flattened_movement_time_component_l2_ball"
+    return "per_trial_flattened_time_component_l2_ball"
+
+
+def _pgd_active_max_l2_radius_15cm(config: PgdFullStateEpsilonTrainingConfig) -> float | None:
+    if _pgd_cap_free_direct_soft_energy(config):
+        return None
+    if config.budget_schedule == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE:
+        return config.sisu_max_l2_radius
+    return config.reference_l2_radius
+
+
+def _pgd_budget_source(config: PgdFullStateEpsilonTrainingConfig) -> dict[str, Any]:
+    if config.budget_schedule == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE:
+        return _pgd_sisu_max_radius_source(config)
+    return _pgd_fixed_radius_source(config)
 
 
 def _pgd_sisu_max_radius_source(
@@ -2907,11 +2957,25 @@ def run_broad_epsilon_pgd_inner_maximizer(
     keys_model: Any,
     config: Any,
     *,
+    soft_energy_lambda_override: Any | None = None,
     return_diagnostics: bool = False,
 ) -> tuple[TaskTrialSpec, dict[str, jnp.ndarray]]:
     """Run the PGD inner maximizer and optionally return compact scalar diagnostics."""
 
     cfg = config_from_broad_epsilon_pgd_hps(config)
+    if (
+        soft_energy_lambda_override is not None
+        and cfg.objective_kind != BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE
+    ):
+        raise ValueError("soft_energy_lambda_override is only valid for soft-energy PGD.")
+    if (
+        soft_energy_lambda_override is not None
+        and cfg.adversary_mechanism != BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM
+    ):
+        raise ValueError(
+            "soft_energy_lambda_override is only supported for the direct_epsilon "
+            "PGD mechanism."
+        )
     if cfg.adversary_mechanism in BROAD_EPSILON_PGD_FINITE_POLICY_MECHANISMS:
         return _run_finite_broad_epsilon_pgd_inner_maximizer(
             task,
@@ -2924,9 +2988,22 @@ def run_broad_epsilon_pgd_inner_maximizer(
         )
     specs = _ensure_broad_epsilon_input(trial_specs, epsilon_dim=cfg.epsilon_dim)
     base_epsilon = jnp.asarray(specs.inputs["epsilon"])
-    radius = _broad_epsilon_pgd_trust_radius(specs, cfg).astype(base_epsilon.dtype)
+    radius = (
+        None
+        if _pgd_cap_free_direct_soft_energy(cfg)
+        else _broad_epsilon_pgd_trust_radius(specs, cfg).astype(base_epsilon.dtype)
+    )
     time_mask = _epsilon_time_mask(specs, base_epsilon, cfg.movement_epoch_only)
     delta = jnp.zeros_like(base_epsilon)
+    soft_energy_lambda = (
+        0.0
+        if cfg.objective_kind != BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE
+        else (
+            soft_energy_lambda_override
+            if soft_energy_lambda_override is not None
+            else cfg.soft_energy_lambda
+        )
+    )
 
     def objective_components(delta_candidate):
         masked_delta = delta_candidate * time_mask
@@ -2938,7 +3015,7 @@ def run_broad_epsilon_pgd_inner_maximizer(
         if cfg.objective_kind != BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE:
             penalty = jnp.asarray(0.0, dtype=task_loss.dtype)
         else:
-            penalty = jnp.asarray(cfg.soft_energy_lambda, dtype=task_loss.dtype) * energy_mean
+            penalty = jnp.asarray(soft_energy_lambda, dtype=task_loss.dtype) * energy_mean
         return task_loss, energy_per_trial, penalty, task_loss - penalty
 
     def objective(delta_candidate):
@@ -2950,17 +3027,20 @@ def run_broad_epsilon_pgd_inner_maximizer(
     zero_delta = jnp.zeros_like(base_epsilon)
     objective_initial, grad_initial = objective_and_grad(zero_delta)
     grad_initial = grad_initial * time_mask
-    step_radius = _expand_radius(
-        radius * jnp.asarray(cfg.step_size_fraction, dtype=base_epsilon.dtype),
-        base_epsilon.ndim,
-    )
+    if radius is None:
+        step_scale = jnp.asarray(cfg.step_size_fraction, dtype=base_epsilon.dtype)
+    else:
+        step_scale = _expand_radius(
+            radius * jnp.asarray(cfg.step_size_fraction, dtype=base_epsilon.dtype),
+            base_epsilon.ndim,
+        )
 
     def proposal_from_gradient(delta_current, grad_current):
-        step = _normalize_flattened_per_trial(grad_current) * step_radius
-        return _project_flattened_per_trial_l2_ball(
-            (delta_current + step) * time_mask,
-            radius,
-        )
+        step = _normalize_flattened_per_trial(grad_current) * step_scale
+        proposal = (delta_current + step) * time_mask
+        if radius is None:
+            return proposal
+        return _project_flattened_per_trial_l2_ball(proposal, radius)
 
     def select_best(best_delta, best_objective, candidate_delta, candidate_objective):
         improved = jnp.logical_and(
@@ -3088,10 +3168,9 @@ def run_broad_epsilon_pgd_inner_maximizer(
             ) = state
             ascent_grad = -grad_current
             updates, opt_state = optimizer.update(ascent_grad, opt_state, delta_current)
-            proposal = _project_flattened_per_trial_l2_ball(
-                eqx.apply_updates(delta_current, updates) * time_mask,
-                radius,
-            )
+            proposal = eqx.apply_updates(delta_current, updates) * time_mask
+            if radius is not None:
+                proposal = _project_flattened_per_trial_l2_ball(proposal, radius)
             proposal_objective, proposal_grad = objective_and_grad(proposal)
             proposal_grad = proposal_grad * time_mask
             objective_nan_seen = jnp.logical_or(objective_nan_seen, jnp.isnan(proposal_objective))
@@ -3173,10 +3252,23 @@ def run_broad_epsilon_pgd_inner_maximizer(
         return updated, {}
 
     objective_selected = objective_best
-    delta_norm = _flattened_per_trial_norm(delta).astype(radius.dtype)
+    diagnostic_dtype = base_epsilon.dtype if radius is None else radius.dtype
+    delta_norm = _flattened_per_trial_norm(delta).astype(diagnostic_dtype)
     delta_energy = _epsilon_energy_per_trial(delta)
-    ratio = delta_norm / jnp.maximum(radius, jnp.asarray(1e-12, dtype=radius.dtype))
-    boundary = ratio >= jnp.asarray(1.0 - 1e-4, dtype=ratio.dtype)
+    if radius is None:
+        radius_mean = jnp.asarray(jnp.nan, dtype=diagnostic_dtype)
+        radius_max = jnp.asarray(jnp.nan, dtype=diagnostic_dtype)
+        ratio_mean = jnp.asarray(jnp.nan, dtype=diagnostic_dtype)
+        ratio_max = jnp.asarray(jnp.nan, dtype=diagnostic_dtype)
+        boundary_fraction = jnp.asarray(0.0, dtype=diagnostic_dtype)
+    else:
+        ratio = delta_norm / jnp.maximum(radius, jnp.asarray(1e-12, dtype=radius.dtype))
+        boundary = ratio >= jnp.asarray(1.0 - 1e-4, dtype=ratio.dtype)
+        radius_mean = jnp.mean(radius)
+        radius_max = jnp.max(radius)
+        ratio_mean = jnp.mean(ratio)
+        ratio_max = jnp.max(ratio)
+        boundary_fraction = jnp.mean(boundary.astype(radius.dtype))
     zero_task_loss, zero_energy, zero_penalty, zero_objective = objective_components(zero_delta)
     selected_task_loss, selected_energy, selected_penalty, selected_objective = (
         objective_components(delta)
@@ -3186,15 +3278,16 @@ def run_broad_epsilon_pgd_inner_maximizer(
     )
     del zero_energy, selected_energy, final_energy
     objective_nonfinite_seen = jnp.logical_or(objective_nan_seen, objective_overflow_seen)
+    projection_active = radius is not None
     diagnostics = {
-        "radius_mean": jnp.mean(radius),
-        "radius_max": jnp.max(radius),
+        "radius_mean": radius_mean,
+        "radius_max": radius_max,
         "epsilon_norm_mean": jnp.mean(delta_norm),
         "epsilon_norm_max": jnp.max(delta_norm),
         "epsilon_energy_mean": jnp.mean(delta_energy),
         "epsilon_energy_max": jnp.max(delta_energy),
-        "epsilon_norm_radius_ratio_mean": jnp.mean(ratio),
-        "epsilon_norm_radius_ratio_max": jnp.max(ratio),
+        "epsilon_norm_radius_ratio_mean": ratio_mean,
+        "epsilon_norm_radius_ratio_max": ratio_max,
         "inner_objective_before": jnp.asarray(objective_initial),
         "inner_objective_after": jnp.asarray(objective_selected),
         "inner_objective_improvement": jnp.asarray(objective_selected - objective_initial),
@@ -3214,9 +3307,9 @@ def run_broad_epsilon_pgd_inner_maximizer(
         "penalized_objective_final_endpoint": jnp.asarray(final_objective),
         "selected_objective_gain_over_zero": jnp.asarray(objective_selected - zero_objective),
         "selected_vs_final_objective_gap": jnp.asarray(objective_best - objective_final_endpoint),
-        "boundary_fraction": jnp.mean(boundary.astype(radius.dtype)),
-        "cap_boundary_fraction": jnp.mean(boundary.astype(radius.dtype)),
-        "safety_cap_boundary_fraction": jnp.mean(boundary.astype(radius.dtype)),
+        "boundary_fraction": boundary_fraction,
+        "cap_boundary_fraction": boundary_fraction,
+        "safety_cap_boundary_fraction": boundary_fraction,
         "inner_objective_nan_seen": objective_nan_seen,
         "inner_objective_overflow_seen": objective_overflow_seen,
         "inner_objective_nonfinite_seen": objective_nonfinite_seen,
@@ -3225,6 +3318,7 @@ def run_broad_epsilon_pgd_inner_maximizer(
             cfg.step_size_fraction,
             dtype=jnp.float32,
         ),
+        "step_size_uses_radius": jnp.asarray(projection_active),
         "inner_optimizer_method_is_adam": jnp.asarray(
             cfg.inner_optimizer_method == BROAD_EPSILON_PGD_ADAM
         ),
@@ -3232,10 +3326,12 @@ def run_broad_epsilon_pgd_inner_maximizer(
         "objective_kind_is_soft_energy": jnp.asarray(
             cfg.objective_kind == BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE
         ),
-        "energy_lambda": jnp.asarray(
-            cfg.soft_energy_lambda or 0.0,
-            dtype=jnp.float32,
-        ),
+        "energy_lambda": jnp.asarray(soft_energy_lambda, dtype=jnp.float32),
+        "energy_lambda_override_active": jnp.asarray(soft_energy_lambda_override is not None),
+        "projection_active": jnp.asarray(projection_active),
+        "radius_bound_mode": jnp.asarray(projection_active),
+        "cap_free_soft_energy": jnp.asarray(_pgd_cap_free_direct_soft_energy(cfg)),
+        "safety_cap_enabled": jnp.asarray(cfg.safety_cap_l2_radius_15cm is not None),
     }
     return updated, diagnostics
 

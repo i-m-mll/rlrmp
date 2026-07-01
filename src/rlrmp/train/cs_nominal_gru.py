@@ -13,7 +13,7 @@ import math
 import os
 import subprocess
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable, NamedTuple
@@ -28,9 +28,20 @@ import numpy as np
 import optax
 from jax_cookbook import save as fbx_save
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
+from feedbax.intervene.schedule import TimeSeriesParam
 from feedbax.runtime.batch import BatchInfo
+from feedbax.runtime.graph import init_state_from_component
+from feedbax.runtime.iteration import run_component
+from feedbax.runtime.parameter_constraints import project_component_parameters
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule
 from feedbax.training.trainer import get_model_parameters, init_task_trainer_history
+from feedbax.tasks import (
+    extract_timeseries_params,
+    infer_n_steps,
+    prepare_inputs,
+    set_state_by_path,
+    where_key_to_path,
+)
 from jax_cookbook.tree import array_set as tree_set
 from jax_cookbook.tree import filter_spec_leaves
 
@@ -97,6 +108,7 @@ from rlrmp.train.cs_perturbation_training import (
     FixedTargetPerturbationTrainingConfig,
     PgdFullStateEpsilonTrainingConfig,
     PolicyFullStateEpsilonTrainingConfig,
+    config_from_broad_epsilon_pgd_hps,
     config_from_policy_adversary_hps,
     make_broad_epsilon_pgd_pre_step,
     make_policy_adversary,
@@ -154,6 +166,24 @@ VolumeCommit = Callable[[], None]
 
 
 @dataclass(frozen=True)
+class AdaptiveEpsilonState:
+    """Host-side adaptive-lambda state for soft-energy direct-epsilon training."""
+
+    lambda_value: float
+    damage_ema: float | None = None
+    last_update_batch: int | None = None
+    update_count: int = 0
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "lambda_value": float(self.lambda_value),
+            "damage_ema": None if self.damage_ema is None else float(self.damage_ema),
+            "last_update_batch": self.last_update_batch,
+            "update_count": int(self.update_count),
+        }
+
+
+@dataclass(frozen=True)
 class TrainingState:
     """Serializable state needed to resume the chunked C&S GRU training loop."""
 
@@ -164,6 +194,7 @@ class TrainingState:
     history: Any | None
     adversary_policy: Any | None = None
     adversary_optimizer_state: Any | None = None
+    adaptive_epsilon_state: AdaptiveEpsilonState | None = None
 
 
 class GradientDiagnosticsState(NamedTuple):
@@ -963,6 +994,23 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         safety_cap_l2_radius_15cm=args.broad_epsilon_pgd_safety_cap_15cm,
         safety_cap_source=args.broad_epsilon_pgd_safety_cap_source,
     )
+    adaptive_epsilon_curriculum = _adaptive_epsilon_curriculum_config_from_args(args)
+    if adaptive_epsilon_curriculum["enabled"]:
+        if not broad_epsilon_pgd_training.enabled:
+            raise ValueError(
+                "--adaptive-epsilon-curriculum requires --broad-epsilon-pgd-training."
+            )
+        if (
+            broad_epsilon_pgd_training.adversary_mechanism
+            != BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM
+        ):
+            raise ValueError(
+                "--adaptive-epsilon-curriculum currently applies only to direct_epsilon."
+            )
+        if broad_epsilon_pgd_training.objective_kind != BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE:
+            raise ValueError(
+                "--adaptive-epsilon-curriculum requires --broad-epsilon-pgd-objective soft_energy."
+            )
     policy_adversary_training = PolicyFullStateEpsilonTrainingConfig(
         enabled=bool(args.policy_adversary_training),
         policy_class=str(args.policy_adversary_policy_class),
@@ -1141,6 +1189,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         "perturbation_training": perturbation_training.to_hps_dict(),
         "broad_epsilon_training": broad_epsilon_training.to_hps_dict(),
         "broad_epsilon_pgd_training": broad_epsilon_pgd_training.to_hps_dict(),
+        "adaptive_epsilon_curriculum": adaptive_epsilon_curriculum,
         "policy_adversary_training": policy_adversary_training.to_hps_dict(),
         "target_relative_multitarget": target_relative_multitarget.to_hps_dict(),
         "loss": {
@@ -2134,7 +2183,12 @@ def run_full_training(
     key_init, key_train, key_adversary = jr.split(jr.PRNGKey(int(args.seed)), 3)
     pair = setup_task_model_pair(hps, key=key_init)
     trainer = _build_trainer(hps)
-    pre_step_fn = make_broad_epsilon_pgd_pre_step(hps.broad_epsilon_pgd_training)
+    adaptive_epsilon_enabled = _adaptive_epsilon_curriculum_enabled(hps)
+    pre_step_fn = (
+        None
+        if adaptive_epsilon_enabled
+        else make_broad_epsilon_pgd_pre_step(hps.broad_epsilon_pgd_training)
+    )
     policy_adversary_enabled = _policy_adversary_training_enabled(hps)
     policy_adversary_optimizer = None
     adversary_policy_template = None
@@ -2157,6 +2211,11 @@ def run_full_training(
         where_train=where_train[0],
         key=key_train,
     )
+    if adaptive_epsilon_enabled:
+        template_state = replace(
+            template_state,
+            adaptive_epsilon_state=_initial_adaptive_epsilon_state(hps),
+        )
     checkpoint_root = output_dir / "checkpoints"
     state = (
         load_latest_checkpoint(
@@ -2172,28 +2231,21 @@ def run_full_training(
     )
     if policy_adversary_enabled:
         if state.adversary_policy is None:
-            state = TrainingState(
-                model=state.model,
-                optimizer_state=state.optimizer_state,
-                completed_batches=state.completed_batches,
-                key=state.key,
-                history=state.history,
+            state = replace(
+                state,
                 adversary_policy=adversary_policy_template,
-                adversary_optimizer_state=adversary_optimizer_state_template,
             )
         if state.adversary_optimizer_state is None:
-            state = TrainingState(
-                model=state.model,
-                optimizer_state=state.optimizer_state,
-                completed_batches=state.completed_batches,
-                key=state.key,
-                history=state.history,
-                adversary_policy=state.adversary_policy,
+            state = replace(
+                state,
                 adversary_optimizer_state=adversary_optimizer_state_template,
             )
+    if adaptive_epsilon_enabled and state.adaptive_epsilon_state is None:
+        state = replace(state, adaptive_epsilon_state=_initial_adaptive_epsilon_state(hps))
 
     chunks: list[dict[str, float | int | str]] = []
     pgd_diagnostic_chunks: list[dict[str, np.ndarray]] = []
+    adaptive_epsilon_diagnostic_chunks: list[dict[str, np.ndarray]] = []
     policy_adversary_diagnostic_chunks: list[dict[str, np.ndarray]] = []
     training_started = time.perf_counter()
     while state.completed_batches < int(args.n_train_batches):
@@ -2210,6 +2262,7 @@ def run_full_training(
         chunk_started = time.perf_counter()
         pgd_diagnostics: dict[str, np.ndarray] = {}
         policy_adversary_diagnostics = None
+        adaptive_epsilon_diagnostics = None
         if policy_adversary_enabled:
             if policy_adversary_optimizer is None:
                 raise ValueError("Policy adversary optimizer was not initialized.")
@@ -2235,6 +2288,29 @@ def run_full_training(
                 chunk_batches=chunk_batches,
                 log_progress=not bool(args.disable_progress),
             )
+        elif adaptive_epsilon_enabled:
+            (
+                model,
+                history_chunk,
+                optimizer_state,
+                adaptive_epsilon_state,
+                adaptive_epsilon_diagnostics,
+            ) = _run_adaptive_epsilon_training_chunk(
+                trainer=trainer,
+                task=pair.task,
+                model=state.model,
+                optimizer_state=state.optimizer_state,
+                adaptive_state=state.adaptive_epsilon_state,
+                hps=hps,
+                where_train=where_train[0],
+                key=key_chunk,
+                start_batch=state.completed_batches,
+                chunk_batches=chunk_batches,
+                log_progress=not bool(args.disable_progress),
+            )
+            adversary_policy = state.adversary_policy
+            adversary_optimizer_state = state.adversary_optimizer_state
+            state = replace(state, adaptive_epsilon_state=adaptive_epsilon_state)
         else:
             adversary_policy = state.adversary_policy
             adversary_optimizer_state = state.adversary_optimizer_state
@@ -2271,6 +2347,8 @@ def run_full_training(
             )
             if pgd_diagnostics:
                 pgd_diagnostic_chunks.append(pgd_diagnostics)
+            if adaptive_epsilon_diagnostics:
+                adaptive_epsilon_diagnostic_chunks.append(adaptive_epsilon_diagnostics)
             if policy_adversary_diagnostics:
                 policy_adversary_diagnostic_chunks.append(
                     _policy_adversary_diagnostics_arrays(
@@ -2291,7 +2369,8 @@ def run_full_training(
         history_chunk_path = output_dir / "history_chunks" / f"history_{completed:07d}.eqx"
         history_chunk_path.parent.mkdir(parents=True, exist_ok=True)
         _save_pytree(history_chunk_path, history_chunk)
-        state = TrainingState(
+        state = replace(
+            state,
             model=model,
             optimizer_state=optimizer_state,
             completed_batches=completed,
@@ -2338,6 +2417,7 @@ def run_full_training(
         training_history_path=final_history_path,
         pgd_diagnostic_chunks=pgd_diagnostic_chunks,
         policy_adversary_diagnostic_chunks=policy_adversary_diagnostic_chunks,
+        adaptive_epsilon_diagnostic_chunks=adaptive_epsilon_diagnostic_chunks,
     )
     final_summary = {
         "schema_version": f"{SCHEMA_VERSION}.training.v1",
@@ -2420,6 +2500,8 @@ def save_training_checkpoint(
         "stochastic_preset": str(args.stochastic_preset),
         "run_spec": run_spec,
     }
+    if state.adaptive_epsilon_state is not None:
+        metadata["adaptive_epsilon_state"] = state.adaptive_epsilon_state.to_json()
     _atomic_write_json(tmp / "metadata.json", metadata)
     if target.exists():
         _remove_tree(target)
@@ -2480,6 +2562,21 @@ def load_latest_checkpoint(
         )
         else None
     )
+    adaptive_payload = metadata.get("adaptive_epsilon_state")
+    adaptive_epsilon_state = (
+        AdaptiveEpsilonState(
+            lambda_value=float(adaptive_payload["lambda_value"]),
+            damage_ema=(
+                None
+                if adaptive_payload.get("damage_ema") is None
+                else float(adaptive_payload["damage_ema"])
+            ),
+            last_update_batch=adaptive_payload.get("last_update_batch"),
+            update_count=int(adaptive_payload.get("update_count", 0)),
+        )
+        if isinstance(adaptive_payload, dict)
+        else None
+    )
     return TrainingState(
         model=model,
         optimizer_state=optimizer_state,
@@ -2488,6 +2585,7 @@ def load_latest_checkpoint(
         history=history,
         adversary_policy=adversary_policy,
         adversary_optimizer_state=adversary_optimizer_state,
+        adaptive_epsilon_state=adaptive_epsilon_state,
     )
 
 
@@ -2999,6 +3097,30 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--adaptive-epsilon-curriculum",
+        action="store_true",
+        help=(
+            "Enable adaptive-lambda soft-energy direct-epsilon training with a paired "
+            "clean/adversarial controller loss. Requires --broad-epsilon-pgd-training "
+            "and --broad-epsilon-pgd-objective soft_energy."
+        ),
+    )
+    parser.add_argument("--adaptive-epsilon-damage-start", type=float, default=0.0)
+    parser.add_argument("--adaptive-epsilon-damage-peak", type=float, default=3500.0)
+    parser.add_argument("--adaptive-epsilon-damage-final", type=float, default=1000.0)
+    parser.add_argument("--adaptive-epsilon-damage-ramp-batches", type=int, default=2500)
+    parser.add_argument("--adaptive-epsilon-damage-anneal-batches", type=int, default=5000)
+    parser.add_argument("--adaptive-epsilon-update-interval-batches", type=int, default=50)
+    parser.add_argument("--adaptive-epsilon-ema-alpha", type=float, default=0.1)
+    parser.add_argument("--adaptive-epsilon-eta", type=float, default=0.1)
+    parser.add_argument("--adaptive-epsilon-deadband-frac", type=float, default=0.10)
+    parser.add_argument("--adaptive-epsilon-lambda-min", type=float, default=1e-12)
+    parser.add_argument("--adaptive-epsilon-lambda-max", type=float, default=None)
+    parser.add_argument("--adaptive-epsilon-max-log-step", type=float, default=0.25)
+    parser.add_argument("--adaptive-epsilon-outer-weight-start", type=float, default=0.0)
+    parser.add_argument("--adaptive-epsilon-outer-weight-final", type=float, default=1.0)
+    parser.add_argument("--adaptive-epsilon-outer-weight-ramp-batches", type=int, default=2500)
+    parser.add_argument(
         "--policy-adversary-training",
         action="store_true",
         help=(
@@ -3447,6 +3569,7 @@ def _checkpoint_metadata(args: argparse.Namespace, output_dir: Path) -> dict[str
             "history.eqx",
             "adversary_policy.eqx when --policy-adversary-training is active",
             "adversary_optimizer_state.eqx when --policy-adversary-training is active",
+            "adaptive_epsilon_state in metadata.json when adaptive epsilon curriculum is active",
             "metadata.json",
         ],
     }
@@ -3533,6 +3656,115 @@ def _broad_epsilon_training_enabled(hps: TreeNamespace) -> bool:
 
 def _broad_epsilon_pgd_training_enabled(hps: TreeNamespace) -> bool:
     return bool(getattr(getattr(hps, "broad_epsilon_pgd_training", None), "enabled", False))
+
+
+def _adaptive_epsilon_curriculum_config_from_args(args: argparse.Namespace) -> dict[str, Any]:
+    enabled = bool(getattr(args, "adaptive_epsilon_curriculum", False))
+    cfg = {
+        "enabled": enabled,
+        "damage_schedule": {
+            "kind": "linear_ramp_then_cosine_anneal",
+            "start": float(args.adaptive_epsilon_damage_start),
+            "peak": float(args.adaptive_epsilon_damage_peak),
+            "final": float(args.adaptive_epsilon_damage_final),
+            "ramp_batches": int(args.adaptive_epsilon_damage_ramp_batches),
+            "anneal_batches": int(args.adaptive_epsilon_damage_anneal_batches),
+        },
+        "lambda_update": {
+            "interval_batches": int(args.adaptive_epsilon_update_interval_batches),
+            "ema_alpha": float(args.adaptive_epsilon_ema_alpha),
+            "eta": float(args.adaptive_epsilon_eta),
+            "deadband_frac": float(args.adaptive_epsilon_deadband_frac),
+            "lambda_min": float(args.adaptive_epsilon_lambda_min),
+            "lambda_max": (
+                None
+                if args.adaptive_epsilon_lambda_max is None
+                else float(args.adaptive_epsilon_lambda_max)
+            ),
+            "max_log_step": float(args.adaptive_epsilon_max_log_step),
+        },
+        "outer_adversarial_weight": {
+            "kind": "linear_ramp_then_hold",
+            "start": float(args.adaptive_epsilon_outer_weight_start),
+            "final": float(args.adaptive_epsilon_outer_weight_final),
+            "ramp_batches": int(args.adaptive_epsilon_outer_weight_ramp_batches),
+            "applies_to": "optimized_direct_epsilon_loss_only",
+            "perturbation_bank_policy": "orthogonal_unweighted_by_outer_adversarial_weight",
+        },
+    }
+    if not enabled:
+        return cfg
+    damage = cfg["damage_schedule"]
+    if damage["ramp_batches"] < 0 or damage["anneal_batches"] < 0:
+        raise ValueError("Adaptive epsilon damage schedule batch counts must be nonnegative.")
+    if damage["start"] < 0.0 or damage["peak"] < 0.0 or damage["final"] < 0.0:
+        raise ValueError("Adaptive epsilon damage targets must be nonnegative.")
+    if cfg["lambda_update"]["interval_batches"] < 1:
+        raise ValueError("Adaptive epsilon update interval must be positive.")
+    if not 0.0 < cfg["lambda_update"]["ema_alpha"] <= 1.0:
+        raise ValueError("Adaptive epsilon EMA alpha must be in (0, 1].")
+    if cfg["lambda_update"]["eta"] <= 0.0:
+        raise ValueError("Adaptive epsilon eta must be positive.")
+    if cfg["lambda_update"]["deadband_frac"] < 0.0:
+        raise ValueError("Adaptive epsilon deadband fraction must be nonnegative.")
+    if cfg["lambda_update"]["lambda_min"] <= 0.0:
+        raise ValueError("Adaptive epsilon lambda_min must be positive.")
+    if (
+        cfg["lambda_update"]["lambda_max"] is not None
+        and cfg["lambda_update"]["lambda_max"] <= cfg["lambda_update"]["lambda_min"]
+    ):
+        raise ValueError("Adaptive epsilon lambda_max must be greater than lambda_min.")
+    if cfg["lambda_update"]["max_log_step"] <= 0.0:
+        raise ValueError("Adaptive epsilon max_log_step must be positive.")
+    outer = cfg["outer_adversarial_weight"]
+    if outer["ramp_batches"] < 0:
+        raise ValueError("Adaptive epsilon outer-weight ramp batches must be nonnegative.")
+    if not 0.0 <= outer["start"] <= 1.0 or not 0.0 <= outer["final"] <= 1.0:
+        raise ValueError("Adaptive epsilon outer adversarial weights must lie in [0, 1].")
+    return cfg
+
+
+def _adaptive_epsilon_curriculum_enabled(hps: TreeNamespace) -> bool:
+    return bool(getattr(getattr(hps, "adaptive_epsilon_curriculum", None), "enabled", False))
+
+
+def _adaptive_epsilon_damage_target(config: Any, batch_index: int) -> float:
+    schedule = getattr(config, "damage_schedule")
+    start = float(schedule.start)
+    peak = float(schedule.peak)
+    final = float(schedule.final)
+    ramp_batches = int(schedule.ramp_batches)
+    anneal_batches = int(schedule.anneal_batches)
+    batch = max(0, int(batch_index))
+    if ramp_batches > 0 and batch < ramp_batches:
+        frac = batch / float(ramp_batches)
+        return start + frac * (peak - start)
+    if anneal_batches > 0 and batch < ramp_batches + anneal_batches:
+        frac = (batch - ramp_batches) / float(anneal_batches)
+        cosine = 0.5 * (1.0 + math.cos(math.pi * frac))
+        return final + cosine * (peak - final)
+    return final
+
+
+def _adaptive_epsilon_outer_weight(config: Any, batch_index: int) -> float:
+    schedule = getattr(config, "outer_adversarial_weight")
+    start = float(schedule.start)
+    final = float(schedule.final)
+    ramp_batches = int(schedule.ramp_batches)
+    batch = max(0, int(batch_index))
+    if ramp_batches < 1:
+        return final
+    frac = min(1.0, batch / float(ramp_batches))
+    return start + frac * (final - start)
+
+
+def _initial_adaptive_epsilon_state(hps: TreeNamespace) -> AdaptiveEpsilonState | None:
+    if not _adaptive_epsilon_curriculum_enabled(hps):
+        return None
+    cfg = config_from_broad_epsilon_pgd_hps(hps.broad_epsilon_pgd_training)
+    if cfg.soft_energy_lambda is None:
+        raise ValueError("Adaptive epsilon curriculum requires a resolved positive energy lambda.")
+    return AdaptiveEpsilonState(lambda_value=float(cfg.soft_energy_lambda))
 
 
 def _policy_adversary_training_enabled(hps: TreeNamespace) -> bool:
@@ -3815,6 +4047,7 @@ def _training_diagnostics_metadata(
             "validation_loss_terms",
             "pgd_broad_epsilon_inner_maximizer",
             "policy_adversary_inner_optimizer",
+            "adaptive_epsilon_curriculum",
         ],
     }
 
@@ -3847,6 +4080,7 @@ def write_training_diagnostics_sidecar(
     history_diagnostic_chunks: list[dict[str, np.ndarray]] | None = None,
     pgd_diagnostic_chunks: list[dict[str, np.ndarray]] | None = None,
     policy_adversary_diagnostic_chunks: list[dict[str, np.ndarray]] | None = None,
+    adaptive_epsilon_diagnostic_chunks: list[dict[str, np.ndarray]] | None = None,
 ) -> dict[str, Any]:
     """Write compact training-process scalar sidecars for future optimizer audits."""
 
@@ -3879,6 +4113,8 @@ def write_training_diagnostics_sidecar(
         arrays.update(_combine_history_diagnostic_chunks(pgd_diagnostic_chunks))
     if policy_adversary_diagnostic_chunks:
         arrays.update(_combine_history_diagnostic_chunks(policy_adversary_diagnostic_chunks))
+    if adaptive_epsilon_diagnostic_chunks:
+        arrays.update(_combine_history_diagnostic_chunks(adaptive_epsilon_diagnostic_chunks))
 
     npz_path = Path(metadata["sidecar_path"])
     manifest_path = Path(metadata["manifest_path"])
@@ -4068,6 +4304,451 @@ def _make_policy_adversary_pre_step(policy: Any, config: Any) -> Callable:
     """Return a stable PyTree hook applying the current learned policy adversary."""
 
     return make_policy_adversary_pre_step(policy, config)
+
+
+def _run_adaptive_epsilon_training_chunk(
+    *,
+    trainer: TaskTrainer,
+    task: Any,
+    model: Any,
+    optimizer_state: Any,
+    adaptive_state: AdaptiveEpsilonState | None,
+    hps: TreeNamespace,
+    where_train: Callable[[Any], Any],
+    key: Any,
+    start_batch: int,
+    chunk_batches: int,
+    log_progress: bool,
+) -> tuple[Any, Any, Any, AdaptiveEpsilonState, dict[str, np.ndarray]]:
+    """Run one paired clean/adversarial adaptive direct-epsilon training chunk."""
+
+    if chunk_batches < 1:
+        raise ValueError("chunk_batches must be positive")
+    if adaptive_state is None:
+        adaptive_state = _initial_adaptive_epsilon_state(hps)
+    if adaptive_state is None:
+        raise ValueError("Adaptive epsilon state is required for adaptive training.")
+
+    n_replicates = int(getattr(getattr(hps, "model", hps), "n_replicates", 1))
+    batch_size = int(hps.batch_size)
+    where_train_spec = filter_spec_leaves(model, where_train)
+    flat_model, treedef_model = jtu.tree_flatten(model)
+    flat_opt_state, treedef_opt_state = jtu.tree_flatten(optimizer_state)
+
+    def _ensemble_in_axis(leaf):
+        if _is_replicate_axis_array(leaf, n_replicates):
+            return 0
+        return None
+
+    flat_model_arr_spec = jt.map(_ensemble_in_axis, flat_model)
+    train_step = eqx.filter_vmap(
+        _adaptive_epsilon_train_step,
+        in_axes=(
+            None,
+            None,
+            None,
+            flat_model_arr_spec,
+            None,
+            0,
+            None,
+            None,
+            None,
+            None,
+            0,
+            None,
+            None,
+        ),
+        out_axes=(
+            eqx.if_array(0),
+            0,
+            flat_model_arr_spec,
+            eqx.if_array(0),
+            eqx.if_array(0),
+            eqx.if_array(0),
+        ),
+    )
+    history = init_task_trainer_history(
+        task.loss_func,
+        chunk_batches,
+        n_replicates,
+        ensembled=True,
+        ensemble_random_trials=True,
+        start_batch=0,
+        task=task,
+        batch_size=batch_size,
+        model=model,
+        where_train=where_train,
+    )
+    keys = jr.split(key, chunk_batches)
+    progress_every = batch_log_every(int(hps.n_batches_condition))
+    chunk_started = time.perf_counter()
+    diagnostic_series: dict[str, list[np.ndarray]] = {}
+
+    for local_batch in range(chunk_batches):
+        global_batch = start_batch + local_batch
+        key_train, key_eval = jr.split(keys[local_batch], 2)
+        target_damage = _adaptive_epsilon_damage_target(
+            hps.adaptive_epsilon_curriculum,
+            global_batch,
+        )
+        outer_weight = _adaptive_epsilon_outer_weight(
+            hps.adaptive_epsilon_curriculum,
+            global_batch,
+        )
+        batch_info = BatchInfo(
+            size=batch_size,
+            start=jnp.asarray(0),
+            current=jnp.asarray(global_batch),
+            total=jnp.asarray(hps.n_batches_condition),
+        )
+        key_train = jr.split(key_train, n_replicates)
+        losses, _trial_specs, flat_model, flat_opt_state, _grads, diagnostics = train_step(
+            task,
+            task.loss_func,
+            batch_info,
+            flat_model,
+            treedef_model,
+            flat_opt_state,
+            treedef_opt_state,
+            where_train_spec,
+            trainer.optimizer,
+            hps.broad_epsilon_pgd_training,
+            key_train,
+            jnp.asarray(adaptive_state.lambda_value, dtype=jnp.float32),
+            jnp.asarray(outer_weight, dtype=jnp.float32),
+        )
+        damage_raw = float(np.asarray(jax.device_get(jnp.mean(diagnostics["damage_raw"]))))
+        adaptive_state, update_diagnostics = _update_adaptive_epsilon_state(
+            adaptive_state,
+            hps.adaptive_epsilon_curriculum,
+            batch_index=global_batch,
+            target_damage=target_damage,
+            measured_damage=damage_raw,
+        )
+        host_diagnostics = {
+            name: np.asarray(jax.device_get(value))
+            for name, value in diagnostics.items()
+            if eqx.is_array(value) or np.isscalar(value)
+        }
+        host_diagnostics.update(update_diagnostics)
+        host_diagnostics["target_damage"] = np.asarray(target_damage, dtype=np.float32)
+        host_diagnostics["outer_weight"] = np.asarray(outer_weight, dtype=np.float32)
+        host_diagnostics["lambda_value"] = np.asarray(
+            adaptive_state.lambda_value,
+            dtype=np.float32,
+        )
+        host_diagnostics["global_batch"] = np.asarray(global_batch, dtype=np.float32)
+        _append_adaptive_epsilon_diagnostics(diagnostic_series, host_diagnostics)
+
+        history = eqx.tree_at(
+            lambda history: history.loss,
+            history,
+            tree_set(
+                history.loss,
+                losses.map(lambda arr: jnp.mean(arr, axis=-1)),
+                local_batch,
+            ),
+        )
+        opt_state_for_history = jtu.tree_unflatten(treedef_opt_state, flat_opt_state)
+        if (hyperparams := getattr(opt_state_for_history, "hyperparams", None)) is not None:
+            history = eqx.tree_at(
+                lambda history: history.learning_rate,
+                history,
+                history.learning_rate.at[local_batch].set(hyperparams["learning_rate"]),
+            )
+        if log_progress and should_log_batch(
+            global_batch,
+            int(hps.n_batches_condition),
+            every=progress_every,
+        ):
+            loss_mean = losses.map(jnp.mean)
+            print(
+                format_batch_line(
+                    "adaptive_epsilon",
+                    global_batch,
+                    int(hps.n_batches_condition),
+                    loss=float(jax.device_get(loss_mean.total)),
+                    damage=damage_raw,
+                    target=target_damage,
+                    lambda_value=float(adaptive_state.lambda_value),
+                    outer=outer_weight,
+                    elapsed=time.perf_counter() - chunk_started,
+                ),
+                flush=True,
+            )
+
+    model = jtu.tree_unflatten(treedef_model, flat_model)
+    optimizer_state = jtu.tree_unflatten(treedef_opt_state, flat_opt_state)
+    states_validation, losses_validation = task.eval_ensemble_with_loss(
+        model,
+        n_replicates,
+        key_eval,
+        ensemble_random_trials=True,
+    )
+    del states_validation
+    history = eqx.tree_at(
+        lambda history: history.loss_validation,
+        history,
+        tree_set(
+            history.loss_validation,
+            losses_validation.map(lambda arr: jnp.mean(arr, axis=-1)),
+            chunk_batches - 1,
+        ),
+    )
+    return (
+        model,
+        history,
+        optimizer_state,
+        adaptive_state,
+        _adaptive_epsilon_diagnostics_arrays(diagnostic_series),
+    )
+
+
+@eqx.filter_jit
+def _adaptive_epsilon_train_step(
+    task: Any,
+    loss_func: Any,
+    batch_info: BatchInfo,
+    flat_model: Any,
+    treedef_model: Any,
+    flat_opt_state: Any,
+    treedef_opt_state: Any,
+    where_train_spec: Any,
+    optimizer: optax.GradientTransformation,
+    pgd_config: Any,
+    key: Any,
+    energy_lambda: Any,
+    outer_weight: Any,
+) -> tuple[Any, Any, Any, Any, Any, dict[str, jnp.ndarray]]:
+    key_trials, key_init, key_model = jr.split(key, 3)
+    keys_trials = jr.split(key_trials, batch_info.size)
+    keys_init = jr.split(key_init, batch_info.size)
+    keys_model = jr.split(key_model, batch_info.size)
+    trial_specs = eqx.filter_vmap(
+        partial(
+            task.get_train_trial_with_intervenor_params,
+            batch_info=batch_info,
+        )
+    )(keys_trials)
+    model = jtu.tree_unflatten(treedef_model, flat_model)
+    adv_specs, inner_diagnostics = run_broad_epsilon_pgd_inner_maximizer(
+        task,
+        model,
+        trial_specs,
+        loss_func,
+        keys_model,
+        config=pgd_config,
+        soft_energy_lambda_override=energy_lambda,
+        return_diagnostics=True,
+    )
+    adv_specs = jt.map(
+        lambda value: jax.lax.stop_gradient(value) if eqx.is_array(value) else value,
+        adv_specs,
+    )
+    init_states = eqx.filter_vmap(lambda _: init_state_from_component(model))(keys_init)
+    init_states = eqx.filter_vmap(
+        lambda state, trial_spec: _apply_trial_spec_initial_state(model, state, trial_spec)
+    )(init_states, trial_specs)
+    diff_model, static_model = eqx.partition(model, where_train_spec)
+    opt_state = jtu.tree_unflatten(treedef_opt_state, flat_opt_state)
+
+    def paired_loss(current_diff_model):
+        current_model = eqx.combine(current_diff_model, static_model)
+        clean_states = _eval_trial_specs_for_training(
+            current_model,
+            trial_specs,
+            init_states,
+            keys_model,
+        )
+        adv_states = _eval_trial_specs_for_training(
+            current_model,
+            adv_specs,
+            init_states,
+            keys_model,
+        )
+        clean_losses = loss_func(clean_states, trial_specs, current_model)
+        adv_losses = loss_func(adv_states, adv_specs, current_model)
+        weighted_losses = _weighted_loss_tree(clean_losses, adv_losses, outer_weight)
+        diagnostics = {
+            "damage_raw": jnp.asarray(adv_losses.total - clean_losses.total),
+            "clean_loss_total": jnp.asarray(clean_losses.total),
+            "adversarial_loss_total": jnp.asarray(adv_losses.total),
+            "weighted_loss_total": jnp.asarray(weighted_losses.total),
+            "energy_lambda_used": jnp.asarray(energy_lambda, dtype=jnp.float32),
+            "outer_weight_used": jnp.asarray(outer_weight, dtype=jnp.float32),
+        }
+        diagnostics.update({f"inner_{name}": value for name, value in inner_diagnostics.items()})
+        return weighted_losses.total, (weighted_losses, diagnostics)
+
+    (_, (losses, diagnostics)), grads = eqx.filter_value_and_grad(
+        paired_loss,
+        has_aux=True,
+    )(diff_model)
+    updates, opt_state = optimizer.update(grads, opt_state, model)
+    model = eqx.apply_updates(model, updates)
+    model = project_component_parameters(model)
+    flat_model = jtu.tree_leaves(model)
+    flat_opt_state = jtu.tree_leaves(opt_state)
+    return losses, adv_specs, flat_model, flat_opt_state, grads, diagnostics
+
+
+def _weighted_loss_tree(clean_losses: Any, adv_losses: Any, outer_weight: Any) -> Any:
+    def combine(clean_value: Any, adv_value: Any) -> Any:
+        if eqx.is_array(clean_value) and eqx.is_array(adv_value):
+            return (1.0 - outer_weight) * clean_value + outer_weight * adv_value
+        return clean_value
+
+    return jt.map(combine, clean_losses, adv_losses)
+
+
+def _apply_trial_spec_initial_state(model: Any, state: Any, trial_spec: Any) -> Any:
+    for where_substate, init_substate in trial_spec.inits.items():
+        path = where_key_to_path(where_substate)
+        state = set_state_by_path(model, state, path, init_substate)
+
+    if trial_spec.intervene:
+        intervention_indices = model.intervention_state_indices()
+        for label, params in trial_spec.intervene.items():
+            if label not in intervention_indices:
+                raise ValueError(f"Unknown intervention label '{label}'")
+            idx = intervention_indices[label]
+            current = state.get(idx)
+
+            def _merge_leaf(p, c):
+                if isinstance(p, TimeSeriesParam):
+                    return c
+                if p is None:
+                    return c
+                return p
+
+            merged = jt.map(
+                _merge_leaf,
+                params,
+                current,
+                is_leaf=lambda x: x is None or isinstance(x, TimeSeriesParam),
+            )
+            state = _state_set_matching_dtypes(state, idx, merged)
+
+    return model.state_consistency_update(state)
+
+
+def _eval_trial_specs_for_training(model: Any, trial_specs: Any, init_states: Any, keys: Any) -> Any:
+    def _run_trial(trial_spec, init_state, key):
+        inputs = prepare_inputs(model, trial_spec.inputs)
+        n_steps = infer_n_steps(inputs, getattr(trial_spec, "timeline", None))
+        if trial_spec.intervene:
+            intervene_inputs = _extract_intervene_inputs(trial_spec.intervene, model)
+            if intervene_inputs:
+                inputs = {**inputs, **intervene_inputs}
+        _, _, state_history = run_component(
+            model,
+            inputs,
+            init_state,
+            key=key,
+            n_steps=n_steps,
+        )
+        return jt.map(lambda x: x[1:] if x is not None else x, state_history)
+
+    return eqx.filter_vmap(_run_trial)(trial_specs, init_states, keys)
+
+
+def _extract_intervene_inputs(intervene: Any, model: Any) -> dict[str, Any]:
+    indices = model.intervention_state_indices()
+    result = {}
+    for label, params in intervene.items():
+        if label not in indices:
+            continue
+        idx = indices[label]
+        tv_params = extract_timeseries_params(params, idx.init)
+        if tv_params is not None:
+            result[f"intervene:{label}"] = tv_params
+    return result
+
+
+def _cast_to_state_dtypes(new_value: Any, current_value: Any) -> Any:
+    def _cast_leaf(new_leaf, current_leaf):
+        if eqx.is_array(new_leaf) and eqx.is_array(current_leaf):
+            if getattr(new_leaf, "dtype", None) != getattr(current_leaf, "dtype", None):
+                return jnp.asarray(new_leaf, dtype=current_leaf.dtype)
+        return new_leaf
+
+    return jt.map(_cast_leaf, new_value, current_value)
+
+
+def _state_set_matching_dtypes(state: Any, idx: Any, new_value: Any) -> Any:
+    current_value = state.get(idx)
+    return state.set(idx, _cast_to_state_dtypes(new_value, current_value))
+
+
+def _update_adaptive_epsilon_state(
+    state: AdaptiveEpsilonState,
+    config: Any,
+    *,
+    batch_index: int,
+    target_damage: float,
+    measured_damage: float,
+) -> tuple[AdaptiveEpsilonState, dict[str, np.ndarray]]:
+    update_cfg = getattr(config, "lambda_update")
+    alpha = float(update_cfg.ema_alpha)
+    damage_ema = (
+        float(measured_damage)
+        if state.damage_ema is None
+        else (1.0 - alpha) * float(state.damage_ema) + alpha * float(measured_damage)
+    )
+    completed_batches = int(batch_index) + 1
+    interval = int(update_cfg.interval_batches)
+    update_due = completed_batches % interval == 0
+    target = float(target_damage)
+    relative_error = (
+        (damage_ema - target) / max(target, 1e-12)
+        if target > 0.0
+        else 0.0
+    )
+    deadband = float(update_cfg.deadband_frac)
+    lambda_value = float(state.lambda_value)
+    updated = False
+    log_step = 0.0
+    if update_due and target > 0.0 and abs(relative_error) > deadband:
+        eta = float(update_cfg.eta)
+        max_log_step = float(update_cfg.max_log_step)
+        log_step = max(-max_log_step, min(max_log_step, eta * relative_error))
+        lambda_value *= math.exp(log_step)
+        lambda_value = max(lambda_value, float(update_cfg.lambda_min))
+        lambda_max = getattr(update_cfg, "lambda_max", None)
+        if lambda_max is not None:
+            lambda_value = min(lambda_value, float(lambda_max))
+        updated = True
+    next_state = AdaptiveEpsilonState(
+        lambda_value=lambda_value,
+        damage_ema=damage_ema,
+        last_update_batch=int(batch_index) if updated else state.last_update_batch,
+        update_count=state.update_count + (1 if updated else 0),
+    )
+    return next_state, {
+        "damage_ema": np.asarray(damage_ema, dtype=np.float32),
+        "relative_error": np.asarray(relative_error, dtype=np.float32),
+        "lambda_updated": np.asarray(updated, dtype=bool),
+        "lambda_log_step": np.asarray(log_step, dtype=np.float32),
+        "update_due": np.asarray(update_due, dtype=bool),
+        "update_count": np.asarray(next_state.update_count, dtype=np.float32),
+    }
+
+
+def _append_adaptive_epsilon_diagnostics(
+    series: dict[str, list[np.ndarray]],
+    diagnostics: dict[str, np.ndarray],
+) -> None:
+    for name, value in diagnostics.items():
+        series.setdefault(name, []).append(np.asarray(value))
+
+
+def _adaptive_epsilon_diagnostics_arrays(
+    series: dict[str, list[np.ndarray]],
+) -> dict[str, np.ndarray]:
+    return {
+        f"adaptive_epsilon_{name}": np.stack(values, axis=0)
+        for name, values in sorted(series.items())
+    }
 
 
 def _run_policy_adversary_training_chunk(
