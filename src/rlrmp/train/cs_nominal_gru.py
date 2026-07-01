@@ -163,6 +163,10 @@ DELAYED_MOVEMENT_COST_TAIL_MODES = (
 )
 TRAINING_DIAGNOSTICS_NPZ = "training_diagnostics.npz"
 TRAINING_DIAGNOSTICS_MANIFEST = "training_diagnostics.json"
+ADAPTIVE_EPSILON_ZERO_ADVERSARY_GAIN_TOLERANCE = 1e-8
+ADAPTIVE_EPSILON_ZERO_ADVERSARY_STOP_REASON = (
+    "adaptive_epsilon_zero_adversary_two_consecutive_checkpoints"
+)
 VolumeCommit = Callable[[], None]
 
 
@@ -174,6 +178,7 @@ class AdaptiveEpsilonState:
     damage_ema: float | None = None
     last_update_batch: int | None = None
     update_count: int = 0
+    schedule_start_batch: int = 0
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -181,6 +186,7 @@ class AdaptiveEpsilonState:
             "damage_ema": None if self.damage_ema is None else float(self.damage_ema),
             "last_update_batch": self.last_update_batch,
             "update_count": int(self.update_count),
+            "schedule_start_batch": int(self.schedule_start_batch),
         }
 
 
@@ -2218,18 +2224,42 @@ def run_full_training(
             adaptive_epsilon_state=_initial_adaptive_epsilon_state(hps),
         )
     checkpoint_root = output_dir / "checkpoints"
+    checkpoint_path = latest_checkpoint_path(checkpoint_root)
+    resume_from_checkpoint = bool(args.resume and checkpoint_path.exists())
+    checkpoint_completed_batches = None
+    optimizer_state_template = template_state.optimizer_state
+    if resume_from_checkpoint:
+        checkpoint_metadata = json.loads(
+            (checkpoint_path / "metadata.json").read_text(encoding="utf-8")
+        )
+        checkpoint_completed_batches = int(checkpoint_metadata.get("completed_batches", 0))
+        checkpoint_diagnostic_batches = int(
+            checkpoint_metadata.get("n_train_batches", checkpoint_completed_batches)
+        )
+        optimizer_state_template = _resize_optimizer_diagnostics_for_batches(
+            optimizer_state_template,
+            checkpoint_diagnostic_batches,
+        )
     state = (
         load_latest_checkpoint(
             checkpoint_root,
             model_template=pair.model,
-            optimizer_state_template=template_state.optimizer_state,
+            optimizer_state_template=optimizer_state_template,
             history_template=None,
             adversary_policy_template=adversary_policy_template,
             adversary_optimizer_state_template=adversary_optimizer_state_template,
         )
-        if args.resume and latest_checkpoint_path(checkpoint_root).exists()
+        if resume_from_checkpoint
         else template_state
     )
+    if resume_from_checkpoint and checkpoint_completed_batches is not None:
+        state = replace(
+            state,
+            optimizer_state=_resize_optimizer_diagnostics_for_batches(
+                state.optimizer_state,
+                max(int(args.n_train_batches), checkpoint_completed_batches),
+            ),
+        )
     if policy_adversary_enabled:
         if state.adversary_policy is None:
             state = replace(
@@ -2242,12 +2272,22 @@ def run_full_training(
                 adversary_optimizer_state=adversary_optimizer_state_template,
             )
     if adaptive_epsilon_enabled and state.adaptive_epsilon_state is None:
-        state = replace(state, adaptive_epsilon_state=_initial_adaptive_epsilon_state(hps))
+        state = replace(
+            state,
+            adaptive_epsilon_state=_initial_adaptive_epsilon_state(
+                hps,
+                schedule_start_batch=state.completed_batches,
+            ),
+        )
 
     chunks: list[dict[str, float | int | str]] = []
     pgd_diagnostic_chunks: list[dict[str, np.ndarray]] = []
     adaptive_epsilon_diagnostic_chunks: list[dict[str, np.ndarray]] = []
     policy_adversary_diagnostic_chunks: list[dict[str, np.ndarray]] = []
+    adaptive_epsilon_zero_adversary_guard = _initial_adaptive_epsilon_zero_guard(
+        enabled=adaptive_epsilon_enabled,
+    )
+    stop_reason: str | None = None
     training_started = time.perf_counter()
     while state.completed_batches < int(args.n_train_batches):
         if stop_after_batches is not None and state.completed_batches >= stop_after_batches:
@@ -2387,6 +2427,11 @@ def run_full_training(
             run_spec=run_spec,
         )
         _commit_volume(volume_commit)
+        if adaptive_epsilon_enabled and adaptive_epsilon_diagnostics:
+            adaptive_epsilon_zero_adversary_guard = _update_adaptive_epsilon_zero_guard(
+                adaptive_epsilon_zero_adversary_guard,
+                adaptive_epsilon_diagnostics,
+            )
         chunks.append(
             {
                 "completed_batches": completed,
@@ -2397,7 +2442,14 @@ def run_full_training(
                 "batches_per_second": chunk_batches / chunk_duration_seconds,
             }
         )
+        if (
+            adaptive_epsilon_zero_adversary_guard["should_stop"]
+            and state.completed_batches < int(args.n_train_batches)
+        ):
+            stop_reason = ADAPTIVE_EPSILON_ZERO_ADVERSARY_STOP_REASON
+            break
         if stop_after_batches is not None and state.completed_batches >= stop_after_batches:
+            stop_reason = "checkpoint_gate_stop_after_batches"
             break
     training_duration_seconds = time.perf_counter() - training_started
 
@@ -2428,7 +2480,12 @@ def run_full_training(
         "stopped_early_for_checkpoint_gate": (
             stop_after_batches is not None and state.completed_batches < int(args.n_train_batches)
         ),
+        "stopped_early_for_adaptive_epsilon_zero_adversary": (
+            stop_reason == ADAPTIVE_EPSILON_ZERO_ADVERSARY_STOP_REASON
+        ),
+        "stop_reason": stop_reason,
         "stop_after_batches": stop_after_batches,
+        "adaptive_epsilon_zero_adversary_guard": adaptive_epsilon_zero_adversary_guard,
         "training_duration_seconds": training_duration_seconds,
         "training_batches_per_second": (
             state.completed_batches / training_duration_seconds
@@ -2574,6 +2631,7 @@ def load_latest_checkpoint(
             ),
             last_update_batch=adaptive_payload.get("last_update_batch"),
             update_count=int(adaptive_payload.get("update_count", 0)),
+            schedule_start_batch=int(adaptive_payload.get("schedule_start_batch", 0)),
         )
         if isinstance(adaptive_payload, dict)
         else None
@@ -3456,6 +3514,62 @@ def _update_diagnostics_transform(*, n_batches: int) -> optax.GradientTransforma
     return optax.GradientTransformation(init_fn, update_fn)
 
 
+def _resize_optimizer_diagnostics_for_batches(optimizer_state: Any, n_batches: int) -> Any:
+    """Resize host-side optimizer diagnostic buffers for cross-length checkpoint resume."""
+
+    target_batches = max(0, int(n_batches))
+
+    def resize_leaf(leaf: Any) -> Any:
+        if isinstance(leaf, GradientDiagnosticsState):
+            return GradientDiagnosticsState(
+                count=leaf.count,
+                gradient_norm_pre_clip=_resize_diagnostic_series(
+                    leaf.gradient_norm_pre_clip,
+                    target_batches,
+                ),
+                gradient_clipped=_resize_diagnostic_series(
+                    leaf.gradient_clipped,
+                    target_batches,
+                ),
+                learning_rate=_resize_diagnostic_series(leaf.learning_rate, target_batches),
+            )
+        if isinstance(leaf, UpdateDiagnosticsState):
+            return UpdateDiagnosticsState(
+                count=leaf.count,
+                update_norm=_resize_diagnostic_series(leaf.update_norm, target_batches),
+                parameter_norm=_resize_diagnostic_series(leaf.parameter_norm, target_batches),
+                update_parameter_norm_ratio=_resize_diagnostic_series(
+                    leaf.update_parameter_norm_ratio,
+                    target_batches,
+                ),
+            )
+        return leaf
+
+    return jt.map(
+        resize_leaf,
+        optimizer_state,
+        is_leaf=lambda leaf: isinstance(leaf, (GradientDiagnosticsState, UpdateDiagnosticsState)),
+    )
+
+
+def _resize_diagnostic_series(series: Any, n_batches: int) -> Any:
+    target_batches = max(0, int(n_batches))
+    values = jnp.asarray(series)
+    if values.ndim < 1:
+        return values
+    current_batches = int(values.shape[-1])
+    if current_batches == target_batches:
+        return values
+    if current_batches > target_batches:
+        return values[..., :target_batches]
+    pad_shape = (*values.shape[:-1], target_batches - current_batches)
+    if jnp.issubdtype(values.dtype, jnp.floating):
+        pad = jnp.full(pad_shape, jnp.nan, dtype=values.dtype)
+    else:
+        pad = jnp.zeros(pad_shape, dtype=values.dtype)
+    return jnp.concatenate([values, pad], axis=-1)
+
+
 def _build_trainer(hps: TreeNamespace) -> TaskTrainer:
     schedule = _learning_rate_schedule(hps)
     transforms = []
@@ -3759,13 +3873,27 @@ def _adaptive_epsilon_outer_weight(config: Any, batch_index: int) -> float:
     return start + frac * (final - start)
 
 
-def _initial_adaptive_epsilon_state(hps: TreeNamespace) -> AdaptiveEpsilonState | None:
+def _initial_adaptive_epsilon_state(
+    hps: TreeNamespace,
+    *,
+    schedule_start_batch: int = 0,
+) -> AdaptiveEpsilonState | None:
     if not _adaptive_epsilon_curriculum_enabled(hps):
         return None
     cfg = config_from_broad_epsilon_pgd_hps(hps.broad_epsilon_pgd_training)
     if cfg.soft_energy_lambda is None:
         raise ValueError("Adaptive epsilon curriculum requires a resolved positive energy lambda.")
-    return AdaptiveEpsilonState(lambda_value=float(cfg.soft_energy_lambda))
+    return AdaptiveEpsilonState(
+        lambda_value=float(cfg.soft_energy_lambda),
+        schedule_start_batch=max(0, int(schedule_start_batch)),
+    )
+
+
+def _adaptive_epsilon_schedule_batch(
+    adaptive_state: AdaptiveEpsilonState,
+    global_batch: int,
+) -> int:
+    return max(0, int(global_batch) - int(adaptive_state.schedule_start_batch))
 
 
 def _policy_adversary_training_enabled(hps: TreeNamespace) -> bool:
@@ -4420,14 +4548,15 @@ def _run_adaptive_epsilon_training_chunk(
 
     for local_batch in range(chunk_batches):
         global_batch = start_batch + local_batch
+        schedule_batch = _adaptive_epsilon_schedule_batch(adaptive_state, global_batch)
         key_train, key_eval = jr.split(keys[local_batch], 2)
         target_damage = _adaptive_epsilon_damage_target(
             hps.adaptive_epsilon_curriculum,
-            global_batch,
+            schedule_batch,
         )
         outer_weight = _adaptive_epsilon_outer_weight(
             hps.adaptive_epsilon_curriculum,
-            global_batch,
+            schedule_batch,
         )
         batch_info = BatchInfo(
             size=batch_size,
@@ -4492,6 +4621,7 @@ def _run_adaptive_epsilon_training_chunk(
             dtype=np.float32,
         )
         host_diagnostics["global_batch"] = np.asarray(global_batch, dtype=np.float32)
+        host_diagnostics["schedule_batch"] = np.asarray(schedule_batch, dtype=np.float32)
         _append_adaptive_epsilon_diagnostics(diagnostic_series, host_diagnostics)
 
         history = eqx.tree_at(
@@ -4873,6 +5003,7 @@ def _update_adaptive_epsilon_state(
         damage_ema=damage_ema,
         last_update_batch=int(batch_index) if updated else state.last_update_batch,
         update_count=state.update_count + (1 if updated else 0),
+        schedule_start_batch=state.schedule_start_batch,
     )
     return next_state, {
         "damage_ema": np.asarray(damage_ema, dtype=np.float32),
@@ -5320,6 +5451,75 @@ def _latest_pgd_progress_scalars(
         if value is not None:
             scalars[target] = value
     return scalars
+
+
+def _initial_adaptive_epsilon_zero_guard(*, enabled: bool) -> dict[str, Any]:
+    return {
+        "enabled": bool(enabled),
+        "stop_reason": ADAPTIVE_EPSILON_ZERO_ADVERSARY_STOP_REASON,
+        "gain_tolerance": ADAPTIVE_EPSILON_ZERO_ADVERSARY_GAIN_TOLERANCE,
+        "checkpoints_seen": 0,
+        "consecutive_active_zero_adversary_checkpoints": 0,
+        "should_stop": False,
+        "last_checkpoint": None,
+    }
+
+
+def _update_adaptive_epsilon_zero_guard(
+    guard: dict[str, Any],
+    adaptive_epsilon_diagnostics: dict[str, np.ndarray],
+) -> dict[str, Any]:
+    next_guard = dict(guard)
+    next_guard["enabled"] = True
+    next_guard["checkpoints_seen"] = int(next_guard.get("checkpoints_seen", 0)) + 1
+    evidence = _adaptive_epsilon_zero_checkpoint_evidence(adaptive_epsilon_diagnostics)
+    next_guard["last_checkpoint"] = evidence
+    if evidence["active"] and evidence["zero_adversary"]:
+        consecutive = int(next_guard.get("consecutive_active_zero_adversary_checkpoints", 0)) + 1
+    else:
+        consecutive = 0
+    next_guard["consecutive_active_zero_adversary_checkpoints"] = consecutive
+    next_guard["should_stop"] = consecutive >= 2
+    return next_guard
+
+
+def _adaptive_epsilon_zero_checkpoint_evidence(
+    adaptive_epsilon_diagnostics: dict[str, np.ndarray],
+) -> dict[str, Any]:
+    gain = None
+    gain_source = None
+    gain_keys = (
+        "adaptive_epsilon_adaptive_update_inner_selected_objective_gain_over_zero",
+        "adaptive_epsilon_inner_selected_objective_gain_over_zero",
+    )
+    for key in gain_keys:
+        gain = _latest_scalar(adaptive_epsilon_diagnostics.get(key))
+        if gain is not None:
+            gain_source = key
+            break
+
+    target_damage = _latest_scalar(adaptive_epsilon_diagnostics.get("adaptive_epsilon_target_damage"))
+    outer_weight = _latest_scalar(adaptive_epsilon_diagnostics.get("adaptive_epsilon_outer_weight"))
+    active = (
+        target_damage is not None
+        and target_damage > 0.0
+        and outer_weight is not None
+        and outer_weight > 0.0
+    )
+    zero_adversary = (
+        active
+        and gain is not None
+        and gain <= ADAPTIVE_EPSILON_ZERO_ADVERSARY_GAIN_TOLERANCE
+    )
+    return {
+        "active": bool(active),
+        "zero_adversary": bool(zero_adversary),
+        "selected_objective_gain_over_zero": gain,
+        "gain_source": gain_source,
+        "target_damage": target_damage,
+        "outer_weight": outer_weight,
+        "gain_tolerance": ADAPTIVE_EPSILON_ZERO_ADVERSARY_GAIN_TOLERANCE,
+    }
 
 
 def _latest_scalar(values: Any) -> float | None:

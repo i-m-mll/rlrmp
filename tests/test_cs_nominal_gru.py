@@ -59,6 +59,8 @@ from rlrmp.train.cs_nominal_gru import (
     DEFAULT_STOCHASTIC_PRESET,
     DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON,
     DELAYED_REACH_TRAINING_MODE,
+    GradientDiagnosticsState,
+    UpdateDiagnosticsState,
     build_graph_bundle,
     build_hps,
     build_parser,
@@ -66,10 +68,14 @@ from rlrmp.train.cs_nominal_gru import (
     derive_spec_path,
     _adaptive_epsilon_damage_target,
     _adaptive_epsilon_outer_weight,
+    _adaptive_epsilon_schedule_batch,
+    _initial_adaptive_epsilon_zero_guard,
+    _update_adaptive_epsilon_zero_guard,
     main,
     _emit_checkpoint_progress,
     _initial_adaptive_epsilon_state,
     _prepend_existing_training_diagnostics,
+    _resize_optimizer_diagnostics_for_batches,
     _sample_adaptive_epsilon_damage_eval_batch,
     _sample_adaptive_epsilon_training_batch,
     _update_adaptive_epsilon_state,
@@ -714,6 +720,136 @@ def test_adaptive_epsilon_schedules_and_lambda_update_are_conservative() -> None
     assert diagnostics["lambda_updated"] == np.asarray(True)
     assert state.lambda_value > 10.0
     assert state.update_count == 1
+
+
+def test_adaptive_epsilon_continuation_schedule_is_relative_to_resume_start() -> None:
+    hps = build_hps(
+        _args(
+            broad_epsilon_pgd_training=True,
+            broad_epsilon_pgd_objective=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+            broad_epsilon_pgd_energy_lambda=10.0,
+            adaptive_epsilon_curriculum=True,
+            target_relative_multitarget=True,
+        )
+    )
+    cfg = hps.adaptive_epsilon_curriculum
+    resumed_state = _initial_adaptive_epsilon_state(hps, schedule_start_batch=12000)
+    scratch_state = _initial_adaptive_epsilon_state(hps)
+    assert resumed_state is not None
+    assert scratch_state is not None
+
+    assert _adaptive_epsilon_schedule_batch(resumed_state, 12000) == 0
+    assert _adaptive_epsilon_schedule_batch(resumed_state, 13250) == 1250
+    assert _adaptive_epsilon_schedule_batch(resumed_state, 14500) == 2500
+    assert _adaptive_epsilon_schedule_batch(resumed_state, 19499) == 7499
+    assert _adaptive_epsilon_damage_target(
+        cfg,
+        _adaptive_epsilon_schedule_batch(resumed_state, 13250),
+    ) == pytest.approx(1750.0)
+    assert _adaptive_epsilon_outer_weight(
+        cfg,
+        _adaptive_epsilon_schedule_batch(resumed_state, 13250),
+    ) == pytest.approx(0.5)
+
+    assert _adaptive_epsilon_schedule_batch(scratch_state, 0) == 0
+    assert _adaptive_epsilon_schedule_batch(scratch_state, 2500) == 2500
+
+
+def test_resume_optimizer_diagnostics_resize_pads_cross_length_buffers() -> None:
+    optimizer_state = {
+        "gradient": GradientDiagnosticsState(
+            count=jnp.asarray(2, dtype=jnp.int32),
+            gradient_norm_pre_clip=jnp.asarray([1.0, 2.0], dtype=jnp.float32),
+            gradient_clipped=jnp.asarray([True, False], dtype=bool),
+            learning_rate=jnp.asarray([0.1, 0.2], dtype=jnp.float32),
+        ),
+        "update": UpdateDiagnosticsState(
+            count=jnp.asarray(2, dtype=jnp.int32),
+            update_norm=jnp.asarray([3.0, 4.0], dtype=jnp.float32),
+            parameter_norm=jnp.asarray([5.0, 6.0], dtype=jnp.float32),
+            update_parameter_norm_ratio=jnp.asarray([0.3, 0.4], dtype=jnp.float32),
+        ),
+    }
+
+    resized = _resize_optimizer_diagnostics_for_batches(optimizer_state, 4)
+
+    np.testing.assert_allclose(resized["gradient"].gradient_norm_pre_clip[:2], [1.0, 2.0])
+    assert np.isnan(np.asarray(resized["gradient"].gradient_norm_pre_clip[2:])).all()
+    assert resized["gradient"].gradient_clipped.tolist() == [True, False, False, False]
+    np.testing.assert_allclose(resized["update"].update_norm[:2], [3.0, 4.0])
+    assert np.isnan(np.asarray(resized["update"].update_norm[2:])).all()
+    assert int(resized["gradient"].count) == 2
+    assert int(resized["update"].count) == 2
+
+    shrunk = _resize_optimizer_diagnostics_for_batches(resized, 1)
+    assert shrunk["gradient"].gradient_norm_pre_clip.shape == (1,)
+    np.testing.assert_allclose(shrunk["gradient"].gradient_norm_pre_clip, [1.0])
+
+    vmapped = {
+        "gradient": GradientDiagnosticsState(
+            count=jnp.asarray([2, 2], dtype=jnp.int32),
+            gradient_norm_pre_clip=jnp.asarray([[1.0, 2.0], [3.0, 4.0]], dtype=jnp.float32),
+            gradient_clipped=jnp.asarray([[True, False], [False, True]], dtype=bool),
+            learning_rate=jnp.asarray([[0.1, 0.2], [0.3, 0.4]], dtype=jnp.float32),
+        )
+    }
+    resized_vmapped = _resize_optimizer_diagnostics_for_batches(vmapped, 4)
+    assert resized_vmapped["gradient"].gradient_norm_pre_clip.shape == (2, 4)
+    np.testing.assert_allclose(
+        resized_vmapped["gradient"].gradient_norm_pre_clip[:, :2],
+        [[1.0, 2.0], [3.0, 4.0]],
+    )
+    assert np.isnan(np.asarray(resized_vmapped["gradient"].gradient_norm_pre_clip[:, 2:])).all()
+    assert resized_vmapped["gradient"].gradient_clipped.tolist() == [
+        [True, False, False, False],
+        [False, True, False, False],
+    ]
+
+
+def test_adaptive_epsilon_zero_adversary_guard_stops_after_two_active_checkpoints() -> None:
+    guard = _initial_adaptive_epsilon_zero_guard(enabled=True)
+    inactive_zero = {
+        "adaptive_epsilon_adaptive_update_inner_selected_objective_gain_over_zero": np.array(
+            [0.0]
+        ),
+        "adaptive_epsilon_target_damage": np.array([0.0]),
+        "adaptive_epsilon_outer_weight": np.array([0.0]),
+    }
+    active_zero = {
+        "adaptive_epsilon_adaptive_update_inner_selected_objective_gain_over_zero": np.array(
+            [0.0]
+        ),
+        "adaptive_epsilon_target_damage": np.array([100.0]),
+        "adaptive_epsilon_outer_weight": np.array([1.0]),
+    }
+    active_nonzero = {
+        "adaptive_epsilon_adaptive_update_inner_selected_objective_gain_over_zero": np.array(
+            [1.0e-3]
+        ),
+        "adaptive_epsilon_target_damage": np.array([100.0]),
+        "adaptive_epsilon_outer_weight": np.array([1.0]),
+    }
+
+    guard = _update_adaptive_epsilon_zero_guard(guard, inactive_zero)
+    assert guard["last_checkpoint"]["active"] is False
+    assert guard["consecutive_active_zero_adversary_checkpoints"] == 0
+    assert guard["should_stop"] is False
+
+    guard = _update_adaptive_epsilon_zero_guard(guard, active_zero)
+    assert guard["last_checkpoint"]["active"] is True
+    assert guard["last_checkpoint"]["zero_adversary"] is True
+    assert guard["consecutive_active_zero_adversary_checkpoints"] == 1
+    assert guard["should_stop"] is False
+
+    guard = _update_adaptive_epsilon_zero_guard(guard, active_nonzero)
+    assert guard["last_checkpoint"]["zero_adversary"] is False
+    assert guard["consecutive_active_zero_adversary_checkpoints"] == 0
+    assert guard["should_stop"] is False
+
+    guard = _update_adaptive_epsilon_zero_guard(guard, active_zero)
+    guard = _update_adaptive_epsilon_zero_guard(guard, active_zero)
+    assert guard["consecutive_active_zero_adversary_checkpoints"] == 2
+    assert guard["should_stop"] is True
 
 
 def test_adaptive_epsilon_lambda_update_uses_clipped_log_ratio() -> None:
