@@ -648,6 +648,51 @@ def test_adaptive_epsilon_curriculum_hps_contract() -> None:
     assert adaptive_state.lambda_value == pytest.approx(2.5)
 
 
+def test_adaptive_epsilon_run_spec_replay_preserves_curriculum(tmp_path: Path) -> None:
+    output_dir = tmp_path / "_artifacts" / "91a090c" / "runs" / "smoke"
+    spec_dir = tmp_path / "results" / "91a090c" / "runs" / "smoke"
+    args = _args(
+        output_dir=str(output_dir),
+        spec_dir=str(spec_dir),
+        issue="91a090c",
+        target_relative_multitarget=True,
+        broad_epsilon_pgd_training=True,
+        broad_epsilon_pgd_objective=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+        broad_epsilon_pgd_energy_lambda=2.5,
+        adaptive_epsilon_curriculum=True,
+        adaptive_epsilon_damage_peak=3500.0,
+        adaptive_epsilon_damage_final=1000.0,
+        adaptive_epsilon_damage_ramp_batches=1,
+        adaptive_epsilon_damage_anneal_batches=2,
+        adaptive_epsilon_update_interval_batches=3,
+        adaptive_epsilon_ema_alpha=0.2,
+        adaptive_epsilon_eta=0.3,
+        adaptive_epsilon_deadband_frac=0.4,
+        adaptive_epsilon_lambda_min=1e-9,
+        adaptive_epsilon_max_log_step=0.5,
+        adaptive_epsilon_outer_weight_ramp_batches=6,
+    )
+
+    result = write_run_spec(args)
+    replay_args = resolve_run_spec_args(_args(run_spec=result["run_spec_path"]))
+
+    assert replay_args.adaptive_epsilon_curriculum is True
+    assert replay_args.adaptive_epsilon_damage_peak == pytest.approx(3500.0)
+    assert replay_args.adaptive_epsilon_damage_final == pytest.approx(1000.0)
+    assert replay_args.adaptive_epsilon_damage_ramp_batches == 1
+    assert replay_args.adaptive_epsilon_damage_anneal_batches == 2
+    assert replay_args.adaptive_epsilon_update_interval_batches == 3
+    assert replay_args.adaptive_epsilon_ema_alpha == pytest.approx(0.2)
+    assert replay_args.adaptive_epsilon_eta == pytest.approx(0.3)
+    assert replay_args.adaptive_epsilon_deadband_frac == pytest.approx(0.4)
+    assert replay_args.adaptive_epsilon_lambda_min == pytest.approx(1e-9)
+    assert replay_args.adaptive_epsilon_max_log_step == pytest.approx(0.5)
+    assert replay_args.adaptive_epsilon_outer_weight_ramp_batches == 6
+
+    hps = build_hps(replay_args)
+    assert hps.adaptive_epsilon_curriculum.enabled is True
+
+
 def test_adaptive_epsilon_curriculum_requires_soft_direct_pgd() -> None:
     with pytest.raises(ValueError, match="requires --broad-epsilon-pgd-training"):
         build_hps(_args(adaptive_epsilon_curriculum=True))

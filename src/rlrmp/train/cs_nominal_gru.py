@@ -436,6 +436,10 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
     broad_pgd_mechanism = _dict_value(broad_pgd, "mechanism")
     broad_pgd_safety_cap = _dict_value(broad_pgd, "safety_cap")
     broad_pgd_safety_cap_source = _dict_value(broad_pgd_safety_cap, "source")
+    adaptive_epsilon = _dict_value(hps, "adaptive_epsilon_curriculum")
+    adaptive_damage = _dict_value(adaptive_epsilon, "damage_schedule")
+    adaptive_lambda = _dict_value(adaptive_epsilon, "lambda_update")
+    adaptive_outer_weight = _dict_value(adaptive_epsilon, "outer_adversarial_weight")
     target_relative = _dict_value(hps, "target_relative_multitarget")
     target_distribution = _dict_value(target_relative, "target_distribution")
     delayed = _dict_value(hps, "delayed_reach")
@@ -665,6 +669,30 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
         "broad_epsilon_pgd_sisu_max_radius_source": broad_pgd_max_radius_source.get(
             "key",
             broad_pgd.get("sisu_max_radius_source"),
+        ),
+        "adaptive_epsilon_curriculum": bool(adaptive_epsilon.get("enabled", False)),
+        "adaptive_epsilon_damage_start": float(adaptive_damage.get("start", 0.0)),
+        "adaptive_epsilon_damage_peak": float(adaptive_damage.get("peak", 3500.0)),
+        "adaptive_epsilon_damage_final": float(adaptive_damage.get("final", 1000.0)),
+        "adaptive_epsilon_damage_ramp_batches": int(
+            adaptive_damage.get("ramp_batches", 2500)
+        ),
+        "adaptive_epsilon_damage_anneal_batches": int(
+            adaptive_damage.get("anneal_batches", 5000)
+        ),
+        "adaptive_epsilon_update_interval_batches": int(
+            adaptive_lambda.get("interval_batches", 50)
+        ),
+        "adaptive_epsilon_ema_alpha": float(adaptive_lambda.get("ema_alpha", 0.1)),
+        "adaptive_epsilon_eta": float(adaptive_lambda.get("eta", 0.1)),
+        "adaptive_epsilon_deadband_frac": float(adaptive_lambda.get("deadband_frac", 0.10)),
+        "adaptive_epsilon_lambda_min": float(adaptive_lambda.get("lambda_min", 1e-12)),
+        "adaptive_epsilon_lambda_max": adaptive_lambda.get("lambda_max"),
+        "adaptive_epsilon_max_log_step": float(adaptive_lambda.get("max_log_step", 0.25)),
+        "adaptive_epsilon_outer_weight_start": float(adaptive_outer_weight.get("start", 0.0)),
+        "adaptive_epsilon_outer_weight_final": float(adaptive_outer_weight.get("final", 1.0)),
+        "adaptive_epsilon_outer_weight_ramp_batches": int(
+            adaptive_outer_weight.get("ramp_batches", 2500)
         ),
         "policy_adversary_training": bool(policy_adversary.get("enabled", False)),
         "policy_adversary_policy_class": str(
