@@ -1,0 +1,39 @@
+{
+  "schema_version": "rlrmp.runpod_launch_gate.v1",
+  "user_confirmed": true,
+  "confirmation_source": "User explicitly authorized launch in the 2026-07-01 Codex conversation after the dedicated experiment issue was created.",
+  "issue": "e148f33",
+  "parent_issue": "08483d5",
+  "row_label": "adaptive_curriculum_3500to1000",
+  "tracked_run_spec": "results/e148f33/runs/adaptive_curriculum_3500to1000.json",
+  "bulk_output_dir": "_artifacts/e148f33/runs/adaptive_curriculum_3500to1000",
+  "baseline_checkpoint": "_artifacts/08483d5/runs/h0_6d_no_pgd_const_band16_cpu/checkpoints/checkpoint_0012000",
+  "baseline_completed_batches": 12000,
+  "checkpoint_gate_stop_after_batches": 12500,
+  "final_total_batches": 19500,
+  "gpu": {
+    "provider": "RunPod",
+    "cloud_type": "SECURE",
+    "gpu_id": "NVIDIA GeForce RTX 5090",
+    "gpu_count": 1
+  },
+  "remote_commands": {
+    "checkpoint_gate": "cd /workspace/rlrmp && uv run --no-sync python scripts/train_cs_nominal_gru.py --run-spec results/e148f33/runs/adaptive_curriculum_3500to1000.json --full-train --resume --stop-after-batches 12500",
+    "full_resume": "cd /workspace/rlrmp && uv run --no-sync python scripts/train_cs_nominal_gru.py --run-spec results/e148f33/runs/adaptive_curriculum_3500to1000.json --full-train --resume"
+  },
+  "stop_rules": [
+    "Stop if loss is nonfinite or exploding.",
+    "Stop if checkpoint/resume fails.",
+    "Stop if the in-process adaptive epsilon zero-adversary guard reports two consecutive active zero-gain checkpoints."
+  ],
+  "diagnostics_required": [
+    "adaptive_epsilon_adaptive_update_damage_raw",
+    "adaptive_epsilon_lambda_value",
+    "adaptive_epsilon_target_damage",
+    "adaptive_epsilon_outer_weight",
+    "adaptive_epsilon_log_ratio_error",
+    "adaptive_epsilon_lambda_log_step",
+    "adaptive_epsilon_adaptive_update_inner_selected_objective_gain_over_zero"
+  ]
+}
+

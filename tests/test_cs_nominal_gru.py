@@ -66,6 +66,9 @@ from rlrmp.train.cs_nominal_gru import (
     derive_spec_path,
     _adaptive_epsilon_damage_target,
     _adaptive_epsilon_outer_weight,
+    _adaptive_epsilon_schedule_batch,
+    _initial_adaptive_epsilon_zero_guard,
+    _update_adaptive_epsilon_zero_guard,
     main,
     _emit_checkpoint_progress,
     _initial_adaptive_epsilon_state,
@@ -714,6 +717,85 @@ def test_adaptive_epsilon_schedules_and_lambda_update_are_conservative() -> None
     assert diagnostics["lambda_updated"] == np.asarray(True)
     assert state.lambda_value > 10.0
     assert state.update_count == 1
+
+
+def test_adaptive_epsilon_continuation_schedule_is_relative_to_resume_start() -> None:
+    hps = build_hps(
+        _args(
+            broad_epsilon_pgd_training=True,
+            broad_epsilon_pgd_objective=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+            broad_epsilon_pgd_energy_lambda=10.0,
+            adaptive_epsilon_curriculum=True,
+            target_relative_multitarget=True,
+        )
+    )
+    cfg = hps.adaptive_epsilon_curriculum
+    resumed_state = _initial_adaptive_epsilon_state(hps, schedule_start_batch=12000)
+    scratch_state = _initial_adaptive_epsilon_state(hps)
+    assert resumed_state is not None
+    assert scratch_state is not None
+
+    assert _adaptive_epsilon_schedule_batch(resumed_state, 12000) == 0
+    assert _adaptive_epsilon_schedule_batch(resumed_state, 13250) == 1250
+    assert _adaptive_epsilon_schedule_batch(resumed_state, 14500) == 2500
+    assert _adaptive_epsilon_schedule_batch(resumed_state, 19499) == 7499
+    assert _adaptive_epsilon_damage_target(
+        cfg,
+        _adaptive_epsilon_schedule_batch(resumed_state, 13250),
+    ) == pytest.approx(1750.0)
+    assert _adaptive_epsilon_outer_weight(
+        cfg,
+        _adaptive_epsilon_schedule_batch(resumed_state, 13250),
+    ) == pytest.approx(0.5)
+
+    assert _adaptive_epsilon_schedule_batch(scratch_state, 0) == 0
+    assert _adaptive_epsilon_schedule_batch(scratch_state, 2500) == 2500
+
+
+def test_adaptive_epsilon_zero_adversary_guard_stops_after_two_active_checkpoints() -> None:
+    guard = _initial_adaptive_epsilon_zero_guard(enabled=True)
+    inactive_zero = {
+        "adaptive_epsilon_adaptive_update_inner_selected_objective_gain_over_zero": np.array(
+            [0.0]
+        ),
+        "adaptive_epsilon_target_damage": np.array([0.0]),
+        "adaptive_epsilon_outer_weight": np.array([0.0]),
+    }
+    active_zero = {
+        "adaptive_epsilon_adaptive_update_inner_selected_objective_gain_over_zero": np.array(
+            [0.0]
+        ),
+        "adaptive_epsilon_target_damage": np.array([100.0]),
+        "adaptive_epsilon_outer_weight": np.array([1.0]),
+    }
+    active_nonzero = {
+        "adaptive_epsilon_adaptive_update_inner_selected_objective_gain_over_zero": np.array(
+            [1.0e-3]
+        ),
+        "adaptive_epsilon_target_damage": np.array([100.0]),
+        "adaptive_epsilon_outer_weight": np.array([1.0]),
+    }
+
+    guard = _update_adaptive_epsilon_zero_guard(guard, inactive_zero)
+    assert guard["last_checkpoint"]["active"] is False
+    assert guard["consecutive_active_zero_adversary_checkpoints"] == 0
+    assert guard["should_stop"] is False
+
+    guard = _update_adaptive_epsilon_zero_guard(guard, active_zero)
+    assert guard["last_checkpoint"]["active"] is True
+    assert guard["last_checkpoint"]["zero_adversary"] is True
+    assert guard["consecutive_active_zero_adversary_checkpoints"] == 1
+    assert guard["should_stop"] is False
+
+    guard = _update_adaptive_epsilon_zero_guard(guard, active_nonzero)
+    assert guard["last_checkpoint"]["zero_adversary"] is False
+    assert guard["consecutive_active_zero_adversary_checkpoints"] == 0
+    assert guard["should_stop"] is False
+
+    guard = _update_adaptive_epsilon_zero_guard(guard, active_zero)
+    guard = _update_adaptive_epsilon_zero_guard(guard, active_zero)
+    assert guard["consecutive_active_zero_adversary_checkpoints"] == 2
+    assert guard["should_stop"] is True
 
 
 def test_adaptive_epsilon_lambda_update_uses_clipped_log_ratio() -> None:
