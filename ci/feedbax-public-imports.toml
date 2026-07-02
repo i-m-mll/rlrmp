@@ -118,12 +118,19 @@ symbols = [
 ]
 
 [[canonical_homes]]
-module = "feedbax.contracts.graphs.materialization"
-symbols = ["materialize_model_artifact"]
+module = "feedbax.contracts.artifact_schema"
+symbols = [
+  "ARRAY_STORE_SCHEMA_VERSION",
+  "METADATA_KEY",
+  "ArrayStore",
+  "ArrayStorePayload",
+  "ArrayStoreValidationError",
+  "validate_role_coverage",
+]
 
 [[canonical_homes]]
 module = "feedbax.contracts.graphs.materialization"
-symbols = ["materialize_model_artifact"]
+symbols = ["materialize_array_store", "materialize_model_artifact"]
 
 [[canonical_homes]]
 module = "feedbax.contracts.graphs.serialization"
@@ -154,6 +161,7 @@ symbols = [
   "TreeHashRef",
   "load_manifest",
   "safe_manifest_key",
+  "sha256_file",
 ]
 
 [[canonical_homes]]

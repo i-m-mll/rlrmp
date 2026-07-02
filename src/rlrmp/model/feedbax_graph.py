@@ -779,6 +779,7 @@ def build_point_mass_sensorimotor_graph_spec(
     key: Any | None = None,
     controller_kind: str | None = None,
     intervention_type: str | None = "FixedField",
+    _legacy_recurrent_controller: bool = False,
 ) -> GraphSpec:
     """Serialize the point-mass feedback loop used by RLRMP training.
 
@@ -814,6 +815,7 @@ def build_point_mass_sensorimotor_graph_spec(
         hidden_type=hidden_type,
         sisu_gating=sisu_gating,
         key=key_param,
+        legacy_recurrent_controller=_legacy_recurrent_controller,
     )
     subgraphs = {"net": net_subgraph} if net_subgraph is not None else None
     nodes: dict[str, ComponentSpec] = {
@@ -1193,6 +1195,48 @@ def create_point_mass_graph_ensemble(
     return install_simple_feedback_runtime_hooks(eqx.combine(stacked_dynamic, static_model))
 
 
+def create_legacy_point_mass_graph_ensemble(
+    hps: Any,
+    task: Any,
+    *,
+    n: int,
+    key: Any,
+    n_extra_inputs: int = 1,
+    population_structure: PopulationStructure | None = None,
+    hidden_type: Any | None = None,
+    sisu_gating: str = "additive",
+    controller_kind: str | None = None,
+    intervention_type: str = "FixedField",
+) -> Graph:
+    """Build the historical staged-network graph shape for checkpoint materialization."""
+
+    keys = jr.split(key, int(n))
+    models = [
+        materialize_rlrmp_graph_spec(
+            build_point_mass_sensorimotor_graph_spec(
+                hps,
+                task=task,
+                n_extra_inputs=n_extra_inputs,
+                population_structure=population_structure,
+                hidden_type=hidden_type,
+                sisu_gating=sisu_gating,
+                controller_kind=controller_kind,
+                intervention_type=intervention_type,
+                key=key_i,
+                _legacy_recurrent_controller=True,
+            ),
+            install_runtime_hooks=False,
+        )
+        for key_i in keys
+    ]
+    template = models[0]
+    models = [template, *[_align_state_index_markers(template, model) for model in models[1:]]]
+    dynamic_models = [eqx.filter(model, eqx.is_array) for model in models]
+    static_model = eqx.filter(template, lambda leaf: not eqx.is_array(leaf))
+    stacked_dynamic = jt.map(lambda *leaves: jnp.stack(leaves), *dynamic_models)
+    return install_simple_feedback_runtime_hooks(eqx.combine(stacked_dynamic, static_model))
+
+
 def _align_state_index_markers(template: Graph, model: Graph) -> Graph:
     def _align(template_leaf, model_leaf):
         if isinstance(template_leaf, StateIndex) and isinstance(model_leaf, StateIndex):
@@ -1448,6 +1492,7 @@ def _controller_component_spec(
     hidden_type: Any | None = None,
     sisu_gating: str = "additive",
     key: list[int] | None = None,
+    legacy_recurrent_controller: bool = False,
 ) -> tuple[ComponentSpec, GraphSpec | None]:
     if controller_kind == "linear":
         return (
@@ -1486,6 +1531,28 @@ def _controller_component_spec(
         hps,
         population_structure,
     )
+    if legacy_recurrent_controller:
+        return (
+            ComponentSpec(
+                type="RLRMPSimpleStagedNetwork",
+                params={
+                    "controller_kind": controller_kind,
+                    "input_size": input_size,
+                    "input_size_source": "task-derived" if input_size is not None else "unresolved",
+                    "hidden_size": int(hps.model.hidden_size),
+                    "out_size": 2,
+                    "encoding_size": None,
+                    "hidden_type": hidden_type_name,
+                    "sisu_gating": str(sisu_gating),
+                    "n_extra_inputs": int(n_extra_inputs),
+                    "population_structure": population_params,
+                    "key": key,
+                },
+                input_ports=["input", "feedback"],
+                output_ports=["output", "hidden"],
+            ),
+            None,
+        )
     if _requires_native_recurrent_controller_gap(
         controller_kind=controller_kind,
         input_size=input_size,

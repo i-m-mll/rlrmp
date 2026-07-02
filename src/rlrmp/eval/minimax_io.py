@@ -26,12 +26,18 @@ import jax.random as jr
 import jax.tree as jt
 import jax.tree_util as jtu
 from equinox.nn import StateIndex
-from feedbax.intervene import FixedFieldParams
+from feedbax.intervene import FixedFieldParams, schedule_intervenor
 from jax_cookbook import load_with_hyperparameters
 
 from rlrmp.adversary import GaussianBumpAdversary
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
-from rlrmp.train.task_model import setup_task_model_pair
+from rlrmp.model.feedbax_graph import create_legacy_point_mass_graph_ensemble
+from rlrmp.train.task_model import (
+    SISU_FNS,
+    build_task_base,
+    get_disturbance_params,
+    setup_task_model_pair,
+)
 
 __all__ = ["load_adversary", "load_config", "load_model"]
 
@@ -72,9 +78,44 @@ def _squeeze_replicate_axis(model):
 def make_legacy_minimax_model_template(hps, *, key):
     """Build the legacy float32/int32 minimax template used by archived runs."""
 
-    template = setup_task_model_pair(hps, key=key).model
+    template = _setup_legacy_minimax_model(hps, key=key)
     template = _with_legacy_intervenor_state_index(template)
     return jtu.tree_map_with_path(_legacy_serialized_array_leaf, template)
+
+
+def _setup_legacy_minimax_model(hps, *, key):
+    """Rebuild the pre-native staged-network graph shape for legacy checkpoints."""
+
+    task = build_task_base(hps)
+    model = create_legacy_point_mass_graph_ensemble(
+        hps,
+        task,
+        n=hps.model.n_replicates,
+        key=key,
+        n_extra_inputs=1,
+        hidden_type=getattr(hps, "hidden_type", None),
+        sisu_gating=str(getattr(hps, "sisu_gating", "additive")),
+        intervention_type=_intervention_component_type(hps.pert.type),
+    )
+    task = task.add_input(name="sisu", input_fn=SISU_FNS[hps.method])
+    _, model = schedule_intervenor(
+        task,
+        model,
+        label=PLANT_INTERVENOR_LABEL,
+        intervenor_params=get_disturbance_params(hps),
+        default_active=False,
+    )
+    return model
+
+
+def _intervention_component_type(pert_type: str) -> str:
+    if pert_type == "curl":
+        return "CurlField"
+    if pert_type in {"constant", "gusts"}:
+        return "FixedField"
+    if pert_type == "dynamics_matrix":
+        return "DynamicsMatrixPerturb"
+    raise ValueError(f"Unknown perturbation type: {pert_type!r}")
 
 
 def normalize_loaded_minimax_runtime(model, hps, *, key, current_model=None):
