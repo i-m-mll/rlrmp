@@ -1,0 +1,92 @@
+name: Feedbax contract gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - develop
+
+jobs:
+  feedbax-contract:
+    name: Feedbax drift contract suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out rlrmp
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Read Feedbax pin
+        id: feedbax-ref
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          from pathlib import Path
+          import tomllib
+
+          ref = tomllib.loads(Path("ci/feedbax-ref.toml").read_text())
+          print(f"repo={ref['repo']}")
+          print(f"rev={ref['rev']}")
+          print(f"branch={ref['branch']}")
+          PY
+
+      - name: Check out pinned Feedbax
+        uses: actions/checkout@v4
+        with:
+          repository: i-m-mll/feedbax
+          ref: ${{ steps.feedbax-ref.outputs.rev }}
+          path: feedbax
+
+      - name: Install clean contract environment
+        run: |
+          uv venv "$RUNNER_TEMP/feedbax-contract-venv"
+          . "$RUNNER_TEMP/feedbax-contract-venv/bin/activate"
+          uv pip install pytest
+          uv pip install "jax-cookbook @ git+https://github.com/i-m-mll/jax-cookbook.git@779693475337d5275e20e6a5c1bacce448e444f3"
+          uv pip install ./feedbax
+          uv build --wheel
+          uv pip install dist/*.whl
+
+      - name: Run rlrmp Feedbax contract suite
+        run: |
+          set -o pipefail
+          . "$RUNNER_TEMP/feedbax-contract-venv/bin/activate"
+          pytest -m feedbax_contract --strict-markers \
+            -o xfail_strict=true \
+            -o empty_parameter_set_mark=fail_at_collect \
+            -ra | tee "$RUNNER_TEMP/rlrmp-feedbax-contract.log"
+          ! grep -E "SKIPPED|XFAIL" "$RUNNER_TEMP/rlrmp-feedbax-contract.log"
+
+      - name: Run rlrmp clean-install check when present
+        run: |
+          . "$RUNNER_TEMP/feedbax-contract-venv/bin/activate"
+          if [ -x scripts/ci_clean_install_check.sh ]; then
+            scripts/ci_clean_install_check.sh
+          elif [ -f scripts/ci_clean_install_check.py ]; then
+            python scripts/ci_clean_install_check.py
+          else
+            echo "scripts/ci_clean_install_check.* not present in this branch; ccfe63a owns it."
+          fi
+
+      - name: Run Feedbax upstream contract suites
+        working-directory: feedbax
+        run: |
+          set -o pipefail
+          . "$RUNNER_TEMP/feedbax-contract-venv/bin/activate"
+          pytest \
+            tests/test_contract_import_boundary.py \
+            tests/test_root_import_boundaries.py \
+            tests/test_structured_spec_migrations.py \
+            tests/test_provider_contract.py \
+            --strict-markers \
+            -o xfail_strict=true \
+            -o empty_parameter_set_mark=fail_at_collect \
+            -ra | tee "$RUNNER_TEMP/feedbax-upstream-contract.log"
+          ! grep -E "SKIPPED|XFAIL" "$RUNNER_TEMP/feedbax-upstream-contract.log"

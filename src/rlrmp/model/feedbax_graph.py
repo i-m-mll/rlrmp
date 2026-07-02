@@ -47,6 +47,7 @@ from rlrmp.model.trainable import staged_network_trainable_paths
 
 
 SCHEMA_VERSION = "rlrmp.feedbax_graph.v1"
+SUPPORTED_GRAPH_SPEC_VERSIONS = ("1.0.0",)
 EXECUTION_BACKEND = "feedbax.contracts.graphs.serialization.spec_to_graph"
 
 

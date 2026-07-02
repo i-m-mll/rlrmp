@@ -1,0 +1,350 @@
+manifest_version = 1
+
+public_import_modules = [
+  "feedbax",
+  "jax_cookbook.tree",
+]
+
+[[known_in_flight]]
+path = "src/rlrmp/runtime/studio_records.py"
+module = "feedbax.studio_execution"
+symbols = [
+  "StudioPipelineMaterializationRequest",
+  "StudioPipelineMaterializationResult",
+  "materialize_studio_pipeline",
+]
+reason = "fixed by ccfe63a - coordinator empties this list at integration"
+
+[[known_in_flight]]
+path = "src/rlrmp/artifact_migration.py"
+module = "feedbax.artifact_materialize"
+symbols = ["materialize_model_artifact"]
+reason = "fixed by ccfe63a - coordinator empties this list at integration"
+
+[[known_in_flight]]
+path = "src/rlrmp/lme.py"
+module = "jax_cookbook._ldict"
+symbols = ["LDict", "LDictConstructor"]
+reason = "fixed by ccfe63a - coordinator empties this list at integration"
+
+[[allowed_private_strings]]
+path = "results/2bc95fd/scripts/plot_training_loss_6cell.py"
+line = "feedbax._io.save"
+reason = "Historical docstring names the old Feedbax save format; not a live import."
+
+[[allowed_private_strings]]
+path = "results/f47abb1/scripts/plot_training_loss_lit_replication.py"
+line = "feedbax._io.save"
+reason = "Historical docstring names the old Feedbax save format; not a live import."
+
+[[canonical_homes]]
+module = "feedbax"
+symbols = [
+  "AbstractTask",
+  "DelayedReachTaskInputs",
+  "DelayedReaches",
+  "SimpleReaches",
+  "TaskTrialSpec",
+  "TrialTimeline",
+  "WhereDict",
+  "pos_only_states",
+  "prepare_trial",
+]
+
+[[canonical_homes]]
+module = "feedbax.analysis"
+symbols = ["GraphControllerAdapter", "graph_controller"]
+
+[[canonical_homes]]
+module = "feedbax.analysis.analysis"
+symbols = ["AbstractAnalysis", "AbstractAnalysisPorts", "Data", "InputOf"]
+
+[[canonical_homes]]
+module = "feedbax.analysis.context"
+symbols = ["AnalysisArtifactFile", "AnalysisRunContext"]
+
+[[canonical_homes]]
+module = "feedbax.analysis.evaluation"
+symbols = ["EvaluationRecipeResult", "register_evaluation_recipe"]
+
+[[canonical_homes]]
+module = "feedbax.analysis.materialization"
+symbols = [
+  "AnalysisArtifactGroup",
+  "ContextMaterializer",
+  "ExistingAnalysisArtifact",
+  "MaterializationResult",
+  "materialization_metadata",
+]
+
+[[canonical_homes]]
+module = "feedbax.analysis.pca"
+symbols = ["PCAResults"]
+
+[[canonical_homes]]
+module = "feedbax.analysis.specs"
+symbols = [
+  "AnalysisRecipeResult",
+  "ResolvedAnalysisInput",
+  "execute_analysis_run_spec",
+  "register_analysis_recipe",
+]
+
+[[canonical_homes]]
+module = "feedbax.analysis.state_utils"
+symbols = ["vmap_eval_ensemble"]
+
+[[canonical_homes]]
+module = "feedbax.analysis.types"
+symbols = ["AnalysisInputData"]
+
+[[canonical_homes]]
+module = "feedbax.component_registry"
+symbols = ["ComponentMigration", "ComponentMigrationPack", "get_component_registry"]
+
+[[canonical_homes]]
+module = "feedbax.config.namespace"
+symbols = ["TreeNamespace", "dict_to_namespace"]
+
+[[canonical_homes]]
+module = "feedbax.config.tree"
+symbols = ["ldict_level_to_top"]
+
+[[canonical_homes]]
+module = "feedbax.config.utils"
+symbols = ["deep_merge"]
+
+[[canonical_homes]]
+module = "feedbax.contracts.graph"
+symbols = [
+  "AdditiveGraphChannelAdapterSpec",
+  "AdditiveGraphChannelTargetSpec",
+  "ComponentSpec",
+  "GraphMetadata",
+  "GraphSpec",
+  "RetainedObservableSpec",
+  "RetainedObservableTargetSpec",
+  "RetentionPolicySpec",
+  "StudioArtifactRef",
+  "StudioCollectionRef",
+  "StudioManifestRef",
+  "StudioTaskBindingSpec",
+  "StudioValidationState",
+  "StudioWorkspaceSpec",
+  "WireSpec",
+  "build_default_studio_workspace",
+]
+
+[[canonical_homes]]
+module = "feedbax.contracts.graphs.serialization"
+symbols = ["graph_to_spec", "spec_to_graph"]
+
+[[canonical_homes]]
+module = "feedbax.contracts.manifest"
+symbols = [
+  "AnalysisRunSpec",
+  "ArtifactRef",
+  "EntrypointRef",
+  "EvaluationRunSpec",
+  "FileHashRef",
+  "ModelArtifactManifest",
+  "ParentRef",
+  "Provenance",
+  "REGENERATION_SPEC_SCHEMA_VERSION",
+  "RegenerationCommand",
+  "RegenerationSpec",
+  "SCHEMA_VERSION",
+  "SpecPayload",
+  "TrainingRunManifest",
+  "TreeHashEntry",
+  "TreeHashRef",
+  "load_manifest",
+  "safe_manifest_key",
+]
+
+[[canonical_homes]]
+module = "feedbax.contracts.migrations"
+symbols = [
+  "SpecFamilyMigrationPolicy",
+  "SpecMigrationResult",
+  "SpecSchemaFamily",
+  "SpecSchemaRegistry",
+  "UnknownSpecFamily",
+  "UnsupportedSpecVersion",
+  "default_spec_registry",
+  "migrate_structured_spec_payload",
+]
+
+[[canonical_homes]]
+module = "feedbax.intervene"
+symbols = [
+  "AddNoise",
+  "CurlField",
+  "CurlFieldParams",
+  "DynamicsMatrixPerturb",
+  "DynamicsMatrixPerturbParams",
+  "FixedField",
+  "FixedFieldParams",
+  "InterventionSpec",
+  "TimeSeriesParam",
+  "schedule_intervenor",
+]
+
+[[canonical_homes]]
+module = "feedbax.intervene.schedule"
+symbols = ["TimeSeriesParam"]
+
+[[canonical_homes]]
+module = "feedbax.mechanics"
+symbols = ["LinearStateSpace", "Mechanics", "MechanicsState"]
+
+[[canonical_homes]]
+module = "feedbax.mechanics.plant"
+symbols = ["DirectForceInput"]
+
+[[canonical_homes]]
+module = "feedbax.mechanics.skeleton.pointmass"
+symbols = ["PointMass"]
+
+[[canonical_homes]]
+module = "feedbax.models.feedback"
+symbols = ["FeedbackChannels", "SimpleFeedback", "SimpleFeedbackState"]
+
+[[canonical_homes]]
+module = "feedbax.models.networks"
+symbols = [
+  "LeakyRNNCell",
+  "MaskedLinear",
+  "NetworkState",
+  "PopulationStructure",
+  "SimpleStagedNetwork",
+]
+
+[[canonical_homes]]
+module = "feedbax.objectives.loss"
+symbols = [
+  "AbstractLoss",
+  "CompositeLoss",
+  "EpochMaskedLoss",
+  "FuncTermsLoss",
+  "OutputJerkLoss",
+  "StateDerivativeLoss",
+  "TargetSpec",
+  "TargetStateLoss",
+  "TermTree",
+  "reduce_over_time_with_weights",
+  "target_final_state",
+  "target_zero",
+]
+
+[[canonical_homes]]
+module = "feedbax.objectives.streaming"
+symbols = ["make_streaming_loss_fn"]
+
+[[canonical_homes]]
+module = "feedbax.plot"
+symbols = ["loss_history", "loss_history_compare", "save_figure"]
+
+[[canonical_homes]]
+module = "feedbax.plot.io"
+symbols = ["save_figure_with_spec"]
+
+[[canonical_homes]]
+module = "feedbax.plugins"
+symbols = ["EXPERIMENT_REGISTRY"]
+
+[[canonical_homes]]
+module = "feedbax.plugins.discovery"
+symbols = ["register_package_from_module_info"]
+
+[[canonical_homes]]
+module = "feedbax.runtime.batch"
+symbols = ["BatchInfo"]
+
+[[canonical_homes]]
+module = "feedbax.runtime.channel"
+symbols = ["Channel", "ChannelState"]
+
+[[canonical_homes]]
+module = "feedbax.runtime.components"
+symbols = ["Sum"]
+
+[[canonical_homes]]
+module = "feedbax.runtime.filters"
+symbols = ["FilterState"]
+
+[[canonical_homes]]
+module = "feedbax.runtime.graph"
+symbols = ["Component", "Graph", "Wire", "init_state_from_component"]
+
+[[canonical_homes]]
+module = "feedbax.runtime.graph_channel_adapters"
+symbols = ["materialize_additive_channel_adapters"]
+
+[[canonical_homes]]
+module = "feedbax.runtime.iteration"
+symbols = ["run_component"]
+
+[[canonical_homes]]
+module = "feedbax.runtime.model"
+symbols = ["AbstractModel"]
+
+[[canonical_homes]]
+module = "feedbax.runtime.noise"
+symbols = ["Multiplicative", "Normal"]
+
+[[canonical_homes]]
+module = "feedbax.runtime.parameter_constraints"
+symbols = ["project_component_parameters"]
+
+[[canonical_homes]]
+module = "feedbax.runtime.state"
+symbols = ["CartesianState"]
+
+[[canonical_homes]]
+module = "feedbax.tasks"
+symbols = [
+  "extract_timeseries_params",
+  "infer_n_steps",
+  "prepare_inputs",
+  "set_state_by_path",
+  "where_key_to_path",
+]
+
+[[canonical_homes]]
+module = "feedbax.train"
+symbols = ["TaskTrainerHistory", "init_task_trainer_history"]
+
+[[canonical_homes]]
+module = "feedbax.training.loss"
+symbols = ["get_readout_norm_loss"]
+
+[[canonical_homes]]
+module = "feedbax.training.train"
+symbols = [
+  "TaskTrainer",
+  "always_active",
+  "bernoulli_active",
+  "make_delayed_cosine_schedule",
+  "train_pair",
+]
+
+[[canonical_homes]]
+module = "feedbax.training.trainer"
+symbols = ["get_model_parameters", "init_task_trainer_history"]
+
+[[canonical_homes]]
+module = "feedbax.training.types"
+symbols = ["TaskModelPair"]
+
+[[canonical_homes]]
+module = "jax_cookbook"
+symbols = ["LDict", "is_module", "load", "load_with_hyperparameters", "save"]
+
+[[canonical_homes]]
+module = "jax_cookbook.misc"
+symbols = ["split_by", "window_take"]
+
+[[canonical_homes]]
+module = "jax_cookbook.tree"
+symbols = ["array_set", "filter_spec_leaves"]

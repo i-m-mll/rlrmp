@@ -64,3 +64,10 @@ exclude = ["**/__pycache__", ".venv", "archive", "manuscript", "results", "docs"
 typeCheckingMode = "standard"
 verboseOutput = true
 reportMissingImports = true
+
+[tool.pytest.ini_options]
+addopts = "--strict-markers"
+testpaths = ["tests"]
+markers = [
+    "feedbax_contract: Feedbax drift contract and cross-repo compatibility gates",
+]
