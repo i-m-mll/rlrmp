@@ -54,12 +54,14 @@ from rlrmp.loss import (
 from rlrmp.paths import REPO_ROOT, run_artifact_dir, run_spec_dir
 import rlrmp.train.cs_perturbation_training as cs_perturbation_training
 from rlrmp.train.cs_nominal_gru import (
+    AdaptiveEpsilonState,
     CS_DELAYED_REACH_TASK_TYPE,
     DEFAULT_DELAYED_P_CATCH_TRIAL,
     DEFAULT_STOCHASTIC_PRESET,
     DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON,
     DELAYED_REACH_TRAINING_MODE,
     GradientDiagnosticsState,
+    TrainingState,
     UpdateDiagnosticsState,
     build_graph_bundle,
     build_hps,
@@ -69,6 +71,7 @@ from rlrmp.train.cs_nominal_gru import (
     _adaptive_epsilon_damage_target,
     _adaptive_epsilon_outer_weight,
     _adaptive_epsilon_schedule_batch,
+    _adaptive_epsilon_zero_guard_from_state,
     _initial_adaptive_epsilon_zero_guard,
     _update_adaptive_epsilon_zero_guard,
     main,
@@ -79,11 +82,13 @@ from rlrmp.train.cs_nominal_gru import (
     _sample_adaptive_epsilon_damage_eval_batch,
     _sample_adaptive_epsilon_training_batch,
     _update_adaptive_epsilon_state,
+    load_latest_checkpoint,
     planned_246182c_post_movement_cost_tail_rows,
     planned_e901a20_policy_adversary_rows,
     planned_ef9c882_start_pos_hold_rows,
     resolve_run_spec_args,
     run_full_training,
+    save_training_checkpoint,
     write_run_spec,
 )
 from rlrmp.train.cs_perturbation_training import (
@@ -850,6 +855,99 @@ def test_adaptive_epsilon_zero_adversary_guard_stops_after_two_active_checkpoint
     guard = _update_adaptive_epsilon_zero_guard(guard, active_zero)
     assert guard["consecutive_active_zero_adversary_checkpoints"] == 2
     assert guard["should_stop"] is True
+
+
+def test_adaptive_epsilon_zero_guard_survives_checkpoint_resume(tmp_path: Path) -> None:
+    active_zero = {
+        "adaptive_epsilon_adaptive_update_inner_selected_objective_gain_over_zero": np.array(
+            [0.0]
+        ),
+        "adaptive_epsilon_target_damage": np.array([100.0]),
+        "adaptive_epsilon_outer_weight": np.array([1.0]),
+    }
+    guard = _update_adaptive_epsilon_zero_guard(
+        _initial_adaptive_epsilon_zero_guard(enabled=True),
+        active_zero,
+    )
+    checkpoint_root = tmp_path / "checkpoints"
+    model_template = jnp.asarray([1.0, 2.0], dtype=jnp.float32)
+    optimizer_state_template = jnp.asarray([3.0], dtype=jnp.float32)
+    state = TrainingState(
+        model=model_template,
+        optimizer_state=optimizer_state_template,
+        completed_batches=4,
+        key=jnp.asarray([0, 1], dtype=jnp.uint32),
+        history=None,
+        adaptive_epsilon_state=AdaptiveEpsilonState(
+            lambda_value=0.5,
+            zero_adversary_guard=guard,
+        ),
+    )
+    save_training_checkpoint(
+        checkpoint_root,
+        state,
+        args=_args(n_train_batches=8, checkpoint_interval_batches=4),
+        run_spec={"schema_version": "test"},
+    )
+
+    loaded = load_latest_checkpoint(
+        checkpoint_root,
+        model_template=model_template,
+        optimizer_state_template=optimizer_state_template,
+    )
+    assert loaded.adaptive_epsilon_state is not None
+    restored_guard = _adaptive_epsilon_zero_guard_from_state(
+        loaded.adaptive_epsilon_state,
+        enabled=True,
+    )
+
+    assert restored_guard["checkpoints_seen"] == 1
+    assert restored_guard["consecutive_active_zero_adversary_checkpoints"] == 1
+    assert restored_guard["should_stop"] is False
+
+    resumed_guard = _update_adaptive_epsilon_zero_guard(restored_guard, active_zero)
+    assert resumed_guard["checkpoints_seen"] == 2
+    assert resumed_guard["consecutive_active_zero_adversary_checkpoints"] == 2
+    assert resumed_guard["should_stop"] is True
+
+
+def test_adaptive_epsilon_zero_guard_legacy_checkpoint_defaults_to_zero(tmp_path: Path) -> None:
+    checkpoint_root = tmp_path / "checkpoints"
+    model_template = jnp.asarray([1.0, 2.0], dtype=jnp.float32)
+    optimizer_state_template = jnp.asarray([3.0], dtype=jnp.float32)
+    state = TrainingState(
+        model=model_template,
+        optimizer_state=optimizer_state_template,
+        completed_batches=4,
+        key=jnp.asarray([0, 1], dtype=jnp.uint32),
+        history=None,
+        adaptive_epsilon_state=AdaptiveEpsilonState(lambda_value=0.5),
+    )
+    checkpoint_path = save_training_checkpoint(
+        checkpoint_root,
+        state,
+        args=_args(n_train_batches=8, checkpoint_interval_batches=4),
+        run_spec={"schema_version": "test"},
+    )
+    metadata_path = checkpoint_path / "metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["adaptive_epsilon_state"].pop("zero_adversary_guard", None)
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    loaded = load_latest_checkpoint(
+        checkpoint_root,
+        model_template=model_template,
+        optimizer_state_template=optimizer_state_template,
+    )
+    assert loaded.adaptive_epsilon_state is not None
+    restored_guard = _adaptive_epsilon_zero_guard_from_state(
+        loaded.adaptive_epsilon_state,
+        enabled=True,
+    )
+
+    assert restored_guard["checkpoints_seen"] == 0
+    assert restored_guard["consecutive_active_zero_adversary_checkpoints"] == 0
+    assert restored_guard["should_stop"] is False
 
 
 def test_adaptive_epsilon_lambda_update_uses_clipped_log_ratio() -> None:

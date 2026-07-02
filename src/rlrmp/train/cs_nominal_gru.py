@@ -179,15 +179,19 @@ class AdaptiveEpsilonState:
     last_update_batch: int | None = None
     update_count: int = 0
     schedule_start_batch: int = 0
+    zero_adversary_guard: dict[str, Any] | None = None
 
     def to_json(self) -> dict[str, Any]:
-        return {
+        payload = {
             "lambda_value": float(self.lambda_value),
             "damage_ema": None if self.damage_ema is None else float(self.damage_ema),
             "last_update_batch": self.last_update_batch,
             "update_count": int(self.update_count),
             "schedule_start_batch": int(self.schedule_start_batch),
         }
+        if self.zero_adversary_guard is not None:
+            payload["zero_adversary_guard"] = dict(self.zero_adversary_guard)
+        return payload
 
 
 @dataclass(frozen=True)
@@ -2284,7 +2288,8 @@ def run_full_training(
     pgd_diagnostic_chunks: list[dict[str, np.ndarray]] = []
     adaptive_epsilon_diagnostic_chunks: list[dict[str, np.ndarray]] = []
     policy_adversary_diagnostic_chunks: list[dict[str, np.ndarray]] = []
-    adaptive_epsilon_zero_adversary_guard = _initial_adaptive_epsilon_zero_guard(
+    adaptive_epsilon_zero_adversary_guard = _adaptive_epsilon_zero_guard_from_state(
+        state.adaptive_epsilon_state,
         enabled=adaptive_epsilon_enabled,
     )
     stop_reason: str | None = None
@@ -2420,6 +2425,19 @@ def run_full_training(
             adversary_policy=adversary_policy,
             adversary_optimizer_state=adversary_optimizer_state,
         )
+        if adaptive_epsilon_enabled and adaptive_epsilon_diagnostics:
+            adaptive_epsilon_zero_adversary_guard = _update_adaptive_epsilon_zero_guard(
+                adaptive_epsilon_zero_adversary_guard,
+                adaptive_epsilon_diagnostics,
+            )
+        if state.adaptive_epsilon_state is not None:
+            state = replace(
+                state,
+                adaptive_epsilon_state=replace(
+                    state.adaptive_epsilon_state,
+                    zero_adversary_guard=adaptive_epsilon_zero_adversary_guard,
+                ),
+            )
         checkpoint_path = save_training_checkpoint(
             checkpoint_root,
             state,
@@ -2427,11 +2445,6 @@ def run_full_training(
             run_spec=run_spec,
         )
         _commit_volume(volume_commit)
-        if adaptive_epsilon_enabled and adaptive_epsilon_diagnostics:
-            adaptive_epsilon_zero_adversary_guard = _update_adaptive_epsilon_zero_guard(
-                adaptive_epsilon_zero_adversary_guard,
-                adaptive_epsilon_diagnostics,
-            )
         chunks.append(
             {
                 "completed_batches": completed,
@@ -2632,6 +2645,14 @@ def load_latest_checkpoint(
             last_update_batch=adaptive_payload.get("last_update_batch"),
             update_count=int(adaptive_payload.get("update_count", 0)),
             schedule_start_batch=int(adaptive_payload.get("schedule_start_batch", 0)),
+            zero_adversary_guard=(
+                _normalize_adaptive_epsilon_zero_guard(
+                    adaptive_payload.get("zero_adversary_guard"),
+                    enabled=True,
+                )
+                if isinstance(adaptive_payload.get("zero_adversary_guard"), dict)
+                else None
+            ),
         )
         if isinstance(adaptive_payload, dict)
         else None
@@ -5004,6 +5025,7 @@ def _update_adaptive_epsilon_state(
         last_update_batch=int(batch_index) if updated else state.last_update_batch,
         update_count=state.update_count + (1 if updated else 0),
         schedule_start_batch=state.schedule_start_batch,
+        zero_adversary_guard=state.zero_adversary_guard,
     )
     return next_state, {
         "damage_ema": np.asarray(damage_ema, dtype=np.float32),
@@ -5463,6 +5485,47 @@ def _initial_adaptive_epsilon_zero_guard(*, enabled: bool) -> dict[str, Any]:
         "should_stop": False,
         "last_checkpoint": None,
     }
+
+
+def _adaptive_epsilon_zero_guard_from_state(
+    adaptive_state: AdaptiveEpsilonState | None,
+    *,
+    enabled: bool,
+) -> dict[str, Any]:
+    if adaptive_state is not None and isinstance(adaptive_state.zero_adversary_guard, dict):
+        return _normalize_adaptive_epsilon_zero_guard(
+            adaptive_state.zero_adversary_guard,
+            enabled=enabled,
+        )
+    return _initial_adaptive_epsilon_zero_guard(enabled=enabled)
+
+
+def _normalize_adaptive_epsilon_zero_guard(
+    payload: Any,
+    *,
+    enabled: bool,
+) -> dict[str, Any]:
+    guard = _initial_adaptive_epsilon_zero_guard(enabled=enabled)
+    if not isinstance(payload, dict):
+        return guard
+    guard["enabled"] = bool(payload.get("enabled", enabled))
+    guard["stop_reason"] = str(
+        payload.get("stop_reason", ADAPTIVE_EPSILON_ZERO_ADVERSARY_STOP_REASON)
+    )
+    guard["gain_tolerance"] = float(
+        payload.get(
+            "gain_tolerance",
+            ADAPTIVE_EPSILON_ZERO_ADVERSARY_GAIN_TOLERANCE,
+        )
+    )
+    guard["checkpoints_seen"] = int(payload.get("checkpoints_seen", 0))
+    guard["consecutive_active_zero_adversary_checkpoints"] = int(
+        payload.get("consecutive_active_zero_adversary_checkpoints", 0)
+    )
+    guard["should_stop"] = bool(payload.get("should_stop", False))
+    last_checkpoint = payload.get("last_checkpoint")
+    guard["last_checkpoint"] = last_checkpoint if isinstance(last_checkpoint, dict) else None
+    return guard
 
 
 def _update_adaptive_epsilon_zero_guard(
