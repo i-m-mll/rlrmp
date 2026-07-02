@@ -1,0 +1,96 @@
+manifest_version = 1
+marker = "feedbax_contract"
+
+[[families]]
+name = "analysis_recipe_contract"
+owner = "419eed1"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_feedbax_analysis_module_contract.py::"
+minimum_non_skipped = 2
+negative_canary = "tests/test_feedbax_contract_meta.py::test_analysis_recipe_negative_canary_rejects_bad_signature"
+
+[[families]]
+name = "graph_spec_contract"
+owner = "419eed1"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_feedbax_graph_specs.py::"
+minimum_non_skipped = 1
+negative_canary = "tests/test_feedbax_contract_meta.py::test_version_pin_negative_canary_rejects_unsupported_graph_version"
+
+[[families]]
+name = "artifact_manifest_normalization"
+owner = "419eed1"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_artifact_manifest_normalization_fixture.py::"
+minimum_non_skipped = 4
+negative_canary = "tests/test_feedbax_contract_meta.py::test_manifest_fixture_negative_canary_rejects_wrong_run_spec_version"
+
+[[families]]
+name = "import_boundary"
+owner = "419eed1"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_feedbax_import_boundary.py::"
+minimum_non_skipped = 2
+negative_canary = "tests/test_feedbax_import_boundary.py::test_import_boundary_negative_canaries_reject_private_and_uncanonical_imports"
+
+[[families]]
+name = "suite_manifest_meta"
+owner = "419eed1"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_feedbax_contract_meta.py::"
+minimum_non_skipped = 3
+negative_canary = "tests/test_feedbax_contract_meta.py::test_suite_manifest_negative_canary_rejects_zero_live_family"
+
+[[families]]
+name = "graph_sidecar_audit"
+owner = "e9fc384"
+status = "pending_enrollment"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/"
+minimum_non_skipped = 1
+note = "Parallel lane e9fc384 owns tests/ plus results/e9fc384 content; coordinator enrolls by changing status to live and narrowing the pattern."
+
+[[families]]
+name = "converted_sidecar_loadability"
+owner = "ae15851"
+status = "pending_enrollment"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/"
+minimum_non_skipped = 1
+
+[[families]]
+name = "retired_id_scan"
+owner = "7811e47"
+status = "pending_enrollment"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/"
+minimum_non_skipped = 1
+
+[[families]]
+name = "descriptor_basis_hash"
+owner = "844acc6"
+status = "pending_enrollment"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/"
+minimum_non_skipped = 1
+
+[[families]]
+name = "product_identity_hash"
+owner = "108b4d3"
+status = "pending_enrollment"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/"
+minimum_non_skipped = 1
+
+[[families]]
+name = "write_surface"
+owner = "f5d9695"
+status = "pending_enrollment"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/"
+minimum_non_skipped = 1

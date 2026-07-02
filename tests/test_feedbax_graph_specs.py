@@ -20,6 +20,7 @@ from rlrmp.model.feedbax_graph import (
     EXECUTION_BACKEND,
     GRAPH_PLANT_INTERVENOR_NODE,
     SCHEMA_VERSION,
+    SUPPORTED_GRAPH_SPEC_VERSIONS,
     build_point_mass_sensorimotor_graph_spec,
     build_rlrmp_feedbax_graph_bundle,
     build_runtime_rlrmp_feedbax_graph_bundle,
@@ -34,6 +35,9 @@ from rlrmp.intervention_compat import swap_plant_intervenor_to_dynamics_matrix
 from rlrmp.train.task_model import build_task_base, setup_task_model_pair
 from rlrmp.model.stochastic_runtime import PLANT_PROCESS_FORCE_NOISE_LABEL
 from rlrmp.train.minimax import build_hps
+
+
+pytestmark = pytest.mark.feedbax_contract
 
 
 def _args(**overrides):
@@ -109,8 +113,10 @@ def test_rlrmp_graph_contract_versions_pin_feedbax_manifest_schema() -> None:
     )
 
     assert SCHEMA_VERSION == "rlrmp.feedbax_graph.v1"
+    assert SUPPORTED_GRAPH_SPEC_VERSIONS == ("1.0.0",)
     assert FEEDBAX_MANIFEST_SCHEMA_VERSION == "feedbax.manifest.v1"
     assert bundle.graph_spec.metadata is not None
+    assert bundle.graph_spec.metadata.version in SUPPORTED_GRAPH_SPEC_VERSIONS
     assert bundle.graph_spec.metadata.version == "1.0.0"
     assert bundle.manifest["schema_version"] == SCHEMA_VERSION
     assert bundle.to_run_metadata()["schema_version"] == SCHEMA_VERSION
