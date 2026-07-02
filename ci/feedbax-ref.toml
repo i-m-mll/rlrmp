@@ -1,5 +1,4 @@
-# feedbax develop is currently two local commits ahead of origin/develop.
-# The cross-repo GitHub Actions clone remains red until this commit is pushed.
+# Pinned feedbax develop SHA (pushed to origin/develop).
 repo = "https://github.com/i-m-mll/feedbax.git"
 rev = "471b016f4e12dae4eacd6769b99fbc0ce320f4cf"
 branch = "develop"

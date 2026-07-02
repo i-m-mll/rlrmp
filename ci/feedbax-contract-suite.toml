@@ -49,11 +49,10 @@ negative_canary = "tests/test_feedbax_contract_meta.py::test_suite_manifest_nega
 [[families]]
 name = "graph_sidecar_audit"
 owner = "e9fc384"
-status = "pending_enrollment"
+status = "live"
 marker = "feedbax_contract"
-expected_collection_pattern = "tests/"
-minimum_non_skipped = 1
-note = "Parallel lane e9fc384 owns tests/ plus results/e9fc384 content; coordinator enrolls by changing status to live and narrowing the pattern."
+expected_collection_pattern = "tests/test_graph_sidecar_audit_manifest.py::"
+minimum_non_skipped = 10
 
 [[families]]
 name = "converted_sidecar_loadability"

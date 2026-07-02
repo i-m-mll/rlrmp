@@ -5,28 +5,6 @@ public_import_modules = [
   "jax_cookbook.tree",
 ]
 
-[[known_in_flight]]
-path = "src/rlrmp/runtime/studio_records.py"
-module = "feedbax.studio_execution"
-symbols = [
-  "StudioPipelineMaterializationRequest",
-  "StudioPipelineMaterializationResult",
-  "materialize_studio_pipeline",
-]
-reason = "fixed by ccfe63a - coordinator empties this list at integration"
-
-[[known_in_flight]]
-path = "src/rlrmp/artifact_migration.py"
-module = "feedbax.artifact_materialize"
-symbols = ["materialize_model_artifact"]
-reason = "fixed by ccfe63a - coordinator empties this list at integration"
-
-[[known_in_flight]]
-path = "src/rlrmp/lme.py"
-module = "jax_cookbook._ldict"
-symbols = ["LDict", "LDictConstructor"]
-reason = "fixed by ccfe63a - coordinator empties this list at integration"
-
 [[allowed_private_strings]]
 path = "results/2bc95fd/scripts/plot_training_loss_6cell.py"
 line = "feedbax._io.save"
@@ -134,6 +112,14 @@ symbols = [
   "WireSpec",
   "build_default_studio_workspace",
 ]
+
+[[canonical_homes]]
+module = "feedbax.contracts.graphs.materialization"
+symbols = ["materialize_model_artifact"]
+
+[[canonical_homes]]
+module = "feedbax.contracts.graphs.materialization"
+symbols = ["materialize_model_artifact"]
 
 [[canonical_homes]]
 module = "feedbax.contracts.graphs.serialization"
@@ -302,6 +288,14 @@ module = "feedbax.runtime.state"
 symbols = ["CartesianState"]
 
 [[canonical_homes]]
+module = "feedbax.studio.execution"
+symbols = [
+  "StudioPipelineMaterializationRequest",
+  "StudioPipelineMaterializationResult",
+  "materialize_studio_pipeline",
+]
+
+[[canonical_homes]]
 module = "feedbax.tasks"
 symbols = [
   "extract_timeseries_params",
@@ -339,7 +333,14 @@ symbols = ["TaskModelPair"]
 
 [[canonical_homes]]
 module = "jax_cookbook"
-symbols = ["LDict", "is_module", "load", "load_with_hyperparameters", "save"]
+symbols = [
+  "LDict",
+  "LDictConstructor",
+  "is_module",
+  "load",
+  "load_with_hyperparameters",
+  "save",
+]
 
 [[canonical_homes]]
 module = "jax_cookbook.misc"
