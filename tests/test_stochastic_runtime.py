@@ -112,7 +112,8 @@ def test_linear_tracker_runtime_uses_same_stochastic_force_channel() -> None:
     efferent = pair.model.nodes["efferent"]
     noise_func = efferent.noise_func
 
-    assert pair.model.nodes["net"].__class__.__name__ == "LinearTrackerController"
+    assert pair.model.nodes["net"].__class__.__name__ == "AffineFeedbackController"
+    assert pair.model.nodes["net_state"].__class__.__name__ == "NetworkStateCache"
     assert efferent.add_noise is True
     assert isinstance(noise_func, CompositeNoise)
     assert noise_func.terms[0].noise_func.std == 0.04

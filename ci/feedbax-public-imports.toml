@@ -81,6 +81,10 @@ module = "feedbax.component_registry"
 symbols = ["ComponentMigration", "ComponentMigrationPack", "get_component_registry"]
 
 [[canonical_homes]]
+module = "feedbax.control"
+symbols = ["AffineFeedbackController"]
+
+[[canonical_homes]]
 module = "feedbax.config.namespace"
 symbols = ["TreeNamespace", "dict_to_namespace"]
 

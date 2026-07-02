@@ -5,13 +5,17 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
+import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 import pytest
 from feedbax.component_registry import ComponentRegistry
 from feedbax.contracts.graph import GraphSpec
+from feedbax.control import AffineFeedbackController
 from feedbax.runtime.graph import Graph
+from feedbax.runtime.graph import init_state_from_component
 from feedbax.intervene import CurlField, DynamicsMatrixPerturb, FixedField
 from feedbax.contracts.manifest import SCHEMA_VERSION as FEEDBAX_MANIFEST_SCHEMA_VERSION
 
@@ -32,6 +36,7 @@ from rlrmp.model.feedbax_graph import (
     write_graph_spec_bundle,
 )
 from rlrmp.intervention_compat import swap_plant_intervenor_to_dynamics_matrix
+from rlrmp.controllers.linear import LinearController, LinearTrackerController
 from rlrmp.train.task_model import build_task_base, setup_task_model_pair
 from rlrmp.model.stochastic_runtime import PLANT_PROCESS_FORCE_NOISE_LABEL
 from rlrmp.train.minimax import build_hps
@@ -316,7 +321,111 @@ def test_graph_spec_serializes_explicit_stochastic_runtime_contract() -> None:
     assert (PLANT_PROCESS_FORCE_NOISE_LABEL, "output", "mechanics", "force") in force_edges
 
 
-def test_linear_tracker_is_graphspec_addressable_as_rlrmp_component() -> None:
+def _linear_controller_fixed_inputs():
+    gain = jnp.asarray(
+        [
+            [
+                [1.5, -0.5, 0.25, 2.0],
+                [-1.0, 0.75, -0.5, 1.25],
+            ]
+        ],
+        dtype=jnp.float32,
+    )
+    feedforward = jnp.asarray([[0.2, -0.1]], dtype=jnp.float32)
+    target = jnp.asarray([0.4, -0.2], dtype=jnp.float32)
+    feedback = (
+        jnp.asarray([0.1, 0.3], dtype=jnp.float32),
+        jnp.asarray([0.5, -0.4], dtype=jnp.float32),
+    )
+    input_value = {
+        "task": SimpleNamespace(
+            effector_target=SimpleNamespace(pos=target),
+        )
+    }
+    reference = jnp.concatenate([target, jnp.zeros(2, dtype=target.dtype)])
+    feedback_vector = jnp.concatenate(feedback)
+    return gain, feedforward, input_value, feedback, reference, feedback_vector
+
+
+def _with_float32_network_state(controller):
+    init_state = type(controller._initial_state)(
+        input=jnp.zeros(0),
+        hidden=jnp.zeros((1,), dtype=jnp.float32),
+        output=jnp.zeros(controller.n_controls, dtype=jnp.float32),
+        encoding=None,
+    )
+    object.__setattr__(controller, "_initial_state", init_state)
+    object.__setattr__(controller.state_index, "init", init_state)
+    return controller
+
+
+def test_affine_linear_controller_sign_convention_matches_rlrmp_forms() -> None:
+    gain, feedforward, input_value, feedback, reference, feedback_vector = (
+        _linear_controller_fixed_inputs()
+    )
+
+    regulator = _with_float32_network_state(LinearController(n_steps=1, key=jr.PRNGKey(0)))
+    tracker = _with_float32_network_state(LinearTrackerController(n_steps=1, key=jr.PRNGKey(0)))
+    regulator = eqx.tree_at(lambda controller: controller.K, regulator, gain)
+    tracker = eqx.tree_at(
+        lambda controller: (controller.K, controller.u_ff),
+        tracker,
+        (gain, feedforward),
+    )
+    affine_regulator = AffineFeedbackController(gain=gain)
+    affine_tracker = AffineFeedbackController(gain=gain, feedforward=feedforward)
+
+    legacy_inputs = {"input": input_value, "feedback": feedback}
+    affine_inputs = {"feedback": feedback_vector, "reference": reference}
+
+    legacy_regulator_output, _ = regulator(
+        legacy_inputs,
+        init_state_from_component(regulator),
+        key=jr.PRNGKey(1),
+    )
+    affine_regulator_output, _ = affine_regulator(
+        affine_inputs,
+        init_state_from_component(affine_regulator),
+        key=jr.PRNGKey(1),
+    )
+    legacy_tracker_output, _ = tracker(
+        legacy_inputs,
+        init_state_from_component(tracker),
+        key=jr.PRNGKey(1),
+    )
+    affine_tracker_output, _ = affine_tracker(
+        affine_inputs,
+        init_state_from_component(affine_tracker),
+        key=jr.PRNGKey(1),
+    )
+
+    assert jnp.allclose(
+        legacy_regulator_output["output"],
+        jnp.asarray([1.375, 0.075], dtype=jnp.float32),
+        rtol=0.0,
+        atol=1e-6,
+    )
+    assert jnp.allclose(
+        affine_regulator_output["command"],
+        legacy_regulator_output["output"],
+        rtol=0.0,
+        atol=1e-6,
+    )
+    assert jnp.allclose(
+        legacy_tracker_output["output"],
+        jnp.asarray([1.575, -0.025], dtype=jnp.float32),
+        rtol=0.0,
+        atol=1e-6,
+    )
+    assert jnp.allclose(
+        affine_tracker_output["command"],
+        legacy_tracker_output["output"],
+        rtol=0.0,
+        atol=1e-6,
+    )
+
+
+def test_linear_tracker_uses_native_affine_controller_graph_structure() -> None:
     hps = _hps(hidden_type="linear_tracker")
     task = build_task_base(hps)
     bundle = build_rlrmp_feedbax_graph_bundle(
@@ -328,11 +437,25 @@ def test_linear_tracker_is_graphspec_addressable_as_rlrmp_component() -> None:
     graph = materialize_rlrmp_graph_spec(bundle.graph_spec)
 
     net = bundle.graph_spec.nodes["net"]
-    assert net.type == "RLRMPLinearTrackerController"
-    assert net.params["n_steps"] == hps.task.n_steps - 1
-    assert net.params["target_source"] == "input.task.effector_target.pos"
-    assert graph.nodes["net"].__class__.__name__ == "LinearTrackerController"
-    assert bundle.training_spec["trainable"] == ["nodes.net.K", "nodes.net.u_ff"]
+    assert net.type == "AffineFeedbackController"
+    assert jnp.asarray(net.params["gain"]).shape == (hps.task.n_steps - 1, 2, 4)
+    assert jnp.asarray(net.params["feedforward"]).shape == (hps.task.n_steps - 1, 2)
+    assert bundle.graph_spec.nodes["feedback_vector"].type == "Ravel"
+    assert bundle.graph_spec.nodes["target_reference"].type == "RLRMPPointMassReferenceVector"
+    assert bundle.graph_spec.nodes["target_reference"].params["target_source"] == (
+        "input.task.effector_target.pos"
+    )
+    assert bundle.graph_spec.nodes["net_state"].type == "RLRMPNetworkStateCache"
+    assert graph.nodes["net"].__class__.__name__ == "AffineFeedbackController"
+    assert graph.nodes["net_state"].__class__.__name__ == "NetworkStateCache"
+    assert bundle.training_spec["trainable"] == [
+        "nodes.net.gain",
+        "nodes.net.feedforward",
+    ]
+    assert ("net", "command", "net_state", "input") in {
+        (wire.source_node, wire.source_port, wire.target_node, wire.target_port)
+        for wire in bundle.graph_spec.wires
+    }
 
 
 def test_legacy_generic_rlrmp_graph_component_ids_materialize_through_migration() -> None:
@@ -564,7 +687,7 @@ def test_setup_task_model_pair_materializes_gru_and_linear_graph_paths() -> None
 
     for hidden_type, expected_net in [
         ("gru", "SimpleStagedNetwork"),
-        ("linear", "LinearController"),
+        ("linear", "AffineFeedbackController"),
     ]:
         hps = build_hps(_args(hidden_type=hidden_type, n_replicates=2))
         pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
@@ -579,7 +702,7 @@ def test_setup_task_model_pair_materializes_gru_and_linear_graph_paths() -> None
     ("hidden_type", "expected_net"),
     [
         ("gru", "Subgraph"),
-        ("linear", "RLRMPLinearController"),
+        ("linear", "AffineFeedbackController"),
     ],
 )
 @pytest.mark.parametrize(
@@ -613,6 +736,7 @@ def test_runtime_graph_bundle_exports_constructed_model_intervenor(
         assert graph.nodes["net_cell"].__class__.__name__ == "GRU"
     else:
         assert bundle.graph_spec.nodes["net"].type == expected_net
+        assert bundle.graph_spec.nodes["net_state"].type == "RLRMPNetworkStateCache"
     assert bundle.graph_spec.nodes["mechanics"].params["damping"] == hps.model.damping
     assert bundle.graph_spec.nodes["feedback"].params["delay"] == hps.model.feedback_delay_steps
     assert bundle.graph_spec.nodes["efferent"].type == "Channel"
