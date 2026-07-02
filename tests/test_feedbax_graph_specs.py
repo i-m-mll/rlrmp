@@ -23,6 +23,7 @@ from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.model.feedbax_graph import (
     EXECUTION_BACKEND,
     GRAPH_PLANT_INTERVENOR_NODE,
+    POINT_MASS_TARGET_POSITION_INPUT,
     SCHEMA_VERSION,
     SUPPORTED_GRAPH_SPEC_VERSIONS,
     build_point_mass_sensorimotor_graph_spec,
@@ -441,18 +442,37 @@ def test_linear_tracker_uses_native_affine_controller_graph_structure() -> None:
     assert jnp.asarray(net.params["gain"]).shape == (hps.task.n_steps - 1, 2, 4)
     assert jnp.asarray(net.params["feedforward"]).shape == (hps.task.n_steps - 1, 2)
     assert bundle.graph_spec.nodes["feedback_vector"].type == "Ravel"
-    assert bundle.graph_spec.nodes["target_reference"].type == "RLRMPPointMassReferenceVector"
-    assert bundle.graph_spec.nodes["target_reference"].params["target_source"] == (
-        "input.task.effector_target.pos"
+    assert bundle.graph_spec.nodes["zero_velocity"].type == "Constant"
+    assert bundle.graph_spec.nodes["zero_velocity"].params["value"] == [0.0, 0.0]
+    assert bundle.graph_spec.nodes["reference_mux"].type == "Mux"
+    task_binding_spec = bundle.task_spec["task_binding_spec"]
+    binding = task_binding_spec["bindings"][0]
+    data = task_binding_spec["exposed_data"][0]
+    assert binding["id"] == POINT_MASS_TARGET_POSITION_INPUT
+    assert binding["target_node_id"] == "reference_mux"
+    assert binding["target_port"] == "in_0"
+    assert data["path"] == "inputs.effector_target.pos"
+    assert bundle.graph_spec.input_bindings[POINT_MASS_TARGET_POSITION_INPUT] == (
+        "reference_mux",
+        "in_0",
     )
-    assert bundle.graph_spec.nodes["net_state"].type == "RLRMPNetworkStateCache"
     assert graph.nodes["net"].__class__.__name__ == "AffineFeedbackController"
-    assert graph.nodes["net_state"].__class__.__name__ == "NetworkStateCache"
+    assert "net_state" not in bundle.graph_spec.nodes
+    assert "net_state" not in graph.nodes
+    assert graph.input_bindings[POINT_MASS_TARGET_POSITION_INPUT] == ("reference_mux", "in_0")
     assert bundle.training_spec["trainable"] == [
         "nodes.net.gain",
         "nodes.net.feedforward",
     ]
-    assert ("net", "command", "net_state", "input") in {
+    assert ("zero_velocity", "output", "reference_mux", "in_1") in {
+        (wire.source_node, wire.source_port, wire.target_node, wire.target_port)
+        for wire in bundle.graph_spec.wires
+    }
+    assert ("reference_mux", "output", "net", "reference") in {
+        (wire.source_node, wire.source_port, wire.target_node, wire.target_port)
+        for wire in bundle.graph_spec.wires
+    }
+    assert ("net", "command", "efferent", "input") in {
         (wire.source_node, wire.source_port, wire.target_node, wire.target_port)
         for wire in bundle.graph_spec.wires
     }
@@ -736,7 +756,9 @@ def test_runtime_graph_bundle_exports_constructed_model_intervenor(
         assert graph.nodes["net_cell"].__class__.__name__ == "GRU"
     else:
         assert bundle.graph_spec.nodes["net"].type == expected_net
-        assert bundle.graph_spec.nodes["net_state"].type == "RLRMPNetworkStateCache"
+        assert bundle.graph_spec.nodes["reference_mux"].type == "Mux"
+        assert bundle.graph_spec.nodes["zero_velocity"].type == "Constant"
+        assert "net_state" not in bundle.graph_spec.nodes
     assert bundle.graph_spec.nodes["mechanics"].params["damping"] == hps.model.damping
     assert bundle.graph_spec.nodes["feedback"].params["delay"] == hps.model.feedback_delay_steps
     assert bundle.graph_spec.nodes["efferent"].type == "Channel"

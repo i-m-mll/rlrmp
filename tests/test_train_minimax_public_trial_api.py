@@ -10,9 +10,10 @@ import jax.numpy as jnp
 import jax.random as jr
 from equinox.nn import StateIndex
 from feedbax import TaskTrialSpec, TrialTimeline, WhereDict
-from feedbax.runtime.graph import Component, Graph
+from feedbax.runtime.graph import Component, Graph, init_state_from_component
 from feedbax.objectives.loss import CompositeLoss, ModelLoss
 
+from rlrmp.model.feedbax_graph import POINT_MASS_TARGET_POSITION_INPUT
 from rlrmp.paths import REPO_ROOT
 from rlrmp.train.task_model import setup_task_model_pair
 
@@ -139,6 +140,8 @@ def test_linear_tracker_minimax_selector_uses_affine_gain_and_feedforward() -> N
     where_trainable = train_minimax._trainable_where(pair.model)(pair.model)
 
     assert pair.model.nodes["net"].__class__.__name__ == "AffineFeedbackController"
+    assert POINT_MASS_TARGET_POSITION_INPUT in pair.model.input_ports
+    assert "net_state" not in pair.model.nodes
     assert hps.where["0"] == ["nodes.net.gain", "nodes.net.feedforward"]
     assert len(trainable) == len(where_trainable) == 2
     assert all(
@@ -147,3 +150,6 @@ def test_linear_tracker_minimax_selector_uses_affine_gain_and_feedforward() -> N
     )
     assert trainable[0] is pair.model.nodes["net"].gain
     assert trainable[1] is pair.model.nodes["net"].feedforward
+    state_view = pair.model.state_view(init_state_from_component(pair.model))
+    assert state_view.net.output.shape[-1] == 2
+    assert state_view.net.hidden.shape[-1] == 1

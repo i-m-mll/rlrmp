@@ -50,6 +50,7 @@ from rlrmp.model import (
     create_point_mass_linear_ensemble,
     create_point_mass_nn_ensemble,
 )
+from rlrmp.model.feedbax_graph import POINT_MASS_TARGET_POSITION_INPUT
 from rlrmp.task import TASK_TYPES
 from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_FINITE_POLICY_MECHANISMS,
@@ -401,6 +402,11 @@ def setup_task_model_pair(
         )
     except AttributeError:
         raise ValueError("No training method label assigned to hps_train.method")
+    if isinstance(hidden_type, str) and hidden_type in LINEAR_HIDDEN_TYPES:
+        task = task.add_input(
+            name=POINT_MASS_TARGET_POSITION_INPUT,
+            input_fn=_point_mass_target_position_input,
+        )
 
     # Build disturbance params for scheduling
     disturbance_params = get_disturbance_params(hps)
@@ -693,6 +699,20 @@ def _cs_delayed_go_cue_input(
     hold = jnp.asarray(task_inputs.hold, dtype=jnp.float32)
     go = 1.0 - hold
     return go[..., 0] if go.ndim > 0 and go.shape[-1] == 1 else go
+
+
+def _point_mass_target_position_input(
+    trial_spec: TaskTrialSpec,
+    key: PRNGKeyArray,
+) -> jax.Array:
+    """Expose the native Feedbax task-data binding for point-mass target position."""
+
+    del key
+    inputs = trial_spec.inputs
+    task_inputs = inputs.get("effector_target") if isinstance(inputs, Mapping) else inputs
+    if task_inputs is None or not hasattr(task_inputs, "pos"):
+        raise ValueError("Point-mass target-position binding requires inputs.effector_target.pos")
+    return jnp.asarray(task_inputs.pos)
 
 
 def _cs_delayed_go_cue_with_scalar_input(scalar_input_fn: Callable) -> Callable:

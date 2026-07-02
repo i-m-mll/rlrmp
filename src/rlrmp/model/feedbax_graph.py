@@ -23,10 +23,11 @@ from feedbax.contracts.graph import (
     RetainedObservableSpec,
     RetainedObservableTargetSpec,
     RetentionPolicySpec,
+    StudioTaskBindingSpec,
     WireSpec,
 )
 from feedbax.runtime.filters import FilterState
-from feedbax.runtime.graph import Component, Graph
+from feedbax.runtime.graph import Graph
 from feedbax.intervene import DynamicsMatrixPerturb
 from feedbax.mechanics import Mechanics, MechanicsState
 from feedbax.mechanics.plant import DirectForceInput
@@ -60,10 +61,11 @@ NATIVE_POINT_MASS_COMPONENT = "PointMass"
 NATIVE_FEEDBACK_CHANNELS_COMPONENT = "FeedbackChannels"
 NATIVE_CHANNEL_COMPONENT = "Channel"
 NATIVE_SUBGRAPH_COMPONENT = "Subgraph"
+NATIVE_CONSTANT_COMPONENT = "Constant"
 NATIVE_RAVEL_COMPONENT = "Ravel"
+NATIVE_MUX_COMPONENT = "Mux"
 NATIVE_AFFINE_FEEDBACK_CONTROLLER_COMPONENT = "AffineFeedbackController"
-RLRMP_POINT_MASS_REFERENCE_VECTOR_COMPONENT = "RLRMPPointMassReferenceVector"
-RLRMP_NETWORK_STATE_CACHE_COMPONENT = "RLRMPNetworkStateCache"
+POINT_MASS_TARGET_POSITION_INPUT = "task:target_position->reference_mux.in_0"
 RLRMP_MIGRATION_PACK_OWNER = "rlrmp"
 RLRMP_COMPONENT_MIGRATION_PACK_VERSION = "1"
 
@@ -83,99 +85,6 @@ def _point_mass_feedback(state: MechanicsState):
         state.plant.skeleton.pos,
         state.plant.skeleton.vel,
     )
-
-
-def _extract_point_mass_target_pos(input_value: Any):
-    if isinstance(input_value, dict):
-        task_input = input_value.get("task", None)
-        if task_input is None:
-            for value in input_value.values():
-                if hasattr(value, "effector_target"):
-                    task_input = value
-                    break
-    else:
-        task_input = input_value
-    if task_input is None or not hasattr(task_input, "effector_target"):
-        raise ValueError("Could not locate effector_target.pos in point-mass task input")
-    return task_input.effector_target.pos
-
-
-class PointMassReferenceVector(Component):
-    """Extract target position and emit ``[target_pos, zero_velocity]``."""
-
-    input_ports = ("input",)
-    output_ports = ("reference",)
-
-    target_source: str = eqx.field(static=True)
-    n_position_dims: int = eqx.field(static=True)
-    n_velocity_dims: int = eqx.field(static=True)
-
-    def __init__(
-        self,
-        *,
-        target_source: str = "input.task.effector_target.pos",
-        n_position_dims: int = 2,
-        n_velocity_dims: int = 2,
-    ):
-        self.target_source = str(target_source)
-        self.n_position_dims = int(n_position_dims)
-        self.n_velocity_dims = int(n_velocity_dims)
-
-    def __call__(self, inputs: dict[str, Any], state, *, key):
-        del key
-        target_pos = jnp.asarray(_extract_point_mass_target_pos(inputs["input"]))
-        target_pos = target_pos[..., : self.n_position_dims]
-        target_vel = jnp.zeros(
-            target_pos.shape[:-1] + (self.n_velocity_dims,),
-            dtype=target_pos.dtype,
-        )
-        return {"reference": jnp.concatenate([target_pos, target_vel], axis=-1)}, state
-
-    def to_params(self) -> dict[str, Any]:
-        return {
-            "target_source": self.target_source,
-            "n_position_dims": self.n_position_dims,
-            "n_velocity_dims": self.n_velocity_dims,
-        }
-
-
-class NetworkStateCache(Component):
-    """Store controller command output in ``NetworkState`` for RLRMP losses."""
-
-    input_ports = ("input",)
-    output_ports = ("output", "hidden")
-
-    n_controls: int = eqx.field(static=True)
-    state_index: StateIndex
-    _initial_state: NetworkState = eqx.field(static=True)
-
-    def __init__(self, *, n_controls: int = 2):
-        self.n_controls = int(n_controls)
-        init_state = NetworkState(
-            input=jnp.zeros(0),
-            hidden=jnp.zeros((1,)),
-            output=jnp.zeros(self.n_controls),
-            encoding=None,
-        )
-        self._initial_state = init_state
-        self.state_index = StateIndex(init_state)
-
-    def __call__(self, inputs: dict[str, Any], state, *, key):
-        del key
-        previous: NetworkState = state.get(self.state_index)
-        command = jnp.asarray(inputs["input"])
-        hidden = jnp.asarray(previous.hidden) + jnp.array([1.0], dtype=previous.hidden.dtype)
-        next_state = NetworkState(
-            input=jnp.zeros(0),
-            hidden=hidden,
-            output=command,
-            encoding=None,
-        )
-        state = state.set(self.state_index, next_state)
-        return {"output": command, "hidden": hidden}, state
-
-    def to_params(self) -> dict[str, Any]:
-        return {"n_controls": self.n_controls}
 
 
 @dataclass(frozen=True)
@@ -237,26 +146,6 @@ def register_rlrmp_graph_components(component_registry: Any | None = None) -> An
         category="RLRMP",
         description="RLRMP linear tracker controller.",
         input_ports=["input", "feedback"],
-        output_ports=["output", "hidden"],
-        output_prototype_fn=_linear_controller_output_prototype,
-        provenance="rlrmp",
-    )
-    registry.register_component_type(
-        RLRMP_POINT_MASS_REFERENCE_VECTOR_COMPONENT,
-        _build_point_mass_reference_vector,
-        category="RLRMP",
-        description="RLRMP point-mass task input to affine reference vector.",
-        input_ports=["input"],
-        output_ports=["reference"],
-        output_prototype_fn=_point_mass_reference_vector_output_prototype,
-        provenance="rlrmp",
-    )
-    registry.register_component_type(
-        RLRMP_NETWORK_STATE_CACHE_COMPONENT,
-        _build_network_state_cache,
-        category="RLRMP",
-        description="RLRMP NetworkState compatibility cache for native controllers.",
-        input_ports=["input"],
         output_ports=["output", "hidden"],
         output_prototype_fn=_linear_controller_output_prototype,
         provenance="rlrmp",
@@ -483,15 +372,6 @@ def _linear_controller_output_prototype(
     return {"output": jnp.zeros(controls), "hidden": jnp.zeros(1)}
 
 
-def _point_mass_reference_vector_output_prototype(
-    params: dict[str, Any],
-    inputs: dict[str, Any],
-) -> dict[str, Any]:
-    del inputs
-    width = int(params.get("n_position_dims", 2)) + int(params.get("n_velocity_dims", 2))
-    return {"reference": jnp.zeros(width)}
-
-
 def _force_passthrough_output_prototype(
     params: dict[str, Any],
     inputs: dict[str, Any],
@@ -510,7 +390,15 @@ def install_simple_feedback_runtime_hooks(graph: Graph) -> Graph:
 
     def _state_view(node_states):
         force_filter_state = node_states.get("force_filter", FilterState(output=None, solver=None))
-        net_state = node_states.get("net_state", node_states["net"])
+        net_state = node_states["net"]
+        if not hasattr(net_state, "output"):
+            command = jnp.asarray(node_states["efferent"].output)
+            net_state = NetworkState(
+                input=jnp.zeros((0,), dtype=command.dtype),
+                hidden=jnp.atleast_1d(jnp.asarray(net_state)),
+                output=command,
+                encoding=None,
+            )
         return SimpleFeedbackState(
             mechanics=node_states["mechanics"],
             net=net_state,
@@ -583,18 +471,6 @@ def _build_linear_tracker_controller(params: dict[str, Any]):
         u_ff_init_scale=float(params.get("u_ff_init_scale", 0.0) or 0.0),
         key=_key_from_params(params),
     )
-
-
-def _build_point_mass_reference_vector(params: dict[str, Any]) -> PointMassReferenceVector:
-    return PointMassReferenceVector(
-        target_source=str(params.get("target_source", "input.task.effector_target.pos")),
-        n_position_dims=int(params.get("n_position_dims", 2)),
-        n_velocity_dims=int(params.get("n_velocity_dims", 2)),
-    )
-
-
-def _build_network_state_cache(params: dict[str, Any]) -> NetworkStateCache:
-    return NetworkStateCache(n_controls=int(params.get("n_controls", 2)))
 
 
 def _key_from_params(params: dict[str, Any]):
@@ -682,6 +558,10 @@ def _graph_bundle_metadata(
     controller_kind: str,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
     task_spec = _task_spec(hps)
+    if controller_kind in {"linear", "linear_tracker"}:
+        task_spec["task_binding_spec"] = _point_mass_reference_task_binding_spec().model_dump(
+            mode="json"
+        )
     loss_spec = _loss_spec(hps)
     training_spec = _training_spec(hps, controller_kind=controller_kind)
     manifest = {
@@ -690,16 +570,15 @@ def _graph_bundle_metadata(
         "component_policy": {
             "feedbax_component_types": [
                 NATIVE_SUBGRAPH_COMPONENT,
+                NATIVE_CONSTANT_COMPONENT,
                 NATIVE_RAVEL_COMPONENT,
+                NATIVE_MUX_COMPONENT,
                 NATIVE_AFFINE_FEEDBACK_CONTROLLER_COMPONENT,
-                "Mux",
                 "GRU",
                 "Linear",
             ],
             "rlrmp_component_types": [
                 "RLRMPSimpleStagedNetwork",
-                RLRMP_POINT_MASS_REFERENCE_VECTOR_COMPONENT,
-                RLRMP_NETWORK_STATE_CACHE_COMPONENT,
                 "DynamicsMatrixPerturb",
             ],
             "legacy_component_aliases": [
@@ -715,9 +594,10 @@ def _graph_bundle_metadata(
                 "nodes use Feedbax-native component types. Plain/additive unmasked "
                 "GRU controllers emit explicit RLRMP graph wiring around Feedbax Mux, "
                 "GRU, and Linear primitives. Linear and linear-tracker controllers emit "
-                "Feedbax AffineFeedbackController nodes fed by explicit feedback-vector "
-                "and target-reference plumbing; RLRMP compatibility nodes only bridge the "
-                "existing point-mass task input and NetworkState loss view. RLRMP-branded "
+                "Feedbax AffineFeedbackController nodes fed by native feedback-vector "
+                "and task-data-bound reference-vector plumbing. The runtime state view "
+                "adapts native affine/efferent state for legacy RLRMP losses without "
+                "adding graph nodes. RLRMP-branded "
                 "staged network components remain for multiplicative SISU, population masks, "
                 "and historical specs. SISU is an RLRMP task input, not a Feedbax network port."
             ),
@@ -826,23 +706,19 @@ def build_point_mass_sensorimotor_graph_spec(
             input_ports=["input"],
             output_ports=["output"],
         )
-        nodes["target_reference"] = ComponentSpec(
-            type=RLRMP_POINT_MASS_REFERENCE_VECTOR_COMPONENT,
-            params={
-                "target_source": "input.task.effector_target.pos",
-                "n_position_dims": 2,
-                "n_velocity_dims": 2,
-            },
-            input_ports=["input"],
-            output_ports=["reference"],
+        nodes["zero_velocity"] = ComponentSpec(
+            type=NATIVE_CONSTANT_COMPONENT,
+            params={"value": [0.0, 0.0]},
+            input_ports=[],
+            output_ports=["output"],
         )
-        nodes["net_state"] = ComponentSpec(
-            type=RLRMP_NETWORK_STATE_CACHE_COMPONENT,
-            params={"n_controls": 2},
-            input_ports=["input"],
-            output_ports=["output", "hidden"],
+        nodes["reference_mux"] = ComponentSpec(
+            type=NATIVE_MUX_COMPONENT,
+            params={"n_inputs": 2},
+            input_ports=["in_0", "in_1"],
+            output_ports=["output"],
         )
-        controller_output_source = ("net_state", "output")
+        controller_output_source = ("net", "command")
         wires: list[WireSpec] = [
             WireSpec(
                 source_node="feedback",
@@ -857,16 +733,16 @@ def build_point_mass_sensorimotor_graph_spec(
                 target_port="feedback",
             ),
             WireSpec(
-                source_node="target_reference",
-                source_port="reference",
-                target_node="net",
-                target_port="reference",
+                source_node="zero_velocity",
+                source_port="output",
+                target_node="reference_mux",
+                target_port="in_1",
             ),
             WireSpec(
-                source_node="net",
-                source_port="command",
-                target_node="net_state",
-                target_port="input",
+                source_node="reference_mux",
+                source_port="output",
+                target_node="net",
+                target_port="reference",
             ),
             WireSpec(
                 source_node="mechanics",
@@ -883,7 +759,7 @@ def build_point_mass_sensorimotor_graph_spec(
             ),
         ]
         input_bindings: dict[str, tuple[str, str]] = {
-            "input": ("target_reference", "input")
+            POINT_MASS_TARGET_POSITION_INPUT: ("reference_mux", "in_0")
         }
     else:
         controller_output_source = ("net", "output")
@@ -1060,6 +936,38 @@ def build_point_mass_sensorimotor_graph_spec(
     )
 
 
+def _point_mass_reference_task_binding_spec() -> StudioTaskBindingSpec:
+    return StudioTaskBindingSpec.model_validate(
+        {
+            "schema_version": "feedbax.spec.studio.task_bindings.v2",
+            "exposed_data": [
+                {
+                    "id": "target_position",
+                    "label": "Target position",
+                    "kind": "signal",
+                    "role": "model_input",
+                    "path": "inputs.effector_target.pos",
+                    "bindable": True,
+                    "expected_shape": ["time", 2],
+                    "dtype": "vector",
+                    "metadata": {"temporal_support": "trajectory"},
+                }
+            ],
+            "bindings": [
+                {
+                    "id": POINT_MASS_TARGET_POSITION_INPUT,
+                    "source_data_id": "target_position",
+                    "target_node_id": "reference_mux",
+                    "target_port": "in_0",
+                    "role": "model_input",
+                    "metadata": {},
+                }
+            ],
+            "metadata": {},
+        }
+    )
+
+
 def create_point_mass_graph_model(
     hps: Any,
     task: Any,
@@ -1174,20 +1082,6 @@ def graph_spec_from_model(
         if cs_lss_spec is not None:
             nodes[name] = cs_lss_spec
             drop_subgraphs.add(name)
-        elif isinstance(component, PointMassReferenceVector):
-            nodes[name] = ComponentSpec(
-                type=RLRMP_POINT_MASS_REFERENCE_VECTOR_COMPONENT,
-                params=component.to_params(),
-                input_ports=list(component.input_ports),
-                output_ports=list(component.output_ports),
-            )
-        elif isinstance(component, NetworkStateCache):
-            nodes[name] = ComponentSpec(
-                type=RLRMP_NETWORK_STATE_CACHE_COMPONENT,
-                params=component.to_params(),
-                input_ports=list(component.input_ports),
-                output_ports=list(component.output_ports),
-            )
         elif isinstance(component, SimpleStagedNetwork):
             staged_spec, staged_subgraph = _runtime_simple_staged_network_component_spec(component)
             nodes[name] = staged_spec
@@ -1785,12 +1679,9 @@ def _retained_observables(
     include_plant_process_force_noise: bool = False,
     controller_kind: str = "gru",
 ) -> list[RetainedObservableSpec]:
-    net_state_node = "net_state" if controller_kind in {"linear", "linear_tracker"} else "net"
     observables = [
         _port_observable("mechanics.effector", "mechanics", "effector"),
         _port_observable("mechanics.state", "mechanics", "state"),
-        _port_observable("net.output", net_state_node, "output"),
-        _port_observable("net.hidden", net_state_node, "hidden"),
         _port_observable("efferent.output", "efferent", "output"),
         _port_observable(
             f"{GRAPH_PLANT_INTERVENOR_NODE}.force",
@@ -1798,6 +1689,15 @@ def _retained_observables(
             "force",
         ),
     ]
+    if controller_kind in {"linear", "linear_tracker"}:
+        observables.append(_port_observable("net.output", "net", "command"))
+    else:
+        observables.extend(
+            [
+                _port_observable("net.output", "net", "output"),
+                _port_observable("net.hidden", "net", "hidden"),
+            ]
+        )
     if include_plant_process_force_noise:
         observables.append(
             _port_observable(
