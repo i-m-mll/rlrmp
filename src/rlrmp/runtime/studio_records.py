@@ -28,7 +28,7 @@ from feedbax.contracts.manifest import (
     load_manifest,
     safe_manifest_key,
 )
-from feedbax.studio_execution import (
+from feedbax.studio.execution import (
     StudioPipelineMaterializationRequest,
     StudioPipelineMaterializationResult,
     materialize_studio_pipeline,

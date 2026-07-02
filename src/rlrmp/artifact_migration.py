@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import jax.random as jr
-from feedbax.artifact_materialize import materialize_model_artifact
+from feedbax.contracts.graphs.materialization import materialize_model_artifact
 from feedbax.contracts.manifest import ModelArtifactManifest, ParentRef
 
 from rlrmp.train.task_model import setup_task_model_pair
