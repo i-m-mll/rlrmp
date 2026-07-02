@@ -436,13 +436,17 @@ def _load_adversarial_checkpoint(
 def _get_trainable(model):
     """Return the trainable leaves of the model.
 
-    Default (SimpleStagedNetwork): (net.hidden, net.readout). Linear-controller
-    MVP variants (Bug: 410d7ac) carry their parameters as ``K`` (and ``u_ff``
-    for the tracker) directly on the net Component — branch on Module class
+    Default (SimpleStagedNetwork): (net.hidden, net.readout). Native affine
+    linear variants carry their parameters as ``gain`` and optional
+    ``feedforward`` directly on the net Component — branch on Module class
     name to keep this single function compatible with both code paths.
     """
     net = model.get_node("net")
     cls_name = type(net).__name__
+    if cls_name == "AffineFeedbackController":
+        if getattr(net, "feedforward", None) is not None:
+            return model.get_node_attrs("net", "gain", "feedforward")
+        return model.get_node_attrs("net", "gain")
     if cls_name == "LinearController":
         return model.get_node_attrs("net", "K")
     if cls_name == "LinearTrackerController":
@@ -463,6 +467,10 @@ def _trainable_where(model):
     """
     net = model.get_node("net")
     cls_name = type(net).__name__
+    if cls_name == "AffineFeedbackController":
+        if getattr(net, "feedforward", None) is not None:
+            return lambda m: m.get_node_attrs("net", "gain", "feedforward")
+        return lambda m: m.get_node_attrs("net", "gain")
     if cls_name == "LinearController":
         return lambda m: m.get_node_attrs("net", "K")
     if cls_name == "LinearTrackerController":
@@ -517,8 +525,12 @@ def _make_where_train(sisu_gating: str = "additive"):
     def where_train_fn(model):
         net = model.get_node("net")
         cls_name = type(net).__name__
-        # Linear-controller MVP variants (Bug: 410d7ac) carry their parameters
-        # directly on the net Component as K (+ u_ff for the tracker).
+        # Native affine linear variants carry their parameters directly on the
+        # net Component as gain (+ feedforward for the tracker).
+        if cls_name == "AffineFeedbackController":
+            if getattr(net, "feedforward", None) is not None:
+                return model.get_node_attrs("net", "gain", "feedforward")
+            return model.get_node_attrs("net", "gain")
         if cls_name == "LinearController":
             return model.get_node_attrs("net", "K")
         if cls_name == "LinearTrackerController":

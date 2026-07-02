@@ -10,9 +10,10 @@ import jax.numpy as jnp
 import jax.random as jr
 from equinox.nn import StateIndex
 from feedbax import TaskTrialSpec, TrialTimeline, WhereDict
-from feedbax.runtime.graph import Component, Graph
+from feedbax.runtime.graph import Component, Graph, init_state_from_component
 from feedbax.objectives.loss import CompositeLoss, ModelLoss
 
+from rlrmp.model.feedbax_graph import POINT_MASS_TARGET_POSITION_INPUT
 from rlrmp.paths import REPO_ROOT
 from rlrmp.train.task_model import setup_task_model_pair
 
@@ -116,3 +117,39 @@ def test_multiplicative_minimax_adversarial_selector_includes_sisu_alpha() -> No
     assert trainable[-1].shape[-1] == hps.model.hidden_size
     assert where_trainable[-1].shape == trainable[-1].shape
     assert jnp.all(where_trainable[-1] == pair.model.nodes["net"].sisu_alpha)
+
+
+def test_linear_tracker_minimax_selector_uses_affine_gain_and_feedforward() -> None:
+    train_minimax = _load_train_minimax_module()
+    args = argparse.Namespace(
+        n_warmup_batches=10,
+        n_adversary_batches=20,
+        controller_lr=0.01,
+        loss_update_enabled=False,
+        loss_update_ratio=0.3,
+        hidden_type="linear_tracker",
+        sisu_gating="additive",
+        n_replicates=1,
+    )
+    hps = train_minimax.build_hps(args)
+    if hps.pert.type == "gusts":
+        hps = hps | {"pert": hps.pert | {"type": "constant"}}
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+
+    trainable = train_minimax._get_trainable(pair.model)
+    where_trainable = train_minimax._trainable_where(pair.model)(pair.model)
+
+    assert pair.model.nodes["net"].__class__.__name__ == "AffineFeedbackController"
+    assert POINT_MASS_TARGET_POSITION_INPUT in pair.model.input_ports
+    assert "net_state" not in pair.model.nodes
+    assert hps.where["0"] == ["nodes.net.gain", "nodes.net.feedforward"]
+    assert len(trainable) == len(where_trainable) == 2
+    assert all(
+        jnp.all(selected == expected)
+        for selected, expected in zip(where_trainable, trainable, strict=True)
+    )
+    assert trainable[0] is pair.model.nodes["net"].gain
+    assert trainable[1] is pair.model.nodes["net"].feedforward
+    state_view = pair.model.state_view(init_state_from_component(pair.model))
+    assert state_view.net.output.shape[-1] == 2
+    assert state_view.net.hidden.shape[-1] == 1

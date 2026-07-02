@@ -9,7 +9,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 import feedbax.contracts.graphs.prototypes as fbx_prototypes
-from feedbax.contracts.graph import GraphSpec
+from feedbax.contracts.graph import ComponentSpec, GraphSpec
 from feedbax.runtime.graph import init_state_from_component
 from feedbax.contracts.graphs.serialization import spec_to_graph
 from feedbax.runtime.state_feedback import StateFeedbackSelector
@@ -23,11 +23,9 @@ from rlrmp.model.cs_lss_gru import (
     CS_EPSILON_DIM,
     FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
     CS_LSS_DELAYED_FEEDBACK_COMPONENT,
-    CS_LSS_INITIAL_HIDDEN_NET_COMPONENT,
     CS_LSS_TARGET_FEEDBACK_COMPONENT,
     CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT,
     CS_REDUCED_EPSILON_DIM,
-    InitialHiddenStagedNetwork,
     build_cs_lss_gru_graph,
     build_cs_lss_gru_graph_spec,
     cs_lss_gru_where_train,
@@ -62,13 +60,13 @@ def test_feedback_selector_uses_oldest_delayed_position_velocity_block() -> None
             "default",
             {"bind_epsilon_input": True},
             FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
-            "RLRMPSimpleStagedNetwork",
+            "Subgraph",
         ),
         (
             "target_relative",
             {"target_relative_feedback": True, "bind_epsilon_input": True},
             FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
-            "RLRMPSimpleStagedNetwork",
+            "Subgraph",
         ),
         (
             "force_filter_feedback",
@@ -78,7 +76,7 @@ def test_feedback_selector_uses_oldest_delayed_position_velocity_block() -> None
                 "bind_epsilon_input": True,
             },
             FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
-            "RLRMPSimpleStagedNetwork",
+            "Subgraph",
         ),
         (
             "noise_channels",
@@ -89,13 +87,13 @@ def test_feedback_selector_uses_oldest_delayed_position_velocity_block() -> None
                 "bind_epsilon_input": True,
             },
             FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
-            "RLRMPSimpleStagedNetwork",
+            "Subgraph",
         ),
         (
             "deterministic_no_epsilon_binding",
             {"bind_epsilon_input": False},
             FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
-            "RLRMPSimpleStagedNetwork",
+            "Subgraph",
         ),
         (
             "no_integrator",
@@ -106,7 +104,7 @@ def test_feedback_selector_uses_oldest_delayed_position_velocity_block() -> None
                 "no_integrator_state": True,
             },
             FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
-            "RLRMPSimpleStagedNetwork",
+            "Subgraph",
         ),
         (
             "initial_hidden_encoder",
@@ -116,7 +114,7 @@ def test_feedback_selector_uses_oldest_delayed_position_velocity_block() -> None
                 "initial_hidden_encoder": True,
             },
             FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
-            CS_LSS_INITIAL_HIDDEN_NET_COMPONENT,
+            "Subgraph",
         ),
     ],
 )
@@ -139,6 +137,16 @@ def test_cs_lss_graph_specs_round_trip_and_materialize_representative_variants(
     assert graph_spec_payload(round_tripped) == payload
     assert spec.nodes["feedback"].type == expected_feedback_type
     assert spec.nodes["net"].type == expected_net_type
+    assert spec.subgraphs is not None
+    assert spec.subgraphs["net"].nodes["cell"].type == "GRU"
+    assert spec.subgraphs["net"].nodes["readout"].type == "Linear"
+    if kwargs.get("initial_hidden_encoder"):
+        assert spec.input_bindings["h0"] == ("net", "h0")
+        recurrent_wire = next(
+            wire for wire in spec.subgraphs["net"].wires if wire.temporality == "recurrent"
+        )
+        assert recurrent_wire.recurrent_initializer["kind"] == "graph-input"
+        assert recurrent_wire.recurrent_initializer["source"] == "h0"
     assert graph.nodes["mechanics"].__class__.__name__ == "LinearStateSpace"
     assert graph.input_ports == tuple(round_tripped.input_ports)
     assert graph.input_bindings == {
@@ -156,6 +164,58 @@ def test_cs_lss_graph_specs_round_trip_and_materialize_representative_variants(
         assert len(spec.nodes["mechanics"].params["B_w"]) == 36
         assert len(spec.nodes["mechanics"].params["B_w"][0]) == 6
         assert graph.nodes["mechanics"].B_w.shape == (36, 6)
+
+
+def test_native_cs_lss_recurrent_graph_matches_legacy_staged_network_fixed_seed() -> None:
+    spec = build_cs_lss_gru_graph_spec(
+        hidden_size=6,
+        bind_epsilon_input=True,
+        key=jax.random.PRNGKey(23),
+    )
+    legacy_params = {
+        key: value
+        for key, value in spec.nodes["net"].params.items()
+        if key not in {"external_input_size", "h0_initializer_source", "h0_source_contract"}
+    }
+    legacy_spec = spec.model_copy(
+        update={
+            "nodes": {
+                **spec.nodes,
+                "net": ComponentSpec(
+                    type="RLRMPSimpleStagedNetwork",
+                    params=legacy_params,
+                    input_ports=["input", "feedback"],
+                    output_ports=["output", "hidden"],
+                ),
+            },
+            "subgraphs": {},
+        }
+    )
+    native_graph = materialize_cs_lss_gru_graph_spec(spec)
+    legacy_graph = materialize_cs_lss_gru_graph_spec(legacy_spec)
+    inputs = {"epsilon": jnp.zeros((CS_EPSILON_DIM,), dtype=jnp.float32)}
+
+    native_outputs, native_state, _native_cycle = native_graph.step(
+        inputs,
+        init_state_from_component(native_graph),
+        cycle_port_values=None,
+        key=jax.random.PRNGKey(24),
+    )
+    legacy_outputs, legacy_state, _legacy_cycle = legacy_graph.step(
+        inputs,
+        init_state_from_component(legacy_graph),
+        cycle_port_values=None,
+        key=jax.random.PRNGKey(24),
+    )
+
+    assert jnp.allclose(native_outputs["force"], legacy_outputs["force"], rtol=0.0, atol=0.0)
+    assert jnp.allclose(native_outputs["state"], legacy_outputs["state"], rtol=0.0, atol=0.0)
+    assert jnp.allclose(
+        native_graph.state_view(native_state).net.hidden,
+        legacy_graph.state_view(legacy_state).net.hidden,
+        rtol=0.0,
+        atol=0.0,
+    )
 
 
 @pytest.mark.parametrize(
@@ -323,11 +383,12 @@ def test_runtime_cs_lss_graph_export_preserves_executable_component_contract() -
 
     assert exported.nodes["feedback"].type == FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT
     assert exported.nodes["feedback"].params == original_spec.nodes["feedback"].params
-    assert exported.nodes["net"].type == CS_LSS_INITIAL_HIDDEN_NET_COMPONENT
-    assert "net" not in (exported.subgraphs or {})
+    assert exported.nodes["net"].type == "Subgraph"
+    assert exported.subgraphs is not None
+    assert exported.subgraphs["net"].nodes["cell"].type == "GRU"
     assert exported.nodes["mechanics"].type == "LinearStateSpace"
     assert exported.nodes["efferent"].type == "Channel"
-    assert rematerialized.nodes["net"].h0_encoder.weight.shape == (7, 6)
+    assert rematerialized.nodes["net"].input_ports == ("input", "feedback", "h0")
 
 
 def test_cs_lss_materialization_uses_registered_prototypes_without_global_patch() -> None:
@@ -344,7 +405,7 @@ def test_cs_lss_materialization_uses_registered_prototypes_without_global_patch(
 
     assert fbx_prototypes.output_prototypes_for_node is original_output_prototypes_for_node
     assert registry.get(FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT).output_prototype_fn is not None
-    assert registry.get("RLRMPSimpleStagedNetwork").output_prototype_fn is not None
+    assert registry.get("Demux").output_prototype_fn is not None
     assert registry.get("Channel").output_prototype_fn is None
     assert registry.get("LinearStateSpace").output_prototype_fn is None
     assert graph.nodes["mechanics"].A.shape == (48, 48)
@@ -528,11 +589,11 @@ def test_default_graph_uses_plain_zero_h0_network() -> None:
     )
     state = init_state_from_component(graph)
 
-    assert not isinstance(graph.nodes["net"], InitialHiddenStagedNetwork)
+    assert graph.nodes["net"].__class__.__name__ == "Graph"
     assert jnp.allclose(graph.state_view(state).net.hidden, jnp.zeros((4,)))
 
 
-def test_initial_hidden_encoder_uses_target_relative_feedback_context_shape() -> None:
+def test_initial_hidden_uses_external_h0_graph_input_shape() -> None:
     graph = build_cs_lss_gru_graph(
         hidden_size=7,
         bind_epsilon_input=True,
@@ -541,13 +602,16 @@ def test_initial_hidden_encoder_uses_target_relative_feedback_context_shape() ->
         key=jax.random.PRNGKey(12),
     )
     net = graph.nodes["net"]
-    context = jnp.array([0.15, 0.0, 0.0, 0.0], dtype=jnp.float32)
 
-    assert isinstance(net, InitialHiddenStagedNetwork)
-    assert net.h0_encoder.weight.shape == (7, 4)
-    assert net.h0_encoder.bias.shape == (7,)
-    assert net.h0_encoder(context).shape == (7,)
-    assert jnp.allclose(net.h0_encoder(context), jnp.zeros((7,)))
+    assert net.__class__.__name__ == "Graph"
+    assert "h0" in net.input_ports
+    recurrent_wire = next(wire for wire in net.wires if wire.temporality == "recurrent")
+    assert recurrent_wire.recurrent_initializer == {
+        "kind": "graph-input",
+        "scope": "trial",
+        "source": "h0",
+        "state_slot": "hidden",
+    }
 
 
 def test_initial_hidden_encoder_defaults_to_float32_even_with_float64_mechanics() -> None:
@@ -565,13 +629,11 @@ def test_initial_hidden_encoder_defaults_to_float32_even_with_float64_mechanics(
     assert jnp.dtype(graph.nodes["mechanics"].A.dtype) == expected_dtype
     assert jnp.dtype(graph.nodes["mechanics"].state_index.init.vector.dtype) == expected_dtype
     assert spec.nodes["net"].params["trainable_dtype"] == expected_dtype.name
-    assert spec.nodes["net"].params["h0_dtype"] == expected_dtype.name
+    assert spec.nodes["net"].params["h0_source_contract"] == "graph-input"
     assert jnp.dtype(graph.nodes["mechanics"].A.dtype) == expected_dtype
     assert jnp.dtype(graph.nodes["mechanics"].state_index.init.vector.dtype) == expected_dtype
-    assert jnp.dtype(graph.nodes["net"].net.hidden.weight_ih.dtype) == expected_dtype
-    assert jnp.dtype(graph.nodes["net"].net.readout.weight.dtype) == expected_dtype
-    assert jnp.dtype(graph.nodes["net"].h0_encoder.weight.dtype) == expected_dtype
-    assert jnp.dtype(graph.nodes["net"].h0_encoder.bias.dtype) == expected_dtype
+    assert jnp.dtype(graph.nodes["net"].nodes["cell"].cell.weight_ih.dtype) == expected_dtype
+    assert jnp.dtype(graph.nodes["net"].nodes["readout"].layer.weight.dtype) == expected_dtype
 
 
 def test_initial_hidden_encoder_preserves_explicit_float64_trainable_dtype() -> None:
@@ -589,11 +651,9 @@ def test_initial_hidden_encoder_preserves_explicit_float64_trainable_dtype() -> 
 
     expected_dtype = jnp.dtype(jnp.float64)
     assert spec.nodes["net"].params["trainable_dtype"] == expected_dtype.name
-    assert spec.nodes["net"].params["h0_dtype"] == expected_dtype.name
-    assert jnp.dtype(graph.nodes["net"].net.hidden.weight_ih.dtype) == expected_dtype
-    assert jnp.dtype(graph.nodes["net"].net.readout.weight.dtype) == expected_dtype
-    assert jnp.dtype(graph.nodes["net"].h0_encoder.weight.dtype) == expected_dtype
-    assert jnp.dtype(graph.nodes["net"].h0_encoder.bias.dtype) == expected_dtype
+    assert spec.nodes["net"].params["h0_source_contract"] == "graph-input"
+    assert jnp.dtype(graph.nodes["net"].nodes["cell"].cell.weight_ih.dtype) == expected_dtype
+    assert jnp.dtype(graph.nodes["net"].nodes["readout"].layer.weight.dtype) == expected_dtype
 
 
 def test_initial_hidden_encoder_requires_target_relative_context() -> None:
@@ -628,6 +688,7 @@ def test_train_filter_excludes_canonical_lss_matrices() -> None:
 def test_train_filter_includes_multiplicative_sisu_alpha() -> None:
     graph = build_cs_lss_gru_graph(
         hidden_size=6,
+        input_size=1,
         bind_epsilon_input=True,
         sisu_gating="multiplicative",
         key=jax.random.PRNGKey(17),
@@ -637,10 +698,10 @@ def test_train_filter_includes_multiplicative_sisu_alpha() -> None:
     trainable = get_model_parameters(graph, where_train_spec)
 
     assert trainable.nodes["mechanics"].A is None
-    assert trainable.nodes["net"].sisu_alpha.shape == (6,)
+    assert trainable.nodes["net"].nodes["sisu_modulator"].gain.shape == (6,)
 
 
-def test_train_filter_includes_h0_encoder_only_when_present() -> None:
+def test_initial_hidden_uses_graph_input_recurrent_initializer() -> None:
     graph = build_cs_lss_gru_graph(
         hidden_size=6,
         bind_epsilon_input=True,
@@ -648,20 +709,18 @@ def test_train_filter_includes_h0_encoder_only_when_present() -> None:
         initial_hidden_encoder=True,
         key=jax.random.PRNGKey(14),
     )
-    where_train = cs_lss_gru_where_train()[0]
-    where_train_spec = filter_spec_leaves(graph, where_train)
-    trainable = get_model_parameters(graph, where_train_spec)
-    trainable_arrays = [leaf for leaf in jax.tree.leaves(trainable) if eqx.is_array(leaf)]
 
-    assert trainable.nodes["mechanics"].A is None
-    assert trainable.nodes["net"].h0_encoder.weight.shape == (6, 4)
-    assert trainable.nodes["net"].h0_encoder.bias.shape == (6,)
-    assert any(leaf.shape == (6, 4) for leaf in trainable_arrays)
+    recurrent_wire = next(
+        wire for wire in graph.nodes["net"].wires if wire.temporality == "recurrent"
+    )
+    assert recurrent_wire.recurrent_initializer["kind"] == "graph-input"
+    assert recurrent_wire.recurrent_initializer["source"] == "h0"
 
 
-def test_train_filter_includes_h0_encoder_and_multiplicative_sisu_alpha() -> None:
+def test_train_filter_includes_multiplicative_sisu_with_graph_input_h0() -> None:
     graph = build_cs_lss_gru_graph(
         hidden_size=6,
+        input_size=1,
         bind_epsilon_input=True,
         target_relative_feedback=True,
         initial_hidden_encoder=True,
@@ -673,5 +732,4 @@ def test_train_filter_includes_h0_encoder_and_multiplicative_sisu_alpha() -> Non
     trainable = get_model_parameters(graph, where_train_spec)
 
     assert trainable.nodes["mechanics"].A is None
-    assert trainable.nodes["net"].h0_encoder.weight.shape == (6, 4)
-    assert trainable.nodes["net"].sisu_alpha.shape == (6,)
+    assert trainable.nodes["net"].nodes["sisu_modulator"].gain.shape == (6,)

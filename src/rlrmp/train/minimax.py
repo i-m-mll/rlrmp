@@ -22,6 +22,14 @@ from rlrmp.model.trainable import staged_network_trainable_paths
 __all__ = ["build_hps"]
 
 
+def _trainable_paths_for_hidden_type(hidden_type: str, sisu_gating: str) -> list[str]:
+    if hidden_type == "linear":
+        return ["nodes.net.gain"]
+    if hidden_type == "linear_tracker":
+        return ["nodes.net.gain", "nodes.net.feedforward"]
+    return staged_network_trainable_paths(sisu_gating=sisu_gating)
+
+
 def _resolve_hidden_type(hidden_type_str: str, dt: float):
     """Map a CLI hidden-type string to the corresponding recurrent cell class/partial.
 
@@ -203,7 +211,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "start_iteration": 0,
         },
         "where": {
-            0: staged_network_trainable_paths(sisu_gating=args.sisu_gating),
+            0: _trainable_paths_for_hidden_type(args.hidden_type, args.sisu_gating),
         },
         # hidden_type is a callable (class or partial), not serialisable to JSON.
         # It is resolved here from the CLI string and stored directly in the namespace.
