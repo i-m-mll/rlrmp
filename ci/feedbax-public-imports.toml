@@ -130,6 +130,10 @@ module = "feedbax.contracts.graphs.serialization"
 symbols = ["graph_to_spec", "spec_to_graph"]
 
 [[canonical_homes]]
+module = "feedbax.contracts.graphs.templates"
+symbols = ["recurrent_controller_template_graph", "recurrent_graph_input_initializer"]
+
+[[canonical_homes]]
 module = "feedbax.contracts.manifest"
 symbols = [
   "AnalysisRunSpec",
@@ -208,6 +212,7 @@ symbols = [
   "NetworkState",
   "PopulationStructure",
   "SimpleStagedNetwork",
+  "population_structure_from_spec",
 ]
 
 [[canonical_homes]]
@@ -257,7 +262,7 @@ symbols = ["Channel", "ChannelState"]
 
 [[canonical_homes]]
 module = "feedbax.runtime.components"
-symbols = ["Sum"]
+symbols = ["ElementwiseAffineModulator", "GRU", "Linear", "Sum"]
 
 [[canonical_homes]]
 module = "feedbax.runtime.filters"
@@ -265,7 +270,7 @@ symbols = ["FilterState"]
 
 [[canonical_homes]]
 module = "feedbax.runtime.graph"
-symbols = ["Component", "Graph", "Wire", "init_state_from_component"]
+symbols = ["Component", "Graph", "GraphState", "Wire", "init_state_from_component"]
 
 [[canonical_homes]]
 module = "feedbax.runtime.graph_channel_adapters"

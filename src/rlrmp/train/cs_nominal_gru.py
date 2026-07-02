@@ -1580,7 +1580,6 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         },
         "component_policy": {
             "rlrmp_component_types": [
-                "RLRMPSimpleStagedNetwork",
                 "FixedField",
             ],
             "feedbax_native_component_types": [

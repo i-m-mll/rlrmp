@@ -12,8 +12,9 @@ import jax.numpy as jnp
 import jax.random as jr
 import pytest
 from feedbax.component_registry import ComponentRegistry
-from feedbax.contracts.graph import GraphSpec
+from feedbax.contracts.graph import ComponentSpec, GraphSpec
 from feedbax.control import AffineFeedbackController
+from feedbax.models.networks import PopulationStructure
 from feedbax.runtime.graph import Graph
 from feedbax.runtime.graph import init_state_from_component
 from feedbax.intervene import CurlField, DynamicsMatrixPerturb, FixedField
@@ -26,12 +27,14 @@ from rlrmp.model.feedbax_graph import (
     POINT_MASS_TARGET_POSITION_INPUT,
     SCHEMA_VERSION,
     SUPPORTED_GRAPH_SPEC_VERSIONS,
+    _build_simple_staged_network,
     build_point_mass_sensorimotor_graph_spec,
     build_rlrmp_feedbax_graph_bundle,
     build_runtime_rlrmp_feedbax_graph_bundle,
     graph_spec_from_model,
     graph_spec_payload,
     materialize_rlrmp_graph_spec,
+    native_recurrent_controller_subgraph,
     register_rlrmp_graph_components,
     resolve_registered_graph_component_migrations,
     write_graph_spec_bundle,
@@ -143,9 +146,9 @@ def test_minimax_graph_bundle_materializes_runtime_graph() -> None:
 
     assert bundle.manifest["execution_backend"] == EXECUTION_BACKEND
     assert isinstance(graph, Graph)
-    assert graph.nodes["net"].__class__.__name__ == "SimpleStagedNetwork"
+    assert graph.nodes["net"].__class__.__name__ == "Graph"
     assert spec.nodes["feedback"].type == "FeedbackChannels"
-    assert spec.nodes["net"].type == "RLRMPSimpleStagedNetwork"
+    assert spec.nodes["net"].type == "Subgraph"
     assert spec.nodes["net"].params["sisu_gating"] == "additive"
     assert spec.nodes["mechanics"].type == "PointMass"
     assert spec.nodes["mechanics"].params["damping"] == 10.0
@@ -208,7 +211,7 @@ def test_plain_additive_gru_graph_spec_uses_explicit_feedbax_primitives() -> Non
     net = spec.nodes["net"]
     assert net.type == "Subgraph"
     assert net.input_ports == ["input", "feedback"]
-    assert "sisu_gating" not in net.params
+    assert net.params["sisu_gating"] == "additive"
     assert (
         net.params["input_size"]
         == net.params["external_input_size"] + net.params["feedback_size"]
@@ -232,7 +235,7 @@ def test_plain_additive_gru_graph_spec_uses_explicit_feedbax_primitives() -> Non
         _hps(),
     ],
 )
-def test_rlrmp_owned_sisu_and_population_cases_keep_staged_wrapper(hps) -> None:
+def test_sisu_and_population_cases_use_native_recurrent_subgraph(hps) -> None:
     spec = build_point_mass_sensorimotor_graph_spec(
         hps,
         task=build_task_base(hps),
@@ -241,9 +244,119 @@ def test_rlrmp_owned_sisu_and_population_cases_keep_staged_wrapper(hps) -> None:
         sisu_gating=hps.sisu_gating,
     )
 
-    assert spec.nodes["net"].type == "RLRMPSimpleStagedNetwork"
+    assert spec.nodes["net"].type == "Subgraph"
     assert spec.nodes["net"].params["sisu_gating"] == hps.sisu_gating
-    assert spec.subgraphs is None
+    assert spec.subgraphs is not None
+    net_graph = spec.subgraphs["net"]
+    assert net_graph.nodes["cell"].type == "GRU"
+    assert net_graph.nodes["readout"].type == "Linear"
+    if hps.sisu_gating == "multiplicative":
+        assert net_graph.nodes["sisu_modulator"].type == "ElementwiseAffineModulator"
+    if net_graph.parameter_constraints:
+        assert {constraint.node for constraint in net_graph.parameter_constraints} == {
+            "cell",
+            "readout",
+        }
+
+
+@pytest.mark.parametrize(
+    ("sisu_gating", "population_structure", "atol"),
+    [
+        ("additive", None, 0.0),
+        ("multiplicative", None, 0.0),
+        (
+            "additive",
+            PopulationStructure.create(
+                hidden_size=7,
+                n_input_only=1,
+                n_readout_only=1,
+                n_recurrent_only=1,
+                n_input_readout=1,
+                key=jr.PRNGKey(19),
+            ),
+            1e-7,
+        ),
+    ],
+)
+def test_native_recurrent_subgraph_matches_legacy_staged_network_fixed_seed(
+    sisu_gating: str,
+    population_structure: PopulationStructure | None,
+    atol: float,
+) -> None:
+    hidden_size = 7
+    out_size = 2
+    input_size = 6
+    trainable_dtype = "float64" if population_structure is not None else "float32"
+    array_dtype = jnp.dtype(trainable_dtype)
+    params = {
+        "input_size": input_size,
+        "external_input_size": 2,
+        "hidden_size": hidden_size,
+        "out_size": out_size,
+        "hidden_type": "GRUCell",
+        "sisu_gating": sisu_gating,
+        "population_structure": (
+            None
+            if population_structure is None
+            else {**population_structure.to_spec(), "hidden_size": hidden_size}
+        ),
+        "key": [0, 123],
+        "trainable_dtype": trainable_dtype,
+    }
+    legacy = _build_simple_staged_network(params)
+    native_spec = native_recurrent_controller_subgraph(
+        input_size=input_size,
+        external_input_size=2,
+        hidden_size=hidden_size,
+        out_size=out_size,
+        hidden_type_name="GRUCell",
+        sisu_gating=sisu_gating,
+        population_params=params["population_structure"],
+        key=params["key"],
+        dtype=params["trainable_dtype"],
+    )
+    registry = register_rlrmp_graph_components(
+        ComponentRegistry(load_user_components=False, discover_plugins=False)
+    )
+    native = materialize_rlrmp_graph_spec(
+        GraphSpec(
+            nodes={
+                "net": ComponentSpec(
+                    type="Subgraph",
+                    params=params,
+                    input_ports=list(native_spec.input_ports),
+                    output_ports=["output", "hidden"],
+                )
+            },
+            wires=[],
+            input_ports=list(native_spec.input_ports),
+            output_ports=["output", "hidden"],
+            input_bindings={name: ("net", name) for name in native_spec.input_ports},
+            output_bindings={"output": ("net", "output"), "hidden": ("net", "hidden")},
+            subgraphs={"net": native_spec},
+        ),
+        registry,
+        install_runtime_hooks=False,
+    )
+    x = jnp.asarray([0.2, -0.1], dtype=array_dtype)
+    feedback = jnp.asarray([0.3, -0.4, 0.5, -0.6], dtype=array_dtype)
+    inputs = {"input": x, "feedback": feedback}
+
+    legacy_outputs, legacy_state = legacy(
+        inputs,
+        init_state_from_component(legacy),
+        key=jr.PRNGKey(5),
+    )
+    native_outputs, native_state, _cycle = native.step(
+        inputs,
+        init_state_from_component(native),
+        cycle_port_values=None,
+        key=jr.PRNGKey(5),
+    )
+
+    assert jnp.allclose(native_outputs["output"], legacy_outputs["output"], rtol=0.0, atol=atol)
+    assert jnp.allclose(native_outputs["hidden"], legacy_outputs["hidden"], rtol=0.0, atol=atol)
+    del legacy_state, native_state
 
 
 @pytest.mark.parametrize(
@@ -691,7 +804,7 @@ def test_write_graph_spec_bundle_creates_companion_manifest(tmp_path) -> None:
     manifest_payload = json.loads(manifest_text)
     assert len(manifest_text.splitlines()) == 1
     assert "\n  " not in manifest_text
-    assert graph_payload["nodes"]["net"]["type"] == "RLRMPSimpleStagedNetwork"
+    assert graph_payload["nodes"]["net"]["type"] == "Subgraph"
     assert graph_payload == graph_spec_payload(bundle.graph_spec)
     round_tripped = GraphSpec.model_validate(graph_payload)
     assert graph_spec_payload(round_tripped) == graph_payload
@@ -706,7 +819,7 @@ def test_setup_task_model_pair_materializes_gru_and_linear_graph_paths() -> None
     import jax.random as jr
 
     for hidden_type, expected_net in [
-        ("gru", "SimpleStagedNetwork"),
+        ("gru", "Graph"),
         ("linear", "AffineFeedbackController"),
     ]:
         hps = build_hps(_args(hidden_type=hidden_type, n_replicates=2))
@@ -750,10 +863,13 @@ def test_runtime_graph_bundle_exports_constructed_model_intervenor(
     assert isinstance(pair.model.nodes[PLANT_INTERVENOR_LABEL], expected_class)
     assert isinstance(graph.nodes[PLANT_INTERVENOR_LABEL], expected_class)
     if hidden_type == "gru":
-        assert bundle.graph_spec.nodes["net_input_mux"].type == "Mux"
-        assert bundle.graph_spec.nodes["net_cell"].type == "GRU"
-        assert bundle.graph_spec.nodes["net_readout"].type == "Linear"
-        assert graph.nodes["net_cell"].__class__.__name__ == "GRU"
+        assert bundle.graph_spec.nodes["net"].type == "Subgraph"
+        assert bundle.graph_spec.subgraphs is not None
+        net_graph = bundle.graph_spec.subgraphs["net"]
+        assert net_graph.nodes["input_mux"].type == "Mux"
+        assert net_graph.nodes["cell"].type == "GRU"
+        assert net_graph.nodes["readout"].type == "Linear"
+        assert graph.nodes["net"].nodes["cell"].__class__.__name__ == "GRU"
     else:
         assert bundle.graph_spec.nodes["net"].type == expected_net
         assert bundle.graph_spec.nodes["reference_mux"].type == "Mux"

@@ -42,7 +42,11 @@ from feedbax.runtime.state import CartesianState
 from rlrmp.analysis.math.cs_game_card import build_canonical_game
 from rlrmp.analysis.pipelines.feedbax_parity import build_cs2019_feedbax_mechanics
 from rlrmp.model.feedbax_graph import (
+    NATIVE_SUBGRAPH_COMPONENT,
+    native_recurrent_controller_subgraph,
+    normalize_native_recurrent_runtime_initializers,
     register_rlrmp_graph_components,
+    recurrent_graph_state_to_network_state,
     resolve_registered_graph_component_migrations,
 )
 from rlrmp.model.trainable import staged_network_trainable_parts
@@ -294,7 +298,10 @@ def _cs_lss_gru_state_view(node_states: dict[str, PyTree]) -> CsLssGruState:
     return CsLssGruState(
         mechanics=mechanics_view,
         sensory=node_states["sensory"],
-        net=node_states["net"],
+        net=recurrent_graph_state_to_network_state(
+            node_states["net"],
+            command=node_states["efferent"].output,
+        ),
         efferent=node_states["efferent"],
     )
 
@@ -466,14 +473,16 @@ def build_cs_lss_gru_graph_spec(
         feedback_dim=feedback_dim,
     )
     key_param = [int(value) for value in jnp.asarray(jr.fold_in(key, 0)).tolist()]
-    net_type = (
-        CS_LSS_INITIAL_HIDDEN_NET_COMPONENT
-        if bool(initial_hidden_encoder)
-        else "RLRMPSimpleStagedNetwork"
-    )
+    if encoding_size is not None:
+        raise ValueError(
+            "Feedbax-native CS-LSS recurrent graph emission does not currently support "
+            "SimpleStagedNetwork encoding_size."
+        )
+    h0_initializer_source = "h0" if bool(initial_hidden_encoder) else None
     net_params = {
         "controller_kind": "gru",
         "input_size": int(input_size) + feedback_dim,
+        "external_input_size": int(input_size),
         "hidden_size": int(hidden_size),
         "out_size": CS_FORCE_DIM,
         "encoding_size": encoding_size,
@@ -489,12 +498,22 @@ def build_cs_lss_gru_graph_spec(
     if initial_hidden_encoder:
         net_params.update(
             {
-                "h0_input_size": feedback_dim,
-                "h0_context_source": "target_relative_delayed_feedback",
-                "h0_initialization": CS_H0_ENCODER_INIT,
-                "h0_dtype": trainable_dtype_name,
+                "h0_initializer_source": h0_initializer_source,
+                "h0_source_contract": "graph-input",
             }
         )
+    net_subgraph = native_recurrent_controller_subgraph(
+        input_size=int(net_params["input_size"]),
+        external_input_size=int(input_size),
+        hidden_size=int(hidden_size),
+        out_size=CS_FORCE_DIM,
+        hidden_type_name=str(net_params["hidden_type"]),
+        sisu_gating=str(sisu_gating),
+        population_params=dict(net_params["population_structure"]),
+        h0_initializer_source=h0_initializer_source,
+        key=key_param,
+        dtype=trainable_dtype_name,
+    )
 
     nodes = {
         "feedback": ComponentSpec(
@@ -515,9 +534,9 @@ def build_cs_lss_gru_graph_spec(
             output_ports=["output"],
         ),
         "net": ComponentSpec(
-            type=net_type,
+            type=NATIVE_SUBGRAPH_COMPONENT,
             params=net_params,
-            input_ports=["input", "feedback"],
+            input_ports=list(net_subgraph.input_ports),
             output_ports=["output", "hidden"],
         ),
         "efferent": ComponentSpec(
@@ -634,6 +653,9 @@ def build_cs_lss_gru_graph_spec(
         )
     input_ports = ["input"] if input_size > 0 else []
     input_bindings = {"input": ("net", "input")} if input_size > 0 else {}
+    if initial_hidden_encoder:
+        input_ports.append("h0")
+        input_bindings["h0"] = ("net", "h0")
     if target_relative_feedback:
         input_ports.append("target")
         if finite_epsilon_policy is None:
@@ -664,6 +686,7 @@ def build_cs_lss_gru_graph_spec(
             "clean_feedback": ("feedback", "feedback"),
             "force": ("efferent", "output"),
         },
+        subgraphs={"net": net_subgraph},
         metadata=GraphMetadata(
             name="RLRMP CS-LSS GRU loop",
             description="Executable GraphSpec contract for the C&S LinearStateSpace GRU path.",
@@ -686,6 +709,7 @@ def materialize_cs_lss_gru_graph_spec(
     graph_spec = resolve_registered_graph_component_migrations(graph_spec, registry)
     graph = spec_to_graph(graph_spec, registry)
     graph = _cast_graph_floating_dtype(graph, _graph_runtime_dtype(graph_spec))
+    graph = normalize_native_recurrent_runtime_initializers(graph)
     return install_cs_lss_gru_runtime_hooks(graph)
 
 
@@ -1095,9 +1119,13 @@ def _key_from_params(params: dict[str, Any]) -> Array:
 def _population_structure_params(
     population_structure: PopulationStructure | None,
     hidden_size: int,
-) -> dict[str, int]:
+) -> dict[str, Any]:
     if population_structure is None:
         return {}
+    if hasattr(population_structure, "to_spec"):
+        spec = dict(population_structure.to_spec())
+        spec["hidden_size"] = int(hidden_size)
+        return spec
     return {
         "hidden_size": int(hidden_size),
         "n_input_only": int(getattr(population_structure, "n_input_only", 0) or 0),
