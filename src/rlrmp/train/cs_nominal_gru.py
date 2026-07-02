@@ -109,6 +109,7 @@ from rlrmp.train.cs_perturbation_training import (
     FixedTargetPerturbationTrainingConfig,
     PgdFullStateEpsilonTrainingConfig,
     PolicyFullStateEpsilonTrainingConfig,
+    add_zero_graph_channel_inputs,
     config_from_broad_epsilon_pgd_hps,
     config_from_policy_adversary_hps,
     make_broad_epsilon_pgd_pre_step,
@@ -163,6 +164,12 @@ DELAYED_MOVEMENT_COST_TAIL_MODES = (
 )
 TRAINING_DIAGNOSTICS_NPZ = "training_diagnostics.npz"
 TRAINING_DIAGNOSTICS_MANIFEST = "training_diagnostics.json"
+ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND = "loss_blend"
+ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER = "epsilon_scaled_outer_training"
+ADAPTIVE_EPSILON_TRAINING_MODES = (
+    ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+    ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER,
+)
 ADAPTIVE_EPSILON_ZERO_ADVERSARY_GAIN_TOLERANCE = 1e-8
 ADAPTIVE_EPSILON_ZERO_ADVERSARY_STOP_REASON = (
     "adaptive_epsilon_zero_adversary_two_consecutive_checkpoints"
@@ -3160,8 +3167,19 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "Enable adaptive-lambda soft-energy direct-epsilon training with a paired "
-            "clean/adversarial controller loss. Requires --broad-epsilon-pgd-training "
-            "and --broad-epsilon-pgd-objective soft_energy."
+            "controller-training mode. Requires --broad-epsilon-pgd-training and "
+            "--broad-epsilon-pgd-objective soft_energy."
+        ),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-controller-training-mode",
+        choices=ADAPTIVE_EPSILON_TRAINING_MODES,
+        default=ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+        help=(
+            "Controller update semantics for adaptive epsilon. loss_blend preserves the "
+            "legacy clean/adversarial loss blend. epsilon_scaled_outer_training optimizes "
+            "the full-strength direct-epsilon adversary, stop-gradients it, then trains "
+            "on one rollout with the epsilon channel physically scaled by the outer schedule."
         ),
     )
     parser.add_argument("--adaptive-epsilon-damage-start", type=float, default=0.0)
@@ -3775,8 +3793,16 @@ def _broad_epsilon_pgd_training_enabled(hps: TreeNamespace) -> bool:
 
 def _adaptive_epsilon_curriculum_config_from_args(args: argparse.Namespace) -> dict[str, Any]:
     enabled = bool(getattr(args, "adaptive_epsilon_curriculum", False))
+    controller_training_mode = str(
+        getattr(
+            args,
+            "adaptive_epsilon_controller_training_mode",
+            ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+        )
+    )
     cfg = {
         "enabled": enabled,
+        "controller_training_mode": controller_training_mode,
         "damage_schedule": {
             "kind": "linear_ramp_then_cosine_anneal",
             "start": float(args.adaptive_epsilon_damage_start),
@@ -3803,12 +3829,21 @@ def _adaptive_epsilon_curriculum_config_from_args(args: argparse.Namespace) -> d
             "start": float(args.adaptive_epsilon_outer_weight_start),
             "final": float(args.adaptive_epsilon_outer_weight_final),
             "ramp_batches": int(args.adaptive_epsilon_outer_weight_ramp_batches),
-            "applies_to": "optimized_direct_epsilon_loss_only",
+            "applies_to": (
+                "optimized_direct_epsilon_loss_only"
+                if controller_training_mode == ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND
+                else "optimized_direct_epsilon_channel_scale_for_controller_rollout"
+            ),
             "perturbation_bank_policy": "orthogonal_unweighted_by_outer_adversarial_weight",
         },
     }
     if not enabled:
         return cfg
+    if controller_training_mode not in ADAPTIVE_EPSILON_TRAINING_MODES:
+        raise ValueError(
+            "Adaptive epsilon controller training mode must be one of "
+            f"{', '.join(ADAPTIVE_EPSILON_TRAINING_MODES)}."
+        )
     damage = cfg["damage_schedule"]
     if damage["ramp_batches"] < 0 or damage["anneal_batches"] < 0:
         raise ValueError("Adaptive epsilon damage schedule batch counts must be nonnegative.")
@@ -4486,6 +4521,7 @@ def _run_adaptive_epsilon_training_chunk(
             0,
             None,
             None,
+            None,
         ),
         out_axes=(
             eqx.if_array(0),
@@ -4525,8 +4561,22 @@ def _run_adaptive_epsilon_training_chunk(
             task,
             batch_info=eval_batch_info,
             batch_size=batch_size,
+            include_graph_adapter_inputs=_perturbation_training_enabled(hps),
+            force_filter_feedback=bool(
+                getattr(hps.perturbation_training, "force_filter_feedback", False)
+            ),
         )
     )(eval_keys)
+    eval_trial_specs_axis = jt.map(
+        lambda leaf: (
+            0
+            if eqx.is_array(leaf)
+            and leaf.ndim > 0
+            and int(leaf.shape[0]) == n_replicates
+            else None
+        ),
+        eval_trial_specs,
+    )
     damage_eval_step = eqx.filter_vmap(
         _adaptive_epsilon_damage_eval_step,
         in_axes=(
@@ -4535,9 +4585,10 @@ def _run_adaptive_epsilon_training_chunk(
             flat_model_arr_spec,
             None,
             None,
+            eval_trial_specs_axis,
             0,
             0,
-            0,
+            None,
             None,
         ),
         out_axes=eqx.if_array(0),
@@ -4579,6 +4630,7 @@ def _run_adaptive_epsilon_training_chunk(
             key_train,
             jnp.asarray(adaptive_state.lambda_value, dtype=jnp.float32),
             jnp.asarray(outer_weight, dtype=jnp.float32),
+            hps.adaptive_epsilon_curriculum.controller_training_mode,
         )
         eval_diagnostics = damage_eval_step(
             task,
@@ -4590,6 +4642,7 @@ def _run_adaptive_epsilon_training_chunk(
             eval_keys_init,
             eval_keys_model,
             jnp.asarray(adaptive_state.lambda_value, dtype=jnp.float32),
+            jnp.asarray(outer_weight, dtype=jnp.float32),
         )
         adaptive_update_damage_raw = float(
             np.asarray(jax.device_get(jnp.mean(eval_diagnostics["adaptive_update_damage_raw"])))
@@ -4703,6 +4756,7 @@ def _adaptive_epsilon_train_step(
     key: Any,
     energy_lambda: Any,
     outer_weight: Any,
+    controller_training_mode: str,
 ) -> tuple[Any, Any, Any, Any, Any, dict[str, jnp.ndarray]]:
     key_trials, key_init, key_model = jr.split(key, 3)
     keys_trials = jr.split(key_trials, batch_info.size)
@@ -4754,17 +4808,90 @@ def _adaptive_epsilon_train_step(
         weighted_losses = _weighted_loss_tree(clean_losses, adv_losses, outer_weight)
         diagnostics = {
             "training_batch_damage_raw": jnp.asarray(adv_losses.total - clean_losses.total),
+            "training_batch_full_strength_damage_raw": jnp.asarray(
+                adv_losses.total - clean_losses.total
+            ),
+            "training_batch_applied_scaled_damage_raw": jnp.asarray(
+                adv_losses.total - clean_losses.total
+            ),
             "training_batch_clean_loss_total": jnp.asarray(clean_losses.total),
             "training_batch_adversarial_loss_total": jnp.asarray(adv_losses.total),
+            "training_batch_full_strength_adversarial_loss_total": jnp.asarray(
+                adv_losses.total
+            ),
+            "training_batch_applied_scaled_loss_total": jnp.asarray(adv_losses.total),
             "training_batch_weighted_loss_total": jnp.asarray(weighted_losses.total),
             "energy_lambda_used": jnp.asarray(energy_lambda, dtype=jnp.float32),
             "outer_weight_used": jnp.asarray(outer_weight, dtype=jnp.float32),
+            "epsilon_scale_used": jnp.asarray(outer_weight, dtype=jnp.float32),
+            "controller_training_mode_is_epsilon_scaled_outer": jnp.asarray(False),
         }
         diagnostics.update({f"inner_{name}": value for name, value in inner_diagnostics.items()})
         return weighted_losses.total, (weighted_losses, diagnostics)
 
+    def epsilon_scaled_outer_loss(current_diff_model):
+        current_model = eqx.combine(current_diff_model, static_model)
+        applied_specs = _scale_direct_epsilon_trial_specs(
+            clean_specs=trial_specs,
+            adv_specs=adv_specs,
+            epsilon_scale=outer_weight,
+        )
+        applied_states = _eval_trial_specs_for_training(
+            current_model,
+            applied_specs,
+            init_states,
+            keys_model,
+        )
+        applied_losses = loss_func(applied_states, applied_specs, current_model)
+        clean_states = _eval_trial_specs_for_training(
+            current_model,
+            trial_specs,
+            init_states,
+            keys_model,
+        )
+        full_adv_states = _eval_trial_specs_for_training(
+            current_model,
+            adv_specs,
+            init_states,
+            keys_model,
+        )
+        clean_losses = loss_func(clean_states, trial_specs, current_model)
+        full_adv_losses = loss_func(full_adv_states, adv_specs, current_model)
+        diagnostics = {
+            "training_batch_damage_raw": jnp.asarray(
+                full_adv_losses.total - clean_losses.total
+            ),
+            "training_batch_full_strength_damage_raw": jnp.asarray(
+                full_adv_losses.total - clean_losses.total
+            ),
+            "training_batch_applied_scaled_damage_raw": jnp.asarray(
+                applied_losses.total - clean_losses.total
+            ),
+            "training_batch_clean_loss_total": jnp.asarray(clean_losses.total),
+            "training_batch_adversarial_loss_total": jnp.asarray(full_adv_losses.total),
+            "training_batch_full_strength_adversarial_loss_total": jnp.asarray(
+                full_adv_losses.total
+            ),
+            "training_batch_applied_scaled_loss_total": jnp.asarray(applied_losses.total),
+            "training_batch_weighted_loss_total": jnp.asarray(applied_losses.total),
+            "energy_lambda_used": jnp.asarray(energy_lambda, dtype=jnp.float32),
+            "outer_weight_used": jnp.asarray(outer_weight, dtype=jnp.float32),
+            "epsilon_scale_used": jnp.asarray(outer_weight, dtype=jnp.float32),
+            "controller_training_mode_is_epsilon_scaled_outer": jnp.asarray(True),
+        }
+        diagnostics.update({f"inner_{name}": value for name, value in inner_diagnostics.items()})
+        return applied_losses.total, (applied_losses, diagnostics)
+
+    if controller_training_mode == ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND:
+        loss_fn = paired_loss
+    elif controller_training_mode == ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER:
+        loss_fn = epsilon_scaled_outer_loss
+    else:
+        raise ValueError(
+            f"Unknown adaptive epsilon controller training mode: {controller_training_mode}"
+        )
     (_, (losses, diagnostics)), grads = eqx.filter_value_and_grad(
-        paired_loss,
+        loss_fn,
         has_aux=True,
     )(diff_model)
     updates, opt_state = optimizer.update(grads, opt_state, model)
@@ -4773,6 +4900,19 @@ def _adaptive_epsilon_train_step(
     flat_model = jtu.tree_leaves(model)
     flat_opt_state = jtu.tree_leaves(opt_state)
     return losses, adv_specs, flat_model, flat_opt_state, grads, diagnostics
+
+
+def _scale_direct_epsilon_trial_specs(
+    *,
+    clean_specs: "TaskTrialSpec",
+    adv_specs: "TaskTrialSpec",
+    epsilon_scale: Any,
+) -> "TaskTrialSpec":
+    clean_epsilon = clean_specs.inputs["epsilon"]
+    adv_epsilon = adv_specs.inputs["epsilon"]
+    scaled_inputs = dict(adv_specs.inputs)
+    scaled_inputs["epsilon"] = clean_epsilon + epsilon_scale * (adv_epsilon - clean_epsilon)
+    return replace(adv_specs, inputs=scaled_inputs)
 
 
 def _sample_adaptive_epsilon_training_batch(
@@ -4797,6 +4937,8 @@ def _sample_adaptive_epsilon_damage_eval_batch(
     *,
     batch_info: BatchInfo,
     batch_size: int,
+    include_graph_adapter_inputs: bool = False,
+    force_filter_feedback: bool = False,
 ) -> tuple["TaskTrialSpec", Any, Any]:
     """Sample the fixed nominal batch used only for adaptive lambda damage updates."""
 
@@ -4808,6 +4950,11 @@ def _sample_adaptive_epsilon_damage_eval_batch(
             batch_info=batch_info,
         )
     )(keys_trials)
+    if include_graph_adapter_inputs:
+        trial_specs = add_zero_graph_channel_inputs(
+            trial_specs,
+            force_filter_feedback=force_filter_feedback,
+        )
     return trial_specs, jr.split(key_init, batch_size), jr.split(key_model, batch_size)
 
 
@@ -4822,6 +4969,7 @@ def _adaptive_epsilon_damage_eval_step(
     keys_init: Any,
     keys_model: Any,
     energy_lambda: Any,
+    epsilon_scale: Any,
 ) -> dict[str, jnp.ndarray]:
     """Measure paired clean/adversarial damage on the fixed nominal update batch."""
 
@@ -4840,6 +4988,11 @@ def _adaptive_epsilon_damage_eval_step(
         lambda value: jax.lax.stop_gradient(value) if eqx.is_array(value) else value,
         adv_specs,
     )
+    applied_specs = _scale_direct_epsilon_trial_specs(
+        clean_specs=trial_specs,
+        adv_specs=adv_specs,
+        epsilon_scale=epsilon_scale,
+    )
     init_states = eqx.filter_vmap(lambda _: init_state_from_component(model))(keys_init)
     init_states = eqx.filter_vmap(
         lambda state, trial_spec: _apply_trial_spec_initial_state(model, state, trial_spec)
@@ -4856,13 +5009,29 @@ def _adaptive_epsilon_damage_eval_step(
         init_states,
         keys_model,
     )
+    applied_states = _eval_trial_specs_for_training(
+        model,
+        applied_specs,
+        init_states,
+        keys_model,
+    )
     clean_losses = loss_func(clean_states, trial_specs, model)
     adv_losses = loss_func(adv_states, adv_specs, model)
+    applied_losses = loss_func(applied_states, applied_specs, model)
     diagnostics = {
         "adaptive_update_damage_raw": jnp.asarray(adv_losses.total - clean_losses.total),
+        "adaptive_update_full_strength_damage_raw": jnp.asarray(
+            adv_losses.total - clean_losses.total
+        ),
+        "adaptive_update_applied_scaled_damage_raw": jnp.asarray(
+            applied_losses.total - clean_losses.total
+        ),
         "adaptive_update_clean_loss_total": jnp.asarray(clean_losses.total),
         "adaptive_update_adversarial_loss_total": jnp.asarray(adv_losses.total),
+        "adaptive_update_full_strength_adversarial_loss_total": jnp.asarray(adv_losses.total),
+        "adaptive_update_applied_scaled_loss_total": jnp.asarray(applied_losses.total),
         "adaptive_update_energy_lambda_used": jnp.asarray(energy_lambda, dtype=jnp.float32),
+        "adaptive_update_epsilon_scale_used": jnp.asarray(epsilon_scale, dtype=jnp.float32),
     }
     diagnostics.update(
         {f"adaptive_update_inner_{name}": value for name, value in inner_diagnostics.items()}
