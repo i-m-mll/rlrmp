@@ -75,7 +75,12 @@ def test_declarative_recipes_use_feedbax_context_materializers() -> None:
         rollout_recovery.analyses["output_feedback_rollout_recovery"],
         ContextMaterializer,
     )
-    assert isinstance(feedback_quality.analyses["feedback_quality_lens"], ContextMaterializer)
+    assert isinstance(feedback_quality.analyses["feedback_quality_lens"], AbstractAnalysis)
+    assert not isinstance(feedback_quality.analyses["feedback_quality_lens"], ContextMaterializer)
+    assert isinstance(
+        feedback_quality.analyses["evaluation_diagnostics"],
+        AbstractAnalysis,
+    )
 
 
 def test_output_feedback_bridge_bundle_resource_loads() -> None:
