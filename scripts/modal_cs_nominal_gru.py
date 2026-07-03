@@ -44,6 +44,7 @@ from rlrmp.cloud.modal_runner import (
     dry_run_payload,
     execute_remote_payload,
     make_config,
+    require_billable_launch_confirmation,
 )
 
 
@@ -138,6 +139,7 @@ def _run_payload(payload: dict[str, Any]) -> int:
 def main(*args: str) -> None:
     parser = build_parser()
     parsed = parser.parse_args(list(args))
+    require_billable_launch_confirmation(parsed)
     config = make_config(parsed)
     if parsed.command == "dry-run":
         print(json.dumps(dry_run_payload(config), indent=2, sort_keys=True))
