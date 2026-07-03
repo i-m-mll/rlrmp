@@ -296,14 +296,14 @@ def _scan_file(path: Path) -> tuple[list[WriteSite], list[frozenset[tuple]]]:
     # one run stay distinct).
     groups: list[frozenset[tuple]] = []
 
-    # (a) same-function if/else: durable writes in body vs orelse.
+    # (a) same-function if/else: emitter writes in body vs orelse.
     for if_node, function in if_nodes:
-        body_targets = _durable_targets_in(if_node.body, relpath, function)
-        else_targets = _durable_targets_in(if_node.orelse, relpath, function)
+        body_targets = _emitter_targets_in(if_node.body, relpath, function)
+        else_targets = _emitter_targets_in(if_node.orelse, relpath, function)
         if body_targets and else_targets:
             groups.append(frozenset(body_targets | else_targets))
 
-    # (b) ternary dispatch over emitter functions: durable writes in A vs B.
+    # (b) ternary dispatch over emitter functions: emitter writes in A vs B.
     func_defs = {n.name: n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
     seen_pairs: set[frozenset[str]] = set()
     for a, partners in dispatch.items():
@@ -312,16 +312,25 @@ def _scan_file(path: Path) -> tuple[list[WriteSite], list[frozenset[tuple]]]:
             if pair in seen_pairs or a not in func_defs or b not in func_defs:
                 continue
             seen_pairs.add(pair)
-            a_targets = _durable_targets_in(func_defs[a].body, relpath, a)
-            b_targets = _durable_targets_in(func_defs[b].body, relpath, b)
+            a_targets = _emitter_targets_in(func_defs[a].body, relpath, a)
+            b_targets = _emitter_targets_in(func_defs[b].body, relpath, b)
             if a_targets and b_targets:
                 groups.append(frozenset(a_targets | b_targets))
 
     return sites, groups
 
 
-def _durable_targets_in(body: list[ast.AST], relpath: str, function: str) -> set[tuple]:
-    """Durable write targets under ``body``, keyed with function context.
+def _emitter_targets_in(body: list[ast.AST], relpath: str, function: str) -> set[tuple]:
+    """Raw-write emitter targets under ``body``, keyed with function context.
+
+    Includes both durable and ephemeral (tmp-staged) emitter sites: the branch
+    matrix tracks the conditional *emitter structure* (which mutually-exclusive
+    legs exist), not the durable/ephemeral classification. Once a final-output
+    emitter is routed onto the custody writer and its local materialization
+    becomes an atomically-staged tmp write (issue 7e71950), the conditional leg
+    is still a genuine emitter a single toy run cannot jointly exercise, so it
+    must remain enumerated here even though it no longer needs an allowlist
+    entry.
 
     ``function`` is the enclosing function name; it is updated when descending
     into a nested ``FunctionDef`` so nested helper writes are attributed
@@ -334,9 +343,7 @@ def _durable_targets_in(body: list[ast.AST], relpath: str, function: str) -> set
         cur = node.name if isinstance(node, ast.FunctionDef) else fn
         if isinstance(node, ast.Call) and _is_raw_write_call(node):
             target_expr = _write_target_expr(node)
-            root = _target_root_name(target_expr)
-            if not (root and _EPHEMERAL_ROOT_RE.match(root)):
-                found.add((relpath, cur, _call_kind(node), _target_label(target_expr)))
+            found.add((relpath, cur, _call_kind(node), _target_label(target_expr)))
         for child in ast.iter_child_nodes(node):
             collect(child, cur)
 
@@ -480,15 +487,20 @@ def test_conditional_emitter_branch_matrix_is_non_vacuous() -> None:
 
     _, groups = _scan_domain()
     assert groups, (
-        "No mutually-exclusive durable emitters found; a single toy run would "
-        "then be able to exercise the whole surface and the branch matrix would "
-        "be vacuous. The scan is either broken or the emission path changed."
+        "No mutually-exclusive emitters found; a single toy run would then be "
+        "able to exercise the whole surface and the branch matrix would be "
+        "vacuous. The scan is either broken or the emission path changed."
     )
     # The two structural exclusions on the minimax path that a toy run cannot
     # jointly exercise: (1) single- vs multi-adversary artifact layout (an
-    # in-function if/else writing `trained_adversary.eqx` vs `adversaries/*`),
-    # and (2) force-profile vs delta_A adversary-log dispatch (a ternary over
-    # two emitter functions). Tuple shape: (relpath, function, kind, target).
+    # in-function if/else materializing `trained_adversary.eqx` vs
+    # `adversaries/*`), and (2) force-profile vs delta_A adversary-log dispatch
+    # (a ternary over two emitter functions). These emitters are now routed onto
+    # the terminal custody transaction with atomically-staged local
+    # materializations (issue 7e71950), so their leg targets are tmp-rooted
+    # (e.g. `tmp_trained_adversary_path`, `tmp_adv_path`); the branch matrix
+    # still enumerates them via the emitter structure. Tuple shape:
+    # (relpath, function, kind, target).
     all_targets = {t for group in groups for t in group}
     functions = {t[1] for t in all_targets}
     labels = {t[3] for t in all_targets}

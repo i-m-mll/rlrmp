@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -28,7 +29,9 @@ from feedbax.training.checkpoint_custody import (
 )
 
 from rlrmp.runtime.checkpoint_custody import (
+    MINIMAX_ADVERSARIAL_BARRIER,
     MINIMAX_WARMUP_BARRIER,
+    has_custody_checkpoint,
     load_cs_checkpoint_transaction,
     load_minimax_checkpoint_transaction,
 )
@@ -288,3 +291,56 @@ def test_minimax_warmup_boundary_checkpoint_resumes_at_adversarial_start(
     assert loaded.manifest.barrier == MINIMAX_WARMUP_BARRIER
     assert int(loaded.slots["active_batch_index"]) == -1
     assert loaded.slots["rng"].tolist() == [7, 8]
+
+
+def test_minimax_final_custody_transaction_is_content_addressed(tmp_path: Path) -> None:
+    """The terminal minimax outputs resolve through the custody run record.
+
+    Issue 7e71950: the final controller / adversary population / loss curves are
+    routed onto a status="final" custody transaction that content-addresses each
+    slot and publishes the latest pointer, rather than raw fbx_save/np.savez
+    writes to output_dir.
+    """
+    train_minimax = _load_train_minimax_module()
+    training_spec = _minimax_training_spec()
+    model = jnp.asarray([1.0, 2.0], dtype=jnp.float32)
+    adversaries = [jnp.asarray([0.1, 0.2], dtype=jnp.float32)]
+    adv_opt_states = [{"count": jnp.asarray(1, dtype=jnp.int32)}]
+    ctrl_opt_state = {"count": jnp.asarray(2, dtype=jnp.int32)}
+
+    train_minimax._write_final_minimax_custody_transaction(
+        tmp_path,
+        training_spec=training_spec,
+        model=model,
+        adversaries=adversaries,
+        adv_opt_states=adv_opt_states,
+        ctrl_opt_state=ctrl_opt_state,
+        rng_key=jnp.asarray([9, 10], dtype=jnp.uint32),
+        batch_idx=3,
+        adv_losses=[0.9, 0.8],
+        ctrl_losses=[1.9, 1.8],
+        adv_indices=[0, 0],
+        warmup_history={"loss": jnp.asarray([1.0], dtype=jnp.float32)},
+    )
+
+    assert has_custody_checkpoint(tmp_path)
+    loaded = load_minimax_checkpoint_transaction(
+        tmp_path,
+        training_spec=training_spec,
+        expected_slots=train_minimax._minimax_expected_slots(
+            model_template=model,
+            adversaries_template=adversaries,
+            adv_opt_states_template=adv_opt_states,
+            ctrl_opt_state_template=ctrl_opt_state,
+        ),
+        expected_population_member_ids={"adversary_population": ["adversary_0"]},
+    )
+
+    assert loaded.manifest.status == "final"
+    assert loaded.manifest.barrier == MINIMAX_ADVERSARIAL_BARRIER
+    assert int(loaded.slots["active_batch_index"]) == 3
+    assert loaded.slots["rng"].tolist() == [9, 10]
+    # Every persisted slot is content-addressed (sha256) in the manifest.
+    assert loaded.manifest.slots
+    for slot in loaded.manifest.slots:
+        assert re.fullmatch(r"[0-9a-f]{64}", slot.sha256)
