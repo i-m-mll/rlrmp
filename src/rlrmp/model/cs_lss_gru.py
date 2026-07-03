@@ -86,6 +86,16 @@ CS_LSS_INITIAL_HIDDEN_NET_COMPONENT = "RLRMPCsLssInitialHiddenStagedNetwork"
 CS_LSS_FINITE_EPSILON_POLICY_COMPONENT = "RLRMPCsLssFiniteEpsilonPolicy"
 CS_LSS_PASSTHROUGH_COMPONENT = "RLRMPCsLssPassthrough"
 FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT = "StateFeedbackSelector"
+# Native identity of the live closed-loop finite-epsilon policy in the active
+# graph-emission path. The retired ``RLRMPCsLssFiniteEpsilonPolicy`` component
+# type survives only as a legacy registration/migration ID (see
+# ``register_cs_lss_graph_components``); the active builder emits a Feedbax-native
+# ``AffineValueComposer`` node labelled ``finite_epsilon_policy`` whose gain/bias
+# parameters carry the component-parameter labels ``finite_epsilon_policy.gain``
+# / ``finite_epsilon_policy.bias``. Descriptors and equivalence tests reference
+# these constants so the native identity has a single source of truth.
+FINITE_EPSILON_POLICY_GRAPH_COMPONENT = "AffineValueComposer"
+FINITE_EPSILON_POLICY_NODE_LABEL = "finite_epsilon_policy"
 CS_LSS_UNSUPPORTED_STOCHASTIC_COMPONENTS = frozenset(
     {
         "RLRMPCsLssStateDiffusion",
@@ -642,8 +652,8 @@ def build_cs_lss_gru_graph_spec(
             input_ports=["input"],
             output_ports=["output"],
         )
-        nodes["finite_epsilon_policy"] = ComponentSpec(
-            type="AffineValueComposer",
+        nodes[FINITE_EPSILON_POLICY_NODE_LABEL] = ComponentSpec(
+            type=FINITE_EPSILON_POLICY_GRAPH_COMPONENT,
             params={
                 "schema_version": "feedbax.component.affine_value_composer.v1",
                 "output_block_size": int(mechanics.B_w.shape[1]),
@@ -654,7 +664,7 @@ def build_cs_lss_gru_graph_spec(
                 "gain_init": jnp.zeros((int(mechanics.B_w.shape[1]), state_dim)).tolist(),
                 "bias_init": jnp.zeros((int(mechanics.B_w.shape[1]),)).tolist(),
                 "use_bias": finite_epsilon_policy == AFFINE_POLICY,
-                "label": "finite_epsilon_policy",
+                "label": FINITE_EPSILON_POLICY_NODE_LABEL,
             },
             input_ports=["base", "state", "target", "gain", "bias"],
             output_ports=["value"],
@@ -698,12 +708,12 @@ def build_cs_lss_gru_graph_spec(
                 WireSpec(
                     source_node="mechanics",
                     source_port="state",
-                    target_node="finite_epsilon_policy",
+                    target_node=FINITE_EPSILON_POLICY_NODE_LABEL,
                     target_port="state",
                     temporality="recurrent",
                 ),
                 WireSpec(
-                    source_node="finite_epsilon_policy",
+                    source_node=FINITE_EPSILON_POLICY_NODE_LABEL,
                     source_port="value",
                     target_node="mechanics",
                     target_port="epsilon",
@@ -717,7 +727,7 @@ def build_cs_lss_gru_graph_spec(
                 WireSpec(
                     source_node="target_source",
                     source_port="output",
-                    target_node="finite_epsilon_policy",
+                    target_node=FINITE_EPSILON_POLICY_NODE_LABEL,
                     target_port="target",
                 ),
             ]
@@ -738,12 +748,12 @@ def build_cs_lss_gru_graph_spec(
         if finite_epsilon_policy is None:
             input_bindings["epsilon"] = ("mechanics", "epsilon")
         else:
-            input_bindings["epsilon"] = ("finite_epsilon_policy", "base")
+            input_bindings["epsilon"] = (FINITE_EPSILON_POLICY_NODE_LABEL, "base")
             input_ports.append(FINITE_POLICY_GAINS_INPUT)
-            input_bindings[FINITE_POLICY_GAINS_INPUT] = ("finite_epsilon_policy", "gain")
+            input_bindings[FINITE_POLICY_GAINS_INPUT] = (FINITE_EPSILON_POLICY_NODE_LABEL, "gain")
             if finite_epsilon_policy == AFFINE_POLICY:
                 input_ports.append(FINITE_POLICY_BIAS_INPUT)
-                input_bindings[FINITE_POLICY_BIAS_INPUT] = ("finite_epsilon_policy", "bias")
+                input_bindings[FINITE_POLICY_BIAS_INPUT] = (FINITE_EPSILON_POLICY_NODE_LABEL, "bias")
     return GraphSpec(
         nodes=nodes,
         wires=wires,
