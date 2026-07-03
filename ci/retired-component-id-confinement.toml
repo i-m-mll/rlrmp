@@ -102,7 +102,7 @@ path = "src/rlrmp/model/cs_lss_gru.py"
 qualname = "<module>"
 owner = "7811e47"
 category = "cs_lss_component_id_constants"
-note = "Module-level CS-LSS component-ID constants and frozensets (registration IDs, migration source_types, unsupported-stochastic set). CS-LSS initial-hidden / finite-epsilon / passthrough have no landed Feedbax-native equivalent yet; retirement to native (AffineValueComposer et al.) is pending on the CS-LSS native-migration lane."
+note = "Module-level CS-LSS component-ID constants and frozensets (registration IDs, migration source_types, unsupported-stochastic set). The finite-epsilon-policy active emission is now Feedbax-native (AffineValueComposer node labelled finite_epsilon_policy; see FINITE_EPSILON_POLICY_GRAPH_COMPONENT); the RLRMPCsLssFiniteEpsilonPolicy constant survives here only as a legacy registration/migration ID so archived graphs still materialize (register_cs_lss_graph_components). CS-LSS initial-hidden / passthrough retirement to native remains pending on the CS-LSS native-migration lane. This <module> scope covers several retired constants, so it cannot narrow to drop just the finite-epsilon constant while legacy loaders reference it."
 
 [[python_scope]]
 path = "src/rlrmp/runtime/run_specs.py"
@@ -110,15 +110,6 @@ qualname = "<module>"
 owner = "7811e47"
 category = "legacy_run_spec_validation"
 note = "CS_LSS_FEEDBACK_COMPONENT_TYPES and LEGACY_POINT_MASS_GRAPH_TYPES accept historical RLRMP IDs only for archived-artifact validation; clean targets are Feedbax-native (StateFeedbackSelector / PointMass / FeedbackChannels)."
-
-# --- sibling-owned active-target-pending emission ---------------------------
-
-[[python_scope]]
-path = "src/rlrmp/train/cs_perturbation_training.py"
-qualname = "pgd_adversary_mechanism_contract"
-owner = "7811e47"
-category = "active_target_pending_retirement"
-note = "Finite-epsilon-policy graph_component contract descriptor. Owned/edited by the ea6ccb4 calibration lane; slated to retire to a Feedbax-native AffineValueComposer component. This is the one active-emission surface still stamping a retired CS-LSS ID; remove this entry when that retirement lands. Not a permanent legacy loader."
 
 # --- deliberate legacy-assertion / conversion / native-vs-legacy tests -------
 

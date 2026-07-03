@@ -46,7 +46,11 @@ from rlrmp.model.feedback_descriptors import (
     COMPONENT_FORCE_FILTER,
     resolve_controller_feedback_view,
 )
-from rlrmp.model.cs_lss_gru import CS_H0_CONTEXT_INPUT
+from rlrmp.model.cs_lss_gru import (
+    CS_H0_CONTEXT_INPUT,
+    FINITE_EPSILON_POLICY_GRAPH_COMPONENT,
+    FINITE_EPSILON_POLICY_NODE_LABEL,
+)
 from rlrmp.train.closed_loop_finite_adversary import (
     AFFINE_POLICY,
     FINITE_POLICY_BIAS_INPUT,
@@ -953,7 +957,8 @@ def pgd_adversary_mechanism_contract(
         },
         "live_evaluation": {
             "implementation": "graph_component",
-            "component": "RLRMPCsLssFiniteEpsilonPolicy",
+            "component": FINITE_EPSILON_POLICY_GRAPH_COMPONENT,
+            "component_label": FINITE_EPSILON_POLICY_NODE_LABEL,
             "hook": None,
             "input_keys": [
                 "epsilon",
@@ -964,7 +969,8 @@ def pgd_adversary_mechanism_contract(
             "target_centering": True,
             "static_clean_rollout_materialization": False,
         },
-        "graph_component": "RLRMPCsLssFiniteEpsilonPolicy",
+        "graph_component": FINITE_EPSILON_POLICY_GRAPH_COMPONENT,
+        "graph_component_label": FINITE_EPSILON_POLICY_NODE_LABEL,
         "no_fake_open_loop_replay": True,
     }
 

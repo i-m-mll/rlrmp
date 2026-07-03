@@ -37,7 +37,8 @@ from rlrmp.analysis.math.cs_released_simulation import default_cs_noise_covarian
 from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig
 from rlrmp.data_products.calibration import load_open_loop_calibration
 from rlrmp.model.cs_lss_gru import (
-    CS_LSS_FINITE_EPSILON_POLICY_COMPONENT,
+    FINITE_EPSILON_POLICY_GRAPH_COMPONENT,
+    FINITE_EPSILON_POLICY_NODE_LABEL,
     CS_EPSILON_DIM,
     CS_REDUCED_EPSILON_DIM,
     CsLssFiniteEpsilonPolicy,
@@ -1183,7 +1184,10 @@ def test_pgd_finite_mechanism_serializes_live_graph_contract() -> None:
     )
     assert payload["mechanism"]["live_evaluation"]["implementation"] == "graph_component"
     assert payload["mechanism"]["live_evaluation"]["component"] == (
-        CS_LSS_FINITE_EPSILON_POLICY_COMPONENT
+        FINITE_EPSILON_POLICY_GRAPH_COMPONENT
+    )
+    assert payload["mechanism"]["live_evaluation"]["component_label"] == (
+        FINITE_EPSILON_POLICY_NODE_LABEL
     )
     assert payload["mechanism"]["live_evaluation"]["static_clean_rollout_materialization"] is False
     assert payload["mechanism"]["no_fake_open_loop_replay"] is True
@@ -1260,7 +1264,8 @@ def test_pgd_mechanism_cli_run_spec_and_replay_for_linear_no_bias(tmp_path: Path
 
     assert pgd["adversary_mechanism"] == LINEAR_NO_BIAS_POLICY
     assert pgd["mechanism"]["implementation_status"] == "implemented"
-    assert pgd["mechanism"]["graph_component"] == CS_LSS_FINITE_EPSILON_POLICY_COMPONENT
+    assert pgd["mechanism"]["graph_component"] == FINITE_EPSILON_POLICY_GRAPH_COMPONENT
+    assert pgd["mechanism"]["graph_component_label"] == FINITE_EPSILON_POLICY_NODE_LABEL
     assert pgd["mechanism"]["live_evaluation"]["implementation"] == "graph_component"
     assert pgd["mechanism"]["live_evaluation"]["hook"] is None
     assert pgd["mechanism"]["live_evaluation"]["input_keys"] == [
@@ -1448,6 +1453,46 @@ def test_finite_pgd_graph_wires_policy_inputs_to_mechanics_epsilon() -> None:
         and wire.target_port == "epsilon"
         for wire in spec.wires
     )
+
+
+@pytest.mark.parametrize("policy_class", [LINEAR_NO_BIAS_POLICY, AFFINE_POLICY])
+def test_pgd_mechanism_contract_points_at_native_finite_policy_component(
+    policy_class: str,
+) -> None:
+    """The live-eval descriptor must name the native node actually emitted.
+
+    Structural equivalence check for the retired-ID retirement (b20e0ea): the
+    ``pgd_adversary_mechanism_contract`` descriptor no longer stamps the retired
+    ``RLRMPCsLssFiniteEpsilonPolicy`` ID; it must instead resolve to the exact
+    Feedbax-native ``AffineValueComposer`` node (type + label) that
+    ``build_cs_lss_gru_graph_spec`` emits for the same policy class.
+    """
+
+    cfg = PgdFullStateEpsilonTrainingConfig(enabled=True, adversary_mechanism=policy_class)
+    contract = cs_perturbation_training.pgd_adversary_mechanism_contract(cfg)
+
+    spec = build_cs_lss_gru_graph_spec(
+        hidden_size=4,
+        target_relative_feedback=True,
+        bind_epsilon_input=True,
+        finite_epsilon_policy=policy_class,
+        no_integrator_state=True,
+        key=jr.PRNGKey(0),
+    )
+
+    # Descriptor names must be native, not the retired branded ID.
+    assert contract["graph_component"] == FINITE_EPSILON_POLICY_GRAPH_COMPONENT
+    assert contract["graph_component_label"] == FINITE_EPSILON_POLICY_NODE_LABEL
+    assert contract["live_evaluation"]["component"] == FINITE_EPSILON_POLICY_GRAPH_COMPONENT
+    assert contract["live_evaluation"]["component_label"] == FINITE_EPSILON_POLICY_NODE_LABEL
+    assert "RLRMPCsLss" not in contract["graph_component"]
+
+    # The descriptor must resolve to a node that actually exists in the emitted
+    # native GraphSpec, with the matching component type.
+    node = spec.nodes[contract["graph_component_label"]]
+    assert node.type == contract["graph_component"]
+    assert node.params["label"] == contract["graph_component_label"]
+    assert node.params["use_bias"] is (policy_class == AFFINE_POLICY)
 
 
 def test_finite_pgd_inner_maximizer_installs_policy_inputs_before_rollout() -> None:
