@@ -28,6 +28,7 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
     repeat_single_validation_trial,
     resolve_run_inputs,
 )
+from rlrmp.io import update_marked_section
 from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.data_products.broad_epsilon import load_broad_epsilon_anchors
@@ -576,7 +577,11 @@ def materialize_gru_worst_case_epsilon_audit(
     }
     public_manifest = _json_ready(manifest)
     output_path.write_text(json.dumps(public_manifest, indent=2, sort_keys=True) + "\n")
-    note_path.write_text(render_worst_case_epsilon_markdown(public_manifest), encoding="utf-8")
+    update_marked_section(
+        note_path,
+        "gru_worst_case_epsilon_audit",
+        render_worst_case_epsilon_markdown(public_manifest),
+    )
     return public_manifest
 
 

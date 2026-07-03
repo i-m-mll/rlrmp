@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+from feedbax.contracts.manifest import CheckpointSelectionManifest, load_manifest
 
 import rlrmp.analysis.pipelines.gru_checkpoint_selection as checkpoint_selection
 from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
@@ -244,8 +245,12 @@ def test_fixed_bank_rescore_manifest_scores_all_durable_checkpoints(
         scorer=scorer,
         repo_root=tmp_path,
     )
+    written = load_manifest(tmp_path / "results" / experiment / "notes" / "fixed_bank_rescored_checkpoints.json")
 
     assert manifest["materialization_status"] == "materialized"
+    assert isinstance(written, CheckpointSelectionManifest)
+    assert written.selection_spec.schema_id == "feedbax.spec.checkpoint_selection"
+    assert written.selection_status == "selected"
     assert manifest["validation_bank"] == {
         "bank_identity": "fixed-validation-bank:test",
         "scorer_identity": "rollout_validation_objective:test",
@@ -374,8 +379,13 @@ def test_not_materialized_fixed_bank_manifest_falls_back_to_sparse_history(
         run_ids=(run_id,),
         repo_root=tmp_path,
     )
+    written = load_manifest(
+        tmp_path / "results" / experiment / "notes" / "validation_selected_checkpoints.json"
+    )
 
     assert manifest["selection_source"] == "sparse_history_fallback"
+    assert isinstance(written, CheckpointSelectionManifest)
+    assert written.selection_spec.schema_id == "feedbax.spec.checkpoint_selection"
     assert manifest["runs"][run_id][0]["checkpoint_batches"] == 3
 
 

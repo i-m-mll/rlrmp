@@ -20,12 +20,13 @@ from jaxtyping import PRNGKeyArray, PyTree
 from rlrmp.analysis.pipelines.diagnostic_provenance import write_regeneration_spec
 from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     FIXED_BANK_CHECKPOINT_POLICY,
-    FIXED_BANK_SCHEMA_VERSION,
+    LEGACY_FIXED_BANK_SCHEMA_VERSION,
     available_checkpoint_batches,
     checkpoint_path_for_batches,
     load_materialized_fixed_bank_manifest,
     load_validation_selected_checkpoint_model,
     validation_objective_history,
+    write_checkpoint_selection_manifest_from_legacy_payload,
 )
 from rlrmp.analysis.pipelines._selected_eval_rollouts import SelectedEvalRolloutProduct
 from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import RolloutEvaluation
@@ -52,6 +53,7 @@ from rlrmp.paths import (
     mkdir_p,
     resolve_run_artifact_path,
 )
+from rlrmp.io import update_marked_section
 from rlrmp.runtime.run_specs import resolve_run_record
 
 
@@ -826,7 +828,11 @@ def materialize_gru_feedback_ablation(
         encoding="utf-8",
     )
     output_path.write_text(json.dumps(tracked_manifest, indent=2, sort_keys=True) + "\n")
-    note_path.write_text(render_feedback_ablation_markdown(manifest))
+    update_marked_section(
+        note_path,
+        "gru_feedback_ablation",
+        render_feedback_ablation_markdown(manifest),
+    )
     write_regeneration_spec(
         spec_path=regeneration_spec_path,
         diagnostic_name="gru_feedback_ablation",
@@ -1078,7 +1084,7 @@ def materialize_feedback_selected_checkpoint_manifest(
         raise ValueError("feedback audit did not contain any available checkpoint selections")
 
     manifest = {
-        "schema_version": FIXED_BANK_SCHEMA_VERSION,
+        "schema_version": LEGACY_FIXED_BANK_SCHEMA_VERSION,
         "issue": experiment,
         "checkpoint_policy": FIXED_BANK_CHECKPOINT_POLICY,
         "materialization_status": "materialized",
@@ -1100,8 +1106,11 @@ def materialize_feedback_selected_checkpoint_manifest(
         "bank": feedback_manifest.get("bank"),
         "runs": runs,
     }
-    mkdir_p(output_path.parent)
-    output_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    write_checkpoint_selection_manifest_from_legacy_payload(
+        manifest,
+        output_path=output_path,
+        repo_root=repo_root,
+    )
     return manifest
 
 

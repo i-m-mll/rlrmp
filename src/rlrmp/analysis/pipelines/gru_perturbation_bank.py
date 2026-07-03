@@ -68,7 +68,7 @@ from rlrmp.model.feedback_descriptors import (
     controller_feedback_axis_index,
     resolve_controller_feedback_view,
 )
-from rlrmp.io import write_compact_json
+from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
@@ -1530,7 +1530,11 @@ def materialize_gru_perturbation_response(
         mkdir_p(detail_manifest_path.parent)
         write_compact_json(detail_manifest_path, manifest)
     write_compact_json(output_path, tracked_manifest)
-    note_path.write_text(render_perturbation_response_markdown(manifest), encoding="utf-8")
+    update_marked_section(
+        note_path,
+        "gru_perturbation_response",
+        render_perturbation_response_markdown(manifest),
+    )
     runs_for_spec = resolve_run_inputs(
         experiment=source_experiment,
         run_ids=run_ids,

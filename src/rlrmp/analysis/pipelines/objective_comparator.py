@@ -13,7 +13,7 @@ import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
-from rlrmp.io import write_compact_json
+from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT, run_spec_path
 from rlrmp.runtime.run_specs import RunSpecValidationError, resolve_run_record
 
@@ -851,7 +851,11 @@ def write_objective_comparator_sidecar(
     json_path.parent.mkdir(parents=True, exist_ok=True)
     markdown_path.parent.mkdir(parents=True, exist_ok=True)
     write_compact_json(json_path, _slim_objective_comparator_sidecar(sidecar))
-    markdown_path.write_text(render_objective_comparator_markdown(sidecar), encoding="utf-8")
+    update_marked_section(
+        markdown_path,
+        "objective_comparator",
+        render_objective_comparator_markdown(sidecar),
+    )
 
 
 def _slim_objective_comparator_sidecar(sidecar: Mapping[str, Any]) -> dict[str, Any]:
@@ -1015,7 +1019,11 @@ def materialize_gru_objective_comparator_sidecar(
     if checkpoint_manifest is None:
         if checkpoint_manifest_path is None:
             raise ValueError("checkpoint_manifest or checkpoint_manifest_path is required")
-        checkpoint_manifest = json.loads(checkpoint_manifest_path.read_text(encoding="utf-8"))
+        from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
+            load_checkpoint_selection_legacy_payload,
+        )
+
+        checkpoint_manifest = load_checkpoint_selection_legacy_payload(checkpoint_manifest_path)
 
     extlqg = compute_default_extlqg_cost_decomposition()
     run_metadata_by_id = {

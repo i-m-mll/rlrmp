@@ -139,7 +139,10 @@ def test_materialize_response_norm_plots_writes_inventory_and_spec(tmp_path: Pat
     assert result["aggregation_method"]["alignment"].startswith("Responses are sign-equalized")
     assert (tmp_path / "results" / "spec.json").exists()
     assert (tmp_path / "plot_manifest.json").exists()
-    assert (tmp_path / "note.md").read_text().startswith("# GRU Perturbation-Response")
+    note = (tmp_path / "note.md").read_text()
+    assert note.startswith("<!-- AUTO-GENERATED: perturbation_response_norm_plots -->\n")
+    assert "# GRU Perturbation-Response" in note
+    assert note.endswith("<!-- /AUTO-GENERATED -->\n")
     for figure in result["figures"]:
         assert (tmp_path / figure["html_path"]).exists()
 

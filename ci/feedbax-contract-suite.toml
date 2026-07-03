@@ -108,10 +108,20 @@ minimum_non_skipped = 2
 [[families]]
 name = "product_identity_hash"
 owner = "108b4d3"
-status = "pending_enrollment"
+status = "live"
 marker = "feedbax_contract"
-expected_collection_pattern = "tests/"
-minimum_non_skipped = 1
+expected_collection_pattern = "tests/test_product_identity_hash.py::"
+minimum_non_skipped = 4
+negative_canary = "tests/test_product_identity_hash.py::test_calibration_product_identity_hash_tamper_fails_closed"
+
+[[families]]
+name = "analysis_write_custody"
+owner = "c223bb8"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_analysis_write_custody.py::"
+minimum_non_skipped = 5
+negative_canary = "tests/test_analysis_write_custody.py::test_analysis_write_negative_canary_flags_unlisted_durable_write"
 
 [[families]]
 name = "write_surface"

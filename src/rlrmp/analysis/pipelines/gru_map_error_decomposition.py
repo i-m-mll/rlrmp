@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 
 from rlrmp.analysis.pipelines.gru_checkpoint_selection import load_materialized_fixed_bank_manifest
+from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT
 from rlrmp.runtime.run_specs import resolve_run_record
 
@@ -472,7 +473,11 @@ def write_map_error_decomposition_result(
 
     markdown_path.parent.mkdir(parents=True, exist_ok=True)
     json_path.parent.mkdir(parents=True, exist_ok=True)
-    markdown_path.write_text(render_map_error_decomposition_markdown(result), encoding="utf-8")
+    update_marked_section(
+        markdown_path,
+        "gru_map_error_decomposition",
+        render_map_error_decomposition_markdown(result),
+    )
     json_path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 

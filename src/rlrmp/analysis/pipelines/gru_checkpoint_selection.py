@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import math
 from collections.abc import Callable, Mapping, Sequence
@@ -16,6 +17,12 @@ import jax.random as jr
 import jax.tree as jt
 import numpy as np
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
+from feedbax.contracts.manifest import (
+    SCHEMA_VERSION as FEEDBAX_MANIFEST_SCHEMA_VERSION,
+    ParentRef,
+    load_manifest,
+    spec_payload,
+)
 
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
 from rlrmp.train.task_model import setup_task_model_pair
@@ -37,9 +44,20 @@ from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path
 from rlrmp.runtime.run_specs import resolve_run_record
 
 
-SPARSE_HISTORY_SCHEMA_VERSION = "rlrmp.validation_selected_gru_checkpoints.v1"
-FIXED_BANK_SCHEMA_VERSION = "rlrmp.fixed_bank_gru_checkpoint_rescore.v1"
-DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION = "rlrmp.delayed_reach_eval_bank.v2"
+LEGACY_SPARSE_HISTORY_SCHEMA_VERSION = "rlrmp.validation_selected_gru_checkpoints.v1"
+LEGACY_FIXED_BANK_SCHEMA_VERSION = "rlrmp.fixed_bank_gru_checkpoint_rescore.v1"
+LEGACY_DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION = "rlrmp.delayed_reach_eval_bank.v2"
+CHECKPOINT_SELECTION_BANK_SCHEMA_ID = "feedbax.manifest.checkpoint_selection.bank"
+DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION = FEEDBAX_MANIFEST_SCHEMA_VERSION
+feedbax_manifest = importlib.import_module("feedbax.contracts.manifest")
+CheckpointCandidateRef = feedbax_manifest.CheckpointCandidateRef
+CheckpointScoreSummary = feedbax_manifest.CheckpointScoreSummary
+CheckpointScorerIdentity = feedbax_manifest.CheckpointScorerIdentity
+CheckpointSelectionBank = feedbax_manifest.CheckpointSelectionBank
+CheckpointSelectionGroup = feedbax_manifest.CheckpointSelectionGroup
+CheckpointSelectionManifest = feedbax_manifest.CheckpointSelectionManifest
+CheckpointSelectionSpec = feedbax_manifest.CheckpointSelectionSpec
+checkpoint_selection_manifest_id = feedbax_manifest.checkpoint_selection_manifest_id
 SPARSE_HISTORY_CHECKPOINT_POLICY = "validation_selected_per_replicate"
 FIXED_BANK_CHECKPOINT_POLICY = "fixed_bank_rescored_per_replicate"
 DEFAULT_FIXED_BANK_MANIFEST_NAME = "fixed_bank_rescored_checkpoints.json"
@@ -180,7 +198,9 @@ class DelayedReachEvalBankSpec:
             reach_length_m=self.reach_length_m,
         )
         return {
-            "schema_version": DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION,
+            "schema_id": CHECKPOINT_SELECTION_BANK_SCHEMA_ID,
+            "schema_version": FEEDBAX_MANIFEST_SCHEMA_VERSION,
+            "legacy_schema_version": LEGACY_DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION,
             "bank_identity": self.bank_identity,
             "bank_family": "delayed_reach_fixed_eval_bank",
             "kind": self.bank_role,
@@ -502,7 +522,7 @@ def materialize_validation_selected_checkpoint_manifest(
     )
     if manifest is None:
         manifest = {
-            "schema_version": SPARSE_HISTORY_SCHEMA_VERSION,
+            "schema_version": LEGACY_SPARSE_HISTORY_SCHEMA_VERSION,
             "issue": experiment,
             "checkpoint_policy": SPARSE_HISTORY_CHECKPOINT_POLICY,
             "selection_source": "sparse_history_fallback",
@@ -524,8 +544,11 @@ def materialize_validation_selected_checkpoint_manifest(
     output_path = output_path or (
         repo_root / "results" / experiment / "notes" / "validation_selected_checkpoints.json"
     )
-    mkdir_p(output_path.parent)
-    output_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_checkpoint_selection_manifest_from_legacy_payload(
+        manifest,
+        output_path=output_path,
+        repo_root=repo_root,
+    )
     return manifest
 
 
@@ -559,7 +582,7 @@ def plan_fixed_bank_checkpoint_rescore(
     }
     output_path = output_path or fixed_bank_manifest_path(experiment, repo_root=repo_root)
     return {
-        "schema_version": FIXED_BANK_SCHEMA_VERSION,
+        "schema_version": LEGACY_FIXED_BANK_SCHEMA_VERSION,
         "issue": experiment,
         "checkpoint_policy": FIXED_BANK_CHECKPOINT_POLICY,
         "selection_source": _fixed_bank_selection_source(validation_bank),
@@ -630,8 +653,11 @@ def materialize_fixed_bank_checkpoint_rescore_manifest(
                 for run_id in run_ids
             },
         }
-    mkdir_p(output_path.parent)
-    output_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_checkpoint_selection_manifest_from_legacy_payload(
+        manifest,
+        output_path=output_path,
+        repo_root=repo_root,
+    )
     return manifest
 
 
@@ -1057,6 +1083,496 @@ def fixed_bank_manifest_path(experiment: str, *, repo_root: Path = REPO_ROOT) ->
     return repo_root / "results" / experiment / "notes" / DEFAULT_FIXED_BANK_MANIFEST_NAME
 
 
+def write_checkpoint_selection_manifest_from_legacy_payload(
+    payload: Mapping[str, Any],
+    *,
+    output_path: Path,
+    repo_root: Path = REPO_ROOT,
+) -> CheckpointSelectionManifest:
+    """Validate and write a Feedbax checkpoint-selection manifest.
+
+    ``payload`` is the pre-Feedbax rlrmp view retained for in-process callers and
+    legacy consumers. The durable file written by this helper is the Feedbax
+    custody model.
+    """
+
+    manifest = _feedbax_checkpoint_selection_manifest_from_legacy_payload(
+        payload,
+        output_path=output_path,
+        repo_root=repo_root,
+    )
+    mkdir_p(output_path.parent)
+    output_path.write_text(
+        manifest.model_dump_json(indent=2, exclude_none=True) + "\n",
+        encoding="utf-8",
+    )
+    return manifest
+
+
+def _feedbax_checkpoint_selection_manifest_from_legacy_payload(
+    payload: Mapping[str, Any],
+    *,
+    output_path: Path,
+    repo_root: Path,
+) -> CheckpointSelectionManifest:
+    issue = str(payload.get("issue") or "unknown")
+    checkpoint_policy = str(payload.get("checkpoint_policy") or SPARSE_HISTORY_CHECKPOINT_POLICY)
+    selection_source = str(payload.get("selection_source") or checkpoint_policy)
+    selection_metric = str(
+        payload.get("selection_metric")
+        or _validation_bank_payload(payload).get("selection_metric")
+        or "validation_objective"
+    )
+    scorer = _checkpoint_scorer_identity(payload, selection_metric=selection_metric)
+    bank = _checkpoint_selection_bank(payload, issue=issue, repo_root=repo_root)
+    groups = _checkpoint_selection_groups(payload, issue=issue, repo_root=repo_root)
+    candidate_checkpoints = _unique_candidates(
+        [
+            candidate
+            for group in groups
+            for candidate in group.candidate_checkpoints
+        ]
+        + _plan_candidate_checkpoints(payload, issue=issue, repo_root=repo_root)
+    )
+    inputs = _checkpoint_selection_inputs(payload, issue=issue, repo_root=repo_root)
+    spec = CheckpointSelectionSpec(
+        selection_type=selection_source,
+        scorer=scorer,
+        bank=bank,
+        group_by="replicate",
+        candidate_checkpoints=candidate_checkpoints,
+        inputs=inputs,
+        fallback_allowed=bool(payload.get("fallback_checkpoint_policy")),
+        params={
+            "checkpoint_policy": checkpoint_policy,
+            "selection_policy": payload.get("selection_policy"),
+            "selection_metric": selection_metric,
+            "validation_role": payload.get("validation_role"),
+            "nominal_quality_role": payload.get("nominal_quality_role"),
+        },
+        metadata={
+            "rlrmp_issue": issue,
+            "output_path": _repo_relative(output_path, repo_root=repo_root),
+            "legacy_schema_version": payload.get("schema_version"),
+            "materialization_status": payload.get("materialization_status"),
+        },
+    )
+    selected = any(group.selected_checkpoint is not None for group in groups)
+    failure_reason = _checkpoint_selection_failure_reason(payload, selected=selected)
+    selection_status: Literal["selected", "fallback_selected", "failed"] = (
+        "selected" if selected else "failed"
+    )
+    return CheckpointSelectionManifest(
+        id=checkpoint_selection_manifest_id(spec),
+        status="completed" if selected else "failed",
+        selection_status=selection_status,
+        failure_reason=failure_reason,
+        selection_spec=spec_payload(
+            "CheckpointSelectionSpec",
+            spec.model_dump(mode="json", exclude_none=True),
+        ),
+        scorer=scorer,
+        bank=bank,
+        fallback_allowed=spec.fallback_allowed,
+        inputs=inputs,
+        selections=groups,
+        summary_metrics={
+            "n_runs": len(payload.get("runs", {}) or {}),
+            "n_selected_checkpoints": sum(
+                1 for group in groups if group.selected_checkpoint is not None
+            ),
+        },
+        metadata={
+            "rlrmp_legacy_view": _json_ready(dict(payload)),
+            "rlrmp_issue": issue,
+            "checkpoint_policy": checkpoint_policy,
+            "selection_source": selection_source,
+            "materialization_status": payload.get("materialization_status"),
+        },
+    )
+
+
+def _legacy_payload_from_feedbax_checkpoint_selection_manifest(
+    manifest: CheckpointSelectionManifest,
+) -> dict[str, Any]:
+    legacy = dict(manifest.metadata.get("rlrmp_legacy_view") or {})
+    legacy.setdefault("schema_version", manifest.schema_version)
+    legacy.setdefault("issue", manifest.metadata.get("rlrmp_issue"))
+    legacy.setdefault("checkpoint_policy", manifest.metadata.get("checkpoint_policy"))
+    legacy.setdefault("selection_source", manifest.metadata.get("selection_source"))
+    legacy.setdefault("materialization_status", manifest.metadata.get("materialization_status"))
+    if manifest.selection_status == "failed":
+        legacy.setdefault("not_materialized_reason", manifest.failure_reason)
+        legacy.setdefault("materialization_status", "not_materialized")
+    runs: dict[str, list[dict[str, Any]]] = {}
+    for group in manifest.selections:
+        if group.selected_checkpoint is None:
+            continue
+        row = dict(group.selected_checkpoint.metadata.get("rlrmp_selection_row") or {})
+        if not row:
+            row = _selection_row_from_feedbax_group(group, manifest)
+        runs.setdefault(str(group.run_id), []).append(row)
+    if runs:
+        legacy["runs"] = {
+            run_id: sorted(rows, key=lambda row: int(row.get("replicate", 0)))
+            for run_id, rows in runs.items()
+        }
+    return legacy
+
+
+def load_checkpoint_selection_legacy_payload(path: Path | str) -> dict[str, Any]:
+    """Load old or Feedbax checkpoint-selection bytes as the rlrmp legacy view."""
+
+    payload_path = Path(path)
+    payload = json.loads(payload_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, Mapping):
+        raise TypeError(f"Checkpoint-selection manifest must be a JSON object: {payload_path}")
+    if payload.get("kind") == "CheckpointSelectionManifest":
+        manifest = load_manifest(payload_path)
+        if not isinstance(manifest, CheckpointSelectionManifest):
+            raise TypeError(f"Expected CheckpointSelectionManifest in {payload_path}")
+        return _legacy_payload_from_feedbax_checkpoint_selection_manifest(manifest)
+    return dict(payload)
+
+
+def _checkpoint_scorer_identity(
+    payload: Mapping[str, Any],
+    *,
+    selection_metric: str,
+) -> CheckpointScorerIdentity:
+    validation_bank = _validation_bank_payload(payload)
+    scorer_id = str(
+        validation_bank.get("scorer_identity")
+        or payload.get("scorer_identity")
+        or payload.get("selection_source")
+        or "rlrmp.sparse_history.validation_objective"
+    )
+    return CheckpointScorerIdentity(
+        scorer_id=scorer_id,
+        version=(
+            None
+            if validation_bank.get("scorer_version") is None
+            else str(validation_bank["scorer_version"])
+        ),
+        parameters={"primary_metric": selection_metric, "objective": "minimize"},
+        metadata={
+            "selection_source": payload.get("selection_source"),
+            "validation_role": payload.get("validation_role"),
+            "nominal_quality_role": payload.get("nominal_quality_role"),
+        },
+    )
+
+
+def _checkpoint_selection_bank(
+    payload: Mapping[str, Any],
+    *,
+    issue: str,
+    repo_root: Path,
+) -> CheckpointSelectionBank:
+    validation_bank = _validation_bank_payload(payload)
+    source_manifest = payload.get("source_feedback_ablation_manifest")
+    if validation_bank:
+        bank_id = str(validation_bank.get("bank_identity") or "rlrmp.fixed_bank")
+        ref = ParentRef(
+            kind="CheckpointSelectionBank",
+            id=bank_id,
+            role=str(payload.get("validation_role") or "fixed_validation_bank"),
+            uri=_repo_uri(source_manifest) if source_manifest is not None else None,
+        )
+        return CheckpointSelectionBank(
+            role="fixed",
+            status="available",
+            bank_id=bank_id,
+            logical_name=str(payload.get("validation_role") or bank_id),
+            ref=ref,
+            metadata={
+                "validation_bank": _json_ready(validation_bank),
+                "selection_metric": payload.get("selection_metric"),
+                "nominal_quality_role": payload.get("nominal_quality_role"),
+            },
+        )
+    if source_manifest is not None:
+        source = str(source_manifest)
+        return CheckpointSelectionBank(
+            role="fixed",
+            status="available",
+            bank_id=f"rlrmp.feedback_rescore_audit:{issue}",
+            logical_name="feedback_rescore_audit",
+            ref=ParentRef(
+                kind="RLRMPGRUFeedbackAblation",
+                id=f"rlrmp-feedback-ablation:{issue}",
+                role="feedback_rescore_audit_bank",
+                uri=_repo_uri(source),
+            ),
+            metadata={"selection_metric": payload.get("selection_metric")},
+        )
+    return CheckpointSelectionBank(
+        role="validation",
+        status="available",
+        bank_id=f"rlrmp.sparse_history_validation:{issue}",
+        logical_name="sparse_training_history_validation",
+        ref=ParentRef(
+            kind="RLRMPGRUTrainingHistoryBank",
+            id=f"rlrmp-gru-training-history-bank:{issue}",
+            role="validation_history_bank",
+            uri=f"repo://{_repo_relative(repo_root / '_artifacts' / issue / 'runs', repo_root=repo_root)}/*/training_history.eqx",
+        ),
+        metadata={
+            "history_validation_log_note": payload.get("history_validation_log_note"),
+        },
+    )
+
+
+def _checkpoint_selection_groups(
+    payload: Mapping[str, Any],
+    *,
+    issue: str,
+    repo_root: Path,
+) -> list[CheckpointSelectionGroup]:
+    runs = payload.get("runs", {})
+    if not isinstance(runs, Mapping):
+        return []
+    groups: list[CheckpointSelectionGroup] = []
+    for run_id, rows in runs.items():
+        if not isinstance(rows, Sequence) or isinstance(rows, str | bytes):
+            continue
+        for row in rows:
+            if not isinstance(row, Mapping):
+                continue
+            candidate = _candidate_ref_from_selection_row(
+                row,
+                issue=issue,
+                run_id=str(run_id),
+                repo_root=repo_root,
+            )
+            groups.append(
+                CheckpointSelectionGroup(
+                    scope="replicate",
+                    run_id=str(run_id),
+                    replicate_id=str(row.get("replicate")),
+                    candidate_checkpoints=[candidate],
+                    selected_checkpoint=candidate,
+                    score_summaries=[
+                        _score_summary_from_selection_row(
+                            row,
+                            candidate_id=candidate.id,
+                            payload=payload,
+                        )
+                    ],
+                    metadata={
+                        "checkpoint_policy": payload.get("checkpoint_policy"),
+                        "selection_source": row.get("selection_source")
+                        or payload.get("selection_source"),
+                    },
+                )
+            )
+    return groups
+
+
+def _candidate_ref_from_selection_row(
+    row: Mapping[str, Any],
+    *,
+    issue: str,
+    run_id: str,
+    repo_root: Path,
+) -> CheckpointCandidateRef:
+    replicate = int(row.get("replicate", 0))
+    checkpoint_batches = int(row["checkpoint_batches"])
+    raw_path = Path(str(row.get("checkpoint_path") or ""))
+    checkpoint_path = (
+        raw_path
+        if raw_path.is_absolute()
+        else (repo_root / raw_path if str(raw_path) else repo_root)
+    )
+    rel_path = _repo_relative(checkpoint_path, repo_root=repo_root)
+    candidate_id = f"{issue}:{run_id}:replicate-{replicate}:checkpoint-{checkpoint_batches}"
+    return CheckpointCandidateRef(
+        id=candidate_id,
+        checkpoint=ParentRef(
+            kind="RLRMPGRUCheckpoint",
+            id=candidate_id,
+            role="checkpoint",
+            uri=_repo_uri(rel_path),
+        ),
+        run_id=run_id,
+        replicate_id=str(replicate),
+        step=checkpoint_batches,
+        training_run=ParentRef(
+            kind="TrainingRunManifest",
+            id=f"rlrmp-training-run:{issue}:{run_id}",
+            role="training_run",
+            uri=_repo_uri(f"results/{issue}/runs/{run_id}.json"),
+        ),
+        metadata={
+            "checkpoint_batches": checkpoint_batches,
+            "checkpoint_path": rel_path,
+            "rlrmp_selection_row": _json_ready(dict(row)),
+        },
+    )
+
+
+def _score_summary_from_selection_row(
+    row: Mapping[str, Any],
+    *,
+    candidate_id: str,
+    payload: Mapping[str, Any],
+) -> CheckpointScoreSummary:
+    primary_metric = str(payload.get("selection_metric") or "validation_objective")
+    primary_value = float(
+        row.get("feedback_score", row.get("scoring_validation_objective", 0.0))
+    )
+    metrics = {
+        "scoring_validation_objective": float(
+            row.get("scoring_validation_objective", primary_value)
+        ),
+        "best_logged_validation_objective": float(
+            row.get("best_logged_validation_objective", primary_value)
+        ),
+        "final_validation_objective": float(row.get("final_validation_objective", primary_value)),
+        "final_vs_selected_validation_degradation": float(
+            row.get("final_vs_selected_validation_degradation", 0.0)
+        ),
+    }
+    if "feedback_score" in row:
+        metrics["feedback_score"] = float(row["feedback_score"])
+    return CheckpointScoreSummary(
+        candidate_id=candidate_id,
+        primary_metric=primary_metric,
+        primary_value=primary_value,
+        objective="minimize",
+        metrics=metrics,
+        metadata={
+            "scoring_validation_log_batch": row.get("scoring_validation_log_batch"),
+            "best_logged_validation_batch": row.get("best_logged_validation_batch"),
+        },
+    )
+
+
+def _plan_candidate_checkpoints(
+    payload: Mapping[str, Any],
+    *,
+    issue: str,
+    repo_root: Path,
+) -> list[CheckpointCandidateRef]:
+    checkpoint_lists = payload.get("checkpoint_lists", {})
+    if not isinstance(checkpoint_lists, Mapping):
+        return []
+    candidates: list[CheckpointCandidateRef] = []
+    for run_id, rows in checkpoint_lists.items():
+        if not isinstance(rows, Sequence) or isinstance(rows, str | bytes):
+            continue
+        for row in rows:
+            if not isinstance(row, Mapping):
+                continue
+            candidates.append(
+                _candidate_ref_from_selection_row(
+                    {"replicate": 0, **dict(row)},
+                    issue=issue,
+                    run_id=str(run_id),
+                    repo_root=repo_root,
+                )
+            )
+    return candidates
+
+
+def _unique_candidates(
+    candidates: Sequence[CheckpointCandidateRef],
+) -> list[CheckpointCandidateRef]:
+    unique: dict[str, CheckpointCandidateRef] = {}
+    for candidate in candidates:
+        unique.setdefault(candidate.id, candidate)
+    return list(unique.values())
+
+
+def _checkpoint_selection_inputs(
+    payload: Mapping[str, Any],
+    *,
+    issue: str,
+    repo_root: Path,
+) -> list[ParentRef]:
+    runs = payload.get("runs", {})
+    run_ids = tuple(str(run_id) for run_id in runs) if isinstance(runs, Mapping) else ()
+    refs = [
+        ParentRef(
+            kind="RLRMPExperiment",
+            id=issue,
+            role="experiment",
+            uri=_repo_uri(f"results/{issue}"),
+        )
+    ]
+    refs.extend(
+        ParentRef(
+            kind="TrainingRunManifest",
+            id=f"rlrmp-training-run:{issue}:{run_id}",
+            role="training_run",
+            uri=_repo_uri(f"results/{issue}/runs/{run_id}.json"),
+        )
+        for run_id in run_ids
+    )
+    source_manifest = payload.get("source_feedback_ablation_manifest")
+    if source_manifest is not None:
+        refs.append(
+            ParentRef(
+                kind="RLRMPGRUFeedbackAblation",
+                id=f"rlrmp-feedback-ablation:{issue}",
+                role="feedback_ablation_manifest",
+                uri=_repo_uri(str(source_manifest)),
+            )
+        )
+    return refs
+
+
+def _checkpoint_selection_failure_reason(
+    payload: Mapping[str, Any],
+    *,
+    selected: bool,
+) -> str | None:
+    if selected:
+        return None
+    return str(
+        payload.get("not_materialized_reason")
+        or payload.get("failure_reason")
+        or "no_checkpoint_selection_rows_materialized"
+    )
+
+
+def _selection_row_from_feedbax_group(
+    group: CheckpointSelectionGroup,
+    manifest: CheckpointSelectionManifest,
+) -> dict[str, Any]:
+    selected = group.selected_checkpoint
+    if selected is None:
+        return {}
+    score = group.score_summaries[0] if group.score_summaries else None
+    selected_score = 0.0 if score is None else float(score.primary_value)
+    return {
+        "replicate": int(group.replicate_id or 0),
+        "checkpoint_batches": int(selected.step or 0),
+        "checkpoint_path": selected.metadata.get("checkpoint_path"),
+        "selection_source": manifest.metadata.get("selection_source"),
+        "scoring_validation_log_batch": int(selected.step or 0),
+        "scoring_validation_objective": selected_score,
+        "best_logged_validation_batch": int(selected.step or 0),
+        "best_logged_validation_objective": selected_score,
+        "final_validation_objective": selected_score,
+        "final_vs_selected_validation_degradation": 0.0,
+    }
+
+
+def _validation_bank_payload(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    validation_bank = payload.get("validation_bank")
+    return validation_bank if isinstance(validation_bank, Mapping) else {}
+
+
+def _repo_uri(path: str | Path | None) -> str | None:
+    if path is None:
+        return None
+    text = str(path)
+    if text.startswith("repo://"):
+        return text
+    return f"repo://{text}"
+
+
 def load_materialized_fixed_bank_manifest(
     *,
     experiment: str,
@@ -1079,11 +1595,11 @@ def load_materialized_fixed_bank_manifest(
     )
     if existing_path is None:
         return None
-    manifest = json.loads(existing_path.read_text(encoding="utf-8"))
-    if manifest.get("schema_version") != FIXED_BANK_SCHEMA_VERSION:
+    manifest = load_checkpoint_selection_legacy_payload(existing_path)
+    if manifest.get("checkpoint_policy") != FIXED_BANK_CHECKPOINT_POLICY:
         if manifest_path is None:
             return None
-        raise ValueError(f"Expected {FIXED_BANK_SCHEMA_VERSION} in {existing_path}")
+        raise ValueError(f"Expected {FIXED_BANK_CHECKPOINT_POLICY} in {existing_path}")
     if manifest.get("materialization_status") != "materialized":
         return None
     return manifest
@@ -1453,16 +1969,22 @@ __all__ = [
     "ReplicateCheckpointSelection",
     "FixedValidationBankSpec",
     "DelayedReachEvalBankSpec",
-    "DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION",
+    "CHECKPOINT_SELECTION_BANK_SCHEMA_ID",
     "DEFAULT_DELAYED_REACH_DIRECTION_COUNT",
     "DEFAULT_DELAYED_REACH_GO_CUE_STEPS",
     "DEFAULT_DELAYED_REACH_UNIFORM_REACH_LENGTH_M",
+    "DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION",
+    "FEEDBAX_MANIFEST_SCHEMA_VERSION",
+    "LEGACY_DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION",
+    "LEGACY_FIXED_BANK_SCHEMA_VERSION",
+    "LEGACY_SPARSE_HISTORY_SCHEMA_VERSION",
     "active_loss_term_labels",
     "available_checkpoint_batches",
     "delayed_reach_eval_bank_spec",
     "delayed_reach_fixed_eval_bank_specs",
     "delayed_reach_fixed_rescore_bank_spec",
     "fixed_bank_manifest_path",
+    "load_checkpoint_selection_legacy_payload",
     "load_validation_selected_checkpoint_model",
     "materialize_fixed_bank_checkpoint_rescore_manifest",
     "materialize_validation_selected_checkpoint_manifest",
@@ -1471,4 +1993,5 @@ __all__ = [
     "select_validation_checkpoints_for_run",
     "select_sparse_history_validation_checkpoints_for_run",
     "validation_objective_history",
+    "write_checkpoint_selection_manifest_from_legacy_payload",
 ]
