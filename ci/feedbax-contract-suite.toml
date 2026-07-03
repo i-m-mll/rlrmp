@@ -7,7 +7,7 @@ owner = "419eed1"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/analysis/test_feedbax_analysis_module_contract.py::"
-minimum_non_skipped = 2
+minimum_non_skipped = 10
 negative_canary = "tests/test_feedbax_contract_meta.py::test_analysis_recipe_negative_canary_rejects_bad_signature"
 
 [[families]]
@@ -16,7 +16,7 @@ owner = "419eed1"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_feedbax_graph_specs.py::"
-minimum_non_skipped = 1
+minimum_non_skipped = 36
 negative_canary = "tests/test_feedbax_contract_meta.py::test_version_pin_negative_canary_rejects_unsupported_graph_version"
 
 [[families]]
@@ -34,7 +34,7 @@ owner = "419eed1"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_feedbax_import_boundary.py::"
-minimum_non_skipped = 2
+minimum_non_skipped = 3
 negative_canary = "tests/test_feedbax_import_boundary.py::test_import_boundary_negative_canaries_reject_private_and_uncanonical_imports"
 
 [[families]]
@@ -43,7 +43,7 @@ owner = "419eed1"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_feedbax_contract_meta.py::"
-minimum_non_skipped = 3
+minimum_non_skipped = 7
 negative_canary = "tests/test_feedbax_contract_meta.py::test_suite_manifest_negative_canary_rejects_zero_live_family"
 
 [[families]]
@@ -77,6 +77,14 @@ status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_controller_feedback_descriptors.py::"
 minimum_non_skipped = 5
+
+[[families]]
+name = "feedback_descriptor_scan"
+owner = "259bd10"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_controller_feedback_descriptors.py::test_feedback_descriptor_ast_scan"
+minimum_non_skipped = 2
 
 [[families]]
 name = "product_identity_hash"

@@ -74,10 +74,6 @@ def tree_sum_n_features(tree) -> int:
     return jt.reduce(lambda x, y: x + y, jt.map(lambda x: x.shape[-1], tree))
 
 
-def _identity_activation(x: Any) -> Any:
-    return x
-
-
 GRAPH_PLANT_INTERVENOR_NODE = PLANT_INTERVENOR_LABEL
 NATIVE_POINT_MASS_COMPONENT = "PointMass"
 NATIVE_FEEDBACK_CHANNELS_COMPONENT = "FeedbackChannels"
@@ -213,8 +209,6 @@ def _build_seeded_linear(params: dict[str, Any]) -> RuntimeLinear:
         dtype=params.get("dtype", None),
         key=_key_from_params(params),
     )
-    if activation_name == "identity":
-        object.__setattr__(component, "activation", _identity_activation)
     if params.get("zero_bias", False) and component.layer.bias is not None:
         component = eqx.tree_at(
             lambda node: node.layer.bias,

@@ -40,6 +40,7 @@ def test_minimax_args_from_run_spec_normalizes_historical_cli_flags() -> None:
 
     assert args.hidden_type == "gru"
     assert args.n_warmup_batches == 12000
+    assert args.adversary_type == "gaussian_bump"
     assert args.streaming_loss is False
     assert args.nn_hidden_derivative == 0.001
     assert args.n_adversary_batches == 0

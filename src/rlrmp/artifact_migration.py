@@ -46,7 +46,7 @@ _DEFAULT_MINIMAX_ARGS: dict[str, Any] = {
     "n_adversary_steps": 5,
     "adversary_lr": 3e-4,
     "controller_lr": 1e-4,
-    "adversary_type": "linear_dynamics",
+    "adversary_type": "gaussian_bump",
     "linear_dynamics_eta_max": 0.1,
     "linear_dynamics_pgd_steps": 5,
     "linear_dynamics_lr": 1e-2,

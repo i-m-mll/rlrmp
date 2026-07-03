@@ -712,7 +712,7 @@ def test_point_mass_builder_does_not_bypass_feedbax_extension_points() -> None:
     for node in ast.walk(tree):
         if _is_object_setattr_call(node):
             field_name = _constant_string_arg(node, 1)
-            if field_name in {"state_view_fn", "state_consistency_fn", "marker"}:
+            if field_name in {"activation", "state_view_fn", "state_consistency_fn", "marker"}:
                 violations.append(
                     f"{source_path}:{node.lineno}: object.__setattr__ writes {field_name!r}"
                 )
