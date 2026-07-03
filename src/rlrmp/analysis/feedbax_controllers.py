@@ -16,8 +16,6 @@ from feedbax.mechanics import MechanicsState
 from feedbax.runtime.state import CartesianState
 from jaxtyping import Array, PRNGKeyArray
 
-from rlrmp.analysis.math.induced_gain import Controller
-
 
 @dataclass(frozen=True)
 class SimpleFeedbackInducedGainController:
@@ -108,7 +106,7 @@ def simple_feedback_induced_gain_controller(
     sisu: float = 0.5,
     key: PRNGKeyArray = jr.PRNGKey(0),
     dtype: Any = jnp.float64,
-) -> Controller:
+) -> GraphControllerAdapter:
     """Build a Feedbax-backed induced-gain controller for SimpleFeedback models.
 
     Args:
@@ -120,7 +118,8 @@ def simple_feedback_induced_gain_controller(
         dtype: Flat controller-state dtype.
 
     Returns:
-        A controller satisfying ``rlrmp.analysis.math.induced_gain.Controller``.
+        A controller structurally compatible with Feedbax's
+        ``GraphControllerAdapter`` interface (``initial_state`` / ``step``).
     """
     feedback_node = _disable_feedback_noise(model.nodes["feedback"])
     net = model.nodes["net"]
