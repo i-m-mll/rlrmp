@@ -1,0 +1,167 @@
+# Retired GraphSpec component-ID confinement allowlist for issue 7811e47
+# (part of umbrella 64a04e0). Enforced by
+# tests/test_retired_component_id_scan.py (the terminal-gate retired-ID scan,
+# gate check 1 of the 419eed1 semantic-safety gate).
+#
+# WHAT THIS PINS (and how it differs from the 9728133 re-accretion ratchet)
+# -----------------------------------------------------------------------
+# The 9728133 ratchet (ci/legacy-pattern-allowlist.toml,
+# tests/test_reaccretion_ratchet.py) freezes the *inventory* of branded
+# GraphSpec component-ID string VALUES defined in four src modules against
+# GROWTH (a new branded ID value fails unless allowlisted). It is value-only;
+# location is informational.
+#
+# This file pins the *locations*. The retired-ID scan asserts inventory-
+# complete CONFINEMENT: every occurrence of every retired GraphSpec
+# component-ID -- across src/, tests/, production scripts/, and manifest /
+# fixture JSON -- must fall inside a bounded, annotated allowlist entry below.
+# An occurrence with no covering entry FAILS the scan (a retired ID reappearing
+# on an active clean-target path). A stale entry that no longer matches any
+# occurrence also FAILS (dead allowlist entries are treated as skips, and skips
+# count as failures).
+#
+# INVENTORY SOURCE OF TRUTH
+# -------------------------
+# The retired-ID inventory is NOT re-listed here. It is read from the 9728133
+# ratchet's [[branded_component_ids]] table (ci/legacy-pattern-allowlist.toml),
+# which is exactly the set of RLRMP-branded GraphSpec component-type IDs the
+# 64a04e0 migration retires (the point-mass / linear / channel / mechanics
+# aliases plus the CS-LSS component IDs). RLRMP-prefixed *schema_kind* /
+# materialization-manifest-family strings in src/rlrmp/runtime/spec_migrations.py
+# and src/rlrmp/analysis/declarative_materialization.py (e.g.
+# "RLRMPGRUEvaluationDiagnosticsManifest", "RLRMPRunSpec") are a SEPARATE
+# branding surface, not GraphSpec component types, and are out of scope for both
+# the ratchet and this confinement scan.
+#
+# ENTRY GRAMMAR
+# -------------
+#   [[python_scope]]  path + qualname : retired IDs may appear as string
+#       literals only inside the named enclosing function ("<module>" = module
+#       top level, e.g. a constant or frozenset). Gives active-emission teeth in
+#       the two mixed model modules where legacy registration / serialization /
+#       migration code coexists with native active builders: a retired ID string
+#       appearing in ANY other function in those files (e.g. a new active
+#       builder) is NOT covered and fails.
+#   [[file]]  path : retired IDs may appear anywhere in this whole file
+#       (deliberate legacy-assertion / conversion tests; sibling-owned files).
+#   [[glob]]  pattern : retired IDs may appear anywhere in files matching the
+#       glob (archived / audited fixture + manifest JSON; conversion code).
+#
+# Every entry carries owner (7-char ledger issue) + category + note.
+
+schema_version = 1
+owning_umbrella = "64a04e0"
+inventory_source = "ci/legacy-pattern-allowlist.toml#branded_component_ids"
+
+# --- src: legacy registration / serialization / migration code paths --------
+
+[[python_scope]]
+path = "src/rlrmp/model/feedbax_graph.py"
+qualname = "register_rlrmp_graph_components"
+owner = "e23874f"
+category = "legacy_registration"
+note = "Registers executable builders for retired point-mass/linear component types so archived GraphSpecs still materialize."
+
+[[python_scope]]
+path = "src/rlrmp/model/feedbax_graph.py"
+qualname = "register_rlrmp_graph_migration_pack"
+owner = "e23874f"
+category = "legacy_migration_pack"
+note = "ComponentMigration source_type entries mapping retired IDs onto Feedbax-native builders."
+
+[[python_scope]]
+path = "src/rlrmp/model/feedbax_graph.py"
+qualname = "_graph_bundle_metadata"
+owner = "e23874f"
+category = "manifest_legacy_aliases"
+note = "Manifest component_policy.legacy_component_aliases documents retired IDs; active types are the native feedbax_component_types list."
+
+[[python_scope]]
+path = "src/rlrmp/model/feedbax_graph.py"
+qualname = "_runtime_linear_controller_params"
+owner = "e23874f"
+category = "legacy_serialization"
+note = "Model->spec export path for historical LinearController/LinearTrackerController instances; native builders emit AffineFeedbackController."
+
+[[python_scope]]
+path = "src/rlrmp/model/feedbax_graph.py"
+qualname = "_controller_component_spec"
+owner = "e23874f"
+category = "legacy_serialization"
+note = "legacy_recurrent_controller-gated branch; the default active branch emits native GRU/Mux/Linear subgraph wiring."
+
+[[python_scope]]
+path = "src/rlrmp/model/feedbax_graph.py"
+qualname = "_normalize_legacy_rlrmp_graph_topology"
+owner = "e23874f"
+category = "legacy_loader"
+note = "Legacy-topology normalization for archived point-mass graphs."
+
+[[python_scope]]
+path = "src/rlrmp/model/cs_lss_gru.py"
+qualname = "<module>"
+owner = "7811e47"
+category = "cs_lss_component_id_constants"
+note = "Module-level CS-LSS component-ID constants and frozensets (registration IDs, migration source_types, unsupported-stochastic set). CS-LSS initial-hidden / finite-epsilon / passthrough have no landed Feedbax-native equivalent yet; retirement to native (AffineValueComposer et al.) is pending on the CS-LSS native-migration lane."
+
+[[python_scope]]
+path = "src/rlrmp/runtime/run_specs.py"
+qualname = "<module>"
+owner = "7811e47"
+category = "legacy_run_spec_validation"
+note = "CS_LSS_FEEDBACK_COMPONENT_TYPES and LEGACY_POINT_MASS_GRAPH_TYPES accept historical RLRMP IDs only for archived-artifact validation; clean targets are Feedbax-native (StateFeedbackSelector / PointMass / FeedbackChannels)."
+
+# --- sibling-owned active-target-pending emission ---------------------------
+
+[[python_scope]]
+path = "src/rlrmp/train/cs_perturbation_training.py"
+qualname = "pgd_adversary_mechanism_contract"
+owner = "7811e47"
+category = "active_target_pending_retirement"
+note = "Finite-epsilon-policy graph_component contract descriptor. Owned/edited by the ea6ccb4 calibration lane; slated to retire to a Feedbax-native AffineValueComposer component. This is the one active-emission surface still stamping a retired CS-LSS ID; remove this entry when that retirement lands. Not a permanent legacy loader."
+
+# --- deliberate legacy-assertion / conversion / native-vs-legacy tests -------
+
+[[file]]
+path = "tests/test_archived_graph_recipe_conversion.py"
+owner = "ae15851"
+category = "legacy_assertion_test"
+note = "Proves archived branded-ID graph recipes still convert and load; deliberately asserts the retired IDs."
+
+[[file]]
+path = "tests/test_cs_lss_gru.py"
+owner = "7811e47"
+category = "legacy_assertion_test"
+note = "CS-LSS native-vs-legacy fixed-seed equivalence and legacy-selector materialization tests deliberately construct legacy specs with retired IDs."
+
+[[file]]
+path = "tests/test_feedbax_graph_specs.py"
+owner = "e23874f"
+category = "legacy_assertion_test"
+note = "Legacy-migration materialization tests deliberately construct archived point-mass specs with retired IDs to prove owner-context loadability."
+
+[[file]]
+path = "tests/test_run_specs.py"
+owner = "7811e47"
+category = "legacy_assertion_test"
+note = "Run-spec validation tests exercise the historical CS-LSS feedback and legacy point-mass component-type allowlists."
+
+# --- archived / audited fixture + manifest JSON, and conversion code ---------
+
+[[glob]]
+pattern = "results/**/*.json"
+owner = "ae15851"
+category = "archived_artifact_json"
+note = "Archived run.json / model.graph(.manifest).json / training-run manifests and the ae15851 conversion outputs. Historical artifacts (Non-Goal: do not alter for loadability); new runs emit Feedbax-native IDs."
+
+[[glob]]
+pattern = "results/ae15851/scripts/**/*.py"
+owner = "ae15851"
+category = "conversion_code"
+note = "One-time archived-graph-recipe conversion code; reads/writes retired IDs by design."
+
+[[glob]]
+pattern = "results/e9fc384/scripts/**/*.py"
+owner = "e9fc384"
+category = "audit_loader"
+note = "Graph-sidecar audit-manifest builder; inspects retired IDs in archived sidecars."
