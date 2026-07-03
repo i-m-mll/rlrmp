@@ -85,9 +85,16 @@ from rlrmp.io import compact_json_dumps, write_compact_json
 from rlrmp.paths import REPO_ROOT, mkdir_p, run_spec_path
 from rlrmp.runtime.run_specs import validate_nominal_gru_run_spec
 from rlrmp.runtime.training_run_specs import (
+    FEEDBAX_TRAINING_RUN_SPEC_KEY,
+    RLRMP_RUN_SPEC_PAYLOAD_KEY,
     attach_composed_training_specs,
     assert_runtime_graph_matches_training_spec,
+    feedbax_training_run_spec_from_payload,
     write_training_run_manifest_for_spec,
+)
+from rlrmp.runtime.spec_migrations import (
+    RUN_SPEC_KIND,
+    accept_rlrmp_spec_payload,
 )
 from rlrmp.model.stochastic_runtime import (
     graphspec_noise_contract,
@@ -181,6 +188,55 @@ ADAPTIVE_EPSILON_ZERO_ADVERSARY_STOP_REASON = (
     "adaptive_epsilon_zero_adversary_two_consecutive_checkpoints"
 )
 VolumeCommit = Callable[[], None]
+
+
+@dataclass(frozen=True)
+class RunSpecExecutionContext:
+    """Validated C&S GRU training contract used by the execution path."""
+
+    run_spec_path: Path
+    run_spec: dict[str, Any]
+    args: argparse.Namespace
+    hps: TreeNamespace
+
+
+RUN_SPEC_RUNTIME_OVERRIDE_KEYS = frozenset(
+    {
+        "run_spec",
+        "dry_run",
+        "resume",
+        "stop_after_batches",
+        "disable_progress",
+        "quiet_progress",
+        "log_step",
+    }
+)
+
+RUN_SPEC_OVERRIDE_CATEGORIES = {
+    "output_dir": "artifact route",
+    "spec_dir": "artifact route",
+    "issue": "run identity",
+    "seed": "run identity",
+    "full_train": "checkpoint policy",
+    "checkpoint_interval_batches": "checkpoint policy",
+    "training_diagnostics": "checkpoint policy",
+    "n_train_batches": "scientific payload",
+    "batch_size": "scientific payload",
+    "controller_lr": "scientific payload",
+    "lr_warmup_batches": "scientific payload",
+    "lr_warmup_init_fraction": "scientific payload",
+    "lr_cosine_alpha": "scientific payload",
+    "gradient_clip_norm": "scientific payload",
+    "plant_backend": "graph identity",
+    "no_integrator_state": "graph identity",
+    "hidden_size": "graph identity",
+    "n_replicates": "graph identity",
+    "n_input_only": "graph identity",
+    "n_readout_only": "graph identity",
+    "n_recurrent_only": "graph identity",
+    "stochastic_preset": "scientific payload",
+    "loss_objective": "scientific payload",
+}
 
 
 @dataclass(frozen=True)
@@ -398,33 +454,172 @@ def resolve_run_spec_args(
 ) -> argparse.Namespace:
     """Return executable CLI arguments replayed from a modern nominal-GRU run spec.
 
-    Explicit CLI values override the checked-in run spec. This keeps replay useful
-    for smoke gates that should write to a new output directory or stop after an
-    intermediate checkpoint without modifying the durable historical run recipe.
+    The checked-in spec owns run identity, graph identity, checkpoint policy,
+    artifact routes, and scientific payload. CLI values may only supply
+    runtime-only execution controls such as ``--resume`` and
+    ``--stop-after-batches``.
     """
 
     run_spec_path = getattr(args, "run_spec", None)
     if run_spec_path is None:
         return args
     parser = parser or build_parser()
-    defaults = parser.parse_args([])
+    payload_path, payload = load_validated_run_spec(run_spec_path)
+    return resolve_run_spec_execution_args(
+        args,
+        run_spec_path=payload_path,
+        run_spec=payload,
+        parser=parser,
+    )
+
+
+def load_validated_run_spec(
+    run_spec_path: Path | str,
+    *,
+    require_graph_sidecars: bool = False,
+) -> tuple[Path, dict[str, Any]]:
+    """Load and validate a composed C&S GRU ``TrainingRunSpec`` recipe."""
+
     payload_path = Path(run_spec_path)
     payload = json.loads(payload_path.read_text(encoding="utf-8"))
     validate_nominal_gru_run_spec(
         payload,
         spec_dir=payload_path.parent,
-        require_graph_sidecars=False,
+        require_graph_sidecars=require_graph_sidecars,
     )
+    _validate_composed_training_spec_payload(payload)
+    return payload_path, payload
 
+
+def resolve_run_spec_execution_args(
+    args: argparse.Namespace,
+    *,
+    run_spec_path: Path,
+    run_spec: dict[str, Any],
+    parser: argparse.ArgumentParser | None = None,
+) -> argparse.Namespace:
+    """Return runtime args after validating CLI overrides against a spec."""
+
+    parser = parser or build_parser()
+    defaults = parser.parse_args([])
     values = vars(defaults).copy()
-    values.update(_args_values_from_run_spec(payload))
-    for key, value in vars(args).items():
-        if key == "run_spec":
+    values.update(_args_values_from_run_spec(run_spec))
+    values["run_spec"] = str(run_spec_path)
+
+    mismatches = []
+    spec_values = _args_values_from_run_spec(run_spec)
+    for key, value in _explicit_cli_overrides(args, defaults).items():
+        if key in RUN_SPEC_RUNTIME_OVERRIDE_KEYS:
             values[key] = value
             continue
-        if value != getattr(defaults, key):
-            values[key] = value
+        spec_value = spec_values.get(key, getattr(defaults, key, None))
+        if _cli_values_match(value, spec_value):
+            continue
+        category = _run_spec_override_category(key)
+        mismatches.append(f"{key} ({category}): CLI={value!r}, spec={spec_value!r}")
+    if mismatches:
+        raise ValueError(
+            "CLI overrides conflict with the validated run spec. "
+            "Run identity, graph identity, checkpoint policy, artifact routes, "
+            "and scientific payload must come from the spec: "
+            + "; ".join(mismatches)
+        )
     return argparse.Namespace(**values)
+
+
+def build_run_spec_execution_context(
+    args: argparse.Namespace,
+    *,
+    parser: argparse.ArgumentParser | None = None,
+) -> RunSpecExecutionContext:
+    """Build the validated execution context for a ``--run-spec`` path."""
+
+    if getattr(args, "run_spec", None) is None:
+        raise ValueError("build_run_spec_execution_context requires --run-spec")
+    parser = parser or build_parser()
+    run_spec_path, run_spec = load_validated_run_spec(args.run_spec)
+    execution_args = resolve_run_spec_execution_args(
+        args,
+        run_spec_path=run_spec_path,
+        run_spec=run_spec,
+        parser=parser,
+    )
+    return RunSpecExecutionContext(
+        run_spec_path=run_spec_path,
+        run_spec=run_spec,
+        args=execution_args,
+        hps=_hps_from_run_spec(run_spec),
+    )
+
+
+def _validate_composed_training_spec_payload(run_spec: dict[str, Any]) -> None:
+    missing = [
+        key
+        for key in (FEEDBAX_TRAINING_RUN_SPEC_KEY, RLRMP_RUN_SPEC_PAYLOAD_KEY)
+        if key not in run_spec
+    ]
+    if missing:
+        raise ValueError(
+            "C&S GRU run spec must embed composed TrainingRunSpec payloads: "
+            + ", ".join(missing)
+        )
+    feedbax_training_run_spec_from_payload(run_spec)
+    extension = run_spec[RLRMP_RUN_SPEC_PAYLOAD_KEY]
+    if not isinstance(extension, dict):
+        raise ValueError("C&S GRU run spec rlrmp_run_spec payload must be an object")
+    accept_rlrmp_spec_payload(
+        RUN_SPEC_KIND,
+        extension,
+        source_version=extension.get("schema_version"),
+        path=RLRMP_RUN_SPEC_PAYLOAD_KEY,
+    )
+
+
+def _explicit_cli_overrides(
+    args: argparse.Namespace,
+    defaults: argparse.Namespace,
+) -> dict[str, Any]:
+    overrides = {}
+    for key, value in vars(args).items():
+        if key == "run_spec":
+            overrides[key] = value
+            continue
+        if not hasattr(defaults, key):
+            continue
+        if not _cli_values_match(value, getattr(defaults, key)):
+            overrides[key] = value
+    return overrides
+
+
+def _cli_values_match(left: Any, right: Any) -> bool:
+    if left is None or right is None:
+        return left is right
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        return math.isclose(float(left), float(right), rel_tol=1e-12, abs_tol=1e-12)
+    return left == right
+
+
+def _run_spec_override_category(key: str) -> str:
+    if key in RUN_SPEC_OVERRIDE_CATEGORIES:
+        return RUN_SPEC_OVERRIDE_CATEGORIES[key]
+    if key.startswith("planned_"):
+        return "CLI planning mode"
+    if key.startswith("perturbation_") or key.startswith("broad_epsilon_"):
+        return "scientific payload"
+    if key.startswith("policy_adversary_") or key.startswith("adaptive_epsilon_"):
+        return "scientific payload"
+    if key.startswith("delayed_") or key.startswith("effector_") or key.startswith("nn_"):
+        return "scientific payload"
+    if key.startswith("target_") or key in {"force_filter_feedback", "initial_hidden_encoder"}:
+        return "graph identity"
+    return "spec-owned contract"
+
+
+def _hps_from_run_spec(run_spec: dict[str, Any]) -> TreeNamespace:
+    hps = dict(run_spec["hps"])
+    if hps.get("hidden_type") == "equinox.nn._rnn.GRUCell":
+        hps["hidden_type"] = eqx.nn.GRUCell
+    return dict_to_namespace(hps, to_type=TreeNamespace)
 
 
 def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
@@ -2212,6 +2407,24 @@ def run_full_training(
     *,
     volume_commit: VolumeCommit | None = None,
 ) -> dict[str, Any]:
+    """Compatibility adapter that enters full training through a validated spec."""
+
+    parser = build_parser()
+    if getattr(args, "run_spec", None) is None:
+        args = _apply_smoke_overrides(args)
+        spec_result = write_run_spec(args)
+        args = argparse.Namespace(
+            **{**vars(args), "run_spec": spec_result["run_spec_path"], "smoke": False}
+        )
+    context = build_run_spec_execution_context(args, parser=parser)
+    return _run_full_training_from_context(context, volume_commit=volume_commit)
+
+
+def _run_full_training_from_context(
+    context: RunSpecExecutionContext,
+    *,
+    volume_commit: VolumeCommit | None = None,
+) -> dict[str, Any]:
     """Run chunked stochastic C&S GRU training with durable checkpoints.
 
     Feedbax's trainer can accept an optimizer state, but its checkpoint restore
@@ -2220,7 +2433,10 @@ def run_full_training(
     PRNG state, run/config metadata, and training history snapshots.
     """
 
-    args = _apply_smoke_overrides(args)
+    args = context.args
+    run_spec = context.run_spec
+    run_spec_path = context.run_spec_path
+    hps = context.hps
     if int(args.n_train_batches) < 1:
         raise ValueError("--n-train-batches must be positive for --full-train")
     if int(args.checkpoint_interval_batches) < 1:
@@ -2232,16 +2448,8 @@ def run_full_training(
         if stop_after_batches > int(args.n_train_batches):
             raise ValueError("--stop-after-batches cannot exceed --n-train-batches")
 
-    spec_result = write_run_spec(args)
+    spec_result = _spec_result_from_execution_context(context)
     output_dir = mkdir_p(Path(args.output_dir))
-    run_spec_path = Path(spec_result["run_spec_path"])
-    run_spec = json.loads(run_spec_path.read_text(encoding="utf-8"))
-
-    args = resolve_run_spec_args(
-        argparse.Namespace(**{**vars(args), "run_spec": str(run_spec_path)}),
-        parser=build_parser(),
-    )
-    hps = build_hps(args)
     key_init, key_train, key_adversary = jr.split(jr.PRNGKey(int(args.seed)), 3)
     pair = setup_task_model_pair(hps, key=key_init)
     runtime_graph_bundle = build_runtime_rlrmp_feedbax_graph_bundle(hps, pair.model)
@@ -2584,6 +2792,23 @@ def run_full_training(
         "training_summary_path": str(final_summary_path),
         "latest_checkpoint": str(latest_checkpoint_path(checkpoint_root)),
         "completed_batches": state.completed_batches,
+    }
+
+
+def _spec_result_from_execution_context(context: RunSpecExecutionContext) -> dict[str, Any]:
+    spec_dir = Path(context.args.spec_dir)
+    graph_metadata = context.run_spec.get("feedbax_graph", {})
+    graph_spec_path = graph_metadata.get("graph_spec_path")
+    graph_manifest_path = graph_metadata.get("manifest_path")
+    return {
+        "run_spec_path": str(context.run_spec_path),
+        "graph_spec_path": None
+        if graph_spec_path is None
+        else str(spec_dir / str(graph_spec_path)),
+        "graph_manifest_path": None
+        if graph_manifest_path is None
+        else str(spec_dir / str(graph_manifest_path)),
+        "training_manifest_path": None,
     }
 
 
@@ -3423,7 +3648,7 @@ def main(
     """CLI entry point."""
 
     parser = build_parser()
-    args = resolve_run_spec_args(parser.parse_args(argv), parser=parser)
+    args = parser.parse_args(argv)
     if args.planned_perturbation_rows:
         print(_json_dumps({"planned_rows": planned_fixed_target_perturbation_rows()}), end="")
         return 0
@@ -3460,13 +3685,49 @@ def main(
             end="",
         )
         return 0
-    result = (
-        run_full_training(args, volume_commit=volume_commit)
-        if args.full_train and not args.dry_run
-        else write_run_spec(args)
-    )
+    if args.run_spec is not None:
+        context = build_run_spec_execution_context(args, parser=parser)
+        if context.args.dry_run:
+            result = render_run_spec_execution_dry_run(context)
+        elif context.args.full_train:
+            result = _run_full_training_from_context(context, volume_commit=volume_commit)
+        else:
+            result = {
+                "run_spec_path": str(context.run_spec_path),
+                "run_spec": context.run_spec,
+                "validated": True,
+            }
+    else:
+        result = (
+            run_full_training(args, volume_commit=volume_commit)
+            if args.full_train and not args.dry_run
+            else write_run_spec(args)
+        )
     print(_json_dumps(result), end="")
     return 0
+
+
+def render_run_spec_execution_dry_run(context: RunSpecExecutionContext) -> dict[str, Any]:
+    """Render the execution plan for a validated spec without writing artifacts."""
+
+    args = context.args
+    return {
+        "run_spec_path": str(context.run_spec_path),
+        "run_spec": context.run_spec,
+        "validated": True,
+        "would_write": [],
+        "would_execute": {
+            "entrypoint": "rlrmp.train.cs_nominal_gru._run_full_training_from_context"
+            if args.full_train
+            else "validate_spec_only",
+            "full_train": bool(args.full_train),
+            "output_dir": str(args.output_dir),
+            "checkpoint_interval_batches": int(args.checkpoint_interval_batches),
+            "resume": bool(args.resume),
+            "stop_after_batches": args.stop_after_batches,
+            "training_diagnostics": bool(args.training_diagnostics),
+        },
+    }
 
 
 def _apply_smoke_overrides(args: argparse.Namespace) -> argparse.Namespace:
