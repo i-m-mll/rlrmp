@@ -261,6 +261,10 @@ module = "feedbax.plugins.discovery"
 symbols = ["register_package_from_module_info"]
 
 [[canonical_homes]]
+module = "feedbax.runtime"
+symbols = ["align_state_indices_like"]
+
+[[canonical_homes]]
 module = "feedbax.runtime.batch"
 symbols = ["BatchInfo"]
 

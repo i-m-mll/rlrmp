@@ -30,6 +30,7 @@ from feedbax.contracts.graphs.templates import (
     recurrent_controller_template_graph,
     recurrent_graph_input_initializer,
 )
+from feedbax.runtime import align_state_indices_like
 from feedbax.runtime.filters import FilterState
 from feedbax.runtime.graph import Graph, GraphState
 from feedbax.runtime.components import ElementwiseAffineModulator as RuntimeElementwiseAffineModulator
@@ -168,24 +169,9 @@ def register_rlrmp_graph_components(component_registry: Any | None = None) -> An
         output_prototype_fn=_linear_controller_output_prototype,
         provenance="rlrmp",
     )
-    _install_feedbax_intervention_output_prototypes(registry)
-    _install_feedbax_demux_output_prototype(registry)
     _install_parameter_aware_recurrent_builders(registry)
     register_rlrmp_graph_migration_pack(registry)
     return registry
-
-
-def _install_feedbax_intervention_output_prototypes(registry: Any) -> None:
-    for component_type in ("FixedField", "CurlField", "DynamicsMatrixPerturb"):
-        meta = registry.get(component_type)
-        if meta is not None and meta.output_prototype_fn is None:
-            meta.output_prototype_fn = _force_passthrough_output_prototype
-
-
-def _install_feedbax_demux_output_prototype(registry: Any) -> None:
-    meta = registry.get(NATIVE_DEMUX_COMPONENT)
-    if meta is not None and meta.output_prototype_fn is None:
-        meta.output_prototype_fn = _demux_output_prototype
 
 
 def _install_parameter_aware_recurrent_builders(registry: Any) -> None:
@@ -508,28 +494,6 @@ def _linear_controller_output_prototype(
     return {"output": jnp.zeros(controls), "hidden": jnp.zeros(1)}
 
 
-def _force_passthrough_output_prototype(
-    params: dict[str, Any],
-    inputs: dict[str, Any],
-) -> dict[str, Any]:
-    del params
-    return {"force": inputs.get("force", jnp.zeros(2))}
-
-
-def _demux_output_prototype(
-    params: dict[str, Any],
-    inputs: dict[str, Any],
-) -> dict[str, Any]:
-    sizes = tuple(int(size) for size in params.get("sizes", ()))
-    if not sizes:
-        source = jnp.asarray(inputs.get("input", jnp.zeros(1)))
-        sizes = (int(source.shape[-1]),)
-    return {
-        f"out_{index}": jnp.zeros((size,), dtype=jnp.asarray(inputs.get("input", 0.0)).dtype)
-        for index, size in enumerate(sizes)
-    }
-
-
 def install_simple_feedback_runtime_hooks(graph: Graph) -> Graph:
     """Install SimpleFeedback-compatible state view and consistency hooks."""
 
@@ -565,9 +529,7 @@ def install_simple_feedback_runtime_hooks(graph: Graph) -> Graph:
         state = state.set(mechanics.state_index, mechanics_state)
         return feedback.fill_queues(state, mechanics_state)
 
-    object.__setattr__(graph, "state_view_fn", _state_view)
-    object.__setattr__(graph, "state_consistency_fn", _consistency_update)
-    return graph
+    return graph.with_state_view(_state_view).with_state_consistency(_consistency_update)
 
 
 def _build_simple_staged_network(params: dict[str, Any]) -> SimpleStagedNetwork:
@@ -1188,7 +1150,7 @@ def create_point_mass_graph_ensemble(
         for key_i in keys
     ]
     template = models[0]
-    models = [template, *[_align_state_index_markers(template, model) for model in models[1:]]]
+    models = [template, *[align_state_indices_like(model, template) for model in models[1:]]]
     dynamic_models = [eqx.filter(model, eqx.is_array) for model in models]
     static_model = eqx.filter(template, lambda leaf: not eqx.is_array(leaf))
     stacked_dynamic = jt.map(lambda *leaves: jnp.stack(leaves), *dynamic_models)
@@ -1230,27 +1192,11 @@ def create_legacy_point_mass_graph_ensemble(
         for key_i in keys
     ]
     template = models[0]
-    models = [template, *[_align_state_index_markers(template, model) for model in models[1:]]]
+    models = [template, *[align_state_indices_like(model, template) for model in models[1:]]]
     dynamic_models = [eqx.filter(model, eqx.is_array) for model in models]
     static_model = eqx.filter(template, lambda leaf: not eqx.is_array(leaf))
     stacked_dynamic = jt.map(lambda *leaves: jnp.stack(leaves), *dynamic_models)
     return install_simple_feedback_runtime_hooks(eqx.combine(stacked_dynamic, static_model))
-
-
-def _align_state_index_markers(template: Graph, model: Graph) -> Graph:
-    def _align(template_leaf, model_leaf):
-        if isinstance(template_leaf, StateIndex) and isinstance(model_leaf, StateIndex):
-            aligned = StateIndex(model_leaf.init)
-            object.__setattr__(aligned, "marker", template_leaf.marker)
-            return aligned
-        return model_leaf
-
-    return jt.map(
-        _align,
-        template,
-        model,
-        is_leaf=lambda leaf: isinstance(leaf, StateIndex),
-    )
 
 
 def graph_spec_from_model(

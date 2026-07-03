@@ -406,8 +406,8 @@ def test_cs_lss_materialization_uses_registered_prototypes_without_global_patch(
     assert fbx_prototypes.output_prototypes_for_node is original_output_prototypes_for_node
     assert registry.get(FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT).output_prototype_fn is not None
     assert registry.get("Demux").output_prototype_fn is not None
-    assert registry.get("Channel").output_prototype_fn is None
-    assert registry.get("LinearStateSpace").output_prototype_fn is None
+    assert registry.get("Channel").output_prototype_fn is not None
+    assert registry.get("LinearStateSpace").output_prototype_fn is not None
     assert graph.nodes["mechanics"].A.shape == (48, 48)
 
 
