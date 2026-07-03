@@ -1,5 +1,7 @@
 """Compatibility helpers for minimax adversary intervention swaps."""
 
+from collections.abc import Mapping
+
 import equinox as eqx
 import jax.numpy as jnp
 from feedbax.runtime.graph import Wire
@@ -8,6 +10,53 @@ from feedbax.intervene import (
     DynamicsMatrixPerturbParams,
 )
 from jaxtyping import PyTree
+
+from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
+
+
+LINEAR_DYNAMICS_ADVERSARY_COMPONENT_PARAMETER_TARGET = {
+    "role": "component_parameter",
+    "source_data_id": "linear_dynamics_adversary_params",
+    "target_node_id": PLANT_INTERVENOR_LABEL,
+    "target_port": "params_override",
+    "task_parameter_label": PLANT_INTERVENOR_LABEL,
+    "temporal_support": "trajectory",
+}
+
+
+def require_exactly_one_intervenor_for_dynamics_matrix_swap(
+    model: PyTree,
+    label: str,
+) -> PyTree:
+    """Validate that the legacy minimax swap has exactly one unswapped target."""
+
+    nodes = getattr(model, "nodes", None)
+    if not isinstance(nodes, Mapping):
+        raise ValueError(
+            "DynamicsMatrixPerturb swap requires a graph-like model with a nodes mapping"
+        )
+
+    matches = sorted(
+        {
+            str(name)
+            for name, node in nodes.items()
+            if name == label or getattr(node, "label", None) == label
+        }
+    )
+    if len(matches) != 1:
+        raise ValueError(
+            "DynamicsMatrixPerturb swap requires exactly one intervenor node "
+            f"matching label {label!r}; found {len(matches)}: {matches}"
+        )
+
+    node = nodes[matches[0]]
+    if isinstance(node, DynamicsMatrixPerturb):
+        raise ValueError(
+            "DynamicsMatrixPerturb swap would be applied twice to intervenor node "
+            f"{matches[0]!r}"
+        )
+
+    return model
 
 
 def swap_plant_intervenor_to_dynamics_matrix(
@@ -43,6 +92,7 @@ def swap_plant_intervenor_to_dynamics_matrix(
     Returns:
         Modified model graph with the swapped intervenor.
     """
+    require_exactly_one_intervenor_for_dynamics_matrix_swap(model, label)
     new_intervenor = DynamicsMatrixPerturb(
         params=DynamicsMatrixPerturbParams(
             active=False,

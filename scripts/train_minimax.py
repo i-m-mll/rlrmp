@@ -61,6 +61,7 @@ from rlrmp.model.feedbax_graph import (
     write_graph_spec_bundle,
 )
 from rlrmp.intervention_compat import (
+    require_exactly_one_intervenor_for_dynamics_matrix_swap,
     swap_plant_intervenor_to_dynamics_matrix,
     swap_task_intervention_to_dynamics_matrix,
 )
@@ -742,7 +743,7 @@ def run_training(args: argparse.Namespace) -> None:
         # Swap on the ensembled model (jt.map over the ensemble pytree).
         warmup_model = jt.map(
             lambda m: swap_plant_intervenor_to_dynamics_matrix(
-                m,
+                require_exactly_one_intervenor_for_dynamics_matrix_swap(m, _PLABEL),
                 _PLABEL,
                 mass=hps.model.effector_mass,
             ),

@@ -13,11 +13,12 @@ import jax.numpy as jnp
 import jax.random as jr
 import pytest
 from feedbax.component_registry import ComponentRegistry
-from feedbax.contracts.graph import ComponentSpec, GraphSpec
+from feedbax.contracts.graph import ComponentSpec, GraphSpec, StudioTaskBindingSpec
 from feedbax.control import AffineFeedbackController
 from feedbax.models.networks import PopulationStructure
 from feedbax.runtime.graph import Graph
 from feedbax.runtime.graph import init_state_from_component
+from feedbax.runtime.task_bindings import expose_task_bindings
 from feedbax.intervene import CurlField, DynamicsMatrixPerturb, FixedField
 from feedbax.contracts.manifest import SCHEMA_VERSION as FEEDBAX_MANIFEST_SCHEMA_VERSION
 
@@ -40,7 +41,10 @@ from rlrmp.model.feedbax_graph import (
     resolve_registered_graph_component_migrations,
     write_graph_spec_bundle,
 )
-from rlrmp.intervention_compat import swap_plant_intervenor_to_dynamics_matrix
+from rlrmp.intervention_compat import (
+    LINEAR_DYNAMICS_ADVERSARY_COMPONENT_PARAMETER_TARGET,
+    swap_plant_intervenor_to_dynamics_matrix,
+)
 from rlrmp.controllers.linear import LinearController, LinearTrackerController
 from rlrmp.train.task_model import build_task_base, setup_task_model_pair
 from rlrmp.model.stochastic_runtime import PLANT_PROCESS_FORCE_NOISE_LABEL
@@ -780,6 +784,79 @@ def test_dynamics_matrix_perturb_spec_preserves_delta_a_contract() -> None:
         GRAPH_PLANT_INTERVENOR_NODE,
         "effector",
     ) in recurrent_edges
+
+
+def test_linear_dynamics_component_parameter_target_resolves_without_intervene_input() -> None:
+    hps = _hps(hidden_type="linear")
+    spec = build_point_mass_sensorimotor_graph_spec(
+        hps,
+        task=build_task_base(hps),
+        n_extra_inputs=0,
+        hidden_type=hps.hidden_type,
+        intervention_type="DynamicsMatrixPerturb",
+    )
+    graph = materialize_rlrmp_graph_spec(spec)
+    legacy_input = f"intervene:{GRAPH_PLANT_INTERVENOR_NODE}"
+    graph = eqx.tree_at(
+        lambda g: (g.input_ports, g.input_bindings),
+        graph,
+        (
+            tuple(port for port in graph.input_ports if port != legacy_input),
+            {key: value for key, value in graph.input_bindings.items() if key != legacy_input},
+        ),
+    )
+    target = LINEAR_DYNAMICS_ADVERSARY_COMPONENT_PARAMETER_TARGET
+
+    binding_spec = StudioTaskBindingSpec.model_validate(
+        {
+            "schema_version": "feedbax.spec.studio.task_bindings.v2",
+            "exposed_data": [
+                {
+                    "id": target["source_data_id"],
+                    "label": "Linear dynamics adversary params",
+                    "kind": "component_parameter",
+                    "role": target["role"],
+                    "path": "linear_dynamics_adversary.params_override",
+                    "bindable": True,
+                    "expected_shape": ["time"],
+                    "dtype": "object",
+                    "metadata": {"temporal_support": target["temporal_support"]},
+                }
+            ],
+            "bindings": [
+                {
+                    "id": (
+                        f"task:{target['source_data_id']}->"
+                        f"{target['target_node_id']}:{target['target_port']}"
+                    ),
+                    "source_data_id": target["source_data_id"],
+                    "target_node_id": target["target_node_id"],
+                    "target_port": target["target_port"],
+                    "role": target["role"],
+                    "metadata": {"task_parameter_label": target["task_parameter_label"]},
+                }
+            ],
+            "metadata": {},
+        }
+    )
+
+    exposure = expose_task_bindings(graph, binding_spec)
+
+    assert legacy_input not in graph.input_bindings
+    assert exposure.state_init_plans == ()
+    assert len(exposure.input_plans) == 1
+    plan = exposure.input_plans[0]
+    assert plan.graph_input == (
+        f"task:{target['source_data_id']}->"
+        f"{target['target_node_id']}.{target['target_port']}"
+    )
+    assert not plan.graph_input.startswith("intervene:")
+    assert plan.target_node == GRAPH_PLANT_INTERVENOR_NODE
+    assert plan.target_port == "params_override"
+    assert exposure.graph.input_bindings[plan.graph_input] == (
+        GRAPH_PLANT_INTERVENOR_NODE,
+        "params_override",
+    )
 
 
 def test_legacy_dynamics_matrix_delta_a_shape_materializes_through_migration() -> None:

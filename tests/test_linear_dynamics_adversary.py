@@ -13,10 +13,12 @@ import jax.numpy as jnp
 import jax.random as jr
 import optax
 import pytest
+from feedbax.intervene import DynamicsMatrixPerturb
 
 from rlrmp.adversary import LinearDynamicsAdversary, _frobenius_project
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.intervention_compat import (
+    require_exactly_one_intervenor_for_dynamics_matrix_swap,
     swap_plant_intervenor_to_dynamics_matrix,
     swap_task_intervention_to_dynamics_matrix,
 )
@@ -143,9 +145,22 @@ class TestDynamicsMatrixPerturbIntegration:
     """Smoke tests verifying the rlrmp-side adversary connects to the
     feedbax-side ``DynamicsMatrixPerturb`` intervenor."""
 
+    @staticmethod
+    def _single_replicate_pair():
+        args = argparse.Namespace(
+            n_warmup_batches=1,
+            n_adversary_batches=1,
+            controller_lr=1e-4,
+            loss_update_enabled=False,
+            loss_update_ratio=0.5,
+            hidden_type="gru",
+            sisu_gating="additive",
+            n_replicates=1,
+        )
+        return setup_task_model_pair(build_hps(args), key=jr.PRNGKey(0))
+
     def test_feedbax_intervenor_consumes_delta_A(self):
         from feedbax.intervene import (
-            DynamicsMatrixPerturb,
             DynamicsMatrixPerturbParams,
         )
         from feedbax.runtime.state import CartesianState
@@ -183,19 +198,56 @@ class TestDynamicsMatrixPerturbIntegration:
         expected = jnp.array([0.3, -0.6], dtype=default_dtype)
         assert jnp.allclose(out["force"], expected)
 
+    def test_intervenor_swap_requires_existing_matching_node(self):
+        pair = self._single_replicate_pair()
+        nodes = dict(pair.model.nodes)
+        nodes.pop(PLANT_INTERVENOR_LABEL)
+        model = eqx.tree_at(lambda g: g.nodes, pair.model, nodes)
+
+        with pytest.raises(ValueError, match="exactly one intervenor node.*found 0"):
+            require_exactly_one_intervenor_for_dynamics_matrix_swap(
+                model,
+                PLANT_INTERVENOR_LABEL,
+            )
+
+    def test_intervenor_swap_accepts_exactly_one_unswapped_node(self):
+        pair = self._single_replicate_pair()
+
+        swapped = swap_plant_intervenor_to_dynamics_matrix(
+            pair.model,
+            PLANT_INTERVENOR_LABEL,
+        )
+
+        assert isinstance(swapped.nodes[PLANT_INTERVENOR_LABEL], DynamicsMatrixPerturb)
+
+    def test_intervenor_swap_rejects_duplicate_matching_nodes(self):
+        pair = self._single_replicate_pair()
+        nodes = dict(pair.model.nodes)
+        nodes["duplicate_intervenor"] = nodes[PLANT_INTERVENOR_LABEL]
+        model = eqx.tree_at(lambda g: g.nodes, pair.model, nodes)
+
+        with pytest.raises(ValueError, match="exactly one intervenor node.*found 2"):
+            require_exactly_one_intervenor_for_dynamics_matrix_swap(
+                model,
+                PLANT_INTERVENOR_LABEL,
+            )
+
+    def test_intervenor_swap_rejects_double_application(self):
+        pair = self._single_replicate_pair()
+        swapped = swap_plant_intervenor_to_dynamics_matrix(
+            pair.model,
+            PLANT_INTERVENOR_LABEL,
+        )
+
+        with pytest.raises(ValueError, match="applied twice"):
+            swap_plant_intervenor_to_dynamics_matrix(
+                swapped,
+                PLANT_INTERVENOR_LABEL,
+            )
+
     def test_task_swap_preserves_callable_pai_asf_schedules(self):
         """Linear-dynamics setup should keep PAI-ASF schedules trial-local."""
-        args = argparse.Namespace(
-            n_warmup_batches=1,
-            n_adversary_batches=1,
-            controller_lr=1e-4,
-            loss_update_enabled=False,
-            loss_update_ratio=0.5,
-            hidden_type="gru",
-            sisu_gating="additive",
-            n_replicates=1,
-        )
-        pair = setup_task_model_pair(build_hps(args), key=jr.PRNGKey(0))
+        pair = self._single_replicate_pair()
         task = pair.task
         model = swap_plant_intervenor_to_dynamics_matrix(pair.model, PLANT_INTERVENOR_LABEL)
 
