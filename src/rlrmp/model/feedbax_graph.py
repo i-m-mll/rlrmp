@@ -29,6 +29,7 @@ from feedbax.contracts.graph import (
 from feedbax.contracts.graphs.templates import (
     recurrent_controller_template_graph,
     recurrent_graph_input_initializer,
+    recurrent_node_output_initializer,
 )
 from feedbax.runtime import align_state_indices_like
 from feedbax.runtime.filters import FilterState
@@ -211,6 +212,12 @@ def _build_seeded_linear(params: dict[str, Any]) -> RuntimeLinear:
             lambda node: node.layer.bias,
             component,
             jnp.zeros_like(component.layer.bias),
+        )
+    if params.get("zero_weight", False):
+        component = eqx.tree_at(
+            lambda node: node.layer.weight,
+            component,
+            jnp.zeros_like(component.layer.weight),
         )
     return component
 
@@ -1549,6 +1556,7 @@ def native_recurrent_controller_subgraph(
     sisu_gating: str = "additive",
     population_params: dict[str, int] | None = None,
     h0_initializer_source: str | None = None,
+    h0_encoder_input_size: int | None = None,
     key: list[int] | None = None,
     dtype: str | None = None,
 ) -> GraphSpec:
@@ -1592,17 +1600,26 @@ def native_recurrent_controller_subgraph(
             )
         }
     )
-    if h0_initializer_source is not None:
-        graph = _with_graph_input_hidden_initializer(
-            graph,
-            source=h0_initializer_source,
-        )
     if sisu_gating == "multiplicative":
         graph = _with_multiplicative_sisu_modulation(
             graph,
             input_size=int(input_size),
             external_input_size=external_input_size,
             hidden_size=int(hidden_size),
+            dtype=dtype,
+        )
+    if h0_initializer_source is not None and h0_encoder_input_size is None:
+        graph = _with_graph_input_hidden_initializer(
+            graph,
+            source=h0_initializer_source,
+        )
+    elif h0_initializer_source is not None:
+        graph = _with_node_output_hidden_initializer(
+            graph,
+            source=h0_initializer_source,
+            input_size=int(h0_encoder_input_size),
+            hidden_size=int(hidden_size),
+            key=key,
             dtype=dtype,
         )
     return graph
@@ -1675,6 +1692,88 @@ def _with_graph_input_hidden_initializer(graph: GraphSpec, *, source: str) -> Gr
     input_bindings[source] = ("cell", "hidden")
     return graph.model_copy(
         update={
+            "wires": wires,
+            "input_ports": input_ports,
+            "input_bindings": input_bindings,
+        }
+    )
+
+
+def _with_node_output_hidden_initializer(
+    graph: GraphSpec,
+    *,
+    source: str,
+    input_size: int,
+    hidden_size: int,
+    key: list[int] | None,
+    dtype: str | None,
+) -> GraphSpec:
+    if input_size <= 0:
+        raise ValueError(f"h0 encoder input_size must be positive; got {input_size}.")
+    nodes = dict(graph.nodes)
+    nodes["hidden_source"] = ComponentSpec(
+        type="Gain",
+        params={"gain": 1.0},
+        input_ports=["input"],
+        output_ports=["output"],
+    )
+    encoder_key = jr.fold_in(_key_from_params({"key": key}), 101)
+    encoder_params: dict[str, Any] = {
+        "input_size": int(input_size),
+        "output_size": int(hidden_size),
+        "use_bias": True,
+        "activation": "identity",
+        "zero_bias": True,
+        "zero_weight": True,
+        "key": [int(value) for value in jnp.asarray(encoder_key).tolist()],
+    }
+    if dtype is not None:
+        encoder_params["dtype"] = str(dtype)
+    nodes[source] = ComponentSpec(
+        type="Linear",
+        params=encoder_params,
+        input_ports=["input"],
+        output_ports=["output"],
+    )
+
+    wires = []
+    for wire in graph.wires:
+        if (
+            wire.target_node == "cell"
+            and wire.target_port == "hidden"
+            and wire.temporality == "recurrent"
+        ):
+            wires.append(
+                WireSpec(
+                    source_node=wire.source_node,
+                    source_port=wire.source_port,
+                    target_node="hidden_source",
+                    target_port="input",
+                )
+            )
+            wires.append(
+                wire.model_copy(
+                    update={
+                        "source_node": "hidden_source",
+                        "source_port": "output",
+                        "recurrent_initializer": recurrent_node_output_initializer(
+                            source,
+                            "output",
+                            state_slot="hidden",
+                        ),
+                    }
+                )
+            )
+            continue
+        wires.append(wire)
+    input_ports = list(graph.input_ports)
+    if "h0_context" not in input_ports:
+        input_ports.append("h0_context")
+    input_bindings = dict(graph.input_bindings)
+    input_bindings["h0_context"] = (source, "input")
+    return graph.model_copy(
+        update={
+            "nodes": nodes,
             "wires": wires,
             "input_ports": input_ports,
             "input_bindings": input_bindings,
