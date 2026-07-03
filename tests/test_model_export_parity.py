@@ -131,6 +131,13 @@ _VARIANT_BUILDERS = {
     "minimax_adversary": lambda: _point_mass_export(
         hidden_type="gru", adversary_type="linear_dynamics"
     ),
+    # Multiplicative-SISU export (0f67665): the multiplicative sisu_modulator ->
+    # cell.hidden wire carries a `constant` recurrent initializer whose value is
+    # now emitted JSON-native ([0.0]*hidden_size + dtype name), so the stacked
+    # export round-trips and re-materializes like every other row.
+    "multiplicative_sisu": lambda: _point_mass_export(
+        hidden_type="gru", sisu_gating="multiplicative"
+    ),
     "population_gru": _population_gru_export,
     "cs_lss": lambda: _cs_lss_export(initial_hidden_encoder=False),
     "cs_lss_initial_hidden": lambda: _cs_lss_export(initial_hidden_encoder=True),
@@ -170,34 +177,6 @@ def test_point_mass_gru_export_matches_requested_component_contract() -> None:
     requested_types = {name: node.type for name, node in requested.nodes.items()}
     exported_types = {name: node.type for name, node in exported.nodes.items()}
     assert exported_types == requested_types
-
-
-def test_multiplicative_sisu_model_export_is_known_gap() -> None:
-    """Lock the current multiplicative-SISU model-derived export gap.
-
-    The multiplicative-SISU point-mass model exports an ElementwiseAffineModulator
-    (``sisu_alpha``) whose JAX-array parameter is not converted for GraphSpec
-    serialization, so ``graph_spec_from_model`` does not round-trip / re-materialize
-    for this variant (single replicate: PydanticSerializationError on the raw array;
-    stacked replicates: StateIndex PyTree-structure mismatch on re-materialization).
-    No existing suite test round-trips this variant, so the gap is otherwise
-    invisible. This is a genuine export-path defect (reported for follow-up), not a
-    test artifact: the additive-SISU point_mass_gru variant round-trips cleanly.
-
-    When the export path is fixed, promote ``multiplicative_sisu`` into
-    ``_VARIANT_BUILDERS`` and delete this characterization test (it will start
-    failing, flagging the fix).
-    """
-
-    hps = _hps(hidden_type="gru", sisu_gating="multiplicative", n_replicates=2)
-    # The gap manifests somewhere in the model-derived export pipeline (replicate
-    # representative extraction / export / re-materialization); assert the pipeline
-    # as a whole raises rather than pinning the exact failing step.
-    with pytest.raises(Exception):
-        pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
-        exported = graph_spec_from_model(pair.model, n_replicates=int(hps.model.n_replicates))
-        round_tripped = GraphSpec.model_validate_json(json.dumps(graph_spec_payload(exported)))
-        materialize_rlrmp_graph_spec(round_tripped)
 
 
 def test_export_parity_negative_rejects_corrupted_component_type() -> None:

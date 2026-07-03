@@ -474,7 +474,8 @@ def normalize_native_recurrent_runtime_initializers(graph: Graph) -> Graph:
                 "scope": "trial",
                 "source": "state_initializer",
                 "state_slot": "hidden",
-                "value": jnp.zeros((hidden_size,), dtype=dtype),
+                "value": [0.0] * hidden_size,
+                "dtype": jnp.dtype(dtype).name,
             }
             wire = replace(wire, recurrent_initializer=initializer)
             wire_changed = True
