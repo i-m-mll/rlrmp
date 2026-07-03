@@ -114,7 +114,6 @@ def test_feedbax_contract_version_pins_cover_live_contracts() -> None:
     assert SUPPORTED_TRAINING_RUN_SPEC_VERSIONS == (RUN_SPEC_SCHEMA_VERSION,)
     assert SUPPORTED_RUN_STATUS_CHECKPOINT_SCHEMA_VERSIONS == (1,)
     assert PENDING_VERSION_PINS == {
-        "descriptor_basis_hash": "owned by issue 844acc6",
         "data_product_payload": (
             "owned by issue 108b4d3/product identity and follow-on data-product work"
         ),
@@ -156,9 +155,7 @@ def _collect_feedbax_contract_nodeids() -> list[str]:
 
 
 def _assert_live_family_counts(manifest: dict, nodeids: list[str]) -> None:
-    live_families = [
-        family for family in manifest["families"] if family["status"] == "live"
-    ]
+    live_families = [family for family in manifest["families"] if family["status"] == "live"]
     assert live_families, "Feedbax contract manifest declares zero live families"
     for family in live_families:
         pattern = family["expected_collection_pattern"]

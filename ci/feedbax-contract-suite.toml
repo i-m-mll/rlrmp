@@ -73,10 +73,10 @@ minimum_non_skipped = 1
 [[families]]
 name = "descriptor_basis_hash"
 owner = "844acc6"
-status = "pending_enrollment"
+status = "live"
 marker = "feedbax_contract"
-expected_collection_pattern = "tests/"
-minimum_non_skipped = 1
+expected_collection_pattern = "tests/test_controller_feedback_descriptors.py::"
+minimum_non_skipped = 5
 
 [[families]]
 name = "product_identity_hash"

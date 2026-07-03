@@ -34,6 +34,10 @@ from rlrmp.model.feedbax_channel_adapters import (
     additive_channel_provenance,
     materialize_additive_channel_adapters_on_graph,
 )
+from rlrmp.model.feedback_descriptors import (
+    COMPONENT_FORCE_FILTER,
+    resolve_controller_feedback_view,
+)
 from rlrmp.model.cs_lss_gru import CS_H0_CONTEXT_INPUT
 from rlrmp.train.closed_loop_finite_adversary import (
     AFFINE_POLICY,
@@ -1236,6 +1240,11 @@ def active_graph_adapter_specs(
 def _widen_controller_visible_adapter(
     spec: AdditiveGraphChannelAdapterSpec,
 ) -> AdditiveGraphChannelAdapterSpec:
+    force_filter = resolve_controller_feedback_view(
+        None,
+        feedback_dim=6,
+        source="cs_perturbation_training_widened_adapter",
+    ).component(COMPONENT_FORCE_FILTER)
     return spec.model_copy(
         update={
             "payload_shape": [6],
@@ -1243,7 +1252,7 @@ def _widen_controller_visible_adapter(
                 **dict(spec.metadata),
                 "force_filter_feedback_payload": "widened_to_controller_feedback_dim",
                 "active_calibrated_components": 4,
-                "inactive_force_filter_components": [4, 5],
+                "inactive_force_filter_components": list(force_filter.absolute_indices),
             },
         }
     )
@@ -2974,8 +2983,7 @@ def run_broad_epsilon_pgd_inner_maximizer(
         and cfg.adversary_mechanism != BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM
     ):
         raise ValueError(
-            "soft_energy_lambda_override is only supported for the direct_epsilon "
-            "PGD mechanism."
+            "soft_energy_lambda_override is only supported for the direct_epsilon PGD mechanism."
         )
     if cfg.adversary_mechanism in BROAD_EPSILON_PGD_FINITE_POLICY_MECHANISMS:
         return _run_finite_broad_epsilon_pgd_inner_maximizer(
@@ -5809,7 +5817,13 @@ def _target_relative_h0_context(
     neg_velocity = -init[..., 2:4]
     pieces = [target_delta, neg_velocity]
     if int(context_dim) == 6:
-        pieces.append(init[..., 4:6])
+        feedback_view = resolve_controller_feedback_view(
+            None,
+            feedback_dim=6,
+            values=init[..., :6],
+            source="cs_perturbation_training_h0_context",
+        )
+        pieces.append(feedback_view.component(COMPONENT_FORCE_FILTER).values)
     elif int(context_dim) != 4:
         raise ValueError(f"Unsupported h0 context dimension {context_dim}; expected 4 or 6.")
     return jnp.concatenate(pieces, axis=-1)

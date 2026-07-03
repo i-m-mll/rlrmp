@@ -31,6 +31,10 @@ from feedbax.contracts.training import (
     standard_supervised_method_ref,
 )
 
+from rlrmp.model.feedback_descriptors import (
+    DESCRIPTOR_PAYLOAD_KEY,
+    controller_feedback_descriptor_from_container,
+)
 from rlrmp.model.feedbax_graph import graph_spec_payload
 from rlrmp.runtime.spec_migrations import (
     RUN_SPEC_KIND,
@@ -50,6 +54,11 @@ def rlrmp_extension_payload(run_spec: dict[str, Any]) -> dict[str, Any]:
     training_summary = _mapping(run_spec, "training_summary")
     model_summary = _mapping(run_spec, "model_summary")
     graph = _mapping(run_spec, "feedbax_graph")
+    feedback_descriptors = controller_feedback_descriptor_from_container(
+        model_summary,
+        feedback_dim=_feedback_dim_from_run_spec(run_spec),
+        source="rlrmp_extension_payload",
+    )
     payload = {
         "issue": str(run_spec.get("issue", "")),
         "mode": str(run_spec.get("mode", "")),
@@ -66,6 +75,7 @@ def rlrmp_extension_payload(run_spec: dict[str, Any]) -> dict[str, Any]:
         "delayed_reach": run_spec.get("delayed_reach"),
         "validation_bins": run_spec.get("validation_bins"),
         "feedbax_graph": graph,
+        DESCRIPTOR_PAYLOAD_KEY: feedback_descriptors,
         "hps": run_spec.get("hps"),
     }
     return stamp_current_schema(RUN_SPEC_KIND, payload)
@@ -84,10 +94,16 @@ def build_feedbax_training_run_spec(
     optimizer = _mapping(run_spec, "optimizer")
     checkpointing = _mapping(run_spec, "checkpointing")
     training_diagnostics = _mapping(run_spec, "training_diagnostics")
+    feedback_descriptors = controller_feedback_descriptor_from_container(
+        _mapping(run_spec, "model_summary"),
+        feedback_dim=_feedback_dim_from_run_spec(run_spec),
+        source="feedbax_training_run_spec",
+    )
     objective_payload = {
         "loss_summary": run_spec.get("loss_summary"),
         "loss_objective": run_spec.get("loss_objective"),
         "fidelity_status": run_spec.get("fidelity_status"),
+        DESCRIPTOR_PAYLOAD_KEY: feedback_descriptors,
     }
     method_metadata = {
         "runner": "rlrmp.train.cs_nominal_gru",
@@ -104,6 +120,8 @@ def build_feedbax_training_run_spec(
             metadata={
                 "source": "materialized_runtime_graph",
                 "sidecar_policy": run_spec.get("feedbax_graph", {}),
+                DESCRIPTOR_PAYLOAD_KEY: feedback_descriptors,
+                "descriptor_basis_hash": feedback_descriptors["descriptor_basis_hash"],
             },
         ),
         task=TaskSpec(
@@ -176,6 +194,8 @@ def build_feedbax_training_run_spec(
         metadata={
             "composed_with": RLRMP_RUN_SPEC_PAYLOAD_KEY,
             "serialize_do_not_rederive": True,
+            DESCRIPTOR_PAYLOAD_KEY: feedback_descriptors,
+            "descriptor_basis_hash": feedback_descriptors["descriptor_basis_hash"],
         },
     )
 
@@ -304,7 +324,9 @@ def write_training_run_manifest_for_spec(
         training_spec=training_spec_payload,
         provenance=Provenance(
             source_repo="https://github.com/i-m-mll/rlrmp.git",
-            source_branch=_string_or_none(_mapping(run_spec, "provenance").get("git", {}).get("branch")),
+            source_branch=_string_or_none(
+                _mapping(run_spec, "provenance").get("git", {}).get("branch")
+            ),
             source_commit=_string_or_none(
                 _mapping(run_spec, "provenance").get("git", {}).get("commit")
             ),
@@ -329,6 +351,22 @@ def write_training_run_manifest_for_spec(
 def _mapping(mapping: dict[str, Any], key: str) -> dict[str, Any]:
     value = mapping.get(key)
     return value if isinstance(value, dict) else {}
+
+
+def _feedback_dim_from_run_spec(run_spec: dict[str, Any]) -> int:
+    model_summary = _mapping(run_spec, "model_summary")
+    feedback = model_summary.get("feedback")
+    if isinstance(feedback, dict) and feedback.get("dimension") is not None:
+        return int(feedback["dimension"])
+    hps = run_spec.get("hps")
+    if isinstance(hps, dict):
+        model = hps.get("model")
+        target = hps.get("target_relative_multitarget")
+        if isinstance(model, dict) and model.get("force_filter_feedback") is True:
+            return 6
+        if isinstance(target, dict) and target.get("force_filter_feedback") is True:
+            return 6
+    return 4
 
 
 def _repo_relative(path: Path) -> str:
