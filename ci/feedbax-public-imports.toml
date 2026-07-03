@@ -246,6 +246,23 @@ symbols = [
 ]
 
 [[canonical_homes]]
+module = "feedbax.execution.models"
+symbols = [
+  "ArtifactPolicy",
+  "ExecutionPlan",
+  "ExecutionSpec",
+  "LocalBackendConfig",
+  "ModalBackendConfig",
+  "RepoSource",
+  "RunPodBackendConfig",
+  "TrainingRunSpecSource",
+]
+
+[[canonical_homes]]
+module = "feedbax.execution.planning"
+symbols = ["prepare_execution_plan"]
+
+[[canonical_homes]]
 module = "feedbax.intervene"
 symbols = [
   "AddNoise",
