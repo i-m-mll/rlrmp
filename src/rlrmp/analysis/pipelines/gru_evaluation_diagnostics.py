@@ -85,16 +85,12 @@ def materialize_gru_evaluation_diagnostics(
     jacobian_timepoints: Sequence[str] = DEFAULT_JACOBIAN_TIMEPOINTS,
     write_bulk_arrays: bool = True,
     regeneration_spec_path: Path | None = None,
+    evaluation_manifest_path: Path | None = None,
+    evaluation_states: Mapping[str, Any] | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
     """Write non-certificate rollout/RNN diagnostics for selected GRU checkpoints."""
 
-    runs = resolve_run_inputs(
-        experiment=experiment,
-        run_ids=run_ids,
-        labels=labels,
-        repo_root=repo_root,
-    )
     output_path = output_path or (
         repo_root / "results" / experiment / "notes" / DEFAULT_OUTPUT_FILENAME
     )
@@ -103,117 +99,140 @@ def materialize_gru_evaluation_diagnostics(
     mkdir_p(output_path.parent)
     if write_bulk_arrays:
         mkdir_p(bulk_dir)
-
-    run_summaries: dict[str, Any] = {}
-    for run in runs:
-        evaluation, model = _evaluate_run_rollout_product(
-            run,
+    if evaluation_states is not None:
+        manifest = _manifest_from_evaluation_states(
+            evaluation_states,
             experiment=experiment,
-            n_rollout_trials=n_rollout_trials,
-            use_validation_selected_checkpoints=use_validation_selected_checkpoints,
-            preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
+            run_ids=run_ids,
+            labels=labels,
+            output_path=output_path,
+            bulk_dir=bulk_dir,
+            regeneration_spec_path=regeneration_spec_path,
+            evaluation_manifest_path=evaluation_manifest_path,
             repo_root=repo_root,
         )
-        behavior = summarize_rollout_behavior(evaluation)
-        feedback_scales = summarize_controller_feedback_scales(
-            evaluation,
-            run_id=run.run_id,
-            checkpoint_policy=_effective_checkpoint_policy_from_manifest(
-                experiment,
+        runs = []
+        wrote_regeneration_spec = True
+    else:
+        runs = resolve_run_inputs(
+            experiment=experiment,
+            run_ids=run_ids,
+            labels=labels,
+            repo_root=repo_root,
+        )
+        run_summaries: dict[str, Any] = {}
+        for run in runs:
+            evaluation, model = _evaluate_run_rollout_product(
+                run,
+                experiment=experiment,
+                n_rollout_trials=n_rollout_trials,
+                use_validation_selected_checkpoints=use_validation_selected_checkpoints,
                 preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
                 repo_root=repo_root,
-            ),
-        )
-        gates = summarize_gru_gates(model.nodes["net"].hidden, evaluation)
-        jacobians = summarize_gru_jacobians(
-            model.nodes["net"].hidden,
-            evaluation,
-            timepoint_policy=jacobian_timepoints,
-        )
-        bulk_file = None
-        if write_bulk_arrays:
-            bulk_file = write_bulk_rollout_arrays(
-                evaluation,
-                bulk_dir=bulk_dir,
-                run_id=run.run_id,
-                repo_root=repo_root,
             )
-        checkpoint_policy = _effective_checkpoint_policy_from_manifest(
-            experiment,
-            preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
-            repo_root=repo_root,
-        )
-        run_summaries[run.run_id] = {
-            "label": run.label,
-            "run_spec_path": _repo_relative(run.run_spec_path, repo_root=repo_root),
-            "artifact_dir": _repo_relative(run.artifact_dir, repo_root=repo_root),
-            "checkpoint_policy": checkpoint_policy,
-            "checkpoint_selection": [
-                selection.to_json(repo_root=repo_root)
-                for selection in evaluation.checkpoint_selection
-            ],
-            "n_replicates": int(evaluation.command.shape[0]),
-            "n_rollout_trials_per_replicate": int(evaluation.command.shape[1]),
-            "n_time_steps": int(evaluation.command.shape[2]),
-            "dt_s": evaluation.dt,
-            "definitions": diagnostic_definitions(),
-            "behavior": behavior,
-            "controller_feedback_scales": feedback_scales,
-            "gru_gates": gates,
-            "local_recurrent_jacobians": jacobians,
-            "bulk_arrays": (
-                None
-                if bulk_file is None
-                else {
-                    "path": _repo_relative(bulk_file, repo_root=repo_root),
-                    "format": "np.savez_compressed",
-                    "arrays": [
-                        "position",
-                        "velocity",
-                        "command",
-                        "hidden_norm",
-                        "gru_input",
-                        "target_position",
-                    ],
-                }
-            ),
-        }
-
-    manifest = stamp_current_schema(
-        GRU_EVALUATION_DIAGNOSTICS_KIND,
-        {
-            "issue": experiment,
-            "checkpoint_policy": (
-                _effective_checkpoint_policy_from_manifest(
+            behavior = summarize_rollout_behavior(evaluation)
+            feedback_scales = summarize_controller_feedback_scales(
+                evaluation,
+                run_id=run.run_id,
+                checkpoint_policy=_effective_checkpoint_policy_from_manifest(
                     experiment,
                     preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
                     repo_root=repo_root,
-                )
-                if use_validation_selected_checkpoints
-                else "final_checkpoint"
-            ),
-            "scope": "post_hoc_evaluation_non_certificate_diagnostics",
-            "regeneration_spec": _repo_relative(regeneration_spec_path, repo_root=repo_root),
-            "standard_certificate_metrics": {
-                "status": "excluded",
-                "excluded_metrics": [
-                    "state_weighted_action_mismatch",
-                    "clean_action_mismatch",
-                    "4d_observation_history_to_action_map_mismatch",
-                    "closed_loop_transition_mismatch",
-                    "value_gap",
-                    "bellman_hessian_residual",
-                ],
-                "note": (
-                    "This sidecar records rollout behavior and recurrent-controller "
-                    "diagnostics only. Standard certificate and action/I/O mismatch "
-                    "metrics remain in the standard-certificate manifests."
                 ),
+            )
+            gates = summarize_gru_gates(model.nodes["net"].hidden, evaluation)
+            jacobians = summarize_gru_jacobians(
+                model.nodes["net"].hidden,
+                evaluation,
+                timepoint_policy=jacobian_timepoints,
+            )
+            bulk_file = None
+            if write_bulk_arrays:
+                bulk_file = write_bulk_rollout_arrays(
+                    evaluation,
+                    bulk_dir=bulk_dir,
+                    run_id=run.run_id,
+                    repo_root=repo_root,
+                )
+            checkpoint_policy = _effective_checkpoint_policy_from_manifest(
+                experiment,
+                preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
+                repo_root=repo_root,
+            )
+            run_summaries[run.run_id] = {
+                "label": run.label,
+                "run_spec_path": _repo_relative(run.run_spec_path, repo_root=repo_root),
+                "artifact_dir": _repo_relative(run.artifact_dir, repo_root=repo_root),
+                "checkpoint_policy": checkpoint_policy,
+                "checkpoint_selection": [
+                    selection.to_json(repo_root=repo_root)
+                    for selection in evaluation.checkpoint_selection
+                ],
+                "n_replicates": int(evaluation.command.shape[0]),
+                "n_rollout_trials_per_replicate": int(evaluation.command.shape[1]),
+                "n_time_steps": int(evaluation.command.shape[2]),
+                "dt_s": evaluation.dt,
+                "definitions": diagnostic_definitions(),
+                "behavior": behavior,
+                "controller_feedback_scales": feedback_scales,
+                "gru_gates": gates,
+                "local_recurrent_jacobians": jacobians,
+                "bulk_arrays": (
+                    None
+                    if bulk_file is None
+                    else {
+                        "path": _repo_relative(bulk_file, repo_root=repo_root),
+                        "format": "np.savez_compressed",
+                        "arrays": [
+                            "position",
+                            "velocity",
+                            "command",
+                            "hidden_norm",
+                            "gru_input",
+                            "target_position",
+                        ],
+                    }
+                ),
+            }
+
+        manifest = stamp_current_schema(
+            GRU_EVALUATION_DIAGNOSTICS_KIND,
+            {
+                "issue": experiment,
+                "checkpoint_policy": (
+                    _effective_checkpoint_policy_from_manifest(
+                        experiment,
+                        preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
+                        repo_root=repo_root,
+                    )
+                    if use_validation_selected_checkpoints
+                    else "final_checkpoint"
+                ),
+                "scope": "post_hoc_evaluation_non_certificate_diagnostics",
+                "regeneration_spec": _repo_relative(regeneration_spec_path, repo_root=repo_root),
+                "standard_certificate_metrics": {
+                    "status": "excluded",
+                    "excluded_metrics": [
+                        "state_weighted_action_mismatch",
+                        "clean_action_mismatch",
+                        "4d_observation_history_to_action_map_mismatch",
+                        "closed_loop_transition_mismatch",
+                        "value_gap",
+                        "bellman_hessian_residual",
+                    ],
+                    "note": (
+                        "This sidecar records rollout behavior and recurrent-controller "
+                        "diagnostics only. Standard certificate and action/I/O mismatch "
+                        "metrics remain in the standard-certificate manifests."
+                    ),
+                },
+                "runs": run_summaries,
             },
-            "runs": run_summaries,
-        },
-    )
+        )
+        wrote_regeneration_spec = False
     output_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if wrote_regeneration_spec:
+        return manifest
     write_regeneration_spec(
         spec_path=regeneration_spec_path,
         diagnostic_name="gru_evaluation_diagnostics",
@@ -232,6 +251,11 @@ def materialize_gru_evaluation_diagnostics(
             ),
             "jacobian_timepoints": list(jacobian_timepoints),
             "write_bulk_arrays": write_bulk_arrays,
+            "evaluation_manifest_path": (
+                None
+                if evaluation_manifest_path is None
+                else _repo_relative(evaluation_manifest_path, repo_root=repo_root)
+            ),
         },
         inputs=[{"role": "run_spec", "path": run.run_spec_path} for run in runs]
         + [{"role": "run_artifact_dir", "path": run.artifact_dir} for run in runs]
@@ -251,6 +275,97 @@ def materialize_gru_evaluation_diagnostics(
         notes=[
             "Evaluation diagnostics are non-certificate sidecars.",
             "Bulk rollout arrays may be deleted and regenerated from this spec if checkpoints remain.",
+        ],
+        repo_root=repo_root,
+    )
+    return manifest
+
+
+def _manifest_from_evaluation_states(
+    evaluation_states: Mapping[str, Any],
+    *,
+    experiment: str,
+    run_ids: Sequence[str],
+    labels: Sequence[str] | None,
+    output_path: Path,
+    bulk_dir: Path,
+    regeneration_spec_path: Path,
+    evaluation_manifest_path: Path | None,
+    repo_root: Path,
+) -> dict[str, Any]:
+    """Return the legacy diagnostics manifest from resolved Feedbax evaluation states."""
+
+    legacy_manifest = evaluation_states.get("legacy_diagnostics_manifest")
+    if isinstance(legacy_manifest, Mapping):
+        manifest = dict(legacy_manifest)
+    else:
+        manifest = stamp_current_schema(
+            GRU_EVALUATION_DIAGNOSTICS_KIND,
+            {
+                "issue": experiment,
+                "checkpoint_policy": "evaluation_manifest",
+                "scope": "post_hoc_evaluation_non_certificate_diagnostics",
+                "regeneration_spec": _repo_relative(regeneration_spec_path, repo_root=repo_root),
+                "standard_certificate_metrics": {
+                    "status": "excluded",
+                    "excluded_metrics": [
+                        "state_weighted_action_mismatch",
+                        "clean_action_mismatch",
+                        "4d_observation_history_to_action_map_mismatch",
+                        "closed_loop_transition_mismatch",
+                        "value_gap",
+                        "bellman_hessian_residual",
+                    ],
+                    "note": (
+                        "This sidecar records rollout behavior and recurrent-controller "
+                        "diagnostics only. Standard certificate and action/I/O mismatch "
+                        "metrics remain in the standard-certificate manifests."
+                    ),
+                },
+                "runs": {},
+            },
+        )
+    manifest["evaluation_manifest_dependency"] = {
+        "manifest_id": evaluation_states.get("evaluation_manifest_id"),
+        "evaluation_type": evaluation_states.get("evaluation_type"),
+        "path": (
+            None
+            if evaluation_manifest_path is None
+            else _repo_relative(evaluation_manifest_path, repo_root=repo_root)
+        ),
+        "product_role": evaluation_states.get("product_role"),
+    }
+    write_regeneration_spec(
+        spec_path=regeneration_spec_path,
+        diagnostic_name="gru_evaluation_diagnostics",
+        materializer=(
+            "rlrmp.analysis.pipelines.gru_evaluation_diagnostics."
+            "materialize_gru_evaluation_diagnostics"
+        ),
+        command=None,
+        parameters={
+            "experiment": experiment,
+            "run_ids": list(run_ids),
+            "labels": None if labels is None else list(labels),
+            "evaluation_manifest_path": (
+                None
+                if evaluation_manifest_path is None
+                else _repo_relative(evaluation_manifest_path, repo_root=repo_root)
+            ),
+        },
+        inputs=(
+            []
+            if evaluation_manifest_path is None
+            else [{"role": "evaluation_run_manifest", "path": evaluation_manifest_path}]
+        ),
+        outputs=[
+            {"role": "evaluation_diagnostics_manifest", "path": output_path},
+            {"role": "bulk_rollout_dir", "path": bulk_dir},
+        ],
+        source_files=["src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py"],
+        notes=[
+            "Evaluation diagnostics were emitted from a Feedbax EvaluationRunManifest "
+            "ParentRef resolved by the analysis stage."
         ],
         repo_root=repo_root,
     )

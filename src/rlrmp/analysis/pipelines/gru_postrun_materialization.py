@@ -177,6 +177,8 @@ def materialize_gru_postrun_analysis(
     perturbation_calibration_reach: str | float | None = None,
     write_perturbation_bulk_arrays: bool = False,
     feedback_selection_level: str = "small",
+    evaluation_manifest_path: Path | None = None,
+    evaluation_states: Mapping[str, Any] | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
     """Materialize the standard post-run GRU analysis bundle.
@@ -243,7 +245,12 @@ def materialize_gru_postrun_analysis(
         use_validation_selected_checkpoints=use_validation_selected_checkpoints,
         preferred_checkpoint_manifest_path=effective_checkpoint_manifest_path,
         regeneration_spec_path=_regeneration_spec_path(plan.evaluation_manifest_path),
+        evaluation_manifest_path=evaluation_manifest_path,
+        evaluation_states=evaluation_states,
         repo_root=repo_root,
+    )
+    evaluation_manifest_path = evaluation_manifest_path or (
+        plan.evaluation_manifest_path if evaluation_states is not None else None
     )
 
     figure_summary = materialize_gru_pilot_figures(
@@ -363,6 +370,11 @@ def materialize_gru_postrun_analysis(
             "type": "feedbax_analysis_bundle",
             "bundle": "rlrmp/gru_postrun",
             "legacy_regeneration_spec": "compatibility_only",
+            "evaluation_manifest_dependency": (
+                None
+                if evaluation_manifest_path is None
+                else _repo_relative(evaluation_manifest_path, repo_root=repo_root)
+            ),
         },
         "plan": plan.to_json(repo_root=repo_root),
         "regeneration_specs": regeneration_specs,
@@ -405,6 +417,11 @@ def materialize_gru_postrun_analysis(
                 plan.evaluation_manifest_path,
                 repo_root=repo_root,
             ),
+            "evaluation_run_manifest": (
+                None
+                if evaluation_manifest_path is None
+                else _repo_relative(evaluation_manifest_path, repo_root=repo_root)
+            ),
             "evaluation_bulk_dir": _repo_relative(plan.evaluation_bulk_dir, repo_root=repo_root),
             "figure_output_dir": _repo_relative(plan.figure_output_dir, repo_root=repo_root),
             "figure_summary": _repo_relative(
@@ -421,6 +438,9 @@ def materialize_gru_postrun_analysis(
         "summaries": {
             "standard_certificate": standard_result.get("summary", {}),
             "evaluation_diagnostics_schema": evaluation_manifest.get("schema_version"),
+            "evaluation_manifest_dependency": evaluation_manifest.get(
+                "evaluation_manifest_dependency"
+            ),
             "figure_summary_keys": sorted(figure_summary.keys()),
         },
     }
@@ -445,6 +465,7 @@ def materialize_gru_postrun_analysis(
         perturbation_calibration_reach=perturbation_calibration_reach,
         write_perturbation_bulk_arrays=write_perturbation_bulk_arrays,
         feedback_selection_level=feedback_selection_level,
+        evaluation_manifest_path=evaluation_manifest_path,
         repo_root=repo_root,
     )
     return manifest
@@ -600,11 +621,17 @@ def _write_postrun_auxiliary_regeneration_specs(
     perturbation_calibration_reach: str | float | None,
     write_perturbation_bulk_arrays: bool,
     feedback_selection_level: str,
+    evaluation_manifest_path: Path | None,
     repo_root: Path,
 ) -> None:
     """Write postrun-owned specs for optional hooks without native spec support."""
 
     run_inputs = _run_input_refs(plan.experiment, run_ids, repo_root=repo_root)
+    evaluation_inputs = (
+        []
+        if evaluation_manifest_path is None
+        else [{"role": "evaluation_run_manifest", "path": evaluation_manifest_path}]
+    )
     checkpoint_inputs = (
         []
         if effective_checkpoint_manifest_path is None
@@ -654,6 +681,7 @@ def _write_postrun_auxiliary_regeneration_specs(
                 "use_validation_selected_checkpoints": use_validation_selected_checkpoints,
             },
             inputs=run_inputs
+            + evaluation_inputs
             + checkpoint_inputs
             + [{"role": "standard_certificate_manifest", "path": plan.standard_manifest_path}],
             outputs=[
@@ -682,6 +710,7 @@ def _write_postrun_auxiliary_regeneration_specs(
                 "use_validation_selected_checkpoints": use_validation_selected_checkpoints,
             },
             inputs=run_inputs
+            + evaluation_inputs
             + checkpoint_inputs
             + [{"role": "standard_certificate_manifest", "path": plan.standard_manifest_path}],
             outputs=[
@@ -720,7 +749,7 @@ def _write_postrun_auxiliary_regeneration_specs(
                 else _repo_relative(effective_checkpoint_manifest_path, repo_root=repo_root)
             ),
         },
-        inputs=run_inputs + checkpoint_inputs,
+        inputs=run_inputs + evaluation_inputs + checkpoint_inputs,
         outputs=[
             {"role": "postrun_manifest", "path": plan.postrun_manifest_path},
             {"role": "standard_certificate_manifest", "path": plan.standard_manifest_path},

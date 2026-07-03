@@ -100,6 +100,8 @@ def center_out_ensemble_recipe(
             "seed": params.get("seed"),
             "trajectories": params.get("trajectories", []),
             "kinematics_summary": params.get("kinematics_summary", {}),
+            "legacy_diagnostics_manifest": params.get("legacy_diagnostics_manifest"),
+            "legacy_bulk_arrays": params.get("legacy_bulk_arrays", {}),
         },
     )
 
