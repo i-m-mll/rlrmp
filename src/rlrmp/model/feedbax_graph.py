@@ -1229,7 +1229,11 @@ def graph_spec_from_model(
 
     from feedbax.contracts.graphs.serialization import graph_to_spec
 
-    if n_replicates is not None and n_replicates > 1:
+    if n_replicates is not None and n_replicates >= 1:
+        # Single-replicate ensembles still carry a leading replicate axis (size
+        # 1); extract the representative replicate for n_replicates == 1 too, so
+        # channel input_proto shapes lose the spurious singleton leading dim and
+        # match the re-materialization prototype inference (74af1ef).
         model = _representative_runtime_graph(
             model,
             n_replicates=n_replicates,
