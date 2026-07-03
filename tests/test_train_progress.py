@@ -134,7 +134,7 @@ class TestMakeBatchLogCallbacks:
         assert any("elapsed=" in m for m in lines)
 
     def test_train_phase_callbacks_emit_lines(self, caplog) -> None:
-        """The ``train`` phase used by train_part2_5.py emits BATCH lines."""
+        """The historical ``train`` phase label emits BATCH lines."""
         log = logging.getLogger("test_progress_train")
         callbacks = make_batch_log_callbacks("train", 5, logger=log)
         with caplog.at_level(logging.INFO, logger="test_progress_train"):
@@ -148,14 +148,7 @@ class TestMakeBatchLogCallbacks:
 
 
 class TestTrainScriptWiring:
-    """Both training entry-points wire the zero-arg BATCH-progress callbacks.
-
-    FIX D / W5: ``train_part2_5.py`` must wire ``make_batch_log_callbacks`` into
-    its ``train_pair`` call, the same host-side pattern ``train_minimax.py``
-    already uses for its warmup phase — so neither path goes dark between the
-    JIT message and the completion sentinel, and no new per-step device->host
-    sync is introduced.
-    """
+    """The live training entry-point wires zero-arg BATCH-progress callbacks."""
 
     def test_minimax_imports_progress_helper(self) -> None:
         module = _load_script_module(
@@ -163,18 +156,3 @@ class TestTrainScriptWiring:
             REPO_ROOT / "scripts" / "train_minimax.py",
         )
         assert hasattr(module, "make_batch_log_callbacks")
-
-    def test_part2_5_imports_progress_helper(self) -> None:
-        module = _load_script_module(
-            "train_part2_5_progress_wiring",
-            REPO_ROOT / "scripts" / "train_part2_5.py",
-        )
-        assert hasattr(module, "make_batch_log_callbacks")
-
-    def test_part2_5_run_training_wires_batch_callbacks(self) -> None:
-        """``run_training`` references the BATCH-progress helper + callbacks kwarg."""
-        source = (REPO_ROOT / "scripts" / "train_part2_5.py").read_text(
-            encoding="utf-8"
-        )
-        assert "make_batch_log_callbacks(" in source
-        assert "batch_callbacks" in source

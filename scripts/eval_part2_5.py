@@ -12,15 +12,11 @@ Usage:
 import argparse
 import json
 import logging
-from functools import partial
 from pathlib import Path
-from typing import Optional
 
-import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
-import jax.tree as jt
 import numpy as np
 from jax_cookbook import load_with_hyperparameters
 from feedbax.plot.io import save_figure_with_spec
@@ -294,7 +290,7 @@ def run_evaluation(args: argparse.Namespace) -> None:
 
     # Reconstruct hyperparameters and task-model pair skeleton
     # We need the skeleton to deserialize the model
-    from scripts.train_part2_5 import build_hps
+    from rlrmp.train.standard import build_hps
     hps_args = argparse.Namespace(**config)
     hps = build_hps(hps_args)
 
