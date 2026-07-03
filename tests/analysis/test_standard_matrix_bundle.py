@@ -39,7 +39,7 @@ from rlrmp.analysis.matrix.standard_matrix import _notes_path
 from rlrmp.paths import REPO_ROOT
 
 
-TOY_EVALUATION_TYPE = "rlrmp_test_standard_matrix_eval"
+TOY_EVALUATION_TYPE = "rlrmp_test.standard_matrix_eval"
 
 
 class TinyMatrixAnalysis(AbstractAnalysis):

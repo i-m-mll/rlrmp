@@ -70,7 +70,7 @@ def register_rlrmp_evaluation_recipes(*, replace: bool = True) -> None:
 
 def center_out_ensemble_recipe(
     run_spec: EvaluationRunSpec,
-    _root: Path,
+    root: Path,
     _states_path: Path,
 ) -> EvaluationRecipeResult:
     """Evaluate the shared center-out/delayed-reach ensemble recipe contract."""
@@ -102,6 +102,11 @@ def center_out_ensemble_recipe(
             "kinematics_summary": params.get("kinematics_summary", {}),
             "legacy_diagnostics_manifest": params.get("legacy_diagnostics_manifest"),
             "legacy_bulk_arrays": params.get("legacy_bulk_arrays", {}),
+            "gru_standard_certificate": _gru_standard_certificate_payload(
+                run_spec,
+                params,
+                root=root,
+            ),
         },
     )
 
@@ -244,6 +249,7 @@ def _result(
         summary_metrics=summary_metrics,
         metadata={
             "rlrmp_evaluation_recipe": run_spec.evaluation_type,
+            "states_schema": f"{run_spec.evaluation_type}.states.v1",
             "product_role": product_role,
             "params_schema_id": params.get("schema_id"),
             "params_schema_version": params.get("schema_version"),
@@ -268,6 +274,66 @@ def _parent_refs(run_spec: EvaluationRunSpec) -> list[dict[str, Any]]:
         if all(existing.id != ref.id or existing.kind != ref.kind for existing in refs):
             refs.append(ref)
     return [ref.model_dump(mode="json", exclude_none=True) for ref in refs]
+
+
+def _gru_standard_certificate_payload(
+    run_spec: EvaluationRunSpec,
+    params: Mapping[str, Any],
+    *,
+    root: Path,
+) -> Mapping[str, Any]:
+    request = params.get("gru_standard_certificate")
+    if not isinstance(request, Mapping):
+        return {}
+    mode = request.get("mode", "precomputed")
+    if mode == "precomputed":
+        return dict(request)
+    if mode != "evaluate_clean_actions":
+        raise ValueError(
+            "gru_standard_certificate.mode must be 'precomputed' or "
+            f"'evaluate_clean_actions', got {mode!r}"
+        )
+
+    from rlrmp.analysis.pipelines.cs_gru_standard_materialization import (
+        evaluate_gru_clean_actions,
+    )
+    from rlrmp.paths import REPO_ROOT
+    from rlrmp.runtime.run_specs import resolve_run_record
+
+    repo_root = Path(request.get("repo_root", root if root is not None else REPO_ROOT))
+    experiment = str(request["experiment"])
+    run_ids = tuple(str(run_id) for run_id in request.get("run_ids", run_spec.training_run_ids))
+    runs = {}
+    for run_id in run_ids:
+        run_record = resolve_run_record(experiment, run_id, repo_root=repo_root)
+        actions, response_maps, metadata = evaluate_gru_clean_actions(
+            run_id,
+            run_spec=run_record,
+            experiment=experiment,
+            use_validation_selected_checkpoints=bool(
+                request.get("use_validation_selected_checkpoints", False)
+            ),
+            preferred_checkpoint_manifest_path=(
+                None
+                if request.get("preferred_checkpoint_manifest_path") is None
+                else Path(str(request["preferred_checkpoint_manifest_path"]))
+            ),
+            repo_root=repo_root,
+        )
+        covariance = metadata.pop("_observation_history_covariance_array", None)
+        runs[run_id] = {
+            "run_spec": run_record,
+            "candidate_actions": actions,
+            "candidate_observation_to_action_map": response_maps,
+            "observation_history_covariance": covariance,
+            "evaluation_metadata": metadata,
+        }
+    return {
+        "mode": mode,
+        "experiment": experiment,
+        "run_ids": list(run_ids),
+        "runs": runs,
+    }
 
 
 def _consumed_data_identities(params: Mapping[str, Any]) -> list[dict[str, Any]]:

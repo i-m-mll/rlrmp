@@ -60,7 +60,8 @@ def test_declarative_recipes_use_feedbax_context_materializers() -> None:
         (),
     )
 
-    assert isinstance(standard.analyses["gru_standard_certificate"], ContextMaterializer)
+    assert isinstance(standard.analyses["gru_standard_certificate"], AbstractAnalysis)
+    assert not isinstance(standard.analyses["gru_standard_certificate"], ContextMaterializer)
     assert isinstance(evaluation.analyses["gru_evaluation_diagnostics"], AbstractAnalysis)
     assert not isinstance(evaluation.analyses["gru_evaluation_diagnostics"], ContextMaterializer)
     feedback_quality = dm.feedback_quality_lens_recipe(
@@ -73,9 +74,18 @@ def test_declarative_recipes_use_feedbax_context_materializers() -> None:
     )
     assert isinstance(
         rollout_recovery.analyses["output_feedback_rollout_recovery"],
+        AbstractAnalysis,
+    )
+    assert not isinstance(
+        rollout_recovery.analyses["output_feedback_rollout_recovery"],
         ContextMaterializer,
     )
-    assert isinstance(feedback_quality.analyses["feedback_quality_lens"], ContextMaterializer)
+    assert isinstance(feedback_quality.analyses["feedback_quality_lens"], AbstractAnalysis)
+    assert not isinstance(feedback_quality.analyses["feedback_quality_lens"], ContextMaterializer)
+    assert isinstance(
+        feedback_quality.analyses["evaluation_diagnostics"],
+        AbstractAnalysis,
+    )
 
 
 def test_output_feedback_bridge_bundle_resource_loads() -> None:
@@ -330,6 +340,90 @@ def test_gru_standard_recipe_records_opaque_certificate_payload(
         assert payload["declarative_analysis"]["schema_owner"] == "rlrmp"
         assert legacy_manifest.exists()
         assert load_manifest(path).id == manifest.id
+    finally:
+        _unregister_declarative_recipes()
+
+
+def test_gru_standard_recipe_consumes_evaluation_manifest_parent_ref(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = ExperimentRegistry()
+    rlrmp.register_experiment_package(registry)
+    eval_spec = EvaluationRunSpec(
+        evaluation_type=CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,
+        training_run_ids=["unit_run"],
+        inputs=[
+            ParentRef(
+                kind="TrainingRunManifest",
+                id="unit_run",
+                role="training_run",
+                metadata={"rlrmp_experiment": "unitexp"},
+            )
+        ],
+        params=stamp_current_schema(
+            CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND,
+            {
+                "task": "center_out",
+                "gru_standard_certificate": {
+                    "mode": "precomputed",
+                    "runs": {
+                        "unit_run": {
+                            "candidate_actions": [[[0.0, 0.0]]],
+                            "evaluation_metadata": {"status": "fixture"},
+                        }
+                    },
+                },
+            },
+        ),
+    )
+    eval_manifest, eval_manifest_path = execute_evaluation_run_spec(
+        eval_spec,
+        root=tmp_path,
+        force=True,
+    )
+
+    def fake_materialize_from_states(evaluation_states, **kwargs):
+        return {
+            "format": "rlrmp.cs_gru_standard_certificates.v1",
+            "issue": kwargs["materializer_issue_id"],
+            "source_issue": kwargs["experiment"],
+            "rows": [],
+            "summary": {
+                "n_rows": 0,
+                "source_eval_manifest": evaluation_states["evaluation_manifest_id"],
+            },
+            "failure_decomposition": {"rows": []},
+        }
+
+    monkeypatch.setattr(
+        dm,
+        "materialize_gru_standard_result_from_evaluation_states",
+        fake_materialize_from_states,
+    )
+    dm.register_certificate_analysis_recipes(replace=True)
+    try:
+        spec = dm.gru_standard_certificate_spec(
+            run_ids=["unit_run"],
+            experiment="unitexp",
+            materializer_issue_id="103db99",
+            evaluation_manifest_id=eval_manifest.id,
+            evaluation_manifest_uri=eval_manifest_path,
+            repo_root=tmp_path / "repo",
+        )
+
+        analysis_manifest, _path = execute_analysis_run_spec(spec, root=tmp_path)
+
+        payload_ref = next(
+            artifact
+            for artifact in analysis_manifest.artifacts
+            if artifact.role == "rlrmp-bridge-standard-certificate"
+        )
+        payload = json.loads(Path(payload_ref.uri).read_text(encoding="utf-8"))
+        assert payload["summary"]["source_eval_manifest"] == eval_manifest.id
+        assert payload["evaluation_manifest_dependency"]["manifest_id"] == eval_manifest.id
+        assert analysis_manifest.inputs[0].kind == "EvaluationRunManifest"
+        assert analysis_manifest.provenance.parents[0].id == eval_manifest.id
     finally:
         _unregister_declarative_recipes()
 
