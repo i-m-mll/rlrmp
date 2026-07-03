@@ -476,47 +476,6 @@ def manifest_matches(
     return manifest.id.endswith(run_label)
 
 
-def comparable_training_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
-    comparable = {
-        key: run_spec.get(key)
-        for key in ("run", "issue", "training_summary", "loss_objective")
-        if key in run_spec
-    }
-    if not comparable and "training_summary" in run_spec:
-        comparable["training_summary"] = run_spec["training_summary"]
-    return comparable
-
-
-def check_inline_manifest_parity(manifest: TrainingRunManifest, run_spec: dict[str, Any]) -> None:
-    inline = manifest.training_spec.inline if manifest.training_spec is not None else None
-    if not inline:
-        return
-    comparable = comparable_training_spec(run_spec)
-    for key, value in comparable.items():
-        if key in inline and inline[key] != value:
-            die(
-                "Feedbax TrainingRunManifest parity failed: "
-                f"training_spec.inline.{key}={inline[key]!r} does not match run spec {value!r}"
-            )
-
-
-def update_manifest_hashes(
-    manifest_path: Path,
-    *,
-    actual_sha: str,
-    actual_size: int,
-    rel_spec_path: str,
-) -> None:
-    payload = load_json(manifest_path)
-    for artifact in payload.get("artifacts", []):
-        if not isinstance(artifact, dict):
-            continue
-        if artifact.get("role") == "tracked_run_spec" and artifact.get("uri") == rel_spec_path:
-            artifact["sha256"] = actual_sha
-            artifact["size_bytes"] = actual_size
-    write_json(manifest_path, payload)
-
-
 def parity_check(
     *,
     repo_root: Path,
@@ -525,21 +484,25 @@ def parity_check(
     manifest_root: Path,
     issue: str,
     run_label: str,
-    update_hashes: bool,
 ) -> str:
     rel_spec_path = rel(spec_path, repo_root)
     manifest_paths = iter_training_manifests(manifest_root, artifact_dir)
-    matches_by_id: dict[str, tuple[Path, TrainingRunManifest]] = {}
+    matches_by_id: dict[str, tuple[Path, TrainingRunManifest, dict[str, Any]]] = {}
     for path in manifest_paths:
         manifest = load_manifest(path)
         if not isinstance(manifest, TrainingRunManifest):
             continue
         if manifest_matches(manifest, rel_spec_path=rel_spec_path, run_label=run_label):
             previous = matches_by_id.get(manifest.id)
-            if previous is None or str(path).startswith(str(manifest_root)):
-                matches_by_id[manifest.id] = (path, manifest)
+            dumped = manifest.model_dump(mode="json", exclude_none=True)
+            if previous is not None and previous[2] != dumped:
+                die(
+                    "Feedbax TrainingRunManifest parity failed: same manifest id has "
+                    f"different content for {rel_spec_path}: {previous[0]} and {path}"
+                )
+            matches_by_id[manifest.id] = (path, manifest, dumped)
 
-    matches = list(matches_by_id.values())
+    matches = [(path, manifest) for path, manifest, _dumped in matches_by_id.values()]
     if not matches:
         return "not_found"
     if len(matches) > 1:
@@ -549,13 +512,14 @@ def parity_check(
         )
 
     manifest_path, manifest = matches[0]
+    if not _is_new_format_manifest(manifest):
+        return "archive-only"
     if issue not in manifest.provenance.issues:
         print(
             "warning: matching Feedbax TrainingRunManifest does not list "
             f"issue {issue} in provenance.issues",
             file=sys.stderr,
         )
-    check_inline_manifest_parity(manifest, load_json(spec_path))
 
     actual_sha = sha256_file(spec_path)
     expected_hashes: list[tuple[str, str | None]] = []
@@ -564,20 +528,17 @@ def parity_check(
             expected_hashes.append(("tracked_run_spec.sha256", artifact.sha256))
 
     for label, expected in expected_hashes:
-        if expected is not None and expected != actual_sha and not update_hashes:
+        if expected is not None and expected != actual_sha:
             die(
                 "Feedbax TrainingRunManifest parity failed: "
                 f"{label}={expected} does not match {rel_spec_path} sha256={actual_sha}"
             )
 
-    if update_hashes:
-        update_manifest_hashes(
-            manifest_path,
-            actual_sha=actual_sha,
-            actual_size=spec_path.stat().st_size,
-            rel_spec_path=rel_spec_path,
-        )
     return str(manifest_path)
+
+
+def _is_new_format_manifest(manifest: TrainingRunManifest) -> bool:
+    return manifest.training_spec is not None and bool(manifest.training_spec.ref)
 
 
 def print_stamp_summary(stamp: dict[str, Any], parity: str | None) -> None:
@@ -642,7 +603,6 @@ def main() -> None:
         manifest_root=manifest_root,
         issue=issue,
         run_label=run_label,
-        update_hashes=False,
     )
     run_spec["post_run_provenance"] = stamp
     write_json(spec_path, run_spec)
@@ -653,7 +613,6 @@ def main() -> None:
         manifest_root=manifest_root,
         issue=issue,
         run_label=run_label,
-        update_hashes=True,
     )
     parity = parity_after_stamp if parity_before_stamp == parity_after_stamp else (
         f"pre-stamp {parity_before_stamp}; stamped {parity_after_stamp}"
