@@ -445,9 +445,7 @@ def _load_adversarial_checkpoint(
                 adv_opt_states_template=adv_opt_states_template,
                 ctrl_opt_state_template=ctrl_opt_state_template,
             ),
-            expected_population_member_ids=_adversary_population_member_ids(
-                adversaries_template
-            ),
+            expected_population_member_ids=_adversary_population_member_ids(adversaries_template),
         )
         slots = loaded.slots
         try:
@@ -476,8 +474,7 @@ def _load_adversarial_checkpoint(
             )
         except Exception as exc:
             raise CheckpointCompatibilityError(
-                "minimax checkpoint PyTree slot could not be deserialized with "
-                "the resume template"
+                "minimax checkpoint PyTree slot could not be deserialized with the resume template"
             ) from exc
         if len(adversaries) != len(adversaries_template):
             raise CheckpointCompatibilityError(
@@ -570,6 +567,55 @@ def _write_warmup_boundary_checkpoint(
     )
 
 
+def _write_final_minimax_custody_transaction(
+    checkpoint_dir: Path,
+    *,
+    training_spec: TrainingRunSpec,
+    model,
+    adversaries: list,
+    adv_opt_states: list,
+    ctrl_opt_state,
+    rng_key,
+    batch_idx: int,
+    adv_losses: list,
+    ctrl_losses: list,
+    adv_indices: list,
+    warmup_history=None,
+) -> None:
+    """Write the terminal (``status="final"``) minimax custody transaction.
+
+    This is the content-addressed durable authority for the run's final
+    outputs — the trained controller, adversary population, loss curves, and
+    warmup history — published through the feedbax custody latest-pointer run
+    record. The ``output_dir`` ``.eqx`` / ``.npz`` files written alongside are
+    compatibility materializations, not the durable record. Issue 7e71950.
+    """
+    active_member_index = adv_indices[-1] if adv_indices else -1
+    write_minimax_checkpoint_transaction(
+        checkpoint_dir,
+        training_spec=training_spec,
+        barrier_name=MINIMAX_ADVERSARIAL_BARRIER,
+        batch_idx=batch_idx,
+        active_member_index=active_member_index,
+        slots=_minimax_checkpoint_slots(
+            model=model,
+            adversaries=adversaries,
+            adv_opt_states=adv_opt_states,
+            ctrl_opt_state=ctrl_opt_state,
+            rng_key=rng_key,
+            batch_idx=batch_idx,
+            active_member_index=active_member_index,
+            adv_losses=adv_losses,
+            ctrl_losses=ctrl_losses,
+            adv_indices=adv_indices,
+            training_spec=training_spec,
+            warmup_history=warmup_history,
+        ),
+        population_member_ids=_adversary_population_member_ids(adversaries),
+        status="final",
+    )
+
+
 def _minimax_checkpoint_slots(
     *,
     model,
@@ -588,9 +634,7 @@ def _minimax_checkpoint_slots(
     slots: dict[str, object] = {
         "controller": serialize_pytree_slot(model),
         "controller_optimizer": serialize_pytree_slot(ctrl_opt_state),
-        "adversary_population": [
-            serialize_pytree_slot(adversary) for adversary in adversaries
-        ],
+        "adversary_population": [serialize_pytree_slot(adversary) for adversary in adversaries],
         "adversary_optimizer": serialize_pytree_slot(adv_opt_states),
         "rng": jnp.asarray(rng_key, dtype=jnp.uint32),
         "active_batch_index": jnp.asarray(batch_idx, dtype=jnp.int32),
@@ -726,8 +770,7 @@ def _with_declarative_component_parameter_inputs(model, inputs):
     target = LINEAR_DYNAMICS_ADVERSARY_COMPONENT_PARAMETER_TARGET
     legacy_key = f"intervene:{target['task_parameter_label']}"
     declared_key = (
-        f"task:{target['source_data_id']}->"
-        f"{target['target_node_id']}.{target['target_port']}"
+        f"task:{target['source_data_id']}->{target['target_node_id']}.{target['target_port']}"
     )
     if (
         isinstance(inputs, dict)
@@ -952,8 +995,14 @@ def run_training(training_run_spec) -> None:
         except Exception:
             logger.warning("Could not enable checkpoint on model — flag has no effect")
 
-    # Save warm-started model (skip if we loaded it from this path via --resume)
-    fbx_save(warmup_model_path, warmup_model, hyperparameters=config_dict)
+    # Save warm-started model as a compatibility materialization (skip if we
+    # loaded it from this path via --resume). The durable authority for the
+    # warm-start controller is the after_warmup custody transaction written
+    # below; this output_dir file is a convenience for downstream loaders and is
+    # atomically staged (tmp-rooted → guard-classified ephemeral). Issue 7e71950.
+    tmp_warmup_model_path = warmup_model_path.with_name("tmp_" + warmup_model_path.name)
+    fbx_save(tmp_warmup_model_path, warmup_model, hyperparameters=config_dict)
+    os.replace(tmp_warmup_model_path, warmup_model_path)
     logger.info("Saved warm-start model to %s", warmup_model_path)
 
     use_linear_dynamics = args.adversary_type == "linear_dynamics"
@@ -1683,9 +1732,7 @@ def run_training(training_run_spec) -> None:
         # loss scalars already synced to host above (no extra device->host
         # sync). `loss` reports the controller loss; `adv_loss` is appended as
         # an extra field.
-        if should_log_batch(
-            batch_idx, args.n_adversary_batches, every=batch_log_step
-        ):
+        if should_log_batch(batch_idx, args.n_adversary_batches, every=batch_log_step):
             logger.info(
                 format_batch_line(
                     "adversarial",
@@ -1748,6 +1795,30 @@ def run_training(training_run_spec) -> None:
     # -----------------------------------------------------------------------
     # Save outputs
     # -----------------------------------------------------------------------
+    # Durable authority: one terminal (status="final") custody transaction that
+    # content-addresses the run's final controller, adversary population, loss
+    # curves, and warmup history, published through the feedbax custody
+    # latest-pointer run record. The output_dir .eqx/.npz files written below
+    # are compatibility materializations for downstream loaders — atomically
+    # staged (tmp-rooted → guard-classified ephemeral), no longer the durable
+    # record. Issue 7e71950.
+    final_controller = adv_model if args.n_adversary_batches > 0 else warmup_model
+    _write_final_minimax_custody_transaction(
+        adv_checkpoint_dir,
+        training_spec=feedbax_spec,
+        model=final_controller,
+        adversaries=adversaries,
+        adv_opt_states=adv_opt_states,
+        ctrl_opt_state=ctrl_opt_state,
+        rng_key=key_adv,
+        batch_idx=args.n_adversary_batches - 1,
+        adv_losses=adv_losses,
+        ctrl_losses=ctrl_losses,
+        adv_indices=adv_indices,
+        warmup_history=warmup_history,
+    )
+    logger.info("Wrote terminal minimax custody transaction under %s", adv_checkpoint_dir)
+
     # Final adversarially-trained model (ensembled: arrays have leading n_reps axis).
     # Bug: a517040 — skip when n_adversary_batches=0: the adversarial phase did not
     # run, and the saved PyTree's adversary state does not match the local skeleton
@@ -1755,7 +1826,9 @@ def run_training(training_run_spec) -> None:
     # Downstream loaders fall back to `warmup_model.eqx` (the correct final model).
     if args.n_adversary_batches > 0:
         final_model_path = output_dir / "adversarial_model.eqx"
-        fbx_save(final_model_path, adv_model, hyperparameters=config_dict)
+        tmp_final_model_path = final_model_path.with_name("tmp_" + final_model_path.name)
+        fbx_save(tmp_final_model_path, adv_model, hyperparameters=config_dict)
+        os.replace(tmp_final_model_path, final_model_path)
         logger.info("Saved adversarial model (n_reps=%d ensembled) to %s", n_reps, final_model_path)
     else:
         logger.info(
@@ -1765,26 +1838,45 @@ def run_training(training_run_spec) -> None:
 
     # Training histories (warmup from TaskTrainer; adversarial phase as numpy arrays)
     if warmup_history is not None:
-        fbx_save(output_dir / "warmup_history.eqx", warmup_history)
+        warmup_history_path = output_dir / "warmup_history.eqx"
+        tmp_warmup_history_path = warmup_history_path.with_name("tmp_" + warmup_history_path.name)
+        fbx_save(tmp_warmup_history_path, warmup_history)
+        os.replace(tmp_warmup_history_path, warmup_history_path)
     loss_data = {
         "ctrl_losses": np.array(ctrl_losses),
         "adv_losses": np.array(adv_losses),
         "adv_indices": np.array(adv_indices),
     }
-    np.savez(output_dir / "adversarial_losses.npz", **loss_data)
-    logger.info("Saved adversarial loss curves to %s", output_dir / "adversarial_losses.npz")
+    adversarial_losses_path = output_dir / "adversarial_losses.npz"
+    tmp_adversarial_losses_path = adversarial_losses_path.with_name(
+        "tmp_" + adversarial_losses_path.name
+    )
+    np.savez(tmp_adversarial_losses_path, **loss_data)
+    os.replace(tmp_adversarial_losses_path, adversarial_losses_path)
+    logger.info("Saved adversarial loss curves to %s", adversarial_losses_path)
 
-    # Final adversary/adversaries (each is vmapped across n_reps replicates)
+    # Final adversary/adversaries (each is vmapped across n_reps replicates). The
+    # single- vs multi-adversary if/else and the force-profile vs ΔA log dispatch
+    # are the conditional emitter structure the write-surface branch matrix
+    # captures; keep both legs materializing so a single toy run cannot certify
+    # the whole surface.
     log_fn = (
         _log_linear_dynamics_adversary if use_linear_dynamics else _log_adversary_force_profiles
     )
     if n_adversaries == 1:
-        # Single adversary population: save with original filename for backward compat
-        fbx_save(output_dir / "trained_adversary.eqx", adversaries[0])
+        # Single adversary population: materialize with original filename for
+        # backward compat (the adversary is content-addressed in the terminal
+        # custody transaction above).
+        trained_adversary_path = output_dir / "trained_adversary.eqx"
+        tmp_trained_adversary_path = trained_adversary_path.with_name(
+            "tmp_" + trained_adversary_path.name
+        )
+        fbx_save(tmp_trained_adversary_path, adversaries[0])
+        os.replace(tmp_trained_adversary_path, trained_adversary_path)
         logger.info(
             "Saved trained adversary (n_reps=%d) to %s",
             n_reps,
-            output_dir / "trained_adversary.eqx",
+            trained_adversary_path,
         )
         log_fn(adversaries[0], output_dir, n_reps=n_reps)
     else:
@@ -1792,7 +1884,9 @@ def run_training(training_run_spec) -> None:
         adv_dir.mkdir(parents=True, exist_ok=True)
         for i, adv in enumerate(adversaries):
             adv_path = adv_dir / f"adversary_{i}.eqx"
-            fbx_save(adv_path, adv)
+            tmp_adv_path = adv_path.with_name("tmp_" + adv_path.name)
+            fbx_save(tmp_adv_path, adv)
+            os.replace(tmp_adv_path, adv_path)
             logger.info("Saved adversary %d to %s", i, adv_path)
             log_fn(adv, output_dir, suffix=f"_adv{i}", n_reps=n_reps)
         logger.info("Saved %d adversaries (each n_reps=%d) to %s", n_adversaries, n_reps, adv_dir)
@@ -1830,9 +1924,15 @@ def _log_adversary_force_profiles(
         n_reps,
     )
 
+    # Derived diagnostic materialization; the source adversary is
+    # content-addressed in the terminal custody transaction. Atomically staged
+    # (tmp-rooted → guard-classified ephemeral). Issue 7e71950.
     filename = f"adversary_force_profiles{suffix}.npz"
-    np.savez(output_dir / filename, forces=forces_np)
-    logger.info("Saved adversary force profiles to %s", output_dir / filename)
+    force_profiles_path = output_dir / filename
+    tmp_force_profiles_path = force_profiles_path.with_name("tmp_" + force_profiles_path.name)
+    np.savez(tmp_force_profiles_path, forces=forces_np)
+    os.replace(tmp_force_profiles_path, force_profiles_path)
+    logger.info("Saved adversary force profiles to %s", force_profiles_path)
 
 
 def _log_linear_dynamics_adversary(
@@ -1863,9 +1963,15 @@ def _log_linear_dynamics_adversary(
         norms.std(),
         n_reps,
     )
+    # Derived diagnostic materialization; the source adversary is
+    # content-addressed in the terminal custody transaction. Atomically staged
+    # (tmp-rooted → guard-classified ephemeral). Issue 7e71950.
     filename = f"adversary_delta_A{suffix}.npz"
-    np.savez(output_dir / filename, delta_A=deltas_np)
-    logger.info("Saved adversary ΔA matrices to %s", output_dir / filename)
+    delta_A_path = output_dir / filename
+    tmp_delta_A_path = delta_A_path.with_name("tmp_" + delta_A_path.name)
+    np.savez(tmp_delta_A_path, delta_A=deltas_np)
+    os.replace(tmp_delta_A_path, delta_A_path)
+    logger.info("Saved adversary ΔA matrices to %s", delta_A_path)
 
 
 # ---------------------------------------------------------------------------

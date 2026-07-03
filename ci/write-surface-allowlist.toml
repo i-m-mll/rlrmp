@@ -48,18 +48,20 @@
 #   materialized_checkpoint -- legacy materialized resume-copy dir written
 #                             alongside the custody transaction.
 #
-# KNOWN FINDINGS (documented, not silently relied against)
-# --------------------------------------------------------
+# RESOLVED FINDINGS (documented, not silently relied against)
+# -----------------------------------------------------------
 # The minimax final-output emitters (warmup_model / adversarial_model /
-# trained_adversary / *_losses / adversary logs) are raw `fbx_save` / `np.savez`
-# writes to `output_dir`, NOT routed through the single feedbax custody writer
-# and NOT manifest-addressed at write time. This is the anticipated standing
-# state on the minimax path (the issue names "a raw warmup_model.eqx write on
-# the minimax path" as exactly the emitter this regression must keep visible).
-# The native TrainingRunManifest emitter addresses these post-hoc; collapsing
-# them onto the single custody writer is follow-on production work, not this
-# terminal audit child. Pinning them here makes the surface deny-by-default and
-# prevents silent growth. See results/f5d9695/notes/lineage_audit.md.
+# trained_adversary / *_losses / adversary logs) were formerly raw `fbx_save` /
+# `np.savez` writes to `output_dir`, NOT routed through the single feedbax
+# custody writer. Issue 7e71950 (follow-on to the f5d9695 terminal audit)
+# collapsed them onto the terminal custody transaction
+# (`_write_final_minimax_custody_transaction`, status="final"): the final
+# controller, adversary population, loss curves, and warmup history are
+# content-addressed and published through the custody latest-pointer run
+# record. The `output_dir` .eqx/.npz files remain as compatibility
+# materializations but are now atomic tmp-staged (ephemeral) writes, so they are
+# no longer durable raw writes and their allowlist entries were removed. See
+# results/f5d9695/notes/lineage_audit.md.
 #
 # ESCAPE MODES this static guard does NOT by itself close (documented):
 #   - subprocess / native-library writes (a child process or C extension that
@@ -90,77 +92,15 @@ owner = "0efc92d"
 role = "run_spec"
 conditional = false
 
-[[durable_write_sites]]
-path = "scripts/train_minimax.py"
-function = "run_training"
-kind = "fbx_save"
-target = "warmup_model_path"
-owner = "f5d9695"
-role = "model_artifact"
-conditional = false
-
-[[durable_write_sites]]
-path = "scripts/train_minimax.py"
-function = "run_training"
-kind = "fbx_save"
-target = "final_model_path"
-owner = "f5d9695"
-role = "model_artifact"
-conditional = true
-
-[[durable_write_sites]]
-path = "scripts/train_minimax.py"
-function = "run_training"
-kind = "fbx_save"
-target = "output_dir/warmup_history.eqx"
-owner = "f5d9695"
-role = "history_artifact"
-conditional = true
-
-[[durable_write_sites]]
-path = "scripts/train_minimax.py"
-function = "run_training"
-kind = "savez"
-target = "output_dir/adversarial_losses.npz"
-owner = "108b4d3"
-role = "log_data_product"
-conditional = false
-
-[[durable_write_sites]]
-path = "scripts/train_minimax.py"
-function = "run_training"
-kind = "fbx_save"
-target = "output_dir/trained_adversary.eqx"
-owner = "f5d9695"
-role = "adversary_artifact"
-conditional = true
-
-[[durable_write_sites]]
-path = "scripts/train_minimax.py"
-function = "run_training"
-kind = "fbx_save"
-target = "adv_path"
-owner = "f5d9695"
-role = "adversary_artifact"
-conditional = true
-
-[[durable_write_sites]]
-path = "scripts/train_minimax.py"
-function = "_log_adversary_force_profiles"
-kind = "savez"
-target = "output_dir/<filename>"
-owner = "108b4d3"
-role = "log_data_product"
-conditional = true
-
-[[durable_write_sites]]
-path = "scripts/train_minimax.py"
-function = "_log_linear_dynamics_adversary"
-kind = "savez"
-target = "output_dir/<filename>"
-owner = "108b4d3"
-role = "log_data_product"
-conditional = true
+# The minimax final-output emitters (warmup/adversarial model, trained
+# adversary/adversaries, adversarial_losses, and the `_log_*` adversary
+# diagnostics) were routed onto the terminal feedbax custody transaction and
+# their output_dir materializations converted to atomic tmp-staged (ephemeral)
+# writes (issue 7e71950). They are content-addressed and published through the
+# custody latest-pointer run record, so they are no longer raw durable writes
+# and their allowlist entries were removed. The conditional single- vs
+# multi-adversary and force-profile vs delta_A emitter structure remains and is
+# still enumerated by the generated branch matrix.
 
 # --- scripts/train_part2_5.py ------------------------------------------------
 
