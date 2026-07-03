@@ -111,7 +111,7 @@ def test_manifest_fixture_negative_canary_rejects_wrong_run_spec_version() -> No
 def test_feedbax_contract_version_pins_cover_live_contracts() -> None:
     assert SUPPORTED_GRAPH_SPEC_VERSIONS == ("1.0.0",)
     assert SUPPORTED_FEEDBAX_MANIFEST_SCHEMA_VERSIONS == ("feedbax.manifest.v1",)
-    assert SUPPORTED_TRAINING_RUN_SPEC_VERSIONS == ("rlrmp.run_spec.v1",)
+    assert SUPPORTED_TRAINING_RUN_SPEC_VERSIONS == (RUN_SPEC_SCHEMA_VERSION,)
     assert SUPPORTED_RUN_STATUS_CHECKPOINT_SCHEMA_VERSIONS == (1,)
     assert PENDING_VERSION_PINS == {
         "descriptor_basis_hash": "owned by issue 844acc6",

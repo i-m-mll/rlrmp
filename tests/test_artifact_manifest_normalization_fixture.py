@@ -7,7 +7,7 @@ import pytest
 from feedbax.contracts.manifest import TrainingRunManifest, load_manifest, sha256_file
 from feedbax.persistence.manifest_index import index_manifest_file
 
-from rlrmp.runtime.spec_migrations import ensure_rlrmp_spec_families
+from rlrmp.runtime.spec_migrations import RUN_SPEC_SCHEMA_VERSION, ensure_rlrmp_spec_families
 
 
 pytestmark = pytest.mark.feedbax_contract
@@ -47,12 +47,15 @@ def test_artifact_manifest_fixture_preserves_run_spec_parity() -> None:
     assert training_spec is not None
     assert training_spec.kind == "RLRMPRunSpec"
     assert training_spec.schema_id == "rlrmp.run_spec"
-    assert training_spec.schema_version == "rlrmp.run_spec.v1"
+    assert training_spec.schema_version == RUN_SPEC_SCHEMA_VERSION
     assert training_spec.ref == str(RUN_SPEC.relative_to(REPO_ROOT))
     assert training_spec.sha256 is not None
     assert training_spec.source_sha256 == sha256_file(RUN_SPEC)
     assert training_spec.metadata == {"source_record_role": "tracked_run_spec"}
     assert training_spec.inline == {
+        "schema_id": "rlrmp.run_spec",
+        "schema_version": RUN_SPEC_SCHEMA_VERSION,
+        "migration_policy": "migrated_active_v1_to_v2",
         "run": run_spec["run"],
         "issue": run_spec["issue"],
         "training_mode": run_spec["training_summary"]["training_mode"],

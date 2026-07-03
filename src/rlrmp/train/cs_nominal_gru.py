@@ -27,6 +27,7 @@ import jax.tree_util as jtu
 import numpy as np
 import optax
 from feedbax import TaskTrialSpec
+from feedbax.models.networks import PopulationStructure
 from jax_cookbook import save as fbx_save
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 from feedbax.intervene.schedule import TimeSeriesParam
@@ -59,11 +60,16 @@ from rlrmp.analysis.math.cs_released_simulation import (
     default_cs_noise_covariances,
 )
 from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig
-from rlrmp.model.cs_lss_gru import CS_H0_CONTEXT_DIM, CS_H0_ENCODER_INIT
+from rlrmp.model.cs_lss_gru import (
+    CS_H0_CONTEXT_DIM,
+    CS_H0_ENCODER_INIT,
+    build_cs_lss_gru_graph_spec,
+)
 from rlrmp.model.feedbax_graph import (
     EXECUTION_BACKEND,
     GRAPH_PLANT_INTERVENOR_NODE,
     RLRMPFeedbaxGraphBundle,
+    build_runtime_rlrmp_feedbax_graph_bundle,
     build_point_mass_sensorimotor_graph_spec,
     write_graph_spec_bundle,
 )
@@ -76,6 +82,11 @@ from rlrmp.loss import (
 from rlrmp.io import compact_json_dumps, write_compact_json
 from rlrmp.paths import REPO_ROOT, mkdir_p, run_spec_path
 from rlrmp.runtime.run_specs import validate_nominal_gru_run_spec
+from rlrmp.runtime.training_run_specs import (
+    attach_composed_training_specs,
+    assert_runtime_graph_matches_training_spec,
+    write_training_run_manifest_for_spec,
+)
 from rlrmp.model.stochastic_runtime import (
     graphspec_noise_contract,
     stochastic_runtime_config_from_model,
@@ -131,6 +142,9 @@ from rlrmp.train.progress import batch_log_every, format_batch_line, should_log_
 from rlrmp.train.task_model import (
     CS_LSS_PLANT_BACKEND,
     LEGACY_CAUSAL_PLANT_BACKEND,
+    _finite_epsilon_policy_mechanism,
+    _sisu_conditioned_pgd_budget_enabled,
+    _sisu_conditioned_pgd_budget_input_name,
     setup_task_model_pair,
 )
 from rlrmp.model.trainable import staged_network_trainable_parts, staged_network_trainable_paths
@@ -1536,6 +1550,56 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
     }
 
 
+def build_training_run_graph_spec(hps: TreeNamespace, *, seed: int) -> Any:
+    """Return the GraphSpec recorded in the composed Feedbax TrainingRunSpec."""
+
+    if str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND)) != CS_LSS_PLANT_BACKEND:
+        return build_graph_bundle(hps).graph_spec
+
+    hidden_type = getattr(hps, "hidden_type", None) or eqx.nn.GRUCell
+    pop_config = hps.model.population_structure
+    key_init = jr.split(jr.PRNGKey(int(seed)), 3)[0]
+    key_pop, key_models = jr.split(key_init)
+    population_structure = PopulationStructure.create(
+        hidden_size=hps.model.hidden_size,
+        n_input_only=getattr(pop_config, "n_input_only", 0) or 0,
+        n_readout_only=getattr(pop_config, "n_readout_only", 0) or 0,
+        n_recurrent_only=getattr(pop_config, "n_recurrent_only", 0) or 0,
+        n_input_readout=getattr(pop_config, "n_input_readout", 0) or 0,
+        assignment_fn=None,
+        key=key_pop,
+    )
+    key_one = jr.split(key_models, int(hps.model.n_replicates))[0]
+    target_relative = _target_relative_multitarget_enabled(hps)
+    delayed_reach = _delayed_reach_enabled(hps)
+    scalar_input_count = int(delayed_reach or not target_relative)
+    if _sisu_conditioned_pgd_budget_enabled(hps):
+        sisu_input_name = _sisu_conditioned_pgd_budget_input_name(hps)
+        if not (sisu_input_name == "input" and scalar_input_count > 0):
+            scalar_input_count += 1
+    return build_cs_lss_gru_graph_spec(
+        hidden_size=int(hps.model.hidden_size),
+        input_size=scalar_input_count,
+        hidden_type=hidden_type,
+        population_structure=population_structure,
+        sisu_gating=str(getattr(hps, "sisu_gating", "additive")),
+        sensory_noise_std=float(hps.model.sensory_noise_std),
+        additive_motor_noise_std=float(hps.model.additive_motor_noise_std),
+        signal_dependent_motor_noise_std=float(hps.model.signal_dependent_motor_noise_std),
+        bind_epsilon_input=True,
+        finite_epsilon_policy=_finite_epsilon_policy_mechanism(hps),
+        target_relative_feedback=target_relative,
+        force_filter_feedback=bool(
+            getattr(hps.target_relative_multitarget, "force_filter_feedback", False)
+        ),
+        initial_hidden_encoder=_initial_hidden_encoder_enabled(hps),
+        no_integrator_state=bool(getattr(hps.model, "no_integrator_state", False)),
+        trainable_dtype=getattr(hps.model, "trainable_dtype", None),
+        population_mask_mode=getattr(hps.model, "population_mask_mode", None),
+        key=key_one,
+    )
+
+
 def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
     """Build the GraphSpec bundle for the nominal GRU run."""
 
@@ -1766,6 +1830,7 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
     )
     hps = build_hps(args)
     graph_bundle = build_graph_bundle(hps)
+    training_run_graph_spec = build_training_run_graph_spec(hps, seed=int(args.seed))
     payload = build_run_spec(
         args,
         output_dir=output_dir,
@@ -1778,7 +1843,12 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
         if _should_write_graph_spec(hps):
             would_write.append(str(spec_dir / "model.graph.json"))
         return {
-            "run_spec": payload,
+            "run_spec": attach_composed_training_specs(
+                payload,
+                graph_spec=training_run_graph_spec,
+                output_dir=output_dir,
+                spec_dir=spec_dir,
+            ),
             "would_write": would_write,
         }
 
@@ -1788,12 +1858,26 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
     payload["feedbax_graph"] = graph_bundle.to_run_metadata(
         graph_spec_path=None if graph_path is None else graph_path.name,
     )
+    payload = attach_composed_training_specs(
+        payload,
+        graph_spec=training_run_graph_spec,
+        output_dir=output_dir,
+        spec_dir=spec_dir,
+    )
     validate_nominal_gru_run_spec(payload, spec_dir=spec_dir)
     run_path.write_text(_json_dumps(payload), encoding="utf-8")
+    manifest_path = write_training_run_manifest_for_spec(
+        run_spec_path=run_path,
+        run_spec=payload,
+        manifest_root=REPO_ROOT / "_artifacts" / "feedbax_runs",
+        graph_manifest_path=spec_dir / "model.graph.manifest.json",
+        graph_spec_path=graph_path,
+    )
     return {
         "run_spec_path": str(run_path),
         "graph_spec_path": None if graph_path is None else str(graph_path),
         "graph_manifest_path": str(spec_dir / "model.graph.manifest.json"),
+        "training_manifest_path": str(manifest_path),
     }
 
 
@@ -2189,9 +2273,18 @@ def run_full_training(
     run_spec_path = Path(spec_result["run_spec_path"])
     run_spec = json.loads(run_spec_path.read_text(encoding="utf-8"))
 
+    args = resolve_run_spec_args(
+        argparse.Namespace(**{**vars(args), "run_spec": str(run_spec_path)}),
+        parser=build_parser(),
+    )
     hps = build_hps(args)
     key_init, key_train, key_adversary = jr.split(jr.PRNGKey(int(args.seed)), 3)
     pair = setup_task_model_pair(hps, key=key_init)
+    runtime_graph_bundle = build_runtime_rlrmp_feedbax_graph_bundle(hps, pair.model)
+    assert_runtime_graph_matches_training_spec(
+        run_spec,
+        graph_spec=runtime_graph_bundle.graph_spec,
+    )
     trainer = _build_trainer(hps)
     adaptive_epsilon_enabled = _adaptive_epsilon_curriculum_enabled(hps)
     pre_step_fn = (
