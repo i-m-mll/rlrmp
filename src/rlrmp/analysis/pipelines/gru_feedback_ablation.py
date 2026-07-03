@@ -53,6 +53,7 @@ from rlrmp.paths import (
     resolve_run_artifact_path,
     run_spec_path as tracked_run_spec_path,
 )
+from rlrmp.runtime.run_specs import resolve_run_record
 
 
 SCHEMA_VERSION = "rlrmp.gru_feedback_ablation.v1"
@@ -1018,7 +1019,7 @@ def materialize_feedback_selected_checkpoint_manifest(
             continue
         run_spec_path = tracked_run_spec_path(experiment, str(run_id), repo_root=repo_root)
         artifact_dir = repo_root / "_artifacts" / experiment / "runs" / str(run_id)
-        run_spec = json.loads(run_spec_path.read_text(encoding="utf-8"))
+        run_spec = resolve_run_record(experiment, str(run_id), repo_root=repo_root)
         validation_objective, valid_records = validation_objective_history(
             run_spec=run_spec,
             history_path=resolve_run_artifact_path(artifact_dir, "training_history.eqx"),

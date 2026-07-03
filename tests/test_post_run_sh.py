@@ -6,6 +6,9 @@ import subprocess
 from hashlib import sha256
 from pathlib import Path
 
+from rlrmp.runtime.run_specs import resolve_run_record
+from rlrmp.runtime.spec_migrations import RUN_SPEC_SCHEMA_ID, RUN_SPEC_SCHEMA_VERSION
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "post_run.sh"
@@ -95,7 +98,7 @@ def write_run_source(
             },
         },
     }
-    run_spec_sha = write_json(path / "run.json", run_spec)
+    write_json(path / "run.json", run_spec)
     write_json(path / "training_summary.json", run_spec["training_summary"])
     manifest_run_spec_sha = "bad-fixture-sha" if mismatched_spec_hash else run_spec_sha
     manifest = {
@@ -147,6 +150,87 @@ def write_run_source(
         / "feedbax_training_run_fixture__ok.json",
         manifest,
     )
+    (path / "trained_model.eqx").write_text("fixture model\n", encoding="utf-8")
+
+
+def write_native_run_source(path: Path) -> None:
+    path.mkdir()
+    run_spec = {
+        "run": "fixture__native",
+        "issue": "731fdf7",
+        "schema_version": "rlrmp.cs_stochastic_gru.v1",
+        "game_card": {"dt": 0.01},
+        "task_timing": {"n_steps": 61},
+        "model_summary": {"controller_kind": "gru", "hidden_size": 4},
+        "training_summary": {
+            "training_mode": "nominal",
+            "completed_batches": 3,
+            "n_train_batches": 3,
+            "batch_size": 2,
+            "final_validation_loss": 0.125,
+        },
+        "loss_objective": "partial_feedbax_terms",
+        "loss_summary": {
+            "objective_profile": "partial_feedbax_terms",
+            "active_cs_terms": {},
+        },
+        "provenance": {
+            "git": {},
+            "dependencies": {},
+            "modal": {},
+            "gpu": {},
+        },
+        "feedbax_graph": {
+            "graph_spec_path": None,
+            "manifest_path": "model.graph.manifest.json",
+            "graph_export_status": "unavailable",
+        },
+        "hps": {"model": {"n_replicates": 2}},
+        "native_full_payload_marker": {"kept": True},
+    }
+    run_spec_sha = write_json(path / "run.json", run_spec)
+    write_json(path / "training_summary.json", run_spec["training_summary"])
+    inline = dict(run_spec)
+    inline["schema_id"] = RUN_SPEC_SCHEMA_ID
+    inline["schema_version"] = RUN_SPEC_SCHEMA_VERSION
+    inline["source_schema_version"] = run_spec["schema_version"]
+    manifest = {
+        "kind": "TrainingRunManifest",
+        "schema_version": "feedbax.manifest.v1",
+        "id": "feedbax-training-run:fixture-native",
+        "created_at": "2026-06-11T00:00:00Z",
+        "feedbax_version": "fixture",
+        "provider_version": "feedbax-provider.v1",
+        "status": "completed",
+        "job_id": "fixture__native",
+        "provenance": {
+            "source_repo": "https://github.com/i-m-mll/rlrmp.git",
+            "source_branch": "feature/5b571ae-runrecord-collapse",
+            "source_commit": "rlrmp-fixture-sha",
+            "dirty": False,
+            "issues": ["731fdf7"],
+        },
+        "training_spec": {
+            "kind": "RLRMPRunSpec",
+            "schema_id": RUN_SPEC_SCHEMA_ID,
+            "schema_version": RUN_SPEC_SCHEMA_VERSION,
+            "inline": inline,
+            "ref": "results/731fdf7/runs/fixture__native.json",
+            "metadata": {"source_record_role": "tracked_run_spec"},
+        },
+        "artifacts": [
+            {
+                "role": "tracked_run_spec",
+                "logical_name": "fixture__native.json",
+                "media_type": "application/json",
+                "storage_backend": "rlrmp-results",
+                "uri": "results/731fdf7/runs/fixture__native.json",
+                "metadata": {"availability": "checked_in"},
+            }
+        ],
+        "summary_metrics": {"completed_batches": 3, "final_validation_loss": 0.125},
+    }
+    write_json(path / "feedbax_runs" / "manifests" / "training_runs" / "native.json", manifest)
     (path / "trained_model.eqx").write_text("fixture model\n", encoding="utf-8")
 
 
@@ -315,6 +399,44 @@ def test_local_fixture_syncs_spec_commits_and_records_auth(tmp_path: Path) -> No
     assert payload["metrics_summary"]["completed_batches"] == 3
     assert payload["metrics_summary"]["final_validation_loss"] == 0.125
     assert "timestamp" in payload
+
+
+def test_transitional_native_manifest_matches_reconstructed_parity(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    source = tmp_path / "source"
+    bin_dir = tmp_path / "bin"
+    auth_record = tmp_path / "auth_args.txt"
+    init_git_repo(repo)
+    write_native_run_source(source)
+    fake_agent_commit, fake_mandible = write_fake_commands(bin_dir, auth_record)
+
+    env = os.environ.copy()
+    env["POST_RUN_AGENT_COMMIT"] = str(fake_agent_commit)
+    env["POST_RUN_MANDIBLE_AUTH"] = str(fake_mandible)
+
+    output = run_command(
+        [
+            "bash",
+            str(SCRIPT),
+            "--repo-root",
+            str(repo),
+            "--issue",
+            "731fdf7",
+            "--run",
+            "fixture__native",
+            "--artifacts-src",
+            f"local:{source}",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    native = resolve_run_record("731fdf7", "fixture__native", repo_root=repo)
+
+    assert "TrainingRunManifest parity:" in output
+    assert native["run"] == "fixture__native"
+    assert native["training_summary"]["training_mode"] == "nominal"
+    assert native["native_full_payload_marker"] == {"kept": True}
 
 
 def test_graphspec_resolves_from_flat_recipe_sidecar_dir(tmp_path: Path) -> None:

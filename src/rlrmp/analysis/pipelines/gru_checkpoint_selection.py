@@ -34,6 +34,7 @@ from rlrmp.train.cs_perturbation_training import (
     target_relative_validation_bins,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path, run_spec_path
+from rlrmp.runtime.run_specs import resolve_run_record
 
 
 SPARSE_HISTORY_SCHEMA_VERSION = "rlrmp.validation_selected_gru_checkpoints.v1"
@@ -645,9 +646,7 @@ def score_fixed_bank_checkpoints_for_run(
     """Score all durable checkpoints for a run and select the best per replicate."""
 
     artifact_dir = repo_root / "_artifacts" / experiment / "runs" / run_id
-    run_spec = json.loads(
-        run_spec_path(experiment, run_id, repo_root=repo_root).read_text(encoding="utf-8")
-    )
+    run_spec = resolve_run_record(experiment, run_id, repo_root=repo_root)
     checkpoint_batches = available_checkpoint_batches(artifact_dir)
     if not checkpoint_batches:
         raise FileNotFoundError(
@@ -763,9 +762,7 @@ def select_sparse_history_validation_checkpoints_for_run(
     """Select checkpoints from sparse logged validation records."""
 
     artifact_dir = repo_root / "_artifacts" / experiment / "runs" / run_id
-    run_spec = json.loads(
-        run_spec_path(experiment, run_id, repo_root=repo_root).read_text(encoding="utf-8")
-    )
+    run_spec = resolve_run_record(experiment, run_id, repo_root=repo_root)
     objective, valid_records = validation_objective_history(
         run_spec=run_spec,
         history_path=resolve_run_artifact_path(artifact_dir, "training_history.eqx"),

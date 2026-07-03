@@ -27,6 +27,8 @@ from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     materialize_validation_selected_checkpoint_manifest,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path
+from rlrmp.paths import run_spec_path as tracked_run_spec_path
+from rlrmp.runtime.run_specs import resolve_run_record
 from rlrmp.train.cs_nominal_gru import _where_train
 from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_TRAINING_MODE,
@@ -378,13 +380,14 @@ def discover_broad_epsilon_run_ids(
     if not run_root.exists():
         raise FileNotFoundError(f"Missing run-spec root: {run_root}")
     run_ids = []
-    for path in sorted(run_root.glob("*/run.json")):
-        run_spec = json.loads(path.read_text(encoding="utf-8"))
+    for path in sorted(run_root.glob("*.json")):
+        run_id = path.stem
+        run_spec = resolve_run_record(experiment, run_id, repo_root=repo_root)
         broad = broad_epsilon_metadata(run_spec)
         if broad.get("enabled") is True:
-            if not include_smoke and path.parent.name.startswith("smoke__"):
+            if not include_smoke and run_id.startswith("smoke__"):
                 continue
-            run_ids.append(path.parent.name)
+            run_ids.append(run_id)
     return tuple(run_ids)
 
 
@@ -398,7 +401,7 @@ def resolve_run_inputs(
 
     runs = []
     for run_id in run_ids:
-        run_spec_path = repo_root / "results" / experiment / "runs" / run_id / "run.json"
+        run_spec_path = tracked_run_spec_path(experiment, run_id, repo_root=repo_root)
         artifact_dir = repo_root / "_artifacts" / experiment / "runs" / run_id
         if not run_spec_path.exists():
             raise FileNotFoundError(f"Missing run spec: {run_spec_path}")
@@ -409,7 +412,7 @@ def resolve_run_inputs(
                 run_id=run_id,
                 run_spec_path=run_spec_path,
                 artifact_dir=artifact_dir,
-                run_spec=json.loads(run_spec_path.read_text(encoding="utf-8")),
+                run_spec=resolve_run_record(experiment, run_id, repo_root=repo_root),
             )
         )
     return runs

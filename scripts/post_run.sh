@@ -264,6 +264,7 @@ from feedbax.contracts.manifest import (
     TrainingRunManifest,
     load_manifest,
 )
+from rlrmp.runtime.spec_migrations import ensure_rlrmp_spec_families
 
 
 POST_RUN_SCHEMA_VERSION = "rlrmp.post_run_provenance.v1"
@@ -507,9 +508,6 @@ def update_manifest_hashes(
     rel_spec_path: str,
 ) -> None:
     payload = load_json(manifest_path)
-    training_spec = payload.get("training_spec")
-    if isinstance(training_spec, dict) and training_spec.get("ref") == rel_spec_path:
-        training_spec["sha256"] = actual_sha
     for artifact in payload.get("artifacts", []):
         if not isinstance(artifact, dict):
             continue
@@ -561,8 +559,6 @@ def parity_check(
 
     actual_sha = sha256_file(spec_path)
     expected_hashes: list[tuple[str, str | None]] = []
-    if manifest.training_spec is not None and manifest.training_spec.ref == rel_spec_path:
-        expected_hashes.append(("training_spec.sha256", manifest.training_spec.sha256))
     for artifact in manifest.artifacts:
         if artifact.role == "tracked_run_spec" and artifact.uri == rel_spec_path:
             expected_hashes.append(("tracked_run_spec.sha256", artifact.sha256))
@@ -600,6 +596,7 @@ def print_stamp_summary(stamp: dict[str, Any], parity: str | None) -> None:
 
 
 def main() -> None:
+    ensure_rlrmp_spec_families()
     mode = sys.argv[1]
     repo_root = Path(sys.argv[2]).resolve()
     spec_path = Path(sys.argv[3]).resolve()
