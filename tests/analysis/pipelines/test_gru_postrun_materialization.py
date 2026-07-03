@@ -274,11 +274,17 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         run_ids=("run_a", "run_b"),
         labels=("A", "B"),
         output_tag="fullqrf_validation_selected",
+        evaluation_manifest_path=tmp_path / "manifests" / "evaluation_runs" / "eval.json",
+        evaluation_states={"evaluation_manifest_id": "eval-id", "product_role": "fixture"},
         repo_root=tmp_path,
     )
 
     assert calls["standard"]["use_validation_selected_checkpoints"] is True
     assert calls["evaluation"]["use_validation_selected_checkpoints"] is True
+    assert calls["evaluation"]["evaluation_manifest_path"] == (
+        tmp_path / "manifests" / "evaluation_runs" / "eval.json"
+    )
+    assert calls["evaluation"]["evaluation_states"]["evaluation_manifest_id"] == "eval-id"
     assert calls["figures"]["use_validation_selected_checkpoints"] is True
     assert calls["objective"]["use_validation_selected_checkpoints"] is True
     assert calls["objective"]["checkpoint_policy"] == "validation_selected_per_replicate"
@@ -387,6 +393,10 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
     assert manifest["outputs"]["perturbation_response"]["status"] == "materialized"
     assert manifest["outputs"]["feedback_ablation"]["status"] == "materialized"
     assert manifest["outputs"]["feedback_checkpoint_selection"]["status"] == "available"
+    assert manifest["outputs"]["evaluation_run_manifest"] == "manifests/evaluation_runs/eval.json"
+    assert manifest["primary_run_contract"]["evaluation_manifest_dependency"] == (
+        "manifests/evaluation_runs/eval.json"
+    )
     assert (
         manifest["outputs"]["feedback_checkpoint_selection"]["selection_use"]
         == "audit_only_not_primary_checkpoint_selection"

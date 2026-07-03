@@ -94,6 +94,33 @@ DELAYED_REACH_EVAL_BANK_SCHEMA_ID = "feedbax.manifest.checkpoint_selection.bank"
 DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION = FEEDBAX_MANIFEST_SCHEMA_VERSION
 DELAYED_REACH_EVAL_BANK_LEGACY_VERSION = "rlrmp.delayed_reach_eval_bank.v2"
 
+CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND = "RLRMPCenterOutEnsembleEvaluationParams"
+CENTER_OUT_ENSEMBLE_EVAL_PARAMS_SCHEMA_ID = "rlrmp.eval.center_out_ensemble.params"
+CENTER_OUT_ENSEMBLE_EVAL_PARAMS_SCHEMA_VERSION = "rlrmp.eval.center_out_ensemble.params.v1"
+
+PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND = "RLRMPPerturbationResponseBankEvaluationParams"
+PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_ID = "rlrmp.eval.perturbation_response_bank.params"
+PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION = (
+    "rlrmp.eval.perturbation_response_bank.params.v1"
+)
+
+FEEDBACK_ABLATION_EVAL_PARAMS_KIND = "RLRMPFeedbackAblationEvaluationParams"
+FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_ID = "rlrmp.eval.feedback_ablation.params"
+FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION = "rlrmp.eval.feedback_ablation.params.v1"
+
+WORST_CASE_EPSILON_EVAL_PARAMS_KIND = "RLRMPWorstCaseEpsilonEvaluationParams"
+WORST_CASE_EPSILON_EVAL_PARAMS_SCHEMA_ID = "rlrmp.eval.worst_case_epsilon.params"
+WORST_CASE_EPSILON_EVAL_PARAMS_SCHEMA_VERSION = "rlrmp.eval.worst_case_epsilon.params.v1"
+
+DELAYED_REACH_BANK_EVAL_PARAMS_KIND = "RLRMPDelayedReachBankEvaluationParams"
+DELAYED_REACH_BANK_EVAL_PARAMS_SCHEMA_ID = "rlrmp.eval.delayed_reach_bank.params"
+DELAYED_REACH_BANK_EVAL_PARAMS_SCHEMA_VERSION = "rlrmp.eval.delayed_reach_bank.params.v1"
+
+STANDARD_MATRIX_EVAL_PARAMS_KIND = "RLRMPStandardMatrixEvaluationParams"
+STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_ID = "rlrmp.standard_matrix_evaluation.params"
+STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION = "rlrmp.standard_matrix_evaluation.params.v2"
+STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION_V1 = "rlrmp.standard_matrix_evaluation.params.v1"
+
 RUN_SPEC_KIND = "RLRMPRunSpec"
 RUN_SPEC_SCHEMA_ID = "rlrmp.run_spec"
 RUN_SPEC_SCHEMA_VERSION = "rlrmp.run_spec.v2"
@@ -453,6 +480,68 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             ),
         ),
         _family(
+            CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND,
+            CENTER_OUT_ENSEMBLE_EVAL_PARAMS_SCHEMA_ID,
+            CENTER_OUT_ENSEMBLE_EVAL_PARAMS_SCHEMA_VERSION,
+            emitted_by=("rlrmp.eval.recipes.center_out_ensemble_recipe",),
+            consumed_by=("Feedbax EvaluationRunSpec.params",),
+            description="Params for rlrmp center-out/delayed-reach ensemble evaluation.",
+            rejected_old_versions=("rlrmp.eval.center_out_ensemble.params.v0",),
+        ),
+        _family(
+            PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND,
+            PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_ID,
+            PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION,
+            emitted_by=("rlrmp.eval.recipes.perturbation_response_bank_recipe",),
+            consumed_by=("Feedbax EvaluationRunSpec.params",),
+            description="Params for rlrmp perturbation-response bank evaluation.",
+            rejected_old_versions=("rlrmp.eval.perturbation_response_bank.params.v0",),
+        ),
+        _family(
+            FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
+            FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_ID,
+            FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION,
+            emitted_by=("rlrmp.eval.recipes.feedback_ablation_recipe",),
+            consumed_by=("Feedbax EvaluationRunSpec.params",),
+            description="Params for rlrmp feedback-ablation evaluation.",
+            rejected_old_versions=("rlrmp.eval.feedback_ablation.params.v0",),
+        ),
+        _family(
+            WORST_CASE_EPSILON_EVAL_PARAMS_KIND,
+            WORST_CASE_EPSILON_EVAL_PARAMS_SCHEMA_ID,
+            WORST_CASE_EPSILON_EVAL_PARAMS_SCHEMA_VERSION,
+            emitted_by=("rlrmp.eval.recipes.worst_case_epsilon_recipe",),
+            consumed_by=("Feedbax EvaluationRunSpec.params",),
+            description="Params for rlrmp worst-case epsilon evaluation.",
+            rejected_old_versions=("rlrmp.eval.worst_case_epsilon.params.v0",),
+        ),
+        _family(
+            DELAYED_REACH_BANK_EVAL_PARAMS_KIND,
+            DELAYED_REACH_BANK_EVAL_PARAMS_SCHEMA_ID,
+            DELAYED_REACH_BANK_EVAL_PARAMS_SCHEMA_VERSION,
+            emitted_by=("rlrmp.eval.recipes.delayed_reach_bank_recipe",),
+            consumed_by=("Feedbax EvaluationRunSpec.params",),
+            description="Params for rlrmp delayed-reach bank evaluation.",
+            rejected_old_versions=("rlrmp.eval.delayed_reach_bank.params.v0",),
+        ),
+        _family(
+            STANDARD_MATRIX_EVAL_PARAMS_KIND,
+            STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_ID,
+            STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.matrix.standard_matrix",),
+            consumed_by=("Feedbax EvaluationRunSpec.params",),
+            description=(
+                "Params for rlrmp standard-matrix evaluation; v2 makes legacy "
+                "pre-materialized payloads explicit."
+            ),
+            rejected_old_versions=(STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION_V1,),
+            notes=(
+                "The prior implicit matrix_payload cache shim is intentionally not "
+                "migrated. Re-emit specs with legacy_payload_mode=true for legacy "
+                "payloads or omit matrix_payload to build cells from model refs."
+            ),
+        ),
+        _family(
             RUN_SPEC_KIND,
             RUN_SPEC_SCHEMA_ID,
             RUN_SPEC_SCHEMA_VERSION,
@@ -537,16 +626,25 @@ def _migrate_run_spec_v1_to_v2(payload: dict[str, Any]) -> dict[str, Any]:
 
 __all__ = [
     "ArchiveOnlySpecError",
+    "CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND",
+    "CENTER_OUT_ENSEMBLE_EVAL_PARAMS_SCHEMA_ID",
+    "CENTER_OUT_ENSEMBLE_EVAL_PARAMS_SCHEMA_VERSION",
     "CS_GRU_STANDARD_CERTIFICATES_KIND",
     "CS_GRU_STANDARD_CERTIFICATES_SCHEMA_ID",
     "CS_GRU_STANDARD_CERTIFICATES_SCHEMA_VERSION",
     "DELAYED_DIAGNOSTIC_BUNDLE_KIND",
     "DELAYED_DIAGNOSTIC_BUNDLE_SCHEMA_ID",
     "DELAYED_DIAGNOSTIC_BUNDLE_SCHEMA_VERSION",
+    "DELAYED_REACH_BANK_EVAL_PARAMS_KIND",
+    "DELAYED_REACH_BANK_EVAL_PARAMS_SCHEMA_ID",
+    "DELAYED_REACH_BANK_EVAL_PARAMS_SCHEMA_VERSION",
     "DELAYED_REACH_EVAL_BANK_KIND",
     "DELAYED_REACH_EVAL_BANK_LEGACY_VERSION",
     "DELAYED_REACH_EVAL_BANK_SCHEMA_ID",
     "DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION",
+    "FEEDBACK_ABLATION_EVAL_PARAMS_KIND",
+    "FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_ID",
+    "FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION",
     "FEEDBACK_QUALITY_LENS_KIND",
     "FEEDBACK_QUALITY_LENS_SCHEMA_ID",
     "FEEDBACK_QUALITY_LENS_SCHEMA_VERSION",
@@ -588,15 +686,25 @@ __all__ = [
     "PERTURBATION_OPEN_LOOP_CALIBRATION_KIND",
     "PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_ID",
     "PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_VERSION",
+    "PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND",
+    "PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_ID",
+    "PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION",
     "RUN_SPEC_KIND",
     "RUN_SPEC_SCHEMA_ID",
     "RUN_SPEC_SCHEMA_VERSION",
     "RUN_SPEC_SCHEMA_VERSION_LEGACY_CS_GRU",
     "RUN_SPEC_SCHEMA_VERSION_V1",
+    "STANDARD_MATRIX_EVAL_PARAMS_KIND",
+    "STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_ID",
+    "STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION",
+    "STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION_V1",
     "VALIDATION_SELECTED_GRU_CHECKPOINTS_KIND",
     "VALIDATION_SELECTED_GRU_CHECKPOINTS_LEGACY_VERSION",
     "VALIDATION_SELECTED_GRU_CHECKPOINTS_SCHEMA_ID",
     "VALIDATION_SELECTED_GRU_CHECKPOINTS_SCHEMA_VERSION",
+    "WORST_CASE_EPSILON_EVAL_PARAMS_KIND",
+    "WORST_CASE_EPSILON_EVAL_PARAMS_SCHEMA_ID",
+    "WORST_CASE_EPSILON_EVAL_PARAMS_SCHEMA_VERSION",
     "accept_rlrmp_spec_payload",
     "ensure_rlrmp_spec_families",
     "load_rlrmp_spec_payload",
