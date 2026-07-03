@@ -14,13 +14,14 @@ from rlrmp.benchmarks import packing as packing_benchmark
 from rlrmp.cloud.modal_runner import (
     CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
     CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
-    DEFAULT_RUN,
     DEFAULT_GPU,
+    DEFAULT_RUN,
     DEFAULT_TRAIN_TIMEOUT_SECONDS,
     MODAL_VOLUME_NAME,
     REGULARIZED_RUN,
     NominalGruRunConfig,
     activate_project_venv,
+    build_launcher_spec_bundle,
     build_parser,
     build_packing_benchmark_command,
     build_remote_smoke_command,
@@ -29,6 +30,8 @@ from rlrmp.cloud.modal_runner import (
     cs_nominal_gru_scenario_config,
     dry_run_payload,
     make_config,
+    require_billable_launch_confirmation,
+    spec_lock_payload,
 )
 
 
@@ -87,17 +90,18 @@ def test_nominal_training_command_is_bounded_and_nominal_only() -> None:
     )
 
     command = build_training_command(config)
+    bundle = build_launcher_spec_bundle(config)
 
-    assert command[:4] == ["uv", "run", "python", "scripts/train_cs_nominal_gru.py"]
-    assert "--n-adversary-batches" not in command
-    assert command[command.index("--n-train-batches") + 1] == "1"
-    assert command[command.index("--issue") + 1] == "30f2313"
-    assert command[command.index("--hidden-size") + 1] == "4"
-    assert command[command.index("--stochastic-preset") + 1] == "cs2019-rollout"
-    assert command[command.index("--checkpoint-interval-batches") + 1] == "500"
-    assert "--full-train" in command
-    assert "--resume" not in command
-    assert "--regularized-fidelity" not in command
+    assert command[:2] == ["bash", "-lc"]
+    assert "python -m feedbax execute-training-run-spec" in command[2]
+    assert "scripts/train_cs_nominal_gru.py" not in command[2]
+    assert "--n-adversary-batches" not in command[2]
+    assert bundle.rlrmp_run_spec["n_train_batches"] == 1
+    assert bundle.rlrmp_run_spec["issue"] == "30f2313"
+    assert bundle.rlrmp_run_spec["hps"]["model"]["hidden_size"] == 4
+    assert bundle.rlrmp_run_spec["checkpointing"]["interval_batches"] == 500
+    assert bundle.rlrmp_run_spec["full_training_launch"] == "requested"
+    assert bundle.rlrmp_run_spec["fidelity_status"]["nn_hidden"] == 0.0
 
 
 def test_training_command_passes_optimizer_grid_parameters() -> None:
@@ -106,34 +110,38 @@ def test_training_command_passes_optimizer_grid_parameters() -> None:
         gradient_clip_norm=5.0,
     )
 
-    command = build_training_command(config, remote=True)
+    bundle = build_launcher_spec_bundle(config, backend="modal")
 
-    assert command[command.index("--controller-lr") + 1] == "0.003"
-    assert command[command.index("--gradient-clip-norm") + 1] == "5.0"
+    assert bundle.rlrmp_run_spec["controller_lr"] == 0.003
+    assert bundle.rlrmp_run_spec["optimizer"]["gradient_clip_norm"] == 5.0
+    assert "execute-training-run-spec" in bundle.execution_plan.command
 
 
 def test_training_command_passes_loss_objective() -> None:
     config = NominalGruRunConfig(loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE)
 
-    command = build_training_command(config, remote=True)
+    bundle = build_launcher_spec_bundle(config, backend="modal")
 
-    assert command[command.index("--loss-objective") + 1] == "full_analytical_qrf"
+    assert bundle.rlrmp_run_spec["loss_objective"] == "full_analytical_qrf"
 
-    ablation = build_training_command(
+    ablation = build_launcher_spec_bundle(
         NominalGruRunConfig(loss_objective=CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE),
-        remote=True,
+        backend="modal",
     )
 
-    assert ablation[ablation.index("--loss-objective") + 1] == "partial_net_output_force_filter"
+    assert ablation.rlrmp_run_spec["loss_objective"] == "partial_net_output_force_filter"
 
 
 def test_regularized_training_command_uses_hidden_penalty_switch() -> None:
     config = NominalGruRunConfig(run=REGULARIZED_RUN, regularized_fidelity=True)
 
-    command = build_training_command(config)
+    bundle = build_launcher_spec_bundle(config)
 
-    assert "--regularized-fidelity" in command
-    assert "--nn-hidden" not in command
+    assert bundle.rlrmp_run_spec["fidelity_status"]["regularized_pair"] is True
+    assert bundle.rlrmp_run_spec["fidelity_status"]["regularizer"] == "nn_hidden"
+    assert bundle.rlrmp_run_spec["fidelity_status"]["nn_hidden"] == 1e-5
+    assert "--regularized-fidelity" not in bundle.execution_plan.command
+    assert "--nn-hidden" not in bundle.execution_plan.command
 
 
 def test_remote_training_command_uses_no_sync_and_remote_paths() -> None:
@@ -141,11 +149,11 @@ def test_remote_training_command_uses_no_sync_and_remote_paths() -> None:
 
     command = build_training_command(config, remote=True)
 
-    assert command[:5] == ["uv", "run", "--no-sync", "python", "scripts/train_cs_nominal_gru.py"]
-    assert f"/vol/rlrmp-cs-stochastic-gru/_artifacts/30f2313/runs/{DEFAULT_RUN}" in command
-    assert f"/vol/rlrmp-cs-stochastic-gru/results/30f2313/runs/{DEFAULT_RUN}" in command
-    assert "--full-train" in command
-    assert "--resume" in command
+    assert command[:2] == ["bash", "-lc"]
+    assert "/vol/rlrmp-cs-stochastic-gru/_artifacts/feedbax_runs/" in command[2]
+    assert "training-run-spec.json" in command[2]
+    assert f"/vol/rlrmp-cs-stochastic-gru/_artifacts/feedbax_runs/{DEFAULT_RUN}" in command[2]
+    assert "scripts/train_cs_nominal_gru.py" not in command[2]
 
 
 def test_pinned_mode_uses_configured_repo_dir() -> None:
@@ -156,27 +164,31 @@ def test_pinned_mode_uses_configured_repo_dir() -> None:
         pinned_repo_dir="/opt/rlrmp",
     )
 
-    command = build_training_command(config, remote=True)
+    bundle = build_launcher_spec_bundle(config, backend="modal")
 
-    assert f"/vol/rlrmp-cs-stochastic-gru/_artifacts/30f2313/runs/{DEFAULT_RUN}" in command
-    assert f"/vol/rlrmp-cs-stochastic-gru/results/30f2313/runs/{DEFAULT_RUN}" in command
+    assert bundle.execution_spec.repos[0].target_path == "/opt/rlrmp"
+    assert bundle.execution_spec.repos[0].install_mode == "github-ref"
+    assert f"/vol/rlrmp-cs-stochastic-gru/_artifacts/feedbax_runs/{DEFAULT_RUN}" in (
+        bundle.execution_plan.command
+    )
 
 
 def test_regularized_modal_command_selects_hidden_penalty_pair() -> None:
-    command = build_training_command(
+    bundle = build_launcher_spec_bundle(
         NominalGruRunConfig(
             run=REGULARIZED_RUN,
             regularized_fidelity=True,
         ),
-        remote=True,
+        backend="modal",
     )
 
-    assert "--regularized-fidelity" in command
-    assert "cs_stochastic_gru__hidden_penalty" in command[command.index("--output-dir") + 1]
-    assert "cs_stochastic_gru__hidden_penalty" in command[command.index("--spec-dir") + 1]
+    assert bundle.rlrmp_run_spec["fidelity_status"]["regularized_pair"] is True
+    assert bundle.rlrmp_run_spec["fidelity_status"]["regularizer"] == "nn_hidden"
+    assert "cs_stochastic_gru__hidden_penalty" in bundle.rlrmp_run_spec["artifact_output_dir"]
+    assert "cs_stochastic_gru__hidden_penalty" in bundle.rlrmp_run_spec["spec_dir"]
 
 
-def test_dry_run_payload_exposes_no_warm_container_settings() -> None:
+def test_dry_run_payload_exposes_spec_lock_and_no_warm_container_settings() -> None:
     payload = dry_run_payload(
         NominalGruRunConfig(
             gpu="A10G",
@@ -193,6 +205,21 @@ def test_dry_run_payload_exposes_no_warm_container_settings() -> None:
     assert payload["warm_containers"] == 0
     assert payload["min_containers"] == 0
     assert payload["max_containers"] == 1
+    spec_lock = payload["spec_lock"]
+    assert spec_lock["backend"] == "modal"
+    assert spec_lock["gpu_cloud"]["gpu"] == "A10G"
+    assert spec_lock["training_run_spec"]["identity"].endswith("#feedbax-training-run-spec")
+    assert spec_lock["training_run_spec"]["content_sha256"]
+    assert spec_lock["rlrmp_run_spec"]["identity"].startswith("rlrmp://30f2313/runs/")
+    assert spec_lock["rlrmp_run_spec"]["content_sha256"]
+    assert spec_lock["manifest_root"] == "_artifacts/feedbax_runs"
+    assert spec_lock["checkpoint_policy"]["checkpoint_interval"] == 500
+    assert "python -m feedbax execute-training-run-spec" in spec_lock["derived_runner_command"]
+    route_roles = {route["role"] for route in spec_lock["artifact_routes"]}
+    assert {"training_run_spec", "training_run_manifest", "tracked_spec", "bulk_output"} <= (
+        route_roles
+    )
+    assert payload["execution_plans"]["runpod"]["backend"] == "runpod"
     assert payload["remote_smoke_command"] == build_remote_smoke_command()
     assert payload["remote_packing_benchmark_command"] == build_packing_benchmark_command(
         NominalGruRunConfig(
@@ -207,9 +234,10 @@ def test_dry_run_payload_exposes_no_warm_container_settings() -> None:
     assert planned["stochastic_no_hidden_penalty"]["nn_hidden"] == 0.0
     assert planned["stochastic_hidden_penalty"]["run"] == REGULARIZED_RUN
     assert planned["stochastic_hidden_penalty"]["nn_hidden"] == 1e-5
-    assert (
-        "--regularized-fidelity" in planned["stochastic_hidden_penalty"]["remote_training_command"]
-    )
+    assert "unavailable" in planned["stochastic_hidden_penalty"]["modal_spec_lock"]
+    assert "full_analytical_qrf" in planned["stochastic_hidden_penalty"]["modal_spec_lock"][
+        "unavailable"
+    ]
     pull = payload["modal_volume_pull_commands"]
     assert pull["artifacts"][:4] == ["modal", "volume", "get", MODAL_VOLUME_NAME]
     assert pull["artifacts"][4] == f"_artifacts/30f2313/runs/{DEFAULT_RUN}"
@@ -236,6 +264,67 @@ def test_modal_run_defaults_to_training_timeout() -> None:
     assert config.timeout_seconds == DEFAULT_TRAIN_TIMEOUT_SECONDS
     assert config.gpu == DEFAULT_GPU == "A10"
     assert config.loss_objective == "full_analytical_qrf"
+
+
+def test_local_spec_lock_renders_without_provider_payload() -> None:
+    bundle = build_launcher_spec_bundle(
+        NominalGruRunConfig(
+            experiment="d6b7018",
+            run="local_spec_lock_unit",
+            n_train_batches=1,
+            batch_size=2,
+            n_replicates=1,
+            hidden_size=4,
+        ),
+        backend="local",
+    )
+    payload = spec_lock_payload(bundle)
+
+    assert payload["backend"] == "local"
+    assert payload["cloud_payload"] == {}
+    assert payload["gpu_cloud"] == {"gpu": None, "cloud_type": "local"}
+    assert payload["training_run_spec"]["content_sha256"]
+    assert payload["rlrmp_run_spec"]["content_sha256"]
+    assert payload["derived_runner_command"].startswith("XLA_PYTHON_CLIENT_PREALLOCATE=false")
+    assert "python -m feedbax execute-training-run-spec" in payload["derived_runner_command"]
+
+
+def test_runpod_plan_renders_without_provider_contact() -> None:
+    bundle = build_launcher_spec_bundle(
+        NominalGruRunConfig(
+            experiment="d6b7018",
+            run="runpod_plan_unit",
+            n_train_batches=1,
+            batch_size=2,
+            n_replicates=1,
+            hidden_size=4,
+            runpod_cloud_type="SECURE",
+            runpod_gpu_type_ids=("NVIDIA GeForce RTX 4090",),
+        ),
+        backend="runpod",
+    )
+    payload = spec_lock_payload(bundle)
+
+    assert payload["backend"] == "runpod"
+    assert payload["gpu_cloud"]["cloud_type"] == "SECURE"
+    assert payload["gpu_cloud"]["gpu_type_ids"] == ["NVIDIA GeForce RTX 4090"]
+    assert payload["cloud_payload"]["provider"] == "runpod"
+    assert payload["cloud_payload"]["pod_request"]["cloudType"] == "SECURE"
+    assert payload["cloud_payload"]["pod_request"]["gpuTypeIds"] == [
+        "NVIDIA GeForce RTX 4090"
+    ]
+    assert "runpodctl pod create" in payload["cloud_payload"]["runpodctl_create"]
+    assert "python -m feedbax execute-training-run-spec" in payload["derived_runner_command"]
+
+
+def test_billable_modal_run_refuses_without_explicit_confirmation() -> None:
+    args = build_parser().parse_args(["modal-run"])
+
+    with pytest.raises(SystemExit, match="Refusing billable Modal training launch"):
+        require_billable_launch_confirmation(args)
+
+    confirmed = build_parser().parse_args(["modal-run", "--confirm-billable-launch"])
+    require_billable_launch_confirmation(confirmed)
 
 
 def test_activate_project_venv_exposes_uv_site_packages(

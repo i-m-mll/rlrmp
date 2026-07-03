@@ -30,8 +30,8 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
 )
 from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.data_products.broad_epsilon import load_broad_epsilon_anchors
 from rlrmp.train.cs_perturbation_training import (
-    BROAD_EPSILON_LEVELS,
     BROAD_EPSILON_REFERENCE_REACH_M,
 )
 
@@ -185,14 +185,15 @@ def declared_epsilon_l2_radius(
     """Return the declared rollout L2 radius from a b8aa38e run spec."""
 
     if budget_level_override is not None:
-        if budget_level_override not in BROAD_EPSILON_LEVELS:
-            levels = ", ".join(sorted(BROAD_EPSILON_LEVELS))
+        broad_epsilon_anchors = load_broad_epsilon_anchors()
+        if budget_level_override not in broad_epsilon_anchors:
+            levels = ", ".join(sorted(broad_epsilon_anchors.keys()))
             raise ValueError(
                 f"Unknown budget_level_override {budget_level_override!r}; "
                 f"expected one of {levels}."
             )
         contract = {
-            **BROAD_EPSILON_LEVELS[budget_level_override],
+            **broad_epsilon_anchors[budget_level_override],
             "reference_reach_m": BROAD_EPSILON_REFERENCE_REACH_M,
         }
         raw_radius = contract["closed_loop_epsilon_l2_15cm"]
@@ -742,7 +743,7 @@ def audit_run_worst_case_epsilon(
             "energy": radius * radius,
             "reach_length_m": reach_length,
             "source": (
-                f"BROAD_EPSILON_LEVELS[{budget_level_override!r}] override"
+                f"broad_epsilon_budget_anchors[{budget_level_override!r}] override"
                 if budget_level_override is not None
                 else budget_source
             ),

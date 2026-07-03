@@ -48,6 +48,7 @@ from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     materialize_validation_selected_checkpoint_manifest,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path, run_spec_path
+from rlrmp.runtime.run_specs import resolve_run_record
 from rlrmp.train.task_model import setup_task_model_pair
 
 DEFAULT_FIGURE_SUBDIR = "tmp_figures/gru_pilot"
@@ -259,7 +260,7 @@ def resolve_run_inputs(
                 label=label,
                 run_spec_path=resolved_run_spec_path,
                 artifact_dir=artifact_dir,
-                run_spec=json.loads(resolved_run_spec_path.read_text(encoding="utf-8")),
+                run_spec=resolve_run_record(experiment, run_id, repo_root=repo_root),
             )
         )
     return runs

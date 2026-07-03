@@ -58,6 +58,7 @@ def write_run_source(
     *,
     mismatched_spec_hash: bool = False,
     include_graph_sidecar: bool = True,
+    include_training_spec: bool = False,
 ) -> None:
     path.mkdir()
     manifest_relpath = "training_run_manifest.json"
@@ -138,6 +139,19 @@ def write_run_source(
         ],
         "summary_metrics": {"completed_batches": 3, "final_validation_loss": 0.125},
     }
+    if include_training_spec:
+        inline = dict(run_spec)
+        inline["schema_id"] = "rlrmp.run_spec"
+        inline["schema_version"] = "rlrmp.run_spec.v2"
+        inline["source_schema_version"] = run_spec["schema_version"]
+        manifest["training_spec"] = {
+            "kind": "RLRMPRunSpec",
+            "schema_id": "rlrmp.run_spec",
+            "schema_version": "rlrmp.run_spec.v2",
+            "inline": inline,
+            "ref": "results/731fdf7/runs/fixture__ok.json",
+            "metadata": {"source_record_role": "tracked_run_spec"},
+        }
     write_json(path / manifest_relpath, manifest)
     write_json(
         path
@@ -148,7 +162,6 @@ def write_run_source(
         manifest,
     )
     (path / "trained_model.eqx").write_text("fixture model\n", encoding="utf-8")
-
 
 def write_fake_commands(bin_dir: Path, auth_record: Path) -> tuple[Path, Path]:
     bin_dir.mkdir()
@@ -285,6 +298,7 @@ def test_local_fixture_syncs_spec_commits_and_records_auth(tmp_path: Path) -> No
     ).is_file()
     assert "| `completed_batches` | 3 |" in output
     assert "| `final_validation_loss` | 0.125 |" in output
+    assert "TrainingRunManifest parity: archive-only" in output
 
     log = run_command(["git", "log", "--oneline", "-1"], cwd=repo)
     assert "record post-run spec fixture__ok" in log
@@ -315,7 +329,6 @@ def test_local_fixture_syncs_spec_commits_and_records_auth(tmp_path: Path) -> No
     assert payload["metrics_summary"]["completed_batches"] == 3
     assert payload["metrics_summary"]["final_validation_loss"] == 0.125
     assert "timestamp" in payload
-
 
 def test_graphspec_resolves_from_flat_recipe_sidecar_dir(tmp_path: Path) -> None:
     """FIX B: GraphSpec bundle in the flat-recipe sidecar dir is resolvable.
@@ -497,7 +510,7 @@ def test_manifest_run_spec_mismatch_fails_before_commit(tmp_path: Path) -> None:
     bin_dir = tmp_path / "bin"
     auth_record = tmp_path / "auth_args.txt"
     init_git_repo(repo)
-    write_run_source(source, mismatched_spec_hash=True)
+    write_run_source(source, mismatched_spec_hash=True, include_training_spec=True)
     fake_agent_commit, fake_mandible = write_fake_commands(bin_dir, auth_record)
 
     env = os.environ.copy()

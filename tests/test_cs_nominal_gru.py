@@ -20,12 +20,14 @@ import numpy as np
 import optax
 import pytest
 from feedbax import TaskTrialSpec, TrialTimeline, WhereDict
+from feedbax.contracts.training import TrainingRunSpec
 from feedbax.objectives.loss import AbstractLoss, TargetSpec
 from feedbax.mechanics import LinearStateSpace
 from feedbax.runtime.batch import BatchInfo
 from feedbax.runtime.state_feedback import StateFeedbackSelector
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
 from feedbax.config.namespace import TreeNamespace
+from pydantic import ValidationError
 
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
@@ -33,16 +35,16 @@ from rlrmp.analysis.math.cs_game_card import (
 )
 from rlrmp.analysis.math.cs_released_simulation import default_cs_noise_covariances
 from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig
-from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
-    DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT,
-)
+from rlrmp.data_products.calibration import load_open_loop_calibration
 from rlrmp.model.cs_lss_gru import (
-    CS_LSS_FINITE_EPSILON_POLICY_COMPONENT,
+    FINITE_EPSILON_POLICY_GRAPH_COMPONENT,
+    FINITE_EPSILON_POLICY_NODE_LABEL,
     CS_EPSILON_DIM,
     CS_REDUCED_EPSILON_DIM,
     CsLssFiniteEpsilonPolicy,
     build_cs_lss_gru_graph_spec,
 )
+from rlrmp.model.trainable import staged_network_trainable_parts
 from rlrmp.loss import (
     CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
     CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
@@ -52,26 +54,33 @@ from rlrmp.loss import (
     get_reach_loss,
 )
 from rlrmp.paths import REPO_ROOT, run_artifact_dir, run_spec_dir
+import rlrmp.train.cs_nominal_gru as cs_nominal_gru
 import rlrmp.train.cs_perturbation_training as cs_perturbation_training
 from rlrmp.train.cs_nominal_gru import (
+    AdaptiveEpsilonState,
     CS_DELAYED_REACH_TASK_TYPE,
     DEFAULT_DELAYED_P_CATCH_TRIAL,
     DEFAULT_STOCHASTIC_PRESET,
     DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON,
     DELAYED_REACH_TRAINING_MODE,
     GradientDiagnosticsState,
+    TrainingState,
     UpdateDiagnosticsState,
     build_graph_bundle,
+    build_training_run_graph_spec,
     build_hps,
     build_parser,
+    build_run_spec_execution_context,
     derive_spec_dir,
     derive_spec_path,
     _adaptive_epsilon_damage_target,
     _adaptive_epsilon_outer_weight,
     _adaptive_epsilon_schedule_batch,
+    _adaptive_epsilon_zero_guard_from_state,
     _initial_adaptive_epsilon_zero_guard,
     _update_adaptive_epsilon_zero_guard,
     main,
+    render_run_spec_execution_dry_run,
     _emit_checkpoint_progress,
     _initial_adaptive_epsilon_state,
     _prepend_existing_training_diagnostics,
@@ -79,12 +88,19 @@ from rlrmp.train.cs_nominal_gru import (
     _sample_adaptive_epsilon_damage_eval_batch,
     _sample_adaptive_epsilon_training_batch,
     _update_adaptive_epsilon_state,
+    load_latest_checkpoint,
     planned_246182c_post_movement_cost_tail_rows,
     planned_e901a20_policy_adversary_rows,
     planned_ef9c882_start_pos_hold_rows,
     resolve_run_spec_args,
     run_full_training,
+    save_training_checkpoint,
     write_run_spec,
+)
+from rlrmp.runtime.training_run_specs import (
+    FEEDBAX_TRAINING_RUN_SPEC_KEY,
+    assert_runtime_graph_matches_training_spec,
+    build_feedbax_training_run_spec,
 )
 from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_ADAM,
@@ -296,9 +312,13 @@ def test_target_support_cli_default_is_band16_fixed_reach() -> None:
 def _where_train() -> dict[int, object]:
     def where_train_fn(model):
         net = model.nodes["net"]
-        return (net.hidden, net.readout)
+        return staged_network_trainable_parts(net)
 
     return {0: where_train_fn}
+
+
+def _native_recurrent_input_size(model) -> int:
+    return int(model.nodes["net"].nodes["cell"].input_size)
 
 
 def _delayed_cs_task(
@@ -852,6 +872,99 @@ def test_adaptive_epsilon_zero_adversary_guard_stops_after_two_active_checkpoint
     assert guard["should_stop"] is True
 
 
+def test_adaptive_epsilon_zero_guard_survives_checkpoint_resume(tmp_path: Path) -> None:
+    active_zero = {
+        "adaptive_epsilon_adaptive_update_inner_selected_objective_gain_over_zero": np.array(
+            [0.0]
+        ),
+        "adaptive_epsilon_target_damage": np.array([100.0]),
+        "adaptive_epsilon_outer_weight": np.array([1.0]),
+    }
+    guard = _update_adaptive_epsilon_zero_guard(
+        _initial_adaptive_epsilon_zero_guard(enabled=True),
+        active_zero,
+    )
+    checkpoint_root = tmp_path / "checkpoints"
+    model_template = jnp.asarray([1.0, 2.0], dtype=jnp.float32)
+    optimizer_state_template = jnp.asarray([3.0], dtype=jnp.float32)
+    state = TrainingState(
+        model=model_template,
+        optimizer_state=optimizer_state_template,
+        completed_batches=4,
+        key=jnp.asarray([0, 1], dtype=jnp.uint32),
+        history=None,
+        adaptive_epsilon_state=AdaptiveEpsilonState(
+            lambda_value=0.5,
+            zero_adversary_guard=guard,
+        ),
+    )
+    save_training_checkpoint(
+        checkpoint_root,
+        state,
+        args=_args(n_train_batches=8, checkpoint_interval_batches=4),
+        run_spec={"schema_version": "test"},
+    )
+
+    loaded = load_latest_checkpoint(
+        checkpoint_root,
+        model_template=model_template,
+        optimizer_state_template=optimizer_state_template,
+    )
+    assert loaded.adaptive_epsilon_state is not None
+    restored_guard = _adaptive_epsilon_zero_guard_from_state(
+        loaded.adaptive_epsilon_state,
+        enabled=True,
+    )
+
+    assert restored_guard["checkpoints_seen"] == 1
+    assert restored_guard["consecutive_active_zero_adversary_checkpoints"] == 1
+    assert restored_guard["should_stop"] is False
+
+    resumed_guard = _update_adaptive_epsilon_zero_guard(restored_guard, active_zero)
+    assert resumed_guard["checkpoints_seen"] == 2
+    assert resumed_guard["consecutive_active_zero_adversary_checkpoints"] == 2
+    assert resumed_guard["should_stop"] is True
+
+
+def test_adaptive_epsilon_zero_guard_legacy_checkpoint_defaults_to_zero(tmp_path: Path) -> None:
+    checkpoint_root = tmp_path / "checkpoints"
+    model_template = jnp.asarray([1.0, 2.0], dtype=jnp.float32)
+    optimizer_state_template = jnp.asarray([3.0], dtype=jnp.float32)
+    state = TrainingState(
+        model=model_template,
+        optimizer_state=optimizer_state_template,
+        completed_batches=4,
+        key=jnp.asarray([0, 1], dtype=jnp.uint32),
+        history=None,
+        adaptive_epsilon_state=AdaptiveEpsilonState(lambda_value=0.5),
+    )
+    checkpoint_path = save_training_checkpoint(
+        checkpoint_root,
+        state,
+        args=_args(n_train_batches=8, checkpoint_interval_batches=4),
+        run_spec={"schema_version": "test"},
+    )
+    metadata_path = checkpoint_path / "metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["adaptive_epsilon_state"].pop("zero_adversary_guard", None)
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    loaded = load_latest_checkpoint(
+        checkpoint_root,
+        model_template=model_template,
+        optimizer_state_template=optimizer_state_template,
+    )
+    assert loaded.adaptive_epsilon_state is not None
+    restored_guard = _adaptive_epsilon_zero_guard_from_state(
+        loaded.adaptive_epsilon_state,
+        enabled=True,
+    )
+
+    assert restored_guard["checkpoints_seen"] == 0
+    assert restored_guard["consecutive_active_zero_adversary_checkpoints"] == 0
+    assert restored_guard["should_stop"] is False
+
+
 def test_adaptive_epsilon_lambda_update_uses_clipped_log_ratio() -> None:
     hps = build_hps(
         _args(
@@ -1071,7 +1184,10 @@ def test_pgd_finite_mechanism_serializes_live_graph_contract() -> None:
     )
     assert payload["mechanism"]["live_evaluation"]["implementation"] == "graph_component"
     assert payload["mechanism"]["live_evaluation"]["component"] == (
-        CS_LSS_FINITE_EPSILON_POLICY_COMPONENT
+        FINITE_EPSILON_POLICY_GRAPH_COMPONENT
+    )
+    assert payload["mechanism"]["live_evaluation"]["component_label"] == (
+        FINITE_EPSILON_POLICY_NODE_LABEL
     )
     assert payload["mechanism"]["live_evaluation"]["static_clean_rollout_materialization"] is False
     assert payload["mechanism"]["no_fake_open_loop_replay"] is True
@@ -1148,7 +1264,8 @@ def test_pgd_mechanism_cli_run_spec_and_replay_for_linear_no_bias(tmp_path: Path
 
     assert pgd["adversary_mechanism"] == LINEAR_NO_BIAS_POLICY
     assert pgd["mechanism"]["implementation_status"] == "implemented"
-    assert pgd["mechanism"]["graph_component"] == CS_LSS_FINITE_EPSILON_POLICY_COMPONENT
+    assert pgd["mechanism"]["graph_component"] == FINITE_EPSILON_POLICY_GRAPH_COMPONENT
+    assert pgd["mechanism"]["graph_component_label"] == FINITE_EPSILON_POLICY_NODE_LABEL
     assert pgd["mechanism"]["live_evaluation"]["implementation"] == "graph_component"
     assert pgd["mechanism"]["live_evaluation"]["hook"] is None
     assert pgd["mechanism"]["live_evaluation"]["input_keys"] == [
@@ -1290,20 +1407,92 @@ def test_finite_pgd_graph_wires_policy_inputs_to_mechanics_epsilon() -> None:
         key=jr.PRNGKey(0),
     )
 
-    assert spec.nodes["finite_epsilon_policy"].type == CS_LSS_FINITE_EPSILON_POLICY_COMPONENT
-    assert spec.input_bindings["epsilon"] == ("finite_epsilon_policy", "base_epsilon")
+    assert spec.nodes["finite_epsilon_policy"].type == "AffineValueComposer"
+    assert spec.nodes["finite_epsilon_policy"].input_ports == [
+        "base",
+        "state",
+        "target",
+        "gain",
+        "bias",
+    ]
+    assert spec.nodes["finite_epsilon_policy"].output_ports == ["value"]
+    assert spec.nodes["finite_epsilon_policy"].params["use_bias"] is False
+    assert spec.nodes["finite_epsilon_policy"].params["output_block_size"] == CS_REDUCED_EPSILON_DIM
+    assert spec.input_bindings["epsilon"] == ("finite_epsilon_policy", "base")
     assert spec.input_bindings[FINITE_POLICY_GAINS_INPUT] == (
         "finite_epsilon_policy",
-        "gains",
+        "gain",
     )
     assert FINITE_POLICY_BIAS_INPUT not in spec.input_bindings
     assert any(
+        wire.source_node == "mechanics"
+        and wire.source_port == "state"
+        and wire.target_node == "finite_epsilon_policy"
+        and wire.target_port == "state"
+        and wire.temporality == "recurrent"
+        for wire in spec.wires
+    )
+    assert any(
+        wire.source_node == "target_source"
+        and wire.source_port == "output"
+        and wire.target_node == "feedback"
+        and wire.target_port == "target"
+        for wire in spec.wires
+    )
+    assert any(
+        wire.source_node == "target_source"
+        and wire.source_port == "output"
+        and wire.target_node == "finite_epsilon_policy"
+        and wire.target_port == "target"
+        for wire in spec.wires
+    )
+    assert any(
         wire.source_node == "finite_epsilon_policy"
-        and wire.source_port == "epsilon"
+        and wire.source_port == "value"
         and wire.target_node == "mechanics"
         and wire.target_port == "epsilon"
         for wire in spec.wires
     )
+
+
+@pytest.mark.parametrize("policy_class", [LINEAR_NO_BIAS_POLICY, AFFINE_POLICY])
+def test_pgd_mechanism_contract_points_at_native_finite_policy_component(
+    policy_class: str,
+) -> None:
+    """The live-eval descriptor must name the native node actually emitted.
+
+    Structural equivalence check for the retired-ID retirement (b20e0ea): the
+    ``pgd_adversary_mechanism_contract`` descriptor no longer stamps the retired
+    ``RLRMPCsLssFiniteEpsilonPolicy`` ID; it must instead resolve to the exact
+    Feedbax-native ``AffineValueComposer`` node (type + label) that
+    ``build_cs_lss_gru_graph_spec`` emits for the same policy class.
+    """
+
+    cfg = PgdFullStateEpsilonTrainingConfig(enabled=True, adversary_mechanism=policy_class)
+    contract = cs_perturbation_training.pgd_adversary_mechanism_contract(cfg)
+
+    spec = build_cs_lss_gru_graph_spec(
+        hidden_size=4,
+        target_relative_feedback=True,
+        bind_epsilon_input=True,
+        finite_epsilon_policy=policy_class,
+        no_integrator_state=True,
+        key=jr.PRNGKey(0),
+    )
+
+    # Descriptor names must be native, not the retired branded ID.
+    assert contract["graph_component"] == FINITE_EPSILON_POLICY_GRAPH_COMPONENT
+    assert contract["graph_component_label"] == FINITE_EPSILON_POLICY_NODE_LABEL
+    assert contract["live_evaluation"]["component"] == FINITE_EPSILON_POLICY_GRAPH_COMPONENT
+    assert contract["live_evaluation"]["component_label"] == FINITE_EPSILON_POLICY_NODE_LABEL
+    assert "RLRMPCsLss" not in contract["graph_component"]
+
+    # The descriptor must resolve to a node that actually exists in the emitted
+    # native GraphSpec, with the matching component type.
+    node = spec.nodes[contract["graph_component_label"]]
+    assert node.type == contract["graph_component"]
+    assert node.params["label"] == contract["graph_component_label"]
+    assert node.params["use_bias"] is (policy_class == AFFINE_POLICY)
 
 
 def test_finite_pgd_inner_maximizer_installs_policy_inputs_before_rollout() -> None:
@@ -2045,7 +2234,7 @@ def test_delayed_sisu_uses_separate_budget_key_and_composite_controller_input() 
     go_step = int(trial.timeline.epoch_bounds[-2])
 
     assert pair.model.input_ports[:3] == ("input", "target", "epsilon")
-    assert pair.model.nodes["net"].input_size == 8
+    assert _native_recurrent_input_size(pair.model) == 8
     assert sorted(trial.inputs) == ["epsilon", "input", "sisu", "target", "task"]
     assert trial.inputs["input"].shape[-1] == 2
     assert jnp.allclose(trial.inputs["input"][:go_step, 0], 0.0)
@@ -2569,6 +2758,90 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     assert REPO_ROOT not in output_dir.parents
 
 
+def test_feedbax_training_run_spec_rejects_cs_fields(tmp_path: Path) -> None:
+    result = write_run_spec(
+        _args(
+            output_dir=str(tmp_path / "bulk"),
+            spec_dir=str(tmp_path / "spec"),
+            smoke=True,
+            dry_run=True,
+        )
+    )
+    feedbax_spec = result["run_spec"][FEEDBAX_TRAINING_RUN_SPEC_KEY]
+
+    for field_name in (
+        "game_card",
+        "loss_objective",
+        "training_mode",
+        "CS_LSS_FEEDBACK_COMPONENT_TYPES",
+    ):
+        with pytest.raises(ValidationError):
+            TrainingRunSpec.model_validate({**feedbax_spec, field_name: "not allowed"})
+
+
+@pytest.mark.parametrize(
+    ("variant", "overrides"),
+    [
+        ("nominal", {}),
+        (
+            "delayed_reach",
+            {"delayed_reach": True, "target_relative_multitarget": True},
+        ),
+        ("perturbation_training", {"perturbation_training": True}),
+        (
+            "broad_epsilon",
+            {"target_relative_multitarget": True, "broad_epsilon_training": True},
+        ),
+        ("target_relative", {"target_relative_multitarget": True}),
+        (
+            "target_relative_h0",
+            {"target_relative_multitarget": True, "initial_hidden_encoder": True},
+        ),
+    ],
+)
+def test_cs_gru_hps_adapter_matches_expected_training_run_spec(
+    tmp_path: Path,
+    variant: str,
+    overrides: dict[str, object],
+) -> None:
+    args = _args(
+        output_dir=str(tmp_path / variant / "bulk"),
+        spec_dir=str(tmp_path / variant / "spec"),
+        smoke=True,
+        dry_run=True,
+        **overrides,
+    )
+    result = write_run_spec(args)
+    payload = result["run_spec"]
+    actual = TrainingRunSpec.model_validate(payload[FEEDBAX_TRAINING_RUN_SPEC_KEY])
+    hps = build_hps(args)
+    expected = build_feedbax_training_run_spec(
+        payload,
+        graph_spec=build_training_run_graph_spec(hps, seed=int(args.seed)),
+        output_dir=Path(args.output_dir),
+        spec_dir=Path(args.spec_dir),
+    )
+
+    assert actual == expected
+
+
+def test_training_run_spec_graph_guard_rejects_diverging_hps(tmp_path: Path) -> None:
+    args = _args(
+        output_dir=str(tmp_path / "bulk"),
+        spec_dir=str(tmp_path / "spec"),
+        smoke=True,
+        dry_run=True,
+    )
+    payload = write_run_spec(args)["run_spec"]
+    diverging_hps = build_hps(_args(hidden_size=5, n_replicates=1))
+
+    with pytest.raises(ValueError, match="Serialized TrainingRunSpec graph"):
+        assert_runtime_graph_matches_training_spec(
+            payload,
+            graph_spec=build_training_run_graph_spec(diverging_hps, seed=int(args.seed)),
+        )
+
+
 def test_full_analytical_qrf_run_spec_records_exact_objective_metadata(tmp_path: Path) -> None:
     output_dir = tmp_path / "bulk"
     spec_dir = tmp_path / "spec"
@@ -3024,9 +3297,7 @@ def test_calibrated_timing_sampler_consumes_calibrated_amplitudes() -> None:
         _unique_abs_nonzero(init_delta[..., 2:4]),
         {
             target_peak_delta_x
-            / DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT["initial_velocity_offset"][
-                "initial_condition"
-            ]
+            / load_open_loop_calibration()["initial_velocity_offset"]["initial_condition"]
         },
     )
 
@@ -3034,7 +3305,7 @@ def test_calibrated_timing_sampler_consumes_calibrated_amplitudes() -> None:
     process_delta = process_bin.inputs["epsilon"] - base.inputs["epsilon"]
     process_expected = {
         target_peak_delta_x
-        / DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT["process_epsilon_force_state_xy"]["early"]
+        / load_open_loop_calibration()["process_epsilon_force_state_xy"]["early"]
     }
     _assert_values_close_to_expected(
         _unique_abs_nonzero(process_delta),
@@ -3044,8 +3315,7 @@ def test_calibrated_timing_sampler_consumes_calibrated_amplitudes() -> None:
     command_bin = apply_validation_bin(base, hps.perturbation_training, "command_input")
     command = command_bin.inputs[GRAPH_ADAPTER_SPECS["command_input"].input_key]
     command_full = {
-        target_peak_delta_x
-        / DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT["command_input_pulse"]["early"]
+        target_peak_delta_x / load_open_loop_calibration()["command_input_pulse"]["early"]
     }
     command_xy = np.asarray(command[..., 5, :2])
     command_norm = np.linalg.norm(command_xy, axis=-1)
@@ -3270,7 +3540,23 @@ def test_calibrated_timing_run_spec_exposes_family_timing_bins(tmp_path: Path) -
         hps_config["mixture_semantics"]["calibrated_levels"]["amplitude_wiring_status"]
         == "wired_in_sampler_when_calibrated_timing_true"
     )
-    assert hps_config["calibrated_amplitude_policy"]["artifact_dependency"] == ("none_at_runtime")
+    # Fail-closed identity: calibration IS consumed at runtime in calibrated-timing
+    # mode, so the emitted policy must carry a data-product identity block with a
+    # non-null hash and must not claim "none_at_runtime" (issue ea6ccb4).
+    calibrated_policy = hps_config["calibrated_amplitude_policy"]
+    data_product = calibrated_policy["data_product"]
+    assert data_product["role"] == "perturbation_open_loop_calibration"
+    assert data_product["product_schema_version"] == "rlrmp.perturbation_open_loop_calibration.v2"
+    assert data_product["product_identity_hash"]
+    assert calibrated_policy["artifact_dependency"] != "none_at_runtime"
+    assert calibrated_policy["artifact_dependency"] == data_product["product_path"]
+    consumed = payload["consumed_data_identities"]
+    calibration_ids = [
+        entry for entry in consumed if entry["role"] == "perturbation_open_loop_calibration"
+    ]
+    assert len(calibration_ids) == 1
+    assert calibration_ids[0]["hash"] == data_product["product_identity_hash"]
+    assert calibration_ids[0]["schema"] == "rlrmp.perturbation_open_loop_calibration.v2"
 
 
 def test_movement_age_timing_run_spec_distinguishes_timing_basis(tmp_path: Path) -> None:
@@ -3322,20 +3608,27 @@ def test_movement_age_timing_run_spec_distinguishes_timing_basis(tmp_path: Path)
 
     parser = build_parser()
     replay_args = resolve_run_spec_args(
-        parser.parse_args(
-            [
-                "--run-spec",
-                movement_result["run_spec_path"],
-                "--output-dir",
-                str(tmp_path / "replay_bulk"),
-                "--spec-dir",
-                str(tmp_path / "replay_spec"),
-            ]
-        ),
+        parser.parse_args(["--run-spec", movement_result["run_spec_path"]]),
         parser=parser,
     )
     assert replay_args.perturbation_movement_age_timing is True
+    assert replay_args.output_dir == str(tmp_path / "movement_bulk")
+    assert replay_args.spec_dir == str(tmp_path / "movement_spec")
 
+    with pytest.raises(ValueError, match="artifact route"):
+        resolve_run_spec_args(
+            parser.parse_args(
+                [
+                    "--run-spec",
+                    movement_result["run_spec_path"],
+                    "--output-dir",
+                    str(tmp_path / "replay_bulk"),
+                    "--spec-dir",
+                    str(tmp_path / "replay_spec"),
+                ]
+            ),
+            parser=parser,
+        )
 
 def test_target_relative_feedback_sign_contract() -> None:
     spec = build_cs_lss_gru_graph_spec(
@@ -3553,7 +3846,7 @@ def test_delayed_reach_setup_adds_go_cue_and_preserves_target_visibility() -> No
     assert hps.task.p_catch_trial == pytest.approx(0.0)
     assert hps.loss.weights.nn_output_pre_go == pytest.approx(1.0)
     assert pair.model.input_ports[:3] == ("input", "target", "epsilon")
-    assert pair.model.nodes["net"].input_size == 7
+    assert _native_recurrent_input_size(pair.model) == 7
     assert trial.timeline.epoch_names == ("prep", "movement")
     assert 10 <= go_step <= 30
     assert trial.inputs["input"].shape == (trial.timeline.n_steps - 1,)
@@ -4560,7 +4853,7 @@ def test_force_filter_feedback_setup_uses_six_dimensional_feedback() -> None:
     assert hps.target_relative_multitarget.force_filter_feedback is True
     assert hps.target_relative_multitarget.input_contract.shape == [6]
     assert hps.model.force_filter_feedback is True
-    assert pair.model.nodes["net"].input_size == 6
+    assert _native_recurrent_input_size(pair.model) == 6
     assert pair.model.nodes["sensory"].input_proto.shape[-1] == 6
 
 
@@ -4742,18 +5035,12 @@ def test_modern_run_spec_replays_to_current_training_args(tmp_path: Path) -> Non
     )
     result = write_run_spec(args)
 
-    replay_output_dir = tmp_path / "current_artifacts"
-    replay_spec_dir = tmp_path / "current_spec"
     parser = build_parser()
     replay_args = resolve_run_spec_args(
         parser.parse_args(
             [
                 "--run-spec",
                 result["run_spec_path"],
-                "--output-dir",
-                str(replay_output_dir),
-                "--spec-dir",
-                str(replay_spec_dir),
                 "--stop-after-batches",
                 "1000",
             ]
@@ -4762,8 +5049,8 @@ def test_modern_run_spec_replays_to_current_training_args(tmp_path: Path) -> Non
     )
 
     assert replay_args.issue == "020a65b"
-    assert replay_args.output_dir == str(replay_output_dir)
-    assert replay_args.spec_dir == str(replay_spec_dir)
+    assert replay_args.output_dir == str(output_dir)
+    assert replay_args.spec_dir == str(spec_dir)
     assert replay_args.full_train is True
     assert replay_args.stop_after_batches == 1000
     assert replay_args.n_train_batches == 12000
@@ -4780,6 +5067,54 @@ def test_modern_run_spec_replays_to_current_training_args(tmp_path: Path) -> Non
     assert replay_args.force_filter_feedback is True
     assert replay_args.broad_epsilon_training is False
     assert replay_args.broad_epsilon_pgd_training is False
+
+
+def test_run_spec_replay_rejects_artifact_route_override(tmp_path: Path) -> None:
+    result = write_run_spec(
+        _args(
+            output_dir=str(tmp_path / "historical_artifacts"),
+            spec_dir=str(tmp_path / "historical_spec"),
+            full_train=True,
+        )
+    )
+    parser = build_parser()
+
+    with pytest.raises(ValueError, match="artifact route"):
+        resolve_run_spec_args(
+            parser.parse_args(
+                [
+                    "--run-spec",
+                    result["run_spec_path"],
+                    "--output-dir",
+                    str(tmp_path / "current_artifacts"),
+                ]
+            ),
+            parser=parser,
+        )
+
+
+def test_run_spec_replay_rejects_scientific_payload_override(tmp_path: Path) -> None:
+    result = write_run_spec(
+        _args(
+            output_dir=str(tmp_path / "historical_artifacts"),
+            spec_dir=str(tmp_path / "historical_spec"),
+            full_train=True,
+        )
+    )
+    parser = build_parser()
+
+    with pytest.raises(ValueError, match="scientific payload"):
+        resolve_run_spec_args(
+            parser.parse_args(
+                [
+                    "--run-spec",
+                    result["run_spec_path"],
+                    "--n-train-batches",
+                    "8",
+                ]
+            ),
+            parser=parser,
+        )
 
 
 def test_flat_run_spec_replay_does_not_require_adjacent_graph_manifest(
@@ -4806,39 +5141,30 @@ def test_flat_run_spec_replay_does_not_require_adjacent_graph_manifest(
     flat_run_spec = flat_spec_dir / "delayed_movement_bank.json"
     flat_run_spec.write_text(Path(result["run_spec_path"]).read_text(), encoding="utf-8")
 
-    replay_spec_dir = tmp_path / "replayed_spec"
     parser = build_parser()
     replay_args = resolve_run_spec_args(
-        parser.parse_args(
-            [
-                "--run-spec",
-                str(flat_run_spec),
-                "--output-dir",
-                str(tmp_path / "replayed_artifacts"),
-                "--spec-dir",
-                str(replay_spec_dir),
-                "--broad-epsilon-pgd-training",
-                "--broad-epsilon-budget-scale",
-                "3.688240371719434",
-                "--broad-epsilon-pgd-steps",
-                "10",
-            ]
-        ),
+        parser.parse_args(["--run-spec", str(flat_run_spec)]),
         parser=parser,
     )
-    replay_result = write_run_spec(replay_args)
-    replay_payload = json.loads(Path(replay_result["run_spec_path"]).read_text())
 
-    assert Path(replay_result["graph_manifest_path"]).is_file()
-    assert Path(replay_result["graph_manifest_path"]).parent == replay_spec_dir
-    assert Path(replay_result["run_spec_path"]) == replay_spec_dir.with_suffix(".json")
-    assert not (replay_spec_dir / "run.json").exists()
-    pgd = replay_payload["hps"]["broad_epsilon_pgd_training"]
-    assert pgd["enabled"] is True
-    assert pgd["epsilon_dim"] == 8
-    assert pgd["movement_epoch_only"] is True
-    assert pgd["budget_scale"] == pytest.approx(3.688240371719434)
-    assert pgd["inner_maximizer"]["n_steps"] == 10
+    assert replay_args.output_dir == str(tmp_path / "historical_artifacts")
+    assert replay_args.spec_dir == str(tmp_path / "historical_spec")
+
+    with pytest.raises(ValueError, match="scientific payload"):
+        resolve_run_spec_args(
+            parser.parse_args(
+                [
+                    "--run-spec",
+                    str(flat_run_spec),
+                    "--broad-epsilon-pgd-training",
+                    "--broad-epsilon-budget-scale",
+                    "3.688240371719434",
+                    "--broad-epsilon-pgd-steps",
+                    "10",
+                ]
+            ),
+            parser=parser,
+        )
 
 
 def test_full_train_run_spec_replay_dry_run_stays_on_spec_path(
@@ -4866,10 +5192,94 @@ def test_full_train_run_spec_replay_dry_run_stays_on_spec_path(
     payload = json.loads(capsys.readouterr().out)
 
     assert "would_write" in payload
+    assert payload["would_execute"]["entrypoint"].endswith("_run_full_training_from_context")
     assert payload["run_spec"]["full_training_launch"] == "requested"
     assert payload["run_spec"]["hps"]["loss"]["delayed_movement_cost_tail_mode"] == (
         DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON
     )
+
+
+def test_spec_file_execution_context_uses_validated_payload(tmp_path: Path) -> None:
+    result = write_run_spec(
+        _args(
+            output_dir=str(tmp_path / "artifacts"),
+            spec_dir=str(tmp_path / "spec"),
+            smoke=True,
+            full_train=True,
+        )
+    )
+    parser = build_parser()
+    context = build_run_spec_execution_context(
+        parser.parse_args(
+            [
+                "--run-spec",
+                result["run_spec_path"],
+                "--resume",
+                "--stop-after-batches",
+                "1",
+            ]
+        ),
+        parser=parser,
+    )
+
+    assert context.run_spec_path == Path(result["run_spec_path"])
+    assert context.run_spec["full_training_launch"] == "requested"
+    assert context.args.resume is True
+    assert context.args.stop_after_batches == 1
+    assert context.hps.hidden_type is eqx.nn.GRUCell
+    assert context.hps.model.hidden_size == 4
+
+
+def test_legacy_full_train_flags_emit_spec_before_execution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = {}
+
+    def fake_executor(context, *, volume_commit=None):  # noqa: ANN001, ANN202
+        captured["context"] = context
+        captured["volume_commit"] = volume_commit
+        return {"run_spec_path": str(context.run_spec_path), "completed_batches": 0}
+
+    monkeypatch.setattr(cs_nominal_gru, "_run_full_training_from_context", fake_executor)
+
+    result = run_full_training(
+        _args(
+            output_dir=str(tmp_path / "artifacts"),
+            spec_dir=str(tmp_path / "spec"),
+            smoke=True,
+            full_train=True,
+        )
+    )
+    context = captured["context"]
+
+    assert Path(result["run_spec_path"]).is_file()
+    assert context.run_spec_path == Path(result["run_spec_path"])
+    assert context.args.smoke is False
+    assert context.run_spec["mode"] == "full_train"
+    assert context.run_spec["model_summary"]["hidden_size"] == 4
+    assert context.hps.model.hidden_size == 4
+
+
+def test_run_spec_dry_run_renderer_does_not_write(tmp_path: Path) -> None:
+    result = write_run_spec(
+        _args(
+            output_dir=str(tmp_path / "artifacts"),
+            spec_dir=str(tmp_path / "spec"),
+            smoke=True,
+            full_train=True,
+        )
+    )
+    context = build_run_spec_execution_context(
+        build_parser().parse_args(["--run-spec", result["run_spec_path"], "--dry-run"])
+    )
+
+    rendered = render_run_spec_execution_dry_run(context)
+
+    assert rendered["validated"] is True
+    assert rendered["would_write"] == []
+    assert rendered["would_execute"]["output_dir"] == str(tmp_path / "artifacts")
+    assert rendered["run_spec"]["mode"] == "full_train"
 
 
 def test_initial_hidden_encoder_requires_target_relative_hps() -> None:

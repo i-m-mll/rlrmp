@@ -60,6 +60,14 @@ from rlrmp.model.feedbax_channel_adapters import (
     find_materialized_additive_channel_adapter,
     materialize_additive_channel_adapter_on_graph,
 )
+from rlrmp.model.feedback_descriptors import (
+    COMPONENT_FORCE_FILTER,
+    COMPONENT_POSITION,
+    COMPONENT_VELOCITY,
+    DESCRIPTOR_PAYLOAD_KEY,
+    controller_feedback_axis_index,
+    resolve_controller_feedback_view,
+)
 from rlrmp.io import write_compact_json
 from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
@@ -382,29 +390,30 @@ def default_cs_perturbation_bank(
                     "insertion_point": "sensory.output -> net.feedback",
                 },
             ),
-            ):
-                for feedback_quantity, units, amplitude, axes in (
-                    ("position", "m", 0.01, ("x", "y")),
-                    ("velocity", "m/s", 0.05, ("vx", "vy")),
-                    ("force_filter", "N", 0.1, ("x", "y")),
-                ):
-                    for axis in axes:
-                        for sign in (-1, 1):
-                            axis_role = _target_relative_axis_role(axis)
-                            feedback_index = _controller_visible_feedback_index(
-                                feedback_quantity,
-                                axis,
-                            )
-                            perturbations.append(
-                                PerturbationSpec(
+        ):
+            for component in resolve_controller_feedback_view(
+                None,
+                feedback_dim=6,
+                source="default_gru_perturbation_bank",
+            ).iter_components():
+                amplitude = _default_feedback_amplitude(component.component_id)
+                for axis in component.axes:
+                    for sign in (-1, 1):
+                        axis_role = _target_relative_axis_role(axis)
+                        feedback_index = _controller_visible_feedback_index(
+                            component.component_id,
+                            axis,
+                        )
+                        perturbations.append(
+                            PerturbationSpec(
                                 perturbation_id=(
-                                    f"{family}__{feedback_quantity}__"
+                                    f"{family}__{component.component_id}__"
                                     f"{timing_bin.label}_t{start}_{axis}_{_sign_label(sign)}"
                                 ),
                                 channel=channel,
                                 family=family,
                                 amplitude=amplitude,
-                                units=units,
+                                units=component.units or "model_feedback_units",
                                 axis=axis,
                                 basis=basis,
                                 sign=sign,
@@ -418,7 +427,7 @@ def default_cs_perturbation_bank(
                                 adapter=f"feedbax.additive_channel_adapter.{channel}",
                                 description=(
                                     f"{description} This row is a signed "
-                                    f"target-relative {axis_role} {feedback_quantity} "
+                                    f"target-relative {axis_role} {component.component_id} "
                                     "false-feedback probe in the canonical +x reach."
                                 ),
                                 calibration_role="raw_default_requires_same_bank_calibration",
@@ -426,10 +435,12 @@ def default_cs_perturbation_bank(
                                 semantic_family=semantic_family or "false_feedback_offset",
                                 channel_provenance={
                                     **provenance,
-                                    "feedback_quantity": feedback_quantity,
+                                    "feedback_quantity": component.component_id,
+                                    "descriptor_id": component.descriptor_id,
                                     "feedback_payload_index": feedback_index,
-                                    "force_filter_feedback_only": feedback_quantity
-                                    == "force_filter",
+                                    "force_filter_feedback_only": (
+                                        component.component_id == COMPONENT_FORCE_FILTER
+                                    ),
                                     "target_relative_axis_role": axis_role,
                                     "target_relative_basis": "canonical_plus_x_reach",
                                     "false_feedback_probe": True,
@@ -568,13 +579,15 @@ def default_cs_calibrated_perturbation_bank(
 
     from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
         DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS,
-        DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S,
-        DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT,
         DEFAULT_PLANT_TIMING_BINS,
         DEFAULT_REACH_CALIBRATION_POINTS,
         DEFAULT_REACH_RELATIVE_LEVELS,
         calibrated_amplitude_from_unit_sensitivity,
     )
+    from rlrmp.data_products.calibration import load_open_loop_calibration
+
+    calibration = load_open_loop_calibration()
+    controller_visible_velocity_scale_m_s = calibration.controller_visible_velocity_scale_m_s
 
     reach = _select_reach_calibration_point(
         calibration_reach,
@@ -641,7 +654,7 @@ def default_cs_calibrated_perturbation_bank(
             ("initial_position_offset", "m"),
             ("initial_velocity_offset", "m/s"),
         ):
-            sensitivity = DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT[family]["initial_condition"]
+            sensitivity = calibration[family]["initial_condition"]
             amplitude = calibrated_amplitude_from_unit_sensitivity(
                 target_peak_delta_x_m=target_peak,
                 peak_delta_x_per_unit_m=float(sensitivity),
@@ -650,9 +663,7 @@ def default_cs_calibrated_perturbation_bank(
                 for sign in (-1, 1):
                     perturbations.append(
                         PerturbationSpec(
-                            perturbation_id=(
-                                f"{family}__{level.name}__{axis}_{_sign_label(sign)}"
-                            ),
+                            perturbation_id=(f"{family}__{level.name}__{axis}_{_sign_label(sign)}"),
                             channel="initial_state",
                             family=family,
                             amplitude=amplitude,
@@ -739,11 +750,7 @@ def default_cs_calibrated_perturbation_bank(
                     if family == "target_aligned_lateral_command_load_pulse"
                     else family
                 )
-                sensitivity = float(
-                    DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT[sensitivity_family][
-                        timing_bin.label
-                    ]
-                )
+                sensitivity = float(calibration[sensitivity_family][timing_bin.label])
                 amplitude = calibrated_amplitude_from_unit_sensitivity(
                     target_peak_delta_x_m=target_peak,
                     peak_delta_x_per_unit_m=sensitivity,
@@ -909,14 +916,11 @@ def default_cs_calibrated_perturbation_bank(
                                 },
                             )
                         )
-                velocity_amplitude = (
-                    float(
-                        velocity_scale["reference_scale"]
-                        if velocity_scale is not None
-                        else DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S
-                    )
-                    * float(level.fraction_of_reach)
-                )
+                velocity_amplitude = float(
+                    velocity_scale["reference_scale"]
+                    if velocity_scale is not None
+                    else controller_visible_velocity_scale_m_s
+                ) * float(level.fraction_of_reach)
                 for axis in ("vx", "vy"):
                     for sign in (-1, 1):
                         axis_role = _target_relative_axis_role(axis)
@@ -960,7 +964,7 @@ def default_cs_calibrated_perturbation_bank(
                                     "nominal_peak_speed_m_s": float(
                                         velocity_scale["reference_scale"]
                                         if velocity_scale is not None
-                                        else DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S
+                                        else controller_visible_velocity_scale_m_s
                                     ),
                                     "controller_feedback_scale": (
                                         None
@@ -977,8 +981,8 @@ def default_cs_calibrated_perturbation_bank(
                                 },
                             )
                         )
-                force_filter_amplitude = (
-                    float(force_filter_scale["reference_scale"]) * float(level.fraction_of_reach)
+                force_filter_amplitude = float(force_filter_scale["reference_scale"]) * float(
+                    level.fraction_of_reach
                 )
                 for axis in ("x", "y"):
                     for sign in (-1, 1):
@@ -1096,9 +1100,10 @@ def default_cs_calibrated_perturbation_bank(
                     "force_filter": _feedback_scale_provenance(force_filter_scale),
                 },
                 "source": (
-                    "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py "
-                    "DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT, native conventions, "
-                    "and nominal-rollout controller feedback scale manifest"
+                    "governed open-loop calibration data product "
+                    "(rlrmp.perturbation_open_loop_calibration.v2 at "
+                    "results/ea6ccb4/data_products/perturbation_open_loop_calibration.json), "
+                    "native conventions, and nominal-rollout controller feedback scale manifest"
                 ),
             },
             "perturbations": [spec.to_json() for spec in perturbations],
@@ -1112,7 +1117,9 @@ def _load_feedback_scale_manifest(
     manifest_path: Path | None,
 ) -> Mapping[str, Any] | None:
     if manifest is not None and manifest_path is not None:
-        raise ValueError("Pass either feedback_scale_manifest or feedback_scale_manifest_path, not both")
+        raise ValueError(
+            "Pass either feedback_scale_manifest or feedback_scale_manifest_path, not both"
+        )
     if manifest is not None:
         return manifest
     if manifest_path is None:
@@ -1138,6 +1145,15 @@ def _controller_feedback_component_scale(
     scale_entries = _controller_feedback_scale_entries(manifest)
     component_entries: list[dict[str, Any]] = []
     for run_id, entry in scale_entries:
+        descriptor_payload = entry.get(DESCRIPTOR_PAYLOAD_KEY)
+        descriptor_view = resolve_controller_feedback_view(
+            descriptor_payload if isinstance(descriptor_payload, Mapping) else None,
+            feedback_dim=int(
+                entry.get("feedback_dim", 6 if component == COMPONENT_FORCE_FILTER else 4)
+            ),
+            source="gru_perturbation_bank.feedback_scale_manifest",
+        )
+        descriptor_id = descriptor_view.component(component).descriptor_id
         components = entry.get("components", {})
         if not isinstance(components, Mapping) or component not in components:
             continue
@@ -1150,6 +1166,7 @@ def _controller_feedback_component_scale(
         component_entries.append(
             {
                 "run_id": run_id,
+                "descriptor_id": payload.get("descriptor_id", descriptor_id),
                 "reference_scale": float(reference_scale),
                 "reference_scale_statistic": payload.get(
                     "reference_scale_statistic",
@@ -1174,6 +1191,7 @@ def _controller_feedback_component_scale(
     reference_scale = float(np.mean([entry["reference_scale"] for entry in component_entries]))
     return {
         "component": component,
+        "descriptor_id": component_entries[0].get("descriptor_id"),
         "reference_scale": reference_scale,
         "aggregation": "mean_reference_scale_across_manifest_runs",
         "runs": component_entries,
@@ -1184,7 +1202,9 @@ def _controller_feedback_scale_entries(
     manifest: Mapping[str, Any],
 ) -> list[tuple[str | None, Mapping[str, Any]]]:
     if manifest.get("schema_version") == "rlrmp.controller_feedback_scales.v1":
-        return [(str(manifest.get("run_id")) if manifest.get("run_id") is not None else None, manifest)]
+        return [
+            (str(manifest.get("run_id")) if manifest.get("run_id") is not None else None, manifest)
+        ]
 
     runs = manifest.get("runs")
     if isinstance(runs, Mapping):
@@ -1206,6 +1226,7 @@ def _controller_feedback_scale_entries(
 def _feedback_scale_provenance(scale: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "component": scale["component"],
+        "descriptor_id": scale.get("descriptor_id"),
         "reference_scale": float(scale["reference_scale"]),
         "aggregation": scale["aggregation"],
         "runs": list(scale["runs"]),
@@ -1353,8 +1374,7 @@ def _initial_position_contract_manifest() -> dict[str, Any]:
                     "validation-selected checkpoints."
                 ),
                 "future_graphspec_mapping": (
-                    "task-data initial hand transform with immediate current-state "
-                    "visibility"
+                    "task-data initial hand transform with immediate current-state visibility"
                 ),
             },
         },
@@ -1545,14 +1565,8 @@ def materialize_gru_perturbation_response(
             ),
             "checkpoint_selection_mode": checkpoint_selection_mode,
         },
-        inputs=[
-            {"role": "run_spec", "path": run.run_spec_path}
-            for run in runs_for_spec
-        ]
-        + [
-            {"role": "run_artifact_dir", "path": run.artifact_dir}
-            for run in runs_for_spec
-        ]
+        inputs=[{"role": "run_spec", "path": run.run_spec_path} for run in runs_for_spec]
+        + [{"role": "run_artifact_dir", "path": run.artifact_dir} for run in runs_for_spec]
         + (
             []
             if preferred_checkpoint_manifest_path is None
@@ -1561,7 +1575,9 @@ def materialize_gru_perturbation_response(
         + (
             []
             if feedback_scale_manifest_path is None
-            else [{"role": "controller_feedback_scale_manifest", "path": feedback_scale_manifest_path}]
+            else [
+                {"role": "controller_feedback_scale_manifest", "path": feedback_scale_manifest_path}
+            ]
         ),
         outputs=[
             {"role": "perturbation_response_manifest", "path": output_path},
@@ -1700,7 +1716,10 @@ def _effective_checkpoint_policy_from_manifest(
     """Return the checkpoint policy represented by an optional preferred manifest."""
 
     effective_selection_mode = checkpoint_selection_mode
-    if effective_selection_mode == "sparse_history" and preferred_checkpoint_manifest_path is not None:
+    if (
+        effective_selection_mode == "sparse_history"
+        and preferred_checkpoint_manifest_path is not None
+    ):
         effective_selection_mode = "fixed_bank_manifest"
     if effective_selection_mode == "sparse_history":
         return "validation_selected_per_replicate"
@@ -1765,8 +1784,7 @@ def evaluate_run_perturbation_bank(
     bulk_files: dict[str, str] = {}
     if evaluation_backend != "serial":
         raise ValueError(
-            f"unsupported perturbation evaluation backend {evaluation_backend!r}; "
-            "expected 'serial'"
+            f"unsupported perturbation evaluation backend {evaluation_backend!r}; expected 'serial'"
         )
 
     for perturbation in bank["perturbations"]:
@@ -2147,7 +2165,9 @@ def _command_input_no_op_guard(
         "input_response_max": input_max,
         "full_qrf_delta_abs_max": cost_abs_max,
     }
-    finite_values = [value for value in observed.values() if value is not None and np.isfinite(value)]
+    finite_values = [
+        value for value in observed.values() if value is not None and np.isfinite(value)
+    ]
     if finite_values and max(abs(value) for value in finite_values) > tolerance:
         return {
             "status": "passed",
@@ -2267,8 +2287,7 @@ def score_full_qrf_rollout_cost(
     horizon = int(schedule.T)
     if state_array.shape[-2] != horizon:
         raise ValueError(
-            f"Full-Q/R/Q_f scorer expected {horizon} rollout states, "
-            f"got {state_array.shape[-2]}."
+            f"Full-Q/R/Q_f scorer expected {horizon} rollout states, got {state_array.shape[-2]}."
         )
     if command_array.shape[-2] != horizon:
         raise ValueError(
@@ -2383,11 +2402,7 @@ def _full_qrf_window_inputs(
     else:
         basis = "timeline_epoch_bounds_movement_window"
     stop = int(start + horizon)
-    window_initial = (
-        initial_array
-        if start == 0
-        else state_array[..., start - 1, :]
-    )
+    window_initial = initial_array if start == 0 else state_array[..., start - 1, :]
     return (
         state_array[..., start:stop, :],
         command_array[..., start:stop, :],
@@ -2506,10 +2521,7 @@ def _validate_timed_pulse_indices(
     if duration < 1:
         return f"duration={duration} must be positive"
     if np.any(start_indices < 0) or np.any(start_indices + duration > n_time):
-        return (
-            f"start_indices={start_indices.tolist()}, duration={duration}, "
-            f"n_time={n_time}"
-        )
+        return f"start_indices={start_indices.tolist()}, duration={duration}, n_time={n_time}"
     return None
 
 
@@ -2577,10 +2589,7 @@ def evaluate_extlqg_perturbation_comparator(
         return {
             "status": "blocked",
             "lens": "deterministic_extlqg_same_declared_perturbation",
-            "reason": (
-                "requires extLQG comparator context keys: "
-                + ", ".join(missing_context)
-            ),
+            "reason": ("requires extLQG comparator context keys: " + ", ".join(missing_context)),
             "selection_role": "audit_only_not_used_for_checkpoint_selection",
         }
     try:
@@ -3160,9 +3169,7 @@ def _apply_movement_onset_initial_state_process_impulse(
             "movement_start_indices": [int(start) for start in movement_starts.tolist()],
             "movement_start_source": movement_start_source,
             "start_time_index": int(movement_starts[0]),
-            "absolute_start_time_indices": [
-                int(start) for start in movement_starts.tolist()
-            ],
+            "absolute_start_time_indices": [int(start) for start in movement_starts.tolist()],
             "relative_start_time_index": 0,
             "duration_steps": 1,
             "epsilon_index": epsilon_index,
@@ -3222,8 +3229,7 @@ def _apply_command_input_pulse(
             target_node="mechanics",
             target_port="force",
             graphspec_mapping=(
-                "named additive command_input channel on efferent.output -> "
-                "mechanics.force"
+                "named additive command_input channel on efferent.output -> mechanics.force"
             ),
         ),
     )
@@ -3441,10 +3447,7 @@ def _apply_process_epsilon_pulse(
         return AdapterResult(
             status="blocked",
             trial_specs=trial_specs,
-            reason=(
-                "process_epsilon_pulse timing is outside epsilon time axis: "
-                f"{timing_error}"
-            ),
+            reason=(f"process_epsilon_pulse timing is outside epsilon time axis: {timing_error}"),
         )
     amount = float(perturbation["amplitude"]) * int(perturbation["sign"])
     adapter_spec = _process_epsilon_adapter_spec(
@@ -3601,12 +3604,17 @@ def _extlqg_observation_sign_multiplier(
 
 
 def _controller_visible_feedback_index(feedback_quantity: str, axis: str) -> int:
-    axis_index = _axis_index(axis)
-    if feedback_quantity in {"position", "velocity"}:
-        return axis_index
-    if feedback_quantity == "force_filter":
-        return 4 + axis_index
-    raise ValueError(f"Unsupported controller-visible feedback quantity {feedback_quantity!r}")
+    return controller_feedback_axis_index(feedback_quantity, axis, feedback_dim=6)
+
+
+def _default_feedback_amplitude(component_id: str) -> float:
+    if component_id == COMPONENT_POSITION:
+        return 0.01
+    if component_id == COMPONENT_VELOCITY:
+        return 0.05
+    if component_id == COMPONENT_FORCE_FILTER:
+        return 0.1
+    raise ValueError(f"Unsupported controller-visible feedback quantity {component_id!r}")
 
 
 def _process_epsilon_adapter_spec(
@@ -3742,9 +3750,7 @@ def _build_extlqg_comparator_context(
 def _build_robust_output_feedback_comparator_context() -> dict[str, Any]:
     """Build deterministic robust output-feedback comparator context."""
 
-    reference = materialize_reference(
-        gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,)
-    )
+    reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
     gamma_ref = reference.gamma_references[0]
     plant = reference.plant
     schedule = reference.schedule
@@ -4020,8 +4026,7 @@ def _extlqg_process_epsilon(
     duration = int(timing.get("duration_steps", 1))
     if start < 0 or duration < 1 or start + duration > horizon:
         raise ValueError(
-            f"process_epsilon timing outside analytical horizon: {start=}, "
-            f"{duration=}, {horizon=}"
+            f"process_epsilon timing outside analytical horizon: {start=}, {duration=}, {horizon=}"
         )
     amount = float(perturbation["amplitude"]) * int(perturbation["sign"])
     epsilon = jnp.zeros((horizon, epsilon_dim), dtype=jnp.float64)
@@ -4043,8 +4048,7 @@ def _extlqg_command_input_offset(
     duration = int(timing.get("duration_steps", 1))
     if start < 0 or duration < 1 or start + duration > horizon:
         raise ValueError(
-            f"command-input timing outside analytical horizon: {start=}, "
-            f"{duration=}, {horizon=}"
+            f"command-input timing outside analytical horizon: {start=}, {duration=}, {horizon=}"
         )
     amount = float(perturbation["amplitude"]) * int(perturbation["sign"])
     offset = jnp.zeros((horizon, action_dim), dtype=jnp.float64)
@@ -4178,9 +4182,7 @@ def _goal_centered_vectors(values: Any, *, target_pos: Any, physical_dim: int = 
     if target.shape != (2,):
         raise ValueError(f"target_pos must have shape (2,), got {target.shape}")
     if result.shape[-1] % physical_dim != 0:
-        raise ValueError(
-            f"state dimension {result.shape[-1]} is not divisible by {physical_dim}"
-        )
+        raise ValueError(f"state dimension {result.shape[-1]} is not divisible by {physical_dim}")
     for start in range(0, result.shape[-1], physical_dim):
         result = result.at[..., start : start + 2].add(-target)
     return result
@@ -4504,9 +4506,7 @@ def _class_group_summary(
         _available_metric_means(evaluated, "extra_full_qrf_cost.delta_cost.total")
     )
     comparator_rows = [
-        row
-        for row in evaluated
-        if row.get("extlqg_comparator", {}).get("status") == "available"
+        row for row in evaluated if row.get("extlqg_comparator", {}).get("status") == "available"
     ]
     cost_ratio = _ratio_of_means(
         _available_metric_means(evaluated, "extra_full_qrf_cost.delta_cost.total"),
@@ -4556,11 +4556,9 @@ def _class_group_summary(
         "robust_analytical_not_applicable_reasons": _reason_counts(
             row.get("robust_output_feedback_comparator", {})
             for row in rows
-            if row.get("robust_output_feedback_comparator", {}).get("status")
-            == "not_applicable"
+            if row.get("robust_output_feedback_comparator", {}).get("status") == "not_applicable"
         ),
-        "denominator_warnings": _ratio_warnings(cost_ratio)
-        + _ratio_warnings(robust_cost_ratio),
+        "denominator_warnings": _ratio_warnings(cost_ratio) + _ratio_warnings(robust_cost_ratio),
     }
 
 
@@ -4851,11 +4849,7 @@ def _signed_pair_response_summary(rows: Sequence[Mapping[str, Any]]) -> dict[str
         "pairing_rule": "channel/family/axis/timing/amplitude +/- pairs",
         "pairs": pair_summaries,
         "aggregate": {
-            metric: {
-                key: _summary_stats(values)
-                for key, values in metric_values.items()
-                if values
-            }
+            metric: {key: _summary_stats(values) for key, values in metric_values.items() if values}
             for metric, metric_values in aggregate_by_metric.items()
         },
     }
@@ -4892,9 +4886,7 @@ def _controller_io_bank_summary(rows: Sequence[Mapping[str, Any]]) -> dict[str, 
 
 def _available_metric_means(rows: Sequence[Mapping[str, Any]], metric: str) -> list[float]:
     return [
-        value
-        for row in rows
-        if (value := _metric_mean(row.get("metrics", {}), metric)) is not None
+        value for row in rows if (value := _metric_mean(row.get("metrics", {}), metric)) is not None
     ]
 
 

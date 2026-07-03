@@ -13,6 +13,7 @@ import math
 import os
 import subprocess
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
@@ -34,6 +35,7 @@ from feedbax.runtime.batch import BatchInfo
 from feedbax.runtime.graph import init_state_from_component
 from feedbax.runtime.iteration import run_component
 from feedbax.runtime.parameter_constraints import project_component_parameters
+from feedbax.training.checkpoint_custody import CheckpointCompatibilityError
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule
 from feedbax.training.trainer import get_model_parameters, init_task_trainer_history
 from feedbax.tasks import (
@@ -59,11 +61,19 @@ from rlrmp.analysis.math.cs_released_simulation import (
     default_cs_noise_covariances,
 )
 from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig
-from rlrmp.model.cs_lss_gru import CS_H0_CONTEXT_DIM, CS_H0_ENCODER_INIT
+from rlrmp.model.cs_lss_gru import (
+    CS_H0_CONTEXT_DIM,
+    CS_H0_ENCODER_INIT,
+)
+from rlrmp.model.feedback_descriptors import (
+    DESCRIPTOR_PAYLOAD_KEY,
+    controller_feedback_descriptor_payload,
+)
 from rlrmp.model.feedbax_graph import (
     EXECUTION_BACKEND,
     GRAPH_PLANT_INTERVENOR_NODE,
     RLRMPFeedbaxGraphBundle,
+    build_runtime_rlrmp_feedbax_graph_bundle,
     build_point_mass_sensorimotor_graph_spec,
     write_graph_spec_bundle,
 )
@@ -76,6 +86,27 @@ from rlrmp.loss import (
 from rlrmp.io import compact_json_dumps, write_compact_json
 from rlrmp.paths import REPO_ROOT, mkdir_p, run_spec_path
 from rlrmp.runtime.run_specs import validate_nominal_gru_run_spec
+from rlrmp.runtime.checkpoint_custody import (
+    has_custody_checkpoint,
+    has_feedbax_training_spec,
+    load_cs_checkpoint_transaction,
+    deserialize_pytree_slot,
+    serialize_pytree_slot,
+    write_cs_checkpoint_transaction,
+)
+from rlrmp.runtime.training_run_specs import (
+    FEEDBAX_TRAINING_RUN_SPEC_KEY,
+    RLRMP_RUN_SPEC_PAYLOAD_KEY,
+    attach_composed_training_specs,
+    attach_post_run_provenance,
+    assert_runtime_graph_matches_training_spec,
+    feedbax_training_run_spec_from_payload,
+    write_training_run_manifest_for_spec,
+)
+from rlrmp.runtime.spec_migrations import (
+    RUN_SPEC_KIND,
+    accept_rlrmp_spec_payload,
+)
 from rlrmp.model.stochastic_runtime import (
     graphspec_noise_contract,
     stochastic_runtime_config_from_model,
@@ -111,6 +142,7 @@ from rlrmp.train.cs_perturbation_training import (
     PolicyFullStateEpsilonTrainingConfig,
     config_from_broad_epsilon_pgd_hps,
     config_from_policy_adversary_hps,
+    consumed_calibration_budget_identities,
     make_broad_epsilon_pgd_pre_step,
     make_policy_adversary,
     make_policy_adversary_pre_step,
@@ -171,6 +203,55 @@ VolumeCommit = Callable[[], None]
 
 
 @dataclass(frozen=True)
+class RunSpecExecutionContext:
+    """Validated C&S GRU training contract used by the execution path."""
+
+    run_spec_path: Path
+    run_spec: dict[str, Any]
+    args: argparse.Namespace
+    hps: TreeNamespace
+
+
+RUN_SPEC_RUNTIME_OVERRIDE_KEYS = frozenset(
+    {
+        "run_spec",
+        "dry_run",
+        "resume",
+        "stop_after_batches",
+        "disable_progress",
+        "quiet_progress",
+        "log_step",
+    }
+)
+
+RUN_SPEC_OVERRIDE_CATEGORIES = {
+    "output_dir": "artifact route",
+    "spec_dir": "artifact route",
+    "issue": "run identity",
+    "seed": "run identity",
+    "full_train": "checkpoint policy",
+    "checkpoint_interval_batches": "checkpoint policy",
+    "training_diagnostics": "checkpoint policy",
+    "n_train_batches": "scientific payload",
+    "batch_size": "scientific payload",
+    "controller_lr": "scientific payload",
+    "lr_warmup_batches": "scientific payload",
+    "lr_warmup_init_fraction": "scientific payload",
+    "lr_cosine_alpha": "scientific payload",
+    "gradient_clip_norm": "scientific payload",
+    "plant_backend": "graph identity",
+    "no_integrator_state": "graph identity",
+    "hidden_size": "graph identity",
+    "n_replicates": "graph identity",
+    "n_input_only": "graph identity",
+    "n_readout_only": "graph identity",
+    "n_recurrent_only": "graph identity",
+    "stochastic_preset": "scientific payload",
+    "loss_objective": "scientific payload",
+}
+
+
+@dataclass(frozen=True)
 class AdaptiveEpsilonState:
     """Host-side adaptive-lambda state for soft-energy direct-epsilon training."""
 
@@ -179,15 +260,19 @@ class AdaptiveEpsilonState:
     last_update_batch: int | None = None
     update_count: int = 0
     schedule_start_batch: int = 0
+    zero_adversary_guard: dict[str, Any] | None = None
 
     def to_json(self) -> dict[str, Any]:
-        return {
+        payload = {
             "lambda_value": float(self.lambda_value),
             "damage_ema": None if self.damage_ema is None else float(self.damage_ema),
             "last_update_batch": self.last_update_batch,
             "update_count": int(self.update_count),
             "schedule_start_batch": int(self.schedule_start_batch),
         }
+        if self.zero_adversary_guard is not None:
+            payload["zero_adversary_guard"] = dict(self.zero_adversary_guard)
+        return payload
 
 
 @dataclass(frozen=True)
@@ -381,33 +466,172 @@ def resolve_run_spec_args(
 ) -> argparse.Namespace:
     """Return executable CLI arguments replayed from a modern nominal-GRU run spec.
 
-    Explicit CLI values override the checked-in run spec. This keeps replay useful
-    for smoke gates that should write to a new output directory or stop after an
-    intermediate checkpoint without modifying the durable historical run recipe.
+    The checked-in spec owns run identity, graph identity, checkpoint policy,
+    artifact routes, and scientific payload. CLI values may only supply
+    runtime-only execution controls such as ``--resume`` and
+    ``--stop-after-batches``.
     """
 
     run_spec_path = getattr(args, "run_spec", None)
     if run_spec_path is None:
         return args
     parser = parser or build_parser()
-    defaults = parser.parse_args([])
+    payload_path, payload = load_validated_run_spec(run_spec_path)
+    return resolve_run_spec_execution_args(
+        args,
+        run_spec_path=payload_path,
+        run_spec=payload,
+        parser=parser,
+    )
+
+
+def load_validated_run_spec(
+    run_spec_path: Path | str,
+    *,
+    require_graph_sidecars: bool = False,
+) -> tuple[Path, dict[str, Any]]:
+    """Load and validate a composed C&S GRU ``TrainingRunSpec`` recipe."""
+
     payload_path = Path(run_spec_path)
     payload = json.loads(payload_path.read_text(encoding="utf-8"))
     validate_nominal_gru_run_spec(
         payload,
         spec_dir=payload_path.parent,
-        require_graph_sidecars=False,
+        require_graph_sidecars=require_graph_sidecars,
     )
+    _validate_composed_training_spec_payload(payload)
+    return payload_path, payload
 
+
+def resolve_run_spec_execution_args(
+    args: argparse.Namespace,
+    *,
+    run_spec_path: Path,
+    run_spec: dict[str, Any],
+    parser: argparse.ArgumentParser | None = None,
+) -> argparse.Namespace:
+    """Return runtime args after validating CLI overrides against a spec."""
+
+    parser = parser or build_parser()
+    defaults = parser.parse_args([])
     values = vars(defaults).copy()
-    values.update(_args_values_from_run_spec(payload))
-    for key, value in vars(args).items():
-        if key == "run_spec":
+    values.update(_args_values_from_run_spec(run_spec))
+    values["run_spec"] = str(run_spec_path)
+
+    mismatches = []
+    spec_values = _args_values_from_run_spec(run_spec)
+    for key, value in _explicit_cli_overrides(args, defaults).items():
+        if key in RUN_SPEC_RUNTIME_OVERRIDE_KEYS:
             values[key] = value
             continue
-        if value != getattr(defaults, key):
-            values[key] = value
+        spec_value = spec_values.get(key, getattr(defaults, key, None))
+        if _cli_values_match(value, spec_value):
+            continue
+        category = _run_spec_override_category(key)
+        mismatches.append(f"{key} ({category}): CLI={value!r}, spec={spec_value!r}")
+    if mismatches:
+        raise ValueError(
+            "CLI overrides conflict with the validated run spec. "
+            "Run identity, graph identity, checkpoint policy, artifact routes, "
+            "and scientific payload must come from the spec: "
+            + "; ".join(mismatches)
+        )
     return argparse.Namespace(**values)
+
+
+def build_run_spec_execution_context(
+    args: argparse.Namespace,
+    *,
+    parser: argparse.ArgumentParser | None = None,
+) -> RunSpecExecutionContext:
+    """Build the validated execution context for a ``--run-spec`` path."""
+
+    if getattr(args, "run_spec", None) is None:
+        raise ValueError("build_run_spec_execution_context requires --run-spec")
+    parser = parser or build_parser()
+    run_spec_path, run_spec = load_validated_run_spec(args.run_spec)
+    execution_args = resolve_run_spec_execution_args(
+        args,
+        run_spec_path=run_spec_path,
+        run_spec=run_spec,
+        parser=parser,
+    )
+    return RunSpecExecutionContext(
+        run_spec_path=run_spec_path,
+        run_spec=run_spec,
+        args=execution_args,
+        hps=_hps_from_run_spec(run_spec),
+    )
+
+
+def _validate_composed_training_spec_payload(run_spec: dict[str, Any]) -> None:
+    missing = [
+        key
+        for key in (FEEDBAX_TRAINING_RUN_SPEC_KEY, RLRMP_RUN_SPEC_PAYLOAD_KEY)
+        if key not in run_spec
+    ]
+    if missing:
+        raise ValueError(
+            "C&S GRU run spec must embed composed TrainingRunSpec payloads: "
+            + ", ".join(missing)
+        )
+    feedbax_training_run_spec_from_payload(run_spec)
+    extension = run_spec[RLRMP_RUN_SPEC_PAYLOAD_KEY]
+    if not isinstance(extension, dict):
+        raise ValueError("C&S GRU run spec rlrmp_run_spec payload must be an object")
+    accept_rlrmp_spec_payload(
+        RUN_SPEC_KIND,
+        extension,
+        source_version=extension.get("schema_version"),
+        path=RLRMP_RUN_SPEC_PAYLOAD_KEY,
+    )
+
+
+def _explicit_cli_overrides(
+    args: argparse.Namespace,
+    defaults: argparse.Namespace,
+) -> dict[str, Any]:
+    overrides = {}
+    for key, value in vars(args).items():
+        if key == "run_spec":
+            overrides[key] = value
+            continue
+        if not hasattr(defaults, key):
+            continue
+        if not _cli_values_match(value, getattr(defaults, key)):
+            overrides[key] = value
+    return overrides
+
+
+def _cli_values_match(left: Any, right: Any) -> bool:
+    if left is None or right is None:
+        return left is right
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        return math.isclose(float(left), float(right), rel_tol=1e-12, abs_tol=1e-12)
+    return left == right
+
+
+def _run_spec_override_category(key: str) -> str:
+    if key in RUN_SPEC_OVERRIDE_CATEGORIES:
+        return RUN_SPEC_OVERRIDE_CATEGORIES[key]
+    if key.startswith("planned_"):
+        return "CLI planning mode"
+    if key.startswith("perturbation_") or key.startswith("broad_epsilon_"):
+        return "scientific payload"
+    if key.startswith("policy_adversary_") or key.startswith("adaptive_epsilon_"):
+        return "scientific payload"
+    if key.startswith("delayed_") or key.startswith("effector_") or key.startswith("nn_"):
+        return "scientific payload"
+    if key.startswith("target_") or key in {"force_filter_feedback", "initial_hidden_encoder"}:
+        return "graph identity"
+    return "spec-owned contract"
+
+
+def _hps_from_run_spec(run_spec: dict[str, Any]) -> TreeNamespace:
+    hps = dict(run_spec["hps"])
+    if hps.get("hidden_type") == "equinox.nn._rnn.GRUCell":
+        hps["hidden_type"] = eqx.nn.GRUCell
+    return dict_to_namespace(hps, to_type=TreeNamespace)
 
 
 def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
@@ -1004,9 +1228,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
     adaptive_epsilon_curriculum = _adaptive_epsilon_curriculum_config_from_args(args)
     if adaptive_epsilon_curriculum["enabled"]:
         if not broad_epsilon_pgd_training.enabled:
-            raise ValueError(
-                "--adaptive-epsilon-curriculum requires --broad-epsilon-pgd-training."
-            )
+            raise ValueError("--adaptive-epsilon-curriculum requires --broad-epsilon-pgd-training.")
         if (
             broad_epsilon_pgd_training.adversary_mechanism
             != BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM
@@ -1420,6 +1642,7 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
     go_cue_dim = 1 if delayed_reach else 0
     sisu_condition_input = _sisu_conditioned_pgd_input_key(hps)
     sisu_condition_dim = 1 if sisu_condition_input is not None else 0
+    feedback_descriptors = _controller_feedback_descriptors(hps)
     return {
         "controller_kind": "gru",
         "plant_backend": plant_backend,
@@ -1452,6 +1675,8 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
             "delay_steps": int(hps.model.feedback_delay_steps),
             "basis": _controller_feedback_basis(hps),
             "dimension": _controller_feedback_dim(hps),
+            DESCRIPTOR_PAYLOAD_KEY: feedback_descriptors,
+            "descriptor_basis_hash": feedback_descriptors["descriptor_basis_hash"],
             "noise_std": stochastic_runtime["sensory_noise_std"],
             "noise_role": "sensory_feedback",
             "noise_timing": (
@@ -1532,6 +1757,17 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
     }
 
 
+def build_training_run_graph_spec(hps: TreeNamespace, *, seed: int) -> Any:
+    """Return the GraphSpec recorded in the composed Feedbax TrainingRunSpec."""
+
+    if str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND)) != CS_LSS_PLANT_BACKEND:
+        return build_graph_bundle(hps).graph_spec
+
+    key_init = jr.split(jr.PRNGKey(int(seed)), 3)[0]
+    pair = setup_task_model_pair(hps, key=key_init)
+    return build_runtime_rlrmp_feedbax_graph_bundle(hps, pair.model).graph_spec
+
+
 def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
     """Build the GraphSpec bundle for the nominal GRU run."""
 
@@ -1562,8 +1798,10 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
         "loss_objective": str(hps.loss.objective),
         "initial_hidden_encoder": _initial_hidden_encoder_metadata(hps),
+        DESCRIPTOR_PAYLOAD_KEY: _controller_feedback_descriptors(hps),
     }
     model_structure = build_model_structure_summary(hps)
+    feedback_descriptors = _controller_feedback_descriptors(hps)
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "execution_backend": EXECUTION_BACKEND,
@@ -1580,7 +1818,6 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         },
         "component_policy": {
             "rlrmp_component_types": [
-                "RLRMPSimpleStagedNetwork",
                 "FixedField",
             ],
             "feedbax_native_component_types": [
@@ -1600,6 +1837,7 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "task_spec": task_spec,
         "loss_spec": loss_spec,
         "training_spec": training_spec,
+        DESCRIPTOR_PAYLOAD_KEY: feedback_descriptors,
         "game_card_provenance": build_loss_game_card_provenance(hps),
         "model_structure": model_structure,
         "delayed_reach": _plain(hps.delayed_reach),
@@ -1681,6 +1919,16 @@ def build_run_spec(
     hps = build_hps(args)
     training_distribution = _training_distribution_metadata(hps)
     validation_bins = _validation_bins_metadata(hps)
+    calibration_consumed = _perturbation_training_enabled(hps) and bool(
+        getattr(hps.perturbation_training, "calibrated_timing", False)
+    )
+    broad_epsilon_consumed = bool(getattr(hps.broad_epsilon_training, "enabled", False)) or bool(
+        getattr(hps.broad_epsilon_pgd_training, "enabled", False)
+    )
+    consumed_data_identities = consumed_calibration_budget_identities(
+        calibration_consumed=calibration_consumed,
+        broad_epsilon_consumed=broad_epsilon_consumed,
+    )
     delayed_reach = _plain(hps.delayed_reach)
     model_summary = build_model_structure_summary(hps)
     training_summary = {
@@ -1734,6 +1982,7 @@ def build_run_spec(
         "loss_summary": graph_bundle.loss_spec,
         "training_summary": training_summary,
         "feedbax_graph": graph_bundle.to_run_metadata(),
+        "consumed_data_identities": consumed_data_identities,
         "hps": _plain(hps),
         "provenance": {
             "git": _get_git_metadata(),
@@ -1763,6 +2012,7 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
     )
     hps = build_hps(args)
     graph_bundle = build_graph_bundle(hps)
+    training_run_graph_spec = build_training_run_graph_spec(hps, seed=int(args.seed))
     payload = build_run_spec(
         args,
         output_dir=output_dir,
@@ -1775,7 +2025,12 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
         if _should_write_graph_spec(hps):
             would_write.append(str(spec_dir / "model.graph.json"))
         return {
-            "run_spec": payload,
+            "run_spec": attach_composed_training_specs(
+                payload,
+                graph_spec=training_run_graph_spec,
+                output_dir=output_dir,
+                spec_dir=spec_dir,
+            ),
             "would_write": would_write,
         }
 
@@ -1785,12 +2040,40 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
     payload["feedbax_graph"] = graph_bundle.to_run_metadata(
         graph_spec_path=None if graph_path is None else graph_path.name,
     )
+    payload = attach_composed_training_specs(
+        payload,
+        graph_spec=training_run_graph_spec,
+        output_dir=output_dir,
+        spec_dir=spec_dir,
+    )
+    payload = attach_post_run_provenance(
+        payload,
+        run_spec_path=run_path,
+        artifact_dir=output_dir,
+        manifest_root=REPO_ROOT / "_artifacts" / "feedbax_runs",
+        graph_manifest_path=spec_dir / "model.graph.manifest.json",
+        graph_spec_path=graph_path,
+    )
+    payload = attach_composed_training_specs(
+        payload,
+        graph_spec=training_run_graph_spec,
+        output_dir=output_dir,
+        spec_dir=spec_dir,
+    )
     validate_nominal_gru_run_spec(payload, spec_dir=spec_dir)
     run_path.write_text(_json_dumps(payload), encoding="utf-8")
+    manifest_path = write_training_run_manifest_for_spec(
+        run_spec_path=run_path,
+        run_spec=payload,
+        manifest_root=REPO_ROOT / "_artifacts" / "feedbax_runs",
+        graph_manifest_path=spec_dir / "model.graph.manifest.json",
+        graph_spec_path=graph_path,
+    )
     return {
         "run_spec_path": str(run_path),
         "graph_spec_path": None if graph_path is None else str(graph_path),
         "graph_manifest_path": str(spec_dir / "model.graph.manifest.json"),
+        "training_manifest_path": str(manifest_path),
     }
 
 
@@ -2161,6 +2444,24 @@ def run_full_training(
     *,
     volume_commit: VolumeCommit | None = None,
 ) -> dict[str, Any]:
+    """Compatibility adapter that enters full training through a validated spec."""
+
+    parser = build_parser()
+    if getattr(args, "run_spec", None) is None:
+        args = _apply_smoke_overrides(args)
+        spec_result = write_run_spec(args)
+        args = argparse.Namespace(
+            **{**vars(args), "run_spec": spec_result["run_spec_path"], "smoke": False}
+        )
+    context = build_run_spec_execution_context(args, parser=parser)
+    return _run_full_training_from_context(context, volume_commit=volume_commit)
+
+
+def _run_full_training_from_context(
+    context: RunSpecExecutionContext,
+    *,
+    volume_commit: VolumeCommit | None = None,
+) -> dict[str, Any]:
     """Run chunked stochastic C&S GRU training with durable checkpoints.
 
     Feedbax's trainer can accept an optimizer state, but its checkpoint restore
@@ -2169,7 +2470,10 @@ def run_full_training(
     PRNG state, run/config metadata, and training history snapshots.
     """
 
-    args = _apply_smoke_overrides(args)
+    args = context.args
+    run_spec = context.run_spec
+    run_spec_path = context.run_spec_path
+    hps = context.hps
     if int(args.n_train_batches) < 1:
         raise ValueError("--n-train-batches must be positive for --full-train")
     if int(args.checkpoint_interval_batches) < 1:
@@ -2181,14 +2485,15 @@ def run_full_training(
         if stop_after_batches > int(args.n_train_batches):
             raise ValueError("--stop-after-batches cannot exceed --n-train-batches")
 
-    spec_result = write_run_spec(args)
+    spec_result = _spec_result_from_execution_context(context)
     output_dir = mkdir_p(Path(args.output_dir))
-    run_spec_path = Path(spec_result["run_spec_path"])
-    run_spec = json.loads(run_spec_path.read_text(encoding="utf-8"))
-
-    hps = build_hps(args)
     key_init, key_train, key_adversary = jr.split(jr.PRNGKey(int(args.seed)), 3)
     pair = setup_task_model_pair(hps, key=key_init)
+    runtime_graph_bundle = build_runtime_rlrmp_feedbax_graph_bundle(hps, pair.model)
+    assert_runtime_graph_matches_training_spec(
+        run_spec,
+        graph_spec=runtime_graph_bundle.graph_spec,
+    )
     trainer = _build_trainer(hps)
     adaptive_epsilon_enabled = _adaptive_epsilon_curriculum_enabled(hps)
     pre_step_fn = (
@@ -2225,7 +2530,9 @@ def run_full_training(
         )
     checkpoint_root = output_dir / "checkpoints"
     checkpoint_path = latest_checkpoint_path(checkpoint_root)
-    resume_from_checkpoint = bool(args.resume and checkpoint_path.exists())
+    resume_from_checkpoint = bool(
+        args.resume and (has_custody_checkpoint(checkpoint_root) or checkpoint_path.exists())
+    )
     checkpoint_completed_batches = None
     optimizer_state_template = template_state.optimizer_state
     if resume_from_checkpoint:
@@ -2248,6 +2555,7 @@ def run_full_training(
             history_template=None,
             adversary_policy_template=adversary_policy_template,
             adversary_optimizer_state_template=adversary_optimizer_state_template,
+            run_spec=run_spec,
         )
         if resume_from_checkpoint
         else template_state
@@ -2284,7 +2592,8 @@ def run_full_training(
     pgd_diagnostic_chunks: list[dict[str, np.ndarray]] = []
     adaptive_epsilon_diagnostic_chunks: list[dict[str, np.ndarray]] = []
     policy_adversary_diagnostic_chunks: list[dict[str, np.ndarray]] = []
-    adaptive_epsilon_zero_adversary_guard = _initial_adaptive_epsilon_zero_guard(
+    adaptive_epsilon_zero_adversary_guard = _adaptive_epsilon_zero_guard_from_state(
+        state.adaptive_epsilon_state,
         enabled=adaptive_epsilon_enabled,
     )
     stop_reason: str | None = None
@@ -2420,6 +2729,19 @@ def run_full_training(
             adversary_policy=adversary_policy,
             adversary_optimizer_state=adversary_optimizer_state,
         )
+        if adaptive_epsilon_enabled and adaptive_epsilon_diagnostics:
+            adaptive_epsilon_zero_adversary_guard = _update_adaptive_epsilon_zero_guard(
+                adaptive_epsilon_zero_adversary_guard,
+                adaptive_epsilon_diagnostics,
+            )
+        if state.adaptive_epsilon_state is not None:
+            state = replace(
+                state,
+                adaptive_epsilon_state=replace(
+                    state.adaptive_epsilon_state,
+                    zero_adversary_guard=adaptive_epsilon_zero_adversary_guard,
+                ),
+            )
         checkpoint_path = save_training_checkpoint(
             checkpoint_root,
             state,
@@ -2427,11 +2749,6 @@ def run_full_training(
             run_spec=run_spec,
         )
         _commit_volume(volume_commit)
-        if adaptive_epsilon_enabled and adaptive_epsilon_diagnostics:
-            adaptive_epsilon_zero_adversary_guard = _update_adaptive_epsilon_zero_guard(
-                adaptive_epsilon_zero_adversary_guard,
-                adaptive_epsilon_diagnostics,
-            )
         chunks.append(
             {
                 "completed_batches": completed,
@@ -2442,9 +2759,8 @@ def run_full_training(
                 "batches_per_second": chunk_batches / chunk_duration_seconds,
             }
         )
-        if (
-            adaptive_epsilon_zero_adversary_guard["should_stop"]
-            and state.completed_batches < int(args.n_train_batches)
+        if adaptive_epsilon_zero_adversary_guard["should_stop"] and state.completed_batches < int(
+            args.n_train_batches
         ):
             stop_reason = ADAPTIVE_EPSILON_ZERO_ADVERSARY_STOP_REASON
             break
@@ -2519,6 +2835,23 @@ def run_full_training(
     }
 
 
+def _spec_result_from_execution_context(context: RunSpecExecutionContext) -> dict[str, Any]:
+    spec_dir = Path(context.args.spec_dir)
+    graph_metadata = context.run_spec.get("feedbax_graph", {})
+    graph_spec_path = graph_metadata.get("graph_spec_path")
+    graph_manifest_path = graph_metadata.get("manifest_path")
+    return {
+        "run_spec_path": str(context.run_spec_path),
+        "graph_spec_path": None
+        if graph_spec_path is None
+        else str(spec_dir / str(graph_spec_path)),
+        "graph_manifest_path": None
+        if graph_manifest_path is None
+        else str(spec_dir / str(graph_manifest_path)),
+        "training_manifest_path": None,
+    }
+
+
 def save_training_checkpoint(
     checkpoint_root: Path,
     state: TrainingState,
@@ -2526,7 +2859,30 @@ def save_training_checkpoint(
     args: argparse.Namespace,
     run_spec: dict[str, Any],
 ) -> Path:
-    """Write a numbered checkpoint and atomically repoint ``checkpoint_latest``."""
+    """Write a Feedbax custody checkpoint and compatibility materialization."""
+
+    metadata = _training_checkpoint_metadata(args, state, run_spec)
+    if has_feedbax_training_spec(run_spec):
+        write_cs_checkpoint_transaction(
+            checkpoint_root,
+            run_spec=run_spec,
+            completed_batches=state.completed_batches,
+            slots=_cs_checkpoint_slots(state, metadata),
+        )
+    return _save_training_checkpoint_materialization(
+        checkpoint_root,
+        state,
+        metadata=metadata,
+    )
+
+
+def _save_training_checkpoint_materialization(
+    checkpoint_root: Path,
+    state: TrainingState,
+    *,
+    metadata: dict[str, Any],
+) -> Path:
+    """Write the historical numbered checkpoint directory for compatibility."""
 
     checkpoint_root.mkdir(parents=True, exist_ok=True)
     checkpoint_name = f"checkpoint_{state.completed_batches:07d}"
@@ -2547,19 +2903,6 @@ def save_training_checkpoint(
         )
     if state.history is not None:
         _save_pytree(tmp / "history.eqx", state.history)
-    metadata = {
-        "schema_version": f"{SCHEMA_VERSION}.checkpoint.v1",
-        "issue": str(args.issue),
-        "completed_batches": state.completed_batches,
-        "n_train_batches": int(args.n_train_batches),
-        "checkpoint_interval_batches": int(args.checkpoint_interval_batches),
-        "seed": int(args.seed),
-        "next_prng_key": _plain(state.key),
-        "stochastic_preset": str(args.stochastic_preset),
-        "run_spec": run_spec,
-    }
-    if state.adaptive_epsilon_state is not None:
-        metadata["adaptive_epsilon_state"] = state.adaptive_epsilon_state.to_json()
     _atomic_write_json(tmp / "metadata.json", metadata)
     if target.exists():
         _remove_tree(target)
@@ -2584,8 +2927,53 @@ def load_latest_checkpoint(
     history_template: Any | None = None,
     adversary_policy_template: Any | None = None,
     adversary_optimizer_state_template: Any | None = None,
+    run_spec: dict[str, Any] | None = None,
 ) -> TrainingState:
-    """Load ``checkpoint_latest`` using explicit model and optimizer templates."""
+    """Load the latest checkpoint using Feedbax custody, with legacy fallback."""
+
+    if (
+        run_spec is not None
+        and has_feedbax_training_spec(run_spec)
+        and has_custody_checkpoint(checkpoint_root)
+    ):
+        loaded = load_cs_checkpoint_transaction(
+            checkpoint_root,
+            run_spec=run_spec,
+            expected_slots=_cs_expected_slots(
+                model_template=model_template,
+                optimizer_state_template=optimizer_state_template,
+                adversary_policy_template=adversary_policy_template,
+                adversary_optimizer_state_template=adversary_optimizer_state_template,
+            ),
+        )
+        return _training_state_from_cs_slots(
+            loaded.slots,
+            model_template=model_template,
+            optimizer_state_template=optimizer_state_template,
+            adversary_policy_template=adversary_policy_template,
+            adversary_optimizer_state_template=adversary_optimizer_state_template,
+        )
+
+    return _load_latest_checkpoint_materialization(
+        checkpoint_root,
+        model_template=model_template,
+        optimizer_state_template=optimizer_state_template,
+        history_template=history_template,
+        adversary_policy_template=adversary_policy_template,
+        adversary_optimizer_state_template=adversary_optimizer_state_template,
+    )
+
+
+def _load_latest_checkpoint_materialization(
+    checkpoint_root: Path,
+    *,
+    model_template: Any,
+    optimizer_state_template: Any,
+    history_template: Any | None = None,
+    adversary_policy_template: Any | None = None,
+    adversary_optimizer_state_template: Any | None = None,
+) -> TrainingState:
+    """Load historical ``checkpoint_latest`` using explicit PyTree templates."""
 
     checkpoint_path = latest_checkpoint_path(checkpoint_root)
     if not checkpoint_path.exists():
@@ -2632,6 +3020,14 @@ def load_latest_checkpoint(
             last_update_batch=adaptive_payload.get("last_update_batch"),
             update_count=int(adaptive_payload.get("update_count", 0)),
             schedule_start_batch=int(adaptive_payload.get("schedule_start_batch", 0)),
+            zero_adversary_guard=(
+                _normalize_adaptive_epsilon_zero_guard(
+                    adaptive_payload.get("zero_adversary_guard"),
+                    enabled=True,
+                )
+                if isinstance(adaptive_payload.get("zero_adversary_guard"), dict)
+                else None
+            ),
         )
         if isinstance(adaptive_payload, dict)
         else None
@@ -2645,6 +3041,117 @@ def load_latest_checkpoint(
         adversary_policy=adversary_policy,
         adversary_optimizer_state=adversary_optimizer_state,
         adaptive_epsilon_state=adaptive_epsilon_state,
+    )
+
+
+def _training_checkpoint_metadata(
+    args: argparse.Namespace,
+    state: TrainingState,
+    run_spec: dict[str, Any],
+) -> dict[str, Any]:
+    metadata = {
+        "schema_version": f"{SCHEMA_VERSION}.checkpoint.v1",
+        "issue": str(args.issue),
+        "completed_batches": state.completed_batches,
+        "n_train_batches": int(args.n_train_batches),
+        "checkpoint_interval_batches": int(args.checkpoint_interval_batches),
+        "seed": int(args.seed),
+        "next_prng_key": _plain(state.key),
+        "stochastic_preset": str(args.stochastic_preset),
+        "run_spec": run_spec,
+    }
+    if state.adaptive_epsilon_state is not None:
+        metadata["adaptive_epsilon_state"] = state.adaptive_epsilon_state.to_json()
+    return metadata
+
+
+def _cs_checkpoint_slots(
+    state: TrainingState,
+    metadata: dict[str, Any],
+) -> dict[str, Any]:
+    slots: dict[str, Any] = {
+        "model": serialize_pytree_slot(state.model),
+        "optimizer": serialize_pytree_slot(state.optimizer_state),
+        "prng": state.key,
+        "completed_batches": jnp.asarray(state.completed_batches, dtype=jnp.int32),
+        "checkpoint_metadata": metadata,
+    }
+    if state.history is not None:
+        slots["history"] = state.history
+    if state.adversary_policy is not None:
+        slots["adversary_policy"] = serialize_pytree_slot(state.adversary_policy)
+    if state.adversary_optimizer_state is not None:
+        slots["adversary_optimizer"] = serialize_pytree_slot(
+            state.adversary_optimizer_state
+        )
+    if state.adaptive_epsilon_state is not None:
+        slots["adaptive_epsilon_state"] = state.adaptive_epsilon_state
+    return slots
+
+
+def _cs_expected_slots(
+    *,
+    model_template: Any,
+    optimizer_state_template: Any,
+    adversary_policy_template: Any | None,
+    adversary_optimizer_state_template: Any | None,
+) -> dict[str, Any]:
+    expected: dict[str, Any] = {
+        "prng": jnp.asarray([0, 0], dtype=jnp.uint32),
+        "completed_batches": jnp.asarray(0, dtype=jnp.int32),
+    }
+    return expected
+
+
+def _training_state_from_cs_slots(
+    slots: Mapping[str, Any],
+    *,
+    model_template: Any,
+    optimizer_state_template: Any,
+    adversary_policy_template: Any | None,
+    adversary_optimizer_state_template: Any | None,
+) -> TrainingState:
+    try:
+        model = deserialize_pytree_slot(slots["model"], model_template, slot="model")
+        optimizer_state = deserialize_pytree_slot(
+            slots["optimizer"],
+            optimizer_state_template,
+            slot="optimizer",
+        )
+        adversary_policy = (
+            deserialize_pytree_slot(
+                slots["adversary_policy"],
+                adversary_policy_template,
+                slot="adversary_policy",
+            )
+            if adversary_policy_template is not None and "adversary_policy" in slots
+            else None
+        )
+        adversary_optimizer_state = (
+            deserialize_pytree_slot(
+                slots["adversary_optimizer"],
+                adversary_optimizer_state_template,
+                slot="adversary_optimizer",
+            )
+            if (
+                adversary_optimizer_state_template is not None
+                and "adversary_optimizer" in slots
+            )
+            else None
+        )
+    except Exception as exc:
+        raise CheckpointCompatibilityError(
+            "checkpoint PyTree slot could not be deserialized with the resume template"
+        ) from exc
+    return TrainingState(
+        model=model,
+        optimizer_state=optimizer_state,
+        completed_batches=int(slots["completed_batches"]),
+        key=jnp.asarray(slots["prng"], dtype=jnp.uint32),
+        history=slots.get("history"),
+        adversary_policy=adversary_policy,
+        adversary_optimizer_state=adversary_optimizer_state,
+        adaptive_epsilon_state=slots.get("adaptive_epsilon_state"),
     )
 
 
@@ -3347,7 +3854,7 @@ def main(
     """CLI entry point."""
 
     parser = build_parser()
-    args = resolve_run_spec_args(parser.parse_args(argv), parser=parser)
+    args = parser.parse_args(argv)
     if args.planned_perturbation_rows:
         print(_json_dumps({"planned_rows": planned_fixed_target_perturbation_rows()}), end="")
         return 0
@@ -3384,13 +3891,49 @@ def main(
             end="",
         )
         return 0
-    result = (
-        run_full_training(args, volume_commit=volume_commit)
-        if args.full_train and not args.dry_run
-        else write_run_spec(args)
-    )
+    if args.run_spec is not None:
+        context = build_run_spec_execution_context(args, parser=parser)
+        if context.args.dry_run:
+            result = render_run_spec_execution_dry_run(context)
+        elif context.args.full_train:
+            result = _run_full_training_from_context(context, volume_commit=volume_commit)
+        else:
+            result = {
+                "run_spec_path": str(context.run_spec_path),
+                "run_spec": context.run_spec,
+                "validated": True,
+            }
+    else:
+        result = (
+            run_full_training(args, volume_commit=volume_commit)
+            if args.full_train and not args.dry_run
+            else write_run_spec(args)
+        )
     print(_json_dumps(result), end="")
     return 0
+
+
+def render_run_spec_execution_dry_run(context: RunSpecExecutionContext) -> dict[str, Any]:
+    """Render the execution plan for a validated spec without writing artifacts."""
+
+    args = context.args
+    return {
+        "run_spec_path": str(context.run_spec_path),
+        "run_spec": context.run_spec,
+        "validated": True,
+        "would_write": [],
+        "would_execute": {
+            "entrypoint": "rlrmp.train.cs_nominal_gru._run_full_training_from_context"
+            if args.full_train
+            else "validate_spec_only",
+            "full_train": bool(args.full_train),
+            "output_dir": str(args.output_dir),
+            "checkpoint_interval_batches": int(args.checkpoint_interval_batches),
+            "resume": bool(args.resume),
+            "stop_after_batches": args.stop_after_batches,
+            "training_diagnostics": bool(args.training_diagnostics),
+        },
+    }
 
 
 def _apply_smoke_overrides(args: argparse.Namespace) -> argparse.Namespace:
@@ -4002,6 +4545,13 @@ def _controller_feedback_dim(hps: TreeNamespace) -> int:
             else 4
         )
     return 4
+
+
+def _controller_feedback_descriptors(hps: TreeNamespace) -> dict[str, Any]:
+    return controller_feedback_descriptor_payload(
+        feedback_dim=_controller_feedback_dim(hps),
+        basis_id=_controller_feedback_basis(hps),
+    )
 
 
 def _validation_bins_metadata(hps: TreeNamespace) -> dict[str, Any]:
@@ -4910,7 +5460,9 @@ def _apply_trial_spec_initial_state(model: Any, state: Any, trial_spec: Any) -> 
     return model.state_consistency_update(state)
 
 
-def _eval_trial_specs_for_training(model: Any, trial_specs: Any, init_states: Any, keys: Any) -> Any:
+def _eval_trial_specs_for_training(
+    model: Any, trial_specs: Any, init_states: Any, keys: Any
+) -> Any:
     def _run_trial(trial_spec, init_state, key):
         inputs = prepare_inputs(model, trial_spec.inputs)
         n_steps = infer_n_steps(inputs, getattr(trial_spec, "timeline", None))
@@ -4980,9 +5532,7 @@ def _update_adaptive_epsilon_state(
     ratio_eps = 1e-12
     relative_error = (damage_ema - target) / max(target, ratio_eps) if target > 0.0 else 0.0
     log_ratio_error = (
-        math.log(max(damage_ema, ratio_eps) / max(target, ratio_eps))
-        if target > 0.0
-        else 0.0
+        math.log(max(damage_ema, ratio_eps) / max(target, ratio_eps)) if target > 0.0 else 0.0
     )
     deadband = float(update_cfg.deadband_frac)
     lambda_value = float(state.lambda_value)
@@ -5004,6 +5554,7 @@ def _update_adaptive_epsilon_state(
         last_update_batch=int(batch_index) if updated else state.last_update_batch,
         update_count=state.update_count + (1 if updated else 0),
         schedule_start_batch=state.schedule_start_batch,
+        zero_adversary_guard=state.zero_adversary_guard,
     )
     return next_state, {
         "damage_ema": np.asarray(damage_ema, dtype=np.float32),
@@ -5465,6 +6016,47 @@ def _initial_adaptive_epsilon_zero_guard(*, enabled: bool) -> dict[str, Any]:
     }
 
 
+def _adaptive_epsilon_zero_guard_from_state(
+    adaptive_state: AdaptiveEpsilonState | None,
+    *,
+    enabled: bool,
+) -> dict[str, Any]:
+    if adaptive_state is not None and isinstance(adaptive_state.zero_adversary_guard, dict):
+        return _normalize_adaptive_epsilon_zero_guard(
+            adaptive_state.zero_adversary_guard,
+            enabled=enabled,
+        )
+    return _initial_adaptive_epsilon_zero_guard(enabled=enabled)
+
+
+def _normalize_adaptive_epsilon_zero_guard(
+    payload: Any,
+    *,
+    enabled: bool,
+) -> dict[str, Any]:
+    guard = _initial_adaptive_epsilon_zero_guard(enabled=enabled)
+    if not isinstance(payload, dict):
+        return guard
+    guard["enabled"] = bool(payload.get("enabled", enabled))
+    guard["stop_reason"] = str(
+        payload.get("stop_reason", ADAPTIVE_EPSILON_ZERO_ADVERSARY_STOP_REASON)
+    )
+    guard["gain_tolerance"] = float(
+        payload.get(
+            "gain_tolerance",
+            ADAPTIVE_EPSILON_ZERO_ADVERSARY_GAIN_TOLERANCE,
+        )
+    )
+    guard["checkpoints_seen"] = int(payload.get("checkpoints_seen", 0))
+    guard["consecutive_active_zero_adversary_checkpoints"] = int(
+        payload.get("consecutive_active_zero_adversary_checkpoints", 0)
+    )
+    guard["should_stop"] = bool(payload.get("should_stop", False))
+    last_checkpoint = payload.get("last_checkpoint")
+    guard["last_checkpoint"] = last_checkpoint if isinstance(last_checkpoint, dict) else None
+    return guard
+
+
 def _update_adaptive_epsilon_zero_guard(
     guard: dict[str, Any],
     adaptive_epsilon_diagnostics: dict[str, np.ndarray],
@@ -5498,7 +6090,9 @@ def _adaptive_epsilon_zero_checkpoint_evidence(
             gain_source = key
             break
 
-    target_damage = _latest_scalar(adaptive_epsilon_diagnostics.get("adaptive_epsilon_target_damage"))
+    target_damage = _latest_scalar(
+        adaptive_epsilon_diagnostics.get("adaptive_epsilon_target_damage")
+    )
     outer_weight = _latest_scalar(adaptive_epsilon_diagnostics.get("adaptive_epsilon_outer_weight"))
     active = (
         target_damage is not None
@@ -5507,9 +6101,7 @@ def _adaptive_epsilon_zero_checkpoint_evidence(
         and outer_weight > 0.0
     )
     zero_adversary = (
-        active
-        and gain is not None
-        and gain <= ADAPTIVE_EPSILON_ZERO_ADVERSARY_GAIN_TOLERANCE
+        active and gain is not None and gain <= ADAPTIVE_EPSILON_ZERO_ADVERSARY_GAIN_TOLERANCE
     )
     return {
         "active": bool(active),

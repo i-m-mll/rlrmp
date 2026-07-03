@@ -16,8 +16,6 @@ from feedbax.mechanics import MechanicsState
 from feedbax.runtime.state import CartesianState
 from jaxtyping import Array, PRNGKeyArray
 
-from rlrmp.analysis.math.induced_gain import Controller
-
 
 @dataclass(frozen=True)
 class SimpleFeedbackInducedGainController:
@@ -101,6 +99,29 @@ def _disable_feedback_noise(feedback_node: Any) -> Any:
     return eqx.tree_at(lambda node: node.channels, feedback_node, channels)
 
 
+def _pytree_size(tree: Any) -> int:
+    return sum(int(jnp.asarray(leaf).size) for leaf in jt.leaves(tree))
+
+
+def _net_input_size(net: Any) -> int:
+    if isinstance(net, Graph) and "cell" in net.nodes and hasattr(net.nodes["cell"], "input_size"):
+        return int(net.nodes["cell"].input_size)
+    if hasattr(net, "input_size"):
+        return int(net.input_size)
+    raise AttributeError("Could not determine net input size from Feedbax graph structure.")
+
+
+def _feedback_size(
+    feedback_node: Any,
+    mechanics_template: MechanicsState,
+    state: Any,
+    *,
+    key: PRNGKeyArray,
+) -> int:
+    outputs, _ = feedback_node({"mechanics": mechanics_template}, state, key=key)
+    return _pytree_size(outputs["feedback"])
+
+
 def simple_feedback_induced_gain_controller(
     model: Graph,
     *,
@@ -108,7 +129,7 @@ def simple_feedback_induced_gain_controller(
     sisu: float = 0.5,
     key: PRNGKeyArray = jr.PRNGKey(0),
     dtype: Any = jnp.float64,
-) -> Controller:
+) -> GraphControllerAdapter:
     """Build a Feedbax-backed induced-gain controller for SimpleFeedback models.
 
     Args:
@@ -120,16 +141,22 @@ def simple_feedback_induced_gain_controller(
         dtype: Flat controller-state dtype.
 
     Returns:
-        A controller satisfying ``rlrmp.analysis.math.induced_gain.Controller``.
+        A controller structurally compatible with Feedbax's
+        ``GraphControllerAdapter`` interface (``initial_state`` / ``step``).
     """
     feedback_node = _disable_feedback_noise(model.nodes["feedback"])
     net = model.nodes["net"]
     task_input = _task_input(target_pos, sisu=sisu, dtype=dtype)
-    expected_task_size = int(net.input_size) - 4
+    full_state = model.init_state(key=jr.PRNGKey(0))
+    mechanics_template = full_state.get(model.nodes["mechanics"].state_index)
+    net_input_size = _net_input_size(net)
+    feedback_size = _feedback_size(feedback_node, mechanics_template, full_state, key=key)
+    expected_task_size = net_input_size - feedback_size
     if int(task_input.shape[0]) != expected_task_size:
         raise ValueError(
             f"Constructed task_input has dim {task_input.shape[0]} but "
-            f"net expects {expected_task_size} (= {net.input_size} - 4 feedback)."
+            f"net expects {expected_task_size} (= {net_input_size} - "
+            f"{feedback_size} feedback)."
         )
 
     controller_graph = Graph(
@@ -150,8 +177,6 @@ def simple_feedback_induced_gain_controller(
         output_port="output",
         dtype=dtype,
     )
-    full_state = model.init_state(key=jr.PRNGKey(0))
-    mechanics_template = full_state.get(model.nodes["mechanics"].state_index)
     target_pos_arr = jnp.asarray(target_pos, dtype=dtype)
     return SimpleFeedbackInducedGainController(
         adapter=adapter,

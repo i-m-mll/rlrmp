@@ -8,6 +8,7 @@ starting a Modal container.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import platform
@@ -20,7 +21,24 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Literal, Sequence
 
+from feedbax.contracts.training import TrainingRunSpec
+from feedbax.execution.models import (
+    ArtifactPolicy,
+    ExecutionPlan,
+    ExecutionSpec,
+    LocalBackendConfig,
+    ModalBackendConfig,
+    RepoSource,
+    RunPodBackendConfig,
+    TrainingRunSpecSource,
+)
+from feedbax.execution.planning import prepare_execution_plan
+
 from rlrmp.paths import REPO_ROOT, run_artifact_dir, run_spec_dir
+from rlrmp.runtime.training_run_specs import (
+    RLRMP_RUN_SPEC_PAYLOAD_KEY,
+    feedbax_training_run_spec_from_payload,
+)
 
 APP_NAME = "rlrmp-cs-stochastic-gru"
 DEFAULT_EXPERIMENT = "30f2313"
@@ -36,6 +54,9 @@ CS_LOSS_OBJECTIVES = (
     CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
 )
 DEFAULT_GPU = "A10"
+DEFAULT_RUNPOD_GPU_TYPE_IDS = ("NVIDIA GeForce RTX 4090",)
+DEFAULT_RUNPOD_IMAGE_NAME = "runpod/pytorch:1.0.3-cu1281-torch290-ubuntu2204"
+DEFAULT_MANIFEST_ROOT = "_artifacts/feedbax_runs"
 DEFAULT_TIMEOUT_SECONDS = 60
 DEFAULT_TRAIN_TIMEOUT_SECONDS = 24 * 60 * 60
 DEFAULT_N_TRAIN_BATCHES = 12000
@@ -113,6 +134,10 @@ class NominalGruRunConfig:
     initial_hidden_encoder: bool = False
     training_diagnostics: bool = True
     schedule_total_batches: int = 1000
+    confirm_billable_launch: bool = False
+    runpod_cloud_type: Literal["SECURE", "COMMUNITY"] = "SECURE"
+    runpod_gpu_type_ids: tuple[str, ...] = DEFAULT_RUNPOD_GPU_TYPE_IDS
+    runpod_image_name: str = DEFAULT_RUNPOD_IMAGE_NAME
 
     def local_artifact_dir(self) -> Path:
         return run_artifact_dir(self.experiment, self.run)
@@ -132,8 +157,381 @@ class NominalGruRunConfig:
         return REMOTE_REPO_DIR
 
 
+@dataclass(frozen=True)
+class LauncherSpecBundle:
+    """Spec-derived launcher state for one backend."""
+
+    backend: Literal["local", "modal", "runpod"]
+    config: NominalGruRunConfig
+    rlrmp_run_spec: dict[str, Any]
+    training_run_spec: TrainingRunSpec
+    execution_spec: ExecutionSpec
+    execution_plan: ExecutionPlan
+    rlrmp_identity: str
+    rlrmp_content_sha256: str
+    training_identity: str
+    training_content_sha256: str
+    rlrmp_run_spec_path: Path
+
+
 def _append_arg(command: list[str], flag: str, value: str | int | float) -> None:
     command.extend([flag, str(value)])
+
+
+def _json_hash(payload: Any) -> str:
+    body = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def _model_payload(value: Any) -> Any:
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json", exclude_none=True)
+    if isinstance(value, list):
+        return [_model_payload(item) for item in value]
+    if isinstance(value, tuple):
+        return [_model_payload(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _model_payload(item) for key, item in value.items()}
+    return value
+
+
+def _run_spec_file_for_spec_dir(spec_dir: Path) -> Path:
+    return spec_dir.parent / f"{spec_dir.name}.json"
+
+
+def _backend_artifact_dir(config: NominalGruRunConfig, backend: str) -> Path:
+    if backend == "modal":
+        return config.remote_artifact_dir()
+    if backend == "runpod":
+        return REMOTE_REPO_DIR / "_artifacts" / config.experiment / "runs" / config.run
+    return config.local_artifact_dir()
+
+
+def _backend_spec_dir(config: NominalGruRunConfig, backend: str) -> Path:
+    if backend == "modal":
+        return config.remote_spec_dir()
+    if backend == "runpod":
+        return REMOTE_REPO_DIR / "results" / config.experiment / "runs" / config.run
+    return config.local_spec_dir()
+
+
+def _training_spec_path_for_backend(config: NominalGruRunConfig, backend: str) -> Path:
+    return _run_spec_file_for_spec_dir(_backend_spec_dir(config, backend))
+
+
+def _legacy_training_script_args(
+    config: NominalGruRunConfig,
+    *,
+    backend: str,
+    dry_run: bool,
+) -> list[str]:
+    """Return compatibility argv for the sanctioned C&S GRU spec emitter."""
+
+    artifact_dir = _backend_artifact_dir(config, backend)
+    spec_dir = _backend_spec_dir(config, backend)
+    command: list[str] = []
+    for flag, value in [
+        ("--n-train-batches", config.n_train_batches),
+        ("--issue", config.experiment),
+        ("--batch-size", config.batch_size),
+        ("--n-replicates", config.n_replicates),
+        ("--hidden-size", config.hidden_size),
+        ("--seed", config.seed),
+        ("--controller-lr", config.controller_lr),
+        ("--lr-warmup-batches", config.lr_warmup_batches),
+        ("--lr-warmup-init-fraction", config.lr_warmup_init_fraction),
+        ("--lr-cosine-alpha", config.lr_cosine_alpha),
+        ("--stochastic-preset", config.stochastic_preset),
+        ("--loss-objective", config.loss_objective),
+        ("--output-dir", artifact_dir),
+        ("--spec-dir", spec_dir),
+        ("--checkpoint-interval-batches", config.checkpoint_interval_batches),
+        ("--perturbation-physical-level", config.perturbation_physical_level),
+        ("--broad-epsilon-level", config.broad_epsilon_level),
+        ("--broad-epsilon-budget-scale", config.broad_epsilon_budget_scale),
+        ("--broad-epsilon-pgd-steps", config.broad_epsilon_pgd_steps),
+        ("--broad-epsilon-pgd-step-size-fraction", config.broad_epsilon_pgd_step_size_fraction),
+    ]:
+        _append_arg(command, flag, value)
+    if config.gradient_clip_norm is not None:
+        _append_arg(command, "--gradient-clip-norm", config.gradient_clip_norm)
+    if config.regularized_fidelity:
+        command.append("--regularized-fidelity")
+    if config.resume:
+        command.append("--resume")
+    if config.target_relative_multitarget:
+        command.append("--target-relative-multitarget")
+    if config.force_filter_feedback:
+        command.append("--force-filter-feedback")
+    if config.perturbation_training:
+        command.append("--perturbation-training")
+    if config.perturbation_calibrated_timing:
+        command.append("--perturbation-calibrated-timing")
+    if config.broad_epsilon_training:
+        command.append("--broad-epsilon-training")
+    if config.broad_epsilon_reach_scaling:
+        command.append("--broad-epsilon-reach-scaling")
+    else:
+        command.append("--no-broad-epsilon-reach-scaling")
+    if config.broad_epsilon_pgd_training:
+        command.append("--broad-epsilon-pgd-training")
+    if config.broad_epsilon_pgd_seed is not None:
+        _append_arg(command, "--broad-epsilon-pgd-seed", config.broad_epsilon_pgd_seed)
+    if config.initial_hidden_encoder:
+        command.append("--initial-hidden-encoder")
+    if config.training_diagnostics:
+        command.append("--training-diagnostics")
+    else:
+        command.append("--no-training-diagnostics")
+    command.append("--full-train")
+    if dry_run:
+        command.append("--dry-run")
+    command.extend(config.extra_args)
+    return command
+
+
+def build_rlrmp_run_spec(
+    config: NominalGruRunConfig,
+    *,
+    backend: Literal["local", "modal", "runpod"] = "local",
+) -> dict[str, Any]:
+    """Build the composed RLRMP run recipe via the sanctioned spec emitter."""
+
+    from rlrmp.train.cs_nominal_gru import build_parser as build_training_parser
+    from rlrmp.train.cs_nominal_gru import write_run_spec
+
+    parser = build_training_parser()
+    args = parser.parse_args(
+        _legacy_training_script_args(config, backend=backend, dry_run=True)
+    )
+    result = write_run_spec(args)
+    return result["run_spec"]
+
+
+def _execution_sources(config: NominalGruRunConfig) -> list[RepoSource]:
+    if config.mode == "pinned":
+        return [
+            RepoSource(
+                name="rlrmp",
+                role="project",
+                install_mode="github-ref",
+                package="rlrmp",
+                git_ref="HEAD",
+                target_path=config.pinned_repo_dir,
+                metadata={"source_mode": "pinned"},
+            )
+        ]
+    return [
+        RepoSource(
+            name="rlrmp",
+            role="project",
+            install_mode="local-rsync",
+            package="rlrmp",
+            local_path=str(REPO_ROOT),
+            target_path=str(REMOTE_REPO_DIR),
+        ),
+        RepoSource(
+            name="feedbax",
+            role="dependency",
+            install_mode="local-rsync",
+            package="feedbax",
+            local_path=str(LOCAL_FEEDBAX_DIR),
+            target_path=str(REMOTE_FEEDBAX_DIR),
+        ),
+        RepoSource(
+            name="jax-cookbook",
+            role="dependency",
+            install_mode="local-rsync",
+            package="jax-cookbook",
+            local_path=str(LOCAL_JAX_COOKBOOK_DIR),
+            target_path=str(REMOTE_JAX_COOKBOOK_DIR),
+        ),
+    ]
+
+
+def _execution_spec_for_backend(
+    config: NominalGruRunConfig,
+    *,
+    backend: Literal["local", "modal", "runpod"],
+    training_source: TrainingRunSpecSource,
+) -> ExecutionSpec:
+    spec_dir = _backend_spec_dir(config, backend)
+    artifact_dir = _backend_artifact_dir(config, backend)
+    tracked_paths = [
+        str(_run_spec_file_for_spec_dir(spec_dir)),
+        str(spec_dir),
+    ]
+    artifact_policy = ArtifactPolicy(
+        manifest_root=DEFAULT_MANIFEST_ROOT,
+        tracked_paths=tracked_paths,
+        bulk_paths=[str(artifact_dir)],
+        metadata={
+            "checkpoint_policy": "latest-plus-interval",
+            "checkpoint_interval_batches": config.checkpoint_interval_batches,
+        },
+    )
+    common: dict[str, Any] = {
+        "kind": "training",
+        "job_id": config.run,
+        "backend": backend,
+        "training_run_spec": training_source,
+        "repos": [] if backend == "local" else _execution_sources(config),
+        "primary_repo": None if backend == "local" else "rlrmp",
+        "artifact_policy": artifact_policy,
+        "issues": [config.experiment],
+        "metadata": {
+            "launcher": "rlrmp.cloud.modal_runner",
+            "rlrmp_run": config.run,
+            "rlrmp_issue": config.experiment,
+            "billable_launch_confirmation_required": backend in {"modal", "runpod"},
+        },
+    }
+    if backend == "local":
+        return ExecutionSpec(
+            **common,
+            local=LocalBackendConfig(cwd=str(REPO_ROOT)),
+        )
+    if backend == "modal":
+        return ExecutionSpec(
+            **common,
+            modal=ModalBackendConfig(
+                app_name=APP_NAME,
+                gpu=config.gpu,
+                volume_name=MODAL_VOLUME_NAME,
+                volume_mount_path=str(MODAL_VOLUME_MOUNT),
+                timeout_seconds=config.timeout_seconds,
+                max_containers=1,
+                image_packages=["feedbax", "jax[cuda12]", "uv"],
+            ),
+        )
+    return ExecutionSpec(
+        **common,
+        runpod=RunPodBackendConfig(
+            name=f"rlrmp-{config.experiment}-{config.run}",
+            image_name=config.runpod_image_name,
+            cloud_type=config.runpod_cloud_type,
+            gpu_type_ids=list(config.runpod_gpu_type_ids),
+            gpu_count=1,
+            volume_mount_path=str(REMOTE_REPO_DIR.parent),
+        ),
+    )
+
+
+def build_launcher_spec_bundle(
+    config: NominalGruRunConfig,
+    *,
+    backend: Literal["local", "modal", "runpod"] = "local",
+) -> LauncherSpecBundle:
+    """Build the spec-derived execution plan without contacting providers."""
+
+    run_spec = build_rlrmp_run_spec(config, backend=backend)
+    training_spec = feedbax_training_run_spec_from_payload(run_spec)
+    rlrmp_payload = run_spec[RLRMP_RUN_SPEC_PAYLOAD_KEY]
+    rlrmp_hash = _json_hash(rlrmp_payload)
+    rlrmp_identity = f"rlrmp://{config.experiment}/runs/{config.run}"
+    training_identity = f"{rlrmp_identity}#feedbax-training-run-spec"
+    training_source = TrainingRunSpecSource(
+        kind="inline",
+        inline=training_spec,
+        path="training-run-spec.json",
+        identity=training_identity,
+        metadata={
+            "rlrmp_run_spec_identity": rlrmp_identity,
+            "rlrmp_run_spec_content_sha256": rlrmp_hash,
+            "rlrmp_run_spec_path": str(_training_spec_path_for_backend(config, backend)),
+        },
+    )
+    execution_spec = _execution_spec_for_backend(
+        config,
+        backend=backend,
+        training_source=training_source,
+    )
+    execution_plan = prepare_execution_plan(execution_spec)
+    return LauncherSpecBundle(
+        backend=backend,
+        config=config,
+        rlrmp_run_spec=run_spec,
+        training_run_spec=training_spec,
+        execution_spec=execution_spec,
+        execution_plan=execution_plan,
+        rlrmp_identity=rlrmp_identity,
+        rlrmp_content_sha256=rlrmp_hash,
+        training_identity=training_identity,
+        training_content_sha256=training_source.resolved_content_sha256(),
+        rlrmp_run_spec_path=_training_spec_path_for_backend(config, backend),
+    )
+
+
+def _gpu_cloud_payload(config: NominalGruRunConfig, backend: str) -> dict[str, Any]:
+    if backend == "runpod":
+        return {
+            "cloud_type": config.runpod_cloud_type,
+            "gpu_type_ids": list(config.runpod_gpu_type_ids),
+            "image_name": config.runpod_image_name,
+        }
+    if backend == "modal":
+        return {
+            "gpu": config.gpu,
+            "volume_name": MODAL_VOLUME_NAME,
+            "volume_mount_path": str(MODAL_VOLUME_MOUNT),
+        }
+    return {"gpu": None, "cloud_type": "local"}
+
+
+def spec_lock_payload(bundle: LauncherSpecBundle) -> dict[str, Any]:
+    """Return the human-reviewable launch spec-lock payload."""
+
+    checkpoint_policy = _model_payload(bundle.training_run_spec.checkpoint_progress)
+    artifact_policy = _model_payload(bundle.training_run_spec.artifacts)
+    plan = bundle.execution_plan
+    return {
+        "backend": bundle.backend,
+        "gpu_cloud": _gpu_cloud_payload(bundle.config, bundle.backend),
+        "training_run_spec": {
+            "identity": bundle.training_identity,
+            "content_sha256": bundle.training_content_sha256,
+            "schema_id": bundle.training_run_spec.schema_id,
+            "schema_version": bundle.training_run_spec.schema_version,
+            "execution_source": _model_payload(bundle.execution_spec.training_run_spec),
+        },
+        "rlrmp_run_spec": {
+            "identity": bundle.rlrmp_identity,
+            "content_sha256": bundle.rlrmp_content_sha256,
+            "path": str(bundle.rlrmp_run_spec_path),
+            "payload_schema_id": bundle.rlrmp_run_spec[RLRMP_RUN_SPEC_PAYLOAD_KEY].get(
+                "schema_id"
+            ),
+            "payload_schema_version": bundle.rlrmp_run_spec[RLRMP_RUN_SPEC_PAYLOAD_KEY].get(
+                "schema_version"
+            ),
+        },
+        "manifest_root": bundle.execution_spec.artifact_policy.manifest_root,
+        "checkpoint_policy": checkpoint_policy,
+        "training_artifact_policy": artifact_policy,
+        "derived_runner_command": plan.command,
+        "run_directory": plan.run_directory,
+        "artifact_routes": _model_payload(plan.artifact_routes),
+        "health_checks": _model_payload(plan.health_checks),
+        "cloud_payload": _model_payload(plan.cloud_payload),
+        "warnings": list(plan.warnings),
+    }
+
+
+def materialize_training_run_spec(bundle: LauncherSpecBundle) -> Path:
+    """Write the inline TrainingRunSpec to the exact path consumed by the plan."""
+
+    source = bundle.execution_spec.training_run_spec
+    if source is None:
+        raise ValueError("ExecutionSpec has no training_run_spec")
+    spec_path = Path(source.path)
+    if not spec_path.is_absolute():
+        spec_path = Path(bundle.execution_plan.run_directory) / source.path
+    payload = source.inline_payload()
+    if payload is None:
+        raise ValueError("Only inline TrainingRunSpec sources can be materialized here")
+    spec_path.parent.mkdir(parents=True, exist_ok=True)
+    spec_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return spec_path
 
 
 def build_training_command(
@@ -141,46 +539,16 @@ def build_training_command(
     *,
     remote: bool = False,
 ) -> list[str]:
-    """Build the stochastic C&S-fidelity GRU training command.
+    """Build the spec-derived Feedbax runner command.
 
-    The command intentionally targets the dedicated C&S GRU trainer,
-    not the older delayed-reach minimax trainer.
+    ``NominalGruRunConfig`` is retained as a compatibility adapter. The
+    returned command executes the inline ``TrainingRunSpec`` through Feedbax's
+    generic runner instead of reconstructing trainer-specific flags here.
     """
 
-    artifact_dir = config.remote_artifact_dir() if remote else config.local_artifact_dir()
-    spec_dir = config.remote_spec_dir() if remote else config.local_spec_dir()
-    command = [
-        "uv",
-        "run",
-        "--no-sync" if remote else "",
-        "python",
-        "scripts/train_cs_nominal_gru.py",
-    ]
-    command = [part for part in command if part]
-    _append_arg(command, "--n-train-batches", config.n_train_batches)
-    _append_arg(command, "--issue", config.experiment)
-    _append_arg(command, "--batch-size", config.batch_size)
-    _append_arg(command, "--n-replicates", config.n_replicates)
-    _append_arg(command, "--hidden-size", config.hidden_size)
-    _append_arg(command, "--seed", config.seed)
-    _append_arg(command, "--controller-lr", config.controller_lr)
-    _append_arg(command, "--lr-warmup-batches", config.lr_warmup_batches)
-    _append_arg(command, "--lr-warmup-init-fraction", config.lr_warmup_init_fraction)
-    _append_arg(command, "--lr-cosine-alpha", config.lr_cosine_alpha)
-    if config.gradient_clip_norm is not None:
-        _append_arg(command, "--gradient-clip-norm", config.gradient_clip_norm)
-    _append_arg(command, "--stochastic-preset", config.stochastic_preset)
-    _append_arg(command, "--loss-objective", config.loss_objective)
-    _append_arg(command, "--output-dir", artifact_dir)
-    _append_arg(command, "--spec-dir", spec_dir)
-    _append_arg(command, "--checkpoint-interval-batches", config.checkpoint_interval_batches)
-    command.append("--full-train")
-    if config.resume:
-        command.append("--resume")
-    if config.regularized_fidelity:
-        command.append("--regularized-fidelity")
-    command.extend(config.extra_args)
-    return command
+    backend: Literal["local", "modal"] = "modal" if remote else "local"
+    plan = build_launcher_spec_bundle(config, backend=backend).execution_plan
+    return ["bash", "-lc", plan.command]
 
 
 def build_training_script_args(
@@ -188,11 +556,13 @@ def build_training_script_args(
     *,
     remote: bool = False,
 ) -> list[str]:
-    """Return argv for ``scripts/train_cs_nominal_gru.py`` without uv/python."""
+    """Return compatibility argv that generates the spec consumed by the plan."""
 
-    command = build_training_command(config, remote=remote)
-    script_index = command.index("scripts/train_cs_nominal_gru.py")
-    return command[script_index + 1 :]
+    return _legacy_training_script_args(
+        config,
+        backend="modal" if remote else "local",
+        dry_run=False,
+    )
 
 
 def cs_nominal_gru_scenario_config(config: NominalGruRunConfig) -> dict[str, Any]:
@@ -324,6 +694,9 @@ def shell_join(command: Sequence[str]) -> str:
 def dry_run_payload(config: NominalGruRunConfig) -> dict[str, Any]:
     """Return the local and remote commands without executing cloud work."""
 
+    local_bundle = build_launcher_spec_bundle(config, backend="local")
+    modal_bundle = build_launcher_spec_bundle(config, backend="modal")
+    runpod_bundle = build_launcher_spec_bundle(config, backend="runpod")
     return {
         "app_name": APP_NAME,
         "modal_volume_name": MODAL_VOLUME_NAME,
@@ -339,10 +712,21 @@ def dry_run_payload(config: NominalGruRunConfig) -> dict[str, Any]:
         "warm_containers": 0,
         "min_containers": 0,
         "max_containers": 1,
-        "local_training_command": build_training_command(config, remote=False),
-        "local_training_shell": shell_join(build_training_command(config, remote=False)),
-        "remote_training_command": build_training_command(config, remote=True),
-        "remote_training_shell": shell_join(build_training_command(config, remote=True)),
+        "spec_lock": spec_lock_payload(modal_bundle),
+        "execution_plans": {
+            "local": _model_payload(local_bundle.execution_plan),
+            "modal": _model_payload(modal_bundle.execution_plan),
+            "runpod": _model_payload(runpod_bundle.execution_plan),
+        },
+        "spec_locks": {
+            "local": spec_lock_payload(local_bundle),
+            "modal": spec_lock_payload(modal_bundle),
+            "runpod": spec_lock_payload(runpod_bundle),
+        },
+        "local_training_command": ["bash", "-lc", local_bundle.execution_plan.command],
+        "local_training_shell": shell_join(["bash", "-lc", local_bundle.execution_plan.command]),
+        "remote_training_command": ["bash", "-lc", modal_bundle.execution_plan.command],
+        "remote_training_shell": shell_join(["bash", "-lc", modal_bundle.execution_plan.command]),
         "remote_packing_benchmark_command": build_packing_benchmark_command(config, remote=True),
         "remote_packing_benchmark_shell": shell_join(
             build_packing_benchmark_command(config, remote=True)
@@ -376,20 +760,35 @@ def planned_stochastic_runs(config: NominalGruRunConfig) -> dict[str, dict[str, 
     }
     no_hidden_config = NominalGruRunConfig(**base)
     hidden_config = NominalGruRunConfig(**regularized)
+    no_hidden_modal_lock = spec_lock_payload(
+        build_launcher_spec_bundle(no_hidden_config, backend="modal")
+    )
+    try:
+        hidden_local_command = build_training_command(hidden_config, remote=False)
+        hidden_remote_command = build_training_command(hidden_config, remote=True)
+        hidden_modal_lock = spec_lock_payload(
+            build_launcher_spec_bundle(hidden_config, backend="modal")
+        )
+    except ValueError as exc:
+        hidden_local_command = []
+        hidden_remote_command = []
+        hidden_modal_lock = {"unavailable": str(exc)}
     return {
         "stochastic_no_hidden_penalty": {
             "run": DEFAULT_RUN,
             "nn_hidden": 0.0,
             "local_training_command": build_training_command(no_hidden_config, remote=False),
             "remote_training_command": build_training_command(no_hidden_config, remote=True),
+            "modal_spec_lock": no_hidden_modal_lock,
             "modal_volume_pull_commands": modal_volume_pull_commands(no_hidden_config),
             "modal_volume_sync_command": modal_volume_sync_command(no_hidden_config),
         },
         "stochastic_hidden_penalty": {
             "run": REGULARIZED_RUN,
             "nn_hidden": 1e-5,
-            "local_training_command": build_training_command(hidden_config, remote=False),
-            "remote_training_command": build_training_command(hidden_config, remote=True),
+            "local_training_command": hidden_local_command,
+            "remote_training_command": hidden_remote_command,
+            "modal_spec_lock": hidden_modal_lock,
             "modal_volume_pull_commands": modal_volume_pull_commands(hidden_config),
             "modal_volume_sync_command": modal_volume_sync_command(hidden_config),
         },
@@ -598,6 +997,24 @@ def run_subprocess(
     return result.returncode
 
 
+def run_shell_command(
+    command: str,
+    *,
+    timeout_seconds: int,
+    cwd: Path | None = None,
+) -> int:
+    """Run a rendered execution-plan command through the shell."""
+
+    print(command, flush=True)
+    result = subprocess.run(
+        ["bash", "-lc", command],
+        timeout=timeout_seconds,
+        cwd=cwd,
+        check=False,
+    )
+    return result.returncode
+
+
 def patch_remote_editable_paths() -> None:
     """Patch exact local editable paths for source-mode execution on Modal."""
 
@@ -642,12 +1059,16 @@ def execute_remote_payload(
     if command_kind == "modal-smoke":
         return run_subprocess(build_remote_smoke_command(), timeout_seconds=config.timeout_seconds)
     if command_kind == "modal-run":
-        from rlrmp.train.cs_nominal_gru import main as train_main
-
-        return train_main(
-            build_training_script_args(config, remote=True),
-            volume_commit=volume_commit,
+        bundle = build_launcher_spec_bundle(config, backend="modal")
+        materialize_training_run_spec(bundle)
+        return_code = run_shell_command(
+            bundle.execution_plan.command,
+            timeout_seconds=config.timeout_seconds,
+            cwd=config.remote_repo_dir(),
         )
+        if volume_commit is not None:
+            volume_commit()
+        return return_code
     if command_kind == "modal-packing-smoke":
         return run_subprocess(
             build_packing_benchmark_command(config, remote=True),
@@ -719,7 +1140,21 @@ def make_config(args: argparse.Namespace) -> NominalGruRunConfig:
         initial_hidden_encoder=args.initial_hidden_encoder,
         training_diagnostics=args.training_diagnostics,
         schedule_total_batches=args.schedule_total_batches,
+        confirm_billable_launch=args.confirm_billable_launch,
+        runpod_cloud_type=args.runpod_cloud_type,
+        runpod_gpu_type_ids=tuple(args.runpod_gpu_type_id or DEFAULT_RUNPOD_GPU_TYPE_IDS),
+        runpod_image_name=args.runpod_image_name,
     )
+
+
+def require_billable_launch_confirmation(args: argparse.Namespace) -> None:
+    """Refuse billable cloud training launches without explicit confirmation."""
+
+    if args.command == "modal-run" and not args.confirm_billable_launch:
+        raise SystemExit(
+            "Refusing billable Modal training launch without --confirm-billable-launch. "
+            "Dry-run/spec-lock review is not launch authorization."
+        )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -736,6 +1171,28 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mode", choices=["source", "pinned"], default="source")
     parser.add_argument("--gpu", default=DEFAULT_GPU)
     parser.add_argument("--timeout-seconds", type=int, default=DEFAULT_TIMEOUT_SECONDS)
+    parser.add_argument(
+        "--confirm-billable-launch",
+        action="store_true",
+        help=(
+            "Required for non-smoke Modal training launches after the run spec-lock "
+            "has been explicitly approved."
+        ),
+    )
+    parser.add_argument(
+        "--runpod-cloud-type",
+        choices=["SECURE", "COMMUNITY"],
+        default="SECURE",
+    )
+    parser.add_argument(
+        "--runpod-gpu-type-id",
+        action="append",
+        help=(
+            "RunPod GPU type ID for plan rendering. Repeat for fallback order; "
+            "defaults to secure RTX 4090."
+        ),
+    )
+    parser.add_argument("--runpod-image-name", default=DEFAULT_RUNPOD_IMAGE_NAME)
     parser.add_argument("--experiment", default=DEFAULT_EXPERIMENT)
     parser.add_argument("--run", default=DEFAULT_RUN)
     parser.add_argument("--n-train-batches", type=int, default=DEFAULT_N_TRAIN_BATCHES)
@@ -850,6 +1307,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    require_billable_launch_confirmation(args)
     config = make_config(args)
     if args.command == "dry-run":
         print(json.dumps(dry_run_payload(config), indent=2, sort_keys=True))

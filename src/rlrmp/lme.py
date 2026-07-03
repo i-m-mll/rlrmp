@@ -6,16 +6,15 @@ is organized in PyTree structures with hierarchical regressors.
 """
 
 import itertools
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, Optional, Sequence, Tuple, Union
 
-import jax
 import jax.numpy as jnp
 import jax.tree as jt
 import jax_cookbook.tree as jtree
 import numpy as np
 import pandas as pd
 import statsmodels.formula.api as smf
-from jax_cookbook._ldict import LDict, LDictConstructor
+from jax_cookbook import LDict, LDictConstructor
 from statsmodels.regression.mixed_linear_model import MixedLMResults
 
 
@@ -345,7 +344,7 @@ def fit_lme(
     Examples
     --------
     >>> # Create a simple PyTree with two levels of regressors
-    >>> from jax_cookbook._ldict import LDict
+    >>> from jax_cookbook import LDict
     >>> import jax.numpy as jnp
     >>>
     >>> data = LDict("speed", {

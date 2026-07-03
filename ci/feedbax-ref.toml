@@ -1,0 +1,4 @@
+# Pinned feedbax develop SHA (pushed to origin/develop).
+repo = "https://github.com/i-m-mll/feedbax.git"
+rev = "0a71eaf854dfbf693e33b04acc04caba8b6ea364"
+branch = "develop"

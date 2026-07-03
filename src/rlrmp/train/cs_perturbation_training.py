@@ -24,15 +24,32 @@ from jaxtyping import PRNGKeyArray
 
 from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
     DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS,
-    DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S,
-    DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT,
     DEFAULT_PLANT_TIMING_BINS,
     DEFAULT_REACH_RELATIVE_LEVELS,
+)
+from rlrmp.data_products.broad_epsilon import (
+    consumed_broad_epsilon_identity,
+    load_broad_epsilon_anchors,
+)
+from rlrmp.data_products.calibration import (
+    CALIBRATION_PRODUCT_RELPATH,
+    CALIBRATION_PRODUCT_ROLE,
+    consumed_calibration_identity,
+    load_open_loop_calibration,
 )
 from rlrmp.model.feedbax_channel_adapters import (
     additive_channel_payload_dim,
     additive_channel_provenance,
     materialize_additive_channel_adapters_on_graph,
+)
+from rlrmp.model.feedback_descriptors import (
+    COMPONENT_FORCE_FILTER,
+    resolve_controller_feedback_view,
+)
+from rlrmp.model.cs_lss_gru import (
+    CS_H0_CONTEXT_INPUT,
+    FINITE_EPSILON_POLICY_GRAPH_COMPONENT,
+    FINITE_EPSILON_POLICY_NODE_LABEL,
 )
 from rlrmp.train.closed_loop_finite_adversary import (
     AFFINE_POLICY,
@@ -204,24 +221,11 @@ TIMING_LABELS_CONTROLLER_VISIBLE = tuple(
 )
 BROAD_EPSILON_DIM = 8
 BROAD_EPSILON_REFERENCE_REACH_M = 0.15
-BROAD_EPSILON_LEVELS: dict[str, dict[str, Any]] = {
-    "moderate": {
-        "gamma_factor": 1.4,
-        "closed_loop_epsilon_energy_15cm": 1.518885046213267e-06,
-        "closed_loop_epsilon_l2_15cm": 0.0012324305441740995,
-        "delta_v_percent": 4.041729916548296,
-        "source_issue": "cb98e58",
-        "source_note": "results/cb98e58/notes/analytical_game_card_manifest.json",
-    },
-    "strong": {
-        "gamma_factor": 1.05,
-        "closed_loop_epsilon_energy_15cm": 5.421868381615368e-06,
-        "closed_loop_epsilon_l2_15cm": 0.0023284905801002004,
-        "delta_v_percent": 7.460371202249536,
-        "source_issue": "a7dad8a",
-        "source_note": "results/a7dad8a/notes/adversary_equivalence_manifest.json",
-    },
-}
+# The broad-epsilon per-level closed-loop budget anchors are no longer baked here.
+# They are adopted from their analytical game-card / adversary-equivalence sources
+# (cb98e58 moderate, a7dad8a strong), persisted as a governed data product under
+# results/ea6ccb4/data_products/, and loaded fail-closed by identity via
+# rlrmp.data_products.broad_epsilon.load_broad_epsilon_anchors(). See issue ea6ccb4.
 PGD_SISU_MAX_RADIUS_SOURCES: dict[str, dict[str, Any]] = {
     "raw_strong_gamma_1p05_radius": {
         "source_kind": "raw_analytical_gamma_anchor",
@@ -286,8 +290,9 @@ class BroadFullStateEpsilonTrainingConfig:
     epsilon_dim: int = BROAD_EPSILON_DIM
 
     def __post_init__(self) -> None:
-        if self.level not in BROAD_EPSILON_LEVELS:
-            levels = ", ".join(BROAD_EPSILON_LEVELS)
+        anchors = load_broad_epsilon_anchors()
+        if self.level not in anchors:
+            levels = ", ".join(anchors.keys())
             raise ValueError(
                 f"Unknown broad-epsilon level {self.level!r}; expected one of {levels}."
             )
@@ -302,7 +307,7 @@ class BroadFullStateEpsilonTrainingConfig:
     def level_contract(self) -> dict[str, Any]:
         """Return the immutable analytical budget anchor for this level."""
 
-        return dict(BROAD_EPSILON_LEVELS[self.level])
+        return dict(load_broad_epsilon_anchors()[self.level])
 
     @property
     def reference_l2_radius(self) -> float:
@@ -405,8 +410,9 @@ class PgdFullStateEpsilonTrainingConfig:
                 f"Unknown PGD adversary mechanism {self.adversary_mechanism!r}; "
                 f"expected one of {mechanisms}."
             )
-        if self.level not in BROAD_EPSILON_LEVELS:
-            levels = ", ".join(BROAD_EPSILON_LEVELS)
+        anchors = load_broad_epsilon_anchors()
+        if self.level not in anchors:
+            levels = ", ".join(anchors.keys())
             raise ValueError(
                 f"Unknown PGD broad-epsilon level {self.level!r}; expected one of {levels}."
             )
@@ -491,7 +497,7 @@ class PgdFullStateEpsilonTrainingConfig:
     def level_contract(self) -> dict[str, Any]:
         """Return the immutable analytical budget anchor for this level."""
 
-        return dict(BROAD_EPSILON_LEVELS[self.level])
+        return dict(load_broad_epsilon_anchors()[self.level])
 
     @property
     def reference_l2_radius(self) -> float:
@@ -951,7 +957,8 @@ def pgd_adversary_mechanism_contract(
         },
         "live_evaluation": {
             "implementation": "graph_component",
-            "component": "RLRMPCsLssFiniteEpsilonPolicy",
+            "component": FINITE_EPSILON_POLICY_GRAPH_COMPONENT,
+            "component_label": FINITE_EPSILON_POLICY_NODE_LABEL,
             "hook": None,
             "input_keys": [
                 "epsilon",
@@ -962,7 +969,8 @@ def pgd_adversary_mechanism_contract(
             "target_centering": True,
             "static_clean_rollout_materialization": False,
         },
-        "graph_component": "RLRMPCsLssFiniteEpsilonPolicy",
+        "graph_component": FINITE_EPSILON_POLICY_GRAPH_COMPONENT,
+        "graph_component_label": FINITE_EPSILON_POLICY_NODE_LABEL,
         "no_fake_open_loop_replay": True,
     }
 
@@ -1235,6 +1243,11 @@ def active_graph_adapter_specs(
 def _widen_controller_visible_adapter(
     spec: AdditiveGraphChannelAdapterSpec,
 ) -> AdditiveGraphChannelAdapterSpec:
+    force_filter = resolve_controller_feedback_view(
+        None,
+        feedback_dim=6,
+        source="cs_perturbation_training_widened_adapter",
+    ).component(COMPONENT_FORCE_FILTER)
     return spec.model_copy(
         update={
             "payload_shape": [6],
@@ -1242,7 +1255,7 @@ def _widen_controller_visible_adapter(
                 **dict(spec.metadata),
                 "force_filter_feedback_payload": "widened_to_controller_feedback_dim",
                 "active_calibrated_components": 4,
-                "inactive_force_filter_components": [4, 5],
+                "inactive_force_filter_components": list(force_filter.absolute_indices),
             },
         }
     )
@@ -2096,6 +2109,23 @@ def calibrated_amplitude_policy_manifest(
 ) -> dict[str, Any]:
     """Return the calibrated amplitude rule consumed by the training sampler."""
 
+    calibration = load_open_loop_calibration()
+    data_product = {
+        "role": CALIBRATION_PRODUCT_ROLE,
+        "product_schema_id": "rlrmp.perturbation_open_loop_calibration",
+        "product_schema_version": "rlrmp.perturbation_open_loop_calibration.v2",
+        "product_identity_hash": calibration.product_identity_hash,
+        "product_path": CALIBRATION_PRODUCT_RELPATH,
+    }
+    # The open-loop unit-sensitivity table and controller-visible velocity scale are
+    # a governed data product consumed at runtime; artifact_dependency names the
+    # runtime dependency and must not claim "none_at_runtime" while calibration is
+    # consumed (issue ea6ccb4). A distinct closed-loop calibration table, when used,
+    # is still reported as its own path.
+    if config.calibration_regime != OPEN_LOOP_ALL_CALIBRATION_REGIME:
+        artifact_dependency = config.closed_loop_calibration_table_path
+    else:
+        artifact_dependency = CALIBRATION_PRODUCT_RELPATH
     return {
         "schema_version": "rlrmp.cs_perturbation_calibrated_amplitude_policy.v1",
         "active": bool(config.calibrated_timing),
@@ -2113,8 +2143,11 @@ def calibrated_amplitude_policy_manifest(
             "position components are native reach_length_m * level_fraction offsets; "
             "velocity components are native nominal_peak_speed_m_s * level_fraction offsets"
         ),
-        "controller_visible_velocity_scale_m_s": DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S,
-        "open_loop_peak_delta_x_per_unit": DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT,
+        "controller_visible_velocity_scale_m_s": (
+            calibration.controller_visible_velocity_scale_m_s
+        ),
+        "open_loop_peak_delta_x_per_unit": calibration.peak_delta_x_per_unit,
+        "data_product": data_product,
         "calibration_regime": calibration_regime_manifest(config),
         "command_input_training_direction_policy": {
             "distribution": "uniform_random_2d_direction",
@@ -2129,12 +2162,30 @@ def calibrated_amplitude_policy_manifest(
             "disabled in calibrated_timing mode; the declared physical_level fixes the "
             "effect-size target"
         ),
-        "artifact_dependency": (
-            config.closed_loop_calibration_table_path
-            if config.calibration_regime != OPEN_LOOP_ALL_CALIBRATION_REGIME
-            else "none_at_runtime"
-        ),
+        "artifact_dependency": artifact_dependency,
     }
+
+
+def consumed_calibration_budget_identities(
+    *,
+    calibration_consumed: bool,
+    broad_epsilon_consumed: bool,
+) -> list[dict[str, str]]:
+    """Return consumed data-product identities for the emitted run spec.
+
+    Each entry is a ``{role, schema, hash}`` record snapshotting the typed
+    identity of a calibration/budget data product the run consumes at runtime.
+    The open-loop calibration product is consumed whenever calibrated-timing
+    amplitude wiring is active; the broad-epsilon budget-anchor product is
+    consumed whenever a broad full-state epsilon lane (random or PGD) is active.
+    """
+
+    identities: list[dict[str, str]] = []
+    if calibration_consumed:
+        identities.append(consumed_calibration_identity())
+    if broad_epsilon_consumed:
+        identities.append(consumed_broad_epsilon_identity())
+    return identities
 
 
 def perturbation_training_mixture_semantics(
@@ -2973,8 +3024,7 @@ def run_broad_epsilon_pgd_inner_maximizer(
         and cfg.adversary_mechanism != BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM
     ):
         raise ValueError(
-            "soft_energy_lambda_override is only supported for the direct_epsilon "
-            "PGD mechanism."
+            "soft_energy_lambda_override is only supported for the direct_epsilon PGD mechanism."
         )
     if cfg.adversary_mechanism in BROAD_EPSILON_PGD_FINITE_POLICY_MECHANISMS:
         return _run_finite_broad_epsilon_pgd_inner_maximizer(
@@ -4631,12 +4681,10 @@ def _single_bin_amount(
     if bin_name == "initial_position":
         return target_peak_delta_x
     if bin_name == "initial_velocity":
-        sensitivity = DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT["initial_velocity_offset"][
-            "initial_condition"
-        ]
+        sensitivity = load_open_loop_calibration()["initial_velocity_offset"]["initial_condition"]
         return target_peak_delta_x / sensitivity
     if bin_name == "process_epsilon":
-        sensitivity = DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT["process_epsilon_force_state_xy"][
+        sensitivity = load_open_loop_calibration()["process_epsilon_force_state_xy"][
             TIMING_LABELS_PLANT[0]
         ]
         return target_peak_delta_x / sensitivity
@@ -4654,9 +4702,7 @@ def _single_bin_amount(
                 reducer="mean",
             )[0]
             return amount * reach_scale
-        sensitivity = DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT["command_input_pulse"][
-            TIMING_LABELS_PLANT[0]
-        ]
+        sensitivity = load_open_loop_calibration()["command_input_pulse"][TIMING_LABELS_PLANT[0]]
         return target_peak_delta_x / sensitivity
     if bin_name == "sensory_feedback" and _calibration_uses_closed_loop(
         config,
@@ -4715,9 +4761,7 @@ def _calibrated_initial_amount(
     target_peak_delta_x = _target_peak_delta_x_m(trial_specs, config)
     if bin_name == "initial_position":
         return target_peak_delta_x
-    sensitivity = DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT["initial_velocity_offset"][
-        "initial_condition"
-    ]
+    sensitivity = load_open_loop_calibration()["initial_velocity_offset"]["initial_condition"]
     return target_peak_delta_x / jnp.asarray(sensitivity, dtype=jnp.float32)
 
 
@@ -4902,10 +4946,7 @@ def _calibrated_timing_indexed_amounts(
         ).astype(dtype)
         return jnp.expand_dims(jnp.asarray(reach_scale, dtype=dtype), -1) * amplitudes
     sensitivities = jnp.asarray(
-        [
-            DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT[family][timing_label]
-            for timing_label in timing_labels
-        ],
+        [load_open_loop_calibration()[family][timing_label] for timing_label in timing_labels],
         dtype=dtype,
     )
     return jnp.expand_dims(jnp.asarray(target_peak_delta_x, dtype=dtype), -1) / sensitivities
@@ -4926,7 +4967,7 @@ def _process_epsilon_sensitivity_table(dtype: Any) -> jnp.ndarray:
     for family in PROCESS_EPSILON_COMPONENT_FAMILIES:
         rows.append(
             [
-                DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT[family][timing_label]
+                load_open_loop_calibration()[family][timing_label]
                 for timing_label in TIMING_LABELS_PLANT
             ]
         )
@@ -5474,7 +5515,7 @@ def _controller_visible_component_amounts(
             axis=-1,
         )
     velocity_amount = jnp.asarray(
-        DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S
+        load_open_loop_calibration().controller_visible_velocity_scale_m_s
         * REACH_RELATIVE_LEVELS[config.physical_level],
         dtype=dtype,
     )
@@ -5758,10 +5799,17 @@ def _with_static_target(
             )
             inputs["task"] = task_inputs
     inputs["target"] = target_sequence
+    if CS_H0_CONTEXT_INPUT in inputs:
+        inputs[CS_H0_CONTEXT_INPUT] = _target_relative_h0_context(
+            trial_specs,
+            target_sequence=target_sequence,
+            context_dim=int(jnp.asarray(inputs[CS_H0_CONTEXT_INPUT]).shape[-1]),
+            batch_shape=batch_shape,
+        )
     inputs = {
         key: (
             value
-            if key in {"target", "effector_target", "task"}
+            if key in {"target", "effector_target", "task", CS_H0_CONTEXT_INPUT}
             else _broadcast_trial_input_array(key, value, batch_shape)
         )
         for key, value in inputs.items()
@@ -5785,6 +5833,45 @@ def _with_static_target(
         timeline=timeline,
         extra=extra,
     )
+
+
+def _target_relative_h0_context(
+    trial_specs: TaskTrialSpec,
+    *,
+    target_sequence: jnp.ndarray,
+    context_dim: int,
+    batch_shape: tuple[int, ...],
+) -> jnp.ndarray:
+    """Return the first controller-visible target-relative feedback for native h0."""
+
+    init = _initial_lss_physical_state(trial_specs, batch_shape=batch_shape)
+    target_delta = target_sequence[..., 0, :] - init[..., 0:2]
+    neg_velocity = -init[..., 2:4]
+    pieces = [target_delta, neg_velocity]
+    if int(context_dim) == 6:
+        feedback_view = resolve_controller_feedback_view(
+            None,
+            feedback_dim=6,
+            values=init[..., :6],
+            source="cs_perturbation_training_h0_context",
+        )
+        pieces.append(feedback_view.component(COMPONENT_FORCE_FILTER).values)
+    elif int(context_dim) != 4:
+        raise ValueError(f"Unsupported h0 context dimension {context_dim}; expected 4 or 6.")
+    return jnp.concatenate(pieces, axis=-1)
+
+
+def _initial_lss_physical_state(
+    trial_specs: TaskTrialSpec,
+    *,
+    batch_shape: tuple[int, ...],
+) -> jnp.ndarray:
+    init = jnp.asarray(trial_specs.inits["mechanics.vector"])
+    if init.shape[: len(batch_shape)] != batch_shape:
+        init = _broadcast_trial_array(init, batch_shape)
+    if init.shape[-1] < 6:
+        raise ValueError("Native h0 context requires at least 6 physical initial-state entries.")
+    return init[..., :6]
 
 
 def _catch_preserving_loss_target_sequence(

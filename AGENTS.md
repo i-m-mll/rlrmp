@@ -376,16 +376,24 @@ Stable post-run provenance contract:
   SHA, Feedbax manifest/provider schema versions, the post-run provenance
   schema version, the pinned manifest root, and GraphSpec hash/version when the
   graph sidecar is present.
-- Non-dry runs stamp the tracked run spec with `post_run_provenance`, then run
-  Feedbax `TrainingRunManifest` parity before `git add` / `agent-commit`. A
-  mismatched tracked run spec and matching manifest blocks the commit.
+- New-format training runs stamp `post_run_provenance` during run production and
+  emit a Feedbax `TrainingRunManifest` whose `training_spec` is the canonical
+  full `RLRMPRunSpec` run record. The tracked
+  `results/<hash>/runs/<run>.json` file remains a recipe/reference convenience
+  for repo layout, but it is not the authority for new-format runs.
+- `scripts/post_run.sh` verifies the already-emitted `TrainingRunManifest` and
+  tracked recipe identity before `git add` / `agent-commit`. It must not
+  reconstruct, rewrite, or hash-reconcile the canonical manifest. A mismatched
+  tracked run spec and matching new-format manifest blocks the commit.
 - Non-dry runs must verify `uv.lock` is clean before `git add` /
   `agent-commit` / auth submission. `POST_RUN_ALLOW_DIRTY_UV_LOCK=1` is an
   emergency override only when the lockfile change is deliberate and documented
   elsewhere.
-- Existing legacy runs without a matching Feedbax `TrainingRunManifest` may
-  continue through the wrapper, but the output must report that parity was
-  `not_found` rather than silently implying a checked manifest.
+- Existing legacy runs without a matching Feedbax `TrainingRunManifest`, or
+  with a matching archived manifest that lacks the new-format training-spec
+  discriminator, may continue through the wrapper. The output must report
+  literal `not_found` or `archive-only` parity rather than silently implying a
+  checked manifest.
 - The run recipe must arrive at the **flat** canonical path
   `results/<hash>/runs/<run>.json`. Training scripts now write the flat recipe
   directly (`derive_spec_path`; W8/`e926665`). If only a **legacy nested**
@@ -432,6 +440,10 @@ The repo separates artifacts by ROLE, not by directory name:
 - **`results/`** is tracked. It holds *specs* (recipes) and *narratives* (prose).
 - **`_artifacts/`** is gitignored. It mirrors `results/` and holds *bulk* outputs.
 - **Cloud-provider directory names (`runpod/`, `modal/`, etc.) are NOT meaningful** — they all go under `_artifacts/`. Never patch `.gitignore` with a new provider name.
+
+### Generated/adopted empirical data lives in governed products, not source constants (Bug: `ea6ccb4`)
+
+Generated, empirical, or adopted-analytical datasets (calibration tables, budget anchors, and similar) must NOT be baked into `src/` as module-level Python constants. Source code keeps schemas, loaders, and builders; the data lives in a tracked, schema-versioned data product — persisted under `results/<hash>/data_products/` on the Feedbax `AnalysisDataProduct` envelope with an rlrmp `product_schema_id` — and is loaded at runtime by typed product identity with fail-closed validation (schema, role, `product_identity_hash`, and artifact hash), never trusted as a source literal. Consumers use the loaders in `rlrmp.data_products` (`load_open_loop_calibration`, `load_broad_epsilon_anchors`); emitted run specs snapshot each consumed identity via `add_consumed_data_identity`. The AST data-lint (`rlrmp.data_products.lint`, family `generated_data_constant_scan` in `ci/feedbax-contract-suite.toml`) enforces this: it flags multi-entry high-precision float container literals under `src/` unless they are loader-fed or allowlisted-with-rationale. Small conventional constants, dimensions, solver tolerances, and enum-like labels are out of scope; a single adopted scalar may be allowlisted-with-rationale instead of migrated.
 
 ### Flat-by-hash layout (Bug: `f485c26`)
 

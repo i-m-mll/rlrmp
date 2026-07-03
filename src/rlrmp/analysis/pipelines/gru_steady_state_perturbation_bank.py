@@ -38,6 +38,12 @@ from rlrmp.analysis.pipelines.sisu_spectrum_diagnostics import (
     zero_disturbance_payload,
 )
 from rlrmp.io import update_marked_section
+from rlrmp.model.feedback_descriptors import (
+    COMPONENT_FORCE_FILTER,
+    COMPONENT_POSITION,
+    COMPONENT_VELOCITY,
+    resolve_controller_feedback_view,
+)
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.train.task_model import setup_task_model_pair
 
@@ -185,14 +191,21 @@ def default_feedback_perturbations(
     """Return symmetric position, velocity, and force/filter feedback offsets."""
 
     rows: list[FeedbackPerturbation] = []
-    families: tuple[tuple[PerturbationFamily, tuple[int, int], float, str], ...] = (
-        ("position", (0, 1), position_scale_m, "m"),
-        ("velocity", (2, 3), velocity_scale_m_s, "m/s"),
-        ("force_filter", (4, 5), force_filter_scale, "model_feedback_units"),
+    descriptor_view = resolve_controller_feedback_view(
+        None,
+        feedback_dim=feedback_dim,
+        source="steady_state_feedback_perturbation_bank",
     )
-    for family, indices, amplitude, units in families:
-        if max(indices) >= feedback_dim:
-            continue
+    amplitudes = {
+        COMPONENT_POSITION: position_scale_m,
+        COMPONENT_VELOCITY: velocity_scale_m_s,
+        COMPONENT_FORCE_FILTER: force_filter_scale,
+    }
+    for component in descriptor_view.iter_components():
+        family = component.component_id
+        indices = tuple(component.absolute_indices)
+        amplitude = amplitudes[family]
+        units = component.units or "model_feedback_units"
         for axis, direction in (("x", (1.0, 0.0)), ("y", (0.0, 1.0))):
             for sign, sign_label in ((1, "pos"), (-1, "neg")):
                 signed = (sign * direction[0], sign * direction[1])
