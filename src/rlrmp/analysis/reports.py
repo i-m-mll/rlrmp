@@ -1,0 +1,294 @@
+"""Feedbax report-stage recipes for rlrmp analysis products."""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Mapping, Sequence
+from pathlib import Path
+from typing import Any
+
+from feedbax.analysis.reports import (
+    REPORT_RENDER_ROLE,
+    ReportRecipeResult,
+    ResolvedReportInput,
+    register_report_recipe,
+)
+from feedbax.contracts.manifest import (
+    ArtifactRef,
+    ReportSpec,
+    store_bytes_artifact,
+    store_json_artifact,
+)
+
+from rlrmp.runtime.spec_migrations import (
+    BRIDGE_CERTIFICATE_REPORT_PARAMS_KIND,
+    FEEDBACK_QUALITY_LENS_REPORT_PARAMS_KIND,
+    GRU_POSTRUN_REPORT_PARAMS_KIND,
+    ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_KIND,
+    stamp_current_schema,
+)
+
+
+GRU_POSTRUN_REPORT_TYPE = "rlrmp.report.gru_postrun_summary"
+BRIDGE_CERTIFICATE_REPORT_TYPE = "rlrmp.report.bridge_certificate_notes"
+FEEDBACK_QUALITY_LENS_REPORT_TYPE = "rlrmp.report.feedback_quality_lens_summary"
+ROBUSTNESS_PHENOTYPE_REPORT_TYPE = "rlrmp.report.robustness_phenotype_markdown"
+
+GRU_POSTRUN_REPORT_RENDER_ROLE = "rlrmp-gru-postrun-report-render"
+BRIDGE_CERTIFICATE_REPORT_RENDER_ROLE = "rlrmp-bridge-certificate-report-render"
+FEEDBACK_QUALITY_LENS_REPORT_RENDER_ROLE = "rlrmp-feedback-quality-lens-report-render"
+ROBUSTNESS_PHENOTYPE_REPORT_RENDER_ROLE = "rlrmp-robustness-phenotype-report-render"
+
+_DEFAULT_SOURCE_ROLES_BY_REPORT_TYPE = {
+    GRU_POSTRUN_REPORT_TYPE: (
+        "rlrmp-gru-standard-certificate-note",
+        "rlrmp-gru-objective-comparator-note",
+        "rlrmp-gru-map-decomposition-note",
+        "rlrmp-gru-perturbation-response-note",
+        "rlrmp-gru-feedback-ablation-note",
+    ),
+    BRIDGE_CERTIFICATE_REPORT_TYPE: (
+        "rlrmp-gru-standard-certificate-note",
+        "rlrmp-bridge-standard-certificate-note",
+    ),
+    FEEDBACK_QUALITY_LENS_REPORT_TYPE: ("rlrmp-feedback-quality-lens",),
+    ROBUSTNESS_PHENOTYPE_REPORT_TYPE: (
+        "rlrmp-robustness-phenotype-sidecar-note",
+    ),
+}
+
+_REPORT_KIND_BY_TYPE = {
+    GRU_POSTRUN_REPORT_TYPE: GRU_POSTRUN_REPORT_PARAMS_KIND,
+    BRIDGE_CERTIFICATE_REPORT_TYPE: BRIDGE_CERTIFICATE_REPORT_PARAMS_KIND,
+    FEEDBACK_QUALITY_LENS_REPORT_TYPE: FEEDBACK_QUALITY_LENS_REPORT_PARAMS_KIND,
+    ROBUSTNESS_PHENOTYPE_REPORT_TYPE: ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_KIND,
+}
+
+_RENDER_ROLE_BY_TYPE = {
+    GRU_POSTRUN_REPORT_TYPE: GRU_POSTRUN_REPORT_RENDER_ROLE,
+    BRIDGE_CERTIFICATE_REPORT_TYPE: BRIDGE_CERTIFICATE_REPORT_RENDER_ROLE,
+    FEEDBACK_QUALITY_LENS_REPORT_TYPE: FEEDBACK_QUALITY_LENS_REPORT_RENDER_ROLE,
+    ROBUSTNESS_PHENOTYPE_REPORT_TYPE: ROBUSTNESS_PHENOTYPE_REPORT_RENDER_ROLE,
+}
+
+_TITLE_BY_TYPE = {
+    GRU_POSTRUN_REPORT_TYPE: "GRU Postrun Report",
+    BRIDGE_CERTIFICATE_REPORT_TYPE: "Bridge Certificate Notes",
+    FEEDBACK_QUALITY_LENS_REPORT_TYPE: "Feedback-Quality Lens Summary",
+    ROBUSTNESS_PHENOTYPE_REPORT_TYPE: "Robustness Phenotype Report",
+}
+
+
+def register_rlrmp_report_recipes(*, replace: bool = True) -> None:
+    """Register rlrmp report recipes with Feedbax."""
+
+    for report_type in _REPORT_KIND_BY_TYPE:
+        register_report_recipe(report_type, artifact_markdown_report_recipe, replace=replace)
+
+
+def report_stage_params(
+    report_type: str,
+    *,
+    source_artifact_roles: Sequence[str] | None = None,
+    title: str | None = None,
+    include_json_artifact: bool = True,
+) -> dict[str, Any]:
+    """Return schema-stamped params for an rlrmp report-stage recipe."""
+
+    kind = _REPORT_KIND_BY_TYPE[report_type]
+    params = {
+        "source_artifact_roles": list(
+            source_artifact_roles or _DEFAULT_SOURCE_ROLES_BY_REPORT_TYPE[report_type]
+        ),
+        "title": title or _TITLE_BY_TYPE[report_type],
+        "include_json_artifact": include_json_artifact,
+    }
+    return stamp_current_schema(kind, params)
+
+
+def artifact_markdown_report_recipe(
+    report_spec: ReportSpec,
+    root: Path,
+    inputs: Sequence[ResolvedReportInput],
+) -> ReportRecipeResult:
+    """Render markdown by copying selected upstream analysis artifacts."""
+
+    params = _stage_params(report_spec)
+    source_roles = tuple(
+        str(role)
+        for role in params.get(
+            "source_artifact_roles",
+            _DEFAULT_SOURCE_ROLES_BY_REPORT_TYPE.get(report_spec.report_type, ()),
+        )
+    )
+    if not source_roles:
+        raise ValueError(f"{report_spec.report_type} requires source_artifact_roles")
+
+    sections: list[dict[str, Any]] = []
+    for resolved in inputs:
+        manifest = resolved.manifest
+        if manifest is None:
+            sections.append(
+                {
+                    "status": "missing_manifest",
+                    "manifest_ref": resolved.ref.model_dump(mode="json", exclude_none=True),
+                }
+            )
+            continue
+        for artifact in getattr(manifest, "artifacts", ()):
+            if artifact.role not in source_roles:
+                continue
+            sections.append(_section_for_artifact(artifact))
+
+    title = str(params.get("title") or _TITLE_BY_TYPE.get(report_spec.report_type, "RLRMP Report"))
+    markdown = _render_sections_markdown(
+        title=title,
+        narrative=report_spec.narrative,
+        report_type=report_spec.report_type,
+        source_roles=source_roles,
+        sections=sections,
+    )
+    render = store_bytes_artifact(
+        markdown.encode("utf-8"),
+        root=root,
+        role=REPORT_RENDER_ROLE,
+        logical_name=f"{report_spec.report_type.replace('.', '/')}.md",
+        media_type="text/markdown",
+        suffix=".md",
+        metadata={
+            "rlrmp_report_role": _RENDER_ROLE_BY_TYPE.get(report_spec.report_type),
+            "source_artifact_roles": list(source_roles),
+        },
+    )
+    artifacts = [render]
+    if bool(params.get("include_json_artifact", True)):
+        artifacts.append(
+            store_json_artifact(
+                {
+                    "schema_id": params.get("schema_id"),
+                    "schema_version": params.get("schema_version"),
+                    "report_type": report_spec.report_type,
+                    "source_artifact_roles": list(source_roles),
+                    "sections": sections,
+                },
+                root=root,
+                role=_RENDER_ROLE_BY_TYPE.get(report_spec.report_type, "rlrmp-report-summary"),
+                logical_name=f"{report_spec.report_type.replace('.', '/')}.json",
+                metadata={"report_type": report_spec.report_type},
+            )
+        )
+    return ReportRecipeResult(
+        artifacts=artifacts,
+        summary={
+            "sections": len(sections),
+            "source_roles": len(source_roles),
+        },
+        metadata={
+            "schema_id": params.get("schema_id"),
+            "schema_version": params.get("schema_version"),
+        },
+    )
+
+
+def _stage_params(report_spec: ReportSpec) -> dict[str, Any]:
+    """Return bundled or direct report params."""
+
+    params = dict(report_spec.params)
+    stage_params = params.get("stage_params")
+    if isinstance(stage_params, Mapping):
+        return dict(stage_params)
+    return params
+
+
+def _section_for_artifact(artifact: ArtifactRef) -> dict[str, Any]:
+    section = {
+        "role": artifact.role,
+        "logical_name": artifact.logical_name,
+        "media_type": artifact.media_type,
+        "sha256": artifact.sha256,
+        "uri": artifact.uri,
+        "status": "materialized",
+    }
+    if artifact.uri is None:
+        section["status"] = "missing_uri"
+        return section
+
+    path = Path(artifact.uri)
+    if not path.exists():
+        section["status"] = "missing_artifact_file"
+        return section
+
+    if artifact.media_type == "application/json" or path.suffix == ".json":
+        try:
+            section["json"] = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            section["status"] = "invalid_json"
+            section["error"] = str(exc)
+        return section
+
+    if artifact.media_type.startswith("text/") or path.suffix in {".md", ".txt"}:
+        section["text"] = path.read_text(encoding="utf-8")
+        return section
+
+    section["status"] = "unsupported_media_type"
+    return section
+
+
+def _render_sections_markdown(
+    *,
+    title: str,
+    narrative: str | None,
+    report_type: str,
+    source_roles: Sequence[str],
+    sections: Sequence[Mapping[str, Any]],
+) -> str:
+    lines = [f"# {title}", ""]
+    if narrative:
+        lines.extend([narrative, ""])
+    lines.extend(
+        [
+            f"Report type: `{report_type}`",
+            f"Source roles: {', '.join(f'`{role}`' for role in source_roles)}",
+            "",
+        ]
+    )
+    if not sections:
+        lines.extend(["No matching upstream artifacts were materialized.", ""])
+        return "\n".join(lines)
+
+    for section in sections:
+        role = section.get("role", "unknown")
+        logical_name = section.get("logical_name", "unknown")
+        lines.extend([f"## {role}", "", f"Source: `{logical_name}`", ""])
+        if section.get("status") != "materialized":
+            lines.extend([f"Status: `{section.get('status')}`", ""])
+            continue
+        if "text" in section:
+            lines.extend([str(section["text"]).rstrip(), ""])
+        elif "json" in section:
+            lines.extend(
+                [
+                    "```json",
+                    json.dumps(section["json"], indent=2, sort_keys=True),
+                    "```",
+                    "",
+                ]
+            )
+        else:
+            lines.extend([f"Status: `{section.get('status', 'unavailable')}`", ""])
+    return "\n".join(lines)
+
+
+__all__ = [
+    "BRIDGE_CERTIFICATE_REPORT_RENDER_ROLE",
+    "BRIDGE_CERTIFICATE_REPORT_TYPE",
+    "FEEDBACK_QUALITY_LENS_REPORT_RENDER_ROLE",
+    "FEEDBACK_QUALITY_LENS_REPORT_TYPE",
+    "GRU_POSTRUN_REPORT_RENDER_ROLE",
+    "GRU_POSTRUN_REPORT_TYPE",
+    "ROBUSTNESS_PHENOTYPE_REPORT_RENDER_ROLE",
+    "ROBUSTNESS_PHENOTYPE_REPORT_TYPE",
+    "artifact_markdown_report_recipe",
+    "register_rlrmp_report_recipes",
+    "report_stage_params",
+]

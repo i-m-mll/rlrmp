@@ -303,8 +303,8 @@ Adjust flags to match the current script's CLI if it has changed.
 - **Batch-progress lines.** rlrmp training scripts emit grep-friendly
   per-batch progress lines so a monitor can report the last batch seen between
   the JIT message and the completion sentinel
-  (`scripts/train_minimax.py` warmup + adversarial phases and
-  `scripts/train_part2_5.py`; helper `rlrmp.train.progress`). The stable format
+  (`scripts/train_minimax.py` warmup + adversarial phases; helper
+  `rlrmp.train.progress`). The stable format
   is `BATCH phase=<phase> batch=<i>/<n> [loss=<x>] [elapsed=<s>s]` — always
   starting with the literal `BATCH` token, with `phase` and `batch=<i>/<n>` as
   the load-bearing fields. The format is intentionally grep-friendly so
@@ -488,7 +488,7 @@ recipe. If a run needs additional tracked sidecars, use
 
 ### Script placement: experiment-specific vs reusable (Bug: 8404108)
 
-The top-level `scripts/` directory is for cross-cutting tooling — scripts that operate generically across experiments (e.g. `train_minimax.py`, `train_part2_5.py`, `eval_minimax.py`, `eval_diagnostics.py`, infrastructure shell scripts). It is NOT a dumping ground for experiment-specific analysis code.
+The top-level `scripts/` directory is for cross-cutting tooling — scripts that operate generically across experiments (e.g. `train_minimax.py`, `eval_minimax.py`, `eval_diagnostics.py`, infrastructure shell scripts). It is NOT a dumping ground for experiment-specific analysis code.
 
 **Hard rules:**
 

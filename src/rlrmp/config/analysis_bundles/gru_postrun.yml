@@ -67,6 +67,47 @@ stages:
         required: false
       - role: rlrmp-gru-postrun-legacy-regeneration-spec
         required: false
+  - name: postrun_report
+    kind: report
+    mode: grouped
+    depends_on: [postrun_diagnostics]
+    report_type: rlrmp.report.gru_postrun_summary
+    params:
+      schema_id: rlrmp.report.gru_postrun_summary.params
+      schema_version: rlrmp.report.gru_postrun_summary.params.v1
+      title: GRU Postrun Report
+      source_artifact_roles:
+        - rlrmp-gru-standard-certificate-note
+        - rlrmp-gru-objective-comparator-note
+        - rlrmp-gru-map-decomposition-note
+        - rlrmp-gru-perturbation-response-note
+        - rlrmp-gru-feedback-ablation-note
+      include_json_artifact: true
+      narrative: Feedbax-custody report render for the tracked GRU postrun notes.
+    outputs:
+      - role: report_render
+        required: true
+      - role: rlrmp-gru-postrun-report-render
+        required: false
+  - name: bridge_certificate_report
+    kind: report
+    mode: grouped
+    depends_on: [postrun_diagnostics]
+    report_type: rlrmp.report.bridge_certificate_notes
+    params:
+      schema_id: rlrmp.report.bridge_certificate_notes.params
+      schema_version: rlrmp.report.bridge_certificate_notes.params.v1
+      title: Bridge Certificate Notes
+      source_artifact_roles:
+        - rlrmp-gru-standard-certificate-note
+        - rlrmp-bridge-standard-certificate-note
+      include_json_artifact: true
+      narrative: Feedbax-custody report render for standard-certificate Markdown.
+    outputs:
+      - role: report_render
+        required: true
+      - role: rlrmp-bridge-certificate-report-render
+        required: false
   - name: feedback_quality_lens
     kind: materialization
     depends_on: [postrun_diagnostics]

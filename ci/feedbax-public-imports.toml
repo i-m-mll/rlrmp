@@ -60,6 +60,15 @@ module = "feedbax.analysis.pca"
 symbols = ["PCAResults"]
 
 [[canonical_homes]]
+module = "feedbax.analysis.reports"
+symbols = [
+  "REPORT_RENDER_ROLE",
+  "ReportRecipeResult",
+  "ResolvedReportInput",
+  "register_report_recipe",
+]
+
+[[canonical_homes]]
 module = "feedbax.analysis.specs"
 symbols = [
   "AnalysisRecipeResult",
@@ -174,6 +183,7 @@ symbols = [
   "REGENERATION_SPEC_SCHEMA_VERSION",
   "RegenerationCommand",
   "RegenerationSpec",
+  "ReportSpec",
   "SCHEMA_VERSION",
   "SpecPayload",
   "TrainingRunManifest",
@@ -184,6 +194,8 @@ symbols = [
   "safe_manifest_key",
   "sha256_file",
   "spec_payload",
+  "store_bytes_artifact",
+  "store_json_artifact",
   "write_manifest",
 ]
 

@@ -12,11 +12,10 @@ Bug: fd64bb4 — Phase 2 path-helper module. The helper tests verify that
 ``rlrmp.paths`` returns the correct absolute paths for the mirror-tree layout
 and that the two sides of the mirror are structurally consistent.
 
-Bug: 0077b42 — Phase 2 completion. Train scripts now split the tracked
+Bug: 0077b42 — Phase 2 completion. Train scripts split the tracked
 ``run.json`` spec from the bulk-artifact outputs. Tests below verify that
-``derive_spec_dir`` (in both ``train_part2_5`` and ``train_minimax``) maps an
-``_artifacts/`` artifact path to the corresponding ``results/`` spec path
-under the mirror invariant.
+``derive_spec_dir`` maps an ``_artifacts/`` artifact path to the corresponding
+``results/`` spec path under the mirror invariant.
 
 The gitignore tests shell out to `git check-ignore -q`, which is the
 authoritative oracle for whether a path would be tracked.
@@ -438,14 +437,6 @@ def _load_module(module_name: str, file_path: Path):
 
 
 @pytest.fixture(scope="module")
-def train_part2_5_module():
-    return _load_module(
-        "train_part2_5_under_test",
-        REPO_ROOT / "scripts" / "train_part2_5.py",
-    )
-
-
-@pytest.fixture(scope="module")
 def train_minimax_module():
     return _load_module(
         "train_minimax_under_test",
@@ -461,20 +452,10 @@ class TestDerivedSpecDirMirrorInvariant:
     ``rlrmp.paths.run_spec_dir(exp, run)`` for the same ``(exp, run)``.
     """
 
-    def test_part2_5_run_artifact_to_run_spec(self, train_part2_5_module) -> None:
-        artifact = run_artifact_dir("part2_5", "baseline__standard_12k")
-        spec = train_part2_5_module.derive_spec_dir(artifact)
-        assert spec == run_spec_dir("part2_5", "baseline__standard_12k")
-
     def test_minimax_run_artifact_to_run_spec(self, train_minimax_module) -> None:
         artifact = run_artifact_dir("minimax", "seed_0")
         spec = train_minimax_module.derive_spec_dir(artifact)
         assert spec == run_spec_dir("minimax", "seed_0")
-
-    def test_relative_artifact_path_resolves_correctly(self, train_part2_5_module) -> None:
-        """A relative ``_artifacts/...`` path should still map under ``results/``."""
-        spec = train_part2_5_module.derive_spec_dir(Path("_artifacts/part2_5/runs/foo"))
-        assert spec == run_spec_dir("part2_5", "foo")
 
 
 class TestDerivedSpecPathFlat:
@@ -485,14 +466,6 @@ class TestDerivedSpecPathFlat:
     must instead live at the flat ``results/<exp>/runs/<run>.json`` path
     (``rlrmp.paths.run_spec_path``).
     """
-
-    def test_part2_5_artifact_to_flat_recipe(self, train_part2_5_module) -> None:
-        artifact = run_artifact_dir("part2_5", "baseline__standard_12k")
-        spec = train_part2_5_module.derive_spec_path(artifact)
-        assert spec == run_spec_path("part2_5", "baseline__standard_12k")
-        assert spec.name == "baseline__standard_12k.json"
-        # No nested runs/<run>/run.json directory form.
-        assert spec.parent == run_spec_dir("part2_5", "baseline__standard_12k").parent
 
     def test_minimax_artifact_to_flat_recipe(self, train_minimax_module) -> None:
         artifact = run_artifact_dir("minimax", "seed_0")
@@ -510,9 +483,8 @@ class TestDerivedSpecPathFlat:
         nested = run_spec_dir("minimax", "seed_0") / "run.json"
         assert spec != nested
 
-    @pytest.mark.parametrize("module_fixture", ["minimax", "part2_5"])
     def test_writer_ignores_preexisting_legacy_recipe(
-        self, module_fixture, train_minimax_module, train_part2_5_module
+        self, train_minimax_module
     ) -> None:
         """Writer resolves to the flat path even when a legacy recipe is present.
 
@@ -522,10 +494,6 @@ class TestDerivedSpecPathFlat:
         disk. A re-run would then overwrite the non-canonical nested file. The
         writer path must always land on the flat ``<run>.json`` recipe.
         """
-        module = {
-            "minimax": train_minimax_module,
-            "part2_5": train_part2_5_module,
-        }[module_fixture]
         exp = "zzz_test_legacy_writer"
         run = "writer_run"
         legacy = run_spec_dir(exp, run) / "run.json"
@@ -535,7 +503,7 @@ class TestDerivedSpecPathFlat:
             # Reader/resolver would point at the legacy recipe ...
             assert run_spec_path(exp, run) == legacy
             # ... but the script writer path lands on the flat recipe.
-            spec = module.derive_spec_path(run_artifact_dir(exp, run))
+            spec = train_minimax_module.derive_spec_path(run_artifact_dir(exp, run))
             assert spec == flat_run_spec_path(exp, run)
             assert spec.name == f"{run}.json"
             assert spec != legacy
@@ -571,27 +539,9 @@ class TestDerivedSpecPathFallback:
         assert spec.parent == out.parent
         assert spec.suffix == ".json"
 
-    def test_part2_5_out_of_tree_path_uses_flat_sibling(
-        self, tmp_path, train_part2_5_module
-    ) -> None:
-        out = tmp_path / "myrun"
-        out.mkdir()
-        spec = train_part2_5_module.derive_spec_path(out)
-        assert spec.name == "myrun_spec.json"
-        assert spec.parent == out.parent
-        assert spec.suffix == ".json"
-
 
 class TestDerivedSpecDirFallback:
     """When ``output_dir`` is outside ``_artifacts/``, fall back to a sibling."""
-
-    def test_out_of_tree_path_uses_sibling_spec(self, tmp_path, train_part2_5_module) -> None:
-        """Paths outside the artifact tree map to ``<dir>_spec`` next to them."""
-        out = tmp_path / "myrun"
-        out.mkdir()
-        spec = train_part2_5_module.derive_spec_dir(out)
-        assert spec.name == "myrun_spec"
-        assert spec.parent == out.parent
 
     def test_minimax_out_of_tree_path_uses_sibling_spec(
         self, tmp_path, train_minimax_module

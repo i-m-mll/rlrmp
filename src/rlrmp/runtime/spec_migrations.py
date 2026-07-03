@@ -75,6 +75,32 @@ FEEDBACK_QUALITY_LENS_KIND = "RLRMPFeedbackQualityLens"
 FEEDBACK_QUALITY_LENS_SCHEMA_ID = "rlrmp.feedback_quality_lens"
 FEEDBACK_QUALITY_LENS_SCHEMA_VERSION = "rlrmp.feedback_quality_lens.v1"
 
+GRU_POSTRUN_REPORT_PARAMS_KIND = "RLRMPGRUPostrunReportParams"
+GRU_POSTRUN_REPORT_PARAMS_SCHEMA_ID = "rlrmp.report.gru_postrun_summary.params"
+GRU_POSTRUN_REPORT_PARAMS_SCHEMA_VERSION = "rlrmp.report.gru_postrun_summary.params.v1"
+
+BRIDGE_CERTIFICATE_REPORT_PARAMS_KIND = "RLRMPBridgeCertificateReportParams"
+BRIDGE_CERTIFICATE_REPORT_PARAMS_SCHEMA_ID = "rlrmp.report.bridge_certificate_notes.params"
+BRIDGE_CERTIFICATE_REPORT_PARAMS_SCHEMA_VERSION = (
+    "rlrmp.report.bridge_certificate_notes.params.v1"
+)
+
+FEEDBACK_QUALITY_LENS_REPORT_PARAMS_KIND = "RLRMPFeedbackQualityLensReportParams"
+FEEDBACK_QUALITY_LENS_REPORT_PARAMS_SCHEMA_ID = (
+    "rlrmp.report.feedback_quality_lens_summary.params"
+)
+FEEDBACK_QUALITY_LENS_REPORT_PARAMS_SCHEMA_VERSION = (
+    "rlrmp.report.feedback_quality_lens_summary.params.v1"
+)
+
+ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_KIND = "RLRMPRobustnessPhenotypeReportParams"
+ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_SCHEMA_ID = (
+    "rlrmp.report.robustness_phenotype_markdown.params"
+)
+ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_SCHEMA_VERSION = (
+    "rlrmp.report.robustness_phenotype_markdown.params.v1"
+)
+
 VALIDATION_SELECTED_GRU_CHECKPOINTS_KIND = "RLRMPValidationSelectedGRUCheckpoints"
 VALIDATION_SELECTED_GRU_CHECKPOINTS_SCHEMA_ID = "feedbax.manifest.checkpoint_selection"
 VALIDATION_SELECTED_GRU_CHECKPOINTS_SCHEMA_VERSION = FEEDBAX_MANIFEST_SCHEMA_VERSION
@@ -428,6 +454,45 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             ),
         ),
         _family(
+            GRU_POSTRUN_REPORT_PARAMS_KIND,
+            GRU_POSTRUN_REPORT_PARAMS_SCHEMA_ID,
+            GRU_POSTRUN_REPORT_PARAMS_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.reports", "rlrmp/config/analysis_bundles/gru_postrun.yml"),
+            consumed_by=("Feedbax ReportSpec.params",),
+            description="Params for the GRU postrun report-render recipe.",
+            rejected_old_versions=("rlrmp.report.gru_postrun_summary.params.v0",),
+        ),
+        _family(
+            BRIDGE_CERTIFICATE_REPORT_PARAMS_KIND,
+            BRIDGE_CERTIFICATE_REPORT_PARAMS_SCHEMA_ID,
+            BRIDGE_CERTIFICATE_REPORT_PARAMS_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.reports", "rlrmp/config/analysis_bundles/gru_postrun.yml"),
+            consumed_by=("Feedbax ReportSpec.params",),
+            description="Params for the bridge-certificate notes report-render recipe.",
+            rejected_old_versions=("rlrmp.report.bridge_certificate_notes.params.v0",),
+        ),
+        _family(
+            FEEDBACK_QUALITY_LENS_REPORT_PARAMS_KIND,
+            FEEDBACK_QUALITY_LENS_REPORT_PARAMS_SCHEMA_ID,
+            FEEDBACK_QUALITY_LENS_REPORT_PARAMS_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.reports",),
+            consumed_by=("Feedbax ReportSpec.params",),
+            description="Params for the feedback-quality lens report-render recipe.",
+            rejected_old_versions=("rlrmp.report.feedback_quality_lens_summary.params.v0",),
+        ),
+        _family(
+            ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_KIND,
+            ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_SCHEMA_ID,
+            ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_SCHEMA_VERSION,
+            emitted_by=(
+                "rlrmp.analysis.reports",
+                "rlrmp/config/analysis_bundles/robustness_phenotype.yml",
+            ),
+            consumed_by=("Feedbax ReportSpec.params",),
+            description="Params for the robustness-phenotype Markdown report-render recipe.",
+            rejected_old_versions=("rlrmp.report.robustness_phenotype_markdown.params.v0",),
+        ),
+        _family(
             VALIDATION_SELECTED_GRU_CHECKPOINTS_KIND,
             VALIDATION_SELECTED_GRU_CHECKPOINTS_SCHEMA_ID,
             VALIDATION_SELECTED_GRU_CHECKPOINTS_SCHEMA_VERSION,
@@ -626,6 +691,9 @@ def _migrate_run_spec_v1_to_v2(payload: dict[str, Any]) -> dict[str, Any]:
 
 __all__ = [
     "ArchiveOnlySpecError",
+    "BRIDGE_CERTIFICATE_REPORT_PARAMS_KIND",
+    "BRIDGE_CERTIFICATE_REPORT_PARAMS_SCHEMA_ID",
+    "BRIDGE_CERTIFICATE_REPORT_PARAMS_SCHEMA_VERSION",
     "CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND",
     "CENTER_OUT_ENSEMBLE_EVAL_PARAMS_SCHEMA_ID",
     "CENTER_OUT_ENSEMBLE_EVAL_PARAMS_SCHEMA_VERSION",
@@ -646,6 +714,9 @@ __all__ = [
     "FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_ID",
     "FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION",
     "FEEDBACK_QUALITY_LENS_KIND",
+    "FEEDBACK_QUALITY_LENS_REPORT_PARAMS_KIND",
+    "FEEDBACK_QUALITY_LENS_REPORT_PARAMS_SCHEMA_ID",
+    "FEEDBACK_QUALITY_LENS_REPORT_PARAMS_SCHEMA_VERSION",
     "FEEDBACK_QUALITY_LENS_SCHEMA_ID",
     "FEEDBACK_QUALITY_LENS_SCHEMA_VERSION",
     "FINITE_ADVERSARY_POLICY_METADATA_KIND",
@@ -670,6 +741,9 @@ __all__ = [
     "GRU_PERTURBATION_BANK_KIND",
     "GRU_PERTURBATION_BANK_SCHEMA_ID",
     "GRU_PERTURBATION_BANK_SCHEMA_VERSION",
+    "GRU_POSTRUN_REPORT_PARAMS_KIND",
+    "GRU_POSTRUN_REPORT_PARAMS_SCHEMA_ID",
+    "GRU_POSTRUN_REPORT_PARAMS_SCHEMA_VERSION",
     "GRU_PERTURBATION_RESPONSE_NORM_PLOTS_KIND",
     "GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_ID",
     "GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_VERSION",
@@ -689,6 +763,9 @@ __all__ = [
     "PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND",
     "PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_ID",
     "PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION",
+    "ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_KIND",
+    "ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_SCHEMA_ID",
+    "ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_SCHEMA_VERSION",
     "RUN_SPEC_KIND",
     "RUN_SPEC_SCHEMA_ID",
     "RUN_SPEC_SCHEMA_VERSION",
