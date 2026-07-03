@@ -64,6 +64,80 @@ class _FakeTask:
         )
 
 
+def _legacy_extlqg_cost_decomposition_for_test() -> ExtLQGCostDecomposition:
+    """Mirror the pre-dedup objective-comparator loop for equivalence testing."""
+
+    from rlrmp.analysis.math.cs_game_card import (
+        OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
+        materialize_reference,
+    )
+    from rlrmp.analysis.math.cs_released_simulation import (
+        _compute_ext_kalman,
+        _compute_ofc,
+        _default_output_feedback_initial_state,
+        default_cs_noise_covariances,
+    )
+    from rlrmp.analysis.math.output_feedback import (
+        delayed_observation_matrix,
+        position_velocity_observation_config,
+    )
+
+    reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
+    plant = reference.plant
+    schedule = reference.schedule
+    config = position_velocity_observation_config(plant)
+    covariances = default_cs_noise_covariances(plant, config)
+    h_matrix = delayed_observation_matrix(plant, config)
+    state_noise = covariances.motor + covariances.process
+    initial_covariance = jnp.eye(plant.n, dtype=jnp.float64) * jnp.asarray(
+        config.estimator_initial_covariance,
+        dtype=jnp.float64,
+    )
+    estimator_gains = jnp.zeros((schedule.T, plant.n, h_matrix.shape[0]), dtype=jnp.float64)
+    current = 1.0e6
+    deterministic = 0.0
+    initial_trace = 0.0
+    scalar = 0.0
+    expected = current
+    iteration = 0
+    for iteration in range(1, 101):
+        controller_gains, sx0, se0, scalar_cost = _compute_ofc(
+            plant,
+            schedule,
+            estimator_gains,
+            h_matrix,
+            covariances.signal_dependent_state,
+            state_noise,
+            covariances.sensory,
+        )
+        estimator_gains, _state_covariances = _compute_ext_kalman(
+            plant,
+            h_matrix,
+            controller_gains,
+            covariances.signal_dependent_state,
+            state_noise,
+            covariances.sensory,
+            initial_covariance,
+            initial_covariance,
+        )
+        x0 = _default_output_feedback_initial_state(plant, config)
+        deterministic = float(x0 @ sx0 @ x0)
+        initial_trace = float(jnp.trace((sx0 + se0) @ initial_covariance))
+        scalar = float(scalar_cost)
+        expected = deterministic + initial_trace + scalar
+        relative_change = abs(current - expected) / max(abs(expected), 1e-300)
+        current = expected
+        if relative_change <= 1e-14:
+            break
+    return ExtLQGCostDecomposition(
+        deterministic_initial_state=deterministic,
+        initial_covariance_trace=initial_trace,
+        accumulated_noise_scalar=scalar,
+        total_expected_cost=expected,
+        provenance=f"legacy objective-comparator inline loop, {iteration} iterations",
+    )
+
+
 def _checkpoint_selection() -> dict[str, object]:
     return {
         "schema_version": "rlrmp.validation_selected_gru_checkpoints.v1",
@@ -777,6 +851,29 @@ def test_load_run_objective_metadata_extracts_full_qrf_contract(
         "state_running_q",
         "terminal_q_f",
     ]
+
+
+def test_default_extlqg_cost_decomposition_matches_legacy_inline_iteration() -> None:
+    legacy = _legacy_extlqg_cost_decomposition_for_test()
+    deduped = objective_comparator.compute_default_extlqg_cost_decomposition()
+
+    np.testing.assert_allclose(
+        [
+            deduped.deterministic_initial_state,
+            deduped.initial_covariance_trace,
+            deduped.accumulated_noise_scalar,
+            deduped.total_expected_cost,
+        ],
+        [
+            legacy.deterministic_initial_state,
+            legacy.initial_covariance_trace,
+            legacy.accumulated_noise_scalar,
+            legacy.total_expected_cost,
+        ],
+        rtol=0.0,
+        atol=1e-9,
+    )
+    assert deduped.provenance.endswith(", 6 iterations")
 
 
 def test_materialize_gru_objective_comparator_sidecar_uses_validation_manifest(
