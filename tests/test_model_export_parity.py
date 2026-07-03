@@ -80,8 +80,8 @@ def _unmasked_population() -> argparse.Namespace:
 # --------------------------------------------------------------------------- #
 
 
-def _point_mass_export(**hps_overrides):
-    hps = _hps(n_replicates=2, **hps_overrides)
+def _point_mass_export(*, n_replicates: int = 2, **hps_overrides):
+    hps = _hps(n_replicates=n_replicates, **hps_overrides)
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
     exported = graph_spec_from_model(pair.model, n_replicates=int(hps.model.n_replicates))
     return exported, materialize_rlrmp_graph_spec
@@ -122,6 +122,10 @@ def _cs_lss_export(*, initial_hidden_encoder: bool):
 
 _VARIANT_BUILDERS = {
     "point_mass_gru": lambda: _point_mass_export(hidden_type="gru"),
+    # Single-replicate export regression (74af1ef): n_replicates=1 ensembles
+    # kept a spurious leading singleton axis in the efferent channel input_proto
+    # ([1, 2] vs the [2] prototype) and failed re-materialization.
+    "point_mass_gru_n1": lambda: _point_mass_export(hidden_type="gru", n_replicates=1),
     "linear": lambda: _point_mass_export(hidden_type="linear"),
     "linear_tracker": lambda: _point_mass_export(hidden_type="linear_tracker"),
     "minimax_adversary": lambda: _point_mass_export(
