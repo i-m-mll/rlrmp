@@ -634,7 +634,7 @@ def build_rlrmp_feedbax_graph_bundle(
         sisu_gating=sisu_gating,
         key=key,
         controller_kind=controller_kind,
-        intervention_type="FixedField",
+        intervention_type=_intervention_type_from_hps(hps),
     )
     task_spec, loss_spec, training_spec, manifest = _graph_bundle_metadata(
         hps,
@@ -990,10 +990,21 @@ def build_point_mass_sensorimotor_graph_spec(
                 target_port="force",
             )
         )
-        input_bindings[f"intervene:{GRAPH_PLANT_INTERVENOR_NODE}"] = (
-            GRAPH_PLANT_INTERVENOR_NODE,
-            "params_override",
-        )
+        if intervention_type == "DynamicsMatrixPerturb":
+            from rlrmp.intervention_compat import (
+                LINEAR_DYNAMICS_ADVERSARY_COMPONENT_PARAMETER_TARGET,
+            )
+
+            target = LINEAR_DYNAMICS_ADVERSARY_COMPONENT_PARAMETER_TARGET
+            input_bindings[
+                f"task:{target['source_data_id']}->"
+                f"{target['target_node_id']}.{target['target_port']}"
+            ] = (GRAPH_PLANT_INTERVENOR_NODE, "params_override")
+        else:
+            input_bindings[f"intervene:{GRAPH_PLANT_INTERVENOR_NODE}"] = (
+                GRAPH_PLANT_INTERVENOR_NODE,
+                "params_override",
+            )
 
     if noise_config.has_plant_process_force_noise:
         force_wires = [
@@ -2056,6 +2067,15 @@ def _intervention_component_spec(intervention_type: str, hps: Any) -> ComponentS
         input_ports=input_ports,
         output_ports=["force"],
     )
+
+
+def _intervention_type_from_hps(hps: Any) -> str:
+    pert_type = str(getattr(hps.pert, "type", "gusts"))
+    if pert_type == "curl":
+        return "CurlField"
+    if pert_type == "dynamics_matrix":
+        return "DynamicsMatrixPerturb"
+    return "FixedField"
 
 
 def _retained_observables(

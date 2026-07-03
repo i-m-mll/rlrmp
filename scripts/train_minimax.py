@@ -21,15 +21,16 @@ Usage:
         --output-dir results/pop_adversary
 """
 
-import argparse
 import json
 import logging
 import os
 import shutil
 import subprocess
+import sys
 import time
 from functools import partial
 from pathlib import Path
+from types import SimpleNamespace
 
 import equinox as eqx
 import jax
@@ -45,6 +46,7 @@ from jax_cookbook import save as fbx_save
 from feedbax.runtime.iteration import run_component
 from feedbax.runtime.batch import BatchInfo
 from feedbax.objectives.streaming import make_streaming_loss_fn
+from feedbax.contracts.training import TrainingRunSpec
 from feedbax.training.train import (
     TaskTrainer,
     make_delayed_cosine_schedule,
@@ -56,14 +58,10 @@ from rlrmp.adversarial_training import (
     _inject_adversary_forces,
 )
 from rlrmp.adversary import GaussianBumpAdversary, LinearDynamicsAdversary
+from rlrmp.intervention_compat import LINEAR_DYNAMICS_ADVERSARY_COMPONENT_PARAMETER_TARGET
 from rlrmp.model.feedbax_graph import (
     build_runtime_rlrmp_feedbax_graph_bundle,
     write_graph_spec_bundle,
-)
-from rlrmp.intervention_compat import (
-    require_exactly_one_intervenor_for_dynamics_matrix_swap,
-    swap_plant_intervenor_to_dynamics_matrix,
-    swap_task_intervention_to_dynamics_matrix,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p, run_spec_path
 from rlrmp.model.trainable import staged_network_trainable_parts
@@ -78,7 +76,15 @@ from rlrmp.train.progress import (
 # library module; previously defined inline here and pulled by analysis scripts
 # via sys.path injection). Re-imported for internal use; analysis / eval scripts
 # should import from `rlrmp.train` directly.
-from rlrmp.train.minimax import build_hps  # noqa: F401  (re-exported intentionally)
+from rlrmp.train.minimax import (  # noqa: F401  (re-exported intentionally)
+    build_hps,
+    build_minimax_training_run_spec,
+    legacy_cli_args_to_minimax_config,
+    minimax_config_namespace,
+    minimax_training_run_spec_from_file,
+    minimax_training_run_spec_to_config,
+    validate_minimax_run_spec,
+)
 from rlrmp.train.task_model import setup_task_model_pair
 
 logger = logging.getLogger(__name__)
@@ -267,7 +273,7 @@ def _collect_gpu_info() -> dict:
     return info
 
 
-def _configure_jax_runtime(args: argparse.Namespace) -> None:
+def _configure_jax_runtime(args) -> None:
     """Configure JAX runtime options that must be set before first compile."""
     cache_dir = args.jax_cache_dir or os.environ.get("JAX_COMPILATION_CACHE_DIR")
     if cache_dir:
@@ -502,13 +508,17 @@ def _eval_trials_streaming(task, model, trial_specs, keys, loss_func):
     def eval_single(trial_spec, key):
         key_run = jr.split(key, 2)[1]
         prepared = prepare_trial(model, trial_spec)
+        prepared_inputs = _with_declarative_component_parameter_inputs(
+            model,
+            prepared.inputs,
+        )
 
         # Build per-step streaming loss closure (single trial, no batch dim)
         streaming_fn = make_streaming_loss_fn(loss_func, trial_spec, model, prepared.n_steps)
 
         _outputs, _final_state, total_loss = run_component(
             model,
-            prepared.inputs,
+            prepared_inputs,
             prepared.init_state,
             key=key_run,
             n_steps=prepared.n_steps,
@@ -518,6 +528,24 @@ def _eval_trials_streaming(task, model, trial_specs, keys, loss_func):
 
     per_trial_losses = eqx.filter_vmap(eval_single)(trial_specs, keys)
     return per_trial_losses.mean()
+
+
+def _with_declarative_component_parameter_inputs(model, inputs):
+    """Mirror legacy prepared intervention input under the declared task binding."""
+    target = LINEAR_DYNAMICS_ADVERSARY_COMPONENT_PARAMETER_TARGET
+    legacy_key = f"intervene:{target['task_parameter_label']}"
+    declared_key = (
+        f"task:{target['source_data_id']}->"
+        f"{target['target_node_id']}.{target['target_port']}"
+    )
+    if (
+        isinstance(inputs, dict)
+        and legacy_key in inputs
+        and declared_key in getattr(model, "input_ports", ())
+        and declared_key not in inputs
+    ):
+        return {**inputs, declared_key: inputs[legacy_key]}
+    return inputs
 
 
 def _make_where_train(sisu_gating: str = "additive"):
@@ -541,8 +569,22 @@ def _make_where_train(sisu_gating: str = "additive"):
     return {0: where_train_fn}
 
 
-def run_training(args: argparse.Namespace) -> None:
-    """Run minimax adversarial training."""
+def run_training(training_run_spec) -> None:
+    """Run minimax adversarial training from a validated TrainingRunSpec."""
+    if isinstance(training_run_spec, dict) and "feedbax_training_run_spec" in training_run_spec:
+        validate_minimax_run_spec(training_run_spec, spec_dir=Path("."))
+        feedbax_spec = TrainingRunSpec.model_validate(
+            training_run_spec["feedbax_training_run_spec"]
+        )
+        config_dict = dict(training_run_spec)
+    else:
+        feedbax_spec = (
+            training_run_spec
+            if isinstance(training_run_spec, TrainingRunSpec)
+            else TrainingRunSpec.model_validate(training_run_spec)
+        )
+        config_dict = None
+    args = minimax_config_namespace(minimax_training_run_spec_to_config(feedbax_spec))
     _configure_jax_runtime(args)
 
     output_dir = Path(args.output_dir)
@@ -578,15 +620,17 @@ def run_training(args: argparse.Namespace) -> None:
 
     graph_bundle = build_runtime_rlrmp_feedbax_graph_bundle(hps, pair.model)
     graph_path = write_graph_spec_bundle(graph_bundle, spec_dir)
-
-    config_dict = {
-        **vars(args),
-        "git": _get_git_metadata(),
-        "gpu_info": _collect_gpu_info(),
-        "feedbax_graph": graph_bundle.to_run_metadata(
+    config_dict = build_minimax_training_run_spec(
+        minimax_training_run_spec_to_config(feedbax_spec),
+        graph_spec=graph_bundle.graph_spec,
+        output_dir=output_dir,
+        spec_dir=spec_dir,
+        git=_get_git_metadata(),
+        gpu_info=_collect_gpu_info(),
+        feedbax_graph=graph_bundle.to_run_metadata(
             graph_spec_path=graph_path.name,
         ),
-    }
+    )
     with open(spec_path, "w") as f:
         json.dump(config_dict, f, indent=2, default=str)
     logger.info("Saved run spec to %s", spec_path)
@@ -634,7 +678,7 @@ def run_training(args: argparse.Namespace) -> None:
             # expected by build_hps
             for k in ("git", "output_dir", "checkpoint_every", "resume"):
                 stored_hps.pop(k, None)
-            resume_args = argparse.Namespace(**stored_hps)
+            resume_args = minimax_config_namespace(stored_hps)
             resume_hps = build_hps(resume_args)
             return setup_task_model_pair(resume_hps, key=key).model
 
@@ -655,7 +699,7 @@ def run_training(args: argparse.Namespace) -> None:
 
             stored_hps.pop("git", None)
             stored_hps.pop("output_dir", None)
-            stored_args = argparse.Namespace(**stored_hps)
+            stored_args = SimpleNamespace(**stored_hps)
             stored_hps_obj = build_hps_standard(stored_args)
             return setup_task_model_pair(stored_hps_obj, key=key).model
 
@@ -721,37 +765,7 @@ def run_training(args: argparse.Namespace) -> None:
     fbx_save(warmup_model_path, warmup_model, hyperparameters=config_dict)
     logger.info("Saved warm-start model to %s", warmup_model_path)
 
-    # -----------------------------------------------------------------------
-    # Optional: swap plant intervenor for the adversarial phase.
-    # When --adversary-type linear_dynamics, replace the warmup-phase
-    # FixedField/CurlField intervenor with DynamicsMatrixPerturb so the
-    # adversary can drive ΔA·x perturbations through the same disturbance
-    # channel. Bug: c723082.
-    # -----------------------------------------------------------------------
     use_linear_dynamics = args.adversary_type == "linear_dynamics"
-    if use_linear_dynamics:
-        from rlrmp.disturbance import PLANT_INTERVENOR_LABEL as _PLABEL
-
-        logger.info(
-            "Swapping plant intervenor at label %r to DynamicsMatrixPerturb "
-            "(eta_max=%g, pgd_steps=%d, pgd_lr=%g) for adversarial phase",
-            _PLABEL,
-            args.linear_dynamics_eta_max,
-            args.linear_dynamics_pgd_steps,
-            args.linear_dynamics_lr,
-        )
-        # Swap on the ensembled model (jt.map over the ensemble pytree).
-        warmup_model = jt.map(
-            lambda m: swap_plant_intervenor_to_dynamics_matrix(
-                require_exactly_one_intervenor_for_dynamics_matrix_swap(m, _PLABEL),
-                _PLABEL,
-                mass=hps.model.effector_mass,
-            ),
-            warmup_model,
-            is_leaf=lambda x: x is not None and hasattr(x, "nodes") and hasattr(x, "input_ports"),
-        )
-        # Swap on the task so trial_specs.intervene[label] has the right type.
-        task = swap_task_intervention_to_dynamics_matrix(task, _PLABEL)
 
     # -----------------------------------------------------------------------
     # Phase 2 — adversarial training
@@ -1634,10 +1648,10 @@ def _log_linear_dynamics_adversary(
 # ---------------------------------------------------------------------------
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Minimax adversarial training for RLRMP reaching controllers."
-    )
+def parse_args() -> SimpleNamespace:
+    return minimax_config_namespace(legacy_cli_args_to_minimax_config(sys.argv[1:]))
+
+    parser = None
     parser.add_argument(
         "--n-warmup-batches",
         type=int,
@@ -1842,7 +1856,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--loss-update-enabled",
-        action=argparse.BooleanOptionalAction,
+        action=None,
         default=False,
         help=(
             "Enable adaptive loss update to drive control cost toward a target ratio "
@@ -1860,7 +1874,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--fused",
-        action=argparse.BooleanOptionalAction,
+        action=None,
         default=True,
         help=(
             "Fuse the K adversary steps + controller step into a single JIT "
@@ -1871,7 +1885,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--streaming-loss",
-        action=argparse.BooleanOptionalAction,
+        action=None,
         default=False,
         help=(
             "Accumulate loss inside the simulation scan body instead of storing "
@@ -2168,10 +2182,52 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def author_minimax_training_run_spec(args: SimpleNamespace) -> TrainingRunSpec:
+    """Author, validate, and write the minimax TrainingRunSpec for a launch."""
+
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    spec_dir = Path(args.spec_dir) if args.spec_dir is not None else derive_spec_dir(output_dir)
+    mkdir_p(spec_dir)
+    spec_path = derive_spec_path(output_dir)
+    mkdir_p(spec_path.parent)
+
+    hps = build_hps(args)
+    key_init = jr.split(jr.PRNGKey(args.seed), 3)[0]
+    pair = setup_task_model_pair(hps, key=key_init)
+    graph_bundle = build_runtime_rlrmp_feedbax_graph_bundle(hps, pair.model)
+    graph_path = write_graph_spec_bundle(graph_bundle, spec_dir)
+    payload = build_minimax_training_run_spec(
+        args.__dict__,
+        graph_spec=graph_bundle.graph_spec,
+        output_dir=output_dir,
+        spec_dir=spec_dir,
+        git=_get_git_metadata(),
+        gpu_info=_collect_gpu_info(),
+        feedbax_graph=graph_bundle.to_run_metadata(graph_spec_path=graph_path.name),
+    )
+    validate_minimax_run_spec(payload, spec_dir=spec_dir)
+    with open(spec_path, "w") as f:
+        json.dump(payload, f, indent=2, default=str)
+    logger.info("Saved validated minimax TrainingRunSpec recipe to %s", spec_path)
+    return TrainingRunSpec.model_validate(payload["feedbax_training_run_spec"])
+
+
+def training_run_spec_from_argv(argv: list[str]) -> TrainingRunSpec:
+    """Return the spec requested by CLI argv without exposing raw args to training."""
+
+    if argv[:1] == ["--training-run-spec"]:
+        if len(argv) != 2:
+            raise ValueError("--training-run-spec expects exactly one path")
+        return minimax_training_run_spec_from_file(argv[1])
+    args = minimax_config_namespace(legacy_cli_args_to_minimax_config(argv))
+    return author_minimax_training_run_spec(args)
+
+
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
-    args = parse_args()
-    run_training(args)
+    spec = training_run_spec_from_argv(sys.argv[1:])
+    run_training(spec)

@@ -6,6 +6,11 @@ import json
 from pathlib import Path
 from typing import Any
 
+from rlrmp.train.minimax import (
+    validate_minimax_run_spec,
+    validate_minimax_run_spec_file,
+)
+
 
 NOMINAL_GRU_REQUIRED_TOP_LEVEL_KEYS = frozenset(
     {
@@ -276,4 +281,6 @@ __all__ = [
     "RunSpecValidationError",
     "validate_nominal_gru_run_spec",
     "validate_nominal_gru_run_spec_file",
+    "validate_minimax_run_spec",
+    "validate_minimax_run_spec_file",
 ]

@@ -43,7 +43,6 @@ from rlrmp.model.feedbax_graph import (
 )
 from rlrmp.intervention_compat import (
     LINEAR_DYNAMICS_ADVERSARY_COMPONENT_PARAMETER_TARGET,
-    swap_plant_intervenor_to_dynamics_matrix,
 )
 from rlrmp.controllers.linear import LinearController, LinearTrackerController
 from rlrmp.train.task_model import build_task_base, setup_task_model_pair
@@ -768,10 +767,16 @@ def test_dynamics_matrix_perturb_spec_preserves_delta_a_contract() -> None:
     assert "effector" in intervenor.input_ports
     assert isinstance(graph.nodes[PLANT_INTERVENOR_LABEL], DynamicsMatrixPerturb)
     assert graph.nodes[PLANT_INTERVENOR_LABEL].label == PLANT_INTERVENOR_LABEL
-    assert spec.input_bindings[f"intervene:{GRAPH_PLANT_INTERVENOR_NODE}"] == (
+    target = LINEAR_DYNAMICS_ADVERSARY_COMPONENT_PARAMETER_TARGET
+    graph_input = (
+        f"task:{target['source_data_id']}->"
+        f"{target['target_node_id']}.{target['target_port']}"
+    )
+    assert spec.input_bindings[graph_input] == (
         GRAPH_PLANT_INTERVENOR_NODE,
         "params_override",
     )
+    assert f"intervene:{GRAPH_PLANT_INTERVENOR_NODE}" not in spec.input_bindings
 
     recurrent_edges = {
         (wire.source_node, wire.source_port, wire.target_node, wire.target_port)
@@ -1004,7 +1009,7 @@ def test_runtime_graph_bundle_exports_constructed_model_intervenor(
     assert bundle.graph_spec.nodes["efferent"].params["input_shape"] == [2]
 
 
-def test_runtime_graph_bundle_catches_old_fixedfield_default_mismatch() -> None:
+def test_runtime_graph_bundle_matches_hps_authored_intervention_type() -> None:
     hps = _hps(hidden_type="gru", n_replicates=2)
     hps = hps | {"pert": hps.pert | {"type": "curl"}}
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
@@ -1020,23 +1025,15 @@ def test_runtime_graph_bundle_catches_old_fixedfield_default_mismatch() -> None:
     )
 
     assert runtime_bundle.graph_spec.nodes[PLANT_INTERVENOR_LABEL].type == "CurlField"
-    assert stale_hps_bundle.graph_spec.nodes[PLANT_INTERVENOR_LABEL].type == "FixedField"
-    assert graph_spec_payload(runtime_bundle.graph_spec) != graph_spec_payload(
-        stale_hps_bundle.graph_spec
-    )
+    assert stale_hps_bundle.graph_spec.nodes[PLANT_INTERVENOR_LABEL].type == "CurlField"
 
 
 def test_runtime_graph_spec_preserves_dynamics_matrix_intervenor() -> None:
-    hps = _hps(hidden_type="gru", n_replicates=2)
+    hps = _hps(hidden_type="gru", n_replicates=2, adversary_type="linear_dynamics")
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
-    runtime_model = swap_plant_intervenor_to_dynamics_matrix(
-        pair.model,
-        PLANT_INTERVENOR_LABEL,
-        mass=hps.model.effector_mass,
-    )
 
     graph_spec = graph_spec_from_model(
-        runtime_model,
+        pair.model,
         n_replicates=int(hps.model.n_replicates),
     )
     graph = materialize_rlrmp_graph_spec(graph_spec)
