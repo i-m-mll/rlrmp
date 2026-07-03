@@ -29,7 +29,9 @@ from feedbax.contracts.graph import (
 from feedbax.contracts.graphs.templates import (
     recurrent_controller_template_graph,
     recurrent_graph_input_initializer,
+    recurrent_node_output_initializer,
 )
+from feedbax.runtime import align_state_indices_like
 from feedbax.runtime.filters import FilterState
 from feedbax.runtime.graph import Graph, GraphState
 from feedbax.runtime.components import ElementwiseAffineModulator as RuntimeElementwiseAffineModulator
@@ -168,24 +170,9 @@ def register_rlrmp_graph_components(component_registry: Any | None = None) -> An
         output_prototype_fn=_linear_controller_output_prototype,
         provenance="rlrmp",
     )
-    _install_feedbax_intervention_output_prototypes(registry)
-    _install_feedbax_demux_output_prototype(registry)
     _install_parameter_aware_recurrent_builders(registry)
     register_rlrmp_graph_migration_pack(registry)
     return registry
-
-
-def _install_feedbax_intervention_output_prototypes(registry: Any) -> None:
-    for component_type in ("FixedField", "CurlField", "DynamicsMatrixPerturb"):
-        meta = registry.get(component_type)
-        if meta is not None and meta.output_prototype_fn is None:
-            meta.output_prototype_fn = _force_passthrough_output_prototype
-
-
-def _install_feedbax_demux_output_prototype(registry: Any) -> None:
-    meta = registry.get(NATIVE_DEMUX_COMPONENT)
-    if meta is not None and meta.output_prototype_fn is None:
-        meta.output_prototype_fn = _demux_output_prototype
 
 
 def _install_parameter_aware_recurrent_builders(registry: Any) -> None:
@@ -225,6 +212,12 @@ def _build_seeded_linear(params: dict[str, Any]) -> RuntimeLinear:
             lambda node: node.layer.bias,
             component,
             jnp.zeros_like(component.layer.bias),
+        )
+    if params.get("zero_weight", False):
+        component = eqx.tree_at(
+            lambda node: node.layer.weight,
+            component,
+            jnp.zeros_like(component.layer.weight),
         )
     return component
 
@@ -508,28 +501,6 @@ def _linear_controller_output_prototype(
     return {"output": jnp.zeros(controls), "hidden": jnp.zeros(1)}
 
 
-def _force_passthrough_output_prototype(
-    params: dict[str, Any],
-    inputs: dict[str, Any],
-) -> dict[str, Any]:
-    del params
-    return {"force": inputs.get("force", jnp.zeros(2))}
-
-
-def _demux_output_prototype(
-    params: dict[str, Any],
-    inputs: dict[str, Any],
-) -> dict[str, Any]:
-    sizes = tuple(int(size) for size in params.get("sizes", ()))
-    if not sizes:
-        source = jnp.asarray(inputs.get("input", jnp.zeros(1)))
-        sizes = (int(source.shape[-1]),)
-    return {
-        f"out_{index}": jnp.zeros((size,), dtype=jnp.asarray(inputs.get("input", 0.0)).dtype)
-        for index, size in enumerate(sizes)
-    }
-
-
 def install_simple_feedback_runtime_hooks(graph: Graph) -> Graph:
     """Install SimpleFeedback-compatible state view and consistency hooks."""
 
@@ -565,9 +536,7 @@ def install_simple_feedback_runtime_hooks(graph: Graph) -> Graph:
         state = state.set(mechanics.state_index, mechanics_state)
         return feedback.fill_queues(state, mechanics_state)
 
-    object.__setattr__(graph, "state_view_fn", _state_view)
-    object.__setattr__(graph, "state_consistency_fn", _consistency_update)
-    return graph
+    return graph.with_state_view(_state_view).with_state_consistency(_consistency_update)
 
 
 def _build_simple_staged_network(params: dict[str, Any]) -> SimpleStagedNetwork:
@@ -1188,7 +1157,7 @@ def create_point_mass_graph_ensemble(
         for key_i in keys
     ]
     template = models[0]
-    models = [template, *[_align_state_index_markers(template, model) for model in models[1:]]]
+    models = [template, *[align_state_indices_like(model, template) for model in models[1:]]]
     dynamic_models = [eqx.filter(model, eqx.is_array) for model in models]
     static_model = eqx.filter(template, lambda leaf: not eqx.is_array(leaf))
     stacked_dynamic = jt.map(lambda *leaves: jnp.stack(leaves), *dynamic_models)
@@ -1230,27 +1199,11 @@ def create_legacy_point_mass_graph_ensemble(
         for key_i in keys
     ]
     template = models[0]
-    models = [template, *[_align_state_index_markers(template, model) for model in models[1:]]]
+    models = [template, *[align_state_indices_like(model, template) for model in models[1:]]]
     dynamic_models = [eqx.filter(model, eqx.is_array) for model in models]
     static_model = eqx.filter(template, lambda leaf: not eqx.is_array(leaf))
     stacked_dynamic = jt.map(lambda *leaves: jnp.stack(leaves), *dynamic_models)
     return install_simple_feedback_runtime_hooks(eqx.combine(stacked_dynamic, static_model))
-
-
-def _align_state_index_markers(template: Graph, model: Graph) -> Graph:
-    def _align(template_leaf, model_leaf):
-        if isinstance(template_leaf, StateIndex) and isinstance(model_leaf, StateIndex):
-            aligned = StateIndex(model_leaf.init)
-            object.__setattr__(aligned, "marker", template_leaf.marker)
-            return aligned
-        return model_leaf
-
-    return jt.map(
-        _align,
-        template,
-        model,
-        is_leaf=lambda leaf: isinstance(leaf, StateIndex),
-    )
 
 
 def graph_spec_from_model(
@@ -1603,6 +1556,7 @@ def native_recurrent_controller_subgraph(
     sisu_gating: str = "additive",
     population_params: dict[str, int] | None = None,
     h0_initializer_source: str | None = None,
+    h0_encoder_input_size: int | None = None,
     key: list[int] | None = None,
     dtype: str | None = None,
 ) -> GraphSpec:
@@ -1646,17 +1600,26 @@ def native_recurrent_controller_subgraph(
             )
         }
     )
-    if h0_initializer_source is not None:
-        graph = _with_graph_input_hidden_initializer(
-            graph,
-            source=h0_initializer_source,
-        )
     if sisu_gating == "multiplicative":
         graph = _with_multiplicative_sisu_modulation(
             graph,
             input_size=int(input_size),
             external_input_size=external_input_size,
             hidden_size=int(hidden_size),
+            dtype=dtype,
+        )
+    if h0_initializer_source is not None and h0_encoder_input_size is None:
+        graph = _with_graph_input_hidden_initializer(
+            graph,
+            source=h0_initializer_source,
+        )
+    elif h0_initializer_source is not None:
+        graph = _with_node_output_hidden_initializer(
+            graph,
+            source=h0_initializer_source,
+            input_size=int(h0_encoder_input_size),
+            hidden_size=int(hidden_size),
+            key=key,
             dtype=dtype,
         )
     return graph
@@ -1729,6 +1692,88 @@ def _with_graph_input_hidden_initializer(graph: GraphSpec, *, source: str) -> Gr
     input_bindings[source] = ("cell", "hidden")
     return graph.model_copy(
         update={
+            "wires": wires,
+            "input_ports": input_ports,
+            "input_bindings": input_bindings,
+        }
+    )
+
+
+def _with_node_output_hidden_initializer(
+    graph: GraphSpec,
+    *,
+    source: str,
+    input_size: int,
+    hidden_size: int,
+    key: list[int] | None,
+    dtype: str | None,
+) -> GraphSpec:
+    if input_size <= 0:
+        raise ValueError(f"h0 encoder input_size must be positive; got {input_size}.")
+    nodes = dict(graph.nodes)
+    nodes["hidden_source"] = ComponentSpec(
+        type="Gain",
+        params={"gain": 1.0},
+        input_ports=["input"],
+        output_ports=["output"],
+    )
+    encoder_key = jr.fold_in(_key_from_params({"key": key}), 101)
+    encoder_params: dict[str, Any] = {
+        "input_size": int(input_size),
+        "output_size": int(hidden_size),
+        "use_bias": True,
+        "activation": "identity",
+        "zero_bias": True,
+        "zero_weight": True,
+        "key": [int(value) for value in jnp.asarray(encoder_key).tolist()],
+    }
+    if dtype is not None:
+        encoder_params["dtype"] = str(dtype)
+    nodes[source] = ComponentSpec(
+        type="Linear",
+        params=encoder_params,
+        input_ports=["input"],
+        output_ports=["output"],
+    )
+
+    wires = []
+    for wire in graph.wires:
+        if (
+            wire.target_node == "cell"
+            and wire.target_port == "hidden"
+            and wire.temporality == "recurrent"
+        ):
+            wires.append(
+                WireSpec(
+                    source_node=wire.source_node,
+                    source_port=wire.source_port,
+                    target_node="hidden_source",
+                    target_port="input",
+                )
+            )
+            wires.append(
+                wire.model_copy(
+                    update={
+                        "source_node": "hidden_source",
+                        "source_port": "output",
+                        "recurrent_initializer": recurrent_node_output_initializer(
+                            source,
+                            "output",
+                            state_slot="hidden",
+                        ),
+                    }
+                )
+            )
+            continue
+        wires.append(wire)
+    input_ports = list(graph.input_ports)
+    if "h0_context" not in input_ports:
+        input_ports.append("h0_context")
+    input_bindings = dict(graph.input_bindings)
+    input_bindings["h0_context"] = (source, "input")
+    return graph.model_copy(
+        update={
+            "nodes": nodes,
             "wires": wires,
             "input_ports": input_ports,
             "input_bindings": input_bindings,

@@ -138,7 +138,11 @@ symbols = ["graph_to_spec", "spec_to_graph"]
 
 [[canonical_homes]]
 module = "feedbax.contracts.graphs.templates"
-symbols = ["recurrent_controller_template_graph", "recurrent_graph_input_initializer"]
+symbols = [
+  "recurrent_controller_template_graph",
+  "recurrent_graph_input_initializer",
+  "recurrent_node_output_initializer",
+]
 
 [[canonical_homes]]
 module = "feedbax.contracts.manifest"
@@ -283,6 +287,10 @@ module = "feedbax.plugins.discovery"
 symbols = ["register_package_from_module_info"]
 
 [[canonical_homes]]
+module = "feedbax.runtime"
+symbols = ["align_state_indices_like"]
+
+[[canonical_homes]]
 module = "feedbax.runtime.batch"
 symbols = ["BatchInfo"]
 
@@ -317,6 +325,10 @@ symbols = ["AbstractModel"]
 [[canonical_homes]]
 module = "feedbax.runtime.noise"
 symbols = ["Multiplicative", "Normal"]
+
+[[canonical_homes]]
+module = "feedbax.runtime.affine_composer"
+symbols = ["affine_value_composer_output_prototype"]
 
 [[canonical_homes]]
 module = "feedbax.runtime.parameter_constraints"

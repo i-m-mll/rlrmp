@@ -21,8 +21,12 @@ from rlrmp.model.cs_lss_gru import (
     CS_DELAYED_POS_VEL_INDICES,
     CS_DELAYED_POS_VEL_FORCE_INDICES,
     CS_EPSILON_DIM,
+    CS_FEEDBACK_DIM,
+    CS_H0_CONTEXT_INPUT,
     FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
     CS_LSS_DELAYED_FEEDBACK_COMPONENT,
+    CS_LSS_FINITE_EPSILON_POLICY_COMPONENT,
+    CS_LSS_INITIAL_HIDDEN_NET_COMPONENT,
     CS_LSS_TARGET_FEEDBACK_COMPONENT,
     CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT,
     CS_REDUCED_EPSILON_DIM,
@@ -34,6 +38,12 @@ from rlrmp.model.cs_lss_gru import (
     register_cs_lss_graph_components,
 )
 from rlrmp.model.feedbax_graph import graph_spec_from_model, graph_spec_payload
+from rlrmp.train.closed_loop_finite_adversary import (
+    AFFINE_POLICY,
+    FINITE_POLICY_BIAS_INPUT,
+    FINITE_POLICY_GAINS_INPUT,
+    LINEAR_NO_BIAS_POLICY,
+)
 
 
 def test_feedback_selector_uses_oldest_delayed_position_velocity_block() -> None:
@@ -141,12 +151,14 @@ def test_cs_lss_graph_specs_round_trip_and_materialize_representative_variants(
     assert spec.subgraphs["net"].nodes["cell"].type == "GRU"
     assert spec.subgraphs["net"].nodes["readout"].type == "Linear"
     if kwargs.get("initial_hidden_encoder"):
-        assert spec.input_bindings["h0"] == ("net", "h0")
+        assert spec.input_bindings[CS_H0_CONTEXT_INPUT] == ("net", CS_H0_CONTEXT_INPUT)
+        assert spec.subgraphs["net"].nodes["h0_encoder"].type == "Linear"
         recurrent_wire = next(
             wire for wire in spec.subgraphs["net"].wires if wire.temporality == "recurrent"
         )
-        assert recurrent_wire.recurrent_initializer["kind"] == "graph-input"
-        assert recurrent_wire.recurrent_initializer["source"] == "h0"
+        assert recurrent_wire.recurrent_initializer["kind"] == "node-output"
+        assert recurrent_wire.recurrent_initializer["source_node"] == "h0_encoder"
+        assert recurrent_wire.recurrent_initializer["source_port"] == "output"
     assert graph.nodes["mechanics"].__class__.__name__ == "LinearStateSpace"
     assert graph.input_ports == tuple(round_tripped.input_ports)
     assert graph.input_bindings == {
@@ -206,6 +218,208 @@ def test_native_cs_lss_recurrent_graph_matches_legacy_staged_network_fixed_seed(
         init_state_from_component(legacy_graph),
         cycle_port_values=None,
         key=jax.random.PRNGKey(24),
+    )
+
+    assert jnp.allclose(native_outputs["force"], legacy_outputs["force"], rtol=0.0, atol=0.0)
+    assert jnp.allclose(native_outputs["state"], legacy_outputs["state"], rtol=0.0, atol=0.0)
+    assert jnp.allclose(
+        native_graph.state_view(native_state).net.hidden,
+        legacy_graph.state_view(legacy_state).net.hidden,
+        rtol=0.0,
+        atol=0.0,
+    )
+
+
+def _legacy_finite_epsilon_spec(
+    spec: GraphSpec,
+    *,
+    policy_class: str,
+    physical_block_size: int,
+) -> GraphSpec:
+    nodes = dict(spec.nodes)
+    nodes["finite_epsilon_policy"] = ComponentSpec(
+        type=CS_LSS_FINITE_EPSILON_POLICY_COMPONENT,
+        params={
+            "policy_class": policy_class,
+            "physical_block_size": physical_block_size,
+        },
+        input_ports=["base_epsilon", "state", "target", "gains", "bias"],
+        output_ports=["epsilon"],
+    )
+    target_port_names = {
+        "base": "base_epsilon",
+        "gain": "gains",
+        "bias": "bias",
+        "state": "state",
+        "target": "target",
+    }
+    wires = []
+    for wire in spec.wires:
+        if wire.target_node == "finite_epsilon_policy":
+            wire = wire.model_copy(
+                update={"target_port": target_port_names.get(wire.target_port, wire.target_port)}
+            )
+        if wire.source_node == "finite_epsilon_policy" and wire.source_port == "value":
+            wire = wire.model_copy(update={"source_port": "epsilon"})
+        wires.append(wire)
+    input_bindings = {
+        name: (
+            node,
+            target_port_names.get(port, port) if node == "finite_epsilon_policy" else port,
+        )
+        for name, (node, port) in spec.input_bindings.items()
+    }
+    return spec.model_copy(
+        update={
+            "nodes": nodes,
+            "wires": wires,
+            "input_bindings": input_bindings,
+        }
+    )
+
+
+@pytest.mark.parametrize("policy_class", [LINEAR_NO_BIAS_POLICY, AFFINE_POLICY])
+def test_native_finite_epsilon_composer_matches_legacy_policy_fixed_seed(
+    policy_class: str,
+) -> None:
+    initial_state = jnp.linspace(-0.2, 0.2, 48, dtype=jnp.float32)
+    native_spec = build_cs_lss_gru_graph_spec(
+        hidden_size=5,
+        initial_state=initial_state,
+        bind_epsilon_input=True,
+        finite_epsilon_policy=policy_class,
+        target_relative_feedback=True,
+        key=jax.random.PRNGKey(31),
+    )
+    legacy_spec = _legacy_finite_epsilon_spec(
+        native_spec,
+        policy_class=policy_class,
+        physical_block_size=8,
+    )
+    native_graph = materialize_cs_lss_gru_graph_spec(native_spec)
+    legacy_graph = materialize_cs_lss_gru_graph_spec(legacy_spec)
+    state_dim = int(initial_state.shape[0])
+    epsilon_dim = int(native_graph.nodes["mechanics"].B_w.shape[1])
+    inputs = {
+        "target": jnp.array([0.12, -0.07], dtype=jnp.float32),
+        "epsilon": jnp.linspace(0.01, 0.03, epsilon_dim, dtype=jnp.float32),
+        FINITE_POLICY_GAINS_INPUT: (
+            jnp.arange(epsilon_dim * state_dim, dtype=jnp.float32).reshape(epsilon_dim, state_dim)
+            * 1e-4
+        ),
+    }
+    if policy_class == AFFINE_POLICY:
+        inputs[FINITE_POLICY_BIAS_INPUT] = jnp.linspace(
+            -0.03,
+            0.02,
+            epsilon_dim,
+            dtype=jnp.float32,
+        )
+
+    native_outputs, _native_state, _native_cycle = native_graph.step(
+        inputs,
+        init_state_from_component(native_graph),
+        cycle_port_values=None,
+        key=jax.random.PRNGKey(32),
+    )
+    legacy_outputs, _legacy_state, _legacy_cycle = legacy_graph.step(
+        inputs,
+        init_state_from_component(legacy_graph),
+        cycle_port_values=None,
+        key=jax.random.PRNGKey(32),
+    )
+
+    assert native_spec.nodes["finite_epsilon_policy"].type == "AffineValueComposer"
+    assert jnp.allclose(native_outputs["state"], legacy_outputs["state"], rtol=0.0, atol=0.0)
+    assert jnp.allclose(native_outputs["force"], legacy_outputs["force"], rtol=0.0, atol=0.0)
+
+
+def _legacy_initial_hidden_spec(spec: GraphSpec, *, h0_input_size: int) -> GraphSpec:
+    legacy_params = {
+        key: value
+        for key, value in spec.nodes["net"].params.items()
+        if key
+        not in {
+            "external_input_size",
+            "h0_context_input",
+            "h0_encoder_input_size",
+            "h0_initializer_source",
+            "h0_source_contract",
+        }
+    }
+    legacy_params.update(
+        {
+            "h0_input_size": int(h0_input_size),
+            "h0_dtype": legacy_params.get("trainable_dtype", "float32"),
+        }
+    )
+    nodes = {
+        **spec.nodes,
+        "net": ComponentSpec(
+            type=CS_LSS_INITIAL_HIDDEN_NET_COMPONENT,
+            params=legacy_params,
+            input_ports=["input", "feedback"],
+            output_ports=["output", "hidden"],
+        ),
+    }
+    input_ports = [port for port in spec.input_ports if port != CS_H0_CONTEXT_INPUT]
+    input_bindings = {
+        port: binding
+        for port, binding in spec.input_bindings.items()
+        if port != CS_H0_CONTEXT_INPUT
+    }
+    return spec.model_copy(
+        update={
+            "nodes": nodes,
+            "input_ports": input_ports,
+            "input_bindings": input_bindings,
+            "subgraphs": {},
+        }
+    )
+
+
+def test_native_initial_hidden_encoder_matches_legacy_component_fixed_seed() -> None:
+    target = jnp.array([0.12, -0.08], dtype=jnp.float32)
+    initial_state = jnp.linspace(-0.05, 0.05, 48, dtype=jnp.float32)
+    native_spec = build_cs_lss_gru_graph_spec(
+        hidden_size=6,
+        input_size=1,
+        initial_state=initial_state,
+        bind_epsilon_input=True,
+        target_relative_feedback=True,
+        initial_hidden_encoder=True,
+        key=jax.random.PRNGKey(41),
+    )
+    legacy_spec = _legacy_initial_hidden_spec(native_spec, h0_input_size=CS_FEEDBACK_DIM)
+    native_graph = materialize_cs_lss_gru_graph_spec(native_spec)
+    legacy_graph = materialize_cs_lss_gru_graph_spec(legacy_spec)
+    h0_context = jnp.concatenate(
+        [
+            target - initial_state[40:42],
+            -initial_state[42:44],
+        ]
+    )
+    native_inputs = {
+        "input": jnp.array([0.25], dtype=jnp.float32),
+        "target": target,
+        "epsilon": jnp.zeros((CS_EPSILON_DIM,), dtype=jnp.float32),
+        CS_H0_CONTEXT_INPUT: h0_context,
+    }
+    legacy_inputs = {
+        key: value for key, value in native_inputs.items() if key != CS_H0_CONTEXT_INPUT
+    }
+
+    native_outputs, native_state, _native_cycle = native_graph.step(
+        native_inputs,
+        init_state_from_component(native_graph),
+        cycle_port_values=None,
+        key=jax.random.PRNGKey(42),
+    )
+    legacy_outputs, legacy_state, _legacy_cycle = legacy_graph.step(
+        legacy_inputs,
+        init_state_from_component(legacy_graph),
+        cycle_port_values=None,
+        key=jax.random.PRNGKey(42),
     )
 
     assert jnp.allclose(native_outputs["force"], legacy_outputs["force"], rtol=0.0, atol=0.0)
@@ -388,7 +602,7 @@ def test_runtime_cs_lss_graph_export_preserves_executable_component_contract() -
     assert exported.subgraphs["net"].nodes["cell"].type == "GRU"
     assert exported.nodes["mechanics"].type == "LinearStateSpace"
     assert exported.nodes["efferent"].type == "Channel"
-    assert rematerialized.nodes["net"].input_ports == ("input", "feedback", "h0")
+    assert rematerialized.nodes["net"].input_ports == ("input", "feedback", CS_H0_CONTEXT_INPUT)
 
 
 def test_cs_lss_materialization_uses_registered_prototypes_without_global_patch() -> None:
@@ -406,8 +620,8 @@ def test_cs_lss_materialization_uses_registered_prototypes_without_global_patch(
     assert fbx_prototypes.output_prototypes_for_node is original_output_prototypes_for_node
     assert registry.get(FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT).output_prototype_fn is not None
     assert registry.get("Demux").output_prototype_fn is not None
-    assert registry.get("Channel").output_prototype_fn is None
-    assert registry.get("LinearStateSpace").output_prototype_fn is None
+    assert registry.get("Channel").output_prototype_fn is not None
+    assert registry.get("LinearStateSpace").output_prototype_fn is not None
     assert graph.nodes["mechanics"].A.shape == (48, 48)
 
 
@@ -593,7 +807,7 @@ def test_default_graph_uses_plain_zero_h0_network() -> None:
     assert jnp.allclose(graph.state_view(state).net.hidden, jnp.zeros((4,)))
 
 
-def test_initial_hidden_uses_external_h0_graph_input_shape() -> None:
+def test_initial_hidden_uses_context_encoder_node_output_initializer() -> None:
     graph = build_cs_lss_gru_graph(
         hidden_size=7,
         bind_epsilon_input=True,
@@ -604,12 +818,14 @@ def test_initial_hidden_uses_external_h0_graph_input_shape() -> None:
     net = graph.nodes["net"]
 
     assert net.__class__.__name__ == "Graph"
-    assert "h0" in net.input_ports
+    assert CS_H0_CONTEXT_INPUT in net.input_ports
+    assert net.nodes["h0_encoder"].__class__.__name__ == "Linear"
     recurrent_wire = next(wire for wire in net.wires if wire.temporality == "recurrent")
     assert recurrent_wire.recurrent_initializer == {
-        "kind": "graph-input",
+        "kind": "node-output",
         "scope": "trial",
-        "source": "h0",
+        "source_node": "h0_encoder",
+        "source_port": "output",
         "state_slot": "hidden",
     }
 
@@ -629,11 +845,12 @@ def test_initial_hidden_encoder_defaults_to_float32_even_with_float64_mechanics(
     assert jnp.dtype(graph.nodes["mechanics"].A.dtype) == expected_dtype
     assert jnp.dtype(graph.nodes["mechanics"].state_index.init.vector.dtype) == expected_dtype
     assert spec.nodes["net"].params["trainable_dtype"] == expected_dtype.name
-    assert spec.nodes["net"].params["h0_source_contract"] == "graph-input"
+    assert spec.nodes["net"].params["h0_source_contract"] == "node-output"
     assert jnp.dtype(graph.nodes["mechanics"].A.dtype) == expected_dtype
     assert jnp.dtype(graph.nodes["mechanics"].state_index.init.vector.dtype) == expected_dtype
     assert jnp.dtype(graph.nodes["net"].nodes["cell"].cell.weight_ih.dtype) == expected_dtype
     assert jnp.dtype(graph.nodes["net"].nodes["readout"].layer.weight.dtype) == expected_dtype
+    assert jnp.dtype(graph.nodes["net"].nodes["h0_encoder"].layer.weight.dtype) == expected_dtype
 
 
 def test_initial_hidden_encoder_preserves_explicit_float64_trainable_dtype() -> None:
@@ -651,9 +868,10 @@ def test_initial_hidden_encoder_preserves_explicit_float64_trainable_dtype() -> 
 
     expected_dtype = jnp.dtype(jnp.float64)
     assert spec.nodes["net"].params["trainable_dtype"] == expected_dtype.name
-    assert spec.nodes["net"].params["h0_source_contract"] == "graph-input"
+    assert spec.nodes["net"].params["h0_source_contract"] == "node-output"
     assert jnp.dtype(graph.nodes["net"].nodes["cell"].cell.weight_ih.dtype) == expected_dtype
     assert jnp.dtype(graph.nodes["net"].nodes["readout"].layer.weight.dtype) == expected_dtype
+    assert jnp.dtype(graph.nodes["net"].nodes["h0_encoder"].layer.weight.dtype) == expected_dtype
 
 
 def test_initial_hidden_encoder_requires_target_relative_context() -> None:
@@ -701,7 +919,7 @@ def test_train_filter_includes_multiplicative_sisu_alpha() -> None:
     assert trainable.nodes["net"].nodes["sisu_modulator"].gain.shape == (6,)
 
 
-def test_initial_hidden_uses_graph_input_recurrent_initializer() -> None:
+def test_initial_hidden_uses_node_output_recurrent_initializer() -> None:
     graph = build_cs_lss_gru_graph(
         hidden_size=6,
         bind_epsilon_input=True,
@@ -713,8 +931,104 @@ def test_initial_hidden_uses_graph_input_recurrent_initializer() -> None:
     recurrent_wire = next(
         wire for wire in graph.nodes["net"].wires if wire.temporality == "recurrent"
     )
-    assert recurrent_wire.recurrent_initializer["kind"] == "graph-input"
-    assert recurrent_wire.recurrent_initializer["source"] == "h0"
+    assert recurrent_wire.recurrent_initializer["kind"] == "node-output"
+    assert recurrent_wire.recurrent_initializer["source_node"] == "h0_encoder"
+    assert recurrent_wire.recurrent_initializer["source_port"] == "output"
+
+
+def test_initial_hidden_node_output_initializer_does_not_rerun_with_saved_cycle() -> None:
+    graph = build_cs_lss_gru_graph(
+        hidden_size=6,
+        bind_epsilon_input=True,
+        target_relative_feedback=True,
+        initial_hidden_encoder=True,
+        key=jax.random.PRNGKey(44),
+    )
+    state = init_state_from_component(graph)
+    first_inputs = {
+        "target": jnp.array([0.1, -0.2], dtype=jnp.float32),
+        "epsilon": jnp.zeros((CS_EPSILON_DIM,), dtype=jnp.float32),
+        CS_H0_CONTEXT_INPUT: jnp.array([0.1, -0.2, 0.0, 0.0], dtype=jnp.float32),
+    }
+    _outputs, state, cycle = graph.step(
+        first_inputs,
+        state,
+        cycle_port_values=None,
+        key=jax.random.PRNGKey(45),
+    )
+    state_leaves, state_treedef = jax.tree.flatten(state)
+    state_a_input = jax.tree.unflatten(state_treedef, state_leaves)
+    state_b_input = jax.tree.unflatten(state_treedef, state_leaves)
+    second_inputs_a = {
+        **first_inputs,
+        CS_H0_CONTEXT_INPUT: jnp.array([10.0, 20.0, 30.0, 40.0], dtype=jnp.float32),
+    }
+    second_inputs_b = {
+        **first_inputs,
+        CS_H0_CONTEXT_INPUT: jnp.array([-10.0, -20.0, -30.0, -40.0], dtype=jnp.float32),
+    }
+
+    outputs_a, state_a, cycle_a = graph.step(
+        second_inputs_a,
+        state_a_input,
+        cycle_port_values=cycle,
+        key=jax.random.PRNGKey(46),
+    )
+    outputs_b, state_b, cycle_b = graph.step(
+        second_inputs_b,
+        state_b_input,
+        cycle_port_values=cycle,
+        key=jax.random.PRNGKey(46),
+    )
+
+    assert jnp.allclose(outputs_a["force"], outputs_b["force"], rtol=0.0, atol=0.0)
+    assert jnp.allclose(
+        graph.state_view(state_a).net.hidden,
+        graph.state_view(state_b).net.hidden,
+        rtol=0.0,
+        atol=0.0,
+    )
+    assert jnp.allclose(
+        cycle_a[("__nested__", "net")][("cell", "hidden")],
+        cycle_b[("__nested__", "net")][("cell", "hidden")],
+        rtol=0.0,
+        atol=0.0,
+    )
+
+
+def test_initial_hidden_encoder_receives_rollout_loss_gradients() -> None:
+    graph = build_cs_lss_gru_graph(
+        hidden_size=6,
+        bind_epsilon_input=True,
+        target_relative_feedback=True,
+        initial_hidden_encoder=True,
+        key=jax.random.PRNGKey(47),
+    )
+    inputs = {
+        "target": jnp.array([0.2, -0.1], dtype=jnp.float32),
+        "epsilon": jnp.zeros((CS_EPSILON_DIM,), dtype=jnp.float32),
+        CS_H0_CONTEXT_INPUT: jnp.array([0.2, -0.1, 0.3, -0.4], dtype=jnp.float32),
+    }
+
+    def loss(model):
+        outputs, state, _cycle = model.step(
+            inputs,
+            init_state_from_component(model),
+            cycle_port_values=None,
+            key=jax.random.PRNGKey(48),
+        )
+        hidden = model.state_view(state).net.hidden
+        return jnp.sum(outputs["force"] ** 2) + 0.1 * jnp.sum(hidden**2)
+
+    value, grads = eqx.filter_value_and_grad(loss)(graph)
+    weight_grad = grads.nodes["net"].nodes["h0_encoder"].layer.weight
+    bias_grad = grads.nodes["net"].nodes["h0_encoder"].layer.bias
+
+    assert jnp.isfinite(value)
+    assert weight_grad.shape == (6, CS_FEEDBACK_DIM)
+    assert bias_grad.shape == (6,)
+    assert jnp.linalg.norm(weight_grad) > 0
+    assert jnp.linalg.norm(bias_grad) > 0
 
 
 def test_train_filter_includes_multiplicative_sisu_with_graph_input_h0() -> None:

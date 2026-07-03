@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -698,6 +699,51 @@ def test_rlrmp_registry_uses_feedbax_intervention_builders() -> None:
         assert meta.builder is not None
         assert meta.provenance == "feedbax"
         assert meta.output_prototype_fn is not None
+
+
+def test_point_mass_builder_does_not_bypass_feedbax_extension_points() -> None:
+    source_path = Path("src/rlrmp/model/feedbax_graph.py")
+    tree = ast.parse(source_path.read_text(encoding="utf-8"))
+    violations: list[str] = []
+
+    for node in ast.walk(tree):
+        if _is_object_setattr_call(node):
+            field_name = _constant_string_arg(node, 1)
+            if field_name in {"state_view_fn", "state_consistency_fn", "marker"}:
+                violations.append(
+                    f"{source_path}:{node.lineno}: object.__setattr__ writes {field_name!r}"
+                )
+        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                if isinstance(target, ast.Attribute) and target.attr in {
+                    "marker",
+                    "output_prototype_fn",
+                }:
+                    violations.append(
+                        f"{source_path}:{target.lineno}: assignment writes {target.attr!r}"
+                    )
+
+    assert violations == []
+
+
+def _is_object_setattr_call(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "__setattr__"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "object"
+    )
+
+
+def _constant_string_arg(node: ast.Call, index: int) -> str | None:
+    if len(node.args) <= index:
+        return None
+    arg = node.args[index]
+    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+        return arg.value
+    return None
 
 
 def test_dynamics_matrix_perturb_spec_preserves_delta_a_contract() -> None:
