@@ -93,3 +93,11 @@ status = "pending_enrollment"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/"
 minimum_non_skipped = 1
+
+[[families]]
+name = "reaccretion_ratchet"
+owner = "9728133"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_reaccretion_ratchet.py::"
+minimum_non_skipped = 5
