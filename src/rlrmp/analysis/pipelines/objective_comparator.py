@@ -907,80 +907,43 @@ def _top_level_comparator_has_run(
 def compute_default_extlqg_cost_decomposition() -> ExtLQGCostDecomposition:
     """Compute the canonical C&S extLQG expected-cost decomposition."""
 
-    import jax.numpy as jnp
-
     from rlrmp.analysis.math.cs_game_card import (
         OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
         materialize_reference,
     )
     from rlrmp.analysis.math.cs_released_simulation import (
-        _compute_ext_kalman,
-        _compute_ofc,
-        _default_output_feedback_initial_state,
         default_cs_noise_covariances,
+        solve_extlqg_fixed_point,
     )
-    from rlrmp.analysis.math.output_feedback import (
-        delayed_observation_matrix,
-        position_velocity_observation_config,
-    )
+    from rlrmp.analysis.math.output_feedback import position_velocity_observation_config
 
     reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
     plant = reference.plant
     schedule = reference.schedule
     config = position_velocity_observation_config(plant)
     covariances = default_cs_noise_covariances(plant, config)
-    h_matrix = delayed_observation_matrix(plant, config)
-    state_noise = covariances.motor + covariances.process
-    initial_covariance = jnp.eye(plant.n, dtype=jnp.float64) * jnp.asarray(
-        config.estimator_initial_covariance,
-        dtype=jnp.float64,
+    fixed_point = solve_extlqg_fixed_point(
+        plant,
+        schedule,
+        covariances,
+        config=config,
     )
-    estimator_gains = jnp.zeros((schedule.T, plant.n, h_matrix.shape[0]), dtype=jnp.float64)
-    current = 1.0e6
-    deterministic = 0.0
-    initial_trace = 0.0
-    scalar = 0.0
-    expected = current
-    iteration = 0
-    for iteration in range(1, 101):
-        controller_gains, sx0, se0, scalar_cost = _compute_ofc(
-            plant,
-            schedule,
-            estimator_gains,
-            h_matrix,
-            covariances.signal_dependent_state,
-            state_noise,
-            covariances.sensory,
-        )
-        estimator_gains, _state_covariances = _compute_ext_kalman(
-            plant,
-            h_matrix,
-            controller_gains,
-            covariances.signal_dependent_state,
-            state_noise,
-            covariances.sensory,
-            initial_covariance,
-            initial_covariance,
-        )
-        x0 = _default_output_feedback_initial_state(plant, config)
-        deterministic = float(x0 @ sx0 @ x0)
-        initial_trace = float(jnp.trace((sx0 + se0) @ initial_covariance))
-        scalar = float(scalar_cost)
-        expected = deterministic + initial_trace + scalar
-        relative_change = abs(current - expected) / max(abs(expected), 1e-300)
-        current = expected
-        if relative_change <= 1e-14:
-            break
+    if (
+        fixed_point.deterministic_initial_state_cost is None
+        or fixed_point.initial_covariance_trace_cost is None
+        or fixed_point.accumulated_noise_scalar_cost is None
+    ):
+        raise ValueError("extLQG fixed-point solver did not report expected-cost components")
 
     return ExtLQGCostDecomposition(
-        deterministic_initial_state=deterministic,
-        initial_covariance_trace=initial_trace,
-        accumulated_noise_scalar=scalar,
-        total_expected_cost=expected,
+        deterministic_initial_state=fixed_point.deterministic_initial_state_cost,
+        initial_covariance_trace=fixed_point.initial_covariance_trace_cost,
+        accumulated_noise_scalar=fixed_point.accumulated_noise_scalar_cost,
+        total_expected_cost=fixed_point.expected_cost,
         provenance=(
             "canonical C&S extLQG fixed-point decomposition from "
             "materialize_reference(output_feedback_certificate_gamma_factor), "
-            f"{iteration} iterations"
+            f"{fixed_point.n_iterations} iterations"
         ),
     )
 

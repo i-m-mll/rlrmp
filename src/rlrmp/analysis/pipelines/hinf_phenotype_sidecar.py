@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from rlrmp.analysis.pipelines.diagnostic_provenance import repo_relative, write_regeneration_spec
-from rlrmp.io import update_marked_section
+from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT
 
 
@@ -140,7 +140,7 @@ def write_hinf_phenotype_sidecar(
             regeneration_spec_path,
             repo_root=repo_root,
         )
-    json_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_compact_json(json_path, payload)
     update_marked_section(
         markdown_path,
         "hinf_phenotype_sidecar",
