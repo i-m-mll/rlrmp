@@ -692,7 +692,7 @@ def test_feedbax_graph_controller_smoke():
     from equinox.nn import StateIndex
     from feedbax.runtime.graph import Component, Graph
 
-    from rlrmp.analysis.math.induced_gain import feedbax_graph_controller
+    from feedbax.analysis import graph_controller
 
     class GainComponent(Component):
         """y = -K @ x; carries a 1-element counter to exercise stateful flatten."""
@@ -726,7 +726,7 @@ def test_feedbax_graph_controller_smoke():
     )
 
     key = jax.random.PRNGKey(0)
-    ctrl = feedbax_graph_controller(graph, key=key)
+    ctrl = graph_controller(graph, key=key)
     h0 = ctrl.initial_state()
     # The state contains a single 1-element float counter.
     assert h0.shape == (1,)
@@ -768,7 +768,7 @@ def test_feedbax_graph_controller_cyclic_smoke():
     from equinox.nn import StateIndex
     from feedbax.runtime.graph import Component, Graph, Wire
 
-    from rlrmp.analysis.math.induced_gain import feedbax_graph_controller
+    from feedbax.analysis import graph_controller
 
     class GainWithRecurrent(Component):
         """y = -K @ x + h_in. Stateless component with two input ports."""
@@ -831,7 +831,7 @@ def test_feedbax_graph_controller_cyclic_smoke():
     assert graph._needs_iteration  # sanity: cycle detected
 
     key = jax.random.PRNGKey(0)
-    ctrl = feedbax_graph_controller(graph, key=key)
+    ctrl = graph_controller(graph, key=key)
     h0 = ctrl.initial_state()
     # Augmented h carries (delay state) + (cycle port value for a.h_in).
     # delay state is 1 element; cycle dict has one (1,) entry.
