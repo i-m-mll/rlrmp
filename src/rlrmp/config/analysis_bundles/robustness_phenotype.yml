@@ -54,6 +54,24 @@ stages:
         required: true
       - role: rlrmp-formal-hinf-certificate
         required: false
+  - name: phenotype_report
+    kind: report
+    mode: grouped
+    depends_on: [phenotype_sidecar]
+    report_type: rlrmp.report.robustness_phenotype_markdown
+    params:
+      schema_id: rlrmp.report.robustness_phenotype_markdown.params
+      schema_version: rlrmp.report.robustness_phenotype_markdown.params.v1
+      title: Robustness Phenotype Report
+      source_artifact_roles:
+        - rlrmp-robustness-phenotype-sidecar-note
+      include_json_artifact: true
+      narrative: Feedbax-custody report render for the tracked phenotype Markdown export.
+    outputs:
+      - role: report_render
+        required: true
+      - role: rlrmp-robustness-phenotype-report-render
+        required: false
   - name: formal_hinf_certificate
     kind: materialization
     depends_on: [phenotype_sidecar]
