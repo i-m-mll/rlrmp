@@ -55,6 +55,7 @@ from rlrmp.loss import (
     get_reach_loss,
 )
 from rlrmp.paths import REPO_ROOT, run_artifact_dir, run_spec_dir
+import rlrmp.train.cs_nominal_gru as cs_nominal_gru
 import rlrmp.train.cs_perturbation_training as cs_perturbation_training
 from rlrmp.train.cs_nominal_gru import (
     AdaptiveEpsilonState,
@@ -70,6 +71,7 @@ from rlrmp.train.cs_nominal_gru import (
     build_training_run_graph_spec,
     build_hps,
     build_parser,
+    build_run_spec_execution_context,
     derive_spec_dir,
     derive_spec_path,
     _adaptive_epsilon_damage_target,
@@ -79,6 +81,7 @@ from rlrmp.train.cs_nominal_gru import (
     _initial_adaptive_epsilon_zero_guard,
     _update_adaptive_epsilon_zero_guard,
     main,
+    render_run_spec_execution_dry_run,
     _emit_checkpoint_progress,
     _initial_adaptive_epsilon_state,
     _prepend_existing_training_diagnostics,
@@ -3549,20 +3552,27 @@ def test_movement_age_timing_run_spec_distinguishes_timing_basis(tmp_path: Path)
 
     parser = build_parser()
     replay_args = resolve_run_spec_args(
-        parser.parse_args(
-            [
-                "--run-spec",
-                movement_result["run_spec_path"],
-                "--output-dir",
-                str(tmp_path / "replay_bulk"),
-                "--spec-dir",
-                str(tmp_path / "replay_spec"),
-            ]
-        ),
+        parser.parse_args(["--run-spec", movement_result["run_spec_path"]]),
         parser=parser,
     )
     assert replay_args.perturbation_movement_age_timing is True
+    assert replay_args.output_dir == str(tmp_path / "movement_bulk")
+    assert replay_args.spec_dir == str(tmp_path / "movement_spec")
 
+    with pytest.raises(ValueError, match="artifact route"):
+        resolve_run_spec_args(
+            parser.parse_args(
+                [
+                    "--run-spec",
+                    movement_result["run_spec_path"],
+                    "--output-dir",
+                    str(tmp_path / "replay_bulk"),
+                    "--spec-dir",
+                    str(tmp_path / "replay_spec"),
+                ]
+            ),
+            parser=parser,
+        )
 
 def test_target_relative_feedback_sign_contract() -> None:
     spec = build_cs_lss_gru_graph_spec(
@@ -4969,18 +4979,12 @@ def test_modern_run_spec_replays_to_current_training_args(tmp_path: Path) -> Non
     )
     result = write_run_spec(args)
 
-    replay_output_dir = tmp_path / "current_artifacts"
-    replay_spec_dir = tmp_path / "current_spec"
     parser = build_parser()
     replay_args = resolve_run_spec_args(
         parser.parse_args(
             [
                 "--run-spec",
                 result["run_spec_path"],
-                "--output-dir",
-                str(replay_output_dir),
-                "--spec-dir",
-                str(replay_spec_dir),
                 "--stop-after-batches",
                 "1000",
             ]
@@ -4989,8 +4993,8 @@ def test_modern_run_spec_replays_to_current_training_args(tmp_path: Path) -> Non
     )
 
     assert replay_args.issue == "020a65b"
-    assert replay_args.output_dir == str(replay_output_dir)
-    assert replay_args.spec_dir == str(replay_spec_dir)
+    assert replay_args.output_dir == str(output_dir)
+    assert replay_args.spec_dir == str(spec_dir)
     assert replay_args.full_train is True
     assert replay_args.stop_after_batches == 1000
     assert replay_args.n_train_batches == 12000
@@ -5007,6 +5011,54 @@ def test_modern_run_spec_replays_to_current_training_args(tmp_path: Path) -> Non
     assert replay_args.force_filter_feedback is True
     assert replay_args.broad_epsilon_training is False
     assert replay_args.broad_epsilon_pgd_training is False
+
+
+def test_run_spec_replay_rejects_artifact_route_override(tmp_path: Path) -> None:
+    result = write_run_spec(
+        _args(
+            output_dir=str(tmp_path / "historical_artifacts"),
+            spec_dir=str(tmp_path / "historical_spec"),
+            full_train=True,
+        )
+    )
+    parser = build_parser()
+
+    with pytest.raises(ValueError, match="artifact route"):
+        resolve_run_spec_args(
+            parser.parse_args(
+                [
+                    "--run-spec",
+                    result["run_spec_path"],
+                    "--output-dir",
+                    str(tmp_path / "current_artifacts"),
+                ]
+            ),
+            parser=parser,
+        )
+
+
+def test_run_spec_replay_rejects_scientific_payload_override(tmp_path: Path) -> None:
+    result = write_run_spec(
+        _args(
+            output_dir=str(tmp_path / "historical_artifacts"),
+            spec_dir=str(tmp_path / "historical_spec"),
+            full_train=True,
+        )
+    )
+    parser = build_parser()
+
+    with pytest.raises(ValueError, match="scientific payload"):
+        resolve_run_spec_args(
+            parser.parse_args(
+                [
+                    "--run-spec",
+                    result["run_spec_path"],
+                    "--n-train-batches",
+                    "8",
+                ]
+            ),
+            parser=parser,
+        )
 
 
 def test_flat_run_spec_replay_does_not_require_adjacent_graph_manifest(
@@ -5033,39 +5085,30 @@ def test_flat_run_spec_replay_does_not_require_adjacent_graph_manifest(
     flat_run_spec = flat_spec_dir / "delayed_movement_bank.json"
     flat_run_spec.write_text(Path(result["run_spec_path"]).read_text(), encoding="utf-8")
 
-    replay_spec_dir = tmp_path / "replayed_spec"
     parser = build_parser()
     replay_args = resolve_run_spec_args(
-        parser.parse_args(
-            [
-                "--run-spec",
-                str(flat_run_spec),
-                "--output-dir",
-                str(tmp_path / "replayed_artifacts"),
-                "--spec-dir",
-                str(replay_spec_dir),
-                "--broad-epsilon-pgd-training",
-                "--broad-epsilon-budget-scale",
-                "3.688240371719434",
-                "--broad-epsilon-pgd-steps",
-                "10",
-            ]
-        ),
+        parser.parse_args(["--run-spec", str(flat_run_spec)]),
         parser=parser,
     )
-    replay_result = write_run_spec(replay_args)
-    replay_payload = json.loads(Path(replay_result["run_spec_path"]).read_text())
 
-    assert Path(replay_result["graph_manifest_path"]).is_file()
-    assert Path(replay_result["graph_manifest_path"]).parent == replay_spec_dir
-    assert Path(replay_result["run_spec_path"]) == replay_spec_dir.with_suffix(".json")
-    assert not (replay_spec_dir / "run.json").exists()
-    pgd = replay_payload["hps"]["broad_epsilon_pgd_training"]
-    assert pgd["enabled"] is True
-    assert pgd["epsilon_dim"] == 8
-    assert pgd["movement_epoch_only"] is True
-    assert pgd["budget_scale"] == pytest.approx(3.688240371719434)
-    assert pgd["inner_maximizer"]["n_steps"] == 10
+    assert replay_args.output_dir == str(tmp_path / "historical_artifacts")
+    assert replay_args.spec_dir == str(tmp_path / "historical_spec")
+
+    with pytest.raises(ValueError, match="scientific payload"):
+        resolve_run_spec_args(
+            parser.parse_args(
+                [
+                    "--run-spec",
+                    str(flat_run_spec),
+                    "--broad-epsilon-pgd-training",
+                    "--broad-epsilon-budget-scale",
+                    "3.688240371719434",
+                    "--broad-epsilon-pgd-steps",
+                    "10",
+                ]
+            ),
+            parser=parser,
+        )
 
 
 def test_full_train_run_spec_replay_dry_run_stays_on_spec_path(
@@ -5093,10 +5136,94 @@ def test_full_train_run_spec_replay_dry_run_stays_on_spec_path(
     payload = json.loads(capsys.readouterr().out)
 
     assert "would_write" in payload
+    assert payload["would_execute"]["entrypoint"].endswith("_run_full_training_from_context")
     assert payload["run_spec"]["full_training_launch"] == "requested"
     assert payload["run_spec"]["hps"]["loss"]["delayed_movement_cost_tail_mode"] == (
         DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON
     )
+
+
+def test_spec_file_execution_context_uses_validated_payload(tmp_path: Path) -> None:
+    result = write_run_spec(
+        _args(
+            output_dir=str(tmp_path / "artifacts"),
+            spec_dir=str(tmp_path / "spec"),
+            smoke=True,
+            full_train=True,
+        )
+    )
+    parser = build_parser()
+    context = build_run_spec_execution_context(
+        parser.parse_args(
+            [
+                "--run-spec",
+                result["run_spec_path"],
+                "--resume",
+                "--stop-after-batches",
+                "1",
+            ]
+        ),
+        parser=parser,
+    )
+
+    assert context.run_spec_path == Path(result["run_spec_path"])
+    assert context.run_spec["full_training_launch"] == "requested"
+    assert context.args.resume is True
+    assert context.args.stop_after_batches == 1
+    assert context.hps.hidden_type is eqx.nn.GRUCell
+    assert context.hps.model.hidden_size == 4
+
+
+def test_legacy_full_train_flags_emit_spec_before_execution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = {}
+
+    def fake_executor(context, *, volume_commit=None):  # noqa: ANN001, ANN202
+        captured["context"] = context
+        captured["volume_commit"] = volume_commit
+        return {"run_spec_path": str(context.run_spec_path), "completed_batches": 0}
+
+    monkeypatch.setattr(cs_nominal_gru, "_run_full_training_from_context", fake_executor)
+
+    result = run_full_training(
+        _args(
+            output_dir=str(tmp_path / "artifacts"),
+            spec_dir=str(tmp_path / "spec"),
+            smoke=True,
+            full_train=True,
+        )
+    )
+    context = captured["context"]
+
+    assert Path(result["run_spec_path"]).is_file()
+    assert context.run_spec_path == Path(result["run_spec_path"])
+    assert context.args.smoke is False
+    assert context.run_spec["mode"] == "full_train"
+    assert context.run_spec["model_summary"]["hidden_size"] == 4
+    assert context.hps.model.hidden_size == 4
+
+
+def test_run_spec_dry_run_renderer_does_not_write(tmp_path: Path) -> None:
+    result = write_run_spec(
+        _args(
+            output_dir=str(tmp_path / "artifacts"),
+            spec_dir=str(tmp_path / "spec"),
+            smoke=True,
+            full_train=True,
+        )
+    )
+    context = build_run_spec_execution_context(
+        build_parser().parse_args(["--run-spec", result["run_spec_path"], "--dry-run"])
+    )
+
+    rendered = render_run_spec_execution_dry_run(context)
+
+    assert rendered["validated"] is True
+    assert rendered["would_write"] == []
+    assert rendered["would_execute"]["output_dir"] == str(tmp_path / "artifacts")
+    assert rendered["run_spec"]["mode"] == "full_train"
 
 
 def test_initial_hidden_encoder_requires_target_relative_hps() -> None:
