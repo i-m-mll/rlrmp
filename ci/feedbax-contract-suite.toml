@@ -57,10 +57,10 @@ minimum_non_skipped = 10
 [[families]]
 name = "converted_sidecar_loadability"
 owner = "ae15851"
-status = "pending_enrollment"
+status = "live"
 marker = "feedbax_contract"
-expected_collection_pattern = "tests/"
-minimum_non_skipped = 1
+expected_collection_pattern = "tests/test_archived_graph_recipe_conversion.py::"
+minimum_non_skipped = 5
 
 [[families]]
 name = "retired_id_scan"

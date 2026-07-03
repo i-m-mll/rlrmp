@@ -27,6 +27,7 @@ pytestmark = pytest.mark.feedbax_contract
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = REPO_ROOT / "results" / "e9fc384" / "notes" / "graph_sidecar_audit_manifest.json"
 SIDECAR_PATTERNS = ("results/**/model.graph.json", "results/**/*.graph.json")
+CONVERTED_FIXTURE_PREFIXES = ("results/ae15851/converted/",)
 
 
 def _live_sidecar_paths() -> list[str]:
@@ -37,7 +38,13 @@ def _live_sidecar_paths() -> list[str]:
         capture_output=True,
         text=True,
     )
-    return sorted({line for line in result.stdout.splitlines() if line})
+    return sorted(
+        {
+            line
+            for line in result.stdout.splitlines()
+            if line and not line.startswith(CONVERTED_FIXTURE_PREFIXES)
+        }
+    )
 
 
 def _sha256(path: Path) -> str:
