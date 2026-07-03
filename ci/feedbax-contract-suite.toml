@@ -65,10 +65,29 @@ minimum_non_skipped = 5
 [[families]]
 name = "retired_id_scan"
 owner = "7811e47"
-status = "pending_enrollment"
+status = "live"
 marker = "feedbax_contract"
-expected_collection_pattern = "tests/"
-minimum_non_skipped = 1
+expected_collection_pattern = "tests/test_retired_component_id_scan.py::"
+minimum_non_skipped = 5
+negative_canary = "tests/test_retired_component_id_scan.py::test_scan_negative_canary_flags_unconfined_active_emission"
+
+[[families]]
+name = "descriptor_conformance_canary"
+owner = "7811e47"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_descriptor_conformance_canary.py::"
+minimum_non_skipped = 10
+negative_canary = "tests/test_descriptor_conformance_canary.py::test_canary_negative_rejects_positional_basis_confusion"
+
+[[families]]
+name = "model_export_parity"
+owner = "7811e47"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_model_export_parity.py::"
+minimum_non_skipped = 9
+negative_canary = "tests/test_model_export_parity.py::test_export_parity_negative_rejects_corrupted_component_type"
 
 [[families]]
 name = "descriptor_basis_hash"

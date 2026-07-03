@@ -67,6 +67,13 @@ FEEDBAX_GRAPH_REQUIRED_POINTER_KEYS = frozenset(
 )
 CS_LSS_PLANT_BACKEND = "cs_lss"
 CS_LSS_REQUIRED_MECHANICS_TYPE = "LinearStateSpace"
+# CS-LSS feedback component types accepted by run-spec validation. The clean
+# target is the Feedbax-native ``StateFeedbackSelector``; the branded
+# ``RLRMPCsLss*`` feedback IDs are accepted ONLY so archived CS-LSS run specs
+# still validate. They are ComponentMigration source_types (see
+# src/rlrmp/model/cs_lss_gru.py) and are pinned as retired IDs by the 7811e47
+# confinement scan (ci/retired-component-id-confinement.toml) and the 9728133
+# ratchet — do not add new branded feedback IDs here for active runs.
 CS_LSS_FEEDBACK_COMPONENT_TYPES = frozenset(
     {
         "StateFeedbackSelector",
@@ -75,6 +82,11 @@ CS_LSS_FEEDBACK_COMPONENT_TYPES = frozenset(
         "RLRMPCsLssTargetRelativeDelayedProprioceptiveFeedback",
     }
 )
+# Legacy point-mass graph node types accepted by run-spec validation. The clean
+# targets are the Feedbax-native ``PointMass``/``FirstOrderFilter`` (and native
+# ``FeedbackChannels``); the branded ``RLRMPPointMass``/``RLRMPFeedbackChannels``
+# entries are accepted ONLY for archived-artifact validation and are retired IDs
+# under the 7811e47 confinement scan and the 9728133 ratchet.
 LEGACY_POINT_MASS_GRAPH_TYPES = frozenset(
     {
         "FirstOrderFilter",
