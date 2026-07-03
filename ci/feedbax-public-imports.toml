@@ -203,12 +203,16 @@ module = "feedbax.contracts.training"
 symbols = [
   "ArtifactPolicySpec",
   "CheckpointProgressPolicySpec",
+  "DEFAULT_TRAINING_METHOD_REGISTRY",
   "ExecutionPolicySpec",
   "GraphTopologySourceSpec",
+  "MethodPayloadEnvelope",
+  "MethodRefSpec",
   "ObjectiveSlotSpec",
   "RiskAggregationSpec",
   "TaskSpec",
   "TrainingConfig",
+  "TrainingMethodRegistration",
   "TrainingRunSpec",
   "WorkerExecutionSpec",
   "standard_supervised_effective_phase_spec",
@@ -220,6 +224,23 @@ symbols = [
 [[canonical_homes]]
 module = "feedbax.contracts.value_schema"
 symbols = ["ValueSchema"]
+
+[[canonical_homes]]
+module = "feedbax.contracts.worker"
+symbols = [
+  "AxisSpec",
+  "CheckpointBarrierSpec",
+  "CheckpointSlotSpec",
+  "EffectivePhaseSpec",
+  "MethodContractSpec",
+  "OptimizerTargetBinding",
+  "PhaseProgramSpec",
+  "PhaseSpec",
+  "StateSlotSpec",
+  "UpdateKernelSpec",
+  "UpdateStepSpec",
+  "derive_consistency_predicate",
+]
 
 [[canonical_homes]]
 module = "feedbax.intervene"

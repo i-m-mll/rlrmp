@@ -171,16 +171,6 @@ owner = "1e6201e"
 note = "C&S GRU run-spec/training CLI; 1e6201e shrinks this to a spec adapter."
 
 [[argparse_training_entry_points]]
-path = "src/rlrmp/train/closed_loop_distillation.py"
-owner = "be860c4"
-note = "Distillation training method CLI."
-
-[[argparse_training_entry_points]]
-path = "src/rlrmp/train/guided_distillation.py"
-owner = "be860c4"
-note = "Distillation training method CLI."
-
-[[argparse_training_entry_points]]
 path = "scripts/train_minimax.py"
 owner = "54b0c2e"
 note = "Minimax adversarial training launcher."
@@ -201,15 +191,3 @@ path = "scripts/train_part2_5.py"
 function = "run_training"
 owner = "5b571ae"
 note = "Raw json.dump(config_dict, ...) to derive_spec_path(); no validate_nominal_gru_run_spec/stamp_current_schema call."
-
-[[run_spec_writer_sites]]
-path = "src/rlrmp/train/closed_loop_distillation.py"
-function = "write_run_spec"
-owner = "b047981"
-note = "path.write_text(json.dumps(spec, ...)); no sanctioned emitter call."
-
-[[run_spec_writer_sites]]
-path = "src/rlrmp/train/guided_distillation.py"
-function = "main"
-owner = "b047981"
-note = "spec_path.write_text(json.dumps(payload, ...)); no sanctioned emitter call."
