@@ -579,13 +579,15 @@ def default_cs_calibrated_perturbation_bank(
 
     from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
         DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS,
-        DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S,
-        DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT,
         DEFAULT_PLANT_TIMING_BINS,
         DEFAULT_REACH_CALIBRATION_POINTS,
         DEFAULT_REACH_RELATIVE_LEVELS,
         calibrated_amplitude_from_unit_sensitivity,
     )
+    from rlrmp.data_products.calibration import load_open_loop_calibration
+
+    calibration = load_open_loop_calibration()
+    controller_visible_velocity_scale_m_s = calibration.controller_visible_velocity_scale_m_s
 
     reach = _select_reach_calibration_point(
         calibration_reach,
@@ -652,7 +654,7 @@ def default_cs_calibrated_perturbation_bank(
             ("initial_position_offset", "m"),
             ("initial_velocity_offset", "m/s"),
         ):
-            sensitivity = DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT[family]["initial_condition"]
+            sensitivity = calibration[family]["initial_condition"]
             amplitude = calibrated_amplitude_from_unit_sensitivity(
                 target_peak_delta_x_m=target_peak,
                 peak_delta_x_per_unit_m=float(sensitivity),
@@ -748,9 +750,7 @@ def default_cs_calibrated_perturbation_bank(
                     if family == "target_aligned_lateral_command_load_pulse"
                     else family
                 )
-                sensitivity = float(
-                    DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT[sensitivity_family][timing_bin.label]
-                )
+                sensitivity = float(calibration[sensitivity_family][timing_bin.label])
                 amplitude = calibrated_amplitude_from_unit_sensitivity(
                     target_peak_delta_x_m=target_peak,
                     peak_delta_x_per_unit_m=sensitivity,
@@ -919,7 +919,7 @@ def default_cs_calibrated_perturbation_bank(
                 velocity_amplitude = float(
                     velocity_scale["reference_scale"]
                     if velocity_scale is not None
-                    else DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S
+                    else controller_visible_velocity_scale_m_s
                 ) * float(level.fraction_of_reach)
                 for axis in ("vx", "vy"):
                     for sign in (-1, 1):
@@ -964,7 +964,7 @@ def default_cs_calibrated_perturbation_bank(
                                     "nominal_peak_speed_m_s": float(
                                         velocity_scale["reference_scale"]
                                         if velocity_scale is not None
-                                        else DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S
+                                        else controller_visible_velocity_scale_m_s
                                     ),
                                     "controller_feedback_scale": (
                                         None
@@ -1100,9 +1100,10 @@ def default_cs_calibrated_perturbation_bank(
                     "force_filter": _feedback_scale_provenance(force_filter_scale),
                 },
                 "source": (
-                    "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py "
-                    "DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT, native conventions, "
-                    "and nominal-rollout controller feedback scale manifest"
+                    "governed open-loop calibration data product "
+                    "(rlrmp.perturbation_open_loop_calibration.v2 at "
+                    "results/ea6ccb4/data_products/perturbation_open_loop_calibration.json), "
+                    "native conventions, and nominal-rollout controller feedback scale manifest"
                 ),
             },
             "perturbations": [spec.to_json() for spec in perturbations],

@@ -142,6 +142,7 @@ from rlrmp.train.cs_perturbation_training import (
     PolicyFullStateEpsilonTrainingConfig,
     config_from_broad_epsilon_pgd_hps,
     config_from_policy_adversary_hps,
+    consumed_calibration_budget_identities,
     make_broad_epsilon_pgd_pre_step,
     make_policy_adversary,
     make_policy_adversary_pre_step,
@@ -1918,6 +1919,16 @@ def build_run_spec(
     hps = build_hps(args)
     training_distribution = _training_distribution_metadata(hps)
     validation_bins = _validation_bins_metadata(hps)
+    calibration_consumed = _perturbation_training_enabled(hps) and bool(
+        getattr(hps.perturbation_training, "calibrated_timing", False)
+    )
+    broad_epsilon_consumed = bool(getattr(hps.broad_epsilon_training, "enabled", False)) or bool(
+        getattr(hps.broad_epsilon_pgd_training, "enabled", False)
+    )
+    consumed_data_identities = consumed_calibration_budget_identities(
+        calibration_consumed=calibration_consumed,
+        broad_epsilon_consumed=broad_epsilon_consumed,
+    )
     delayed_reach = _plain(hps.delayed_reach)
     model_summary = build_model_structure_summary(hps)
     training_summary = {
@@ -1971,7 +1982,7 @@ def build_run_spec(
         "loss_summary": graph_bundle.loss_spec,
         "training_summary": training_summary,
         "feedbax_graph": graph_bundle.to_run_metadata(),
-        "consumed_data_identities": [],
+        "consumed_data_identities": consumed_data_identities,
         "hps": _plain(hps),
         "provenance": {
             "git": _get_git_metadata(),

@@ -128,3 +128,12 @@ status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_reaccretion_ratchet.py::"
 minimum_non_skipped = 5
+
+[[families]]
+name = "generated_data_constant_scan"
+owner = "ea6ccb4"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_data_lint_generated_constants.py::"
+minimum_non_skipped = 6
+negative_canary = "tests/test_data_lint_generated_constants.py::test_data_lint_flags_the_two_named_generated_tables"

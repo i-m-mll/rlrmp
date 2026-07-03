@@ -441,6 +441,10 @@ The repo separates artifacts by ROLE, not by directory name:
 - **`_artifacts/`** is gitignored. It mirrors `results/` and holds *bulk* outputs.
 - **Cloud-provider directory names (`runpod/`, `modal/`, etc.) are NOT meaningful** — they all go under `_artifacts/`. Never patch `.gitignore` with a new provider name.
 
+### Generated/adopted empirical data lives in governed products, not source constants (Bug: `ea6ccb4`)
+
+Generated, empirical, or adopted-analytical datasets (calibration tables, budget anchors, and similar) must NOT be baked into `src/` as module-level Python constants. Source code keeps schemas, loaders, and builders; the data lives in a tracked, schema-versioned data product — persisted under `results/<hash>/data_products/` on the Feedbax `AnalysisDataProduct` envelope with an rlrmp `product_schema_id` — and is loaded at runtime by typed product identity with fail-closed validation (schema, role, `product_identity_hash`, and artifact hash), never trusted as a source literal. Consumers use the loaders in `rlrmp.data_products` (`load_open_loop_calibration`, `load_broad_epsilon_anchors`); emitted run specs snapshot each consumed identity via `add_consumed_data_identity`. The AST data-lint (`rlrmp.data_products.lint`, family `generated_data_constant_scan` in `ci/feedbax-contract-suite.toml`) enforces this: it flags multi-entry high-precision float container literals under `src/` unless they are loader-fed or allowlisted-with-rationale. Small conventional constants, dimensions, solver tolerances, and enum-like labels are out of scope; a single adopted scalar may be allowlisted-with-rationale instead of migrated.
+
 ### Flat-by-hash layout (Bug: `f485c26`)
 
 Each top-level entry under `results/` and `_artifacts/` is a **directory named by its 7-character tracking-issue prefix** (e.g. `results/2bc95fd/`, `_artifacts/efc4d68/`). The issue is the atomic unit; no phase-level parent dirs in the directory tree (phase membership lives on the issue body / `b33e8da` coord).
