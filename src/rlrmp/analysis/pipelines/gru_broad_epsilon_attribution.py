@@ -26,6 +26,7 @@ from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     load_validation_selected_checkpoint_model,
     materialize_validation_selected_checkpoint_manifest,
 )
+from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path
 from rlrmp.paths import run_spec_path as tracked_run_spec_path
 from rlrmp.runtime.run_specs import resolve_run_record
@@ -148,9 +149,10 @@ def materialize_broad_epsilon_attribution(
     csv_path = notes_dir / f"{output_tag}.csv"
     json_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     csv_path.write_text(render_summary_csv(rows), encoding="utf-8")
-    md_path.write_text(
+    update_marked_section(
+        md_path,
+        "gru_broad_epsilon_attribution",
         render_markdown(manifest, csv_path=csv_path, repo_root=repo_root),
-        encoding="utf-8",
     )
     manifest["outputs"] = {
         "json": repo_relative(json_path, repo_root=repo_root),

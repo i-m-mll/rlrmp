@@ -61,6 +61,7 @@ from rlrmp.analysis.pipelines.standard_certificate_materialization import (
     materialization_summary,
     repo_relative,
 )
+from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path, run_spec_path
 from rlrmp.runtime.spec_migrations import (
     CS_GRU_STANDARD_CERTIFICATES_KIND,
@@ -966,7 +967,11 @@ def write_gru_standard_result(
     regeneration_spec_path = regeneration_spec_path or _regeneration_spec_path(manifest_path)
     result = copy.deepcopy(result)
     result["regeneration_spec"] = repo_relative(regeneration_spec_path, repo_root=repo_root)
-    note_path.write_text(render_gru_standard_markdown(result), encoding="utf-8")
+    update_marked_section(
+        note_path,
+        "gru_standard_certificates",
+        render_gru_standard_markdown(result),
+    )
     manifest_path.write_text(
         json.dumps(result, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
