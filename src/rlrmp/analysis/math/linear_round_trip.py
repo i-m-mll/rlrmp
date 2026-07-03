@@ -1,4 +1,8 @@
-"""Phase 3 linear same-game round-trip checks for the C&S gate.
+"""Legacy scope note: `write_outputs` is a frozen writer/driver surface. The
+math core in this module remains LIVE library code consumed by registered
+recipes.
+
+Phase 3 linear same-game round-trip checks for the C&S gate.
 
 This module keeps the first Phase 3 implementation deliberately local and
 analytical. It uses the Phase 0 game-card matrices directly, trains
@@ -933,7 +937,18 @@ def write_outputs(
     discretization: str = DEFAULT_DISCRETIZATION,
     lane: str = DEFAULT_LANE,
 ) -> dict[str, Any]:
-    """Write tracked Phase 3 summary outputs and bulk arrays."""
+    """LEGACY (frozen 2026-07-03, issue 64d5f13).
+
+    This writer/driver is not contract-native: it predates the feedbax recipe,
+    bundle, and manifest contracts. It may not run without deliberate
+    realignment. Do not copy it as a pattern for new analyses. The
+    port-or-delete decision is deferred to the report-stage era (feedbax
+    132f98c) / publication.
+
+    Scoped legacy surface: `write_outputs`. The math core in this module is
+    LIVE library code consumed by registered recipes; this banner does not
+    apply to the math core.
+    """
 
     result = run_phase3_linear_round_trip()
     summary = result_summary(result, discretization=discretization, lane=lane)

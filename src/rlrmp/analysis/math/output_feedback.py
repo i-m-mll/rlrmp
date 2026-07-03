@@ -1,4 +1,10 @@
-"""C&S output-feedback / estimator-in-loop analytical lane.
+"""Legacy scope note: `analyze_phase0b_output_feedback`,
+`analyze_phase1_output_feedback`, `analyze_phase3_output_feedback`,
+`write_gamma_sweep_outputs`, and `write_outputs` are frozen writer/driver
+surfaces. The output-feedback math core in this module remains LIVE library
+code consumed by registered recipes.
+
+C&S output-feedback / estimator-in-loop analytical lane.
 
 The existing game-card lane is deterministic full augmented-state replay:
 ``u_t = -K_t x_t``.  C&S's released simulation code instead observes only the
@@ -1283,7 +1289,18 @@ def train_output_feedback_lqr_bellman_controller(
 def analyze_phase0b_output_feedback(
     config: OutputFeedbackConfig = OutputFeedbackConfig(),
 ) -> dict[str, Any]:
-    """Materialize Phase 0B output-feedback reference metrics."""
+    """LEGACY (frozen 2026-07-03, issue 64d5f13).
+
+    This writer/driver is not contract-native: it predates the feedbax recipe,
+    bundle, and manifest contracts. It may not run without deliberate
+    realignment. Do not copy it as a pattern for new analyses. The
+    port-or-delete decision is deferred to the report-stage era (feedbax
+    132f98c) / publication.
+
+    Scoped legacy surface: `analyze_phase0b_output_feedback`. The math core in
+    this module is LIVE library code consumed by registered recipes; this
+    banner does not apply to the math core.
+    """
 
     reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
     gamma_ref = reference.gamma_references[0]
@@ -1449,7 +1466,18 @@ def analyze_phase1_output_feedback(
     seed: int = 0,
     config: OutputFeedbackConfig = OutputFeedbackConfig(),
 ) -> OutputFeedbackPhase1Result:
-    """Rerun Phase 1 under C&S estimator-in-loop dynamics."""
+    """LEGACY (frozen 2026-07-03, issue 64d5f13).
+
+    This writer/driver is not contract-native: it predates the feedbax recipe,
+    bundle, and manifest contracts. It may not run without deliberate
+    realignment. Do not copy it as a pattern for new analyses. The
+    port-or-delete decision is deferred to the report-stage era (feedbax
+    132f98c) / publication.
+
+    Scoped legacy surface: `analyze_phase1_output_feedback`. The math core in
+    this module is LIVE library code consumed by registered recipes; this
+    banner does not apply to the math core.
+    """
 
     reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
     gamma_ref = reference.gamma_references[0]
@@ -1869,7 +1897,18 @@ def analyze_phase3_output_feedback(
     training_config: LinearTrainingConfig = LinearTrainingConfig(),
     quasi_newton_config: LinearTrainingConfig = LinearTrainingConfig(n_steps=500),
 ) -> OutputFeedbackPhase3Result:
-    """Compute Phase 3 estimator-in-loop reference audits."""
+    """LEGACY (frozen 2026-07-03, issue 64d5f13).
+
+    This writer/driver is not contract-native: it predates the feedbax recipe,
+    bundle, and manifest contracts. It may not run without deliberate
+    realignment. Do not copy it as a pattern for new analyses. The
+    port-or-delete decision is deferred to the report-stage era (feedbax
+    132f98c) / publication.
+
+    Scoped legacy surface: `analyze_phase3_output_feedback`. The math core in
+    this module is LIVE library code consumed by registered recipes; this
+    banner does not apply to the math core.
+    """
 
     reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
     gamma_ref = reference.gamma_references[0]
@@ -2596,7 +2635,18 @@ def write_gamma_sweep_outputs(
     discretization: str = DEFAULT_DISCRETIZATION,
     lane: str = DEFAULT_LANE,
 ) -> dict[str, Any]:
-    """Write gamma-penalized output-feedback robust sweep artifacts."""
+    """LEGACY (frozen 2026-07-03, issue 64d5f13).
+
+    This writer/driver is not contract-native: it predates the feedbax recipe,
+    bundle, and manifest contracts. It may not run without deliberate
+    realignment. Do not copy it as a pattern for new analyses. The
+    port-or-delete decision is deferred to the report-stage era (feedbax
+    132f98c) / publication.
+
+    Scoped legacy surface: `write_gamma_sweep_outputs`. The math core in this
+    module is LIVE library code consumed by registered recipes; this banner
+    does not apply to the math core.
+    """
 
     sweep = analyze_output_feedback_gamma_sweep(gamma_factors=gamma_factors)
     summary = gamma_sweep_summary(sweep)
@@ -2693,7 +2743,18 @@ def write_outputs(
     discretization: str = DEFAULT_DISCRETIZATION,
     lane: str = DEFAULT_LANE,
 ) -> dict[str, Any]:
-    """Write combined Phase 0B/1/3 output-feedback lane artifacts."""
+    """LEGACY (frozen 2026-07-03, issue 64d5f13).
+
+    This writer/driver is not contract-native: it predates the feedbax recipe,
+    bundle, and manifest contracts. It may not run without deliberate
+    realignment. Do not copy it as a pattern for new analyses. The
+    port-or-delete decision is deferred to the report-stage era (feedbax
+    132f98c) / publication.
+
+    Scoped legacy surface: `write_outputs`. The math core in this module is
+    LIVE library code consumed by registered recipes; this banner does not
+    apply to the math core.
+    """
 
     phase0b = analyze_phase0b_output_feedback()
     phase1 = analyze_phase1_output_feedback()
