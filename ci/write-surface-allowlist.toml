@@ -102,35 +102,6 @@ conditional = false
 # multi-adversary and force-profile vs delta_A emitter structure remains and is
 # still enumerated by the generated branch matrix.
 
-# --- scripts/train_part2_5.py ------------------------------------------------
-
-[[durable_write_sites]]
-path = "scripts/train_part2_5.py"
-function = "run_training"
-kind = "open_w"
-target = "spec_path"
-owner = "0efc92d"
-role = "run_spec"
-conditional = false
-
-[[durable_write_sites]]
-path = "scripts/train_part2_5.py"
-function = "run_training"
-kind = "fbx_save"
-target = "model_path"
-owner = "f5d9695"
-role = "model_artifact"
-conditional = false
-
-[[durable_write_sites]]
-path = "scripts/train_part2_5.py"
-function = "run_training"
-kind = "fbx_save"
-target = "history_path"
-owner = "f5d9695"
-role = "history_artifact"
-conditional = false
-
 # --- src/rlrmp/train/closed_loop_distillation.py -----------------------------
 
 [[durable_write_sites]]

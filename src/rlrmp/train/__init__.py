@@ -4,8 +4,7 @@ Modules in this package construct :class:`~feedbax.config.namespace.TreeNamespac
 hyperparameter trees from CLI argparse Namespaces and build task/model skeletons
 for training and checkpoint reload paths. The training loops themselves live in
 feedbax (:mod:`feedbax.training.train`) and the training-method-specific drivers
-live in ``scripts/`` (see e.g. ``scripts/train_minimax.py`` and
-``scripts/train_part2_5.py``).
+live in ``scripts/`` (see e.g. ``scripts/train_minimax.py``).
 
 Sub-modules are named by training method (``minimax``, ``standard``), not by
 experiment or phase. See the **Script placement** convention in the project

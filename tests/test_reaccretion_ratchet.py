@@ -107,7 +107,9 @@ def test_hand_rolled_run_spec_writer_sites_match_allowlist() -> None:
         "(validate_nominal_gru_run_spec / stamp_current_schema / "
         "accept_rlrmp_spec_payload)."
     )
-    assert found, "Run-spec writer-site scan found zero sites; scan scope may be broken"
+    # This retired-pattern inventory is allowed to reach zero when the last
+    # hand-rolled run-spec writer has been removed. The negative canary below
+    # still proves new unallowlisted writers are rejected.
 
 
 def test_reaccretion_ratchet_negative_canary_rejects_unlisted_instance() -> None:

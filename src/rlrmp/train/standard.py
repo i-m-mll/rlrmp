@@ -1,13 +1,12 @@
 """Hyperparameter construction for the non-adversarial (standard) trainer.
 
-Bug: 8404108 — extracted from ``scripts/train_part2_5.py`` so analysis /
-eval / diagnostic scripts can reconstruct the same hyperparameter tree
-from a saved ``config.json`` without ``sys.path``-injecting the training
+Bug: 8404108 — extracted from the retired ``scripts/train_part2_5.py`` so
+analysis / eval / diagnostic scripts can reconstruct the same hyperparameter
+tree from a saved ``config.json`` without importing the historical training
 script.
 
-The training driver itself remains in ``scripts/train_part2_5.py`` along
-with its CVaR / APT wrappers; only the hyperparameter constructors and the
-loss-mode menu are library-grade.
+Only the hyperparameter constructors and the loss-mode menu are retained as
+library-grade compatibility helpers.
 
 The four loss modes are:
 
