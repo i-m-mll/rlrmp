@@ -63,6 +63,10 @@ from rlrmp.model.cs_lss_gru import (
     CS_H0_CONTEXT_DIM,
     CS_H0_ENCODER_INIT,
 )
+from rlrmp.model.feedback_descriptors import (
+    DESCRIPTOR_PAYLOAD_KEY,
+    controller_feedback_descriptor_payload,
+)
 from rlrmp.model.feedbax_graph import (
     EXECUTION_BACKEND,
     GRAPH_PLANT_INTERVENOR_NODE,
@@ -1017,9 +1021,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
     adaptive_epsilon_curriculum = _adaptive_epsilon_curriculum_config_from_args(args)
     if adaptive_epsilon_curriculum["enabled"]:
         if not broad_epsilon_pgd_training.enabled:
-            raise ValueError(
-                "--adaptive-epsilon-curriculum requires --broad-epsilon-pgd-training."
-            )
+            raise ValueError("--adaptive-epsilon-curriculum requires --broad-epsilon-pgd-training.")
         if (
             broad_epsilon_pgd_training.adversary_mechanism
             != BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM
@@ -1433,6 +1435,7 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
     go_cue_dim = 1 if delayed_reach else 0
     sisu_condition_input = _sisu_conditioned_pgd_input_key(hps)
     sisu_condition_dim = 1 if sisu_condition_input is not None else 0
+    feedback_descriptors = _controller_feedback_descriptors(hps)
     return {
         "controller_kind": "gru",
         "plant_backend": plant_backend,
@@ -1465,6 +1468,8 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
             "delay_steps": int(hps.model.feedback_delay_steps),
             "basis": _controller_feedback_basis(hps),
             "dimension": _controller_feedback_dim(hps),
+            DESCRIPTOR_PAYLOAD_KEY: feedback_descriptors,
+            "descriptor_basis_hash": feedback_descriptors["descriptor_basis_hash"],
             "noise_std": stochastic_runtime["sensory_noise_std"],
             "noise_role": "sensory_feedback",
             "noise_timing": (
@@ -1586,8 +1591,10 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
         "loss_objective": str(hps.loss.objective),
         "initial_hidden_encoder": _initial_hidden_encoder_metadata(hps),
+        DESCRIPTOR_PAYLOAD_KEY: _controller_feedback_descriptors(hps),
     }
     model_structure = build_model_structure_summary(hps)
+    feedback_descriptors = _controller_feedback_descriptors(hps)
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "execution_backend": EXECUTION_BACKEND,
@@ -1623,6 +1630,7 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "task_spec": task_spec,
         "loss_spec": loss_spec,
         "training_spec": training_spec,
+        DESCRIPTOR_PAYLOAD_KEY: feedback_descriptors,
         "game_card_provenance": build_loss_game_card_provenance(hps),
         "model_structure": model_structure,
         "delayed_reach": _plain(hps.delayed_reach),
@@ -2503,9 +2511,8 @@ def run_full_training(
                 "batches_per_second": chunk_batches / chunk_duration_seconds,
             }
         )
-        if (
-            adaptive_epsilon_zero_adversary_guard["should_stop"]
-            and state.completed_batches < int(args.n_train_batches)
+        if adaptive_epsilon_zero_adversary_guard["should_stop"] and state.completed_batches < int(
+            args.n_train_batches
         ):
             stop_reason = ADAPTIVE_EPSILON_ZERO_ADVERSARY_STOP_REASON
             break
@@ -4073,6 +4080,13 @@ def _controller_feedback_dim(hps: TreeNamespace) -> int:
     return 4
 
 
+def _controller_feedback_descriptors(hps: TreeNamespace) -> dict[str, Any]:
+    return controller_feedback_descriptor_payload(
+        feedback_dim=_controller_feedback_dim(hps),
+        basis_id=_controller_feedback_basis(hps),
+    )
+
+
 def _validation_bins_metadata(hps: TreeNamespace) -> dict[str, Any]:
     if _target_relative_multitarget_enabled(hps):
         return target_relative_validation_manifest(hps.target_relative_multitarget)
@@ -4979,7 +4993,9 @@ def _apply_trial_spec_initial_state(model: Any, state: Any, trial_spec: Any) -> 
     return model.state_consistency_update(state)
 
 
-def _eval_trial_specs_for_training(model: Any, trial_specs: Any, init_states: Any, keys: Any) -> Any:
+def _eval_trial_specs_for_training(
+    model: Any, trial_specs: Any, init_states: Any, keys: Any
+) -> Any:
     def _run_trial(trial_spec, init_state, key):
         inputs = prepare_inputs(model, trial_spec.inputs)
         n_steps = infer_n_steps(inputs, getattr(trial_spec, "timeline", None))
@@ -5049,9 +5065,7 @@ def _update_adaptive_epsilon_state(
     ratio_eps = 1e-12
     relative_error = (damage_ema - target) / max(target, ratio_eps) if target > 0.0 else 0.0
     log_ratio_error = (
-        math.log(max(damage_ema, ratio_eps) / max(target, ratio_eps))
-        if target > 0.0
-        else 0.0
+        math.log(max(damage_ema, ratio_eps) / max(target, ratio_eps)) if target > 0.0 else 0.0
     )
     deadband = float(update_cfg.deadband_frac)
     lambda_value = float(state.lambda_value)
@@ -5609,7 +5623,9 @@ def _adaptive_epsilon_zero_checkpoint_evidence(
             gain_source = key
             break
 
-    target_damage = _latest_scalar(adaptive_epsilon_diagnostics.get("adaptive_epsilon_target_damage"))
+    target_damage = _latest_scalar(
+        adaptive_epsilon_diagnostics.get("adaptive_epsilon_target_damage")
+    )
     outer_weight = _latest_scalar(adaptive_epsilon_diagnostics.get("adaptive_epsilon_outer_weight"))
     active = (
         target_damage is not None
@@ -5618,9 +5634,7 @@ def _adaptive_epsilon_zero_checkpoint_evidence(
         and outer_weight > 0.0
     )
     zero_adversary = (
-        active
-        and gain is not None
-        and gain <= ADAPTIVE_EPSILON_ZERO_ADVERSARY_GAIN_TOLERANCE
+        active and gain is not None and gain <= ADAPTIVE_EPSILON_ZERO_ADVERSARY_GAIN_TOLERANCE
     )
     return {
         "active": bool(active),

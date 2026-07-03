@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -33,6 +33,10 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
 from rlrmp.analysis.pipelines._selected_eval_rollouts import (
     SelectedEvalRolloutProduct,
     initial_effector_position as rollout_initial_effector_position,
+)
+from rlrmp.model.feedback_descriptors import (
+    DESCRIPTOR_PAYLOAD_KEY,
+    resolve_controller_feedback_view_from_gru_input,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path
 from rlrmp.runtime.spec_migrations import (
@@ -229,14 +233,8 @@ def materialize_gru_evaluation_diagnostics(
             "jacobian_timepoints": list(jacobian_timepoints),
             "write_bulk_arrays": write_bulk_arrays,
         },
-        inputs=[
-            {"role": "run_spec", "path": run.run_spec_path}
-            for run in runs
-        ]
-        + [
-            {"role": "run_artifact_dir", "path": run.artifact_dir}
-            for run in runs
-        ]
+        inputs=[{"role": "run_spec", "path": run.run_spec_path} for run in runs]
+        + [{"role": "run_artifact_dir", "path": run.artifact_dir} for run in runs]
         + (
             []
             if preferred_checkpoint_manifest_path is None
@@ -461,12 +459,12 @@ def summarize_controller_feedback_scales(
     run_id: str | None = None,
     checkpoint_policy: str | None = None,
     statistic: str = CONTROLLER_FEEDBACK_SCALE_STATISTIC,
+    feedback_descriptor_payload: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Summarize rollout-derived scales for controller-visible feedback channels.
 
-    The GRU input may include non-feedback features before the feedback block. The
-    feedback contract is therefore read from the trailing four or six columns:
-    position x/y, velocity x/y, and optionally force/filter x/y.
+    Descriptor resolution owns the feedback-vector basis and any legacy adoption
+    needed for historical GRU inputs that did not serialize descriptor records.
     """
 
     if statistic != CONTROLLER_FEEDBACK_SCALE_STATISTIC:
@@ -476,36 +474,38 @@ def summarize_controller_feedback_scales(
     if gru_input.ndim < 4:
         raise ValueError("evaluation.gru_input must have shape replicate/trial/time/feature")
     input_dim = int(gru_input.shape[-1])
-    feedback_dim = 6 if input_dim >= 6 else 4 if input_dim >= 4 else input_dim
-    if feedback_dim < 4:
+    try:
+        feedback_view = resolve_controller_feedback_view_from_gru_input(
+            gru_input,
+            payload=feedback_descriptor_payload,
+            source="gru_evaluation_diagnostics.controller_feedback_scales",
+        )
+    except ValueError as exc:
         return {
             "status": "unavailable",
-            "reason": f"gru_input trailing feedback block requires at least 4 dims, got {input_dim}",
+            "reason": str(exc),
             "run_id": run_id,
             "checkpoint_policy": checkpoint_policy,
             "gru_input_dim": input_dim,
-            "feedback_dim": feedback_dim,
+            "feedback_dim": input_dim,
             "components": {},
         }
 
-    start = input_dim - feedback_dim
-    component_specs = [
-        ("position", "m", (0, 1)),
-        ("velocity", "m/s", (2, 3)),
-    ]
-    if feedback_dim >= 6:
-        component_specs.append(("force_filter", "N", (4, 5)))
-
     components: dict[str, Any] = {}
-    for name, units, basis_indices in component_specs:
-        absolute_indices = tuple(start + idx for idx in basis_indices)
-        values = gru_input[..., absolute_indices]
+    for component in feedback_view.iter_components():
+        values = component.values
+        if values is None:
+            raise ValueError("resolved controller feedback view did not bind values")
         norm = jnp.linalg.norm(values, axis=-1)
         abs_values = jnp.abs(values)
-        components[name] = {
-            "units": units,
-            "feedback_basis_indices": list(basis_indices),
-            "gru_input_indices": list(absolute_indices),
+        components[component.component_id] = {
+            "descriptor_id": component.descriptor_id,
+            "label": component.label,
+            "units": component.units,
+            "feedback_basis_indices": list(
+                range(component.slice.start, component.slice.stop, component.slice.step)
+            ),
+            "gru_input_indices": list(component.absolute_indices),
             "rms_norm": float(jnp.sqrt(jnp.mean(jnp.square(norm)))),
             "p95_norm": float(jnp.quantile(norm.reshape(-1), 0.95)),
             "per_component_rms": [
@@ -517,23 +517,23 @@ def summarize_controller_feedback_scales(
                 for idx in range(abs_values.shape[-1])
             ],
         }
-        components[name]["reference_scale"] = float(components[name][statistic])
-        components[name]["reference_scale_statistic"] = statistic
+        components[component.component_id]["reference_scale"] = float(
+            components[component.component_id][statistic]
+        )
+        components[component.component_id]["reference_scale_statistic"] = statistic
 
     return {
         "status": "available",
         "schema_version": "rlrmp.controller_feedback_scales.v1",
+        DESCRIPTOR_PAYLOAD_KEY: dict(feedback_view.payload),
+        "descriptor_basis_hash": feedback_view.descriptor_basis_hash,
         "run_id": run_id,
         "checkpoint_policy": checkpoint_policy,
-        "source": "nominal_selected_checkpoint_rollouts.states.net.input.trailing_feedback_channels",
-        "feedback_basis": (
-            "target_relative_delayed_feedback_plus_force_filter"
-            if feedback_dim >= 6
-            else "target_relative_delayed_feedback"
-        ),
+        "source": "nominal_selected_checkpoint_rollouts.states.net.input.controller_feedback",
+        "feedback_basis": feedback_view.basis_id,
         "gru_input_dim": input_dim,
-        "feedback_dim": feedback_dim,
-        "feedback_start_index": start,
+        "feedback_dim": feedback_view.feedback_dim,
+        "feedback_start_index": feedback_view.start_index,
         "statistic": statistic,
         "scale_rule": "amplitude = component.reference_scale * level_fraction_of_reach",
         "components": components,

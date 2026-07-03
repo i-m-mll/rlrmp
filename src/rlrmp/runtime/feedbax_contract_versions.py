@@ -13,7 +13,6 @@ SUPPORTED_TRAINING_RUN_SPEC_VERSIONS = (RUN_SPEC_SCHEMA_VERSION,)
 SUPPORTED_RUN_STATUS_CHECKPOINT_SCHEMA_VERSIONS = (1,)
 
 PENDING_VERSION_PINS = {
-    "descriptor_basis_hash": "owned by issue 844acc6",
     "data_product_payload": "owned by issue 108b4d3/product identity and follow-on data-product work",
 }
 

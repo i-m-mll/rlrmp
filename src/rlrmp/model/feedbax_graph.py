@@ -34,10 +34,14 @@ from feedbax.contracts.graphs.templates import (
 from feedbax.runtime import align_state_indices_like
 from feedbax.runtime.filters import FilterState
 from feedbax.runtime.graph import Graph, GraphState
-from feedbax.runtime.components import ElementwiseAffineModulator as RuntimeElementwiseAffineModulator
+from feedbax.runtime.components import (
+    ElementwiseAffineModulator as RuntimeElementwiseAffineModulator,
+)
 from feedbax.runtime.components import GRU as RuntimeGRU
 from feedbax.runtime.components import Linear as RuntimeLinear
 from feedbax.intervene import DynamicsMatrixPerturb
+
+from rlrmp.model.feedback_descriptors import controller_feedback_order_labels
 from feedbax.mechanics import Mechanics, MechanicsState
 from feedbax.mechanics.plant import DirectForceInput
 from feedbax.mechanics.skeleton.pointmass import PointMass
@@ -125,7 +129,7 @@ class RLRMPFeedbaxGraphBundle:
     ) -> dict[str, Any]:
         """Return the compact metadata embedded into ``run.json``."""
 
-        return {
+        metadata = {
             "schema_version": SCHEMA_VERSION,
             "graph_spec_path": graph_spec_path,
             "manifest_path": manifest_path,
@@ -134,6 +138,10 @@ class RLRMPFeedbaxGraphBundle:
             "component_policy": self.manifest["component_policy"],
             "legacy_loader": self.manifest["legacy_loader"],
         }
+        descriptors = self.manifest.get("controller_feedback_descriptors")
+        if descriptors is not None:
+            metadata["controller_feedback_descriptors"] = descriptors
+        return metadata
 
 
 def register_rlrmp_graph_components(component_registry: Any | None = None) -> Any:
@@ -1402,7 +1410,7 @@ def _runtime_linear_controller_params(component: Any) -> dict[str, Any] | None:
         "n_controls": int(component.n_controls),
         "n_states": int(component.n_states),
         "target_source": "input.task.effector_target.pos",
-        "feedback_order": ["pos_x", "pos_y", "vel_x", "vel_y"],
+        "feedback_order": controller_feedback_order_labels(),
     }
 
 
@@ -1569,7 +1577,9 @@ def native_recurrent_controller_subgraph(
     population_structure = _population_structure_from_params(population_params or {})
     network_input_size = int(input_size) - (1 if sisu_gating == "multiplicative" else 0)
     if network_input_size <= 0:
-        raise ValueError(f"Native recurrent controller input_size must be positive; got {input_size}.")
+        raise ValueError(
+            f"Native recurrent controller input_size must be positive; got {input_size}."
+        )
     graph = recurrent_controller_template_graph(
         input_size=network_input_size,
         hidden_size=int(hidden_size),
@@ -1597,7 +1607,7 @@ def native_recurrent_controller_subgraph(
                 updated_at="1970-01-01T00:00:00",
                 version="1.0.0",
                 tags=["rlrmp", "feedbax", "gru"],
-            )
+            ),
         }
     )
     if sisu_gating == "multiplicative":
@@ -1645,9 +1655,7 @@ def _with_recurrent_leaf_params(
     out = dict(nodes)
     for name, params_update in updates.items():
         node = out[name]
-        out[name] = node.model_copy(
-            update={"params": {**dict(node.params), **params_update}}
-        )
+        out[name] = node.model_copy(update={"params": {**dict(node.params), **params_update}})
     return out
 
 
@@ -1914,7 +1922,9 @@ def _with_multiplicative_sisu_modulation(
     )
 
 
-def recurrent_graph_state_to_network_state(net_state: Any, *, command: Any | None = None) -> NetworkState:
+def recurrent_graph_state_to_network_state(
+    net_state: Any, *, command: Any | None = None
+) -> NetworkState:
     """Return the legacy NetworkState view for native recurrent-controller graphs."""
 
     if hasattr(net_state, "output"):
@@ -2006,7 +2016,7 @@ def _linear_controller_params(hps: Any) -> dict[str, Any]:
         "n_controls": 2,
         "n_states": 4,
         "target_source": "input.task.effector_target.pos",
-        "feedback_order": ["pos_x", "pos_y", "vel_x", "vel_y"],
+        "feedback_order": controller_feedback_order_labels(),
     }
 
 
@@ -2022,7 +2032,7 @@ def _affine_linear_controller_params(
         "gain": jnp.zeros((n_steps, n_controls, n_states)).tolist(),
         "schedule_policy": "hold",
         "target_source": "input.task.effector_target.pos",
-        "feedback_order": ["pos_x", "pos_y", "vel_x", "vel_y"],
+        "feedback_order": controller_feedback_order_labels(),
         "reference_order": ["target_pos_x", "target_pos_y", "zero_vel_x", "zero_vel_y"],
     }
     if include_feedforward:

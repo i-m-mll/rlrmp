@@ -41,6 +41,11 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
     resolve_run_inputs,
 )
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
+from rlrmp.model.feedback_descriptors import (
+    COMPONENT_POSITION,
+    COMPONENT_VELOCITY,
+    resolve_controller_feedback_view,
+)
 from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import (
     REPO_ROOT,
@@ -86,8 +91,6 @@ EvaluationBin = Literal[
 
 OBSERVATION_ABLATION_INPUT_PREFIX = "feedback_ablation"
 OBSERVATION_DIM = 4
-POSITION_ONLY_MASK = (1.0, 1.0, 0.0, 0.0)
-VELOCITY_ONLY_MASK = (0.0, 0.0, 1.0, 1.0)
 NOMINAL_ENDPOINT_WARN_M = 0.08
 NOMINAL_TERMINAL_SPEED_WARN_M_S = 0.35
 COMMAND_RATIO_WARN = 2.0
@@ -346,9 +349,17 @@ def build_observation_ablation_spec(
     safe_bin = bin_id.replace("/", "_").replace(":", "_")
     label = f"feedback_ablation_{mode}_{safe_bin}"
     if mode == "position_only_observation":
-        return ObservationAblationSpec(mode=mode, label=label, mask=POSITION_ONLY_MASK)
+        return ObservationAblationSpec(
+            mode=mode,
+            label=label,
+            mask=_feedback_component_mask(COMPONENT_POSITION),
+        )
     if mode == "velocity_only_observation":
-        return ObservationAblationSpec(mode=mode, label=label, mask=VELOCITY_ONLY_MASK)
+        return ObservationAblationSpec(
+            mode=mode,
+            label=label,
+            mask=_feedback_component_mask(COMPONENT_VELOCITY),
+        )
     if mode == "normal":
         return ObservationAblationSpec(mode=mode, label=label)
     return ObservationAblationSpec(
@@ -356,6 +367,21 @@ def build_observation_ablation_spec(
         label=label,
         input_key=f"{OBSERVATION_ABLATION_INPUT_PREFIX}:{mode}:{safe_bin}",
     )
+
+
+def _feedback_component_mask(
+    component_id: str, *, feedback_dim: int = OBSERVATION_DIM
+) -> tuple[float, ...]:
+    descriptor_view = resolve_controller_feedback_view(
+        None,
+        feedback_dim=feedback_dim,
+        source="gru_feedback_ablation_mask",
+    )
+    component = descriptor_view.component(component_id)
+    mask = [0.0] * feedback_dim
+    for index in range(component.slice.start, component.slice.stop, component.slice.step):
+        mask[index] = 1.0
+    return tuple(mask)
 
 
 def insert_observation_ablation(model: Any, spec: ObservationAblationSpec) -> Any:

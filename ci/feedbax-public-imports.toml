@@ -129,6 +129,20 @@ symbols = [
 ]
 
 [[canonical_homes]]
+module = "feedbax.contracts.descriptors"
+symbols = [
+  "ComponentDescriptor",
+  "ComponentSelectorSyntax",
+  "ComponentSlice",
+  "DescriptorBasisIdentity",
+  "SelectorFallbackPolicyIdentity",
+  "SelectorRoleIdentity",
+  "VariableDescriptor",
+  "descriptor_basis_from_descriptors",
+  "resolve_descriptor_view",
+]
+
+[[canonical_homes]]
 module = "feedbax.contracts.graphs.materialization"
 symbols = ["materialize_array_store", "materialize_model_artifact"]
 
@@ -202,6 +216,10 @@ symbols = [
   "standard_supervised_method_payload",
   "standard_supervised_method_ref",
 ]
+
+[[canonical_homes]]
+module = "feedbax.contracts.value_schema"
+symbols = ["ValueSchema"]
 
 [[canonical_homes]]
 module = "feedbax.intervene"
