@@ -1,4 +1,8 @@
-"""Robust Bellman diagnostics for the linear same-game gate."""
+"""Legacy scope note: `write_outputs` is a frozen writer/driver surface. The
+math core in this module remains LIVE library code consumed by registered
+recipes.
+
+Robust Bellman diagnostics for the linear same-game gate."""
 
 from __future__ import annotations
 
@@ -2165,7 +2169,18 @@ def write_outputs(
     discretization: str = DEFAULT_DISCRETIZATION,
     lane: str = DEFAULT_LANE,
 ) -> dict[str, Any]:
-    """Write robust Bellman diagnostics."""
+    """LEGACY (frozen 2026-07-03, issue 64d5f13).
+
+    This writer/driver is not contract-native: it predates the feedbax recipe,
+    bundle, and manifest contracts. It may not run without deliberate
+    realignment. Do not copy it as a pattern for new analyses. The
+    port-or-delete decision is deferred to the report-stage era (feedbax
+    132f98c) / publication.
+
+    Scoped legacy surface: `write_outputs`. The math core in this module is
+    LIVE library code consumed by registered recipes; this banner does not
+    apply to the math core.
+    """
 
     summary = analyze_robust_bellman(discretization=discretization, lane=lane)
     results_dir = mkdir_p(REPO_ROOT / "results" / issue_id)
