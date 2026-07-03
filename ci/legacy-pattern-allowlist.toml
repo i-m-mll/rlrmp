@@ -176,15 +176,19 @@ owner = "54b0c2e"
 note = "Minimax adversarial training launcher."
 
 [[argparse_training_entry_points]]
+path = "src/rlrmp/train/closed_loop_distillation.py"
+owner = "be860c4"
+note = "Distillation training method CLI."
+
+[[argparse_training_entry_points]]
+path = "src/rlrmp/train/guided_distillation.py"
+owner = "be860c4"
+note = "Distillation training method CLI."
+
+[[argparse_training_entry_points]]
 path = "scripts/train_part2_5.py"
 owner = "64a04e0"
 note = "Legacy Part 2.5 experiment launcher; no specific migration child owns it yet."
-
-[[run_spec_writer_sites]]
-path = "scripts/train_minimax.py"
-function = "run_training"
-owner = "5b571ae"
-note = "Raw json.dump(config_dict, ...) to derive_spec_path(); no validate_nominal_gru_run_spec/stamp_current_schema call."
 
 [[run_spec_writer_sites]]
 path = "scripts/train_part2_5.py"

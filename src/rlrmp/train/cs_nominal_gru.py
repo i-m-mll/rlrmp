@@ -13,6 +13,7 @@ import math
 import os
 import subprocess
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
@@ -34,6 +35,7 @@ from feedbax.runtime.batch import BatchInfo
 from feedbax.runtime.graph import init_state_from_component
 from feedbax.runtime.iteration import run_component
 from feedbax.runtime.parameter_constraints import project_component_parameters
+from feedbax.training.checkpoint_custody import CheckpointCompatibilityError
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule
 from feedbax.training.trainer import get_model_parameters, init_task_trainer_history
 from feedbax.tasks import (
@@ -84,6 +86,14 @@ from rlrmp.loss import (
 from rlrmp.io import compact_json_dumps, write_compact_json
 from rlrmp.paths import REPO_ROOT, mkdir_p, run_spec_path
 from rlrmp.runtime.run_specs import validate_nominal_gru_run_spec
+from rlrmp.runtime.checkpoint_custody import (
+    has_custody_checkpoint,
+    has_feedbax_training_spec,
+    load_cs_checkpoint_transaction,
+    deserialize_pytree_slot,
+    serialize_pytree_slot,
+    write_cs_checkpoint_transaction,
+)
 from rlrmp.runtime.training_run_specs import (
     FEEDBAX_TRAINING_RUN_SPEC_KEY,
     RLRMP_RUN_SPEC_PAYLOAD_KEY,
@@ -2493,7 +2503,9 @@ def _run_full_training_from_context(
         )
     checkpoint_root = output_dir / "checkpoints"
     checkpoint_path = latest_checkpoint_path(checkpoint_root)
-    resume_from_checkpoint = bool(args.resume and checkpoint_path.exists())
+    resume_from_checkpoint = bool(
+        args.resume and (has_custody_checkpoint(checkpoint_root) or checkpoint_path.exists())
+    )
     checkpoint_completed_batches = None
     optimizer_state_template = template_state.optimizer_state
     if resume_from_checkpoint:
@@ -2516,6 +2528,7 @@ def _run_full_training_from_context(
             history_template=None,
             adversary_policy_template=adversary_policy_template,
             adversary_optimizer_state_template=adversary_optimizer_state_template,
+            run_spec=run_spec,
         )
         if resume_from_checkpoint
         else template_state
@@ -2819,7 +2832,30 @@ def save_training_checkpoint(
     args: argparse.Namespace,
     run_spec: dict[str, Any],
 ) -> Path:
-    """Write a numbered checkpoint and atomically repoint ``checkpoint_latest``."""
+    """Write a Feedbax custody checkpoint and compatibility materialization."""
+
+    metadata = _training_checkpoint_metadata(args, state, run_spec)
+    if has_feedbax_training_spec(run_spec):
+        write_cs_checkpoint_transaction(
+            checkpoint_root,
+            run_spec=run_spec,
+            completed_batches=state.completed_batches,
+            slots=_cs_checkpoint_slots(state, metadata),
+        )
+    return _save_training_checkpoint_materialization(
+        checkpoint_root,
+        state,
+        metadata=metadata,
+    )
+
+
+def _save_training_checkpoint_materialization(
+    checkpoint_root: Path,
+    state: TrainingState,
+    *,
+    metadata: dict[str, Any],
+) -> Path:
+    """Write the historical numbered checkpoint directory for compatibility."""
 
     checkpoint_root.mkdir(parents=True, exist_ok=True)
     checkpoint_name = f"checkpoint_{state.completed_batches:07d}"
@@ -2840,19 +2876,6 @@ def save_training_checkpoint(
         )
     if state.history is not None:
         _save_pytree(tmp / "history.eqx", state.history)
-    metadata = {
-        "schema_version": f"{SCHEMA_VERSION}.checkpoint.v1",
-        "issue": str(args.issue),
-        "completed_batches": state.completed_batches,
-        "n_train_batches": int(args.n_train_batches),
-        "checkpoint_interval_batches": int(args.checkpoint_interval_batches),
-        "seed": int(args.seed),
-        "next_prng_key": _plain(state.key),
-        "stochastic_preset": str(args.stochastic_preset),
-        "run_spec": run_spec,
-    }
-    if state.adaptive_epsilon_state is not None:
-        metadata["adaptive_epsilon_state"] = state.adaptive_epsilon_state.to_json()
     _atomic_write_json(tmp / "metadata.json", metadata)
     if target.exists():
         _remove_tree(target)
@@ -2877,8 +2900,53 @@ def load_latest_checkpoint(
     history_template: Any | None = None,
     adversary_policy_template: Any | None = None,
     adversary_optimizer_state_template: Any | None = None,
+    run_spec: dict[str, Any] | None = None,
 ) -> TrainingState:
-    """Load ``checkpoint_latest`` using explicit model and optimizer templates."""
+    """Load the latest checkpoint using Feedbax custody, with legacy fallback."""
+
+    if (
+        run_spec is not None
+        and has_feedbax_training_spec(run_spec)
+        and has_custody_checkpoint(checkpoint_root)
+    ):
+        loaded = load_cs_checkpoint_transaction(
+            checkpoint_root,
+            run_spec=run_spec,
+            expected_slots=_cs_expected_slots(
+                model_template=model_template,
+                optimizer_state_template=optimizer_state_template,
+                adversary_policy_template=adversary_policy_template,
+                adversary_optimizer_state_template=adversary_optimizer_state_template,
+            ),
+        )
+        return _training_state_from_cs_slots(
+            loaded.slots,
+            model_template=model_template,
+            optimizer_state_template=optimizer_state_template,
+            adversary_policy_template=adversary_policy_template,
+            adversary_optimizer_state_template=adversary_optimizer_state_template,
+        )
+
+    return _load_latest_checkpoint_materialization(
+        checkpoint_root,
+        model_template=model_template,
+        optimizer_state_template=optimizer_state_template,
+        history_template=history_template,
+        adversary_policy_template=adversary_policy_template,
+        adversary_optimizer_state_template=adversary_optimizer_state_template,
+    )
+
+
+def _load_latest_checkpoint_materialization(
+    checkpoint_root: Path,
+    *,
+    model_template: Any,
+    optimizer_state_template: Any,
+    history_template: Any | None = None,
+    adversary_policy_template: Any | None = None,
+    adversary_optimizer_state_template: Any | None = None,
+) -> TrainingState:
+    """Load historical ``checkpoint_latest`` using explicit PyTree templates."""
 
     checkpoint_path = latest_checkpoint_path(checkpoint_root)
     if not checkpoint_path.exists():
@@ -2946,6 +3014,117 @@ def load_latest_checkpoint(
         adversary_policy=adversary_policy,
         adversary_optimizer_state=adversary_optimizer_state,
         adaptive_epsilon_state=adaptive_epsilon_state,
+    )
+
+
+def _training_checkpoint_metadata(
+    args: argparse.Namespace,
+    state: TrainingState,
+    run_spec: dict[str, Any],
+) -> dict[str, Any]:
+    metadata = {
+        "schema_version": f"{SCHEMA_VERSION}.checkpoint.v1",
+        "issue": str(args.issue),
+        "completed_batches": state.completed_batches,
+        "n_train_batches": int(args.n_train_batches),
+        "checkpoint_interval_batches": int(args.checkpoint_interval_batches),
+        "seed": int(args.seed),
+        "next_prng_key": _plain(state.key),
+        "stochastic_preset": str(args.stochastic_preset),
+        "run_spec": run_spec,
+    }
+    if state.adaptive_epsilon_state is not None:
+        metadata["adaptive_epsilon_state"] = state.adaptive_epsilon_state.to_json()
+    return metadata
+
+
+def _cs_checkpoint_slots(
+    state: TrainingState,
+    metadata: dict[str, Any],
+) -> dict[str, Any]:
+    slots: dict[str, Any] = {
+        "model": serialize_pytree_slot(state.model),
+        "optimizer": serialize_pytree_slot(state.optimizer_state),
+        "prng": state.key,
+        "completed_batches": jnp.asarray(state.completed_batches, dtype=jnp.int32),
+        "checkpoint_metadata": metadata,
+    }
+    if state.history is not None:
+        slots["history"] = state.history
+    if state.adversary_policy is not None:
+        slots["adversary_policy"] = serialize_pytree_slot(state.adversary_policy)
+    if state.adversary_optimizer_state is not None:
+        slots["adversary_optimizer"] = serialize_pytree_slot(
+            state.adversary_optimizer_state
+        )
+    if state.adaptive_epsilon_state is not None:
+        slots["adaptive_epsilon_state"] = state.adaptive_epsilon_state
+    return slots
+
+
+def _cs_expected_slots(
+    *,
+    model_template: Any,
+    optimizer_state_template: Any,
+    adversary_policy_template: Any | None,
+    adversary_optimizer_state_template: Any | None,
+) -> dict[str, Any]:
+    expected: dict[str, Any] = {
+        "prng": jnp.asarray([0, 0], dtype=jnp.uint32),
+        "completed_batches": jnp.asarray(0, dtype=jnp.int32),
+    }
+    return expected
+
+
+def _training_state_from_cs_slots(
+    slots: Mapping[str, Any],
+    *,
+    model_template: Any,
+    optimizer_state_template: Any,
+    adversary_policy_template: Any | None,
+    adversary_optimizer_state_template: Any | None,
+) -> TrainingState:
+    try:
+        model = deserialize_pytree_slot(slots["model"], model_template, slot="model")
+        optimizer_state = deserialize_pytree_slot(
+            slots["optimizer"],
+            optimizer_state_template,
+            slot="optimizer",
+        )
+        adversary_policy = (
+            deserialize_pytree_slot(
+                slots["adversary_policy"],
+                adversary_policy_template,
+                slot="adversary_policy",
+            )
+            if adversary_policy_template is not None and "adversary_policy" in slots
+            else None
+        )
+        adversary_optimizer_state = (
+            deserialize_pytree_slot(
+                slots["adversary_optimizer"],
+                adversary_optimizer_state_template,
+                slot="adversary_optimizer",
+            )
+            if (
+                adversary_optimizer_state_template is not None
+                and "adversary_optimizer" in slots
+            )
+            else None
+        )
+    except Exception as exc:
+        raise CheckpointCompatibilityError(
+            "checkpoint PyTree slot could not be deserialized with the resume template"
+        ) from exc
+    return TrainingState(
+        model=model,
+        optimizer_state=optimizer_state,
+        completed_batches=int(slots["completed_batches"]),
+        key=jnp.asarray(slots["prng"], dtype=jnp.uint32),
+        history=slots.get("history"),
+        adversary_policy=adversary_policy,
+        adversary_optimizer_state=adversary_optimizer_state,
+        adaptive_epsilon_state=slots.get("adaptive_epsilon_state"),
     )
 
 

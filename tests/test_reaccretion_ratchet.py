@@ -49,6 +49,8 @@ SANCTIONED_RUN_SPEC_EMITTER_NAMES = frozenset(
     {
         "validate_nominal_gru_run_spec",
         "validate_nominal_gru_run_spec_file",
+        "validate_minimax_run_spec",
+        "validate_minimax_run_spec_file",
         "stamp_current_schema",
         "accept_rlrmp_spec_payload",
     }

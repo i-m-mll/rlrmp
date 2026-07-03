@@ -39,8 +39,6 @@ Usage example::
 """
 
 from collections.abc import Callable
-from functools import partial
-from typing import Optional
 
 import equinox as eqx
 import jax
@@ -95,8 +93,9 @@ def _inject_adversary_delta_A(
     Broadcasts a single ``delta_A`` matrix across the batch by stacking. The
     plant intervenor at ``PLANT_INTERVENOR_LABEL`` must already be a
     ``DynamicsMatrixPerturb`` (its params type is ``DynamicsMatrixPerturbParams``)
-    — typically wired up by ``swap_plant_intervenor_to_dynamics_matrix`` before
-    the adversarial phase begins. Bug: c723082.
+    authored into the graph before materialization. The adversarial phase sets
+    both ``active`` and ``delta_A`` through the component-parameter
+    ``params_override`` lane. Bug: c723082, 54b0c2e.
 
     Args:
         trial_specs: Batched trial specifications.
@@ -106,19 +105,33 @@ def _inject_adversary_delta_A(
     Returns:
         Modified trial_specs with the ``delta_A`` injected on every trial.
     """
+    n_steps = _infer_trial_input_steps(trial_specs)
     delta_A_batched = jnp.broadcast_to(
-        delta_A[None, ...], (batch_size,) + delta_A.shape
+        delta_A[None, None, ...], (batch_size, n_steps, *delta_A.shape)
     )
+    active = jnp.ones((batch_size, n_steps), dtype=bool)
     new_intervene = eqx.tree_at(
-        lambda spec: spec.delta_A,
+        lambda spec: (spec.active, spec.delta_A),
         trial_specs.intervene[PLANT_INTERVENOR_LABEL],
-        delta_A_batched,
+        (TimeSeriesParam(active), TimeSeriesParam(delta_A_batched)),
     )
     return eqx.tree_at(
         lambda ts: ts.intervene[PLANT_INTERVENOR_LABEL],
         trial_specs,
         new_intervene,
     )
+
+
+def _infer_trial_input_steps(trial_specs: TaskTrialSpec) -> int:
+    """Infer the rollout input length for batched adversary parameter overrides."""
+    leaves = [
+        leaf
+        for leaf in jt.leaves(trial_specs.inputs)
+        if eqx.is_array(leaf) and leaf.ndim >= 2
+    ]
+    if not leaves:
+        raise ValueError("cannot infer trial input length for adversary delta_A injection")
+    return int(leaves[0].shape[1])
 
 
 def _adversary_loss(

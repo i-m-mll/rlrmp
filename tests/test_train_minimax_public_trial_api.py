@@ -105,6 +105,7 @@ def test_multiplicative_minimax_adversarial_selector_includes_sisu_alpha() -> No
         loss_update_ratio=0.3,
         hidden_type="gru",
         sisu_gating="multiplicative",
+        n_replicates=1,
     )
     hps = train_minimax.build_hps(args)
     if hps.pert.type == "gusts":
@@ -116,7 +117,7 @@ def test_multiplicative_minimax_adversarial_selector_includes_sisu_alpha() -> No
 
     assert trainable[-1].shape[-1] == hps.model.hidden_size
     assert where_trainable[-1].shape == trainable[-1].shape
-    assert jnp.all(where_trainable[-1] == pair.model.nodes["net"].sisu_alpha)
+    assert jnp.all(where_trainable[-1] == pair.model.nodes["net"].nodes["sisu_modulator"].gain)
 
 
 def test_linear_tracker_minimax_selector_uses_affine_gain_and_feedforward() -> None:
@@ -152,4 +153,4 @@ def test_linear_tracker_minimax_selector_uses_affine_gain_and_feedforward() -> N
     assert trainable[1] is pair.model.nodes["net"].feedforward
     state_view = pair.model.state_view(init_state_from_component(pair.model))
     assert state_view.net.output.shape[-1] == 2
-    assert state_view.net.hidden.shape[-1] == 1
+    assert state_view.net.hidden.shape[-1] == 2

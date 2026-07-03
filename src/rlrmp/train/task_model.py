@@ -12,6 +12,7 @@ import jax.random as jr
 from feedbax import AbstractTask, TaskTrialSpec, WhereDict
 from feedbax.intervene import (
     CurlFieldParams,
+    DynamicsMatrixPerturbParams,
     FixedFieldParams,
     schedule_intervenor,
 )
@@ -135,6 +136,7 @@ disturbance_extra_params = LDict.of("train__method")(
                 field=scaled_sampler(vector_with_gaussian_length, hps.pert.std)
             ),
             "gusts": get_gusts_fn,
+            "dynamics_matrix": lambda hps: {},
         },
     }
 )
@@ -220,6 +222,14 @@ def get_disturbance_params(hps: TreeNamespace):
             FixedFieldParams,
             scale=scale,
             active=active,
+            **extra_params,
+        )
+    elif pert_type == "dynamics_matrix":
+        return _scheduled_intervention_params(
+            DynamicsMatrixPerturbParams,
+            scale=scale,
+            active=False,
+            delta_A=jnp.zeros((2, 4), dtype=jnp.float32),
             **extra_params,
         )
     else:

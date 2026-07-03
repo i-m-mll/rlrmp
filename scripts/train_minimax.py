@@ -21,15 +21,16 @@ Usage:
         --output-dir results/pop_adversary
 """
 
-import argparse
 import json
 import logging
 import os
 import shutil
 import subprocess
+import sys
 import time
 from functools import partial
 from pathlib import Path
+from types import SimpleNamespace
 
 import equinox as eqx
 import jax
@@ -45,6 +46,8 @@ from jax_cookbook import save as fbx_save
 from feedbax.runtime.iteration import run_component
 from feedbax.runtime.batch import BatchInfo
 from feedbax.objectives.streaming import make_streaming_loss_fn
+from feedbax.contracts.training import TrainingRunSpec
+from feedbax.training.checkpoint_custody import CheckpointCompatibilityError
 from feedbax.training.train import (
     TaskTrainer,
     make_delayed_cosine_schedule,
@@ -56,13 +59,10 @@ from rlrmp.adversarial_training import (
     _inject_adversary_forces,
 )
 from rlrmp.adversary import GaussianBumpAdversary, LinearDynamicsAdversary
+from rlrmp.intervention_compat import LINEAR_DYNAMICS_ADVERSARY_COMPONENT_PARAMETER_TARGET
 from rlrmp.model.feedbax_graph import (
     build_runtime_rlrmp_feedbax_graph_bundle,
     write_graph_spec_bundle,
-)
-from rlrmp.intervention_compat import (
-    swap_plant_intervenor_to_dynamics_matrix,
-    swap_task_intervention_to_dynamics_matrix,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p, run_spec_path
 from rlrmp.model.trainable import staged_network_trainable_parts
@@ -77,8 +77,26 @@ from rlrmp.train.progress import (
 # library module; previously defined inline here and pulled by analysis scripts
 # via sys.path injection). Re-imported for internal use; analysis / eval scripts
 # should import from `rlrmp.train` directly.
-from rlrmp.train.minimax import build_hps  # noqa: F401  (re-exported intentionally)
+from rlrmp.train.minimax import (  # noqa: F401  (re-exported intentionally)
+    build_hps,
+    build_minimax_training_run_spec,
+    legacy_cli_args_to_minimax_config,
+    minimax_config_namespace,
+    minimax_training_run_spec_from_file,
+    minimax_training_run_spec_to_config,
+    validate_minimax_run_spec,
+)
 from rlrmp.train.task_model import setup_task_model_pair
+from rlrmp.runtime.checkpoint_custody import (
+    MINIMAX_ADVERSARIAL_BARRIER,
+    MINIMAX_WARMUP_BARRIER,
+    deserialize_pytree_slot,
+    has_custody_checkpoint,
+    load_minimax_checkpoint_transaction,
+    serialize_pytree_slot,
+    spec_digests,
+    write_minimax_checkpoint_transaction,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -266,7 +284,7 @@ def _collect_gpu_info() -> dict:
     return info
 
 
-def _configure_jax_runtime(args: argparse.Namespace) -> None:
+def _configure_jax_runtime(args) -> None:
     """Configure JAX runtime options that must be set before first compile."""
     cache_dir = args.jax_cache_dir or os.environ.get("JAX_COMPILATION_CACHE_DIR")
     if cache_dir:
@@ -299,8 +317,11 @@ def _save_adversarial_checkpoint(
     adv_losses: list,
     ctrl_losses: list,
     adv_indices: list,
+    *,
+    training_spec: TrainingRunSpec | None = None,
+    rng_key=None,
 ) -> None:
-    """Save adversarial training state to a checkpoint directory.
+    """Save adversarial training state to custody and a materialized directory.
 
     Writes atomically: assembles state in a temp dir then renames it over
     the previous checkpoint so a preempted write never leaves corrupt state.
@@ -321,6 +342,30 @@ def _save_adversarial_checkpoint(
         ctrl_losses: Controller loss history.
         adv_indices: Active adversary index history.
     """
+    model = jtu.tree_unflatten(treedef_model, flat_model)
+    if training_spec is not None:
+        write_minimax_checkpoint_transaction(
+            checkpoint_dir,
+            training_spec=training_spec,
+            barrier_name=MINIMAX_ADVERSARIAL_BARRIER,
+            batch_idx=batch_idx,
+            active_member_index=adv_indices[-1] if adv_indices else -1,
+            slots=_minimax_checkpoint_slots(
+                model=model,
+                adversaries=adversaries,
+                adv_opt_states=adv_opt_states,
+                ctrl_opt_state=ctrl_opt_state,
+                rng_key=rng_key,
+                batch_idx=batch_idx,
+                active_member_index=adv_indices[-1] if adv_indices else -1,
+                adv_losses=adv_losses,
+                ctrl_losses=ctrl_losses,
+                adv_indices=adv_indices,
+                training_spec=training_spec,
+            ),
+            population_member_ids=_adversary_population_member_ids(adversaries),
+        )
+
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     target = checkpoint_dir / _CHECKPOINT_SUBDIR
 
@@ -332,7 +377,6 @@ def _save_adversarial_checkpoint(
 
     try:
         # 1. Model: reconstruct → serialize leaves
-        model = jtu.tree_unflatten(treedef_model, flat_model)
         eqx.tree_serialise_leaves(tmp_dir / "model.eqx", model)
 
         # 2. Adversaries: serialize each
@@ -373,6 +417,8 @@ def _load_adversarial_checkpoint(
     adv_opt_states_template: list,
     ctrl_opt_state_template,
     treedef_model,
+    *,
+    training_spec: TrainingRunSpec | None = None,
 ):
     """Load adversarial training state from ``checkpoint_latest/``.
 
@@ -389,6 +435,67 @@ def _load_adversarial_checkpoint(
         Tuple of ``(flat_model, adversaries, adv_opt_states, ctrl_opt_state,
         resume_batch_idx, adv_losses, ctrl_losses, adv_indices)``.
     """
+    if training_spec is not None and has_custody_checkpoint(checkpoint_dir):
+        loaded = load_minimax_checkpoint_transaction(
+            checkpoint_dir,
+            training_spec=training_spec,
+            expected_slots=_minimax_expected_slots(
+                model_template=model_template,
+                adversaries_template=adversaries_template,
+                adv_opt_states_template=adv_opt_states_template,
+                ctrl_opt_state_template=ctrl_opt_state_template,
+            ),
+            expected_population_member_ids=_adversary_population_member_ids(
+                adversaries_template
+            ),
+        )
+        slots = loaded.slots
+        try:
+            controller = deserialize_pytree_slot(
+                slots["controller"],
+                model_template,
+                slot="controller",
+            )
+            adversaries = [
+                deserialize_pytree_slot(blob, template, slot="adversary_population")
+                for blob, template in zip(
+                    slots["adversary_population"],
+                    adversaries_template,
+                    strict=True,
+                )
+            ]
+            adv_opt_states = deserialize_pytree_slot(
+                slots["adversary_optimizer"],
+                adv_opt_states_template,
+                slot="adversary_optimizer",
+            )
+            ctrl_opt_state = deserialize_pytree_slot(
+                slots["controller_optimizer"],
+                ctrl_opt_state_template,
+                slot="controller_optimizer",
+            )
+        except Exception as exc:
+            raise CheckpointCompatibilityError(
+                "minimax checkpoint PyTree slot could not be deserialized with "
+                "the resume template"
+            ) from exc
+        if len(adversaries) != len(adversaries_template):
+            raise CheckpointCompatibilityError(
+                "population identity mismatch for slot 'adversary_population'"
+            )
+        flat_model = jtu.tree_flatten(controller)[0]
+        return (
+            flat_model,
+            adversaries,
+            adv_opt_states,
+            ctrl_opt_state,
+            int(slots["active_batch_index"]),
+            list(slots.get("adversary_losses", [])),
+            list(slots.get("controller_losses", [])),
+            list(slots.get("adversary_indices", [])),
+            jnp.asarray(slots["rng"], dtype=jnp.uint32),
+        )
+
     target = checkpoint_dir / _CHECKPOINT_SUBDIR
     if not target.exists():
         raise FileNotFoundError(f"No checkpoint found at {target}")
@@ -426,6 +533,97 @@ def _load_adversarial_checkpoint(
         meta["ctrl_losses"],
         meta["adv_indices"],
     )
+
+
+def _write_warmup_boundary_checkpoint(
+    checkpoint_dir: Path,
+    *,
+    training_spec: TrainingRunSpec,
+    model,
+    adversaries: list,
+    adv_opt_states: list,
+    ctrl_opt_state,
+    rng_key,
+    warmup_history,
+) -> None:
+    write_minimax_checkpoint_transaction(
+        checkpoint_dir,
+        training_spec=training_spec,
+        barrier_name=MINIMAX_WARMUP_BARRIER,
+        batch_idx=-1,
+        active_member_index=-1,
+        slots=_minimax_checkpoint_slots(
+            model=model,
+            adversaries=adversaries,
+            adv_opt_states=adv_opt_states,
+            ctrl_opt_state=ctrl_opt_state,
+            rng_key=rng_key,
+            batch_idx=-1,
+            active_member_index=-1,
+            adv_losses=[],
+            ctrl_losses=[],
+            adv_indices=[],
+            training_spec=training_spec,
+            warmup_history=warmup_history,
+        ),
+        population_member_ids=_adversary_population_member_ids(adversaries),
+    )
+
+
+def _minimax_checkpoint_slots(
+    *,
+    model,
+    adversaries: list,
+    adv_opt_states: list,
+    ctrl_opt_state,
+    rng_key,
+    batch_idx: int,
+    active_member_index: int,
+    adv_losses: list,
+    ctrl_losses: list,
+    adv_indices: list,
+    training_spec: TrainingRunSpec,
+    warmup_history=None,
+) -> dict[str, object]:
+    slots: dict[str, object] = {
+        "controller": serialize_pytree_slot(model),
+        "controller_optimizer": serialize_pytree_slot(ctrl_opt_state),
+        "adversary_population": [
+            serialize_pytree_slot(adversary) for adversary in adversaries
+        ],
+        "adversary_optimizer": serialize_pytree_slot(adv_opt_states),
+        "rng": jnp.asarray(rng_key, dtype=jnp.uint32),
+        "active_batch_index": jnp.asarray(batch_idx, dtype=jnp.int32),
+        "active_member_index": jnp.asarray(active_member_index, dtype=jnp.int32),
+        "spec_digests": spec_digests(training_spec),
+    }
+    if adv_losses:
+        slots["adversary_losses"] = list(adv_losses)
+    if ctrl_losses:
+        slots["controller_losses"] = list(ctrl_losses)
+    if adv_indices:
+        slots["adversary_indices"] = list(adv_indices)
+    if warmup_history is not None:
+        slots["warmup_history"] = warmup_history
+    return slots
+
+
+def _minimax_expected_slots(
+    *,
+    model_template,
+    adversaries_template: list,
+    adv_opt_states_template: list,
+    ctrl_opt_state_template,
+) -> dict[str, object]:
+    return {
+        "rng": jnp.asarray([0, 0], dtype=jnp.uint32),
+        "active_batch_index": jnp.asarray(0, dtype=jnp.int32),
+        "active_member_index": jnp.asarray(0, dtype=jnp.int32),
+    }
+
+
+def _adversary_population_member_ids(adversaries: list) -> dict[str, list[str]]:
+    return {"adversary_population": [f"adversary_{index}" for index, _ in enumerate(adversaries)]}
 
 
 # ---------------------------------------------------------------------------
@@ -501,13 +699,17 @@ def _eval_trials_streaming(task, model, trial_specs, keys, loss_func):
     def eval_single(trial_spec, key):
         key_run = jr.split(key, 2)[1]
         prepared = prepare_trial(model, trial_spec)
+        prepared_inputs = _with_declarative_component_parameter_inputs(
+            model,
+            prepared.inputs,
+        )
 
         # Build per-step streaming loss closure (single trial, no batch dim)
         streaming_fn = make_streaming_loss_fn(loss_func, trial_spec, model, prepared.n_steps)
 
         _outputs, _final_state, total_loss = run_component(
             model,
-            prepared.inputs,
+            prepared_inputs,
             prepared.init_state,
             key=key_run,
             n_steps=prepared.n_steps,
@@ -517,6 +719,24 @@ def _eval_trials_streaming(task, model, trial_specs, keys, loss_func):
 
     per_trial_losses = eqx.filter_vmap(eval_single)(trial_specs, keys)
     return per_trial_losses.mean()
+
+
+def _with_declarative_component_parameter_inputs(model, inputs):
+    """Mirror legacy prepared intervention input under the declared task binding."""
+    target = LINEAR_DYNAMICS_ADVERSARY_COMPONENT_PARAMETER_TARGET
+    legacy_key = f"intervene:{target['task_parameter_label']}"
+    declared_key = (
+        f"task:{target['source_data_id']}->"
+        f"{target['target_node_id']}.{target['target_port']}"
+    )
+    if (
+        isinstance(inputs, dict)
+        and legacy_key in inputs
+        and declared_key in getattr(model, "input_ports", ())
+        and declared_key not in inputs
+    ):
+        return {**inputs, declared_key: inputs[legacy_key]}
+    return inputs
 
 
 def _make_where_train(sisu_gating: str = "additive"):
@@ -540,8 +760,22 @@ def _make_where_train(sisu_gating: str = "additive"):
     return {0: where_train_fn}
 
 
-def run_training(args: argparse.Namespace) -> None:
-    """Run minimax adversarial training."""
+def run_training(training_run_spec) -> None:
+    """Run minimax adversarial training from a validated TrainingRunSpec."""
+    if isinstance(training_run_spec, dict) and "feedbax_training_run_spec" in training_run_spec:
+        validate_minimax_run_spec(training_run_spec, spec_dir=Path("."))
+        feedbax_spec = TrainingRunSpec.model_validate(
+            training_run_spec["feedbax_training_run_spec"]
+        )
+        config_dict = dict(training_run_spec)
+    else:
+        feedbax_spec = (
+            training_run_spec
+            if isinstance(training_run_spec, TrainingRunSpec)
+            else TrainingRunSpec.model_validate(training_run_spec)
+        )
+        config_dict = None
+    args = minimax_config_namespace(minimax_training_run_spec_to_config(feedbax_spec))
     _configure_jax_runtime(args)
 
     output_dir = Path(args.output_dir)
@@ -577,15 +811,17 @@ def run_training(args: argparse.Namespace) -> None:
 
     graph_bundle = build_runtime_rlrmp_feedbax_graph_bundle(hps, pair.model)
     graph_path = write_graph_spec_bundle(graph_bundle, spec_dir)
-
-    config_dict = {
-        **vars(args),
-        "git": _get_git_metadata(),
-        "gpu_info": _collect_gpu_info(),
-        "feedbax_graph": graph_bundle.to_run_metadata(
+    config_dict = build_minimax_training_run_spec(
+        minimax_training_run_spec_to_config(feedbax_spec),
+        graph_spec=graph_bundle.graph_spec,
+        output_dir=output_dir,
+        spec_dir=spec_dir,
+        git=_get_git_metadata(),
+        gpu_info=_collect_gpu_info(),
+        feedbax_graph=graph_bundle.to_run_metadata(
             graph_spec_path=graph_path.name,
         ),
-    }
+    )
     with open(spec_path, "w") as f:
         json.dump(config_dict, f, indent=2, default=str)
     logger.info("Saved run spec to %s", spec_path)
@@ -633,7 +869,7 @@ def run_training(args: argparse.Namespace) -> None:
             # expected by build_hps
             for k in ("git", "output_dir", "checkpoint_every", "resume"):
                 stored_hps.pop(k, None)
-            resume_args = argparse.Namespace(**stored_hps)
+            resume_args = minimax_config_namespace(stored_hps)
             resume_hps = build_hps(resume_args)
             return setup_task_model_pair(resume_hps, key=key).model
 
@@ -654,7 +890,7 @@ def run_training(args: argparse.Namespace) -> None:
 
             stored_hps.pop("git", None)
             stored_hps.pop("output_dir", None)
-            stored_args = argparse.Namespace(**stored_hps)
+            stored_args = SimpleNamespace(**stored_hps)
             stored_hps_obj = build_hps_standard(stored_args)
             return setup_task_model_pair(stored_hps_obj, key=key).model
 
@@ -720,37 +956,7 @@ def run_training(args: argparse.Namespace) -> None:
     fbx_save(warmup_model_path, warmup_model, hyperparameters=config_dict)
     logger.info("Saved warm-start model to %s", warmup_model_path)
 
-    # -----------------------------------------------------------------------
-    # Optional: swap plant intervenor for the adversarial phase.
-    # When --adversary-type linear_dynamics, replace the warmup-phase
-    # FixedField/CurlField intervenor with DynamicsMatrixPerturb so the
-    # adversary can drive ΔA·x perturbations through the same disturbance
-    # channel. Bug: c723082.
-    # -----------------------------------------------------------------------
     use_linear_dynamics = args.adversary_type == "linear_dynamics"
-    if use_linear_dynamics:
-        from rlrmp.disturbance import PLANT_INTERVENOR_LABEL as _PLABEL
-
-        logger.info(
-            "Swapping plant intervenor at label %r to DynamicsMatrixPerturb "
-            "(eta_max=%g, pgd_steps=%d, pgd_lr=%g) for adversarial phase",
-            _PLABEL,
-            args.linear_dynamics_eta_max,
-            args.linear_dynamics_pgd_steps,
-            args.linear_dynamics_lr,
-        )
-        # Swap on the ensembled model (jt.map over the ensemble pytree).
-        warmup_model = jt.map(
-            lambda m: swap_plant_intervenor_to_dynamics_matrix(
-                m,
-                _PLABEL,
-                mass=hps.model.effector_mass,
-            ),
-            warmup_model,
-            is_leaf=lambda x: x is not None and hasattr(x, "nodes") and hasattr(x, "input_ports"),
-        )
-        # Swap on the task so trial_specs.intervene[label] has the right type.
-        task = swap_task_intervention_to_dynamics_matrix(task, _PLABEL)
 
     # -----------------------------------------------------------------------
     # Phase 2 — adversarial training
@@ -918,6 +1124,22 @@ def run_training(args: argparse.Namespace) -> None:
         single_rep_ctrl_state,
         is_leaf=eqx.is_array,
     )
+    adv_checkpoint_dir = output_dir / _CHECKPOINT_DIR_NAME
+    legacy_adv_checkpoint_path = adv_checkpoint_dir / _CHECKPOINT_SUBDIR
+    if not (
+        args.resume
+        and (has_custody_checkpoint(adv_checkpoint_dir) or legacy_adv_checkpoint_path.exists())
+    ):
+        _write_warmup_boundary_checkpoint(
+            adv_checkpoint_dir,
+            training_spec=feedbax_spec,
+            model=warmup_model,
+            adversaries=adversaries,
+            adv_opt_states=adv_opt_states,
+            ctrl_opt_state=ctrl_opt_state,
+            rng_key=key_adv,
+            warmup_history=warmup_history,
+        )
 
     # ---------------------------------------------------------------------------
     # JIT-compiled training steps — defined as closures over task, loss_func,
@@ -1277,7 +1499,6 @@ def run_training(args: argparse.Namespace) -> None:
     # -----------------------------------------------------------------------
     # Resume from checkpoint (if requested)
     # -----------------------------------------------------------------------
-    adv_checkpoint_dir = output_dir / _CHECKPOINT_DIR_NAME
     start_batch_idx = 0
     adv_losses = []
     ctrl_losses = []
@@ -1285,25 +1506,42 @@ def run_training(args: argparse.Namespace) -> None:
 
     if args.resume:
         ckpt_path = adv_checkpoint_dir / _CHECKPOINT_SUBDIR
-        if ckpt_path.exists():
-            logger.info("--resume: loading adversarial checkpoint from %s", ckpt_path)
-            (
-                full_flat_loaded,
-                adversaries,
-                adv_opt_states,
-                ctrl_opt_state,
-                last_completed_batch,
-                adv_losses,
-                ctrl_losses,
-                adv_indices,
-            ) = _load_adversarial_checkpoint(
+        if has_custody_checkpoint(adv_checkpoint_dir) or ckpt_path.exists():
+            logger.info("--resume: loading adversarial checkpoint from %s", adv_checkpoint_dir)
+            loaded_checkpoint = _load_adversarial_checkpoint(
                 adv_checkpoint_dir,
                 warmup_model,
                 adversaries,
                 adv_opt_states,
                 ctrl_opt_state,
                 treedef_ensembled,
+                training_spec=(
+                    feedbax_spec if has_custody_checkpoint(adv_checkpoint_dir) else None
+                ),
             )
+            if len(loaded_checkpoint) == 9:
+                (
+                    full_flat_loaded,
+                    adversaries,
+                    adv_opt_states,
+                    ctrl_opt_state,
+                    last_completed_batch,
+                    adv_losses,
+                    ctrl_losses,
+                    adv_indices,
+                    key_adv,
+                ) = loaded_checkpoint
+            else:
+                (
+                    full_flat_loaded,
+                    adversaries,
+                    adv_opt_states,
+                    ctrl_opt_state,
+                    last_completed_batch,
+                    adv_losses,
+                    ctrl_losses,
+                    adv_indices,
+                ) = loaded_checkpoint
             # Extract only the per-replicate arrays for the training loop
             flat_model, _ = _split_flat(full_flat_loaded)
             start_batch_idx = last_completed_batch + 1
@@ -1495,6 +1733,8 @@ def run_training(args: argparse.Namespace) -> None:
                 adv_losses,
                 ctrl_losses,
                 adv_indices,
+                training_spec=feedbax_spec,
+                rng_key=key_adv,
             )
 
     logger.info("Adversarial training complete.")
@@ -1633,10 +1873,10 @@ def _log_linear_dynamics_adversary(
 # ---------------------------------------------------------------------------
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Minimax adversarial training for RLRMP reaching controllers."
-    )
+def parse_args() -> SimpleNamespace:
+    return minimax_config_namespace(legacy_cli_args_to_minimax_config(sys.argv[1:]))
+
+    parser = None
     parser.add_argument(
         "--n-warmup-batches",
         type=int,
@@ -1841,7 +2081,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--loss-update-enabled",
-        action=argparse.BooleanOptionalAction,
+        action=None,
         default=False,
         help=(
             "Enable adaptive loss update to drive control cost toward a target ratio "
@@ -1859,7 +2099,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--fused",
-        action=argparse.BooleanOptionalAction,
+        action=None,
         default=True,
         help=(
             "Fuse the K adversary steps + controller step into a single JIT "
@@ -1870,7 +2110,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--streaming-loss",
-        action=argparse.BooleanOptionalAction,
+        action=None,
         default=False,
         help=(
             "Accumulate loss inside the simulation scan body instead of storing "
@@ -2167,10 +2407,52 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def author_minimax_training_run_spec(args: SimpleNamespace) -> TrainingRunSpec:
+    """Author, validate, and write the minimax TrainingRunSpec for a launch."""
+
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    spec_dir = Path(args.spec_dir) if args.spec_dir is not None else derive_spec_dir(output_dir)
+    mkdir_p(spec_dir)
+    spec_path = derive_spec_path(output_dir)
+    mkdir_p(spec_path.parent)
+
+    hps = build_hps(args)
+    key_init = jr.split(jr.PRNGKey(args.seed), 3)[0]
+    pair = setup_task_model_pair(hps, key=key_init)
+    graph_bundle = build_runtime_rlrmp_feedbax_graph_bundle(hps, pair.model)
+    graph_path = write_graph_spec_bundle(graph_bundle, spec_dir)
+    payload = build_minimax_training_run_spec(
+        args.__dict__,
+        graph_spec=graph_bundle.graph_spec,
+        output_dir=output_dir,
+        spec_dir=spec_dir,
+        git=_get_git_metadata(),
+        gpu_info=_collect_gpu_info(),
+        feedbax_graph=graph_bundle.to_run_metadata(graph_spec_path=graph_path.name),
+    )
+    validate_minimax_run_spec(payload, spec_dir=spec_dir)
+    with open(spec_path, "w") as f:
+        json.dump(payload, f, indent=2, default=str)
+    logger.info("Saved validated minimax TrainingRunSpec recipe to %s", spec_path)
+    return TrainingRunSpec.model_validate(payload["feedbax_training_run_spec"])
+
+
+def training_run_spec_from_argv(argv: list[str]) -> TrainingRunSpec:
+    """Return the spec requested by CLI argv without exposing raw args to training."""
+
+    if argv[:1] == ["--training-run-spec"]:
+        if len(argv) != 2:
+            raise ValueError("--training-run-spec expects exactly one path")
+        return minimax_training_run_spec_from_file(argv[1])
+    args = minimax_config_namespace(legacy_cli_args_to_minimax_config(argv))
+    return author_minimax_training_run_spec(args)
+
+
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
-    args = parse_args()
-    run_training(args)
+    spec = training_run_spec_from_argv(sys.argv[1:])
+    run_training(spec)
