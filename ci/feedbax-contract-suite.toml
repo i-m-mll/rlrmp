@@ -116,10 +116,11 @@ minimum_non_skipped = 1
 [[families]]
 name = "write_surface"
 owner = "f5d9695"
-status = "pending_enrollment"
+status = "live"
 marker = "feedbax_contract"
-expected_collection_pattern = "tests/"
-minimum_non_skipped = 1
+expected_collection_pattern = "tests/test_write_surface_custody.py::"
+minimum_non_skipped = 14
+negative_canary = "tests/test_write_surface_custody.py::test_write_surface_negative_canary_flags_new_durable_write"
 
 [[families]]
 name = "reaccretion_ratchet"
