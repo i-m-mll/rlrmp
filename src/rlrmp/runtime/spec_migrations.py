@@ -18,6 +18,7 @@ from feedbax.contracts.migrations import (
     default_spec_registry,
     migrate_structured_spec_payload,
 )
+from feedbax.contracts.manifest import SCHEMA_VERSION as FEEDBAX_MANIFEST_SCHEMA_VERSION
 
 
 GRU_EVALUATION_DIAGNOSTICS_KIND = "RLRMPGRUEvaluationDiagnosticsManifest"
@@ -73,6 +74,25 @@ DELAYED_DIAGNOSTIC_BUNDLE_SCHEMA_VERSION = "rlrmp.delayed_diagnostic_bundle.v1"
 FEEDBACK_QUALITY_LENS_KIND = "RLRMPFeedbackQualityLens"
 FEEDBACK_QUALITY_LENS_SCHEMA_ID = "rlrmp.feedback_quality_lens"
 FEEDBACK_QUALITY_LENS_SCHEMA_VERSION = "rlrmp.feedback_quality_lens.v1"
+
+VALIDATION_SELECTED_GRU_CHECKPOINTS_KIND = "RLRMPValidationSelectedGRUCheckpoints"
+VALIDATION_SELECTED_GRU_CHECKPOINTS_SCHEMA_ID = "feedbax.manifest.checkpoint_selection"
+VALIDATION_SELECTED_GRU_CHECKPOINTS_SCHEMA_VERSION = FEEDBAX_MANIFEST_SCHEMA_VERSION
+VALIDATION_SELECTED_GRU_CHECKPOINTS_LEGACY_VERSION = (
+    "rlrmp.validation_selected_gru_checkpoints.v1"
+)
+
+FIXED_BANK_GRU_CHECKPOINT_RESCORE_KIND = "RLRMPFixedBankGRUCheckpointRescore"
+FIXED_BANK_GRU_CHECKPOINT_RESCORE_SCHEMA_ID = "feedbax.manifest.checkpoint_selection"
+FIXED_BANK_GRU_CHECKPOINT_RESCORE_SCHEMA_VERSION = FEEDBAX_MANIFEST_SCHEMA_VERSION
+FIXED_BANK_GRU_CHECKPOINT_RESCORE_LEGACY_VERSION = (
+    "rlrmp.fixed_bank_gru_checkpoint_rescore.v1"
+)
+
+DELAYED_REACH_EVAL_BANK_KIND = "RLRMPDelayedReachEvalBank"
+DELAYED_REACH_EVAL_BANK_SCHEMA_ID = "feedbax.manifest.checkpoint_selection.bank"
+DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION = FEEDBAX_MANIFEST_SCHEMA_VERSION
+DELAYED_REACH_EVAL_BANK_LEGACY_VERSION = "rlrmp.delayed_reach_eval_bank.v2"
 
 RUN_SPEC_KIND = "RLRMPRunSpec"
 RUN_SPEC_SCHEMA_ID = "rlrmp.run_spec"
@@ -381,6 +401,58 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             ),
         ),
         _family(
+            VALIDATION_SELECTED_GRU_CHECKPOINTS_KIND,
+            VALIDATION_SELECTED_GRU_CHECKPOINTS_SCHEMA_ID,
+            VALIDATION_SELECTED_GRU_CHECKPOINTS_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.pipelines.gru_checkpoint_selection",),
+            consumed_by=("GRU checkpoint-selection consumers",),
+            description=(
+                "Retired rlrmp validation-selected checkpoint payload now emitted as "
+                "Feedbax CheckpointSelectionManifest."
+            ),
+            rejected_old_versions=(VALIDATION_SELECTED_GRU_CHECKPOINTS_LEGACY_VERSION,),
+            notes=(
+                "The legacy JSON shape is accepted only by the explicit file-load "
+                "compatibility path in gru_checkpoint_selection; durable new writes use "
+                "Feedbax CheckpointSelectionManifest/CheckpointSelectionSpec."
+            ),
+        ),
+        _family(
+            FIXED_BANK_GRU_CHECKPOINT_RESCORE_KIND,
+            FIXED_BANK_GRU_CHECKPOINT_RESCORE_SCHEMA_ID,
+            FIXED_BANK_GRU_CHECKPOINT_RESCORE_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.pipelines.gru_checkpoint_selection",),
+            consumed_by=("GRU fixed-bank checkpoint-selection consumers",),
+            description=(
+                "Retired rlrmp fixed-bank checkpoint-rescore payload now emitted as "
+                "Feedbax CheckpointSelectionManifest."
+            ),
+            rejected_old_versions=(FIXED_BANK_GRU_CHECKPOINT_RESCORE_LEGACY_VERSION,),
+            notes=(
+                "The old fixed-bank payload has no registry-level deterministic migration "
+                "because the compatibility loader needs file context for path refs. "
+                "New durable writes use Feedbax checkpoint-selection custody."
+            ),
+        ),
+        _family(
+            DELAYED_REACH_EVAL_BANK_KIND,
+            DELAYED_REACH_EVAL_BANK_SCHEMA_ID,
+            DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.pipelines.gru_checkpoint_selection",),
+            consumed_by=("GRU fixed-bank checkpoint-selection specs",),
+            description=(
+                "Retired rlrmp delayed-reach evaluation-bank payload now represented as "
+                "Feedbax CheckpointSelectionBank metadata."
+            ),
+            rejected_old_versions=(DELAYED_REACH_EVAL_BANK_LEGACY_VERSION,),
+            notes=(
+                "Delayed-reach bank details are carried inside Feedbax "
+                "CheckpointSelectionSpec/CheckpointSelectionBank metadata. Regenerate "
+                "through gru_checkpoint_selection instead of registry-migrating the old "
+                "standalone dict."
+            ),
+        ),
+        _family(
             RUN_SPEC_KIND,
             RUN_SPEC_SCHEMA_ID,
             RUN_SPEC_SCHEMA_VERSION,
@@ -471,12 +543,20 @@ __all__ = [
     "DELAYED_DIAGNOSTIC_BUNDLE_KIND",
     "DELAYED_DIAGNOSTIC_BUNDLE_SCHEMA_ID",
     "DELAYED_DIAGNOSTIC_BUNDLE_SCHEMA_VERSION",
+    "DELAYED_REACH_EVAL_BANK_KIND",
+    "DELAYED_REACH_EVAL_BANK_LEGACY_VERSION",
+    "DELAYED_REACH_EVAL_BANK_SCHEMA_ID",
+    "DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION",
     "FEEDBACK_QUALITY_LENS_KIND",
     "FEEDBACK_QUALITY_LENS_SCHEMA_ID",
     "FEEDBACK_QUALITY_LENS_SCHEMA_VERSION",
     "FINITE_ADVERSARY_POLICY_METADATA_KIND",
     "FINITE_ADVERSARY_POLICY_METADATA_SCHEMA_ID",
     "FINITE_ADVERSARY_POLICY_METADATA_SCHEMA_VERSION",
+    "FIXED_BANK_GRU_CHECKPOINT_RESCORE_KIND",
+    "FIXED_BANK_GRU_CHECKPOINT_RESCORE_LEGACY_VERSION",
+    "FIXED_BANK_GRU_CHECKPOINT_RESCORE_SCHEMA_ID",
+    "FIXED_BANK_GRU_CHECKPOINT_RESCORE_SCHEMA_VERSION",
     "GRU_EVALUATION_DIAGNOSTICS_KIND",
     "GRU_EVALUATION_DIAGNOSTICS_SCHEMA_ID",
     "GRU_EVALUATION_DIAGNOSTICS_SCHEMA_VERSION",
@@ -513,6 +593,10 @@ __all__ = [
     "RUN_SPEC_SCHEMA_VERSION",
     "RUN_SPEC_SCHEMA_VERSION_LEGACY_CS_GRU",
     "RUN_SPEC_SCHEMA_VERSION_V1",
+    "VALIDATION_SELECTED_GRU_CHECKPOINTS_KIND",
+    "VALIDATION_SELECTED_GRU_CHECKPOINTS_LEGACY_VERSION",
+    "VALIDATION_SELECTED_GRU_CHECKPOINTS_SCHEMA_ID",
+    "VALIDATION_SELECTED_GRU_CHECKPOINTS_SCHEMA_VERSION",
     "accept_rlrmp_spec_payload",
     "ensure_rlrmp_spec_families",
     "load_rlrmp_spec_payload",

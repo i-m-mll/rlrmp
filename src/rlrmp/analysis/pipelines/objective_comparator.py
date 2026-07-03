@@ -1015,7 +1015,11 @@ def materialize_gru_objective_comparator_sidecar(
     if checkpoint_manifest is None:
         if checkpoint_manifest_path is None:
             raise ValueError("checkpoint_manifest or checkpoint_manifest_path is required")
-        checkpoint_manifest = json.loads(checkpoint_manifest_path.read_text(encoding="utf-8"))
+        from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
+            load_checkpoint_selection_legacy_payload,
+        )
+
+        checkpoint_manifest = load_checkpoint_selection_legacy_payload(checkpoint_manifest_path)
 
     extlqg = compute_default_extlqg_cost_decomposition()
     run_metadata_by_id = {
