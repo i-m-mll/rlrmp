@@ -27,7 +27,6 @@ import jax.tree_util as jtu
 import numpy as np
 import optax
 from feedbax import TaskTrialSpec
-from feedbax.models.networks import PopulationStructure
 from jax_cookbook import save as fbx_save
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 from feedbax.intervene.schedule import TimeSeriesParam
@@ -63,7 +62,6 @@ from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig
 from rlrmp.model.cs_lss_gru import (
     CS_H0_CONTEXT_DIM,
     CS_H0_ENCODER_INIT,
-    build_cs_lss_gru_graph_spec,
 )
 from rlrmp.model.feedbax_graph import (
     EXECUTION_BACKEND,
@@ -142,9 +140,6 @@ from rlrmp.train.progress import batch_log_every, format_batch_line, should_log_
 from rlrmp.train.task_model import (
     CS_LSS_PLANT_BACKEND,
     LEGACY_CAUSAL_PLANT_BACKEND,
-    _finite_epsilon_policy_mechanism,
-    _sisu_conditioned_pgd_budget_enabled,
-    _sisu_conditioned_pgd_budget_input_name,
     setup_task_model_pair,
 )
 from rlrmp.model.trainable import staged_network_trainable_parts, staged_network_trainable_paths
@@ -1556,48 +1551,9 @@ def build_training_run_graph_spec(hps: TreeNamespace, *, seed: int) -> Any:
     if str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND)) != CS_LSS_PLANT_BACKEND:
         return build_graph_bundle(hps).graph_spec
 
-    hidden_type = getattr(hps, "hidden_type", None) or eqx.nn.GRUCell
-    pop_config = hps.model.population_structure
     key_init = jr.split(jr.PRNGKey(int(seed)), 3)[0]
-    key_pop, key_models = jr.split(key_init)
-    population_structure = PopulationStructure.create(
-        hidden_size=hps.model.hidden_size,
-        n_input_only=getattr(pop_config, "n_input_only", 0) or 0,
-        n_readout_only=getattr(pop_config, "n_readout_only", 0) or 0,
-        n_recurrent_only=getattr(pop_config, "n_recurrent_only", 0) or 0,
-        n_input_readout=getattr(pop_config, "n_input_readout", 0) or 0,
-        assignment_fn=None,
-        key=key_pop,
-    )
-    key_one = jr.split(key_models, int(hps.model.n_replicates))[0]
-    target_relative = _target_relative_multitarget_enabled(hps)
-    delayed_reach = _delayed_reach_enabled(hps)
-    scalar_input_count = int(delayed_reach or not target_relative)
-    if _sisu_conditioned_pgd_budget_enabled(hps):
-        sisu_input_name = _sisu_conditioned_pgd_budget_input_name(hps)
-        if not (sisu_input_name == "input" and scalar_input_count > 0):
-            scalar_input_count += 1
-    return build_cs_lss_gru_graph_spec(
-        hidden_size=int(hps.model.hidden_size),
-        input_size=scalar_input_count,
-        hidden_type=hidden_type,
-        population_structure=population_structure,
-        sisu_gating=str(getattr(hps, "sisu_gating", "additive")),
-        sensory_noise_std=float(hps.model.sensory_noise_std),
-        additive_motor_noise_std=float(hps.model.additive_motor_noise_std),
-        signal_dependent_motor_noise_std=float(hps.model.signal_dependent_motor_noise_std),
-        bind_epsilon_input=True,
-        finite_epsilon_policy=_finite_epsilon_policy_mechanism(hps),
-        target_relative_feedback=target_relative,
-        force_filter_feedback=bool(
-            getattr(hps.target_relative_multitarget, "force_filter_feedback", False)
-        ),
-        initial_hidden_encoder=_initial_hidden_encoder_enabled(hps),
-        no_integrator_state=bool(getattr(hps.model, "no_integrator_state", False)),
-        trainable_dtype=getattr(hps.model, "trainable_dtype", None),
-        population_mask_mode=getattr(hps.model, "population_mask_mode", None),
-        key=key_one,
-    )
+    pair = setup_task_model_pair(hps, key=key_init)
+    return build_runtime_rlrmp_feedbax_graph_bundle(hps, pair.model).graph_spec
 
 
 def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:

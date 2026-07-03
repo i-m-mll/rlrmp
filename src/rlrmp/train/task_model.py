@@ -31,7 +31,10 @@ from rlrmp.analysis.math.cs_released_simulation import (
 from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig, process_covariance
 from rlrmp.model.cs_lss_gru import (
     CS_DEFAULT_TRAINABLE_DTYPE,
+    CS_FEEDBACK_DIM,
+    CS_H0_CONTEXT_INPUT,
     CS_PHYSICAL_STATE_DIM,
+    CS_PROPRIOCEPTIVE_FEEDBACK_DIM,
     CS_REDUCED_PHYSICAL_STATE_DIM,
     build_cs_lss_gru_graph,
 )
@@ -327,6 +330,8 @@ def setup_task_model_pair(
             if sisu_conditioned_pgd
             else None,
             finite_epsilon_policy=finite_epsilon_policy,
+            initial_hidden_encoder=bool(getattr(hps.model, "initial_hidden_encoder", False)),
+            force_filter_feedback=target_training.force_filter_feedback,
             physical_state_dim=physical_state_dim,
             dtype=runtime_dtype,
         )
@@ -555,6 +560,8 @@ def _add_cs_lss_task_inputs(
     scalar_input_name: str = "input",
     scalar_input_fn: Callable | None = None,
     finite_epsilon_policy: str | None = None,
+    initial_hidden_encoder: bool = False,
+    force_filter_feedback: bool = False,
     physical_state_dim: int = CS_PHYSICAL_STATE_DIM,
     dtype=jnp.float32,
 ) -> _CsLssTaskAdapter:
@@ -592,6 +599,18 @@ def _add_cs_lss_task_inputs(
             dtype=dtype,
         ),
     )
+    if initial_hidden_encoder:
+        context_dim = (
+            CS_PROPRIOCEPTIVE_FEEDBACK_DIM if force_filter_feedback else CS_FEEDBACK_DIM
+        )
+        task = task.add_input(
+            name=CS_H0_CONTEXT_INPUT,
+            input_fn=lambda trial_spec, key: _zero_h0_context_input(
+                trial_spec,
+                context_dim=context_dim,
+                dtype=dtype,
+            ),
+        )
     if finite_epsilon_policy is None:
         return task
     state_dim = 6 * int(physical_state_dim)
@@ -614,6 +633,17 @@ def _add_cs_lss_task_inputs(
             ),
         )
     return task
+
+
+def _zero_h0_context_input(
+    trial_spec: TaskTrialSpec,
+    *,
+    context_dim: int,
+    dtype=jnp.float32,
+) -> jax.Array:
+    target = trial_spec.targets["mechanics.effector.pos"].value
+    batch_shape = target.shape[:-2] if target.ndim >= 3 else ()
+    return jnp.zeros((*batch_shape, int(context_dim)), dtype=dtype)
 
 
 def _cs_delayed_reach_enabled(hps: TreeNamespace) -> bool:

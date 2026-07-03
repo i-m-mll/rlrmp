@@ -45,6 +45,7 @@ from rlrmp.model.cs_lss_gru import (
     CsLssFiniteEpsilonPolicy,
     build_cs_lss_gru_graph_spec,
 )
+from rlrmp.model.trainable import staged_network_trainable_parts
 from rlrmp.loss import (
     CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
     CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
@@ -309,9 +310,13 @@ def test_target_support_cli_default_is_band16_fixed_reach() -> None:
 def _where_train() -> dict[int, object]:
     def where_train_fn(model):
         net = model.nodes["net"]
-        return (net.hidden, net.readout)
+        return staged_network_trainable_parts(net)
 
     return {0: where_train_fn}
+
+
+def _native_recurrent_input_size(model) -> int:
+    return int(model.nodes["net"].nodes["cell"].input_size)
 
 
 def _delayed_cs_task(
@@ -1396,16 +1401,48 @@ def test_finite_pgd_graph_wires_policy_inputs_to_mechanics_epsilon() -> None:
         key=jr.PRNGKey(0),
     )
 
-    assert spec.nodes["finite_epsilon_policy"].type == CS_LSS_FINITE_EPSILON_POLICY_COMPONENT
-    assert spec.input_bindings["epsilon"] == ("finite_epsilon_policy", "base_epsilon")
+    assert spec.nodes["finite_epsilon_policy"].type == "AffineValueComposer"
+    assert spec.nodes["finite_epsilon_policy"].input_ports == [
+        "base",
+        "state",
+        "target",
+        "gain",
+        "bias",
+    ]
+    assert spec.nodes["finite_epsilon_policy"].output_ports == ["value"]
+    assert spec.nodes["finite_epsilon_policy"].params["use_bias"] is False
+    assert spec.nodes["finite_epsilon_policy"].params["output_block_size"] == CS_REDUCED_EPSILON_DIM
+    assert spec.input_bindings["epsilon"] == ("finite_epsilon_policy", "base")
     assert spec.input_bindings[FINITE_POLICY_GAINS_INPUT] == (
         "finite_epsilon_policy",
-        "gains",
+        "gain",
     )
     assert FINITE_POLICY_BIAS_INPUT not in spec.input_bindings
     assert any(
+        wire.source_node == "mechanics"
+        and wire.source_port == "state"
+        and wire.target_node == "finite_epsilon_policy"
+        and wire.target_port == "state"
+        and wire.temporality == "recurrent"
+        for wire in spec.wires
+    )
+    assert any(
+        wire.source_node == "target_source"
+        and wire.source_port == "output"
+        and wire.target_node == "feedback"
+        and wire.target_port == "target"
+        for wire in spec.wires
+    )
+    assert any(
+        wire.source_node == "target_source"
+        and wire.source_port == "output"
+        and wire.target_node == "finite_epsilon_policy"
+        and wire.target_port == "target"
+        for wire in spec.wires
+    )
+    assert any(
         wire.source_node == "finite_epsilon_policy"
-        and wire.source_port == "epsilon"
+        and wire.source_port == "value"
         and wire.target_node == "mechanics"
         and wire.target_port == "epsilon"
         for wire in spec.wires
@@ -2151,7 +2188,7 @@ def test_delayed_sisu_uses_separate_budget_key_and_composite_controller_input() 
     go_step = int(trial.timeline.epoch_bounds[-2])
 
     assert pair.model.input_ports[:3] == ("input", "target", "epsilon")
-    assert pair.model.nodes["net"].input_size == 8
+    assert _native_recurrent_input_size(pair.model) == 8
     assert sorted(trial.inputs) == ["epsilon", "input", "sisu", "target", "task"]
     assert trial.inputs["input"].shape[-1] == 2
     assert jnp.allclose(trial.inputs["input"][:go_step, 0], 0.0)
@@ -3743,7 +3780,7 @@ def test_delayed_reach_setup_adds_go_cue_and_preserves_target_visibility() -> No
     assert hps.task.p_catch_trial == pytest.approx(0.0)
     assert hps.loss.weights.nn_output_pre_go == pytest.approx(1.0)
     assert pair.model.input_ports[:3] == ("input", "target", "epsilon")
-    assert pair.model.nodes["net"].input_size == 7
+    assert _native_recurrent_input_size(pair.model) == 7
     assert trial.timeline.epoch_names == ("prep", "movement")
     assert 10 <= go_step <= 30
     assert trial.inputs["input"].shape == (trial.timeline.n_steps - 1,)
@@ -4750,7 +4787,7 @@ def test_force_filter_feedback_setup_uses_six_dimensional_feedback() -> None:
     assert hps.target_relative_multitarget.force_filter_feedback is True
     assert hps.target_relative_multitarget.input_contract.shape == [6]
     assert hps.model.force_filter_feedback is True
-    assert pair.model.nodes["net"].input_size == 6
+    assert _native_recurrent_input_size(pair.model) == 6
     assert pair.model.nodes["sensory"].input_proto.shape[-1] == 6
 
 

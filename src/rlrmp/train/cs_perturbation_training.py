@@ -34,6 +34,7 @@ from rlrmp.model.feedbax_channel_adapters import (
     additive_channel_provenance,
     materialize_additive_channel_adapters_on_graph,
 )
+from rlrmp.model.cs_lss_gru import CS_H0_CONTEXT_INPUT
 from rlrmp.train.closed_loop_finite_adversary import (
     AFFINE_POLICY,
     FINITE_POLICY_BIAS_INPUT,
@@ -5758,10 +5759,17 @@ def _with_static_target(
             )
             inputs["task"] = task_inputs
     inputs["target"] = target_sequence
+    if CS_H0_CONTEXT_INPUT in inputs:
+        inputs[CS_H0_CONTEXT_INPUT] = _target_relative_h0_context(
+            trial_specs,
+            target_sequence=target_sequence,
+            context_dim=int(jnp.asarray(inputs[CS_H0_CONTEXT_INPUT]).shape[-1]),
+            batch_shape=batch_shape,
+        )
     inputs = {
         key: (
             value
-            if key in {"target", "effector_target", "task"}
+            if key in {"target", "effector_target", "task", CS_H0_CONTEXT_INPUT}
             else _broadcast_trial_input_array(key, value, batch_shape)
         )
         for key, value in inputs.items()
@@ -5785,6 +5793,39 @@ def _with_static_target(
         timeline=timeline,
         extra=extra,
     )
+
+
+def _target_relative_h0_context(
+    trial_specs: TaskTrialSpec,
+    *,
+    target_sequence: jnp.ndarray,
+    context_dim: int,
+    batch_shape: tuple[int, ...],
+) -> jnp.ndarray:
+    """Return the first controller-visible target-relative feedback for native h0."""
+
+    init = _initial_lss_physical_state(trial_specs, batch_shape=batch_shape)
+    target_delta = target_sequence[..., 0, :] - init[..., 0:2]
+    neg_velocity = -init[..., 2:4]
+    pieces = [target_delta, neg_velocity]
+    if int(context_dim) == 6:
+        pieces.append(init[..., 4:6])
+    elif int(context_dim) != 4:
+        raise ValueError(f"Unsupported h0 context dimension {context_dim}; expected 4 or 6.")
+    return jnp.concatenate(pieces, axis=-1)
+
+
+def _initial_lss_physical_state(
+    trial_specs: TaskTrialSpec,
+    *,
+    batch_shape: tuple[int, ...],
+) -> jnp.ndarray:
+    init = jnp.asarray(trial_specs.inits["mechanics.vector"])
+    if init.shape[: len(batch_shape)] != batch_shape:
+        init = _broadcast_trial_array(init, batch_shape)
+    if init.shape[-1] < 6:
+        raise ValueError("Native h0 context requires at least 6 physical initial-state entries.")
+    return init[..., :6]
 
 
 def _catch_preserving_loss_target_sequence(
