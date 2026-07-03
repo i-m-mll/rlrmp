@@ -52,6 +52,7 @@ from rlrmp.paths import (
     mkdir_p,
     resolve_run_artifact_path,
 )
+from rlrmp.io import update_marked_section
 from rlrmp.runtime.run_specs import resolve_run_record
 
 
@@ -826,7 +827,11 @@ def materialize_gru_feedback_ablation(
         encoding="utf-8",
     )
     output_path.write_text(json.dumps(tracked_manifest, indent=2, sort_keys=True) + "\n")
-    note_path.write_text(render_feedback_ablation_markdown(manifest))
+    update_marked_section(
+        note_path,
+        "gru_feedback_ablation",
+        render_feedback_ablation_markdown(manifest),
+    )
     write_regeneration_spec(
         spec_path=regeneration_spec_path,
         diagnostic_name="gru_feedback_ablation",

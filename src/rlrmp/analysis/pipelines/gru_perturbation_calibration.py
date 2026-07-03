@@ -12,6 +12,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from rlrmp.analysis.pipelines.diagnostic_provenance import repo_relative, write_regeneration_spec
+from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 if TYPE_CHECKING:
@@ -412,7 +413,11 @@ def materialize_perturbation_open_loop_calibration(
         "family_summary": _summarize_reach_relative_rows(rows),
     }
     output_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    note_path.write_text(render_calibration_markdown(manifest), encoding="utf-8")
+    update_marked_section(
+        note_path,
+        "perturbation_open_loop_calibration",
+        render_calibration_markdown(manifest),
+    )
     _write_calibration_regeneration_spec(
         spec_path=regeneration_spec_path,
         output_path=output_path,

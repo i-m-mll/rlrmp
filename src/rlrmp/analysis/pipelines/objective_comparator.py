@@ -13,7 +13,7 @@ import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
-from rlrmp.io import write_compact_json
+from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT, run_spec_path
 from rlrmp.runtime.run_specs import RunSpecValidationError, resolve_run_record
 
@@ -851,7 +851,11 @@ def write_objective_comparator_sidecar(
     json_path.parent.mkdir(parents=True, exist_ok=True)
     markdown_path.parent.mkdir(parents=True, exist_ok=True)
     write_compact_json(json_path, _slim_objective_comparator_sidecar(sidecar))
-    markdown_path.write_text(render_objective_comparator_markdown(sidecar), encoding="utf-8")
+    update_marked_section(
+        markdown_path,
+        "objective_comparator",
+        render_objective_comparator_markdown(sidecar),
+    )
 
 
 def _slim_objective_comparator_sidecar(sidecar: Mapping[str, Any]) -> dict[str, Any]:
