@@ -169,13 +169,14 @@ def test_standard_graph_distillation_trainable_leaves_default_to_float32() -> No
     )
 
     leaves = guided_distillation._trainable_float_leaves(model, where_train_spec)
+    parts = guided_distillation.standard_controller_parts(model)
     assert leaves
     assert {leaf.dtype for leaf in leaves} == {jnp.dtype(jnp.float32)}
-    assert model.nodes["net"].net.hidden.weight_ih.dtype == jnp.dtype(jnp.float32)
-    assert model.nodes["net"].net.readout.weight.dtype == jnp.dtype(jnp.float32)
-    assert model.nodes["net"].h0_encoder.weight.dtype == jnp.dtype(jnp.float32)
+    assert parts.hidden_cell.weight_ih.dtype == jnp.dtype(jnp.float32)
+    assert guided_distillation._linear_weight(parts.readout).dtype == jnp.dtype(jnp.float32)
+    assert parts.h0_encoder.weight.dtype == jnp.dtype(jnp.float32)
     if "population_mask_mode" in inspect.signature(SimpleStagedNetwork).parameters:
-        assert not hasattr(model.nodes["net"].net.readout, "linear")
+        assert not hasattr(parts.readout, "linear")
 
 
 def test_standard_graph_distillation_preserves_explicit_float64_request() -> None:
@@ -384,7 +385,11 @@ def test_distillation_cli_smoke_train_runs_real_trainer(
         output_dir / "trained_model.eqx",
         setup_func=lambda key, **_kwargs: _setup_task_model_pair(hps, key=key).model,
     )
-    assert model.nodes["net"].net.hidden.weight_ih.shape == (2, 18, 6)
+    assert guided_distillation.standard_controller_parts(model).hidden_cell.weight_ih.shape == (
+        2,
+        18,
+        6,
+    )
 
 
 def test_action_history_context_does_not_enter_student_forward_path(

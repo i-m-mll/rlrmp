@@ -26,6 +26,13 @@ from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 from feedbax.objectives.loss import AbstractLoss, TermTree
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
 from rlrmp.model.trainable import staged_network_trainable_parts
+from rlrmp.runtime.training_run_specs import (
+    CLOSED_LOOP_DISTILLATION_METHOD_REF,
+    attach_distillation_training_specs,
+    training_arg_parser,
+    validate_distillation_training_run_spec,
+    write_distillation_run_spec,
+)
 from rlrmp.train.distillation import batched_directional_jvps
 
 SCHEMA_VERSION = "rlrmp.closed_loop_distillation.training_entry.v1"
@@ -316,7 +323,7 @@ def build_closed_loop_distillation_spec(args: argparse.Namespace) -> dict[str, A
         directional_input_output_jvp=float(_arg_value(args, "input_output_jvp_weight", 0.25)),
         task_qr_rollout=float(_arg_value(args, "task_rollout_loss_weight", 0.0)),
     )
-    return {
+    spec = {
         "schema_version": SCHEMA_VERSION,
         "issue": ISSUE_ID,
         "tracker_issue": TRACKER_ISSUE_ID,
@@ -324,6 +331,7 @@ def build_closed_loop_distillation_spec(args: argparse.Namespace) -> dict[str, A
         "prior_guided_issue": PRIOR_GUIDED_ISSUE_ID,
         "guided_jvp_issue": GUIDED_JVP_ISSUE_ID,
         "run_id": run_id,
+        "method_ref": CLOSED_LOOP_DISTILLATION_METHOD_REF,
         "seed": int(_arg_value(args, "seed", 0)),
         "user_confirmed": bool(_arg_value(args, "user_confirmed", False)),
         "artifact_output_dir": output_dir,
@@ -520,6 +528,12 @@ def build_closed_loop_distillation_spec(args: argparse.Namespace) -> dict[str, A
             "--full-train requires explicit user launch approval, not a Feedbax hook blocker.",
         ],
     }
+    return attach_distillation_training_specs(
+        spec,
+        method="closed_loop_distillation",
+        output_dir=Path(output_dir),
+        spec_path=run_spec_path,
+    )
 
 
 def validate_run_spec(spec: dict[str, Any]) -> None:
@@ -548,6 +562,7 @@ def validate_run_spec(spec: dict[str, Any]) -> None:
     trainer_path = str(entry.get("trainer_path", ""))
     if "TaskTrainer/train_pair" not in trainer_path:
         raise ValueError("Training entry must use Feedbax TaskTrainer/train_pair.")
+    validate_distillation_training_run_spec(spec, method="closed_loop_distillation")
 
 
 def _base_run_spec(path: str | Path = BASE_RUN_SPEC) -> dict[str, Any]:
@@ -560,6 +575,20 @@ def _normalize_serialized_hps(hps: dict[str, Any]) -> dict[str, Any]:
         normalized["hidden_type"] = None
     if "intervention_scaleup_batches" not in normalized:
         normalized["intervention_scaleup_batches"] = [0, 0]
+    pgd = normalized.get("broad_epsilon_pgd_training")
+    if isinstance(pgd, dict) and not pgd.get("enabled", False):
+        budget_contract = pgd.get("budget_contract")
+        if isinstance(budget_contract, dict) and budget_contract.get("effective_l2_radius_15cm"):
+            budget_contract.setdefault(
+                "budget_source",
+                {
+                    "key": "disabled_closed_loop_distillation_no_pgd",
+                    "note": (
+                        "Closed-loop distillation disables PGD; retained radius is "
+                        "provenance only."
+                    ),
+                },
+            )
     return normalized
 
 
@@ -876,8 +905,7 @@ def smoke_directional_jvp() -> dict[str, Any]:
 def write_run_spec(path: Path, spec: dict[str, Any]) -> None:
     """Write a stable, sorted JSON run spec."""
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_distillation_run_spec(path, spec, method="closed_loop_distillation")
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -997,7 +1025,7 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = training_arg_parser(description=__doc__)
     parser.add_argument("--run-id", default=RUN_ID)
     parser.add_argument("--run-spec", type=Path)
     parser.add_argument("--run-spec-output", type=Path, default=DEFAULT_SPEC_PATH)

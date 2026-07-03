@@ -80,6 +80,10 @@ RUN_SPEC_SCHEMA_VERSION = "rlrmp.run_spec.v2"
 RUN_SPEC_SCHEMA_VERSION_V1 = "rlrmp.run_spec.v1"
 RUN_SPEC_SCHEMA_VERSION_LEGACY_CS_GRU = "rlrmp.cs_stochastic_gru.v1"
 
+FINITE_ADVERSARY_POLICY_METADATA_KIND = "RLRMPFiniteAdversaryPolicyMetadata"
+FINITE_ADVERSARY_POLICY_METADATA_SCHEMA_ID = "rlrmp.finite_adversary_policy_metadata"
+FINITE_ADVERSARY_POLICY_METADATA_SCHEMA_VERSION = "rlrmp.finite_adversary_policy_metadata.v1"
+
 LEGACY_TRAINING_CONFIG_KIND = "RLRMPLegacyTrainingConfig"
 LEGACY_TRAINING_CONFIG_SCHEMA_ID = "rlrmp.legacy_training_config"
 LEGACY_TRAINING_CONFIG_SCHEMA_VERSION = "rlrmp.legacy_training_config.archive.v1"
@@ -396,6 +400,22 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
                 "outside this family."
             ),
         ),
+        _family(
+            FINITE_ADVERSARY_POLICY_METADATA_KIND,
+            FINITE_ADVERSARY_POLICY_METADATA_SCHEMA_ID,
+            FINITE_ADVERSARY_POLICY_METADATA_SCHEMA_VERSION,
+            emitted_by=("rlrmp.train.closed_loop_finite_adversary",),
+            consumed_by=(
+                "rlrmp TrainingRunSpec method payloads",
+                "rlrmp finite-policy run specs and audits",
+            ),
+            description="Governed finite closed-loop adversary policy metadata payload.",
+            rejected_old_versions=("rlrmp.finite_adversary_policy_metadata.v0",),
+            notes=(
+                "FiniteAdversaryPolicyMetadata is carried through the governed "
+                "RLRMP payload envelope; standalone ad-hoc metadata serializers are retired."
+            ),
+        ),
     )
 
 
@@ -454,6 +474,9 @@ __all__ = [
     "FEEDBACK_QUALITY_LENS_KIND",
     "FEEDBACK_QUALITY_LENS_SCHEMA_ID",
     "FEEDBACK_QUALITY_LENS_SCHEMA_VERSION",
+    "FINITE_ADVERSARY_POLICY_METADATA_KIND",
+    "FINITE_ADVERSARY_POLICY_METADATA_SCHEMA_ID",
+    "FINITE_ADVERSARY_POLICY_METADATA_SCHEMA_VERSION",
     "GRU_EVALUATION_DIAGNOSTICS_KIND",
     "GRU_EVALUATION_DIAGNOSTICS_SCHEMA_ID",
     "GRU_EVALUATION_DIAGNOSTICS_SCHEMA_VERSION",

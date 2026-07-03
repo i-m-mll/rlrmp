@@ -27,6 +27,9 @@ from rlrmp.train.guided_distillation import (
     DEFAULT_SPEC_PATH,
     _save_pytree,
     _standard_hps_from_spec,
+    standard_controller_action_dim,
+    standard_controller_feedback_dim,
+    standard_controller_parts,
 )
 
 
@@ -118,8 +121,8 @@ def main(argv: list[str] | None = None) -> int:
     ).model
     n_replicates = int(hps.model.n_replicates)
     hidden_size = int(hps.model.hidden_size)
-    feedback_dim = int(standard_template.nodes["net"].net.hidden.weight_ih.shape[-1])
-    action_dim = int(_linear_weight(standard_template.nodes["net"].net.readout).shape[-2])
+    feedback_dim = standard_controller_feedback_dim(standard_template)
+    action_dim = standard_controller_action_dim(standard_template)
     legacy_template = eqx.filter_vmap(
         lambda key: LegacyGuidedDistillationPolicy(
             feedback_dim=feedback_dim,
@@ -196,31 +199,46 @@ def migrate_one_model(
     standard = standard_template
     return eqx.tree_at(
         lambda model: (
-            model.nodes["net"].h0_encoder.weight,
-            model.nodes["net"].h0_encoder.bias,
-            model.nodes["net"].net.hidden.weight_ih,
-            model.nodes["net"].net.hidden.weight_hh,
-            model.nodes["net"].net.hidden.bias,
-            model.nodes["net"].net.hidden.bias_n,
-            _linear_weight(model.nodes["net"].net.readout),
-            _linear_bias(model.nodes["net"].net.readout),
+            standard_controller_parts(model).h0_encoder.weight,
+            standard_controller_parts(model).h0_encoder.bias,
+            standard_controller_parts(model).hidden_cell.weight_ih,
+            standard_controller_parts(model).hidden_cell.weight_hh,
+            standard_controller_parts(model).hidden_cell.bias,
+            standard_controller_parts(model).hidden_cell.bias_n,
+            _linear_weight(standard_controller_parts(model).readout),
+            _linear_bias(standard_controller_parts(model).readout),
         ),
         standard,
         replace=(
-            _like(legacy_model.h0_encoder.weight, standard.nodes["net"].h0_encoder.weight),
-            _like(legacy_model.h0_encoder.bias, standard.nodes["net"].h0_encoder.bias),
+            _like(
+                legacy_model.h0_encoder.weight,
+                standard_controller_parts(standard).h0_encoder.weight,
+            ),
+            _like(
+                legacy_model.h0_encoder.bias,
+                standard_controller_parts(standard).h0_encoder.bias,
+            ),
             _like(
                 legacy_model.cell.weight_ih[..., :feedback_dim],
-                standard.nodes["net"].net.hidden.weight_ih,
+                standard_controller_parts(standard).hidden_cell.weight_ih,
             ),
-            _like(legacy_model.cell.weight_hh, standard.nodes["net"].net.hidden.weight_hh),
-            _like(legacy_model.cell.bias, standard.nodes["net"].net.hidden.bias),
-            _like(legacy_model.cell.bias_n, standard.nodes["net"].net.hidden.bias_n),
+            _like(
+                legacy_model.cell.weight_hh,
+                standard_controller_parts(standard).hidden_cell.weight_hh,
+            ),
+            _like(legacy_model.cell.bias, standard_controller_parts(standard).hidden_cell.bias),
+            _like(
+                legacy_model.cell.bias_n,
+                standard_controller_parts(standard).hidden_cell.bias_n,
+            ),
             _like(
                 legacy_model.readout.weight,
-                _linear_weight(standard.nodes["net"].net.readout),
+                _linear_weight(standard_controller_parts(standard).readout),
             ),
-            _like(legacy_model.readout.bias, _linear_bias(standard.nodes["net"].net.readout)),
+            _like(
+                legacy_model.readout.bias,
+                _linear_bias(standard_controller_parts(standard).readout),
+            ),
         ),
     )
 
@@ -293,8 +311,8 @@ def smoke_standard_load(model_path: Path, *, hps: Any, seed: int) -> dict[str, A
     return {
         "load_status": "ok",
         "model_path": str(model_path),
-        "n_replicates": int(model.nodes["net"].net.hidden.weight_ih.shape[0]),
-        "feedback_dim": int(model.nodes["net"].net.hidden.weight_ih.shape[-1]),
+        "n_replicates": int(standard_controller_parts(model).hidden_cell.weight_ih.shape[0]),
+        "feedback_dim": standard_controller_feedback_dim(model),
         "seed": int(seed),
     }
 
