@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+import equinox as eqx
+from feedbax.analysis.analysis import AbstractAnalysis
 from feedbax.analysis.context import AnalysisArtifactFile, AnalysisRunContext
 from feedbax.analysis.materialization import (
     AnalysisArtifactGroup,
@@ -15,7 +17,7 @@ from feedbax.analysis.materialization import (
     materialization_metadata,
 )
 from feedbax.analysis.specs import AnalysisRecipeResult, register_analysis_recipe
-from feedbax.contracts.manifest import AnalysisRunSpec
+from feedbax.contracts.manifest import AnalysisRunSpec, ParentRef
 from feedbax.analysis.types import AnalysisInputData
 from feedbax.config.namespace import TreeNamespace
 
@@ -77,6 +79,71 @@ ROBUSTNESS_PHENOTYPE_SOURCE_ROLES = {
     "rlrmp-induced-gain-manifest": "induced_gain",
     "rlrmp-exact-audit-manifest": "exact_audit",
 }
+
+
+class RLRMPManifestAnalysis(AbstractAnalysis):
+    """Context-aware rlrmp analysis node that records Feedbax-owned artifacts."""
+
+    materializer: Callable[[AnalysisRunContext, AnalysisInputData], Any | MaterializationResult] = (
+        eqx.field(kw_only=True, static=True)
+    )
+    artifact_role: str = eqx.field(kw_only=True, static=True)
+    logical_name: str = eqx.field(kw_only=True, static=True)
+    schema_boundary: str | None = eqx.field(default=None, static=True)
+    metadata: dict[str, Any] = eqx.field(default_factory=dict, static=True)
+
+    def compute(self, data: AnalysisInputData, **kwargs: Any) -> dict[str, Any]:
+        del data, kwargs
+        return {
+            "status": "pending_context_artifact_emission",
+            "artifact_role": self.artifact_role,
+            "logical_name": self.logical_name,
+        }
+
+    def emit_artifacts(
+        self,
+        context: AnalysisRunContext,
+        data: AnalysisInputData,
+        *,
+        result: Mapping[str, Any],
+        **kwargs: Any,
+    ) -> Any:
+        del result, kwargs
+        materialized = self.materializer(context, data)
+        if not isinstance(materialized, MaterializationResult):
+            materialized = MaterializationResult(payload=materialized)
+        payload = materialized.payload
+        metadata = {**self.metadata, **materialized.payload_metadata}
+        if self.schema_boundary is not None:
+            metadata.setdefault("schema_boundary", self.schema_boundary)
+
+        context.record_artifact_refs_from_value(payload)
+        payload_ref = context.record_json_artifact(
+            payload,
+            role=self.artifact_role,
+            logical_name=self.logical_name,
+            metadata=metadata,
+        )
+        context.record_artifact_refs([payload_ref, *materialized.artifact_refs])
+        for artifact in materialized.existing_artifacts:
+            context.record_artifact(
+                artifact.path,
+                role=artifact.role,
+                logical_name=artifact.logical_name,
+                media_type=artifact.media_type,
+                metadata=artifact.metadata,
+                group_id=artifact.group_id,
+                group_role=artifact.group_role,
+                group_metadata=artifact.group_metadata,
+            )
+        for group in materialized.artifact_groups:
+            context.record_artifact_group(
+                group_id=group.group_id,
+                members=group.members,
+                metadata=group.metadata,
+            )
+        context.record_regeneration_specs(materialized.regeneration_specs)
+        return payload
 
 
 def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
@@ -168,6 +235,8 @@ def gru_evaluation_diagnostics_spec(
     jacobian_timepoints: Sequence[str] = DEFAULT_JACOBIAN_TIMEPOINTS,
     write_bulk_arrays: bool = True,
     regeneration_spec_path: Path | str | None = None,
+    evaluation_manifest_id: str | None = None,
+    evaluation_manifest_uri: Path | str | None = None,
     repo_root: Path | str | None = None,
 ) -> AnalysisRunSpec:
     """Return declarative spec data for GRU rollout diagnostics."""
@@ -189,8 +258,13 @@ def gru_evaluation_diagnostics_spec(
     )
     _set_optional_path_param(params, "regeneration_spec_path", regeneration_spec_path)
     _set_optional_path_param(params, "repo_root", repo_root)
+    inputs = _evaluation_parent_refs(
+        evaluation_manifest_id=evaluation_manifest_id,
+        evaluation_manifest_uri=evaluation_manifest_uri,
+    )
     return AnalysisRunSpec(
         analysis_type=GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE,
+        inputs=inputs,
         params=params,
     )
 
@@ -208,6 +282,8 @@ def gru_postrun_spec(
     include_map_decomposition: bool = True,
     include_perturbation_response: bool = True,
     include_feedback_ablation: bool = True,
+    evaluation_manifest_id: str | None = None,
+    evaluation_manifest_uri: Path | str | None = None,
     repo_root: Path | str | None = None,
 ) -> AnalysisRunSpec:
     """Return declarative spec data for the complete GRU post-run bundle."""
@@ -228,8 +304,13 @@ def gru_postrun_spec(
     if labels is not None:
         params["labels"] = list(labels)
     _set_optional_path_param(params, "repo_root", repo_root)
+    inputs = _evaluation_parent_refs(
+        evaluation_manifest_id=evaluation_manifest_id,
+        evaluation_manifest_uri=evaluation_manifest_uri,
+    )
     return AnalysisRunSpec(
         analysis_type=GRU_POSTRUN_ANALYSIS_TYPE,
+        inputs=inputs,
         params=params,
     )
 
@@ -359,20 +440,25 @@ def gru_standard_certificate_recipe(
 def gru_evaluation_diagnostics_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
-    _inputs: Sequence[Any],
+    inputs: Sequence[Any],
 ) -> AnalysisRecipeResult:
     """Build the declarative GRU rollout-diagnostics recipe."""
 
     params = dict(spec.params)
-    analysis = ContextMaterializer(
-        materializer=lambda context: _materialize_gru_evaluation_diagnostics(context, params),
+    evaluation_input = _primary_evaluation_input(inputs)
+    analysis = RLRMPManifestAnalysis(
+        materializer=lambda context, data: _materialize_gru_evaluation_diagnostics(
+            context,
+            params,
+            evaluation_input=evaluation_input,
+        ),
         artifact_role="rlrmp-gru-evaluation-diagnostics",
         logical_name="gru_evaluation_diagnostics.json",
         schema_boundary="rlrmp-owned GRU diagnostic payload",
     )
     return AnalysisRecipeResult(
         analyses={"gru_evaluation_diagnostics": analysis},
-        data=_empty_analysis_data(),
+        data=_analysis_data_from_evaluation_input(evaluation_input),
     )
 
 
@@ -386,12 +472,14 @@ def gru_postrun_recipe(
     params = dict(spec.params)
     resolved_run_ids = _run_ids_from_params_or_inputs(params, inputs)
     experiment = _experiment_from_params_or_inputs(params, inputs)
-    analysis = ContextMaterializer(
-        materializer=lambda context: _materialize_gru_postrun(
+    evaluation_input = _primary_evaluation_input(inputs)
+    analysis = RLRMPManifestAnalysis(
+        materializer=lambda context, data: _materialize_gru_postrun(
             context,
             params,
             experiment=experiment,
             run_ids=resolved_run_ids,
+            evaluation_input=evaluation_input,
         ),
         artifact_role="rlrmp-gru-postrun-manifest",
         logical_name="gru_postrun_materialization.json",
@@ -399,7 +487,7 @@ def gru_postrun_recipe(
     )
     return AnalysisRecipeResult(
         analyses={"gru_postrun_materialization": analysis},
-        data=_empty_analysis_data(),
+        data=_analysis_data_from_evaluation_input(evaluation_input),
     )
 
 
@@ -551,6 +639,8 @@ def _materialize_gru_standard(
 def _materialize_gru_evaluation_diagnostics(
     context: AnalysisRunContext,
     params: Mapping[str, Any],
+    *,
+    evaluation_input: Any | None = None,
 ) -> MaterializationResult:
     if "experiment" not in params:
         raise ValueError("GRU evaluation diagnostics recipe requires params.experiment")
@@ -585,6 +675,8 @@ def _materialize_gru_evaluation_diagnostics(
             params.get("regeneration_spec_path"),
             repo_root=repo_root,
         ),
+        evaluation_manifest_path=_resolved_input_path(evaluation_input),
+        evaluation_states=_resolved_input_states(evaluation_input),
         repo_root=repo_root,
     )
     existing = _existing_file(
@@ -613,6 +705,7 @@ def _materialize_gru_postrun(
     *,
     experiment: str,
     run_ids: Sequence[str],
+    evaluation_input: Any | None = None,
 ) -> MaterializationResult:
     if not run_ids:
         raise ValueError("GRU post-run recipe requires at least one run ID")
@@ -642,6 +735,8 @@ def _materialize_gru_postrun(
         perturbation_calibration_level=params.get("perturbation_calibration_level"),
         perturbation_calibration_reach=params.get("perturbation_calibration_reach"),
         feedback_selection_level=str(params.get("feedback_selection_level", "small")),
+        evaluation_manifest_path=_resolved_input_path(evaluation_input),
+        evaluation_states=_resolved_input_states(evaluation_input),
         repo_root=repo_root,
     )
     plan = plan_gru_postrun_materialization(
@@ -916,6 +1011,40 @@ def _empty_analysis_data() -> AnalysisInputData:
     )
 
 
+def _analysis_data_from_evaluation_input(evaluation_input: Any | None) -> AnalysisInputData:
+    if evaluation_input is None:
+        return _empty_analysis_data()
+    ref = getattr(evaluation_input, "ref", None)
+    return AnalysisInputData(
+        models={},
+        tasks={},
+        states={
+            "evaluation": _resolved_input_states(evaluation_input),
+            "evaluation_manifest_id": getattr(ref, "id", None),
+        },
+        hps={},
+        extras=TreeNamespace(),
+    )
+
+
+def _primary_evaluation_input(inputs: Sequence[Any]) -> Any | None:
+    for resolved in inputs:
+        ref = getattr(resolved, "ref", None)
+        if getattr(ref, "kind", None) == "EvaluationRunManifest":
+            return resolved
+    return None
+
+
+def _resolved_input_path(resolved: Any | None) -> Path | None:
+    path = getattr(resolved, "path", None)
+    return Path(path) if path is not None else None
+
+
+def _resolved_input_states(resolved: Any | None) -> Mapping[str, Any] | None:
+    states = getattr(resolved, "states", None)
+    return states if isinstance(states, Mapping) else None
+
+
 def _run_ids_from_params_or_inputs(
     params: Mapping[str, Any],
     inputs: Sequence[Any],
@@ -926,6 +1055,13 @@ def _run_ids_from_params_or_inputs(
     for resolved in inputs:
         ref = getattr(resolved, "ref", None)
         if ref is None:
+            continue
+        if getattr(ref, "kind", None) == "EvaluationRunManifest":
+            manifest = getattr(resolved, "manifest", None)
+            for parent in getattr(manifest, "input_training_runs", ()):
+                parent_id = getattr(parent, "id", None)
+                if parent_id is not None:
+                    run_ids.append(str(parent_id))
             continue
         run_id = getattr(ref, "metadata", {}).get("run_id") or getattr(ref, "id", None)
         if run_id is not None:
@@ -1399,6 +1535,23 @@ def _set_optional_path_param(
 ) -> None:
     if value is not None:
         params[key] = str(value)
+
+
+def _evaluation_parent_refs(
+    *,
+    evaluation_manifest_id: str | None,
+    evaluation_manifest_uri: Path | str | None,
+) -> list[Any]:
+    if evaluation_manifest_id is None:
+        return []
+    return [
+        ParentRef(
+            kind="EvaluationRunManifest",
+            id=evaluation_manifest_id,
+            role="evaluation_run",
+            uri=None if evaluation_manifest_uri is None else str(evaluation_manifest_uri),
+        )
+    ]
 
 
 __all__ = [

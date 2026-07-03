@@ -8,13 +8,24 @@ from pathlib import Path
 import numpy as np
 import pytest
 import rlrmp
+from feedbax.analysis.analysis import AbstractAnalysis
 from feedbax.analysis.bundles import execute_analysis_bundle, load_analysis_bundle
+from feedbax.analysis.evaluation import execute_evaluation_run_spec
 from feedbax.analysis.materialization import ContextMaterializer
 from feedbax.analysis.specs import execute_analysis_run_spec, unregister_analysis_recipe
-from feedbax.contracts.manifest import AnalysisRunSpec, TrainingRunManifest, load_manifest, write_manifest
+from feedbax.contracts.manifest import (
+    AnalysisRunSpec,
+    EvaluationRunSpec,
+    ParentRef,
+    TrainingRunManifest,
+    load_manifest,
+    write_manifest,
+)
 from feedbax.plugins.registry import ExperimentRegistry
 
 from rlrmp.analysis import declarative_materialization as dm
+from rlrmp.eval.recipes import CENTER_OUT_ENSEMBLE_EVALUATION_TYPE
+from rlrmp.runtime.spec_migrations import CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND, stamp_current_schema
 
 
 def _artifact_roles(manifest) -> set[str]:
@@ -50,7 +61,8 @@ def test_declarative_recipes_use_feedbax_context_materializers() -> None:
     )
 
     assert isinstance(standard.analyses["gru_standard_certificate"], ContextMaterializer)
-    assert isinstance(evaluation.analyses["gru_evaluation_diagnostics"], ContextMaterializer)
+    assert isinstance(evaluation.analyses["gru_evaluation_diagnostics"], AbstractAnalysis)
+    assert not isinstance(evaluation.analyses["gru_evaluation_diagnostics"], ContextMaterializer)
     feedback_quality = dm.feedback_quality_lens_recipe(
         dm.feedback_quality_lens_spec(
             experiment="unitexp",
@@ -393,6 +405,73 @@ def test_gru_evaluation_recipe_groups_bulk_npz_artifacts(
         assert payload["schema_version"] == "rlrmp.gru_evaluation_diagnostics.v1"
         assert payload["declarative_analysis"]["artifact_owner"] == ("feedbax.AnalysisRunManifest")
         assert load_manifest(path).id == manifest.id
+    finally:
+        _unregister_declarative_recipes()
+
+
+def test_gru_evaluation_recipe_consumes_evaluation_manifest_parent_ref(tmp_path: Path) -> None:
+    registry = ExperimentRegistry()
+    rlrmp.register_experiment_package(registry)
+    legacy_manifest = {
+        "schema_version": "rlrmp.gru_evaluation_diagnostics.v1",
+        "issue": "unitexp",
+        "scope": "post_hoc_evaluation_non_certificate_diagnostics",
+        "runs": {
+            "unit_run": {
+                "label": "Unit Run",
+                "checkpoint_policy": "validation_selected_per_replicate",
+            }
+        },
+    }
+    eval_spec = EvaluationRunSpec(
+        evaluation_type=CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,
+        inputs=[
+            ParentRef(
+                kind="TrainingRunManifest",
+                id="unit_run",
+                role="training_run",
+                metadata={"rlrmp_experiment": "unitexp"},
+            )
+        ],
+        params=stamp_current_schema(
+            CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND,
+            {
+                "task": "center_out",
+                "legacy_diagnostics_manifest": legacy_manifest,
+            },
+        ),
+    )
+    eval_manifest, eval_manifest_path = execute_evaluation_run_spec(
+        eval_spec,
+        root=tmp_path,
+        force=True,
+    )
+    output_path = tmp_path / "diagnostics.json"
+    dm.register_certificate_analysis_recipes(replace=True)
+    try:
+        spec = dm.gru_evaluation_diagnostics_spec(
+            experiment="unitexp",
+            run_ids=["unit_run"],
+            output_path=output_path,
+            bulk_dir=tmp_path / "bulk",
+            evaluation_manifest_id=eval_manifest.id,
+            evaluation_manifest_uri=eval_manifest_path,
+            repo_root=tmp_path / "repo",
+        )
+
+        analysis_manifest, _path = execute_analysis_run_spec(spec, root=tmp_path)
+
+        payload_ref = next(
+            artifact
+            for artifact in analysis_manifest.artifacts
+            if artifact.role == "rlrmp-gru-evaluation-diagnostics"
+        )
+        payload = json.loads(Path(payload_ref.uri).read_text(encoding="utf-8"))
+        written = json.loads(output_path.read_text(encoding="utf-8"))
+        assert payload["runs"] == legacy_manifest["runs"]
+        assert written["evaluation_manifest_dependency"]["manifest_id"] == eval_manifest.id
+        assert analysis_manifest.inputs[0].kind == "EvaluationRunManifest"
+        assert analysis_manifest.provenance.parents[0].id == eval_manifest.id
     finally:
         _unregister_declarative_recipes()
 

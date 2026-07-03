@@ -21,6 +21,10 @@ from feedbax.config.namespace import TreeNamespace
 
 from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT
+from rlrmp.runtime.spec_migrations import (
+    STANDARD_MATRIX_EVAL_PARAMS_KIND,
+    accept_rlrmp_spec_payload,
+)
 from rlrmp.viz import profile_comparison_grid
 
 STANDARD_MATRIX_ANALYSIS_TYPE = "rlrmp.standard_matrix"
@@ -107,8 +111,14 @@ def standard_matrix_evaluation_recipe(
     _root: Path,
     _states_path: Path,
 ) -> EvaluationRecipeResult:
-    """Cache a pre-materialized standard matrix payload as evaluation states."""
-    payload = run_spec.params.get("matrix_payload", run_spec.params.get("states"))
+    """Produce standard-matrix evaluation states from refs or explicit legacy payloads."""
+    params = _accept_standard_matrix_params(run_spec.params)
+    legacy_payload_mode = params.get("legacy_payload_mode") is True
+    payload = params.get("matrix_payload", params.get("states"))
+    if payload is not None and not legacy_payload_mode:
+        raise ValueError(
+            "standard-matrix matrix_payload/states params require legacy_payload_mode=true"
+        )
     if payload is None:
         payload = {
             "cells": [
@@ -121,15 +131,27 @@ def standard_matrix_evaluation_recipe(
                 for ref in run_spec.inputs
             ]
         }
-    cells = _normalise_cells(payload, params=run_spec.params)
+    elif not legacy_payload_mode:
+        raise ValueError("standard-matrix legacy payload mode must be explicit")
+    cells = _normalise_cells(payload, params=params)
     return EvaluationRecipeResult(
         states={"cells": cells},
         summary_metrics={"standard_matrix_cells": len(cells)},
         metadata={
             "standard_matrix": True,
             "cell_count": len(cells),
+            "legacy_payload_mode": legacy_payload_mode,
+            "params_schema_id": params.get("schema_id"),
+            "params_schema_version": params.get("schema_version"),
         },
     )
+
+
+def _accept_standard_matrix_params(params: Mapping[str, Any]) -> dict[str, Any]:
+    if "schema_version" not in params and "schema_id" not in params:
+        return dict(params)
+    result = accept_rlrmp_spec_payload(STANDARD_MATRIX_EVAL_PARAMS_KIND, params)
+    return dict(result.payload)
 
 
 def standard_matrix_recipe(

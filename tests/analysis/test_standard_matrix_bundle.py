@@ -297,7 +297,7 @@ def test_registered_standard_matrix_recipe_executes_profile_with_routing(
                 role="training_run",
             )
         ],
-        params={"matrix_payload": payload},
+        params={"matrix_payload": payload, "legacy_payload_mode": True},
     )
     eval_manifest, eval_path = execute_evaluation_run_spec(
         eval_spec,
@@ -396,7 +396,7 @@ def test_registered_standard_matrix_notes_preserve_handwritten_sections(
                 role="training_run",
             )
         ],
-        params={"matrix_payload": payload},
+        params={"matrix_payload": payload, "legacy_payload_mode": True},
     )
     eval_manifest, eval_path = execute_evaluation_run_spec(
         eval_spec,
