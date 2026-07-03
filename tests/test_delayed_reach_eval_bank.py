@@ -11,10 +11,11 @@ import numpy as np
 import pytest
 
 from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
+    CHECKPOINT_SELECTION_BANK_SCHEMA_ID,
     DEFAULT_DELAYED_REACH_DIRECTION_COUNT,
     DEFAULT_DELAYED_REACH_GO_CUE_STEPS,
     DEFAULT_DELAYED_REACH_UNIFORM_REACH_LENGTH_M,
-    DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION,
+    FEEDBAX_MANIFEST_SCHEMA_VERSION,
     delayed_reach_eval_bank_spec,
     delayed_reach_fixed_eval_bank_specs,
     delayed_reach_fixed_rescore_bank_spec,
@@ -55,7 +56,8 @@ def test_uniform_delayed_eval_bank_preserves_historical_grid_contract() -> None:
 
     payload = bank.to_json()
 
-    assert payload["schema_version"] == DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION
+    assert payload["schema_id"] == CHECKPOINT_SELECTION_BANK_SCHEMA_ID
+    assert payload["schema_version"] == FEEDBAX_MANIFEST_SCHEMA_VERSION
     assert payload["kind"] == "no_catch"
     assert payload["catch"] is False
     assert payload["go_cue_min"] == 10
