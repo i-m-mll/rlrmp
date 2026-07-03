@@ -1,0 +1,76 @@
+{
+  "schema_id": "feedbax.manifest.analysis_data_product",
+  "schema_version": "feedbax.manifest.analysis_data_product.v1",
+  "product_schema_id": "rlrmp.perturbation_open_loop_calibration",
+  "product_schema_version": "rlrmp.perturbation_open_loop_calibration.v2",
+  "role": "perturbation_open_loop_calibration",
+  "logical_name": "cs_perturbation_open_loop_calibration",
+  "producer_manifest_id": "rlrmp.analysis.pipelines.gru_perturbation_calibration.materialize_perturbation_open_loop_calibration",
+  "parent_manifests": [],
+  "checkpoint_policy": {},
+  "rollout_policy": {},
+  "parameters": {
+    "open_loop_peak_delta_x_per_unit": {
+      "command_input_pulse": {
+        "early": 0.022194585242892,
+        "mid": 0.01739291144150351,
+        "late": 0.007727047798606057
+      },
+      "initial_position_offset": {
+        "initial_condition": 1.0
+      },
+      "initial_velocity_offset": {
+        "initial_condition": 0.5826373777683177
+      },
+      "process_epsilon_force_state_xy": {
+        "early": 0.146484262603,
+        "mid": 0.114793215514,
+        "late": 0.0509985154708
+      },
+      "process_epsilon_integrator_xy": {
+        "early": 0.652559200439,
+        "mid": 0.425295447092,
+        "late": 0.115223248806
+      },
+      "process_epsilon_position_xy": {
+        "early": 5.0,
+        "mid": 5.0,
+        "late": 5.0
+      },
+      "process_epsilon_velocity_xy": {
+        "early": 2.53474407996,
+        "mid": 2.05747045529,
+        "late": 1.08847767512
+      }
+    },
+    "controller_visible_velocity_scale_m_s": 0.7310094144305818,
+    "controller_visible_force_filter_scale_n": 1.0,
+    "reference_reach_m": 0.15,
+    "scale_provenance": {
+      "controller_visible_velocity_scale_m_s": {
+        "source_issue": "a7dad8a",
+        "source_note": "results/a7dad8a/notes/adversary_equivalence_manifest.json",
+        "source_field": "game_card_summary.lqr.peak_forward_velocity",
+        "description": "C&S faithful-plant LQR peak forward velocity used as the controller-visible native velocity scale"
+      },
+      "controller_visible_force_filter_scale_n": {
+        "value_n": 1.0,
+        "description": "native 1 N reference offset for force/filter controller-visible components; unit convention, not generated data"
+      }
+    }
+  },
+  "artifacts": [],
+  "materialization": {
+    "materializer": "rlrmp.analysis.pipelines.gru_perturbation_calibration.materialize_perturbation_open_loop_calibration",
+    "rerun_command": "uv run python scripts/materialize_perturbation_open_loop_calibration.py",
+    "open_loop_reference": "extLQG nominal command replay (no feedback correction)",
+    "bulk_manifest_root": "_artifacts/1ad3c16/perturbation_open_loop_calibration"
+  },
+  "regeneration": [],
+  "product_identity_hash": "03edd3141b62d1b1cf045097114caac7bc96f1236a433875976aec974d9bb97a",
+  "metadata": {
+    "issue": "ea6ccb4",
+    "provenance_issue": "1ad3c16",
+    "note": "Distilled open-loop unit-sensitivity table; bulk per-row manifest lives under _artifacts and is not required at runtime."
+  }
+}

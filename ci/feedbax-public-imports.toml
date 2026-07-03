@@ -101,6 +101,7 @@ module = "feedbax.contracts.graph"
 symbols = [
   "AdditiveGraphChannelAdapterSpec",
   "AdditiveGraphChannelTargetSpec",
+  "AnalysisDataProductRequirement",
   "ComponentSpec",
   "GraphMetadata",
   "GraphSpec",
@@ -161,6 +162,7 @@ symbols = [
 [[canonical_homes]]
 module = "feedbax.contracts.manifest"
 symbols = [
+  "AnalysisDataProduct",
   "AnalysisRunSpec",
   "ArtifactRef",
   "EntrypointRef",
@@ -177,6 +179,7 @@ symbols = [
   "TrainingRunManifest",
   "TreeHashEntry",
   "TreeHashRef",
+  "analysis_data_product_identity_hash",
   "load_manifest",
   "safe_manifest_key",
   "sha256_file",

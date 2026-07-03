@@ -35,9 +35,7 @@ from rlrmp.analysis.math.cs_game_card import (
 )
 from rlrmp.analysis.math.cs_released_simulation import default_cs_noise_covariances
 from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig
-from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
-    DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT,
-)
+from rlrmp.data_products.calibration import load_open_loop_calibration
 from rlrmp.model.cs_lss_gru import (
     CS_LSS_FINITE_EPSILON_POLICY_COMPONENT,
     CS_EPSILON_DIM,
@@ -3254,9 +3252,7 @@ def test_calibrated_timing_sampler_consumes_calibrated_amplitudes() -> None:
         _unique_abs_nonzero(init_delta[..., 2:4]),
         {
             target_peak_delta_x
-            / DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT["initial_velocity_offset"][
-                "initial_condition"
-            ]
+            / load_open_loop_calibration()["initial_velocity_offset"]["initial_condition"]
         },
     )
 
@@ -3264,7 +3260,7 @@ def test_calibrated_timing_sampler_consumes_calibrated_amplitudes() -> None:
     process_delta = process_bin.inputs["epsilon"] - base.inputs["epsilon"]
     process_expected = {
         target_peak_delta_x
-        / DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT["process_epsilon_force_state_xy"]["early"]
+        / load_open_loop_calibration()["process_epsilon_force_state_xy"]["early"]
     }
     _assert_values_close_to_expected(
         _unique_abs_nonzero(process_delta),
@@ -3274,8 +3270,7 @@ def test_calibrated_timing_sampler_consumes_calibrated_amplitudes() -> None:
     command_bin = apply_validation_bin(base, hps.perturbation_training, "command_input")
     command = command_bin.inputs[GRAPH_ADAPTER_SPECS["command_input"].input_key]
     command_full = {
-        target_peak_delta_x
-        / DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT["command_input_pulse"]["early"]
+        target_peak_delta_x / load_open_loop_calibration()["command_input_pulse"]["early"]
     }
     command_xy = np.asarray(command[..., 5, :2])
     command_norm = np.linalg.norm(command_xy, axis=-1)
@@ -3500,7 +3495,23 @@ def test_calibrated_timing_run_spec_exposes_family_timing_bins(tmp_path: Path) -
         hps_config["mixture_semantics"]["calibrated_levels"]["amplitude_wiring_status"]
         == "wired_in_sampler_when_calibrated_timing_true"
     )
-    assert hps_config["calibrated_amplitude_policy"]["artifact_dependency"] == ("none_at_runtime")
+    # Fail-closed identity: calibration IS consumed at runtime in calibrated-timing
+    # mode, so the emitted policy must carry a data-product identity block with a
+    # non-null hash and must not claim "none_at_runtime" (issue ea6ccb4).
+    calibrated_policy = hps_config["calibrated_amplitude_policy"]
+    data_product = calibrated_policy["data_product"]
+    assert data_product["role"] == "perturbation_open_loop_calibration"
+    assert data_product["product_schema_version"] == "rlrmp.perturbation_open_loop_calibration.v2"
+    assert data_product["product_identity_hash"]
+    assert calibrated_policy["artifact_dependency"] != "none_at_runtime"
+    assert calibrated_policy["artifact_dependency"] == data_product["product_path"]
+    consumed = payload["consumed_data_identities"]
+    calibration_ids = [
+        entry for entry in consumed if entry["role"] == "perturbation_open_loop_calibration"
+    ]
+    assert len(calibration_ids) == 1
+    assert calibration_ids[0]["hash"] == data_product["product_identity_hash"]
+    assert calibration_ids[0]["schema"] == "rlrmp.perturbation_open_loop_calibration.v2"
 
 
 def test_movement_age_timing_run_spec_distinguishes_timing_basis(tmp_path: Path) -> None:
