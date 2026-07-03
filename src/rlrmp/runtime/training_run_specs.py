@@ -13,7 +13,6 @@ from pydantic import BaseModel, ConfigDict
 
 from feedbax.contracts.manifest import (
     ArtifactRef,
-    PROVIDER_VERSION,
     Provenance,
     SCHEMA_VERSION,
     SpecPayload,
@@ -77,6 +76,7 @@ RLRMP_RUN_SPEC_PAYLOAD_KEY = "rlrmp_run_spec"
 CONSUMED_DATA_IDENTITIES_KEY = "consumed_data_identities"
 POST_RUN_SCHEMA_VERSION = "rlrmp.post_run_provenance.v1"
 PINNED_MANIFEST_ROOT = "_artifacts/feedbax_runs"
+FEEDBAX_PROVIDER_VERSION = "feedbax-provider.v1"
 
 CLOSED_LOOP_DISTILLATION_METHOD_REF = "rlrmp/closed_loop_distillation/v1"
 CLOSED_LOOP_DISTILLATION_PAYLOAD_SCHEMA_ID = (
@@ -1070,7 +1070,7 @@ def attach_post_run_provenance(
         "schemas": {
             "post_run_provenance": POST_RUN_SCHEMA_VERSION,
             "feedbax_manifest": SCHEMA_VERSION,
-            "feedbax_provider": PROVIDER_VERSION,
+            "feedbax_provider": FEEDBAX_PROVIDER_VERSION,
         },
         "feedbax_manifest_root": {
             "path": PINNED_MANIFEST_ROOT,

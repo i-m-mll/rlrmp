@@ -7,6 +7,7 @@ import numpy as np
 from feedbax import TaskTrialSpec, WhereDict
 from feedbax.objectives.loss import TargetSpec
 
+import rlrmp.analysis.pipelines.cs_gru_standard_materialization as cs_standard
 from rlrmp.analysis.pipelines.bridge_certificates import (
     BELLMAN_HESSIAN_RESIDUAL,
     CLOSED_LOOP_TRANSITION_MISMATCH,
@@ -305,7 +306,15 @@ def test_response_map_sampling_repeats_first_trial_from_multitarget_bank() -> No
     )
 
 
-def test_gru_materializer_does_not_claim_action_evidence_when_models_are_not_loaded() -> None:
+def test_gru_materializer_does_not_claim_action_evidence_when_models_are_not_loaded(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        cs_standard,
+        "resolve_run_record",
+        lambda _experiment, _run_id, *, repo_root: _minimal_run_spec(),
+    )
+
     result = materialize_gru_standard_result(run_ids=(RUN_IDS[0],), load_models=False)
     row = result["rows"][0]
     by_name = _components(row)

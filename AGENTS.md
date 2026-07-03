@@ -376,16 +376,24 @@ Stable post-run provenance contract:
   SHA, Feedbax manifest/provider schema versions, the post-run provenance
   schema version, the pinned manifest root, and GraphSpec hash/version when the
   graph sidecar is present.
-- Non-dry runs stamp the tracked run spec with `post_run_provenance`, then run
-  Feedbax `TrainingRunManifest` parity before `git add` / `agent-commit`. A
-  mismatched tracked run spec and matching manifest blocks the commit.
+- New-format training runs stamp `post_run_provenance` during run production and
+  emit a Feedbax `TrainingRunManifest` whose `training_spec` is the canonical
+  full `RLRMPRunSpec` run record. The tracked
+  `results/<hash>/runs/<run>.json` file remains a recipe/reference convenience
+  for repo layout, but it is not the authority for new-format runs.
+- `scripts/post_run.sh` verifies the already-emitted `TrainingRunManifest` and
+  tracked recipe identity before `git add` / `agent-commit`. It must not
+  reconstruct, rewrite, or hash-reconcile the canonical manifest. A mismatched
+  tracked run spec and matching new-format manifest blocks the commit.
 - Non-dry runs must verify `uv.lock` is clean before `git add` /
   `agent-commit` / auth submission. `POST_RUN_ALLOW_DIRTY_UV_LOCK=1` is an
   emergency override only when the lockfile change is deliberate and documented
   elsewhere.
-- Existing legacy runs without a matching Feedbax `TrainingRunManifest` may
-  continue through the wrapper, but the output must report that parity was
-  `not_found` rather than silently implying a checked manifest.
+- Existing legacy runs without a matching Feedbax `TrainingRunManifest`, or
+  with a matching archived manifest that lacks the new-format training-spec
+  discriminator, may continue through the wrapper. The output must report
+  literal `not_found` or `archive-only` parity rather than silently implying a
+  checked manifest.
 - The run recipe must arrive at the **flat** canonical path
   `results/<hash>/runs/<run>.json`. Training scripts now write the flat recipe
   directly (`derive_spec_path`; W8/`e926665`). If only a **legacy nested**
