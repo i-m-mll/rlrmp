@@ -9,7 +9,8 @@ from typing import Any
 import numpy as np
 
 from rlrmp.analysis.pipelines.gru_checkpoint_selection import load_materialized_fixed_bank_manifest
-from rlrmp.paths import REPO_ROOT, run_spec_path
+from rlrmp.paths import REPO_ROOT
+from rlrmp.runtime.run_specs import resolve_run_record
 
 OBSERVATION_CHANNELS = ("px", "py", "vx", "vy")
 ACTION_CHANNELS = ("ux", "uy")
@@ -52,7 +53,7 @@ def materialize_gru_map_error_decomposition(
     reference_map, reference_metadata = cs_output_feedback_observation_action_map()
     rows = []
     for run_id in selected_run_ids:
-        run_spec = _read_json(run_spec_path(experiment, run_id, repo_root=repo_root))
+        run_spec = resolve_run_record(experiment, run_id, repo_root=repo_root)
         _actions, candidate_map, evaluation_metadata = evaluate_gru_clean_actions(
             run_id,
             run_spec=run_spec,

@@ -98,6 +98,7 @@ from rlrmp.runtime.training_run_specs import (
     FEEDBAX_TRAINING_RUN_SPEC_KEY,
     RLRMP_RUN_SPEC_PAYLOAD_KEY,
     attach_composed_training_specs,
+    attach_post_run_provenance,
     assert_runtime_graph_matches_training_spec,
     feedbax_training_run_spec_from_payload,
     write_training_run_manifest_for_spec,
@@ -1970,6 +1971,7 @@ def build_run_spec(
         "loss_summary": graph_bundle.loss_spec,
         "training_summary": training_summary,
         "feedbax_graph": graph_bundle.to_run_metadata(),
+        "consumed_data_identities": [],
         "hps": _plain(hps),
         "provenance": {
             "git": _get_git_metadata(),
@@ -2026,6 +2028,20 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
     graph_path = _write_graph_bundle_for_backend(hps, graph_bundle, spec_dir)
     payload["feedbax_graph"] = graph_bundle.to_run_metadata(
         graph_spec_path=None if graph_path is None else graph_path.name,
+    )
+    payload = attach_composed_training_specs(
+        payload,
+        graph_spec=training_run_graph_spec,
+        output_dir=output_dir,
+        spec_dir=spec_dir,
+    )
+    payload = attach_post_run_provenance(
+        payload,
+        run_spec_path=run_path,
+        artifact_dir=output_dir,
+        manifest_root=REPO_ROOT / "_artifacts" / "feedbax_runs",
+        graph_manifest_path=spec_dir / "model.graph.manifest.json",
+        graph_spec_path=graph_path,
     )
     payload = attach_composed_training_specs(
         payload,

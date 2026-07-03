@@ -731,32 +731,40 @@ def test_write_objective_comparator_sidecar_serializes_json_and_markdown(tmp_pat
     assert "Per-term realized scoring" in markdown
 
 
-def test_load_run_objective_metadata_extracts_full_qrf_contract(tmp_path: Path) -> None:
-    run_spec_path = tmp_path / "run.json"
-    run_spec_path.write_text(
-        json.dumps(
-            {
-                "loss_objective": "full_analytical_qrf",
-                "loss_summary": {
-                    "objective_profile": "full_analytical_qrf",
-                    "active_cs_terms": {
-                        "state_running_q": {},
-                        "terminal_q_f": {},
-                        "control_r": {},
-                    },
-                    "force_filter_state_cost": "included_via_Q_entries_4_5_each_delay_block",
-                    "disturbance_integrator_state_cost": (
-                        "included_via_Q_entries_6_7_each_delay_block"
-                    ),
-                },
-            }
-        ),
+def test_load_run_objective_metadata_extracts_full_qrf_contract(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    (tmp_path / "results" / "abc1234" / "runs").mkdir(parents=True)
+    (tmp_path / "results" / "abc1234" / "runs" / "run_a.json").write_text(
+        "{}",
         encoding="utf-8",
     )
 
-    metadata = load_run_objective_metadata(run_spec_path)
+    def fake_resolve(experiment: str, run_id: str, *, repo_root: Path):
+        assert (experiment, run_id, repo_root) == ("abc1234", "run_a", tmp_path)
+        return {
+            "loss_objective": "full_analytical_qrf",
+            "loss_summary": {
+                "objective_profile": "full_analytical_qrf",
+                "active_cs_terms": {
+                    "state_running_q": {},
+                    "terminal_q_f": {},
+                    "control_r": {},
+                },
+                "force_filter_state_cost": "included_via_Q_entries_4_5_each_delay_block",
+                "disturbance_integrator_state_cost": (
+                    "included_via_Q_entries_6_7_each_delay_block"
+                ),
+            },
+        }
+
+    monkeypatch.setattr(objective_comparator, "resolve_run_record", fake_resolve)
+
+    metadata = load_run_objective_metadata("abc1234", "run_a", repo_root=tmp_path)
 
     assert metadata["status"] == "available"
+    assert metadata["run_spec_path"] == "results/abc1234/runs/run_a.json"
     assert metadata["loss_objective"] == "full_analytical_qrf"
     assert metadata["full_qrf_lens"]["status"] == "available"
     assert metadata["full_qrf_lens"]["active_terms"] == [

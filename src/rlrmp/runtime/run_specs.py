@@ -6,6 +6,14 @@ import json
 from pathlib import Path
 from typing import Any
 
+from feedbax.contracts.manifest import TrainingRunManifest, load_manifest
+
+from rlrmp.paths import REPO_ROOT, flat_run_spec_path, run_spec_path
+from rlrmp.runtime.spec_migrations import (
+    RUN_SPEC_KIND,
+    accept_rlrmp_spec_payload,
+    ensure_rlrmp_spec_families,
+)
 from rlrmp.train.minimax import (
     validate_minimax_run_spec,
     validate_minimax_run_spec_file,
@@ -79,6 +87,47 @@ LEGACY_POINT_MASS_GRAPH_TYPES = frozenset(
 
 class RunSpecValidationError(ValueError):
     """Raised when a tracked run spec is missing required metadata."""
+
+
+def resolve_run_record(
+    exp: str,
+    run: str,
+    *,
+    repo_root: Path = REPO_ROOT,
+) -> dict[str, Any]:
+    """Resolve a governed RLRMP run record from its canonical TrainingRunManifest.
+
+    New-format runs are authoritative through
+    ``TrainingRunManifest.training_spec`` with ``SpecPayload(kind="RLRMPRunSpec")``.
+    The tracked ``results/<exp>/runs/<run>.json`` file remains a convenient
+    recipe/ref target, but this resolver does not read it for run details.
+    """
+
+    ensure_rlrmp_spec_families()
+    manifest_path, manifest = _resolve_training_manifest(exp, run, repo_root=repo_root)
+    training_spec = manifest.training_spec
+    if training_spec is None:
+        raise RunSpecValidationError(
+            f"TrainingRunManifest has no training_spec for {exp}/{run}: {manifest_path}"
+        )
+    if training_spec.kind != RUN_SPEC_KIND:
+        raise RunSpecValidationError(
+            f"TrainingRunManifest training_spec kind must be {RUN_SPEC_KIND!r}; "
+            f"found {training_spec.kind!r} in {manifest_path}"
+        )
+    result = accept_rlrmp_spec_payload(
+        RUN_SPEC_KIND,
+        training_spec.inline,
+        source_version=training_spec.schema_version,
+        path=f"{manifest_path}:training_spec.inline",
+    )
+    payload = dict(result.payload)
+    validate_nominal_gru_run_spec(
+        payload,
+        spec_dir=flat_run_spec_path(exp, run, repo_root=repo_root).with_suffix(""),
+        require_graph_sidecars=False,
+    )
+    return payload
 
 
 def validate_nominal_gru_run_spec(
@@ -264,6 +313,89 @@ def _validate_cs_lss_graph_spec_sidecar(graph_spec_path: Path) -> None:
         )
 
 
+def _resolve_training_manifest(
+    exp: str,
+    run: str,
+    *,
+    repo_root: Path,
+) -> tuple[Path, TrainingRunManifest]:
+    rel_flat = _repo_relative(flat_run_spec_path(exp, run, repo_root=repo_root), repo_root)
+    rel_existing = _repo_relative(run_spec_path(exp, run, repo_root=repo_root), repo_root)
+    matches: list[tuple[Path, TrainingRunManifest]] = []
+    for path in _iter_training_manifest_paths(exp, run, repo_root=repo_root):
+        loaded = load_manifest(path)
+        if not isinstance(loaded, TrainingRunManifest):
+            continue
+        if _manifest_matches(loaded, run=run, rel_paths={rel_flat, rel_existing}):
+            matches.append((path, loaded))
+    if not matches:
+        raise RunSpecValidationError(
+            "TrainingRunManifest run record not_found for "
+            f"{exp}/{run}; legacy archive-only specs are not canonical run records"
+        )
+    by_id: dict[str, tuple[Path, TrainingRunManifest, dict[str, Any]]] = {}
+    for path, manifest in matches:
+        dumped = manifest.model_dump(mode="json", exclude_none=True)
+        previous = by_id.get(manifest.id)
+        if previous is not None and previous[2] != dumped:
+            raise RunSpecValidationError(
+                f"same TrainingRunManifest id has different content for {exp}/{run}: "
+                f"{previous[0]} and {path}"
+            )
+        by_id[manifest.id] = (path, manifest, dumped)
+    distinct = [(path, manifest) for path, manifest, _dumped in by_id.values()]
+    if len(distinct) > 1:
+        raise RunSpecValidationError(
+            f"multiple TrainingRunManifest records match {exp}/{run}: "
+            + ", ".join(str(path) for path, _manifest in distinct)
+        )
+    return distinct[0]
+
+
+def _iter_training_manifest_paths(exp: str, run: str, *, repo_root: Path) -> list[Path]:
+    paths: list[Path] = []
+    for root in (
+        repo_root / "_artifacts" / "feedbax_runs" / "manifests" / "training_runs",
+        repo_root / "results" / exp / "manifests" / "training_runs",
+    ):
+        if root.is_dir():
+            paths.extend(sorted(root.glob("*.json")))
+    for name in (
+        "training_run_manifest.json",
+        "feedbax_training_run_manifest.json",
+        "model.training_run.manifest.json",
+    ):
+        candidate = repo_root / "_artifacts" / exp / "runs" / run / name
+        if candidate.is_file():
+            paths.append(candidate)
+    return sorted(dict.fromkeys(paths))
+
+
+def _manifest_matches(
+    manifest: TrainingRunManifest,
+    *,
+    run: str,
+    rel_paths: set[str],
+) -> bool:
+    refs = set()
+    if manifest.training_spec is not None and manifest.training_spec.ref:
+        refs.add(manifest.training_spec.ref)
+    for artifact in manifest.artifacts:
+        if artifact.uri:
+            refs.add(artifact.uri)
+        original_uri = artifact.metadata.get("original_uri")
+        if isinstance(original_uri, str):
+            refs.add(original_uri)
+    return bool(refs & rel_paths) or manifest.job_id == run or manifest.id.endswith(run)
+
+
+def _repo_relative(path: Path, repo_root: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(repo_root.resolve()))
+    except ValueError:
+        return str(path)
+
+
 def _missing_keys(mapping: dict[str, Any], required_keys: frozenset[str]) -> list[str]:
     return sorted(key for key in required_keys if key not in mapping)
 
@@ -279,6 +411,7 @@ __all__ = [
     "NOMINAL_GRU_REQUIRED_TOP_LEVEL_KEYS",
     "NOMINAL_GRU_TRAINING_MODES",
     "RunSpecValidationError",
+    "resolve_run_record",
     "validate_nominal_gru_run_spec",
     "validate_nominal_gru_run_spec_file",
     "validate_minimax_run_spec",

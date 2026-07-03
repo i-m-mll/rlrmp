@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +14,7 @@ from pydantic import BaseModel, ConfigDict
 from feedbax.contracts.manifest import (
     ArtifactRef,
     Provenance,
+    SCHEMA_VERSION,
     SpecPayload,
     TrainingRunManifest,
     sha256_file,
@@ -63,12 +66,17 @@ from rlrmp.runtime.spec_migrations import (
     RUN_SPEC_KIND,
     RUN_SPEC_SCHEMA_ID,
     RUN_SPEC_SCHEMA_VERSION,
+    ensure_rlrmp_spec_families,
     stamp_current_schema,
 )
 
 
 FEEDBAX_TRAINING_RUN_SPEC_KEY = "feedbax_training_run_spec"
 RLRMP_RUN_SPEC_PAYLOAD_KEY = "rlrmp_run_spec"
+CONSUMED_DATA_IDENTITIES_KEY = "consumed_data_identities"
+POST_RUN_SCHEMA_VERSION = "rlrmp.post_run_provenance.v1"
+PINNED_MANIFEST_ROOT = "_artifacts/feedbax_runs"
+FEEDBAX_PROVIDER_VERSION = "feedbax-provider.v1"
 
 CLOSED_LOOP_DISTILLATION_METHOD_REF = "rlrmp/closed_loop_distillation/v1"
 CLOSED_LOOP_DISTILLATION_PAYLOAD_SCHEMA_ID = (
@@ -725,36 +733,53 @@ def _int_or_none(value: Any) -> int | None:
 
 
 def rlrmp_extension_payload(run_spec: dict[str, Any]) -> dict[str, Any]:
-    """Return the RLRMP-owned v2 extension payload embedded in tracked recipes."""
+    """Return the full RLRMP-owned v2 run payload embedded in manifests."""
 
-    training_summary = _mapping(run_spec, "training_summary")
-    model_summary = _mapping(run_spec, "model_summary")
-    graph = _mapping(run_spec, "feedbax_graph")
-    feedback_descriptors = controller_feedback_descriptor_from_container(
-        model_summary,
-        feedback_dim=_feedback_dim_from_run_spec(run_spec),
-        source="rlrmp_extension_payload",
-    )
     payload = {
-        "issue": str(run_spec.get("issue", "")),
-        "mode": str(run_spec.get("mode", "")),
-        "training_script": str(run_spec.get("training_script", "")),
-        "loss_objective": run_spec.get("loss_objective"),
-        "training_mode": training_summary.get("training_mode"),
-        "game_card": run_spec.get("game_card"),
-        "model_summary": model_summary,
-        "training_summary": training_summary,
-        "loss_summary": run_spec.get("loss_summary"),
-        "task_timing": run_spec.get("task_timing"),
-        "fidelity_status": run_spec.get("fidelity_status"),
-        "training_distribution": run_spec.get("training_distribution"),
-        "delayed_reach": run_spec.get("delayed_reach"),
-        "validation_bins": run_spec.get("validation_bins"),
-        "feedbax_graph": graph,
-        DESCRIPTOR_PAYLOAD_KEY: feedback_descriptors,
-        "hps": run_spec.get("hps"),
+        key: value
+        for key, value in run_spec.items()
+        if key not in {RLRMP_RUN_SPEC_PAYLOAD_KEY, FEEDBAX_TRAINING_RUN_SPEC_KEY}
     }
+    source_schema_version = payload.get("schema_version")
+    payload["schema_id"] = RUN_SPEC_SCHEMA_ID
+    payload["schema_version"] = RUN_SPEC_SCHEMA_VERSION
+    if source_schema_version is not None and source_schema_version != RUN_SPEC_SCHEMA_VERSION:
+        payload.setdefault("source_schema_version", source_schema_version)
+    payload.setdefault(CONSUMED_DATA_IDENTITIES_KEY, [])
+    model_summary = _mapping(run_spec, "model_summary")
+    payload.setdefault(
+        DESCRIPTOR_PAYLOAD_KEY,
+        controller_feedback_descriptor_from_container(
+            model_summary,
+            feedback_dim=_feedback_dim_from_run_spec(run_spec),
+            source="rlrmp_extension_payload",
+        ),
+    )
     return stamp_current_schema(RUN_SPEC_KIND, payload)
+
+
+def add_consumed_data_identity(
+    run_spec: dict[str, Any],
+    *,
+    role: str,
+    schema: str,
+    hash: str,
+) -> dict[str, Any]:
+    """Return ``run_spec`` with one consumed data-product identity recorded."""
+
+    if not role.strip():
+        raise ValueError("consumed data identity role must not be empty")
+    if not schema.strip():
+        raise ValueError("consumed data identity schema must not be empty")
+    if not hash.strip():
+        raise ValueError("consumed data identity hash must not be empty")
+    payload = dict(run_spec)
+    existing = payload.get(CONSUMED_DATA_IDENTITIES_KEY, [])
+    if not isinstance(existing, list):
+        raise TypeError(f"{CONSUMED_DATA_IDENTITIES_KEY} must be a list")
+    entry = {"role": role, "schema": schema, "hash": hash}
+    payload[CONSUMED_DATA_IDENTITIES_KEY] = [*existing, entry] if entry not in existing else existing
+    return payload
 
 
 def build_feedbax_training_run_spec(
@@ -932,6 +957,7 @@ def write_training_run_manifest_for_spec(
 ) -> Path:
     """Emit the Feedbax ``TrainingRunManifest`` parity record at production time."""
 
+    ensure_rlrmp_spec_families()
     rel_run_spec = _repo_relative(run_spec_path)
     rel_graph_manifest = _repo_relative(graph_manifest_path)
     artifacts = [
@@ -971,7 +997,7 @@ def write_training_run_manifest_for_spec(
             )
         )
 
-    extension = run_spec[RLRMP_RUN_SPEC_PAYLOAD_KEY]
+    extension = dict(run_spec[RLRMP_RUN_SPEC_PAYLOAD_KEY])
     training_spec_payload = SpecPayload(
         kind=RUN_SPEC_KIND,
         schema_id=RUN_SPEC_SCHEMA_ID,
@@ -1024,6 +1050,46 @@ def write_training_run_manifest_for_spec(
     return write_manifest(manifest, root=manifest_root)
 
 
+def attach_post_run_provenance(
+    run_spec: dict[str, Any],
+    *,
+    run_spec_path: Path,
+    artifact_dir: Path,
+    manifest_root: Path,
+    graph_manifest_path: Path | None = None,
+    graph_spec_path: Path | None = None,
+) -> dict[str, Any]:
+    """Attach the production-time post-run provenance stamp to a run payload."""
+
+    payload = dict(run_spec)
+    payload["post_run_provenance"] = {
+        "schema_version": POST_RUN_SCHEMA_VERSION,
+        "tool": "rlrmp.runtime.training_run_specs",
+        "rlrmp": _git_record(_repo_root()),
+        "feedbax": _git_record(_feedbax_repo()),
+        "schemas": {
+            "post_run_provenance": POST_RUN_SCHEMA_VERSION,
+            "feedbax_manifest": SCHEMA_VERSION,
+            "feedbax_provider": FEEDBAX_PROVIDER_VERSION,
+        },
+        "feedbax_manifest_root": {
+            "path": PINNED_MANIFEST_ROOT,
+            "absolute_path_sha256": hashlib.sha256(
+                str(manifest_root.resolve()).encode()
+            ).hexdigest(),
+            "env": "FEEDBAX_RUNS_DIR",
+        },
+        "feedbax_graph": _graph_metadata(
+            run_spec=payload,
+            run_spec_path=run_spec_path,
+            artifact_dir=artifact_dir,
+            graph_manifest_path=graph_manifest_path,
+            graph_spec_path=graph_spec_path,
+        ),
+    }
+    return payload
+
+
 def _mapping(mapping: dict[str, Any], key: str) -> dict[str, Any]:
     value = mapping.get(key)
     return value if isinstance(value, dict) else {}
@@ -1056,3 +1122,97 @@ def _repo_relative(path: Path) -> str:
 
 def _string_or_none(value: Any) -> str | None:
     return None if value is None else str(value)
+
+
+def _repo_root() -> Path:
+    from rlrmp.paths import REPO_ROOT
+
+    return REPO_ROOT
+
+
+def _git_value(repo: Path | None, *args: str) -> str | None:
+    if repo is None:
+        return None
+    try:
+        return subprocess.check_output(
+            ["git", "-C", str(repo), *args],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except subprocess.CalledProcessError:
+        return None
+
+
+def _git_record(repo: Path | None) -> dict[str, Any]:
+    status = _git_value(repo, "status", "--short")
+    return {
+        "commit": _git_value(repo, "rev-parse", "HEAD"),
+        "branch": _git_value(repo, "rev-parse", "--abbrev-ref", "HEAD"),
+        "dirty": bool(status) if status is not None else None,
+        "remote": _git_value(repo, "config", "--get", "remote.origin.url"),
+    }
+
+
+def _feedbax_repo() -> Path | None:
+    try:
+        import tomllib
+    except ModuleNotFoundError:  # pragma: no cover - Python <3.11 fallback is unused here.
+        return None
+    pyproject = _repo_root() / "pyproject.toml"
+    try:
+        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    except OSError:
+        return None
+    source = (
+        data.get("tool", {})
+        .get("uv", {})
+        .get("sources", {})
+        .get("feedbax", {})
+        .get("path")
+    )
+    if not source:
+        return None
+    path = Path(str(source)).expanduser()
+    if not path.is_absolute():
+        path = _repo_root() / path
+    return path if path.exists() else None
+
+
+def _graph_metadata(
+    *,
+    run_spec: dict[str, Any],
+    run_spec_path: Path,
+    artifact_dir: Path,
+    graph_manifest_path: Path | None,
+    graph_spec_path: Path | None,
+) -> dict[str, Any]:
+    graph = _mapping(run_spec, "feedbax_graph")
+    graph_version = None
+    if graph_spec_path is not None and graph_spec_path.is_file():
+        try:
+            payload = json.loads(graph_spec_path.read_text(encoding="utf-8"))
+            graph_version = (
+                payload.get("schema_version")
+                or payload.get("version")
+                or payload.get("$schema")
+            )
+        except (OSError, json.JSONDecodeError):
+            graph_version = None
+    return {
+        "graph_spec_path": graph.get("graph_spec_path"),
+        "graph_spec_sha256": (
+            sha256_file(graph_spec_path)
+            if graph_spec_path is not None and graph_spec_path.is_file()
+            else None
+        ),
+        "graph_spec_version": graph_version,
+        "graph_manifest_path": graph.get("manifest_path")
+        or (None if graph_manifest_path is None else graph_manifest_path.name),
+        "graph_manifest_sha256": (
+            sha256_file(graph_manifest_path)
+            if graph_manifest_path is not None and graph_manifest_path.is_file()
+            else None
+        ),
+        "tracked_run_spec": _repo_relative(run_spec_path),
+        "artifact_dir": _repo_relative(artifact_dir),
+    }

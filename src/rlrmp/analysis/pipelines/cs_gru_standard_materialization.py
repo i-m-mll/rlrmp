@@ -67,6 +67,7 @@ from rlrmp.runtime.spec_migrations import (
     CS_GRU_STANDARD_CERTIFICATES_SCHEMA_VERSION,
     stamp_current_schema,
 )
+from rlrmp.runtime.run_specs import resolve_run_record
 from rlrmp.model.stochastic_runtime import (
     PLANT_PROCESS_FORCE_NOISE_LABEL,
     add_plant_process_force_noise,
@@ -224,7 +225,7 @@ def materialize_gru_standard_row(
     """Materialize one GRU pilot standard row."""
 
     resolved_run_spec_path = run_spec_path(experiment, run_id, repo_root=repo_root)
-    run_spec = _read_json(resolved_run_spec_path)
+    run_spec = resolve_run_record(experiment, run_id, repo_root=repo_root)
     training_summary_path = _default_training_summary_path(
         run_id,
         experiment=experiment,
@@ -515,7 +516,7 @@ def evaluate_gru_clean_actions(
         JSON-compatible evaluation metadata.
     """
 
-    run_spec = run_spec or _read_json(run_spec_path(experiment, run_id, repo_root=repo_root))
+    run_spec = run_spec or resolve_run_record(experiment, run_id, repo_root=repo_root)
     hps = dict_to_namespace(normalize_gru_hps(run_spec["hps"]), to_type=TreeNamespace)
     n_replicates = int(hps.model.n_replicates)
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(int(run_spec.get("seed", 42))))

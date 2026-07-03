@@ -15,6 +15,7 @@ import jax.random as jr
 import numpy as np
 from rlrmp.io import write_compact_json
 from rlrmp.paths import REPO_ROOT, run_spec_path
+from rlrmp.runtime.run_specs import RunSpecValidationError, resolve_run_record
 
 
 SCHEMA_VERSION = "rlrmp.objective_comparator_sidecar.v6"
@@ -1019,7 +1020,8 @@ def materialize_gru_objective_comparator_sidecar(
     extlqg = compute_default_extlqg_cost_decomposition()
     run_metadata_by_id = {
         str(run_id): load_run_objective_metadata(
-            run_spec_path(experiment, str(run_id), repo_root=repo_root),
+            experiment,
+            str(run_id),
             repo_root=repo_root,
         )
         for run_id in run_ids
@@ -1121,19 +1123,23 @@ def _build_run_row(
 
 
 def load_run_objective_metadata(
-    run_spec_path: Path,
+    experiment: str,
+    run_id: str,
     *,
     repo_root: Path | None = None,
 ) -> dict[str, Any]:
     """Load the objective metadata needed to judge sidecar comparability."""
 
-    if not run_spec_path.exists():
-        return _missing_run_metadata(path=run_spec_path)
-    run_spec = json.loads(run_spec_path.read_text(encoding="utf-8"))
+    effective_repo_root = repo_root or REPO_ROOT
+    resolved_run_spec_path = run_spec_path(experiment, run_id, repo_root=effective_repo_root)
+    try:
+        run_spec = resolve_run_record(experiment, run_id, repo_root=effective_repo_root)
+    except RunSpecValidationError:
+        return _missing_run_metadata(path=resolved_run_spec_path)
     loss_summary = _expect_mapping(run_spec.get("loss_summary", {}))
     return {
         "status": "available",
-        "run_spec_path": _repo_relative(run_spec_path, repo_root=repo_root or REPO_ROOT),
+        "run_spec_path": _repo_relative(resolved_run_spec_path, repo_root=effective_repo_root),
         "loss_objective": run_spec.get("loss_objective"),
         "objective_profile": loss_summary.get("objective_profile"),
         "full_qrf_lens": _full_qrf_lens_from_loss_summary(loss_summary),
