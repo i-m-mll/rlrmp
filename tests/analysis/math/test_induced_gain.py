@@ -175,7 +175,12 @@ def _manual_network_controller_outputs(model, ctrl, observations, *, key):
     """Old net-plus-delay wrapper logic used as a parity oracle."""
     net = model.nodes["net"]
     full_state = model.init_state(key=jax.random.PRNGKey(0))
-    net_state = full_state.get(net.state_index)
+    if hasattr(net, "initial_cycle_port_values"):
+        net_state = full_state
+        cycle_values = net.initial_cycle_port_values(net_state)
+    else:
+        net_state = full_state.get(net.state_index)
+        cycle_values = None
     queue = jnp.zeros((ctrl.delay, ctrl.n_obs), dtype=jnp.float64)
     outputs = []
     for t, sensory_obs in enumerate(observations):
@@ -187,15 +192,24 @@ def _manual_network_controller_outputs(model, ctrl, observations, *, key):
         else:
             delayed_obs = obs_abs
 
-        leaves, treedef = jax.tree.flatten(full_state)
-        state = jax.tree.unflatten(treedef, leaves)
-        state = state.set(net.state_index, net_state)
         net_inputs = {
             "input": ctrl.task_input,
             "feedback": (delayed_obs[:2], delayed_obs[2:]),
         }
-        net_outputs, state_next = net(net_inputs, state, key=jax.random.fold_in(key, t))
-        net_state = state_next.get(net.state_index)
+        step_key = jax.random.fold_in(key, t)
+        if hasattr(net, "step"):
+            net_outputs, net_state, cycle_values = net.step(
+                net_inputs,
+                net_state,
+                cycle_values,
+                key=step_key,
+            )
+        else:
+            leaves, treedef = jax.tree.flatten(full_state)
+            state = jax.tree.unflatten(treedef, leaves)
+            state = state.set(net.state_index, net_state)
+            net_outputs, state_next = net(net_inputs, state, key=step_key)
+            net_state = state_next.get(net.state_index)
         outputs.append(net_outputs["output"])
     return outputs
 
