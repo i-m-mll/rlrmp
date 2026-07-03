@@ -124,6 +124,15 @@ minimum_non_skipped = 5
 negative_canary = "tests/test_analysis_write_custody.py::test_analysis_write_negative_canary_flags_unlisted_durable_write"
 
 [[families]]
+name = "analysis_eval_dependency"
+owner = "10bdaa4"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_analysis_eval_dependency.py::"
+minimum_non_skipped = 5
+negative_canary = "tests/test_analysis_eval_dependency.py::test_analysis_eval_dependency_negative_canary_flags_unlisted_registered_analysis"
+
+[[families]]
 name = "write_surface"
 owner = "f5d9695"
 status = "live"
