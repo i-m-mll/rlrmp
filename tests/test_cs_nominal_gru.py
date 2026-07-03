@@ -20,12 +20,14 @@ import numpy as np
 import optax
 import pytest
 from feedbax import TaskTrialSpec, TrialTimeline, WhereDict
+from feedbax.contracts.training import TrainingRunSpec
 from feedbax.objectives.loss import AbstractLoss, TargetSpec
 from feedbax.mechanics import LinearStateSpace
 from feedbax.runtime.batch import BatchInfo
 from feedbax.runtime.state_feedback import StateFeedbackSelector
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
 from feedbax.config.namespace import TreeNamespace
+from pydantic import ValidationError
 
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
@@ -64,6 +66,7 @@ from rlrmp.train.cs_nominal_gru import (
     TrainingState,
     UpdateDiagnosticsState,
     build_graph_bundle,
+    build_training_run_graph_spec,
     build_hps,
     build_parser,
     derive_spec_dir,
@@ -90,6 +93,11 @@ from rlrmp.train.cs_nominal_gru import (
     run_full_training,
     save_training_checkpoint,
     write_run_spec,
+)
+from rlrmp.runtime.training_run_specs import (
+    FEEDBAX_TRAINING_RUN_SPEC_KEY,
+    assert_runtime_graph_matches_training_spec,
+    build_feedbax_training_run_spec,
 )
 from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_ADAM,
@@ -2665,6 +2673,90 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     assert manifest["training_spec"]["nominal_only"] is True
     assert not output_dir.exists()
     assert REPO_ROOT not in output_dir.parents
+
+
+def test_feedbax_training_run_spec_rejects_cs_fields(tmp_path: Path) -> None:
+    result = write_run_spec(
+        _args(
+            output_dir=str(tmp_path / "bulk"),
+            spec_dir=str(tmp_path / "spec"),
+            smoke=True,
+            dry_run=True,
+        )
+    )
+    feedbax_spec = result["run_spec"][FEEDBAX_TRAINING_RUN_SPEC_KEY]
+
+    for field_name in (
+        "game_card",
+        "loss_objective",
+        "training_mode",
+        "CS_LSS_FEEDBACK_COMPONENT_TYPES",
+    ):
+        with pytest.raises(ValidationError):
+            TrainingRunSpec.model_validate({**feedbax_spec, field_name: "not allowed"})
+
+
+@pytest.mark.parametrize(
+    ("variant", "overrides"),
+    [
+        ("nominal", {}),
+        (
+            "delayed_reach",
+            {"delayed_reach": True, "target_relative_multitarget": True},
+        ),
+        ("perturbation_training", {"perturbation_training": True}),
+        (
+            "broad_epsilon",
+            {"target_relative_multitarget": True, "broad_epsilon_training": True},
+        ),
+        ("target_relative", {"target_relative_multitarget": True}),
+        (
+            "target_relative_h0",
+            {"target_relative_multitarget": True, "initial_hidden_encoder": True},
+        ),
+    ],
+)
+def test_cs_gru_hps_adapter_matches_expected_training_run_spec(
+    tmp_path: Path,
+    variant: str,
+    overrides: dict[str, object],
+) -> None:
+    args = _args(
+        output_dir=str(tmp_path / variant / "bulk"),
+        spec_dir=str(tmp_path / variant / "spec"),
+        smoke=True,
+        dry_run=True,
+        **overrides,
+    )
+    result = write_run_spec(args)
+    payload = result["run_spec"]
+    actual = TrainingRunSpec.model_validate(payload[FEEDBAX_TRAINING_RUN_SPEC_KEY])
+    hps = build_hps(args)
+    expected = build_feedbax_training_run_spec(
+        payload,
+        graph_spec=build_training_run_graph_spec(hps, seed=int(args.seed)),
+        output_dir=Path(args.output_dir),
+        spec_dir=Path(args.spec_dir),
+    )
+
+    assert actual == expected
+
+
+def test_training_run_spec_graph_guard_rejects_diverging_hps(tmp_path: Path) -> None:
+    args = _args(
+        output_dir=str(tmp_path / "bulk"),
+        spec_dir=str(tmp_path / "spec"),
+        smoke=True,
+        dry_run=True,
+    )
+    payload = write_run_spec(args)["run_spec"]
+    diverging_hps = build_hps(_args(hidden_size=5, n_replicates=1))
+
+    with pytest.raises(ValueError, match="Serialized TrainingRunSpec graph"):
+        assert_runtime_graph_matches_training_spec(
+            payload,
+            graph_spec=build_training_run_graph_spec(diverging_hps, seed=int(args.seed)),
+        )
 
 
 def test_full_analytical_qrf_run_spec_records_exact_objective_metadata(tmp_path: Path) -> None:

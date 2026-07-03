@@ -52,6 +52,8 @@ from rlrmp.runtime.spec_migrations import (
     RUN_SPEC_KIND,
     RUN_SPEC_SCHEMA_ID,
     RUN_SPEC_SCHEMA_VERSION,
+    RUN_SPEC_SCHEMA_VERSION_LEGACY_CS_GRU,
+    RUN_SPEC_SCHEMA_VERSION_V1,
     accept_rlrmp_spec_payload,
     ensure_rlrmp_spec_families,
     load_rlrmp_spec_payload,
@@ -154,6 +156,12 @@ def test_rlrmp_spec_policy_registers_current_families_and_rejects_v0() -> None:
         assert family.current_version == current_version
         assert family.policy is not None
         assert family.policy.owner_module == "rlrmp.runtime.spec_migrations"
+        if kind == RUN_SPEC_KIND:
+            assert family.policy.stance == "migrate"
+            assert set(family.policy.supported_old_versions) == {
+                RUN_SPEC_SCHEMA_VERSION_V1,
+                RUN_SPEC_SCHEMA_VERSION_LEGACY_CS_GRU,
+            }
 
         result = registry.migrate(kind, {"schema_version": current_version})
         assert result.target_version == current_version
@@ -197,6 +205,20 @@ def test_representative_historical_artifacts_load_or_reject_by_policy() -> None:
     )
     assert run_spec.schema_id == RUN_SPEC_SCHEMA_ID
     assert run_spec.target_version == RUN_SPEC_SCHEMA_VERSION
+
+    migrated_cs_gru = load_rlrmp_spec_payload(
+        RUN_SPEC_KIND,
+        REPO_ROOT
+        / "results"
+        / "30f2313"
+        / "runs"
+        / "cs_stochastic_gru__hidden_penalty"
+        / "run.json",
+    )
+    assert migrated_cs_gru.source_version == RUN_SPEC_SCHEMA_VERSION_LEGACY_CS_GRU
+    assert migrated_cs_gru.target_version == RUN_SPEC_SCHEMA_VERSION
+    assert migrated_cs_gru.migrated
+    assert migrated_cs_gru.payload["migration_policy"] == "migrated_active_v1_to_v2"
 
     evaluation_manifest = load_rlrmp_spec_payload(
         GRU_EVALUATION_DIAGNOSTICS_KIND,

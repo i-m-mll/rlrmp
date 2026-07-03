@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from feedbax.contracts.migrations import (
+    SchemaMigration,
     SpecFamilyMigrationPolicy,
     SpecMigrationResult,
     SpecSchemaFamily,
@@ -75,7 +76,9 @@ FEEDBACK_QUALITY_LENS_SCHEMA_VERSION = "rlrmp.feedback_quality_lens.v1"
 
 RUN_SPEC_KIND = "RLRMPRunSpec"
 RUN_SPEC_SCHEMA_ID = "rlrmp.run_spec"
-RUN_SPEC_SCHEMA_VERSION = "rlrmp.run_spec.v1"
+RUN_SPEC_SCHEMA_VERSION = "rlrmp.run_spec.v2"
+RUN_SPEC_SCHEMA_VERSION_V1 = "rlrmp.run_spec.v1"
+RUN_SPEC_SCHEMA_VERSION_LEGACY_CS_GRU = "rlrmp.cs_stochastic_gru.v1"
 
 LEGACY_TRAINING_CONFIG_KIND = "RLRMPLegacyTrainingConfig"
 LEGACY_TRAINING_CONFIG_SCHEMA_ID = "rlrmp.legacy_training_config"
@@ -97,6 +100,27 @@ def ensure_rlrmp_spec_families(
             active_registry.resolve(family.kind)
         except UnknownSpecFamily:
             active_registry.register_family(family)
+            if family.kind == RUN_SPEC_KIND:
+                for source_version, migration_id in (
+                    (RUN_SPEC_SCHEMA_VERSION_V1, "rlrmp-run-spec-v1-to-v2"),
+                    (
+                        RUN_SPEC_SCHEMA_VERSION_LEGACY_CS_GRU,
+                        "rlrmp-cs-stochastic-gru-v1-to-run-spec-v2",
+                    ),
+                ):
+                    active_registry.register_migration(
+                        RUN_SPEC_KIND,
+                        SchemaMigration(
+                            source_version=source_version,
+                            target_version=RUN_SPEC_SCHEMA_VERSION,
+                            migration_id=migration_id,
+                            migrate=_migrate_run_spec_v1_to_v2,
+                            description=(
+                                "Carry active tracked RLRMP run-spec payloads into the "
+                                "v2 extension family used beside Feedbax TrainingRunSpec."
+                            ),
+                        ),
+                    )
             if family.policy is not None:
                 for old_version in family.policy.rejected_old_versions:
                     active_registry.reject_version(
@@ -360,6 +384,17 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             consumed_by=("rlrmp.runtime.run_specs", "Feedbax TrainingRunManifest.training_spec"),
             description="Tracked RLRMP run recipe under results/<issue>/runs.",
             rejected_old_versions=("rlrmp.run_spec.v0",),
+            supported_old_versions=(
+                RUN_SPEC_SCHEMA_VERSION_V1,
+                RUN_SPEC_SCHEMA_VERSION_LEGACY_CS_GRU,
+            ),
+            stance="migrate",
+            notes=(
+                "Active v1 tracked run specs are migrated by carrying their scientific "
+                "payload into the v2 RLRMPRunSpec extension beside a composed Feedbax "
+                "TrainingRunSpec. Archive-only pre-run-spec config.json files remain "
+                "outside this family."
+            ),
         ),
     )
 
@@ -373,6 +408,8 @@ def _family(
     consumed_by: tuple[str, ...],
     description: str,
     rejected_old_versions: tuple[str, ...],
+    supported_old_versions: tuple[str, ...] = (),
+    stance: str = "reject",
     notes: str | None = None,
 ) -> SpecSchemaFamily:
     policy_notes = (
@@ -389,12 +426,21 @@ def _family(
             owner_module="rlrmp.runtime.spec_migrations",
             emitted_by=emitted_by,
             consumed_by=consumed_by,
-            stance="reject",
+            stance=stance,
+            supported_old_versions=supported_old_versions,
             rejected_old_versions=rejected_old_versions,
             required_tests=("tests/test_rlrmp_spec_migrations.py",),
             notes=policy_notes,
         ),
     )
+
+
+def _migrate_run_spec_v1_to_v2(payload: dict[str, Any]) -> dict[str, Any]:
+    migrated = dict(payload)
+    migrated.setdefault("schema_id", RUN_SPEC_SCHEMA_ID)
+    migrated["schema_version"] = RUN_SPEC_SCHEMA_VERSION
+    migrated.setdefault("migration_policy", "migrated_active_v1_to_v2")
+    return migrated
 
 
 __all__ = [
@@ -442,6 +488,8 @@ __all__ = [
     "RUN_SPEC_KIND",
     "RUN_SPEC_SCHEMA_ID",
     "RUN_SPEC_SCHEMA_VERSION",
+    "RUN_SPEC_SCHEMA_VERSION_LEGACY_CS_GRU",
+    "RUN_SPEC_SCHEMA_VERSION_V1",
     "accept_rlrmp_spec_payload",
     "ensure_rlrmp_spec_families",
     "load_rlrmp_spec_payload",
