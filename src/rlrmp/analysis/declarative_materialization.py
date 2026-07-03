@@ -25,6 +25,7 @@ from rlrmp.analysis.pipelines.cs_gru_standard_materialization import (
     MATERIALIZER_ISSUE_ID,
     RUN_IDS,
     SOURCE_ISSUE_ID,
+    materialize_gru_standard_result_from_evaluation_states,
     materialize_gru_standard_result,
     write_gru_standard_result,
 )
@@ -50,6 +51,7 @@ from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
     write_outputs as write_output_feedback_rollout_recovery_outputs,
 )
 from rlrmp.analysis.math.rerun_metadata import DEFAULT_DISCRETIZATION, DEFAULT_LANE
+from rlrmp.eval.recipes import CENTER_OUT_ENSEMBLE_EVALUATION_TYPE
 from rlrmp.paths import REPO_ROOT
 
 
@@ -62,6 +64,9 @@ OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE = (
     "rlrmp.output_feedback_bridge.rollout_recovery"
 )
 BRIDGE_STANDARD_ANALYSIS_TYPE = GRU_STANDARD_ANALYSIS_TYPE
+EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE = {
+    GRU_STANDARD_ANALYSIS_TYPE: (CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,),
+}
 
 ROBUSTNESS_PHENOTYPE_ISSUE_ID = "769aea6"
 
@@ -198,6 +203,8 @@ def gru_standard_certificate_spec(
     note_output: Path | str | None = None,
     manifest_output: Path | str | None = None,
     regeneration_spec_path: Path | str | None = None,
+    evaluation_manifest_id: str | None = None,
+    evaluation_manifest_uri: Path | str | None = None,
     repo_root: Path | str | None = None,
 ) -> AnalysisRunSpec:
     """Return declarative spec data for the GRU standard-certificate materializer."""
@@ -216,8 +223,13 @@ def gru_standard_certificate_spec(
     _set_optional_path_param(params, "manifest_output", manifest_output)
     _set_optional_path_param(params, "regeneration_spec_path", regeneration_spec_path)
     _set_optional_path_param(params, "repo_root", repo_root)
+    inputs = _evaluation_parent_refs(
+        evaluation_manifest_id=evaluation_manifest_id,
+        evaluation_manifest_uri=evaluation_manifest_uri,
+    )
     return AnalysisRunSpec(
         analysis_type=GRU_STANDARD_ANALYSIS_TYPE,
+        inputs=inputs,
         params=params,
     )
 
@@ -420,20 +432,25 @@ def robustness_phenotype_spec(
 def gru_standard_certificate_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
-    _inputs: Sequence[Any],
+    inputs: Sequence[Any],
 ) -> AnalysisRecipeResult:
     """Build the declarative GRU standard-certificate recipe."""
 
     params = dict(spec.params)
-    analysis = ContextMaterializer(
-        materializer=lambda context: _materialize_gru_standard(context, params),
+    evaluation_input = _primary_evaluation_input(inputs)
+    analysis = RLRMPManifestAnalysis(
+        materializer=lambda context, data: _materialize_gru_standard(
+            context,
+            params,
+            evaluation_input=evaluation_input,
+        ),
         artifact_role="rlrmp-bridge-standard-certificate",
         logical_name="gru_standard_certificates.json",
         schema_boundary="rlrmp-owned BridgeRunManifest/certificate payload",
     )
     return AnalysisRecipeResult(
         analyses={"gru_standard_certificate": analysis},
-        data=_empty_analysis_data(),
+        data=_analysis_data_from_evaluation_input(evaluation_input),
     )
 
 
@@ -499,14 +516,17 @@ def output_feedback_rollout_recovery_recipe(
     """Build the declarative output-feedback rollout-recovery recipe."""
 
     params = dict(spec.params)
-    analysis = ContextMaterializer(
-        materializer=lambda context: _materialize_output_feedback_rollout_recovery(
+    analysis = RLRMPManifestAnalysis(
+        materializer=lambda context, data: _materialize_output_feedback_rollout_recovery(
             context,
             params,
         ),
         artifact_role="rlrmp-output-feedback-rollout-recovery",
         logical_name="output_feedback_rollout_recovery.json",
-        schema_boundary="rlrmp-owned output-feedback bridge diagnostic payload",
+        schema_boundary=(
+            "rlrmp-owned output-feedback bridge diagnostic payload; analytical "
+            "rollouts stay analysis-internal per e1ad278 Q2"
+        ),
     )
     return AnalysisRecipeResult(
         analyses={"output_feedback_rollout_recovery": analysis},
@@ -568,24 +588,40 @@ def robustness_phenotype_recipe(
 def _materialize_gru_standard(
     context: AnalysisRunContext,
     params: Mapping[str, Any],
+    *,
+    evaluation_input: Any | None = None,
 ) -> MaterializationResult:
     run_ids = tuple(str(run_id) for run_id in params.get("run_ids", RUN_IDS))
     experiment = str(params.get("experiment", SOURCE_ISSUE_ID))
     repo_root = _repo_root_from_params(params)
-    result = materialize_gru_standard_result(
-        run_ids=run_ids,
-        load_models=bool(params.get("load_models", True)),
-        experiment=experiment,
-        materializer_issue_id=str(params.get("materializer_issue_id", MATERIALIZER_ISSUE_ID)),
-        use_validation_selected_checkpoints=bool(
-            params.get("use_validation_selected_checkpoints", False)
-        ),
-        preferred_checkpoint_manifest_path=_optional_path(
-            params.get("preferred_checkpoint_manifest_path"),
+    evaluation_states = _resolved_input_states(evaluation_input)
+    if evaluation_states is not None:
+        result = materialize_gru_standard_result_from_evaluation_states(
+            evaluation_states,
+            run_ids=run_ids,
+            experiment=experiment,
+            materializer_issue_id=str(
+                params.get("materializer_issue_id", MATERIALIZER_ISSUE_ID)
+            ),
             repo_root=repo_root,
-        ),
-        repo_root=repo_root,
-    )
+        )
+    else:
+        result = materialize_gru_standard_result(
+            run_ids=run_ids,
+            load_models=bool(params.get("load_models", True)),
+            experiment=experiment,
+            materializer_issue_id=str(
+                params.get("materializer_issue_id", MATERIALIZER_ISSUE_ID)
+            ),
+            use_validation_selected_checkpoints=bool(
+                params.get("use_validation_selected_checkpoints", False)
+            ),
+            preferred_checkpoint_manifest_path=_optional_path(
+                params.get("preferred_checkpoint_manifest_path"),
+                repo_root=repo_root,
+            ),
+            repo_root=repo_root,
+        )
     note_path = _optional_path(params.get("note_output"), repo_root=repo_root)
     manifest_path = _optional_path(params.get("manifest_output"), repo_root=repo_root)
     existing_artifacts: list[ExistingAnalysisArtifact] = []
@@ -630,6 +666,10 @@ def _materialize_gru_standard(
             **result,
             "declarative_analysis": _declarative_metadata(context),
         }
+    if evaluation_input is not None:
+        result["evaluation_manifest_dependency"] = _evaluation_dependency_metadata(
+            evaluation_input
+        )
     return MaterializationResult(
         payload=result,
         existing_artifacts=tuple(existing_artifacts),
@@ -900,6 +940,13 @@ def _materialize_output_feedback_rollout_recovery(
         payload={
             **summary,
             "declarative_analysis": _declarative_metadata(context),
+            "evaluation_dependency_policy": {
+                "status": "not_applicable",
+                "reason": (
+                    "Analytical output-feedback rollouts take fitted gains, not "
+                    "model artifacts, and remain analysis-internal per e1ad278 Q2."
+                ),
+            },
         },
         existing_artifacts=existing_artifacts,
         artifact_groups=artifact_groups,
@@ -1043,6 +1090,25 @@ def _resolved_input_path(resolved: Any | None) -> Path | None:
 def _resolved_input_states(resolved: Any | None) -> Mapping[str, Any] | None:
     states = getattr(resolved, "states", None)
     return states if isinstance(states, Mapping) else None
+
+
+def _evaluation_dependency_metadata(resolved: Any) -> dict[str, Any]:
+    ref = getattr(resolved, "ref", None)
+    manifest = getattr(resolved, "manifest", None)
+    states = _resolved_input_states(resolved) or {}
+    return {
+        "manifest_id": getattr(ref, "id", None),
+        "evaluation_type": states.get(
+            "evaluation_type",
+            getattr(getattr(manifest, "evaluation_spec", None), "inline", {}).get(
+                "evaluation_type"
+            )
+            if getattr(manifest, "evaluation_spec", None) is not None
+            else None,
+        ),
+        "path": None if _resolved_input_path(resolved) is None else str(_resolved_input_path(resolved)),
+        "product_role": states.get("product_role"),
+    }
 
 
 def _run_ids_from_params_or_inputs(
