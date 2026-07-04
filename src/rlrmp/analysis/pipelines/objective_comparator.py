@@ -15,6 +15,7 @@ import jax.random as jr
 import numpy as np
 from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT, run_spec_path
+from rlrmp.runtime.run_spec_access import require_run_seed
 from rlrmp.runtime.run_specs import RunSpecValidationError, resolve_run_record
 
 
@@ -575,7 +576,10 @@ def materialize_shared_rollout_comparator(
     for run in runs:
         hps = dict_to_namespace(normalize_gru_hps(run.run_spec["hps"]), to_type=TreeNamespace)
         n_replicates = int(hps.model.n_replicates)
-        pair = setup_task_model_pair(hps, key=jr.PRNGKey(int(run.run_spec.get("seed", 42))))
+        pair = setup_task_model_pair(
+            hps,
+            key=jr.PRNGKey(require_run_seed(run.run_spec, source=run.run_spec_path)),
+        )
         model, checkpoint_selection = load_validation_selected_checkpoint_model(
             experiment=experiment,
             run_id=run.run_id,

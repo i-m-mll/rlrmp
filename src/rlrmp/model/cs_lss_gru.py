@@ -51,6 +51,7 @@ from rlrmp.model.feedbax_graph import (
     resolve_registered_graph_component_migrations,
 )
 from rlrmp.model.trainable import staged_network_trainable_parts
+from rlrmp.runtime.run_spec_access import require_run_seed
 from rlrmp.train.closed_loop_finite_adversary import (
     AFFINE_POLICY,
     FINITE_POLICY_BIAS_INPUT,
@@ -1195,7 +1196,9 @@ def _build_simple_staged_network(params: dict[str, Any]) -> SimpleStagedNetwork:
         out_size=int(params.get("out_size", CS_FORCE_DIM)),
         encoding_size=params.get("encoding_size"),
         hidden_type=_hidden_type_from_name(str(params.get("hidden_type", "GRUCell"))),
-        population_structure=_population_structure_from_params(params.get("population_structure")),
+        population_structure=_population_structure_from_params(
+            _params_with_parent_key(params.get("population_structure"), params)
+        ),
         sisu_gating=str(params.get("sisu_gating", "additive")),
         dtype=jnp.dtype(params.get("trainable_dtype", jnp.float32)),
         **mask_kwargs,
@@ -1229,7 +1232,19 @@ def _key_from_params(params: dict[str, Any]) -> Array:
     key_data = params.get("key")
     if key_data is not None:
         return jnp.asarray(key_data, dtype=jnp.uint32)
-    return jr.PRNGKey(int(params.get("seed", 0)))
+    return jr.PRNGKey(require_run_seed(params))
+
+
+def _params_with_parent_key(params: Any, parent: dict[str, Any]) -> Any:
+    if not isinstance(params, dict):
+        return params
+    if not params:
+        return params
+    if params.get("key") is not None or params.get("seed") is not None:
+        return params
+    if parent.get("key") is None:
+        return params
+    return {**params, "key": parent["key"]}
 
 
 def _population_structure_params(
@@ -1261,7 +1276,7 @@ def _population_structure_from_params(params: Any) -> PopulationStructure | None
         n_recurrent_only=int(params.get("n_recurrent_only", 0) or 0),
         n_input_readout=int(params.get("n_input_readout", 0) or 0),
         assignment_fn=None,
-        key=jr.PRNGKey(int(params.get("seed", 0))),
+        key=_key_from_params(params),
     )
 
 

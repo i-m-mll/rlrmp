@@ -46,6 +46,7 @@ from rlrmp.model.feedback_descriptors import (
     resolve_controller_feedback_view,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.runtime.run_spec_access import require_run_seed
 from rlrmp.train.task_model import setup_task_model_pair
 
 
@@ -544,7 +545,7 @@ def evaluate_comparison(
             repo_root=repo_root,
         )[0]
         hps = dict_to_namespace(normalize_gru_hps(run.run_spec["hps"]), to_type=TreeNamespace)
-        seed = int(run.run_spec.get("seed", 42))
+        seed = require_run_seed(run.run_spec, source=run.run_spec_path)
         pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
         n_replicates = int(hps.model.n_replicates)
         model, checkpoint_selection = load_validation_selected_checkpoint_model(

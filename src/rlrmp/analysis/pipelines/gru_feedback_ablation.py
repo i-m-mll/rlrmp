@@ -54,6 +54,7 @@ from rlrmp.paths import (
     resolve_run_artifact_path,
 )
 from rlrmp.io import update_marked_section
+from rlrmp.runtime.run_spec_access import require_run_seed
 from rlrmp.runtime.run_specs import resolve_run_record
 
 
@@ -1173,7 +1174,7 @@ def evaluate_run_feedback_ablation(
         raise ValueError("n_rollout_trials must be at least 1")
     hps = dict_to_namespace(normalize_gru_hps(run.run_spec["hps"]), to_type=TreeNamespace)
     n_replicates = int(hps.model.n_replicates)
-    seed = int(run.run_spec.get("seed", 42))
+    seed = require_run_seed(run.run_spec, source=run.run_spec_path)
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
     model, checkpoint_selection = load_validation_selected_checkpoint_model(
         experiment=source_experiment,

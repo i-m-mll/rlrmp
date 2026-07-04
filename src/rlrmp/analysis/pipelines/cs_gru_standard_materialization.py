@@ -68,6 +68,7 @@ from rlrmp.runtime.spec_migrations import (
     CS_GRU_STANDARD_CERTIFICATES_SCHEMA_VERSION,
     stamp_current_schema,
 )
+from rlrmp.runtime.run_spec_access import require_run_seed
 from rlrmp.runtime.run_specs import resolve_run_record
 from rlrmp.model.stochastic_runtime import (
     PLANT_PROCESS_FORCE_NOISE_LABEL,
@@ -717,7 +718,15 @@ def evaluate_gru_clean_actions(
     run_spec = run_spec or resolve_run_record(experiment, run_id, repo_root=repo_root)
     hps = dict_to_namespace(normalize_gru_hps(run_spec["hps"]), to_type=TreeNamespace)
     n_replicates = int(hps.model.n_replicates)
-    pair = setup_task_model_pair(hps, key=jr.PRNGKey(int(run_spec.get("seed", 42))))
+    pair = setup_task_model_pair(
+        hps,
+        key=jr.PRNGKey(
+            require_run_seed(
+                run_spec,
+                source=run_spec_path(experiment, run_id, repo_root=repo_root),
+            )
+        ),
+    )
     if use_validation_selected_checkpoints:
         from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
             load_validation_selected_checkpoint_model,

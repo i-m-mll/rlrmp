@@ -43,6 +43,7 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
 )
 from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT
+from rlrmp.runtime.run_spec_access import require_run_dt, require_run_seed
 from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.viz import profile_comparison_grid
 
@@ -216,7 +217,7 @@ def evaluate_sisu_profiles(
     for run in runs:
         hps = dict_to_namespace(normalize_gru_hps(run.run_spec["hps"]), to_type=TreeNamespace)
         n_replicates = int(hps.model.n_replicates)
-        seed = int(run.run_spec.get("seed", 42))
+        seed = require_run_seed(run.run_spec, source=run.run_spec_path)
         pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
         if use_validation_selected_checkpoints:
             model, selections = load_validation_selected_checkpoint_model(
@@ -244,7 +245,7 @@ def evaluate_sisu_profiles(
             model,
             lambda leaf: _is_replicate_array(leaf, n_replicates),
         )
-        dt = float(run.run_spec.get("game_card", {}).get("dt", getattr(hps, "dt", 0.01)))
+        dt = require_run_dt(run.run_spec, hps, source=run.run_spec_path)
         curves: list[SisuCurve] = []
         for sisu in sisu_levels:
             trials = set_sisu_condition(base_trials, float(sisu), input_key=input_key)

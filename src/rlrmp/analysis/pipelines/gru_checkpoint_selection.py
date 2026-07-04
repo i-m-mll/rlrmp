@@ -40,7 +40,8 @@ from rlrmp.train.cs_perturbation_training import (
     target_relative_target_support_config,
     target_relative_validation_bins,
 )
-from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path
+from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path, run_spec_path
+from rlrmp.runtime.run_spec_access import require_run_seed
 from rlrmp.runtime.run_specs import resolve_run_record
 
 
@@ -891,7 +892,10 @@ def load_validation_selected_checkpoint_model(
         raise ValueError(
             f"Selection count {len(selections)} does not match n_replicates={n_replicates}"
         )
-    seed = int(run_spec.get("seed", 42))
+    seed = require_run_seed(
+        run_spec,
+        source=run_spec_path(experiment, run_id, repo_root=repo_root),
+    )
     template = setup_task_model_pair(hps, key=jr.PRNGKey(seed)).model
     models = [
         eqx.tree_deserialise_leaves(selection.checkpoint_path / "model.eqx", template)
