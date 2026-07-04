@@ -63,11 +63,13 @@ from rlrmp.model.stochastic_runtime import (
     stochastic_runtime_config_from_model,
 )
 from rlrmp.model.trainable import staged_network_trainable_paths
+from rlrmp.runtime.run_spec_access import require_run_seed
 
 
 SCHEMA_VERSION = "rlrmp.feedbax_graph.v1"
 SUPPORTED_GRAPH_SPEC_VERSIONS = ("1.0.0",)
 EXECUTION_BACKEND = "feedbax.contracts.graphs.serialization.spec_to_graph"
+DEFAULT_GRAPH_COMPONENT_SEED = 0
 
 
 def tree_sum_n_features(tree) -> int:
@@ -552,7 +554,9 @@ def _build_simple_staged_network(params: dict[str, Any]) -> SimpleStagedNetwork:
         hidden_type = eqx.nn.GRUCell
     else:
         raise ValueError(f"Unsupported RLRMP hidden_type {hidden_type_name!r}")
-    population_structure = _population_structure_from_params(params.get("population_structure"))
+    population_structure = _population_structure_from_params(
+        _params_with_parent_key(params.get("population_structure"), params)
+    )
     key = _key_from_params(params)
     return SimpleStagedNetwork(
         input_size=int(params["input_size"]),
@@ -596,7 +600,30 @@ def _key_from_params(params: dict[str, Any]):
     key_data = params.get("key")
     if key_data is not None:
         return jnp.asarray(key_data, dtype=jnp.uint32)
-    return jr.PRNGKey(int(params.get("seed", 0)))
+    return jr.PRNGKey(require_run_seed(params))
+
+
+def _component_key_param(key: Any | None, *, seed: Any | None = None) -> list[int]:
+    if key is not None:
+        return [int(value) for value in jnp.asarray(key).tolist()]
+    if seed is not None:
+        return [int(value) for value in jnp.asarray(jr.PRNGKey(int(seed))).tolist()]
+    return [
+        int(value)
+        for value in jnp.asarray(jr.PRNGKey(DEFAULT_GRAPH_COMPONENT_SEED)).tolist()
+    ]
+
+
+def _params_with_parent_key(params: Any, parent: dict[str, Any]) -> Any:
+    if not isinstance(params, dict):
+        return params
+    if not params:
+        return params
+    if params.get("key") is not None or params.get("seed") is not None:
+        return params
+    if parent.get("key") is None:
+        return params
+    return {**params, "key": parent["key"]}
 
 
 def _population_structure_from_params(params: Any) -> PopulationStructure | None:
@@ -613,7 +640,7 @@ def _population_structure_from_params(params: Any) -> PopulationStructure | None
         n_recurrent_only=int(params.get("n_recurrent_only", 0) or 0),
         n_input_readout=int(params.get("n_input_readout", 0) or 0),
         assignment_fn=None,
-        key=jr.PRNGKey(int(params.get("seed", 0))),
+        key=_key_from_params(params),
     )
 
 
@@ -771,7 +798,7 @@ def build_point_mass_sensorimotor_graph_spec(
         from rlrmp.train.task_model import build_task_base
 
         task = build_task_base(hps)
-    key_param = None if key is None else [int(value) for value in jnp.asarray(key).tolist()]
+    key_param = _component_key_param(key, seed=getattr(hps, "seed", None))
 
     mechanics_params = {
         "dt": float(hps.dt),
@@ -1242,7 +1269,10 @@ def graph_spec_from_model(
         )
     graph_spec = graph_to_spec(model)
     nodes = dict(graph_spec.nodes)
-    subgraphs = dict(graph_spec.subgraphs or {})
+    subgraphs = {
+        name: _with_missing_runtime_component_keys(subgraph)
+        for name, subgraph in dict(graph_spec.subgraphs or {}).items()
+    }
     drop_subgraphs: set[str] = set()
     cs_lss_graph = _is_cs_lss_graph(model)
     for name, component in model.nodes.items():
@@ -1284,6 +1314,22 @@ def _is_cs_lss_graph(model: Graph) -> bool:
     from feedbax.mechanics import LinearStateSpace
 
     return isinstance(model.nodes.get("mechanics"), LinearStateSpace)
+
+
+def _with_missing_runtime_component_keys(graph_spec: GraphSpec) -> GraphSpec:
+    nodes = {}
+    for name, node in graph_spec.nodes.items():
+        if node.type in {"GRU", "Linear"} and node.params.get("key") is None:
+            nodes[name] = node.model_copy(
+                update={"params": {**dict(node.params), "key": _component_key_param(None)}}
+            )
+        else:
+            nodes[name] = node
+    subgraphs = {
+        name: _with_missing_runtime_component_keys(subgraph)
+        for name, subgraph in dict(graph_spec.subgraphs or {}).items()
+    }
+    return graph_spec.model_copy(update={"nodes": nodes, "subgraphs": subgraphs or None})
 
 
 def _cs_lss_runtime_component_spec(component: Any) -> ComponentSpec | None:
@@ -1339,6 +1385,7 @@ def _cs_lss_simple_staged_network_params(component: SimpleStagedNetwork) -> dict
             component.population_structure,
             hidden_size=int(component.hidden_size),
         ),
+        "key": _component_key_param(None),
     }
 
 
@@ -1355,6 +1402,7 @@ def _runtime_population_structure_params(
         "n_readout_only": int(getattr(population_structure, "n_readout_only", 0) or 0),
         "n_recurrent_only": int(getattr(population_structure, "n_recurrent_only", 0) or 0),
         "n_input_readout": int(getattr(population_structure, "n_input_readout", 0) or 0),
+        "key": _component_key_param(None),
     }
 
 
@@ -1584,7 +1632,10 @@ def native_recurrent_controller_subgraph(
         raise ValueError(f"Unsupported sisu_gating {sisu_gating!r}.")
     if hidden_type_name not in {"GRU", "GRUCell", "gru"}:
         raise ValueError(f"Unsupported Feedbax-native hidden_type {hidden_type_name!r}.")
-    population_structure = _population_structure_from_params(population_params or {})
+    population_params = dict(population_params or {})
+    if population_params and population_params.get("key") is None:
+        population_params["key"] = key
+    population_structure = _population_structure_from_params(population_params)
     network_input_size = int(input_size) - (1 if sisu_gating == "multiplicative" else 0)
     if network_input_size <= 0:
         raise ValueError(

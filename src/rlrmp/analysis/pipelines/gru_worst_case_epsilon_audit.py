@@ -29,12 +29,13 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
     resolve_run_inputs,
 )
 from rlrmp.io import update_marked_section
-from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.runtime.run_spec_access import require_run_seed
 from rlrmp.data_products.broad_epsilon import load_broad_epsilon_anchors
 from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_REFERENCE_REACH_M,
 )
+from rlrmp.train.task_model import setup_task_model_pair
 
 
 SCHEMA_VERSION = "rlrmp.gru_worst_case_epsilon_audit.v1"
@@ -607,7 +608,10 @@ def audit_run_worst_case_epsilon(
 
     hps = dict_to_namespace(normalize_gru_hps(run.run_spec["hps"]), to_type=TreeNamespace)
     n_replicates = int(hps.model.n_replicates)
-    pair = setup_task_model_pair(hps, key=jr.PRNGKey(int(run.run_spec.get("seed", 42))))
+    pair = setup_task_model_pair(
+        hps,
+        key=jr.PRNGKey(require_run_seed(run.run_spec, source=run.run_spec_path)),
+    )
     model, checkpoint_selection = load_validation_selected_checkpoint_model(
         experiment=source_experiment,
         run_id=run.run_id,

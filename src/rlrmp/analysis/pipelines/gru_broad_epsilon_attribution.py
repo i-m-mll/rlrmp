@@ -29,6 +29,7 @@ from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
 from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path
 from rlrmp.paths import run_spec_path as tracked_run_spec_path
+from rlrmp.runtime.run_spec_access import require_run_seed
 from rlrmp.runtime.run_specs import resolve_run_record
 from rlrmp.train.cs_nominal_gru import _where_train
 from rlrmp.train.cs_perturbation_training import (
@@ -177,7 +178,7 @@ def evaluate_run_broad_epsilon_attribution(
 
     hps = dict_to_namespace(normalize_gru_hps(run.run_spec["hps"]), to_type=TreeNamespace)
     n_replicates = int(hps.model.n_replicates)
-    seed = int(run.run_spec.get("seed", 42))
+    seed = require_run_seed(run.run_spec, source=run.run_spec_path)
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
     model, checkpoint_selection = load_model_for_run(
         run,

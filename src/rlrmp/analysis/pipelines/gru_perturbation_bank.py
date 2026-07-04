@@ -70,6 +70,7 @@ from rlrmp.model.feedback_descriptors import (
 )
 from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.runtime.run_spec_access import require_run_seed
 
 
 SCHEMA_VERSION = "rlrmp.gru_perturbation_bank.v3"
@@ -1732,7 +1733,7 @@ def evaluate_run_perturbation_bank(
 
     hps = dict_to_namespace(normalize_gru_hps(run.run_spec["hps"]), to_type=TreeNamespace)
     n_replicates = int(hps.model.n_replicates)
-    seed = int(run.run_spec.get("seed", 42))
+    seed = require_run_seed(run.run_spec, source=run.run_spec_path)
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
     model, checkpoint_selection = load_validation_selected_checkpoint_model(
         experiment=source_experiment,
