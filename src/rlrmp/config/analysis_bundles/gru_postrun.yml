@@ -248,13 +248,205 @@ stages:
         required: true
       - role: rlrmp-bridge-certificate-report-render
         required: false
+  - name: evaluation_diagnostics
+    kind: materialization
+    mode: grouped
+    analysis_type: rlrmp.feedback_quality.evaluation_diagnostics
+    params:
+      experiment_metadata_key: rlrmp_experiment
+      output_tag: validation_selected
+      use_validation_selected_checkpoints: true
+      materialize_evaluation_diagnostics: false
+    run_condition:
+      kind: any
+      exprs:
+        - kind: compare
+          item: evaluation_run
+          op: exists
+        - kind: compare
+          item: params
+          path: materialize_evaluation_diagnostics
+          op: eq
+          value: true
+    outputs:
+      - role: rlrmp-feedback-quality-evaluation-diagnostics-status
+        required: false
+  - name: objective_comparator
+    kind: materialization
+    mode: grouped
+    analysis_type: rlrmp.feedback_quality.objective_comparator
+    params:
+      experiment_metadata_key: rlrmp_experiment
+      output_tag: validation_selected
+      use_validation_selected_checkpoints: true
+      materialize_objective_comparator: false
+    run_condition:
+      kind: any
+      exprs:
+        - kind: compare
+          item: evaluation_run
+          op: exists
+        - kind: compare
+          item: params
+          path: materialize_objective_comparator
+          op: eq
+          value: true
+    outputs:
+      - role: rlrmp-feedback-quality-objective-comparator-status
+        required: false
+  - name: perturbation_response
+    kind: materialization
+    mode: grouped
+    analysis_type: rlrmp.feedback_quality.perturbation_response
+    params:
+      experiment_metadata_key: rlrmp_experiment
+      output_tag: validation_selected
+      use_validation_selected_checkpoints: true
+      materialize_perturbation_response: false
+    run_condition:
+      kind: any
+      exprs:
+        - kind: compare
+          item: evaluation_run
+          op: exists
+        - kind: compare
+          item: params
+          path: materialize_perturbation_response
+          op: eq
+          value: true
+    outputs:
+      - role: rlrmp-feedback-quality-perturbation-response-status
+        required: false
+      - role: rlrmp-feedback-quality-perturbation-response-manifest
+        required: false
+  - name: feedback_ablation
+    kind: materialization
+    mode: grouped
+    analysis_type: rlrmp.feedback_quality.feedback_ablation
+    params:
+      experiment_metadata_key: rlrmp_experiment
+      output_tag: validation_selected
+      use_validation_selected_checkpoints: true
+      materialize_feedback_ablation: false
+    run_condition:
+      kind: any
+      exprs:
+        - kind: compare
+          item: evaluation_run
+          op: exists
+        - kind: compare
+          item: params
+          path: materialize_feedback_ablation
+          op: eq
+          value: true
+    outputs:
+      - role: rlrmp-feedback-quality-feedback-ablation-status
+        required: false
+  - name: perturbation_calibration
+    kind: materialization
+    mode: grouped
+    analysis_type: rlrmp.feedback_quality.perturbation_calibration
+    params:
+      experiment_metadata_key: rlrmp_experiment
+      output_tag: validation_selected
+      use_validation_selected_checkpoints: true
+      materialize_perturbation_calibration: false
+    run_condition:
+      kind: compare
+      item: params
+      path: materialize_perturbation_calibration
+      op: eq
+      value: true
+    outputs:
+      - role: rlrmp-feedback-quality-perturbation-calibration-status
+        required: false
+  - name: response_norm_plots
+    kind: materialization
+    mode: grouped
+    include_bundle_inputs: true
+    depends_on_roles:
+      - stage: perturbation_response
+        role: rlrmp-feedback-quality-perturbation-response-manifest
+        required: false
+    analysis_type: rlrmp.feedback_quality.response_norm_plots
+    params:
+      experiment_metadata_key: rlrmp_experiment
+      output_tag: validation_selected
+      use_validation_selected_checkpoints: true
+      materialize_response_norm_plots: false
+    run_condition:
+      kind: all
+      exprs:
+        - kind: compare
+          item: params
+          path: materialize_response_norm_plots
+          op: eq
+          value: true
+        - kind: compare
+          item: rlrmp-feedback-quality-perturbation-response-manifest
+          op: exists
+    outputs:
+      - role: rlrmp-feedback-quality-response-norm-plots-status
+        required: false
   - name: feedback_quality_lens
     kind: materialization
-    depends_on: [postrun_diagnostics]
+    mode: grouped
+    include_bundle_inputs: true
+    depends_on:
+      - evaluation_diagnostics
+      - objective_comparator
+      - perturbation_response
+      - feedback_ablation
+      - perturbation_calibration
+      - response_norm_plots
+    depends_on_roles:
+      - stage: evaluation_diagnostics
+        role: rlrmp-feedback-quality-evaluation-diagnostics-status
+        required: false
+      - stage: objective_comparator
+        role: rlrmp-feedback-quality-objective-comparator-status
+        required: false
+      - stage: perturbation_response
+        role: rlrmp-feedback-quality-perturbation-response-status
+        required: false
+      - stage: feedback_ablation
+        role: rlrmp-feedback-quality-feedback-ablation-status
+        required: false
+      - stage: perturbation_calibration
+        role: rlrmp-feedback-quality-perturbation-calibration-status
+        required: false
+      - stage: response_norm_plots
+        role: rlrmp-feedback-quality-response-norm-plots-status
+        required: false
+    analysis_type: rlrmp.feedback_quality_lens
+    params:
+      experiment_metadata_key: rlrmp_experiment
+      output_tag: validation_selected
+      use_validation_selected_checkpoints: true
+    run_condition:
+      kind: all
+      exprs:
+        - kind: compare
+          item: rlrmp-feedback-quality-evaluation-diagnostics-status
+          op: exists
+        - kind: compare
+          item: rlrmp-feedback-quality-objective-comparator-status
+          op: exists
+        - kind: compare
+          item: rlrmp-feedback-quality-perturbation-response-status
+          op: exists
+        - kind: compare
+          item: rlrmp-feedback-quality-feedback-ablation-status
+          op: exists
+        - kind: compare
+          item: rlrmp-feedback-quality-perturbation-calibration-status
+          op: exists
+        - kind: compare
+          item: rlrmp-feedback-quality-response-norm-plots-status
+          op: exists
     outputs:
       - role: rlrmp-feedback-quality-lens
         required: false
-    not_applicable_reason: "Sibling-owned by af77a06; not part of this bundle migration."
   - name: robustness_phenotype_aggregation
     kind: materialization
     depends_on: [postrun_diagnostics]

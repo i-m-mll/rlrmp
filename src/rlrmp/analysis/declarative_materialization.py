@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -102,7 +103,7 @@ EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE = {
         PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
     ),
     PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE: ("analysis_run",),
-    FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE: ("evaluation_run",),
+    FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE: ("analysis_run",),
     ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE: ("evaluation_run",),
 }
 
@@ -114,6 +115,58 @@ FEEDBACK_QUALITY_COMPONENT_NAMES = (
     "response_norm_plots",
     "perturbation_calibration",
 )
+FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES = {
+    name: f"rlrmp.feedback_quality.{name}" for name in FEEDBACK_QUALITY_COMPONENT_NAMES
+}
+FEEDBACK_QUALITY_COMPONENT_STATUS_ROLES = {
+    name: f"rlrmp-feedback-quality-{name.replace('_', '-')}-status"
+    for name in FEEDBACK_QUALITY_COMPONENT_NAMES
+}
+
+EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE.update(
+    {
+        FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["evaluation_diagnostics"]: (
+            "evaluation_run",
+            "params.materialize_evaluation_diagnostics",
+        ),
+        FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["objective_comparator"]: (
+            "evaluation_run",
+            "params.materialize_objective_comparator",
+        ),
+        FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["perturbation_response"]: (
+            "evaluation_run",
+            "params.materialize_perturbation_response",
+        ),
+        FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["feedback_ablation"]: (
+            "evaluation_run",
+            "params.materialize_feedback_ablation",
+        ),
+        FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["response_norm_plots"]: (
+            "rlrmp-feedback-quality-perturbation-response-manifest",
+        ),
+        FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["perturbation_calibration"]: (
+            "params.materialize_perturbation_calibration",
+        ),
+    }
+)
+
+
+FeedbackQualityMaterializer = Callable[
+    [AnalysisRunContext, Mapping[str, Any], str, tuple[str, ...], Any | None, Path],
+    Mapping[str, Any],
+]
+
+
+@dataclass(frozen=True)
+class FeedbackQualityComponentRegistration:
+    """Registered feedback-quality component leaf metadata."""
+
+    name: str
+    materializer: FeedbackQualityMaterializer
+    artifact_role: str
+    logical_name: str
+    live_materializer: str
+    gating_spec: str
 
 
 class RLRMPManifestAnalysis(AbstractAnalysis):
@@ -269,257 +322,6 @@ class FeedbackQualityLensPorts(AbstractAnalysisPorts):
     perturbation_calibration: Any = None
 
 
-class FeedbackQualityComponentAnalysis(AbstractAnalysis):
-    """One feedback-quality component node with optional live materialization."""
-
-    component_name: str = eqx.field(kw_only=True, static=True)
-    component: dict[str, Any] = eqx.field(kw_only=True, static=True)
-    params: dict[str, Any] = eqx.field(kw_only=True, static=True)
-    experiment: str = eqx.field(kw_only=True, static=True)
-    run_ids: tuple[str, ...] = eqx.field(kw_only=True, static=True)
-    include: bool = eqx.field(default=True, kw_only=True, static=True)
-    not_applicable: bool = eqx.field(default=False, kw_only=True, static=True)
-    repo_root: Path = eqx.field(kw_only=True, static=True)
-    evaluation_input: Any | None = eqx.field(default=None, kw_only=True, static=True)
-
-    def compute(self, data: AnalysisInputData, **kwargs: Any) -> dict[str, Any]:
-        del data, kwargs
-        output, _existing, _groups = _feedback_quality_component_output(
-            self.component_name,
-            self.component,
-            include=self.include,
-            not_applicable=self.not_applicable,
-            repo_root=self.repo_root,
-        )
-        output.setdefault("component_node", self.component_name)
-        output.setdefault("materialization_mode", "existing_artifact_status")
-        if output["status"] == "unavailable" and self._has_live_materializer():
-            output["materialization_mode"] = "live_node_pending_inputs"
-            output["live_materializer"] = self._live_materializer_name()
-            output.setdefault(
-                "reason",
-                "live materializer is available but required inputs were not materialized",
-            )
-        return output
-
-    def emit_artifacts(
-        self,
-        context: AnalysisRunContext,
-        data: AnalysisInputData,
-        *,
-        result: Mapping[str, Any],
-        **kwargs: Any,
-    ) -> dict[str, Any]:
-        del data, kwargs
-        output = dict(result)
-        if (
-            output.get("status") == "unavailable"
-            and self.include
-            and not self.not_applicable
-            and self._has_live_materializer()
-            and self._can_attempt_live_materializer()
-        ):
-            output = self._attempt_live_materializer(context)
-
-        refreshed, existing, groups = _feedback_quality_component_output(
-            self.component_name,
-            self.component,
-            include=self.include,
-            not_applicable=self.not_applicable,
-            repo_root=self.repo_root,
-        )
-        if refreshed.get("status") == "materialized":
-            output = refreshed
-        output.setdefault("component_node", self.component_name)
-        output.setdefault(
-            "materialization_mode",
-            "live_analysis_node" if self._has_live_materializer() else "status_only",
-        )
-        if self._has_live_materializer():
-            output.setdefault("live_materializer", self._live_materializer_name())
-
-        for artifact in existing:
-            context.record_artifact(
-                artifact.path,
-                role=artifact.role,
-                logical_name=artifact.logical_name,
-                media_type=artifact.media_type,
-                metadata=artifact.metadata,
-                group_id=artifact.group_id,
-                group_role=artifact.group_role,
-                group_metadata=artifact.group_metadata,
-            )
-        for group in groups:
-            context.record_artifact_group(
-                group_id=group.group_id,
-                members=group.members,
-                metadata=group.metadata,
-            )
-        return output
-
-    def _has_live_materializer(self) -> bool:
-        return self.component_name in {
-            "evaluation_diagnostics",
-            "objective_comparator",
-            "perturbation_response",
-            "feedback_ablation",
-            "response_norm_plots",
-            "perturbation_calibration",
-        }
-
-    def _live_materializer_name(self) -> str:
-        return {
-            "evaluation_diagnostics": (
-                "rlrmp.analysis.pipelines.gru_evaluation_diagnostics."
-                "materialize_gru_evaluation_diagnostics"
-            ),
-            "objective_comparator": (
-                "rlrmp.analysis.pipelines.objective_comparator."
-                "materialize_gru_objective_comparator_sidecar"
-            ),
-            "perturbation_response": (
-                "rlrmp.analysis.pipelines.gru_perturbation_bank."
-                "materialize_gru_perturbation_response"
-            ),
-            "feedback_ablation": (
-                "rlrmp.analysis.pipelines.gru_feedback_ablation.materialize_gru_feedback_ablation"
-            ),
-            "response_norm_plots": (
-                "rlrmp.analysis.pipelines.gru_perturbation_response_norm_plots."
-                "materialize_response_norm_plots"
-            ),
-            "perturbation_calibration": (
-                "rlrmp.analysis.pipelines.gru_perturbation_calibration."
-                "materialize_perturbation_open_loop_calibration"
-            ),
-        }[self.component_name]
-
-    def _can_attempt_live_materializer(self) -> bool:
-        if self.component_name in {"response_norm_plots", "perturbation_calibration"}:
-            return bool(self.params.get(f"materialize_{self.component_name}", False))
-        return self.evaluation_input is not None or bool(
-            self.params.get(f"materialize_{self.component_name}", False)
-        )
-
-    def _attempt_live_materializer(self, context: AnalysisRunContext) -> dict[str, Any]:
-        try:
-            return self._run_live_materializer(context)
-        except (FileNotFoundError, ValueError, KeyError, AttributeError, ImportError) as exc:
-            return {
-                "status": "skipped",
-                "schema_kind": self.component["schema_kind"],
-                "reason": f"{self.component_name}_inputs_unavailable",
-                "detail": str(exc),
-                "selection_role": "audit_only_not_used_for_checkpoint_selection",
-                "component_node": self.component_name,
-                "materialization_mode": "live_analysis_node",
-                "live_materializer": self._live_materializer_name(),
-            }
-
-    def _run_live_materializer(self, context: AnalysisRunContext) -> dict[str, Any]:
-        output_tag = str(self.params.get("output_tag", DEFAULT_OUTPUT_TAG))
-        plan = plan_gru_postrun_materialization(
-            experiment=self.experiment,
-            run_ids=self.run_ids,
-            output_tag=output_tag,
-            use_validation_selected_checkpoints=bool(
-                self.params.get("use_validation_selected_checkpoints", True)
-            ),
-            fixed_bank_rescore_manifest_path=_optional_path(
-                self.params.get("fixed_bank_rescore_manifest_path"),
-                repo_root=self.repo_root,
-            ),
-            repo_root=self.repo_root,
-        )
-        n_rollout_trials = int(self.params.get("n_rollout_trials", DEFAULT_N_ROLLOUT_TRIALS))
-        labels = _optional_str_sequence(self.params.get("labels"))
-        if self.component_name == "evaluation_diagnostics":
-            return _materialize_gru_evaluation_diagnostics(
-                context,
-                {
-                    **self.params,
-                    "experiment": self.experiment,
-                    "run_ids": list(self.run_ids),
-                    "output_path": str(plan.evaluation_manifest_path),
-                    "bulk_dir": str(plan.evaluation_bulk_dir),
-                },
-                evaluation_input=self.evaluation_input,
-            ).payload
-        if self.component_name == "objective_comparator":
-            return materialize_optional_objective_comparator(
-                experiment=self.experiment,
-                run_ids=self.run_ids,
-                labels=labels,
-                checkpoint_policy=plan.checkpoint_policy,
-                use_validation_selected_checkpoints=bool(
-                    self.params.get("use_validation_selected_checkpoints", True)
-                ),
-                checkpoint_manifest=None,
-                checkpoint_manifest_path=plan.checkpoint_manifest_path,
-                standard_manifest_path=plan.standard_manifest_path,
-                output_path=plan.objective_comparator_json_path,
-                note_path=plan.objective_comparator_note_path,
-                repo_root=self.repo_root,
-            )
-        if self.component_name == "perturbation_response":
-            return materialize_optional_perturbation_response(
-                experiment=self.experiment,
-                run_ids=self.run_ids,
-                labels=labels,
-                n_rollout_trials=n_rollout_trials,
-                output_path=plan.perturbation_response_json_path,
-                note_path=plan.perturbation_response_note_path,
-                bulk_dir=plan.perturbation_response_bulk_dir,
-                calibration_level=self.params.get("perturbation_calibration_level"),
-                calibration_reach=self.params.get("perturbation_calibration_reach"),
-                preferred_checkpoint_manifest_path=plan.checkpoint_manifest_path,
-                write_bulk_arrays=bool(self.params.get("write_perturbation_bulk_arrays", False)),
-                repo_root=self.repo_root,
-            )
-        if self.component_name == "feedback_ablation":
-            return materialize_optional_feedback_ablation(
-                experiment=self.experiment,
-                run_ids=self.run_ids,
-                labels=labels,
-                n_rollout_trials=n_rollout_trials,
-                output_path=plan.feedback_ablation_json_path,
-                note_path=plan.feedback_ablation_note_path,
-                calibration_level=self.params.get("perturbation_calibration_level"),
-                calibration_reach=self.params.get("perturbation_calibration_reach"),
-                feedback_selection_level=str(self.params.get("feedback_selection_level", "small")),
-                preferred_checkpoint_manifest_path=plan.checkpoint_manifest_path,
-                repo_root=self.repo_root,
-            )
-        if self.component_name == "response_norm_plots":
-            from rlrmp.analysis.pipelines.gru_perturbation_response_norm_plots import (
-                materialize_response_norm_plots,
-            )
-
-            tracked_path = self.component["tracked"][0]
-            note_path = self.component["notes"][0]
-            figure_dir = self.component["groups"][0][0]
-            return materialize_response_norm_plots(
-                source_manifest_path=plan.perturbation_response_json_path,
-                results_dir=figure_dir,
-                asset_dir=figure_dir / "_assets",
-                note_path=note_path,
-                manifest_path=tracked_path,
-                repo_root=self.repo_root,
-            )
-        if self.component_name == "perturbation_calibration":
-            from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
-                materialize_perturbation_open_loop_calibration,
-            )
-
-            return materialize_perturbation_open_loop_calibration(
-                result_experiment=self.experiment,
-                output_path=self.component["tracked"][0],
-                note_path=self.component["notes"][0],
-                repo_root=self.repo_root,
-            )
-        raise ValueError(f"Unknown feedback-quality component {self.component_name!r}")
-
-
 class FeedbackQualitySummaryAnalysis(AbstractAnalysis[FeedbackQualityLensPorts]):
     """Aggregate feedback-quality component nodes into the lens payload."""
 
@@ -528,6 +330,7 @@ class FeedbackQualitySummaryAnalysis(AbstractAnalysis[FeedbackQualityLensPorts])
         default_factory=FeedbackQualityLensPorts,
         converter=FeedbackQualityLensPorts.converter,
     )
+    component_outputs: dict[str, dict[str, Any]] = eqx.field(kw_only=True, static=True)
     params: dict[str, Any] = eqx.field(kw_only=True, static=True)
     experiment: str = eqx.field(kw_only=True, static=True)
     run_ids: tuple[str, ...] = eqx.field(kw_only=True, static=True)
@@ -538,24 +341,10 @@ class FeedbackQualitySummaryAnalysis(AbstractAnalysis[FeedbackQualityLensPorts])
     def compute(
         self,
         data: AnalysisInputData,
-        *,
-        evaluation_diagnostics: Mapping[str, Any],
-        objective_comparator: Mapping[str, Any],
-        perturbation_response: Mapping[str, Any],
-        feedback_ablation: Mapping[str, Any],
-        response_norm_plots: Mapping[str, Any],
-        perturbation_calibration: Mapping[str, Any],
         **kwargs: Any,
     ) -> dict[str, Any]:
         del data, kwargs
-        outputs = {
-            "evaluation_diagnostics": dict(evaluation_diagnostics),
-            "objective_comparator": dict(objective_comparator),
-            "perturbation_response": dict(perturbation_response),
-            "feedback_ablation": dict(feedback_ablation),
-            "response_norm_plots": dict(response_norm_plots),
-            "perturbation_calibration": dict(perturbation_calibration),
-        }
+        outputs = {name: dict(self.component_outputs[name]) for name in FEEDBACK_QUALITY_COMPONENT_NAMES}
         return {
             "schema_id": "rlrmp.feedback_quality_lens",
             "schema_version": "rlrmp.feedback_quality_lens.v1",
@@ -742,6 +531,12 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
         perturbation_bank_aggregate_recipe,
         replace=replace,
     )
+    for registration in _feedback_quality_component_registrations().values():
+        register_analysis_recipe(
+            FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES[registration.name],
+            _feedback_quality_component_recipe(registration.name),
+            replace=replace,
+        )
     register_analysis_recipe(
         FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE,
         feedback_quality_lens_recipe,
@@ -1185,6 +980,51 @@ def perturbation_bank_aggregate_recipe(
     )
 
 
+def _feedback_quality_component_recipe(
+    component_name: str,
+) -> Callable[[AnalysisRunSpec, Path, Sequence[Any]], AnalysisRecipeResult]:
+    """Return the registered recipe for one feedback-quality component leaf."""
+
+    def _recipe(
+        spec: AnalysisRunSpec,
+        _root: Path,
+        inputs: Sequence[Any],
+    ) -> AnalysisRecipeResult:
+        params = dict(spec.params)
+        resolved_run_ids = _feedback_quality_run_ids_from_params_or_inputs(params, inputs)
+        experiment = _experiment_from_params_or_inputs(params, inputs)
+        repo_root = _repo_root_from_params(params)
+        evaluation_input = _primary_evaluation_input(inputs)
+        registration = _feedback_quality_component_registrations()[component_name]
+        analysis = RLRMPManifestAnalysis(
+            materializer=lambda context, data: _materialize_feedback_quality_component(
+                context,
+                data,
+                registration=registration,
+                params=params,
+                experiment=experiment,
+                run_ids=resolved_run_ids,
+                evaluation_input=evaluation_input,
+                repo_root=repo_root,
+            ),
+            artifact_role=registration.artifact_role,
+            logical_name=registration.logical_name,
+            schema_boundary="rlrmp-owned feedback-quality component status payload",
+            metadata={
+                "component": registration.name,
+                "live_materializer": registration.live_materializer,
+                "gating_spec": registration.gating_spec,
+            },
+        )
+        return AnalysisRecipeResult(
+            analyses={registration.name: analysis},
+            data=_analysis_data_from_evaluation_input(evaluation_input),
+        )
+
+    _recipe.__name__ = f"feedback_quality_{component_name}_recipe"
+    return _recipe
+
+
 def output_feedback_rollout_recovery_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
@@ -1219,7 +1059,7 @@ def feedback_quality_lens_recipe(
     """Build the declarative feedback-control quality lens recipe."""
 
     params = dict(spec.params)
-    resolved_run_ids = _run_ids_from_params_or_inputs(params, inputs)
+    resolved_run_ids = _feedback_quality_run_ids_from_params_or_inputs(params, inputs)
     experiment = _experiment_from_params_or_inputs(params, inputs)
     repo_root = _repo_root_from_params(params)
     output_tag = str(params.get("output_tag", DEFAULT_OUTPUT_TAG))
@@ -1236,27 +1076,9 @@ def feedback_quality_lens_recipe(
         ),
         repo_root=repo_root,
     )
-    not_applicable = set(_optional_str_sequence(params.get("not_applicable_components")) or [])
-    components = _feedback_quality_components(plan, params=params, repo_root=repo_root)
-    evaluation_input = _primary_evaluation_input(inputs)
-    component_nodes = {
-        name: FeedbackQualityComponentAnalysis(
-            component_name=name,
-            component=component,
-            params=params,
-            experiment=experiment,
-            run_ids=tuple(resolved_run_ids),
-            include=bool(params.get(f"include_{name}", True)),
-            not_applicable=name in not_applicable,
-            repo_root=repo_root,
-            evaluation_input=evaluation_input,
-        )
-        for name, component in components.items()
-    }
+    component_outputs = _feedback_quality_component_outputs_from_inputs(inputs)
     summary = FeedbackQualitySummaryAnalysis(
-        inputs=FeedbackQualityLensPorts(
-            **{name: name for name in FEEDBACK_QUALITY_COMPONENT_NAMES}
-        ),
+        component_outputs=component_outputs,
         params=params,
         experiment=experiment,
         run_ids=tuple(resolved_run_ids),
@@ -1265,11 +1087,8 @@ def feedback_quality_lens_recipe(
         plan_checkpoint_selection_source=plan.checkpoint_selection_source,
     )
     return AnalysisRecipeResult(
-        analyses={
-            **component_nodes,
-            "feedback_quality_lens": summary,
-        },
-        data=_analysis_data_from_evaluation_input(evaluation_input),
+        analyses={"feedback_quality_lens": summary},
+        data=_empty_analysis_data(),
     )
 
 
@@ -1514,22 +1333,355 @@ def _materialize_gru_postrun(
     )
 
 
-def _materialize_feedback_quality_lens(
+def _feedback_quality_component_registrations() -> dict[str, FeedbackQualityComponentRegistration]:
+    return {
+        "evaluation_diagnostics": FeedbackQualityComponentRegistration(
+            name="evaluation_diagnostics",
+            materializer=_materialize_feedback_quality_evaluation_diagnostics,
+            artifact_role=FEEDBACK_QUALITY_COMPONENT_STATUS_ROLES["evaluation_diagnostics"],
+            logical_name="feedback_quality/evaluation_diagnostics_status.json",
+            live_materializer=(
+                "rlrmp.analysis.pipelines.gru_evaluation_diagnostics."
+                "materialize_gru_evaluation_diagnostics"
+            ),
+            gating_spec="evaluation_run_present_or_materialize_flag",
+        ),
+        "objective_comparator": FeedbackQualityComponentRegistration(
+            name="objective_comparator",
+            materializer=_materialize_feedback_quality_objective_comparator,
+            artifact_role=FEEDBACK_QUALITY_COMPONENT_STATUS_ROLES["objective_comparator"],
+            logical_name="feedback_quality/objective_comparator_status.json",
+            live_materializer=(
+                "rlrmp.analysis.pipelines.objective_comparator."
+                "materialize_gru_objective_comparator_sidecar"
+            ),
+            gating_spec="evaluation_run_present_or_materialize_flag",
+        ),
+        "perturbation_response": FeedbackQualityComponentRegistration(
+            name="perturbation_response",
+            materializer=_materialize_feedback_quality_perturbation_response,
+            artifact_role=FEEDBACK_QUALITY_COMPONENT_STATUS_ROLES["perturbation_response"],
+            logical_name="feedback_quality/perturbation_response_status.json",
+            live_materializer=(
+                "rlrmp.analysis.pipelines.gru_perturbation_bank."
+                "materialize_gru_perturbation_response"
+            ),
+            gating_spec="evaluation_run_present_or_materialize_flag",
+        ),
+        "feedback_ablation": FeedbackQualityComponentRegistration(
+            name="feedback_ablation",
+            materializer=_materialize_feedback_quality_feedback_ablation,
+            artifact_role=FEEDBACK_QUALITY_COMPONENT_STATUS_ROLES["feedback_ablation"],
+            logical_name="feedback_quality/feedback_ablation_status.json",
+            live_materializer=(
+                "rlrmp.analysis.pipelines.gru_feedback_ablation."
+                "materialize_gru_feedback_ablation"
+            ),
+            gating_spec="evaluation_run_present_or_materialize_flag",
+        ),
+        "response_norm_plots": FeedbackQualityComponentRegistration(
+            name="response_norm_plots",
+            materializer=_materialize_feedback_quality_response_norm_plots,
+            artifact_role=FEEDBACK_QUALITY_COMPONENT_STATUS_ROLES["response_norm_plots"],
+            logical_name="feedback_quality/response_norm_plots_status.json",
+            live_materializer=(
+                "rlrmp.analysis.pipelines.gru_perturbation_response_norm_plots."
+                "materialize_response_norm_plots"
+            ),
+            gating_spec="materialize_flag_and_perturbation_response_role_present",
+        ),
+        "perturbation_calibration": FeedbackQualityComponentRegistration(
+            name="perturbation_calibration",
+            materializer=_materialize_feedback_quality_perturbation_calibration,
+            artifact_role=FEEDBACK_QUALITY_COMPONENT_STATUS_ROLES["perturbation_calibration"],
+            logical_name="feedback_quality/perturbation_calibration_status.json",
+            live_materializer=(
+                "rlrmp.analysis.pipelines.gru_perturbation_calibration."
+                "materialize_perturbation_open_loop_calibration"
+            ),
+            gating_spec="materialize_flag",
+        ),
+    }
+
+
+def _materialize_feedback_quality_component(
     context: AnalysisRunContext,
+    data: AnalysisInputData,
+    *,
+    registration: FeedbackQualityComponentRegistration,
+    params: Mapping[str, Any],
+    experiment: str,
+    run_ids: Sequence[str],
+    evaluation_input: Any | None,
+    repo_root: Path,
+) -> MaterializationResult:
+    del data
+    if not run_ids:
+        raise ValueError("Feedback-quality component recipe requires at least one run ID")
+    plan = _feedback_quality_plan(
+        params,
+        experiment=experiment,
+        run_ids=run_ids,
+        repo_root=repo_root,
+    )
+    not_applicable = set(_optional_str_sequence(params.get("not_applicable_components")) or [])
+    component = _feedback_quality_components(plan, params=params, repo_root=repo_root)[
+        registration.name
+    ]
+    output, existing, groups = _feedback_quality_component_output(
+        registration.name,
+        component,
+        include=bool(params.get(f"include_{registration.name}", True)),
+        not_applicable=registration.name in not_applicable,
+        repo_root=repo_root,
+    )
+    materialization_mode = "live_analysis_node"
+    if output["status"] == "unavailable":
+        raw_output = registration.materializer(
+            context,
+            params,
+            experiment,
+            tuple(run_ids),
+            evaluation_input,
+            repo_root,
+        )
+        refreshed, existing, groups = _feedback_quality_component_output(
+            registration.name,
+            component,
+            include=bool(params.get(f"include_{registration.name}", True)),
+            not_applicable=registration.name in not_applicable,
+            repo_root=repo_root,
+        )
+        output = _feedback_quality_live_output(
+            refreshed,
+            raw_output,
+            name=registration.name,
+        )
+        materialization_mode = "live_analysis_node"
+
+    output.setdefault("component_node", registration.name)
+    output.setdefault("materialization_mode", materialization_mode)
+    output.setdefault("live_materializer", registration.live_materializer)
+    return MaterializationResult(
+        payload=output,
+        existing_artifacts=existing,
+        artifact_groups=groups,
+        payload_metadata={"component": registration.name},
+    )
+
+
+def _feedback_quality_live_output(
+    refreshed: Mapping[str, Any],
+    raw_output: Mapping[str, Any],
+    *,
+    name: str,
+) -> dict[str, Any]:
+    if refreshed.get("status") == "materialized":
+        return dict(refreshed)
+    if raw_output.get("status") == "skipped":
+        return {
+            **dict(refreshed),
+            "status": "skipped",
+            "reason": raw_output.get("reason", f"{name}_materializer_skipped"),
+            "detail": dict(raw_output),
+        }
+    return dict(refreshed)
+
+
+def _materialize_feedback_quality_evaluation_diagnostics(
+    context: AnalysisRunContext,
+    params: Mapping[str, Any],
+    experiment: str,
+    run_ids: tuple[str, ...],
+    evaluation_input: Any | None,
+    repo_root: Path,
+) -> Mapping[str, Any]:
+    plan = _feedback_quality_plan(
+        params,
+        experiment=experiment,
+        run_ids=run_ids,
+        repo_root=repo_root,
+    )
+    return _materialize_gru_evaluation_diagnostics(
+        context,
+        {
+            **dict(params),
+            "experiment": experiment,
+            "run_ids": list(run_ids),
+            "output_path": str(plan.evaluation_manifest_path),
+            "bulk_dir": str(plan.evaluation_bulk_dir),
+        },
+        evaluation_input=evaluation_input,
+    ).payload
+
+
+def _materialize_feedback_quality_objective_comparator(
+    context: AnalysisRunContext,
+    params: Mapping[str, Any],
+    experiment: str,
+    run_ids: tuple[str, ...],
+    evaluation_input: Any | None,
+    repo_root: Path,
+) -> Mapping[str, Any]:
+    del context, evaluation_input
+    plan = _feedback_quality_plan(
+        params,
+        experiment=experiment,
+        run_ids=run_ids,
+        repo_root=repo_root,
+    )
+    return materialize_optional_objective_comparator(
+        experiment=experiment,
+        run_ids=run_ids,
+        labels=_optional_str_sequence(params.get("labels")),
+        checkpoint_policy=plan.checkpoint_policy,
+        use_validation_selected_checkpoints=bool(
+            params.get("use_validation_selected_checkpoints", True)
+        ),
+        checkpoint_manifest=None,
+        checkpoint_manifest_path=plan.checkpoint_manifest_path,
+        standard_manifest_path=plan.standard_manifest_path,
+        output_path=plan.objective_comparator_json_path,
+        note_path=plan.objective_comparator_note_path,
+        repo_root=repo_root,
+    )
+
+
+def _materialize_feedback_quality_perturbation_response(
+    context: AnalysisRunContext,
+    params: Mapping[str, Any],
+    experiment: str,
+    run_ids: tuple[str, ...],
+    evaluation_input: Any | None,
+    repo_root: Path,
+) -> Mapping[str, Any]:
+    del context, evaluation_input
+    plan = _feedback_quality_plan(
+        params,
+        experiment=experiment,
+        run_ids=run_ids,
+        repo_root=repo_root,
+    )
+    return materialize_optional_perturbation_response(
+        experiment=experiment,
+        run_ids=run_ids,
+        labels=_optional_str_sequence(params.get("labels")),
+        n_rollout_trials=int(params.get("n_rollout_trials", DEFAULT_N_ROLLOUT_TRIALS)),
+        output_path=plan.perturbation_response_json_path,
+        note_path=plan.perturbation_response_note_path,
+        bulk_dir=plan.perturbation_response_bulk_dir,
+        calibration_level=params.get("perturbation_calibration_level"),
+        calibration_reach=params.get("perturbation_calibration_reach"),
+        preferred_checkpoint_manifest_path=plan.checkpoint_manifest_path,
+        write_bulk_arrays=bool(params.get("write_perturbation_bulk_arrays", False)),
+        repo_root=repo_root,
+    )
+
+
+def _materialize_feedback_quality_feedback_ablation(
+    context: AnalysisRunContext,
+    params: Mapping[str, Any],
+    experiment: str,
+    run_ids: tuple[str, ...],
+    evaluation_input: Any | None,
+    repo_root: Path,
+) -> Mapping[str, Any]:
+    del context, evaluation_input
+    plan = _feedback_quality_plan(
+        params,
+        experiment=experiment,
+        run_ids=run_ids,
+        repo_root=repo_root,
+    )
+    return materialize_optional_feedback_ablation(
+        experiment=experiment,
+        run_ids=run_ids,
+        labels=_optional_str_sequence(params.get("labels")),
+        n_rollout_trials=int(params.get("n_rollout_trials", DEFAULT_N_ROLLOUT_TRIALS)),
+        output_path=plan.feedback_ablation_json_path,
+        note_path=plan.feedback_ablation_note_path,
+        calibration_level=params.get("perturbation_calibration_level"),
+        calibration_reach=params.get("perturbation_calibration_reach"),
+        feedback_selection_level=str(params.get("feedback_selection_level", "small")),
+        preferred_checkpoint_manifest_path=plan.checkpoint_manifest_path,
+        repo_root=repo_root,
+    )
+
+
+def _materialize_feedback_quality_response_norm_plots(
+    context: AnalysisRunContext,
+    params: Mapping[str, Any],
+    experiment: str,
+    run_ids: tuple[str, ...],
+    evaluation_input: Any | None,
+    repo_root: Path,
+) -> Mapping[str, Any]:
+    del context, evaluation_input
+    plan = _feedback_quality_plan(
+        params,
+        experiment=experiment,
+        run_ids=run_ids,
+        repo_root=repo_root,
+    )
+    component = _feedback_quality_components(plan, params=params, repo_root=repo_root)[
+        "response_norm_plots"
+    ]
+    from rlrmp.analysis.pipelines.gru_perturbation_response_norm_plots import (
+        materialize_response_norm_plots,
+    )
+
+    figure_dir = component["groups"][0][0]
+    return materialize_response_norm_plots(
+        source_manifest_path=plan.perturbation_response_json_path,
+        results_dir=figure_dir,
+        asset_dir=figure_dir / "_assets",
+        note_path=component["notes"][0],
+        manifest_path=component["tracked"][0],
+        repo_root=repo_root,
+    )
+
+
+def _materialize_feedback_quality_perturbation_calibration(
+    context: AnalysisRunContext,
+    params: Mapping[str, Any],
+    experiment: str,
+    run_ids: tuple[str, ...],
+    evaluation_input: Any | None,
+    repo_root: Path,
+) -> Mapping[str, Any]:
+    del context, evaluation_input
+    plan = _feedback_quality_plan(
+        params,
+        experiment=experiment,
+        run_ids=run_ids,
+        repo_root=repo_root,
+    )
+    component = _feedback_quality_components(plan, params=params, repo_root=repo_root)[
+        "perturbation_calibration"
+    ]
+    from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
+        materialize_perturbation_open_loop_calibration,
+    )
+
+    return materialize_perturbation_open_loop_calibration(
+        result_experiment=experiment,
+        output_path=component["tracked"][0],
+        note_path=component["notes"][0],
+        repo_root=repo_root,
+    )
+
+
+def _feedback_quality_plan(
     params: Mapping[str, Any],
     *,
     experiment: str,
     run_ids: Sequence[str],
-) -> MaterializationResult:
-    if not run_ids:
-        raise ValueError("Feedback-quality lens recipe requires at least one run ID")
-
-    repo_root = _repo_root_from_params(params)
-    output_tag = str(params.get("output_tag", DEFAULT_OUTPUT_TAG))
-    plan = plan_gru_postrun_materialization(
+    repo_root: Path,
+) -> Any:
+    return plan_gru_postrun_materialization(
         experiment=experiment,
         run_ids=tuple(run_ids),
-        output_tag=output_tag,
+        output_tag=str(params.get("output_tag", DEFAULT_OUTPUT_TAG)),
         use_validation_selected_checkpoints=bool(
             params.get("use_validation_selected_checkpoints", True)
         ),
@@ -1539,59 +1691,33 @@ def _materialize_feedback_quality_lens(
         ),
         repo_root=repo_root,
     )
-    not_applicable = set(_optional_str_sequence(params.get("not_applicable_components")) or [])
-    components = _feedback_quality_components(plan, params=params, repo_root=repo_root)
 
+
+def _feedback_quality_component_outputs_from_inputs(
+    inputs: Sequence[Any],
+) -> dict[str, dict[str, Any]]:
     outputs: dict[str, dict[str, Any]] = {}
-    existing_artifacts: list[ExistingAnalysisArtifact] = []
-    artifact_groups: list[AnalysisArtifactGroup] = []
-    for name, component in components.items():
-        output, existing, groups = _feedback_quality_component_output(
-            name,
-            component,
-            include=bool(params.get(f"include_{name}", True)),
-            not_applicable=name in not_applicable,
-            repo_root=repo_root,
-        )
-        outputs[name] = output
-        existing_artifacts.extend(existing)
-        artifact_groups.extend(groups)
-
-    payload = {
-        "schema_id": "rlrmp.feedback_quality_lens",
-        "schema_version": "rlrmp.feedback_quality_lens.v1",
-        "issue": str(params.get("issue", "af77a06")),
-        "scope": "feedback_control_quality_diagnostics",
-        "experiment": experiment,
-        "run_ids": list(run_ids),
-        "labels": _optional_str_sequence(params.get("labels")),
-        "output_tag": output_tag,
-        "checkpoint_policy": plan.checkpoint_policy,
-        "checkpoint_selection_source": plan.checkpoint_selection_source,
-        "selection_leakage_guard": {
-            "status": "audit_only",
-            "primary_checkpoint_selection": plan.checkpoint_selection_source,
-            "feedback_quality_components": sorted(outputs),
-            "note": (
-                "Feedback-control quality diagnostics are audit sidecars; they do "
-                "not silently replace the explicitly selected checkpoints."
-            ),
-        },
-        "outputs": outputs,
-        "bundle_contract": {
-            "primary": "feedbax_analysis_bundle",
-            "bundle": "rlrmp/feedback_quality_lens",
-            "analysis_manifest_id": context.manifest_id,
-            "scientific_schema_owner": "rlrmp",
-            "artifact_custody": "feedbax.AnalysisRunManifest",
-        },
-        "declarative_analysis": _declarative_metadata(context),
+    by_role = {
+        registration.artifact_role: registration
+        for registration in _feedback_quality_component_registrations().values()
     }
-    return MaterializationResult(
-        payload=payload,
-        existing_artifacts=tuple(existing_artifacts),
-        artifact_groups=tuple(artifact_groups),
-    )
+    for resolved in inputs:
+        manifest = getattr(resolved, "manifest", None)
+        if manifest is None:
+            continue
+        for artifact in getattr(manifest, "artifacts", ()):
+            registration = by_role.get(artifact.role)
+            if registration is None or artifact.logical_name != registration.logical_name:
+                continue
+            if artifact.uri is None:
+                raise ValueError(
+                    f"Feedback-quality component {registration.name!r} lacks artifact URI"
+                )
+            outputs[registration.name] = _read_json_payload(Path(artifact.uri))
+    missing = sorted(set(FEEDBACK_QUALITY_COMPONENT_NAMES).difference(outputs))
+    if missing:
+        raise ValueError(f"Feedback-quality aggregate missing component payloads: {missing}")
+    return outputs
 
 
 def _materialize_output_feedback_rollout_recovery(
@@ -2196,6 +2322,28 @@ def _run_ids_from_params_or_inputs(
     return tuple(run_ids)
 
 
+def _feedback_quality_run_ids_from_params_or_inputs(
+    params: Mapping[str, Any],
+    inputs: Sequence[Any],
+) -> tuple[str, ...]:
+    if params.get("run_ids") is not None:
+        return tuple(str(run_id) for run_id in params["run_ids"])
+    run_ids: list[str] = []
+    for resolved in inputs:
+        ref = getattr(resolved, "ref", None)
+        if ref is None:
+            continue
+        if getattr(ref, "kind", None) == "EvaluationRunManifest":
+            manifest = getattr(resolved, "manifest", None)
+            for parent in getattr(manifest, "input_training_runs", ()):
+                parent_id = getattr(parent, "id", None)
+                if parent_id is not None:
+                    run_ids.append(str(parent_id))
+        elif getattr(ref, "kind", None) == "TrainingRunManifest":
+            run_ids.append(str(getattr(ref, "id", "")))
+    return tuple(run_id for run_id in run_ids if run_id)
+
+
 def _experiment_from_params_or_inputs(
     params: Mapping[str, Any],
     inputs: Sequence[Any],
@@ -2683,6 +2831,8 @@ def _evaluation_parent_refs(
 
 __all__ = [
     "BRIDGE_STANDARD_ANALYSIS_TYPE",
+    "FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES",
+    "FEEDBACK_QUALITY_COMPONENT_NAMES",
     "FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE",
     "GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE",
     "GRU_POSTRUN_ANALYSIS_TYPE",

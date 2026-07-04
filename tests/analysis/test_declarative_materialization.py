@@ -9,7 +9,10 @@ import numpy as np
 import pytest
 import rlrmp
 from feedbax.analysis.analysis import AbstractAnalysis
-from feedbax.analysis.bundles import execute_analysis_bundle, load_analysis_bundle
+from feedbax.analysis.bundles import (
+    execute_staged_analysis_bundle,
+    load_analysis_bundle,
+)
 from feedbax.analysis.evaluation import execute_evaluation_run_spec
 from feedbax.analysis.materialization import ContextMaterializer
 from feedbax.analysis.specs import (
@@ -39,6 +42,13 @@ from rlrmp.runtime.spec_migrations import (
 )
 
 
+FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures"
+FEEDBACK_QUALITY_ALLOWED_PARITY_DIFFS = (
+    "declarative_analysis",
+    "bundle_contract.analysis_manifest_id",
+)
+
+
 def _artifact_roles(manifest) -> set[str]:
     return {artifact.role for artifact in manifest.artifacts}
 
@@ -49,11 +59,20 @@ def _artifact_payload(manifest, role: str) -> dict:
     return json.loads(Path(artifact.uri).read_text(encoding="utf-8"))
 
 
+def _feedback_quality_parity_payload(payload: dict) -> dict:
+    normalized = json.loads(json.dumps(payload, sort_keys=True))
+    normalized.pop("declarative_analysis", None)
+    normalized.get("bundle_contract", {}).pop("analysis_manifest_id", None)
+    return normalized
+
+
 def _unregister_declarative_recipes() -> None:
     unregister_analysis_recipe(dm.GRU_STANDARD_ANALYSIS_TYPE)
     unregister_analysis_recipe(dm.GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE)
     unregister_analysis_recipe(dm.PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE)
     unregister_analysis_recipe(dm.PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE)
+    for analysis_type in dm.FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES.values():
+        unregister_analysis_recipe(analysis_type)
     unregister_analysis_recipe(dm.FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE)
     unregister_analysis_recipe(dm.ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE)
     unregister_analysis_recipe(dm.OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE)
@@ -171,14 +190,6 @@ def test_declarative_recipes_use_feedbax_context_materializers() -> None:
     assert not isinstance(standard.analyses["gru_standard_certificate"], ContextMaterializer)
     assert isinstance(evaluation.analyses["gru_evaluation_diagnostics"], AbstractAnalysis)
     assert not isinstance(evaluation.analyses["gru_evaluation_diagnostics"], ContextMaterializer)
-    feedback_quality = dm.feedback_quality_lens_recipe(
-        dm.feedback_quality_lens_spec(
-            experiment="unitexp",
-            run_ids=["unit_run"],
-        ),
-        Path("."),
-        (),
-    )
     assert isinstance(
         rollout_recovery.analyses["output_feedback_rollout_recovery"],
         AbstractAnalysis,
@@ -186,12 +197,6 @@ def test_declarative_recipes_use_feedbax_context_materializers() -> None:
     assert not isinstance(
         rollout_recovery.analyses["output_feedback_rollout_recovery"],
         ContextMaterializer,
-    )
-    assert isinstance(feedback_quality.analyses["feedback_quality_lens"], AbstractAnalysis)
-    assert not isinstance(feedback_quality.analyses["feedback_quality_lens"], ContextMaterializer)
-    assert isinstance(
-        feedback_quality.analyses["evaluation_diagnostics"],
-        AbstractAnalysis,
     )
     perturbation_leaf = dm.perturbation_class_response_recipe(
         dm.perturbation_class_response_spec(
@@ -253,8 +258,19 @@ def test_feedback_quality_lens_bundle_resource_loads() -> None:
 
     assert bundle.name == "feedback_quality_lens"
     assert bundle.metadata["bundle_family"] == "rlrmp/feedback_quality_lens"
-    assert bundle.templates[0].analysis_type == dm.FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE
-    assert bundle.templates[0].requested_outputs == ["feedback_quality_lens"]
+    stages = {stage.name: stage for stage in bundle.stages}
+    assert stages["evaluation_diagnostics"].analysis_type == (
+        dm.FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["evaluation_diagnostics"]
+    )
+    assert stages["response_norm_plots"].depends_on_roles[0].stage == "perturbation_response"
+    assert stages["response_norm_plots"].depends_on_roles[0].role == (
+        "rlrmp-feedback-quality-perturbation-response-manifest"
+    )
+    assert stages["response_norm_plots"].depends_on_roles[0].required is False
+    assert stages["feedback_quality_lens"].analysis_type == dm.FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE
+    assert set(stages["feedback_quality_lens"].depends_on) == set(
+        dm.FEEDBACK_QUALITY_COMPONENT_NAMES
+    )
 
 
 def test_gru_postrun_bundle_declares_perturbation_leaf_aggregate_stages() -> None:
@@ -526,7 +542,27 @@ def test_feedback_quality_lens_bundle_executes_fixture_and_groups_artifacts(
     norm_fig_dir.mkdir(parents=True, exist_ok=True)
     (norm_fig_dir / "figure.html").write_text("<html></html>\n", encoding="utf-8")
 
-    outputs = execute_analysis_bundle(
+    calibration_dir = (
+        repo_root
+        / "_artifacts"
+        / "5f70333"
+        / "perturbation_open_loop_calibration"
+    )
+    calibration_dir.mkdir(parents=True, exist_ok=True)
+    (calibration_dir / "perturbation_open_loop_calibration.json").write_text(
+        json.dumps({"schema_version": "rlrmp.perturbation_open_loop_calibration.v1"}) + "\n",
+        encoding="utf-8",
+    )
+    (repo_root / "results" / "5f70333" / "notes").mkdir(parents=True, exist_ok=True)
+    (
+        repo_root / "results" / "5f70333" / "notes" / "perturbation_open_loop_calibration.md"
+    ).write_text("# calibration\n", encoding="utf-8")
+    (calibration_dir / "calibration_table.csv").write_text(
+        "level,value\nsmall,1.0\n",
+        encoding="utf-8",
+    )
+
+    execution = execute_staged_analysis_bundle(
         bundle,
         root=feedbax_root,
         run_ids=[run_id],
@@ -534,16 +570,26 @@ def test_feedback_quality_lens_bundle_executes_fixture_and_groups_artifacts(
         fig_dump_formats=("json",),
     )
 
-    assert len(outputs) == 1
-    _expansion, manifest, manifest_path = outputs[0]
+    stages = {stage.name: stage for stage in execution.stages}
+    assert stages["perturbation_response"].status == "materialized"
+    assert stages["response_norm_plots"].status == "materialized"
+    assert stages["feedback_quality_lens"].status == "materialized"
+    manifest_ref = stages["feedback_quality_lens"].manifest_refs[0]
+    manifest = load_manifest(manifest_ref.uri)
+    manifest_path = Path(manifest_ref.uri)
     assert manifest_path.exists()
     assert manifest.status == "completed"
     assert manifest.provenance.issues == ["af77a06"]
-    roles = _artifact_roles(manifest)
-    assert "rlrmp-feedback-quality-lens" in roles
+    stage_manifests = [
+        load_manifest(stage.manifest_refs[0].uri)
+        for stage in stages.values()
+        if stage.manifest_refs
+    ]
+    roles = set().union(*(_artifact_roles(stage_manifest) for stage_manifest in stage_manifests))
+    assert "rlrmp-feedback-quality-lens" in _artifact_roles(manifest)
     assert "rlrmp-feedback-quality-perturbation-response-bulk" in roles
     assert "rlrmp-feedback-quality-response-norm-figure" in roles
-    assert "rlrmp-feedback-quality-perturbation-calibration-manifest" not in roles
+    assert "rlrmp-feedback-quality-perturbation-calibration-manifest" in roles
 
     payload_ref = next(
         artifact
@@ -555,14 +601,25 @@ def test_feedback_quality_lens_bundle_executes_fixture_and_groups_artifacts(
     assert payload["bundle_contract"]["artifact_custody"] == "feedbax.AnalysisRunManifest"
     assert payload["outputs"]["perturbation_response"]["status"] == "materialized"
     assert payload["outputs"]["response_norm_plots"]["status"] == "materialized"
-    assert payload["outputs"]["perturbation_calibration"]["status"] == "unavailable"
+    assert payload["outputs"]["perturbation_calibration"]["status"] == "materialized"
+    expected_payload = json.loads(
+        (FIXTURES_DIR / "feedback_quality_lens_legacy_payload.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert FEEDBACK_QUALITY_ALLOWED_PARITY_DIFFS == (
+        "declarative_analysis",
+        "bundle_contract.analysis_manifest_id",
+    )
+    assert _feedback_quality_parity_payload(payload) == expected_payload
     assert (
         "feedback_quality_perturbation_response_bulk"
         in payload["outputs"]["perturbation_response"]["artifact_group_ids"]
     )
     bulk_artifact = next(
         artifact
-        for artifact in manifest.artifacts
+        for stage_manifest in stage_manifests
+        for artifact in stage_manifest.artifacts
         if artifact.role == "rlrmp-feedback-quality-perturbation-response-bulk"
     )
     assert bulk_artifact.metadata["artifact_group"]["id"] == (
@@ -571,32 +628,49 @@ def test_feedback_quality_lens_bundle_executes_fixture_and_groups_artifacts(
     assert load_manifest(manifest_path).id == manifest.id
 
 
-def test_feedback_quality_lens_records_skipped_and_not_applicable_status(
+def test_feedback_quality_lens_records_run_condition_skips(
     tmp_path: Path,
 ) -> None:
-    dm.register_certificate_analysis_recipes(replace=True)
-    try:
-        spec = dm.feedback_quality_lens_spec(
-            experiment="unitexp",
-            run_ids=["unit_run"],
-            include_feedback_ablation=False,
-            not_applicable_components=["perturbation_calibration"],
-            repo_root=tmp_path / "repo",
-        )
+    registry = ExperimentRegistry()
+    rlrmp.register_experiment_package(registry)
+    bundle = load_analysis_bundle("rlrmp/feedback_quality_lens", registry=registry)
+    stages = []
+    for stage in bundle.stages:
+        params = dict(stage.params)
+        for name in dm.FEEDBACK_QUALITY_COMPONENT_NAMES:
+            params[f"materialize_{name}"] = False
+        stages.append(stage.model_copy(update={"params": params}))
+    bundle = bundle.model_copy(update={"stages": stages})
+    run_id = "rlrmp-test-training-run:feedback-quality-skip"
+    write_manifest(
+        TrainingRunManifest(
+            id=run_id,
+            job_id="feedback-quality-skip-fixture",
+            status="completed",
+            metadata={
+                "feedback_quality_candidate": True,
+                "rlrmp_experiment": "5f70333",
+            },
+        ),
+        root=tmp_path,
+        index=False,
+    )
 
-        manifest, _path = execute_analysis_run_spec(spec, root=tmp_path, issues=["af77a06"])
+    execution = execute_staged_analysis_bundle(
+        bundle,
+        root=tmp_path,
+        run_ids=[run_id],
+        issues=["af77a06"],
+    )
 
-        payload_ref = next(
-            artifact
-            for artifact in manifest.artifacts
-            if artifact.role == "rlrmp-feedback-quality-lens"
-        )
-        payload = json.loads(Path(payload_ref.uri).read_text(encoding="utf-8"))
-        assert payload["outputs"]["feedback_ablation"]["status"] == "skipped"
-        assert payload["outputs"]["perturbation_calibration"]["status"] == "not_applicable"
-        assert payload["outputs"]["evaluation_diagnostics"]["status"] == "unavailable"
-    finally:
-        _unregister_declarative_recipes()
+    records = {stage.name: stage for stage in execution.stages}
+    assert records["evaluation_diagnostics"].status == "skipped"
+    assert records["perturbation_calibration"].status == "skipped"
+    assert records["response_norm_plots"].status == "skipped"
+    assert records["feedback_quality_lens"].status == "skipped"
+    assert records["evaluation_diagnostics"].reason is not None
+    assert "run_condition evaluated false" in records["evaluation_diagnostics"].reason
+    assert "materialize_evaluation_diagnostics" in records["evaluation_diagnostics"].reason
 
 
 def test_gru_standard_recipe_records_opaque_certificate_payload(
