@@ -153,6 +153,16 @@ symbols = [
 ]
 
 [[canonical_homes]]
+module = "feedbax.contracts.extraction"
+symbols = [
+  "DataProductDrift",
+  "ExtractionProductIdentityMismatch",
+  "ExtractionProductSpec",
+  "materialize_extraction_product",
+  "verify_extraction_product",
+]
+
+[[canonical_homes]]
 module = "feedbax.contracts.graphs.materialization"
 symbols = ["materialize_array_store", "materialize_model_artifact"]
 
