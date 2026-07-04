@@ -42,7 +42,7 @@ from rlrmp.train.cs_nominal_gru import (
     save_training_checkpoint,
 )
 from rlrmp.train.minimax import (
-    MINIMAX_CONFIG_DEFAULTS,
+    MinimaxConfig,
     _minimax_method_payload,
     minimax_effective_phase_spec,
     minimax_method_contract,
@@ -129,7 +129,7 @@ def _minimax_training_spec() -> TrainingRunSpec:
         objective=ObjectiveSlotSpec(kind="external", payload={"loss": "minimax"}),
         method_ref=MethodRefSpec(package="rlrmp", name="minimax", version="v1"),
         method_payload=_minimax_method_payload(
-            dict(MINIMAX_CONFIG_DEFAULTS),
+            MinimaxConfig().model_dump(mode="python"),
             output_dir=Path("bulk"),
             spec_dir=Path("spec"),
         ),
