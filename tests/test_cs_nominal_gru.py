@@ -9,6 +9,7 @@ import math
 import subprocess
 import sys
 import warnings
+from dataclasses import asdict
 from functools import partial
 from pathlib import Path
 
@@ -5668,6 +5669,69 @@ def test_target_hps_without_profile_normalizes_to_band16_default() -> None:
     assert len(config.held_out_targets_m) == 16
     assert config.seen_amplitudes_m == (TARGET_SUPPORT_CONST_REACH_M,)
     assert config.held_out_amplitudes_m == (TARGET_SUPPORT_CONST_REACH_M,)
+
+
+def test_target_hps_normalization_matches_frozen_override_outputs() -> None:
+    cases = {
+        "nested_old": TreeNamespace(
+            enabled=True,
+            force_filter_feedback=TreeNamespace(enabled=True),
+            target_distribution=TreeNamespace(
+                target_support_profile=TARGET_SUPPORT_PROFILE_020A65B,
+                seen_directions_deg=(0.0, 90.0),
+                held_out_directions_deg=(180.0,),
+                seen_amplitudes_m=(0.15,),
+                held_out_amplitudes_m=(0.2,),
+                original_target_anchor_m=(0.15, 0.0),
+                support_metadata={"source": "nested"},
+            ),
+        ),
+        "top_level_overrides_nested": TreeNamespace(
+            enabled=True,
+            force_filter_feedback=False,
+            target_support_profile=TARGET_SUPPORT_PROFILE_CONST_SPARSE8,
+            seen_directions_deg=(0.0, 180.0),
+            held_out_directions_deg=(90.0, 270.0),
+            seen_amplitudes_m=(0.15,),
+            held_out_amplitudes_m=(0.12,),
+            original_target_anchor_m=(0.15, 0.0),
+            support_metadata={"source": "top"},
+            target_distribution=TreeNamespace(
+                target_support_profile=TARGET_SUPPORT_PROFILE_020A65B,
+                seen_directions_deg=(45.0,),
+                support_metadata={"source": "nested"},
+            ),
+        ),
+    }
+
+    frozen_outputs = {
+        "nested_old": {
+            "enabled": True,
+            "force_filter_feedback": True,
+            "target_support_profile": TARGET_SUPPORT_PROFILE_020A65B,
+            "seen_directions_deg": (0.0, 90.0),
+            "held_out_directions_deg": (180.0,),
+            "seen_amplitudes_m": (0.15,),
+            "held_out_amplitudes_m": (0.2,),
+            "original_target_anchor_m": (0.15, 0.0),
+            "support_metadata": (("source", "nested"),),
+        },
+        "top_level_overrides_nested": {
+            "enabled": True,
+            "force_filter_feedback": False,
+            "target_support_profile": TARGET_SUPPORT_PROFILE_CONST_SPARSE8,
+            "seen_directions_deg": (0.0, 180.0),
+            "held_out_directions_deg": (90.0, 270.0),
+            "seen_amplitudes_m": (0.15,),
+            "held_out_amplitudes_m": (0.12,),
+            "original_target_anchor_m": (0.15, 0.0),
+            "support_metadata": (("source", "top"),),
+        },
+    }
+
+    assert {name: asdict(config_from_target_hps(case)) for name, case in cases.items()} == (
+        frozen_outputs
+    )
 
 
 def test_33b0dcb_target_support_planned_rows_and_specs(tmp_path: Path) -> None:

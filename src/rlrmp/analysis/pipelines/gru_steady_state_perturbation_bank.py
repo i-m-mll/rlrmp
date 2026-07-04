@@ -151,6 +151,23 @@ class ComparisonSpec:
     preferred_checkpoint_manifest_path: Path | None = None
 
 
+@dataclass(frozen=True)
+class SteadyStatePerturbationBankConfig:
+    """Entry-level defaults for steady-state feedback-bank materialization."""
+
+    result_experiment: str = ISSUE
+    n_rollout_trials: int = DEFAULT_N_ROLLOUT_TRIALS
+    pre_go_steps: int = DEFAULT_PRE_GO_STEPS
+    post_go_washin_steps: int = DEFAULT_POST_GO_WASHIN_STEPS
+    pulse_duration_steps: int = DEFAULT_PULSE_DURATION_STEPS
+    final_window_steps: int = DEFAULT_FINAL_WINDOW_STEPS
+    position_scale_m: float = DEFAULT_POSITION_SCALE_M
+    velocity_scale_m_s: float = DEFAULT_VELOCITY_SCALE_M_S
+    force_filter_scale: float = DEFAULT_FORCE_FILTER_SCALE
+    pre_onset_figure_steps: int = DEFAULT_PRE_ONSET_FIGURE_STEPS
+    post_onset_figure_steps: int = DEFAULT_POST_ONSET_FIGURE_STEPS
+
+
 def sisu_condition(value: float, *, label: str | None = None) -> ConditionSpec:
     """Return a condition that sets the SISU input to ``value``."""
 
@@ -186,12 +203,19 @@ def identity_condition(
 def default_feedback_perturbations(
     *,
     feedback_dim: int,
-    position_scale_m: float = DEFAULT_POSITION_SCALE_M,
-    velocity_scale_m_s: float = DEFAULT_VELOCITY_SCALE_M_S,
-    force_filter_scale: float = DEFAULT_FORCE_FILTER_SCALE,
+    config: SteadyStatePerturbationBankConfig | None = None,
+    position_scale_m: float | None = None,
+    velocity_scale_m_s: float | None = None,
+    force_filter_scale: float | None = None,
 ) -> tuple[FeedbackPerturbation, ...]:
     """Return symmetric position, velocity, and force/filter feedback offsets."""
 
+    config = config or SteadyStatePerturbationBankConfig()
+    position_scale_m = config.position_scale_m if position_scale_m is None else position_scale_m
+    velocity_scale_m_s = (
+        config.velocity_scale_m_s if velocity_scale_m_s is None else velocity_scale_m_s
+    )
+    force_filter_scale = config.force_filter_scale if force_filter_scale is None else force_filter_scale
     rows: list[FeedbackPerturbation] = []
     descriptor_view = resolve_controller_feedback_view(
         None,
@@ -240,38 +264,37 @@ def materialize_steady_state_comparisons(
 ) -> dict[str, Any]:
     """Materialize steady-state feedback responses and comparison figures."""
 
-    repo_root = repo_root.resolve()
-    notes_dir = mkdir_p(repo_root / "results" / result_experiment / "notes")
-    feedback_offset_scales = _feedback_offset_scales(
-        position_scale_m=position_scale_m,
-        velocity_scale_m_s=velocity_scale_m_s,
-        force_filter_scale=force_filter_scale,
+    config = SteadyStatePerturbationBankConfig(
+        result_experiment=result_experiment,
+        n_rollout_trials=int(n_rollout_trials),
+        pulse_duration_steps=int(pulse_duration_steps),
+        position_scale_m=float(position_scale_m),
+        velocity_scale_m_s=float(velocity_scale_m_s),
+        force_filter_scale=float(force_filter_scale),
     )
+    repo_root = repo_root.resolve()
+    notes_dir = mkdir_p(repo_root / "results" / config.result_experiment / "notes")
+    feedback_offset_scales = _feedback_offset_scales(config=config)
     all_results: dict[str, Any] = {}
     for comparison in comparisons:
         all_results[comparison.comparison_id] = evaluate_comparison(
             comparison,
-            result_experiment=result_experiment,
-            n_rollout_trials=n_rollout_trials,
-            pulse_duration_steps=pulse_duration_steps,
-            position_scale_m=position_scale_m,
-            velocity_scale_m_s=velocity_scale_m_s,
-            force_filter_scale=force_filter_scale,
+            config=config,
             repo_root=repo_root,
         )
 
     detail_manifest = {
         "schema_version": SCHEMA_VERSION,
-        "issue": result_experiment,
-        "n_rollout_trials": int(n_rollout_trials),
-        "pulse_duration_steps": int(pulse_duration_steps),
+        "issue": config.result_experiment,
+        "n_rollout_trials": int(config.n_rollout_trials),
+        "pulse_duration_steps": int(config.pulse_duration_steps),
         "feedback_offset_scales": feedback_offset_scales,
-        "response_window": _response_window_contract(),
-        "washin_contract": _washin_contract(),
+        "response_window": _response_window_contract(config=config),
+        "washin_contract": _washin_contract(config=config),
         "comparisons": all_results,
     }
     summary_path = notes_dir / SUMMARY_FILENAME
-    detail_path = repo_root / "_artifacts" / result_experiment / "notes" / DETAIL_FILENAME
+    detail_path = repo_root / "_artifacts" / config.result_experiment / "notes" / DETAIL_FILENAME
     markdown_path = notes_dir / "steady_state_perturbation_bank.md"
     regeneration_path = notes_dir / "steady_state_perturbation_bank_regeneration_spec.json"
     summary_manifest = slim_steady_state_manifest(
@@ -306,12 +329,12 @@ def materialize_steady_state_comparisons(
         ),
         command="PYTHONPATH=$PWD/src uv run --no-sync python results/87424a4/scripts/materialize_steady_state_perturbation_bank.py",
         parameters={
-            "result_experiment": result_experiment,
-            "n_rollout_trials": n_rollout_trials,
-            "pulse_duration_steps": pulse_duration_steps,
-            "position_scale_m": position_scale_m,
-            "velocity_scale_m_s": velocity_scale_m_s,
-            "force_filter_scale": force_filter_scale,
+            "result_experiment": config.result_experiment,
+            "n_rollout_trials": config.n_rollout_trials,
+            "pulse_duration_steps": config.pulse_duration_steps,
+            "position_scale_m": config.position_scale_m,
+            "velocity_scale_m_s": config.velocity_scale_m_s,
+            "force_filter_scale": config.force_filter_scale,
         },
         inputs=[
             {"role": "run_spec", "path": row["run_spec_path"]}
@@ -516,12 +539,7 @@ def _is_scalar_mapping(value: Any) -> bool:
 def evaluate_comparison(
     comparison: ComparisonSpec,
     *,
-    result_experiment: str,
-    n_rollout_trials: int,
-    pulse_duration_steps: int,
-    position_scale_m: float,
-    velocity_scale_m_s: float,
-    force_filter_scale: float,
+    config: SteadyStatePerturbationBankConfig,
     repo_root: Path,
 ) -> dict[str, Any]:
     """Evaluate one comparison and write its three-panel figure."""
@@ -529,11 +547,7 @@ def evaluate_comparison(
     condition_payloads: dict[str, Any] = {}
     timing_payloads: dict[str, Any] = {}
     feedback_dims: dict[str, int] = {}
-    feedback_offset_scales = _feedback_offset_scales(
-        position_scale_m=position_scale_m,
-        velocity_scale_m_s=velocity_scale_m_s,
-        force_filter_scale=force_filter_scale,
-    )
+    feedback_offset_scales = _feedback_offset_scales(config=config)
     for condition in comparison.conditions:
         source_experiment = condition.source_experiment or comparison.source_experiment
         run_id = condition.run_id or comparison.run_id
@@ -556,13 +570,16 @@ def evaluate_comparison(
             checkpoint_selection_mode=comparison.checkpoint_selection_mode,
             repo_root=repo_root,
         )
-        base_trials = repeat_single_validation_trial(pair.task.validation_trials, n_rollout_trials)
+        base_trials = repeat_single_validation_trial(
+            pair.task.validation_trials,
+            config.n_rollout_trials,
+        )
         steady_trials, timing = make_steady_state_trial_specs(
             base_trials,
             delayed=delayed,
             target_position=np.asarray(_target_position(run, base_trials), dtype=np.float64),
-            pulse_duration_steps=pulse_duration_steps,
-            min_post_onset_steps=DEFAULT_POST_ONSET_FIGURE_STEPS,
+            config=config,
+            min_post_onset_steps=config.post_onset_figure_steps,
         )
         steady_trials = pad_feedback_offset_inputs(
             steady_trials,
@@ -572,9 +589,7 @@ def evaluate_comparison(
         feedback_dim = _feedback_dim(steady_trials)
         perturbations = default_feedback_perturbations(
             feedback_dim=feedback_dim,
-            position_scale_m=position_scale_m,
-            velocity_scale_m_s=velocity_scale_m_s,
-            force_filter_scale=force_filter_scale,
+            config=config,
         )
         trials = (
             steady_trials if condition.transform is None else condition.transform(steady_trials)
@@ -590,6 +605,7 @@ def evaluate_comparison(
             timing=timing,
             n_replicates=n_replicates,
             checkpoint_selection=checkpoint_selection,
+            config=config,
             repo_root=repo_root,
         )
         timing_payloads[condition.condition_id] = timing
@@ -599,28 +615,28 @@ def evaluate_comparison(
         comparison_title=comparison.title,
         conditions=condition_payloads,
         dt=float(next(iter(condition_payloads.values()))["dt_s"]),
-        pulse_duration_steps=pulse_duration_steps,
+        pulse_duration_steps=config.pulse_duration_steps,
     )
     spec = {
         "schema_version": SCHEMA_VERSION,
-        "issue": result_experiment,
+        "issue": config.result_experiment,
         "comparison_id": comparison.comparison_id,
         "title": comparison.title,
         "source_experiment": comparison.source_experiment,
         "run_id": comparison.run_id,
-        "n_rollout_trials": int(n_rollout_trials),
-        "pulse_duration_steps": int(pulse_duration_steps),
+        "n_rollout_trials": int(config.n_rollout_trials),
+        "pulse_duration_steps": int(config.pulse_duration_steps),
         "feedback_offset_scales": feedback_offset_scales,
-        "response_window": _response_window_contract(),
+        "response_window": _response_window_contract(config=config),
         "timing_by_condition": timing_payloads,
-        "washin_contract": _washin_contract(),
+        "washin_contract": _washin_contract(config=config),
     }
     _ensure_rlrmp_registered()
     saved = save_figure(
         fig=figure,
         spec=spec,
         package="rlrmp",
-        experiment=result_experiment,
+        experiment=config.result_experiment,
         topic=comparison.comparison_id,
         extra_packages=["rlrmp"],
     )
@@ -640,13 +656,24 @@ def make_steady_state_trial_specs(
     *,
     delayed: bool,
     target_position: np.ndarray,
-    pre_go_steps: int = DEFAULT_PRE_GO_STEPS,
-    post_go_washin_steps: int = DEFAULT_POST_GO_WASHIN_STEPS,
-    pulse_duration_steps: int = DEFAULT_PULSE_DURATION_STEPS,
+    config: SteadyStatePerturbationBankConfig | None = None,
+    pre_go_steps: int | None = None,
+    post_go_washin_steps: int | None = None,
+    pulse_duration_steps: int | None = None,
     min_post_onset_steps: int | None = None,
 ) -> tuple[Any, dict[str, Any]]:
     """Return trial specs initialized at the target with a steady-state wash-in prefix."""
 
+    config = config or SteadyStatePerturbationBankConfig()
+    pre_go_steps = config.pre_go_steps if pre_go_steps is None else pre_go_steps
+    post_go_washin_steps = (
+        config.post_go_washin_steps
+        if post_go_washin_steps is None
+        else post_go_washin_steps
+    )
+    pulse_duration_steps = (
+        config.pulse_duration_steps if pulse_duration_steps is None else pulse_duration_steps
+    )
     updated = set_mechanics_vector_to_target(trial_specs, target_position)
     updated = set_target_streams_to_constant(updated, target_position)
     updated = zero_disturbance_payload(updated)
@@ -676,6 +703,7 @@ def make_steady_state_trial_specs(
     pulse_start = _figure_compatible_pulse_start(
         horizon_clamped_pulse_start,
         horizon_steps=horizon,
+        config=config,
     )
     response_steps = max(horizon - pulse_start, 0)
     return updated, {
@@ -785,11 +813,16 @@ def _extend_timeline_to_horizon(
     return updated
 
 
-def _figure_compatible_pulse_start(requested_pulse_start: int, *, horizon_steps: int) -> int:
+def _figure_compatible_pulse_start(
+    requested_pulse_start: int,
+    *,
+    horizon_steps: int,
+    config: SteadyStatePerturbationBankConfig,
+) -> int:
     """Keep the requested wash-in unless it would starve the recovery figure window."""
 
-    if horizon_steps >= DEFAULT_PRE_ONSET_FIGURE_STEPS + DEFAULT_POST_ONSET_FIGURE_STEPS:
-        latest = max(horizon_steps - DEFAULT_POST_ONSET_FIGURE_STEPS, 0)
+    if horizon_steps >= config.pre_onset_figure_steps + config.post_onset_figure_steps:
+        latest = max(horizon_steps - config.post_onset_figure_steps, 0)
         return int(min(requested_pulse_start, latest))
     return int(requested_pulse_start)
 
@@ -906,6 +939,7 @@ def evaluate_condition(
     timing: Mapping[str, Any],
     n_replicates: int,
     checkpoint_selection: Sequence[Any],
+    config: SteadyStatePerturbationBankConfig,
     repo_root: Path,
 ) -> dict[str, Any]:
     """Evaluate one condition on the steady-state feedback bank."""
@@ -917,7 +951,11 @@ def evaluate_condition(
         n_replicates=n_replicates,
         seed=0,
     )
-    wash = washin_diagnostics(base, pulse_start=int(timing["pulse_start_step"]))
+    wash = washin_diagnostics(
+        base,
+        pulse_start=int(timing["pulse_start_step"]),
+        config=config,
+    )
     rows = []
     for perturbation in perturbations:
         row = perturbation.to_bank_row(
@@ -950,6 +988,7 @@ def evaluate_condition(
                 base=base,
                 perturbed=perturbed,
                 pulse_start=int(timing["pulse_start_step"]),
+                config=config,
             )
             | {"adapter": adapter.to_json()}
         )
@@ -980,9 +1019,11 @@ def summarize_feedback_row(
     base: RolloutEvaluation,
     perturbed: RolloutEvaluation,
     pulse_start: int,
+    config: SteadyStatePerturbationBankConfig | None = None,
 ) -> dict[str, Any]:
     """Summarize a signed feedback perturbation row."""
 
+    config = config or SteadyStatePerturbationBankConfig()
     delta_command = perturbed.command - base.command
     delta_hidden = perturbed.hidden - base.hidden
     direction = np.asarray(perturbation.direction, dtype=np.float64)
@@ -1023,26 +1064,32 @@ def summarize_feedback_row(
     command_window, relative_steps = _mean_onset_window(
         aligned_command,
         pulse_start=pulse_start,
+        config=config,
     )
     orthogonal_command_window, _ = _mean_onset_window(
         orthogonal_command,
         pulse_start=pulse_start,
+        config=config,
     )
     position_window, _ = _mean_onset_window(
         aligned_position,
         pulse_start=pulse_start,
+        config=config,
     )
     orthogonal_position_window, _ = _mean_onset_window(
         orthogonal_position,
         pulse_start=pulse_start,
+        config=config,
     )
     velocity_window, _ = _mean_onset_window(
         aligned_velocity,
         pulse_start=pulse_start,
+        config=config,
     )
     orthogonal_velocity_window, _ = _mean_onset_window(
         orthogonal_velocity,
         pulse_start=pulse_start,
+        config=config,
     )
     action_norm = np.linalg.norm(delta_command[:, :, pulse_start:, :], axis=-1)
     hidden_norm = np.linalg.norm(delta_hidden[:, :, pulse_start:, :], axis=-1)
@@ -1239,10 +1286,15 @@ def washin_diagnostics(
     evaluation: RolloutEvaluation,
     *,
     pulse_start: int,
-    final_window_steps: int = DEFAULT_FINAL_WINDOW_STEPS,
+    config: SteadyStatePerturbationBankConfig | None = None,
+    final_window_steps: int | None = None,
 ) -> dict[str, Any]:
     """Summarize baseline drift over the final wash-in window."""
 
+    config = config or SteadyStatePerturbationBankConfig()
+    final_window_steps = (
+        config.final_window_steps if final_window_steps is None else final_window_steps
+    )
     stop = max(min(pulse_start, evaluation.command.shape[2]), 1)
     start = max(stop - final_window_steps, 0)
     command = evaluation.command[:, :, start:stop, :]
@@ -1590,11 +1642,15 @@ def _mean_onset_window(
     aligned_values: np.ndarray,
     *,
     pulse_start: int,
-    pre_steps: int = DEFAULT_PRE_ONSET_FIGURE_STEPS,
-    post_steps: int = DEFAULT_POST_ONSET_FIGURE_STEPS,
+    config: SteadyStatePerturbationBankConfig | None = None,
+    pre_steps: int | None = None,
+    post_steps: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return trial/replicate mean in a small pre-onset and recovery window."""
 
+    config = config or SteadyStatePerturbationBankConfig()
+    pre_steps = config.pre_onset_figure_steps if pre_steps is None else pre_steps
+    post_steps = config.post_onset_figure_steps if post_steps is None else post_steps
     start = max(int(pulse_start) - int(pre_steps), 0)
     stop = min(int(pulse_start) + int(post_steps), aligned_values.shape[2])
     window = aligned_values[:, :, start:stop]
@@ -1612,7 +1668,10 @@ def settling_step(profile: np.ndarray, *, tolerance: float) -> int | None:
     return None
 
 
-def _washin_contract() -> dict[str, Any]:
+def _washin_contract(
+    *, config: SteadyStatePerturbationBankConfig | None = None
+) -> dict[str, Any]:
+    config = config or SteadyStatePerturbationBankConfig()
     return {
         "schema_version": SCHEMA_VERSION,
         "initial_mechanics": (
@@ -1621,7 +1680,10 @@ def _washin_contract() -> dict[str, Any]:
             "and integrator state."
         ),
         "noise": "epsilon inputs are zeroed before evaluation.",
-        "delayed_go_cue": "go cue off for 10 steps, then on; target visible throughout.",
+        "delayed_go_cue": (
+            f"go cue off for {int(config.pre_go_steps)} steps, then on; "
+            "target visible throughout."
+        ),
         "fanout_policy": (
             "prefix_equivalent_batched_trials because the current Feedbax eval API "
             "does not expose a supported hidden-state resume hook."
@@ -1629,10 +1691,13 @@ def _washin_contract() -> dict[str, Any]:
     }
 
 
-def _response_window_contract() -> dict[str, Any]:
+def _response_window_contract(
+    *, config: SteadyStatePerturbationBankConfig | None = None
+) -> dict[str, Any]:
+    config = config or SteadyStatePerturbationBankConfig()
     return {
-        "pre_onset_steps": DEFAULT_PRE_ONSET_FIGURE_STEPS,
-        "post_onset_steps": DEFAULT_POST_ONSET_FIGURE_STEPS,
+        "pre_onset_steps": int(config.pre_onset_figure_steps),
+        "post_onset_steps": int(config.post_onset_figure_steps),
         "x_axis": "seconds relative to perturbation onset",
         "projection_basis": {
             "aligned": "signed projection onto the normalized perturbation direction",
@@ -1651,23 +1716,17 @@ def _response_window_contract() -> dict[str, Any]:
 
 def _feedback_offset_scales(
     *,
-    position_scale_m: float,
-    velocity_scale_m_s: float,
-    force_filter_scale: float,
+    config: SteadyStatePerturbationBankConfig,
 ) -> dict[str, float]:
     return {
-        "position_m": float(position_scale_m),
-        "velocity_m_s": float(velocity_scale_m_s),
-        "force_filter": float(force_filter_scale),
+        "position_m": float(config.position_scale_m),
+        "velocity_m_s": float(config.velocity_scale_m_s),
+        "force_filter": float(config.force_filter_scale),
     }
 
 
 def _feedback_offset_scale_defaults() -> dict[str, float]:
-    return _feedback_offset_scales(
-        position_scale_m=DEFAULT_POSITION_SCALE_M,
-        velocity_scale_m_s=DEFAULT_VELOCITY_SCALE_M_S,
-        force_filter_scale=DEFAULT_FORCE_FILTER_SCALE,
-    )
+    return _feedback_offset_scales(config=SteadyStatePerturbationBankConfig())
 
 
 def _update_summary_markdown(path: Path, content: str) -> None:
@@ -1701,6 +1760,7 @@ __all__ = [
     "ComparisonSpec",
     "ConditionSpec",
     "FeedbackPerturbation",
+    "SteadyStatePerturbationBankConfig",
     "aggregate_family_profiles",
     "default_feedback_perturbations",
     "identity_condition",
