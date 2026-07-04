@@ -18,6 +18,7 @@ from feedbax.contracts.graph import (
 )
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 
+from rlrmp.analysis.perturbation_rows import PerturbationChannel, PerturbationSpec
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     TARGET_POS,
@@ -86,77 +87,10 @@ DEFAULT_RUN_IDS = (
     "lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64",
 )
 
-PerturbationChannel = Literal[
-    "initial_state",
-    "command_input",
-    "process_epsilon",
-    "sensory_feedback",
-    "delayed_observation",
-    "target_stream",
-]
 PerturbationStatus = Literal["evaluated", "blocked", "not_implemented", "not_applicable"]
 
 GRAPH_ADAPTER_INPUT_PREFIX = "perturbation.channel"
 PerturbationEvaluationBackend = Literal["serial"]
-
-
-@dataclass(frozen=True)
-class PerturbationSpec:
-    """Declarative perturbation row in the standard C&S bank."""
-
-    perturbation_id: str
-    channel: PerturbationChannel
-    family: str
-    amplitude: float
-    units: str
-    axis: str
-    basis: str
-    sign: int
-    timing: Mapping[str, Any]
-    adapter: str
-    description: str
-    epsilon_component: str | None = None
-    epsilon_index: int | None = None
-    initial_position_case: str | None = None
-    calibration_role: str | None = None
-    timing_bin: str | None = None
-    semantic_family: str | None = None
-    channel_provenance: Mapping[str, Any] | None = None
-    calibration_provenance: Mapping[str, Any] | None = None
-
-    def to_json(self) -> dict[str, Any]:
-        """Return a JSON-serializable perturbation specification."""
-
-        row = {
-            "perturbation_id": self.perturbation_id,
-            "channel": self.channel,
-            "family": self.family,
-            "amplitude": float(self.amplitude),
-            "units": self.units,
-            "axis": self.axis,
-            "basis": self.basis,
-            "sign": int(self.sign),
-            "timing": dict(self.timing),
-            "adapter": self.adapter,
-            "description": self.description,
-        }
-        if self.epsilon_component is not None:
-            row["epsilon_component"] = self.epsilon_component
-        if self.epsilon_index is not None:
-            row["epsilon_index"] = int(self.epsilon_index)
-        if self.initial_position_case is not None:
-            row["initial_position_case"] = self.initial_position_case
-        if self.calibration_role is not None:
-            row["calibration_role"] = self.calibration_role
-        if self.timing_bin is not None:
-            row["timing_bin"] = self.timing_bin
-        if self.semantic_family is not None:
-            row["semantic_family"] = self.semantic_family
-        if self.channel_provenance is not None:
-            row["channel_provenance"] = dict(self.channel_provenance)
-        if self.calibration_provenance is not None:
-            row.update(dict(self.calibration_provenance))
-        return row
 
 
 @dataclass(frozen=True)
@@ -1233,15 +1167,28 @@ def _feedback_scale_provenance(scale: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _validated_perturbation_row(
+    perturbation: PerturbationSpec | Mapping[str, Any],
+) -> dict[str, Any]:
+    spec = (
+        perturbation
+        if isinstance(perturbation, PerturbationSpec)
+        else PerturbationSpec.from_mapping(perturbation)
+    )
+    spec.validate()
+    return spec.to_json()
+
+
 def apply_perturbation_to_trial_specs(
     trial_specs: Any,
-    perturbation: Mapping[str, Any],
+    perturbation: PerturbationSpec | Mapping[str, Any],
     *,
     model: Any | None = None,
     plant_intervenor_label: str = PLANT_INTERVENOR_LABEL,
 ) -> AdapterResult:
     """Apply one perturbation row to external TaskTrialSpec interfaces."""
 
+    perturbation = _validated_perturbation_row(perturbation)
     channel = str(perturbation["channel"])
     if channel == "initial_state":
         return _apply_initial_state_perturbation(trial_specs, perturbation)
@@ -2558,13 +2505,14 @@ def delta_full_qrf_cost_summary(
 
 
 def evaluate_extlqg_perturbation_comparator(
-    perturbation: Mapping[str, Any],
+    perturbation: PerturbationSpec | Mapping[str, Any],
     *,
     context: Mapping[str, Any],
     gru_metrics: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Evaluate the deterministic extLQG comparator for one perturbation row."""
 
+    perturbation = _validated_perturbation_row(perturbation)
     channel = str(perturbation["channel"])
     supported_channels = {
         "command_input",
@@ -2713,13 +2661,14 @@ def extlqg_comparator_status(
 
 
 def evaluate_robust_output_feedback_perturbation_comparator(
-    perturbation: Mapping[str, Any],
+    perturbation: PerturbationSpec | Mapping[str, Any],
     *,
     context: Mapping[str, Any],
     gru_metrics: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Evaluate the robust output-feedback analytical response for one bank row."""
 
+    perturbation = _validated_perturbation_row(perturbation)
     channel = str(perturbation["channel"])
     supported_channels = {"initial_state", "command_input", "process_epsilon"}
     if channel not in supported_channels:
@@ -5245,6 +5194,7 @@ __all__ = [
     "GRAPH_ADAPTER_INPUT_PREFIX",
     "SCHEMA_VERSION",
     "AdapterResult",
+    "PerturbationChannel",
     "PerturbationSpec",
     "apply_perturbation_to_trial_specs",
     "compare_response_metric_summaries",
