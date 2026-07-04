@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import subprocess
@@ -59,11 +60,13 @@ import rlrmp.train.cs_perturbation_training as cs_perturbation_training
 from rlrmp.train.cs_nominal_gru import (
     AdaptiveEpsilonState,
     CS_DELAYED_REACH_TASK_TYPE,
+    CsNominalGruConfig,
     DEFAULT_DELAYED_P_CATCH_TRIAL,
     DEFAULT_STOCHASTIC_PRESET,
     DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON,
     DELAYED_REACH_TRAINING_MODE,
     GradientDiagnosticsState,
+    SCHEMA_VERSION,
     TrainingState,
     UpdateDiagnosticsState,
     build_graph_bundle,
@@ -71,6 +74,7 @@ from rlrmp.train.cs_nominal_gru import (
     build_hps,
     build_parser,
     build_run_spec_execution_context,
+    cs_nominal_gru_config_from_args,
     derive_spec_dir,
     derive_spec_path,
     _adaptive_epsilon_damage_target,
@@ -209,6 +213,34 @@ def _args(**overrides) -> argparse.Namespace:
     return args
 
 
+def _cs_nominal_gru_golden_fixture() -> dict:
+    return json.loads(
+        Path("tests/fixtures/cs_nominal_gru_config_golden.json").read_text(encoding="utf-8")
+    )
+
+
+def _stable_golden_run_spec_sha256(payload: dict) -> str:
+    fixture = _cs_nominal_gru_golden_fixture()
+    stable = {key: payload[key] for key in fixture["stable_run_spec_keys"]}
+    canonical = json.dumps(
+        json.loads(json.dumps(stable, sort_keys=True)),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _cs_stochastic_gru_run_spec_paths() -> list[Path]:
+    paths: list[Path] = []
+    for path in sorted(Path("results").rglob("*.json")):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if payload.get("schema_version") != SCHEMA_VERSION:
+            continue
+        if {"hps", "feedbax_graph", "training_script"}.issubset(payload):
+            paths.append(path)
+    return paths
+
+
 def _parse_planned_training_command(command: list[str]) -> argparse.Namespace:
     script_index = command.index("scripts/train_cs_nominal_gru.py")
     return build_parser().parse_args(command[script_index + 1 :])
@@ -307,6 +339,61 @@ def test_target_support_cli_default_is_band16_fixed_reach() -> None:
 
     assert DEFAULT_TARGET_SUPPORT_PROFILE == TARGET_SUPPORT_PROFILE_CONST_BAND16
     assert args.target_support_profile == TARGET_SUPPORT_PROFILE_CONST_BAND16
+
+
+def test_cs_nominal_gru_config_defaults_match_pre_refactor_fixture() -> None:
+    fixture = _cs_nominal_gru_golden_fixture()
+    expected = dict(fixture["cases"]["default"]["parsed_args"])
+    expected["dry_run"] = False
+
+    assert CsNominalGruConfig().model_dump(mode="python") == expected
+    assert vars(build_parser().parse_args([])) == expected
+
+
+def test_cs_nominal_gru_config_rejects_extra_fields() -> None:
+    with pytest.raises(ValidationError):
+        CsNominalGruConfig.model_validate({"seed": 42, "unknown_field": True})
+
+
+def test_cs_nominal_gru_argparse_defaults_and_choices_derive_from_config() -> None:
+    parser = build_parser()
+    help_text = parser.format_help()
+
+    assert parser.parse_args(["--seed", "7"]).seed == 7
+    assert parser.parse_args(
+        ["--target-support-profile", "const_sparse8"]
+    ).target_support_profile == (TARGET_SUPPORT_PROFILE_CONST_SPARSE8)
+    assert parser.parse_args(
+        ["--broad-epsilon-pgd-inner-optimizer-method", "adam"]
+    ).broad_epsilon_pgd_inner_optimizer_method == (BROAD_EPSILON_PGD_ADAM)
+    assert "--seed SEED" in help_text
+    assert "(default: 42)" in help_text
+    assert "{old_020a65b,const_dense_all,const_sparse8,const_band8,const_band16,const_band36}" in (
+        help_text
+    )
+    assert "{projected_gradient_ascent,adam}" in help_text
+
+
+def test_cs_nominal_gru_pre_refactor_golden_payloads_stay_stable() -> None:
+    fixture = _cs_nominal_gru_golden_fixture()
+    parser = build_parser()
+
+    for case in fixture["cases"].values():
+        args = parser.parse_args(case["argv"])
+        config = cs_nominal_gru_config_from_args(args)
+        payload = write_run_spec(args)["run_spec"]
+
+        assert config.model_dump(mode="python") == case["parsed_args"]
+        assert _stable_golden_run_spec_sha256(payload) == case["stable_run_spec_sha256"]
+
+
+def test_cs_nominal_gru_config_validates_tracked_cs_stochastic_gru_corpus() -> None:
+    paths = _cs_stochastic_gru_run_spec_paths()
+
+    assert len(paths) == 134
+    for path in paths:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        CsNominalGruConfig.model_validate(cs_nominal_gru._args_values_from_run_spec(payload))
 
 
 def _where_train() -> dict[int, object]:
@@ -829,16 +916,12 @@ def test_resume_optimizer_diagnostics_resize_pads_cross_length_buffers() -> None
 def test_adaptive_epsilon_zero_adversary_guard_stops_after_two_active_checkpoints() -> None:
     guard = _initial_adaptive_epsilon_zero_guard(enabled=True)
     inactive_zero = {
-        "adaptive_epsilon_adaptive_update_inner_selected_objective_gain_over_zero": np.array(
-            [0.0]
-        ),
+        "adaptive_epsilon_adaptive_update_inner_selected_objective_gain_over_zero": np.array([0.0]),
         "adaptive_epsilon_target_damage": np.array([0.0]),
         "adaptive_epsilon_outer_weight": np.array([0.0]),
     }
     active_zero = {
-        "adaptive_epsilon_adaptive_update_inner_selected_objective_gain_over_zero": np.array(
-            [0.0]
-        ),
+        "adaptive_epsilon_adaptive_update_inner_selected_objective_gain_over_zero": np.array([0.0]),
         "adaptive_epsilon_target_damage": np.array([100.0]),
         "adaptive_epsilon_outer_weight": np.array([1.0]),
     }
@@ -874,9 +957,7 @@ def test_adaptive_epsilon_zero_adversary_guard_stops_after_two_active_checkpoint
 
 def test_adaptive_epsilon_zero_guard_survives_checkpoint_resume(tmp_path: Path) -> None:
     active_zero = {
-        "adaptive_epsilon_adaptive_update_inner_selected_objective_gain_over_zero": np.array(
-            [0.0]
-        ),
+        "adaptive_epsilon_adaptive_update_inner_selected_objective_gain_over_zero": np.array([0.0]),
         "adaptive_epsilon_target_damage": np.array([100.0]),
         "adaptive_epsilon_outer_weight": np.array([1.0]),
     }
@@ -1011,9 +1092,7 @@ def test_adaptive_epsilon_lambda_update_uses_clipped_log_ratio() -> None:
         target_damage=100.0,
         measured_damage=1.0e9,
     )
-    assert clipped_diagnostics["lambda_log_step"] == pytest.approx(
-        cfg.lambda_update.max_log_step
-    )
+    assert clipped_diagnostics["lambda_log_step"] == pytest.approx(cfg.lambda_update.max_log_step)
     assert clipped_state.lambda_value == pytest.approx(
         base_state.lambda_value * math.exp(cfg.lambda_update.max_log_step)
     )
@@ -3629,6 +3708,7 @@ def test_movement_age_timing_run_spec_distinguishes_timing_basis(tmp_path: Path)
             ),
             parser=parser,
         )
+
 
 def test_target_relative_feedback_sign_contract() -> None:
     spec = build_cs_lss_gru_graph_spec(
