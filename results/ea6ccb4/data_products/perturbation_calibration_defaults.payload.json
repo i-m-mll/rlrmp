@@ -1,0 +1,138 @@
+{
+  "schema_id": "rlrmp.perturbation_calibration_defaults.payload",
+  "schema_version": "rlrmp.perturbation_calibration_defaults.payload.v1",
+  "role": "perturbation_calibration_defaults",
+  "amplitude_factors": [
+    0.05,
+    0.1,
+    0.2,
+    0.5,
+    1.0,
+    2.0,
+    5.0,
+    10.0,
+    20.0,
+    50.0,
+    100.0,
+    200.0,
+    500.0,
+    1000.0
+  ],
+  "reach_calibration_points": [
+    {
+      "label": "seen_train_0p10",
+      "split": "seen/train",
+      "reach_length_m": 0.1,
+      "role": "multi_target_training_reach_length"
+    },
+    {
+      "label": "seen_train_anchor_0p15",
+      "split": "seen/train",
+      "reach_length_m": 0.15,
+      "role": "multi_target_training_reach_length_and_original_anchor"
+    },
+    {
+      "label": "heldout_eval_0p12",
+      "split": "held-out/eval",
+      "reach_length_m": 0.12,
+      "role": "multi_target_held_out_evaluation_reach_length"
+    },
+    {
+      "label": "heldout_eval_0p18",
+      "split": "held-out/eval",
+      "reach_length_m": 0.18,
+      "role": "multi_target_held_out_evaluation_reach_length"
+    }
+  ],
+  "reach_relative_levels": [
+    {
+      "name": "small",
+      "fraction_of_reach": 0.05,
+      "role": "small_probe"
+    },
+    {
+      "name": "moderate",
+      "fraction_of_reach": 0.1,
+      "role": "moderate_probe"
+    },
+    {
+      "name": "stress",
+      "fraction_of_reach": 0.25,
+      "role": "stress_probe"
+    }
+  ],
+  "plant_timing_bins": [
+    {
+      "label": "early",
+      "start_time_index": 5,
+      "duration_steps": 5,
+      "role": "plant_side_open_loop_calibration"
+    },
+    {
+      "label": "mid",
+      "start_time_index": 15,
+      "duration_steps": 5,
+      "role": "plant_side_open_loop_calibration"
+    },
+    {
+      "label": "late",
+      "start_time_index": 35,
+      "duration_steps": 5,
+      "role": "plant_side_open_loop_calibration"
+    }
+  ],
+  "controller_visible_timing_bins": [
+    {
+      "label": "early_visible",
+      "start_time_index": 10,
+      "duration_steps": 5,
+      "role": "controller_visible_offset_convention"
+    },
+    {
+      "label": "mid_visible",
+      "start_time_index": 20,
+      "duration_steps": 5,
+      "role": "controller_visible_offset_convention"
+    },
+    {
+      "label": "late_visible",
+      "start_time_index": 40,
+      "duration_steps": 5,
+      "role": "controller_visible_offset_convention"
+    }
+  ],
+  "native_conventions": [
+    {
+      "family": "sensory_feedback_offset",
+      "channel": "sensory_feedback",
+      "native_unit_rule": "position offsets are fractions of reach length; velocity offsets are fractions of nominal peak speed when available; force/filter offsets are fractions of a native 1 N reference offset",
+      "timing_rule": "controller-visible starts 10/20/40 with 5-step duration",
+      "report_metric": "closed-loop induced discrepancy against paired nominal rollout",
+      "role": "metadata_only_not_open_loop_physical_calibration"
+    },
+    {
+      "family": "delayed_observation_offset",
+      "channel": "delayed_observation",
+      "native_unit_rule": "pre-noise delayed-measurement position offsets are fractions of reach length; velocity offsets use nominal peak speed placeholder when the actual peak speed is unavailable; force/filter offsets are fractions of a native 1 N reference offset",
+      "timing_rule": "controller-visible starts 10/20/40 with 5-step duration",
+      "report_metric": "closed-loop induced discrepancy against paired nominal rollout",
+      "role": "metadata_only_not_open_loop_physical_calibration"
+    },
+    {
+      "family": "target_stream_jump",
+      "channel": "target_stream",
+      "native_unit_rule": "target offsets are fractions of reach length",
+      "timing_rule": "controller-visible starts 10/20/40 with 5-step duration",
+      "report_metric": "closed-loop induced discrepancy once target-stream rows exist",
+      "role": "metadata_only_not_open_loop_physical_calibration"
+    },
+    {
+      "family": "true_extra_delay_steps",
+      "channel": "feedback_delay",
+      "native_unit_rule": "integer extra delay steps, not a reach-relative amplitude",
+      "timing_rule": "applies to the feedback path delay schedule rather than pulse timing",
+      "report_metric": "induced discrepancy from added delay, to be reported in future rows",
+      "role": "metadata_only_not_open_loop_physical_calibration"
+    }
+  ]
+}

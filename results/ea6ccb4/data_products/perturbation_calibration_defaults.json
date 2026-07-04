@@ -1,0 +1,88 @@
+{
+  "schema_id": "feedbax.manifest.analysis_data_product",
+  "schema_version": "feedbax.manifest.analysis_data_product.v1",
+  "product_schema_id": "rlrmp.perturbation_calibration_defaults",
+  "product_schema_version": "rlrmp.perturbation_calibration_defaults.v1",
+  "role": "perturbation_calibration_defaults",
+  "logical_name": "cs_perturbation_calibration_defaults",
+  "producer_manifest_id": "rlrmp.data_products.calibration.build_perturbation_calibration_defaults_product",
+  "parent_manifests": [],
+  "checkpoint_policy": {},
+  "rollout_policy": {},
+  "parameters": {
+    "payload_schema_id": "rlrmp.perturbation_calibration_defaults.payload",
+    "payload_schema_version": "rlrmp.perturbation_calibration_defaults.payload.v1",
+    "payload_artifact_uri": "results/ea6ccb4/data_products/perturbation_calibration_defaults.payload.json",
+    "adoption_records": [
+      {
+        "source_kind": "previously_baked_module_constant",
+        "source_file": "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py",
+        "source_constant": "DEFAULT_AMPLITUDE_FACTORS",
+        "description": "Legacy fixed-mm amplitude-factor sweep retained for regeneration specs."
+      },
+      {
+        "source_kind": "previously_baked_module_constant",
+        "source_file": "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py",
+        "source_constant": "DEFAULT_REACH_CALIBRATION_POINTS",
+        "description": "Reach lengths and split labels used for reach-relative calibration rows."
+      },
+      {
+        "source_kind": "previously_baked_module_constant",
+        "source_file": "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py",
+        "source_constant": "DEFAULT_REACH_RELATIVE_LEVELS",
+        "description": "Named perturbation effect-size levels as fractions of reach length."
+      },
+      {
+        "source_kind": "previously_baked_module_constant",
+        "source_file": "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py",
+        "source_constant": "DEFAULT_PLANT_TIMING_BINS",
+        "description": "Plant-side pulse timing bins for open-loop calibration rows."
+      },
+      {
+        "source_kind": "previously_baked_module_constant",
+        "source_file": "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py",
+        "source_constant": "DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS",
+        "description": "Controller-visible timing conventions for metadata-only perturbation rows."
+      },
+      {
+        "source_kind": "previously_baked_module_constant",
+        "source_file": "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py",
+        "source_constant": "DEFAULT_NATIVE_CONVENTIONS",
+        "description": "Native-unit/reporting conventions for controller-visible perturbation families."
+      }
+    ],
+    "entry_counts": {
+      "amplitude_factors": 14,
+      "reach_calibration_points": 4,
+      "reach_relative_levels": 3,
+      "plant_timing_bins": 3,
+      "controller_visible_timing_bins": 3,
+      "native_conventions": 4
+    }
+  },
+  "artifacts": [
+    {
+      "role": "calibration_defaults_payload",
+      "logical_name": "cs_perturbation_calibration_defaults_payload",
+      "sha256": "2947ce1bbc3511d80c10d7c2428320de2d59fc74af7f416e9107a87c5e3072cc",
+      "media_type": "application/json",
+      "storage_backend": "git",
+      "uri": "results/ea6ccb4/data_products/perturbation_calibration_defaults.payload.json",
+      "metadata": {
+        "schema_id": "rlrmp.perturbation_calibration_defaults.payload",
+        "schema_version": "rlrmp.perturbation_calibration_defaults.payload.v1"
+      }
+    }
+  ],
+  "materialization": {
+    "materializer": "rlrmp.data_products.calibration.build_perturbation_calibration_defaults_product",
+    "source": "adopted from previously baked module constants"
+  },
+  "regeneration": [],
+  "product_identity_hash": "56a58d4ca3f5ff143e6acab62dee9bf25256cec9a8d540804736e684770b63e5",
+  "metadata": {
+    "issue": "ea6ccb4",
+    "source_file": "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py",
+    "note": "Adopted runtime defaults for perturbation calibration; no derivable source manifest exists beyond the previously baked constants."
+  }
+}

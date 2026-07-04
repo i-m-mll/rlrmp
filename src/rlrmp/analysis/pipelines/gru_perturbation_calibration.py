@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -12,6 +11,14 @@ import jax.numpy as jnp
 import numpy as np
 
 from rlrmp.analysis.pipelines.diagnostic_provenance import repo_relative, write_regeneration_spec
+from rlrmp.data_products.calibration import (
+    NativeConvention,
+    ReachCalibrationPoint,
+    ReachRelativeLevel,
+    TimingCalibrationBin,
+    consumed_perturbation_calibration_defaults_identity,
+    load_perturbation_calibration_defaults,
+)
 from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
@@ -34,22 +41,6 @@ DEFAULT_NOMINAL_GRU_BASELINE = {
         "this materializer defines bins from extLQG nominal-command open-loop replay"
     ),
 }
-DEFAULT_AMPLITUDE_FACTORS = (
-    0.05,
-    0.1,
-    0.2,
-    0.5,
-    1.0,
-    2.0,
-    5.0,
-    10.0,
-    20.0,
-    50.0,
-    100.0,
-    200.0,
-    500.0,
-    1000.0,
-)
 OPEN_LOOP_SUPPORTED_CHANNELS = {"initial_state", "command_input", "process_epsilon"}
 TIMED_PLANT_SIDE_FAMILIES = {
     "command_input_pulse",
@@ -60,208 +51,11 @@ TIMED_PLANT_SIDE_FAMILIES = {
 }
 
 
-@dataclass(frozen=True)
-class ReachCalibrationPoint:
-    """A reach length whose relative perturbation levels should be calibrated."""
-
-    label: str
-    split: str
-    reach_length_m: float
-    role: str
-
-    def to_json(self) -> dict[str, Any]:
-        """Return a JSON-serializable calibration point."""
-
-        return {
-            "label": self.label,
-            "split": self.split,
-            "reach_length_m": float(self.reach_length_m),
-            "role": self.role,
-        }
-
-
-@dataclass(frozen=True)
-class ReachRelativeLevel:
-    """A relative open-loop effect-size level."""
-
-    name: str
-    fraction_of_reach: float
-    role: str
-
-    def to_json(self) -> dict[str, Any]:
-        """Return a JSON-serializable level definition."""
-
-        return {
-            "name": self.name,
-            "fraction_of_reach": float(self.fraction_of_reach),
-            "role": self.role,
-        }
-
-
-@dataclass(frozen=True)
-class TimingCalibrationBin:
-    """A deterministic timing bin used by perturbation calibration."""
-
-    label: str
-    start_time_index: int
-    duration_steps: int
-    role: str
-
-    def to_json(self) -> dict[str, Any]:
-        """Return a JSON-serializable timing-bin definition."""
-
-        return {
-            "label": self.label,
-            "start_time_index": int(self.start_time_index),
-            "duration_steps": int(self.duration_steps),
-            "role": self.role,
-        }
-
-
-@dataclass(frozen=True)
-class NativeConvention:
-    """Native-unit convention for rows that are not open-loop plant calibrations."""
-
-    family: str
-    channel: str
-    native_unit_rule: str
-    timing_rule: str
-    report_metric: str
-    role: str
-
-    def to_json(self) -> dict[str, Any]:
-        """Return a JSON-serializable native convention."""
-
-        return {
-            "family": self.family,
-            "channel": self.channel,
-            "native_unit_rule": self.native_unit_rule,
-            "timing_rule": self.timing_rule,
-            "report_metric": self.report_metric,
-            "role": self.role,
-        }
-
-
-DEFAULT_REACH_CALIBRATION_POINTS = (
-    ReachCalibrationPoint(
-        label="seen_train_0p10",
-        split="seen/train",
-        reach_length_m=0.10,
-        role="multi_target_training_reach_length",
-    ),
-    ReachCalibrationPoint(
-        label="seen_train_anchor_0p15",
-        split="seen/train",
-        reach_length_m=0.15,
-        role="multi_target_training_reach_length_and_original_anchor",
-    ),
-    ReachCalibrationPoint(
-        label="heldout_eval_0p12",
-        split="held-out/eval",
-        reach_length_m=0.12,
-        role="multi_target_held_out_evaluation_reach_length",
-    ),
-    ReachCalibrationPoint(
-        label="heldout_eval_0p18",
-        split="held-out/eval",
-        reach_length_m=0.18,
-        role="multi_target_held_out_evaluation_reach_length",
-    ),
-)
-DEFAULT_REACH_RELATIVE_LEVELS = (
-    ReachRelativeLevel(name="small", fraction_of_reach=0.05, role="small_probe"),
-    ReachRelativeLevel(name="moderate", fraction_of_reach=0.10, role="moderate_probe"),
-    ReachRelativeLevel(name="stress", fraction_of_reach=0.25, role="stress_probe"),
-)
-DEFAULT_PLANT_TIMING_BINS = (
-    TimingCalibrationBin(
-        label="early",
-        start_time_index=5,
-        duration_steps=5,
-        role="plant_side_open_loop_calibration",
-    ),
-    TimingCalibrationBin(
-        label="mid",
-        start_time_index=15,
-        duration_steps=5,
-        role="plant_side_open_loop_calibration",
-    ),
-    TimingCalibrationBin(
-        label="late",
-        start_time_index=35,
-        duration_steps=5,
-        role="plant_side_open_loop_calibration",
-    ),
-)
-DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS = (
-    TimingCalibrationBin(
-        label="early_visible",
-        start_time_index=10,
-        duration_steps=5,
-        role="controller_visible_offset_convention",
-    ),
-    TimingCalibrationBin(
-        label="mid_visible",
-        start_time_index=20,
-        duration_steps=5,
-        role="controller_visible_offset_convention",
-    ),
-    TimingCalibrationBin(
-        label="late_visible",
-        start_time_index=40,
-        duration_steps=5,
-        role="controller_visible_offset_convention",
-    ),
-)
-DEFAULT_NATIVE_CONVENTIONS = (
-    NativeConvention(
-        family="sensory_feedback_offset",
-        channel="sensory_feedback",
-        native_unit_rule=(
-            "position offsets are fractions of reach length; velocity offsets are "
-            "fractions of nominal peak speed when available; force/filter offsets "
-            "are fractions of a native 1 N reference offset"
-        ),
-        timing_rule="controller-visible starts 10/20/40 with 5-step duration",
-        report_metric="closed-loop induced discrepancy against paired nominal rollout",
-        role="metadata_only_not_open_loop_physical_calibration",
-    ),
-    NativeConvention(
-        family="delayed_observation_offset",
-        channel="delayed_observation",
-        native_unit_rule=(
-            "pre-noise delayed-measurement position offsets are fractions of reach "
-            "length; velocity offsets use nominal peak speed placeholder when the "
-            "actual peak speed is unavailable; force/filter offsets are fractions "
-            "of a native 1 N reference offset"
-        ),
-        timing_rule="controller-visible starts 10/20/40 with 5-step duration",
-        report_metric="closed-loop induced discrepancy against paired nominal rollout",
-        role="metadata_only_not_open_loop_physical_calibration",
-    ),
-    NativeConvention(
-        family="target_stream_jump",
-        channel="target_stream",
-        native_unit_rule="target offsets are fractions of reach length",
-        timing_rule="controller-visible starts 10/20/40 with 5-step duration",
-        report_metric="closed-loop induced discrepancy once target-stream rows exist",
-        role="metadata_only_not_open_loop_physical_calibration",
-    ),
-    NativeConvention(
-        family="true_extra_delay_steps",
-        channel="feedback_delay",
-        native_unit_rule="integer extra delay steps, not a reach-relative amplitude",
-        timing_rule="applies to the feedback path delay schedule rather than pulse timing",
-        report_metric="induced discrepancy from added delay, to be reported in future rows",
-        role="metadata_only_not_open_loop_physical_calibration",
-    ),
-)
-
-# Generated open-loop calibration values (the open-loop unit-sensitivity table and
-# the controller-visible velocity scale) are no longer baked here as source
-# constants. They are persisted as a governed, schema-versioned data product under
-# results/ea6ccb4/data_products/ and loaded fail-closed by identity via
-# rlrmp.data_products.calibration.load_open_loop_calibration(). See issue ea6ccb4.
+# Generated/adopted calibration values are no longer baked here as source
+# constants. Open-loop unit sensitivities, the controller-visible velocity scale,
+# and the adopted runtime-default tables are persisted as governed data products
+# under results/ea6ccb4/data_products/ and loaded fail-closed by identity via
+# rlrmp.data_products.calibration. See issue ea6ccb4.
 # The force/filter native scale below is a unit convention (1 N reference offset),
 # not generated data, and stays as a source constant.
 DEFAULT_CONTROLLER_VISIBLE_FORCE_FILTER_SCALE_N = 1.0
@@ -269,14 +63,12 @@ DEFAULT_CONTROLLER_VISIBLE_FORCE_FILTER_SCALE_N = 1.0
 
 def materialize_perturbation_open_loop_calibration(
     *,
-    amplitude_factors: Sequence[float] = DEFAULT_AMPLITUDE_FACTORS,
-    reach_points: Sequence[ReachCalibrationPoint] = DEFAULT_REACH_CALIBRATION_POINTS,
-    levels: Sequence[ReachRelativeLevel] = DEFAULT_REACH_RELATIVE_LEVELS,
-    plant_timing_bins: Sequence[TimingCalibrationBin] = DEFAULT_PLANT_TIMING_BINS,
-    controller_visible_timing_bins: Sequence[
-        TimingCalibrationBin
-    ] = DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS,
-    native_conventions: Sequence[NativeConvention] = DEFAULT_NATIVE_CONVENTIONS,
+    amplitude_factors: Sequence[float] | None = None,
+    reach_points: Sequence[ReachCalibrationPoint] | None = None,
+    levels: Sequence[ReachRelativeLevel] | None = None,
+    plant_timing_bins: Sequence[TimingCalibrationBin] | None = None,
+    controller_visible_timing_bins: Sequence[TimingCalibrationBin] | None = None,
+    native_conventions: Sequence[NativeConvention] | None = None,
     result_experiment: str = DEFAULT_RESULT_EXPERIMENT,
     output_path: Path | None = None,
     note_path: Path | None = None,
@@ -290,6 +82,35 @@ def materialize_perturbation_open_loop_calibration(
         _extlqg_cost_summary,
         default_cs_perturbation_bank,
     )
+
+    defaults_used = (
+        amplitude_factors is None
+        or reach_points is None
+        or levels is None
+        or plant_timing_bins is None
+        or controller_visible_timing_bins is None
+        or native_conventions is None
+    )
+    if defaults_used:
+        defaults = load_perturbation_calibration_defaults()
+        amplitude_factors = (
+            defaults.amplitude_factors if amplitude_factors is None else amplitude_factors
+        )
+        reach_points = (
+            defaults.reach_calibration_points if reach_points is None else reach_points
+        )
+        levels = defaults.reach_relative_levels if levels is None else levels
+        plant_timing_bins = (
+            defaults.plant_timing_bins if plant_timing_bins is None else plant_timing_bins
+        )
+        controller_visible_timing_bins = (
+            defaults.controller_visible_timing_bins
+            if controller_visible_timing_bins is None
+            else controller_visible_timing_bins
+        )
+        native_conventions = (
+            defaults.native_conventions if native_conventions is None else native_conventions
+        )
 
     output_path = output_path or (
         repo_root / "_artifacts" / result_experiment / DEFAULT_BULK_SUBDIR / DEFAULT_OUTPUT_FILENAME
@@ -407,6 +228,9 @@ def materialize_perturbation_open_loop_calibration(
             ),
         },
         "nominal_gru_baseline_for_later_closed_loop_calibration": DEFAULT_NOMINAL_GRU_BASELINE,
+        "consumed_data_identities": _consumed_default_identities()
+        if defaults_used
+        else [],
         "bulk_manifest_path": _repo_relative(output_path, repo_root=repo_root),
         "regeneration_spec_path": repo_relative(regeneration_spec_path, repo_root=repo_root),
         "rows": rows,
@@ -428,6 +252,42 @@ def materialize_perturbation_open_loop_calibration(
         repo_root=repo_root,
     )
     return manifest
+
+
+def default_amplitude_factors() -> tuple[float, ...]:
+    """Return adopted amplitude factors from the governed defaults product."""
+
+    return load_perturbation_calibration_defaults().amplitude_factors
+
+
+def default_reach_calibration_points() -> tuple[ReachCalibrationPoint, ...]:
+    """Return adopted reach calibration points from the governed defaults product."""
+
+    return load_perturbation_calibration_defaults().reach_calibration_points
+
+
+def default_reach_relative_levels() -> tuple[ReachRelativeLevel, ...]:
+    """Return adopted reach-relative levels from the governed defaults product."""
+
+    return load_perturbation_calibration_defaults().reach_relative_levels
+
+
+def default_plant_timing_bins() -> tuple[TimingCalibrationBin, ...]:
+    """Return adopted plant-side timing bins from the governed defaults product."""
+
+    return load_perturbation_calibration_defaults().plant_timing_bins
+
+
+def default_controller_visible_timing_bins() -> tuple[TimingCalibrationBin, ...]:
+    """Return adopted controller-visible timing bins from the governed defaults product."""
+
+    return load_perturbation_calibration_defaults().controller_visible_timing_bins
+
+
+def default_native_conventions() -> tuple[NativeConvention, ...]:
+    """Return adopted native conventions from the governed defaults product."""
+
+    return load_perturbation_calibration_defaults().native_conventions
 
 
 def calibrated_amplitude_from_unit_sensitivity(
@@ -1031,6 +891,7 @@ def _write_calibration_regeneration_spec(
         parameters={
             "result_experiment": result_experiment,
             "amplitude_factors": [float(factor) for factor in amplitude_factors],
+            "consumed_data_identities": manifest.get("consumed_data_identities", []),
             "source_model": source_model,
             "source_run_ids": source_run_ids,
             "reach_points": manifest.get("reach_points", []),
@@ -1075,6 +936,16 @@ def _write_calibration_regeneration_spec(
         ],
         repo_root=repo_root,
     )
+
+
+def _consumed_default_identities() -> list[dict[str, str]]:
+    from rlrmp.runtime.training_run_specs import add_consumed_data_identity
+
+    spec = add_consumed_data_identity(
+        {},
+        **consumed_perturbation_calibration_defaults_identity(),
+    )
+    return list(spec.get("consumed_data_identities", []))
 
 
 def _metric_mean(metrics: Mapping[str, Any], key: str) -> float | None:
@@ -1137,12 +1008,7 @@ def _repo_relative(path: Path, *, repo_root: Path) -> str:
 
 
 __all__ = [
-    "DEFAULT_REACH_CALIBRATION_POINTS",
-    "DEFAULT_REACH_RELATIVE_LEVELS",
-    "DEFAULT_PLANT_TIMING_BINS",
-    "DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS",
     "DEFAULT_CONTROLLER_VISIBLE_FORCE_FILTER_SCALE_N",
-    "DEFAULT_NATIVE_CONVENTIONS",
     "DEFAULT_NOMINAL_GRU_BASELINE",
     "DEFAULT_REGENERATION_SPEC_FILENAME",
     "NativeConvention",
@@ -1151,6 +1017,12 @@ __all__ = [
     "SCHEMA_VERSION",
     "TimingCalibrationBin",
     "calibrated_amplitude_from_unit_sensitivity",
+    "default_amplitude_factors",
+    "default_controller_visible_timing_bins",
+    "default_native_conventions",
+    "default_plant_timing_bins",
+    "default_reach_calibration_points",
+    "default_reach_relative_levels",
     "materialize_perturbation_open_loop_calibration",
     "render_calibration_markdown",
 ]
