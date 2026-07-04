@@ -90,6 +90,7 @@ def _smoke_cs_args(*, output_dir: Path, spec_dir: Path, **overrides: object) -> 
         n_replicates=1,
         hidden_size=4,
         controller_lr=1e-3,
+        gradient_clip_norm=5.0,
         lr_warmup_batches=1,
         lr_warmup_init_fraction=0.1,
         lr_cosine_alpha=0.01,
@@ -228,6 +229,7 @@ def test_cloud_plans_render_for_all_backends_without_provider_contact() -> None:
         batch_size=2,
         n_replicates=1,
         hidden_size=4,
+        gradient_clip_norm=5.0,
         runpod_cloud_type="SECURE",
         runpod_gpu_type_ids=("NVIDIA GeForce RTX 4090",),
     )
