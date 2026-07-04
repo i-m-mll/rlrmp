@@ -389,11 +389,21 @@ def test_cs_nominal_gru_pre_refactor_golden_payloads_stay_stable() -> None:
 
 def test_cs_nominal_gru_config_validates_tracked_cs_stochastic_gru_corpus() -> None:
     paths = _cs_stochastic_gru_run_spec_paths()
+    clean_paths = []
+    fail_closed: set[Path] = set()
 
     assert len(paths) == 134
     for path in paths:
         payload = json.loads(path.read_text(encoding="utf-8"))
-        CsNominalGruConfig.model_validate(cs_nominal_gru._args_values_from_run_spec(payload))
+        try:
+            CsNominalGruConfig.model_validate(cs_nominal_gru._args_values_from_run_spec(payload))
+        except ValidationError:
+            fail_closed.add(path)
+        else:
+            clean_paths.append(path)
+
+    assert len(clean_paths) == 134
+    assert fail_closed == set()
 
 
 def _where_train() -> dict[int, object]:
@@ -5978,6 +5988,7 @@ def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Pat
     )
     assert diagnostics_manifest["completed_batches"] == 4
     assert diagnostics_manifest["gradient_clip_active"] is False
+    assert diagnostics_manifest["gradient_clip_norm"] is None
     assert diagnostics_manifest["training_history_path"] == str(output_dir / "training_history.eqx")
     assert "optimizer_gradient_norm_pre_clip" in diagnostics_manifest["arrays"]
     assert summary["training_duration_seconds"] > 0

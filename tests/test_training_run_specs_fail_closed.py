@@ -31,9 +31,22 @@ TRACKED_CLEAN_DISTILLATION_SPECS = (
     ),
 )
 EXPECTED_TRACKED_FAIL_CLOSED = {
-    Path("results/6c36536/runs/delayed_movement_bank.json"): "optimizer.gradient_clip_norm",
     Path("results/a378b34/runs/h0_extlqg_6d_closed_loop_distillation.json"): (
         "teacher_contract.horizon"
+    ),
+}
+EXPECTED_DIRECTORY_RUN_FAIL_CLOSED = {
+    Path("results/30f2313/runs/cs_stochastic_gru__hidden_penalty/run.json"): (
+        "optimizer.gradient_clip_norm"
+    ),
+    Path("results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/run.json"): (
+        "optimizer.gradient_clip_norm"
+    ),
+    Path("results/3b2af27/runs/lss_12k__hidden_penalty/run.json"): (
+        "optimizer.gradient_clip_norm"
+    ),
+    Path("results/3b2af27/runs/lss_12k__no_hidden_penalty/run.json"): (
+        "optimizer.gradient_clip_norm"
     ),
 }
 
@@ -81,6 +94,10 @@ def _adapter_method_for_payload(payload: dict[str, Any]) -> str | None:
 
 def _flat_tracked_run_specs() -> list[Path]:
     return sorted(Path("results").glob("*/runs/*.json"))
+
+
+def _directory_tracked_run_specs() -> list[Path]:
+    return sorted(Path("results").glob("*/runs/*/run.json"))
 
 
 def _delete_path(payload: dict[str, Any], field_path: str) -> None:
@@ -242,6 +259,34 @@ def test_cs_training_config_fails_closed_on_missing_run_descriptive_key(
     assert "complete_cs_fixture" in exc_info.value.spec_identity
 
 
+def test_training_config_adapters_distinguish_explicit_null_from_absent_gradient_clip() -> None:
+    cs_payload = _complete_cs_spec()
+    cs_payload["optimizer"]["gradient_clip_norm"] = None
+    assert _cs_training_config(cs_payload).grad_clip is None
+
+    missing_cs_payload = _complete_cs_spec()
+    del missing_cs_payload["optimizer"]["gradient_clip_norm"]
+    with pytest.raises(MissingTrainingRunSpecFieldError, match="optimizer.gradient_clip_norm"):
+        _cs_training_config(missing_cs_payload)
+
+    guided_payload = _complete_guided_spec()
+    guided_payload["optimizer"]["gradient_clip_norm"] = None
+    assert (
+        _distillation_training_config(guided_payload, method="guided_distillation").grad_clip
+        is None
+    )
+
+    closed_loop_payload = _complete_closed_loop_spec()
+    closed_loop_payload["student_contract"]["gradient_clip_norm"] = None
+    assert (
+        _distillation_training_config(
+            closed_loop_payload,
+            method="closed_loop_distillation",
+        ).grad_clip
+        is None
+    )
+
+
 def test_cs_training_config_ignores_optional_training_diagnostics_metadata() -> None:
     payload = _complete_cs_spec()
     with_metadata = _cs_training_config(payload)
@@ -284,5 +329,28 @@ def test_tracked_training_config_adapter_corpus_census() -> None:
         else:
             clean_paths.append(path)
 
-    assert len(clean_paths) == 59
+    assert len(clean_paths) == 60
     assert fail_closed == EXPECTED_TRACKED_FAIL_CLOSED
+
+
+def test_directory_training_config_adapter_corpus_census() -> None:
+    clean_paths = []
+    fail_closed: dict[Path, str] = {}
+
+    for path in _directory_tracked_run_specs():
+        payload = _read_json(path)
+        method = _adapter_method_for_payload(payload)
+        if method is None:
+            continue
+        try:
+            if method == "cs_gru":
+                _cs_training_config(payload, spec_dir=path.parent)
+            else:
+                _distillation_training_config(payload, method=method, spec_path=path)
+        except MissingTrainingRunSpecFieldError as exc:
+            fail_closed[path] = exc.field_path
+        else:
+            clean_paths.append(path)
+
+    assert len(clean_paths) == 73
+    assert fail_closed == EXPECTED_DIRECTORY_RUN_FAIL_CLOSED

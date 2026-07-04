@@ -663,7 +663,7 @@ def _recording_spec_identity(
 def _value_at_path(mapping: dict[str, Any], field_path: str) -> tuple[Any, bool]:
     value: Any = mapping
     for part in field_path.split("."):
-        if not isinstance(value, dict) or part not in value or value[part] is None:
+        if not isinstance(value, dict) or part not in value:
             return None, False
         value = value[part]
     return value, True
@@ -710,6 +710,22 @@ def _required_recording_field_from(
     )
 
 
+def _required_float_or_none_recording_field(
+    run_spec: dict[str, Any],
+    field_path: str,
+    *,
+    spec_path: Path | None = None,
+    spec_dir: Path | None = None,
+) -> float | None:
+    value = _required_recording_field(
+        run_spec,
+        field_path,
+        spec_path=spec_path,
+        spec_dir=spec_dir,
+    )
+    return None if value is None else float(value)
+
+
 def _distillation_training_config(
     run_spec: dict[str, Any],
     *,
@@ -739,12 +755,10 @@ def _distillation_training_config(
                     spec_path=spec_path,
                 )
             ),
-            grad_clip=float(
-                _required_recording_field(
-                    run_spec,
-                    "student_contract.gradient_clip_norm",
-                    spec_path=spec_path,
-                )
+            grad_clip=_required_float_or_none_recording_field(
+                run_spec,
+                "student_contract.gradient_clip_norm",
+                spec_path=spec_path,
             ),
             hidden_dim=int(
                 _required_recording_field(
@@ -798,12 +812,10 @@ def _distillation_training_config(
                 spec_path=spec_path,
             )
         ),
-        grad_clip=float(
-            _required_recording_field(
-                run_spec,
-                "optimizer.gradient_clip_norm",
-                spec_path=spec_path,
-            )
+        grad_clip=_required_float_or_none_recording_field(
+            run_spec,
+            "optimizer.gradient_clip_norm",
+            spec_path=spec_path,
         ),
         hidden_dim=int(
             _required_recording_field(run_spec, "model_contract.hidden_size", spec_path=spec_path)
@@ -920,12 +932,10 @@ def _cs_training_config(
                 spec_dir=spec_dir,
             )
         ),
-        grad_clip=float(
-            _required_recording_field(
-                run_spec,
-                "optimizer.gradient_clip_norm",
-                spec_dir=spec_dir,
-            )
+        grad_clip=_required_float_or_none_recording_field(
+            run_spec,
+            "optimizer.gradient_clip_norm",
+            spec_dir=spec_dir,
         ),
         hidden_dim=int(
             _required_recording_field(
