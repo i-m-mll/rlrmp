@@ -364,7 +364,7 @@ def build_minimax_training_run_spec(
         method_extensions={
             "metadata": {
                 "rlrmp_extension_payload": "rlrmp_run_spec",
-                "scientific_semantics_owner": "rlrmp.adversary",
+                "scientific_semantics_owner": "rlrmp.train.adversary",
             }
         },
         worker_execution=WorkerExecutionSpec(

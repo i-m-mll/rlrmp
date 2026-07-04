@@ -6,7 +6,7 @@ specific on-disk layout into each ``_artifacts/<exp>/runs/<run>/`` directory:
 - ``config.json`` — run hyperparameters (the argparse namespace)
 - ``warmup_model.eqx`` — model after the warm-start phase (pre-adversarial)
 - ``adversarial_model.eqx`` — model after the adversarial phase
-- ``trained_adversary.eqx`` — saved :class:`rlrmp.adversary.GaussianBumpAdversary`
+- ``trained_adversary.eqx`` — saved :class:`rlrmp.train.adversary.GaussianBumpAdversary`
 
 These helpers load any of those artifacts. They are training-method-specific
 (a minimax run dir has different on-disk semantics than a standard run dir),
@@ -29,7 +29,7 @@ from equinox.nn import StateIndex
 from feedbax.intervene import FixedFieldParams, schedule_intervenor
 from jax_cookbook import load_with_hyperparameters
 
-from rlrmp.adversary import GaussianBumpAdversary
+from rlrmp.train.adversary import GaussianBumpAdversary
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.model.feedbax_graph import create_legacy_point_mass_graph_ensemble
 from rlrmp.train.task_model import (

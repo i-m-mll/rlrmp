@@ -115,7 +115,7 @@ The synthesis (``synthesis_review.md`` section 2 / 4.2) distinguishes:
 - **Flavor (b)**: structural perturbation :math:`\\Delta A` to the dynamics
   matrix, constant over the trial. ``\\dot v \\mathrel{+}= \\Delta A\\,
   [p, v]``, matching the feedbax ``DynamicsMatrixPerturb`` intervenor and
-  ``LinearDynamicsAdversary`` in ``rlrmp.adversary``.
+  ``LinearDynamicsAdversary`` in ``rlrmp.train.adversary``.
 
 The flavor-(b) extension is implemented by ``solve_hinf_riccati_modelclass``
 and ``find_gamma_star_modelclass``. It uses the **S-procedure / quadratic-
