@@ -92,6 +92,10 @@ class ReportStageParams(BaseModel):
     source_artifact_roles: list[str] = Field(default_factory=list)
     title: str = "RLRMP Report"
     include_json_artifact: bool = True
+    narrative: str | None = Field(
+        default=None,
+        description="Optional introductory Markdown copied from declarative bundle params.",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -185,7 +189,7 @@ def artifact_markdown_report_recipe(
     title = params.title
     markdown = _render_sections_markdown(
         title=title,
-        narrative=report_spec.narrative,
+        narrative=report_spec.narrative or params.narrative,
         report_type=report_spec.report_type,
         source_roles=source_roles,
         sections=sections,

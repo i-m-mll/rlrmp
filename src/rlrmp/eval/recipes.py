@@ -86,6 +86,8 @@ class PerturbationResponseBankEvalParams(_StrictParamsModel):
     response_tensors: Any | None = None
     class_index_map: Any | None = None
     bank_status: dict[str, Any] = Field(default_factory=dict)
+    bundle_contract: dict[str, Any] = Field(default_factory=dict)
+    states_custody: Literal["cache", "durable"] | None = None
     legacy_payload_mode: bool = False
     source_experiment: str | None = None
     experiment: str | None = None

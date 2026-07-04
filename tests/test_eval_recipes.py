@@ -158,6 +158,8 @@ def _bank() -> dict[str, Any]:
                 "response_tensors": None,
                 "class_index_map": None,
                 "bank_status": {},
+                "bundle_contract": {},
+                "states_custody": None,
                 "legacy_payload_mode": False,
                 "source_experiment": None,
                 "experiment": None,

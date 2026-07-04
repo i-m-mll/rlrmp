@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 import rlrmp
+from feedbax.analysis.bundles import load_analysis_bundle
 from feedbax.analysis.reports import execute_report_spec, registered_report_types
 from feedbax.contracts.manifest import (
     AnalysisRunManifest,
@@ -23,6 +24,24 @@ from pydantic import ValidationError
 
 from rlrmp.analysis import reports as rr
 from rlrmp.runtime.params_models import params_model_for, registered_params_models
+
+REPORT_BUNDLE_NAMES = (
+    "rlrmp/robustness_phenotype",
+    "rlrmp/output_feedback_bridge",
+    "rlrmp/feedback_quality_lens",
+    "rlrmp/gru_postrun",
+    "rlrmp/training_diagnostics",
+    "rlrmp/standard_matrix",
+)
+
+EXPECTED_REPORT_STAGE_PARAM_KEYS = {
+    "schema_id",
+    "schema_version",
+    "title",
+    "source_artifact_roles",
+    "include_json_artifact",
+    "narrative",
+}
 
 
 def _write_analysis_manifest(
@@ -119,8 +138,33 @@ def test_report_stage_params_defaults_match_recipe_literals(
     assert model.source_artifact_roles == expected_source_roles
     assert model.title == expected_title
     assert model.include_json_artifact is True
+    assert model.narrative is None
     assert model.schema_id is None
     assert model.schema_version is None
+
+
+def test_report_stage_params_validate_all_bundle_report_stage_payloads() -> None:
+    registry = ExperimentRegistry()
+    rlrmp.register_experiment_package(registry)
+    report_payloads: dict[tuple[str, str], set[str]] = {}
+
+    for bundle_name in REPORT_BUNDLE_NAMES:
+        bundle = load_analysis_bundle(bundle_name, registry=registry)
+        for stage in bundle.stages:
+            if getattr(stage, "kind", None) != "report":
+                continue
+            params = dict(getattr(stage, "params", {}) or {})
+            report_payloads[(bundle_name, stage.name)] = set(params)
+            model = rr.ReportStageParams.model_validate(
+                {"report_type": stage.report_type, **params}
+            )
+            assert model.narrative == params["narrative"]
+
+    assert report_payloads == {
+        ("rlrmp/robustness_phenotype", "phenotype_report"): EXPECTED_REPORT_STAGE_PARAM_KEYS,
+        ("rlrmp/gru_postrun", "postrun_report"): EXPECTED_REPORT_STAGE_PARAM_KEYS,
+        ("rlrmp/gru_postrun", "bridge_certificate_report"): EXPECTED_REPORT_STAGE_PARAM_KEYS,
+    }
 
 
 def test_report_stage_params_reject_extra_fields() -> None:
