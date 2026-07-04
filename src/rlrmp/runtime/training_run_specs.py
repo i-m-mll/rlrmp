@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from feedbax.contracts.manifest import (
     ArtifactRef,
@@ -111,30 +111,296 @@ class _StrictPayloadModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class DistillationBaseContractPayload(_StrictPayloadModel):
+    """Shared base-row provenance recorded in distillation method payloads."""
+
+    issue: str
+    run_id: str
+    run_spec: str
+    inherit: list[str]
+
+
+class DistillationOptimizerPayload(_StrictPayloadModel):
+    """Optimizer settings recorded by distillation method payloads."""
+
+    name: str
+    controller_lr: float | None = None
+    lr_schedule: str
+    lr_warmup_batches: int
+    lr_cosine_alpha: float
+    gradient_clip_norm: float | None
+    lr_warmup_init_fraction: float | None = None
+
+
+class DistillationCheckpointingPayload(_StrictPayloadModel):
+    """Checkpoint policy recorded by distillation method payloads."""
+
+    enabled: bool
+    interval_batches: int
+    resume_flag: str
+    latest_pointer: str
+    format: str
+    default: str | None = None
+    contents: list[str] | None = None
+
+
+class ClosedLoopTeacherContractPayload(_StrictPayloadModel):
+    """Analytical teacher contract for closed-loop distillation."""
+
+    issue: str
+    controller: str
+    teacher_package: str
+    teacher_gains_key: str
+    required_package_key: str
+    matched_inputs: list[str]
+    feedback_basis: str
+    reference_basis_note: str
+    horizon: int | None = None
+
+
+class ClosedLoopStudentContractPayload(_StrictPayloadModel):
+    """Student graph/training contract for closed-loop distillation."""
+
+    setup_function: str
+    graph_source: str
+    feedback_input_basis: str
+    controller_input_dim: int
+    force_filter_feedback: bool
+    initial_hidden_encoder: bool
+    hidden_size: int
+    n_replicates: int
+    batch_size: int
+    n_train_batches: int
+    controller_lr: float
+    lr_schedule: str
+    lr_warmup_batches: int
+    lr_cosine_alpha: float
+    gradient_clip_norm: float | None
+    broad_epsilon_pgd_training: bool
+    trainable_dtype: str
+
+
+class ClosedLoopSemanticsPayload(_StrictPayloadModel):
+    """Closed-loop rollout semantics for the analytical-teacher loss."""
+
+    student_rollout: str
+    student_actions_feed_future_observations: bool
+    teacher_forced_feedback_bank_imitation: bool
+    old_guided_trainer_is_main_path: bool
+    trainer_contract: str
+
+
+class ClosedLoopWeightedComponentPayload(_StrictPayloadModel):
+    """Enabled/weight pair for closed-loop scalar loss components."""
+
+    enabled: bool
+    weight: float
+
+
+class ClosedLoopDirectionalJvpComponentPayload(ClosedLoopWeightedComponentPayload):
+    """Directional JVP component settings for closed-loop distillation."""
+
+    basis: str
+    jacobian_shape: list[int]
+    implementation: str
+
+
+class ClosedLoopLossComponentsPayload(_StrictPayloadModel):
+    """Named closed-loop distillation loss components."""
+
+    closed_loop_kinematics_trajectory: ClosedLoopWeightedComponentPayload
+    velocity_trajectory: ClosedLoopWeightedComponentPayload
+    action_force_trajectory: ClosedLoopWeightedComponentPayload
+    perturbation_response_trajectory: ClosedLoopWeightedComponentPayload
+    directional_input_output_jvp: ClosedLoopDirectionalJvpComponentPayload
+    task_qr_rollout: ClosedLoopWeightedComponentPayload
+
+
+class ClosedLoopLossWeightsPayload(_StrictPayloadModel):
+    """Closed-loop loss weight summary."""
+
+    kinematics_trajectory: float
+    velocity: float
+    action_force_trajectory: float
+    perturbation_response_trajectory: float
+    directional_input_output_jvp: float
+    task_qr_rollout: float
+    endpoint: float
+    settling: float
+
+
+class ClosedLoopLossSurfacePayload(_StrictPayloadModel):
+    """Closed-loop distillation loss-surface payload."""
+
+    weights: ClosedLoopLossWeightsPayload
+    default_task_qr_rollout_loss: str
+    task_qr_rollout_loss_can_be_enabled_later: bool
+    components: ClosedLoopLossComponentsPayload
+
+
 class ClosedLoopDistillationMethodPayload(_StrictPayloadModel):
     """Governed payload for closed-loop analytical-teacher distillation."""
 
-    teacher_contract: dict[str, Any]
-    student_contract: dict[str, Any]
-    base_contract: dict[str, Any]
-    closed_loop_semantics: dict[str, Any]
-    loss_surface: dict[str, Any]
-    optimizer: dict[str, Any]
-    checkpointing: dict[str, Any]
+    teacher_contract: ClosedLoopTeacherContractPayload
+    student_contract: ClosedLoopStudentContractPayload
+    base_contract: DistillationBaseContractPayload
+    closed_loop_semantics: ClosedLoopSemanticsPayload
+    loss_surface: ClosedLoopLossSurfacePayload
+    optimizer: DistillationOptimizerPayload
+    checkpointing: DistillationCheckpointingPayload
     finite_adversary_policy_metadata: dict[str, Any] | None = None
+
+
+class GuidedTeacherExternalBasisPayload(_StrictPayloadModel):
+    """External teacher/student basis names for guided distillation."""
+
+    feedback_history: str
+    action_history: str
+    action_output: str
+
+
+class GuidedTeacherContractPayload(_StrictPayloadModel):
+    """Analytical teacher contract for guided distillation."""
+
+    issue: str
+    primary_teacher: str
+    diagnostic_teacher: str
+    teacher_package: str
+    teacher_manifest: str
+    external_basis: GuidedTeacherExternalBasisPayload
+    teacher_gains_key: str | None = None
+    student_architecture_boundary: str | None = None
+
+
+class GuidedTeacherBankPayload(_StrictPayloadModel):
+    """Batched analytical-teacher materialization contract."""
+
+    materializer: str
+    source: str
+    teacher: str
+    horizon: int
+    sampled_initial_state_std: float
+    observation_perturbation_std: float
+    action_context: str
+    approximation: str
+    teacher_gains_key: str | None = None
+
+
+class GuidedTrainingPhasePayload(_StrictPayloadModel):
+    """One phase in the guided distillation forcing schedule."""
+
+    name: str
+    start_batch: int
+    end_batch: int
+    teacher_forcing_fraction: float
+    student_forcing_fraction: float
+
+
+class GuidedTrainingSchedulePayload(_StrictPayloadModel):
+    """Guided distillation training schedule."""
+
+    total_batches: int | None = None
+    phases: list[GuidedTrainingPhasePayload]
+
+
+class GuidedDistillationWeightsPayload(_StrictPayloadModel):
+    """Guided distillation loss weights."""
+
+    clean_action: float
+    perturbation_response: float
+    input_output_jvp: float
+    student_forced_rollout_anchor: float
+
+
+class GuidedDistillationConfigPayload(_StrictPayloadModel):
+    """Summary of the reusable guided distillation loss config."""
+
+    issue: str
+    experiment_issue: str
+    teacher_issue: str
+    base_issue: str
+    base_run_id: str
+    teacher_package: str
+    primary_teacher: str
+    diagnostic_teacher: str
+    feedback_basis: str
+    action_basis: str
+    hidden_state_supervision: bool
+    n_jvp_directions: int
+    jvp_direction_basis: str
+    jvp_direction_sampler: str
+    weights: GuidedDistillationWeightsPayload
+
+
+class GuidedDescribedComponentPayload(_StrictPayloadModel):
+    """Enabled/weight/description triple for guided loss components."""
+
+    enabled: bool
+    weight: float
+    description: str
+
+
+class GuidedJvpComponentPayload(_StrictPayloadModel):
+    """Directional JVP settings for guided distillation."""
+
+    enabled: bool
+    weight: float
+    n_directions: int
+    direction_basis: str
+    implementation: str
+
+
+class GuidedDistillationComponentsPayload(_StrictPayloadModel):
+    """Named guided distillation loss components."""
+
+    clean_action: GuidedDescribedComponentPayload
+    perturbation_response: GuidedDescribedComponentPayload
+    input_output_jvp: GuidedJvpComponentPayload
+    student_forced_rollout_anchor: GuidedDescribedComponentPayload
+
+
+class GuidedDistillationSurfacePayload(_StrictPayloadModel):
+    """Guided distillation loss surface."""
+
+    config: GuidedDistillationConfigPayload
+    hidden_state_supervision: bool
+    components: GuidedDistillationComponentsPayload
+    student_action_history_input: bool | None = None
+
+
+class GuidedModelContractPayload(_StrictPayloadModel):
+    """Student model contract for guided distillation."""
+
+    setup_function: str
+    checkpoint_format: str
+    final_model: str
+    initial_hidden_encoder: bool
+    force_filter_feedback: bool
+    hidden_size: int
+    batch_size: int | None = None
+    n_replicates: int
+    vectorized_replicates: bool
+    plant_backend: str
+    stochastic_preset: str
+    broad_epsilon_pgd_training: bool
+    checkpoint_model: str | None = None
+    controller_input_dim: int | None = None
+    student_action_history_input: bool | None = None
+    trainable_dtype: str | None = None
+    population_mask_mode: str | None = None
 
 
 class GuidedDistillationMethodPayload(_StrictPayloadModel):
     """Governed payload for guided analytical-teacher distillation."""
 
-    teacher_contract: dict[str, Any]
-    teacher_bank: dict[str, Any]
-    base_contract: dict[str, Any]
-    training_schedule: dict[str, Any]
-    distillation_surface: dict[str, Any]
-    optimizer: dict[str, Any]
-    model_contract: dict[str, Any]
-    checkpointing: dict[str, Any]
+    teacher_contract: GuidedTeacherContractPayload
+    teacher_bank: GuidedTeacherBankPayload
+    base_contract: DistillationBaseContractPayload
+    training_schedule: GuidedTrainingSchedulePayload
+    distillation_surface: GuidedDistillationSurfacePayload
+    optimizer: DistillationOptimizerPayload
+    model_contract: GuidedModelContractPayload
+    checkpointing: DistillationCheckpointingPayload
 
 
 def training_arg_parser(*args: Any, **kwargs: Any) -> argparse.ArgumentParser:
@@ -190,11 +456,33 @@ def register_rlrmp_distillation_methods() -> None:
     )
 
 
-def closed_loop_distillation_method_payload(
-    run_spec: dict[str, Any],
-) -> MethodPayloadEnvelope:
-    """Return the governed payload envelope for a closed-loop distillation spec."""
+def _validation_missing_field_path(exc: ValidationError) -> str | None:
+    for error in exc.errors():
+        if error.get("type") == "missing":
+            return ".".join(str(part) for part in error["loc"])
+    return None
 
+
+def _payload_validation_error(
+    exc: ValidationError,
+    *,
+    run_spec: dict[str, Any],
+    spec_path: Path | None = None,
+) -> ValidationError:
+    field_path = _validation_missing_field_path(exc)
+    if field_path is not None:
+        raise MissingTrainingRunSpecFieldError(
+            field_path=field_path,
+            spec_identity=_recording_spec_identity(run_spec, spec_path=spec_path),
+        ) from exc
+    return exc
+
+
+def _closed_loop_distillation_payload_model(
+    run_spec: dict[str, Any],
+    *,
+    spec_path: Path | None = None,
+) -> ClosedLoopDistillationMethodPayload:
     payload = {
         "teacher_contract": _mapping(run_spec, "teacher_contract"),
         "student_contract": _mapping(run_spec, "student_contract"),
@@ -205,17 +493,17 @@ def closed_loop_distillation_method_payload(
         "checkpointing": _mapping(run_spec, "checkpointing"),
         "finite_adversary_policy_metadata": run_spec.get("finite_adversary_policy_metadata"),
     }
-    validated = ClosedLoopDistillationMethodPayload.model_validate(payload)
-    return MethodPayloadEnvelope(
-        schema_id=CLOSED_LOOP_DISTILLATION_PAYLOAD_SCHEMA_ID,
-        schema_version=CLOSED_LOOP_DISTILLATION_PAYLOAD_SCHEMA_VERSION,
-        payload=validated.model_dump(mode="json", exclude_none=True),
-    )
+    try:
+        return ClosedLoopDistillationMethodPayload.model_validate(payload)
+    except ValidationError as exc:
+        raise _payload_validation_error(exc, run_spec=run_spec, spec_path=spec_path)
 
 
-def guided_distillation_method_payload(run_spec: dict[str, Any]) -> MethodPayloadEnvelope:
-    """Return the governed payload envelope for a guided distillation spec."""
-
+def _guided_distillation_payload_model(
+    run_spec: dict[str, Any],
+    *,
+    spec_path: Path | None = None,
+) -> GuidedDistillationMethodPayload:
     payload = {
         "teacher_contract": _mapping(run_spec, "teacher_contract"),
         "teacher_bank": _mapping(run_spec, "teacher_bank"),
@@ -226,11 +514,33 @@ def guided_distillation_method_payload(run_spec: dict[str, Any]) -> MethodPayloa
         "model_contract": _mapping(run_spec, "model_contract"),
         "checkpointing": _mapping(run_spec, "checkpointing"),
     }
-    validated = GuidedDistillationMethodPayload.model_validate(payload)
+    try:
+        return GuidedDistillationMethodPayload.model_validate(payload)
+    except ValidationError as exc:
+        raise _payload_validation_error(exc, run_spec=run_spec, spec_path=spec_path)
+
+
+def closed_loop_distillation_method_payload(
+    run_spec: dict[str, Any],
+) -> MethodPayloadEnvelope:
+    """Return the governed payload envelope for a closed-loop distillation spec."""
+
+    validated = _closed_loop_distillation_payload_model(run_spec)
+    return MethodPayloadEnvelope(
+        schema_id=CLOSED_LOOP_DISTILLATION_PAYLOAD_SCHEMA_ID,
+        schema_version=CLOSED_LOOP_DISTILLATION_PAYLOAD_SCHEMA_VERSION,
+        payload=validated.model_dump(mode="json", exclude_none=True),
+    )
+
+
+def guided_distillation_method_payload(run_spec: dict[str, Any]) -> MethodPayloadEnvelope:
+    """Return the governed payload envelope for a guided distillation spec."""
+
+    validated = _guided_distillation_payload_model(run_spec)
     return MethodPayloadEnvelope(
         schema_id=GUIDED_DISTILLATION_PAYLOAD_SCHEMA_ID,
         schema_version=GUIDED_DISTILLATION_PAYLOAD_SCHEMA_VERSION,
-        payload=validated.model_dump(mode="json"),
+        payload=validated.model_dump(mode="json", exclude_none=True),
     )
 
 
@@ -638,6 +948,15 @@ def _distillation_method_ref_key(method: str) -> str:
     raise ValueError(f"unknown RLRMP distillation method {method!r}")
 
 
+def _distillation_method_for_run_spec(run_spec: dict[str, Any]) -> str:
+    keys = set(run_spec)
+    if {"student_contract", "closed_loop_semantics", "loss_surface"} <= keys:
+        return "closed_loop_distillation"
+    if {"model_contract", "teacher_bank", "training_schedule", "distillation_surface"} <= keys:
+        return "guided_distillation"
+    raise ValueError("run spec does not carry a recognized RLRMP distillation payload")
+
+
 def _recording_spec_identity(
     run_spec: dict[str, Any],
     *,
@@ -726,6 +1045,23 @@ def _required_float_or_none_recording_field(
     return None if value is None else float(value)
 
 
+def _required_typed_recording_field(
+    run_spec: dict[str, Any],
+    field_path: str,
+    value: Any,
+    *,
+    spec_path: Path | None = None,
+    missing_field_path: str | None = None,
+) -> Any:
+    _, found = _value_at_path(run_spec, field_path)
+    if found:
+        return value
+    raise MissingTrainingRunSpecFieldError(
+        field_path=missing_field_path or field_path,
+        spec_identity=_recording_spec_identity(run_spec, spec_path=spec_path),
+    )
+
+
 def _distillation_training_config(
     run_spec: dict[str, Any],
     *,
@@ -733,154 +1069,135 @@ def _distillation_training_config(
     spec_path: Path | None = None,
 ) -> TrainingConfig:
     if method == "closed_loop_distillation":
+        payload = _closed_loop_distillation_payload_model(run_spec, spec_path=spec_path)
         return TrainingConfig(
-            n_batches=int(
-                _required_recording_field(
-                    run_spec,
-                    "student_contract.n_train_batches",
-                    spec_path=spec_path,
-                )
+            n_batches=int(payload.student_contract.n_train_batches),
+            batch_size=int(payload.student_contract.batch_size),
+            learning_rate=float(payload.student_contract.controller_lr),
+            grad_clip=(
+                None
+                if payload.student_contract.gradient_clip_norm is None
+                else float(payload.student_contract.gradient_clip_norm)
             ),
-            batch_size=int(
-                _required_recording_field(
-                    run_spec,
-                    "student_contract.batch_size",
-                    spec_path=spec_path,
-                )
-            ),
-            learning_rate=float(
-                _required_recording_field(
-                    run_spec,
-                    "student_contract.controller_lr",
-                    spec_path=spec_path,
-                )
-            ),
-            grad_clip=_required_float_or_none_recording_field(
-                run_spec,
-                "student_contract.gradient_clip_norm",
-                spec_path=spec_path,
-            ),
-            hidden_dim=int(
-                _required_recording_field(
-                    run_spec,
-                    "student_contract.hidden_size",
-                    spec_path=spec_path,
-                )
-            ),
+            hidden_dim=int(payload.student_contract.hidden_size),
             network_type="gru",
             n_reach_steps=int(
-                _required_recording_field(
+                _required_typed_recording_field(
                     run_spec,
                     "teacher_contract.horizon",
+                    payload.teacher_contract.horizon,
                     spec_path=spec_path,
                 )
             ),
-            effort_weight=float(
-                _required_recording_field(
-                    run_spec,
-                    "loss_surface.weights.action_force_trajectory",
-                    spec_path=spec_path,
-                )
-            ),
-            snapshot_interval=int(
-                _required_recording_field(
-                    run_spec,
-                    f"checkpointing.{CHECKPOINT_INTERVAL_BATCHES_KEY}",
-                    spec_path=spec_path,
-                )
-            ),
+            effort_weight=float(payload.loss_surface.weights.action_force_trajectory),
+            snapshot_interval=int(payload.checkpointing.interval_batches),
+        )
+    payload = _guided_distillation_payload_model(run_spec, spec_path=spec_path)
+    if "n_train_batches" in run_spec:
+        n_batches = run_spec["n_train_batches"]
+    else:
+        n_batches = _required_typed_recording_field(
+            run_spec,
+            "training_schedule.total_batches",
+            payload.training_schedule.total_batches,
+            spec_path=spec_path,
+            missing_field_path="n_train_batches or training_schedule.total_batches",
+        )
+    if "batch_size" in run_spec:
+        batch_size = run_spec["batch_size"]
+    else:
+        batch_size = _required_typed_recording_field(
+            run_spec,
+            "model_contract.batch_size",
+            payload.model_contract.batch_size,
+            spec_path=spec_path,
+            missing_field_path="batch_size or model_contract.batch_size",
+        )
+    if "controller_lr" in run_spec:
+        learning_rate = run_spec["controller_lr"]
+    else:
+        learning_rate = _required_typed_recording_field(
+            run_spec,
+            "optimizer.controller_lr",
+            payload.optimizer.controller_lr,
+            spec_path=spec_path,
+            missing_field_path="controller_lr or optimizer.controller_lr",
         )
     return TrainingConfig(
-        n_batches=int(
-            _required_recording_field_from(
-                run_spec,
-                ("n_train_batches", "training_schedule.total_batches"),
-                spec_path=spec_path,
-            )
+        n_batches=int(n_batches),
+        batch_size=int(batch_size),
+        learning_rate=float(learning_rate),
+        grad_clip=(
+            None
+            if payload.optimizer.gradient_clip_norm is None
+            else float(payload.optimizer.gradient_clip_norm)
         ),
-        batch_size=int(
-            _required_recording_field_from(
-                run_spec,
-                ("batch_size", "model_contract.batch_size"),
-                spec_path=spec_path,
-            )
-        ),
-        learning_rate=float(
-            _required_recording_field_from(
-                run_spec,
-                ("controller_lr", "optimizer.controller_lr"),
-                spec_path=spec_path,
-            )
-        ),
-        grad_clip=_required_float_or_none_recording_field(
-            run_spec,
-            "optimizer.gradient_clip_norm",
-            spec_path=spec_path,
-        ),
-        hidden_dim=int(
-            _required_recording_field(run_spec, "model_contract.hidden_size", spec_path=spec_path)
-        ),
+        hidden_dim=int(payload.model_contract.hidden_size),
         network_type="gru",
-        n_reach_steps=int(
-            _required_recording_field(run_spec, "teacher_bank.horizon", spec_path=spec_path)
-        ),
-        effort_weight=float(
-            _required_recording_field(
-                run_spec,
-                "distillation_surface.components.clean_action.weight",
-                spec_path=spec_path,
-            )
-        ),
-        snapshot_interval=int(
-            _required_recording_field(
-                run_spec,
-                f"checkpointing.{CHECKPOINT_INTERVAL_BATCHES_KEY}",
-                spec_path=spec_path,
-            )
-        ),
+        n_reach_steps=int(payload.teacher_bank.horizon),
+        effort_weight=float(payload.distillation_surface.components.clean_action.weight),
+        snapshot_interval=int(payload.checkpointing.interval_batches),
     )
 
 
 def _distillation_task_params(run_spec: dict[str, Any], *, method: str) -> dict[str, Any]:
     if method == "closed_loop_distillation":
-        student = _mapping(run_spec, "student_contract")
+        payload = _closed_loop_distillation_payload_model(run_spec)
         return {
-            "student_contract": student,
+            "student_contract": payload.student_contract.model_dump(
+                mode="json",
+                exclude_none=True,
+            ),
             "closed_loop": True,
-            "teacher": _mapping(run_spec, "teacher_contract").get("controller"),
+            "teacher": payload.teacher_contract.controller,
         }
+    payload = _guided_distillation_payload_model(run_spec)
     return {
-        "model_contract": _mapping(run_spec, "model_contract"),
-        "teacher_bank": _mapping(run_spec, "teacher_bank"),
-        "training_schedule": _mapping(run_spec, "training_schedule"),
+        "model_contract": payload.model_contract.model_dump(mode="json", exclude_none=True),
+        "teacher_bank": payload.teacher_bank.model_dump(mode="json", exclude_none=True),
+        "training_schedule": payload.training_schedule.model_dump(
+            mode="json",
+            exclude_none=True,
+        ),
     }
 
 
 def _distillation_objective_payload(run_spec: dict[str, Any], *, method: str) -> dict[str, Any]:
     if method == "closed_loop_distillation":
+        payload = _closed_loop_distillation_payload_model(run_spec)
         return {
-            "loss_surface": _mapping(run_spec, "loss_surface"),
-            "closed_loop_semantics": _mapping(run_spec, "closed_loop_semantics"),
+            "loss_surface": payload.loss_surface.model_dump(mode="json", exclude_none=True),
+            "closed_loop_semantics": payload.closed_loop_semantics.model_dump(
+                mode="json",
+                exclude_none=True,
+            ),
         }
+    payload = _guided_distillation_payload_model(run_spec)
     return {
-        "distillation_surface": _mapping(run_spec, "distillation_surface"),
-        "training_schedule": _mapping(run_spec, "training_schedule"),
+        "distillation_surface": payload.distillation_surface.model_dump(
+            mode="json",
+            exclude_none=True,
+        ),
+        "training_schedule": payload.training_schedule.model_dump(
+            mode="json",
+            exclude_none=True,
+        ),
     }
 
 
 def _distillation_graph_ref(run_spec: dict[str, Any]) -> str:
-    base = _mapping(run_spec, "base_contract").get("run_spec")
-    return str(base or "runtime://rlrmp.train.task_model.setup_task_model_pair")
+    method = _distillation_method_for_run_spec(run_spec)
+    if method == "closed_loop_distillation":
+        base = _closed_loop_distillation_payload_model(run_spec).base_contract.run_spec
+    else:
+        base = _guided_distillation_payload_model(run_spec).base_contract.run_spec
+    return str(base)
 
 
 def _distillation_setup_function(run_spec: dict[str, Any], *, method: str) -> str:
-    key = "student_contract" if method == "closed_loop_distillation" else "model_contract"
-    return str(
-        _mapping(run_spec, key).get(
-            "setup_function",
-            "rlrmp.train.task_model.setup_task_model_pair",
-        )
-    )
+    if method == "closed_loop_distillation":
+        return _closed_loop_distillation_payload_model(run_spec).student_contract.setup_function
+    return _guided_distillation_payload_model(run_spec).model_contract.setup_function
 
 
 def _distillation_runner(run_spec: dict[str, Any], *, method: str) -> str:

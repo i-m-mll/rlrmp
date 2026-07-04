@@ -386,6 +386,7 @@ def build_closed_loop_distillation_spec(args: argparse.Namespace) -> dict[str, A
                 _arg_value(args, "teacher_gains_key", DEFAULT_TEACHER_GAINS_KEY)
             ),
             "required_package_key": DEFAULT_TEACHER_GAINS_KEY,
+            "horizon": 60,
             "matched_inputs": [
                 "seeds",
                 "trial specifications",
