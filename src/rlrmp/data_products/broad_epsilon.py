@@ -1,4 +1,4 @@
-"""Broad full-state epsilon budget anchors as a governed, adopted data product.
+"""Broad full-state epsilon budget anchors as a governed extraction product.
 
 The broad-epsilon training lane draws its per-level closed-loop epsilon budget
 from analytical game-card / adversary-equivalence manifests, not from a baked
@@ -12,21 +12,28 @@ Python table. The two levels adopt directly from their analytical sources:
   (``game_card_summary.frontier`` entry with ``factor == 1.05``).
 
 The persisted product records an explicit adoption record per level (source
-manifest, pointer, and adopted values). The loader fails closed if the persisted
-product's identity drifts, and additionally re-reads the analytical sources and
-fails closed if the adopted values no longer match, so historical runs remain
+manifest, pointer, and adopted values). The extraction spec under
+``results/ea6ccb4/data_products/`` owns the source selection and field mapping.
+The loader fails closed if the persisted product's identity drifts, and
+additionally re-runs the feedbax extraction engine so historical runs remain
 reproducible through the adoption records rather than through silent constants.
 """
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 from feedbax.contracts.graph import AnalysisDataProductRequirement
+from feedbax.contracts.extraction import (
+    DataProductDrift,
+    ExtractionProductIdentityMismatch,
+    ExtractionProductSpec,
+    materialize_extraction_product,
+    verify_extraction_product,
+)
 from feedbax.contracts.manifest import AnalysisDataProduct
 
 from rlrmp.data_products.envelope import DataProductError, load_data_product
@@ -41,11 +48,13 @@ __all__ = [
     "BROAD_EPSILON_PRODUCT_SCHEMA_ID",
     "BROAD_EPSILON_PRODUCT_SCHEMA_VERSION",
     "BROAD_EPSILON_REFERENCE_REACH_M",
+    "BROAD_EPSILON_EXTRACTION_SPEC_PATH",
     "BroadEpsilonAnchors",
     "broad_epsilon_data_product_requirement",
     "build_broad_epsilon_budget_anchors_product",
     "consumed_broad_epsilon_identity",
     "load_broad_epsilon_anchors",
+    "verify_broad_epsilon_budget_anchors_product",
     "write_broad_epsilon_budget_anchors_product",
 ]
 
@@ -58,6 +67,10 @@ BROAD_EPSILON_PRODUCT_PRODUCER = (
 )
 BROAD_EPSILON_PRODUCT_RELPATH = "results/ea6ccb4/data_products/broad_epsilon_budget_anchors.json"
 BROAD_EPSILON_PRODUCT_PATH = REPO_ROOT / BROAD_EPSILON_PRODUCT_RELPATH
+BROAD_EPSILON_EXTRACTION_SPEC_RELPATH = (
+    "results/ea6ccb4/data_products/broad_epsilon_budget_anchors.extraction.json"
+)
+BROAD_EPSILON_EXTRACTION_SPEC_PATH = REPO_ROOT / BROAD_EPSILON_EXTRACTION_SPEC_RELPATH
 BROAD_EPSILON_REFERENCE_REACH_M = 0.15
 
 # Pinned identity of the adopted budget-anchor product.
@@ -65,7 +78,6 @@ BROAD_EPSILON_PRODUCT_IDENTITY_HASH = (
     "4e5d319c4848ef19d25ddf9dc8d21a6230cc0d336c5f565fe1a0b63516332542"
 )
 
-# Contract keys returned to downstream consumers (exact legacy shape).
 _CONTRACT_KEYS = (
     "gamma_factor",
     "closed_loop_epsilon_energy_15cm",
@@ -75,25 +87,7 @@ _CONTRACT_KEYS = (
     "source_note",
 )
 
-# Per-level analytical adoption source. ``factor`` selects the frontier entry.
-_LEVEL_SOURCES: dict[str, dict[str, Any]] = {
-    "moderate": {
-        "gamma_factor": 1.4,
-        "source_issue": "cb98e58",
-        "source_note": "results/cb98e58/notes/analytical_game_card_manifest.json",
-        "source_manifest": "results/cb98e58/notes/analytical_game_card_manifest.json",
-        "frontier_pointer": ("frontier",),
-        "source_factor_key": "1p4",
-    },
-    "strong": {
-        "gamma_factor": 1.05,
-        "source_issue": "a7dad8a",
-        "source_note": "results/a7dad8a/notes/adversary_equivalence_manifest.json",
-        "source_manifest": "results/a7dad8a/notes/adversary_equivalence_manifest.json",
-        "frontier_pointer": ("game_card_summary", "frontier"),
-        "source_factor_key": "1p05",
-    },
-}
+_EXPECTED_LEVELS = ("moderate", "strong")
 
 
 @dataclass(frozen=True)
@@ -116,95 +110,61 @@ class BroadEpsilonAnchors:
         return self.levels.keys()
 
 
-def _read_frontier_entry(source: dict[str, Any]) -> dict[str, Any]:
-    """Read the analytical frontier entry named by ``source`` (fail-closed)."""
-
-    path = REPO_ROOT / source["source_manifest"]
-    if not path.is_file():
-        raise DataProductError(
-            f"broad-epsilon analytical source is missing: {path}",
-            kind="Missing",
-            mismatch_class="missing-source",
-        )
-    payload: Any = json.loads(path.read_text(encoding="utf-8"))
-    for key in source["frontier_pointer"]:
-        payload = payload[key]
-    factor = float(source["gamma_factor"])
-    for entry in payload:
-        if abs(float(entry.get("factor", "nan")) - factor) <= 1e-12:
-            return entry
-    raise DataProductError(
-        f"broad-epsilon analytical source {source['source_manifest']} has no frontier "
-        f"entry for factor {factor}",
-        kind="Mismatch",
-        mismatch_class="missing-source-entry",
-    )
-
-
-def _anchor_from_source(level: str, source: dict[str, Any]) -> dict[str, Any]:
-    entry = _read_frontier_entry(source)
-    return {
-        "gamma_factor": float(source["gamma_factor"]),
-        "closed_loop_epsilon_energy_15cm": float(entry["closed_loop_epsilon_energy"]),
-        "closed_loop_epsilon_l2_15cm": float(entry["closed_loop_epsilon_l2"]),
-        "delta_v_percent": float(entry["delta_v_percent"]),
-        "source_issue": str(source["source_issue"]),
-        "source_note": str(source["source_note"]),
-    }
-
-
 def _contract(anchor: dict[str, Any]) -> dict[str, Any]:
     return {key: anchor[key] for key in _CONTRACT_KEYS}
 
 
-def _adoption_record(level: str, source: dict[str, Any], anchor: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "source_manifest": source["source_manifest"],
-        "source_pointer": (
-            f"{'.'.join(source['frontier_pointer'])}[factor={source['gamma_factor']}]"
-        ),
-        "source_factor_key": source["source_factor_key"],
-        "adopted_fields": {
-            "closed_loop_epsilon_energy_15cm": "closed_loop_epsilon_energy",
-            "closed_loop_epsilon_l2_15cm": "closed_loop_epsilon_l2",
-            "delta_v_percent": "delta_v_percent",
-        },
-        "adopted_values": _contract(anchor),
-        "note": "Historical broad-epsilon runs used the identical baked values; the "
-        "adoption record makes that provenance explicit and reproducible.",
-    }
+@lru_cache(maxsize=1)
+def _broad_epsilon_extraction_spec() -> ExtractionProductSpec:
+    """Read the tracked feedbax extraction spec for broad-epsilon anchors."""
+
+    if not BROAD_EPSILON_EXTRACTION_SPEC_PATH.is_file():
+        raise DataProductError(
+            f"broad-epsilon extraction spec is missing: {BROAD_EPSILON_EXTRACTION_SPEC_PATH}",
+            kind="Missing",
+            mismatch_class="missing-extraction-spec",
+        )
+    try:
+        return ExtractionProductSpec.model_validate_json(
+            BROAD_EPSILON_EXTRACTION_SPEC_PATH.read_text(encoding="utf-8")
+        )
+    except ValueError as exc:
+        raise DataProductError(
+            f"broad-epsilon extraction spec failed validation: {exc}",
+            kind="Mismatch",
+            mismatch_class="extraction-spec",
+        ) from exc
 
 
 def build_broad_epsilon_budget_anchors_product() -> AnalysisDataProduct:
-    """Build the broad-epsilon anchors :class:`AnalysisDataProduct` from sources."""
+    """Build the broad-epsilon anchors :class:`AnalysisDataProduct` from the spec."""
 
-    levels_payload: dict[str, Any] = {}
-    for level, source in _LEVEL_SOURCES.items():
-        anchor = _anchor_from_source(level, source)
-        levels_payload[level] = {
-            **_contract(anchor),
-            "adoption": _adoption_record(level, source, anchor),
-        }
-    return AnalysisDataProduct(
-        product_schema_id=BROAD_EPSILON_PRODUCT_SCHEMA_ID,
-        product_schema_version=BROAD_EPSILON_PRODUCT_SCHEMA_VERSION,
-        role=BROAD_EPSILON_PRODUCT_ROLE,
-        logical_name=BROAD_EPSILON_PRODUCT_LOGICAL_NAME,
-        producer_manifest_id=BROAD_EPSILON_PRODUCT_PRODUCER,
-        parameters={
-            "reference_reach_m": BROAD_EPSILON_REFERENCE_REACH_M,
-            "levels": levels_payload,
-        },
-        materialization={
-            "materializer": BROAD_EPSILON_PRODUCT_PRODUCER,
-            "adoption_mode": "read_analytical_frontier_entries",
-        },
-        metadata={
-            "issue": "ea6ccb4",
-            "note": "Broad-epsilon per-level closed-loop epsilon budgets adopted from "
-            "analytical game-card / adversary-equivalence manifests.",
-        },
-    )
+    try:
+        return materialize_extraction_product(_broad_epsilon_extraction_spec(), REPO_ROOT)
+    except ExtractionProductIdentityMismatch as exc:
+        raise DataProductError(
+            f"broad-epsilon extraction product identity mismatch: {exc}",
+            kind="Mismatch",
+            mismatch_class="product-identity",
+        ) from exc
+
+
+def verify_broad_epsilon_budget_anchors_product(
+    *,
+    path: Path | None = None,
+) -> AnalysisDataProduct:
+    """Load and verify the persisted broad-epsilon product against its extraction spec."""
+
+    path = path or BROAD_EPSILON_PRODUCT_PATH
+    product = load_data_product(path, broad_epsilon_data_product_requirement())
+    try:
+        return verify_extraction_product(_broad_epsilon_extraction_spec(), product, REPO_ROOT)
+    except DataProductDrift as exc:
+        raise DataProductError(
+            f"broad-epsilon product no longer matches analytical sources: {exc}",
+            kind="Mismatch",
+            mismatch_class="analytical-source-drift",
+        ) from exc
 
 
 def write_broad_epsilon_budget_anchors_product(
@@ -256,30 +216,17 @@ def load_broad_epsilon_anchors() -> BroadEpsilonAnchors:
     if the persisted values no longer match the analytical source manifests.
     """
 
-    product = load_data_product(
-        BROAD_EPSILON_PRODUCT_PATH,
-        broad_epsilon_data_product_requirement(),
-    )
+    product = verify_broad_epsilon_budget_anchors_product()
     persisted_levels = product.parameters["levels"]
     levels: dict[str, dict[str, Any]] = {}
-    for level, source in _LEVEL_SOURCES.items():
+    for level in _EXPECTED_LEVELS:
         if level not in persisted_levels:
             raise DataProductError(
                 f"broad-epsilon product is missing level {level!r}",
                 kind="Missing",
                 mismatch_class="missing-level",
             )
-        contract = _contract(persisted_levels[level])
-        source_anchor = _contract(_anchor_from_source(level, source))
-        if contract != source_anchor:
-            raise DataProductError(
-                f"broad-epsilon level {level!r} no longer matches its analytical "
-                f"source {source['source_note']}: persisted={contract!r}, "
-                f"source={source_anchor!r}",
-                kind="Mismatch",
-                mismatch_class="analytical-source-drift",
-            )
-        levels[level] = contract
+        levels[level] = _contract(persisted_levels[level])
     return BroadEpsilonAnchors(
         levels=levels,
         product_identity_hash=str(product.product_identity_hash),

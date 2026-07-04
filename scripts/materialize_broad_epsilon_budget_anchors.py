@@ -15,11 +15,11 @@ from feedbax.contracts.manifest import (
 from rlrmp.data_products.broad_epsilon import (
     BROAD_EPSILON_PRODUCT_IDENTITY_HASH,
     BROAD_EPSILON_PRODUCT_PATH,
-    broad_epsilon_data_product_requirement,
     build_broad_epsilon_budget_anchors_product,
+    verify_broad_epsilon_budget_anchors_product,
     write_broad_epsilon_budget_anchors_product,
 )
-from rlrmp.data_products.envelope import DataProductError, load_data_product
+from rlrmp.data_products.envelope import DataProductError
 
 
 class MaterializationMismatch(RuntimeError):
@@ -50,7 +50,7 @@ def main() -> int:
         if args.write:
             write_broad_epsilon_budget_anchors_product(product, path=path)
         _verify_serialized_bytes(product, path)
-        load_data_product(path, broad_epsilon_data_product_requirement())
+        verify_broad_epsilon_budget_anchors_product(path=path)
     except DataProductError as exc:
         _print_summary(
             mode=mode,
