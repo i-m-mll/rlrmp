@@ -19,7 +19,7 @@ from rlrmp.eval.ensemble import eval_ensemble_on_trials
 from rlrmp.eval.kinematics import compute_kinematics
 from rlrmp.eval.minimax_io import load_model
 from rlrmp.train.task_model import setup_task_model_pair
-from rlrmp.train.minimax import MINIMAX_CONFIG_DEFAULTS, build_hps
+from rlrmp.train.minimax import MinimaxConfig, build_hps
 
 
 # Pinned historical defaults allowed to diverge from live minimax config defaults.
@@ -60,20 +60,21 @@ def test_minimax_args_from_run_spec_normalizes_historical_cli_flags() -> None:
 
 
 def test_frozen_minimax_defaults_only_diverge_on_allowlisted_keys() -> None:
-    assert _DEFAULT_MINIMAX_ARGS.keys() == MINIMAX_CONFIG_DEFAULTS.keys()
+    live_defaults = MinimaxConfig().model_dump(mode="python")
+    assert _DEFAULT_MINIMAX_ARGS.keys() == live_defaults.keys()
 
     for key in sorted(_DEFAULT_MINIMAX_ARGS):
         if key in _PINNED_MINIMAX_DEFAULT_DRIFT_KEYS:
             continue
         historical_value = _DEFAULT_MINIMAX_ARGS[key]
-        live_value = MINIMAX_CONFIG_DEFAULTS[key]
+        live_value = live_defaults[key]
         assert historical_value == live_value, (
             f"Unexpected minimax default drift for {key!r}: "
             f"historical={historical_value!r}, live={live_value!r}"
         )
 
     assert any(
-        _DEFAULT_MINIMAX_ARGS[key] != MINIMAX_CONFIG_DEFAULTS[key]
+        _DEFAULT_MINIMAX_ARGS[key] != live_defaults[key]
         for key in _PINNED_MINIMAX_DEFAULT_DRIFT_KEYS
     )
 

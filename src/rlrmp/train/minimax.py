@@ -17,7 +17,7 @@ from collections.abc import Mapping, Sequence
 from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Literal
 
 import equinox as eqx
 from feedbax.contracts.training import (
@@ -54,7 +54,7 @@ from feedbax.contracts.worker import (
     derive_consistency_predicate,
 )
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 from rlrmp.model.feedbax_graph import graph_spec_payload
 from rlrmp.runtime.spec_migrations import (
@@ -69,6 +69,7 @@ __all__ = [
     "MINIMAX_METHOD_REF",
     "MINIMAX_METHOD_PAYLOAD_SCHEMA_ID",
     "MINIMAX_METHOD_PAYLOAD_SCHEMA_VERSION",
+    "MinimaxConfig",
     "MinimaxMethodPayload",
     "build_hps",
     "build_minimax_training_run_spec",
@@ -85,113 +86,150 @@ __all__ = [
 
 MINIMAX_METHOD_REF = "rlrmp/minimax/v1"
 MINIMAX_METHOD_PAYLOAD_SCHEMA_ID = "rlrmp.spec.training_method.minimax_payload"
+# Schema version intentionally remains v1: this refactor gives the unchanged
+# wire shape typed owners, and no durable minimax payload corpus existed when it
+# landed.
 MINIMAX_METHOD_PAYLOAD_SCHEMA_VERSION = "rlrmp.spec.training_method.minimax_payload.v1"
 
-_BOOL_FIELDS = {
-    "checkpoint",
-    "resume",
-    "loss_update_enabled",
-    "fused",
-    "streaming_loss",
-}
-_CHOICES = {
-    "adversary_type": {"gaussian_bump", "linear_dynamics"},
-    "hidden_type": {"gru", "vanilla_rnn", "linear", "linear_tracker"},
-    "sisu_gating": {"additive", "multiplicative"},
-    "effector_pos_running_schedule": {"flat", "powerlaw", "movement_ramp"},
-    "effector_hold_pos_schedule": {"flat", "powerlaw"},
-    "movement_ramp_shape": {"linear", "cosine", "power"},
-}
-_FIELD_TYPES = {
-    "n_warmup_batches": int,
-    "batch_size": int,
-    "n_replicates": int,
-    "n_adversary_batches": int,
-    "n_adversary_steps": int,
-    "adversary_lr": float,
-    "controller_lr": float,
-    "linear_dynamics_eta_max": float,
-    "linear_dynamics_pgd_steps": int,
-    "linear_dynamics_lr": float,
-    "n_bumps": int,
-    "force_max": float,
-    "n_adversaries": int,
-    "adv_batch_size": int,
-    "seed": int,
-    "checkpoint_every": int,
-    "loss_update_ratio": float,
-    "nn_hidden_derivative": float,
-    "nn_output_jerk": float,
-    "nn_output_pre_go": float,
-    "nn_hidden_derivative_pre_go": float,
-    "effector_hold_pos": float,
-    "effector_hold_vel": float,
-    "effector_final_vel": float,
-    "effector_vel_late": float,
-    "effector_pos_running": float,
-    "effector_pos_late_weight": float,
-    "effector_pos_late_final_scale": float,
-    "effector_pos_late_start_step": int,
-    "position_powerlaw_power": float,
-    "movement_ramp_duration_steps": int,
-    "movement_ramp_power": float,
-    "p_catch_trial": float,
-    "nn_output": float,
-    "nn_hidden": float,
-}
-MINIMAX_CONFIG_DEFAULTS: dict[str, Any] = {
-    "n_warmup_batches": 2000,
-    "batch_size": 250,
-    "n_replicates": 5,
-    "n_adversary_batches": 8000,
-    "n_adversary_steps": 5,
-    "adversary_lr": 3e-4,
-    "controller_lr": 1e-4,
-    "adversary_type": "gaussian_bump",
-    "linear_dynamics_eta_max": 0.1,
-    "linear_dynamics_pgd_steps": 5,
-    "linear_dynamics_lr": 1e-2,
-    "n_bumps": 3,
-    "force_max": 1.0,
-    "n_adversaries": 1,
-    "adv_batch_size": None,
-    "warmup_model": None,
-    "output_dir": "_artifacts/minimax/minimax_test",
-    "spec_dir": None,
-    "jax_cache_dir": None,
-    "jax_explain_cache_misses": False,
-    "seed": 42,
-    "checkpoint": False,
-    "checkpoint_every": 500,
-    "resume": False,
-    "loss_update_enabled": False,
-    "loss_update_ratio": 0.5,
-    "fused": True,
-    "streaming_loss": False,
-    "hidden_type": "gru",
-    "nn_hidden_derivative": 0.0,
-    "nn_output_jerk": 0.0,
-    "nn_output_pre_go": 0.0,
-    "nn_hidden_derivative_pre_go": 0.0,
-    "sisu_gating": "additive",
-    "effector_hold_pos": 10.0,
-    "effector_hold_vel": 10.0,
-    "effector_final_vel": 0.0,
-    "effector_vel_late": 0.1,
-    "effector_pos_running": 1.0,
-    "effector_pos_late_weight": 0.5,
-    "effector_pos_late_final_scale": 2.0,
-    "effector_pos_late_start_step": 80,
-    "effector_pos_running_schedule": "flat",
-    "effector_hold_pos_schedule": "flat",
-    "position_powerlaw_power": 6.0,
-    "movement_ramp_shape": "linear",
-    "movement_ramp_duration_steps": 60,
-    "movement_ramp_power": 2.0,
-    "p_catch_trial": 0.5,
-    "nn_output": 1e-5,
-    "nn_hidden": 1e-5,
-}
+
+class MinimaxConfig(BaseModel):
+    """Flat minimax method config whose fields own all authoring defaults."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    n_warmup_batches: int = Field(2000, ge=0)
+    n_adversary_batches: int = Field(8000, ge=0)
+    n_adversary_steps: int = Field(5, gt=0)
+    batch_size: int = Field(250, gt=0)
+    adv_batch_size: int | None = None
+    n_replicates: int = Field(5, gt=0)
+    seed: int = 42
+
+    controller_lr: float = 1e-4
+    adversary_lr: float = 3e-4
+    loss_update_enabled: bool = False
+    loss_update_ratio: float = 0.5
+
+    adversary_type: Literal["gaussian_bump", "linear_dynamics"] = "gaussian_bump"
+    n_adversaries: int = Field(1, gt=0)
+    n_bumps: int = 3
+    force_max: float = 1.0
+    linear_dynamics_eta_max: float = 0.1
+    linear_dynamics_pgd_steps: int = 5
+    linear_dynamics_lr: float = 1e-2
+
+    hidden_type: Literal["gru", "vanilla_rnn", "linear", "linear_tracker"] = "gru"
+    sisu_gating: Literal["additive", "multiplicative"] = "additive"
+
+    nn_output: float = 1e-5
+    nn_hidden: float = 1e-5
+    nn_hidden_derivative: float = 0.0
+    nn_output_jerk: float = 0.0
+    nn_output_pre_go: float = 0.0
+    nn_hidden_derivative_pre_go: float = 0.0
+    effector_hold_pos: float = 10.0
+    effector_hold_vel: float = 10.0
+    effector_final_vel: float = 0.0
+    effector_vel_late: float = 0.1
+    effector_pos_running: float = 1.0
+    effector_pos_late_weight: float = 0.5
+    effector_pos_late_final_scale: float = 2.0
+    effector_pos_late_start_step: int = 80
+
+    effector_pos_running_schedule: Literal["flat", "powerlaw", "movement_ramp"] = "flat"
+    effector_hold_pos_schedule: Literal["flat", "powerlaw"] = "flat"
+    position_powerlaw_power: float = 6.0
+    movement_ramp_shape: Literal["linear", "cosine", "power"] = "linear"
+    movement_ramp_duration_steps: int = 60
+    movement_ramp_power: float = 2.0
+
+    p_catch_trial: float = 0.5
+
+    warmup_model: str | None = None
+    output_dir: str = "_artifacts/minimax/minimax_test"
+    spec_dir: str | None = None
+    jax_cache_dir: str | None = None
+    jax_explain_cache_misses: bool = False
+    checkpoint: bool = False
+    checkpoint_every: int = 500
+    resume: bool = False
+    fused: bool = True
+    streaming_loss: bool = False
+
+    @model_validator(mode="after")
+    def _validate_config(self) -> "MinimaxConfig":
+        if self.adversary_type == "linear_dynamics" and not self.fused:
+            raise ValueError("linear_dynamics minimax requires fused execution")
+        return self
+
+
+class MinimaxWarmupSpec(BaseModel):
+    """Typed warmup phase view derived from :class:`MinimaxConfig`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    n_batches: int = Field(ge=0)
+    optimizer: Literal["adamw"] = "adamw"
+    direction: Literal["minimize"] = "minimize"
+    target: Literal["controller"] = "controller"
+
+
+class MinimaxAdversarialSpec(BaseModel):
+    """Typed adversarial phase view derived from :class:`MinimaxConfig`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    n_batches: int = Field(ge=0)
+    inner_steps: int = Field(gt=0)
+    active_member: str = "batch_idx % n_adversaries"
+    kernel_variant: Literal["fused", "decomposed"]
+    frozen_controller: bool = True
+    outer_direction: Literal["minimize"] = "minimize"
+    inner_direction: Literal["maximize"] = "maximize"
+
+
+class MinimaxProjectionSpec(BaseModel):
+    """Typed projection policy view derived from :class:`MinimaxConfig`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    target: str
+    operator: Literal["frobenius_ball"] = "frobenius_ball"
+    radius: float
+    radius_source: str = "linear_dynamics_eta_max"
+    timing: str = "after_each_adversary_step"
+    phase_scope: str = "adversarial"
+
+
+class MinimaxOptimizerPolicySpec(BaseModel):
+    """Typed optimizer policy view derived from :class:`MinimaxConfig`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    controller_lr: float
+    adversary_lr: float
+    controller_optimizer: str = "adamw"
+    adversary_optimizer: str = "adam"
+
+
+class MinimaxCheckpointPolicySpec(BaseModel):
+    """Typed checkpoint policy view derived from :class:`MinimaxConfig`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    checkpoint_every: int
+    barriers: list[str]
+    custody: str = "feedbax"
+
+
+class MinimaxOutputArtifactsSpec(BaseModel):
+    """Typed output artifact policy view derived from :class:`MinimaxConfig`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    artifact_root: str
+    tracked_spec_dir: str
+    training_run_spec: str = "feedbax_training_run_spec"
 
 
 class MinimaxMethodPayload(BaseModel):
@@ -199,27 +237,61 @@ class MinimaxMethodPayload(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    config: dict[str, Any]
-    adversary_type: str
-    warmup: dict[str, Any]
-    adversarial: dict[str, Any]
-    projection: dict[str, Any]
-    optimizer_policy: dict[str, Any]
-    checkpoint_policy: dict[str, Any]
-    output_artifacts: dict[str, Any]
+    config: MinimaxConfig
+    adversary_type: Literal["gaussian_bump", "linear_dynamics"]
+    warmup: MinimaxWarmupSpec
+    adversarial: MinimaxAdversarialSpec
+    projection: MinimaxProjectionSpec
+    optimizer_policy: MinimaxOptimizerPolicySpec
+    checkpoint_policy: MinimaxCheckpointPolicySpec
+    output_artifacts: MinimaxOutputArtifactsSpec
     rlrmp_extension_payload: str = "rlrmp_run_spec"
+
+    @field_serializer("config")
+    def _serialize_config(self, config: MinimaxConfig, info: Any) -> dict[str, Any]:
+        return config.model_dump(mode=info.mode, exclude_none=False)
 
     @model_validator(mode="after")
     def _validate_payload(self) -> "MinimaxMethodPayload":
-        if self.adversary_type not in _CHOICES["adversary_type"]:
-            raise ValueError(f"unsupported minimax adversary_type: {self.adversary_type!r}")
-        if int(self.warmup.get("n_batches", -1)) < 0:
-            raise ValueError("warmup.n_batches must be non-negative")
-        if int(self.adversarial.get("n_batches", -1)) < 0:
-            raise ValueError("adversarial.n_batches must be non-negative")
-        target = self.projection.get("target")
-        if self.adversary_type == "linear_dynamics" and target != (
-            "adversary_population[active_member].delta_A"
+        config = self.config
+        expected_projection_target = "adversary_population[active_member].delta_A"
+        expected_adversary_lr = (
+            config.linear_dynamics_lr
+            if config.adversary_type == "linear_dynamics"
+            else config.adversary_lr
+        )
+        checks = {
+            "adversary_type": self.adversary_type == config.adversary_type,
+            "warmup.n_batches": self.warmup.n_batches == config.n_warmup_batches,
+            "adversarial.n_batches": (
+                self.adversarial.n_batches == config.n_adversary_batches
+            ),
+            "adversarial.inner_steps": (
+                self.adversarial.inner_steps == config.n_adversary_steps
+            ),
+            "adversarial.kernel_variant": (
+                self.adversarial.kernel_variant == ("fused" if config.fused else "decomposed")
+            ),
+            "projection.radius": self.projection.radius == config.linear_dynamics_eta_max,
+            "projection.target": self.projection.target == expected_projection_target,
+            "optimizer_policy.controller_lr": (
+                self.optimizer_policy.controller_lr == config.controller_lr
+            ),
+            "optimizer_policy.adversary_lr": (
+                self.optimizer_policy.adversary_lr == expected_adversary_lr
+            ),
+            "checkpoint_policy.checkpoint_every": (
+                self.checkpoint_policy.checkpoint_every == config.checkpoint_every
+            ),
+        }
+        mismatches = [name for name, ok in checks.items() if not ok]
+        if mismatches:
+            raise ValueError(
+                "minimax method payload derived views disagree with config: "
+                + ", ".join(mismatches)
+            )
+        if self.adversary_type == "linear_dynamics" and self.projection.target != (
+            expected_projection_target
         ):
             raise ValueError(
                 "linear_dynamics minimax payload must project "
@@ -236,7 +308,7 @@ def legacy_cli_args_to_minimax_config(argv: Sequence[str]) -> dict[str, Any]:
     ``TrainingRunSpec``, never a raw parser namespace.
     """
 
-    config = dict(MINIMAX_CONFIG_DEFAULTS)
+    raw_overrides: dict[str, Any] = {}
     index = 0
     while index < len(argv):
         token = argv[index]
@@ -251,12 +323,12 @@ def legacy_cli_args_to_minimax_config(argv: Sequence[str]) -> dict[str, Any]:
         negate = raw_name.startswith("no-")
         name = raw_name[3:] if negate else raw_name
         field = name.replace("-", "_")
-        if field not in config:
+        if field not in MinimaxConfig.model_fields:
             raise ValueError(f"unknown minimax option: --{raw_name}")
-        if field in _BOOL_FIELDS or field == "jax_explain_cache_misses":
-            config[field] = not negate
+        if MinimaxConfig.model_fields[field].annotation is bool:
+            raw_overrides[field] = not negate
             if value_text is not None:
-                config[field] = _parse_bool(value_text, field=field)
+                raw_overrides[field] = _parse_bool(value_text, field=field)
         else:
             if negate:
                 raise ValueError(f"--no-{name} is only valid for boolean minimax options")
@@ -265,20 +337,16 @@ def legacy_cli_args_to_minimax_config(argv: Sequence[str]) -> dict[str, Any]:
                 if index >= len(argv):
                     raise ValueError(f"missing value for --{name}")
                 value_text = argv[index]
-            parser = _FIELD_TYPES.get(field, str)
-            config[field] = parser(value_text)
+            raw_overrides[field] = value_text
         index += 1
-    _validate_minimax_config(config)
-    return config
+    return MinimaxConfig.model_validate(raw_overrides).model_dump(mode="python")
 
 
 def minimax_config_namespace(config: Mapping[str, Any]) -> SimpleNamespace:
     """Return attribute-style access for an already validated minimax config."""
 
-    merged = dict(MINIMAX_CONFIG_DEFAULTS)
-    merged.update(dict(config))
-    _validate_minimax_config(merged)
-    return SimpleNamespace(**merged)
+    normalized = MinimaxConfig.model_validate(dict(config))
+    return SimpleNamespace(**normalized.model_dump(mode="python"))
 
 
 def build_minimax_training_run_spec(
@@ -294,9 +362,7 @@ def build_minimax_training_run_spec(
     """Build the tracked minimax recipe with a composed Feedbax TrainingRunSpec."""
 
     ensure_minimax_training_method_registered()
-    normalized = dict(MINIMAX_CONFIG_DEFAULTS)
-    normalized.update(dict(config))
-    _validate_minimax_config(normalized)
+    normalized = MinimaxConfig.model_validate(dict(config))
     payload = _legacy_minimax_run_spec_payload(
         normalized,
         git=dict(git or {}),
@@ -319,26 +385,27 @@ def build_minimax_training_run_spec(
             schema_version=getattr(graph_spec, "schema_version", None),
             metadata={
                 "source": "requested_serialized_graph_spec",
-                "declarative_adversary_injection": normalized["adversary_type"]
-                == "linear_dynamics",
+                "declarative_adversary_injection": (
+                    normalized.adversary_type == "linear_dynamics"
+                ),
                 "component_parameter_binding": (
                     "linear_dynamics_adversary_params"
-                    if normalized["adversary_type"] == "linear_dynamics"
+                    if normalized.adversary_type == "linear_dynamics"
                     else None
                 ),
             },
         ),
         task=TaskSpec(type="rlrmp_minimax_delayed_reach", params={"dt": 0.01}),
         training_config=TrainingConfig(
-            n_batches=int(normalized["n_warmup_batches"] + normalized["n_adversary_batches"]),
-            batch_size=int(normalized["batch_size"]),
-            learning_rate=float(normalized["controller_lr"]),
+            n_batches=normalized.n_warmup_batches + normalized.n_adversary_batches,
+            batch_size=normalized.batch_size,
+            learning_rate=normalized.controller_lr,
             grad_clip=1.0,
             hidden_dim=180,
-            network_type=str(normalized["hidden_type"]),
+            network_type=normalized.hidden_type,
             n_reach_steps=140,
-            effort_weight=float(normalized["nn_output"]),
-            snapshot_interval=max(1, int(normalized["checkpoint_every"] or 1)),
+            effort_weight=normalized.nn_output,
+            snapshot_interval=max(1, normalized.checkpoint_every or 1),
         ),
         objective=ObjectiveSlotSpec(
             kind="external",
@@ -392,8 +459,8 @@ def build_minimax_training_run_spec(
             },
         ),
         checkpoint_progress=CheckpointProgressPolicySpec(
-            checkpoint_interval=max(1, int(normalized["checkpoint_every"] or 1)),
-            progress_interval=max(1, int(normalized["checkpoint_every"] or 1)),
+            checkpoint_interval=max(1, normalized.checkpoint_every or 1),
+            progress_interval=max(1, normalized.checkpoint_every or 1),
             metadata={
                 "effective_phase_fingerprint": fingerprint,
                 "checkpoint_custody_owner": "feedbax",
@@ -435,7 +502,7 @@ def minimax_training_run_spec_to_config(spec: TrainingRunSpec) -> dict[str, Any]
     )
     if not isinstance(validated, MinimaxMethodPayload):
         raise TypeError("TrainingRunSpec does not carry an RLRMP minimax method payload")
-    return dict(validated.config)
+    return validated.config.model_dump(mode="python")
 
 
 def validate_minimax_run_spec(
@@ -812,57 +879,43 @@ def _minimax_update_kernels(
 
 
 def _minimax_method_payload(
-    config: Mapping[str, Any],
+    config: Mapping[str, Any] | MinimaxConfig,
     *,
     output_dir: Path,
     spec_dir: Path,
 ) -> MethodPayloadEnvelope:
+    normalized = (
+        config if isinstance(config, MinimaxConfig) else MinimaxConfig.model_validate(dict(config))
+    )
     payload = MinimaxMethodPayload(
-        config=dict(config),
-        adversary_type=str(config["adversary_type"]),
-        warmup={
-            "n_batches": int(config["n_warmup_batches"]),
-            "optimizer": "adamw",
-            "direction": "minimize",
-            "target": "controller",
-        },
-        adversarial={
-            "n_batches": int(config["n_adversary_batches"]),
-            "inner_steps": int(config["n_adversary_steps"]),
-            "active_member": "batch_idx % n_adversaries",
-            "kernel_variant": "fused" if bool(config["fused"]) else "decomposed",
-            "frozen_controller": True,
-            "outer_direction": "minimize",
-            "inner_direction": "maximize",
-        },
-        projection={
-            "target": "adversary_population[active_member].delta_A",
-            "operator": "frobenius_ball",
-            "radius": float(config["linear_dynamics_eta_max"]),
-            "radius_source": "linear_dynamics_eta_max",
-            "timing": "after_each_adversary_step",
-            "phase_scope": "adversarial",
-        },
-        optimizer_policy={
-            "controller_lr": float(config["controller_lr"]),
-            "adversary_lr": (
-                float(config["linear_dynamics_lr"])
-                if config["adversary_type"] == "linear_dynamics"
-                else float(config["adversary_lr"])
+        config=normalized,
+        adversary_type=normalized.adversary_type,
+        warmup=MinimaxWarmupSpec(n_batches=normalized.n_warmup_batches),
+        adversarial=MinimaxAdversarialSpec(
+            n_batches=normalized.n_adversary_batches,
+            inner_steps=normalized.n_adversary_steps,
+            kernel_variant="fused" if normalized.fused else "decomposed",
+        ),
+        projection=MinimaxProjectionSpec(
+            target="adversary_population[active_member].delta_A",
+            radius=normalized.linear_dynamics_eta_max,
+        ),
+        optimizer_policy=MinimaxOptimizerPolicySpec(
+            controller_lr=normalized.controller_lr,
+            adversary_lr=(
+                normalized.linear_dynamics_lr
+                if normalized.adversary_type == "linear_dynamics"
+                else normalized.adversary_lr
             ),
-            "controller_optimizer": "adamw",
-            "adversary_optimizer": "adam",
-        },
-        checkpoint_policy={
-            "checkpoint_every": int(config["checkpoint_every"]),
-            "barriers": ["after_warmup", "after_adversarial"],
-            "custody": "feedbax",
-        },
-        output_artifacts={
-            "artifact_root": str(output_dir),
-            "tracked_spec_dir": str(spec_dir),
-            "training_run_spec": "feedbax_training_run_spec",
-        },
+        ),
+        checkpoint_policy=MinimaxCheckpointPolicySpec(
+            checkpoint_every=normalized.checkpoint_every,
+            barriers=["after_warmup", "after_adversarial"],
+        ),
+        output_artifacts=MinimaxOutputArtifactsSpec(
+            artifact_root=str(output_dir),
+            tracked_spec_dir=str(spec_dir),
+        ),
     )
     return MethodPayloadEnvelope(
         schema_id=MINIMAX_METHOD_PAYLOAD_SCHEMA_ID,
@@ -872,19 +925,20 @@ def _minimax_method_payload(
 
 
 def _legacy_minimax_run_spec_payload(
-    config: Mapping[str, Any],
+    config: MinimaxConfig,
     *,
     git: Mapping[str, Any],
     gpu_info: Mapping[str, Any],
     feedbax_graph: Mapping[str, Any],
 ) -> dict[str, Any]:
     training_mode = "minimax"
-    if config["adversary_type"] == "linear_dynamics":
+    if config.adversary_type == "linear_dynamics":
         training_mode += "+linear_dynamics"
+    config_dict = config.model_dump(mode="python")
     return stamp_current_schema(
         RUN_SPEC_KIND,
         {
-            **dict(config),
+            **config_dict,
             "mode": "train_minimax",
             "training_script": "scripts/train_minimax.py",
             "git": dict(git),
@@ -892,22 +946,22 @@ def _legacy_minimax_run_spec_payload(
             "feedbax_graph": dict(feedbax_graph),
             "training_summary": {
                 "training_mode": training_mode,
-                "n_warmup_batches": int(config["n_warmup_batches"]),
-                "n_adversary_batches": int(config["n_adversary_batches"]),
-                "batch_size": int(config["batch_size"]),
-                "adv_batch_size": config["adv_batch_size"],
-                "n_replicates": int(config["n_replicates"]),
+                "n_warmup_batches": config.n_warmup_batches,
+                "n_adversary_batches": config.n_adversary_batches,
+                "batch_size": config.batch_size,
+                "adv_batch_size": config.adv_batch_size,
+                "n_replicates": config.n_replicates,
             },
             "adversary": {
-                "type": config["adversary_type"],
-                "n_adversaries": int(config["n_adversaries"]),
-                "n_inner_steps": int(config["n_adversary_steps"]),
-                "n_bumps": int(config["n_bumps"]),
-                "force_max": float(config["force_max"]),
+                "type": config.adversary_type,
+                "n_adversaries": config.n_adversaries,
+                "n_inner_steps": config.n_adversary_steps,
+                "n_bumps": config.n_bumps,
+                "force_max": config.force_max,
                 "linear_dynamics": {
-                    "eta_max": float(config["linear_dynamics_eta_max"]),
-                    "pgd_steps": int(config["linear_dynamics_pgd_steps"]),
-                    "learning_rate": float(config["linear_dynamics_lr"]),
+                    "eta_max": config.linear_dynamics_eta_max,
+                    "pgd_steps": config.linear_dynamics_pgd_steps,
+                    "learning_rate": config.linear_dynamics_lr,
                 },
             },
             "phase_program": {
@@ -917,28 +971,28 @@ def _legacy_minimax_run_spec_payload(
                     "frobenius_ball_projection",
                     "outer_controller_descent",
                 ],
-                "kernel_variant": "fused" if bool(config["fused"]) else "decomposed",
+                "kernel_variant": "fused" if config.fused else "decomposed",
             },
             "projection": {
                 "target": "adversary_population[active_member].delta_A",
                 "operator": "frobenius_ball",
                 "radius_source": "linear_dynamics_eta_max",
-                "radius": float(config["linear_dynamics_eta_max"]),
+                "radius": config.linear_dynamics_eta_max,
             },
             "optimizer": {
-                "controller": {"type": "adamw", "learning_rate": float(config["controller_lr"])},
+                "controller": {"type": "adamw", "learning_rate": config.controller_lr},
                 "adversary": {
                     "type": "adam",
                     "learning_rate": (
-                        float(config["linear_dynamics_lr"])
-                        if config["adversary_type"] == "linear_dynamics"
-                        else float(config["adversary_lr"])
+                        config.linear_dynamics_lr
+                        if config.adversary_type == "linear_dynamics"
+                        else config.adversary_lr
                     ),
                 },
             },
             "checkpointing": {
-                "checkpoint_every": int(config["checkpoint_every"]),
-                "resume": bool(config["resume"]),
+                "checkpoint_every": config.checkpoint_every,
+                "resume": config.resume,
                 "custody": "feedbax",
             },
         },
@@ -960,20 +1014,6 @@ def _rlrmp_minimax_extension_payload(run_spec: Mapping[str, Any]) -> dict[str, A
     }
 
 
-def _validate_minimax_config(config: Mapping[str, Any]) -> None:
-    for field, choices in _CHOICES.items():
-        if config[field] not in choices:
-            raise ValueError(f"{field} must be one of {sorted(choices)}; found {config[field]!r}")
-    for field in ("n_warmup_batches", "n_adversary_batches"):
-        if int(config[field]) < 0:
-            raise ValueError(f"{field} must be non-negative")
-    for field in ("batch_size", "n_replicates", "n_adversary_steps", "n_adversaries"):
-        if int(config[field]) <= 0:
-            raise ValueError(f"{field} must be positive")
-    if config["adversary_type"] == "linear_dynamics" and not bool(config["fused"]):
-        raise ValueError("linear_dynamics minimax requires fused execution")
-
-
 def _parse_bool(value: str, *, field: str) -> bool:
     lowered = value.lower()
     if lowered in {"1", "true", "yes", "on"}:
@@ -985,8 +1025,8 @@ def _parse_bool(value: str, *, field: str) -> bool:
 
 def _minimax_cli_help() -> str:
     options = "\n".join(
-        f"  --{name.replace('_', '-')} (default: {value!r})"
-        for name, value in sorted(MINIMAX_CONFIG_DEFAULTS.items())
+        f"  --{name.replace('_', '-')} (default: {field.default!r})"
+        for name, field in sorted(MinimaxConfig.model_fields.items())
     )
     return "Minimax adversarial training spec authoring options:\n" + options
 

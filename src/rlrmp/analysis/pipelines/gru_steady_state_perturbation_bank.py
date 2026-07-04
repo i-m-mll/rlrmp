@@ -18,6 +18,7 @@ from feedbax.plot import save_figure
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 
+from rlrmp.analysis.perturbation_rows import PerturbationSpec
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
 from rlrmp.analysis.pipelines.diagnostic_provenance import repo_relative, write_regeneration_spec
 from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
@@ -88,37 +89,37 @@ class FeedbackPerturbation:
 
         payload_index = self.feedback_indices[0] if self.direction[0] else self.feedback_indices[1]
         axis = "x" if self.direction[0] else "y"
-        return {
-            "perturbation_id": self.perturbation_id,
-            "channel": "sensory_feedback",
-            "family": f"steady_state_{self.family}_feedback_offset",
-            "semantic_family": "steady_state_feedback_offset",
-            "feedback_quantity": self.family,
-            "feedback_payload_index": payload_index,
-            "force_filter_feedback_only": self.family == "force_filter",
-            "amplitude": float(self.amplitude),
-            "units": self.units,
-            "axis": axis,
-            "basis": f"feedback_{self.family}_xy",
-            "sign": int(self.sign),
-            "timing": {
+        return PerturbationSpec(
+            perturbation_id=self.perturbation_id,
+            channel="sensory_feedback",
+            family=f"steady_state_{self.family}_feedback_offset",
+            amplitude=float(self.amplitude),
+            units=self.units,
+            axis=axis,
+            basis=f"feedback_{self.family}_xy",
+            sign=int(self.sign),
+            timing={
                 "epoch": "steady_state_endpoint",
                 "start_time_index": int(pulse_start),
                 "duration_steps": int(pulse_duration),
             },
-            "timing_bin": "steady_state_endpoint",
-            "adapter": "named_graph_channel_offset",
-            "description": (
+            adapter="named_graph_channel_offset",
+            description=(
                 f"Add a {self.units} {self.family} feedback offset after the shared "
                 "steady-state wash-in prefix."
             ),
-            "channel_provenance": {
+            timing_bin="steady_state_endpoint",
+            semantic_family="steady_state_feedback_offset",
+            channel_provenance={
                 "feedback_dim": int(feedback_dim),
                 "feedback_quantity": self.family,
                 "feedback_payload_index": int(payload_index),
                 "direction": [float(self.direction[0]), float(self.direction[1])],
             },
-        }
+            feedback_payload_index=payload_index,
+            feedback_quantity=self.family,
+            force_filter_feedback_only=self.family == "force_filter",
+        ).to_json()
 
 
 @dataclass(frozen=True)

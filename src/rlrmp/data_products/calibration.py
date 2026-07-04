@@ -27,6 +27,7 @@ from feedbax.contracts.graph import AnalysisDataProductRequirement
 from feedbax.contracts.manifest import AnalysisDataProduct
 
 from rlrmp.data_products.envelope import load_data_product
+from rlrmp.data_products.registry import register_data_product_identity
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 __all__ = [
@@ -182,6 +183,16 @@ def calibration_data_product_requirement() -> AnalysisDataProductRequirement:
         logical_name=CALIBRATION_PRODUCT_LOGICAL_NAME,
         product_identity_hash=CALIBRATION_PRODUCT_IDENTITY_HASH,
     )
+
+
+register_data_product_identity(
+    role=CALIBRATION_PRODUCT_ROLE,
+    product_schema_id=CALIBRATION_PRODUCT_SCHEMA_ID,
+    product_schema_version=CALIBRATION_PRODUCT_SCHEMA_VERSION,
+    logical_name=CALIBRATION_PRODUCT_LOGICAL_NAME,
+    requirement_factory=calibration_data_product_requirement,
+    document_relpath=CALIBRATION_PRODUCT_RELPATH,
+)
 
 
 @lru_cache(maxsize=1)

@@ -10,18 +10,17 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
-import platform
-import site
 import shlex
-import subprocess
-import sys
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Literal, Sequence
 
 from feedbax.contracts.training import TrainingRunSpec
+from feedbax.execution.container import (
+    collect_environment_provenance,
+    run_shell_command,
+    run_subprocess,
+)
 from feedbax.execution.models import (
     ArtifactPolicy,
     ExecutionPlan,
@@ -72,6 +71,17 @@ REMOTE_JAX_COOKBOOK_DIR = Path("/workspace/jax-cookbook")
 REMOTE_VENV_DIR = REMOTE_REPO_DIR / ".venv"
 LOCAL_FEEDBAX_DIR = Path("/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax")
 LOCAL_JAX_COOKBOOK_DIR = Path("/Users/mll/Main/10 Projects/05 Utils/jax-cookbook")
+LOCAL_EMBED_IGNORE_PARTS = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    ".pytest_cache",
+    "_artifacts",
+    "worktrees",
+    "manuscript.assets",
+    "TODO.assets",
+]
+LOCAL_EMBED_IGNORE_SUFFIXES = [".assets"]
 
 Mode = Literal["source", "pinned"]
 CommandKind = Literal["dry-run", "local-smoke", "modal-smoke", "modal-run", "modal-packing-smoke"]
@@ -325,26 +335,43 @@ def _execution_sources(config: NominalGruRunConfig) -> list[RepoSource]:
         RepoSource(
             name="rlrmp",
             role="project",
-            install_mode="local-rsync",
+            install_mode="local-embed",
             package="rlrmp",
             local_path=str(REPO_ROOT),
             target_path=str(REMOTE_REPO_DIR),
+            ignore_parts=LOCAL_EMBED_IGNORE_PARTS,
+            ignore_suffixes=LOCAL_EMBED_IGNORE_SUFFIXES,
+            extra_path_rewrites={
+                "../20 Feedbax/feedbax": str(REMOTE_FEEDBAX_DIR),
+                "../../../20 Feedbax/feedbax": str(REMOTE_FEEDBAX_DIR),
+            },
         ),
         RepoSource(
             name="feedbax",
             role="dependency",
-            install_mode="local-rsync",
+            install_mode="local-embed",
             package="feedbax",
             local_path=str(LOCAL_FEEDBAX_DIR),
             target_path=str(REMOTE_FEEDBAX_DIR),
+            ignore_parts=LOCAL_EMBED_IGNORE_PARTS,
+            ignore_suffixes=LOCAL_EMBED_IGNORE_SUFFIXES,
+            extra_path_rewrites={
+                "../../../20 Feedbax/feedbax": str(REMOTE_FEEDBAX_DIR),
+            },
         ),
         RepoSource(
             name="jax-cookbook",
             role="dependency",
-            install_mode="local-rsync",
+            install_mode="local-embed",
             package="jax-cookbook",
             local_path=str(LOCAL_JAX_COOKBOOK_DIR),
             target_path=str(REMOTE_JAX_COOKBOOK_DIR),
+            ignore_parts=LOCAL_EMBED_IGNORE_PARTS,
+            ignore_suffixes=LOCAL_EMBED_IGNORE_SUFFIXES,
+            extra_path_rewrites={
+                "../../../../05 Utils/jax-cookbook": str(REMOTE_JAX_COOKBOOK_DIR),
+                "../../../../../05 Utils/jax-cookbook": str(REMOTE_JAX_COOKBOOK_DIR),
+            },
         ),
     ]
 
@@ -394,6 +421,13 @@ def _execution_spec_for_backend(
     if backend == "modal":
         return ExecutionSpec(
             **common,
+            env={
+                "PYTHONPATH": (
+                    f"{REMOTE_REPO_DIR}/src:{REMOTE_FEEDBAX_DIR}:"
+                    f"{REMOTE_JAX_COOKBOOK_DIR}"
+                ),
+                "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+            },
             modal=ModalBackendConfig(
                 app_name=APP_NAME,
                 gpu=config.gpu,
@@ -401,7 +435,8 @@ def _execution_spec_for_backend(
                 volume_mount_path=str(MODAL_VOLUME_MOUNT),
                 timeout_seconds=config.timeout_seconds,
                 max_containers=1,
-                image_packages=["feedbax", "jax[cuda12]", "uv"],
+                image_packages=[],
+                extra_install_commands=['uv pip install -U "jax[cuda12]"'],
             ),
         )
     return ExecutionSpec(
@@ -837,129 +872,6 @@ def _modal_volume_relative(path: Path) -> str:
     return str(path.relative_to(MODAL_VOLUME_MOUNT))
 
 
-def activate_project_venv(venv_dir: Path = REMOTE_VENV_DIR) -> Path:
-    """Expose a uv-created project venv to the current Python process.
-
-    Modal invokes the function body with its system Python, while the image
-    build installs rlrmp dependencies into ``/workspace/rlrmp/.venv``. The
-    in-process trainer path therefore needs the venv's site-packages on
-    ``sys.path`` before importing Equinox/Feedbax/JAX-dependent modules.
-    """
-
-    lib_dir = venv_dir / "lib"
-    site_packages = sorted(lib_dir.glob("python*/site-packages"))
-    if not site_packages:
-        raise FileNotFoundError(f"No site-packages directory found under {lib_dir}")
-
-    before = list(sys.path)
-    site_path = str(site_packages[-1])
-    site.addsitedir(site_path)
-    activated_paths = [
-        path for path in sys.path if path == site_path or (path not in before and path)
-    ]
-    sys.path[:] = [
-        *activated_paths,
-        *(path for path in sys.path if path not in set(activated_paths)),
-    ]
-    _evict_modal_bundled_modules(("typing_extensions",))
-
-    bin_path = str(venv_dir / "bin")
-    path_parts = os.environ.get("PATH", "").split(os.pathsep)
-    if bin_path not in path_parts:
-        os.environ["PATH"] = os.pathsep.join([bin_path, *path_parts])
-    os.environ["VIRTUAL_ENV"] = str(venv_dir)
-    return site_packages[-1]
-
-
-def _evict_modal_bundled_modules(module_names: Sequence[str]) -> None:
-    for module_name in module_names:
-        module = sys.modules.get(module_name)
-        module_file = getattr(module, "__file__", None)
-        if module_file is None:
-            continue
-        parts = Path(module_file).parts
-        if "__modal" in parts and "deps" in parts:
-            sys.modules.pop(module_name, None)
-
-
-def collect_provenance() -> dict[str, Any]:
-    """Collect best-effort local or Modal environment provenance."""
-
-    provenance: dict[str, Any] = {
-        "captured_at": datetime.now(timezone.utc).isoformat(),
-        "python": sys.version,
-        "platform": platform.platform(),
-        "executable": sys.executable,
-        "cwd": str(Path.cwd()),
-        "modal_env": {key: value for key, value in os.environ.items() if key.startswith("MODAL_")},
-        "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
-    }
-    for package in ("modal", "rlrmp", "feedbax", "jax_cookbook", "jax"):
-        try:
-            module = __import__(package)
-            provenance[f"{package}_version"] = getattr(module, "__version__", "unknown")
-            if package == "jax":
-                provenance["jax_devices"] = [str(device) for device in module.devices()]
-                provenance["jax_default_backend"] = module.default_backend()
-        except Exception as exc:
-            provenance[f"{package}_error"] = str(exc)
-
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-        provenance["rlrmp_commit"] = result.stdout.strip() if result.returncode == 0 else None
-    except Exception as exc:
-        provenance["rlrmp_commit_error"] = str(exc)
-
-    try:
-        result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=name,driver_version,memory.total", "--format=csv"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-        provenance["nvidia_smi"] = result.stdout.strip()
-        provenance["nvidia_smi_returncode"] = result.returncode
-        provenance["nvidia_smi_stderr"] = result.stderr.strip()
-    except Exception as exc:
-        provenance["nvidia_smi_error"] = str(exc)
-    return provenance
-
-
-def collect_source_provenance(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
-    """Collect local source provenance before Modal source dirs are copied."""
-
-    commands = {
-        "commit": ["git", "rev-parse", "HEAD"],
-        "branch": ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-        "status_short": ["git", "status", "--short"],
-    }
-    provenance: dict[str, Any] = {}
-    for key, command in commands.items():
-        try:
-            result = subprocess.run(
-                command,
-                cwd=repo_root,
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False,
-            )
-            provenance[key] = result.stdout.strip() if result.returncode == 0 else None
-            if result.returncode != 0:
-                provenance[f"{key}_stderr"] = result.stderr.strip()
-        except Exception as exc:
-            provenance[f"{key}_error"] = str(exc)
-    return provenance
-
-
 def write_provenance(
     config: NominalGruRunConfig,
     *,
@@ -968,7 +880,10 @@ def write_provenance(
 ) -> dict[str, str]:
     """Write Modal/environment provenance next to the run spec and artifacts."""
 
-    payload = collect_provenance()
+    payload = collect_environment_provenance(
+        packages=("modal", "rlrmp", "feedbax", "jax_cookbook", "jax"),
+        repo_root=REPO_ROOT,
+    )
     if source_provenance is not None:
         payload["source_provenance"] = source_provenance
     spec_dir = config.remote_spec_dir() if remote else config.local_spec_dir()
@@ -984,62 +899,6 @@ def write_provenance(
     return paths
 
 
-def run_subprocess(
-    command: Sequence[str],
-    *,
-    timeout_seconds: int,
-    cwd: Path | None = None,
-) -> int:
-    """Run a bounded subprocess and return its exit code."""
-
-    print(shell_join(command), flush=True)
-    result = subprocess.run(list(command), timeout=timeout_seconds, cwd=cwd, check=False)
-    return result.returncode
-
-
-def run_shell_command(
-    command: str,
-    *,
-    timeout_seconds: int,
-    cwd: Path | None = None,
-) -> int:
-    """Run a rendered execution-plan command through the shell."""
-
-    print(command, flush=True)
-    result = subprocess.run(
-        ["bash", "-lc", command],
-        timeout=timeout_seconds,
-        cwd=cwd,
-        check=False,
-    )
-    return result.returncode
-
-
-def patch_remote_editable_paths() -> None:
-    """Patch exact local editable paths for source-mode execution on Modal."""
-
-    replacements = {
-        str(LOCAL_FEEDBAX_DIR): str(REMOTE_FEEDBAX_DIR),
-        "../../../20 Feedbax/feedbax": str(REMOTE_FEEDBAX_DIR),
-        str(LOCAL_JAX_COOKBOOK_DIR): str(REMOTE_JAX_COOKBOOK_DIR),
-        "../../../../05 Utils/jax-cookbook": str(REMOTE_JAX_COOKBOOK_DIR),
-        "../../../../../05 Utils/jax-cookbook": str(REMOTE_JAX_COOKBOOK_DIR),
-    }
-    files = [
-        REMOTE_REPO_DIR / "pyproject.toml",
-        REMOTE_REPO_DIR / "uv.lock",
-        REMOTE_FEEDBAX_DIR / "pyproject.toml",
-        REMOTE_FEEDBAX_DIR / "uv.lock",
-    ]
-    for file_path in files:
-        if not file_path.exists():
-            continue
-        text = file_path.read_text()
-        for old, new in replacements.items():
-            text = text.replace(old, new)
-        file_path.write_text(text)
-
-
 def execute_remote_payload(
     payload: dict[str, Any],
     *,
@@ -1049,8 +908,6 @@ def execute_remote_payload(
 
     config = NominalGruRunConfig(**payload["config"])
     command_kind: CommandKind = payload["command_kind"]
-    if config.mode == "source":
-        patch_remote_editable_paths()
     write_provenance(
         config,
         remote=True,
@@ -1313,7 +1170,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(dry_run_payload(config), indent=2, sort_keys=True))
         return 0
     if args.command == "local-smoke":
-        print(json.dumps(collect_provenance(), indent=2, sort_keys=True))
+        print(
+            json.dumps(
+                collect_environment_provenance(
+                    packages=("modal", "rlrmp", "feedbax", "jax_cookbook", "jax"),
+                    repo_root=REPO_ROOT,
+                ),
+                indent=2,
+                sort_keys=True,
+            )
+        )
         return 0
     if args.command in {"modal-smoke", "modal-run"}:
         raise SystemExit(

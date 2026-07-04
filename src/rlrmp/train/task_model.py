@@ -263,18 +263,25 @@ def build_task_base(hps: TreeNamespace):
     if task_type in {"simple_reach", "fixed_simple_reach"}:
         delayed_only_keys = {
             "epoch_len_ranges",
-            "target_on_epochs",
+            "n_control_stages",
+            "p_catch_trial",
+            "preset",
+            "train_endpoint_mode",
+            "target_visible_from_start",
             "hold_epochs",
             "move_epochs",
-            "p_catch_trial",
-            "train_endpoint_mode",
-            "preset",
-            "n_control_stages",
-            "target_visible_from_start",
+            "target_on_epochs",
             "go_cue_event_name",
             "catch_metadata_policy",
         }
         hps_task = {k: v for k, v in hps_task.items() if k not in delayed_only_keys}
+        hps_task["epoch_name"] = "movement"
+        if task_type == "fixed_simple_reach":
+            fixed_init_pos = hps_task.pop("fixed_init_pos", jnp.zeros(2))
+            fixed_target_pos = hps_task.pop("fixed_target_pos", jnp.asarray([0.15, 0.0]))
+            hps_task["fixed_endpoints"] = jnp.stack(
+                [jnp.asarray(fixed_init_pos), jnp.asarray(fixed_target_pos)]
+            )
     return TASK_TYPES[task_type](loss_func=get_reach_loss(hps), **hps_task)
 
 

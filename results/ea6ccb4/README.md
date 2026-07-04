@@ -34,8 +34,11 @@ constants (see the policy in `AGENTS.md`/`CLAUDE.md`).
     `results/cb98e58/notes/analytical_game_card_manifest.json` and `strong` (gamma
     factor 1.05) from `results/a7dad8a/notes/adversary_equivalence_manifest.json`.
     Replaces the deleted `BROAD_EPSILON_LEVELS` constant.
-  - Regeneration: `rlrmp.data_products.broad_epsilon.build_broad_epsilon_budget_anchors_product`
-    reads the analytical frontier entries directly.
+  - Regeneration/check: `uv run --no-sync python scripts/materialize_broad_epsilon_budget_anchors.py`
+    rebuilds from the analytical frontier entries and verifies the pinned identity hash
+    plus byte identity against this tracked document. Use `--write` to rewrite the
+    document after the same pin check; the rerun command lives here rather than in the
+    product payload to avoid a no-information identity-hash bump.
   - Loader: `rlrmp.data_products.broad_epsilon.load_broad_epsilon_anchors`. On load it
     re-reads the analytical sources and fails closed if the persisted values ever drift
     from them, so historical runs stay reproducible through the adoption records.
