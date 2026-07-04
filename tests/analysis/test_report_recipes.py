@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 import rlrmp
 from feedbax.analysis.reports import execute_report_spec, registered_report_types
 from feedbax.contracts.manifest import (
@@ -18,8 +19,10 @@ from feedbax.contracts.manifest import (
     write_manifest,
 )
 from feedbax.plugins.registry import ExperimentRegistry
+from pydantic import ValidationError
 
 from rlrmp.analysis import reports as rr
+from rlrmp.runtime.params_models import params_model_for, registered_params_models
 
 
 def _write_analysis_manifest(
@@ -70,6 +73,96 @@ def test_rlrmp_report_recipes_register_with_lazy_package_registration() -> None:
         rr.FEEDBACK_QUALITY_LENS_REPORT_TYPE,
         rr.ROBUSTNESS_PHENOTYPE_REPORT_TYPE,
     } <= registered
+
+
+@pytest.mark.parametrize(
+    ("report_type", "expected_title", "expected_source_roles"),
+    [
+        (
+            rr.GRU_POSTRUN_REPORT_TYPE,
+            "GRU Postrun Report",
+            [
+                "rlrmp-gru-standard-certificate-note",
+                "rlrmp-gru-objective-comparator-note",
+                "rlrmp-gru-map-decomposition-note",
+                "rlrmp-gru-perturbation-response-note",
+                "rlrmp-gru-feedback-ablation-note",
+            ],
+        ),
+        (
+            rr.BRIDGE_CERTIFICATE_REPORT_TYPE,
+            "Bridge Certificate Notes",
+            [
+                "rlrmp-gru-standard-certificate-note",
+                "rlrmp-bridge-standard-certificate-note",
+            ],
+        ),
+        (
+            rr.FEEDBACK_QUALITY_LENS_REPORT_TYPE,
+            "Feedback-Quality Lens Summary",
+            ["rlrmp-feedback-quality-lens"],
+        ),
+        (
+            rr.ROBUSTNESS_PHENOTYPE_REPORT_TYPE,
+            "Robustness Phenotype Report",
+            ["rlrmp-robustness-phenotype-sidecar-note"],
+        ),
+    ],
+)
+def test_report_stage_params_defaults_match_recipe_literals(
+    report_type: str,
+    expected_title: str,
+    expected_source_roles: list[str],
+) -> None:
+    model = rr.ReportStageParams.model_validate({"report_type": report_type})
+
+    assert model.source_artifact_roles == expected_source_roles
+    assert model.title == expected_title
+    assert model.include_json_artifact is True
+    assert model.schema_id is None
+    assert model.schema_version is None
+
+
+def test_report_stage_params_reject_extra_fields() -> None:
+    with pytest.raises(ValidationError):
+        rr.ReportStageParams.model_validate(
+            {"report_type": rr.BRIDGE_CERTIFICATE_REPORT_TYPE, "unknown": True}
+        )
+
+
+def test_report_params_model_table_resolves_registered_report_recipes() -> None:
+    rr.register_rlrmp_report_recipes(replace=True)
+
+    for report_type in (
+        rr.GRU_POSTRUN_REPORT_TYPE,
+        rr.BRIDGE_CERTIFICATE_REPORT_TYPE,
+        rr.FEEDBACK_QUALITY_LENS_REPORT_TYPE,
+        rr.ROBUSTNESS_PHENOTYPE_REPORT_TYPE,
+    ):
+        assert params_model_for(report_type) is rr.ReportStageParams
+        assert registered_params_models()[report_type] is rr.ReportStageParams
+    with pytest.raises(KeyError):
+        params_model_for("rlrmp.report.unknown")
+
+
+def test_report_stage_defaults_have_single_model_owner() -> None:
+    constructed = rr.report_stage_params(rr.BRIDGE_CERTIFICATE_REPORT_TYPE)
+    constructed_model = rr.ReportStageParams.model_validate(
+        {"report_type": rr.BRIDGE_CERTIFICATE_REPORT_TYPE, **constructed}
+    )
+    consumed_model = rr._validated_stage_params(
+        ReportSpec(
+            report_type=rr.BRIDGE_CERTIFICATE_REPORT_TYPE,
+            params={
+                "schema_id": constructed["schema_id"],
+                "schema_version": constructed["schema_version"],
+            },
+        )
+    )
+
+    assert consumed_model.source_artifact_roles == constructed_model.source_artifact_roles
+    assert consumed_model.title == constructed_model.title
+    assert consumed_model.include_json_artifact == constructed_model.include_json_artifact
 
 
 def test_bridge_report_render_matches_fixture_note_section(tmp_path: Path) -> None:

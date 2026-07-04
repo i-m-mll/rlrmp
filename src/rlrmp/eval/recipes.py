@@ -7,14 +7,16 @@ import json
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from feedbax.analysis.evaluation import EvaluationRecipeResult, register_evaluation_recipe
 from feedbax.contracts.manifest import (
     EvaluationRunSpec,
     ParentRef,
 )
+from pydantic import BaseModel, ConfigDict, Field
 
+from rlrmp.runtime.params_models import params_model_for, register_params_model
 from rlrmp.runtime.spec_migrations import (
     CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND,
     DELAYED_REACH_BANK_EVAL_PARAMS_KIND,
@@ -39,9 +41,120 @@ _RECIPE_PARAM_KINDS = {
 }
 
 
+class _StrictParamsModel(BaseModel):
+    """Base class for strict current-version recipe params."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_id: str | None = None
+    schema_version: str | None = None
+    consumed_data_identities: list[dict[str, Any]] | dict[str, Any] = Field(
+        default_factory=list
+    )
+
+
+class CenterOutEnsembleEvalParams(_StrictParamsModel):
+    """Params for the shared center-out/delayed-reach ensemble eval recipe."""
+
+    task: Any | None = None
+    checkpoint_selector: Any | None = None
+    replicate_selector: Any | None = None
+    n_directions: Any | None = None
+    n_trials_per_direction: Any | None = None
+    n_trials: Any | None = None
+    directions: Any | None = None
+    task_conditions: Any | None = None
+    perturbation: Any | None = None
+    pert_axis: Any | None = None
+    sisu_values: list[Any] = Field(default_factory=list)
+    seed: Any | None = None
+    trajectories: list[Any] = Field(default_factory=list)
+    kinematics_summary: dict[str, Any] = Field(default_factory=dict)
+    legacy_diagnostics_manifest: Any | None = None
+    legacy_bulk_arrays: dict[str, Any] = Field(default_factory=dict)
+    gru_standard_certificate: dict[str, Any] | None = None
+
+
+class PerturbationResponseBankEvalParams(_StrictParamsModel):
+    """Params for perturbation-response bank evaluation."""
+
+    checkpoint_bank_ref: Any | None = None
+    checkpoint_bank: Any | None = None
+    perturbation_battery: Any | None = None
+    bank: Any | None = None
+    alignment_mode: Literal["reach_locked"] = "reach_locked"
+    response_tensors: Any | None = None
+    class_index_map: Any | None = None
+    bank_status: dict[str, Any] = Field(default_factory=dict)
+    legacy_payload_mode: bool = False
+    source_experiment: str | None = None
+    experiment: str | None = None
+    run_ids: list[str] | None = None
+    labels: list[str] | None = None
+    class_set: str | list[str] | None = None
+    families: str | list[str] | None = None
+    family_set: str | list[str] | None = None
+    perturbation_families: str | list[str] | None = None
+    perturbation_ids: str | list[str] | None = None
+    consume_open_loop_calibration: bool = False
+    bank_mode: Literal["raw", "calibrated"] | None = None
+    mode: Literal["raw", "calibrated"] = "raw"
+    calibration_level: Any | None = None
+    calibration_reach: Any | None = None
+    feedback_scale_manifest: Any | None = None
+    feedback_scale_manifest_path: str | None = None
+    repo_root: str | None = None
+    bulk_dir: str | None = None
+    write_bulk_arrays: bool = False
+    n_rollout_trials: int = Field(8, ge=1)
+    extlqg_physical_dim: Literal[6, 8] = 8
+    preferred_checkpoint_manifest_path: str | None = None
+    checkpoint_selection_mode: Literal["sparse_history", "fixed_bank_manifest"] = (
+        "sparse_history"
+    )
+
+
+class FeedbackAblationEvalParams(_StrictParamsModel):
+    """Params for feedback-ablation evaluation."""
+
+    ablation_masks: Any | None = None
+    ablation_mask_set: Any | None = None
+    base_task: dict[str, Any] = Field(default_factory=dict)
+    rollout_pairs: list[Any] = Field(default_factory=list)
+
+
+class WorstCaseEpsilonEvalParams(_StrictParamsModel):
+    """Params for worst-case epsilon evaluation."""
+
+    epsilon_budget_data_product_identity: Any | None = None
+    epsilon_budget_identity: Any | None = None
+    optimizer: dict[str, Any] = Field(default_factory=dict)
+    audit_inputs: dict[str, Any] = Field(default_factory=dict)
+    worst_case_rollouts: list[Any] = Field(default_factory=list)
+
+
+class DelayedReachBankEvalParams(_StrictParamsModel):
+    """Params for delayed-reach bank evaluation."""
+
+    bank_spec: dict[str, Any] = Field(default_factory=dict)
+    bank_tensors: dict[str, Any] = Field(default_factory=dict)
+    selection_inputs: dict[str, Any] = Field(default_factory=dict)
+
+
+_PARAMS_MODEL_BY_RECIPE = {
+    CENTER_OUT_ENSEMBLE_EVALUATION_TYPE: CenterOutEnsembleEvalParams,
+    PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE: PerturbationResponseBankEvalParams,
+    FEEDBACK_ABLATION_EVALUATION_TYPE: FeedbackAblationEvalParams,
+    WORST_CASE_EPSILON_EVALUATION_TYPE: WorstCaseEpsilonEvalParams,
+    DELAYED_REACH_BANK_EVALUATION_TYPE: DelayedReachBankEvalParams,
+}
+
+
 def register_rlrmp_evaluation_recipes(*, replace: bool = True) -> None:
     """Register rlrmp's manifest-canonical evaluation recipes."""
 
+    for recipe_name, model_class in _PARAMS_MODEL_BY_RECIPE.items():
+        register_params_model(recipe_name, model_class, replace=replace)
     register_evaluation_recipe(
         CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,
         center_out_ensemble_recipe,
@@ -76,16 +189,16 @@ def center_out_ensemble_recipe(
 ) -> EvaluationRecipeResult:
     """Evaluate the shared center-out/delayed-reach ensemble recipe contract."""
 
-    params = _validated_params(run_spec)
+    p, params = _validated_params(run_spec)
     _require_one_of(params, ("task",), recipe=run_spec.evaluation_type)
     return _result(
         run_spec,
         params,
         product_role="center_out_ensemble_states",
         state_payload={
-            "task": params.get("task"),
-            "checkpoint_selector": params.get("checkpoint_selector"),
-            "replicate_selector": params.get("replicate_selector"),
+            "task": p.task,
+            "checkpoint_selector": p.checkpoint_selector,
+            "replicate_selector": p.replicate_selector,
             "trial_specs": _subset(
                 params,
                 (
@@ -96,13 +209,13 @@ def center_out_ensemble_recipe(
                     "task_conditions",
                 ),
             ),
-            "perturbation": params.get("perturbation", params.get("pert_axis")),
-            "sisu_values": params.get("sisu_values", []),
-            "seed": params.get("seed"),
-            "trajectories": params.get("trajectories", []),
-            "kinematics_summary": params.get("kinematics_summary", {}),
-            "legacy_diagnostics_manifest": params.get("legacy_diagnostics_manifest"),
-            "legacy_bulk_arrays": params.get("legacy_bulk_arrays", {}),
+            "perturbation": p.perturbation if p.perturbation is not None else p.pert_axis,
+            "sisu_values": p.sisu_values,
+            "seed": p.seed,
+            "trajectories": p.trajectories,
+            "kinematics_summary": p.kinematics_summary,
+            "legacy_diagnostics_manifest": p.legacy_diagnostics_manifest,
+            "legacy_bulk_arrays": p.legacy_bulk_arrays,
             "gru_standard_certificate": _gru_standard_certificate_payload(
                 run_spec,
                 params,
@@ -119,7 +232,7 @@ def perturbation_response_bank_recipe(
 ) -> EvaluationRecipeResult:
     """Evaluate a perturbation-response bank request."""
 
-    params = _validated_params(run_spec)
+    _p, params = _validated_params(run_spec)
     payload = _perturbation_response_bank_payload(run_spec, params, root=root)
     return _result(
         run_spec,
@@ -138,7 +251,7 @@ def feedback_ablation_recipe(
 ) -> EvaluationRecipeResult:
     """Evaluate intact-vs-ablated feedback rollout pairs."""
 
-    params = _validated_params(run_spec)
+    p, params = _validated_params(run_spec)
     _require_one_of(
         params,
         ("ablation_masks", "ablation_mask_set"),
@@ -149,9 +262,11 @@ def feedback_ablation_recipe(
         params,
         product_role="feedback_ablation_rollouts",
         state_payload={
-            "ablation_masks": params.get("ablation_masks", params.get("ablation_mask_set")),
-            "base_task": params.get("base_task", {}),
-            "rollout_pairs": params.get("rollout_pairs", []),
+            "ablation_masks": p.ablation_masks
+            if p.ablation_masks is not None
+            else p.ablation_mask_set,
+            "base_task": p.base_task,
+            "rollout_pairs": p.rollout_pairs,
         },
     )
 
@@ -163,7 +278,7 @@ def worst_case_epsilon_recipe(
 ) -> EvaluationRecipeResult:
     """Evaluate worst-case epsilon perturbation audits."""
 
-    params = _validated_params(run_spec)
+    p, params = _validated_params(run_spec)
     _require_one_of(
         params,
         ("epsilon_budget_data_product_identity", "epsilon_budget_identity"),
@@ -174,13 +289,14 @@ def worst_case_epsilon_recipe(
         params,
         product_role="worst_case_epsilon_rollouts",
         state_payload={
-            "epsilon_budget_identity": params.get(
-                "epsilon_budget_data_product_identity",
-                params.get("epsilon_budget_identity"),
+            "epsilon_budget_identity": (
+                p.epsilon_budget_data_product_identity
+                if p.epsilon_budget_data_product_identity is not None
+                else p.epsilon_budget_identity
             ),
-            "optimizer": params.get("optimizer", {}),
-            "audit_inputs": params.get("audit_inputs", {}),
-            "worst_case_rollouts": params.get("worst_case_rollouts", []),
+            "optimizer": p.optimizer,
+            "audit_inputs": p.audit_inputs,
+            "worst_case_rollouts": p.worst_case_rollouts,
         },
     )
 
@@ -192,24 +308,26 @@ def delayed_reach_bank_recipe(
 ) -> EvaluationRecipeResult:
     """Evaluate delayed-reach checkpoint-selection banks."""
 
-    params = _validated_params(run_spec)
+    p, params = _validated_params(run_spec)
     _require_one_of(params, ("bank_spec",), recipe=run_spec.evaluation_type)
     return _result(
         run_spec,
         params,
         product_role="delayed_reach_eval_bank",
         state_payload={
-            "bank_spec": params.get("bank_spec", {}),
-            "bank_tensors": params.get("bank_tensors", {}),
-            "selection_inputs": params.get("selection_inputs", {}),
+            "bank_spec": p.bank_spec,
+            "bank_tensors": p.bank_tensors,
+            "selection_inputs": p.selection_inputs,
         },
     )
 
 
-def _validated_params(run_spec: EvaluationRunSpec) -> dict[str, Any]:
+def _validated_params(run_spec: EvaluationRunSpec) -> tuple[BaseModel, dict[str, Any]]:
     kind = _RECIPE_PARAM_KINDS[run_spec.evaluation_type]
     result = accept_rlrmp_spec_payload(kind, run_spec.params)
-    return dict(result.payload)
+    params = dict(result.payload)
+    model_class = params_model_for(run_spec.evaluation_type)
+    return model_class.model_validate(params), params
 
 
 def _result(
@@ -804,9 +922,14 @@ def _sha256(data: bytes) -> str:
 
 __all__ = [
     "CENTER_OUT_ENSEMBLE_EVALUATION_TYPE",
+    "CenterOutEnsembleEvalParams",
     "DELAYED_REACH_BANK_EVALUATION_TYPE",
+    "DelayedReachBankEvalParams",
     "FEEDBACK_ABLATION_EVALUATION_TYPE",
+    "FeedbackAblationEvalParams",
+    "PerturbationResponseBankEvalParams",
     "PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE",
+    "WorstCaseEpsilonEvalParams",
     "WORST_CASE_EPSILON_EVALUATION_TYPE",
     "center_out_ensemble_recipe",
     "delayed_reach_bank_recipe",
