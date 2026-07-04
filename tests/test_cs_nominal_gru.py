@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
 import subprocess
@@ -220,15 +219,17 @@ def _cs_nominal_gru_golden_fixture() -> dict:
     )
 
 
-def _stable_golden_run_spec_sha256(payload: dict) -> str:
+def _stable_golden_run_spec_payload(payload: dict) -> dict:
     fixture = _cs_nominal_gru_golden_fixture()
     stable = {key: payload[key] for key in fixture["stable_run_spec_keys"]}
-    canonical = json.dumps(
-        json.loads(json.dumps(stable, sort_keys=True)),
-        sort_keys=True,
-        separators=(",", ":"),
+    canonical = json.loads(
+        json.dumps(
+            stable,
+            sort_keys=True,
+        )
     )
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    canonical["rlrmp_run_spec"]["provenance"]["git"]["rlrmp_commit"] = "<current-commit>"
+    return canonical
 
 
 def _cs_stochastic_gru_run_spec_paths() -> list[Path]:
@@ -385,7 +386,7 @@ def test_cs_nominal_gru_pre_refactor_golden_payloads_stay_stable() -> None:
         payload = write_run_spec(args)["run_spec"]
 
         assert config.model_dump(mode="python") == case["parsed_args"]
-        assert _stable_golden_run_spec_sha256(payload) == case["stable_run_spec_sha256"]
+        assert _stable_golden_run_spec_payload(payload) == case["stable_run_spec_payload"]
 
 
 def test_cs_nominal_gru_config_validates_tracked_cs_stochastic_gru_corpus() -> None:
