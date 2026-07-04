@@ -19,8 +19,8 @@ Integration with Feedbax TaskTrainer:
 
 Usage example::
 
-    from rlrmp.adversary import GaussianBumpAdversary
-    from rlrmp.adversarial_training import make_adversary_pre_step_fn
+    from rlrmp.train.adversary import GaussianBumpAdversary
+    from rlrmp.train.adversarial_training import make_adversary_pre_step_fn
     import jax.random as jr
     import optax
 
@@ -50,8 +50,8 @@ from feedbax.intervene import TimeSeriesParam
 from feedbax.training.types import TaskModelPair
 from jaxtyping import Array, Float, PyTree
 
-from rlrmp.adversary import GaussianBumpAdversary
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
+from rlrmp.train.adversary import GaussianBumpAdversary
 
 
 def _inject_adversary_forces(

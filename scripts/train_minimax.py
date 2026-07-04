@@ -54,11 +54,11 @@ from feedbax.training.train import (
     train_pair,
 )
 
-from rlrmp.adversarial_training import (
+from rlrmp.train.adversarial_training import (
     _inject_adversary_delta_A,
     _inject_adversary_forces,
 )
-from rlrmp.adversary import GaussianBumpAdversary, LinearDynamicsAdversary
+from rlrmp.train.adversary import GaussianBumpAdversary, LinearDynamicsAdversary
 from rlrmp.intervention_compat import LINEAR_DYNAMICS_ADVERSARY_COMPONENT_PARAMETER_TARGET
 from rlrmp.model.feedbax_graph import (
     build_runtime_rlrmp_feedbax_graph_bundle,

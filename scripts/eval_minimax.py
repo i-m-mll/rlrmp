@@ -33,7 +33,7 @@ from pathlib import Path
 import jax.random as jr
 import numpy as np
 
-from rlrmp.adversary import GaussianBumpAdversary
+from rlrmp.train.adversary import GaussianBumpAdversary
 from rlrmp.eval import eval_at_pert0, eval_at_pert_scale
 from rlrmp.eval.minimax_io import load_adversary, load_config, load_model
 from rlrmp.train.task_model import setup_task_model_pair
