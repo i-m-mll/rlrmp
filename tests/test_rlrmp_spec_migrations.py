@@ -229,7 +229,10 @@ def test_rlrmp_spec_policy_registers_current_families_and_rejects_v0() -> None:
         PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND: (
             PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_ID,
             PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION,
-            ("rlrmp.eval.perturbation_response_bank.params.v0",),
+            (
+                "rlrmp.eval.perturbation_response_bank.params.v0",
+                "rlrmp.eval.perturbation_response_bank.params.v1",
+            ),
         ),
         FEEDBACK_ABLATION_EVAL_PARAMS_KIND: (
             FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_ID,

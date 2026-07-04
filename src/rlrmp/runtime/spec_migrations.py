@@ -127,7 +127,7 @@ CENTER_OUT_ENSEMBLE_EVAL_PARAMS_SCHEMA_VERSION = "rlrmp.eval.center_out_ensemble
 PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND = "RLRMPPerturbationResponseBankEvaluationParams"
 PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_ID = "rlrmp.eval.perturbation_response_bank.params"
 PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION = (
-    "rlrmp.eval.perturbation_response_bank.params.v1"
+    "rlrmp.eval.perturbation_response_bank.params.v2"
 )
 
 FEEDBACK_ABLATION_EVAL_PARAMS_KIND = "RLRMPFeedbackAblationEvaluationParams"
@@ -559,8 +559,19 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION,
             emitted_by=("rlrmp.eval.recipes.perturbation_response_bank_recipe",),
             consumed_by=("Feedbax EvaluationRunSpec.params",),
-            description="Params for rlrmp perturbation-response bank evaluation.",
-            rejected_old_versions=("rlrmp.eval.perturbation_response_bank.params.v0",),
+            description=(
+                "Params for rlrmp perturbation-response bank evaluation; v2 makes "
+                "legacy precomputed response tensors explicit."
+            ),
+            rejected_old_versions=(
+                "rlrmp.eval.perturbation_response_bank.params.v0",
+                "rlrmp.eval.perturbation_response_bank.params.v1",
+            ),
+            notes=(
+                "The prior implicit response_tensors cache shim is intentionally not "
+                "migrated. Re-emit specs with legacy_payload_mode=true for legacy "
+                "payloads or omit response_tensors to run model-driven bank production."
+            ),
         ),
         _family(
             FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
