@@ -810,7 +810,13 @@ def test_gru_postrun_bundle_executes_with_stage_artifact_roles(
     assert postrun_report_outputs["report_render"].status == "materialized"
     assert bridge_report_outputs["report_render"].status == "materialized"
     assert stages["archive_only_entrypoints"].status == "skipped"
-    assert stages["feedback_quality_lens"].status == "not_applicable"
+    assert stages["evaluation_diagnostics"].status == "skipped"
+    assert stages["objective_comparator"].status == "skipped"
+    assert stages["perturbation_response"].status == "skipped"
+    assert stages["feedback_ablation"].status == "skipped"
+    assert stages["perturbation_calibration"].status == "skipped"
+    assert stages["response_norm_plots"].status == "skipped"
+    assert stages["feedback_quality_lens"].status == "skipped"
     assert stages["training_diagnostics"].status == "not_applicable"
 
     manifest_ref = postrun_stage.manifest_refs[0]

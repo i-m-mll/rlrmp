@@ -37,6 +37,10 @@ GRU_PERTURBATION_BANK_KIND = "RLRMPGRUPerturbationBank"
 GRU_PERTURBATION_BANK_SCHEMA_ID = "rlrmp.gru_perturbation_bank"
 GRU_PERTURBATION_BANK_SCHEMA_VERSION = "rlrmp.gru_perturbation_bank.v3"
 
+PERTURBATION_CLASS_RESPONSE_KIND = "RLRMPPerturbationClassResponse"
+PERTURBATION_CLASS_RESPONSE_SCHEMA_ID = "rlrmp.perturbation_class_response"
+PERTURBATION_CLASS_RESPONSE_SCHEMA_VERSION = "rlrmp.perturbation_class_response.v1"
+
 GRU_PERTURBATION_RESPONSE_NORM_PLOTS_KIND = "RLRMPGRUPerturbationResponseNormPlots"
 GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_ID = "rlrmp.gru_perturbation_response_norm_plots"
 GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_VERSION = (
@@ -127,7 +131,7 @@ CENTER_OUT_ENSEMBLE_EVAL_PARAMS_SCHEMA_VERSION = "rlrmp.eval.center_out_ensemble
 PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND = "RLRMPPerturbationResponseBankEvaluationParams"
 PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_ID = "rlrmp.eval.perturbation_response_bank.params"
 PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION = (
-    "rlrmp.eval.perturbation_response_bank.params.v1"
+    "rlrmp.eval.perturbation_response_bank.params.v2"
 )
 
 FEEDBACK_ABLATION_EVAL_PARAMS_KIND = "RLRMPFeedbackAblationEvaluationParams"
@@ -319,7 +323,10 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             GRU_PERTURBATION_BANK_KIND,
             GRU_PERTURBATION_BANK_SCHEMA_ID,
             GRU_PERTURBATION_BANK_SCHEMA_VERSION,
-            emitted_by=("rlrmp.analysis.pipelines.gru_perturbation_bank",),
+            emitted_by=(
+                "rlrmp.analysis.pipelines.gru_perturbation_bank",
+                "rlrmp.analysis.declarative_materialization",
+            ),
             consumed_by=(
                 "rlrmp.analysis.pipelines.gru_perturbation_calibration",
                 "rlrmp.analysis.pipelines.gru_feedback_ablation",
@@ -333,6 +340,24 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
                 "rlrmp.gru_perturbation_response.v0",
                 "rlrmp.gru_perturbation_response.v1",
                 "rlrmp.gru_perturbation_response.v2",
+            ),
+        ),
+        _family(
+            PERTURBATION_CLASS_RESPONSE_KIND,
+            PERTURBATION_CLASS_RESPONSE_SCHEMA_ID,
+            PERTURBATION_CLASS_RESPONSE_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.declarative_materialization",),
+            consumed_by=(
+                "rlrmp.analysis.declarative_materialization.PerturbationBankAggregateAnalysis",
+            ),
+            description=(
+                "One perturbation family response slice from the shared perturbation bank "
+                "evaluation manifest."
+            ),
+            rejected_old_versions=("rlrmp.perturbation_class_response.v0",),
+            notes=(
+                "Leaf products are not reconstructed from historical aggregate bank "
+                "payloads; regenerate through the shared perturbation-response eval."
             ),
         ),
         _family(
@@ -559,8 +584,19 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION,
             emitted_by=("rlrmp.eval.recipes.perturbation_response_bank_recipe",),
             consumed_by=("Feedbax EvaluationRunSpec.params",),
-            description="Params for rlrmp perturbation-response bank evaluation.",
-            rejected_old_versions=("rlrmp.eval.perturbation_response_bank.params.v0",),
+            description=(
+                "Params for rlrmp perturbation-response bank evaluation; v2 makes "
+                "legacy precomputed response tensors explicit."
+            ),
+            rejected_old_versions=(
+                "rlrmp.eval.perturbation_response_bank.params.v0",
+                "rlrmp.eval.perturbation_response_bank.params.v1",
+            ),
+            notes=(
+                "The prior implicit response_tensors cache shim is intentionally not "
+                "migrated. Re-emit specs with legacy_payload_mode=true for legacy "
+                "payloads or omit response_tensors to run model-driven bank production."
+            ),
         ),
         _family(
             FEEDBACK_ABLATION_EVAL_PARAMS_KIND,

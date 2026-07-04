@@ -72,6 +72,9 @@ from rlrmp.runtime.spec_migrations import (
     OBJECTIVE_COMPARATOR_SIDECAR_KIND,
     OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_ID,
     OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_VERSION,
+    PERTURBATION_CLASS_RESPONSE_KIND,
+    PERTURBATION_CLASS_RESPONSE_SCHEMA_ID,
+    PERTURBATION_CLASS_RESPONSE_SCHEMA_VERSION,
     PERTURBATION_OPEN_LOOP_CALIBRATION_KIND,
     PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_ID,
     PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_VERSION,
@@ -134,6 +137,11 @@ def test_rlrmp_spec_policy_registers_current_families_and_rejects_v0() -> None:
                 "rlrmp.gru_perturbation_bank.v2",
                 "rlrmp.gru_perturbation_response.v2",
             ),
+        ),
+        PERTURBATION_CLASS_RESPONSE_KIND: (
+            PERTURBATION_CLASS_RESPONSE_SCHEMA_ID,
+            PERTURBATION_CLASS_RESPONSE_SCHEMA_VERSION,
+            ("rlrmp.perturbation_class_response.v0",),
         ),
         GRU_PERTURBATION_RESPONSE_NORM_PLOTS_KIND: (
             GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_ID,
@@ -229,7 +237,10 @@ def test_rlrmp_spec_policy_registers_current_families_and_rejects_v0() -> None:
         PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND: (
             PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_ID,
             PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION,
-            ("rlrmp.eval.perturbation_response_bank.params.v0",),
+            (
+                "rlrmp.eval.perturbation_response_bank.params.v0",
+                "rlrmp.eval.perturbation_response_bank.params.v1",
+            ),
         ),
         FEEDBACK_ABLATION_EVAL_PARAMS_KIND: (
             FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_ID,
