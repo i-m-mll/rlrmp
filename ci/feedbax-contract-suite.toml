@@ -162,6 +162,14 @@ minimum_non_skipped = 6
 negative_canary = "tests/test_data_lint_generated_constants.py::test_data_lint_flags_the_two_named_generated_tables"
 
 [[families]]
+name = "defaults_schema_ownership_scan"
+owner = "5b3aabe"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_defaults_ratchet.py::"
+minimum_non_skipped = 2
+
+[[families]]
 name = "lane_b_terminal_gate"
 owner = "08bb6d4"
 status = "live"
