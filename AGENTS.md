@@ -123,6 +123,16 @@ when its provenance value is gone. The current inventory is
 
 ## Standard Certificate Presentation
 
+The prescriptions below are the presentation contract for Phase-3 bridge
+standard-certificate results. They are being migrated into the
+`rlrmp.report.bridge_certificate_notes` recipe so the table and annotations are
+rendered by construction (rlrmp `9c342ba`; a spec-governed template layer,
+feedbax `4d1558c`, is the longer-term home). Until that lands this section is the
+authority, and the rules here that no render can enforce — showing a table
+rather than prose when presenting results in conversation, recomputing rather
+than leaving components partial, and keeping evaluation lenses distinct from
+training axes — remain agent-facing regardless.
+
 When presenting Phase 3 bridge standard-certificate results, show a table rather
 than only a prose summary. Include row identity, status, training distribution,
 evaluation lens, objective/cost ratio, state-weighted action mismatch, closed-loop
@@ -239,135 +249,67 @@ remote/local run execution and monitoring.
 
 ## RunPod Deploy Runbook for rlrmp Experiments
 
-### Current training-method orientation (May 2026)
+### Spec lock before launch (hard gate)
 
-- Recent calibration work (`f47abb1`, then `3702f54`) shifted the project from
-  ratio-based loss interpretation toward absolute within-cell behaviour: pre-go
-  drift, forward-velocity RMSE, peak velocity, time-to-peak, and endpoint
-  quality matter more than cross-cell RMSE ratios.
-- The best warmup-only cell from the pre-go motor-mask matrix was
-  `full_trial_pl__prego_1`: full-trial power-law position schedule, no output
-  jerk, `nn_output_pre_go=1.0`, position weight 1x, `n_adversary_batches=0`.
-  It suppressed pre-go RMS drift to about `0.02 mm`, with velocity RMSE about
-  `0.0176 m/s`, peak velocity about `1.087 m/s`, and time-to-peak about
-  `36.8` steps. These were warmup-only results and still need adversarial
-  revalidation before being treated as final.
-- Increasing position weight to 10x made training worse despite reaching more
-  aggressively: higher replicate variance and poorer overall behaviour. Do not
-  assume "more position weight" is a clean fix for lazy reaches.
-- Saturating `nn_output_pre_go` may not be monotonic. A 1k smoke test with
-  `nn_output_pre_go=100` stayed finite but plateaued around validation loss
-  `6.3`, worse than the prior `prego=1` early trajectory. Treat very large
-  pre-go penalties as potentially destabilizing until smoke-tested.
-- For movement-ramp experiments, target-on/pre-movement position and velocity
-  costs must be explicitly zero (`effector_hold_pos=0`,
-  `effector_hold_vel=0`). The only nonzero position-error term should be
-  `effector_pos_running` with a movement-epoch-locked ramp. This ramp should
-  start at the actual movement epoch, have fixed duration across go-cue timing
-  conditions, and remain at max weight after the ramp completes.
+Before any **billable** training launch (`runpodctl pod create` for a run, or a
+non-smoke `modal run`), present a one-table run spec — task structure, loss
+terms, dims, `n_batches`, `lr`, seeds, GPU/cloud — and obtain **explicit user
+confirmation**. Mid-session plan discussion is NOT launch authorization.
 
-### Spec lock before launch
+Do not unilaterally upgrade cloud tier or GPU class — ask the user first.
+Secure cloud is the default for billable RunPod launches; use community cloud
+only when the user explicitly accepts the lower isolation tier for that run.
 
-Before any **billable** training launch (`runpodctl pod create` for a run, or a non-smoke `modal run`), present a one-table run spec — task structure, loss terms, dims, `n_batches`, `lr`, seeds, GPU/cloud — and obtain **explicit user confirmation**. Mid-session plan discussion is NOT launch authorization.
+### Prerequisites and GPU choice
 
-### 1. Prerequisites
-- `runpodctl` binary from GitHub releases (the `install.sh` requires sudo; download the binary manually if sudo is unavailable).
-- SSH key at `~/.runpod/ssh/RunPod-Key-Go`.
-- API key configured: `runpodctl config --apiKey <key>` → writes `~/.runpod/config.toml`.
+- `runpodctl` binary from GitHub releases (its `install.sh` needs sudo; download
+  the binary directly if sudo is unavailable). SSH key at
+  `~/.runpod/ssh/RunPod-Key-Go`; API key via `runpodctl config --apiKey <key>`.
+- Check GPU availability per datacenter with `runpodctl datacenter list`.
+- **RTX 4090 secure cloud** is the validated baseline. **RTX 5090** (Blackwell)
+  is faster but image-sensitive: use a `cu1281`-or-newer PyTorch image whose
+  Docker tag you have verified exists, then install `jax[cuda12]` after
+  `uv sync`; skip the deprecated `runpod/pytorch:2.8.0-...` template.
 
-### 2. Pre-flight checks
-(Cross-ref dotfiles `3602840` cost policy + verify-resources comment.)
-- Verify the Docker image tag exists on Docker Hub **before** `pod create` — stale tags cause silent deploy failures.
-- Check GPU availability per DC: `runpodctl datacenter list`.
+### Deploy and monitor via the feedbax scripts
 
-### 3. GPU choice
-(Cross-ref subagent GPU analysis, Part 2.5 session.)
-- **Secure cloud is the default for billable RunPod launches.** Use community
-  cloud only when the user explicitly accepts the lower isolation tier for that
-  run.
-- **RTX 4090 secure cloud**: validated baseline when available; availability can
-  be low, but do not infer failure from `uptimeSeconds: 0` (see §4b).
-- **RTX 4090 community cloud**: cheapest validated option, but not the default.
-- **RTX 5090** (Blackwell, EUR-IS-2 or similar): faster, but some templates carry stale image references.
-  - Template `runpod-torch-v280` / image `runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404` has been observed to boot and expose SSH on a 5090 (driver 570.124.06). After `uv sync`, install `jax[cuda12]`; this upgrades to CUDA 12.9 wheels (`jax==0.10.0`) and exposes `CudaDevice(id=0)`.
-  - Image `runpod/pytorch:1.0.3-cu1281-torch290-ubuntu2204` or newer (`cu1290`/`cu1300`) should also support Blackwell — verify the Docker tag exists before creating the pod.
-  - Skip the deprecated `runpod/pytorch:2.8.0-...` template.
-
-### 4. Deploy steps
-
-Prefer the Feedbax deploy automation for RunPod setup instead of reproducing the
-manual sequence here:
+Use the feedbax deploy automation as the deploy/bootstrap/monitor surface; do
+not reproduce a manual recipe here.
 
 - `~/Main/10 Projects/10 PhD/20 Feedbax/feedbax/scripts/deploy/runpod_deploy.sh`
 - `~/Main/10 Projects/10 PhD/20 Feedbax/feedbax/scripts/deploy/poll_run.sh`
 
-Those scripts own the normal pod-create, SSH readiness polling, path-dependency
-sync, local-path patching, and install flow for the rlrmp/feedbax/jax-cookbook
-stack. Use their `--help` / dry-run style surfaces first, and improve the
-Feedbax scripts when the deployment procedure changes rather than copying a new
-manual recipe into this file.
+They own pod-create, SSH endpoint discovery, dead-state fail-fast, path-dependency
+sync and local-path patching, the nohup+sentinel install pattern, the
+poisoned-venv probe-and-rebuild on pod reuse, and cadence-based polling with
+per-row/per-batch progress. Read their `--help` / dry-run surfaces first. **When
+they fail or fall short, harden the scripts and file the gap** (feedbax issue,
+surfaced-from note per the meta coordination protocol) rather than reverting to
+a manual recipe in this file.
 
-Manual fallback/debugging invariants:
+Residual invariants the scripts do not fully own (agent judgment still required):
 
-- Expose `22/tcp` at pod creation; the default RunPod port set can make direct
+- Expose `22/tcp` at pod creation; the default RunPod port set can leave direct
   TCP SSH unreachable.
-- Acquire the direct endpoint first: immediately read the `.ssh.ssh_command`
-  from `runpodctl pod get`, then verify it with `ssh ... 'true'` or
-  `ssh ... 'nvidia-smi'` before setup, installs, or run launches.
-- Poll readiness from the `.ssh` object and a functional SSH probe such as
-  `nvidia-smi`, not from `.runtime`, `.runtime.ports`, or `uptimeSeconds`
-  (Bug: b399efc).
-- Use `rsync -az --stats --no-owner --no-group` with inline excludes for
-  rlrmp, feedbax, and jax-cookbook. Do not stash rsync flags in a shell
-  variable.
-- Patch embedded local editable paths with literal-string replacements; avoid
-  broad `sed` globs that can corrupt TOML or lockfile metadata.
-- After installing CUDA JAX on the pod, do not run `uv sync` again. Use
-  `uv run --no-sync` for subsequent commands.
+- Scan the nohup log for `ptxas` warnings, `OOM`, and `Traceback` alongside the
+  loss-progress signal — `poll_run.sh` reports structured status, not error
+  patterns.
+- Verify the Docker image tag exists on Docker Hub before `pod create`; stale
+  tags cause silent deploy failures. (The `uptimeSeconds`-is-not-liveness rule,
+  Bug `b399efc`, is implemented in the scripts — do not reintroduce manual
+  liveness heuristics around them.)
+- After a CUDA-JAX install on a pod, use `uv run --no-sync`; do not re-run
+  `uv sync`.
+- In manual fallback only: patch embedded local editable paths with
+  literal-string replacements, never broad `sed` globs — those can corrupt TOML
+  and lockfile metadata.
+- Pod billing starts on **creation**, not container start (dotfiles `3602840`);
+  a live-but-slow pod bills while it boots.
+- **Modal:** destructive CLI ops (`modal app stop`, `modal volume rm`) require
+  `--yes`/`-y`; non-interactive shells abort without it.
 
-#### Endpoint discovery (runpodctl 2.2.0 secure pods)
+### Smoke test
 
-Confirmed by the 2026-06-20 secure-pod probe:
-
-- A secure pod's SSH endpoint lives **only** in the `.ssh` object of
-  `runpodctl pod get -o json` — read `.ssh.ip`, `.ssh.port`, and
-  `.ssh.ssh_command`. Do **not** rely on `publicIp` or `portMappings`; secure
-  pods do not surface the direct SSH endpoint there.
-- While the pod is still booting, `.ssh` is an error object
-  (`{"error":"pod not ready", ...}`), not the endpoint. Poll `.ssh` until it
-  resolves to `ip`/`port`/`ssh_command`, then prove it with `ssh ... 'true'` or
-  `ssh ... 'nvidia-smi'` before any expensive setup (Bug: b399efc).
-
-#### Dead-state rule (fail fast on a bad image)
-
-- A failed image flips `desiredStatus` → `EXITED` within seconds of creation,
-  with `lastStatusChange` reading `Exited by Runpod: ...`. Treat
-  `EXITED`/`TERMINATED` within the boot grace window as a dead pod: bail
-  immediately rather than polling to timeout. This complements the
-  `uptimeSeconds`/`.ssh`-liveness note (Bug: b399efc) — a live-but-slow pod
-  shows `uptimeSeconds: 0` while `.ssh` resolves, whereas a dead pod shows
-  `desiredStatus: EXITED`.
-
-#### Pod reuse: probe for a poisoned venv before bootstrap
-
-When reusing an existing pod (rather than a fresh image), the shared `.venv`
-can be left in a half-migrated state by a previous interrupted install. The
-diagnostic symptom is `ImportError: cannot import name 'array_creation'` (or a
-similar partially-initialized JAX/numpy import) on the first `uv run --no-sync`.
-
-- Probe consistency before doing work: run a cheap
-  `uv run --no-sync python -c 'import jax, jax.numpy; print(jax.devices())'`
-  on the pod and check it succeeds.
-- If the venv is poisoned, rebuild it: `uv venv --clear`, then re-sync the
-  environment and reinstall CUDA JAX (`uv pip install "jax[cuda12]"` per §3),
-  then resume with `uv run --no-sync`. Do not try to patch around a poisoned
-  venv in place. Cross-ref lesson `76d3a8e`.
-
-### 5. nohup pattern (mandatory for installs)
-SSH session killed mid-install → SIGHUP kills the process → wasted bandwidth and a broken env.
-Always run long setup commands as `nohup <cmd> > <logfile> 2>&1 &` and touch a sentinel file on completion. Poll the sentinel rather than the process.
-
-### 6. Smoke test
 ```bash
 cd /workspace/rlrmp
 uv run --no-sync python scripts/train_minimax.py \
@@ -376,41 +318,15 @@ uv run --no-sync python scripts/train_minimax.py \
   --n-replicates 5 --hidden-type gru \
   --output-dir /workspace/smoke_test --checkpoint --fused
 ```
-Adjust flags to match the current script's CLI if it has changed.
 
-### 7. Monitoring cadence
-- **Smoke test**: check 1 min after start, then every 5 min.
-- **Full run**: check at 1 min (confirm JIT compilation visible), every 5 min during early loss decline, drop to every 30 min once loss is steadily descending.
-- Watch for `ptxas` warnings, `OOM`, and `Traceback` patterns alongside loss-progress signal.
-- For 1k warmup-only smoke tests on a 5090, first compilation takes ~30 s and the whole run completes in a few minutes. Pause after the smoke test and do not launch the main matrix until the user confirms.
-- **Batch-progress lines.** rlrmp training scripts emit grep-friendly
-  per-batch progress lines so a monitor can report the last batch seen between
-  the JIT message and the completion sentinel
-  (`scripts/train_minimax.py` warmup + adversarial phases; helper
-  `rlrmp.train.progress`). The stable format
-  is `BATCH phase=<phase> batch=<i>/<n> [loss=<x>] [elapsed=<s>s]` — always
-  starting with the literal `BATCH` token, with `phase` and `batch=<i>/<n>` as
-  the load-bearing fields. The format is intentionally grep-friendly so
-  `poll_run.sh`'s aggregate progress parsing can consume it once that parsing
-  lands on feedbax's protected branch; until then the lines remain available
-  for it (and useful for a plain `grep BATCH` on the nohup log). The line is
-  host-side only (no per-step device→host sync; smoke-size runs log every batch,
-  larger runs every 10th). Transient poll/retry detail belongs in chat or the
-  nohup log, **not** in Mandible checkpoints (see §9 run-status convention).
+Adjust flags to the current CLI. Pause after the smoke test and do not launch
+the main matrix until the user confirms. rlrmp training scripts emit
+grep-friendly `BATCH phase=<phase> batch=<i>/<n> [loss=<x>] [elapsed=<s>s]`
+progress lines (helper `rlrmp.train.progress`) that `poll_run.sh` consumes;
+these are log-only, never Mandible checkpoints (see the run-status convention
+below).
 
-### 8. Cost discipline
-(Cross-ref dotfiles `3602840`.)
-- Pod billing starts on **creation**, not on container start.
-- After creation, acquire and verify the direct SSH endpoint before any expensive
-  setup step. Use the `.ssh.ssh_command` from `runpodctl pod get`, confirmed by
-  a functional SSH probe (`ssh ... 'true'` or `ssh ... 'nvidia-smi'`). Do NOT
-  rely on `uptimeSeconds > 0`, `.runtime`, or `.runtime.ports` as the primary
-  liveness signal — a working pod can show `uptimeSeconds: 0` and no `.runtime`
-  object while `.ssh` is valid (Bug: b399efc).
-- Do not unilaterally upgrade cloud tier or GPU class — ask the user first.
-- **Modal:** destructive CLI ops (`modal app stop`, `modal volume rm`) require `--yes`/`-y`; non-interactive shells abort without it.
-
-### 9. Post-training-run protocol
+### Post-training-run protocol
 
 After every remote training run completes, use `scripts/post_run.sh` wherever
 possible as the deterministic handoff step. It owns the mechanical protocol:
@@ -450,39 +366,17 @@ The residual agent-owned judgment after `scripts/post_run.sh` is:
 
 (Relates to `efc4d68`. Codified after the 2026-05-08 baseline matrix session, where step 1 was deferred until a separate follow-up task.)
 
-Stable post-run provenance contract:
-
-- `scripts/post_run.sh` pins Feedbax's manifest root for this repo to
-  `_artifacts/feedbax_runs/` by exporting/checking `FEEDBAX_RUNS_DIR`. If the
-  environment points anywhere else, the wrapper must fail before committing.
-- Dry runs must print the post-run provenance stamp preview: rlrmp SHA, Feedbax
-  SHA, Feedbax manifest/provider schema versions, the post-run provenance
-  schema version, the pinned manifest root, and GraphSpec hash/version when the
-  graph sidecar is present.
-- New-format training runs stamp `post_run_provenance` during run production and
-  emit a Feedbax `TrainingRunManifest` whose `training_spec` is the canonical
-  full `RLRMPRunSpec` run record. The tracked
-  `results/<hash>/runs/<run>.json` file remains a recipe/reference convenience
-  for repo layout, but it is not the authority for new-format runs.
-- `scripts/post_run.sh` verifies the already-emitted `TrainingRunManifest` and
-  tracked recipe identity before `git add` / `agent-commit`. It must not
-  reconstruct, rewrite, or hash-reconcile the canonical manifest. A mismatched
-  tracked run spec and matching new-format manifest blocks the commit.
-- Non-dry runs must verify `uv.lock` is clean before `git add` /
-  `agent-commit` / auth submission. `POST_RUN_ALLOW_DIRTY_UV_LOCK=1` is an
-  emergency override only when the lockfile change is deliberate and documented
-  elsewhere.
-- Existing legacy runs without a matching Feedbax `TrainingRunManifest`, or
-  with a matching archived manifest that lacks the new-format training-spec
-  discriminator, may continue through the wrapper. The output must report
-  literal `not_found` or `archive-only` parity rather than silently implying a
-  checked manifest.
-- The run recipe must arrive at the **flat** canonical path
-  `results/<hash>/runs/<run>.json`. Training scripts now write the flat recipe
-  directly (`derive_spec_path`; W8/`e926665`). If only a **legacy nested**
-  `results/<hash>/runs/<run>/run.json` recipe is present, `post_run.sh` raises
-  an explicit error rather than silently promoting it — re-run training with
-  the updated scripts or move the recipe to the flat path first.
+Provenance and manifest enforcement live in `scripts/post_run.sh` itself, not
+here: it pins the feedbax manifest root (`FEEDBAX_RUNS_DIR`), verifies the
+emitted `TrainingRunManifest` and tracked recipe identity before committing
+(without reconstructing or hash-reconciling the manifest), requires the run
+recipe at the flat canonical path `results/<hash>/runs/<run>.json`, blocks a
+dirty `uv.lock` (`POST_RUN_ALLOW_DIRTY_UV_LOCK=1` is a documented emergency
+override only), and reports `not_found` / `archive-only` parity for legacy runs
+rather than implying a checked manifest. Run a dry run first — it previews the
+full provenance stamp. If the script cannot cover a source shape, preserve its
+layout and auth/commit conventions in the manual fallback and file the script
+gap.
 
 Run-status checkpoint convention (`e8b5b3b`):
 
@@ -530,7 +424,7 @@ Generated, empirical, or adopted-analytical datasets (calibration tables, budget
 
 ### Flat-by-hash layout (Bug: `f485c26`)
 
-Each top-level entry under `results/` and `_artifacts/` is a **directory named by its 7-character tracking-issue prefix** (e.g. `results/2bc95fd/`, `_artifacts/efc4d68/`). The issue is the atomic unit; no phase-level parent dirs in the directory tree (phase membership lives on the issue body / `b33e8da` coord).
+Each top-level entry under `results/` and `_artifacts/` is a **directory named by its 7-character tracking-issue prefix** (e.g. `results/2bc95fd/`, `_artifacts/efc4d68/`). The issue is the atomic unit; no umbrella-level parent dirs in the directory tree (umbrella membership lives on the issue body / `b33e8da` index).
 
 Inside each `<hash>/`:
 
@@ -692,19 +586,31 @@ Out-of-scope for f485c26 (tracked separately on `e75ddd7`): the `1_general.asset
 
 ## Issue Coordination
 
-This project uses a small set of long-lived **coordination issues** (label: `coordination`) as decision-tracking surfaces. They are distinct from `umbrella` issues (which bundle a specific phase of work) and from ordinary `feature` / `error` issues (which carry the substantive work). Future agents must know which coordination issue to comment on when, what to file as a new issue vs. a comment, and how to keep these surfaces from becoming a dumping ground.
+This project uses a small set of long-lived **coordination issues** (label:
+`coordination`) as themed decision logs. A coordination issue is a dated
+timeline of decisions and notes on one theme — the body is a stable orientation
+index (scope, what's owned, cross-refs), and the comments are the log, which
+legitimately includes long-form theme notes that do not deserve their own issue.
+They are distinct from `umbrella` issues (which bundle a specific body of work
+and close when it lands) and from ordinary `feature` / `error` issues (which
+carry the substantive work). The generic rules here (closure test, body/comment
+split, trailer hygiene, cross-repo surfacing) are being promoted to the global
+instructions (dotfiles `86aa0b5`); once that lands, the global wording is
+authoritative and this section keeps only rlrmp's concrete surfaces and routing.
 
-For Mandible issue command syntax, see the global `~/.codex/AGENTS.md` issue-tracking convention. This section covers only project-specific coordination protocol.
+For Mandible issue command syntax, see the global `~/.codex/AGENTS.md`
+issue-tracking convention.
 
 ### The four coordination issues
 
-Each has the `coordination` label and is project-lifetime (no closure-on-merge intent, no phase scope).
+Each has the `coordination` label and is project-lifetime (no closure-on-merge
+intent).
 
 | ID | Name | Scope |
 |---|---|---|
 | `4d38c15` | Project analyses coordination | Cross-cutting decisions about *analyses applied to trained models*. |
 | `c99ad9d` | Project training-methods coordination | Cross-cutting decisions about *how models are trained*. |
-| `b33e8da` | Project phases coordination | Index of phase umbrellas, phase boundaries, pivots, outcomes. |
+| `b33e8da` | Project umbrella index | Timeline of experimental/work umbrellas: creation, boundaries, pivots, outcomes. |
 | `1d9ae6f` | Project meta coordination | Cross-project / workflow concerns surfaced from rlrmp work (Mandible, feedbax, dotfiles, general workflow). |
 
 #### `4d38c15` — analyses
@@ -719,11 +625,20 @@ Each has the `coordination` label and is project-lifetime (no closure-on-merge i
 **Does NOT own:** specific analyses (→ `4d38c15`); phase markers (→ `b33e8da`); model-structure decisions independent of training method (may eventually move to a separate model-structure coord).
 **Triggers:** introducing a new training method or adversary class; redesigning an existing adversary; flavor-of-`max` decisions; cross-method tier shifts; training-relevant plant-regime changes.
 
-#### `b33e8da` — phases
+#### `b33e8da` — umbrella index
 
-**Owns:** index of phase umbrellas (current and past) with one-line motivating-question + verdict; phase boundaries and pivots; cross-references to phase artifacts (READMEs, synthesis docs).
-**Does NOT own:** the work content of any phase (lives on the phase umbrella) or in-phase analyses (→ `4d38c15`).
-**Triggers:** starting a new phase / work-bundle (file an `umbrella`-labeled issue, then comment here); a phase ends, pivots, or is abandoned (follow-up comment with outcome).
+**Owns:** the timeline of work umbrellas (current and past) with one-line
+motivating-question + outcome; umbrella boundaries, pivots, and successions;
+cross-references to umbrella artifacts (READMEs, synthesis docs).
+**Does NOT own:** the work content of any umbrella (lives on the umbrella and its
+children) or in-umbrella analyses (→ `4d38c15`).
+**Triggers:** creating a new umbrella (comment here with its ID + motivating
+question); an umbrella ends, pivots, or is abandoned (follow-up comment with the
+outcome). The `coordinate-umbrella` skill posts these entries as a step, so the
+index stays current rather than depending on memory.
+**Note:** "phase" was prose convention layered on ordinary umbrellas with no
+schema or CLI backing; this surface is now simply the umbrella index. Historical
+comments that say "phase" mean "umbrella".
 
 #### `1d9ae6f` — meta cross-project
 
@@ -733,16 +648,27 @@ Each has the `coordination` label and is project-lifetime (no closure-on-merge i
 
 ### Umbrella vs coordination — which label?
 
-- **`umbrella`** — phase-tied or work-bundle-tied. **May close deliberately** when the bundle is done, via an auth request `--closes-issue` field, explicit `Closes-Mandible-Issue:` trailer, or user action. Example: `b557d4e` (methodology-fix phase umbrella) closed when its synthesis-review work merged. The phase work continues on its children; the umbrella just marked the bundle.
-- **`coordination`** — project-spanning decision-tracking surface. **Should not close on merge** and should not be referenced as the completed work unit in `Mandible-Issue:` trailers. These persist for the project's lifetime.
+Apply the global closure test: *should this issue close when the work it tracks
+merges?* Yes → `umbrella` (work-bundle-tied; may close deliberately via an auth
+`--closes-issue`, a `Closes-Mandible-Issue:` trailer, or user action — e.g.
+`b557d4e` closed when its synthesis-review work merged). No → `coordination`
+(project-lifetime; persists).
 
-**Decision rule:** "Should this issue close when the work it tracks merges?" — Yes → `umbrella`. No → `coordination`.
+### Body vs comments on a coordination issue (`1ba096f`)
 
-### Body content directive (umbrella-verbosity, `1ba096f`)
-
-> Higher-level coordination/umbrella issue **bodies** must be **minimal** — cross-references to children/related issues, plus only material that does not already live in a finer-grained issue. Long-form discussion belongs in the relevant analysis/feature issue. Comments on the coordination/umbrella are timestamped + threaded; use them for cross-cutting decisions, tier shifts, and similar.
-
-In practice: a coord body reads like a table of contents (scope, what's owned, what isn't, cross-refs). Tier ordering, phase inventory, and similar cross-cutting state belong in **comments** (timestamped, revisable). Substantive findings (results, plots, math) live on the relevant child issue; the coord may carry a one-line cross-ref.
+- The **body** is a stable index: scope, what's owned and what isn't, and
+  cross-references. Keep it small; it rarely changes.
+- The **comments** are the dated log: decisions, tier shifts, corrections, and
+  long-form theme notes that do not warrant their own issue. Long-form notes
+  here are legitimate — this is the project's research timeline for the theme,
+  and later comments routinely cite earlier ones by ordinal.
+- **Substantive results tied to a specific unit of work** (a run's numbers, an
+  analysis's plots) live on that work's own issue; the coordination comment
+  carries the decision plus a one-line cross-ref, not the full write-up.
+- **Hard rule (enforcement-worthy):** never attach a work unit, branch, or
+  `Mandible-Issue:` trailer to a coordination issue. It is a log, not a
+  work destination. Anything that becomes a unit of work graduates to its own
+  issue.
 
 ### Decision flow — when to file vs. comment
 
@@ -757,8 +683,8 @@ In practice: a coord body reads like a table of contents (scope, what's owned, w
 | Flavor-of-`max` decision (input-instance / model-class / LEQG) | maybe (if requires implementation) | `c99ad9d` |
 | Plant-regime parameter change *that couples to training* | maybe | `c99ad9d` |
 | Plant-regime parameter change *independent of training* | yes (normal issue) | (no coord — until model-structure coord exists) |
-| Starting a new phase / work-bundle | yes (`umbrella`) | `b33e8da` (umbrella ID + one-line motivating question) |
-| Phase outcome (merged / abandoned / pivoted) | no | `b33e8da` |
+| Starting a new work-bundle umbrella | yes (`umbrella`) | `b33e8da` (umbrella ID + one-line motivating question) |
+| Umbrella outcome (merged / abandoned / pivoted) | no | `b33e8da` |
 | Mandible / feedbax / dotfiles concern surfaced from rlrmp | yes, **in destination repo** | `1d9ae6f` (destination repo + issue ID + one-liner) |
 | General-workflow / tooling improvement | yes, in appropriate repo | `1d9ae6f` |
 | Bug or feature *entirely within rlrmp* | yes (`error` / `feature`) | (no coord — direct work) |
@@ -768,32 +694,58 @@ When the table doesn't cover your case: ask "is this a project-lifetime decision
 ### Cross-referencing protocol
 
 - Use **7-character issue-ID prefixes** in bodies and comments (e.g. `4d38c15`).
-- When filing in a destination repo (per `1d9ae6f`), include a one-line "surfaced from rlrmp" note in the destination issue's body, plus the rlrmp issue ID or branch that surfaced it.
-- When the destination-repo issue resolves, comment back on `1d9ae6f` with the resolution (merge SHA / closing comment link).
+- When filing in a destination repo (per `1d9ae6f`), include a one-line
+  "surfaced from rlrmp" note in the destination issue's body with the rlrmp
+  issue ID or branch that surfaced it, **and create a structured cross-repo
+  link** (`mandible issue link`) at filing time so the unresolved dependency is
+  queryable — a prose promise to "report back later" is not a mechanism and has
+  empirically not held.
+- When you notice a destination-repo issue has resolved, comment the resolution
+  (merge SHA / closing pointer) back on `1d9ae6f` — good practice, but the
+  structured link is the requirement.
 - Coordination issue bodies index children — they do not duplicate child content.
 
 ### Commit `Mandible-Issue:` trailers — never reference coordination issues
 
 `Mandible-Issue:` trailers are for the relevant child / feature / bug issue - the unit of work the commit completes. Coordination issues are decision-tracking surfaces, not commit destinations. So `mandible commit linked --issue <id>` should always take a child / feature / bug issue ID, never `4d38c15` / `c99ad9d` / `b33e8da` / `1d9ae6f`. Use `Closes-Mandible-Issue: <id>` only when the commit should deliberately close that issue through the auth merge.
 
-### Phase umbrella protocol
+### Umbrella protocol
 
-1. **Create a phase umbrella** — a new issue labeled `umbrella` (and `feature` if appropriate). Body: minimal — motivating question, scope, links to phase artifacts (e.g. a `results/<exp>/README.md`).
-2. **Comment on `b33e8da`** with the umbrella ID + one-line motivating question (this makes `b33e8da` the "what umbrellas are active" discovery surface).
-3. **Children** reference the umbrella in **their bodies** ("Part of phase `b557d4e`."), not in commit `Mandible-Issue:` trailers. Close the umbrella only deliberately when the phase is done.
-4. **On phase end / pivot / abandonment**, comment on `b33e8da` with the one-line outcome ("merged via X", "pivoted to Y", "abandoned because Z").
+1. **Create the umbrella** — a new issue labeled `umbrella` (and `feature` if
+   appropriate). Body: minimal — motivating question, scope, links to artifacts
+   (e.g. a `results/<hash>/README.md`).
+2. **Comment on `b33e8da`** with the umbrella ID + one-line motivating question,
+   so the index stays the "what umbrellas exist" discovery surface. The
+   `coordinate-umbrella` skill does this as a step.
+3. **Children** reference the umbrella in **their bodies** ("Part of
+   `<umbrella>`."), not in commit trailers. Close the umbrella only deliberately
+   when its work is done.
+4. **On end / pivot / abandonment**, comment on `b33e8da` with the one-line
+   outcome ("merged via X", "pivoted to Y", "abandoned because Z").
 
-Past phases for orientation (see `b33e8da` for the live inventory): Part 1 (`297260c`), Part 2 (`0af472c`), Part 2.5 (`844ef95`), and Methodology-fix (`b557d4e`). Check the ledger for the current phase before treating any historical phase as active.
+Past umbrellas for orientation (see `b33e8da` for the live inventory): Part 1
+(`297260c`), Part 2 (`0af472c`), Part 2.5 (`844ef95`), Methodology-fix
+(`b557d4e`), feedbax-native alignment (`64a04e0`). Check the ledger for the
+current umbrella before treating any historical one as active.
 
-### Worked example: cross-cutting Riccati flavor-(a) finding
+### Worked example: routing a cross-cutting finding
 
-`tests/test_hinf_riccati.py::test_cs_faithful_qr_velocity_inflation` xfailed with a substantive diagnosis: faithful C&S Eq. 15 Q,R on the C&S regime gave Δv = −0.04% at 1.5γ\*, implying production Riccati's `B_w` is most likely flavor-(a) additive force, not flavor-(b) `ΔA·x`. This ties a training-method concern (flavor-of-`max`) to an analysis-side issue (`c723082`, LinearDynamicsAdversary). Protocol: the full diagnosis lives in the test's xfail reason string (implementation-level doc); a coordination comment on `c99ad9d` noted the cross-cutting concern + cross-ref to `c723082`; the planned follow-up ("Riccati `B_w` generalization to `ΔA`") gets a normal `feature` issue only when actually scheduled, then a cross-ref comment on `c99ad9d`.
+A test xfail (`tests/test_hinf_riccati.py::test_cs_faithful_qr_velocity_inflation`)
+produced a diagnosis that touches both a training-method concern (Riccati
+flavor-of-`max`) and an analysis-side issue (`c723082`). Routing: the full
+diagnosis stays in the test's xfail reason string (implementation-level doc); a
+`c99ad9d` comment records the cross-cutting concern + cross-ref; the follow-up
+gets its own `feature` issue only when scheduled. The pattern — deep detail on
+the work surface, a decision-plus-cross-ref on the coordination surface — is the
+point.
 
 ### What NOT to do
 
-- **Don't comment tier opinions on individual analysis issues.** Tier shifts are cross-cutting → `4d38c15`.
-- **Don't put long-form discussion in coordination issue bodies.** Bodies are tables of contents; discussion goes in comments or on the child issue.
-- **Don't reference `coordination`-labeled issues in commit `Mandible-Issue:` trailers.** Use the child / feature / bug issue.
-- **Don't create a new coordination issue when an existing one's scope covers the concern.** New coords are project-lifetime commitments — discuss first.
-- **Don't paste subagent output or raw analysis into a coord body.** Move it to the child issue (or a `results/<exp>/` doc) and replace with a one-line cross-ref.
-- **Don't index every commit on the coord.** Only commits that change cross-cutting state (a tier, a method choice, a phase boundary) merit a coord comment.
+- **Don't comment tier opinions on individual analysis issues.** Tier shifts are
+  cross-cutting → `4d38c15`.
+- **Don't attach work units, branches, or `Mandible-Issue:` trailers to a
+  coordination issue.** Use the child / feature / bug issue.
+- **Don't create a new coordination issue when an existing scope covers it.**
+  New coordination surfaces are project-lifetime commitments — discuss first.
+- **Don't log every commit.** Only commits that change cross-cutting state (a
+  tier, a method choice, an umbrella boundary) merit a coordination comment.
