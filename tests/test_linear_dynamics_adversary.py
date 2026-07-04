@@ -18,8 +18,8 @@ from feedbax.runtime.graph import Component, Graph, Wire, init_state_from_compon
 from feedbax.runtime.iteration import run_component
 from feedbax.runtime.state import CartesianState
 
-from rlrmp.adversarial_training import _inject_adversary_delta_A
-from rlrmp.adversary import LinearDynamicsAdversary, _frobenius_project
+from rlrmp.train.adversarial_training import _inject_adversary_delta_A
+from rlrmp.train.adversary import LinearDynamicsAdversary, _frobenius_project
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.intervention_compat import LINEAR_DYNAMICS_ADVERSARY_COMPONENT_PARAMETER_TARGET
 from rlrmp.train.task_model import setup_task_model_pair

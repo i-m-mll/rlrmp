@@ -1,4 +1,10 @@
-"""Linear time-varying (LTV) controllers for the decoupling acid test (MVP).
+"""LEGACY (frozen 2026-07-04, issue fac28cb).
+
+Retained only for the archived-recipe conversion path (issue ae15851) and the
+sign-convention regression test. Superseded by feedbax's
+AffineFeedbackController; not a pattern for new work.
+
+Linear time-varying (LTV) controllers for the decoupling acid test (MVP).
 
 Implements two architectures sharing the same plant + feedback wiring as
 ``feedbax.xabdeef.models.point_mass_nn`` but replacing ``SimpleStagedNetwork``
@@ -38,14 +44,8 @@ import jax.numpy as jnp
 import jax.random as jr
 from equinox import field
 from equinox.nn import State, StateIndex
-from feedbax import AbstractTask
-from feedbax.models.feedback import SimpleFeedback
-from feedbax.runtime.graph import Component
-from feedbax.mechanics import Mechanics
-from feedbax.mechanics.plant import DirectForceInput
-from feedbax.mechanics.skeleton.pointmass import PointMass
 from feedbax.models.networks import NetworkState
-from feedbax.runtime.noise import Multiplicative, Normal
+from feedbax.runtime.graph import Component
 from jax.flatten_util import ravel_pytree
 from jaxtyping import Array, Float, PRNGKeyArray, PyTree
 
@@ -315,112 +315,3 @@ class LinearTrackerController(Component):
         )
         state = state.set(self.state_index, new_state)
         return {"output": u, "hidden": new_hidden}, state
-
-
-# ---------------------------------------------------------------------------
-# Body constructor — parallel to feedbax.xabdeef.models.point_mass_nn
-# ---------------------------------------------------------------------------
-
-
-def point_mass_linear_controller(
-    task: AbstractTask,
-    controller_type: str = "linear",
-    n_extra_inputs: int = 0,  # unused; kept for API parity with point_mass_nn
-    n_steps: int = 140,
-    dt: float = 0.01,
-    mass: float = 1.0,
-    damping: float = 0.0,
-    feedback_delay_steps: int = 0,
-    feedback_noise_std: float = 0.0,
-    motor_noise_std: float = 0.0,
-    tau_rise: float = 0.0,
-    tau_decay: float = 0.0,
-    K_init_scale: float = 0.0,
-    u_ff_init_scale: float = 0.0,
-    *,
-    key: PRNGKeyArray,
-) -> SimpleFeedback:
-    """Build a point-mass body controlled by a linear (regulator or tracker) controller.
-
-    Mirrors the structure of ``feedbax.xabdeef.models.point_mass_nn`` but
-    substitutes ``LinearController`` or ``LinearTrackerController`` for
-    ``SimpleStagedNetwork``. Plant, feedback channel, efferent channel, and
-    motor-noise wiring are identical; only the ``net`` node differs.
-
-    Args:
-        task: The task instance (used by ``SimpleFeedback`` only for input-size
-            inference; our linear controllers read the structure directly).
-        controller_type: ``"linear"`` (regulator) or ``"linear_tracker"`` (with
-            feedforward).
-        n_extra_inputs: Ignored — kept so create_point_mass_nn_ensemble's call
-            signature still passes through cleanly.
-        n_steps: Simulation timesteps. K and u_ff are (n_steps - 1, ...) — the
-            task input sequences span ``n_steps - 1`` steps (see
-            ``feedbax.task.DelayedReaches._get_sequences``).
-        dt: Simulation step length.
-        mass, damping: Point-mass parameters.
-        feedback_delay_steps, feedback_noise_std, motor_noise_std: Loop noise
-            parameters (kept matching the GRU baseline).
-        tau_rise, tau_decay: First-order actuation filter time constants
-            (forwarded to ``SimpleFeedback``).
-        K_init_scale, u_ff_init_scale: Initial gain / feedforward magnitudes.
-        key: PRNG key.
-
-    Returns:
-        A ``SimpleFeedback`` graph.
-    """
-    key_net, key_body = jr.split(key)
-
-    system = PointMass(mass=mass, damping=damping)
-    mechanics = Mechanics(DirectForceInput(system), dt)
-
-    feedback_spec = dict(
-        where=lambda state: (
-            state.plant.skeleton.pos,
-            state.plant.skeleton.vel,
-        ),
-        delay=feedback_delay_steps,
-        noise_func=Normal(std=feedback_noise_std),
-    )
-
-    # Number of timesteps that the controller actually drives the plant.
-    # Per feedbax.task.DelayedReaches._get_sequences the input sequences have
-    # length ``n_steps - 1``, so K / u_ff must be sized to match.
-    n_active_steps = n_steps - 1
-
-    if controller_type == "linear":
-        net: Component = LinearController(
-            n_steps=n_active_steps,
-            n_controls=system.input_size,
-            n_states=4,  # (pos_xy, vel_xy)
-            K_init_scale=K_init_scale,
-            key=key_net,
-        )
-    elif controller_type == "linear_tracker":
-        net = LinearTrackerController(
-            n_steps=n_active_steps,
-            n_controls=system.input_size,
-            n_states=4,
-            K_init_scale=K_init_scale,
-            u_ff_init_scale=u_ff_init_scale,
-            key=key_net,
-        )
-    else:
-        raise ValueError(
-            f"Unknown controller_type {controller_type!r}; expected 'linear' or "
-            f"'linear_tracker'."
-        )
-
-    body = SimpleFeedback(
-        net,
-        mechanics,
-        feedback_spec=feedback_spec,
-        motor_noise_func=(
-            Multiplicative(Normal(std=motor_noise_std))
-            + Normal(std=1.8 * motor_noise_std)
-        ),
-        tau_rise=tau_rise,
-        tau_decay=tau_decay,
-        key=key_body,
-    )
-    return body

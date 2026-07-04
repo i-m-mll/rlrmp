@@ -1,4 +1,5 @@
 # TODO: relocate to results/410d7ac/scripts/ — per CLAUDE.md script-placement convention
+# ruff: noqa: E402
 """Linear-controller decoupling acid test — corrected MVP analysis (Bug: 410d7ac).
 
 Bug: 06f7faf — the primary Δv metric is unaffected (it uses per-trial after-go
@@ -311,14 +312,23 @@ def forward_velocity_profile(states, trial_specs) -> np.ndarray:
 def u_ff_diagnostic(model, args: argparse.Namespace) -> dict | None:
     """If model is a LinearTrackerController ensemble, return |u_ff| stats.
 
-    Reads ``model.nodes["net"].u_ff`` directly. The ensembled model has
-    a leading ``(n_replicates,)`` axis on the array.
+    Reads native ``feedforward`` first, then legacy ``u_ff``. The ensembled
+    model has a leading ``(n_replicates,)`` axis on the array.
     """
     if args.hidden_type != "linear_tracker":
         return None
     try:
-        u_ff_arr = np.asarray(model.nodes["net"].u_ff)
-    except (AttributeError, KeyError):
+        net = model.nodes["net"]
+    except KeyError:
+        return None
+    if hasattr(net, "feedforward"):
+        feedforward = net.feedforward
+        if feedforward is None:
+            return None
+        u_ff_arr = np.asarray(feedforward)
+    elif hasattr(net, "u_ff"):
+        u_ff_arr = np.asarray(net.u_ff)
+    else:
         return None
     return {
         "u_ff_shape": list(u_ff_arr.shape),
@@ -333,8 +343,14 @@ def u_ff_diagnostic(model, args: argparse.Namespace) -> dict | None:
 def K_diagnostic(model) -> dict | None:
     """Return |K| stats for both LinearController and LinearTrackerController."""
     try:
-        K_arr = np.asarray(model.nodes["net"].K)
-    except (AttributeError, KeyError):
+        net = model.nodes["net"]
+    except KeyError:
+        return None
+    if hasattr(net, "gain"):
+        K_arr = np.asarray(net.gain)
+    elif hasattr(net, "K"):
+        K_arr = np.asarray(net.K)
+    else:
         return None
     return {
         "K_shape": list(K_arr.shape),
