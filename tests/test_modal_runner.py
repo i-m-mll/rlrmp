@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import argparse
-import importlib
 import json
-import os
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -20,13 +18,11 @@ from rlrmp.cloud.modal_runner import (
     MODAL_VOLUME_NAME,
     REGULARIZED_RUN,
     NominalGruRunConfig,
-    activate_project_venv,
     build_launcher_spec_bundle,
     build_parser,
     build_packing_benchmark_command,
     build_remote_smoke_command,
     build_training_command,
-    collect_source_provenance,
     cs_nominal_gru_scenario_config,
     dry_run_payload,
     make_config,
@@ -173,6 +169,43 @@ def test_pinned_mode_uses_configured_repo_dir() -> None:
     )
 
 
+def test_source_mode_modal_bundle_uses_local_embed_sources_and_renderer_config() -> None:
+    bundle = build_launcher_spec_bundle(NominalGruRunConfig(), backend="modal")
+
+    sources = {source.name: source for source in bundle.execution_spec.repos}
+
+    assert set(sources) == {"rlrmp", "feedbax", "jax-cookbook"}
+    assert sources["rlrmp"].role == "project"
+    assert sources["feedbax"].role == "dependency"
+    assert sources["jax-cookbook"].role == "dependency"
+    assert {source.install_mode for source in sources.values()} == {"local-embed"}
+    assert sources["rlrmp"].ignore_parts == sources["feedbax"].ignore_parts
+    assert ".git" in sources["rlrmp"].ignore_parts
+    assert "TODO.assets" in sources["rlrmp"].ignore_parts
+    assert sources["rlrmp"].ignore_suffixes == [".assets"]
+    assert sources["rlrmp"].extra_path_rewrites["../20 Feedbax/feedbax"] == (
+        "/workspace/feedbax"
+    )
+    assert sources["feedbax"].extra_path_rewrites["../../../20 Feedbax/feedbax"] == (
+        "/workspace/feedbax"
+    )
+    assert sources["jax-cookbook"].extra_path_rewrites[
+        "../../../../../05 Utils/jax-cookbook"
+    ] == "/workspace/jax-cookbook"
+    assert bundle.execution_spec.modal.extra_install_commands == [
+        'uv pip install -U "jax[cuda12]"'
+    ]
+    assert bundle.execution_spec.modal.image_packages == []
+    assert bundle.execution_plan.cloud_payload["cells"][0]["command"].startswith(
+        "uv run --no-sync "
+    )
+    assert bundle.execution_plan.reproducibility["install_modes"] == {
+        "rlrmp": "local-embed",
+        "feedbax": "local-embed",
+        "jax-cookbook": "local-embed",
+    }
+
+
 def test_regularized_modal_command_selects_hidden_penalty_pair() -> None:
     bundle = build_launcher_spec_bundle(
         NominalGruRunConfig(
@@ -254,6 +287,16 @@ def test_dry_run_payload_exposes_spec_lock_and_no_warm_container_settings() -> N
     ]
 
 
+def test_modal_app_script_delegates_image_construction_to_feedbax_renderer() -> None:
+    script = Path("scripts/modal_cs_nominal_gru.py").read_text(encoding="utf-8")
+
+    assert "render_modal_app" in script
+    assert "add_local_dir" not in script
+    assert "run_commands" not in script
+    assert "_ignore_source" not in script
+    assert "extra_path_rewrites" not in script
+
+
 def test_modal_run_defaults_to_training_timeout() -> None:
     args = build_parser().parse_args(
         ["modal-run", "--loss-objective", "full_analytical_qrf"]
@@ -325,73 +368,6 @@ def test_billable_modal_run_refuses_without_explicit_confirmation() -> None:
 
     confirmed = build_parser().parse_args(["modal-run", "--confirm-billable-launch"])
     require_billable_launch_confirmation(confirmed)
-
-
-def test_activate_project_venv_exposes_uv_site_packages(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    venv_dir = tmp_path / ".venv"
-    site_packages = venv_dir / "lib" / "python3.12" / "site-packages"
-    site_packages.mkdir(parents=True)
-    editable_src = tmp_path / "editable-src"
-    editable_src.mkdir()
-    (site_packages / "editable.pth").write_text(str(editable_src) + "\n")
-    modal_deps = tmp_path / "__modal" / "deps"
-    modal_deps.mkdir(parents=True)
-    monkeypatch.setenv("PATH", "/usr/bin")
-    original_path = list(sys.path)
-
-    try:
-        sys.path.insert(0, str(modal_deps))
-        activated = activate_project_venv(venv_dir)
-
-        assert activated == site_packages
-        assert sys.path.index(str(site_packages)) < sys.path.index(str(modal_deps))
-        assert sys.path.index(str(editable_src)) < sys.path.index(str(modal_deps))
-        assert os.environ["VIRTUAL_ENV"] == str(venv_dir)
-        assert os.environ["PATH"].split(os.pathsep)[0] == str(venv_dir / "bin")
-    finally:
-        sys.path[:] = original_path
-
-
-def test_activate_project_venv_prefers_venv_package_over_modal_deps(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    venv_dir = tmp_path / ".venv"
-    site_packages = venv_dir / "lib" / "python3.12" / "site-packages"
-    site_packages.mkdir(parents=True)
-    (site_packages / "typing_extensions.py").write_text("Sentinel = object()\n")
-    modal_deps = tmp_path / "__modal" / "deps"
-    modal_deps.mkdir(parents=True)
-    (modal_deps / "typing_extensions.py").write_text("_Sentinel = object()\n")
-    original_path = list(sys.path)
-    old_module = sys.modules.pop("typing_extensions", None)
-
-    try:
-        sys.path.insert(0, str(modal_deps))
-        shadow_module = importlib.import_module("typing_extensions")
-        assert not hasattr(shadow_module, "Sentinel")
-        assert Path(shadow_module.__file__).parent == modal_deps
-
-        activate_project_venv(venv_dir)
-        module = importlib.import_module("typing_extensions")
-
-        assert hasattr(module, "Sentinel")
-        assert Path(module.__file__).parent == site_packages
-    finally:
-        sys.path[:] = original_path
-        sys.modules.pop("typing_extensions", None)
-        if old_module is not None:
-            sys.modules["typing_extensions"] = old_module
-
-
-def test_collect_source_provenance_reports_commit_and_status() -> None:
-    provenance = collect_source_provenance()
-
-    assert provenance["commit"]
-    assert "status_short" in provenance
 
 
 def test_packing_benchmark_command_disables_sync_and_sets_worker_count() -> None:
