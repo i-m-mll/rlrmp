@@ -18,9 +18,11 @@ from feedbax.analysis.specs import register_analysis_recipe
 from feedbax.contracts.manifest import EvaluationRunSpec
 from feedbax.analysis.types import AnalysisInputData
 from feedbax.config.namespace import TreeNamespace
+from pydantic import BaseModel, ConfigDict, Field
 
 from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT
+from rlrmp.runtime.params_models import register_params_model
 from rlrmp.runtime.spec_migrations import (
     STANDARD_MATRIX_EVAL_PARAMS_KIND,
     accept_rlrmp_spec_payload,
@@ -40,6 +42,24 @@ STANDARD_MATRIX_OUTPUTS = (
     "rmse_ratio_comparison",
     "notes",
 )
+
+
+class StandardMatrixEvalParams(BaseModel):
+    """Params for the standard-matrix evaluation recipe."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_id: str | None = None
+    schema_version: str | None = None
+    matrix_payload: Any | None = None
+    states: Any | None = None
+    legacy_payload_mode: bool = False
+    cell_metadata: dict[str, Any] = Field(default_factory=dict)
+    profile_key: str | None = None
+    metric_order: list[str] | None = None
+    notes_path: str | None = None
+    note_marker: str | None = None
+    figure_routing: dict[str, Any] = Field(default_factory=dict)
 
 
 class StandardMatrixAnalysis(AbstractAnalysis):
@@ -98,7 +118,16 @@ class StandardMatrixAnalysis(AbstractAnalysis):
 
 def register_standard_matrix_recipes(*, replace: bool = True) -> None:
     """Register rlrmp's standard matrix analysis and evaluation recipes."""
-    register_analysis_recipe(STANDARD_MATRIX_ANALYSIS_TYPE, standard_matrix_recipe, replace=replace)
+    register_params_model(
+        STANDARD_MATRIX_EVALUATION_TYPE,
+        StandardMatrixEvalParams,
+        replace=replace,
+    )
+    register_analysis_recipe(
+        STANDARD_MATRIX_ANALYSIS_TYPE,
+        standard_matrix_recipe,
+        replace=replace,
+    )
     register_evaluation_recipe(
         STANDARD_MATRIX_EVALUATION_TYPE,
         standard_matrix_evaluation_recipe,

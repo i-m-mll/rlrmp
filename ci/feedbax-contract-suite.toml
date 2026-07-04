@@ -167,7 +167,8 @@ owner = "5b3aabe"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_defaults_ratchet.py::"
-minimum_non_skipped = 2
+minimum_non_skipped = 5
+negative_canary = "tests/test_defaults_ratchet.py::test_defaults_scanner_negative_canary_detects_out_of_schema_default"
 
 [[families]]
 name = "lane_b_terminal_gate"
