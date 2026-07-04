@@ -557,7 +557,7 @@ def _cs_nominal_gru_metadata(hps: Any) -> dict[str, Any]:
     broad_epsilon = getattr(hps, "broad_epsilon_training", None)
     broad_epsilon_pgd = getattr(hps, "broad_epsilon_pgd_training", None)
     initial_hidden_encoder = getattr(hps, "initial_hidden_encoder", None)
-    pgd_inner = getattr(broad_epsilon_pgd, "inner_maximizer", None)
+    pgd_config = _cs_nominal_gru_pgd_training_config(broad_epsilon_pgd)
     return {
         "scenario": DEFAULT_SCENARIO,
         "batch_size": int(hps.batch_size),
@@ -583,18 +583,23 @@ def _cs_nominal_gru_metadata(hps: Any) -> dict[str, Any]:
         "broad_epsilon_pgd_training": bool(getattr(broad_epsilon_pgd, "enabled", False)),
         "broad_epsilon_level": str(getattr(broad_epsilon, "level", "not_applicable")),
         "broad_epsilon_pgd_level": str(getattr(broad_epsilon_pgd, "level", "not_applicable")),
-        "broad_epsilon_pgd_steps": (
-            None if pgd_inner is None else int(getattr(pgd_inner, "n_steps", 0))
-        ),
-        "broad_epsilon_pgd_step_size_fraction": (
-            None
-            if pgd_inner is None
-            else float(getattr(pgd_inner, "step_size_fraction_of_l2_radius", 0.0))
-        ),
+        "broad_epsilon_pgd_steps": int(pgd_config.n_steps),
+        "broad_epsilon_pgd_step_size_fraction": float(pgd_config.step_size_fraction),
         "initial_hidden_encoder": bool(getattr(initial_hidden_encoder, "enabled", False)),
         "training_diagnostics": bool(hps.training_diagnostics),
         "schedule_total_batches": int(hps.n_batches_condition),
     }
+
+
+def _cs_nominal_gru_pgd_training_config(config: Any) -> Any:
+    from rlrmp.train.cs_perturbation_training import (
+        PgdFullStateEpsilonTrainingConfig,
+        config_from_broad_epsilon_pgd_hps,
+    )
+
+    if config is None:
+        return PgdFullStateEpsilonTrainingConfig()
+    return config_from_broad_epsilon_pgd_hps(config)
 
 
 SCENARIO_FACTORIES: dict[str, ScenarioFactory] = {

@@ -2380,16 +2380,19 @@ def perturbation_training_mixture_semantics(
 def config_from_target_hps(config: Any) -> TargetRelativeMultiTargetTrainingConfig:
     """Normalize an hps target-distribution payload to a dataclass."""
 
-    enabled = bool(getattr(config, "enabled", False))
-    force_filter_feedback = getattr(config, "force_filter_feedback", False)
+    enabled = bool(_payload_get(config, "enabled", False))
+    force_filter_feedback = _payload_get(config, "force_filter_feedback", False)
     if not isinstance(force_filter_feedback, bool):
-        force_filter_feedback = bool(getattr(force_filter_feedback, "enabled", False))
-    target_distribution = getattr(config, "target_distribution", None)
+        force_filter_feedback = bool(_payload_get(force_filter_feedback, "enabled", False))
+    target_distribution = _payload_get(config, "target_distribution", None)
 
-    def target_value(name: str, default: Any) -> Any:
-        return getattr(config, name, getattr(target_distribution, name, default))
-
-    profile = str(target_value("target_support_profile", DEFAULT_TARGET_SUPPORT_PROFILE))
+    profile = str(
+        _first_payload_value(
+            (config, "target_support_profile"),
+            (target_distribution, "target_support_profile"),
+            default=DEFAULT_TARGET_SUPPORT_PROFILE,
+        )
+    )
     default_config = target_relative_target_support_config(
         profile=profile,
         enabled=enabled,
@@ -2401,40 +2404,49 @@ def config_from_target_hps(config: Any) -> TargetRelativeMultiTargetTrainingConf
         target_support_profile=profile,
         seen_directions_deg=tuple(
             float(x)
-            for x in target_value(
-                "seen_directions_deg",
-                default_config.seen_directions_deg,
+            for x in _first_payload_value(
+                (config, "seen_directions_deg"),
+                (target_distribution, "seen_directions_deg"),
+                default=default_config.seen_directions_deg,
             )
         ),
         held_out_directions_deg=tuple(
             float(x)
-            for x in target_value(
-                "held_out_directions_deg",
-                default_config.held_out_directions_deg,
+            for x in _first_payload_value(
+                (config, "held_out_directions_deg"),
+                (target_distribution, "held_out_directions_deg"),
+                default=default_config.held_out_directions_deg,
             )
         ),
         seen_amplitudes_m=tuple(
             float(x)
-            for x in target_value(
-                "seen_amplitudes_m",
-                default_config.seen_amplitudes_m,
+            for x in _first_payload_value(
+                (config, "seen_amplitudes_m"),
+                (target_distribution, "seen_amplitudes_m"),
+                default=default_config.seen_amplitudes_m,
             )
         ),
         held_out_amplitudes_m=tuple(
             float(x)
-            for x in target_value(
-                "held_out_amplitudes_m",
-                default_config.held_out_amplitudes_m,
+            for x in _first_payload_value(
+                (config, "held_out_amplitudes_m"),
+                (target_distribution, "held_out_amplitudes_m"),
+                default=default_config.held_out_amplitudes_m,
             )
         ),
         original_target_anchor_m=tuple(
             float(x)
-            for x in target_value(
-                "original_target_anchor_m",
-                default_config.original_target_anchor_m,
+            for x in _first_payload_value(
+                (config, "original_target_anchor_m"),
+                (target_distribution, "original_target_anchor_m"),
+                default=default_config.original_target_anchor_m,
             )
         ),
-        support_metadata=target_value("support_metadata", default_config.support_metadata),
+        support_metadata=_first_payload_value(
+            (config, "support_metadata"),
+            (target_distribution, "support_metadata"),
+            default=default_config.support_metadata,
+        ),
     )
 
 
