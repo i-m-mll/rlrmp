@@ -6,20 +6,20 @@ import json
 from pathlib import Path
 
 from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
-    DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS,
-    DEFAULT_NATIVE_CONVENTIONS,
-    DEFAULT_PLANT_TIMING_BINS,
-    DEFAULT_REACH_CALIBRATION_POINTS,
-    DEFAULT_REACH_RELATIVE_LEVELS,
     _write_calibration_regeneration_spec,
     calibrated_amplitude_from_unit_sensitivity,
+    default_controller_visible_timing_bins,
+    default_native_conventions,
+    default_plant_timing_bins,
+    default_reach_calibration_points,
+    default_reach_relative_levels,
     render_calibration_markdown,
 )
 
 
 def test_default_reach_relative_calibration_config_is_explicit() -> None:
-    reaches = {point.label: point for point in DEFAULT_REACH_CALIBRATION_POINTS}
-    levels = {level.name: level for level in DEFAULT_REACH_RELATIVE_LEVELS}
+    reaches = {point.label: point for point in default_reach_calibration_points()}
+    levels = {level.name: level for level in default_reach_relative_levels()}
 
     assert reaches["seen_train_0p10"].split == "seen/train"
     assert reaches["seen_train_0p10"].reach_length_m == 0.10
@@ -37,11 +37,13 @@ def test_default_reach_relative_calibration_config_is_explicit() -> None:
 
 
 def test_default_timing_and_native_conventions_are_explicit() -> None:
-    plant_bins = {timing_bin.label: timing_bin for timing_bin in DEFAULT_PLANT_TIMING_BINS}
+    plant_bins = {timing_bin.label: timing_bin for timing_bin in default_plant_timing_bins()}
     visible_bins = {
-        timing_bin.label: timing_bin for timing_bin in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS
+        timing_bin.label: timing_bin for timing_bin in default_controller_visible_timing_bins()
     }
-    native_conventions = {convention.family: convention for convention in DEFAULT_NATIVE_CONVENTIONS}
+    native_conventions = {
+        convention.family: convention for convention in default_native_conventions()
+    }
 
     assert [plant_bins[label].start_time_index for label in ("early", "mid", "late")] == [
         5,
@@ -97,11 +99,13 @@ def test_reach_relative_markdown_reports_targets_and_rerun_command() -> None:
             "_artifacts/1ad3c16/perturbation_open_loop_calibration/"
             "perturbation_open_loop_calibration_regeneration_spec.json"
         ),
-        "reach_points": [point.to_json() for point in DEFAULT_REACH_CALIBRATION_POINTS[:1]],
-        "level_definitions": [level.to_json() for level in DEFAULT_REACH_RELATIVE_LEVELS[:1]],
-        "plant_timing_bins": [timing_bin.to_json() for timing_bin in DEFAULT_PLANT_TIMING_BINS],
+        "reach_points": [point.to_json() for point in default_reach_calibration_points()[:1]],
+        "level_definitions": [level.to_json() for level in default_reach_relative_levels()[:1]],
+        "plant_timing_bins": [
+            timing_bin.to_json() for timing_bin in default_plant_timing_bins()
+        ],
         "native_conventions": [
-            convention.to_json() for convention in DEFAULT_NATIVE_CONVENTIONS[:1]
+            convention.to_json() for convention in default_native_conventions()[:1]
         ],
         "rows": [
             {
@@ -157,10 +161,12 @@ def test_calibration_regeneration_spec_records_source_model_and_outputs(tmp_path
         note_path=note_path,
         manifest={
             "bank_schema_version": "bank.v1",
-            "reach_points": [DEFAULT_REACH_CALIBRATION_POINTS[0].to_json()],
-            "level_definitions": [DEFAULT_REACH_RELATIVE_LEVELS[0].to_json()],
-            "plant_timing_bins": [DEFAULT_PLANT_TIMING_BINS[0].to_json()],
-            "controller_visible_timing_bins": [DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS[0].to_json()],
+            "reach_points": [default_reach_calibration_points()[0].to_json()],
+            "level_definitions": [default_reach_relative_levels()[0].to_json()],
+            "plant_timing_bins": [default_plant_timing_bins()[0].to_json()],
+            "controller_visible_timing_bins": [
+                default_controller_visible_timing_bins()[0].to_json()
+            ],
         },
         amplitude_factors=(0.1, 1.0),
         result_experiment="1ad3c16",

@@ -26,6 +26,11 @@ from rlrmp.data_products.broad_epsilon import (
     load_broad_epsilon_anchors,
 )
 from rlrmp.data_products.calibration import (
+    CALIBRATION_DEFAULTS_PAYLOAD_PATH,
+    CALIBRATION_DEFAULTS_PAYLOAD_SHA256,
+    CALIBRATION_DEFAULTS_PRODUCT_IDENTITY_HASH,
+    CALIBRATION_DEFAULTS_PRODUCT_PATH,
+    CALIBRATION_DEFAULTS_PRODUCT_ROLE,
     CALIBRATION_PRODUCT_IDENTITY_HASH,
     CALIBRATION_PRODUCT_LOGICAL_NAME,
     CALIBRATION_PRODUCT_PATH,
@@ -33,8 +38,11 @@ from rlrmp.data_products.calibration import (
     CALIBRATION_PRODUCT_ROLE,
     CALIBRATION_PRODUCT_SCHEMA_ID,
     CALIBRATION_PRODUCT_SCHEMA_VERSION,
+    build_perturbation_calibration_defaults_payload,
     calibration_data_product_requirement,
+    calibration_defaults_data_product_requirement,
     load_open_loop_calibration,
+    load_perturbation_calibration_defaults,
 )
 from rlrmp.data_products.envelope import DataProductError, load_data_product
 from rlrmp.data_products.registry import (
@@ -65,6 +73,19 @@ def test_broad_epsilon_product_identity_hash_loader_matches_pin() -> None:
     )
 
 
+def test_calibration_defaults_product_identity_hash_loader_matches_pin() -> None:
+    load_perturbation_calibration_defaults.cache_clear()
+    defaults = load_perturbation_calibration_defaults()
+    assert defaults.product_identity_hash == CALIBRATION_DEFAULTS_PRODUCT_IDENTITY_HASH
+    assert defaults.payload_sha256 == CALIBRATION_DEFAULTS_PAYLOAD_SHA256
+    assert calibration_defaults_data_product_requirement().product_identity_hash == (
+        CALIBRATION_DEFAULTS_PRODUCT_IDENTITY_HASH
+    )
+    assert calibration_defaults_data_product_requirement().artifact_sha256 == (
+        CALIBRATION_DEFAULTS_PAYLOAD_SHA256
+    )
+
+
 def test_calibration_product_identity_hash_tamper_fails_closed(tmp_path: Path) -> None:
     tampered = _tampered_copy(
         CALIBRATION_PRODUCT_PATH,
@@ -88,6 +109,55 @@ def test_broad_epsilon_product_identity_hash_tamper_fails_closed(tmp_path: Path)
 
     with pytest.raises(DataProductError, match="product_identity|identity validation"):
         load_data_product(tampered, broad_epsilon_data_product_requirement())
+
+
+def test_calibration_defaults_product_artifact_hash_tamper_fails_closed(tmp_path: Path) -> None:
+    tampered = _tampered_copy(
+        CALIBRATION_DEFAULTS_PRODUCT_PATH,
+        tmp_path,
+        lambda payload: payload["artifacts"][0].__setitem__("sha256", "0" * 64),
+    )
+
+    with pytest.raises(DataProductError, match="product_identity|artifact"):
+        load_data_product(tampered, calibration_defaults_data_product_requirement())
+
+
+def test_calibration_defaults_payload_values_match_pre_migration_constants() -> None:
+    load_perturbation_calibration_defaults.cache_clear()
+    defaults = load_perturbation_calibration_defaults()
+    payload = json.loads(CALIBRATION_DEFAULTS_PAYLOAD_PATH.read_text(encoding="utf-8"))
+
+    assert defaults.amplitude_factors == _PRE_MIGRATION_AMPLITUDE_FACTORS
+    assert [point.to_json() for point in defaults.reach_calibration_points] == (
+        _PRE_MIGRATION_REACH_CALIBRATION_POINTS
+    )
+    assert [level.to_json() for level in defaults.reach_relative_levels] == (
+        _PRE_MIGRATION_REACH_RELATIVE_LEVELS
+    )
+    assert [timing_bin.to_json() for timing_bin in defaults.plant_timing_bins] == (
+        _PRE_MIGRATION_PLANT_TIMING_BINS
+    )
+    assert [
+        timing_bin.to_json() for timing_bin in defaults.controller_visible_timing_bins
+    ] == _PRE_MIGRATION_CONTROLLER_VISIBLE_TIMING_BINS
+    assert [convention.to_json() for convention in defaults.native_conventions] == (
+        _PRE_MIGRATION_NATIVE_CONVENTIONS
+    )
+    assert payload["amplitude_factors"] == list(_PRE_MIGRATION_AMPLITUDE_FACTORS)
+
+
+def test_calibration_defaults_payload_round_trip_preserves_tracked_values() -> None:
+    defaults = load_perturbation_calibration_defaults()
+    rebuilt = build_perturbation_calibration_defaults_payload(
+        amplitude_factors=defaults.amplitude_factors,
+        reach_calibration_points=defaults.reach_calibration_points,
+        reach_relative_levels=defaults.reach_relative_levels,
+        plant_timing_bins=defaults.plant_timing_bins,
+        controller_visible_timing_bins=defaults.controller_visible_timing_bins,
+        native_conventions=defaults.native_conventions,
+    )
+    tracked = json.loads(CALIBRATION_DEFAULTS_PAYLOAD_PATH.read_text(encoding="utf-8"))
+    assert rebuilt == tracked
 
 
 def test_broad_epsilon_extraction_round_trip_preserves_tracked_bytes(
@@ -195,7 +265,11 @@ def test_data_product_registry_duplicate_role_fails_closed(colliding_key: str) -
 
 def test_registered_data_products_resolve_fail_closed() -> None:
     identities = registered_data_product_identities()
-    assert {CALIBRATION_PRODUCT_ROLE, BROAD_EPSILON_PRODUCT_ROLE} <= set(identities)
+    assert {
+        CALIBRATION_PRODUCT_ROLE,
+        BROAD_EPSILON_PRODUCT_ROLE,
+        CALIBRATION_DEFAULTS_PRODUCT_ROLE,
+    } <= set(identities)
 
     for identity in identities.values():
         path = REPO_ROOT / identity.document_relpath
@@ -227,3 +301,135 @@ def _tampered_copy(
     destination = tmp_path / source.name
     destination.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return destination
+
+
+_PRE_MIGRATION_AMPLITUDE_FACTORS = (
+    0.05,
+    0.1,
+    0.2,
+    0.5,
+    1.0,
+    2.0,
+    5.0,
+    10.0,
+    20.0,
+    50.0,
+    100.0,
+    200.0,
+    500.0,
+    1000.0,
+)
+_PRE_MIGRATION_REACH_CALIBRATION_POINTS = [
+    {
+        "label": "seen_train_0p10",
+        "split": "seen/train",
+        "reach_length_m": 0.10,
+        "role": "multi_target_training_reach_length",
+    },
+    {
+        "label": "seen_train_anchor_0p15",
+        "split": "seen/train",
+        "reach_length_m": 0.15,
+        "role": "multi_target_training_reach_length_and_original_anchor",
+    },
+    {
+        "label": "heldout_eval_0p12",
+        "split": "held-out/eval",
+        "reach_length_m": 0.12,
+        "role": "multi_target_held_out_evaluation_reach_length",
+    },
+    {
+        "label": "heldout_eval_0p18",
+        "split": "held-out/eval",
+        "reach_length_m": 0.18,
+        "role": "multi_target_held_out_evaluation_reach_length",
+    },
+]
+_PRE_MIGRATION_REACH_RELATIVE_LEVELS = [
+    {"name": "small", "fraction_of_reach": 0.05, "role": "small_probe"},
+    {"name": "moderate", "fraction_of_reach": 0.10, "role": "moderate_probe"},
+    {"name": "stress", "fraction_of_reach": 0.25, "role": "stress_probe"},
+]
+_PRE_MIGRATION_PLANT_TIMING_BINS = [
+    {
+        "label": "early",
+        "start_time_index": 5,
+        "duration_steps": 5,
+        "role": "plant_side_open_loop_calibration",
+    },
+    {
+        "label": "mid",
+        "start_time_index": 15,
+        "duration_steps": 5,
+        "role": "plant_side_open_loop_calibration",
+    },
+    {
+        "label": "late",
+        "start_time_index": 35,
+        "duration_steps": 5,
+        "role": "plant_side_open_loop_calibration",
+    },
+]
+_PRE_MIGRATION_CONTROLLER_VISIBLE_TIMING_BINS = [
+    {
+        "label": "early_visible",
+        "start_time_index": 10,
+        "duration_steps": 5,
+        "role": "controller_visible_offset_convention",
+    },
+    {
+        "label": "mid_visible",
+        "start_time_index": 20,
+        "duration_steps": 5,
+        "role": "controller_visible_offset_convention",
+    },
+    {
+        "label": "late_visible",
+        "start_time_index": 40,
+        "duration_steps": 5,
+        "role": "controller_visible_offset_convention",
+    },
+]
+_PRE_MIGRATION_NATIVE_CONVENTIONS = [
+    {
+        "family": "sensory_feedback_offset",
+        "channel": "sensory_feedback",
+        "native_unit_rule": (
+            "position offsets are fractions of reach length; velocity offsets are "
+            "fractions of nominal peak speed when available; force/filter offsets "
+            "are fractions of a native 1 N reference offset"
+        ),
+        "timing_rule": "controller-visible starts 10/20/40 with 5-step duration",
+        "report_metric": "closed-loop induced discrepancy against paired nominal rollout",
+        "role": "metadata_only_not_open_loop_physical_calibration",
+    },
+    {
+        "family": "delayed_observation_offset",
+        "channel": "delayed_observation",
+        "native_unit_rule": (
+            "pre-noise delayed-measurement position offsets are fractions of reach "
+            "length; velocity offsets use nominal peak speed placeholder when the "
+            "actual peak speed is unavailable; force/filter offsets are fractions "
+            "of a native 1 N reference offset"
+        ),
+        "timing_rule": "controller-visible starts 10/20/40 with 5-step duration",
+        "report_metric": "closed-loop induced discrepancy against paired nominal rollout",
+        "role": "metadata_only_not_open_loop_physical_calibration",
+    },
+    {
+        "family": "target_stream_jump",
+        "channel": "target_stream",
+        "native_unit_rule": "target offsets are fractions of reach length",
+        "timing_rule": "controller-visible starts 10/20/40 with 5-step duration",
+        "report_metric": "closed-loop induced discrepancy once target-stream rows exist",
+        "role": "metadata_only_not_open_loop_physical_calibration",
+    },
+    {
+        "family": "true_extra_delay_steps",
+        "channel": "feedback_delay",
+        "native_unit_rule": "integer extra delay steps, not a reach-relative amplitude",
+        "timing_rule": "applies to the feedback path delay schedule rather than pulse timing",
+        "report_metric": "induced discrepancy from added delay, to be reported in future rows",
+        "role": "metadata_only_not_open_loop_physical_calibration",
+    },
+]

@@ -55,12 +55,32 @@ BROAD_EPSILON_LEVELS = {
 """
 
 # Things the lint MUST ignore: a dimension constant, a solver tolerance, an
-# enum-like string tuple, and a low-precision convention tuple.
+# enum-like string tuple, and a low-precision convention tuple outside a
+# designated science-data module.
 _IGNORED_SNIPPET = """
 BROAD_EPSILON_DIM = 8
 SOLVER_TOLERANCE = 1e-9
 PERTURBATION_BINS = ("nominal", "process_epsilon", "command_input", "sensory_feedback")
 DEFAULT_AMPLITUDE_FACTORS = (0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0)
+"""
+
+_LOW_PRECISION_CALIBRATION_TABLE_SNIPPET = """
+DEFAULT_AMPLITUDE_FACTORS = (
+    0.05,
+    0.1,
+    0.2,
+    0.5,
+    1.0,
+    2.0,
+    5.0,
+    10.0,
+    20.0,
+    50.0,
+    100.0,
+    200.0,
+    500.0,
+    1000.0,
+)
 """
 
 # A value produced by a loader call is not a literal and is never flagged.
@@ -82,6 +102,17 @@ def test_data_lint_flags_the_two_named_generated_tables() -> None:
 def test_data_lint_ignores_dimensions_tolerances_and_labels() -> None:
     findings = scan_source(_IGNORED_SNIPPET, "example/conventions.py")
     assert findings == [], [f.name for f in findings]
+
+
+@pytest.mark.feedbax_contract
+def test_data_lint_flags_low_precision_calibration_table_shape() -> None:
+    findings = scan_source(
+        _LOW_PRECISION_CALIBRATION_TABLE_SNIPPET,
+        "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py",
+    )
+    assert [finding.name for finding in findings] == ["DEFAULT_AMPLITUDE_FACTORS"]
+    assert findings[0].n_high_precision == 0
+    assert findings[0].n_float_leaves == 14
 
 
 @pytest.mark.feedbax_contract

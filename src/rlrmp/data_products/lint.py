@@ -5,7 +5,11 @@ must live in tracked data products loaded fail-closed by identity, not as
 module-level source constants (see issue ea6ccb4). This lint flags module-level
 container literals (``dict`` / ``tuple`` / ``list`` / ``set``) whose float leaves
 carry high precision **and** whose high-precision-leaf cardinality exceeds a small
-threshold, unless the assignment target is allowlisted-with-rationale here.
+threshold, unless the assignment target is allowlisted-with-rationale here. It
+also has a path-gated cardinality canary for designated science-data modules:
+large low-precision float tables in those modules are flagged by shape because
+the old perturbation-calibration defaults proved that significant-figure-only
+detection was blind to adopted data tables.
 
 It is deliberately AST-based (a regex lint does not satisfy the ea6ccb4
 criterion): the scanner parses each module and inspects only top-level
@@ -16,7 +20,7 @@ never flagged). It ignores:
 * scalars (dimension constants like ``BROAD_EPSILON_DIM = 8``, solver tolerances,
   single adopted scalars such as ``R_weight``) -- only multi-entry container
   literals are considered;
-* low-precision numeric conventions (amplitude factors, fractions of reach);
+* low-precision numeric conventions outside designated science-data modules;
 * enum-like string tuples / labels (no float leaves);
 * everything under ``tests/``.
 """
@@ -29,9 +33,11 @@ from pathlib import Path
 
 __all__ = [
     "ALLOWLIST",
+    "DESIGNATED_SCIENCE_DATA_LITERAL_RELPATHS",
     "GeneratedConstantFinding",
     "HIGH_PRECISION_SIGFIG_THRESHOLD",
     "MIN_HIGH_PRECISION_CARDINALITY",
+    "MIN_SCIENCE_DATA_FLOAT_CARDINALITY",
     "scan_source",
     "scan_tree",
     "significant_figures",
@@ -47,6 +53,26 @@ HIGH_PRECISION_SIGFIG_THRESHOLD = 6
 # A container literal is flagged when it has strictly more than this many
 # high-precision float leaves (cardinality > 3).
 MIN_HIGH_PRECISION_CARDINALITY = 3
+
+# Large low-precision float containers in these science-data modules are data
+# literals until proven otherwise. This path gate names the ea6ccb4 blind spot
+# without flooding unrelated modules that legitimately use conventional float
+# tuples for dimensions, plotting, or solver parameters.
+DESIGNATED_SCIENCE_DATA_LITERAL_RELPATHS = frozenset(
+    {
+        "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py",
+    }
+)
+
+# A designated-module literal is flagged when it has at least this many float
+# leaves and the target name looks like a data table/default set.
+MIN_SCIENCE_DATA_FLOAT_CARDINALITY = 6
+SCIENCE_DATA_LITERAL_NAME_HINTS = (
+    "AMPLITUDE_FACTORS",
+    "CALIBRATION",
+    "LEVELS",
+    "TIMING_BINS",
+)
 
 # Allowlist of module-level container literals that carry high-precision float
 # tables but are intentionally kept as source constants with explicit provenance.
@@ -129,19 +155,38 @@ def scan_source(text: str, relpath: str) -> list[GeneratedConstantFinding]:
         high_precision = [
             f for f in floats if significant_figures(f) > HIGH_PRECISION_SIGFIG_THRESHOLD
         ]
-        if len(high_precision) <= MIN_HIGH_PRECISION_CARDINALITY:
+        high_precision_hit = len(high_precision) > MIN_HIGH_PRECISION_CARDINALITY
+        cardinality_hit = any(
+            _is_science_data_literal(relpath=relpath, name=name, floats=floats)
+            for name in names
+        )
+        if not high_precision_hit and not cardinality_hit:
             continue
         for name in names:
-            findings.append(
-                GeneratedConstantFinding(
-                    relpath=relpath,
-                    lineno=node.lineno,
-                    name=name,
-                    n_high_precision=len(high_precision),
-                    n_float_leaves=len(floats),
+            if high_precision_hit or _is_science_data_literal(
+                relpath=relpath,
+                name=name,
+                floats=floats,
+            ):
+                findings.append(
+                    GeneratedConstantFinding(
+                        relpath=relpath,
+                        lineno=node.lineno,
+                        name=name,
+                        n_high_precision=len(high_precision),
+                        n_float_leaves=len(floats),
+                    )
                 )
-            )
     return findings
+
+
+def _is_science_data_literal(*, relpath: str, name: str, floats: list[float]) -> bool:
+    if relpath not in DESIGNATED_SCIENCE_DATA_LITERAL_RELPATHS:
+        return False
+    if len(floats) < MIN_SCIENCE_DATA_FLOAT_CARDINALITY:
+        return False
+    upper_name = name.upper()
+    return any(hint in upper_name for hint in SCIENCE_DATA_LITERAL_NAME_HINTS)
 
 
 def scan_tree(src_root: Path, *, repo_root: Path) -> list[GeneratedConstantFinding]:
