@@ -38,6 +38,12 @@ _FEEDBAX_LEGACY_GRAPH_SCHEMA_VERSION = "1.0.0"
 _LEGACY_ARRAY_STORE_SCHEMA_VERSION = "feedbax.array_store.v1"
 
 
+# Frozen fallback defaults for reconstructing historical (pre-migration) run
+# specs (issue b41c940). This dict is pinned to the CLI defaults in effect
+# when those runs launched and must NOT be kept in sync with live
+# MINIMAX_CONFIG_DEFAULTS in rlrmp.train.minimax. The two are allowed to
+# diverge on keys whose live defaults changed after those runs were recorded.
+# See tests/test_artifact_migration.py for the allowlisted drift guard.
 _DEFAULT_MINIMAX_ARGS: dict[str, Any] = {
     "n_warmup_batches": 12000,
     "batch_size": 250,
