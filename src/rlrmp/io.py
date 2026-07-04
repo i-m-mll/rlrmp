@@ -66,6 +66,12 @@ def write_compact_json(
     os.replace(tmp, path)
 
 
+def read_json(path: Path) -> Any:
+    """Read a UTF-8 JSON document."""
+
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def _open_marker(name: str) -> str:
     return f"<!-- AUTO-GENERATED: {name} -->"
 

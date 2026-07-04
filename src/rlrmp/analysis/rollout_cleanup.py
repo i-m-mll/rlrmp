@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
-from rlrmp.io import write_compact_json
+from rlrmp.io import read_json, write_compact_json
 
 
 SCHEMA_VERSION = "rlrmp.raw_rollout_cleanup.v1"
@@ -63,7 +62,11 @@ def cleanup_raw_perturbation_rollouts(
 
     repo_root = repo_root.resolve()
     manifest_path = _resolve_repo_path(tracked_manifest_path, repo_root=repo_root)
-    manifest = _read_json(manifest_path)
+    if not manifest_path.is_file():
+        raise CleanupPreconditionError(f"tracked manifest does not exist: {manifest_path}")
+    manifest = read_json(manifest_path)
+    if not isinstance(manifest, dict):
+        raise CleanupPreconditionError(f"tracked manifest must be a JSON object: {manifest_path}")
     resolved_bulk_dir = _resolve_bulk_dir(manifest, bulk_dir=bulk_dir, repo_root=repo_root)
     summaries = _resolve_summary_paths(
         manifest_path,
@@ -174,15 +177,6 @@ def _resolve_repo_path(path: Path | str, *, repo_root: Path) -> Path:
     if not resolved.is_absolute():
         resolved = repo_root / resolved
     return resolved.resolve()
-
-
-def _read_json(path: Path) -> dict[str, Any]:
-    if not path.is_file():
-        raise CleanupPreconditionError(f"tracked manifest does not exist: {path}")
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise CleanupPreconditionError(f"tracked manifest must be a JSON object: {path}")
-    return payload
 
 
 def _resolve_bulk_dir(

@@ -1,0 +1,1 @@
+Issue 96ac0e5 records the repo-wide query-language eligibility sweep and thin-wrapper deprecation lane under umbrella d1f90ac. The audit corpus and adjudicated wrapper decisions live under `notes/`, with this lane deleting dead `rlrmp.data_products` build/write/accessor wrappers and preserving the evidence needed to review those decisions later.

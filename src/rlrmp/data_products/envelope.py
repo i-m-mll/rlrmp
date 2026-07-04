@@ -41,6 +41,7 @@ __all__ = [
     "load_data_product",
     "read_data_product",
     "validate_data_product",
+    "write_data_product",
 ]
 
 
@@ -187,6 +188,16 @@ def load_data_product(
     product = read_data_product(path)
     validate_data_product(product, requirement, source=str(path))
     return product
+
+
+def write_data_product(product: AnalysisDataProduct, path: Path) -> None:
+    """Persist an analysis data product using the tracked JSON byte format."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        product.model_dump_json(indent=2, exclude_none=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _schema_version_satisfies(

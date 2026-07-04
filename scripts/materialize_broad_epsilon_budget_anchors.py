@@ -7,6 +7,12 @@ import argparse
 import json
 from pathlib import Path
 
+from feedbax.contracts.extraction import (
+    DataProductDrift,
+    ExtractionProductIdentityMismatch,
+    materialize_extraction_product,
+    verify_extraction_product,
+)
 from feedbax.contracts.manifest import (
     AnalysisDataProduct,
     analysis_data_product_identity_hash,
@@ -15,11 +21,11 @@ from feedbax.contracts.manifest import (
 from rlrmp.data_products.broad_epsilon import (
     BROAD_EPSILON_PRODUCT_IDENTITY_HASH,
     BROAD_EPSILON_PRODUCT_PATH,
-    build_broad_epsilon_budget_anchors_product,
-    verify_broad_epsilon_budget_anchors_product,
-    write_broad_epsilon_budget_anchors_product,
+    _broad_epsilon_extraction_spec,
+    broad_epsilon_data_product_requirement,
 )
-from rlrmp.data_products.envelope import DataProductError
+from rlrmp.data_products.envelope import DataProductError, load_data_product, write_data_product
+from rlrmp.paths import REPO_ROOT
 
 
 class MaterializationMismatch(RuntimeError):
@@ -45,12 +51,21 @@ def main() -> int:
     mode = "write" if args.write else "check"
     path = args.output_path or BROAD_EPSILON_PRODUCT_PATH
     try:
-        product = build_broad_epsilon_budget_anchors_product()
+        spec = _broad_epsilon_extraction_spec()
+        product = _materialize_product()
         identity_hash = _verify_identity_pin(product)
         if args.write:
-            write_broad_epsilon_budget_anchors_product(product, path=path)
+            write_data_product(product, path)
         _verify_serialized_bytes(product, path)
-        verify_broad_epsilon_budget_anchors_product(path=path)
+        persisted = load_data_product(path, broad_epsilon_data_product_requirement())
+        try:
+            verify_extraction_product(spec, persisted, REPO_ROOT)
+        except DataProductDrift as exc:
+            raise DataProductError(
+                f"broad-epsilon product no longer matches analytical sources: {exc}",
+                kind="Mismatch",
+                mismatch_class="analytical-source-drift",
+            ) from exc
     except DataProductError as exc:
         _print_summary(
             mode=mode,
@@ -77,6 +92,17 @@ def main() -> int:
         identity_hash=identity_hash,
     )
     return 0
+
+
+def _materialize_product() -> AnalysisDataProduct:
+    try:
+        return materialize_extraction_product(_broad_epsilon_extraction_spec(), REPO_ROOT)
+    except ExtractionProductIdentityMismatch as exc:
+        raise DataProductError(
+            f"broad-epsilon extraction product identity mismatch: {exc}",
+            kind="Mismatch",
+            mismatch_class="product-identity",
+        ) from exc
 
 
 def _verify_identity_pin(product: AnalysisDataProduct) -> str:

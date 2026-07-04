@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -31,7 +31,7 @@ from feedbax.contracts.manifest import AnalysisDataProduct, ArtifactRef
 
 from rlrmp.data_products.envelope import DataProductError, load_data_product
 from rlrmp.data_products.registry import register_data_product_identity
-from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.paths import REPO_ROOT
 
 __all__ = [
     "CALIBRATION_PRODUCT_IDENTITY_HASH",
@@ -58,20 +58,12 @@ __all__ = [
     "ReachCalibrationPoint",
     "ReachRelativeLevel",
     "TimingCalibrationBin",
-    "build_open_loop_calibration_product",
-    "build_perturbation_calibration_defaults_payload",
-    "build_perturbation_calibration_defaults_product",
     "calibration_data_product_requirement",
     "calibration_defaults_data_product_requirement",
     "consumed_calibration_identity",
     "consumed_perturbation_calibration_defaults_identity",
-    "controller_visible_velocity_scale_m_s",
     "load_perturbation_calibration_defaults",
     "load_open_loop_calibration",
-    "open_loop_peak_delta_x_per_unit",
-    "write_perturbation_calibration_defaults_payload",
-    "write_perturbation_calibration_defaults_product",
-    "write_open_loop_calibration_product",
 ]
 
 CALIBRATION_PRODUCT_SCHEMA_ID = "rlrmp.perturbation_open_loop_calibration"
@@ -97,9 +89,7 @@ CALIBRATION_DEFAULTS_PRODUCT_SCHEMA_ID = "rlrmp.perturbation_calibration_default
 CALIBRATION_DEFAULTS_PRODUCT_SCHEMA_VERSION = "rlrmp.perturbation_calibration_defaults.v1"
 CALIBRATION_DEFAULTS_PRODUCT_ROLE = "perturbation_calibration_defaults"
 CALIBRATION_DEFAULTS_PRODUCT_LOGICAL_NAME = "cs_perturbation_calibration_defaults"
-CALIBRATION_DEFAULTS_PRODUCT_PRODUCER = (
-    "rlrmp.data_products.calibration.build_perturbation_calibration_defaults_product"
-)
+CALIBRATION_DEFAULTS_PRODUCT_PRODUCER = "tracked_calibration_defaults_document"
 CALIBRATION_DEFAULTS_PRODUCT_RELPATH = (
     "results/ea6ccb4/data_products/perturbation_calibration_defaults.json"
 )
@@ -134,46 +124,6 @@ CONTROLLER_VISIBLE_FORCE_FILTER_SCALE_CONVENTION = {
     "description": "native 1 N reference offset for force/filter controller-visible "
     "components; unit convention, not generated data",
 }
-
-CALIBRATION_DEFAULTS_ADOPTION_RECORDS = [
-    {
-        "source_kind": "previously_baked_module_constant",
-        "source_file": "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py",
-        "source_constant": "DEFAULT_AMPLITUDE_FACTORS",
-        "description": "Legacy fixed-mm amplitude-factor sweep retained for regeneration specs.",
-    },
-    {
-        "source_kind": "previously_baked_module_constant",
-        "source_file": "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py",
-        "source_constant": "DEFAULT_REACH_CALIBRATION_POINTS",
-        "description": "Reach lengths and split labels used for reach-relative calibration rows.",
-    },
-    {
-        "source_kind": "previously_baked_module_constant",
-        "source_file": "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py",
-        "source_constant": "DEFAULT_REACH_RELATIVE_LEVELS",
-        "description": "Named perturbation effect-size levels as fractions of reach length.",
-    },
-    {
-        "source_kind": "previously_baked_module_constant",
-        "source_file": "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py",
-        "source_constant": "DEFAULT_PLANT_TIMING_BINS",
-        "description": "Plant-side pulse timing bins for open-loop calibration rows.",
-    },
-    {
-        "source_kind": "previously_baked_module_constant",
-        "source_file": "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py",
-        "source_constant": "DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS",
-        "description": "Controller-visible timing conventions for metadata-only perturbation rows.",
-    },
-    {
-        "source_kind": "previously_baked_module_constant",
-        "source_file": "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py",
-        "source_constant": "DEFAULT_NATIVE_CONVENTIONS",
-        "description": "Native-unit/reporting conventions for controller-visible perturbation families.",
-    },
-]
-
 
 @dataclass(frozen=True)
 class OpenLoopCalibration:
@@ -285,199 +235,6 @@ class PerturbationCalibrationDefaults:
     native_conventions: tuple[NativeConvention, ...]
     product_identity_hash: str
     payload_sha256: str
-
-
-def _calibration_parameters(
-    peak_delta_x_per_unit: dict[str, dict[str, float]],
-    controller_visible_velocity_scale_m_s: float,
-    controller_visible_force_filter_scale_n: float,
-    reference_reach_m: float,
-) -> dict[str, Any]:
-    return {
-        "open_loop_peak_delta_x_per_unit": {
-            str(family): {str(bin_): float(value) for bin_, value in bins.items()}
-            for family, bins in peak_delta_x_per_unit.items()
-        },
-        "controller_visible_velocity_scale_m_s": float(controller_visible_velocity_scale_m_s),
-        "controller_visible_force_filter_scale_n": float(controller_visible_force_filter_scale_n),
-        "reference_reach_m": float(reference_reach_m),
-        "scale_provenance": {
-            "controller_visible_velocity_scale_m_s": CONTROLLER_VISIBLE_VELOCITY_SCALE_ADOPTION,
-            "controller_visible_force_filter_scale_n": (
-                CONTROLLER_VISIBLE_FORCE_FILTER_SCALE_CONVENTION
-            ),
-        },
-    }
-
-
-def build_open_loop_calibration_product(
-    *,
-    peak_delta_x_per_unit: dict[str, dict[str, float]],
-    controller_visible_velocity_scale_m_s: float,
-    controller_visible_force_filter_scale_n: float = 1.0,
-    reference_reach_m: float = 0.15,
-) -> AnalysisDataProduct:
-    """Build the calibration :class:`AnalysisDataProduct` envelope."""
-
-    return AnalysisDataProduct(
-        product_schema_id=CALIBRATION_PRODUCT_SCHEMA_ID,
-        product_schema_version=CALIBRATION_PRODUCT_SCHEMA_VERSION,
-        role=CALIBRATION_PRODUCT_ROLE,
-        logical_name=CALIBRATION_PRODUCT_LOGICAL_NAME,
-        producer_manifest_id=CALIBRATION_PRODUCT_PRODUCER,
-        parameters=_calibration_parameters(
-            peak_delta_x_per_unit,
-            controller_visible_velocity_scale_m_s,
-            controller_visible_force_filter_scale_n,
-            reference_reach_m,
-        ),
-        materialization={
-            "materializer": CALIBRATION_PRODUCT_PRODUCER,
-            "rerun_command": (
-                "uv run python scripts/materialize_perturbation_open_loop_calibration.py"
-            ),
-            "open_loop_reference": "extLQG nominal command replay (no feedback correction)",
-            "bulk_manifest_root": "_artifacts/1ad3c16/perturbation_open_loop_calibration",
-        },
-        metadata={
-            "issue": "ea6ccb4",
-            "provenance_issue": "1ad3c16",
-            "note": "Distilled open-loop unit-sensitivity table; bulk per-row manifest "
-            "lives under _artifacts and is not required at runtime.",
-        },
-    )
-
-
-def write_open_loop_calibration_product(
-    product: AnalysisDataProduct,
-    *,
-    path: Path | None = None,
-) -> Path:
-    """Persist the calibration product as tracked JSON and return its path."""
-
-    path = path or CALIBRATION_PRODUCT_PATH
-    mkdir_p(path.parent)
-    path.write_text(
-        product.model_dump_json(indent=2, exclude_none=True) + "\n",
-        encoding="utf-8",
-    )
-    return path
-
-
-def build_perturbation_calibration_defaults_payload(
-    *,
-    amplitude_factors: Sequence[float],
-    reach_calibration_points: Sequence[ReachCalibrationPoint],
-    reach_relative_levels: Sequence[ReachRelativeLevel],
-    plant_timing_bins: Sequence[TimingCalibrationBin],
-    controller_visible_timing_bins: Sequence[TimingCalibrationBin],
-    native_conventions: Sequence[NativeConvention],
-) -> dict[str, Any]:
-    """Build the adopted calibration-default payload document."""
-
-    return {
-        "schema_id": CALIBRATION_DEFAULTS_PAYLOAD_SCHEMA_ID,
-        "schema_version": CALIBRATION_DEFAULTS_PAYLOAD_SCHEMA_VERSION,
-        "role": CALIBRATION_DEFAULTS_PRODUCT_ROLE,
-        "amplitude_factors": [float(factor) for factor in amplitude_factors],
-        "reach_calibration_points": [
-            point.to_json() for point in reach_calibration_points
-        ],
-        "reach_relative_levels": [level.to_json() for level in reach_relative_levels],
-        "plant_timing_bins": [timing_bin.to_json() for timing_bin in plant_timing_bins],
-        "controller_visible_timing_bins": [
-            timing_bin.to_json() for timing_bin in controller_visible_timing_bins
-        ],
-        "native_conventions": [
-            convention.to_json() for convention in native_conventions
-        ],
-    }
-
-
-def write_perturbation_calibration_defaults_payload(
-    payload: Mapping[str, Any],
-    *,
-    path: Path | None = None,
-) -> Path:
-    """Persist the adopted defaults payload JSON and return its path."""
-
-    path = path or CALIBRATION_DEFAULTS_PAYLOAD_PATH
-    mkdir_p(path.parent)
-    path.write_text(
-        json.dumps(payload, indent=2, sort_keys=False) + "\n",
-        encoding="utf-8",
-    )
-    return path
-
-
-def build_perturbation_calibration_defaults_product(
-    *,
-    payload_sha256: str,
-    payload_relpath: str = CALIBRATION_DEFAULTS_PAYLOAD_RELPATH,
-) -> AnalysisDataProduct:
-    """Build the adopted calibration-defaults :class:`AnalysisDataProduct` envelope."""
-
-    return AnalysisDataProduct(
-        product_schema_id=CALIBRATION_DEFAULTS_PRODUCT_SCHEMA_ID,
-        product_schema_version=CALIBRATION_DEFAULTS_PRODUCT_SCHEMA_VERSION,
-        role=CALIBRATION_DEFAULTS_PRODUCT_ROLE,
-        logical_name=CALIBRATION_DEFAULTS_PRODUCT_LOGICAL_NAME,
-        producer_manifest_id=CALIBRATION_DEFAULTS_PRODUCT_PRODUCER,
-        parameters={
-            "payload_schema_id": CALIBRATION_DEFAULTS_PAYLOAD_SCHEMA_ID,
-            "payload_schema_version": CALIBRATION_DEFAULTS_PAYLOAD_SCHEMA_VERSION,
-            "payload_artifact_uri": payload_relpath,
-            "adoption_records": CALIBRATION_DEFAULTS_ADOPTION_RECORDS,
-            "entry_counts": {
-                "amplitude_factors": 14,
-                "reach_calibration_points": 4,
-                "reach_relative_levels": 3,
-                "plant_timing_bins": 3,
-                "controller_visible_timing_bins": 3,
-                "native_conventions": 4,
-            },
-        },
-        artifacts=[
-            ArtifactRef(
-                role="calibration_defaults_payload",
-                logical_name=CALIBRATION_DEFAULTS_PAYLOAD_LOGICAL_NAME,
-                sha256=payload_sha256,
-                media_type="application/json",
-                storage_backend="git",
-                uri=payload_relpath,
-                metadata={
-                    "schema_id": CALIBRATION_DEFAULTS_PAYLOAD_SCHEMA_ID,
-                    "schema_version": CALIBRATION_DEFAULTS_PAYLOAD_SCHEMA_VERSION,
-                },
-            )
-        ],
-        materialization={
-            "materializer": CALIBRATION_DEFAULTS_PRODUCT_PRODUCER,
-            "source": "adopted from previously baked module constants",
-        },
-        metadata={
-            "issue": "ea6ccb4",
-            "source_file": "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py",
-            "note": "Adopted runtime defaults for perturbation calibration; no derivable "
-            "source manifest exists beyond the previously baked constants.",
-        },
-    )
-
-
-def write_perturbation_calibration_defaults_product(
-    product: AnalysisDataProduct,
-    *,
-    path: Path | None = None,
-) -> Path:
-    """Persist the adopted calibration-defaults product as tracked JSON."""
-
-    path = path or CALIBRATION_DEFAULTS_PRODUCT_PATH
-    mkdir_p(path.parent)
-    path.write_text(
-        product.model_dump_json(indent=2, exclude_none=True) + "\n",
-        encoding="utf-8",
-    )
-    return path
 
 
 def calibration_data_product_requirement() -> AnalysisDataProductRequirement:
@@ -627,18 +384,6 @@ def load_perturbation_calibration_defaults() -> PerturbationCalibrationDefaults:
         product_identity_hash=str(product.product_identity_hash),
         payload_sha256=str(artifact.sha256),
     )
-
-
-def open_loop_peak_delta_x_per_unit() -> dict[str, dict[str, float]]:
-    """Return the loaded open-loop unit-sensitivity table."""
-
-    return load_open_loop_calibration().peak_delta_x_per_unit
-
-
-def controller_visible_velocity_scale_m_s() -> float:
-    """Return the loaded controller-visible native velocity scale."""
-
-    return load_open_loop_calibration().controller_visible_velocity_scale_m_s
 
 
 def consumed_calibration_identity() -> dict[str, str]:
