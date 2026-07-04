@@ -38,6 +38,89 @@ The neural networks are not the endpoint as an ML benchmark. They are model syst
 - The feedbax repo is at `~/Main/10 Projects/10 PhD/20 Feedbax/feedbax/` (rlrmp's `pyproject.toml` points its editable source at this repo root). The Python package lives at `feedbax/feedbax/` inside the repo — there is **no `src/` layout**. Import via `uv run --no-sync python`, never bare `python`.
 - Feedbax's protected branch is `develop`, not `main`. All canonical feedbax behaviour, APIs, and architectural patterns reside on `develop`, which the repo root now carries; the `main` branch may lag substantially and is not authoritative. Use worktrees for feature work (`wt feature/<name> develop`), following this repo's conventions. To read current behaviour, read files at the repo root or use `git show develop:path/to/file.py`.
 
+## Repo Implementation Policy
+
+### Non-negotiable implementation principles
+
+- **Data stays separate from code.** Generated, empirical, or adopted data lives
+  in tracked specs or governed data products with schema versions, roles, and
+  hashes. Source code holds schemas, loaders, and builders, not baked-in data
+  tables.
+- **Contracts are obeyed, never bypassed.** If feedbax cannot express an rlrmp
+  need, file and fix the feedbax gap. Do not add rlrmp-side shims,
+  monkeypatches, private writes, or temporary wrappers that bypass the owning
+  contract.
+- **Everything official is registered.** Trainers, analyses, diagnostics,
+  adversaries, perturbations, reports, and graph pieces must be registered
+  feedbax primitives when general, or rlrmp components that fully participate in
+  feedbax registration, schema, and migration contracts when project-specific.
+- **Graphs are parsimonious and modular.** Factor work into small reusable
+  components. General leaves belong in feedbax; only genuinely rlrmp-specific
+  scientific components stay here.
+- **Runs, evaluations, analyses, and reports are spec-first.** Specs are
+  schema-compliant, migratable, and serialized as the source of truth. Execution
+  materializes specs and manifests; do not re-derive canonical payloads after
+  the fact.
+- **A fix without a guard is half a fix.** When a residual class is fixed, add
+  or extend a structural CI gate so the class cannot quietly return.
+- **Residuals are fixed in-wave.** Bugs and contract gaps discovered during a
+  wave are filed, adopted into the relevant coordination surface, and resolved
+  in that wave unless blocked by an explicit user decision or external
+  infrastructure.
+
+### Analysis pipeline policy
+
+The current analysis pipeline is feedbax-native and manifest-canonical:
+
+1. Registered evaluation recipes under `rlrmp.eval.*` produce
+   `EvaluationRunManifest` records and cached evaluation states. Evaluation
+   identity comes from the canonical `EvaluationRunSpec`; analyses must consume
+   these manifests and must not rerun rollouts internally.
+2. Analyses are registered recipes that build `AbstractAnalysis` nodes. Their
+   inputs are `ParentRef`s to upstream manifests, especially evaluation
+   manifests when the analysis consumes rollout/evaluation states.
+3. Reports are registered `rlrmp.report.*` recipes. Report stages render
+   feedbax-custody `report_render` artifacts. Tracked Markdown notes are
+   downstream exports of those report artifacts; `rlrmp.io.update_marked_section`
+   still governs any tracked note copy.
+4. For paired or comparative conditions, such as "SISU-on vs SISU-off", the
+   canonical shape is one staged `AnalysisBundleSpec`: one evaluation stage per
+   condition using the same evaluation recipe with different params, then
+   analysis stages whose `depends_on` lists those evaluation stages. Use
+   ungrouped/per-run stages for independent per-condition analyses. Use grouped
+   stages for one analysis consuming all conditions together, and set
+   `include_bundle_inputs` when that grouped analysis also needs the original
+   training context. Feedbax caches and reuses evals by manifest identity.
+
+### Feedbax contract CI gates
+
+The marked gate is `feedbax_contract` in `ci/feedbax-contract-suite.toml`. The
+manifest is part of the contract: skips are failures, negative canaries should
+remain meaningful, and allowlists are shrink-only unless a new issue documents
+why an exception is still required.
+
+| Family | Protects |
+|---|---|
+| `analysis_recipe_contract` | Analysis recipes stay registered, schema-bearing, and executable through feedbax. |
+| `analysis_write_custody` | Analysis outputs use feedbax custody instead of direct durable writes. |
+| `analysis_eval_dependency` | Registered analyses that need rollouts depend on evaluation manifests. |
+| `product_identity_hash` | Governed data products fail closed when identities or hashes drift. |
+| `generated_data_constant_scan` | Generated/adopted data does not re-enter `src/` as high-precision constants. |
+| `retired_id_scan` | Retired component IDs remain confined to archive/compatibility readers. |
+| `write_surface` | Durable writer surfaces are explicit, reviewed, and custody-routed. |
+| `import_boundary` | rlrmp imports feedbax through public, canonical APIs only. |
+| `graph_spec_contract` and `artifact_manifest_normalization` | Graph specs and manifests remain schema-compatible with feedbax. |
+| `reaccretion_ratchet`, `lane_b_terminal_gate`, `lane_c_terminal_gate` | Deleted or remediated residual classes cannot quietly return. |
+
+### LEGACY-banner convention
+
+A `LEGACY (frozen ..., issue ...)` banner means the file or function is retained
+for provenance or deferred porting. It is not contract-native, may not run, and
+is never a pattern to copy. New work must either port the behavior into the
+feedbax-native recipe/bundle/manifest pipeline or delete the obsolete surface
+when its provenance value is gone. The current inventory is
+`results/3cf909c/notes/legacy_materializers.md`.
+
 ## Standard Certificate Presentation
 
 When presenting Phase 3 bridge standard-certificate results, show a table rather
@@ -116,7 +199,7 @@ fig = profile_comparison_grid(
 
 ### Aligned-profile aggregators trim by default
 
-The `pooled_trial_mean_with_band` and `replicate_mean_curves` helpers in `rlrmp.analysis.trial_alignment` trim aligned profiles to the strict full-support column window (`min_coverage=1.0`) before reducing. Callers receive the trim slice alongside the curves so companion time axes can be sliced consistently (`t = ((np.arange(n) - center) * dt)[sl]`). Pass `trim=False` only when downstream code needs identical step axes across multiple invocations (e.g. cross-cell pairwise RMSE) and the reducer is already NaN-tolerant.
+The `pooled_trial_mean_with_band` and `replicate_mean_curves` helpers in `rlrmp.analysis.math.trial_alignment` trim aligned profiles to the strict full-support column window (`min_coverage=1.0`) before reducing. Callers receive the trim slice alongside the curves so companion time axes can be sliced consistently (`t = ((np.arange(n) - center) * dt)[sl]`). Pass `trim=False` only when downstream code needs identical step axes across multiple invocations (e.g. cross-cell pairwise RMSE) and the reducer is already NaN-tolerant.
 
 ### Auto-generated note sections (Bug: 06f7faf)
 
@@ -334,7 +417,7 @@ possible as the deterministic handoff step. It owns the mechanical protocol:
 artifact sync from local, Modal, or pod sources; tracked run-spec creation under
 `results/<issue>/runs/<run>.json`; bulk artifact placement under
 `_artifacts/<issue>/runs/<run>/`; metrics-table rendering from
-`training_summary.json`; `git add`; `agent-commit`; and Mandible auth request
+`training_summary.json`; `git add`; `agent-commit` through the wrapper; and Mandible auth request
 submission.
 
 Run it from the feature worktree that should own the post-run commit:
@@ -493,7 +576,7 @@ The top-level `scripts/` directory is for cross-cutting tooling — scripts that
 **Hard rules:**
 
 1. **Capability-named library modules.** Modules under `src/rlrmp/` MUST be named by capability — `eval`, `train`, `plot`/`viz`, `analysis`, `lme`, etc. — never by experiment, phase, or paper (no `part2_5`, `methodology_fix`, `shahbazi`, `tier1`). If you want to call a module `<phase>_helpers.py`, identify the underlying capability and use that name instead. Within a capability module, training-method-specific sub-modules ARE allowed (`rlrmp.train.minimax`, `rlrmp.eval.minimax_io`) because training methods are stable concepts spanning experiments. Experiment-named sub-modules are still forbidden.
-2. **Experiment-specific scripts** (analysis pipelines, plotting, one-off diagnostics tied to a single tracking issue) live with the experiment: `results/<hash>/scripts/<name>.py`. Commit them alongside the experiment's `runs/`, `notes/`, `figures/` with `agent-commit --issue <hash>` so the commit carries the matching `Mandible-Issue: <hash>` trailer.
+2. **Experiment-specific scripts** (analysis pipelines, plotting, one-off diagnostics tied to a single tracking issue) live with the experiment: `results/<hash>/scripts/<name>.py`. Commit them alongside the experiment's `runs/`, `notes/`, `figures/` with `mandible commit linked --issue <hash>` so the commit carries the matching `Mandible-Issue: <hash>` trailer.
 3. **Reusable components** (utilities, plotting primitives, analysis routines several experiments call) MUST be refactored into the capability-named library module BEFORE the experiment script lands. Extract now, not "for now" — the helper will outlast the script. Submit the library change via an auth request to `src/rlrmp/` (or `feedbax/` if plant- or task-general).
 4. **Mixed scripts** split: the driver under `results/<hash>/scripts/`, the helpers in `src/rlrmp/`. Both can land in the same auth request - the driver commit carries the experiment's `Mandible-Issue: <hash>` trailer; a substantial library change carries its own feature issue.
 5. **Cross-cutting CLI entry-points** (training/eval launchers operating generically across experiments) stay in `scripts/` (`scripts/train_minimax.py`, `scripts/eval_minimax.py`, etc.). They MUST import reusable helpers from `src/rlrmp/`, not from each other.
@@ -574,7 +657,7 @@ Bug: `f485c26`, feedbax `67bf476`. The dual-tree write + symlink is automatic pe
 rlrmp's `.worktree.yaml` adds `_artifacts` to its `shared:` list, so `~/.dotfiles/bin/wt` symlinks the directory from the main worktree's repo root into every feature worktree at creation time. All writes to `_artifacts/` from a worktree therefore go to the main repo's `_artifacts/`, regardless of which worktree the script runs from. This prevents gitignored bulk outputs (figure HTML renders, training checkpoints, etc.) from being silently deleted when `dwt` removes the worktree post-merge — the original failure mode that motivated this convention (see issue `0887e3e` for the design discussion).
 
 - **New worktrees** inherit the symlink automatically via `wt` (it processes `.worktree.yaml` at creation time).
-- **Pre-existing worktrees** can pick up the symlink by running `~/.dotfiles/bin/wt-sync` from inside the worktree.
+- **Pre-existing worktrees** can pick up the symlink by running `~/.dotfiles/bin/wt sync` from inside the worktree.
 - **`.worktree.yaml` also declares `setup: mkdir -p _artifacts`** so the directory exists on fresh clones (otherwise `wt` would warn "not found in repo root, skipping" and no symlink would be created).
 
 Constraint: nothing under `_artifacts/` may be tracked in git. A tracked file would be materialized by `git checkout` when the worktree is created, then conflict with the symlink replacement that `wt` performs. The `.gitignore` pattern is therefore `_artifacts` (no trailing slash, no re-include exceptions) — see Bug: `0887e3e` for why the prior `!_artifacts/README.md` exception had to be removed.
@@ -691,7 +774,7 @@ When the table doesn't cover your case: ask "is this a project-lifetime decision
 
 ### Commit `Mandible-Issue:` trailers — never reference coordination issues
 
-`Mandible-Issue:` trailers are for the relevant child / feature / bug issue - the unit of work the commit completes. Coordination issues are decision-tracking surfaces, not commit destinations. So `agent-commit --issue <id>` should always take a child / feature / bug issue ID, never `4d38c15` / `c99ad9d` / `b33e8da` / `1d9ae6f`. Use `Closes-Mandible-Issue: <id>` only when the commit should deliberately close that issue through the auth merge.
+`Mandible-Issue:` trailers are for the relevant child / feature / bug issue - the unit of work the commit completes. Coordination issues are decision-tracking surfaces, not commit destinations. So `mandible commit linked --issue <id>` should always take a child / feature / bug issue ID, never `4d38c15` / `c99ad9d` / `b33e8da` / `1d9ae6f`. Use `Closes-Mandible-Issue: <id>` only when the commit should deliberately close that issue through the auth merge.
 
 ### Phase umbrella protocol
 
@@ -700,7 +783,7 @@ When the table doesn't cover your case: ask "is this a project-lifetime decision
 3. **Children** reference the umbrella in **their bodies** ("Part of phase `b557d4e`."), not in commit `Mandible-Issue:` trailers. Close the umbrella only deliberately when the phase is done.
 4. **On phase end / pivot / abandonment**, comment on `b33e8da` with the one-line outcome ("merged via X", "pivoted to Y", "abandoned because Z").
 
-Past phases for orientation (see `b33e8da` for the live inventory): Part 1 (`297260c`), Part 2 (`0af472c`), Part 2.5 (`844ef95`), Methodology-fix (`b557d4e`, currently active).
+Past phases for orientation (see `b33e8da` for the live inventory): Part 1 (`297260c`), Part 2 (`0af472c`), Part 2.5 (`844ef95`), and Methodology-fix (`b557d4e`). Check the ledger for the current phase before treating any historical phase as active.
 
 ### Worked example: cross-cutting Riccati flavor-(a) finding
 
