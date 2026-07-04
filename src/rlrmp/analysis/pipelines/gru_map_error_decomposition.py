@@ -9,7 +9,7 @@ from typing import Any
 import numpy as np
 
 from rlrmp.analysis.pipelines.gru_checkpoint_selection import load_materialized_fixed_bank_manifest
-from rlrmp.io import update_marked_section
+from rlrmp.io import read_json, update_marked_section
 from rlrmp.paths import REPO_ROOT
 from rlrmp.runtime.run_specs import resolve_run_record
 
@@ -49,7 +49,7 @@ def materialize_gru_map_error_decomposition(
         evaluate_gru_clean_actions,
     )
 
-    manifest = _read_json(standard_manifest_path)
+    manifest = read_json(standard_manifest_path)
     selected_run_ids = run_ids or _source_run_ids_from_standard_manifest(manifest)
     reference_map, reference_metadata = cs_output_feedback_observation_action_map()
     rows = []
@@ -516,10 +516,6 @@ def _component_summary(row: dict[str, Any], component_name: str) -> dict[str, An
                 "reason": component.get("reason"),
             }
     return None
-
-
-def _read_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _repo_relative(path: Path, *, repo_root: Path) -> str:

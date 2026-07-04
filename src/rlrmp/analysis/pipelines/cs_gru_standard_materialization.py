@@ -61,7 +61,7 @@ from rlrmp.analysis.pipelines.standard_certificate_materialization import (
     materialization_summary,
     repo_relative,
 )
-from rlrmp.io import update_marked_section
+from rlrmp.io import read_json, update_marked_section
 from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path, run_spec_path
 from rlrmp.runtime.spec_migrations import (
     CS_GRU_STANDARD_CERTIFICATES_KIND,
@@ -318,7 +318,7 @@ def materialize_gru_standard_row(
         experiment=experiment,
         repo_root=repo_root,
     )
-    training_summary = _read_json(training_summary_path) if training_summary_path.exists() else {}
+    training_summary = read_json(training_summary_path) if training_summary_path.exists() else {}
     reference_actions, reference_metadata = cs_output_feedback_reference_actions()
     reference_map, response_reference_metadata = cs_output_feedback_observation_action_map()
     action_weight = reference_metadata["action_weight"]
@@ -418,7 +418,7 @@ def materialize_gru_standard_row_from_evaluation_state(
         experiment=experiment,
         repo_root=repo_root,
     )
-    training_summary = _read_json(training_summary_path) if training_summary_path.exists() else {}
+    training_summary = read_json(training_summary_path) if training_summary_path.exists() else {}
     reference_actions, reference_metadata = cs_output_feedback_reference_actions()
     reference_map, response_reference_metadata = cs_output_feedback_observation_action_map()
     action_weight = reference_metadata["action_weight"]
@@ -1382,10 +1382,6 @@ def _fmt(value: Any) -> str:
         return f"{float(value):.6g}"
     except (TypeError, ValueError):
         return str(value)
-
-
-def _read_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _default_model_path(

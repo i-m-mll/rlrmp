@@ -23,22 +23,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
-from pathlib import Path
 from typing import Any
 
 from feedbax.contracts.graph import AnalysisDataProductRequirement
 from feedbax.contracts.extraction import (
     DataProductDrift,
-    ExtractionProductIdentityMismatch,
     ExtractionProductSpec,
-    materialize_extraction_product,
     verify_extraction_product,
 )
-from feedbax.contracts.manifest import AnalysisDataProduct
 
 from rlrmp.data_products.envelope import DataProductError, load_data_product
 from rlrmp.data_products.registry import register_data_product_identity
-from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.paths import REPO_ROOT
 
 __all__ = [
     "BROAD_EPSILON_PRODUCT_IDENTITY_HASH",
@@ -51,20 +47,15 @@ __all__ = [
     "BROAD_EPSILON_EXTRACTION_SPEC_PATH",
     "BroadEpsilonAnchors",
     "broad_epsilon_data_product_requirement",
-    "build_broad_epsilon_budget_anchors_product",
     "consumed_broad_epsilon_identity",
     "load_broad_epsilon_anchors",
-    "verify_broad_epsilon_budget_anchors_product",
-    "write_broad_epsilon_budget_anchors_product",
 ]
 
 BROAD_EPSILON_PRODUCT_SCHEMA_ID = "rlrmp.broad_epsilon_budget_anchors"
 BROAD_EPSILON_PRODUCT_SCHEMA_VERSION = "rlrmp.broad_epsilon_budget_anchors.v1"
 BROAD_EPSILON_PRODUCT_ROLE = "broad_epsilon_budget_anchors"
 BROAD_EPSILON_PRODUCT_LOGICAL_NAME = "cs_broad_epsilon_budget_anchors"
-BROAD_EPSILON_PRODUCT_PRODUCER = (
-    "rlrmp.data_products.broad_epsilon.build_broad_epsilon_budget_anchors_product"
-)
+BROAD_EPSILON_PRODUCT_PRODUCER = "scripts.materialize_broad_epsilon_budget_anchors"
 BROAD_EPSILON_PRODUCT_RELPATH = "results/ea6ccb4/data_products/broad_epsilon_budget_anchors.json"
 BROAD_EPSILON_PRODUCT_PATH = REPO_ROOT / BROAD_EPSILON_PRODUCT_RELPATH
 BROAD_EPSILON_EXTRACTION_SPEC_RELPATH = (
@@ -136,53 +127,6 @@ def _broad_epsilon_extraction_spec() -> ExtractionProductSpec:
         ) from exc
 
 
-def build_broad_epsilon_budget_anchors_product() -> AnalysisDataProduct:
-    """Build the broad-epsilon anchors :class:`AnalysisDataProduct` from the spec."""
-
-    try:
-        return materialize_extraction_product(_broad_epsilon_extraction_spec(), REPO_ROOT)
-    except ExtractionProductIdentityMismatch as exc:
-        raise DataProductError(
-            f"broad-epsilon extraction product identity mismatch: {exc}",
-            kind="Mismatch",
-            mismatch_class="product-identity",
-        ) from exc
-
-
-def verify_broad_epsilon_budget_anchors_product(
-    *,
-    path: Path | None = None,
-) -> AnalysisDataProduct:
-    """Load and verify the persisted broad-epsilon product against its extraction spec."""
-
-    path = path or BROAD_EPSILON_PRODUCT_PATH
-    product = load_data_product(path, broad_epsilon_data_product_requirement())
-    try:
-        return verify_extraction_product(_broad_epsilon_extraction_spec(), product, REPO_ROOT)
-    except DataProductDrift as exc:
-        raise DataProductError(
-            f"broad-epsilon product no longer matches analytical sources: {exc}",
-            kind="Mismatch",
-            mismatch_class="analytical-source-drift",
-        ) from exc
-
-
-def write_broad_epsilon_budget_anchors_product(
-    product: AnalysisDataProduct,
-    *,
-    path: Path | None = None,
-) -> Path:
-    """Persist the broad-epsilon anchors product as tracked JSON."""
-
-    path = path or BROAD_EPSILON_PRODUCT_PATH
-    mkdir_p(path.parent)
-    path.write_text(
-        product.model_dump_json(indent=2, exclude_none=True) + "\n",
-        encoding="utf-8",
-    )
-    return path
-
-
 def broad_epsilon_data_product_requirement() -> AnalysisDataProductRequirement:
     """Return the fail-closed requirement for the broad-epsilon anchors product."""
 
@@ -216,7 +160,22 @@ def load_broad_epsilon_anchors() -> BroadEpsilonAnchors:
     if the persisted values no longer match the analytical source manifests.
     """
 
-    product = verify_broad_epsilon_budget_anchors_product()
+    product = load_data_product(
+        BROAD_EPSILON_PRODUCT_PATH,
+        broad_epsilon_data_product_requirement(),
+    )
+    try:
+        product = verify_extraction_product(
+            _broad_epsilon_extraction_spec(),
+            product,
+            REPO_ROOT,
+        )
+    except DataProductDrift as exc:
+        raise DataProductError(
+            f"broad-epsilon product no longer matches analytical sources: {exc}",
+            kind="Mismatch",
+            mismatch_class="analytical-source-drift",
+        ) from exc
     persisted_levels = product.parameters["levels"]
     levels: dict[str, dict[str, Any]] = {}
     for level in _EXPECTED_LEVELS:

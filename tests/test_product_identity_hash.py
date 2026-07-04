@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -38,7 +39,6 @@ from rlrmp.data_products.calibration import (
     CALIBRATION_PRODUCT_ROLE,
     CALIBRATION_PRODUCT_SCHEMA_ID,
     CALIBRATION_PRODUCT_SCHEMA_VERSION,
-    build_perturbation_calibration_defaults_payload,
     calibration_data_product_requirement,
     calibration_defaults_data_product_requirement,
     load_open_loop_calibration,
@@ -146,18 +146,9 @@ def test_calibration_defaults_payload_values_match_pre_migration_constants() -> 
     assert payload["amplitude_factors"] == list(_PRE_MIGRATION_AMPLITUDE_FACTORS)
 
 
-def test_calibration_defaults_payload_round_trip_preserves_tracked_values() -> None:
-    defaults = load_perturbation_calibration_defaults()
-    rebuilt = build_perturbation_calibration_defaults_payload(
-        amplitude_factors=defaults.amplitude_factors,
-        reach_calibration_points=defaults.reach_calibration_points,
-        reach_relative_levels=defaults.reach_relative_levels,
-        plant_timing_bins=defaults.plant_timing_bins,
-        controller_visible_timing_bins=defaults.controller_visible_timing_bins,
-        native_conventions=defaults.native_conventions,
-    )
-    tracked = json.loads(CALIBRATION_DEFAULTS_PAYLOAD_PATH.read_text(encoding="utf-8"))
-    assert rebuilt == tracked
+def test_calibration_defaults_payload_bytes_match_pinned_hash() -> None:
+    payload_bytes = CALIBRATION_DEFAULTS_PAYLOAD_PATH.read_bytes()
+    assert hashlib.sha256(payload_bytes).hexdigest() == CALIBRATION_DEFAULTS_PAYLOAD_SHA256
 
 
 def test_broad_epsilon_extraction_round_trip_preserves_tracked_bytes(
