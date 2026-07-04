@@ -1,14 +1,18 @@
 # Shrink-only defaults-ratchet allowlist for issue 5b3aabe.
 #
-# Enforced by tests/test_defaults_ratchet.py. This file pins the phase-1
+# Enforced by tests/test_defaults_ratchet.py and
+# src/rlrmp/runtime/defaults_scan.py. This file pins the current
 # inventory of .get("key", literal_default) and getattr(obj, "key",
-# literal_default) fallback sites in the scan targets named by that test.
+# literal_default) fallback sites in the scan targets named by the scanner.
 #
 # Direction rules:
 #   - Removing code sites never fails the test; stale entries may remain here
 #     while sibling lanes delete defaults in parallel.
 #   - Adding a new or extra occurrence of a (path, key, literal_repr) triple
 #     fails unless this allowlist is deliberately updated with an owning issue.
+#
+# Phase-2 pruning: this file was regenerated against the current 5b3aabe
+# worktree, reducing the frozen occurrence count from 420 to 367.
 #
 # Owner groups used for this seed:
 #   - 9f6d2a5: Seed/dt/benchmark fallback remediation lane.
@@ -21,118 +25,6 @@ schema_version = 1
 owning_issue = "5b3aabe"
 
 # 9f6d2a5: Seed/dt/benchmark fallback remediation lane.
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py"
-key = "seed"
-literal_repr = "42"
-count = 1
-owner = "9f6d2a5"
-note = "Seed/dt/benchmark fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_broad_epsilon_attribution.py"
-key = "seed"
-literal_repr = "42"
-count = 1
-owner = "9f6d2a5"
-note = "Seed/dt/benchmark fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py"
-key = "seed"
-literal_repr = "42"
-count = 1
-owner = "9f6d2a5"
-note = "Seed/dt/benchmark fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py"
-key = "dt"
-literal_repr = "0.01"
-count = 1
-owner = "9f6d2a5"
-note = "Seed/dt/benchmark fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py"
-key = "seed"
-literal_repr = "42"
-count = 1
-owner = "9f6d2a5"
-note = "Seed/dt/benchmark fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py"
-key = "seed"
-literal_repr = "42"
-count = 1
-owner = "9f6d2a5"
-note = "Seed/dt/benchmark fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
-key = "seed"
-literal_repr = "42"
-count = 1
-owner = "9f6d2a5"
-note = "Seed/dt/benchmark fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_pilot_figures.py"
-key = "dt"
-literal_repr = "0.01"
-count = 1
-owner = "9f6d2a5"
-note = "Seed/dt/benchmark fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_pilot_figures.py"
-key = "seed"
-literal_repr = "42"
-count = 1
-owner = "9f6d2a5"
-note = "Seed/dt/benchmark fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py"
-key = "seed"
-literal_repr = "42"
-count = 1
-owner = "9f6d2a5"
-note = "Seed/dt/benchmark fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_worst_case_epsilon_audit.py"
-key = "seed"
-literal_repr = "42"
-count = 1
-owner = "9f6d2a5"
-note = "Seed/dt/benchmark fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/objective_comparator.py"
-key = "seed"
-literal_repr = "42"
-count = 1
-owner = "9f6d2a5"
-note = "Seed/dt/benchmark fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py"
-key = "dt"
-literal_repr = "0.01"
-count = 1
-owner = "9f6d2a5"
-note = "Seed/dt/benchmark fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py"
-key = "seed"
-literal_repr = "42"
-count = 1
-owner = "9f6d2a5"
-note = "Seed/dt/benchmark fallback remediation lane."
-
 [[default_fallback_sites]]
 path = "src/rlrmp/benchmarks/packing.py"
 key = "cpu_threads_per_worker"
@@ -182,30 +74,6 @@ owner = "9f6d2a5"
 note = "Seed/dt/benchmark fallback remediation lane."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/model/cs_lss_gru.py"
-key = "seed"
-literal_repr = "0"
-count = 2
-owner = "9f6d2a5"
-note = "Seed/dt/benchmark fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/model/feedbax_graph.py"
-key = "seed"
-literal_repr = "0"
-count = 2
-owner = "9f6d2a5"
-note = "Seed/dt/benchmark fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/train/closed_loop_distillation.py"
-key = "seed"
-literal_repr = "0"
-count = 1
-owner = "9f6d2a5"
-note = "Seed/dt/benchmark fallback remediation lane."
-
-[[default_fallback_sites]]
 path = "src/rlrmp/train/cs_nominal_gru.py"
 key = "seed"
 literal_repr = "42"
@@ -213,68 +81,13 @@ count = 1
 owner = "9f6d2a5"
 note = "Seed/dt/benchmark fallback remediation lane."
 
+
 # 1d59c4d: Training-run spec fallback remediation lane.
-[[default_fallback_sites]]
-path = "src/rlrmp/runtime/training_run_specs.py"
-key = "action_force_trajectory"
-literal_repr = "1.0"
-count = 1
-owner = "1d59c4d"
-note = "Training-run spec fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/runtime/training_run_specs.py"
-key = "batch_size"
-literal_repr = "1"
-count = 2
-owner = "1d59c4d"
-note = "Training-run spec fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/runtime/training_run_specs.py"
-key = "controller_lr"
-literal_repr = "0.001"
-count = 2
-owner = "1d59c4d"
-note = "Training-run spec fallback remediation lane."
-
 [[default_fallback_sites]]
 path = "src/rlrmp/runtime/training_run_specs.py"
 key = "dirty"
 literal_repr = "False"
 count = 1
-owner = "1d59c4d"
-note = "Training-run spec fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/runtime/training_run_specs.py"
-key = "gradient_clip_norm"
-literal_repr = "1.0"
-count = 2
-owner = "1d59c4d"
-note = "Training-run spec fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/runtime/training_run_specs.py"
-key = "hidden_size"
-literal_repr = "0"
-count = 3
-owner = "1d59c4d"
-note = "Training-run spec fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/runtime/training_run_specs.py"
-key = "horizon"
-literal_repr = "60"
-count = 2
-owner = "1d59c4d"
-note = "Training-run spec fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/runtime/training_run_specs.py"
-key = "interval_batches"
-literal_repr = "1"
-count = 5
 owner = "1d59c4d"
 note = "Training-run spec fallback remediation lane."
 
@@ -288,24 +101,8 @@ note = "Training-run spec fallback remediation lane."
 
 [[default_fallback_sites]]
 path = "src/rlrmp/runtime/training_run_specs.py"
-key = "n_steps"
-literal_repr = "0"
-count = 1
-owner = "1d59c4d"
-note = "Training-run spec fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/runtime/training_run_specs.py"
 key = "n_train_batches"
 literal_repr = "0"
-count = 1
-owner = "1d59c4d"
-note = "Training-run spec fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/runtime/training_run_specs.py"
-key = "n_train_batches"
-literal_repr = "1"
 count = 1
 owner = "1d59c4d"
 note = "Training-run spec fallback remediation lane."
@@ -320,24 +117,8 @@ note = "Training-run spec fallback remediation lane."
 
 [[default_fallback_sites]]
 path = "src/rlrmp/runtime/training_run_specs.py"
-key = "scale"
-literal_repr = "1.0"
-count = 1
-owner = "1d59c4d"
-note = "Training-run spec fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/runtime/training_run_specs.py"
 key = "setup_function"
 literal_repr = "'rlrmp.train.task_model.setup_task_model_pair'"
-count = 1
-owner = "1d59c4d"
-note = "Training-run spec fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/runtime/training_run_specs.py"
-key = "total_batches"
-literal_repr = "1"
 count = 1
 owner = "1d59c4d"
 note = "Training-run spec fallback remediation lane."
@@ -358,27 +139,12 @@ count = 1
 owner = "1d59c4d"
 note = "Training-run spec fallback remediation lane."
 
-[[default_fallback_sites]]
-path = "src/rlrmp/runtime/training_run_specs.py"
-key = "weight"
-literal_repr = "1.0"
-count = 1
-owner = "1d59c4d"
-note = "Training-run spec fallback remediation lane."
 
 # cc3a61f: Recipe/report/training fallback remediation lane.
 [[default_fallback_sites]]
 path = "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py"
 key = "direction"
 literal_repr = "(0.0, 0.0)"
-count = 1
-owner = "cc3a61f"
-note = "Recipe/report/training fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/reports.py"
-key = "include_json_artifact"
-literal_repr = "True"
 count = 1
 owner = "cc3a61f"
 note = "Recipe/report/training fallback remediation lane."
@@ -627,7 +393,7 @@ note = "Recipe/report/training fallback remediation lane."
 path = "src/rlrmp/train/cs_nominal_gru.py"
 key = "delayed_pre_go_force_filter_hold"
 literal_repr = "0.0"
-count = 3
+count = 2
 owner = "cc3a61f"
 note = "Recipe/report/training fallback remediation lane."
 
@@ -635,7 +401,7 @@ note = "Recipe/report/training fallback remediation lane."
 path = "src/rlrmp/train/cs_nominal_gru.py"
 key = "delayed_pre_go_start_pos_hold"
 literal_repr = "0.0"
-count = 3
+count = 2
 owner = "cc3a61f"
 note = "Recipe/report/training fallback remediation lane."
 
@@ -643,7 +409,7 @@ note = "Recipe/report/training fallback remediation lane."
 path = "src/rlrmp/train/cs_nominal_gru.py"
 key = "delayed_pre_go_start_pos_hold_norm"
 literal_repr = "'l2'"
-count = 3
+count = 2
 owner = "cc3a61f"
 note = "Recipe/report/training fallback remediation lane."
 
@@ -651,39 +417,7 @@ note = "Recipe/report/training fallback remediation lane."
 path = "src/rlrmp/train/cs_nominal_gru.py"
 key = "delayed_pre_go_zero_vel_hold"
 literal_repr = "0.0"
-count = 3
-owner = "cc3a61f"
-note = "Recipe/report/training fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/train/cs_nominal_gru.py"
-key = "delayed_reach"
-literal_repr = "False"
-count = 1
-owner = "cc3a61f"
-note = "Recipe/report/training fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/train/cs_nominal_gru.py"
-key = "delayed_reach_go_cue_max_step"
-literal_repr = "30"
-count = 1
-owner = "cc3a61f"
-note = "Recipe/report/training fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/train/cs_nominal_gru.py"
-key = "delayed_reach_go_cue_min_step"
-literal_repr = "10"
-count = 1
-owner = "cc3a61f"
-note = "Recipe/report/training fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/train/cs_nominal_gru.py"
-key = "delayed_reach_trial_type_normalized_loss"
-literal_repr = "False"
-count = 1
+count = 2
 owner = "cc3a61f"
 note = "Recipe/report/training fallback remediation lane."
 
@@ -883,7 +617,7 @@ note = "Recipe/report/training fallback remediation lane."
 path = "src/rlrmp/train/cs_nominal_gru.py"
 key = "nn_output_pre_go"
 literal_repr = "0.0"
-count = 2
+count = 1
 owner = "cc3a61f"
 note = "Recipe/report/training fallback remediation lane."
 
@@ -899,7 +633,7 @@ note = "Recipe/report/training fallback remediation lane."
 path = "src/rlrmp/train/cs_nominal_gru.py"
 key = "no_integrator_state"
 literal_repr = "False"
-count = 5
+count = 4
 owner = "cc3a61f"
 note = "Recipe/report/training fallback remediation lane."
 
@@ -1247,6 +981,7 @@ count = 1
 owner = "cc3a61f"
 note = "Recipe/report/training fallback remediation lane."
 
+
 # 7cfe941: Calibration pipeline/data-product fallback remediation lane.
 [[default_fallback_sites]]
 path = "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py"
@@ -1303,6 +1038,7 @@ literal_repr = "'initial_condition'"
 count = 1
 owner = "7cfe941"
 note = "Calibration pipeline/data-product fallback remediation lane."
+
 
 # 5b3aabe: Phase-1 defaults ratchet catch-all until a narrower owner is split.
 [[default_fallback_sites]]
@@ -1829,14 +1565,6 @@ note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 path = "src/rlrmp/analysis/pipelines/output_feedback_time_constrained.py"
 key = "runtime_seconds"
 literal_repr = "0.0"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/eval/minimax_io.py"
-key = "sisu_gating"
-literal_repr = "'additive'"
 count = 1
 owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."

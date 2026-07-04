@@ -10,48 +10,136 @@ name the owning ledger issue.
 
 from __future__ import annotations
 
-import ast
 from collections import Counter
-from dataclasses import dataclass
 from pathlib import Path
 import re
-from typing import Any
 import tomllib
 
 import pytest
+import rlrmp
+from feedbax.analysis import evaluation as feedbax_evaluation
+from feedbax.analysis.reports import registered_report_types
+from feedbax.plugins.registry import ExperimentRegistry
+from pydantic import BaseModel
+
+from rlrmp.runtime.defaults_scan import (
+    DefaultFallbackSite,
+    DefaultValueDriftException,
+    count_default_fallback_sites,
+    find_value_drifts,
+    scan_default_fallback_site_instances,
+    scan_default_fallback_sites,
+    scan_default_fallback_sites_in_paths,
+)
+from rlrmp.runtime.params_models import params_model_for, registered_params_models
 
 
 pytestmark = pytest.mark.feedbax_contract
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ALLOWLIST_PATH = REPO_ROOT / "ci" / "defaults-ratchet-allowlist.toml"
+CANARY_PATH = REPO_ROOT / "tests" / "fixtures" / "defaults_scan_canary.py"
 
-SCAN_TARGETS = (
-    "src/rlrmp/eval/",
-    "src/rlrmp/analysis/pipelines/",
-    "src/rlrmp/analysis/reports.py",
-    "src/rlrmp/runtime/training_run_specs.py",
-    "src/rlrmp/train/cs_nominal_gru.py",
-    "src/rlrmp/train/cs_perturbation_training.py",
-    "src/rlrmp/benchmarks/packing.py",
-    "src/rlrmp/model/",
-    "src/rlrmp/train/closed_loop_distillation.py",
-    "src/rlrmp/eval/minimax_io.py",
+VALUE_DRIFT_EXCEPTIONS: tuple[DefaultValueDriftException, ...] = (
+    DefaultValueDriftException(
+        key="status",
+        reason=(
+            "Generic analysis/report result-state metadata; values are local state labels, "
+            "not one shared schema default."
+        ),
+    ),
+    DefaultValueDriftException(
+        key="reason",
+        reason=(
+            "Generic missingness/failure explanation metadata; values describe local "
+            "diagnostic states, not one shared parameter."
+        ),
+    ),
+    DefaultValueDriftException(
+        key="type",
+        reason=(
+            "Generic payload discriminator used by unrelated training-task and perturbation "
+            "records."
+        ),
+    ),
+    DefaultValueDriftException(
+        key="role",
+        reason=(
+            "Generic artifact/input role metadata; report rendering and diagnostic bundles use "
+            "different local absence labels."
+        ),
+    ),
+    DefaultValueDriftException(
+        key="enabled",
+        path="src/rlrmp/analysis/pipelines/gru_broad_epsilon_attribution.py",
+        literal_repr="True",
+        reason=(
+            "Broad-epsilon attribution is an opt-out analysis stage; training and benchmark "
+            "feature toggles remain opt-in defaults."
+        ),
+    ),
+    DefaultValueDriftException(
+        key="hidden_size",
+        path="src/rlrmp/model/feedbax_graph.py",
+        literal_repr="1",
+        reason=(
+            "Feedbax graph hidden-size fallback is a deserialization shape placeholder, not the "
+            "training model width default."
+        ),
+    ),
+    DefaultValueDriftException(
+        key="level",
+        path="src/rlrmp/benchmarks/packing.py",
+        literal_repr="'not_applicable'",
+        reason=(
+            "Benchmark packing rows use not_applicable as result metadata; perturbation training "
+            "uses level as a calibration strength."
+        ),
+    ),
+    DefaultValueDriftException(
+        key="n_replicates",
+        path="src/rlrmp/train/cs_nominal_gru.py",
+        literal_repr="5",
+        reason=(
+            "The nominal training CLI's legacy run default differs from scalar materialization "
+            "fallbacks that collapse to one replicate."
+        ),
+    ),
+    DefaultValueDriftException(
+        key="n_steps",
+        path="src/rlrmp/benchmarks/packing.py",
+        literal_repr="0",
+        reason=(
+            "Benchmark packing uses zero as an unavailable step-count marker; perturbation "
+            "training uses n_steps as a real perturbation horizon."
+        ),
+    ),
+    DefaultValueDriftException(
+        key="reach_length_scaling",
+        path="src/rlrmp/analysis/pipelines/gru_worst_case_epsilon_audit.py",
+        literal_repr="False",
+        reason=(
+            "Worst-case epsilon audit reads a legacy absent flag as disabled; training "
+            "perturbation configs default reach-relative scaling on."
+        ),
+    ),
+    DefaultValueDriftException(
+        key="sign",
+        path="src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
+        literal_repr="0",
+        reason=(
+            "Feedback-ablation summaries use neutral sign metadata; perturbation calibration "
+            "uses sign as a directional pulse parameter."
+        ),
+    ),
 )
-
-
-@dataclass(frozen=True, order=True)
-class DefaultFallbackSite:
-    path: str
-    key: str
-    literal_repr: str
 
 
 def test_default_fallback_sites_match_allowlist() -> None:
     allowlist = _load_allowlist()
     allowed = _allowlisted_sites(allowlist)
 
-    found = _scan_default_fallback_sites()
+    found = scan_default_fallback_sites(REPO_ROOT)
 
     new_instances = _new_or_grown_instances(found, allowed)
     assert not new_instances, (
@@ -89,6 +177,59 @@ def test_default_fallback_allowlist_entries_carry_owner_and_count() -> None:
         )
 
 
+def test_default_fallback_values_do_not_drift_across_files() -> None:
+    for exception in VALUE_DRIFT_EXCEPTIONS:
+        assert exception.reason, f"Value-drift exception needs a justification: {exception}"
+
+    sites = scan_default_fallback_site_instances(REPO_ROOT)
+    drifts = find_value_drifts(sites, exceptions=VALUE_DRIFT_EXCEPTIONS)
+
+    assert not drifts, (
+        "Same-key default fallback values drift across files: "
+        f"{[drift.display() for drift in drifts]}. Route the value through a "
+        "schema-owned params model, or add a narrowly justified exception for "
+        "genuinely different concepts that share a key name."
+    )
+
+
+def test_defaults_scanner_negative_canary_detects_out_of_schema_default() -> None:
+    found = count_default_fallback_sites(
+        scan_default_fallback_sites_in_paths([CANARY_PATH], repo_root=REPO_ROOT)
+    )
+
+    assert found[
+        DefaultFallbackSite(
+            path="tests/fixtures/defaults_scan_canary.py",
+            key="default_scan_canary",
+            literal_repr="12345",
+        )
+    ] == 1
+
+
+def test_registered_eval_and_report_recipes_have_params_models() -> None:
+    rlrmp.register_experiment_package(ExperimentRegistry())
+
+    registered_eval_types = sorted(
+        evaluation_type
+        for evaluation_type in feedbax_evaluation._EVALUATION_RECIPES
+        if evaluation_type.startswith("rlrmp.")
+    )
+    registered_reports = sorted(
+        report_type
+        for report_type in registered_report_types()
+        if report_type.startswith("rlrmp.")
+    )
+    registered_recipe_names = registered_eval_types + registered_reports
+
+    assert registered_recipe_names
+    for recipe_name in registered_recipe_names:
+        model_class = params_model_for(recipe_name)
+        assert issubclass(model_class, BaseModel), recipe_name
+        assert registered_params_models()[recipe_name] is model_class
+    with pytest.raises(KeyError):
+        params_model_for("rlrmp.eval.unregistered")
+
+
 def _load_allowlist() -> dict:
     return tomllib.loads(ALLOWLIST_PATH.read_text(encoding="utf-8"))
 
@@ -96,11 +237,7 @@ def _load_allowlist() -> dict:
 def _allowlisted_sites(allowlist: dict) -> Counter[DefaultFallbackSite]:
     counter: Counter[DefaultFallbackSite] = Counter()
     for entry in allowlist["default_fallback_sites"]:
-        site = DefaultFallbackSite(
-            path=entry["path"],
-            key=entry["key"],
-            literal_repr=entry["literal_repr"],
-        )
+        site = DefaultFallbackSite(entry["path"], entry["key"], entry["literal_repr"])
         counter[site] += int(entry["count"])
     return counter
 
@@ -124,82 +261,3 @@ def _new_or_grown_instances(
             }
         )
     return instances
-
-
-def _scan_default_fallback_sites() -> Counter[DefaultFallbackSite]:
-    found: Counter[DefaultFallbackSite] = Counter()
-    for path in _scan_files():
-        relpath = path.relative_to(REPO_ROOT).as_posix()
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            site = _default_fallback_site(node, relpath)
-            if site is not None:
-                found[site] += 1
-    return found
-
-
-def _scan_files() -> list[Path]:
-    files: set[Path] = set()
-    for target in SCAN_TARGETS:
-        path = REPO_ROOT / target
-        if path.is_dir():
-            files.update(path.rglob("*.py"))
-        elif path.exists():
-            files.add(path)
-        else:
-            raise AssertionError(f"Configured default-fallback scan target does not exist: {target}")
-    return sorted(files)
-
-
-def _default_fallback_site(call: ast.Call, relpath: str) -> DefaultFallbackSite | None:
-    key_node: ast.AST | None = None
-    default_node: ast.AST | None = None
-
-    if isinstance(call.func, ast.Attribute) and call.func.attr == "get":
-        if len(call.args) >= 2:
-            key_node = call.args[0]
-            default_node = call.args[1]
-    elif isinstance(call.func, ast.Name) and call.func.id == "getattr":
-        if len(call.args) >= 3:
-            key_node = call.args[1]
-            default_node = call.args[2]
-
-    if key_node is None or default_node is None:
-        return None
-
-    key = _literal_value(key_node)
-    default = _literal_value(default_node)
-    if not isinstance(key, str) or not _is_meaningful_literal(default):
-        return None
-    return DefaultFallbackSite(relpath, key, repr(default))
-
-
-def _literal_value(node: ast.AST) -> Any:
-    try:
-        return ast.literal_eval(node)
-    except (ValueError, SyntaxError):
-        return None
-
-
-def _is_meaningful_literal(value: Any) -> bool:
-    if isinstance(value, bool):
-        return True
-    if isinstance(value, int | float):
-        return True
-    if isinstance(value, str):
-        return value != ""
-    if isinstance(value, tuple):
-        return bool(value) and all(_is_tuple_scalar(item) for item in value)
-    return False
-
-
-def _is_tuple_scalar(value: Any) -> bool:
-    if isinstance(value, bool):
-        return True
-    if isinstance(value, int | float):
-        return True
-    if isinstance(value, str):
-        return value != ""
-    return False
