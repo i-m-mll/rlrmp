@@ -261,6 +261,22 @@ symbols = [
 ]
 
 [[canonical_homes]]
+module = "feedbax.execution.backends"
+symbols = ["render_modal_app"]
+
+[[canonical_homes]]
+module = "feedbax.execution.container"
+symbols = [
+  "activate_project_venv",
+  "collect_environment_provenance",
+  "collect_source_provenance",
+  "evict_bundled_modules",
+  "rewrite_embedded_paths",
+  "run_shell_command",
+  "run_subprocess",
+]
+
+[[canonical_homes]]
 module = "feedbax.execution.models"
 symbols = [
   "ArtifactPolicy",
