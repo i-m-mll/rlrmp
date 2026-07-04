@@ -11,7 +11,6 @@ from feedbax.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts
 from feedbax.analysis.context import AnalysisArtifactFile, AnalysisRunContext
 from feedbax.analysis.materialization import (
     AnalysisArtifactGroup,
-    ContextMaterializer,
     ExistingAnalysisArtifact,
     MaterializationResult,
     materialization_metadata,
@@ -54,13 +53,23 @@ from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
     write_outputs as write_output_feedback_rollout_recovery_outputs,
 )
 from rlrmp.analysis.math.rerun_metadata import DEFAULT_DISCRETIZATION, DEFAULT_LANE
-from rlrmp.eval.recipes import CENTER_OUT_ENSEMBLE_EVALUATION_TYPE
+from rlrmp.eval.recipes import (
+    CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,
+    PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
+)
 from rlrmp.paths import REPO_ROOT
+from rlrmp.runtime.spec_migrations import (
+    GRU_PERTURBATION_BANK_SCHEMA_VERSION,
+    PERTURBATION_CLASS_RESPONSE_SCHEMA_ID,
+    PERTURBATION_CLASS_RESPONSE_SCHEMA_VERSION,
+)
 
 
 GRU_STANDARD_ANALYSIS_TYPE = "rlrmp.certificate.gru_standard"
 GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE = "rlrmp.diagnostic.gru_evaluation"
 GRU_POSTRUN_ANALYSIS_TYPE = "rlrmp.gru_postrun"
+PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE = "rlrmp.perturbation_class_response"
+PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE = "rlrmp.perturbation_bank_aggregate"
 FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE = "rlrmp.feedback_quality_lens"
 ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE = "rlrmp.robustness_phenotype"
 OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE = (
@@ -89,6 +98,10 @@ EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE = {
     GRU_STANDARD_ANALYSIS_TYPE: (CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,),
     GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE: ("evaluation_run",),
     GRU_POSTRUN_ANALYSIS_TYPE: ("evaluation_run",),
+    PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE: (
+        PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
+    ),
+    PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE: ("analysis_run",),
     FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE: ("evaluation_run",),
     ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE: ("evaluation_run",),
 }
@@ -165,6 +178,83 @@ class RLRMPManifestAnalysis(AbstractAnalysis):
                 metadata=group.metadata,
             )
         context.record_regeneration_specs(materialized.regeneration_specs)
+        return payload
+
+
+class PerturbationClassResponseAnalysis(AbstractAnalysis):
+    """Slice one perturbation family from a shared perturbation-bank eval payload."""
+
+    params: dict[str, Any] = eqx.field(kw_only=True, static=True)
+    evaluation_input: Any = eqx.field(kw_only=True, static=True)
+
+    def compute(self, data: AnalysisInputData, **kwargs: Any) -> dict[str, Any]:
+        del kwargs
+        states = _resolved_input_states(self.evaluation_input)
+        if states is None and isinstance(data.states, Mapping):
+            maybe_states = data.states.get("evaluation")
+            states = maybe_states if isinstance(maybe_states, Mapping) else None
+        if states is None:
+            raise ValueError("perturbation class response requires evaluation states")
+        return _perturbation_class_response_payload(
+            states,
+            self.params,
+            evaluation_input=self.evaluation_input,
+        )
+
+    def emit_artifacts(
+        self,
+        context: AnalysisRunContext,
+        data: AnalysisInputData,
+        *,
+        result: Mapping[str, Any],
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        del data, kwargs
+        payload = dict(result)
+        family = str(payload["family"])
+        context.record_json_artifact(
+            payload,
+            role="rlrmp-perturbation-class-response",
+            logical_name=f"perturbation_class_response/{family}.json",
+            metadata={
+                "schema_boundary": "rlrmp-owned perturbation class response payload",
+                "family": family,
+                "evaluation_manifest_id": payload["evaluation_manifest"]["id"],
+            },
+        )
+        return payload
+
+
+class PerturbationBankAggregateAnalysis(AbstractAnalysis):
+    """Aggregate perturbation-family leaf products into the legacy bank payload."""
+
+    params: dict[str, Any] = eqx.field(kw_only=True, static=True)
+    leaf_products: tuple[dict[str, Any], ...] = eqx.field(kw_only=True, static=True)
+
+    def compute(self, data: AnalysisInputData, **kwargs: Any) -> dict[str, Any]:
+        del data, kwargs
+        return _aggregate_perturbation_class_products(self.leaf_products, self.params)
+
+    def emit_artifacts(
+        self,
+        context: AnalysisRunContext,
+        data: AnalysisInputData,
+        *,
+        result: Mapping[str, Any],
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        del data, kwargs
+        payload = dict(result)
+        context.record_json_artifact(
+            payload,
+            role="rlrmp-gru-perturbation-response-manifest",
+            logical_name="gru_perturbation_response_aggregate.json",
+            metadata={
+                "schema_boundary": "rlrmp-owned GRU perturbation bank payload",
+                "schema_version": GRU_PERTURBATION_BANK_SCHEMA_VERSION,
+                "source": "perturbation_class_response_leaves",
+            },
+        )
         return payload
 
 
@@ -643,6 +733,16 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
         replace=replace,
     )
     register_analysis_recipe(
+        PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE,
+        perturbation_class_response_recipe,
+        replace=replace,
+    )
+    register_analysis_recipe(
+        PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE,
+        perturbation_bank_aggregate_recipe,
+        replace=replace,
+    )
+    register_analysis_recipe(
         FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE,
         feedback_quality_lens_recipe,
         replace=replace,
@@ -796,6 +896,55 @@ def gru_postrun_spec(
     return AnalysisRunSpec(
         analysis_type=GRU_POSTRUN_ANALYSIS_TYPE,
         inputs=inputs,
+        params=params,
+    )
+
+
+def perturbation_class_response_spec(
+    *,
+    family: str,
+    row_ids: Sequence[str] | None = None,
+    evaluation_manifest_id: str | None = None,
+    evaluation_manifest_uri: Path | str | None = None,
+    expected_calibration_identity: Mapping[str, Any] | None = None,
+) -> AnalysisRunSpec:
+    """Return declarative spec data for one perturbation-class response leaf."""
+
+    params: dict[str, Any] = {"family": family}
+    if row_ids is not None:
+        params["row_ids"] = list(row_ids)
+    if expected_calibration_identity is not None:
+        params["expected_calibration_identity"] = dict(expected_calibration_identity)
+    inputs = _evaluation_parent_refs(
+        evaluation_manifest_id=evaluation_manifest_id,
+        evaluation_manifest_uri=evaluation_manifest_uri,
+    )
+    return AnalysisRunSpec(
+        analysis_type=PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE,
+        inputs=inputs,
+        params=params,
+    )
+
+
+def perturbation_bank_aggregate_spec(
+    *,
+    leaf_manifest_refs: Sequence[ParentRef] = (),
+    issue: str | None = None,
+    source_experiment: str | None = None,
+    bank_mode: str | None = None,
+) -> AnalysisRunSpec:
+    """Return declarative spec data for aggregating perturbation-class leaves."""
+
+    params: dict[str, Any] = {}
+    if issue is not None:
+        params["issue"] = issue
+    if source_experiment is not None:
+        params["source_experiment"] = source_experiment
+    if bank_mode is not None:
+        params["bank_mode"] = bank_mode
+    return AnalysisRunSpec(
+        analysis_type=PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE,
+        inputs=list(leaf_manifest_refs),
         params=params,
     )
 
@@ -992,6 +1141,47 @@ def gru_postrun_recipe(
     return AnalysisRecipeResult(
         analyses={"gru_postrun_materialization": analysis},
         data=_analysis_data_from_evaluation_input(evaluation_input),
+    )
+
+
+def perturbation_class_response_recipe(
+    spec: AnalysisRunSpec,
+    _root: Path,
+    inputs: Sequence[Any],
+) -> AnalysisRecipeResult:
+    """Build one perturbation-family response analysis from shared eval states."""
+
+    params = dict(spec.params)
+    evaluation_input = _primary_evaluation_input(inputs)
+    if evaluation_input is None:
+        raise ValueError("perturbation class response requires an EvaluationRunManifest input")
+    analysis = PerturbationClassResponseAnalysis(
+        params=params,
+        evaluation_input=evaluation_input,
+    )
+    family = str(params.get("family", "perturbation_class"))
+    return AnalysisRecipeResult(
+        analyses={family: analysis},
+        data=_analysis_data_from_evaluation_input(evaluation_input),
+    )
+
+
+def perturbation_bank_aggregate_recipe(
+    spec: AnalysisRunSpec,
+    _root: Path,
+    inputs: Sequence[Any],
+) -> AnalysisRecipeResult:
+    """Build an aggregate perturbation bank from class-response leaf products."""
+
+    params = dict(spec.params)
+    leaf_products = tuple(_load_perturbation_class_product(resolved) for resolved in inputs)
+    analysis = PerturbationBankAggregateAnalysis(
+        params=params,
+        leaf_products=leaf_products,
+    )
+    return AnalysisRecipeResult(
+        analyses={"perturbation_bank_aggregate": analysis},
+        data=_empty_analysis_data(),
     )
 
 
@@ -1562,6 +1752,361 @@ def _robustness_phenotype_source_paths(
             if artifact.uri is not None:
                 source_paths[source_name] = _optional_path(artifact.uri, repo_root=repo_root)
     return source_paths
+
+
+def _perturbation_class_response_payload(
+    states: Mapping[str, Any],
+    params: Mapping[str, Any],
+    *,
+    evaluation_input: Any,
+) -> dict[str, Any]:
+    family = str(params.get("family", ""))
+    if not family:
+        raise ValueError("perturbation class response params must include family")
+    if states.get("evaluation_type") != PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE:
+        raise ValueError(
+            "perturbation class response requires "
+            f"{PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE!r} eval states"
+        )
+    class_index_map = states.get("class_index_map")
+    if not isinstance(class_index_map, Mapping):
+        raise ValueError("perturbation response eval states lack class_index_map")
+    if family not in class_index_map:
+        available = sorted(str(item) for item in class_index_map)
+        raise ValueError(
+            "perturbation class response requested family "
+            f"{family!r}, but the evaluation manifest contains families {available}"
+        )
+    class_entry = class_index_map[family]
+    if not isinstance(class_entry, Mapping):
+        raise TypeError(f"class_index_map entry for {family!r} must be a mapping")
+
+    perturbation_ids = _selected_perturbation_ids(class_entry, params, family=family)
+    row_index_by_id = _row_index_by_perturbation_id(class_entry, perturbation_ids)
+    bank = _slice_perturbation_bank(
+        states.get("perturbation_battery"),
+        perturbation_ids,
+        row_index_by_id=row_index_by_id,
+    )
+    runs = _slice_perturbation_runs(
+        states.get("response_tensors"),
+        perturbation_ids,
+        row_index_by_id=row_index_by_id,
+    )
+    calibration_identities = _calibration_identities_for_leaf(states, params, family=family)
+    eval_dependency = _evaluation_dependency_metadata(evaluation_input)
+    eval_id = (
+        eval_dependency.get("manifest_id")
+        or states.get("evaluation_manifest_id")
+        or getattr(getattr(evaluation_input, "ref", None), "id", None)
+    )
+    return {
+        "schema_id": PERTURBATION_CLASS_RESPONSE_SCHEMA_ID,
+        "schema_version": PERTURBATION_CLASS_RESPONSE_SCHEMA_VERSION,
+        "family": family,
+        "row_ids": list(perturbation_ids),
+        "row_indices": [row_index_by_id[row_id] for row_id in perturbation_ids],
+        "row_index_by_perturbation_id": row_index_by_id,
+        "class_index_entry": dict(class_entry),
+        "calibration_identity": calibration_identities,
+        "evaluation_manifest": {
+            **eval_dependency,
+            "id": eval_id,
+        },
+        "bank": bank,
+        "runs": runs,
+        "aggregate_base": _aggregate_base_from_eval_states(states),
+    }
+
+
+def _selected_perturbation_ids(
+    class_entry: Mapping[str, Any],
+    params: Mapping[str, Any],
+    *,
+    family: str,
+) -> tuple[str, ...]:
+    available = tuple(str(row_id) for row_id in class_entry.get("perturbation_ids", ()))
+    requested = params.get("row_ids")
+    if requested is None:
+        return available
+    if isinstance(requested, str):
+        selected = (requested,)
+    elif isinstance(requested, Sequence) and not isinstance(requested, (str, bytes)):
+        selected = tuple(str(row_id) for row_id in requested)
+    else:
+        raise TypeError("perturbation class response row_ids must be a string or sequence")
+    missing = sorted(set(selected).difference(available))
+    if missing:
+        raise ValueError(
+            f"perturbation class response family {family!r} requested unavailable "
+            f"row_ids {missing}; available row_ids: {sorted(available)}"
+        )
+    return selected
+
+
+def _row_index_by_perturbation_id(
+    class_entry: Mapping[str, Any],
+    perturbation_ids: Sequence[str],
+) -> dict[str, int]:
+    ids = [str(row_id) for row_id in class_entry.get("perturbation_ids", ())]
+    indices = [int(index) for index in class_entry.get("row_indices", ())]
+    mapping = dict(zip(ids, indices, strict=True))
+    return {row_id: mapping[row_id] for row_id in perturbation_ids}
+
+
+def _slice_perturbation_bank(
+    raw_bank: Any,
+    perturbation_ids: Sequence[str],
+    *,
+    row_index_by_id: Mapping[str, int],
+) -> dict[str, Any]:
+    if not isinstance(raw_bank, Mapping):
+        raise TypeError("perturbation response eval states lack perturbation_battery")
+    bank = dict(raw_bank)
+    rows = raw_bank.get("perturbations", ())
+    if not isinstance(rows, Sequence) or isinstance(rows, (str, bytes)):
+        raise TypeError("perturbation_battery.perturbations must be a sequence")
+    by_id = {
+        str(row.get("perturbation_id")): dict(row)
+        for row in rows
+        if isinstance(row, Mapping)
+    }
+    bank["perturbations"] = [
+        {**by_id[row_id], "class_response_row_index": row_index_by_id[row_id]}
+        for row_id in perturbation_ids
+    ]
+    return bank
+
+
+def _slice_perturbation_runs(
+    response_tensors: Any,
+    perturbation_ids: Sequence[str],
+    *,
+    row_index_by_id: Mapping[str, int],
+) -> dict[str, Any]:
+    if not isinstance(response_tensors, Mapping):
+        raise TypeError("perturbation response eval states lack response_tensors")
+    runs = response_tensors.get("runs", {})
+    if not isinstance(runs, Mapping):
+        raise TypeError("response_tensors.runs must be a mapping")
+    return {
+        str(run_id): _slice_perturbation_run(
+            run_payload,
+            perturbation_ids,
+            row_index_by_id=row_index_by_id,
+        )
+        for run_id, run_payload in runs.items()
+        if isinstance(run_payload, Mapping)
+    }
+
+
+def _slice_perturbation_run(
+    run_payload: Mapping[str, Any],
+    perturbation_ids: Sequence[str],
+    *,
+    row_index_by_id: Mapping[str, int],
+) -> dict[str, Any]:
+    selected = set(perturbation_ids)
+    run = dict(run_payload)
+    rows = [
+        dict(row)
+        for row in run_payload.get("perturbations", ())
+        if isinstance(row, Mapping) and str(row.get("perturbation_id")) in selected
+    ]
+    rows.sort(key=lambda row: row_index_by_id[str(row["perturbation_id"])])
+    for row in rows:
+        row["class_response_row_index"] = row_index_by_id[str(row["perturbation_id"])]
+    run["perturbations"] = rows
+    run["status_counts"] = _perturbation_status_counts(rows)
+    run["robust_response_summary"] = _summarize_perturbation_rows(rows)
+    bulk_files = run_payload.get("bulk_files")
+    if isinstance(bulk_files, Mapping):
+        run["bulk_files"] = {
+            str(row_id): bulk_files[row_id]
+            for row_id in perturbation_ids
+            if row_id in bulk_files
+        }
+    return run
+
+
+def _calibration_identities_for_leaf(
+    states: Mapping[str, Any],
+    params: Mapping[str, Any],
+    *,
+    family: str,
+) -> list[dict[str, Any]]:
+    identities = states.get("consumed_data_identities", [])
+    if isinstance(identities, Mapping):
+        recorded = [dict(identities)]
+    elif isinstance(identities, Sequence) and not isinstance(identities, (str, bytes)):
+        recorded = [dict(item) for item in identities if isinstance(item, Mapping)]
+    else:
+        recorded = []
+    expected = params.get("expected_calibration_identity", params.get("calibration_identity"))
+    if expected is None:
+        return recorded
+    if not isinstance(expected, Mapping):
+        raise TypeError("expected_calibration_identity must be a mapping")
+    if not any(_identity_matches(identity, expected) for identity in recorded):
+        raise ValueError(
+            f"perturbation class response family {family!r} expected calibration "
+            f"identity {dict(expected)!r}, but eval manifest recorded {recorded!r}"
+        )
+    return recorded
+
+
+def _identity_matches(recorded: Mapping[str, Any], expected: Mapping[str, Any]) -> bool:
+    return all(recorded.get(key) == value for key, value in expected.items())
+
+
+def _aggregate_base_from_eval_states(states: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "schema_version": GRU_PERTURBATION_BANK_SCHEMA_VERSION,
+        "issue": None,
+        "source_experiment": None,
+        "checkpoint_policy": {
+            "status": "from_evaluation_manifest",
+            "evaluation_manifest_id": states.get("evaluation_manifest_id"),
+        },
+        "scope": "controller_independent_perturbation_response",
+        "regeneration_spec": None,
+        "bank_mode": states.get("production_mode"),
+        "feedback_scale_manifest": None,
+        "semantics_correction": (
+            "Aggregate reconstructed from perturbation-class response leaves over the "
+            "shared perturbation-response evaluation manifest."
+        ),
+        "extlqg_comparator": {
+            "status": "preserved_in_row_metrics",
+            "checkpoint_selection_role": "audit_only_not_used_for_selection",
+        },
+        "robust_output_feedback_comparator": {
+            "status": "preserved_in_row_metrics",
+            "checkpoint_selection_role": "audit_only_not_used_for_selection",
+        },
+        "full_qrf_cost": {
+            "status": "preserved_in_row_metrics",
+            "lens": "realized_deterministic_rollout_full_qrf",
+        },
+    }
+
+
+def _load_perturbation_class_product(resolved: Any) -> dict[str, Any]:
+    manifest = getattr(resolved, "manifest", None)
+    if manifest is None:
+        raise ValueError("perturbation bank aggregate requires analysis manifest inputs")
+    for artifact in getattr(manifest, "artifacts", ()):
+        if artifact.role != "rlrmp-perturbation-class-response":
+            continue
+        if artifact.uri is None:
+            raise ValueError("perturbation class response artifact lacks uri")
+        payload = _read_json_payload(Path(artifact.uri))
+        if payload.get("schema_id") != PERTURBATION_CLASS_RESPONSE_SCHEMA_ID:
+            raise ValueError(
+                "perturbation class response artifact has wrong schema_id "
+                f"{payload.get('schema_id')!r}"
+            )
+        return payload
+    raise ValueError(
+        f"analysis manifest {getattr(manifest, 'id', '<unknown>')!r} lacks "
+        "rlrmp-perturbation-class-response artifact"
+    )
+
+
+def _aggregate_perturbation_class_products(
+    leaf_products: Sequence[Mapping[str, Any]],
+    params: Mapping[str, Any],
+) -> dict[str, Any]:
+    if not leaf_products:
+        raise ValueError("perturbation bank aggregate requires at least one leaf product")
+    eval_ids = {
+        str(product.get("evaluation_manifest", {}).get("id"))
+        for product in leaf_products
+        if isinstance(product.get("evaluation_manifest"), Mapping)
+    }
+    if len(eval_ids) != 1:
+        raise ValueError(
+            "perturbation bank aggregate requires all leaves to share one evaluation "
+            f"manifest; got {sorted(eval_ids)}"
+        )
+    base = dict(leaf_products[0].get("aggregate_base", {}))
+    base["schema_version"] = GRU_PERTURBATION_BANK_SCHEMA_VERSION
+    for key in ("issue", "source_experiment", "bank_mode"):
+        if params.get(key) is not None:
+            base[key] = params[key]
+    rows = _aggregate_bank_rows(leaf_products)
+    bank = dict(leaf_products[0].get("bank", {}))
+    bank["perturbations"] = rows
+    return {
+        **base,
+        "bank": bank,
+        "runs": _aggregate_leaf_runs(leaf_products),
+    }
+
+
+def _aggregate_bank_rows(leaf_products: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for product in leaf_products:
+        bank = product.get("bank", {})
+        if not isinstance(bank, Mapping):
+            continue
+        for row in bank.get("perturbations", ()):
+            if isinstance(row, Mapping):
+                rows.append(dict(row))
+    rows.sort(key=lambda row: int(row.get("class_response_row_index", 0)))
+    for row in rows:
+        row.pop("class_response_row_index", None)
+    return rows
+
+
+def _aggregate_leaf_runs(leaf_products: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    runs: dict[str, dict[str, Any]] = {}
+    for product in leaf_products:
+        run_payloads = product.get("runs", {})
+        if not isinstance(run_payloads, Mapping):
+            continue
+        for run_id, run_payload in run_payloads.items():
+            if not isinstance(run_payload, Mapping):
+                continue
+            run_key = str(run_id)
+            if run_key not in runs:
+                run = dict(run_payload)
+                rows = list(run_payload.get("perturbations", ()))
+                runs[run_key] = run
+            else:
+                run = runs[run_key]
+                rows = list(run.get("perturbations", ()))
+                rows.extend(run_payload.get("perturbations", ()))
+            run["perturbations"] = [
+                dict(row) for row in rows if isinstance(row, Mapping)
+            ]
+            run["bulk_files"] = {
+                **dict(run.get("bulk_files", {}) or {}),
+                **dict(run_payload.get("bulk_files", {}) or {}),
+            }
+    for run in runs.values():
+        rows = list(run.get("perturbations", ()))
+        rows.sort(key=lambda row: int(row.get("class_response_row_index", 0)))
+        for row in rows:
+            row.pop("class_response_row_index", None)
+        run["perturbations"] = rows
+        run["status_counts"] = _perturbation_status_counts(rows)
+        run["robust_response_summary"] = _summarize_perturbation_rows(rows)
+    return runs
+
+
+def _perturbation_status_counts(rows: Sequence[Mapping[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        status = str(row.get("status", "unknown"))
+        counts[status] = counts.get(status, 0) + 1
+    return counts
+
+
+def _summarize_perturbation_rows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    from rlrmp.analysis.pipelines.gru_perturbation_bank import summarize_perturbation_bank
+
+    return summarize_perturbation_bank(rows)
 
 
 def _empty_analysis_data() -> AnalysisInputData:
@@ -2143,6 +2688,8 @@ __all__ = [
     "GRU_POSTRUN_ANALYSIS_TYPE",
     "GRU_STANDARD_ANALYSIS_TYPE",
     "OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE",
+    "PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE",
+    "PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE",
     "ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE",
     "feedback_quality_lens_recipe",
     "feedback_quality_lens_spec",
@@ -2154,6 +2701,10 @@ __all__ = [
     "gru_standard_certificate_recipe",
     "output_feedback_rollout_recovery_recipe",
     "output_feedback_rollout_recovery_spec",
+    "perturbation_bank_aggregate_recipe",
+    "perturbation_bank_aggregate_spec",
+    "perturbation_class_response_recipe",
+    "perturbation_class_response_spec",
     "register_certificate_analysis_recipes",
     "register_declarative_materialization_recipes",
     "robustness_phenotype_recipe",

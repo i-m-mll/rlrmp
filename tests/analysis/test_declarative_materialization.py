@@ -12,7 +12,11 @@ from feedbax.analysis.analysis import AbstractAnalysis
 from feedbax.analysis.bundles import execute_analysis_bundle, load_analysis_bundle
 from feedbax.analysis.evaluation import execute_evaluation_run_spec
 from feedbax.analysis.materialization import ContextMaterializer
-from feedbax.analysis.specs import execute_analysis_run_spec, unregister_analysis_recipe
+from feedbax.analysis.specs import (
+    AnalysisRecipeExecutionError,
+    execute_analysis_run_spec,
+    unregister_analysis_recipe,
+)
 from feedbax.contracts.manifest import (
     AnalysisRunSpec,
     EvaluationRunSpec,
@@ -24,20 +28,123 @@ from feedbax.contracts.manifest import (
 from feedbax.plugins.registry import ExperimentRegistry
 
 from rlrmp.analysis import declarative_materialization as dm
-from rlrmp.eval.recipes import CENTER_OUT_ENSEMBLE_EVALUATION_TYPE
-from rlrmp.runtime.spec_migrations import CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND, stamp_current_schema
+from rlrmp.eval.recipes import (
+    CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,
+    PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
+)
+from rlrmp.runtime.spec_migrations import (
+    CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND,
+    PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND,
+    stamp_current_schema,
+)
 
 
 def _artifact_roles(manifest) -> set[str]:
     return {artifact.role for artifact in manifest.artifacts}
 
 
+def _artifact_payload(manifest, role: str) -> dict:
+    artifact = next(artifact for artifact in manifest.artifacts if artifact.role == role)
+    assert artifact.uri is not None
+    return json.loads(Path(artifact.uri).read_text(encoding="utf-8"))
+
+
 def _unregister_declarative_recipes() -> None:
     unregister_analysis_recipe(dm.GRU_STANDARD_ANALYSIS_TYPE)
     unregister_analysis_recipe(dm.GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE)
+    unregister_analysis_recipe(dm.PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE)
+    unregister_analysis_recipe(dm.PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE)
     unregister_analysis_recipe(dm.FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE)
     unregister_analysis_recipe(dm.ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE)
     unregister_analysis_recipe(dm.OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE)
+
+
+def _training_ref(run_id: str = "training-run-a") -> ParentRef:
+    return ParentRef(kind="TrainingRunManifest", id=run_id, role="training_run")
+
+
+def _perturbation_row(
+    perturbation_id: str,
+    *,
+    family: str,
+    axis: str = "x",
+) -> dict[str, object]:
+    return {
+        "perturbation_id": perturbation_id,
+        "channel": "command_input",
+        "family": family,
+        "amplitude": 1.0,
+        "units": "N",
+        "axis": axis,
+        "basis": "command_cartesian_force_xy",
+        "sign": 1,
+        "timing": {"start_time_index": 1, "duration_steps": 2},
+        "adapter": "feedbax.additive_channel_adapter.command_input",
+        "description": "Unit test command pulse.",
+        "calibration_mode": "unit_test",
+        "calibration_role": "reach_relative_calibrated_open_loop",
+    }
+
+
+def _perturbation_bank() -> dict[str, object]:
+    return {
+        "bank_id": "unit_test_bank",
+        "perturbations": [
+            _perturbation_row("row-a", family="command_input_pulse"),
+            _perturbation_row(
+                "row-b",
+                family="target_aligned_lateral_command_load_pulse",
+                axis="y",
+            ),
+        ],
+    }
+
+
+def _run_payload() -> dict[str, object]:
+    return {
+        "label": "Run A",
+        "run_spec_path": "results/unit/runs/training-run-a.json",
+        "artifact_dir": "_artifacts/unit/runs/training-run-a",
+        "n_replicates": 1,
+        "n_rollout_trials_per_replicate": 1,
+        "n_time_steps": 2,
+        "dt_s": 0.01,
+        "status_counts": {"evaluated": 2},
+        "perturbations": [
+            {
+                "perturbation_id": "row-a",
+                "channel": "command_input",
+                "family": "command_input_pulse",
+                "axis": "x",
+                "status": "evaluated",
+                "metrics": {
+                    "delta_action_norm_mean": 1.0,
+                    "delta_position_norm_mean": 0.5,
+                },
+                "perturbation": _perturbation_row("row-a", family="command_input_pulse"),
+            },
+            {
+                "perturbation_id": "row-b",
+                "channel": "command_input",
+                "family": "target_aligned_lateral_command_load_pulse",
+                "axis": "y",
+                "status": "evaluated",
+                "metrics": {
+                    "delta_action_norm_mean": 2.0,
+                    "delta_position_norm_mean": 1.5,
+                },
+                "perturbation": _perturbation_row(
+                    "row-b",
+                    family="target_aligned_lateral_command_load_pulse",
+                    axis="y",
+                ),
+            },
+        ],
+        "bulk_files": {
+            "row-a": "_artifacts/unit/runs/training-run-a/row-a.npz",
+            "row-b": "_artifacts/unit/runs/training-run-a/row-b.npz",
+        },
+    }
 
 
 def test_declarative_recipes_use_feedbax_context_materializers() -> None:
@@ -86,6 +193,44 @@ def test_declarative_recipes_use_feedbax_context_materializers() -> None:
         feedback_quality.analyses["evaluation_diagnostics"],
         AbstractAnalysis,
     )
+    perturbation_leaf = dm.perturbation_class_response_recipe(
+        dm.perturbation_class_response_spec(
+            family="command_input_pulse",
+            evaluation_manifest_id="eval-manifest",
+        ),
+        Path("."),
+        [
+            type(
+                "Resolved",
+                (),
+                {
+                    "ref": ParentRef(
+                        kind="EvaluationRunManifest",
+                        id="eval-manifest",
+                        role="evaluation_run",
+                    ),
+                    "states": {
+                        "evaluation_type": PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
+                        "evaluation_manifest_id": "eval-manifest",
+                        "perturbation_battery": {"perturbations": []},
+                        "response_tensors": {"runs": {}},
+                        "class_index_map": {
+                            "command_input_pulse": {
+                                "perturbation_ids": [],
+                                "row_indices": [],
+                            }
+                        },
+                    },
+                    "manifest": None,
+                    "path": None,
+                },
+            )()
+        ],
+    )
+    assert isinstance(
+        perturbation_leaf.analyses["command_input_pulse"],
+        AbstractAnalysis,
+    )
 
 
 def test_output_feedback_bridge_bundle_resource_loads() -> None:
@@ -110,6 +255,190 @@ def test_feedback_quality_lens_bundle_resource_loads() -> None:
     assert bundle.metadata["bundle_family"] == "rlrmp/feedback_quality_lens"
     assert bundle.templates[0].analysis_type == dm.FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE
     assert bundle.templates[0].requested_outputs == ["feedback_quality_lens"]
+
+
+def test_gru_postrun_bundle_declares_perturbation_leaf_aggregate_stages() -> None:
+    registry = ExperimentRegistry()
+    rlrmp.register_experiment_package(registry)
+
+    bundle = load_analysis_bundle("rlrmp/gru_postrun", registry=registry)
+
+    stages = {stage.name: stage for stage in bundle.stages}
+    assert stages["perturbation_bank_eval"].evaluation_type == (
+        PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE
+    )
+    assert stages["perturbation_class_command_input_pulse"].analysis_type == (
+        dm.PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE
+    )
+    assert stages["perturbation_class_command_input_pulse"].depends_on == [
+        "perturbation_bank_eval"
+    ]
+    assert stages["perturbation_bank_aggregate"].analysis_type == (
+        dm.PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE
+    )
+    assert "perturbation_class_command_input_pulse" in (
+        stages["perturbation_bank_aggregate"].depends_on
+    )
+
+
+def test_perturbation_class_leaves_aggregate_to_legacy_bank_payload(
+    tmp_path: Path,
+) -> None:
+    registry = ExperimentRegistry()
+    rlrmp.register_experiment_package(registry)
+    params = stamp_current_schema(
+        PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND,
+        {
+            "checkpoint_bank_ref": {"kind": "CheckpointSelectionManifest", "id": "bank-a"},
+            "perturbation_battery": _perturbation_bank(),
+            "response_tensors": {"runs": {"training-run-a": _run_payload()}},
+            "consumed_data_identities": [
+                {
+                    "role": "perturbation_open_loop_calibration",
+                    "hash": "sha256:unit-calibration",
+                }
+            ],
+            "legacy_payload_mode": True,
+        },
+    )
+    eval_manifest, eval_path = execute_evaluation_run_spec(
+        EvaluationRunSpec(
+            evaluation_type=PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
+            training_run_ids=["training-run-a"],
+            inputs=[_training_ref()],
+            params=params,
+        ),
+        root=tmp_path,
+        force=True,
+    )
+    leaf_manifests = []
+    for family in (
+        "command_input_pulse",
+        "target_aligned_lateral_command_load_pulse",
+    ):
+        manifest, path = execute_analysis_run_spec(
+            dm.perturbation_class_response_spec(
+                family=family,
+                evaluation_manifest_id=eval_manifest.id,
+                evaluation_manifest_uri=eval_path,
+                expected_calibration_identity={"hash": "sha256:unit-calibration"},
+            ),
+            root=tmp_path,
+        )
+        leaf_payload = _artifact_payload(manifest, "rlrmp-perturbation-class-response")
+        assert leaf_payload["family"] == family
+        assert leaf_payload["evaluation_manifest"]["id"] == eval_manifest.id
+        leaf_manifests.append(
+            ParentRef(
+                kind="AnalysisRunManifest",
+                id=manifest.id,
+                role="analysis_run",
+                uri=str(path),
+            )
+        )
+
+    aggregate_manifest, _aggregate_path = execute_analysis_run_spec(
+        dm.perturbation_bank_aggregate_spec(
+            leaf_manifest_refs=leaf_manifests,
+            issue="unit",
+            source_experiment="unit-exp",
+            bank_mode="raw",
+        ),
+        root=tmp_path,
+    )
+    aggregate = _artifact_payload(
+        aggregate_manifest,
+        "rlrmp-gru-perturbation-response-manifest",
+    )
+
+    legacy_run = _run_payload()
+    assert aggregate["schema_version"] == "rlrmp.gru_perturbation_bank.v3"
+    assert [row["perturbation_id"] for row in aggregate["bank"]["perturbations"]] == [
+        "row-a",
+        "row-b",
+    ]
+    assert [
+        row["perturbation_id"]
+        for row in aggregate["runs"]["training-run-a"]["perturbations"]
+    ] == ["row-a", "row-b"]
+    assert aggregate["runs"]["training-run-a"]["status_counts"] == {
+        "evaluated": 2,
+    }
+    assert aggregate["runs"]["training-run-a"]["bulk_files"] == legacy_run["bulk_files"]
+    assert aggregate["runs"]["training-run-a"]["n_time_steps"] == legacy_run["n_time_steps"]
+
+
+def test_perturbation_class_leaf_absent_family_fails_closed(tmp_path: Path) -> None:
+    registry = ExperimentRegistry()
+    rlrmp.register_experiment_package(registry)
+    params = stamp_current_schema(
+        PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND,
+        {
+            "checkpoint_bank_ref": {"kind": "CheckpointSelectionManifest", "id": "bank-a"},
+            "perturbation_battery": _perturbation_bank(),
+            "response_tensors": {"runs": {"training-run-a": _run_payload()}},
+            "legacy_payload_mode": True,
+        },
+    )
+    eval_manifest, eval_path = execute_evaluation_run_spec(
+        EvaluationRunSpec(
+            evaluation_type=PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
+            training_run_ids=["training-run-a"],
+            inputs=[_training_ref()],
+            params=params,
+        ),
+        root=tmp_path,
+        force=True,
+    )
+
+    with pytest.raises(AnalysisRecipeExecutionError) as excinfo:
+        execute_analysis_run_spec(
+            dm.perturbation_class_response_spec(
+                family="missing_family",
+                evaluation_manifest_id=eval_manifest.id,
+                evaluation_manifest_uri=eval_path,
+            ),
+            root=tmp_path,
+        )
+    assert "missing_family" in str(excinfo.value.__cause__)
+    assert "contains families" in str(excinfo.value.__cause__)
+
+
+def test_legacy_perturbation_materializer_routes_to_leaf_aggregate_without_raw_outputs(
+    tmp_path: Path,
+) -> None:
+    from rlrmp.analysis.pipelines import gru_perturbation_bank
+
+    output_path = tmp_path / "legacy_manifest.json"
+    note_path = tmp_path / "legacy_note.md"
+    bulk_dir = tmp_path / "legacy_bulk"
+
+    manifest = gru_perturbation_bank.materialize_gru_perturbation_response(
+        source_experiment="unit-exp",
+        result_experiment="e32c8bb",
+        run_ids=("training-run-a",),
+        evaluate=False,
+        write_bulk_arrays=True,
+        output_path=output_path,
+        note_path=note_path,
+        bulk_dir=bulk_dir,
+        repo_root=tmp_path,
+    )
+
+    assert manifest["schema_version"] == "rlrmp.gru_perturbation_bank.v3"
+    assert manifest["issue"] == "e32c8bb"
+    assert manifest["source_experiment"] == "unit-exp"
+    assert manifest["bank_summary"]["n_perturbations"] == len(
+        manifest["bank"]["perturbations"]
+    )
+    assert manifest["compatibility_adapter"]["route"] == (
+        "feedbax_evaluation_manifest_to_perturbation_class_leaf_aggregate"
+    )
+    assert manifest["compatibility_adapter"]["write_bulk_arrays_requested"] is True
+    assert manifest["compatibility_adapter"]["write_bulk_arrays_effective"] is False
+    assert not output_path.exists()
+    assert not note_path.exists()
+    assert not bulk_dir.exists()
 
 
 def test_feedback_quality_lens_bundle_executes_fixture_and_groups_artifacts(

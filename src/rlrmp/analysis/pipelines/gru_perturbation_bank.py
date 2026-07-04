@@ -6,6 +6,7 @@ import json
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Literal
 
 import equinox as eqx
@@ -35,7 +36,6 @@ from rlrmp.analysis.math.cs_released_simulation import (
     zero_forward_noise_draws,
     zero_noise_covariances,
 )
-from rlrmp.analysis.pipelines.diagnostic_provenance import write_regeneration_spec
 from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     CheckpointSelectionMode,
     load_materialized_fixed_bank_manifest,
@@ -46,7 +46,6 @@ from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import RolloutEvaluatio
 from rlrmp.analysis.pipelines.gru_pilot_figures import (
     RunFigureInputs,
     repeat_single_validation_trial,
-    resolve_run_inputs,
 )
 from rlrmp.analysis.math.output_feedback import (
     OutputFeedbackConfig,
@@ -69,7 +68,6 @@ from rlrmp.model.feedback_descriptors import (
     controller_feedback_axis_index,
     resolve_controller_feedback_view,
 )
-from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
@@ -1350,208 +1348,234 @@ def materialize_gru_perturbation_response(
     preferred_checkpoint_manifest_path: Path | None = None,
     checkpoint_selection_mode: CheckpointSelectionMode = "sparse_history",
 ) -> dict[str, Any]:
-    """Materialize the standard C&S perturbation-response bank and GRU responses."""
+    """Compatibility adapter for the retired monolithic bank materializer.
 
-    bank = default_cs_perturbation_bank(
-        mode=bank_mode,
+    The durable file-writing entry point now routes through the P1b spec path:
+    a perturbation-response evaluation manifest, per-family leaf payloads, and
+    the aggregate legacy bank shape. Legacy path arguments are accepted so
+    existing callers fail less abruptly, but this adapter does not write tracked
+    JSON, Markdown notes, regeneration specs, or per-row NPZ bulk arrays.
+    """
+
+    eval_manifest, eval_manifest_path, eval_states = _execute_perturbation_bank_eval_adapter(
+        source_experiment=source_experiment,
+        result_experiment=result_experiment,
+        run_ids=run_ids,
+        labels=labels,
+        n_rollout_trials=n_rollout_trials,
+        evaluate=evaluate,
+        bank_mode=bank_mode,
         calibration_level=calibration_level,
         calibration_reach=calibration_reach,
         feedback_scale_manifest_path=feedback_scale_manifest_path,
+        extlqg_physical_dim=extlqg_physical_dim,
+        preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
+        checkpoint_selection_mode=checkpoint_selection_mode,
+        repo_root=repo_root,
     )
-    output_path = output_path or (
-        repo_root / "results" / result_experiment / "notes" / DEFAULT_OUTPUT_FILENAME
+    manifest = _aggregate_perturbation_eval_adapter(
+        eval_states,
+        eval_manifest=eval_manifest,
+        eval_manifest_path=eval_manifest_path,
+        issue=result_experiment,
+        source_experiment=source_experiment,
+        bank_mode=bank_mode,
     )
-    note_path = note_path or (
-        repo_root / "results" / result_experiment / "notes" / DEFAULT_NOTE_FILENAME
-    )
-    bulk_dir = bulk_dir or repo_root / "_artifacts" / result_experiment / DEFAULT_BULK_SUBDIR
-    regeneration_spec_path = regeneration_spec_path or _regeneration_spec_path(output_path)
-    mkdir_p(output_path.parent)
-    if write_bulk_arrays and evaluate:
-        mkdir_p(bulk_dir)
-
-    run_summaries: dict[str, Any] = {}
-    if evaluate:
-        runs = resolve_run_inputs(
-            experiment=source_experiment,
-            run_ids=run_ids,
-            labels=labels,
-            repo_root=repo_root,
-        )
-        for run in runs:
-            run_summaries[run.run_id] = evaluate_run_perturbation_bank(
-                run,
-                source_experiment=source_experiment,
-                bank=bank,
-                n_rollout_trials=n_rollout_trials,
-                write_bulk_arrays=write_bulk_arrays,
-                bulk_dir=bulk_dir,
-                extlqg_physical_dim=extlqg_physical_dim,
-                preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
-                checkpoint_selection_mode=checkpoint_selection_mode,
-                repo_root=repo_root,
-            )
-
-    manifest = {
-        "schema_version": SCHEMA_VERSION,
-        "issue": result_experiment,
-        "source_experiment": source_experiment,
-        "checkpoint_policy": _effective_checkpoint_policy_from_manifest(
-            source_experiment,
-            preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
-            checkpoint_selection_mode=checkpoint_selection_mode,
-            repo_root=repo_root,
+    manifest["bank_summary"] = _adapter_bank_summary(manifest.get("bank", {}))
+    manifest["compatibility_adapter"] = {
+        "materializer": (
+            "rlrmp.analysis.pipelines.gru_perturbation_bank."
+            "materialize_gru_perturbation_response"
         ),
-        "scope": "controller_independent_perturbation_response",
-        "regeneration_spec": _repo_relative(regeneration_spec_path, repo_root=repo_root),
-        "bank_mode": bank_mode,
-        "feedback_scale_manifest": (
-            None
-            if feedback_scale_manifest_path is None
-            else _repo_relative(feedback_scale_manifest_path, repo_root=repo_root)
-        ),
-        "semantics_correction": (
-            "v2 splits the former plant_force rows into command_input_pulse "
-            "(post-controller command-port perturbations) and process_epsilon_pulse "
-            "(mechanics.epsilon / B_w process perturbations). Process-epsilon "
-            "rows span the canonical current physical block [px, py, vx, vy, "
-            "fx, fy, eps_x_int, eps_y_int]. v3 timing-aware rows evaluate "
-            "plant-side command/process pulses at early/mid/late bins and "
-            "controller-visible sensory/pre-noise delayed-measurement offsets at "
-            "early_visible/mid_visible/late_visible bins."
-        ),
-        "bank": bank,
-        "extlqg_comparator": {
-            "status": "available_for_initial_state_command_input_process_epsilon_and_sensory_feedback",
-            "physical_dim": int(extlqg_physical_dim),
-            "game_source": (
-                "rlrmp.analysis.math.cs_game_card.build_no_integrator_game"
-                if int(extlqg_physical_dim) == 6
-                else "rlrmp.analysis.math.cs_game_card.build_canonical_game"
-            ),
-            "reason": (
-                "Deterministic extLQG response rows are evaluated for perturbations "
-                "with clean analytical interfaces: initial_state, command_input, "
-                "process_epsilon, and sensory_feedback. "
-                "Command-input rows add an external pulse after the controller "
-                "command and before the plant input. Sensory-feedback rows offset "
-                "the post-noise measurement delivered to the estimator after "
-                "converting target-relative GRU feedback signs into raw analytical "
-                "observation signs. Target-stream remains deferred for current "
-                "fixed-target checkpoints."
-            ),
-            "checkpoint_selection_role": "audit_only_not_used_for_selection",
-        },
-        "robust_output_feedback_comparator": {
-            "status": "available_for_initial_state_command_input_and_process_epsilon",
-            "reason": (
-                "The output-feedback robust analytical controller is replayed through "
-                "the same deterministic released-code plant/estimator lane for "
-                "initial-state, command-input, and process-epsilon rows. Sensory "
-                "false-feedback offsets are marked not_applicable until the robust "
-                "released-forward helper exposes the same measurement-offset ports "
-                "as the extLQG lane."
-            ),
-            "gamma_factor": OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
-            "checkpoint_selection_role": "audit_only_not_used_for_selection",
-        },
-        "full_qrf_cost": {
-            "status": "available",
-            "lens": "realized_deterministic_rollout_full_qrf",
-            "reason": (
-                "Costs are rescored post hoc from states.mechanics.vector and "
-                "states.net.output using the canonical C&S Q_t/R_t/Q_f schedule. "
-                "They are audit-only perturbation diagnostics and are not used for "
-                "checkpoint selection."
+        "route": "feedbax_evaluation_manifest_to_perturbation_class_leaf_aggregate",
+        "evaluation_manifest_id": eval_manifest.id,
+        "evaluation_manifest_path": str(eval_manifest_path),
+        "legacy_output_paths_ignored": {
+            "output_path": None if output_path is None else str(output_path),
+            "note_path": None if note_path is None else str(note_path),
+            "bulk_dir": None if bulk_dir is None else str(bulk_dir),
+            "regeneration_spec_path": (
+                None if regeneration_spec_path is None else str(regeneration_spec_path)
             ),
         },
-        "runs": run_summaries,
+        "write_bulk_arrays_requested": bool(write_bulk_arrays),
+        "write_bulk_arrays_effective": False,
     }
-    detail_manifest_path = bulk_dir / f"{output_path.stem}_detail.json"
-    tracked_manifest = _slim_perturbation_response_manifest(
-        manifest,
-        detail_manifest_path=detail_manifest_path if evaluate else None,
-        repo_root=repo_root,
+    return manifest
+
+
+def _execute_perturbation_bank_eval_adapter(
+    *,
+    source_experiment: str,
+    result_experiment: str,
+    run_ids: Sequence[str],
+    labels: Sequence[str] | None,
+    n_rollout_trials: int,
+    evaluate: bool,
+    bank_mode: Literal["raw", "calibrated"],
+    calibration_level: str | Sequence[str] | None,
+    calibration_reach: str | float | None,
+    feedback_scale_manifest_path: Path | None,
+    extlqg_physical_dim: Literal[6, 8],
+    preferred_checkpoint_manifest_path: Path | None,
+    checkpoint_selection_mode: CheckpointSelectionMode,
+    repo_root: Path,
+) -> tuple[Any, Path, Mapping[str, Any]]:
+    from feedbax.contracts.manifest import EvaluationRunSpec, ParentRef
+
+    from rlrmp import ensure_rlrmp_recipes_registered
+    from rlrmp.eval.recipes import (
+        PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
+        perturbation_response_bank_recipe,
     )
-    if evaluate:
-        mkdir_p(detail_manifest_path.parent)
-        write_compact_json(detail_manifest_path, manifest)
-    write_compact_json(output_path, tracked_manifest)
-    update_marked_section(
-        note_path,
-        "gru_perturbation_response",
-        render_perturbation_response_markdown(manifest),
+    from rlrmp.runtime.spec_migrations import (
+        PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND,
+        stamp_current_schema,
     )
-    runs_for_spec = resolve_run_inputs(
-        experiment=source_experiment,
-        run_ids=run_ids,
-        labels=labels,
-        repo_root=repo_root,
-    )
-    write_regeneration_spec(
-        spec_path=regeneration_spec_path,
-        diagnostic_name="gru_perturbation_response_bank",
-        materializer="rlrmp.analysis.pipelines.gru_perturbation_bank.materialize_gru_perturbation_response",
-        command=None,
-        parameters={
-            "source_experiment": source_experiment,
-            "result_experiment": result_experiment,
-            "run_ids": list(run_ids),
-            "labels": None if labels is None else list(labels),
-            "n_rollout_trials": n_rollout_trials,
-            "evaluate": evaluate,
-            "write_bulk_arrays": write_bulk_arrays,
-            "bank_mode": bank_mode,
-            "calibration_level": calibration_level,
-            "calibration_reach": calibration_reach,
-            "feedback_scale_manifest_path": (
-                None
-                if feedback_scale_manifest_path is None
-                else _repo_relative(feedback_scale_manifest_path, repo_root=repo_root)
-            ),
-            "preferred_checkpoint_manifest_path": (
-                None
-                if preferred_checkpoint_manifest_path is None
-                else _repo_relative(preferred_checkpoint_manifest_path, repo_root=repo_root)
-            ),
-            "checkpoint_selection_mode": checkpoint_selection_mode,
-        },
-        inputs=[{"role": "run_spec", "path": run.run_spec_path} for run in runs_for_spec]
-        + [{"role": "run_artifact_dir", "path": run.artifact_dir} for run in runs_for_spec]
-        + (
-            []
+
+    ensure_rlrmp_recipes_registered()
+    params: dict[str, Any] = {
+        "source_experiment": source_experiment,
+        "run_ids": list(run_ids),
+        "labels": None if labels is None else list(labels),
+        "n_rollout_trials": int(n_rollout_trials),
+        "bank_mode": bank_mode,
+        "calibration_level": calibration_level,
+        "calibration_reach": calibration_reach,
+        "feedback_scale_manifest_path": (
+            None if feedback_scale_manifest_path is None else str(feedback_scale_manifest_path)
+        ),
+        "extlqg_physical_dim": int(extlqg_physical_dim),
+        "preferred_checkpoint_manifest_path": (
+            None
             if preferred_checkpoint_manifest_path is None
-            else [{"role": "checkpoint_manifest", "path": preferred_checkpoint_manifest_path}]
+            else str(preferred_checkpoint_manifest_path)
+        ),
+        "checkpoint_selection_mode": checkpoint_selection_mode,
+        "repo_root": str(repo_root),
+        "write_bulk_arrays": False,
+    }
+    params = {key: value for key, value in params.items() if value is not None}
+    if not evaluate:
+        params.update(
+            {
+                "checkpoint_bank_ref": {
+                    "kind": "CheckpointSelectionManifest",
+                    "id": f"{source_experiment}_legacy_adapter_no_evaluate",
+                },
+                "perturbation_battery": default_cs_perturbation_bank(
+                    mode=bank_mode,
+                    calibration_level=calibration_level,
+                    calibration_reach=calibration_reach,
+                    feedback_scale_manifest_path=feedback_scale_manifest_path,
+                ),
+                "response_tensors": {"runs": {}},
+                "legacy_payload_mode": True,
+            }
         )
-        + (
-            []
-            if feedback_scale_manifest_path is None
-            else [
-                {"role": "controller_feedback_scale_manifest", "path": feedback_scale_manifest_path}
-            ]
-        ),
-        outputs=[
-            {"role": "perturbation_response_manifest", "path": output_path},
-            {"role": "perturbation_response_note", "path": note_path},
-            {"role": "perturbation_response_bulk_dir", "path": bulk_dir},
-        ]
-        + (
-            [{"role": "perturbation_response_detail_manifest", "path": detail_manifest_path}]
-            if evaluate
-            else []
-        ),
-        source_files=[
-            "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
-            "src/rlrmp/analysis/math/cs_released_simulation.py",
-            "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py",
+    spec = EvaluationRunSpec(
+        evaluation_type=PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
+        training_run_ids=list(run_ids),
+        inputs=[
+            ParentRef(kind="TrainingRunManifest", id=str(run_id), role="training_run")
+            for run_id in run_ids
         ],
-        notes=[
-            "Perturbation-response arrays and full row manifests are bulk analysis payloads.",
-            "The tracked manifest is intentionally slim and points to _artifacts detail bytes.",
-        ],
-        repo_root=repo_root,
+        params=stamp_current_schema(PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND, params),
     )
-    return tracked_manifest
+    result = perturbation_response_bank_recipe(
+        spec,
+        repo_root,
+        repo_root / "cache" / "states" / "legacy_perturbation_adapter.pkl",
+    )
+    states = result.states
+    if not isinstance(states, Mapping):
+        raise TypeError("perturbation-response evaluation states must be a mapping")
+    manifest = SimpleNamespace(
+        id=str(result.metadata.get("caching_identity", {}).get("manifest_id")),
+        metadata=result.metadata,
+        summary_metrics=result.summary_metrics,
+    )
+    manifest_path = repo_root / "manifests" / "evaluation_runs" / f"{manifest.id}.json"
+    return manifest, manifest_path, states
+
+
+def _aggregate_perturbation_eval_adapter(
+    states: Mapping[str, Any],
+    *,
+    eval_manifest: Any,
+    eval_manifest_path: Path,
+    issue: str,
+    source_experiment: str,
+    bank_mode: Literal["raw", "calibrated"],
+) -> dict[str, Any]:
+    from feedbax.contracts.manifest import ParentRef
+
+    from rlrmp.analysis import declarative_materialization as dm
+
+    class_index_map = states.get("class_index_map")
+    if not isinstance(class_index_map, Mapping):
+        raise ValueError("perturbation-response evaluation states lack class_index_map")
+    resolved_eval = SimpleNamespace(
+        ref=ParentRef(
+            kind="EvaluationRunManifest",
+            id=eval_manifest.id,
+            role="evaluation_run",
+            uri=str(eval_manifest_path),
+        ),
+        manifest=eval_manifest,
+        path=eval_manifest_path,
+        states=states,
+    )
+    leaf_products = [
+        dm._perturbation_class_response_payload(
+            states,
+            {"family": str(family)},
+            evaluation_input=resolved_eval,
+        )
+        for family in class_index_map
+    ]
+    return dm._aggregate_perturbation_class_products(
+        leaf_products,
+        {
+            "issue": issue,
+            "source_experiment": source_experiment,
+            "bank_mode": bank_mode,
+        },
+    )
+
+
+def _adapter_bank_summary(bank: Any) -> dict[str, Any]:
+    if not isinstance(bank, Mapping):
+        return {"n_perturbations": 0, "families": [], "channels": [], "timing_bins": []}
+    rows = bank.get("perturbations", [])
+    if not isinstance(rows, Sequence) or isinstance(rows, (str, bytes)):
+        rows = []
+    return {
+        "bank_id": bank.get("bank_id"),
+        "schema_version": bank.get("schema_version"),
+        "n_perturbations": len(rows),
+        "families": sorted(
+            {
+                str(row.get("family"))
+                for row in rows
+                if isinstance(row, Mapping) and row.get("family") is not None
+            }
+        ),
+        "channels": sorted(
+            {
+                str(row.get("channel"))
+                for row in rows
+                if isinstance(row, Mapping) and row.get("channel") is not None
+            }
+        ),
+        "timing_bins": sorted(
+            {
+                str(row.get("timing_bin"))
+                for row in rows
+                if isinstance(row, Mapping) and row.get("timing_bin") is not None
+            }
+        ),
+    }
 
 
 def _regeneration_spec_path(path: Path) -> Path:
@@ -4082,6 +4106,9 @@ def _write_perturbation_bulk_arrays(
     bulk_dir: Path,
     perturbation_id: str,
 ) -> Path:
+    # Kept for direct evaluate_run_perturbation_bank and benchmark callers that
+    # still request legacy per-row NPZ arrays; the public materializer adapter no
+    # longer routes through this writer.
     mkdir_p(bulk_dir)
     path = bulk_dir / f"{perturbation_id}.npz"
     np.savez_compressed(
@@ -5175,12 +5202,11 @@ def _repo_relative(path: Path, *, repo_root: Path = REPO_ROOT) -> str:
 
 
 def write_default_bank(path: Path) -> None:
-    """Write the default bank schema to a JSON file."""
+    """Retired raw writer retained only as an import-compatible stub."""
 
-    mkdir_p(path.parent)
-    path.write_text(
-        json.dumps(default_cs_perturbation_bank(), indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
+    raise RuntimeError(
+        "write_default_bank is retired; use default_cs_perturbation_bank() and "
+        "record the payload through Feedbax custody instead."
     )
 
 
