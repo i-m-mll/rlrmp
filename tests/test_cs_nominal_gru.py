@@ -2765,6 +2765,7 @@ def test_feedbax_training_run_spec_rejects_cs_fields(tmp_path: Path) -> None:
             spec_dir=str(tmp_path / "spec"),
             smoke=True,
             dry_run=True,
+            gradient_clip_norm=5.0,
         )
     )
     feedbax_spec = result["run_spec"][FEEDBAX_TRAINING_RUN_SPEC_KEY]
@@ -2809,6 +2810,7 @@ def test_cs_gru_hps_adapter_matches_expected_training_run_spec(
         spec_dir=str(tmp_path / variant / "spec"),
         smoke=True,
         dry_run=True,
+        gradient_clip_norm=5.0,
         **overrides,
     )
     result = write_run_spec(args)
@@ -2831,6 +2833,7 @@ def test_training_run_spec_graph_guard_rejects_diverging_hps(tmp_path: Path) -> 
         spec_dir=str(tmp_path / "spec"),
         smoke=True,
         dry_run=True,
+        gradient_clip_norm=5.0,
     )
     payload = write_run_spec(args)["run_spec"]
     diverging_hps = build_hps(_args(hidden_size=5, n_replicates=1))

@@ -77,6 +77,7 @@ CONSUMED_DATA_IDENTITIES_KEY = "consumed_data_identities"
 POST_RUN_SCHEMA_VERSION = "rlrmp.post_run_provenance.v1"
 PINNED_MANIFEST_ROOT = "_artifacts/feedbax_runs"
 FEEDBAX_PROVIDER_VERSION = "feedbax-provider.v1"
+CHECKPOINT_INTERVAL_BATCHES_KEY = "interval_batches"
 
 CLOSED_LOOP_DISTILLATION_METHOD_REF = "rlrmp/closed_loop_distillation/v1"
 CLOSED_LOOP_DISTILLATION_PAYLOAD_SCHEMA_ID = (
@@ -92,6 +93,18 @@ GUIDED_DISTILLATION_PAYLOAD_SCHEMA_ID = (
 GUIDED_DISTILLATION_PAYLOAD_SCHEMA_VERSION = (
     "rlrmp.spec.training_method.guided_distillation_payload.v1"
 )
+
+
+class MissingTrainingRunSpecFieldError(ValueError):
+    """Raised when a recording adapter would otherwise fabricate run provenance."""
+
+    def __init__(self, *, field_path: str, spec_identity: str) -> None:
+        self.field_path = field_path
+        self.spec_identity = spec_identity
+        super().__init__(
+            "TrainingRunSpec recording adapter missing required field "
+            f"{field_path!r} in {spec_identity}"
+        )
 
 
 class _StrictPayloadModel(BaseModel):
@@ -285,7 +298,7 @@ def build_distillation_training_run_spec(
     checkpointing = _mapping(run_spec, "checkpointing")
     task_params = _distillation_task_params(run_spec, method=method)
     objective_payload = _distillation_objective_payload(run_spec, method=method)
-    training_config = _distillation_training_config(run_spec, method=method)
+    training_config = _distillation_training_config(run_spec, method=method, spec_path=spec_path)
     effective_phase = EffectivePhaseSpec(
         method_ref=contract.method_ref,
         axes=contract.axes,
@@ -350,8 +363,8 @@ def build_distillation_training_run_spec(
             metadata={"tracked_run_spec": str(spec_path)},
         ),
         checkpoint_progress=CheckpointProgressPolicySpec(
-            checkpoint_interval=_int_or_none(checkpointing.get("interval_batches")),
-            progress_interval=_int_or_none(checkpointing.get("interval_batches")),
+            checkpoint_interval=training_config.snapshot_interval,
+            progress_interval=training_config.snapshot_interval,
             metadata={"latest_pointer": checkpointing.get("latest_pointer")},
         ),
         metadata={
@@ -625,42 +638,194 @@ def _distillation_method_ref_key(method: str) -> str:
     raise ValueError(f"unknown RLRMP distillation method {method!r}")
 
 
-def _distillation_training_config(run_spec: dict[str, Any], *, method: str) -> TrainingConfig:
+def _recording_spec_identity(
+    run_spec: dict[str, Any],
+    *,
+    spec_path: Path | None = None,
+    spec_dir: Path | None = None,
+) -> str:
+    """Return a concise source identity for fail-closed recording errors."""
+
+    if spec_path is not None:
+        return str(spec_path)
+    entry_path = _mapping(run_spec, "training_entry").get("run_spec_path")
+    if entry_path:
+        return str(entry_path)
+    issue = run_spec.get("issue")
+    run_id = run_spec.get("run_id")
+    if issue is not None and run_id is not None:
+        return f"issue={issue} run_id={run_id}"
+    if spec_dir is not None:
+        return str(spec_dir)
+    return "<unknown run spec>"
+
+
+def _value_at_path(mapping: dict[str, Any], field_path: str) -> tuple[Any, bool]:
+    value: Any = mapping
+    for part in field_path.split("."):
+        if not isinstance(value, dict) or part not in value or value[part] is None:
+            return None, False
+        value = value[part]
+    return value, True
+
+
+def _required_recording_field(
+    run_spec: dict[str, Any],
+    field_path: str,
+    *,
+    spec_path: Path | None = None,
+    spec_dir: Path | None = None,
+) -> Any:
+    value, found = _value_at_path(run_spec, field_path)
+    if found:
+        return value
+    raise MissingTrainingRunSpecFieldError(
+        field_path=field_path,
+        spec_identity=_recording_spec_identity(
+            run_spec,
+            spec_path=spec_path,
+            spec_dir=spec_dir,
+        ),
+    )
+
+
+def _required_recording_field_from(
+    run_spec: dict[str, Any],
+    field_paths: tuple[str, ...],
+    *,
+    spec_path: Path | None = None,
+    spec_dir: Path | None = None,
+) -> Any:
+    for field_path in field_paths:
+        value, found = _value_at_path(run_spec, field_path)
+        if found:
+            return value
+    raise MissingTrainingRunSpecFieldError(
+        field_path=" or ".join(field_paths),
+        spec_identity=_recording_spec_identity(
+            run_spec,
+            spec_path=spec_path,
+            spec_dir=spec_dir,
+        ),
+    )
+
+
+def _distillation_training_config(
+    run_spec: dict[str, Any],
+    *,
+    method: str,
+    spec_path: Path | None = None,
+) -> TrainingConfig:
     if method == "closed_loop_distillation":
-        student = _mapping(run_spec, "student_contract")
         return TrainingConfig(
-            n_batches=int(student.get("n_train_batches", 1)),
-            batch_size=int(student.get("batch_size", 1)),
-            learning_rate=float(student.get("controller_lr", 1e-3)),
-            grad_clip=float(student.get("gradient_clip_norm", 1.0)),
-            hidden_dim=int(student.get("hidden_size", 0)),
-            network_type="gru",
-            n_reach_steps=int(_mapping(run_spec, "teacher_contract").get("horizon", 60)),
-            effort_weight=float(
-                _mapping(_mapping(run_spec, "loss_surface"), "weights").get(
-                    "action_force_trajectory",
-                    1.0,
+            n_batches=int(
+                _required_recording_field(
+                    run_spec,
+                    "student_contract.n_train_batches",
+                    spec_path=spec_path,
                 )
             ),
-            snapshot_interval=int(_mapping(run_spec, "checkpointing").get("interval_batches", 1)),
+            batch_size=int(
+                _required_recording_field(
+                    run_spec,
+                    "student_contract.batch_size",
+                    spec_path=spec_path,
+                )
+            ),
+            learning_rate=float(
+                _required_recording_field(
+                    run_spec,
+                    "student_contract.controller_lr",
+                    spec_path=spec_path,
+                )
+            ),
+            grad_clip=float(
+                _required_recording_field(
+                    run_spec,
+                    "student_contract.gradient_clip_norm",
+                    spec_path=spec_path,
+                )
+            ),
+            hidden_dim=int(
+                _required_recording_field(
+                    run_spec,
+                    "student_contract.hidden_size",
+                    spec_path=spec_path,
+                )
+            ),
+            network_type="gru",
+            n_reach_steps=int(
+                _required_recording_field(
+                    run_spec,
+                    "teacher_contract.horizon",
+                    spec_path=spec_path,
+                )
+            ),
+            effort_weight=float(
+                _required_recording_field(
+                    run_spec,
+                    "loss_surface.weights.action_force_trajectory",
+                    spec_path=spec_path,
+                )
+            ),
+            snapshot_interval=int(
+                _required_recording_field(
+                    run_spec,
+                    f"checkpointing.{CHECKPOINT_INTERVAL_BATCHES_KEY}",
+                    spec_path=spec_path,
+                )
+            ),
         )
-    model = _mapping(run_spec, "model_contract")
-    optimizer = _mapping(run_spec, "optimizer")
-    teacher_bank = _mapping(run_spec, "teacher_bank")
     return TrainingConfig(
-        n_batches=int(run_spec.get("n_train_batches", _mapping(run_spec, "training_schedule").get("total_batches", 1))),
-        batch_size=int(run_spec.get("batch_size", model.get("batch_size", 1))),
-        learning_rate=float(run_spec.get("controller_lr", optimizer.get("controller_lr", 1e-3))),
-        grad_clip=float(optimizer.get("gradient_clip_norm", 1.0)),
-        hidden_dim=int(model.get("hidden_size", 0)),
-        network_type="gru",
-        n_reach_steps=int(teacher_bank.get("horizon", 60)),
-        effort_weight=float(
-            _mapping(_mapping(run_spec, "distillation_surface"), "components")
-            .get("clean_action", {})
-            .get("weight", 1.0)
+        n_batches=int(
+            _required_recording_field_from(
+                run_spec,
+                ("n_train_batches", "training_schedule.total_batches"),
+                spec_path=spec_path,
+            )
         ),
-        snapshot_interval=int(_mapping(run_spec, "checkpointing").get("interval_batches", 1)),
+        batch_size=int(
+            _required_recording_field_from(
+                run_spec,
+                ("batch_size", "model_contract.batch_size"),
+                spec_path=spec_path,
+            )
+        ),
+        learning_rate=float(
+            _required_recording_field_from(
+                run_spec,
+                ("controller_lr", "optimizer.controller_lr"),
+                spec_path=spec_path,
+            )
+        ),
+        grad_clip=float(
+            _required_recording_field(
+                run_spec,
+                "optimizer.gradient_clip_norm",
+                spec_path=spec_path,
+            )
+        ),
+        hidden_dim=int(
+            _required_recording_field(run_spec, "model_contract.hidden_size", spec_path=spec_path)
+        ),
+        network_type="gru",
+        n_reach_steps=int(
+            _required_recording_field(run_spec, "teacher_bank.horizon", spec_path=spec_path)
+        ),
+        effort_weight=float(
+            _required_recording_field(
+                run_spec,
+                "distillation_surface.components.clean_action.weight",
+                spec_path=spec_path,
+            )
+        ),
+        snapshot_interval=int(
+            _required_recording_field(
+                run_spec,
+                f"checkpointing.{CHECKPOINT_INTERVAL_BATCHES_KEY}",
+                spec_path=spec_path,
+            )
+        ),
     )
 
 
@@ -728,8 +893,75 @@ def _optimizer_payload_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]
     }
 
 
-def _int_or_none(value: Any) -> int | None:
-    return None if value is None else int(value)
+def _cs_training_config(
+    run_spec: dict[str, Any],
+    *,
+    spec_dir: Path | None = None,
+) -> TrainingConfig:
+    return TrainingConfig(
+        n_batches=int(
+            _required_recording_field_from(
+                run_spec,
+                ("n_train_batches", "training_summary.n_train_batches"),
+                spec_dir=spec_dir,
+            )
+        ),
+        batch_size=int(
+            _required_recording_field_from(
+                run_spec,
+                ("batch_size", "training_summary.batch_size"),
+                spec_dir=spec_dir,
+            )
+        ),
+        learning_rate=float(
+            _required_recording_field_from(
+                run_spec,
+                ("controller_lr", "optimizer.learning_rate_0"),
+                spec_dir=spec_dir,
+            )
+        ),
+        grad_clip=float(
+            _required_recording_field(
+                run_spec,
+                "optimizer.gradient_clip_norm",
+                spec_dir=spec_dir,
+            )
+        ),
+        hidden_dim=int(
+            _required_recording_field(
+                run_spec,
+                "model_summary.hidden_size",
+                spec_dir=spec_dir,
+            )
+        ),
+        network_type="gru",
+        n_reach_steps=int(
+            _required_recording_field(
+                run_spec,
+                "task_timing.n_steps",
+                spec_dir=spec_dir,
+            )
+        ),
+        effort_weight=float(
+            # C&S records effort either as the legacy active control term or as the
+            # canonical output-command loss weight for full-Q/R rows; both are source data.
+            _required_recording_field_from(
+                run_spec,
+                (
+                    "loss_summary.active_cs_terms.control.scale",
+                    "loss_summary.weights.nn_output",
+                ),
+                spec_dir=spec_dir,
+            )
+        ),
+        snapshot_interval=int(
+            _required_recording_field(
+                run_spec,
+                f"checkpointing.{CHECKPOINT_INTERVAL_BATCHES_KEY}",
+                spec_dir=spec_dir,
+            )
+        ),
+    )
 
 
 def rlrmp_extension_payload(run_spec: dict[str, Any]) -> dict[str, Any]:
@@ -792,9 +1024,9 @@ def build_feedbax_training_run_spec(
     """Build the composed Feedbax ``TrainingRunSpec`` for one C&S GRU run."""
 
     training_summary = _mapping(run_spec, "training_summary")
-    optimizer = _mapping(run_spec, "optimizer")
     checkpointing = _mapping(run_spec, "checkpointing")
     training_diagnostics = _mapping(run_spec, "training_diagnostics")
+    training_config = _cs_training_config(run_spec, spec_dir=spec_dir)
     feedback_descriptors = controller_feedback_descriptor_from_container(
         _mapping(run_spec, "model_summary"),
         feedback_dim=_feedback_dim_from_run_spec(run_spec),
@@ -829,25 +1061,7 @@ def build_feedbax_training_run_spec(
             type=str(_mapping(run_spec, "task_timing").get("type", "rlrmp_task")),
             params=_mapping(run_spec, "task_timing"),
         ),
-        training_config=TrainingConfig(
-            n_batches=int(run_spec.get("n_train_batches", training_summary["n_train_batches"])),
-            batch_size=int(run_spec.get("batch_size", training_summary["batch_size"])),
-            learning_rate=float(run_spec.get("controller_lr", optimizer["learning_rate_0"])),
-            grad_clip=(
-                1.0
-                if optimizer.get("gradient_clip_norm") is None
-                else float(optimizer["gradient_clip_norm"])
-            ),
-            hidden_dim=int(_mapping(run_spec, "model_summary").get("hidden_size", 0)),
-            network_type="gru",
-            n_reach_steps=int(_mapping(run_spec, "task_timing").get("n_steps", 0)),
-            effort_weight=float(
-                _mapping(_mapping(run_spec, "loss_summary"), "active_cs_terms")
-                .get("control", {})
-                .get("scale", 1.0)
-            ),
-            snapshot_interval=int(checkpointing.get("interval_batches", 1)),
-        ),
+        training_config=training_config,
         objective=ObjectiveSlotSpec(
             kind="external",
             payload=objective_payload,
@@ -884,11 +1098,10 @@ def build_feedbax_training_run_spec(
             metadata={"tracked_spec_dir": str(spec_dir)},
         ),
         checkpoint_progress=CheckpointProgressPolicySpec(
-            checkpoint_interval=int(checkpointing.get("interval_batches", 1)),
+            checkpoint_interval=training_config.snapshot_interval,
+            # Training diagnostics are optional progress metadata, not run topology.
             progress_interval=(
-                None
-                if training_diagnostics.get("enabled") is False
-                else int(checkpointing.get("interval_batches", 1))
+                None if training_diagnostics.get("enabled") is False else training_config.snapshot_interval
             ),
             metadata={"checkpoint_dir": checkpointing.get("checkpoint_dir")},
         ),
