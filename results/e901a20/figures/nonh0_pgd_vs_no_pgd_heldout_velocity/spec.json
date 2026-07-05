@@ -1,0 +1,164 @@
+{
+  "band_definition": "GRU one SD over pooled replicate x target-condition x stochastic repeats; extLQG one SD over stochastic reference rollouts",
+  "checkpoint_policy": "validation_selected_per_replicate_sparse_history",
+  "data": "_artifacts/e901a20/figures/nonh0_pgd_vs_no_pgd_heldout_velocity/nonh0_pgd_vs_no_pgd_heldout_velocity.npz",
+  "evaluation_lens": "validation_selected_stochastic_target_radial_length_normalized",
+  "figure": "_artifacts/e901a20/figures/nonh0_pgd_vs_no_pgd_heldout_velocity/nonh0_pgd_vs_no_pgd_heldout_velocity.html",
+  "figure_link": "results/e901a20/figures/nonh0_pgd_vs_no_pgd_heldout_velocity/figure.html",
+  "inputs": [
+    {
+      "artifact_dir": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
+      "run_spec": "results/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/run.json"
+    },
+    {
+      "artifact_dir": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64",
+      "run_spec": "results/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64/run.json"
+    }
+  ],
+  "manifest": "_artifacts/e901a20/figures/nonh0_pgd_vs_no_pgd_heldout_velocity/manifest.json",
+  "reference": {
+    "n_reference_samples": 320,
+    "primary": "C&S extLQG/output-feedback 8D divided by 0.15 m",
+    "sidecar": "C&S extLQG/output-feedback 4D pos+vel divided by 0.15 m"
+  },
+  "rows": [
+    {
+      "band_ratio_vs_seen": null,
+      "late_tail_mean_last_10_1_s": 0.0053714075341375535,
+      "late_tail_min_last_10_1_s": -0.0006573430941904443,
+      "mean_band_1_s": 0.04458484374487883,
+      "n_pooled_profiles": 3840,
+      "n_target_conditions": 12,
+      "peak_mean_velocity_1_s": 4.888054367425499,
+      "rmse_vs_extlqg_4d_1_s": 0.017705796265917926,
+      "rmse_vs_extlqg_8d_1_s": 0.01561267458958662,
+      "row": "no_pgd",
+      "row_label": "020a65b no-PGD non-H0 GRU",
+      "shape_corr_vs_extlqg_8d": 0.9999690654167708,
+      "split": "seen direction + seen length",
+      "target_distance_max_m": 0.15000000596046448,
+      "target_distance_min_m": 0.09999999902641167,
+      "time_of_peak_s": 0.16
+    },
+    {
+      "band_ratio_vs_seen": 2.7082137214572097,
+      "late_tail_mean_last_10_1_s": 0.09263965766486332,
+      "late_tail_min_last_10_1_s": 0.0731584466828946,
+      "mean_band_1_s": 0.1207452855989065,
+      "n_pooled_profiles": 2560,
+      "n_target_conditions": 8,
+      "peak_mean_velocity_1_s": 4.33810389008855,
+      "rmse_vs_extlqg_4d_1_s": 0.26142309155063864,
+      "rmse_vs_extlqg_8d_1_s": 0.2619637983374773,
+      "row": "no_pgd",
+      "row_label": "020a65b no-PGD non-H0 GRU",
+      "shape_corr_vs_extlqg_8d": 0.9989208543748059,
+      "split": "held-out direction/length",
+      "target_distance_max_m": 0.18000000710799857,
+      "target_distance_min_m": 0.11999999642362849,
+      "time_of_peak_s": 0.16
+    },
+    {
+      "band_ratio_vs_seen": 2.9933831955706136,
+      "late_tail_mean_last_10_1_s": 0.04027870758642786,
+      "late_tail_min_last_10_1_s": 0.02886897281664366,
+      "mean_band_1_s": 0.13345952204306188,
+      "n_pooled_profiles": 6400,
+      "n_target_conditions": 20,
+      "peak_mean_velocity_1_s": 4.668074176490722,
+      "rmse_vs_extlqg_4d_1_s": 0.10297175832358713,
+      "rmse_vs_extlqg_8d_1_s": 0.10331765958204463,
+      "row": "no_pgd",
+      "row_label": "020a65b no-PGD non-H0 GRU",
+      "shape_corr_vs_extlqg_8d": 0.9997705362392465,
+      "split": "all validation targets",
+      "target_distance_max_m": 0.18000000710799857,
+      "target_distance_min_m": 0.09999999902641167,
+      "time_of_peak_s": 0.16
+    },
+    {
+      "band_ratio_vs_seen": null,
+      "late_tail_mean_last_10_1_s": 0.0015375829827341126,
+      "late_tail_min_last_10_1_s": 8.190675758281287e-05,
+      "mean_band_1_s": 0.07307181267510582,
+      "n_pooled_profiles": 3840,
+      "n_target_conditions": 12,
+      "peak_mean_velocity_1_s": 5.199567404882726,
+      "rmse_vs_extlqg_4d_1_s": 0.16296400851648687,
+      "rmse_vs_extlqg_8d_1_s": 0.16221626098868164,
+      "row": "pgd",
+      "row_label": "020a65b PGD non-H0 GRU",
+      "shape_corr_vs_extlqg_8d": 0.9991558459821419,
+      "split": "seen direction + seen length",
+      "target_distance_max_m": 0.15000000596046448,
+      "target_distance_min_m": 0.09999999902641167,
+      "time_of_peak_s": 0.16
+    },
+    {
+      "band_ratio_vs_seen": 1.260322238167784,
+      "late_tail_mean_last_10_1_s": -0.00012837476355471715,
+      "late_tail_min_last_10_1_s": -0.0014230161610915067,
+      "mean_band_1_s": 0.09209403049766642,
+      "n_pooled_profiles": 2560,
+      "n_target_conditions": 8,
+      "peak_mean_velocity_1_s": 5.175920806793409,
+      "rmse_vs_extlqg_4d_1_s": 0.13164215025590636,
+      "rmse_vs_extlqg_8d_1_s": 0.1308685313702087,
+      "row": "pgd",
+      "row_label": "020a65b PGD non-H0 GRU",
+      "shape_corr_vs_extlqg_8d": 0.9996064499321032,
+      "split": "held-out direction/length",
+      "target_distance_max_m": 0.18000000710799857,
+      "target_distance_min_m": 0.11999999642362849,
+      "time_of_peak_s": 0.16
+    },
+    {
+      "band_ratio_vs_seen": 1.1459453252046903,
+      "late_tail_mean_last_10_1_s": 0.0008711998842185805,
+      "late_tail_min_last_10_1_s": -0.0005200624098869109,
+      "mean_band_1_s": 0.08373630213927034,
+      "n_pooled_profiles": 6400,
+      "n_target_conditions": 20,
+      "peak_mean_velocity_1_s": 5.1901087656469915,
+      "rmse_vs_extlqg_4d_1_s": 0.14982903921472243,
+      "rmse_vs_extlqg_8d_1_s": 0.14906916534963688,
+      "row": "pgd",
+      "row_label": "020a65b PGD non-H0 GRU",
+      "shape_corr_vs_extlqg_8d": 0.9993735898370527,
+      "split": "all validation targets",
+      "target_distance_max_m": 0.18000000710799857,
+      "target_distance_min_m": 0.09999999902641167,
+      "time_of_peak_s": 0.16
+    }
+  ],
+  "runtime_provenance": {
+    "feedbax_commit": "4642e20f",
+    "feedbax_package_file": "/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax/feedbax/__init__.py",
+    "feedbax_runtime": "current Python import path",
+    "legacy_feedbax_3add27d7_check": "same convention as the non-H0 no-PGD diagnostic: exact Feedbax 3add27d7 was not used because that old runtime blocked before evaluating the current non-H0 graph path",
+    "local_compatibility_patches": [
+      "cast non-H0 SimpleStagedNetwork checkpoint floating leaves to float64",
+      "set loaded SimpleStagedNetwork dtype/static initial state to float64",
+      "cast nominal trial specs to float64",
+      "pad zero sensory/delayed perturbation inputs from 4D to 6D for nominal-clean force/filter feedback graph"
+    ]
+  },
+  "schema_version": "rlrmp.figure_spec.v1",
+  "source_runs": {
+    "no_pgd": {
+      "experiment": "020a65b",
+      "label": "020a65b no-PGD non-H0 GRU",
+      "run_id": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64"
+    },
+    "pgd": {
+      "experiment": "020a65b",
+      "label": "020a65b PGD non-H0 GRU",
+      "run_id": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64"
+    }
+  },
+  "source_script": "results/e901a20/scripts/materialize_nonh0_pgd_vs_no_pgd_heldout_velocity.py",
+  "split_definition": "seen uses validation targets with non-held-out directions and non-held-out reach lengths; held-out uses held_out_targets_m; all uses all nominal validation targets",
+  "summary_csv": "_artifacts/e901a20/figures/nonh0_pgd_vs_no_pgd_heldout_velocity/nonh0_pgd_vs_no_pgd_heldout_velocity_summary.csv",
+  "topic": "nonh0_pgd_vs_no_pgd_heldout_velocity",
+  "velocity_definition": "GRU curves use validation-selected checkpoints, 64 stochastic repeats per target condition per replicate, and target-radial effector velocity divided by reach length. extLQG references are stochastic forward velocity for the 15 cm released C&S reference divided by 0.15 m."
+}
