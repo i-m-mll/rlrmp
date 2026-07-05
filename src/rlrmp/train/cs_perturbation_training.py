@@ -34,7 +34,7 @@ from rlrmp.data_products.calibration import (
     load_open_loop_calibration,
     load_perturbation_calibration_defaults,
 )
-from rlrmp.data_products.envelope import consumed_identity
+from rlrmp.data_products.envelope import consumed_identity_from_loader
 from rlrmp.model.feedbax_channel_adapters import (
     additive_channel_payload_dim,
     additive_channel_provenance,
@@ -2188,16 +2188,16 @@ def consumed_calibration_budget_identities(
     identities: list[dict[str, str]] = []
     if calibration_consumed:
         identities.append(
-            consumed_identity(
-                load_open_loop_calibration(),
+            consumed_identity_from_loader(
+                load_product=load_open_loop_calibration,
                 role=CALIBRATION_PRODUCT_ROLE,
                 schema=CALIBRATION_PRODUCT_SCHEMA_VERSION,
             )
         )
     if broad_epsilon_consumed:
         identities.append(
-            consumed_identity(
-                load_broad_epsilon_anchors(),
+            consumed_identity_from_loader(
+                load_product=load_broad_epsilon_anchors,
                 role=BROAD_EPSILON_PRODUCT_ROLE,
                 schema=BROAD_EPSILON_PRODUCT_SCHEMA_VERSION,
             )

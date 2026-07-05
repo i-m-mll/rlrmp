@@ -20,7 +20,7 @@ from rlrmp.data_products.calibration import (
     TimingCalibrationBin,
     load_perturbation_calibration_defaults,
 )
-from rlrmp.data_products.envelope import consumed_identity
+from rlrmp.data_products.envelope import consumed_identity_from_loader
 from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
@@ -945,8 +945,8 @@ def _consumed_default_identities() -> list[dict[str, str]]:
 
     spec = add_consumed_data_identity(
         {},
-        **consumed_identity(
-            load_perturbation_calibration_defaults(),
+        **consumed_identity_from_loader(
+            load_product=load_perturbation_calibration_defaults,
             role=CALIBRATION_DEFAULTS_PRODUCT_ROLE,
             schema=CALIBRATION_DEFAULTS_PRODUCT_SCHEMA_VERSION,
         ),

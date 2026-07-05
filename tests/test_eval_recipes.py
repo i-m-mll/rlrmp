@@ -529,16 +529,13 @@ def test_perturbation_response_bank_stamps_eval_time_calibration_identity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import rlrmp.eval.recipes as eval_recipes
+    from rlrmp.data_products import calibration as calibration_products
 
     _register()
     monkeypatch.setattr(
-        eval_recipes,
-        "_consumed_open_loop_calibration_identity",
-        lambda: {
-            "role": "perturbation_open_loop_calibration",
-            "schema": "rlrmp.perturbation_open_loop_calibration.v2",
-            "hash": "sha256:unit-calibration",
-        },
+        calibration_products,
+        "load_open_loop_calibration",
+        lambda: SimpleNamespace(product_identity_hash="sha256:unit-calibration"),
     )
     monkeypatch.setattr(
         eval_recipes,

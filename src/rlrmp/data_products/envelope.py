@@ -26,6 +26,7 @@ whether the product is resolved at run-production time or loaded here.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +41,7 @@ from feedbax.contracts.manifest import (
 __all__ = [
     "DataProductError",
     "consumed_identity",
+    "consumed_identity_from_loader",
     "load_data_product",
     "read_data_product",
     "validate_data_product",
@@ -64,6 +66,17 @@ def consumed_identity(product: Any, *, role: str, schema: str) -> dict[str, str]
         "schema": schema,
         "hash": str(product.product_identity_hash),
     }
+
+
+def consumed_identity_from_loader(
+    *,
+    load_product: Callable[[], Any],
+    role: str,
+    schema: str,
+) -> dict[str, str]:
+    """Load a data product and return its run-spec consumed-identity record."""
+
+    return consumed_identity(load_product(), role=role, schema=schema)
 
 
 def read_data_product(path: Path | str) -> AnalysisDataProduct:
