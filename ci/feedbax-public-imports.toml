@@ -172,6 +172,7 @@ symbols = [
   "Expr",
   "ExpressionContext",
   "ExpressionEvaluationError",
+  "ExpressionPathMissing",
   "ExpressionSelectAmbiguous",
   "Not",
   "Select",
