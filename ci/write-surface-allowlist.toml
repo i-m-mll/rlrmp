@@ -1,0 +1,172 @@
+# Write-surface custody allowlist for issue f5d9695 (terminal child of umbrella
+# 64a04e0, feedbax-native training-manifest lineage).
+#
+# Enforced by tests/test_write_surface_custody.py, family `write_surface` in
+# ci/feedbax-contract-suite.toml.
+#
+# WHAT THIS PINS
+# --------------
+# Every *raw* durable-output write call site in the training run-production /
+# emission domain -- scripts/train_*.py plus src/rlrmp/train/*.py (the same
+# training-entry-point domain the re-accretion ratchet pins). A raw write is a
+# direct `fbx_save` / `eqx.tree_serialise_leaves` / `np.save*` / `open(..,"w")`
+# / `Path.write_text` / `Path.write_bytes` call. A site is DURABLE when its raw
+# write target is NOT rooted at a `tmp`-prefixed variable; tmp-rooted writes are
+# atomic-staging (renamed / `os.replace`-d into place) and are classified
+# ephemeral by the guard, so they are intentionally NOT listed here.
+#
+# DENY-BY-DEFAULT
+# ---------------
+#   - A NEW durable raw-write not listed here fails the gate. Landing it requires
+#     a deliberate edit to this file naming the owning ledger issue and role, OR
+#     routing the write through the sanctioned feedbax custody writer
+#     (feedbax.training.checkpoint_custody.write_checkpoint_transaction, reached
+#     only via src/rlrmp/runtime/checkpoint_custody.py) / a run-spec emitter.
+#   - Removing a listed site once the underlying code is gone is required
+#     (test_allowlist_has_no_dead_entries): the custody inventory must stay
+#     accurate. Because keys are structural (path/function/kind/target-label),
+#     ordinary line moves do not churn the list.
+#   - `conditional` must equal the AST-generated branch-matrix conditionality
+#     (test_conditional_flag_matches_generated_branch_matrix), so the matrix
+#     stays generated-from-emitter-sites, never hand-curated. `conditional=true`
+#     means the emitter sits behind an `if`/`else` guard or a ternary dispatch
+#     over emitter functions -- a leg a single toy run may skip.
+#
+# KEY FIELDS: path, function, kind, target (all four form the structural key),
+# plus owner (7-char ledger issue) and role.
+#
+# ROLES
+#   run_spec               -- writes the tracked run.json / run-spec recipe.
+#   model_artifact         -- serializes a trained model PyTree.
+#   history_artifact       -- serializes training history.
+#   adversary_artifact     -- serializes a trained adversary PyTree.
+#   log_data_product       -- `_log_*` .npz data product (manifest-only
+#                             consumption owned by issue 108b4d3).
+#   write_helper           -- a generic raw-write wrapper called with varying
+#                             (durable or tmp) targets; listed because it *can*
+#                             write durably.
+#   materialized_checkpoint -- legacy materialized resume-copy dir written
+#                             alongside the custody transaction.
+#
+# RESOLVED FINDINGS (documented, not silently relied against)
+# -----------------------------------------------------------
+# The minimax final-output emitters (warmup_model / adversarial_model /
+# trained_adversary / *_losses / adversary logs) were formerly raw `fbx_save` /
+# `np.savez` writes to `output_dir`, NOT routed through the single feedbax
+# custody writer. Issue 7e71950 (follow-on to the f5d9695 terminal audit)
+# collapsed them onto the terminal custody transaction
+# (`_write_final_minimax_custody_transaction`, status="final"): the final
+# controller, adversary population, loss curves, and warmup history are
+# content-addressed and published through the custody latest-pointer run
+# record. The `output_dir` .eqx/.npz files remain as compatibility
+# materializations but are now atomic tmp-staged (ephemeral) writes, so they are
+# no longer durable raw writes and their allowlist entries were removed. See
+# results/f5d9695/notes/lineage_audit.md.
+#
+# ESCAPE MODES this static guard does NOT by itself close (documented):
+#   - subprocess / native-library writes (a child process or C extension that
+#     writes to a durable root is invisible to this AST scan);
+#   - remote object-store writes (Modal volume / S3 style handoff);
+#   - symlink / hardlink traversal (a write to a symlinked path).
+# These are covered by other governance (post_run provenance, custody hashing,
+# manifest parity) and are called out here so they are not mistaken for
+# in-scope guarantees of this static surface guard.
+
+# --- scripts/train_minimax.py ------------------------------------------------
+
+[[durable_write_sites]]
+path = "scripts/train_minimax.py"
+function = "author_minimax_training_run_spec"
+kind = "open_w"
+target = "spec_path"
+owner = "0efc92d"
+role = "run_spec"
+conditional = false
+
+[[durable_write_sites]]
+path = "scripts/train_minimax.py"
+function = "run_training"
+kind = "open_w"
+target = "spec_path"
+owner = "0efc92d"
+role = "run_spec"
+conditional = false
+
+# The minimax final-output emitters (warmup/adversarial model, trained
+# adversary/adversaries, adversarial_losses, and the `_log_*` adversary
+# diagnostics) were routed onto the terminal feedbax custody transaction and
+# their output_dir materializations converted to atomic tmp-staged (ephemeral)
+# writes (issue 7e71950). They are content-addressed and published through the
+# custody latest-pointer run record, so they are no longer raw durable writes
+# and their allowlist entries were removed. The conditional single- vs
+# multi-adversary and force-profile vs delta_A emitter structure remains and is
+# still enumerated by the generated branch matrix.
+
+# --- src/rlrmp/train/closed_loop_distillation.py -----------------------------
+
+[[durable_write_sites]]
+path = "src/rlrmp/train/closed_loop_distillation.py"
+function = "_write_json"
+kind = "write_text"
+target = "path"
+owner = "f5d9695"
+role = "write_helper"
+conditional = false
+
+[[durable_write_sites]]
+path = "src/rlrmp/train/closed_loop_distillation.py"
+function = "_save_full_training_artifacts"
+kind = "tree_serialise_leaves"
+target = "paths[trained_model]"
+owner = "f5d9695"
+role = "model_artifact"
+conditional = false
+
+[[durable_write_sites]]
+path = "src/rlrmp/train/closed_loop_distillation.py"
+function = "_save_full_training_artifacts"
+kind = "tree_serialise_leaves"
+target = "paths[training_history]"
+owner = "f5d9695"
+role = "history_artifact"
+conditional = false
+
+# --- src/rlrmp/train/guided_distillation.py ----------------------------------
+
+[[durable_write_sites]]
+path = "src/rlrmp/train/guided_distillation.py"
+function = "_save_pytree"
+kind = "fbx_save"
+target = "path"
+owner = "f5d9695"
+role = "write_helper"
+conditional = false
+
+# --- src/rlrmp/train/cs_nominal_gru.py ---------------------------------------
+
+[[durable_write_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+function = "_save_pytree"
+kind = "fbx_save"
+target = "path"
+owner = "f5d9695"
+role = "write_helper"
+conditional = false
+
+[[durable_write_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+function = "write_run_spec"
+kind = "write_text"
+target = "run_path"
+owner = "0efc92d"
+role = "run_spec"
+conditional = false
+
+[[durable_write_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+function = "_write_graph_bundle_for_backend"
+kind = "write_text"
+target = "manifest_path"
+owner = "f5d9695"
+role = "write_helper"
+conditional = false

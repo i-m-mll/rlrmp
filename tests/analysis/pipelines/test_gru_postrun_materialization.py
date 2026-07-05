@@ -274,11 +274,17 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         run_ids=("run_a", "run_b"),
         labels=("A", "B"),
         output_tag="fullqrf_validation_selected",
+        evaluation_manifest_path=tmp_path / "manifests" / "evaluation_runs" / "eval.json",
+        evaluation_states={"evaluation_manifest_id": "eval-id", "product_role": "fixture"},
         repo_root=tmp_path,
     )
 
     assert calls["standard"]["use_validation_selected_checkpoints"] is True
     assert calls["evaluation"]["use_validation_selected_checkpoints"] is True
+    assert calls["evaluation"]["evaluation_manifest_path"] == (
+        tmp_path / "manifests" / "evaluation_runs" / "eval.json"
+    )
+    assert calls["evaluation"]["evaluation_states"]["evaluation_manifest_id"] == "eval-id"
     assert calls["figures"]["use_validation_selected_checkpoints"] is True
     assert calls["objective"]["use_validation_selected_checkpoints"] is True
     assert calls["objective"]["checkpoint_policy"] == "validation_selected_per_replicate"
@@ -387,6 +393,10 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
     assert manifest["outputs"]["perturbation_response"]["status"] == "materialized"
     assert manifest["outputs"]["feedback_ablation"]["status"] == "materialized"
     assert manifest["outputs"]["feedback_checkpoint_selection"]["status"] == "available"
+    assert manifest["outputs"]["evaluation_run_manifest"] == "manifests/evaluation_runs/eval.json"
+    assert manifest["primary_run_contract"]["evaluation_manifest_dependency"] == (
+        "manifests/evaluation_runs/eval.json"
+    )
     assert (
         manifest["outputs"]["feedback_checkpoint_selection"]["selection_use"]
         == "audit_only_not_primary_checkpoint_selection"
@@ -791,8 +801,22 @@ def test_gru_postrun_bundle_executes_with_stage_artifact_roles(
     assert output_statuses["rlrmp-gru-map-decomposition-manifest"] == "materialized"
     assert output_statuses["rlrmp-gru-perturbation-response-manifest"] == "materialized"
     assert output_statuses["rlrmp-gru-feedback-ablation-manifest"] == "materialized"
+    postrun_report_stage = stages["postrun_report"]
+    bridge_report_stage = stages["bridge_certificate_report"]
+    assert postrun_report_stage.status == "materialized"
+    assert bridge_report_stage.status == "materialized"
+    postrun_report_outputs = {output.role: output for output in postrun_report_stage.outputs}
+    bridge_report_outputs = {output.role: output for output in bridge_report_stage.outputs}
+    assert postrun_report_outputs["report_render"].status == "materialized"
+    assert bridge_report_outputs["report_render"].status == "materialized"
     assert stages["archive_only_entrypoints"].status == "skipped"
-    assert stages["feedback_quality_lens"].status == "not_applicable"
+    assert stages["evaluation_diagnostics"].status == "skipped"
+    assert stages["objective_comparator"].status == "skipped"
+    assert stages["perturbation_response"].status == "skipped"
+    assert stages["feedback_ablation"].status == "skipped"
+    assert stages["perturbation_calibration"].status == "skipped"
+    assert stages["response_norm_plots"].status == "skipped"
+    assert stages["feedback_quality_lens"].status == "skipped"
     assert stages["training_diagnostics"].status == "not_applicable"
 
     manifest_ref = postrun_stage.manifest_refs[0]
@@ -810,3 +834,12 @@ def test_gru_postrun_bundle_executes_with_stage_artifact_roles(
     payload = json.loads(Path(payload_artifact.uri).read_text(encoding="utf-8"))
     assert payload["bundle_contract"]["primary"] == "feedbax_analysis_bundle"
     assert payload["primary_run_contract"]["legacy_regeneration_spec"] == "compatibility_only"
+
+    report_ref = postrun_report_stage.manifest_refs[0]
+    report_manifest, _path = load_manifest(report_ref.uri), Path(report_ref.uri)
+    render_artifact = next(
+        artifact for artifact in report_manifest.artifacts if artifact.role == "report_render"
+    )
+    render_text = Path(render_artifact.uri).read_text(encoding="utf-8")
+    assert "diagnostic note\n" in render_text
+    assert "rlrmp-gru-standard-certificate-note" in render_text

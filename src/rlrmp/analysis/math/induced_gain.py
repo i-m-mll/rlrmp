@@ -51,11 +51,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Callable, Mapping, Optional, Protocol, Tuple
+from typing import Callable, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
-from feedbax.analysis import graph_controller as _feedbax_graph_controller
+from feedbax.analysis import GraphControllerAdapter
 from jaxtyping import Array, Float
 
 from rlrmp.analysis.math.hinf_riccati import (
@@ -113,54 +113,15 @@ def _validate_z_channel(name: str) -> str:
 
 
 # =============================================================================
-# Controller protocol and adapters
+# Controller adapters
 # =============================================================================
 
-
-class Controller(Protocol):
-    """Closed-loop controller interface.
-
-    The induced-gain analyser is controller-agnostic. Both LTI controllers
-    (Riccati / LQR feedback gains ``K[t]``) and nonlinear RNN controllers
-    (feedbax models) are handled by this protocol.
-
-    Implementations must be pure: ``step`` is a deterministic function of
-    ``(h, sensory_obs, t)``.
-
-    Methods:
-        initial_state: Build the initial controller hidden state.
-        step: Advance the controller by one timestep.
-    """
-
-    def initial_state(self) -> Float[Array, "n_ctrl"]:
-        """Return the initial hidden state.
-
-        Returns:
-            Array of shape ``(n_ctrl,)``. ``n_ctrl == 0`` for stateless
-            controllers (e.g. LTI feedback) is allowed; the augmented closed
-            loop reduces to plant dimension in that case.
-        """
-        ...
-
-    def step(
-        self,
-        h: Float[Array, "n_ctrl"],
-        sensory_obs: Float[Array, "n_obs"],
-        t: int,
-    ) -> Tuple[Float[Array, "n_ctrl"], Float[Array, "m_u"]]:
-        """Advance one timestep.
-
-        Args:
-            h: Controller hidden state, shape ``(n_ctrl,)``.
-            sensory_obs: Observation passed to the controller, shape
-                ``(n_obs,)``. For LTI controllers this is the plant state.
-            t: Discrete time index (used by time-varying gains).
-
-        Returns:
-            ``(h_next, u)`` where ``h_next`` has shape ``(n_ctrl,)`` and
-            ``u`` has shape ``(m_u,)``.
-        """
-        ...
+# The induced-gain analyser is controller-agnostic: it consumes any object
+# exposing Feedbax's ``GraphControllerAdapter`` interface (``initial_state()``
+# and ``step(h, sensory_obs, t) -> (h_next, u)``). Both the stateless LTI
+# controller below and the Feedbax graph controllers satisfy that structural
+# contract, so ``GraphControllerAdapter`` is used as the annotation type
+# throughout rather than a locally-redefined protocol.
 
 
 @dataclass(frozen=True)
@@ -191,7 +152,7 @@ class _LTIController:
         return h, u
 
 
-def lti_controller(K: Float[Array, "T m_u n"]) -> Controller:
+def lti_controller(K: Float[Array, "T m_u n"]) -> GraphControllerAdapter:
     """Build a stateless LTI controller from a time-varying feedback gain.
 
     Use to drop a Riccati (`hinf_riccati.solve_hinf_riccati`) or LQR
@@ -202,45 +163,11 @@ def lti_controller(K: Float[Array, "T m_u n"]) -> Controller:
         K: Time-varying feedback gain, shape ``(T, m_u, n)``.
 
     Returns:
-        A ``Controller`` whose ``step`` returns ``u_t = -K[t] x_t`` and
-        carries no hidden state (``n_ctrl == 0``).
+        A controller (structurally compatible with Feedbax's
+        ``GraphControllerAdapter``) whose ``step`` returns ``u_t = -K[t] x_t``
+        and carries no hidden state (``n_ctrl == 0``).
     """
     return _LTIController(K=jnp.asarray(K, dtype=jnp.float64))
-
-
-def feedbax_graph_controller(
-    graph,
-    *,
-    key: Array,
-    component_registry: Any | None = None,
-    input_port: str = "input",
-    output_port: str | None = "output",
-    static_inputs: Mapping[str, object] | None = None,
-    input_builder: Callable[[object, int], Mapping[str, object]] | None = None,
-    output_selector: Callable[[Mapping[str, object]], object] | None = None,
-    trace: tuple[object, ...] = (),
-    cycle_init: Mapping[tuple[str, str], object] | None = None,
-    key_policy: Callable[[Array, int], Array] | None = None,
-    dtype: Any = jnp.float64,
-) -> Controller:
-    """Compatibility shim for Feedbax's public graph controller adapter."""
-    kwargs = {}
-    if key_policy is not None:
-        kwargs["key_policy"] = key_policy
-    return _feedbax_graph_controller(
-        graph=graph,
-        key=key,
-        component_registry=component_registry,
-        input_port=input_port,
-        output_port=output_port,
-        static_inputs=static_inputs,
-        input_builder=input_builder,
-        output_selector=output_selector,
-        trace=trace,
-        cycle_init=cycle_init,
-        dtype=dtype,
-        **kwargs,
-    )
 
 
 # =============================================================================
@@ -380,7 +307,7 @@ class InducedGainResult:
 
 def _augmented_step(
     plant: PlantLinearization,
-    controller: Controller,
+    controller: GraphControllerAdapter,
     sensory_map: Callable[[Float[Array, "n"]], Float[Array, "n_obs"]],
 ) -> Callable[
     [Float[Array, "n_aug"], Float[Array, "m_w"], int],
@@ -425,7 +352,7 @@ def _full_state_observer(x: Float[Array, "n"]) -> Float[Array, "n"]:
 
 def linearise_trajectory(
     plant: PlantLinearization,
-    controller: Controller,
+    controller: GraphControllerAdapter,
     *,
     init_pos: Float[Array, "2"],
     target_pos: Float[Array, "2"],
@@ -609,7 +536,7 @@ def linearise_trajectory(
 
 def _sensory_perturbation_Bw(
     plant: PlantLinearization,
-    controller: Controller,
+    controller: GraphControllerAdapter,
     sensory_map: Callable[[Float[Array, "n"]], Float[Array, "n_obs"]],
     x_nominal: Float[Array, "T_plus_1 n_aug"],
     horizon: int,
@@ -804,7 +731,7 @@ def _qr_cost_Cz_Dz(
 
 def linearise_fixed_point(
     plant: PlantLinearization,
-    controller: Controller,
+    controller: GraphControllerAdapter,
     *,
     target_pos: Float[Array, "2"],
     w_channel: str = W_ADDITIVE_FORCE,
@@ -967,7 +894,7 @@ def linearise_fixed_point(
 
 def _sensory_perturbation_fp_Bw(
     plant: PlantLinearization,
-    controller: Controller,
+    controller: GraphControllerAdapter,
     sensory_map: Callable[[Float[Array, "n"]], Float[Array, "n_obs"]],
     x_star: Float[Array, "n_aug"],
     t_idx: int,
@@ -1472,7 +1399,7 @@ def induced_gain_hamiltonian(
 
 def induced_gain(
     plant: PlantLinearization,
-    controller: Controller,
+    controller: GraphControllerAdapter,
     *,
     init_pos: Float[Array, "2"],
     target_pos: Float[Array, "2"],
@@ -1642,13 +1569,11 @@ __all__ = [
     "Z_STATE_ERROR",
     "Z_PEAK_VELOCITY",
     # Value types
-    "Controller",
     "TrajectoryLinearisation",
     "FixedPointLinearisation",
     "InducedGainResult",
     # Controller adapters
     "lti_controller",
-    "feedbax_graph_controller",
     # Linearisation
     "linearise_trajectory",
     "linearise_fixed_point",

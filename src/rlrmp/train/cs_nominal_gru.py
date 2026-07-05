@@ -14,10 +14,11 @@ import math
 import os
 import subprocess
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, NamedTuple
+from typing import Any, Callable, Literal, NamedTuple, Union, get_args, get_origin
 
 import equinox as eqx
 import jax
@@ -35,6 +36,7 @@ from feedbax.runtime.batch import BatchInfo
 from feedbax.runtime.graph import init_state_from_component
 from feedbax.runtime.iteration import run_component
 from feedbax.runtime.parameter_constraints import project_component_parameters
+from feedbax.training.checkpoint_custody import CheckpointCompatibilityError
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule
 from feedbax.training.trainer import get_model_parameters, init_task_trainer_history
 from feedbax.tasks import (
@@ -46,6 +48,7 @@ from feedbax.tasks import (
 )
 from jax_cookbook.tree import array_set as tree_set
 from jax_cookbook.tree import filter_spec_leaves
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from rlrmp.analysis.math.cs_game_card import (
     INIT_POS,
@@ -60,23 +63,51 @@ from rlrmp.analysis.math.cs_released_simulation import (
     default_cs_noise_covariances,
 )
 from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig
-from rlrmp.model.cs_lss_gru import CS_H0_CONTEXT_DIM, CS_H0_ENCODER_INIT
+from rlrmp.model.cs_lss_gru import (
+    CS_H0_CONTEXT_DIM,
+    CS_H0_ENCODER_INIT,
+)
+from rlrmp.model.feedback_descriptors import (
+    DESCRIPTOR_PAYLOAD_KEY,
+    controller_feedback_descriptor_payload,
+)
 from rlrmp.model.feedbax_graph import (
     EXECUTION_BACKEND,
     GRAPH_PLANT_INTERVENOR_NODE,
     RLRMPFeedbaxGraphBundle,
+    build_runtime_rlrmp_feedbax_graph_bundle,
     build_point_mass_sensorimotor_graph_spec,
     write_graph_spec_bundle,
 )
 from rlrmp.loss import (
     CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
-    CS_LOSS_OBJECTIVES,
     CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
     CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
 )
 from rlrmp.io import compact_json_dumps, write_compact_json
 from rlrmp.paths import REPO_ROOT, mkdir_p, run_spec_path
 from rlrmp.runtime.run_specs import validate_nominal_gru_run_spec
+from rlrmp.runtime.checkpoint_custody import (
+    has_custody_checkpoint,
+    has_feedbax_training_spec,
+    load_cs_checkpoint_transaction,
+    deserialize_pytree_slot,
+    serialize_pytree_slot,
+    write_cs_checkpoint_transaction,
+)
+from rlrmp.runtime.training_run_specs import (
+    FEEDBAX_TRAINING_RUN_SPEC_KEY,
+    RLRMP_RUN_SPEC_PAYLOAD_KEY,
+    attach_composed_training_specs,
+    attach_post_run_provenance,
+    assert_runtime_graph_matches_training_spec,
+    feedbax_training_run_spec_from_payload,
+    write_training_run_manifest_for_spec,
+)
+from rlrmp.runtime.spec_migrations import (
+    RUN_SPEC_KIND,
+    accept_rlrmp_spec_payload,
+)
 from rlrmp.model.stochastic_runtime import (
     graphspec_noise_contract,
     stochastic_runtime_config_from_model,
@@ -86,8 +117,6 @@ from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
     BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM,
     BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE,
-    BROAD_EPSILON_PGD_INNER_OPTIMIZER_METHODS,
-    BROAD_EPSILON_PGD_MECHANISMS,
     BROAD_EPSILON_PGD_PROJECTED_GRADIENT_ASCENT,
     BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
     BROAD_EPSILON_PGD_TRAINING_MODE,
@@ -99,11 +128,9 @@ from rlrmp.train.cs_perturbation_training import (
     POLICY_ADVERSARY_ENERGY_MODE,
     POLICY_ADVERSARY_MEMORYLESS_MLP,
     POLICY_ADVERSARY_PLAIN_MODE,
-    POLICY_ADVERSARY_POLICY_CLASSES,
     POLICY_ADVERSARY_TRAINING_MODE,
     FINITE_POLICY_BIAS_INPUT,
     FINITE_POLICY_GAINS_INPUT,
-    TARGET_SUPPORT_PROFILES,
     TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
     TARGET_RELATIVE_MULTITARGET_TRAINING_MODE,
     BroadFullStateEpsilonTrainingConfig,
@@ -112,6 +139,7 @@ from rlrmp.train.cs_perturbation_training import (
     PolicyFullStateEpsilonTrainingConfig,
     config_from_broad_epsilon_pgd_hps,
     config_from_policy_adversary_hps,
+    consumed_calibration_budget_identities,
     make_broad_epsilon_pgd_pre_step,
     make_policy_adversary,
     make_policy_adversary_pre_step,
@@ -142,11 +170,6 @@ logger = logging.getLogger(__name__)
 
 ISSUE_ID = "30f2313"
 SCHEMA_VERSION = "rlrmp.cs_stochastic_gru.v1"
-DEFAULT_EXPERIMENT = ISSUE_ID
-DEFAULT_RUN = "cs_stochastic_gru__no_hidden_penalty"
-DEFAULT_OUTPUT_DIR = f"_artifacts/{DEFAULT_EXPERIMENT}/runs/{DEFAULT_RUN}"
-DEFAULT_STOCHASTIC_PRESET = "cs2019-rollout"
-DEFAULT_CHECKPOINT_INTERVAL_BATCHES = 500
 CS_STAGE_COUNT = 60
 CS_FEEDBAX_N_STEPS = CS_STAGE_COUNT + 1
 CS_POSITION_SCALE = 1e6
@@ -157,9 +180,6 @@ CS_DELAYED_REACH_TASK_TYPE = "delayed_reach"
 CS_DELAYED_REACH_TASK_PRESET = "delayed_center_out"
 LEGACY_CS_DELAYED_REACH_TASK_TYPE = "cs_delayed_center_out_reach"
 DELAYED_REACH_TRAINING_MODE = "delayed_reach_target_visible_go_cue"
-DEFAULT_DELAYED_GO_CUE_MIN_STEP = 10
-DEFAULT_DELAYED_GO_CUE_MAX_STEP = 30
-DEFAULT_DELAYED_P_CATCH_TRIAL = 0.5
 DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW = "canonical_window"
 DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON = "flat_after_canonical_horizon"
 DELAYED_MOVEMENT_COST_TAIL_MODES = (
@@ -175,6 +195,314 @@ ADAPTIVE_EPSILON_ZERO_ADVERSARY_STOP_REASON = (
 VolumeCommit = Callable[[], None]
 
 
+class CsNominalGruConfig(BaseModel):
+    """Flat nominal-GRU trainer config whose fields own all authoring defaults."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    run_spec: str | None = None
+    output_dir: str = Field(f"_artifacts/{ISSUE_ID}/runs/cs_stochastic_gru__no_hidden_penalty")
+    spec_dir: str | None = None
+    issue: str = ISSUE_ID
+    seed: int = 42
+
+    n_train_batches: int = Field(12000, ge=0)
+    batch_size: int = Field(250, gt=0)
+    controller_lr: float = Field(1e-2, gt=0.0)
+    lr_warmup_batches: int = Field(0, ge=0)
+    lr_warmup_init_fraction: float = Field(0.1, ge=0.0)
+    lr_cosine_alpha: float = Field(1.0, ge=0.0)
+    gradient_clip_norm: float | None = None
+    n_replicates: int = Field(5, gt=0)
+    hidden_size: int = Field(180, gt=0)
+
+    plant_backend: Literal["cs_lss", "legacy_causal_simplefeedback"] = "cs_lss"
+    no_integrator_state: bool = False
+    stochastic_preset: Literal["cs2019-rollout"] = "cs2019-rollout"
+    target_m: float = float(TARGET_POS[0])
+    n_input_only: int = Field(0, ge=0)
+    n_readout_only: int = Field(0, ge=0)
+    n_recurrent_only: int = Field(0, ge=0)
+
+    effector_pos_running: float = CS_POSITION_SCALE
+    effector_vel_running: float = CS_VELOCITY_SCALE
+    effector_terminal_pos: float = CS_POSITION_SCALE
+    effector_terminal_vel: float = CS_VELOCITY_SCALE
+    effector_final_vel: float = 0.0
+    nn_output: float = CS_CONTROL_SCALE
+    nn_output_jerk: float = 0.0
+    nn_output_pre_go: float | None = None
+    delayed_pre_go_force_filter_hold: float = 0.0
+    delayed_pre_go_start_pos_hold: float = 0.0
+    delayed_pre_go_start_pos_hold_norm: Literal["l2", "l1"] = "l2"
+    delayed_pre_go_zero_vel_hold: float = 0.0
+    loss_objective: Literal[
+        "partial_feedbax_terms",
+        "partial_net_output_force_filter",
+        "full_analytical_qrf",
+    ] = "partial_feedbax_terms"
+    regularized_fidelity: bool = False
+
+    perturbation_training: bool | None = None
+    perturbation_nominal_fraction: float = 0.45
+    perturbation_single_fraction: float = 0.45
+    perturbation_combined_fraction: float = 0.10
+    perturbation_combined_amplitude_scale: float = 0.5
+    perturbation_initial_position_offset_m: float = 0.01
+    perturbation_initial_velocity_offset_m_s: float = 0.05
+    perturbation_process_epsilon_scale: float = 0.01
+    perturbation_command_input_pulse_n: float = 1.0
+    perturbation_sensory_feedback_offset_m: float = 0.01
+    perturbation_delayed_observation_offset_m: float = 0.01
+    perturbation_pulse_start_step: int = 20
+    perturbation_pulse_duration_steps: int = 5
+    perturbation_calibrated_timing: bool | None = None
+    perturbation_movement_age_timing: bool | None = None
+    perturbation_physical_level: Literal["small", "moderate", "stress"] | None = None
+    perturbation_calibration_regime: Literal[
+        "open_loop_all",
+        "closed_loop_sensory",
+        "closed_loop_sensory_command_lateral",
+    ] = "open_loop_all"
+    perturbation_closed_loop_calibration_table: str | None = None
+
+    target_relative_multitarget: bool = False
+    target_support_profile: Literal[
+        "old_020a65b",
+        "const_dense_all",
+        "const_sparse8",
+        "const_band8",
+        "const_band16",
+        "const_band36",
+    ] = DEFAULT_TARGET_SUPPORT_PROFILE
+    delayed_reach: bool = False
+    delayed_reach_go_cue_min_step: int = 10
+    delayed_reach_go_cue_max_step: int = 30
+    delayed_reach_p_catch_trial: float = 0.5
+    delayed_movement_cost_tail_mode: Literal[
+        "canonical_window",
+        "flat_after_canonical_horizon",
+    ] = DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW
+    delayed_reach_trial_type_normalized_loss: bool = False
+    delayed_reach_no_catch_qrf_weight: float = 1.0
+    delayed_reach_catch_qrf_weight: float = 1.0
+    force_filter_feedback: bool | None = None
+
+    broad_epsilon_training: bool = False
+    broad_epsilon_pgd_training: bool = False
+    broad_epsilon_level: Literal["moderate", "strong"] = "moderate"
+    broad_epsilon_budget_scale: float = 1.0
+    broad_epsilon_pgd_fixed_radius_15cm: float | None = None
+    broad_epsilon_pgd_fixed_radius_source: str | None = None
+    broad_epsilon_reach_scaling: bool = True
+    broad_epsilon_pgd_steps: int = Field(3, gt=0)
+    broad_epsilon_pgd_step_size_fraction: float = 0.25
+    broad_epsilon_pgd_inner_optimizer_method: Literal[
+        "projected_gradient_ascent",
+        "adam",
+    ] = "projected_gradient_ascent"
+    broad_epsilon_pgd_adam_lr: float = 3e-4
+    broad_epsilon_pgd_adam_b1: float = 0.9
+    broad_epsilon_pgd_adam_b2: float = 0.999
+    broad_epsilon_pgd_adam_eps: float = 1e-8
+    broad_epsilon_pgd_mechanism: Literal[
+        "direct_epsilon",
+        "linear_no_bias",
+        "affine",
+    ] = "direct_epsilon"
+    broad_epsilon_pgd_objective: Literal["hard_l2", "soft_energy"] = "hard_l2"
+    broad_epsilon_pgd_energy_gamma_star: float | None = None
+    broad_epsilon_pgd_energy_gamma_factor: float | None = None
+    broad_epsilon_pgd_energy_gamma: float | None = None
+    broad_epsilon_pgd_energy_penalty_scale: float = 1.0
+    broad_epsilon_pgd_energy_lambda: float | None = None
+    broad_epsilon_pgd_safety_cap_15cm: float | None = None
+    broad_epsilon_pgd_safety_cap_source: str | None = None
+    broad_epsilon_pgd_budget_schedule: Literal["fixed", "sisu_energy_fraction"] = "fixed"
+    broad_epsilon_pgd_sisu_condition_input: Literal["auto", "input", "sisu"] = "auto"
+    broad_epsilon_pgd_sisu_max_radius: float | None = None
+    broad_epsilon_pgd_sisu_max_radius_source: str | None = None
+
+    adaptive_epsilon_curriculum: bool = False
+    adaptive_epsilon_damage_start: float = 0.0
+    adaptive_epsilon_damage_peak: float = 3500.0
+    adaptive_epsilon_damage_final: float = 1000.0
+    adaptive_epsilon_damage_ramp_batches: int = 2500
+    adaptive_epsilon_damage_anneal_batches: int = 5000
+    adaptive_epsilon_update_interval_batches: int = 50
+    adaptive_epsilon_ema_alpha: float = 0.1
+    adaptive_epsilon_eta: float = 0.1
+    adaptive_epsilon_deadband_frac: float = 0.10
+    adaptive_epsilon_lambda_min: float = 1e-12
+    adaptive_epsilon_lambda_max: float | None = None
+    adaptive_epsilon_max_log_step: float = 0.25
+    adaptive_epsilon_outer_weight_start: float = 0.0
+    adaptive_epsilon_outer_weight_final: float = 1.0
+    adaptive_epsilon_outer_weight_ramp_batches: int = 2500
+
+    policy_adversary_training: bool = False
+    policy_adversary_policy_class: Literal["memoryless_mlp", "linear_no_bias", "affine"] = (
+        "memoryless_mlp"
+    )
+    policy_adversary_mode: Literal["plain", "energy"] = "plain"
+    policy_adversary_width: int = Field(64, gt=0)
+    policy_adversary_depth: int = Field(2, ge=0)
+    policy_adversary_steps: int = Field(5, gt=0)
+    policy_adversary_lr: float = 3e-4
+    policy_adversary_energy_gamma: float = 1.0
+    policy_adversary_radius_15cm: float | None = None
+    policy_adversary_radius_source: str | None = None
+
+    initial_hidden_encoder: bool = False
+    planned_perturbation_rows: bool = False
+    planned_target_relative_rows: bool = False
+    planned_target_relative_h0_rows: bool = False
+    planned_020a65b_h0_pgd_rows: bool = False
+    planned_33b0dcb_target_support_rows: bool = False
+    planned_e901a20_policy_adversary_rows: bool = False
+    planned_e4800d6_sisu_spectrum_rows: bool = False
+    planned_ef9c882_start_pos_hold_rows: bool = False
+    planned_246182c_post_movement_cost_tail_rows: bool = False
+    planned_7c1f7ed_delayed_sisu_spectrum_rows: bool = False
+
+    smoke: bool = False
+    full_train: bool = False
+    resume: bool = False
+    stop_after_batches: int | None = None
+    training_diagnostics: bool = True
+    checkpoint_interval_batches: int = 500
+    log_step: int = 100
+    disable_progress: bool = False
+    quiet_progress: bool = True
+    dry_run: bool = False
+
+    @model_validator(mode="after")
+    def _validate_config(self) -> "CsNominalGruConfig":
+        if self.delayed_reach_go_cue_min_step < 0:
+            raise ValueError("delayed_reach_go_cue_min_step must be nonnegative")
+        if self.delayed_reach_go_cue_max_step < self.delayed_reach_go_cue_min_step:
+            raise ValueError(
+                "delayed_reach_go_cue_max_step must be >= delayed_reach_go_cue_min_step"
+            )
+        if not 0.0 <= self.delayed_reach_p_catch_trial <= 1.0:
+            raise ValueError("delayed_reach_p_catch_trial must be between 0 and 1")
+        if self.n_input_only + self.n_readout_only + self.n_recurrent_only > self.hidden_size:
+            raise ValueError("population subgroup counts must not exceed hidden_size")
+        return self
+
+
+DEFAULT_EXPERIMENT = ISSUE_ID
+DEFAULT_RUN = "cs_stochastic_gru__no_hidden_penalty"
+DEFAULT_OUTPUT_DIR = str(CsNominalGruConfig.model_fields["output_dir"].default)
+DEFAULT_STOCHASTIC_PRESET = str(CsNominalGruConfig.model_fields["stochastic_preset"].default)
+DEFAULT_CHECKPOINT_INTERVAL_BATCHES = int(
+    CsNominalGruConfig.model_fields["checkpoint_interval_batches"].default
+)
+DEFAULT_DELAYED_GO_CUE_MIN_STEP = int(
+    CsNominalGruConfig.model_fields["delayed_reach_go_cue_min_step"].default
+)
+DEFAULT_DELAYED_GO_CUE_MAX_STEP = int(
+    CsNominalGruConfig.model_fields["delayed_reach_go_cue_max_step"].default
+)
+DEFAULT_DELAYED_P_CATCH_TRIAL = float(
+    CsNominalGruConfig.model_fields["delayed_reach_p_catch_trial"].default
+)
+
+
+def _config_payload_from_args(args: argparse.Namespace | Mapping[str, Any]) -> dict[str, Any]:
+    """Return a config payload from a namespace or mapping without unknown attrs."""
+
+    raw = vars(args) if isinstance(args, argparse.Namespace) else dict(args)
+    return {key: raw[key] for key in CsNominalGruConfig.model_fields if key in raw}
+
+
+def cs_nominal_gru_config_from_args(
+    args: argparse.Namespace | Mapping[str, Any] | CsNominalGruConfig,
+) -> CsNominalGruConfig:
+    """Validate a nominal-GRU config from CLI-compatible args."""
+
+    if isinstance(args, CsNominalGruConfig):
+        return args
+    return CsNominalGruConfig.model_validate(_config_payload_from_args(args))
+
+
+def _config_namespace(
+    args: argparse.Namespace | Mapping[str, Any] | CsNominalGruConfig,
+) -> argparse.Namespace:
+    config = cs_nominal_gru_config_from_args(args)
+    return argparse.Namespace(**config.model_dump(mode="python"))
+
+
+def _config_default(field_name: str) -> Any:
+    return CsNominalGruConfig.model_fields[field_name].default
+
+
+def _literal_values(annotation: Any) -> list[Any]:
+    origin = get_origin(annotation)
+    if origin is Literal:
+        return list(get_args(annotation))
+    if origin in {Union, type(int | str)}:
+        values: list[Any] = []
+        for arg in get_args(annotation):
+            values.extend(_literal_values(arg))
+        return values
+    return []
+
+
+def _config_choices(field_name: str) -> list[Any] | None:
+    values = _literal_values(CsNominalGruConfig.model_fields[field_name].annotation)
+    return values or None
+
+
+@dataclass(frozen=True)
+class RunSpecExecutionContext:
+    """Validated C&S GRU training contract used by the execution path."""
+
+    run_spec_path: Path
+    run_spec: dict[str, Any]
+    args: argparse.Namespace
+    hps: TreeNamespace
+
+
+RUN_SPEC_RUNTIME_OVERRIDE_KEYS = frozenset(
+    {
+        "run_spec",
+        "dry_run",
+        "resume",
+        "stop_after_batches",
+        "disable_progress",
+        "quiet_progress",
+        "log_step",
+    }
+)
+
+RUN_SPEC_OVERRIDE_CATEGORIES = {
+    "output_dir": "artifact route",
+    "spec_dir": "artifact route",
+    "issue": "run identity",
+    "seed": "run identity",
+    "full_train": "checkpoint policy",
+    "checkpoint_interval_batches": "checkpoint policy",
+    "training_diagnostics": "checkpoint policy",
+    "n_train_batches": "scientific payload",
+    "batch_size": "scientific payload",
+    "controller_lr": "scientific payload",
+    "lr_warmup_batches": "scientific payload",
+    "lr_warmup_init_fraction": "scientific payload",
+    "lr_cosine_alpha": "scientific payload",
+    "gradient_clip_norm": "scientific payload",
+    "plant_backend": "graph identity",
+    "no_integrator_state": "graph identity",
+    "hidden_size": "graph identity",
+    "n_replicates": "graph identity",
+    "n_input_only": "graph identity",
+    "n_readout_only": "graph identity",
+    "n_recurrent_only": "graph identity",
+    "stochastic_preset": "scientific payload",
+    "loss_objective": "scientific payload",
+}
+
+
 @dataclass(frozen=True)
 class AdaptiveEpsilonState:
     """Host-side adaptive-lambda state for soft-energy direct-epsilon training."""
@@ -184,15 +512,19 @@ class AdaptiveEpsilonState:
     last_update_batch: int | None = None
     update_count: int = 0
     schedule_start_batch: int = 0
+    zero_adversary_guard: dict[str, Any] | None = None
 
     def to_json(self) -> dict[str, Any]:
-        return {
+        payload = {
             "lambda_value": float(self.lambda_value),
             "damage_ema": None if self.damage_ema is None else float(self.damage_ema),
             "last_update_batch": self.last_update_batch,
             "update_count": int(self.update_count),
             "schedule_start_batch": int(self.schedule_start_batch),
         }
+        if self.zero_adversary_guard is not None:
+            payload["zero_adversary_guard"] = dict(self.zero_adversary_guard)
+        return payload
 
 
 @dataclass(frozen=True)
@@ -386,33 +718,170 @@ def resolve_run_spec_args(
 ) -> argparse.Namespace:
     """Return executable CLI arguments replayed from a modern nominal-GRU run spec.
 
-    Explicit CLI values override the checked-in run spec. This keeps replay useful
-    for smoke gates that should write to a new output directory or stop after an
-    intermediate checkpoint without modifying the durable historical run recipe.
+    The checked-in spec owns run identity, graph identity, checkpoint policy,
+    artifact routes, and scientific payload. CLI values may only supply
+    runtime-only execution controls such as ``--resume`` and
+    ``--stop-after-batches``.
     """
 
     run_spec_path = getattr(args, "run_spec", None)
     if run_spec_path is None:
         return args
     parser = parser or build_parser()
-    defaults = parser.parse_args([])
+    payload_path, payload = load_validated_run_spec(run_spec_path)
+    return resolve_run_spec_execution_args(
+        args,
+        run_spec_path=payload_path,
+        run_spec=payload,
+        parser=parser,
+    )
+
+
+def load_validated_run_spec(
+    run_spec_path: Path | str,
+    *,
+    require_graph_sidecars: bool = False,
+) -> tuple[Path, dict[str, Any]]:
+    """Load and validate a composed C&S GRU ``TrainingRunSpec`` recipe."""
+
     payload_path = Path(run_spec_path)
     payload = json.loads(payload_path.read_text(encoding="utf-8"))
     validate_nominal_gru_run_spec(
         payload,
         spec_dir=payload_path.parent,
-        require_graph_sidecars=False,
+        require_graph_sidecars=require_graph_sidecars,
     )
+    _validate_composed_training_spec_payload(payload)
+    return payload_path, payload
 
+
+def resolve_run_spec_execution_args(
+    args: argparse.Namespace,
+    *,
+    run_spec_path: Path,
+    run_spec: dict[str, Any],
+    parser: argparse.ArgumentParser | None = None,
+) -> argparse.Namespace:
+    """Return runtime args after validating CLI overrides against a spec."""
+
+    parser = parser or build_parser()
+    defaults = parser.parse_args([])
     values = vars(defaults).copy()
-    values.update(_args_values_from_run_spec(payload))
-    for key, value in vars(args).items():
-        if key == "run_spec":
+    values.update(_args_values_from_run_spec(run_spec))
+    values["run_spec"] = str(run_spec_path)
+
+    mismatches = []
+    spec_values = _args_values_from_run_spec(run_spec)
+    for key, value in _explicit_cli_overrides(args, defaults).items():
+        if key in RUN_SPEC_RUNTIME_OVERRIDE_KEYS:
             values[key] = value
             continue
-        if value != getattr(defaults, key):
-            values[key] = value
+        spec_value = spec_values.get(key, getattr(defaults, key, None))
+        if _cli_values_match(value, spec_value):
+            continue
+        category = _run_spec_override_category(key)
+        mismatches.append(f"{key} ({category}): CLI={value!r}, spec={spec_value!r}")
+    if mismatches:
+        raise ValueError(
+            "CLI overrides conflict with the validated run spec. "
+            "Run identity, graph identity, checkpoint policy, artifact routes, "
+            "and scientific payload must come from the spec: " + "; ".join(mismatches)
+        )
     return argparse.Namespace(**values)
+
+
+def build_run_spec_execution_context(
+    args: argparse.Namespace,
+    *,
+    parser: argparse.ArgumentParser | None = None,
+) -> RunSpecExecutionContext:
+    """Build the validated execution context for a ``--run-spec`` path."""
+
+    if getattr(args, "run_spec", None) is None:
+        raise ValueError("build_run_spec_execution_context requires --run-spec")
+    parser = parser or build_parser()
+    run_spec_path, run_spec = load_validated_run_spec(args.run_spec)
+    execution_args = resolve_run_spec_execution_args(
+        args,
+        run_spec_path=run_spec_path,
+        run_spec=run_spec,
+        parser=parser,
+    )
+    return RunSpecExecutionContext(
+        run_spec_path=run_spec_path,
+        run_spec=run_spec,
+        args=execution_args,
+        hps=_hps_from_run_spec(run_spec),
+    )
+
+
+def _validate_composed_training_spec_payload(run_spec: dict[str, Any]) -> None:
+    missing = [
+        key
+        for key in (FEEDBAX_TRAINING_RUN_SPEC_KEY, RLRMP_RUN_SPEC_PAYLOAD_KEY)
+        if key not in run_spec
+    ]
+    if missing:
+        raise ValueError(
+            "C&S GRU run spec must embed composed TrainingRunSpec payloads: " + ", ".join(missing)
+        )
+    feedbax_training_run_spec_from_payload(run_spec)
+    extension = run_spec[RLRMP_RUN_SPEC_PAYLOAD_KEY]
+    if not isinstance(extension, dict):
+        raise ValueError("C&S GRU run spec rlrmp_run_spec payload must be an object")
+    accept_rlrmp_spec_payload(
+        RUN_SPEC_KIND,
+        extension,
+        source_version=extension.get("schema_version"),
+        path=RLRMP_RUN_SPEC_PAYLOAD_KEY,
+    )
+
+
+def _explicit_cli_overrides(
+    args: argparse.Namespace,
+    defaults: argparse.Namespace,
+) -> dict[str, Any]:
+    overrides = {}
+    for key, value in vars(args).items():
+        if key == "run_spec":
+            overrides[key] = value
+            continue
+        if not hasattr(defaults, key):
+            continue
+        if not _cli_values_match(value, getattr(defaults, key)):
+            overrides[key] = value
+    return overrides
+
+
+def _cli_values_match(left: Any, right: Any) -> bool:
+    if left is None or right is None:
+        return left is right
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        return math.isclose(float(left), float(right), rel_tol=1e-12, abs_tol=1e-12)
+    return left == right
+
+
+def _run_spec_override_category(key: str) -> str:
+    if key in RUN_SPEC_OVERRIDE_CATEGORIES:
+        return RUN_SPEC_OVERRIDE_CATEGORIES[key]
+    if key.startswith("planned_"):
+        return "CLI planning mode"
+    if key.startswith("perturbation_") or key.startswith("broad_epsilon_"):
+        return "scientific payload"
+    if key.startswith("policy_adversary_") or key.startswith("adaptive_epsilon_"):
+        return "scientific payload"
+    if key.startswith("delayed_") or key.startswith("effector_") or key.startswith("nn_"):
+        return "scientific payload"
+    if key.startswith("target_") or key in {"force_filter_feedback", "initial_hidden_encoder"}:
+        return "graph identity"
+    return "spec-owned contract"
+
+
+def _hps_from_run_spec(run_spec: dict[str, Any]) -> TreeNamespace:
+    hps = dict(run_spec["hps"])
+    if hps.get("hidden_type") == "equinox.nn._rnn.GRUCell":
+        hps["hidden_type"] = eqx.nn.GRUCell
+    return dict_to_namespace(hps, to_type=TreeNamespace)
 
 
 def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
@@ -451,7 +920,7 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
     population = _dict_value(model, "population_structure")
     pgd_inner = _dict_value(broad_pgd, "inner_maximizer")
 
-    return {
+    values = {
         "output_dir": str(run_spec.get("artifact_output_dir", DEFAULT_OUTPUT_DIR)),
         "spec_dir": str(run_spec.get("spec_dir")) if run_spec.get("spec_dir") else None,
         "issue": str(run_spec.get("issue", ISSUE_ID)),
@@ -741,6 +1210,7 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
         "stop_after_batches": None,
         "smoke": False,
     }
+    return CsNominalGruConfig.model_validate(values).model_dump(mode="python")
 
 
 def _dict_value(mapping: dict[str, Any], key: str) -> dict[str, Any]:
@@ -844,7 +1314,9 @@ def _resolve_auto_bool(value: bool | None, *, default: bool) -> bool:
 def build_hps(args: argparse.Namespace) -> TreeNamespace:
     """Build nominal C&S-aligned GRU hyperparameters from CLI arguments."""
 
+    args = _config_namespace(args)
     args = _apply_smoke_overrides(args)
+    args = _config_namespace(args)
     if (
         str(args.loss_objective)
         in {
@@ -865,24 +1337,17 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "--loss-objective full_analytical_qrf because nn_hidden is not an analytical "
             "Q/R/Q_f objective term."
         )
-    no_integrator_state = bool(getattr(args, "no_integrator_state", False))
+    no_integrator_state = bool(args.no_integrator_state)
     if no_integrator_state and str(args.plant_backend) != CS_LSS_PLANT_BACKEND:
         raise ValueError("--no-integrator-state requires --plant-backend cs_lss.")
     plant, schedule = build_no_integrator_game() if no_integrator_state else build_canonical_game()
     preset = stochastic_preset(args.stochastic_preset)
-    delayed_reach = bool(getattr(args, "delayed_reach", False))
-    delayed_go_min = int(getattr(args, "delayed_reach_go_cue_min_step", 10))
-    delayed_go_max = int(getattr(args, "delayed_reach_go_cue_max_step", 30))
-    delayed_p_catch_trial = float(
-        getattr(args, "delayed_reach_p_catch_trial", DEFAULT_DELAYED_P_CATCH_TRIAL)
-    )
+    delayed_reach = bool(args.delayed_reach)
+    delayed_go_min = int(args.delayed_reach_go_cue_min_step)
+    delayed_go_max = int(args.delayed_reach_go_cue_max_step)
+    delayed_p_catch_trial = float(args.delayed_reach_p_catch_trial)
     delayed_movement_cost_tail_mode = str(
-        getattr(
-            args,
-            "delayed_movement_cost_tail_mode",
-            DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW,
-        )
-        or DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW
+        args.delayed_movement_cost_tail_mode or DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW
     )
     if int(schedule.T) != CS_STAGE_COUNT:
         raise ValueError(f"Expected C&S stage count {CS_STAGE_COUNT}, got {schedule.T}")
@@ -902,9 +1367,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         and not delayed_reach
     ):
         raise ValueError("--delayed-movement-cost-tail-mode requires --delayed-reach.")
-    delayed_trial_type_normalized_loss = bool(
-        getattr(args, "delayed_reach_trial_type_normalized_loss", False)
-    )
+    delayed_trial_type_normalized_loss = bool(args.delayed_reach_trial_type_normalized_loss)
     if delayed_trial_type_normalized_loss and not delayed_reach:
         raise ValueError("--delayed-reach-trial-type-normalized-loss requires --delayed-reach.")
     if (
@@ -918,21 +1381,15 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
     nn_hidden = CS_REGULARIZED_NN_HIDDEN if args.regularized_fidelity else 0.0
     nn_output_pre_go = (
         1.0
-        if delayed_reach and getattr(args, "nn_output_pre_go", None) is None
-        else float(getattr(args, "nn_output_pre_go", 0.0) or 0.0)
+        if delayed_reach and args.nn_output_pre_go is None
+        else float(args.nn_output_pre_go or 0.0)
     )
-    delayed_pre_go_force_filter_hold = float(
-        getattr(args, "delayed_pre_go_force_filter_hold", 0.0) or 0.0
-    )
-    delayed_pre_go_start_pos_hold = float(
-        getattr(args, "delayed_pre_go_start_pos_hold", 0.0) or 0.0
-    )
-    delayed_pre_go_start_pos_hold_norm = str(
-        getattr(args, "delayed_pre_go_start_pos_hold_norm", "l2") or "l2"
-    )
+    delayed_pre_go_force_filter_hold = float(args.delayed_pre_go_force_filter_hold or 0.0)
+    delayed_pre_go_start_pos_hold = float(args.delayed_pre_go_start_pos_hold or 0.0)
+    delayed_pre_go_start_pos_hold_norm = str(args.delayed_pre_go_start_pos_hold_norm or "l2")
     if delayed_pre_go_start_pos_hold_norm not in {"l2", "l1"}:
         raise ValueError("--delayed-pre-go-start-pos-hold-norm must be one of: l2, l1")
-    delayed_pre_go_zero_vel_hold = float(getattr(args, "delayed_pre_go_zero_vel_hold", 0.0) or 0.0)
+    delayed_pre_go_zero_vel_hold = float(args.delayed_pre_go_zero_vel_hold or 0.0)
     delayed_pre_go_aux_weights = {
         "delayed_pre_go_force_filter_hold": delayed_pre_go_force_filter_hold,
         "delayed_pre_go_start_pos_hold": delayed_pre_go_start_pos_hold,
@@ -952,24 +1409,23 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             f"n_recurrent_only={args.n_recurrent_only}"
         )
     force_filter_feedback = _resolve_auto_bool(
-        getattr(args, "force_filter_feedback", None),
+        args.force_filter_feedback,
         default=delayed_reach,
     )
     perturbation_training_enabled = _resolve_auto_bool(
-        getattr(args, "perturbation_training", None),
+        args.perturbation_training,
         default=delayed_reach,
     )
     perturbation_calibrated_timing = _resolve_auto_bool(
-        getattr(args, "perturbation_calibrated_timing", None),
+        args.perturbation_calibrated_timing,
         default=delayed_reach and perturbation_training_enabled,
     )
     perturbation_movement_age_timing = _resolve_auto_bool(
-        getattr(args, "perturbation_movement_age_timing", None),
+        args.perturbation_movement_age_timing,
         default=delayed_reach and perturbation_training_enabled and perturbation_calibrated_timing,
     )
     perturbation_physical_level = str(
-        getattr(args, "perturbation_physical_level", None)
-        or ("small" if delayed_reach else "moderate")
+        args.perturbation_physical_level or ("small" if delayed_reach else "moderate")
     )
     perturbation_training = FixedTargetPerturbationTrainingConfig(
         enabled=perturbation_training_enabled,
@@ -1037,9 +1493,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
     adaptive_epsilon_curriculum = _adaptive_epsilon_curriculum_config_from_args(args)
     if adaptive_epsilon_curriculum["enabled"]:
         if not broad_epsilon_pgd_training.enabled:
-            raise ValueError(
-                "--adaptive-epsilon-curriculum requires --broad-epsilon-pgd-training."
-            )
+            raise ValueError("--adaptive-epsilon-curriculum requires --broad-epsilon-pgd-training.")
         if (
             broad_epsilon_pgd_training.adversary_mechanism
             != BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM
@@ -1453,6 +1907,7 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
     go_cue_dim = 1 if delayed_reach else 0
     sisu_condition_input = _sisu_conditioned_pgd_input_key(hps)
     sisu_condition_dim = 1 if sisu_condition_input is not None else 0
+    feedback_descriptors = _controller_feedback_descriptors(hps)
     return {
         "controller_kind": "gru",
         "plant_backend": plant_backend,
@@ -1485,6 +1940,8 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
             "delay_steps": int(hps.model.feedback_delay_steps),
             "basis": _controller_feedback_basis(hps),
             "dimension": _controller_feedback_dim(hps),
+            DESCRIPTOR_PAYLOAD_KEY: feedback_descriptors,
+            "descriptor_basis_hash": feedback_descriptors["descriptor_basis_hash"],
             "noise_std": stochastic_runtime["sensory_noise_std"],
             "noise_role": "sensory_feedback",
             "noise_timing": (
@@ -1565,6 +2022,17 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
     }
 
 
+def build_training_run_graph_spec(hps: TreeNamespace, *, seed: int) -> Any:
+    """Return the GraphSpec recorded in the composed Feedbax TrainingRunSpec."""
+
+    if str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND)) != CS_LSS_PLANT_BACKEND:
+        return build_graph_bundle(hps).graph_spec
+
+    key_init = jr.split(jr.PRNGKey(int(seed)), 3)[0]
+    pair = setup_task_model_pair(hps, key=key_init)
+    return build_runtime_rlrmp_feedbax_graph_bundle(hps, pair.model).graph_spec
+
+
 def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
     """Build the GraphSpec bundle for the nominal GRU run."""
 
@@ -1595,8 +2063,10 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
         "loss_objective": str(hps.loss.objective),
         "initial_hidden_encoder": _initial_hidden_encoder_metadata(hps),
+        DESCRIPTOR_PAYLOAD_KEY: _controller_feedback_descriptors(hps),
     }
     model_structure = build_model_structure_summary(hps)
+    feedback_descriptors = _controller_feedback_descriptors(hps)
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "execution_backend": EXECUTION_BACKEND,
@@ -1613,7 +2083,6 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         },
         "component_policy": {
             "rlrmp_component_types": [
-                "RLRMPSimpleStagedNetwork",
                 "FixedField",
             ],
             "feedbax_native_component_types": [
@@ -1633,6 +2102,7 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "task_spec": task_spec,
         "loss_spec": loss_spec,
         "training_spec": training_spec,
+        DESCRIPTOR_PAYLOAD_KEY: feedback_descriptors,
         "game_card_provenance": build_loss_game_card_provenance(hps),
         "model_structure": model_structure,
         "delayed_reach": _plain(hps.delayed_reach),
@@ -1711,9 +2181,20 @@ def build_run_spec(
 ) -> dict[str, Any]:
     """Build the JSON payload for ``run.json``."""
 
+    args = _config_namespace(args)
     hps = build_hps(args)
     training_distribution = _training_distribution_metadata(hps)
     validation_bins = _validation_bins_metadata(hps)
+    calibration_consumed = _perturbation_training_enabled(hps) and bool(
+        getattr(hps.perturbation_training, "calibrated_timing", False)
+    )
+    broad_epsilon_consumed = bool(getattr(hps.broad_epsilon_training, "enabled", False)) or bool(
+        getattr(hps.broad_epsilon_pgd_training, "enabled", False)
+    )
+    consumed_data_identities = consumed_calibration_budget_identities(
+        calibration_consumed=calibration_consumed,
+        broad_epsilon_consumed=broad_epsilon_consumed,
+    )
     delayed_reach = _plain(hps.delayed_reach)
     model_summary = build_model_structure_summary(hps)
     training_summary = {
@@ -1767,6 +2248,7 @@ def build_run_spec(
         "loss_summary": graph_bundle.loss_spec,
         "training_summary": training_summary,
         "feedbax_graph": graph_bundle.to_run_metadata(),
+        "consumed_data_identities": consumed_data_identities,
         "hps": _plain(hps),
         "provenance": {
             "git": _get_git_metadata(),
@@ -1785,7 +2267,9 @@ def build_run_spec(
 def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
     """Write, or dry-run, the stochastic C&S GRU spec artifacts."""
 
+    args = _config_namespace(args)
     args = _apply_smoke_overrides(args)
+    args = _config_namespace(args)
     output_dir = Path(args.output_dir)
     explicit_spec_dir = args.spec_dir is not None
     spec_dir = Path(args.spec_dir) if explicit_spec_dir else derive_spec_dir(output_dir)
@@ -1796,6 +2280,7 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
     )
     hps = build_hps(args)
     graph_bundle = build_graph_bundle(hps)
+    training_run_graph_spec = build_training_run_graph_spec(hps, seed=int(args.seed))
     payload = build_run_spec(
         args,
         output_dir=output_dir,
@@ -1808,7 +2293,12 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
         if _should_write_graph_spec(hps):
             would_write.append(str(spec_dir / "model.graph.json"))
         return {
-            "run_spec": payload,
+            "run_spec": attach_composed_training_specs(
+                payload,
+                graph_spec=training_run_graph_spec,
+                output_dir=output_dir,
+                spec_dir=spec_dir,
+            ),
             "would_write": would_write,
         }
 
@@ -1818,12 +2308,40 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
     payload["feedbax_graph"] = graph_bundle.to_run_metadata(
         graph_spec_path=None if graph_path is None else graph_path.name,
     )
+    payload = attach_composed_training_specs(
+        payload,
+        graph_spec=training_run_graph_spec,
+        output_dir=output_dir,
+        spec_dir=spec_dir,
+    )
+    payload = attach_post_run_provenance(
+        payload,
+        run_spec_path=run_path,
+        artifact_dir=output_dir,
+        manifest_root=REPO_ROOT / "_artifacts" / "feedbax_runs",
+        graph_manifest_path=spec_dir / "model.graph.manifest.json",
+        graph_spec_path=graph_path,
+    )
+    payload = attach_composed_training_specs(
+        payload,
+        graph_spec=training_run_graph_spec,
+        output_dir=output_dir,
+        spec_dir=spec_dir,
+    )
     validate_nominal_gru_run_spec(payload, spec_dir=spec_dir)
     run_path.write_text(_json_dumps(payload), encoding="utf-8")
+    manifest_path = write_training_run_manifest_for_spec(
+        run_spec_path=run_path,
+        run_spec=payload,
+        manifest_root=REPO_ROOT / "_artifacts" / "feedbax_runs",
+        graph_manifest_path=spec_dir / "model.graph.manifest.json",
+        graph_spec_path=graph_path,
+    )
     return {
         "run_spec_path": str(run_path),
         "graph_spec_path": None if graph_path is None else str(graph_path),
         "graph_manifest_path": str(spec_dir / "model.graph.manifest.json"),
+        "training_manifest_path": str(manifest_path),
     }
 
 
@@ -2194,6 +2712,24 @@ def run_full_training(
     *,
     volume_commit: VolumeCommit | None = None,
 ) -> dict[str, Any]:
+    """Compatibility adapter that enters full training through a validated spec."""
+
+    parser = build_parser()
+    if getattr(args, "run_spec", None) is None:
+        args = _apply_smoke_overrides(args)
+        spec_result = write_run_spec(args)
+        args = argparse.Namespace(
+            **{**vars(args), "run_spec": spec_result["run_spec_path"], "smoke": False}
+        )
+    context = build_run_spec_execution_context(args, parser=parser)
+    return _run_full_training_from_context(context, volume_commit=volume_commit)
+
+
+def _run_full_training_from_context(
+    context: RunSpecExecutionContext,
+    *,
+    volume_commit: VolumeCommit | None = None,
+) -> dict[str, Any]:
     """Run chunked stochastic C&S GRU training with durable checkpoints.
 
     Feedbax's trainer can accept an optimizer state, but its checkpoint restore
@@ -2202,7 +2738,10 @@ def run_full_training(
     PRNG state, run/config metadata, and training history snapshots.
     """
 
-    args = _apply_smoke_overrides(args)
+    args = context.args
+    run_spec = context.run_spec
+    run_spec_path = context.run_spec_path
+    hps = context.hps
     if int(args.n_train_batches) < 1:
         raise ValueError("--n-train-batches must be positive for --full-train")
     if int(args.checkpoint_interval_batches) < 1:
@@ -2214,14 +2753,15 @@ def run_full_training(
         if stop_after_batches > int(args.n_train_batches):
             raise ValueError("--stop-after-batches cannot exceed --n-train-batches")
 
-    spec_result = write_run_spec(args)
+    spec_result = _spec_result_from_execution_context(context)
     output_dir = mkdir_p(Path(args.output_dir))
-    run_spec_path = Path(spec_result["run_spec_path"])
-    run_spec = json.loads(run_spec_path.read_text(encoding="utf-8"))
-
-    hps = build_hps(args)
     key_init, key_train, key_adversary = jr.split(jr.PRNGKey(int(args.seed)), 3)
     pair = setup_task_model_pair(hps, key=key_init)
+    runtime_graph_bundle = build_runtime_rlrmp_feedbax_graph_bundle(hps, pair.model)
+    assert_runtime_graph_matches_training_spec(
+        run_spec,
+        graph_spec=runtime_graph_bundle.graph_spec,
+    )
     trainer = _build_trainer(hps)
     adaptive_epsilon_enabled = _adaptive_epsilon_curriculum_enabled(hps)
     pre_step_fn = (
@@ -2258,7 +2798,9 @@ def run_full_training(
         )
     checkpoint_root = output_dir / "checkpoints"
     checkpoint_path = latest_checkpoint_path(checkpoint_root)
-    resume_from_checkpoint = bool(args.resume and checkpoint_path.exists())
+    resume_from_checkpoint = bool(
+        args.resume and (has_custody_checkpoint(checkpoint_root) or checkpoint_path.exists())
+    )
     checkpoint_completed_batches = None
     optimizer_state_template = template_state.optimizer_state
     if resume_from_checkpoint:
@@ -2281,6 +2823,7 @@ def run_full_training(
             history_template=None,
             adversary_policy_template=adversary_policy_template,
             adversary_optimizer_state_template=adversary_optimizer_state_template,
+            run_spec=run_spec,
         )
         if resume_from_checkpoint
         else template_state
@@ -2317,7 +2860,8 @@ def run_full_training(
     pgd_diagnostic_chunks: list[dict[str, np.ndarray]] = []
     adaptive_epsilon_diagnostic_chunks: list[dict[str, np.ndarray]] = []
     policy_adversary_diagnostic_chunks: list[dict[str, np.ndarray]] = []
-    adaptive_epsilon_zero_adversary_guard = _initial_adaptive_epsilon_zero_guard(
+    adaptive_epsilon_zero_adversary_guard = _adaptive_epsilon_zero_guard_from_state(
+        state.adaptive_epsilon_state,
         enabled=adaptive_epsilon_enabled,
     )
     stop_reason: str | None = None
@@ -2453,6 +2997,19 @@ def run_full_training(
             adversary_policy=adversary_policy,
             adversary_optimizer_state=adversary_optimizer_state,
         )
+        if adaptive_epsilon_enabled and adaptive_epsilon_diagnostics:
+            adaptive_epsilon_zero_adversary_guard = _update_adaptive_epsilon_zero_guard(
+                adaptive_epsilon_zero_adversary_guard,
+                adaptive_epsilon_diagnostics,
+            )
+        if state.adaptive_epsilon_state is not None:
+            state = replace(
+                state,
+                adaptive_epsilon_state=replace(
+                    state.adaptive_epsilon_state,
+                    zero_adversary_guard=adaptive_epsilon_zero_adversary_guard,
+                ),
+            )
         checkpoint_path = save_training_checkpoint(
             checkpoint_root,
             state,
@@ -2471,11 +3028,6 @@ def run_full_training(
                 adaptive_epsilon_diagnostic_chunks=adaptive_epsilon_diagnostic_chunks,
             )
         _commit_volume(volume_commit)
-        if adaptive_epsilon_enabled and adaptive_epsilon_diagnostics:
-            adaptive_epsilon_zero_adversary_guard = _update_adaptive_epsilon_zero_guard(
-                adaptive_epsilon_zero_adversary_guard,
-                adaptive_epsilon_diagnostics,
-            )
         chunks.append(
             {
                 "completed_batches": completed,
@@ -2486,9 +3038,8 @@ def run_full_training(
                 "batches_per_second": chunk_batches / chunk_duration_seconds,
             }
         )
-        if (
-            adaptive_epsilon_zero_adversary_guard["should_stop"]
-            and state.completed_batches < int(args.n_train_batches)
+        if adaptive_epsilon_zero_adversary_guard["should_stop"] and state.completed_batches < int(
+            args.n_train_batches
         ):
             stop_reason = ADAPTIVE_EPSILON_ZERO_ADVERSARY_STOP_REASON
             break
@@ -2563,6 +3114,23 @@ def run_full_training(
     }
 
 
+def _spec_result_from_execution_context(context: RunSpecExecutionContext) -> dict[str, Any]:
+    spec_dir = Path(context.args.spec_dir)
+    graph_metadata = context.run_spec.get("feedbax_graph", {})
+    graph_spec_path = graph_metadata.get("graph_spec_path")
+    graph_manifest_path = graph_metadata.get("manifest_path")
+    return {
+        "run_spec_path": str(context.run_spec_path),
+        "graph_spec_path": None
+        if graph_spec_path is None
+        else str(spec_dir / str(graph_spec_path)),
+        "graph_manifest_path": None
+        if graph_manifest_path is None
+        else str(spec_dir / str(graph_manifest_path)),
+        "training_manifest_path": None,
+    }
+
+
 def save_training_checkpoint(
     checkpoint_root: Path,
     state: TrainingState,
@@ -2570,7 +3138,30 @@ def save_training_checkpoint(
     args: argparse.Namespace,
     run_spec: dict[str, Any],
 ) -> Path:
-    """Write a numbered checkpoint and atomically repoint ``checkpoint_latest``."""
+    """Write a Feedbax custody checkpoint and compatibility materialization."""
+
+    metadata = _training_checkpoint_metadata(args, state, run_spec)
+    if has_feedbax_training_spec(run_spec):
+        write_cs_checkpoint_transaction(
+            checkpoint_root,
+            run_spec=run_spec,
+            completed_batches=state.completed_batches,
+            slots=_cs_checkpoint_slots(state, metadata),
+        )
+    return _save_training_checkpoint_materialization(
+        checkpoint_root,
+        state,
+        metadata=metadata,
+    )
+
+
+def _save_training_checkpoint_materialization(
+    checkpoint_root: Path,
+    state: TrainingState,
+    *,
+    metadata: dict[str, Any],
+) -> Path:
+    """Write the historical numbered checkpoint directory for compatibility."""
 
     checkpoint_root.mkdir(parents=True, exist_ok=True)
     checkpoint_name = f"checkpoint_{state.completed_batches:07d}"
@@ -2591,19 +3182,6 @@ def save_training_checkpoint(
         )
     if state.history is not None:
         _save_pytree(tmp / "history.eqx", state.history)
-    metadata = {
-        "schema_version": f"{SCHEMA_VERSION}.checkpoint.v1",
-        "issue": str(args.issue),
-        "completed_batches": state.completed_batches,
-        "n_train_batches": int(args.n_train_batches),
-        "checkpoint_interval_batches": int(args.checkpoint_interval_batches),
-        "seed": int(args.seed),
-        "next_prng_key": _plain(state.key),
-        "stochastic_preset": str(args.stochastic_preset),
-        "run_spec": run_spec,
-    }
-    if state.adaptive_epsilon_state is not None:
-        metadata["adaptive_epsilon_state"] = state.adaptive_epsilon_state.to_json()
     _atomic_write_json(tmp / "metadata.json", metadata)
     if target.exists():
         _remove_tree(target)
@@ -2628,8 +3206,53 @@ def load_latest_checkpoint(
     history_template: Any | None = None,
     adversary_policy_template: Any | None = None,
     adversary_optimizer_state_template: Any | None = None,
+    run_spec: dict[str, Any] | None = None,
 ) -> TrainingState:
-    """Load ``checkpoint_latest`` using explicit model and optimizer templates."""
+    """Load the latest checkpoint using Feedbax custody, with legacy fallback."""
+
+    if (
+        run_spec is not None
+        and has_feedbax_training_spec(run_spec)
+        and has_custody_checkpoint(checkpoint_root)
+    ):
+        loaded = load_cs_checkpoint_transaction(
+            checkpoint_root,
+            run_spec=run_spec,
+            expected_slots=_cs_expected_slots(
+                model_template=model_template,
+                optimizer_state_template=optimizer_state_template,
+                adversary_policy_template=adversary_policy_template,
+                adversary_optimizer_state_template=adversary_optimizer_state_template,
+            ),
+        )
+        return _training_state_from_cs_slots(
+            loaded.slots,
+            model_template=model_template,
+            optimizer_state_template=optimizer_state_template,
+            adversary_policy_template=adversary_policy_template,
+            adversary_optimizer_state_template=adversary_optimizer_state_template,
+        )
+
+    return _load_latest_checkpoint_materialization(
+        checkpoint_root,
+        model_template=model_template,
+        optimizer_state_template=optimizer_state_template,
+        history_template=history_template,
+        adversary_policy_template=adversary_policy_template,
+        adversary_optimizer_state_template=adversary_optimizer_state_template,
+    )
+
+
+def _load_latest_checkpoint_materialization(
+    checkpoint_root: Path,
+    *,
+    model_template: Any,
+    optimizer_state_template: Any,
+    history_template: Any | None = None,
+    adversary_policy_template: Any | None = None,
+    adversary_optimizer_state_template: Any | None = None,
+) -> TrainingState:
+    """Load historical ``checkpoint_latest`` using explicit PyTree templates."""
 
     checkpoint_path = latest_checkpoint_path(checkpoint_root)
     if not checkpoint_path.exists():
@@ -2676,6 +3299,14 @@ def load_latest_checkpoint(
             last_update_batch=adaptive_payload.get("last_update_batch"),
             update_count=int(adaptive_payload.get("update_count", 0)),
             schedule_start_batch=int(adaptive_payload.get("schedule_start_batch", 0)),
+            zero_adversary_guard=(
+                _normalize_adaptive_epsilon_zero_guard(
+                    adaptive_payload.get("zero_adversary_guard"),
+                    enabled=True,
+                )
+                if isinstance(adaptive_payload.get("zero_adversary_guard"), dict)
+                else None
+            ),
         )
         if isinstance(adaptive_payload, dict)
         else None
@@ -2692,10 +3323,151 @@ def load_latest_checkpoint(
     )
 
 
+def _training_checkpoint_metadata(
+    args: argparse.Namespace,
+    state: TrainingState,
+    run_spec: dict[str, Any],
+) -> dict[str, Any]:
+    metadata = {
+        "schema_version": f"{SCHEMA_VERSION}.checkpoint.v1",
+        "issue": str(args.issue),
+        "completed_batches": state.completed_batches,
+        "n_train_batches": int(args.n_train_batches),
+        "checkpoint_interval_batches": int(args.checkpoint_interval_batches),
+        "seed": int(args.seed),
+        "next_prng_key": _plain(state.key),
+        "stochastic_preset": str(args.stochastic_preset),
+        "run_spec": run_spec,
+    }
+    if state.adaptive_epsilon_state is not None:
+        metadata["adaptive_epsilon_state"] = state.adaptive_epsilon_state.to_json()
+    return metadata
+
+
+def _cs_checkpoint_slots(
+    state: TrainingState,
+    metadata: dict[str, Any],
+) -> dict[str, Any]:
+    slots: dict[str, Any] = {
+        "model": serialize_pytree_slot(state.model),
+        "optimizer": serialize_pytree_slot(state.optimizer_state),
+        "prng": state.key,
+        "completed_batches": jnp.asarray(state.completed_batches, dtype=jnp.int32),
+        "checkpoint_metadata": metadata,
+    }
+    if state.history is not None:
+        slots["history"] = state.history
+    if state.adversary_policy is not None:
+        slots["adversary_policy"] = serialize_pytree_slot(state.adversary_policy)
+    if state.adversary_optimizer_state is not None:
+        slots["adversary_optimizer"] = serialize_pytree_slot(state.adversary_optimizer_state)
+    if state.adaptive_epsilon_state is not None:
+        slots["adaptive_epsilon_state"] = state.adaptive_epsilon_state
+    return slots
+
+
+def _cs_expected_slots(
+    *,
+    model_template: Any,
+    optimizer_state_template: Any,
+    adversary_policy_template: Any | None,
+    adversary_optimizer_state_template: Any | None,
+) -> dict[str, Any]:
+    expected: dict[str, Any] = {
+        "prng": jnp.asarray([0, 0], dtype=jnp.uint32),
+        "completed_batches": jnp.asarray(0, dtype=jnp.int32),
+    }
+    return expected
+
+
+def _training_state_from_cs_slots(
+    slots: Mapping[str, Any],
+    *,
+    model_template: Any,
+    optimizer_state_template: Any,
+    adversary_policy_template: Any | None,
+    adversary_optimizer_state_template: Any | None,
+) -> TrainingState:
+    try:
+        model = deserialize_pytree_slot(slots["model"], model_template, slot="model")
+        optimizer_state = deserialize_pytree_slot(
+            slots["optimizer"],
+            optimizer_state_template,
+            slot="optimizer",
+        )
+        adversary_policy = (
+            deserialize_pytree_slot(
+                slots["adversary_policy"],
+                adversary_policy_template,
+                slot="adversary_policy",
+            )
+            if adversary_policy_template is not None and "adversary_policy" in slots
+            else None
+        )
+        adversary_optimizer_state = (
+            deserialize_pytree_slot(
+                slots["adversary_optimizer"],
+                adversary_optimizer_state_template,
+                slot="adversary_optimizer",
+            )
+            if (adversary_optimizer_state_template is not None and "adversary_optimizer" in slots)
+            else None
+        )
+    except Exception as exc:
+        raise CheckpointCompatibilityError(
+            "checkpoint PyTree slot could not be deserialized with the resume template"
+        ) from exc
+    return TrainingState(
+        model=model,
+        optimizer_state=optimizer_state,
+        completed_batches=int(slots["completed_batches"]),
+        key=jnp.asarray(slots["prng"], dtype=jnp.uint32),
+        history=slots.get("history"),
+        adversary_policy=adversary_policy,
+        adversary_optimizer_state=adversary_optimizer_state,
+        adaptive_epsilon_state=slots.get("adaptive_epsilon_state"),
+    )
+
+
 def latest_checkpoint_path(checkpoint_root: Path) -> Path:
     """Return the path used by the durable latest-checkpoint contract."""
 
     return checkpoint_root / "checkpoint_latest"
+
+
+def _add_config_argument(
+    parser: argparse.ArgumentParser,
+    *flags: str,
+    config_field: str,
+    **kwargs: Any,
+) -> argparse.Action:
+    if "default" not in kwargs:
+        kwargs["default"] = _config_default(config_field)
+    if "choices" not in kwargs:
+        choices = _config_choices(config_field)
+        if choices is not None:
+            kwargs["choices"] = choices
+    return parser.add_argument(*flags, **kwargs)
+
+
+def _apply_config_parser_defaults(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    defaults = CsNominalGruConfig().model_dump(mode="python")
+    for action in parser._actions:
+        if action.dest not in defaults:
+            continue
+        action.default = defaults[action.dest]
+        choices = _config_choices(action.dest)
+        if choices is not None and action.choices is None:
+            action.choices = choices
+        if action.help is argparse.SUPPRESS:
+            continue
+        default_text = f"(default: {action.default!r})"
+        if action.help is None or not action.help.strip():
+            action.help = default_text
+        elif "default:" not in action.help:
+            action.help = f"{action.help} {default_text}"
+    parser.set_defaults(**defaults)
+    return parser
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -2706,23 +3478,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--run-spec",
-        default=None,
+        default=_config_default("run_spec"),
         help=(
             "Replay a modern tracked nominal-GRU run.json through the current "
             "training/spec writer. Explicit CLI flags override the run spec."
         ),
     )
-    parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
-    parser.add_argument("--spec-dir", default=None)
-    parser.add_argument("--issue", default=ISSUE_ID)
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--n-train-batches", type=int, default=12000)
-    parser.add_argument("--batch-size", type=int, default=250)
-    parser.add_argument("--controller-lr", type=float, default=1e-2)
+    parser.add_argument("--output-dir", default=_config_default("output_dir"))
+    parser.add_argument("--spec-dir", default=_config_default("spec_dir"))
+    parser.add_argument("--issue", default=_config_default("issue"))
+    parser.add_argument("--seed", type=int, default=_config_default("seed"))
+    parser.add_argument("--n-train-batches", type=int, default=_config_default("n_train_batches"))
+    parser.add_argument("--batch-size", type=int, default=_config_default("batch_size"))
+    parser.add_argument("--controller-lr", type=float, default=_config_default("controller_lr"))
     parser.add_argument(
         "--lr-warmup-batches",
         type=int,
-        default=0,
+        default=_config_default("lr_warmup_batches"),
         help=(
             "If positive, linearly warm the controller LR from "
             "--lr-warmup-init-fraction * --controller-lr to --controller-lr over this "
@@ -2732,22 +3504,24 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--lr-warmup-init-fraction",
         type=float,
-        default=0.1,
+        default=_config_default("lr_warmup_init_fraction"),
         help="Initial LR fraction for warmup-cosine schedules.",
     )
     parser.add_argument(
         "--lr-cosine-alpha",
         type=float,
-        default=1.0,
+        default=_config_default("lr_cosine_alpha"),
         help="Final LR fraction for cosine schedules.",
     )
-    parser.add_argument("--gradient-clip-norm", type=float, default=None)
-    parser.add_argument("--n-replicates", type=int, default=5)
-    parser.add_argument("--hidden-size", type=int, default=180)
+    parser.add_argument(
+        "--gradient-clip-norm", type=float, default=_config_default("gradient_clip_norm")
+    )
+    parser.add_argument("--n-replicates", type=int, default=_config_default("n_replicates"))
+    parser.add_argument("--hidden-size", type=int, default=_config_default("hidden_size"))
     parser.add_argument(
         "--plant-backend",
-        choices=[CS_LSS_PLANT_BACKEND, LEGACY_CAUSAL_PLANT_BACKEND],
-        default=CS_LSS_PLANT_BACKEND,
+        choices=_config_choices("plant_backend"),
+        default=_config_default("plant_backend"),
         help=(
             "Plant backend for nominal GRU training. The default uses exact C&S "
             "LinearStateSpace mechanics; legacy_causal_simplefeedback preserves the "
@@ -2764,8 +3538,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--stochastic-preset",
-        choices=[DEFAULT_STOCHASTIC_PRESET],
-        default=DEFAULT_STOCHASTIC_PRESET,
+        choices=_config_choices("stochastic_preset"),
+        default=_config_default("stochastic_preset"),
         help=(
             "Named stochastic rollout contract. The preset fixes sensory, command, "
             "signal-dependent, and plant/load force noise and records concrete "
@@ -2775,23 +3549,33 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--target-m",
         type=float,
-        default=float(TARGET_POS[0]),
+        default=_config_default("target_m"),
         help=argparse.SUPPRESS,
     )
-    parser.add_argument("--n-input-only", type=int, default=0)
-    parser.add_argument("--n-readout-only", type=int, default=0)
-    parser.add_argument("--n-recurrent-only", type=int, default=0)
-    parser.add_argument("--effector-pos-running", type=float, default=CS_POSITION_SCALE)
-    parser.add_argument("--effector-vel-running", type=float, default=CS_VELOCITY_SCALE)
-    parser.add_argument("--effector-terminal-pos", type=float, default=CS_POSITION_SCALE)
-    parser.add_argument("--effector-terminal-vel", type=float, default=CS_VELOCITY_SCALE)
-    parser.add_argument("--effector-final-vel", type=float, default=0.0)
-    parser.add_argument("--nn-output", type=float, default=CS_CONTROL_SCALE)
-    parser.add_argument("--nn-output-jerk", type=float, default=0.0)
+    parser.add_argument("--n-input-only", type=int, default=_config_default("n_input_only"))
+    parser.add_argument("--n-readout-only", type=int, default=_config_default("n_readout_only"))
+    parser.add_argument("--n-recurrent-only", type=int, default=_config_default("n_recurrent_only"))
+    parser.add_argument(
+        "--effector-pos-running", type=float, default=_config_default("effector_pos_running")
+    )
+    parser.add_argument(
+        "--effector-vel-running", type=float, default=_config_default("effector_vel_running")
+    )
+    parser.add_argument(
+        "--effector-terminal-pos", type=float, default=_config_default("effector_terminal_pos")
+    )
+    parser.add_argument(
+        "--effector-terminal-vel", type=float, default=_config_default("effector_terminal_vel")
+    )
+    parser.add_argument(
+        "--effector-final-vel", type=float, default=_config_default("effector_final_vel")
+    )
+    parser.add_argument("--nn-output", type=float, default=_config_default("nn_output"))
+    parser.add_argument("--nn-output-jerk", type=float, default=_config_default("nn_output_jerk"))
     parser.add_argument(
         "--nn-output-pre-go",
         type=float,
-        default=None,
+        default=_config_default("nn_output_pre_go"),
         help=(
             "Anti-anticipation controller-output penalty during delayed-reach prep. "
             "Defaults to 1.0 only when --delayed-reach is active; otherwise 0.0."
@@ -2800,7 +3584,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--delayed-pre-go-force-filter-hold",
         type=float,
-        default=0.0,
+        default=_config_default("delayed_pre_go_force_filter_hold"),
         help=(
             "Prep-only delayed-reach auxiliary penalty on the C&S force/filter state. "
             "Default 0.0 preserves the movement-window Q/R/Q_f comparator."
@@ -2809,7 +3593,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--delayed-pre-go-start-pos-hold",
         type=float,
-        default=0.0,
+        default=_config_default("delayed_pre_go_start_pos_hold"),
         help=(
             "Prep-only delayed-reach auxiliary penalty on effector position away from "
             "the sampled start position. Default 0.0."
@@ -2817,8 +3601,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--delayed-pre-go-start-pos-hold-norm",
-        choices=["l2", "l1"],
-        default="l2",
+        choices=_config_choices("delayed_pre_go_start_pos_hold_norm"),
+        default=_config_default("delayed_pre_go_start_pos_hold_norm"),
         help=(
             "Norm for --delayed-pre-go-start-pos-hold. l2 preserves the existing "
             "squared-distance penalty; l1 scores absolute coordinate displacement."
@@ -2827,7 +3611,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--delayed-pre-go-zero-vel-hold",
         type=float,
-        default=0.0,
+        default=_config_default("delayed_pre_go_zero_vel_hold"),
         help=(
             "Prep-only delayed-reach auxiliary penalty on nonzero effector velocity "
             "before the go cue. Default 0.0."
@@ -2835,8 +3619,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--loss-objective",
-        choices=CS_LOSS_OBJECTIVES,
-        default=CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
+        choices=_config_choices("loss_objective"),
+        default=_config_default("loss_objective"),
         help=(
             "Training objective. Default partial_feedbax_terms preserves the historical "
             "Feedbax pos/vel/control term subset. full_analytical_qrf uses the canonical "
@@ -2851,37 +3635,81 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--perturbation-training",
         action=argparse.BooleanOptionalAction,
-        default=None,
+        default=_config_default("perturbation_training"),
         help=(
             "Enable fixed-target perturbation-generalized training using external "
             "task/plant/channel adapters. Defaults to on for --delayed-reach and off "
             "otherwise. Target-position streams are not added."
         ),
     )
-    parser.add_argument("--perturbation-nominal-fraction", type=float, default=0.45)
-    parser.add_argument("--perturbation-single-fraction", type=float, default=0.45)
-    parser.add_argument("--perturbation-combined-fraction", type=float, default=0.10)
-    parser.add_argument("--perturbation-combined-amplitude-scale", type=float, default=0.5)
-    parser.add_argument("--perturbation-initial-position-offset-m", type=float, default=0.01)
-    parser.add_argument("--perturbation-initial-velocity-offset-m-s", type=float, default=0.05)
-    parser.add_argument("--perturbation-process-epsilon-scale", type=float, default=0.01)
-    parser.add_argument("--perturbation-command-input-pulse-n", type=float, default=1.0)
-    parser.add_argument("--perturbation-sensory-feedback-offset-m", type=float, default=0.01)
+    parser.add_argument(
+        "--perturbation-nominal-fraction",
+        type=float,
+        default=_config_default("perturbation_nominal_fraction"),
+    )
+    parser.add_argument(
+        "--perturbation-single-fraction",
+        type=float,
+        default=_config_default("perturbation_single_fraction"),
+    )
+    parser.add_argument(
+        "--perturbation-combined-fraction",
+        type=float,
+        default=_config_default("perturbation_combined_fraction"),
+    )
+    parser.add_argument(
+        "--perturbation-combined-amplitude-scale",
+        type=float,
+        default=_config_default("perturbation_combined_amplitude_scale"),
+    )
+    parser.add_argument(
+        "--perturbation-initial-position-offset-m",
+        type=float,
+        default=_config_default("perturbation_initial_position_offset_m"),
+    )
+    parser.add_argument(
+        "--perturbation-initial-velocity-offset-m-s",
+        type=float,
+        default=_config_default("perturbation_initial_velocity_offset_m_s"),
+    )
+    parser.add_argument(
+        "--perturbation-process-epsilon-scale",
+        type=float,
+        default=_config_default("perturbation_process_epsilon_scale"),
+    )
+    parser.add_argument(
+        "--perturbation-command-input-pulse-n",
+        type=float,
+        default=_config_default("perturbation_command_input_pulse_n"),
+    )
+    parser.add_argument(
+        "--perturbation-sensory-feedback-offset-m",
+        type=float,
+        default=_config_default("perturbation_sensory_feedback_offset_m"),
+    )
     parser.add_argument(
         "--perturbation-delayed-observation-offset-m",
         type=float,
-        default=0.01,
+        default=_config_default("perturbation_delayed_observation_offset_m"),
         help=(
             "Legacy run-spec compatibility only; delayed_observation is no longer "
             "sampled or validated in the active final perturbation bank."
         ),
     )
-    parser.add_argument("--perturbation-pulse-start-step", type=int, default=20)
-    parser.add_argument("--perturbation-pulse-duration-steps", type=int, default=5)
+    parser.add_argument(
+        "--perturbation-pulse-start-step",
+        type=int,
+        default=_config_default("perturbation_pulse_start_step"),
+    )
+    parser.add_argument(
+        "--perturbation-pulse-duration-steps",
+        type=int,
+        default=_config_default("perturbation_pulse_duration_steps"),
+    )
     parser.add_argument(
         "--perturbation-calibrated-timing",
         action=argparse.BooleanOptionalAction,
-        default=None,
+        default=_config_default("perturbation_calibrated_timing"),
         help=(
             "Use timing-bin calibrated perturbation training: plant process/command "
             "pulses sample starts 5/15/35 uniformly and controller-visible sensory "
@@ -2892,7 +3720,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--perturbation-movement-age-timing",
         action=argparse.BooleanOptionalAction,
-        default=None,
+        default=_config_default("perturbation_movement_age_timing"),
         help=(
             "Index calibrated perturbation timing bins by movement age: plant "
             "process/command pulses use movement_start + 5/15/35, controller-visible "
@@ -2904,8 +3732,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--perturbation-physical-level",
-        choices=("small", "moderate", "stress"),
-        default=None,
+        choices=_config_choices("perturbation_physical_level"),
+        default=_config_default("perturbation_physical_level"),
         help=(
             "Declared reach-relative perturbation level for calibrated screens. "
             "Small/moderate are training rows; stress is reserved for evaluation. "
@@ -2914,12 +3742,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--perturbation-calibration-regime",
-        choices=(
-            "open_loop_all",
-            "closed_loop_sensory",
-            "closed_loop_sensory_command_lateral",
-        ),
-        default="open_loop_all",
+        choices=_config_choices("perturbation_calibration_regime"),
+        default=_config_default("perturbation_calibration_regime"),
         help=(
             "Select how calibrated perturbation families resolve amplitudes: all "
             "families from open-loop calibration, sensory feedback from the "
@@ -2929,7 +3753,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--perturbation-closed-loop-calibration-table",
-        default=None,
+        default=_config_default("perturbation_closed_loop_calibration_table"),
         help=(
             "Path to a closed-loop calibration table used by mixed "
             "perturbation-calibration regimes."
@@ -2946,8 +3770,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--target-support-profile",
-        choices=TARGET_SUPPORT_PROFILES,
-        default=DEFAULT_TARGET_SUPPORT_PROFILE,
+        choices=_config_choices("target_support_profile"),
+        default=_config_default("target_support_profile"),
         help=(
             "Named finite target-support profile for --target-relative-multitarget. "
             "Defaults to const_band16: fixed 0.15 m reaches on the dense validation "
@@ -2967,19 +3791,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--delayed-reach-go-cue-min-step",
         type=int,
-        default=DEFAULT_DELAYED_GO_CUE_MIN_STEP,
+        default=_config_default("delayed_reach_go_cue_min_step"),
         help="Inclusive minimum sampled go-cue/prep length for --delayed-reach.",
     )
     parser.add_argument(
         "--delayed-reach-go-cue-max-step",
         type=int,
-        default=DEFAULT_DELAYED_GO_CUE_MAX_STEP,
+        default=_config_default("delayed_reach_go_cue_max_step"),
         help="Inclusive maximum sampled go-cue/prep length for --delayed-reach.",
     )
     parser.add_argument(
         "--delayed-reach-p-catch-trial",
         type=float,
-        default=DEFAULT_DELAYED_P_CATCH_TRIAL,
+        default=_config_default("delayed_reach_p_catch_trial"),
         help=(
             "Probability of delayed-reach no-go catch trials. Catch trials keep the "
             "target visible but keep the go cue at 0 and score holding the initial "
@@ -2988,8 +3812,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--delayed-movement-cost-tail-mode",
-        choices=DELAYED_MOVEMENT_COST_TAIL_MODES,
-        default=DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW,
+        choices=_config_choices("delayed_movement_cost_tail_mode"),
+        default=_config_default("delayed_movement_cost_tail_mode"),
         help=(
             "Delayed-reach full-Q/R/Qf tail support. canonical_window preserves the "
             "60 movement-age stage objective; flat_after_canonical_horizon reuses the "
@@ -3011,7 +3835,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--delayed-reach-no-catch-qrf-weight",
         type=float,
-        default=1.0,
+        default=_config_default("delayed_reach_no_catch_qrf_weight"),
         help=(
             "Explicit weight for the no-catch movement Q/R/Q_f mean when "
             "--delayed-reach-trial-type-normalized-loss is active."
@@ -3020,7 +3844,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--delayed-reach-catch-qrf-weight",
         type=float,
-        default=1.0,
+        default=_config_default("delayed_reach_catch_qrf_weight"),
         help=(
             "Explicit weight for the catch/no-go Q/R/Q_f mean when "
             "--delayed-reach-trial-type-normalized-loss is active."
@@ -3030,7 +3854,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--force-filter-feedback",
         "--proprioceptive-feedback",
         action=argparse.BooleanOptionalAction,
-        default=None,
+        default=_config_default("force_filter_feedback"),
         help=(
             "Extend target-relative delayed feedback with delayed force/filter x/y "
             "coordinates. Defaults to on for --delayed-reach and off otherwise. "
@@ -3055,18 +3879,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--broad-epsilon-level",
-        choices=("moderate", "strong"),
-        default="moderate",
+        choices=_config_choices("broad_epsilon_level"),
+        default=_config_default("broad_epsilon_level"),
         help=(
             "Analytical broad-epsilon budget anchor. moderate uses gamma factor 1.4; "
             "strong uses gamma factor 1.05."
         ),
     )
-    parser.add_argument("--broad-epsilon-budget-scale", type=float, default=1.0)
+    parser.add_argument(
+        "--broad-epsilon-budget-scale",
+        type=float,
+        default=_config_default("broad_epsilon_budget_scale"),
+    )
     parser.add_argument(
         "--broad-epsilon-pgd-fixed-radius-15cm",
         type=float,
-        default=None,
+        default=_config_default("broad_epsilon_pgd_fixed_radius_15cm"),
         help=(
             "Override the fixed broad-epsilon PGD L2 radius at the 15 cm reference reach. "
             "Use with --broad-epsilon-pgd-fixed-radius-source for provenance."
@@ -3074,29 +3902,33 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--broad-epsilon-pgd-fixed-radius-source",
-        default=None,
+        default=_config_default("broad_epsilon_pgd_fixed_radius_source"),
         help="Provenance key for --broad-epsilon-pgd-fixed-radius-15cm.",
     )
     parser.add_argument(
         "--broad-epsilon-reach-scaling",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=_config_default("broad_epsilon_reach_scaling"),
         help=(
             "Scale the 15 cm analytical epsilon L2 radius by sampled reach length. "
             "This is an explicit multi-target normalization choice."
         ),
     )
-    parser.add_argument("--broad-epsilon-pgd-steps", type=int, default=3)
+    parser.add_argument(
+        "--broad-epsilon-pgd-steps",
+        type=int,
+        default=_config_default("broad_epsilon_pgd_steps"),
+    )
     parser.add_argument(
         "--broad-epsilon-pgd-step-size-fraction",
         type=float,
-        default=0.25,
+        default=_config_default("broad_epsilon_pgd_step_size_fraction"),
         help="PGD ascent step size as a fraction of each trial's L2 radius.",
     )
     parser.add_argument(
         "--broad-epsilon-pgd-inner-optimizer-method",
-        choices=BROAD_EPSILON_PGD_INNER_OPTIMIZER_METHODS,
-        default=BROAD_EPSILON_PGD_PROJECTED_GRADIENT_ASCENT,
+        choices=_config_choices("broad_epsilon_pgd_inner_optimizer_method"),
+        default=_config_default("broad_epsilon_pgd_inner_optimizer_method"),
         help=(
             "Inner optimizer for broad-epsilon adversary selection. "
             f"{BROAD_EPSILON_PGD_PROJECTED_GRADIENT_ASCENT} preserves the historical "
@@ -3108,19 +3940,31 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--broad-epsilon-pgd-adam-lr",
         type=float,
-        default=3e-4,
+        default=_config_default("broad_epsilon_pgd_adam_lr"),
         help=(
             "Adam ascent learning rate for broad-epsilon direct-epsilon sequences "
             "or live finite-policy mechanisms."
         ),
     )
-    parser.add_argument("--broad-epsilon-pgd-adam-b1", type=float, default=0.9)
-    parser.add_argument("--broad-epsilon-pgd-adam-b2", type=float, default=0.999)
-    parser.add_argument("--broad-epsilon-pgd-adam-eps", type=float, default=1e-8)
+    parser.add_argument(
+        "--broad-epsilon-pgd-adam-b1",
+        type=float,
+        default=_config_default("broad_epsilon_pgd_adam_b1"),
+    )
+    parser.add_argument(
+        "--broad-epsilon-pgd-adam-b2",
+        type=float,
+        default=_config_default("broad_epsilon_pgd_adam_b2"),
+    )
+    parser.add_argument(
+        "--broad-epsilon-pgd-adam-eps",
+        type=float,
+        default=_config_default("broad_epsilon_pgd_adam_eps"),
+    )
     parser.add_argument(
         "--broad-epsilon-pgd-mechanism",
-        choices=BROAD_EPSILON_PGD_MECHANISMS,
-        default=BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM,
+        choices=_config_choices("broad_epsilon_pgd_mechanism"),
+        default=_config_default("broad_epsilon_pgd_mechanism"),
         help=(
             "Adversary mechanism for broad-epsilon PGD. direct_epsilon preserves the "
             "existing exogenous epsilon-sequence path; finite mechanisms install live "
@@ -3129,33 +3973,45 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--broad-epsilon-pgd-objective",
-        choices=(BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE, BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE),
-        default=BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE,
+        choices=_config_choices("broad_epsilon_pgd_objective"),
+        default=_config_default("broad_epsilon_pgd_objective"),
         help=(
             "Inner PGD objective. hard_l2 preserves the existing projected objective; "
             "soft_energy maximizes task_loss - lambda * epsilon_energy with an explicit "
             "stabilization cap."
         ),
     )
-    parser.add_argument("--broad-epsilon-pgd-energy-gamma-star", type=float, default=None)
-    parser.add_argument("--broad-epsilon-pgd-energy-gamma-factor", type=float, default=None)
-    parser.add_argument("--broad-epsilon-pgd-energy-gamma", type=float, default=None)
+    parser.add_argument(
+        "--broad-epsilon-pgd-energy-gamma-star",
+        type=float,
+        default=_config_default("broad_epsilon_pgd_energy_gamma_star"),
+    )
+    parser.add_argument(
+        "--broad-epsilon-pgd-energy-gamma-factor",
+        type=float,
+        default=_config_default("broad_epsilon_pgd_energy_gamma_factor"),
+    )
+    parser.add_argument(
+        "--broad-epsilon-pgd-energy-gamma",
+        type=float,
+        default=_config_default("broad_epsilon_pgd_energy_gamma"),
+    )
     parser.add_argument(
         "--broad-epsilon-pgd-energy-penalty-scale",
         type=float,
-        default=1.0,
+        default=_config_default("broad_epsilon_pgd_energy_penalty_scale"),
         help="Soft-energy c multiplier in lambda = c * gamma^2 unless lambda is explicit.",
     )
     parser.add_argument(
         "--broad-epsilon-pgd-energy-lambda",
         type=float,
-        default=None,
+        default=_config_default("broad_epsilon_pgd_energy_lambda"),
         help="Explicit soft-energy lambda; otherwise derived as c * gamma^2.",
     )
     parser.add_argument(
         "--broad-epsilon-pgd-safety-cap-15cm",
         type=float,
-        default=None,
+        default=_config_default("broad_epsilon_pgd_safety_cap_15cm"),
         help=(
             "Optional 15 cm L2 trust-region cap for soft-energy PGD stabilization. "
             "This cap is metadata-marked as not the scientific hard-budget constraint."
@@ -3164,13 +4020,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--broad-epsilon-pgd-safety-cap-source",
         type=str,
-        default=None,
+        default=_config_default("broad_epsilon_pgd_safety_cap_source"),
         help="Provenance key/source for --broad-epsilon-pgd-safety-cap-15cm.",
     )
     parser.add_argument(
         "--broad-epsilon-pgd-budget-schedule",
-        choices=("fixed", "sisu_energy_fraction"),
-        default="fixed",
+        choices=_config_choices("broad_epsilon_pgd_budget_schedule"),
+        default=_config_default("broad_epsilon_pgd_budget_schedule"),
         help=(
             "Select the PGD L2 budget schedule. fixed preserves the existing single "
             "radius; sisu_energy_fraction maps SISU to radius via sqrt(SISU)."
@@ -3178,8 +4034,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--broad-epsilon-pgd-sisu-condition-input",
-        choices=("auto", "input", "sisu"),
-        default="auto",
+        choices=_config_choices("broad_epsilon_pgd_sisu_condition_input"),
+        default=_config_default("broad_epsilon_pgd_sisu_condition_input"),
         help=(
             "Trial input that carries the scalar SISU value for sisu_energy_fraction PGD budgets."
         ),
@@ -3187,13 +4043,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--broad-epsilon-pgd-sisu-max-radius",
         type=float,
-        default=None,
+        default=_config_default("broad_epsilon_pgd_sisu_max_radius"),
         help=("Maximum 15 cm PGD L2 radius at SISU=1 for sisu_energy_fraction budgets."),
     )
     parser.add_argument(
         "--broad-epsilon-pgd-sisu-max-radius-source",
         type=str,
-        default=None,
+        default=_config_default("broad_epsilon_pgd_sisu_max_radius_source"),
         help=(
             "Metadata key/source for the SISU PGD max radius, e.g. "
             "raw_strong_gamma_1p05_radius or effective_020a65b_pgd_training_radius."
@@ -3208,21 +4064,81 @@ def build_parser() -> argparse.ArgumentParser:
             "and --broad-epsilon-pgd-objective soft_energy."
         ),
     )
-    parser.add_argument("--adaptive-epsilon-damage-start", type=float, default=0.0)
-    parser.add_argument("--adaptive-epsilon-damage-peak", type=float, default=3500.0)
-    parser.add_argument("--adaptive-epsilon-damage-final", type=float, default=1000.0)
-    parser.add_argument("--adaptive-epsilon-damage-ramp-batches", type=int, default=2500)
-    parser.add_argument("--adaptive-epsilon-damage-anneal-batches", type=int, default=5000)
-    parser.add_argument("--adaptive-epsilon-update-interval-batches", type=int, default=50)
-    parser.add_argument("--adaptive-epsilon-ema-alpha", type=float, default=0.1)
-    parser.add_argument("--adaptive-epsilon-eta", type=float, default=0.1)
-    parser.add_argument("--adaptive-epsilon-deadband-frac", type=float, default=0.10)
-    parser.add_argument("--adaptive-epsilon-lambda-min", type=float, default=1e-12)
-    parser.add_argument("--adaptive-epsilon-lambda-max", type=float, default=None)
-    parser.add_argument("--adaptive-epsilon-max-log-step", type=float, default=0.25)
-    parser.add_argument("--adaptive-epsilon-outer-weight-start", type=float, default=0.0)
-    parser.add_argument("--adaptive-epsilon-outer-weight-final", type=float, default=1.0)
-    parser.add_argument("--adaptive-epsilon-outer-weight-ramp-batches", type=int, default=2500)
+    parser.add_argument(
+        "--adaptive-epsilon-damage-start",
+        type=float,
+        default=_config_default("adaptive_epsilon_damage_start"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-damage-peak",
+        type=float,
+        default=_config_default("adaptive_epsilon_damage_peak"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-damage-final",
+        type=float,
+        default=_config_default("adaptive_epsilon_damage_final"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-damage-ramp-batches",
+        type=int,
+        default=_config_default("adaptive_epsilon_damage_ramp_batches"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-damage-anneal-batches",
+        type=int,
+        default=_config_default("adaptive_epsilon_damage_anneal_batches"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-update-interval-batches",
+        type=int,
+        default=_config_default("adaptive_epsilon_update_interval_batches"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-ema-alpha",
+        type=float,
+        default=_config_default("adaptive_epsilon_ema_alpha"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-eta",
+        type=float,
+        default=_config_default("adaptive_epsilon_eta"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-deadband-frac",
+        type=float,
+        default=_config_default("adaptive_epsilon_deadband_frac"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-lambda-min",
+        type=float,
+        default=_config_default("adaptive_epsilon_lambda_min"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-lambda-max",
+        type=float,
+        default=_config_default("adaptive_epsilon_lambda_max"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-max-log-step",
+        type=float,
+        default=_config_default("adaptive_epsilon_max_log_step"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-outer-weight-start",
+        type=float,
+        default=_config_default("adaptive_epsilon_outer_weight_start"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-outer-weight-final",
+        type=float,
+        default=_config_default("adaptive_epsilon_outer_weight_final"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-outer-weight-ramp-batches",
+        type=int,
+        default=_config_default("adaptive_epsilon_outer_weight_ramp_batches"),
+    )
     parser.add_argument(
         "--policy-adversary-training",
         action="store_true",
@@ -3234,8 +4150,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--policy-adversary-policy-class",
-        choices=POLICY_ADVERSARY_POLICY_CLASSES,
-        default=POLICY_ADVERSARY_MEMORYLESS_MLP,
+        choices=_config_choices("policy_adversary_policy_class"),
+        default=_config_default("policy_adversary_policy_class"),
         help=(
             "Adversary policy parameterization: memoryless_mlp for the existing MLP lane, "
             "or linear_no_bias/affine for finite time-varying policies optimized by Adam."
@@ -3243,21 +4159,37 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--policy-adversary-mode",
-        choices=(POLICY_ADVERSARY_PLAIN_MODE, POLICY_ADVERSARY_ENERGY_MODE),
-        default=POLICY_ADVERSARY_PLAIN_MODE,
+        choices=_config_choices("policy_adversary_mode"),
+        default=_config_default("policy_adversary_mode"),
         help=(
             "plain uses hard projection only; energy adds an H-infinity-style "
             "energy stabilizer to the adversary objective."
         ),
     )
-    parser.add_argument("--policy-adversary-width", type=int, default=64)
-    parser.add_argument("--policy-adversary-depth", type=int, default=2)
-    parser.add_argument("--policy-adversary-steps", type=int, default=5)
-    parser.add_argument("--policy-adversary-lr", type=float, default=3e-4)
+    parser.add_argument(
+        "--policy-adversary-width",
+        type=int,
+        default=_config_default("policy_adversary_width"),
+    )
+    parser.add_argument(
+        "--policy-adversary-depth",
+        type=int,
+        default=_config_default("policy_adversary_depth"),
+    )
+    parser.add_argument(
+        "--policy-adversary-steps",
+        type=int,
+        default=_config_default("policy_adversary_steps"),
+    )
+    parser.add_argument(
+        "--policy-adversary-lr",
+        type=float,
+        default=_config_default("policy_adversary_lr"),
+    )
     parser.add_argument(
         "--policy-adversary-energy-gamma",
         type=float,
-        default=1.0,
+        default=_config_default("policy_adversary_energy_gamma"),
         help=(
             "Multiplier on epsilon energy in energy mode. This is a stabilizer "
             "term, not a formal H-infinity certificate parameter."
@@ -3266,7 +4198,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--policy-adversary-radius-15cm",
         type=float,
-        default=None,
+        default=_config_default("policy_adversary_radius_15cm"),
         help=(
             "Explicit 15 cm L2 epsilon radius for policy-adversary training. "
             "Required when --policy-adversary-training is enabled."
@@ -3275,7 +4207,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--policy-adversary-radius-source",
         type=str,
-        default=None,
+        default=_config_default("policy_adversary_radius_source"),
         help=(
             "Metadata key/source for --policy-adversary-radius-15cm. Required when "
             "--policy-adversary-training is enabled."
@@ -3351,7 +4283,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--stop-after-batches",
         type=int,
-        default=None,
+        default=_config_default("stop_after_batches"),
         help=(
             "For full-train checkpoint-gate smoke runs, stop cleanly after the "
             "first checkpoint at or beyond this completed-batch count while "
@@ -3361,7 +4293,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--training-diagnostics",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=_config_default("training_diagnostics"),
         help=(
             "Write compact optimizer/loss scalar sidecars for full training runs. "
             "Use --no-training-diagnostics to opt out."
@@ -3370,17 +4302,25 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--checkpoint-interval-batches",
         type=int,
-        default=DEFAULT_CHECKPOINT_INTERVAL_BATCHES,
+        default=_config_default("checkpoint_interval_batches"),
     )
-    parser.add_argument("--log-step", type=int, default=100)
-    parser.add_argument("--disable-progress", action="store_true", default=False)
-    parser.add_argument("--quiet-progress", action="store_true", default=True)
+    parser.add_argument("--log-step", type=int, default=_config_default("log_step"))
+    parser.add_argument(
+        "--disable-progress",
+        action="store_true",
+        default=_config_default("disable_progress"),
+    )
+    parser.add_argument(
+        "--quiet-progress",
+        action="store_true",
+        default=_config_default("quiet_progress"),
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print the would-write payload without creating files.",
     )
-    return parser
+    return _apply_config_parser_defaults(parser)
 
 
 def main(
@@ -3391,7 +4331,7 @@ def main(
     """CLI entry point."""
 
     parser = build_parser()
-    args = resolve_run_spec_args(parser.parse_args(argv), parser=parser)
+    args = parser.parse_args(argv)
     if args.planned_perturbation_rows:
         print(_json_dumps({"planned_rows": planned_fixed_target_perturbation_rows()}), end="")
         return 0
@@ -3428,13 +4368,49 @@ def main(
             end="",
         )
         return 0
-    result = (
-        run_full_training(args, volume_commit=volume_commit)
-        if args.full_train and not args.dry_run
-        else write_run_spec(args)
-    )
+    if args.run_spec is not None:
+        context = build_run_spec_execution_context(args, parser=parser)
+        if context.args.dry_run:
+            result = render_run_spec_execution_dry_run(context)
+        elif context.args.full_train:
+            result = _run_full_training_from_context(context, volume_commit=volume_commit)
+        else:
+            result = {
+                "run_spec_path": str(context.run_spec_path),
+                "run_spec": context.run_spec,
+                "validated": True,
+            }
+    else:
+        result = (
+            run_full_training(args, volume_commit=volume_commit)
+            if args.full_train and not args.dry_run
+            else write_run_spec(args)
+        )
     print(_json_dumps(result), end="")
     return 0
+
+
+def render_run_spec_execution_dry_run(context: RunSpecExecutionContext) -> dict[str, Any]:
+    """Render the execution plan for a validated spec without writing artifacts."""
+
+    args = context.args
+    return {
+        "run_spec_path": str(context.run_spec_path),
+        "run_spec": context.run_spec,
+        "validated": True,
+        "would_write": [],
+        "would_execute": {
+            "entrypoint": "rlrmp.train.cs_nominal_gru._run_full_training_from_context"
+            if args.full_train
+            else "validate_spec_only",
+            "full_train": bool(args.full_train),
+            "output_dir": str(args.output_dir),
+            "checkpoint_interval_batches": int(args.checkpoint_interval_batches),
+            "resume": bool(args.resume),
+            "stop_after_batches": args.stop_after_batches,
+            "training_diagnostics": bool(args.training_diagnostics),
+        },
+    }
 
 
 def _apply_smoke_overrides(args: argparse.Namespace) -> argparse.Namespace:
@@ -4046,6 +5022,13 @@ def _controller_feedback_dim(hps: TreeNamespace) -> int:
             else 4
         )
     return 4
+
+
+def _controller_feedback_descriptors(hps: TreeNamespace) -> dict[str, Any]:
+    return controller_feedback_descriptor_payload(
+        feedback_dim=_controller_feedback_dim(hps),
+        basis_id=_controller_feedback_basis(hps),
+    )
 
 
 def _validation_bins_metadata(hps: TreeNamespace) -> dict[str, Any]:
@@ -5034,7 +6017,9 @@ def _apply_trial_spec_initial_state(model: Any, state: Any, trial_spec: Any) -> 
     return model.state_consistency_update(state)
 
 
-def _eval_trial_specs_for_training(model: Any, trial_specs: Any, init_states: Any, keys: Any) -> Any:
+def _eval_trial_specs_for_training(
+    model: Any, trial_specs: Any, init_states: Any, keys: Any
+) -> Any:
     def _run_trial(trial_spec, init_state, key):
         inputs = prepare_inputs(model, trial_spec.inputs)
         n_steps = infer_n_steps(inputs, getattr(trial_spec, "timeline", None))
@@ -5104,9 +6089,7 @@ def _update_adaptive_epsilon_state(
     ratio_eps = 1e-12
     relative_error = (damage_ema - target) / max(target, ratio_eps) if target > 0.0 else 0.0
     log_ratio_error = (
-        math.log(max(damage_ema, ratio_eps) / max(target, ratio_eps))
-        if target > 0.0
-        else 0.0
+        math.log(max(damage_ema, ratio_eps) / max(target, ratio_eps)) if target > 0.0 else 0.0
     )
     deadband = float(update_cfg.deadband_frac)
     lambda_value = float(state.lambda_value)
@@ -5128,6 +6111,7 @@ def _update_adaptive_epsilon_state(
         last_update_batch=int(batch_index) if updated else state.last_update_batch,
         update_count=state.update_count + (1 if updated else 0),
         schedule_start_batch=state.schedule_start_batch,
+        zero_adversary_guard=state.zero_adversary_guard,
     )
     return next_state, {
         "damage_ema": np.asarray(damage_ema, dtype=np.float32),
@@ -5589,6 +6573,47 @@ def _initial_adaptive_epsilon_zero_guard(*, enabled: bool) -> dict[str, Any]:
     }
 
 
+def _adaptive_epsilon_zero_guard_from_state(
+    adaptive_state: AdaptiveEpsilonState | None,
+    *,
+    enabled: bool,
+) -> dict[str, Any]:
+    if adaptive_state is not None and isinstance(adaptive_state.zero_adversary_guard, dict):
+        return _normalize_adaptive_epsilon_zero_guard(
+            adaptive_state.zero_adversary_guard,
+            enabled=enabled,
+        )
+    return _initial_adaptive_epsilon_zero_guard(enabled=enabled)
+
+
+def _normalize_adaptive_epsilon_zero_guard(
+    payload: Any,
+    *,
+    enabled: bool,
+) -> dict[str, Any]:
+    guard = _initial_adaptive_epsilon_zero_guard(enabled=enabled)
+    if not isinstance(payload, dict):
+        return guard
+    guard["enabled"] = bool(payload.get("enabled", enabled))
+    guard["stop_reason"] = str(
+        payload.get("stop_reason", ADAPTIVE_EPSILON_ZERO_ADVERSARY_STOP_REASON)
+    )
+    guard["gain_tolerance"] = float(
+        payload.get(
+            "gain_tolerance",
+            ADAPTIVE_EPSILON_ZERO_ADVERSARY_GAIN_TOLERANCE,
+        )
+    )
+    guard["checkpoints_seen"] = int(payload.get("checkpoints_seen", 0))
+    guard["consecutive_active_zero_adversary_checkpoints"] = int(
+        payload.get("consecutive_active_zero_adversary_checkpoints", 0)
+    )
+    guard["should_stop"] = bool(payload.get("should_stop", False))
+    last_checkpoint = payload.get("last_checkpoint")
+    guard["last_checkpoint"] = last_checkpoint if isinstance(last_checkpoint, dict) else None
+    return guard
+
+
 def _update_adaptive_epsilon_zero_guard(
     guard: dict[str, Any],
     adaptive_epsilon_diagnostics: dict[str, np.ndarray],
@@ -5622,7 +6647,9 @@ def _adaptive_epsilon_zero_checkpoint_evidence(
             gain_source = key
             break
 
-    target_damage = _latest_scalar(adaptive_epsilon_diagnostics.get("adaptive_epsilon_target_damage"))
+    target_damage = _latest_scalar(
+        adaptive_epsilon_diagnostics.get("adaptive_epsilon_target_damage")
+    )
     outer_weight = _latest_scalar(adaptive_epsilon_diagnostics.get("adaptive_epsilon_outer_weight"))
     active = (
         target_damage is not None
@@ -5631,9 +6658,7 @@ def _adaptive_epsilon_zero_checkpoint_evidence(
         and outer_weight > 0.0
     )
     zero_adversary = (
-        active
-        and gain is not None
-        and gain <= ADAPTIVE_EPSILON_ZERO_ADVERSARY_GAIN_TOLERANCE
+        active and gain is not None and gain <= ADAPTIVE_EPSILON_ZERO_ADVERSARY_GAIN_TOLERANCE
     )
     return {
         "active": bool(active),

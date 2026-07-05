@@ -44,6 +44,7 @@ from rlrmp.analysis.math.rerun_metadata import (
     DEFAULT_LANE,
     build_rerun_metadata,
 )
+from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
@@ -1928,7 +1929,7 @@ def write_outputs(
     summary["tracked_manifest"] = _repo_relative(manifest_output, repo_root=active_root)
     summary["artifact_npz"] = _repo_relative(npz_path, repo_root=active_root)
     summary["artifact_npz_keys"] = sorted(result.arrays.keys())
-    note_output.write_text(render_markdown(summary), encoding="utf-8")
+    update_marked_section(note_output, "output_feedback_rollout_recovery", render_markdown(summary))
     manifest_output.write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",

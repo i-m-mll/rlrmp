@@ -12,6 +12,7 @@ import jax.random as jr
 from feedbax import AbstractTask, TaskTrialSpec, WhereDict
 from feedbax.intervene import (
     CurlFieldParams,
+    DynamicsMatrixPerturbParams,
     FixedFieldParams,
     schedule_intervenor,
 )
@@ -31,7 +32,10 @@ from rlrmp.analysis.math.cs_released_simulation import (
 from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig, process_covariance
 from rlrmp.model.cs_lss_gru import (
     CS_DEFAULT_TRAINABLE_DTYPE,
+    CS_FEEDBACK_DIM,
+    CS_H0_CONTEXT_INPUT,
     CS_PHYSICAL_STATE_DIM,
+    CS_PROPRIOCEPTIVE_FEEDBACK_DIM,
     CS_REDUCED_PHYSICAL_STATE_DIM,
     build_cs_lss_gru_graph,
 )
@@ -50,6 +54,7 @@ from rlrmp.model import (
     create_point_mass_linear_ensemble,
     create_point_mass_nn_ensemble,
 )
+from rlrmp.model.feedbax_graph import POINT_MASS_TARGET_POSITION_INPUT
 from rlrmp.task import TASK_TYPES
 from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_FINITE_POLICY_MECHANISMS,
@@ -131,6 +136,7 @@ disturbance_extra_params = LDict.of("train__method")(
                 field=scaled_sampler(vector_with_gaussian_length, hps.pert.std)
             ),
             "gusts": get_gusts_fn,
+            "dynamics_matrix": lambda hps: {},
         },
     }
 )
@@ -218,6 +224,14 @@ def get_disturbance_params(hps: TreeNamespace):
             active=active,
             **extra_params,
         )
+    elif pert_type == "dynamics_matrix":
+        return _scheduled_intervention_params(
+            DynamicsMatrixPerturbParams,
+            scale=scale,
+            active=False,
+            delta_A=jnp.zeros((2, 4), dtype=jnp.float32),
+            **extra_params,
+        )
     else:
         raise ValueError(f"Unknown perturbation type: {pert_type}")
 
@@ -249,18 +263,25 @@ def build_task_base(hps: TreeNamespace):
     if task_type in {"simple_reach", "fixed_simple_reach"}:
         delayed_only_keys = {
             "epoch_len_ranges",
-            "target_on_epochs",
+            "n_control_stages",
+            "p_catch_trial",
+            "preset",
+            "train_endpoint_mode",
+            "target_visible_from_start",
             "hold_epochs",
             "move_epochs",
-            "p_catch_trial",
-            "train_endpoint_mode",
-            "preset",
-            "n_control_stages",
-            "target_visible_from_start",
+            "target_on_epochs",
             "go_cue_event_name",
             "catch_metadata_policy",
         }
         hps_task = {k: v for k, v in hps_task.items() if k not in delayed_only_keys}
+        hps_task["epoch_name"] = "movement"
+        if task_type == "fixed_simple_reach":
+            fixed_init_pos = hps_task.pop("fixed_init_pos", jnp.zeros(2))
+            fixed_target_pos = hps_task.pop("fixed_target_pos", jnp.asarray([0.15, 0.0]))
+            hps_task["fixed_endpoints"] = jnp.stack(
+                [jnp.asarray(fixed_init_pos), jnp.asarray(fixed_target_pos)]
+            )
     return TASK_TYPES[task_type](loss_func=get_reach_loss(hps), **hps_task)
 
 
@@ -326,6 +347,8 @@ def setup_task_model_pair(
             if sisu_conditioned_pgd
             else None,
             finite_epsilon_policy=finite_epsilon_policy,
+            initial_hidden_encoder=bool(getattr(hps.model, "initial_hidden_encoder", False)),
+            force_filter_feedback=target_training.force_filter_feedback,
             physical_state_dim=physical_state_dim,
             dtype=runtime_dtype,
         )
@@ -401,6 +424,11 @@ def setup_task_model_pair(
         )
     except AttributeError:
         raise ValueError("No training method label assigned to hps_train.method")
+    if isinstance(hidden_type, str) and hidden_type in LINEAR_HIDDEN_TYPES:
+        task = task.add_input(
+            name=POINT_MASS_TARGET_POSITION_INPUT,
+            input_fn=_point_mass_target_position_input,
+        )
 
     # Build disturbance params for scheduling
     disturbance_params = get_disturbance_params(hps)
@@ -549,6 +577,8 @@ def _add_cs_lss_task_inputs(
     scalar_input_name: str = "input",
     scalar_input_fn: Callable | None = None,
     finite_epsilon_policy: str | None = None,
+    initial_hidden_encoder: bool = False,
+    force_filter_feedback: bool = False,
     physical_state_dim: int = CS_PHYSICAL_STATE_DIM,
     dtype=jnp.float32,
 ) -> _CsLssTaskAdapter:
@@ -586,6 +616,18 @@ def _add_cs_lss_task_inputs(
             dtype=dtype,
         ),
     )
+    if initial_hidden_encoder:
+        context_dim = (
+            CS_PROPRIOCEPTIVE_FEEDBACK_DIM if force_filter_feedback else CS_FEEDBACK_DIM
+        )
+        task = task.add_input(
+            name=CS_H0_CONTEXT_INPUT,
+            input_fn=lambda trial_spec, key: _zero_h0_context_input(
+                trial_spec,
+                context_dim=context_dim,
+                dtype=dtype,
+            ),
+        )
     if finite_epsilon_policy is None:
         return task
     state_dim = 6 * int(physical_state_dim)
@@ -608,6 +650,17 @@ def _add_cs_lss_task_inputs(
             ),
         )
     return task
+
+
+def _zero_h0_context_input(
+    trial_spec: TaskTrialSpec,
+    *,
+    context_dim: int,
+    dtype=jnp.float32,
+) -> jax.Array:
+    target = trial_spec.targets["mechanics.effector.pos"].value
+    batch_shape = target.shape[:-2] if target.ndim >= 3 else ()
+    return jnp.zeros((*batch_shape, int(context_dim)), dtype=dtype)
 
 
 def _cs_delayed_reach_enabled(hps: TreeNamespace) -> bool:
@@ -693,6 +746,20 @@ def _cs_delayed_go_cue_input(
     hold = jnp.asarray(task_inputs.hold, dtype=jnp.float32)
     go = 1.0 - hold
     return go[..., 0] if go.ndim > 0 and go.shape[-1] == 1 else go
+
+
+def _point_mass_target_position_input(
+    trial_spec: TaskTrialSpec,
+    key: PRNGKeyArray,
+) -> jax.Array:
+    """Expose the native Feedbax task-data binding for point-mass target position."""
+
+    del key
+    inputs = trial_spec.inputs
+    task_inputs = inputs.get("effector_target") if isinstance(inputs, Mapping) else inputs
+    if task_inputs is None or not hasattr(task_inputs, "pos"):
+        raise ValueError("Point-mass target-position binding requires inputs.effector_target.pos")
+    return jnp.asarray(task_inputs.pos)
 
 
 def _cs_delayed_go_cue_with_scalar_input(scalar_input_fn: Callable) -> Callable:

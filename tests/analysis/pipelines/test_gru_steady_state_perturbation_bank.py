@@ -9,6 +9,7 @@ from pathlib import Path
 
 from rlrmp.analysis.pipelines.gru_steady_state_perturbation_bank import (
     FeedbackPerturbation,
+    SteadyStatePerturbationBankConfig,
     aggregate_family_profiles,
     build_response_figure,
     default_feedback_perturbations,
@@ -57,6 +58,33 @@ def test_default_bank_is_symmetric_and_omits_force_filter_for_4d_feedback() -> N
     for family in {row.family for row in bank_6d}:
         directions = {row.direction for row in bank_6d if row.family == family}
         assert directions == {(1.0, 0.0), (-1.0, -0.0), (0.0, 1.0), (-0.0, -1.0)}
+
+
+def test_entry_config_threads_feedback_scales_and_washin_defaults() -> None:
+    config = SteadyStatePerturbationBankConfig(
+        post_go_washin_steps=4,
+        pulse_duration_steps=2,
+        position_scale_m=0.2,
+        velocity_scale_m_s=0.7,
+        force_filter_scale=11.0,
+        post_onset_figure_steps=6,
+    )
+
+    bank = default_feedback_perturbations(feedback_dim=6, config=config)
+    assert {row.amplitude for row in bank if row.family == "position"} == {0.2}
+    assert {row.amplitude for row in bank if row.family == "velocity"} == {0.7}
+    assert {row.amplitude for row in bank if row.family == "force_filter"} == {11.0}
+
+    _, timing = make_steady_state_trial_specs(
+        _trial_spec(horizon=8, feedback_dim=6),
+        delayed=False,
+        target_position=np.array([0.0, 0.0]),
+        config=config,
+    )
+
+    assert timing["pulse_start_step_requested"] == 4
+    assert timing["pulse_duration_steps"] == 2
+    assert timing["post_onset_steps_requested"] is None
 
 
 def test_orthogonal_direction_uses_right_handed_plus_90_convention() -> None:

@@ -1,0 +1,1045 @@
+{
+  "audit_manifest_sha256": "bc0a783f81fc9d94fb092b9e5aa6c56ec4625b83a84883c7f514d88d3532b51f",
+  "audited_count": 38,
+  "conversion_policy": {
+    "dimension_source": "issue ae15851 archived point-mass task contract",
+    "external_input_size": 7,
+    "feedback_size": 4,
+    "input_size": 11,
+    "known_wrong": "excluded_with_provenance",
+    "motor_noise_mapping": "multiplicative_plus_constant -> signal_dependent_plus_additive; signal_dependent_noise_std=noise_std; additive_noise_std=constant_noise_scale*noise_std"
+  },
+  "converted_count": 36,
+  "entries": [
+    {
+      "classification": "known_wrong",
+      "classification_reason": "Expected structural family 'cs_lss' but inspected structure encodes 'point_mass' (node types: ['Channel', 'FirstOrderFilter', 'FixedField', 'PointMass', 'RLRMPFeedbackChannels', 'RLRMPPlantProcessForceNoise', 'RLRMPSimpleStagedNetwork']).",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "936d0081ed1d57ff2cbc98f550b42b6bcbd5ecad69cd8b0b105611345a4e1e62",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPPlantProcessForceNoise",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": null,
+      "disposition": "excluded_known_wrong",
+      "exclusion_reason": "Expected structural family 'cs_lss' but inspected structure encodes 'point_mass' (node types: ['Channel', 'FirstOrderFilter', 'FixedField', 'PointMass', 'RLRMPFeedbackChannels', 'RLRMPPlantProcessForceNoise', 'RLRMPSimpleStagedNetwork']).",
+      "expected_conversion_family": "cs_lss",
+      "original_path": "results/30f2313/runs/cs_stochastic_gru__hidden_penalty/model.graph.json",
+      "original_sha256": "936d0081ed1d57ff2cbc98f550b42b6bcbd5ecad69cd8b0b105611345a4e1e62",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "known_wrong",
+      "classification_reason": "Expected structural family 'cs_lss' but inspected structure encodes 'point_mass' (node types: ['Channel', 'FirstOrderFilter', 'FixedField', 'PointMass', 'RLRMPFeedbackChannels', 'RLRMPPlantProcessForceNoise', 'RLRMPSimpleStagedNetwork']).",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "936d0081ed1d57ff2cbc98f550b42b6bcbd5ecad69cd8b0b105611345a4e1e62",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPPlantProcessForceNoise",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": null,
+      "disposition": "excluded_known_wrong",
+      "exclusion_reason": "Expected structural family 'cs_lss' but inspected structure encodes 'point_mass' (node types: ['Channel', 'FirstOrderFilter', 'FixedField', 'PointMass', 'RLRMPFeedbackChannels', 'RLRMPPlantProcessForceNoise', 'RLRMPSimpleStagedNetwork']).",
+      "expected_conversion_family": "cs_lss",
+      "original_path": "results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/model.graph.json",
+      "original_sha256": "936d0081ed1d57ff2cbc98f550b42b6bcbd5ecad69cd8b0b105611345a4e1e62",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_2bc95fd_gru_jerk_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/2bc95fd/gru__jerk/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_2bc95fd_gru_jerk_loss_historical_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/2bc95fd/gru__jerk_loss_historical/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_2bc95fd_gru_jerk_loss_v_terminal_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/2bc95fd/gru__jerk_loss_v_terminal/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_2bc95fd_gru_jerk_motor_pre_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/2bc95fd/gru__jerk_motor_pre/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_2bc95fd_gru_jerk_motor_smooth_combo_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/2bc95fd/gru__jerk_motor_smooth_combo/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_2bc95fd_gru_jerk_smooth_high_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/2bc95fd/gru__jerk_smooth_high/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_3702f54_full_trial_pl_pos10_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/3702f54/full_trial_pl__pos10/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_3702f54_full_trial_pl_pos10_prego_1_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/3702f54/full_trial_pl__pos10_prego_1/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_3702f54_full_trial_pl_pos10_prego_1e_3_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/3702f54/full_trial_pl__pos10_prego_1e-3/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_3702f54_full_trial_pl_pos10_prego_5e_2_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/3702f54/full_trial_pl__pos10_prego_5e-2/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_3702f54_full_trial_pl_prego_1_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/3702f54/full_trial_pl__prego_1/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_3702f54_full_trial_pl_prego_1e_3_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/3702f54/full_trial_pl__prego_1e-3/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_3702f54_full_trial_pl_prego_5e_2_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/3702f54/full_trial_pl__prego_5e-2/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_3702f54_post_go_pl_pos10_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/3702f54/post_go_pl__pos10/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_b399efc_movement_ramp_cosine_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/b399efc/movement_ramp__cosine/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_b399efc_movement_ramp_linear_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/b399efc/movement_ramp__linear/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_b399efc_movement_ramp_power2_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/b399efc/movement_ramp__power2/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_b399efc_movement_ramp_power4_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/b399efc/movement_ramp__power4/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_b399efc_movement_ramp_power6_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/b399efc/movement_ramp__power6/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_b399efc_movement_ramp_power6_dur80_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/b399efc/movement_ramp__power6_dur80/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_b399efc_movement_ramp_power6_prego5_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/b399efc/movement_ramp__power6_prego5/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_b399efc_smoke_movement_ramp_power6_1k_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/b399efc/smoke__movement_ramp_power6_1k/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_efc4d68_baseline_gru_jerk_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/efc4d68/baseline_gru__jerk/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_efc4d68_baseline_gru_none_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/efc4d68/baseline_gru__none/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_efc4d68_baseline_gru_smooth_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/efc4d68/baseline_gru__smooth/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_efc4d68_baseline_gru_smooth_jerk_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/efc4d68/baseline_gru__smooth_jerk/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "vanilla_rnn",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "1f31b9966f07045e6f6b6f1b305ae5477842dbfa55094fc9306475bd6e97aaff",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_efc4d68_baseline_vrnn_jerk_model_graph_json.graph.json",
+      "converted_sha256": "2698aa5b701fcd4824ab2a3d88ed364865bedb7302b79e94994fe61d764e04ef",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/efc4d68/baseline_vrnn__jerk/model.graph.json",
+      "original_sha256": "1f31b9966f07045e6f6b6f1b305ae5477842dbfa55094fc9306475bd6e97aaff",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_vanilla_rnn"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "vanilla_rnn",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "1f31b9966f07045e6f6b6f1b305ae5477842dbfa55094fc9306475bd6e97aaff",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_efc4d68_baseline_vrnn_none_model_graph_json.graph.json",
+      "converted_sha256": "2698aa5b701fcd4824ab2a3d88ed364865bedb7302b79e94994fe61d764e04ef",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/efc4d68/baseline_vrnn__none/model.graph.json",
+      "original_sha256": "1f31b9966f07045e6f6b6f1b305ae5477842dbfa55094fc9306475bd6e97aaff",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_vanilla_rnn"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "vanilla_rnn",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "1f31b9966f07045e6f6b6f1b305ae5477842dbfa55094fc9306475bd6e97aaff",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_efc4d68_baseline_vrnn_smooth_model_graph_json.graph.json",
+      "converted_sha256": "2698aa5b701fcd4824ab2a3d88ed364865bedb7302b79e94994fe61d764e04ef",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/efc4d68/baseline_vrnn__smooth/model.graph.json",
+      "original_sha256": "1f31b9966f07045e6f6b6f1b305ae5477842dbfa55094fc9306475bd6e97aaff",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_vanilla_rnn"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "vanilla_rnn",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "1f31b9966f07045e6f6b6f1b305ae5477842dbfa55094fc9306475bd6e97aaff",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_efc4d68_baseline_vrnn_smooth_jerk_model_graph_json.graph.json",
+      "converted_sha256": "2698aa5b701fcd4824ab2a3d88ed364865bedb7302b79e94994fe61d764e04ef",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/efc4d68/baseline_vrnn__smooth_jerk/model.graph.json",
+      "original_sha256": "1f31b9966f07045e6f6b6f1b305ae5477842dbfa55094fc9306475bd6e97aaff",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_vanilla_rnn"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_f47abb1_lit_flat_jerk_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/f47abb1/lit__flat_jerk/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_f47abb1_lit_flat_nojerk_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/f47abb1/lit__flat_nojerk/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_f47abb1_lit_full_jerk_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/f47abb1/lit__full_jerk/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_f47abb1_lit_full_nojerk_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/f47abb1/lit__full_nojerk/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_f47abb1_lit_post_jerk_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/f47abb1/lit__post_jerk/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    },
+    {
+      "classification": "clean",
+      "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
+      "controller_kind": "gru",
+      "conversion_candidate_key": {
+        "audited_fixture_hash": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+        "metadata_version": "rlrmp.feedbax_graph.v1",
+        "retired_type": [
+          "Channel",
+          "FirstOrderFilter",
+          "FixedField",
+          "PointMass",
+          "RLRMPFeedbackChannels",
+          "RLRMPSimpleStagedNetwork"
+        ],
+        "structural_predicate": "point_mass_filter_channel_family_present"
+      },
+      "converted_path": "results/ae15851/converted/results_b41c940_migrated_f47abb1_lit_post_nojerk_model_graph_json.graph.json",
+      "converted_sha256": "8d6a0b9e65119d7594f9665ec312f738d358150c3858dbea48202d1fea9067a6",
+      "disposition": "converted",
+      "exclusion_reason": null,
+      "expected_conversion_family": "point_mass",
+      "original_path": "results/b41c940/migrated/f47abb1/lit__post_nojerk/model.graph.json",
+      "original_sha256": "7435864d97cb74a16f04054ea14fc8cbef4e99f474eb0e7d2d81655081e00071",
+      "structural_family_actual": "point_mass",
+      "structural_subfamily_actual": "point_mass_gru"
+    }
+  ],
+  "excluded_count": 2,
+  "expected_count": 38,
+  "schema_version": 1,
+  "source_manifest": "results/e9fc384/notes/graph_sidecar_audit_manifest.json"
+}

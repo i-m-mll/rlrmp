@@ -3,15 +3,22 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
+import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 import pytest
 from feedbax.component_registry import ComponentRegistry
-from feedbax.contracts.graph import GraphSpec
+from feedbax.contracts.graph import ComponentSpec, GraphSpec, StudioTaskBindingSpec
+from feedbax.control import AffineFeedbackController
+from feedbax.models.networks import PopulationStructure
 from feedbax.runtime.graph import Graph
+from feedbax.runtime.graph import init_state_from_component
+from feedbax.runtime.task_bindings import expose_task_bindings
 from feedbax.intervene import CurlField, DynamicsMatrixPerturb, FixedField
 from feedbax.contracts.manifest import SCHEMA_VERSION as FEEDBAX_MANIFEST_SCHEMA_VERSION
 
@@ -19,21 +26,31 @@ from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.model.feedbax_graph import (
     EXECUTION_BACKEND,
     GRAPH_PLANT_INTERVENOR_NODE,
+    POINT_MASS_TARGET_POSITION_INPUT,
     SCHEMA_VERSION,
+    SUPPORTED_GRAPH_SPEC_VERSIONS,
+    _build_simple_staged_network,
     build_point_mass_sensorimotor_graph_spec,
     build_rlrmp_feedbax_graph_bundle,
     build_runtime_rlrmp_feedbax_graph_bundle,
     graph_spec_from_model,
     graph_spec_payload,
     materialize_rlrmp_graph_spec,
+    native_recurrent_controller_subgraph,
     register_rlrmp_graph_components,
     resolve_registered_graph_component_migrations,
     write_graph_spec_bundle,
 )
-from rlrmp.intervention_compat import swap_plant_intervenor_to_dynamics_matrix
+from rlrmp.intervention_compat import (
+    LINEAR_DYNAMICS_ADVERSARY_COMPONENT_PARAMETER_TARGET,
+)
+from rlrmp.controllers.linear import LinearController, LinearTrackerController
 from rlrmp.train.task_model import build_task_base, setup_task_model_pair
 from rlrmp.model.stochastic_runtime import PLANT_PROCESS_FORCE_NOISE_LABEL
 from rlrmp.train.minimax import build_hps
+
+
+pytestmark = pytest.mark.feedbax_contract
 
 
 def _args(**overrides):
@@ -109,8 +126,10 @@ def test_rlrmp_graph_contract_versions_pin_feedbax_manifest_schema() -> None:
     )
 
     assert SCHEMA_VERSION == "rlrmp.feedbax_graph.v1"
+    assert SUPPORTED_GRAPH_SPEC_VERSIONS == ("1.0.0",)
     assert FEEDBAX_MANIFEST_SCHEMA_VERSION == "feedbax.manifest.v1"
     assert bundle.graph_spec.metadata is not None
+    assert bundle.graph_spec.metadata.version in SUPPORTED_GRAPH_SPEC_VERSIONS
     assert bundle.graph_spec.metadata.version == "1.0.0"
     assert bundle.manifest["schema_version"] == SCHEMA_VERSION
     assert bundle.to_run_metadata()["schema_version"] == SCHEMA_VERSION
@@ -131,9 +150,9 @@ def test_minimax_graph_bundle_materializes_runtime_graph() -> None:
 
     assert bundle.manifest["execution_backend"] == EXECUTION_BACKEND
     assert isinstance(graph, Graph)
-    assert graph.nodes["net"].__class__.__name__ == "SimpleStagedNetwork"
+    assert graph.nodes["net"].__class__.__name__ == "Graph"
     assert spec.nodes["feedback"].type == "FeedbackChannels"
-    assert spec.nodes["net"].type == "RLRMPSimpleStagedNetwork"
+    assert spec.nodes["net"].type == "Subgraph"
     assert spec.nodes["net"].params["sisu_gating"] == "additive"
     assert spec.nodes["mechanics"].type == "PointMass"
     assert spec.nodes["mechanics"].params["damping"] == 10.0
@@ -196,7 +215,7 @@ def test_plain_additive_gru_graph_spec_uses_explicit_feedbax_primitives() -> Non
     net = spec.nodes["net"]
     assert net.type == "Subgraph"
     assert net.input_ports == ["input", "feedback"]
-    assert "sisu_gating" not in net.params
+    assert net.params["sisu_gating"] == "additive"
     assert (
         net.params["input_size"]
         == net.params["external_input_size"] + net.params["feedback_size"]
@@ -220,7 +239,7 @@ def test_plain_additive_gru_graph_spec_uses_explicit_feedbax_primitives() -> Non
         _hps(),
     ],
 )
-def test_rlrmp_owned_sisu_and_population_cases_keep_staged_wrapper(hps) -> None:
+def test_sisu_and_population_cases_use_native_recurrent_subgraph(hps) -> None:
     spec = build_point_mass_sensorimotor_graph_spec(
         hps,
         task=build_task_base(hps),
@@ -229,9 +248,119 @@ def test_rlrmp_owned_sisu_and_population_cases_keep_staged_wrapper(hps) -> None:
         sisu_gating=hps.sisu_gating,
     )
 
-    assert spec.nodes["net"].type == "RLRMPSimpleStagedNetwork"
+    assert spec.nodes["net"].type == "Subgraph"
     assert spec.nodes["net"].params["sisu_gating"] == hps.sisu_gating
-    assert spec.subgraphs is None
+    assert spec.subgraphs is not None
+    net_graph = spec.subgraphs["net"]
+    assert net_graph.nodes["cell"].type == "GRU"
+    assert net_graph.nodes["readout"].type == "Linear"
+    if hps.sisu_gating == "multiplicative":
+        assert net_graph.nodes["sisu_modulator"].type == "ElementwiseAffineModulator"
+    if net_graph.parameter_constraints:
+        assert {constraint.node for constraint in net_graph.parameter_constraints} == {
+            "cell",
+            "readout",
+        }
+
+
+@pytest.mark.parametrize(
+    ("sisu_gating", "population_structure", "atol"),
+    [
+        ("additive", None, 0.0),
+        ("multiplicative", None, 0.0),
+        (
+            "additive",
+            PopulationStructure.create(
+                hidden_size=7,
+                n_input_only=1,
+                n_readout_only=1,
+                n_recurrent_only=1,
+                n_input_readout=1,
+                key=jr.PRNGKey(19),
+            ),
+            1e-7,
+        ),
+    ],
+)
+def test_native_recurrent_subgraph_matches_legacy_staged_network_fixed_seed(
+    sisu_gating: str,
+    population_structure: PopulationStructure | None,
+    atol: float,
+) -> None:
+    hidden_size = 7
+    out_size = 2
+    input_size = 6
+    trainable_dtype = "float64" if population_structure is not None else "float32"
+    array_dtype = jnp.dtype(trainable_dtype)
+    params = {
+        "input_size": input_size,
+        "external_input_size": 2,
+        "hidden_size": hidden_size,
+        "out_size": out_size,
+        "hidden_type": "GRUCell",
+        "sisu_gating": sisu_gating,
+        "population_structure": (
+            None
+            if population_structure is None
+            else {**population_structure.to_spec(), "hidden_size": hidden_size}
+        ),
+        "key": [0, 123],
+        "trainable_dtype": trainable_dtype,
+    }
+    legacy = _build_simple_staged_network(params)
+    native_spec = native_recurrent_controller_subgraph(
+        input_size=input_size,
+        external_input_size=2,
+        hidden_size=hidden_size,
+        out_size=out_size,
+        hidden_type_name="GRUCell",
+        sisu_gating=sisu_gating,
+        population_params=params["population_structure"],
+        key=params["key"],
+        dtype=params["trainable_dtype"],
+    )
+    registry = register_rlrmp_graph_components(
+        ComponentRegistry(load_user_components=False, discover_plugins=False)
+    )
+    native = materialize_rlrmp_graph_spec(
+        GraphSpec(
+            nodes={
+                "net": ComponentSpec(
+                    type="Subgraph",
+                    params=params,
+                    input_ports=list(native_spec.input_ports),
+                    output_ports=["output", "hidden"],
+                )
+            },
+            wires=[],
+            input_ports=list(native_spec.input_ports),
+            output_ports=["output", "hidden"],
+            input_bindings={name: ("net", name) for name in native_spec.input_ports},
+            output_bindings={"output": ("net", "output"), "hidden": ("net", "hidden")},
+            subgraphs={"net": native_spec},
+        ),
+        registry,
+        install_runtime_hooks=False,
+    )
+    x = jnp.asarray([0.2, -0.1], dtype=array_dtype)
+    feedback = jnp.asarray([0.3, -0.4, 0.5, -0.6], dtype=array_dtype)
+    inputs = {"input": x, "feedback": feedback}
+
+    legacy_outputs, legacy_state = legacy(
+        inputs,
+        init_state_from_component(legacy),
+        key=jr.PRNGKey(5),
+    )
+    native_outputs, native_state, _cycle = native.step(
+        inputs,
+        init_state_from_component(native),
+        cycle_port_values=None,
+        key=jr.PRNGKey(5),
+    )
+
+    assert jnp.allclose(native_outputs["output"], legacy_outputs["output"], rtol=0.0, atol=atol)
+    assert jnp.allclose(native_outputs["hidden"], legacy_outputs["hidden"], rtol=0.0, atol=atol)
+    del legacy_state, native_state
 
 
 @pytest.mark.parametrize(
@@ -310,7 +439,111 @@ def test_graph_spec_serializes_explicit_stochastic_runtime_contract() -> None:
     assert (PLANT_PROCESS_FORCE_NOISE_LABEL, "output", "mechanics", "force") in force_edges
 
 
-def test_linear_tracker_is_graphspec_addressable_as_rlrmp_component() -> None:
+def _linear_controller_fixed_inputs():
+    gain = jnp.asarray(
+        [
+            [
+                [1.5, -0.5, 0.25, 2.0],
+                [-1.0, 0.75, -0.5, 1.25],
+            ]
+        ],
+        dtype=jnp.float32,
+    )
+    feedforward = jnp.asarray([[0.2, -0.1]], dtype=jnp.float32)
+    target = jnp.asarray([0.4, -0.2], dtype=jnp.float32)
+    feedback = (
+        jnp.asarray([0.1, 0.3], dtype=jnp.float32),
+        jnp.asarray([0.5, -0.4], dtype=jnp.float32),
+    )
+    input_value = {
+        "task": SimpleNamespace(
+            effector_target=SimpleNamespace(pos=target),
+        )
+    }
+    reference = jnp.concatenate([target, jnp.zeros(2, dtype=target.dtype)])
+    feedback_vector = jnp.concatenate(feedback)
+    return gain, feedforward, input_value, feedback, reference, feedback_vector
+
+
+def _with_float32_network_state(controller):
+    init_state = type(controller._initial_state)(
+        input=jnp.zeros(0),
+        hidden=jnp.zeros((1,), dtype=jnp.float32),
+        output=jnp.zeros(controller.n_controls, dtype=jnp.float32),
+        encoding=None,
+    )
+    object.__setattr__(controller, "_initial_state", init_state)
+    object.__setattr__(controller.state_index, "init", init_state)
+    return controller
+
+
+def test_affine_linear_controller_sign_convention_matches_rlrmp_forms() -> None:
+    gain, feedforward, input_value, feedback, reference, feedback_vector = (
+        _linear_controller_fixed_inputs()
+    )
+
+    regulator = _with_float32_network_state(LinearController(n_steps=1, key=jr.PRNGKey(0)))
+    tracker = _with_float32_network_state(LinearTrackerController(n_steps=1, key=jr.PRNGKey(0)))
+    regulator = eqx.tree_at(lambda controller: controller.K, regulator, gain)
+    tracker = eqx.tree_at(
+        lambda controller: (controller.K, controller.u_ff),
+        tracker,
+        (gain, feedforward),
+    )
+    affine_regulator = AffineFeedbackController(gain=gain)
+    affine_tracker = AffineFeedbackController(gain=gain, feedforward=feedforward)
+
+    legacy_inputs = {"input": input_value, "feedback": feedback}
+    affine_inputs = {"feedback": feedback_vector, "reference": reference}
+
+    legacy_regulator_output, _ = regulator(
+        legacy_inputs,
+        init_state_from_component(regulator),
+        key=jr.PRNGKey(1),
+    )
+    affine_regulator_output, _ = affine_regulator(
+        affine_inputs,
+        init_state_from_component(affine_regulator),
+        key=jr.PRNGKey(1),
+    )
+    legacy_tracker_output, _ = tracker(
+        legacy_inputs,
+        init_state_from_component(tracker),
+        key=jr.PRNGKey(1),
+    )
+    affine_tracker_output, _ = affine_tracker(
+        affine_inputs,
+        init_state_from_component(affine_tracker),
+        key=jr.PRNGKey(1),
+    )
+
+    assert jnp.allclose(
+        legacy_regulator_output["output"],
+        jnp.asarray([1.375, 0.075], dtype=jnp.float32),
+        rtol=0.0,
+        atol=1e-6,
+    )
+    assert jnp.allclose(
+        affine_regulator_output["command"],
+        legacy_regulator_output["output"],
+        rtol=0.0,
+        atol=1e-6,
+    )
+    assert jnp.allclose(
+        legacy_tracker_output["output"],
+        jnp.asarray([1.575, -0.025], dtype=jnp.float32),
+        rtol=0.0,
+        atol=1e-6,
+    )
+    assert jnp.allclose(
+        affine_tracker_output["command"],
+        legacy_tracker_output["output"],
+        rtol=0.0,
+        atol=1e-6,
+    )
+
+
+def test_linear_tracker_uses_native_affine_controller_graph_structure() -> None:
     hps = _hps(hidden_type="linear_tracker")
     task = build_task_base(hps)
     bundle = build_rlrmp_feedbax_graph_bundle(
@@ -322,11 +555,44 @@ def test_linear_tracker_is_graphspec_addressable_as_rlrmp_component() -> None:
     graph = materialize_rlrmp_graph_spec(bundle.graph_spec)
 
     net = bundle.graph_spec.nodes["net"]
-    assert net.type == "RLRMPLinearTrackerController"
-    assert net.params["n_steps"] == hps.task.n_steps - 1
-    assert net.params["target_source"] == "input.task.effector_target.pos"
-    assert graph.nodes["net"].__class__.__name__ == "LinearTrackerController"
-    assert bundle.training_spec["trainable"] == ["nodes.net.K", "nodes.net.u_ff"]
+    assert net.type == "AffineFeedbackController"
+    assert jnp.asarray(net.params["gain"]).shape == (hps.task.n_steps - 1, 2, 4)
+    assert jnp.asarray(net.params["feedforward"]).shape == (hps.task.n_steps - 1, 2)
+    assert bundle.graph_spec.nodes["feedback_vector"].type == "Ravel"
+    assert bundle.graph_spec.nodes["zero_velocity"].type == "Constant"
+    assert bundle.graph_spec.nodes["zero_velocity"].params["value"] == [0.0, 0.0]
+    assert bundle.graph_spec.nodes["reference_mux"].type == "Mux"
+    task_binding_spec = bundle.task_spec["task_binding_spec"]
+    binding = task_binding_spec["bindings"][0]
+    data = task_binding_spec["exposed_data"][0]
+    assert binding["id"] == POINT_MASS_TARGET_POSITION_INPUT
+    assert binding["target_node_id"] == "reference_mux"
+    assert binding["target_port"] == "in_0"
+    assert data["path"] == "inputs.effector_target.pos"
+    assert bundle.graph_spec.input_bindings[POINT_MASS_TARGET_POSITION_INPUT] == (
+        "reference_mux",
+        "in_0",
+    )
+    assert graph.nodes["net"].__class__.__name__ == "AffineFeedbackController"
+    assert "net_state" not in bundle.graph_spec.nodes
+    assert "net_state" not in graph.nodes
+    assert graph.input_bindings[POINT_MASS_TARGET_POSITION_INPUT] == ("reference_mux", "in_0")
+    assert bundle.training_spec["trainable"] == [
+        "nodes.net.gain",
+        "nodes.net.feedforward",
+    ]
+    assert ("zero_velocity", "output", "reference_mux", "in_1") in {
+        (wire.source_node, wire.source_port, wire.target_node, wire.target_port)
+        for wire in bundle.graph_spec.wires
+    }
+    assert ("reference_mux", "output", "net", "reference") in {
+        (wire.source_node, wire.source_port, wire.target_node, wire.target_port)
+        for wire in bundle.graph_spec.wires
+    }
+    assert ("net", "command", "efferent", "input") in {
+        (wire.source_node, wire.source_port, wire.target_node, wire.target_port)
+        for wire in bundle.graph_spec.wires
+    }
 
 
 def test_legacy_generic_rlrmp_graph_component_ids_materialize_through_migration() -> None:
@@ -438,6 +704,51 @@ def test_rlrmp_registry_uses_feedbax_intervention_builders() -> None:
         assert meta.output_prototype_fn is not None
 
 
+def test_point_mass_builder_does_not_bypass_feedbax_extension_points() -> None:
+    source_path = Path("src/rlrmp/model/feedbax_graph.py")
+    tree = ast.parse(source_path.read_text(encoding="utf-8"))
+    violations: list[str] = []
+
+    for node in ast.walk(tree):
+        if _is_object_setattr_call(node):
+            field_name = _constant_string_arg(node, 1)
+            if field_name in {"activation", "state_view_fn", "state_consistency_fn", "marker"}:
+                violations.append(
+                    f"{source_path}:{node.lineno}: object.__setattr__ writes {field_name!r}"
+                )
+        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                if isinstance(target, ast.Attribute) and target.attr in {
+                    "marker",
+                    "output_prototype_fn",
+                }:
+                    violations.append(
+                        f"{source_path}:{target.lineno}: assignment writes {target.attr!r}"
+                    )
+
+    assert violations == []
+
+
+def _is_object_setattr_call(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "__setattr__"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "object"
+    )
+
+
+def _constant_string_arg(node: ast.Call, index: int) -> str | None:
+    if len(node.args) <= index:
+        return None
+    arg = node.args[index]
+    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+        return arg.value
+    return None
+
+
 def test_dynamics_matrix_perturb_spec_preserves_delta_a_contract() -> None:
     hps = _hps(hidden_type="linear")
     spec = build_point_mass_sensorimotor_graph_spec(
@@ -456,10 +767,16 @@ def test_dynamics_matrix_perturb_spec_preserves_delta_a_contract() -> None:
     assert "effector" in intervenor.input_ports
     assert isinstance(graph.nodes[PLANT_INTERVENOR_LABEL], DynamicsMatrixPerturb)
     assert graph.nodes[PLANT_INTERVENOR_LABEL].label == PLANT_INTERVENOR_LABEL
-    assert spec.input_bindings[f"intervene:{GRAPH_PLANT_INTERVENOR_NODE}"] == (
+    target = LINEAR_DYNAMICS_ADVERSARY_COMPONENT_PARAMETER_TARGET
+    graph_input = (
+        f"task:{target['source_data_id']}->"
+        f"{target['target_node_id']}.{target['target_port']}"
+    )
+    assert spec.input_bindings[graph_input] == (
         GRAPH_PLANT_INTERVENOR_NODE,
         "params_override",
     )
+    assert f"intervene:{GRAPH_PLANT_INTERVENOR_NODE}" not in spec.input_bindings
 
     recurrent_edges = {
         (wire.source_node, wire.source_port, wire.target_node, wire.target_port)
@@ -472,6 +789,79 @@ def test_dynamics_matrix_perturb_spec_preserves_delta_a_contract() -> None:
         GRAPH_PLANT_INTERVENOR_NODE,
         "effector",
     ) in recurrent_edges
+
+
+def test_linear_dynamics_component_parameter_target_resolves_without_intervene_input() -> None:
+    hps = _hps(hidden_type="linear")
+    spec = build_point_mass_sensorimotor_graph_spec(
+        hps,
+        task=build_task_base(hps),
+        n_extra_inputs=0,
+        hidden_type=hps.hidden_type,
+        intervention_type="DynamicsMatrixPerturb",
+    )
+    graph = materialize_rlrmp_graph_spec(spec)
+    legacy_input = f"intervene:{GRAPH_PLANT_INTERVENOR_NODE}"
+    graph = eqx.tree_at(
+        lambda g: (g.input_ports, g.input_bindings),
+        graph,
+        (
+            tuple(port for port in graph.input_ports if port != legacy_input),
+            {key: value for key, value in graph.input_bindings.items() if key != legacy_input},
+        ),
+    )
+    target = LINEAR_DYNAMICS_ADVERSARY_COMPONENT_PARAMETER_TARGET
+
+    binding_spec = StudioTaskBindingSpec.model_validate(
+        {
+            "schema_version": "feedbax.spec.studio.task_bindings.v2",
+            "exposed_data": [
+                {
+                    "id": target["source_data_id"],
+                    "label": "Linear dynamics adversary params",
+                    "kind": "component_parameter",
+                    "role": target["role"],
+                    "path": "linear_dynamics_adversary.params_override",
+                    "bindable": True,
+                    "expected_shape": ["time"],
+                    "dtype": "object",
+                    "metadata": {"temporal_support": target["temporal_support"]},
+                }
+            ],
+            "bindings": [
+                {
+                    "id": (
+                        f"task:{target['source_data_id']}->"
+                        f"{target['target_node_id']}:{target['target_port']}"
+                    ),
+                    "source_data_id": target["source_data_id"],
+                    "target_node_id": target["target_node_id"],
+                    "target_port": target["target_port"],
+                    "role": target["role"],
+                    "metadata": {"task_parameter_label": target["task_parameter_label"]},
+                }
+            ],
+            "metadata": {},
+        }
+    )
+
+    exposure = expose_task_bindings(graph, binding_spec)
+
+    assert legacy_input not in graph.input_bindings
+    assert exposure.state_init_plans == ()
+    assert len(exposure.input_plans) == 1
+    plan = exposure.input_plans[0]
+    assert plan.graph_input == (
+        f"task:{target['source_data_id']}->"
+        f"{target['target_node_id']}.{target['target_port']}"
+    )
+    assert not plan.graph_input.startswith("intervene:")
+    assert plan.target_node == GRAPH_PLANT_INTERVENOR_NODE
+    assert plan.target_port == "params_override"
+    assert exposure.graph.input_bindings[plan.graph_input] == (
+        GRAPH_PLANT_INTERVENOR_NODE,
+        "params_override",
+    )
 
 
 def test_legacy_dynamics_matrix_delta_a_shape_materializes_through_migration() -> None:
@@ -542,7 +932,7 @@ def test_write_graph_spec_bundle_creates_companion_manifest(tmp_path) -> None:
     manifest_payload = json.loads(manifest_text)
     assert len(manifest_text.splitlines()) == 1
     assert "\n  " not in manifest_text
-    assert graph_payload["nodes"]["net"]["type"] == "RLRMPSimpleStagedNetwork"
+    assert graph_payload["nodes"]["net"]["type"] == "Subgraph"
     assert graph_payload == graph_spec_payload(bundle.graph_spec)
     round_tripped = GraphSpec.model_validate(graph_payload)
     assert graph_spec_payload(round_tripped) == graph_payload
@@ -557,8 +947,8 @@ def test_setup_task_model_pair_materializes_gru_and_linear_graph_paths() -> None
     import jax.random as jr
 
     for hidden_type, expected_net in [
-        ("gru", "SimpleStagedNetwork"),
-        ("linear", "LinearController"),
+        ("gru", "Graph"),
+        ("linear", "AffineFeedbackController"),
     ]:
         hps = build_hps(_args(hidden_type=hidden_type, n_replicates=2))
         pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
@@ -573,7 +963,7 @@ def test_setup_task_model_pair_materializes_gru_and_linear_graph_paths() -> None
     ("hidden_type", "expected_net"),
     [
         ("gru", "Subgraph"),
-        ("linear", "RLRMPLinearController"),
+        ("linear", "AffineFeedbackController"),
     ],
 )
 @pytest.mark.parametrize(
@@ -601,19 +991,25 @@ def test_runtime_graph_bundle_exports_constructed_model_intervenor(
     assert isinstance(pair.model.nodes[PLANT_INTERVENOR_LABEL], expected_class)
     assert isinstance(graph.nodes[PLANT_INTERVENOR_LABEL], expected_class)
     if hidden_type == "gru":
-        assert bundle.graph_spec.nodes["net_input_mux"].type == "Mux"
-        assert bundle.graph_spec.nodes["net_cell"].type == "GRU"
-        assert bundle.graph_spec.nodes["net_readout"].type == "Linear"
-        assert graph.nodes["net_cell"].__class__.__name__ == "GRU"
+        assert bundle.graph_spec.nodes["net"].type == "Subgraph"
+        assert bundle.graph_spec.subgraphs is not None
+        net_graph = bundle.graph_spec.subgraphs["net"]
+        assert net_graph.nodes["input_mux"].type == "Mux"
+        assert net_graph.nodes["cell"].type == "GRU"
+        assert net_graph.nodes["readout"].type == "Linear"
+        assert graph.nodes["net"].nodes["cell"].__class__.__name__ == "GRU"
     else:
         assert bundle.graph_spec.nodes["net"].type == expected_net
+        assert bundle.graph_spec.nodes["reference_mux"].type == "Mux"
+        assert bundle.graph_spec.nodes["zero_velocity"].type == "Constant"
+        assert "net_state" not in bundle.graph_spec.nodes
     assert bundle.graph_spec.nodes["mechanics"].params["damping"] == hps.model.damping
     assert bundle.graph_spec.nodes["feedback"].params["delay"] == hps.model.feedback_delay_steps
     assert bundle.graph_spec.nodes["efferent"].type == "Channel"
     assert bundle.graph_spec.nodes["efferent"].params["input_shape"] == [2]
 
 
-def test_runtime_graph_bundle_catches_old_fixedfield_default_mismatch() -> None:
+def test_runtime_graph_bundle_matches_hps_authored_intervention_type() -> None:
     hps = _hps(hidden_type="gru", n_replicates=2)
     hps = hps | {"pert": hps.pert | {"type": "curl"}}
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
@@ -629,23 +1025,15 @@ def test_runtime_graph_bundle_catches_old_fixedfield_default_mismatch() -> None:
     )
 
     assert runtime_bundle.graph_spec.nodes[PLANT_INTERVENOR_LABEL].type == "CurlField"
-    assert stale_hps_bundle.graph_spec.nodes[PLANT_INTERVENOR_LABEL].type == "FixedField"
-    assert graph_spec_payload(runtime_bundle.graph_spec) != graph_spec_payload(
-        stale_hps_bundle.graph_spec
-    )
+    assert stale_hps_bundle.graph_spec.nodes[PLANT_INTERVENOR_LABEL].type == "CurlField"
 
 
 def test_runtime_graph_spec_preserves_dynamics_matrix_intervenor() -> None:
-    hps = _hps(hidden_type="gru", n_replicates=2)
+    hps = _hps(hidden_type="gru", n_replicates=2, adversary_type="linear_dynamics")
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
-    runtime_model = swap_plant_intervenor_to_dynamics_matrix(
-        pair.model,
-        PLANT_INTERVENOR_LABEL,
-        mass=hps.model.effector_mass,
-    )
 
     graph_spec = graph_spec_from_model(
-        runtime_model,
+        pair.model,
         n_replicates=int(hps.model.n_replicates),
     )
     graph = materialize_rlrmp_graph_spec(graph_spec)

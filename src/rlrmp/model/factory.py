@@ -16,9 +16,8 @@ from rlrmp.model.feedbax_graph import create_point_mass_graph_ensemble
 
 # Sentinel ``hidden_type`` strings that select linear-controller MVP variants
 # instead of an RNN cell class. ``setup_task_model_pair`` dispatches to
-# ``rlrmp.controllers.linear.point_mass_linear_controller`` when one
-# of these is passed; ``create_point_mass_nn_ensemble`` is bypassed because the
-# linear controllers do not use ``SimpleStagedNetwork``. Bug: 410d7ac.
+# native feedbax graph construction when one of these is passed; the linear
+# controller variants do not use ``SimpleStagedNetwork``. Bug: 410d7ac.
 LINEAR_HIDDEN_TYPES = ("linear", "linear_tracker")
 
 
@@ -154,10 +153,8 @@ def create_point_mass_linear_ensemble(
     """Create an ensemble of point-mass plants controlled by linear (LTV) controllers.
 
     Mirrors :func:`create_point_mass_nn_ensemble` but instantiates
-    :class:`rlrmp.controllers.linear.LinearController` or
-    :class:`rlrmp.controllers.linear.LinearTrackerController` instead
-    of ``SimpleStagedNetwork``. Used by the linear-controller MVP for the
-    decoupling acid test (Bug: 410d7ac).
+    native Feedbax affine feedback controllers instead of ``SimpleStagedNetwork``.
+    Used by the linear-controller MVP for the decoupling acid test (Bug: 410d7ac).
 
     Args:
         hps: Hyperparameters namespace (same shape as for the NN case).

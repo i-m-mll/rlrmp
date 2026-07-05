@@ -430,7 +430,7 @@ def plot_adversary_force_profiles(
         hps: Hyperparameters namespace (used for dt and n_steps).
         n_replicates: Number of model replicates (logged in title; adversary not vmapped).
     """
-    from rlrmp.adversary import GaussianBumpAdversary
+    from rlrmp.train.adversary import GaussianBumpAdversary
 
     n_timesteps = hps.task.n_steps - 1
     dt = hps.dt

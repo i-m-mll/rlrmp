@@ -1,4 +1,8 @@
-"""Materialize the C&S released-code-aligned H-infinity analytical game card.
+"""Legacy scope note: `write_outputs` is a frozen writer/driver surface. The
+math core in this module, including `materialize_reference`, remains LIVE
+library code consumed by registered recipes.
+
+Materialize the C&S released-code-aligned H-infinity analytical game card.
 
 This module is intentionally narrow: it builds the canonical Phase 0 game for
 issue ``cb98e58`` / umbrella ``43e8728`` and computes the analytical reference
@@ -647,7 +651,18 @@ def write_outputs(
     discretization: str = DEFAULT_DISCRETIZATION,
     lane: str = DEFAULT_LANE,
 ) -> dict[str, Any]:
-    """Write tracked and untracked game-card outputs."""
+    """LEGACY (frozen 2026-07-03, issue 64d5f13).
+
+    This writer/driver is not contract-native: it predates the feedbax recipe,
+    bundle, and manifest contracts. It may not run without deliberate
+    realignment. Do not copy it as a pattern for new analyses. The
+    port-or-delete decision is deferred to the report-stage era (feedbax
+    132f98c) / publication.
+
+    Scoped legacy surface: `write_outputs`. The math core in this module is
+    LIVE library code consumed by registered recipes; this banner does not
+    apply to the math core.
+    """
 
     reference = materialize_reference()
     summary = reference_summary(reference, discretization=discretization, lane=lane)

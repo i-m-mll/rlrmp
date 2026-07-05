@@ -6,7 +6,9 @@ import json
 from pathlib import Path
 
 import numpy as np
+from feedbax.contracts.manifest import CheckpointSelectionManifest, load_manifest
 
+import rlrmp.analysis.pipelines.gru_checkpoint_selection as checkpoint_selection
 from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     FixedValidationBankSpec,
     ReplicateCheckpointSelection,
@@ -19,7 +21,7 @@ from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
 )
 
 
-def test_select_validation_checkpoints_ignores_zero_padding(tmp_path: Path) -> None:
+def test_select_validation_checkpoints_ignores_zero_padding(tmp_path: Path, monkeypatch) -> None:
     """Select by positive validation records scored at available checkpoints."""
 
     experiment = "issue123"
@@ -40,6 +42,7 @@ def test_select_validation_checkpoints_ignores_zero_padding(tmp_path: Path) -> N
     run_dir.mkdir(parents=True)
     checkpoint_dir.mkdir(parents=True)
     (run_dir / "run.json").write_text(json.dumps(run_spec), encoding="utf-8")
+    _patch_resolver(monkeypatch, run_spec)
     for checkpoint in (3, 6):
         (checkpoint_dir / f"checkpoint_{checkpoint:07d}").mkdir()
 
@@ -183,7 +186,10 @@ def test_validation_objective_history_infers_extra_full_qrf_components(tmp_path:
     np.testing.assert_array_equal(valid_records, np.asarray([[False, False], [True, True], [True, False]]))
 
 
-def test_fixed_bank_rescore_manifest_scores_all_durable_checkpoints(tmp_path: Path) -> None:
+def test_fixed_bank_rescore_manifest_scores_all_durable_checkpoints(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
     experiment = "issue123"
     run_id = "run_a"
     run_dir, artifact_dir = _make_checkpoint_fixture(
@@ -194,6 +200,15 @@ def test_fixed_bank_rescore_manifest_scores_all_durable_checkpoints(tmp_path: Pa
         checkpoints=(3, 6),
     )
     assert run_dir.exists()
+    _patch_resolver(
+        monkeypatch,
+        {
+            "hps": {
+                "model": {"n_replicates": 2},
+                "loss": {"weights": {"effector_pos_running": 1.0}},
+            }
+        },
+    )
     bank = FixedValidationBankSpec(
         bank_identity="fixed-validation-bank:test",
         scorer_identity="rollout_validation_objective:test",
@@ -230,8 +245,12 @@ def test_fixed_bank_rescore_manifest_scores_all_durable_checkpoints(tmp_path: Pa
         scorer=scorer,
         repo_root=tmp_path,
     )
+    written = load_manifest(tmp_path / "results" / experiment / "notes" / "fixed_bank_rescored_checkpoints.json")
 
     assert manifest["materialization_status"] == "materialized"
+    assert isinstance(written, CheckpointSelectionManifest)
+    assert written.selection_spec.schema_id == "feedbax.spec.checkpoint_selection"
+    assert written.selection_status == "selected"
     assert manifest["validation_bank"] == {
         "bank_identity": "fixed-validation-bank:test",
         "scorer_identity": "rollout_validation_objective:test",
@@ -265,7 +284,10 @@ def test_fixed_bank_rescore_manifest_scores_all_durable_checkpoints(tmp_path: Pa
     ]
 
 
-def test_sparse_history_mode_ignores_materialized_fixed_bank_manifest(tmp_path: Path) -> None:
+def test_sparse_history_mode_ignores_materialized_fixed_bank_manifest(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
     experiment = "issue123"
     run_id = "run_a"
     _make_checkpoint_fixture(
@@ -274,6 +296,15 @@ def test_sparse_history_mode_ignores_materialized_fixed_bank_manifest(tmp_path: 
         run_id=run_id,
         n_replicates=1,
         checkpoints=(3, 6),
+    )
+    _patch_resolver(
+        monkeypatch,
+        {
+            "hps": {
+                "model": {"n_replicates": 1},
+                "loss": {"weights": {"effector_pos_running": 1.0}},
+            }
+        },
     )
     _write_sparse_history_fixture(
         tmp_path,
@@ -304,6 +335,7 @@ def test_sparse_history_mode_ignores_materialized_fixed_bank_manifest(tmp_path: 
 
 def test_not_materialized_fixed_bank_manifest_falls_back_to_sparse_history(
     tmp_path: Path,
+    monkeypatch,
 ) -> None:
     experiment = "issue123"
     run_id = "run_a"
@@ -313,6 +345,15 @@ def test_not_materialized_fixed_bank_manifest_falls_back_to_sparse_history(
         run_id=run_id,
         n_replicates=1,
         checkpoints=(3, 6),
+    )
+    _patch_resolver(
+        monkeypatch,
+        {
+            "hps": {
+                "model": {"n_replicates": 1},
+                "loss": {"weights": {"effector_pos_running": 1.0}},
+            }
+        },
     )
     _write_sparse_history_fixture(
         tmp_path,
@@ -338,8 +379,13 @@ def test_not_materialized_fixed_bank_manifest_falls_back_to_sparse_history(
         run_ids=(run_id,),
         repo_root=tmp_path,
     )
+    written = load_manifest(
+        tmp_path / "results" / experiment / "notes" / "validation_selected_checkpoints.json"
+    )
 
     assert manifest["selection_source"] == "sparse_history_fallback"
+    assert isinstance(written, CheckpointSelectionManifest)
+    assert written.selection_spec.schema_id == "feedbax.spec.checkpoint_selection"
     assert manifest["runs"][run_id][0]["checkpoint_batches"] == 3
 
 
@@ -430,3 +476,14 @@ def _write_sparse_history_fixture(
         _write_loss_tree(stream, ((np.ones_like(validation_values), 1.0),))
         _write_loss_tree(stream, ((validation_values, 1.0),))
         np.save(stream, zeros, allow_pickle=False)
+
+
+def _patch_resolver(monkeypatch, run_spec: dict[str, object]) -> None:
+    calls: list[tuple[str, str]] = []
+
+    def fake_resolve(experiment: str, run_id: str, *, repo_root: Path):
+        del repo_root
+        calls.append((experiment, run_id))
+        return run_spec
+
+    monkeypatch.setattr(checkpoint_selection, "resolve_run_record", fake_resolve)

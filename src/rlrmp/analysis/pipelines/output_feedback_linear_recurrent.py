@@ -1,4 +1,11 @@
-"""Phase-aware linear recurrent output-feedback bridge for issue 5e55f69.
+"""LEGACY (frozen 2026-07-03, issue 64d5f13).
+
+This materializer is not contract-native: it predates the feedbax recipe,
+bundle, and manifest contracts. It may not run without deliberate realignment.
+Do not copy it as a pattern for new analyses. The port-or-delete decision is
+deferred to the report-stage era (feedbax 132f98c) / publication.
+
+Phase-aware linear recurrent output-feedback bridge for issue 5e55f69.
 
 This module keeps the GRU-facing bridge deliberately auditable: the controller
 is a linear recurrence driven by delayed observations plus explicit phase/time

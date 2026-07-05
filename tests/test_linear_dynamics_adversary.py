@@ -5,7 +5,7 @@ problem, and integration with the feedbax ``DynamicsMatrixPerturb``
 intervenor (force-channel embedding of ``ΔA · x``).
 """
 
-import argparse
+from types import SimpleNamespace
 
 import equinox as eqx
 import jax
@@ -13,13 +13,15 @@ import jax.numpy as jnp
 import jax.random as jr
 import optax
 import pytest
+from feedbax.intervene import DynamicsMatrixPerturb, DynamicsMatrixPerturbParams
+from feedbax.runtime.graph import Component, Graph, Wire, init_state_from_component
+from feedbax.runtime.iteration import run_component
+from feedbax.runtime.state import CartesianState
 
-from rlrmp.adversary import LinearDynamicsAdversary, _frobenius_project
+from rlrmp.train.adversarial_training import _inject_adversary_delta_A
+from rlrmp.train.adversary import LinearDynamicsAdversary, _frobenius_project
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
-from rlrmp.intervention_compat import (
-    swap_plant_intervenor_to_dynamics_matrix,
-    swap_task_intervention_to_dynamics_matrix,
-)
+from rlrmp.intervention_compat import LINEAR_DYNAMICS_ADVERSARY_COMPONENT_PARAMETER_TARGET
 from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.train.minimax import build_hps
 
@@ -143,9 +145,23 @@ class TestDynamicsMatrixPerturbIntegration:
     """Smoke tests verifying the rlrmp-side adversary connects to the
     feedbax-side ``DynamicsMatrixPerturb`` intervenor."""
 
+    @staticmethod
+    def _single_replicate_pair():
+        args = SimpleNamespace(
+            n_warmup_batches=1,
+            n_adversary_batches=1,
+            controller_lr=1e-4,
+            loss_update_enabled=False,
+            loss_update_ratio=0.5,
+            hidden_type="gru",
+            sisu_gating="additive",
+            n_replicates=1,
+            adversary_type="linear_dynamics",
+        )
+        return setup_task_model_pair(build_hps(args), key=jr.PRNGKey(0))
+
     def test_feedbax_intervenor_consumes_delta_A(self):
         from feedbax.intervene import (
-            DynamicsMatrixPerturb,
             DynamicsMatrixPerturbParams,
         )
         from feedbax.runtime.state import CartesianState
@@ -183,24 +199,9 @@ class TestDynamicsMatrixPerturbIntegration:
         expected = jnp.array([0.3, -0.6], dtype=default_dtype)
         assert jnp.allclose(out["force"], expected)
 
-    def test_task_swap_preserves_callable_pai_asf_schedules(self):
-        """Linear-dynamics setup should keep PAI-ASF schedules trial-local."""
-        args = argparse.Namespace(
-            n_warmup_batches=1,
-            n_adversary_batches=1,
-            controller_lr=1e-4,
-            loss_update_enabled=False,
-            loss_update_ratio=0.5,
-            hidden_type="gru",
-            sisu_gating="additive",
-            n_replicates=1,
-        )
-        pair = setup_task_model_pair(build_hps(args), key=jr.PRNGKey(0))
-        task = pair.task
-        model = swap_plant_intervenor_to_dynamics_matrix(pair.model, PLANT_INTERVENOR_LABEL)
-
-        swapped = swap_task_intervention_to_dynamics_matrix(task, PLANT_INTERVENOR_LABEL)
-        params = swapped.intervention_specs.training[PLANT_INTERVENOR_LABEL].params
+    def test_linear_dynamics_setup_authors_dynamics_matrix_node(self):
+        pair = self._single_replicate_pair()
+        model = pair.model
 
         recurrent_wires = [
             wire
@@ -213,10 +214,141 @@ class TestDynamicsMatrixPerturbIntegration:
         assert len(recurrent_wires) == 1
         assert recurrent_wires[0].temporality == "recurrent"
         assert model._needs_iteration
-        assert callable(params.scale)
-        assert callable(params.active)
-        trial = swapped.get_train_trial_with_intervenor_params(jr.PRNGKey(0))
+        assert isinstance(model.nodes[PLANT_INTERVENOR_LABEL], DynamicsMatrixPerturb)
+
+    def test_delta_a_injection_activates_params_override_path(self):
+        pair = self._single_replicate_pair()
+        trial = pair.task.get_train_trial_with_intervenor_params(jr.PRNGKey(0))
+        trial = jax.tree.map(lambda x: x[None, ...] if eqx.is_array(x) else x, trial)
+        delta_A = jnp.ones((2, 4), dtype=jnp.float32) * 0.01
+        injected = _inject_adversary_delta_A(trial, delta_A, batch_size=1)
+
+        trial_params = injected.intervene[PLANT_INTERVENOR_LABEL]
+        assert trial_params.active.value.shape == (1, 139)
+        assert trial_params.delta_A.value.shape == (1, 139, 2, 4)
+        assert bool(trial_params.active.value[0, 0])
+        assert jnp.allclose(trial_params.delta_A.value[0, 0], delta_A)
+
+    def test_task_authors_inactive_dynamics_matrix_trial_params(self):
+        pair = self._single_replicate_pair()
+        trial = pair.task.get_train_trial_with_intervenor_params(jr.PRNGKey(0))
         trial_params = trial.intervene[PLANT_INTERVENOR_LABEL]
         assert trial_params.delta_A.shape == (2, 4)
         assert trial_params.scale.shape == ()
         assert trial_params.active.shape == ()
+        assert not bool(trial_params.active)
+
+    def test_warmup_active_zero_delta_a_is_controller_level_no_op(self):
+        graph = _controller_dynamics_graph()
+        inactive_loss, inactive_outputs, inactive_grads, inactive_updates = (
+            _controller_graph_loss_grads_updates(graph, active=False)
+        )
+        active_loss, active_outputs, active_grads, active_updates = (
+            _controller_graph_loss_grads_updates(graph, active=True)
+        )
+        assert jnp.allclose(inactive_loss, active_loss)
+        _assert_array_trees_allclose(inactive_outputs, active_outputs)
+        _assert_array_trees_allclose(inactive_grads, active_grads)
+        _assert_array_trees_allclose(inactive_updates, active_updates)
+
+        adversary = LinearDynamicsAdversary(
+            n_state=4,
+            n_dim=2,
+            eta_max=0.1,
+            key=jr.PRNGKey(3),
+        )
+        delta_before = adversary.delta_A
+        _ = adversary()
+        assert jnp.allclose(adversary.delta_A, delta_before)
+
+
+class _LinearForceController(Component):
+    input_ports = ("command",)
+    output_ports = ("force",)
+
+    gain: jnp.ndarray
+
+    def __init__(self):
+        self.gain = jnp.asarray([[0.5, -0.2], [0.1, 0.3]], dtype=jnp.float32)
+
+    def __call__(self, inputs, state, *, key):
+        return {"force": self.gain @ inputs["command"]}, state
+
+
+def _controller_dynamics_graph() -> Graph:
+    target = LINEAR_DYNAMICS_ADVERSARY_COMPONENT_PARAMETER_TARGET
+    params_key = (
+        f"task:{target['source_data_id']}->"
+        f"{target['target_node_id']}.{target['target_port']}"
+    )
+    return Graph(
+        nodes={
+            "controller": _LinearForceController(),
+            PLANT_INTERVENOR_LABEL: DynamicsMatrixPerturb(mass=1.0),
+        },
+        wires=(
+            Wire("controller", "force", PLANT_INTERVENOR_LABEL, "force"),
+        ),
+        input_ports=("command", "effector", params_key),
+        output_ports=("force",),
+        input_bindings={
+            "command": ("controller", "command"),
+            "effector": (PLANT_INTERVENOR_LABEL, "effector"),
+            params_key: (PLANT_INTERVENOR_LABEL, "params_override"),
+        },
+        output_bindings={"force": (PLANT_INTERVENOR_LABEL, "force")},
+    )
+
+
+def _controller_graph_loss_grads_updates(graph: Graph, *, active: bool):
+    target = LINEAR_DYNAMICS_ADVERSARY_COMPONENT_PARAMETER_TARGET
+    params_key = (
+        f"task:{target['source_data_id']}->"
+        f"{target['target_node_id']}.{target['target_port']}"
+    )
+    n_steps = 5
+    params = DynamicsMatrixPerturbParams(
+        scale=jnp.ones((n_steps,), dtype=jnp.float32),
+        active=jnp.full((n_steps,), active),
+        delta_A=jnp.zeros((n_steps, 2, 4), dtype=jnp.float32),
+    )
+    inputs = {
+        "command": jnp.stack(
+            [
+                jnp.linspace(-0.2, 0.2, n_steps),
+                jnp.linspace(0.3, -0.1, n_steps),
+            ],
+            axis=-1,
+        ),
+        "effector": CartesianState(
+            pos=jnp.zeros((n_steps, 2), dtype=jnp.float32),
+            vel=jnp.ones((n_steps, 2), dtype=jnp.float32),
+            force=jnp.zeros((n_steps, 2), dtype=jnp.float32),
+        ),
+        params_key: params,
+    }
+
+    def loss_fn(model):
+        outputs, _final_state, _state_history = run_component(
+            model,
+            inputs,
+            init_state_from_component(model),
+            key=jr.PRNGKey(4),
+            n_steps=n_steps,
+        )
+        return jnp.sum(outputs["force"] ** 2), outputs
+
+    (loss, outputs), grads = eqx.filter_value_and_grad(loss_fn, has_aux=True)(graph)
+    optimizer = optax.adam(1e-4)
+    opt_state = optimizer.init(eqx.filter(graph, eqx.is_array))
+    updates, _ = optimizer.update(grads, opt_state, graph)
+    return loss, outputs, grads, updates
+
+
+def _assert_array_trees_allclose(left, right) -> None:
+    compared = 0
+    for l_leaf, r_leaf in zip(jax.tree.leaves(left), jax.tree.leaves(right), strict=True):
+        if eqx.is_array(l_leaf):
+            compared += 1
+            assert jnp.allclose(l_leaf, r_leaf)
+    assert compared > 0

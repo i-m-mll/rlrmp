@@ -39,7 +39,7 @@ from rlrmp.analysis.matrix.standard_matrix import _notes_path
 from rlrmp.paths import REPO_ROOT
 
 
-TOY_EVALUATION_TYPE = "rlrmp_test_standard_matrix_eval"
+TOY_EVALUATION_TYPE = "rlrmp_test.standard_matrix_eval"
 
 
 class TinyMatrixAnalysis(AbstractAnalysis):
@@ -297,7 +297,7 @@ def test_registered_standard_matrix_recipe_executes_profile_with_routing(
                 role="training_run",
             )
         ],
-        params={"matrix_payload": payload},
+        params={"matrix_payload": payload, "legacy_payload_mode": True},
     )
     eval_manifest, eval_path = execute_evaluation_run_spec(
         eval_spec,
@@ -396,7 +396,7 @@ def test_registered_standard_matrix_notes_preserve_handwritten_sections(
                 role="training_run",
             )
         ],
-        params={"matrix_payload": payload},
+        params={"matrix_payload": payload, "legacy_payload_mode": True},
     )
     eval_manifest, eval_path = execute_evaluation_run_spec(
         eval_spec,

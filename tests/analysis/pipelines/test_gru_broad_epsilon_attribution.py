@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 from io import StringIO
+from pathlib import Path
 
 import jax.numpy as jnp
 import jax.random as jr
@@ -10,13 +11,16 @@ from feedbax import TaskTrialSpec, WhereDict
 from feedbax.objectives.loss import AbstractLoss, TermTree
 from feedbax.config.namespace import TreeNamespace
 
+import rlrmp.analysis.pipelines.gru_broad_epsilon_attribution as broad_epsilon_attribution
 from rlrmp.analysis.pipelines.gru_broad_epsilon_attribution import (
     active_vs_zero_semantics,
+    discover_broad_epsilon_run_ids,
     epsilon_summary,
     gradient_pair_metrics,
     loss_delta_summary,
     paired_broad_epsilon_training_specs,
     render_summary_csv,
+    resolve_run_inputs,
     summarize_loss_tree,
     truncate_trial_specs,
     zero_epsilon_trial_specs,
@@ -213,3 +217,34 @@ def test_epsilon_summary_and_csv_schema_are_unambiguous() -> None:
 
     assert rows[0]["run_id"] == "run"
     assert rows[0]["gradient_status"] == "evaluated"
+
+
+def test_broad_epsilon_run_inputs_use_resolver_and_flat_recipe(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    experiment = "abc1234"
+    run_id = "run_a"
+    (tmp_path / "results" / experiment / "runs").mkdir(parents=True)
+    (tmp_path / "results" / experiment / "runs" / f"{run_id}.json").write_text(
+        "{}",
+        encoding="utf-8",
+    )
+    (tmp_path / "_artifacts" / experiment / "runs" / run_id).mkdir(parents=True)
+    calls: list[tuple[str, str]] = []
+
+    def fake_resolve(exp: str, run: str, *, repo_root: Path):
+        assert repo_root == tmp_path
+        calls.append((exp, run))
+        return {"hps": {"broad_epsilon_training": {"enabled": True}}}
+
+    monkeypatch.setattr(broad_epsilon_attribution, "resolve_run_record", fake_resolve)
+
+    assert discover_broad_epsilon_run_ids(experiment, repo_root=tmp_path) == (run_id,)
+    resolved = resolve_run_inputs(experiment, (run_id,), repo_root=tmp_path)
+
+    assert calls == [(experiment, run_id), (experiment, run_id)]
+    assert resolved[0].run_spec_path == (
+        tmp_path / "results" / experiment / "runs" / f"{run_id}.json"
+    )
+    assert resolved[0].run_spec["hps"]["broad_epsilon_training"]["enabled"] is True

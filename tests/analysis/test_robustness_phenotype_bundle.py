@@ -148,8 +148,8 @@ def test_robustness_phenotype_bundle_executes_with_status_lineage(
 
     assert result.bundle_name == "robustness_phenotype"
     assert result.matched_run_ids == [upstream.id]
-    phenotype_stage = result.stages[0]
-    assert phenotype_stage.name == "phenotype_sidecar"
+    stages = {stage.name: stage for stage in result.stages}
+    phenotype_stage = stages["phenotype_sidecar"]
     output_statuses = {output.role: output.status for output in phenotype_stage.outputs}
     assert output_statuses["manifest"] == "materialized"
     assert output_statuses["rlrmp-robustness-phenotype-sidecar"] == "materialized"
@@ -158,10 +158,20 @@ def test_robustness_phenotype_bundle_executes_with_status_lineage(
     assert output_statuses["rlrmp-robustness-phenotype-regeneration-spec"] == "materialized"
     assert output_statuses["rlrmp-formal-hinf-certificate"] == "missing"
 
-    formal_stage = result.stages[1]
+    report_stage = stages["phenotype_report"]
+    report_statuses = {output.role: output.status for output in report_stage.outputs}
+    assert report_statuses["report_render"] == "materialized"
+    report_manifest = load_manifest(report_stage.manifest_refs[0].uri)
+    render_artifact = next(
+        artifact for artifact in report_manifest.artifacts if artifact.role == "report_render"
+    )
+    render_text = Path(render_artifact.uri).read_text(encoding="utf-8")
+    assert "Interpretive robustness phenotype report" in render_text
+
+    formal_stage = stages["formal_hinf_certificate"]
     assert formal_stage.outputs[0].status == "not_applicable"
     assert "interpretive only" in formal_stage.outputs[0].reason
-    archive_stage = result.stages[2]
+    archive_stage = stages["historical_script_entrypoint"]
     assert archive_stage.outputs[0].status == "skipped"
 
     manifest_ref = phenotype_stage.manifest_refs[0]

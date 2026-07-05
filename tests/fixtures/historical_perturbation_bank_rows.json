@@ -1,0 +1,68 @@
+{
+  "source": "Fixture copy of a historical calibrated perturbation-bank row shape with flattened calibration provenance.",
+  "perturbations": [
+    {
+      "perturbation_id": "initial_position_offset__small__x_pos",
+      "channel": "initial_state",
+      "family": "initial_position_offset",
+      "amplitude": 0.003,
+      "units": "m",
+      "axis": "x",
+      "basis": "plant_cartesian_xy",
+      "sign": 1,
+      "timing": {
+        "epoch": "initial_condition",
+        "time_index": 0
+      },
+      "adapter": "task_trial_spec.inits",
+      "description": "Reach-relative calibrated initial effector position offset.",
+      "initial_position_case": "D_current_state_immediately_visible",
+      "timing_bin": "initial_condition",
+      "calibration_mode": "reach_relative_peak_delta_x",
+      "calibration_role": "reach_relative_calibrated_open_loop",
+      "level_name": "small",
+      "level_fraction_of_reach": 0.02,
+      "reach_label": "fixed_0.15m",
+      "reach_length_m": 0.15,
+      "open_loop_peak_dx_per_unit_m": 1.0,
+      "target_open_loop_peak_dx_m": 0.003
+    },
+    {
+      "perturbation_id": "sensory_feedback_offset__force_filter_small__mid_visible_t20_y_neg",
+      "channel": "sensory_feedback",
+      "family": "sensory_feedback_offset",
+      "amplitude": 0.25,
+      "units": "N",
+      "axis": "y",
+      "basis": "sensory_feedback_named_channel",
+      "sign": -1,
+      "timing": {
+        "epoch": "controller_visible",
+        "start_time_index": 20,
+        "duration_steps": 5,
+        "timing_bin": "mid_visible",
+        "timing_bin_role": "controller_visible_offset_convention"
+      },
+      "adapter": "feedbax.additive_channel_adapter.sensory_feedback",
+      "description": "Historical force-filter false-feedback perturbation row.",
+      "timing_bin": "mid_visible",
+      "semantic_family": "false_feedback_offset",
+      "channel_provenance": {
+        "feedback_quantity": "force_filter",
+        "feedback_payload_index": 5,
+        "force_filter_feedback_only": true
+      },
+      "feedback_payload_index": 5,
+      "feedback_quantity": "force_filter",
+      "force_filter_feedback_only": true,
+      "calibration_mode": "reach_relative_peak_delta_x",
+      "calibration_role": "reach_relative_calibrated_open_loop",
+      "level_name": "small",
+      "level_fraction_of_reach": 0.02,
+      "reach_label": "fixed_0.15m",
+      "reach_length_m": 0.15,
+      "target_open_loop_peak_dx_m": 0.003,
+      "native_unit_rule": "controller_feedback_scale_manifest"
+    }
+  ]
+}

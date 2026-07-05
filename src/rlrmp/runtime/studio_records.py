@@ -28,7 +28,7 @@ from feedbax.contracts.manifest import (
     load_manifest,
     safe_manifest_key,
 )
-from feedbax.studio_execution import (
+from feedbax.studio.execution import (
     StudioPipelineMaterializationRequest,
     StudioPipelineMaterializationResult,
     materialize_studio_pipeline,
@@ -38,7 +38,7 @@ from rlrmp.analysis.matrix import STANDARD_MATRIX_ANALYSIS_TYPE, register_standa
 
 DEFAULT_MANIFEST_ROOT = Path("_artifacts/feedbax_runs")
 DEFAULT_REQUESTED_OUTPUTS = ("summary_metrics",)
-STUDIO_DEFAULT_EVALUATION_TYPE = "studio_default_eval"
+STUDIO_DEFAULT_EVALUATION_TYPE = "feedbax.studio.default_eval"
 
 
 @dataclass(frozen=True)
@@ -112,9 +112,10 @@ def register_rlrmp_studio_recipes(*, replace: bool = True) -> None:
     """Register lightweight recipes used by Feedbax's Studio materializer.
 
     Feedbax currently asks Studio pipeline materialization for a
-    ``studio_default_eval`` evaluation. rlrmp supplies a manifest-summary recipe
-    for that key, then reuses the existing standard-matrix analysis recipe for
-    a browsable figure-producing analysis record.
+    ``feedbax.studio.default_eval`` evaluation. rlrmp supplies a
+    manifest-summary recipe for that key, then reuses the existing
+    standard-matrix analysis recipe for a browsable figure-producing analysis
+    record.
     """
     register_evaluation_recipe(
         STUDIO_DEFAULT_EVALUATION_TYPE,

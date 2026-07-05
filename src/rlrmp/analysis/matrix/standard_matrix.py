@@ -18,9 +18,15 @@ from feedbax.analysis.specs import register_analysis_recipe
 from feedbax.contracts.manifest import EvaluationRunSpec
 from feedbax.analysis.types import AnalysisInputData
 from feedbax.config.namespace import TreeNamespace
+from pydantic import BaseModel, ConfigDict, Field
 
 from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT
+from rlrmp.runtime.params_models import register_params_model
+from rlrmp.runtime.spec_migrations import (
+    STANDARD_MATRIX_EVAL_PARAMS_KIND,
+    accept_rlrmp_spec_payload,
+)
 from rlrmp.viz import profile_comparison_grid
 
 STANDARD_MATRIX_ANALYSIS_TYPE = "rlrmp.standard_matrix"
@@ -36,6 +42,24 @@ STANDARD_MATRIX_OUTPUTS = (
     "rmse_ratio_comparison",
     "notes",
 )
+
+
+class StandardMatrixEvalParams(BaseModel):
+    """Params for the standard-matrix evaluation recipe."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_id: str | None = None
+    schema_version: str | None = None
+    matrix_payload: Any | None = None
+    states: Any | None = None
+    legacy_payload_mode: bool = False
+    cell_metadata: dict[str, Any] = Field(default_factory=dict)
+    profile_key: str | None = None
+    metric_order: list[str] | None = None
+    notes_path: str | None = None
+    note_marker: str | None = None
+    figure_routing: dict[str, Any] = Field(default_factory=dict)
 
 
 class StandardMatrixAnalysis(AbstractAnalysis):
@@ -94,7 +118,16 @@ class StandardMatrixAnalysis(AbstractAnalysis):
 
 def register_standard_matrix_recipes(*, replace: bool = True) -> None:
     """Register rlrmp's standard matrix analysis and evaluation recipes."""
-    register_analysis_recipe(STANDARD_MATRIX_ANALYSIS_TYPE, standard_matrix_recipe, replace=replace)
+    register_params_model(
+        STANDARD_MATRIX_EVALUATION_TYPE,
+        StandardMatrixEvalParams,
+        replace=replace,
+    )
+    register_analysis_recipe(
+        STANDARD_MATRIX_ANALYSIS_TYPE,
+        standard_matrix_recipe,
+        replace=replace,
+    )
     register_evaluation_recipe(
         STANDARD_MATRIX_EVALUATION_TYPE,
         standard_matrix_evaluation_recipe,
@@ -107,8 +140,14 @@ def standard_matrix_evaluation_recipe(
     _root: Path,
     _states_path: Path,
 ) -> EvaluationRecipeResult:
-    """Cache a pre-materialized standard matrix payload as evaluation states."""
-    payload = run_spec.params.get("matrix_payload", run_spec.params.get("states"))
+    """Produce standard-matrix evaluation states from refs or explicit legacy payloads."""
+    params = _accept_standard_matrix_params(run_spec.params)
+    legacy_payload_mode = params.get("legacy_payload_mode") is True
+    payload = params.get("matrix_payload", params.get("states"))
+    if payload is not None and not legacy_payload_mode:
+        raise ValueError(
+            "standard-matrix matrix_payload/states params require legacy_payload_mode=true"
+        )
     if payload is None:
         payload = {
             "cells": [
@@ -121,15 +160,27 @@ def standard_matrix_evaluation_recipe(
                 for ref in run_spec.inputs
             ]
         }
-    cells = _normalise_cells(payload, params=run_spec.params)
+    elif not legacy_payload_mode:
+        raise ValueError("standard-matrix legacy payload mode must be explicit")
+    cells = _normalise_cells(payload, params=params)
     return EvaluationRecipeResult(
         states={"cells": cells},
         summary_metrics={"standard_matrix_cells": len(cells)},
         metadata={
             "standard_matrix": True,
             "cell_count": len(cells),
+            "legacy_payload_mode": legacy_payload_mode,
+            "params_schema_id": params.get("schema_id"),
+            "params_schema_version": params.get("schema_version"),
         },
     )
+
+
+def _accept_standard_matrix_params(params: Mapping[str, Any]) -> dict[str, Any]:
+    if "schema_version" not in params and "schema_id" not in params:
+        return dict(params)
+    result = accept_rlrmp_spec_payload(STANDARD_MATRIX_EVAL_PARAMS_KIND, params)
+    return dict(result.payload)
 
 
 def standard_matrix_recipe(

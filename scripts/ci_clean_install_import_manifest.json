@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "canonical_homes": [
+    {
+      "legacy": "feedbax.studio_execution",
+      "canonical": "feedbax.studio.execution",
+      "scopes": ["production"]
+    },
+    {
+      "legacy": "feedbax.artifact_materialize",
+      "canonical": "feedbax.contracts.graphs.materialization",
+      "scopes": ["production"]
+    },
+    {
+      "legacy": "jax_cookbook._ldict",
+      "canonical": "jax_cookbook",
+      "scopes": ["production", "test"]
+    },
+    {
+      "legacy": "feedbax._io",
+      "canonical": "legacy feedbax save-format label only",
+      "scopes": ["archive", "legacy-fixture"]
+    },
+    {
+      "legacy": "feedbax._tree",
+      "canonical": "feedbax.tasks._tree",
+      "scopes": ["production", "test"]
+    },
+    {
+      "legacy": "feedbax._misc",
+      "canonical": "capability-specific feedbax modules",
+      "scopes": ["archive", "legacy-fixture"]
+    },
+    {
+      "legacy": "feedbax.types",
+      "canonical": "feedbax.training.types or feedbax.analysis.types",
+      "scopes": ["production", "test"]
+    }
+  ],
+  "allowlisted_references": [
+    {
+      "path": "results/2bc95fd/scripts/plot_training_loss_6cell.py",
+      "line": 135,
+      "legacy": "feedbax._io",
+      "reason": "docstring names the legacy file format"
+    },
+    {
+      "path": "results/f47abb1/scripts/plot_training_loss_lit_replication.py",
+      "line": 172,
+      "legacy": "feedbax._io",
+      "reason": "docstring names the legacy file format"
+    }
+  ],
+  "scan_roots": [
+    "src/rlrmp",
+    "scripts",
+    "results"
+  ],
+  "production_module_inventory": {
+    "package": "rlrmp",
+    "import_all_submodules": true
+  },
+  "script_probes": [
+    {
+      "scope": "production",
+      "category": "training",
+      "paths": [
+        "scripts/train_*.py"
+      ]
+    },
+    {
+      "scope": "production",
+      "category": "eval",
+      "paths": [
+        "scripts/eval_*.py"
+      ]
+    },
+    {
+      "scope": "production",
+      "category": "materialization",
+      "paths": [
+        "scripts/materialize_*.py"
+      ]
+    },
+    {
+      "scope": "production",
+      "category": "cloud",
+      "paths": [
+        "scripts/modal_*.py",
+        "scripts/sync_modal_run_artifacts.py",
+        "scripts/tpu_ssh.sh"
+      ]
+    },
+    {
+      "scope": "production",
+      "category": "post-run",
+      "paths": [
+        "scripts/post_run.sh",
+        "scripts/archive_artifact_runs.py"
+      ]
+    }
+  ]
+}

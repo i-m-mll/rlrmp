@@ -1,0 +1,26 @@
+# Analysis recipe evaluation-dependency allowlist for issue 10bdaa4.
+#
+# Enforced by tests/test_analysis_eval_dependency.py and enrolled as
+# `analysis_eval_dependency` in ci/feedbax-contract-suite.toml.
+#
+# WHAT THIS PINS
+# --------------
+# Registered rlrmp Feedbax analysis recipes that do not yet declare evaluation
+# manifest inputs. This complements analysis_write_custody: that family governs
+# raw durable outputs, while this one governs eval-stage inputs.
+#
+# DENY-BY-DEFAULT
+# ---------------
+# A registered rlrmp analysis recipe without an EVAL_DEPENDENCIES declaration
+# fails unless it is listed here. Retired or migrated entries fail as dead
+# allowlist rows. Keys are structural: analysis_type + recipe_module +
+# recipe_name, so recipe moves must update the inventory deliberately.
+
+schema_version = 1
+owner = "10bdaa4"
+
+eval_dependency_exemptions = [
+  { analysis_type = "rlrmp.output_feedback_bridge.rollout_recovery", recipe_module = "rlrmp.analysis.declarative_materialization", recipe_name = "output_feedback_rollout_recovery_recipe", owner = "f742ffb", reason = "analytical rollout recovery consumes fitted gains rather than model-artifact eval states per e1ad278 Q2" },
+  { analysis_type = "rlrmp.standard_matrix", recipe_module = "rlrmp.analysis.matrix.standard_matrix", recipe_name = "standard_matrix_recipe", owner = "10bdaa4", reason = "current standard-matrix analysis is still paired with its cache-shim eval path" },
+  { analysis_type = "rlrmp.training_diagnostics_summary", recipe_module = "rlrmp.analysis.training_diagnostics", recipe_name = "training_diagnostics_recipe", owner = "10bdaa4", reason = "current training-diagnostics summary consumes training sidecars rather than eval manifests" },
+]

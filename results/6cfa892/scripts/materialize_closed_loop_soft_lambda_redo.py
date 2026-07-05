@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import importlib.util
 import json
 import sys
@@ -14,7 +15,7 @@ from typing import Any
 import jax.numpy as jnp
 import numpy as np
 
-from rlrmp.io import update_marked_section, write_compact_json
+from rlrmp.io import compact_json_dumps, update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT
 
 
@@ -154,6 +155,15 @@ def parse_args() -> argparse.Namespace:
         default="results/6cfa892/closed_loop_soft_lambda_redo.json",
     )
     parser.add_argument(
+        "--output-detail-json",
+        default="_artifacts/6cfa892/closed_loop_soft_lambda_redo_detail.json",
+        help=(
+            "Bulk-detail sink for the nested per-run closed-loop rows. Lives under "
+            "the gitignored _artifacts mirror; the tracked --output-json keeps only "
+            "a slim manifest plus a bulk-detail pointer."
+        ),
+    )
+    parser.add_argument(
         "--output-csv",
         default="results/6cfa892/closed_loop_soft_lambda_redo.csv",
     )
@@ -168,15 +178,21 @@ def main() -> int:
     args = parse_args()
     payload = materialize(args)
     output_json = REPO_ROOT / args.output_json
+    output_detail_json = REPO_ROOT / args.output_detail_json
     output_csv = REPO_ROOT / args.output_csv
     output_md = REPO_ROOT / args.output_md
-    write_compact_json(output_json, payload)
+    slim_payload, detail_sha, detail_counts = split_payload(payload, args.output_detail_json)
+    write_detail_json(output_detail_json, payload)
+    write_compact_json(output_json, slim_payload)
     write_csv(output_csv, payload)
     update_marked_section(output_md, "closed_loop_soft_lambda_redo", render_markdown(payload))
     print(
         json.dumps(
             {
                 "json": str(output_json),
+                "detail_json": str(output_detail_json),
+                "detail_sha256": detail_sha,
+                "detail_counts": detail_counts,
                 "csv": str(output_csv),
                 "markdown": str(output_md),
                 "hvp_source_json": str((REPO_ROOT / args.hvp_source_json).resolve()),
@@ -185,6 +201,65 @@ def main() -> int:
         )
     )
     return 0
+
+
+def build_detail_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Canonical bulk-detail document: nested per-run closed-loop rows only."""
+
+    return {
+        "schema_version": payload["schema_version"],
+        "issue": payload["issue"],
+        "source_experiment": payload["source_experiment"],
+        "detail_of": "results/6cfa892/closed_loop_soft_lambda_redo.json",
+        "canonical_form": "nested_rows",
+        "note": (
+            "Canonical bulk form is the nested per-run closed-loop rows "
+            "(rows[].closed_loop_rows). The flat per-setting table (flat_rows) "
+            "is the deterministic concatenation of rows[].closed_loop_rows and "
+            "is covered by the tracked CSV twin "
+            "results/6cfa892/closed_loop_soft_lambda_redo.csv; it is not "
+            "duplicated here."
+        ),
+        "rows": payload["rows"],
+    }
+
+
+def split_payload(
+    payload: dict[str, Any],
+    detail_rel_path: str,
+) -> tuple[dict[str, Any], str, dict[str, int]]:
+    """Return the slim tracked manifest plus the detail file's sha256 and counts."""
+
+    detail_bytes = compact_json_dumps(build_detail_payload(payload)).encode("utf-8")
+    detail_sha = hashlib.sha256(detail_bytes).hexdigest()
+    counts = {
+        "rows": len(payload["rows"]),
+        "closed_loop_rows": sum(len(row["closed_loop_rows"]) for row in payload["rows"]),
+    }
+    slim = {key: value for key, value in payload.items() if key not in {"rows", "flat_rows"}}
+    slim["rows"] = [
+        {key: value for key, value in row.items() if key != "closed_loop_rows"}
+        for row in payload["rows"]
+    ]
+    slim["bulk_detail_manifest"] = {
+        "path": detail_rel_path,
+        "format": "json",
+        "contains": (
+            "full nested per-run closed-loop rows (rows[].closed_loop_rows); the "
+            "flat per-setting table is covered by the tracked CSV twin "
+            "results/6cfa892/closed_loop_soft_lambda_redo.csv"
+        ),
+        "sha256": detail_sha,
+        "counts": counts,
+    }
+    return slim, detail_sha, counts
+
+
+def write_detail_json(path: Path, payload: dict[str, Any]) -> None:
+    """Write the canonical nested bulk-detail document to the _artifacts mirror."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(compact_json_dumps(build_detail_payload(payload)).encode("utf-8"))
 
 
 def materialize(args: argparse.Namespace) -> dict[str, Any]:

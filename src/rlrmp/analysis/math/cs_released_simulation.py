@@ -154,6 +154,9 @@ class CSExtLQGComparatorPath:
     parity_status: str
     n_iterations: int = 0
     expected_cost: float | None = None
+    deterministic_initial_state_cost: float | None = None
+    initial_covariance_trace_cost: float | None = None
+    accumulated_noise_scalar_cost: float | None = None
 
 
 @dataclass(frozen=True)
@@ -367,6 +370,9 @@ def solve_extlqg_fixed_point(
     )
     current = 1.0e6
     expected_cost = current
+    deterministic_cost = 0.0
+    initial_covariance_trace_cost = 0.0
+    accumulated_noise_scalar_cost = 0.0
     controller_gains = jnp.zeros((T, plant.m_u, plant.n), dtype=jnp.float64)
     state_covariances = jnp.repeat(initial_covariance[None, :, :], T + 1, axis=0)
 
@@ -391,7 +397,14 @@ def solve_extlqg_fixed_point(
             initial_covariance,
         )
         x0 = _default_output_feedback_initial_state(plant, config)
-        expected_cost = float(x0 @ sx0 @ x0 + jnp.trace((sx0 + se0) @ initial_covariance) + scalar_cost)
+        deterministic_cost = float(x0 @ sx0 @ x0)
+        initial_covariance_trace_cost = float(jnp.trace((sx0 + se0) @ initial_covariance))
+        accumulated_noise_scalar_cost = float(scalar_cost)
+        expected_cost = (
+            deterministic_cost
+            + initial_covariance_trace_cost
+            + accumulated_noise_scalar_cost
+        )
         relative_change = abs(current - expected_cost) / max(abs(expected_cost), 1e-300)
         current = expected_cost
         if relative_change <= tol:
@@ -406,6 +419,9 @@ def solve_extlqg_fixed_point(
         parity_status="fixed_point: local port of extLQG/computeOFC/computeExtKalman",
         n_iterations=iteration,
         expected_cost=expected_cost,
+        deterministic_initial_state_cost=deterministic_cost,
+        initial_covariance_trace_cost=initial_covariance_trace_cost,
+        accumulated_noise_scalar_cost=accumulated_noise_scalar_cost,
     )
 
 

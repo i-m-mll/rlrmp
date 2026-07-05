@@ -1,0 +1,188 @@
+manifest_version = 1
+marker = "feedbax_contract"
+
+[[families]]
+name = "analysis_recipe_contract"
+owner = "419eed1"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_feedbax_analysis_module_contract.py::"
+minimum_non_skipped = 10
+negative_canary = "tests/test_feedbax_contract_meta.py::test_analysis_recipe_negative_canary_rejects_bad_signature"
+
+[[families]]
+name = "graph_spec_contract"
+owner = "419eed1"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_feedbax_graph_specs.py::"
+minimum_non_skipped = 36
+negative_canary = "tests/test_feedbax_contract_meta.py::test_version_pin_negative_canary_rejects_unsupported_graph_version"
+
+[[families]]
+name = "artifact_manifest_normalization"
+owner = "419eed1"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_artifact_manifest_normalization_fixture.py::"
+minimum_non_skipped = 4
+negative_canary = "tests/test_feedbax_contract_meta.py::test_manifest_fixture_negative_canary_rejects_wrong_run_spec_version"
+
+[[families]]
+name = "import_boundary"
+owner = "419eed1"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_feedbax_import_boundary.py::"
+minimum_non_skipped = 3
+negative_canary = "tests/test_feedbax_import_boundary.py::test_import_boundary_negative_canaries_reject_private_and_uncanonical_imports"
+
+[[families]]
+name = "suite_manifest_meta"
+owner = "419eed1"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_feedbax_contract_meta.py::"
+minimum_non_skipped = 7
+negative_canary = "tests/test_feedbax_contract_meta.py::test_suite_manifest_negative_canary_rejects_zero_live_family"
+
+[[families]]
+name = "graph_sidecar_audit"
+owner = "e9fc384"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_graph_sidecar_audit_manifest.py::"
+minimum_non_skipped = 10
+
+[[families]]
+name = "converted_sidecar_loadability"
+owner = "ae15851"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_archived_graph_recipe_conversion.py::"
+minimum_non_skipped = 5
+
+[[families]]
+name = "retired_id_scan"
+owner = "7811e47"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_retired_component_id_scan.py::"
+minimum_non_skipped = 5
+negative_canary = "tests/test_retired_component_id_scan.py::test_scan_negative_canary_flags_unconfined_active_emission"
+
+[[families]]
+name = "descriptor_conformance_canary"
+owner = "7811e47"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_descriptor_conformance_canary.py::"
+minimum_non_skipped = 10
+negative_canary = "tests/test_descriptor_conformance_canary.py::test_canary_negative_rejects_positional_basis_confusion"
+
+[[families]]
+name = "model_export_parity"
+owner = "7811e47"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_model_export_parity.py::"
+minimum_non_skipped = 9
+negative_canary = "tests/test_model_export_parity.py::test_export_parity_negative_rejects_corrupted_component_type"
+
+[[families]]
+name = "descriptor_basis_hash"
+owner = "844acc6"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_controller_feedback_descriptors.py::"
+minimum_non_skipped = 5
+
+[[families]]
+name = "feedback_descriptor_scan"
+owner = "259bd10"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_controller_feedback_descriptors.py::test_feedback_descriptor_ast_scan"
+minimum_non_skipped = 2
+
+[[families]]
+name = "product_identity_hash"
+owner = "108b4d3"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_product_identity_hash.py::"
+minimum_non_skipped = 8
+negative_canary = [
+    "tests/test_product_identity_hash.py::test_calibration_product_identity_hash_tamper_fails_closed",
+    "tests/test_product_identity_hash.py::test_data_product_registry_duplicate_role_fails_closed",
+]
+
+[[families]]
+name = "analysis_write_custody"
+owner = "c223bb8"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_analysis_write_custody.py::"
+minimum_non_skipped = 5
+negative_canary = "tests/test_analysis_write_custody.py::test_analysis_write_negative_canary_flags_unlisted_durable_write"
+
+[[families]]
+name = "analysis_eval_dependency"
+owner = "10bdaa4"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_analysis_eval_dependency.py::"
+minimum_non_skipped = 5
+negative_canary = "tests/test_analysis_eval_dependency.py::test_analysis_eval_dependency_negative_canary_flags_unlisted_registered_analysis"
+
+[[families]]
+name = "write_surface"
+owner = "f5d9695"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_write_surface_custody.py::"
+minimum_non_skipped = 14
+negative_canary = "tests/test_write_surface_custody.py::test_write_surface_negative_canary_flags_new_durable_write"
+
+[[families]]
+name = "reaccretion_ratchet"
+owner = "9728133"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_reaccretion_ratchet.py::"
+minimum_non_skipped = 5
+
+[[families]]
+name = "generated_data_constant_scan"
+owner = "ea6ccb4"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_data_lint_generated_constants.py::"
+minimum_non_skipped = 6
+negative_canary = "tests/test_data_lint_generated_constants.py::test_data_lint_flags_the_two_named_generated_tables"
+
+[[families]]
+name = "defaults_schema_ownership_scan"
+owner = "5b3aabe"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_defaults_ratchet.py::"
+minimum_non_skipped = 5
+negative_canary = "tests/test_defaults_ratchet.py::test_defaults_scanner_negative_canary_detects_out_of_schema_default"
+
+[[families]]
+name = "lane_b_terminal_gate"
+owner = "08bb6d4"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_lane_b_terminal_gate.py::"
+minimum_non_skipped = 4
+negative_canary = "tests/test_lane_b_terminal_gate.py::test_minimax_dry_run_spec_validates_phase_program_fingerprint"
+
+[[families]]
+name = "lane_c_terminal_gate"
+owner = "08bb6d4"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_lane_c_terminal_gate.py::"
+minimum_non_skipped = 4

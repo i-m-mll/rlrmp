@@ -33,7 +33,7 @@ Outputs:
 - ``results/c723082/notes/induced_gain_first_run.md`` — narrative + headline table.
 
 Usage:
-    uv run python scripts/run_induced_gain_part2_5.py
+    uv run --no-sync python results/c723082/scripts/run_induced_gain_part2_5.py
 """
 
 from __future__ import annotations
@@ -97,10 +97,11 @@ class GroupSpec:
         name: Group identifier (used as a row label and in artifact paths).
         results_subdir: Path under ``_artifacts/part2_5/runpod/`` where the
             ``config.json`` and checkpoint live.
-        build_hps_module: Name of the script under ``scripts/`` whose
-            ``build_hps`` constructs the right hps namespace from the saved
+        build_hps_module: Historical selector for the ``build_hps`` function
+            that constructs the right hps namespace from the saved
             ``config.json`` (``train_minimax`` for Part 2.5 / minimax,
-            ``train_part2_5`` for newer baseline runs).
+            ``train_part2_5`` maps to ``rlrmp.train.standard`` for newer
+            baseline runs).
         checkpoint_kind: ``"adversarial"`` to load
             ``checkpoints_adversarial/checkpoint_latest/model.eqx`` (post-
             adversarial training); ``"warmup"`` to load ``warmup_model.eqx``

@@ -1,0 +1,172 @@
+# Re-accretion ratchet allowlist for issue 9728133 (part of umbrella 64a04e0).
+#
+# Pins three inventories of legacy patterns the 64a04e0 migration exists to
+# retire, so the migration target cannot silently grow while the migration is
+# pending. Enforced by tests/test_reaccretion_ratchet.py.
+#
+# Direction rules:
+#   - Removing an entry never fails the test (shrink-only is ceremony-free):
+#     once a pattern is actually retired, just delete its allowlist entry.
+#   - Adding a NEW instance of a pattern that is not listed here fails the
+#     test suite. Landing the new instance requires a deliberate edit to this
+#     file naming the owning ledger issue.
+#
+# Scope notes (see issue 9728133 report for the full rationale):
+#
+#   [[branded_component_ids]] — RLRMP-branded GraphSpec component-ID string
+#   literals (regex `^RLRMP[A-Z][A-Za-z0-9]*$`, i.e. excludes the bare
+#   `"RLRMP"` category label). Scan is restricted to the four modules that
+#   currently define or validate GraphSpec/component-registry component
+#   types: src/rlrmp/model/feedbax_graph.py, src/rlrmp/model/cs_lss_gru.py,
+#   src/rlrmp/runtime/run_specs.py (legacy/valid-component-type validation
+#   frozensets), and src/rlrmp/train/cs_perturbation_training.py (component
+#   reference). This deliberately excludes RLRMP-prefixed *schema_kind*
+#   strings in src/rlrmp/runtime/spec_migrations.py and
+#   src/rlrmp/analysis/declarative_materialization.py (e.g.
+#   "RLRMPGRUEvaluationDiagnosticsManifest") — those name materialization
+#   manifest schema families, not GraphSpec component types, and are a
+#   separate branding surface not owned by the 7811e47/e23874f/ae15851
+#   component-ID-retirement lane. Matching is by string VALUE only (a branded
+#   ID may legitimately appear in more than one of the four files, e.g. once
+#   where it's defined/registered and again where it's read back for
+#   validation); `known_locations` below is informational, not part of the
+#   pass/fail check.
+#
+#   [[argparse_training_entry_points]] — modules that construct
+#   `argparse.ArgumentParser(...)` directly, restricted to the domain named
+#   in the issue: src/rlrmp/train/*.py plus scripts/train_*.py. Thin CLI
+#   wrapper scripts that only import and call a `main()` defined elsewhere
+#   (e.g. scripts/train_cs_nominal_gru.py) do not themselves construct a
+#   parser and are not separate entries; the argparse-first module they
+#   delegate to is the entry point.
+#
+#   [[run_spec_writer_sites]] — hand-rolled run-spec/run.json writer sites:
+#   functions in the same src/rlrmp/train/*.py + scripts/train_*.py domain
+#   that serialize a run-spec payload via raw `json.dump`/`json.dumps` (via
+#   `open(...).write` or `Path.write_text`) to a spec/run-path-named target,
+#   WITHOUT calling one of the sanctioned emitter helpers anywhere in the
+#   same function body:
+#     - rlrmp.runtime.run_specs.validate_nominal_gru_run_spec[_file]
+#     - rlrmp.runtime.spec_migrations.stamp_current_schema
+#     - rlrmp.runtime.spec_migrations.accept_rlrmp_spec_payload
+#   "Sanctioned" is characterized from what currently exists in the tree, not
+#   an aspirational target: src/rlrmp/train/cs_nominal_gru.py::write_run_spec
+#   is the one call site that validates the payload with
+#   `validate_nominal_gru_run_spec` immediately before writing it, so it is
+#   the closest thing to a sanctioned emitter today and is correctly excluded
+#   from this inventory. `spec_migrations.RUN_SPEC_KIND` /
+#   `accept_rlrmp_spec_payload(RUN_SPEC_KIND, ...)` is a registered schema
+#   family but is not actually called by any run.json writer yet (only
+#   exercised directly in tests/test_rlrmp_spec_migrations.py) — routing real
+#   writers through it is exactly the work b047981 tracks.
+
+schema_version = 1
+owning_umbrella = "64a04e0"
+run_spec_writer_sites = []
+
+[[branded_component_ids]]
+value = "RLRMPCsLssDelayedPositionVelocityFeedback"
+owner = "7811e47"
+known_locations = ["src/rlrmp/model/cs_lss_gru.py", "src/rlrmp/runtime/run_specs.py"]
+note = "Migration source_type only (ComponentMigration to StateFeedbackSelector)."
+
+[[branded_component_ids]]
+value = "RLRMPCsLssTargetRelativeDelayedFeedback"
+owner = "7811e47"
+known_locations = ["src/rlrmp/model/cs_lss_gru.py", "src/rlrmp/runtime/run_specs.py"]
+note = "Migration source_type only (ComponentMigration to StateFeedbackSelector)."
+
+[[branded_component_ids]]
+value = "RLRMPCsLssTargetRelativeDelayedProprioceptiveFeedback"
+owner = "7811e47"
+known_locations = ["src/rlrmp/model/cs_lss_gru.py", "src/rlrmp/runtime/run_specs.py"]
+note = "Migration source_type only (ComponentMigration to StateFeedbackSelector)."
+
+[[branded_component_ids]]
+value = "RLRMPCsLssInitialHiddenStagedNetwork"
+owner = "7811e47"
+known_locations = ["src/rlrmp/model/cs_lss_gru.py"]
+note = "Actively registered component type (register_cs_lss_graph_components)."
+
+[[branded_component_ids]]
+value = "RLRMPCsLssFiniteEpsilonPolicy"
+owner = "7811e47"
+known_locations = ["src/rlrmp/model/cs_lss_gru.py", "src/rlrmp/train/cs_perturbation_training.py"]
+note = "Actively registered component type. Demonstrated 2026-06-28 accretion example from issue 9728133."
+
+[[branded_component_ids]]
+value = "RLRMPCsLssPassthrough"
+owner = "7811e47"
+known_locations = ["src/rlrmp/model/cs_lss_gru.py"]
+note = "Actively registered component type (register_cs_lss_graph_components)."
+
+[[branded_component_ids]]
+value = "RLRMPCsLssStateDiffusion"
+owner = "7811e47"
+known_locations = ["src/rlrmp/model/cs_lss_gru.py"]
+note = "Member of CS_LSS_UNSUPPORTED_STOCHASTIC_COMPONENTS frozenset."
+
+[[branded_component_ids]]
+value = "RLRMPCsLssStateDiffusionNoise"
+owner = "7811e47"
+known_locations = ["src/rlrmp/model/cs_lss_gru.py"]
+note = "Member of CS_LSS_UNSUPPORTED_STOCHASTIC_COMPONENTS frozenset."
+
+[[branded_component_ids]]
+value = "RLRMPCsLssProcessNoise"
+owner = "7811e47"
+known_locations = ["src/rlrmp/model/cs_lss_gru.py"]
+note = "Member of CS_LSS_UNSUPPORTED_STOCHASTIC_COMPONENTS frozenset."
+
+[[branded_component_ids]]
+value = "RLRMPCsLssProcessStateNoise"
+owner = "7811e47"
+known_locations = ["src/rlrmp/model/cs_lss_gru.py"]
+note = "Member of CS_LSS_UNSUPPORTED_STOCHASTIC_COMPONENTS frozenset."
+
+[[branded_component_ids]]
+value = "RLRMPSimpleStagedNetwork"
+owner = "e23874f"
+known_locations = ["src/rlrmp/model/feedbax_graph.py"]
+note = "Actively registered component type (register_rlrmp_graph_components)."
+
+[[branded_component_ids]]
+value = "RLRMPLinearController"
+owner = "e23874f"
+known_locations = ["src/rlrmp/model/feedbax_graph.py"]
+note = "Actively registered component type (register_rlrmp_graph_components)."
+
+[[branded_component_ids]]
+value = "RLRMPLinearTrackerController"
+owner = "e23874f"
+known_locations = ["src/rlrmp/model/feedbax_graph.py"]
+note = "Actively registered component type (register_rlrmp_graph_components)."
+
+[[branded_component_ids]]
+value = "RLRMPPointMass"
+owner = "e23874f"
+known_locations = ["src/rlrmp/model/feedbax_graph.py", "src/rlrmp/runtime/run_specs.py"]
+note = "Migration source_type plus legacy-graph-type validation entry."
+
+[[branded_component_ids]]
+value = "RLRMPFeedbackChannels"
+owner = "e23874f"
+known_locations = ["src/rlrmp/model/feedbax_graph.py", "src/rlrmp/runtime/run_specs.py"]
+note = "Migration source_type plus legacy-graph-type validation entry."
+
+[[branded_component_ids]]
+value = "RLRMPMotorChannel"
+owner = "e23874f"
+known_locations = ["src/rlrmp/model/feedbax_graph.py"]
+note = "Migration source_type only (ComponentMigration to Channel)."
+
+[[branded_component_ids]]
+value = "RLRMPPlantProcessForceNoise"
+owner = "e23874f"
+known_locations = ["src/rlrmp/model/feedbax_graph.py"]
+note = "Migration source_type only (ComponentMigration to Channel)."
+
+[[argparse_training_entry_points]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+owner = "1e6201e"
+note = "C&S GRU run-spec/training CLI; 1e6201e shrinks this to a spec adapter."

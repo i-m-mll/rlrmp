@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import importlib.util
 import json
 import sys
@@ -16,7 +17,7 @@ from typing import Any
 import jax.numpy as jnp
 import numpy as np
 
-from rlrmp.io import update_marked_section, write_compact_json
+from rlrmp.io import compact_json_dumps, update_marked_section, write_compact_json
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -84,6 +85,15 @@ def parse_args() -> argparse.Namespace:
         default="results/d469108/adam_soft_lambda_redo.json",
     )
     parser.add_argument(
+        "--output-detail-json",
+        default="_artifacts/d469108/adam_soft_lambda_redo_detail.json",
+        help=(
+            "Bulk-detail sink for the nested per-run Adam rows. Lives under the "
+            "gitignored _artifacts mirror; the tracked --output-json keeps only a "
+            "slim manifest plus a bulk-detail pointer."
+        ),
+    )
+    parser.add_argument(
         "--output-csv",
         default="results/d469108/adam_soft_lambda_redo.csv",
     )
@@ -98,15 +108,25 @@ def main() -> int:
     args = parse_args()
     payload = materialize(args)
     output_json = REPO_ROOT / args.output_json
+    output_detail_json = REPO_ROOT / args.output_detail_json
     output_csv = REPO_ROOT / args.output_csv
     output_md = REPO_ROOT / args.output_md
-    write_compact_json(output_json, payload)
+    # The full per-setting Adam table is bulk (~1.8 MB serialized twice as nested
+    # rows[].adam_rows and flat_rows). Keep the tracked JSON as a slim manifest and
+    # push the canonical nested detail to the gitignored _artifacts mirror; the flat
+    # table is the CSV twin and is not serialized a third time.
+    slim_payload, detail_sha, detail_counts = split_payload(payload, args.output_detail_json)
+    write_detail_json(output_detail_json, payload, args.output_detail_json)
+    write_compact_json(output_json, slim_payload)
     write_csv(output_csv, payload["flat_rows"])
     update_marked_section(output_md, "adam_soft_lambda_redo", render_markdown(payload))
     print(
         json.dumps(
             {
                 "json": str(output_json),
+                "detail_json": str(output_detail_json),
+                "detail_sha256": detail_sha,
+                "detail_counts": detail_counts,
                 "csv": str(output_csv),
                 "markdown": str(output_md),
                 "hvp_source_json": str((REPO_ROOT / args.hvp_source_json).resolve()),
@@ -115,6 +135,78 @@ def main() -> int:
         )
     )
     return 0
+
+
+def build_detail_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Canonical bulk-detail document: nested per-run Adam rows only.
+
+    The flat per-setting table (``flat_rows``) is the deterministic concatenation of
+    ``rows[].adam_rows`` and is covered by the tracked CSV twin, so it is not
+    duplicated in the detail file.
+    """
+
+    return {
+        "schema_version": payload["schema_version"],
+        "issue": payload["issue"],
+        "source_experiment": payload["source_experiment"],
+        "detail_of": "results/d469108/adam_soft_lambda_redo.json",
+        "canonical_form": "nested_rows",
+        "note": (
+            "Canonical bulk form is the nested per-run Adam rows (rows[].adam_rows). "
+            "The flat per-setting table (flat_rows) is the deterministic concatenation "
+            "of rows[].adam_rows and is covered by the tracked CSV twin "
+            "results/d469108/adam_soft_lambda_redo.csv; it is not duplicated here."
+        ),
+        "rows": payload["rows"],
+    }
+
+
+def split_payload(
+    payload: dict[str, Any],
+    detail_rel_path: str,
+) -> tuple[dict[str, Any], str, dict[str, int]]:
+    """Return the slim tracked manifest plus the detail file's sha256 and counts.
+
+    The tracked manifest keeps every summary/manifest field and a per-run row shell
+    (without the dense ``adam_rows`` payload), drops ``flat_rows`` entirely, and adds
+    a ``bulk_detail_manifest`` pointer into the gitignored ``_artifacts`` mirror.
+    """
+
+    detail_bytes = compact_json_dumps(build_detail_payload(payload)).encode("utf-8")
+    detail_sha = hashlib.sha256(detail_bytes).hexdigest()
+    counts = {
+        "rows": len(payload["rows"]),
+        "adam_rows": sum(len(row["adam_rows"]) for row in payload["rows"]),
+    }
+    slim = {key: value for key, value in payload.items() if key not in {"rows", "flat_rows"}}
+    slim["rows"] = [
+        {key: value for key, value in row.items() if key != "adam_rows"}
+        for row in payload["rows"]
+    ]
+    slim["bulk_detail_manifest"] = {
+        "path": detail_rel_path,
+        "format": "json",
+        "contains": (
+            "full nested per-run Adam rows (rows[].adam_rows); the flat per-setting "
+            "table is covered by the tracked CSV twin "
+            "results/d469108/adam_soft_lambda_redo.csv"
+        ),
+        "sha256": detail_sha,
+        "counts": counts,
+    }
+    return slim, detail_sha, counts
+
+
+def write_detail_json(path: Path, payload: dict[str, Any], detail_rel_path: str) -> None:
+    """Write the canonical nested bulk-detail document to the _artifacts mirror.
+
+    The sha256 recorded in the tracked manifest is computed over exactly these bytes
+    (see ``split_payload``), so both use ``compact_json_dumps`` serialization.
+    """
+
+    del detail_rel_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(compact_json_dumps(build_detail_payload(payload)).encode("utf-8"))
 
 
 def materialize(args: argparse.Namespace) -> dict[str, Any]:
@@ -711,9 +803,12 @@ def render_markdown(payload: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
-            "Full per-setting Adam rows are tracked in "
-            "`results/d469108/adam_soft_lambda_redo.csv` and "
-            "`results/d469108/adam_soft_lambda_redo.json`.",
+            "The tracked `results/d469108/adam_soft_lambda_redo.json` is a slim "
+            "manifest (summary/manifest fields + a `bulk_detail_manifest` pointer). "
+            "The flat per-setting Adam table is the CSV twin "
+            "`results/d469108/adam_soft_lambda_redo.csv`; the canonical nested rows "
+            "(`rows[].adam_rows`) live in the gitignored bulk detail file "
+            "`_artifacts/d469108/adam_soft_lambda_redo_detail.json`.",
         ]
     )
     lines.extend(

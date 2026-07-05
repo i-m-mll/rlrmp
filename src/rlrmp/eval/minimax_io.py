@@ -6,7 +6,7 @@ specific on-disk layout into each ``_artifacts/<exp>/runs/<run>/`` directory:
 - ``config.json`` — run hyperparameters (the argparse namespace)
 - ``warmup_model.eqx`` — model after the warm-start phase (pre-adversarial)
 - ``adversarial_model.eqx`` — model after the adversarial phase
-- ``trained_adversary.eqx`` — saved :class:`rlrmp.adversary.GaussianBumpAdversary`
+- ``trained_adversary.eqx`` — saved :class:`rlrmp.train.adversary.GaussianBumpAdversary`
 
 These helpers load any of those artifacts. They are training-method-specific
 (a minimax run dir has different on-disk semantics than a standard run dir),
@@ -21,12 +21,24 @@ import json
 from pathlib import Path
 
 import equinox as eqx
+import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
+import jax.tree_util as jtu
+from equinox.nn import StateIndex
+from feedbax.intervene import FixedFieldParams, schedule_intervenor
 from jax_cookbook import load_with_hyperparameters
 
-from rlrmp.adversary import GaussianBumpAdversary
-from rlrmp.train.task_model import setup_task_model_pair
+from rlrmp.train.adversary import GaussianBumpAdversary
+from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
+from rlrmp.model.feedbax_graph import create_legacy_point_mass_graph_ensemble
+from rlrmp.train.task_model import (
+    SISU_FNS,
+    build_task_base,
+    get_disturbance_params,
+    setup_task_model_pair,
+)
+from rlrmp.train.minimax import MinimaxConfig
 
 __all__ = ["load_adversary", "load_config", "load_model"]
 
@@ -64,6 +76,125 @@ def _squeeze_replicate_axis(model):
     )
 
 
+def make_legacy_minimax_model_template(hps, *, key):
+    """Build the legacy float32/int32 minimax template used by archived runs."""
+
+    template = _setup_legacy_minimax_model(hps, key=key)
+    template = _with_legacy_intervenor_state_index(template)
+    return jtu.tree_map_with_path(_legacy_serialized_array_leaf, template)
+
+
+def _setup_legacy_minimax_model(hps, *, key):
+    """Rebuild the pre-native staged-network graph shape for legacy checkpoints."""
+
+    task = build_task_base(hps)
+    model = create_legacy_point_mass_graph_ensemble(
+        hps,
+        task,
+        n=hps.model.n_replicates,
+        key=key,
+        n_extra_inputs=1,
+        hidden_type=getattr(hps, "hidden_type", None),
+        sisu_gating=str(getattr(hps, "sisu_gating", _default_sisu_gating())),
+        intervention_type=_intervention_component_type(hps.pert.type),
+    )
+    task = task.add_input(name="sisu", input_fn=SISU_FNS[hps.method])
+    _, model = schedule_intervenor(
+        task,
+        model,
+        label=PLANT_INTERVENOR_LABEL,
+        intervenor_params=get_disturbance_params(hps),
+        default_active=False,
+    )
+    return model
+
+
+def _intervention_component_type(pert_type: str) -> str:
+    if pert_type == "curl":
+        return "CurlField"
+    if pert_type in {"constant", "gusts"}:
+        return "FixedField"
+    if pert_type == "dynamics_matrix":
+        return "DynamicsMatrixPerturb"
+    raise ValueError(f"Unknown perturbation type: {pert_type!r}")
+
+
+def _default_sisu_gating() -> str:
+    default = MinimaxConfig.model_fields["sisu_gating"].default
+    if not isinstance(default, str):
+        raise TypeError("MinimaxConfig sisu_gating default must be a string")
+    return default
+
+
+def normalize_loaded_minimax_runtime(model, hps, *, key, current_model=None):
+    """Restore current runtime state dtypes after legacy checkpoint materialization."""
+
+    current = setup_task_model_pair(hps, key=key).model if current_model is None else current_model
+    if "mechanics" in model.nodes and "mechanics" in current.nodes:
+        model = eqx.tree_at(
+            lambda m: m.nodes["mechanics"].state_index.init,
+            model,
+            current.nodes["mechanics"].state_index.init,
+        )
+    if "feedback" in model.nodes and "feedback" in current.nodes:
+        model = eqx.tree_at(
+            lambda m: m.nodes["feedback"].channels.state_index.init,
+            model,
+            current.nodes["feedback"].channels.state_index.init,
+        )
+    if "force_filter" in model.nodes and "force_filter" in current.nodes:
+        model = eqx.tree_at(
+            lambda m: m.nodes["force_filter"].state_index.init,
+            model,
+            current.nodes["force_filter"].state_index.init,
+        )
+
+    node = model.nodes.get(PLANT_INTERVENOR_LABEL)
+    if node is not None and hasattr(node, "params_index"):
+        params = node.params_index.init
+        model = eqx.tree_at(
+            lambda m: (
+                m.nodes[PLANT_INTERVENOR_LABEL].params_index.init.scale,
+                m.nodes[PLANT_INTERVENOR_LABEL].params_index.init.active,
+                m.nodes[PLANT_INTERVENOR_LABEL].params_index.init.amplitude,
+            ),
+            model,
+            (
+                jnp.asarray(params.scale, dtype=jnp.float32),
+                jnp.asarray(params.active, dtype=jnp.bool_),
+                jnp.asarray(params.amplitude, dtype=jnp.float32),
+            ),
+        )
+    return model
+
+
+def _with_legacy_intervenor_state_index(model):
+    node = model.nodes.get(PLANT_INTERVENOR_LABEL)
+    if node is None or not hasattr(node, "params_index"):
+        return model
+
+    params = FixedFieldParams()
+    object.__setattr__(params, "scale", 1.0)
+    object.__setattr__(params, "active", False)
+    object.__setattr__(params, "amplitude", 1.0)
+    object.__setattr__(params, "field", jnp.zeros((2,), dtype=jnp.float32))
+
+    state_index = StateIndex(params)
+    object.__setattr__(state_index, "marker", node.params_index.marker)
+    return eqx.tree_at(lambda m: m.nodes[PLANT_INTERVENOR_LABEL].params_index, model, state_index)
+
+
+def _legacy_serialized_array_leaf(path, leaf):
+    _ = path
+    if not eqx.is_array(leaf):
+        return leaf
+    if jnp.issubdtype(leaf.dtype, jnp.floating):
+        return jnp.asarray(leaf, dtype=jnp.float32)
+    if jnp.issubdtype(leaf.dtype, jnp.integer):
+        return jnp.asarray(leaf, dtype=jnp.int32)
+    return leaf
+
+
 def load_model(results_dir: Path, filename: str, hps, config: dict):
     """Load a model by ``filename`` from ``results_dir``.
 
@@ -99,25 +230,42 @@ def load_model(results_dir: Path, filename: str, hps, config: dict):
         template = setup_task_model_pair(hps, key=key).model
         return _squeeze_replicate_axis(template)
 
+    def _make_legacy_template(key):
+        return make_legacy_minimax_model_template(hps, key=key)
+
+    errors: list[tuple[str, Exception]] = []
+
     # Try unsqueezed template first (warmup model), then squeezed (adversarial model).
-    for make_template, already_squeezed in [
-        (_make_template, False),
-        (_make_squeezed_template, True),
+    for label, make_template, already_squeezed in [
+        ("unsqueezed", _make_template, False),
+        ("squeezed", _make_squeezed_template, True),
+        ("legacy_minimax", _make_legacy_template, False),
     ]:
         try:
             model, _ = load_with_hyperparameters(
                 model_path,
                 setup_func=lambda key, **kwargs: make_template(key),
             )
+            current_model = setup_task_model_pair(hps, key=jr.PRNGKey(0)).model
+            if already_squeezed:
+                current_model = _squeeze_replicate_axis(current_model)
+            model = normalize_loaded_minimax_runtime(
+                model,
+                hps,
+                key=jr.PRNGKey(0),
+                current_model=current_model,
+            )
             # If loaded with unsqueezed template, squeeze it now for eval.
             if not already_squeezed:
                 model = _squeeze_replicate_axis(model)
             return model
-        except (RuntimeError, ValueError):
+        except (RuntimeError, ValueError) as exc:
+            errors.append((label, exc))
             continue
 
+    details = "; ".join(f"{label}: {type(exc).__name__}: {exc}" for label, exc in errors)
     raise RuntimeError(
-        f"Could not load model from {model_path} with either squeezed or unsqueezed template."
+        f"Could not load model from {model_path} with current or legacy templates. {details}"
     )
 
 
@@ -150,6 +298,8 @@ def load_adversary(results_dir: Path, hps) -> GaussianBumpAdversary | None:
     try:
         adversary = eqx.tree_deserialise_leaves(adv_path, adversary_template)
     except Exception as e:
-        print(f"WARNING: could not deserialise adversary ({e}); will use pre-saved force profiles only.")
+        print(
+            f"WARNING: could not deserialise adversary ({e}); will use pre-saved force profiles only."
+        )
         return None
     return adversary

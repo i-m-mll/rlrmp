@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from feedbax.contracts.migrations import (
+    SchemaMigration,
     SpecFamilyMigrationPolicy,
     SpecMigrationResult,
     SpecSchemaFamily,
@@ -17,6 +18,7 @@ from feedbax.contracts.migrations import (
     default_spec_registry,
     migrate_structured_spec_payload,
 )
+from feedbax.contracts.manifest import SCHEMA_VERSION as FEEDBAX_MANIFEST_SCHEMA_VERSION
 
 
 GRU_EVALUATION_DIAGNOSTICS_KIND = "RLRMPGRUEvaluationDiagnosticsManifest"
@@ -34,6 +36,10 @@ OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_VERSION = "rlrmp.objective_comparator_sideca
 GRU_PERTURBATION_BANK_KIND = "RLRMPGRUPerturbationBank"
 GRU_PERTURBATION_BANK_SCHEMA_ID = "rlrmp.gru_perturbation_bank"
 GRU_PERTURBATION_BANK_SCHEMA_VERSION = "rlrmp.gru_perturbation_bank.v3"
+
+PERTURBATION_CLASS_RESPONSE_KIND = "RLRMPPerturbationClassResponse"
+PERTURBATION_CLASS_RESPONSE_SCHEMA_ID = "rlrmp.perturbation_class_response"
+PERTURBATION_CLASS_RESPONSE_SCHEMA_VERSION = "rlrmp.perturbation_class_response.v1"
 
 GRU_PERTURBATION_RESPONSE_NORM_PLOTS_KIND = "RLRMPGRUPerturbationResponseNormPlots"
 GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_ID = "rlrmp.gru_perturbation_response_norm_plots"
@@ -73,9 +79,87 @@ FEEDBACK_QUALITY_LENS_KIND = "RLRMPFeedbackQualityLens"
 FEEDBACK_QUALITY_LENS_SCHEMA_ID = "rlrmp.feedback_quality_lens"
 FEEDBACK_QUALITY_LENS_SCHEMA_VERSION = "rlrmp.feedback_quality_lens.v1"
 
+GRU_POSTRUN_REPORT_PARAMS_KIND = "RLRMPGRUPostrunReportParams"
+GRU_POSTRUN_REPORT_PARAMS_SCHEMA_ID = "rlrmp.report.gru_postrun_summary.params"
+GRU_POSTRUN_REPORT_PARAMS_SCHEMA_VERSION = "rlrmp.report.gru_postrun_summary.params.v1"
+
+BRIDGE_CERTIFICATE_REPORT_PARAMS_KIND = "RLRMPBridgeCertificateReportParams"
+BRIDGE_CERTIFICATE_REPORT_PARAMS_SCHEMA_ID = "rlrmp.report.bridge_certificate_notes.params"
+BRIDGE_CERTIFICATE_REPORT_PARAMS_SCHEMA_VERSION = (
+    "rlrmp.report.bridge_certificate_notes.params.v1"
+)
+
+FEEDBACK_QUALITY_LENS_REPORT_PARAMS_KIND = "RLRMPFeedbackQualityLensReportParams"
+FEEDBACK_QUALITY_LENS_REPORT_PARAMS_SCHEMA_ID = (
+    "rlrmp.report.feedback_quality_lens_summary.params"
+)
+FEEDBACK_QUALITY_LENS_REPORT_PARAMS_SCHEMA_VERSION = (
+    "rlrmp.report.feedback_quality_lens_summary.params.v1"
+)
+
+ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_KIND = "RLRMPRobustnessPhenotypeReportParams"
+ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_SCHEMA_ID = (
+    "rlrmp.report.robustness_phenotype_markdown.params"
+)
+ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_SCHEMA_VERSION = (
+    "rlrmp.report.robustness_phenotype_markdown.params.v1"
+)
+
+VALIDATION_SELECTED_GRU_CHECKPOINTS_KIND = "RLRMPValidationSelectedGRUCheckpoints"
+VALIDATION_SELECTED_GRU_CHECKPOINTS_SCHEMA_ID = "feedbax.manifest.checkpoint_selection"
+VALIDATION_SELECTED_GRU_CHECKPOINTS_SCHEMA_VERSION = FEEDBAX_MANIFEST_SCHEMA_VERSION
+VALIDATION_SELECTED_GRU_CHECKPOINTS_LEGACY_VERSION = (
+    "rlrmp.validation_selected_gru_checkpoints.v1"
+)
+
+FIXED_BANK_GRU_CHECKPOINT_RESCORE_KIND = "RLRMPFixedBankGRUCheckpointRescore"
+FIXED_BANK_GRU_CHECKPOINT_RESCORE_SCHEMA_ID = "feedbax.manifest.checkpoint_selection"
+FIXED_BANK_GRU_CHECKPOINT_RESCORE_SCHEMA_VERSION = FEEDBAX_MANIFEST_SCHEMA_VERSION
+FIXED_BANK_GRU_CHECKPOINT_RESCORE_LEGACY_VERSION = (
+    "rlrmp.fixed_bank_gru_checkpoint_rescore.v1"
+)
+
+DELAYED_REACH_EVAL_BANK_KIND = "RLRMPDelayedReachEvalBank"
+DELAYED_REACH_EVAL_BANK_SCHEMA_ID = "feedbax.manifest.checkpoint_selection.bank"
+DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION = FEEDBAX_MANIFEST_SCHEMA_VERSION
+DELAYED_REACH_EVAL_BANK_LEGACY_VERSION = "rlrmp.delayed_reach_eval_bank.v2"
+
+CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND = "RLRMPCenterOutEnsembleEvaluationParams"
+CENTER_OUT_ENSEMBLE_EVAL_PARAMS_SCHEMA_ID = "rlrmp.eval.center_out_ensemble.params"
+CENTER_OUT_ENSEMBLE_EVAL_PARAMS_SCHEMA_VERSION = "rlrmp.eval.center_out_ensemble.params.v1"
+
+PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND = "RLRMPPerturbationResponseBankEvaluationParams"
+PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_ID = "rlrmp.eval.perturbation_response_bank.params"
+PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION = (
+    "rlrmp.eval.perturbation_response_bank.params.v2"
+)
+
+FEEDBACK_ABLATION_EVAL_PARAMS_KIND = "RLRMPFeedbackAblationEvaluationParams"
+FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_ID = "rlrmp.eval.feedback_ablation.params"
+FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION = "rlrmp.eval.feedback_ablation.params.v1"
+
+WORST_CASE_EPSILON_EVAL_PARAMS_KIND = "RLRMPWorstCaseEpsilonEvaluationParams"
+WORST_CASE_EPSILON_EVAL_PARAMS_SCHEMA_ID = "rlrmp.eval.worst_case_epsilon.params"
+WORST_CASE_EPSILON_EVAL_PARAMS_SCHEMA_VERSION = "rlrmp.eval.worst_case_epsilon.params.v1"
+
+DELAYED_REACH_BANK_EVAL_PARAMS_KIND = "RLRMPDelayedReachBankEvaluationParams"
+DELAYED_REACH_BANK_EVAL_PARAMS_SCHEMA_ID = "rlrmp.eval.delayed_reach_bank.params"
+DELAYED_REACH_BANK_EVAL_PARAMS_SCHEMA_VERSION = "rlrmp.eval.delayed_reach_bank.params.v1"
+
+STANDARD_MATRIX_EVAL_PARAMS_KIND = "RLRMPStandardMatrixEvaluationParams"
+STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_ID = "rlrmp.standard_matrix_evaluation.params"
+STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION = "rlrmp.standard_matrix_evaluation.params.v2"
+STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION_V1 = "rlrmp.standard_matrix_evaluation.params.v1"
+
 RUN_SPEC_KIND = "RLRMPRunSpec"
 RUN_SPEC_SCHEMA_ID = "rlrmp.run_spec"
-RUN_SPEC_SCHEMA_VERSION = "rlrmp.run_spec.v1"
+RUN_SPEC_SCHEMA_VERSION = "rlrmp.run_spec.v2"
+RUN_SPEC_SCHEMA_VERSION_V1 = "rlrmp.run_spec.v1"
+RUN_SPEC_SCHEMA_VERSION_LEGACY_CS_GRU = "rlrmp.cs_stochastic_gru.v1"
+
+FINITE_ADVERSARY_POLICY_METADATA_KIND = "RLRMPFiniteAdversaryPolicyMetadata"
+FINITE_ADVERSARY_POLICY_METADATA_SCHEMA_ID = "rlrmp.finite_adversary_policy_metadata"
+FINITE_ADVERSARY_POLICY_METADATA_SCHEMA_VERSION = "rlrmp.finite_adversary_policy_metadata.v1"
 
 LEGACY_TRAINING_CONFIG_KIND = "RLRMPLegacyTrainingConfig"
 LEGACY_TRAINING_CONFIG_SCHEMA_ID = "rlrmp.legacy_training_config"
@@ -97,6 +181,27 @@ def ensure_rlrmp_spec_families(
             active_registry.resolve(family.kind)
         except UnknownSpecFamily:
             active_registry.register_family(family)
+            if family.kind == RUN_SPEC_KIND:
+                for source_version, migration_id in (
+                    (RUN_SPEC_SCHEMA_VERSION_V1, "rlrmp-run-spec-v1-to-v2"),
+                    (
+                        RUN_SPEC_SCHEMA_VERSION_LEGACY_CS_GRU,
+                        "rlrmp-cs-stochastic-gru-v1-to-run-spec-v2",
+                    ),
+                ):
+                    active_registry.register_migration(
+                        RUN_SPEC_KIND,
+                        SchemaMigration(
+                            source_version=source_version,
+                            target_version=RUN_SPEC_SCHEMA_VERSION,
+                            migration_id=migration_id,
+                            migrate=_migrate_run_spec_v1_to_v2,
+                            description=(
+                                "Carry active tracked RLRMP run-spec payloads into the "
+                                "v2 extension family used beside Feedbax TrainingRunSpec."
+                            ),
+                        ),
+                    )
             if family.policy is not None:
                 for old_version in family.policy.rejected_old_versions:
                     active_registry.reject_version(
@@ -218,7 +323,10 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             GRU_PERTURBATION_BANK_KIND,
             GRU_PERTURBATION_BANK_SCHEMA_ID,
             GRU_PERTURBATION_BANK_SCHEMA_VERSION,
-            emitted_by=("rlrmp.analysis.pipelines.gru_perturbation_bank",),
+            emitted_by=(
+                "rlrmp.analysis.pipelines.gru_perturbation_bank",
+                "rlrmp.analysis.declarative_materialization",
+            ),
             consumed_by=(
                 "rlrmp.analysis.pipelines.gru_perturbation_calibration",
                 "rlrmp.analysis.pipelines.gru_feedback_ablation",
@@ -232,6 +340,24 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
                 "rlrmp.gru_perturbation_response.v0",
                 "rlrmp.gru_perturbation_response.v1",
                 "rlrmp.gru_perturbation_response.v2",
+            ),
+        ),
+        _family(
+            PERTURBATION_CLASS_RESPONSE_KIND,
+            PERTURBATION_CLASS_RESPONSE_SCHEMA_ID,
+            PERTURBATION_CLASS_RESPONSE_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.declarative_materialization",),
+            consumed_by=(
+                "rlrmp.analysis.declarative_materialization.PerturbationBankAggregateAnalysis",
+            ),
+            description=(
+                "One perturbation family response slice from the shared perturbation bank "
+                "evaluation manifest."
+            ),
+            rejected_old_versions=("rlrmp.perturbation_class_response.v0",),
+            notes=(
+                "Leaf products are not reconstructed from historical aggregate bank "
+                "payloads; regenerate through the shared perturbation-response eval."
             ),
         ),
         _family(
@@ -353,6 +479,170 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             ),
         ),
         _family(
+            GRU_POSTRUN_REPORT_PARAMS_KIND,
+            GRU_POSTRUN_REPORT_PARAMS_SCHEMA_ID,
+            GRU_POSTRUN_REPORT_PARAMS_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.reports", "rlrmp/config/analysis_bundles/gru_postrun.yml"),
+            consumed_by=("Feedbax ReportSpec.params",),
+            description="Params for the GRU postrun report-render recipe.",
+            rejected_old_versions=("rlrmp.report.gru_postrun_summary.params.v0",),
+        ),
+        _family(
+            BRIDGE_CERTIFICATE_REPORT_PARAMS_KIND,
+            BRIDGE_CERTIFICATE_REPORT_PARAMS_SCHEMA_ID,
+            BRIDGE_CERTIFICATE_REPORT_PARAMS_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.reports", "rlrmp/config/analysis_bundles/gru_postrun.yml"),
+            consumed_by=("Feedbax ReportSpec.params",),
+            description="Params for the bridge-certificate notes report-render recipe.",
+            rejected_old_versions=("rlrmp.report.bridge_certificate_notes.params.v0",),
+        ),
+        _family(
+            FEEDBACK_QUALITY_LENS_REPORT_PARAMS_KIND,
+            FEEDBACK_QUALITY_LENS_REPORT_PARAMS_SCHEMA_ID,
+            FEEDBACK_QUALITY_LENS_REPORT_PARAMS_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.reports",),
+            consumed_by=("Feedbax ReportSpec.params",),
+            description="Params for the feedback-quality lens report-render recipe.",
+            rejected_old_versions=("rlrmp.report.feedback_quality_lens_summary.params.v0",),
+        ),
+        _family(
+            ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_KIND,
+            ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_SCHEMA_ID,
+            ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_SCHEMA_VERSION,
+            emitted_by=(
+                "rlrmp.analysis.reports",
+                "rlrmp/config/analysis_bundles/robustness_phenotype.yml",
+            ),
+            consumed_by=("Feedbax ReportSpec.params",),
+            description="Params for the robustness-phenotype Markdown report-render recipe.",
+            rejected_old_versions=("rlrmp.report.robustness_phenotype_markdown.params.v0",),
+        ),
+        _family(
+            VALIDATION_SELECTED_GRU_CHECKPOINTS_KIND,
+            VALIDATION_SELECTED_GRU_CHECKPOINTS_SCHEMA_ID,
+            VALIDATION_SELECTED_GRU_CHECKPOINTS_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.pipelines.gru_checkpoint_selection",),
+            consumed_by=("GRU checkpoint-selection consumers",),
+            description=(
+                "Retired rlrmp validation-selected checkpoint payload now emitted as "
+                "Feedbax CheckpointSelectionManifest."
+            ),
+            rejected_old_versions=(VALIDATION_SELECTED_GRU_CHECKPOINTS_LEGACY_VERSION,),
+            notes=(
+                "The legacy JSON shape is accepted only by the explicit file-load "
+                "compatibility path in gru_checkpoint_selection; durable new writes use "
+                "Feedbax CheckpointSelectionManifest/CheckpointSelectionSpec."
+            ),
+        ),
+        _family(
+            FIXED_BANK_GRU_CHECKPOINT_RESCORE_KIND,
+            FIXED_BANK_GRU_CHECKPOINT_RESCORE_SCHEMA_ID,
+            FIXED_BANK_GRU_CHECKPOINT_RESCORE_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.pipelines.gru_checkpoint_selection",),
+            consumed_by=("GRU fixed-bank checkpoint-selection consumers",),
+            description=(
+                "Retired rlrmp fixed-bank checkpoint-rescore payload now emitted as "
+                "Feedbax CheckpointSelectionManifest."
+            ),
+            rejected_old_versions=(FIXED_BANK_GRU_CHECKPOINT_RESCORE_LEGACY_VERSION,),
+            notes=(
+                "The old fixed-bank payload has no registry-level deterministic migration "
+                "because the compatibility loader needs file context for path refs. "
+                "New durable writes use Feedbax checkpoint-selection custody."
+            ),
+        ),
+        _family(
+            DELAYED_REACH_EVAL_BANK_KIND,
+            DELAYED_REACH_EVAL_BANK_SCHEMA_ID,
+            DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.pipelines.gru_checkpoint_selection",),
+            consumed_by=("GRU fixed-bank checkpoint-selection specs",),
+            description=(
+                "Retired rlrmp delayed-reach evaluation-bank payload now represented as "
+                "Feedbax CheckpointSelectionBank metadata."
+            ),
+            rejected_old_versions=(DELAYED_REACH_EVAL_BANK_LEGACY_VERSION,),
+            notes=(
+                "Delayed-reach bank details are carried inside Feedbax "
+                "CheckpointSelectionSpec/CheckpointSelectionBank metadata. Regenerate "
+                "through gru_checkpoint_selection instead of registry-migrating the old "
+                "standalone dict."
+            ),
+        ),
+        _family(
+            CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND,
+            CENTER_OUT_ENSEMBLE_EVAL_PARAMS_SCHEMA_ID,
+            CENTER_OUT_ENSEMBLE_EVAL_PARAMS_SCHEMA_VERSION,
+            emitted_by=("rlrmp.eval.recipes.center_out_ensemble_recipe",),
+            consumed_by=("Feedbax EvaluationRunSpec.params",),
+            description="Params for rlrmp center-out/delayed-reach ensemble evaluation.",
+            rejected_old_versions=("rlrmp.eval.center_out_ensemble.params.v0",),
+        ),
+        _family(
+            PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND,
+            PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_ID,
+            PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION,
+            emitted_by=("rlrmp.eval.recipes.perturbation_response_bank_recipe",),
+            consumed_by=("Feedbax EvaluationRunSpec.params",),
+            description=(
+                "Params for rlrmp perturbation-response bank evaluation; v2 makes "
+                "legacy precomputed response tensors explicit."
+            ),
+            rejected_old_versions=(
+                "rlrmp.eval.perturbation_response_bank.params.v0",
+                "rlrmp.eval.perturbation_response_bank.params.v1",
+            ),
+            notes=(
+                "The prior implicit response_tensors cache shim is intentionally not "
+                "migrated. Re-emit specs with legacy_payload_mode=true for legacy "
+                "payloads or omit response_tensors to run model-driven bank production."
+            ),
+        ),
+        _family(
+            FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
+            FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_ID,
+            FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION,
+            emitted_by=("rlrmp.eval.recipes.feedback_ablation_recipe",),
+            consumed_by=("Feedbax EvaluationRunSpec.params",),
+            description="Params for rlrmp feedback-ablation evaluation.",
+            rejected_old_versions=("rlrmp.eval.feedback_ablation.params.v0",),
+        ),
+        _family(
+            WORST_CASE_EPSILON_EVAL_PARAMS_KIND,
+            WORST_CASE_EPSILON_EVAL_PARAMS_SCHEMA_ID,
+            WORST_CASE_EPSILON_EVAL_PARAMS_SCHEMA_VERSION,
+            emitted_by=("rlrmp.eval.recipes.worst_case_epsilon_recipe",),
+            consumed_by=("Feedbax EvaluationRunSpec.params",),
+            description="Params for rlrmp worst-case epsilon evaluation.",
+            rejected_old_versions=("rlrmp.eval.worst_case_epsilon.params.v0",),
+        ),
+        _family(
+            DELAYED_REACH_BANK_EVAL_PARAMS_KIND,
+            DELAYED_REACH_BANK_EVAL_PARAMS_SCHEMA_ID,
+            DELAYED_REACH_BANK_EVAL_PARAMS_SCHEMA_VERSION,
+            emitted_by=("rlrmp.eval.recipes.delayed_reach_bank_recipe",),
+            consumed_by=("Feedbax EvaluationRunSpec.params",),
+            description="Params for rlrmp delayed-reach bank evaluation.",
+            rejected_old_versions=("rlrmp.eval.delayed_reach_bank.params.v0",),
+        ),
+        _family(
+            STANDARD_MATRIX_EVAL_PARAMS_KIND,
+            STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_ID,
+            STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.matrix.standard_matrix",),
+            consumed_by=("Feedbax EvaluationRunSpec.params",),
+            description=(
+                "Params for rlrmp standard-matrix evaluation; v2 makes legacy "
+                "pre-materialized payloads explicit."
+            ),
+            rejected_old_versions=(STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION_V1,),
+            notes=(
+                "The prior implicit matrix_payload cache shim is intentionally not "
+                "migrated. Re-emit specs with legacy_payload_mode=true for legacy "
+                "payloads or omit matrix_payload to build cells from model refs."
+            ),
+        ),
+        _family(
             RUN_SPEC_KIND,
             RUN_SPEC_SCHEMA_ID,
             RUN_SPEC_SCHEMA_VERSION,
@@ -360,6 +650,33 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             consumed_by=("rlrmp.runtime.run_specs", "Feedbax TrainingRunManifest.training_spec"),
             description="Tracked RLRMP run recipe under results/<issue>/runs.",
             rejected_old_versions=("rlrmp.run_spec.v0",),
+            supported_old_versions=(
+                RUN_SPEC_SCHEMA_VERSION_V1,
+                RUN_SPEC_SCHEMA_VERSION_LEGACY_CS_GRU,
+            ),
+            stance="migrate",
+            notes=(
+                "Active v1 tracked run specs are migrated by carrying their scientific "
+                "payload into the v2 RLRMPRunSpec extension beside a composed Feedbax "
+                "TrainingRunSpec. Archive-only pre-run-spec config.json files remain "
+                "outside this family."
+            ),
+        ),
+        _family(
+            FINITE_ADVERSARY_POLICY_METADATA_KIND,
+            FINITE_ADVERSARY_POLICY_METADATA_SCHEMA_ID,
+            FINITE_ADVERSARY_POLICY_METADATA_SCHEMA_VERSION,
+            emitted_by=("rlrmp.train.closed_loop_finite_adversary",),
+            consumed_by=(
+                "rlrmp TrainingRunSpec method payloads",
+                "rlrmp finite-policy run specs and audits",
+            ),
+            description="Governed finite closed-loop adversary policy metadata payload.",
+            rejected_old_versions=("rlrmp.finite_adversary_policy_metadata.v0",),
+            notes=(
+                "FiniteAdversaryPolicyMetadata is carried through the governed "
+                "RLRMP payload envelope; standalone ad-hoc metadata serializers are retired."
+            ),
         ),
     )
 
@@ -373,6 +690,8 @@ def _family(
     consumed_by: tuple[str, ...],
     description: str,
     rejected_old_versions: tuple[str, ...],
+    supported_old_versions: tuple[str, ...] = (),
+    stance: str = "reject",
     notes: str | None = None,
 ) -> SpecSchemaFamily:
     policy_notes = (
@@ -389,7 +708,8 @@ def _family(
             owner_module="rlrmp.runtime.spec_migrations",
             emitted_by=emitted_by,
             consumed_by=consumed_by,
-            stance="reject",
+            stance=stance,
+            supported_old_versions=supported_old_versions,
             rejected_old_versions=rejected_old_versions,
             required_tests=("tests/test_rlrmp_spec_migrations.py",),
             notes=policy_notes,
@@ -397,17 +717,51 @@ def _family(
     )
 
 
+def _migrate_run_spec_v1_to_v2(payload: dict[str, Any]) -> dict[str, Any]:
+    migrated = dict(payload)
+    migrated.setdefault("schema_id", RUN_SPEC_SCHEMA_ID)
+    migrated["schema_version"] = RUN_SPEC_SCHEMA_VERSION
+    migrated.setdefault("migration_policy", "migrated_active_v1_to_v2")
+    return migrated
+
+
 __all__ = [
     "ArchiveOnlySpecError",
+    "BRIDGE_CERTIFICATE_REPORT_PARAMS_KIND",
+    "BRIDGE_CERTIFICATE_REPORT_PARAMS_SCHEMA_ID",
+    "BRIDGE_CERTIFICATE_REPORT_PARAMS_SCHEMA_VERSION",
+    "CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND",
+    "CENTER_OUT_ENSEMBLE_EVAL_PARAMS_SCHEMA_ID",
+    "CENTER_OUT_ENSEMBLE_EVAL_PARAMS_SCHEMA_VERSION",
     "CS_GRU_STANDARD_CERTIFICATES_KIND",
     "CS_GRU_STANDARD_CERTIFICATES_SCHEMA_ID",
     "CS_GRU_STANDARD_CERTIFICATES_SCHEMA_VERSION",
     "DELAYED_DIAGNOSTIC_BUNDLE_KIND",
     "DELAYED_DIAGNOSTIC_BUNDLE_SCHEMA_ID",
     "DELAYED_DIAGNOSTIC_BUNDLE_SCHEMA_VERSION",
+    "DELAYED_REACH_BANK_EVAL_PARAMS_KIND",
+    "DELAYED_REACH_BANK_EVAL_PARAMS_SCHEMA_ID",
+    "DELAYED_REACH_BANK_EVAL_PARAMS_SCHEMA_VERSION",
+    "DELAYED_REACH_EVAL_BANK_KIND",
+    "DELAYED_REACH_EVAL_BANK_LEGACY_VERSION",
+    "DELAYED_REACH_EVAL_BANK_SCHEMA_ID",
+    "DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION",
+    "FEEDBACK_ABLATION_EVAL_PARAMS_KIND",
+    "FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_ID",
+    "FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION",
     "FEEDBACK_QUALITY_LENS_KIND",
+    "FEEDBACK_QUALITY_LENS_REPORT_PARAMS_KIND",
+    "FEEDBACK_QUALITY_LENS_REPORT_PARAMS_SCHEMA_ID",
+    "FEEDBACK_QUALITY_LENS_REPORT_PARAMS_SCHEMA_VERSION",
     "FEEDBACK_QUALITY_LENS_SCHEMA_ID",
     "FEEDBACK_QUALITY_LENS_SCHEMA_VERSION",
+    "FINITE_ADVERSARY_POLICY_METADATA_KIND",
+    "FINITE_ADVERSARY_POLICY_METADATA_SCHEMA_ID",
+    "FINITE_ADVERSARY_POLICY_METADATA_SCHEMA_VERSION",
+    "FIXED_BANK_GRU_CHECKPOINT_RESCORE_KIND",
+    "FIXED_BANK_GRU_CHECKPOINT_RESCORE_LEGACY_VERSION",
+    "FIXED_BANK_GRU_CHECKPOINT_RESCORE_SCHEMA_ID",
+    "FIXED_BANK_GRU_CHECKPOINT_RESCORE_SCHEMA_VERSION",
     "GRU_EVALUATION_DIAGNOSTICS_KIND",
     "GRU_EVALUATION_DIAGNOSTICS_SCHEMA_ID",
     "GRU_EVALUATION_DIAGNOSTICS_SCHEMA_VERSION",
@@ -423,6 +777,9 @@ __all__ = [
     "GRU_PERTURBATION_BANK_KIND",
     "GRU_PERTURBATION_BANK_SCHEMA_ID",
     "GRU_PERTURBATION_BANK_SCHEMA_VERSION",
+    "GRU_POSTRUN_REPORT_PARAMS_KIND",
+    "GRU_POSTRUN_REPORT_PARAMS_SCHEMA_ID",
+    "GRU_POSTRUN_REPORT_PARAMS_SCHEMA_VERSION",
     "GRU_PERTURBATION_RESPONSE_NORM_PLOTS_KIND",
     "GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_ID",
     "GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_VERSION",
@@ -439,9 +796,28 @@ __all__ = [
     "PERTURBATION_OPEN_LOOP_CALIBRATION_KIND",
     "PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_ID",
     "PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_VERSION",
+    "PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND",
+    "PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_ID",
+    "PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION",
+    "ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_KIND",
+    "ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_SCHEMA_ID",
+    "ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_SCHEMA_VERSION",
     "RUN_SPEC_KIND",
     "RUN_SPEC_SCHEMA_ID",
     "RUN_SPEC_SCHEMA_VERSION",
+    "RUN_SPEC_SCHEMA_VERSION_LEGACY_CS_GRU",
+    "RUN_SPEC_SCHEMA_VERSION_V1",
+    "STANDARD_MATRIX_EVAL_PARAMS_KIND",
+    "STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_ID",
+    "STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION",
+    "STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION_V1",
+    "VALIDATION_SELECTED_GRU_CHECKPOINTS_KIND",
+    "VALIDATION_SELECTED_GRU_CHECKPOINTS_LEGACY_VERSION",
+    "VALIDATION_SELECTED_GRU_CHECKPOINTS_SCHEMA_ID",
+    "VALIDATION_SELECTED_GRU_CHECKPOINTS_SCHEMA_VERSION",
+    "WORST_CASE_EPSILON_EVAL_PARAMS_KIND",
+    "WORST_CASE_EPSILON_EVAL_PARAMS_SCHEMA_ID",
+    "WORST_CASE_EPSILON_EVAL_PARAMS_SCHEMA_VERSION",
     "accept_rlrmp_spec_payload",
     "ensure_rlrmp_spec_families",
     "load_rlrmp_spec_payload",

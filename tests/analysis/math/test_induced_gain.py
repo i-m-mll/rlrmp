@@ -175,7 +175,12 @@ def _manual_network_controller_outputs(model, ctrl, observations, *, key):
     """Old net-plus-delay wrapper logic used as a parity oracle."""
     net = model.nodes["net"]
     full_state = model.init_state(key=jax.random.PRNGKey(0))
-    net_state = full_state.get(net.state_index)
+    if hasattr(net, "initial_cycle_port_values"):
+        net_state = full_state
+        cycle_values = net.initial_cycle_port_values(net_state)
+    else:
+        net_state = full_state.get(net.state_index)
+        cycle_values = None
     queue = jnp.zeros((ctrl.delay, ctrl.n_obs), dtype=jnp.float64)
     outputs = []
     for t, sensory_obs in enumerate(observations):
@@ -187,15 +192,24 @@ def _manual_network_controller_outputs(model, ctrl, observations, *, key):
         else:
             delayed_obs = obs_abs
 
-        leaves, treedef = jax.tree.flatten(full_state)
-        state = jax.tree.unflatten(treedef, leaves)
-        state = state.set(net.state_index, net_state)
         net_inputs = {
             "input": ctrl.task_input,
             "feedback": (delayed_obs[:2], delayed_obs[2:]),
         }
-        net_outputs, state_next = net(net_inputs, state, key=jax.random.fold_in(key, t))
-        net_state = state_next.get(net.state_index)
+        step_key = jax.random.fold_in(key, t)
+        if hasattr(net, "step"):
+            net_outputs, net_state, cycle_values = net.step(
+                net_inputs,
+                net_state,
+                cycle_values,
+                key=step_key,
+            )
+        else:
+            leaves, treedef = jax.tree.flatten(full_state)
+            state = jax.tree.unflatten(treedef, leaves)
+            state = state.set(net.state_index, net_state)
+            net_outputs, state_next = net(net_inputs, state, key=step_key)
+            net_state = state_next.get(net.state_index)
         outputs.append(net_outputs["output"])
     return outputs
 
@@ -692,7 +706,7 @@ def test_feedbax_graph_controller_smoke():
     from equinox.nn import StateIndex
     from feedbax.runtime.graph import Component, Graph
 
-    from rlrmp.analysis.math.induced_gain import feedbax_graph_controller
+    from feedbax.analysis import graph_controller
 
     class GainComponent(Component):
         """y = -K @ x; carries a 1-element counter to exercise stateful flatten."""
@@ -726,7 +740,7 @@ def test_feedbax_graph_controller_smoke():
     )
 
     key = jax.random.PRNGKey(0)
-    ctrl = feedbax_graph_controller(graph, key=key)
+    ctrl = graph_controller(graph, key=key)
     h0 = ctrl.initial_state()
     # The state contains a single 1-element float counter.
     assert h0.shape == (1,)
@@ -768,7 +782,7 @@ def test_feedbax_graph_controller_cyclic_smoke():
     from equinox.nn import StateIndex
     from feedbax.runtime.graph import Component, Graph, Wire
 
-    from rlrmp.analysis.math.induced_gain import feedbax_graph_controller
+    from feedbax.analysis import graph_controller
 
     class GainWithRecurrent(Component):
         """y = -K @ x + h_in. Stateless component with two input ports."""
@@ -831,7 +845,7 @@ def test_feedbax_graph_controller_cyclic_smoke():
     assert graph._needs_iteration  # sanity: cycle detected
 
     key = jax.random.PRNGKey(0)
-    ctrl = feedbax_graph_controller(graph, key=key)
+    ctrl = graph_controller(graph, key=key)
     h0 = ctrl.initial_state()
     # Augmented h carries (delay state) + (cycle port value for a.h_in).
     # delay state is 1 element; cycle dict has one (1,) entry.

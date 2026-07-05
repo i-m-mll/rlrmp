@@ -21,15 +21,16 @@ Usage:
         --output-dir results/pop_adversary
 """
 
-import argparse
 import json
 import logging
 import os
 import shutil
 import subprocess
+import sys
 import time
 from functools import partial
 from pathlib import Path
+from types import SimpleNamespace
 
 import equinox as eqx
 import jax
@@ -45,24 +46,23 @@ from jax_cookbook import save as fbx_save
 from feedbax.runtime.iteration import run_component
 from feedbax.runtime.batch import BatchInfo
 from feedbax.objectives.streaming import make_streaming_loss_fn
+from feedbax.contracts.training import TrainingRunSpec
+from feedbax.training.checkpoint_custody import CheckpointCompatibilityError
 from feedbax.training.train import (
     TaskTrainer,
     make_delayed_cosine_schedule,
     train_pair,
 )
 
-from rlrmp.adversarial_training import (
+from rlrmp.train.adversarial_training import (
     _inject_adversary_delta_A,
     _inject_adversary_forces,
 )
-from rlrmp.adversary import GaussianBumpAdversary, LinearDynamicsAdversary
+from rlrmp.train.adversary import GaussianBumpAdversary, LinearDynamicsAdversary
+from rlrmp.intervention_compat import LINEAR_DYNAMICS_ADVERSARY_COMPONENT_PARAMETER_TARGET
 from rlrmp.model.feedbax_graph import (
     build_runtime_rlrmp_feedbax_graph_bundle,
     write_graph_spec_bundle,
-)
-from rlrmp.intervention_compat import (
-    swap_plant_intervenor_to_dynamics_matrix,
-    swap_task_intervention_to_dynamics_matrix,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p, run_spec_path
 from rlrmp.model.trainable import staged_network_trainable_parts
@@ -77,8 +77,26 @@ from rlrmp.train.progress import (
 # library module; previously defined inline here and pulled by analysis scripts
 # via sys.path injection). Re-imported for internal use; analysis / eval scripts
 # should import from `rlrmp.train` directly.
-from rlrmp.train.minimax import build_hps  # noqa: F401  (re-exported intentionally)
+from rlrmp.train.minimax import (  # noqa: F401  (re-exported intentionally)
+    build_hps,
+    build_minimax_training_run_spec,
+    legacy_cli_args_to_minimax_config,
+    minimax_config_namespace,
+    minimax_training_run_spec_from_file,
+    minimax_training_run_spec_to_config,
+    validate_minimax_run_spec,
+)
 from rlrmp.train.task_model import setup_task_model_pair
+from rlrmp.runtime.checkpoint_custody import (
+    MINIMAX_ADVERSARIAL_BARRIER,
+    MINIMAX_WARMUP_BARRIER,
+    deserialize_pytree_slot,
+    has_custody_checkpoint,
+    load_minimax_checkpoint_transaction,
+    serialize_pytree_slot,
+    spec_digests,
+    write_minimax_checkpoint_transaction,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -266,7 +284,7 @@ def _collect_gpu_info() -> dict:
     return info
 
 
-def _configure_jax_runtime(args: argparse.Namespace) -> None:
+def _configure_jax_runtime(args) -> None:
     """Configure JAX runtime options that must be set before first compile."""
     cache_dir = args.jax_cache_dir or os.environ.get("JAX_COMPILATION_CACHE_DIR")
     if cache_dir:
@@ -299,8 +317,11 @@ def _save_adversarial_checkpoint(
     adv_losses: list,
     ctrl_losses: list,
     adv_indices: list,
+    *,
+    training_spec: TrainingRunSpec | None = None,
+    rng_key=None,
 ) -> None:
-    """Save adversarial training state to a checkpoint directory.
+    """Save adversarial training state to custody and a materialized directory.
 
     Writes atomically: assembles state in a temp dir then renames it over
     the previous checkpoint so a preempted write never leaves corrupt state.
@@ -321,6 +342,30 @@ def _save_adversarial_checkpoint(
         ctrl_losses: Controller loss history.
         adv_indices: Active adversary index history.
     """
+    model = jtu.tree_unflatten(treedef_model, flat_model)
+    if training_spec is not None:
+        write_minimax_checkpoint_transaction(
+            checkpoint_dir,
+            training_spec=training_spec,
+            barrier_name=MINIMAX_ADVERSARIAL_BARRIER,
+            batch_idx=batch_idx,
+            active_member_index=adv_indices[-1] if adv_indices else -1,
+            slots=_minimax_checkpoint_slots(
+                model=model,
+                adversaries=adversaries,
+                adv_opt_states=adv_opt_states,
+                ctrl_opt_state=ctrl_opt_state,
+                rng_key=rng_key,
+                batch_idx=batch_idx,
+                active_member_index=adv_indices[-1] if adv_indices else -1,
+                adv_losses=adv_losses,
+                ctrl_losses=ctrl_losses,
+                adv_indices=adv_indices,
+                training_spec=training_spec,
+            ),
+            population_member_ids=_adversary_population_member_ids(adversaries),
+        )
+
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     target = checkpoint_dir / _CHECKPOINT_SUBDIR
 
@@ -332,7 +377,6 @@ def _save_adversarial_checkpoint(
 
     try:
         # 1. Model: reconstruct → serialize leaves
-        model = jtu.tree_unflatten(treedef_model, flat_model)
         eqx.tree_serialise_leaves(tmp_dir / "model.eqx", model)
 
         # 2. Adversaries: serialize each
@@ -373,6 +417,8 @@ def _load_adversarial_checkpoint(
     adv_opt_states_template: list,
     ctrl_opt_state_template,
     treedef_model,
+    *,
+    training_spec: TrainingRunSpec | None = None,
 ):
     """Load adversarial training state from ``checkpoint_latest/``.
 
@@ -389,6 +435,64 @@ def _load_adversarial_checkpoint(
         Tuple of ``(flat_model, adversaries, adv_opt_states, ctrl_opt_state,
         resume_batch_idx, adv_losses, ctrl_losses, adv_indices)``.
     """
+    if training_spec is not None and has_custody_checkpoint(checkpoint_dir):
+        loaded = load_minimax_checkpoint_transaction(
+            checkpoint_dir,
+            training_spec=training_spec,
+            expected_slots=_minimax_expected_slots(
+                model_template=model_template,
+                adversaries_template=adversaries_template,
+                adv_opt_states_template=adv_opt_states_template,
+                ctrl_opt_state_template=ctrl_opt_state_template,
+            ),
+            expected_population_member_ids=_adversary_population_member_ids(adversaries_template),
+        )
+        slots = loaded.slots
+        try:
+            controller = deserialize_pytree_slot(
+                slots["controller"],
+                model_template,
+                slot="controller",
+            )
+            adversaries = [
+                deserialize_pytree_slot(blob, template, slot="adversary_population")
+                for blob, template in zip(
+                    slots["adversary_population"],
+                    adversaries_template,
+                    strict=True,
+                )
+            ]
+            adv_opt_states = deserialize_pytree_slot(
+                slots["adversary_optimizer"],
+                adv_opt_states_template,
+                slot="adversary_optimizer",
+            )
+            ctrl_opt_state = deserialize_pytree_slot(
+                slots["controller_optimizer"],
+                ctrl_opt_state_template,
+                slot="controller_optimizer",
+            )
+        except Exception as exc:
+            raise CheckpointCompatibilityError(
+                "minimax checkpoint PyTree slot could not be deserialized with the resume template"
+            ) from exc
+        if len(adversaries) != len(adversaries_template):
+            raise CheckpointCompatibilityError(
+                "population identity mismatch for slot 'adversary_population'"
+            )
+        flat_model = jtu.tree_flatten(controller)[0]
+        return (
+            flat_model,
+            adversaries,
+            adv_opt_states,
+            ctrl_opt_state,
+            int(slots["active_batch_index"]),
+            list(slots.get("adversary_losses", [])),
+            list(slots.get("controller_losses", [])),
+            list(slots.get("adversary_indices", [])),
+            jnp.asarray(slots["rng"], dtype=jnp.uint32),
+        )
+
     target = checkpoint_dir / _CHECKPOINT_SUBDIR
     if not target.exists():
         raise FileNotFoundError(f"No checkpoint found at {target}")
@@ -428,6 +532,144 @@ def _load_adversarial_checkpoint(
     )
 
 
+def _write_warmup_boundary_checkpoint(
+    checkpoint_dir: Path,
+    *,
+    training_spec: TrainingRunSpec,
+    model,
+    adversaries: list,
+    adv_opt_states: list,
+    ctrl_opt_state,
+    rng_key,
+    warmup_history,
+) -> None:
+    write_minimax_checkpoint_transaction(
+        checkpoint_dir,
+        training_spec=training_spec,
+        barrier_name=MINIMAX_WARMUP_BARRIER,
+        batch_idx=-1,
+        active_member_index=-1,
+        slots=_minimax_checkpoint_slots(
+            model=model,
+            adversaries=adversaries,
+            adv_opt_states=adv_opt_states,
+            ctrl_opt_state=ctrl_opt_state,
+            rng_key=rng_key,
+            batch_idx=-1,
+            active_member_index=-1,
+            adv_losses=[],
+            ctrl_losses=[],
+            adv_indices=[],
+            training_spec=training_spec,
+            warmup_history=warmup_history,
+        ),
+        population_member_ids=_adversary_population_member_ids(adversaries),
+    )
+
+
+def _write_final_minimax_custody_transaction(
+    checkpoint_dir: Path,
+    *,
+    training_spec: TrainingRunSpec,
+    model,
+    adversaries: list,
+    adv_opt_states: list,
+    ctrl_opt_state,
+    rng_key,
+    batch_idx: int,
+    adv_losses: list,
+    ctrl_losses: list,
+    adv_indices: list,
+    warmup_history=None,
+) -> None:
+    """Write the terminal (``status="final"``) minimax custody transaction.
+
+    This is the content-addressed durable authority for the run's final
+    outputs — the trained controller, adversary population, loss curves, and
+    warmup history — published through the feedbax custody latest-pointer run
+    record. The ``output_dir`` ``.eqx`` / ``.npz`` files written alongside are
+    compatibility materializations, not the durable record. Issue 7e71950.
+    """
+    active_member_index = adv_indices[-1] if adv_indices else -1
+    write_minimax_checkpoint_transaction(
+        checkpoint_dir,
+        training_spec=training_spec,
+        barrier_name=MINIMAX_ADVERSARIAL_BARRIER,
+        batch_idx=batch_idx,
+        active_member_index=active_member_index,
+        slots=_minimax_checkpoint_slots(
+            model=model,
+            adversaries=adversaries,
+            adv_opt_states=adv_opt_states,
+            ctrl_opt_state=ctrl_opt_state,
+            rng_key=rng_key,
+            batch_idx=batch_idx,
+            active_member_index=active_member_index,
+            adv_losses=adv_losses,
+            ctrl_losses=ctrl_losses,
+            adv_indices=adv_indices,
+            training_spec=training_spec,
+            warmup_history=warmup_history,
+        ),
+        population_member_ids=_adversary_population_member_ids(adversaries),
+        status="final",
+    )
+
+
+def _minimax_checkpoint_slots(
+    *,
+    model,
+    adversaries: list,
+    adv_opt_states: list,
+    ctrl_opt_state,
+    rng_key,
+    batch_idx: int,
+    active_member_index: int,
+    adv_losses: list,
+    ctrl_losses: list,
+    adv_indices: list,
+    training_spec: TrainingRunSpec,
+    warmup_history=None,
+) -> dict[str, object]:
+    slots: dict[str, object] = {
+        "controller": serialize_pytree_slot(model),
+        "controller_optimizer": serialize_pytree_slot(ctrl_opt_state),
+        "adversary_population": [serialize_pytree_slot(adversary) for adversary in adversaries],
+        "adversary_optimizer": serialize_pytree_slot(adv_opt_states),
+        "rng": jnp.asarray(rng_key, dtype=jnp.uint32),
+        "active_batch_index": jnp.asarray(batch_idx, dtype=jnp.int32),
+        "active_member_index": jnp.asarray(active_member_index, dtype=jnp.int32),
+        "spec_digests": spec_digests(training_spec),
+    }
+    if adv_losses:
+        slots["adversary_losses"] = list(adv_losses)
+    if ctrl_losses:
+        slots["controller_losses"] = list(ctrl_losses)
+    if adv_indices:
+        slots["adversary_indices"] = list(adv_indices)
+    if warmup_history is not None:
+        slots["warmup_history"] = warmup_history
+    return slots
+
+
+def _minimax_expected_slots(
+    *,
+    model_template,
+    adversaries_template: list,
+    adv_opt_states_template: list,
+    ctrl_opt_state_template,
+) -> dict[str, object]:
+    return {
+        "rng": jnp.asarray([0, 0], dtype=jnp.uint32),
+        "active_batch_index": jnp.asarray(0, dtype=jnp.int32),
+        "active_member_index": jnp.asarray(0, dtype=jnp.int32),
+    }
+
+
+def _adversary_population_member_ids(adversaries: list) -> dict[str, list[str]]:
+    return {"adversary_population": [f"adversary_{index}" for index, _ in enumerate(adversaries)]}
+
+
 # ---------------------------------------------------------------------------
 # Training
 # ---------------------------------------------------------------------------
@@ -436,13 +678,17 @@ def _load_adversarial_checkpoint(
 def _get_trainable(model):
     """Return the trainable leaves of the model.
 
-    Default (SimpleStagedNetwork): (net.hidden, net.readout). Linear-controller
-    MVP variants (Bug: 410d7ac) carry their parameters as ``K`` (and ``u_ff``
-    for the tracker) directly on the net Component — branch on Module class
+    Default (SimpleStagedNetwork): (net.hidden, net.readout). Native affine
+    linear variants carry their parameters as ``gain`` and optional
+    ``feedforward`` directly on the net Component — branch on Module class
     name to keep this single function compatible with both code paths.
     """
     net = model.get_node("net")
     cls_name = type(net).__name__
+    if cls_name == "AffineFeedbackController":
+        if getattr(net, "feedforward", None) is not None:
+            return model.get_node_attrs("net", "gain", "feedforward")
+        return model.get_node_attrs("net", "gain")
     if cls_name == "LinearController":
         return model.get_node_attrs("net", "K")
     if cls_name == "LinearTrackerController":
@@ -463,6 +709,10 @@ def _trainable_where(model):
     """
     net = model.get_node("net")
     cls_name = type(net).__name__
+    if cls_name == "AffineFeedbackController":
+        if getattr(net, "feedforward", None) is not None:
+            return lambda m: m.get_node_attrs("net", "gain", "feedforward")
+        return lambda m: m.get_node_attrs("net", "gain")
     if cls_name == "LinearController":
         return lambda m: m.get_node_attrs("net", "K")
     if cls_name == "LinearTrackerController":
@@ -493,13 +743,17 @@ def _eval_trials_streaming(task, model, trial_specs, keys, loss_func):
     def eval_single(trial_spec, key):
         key_run = jr.split(key, 2)[1]
         prepared = prepare_trial(model, trial_spec)
+        prepared_inputs = _with_declarative_component_parameter_inputs(
+            model,
+            prepared.inputs,
+        )
 
         # Build per-step streaming loss closure (single trial, no batch dim)
         streaming_fn = make_streaming_loss_fn(loss_func, trial_spec, model, prepared.n_steps)
 
         _outputs, _final_state, total_loss = run_component(
             model,
-            prepared.inputs,
+            prepared_inputs,
             prepared.init_state,
             key=key_run,
             n_steps=prepared.n_steps,
@@ -511,14 +765,35 @@ def _eval_trials_streaming(task, model, trial_specs, keys, loss_func):
     return per_trial_losses.mean()
 
 
+def _with_declarative_component_parameter_inputs(model, inputs):
+    """Mirror legacy prepared intervention input under the declared task binding."""
+    target = LINEAR_DYNAMICS_ADVERSARY_COMPONENT_PARAMETER_TARGET
+    legacy_key = f"intervene:{target['task_parameter_label']}"
+    declared_key = (
+        f"task:{target['source_data_id']}->{target['target_node_id']}.{target['target_port']}"
+    )
+    if (
+        isinstance(inputs, dict)
+        and legacy_key in inputs
+        and declared_key in getattr(model, "input_ports", ())
+        and declared_key not in inputs
+    ):
+        return {**inputs, declared_key: inputs[legacy_key]}
+    return inputs
+
+
 def _make_where_train(sisu_gating: str = "additive"):
     """Return the where_train dict for the controller optimizer."""
 
     def where_train_fn(model):
         net = model.get_node("net")
         cls_name = type(net).__name__
-        # Linear-controller MVP variants (Bug: 410d7ac) carry their parameters
-        # directly on the net Component as K (+ u_ff for the tracker).
+        # Native affine linear variants carry their parameters directly on the
+        # net Component as gain (+ feedforward for the tracker).
+        if cls_name == "AffineFeedbackController":
+            if getattr(net, "feedforward", None) is not None:
+                return model.get_node_attrs("net", "gain", "feedforward")
+            return model.get_node_attrs("net", "gain")
         if cls_name == "LinearController":
             return model.get_node_attrs("net", "K")
         if cls_name == "LinearTrackerController":
@@ -528,8 +803,22 @@ def _make_where_train(sisu_gating: str = "additive"):
     return {0: where_train_fn}
 
 
-def run_training(args: argparse.Namespace) -> None:
-    """Run minimax adversarial training."""
+def run_training(training_run_spec) -> None:
+    """Run minimax adversarial training from a validated TrainingRunSpec."""
+    if isinstance(training_run_spec, dict) and "feedbax_training_run_spec" in training_run_spec:
+        validate_minimax_run_spec(training_run_spec, spec_dir=Path("."))
+        feedbax_spec = TrainingRunSpec.model_validate(
+            training_run_spec["feedbax_training_run_spec"]
+        )
+        config_dict = dict(training_run_spec)
+    else:
+        feedbax_spec = (
+            training_run_spec
+            if isinstance(training_run_spec, TrainingRunSpec)
+            else TrainingRunSpec.model_validate(training_run_spec)
+        )
+        config_dict = None
+    args = minimax_config_namespace(minimax_training_run_spec_to_config(feedbax_spec))
     _configure_jax_runtime(args)
 
     output_dir = Path(args.output_dir)
@@ -565,15 +854,17 @@ def run_training(args: argparse.Namespace) -> None:
 
     graph_bundle = build_runtime_rlrmp_feedbax_graph_bundle(hps, pair.model)
     graph_path = write_graph_spec_bundle(graph_bundle, spec_dir)
-
-    config_dict = {
-        **vars(args),
-        "git": _get_git_metadata(),
-        "gpu_info": _collect_gpu_info(),
-        "feedbax_graph": graph_bundle.to_run_metadata(
+    config_dict = build_minimax_training_run_spec(
+        minimax_training_run_spec_to_config(feedbax_spec),
+        graph_spec=graph_bundle.graph_spec,
+        output_dir=output_dir,
+        spec_dir=spec_dir,
+        git=_get_git_metadata(),
+        gpu_info=_collect_gpu_info(),
+        feedbax_graph=graph_bundle.to_run_metadata(
             graph_spec_path=graph_path.name,
         ),
-    }
+    )
     with open(spec_path, "w") as f:
         json.dump(config_dict, f, indent=2, default=str)
     logger.info("Saved run spec to %s", spec_path)
@@ -621,7 +912,7 @@ def run_training(args: argparse.Namespace) -> None:
             # expected by build_hps
             for k in ("git", "output_dir", "checkpoint_every", "resume"):
                 stored_hps.pop(k, None)
-            resume_args = argparse.Namespace(**stored_hps)
+            resume_args = minimax_config_namespace(stored_hps)
             resume_hps = build_hps(resume_args)
             return setup_task_model_pair(resume_hps, key=key).model
 
@@ -642,7 +933,7 @@ def run_training(args: argparse.Namespace) -> None:
 
             stored_hps.pop("git", None)
             stored_hps.pop("output_dir", None)
-            stored_args = argparse.Namespace(**stored_hps)
+            stored_args = SimpleNamespace(**stored_hps)
             stored_hps_obj = build_hps_standard(stored_args)
             return setup_task_model_pair(stored_hps_obj, key=key).model
 
@@ -704,41 +995,17 @@ def run_training(args: argparse.Namespace) -> None:
         except Exception:
             logger.warning("Could not enable checkpoint on model — flag has no effect")
 
-    # Save warm-started model (skip if we loaded it from this path via --resume)
-    fbx_save(warmup_model_path, warmup_model, hyperparameters=config_dict)
+    # Save warm-started model as a compatibility materialization (skip if we
+    # loaded it from this path via --resume). The durable authority for the
+    # warm-start controller is the after_warmup custody transaction written
+    # below; this output_dir file is a convenience for downstream loaders and is
+    # atomically staged (tmp-rooted → guard-classified ephemeral). Issue 7e71950.
+    tmp_warmup_model_path = warmup_model_path.with_name("tmp_" + warmup_model_path.name)
+    fbx_save(tmp_warmup_model_path, warmup_model, hyperparameters=config_dict)
+    os.replace(tmp_warmup_model_path, warmup_model_path)
     logger.info("Saved warm-start model to %s", warmup_model_path)
 
-    # -----------------------------------------------------------------------
-    # Optional: swap plant intervenor for the adversarial phase.
-    # When --adversary-type linear_dynamics, replace the warmup-phase
-    # FixedField/CurlField intervenor with DynamicsMatrixPerturb so the
-    # adversary can drive ΔA·x perturbations through the same disturbance
-    # channel. Bug: c723082.
-    # -----------------------------------------------------------------------
     use_linear_dynamics = args.adversary_type == "linear_dynamics"
-    if use_linear_dynamics:
-        from rlrmp.disturbance import PLANT_INTERVENOR_LABEL as _PLABEL
-
-        logger.info(
-            "Swapping plant intervenor at label %r to DynamicsMatrixPerturb "
-            "(eta_max=%g, pgd_steps=%d, pgd_lr=%g) for adversarial phase",
-            _PLABEL,
-            args.linear_dynamics_eta_max,
-            args.linear_dynamics_pgd_steps,
-            args.linear_dynamics_lr,
-        )
-        # Swap on the ensembled model (jt.map over the ensemble pytree).
-        warmup_model = jt.map(
-            lambda m: swap_plant_intervenor_to_dynamics_matrix(
-                m,
-                _PLABEL,
-                mass=hps.model.effector_mass,
-            ),
-            warmup_model,
-            is_leaf=lambda x: x is not None and hasattr(x, "nodes") and hasattr(x, "input_ports"),
-        )
-        # Swap on the task so trial_specs.intervene[label] has the right type.
-        task = swap_task_intervention_to_dynamics_matrix(task, _PLABEL)
 
     # -----------------------------------------------------------------------
     # Phase 2 — adversarial training
@@ -906,6 +1173,22 @@ def run_training(args: argparse.Namespace) -> None:
         single_rep_ctrl_state,
         is_leaf=eqx.is_array,
     )
+    adv_checkpoint_dir = output_dir / _CHECKPOINT_DIR_NAME
+    legacy_adv_checkpoint_path = adv_checkpoint_dir / _CHECKPOINT_SUBDIR
+    if not (
+        args.resume
+        and (has_custody_checkpoint(adv_checkpoint_dir) or legacy_adv_checkpoint_path.exists())
+    ):
+        _write_warmup_boundary_checkpoint(
+            adv_checkpoint_dir,
+            training_spec=feedbax_spec,
+            model=warmup_model,
+            adversaries=adversaries,
+            adv_opt_states=adv_opt_states,
+            ctrl_opt_state=ctrl_opt_state,
+            rng_key=key_adv,
+            warmup_history=warmup_history,
+        )
 
     # ---------------------------------------------------------------------------
     # JIT-compiled training steps — defined as closures over task, loss_func,
@@ -1265,7 +1548,6 @@ def run_training(args: argparse.Namespace) -> None:
     # -----------------------------------------------------------------------
     # Resume from checkpoint (if requested)
     # -----------------------------------------------------------------------
-    adv_checkpoint_dir = output_dir / _CHECKPOINT_DIR_NAME
     start_batch_idx = 0
     adv_losses = []
     ctrl_losses = []
@@ -1273,25 +1555,42 @@ def run_training(args: argparse.Namespace) -> None:
 
     if args.resume:
         ckpt_path = adv_checkpoint_dir / _CHECKPOINT_SUBDIR
-        if ckpt_path.exists():
-            logger.info("--resume: loading adversarial checkpoint from %s", ckpt_path)
-            (
-                full_flat_loaded,
-                adversaries,
-                adv_opt_states,
-                ctrl_opt_state,
-                last_completed_batch,
-                adv_losses,
-                ctrl_losses,
-                adv_indices,
-            ) = _load_adversarial_checkpoint(
+        if has_custody_checkpoint(adv_checkpoint_dir) or ckpt_path.exists():
+            logger.info("--resume: loading adversarial checkpoint from %s", adv_checkpoint_dir)
+            loaded_checkpoint = _load_adversarial_checkpoint(
                 adv_checkpoint_dir,
                 warmup_model,
                 adversaries,
                 adv_opt_states,
                 ctrl_opt_state,
                 treedef_ensembled,
+                training_spec=(
+                    feedbax_spec if has_custody_checkpoint(adv_checkpoint_dir) else None
+                ),
             )
+            if len(loaded_checkpoint) == 9:
+                (
+                    full_flat_loaded,
+                    adversaries,
+                    adv_opt_states,
+                    ctrl_opt_state,
+                    last_completed_batch,
+                    adv_losses,
+                    ctrl_losses,
+                    adv_indices,
+                    key_adv,
+                ) = loaded_checkpoint
+            else:
+                (
+                    full_flat_loaded,
+                    adversaries,
+                    adv_opt_states,
+                    ctrl_opt_state,
+                    last_completed_batch,
+                    adv_losses,
+                    ctrl_losses,
+                    adv_indices,
+                ) = loaded_checkpoint
             # Extract only the per-replicate arrays for the training loop
             flat_model, _ = _split_flat(full_flat_loaded)
             start_batch_idx = last_completed_batch + 1
@@ -1433,9 +1732,7 @@ def run_training(args: argparse.Namespace) -> None:
         # loss scalars already synced to host above (no extra device->host
         # sync). `loss` reports the controller loss; `adv_loss` is appended as
         # an extra field.
-        if should_log_batch(
-            batch_idx, args.n_adversary_batches, every=batch_log_step
-        ):
+        if should_log_batch(batch_idx, args.n_adversary_batches, every=batch_log_step):
             logger.info(
                 format_batch_line(
                     "adversarial",
@@ -1483,6 +1780,8 @@ def run_training(args: argparse.Namespace) -> None:
                 adv_losses,
                 ctrl_losses,
                 adv_indices,
+                training_spec=feedbax_spec,
+                rng_key=key_adv,
             )
 
     logger.info("Adversarial training complete.")
@@ -1496,6 +1795,30 @@ def run_training(args: argparse.Namespace) -> None:
     # -----------------------------------------------------------------------
     # Save outputs
     # -----------------------------------------------------------------------
+    # Durable authority: one terminal (status="final") custody transaction that
+    # content-addresses the run's final controller, adversary population, loss
+    # curves, and warmup history, published through the feedbax custody
+    # latest-pointer run record. The output_dir .eqx/.npz files written below
+    # are compatibility materializations for downstream loaders — atomically
+    # staged (tmp-rooted → guard-classified ephemeral), no longer the durable
+    # record. Issue 7e71950.
+    final_controller = adv_model if args.n_adversary_batches > 0 else warmup_model
+    _write_final_minimax_custody_transaction(
+        adv_checkpoint_dir,
+        training_spec=feedbax_spec,
+        model=final_controller,
+        adversaries=adversaries,
+        adv_opt_states=adv_opt_states,
+        ctrl_opt_state=ctrl_opt_state,
+        rng_key=key_adv,
+        batch_idx=args.n_adversary_batches - 1,
+        adv_losses=adv_losses,
+        ctrl_losses=ctrl_losses,
+        adv_indices=adv_indices,
+        warmup_history=warmup_history,
+    )
+    logger.info("Wrote terminal minimax custody transaction under %s", adv_checkpoint_dir)
+
     # Final adversarially-trained model (ensembled: arrays have leading n_reps axis).
     # Bug: a517040 — skip when n_adversary_batches=0: the adversarial phase did not
     # run, and the saved PyTree's adversary state does not match the local skeleton
@@ -1503,7 +1826,9 @@ def run_training(args: argparse.Namespace) -> None:
     # Downstream loaders fall back to `warmup_model.eqx` (the correct final model).
     if args.n_adversary_batches > 0:
         final_model_path = output_dir / "adversarial_model.eqx"
-        fbx_save(final_model_path, adv_model, hyperparameters=config_dict)
+        tmp_final_model_path = final_model_path.with_name("tmp_" + final_model_path.name)
+        fbx_save(tmp_final_model_path, adv_model, hyperparameters=config_dict)
+        os.replace(tmp_final_model_path, final_model_path)
         logger.info("Saved adversarial model (n_reps=%d ensembled) to %s", n_reps, final_model_path)
     else:
         logger.info(
@@ -1513,26 +1838,45 @@ def run_training(args: argparse.Namespace) -> None:
 
     # Training histories (warmup from TaskTrainer; adversarial phase as numpy arrays)
     if warmup_history is not None:
-        fbx_save(output_dir / "warmup_history.eqx", warmup_history)
+        warmup_history_path = output_dir / "warmup_history.eqx"
+        tmp_warmup_history_path = warmup_history_path.with_name("tmp_" + warmup_history_path.name)
+        fbx_save(tmp_warmup_history_path, warmup_history)
+        os.replace(tmp_warmup_history_path, warmup_history_path)
     loss_data = {
         "ctrl_losses": np.array(ctrl_losses),
         "adv_losses": np.array(adv_losses),
         "adv_indices": np.array(adv_indices),
     }
-    np.savez(output_dir / "adversarial_losses.npz", **loss_data)
-    logger.info("Saved adversarial loss curves to %s", output_dir / "adversarial_losses.npz")
+    adversarial_losses_path = output_dir / "adversarial_losses.npz"
+    tmp_adversarial_losses_path = adversarial_losses_path.with_name(
+        "tmp_" + adversarial_losses_path.name
+    )
+    np.savez(tmp_adversarial_losses_path, **loss_data)
+    os.replace(tmp_adversarial_losses_path, adversarial_losses_path)
+    logger.info("Saved adversarial loss curves to %s", adversarial_losses_path)
 
-    # Final adversary/adversaries (each is vmapped across n_reps replicates)
+    # Final adversary/adversaries (each is vmapped across n_reps replicates). The
+    # single- vs multi-adversary if/else and the force-profile vs ΔA log dispatch
+    # are the conditional emitter structure the write-surface branch matrix
+    # captures; keep both legs materializing so a single toy run cannot certify
+    # the whole surface.
     log_fn = (
         _log_linear_dynamics_adversary if use_linear_dynamics else _log_adversary_force_profiles
     )
     if n_adversaries == 1:
-        # Single adversary population: save with original filename for backward compat
-        fbx_save(output_dir / "trained_adversary.eqx", adversaries[0])
+        # Single adversary population: materialize with original filename for
+        # backward compat (the adversary is content-addressed in the terminal
+        # custody transaction above).
+        trained_adversary_path = output_dir / "trained_adversary.eqx"
+        tmp_trained_adversary_path = trained_adversary_path.with_name(
+            "tmp_" + trained_adversary_path.name
+        )
+        fbx_save(tmp_trained_adversary_path, adversaries[0])
+        os.replace(tmp_trained_adversary_path, trained_adversary_path)
         logger.info(
             "Saved trained adversary (n_reps=%d) to %s",
             n_reps,
-            output_dir / "trained_adversary.eqx",
+            trained_adversary_path,
         )
         log_fn(adversaries[0], output_dir, n_reps=n_reps)
     else:
@@ -1540,7 +1884,9 @@ def run_training(args: argparse.Namespace) -> None:
         adv_dir.mkdir(parents=True, exist_ok=True)
         for i, adv in enumerate(adversaries):
             adv_path = adv_dir / f"adversary_{i}.eqx"
-            fbx_save(adv_path, adv)
+            tmp_adv_path = adv_path.with_name("tmp_" + adv_path.name)
+            fbx_save(tmp_adv_path, adv)
+            os.replace(tmp_adv_path, adv_path)
             logger.info("Saved adversary %d to %s", i, adv_path)
             log_fn(adv, output_dir, suffix=f"_adv{i}", n_reps=n_reps)
         logger.info("Saved %d adversaries (each n_reps=%d) to %s", n_adversaries, n_reps, adv_dir)
@@ -1578,9 +1924,15 @@ def _log_adversary_force_profiles(
         n_reps,
     )
 
+    # Derived diagnostic materialization; the source adversary is
+    # content-addressed in the terminal custody transaction. Atomically staged
+    # (tmp-rooted → guard-classified ephemeral). Issue 7e71950.
     filename = f"adversary_force_profiles{suffix}.npz"
-    np.savez(output_dir / filename, forces=forces_np)
-    logger.info("Saved adversary force profiles to %s", output_dir / filename)
+    force_profiles_path = output_dir / filename
+    tmp_force_profiles_path = force_profiles_path.with_name("tmp_" + force_profiles_path.name)
+    np.savez(tmp_force_profiles_path, forces=forces_np)
+    os.replace(tmp_force_profiles_path, force_profiles_path)
+    logger.info("Saved adversary force profiles to %s", force_profiles_path)
 
 
 def _log_linear_dynamics_adversary(
@@ -1611,9 +1963,15 @@ def _log_linear_dynamics_adversary(
         norms.std(),
         n_reps,
     )
+    # Derived diagnostic materialization; the source adversary is
+    # content-addressed in the terminal custody transaction. Atomically staged
+    # (tmp-rooted → guard-classified ephemeral). Issue 7e71950.
     filename = f"adversary_delta_A{suffix}.npz"
-    np.savez(output_dir / filename, delta_A=deltas_np)
-    logger.info("Saved adversary ΔA matrices to %s", output_dir / filename)
+    delta_A_path = output_dir / filename
+    tmp_delta_A_path = delta_A_path.with_name("tmp_" + delta_A_path.name)
+    np.savez(tmp_delta_A_path, delta_A=deltas_np)
+    os.replace(tmp_delta_A_path, delta_A_path)
+    logger.info("Saved adversary ΔA matrices to %s", delta_A_path)
 
 
 # ---------------------------------------------------------------------------
@@ -1621,538 +1979,51 @@ def _log_linear_dynamics_adversary(
 # ---------------------------------------------------------------------------
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Minimax adversarial training for RLRMP reaching controllers."
+def parse_args() -> SimpleNamespace:
+    return minimax_config_namespace(legacy_cli_args_to_minimax_config(sys.argv[1:]))
+
+
+
+def author_minimax_training_run_spec(args: SimpleNamespace) -> TrainingRunSpec:
+    """Author, validate, and write the minimax TrainingRunSpec for a launch."""
+
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    spec_dir = Path(args.spec_dir) if args.spec_dir is not None else derive_spec_dir(output_dir)
+    mkdir_p(spec_dir)
+    spec_path = derive_spec_path(output_dir)
+    mkdir_p(spec_path.parent)
+
+    hps = build_hps(args)
+    key_init = jr.split(jr.PRNGKey(args.seed), 3)[0]
+    pair = setup_task_model_pair(hps, key=key_init)
+    graph_bundle = build_runtime_rlrmp_feedbax_graph_bundle(hps, pair.model)
+    graph_path = write_graph_spec_bundle(graph_bundle, spec_dir)
+    payload = build_minimax_training_run_spec(
+        args.__dict__,
+        graph_spec=graph_bundle.graph_spec,
+        output_dir=output_dir,
+        spec_dir=spec_dir,
+        git=_get_git_metadata(),
+        gpu_info=_collect_gpu_info(),
+        feedbax_graph=graph_bundle.to_run_metadata(graph_spec_path=graph_path.name),
     )
-    parser.add_argument(
-        "--n-warmup-batches",
-        type=int,
-        default=2000,
-        help="Number of warm-start batches before adversarial phase (default: 2000).",
-    )
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=250,
-        help="Per-batch trial count for warmup phase (default: 250).",
-    )
-    parser.add_argument(
-        "--n-replicates",
-        type=int,
-        default=5,
-        help="Number of vmapped controller replicates in the ensemble (default: 5).",
-    )
-    parser.add_argument(
-        "--n-adversary-batches",
-        type=int,
-        default=8000,
-        help="Number of adversarial training batches (default: 8000).",
-    )
-    parser.add_argument(
-        "--n-adversary-steps",
-        type=int,
-        default=5,
-        help="Inner adversary gradient-ascent steps per controller step (default: 5).",
-    )
-    parser.add_argument(
-        "--adversary-lr",
-        type=float,
-        default=3e-4,
-        help="Adversary learning rate (TTUR: should be 3-10x controller LR; default: 3e-4).",
-    )
-    parser.add_argument(
-        "--controller-lr",
-        type=float,
-        default=1e-4,
-        help="Controller learning rate during adversarial phase (default: 1e-4).",
-    )
-    parser.add_argument(
-        "--adversary-type",
-        type=str,
-        default="gaussian_bump",
-        choices=["gaussian_bump", "linear_dynamics"],
-        help=(
-            "Adversary class for the inner-loop maximisation. "
-            "'gaussian_bump' (default, flavour-(a) input-instance): produces "
-            "a per-trial force profile via a sum of learnable Gaussian bumps "
-            "injected through FixedField. 'linear_dynamics' (flavour-(b) "
-            "model-class): produces a ΔA matrix mapping [pos, vel] to a "
-            "velocity-row dynamics perturbation, constrained to a Frobenius "
-            "ball ||ΔA||_F ≤ eta_max via PGD; injected through "
-            "DynamicsMatrixPerturb. Bug: c723082."
-        ),
-    )
-    parser.add_argument(
-        "--linear-dynamics-eta-max",
-        type=float,
-        default=0.1,
-        help=(
-            "Frobenius-norm budget for LinearDynamicsAdversary at SISU=1 "
-            "(default: 0.1). SISU gating multiplies the resulting "
-            "perturbation force via the intervenor's `scale` field. Only "
-            "used with --adversary-type linear_dynamics."
-        ),
-    )
-    parser.add_argument(
-        "--linear-dynamics-pgd-steps",
-        type=int,
-        default=5,
-        help=(
-            "Number of inner PGD ascent steps for LinearDynamicsAdversary "
-            "(default: 5). Currently mirrors --n-adversary-steps; reserved "
-            "for future divergence."
-        ),
-    )
-    parser.add_argument(
-        "--linear-dynamics-lr",
-        type=float,
-        default=1e-2,
-        help=(
-            "Learning rate for the LinearDynamicsAdversary's PGD step "
-            "(default: 1e-2). Larger than the GaussianBump default since "
-            "ΔA values are O(eta_max) ≈ 0.1, vs O(1) for force amplitudes."
-        ),
-    )
-    parser.add_argument(
-        "--n-bumps",
-        type=int,
-        default=3,
-        help="Number of Gaussian bumps in the adversary (default: 3).",
-    )
-    parser.add_argument(
-        "--force-max",
-        type=float,
-        default=1.0,
-        help="Maximum adversary force magnitude per timestep (default: 1.0).",
-    )
-    parser.add_argument(
-        "--n-adversaries",
-        type=int,
-        default=1,
-        help=(
-            "Number of adversaries in the population (default: 1 = single adversary). "
-            "When K > 1, adversaries rotate each batch (index = batch_idx %% K), "
-            "providing diverse perturbation strategies."
-        ),
-    )
-    parser.add_argument(
-        "--adv-batch-size",
-        type=int,
-        default=None,
-        help=(
-            "Batch size for adversarial phase (default: same as warmup batch size). "
-            "Smaller values (e.g. 64) dramatically reduce XLA compilation time."
-        ),
-    )
-    parser.add_argument(
-        "--warmup-model",
-        type=str,
-        default=None,
-        help="Path to a pre-trained model to use as warm-start (skips phase 1).",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=str,
-        default="_artifacts/minimax/minimax_test",
-        help=(
-            "Output directory for bulk artifacts (checkpoints, .eqx, .npz, logs). "
-            "Default mirrors the role-based layout: _artifacts/<exp>/runs/<run>/. "
-            "Use rlrmp.paths.run_artifact_dir(exp, run) to construct this path "
-            "programmatically. The canonical run recipe is written to the flat "
-            "results/<exp>/runs/<run>.json path; the sibling directory "
-            "results/<exp>/runs/<run>/ holds the GraphSpec sidecar."
-        ),
-    )
-    parser.add_argument(
-        "--spec-dir",
-        type=str,
-        default=None,
-        help=(
-            "Tracked sidecar directory for the GraphSpec bundle (default: "
-            "derived from --output-dir via the mirror invariant, mapping "
-            "_artifacts/<exp>/runs/<run>/ -> results/<exp>/runs/<run>/). The "
-            "run recipe itself is always written to the flat "
-            "rlrmp.paths.run_spec_path(exp, run) = results/<exp>/runs/<run>.json "
-            "path. Bug: 0077b42; W8/e926665 (flat recipe)."
-        ),
-    )
-    parser.add_argument(
-        "--jax-cache-dir",
-        type=str,
-        default=None,
-        help=(
-            "Persistent JAX compilation cache directory. If omitted, uses "
-            "JAX_COMPILATION_CACHE_DIR from the environment when set."
-        ),
-    )
-    parser.add_argument(
-        "--jax-explain-cache-misses",
-        action="store_true",
-        help="Enable JAX cache-miss diagnostics for debugging recompilation.",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-        help="Random seed for JAX PRNG (default: 42). Use different seeds for independent replicates.",
-    )
-    parser.add_argument(
-        "--checkpoint",
-        action="store_true",
-        help=(
-            "Enable jax.checkpoint on the model's scan body to reduce peak VRAM at ~22%% "
-            "extra compute cost. Requires feedbax Graph to have a checkpoint field "
-            "(available on the target GPU pod); silently no-ops otherwise."
-        ),
-    )
-    parser.add_argument(
-        "--checkpoint-every",
-        type=int,
-        default=500,
-        help=(
-            "Save adversarial training checkpoint every N batches (default: 500). "
-            "Set 0 to disable. Checkpoints are written to "
-            "<output-dir>/checkpoints_adversarial/checkpoint_latest/ and overwritten "
-            "each time (only one checkpoint is kept)."
-        ),
-    )
-    parser.add_argument(
-        "--resume",
-        action="store_true",
-        help=(
-            "Resume adversarial training from the latest checkpoint in "
-            "<output-dir>/checkpoints_adversarial/checkpoint_latest/. "
-            "Skips phase 1 (warm-start) if warmup_model.eqx already exists in "
-            "<output-dir>."
-        ),
-    )
-    parser.add_argument(
-        "--loss-update-enabled",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help=(
-            "Enable adaptive loss update to drive control cost toward a target ratio "
-            "of goal-state cost (default: False)."
-        ),
-    )
-    parser.add_argument(
-        "--loss-update-ratio",
-        type=float,
-        default=0.5,
-        help=(
-            "Target ratio of control cost to goal-state cost for adaptive loss update "
-            "(default: 0.5). Only used when --loss-update-enabled is set."
-        ),
-    )
-    parser.add_argument(
-        "--fused",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help=(
-            "Fuse the K adversary steps + controller step into a single JIT "
-            "call using lax.fori_loop (default: True). Use --no-fused to fall "
-            "back to the decomposed approach (K×2 + 1 separate JIT calls per "
-            "batch) for debugging or comparison."
-        ),
-    )
-    parser.add_argument(
-        "--streaming-loss",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help=(
-            "Accumulate loss inside the simulation scan body instead of storing "
-            "the full state trajectory (default: False). Eliminates trajectory "
-            "memory at the cost of requiring all loss terms to support per-step "
-            "evaluation (cross-timestep losses like EffectorStraightPathLoss "
-            "are not supported). Use --no-streaming-loss to disable."
-        ),
-    )
-    parser.add_argument(
-        "--hidden-type",
-        type=str,
-        default="gru",
-        choices=["gru", "vanilla_rnn", "linear", "linear_tracker"],
-        help=(
-            "Controller architecture. RNNs: 'gru' (default, GRUCell with gating) "
-            "or 'vanilla_rnn' (LeakyRNNCell with tau=0.1 s => alpha=0.1, no gating, "
-            "diagnostic for the gating-laziness hypothesis). Linear-controller MVP "
-            "variants (Bug: 410d7ac): 'linear' is a pure LTV regulator "
-            "u_t=-K_t·e_t on the target-relative error state; 'linear_tracker' adds "
-            "an independent LTV feedforward channel u_ff(t) for the decoupling acid "
-            "test. With either linear variant, nn_hidden_size, population_structure "
-            "config, and the SISU-gating mode are ignored on the model side."
-        ),
-    )
-    parser.add_argument(
-        "--nn-hidden-derivative",
-        type=float,
-        default=0.0,
-        help=(
-            "Weight on the compositional hidden-state smoothness term "
-            "mean(||h_t - h_{t-1}||²) (default: 0.0 = disabled, baseline "
-            "behaviour). Set to 1e-3 to mirror Shahbazi et al. 2025 Eq. 1. "
-            "Bug: efc4d68."
-        ),
-    )
-    parser.add_argument(
-        "--nn-output-jerk",
-        type=float,
-        default=0.0,
-        help=(
-            "Weight on the compositional output-jerk term "
-            "mean(||v_{t+1} - 2 v_t + v_{t-1}||²) on effector velocity "
-            "(default: 0.0 = disabled, baseline behaviour). Set to 1e5 to "
-            "mirror Shahbazi et al. 2025 Eq. 1. Bug: efc4d68 (feedbax 7e1d257)."
-        ),
-    )
-    parser.add_argument(
-        "--nn-output-pre-go",
-        type=float,
-        default=0.0,
-        help=(
-            "Weight on the pre-go controller-output penalty: "
-            "EpochMaskedLoss wrapping the squared-L2 controller force, "
-            "active during epochs 0+1 (hold + target_on, before the go cue) "
-            "and zero afterwards. Default 0.0 = disabled. Suggested initial "
-            "weight 1e-2 (≈ 1000x the post-aggregated nn_output weight) to "
-            "strongly penalise pre-go anticipatory motor output without "
-            "affecting post-go reach dynamics. Bug: efc4d68 (feedbax 50507a9)."
-        ),
-    )
-    parser.add_argument(
-        "--nn-hidden-derivative-pre-go",
-        type=float,
-        default=0.0,
-        help=(
-            "Weight on the pre-go hidden-state-derivative penalty: "
-            "EpochMaskedLoss wrapping mean(||h_t - h_{t-1}||²), active "
-            "during epochs 0+1 (before the go cue) and zero afterwards. "
-            "Default 0.0 = disabled. Companion to --nn-output-pre-go for "
-            "the 'suppress preparation too' comparator. "
-            "Bug: efc4d68 (feedbax 50507a9)."
-        ),
-    )
-    parser.add_argument(
-        "--sisu-gating",
-        type=str,
-        default="additive",
-        choices=["additive", "multiplicative"],
-        help=(
-            "How SISU enters the network: additive (default, concatenated with input) "
-            "or multiplicative (post-hidden gain modulation h*(1+alpha*sisu), where "
-            "alpha is a learned per-unit vector). Multiplicative forces SISU to act "
-            "as neuromodulatory gain control rather than an ignorable input channel."
-        ),
-    )
-    # ---------------------------------------------------------------------------
-    # Loss-shape flags: restore historical simple_reach_loss structure.
-    # These expose the loss terms that existed before the running/late split so
-    # that variants A and B of the 6-cell anti-anticipation matrix can be run
-    # without changing loss.py defaults. Bug: 2bc95fd
-    # ---------------------------------------------------------------------------
-    parser.add_argument(
-        "--effector-hold-pos",
-        type=float,
-        default=10.0,
-        help=(
-            "Outer weight on the hold-period position penalty ||p(t) - p_0||² "
-            "(active during hold epoch). Default 10.0. Lowering to 0.0 disables "
-            "the hold-position constraint entirely. Bug: 2e1a6ad."
-        ),
-    )
-    parser.add_argument(
-        "--effector-hold-vel",
-        type=float,
-        default=10.0,
-        help=(
-            "Outer weight on the hold-period velocity penalty ||v(t)||² "
-            "(active during hold epoch). Default 10.0. Set to 0.0 to drop "
-            "the hold-velocity constraint (e.g. for lit-replication runs "
-            "matching C&S 2019 which only use position hold). Bug: 2e1a6ad."
-        ),
-    )
-    parser.add_argument(
-        "--effector-final-vel",
-        type=float,
-        default=0.0,
-        help=(
-            "Weight on the terminal-step velocity penalty ||v(T)||² (fires only at "
-            "t=T, the last simulation step). Mirrors the historical "
-            "effector_final_velocity term in simple_reach_loss (feedbax commit "
-            "e985e0e). Default 0.0 = disabled (baseline behaviour unchanged). "
-            "Variant A: set to 1.0 combined with --effector-vel-late 0.0. "
-            "Bug: 2bc95fd."
-        ),
-    )
-    parser.add_argument(
-        "--effector-vel-late",
-        type=float,
-        default=0.1,
-        help=(
-            "Weight on the late-window velocity penalty (entire [go+80, T] window). "
-            "Default 0.1 (current production value). Set to 0.0 combined with "
-            "--effector-final-vel 1.0 to switch from a window penalty to a "
-            "terminal-step penalty (Variants A and B). Bug: 2bc95fd."
-        ),
-    )
-    parser.add_argument(
-        "--effector-pos-running",
-        type=float,
-        default=1.0,
-        help=(
-            "Weight on the running position penalty (uniform over the entire "
-            "post-go movement window [go, T]). Default 1.0 (current production "
-            "value). Set to 0.0 for Variant B, which drops the running position "
-            "term and relies entirely on the late cosine-ramped term. Bug: 2bc95fd."
-        ),
-    )
-    parser.add_argument(
-        "--effector-pos-late-weight",
-        type=float,
-        default=0.5,
-        help=(
-            "Outer weight on the late-window position penalty (cosine-ramped from "
-            "go+start_step to T). Default 0.5 (current production value). "
-            "Variant B: set to 1.0 to compensate for dropping the running term. "
-            "Bug: 2bc95fd."
-        ),
-    )
-    parser.add_argument(
-        "--effector-pos-late-final-scale",
-        type=float,
-        default=2.0,
-        help=(
-            "Final scale factor for the cosine ramp on the late position term "
-            "(ramps from 1.0 to this value over [go+start_step, T]). Default 2.0 "
-            "(current production value). Variant B: set to 6.0 to create a steeper "
-            "end-heavy profile approximating the historical (t/T)^6 discount. "
-            "Bug: 2bc95fd."
-        ),
-    )
-    parser.add_argument(
-        "--effector-pos-late-start-step",
-        type=int,
-        default=80,
-        help=(
-            "Start of the late position-error window, in steps after the go cue. "
-            "Default 80 (current production value, ~800 ms post-go at dt=0.01 s). "
-            "Variant B: set to 0 to start the cosine ramp immediately at the go "
-            "cue, approximating the historical (t/T)^6 full-trial discount. "
-            "Bug: 2bc95fd."
-        ),
-    )
-    # ---------------------------------------------------------------------------
-    # Power-law position schedule flags (Bug: 2e1a6ad).
-    # These expose a faithful (t / (T-1))^power schedule for the position-error
-    # terms, replicating C&S 2019 Eq. 15.  Default "flat" keeps existing
-    # behaviour unchanged; "powerlaw" enables the ramp.
-    # ---------------------------------------------------------------------------
-    parser.add_argument(
-        "--effector-pos-running-schedule",
-        type=str,
-        default="flat",
-        choices=["flat", "powerlaw", "movement_ramp"],
-        help=(
-            "Time-weighting schedule for the running position-error term "
-            "(effector_pos_running, active post-go). 'flat' (default) applies "
-            "uniform weight across the movement window. 'powerlaw' multiplies "
-            "by (t / (T-1))^power where T is the full trial length and power "
-            "is set via --position-powerlaw-power (default 6.0, matching "
-            "C&S 2019 Eq. 15). 'movement_ramp' starts at the movement epoch, "
-            "is zero before movement, ramps for --movement-ramp-duration-steps, "
-            "and then stays at one. Bug: 2e1a6ad; b399efc."
-        ),
-    )
-    parser.add_argument(
-        "--effector-hold-pos-schedule",
-        type=str,
-        default="flat",
-        choices=["flat", "powerlaw"],
-        help=(
-            "Time-weighting schedule for the hold-period position-error term "
-            "(effector_hold_pos, active during hold epoch). 'flat' (default) "
-            "applies uniform weight during hold. 'powerlaw' multiplies by "
-            "(t / (T-1))^power using full-trial normalisation, so the hold "
-            "epoch (early in trial) receives very small weight — concentrating "
-            "the hold penalty on the final timesteps consistent with "
-            "C&S 2019 Eq. 15. Bug: 2e1a6ad."
-        ),
-    )
-    parser.add_argument(
-        "--position-powerlaw-power",
-        type=float,
-        default=6.0,
-        help=(
-            "Exponent for the (t/(T-1))^power position-error schedule. "
-            "Default 6.0 matches C&S 2019 Eq. 15 (puts ~98%% of weight in "
-            "the last 30%% of the trial). Only used when "
-            "--effector-pos-running-schedule powerlaw or "
-            "--effector-hold-pos-schedule powerlaw is set. Bug: 2e1a6ad."
-        ),
-    )
-    parser.add_argument(
-        "--movement-ramp-shape",
-        type=str,
-        default="linear",
-        choices=["linear", "cosine", "power"],
-        help=(
-            "Shape for --effector-pos-running-schedule movement_ramp. The ramp "
-            "starts at the movement epoch, is zero before movement, and stays "
-            "at one after --movement-ramp-duration-steps. Bug: b399efc."
-        ),
-    )
-    parser.add_argument(
-        "--movement-ramp-duration-steps",
-        type=int,
-        default=60,
-        help=(
-            "Fixed number of timesteps over which the movement-locked position "
-            "ramp rises from zero to one. Default 60. Bug: b399efc."
-        ),
-    )
-    parser.add_argument(
-        "--movement-ramp-power",
-        type=float,
-        default=2.0,
-        help=(
-            "Exponent used when --movement-ramp-shape power is selected. "
-            "Ignored for linear and cosine ramps. Bug: b399efc."
-        ),
-    )
-    # ---------------------------------------------------------------------------
-    # Task and loss hyperparameters previously hardcoded in build_hps.
-    # Bug: 2e1a6ad
-    # ---------------------------------------------------------------------------
-    parser.add_argument(
-        "--p-catch-trial",
-        type=float,
-        default=0.5,
-        help=(
-            "Probability of a catch trial (no go cue) in center_out_delayed_reach. "
-            "Default 0.5 (Shahbazi 2025 §4.2). Bug: 2e1a6ad."
-        ),
-    )
-    parser.add_argument(
-        "--nn-output",
-        type=float,
-        default=1e-5,
-        help=(
-            "Weight on the squared L2 controller-output regularisation term "
-            "mean(||u_t||²) (active for all post-go timesteps). Default 1e-5. "
-            "Bug: 2e1a6ad."
-        ),
-    )
-    parser.add_argument(
-        "--nn-hidden",
-        type=float,
-        default=1e-5,
-        help=(
-            "Weight on the squared L2 hidden-state regularisation term "
-            "mean(||h_t||²). Default 1e-5. Bug: 2e1a6ad."
-        ),
-    )
-    return parser.parse_args()
+    validate_minimax_run_spec(payload, spec_dir=spec_dir)
+    with open(spec_path, "w") as f:
+        json.dump(payload, f, indent=2, default=str)
+    logger.info("Saved validated minimax TrainingRunSpec recipe to %s", spec_path)
+    return TrainingRunSpec.model_validate(payload["feedbax_training_run_spec"])
+
+
+def training_run_spec_from_argv(argv: list[str]) -> TrainingRunSpec:
+    """Return the spec requested by CLI argv without exposing raw args to training."""
+
+    if argv[:1] == ["--training-run-spec"]:
+        if len(argv) != 2:
+            raise ValueError("--training-run-spec expects exactly one path")
+        return minimax_training_run_spec_from_file(argv[1])
+    args = minimax_config_namespace(legacy_cli_args_to_minimax_config(argv))
+    return author_minimax_training_run_spec(args)
 
 
 if __name__ == "__main__":
@@ -2160,5 +2031,5 @@ if __name__ == "__main__":
         level=logging.INFO,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
-    args = parse_args()
-    run_training(args)
+    spec = training_run_spec_from_argv(sys.argv[1:])
+    run_training(spec)

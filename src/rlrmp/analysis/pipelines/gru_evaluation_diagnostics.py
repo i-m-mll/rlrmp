@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -34,7 +34,12 @@ from rlrmp.analysis.pipelines._selected_eval_rollouts import (
     SelectedEvalRolloutProduct,
     initial_effector_position as rollout_initial_effector_position,
 )
+from rlrmp.model.feedback_descriptors import (
+    DESCRIPTOR_PAYLOAD_KEY,
+    resolve_controller_feedback_view_from_gru_input,
+)
 from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path
+from rlrmp.runtime.run_spec_access import require_run_dt, require_run_seed
 from rlrmp.runtime.spec_migrations import (
     GRU_EVALUATION_DIAGNOSTICS_KIND,
     GRU_EVALUATION_DIAGNOSTICS_SCHEMA_VERSION,
@@ -81,16 +86,12 @@ def materialize_gru_evaluation_diagnostics(
     jacobian_timepoints: Sequence[str] = DEFAULT_JACOBIAN_TIMEPOINTS,
     write_bulk_arrays: bool = True,
     regeneration_spec_path: Path | None = None,
+    evaluation_manifest_path: Path | None = None,
+    evaluation_states: Mapping[str, Any] | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
     """Write non-certificate rollout/RNN diagnostics for selected GRU checkpoints."""
 
-    runs = resolve_run_inputs(
-        experiment=experiment,
-        run_ids=run_ids,
-        labels=labels,
-        repo_root=repo_root,
-    )
     output_path = output_path or (
         repo_root / "results" / experiment / "notes" / DEFAULT_OUTPUT_FILENAME
     )
@@ -99,117 +100,140 @@ def materialize_gru_evaluation_diagnostics(
     mkdir_p(output_path.parent)
     if write_bulk_arrays:
         mkdir_p(bulk_dir)
-
-    run_summaries: dict[str, Any] = {}
-    for run in runs:
-        evaluation, model = _evaluate_run_rollout_product(
-            run,
+    if evaluation_states is not None:
+        manifest = _manifest_from_evaluation_states(
+            evaluation_states,
             experiment=experiment,
-            n_rollout_trials=n_rollout_trials,
-            use_validation_selected_checkpoints=use_validation_selected_checkpoints,
-            preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
+            run_ids=run_ids,
+            labels=labels,
+            output_path=output_path,
+            bulk_dir=bulk_dir,
+            regeneration_spec_path=regeneration_spec_path,
+            evaluation_manifest_path=evaluation_manifest_path,
             repo_root=repo_root,
         )
-        behavior = summarize_rollout_behavior(evaluation)
-        feedback_scales = summarize_controller_feedback_scales(
-            evaluation,
-            run_id=run.run_id,
-            checkpoint_policy=_effective_checkpoint_policy_from_manifest(
-                experiment,
+        runs = []
+        wrote_regeneration_spec = True
+    else:
+        runs = resolve_run_inputs(
+            experiment=experiment,
+            run_ids=run_ids,
+            labels=labels,
+            repo_root=repo_root,
+        )
+        run_summaries: dict[str, Any] = {}
+        for run in runs:
+            evaluation, model = _evaluate_run_rollout_product(
+                run,
+                experiment=experiment,
+                n_rollout_trials=n_rollout_trials,
+                use_validation_selected_checkpoints=use_validation_selected_checkpoints,
                 preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
                 repo_root=repo_root,
-            ),
-        )
-        gates = summarize_gru_gates(model.nodes["net"].hidden, evaluation)
-        jacobians = summarize_gru_jacobians(
-            model.nodes["net"].hidden,
-            evaluation,
-            timepoint_policy=jacobian_timepoints,
-        )
-        bulk_file = None
-        if write_bulk_arrays:
-            bulk_file = write_bulk_rollout_arrays(
-                evaluation,
-                bulk_dir=bulk_dir,
-                run_id=run.run_id,
-                repo_root=repo_root,
             )
-        checkpoint_policy = _effective_checkpoint_policy_from_manifest(
-            experiment,
-            preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
-            repo_root=repo_root,
-        )
-        run_summaries[run.run_id] = {
-            "label": run.label,
-            "run_spec_path": _repo_relative(run.run_spec_path, repo_root=repo_root),
-            "artifact_dir": _repo_relative(run.artifact_dir, repo_root=repo_root),
-            "checkpoint_policy": checkpoint_policy,
-            "checkpoint_selection": [
-                selection.to_json(repo_root=repo_root)
-                for selection in evaluation.checkpoint_selection
-            ],
-            "n_replicates": int(evaluation.command.shape[0]),
-            "n_rollout_trials_per_replicate": int(evaluation.command.shape[1]),
-            "n_time_steps": int(evaluation.command.shape[2]),
-            "dt_s": evaluation.dt,
-            "definitions": diagnostic_definitions(),
-            "behavior": behavior,
-            "controller_feedback_scales": feedback_scales,
-            "gru_gates": gates,
-            "local_recurrent_jacobians": jacobians,
-            "bulk_arrays": (
-                None
-                if bulk_file is None
-                else {
-                    "path": _repo_relative(bulk_file, repo_root=repo_root),
-                    "format": "np.savez_compressed",
-                    "arrays": [
-                        "position",
-                        "velocity",
-                        "command",
-                        "hidden_norm",
-                        "gru_input",
-                        "target_position",
-                    ],
-                }
-            ),
-        }
-
-    manifest = stamp_current_schema(
-        GRU_EVALUATION_DIAGNOSTICS_KIND,
-        {
-            "issue": experiment,
-            "checkpoint_policy": (
-                _effective_checkpoint_policy_from_manifest(
+            behavior = summarize_rollout_behavior(evaluation)
+            feedback_scales = summarize_controller_feedback_scales(
+                evaluation,
+                run_id=run.run_id,
+                checkpoint_policy=_effective_checkpoint_policy_from_manifest(
                     experiment,
                     preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
                     repo_root=repo_root,
-                )
-                if use_validation_selected_checkpoints
-                else "final_checkpoint"
-            ),
-            "scope": "post_hoc_evaluation_non_certificate_diagnostics",
-            "regeneration_spec": _repo_relative(regeneration_spec_path, repo_root=repo_root),
-            "standard_certificate_metrics": {
-                "status": "excluded",
-                "excluded_metrics": [
-                    "state_weighted_action_mismatch",
-                    "clean_action_mismatch",
-                    "4d_observation_history_to_action_map_mismatch",
-                    "closed_loop_transition_mismatch",
-                    "value_gap",
-                    "bellman_hessian_residual",
-                ],
-                "note": (
-                    "This sidecar records rollout behavior and recurrent-controller "
-                    "diagnostics only. Standard certificate and action/I/O mismatch "
-                    "metrics remain in the standard-certificate manifests."
                 ),
+            )
+            gates = summarize_gru_gates(model.nodes["net"].hidden, evaluation)
+            jacobians = summarize_gru_jacobians(
+                model.nodes["net"].hidden,
+                evaluation,
+                timepoint_policy=jacobian_timepoints,
+            )
+            bulk_file = None
+            if write_bulk_arrays:
+                bulk_file = write_bulk_rollout_arrays(
+                    evaluation,
+                    bulk_dir=bulk_dir,
+                    run_id=run.run_id,
+                    repo_root=repo_root,
+                )
+            checkpoint_policy = _effective_checkpoint_policy_from_manifest(
+                experiment,
+                preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
+                repo_root=repo_root,
+            )
+            run_summaries[run.run_id] = {
+                "label": run.label,
+                "run_spec_path": _repo_relative(run.run_spec_path, repo_root=repo_root),
+                "artifact_dir": _repo_relative(run.artifact_dir, repo_root=repo_root),
+                "checkpoint_policy": checkpoint_policy,
+                "checkpoint_selection": [
+                    selection.to_json(repo_root=repo_root)
+                    for selection in evaluation.checkpoint_selection
+                ],
+                "n_replicates": int(evaluation.command.shape[0]),
+                "n_rollout_trials_per_replicate": int(evaluation.command.shape[1]),
+                "n_time_steps": int(evaluation.command.shape[2]),
+                "dt_s": evaluation.dt,
+                "definitions": diagnostic_definitions(),
+                "behavior": behavior,
+                "controller_feedback_scales": feedback_scales,
+                "gru_gates": gates,
+                "local_recurrent_jacobians": jacobians,
+                "bulk_arrays": (
+                    None
+                    if bulk_file is None
+                    else {
+                        "path": _repo_relative(bulk_file, repo_root=repo_root),
+                        "format": "np.savez_compressed",
+                        "arrays": [
+                            "position",
+                            "velocity",
+                            "command",
+                            "hidden_norm",
+                            "gru_input",
+                            "target_position",
+                        ],
+                    }
+                ),
+            }
+
+        manifest = stamp_current_schema(
+            GRU_EVALUATION_DIAGNOSTICS_KIND,
+            {
+                "issue": experiment,
+                "checkpoint_policy": (
+                    _effective_checkpoint_policy_from_manifest(
+                        experiment,
+                        preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
+                        repo_root=repo_root,
+                    )
+                    if use_validation_selected_checkpoints
+                    else "final_checkpoint"
+                ),
+                "scope": "post_hoc_evaluation_non_certificate_diagnostics",
+                "regeneration_spec": _repo_relative(regeneration_spec_path, repo_root=repo_root),
+                "standard_certificate_metrics": {
+                    "status": "excluded",
+                    "excluded_metrics": [
+                        "state_weighted_action_mismatch",
+                        "clean_action_mismatch",
+                        "4d_observation_history_to_action_map_mismatch",
+                        "closed_loop_transition_mismatch",
+                        "value_gap",
+                        "bellman_hessian_residual",
+                    ],
+                    "note": (
+                        "This sidecar records rollout behavior and recurrent-controller "
+                        "diagnostics only. Standard certificate and action/I/O mismatch "
+                        "metrics remain in the standard-certificate manifests."
+                    ),
+                },
+                "runs": run_summaries,
             },
-            "runs": run_summaries,
-        },
-    )
+        )
+        wrote_regeneration_spec = False
     output_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if wrote_regeneration_spec:
+        return manifest
     write_regeneration_spec(
         spec_path=regeneration_spec_path,
         diagnostic_name="gru_evaluation_diagnostics",
@@ -228,15 +252,14 @@ def materialize_gru_evaluation_diagnostics(
             ),
             "jacobian_timepoints": list(jacobian_timepoints),
             "write_bulk_arrays": write_bulk_arrays,
+            "evaluation_manifest_path": (
+                None
+                if evaluation_manifest_path is None
+                else _repo_relative(evaluation_manifest_path, repo_root=repo_root)
+            ),
         },
-        inputs=[
-            {"role": "run_spec", "path": run.run_spec_path}
-            for run in runs
-        ]
-        + [
-            {"role": "run_artifact_dir", "path": run.artifact_dir}
-            for run in runs
-        ]
+        inputs=[{"role": "run_spec", "path": run.run_spec_path} for run in runs]
+        + [{"role": "run_artifact_dir", "path": run.artifact_dir} for run in runs]
         + (
             []
             if preferred_checkpoint_manifest_path is None
@@ -253,6 +276,97 @@ def materialize_gru_evaluation_diagnostics(
         notes=[
             "Evaluation diagnostics are non-certificate sidecars.",
             "Bulk rollout arrays may be deleted and regenerated from this spec if checkpoints remain.",
+        ],
+        repo_root=repo_root,
+    )
+    return manifest
+
+
+def _manifest_from_evaluation_states(
+    evaluation_states: Mapping[str, Any],
+    *,
+    experiment: str,
+    run_ids: Sequence[str],
+    labels: Sequence[str] | None,
+    output_path: Path,
+    bulk_dir: Path,
+    regeneration_spec_path: Path,
+    evaluation_manifest_path: Path | None,
+    repo_root: Path,
+) -> dict[str, Any]:
+    """Return the legacy diagnostics manifest from resolved Feedbax evaluation states."""
+
+    legacy_manifest = evaluation_states.get("legacy_diagnostics_manifest")
+    if isinstance(legacy_manifest, Mapping):
+        manifest = dict(legacy_manifest)
+    else:
+        manifest = stamp_current_schema(
+            GRU_EVALUATION_DIAGNOSTICS_KIND,
+            {
+                "issue": experiment,
+                "checkpoint_policy": "evaluation_manifest",
+                "scope": "post_hoc_evaluation_non_certificate_diagnostics",
+                "regeneration_spec": _repo_relative(regeneration_spec_path, repo_root=repo_root),
+                "standard_certificate_metrics": {
+                    "status": "excluded",
+                    "excluded_metrics": [
+                        "state_weighted_action_mismatch",
+                        "clean_action_mismatch",
+                        "4d_observation_history_to_action_map_mismatch",
+                        "closed_loop_transition_mismatch",
+                        "value_gap",
+                        "bellman_hessian_residual",
+                    ],
+                    "note": (
+                        "This sidecar records rollout behavior and recurrent-controller "
+                        "diagnostics only. Standard certificate and action/I/O mismatch "
+                        "metrics remain in the standard-certificate manifests."
+                    ),
+                },
+                "runs": {},
+            },
+        )
+    manifest["evaluation_manifest_dependency"] = {
+        "manifest_id": evaluation_states.get("evaluation_manifest_id"),
+        "evaluation_type": evaluation_states.get("evaluation_type"),
+        "path": (
+            None
+            if evaluation_manifest_path is None
+            else _repo_relative(evaluation_manifest_path, repo_root=repo_root)
+        ),
+        "product_role": evaluation_states.get("product_role"),
+    }
+    write_regeneration_spec(
+        spec_path=regeneration_spec_path,
+        diagnostic_name="gru_evaluation_diagnostics",
+        materializer=(
+            "rlrmp.analysis.pipelines.gru_evaluation_diagnostics."
+            "materialize_gru_evaluation_diagnostics"
+        ),
+        command=None,
+        parameters={
+            "experiment": experiment,
+            "run_ids": list(run_ids),
+            "labels": None if labels is None else list(labels),
+            "evaluation_manifest_path": (
+                None
+                if evaluation_manifest_path is None
+                else _repo_relative(evaluation_manifest_path, repo_root=repo_root)
+            ),
+        },
+        inputs=(
+            []
+            if evaluation_manifest_path is None
+            else [{"role": "evaluation_run_manifest", "path": evaluation_manifest_path}]
+        ),
+        outputs=[
+            {"role": "evaluation_diagnostics_manifest", "path": output_path},
+            {"role": "bulk_rollout_dir", "path": bulk_dir},
+        ],
+        source_files=["src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py"],
+        notes=[
+            "Evaluation diagnostics were emitted from a Feedbax EvaluationRunManifest "
+            "ParentRef resolved by the analysis stage."
         ],
         repo_root=repo_root,
     )
@@ -319,7 +433,7 @@ def _evaluate_run_rollout_product(
 
     hps = dict_to_namespace(normalize_gru_hps(run.run_spec["hps"]), to_type=TreeNamespace)
     n_replicates = int(hps.model.n_replicates)
-    seed = int(run.run_spec.get("seed", 42))
+    seed = require_run_seed(run.run_spec, source=run.run_spec_path)
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
     if use_validation_selected_checkpoints:
         model, checkpoint_selection = load_validation_selected_checkpoint_model(
@@ -359,7 +473,7 @@ def _evaluate_run_rollout_product(
         model_arrays,
         jr.split(jr.PRNGKey(0), n_replicates),
     )
-    dt = float(run.run_spec.get("game_card", {}).get("dt", getattr(hps, "dt", 0.01)))
+    dt = require_run_dt(run.run_spec, hps, source=run.run_spec_path)
     return (
         SelectedEvalRolloutProduct.from_states(
             states,
@@ -461,12 +575,12 @@ def summarize_controller_feedback_scales(
     run_id: str | None = None,
     checkpoint_policy: str | None = None,
     statistic: str = CONTROLLER_FEEDBACK_SCALE_STATISTIC,
+    feedback_descriptor_payload: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Summarize rollout-derived scales for controller-visible feedback channels.
 
-    The GRU input may include non-feedback features before the feedback block. The
-    feedback contract is therefore read from the trailing four or six columns:
-    position x/y, velocity x/y, and optionally force/filter x/y.
+    Descriptor resolution owns the feedback-vector basis and any legacy adoption
+    needed for historical GRU inputs that did not serialize descriptor records.
     """
 
     if statistic != CONTROLLER_FEEDBACK_SCALE_STATISTIC:
@@ -476,36 +590,38 @@ def summarize_controller_feedback_scales(
     if gru_input.ndim < 4:
         raise ValueError("evaluation.gru_input must have shape replicate/trial/time/feature")
     input_dim = int(gru_input.shape[-1])
-    feedback_dim = 6 if input_dim >= 6 else 4 if input_dim >= 4 else input_dim
-    if feedback_dim < 4:
+    try:
+        feedback_view = resolve_controller_feedback_view_from_gru_input(
+            gru_input,
+            payload=feedback_descriptor_payload,
+            source="gru_evaluation_diagnostics.controller_feedback_scales",
+        )
+    except ValueError as exc:
         return {
             "status": "unavailable",
-            "reason": f"gru_input trailing feedback block requires at least 4 dims, got {input_dim}",
+            "reason": str(exc),
             "run_id": run_id,
             "checkpoint_policy": checkpoint_policy,
             "gru_input_dim": input_dim,
-            "feedback_dim": feedback_dim,
+            "feedback_dim": input_dim,
             "components": {},
         }
 
-    start = input_dim - feedback_dim
-    component_specs = [
-        ("position", "m", (0, 1)),
-        ("velocity", "m/s", (2, 3)),
-    ]
-    if feedback_dim >= 6:
-        component_specs.append(("force_filter", "N", (4, 5)))
-
     components: dict[str, Any] = {}
-    for name, units, basis_indices in component_specs:
-        absolute_indices = tuple(start + idx for idx in basis_indices)
-        values = gru_input[..., absolute_indices]
+    for component in feedback_view.iter_components():
+        values = component.values
+        if values is None:
+            raise ValueError("resolved controller feedback view did not bind values")
         norm = jnp.linalg.norm(values, axis=-1)
         abs_values = jnp.abs(values)
-        components[name] = {
-            "units": units,
-            "feedback_basis_indices": list(basis_indices),
-            "gru_input_indices": list(absolute_indices),
+        components[component.component_id] = {
+            "descriptor_id": component.descriptor_id,
+            "label": component.label,
+            "units": component.units,
+            "feedback_basis_indices": list(
+                range(component.slice.start, component.slice.stop, component.slice.step)
+            ),
+            "gru_input_indices": list(component.absolute_indices),
             "rms_norm": float(jnp.sqrt(jnp.mean(jnp.square(norm)))),
             "p95_norm": float(jnp.quantile(norm.reshape(-1), 0.95)),
             "per_component_rms": [
@@ -517,23 +633,23 @@ def summarize_controller_feedback_scales(
                 for idx in range(abs_values.shape[-1])
             ],
         }
-        components[name]["reference_scale"] = float(components[name][statistic])
-        components[name]["reference_scale_statistic"] = statistic
+        components[component.component_id]["reference_scale"] = float(
+            components[component.component_id][statistic]
+        )
+        components[component.component_id]["reference_scale_statistic"] = statistic
 
     return {
         "status": "available",
         "schema_version": "rlrmp.controller_feedback_scales.v1",
+        DESCRIPTOR_PAYLOAD_KEY: dict(feedback_view.payload),
+        "descriptor_basis_hash": feedback_view.descriptor_basis_hash,
         "run_id": run_id,
         "checkpoint_policy": checkpoint_policy,
-        "source": "nominal_selected_checkpoint_rollouts.states.net.input.trailing_feedback_channels",
-        "feedback_basis": (
-            "target_relative_delayed_feedback_plus_force_filter"
-            if feedback_dim >= 6
-            else "target_relative_delayed_feedback"
-        ),
+        "source": "nominal_selected_checkpoint_rollouts.states.net.input.controller_feedback",
+        "feedback_basis": feedback_view.basis_id,
         "gru_input_dim": input_dim,
-        "feedback_dim": feedback_dim,
-        "feedback_start_index": start,
+        "feedback_dim": feedback_view.feedback_dim,
+        "feedback_start_index": feedback_view.start_index,
         "statistic": statistic,
         "scale_rule": "amplitude = component.reference_scale * level_fraction_of_reach",
         "components": components,

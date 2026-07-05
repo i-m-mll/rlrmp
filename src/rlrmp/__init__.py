@@ -143,17 +143,21 @@ def ensure_rlrmp_recipes_registered(
     _RECIPES_REGISTERED = "in_progress"
     try:
         from rlrmp.runtime.spec_migrations import ensure_rlrmp_spec_families
+        from rlrmp.eval.recipes import register_rlrmp_evaluation_recipes
         from rlrmp.analysis.matrix import register_standard_matrix_recipes
         from rlrmp.analysis.declarative_materialization import (
             register_declarative_materialization_recipes,
         )
+        from rlrmp.analysis.reports import register_rlrmp_report_recipes
         from rlrmp.analysis.training_diagnostics import (
             register_training_diagnostics_recipes,
         )
 
         ensure_rlrmp_spec_families()
+        register_rlrmp_evaluation_recipes(replace=True)
         register_standard_matrix_recipes()
         register_declarative_materialization_recipes(replace=True)
+        register_rlrmp_report_recipes(replace=True)
         register_training_diagnostics_recipes()
     except Exception:
         # Reset so a later call re-attempts registration.

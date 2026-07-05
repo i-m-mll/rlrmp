@@ -6,6 +6,7 @@ import json
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Literal
 
 import equinox as eqx
@@ -18,6 +19,7 @@ from feedbax.contracts.graph import (
 )
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 
+from rlrmp.analysis.perturbation_rows import PerturbationChannel, PerturbationSpec
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     TARGET_POS,
@@ -34,7 +36,6 @@ from rlrmp.analysis.math.cs_released_simulation import (
     zero_forward_noise_draws,
     zero_noise_covariances,
 )
-from rlrmp.analysis.pipelines.diagnostic_provenance import write_regeneration_spec
 from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     CheckpointSelectionMode,
     load_materialized_fixed_bank_manifest,
@@ -45,7 +46,6 @@ from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import RolloutEvaluatio
 from rlrmp.analysis.pipelines.gru_pilot_figures import (
     RunFigureInputs,
     repeat_single_validation_trial,
-    resolve_run_inputs,
 )
 from rlrmp.analysis.math.output_feedback import (
     OutputFeedbackConfig,
@@ -60,9 +60,17 @@ from rlrmp.model.feedbax_channel_adapters import (
     find_materialized_additive_channel_adapter,
     materialize_additive_channel_adapter_on_graph,
 )
-from rlrmp.io import write_compact_json
+from rlrmp.model.feedback_descriptors import (
+    COMPONENT_FORCE_FILTER,
+    COMPONENT_POSITION,
+    COMPONENT_VELOCITY,
+    DESCRIPTOR_PAYLOAD_KEY,
+    controller_feedback_axis_index,
+    resolve_controller_feedback_view,
+)
 from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.runtime.run_spec_access import require_run_seed
 
 
 SCHEMA_VERSION = "rlrmp.gru_perturbation_bank.v3"
@@ -78,77 +86,10 @@ DEFAULT_RUN_IDS = (
     "lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64",
 )
 
-PerturbationChannel = Literal[
-    "initial_state",
-    "command_input",
-    "process_epsilon",
-    "sensory_feedback",
-    "delayed_observation",
-    "target_stream",
-]
 PerturbationStatus = Literal["evaluated", "blocked", "not_implemented", "not_applicable"]
 
 GRAPH_ADAPTER_INPUT_PREFIX = "perturbation.channel"
 PerturbationEvaluationBackend = Literal["serial"]
-
-
-@dataclass(frozen=True)
-class PerturbationSpec:
-    """Declarative perturbation row in the standard C&S bank."""
-
-    perturbation_id: str
-    channel: PerturbationChannel
-    family: str
-    amplitude: float
-    units: str
-    axis: str
-    basis: str
-    sign: int
-    timing: Mapping[str, Any]
-    adapter: str
-    description: str
-    epsilon_component: str | None = None
-    epsilon_index: int | None = None
-    initial_position_case: str | None = None
-    calibration_role: str | None = None
-    timing_bin: str | None = None
-    semantic_family: str | None = None
-    channel_provenance: Mapping[str, Any] | None = None
-    calibration_provenance: Mapping[str, Any] | None = None
-
-    def to_json(self) -> dict[str, Any]:
-        """Return a JSON-serializable perturbation specification."""
-
-        row = {
-            "perturbation_id": self.perturbation_id,
-            "channel": self.channel,
-            "family": self.family,
-            "amplitude": float(self.amplitude),
-            "units": self.units,
-            "axis": self.axis,
-            "basis": self.basis,
-            "sign": int(self.sign),
-            "timing": dict(self.timing),
-            "adapter": self.adapter,
-            "description": self.description,
-        }
-        if self.epsilon_component is not None:
-            row["epsilon_component"] = self.epsilon_component
-        if self.epsilon_index is not None:
-            row["epsilon_index"] = int(self.epsilon_index)
-        if self.initial_position_case is not None:
-            row["initial_position_case"] = self.initial_position_case
-        if self.calibration_role is not None:
-            row["calibration_role"] = self.calibration_role
-        if self.timing_bin is not None:
-            row["timing_bin"] = self.timing_bin
-        if self.semantic_family is not None:
-            row["semantic_family"] = self.semantic_family
-        if self.channel_provenance is not None:
-            row["channel_provenance"] = dict(self.channel_provenance)
-        if self.calibration_provenance is not None:
-            row.update(dict(self.calibration_provenance))
-        return row
 
 
 @dataclass(frozen=True)
@@ -191,10 +132,9 @@ def default_cs_perturbation_bank(
     if mode != "raw":
         raise ValueError(f"unsupported perturbation bank mode {mode!r}")
 
-    from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
-        DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS,
-        DEFAULT_PLANT_TIMING_BINS,
-    )
+    from rlrmp.data_products.calibration import load_perturbation_calibration_defaults
+
+    calibration_defaults = load_perturbation_calibration_defaults()
 
     perturbations: list[PerturbationSpec] = []
     for family, units, amplitude in (
@@ -238,7 +178,7 @@ def default_cs_perturbation_bank(
         ("integrator", "x", 6, "integrator_x"),
         ("integrator", "y", 7, "integrator_y"),
     )
-    for timing_bin in DEFAULT_PLANT_TIMING_BINS:
+    for timing_bin in calibration_defaults.plant_timing_bins:
         start = int(timing_bin.start_time_index)
         duration = int(timing_bin.duration_steps)
         for axis in ("x", "y"):
@@ -366,7 +306,7 @@ def default_cs_perturbation_bank(
                         ),
                     )
                 )
-    for timing_bin in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS:
+    for timing_bin in calibration_defaults.controller_visible_timing_bins:
         start = int(timing_bin.start_time_index)
         duration = int(timing_bin.duration_steps)
         for channel, family, basis, description, semantic_family, provenance in (
@@ -382,29 +322,30 @@ def default_cs_perturbation_bank(
                     "insertion_point": "sensory.output -> net.feedback",
                 },
             ),
-            ):
-                for feedback_quantity, units, amplitude, axes in (
-                    ("position", "m", 0.01, ("x", "y")),
-                    ("velocity", "m/s", 0.05, ("vx", "vy")),
-                    ("force_filter", "N", 0.1, ("x", "y")),
-                ):
-                    for axis in axes:
-                        for sign in (-1, 1):
-                            axis_role = _target_relative_axis_role(axis)
-                            feedback_index = _controller_visible_feedback_index(
-                                feedback_quantity,
-                                axis,
-                            )
-                            perturbations.append(
-                                PerturbationSpec(
+        ):
+            for component in resolve_controller_feedback_view(
+                None,
+                feedback_dim=6,
+                source="default_gru_perturbation_bank",
+            ).iter_components():
+                amplitude = _default_feedback_amplitude(component.component_id)
+                for axis in component.axes:
+                    for sign in (-1, 1):
+                        axis_role = _target_relative_axis_role(axis)
+                        feedback_index = _controller_visible_feedback_index(
+                            component.component_id,
+                            axis,
+                        )
+                        perturbations.append(
+                            PerturbationSpec(
                                 perturbation_id=(
-                                    f"{family}__{feedback_quantity}__"
+                                    f"{family}__{component.component_id}__"
                                     f"{timing_bin.label}_t{start}_{axis}_{_sign_label(sign)}"
                                 ),
                                 channel=channel,
                                 family=family,
                                 amplitude=amplitude,
-                                units=units,
+                                units=component.units or "model_feedback_units",
                                 axis=axis,
                                 basis=basis,
                                 sign=sign,
@@ -418,7 +359,7 @@ def default_cs_perturbation_bank(
                                 adapter=f"feedbax.additive_channel_adapter.{channel}",
                                 description=(
                                     f"{description} This row is a signed "
-                                    f"target-relative {axis_role} {feedback_quantity} "
+                                    f"target-relative {axis_role} {component.component_id} "
                                     "false-feedback probe in the canonical +x reach."
                                 ),
                                 calibration_role="raw_default_requires_same_bank_calibration",
@@ -426,10 +367,12 @@ def default_cs_perturbation_bank(
                                 semantic_family=semantic_family or "false_feedback_offset",
                                 channel_provenance={
                                     **provenance,
-                                    "feedback_quantity": feedback_quantity,
+                                    "feedback_quantity": component.component_id,
+                                    "descriptor_id": component.descriptor_id,
                                     "feedback_payload_index": feedback_index,
-                                    "force_filter_feedback_only": feedback_quantity
-                                    == "force_filter",
+                                    "force_filter_feedback_only": (
+                                        component.component_id == COMPONENT_FORCE_FILTER
+                                    ),
                                     "target_relative_axis_role": axis_role,
                                     "target_relative_basis": "canonical_plus_x_reach",
                                     "false_feedback_probe": True,
@@ -541,9 +484,12 @@ def default_cs_perturbation_bank(
             ],
         },
         "timing_bin_conventions": {
-            "plant_side": [timing_bin.to_json() for timing_bin in DEFAULT_PLANT_TIMING_BINS],
+            "plant_side": [
+                timing_bin.to_json() for timing_bin in calibration_defaults.plant_timing_bins
+            ],
             "controller_visible": [
-                timing_bin.to_json() for timing_bin in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS
+                timing_bin.to_json()
+                for timing_bin in calibration_defaults.controller_visible_timing_bins
             ],
             "policy": (
                 "Initial-condition rows stay at t=0. Plant-side command_input and "
@@ -567,22 +513,24 @@ def default_cs_calibrated_perturbation_bank(
     """Return a reach-relative calibrated C&S perturbation-response bank."""
 
     from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
-        DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS,
-        DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S,
-        DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT,
-        DEFAULT_PLANT_TIMING_BINS,
-        DEFAULT_REACH_CALIBRATION_POINTS,
-        DEFAULT_REACH_RELATIVE_LEVELS,
         calibrated_amplitude_from_unit_sensitivity,
     )
+    from rlrmp.data_products.calibration import (
+        load_open_loop_calibration,
+        load_perturbation_calibration_defaults,
+    )
+
+    calibration = load_open_loop_calibration()
+    calibration_defaults = load_perturbation_calibration_defaults()
+    controller_visible_velocity_scale_m_s = calibration.controller_visible_velocity_scale_m_s
 
     reach = _select_reach_calibration_point(
         calibration_reach,
-        reach_points=DEFAULT_REACH_CALIBRATION_POINTS,
+        reach_points=calibration_defaults.reach_calibration_points,
     )
     levels = _select_reach_relative_levels(
         calibration_level,
-        levels=DEFAULT_REACH_RELATIVE_LEVELS,
+        levels=calibration_defaults.reach_relative_levels,
     )
     feedback_scale_manifest = _load_feedback_scale_manifest(
         feedback_scale_manifest,
@@ -641,7 +589,7 @@ def default_cs_calibrated_perturbation_bank(
             ("initial_position_offset", "m"),
             ("initial_velocity_offset", "m/s"),
         ):
-            sensitivity = DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT[family]["initial_condition"]
+            sensitivity = calibration[family]["initial_condition"]
             amplitude = calibrated_amplitude_from_unit_sensitivity(
                 target_peak_delta_x_m=target_peak,
                 peak_delta_x_per_unit_m=float(sensitivity),
@@ -650,9 +598,7 @@ def default_cs_calibrated_perturbation_bank(
                 for sign in (-1, 1):
                     perturbations.append(
                         PerturbationSpec(
-                            perturbation_id=(
-                                f"{family}__{level.name}__{axis}_{_sign_label(sign)}"
-                            ),
+                            perturbation_id=(f"{family}__{level.name}__{axis}_{_sign_label(sign)}"),
                             channel="initial_state",
                             family=family,
                             amplitude=amplitude,
@@ -681,7 +627,7 @@ def default_cs_calibrated_perturbation_bank(
                         )
                     )
 
-        for timing_bin in DEFAULT_PLANT_TIMING_BINS:
+    for timing_bin in calibration_defaults.plant_timing_bins:
             start = int(timing_bin.start_time_index)
             duration = int(timing_bin.duration_steps)
             for family, channel, units, basis, adapter, extra in (
@@ -739,11 +685,7 @@ def default_cs_calibrated_perturbation_bank(
                     if family == "target_aligned_lateral_command_load_pulse"
                     else family
                 )
-                sensitivity = float(
-                    DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT[sensitivity_family][
-                        timing_bin.label
-                    ]
-                )
+                sensitivity = float(calibration[sensitivity_family][timing_bin.label])
                 amplitude = calibrated_amplitude_from_unit_sensitivity(
                     target_peak_delta_x_m=target_peak,
                     peak_delta_x_per_unit_m=sensitivity,
@@ -826,7 +768,7 @@ def default_cs_calibrated_perturbation_bank(
                             )
                         )
 
-        for timing_bin in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS:
+    for timing_bin in calibration_defaults.controller_visible_timing_bins:
             start = int(timing_bin.start_time_index)
             duration = int(timing_bin.duration_steps)
             for channel, family, basis, semantic_family, channel_provenance in (
@@ -909,14 +851,11 @@ def default_cs_calibrated_perturbation_bank(
                                 },
                             )
                         )
-                velocity_amplitude = (
-                    float(
-                        velocity_scale["reference_scale"]
-                        if velocity_scale is not None
-                        else DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S
-                    )
-                    * float(level.fraction_of_reach)
-                )
+                velocity_amplitude = float(
+                    velocity_scale["reference_scale"]
+                    if velocity_scale is not None
+                    else controller_visible_velocity_scale_m_s
+                ) * float(level.fraction_of_reach)
                 for axis in ("vx", "vy"):
                     for sign in (-1, 1):
                         axis_role = _target_relative_axis_role(axis)
@@ -960,7 +899,7 @@ def default_cs_calibrated_perturbation_bank(
                                     "nominal_peak_speed_m_s": float(
                                         velocity_scale["reference_scale"]
                                         if velocity_scale is not None
-                                        else DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S
+                                        else controller_visible_velocity_scale_m_s
                                     ),
                                     "controller_feedback_scale": (
                                         None
@@ -977,8 +916,8 @@ def default_cs_calibrated_perturbation_bank(
                                 },
                             )
                         )
-                force_filter_amplitude = (
-                    float(force_filter_scale["reference_scale"]) * float(level.fraction_of_reach)
+                force_filter_amplitude = float(force_filter_scale["reference_scale"]) * float(
+                    level.fraction_of_reach
                 )
                 for axis in ("x", "y"):
                     for sign in (-1, 1):
@@ -1096,9 +1035,10 @@ def default_cs_calibrated_perturbation_bank(
                     "force_filter": _feedback_scale_provenance(force_filter_scale),
                 },
                 "source": (
-                    "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py "
-                    "DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT, native conventions, "
-                    "and nominal-rollout controller feedback scale manifest"
+                    "governed open-loop calibration data product "
+                    "(rlrmp.perturbation_open_loop_calibration.v2 at "
+                    "results/ea6ccb4/data_products/perturbation_open_loop_calibration.json), "
+                    "native conventions, and nominal-rollout controller feedback scale manifest"
                 ),
             },
             "perturbations": [spec.to_json() for spec in perturbations],
@@ -1112,7 +1052,9 @@ def _load_feedback_scale_manifest(
     manifest_path: Path | None,
 ) -> Mapping[str, Any] | None:
     if manifest is not None and manifest_path is not None:
-        raise ValueError("Pass either feedback_scale_manifest or feedback_scale_manifest_path, not both")
+        raise ValueError(
+            "Pass either feedback_scale_manifest or feedback_scale_manifest_path, not both"
+        )
     if manifest is not None:
         return manifest
     if manifest_path is None:
@@ -1138,6 +1080,15 @@ def _controller_feedback_component_scale(
     scale_entries = _controller_feedback_scale_entries(manifest)
     component_entries: list[dict[str, Any]] = []
     for run_id, entry in scale_entries:
+        descriptor_payload = entry.get(DESCRIPTOR_PAYLOAD_KEY)
+        descriptor_view = resolve_controller_feedback_view(
+            descriptor_payload if isinstance(descriptor_payload, Mapping) else None,
+            feedback_dim=int(
+                entry.get("feedback_dim", 6 if component == COMPONENT_FORCE_FILTER else 4)
+            ),
+            source="gru_perturbation_bank.feedback_scale_manifest",
+        )
+        descriptor_id = descriptor_view.component(component).descriptor_id
         components = entry.get("components", {})
         if not isinstance(components, Mapping) or component not in components:
             continue
@@ -1150,6 +1101,7 @@ def _controller_feedback_component_scale(
         component_entries.append(
             {
                 "run_id": run_id,
+                "descriptor_id": payload.get("descriptor_id", descriptor_id),
                 "reference_scale": float(reference_scale),
                 "reference_scale_statistic": payload.get(
                     "reference_scale_statistic",
@@ -1174,6 +1126,7 @@ def _controller_feedback_component_scale(
     reference_scale = float(np.mean([entry["reference_scale"] for entry in component_entries]))
     return {
         "component": component,
+        "descriptor_id": component_entries[0].get("descriptor_id"),
         "reference_scale": reference_scale,
         "aggregation": "mean_reference_scale_across_manifest_runs",
         "runs": component_entries,
@@ -1184,7 +1137,9 @@ def _controller_feedback_scale_entries(
     manifest: Mapping[str, Any],
 ) -> list[tuple[str | None, Mapping[str, Any]]]:
     if manifest.get("schema_version") == "rlrmp.controller_feedback_scales.v1":
-        return [(str(manifest.get("run_id")) if manifest.get("run_id") is not None else None, manifest)]
+        return [
+            (str(manifest.get("run_id")) if manifest.get("run_id") is not None else None, manifest)
+        ]
 
     runs = manifest.get("runs")
     if isinstance(runs, Mapping):
@@ -1206,21 +1161,35 @@ def _controller_feedback_scale_entries(
 def _feedback_scale_provenance(scale: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "component": scale["component"],
+        "descriptor_id": scale.get("descriptor_id"),
         "reference_scale": float(scale["reference_scale"]),
         "aggregation": scale["aggregation"],
         "runs": list(scale["runs"]),
     }
 
 
+def _validated_perturbation_row(
+    perturbation: PerturbationSpec | Mapping[str, Any],
+) -> dict[str, Any]:
+    spec = (
+        perturbation
+        if isinstance(perturbation, PerturbationSpec)
+        else PerturbationSpec.from_mapping(perturbation)
+    )
+    spec.validate()
+    return spec.to_json()
+
+
 def apply_perturbation_to_trial_specs(
     trial_specs: Any,
-    perturbation: Mapping[str, Any],
+    perturbation: PerturbationSpec | Mapping[str, Any],
     *,
     model: Any | None = None,
     plant_intervenor_label: str = PLANT_INTERVENOR_LABEL,
 ) -> AdapterResult:
     """Apply one perturbation row to external TaskTrialSpec interfaces."""
 
+    perturbation = _validated_perturbation_row(perturbation)
     channel = str(perturbation["channel"])
     if channel == "initial_state":
         return _apply_initial_state_perturbation(trial_specs, perturbation)
@@ -1353,8 +1322,7 @@ def _initial_position_contract_manifest() -> dict[str, Any]:
                     "validation-selected checkpoints."
                 ),
                 "future_graphspec_mapping": (
-                    "task-data initial hand transform with immediate current-state "
-                    "visibility"
+                    "task-data initial hand transform with immediate current-state visibility"
                 ),
             },
         },
@@ -1383,208 +1351,234 @@ def materialize_gru_perturbation_response(
     preferred_checkpoint_manifest_path: Path | None = None,
     checkpoint_selection_mode: CheckpointSelectionMode = "sparse_history",
 ) -> dict[str, Any]:
-    """Materialize the standard C&S perturbation-response bank and GRU responses."""
+    """Compatibility adapter for the retired monolithic bank materializer.
 
-    bank = default_cs_perturbation_bank(
-        mode=bank_mode,
+    The durable file-writing entry point now routes through the P1b spec path:
+    a perturbation-response evaluation manifest, per-family leaf payloads, and
+    the aggregate legacy bank shape. Legacy path arguments are accepted so
+    existing callers fail less abruptly, but this adapter does not write tracked
+    JSON, Markdown notes, regeneration specs, or per-row NPZ bulk arrays.
+    """
+
+    eval_manifest, eval_manifest_path, eval_states = _execute_perturbation_bank_eval_adapter(
+        source_experiment=source_experiment,
+        result_experiment=result_experiment,
+        run_ids=run_ids,
+        labels=labels,
+        n_rollout_trials=n_rollout_trials,
+        evaluate=evaluate,
+        bank_mode=bank_mode,
         calibration_level=calibration_level,
         calibration_reach=calibration_reach,
         feedback_scale_manifest_path=feedback_scale_manifest_path,
+        extlqg_physical_dim=extlqg_physical_dim,
+        preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
+        checkpoint_selection_mode=checkpoint_selection_mode,
+        repo_root=repo_root,
     )
-    output_path = output_path or (
-        repo_root / "results" / result_experiment / "notes" / DEFAULT_OUTPUT_FILENAME
+    manifest = _aggregate_perturbation_eval_adapter(
+        eval_states,
+        eval_manifest=eval_manifest,
+        eval_manifest_path=eval_manifest_path,
+        issue=result_experiment,
+        source_experiment=source_experiment,
+        bank_mode=bank_mode,
     )
-    note_path = note_path or (
-        repo_root / "results" / result_experiment / "notes" / DEFAULT_NOTE_FILENAME
-    )
-    bulk_dir = bulk_dir or repo_root / "_artifacts" / result_experiment / DEFAULT_BULK_SUBDIR
-    regeneration_spec_path = regeneration_spec_path or _regeneration_spec_path(output_path)
-    mkdir_p(output_path.parent)
-    if write_bulk_arrays and evaluate:
-        mkdir_p(bulk_dir)
-
-    run_summaries: dict[str, Any] = {}
-    if evaluate:
-        runs = resolve_run_inputs(
-            experiment=source_experiment,
-            run_ids=run_ids,
-            labels=labels,
-            repo_root=repo_root,
-        )
-        for run in runs:
-            run_summaries[run.run_id] = evaluate_run_perturbation_bank(
-                run,
-                source_experiment=source_experiment,
-                bank=bank,
-                n_rollout_trials=n_rollout_trials,
-                write_bulk_arrays=write_bulk_arrays,
-                bulk_dir=bulk_dir,
-                extlqg_physical_dim=extlqg_physical_dim,
-                preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
-                checkpoint_selection_mode=checkpoint_selection_mode,
-                repo_root=repo_root,
-            )
-
-    manifest = {
-        "schema_version": SCHEMA_VERSION,
-        "issue": result_experiment,
-        "source_experiment": source_experiment,
-        "checkpoint_policy": _effective_checkpoint_policy_from_manifest(
-            source_experiment,
-            preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
-            checkpoint_selection_mode=checkpoint_selection_mode,
-            repo_root=repo_root,
+    manifest["bank_summary"] = _adapter_bank_summary(manifest.get("bank", {}))
+    manifest["compatibility_adapter"] = {
+        "materializer": (
+            "rlrmp.analysis.pipelines.gru_perturbation_bank."
+            "materialize_gru_perturbation_response"
         ),
-        "scope": "controller_independent_perturbation_response",
-        "regeneration_spec": _repo_relative(regeneration_spec_path, repo_root=repo_root),
-        "bank_mode": bank_mode,
-        "feedback_scale_manifest": (
-            None
-            if feedback_scale_manifest_path is None
-            else _repo_relative(feedback_scale_manifest_path, repo_root=repo_root)
-        ),
-        "semantics_correction": (
-            "v2 splits the former plant_force rows into command_input_pulse "
-            "(post-controller command-port perturbations) and process_epsilon_pulse "
-            "(mechanics.epsilon / B_w process perturbations). Process-epsilon "
-            "rows span the canonical current physical block [px, py, vx, vy, "
-            "fx, fy, eps_x_int, eps_y_int]. v3 timing-aware rows evaluate "
-            "plant-side command/process pulses at early/mid/late bins and "
-            "controller-visible sensory/pre-noise delayed-measurement offsets at "
-            "early_visible/mid_visible/late_visible bins."
-        ),
-        "bank": bank,
-        "extlqg_comparator": {
-            "status": "available_for_initial_state_command_input_process_epsilon_and_sensory_feedback",
-            "physical_dim": int(extlqg_physical_dim),
-            "game_source": (
-                "rlrmp.analysis.math.cs_game_card.build_no_integrator_game"
-                if int(extlqg_physical_dim) == 6
-                else "rlrmp.analysis.math.cs_game_card.build_canonical_game"
-            ),
-            "reason": (
-                "Deterministic extLQG response rows are evaluated for perturbations "
-                "with clean analytical interfaces: initial_state, command_input, "
-                "process_epsilon, and sensory_feedback. "
-                "Command-input rows add an external pulse after the controller "
-                "command and before the plant input. Sensory-feedback rows offset "
-                "the post-noise measurement delivered to the estimator after "
-                "converting target-relative GRU feedback signs into raw analytical "
-                "observation signs. Target-stream remains deferred for current "
-                "fixed-target checkpoints."
-            ),
-            "checkpoint_selection_role": "audit_only_not_used_for_selection",
-        },
-        "robust_output_feedback_comparator": {
-            "status": "available_for_initial_state_command_input_and_process_epsilon",
-            "reason": (
-                "The output-feedback robust analytical controller is replayed through "
-                "the same deterministic released-code plant/estimator lane for "
-                "initial-state, command-input, and process-epsilon rows. Sensory "
-                "false-feedback offsets are marked not_applicable until the robust "
-                "released-forward helper exposes the same measurement-offset ports "
-                "as the extLQG lane."
-            ),
-            "gamma_factor": OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
-            "checkpoint_selection_role": "audit_only_not_used_for_selection",
-        },
-        "full_qrf_cost": {
-            "status": "available",
-            "lens": "realized_deterministic_rollout_full_qrf",
-            "reason": (
-                "Costs are rescored post hoc from states.mechanics.vector and "
-                "states.net.output using the canonical C&S Q_t/R_t/Q_f schedule. "
-                "They are audit-only perturbation diagnostics and are not used for "
-                "checkpoint selection."
+        "route": "feedbax_evaluation_manifest_to_perturbation_class_leaf_aggregate",
+        "evaluation_manifest_id": eval_manifest.id,
+        "evaluation_manifest_path": str(eval_manifest_path),
+        "legacy_output_paths_ignored": {
+            "output_path": None if output_path is None else str(output_path),
+            "note_path": None if note_path is None else str(note_path),
+            "bulk_dir": None if bulk_dir is None else str(bulk_dir),
+            "regeneration_spec_path": (
+                None if regeneration_spec_path is None else str(regeneration_spec_path)
             ),
         },
-        "runs": run_summaries,
+        "write_bulk_arrays_requested": bool(write_bulk_arrays),
+        "write_bulk_arrays_effective": False,
     }
-    detail_manifest_path = bulk_dir / f"{output_path.stem}_detail.json"
-    tracked_manifest = _slim_perturbation_response_manifest(
-        manifest,
-        detail_manifest_path=detail_manifest_path if evaluate else None,
-        repo_root=repo_root,
+    return manifest
+
+
+def _execute_perturbation_bank_eval_adapter(
+    *,
+    source_experiment: str,
+    result_experiment: str,
+    run_ids: Sequence[str],
+    labels: Sequence[str] | None,
+    n_rollout_trials: int,
+    evaluate: bool,
+    bank_mode: Literal["raw", "calibrated"],
+    calibration_level: str | Sequence[str] | None,
+    calibration_reach: str | float | None,
+    feedback_scale_manifest_path: Path | None,
+    extlqg_physical_dim: Literal[6, 8],
+    preferred_checkpoint_manifest_path: Path | None,
+    checkpoint_selection_mode: CheckpointSelectionMode,
+    repo_root: Path,
+) -> tuple[Any, Path, Mapping[str, Any]]:
+    from feedbax.contracts.manifest import EvaluationRunSpec, ParentRef
+
+    from rlrmp import ensure_rlrmp_recipes_registered
+    from rlrmp.eval.recipes import (
+        PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
+        perturbation_response_bank_recipe,
     )
-    if evaluate:
-        mkdir_p(detail_manifest_path.parent)
-        write_compact_json(detail_manifest_path, manifest)
-    write_compact_json(output_path, tracked_manifest)
-    note_path.write_text(render_perturbation_response_markdown(manifest), encoding="utf-8")
-    runs_for_spec = resolve_run_inputs(
-        experiment=source_experiment,
-        run_ids=run_ids,
-        labels=labels,
-        repo_root=repo_root,
+    from rlrmp.runtime.spec_migrations import (
+        PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND,
+        stamp_current_schema,
     )
-    write_regeneration_spec(
-        spec_path=regeneration_spec_path,
-        diagnostic_name="gru_perturbation_response_bank",
-        materializer="rlrmp.analysis.pipelines.gru_perturbation_bank.materialize_gru_perturbation_response",
-        command=None,
-        parameters={
-            "source_experiment": source_experiment,
-            "result_experiment": result_experiment,
-            "run_ids": list(run_ids),
-            "labels": None if labels is None else list(labels),
-            "n_rollout_trials": n_rollout_trials,
-            "evaluate": evaluate,
-            "write_bulk_arrays": write_bulk_arrays,
-            "bank_mode": bank_mode,
-            "calibration_level": calibration_level,
-            "calibration_reach": calibration_reach,
-            "feedback_scale_manifest_path": (
-                None
-                if feedback_scale_manifest_path is None
-                else _repo_relative(feedback_scale_manifest_path, repo_root=repo_root)
-            ),
-            "preferred_checkpoint_manifest_path": (
-                None
-                if preferred_checkpoint_manifest_path is None
-                else _repo_relative(preferred_checkpoint_manifest_path, repo_root=repo_root)
-            ),
-            "checkpoint_selection_mode": checkpoint_selection_mode,
-        },
-        inputs=[
-            {"role": "run_spec", "path": run.run_spec_path}
-            for run in runs_for_spec
-        ]
-        + [
-            {"role": "run_artifact_dir", "path": run.artifact_dir}
-            for run in runs_for_spec
-        ]
-        + (
-            []
+
+    ensure_rlrmp_recipes_registered()
+    params: dict[str, Any] = {
+        "source_experiment": source_experiment,
+        "run_ids": list(run_ids),
+        "labels": None if labels is None else list(labels),
+        "n_rollout_trials": int(n_rollout_trials),
+        "bank_mode": bank_mode,
+        "calibration_level": calibration_level,
+        "calibration_reach": calibration_reach,
+        "feedback_scale_manifest_path": (
+            None if feedback_scale_manifest_path is None else str(feedback_scale_manifest_path)
+        ),
+        "extlqg_physical_dim": int(extlqg_physical_dim),
+        "preferred_checkpoint_manifest_path": (
+            None
             if preferred_checkpoint_manifest_path is None
-            else [{"role": "checkpoint_manifest", "path": preferred_checkpoint_manifest_path}]
+            else str(preferred_checkpoint_manifest_path)
+        ),
+        "checkpoint_selection_mode": checkpoint_selection_mode,
+        "repo_root": str(repo_root),
+        "write_bulk_arrays": False,
+    }
+    params = {key: value for key, value in params.items() if value is not None}
+    if not evaluate:
+        params.update(
+            {
+                "checkpoint_bank_ref": {
+                    "kind": "CheckpointSelectionManifest",
+                    "id": f"{source_experiment}_legacy_adapter_no_evaluate",
+                },
+                "perturbation_battery": default_cs_perturbation_bank(
+                    mode=bank_mode,
+                    calibration_level=calibration_level,
+                    calibration_reach=calibration_reach,
+                    feedback_scale_manifest_path=feedback_scale_manifest_path,
+                ),
+                "response_tensors": {"runs": {}},
+                "legacy_payload_mode": True,
+            }
         )
-        + (
-            []
-            if feedback_scale_manifest_path is None
-            else [{"role": "controller_feedback_scale_manifest", "path": feedback_scale_manifest_path}]
-        ),
-        outputs=[
-            {"role": "perturbation_response_manifest", "path": output_path},
-            {"role": "perturbation_response_note", "path": note_path},
-            {"role": "perturbation_response_bulk_dir", "path": bulk_dir},
-        ]
-        + (
-            [{"role": "perturbation_response_detail_manifest", "path": detail_manifest_path}]
-            if evaluate
-            else []
-        ),
-        source_files=[
-            "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
-            "src/rlrmp/analysis/math/cs_released_simulation.py",
-            "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py",
+    spec = EvaluationRunSpec(
+        evaluation_type=PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
+        training_run_ids=list(run_ids),
+        inputs=[
+            ParentRef(kind="TrainingRunManifest", id=str(run_id), role="training_run")
+            for run_id in run_ids
         ],
-        notes=[
-            "Perturbation-response arrays and full row manifests are bulk analysis payloads.",
-            "The tracked manifest is intentionally slim and points to _artifacts detail bytes.",
-        ],
-        repo_root=repo_root,
+        params=stamp_current_schema(PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND, params),
     )
-    return tracked_manifest
+    result = perturbation_response_bank_recipe(
+        spec,
+        repo_root,
+        repo_root / "cache" / "states" / "legacy_perturbation_adapter.pkl",
+    )
+    states = result.states
+    if not isinstance(states, Mapping):
+        raise TypeError("perturbation-response evaluation states must be a mapping")
+    manifest = SimpleNamespace(
+        id=str(result.metadata.get("caching_identity", {}).get("manifest_id")),
+        metadata=result.metadata,
+        summary_metrics=result.summary_metrics,
+    )
+    manifest_path = repo_root / "manifests" / "evaluation_runs" / f"{manifest.id}.json"
+    return manifest, manifest_path, states
+
+
+def _aggregate_perturbation_eval_adapter(
+    states: Mapping[str, Any],
+    *,
+    eval_manifest: Any,
+    eval_manifest_path: Path,
+    issue: str,
+    source_experiment: str,
+    bank_mode: Literal["raw", "calibrated"],
+) -> dict[str, Any]:
+    from feedbax.contracts.manifest import ParentRef
+
+    from rlrmp.analysis import declarative_materialization as dm
+
+    class_index_map = states.get("class_index_map")
+    if not isinstance(class_index_map, Mapping):
+        raise ValueError("perturbation-response evaluation states lack class_index_map")
+    resolved_eval = SimpleNamespace(
+        ref=ParentRef(
+            kind="EvaluationRunManifest",
+            id=eval_manifest.id,
+            role="evaluation_run",
+            uri=str(eval_manifest_path),
+        ),
+        manifest=eval_manifest,
+        path=eval_manifest_path,
+        states=states,
+    )
+    leaf_products = [
+        dm._perturbation_class_response_payload(
+            states,
+            {"family": str(family)},
+            evaluation_input=resolved_eval,
+        )
+        for family in class_index_map
+    ]
+    return dm._aggregate_perturbation_class_products(
+        leaf_products,
+        {
+            "issue": issue,
+            "source_experiment": source_experiment,
+            "bank_mode": bank_mode,
+        },
+    )
+
+
+def _adapter_bank_summary(bank: Any) -> dict[str, Any]:
+    if not isinstance(bank, Mapping):
+        return {"n_perturbations": 0, "families": [], "channels": [], "timing_bins": []}
+    rows = bank.get("perturbations", [])
+    if not isinstance(rows, Sequence) or isinstance(rows, (str, bytes)):
+        rows = []
+    return {
+        "bank_id": bank.get("bank_id"),
+        "schema_version": bank.get("schema_version"),
+        "n_perturbations": len(rows),
+        "families": sorted(
+            {
+                str(row.get("family"))
+                for row in rows
+                if isinstance(row, Mapping) and row.get("family") is not None
+            }
+        ),
+        "channels": sorted(
+            {
+                str(row.get("channel"))
+                for row in rows
+                if isinstance(row, Mapping) and row.get("channel") is not None
+            }
+        ),
+        "timing_bins": sorted(
+            {
+                str(row.get("timing_bin"))
+                for row in rows
+                if isinstance(row, Mapping) and row.get("timing_bin") is not None
+            }
+        ),
+    }
 
 
 def _regeneration_spec_path(path: Path) -> Path:
@@ -1700,7 +1694,10 @@ def _effective_checkpoint_policy_from_manifest(
     """Return the checkpoint policy represented by an optional preferred manifest."""
 
     effective_selection_mode = checkpoint_selection_mode
-    if effective_selection_mode == "sparse_history" and preferred_checkpoint_manifest_path is not None:
+    if (
+        effective_selection_mode == "sparse_history"
+        and preferred_checkpoint_manifest_path is not None
+    ):
         effective_selection_mode = "fixed_bank_manifest"
     if effective_selection_mode == "sparse_history":
         return "validation_selected_per_replicate"
@@ -1738,7 +1735,7 @@ def evaluate_run_perturbation_bank(
 
     hps = dict_to_namespace(normalize_gru_hps(run.run_spec["hps"]), to_type=TreeNamespace)
     n_replicates = int(hps.model.n_replicates)
-    seed = int(run.run_spec.get("seed", 42))
+    seed = require_run_seed(run.run_spec, source=run.run_spec_path)
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
     model, checkpoint_selection = load_validation_selected_checkpoint_model(
         experiment=source_experiment,
@@ -1765,8 +1762,7 @@ def evaluate_run_perturbation_bank(
     bulk_files: dict[str, str] = {}
     if evaluation_backend != "serial":
         raise ValueError(
-            f"unsupported perturbation evaluation backend {evaluation_backend!r}; "
-            "expected 'serial'"
+            f"unsupported perturbation evaluation backend {evaluation_backend!r}; expected 'serial'"
         )
 
     for perturbation in bank["perturbations"]:
@@ -2147,7 +2143,9 @@ def _command_input_no_op_guard(
         "input_response_max": input_max,
         "full_qrf_delta_abs_max": cost_abs_max,
     }
-    finite_values = [value for value in observed.values() if value is not None and np.isfinite(value)]
+    finite_values = [
+        value for value in observed.values() if value is not None and np.isfinite(value)
+    ]
     if finite_values and max(abs(value) for value in finite_values) > tolerance:
         return {
             "status": "passed",
@@ -2267,8 +2265,7 @@ def score_full_qrf_rollout_cost(
     horizon = int(schedule.T)
     if state_array.shape[-2] != horizon:
         raise ValueError(
-            f"Full-Q/R/Q_f scorer expected {horizon} rollout states, "
-            f"got {state_array.shape[-2]}."
+            f"Full-Q/R/Q_f scorer expected {horizon} rollout states, got {state_array.shape[-2]}."
         )
     if command_array.shape[-2] != horizon:
         raise ValueError(
@@ -2383,11 +2380,7 @@ def _full_qrf_window_inputs(
     else:
         basis = "timeline_epoch_bounds_movement_window"
     stop = int(start + horizon)
-    window_initial = (
-        initial_array
-        if start == 0
-        else state_array[..., start - 1, :]
-    )
+    window_initial = initial_array if start == 0 else state_array[..., start - 1, :]
     return (
         state_array[..., start:stop, :],
         command_array[..., start:stop, :],
@@ -2506,10 +2499,7 @@ def _validate_timed_pulse_indices(
     if duration < 1:
         return f"duration={duration} must be positive"
     if np.any(start_indices < 0) or np.any(start_indices + duration > n_time):
-        return (
-            f"start_indices={start_indices.tolist()}, duration={duration}, "
-            f"n_time={n_time}"
-        )
+        return f"start_indices={start_indices.tolist()}, duration={duration}, n_time={n_time}"
     return None
 
 
@@ -2542,13 +2532,14 @@ def delta_full_qrf_cost_summary(
 
 
 def evaluate_extlqg_perturbation_comparator(
-    perturbation: Mapping[str, Any],
+    perturbation: PerturbationSpec | Mapping[str, Any],
     *,
     context: Mapping[str, Any],
     gru_metrics: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Evaluate the deterministic extLQG comparator for one perturbation row."""
 
+    perturbation = _validated_perturbation_row(perturbation)
     channel = str(perturbation["channel"])
     supported_channels = {
         "command_input",
@@ -2577,10 +2568,7 @@ def evaluate_extlqg_perturbation_comparator(
         return {
             "status": "blocked",
             "lens": "deterministic_extlqg_same_declared_perturbation",
-            "reason": (
-                "requires extLQG comparator context keys: "
-                + ", ".join(missing_context)
-            ),
+            "reason": ("requires extLQG comparator context keys: " + ", ".join(missing_context)),
             "selection_role": "audit_only_not_used_for_checkpoint_selection",
         }
     try:
@@ -2700,13 +2688,14 @@ def extlqg_comparator_status(
 
 
 def evaluate_robust_output_feedback_perturbation_comparator(
-    perturbation: Mapping[str, Any],
+    perturbation: PerturbationSpec | Mapping[str, Any],
     *,
     context: Mapping[str, Any],
     gru_metrics: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Evaluate the robust output-feedback analytical response for one bank row."""
 
+    perturbation = _validated_perturbation_row(perturbation)
     channel = str(perturbation["channel"])
     supported_channels = {"initial_state", "command_input", "process_epsilon"}
     if channel not in supported_channels:
@@ -3160,9 +3149,7 @@ def _apply_movement_onset_initial_state_process_impulse(
             "movement_start_indices": [int(start) for start in movement_starts.tolist()],
             "movement_start_source": movement_start_source,
             "start_time_index": int(movement_starts[0]),
-            "absolute_start_time_indices": [
-                int(start) for start in movement_starts.tolist()
-            ],
+            "absolute_start_time_indices": [int(start) for start in movement_starts.tolist()],
             "relative_start_time_index": 0,
             "duration_steps": 1,
             "epsilon_index": epsilon_index,
@@ -3222,8 +3209,7 @@ def _apply_command_input_pulse(
             target_node="mechanics",
             target_port="force",
             graphspec_mapping=(
-                "named additive command_input channel on efferent.output -> "
-                "mechanics.force"
+                "named additive command_input channel on efferent.output -> mechanics.force"
             ),
         ),
     )
@@ -3441,10 +3427,7 @@ def _apply_process_epsilon_pulse(
         return AdapterResult(
             status="blocked",
             trial_specs=trial_specs,
-            reason=(
-                "process_epsilon_pulse timing is outside epsilon time axis: "
-                f"{timing_error}"
-            ),
+            reason=(f"process_epsilon_pulse timing is outside epsilon time axis: {timing_error}"),
         )
     amount = float(perturbation["amplitude"]) * int(perturbation["sign"])
     adapter_spec = _process_epsilon_adapter_spec(
@@ -3601,12 +3584,17 @@ def _extlqg_observation_sign_multiplier(
 
 
 def _controller_visible_feedback_index(feedback_quantity: str, axis: str) -> int:
-    axis_index = _axis_index(axis)
-    if feedback_quantity in {"position", "velocity"}:
-        return axis_index
-    if feedback_quantity == "force_filter":
-        return 4 + axis_index
-    raise ValueError(f"Unsupported controller-visible feedback quantity {feedback_quantity!r}")
+    return controller_feedback_axis_index(feedback_quantity, axis, feedback_dim=6)
+
+
+def _default_feedback_amplitude(component_id: str) -> float:
+    if component_id == COMPONENT_POSITION:
+        return 0.01
+    if component_id == COMPONENT_VELOCITY:
+        return 0.05
+    if component_id == COMPONENT_FORCE_FILTER:
+        return 0.1
+    raise ValueError(f"Unsupported controller-visible feedback quantity {component_id!r}")
 
 
 def _process_epsilon_adapter_spec(
@@ -3742,9 +3730,7 @@ def _build_extlqg_comparator_context(
 def _build_robust_output_feedback_comparator_context() -> dict[str, Any]:
     """Build deterministic robust output-feedback comparator context."""
 
-    reference = materialize_reference(
-        gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,)
-    )
+    reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
     gamma_ref = reference.gamma_references[0]
     plant = reference.plant
     schedule = reference.schedule
@@ -4020,8 +4006,7 @@ def _extlqg_process_epsilon(
     duration = int(timing.get("duration_steps", 1))
     if start < 0 or duration < 1 or start + duration > horizon:
         raise ValueError(
-            f"process_epsilon timing outside analytical horizon: {start=}, "
-            f"{duration=}, {horizon=}"
+            f"process_epsilon timing outside analytical horizon: {start=}, {duration=}, {horizon=}"
         )
     amount = float(perturbation["amplitude"]) * int(perturbation["sign"])
     epsilon = jnp.zeros((horizon, epsilon_dim), dtype=jnp.float64)
@@ -4043,8 +4028,7 @@ def _extlqg_command_input_offset(
     duration = int(timing.get("duration_steps", 1))
     if start < 0 or duration < 1 or start + duration > horizon:
         raise ValueError(
-            f"command-input timing outside analytical horizon: {start=}, "
-            f"{duration=}, {horizon=}"
+            f"command-input timing outside analytical horizon: {start=}, {duration=}, {horizon=}"
         )
     amount = float(perturbation["amplitude"]) * int(perturbation["sign"])
     offset = jnp.zeros((horizon, action_dim), dtype=jnp.float64)
@@ -4125,6 +4109,9 @@ def _write_perturbation_bulk_arrays(
     bulk_dir: Path,
     perturbation_id: str,
 ) -> Path:
+    # Kept for direct evaluate_run_perturbation_bank and benchmark callers that
+    # still request legacy per-row NPZ arrays; the public materializer adapter no
+    # longer routes through this writer.
     mkdir_p(bulk_dir)
     path = bulk_dir / f"{perturbation_id}.npz"
     np.savez_compressed(
@@ -4178,9 +4165,7 @@ def _goal_centered_vectors(values: Any, *, target_pos: Any, physical_dim: int = 
     if target.shape != (2,):
         raise ValueError(f"target_pos must have shape (2,), got {target.shape}")
     if result.shape[-1] % physical_dim != 0:
-        raise ValueError(
-            f"state dimension {result.shape[-1]} is not divisible by {physical_dim}"
-        )
+        raise ValueError(f"state dimension {result.shape[-1]} is not divisible by {physical_dim}")
     for start in range(0, result.shape[-1], physical_dim):
         result = result.at[..., start : start + 2].add(-target)
     return result
@@ -4504,9 +4489,7 @@ def _class_group_summary(
         _available_metric_means(evaluated, "extra_full_qrf_cost.delta_cost.total")
     )
     comparator_rows = [
-        row
-        for row in evaluated
-        if row.get("extlqg_comparator", {}).get("status") == "available"
+        row for row in evaluated if row.get("extlqg_comparator", {}).get("status") == "available"
     ]
     cost_ratio = _ratio_of_means(
         _available_metric_means(evaluated, "extra_full_qrf_cost.delta_cost.total"),
@@ -4556,11 +4539,9 @@ def _class_group_summary(
         "robust_analytical_not_applicable_reasons": _reason_counts(
             row.get("robust_output_feedback_comparator", {})
             for row in rows
-            if row.get("robust_output_feedback_comparator", {}).get("status")
-            == "not_applicable"
+            if row.get("robust_output_feedback_comparator", {}).get("status") == "not_applicable"
         ),
-        "denominator_warnings": _ratio_warnings(cost_ratio)
-        + _ratio_warnings(robust_cost_ratio),
+        "denominator_warnings": _ratio_warnings(cost_ratio) + _ratio_warnings(robust_cost_ratio),
     }
 
 
@@ -4851,11 +4832,7 @@ def _signed_pair_response_summary(rows: Sequence[Mapping[str, Any]]) -> dict[str
         "pairing_rule": "channel/family/axis/timing/amplitude +/- pairs",
         "pairs": pair_summaries,
         "aggregate": {
-            metric: {
-                key: _summary_stats(values)
-                for key, values in metric_values.items()
-                if values
-            }
+            metric: {key: _summary_stats(values) for key, values in metric_values.items() if values}
             for metric, metric_values in aggregate_by_metric.items()
         },
     }
@@ -4892,9 +4869,7 @@ def _controller_io_bank_summary(rows: Sequence[Mapping[str, Any]]) -> dict[str, 
 
 def _available_metric_means(rows: Sequence[Mapping[str, Any]], metric: str) -> list[float]:
     return [
-        value
-        for row in rows
-        if (value := _metric_mean(row.get("metrics", {}), metric)) is not None
+        value for row in rows if (value := _metric_mean(row.get("metrics", {}), metric)) is not None
     ]
 
 
@@ -5230,12 +5205,11 @@ def _repo_relative(path: Path, *, repo_root: Path = REPO_ROOT) -> str:
 
 
 def write_default_bank(path: Path) -> None:
-    """Write the default bank schema to a JSON file."""
+    """Retired raw writer retained only as an import-compatible stub."""
 
-    mkdir_p(path.parent)
-    path.write_text(
-        json.dumps(default_cs_perturbation_bank(), indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
+    raise RuntimeError(
+        "write_default_bank is retired; use default_cs_perturbation_bank() and "
+        "record the payload through Feedbax custody instead."
     )
 
 
@@ -5249,6 +5223,7 @@ __all__ = [
     "GRAPH_ADAPTER_INPUT_PREFIX",
     "SCHEMA_VERSION",
     "AdapterResult",
+    "PerturbationChannel",
     "PerturbationSpec",
     "apply_perturbation_to_trial_specs",
     "compare_response_metric_summaries",

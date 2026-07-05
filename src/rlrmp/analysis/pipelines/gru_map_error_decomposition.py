@@ -8,8 +8,14 @@ from typing import Any
 
 import numpy as np
 
+from rlrmp.analysis.manifest_queries import (
+    certificate_component_summary,
+    standard_row_by_source_run_id,
+)
 from rlrmp.analysis.pipelines.gru_checkpoint_selection import load_materialized_fixed_bank_manifest
-from rlrmp.paths import REPO_ROOT, run_spec_path
+from rlrmp.io import read_json, update_marked_section
+from rlrmp.paths import REPO_ROOT
+from rlrmp.runtime.run_specs import resolve_run_record
 
 OBSERVATION_CHANNELS = ("px", "py", "vx", "vy")
 ACTION_CHANNELS = ("ux", "uy")
@@ -47,12 +53,12 @@ def materialize_gru_map_error_decomposition(
         evaluate_gru_clean_actions,
     )
 
-    manifest = _read_json(standard_manifest_path)
+    manifest = read_json(standard_manifest_path)
     selected_run_ids = run_ids or _source_run_ids_from_standard_manifest(manifest)
     reference_map, reference_metadata = cs_output_feedback_observation_action_map()
     rows = []
     for run_id in selected_run_ids:
-        run_spec = _read_json(run_spec_path(experiment, run_id, repo_root=repo_root))
+        run_spec = resolve_run_record(experiment, run_id, repo_root=repo_root)
         _actions, candidate_map, evaluation_metadata = evaluate_gru_clean_actions(
             run_id,
             run_spec=run_spec,
@@ -471,7 +477,11 @@ def write_map_error_decomposition_result(
 
     markdown_path.parent.mkdir(parents=True, exist_ok=True)
     json_path.parent.mkdir(parents=True, exist_ok=True)
-    markdown_path.write_text(render_map_error_decomposition_markdown(result), encoding="utf-8")
+    update_marked_section(
+        markdown_path,
+        "gru_map_error_decomposition",
+        render_map_error_decomposition_markdown(result),
+    )
     json_path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
@@ -487,33 +497,18 @@ def _source_run_ids_from_standard_manifest(manifest: dict[str, Any]) -> tuple[st
 
 
 def _find_standard_row(manifest: dict[str, Any], run_id: str) -> dict[str, Any] | None:
-    for row in manifest.get("rows", ()):
-        if row.get("spec", {}).get("parameters", {}).get("source_run_id") == run_id:
-            spec = row.get("spec", {})
-            return {
-                "run_id": spec.get("run_id"),
-                "status": row.get("status"),
-                "observation_history_to_action_map_mismatch": _component_summary(
-                    row,
-                    "observation_history_to_action_map_mismatch",
-                ),
-            }
-    return None
-
-
-def _component_summary(row: dict[str, Any], component_name: str) -> dict[str, Any] | None:
-    for component in row.get("certificate_components", ()):
-        if component.get("name") == component_name:
-            return {
-                "status": component.get("status"),
-                "summary": component.get("summary"),
-                "reason": component.get("reason"),
-            }
-    return None
-
-
-def _read_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    row = standard_row_by_source_run_id(manifest, run_id)
+    if row is None:
+        return None
+    spec = row.get("spec", {})
+    return {
+        "run_id": spec.get("run_id"),
+        "status": row.get("status"),
+        "observation_history_to_action_map_mismatch": certificate_component_summary(
+            row,
+            "observation_history_to_action_map_mismatch",
+        ),
+    }
 
 
 def _repo_relative(path: Path, *, repo_root: Path) -> str:

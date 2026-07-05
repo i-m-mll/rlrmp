@@ -28,12 +28,14 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
     repeat_single_validation_trial,
     resolve_run_inputs,
 )
-from rlrmp.train.task_model import setup_task_model_pair
+from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.runtime.run_spec_access import require_run_seed
+from rlrmp.data_products.broad_epsilon import load_broad_epsilon_anchors
 from rlrmp.train.cs_perturbation_training import (
-    BROAD_EPSILON_LEVELS,
     BROAD_EPSILON_REFERENCE_REACH_M,
 )
+from rlrmp.train.task_model import setup_task_model_pair
 
 
 SCHEMA_VERSION = "rlrmp.gru_worst_case_epsilon_audit.v1"
@@ -185,14 +187,15 @@ def declared_epsilon_l2_radius(
     """Return the declared rollout L2 radius from a b8aa38e run spec."""
 
     if budget_level_override is not None:
-        if budget_level_override not in BROAD_EPSILON_LEVELS:
-            levels = ", ".join(sorted(BROAD_EPSILON_LEVELS))
+        broad_epsilon_anchors = load_broad_epsilon_anchors()
+        if budget_level_override not in broad_epsilon_anchors:
+            levels = ", ".join(sorted(broad_epsilon_anchors.keys()))
             raise ValueError(
                 f"Unknown budget_level_override {budget_level_override!r}; "
                 f"expected one of {levels}."
             )
         contract = {
-            **BROAD_EPSILON_LEVELS[budget_level_override],
+            **broad_epsilon_anchors[budget_level_override],
             "reference_reach_m": BROAD_EPSILON_REFERENCE_REACH_M,
         }
         raw_radius = contract["closed_loop_epsilon_l2_15cm"]
@@ -575,7 +578,11 @@ def materialize_gru_worst_case_epsilon_audit(
     }
     public_manifest = _json_ready(manifest)
     output_path.write_text(json.dumps(public_manifest, indent=2, sort_keys=True) + "\n")
-    note_path.write_text(render_worst_case_epsilon_markdown(public_manifest), encoding="utf-8")
+    update_marked_section(
+        note_path,
+        "gru_worst_case_epsilon_audit",
+        render_worst_case_epsilon_markdown(public_manifest),
+    )
     return public_manifest
 
 
@@ -601,7 +608,10 @@ def audit_run_worst_case_epsilon(
 
     hps = dict_to_namespace(normalize_gru_hps(run.run_spec["hps"]), to_type=TreeNamespace)
     n_replicates = int(hps.model.n_replicates)
-    pair = setup_task_model_pair(hps, key=jr.PRNGKey(int(run.run_spec.get("seed", 42))))
+    pair = setup_task_model_pair(
+        hps,
+        key=jr.PRNGKey(require_run_seed(run.run_spec, source=run.run_spec_path)),
+    )
     model, checkpoint_selection = load_validation_selected_checkpoint_model(
         experiment=source_experiment,
         run_id=run.run_id,
@@ -742,7 +752,7 @@ def audit_run_worst_case_epsilon(
             "energy": radius * radius,
             "reach_length_m": reach_length,
             "source": (
-                f"BROAD_EPSILON_LEVELS[{budget_level_override!r}] override"
+                f"broad_epsilon_budget_anchors[{budget_level_override!r}] override"
                 if budget_level_override is not None
                 else budget_source
             ),

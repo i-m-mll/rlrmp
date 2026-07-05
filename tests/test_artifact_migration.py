@@ -8,8 +8,11 @@ import jax.random as jr
 import jax.tree_util as jtu
 import numpy as np
 import pytest
+from feedbax.contracts.manifest import ModelArtifactManifest
 
 from rlrmp.artifact_migration import (
+    _DEFAULT_MINIMAX_ARGS,
+    _manifest_parent,
     load_migrated_model_artifact,
     minimax_args_from_run_spec,
 )
@@ -18,7 +21,19 @@ from rlrmp.eval.ensemble import eval_ensemble_on_trials
 from rlrmp.eval.kinematics import compute_kinematics
 from rlrmp.eval.minimax_io import load_model
 from rlrmp.train.task_model import setup_task_model_pair
-from rlrmp.train.minimax import build_hps
+from rlrmp.train.minimax import MinimaxConfig, build_hps
+
+
+# Pinned historical defaults allowed to diverge from live minimax config defaults.
+_PINNED_MINIMAX_DEFAULT_DRIFT_KEYS = frozenset(
+    {
+        "checkpoint",
+        "checkpoint_every",
+        "n_adversary_batches",
+        "n_warmup_batches",
+        "output_dir",
+    }
+)
 
 
 def _migrated_manifest_paths() -> list[Path]:
@@ -40,9 +55,59 @@ def test_minimax_args_from_run_spec_normalizes_historical_cli_flags() -> None:
 
     assert args.hidden_type == "gru"
     assert args.n_warmup_batches == 12000
+    assert args.adversary_type == "gaussian_bump"
     assert args.streaming_loss is False
     assert args.nn_hidden_derivative == 0.001
     assert args.n_adversary_batches == 0
+
+
+def test_manifest_parent_preserves_exactly_one_error_behavior() -> None:
+    manifest = ModelArtifactManifest.model_validate(
+        {
+            "kind": "ModelArtifactManifest",
+            "id": "unit-manifest",
+            "graph_spec": {"kind": "graph_spec", "id": "graph"},
+            "provenance": {
+                "parents": [
+                    {"kind": "legacy_run_spec", "id": "run-spec-1"},
+                    {"kind": "legacy_run_spec", "id": "run-spec-2"},
+                    {"kind": "legacy_checkpoint", "id": "checkpoint"},
+                ]
+            },
+        }
+    )
+
+    assert _manifest_parent(manifest, "legacy_checkpoint").id == "checkpoint"
+    with pytest.raises(
+        ValueError,
+        match="Expected exactly one 'legacy_run_spec' parent in manifest unit-manifest; found 2.",
+    ):
+        _manifest_parent(manifest, "legacy_run_spec")
+    with pytest.raises(
+        ValueError,
+        match="Expected exactly one 'missing' parent in manifest unit-manifest; found 0.",
+    ):
+        _manifest_parent(manifest, "missing")
+
+
+def test_frozen_minimax_defaults_only_diverge_on_allowlisted_keys() -> None:
+    live_defaults = MinimaxConfig().model_dump(mode="python")
+    assert _DEFAULT_MINIMAX_ARGS.keys() == live_defaults.keys()
+
+    for key in sorted(_DEFAULT_MINIMAX_ARGS):
+        if key in _PINNED_MINIMAX_DEFAULT_DRIFT_KEYS:
+            continue
+        historical_value = _DEFAULT_MINIMAX_ARGS[key]
+        live_value = live_defaults[key]
+        assert historical_value == live_value, (
+            f"Unexpected minimax default drift for {key!r}: "
+            f"historical={historical_value!r}, live={live_value!r}"
+        )
+
+    assert any(
+        _DEFAULT_MINIMAX_ARGS[key] != live_defaults[key]
+        for key in _PINNED_MINIMAX_DEFAULT_DRIFT_KEYS
+    )
 
 
 @pytest.mark.parametrize("manifest_path", _migrated_manifest_paths())

@@ -31,6 +31,13 @@ from jax_cookbook import save as fbx_save
 from jax_cookbook.tree import filter_spec_leaves
 from rlrmp.paths import mkdir_p
 from rlrmp.model.trainable import staged_network_trainable_parts
+from rlrmp.runtime.training_run_specs import (
+    GUIDED_DISTILLATION_METHOD_REF,
+    attach_distillation_training_specs,
+    training_arg_parser,
+    validate_distillation_training_run_spec,
+    write_distillation_run_spec,
+)
 from rlrmp.train.distillation import (
     CSH0DistillationConfig,
     DistillationLossWeights,
@@ -145,6 +152,17 @@ def _normalize_serialized_hps(hps: dict[str, Any]) -> dict[str, Any]:
     normalized = copy.deepcopy(hps)
     if normalized.get("hidden_type") == "equinox.nn._rnn.GRUCell":
         normalized["hidden_type"] = None
+    pgd = normalized.get("broad_epsilon_pgd_training")
+    if isinstance(pgd, dict) and not pgd.get("enabled", False):
+        budget_contract = pgd.get("budget_contract")
+        if isinstance(budget_contract, dict) and budget_contract.get("effective_l2_radius_15cm"):
+            budget_contract.setdefault(
+                "budget_source",
+                {
+                    "key": "disabled_guided_distillation_no_pgd",
+                    "note": "Guided distillation disables PGD; retained radius is provenance only.",
+                },
+            )
     return normalized
 
 
@@ -329,6 +347,7 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
         "issue": ISSUE_ID,
         "implementation_issue": IMPLEMENTATION_ISSUE_ID,
         "run_id": run_id,
+        "method_ref": GUIDED_DISTILLATION_METHOD_REF,
         "seed": int(getattr(args, "seed", 0)),
         "batch_size": int(getattr(args, "batch_size", 64)),
         "n_train_batches": int(getattr(args, "n_batches", 12000)),
@@ -591,7 +610,12 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
     }
     if "post_run_provenance" in existing_spec:
         spec["post_run_provenance"] = existing_spec["post_run_provenance"]
-    return spec
+    return attach_distillation_training_specs(
+        spec,
+        method="guided_distillation",
+        output_dir=Path(output_dir),
+        spec_path=run_spec_path,
+    )
 
 
 class BankedAffineTeacher(eqx.Module):
@@ -620,6 +644,15 @@ class GuidedDistillationTrainingState:
     completed_batches: int
     batch_keys: jax.Array
     histories: list[list[dict[str, Any]]]
+
+
+@dataclass(frozen=True)
+class StandardControllerParts:
+    """Controller submodules for old SimpleStagedNetwork and native Graph forms."""
+
+    h0_encoder: Any
+    hidden_cell: Any
+    readout: Any
 
 
 def _require_teacher_package(path: Path) -> dict[str, np.ndarray]:
@@ -778,14 +811,14 @@ def _make_optimizer(
 
 
 def _standard_model_actions(model: Any, feedback_history: jax.Array) -> jax.Array:
-    net_node = model.nodes["net"]
+    parts = standard_controller_parts(model)
 
     def single(feedback: jax.Array) -> jax.Array:
-        hidden = net_node.h0_encoder(feedback[0])
+        hidden = parts.h0_encoder(feedback[0])
 
         def step(carry: jax.Array, value: jax.Array) -> tuple[jax.Array, jax.Array]:
-            next_hidden = net_node.net.hidden(value, carry)
-            action = net_node.net.readout(next_hidden)
+            next_hidden = parts.hidden_cell(value, carry)
+            action = parts.readout(next_hidden)
             return next_hidden, action
 
         _, actions = jax.lax.scan(step, hidden, feedback)
@@ -794,6 +827,50 @@ def _standard_model_actions(model: Any, feedback_history: jax.Array) -> jax.Arra
     if feedback_history.ndim == 2:
         return single(feedback_history)
     return jax.vmap(single)(feedback_history)
+
+
+def standard_controller_parts(model: Any) -> StandardControllerParts:
+    """Return h0 encoder, GRU cell, and readout for supported standard graph shapes."""
+
+    net_node = model.nodes["net"]
+    if hasattr(net_node, "net"):
+        return StandardControllerParts(
+            h0_encoder=net_node.h0_encoder,
+            hidden_cell=net_node.net.hidden,
+            readout=net_node.net.readout,
+        )
+    graph_nodes = getattr(net_node, "nodes", None)
+    if isinstance(graph_nodes, dict):
+        return StandardControllerParts(
+            h0_encoder=graph_nodes["h0_encoder"].layer,
+            hidden_cell=graph_nodes["cell"].cell,
+            readout=graph_nodes["readout"].layer,
+        )
+    raise TypeError(f"Unsupported standard distillation controller type: {type(net_node)!r}")
+
+
+def standard_controller_feedback_dim(model: Any) -> int:
+    """Return the controller-visible feedback dimension from the GRU input weights."""
+
+    return int(standard_controller_parts(model).hidden_cell.weight_ih.shape[-1])
+
+
+def standard_controller_action_dim(model: Any) -> int:
+    """Return the controller command dimension from the readout weights."""
+
+    return int(_linear_weight(standard_controller_parts(model).readout).shape[-2])
+
+
+def _linear_weight(layer: Any) -> jax.Array:
+    """Return the underlying linear weight for plain or masked linear modules."""
+
+    return layer.linear.weight if hasattr(layer, "linear") else layer.weight
+
+
+def _linear_bias(layer: Any) -> jax.Array | None:
+    """Return the underlying linear bias for plain or masked linear modules."""
+
+    return layer.linear.bias if hasattr(layer, "linear") else layer.bias
 
 
 def _where_train_fn(model: Any) -> tuple[Any, ...]:
@@ -1277,6 +1354,7 @@ def run_guided_distillation_training(args: argparse.Namespace) -> dict[str, Any]
                 f"{loaded_spec.get('schema_version')!r}; expected {SCHEMA_VERSION!r}."
             )
         spec = loaded_spec
+    validate_distillation_training_run_spec(spec, method="guided_distillation")
 
     n_batches = int(args.n_batches)
     batch_size = int(args.batch_size)
@@ -1369,7 +1447,7 @@ def run_guided_distillation_training(args: argparse.Namespace) -> dict[str, Any]
         population_mask_mode=population_mask_mode,
     )
     model = _init_standard_model_ensemble(hps=hps, key=model_key)
-    model_feedback_dim = int(model.nodes["net"].net.hidden.weight_ih.shape[-1])
+    model_feedback_dim = standard_controller_feedback_dim(model)
     if feedback_dim != model_feedback_dim:
         raise ValueError(
             f"Teacher package feedback_dim={feedback_dim}, but the standard Feedbax graph "
@@ -1567,7 +1645,7 @@ def smoke_distillation_loss() -> dict[str, Any]:
 def build_parser() -> argparse.ArgumentParser:
     """Build the guided-distillation CLI parser."""
 
-    parser = argparse.ArgumentParser(
+    parser = training_arg_parser(
         description="Prepare the 9727d79 guided C&S GRU distillation no-launch spec.",
     )
     parser.add_argument("--run-id", default=RUN_ID)
@@ -1631,7 +1709,7 @@ def main(argv: list[str] | None = None) -> int:
 
     spec_path = _resolve_run_spec_path(args, _resolve_run_id(args, payload))
     mkdir_p(spec_path.parent)
-    spec_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_distillation_run_spec(spec_path, payload, method="guided_distillation")
     print(json.dumps({"run_spec_path": str(spec_path)}, indent=2, sort_keys=True), end="")
     return 0
 

@@ -1,4 +1,9 @@
-"""Phase 2 Feedbax parity tests for the canonical C&S game card."""
+"""C&S mechanics parity tests for the canonical game card.
+
+Despite the historical filename, this is not part of the Feedbax drift contract
+gate. It checks C&S game-card mechanics equivalence and intentionally remains
+outside the ``feedbax_contract`` marker.
+"""
 
 from __future__ import annotations
 

@@ -115,7 +115,7 @@ The synthesis (``synthesis_review.md`` section 2 / 4.2) distinguishes:
 - **Flavor (b)**: structural perturbation :math:`\\Delta A` to the dynamics
   matrix, constant over the trial. ``\\dot v \\mathrel{+}= \\Delta A\\,
   [p, v]``, matching the feedbax ``DynamicsMatrixPerturb`` intervenor and
-  ``LinearDynamicsAdversary`` in ``rlrmp.adversary``.
+  ``LinearDynamicsAdversary`` in ``rlrmp.train.adversary``.
 
 The flavor-(b) extension is implemented by ``solve_hinf_riccati_modelclass``
 and ``find_gamma_star_modelclass``. It uses the **S-procedure / quadratic-
@@ -1176,7 +1176,15 @@ class CostSpec:
     pos_late_scale_factor: float = 3.0
     vel_late_scale_factor: float = 3.0
     late_start_offset: int = 80
-    R_weight: float = 3.0e-5  # Adaptive-control-cost converged value (synthesis_review section 2)
+    # ea6ccb4 decision: ALLOWLIST-with-rationale (not migrated to a data product).
+    # This is a single adopted-run-derived default control weight -- the adaptive
+    # control-cost converged value reported in synthesis_review section 2 for
+    # loss_update-enabled runs. It is a documented config default (one scalar), not
+    # a generated dataset, so the AST data-lint (which targets multi-entry
+    # high-precision container literals) does not flag it, and migrating a single
+    # documented scalar to a governed product would add custody overhead without
+    # governance benefit. Callers may override R_weight explicitly per run.
+    R_weight: float = 3.0e-5  # adopted adaptive-control-cost converged value (synthesis_review s.2)
     terminal_pos_weight: float = 4.0
     terminal_vel_weight: float = 0.4
 

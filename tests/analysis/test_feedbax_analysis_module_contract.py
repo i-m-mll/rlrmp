@@ -1,24 +1,19 @@
-"""Contract checks for Feedbax-discoverable rlrmp analysis modules."""
+"""Contract checks for Feedbax-discoverable rlrmp analysis recipes."""
 
 from __future__ import annotations
 
-import ast
 import importlib
 import importlib.util
-import pkgutil
-from pathlib import Path
 
 import pytest
+from feedbax.analysis.specs import get_analysis_recipe, registered_analysis_types
+from feedbax.analysis.validation import AnalysisRecipeProtocol, validate_analysis_recipe
 from feedbax.plugins.registry import ExperimentRegistry
 
 import rlrmp
 
 
-REQUIRED_ANALYSIS_MODULE_ATTRIBUTES = (
-    "ANALYSES",
-    "eval_fn",
-    "setup_eval_tasks_and_models",
-)
+pytestmark = pytest.mark.feedbax_contract
 
 
 def test_registered_parts_exclude_removed_frozen_parts() -> None:
@@ -36,66 +31,32 @@ def test_removed_frozen_analysis_parts_are_not_importable() -> None:
     assert importlib.util.find_spec("rlrmp.modules") is None
 
 
-def _registered_analysis_module_specs() -> list[tuple[str, Path]]:
+def _registered_rlrmp_analysis_recipes() -> list[tuple[str, AnalysisRecipeProtocol]]:
     registry = ExperimentRegistry()
     rlrmp.register_experiment_package(registry)
-    metadata = registry.get_package_metadata("rlrmp")
-    root_name = f"{metadata.package_module.__name__}.{metadata.analysis_module_root}"
-
-    module_specs: list[tuple[str, Path]] = []
-    for part in metadata.parts:
-        part_package = importlib.import_module(f"{root_name}.{part}")
-        for info in pkgutil.iter_modules(part_package.__path__, prefix=f"{part_package.__name__}."):
-            module_name = info.name
-            short_name = module_name.rsplit(".", maxsplit=1)[-1]
-            if info.ispkg or short_name.startswith("_"):
-                continue
-
-            spec = info.module_finder.find_spec(module_name)
-            if spec is None or spec.origin is None:
-                raise AssertionError(
-                    f"Could not resolve source path for analysis module {module_name}"
-                )
-            module_specs.append((module_name, Path(spec.origin)))
-
-    return module_specs
-
-
-def _top_level_names(path: Path) -> set[str]:
-    tree = ast.parse(path.read_text(), filename=str(path))
-    names: set[str] = set()
-
-    for node in tree.body:
-        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
-            names.add(node.name)
-        elif isinstance(node, ast.Assign):
-            for target in node.targets:
-                if isinstance(target, ast.Name):
-                    names.add(target.id)
-        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-            names.add(node.target.id)
-
-    return names
+    recipe_types = sorted(
+        analysis_type
+        for analysis_type in registered_analysis_types()
+        if analysis_type.startswith("rlrmp.")
+    )
+    assert recipe_types, "rlrmp registered zero Feedbax analysis recipes"
+    return [
+        (
+            analysis_type,
+            validate_analysis_recipe(analysis_type, get_analysis_recipe(analysis_type)),
+        )
+        for analysis_type in recipe_types
+    ]
 
 
 @pytest.mark.parametrize(
-    ("module_name", "module_path"),
-    _registered_analysis_module_specs(),
-    ids=lambda value: value if isinstance(value, str) else value.name,
+    ("analysis_type", "recipe"),
+    _registered_rlrmp_analysis_recipes(),
+    ids=lambda value: value if isinstance(value, str) else value.__name__,
 )
-def test_registered_analysis_modules_define_feedbax_contract_attributes(
-    module_name: str,
-    module_path: Path,
+def test_registered_analysis_recipes_satisfy_feedbax_protocol(
+    analysis_type: str,
+    recipe: AnalysisRecipeProtocol,
 ) -> None:
-    defined_names = _top_level_names(module_path)
-    missing = [
-        attribute
-        for attribute in REQUIRED_ANALYSIS_MODULE_ATTRIBUTES
-        if attribute not in defined_names
-    ]
-
-    assert missing == [], (
-        f"{module_name} is registered under rlrmp's Feedbax analysis_module_root "
-        f"but does not define required analysis-module attribute(s): {', '.join(missing)}. "
-        "Define ANALYSES, eval_fn, and setup_eval_tasks_and_models at module top level."
-    )
+    assert callable(recipe)
+    assert validate_analysis_recipe(analysis_type, recipe) is recipe

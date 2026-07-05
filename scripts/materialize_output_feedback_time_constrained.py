@@ -1,4 +1,11 @@
-"""Materialize the 87edaae smooth time-basis output-feedback bridge."""
+"""LEGACY (frozen 2026-07-03, issue 64d5f13).
+
+This materializer is not contract-native: it predates the feedbax recipe,
+bundle, and manifest contracts. It may not run without deliberate realignment.
+Do not copy it as a pattern for new analyses. The port-or-delete decision is
+deferred to the report-stage era (feedbax 132f98c) / publication.
+
+Materialize the 87edaae smooth time-basis output-feedback bridge."""
 
 from __future__ import annotations
 

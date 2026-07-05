@@ -34,6 +34,7 @@ from feedbax.component_registry import (
 )
 from feedbax.contracts.graph import ComponentSpec, GraphMetadata, GraphSpec, WireSpec
 from feedbax.runtime.graph import Component, Graph
+from feedbax.runtime.affine_composer import affine_value_composer_output_prototype
 from feedbax.mechanics import LinearStateSpace
 from feedbax.models.networks import NetworkState, PopulationStructure, SimpleStagedNetwork
 from feedbax.contracts.graphs.serialization import spec_to_graph
@@ -42,10 +43,15 @@ from feedbax.runtime.state import CartesianState
 from rlrmp.analysis.math.cs_game_card import build_canonical_game
 from rlrmp.analysis.pipelines.feedbax_parity import build_cs2019_feedbax_mechanics
 from rlrmp.model.feedbax_graph import (
+    NATIVE_SUBGRAPH_COMPONENT,
+    native_recurrent_controller_subgraph,
+    normalize_native_recurrent_runtime_initializers,
     register_rlrmp_graph_components,
+    recurrent_graph_state_to_network_state,
     resolve_registered_graph_component_migrations,
 )
 from rlrmp.model.trainable import staged_network_trainable_parts
+from rlrmp.runtime.run_spec_access import require_run_seed
 from rlrmp.train.closed_loop_finite_adversary import (
     AFFINE_POLICY,
     FINITE_POLICY_BIAS_INPUT,
@@ -70,6 +76,8 @@ CS_H0_CONTEXT_DIM = CS_FEEDBACK_DIM
 CS_H0_ENCODER_INIT = "zero_affine"
 CS_DEFAULT_TRAINABLE_DTYPE = "float32"
 CS_LSS_GRAPH_SPEC_VERSION = "1.0.0"
+CS_H0_CONTEXT_INPUT = "h0_context"
+CS_H0_ENCODER_NODE = "h0_encoder"
 CS_LSS_DELAYED_FEEDBACK_COMPONENT = "RLRMPCsLssDelayedPositionVelocityFeedback"
 CS_LSS_TARGET_FEEDBACK_COMPONENT = "RLRMPCsLssTargetRelativeDelayedFeedback"
 CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT = (
@@ -79,6 +87,16 @@ CS_LSS_INITIAL_HIDDEN_NET_COMPONENT = "RLRMPCsLssInitialHiddenStagedNetwork"
 CS_LSS_FINITE_EPSILON_POLICY_COMPONENT = "RLRMPCsLssFiniteEpsilonPolicy"
 CS_LSS_PASSTHROUGH_COMPONENT = "RLRMPCsLssPassthrough"
 FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT = "StateFeedbackSelector"
+# Native identity of the live closed-loop finite-epsilon policy in the active
+# graph-emission path. The retired ``RLRMPCsLssFiniteEpsilonPolicy`` component
+# type survives only as a legacy registration/migration ID (see
+# ``register_cs_lss_graph_components``); the active builder emits a Feedbax-native
+# ``AffineValueComposer`` node labelled ``finite_epsilon_policy`` whose gain/bias
+# parameters carry the component-parameter labels ``finite_epsilon_policy.gain``
+# / ``finite_epsilon_policy.bias``. Descriptors and equivalence tests reference
+# these constants so the native identity has a single source of truth.
+FINITE_EPSILON_POLICY_GRAPH_COMPONENT = "AffineValueComposer"
+FINITE_EPSILON_POLICY_NODE_LABEL = "finite_epsilon_policy"
 CS_LSS_UNSUPPORTED_STOCHASTIC_COMPONENTS = frozenset(
     {
         "RLRMPCsLssStateDiffusion",
@@ -294,7 +312,10 @@ def _cs_lss_gru_state_view(node_states: dict[str, PyTree]) -> CsLssGruState:
     return CsLssGruState(
         mechanics=mechanics_view,
         sensory=node_states["sensory"],
-        net=node_states["net"],
+        net=recurrent_graph_state_to_network_state(
+            node_states["net"],
+            command=node_states["efferent"].output,
+        ),
         efferent=node_states["efferent"],
     )
 
@@ -303,6 +324,7 @@ def register_cs_lss_graph_components(component_registry: Any | None = None) -> A
     """Register executable CS-LSS component builders for GraphSpec materialization."""
 
     registry = register_rlrmp_graph_components(component_registry or get_component_registry())
+    _install_cs_lss_affine_value_composer_prototype(registry)
     registry.register_component_type(
         CS_LSS_INITIAL_HIDDEN_NET_COMPONENT,
         _build_initial_hidden_staged_network,
@@ -335,6 +357,62 @@ def register_cs_lss_graph_components(component_registry: Any | None = None) -> A
     )
     register_cs_lss_graph_migration_pack(registry)
     return registry
+
+
+def _install_cs_lss_affine_value_composer_prototype(registry: Any) -> None:
+    meta = registry.get("AffineValueComposer")
+    if meta is None or meta.builder is None:
+        return
+    registry.register_component_type(
+        "AffineValueComposer",
+        meta.builder,
+        category=meta.category,
+        description=meta.description,
+        param_schema=meta.param_schema,
+        input_ports=meta.input_ports,
+        output_ports=meta.output_ports,
+        icon=meta.icon,
+        port_types=meta.port_types,
+        is_composite=meta.is_composite,
+        template_graph=meta.template_graph,
+        template_ui_state=meta.template_ui_state,
+        template_id=meta.template_id,
+        template_kind=meta.template_kind,
+        output_prototype_fn=_cs_lss_affine_value_composer_output_prototype,
+        provenance=meta.provenance,
+        owner=meta.owner,
+        param_schema_version=meta.param_schema_version,
+        supported_param_schema_versions=meta.supported_param_schema_versions,
+    )
+
+
+def _cs_lss_affine_value_composer_output_prototype(
+    params: dict[str, Any],
+    inputs: dict[str, Any],
+) -> dict[str, Any]:
+    normalized_inputs = dict(inputs)
+    output_block_size = int(params.get("output_block_size", 1))
+    feature_rules = params.get("feature_rules", ())
+    if "base" not in normalized_inputs:
+        normalized_inputs["base"] = jnp.zeros((output_block_size,))
+    if "state" not in normalized_inputs:
+        state_width = max(
+            (int(rule["state_slice"][1]) for rule in feature_rules),
+            default=1,
+        )
+        normalized_inputs["state"] = jnp.zeros((state_width,))
+    needs_target = any(rule.get("kind") == "target_relative_difference" for rule in feature_rules)
+    if needs_target:
+        target_width = max(
+            (int(rule["target_slice"][1]) for rule in feature_rules if "target_slice" in rule),
+            default=CS_TARGET_DIM,
+        )
+    if needs_target and (
+        "target" not in normalized_inputs
+        or int(getattr(normalized_inputs["target"], "shape", (0,))[-1]) < target_width
+    ):
+        normalized_inputs["target"] = jnp.zeros((target_width,))
+    return affine_value_composer_output_prototype(params, normalized_inputs)
 
 
 def register_cs_lss_graph_migration_pack(component_registry: Any | None = None) -> Any:
@@ -466,14 +544,16 @@ def build_cs_lss_gru_graph_spec(
         feedback_dim=feedback_dim,
     )
     key_param = [int(value) for value in jnp.asarray(jr.fold_in(key, 0)).tolist()]
-    net_type = (
-        CS_LSS_INITIAL_HIDDEN_NET_COMPONENT
-        if bool(initial_hidden_encoder)
-        else "RLRMPSimpleStagedNetwork"
-    )
+    if encoding_size is not None:
+        raise ValueError(
+            "Feedbax-native CS-LSS recurrent graph emission does not currently support "
+            "SimpleStagedNetwork encoding_size."
+        )
+    h0_initializer_source = CS_H0_ENCODER_NODE if bool(initial_hidden_encoder) else None
     net_params = {
         "controller_kind": "gru",
         "input_size": int(input_size) + feedback_dim,
+        "external_input_size": int(input_size),
         "hidden_size": int(hidden_size),
         "out_size": CS_FORCE_DIM,
         "encoding_size": encoding_size,
@@ -489,12 +569,25 @@ def build_cs_lss_gru_graph_spec(
     if initial_hidden_encoder:
         net_params.update(
             {
-                "h0_input_size": feedback_dim,
-                "h0_context_source": "target_relative_delayed_feedback",
-                "h0_initialization": CS_H0_ENCODER_INIT,
-                "h0_dtype": trainable_dtype_name,
+                "h0_initializer_source": h0_initializer_source,
+                "h0_encoder_input_size": feedback_dim,
+                "h0_source_contract": "node-output",
+                "h0_context_input": CS_H0_CONTEXT_INPUT,
             }
         )
+    net_subgraph = native_recurrent_controller_subgraph(
+        input_size=int(net_params["input_size"]),
+        external_input_size=int(input_size),
+        hidden_size=int(hidden_size),
+        out_size=CS_FORCE_DIM,
+        hidden_type_name=str(net_params["hidden_type"]),
+        sisu_gating=str(sisu_gating),
+        population_params=dict(net_params["population_structure"]),
+        h0_initializer_source=h0_initializer_source,
+        h0_encoder_input_size=feedback_dim if initial_hidden_encoder else None,
+        key=key_param,
+        dtype=trainable_dtype_name,
+    )
 
     nodes = {
         "feedback": ComponentSpec(
@@ -515,9 +608,9 @@ def build_cs_lss_gru_graph_spec(
             output_ports=["output"],
         ),
         "net": ComponentSpec(
-            type=net_type,
+            type=NATIVE_SUBGRAPH_COMPONENT,
             params=net_params,
-            input_ports=["input", "feedback"],
+            input_ports=list(net_subgraph.input_ports),
             output_ports=["output", "hidden"],
         ),
         "efferent": ComponentSpec(
@@ -555,19 +648,27 @@ def build_cs_lss_gru_graph_spec(
     }
     if finite_epsilon_policy is not None:
         nodes["target_source"] = ComponentSpec(
-            type=CS_LSS_PASSTHROUGH_COMPONENT,
-            params={},
+            type="Gain",
+            params={"gain": 1.0},
             input_ports=["input"],
             output_ports=["output"],
         )
-        nodes["finite_epsilon_policy"] = ComponentSpec(
-            type=CS_LSS_FINITE_EPSILON_POLICY_COMPONENT,
+        nodes[FINITE_EPSILON_POLICY_NODE_LABEL] = ComponentSpec(
+            type=FINITE_EPSILON_POLICY_GRAPH_COMPONENT,
             params={
-                "policy_class": finite_epsilon_policy,
-                "physical_block_size": physical_state_dim,
+                "schema_version": "feedbax.component.affine_value_composer.v1",
+                "output_block_size": int(mechanics.B_w.shape[1]),
+                "feature_rules": _finite_epsilon_feature_rules(
+                    state_dim=state_dim,
+                    physical_block_size=physical_state_dim,
+                ),
+                "gain_init": jnp.zeros((int(mechanics.B_w.shape[1]), state_dim)).tolist(),
+                "bias_init": jnp.zeros((int(mechanics.B_w.shape[1]),)).tolist(),
+                "use_bias": finite_epsilon_policy == AFFINE_POLICY,
+                "label": FINITE_EPSILON_POLICY_NODE_LABEL,
             },
-            input_ports=["base_epsilon", "state", "target", "gains", "bias"],
-            output_ports=["epsilon"],
+            input_ports=["base", "state", "target", "gain", "bias"],
+            output_ports=["value"],
         )
     wires = [
         WireSpec(
@@ -608,13 +709,13 @@ def build_cs_lss_gru_graph_spec(
                 WireSpec(
                     source_node="mechanics",
                     source_port="state",
-                    target_node="finite_epsilon_policy",
+                    target_node=FINITE_EPSILON_POLICY_NODE_LABEL,
                     target_port="state",
                     temporality="recurrent",
                 ),
                 WireSpec(
-                    source_node="finite_epsilon_policy",
-                    source_port="epsilon",
+                    source_node=FINITE_EPSILON_POLICY_NODE_LABEL,
+                    source_port="value",
                     target_node="mechanics",
                     target_port="epsilon",
                 ),
@@ -627,13 +728,16 @@ def build_cs_lss_gru_graph_spec(
                 WireSpec(
                     source_node="target_source",
                     source_port="output",
-                    target_node="finite_epsilon_policy",
+                    target_node=FINITE_EPSILON_POLICY_NODE_LABEL,
                     target_port="target",
                 ),
             ]
         )
     input_ports = ["input"] if input_size > 0 else []
     input_bindings = {"input": ("net", "input")} if input_size > 0 else {}
+    if initial_hidden_encoder:
+        input_ports.append(CS_H0_CONTEXT_INPUT)
+        input_bindings[CS_H0_CONTEXT_INPUT] = ("net", CS_H0_CONTEXT_INPUT)
     if target_relative_feedback:
         input_ports.append("target")
         if finite_epsilon_policy is None:
@@ -645,12 +749,12 @@ def build_cs_lss_gru_graph_spec(
         if finite_epsilon_policy is None:
             input_bindings["epsilon"] = ("mechanics", "epsilon")
         else:
-            input_bindings["epsilon"] = ("finite_epsilon_policy", "base_epsilon")
+            input_bindings["epsilon"] = (FINITE_EPSILON_POLICY_NODE_LABEL, "base")
             input_ports.append(FINITE_POLICY_GAINS_INPUT)
-            input_bindings[FINITE_POLICY_GAINS_INPUT] = ("finite_epsilon_policy", "gains")
+            input_bindings[FINITE_POLICY_GAINS_INPUT] = (FINITE_EPSILON_POLICY_NODE_LABEL, "gain")
             if finite_epsilon_policy == AFFINE_POLICY:
                 input_ports.append(FINITE_POLICY_BIAS_INPUT)
-                input_bindings[FINITE_POLICY_BIAS_INPUT] = ("finite_epsilon_policy", "bias")
+                input_bindings[FINITE_POLICY_BIAS_INPUT] = (FINITE_EPSILON_POLICY_NODE_LABEL, "bias")
     return GraphSpec(
         nodes=nodes,
         wires=wires,
@@ -664,6 +768,7 @@ def build_cs_lss_gru_graph_spec(
             "clean_feedback": ("feedback", "feedback"),
             "force": ("efferent", "output"),
         },
+        subgraphs={"net": net_subgraph},
         metadata=GraphMetadata(
             name="RLRMP CS-LSS GRU loop",
             description="Executable GraphSpec contract for the C&S LinearStateSpace GRU path.",
@@ -686,6 +791,7 @@ def materialize_cs_lss_gru_graph_spec(
     graph_spec = resolve_registered_graph_component_migrations(graph_spec, registry)
     graph = spec_to_graph(graph_spec, registry)
     graph = _cast_graph_floating_dtype(graph, _graph_runtime_dtype(graph_spec))
+    graph = normalize_native_recurrent_runtime_initializers(graph)
     return install_cs_lss_gru_runtime_hooks(graph)
 
 
@@ -801,6 +907,41 @@ def _delayed_feedback_indices(
     delayed_start = state_dim - physical_state_dim
     width = CS_PROPRIOCEPTIVE_FEEDBACK_DIM if include_force else CS_FEEDBACK_DIM
     return tuple(range(delayed_start, delayed_start + width))
+
+
+def _finite_epsilon_feature_rules(
+    *,
+    state_dim: int,
+    physical_block_size: int,
+) -> list[dict[str, object]]:
+    """Return AffineValueComposer rules for target-centered C&S state features."""
+
+    if physical_block_size < CS_TARGET_DIM:
+        raise ValueError(
+            f"physical_block_size must be at least {CS_TARGET_DIM}; got {physical_block_size}."
+        )
+    if state_dim % physical_block_size != 0:
+        raise ValueError(
+            f"state_dim={state_dim} is not divisible by "
+            f"physical_block_size={physical_block_size}."
+        )
+    rules: list[dict[str, object]] = []
+    for offset in range(0, state_dim, physical_block_size):
+        rules.append(
+            {
+                "kind": "target_relative_difference",
+                "state_slice": [offset, offset + CS_TARGET_DIM],
+                "target_slice": [0, CS_TARGET_DIM],
+            }
+        )
+        if physical_block_size > CS_TARGET_DIM:
+            rules.append(
+                {
+                    "kind": "identity",
+                    "state_slice": [offset + CS_TARGET_DIM, offset + physical_block_size],
+                }
+            )
+    return rules
 
 
 def _validate_cs_lss_graph_args(
@@ -1055,7 +1196,9 @@ def _build_simple_staged_network(params: dict[str, Any]) -> SimpleStagedNetwork:
         out_size=int(params.get("out_size", CS_FORCE_DIM)),
         encoding_size=params.get("encoding_size"),
         hidden_type=_hidden_type_from_name(str(params.get("hidden_type", "GRUCell"))),
-        population_structure=_population_structure_from_params(params.get("population_structure")),
+        population_structure=_population_structure_from_params(
+            _params_with_parent_key(params.get("population_structure"), params)
+        ),
         sisu_gating=str(params.get("sisu_gating", "additive")),
         dtype=jnp.dtype(params.get("trainable_dtype", jnp.float32)),
         **mask_kwargs,
@@ -1089,15 +1232,31 @@ def _key_from_params(params: dict[str, Any]) -> Array:
     key_data = params.get("key")
     if key_data is not None:
         return jnp.asarray(key_data, dtype=jnp.uint32)
-    return jr.PRNGKey(int(params.get("seed", 0)))
+    return jr.PRNGKey(require_run_seed(params))
+
+
+def _params_with_parent_key(params: Any, parent: dict[str, Any]) -> Any:
+    if not isinstance(params, dict):
+        return params
+    if not params:
+        return params
+    if params.get("key") is not None or params.get("seed") is not None:
+        return params
+    if parent.get("key") is None:
+        return params
+    return {**params, "key": parent["key"]}
 
 
 def _population_structure_params(
     population_structure: PopulationStructure | None,
     hidden_size: int,
-) -> dict[str, int]:
+) -> dict[str, Any]:
     if population_structure is None:
         return {}
+    if hasattr(population_structure, "to_spec"):
+        spec = dict(population_structure.to_spec())
+        spec["hidden_size"] = int(hidden_size)
+        return spec
     return {
         "hidden_size": int(hidden_size),
         "n_input_only": int(getattr(population_structure, "n_input_only", 0) or 0),
@@ -1117,7 +1276,7 @@ def _population_structure_from_params(params: Any) -> PopulationStructure | None
         n_recurrent_only=int(params.get("n_recurrent_only", 0) or 0),
         n_input_readout=int(params.get("n_input_readout", 0) or 0),
         assignment_fn=None,
-        key=jr.PRNGKey(int(params.get("seed", 0))),
+        key=_key_from_params(params),
     )
 
 

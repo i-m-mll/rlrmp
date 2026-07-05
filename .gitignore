@@ -257,6 +257,9 @@ results/**
 # Analysis regeneration specs / backfill indexes:
 !results/**/notes/*regeneration_spec.json
 !results/**/notes/diagnostic_regeneration_specs*.json
+# Governed data products (small distilled/adopted tables on the Feedbax
+# AnalysisDataProduct envelope; loaded fail-closed by identity — see ea6ccb4):
+!results/**/data_products/*.json
 # config.json whitelisted at specific depths only — intentionally NOT `!results/**/config.json`.
 # The broad glob is depth-blind and would track bulk per-run configs from cloud providers
 # (runpod/, modal/, coreweave/, etc.) that land deep in the tree. Restrict to the three

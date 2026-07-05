@@ -29,7 +29,7 @@ stages:
       include_reference: true
       include_objective_comparator: true
       include_map_decomposition: true
-      include_perturbation_response: true
+      include_perturbation_response: false
       include_feedback_ablation: true
       bundle_contract:
         primary: feedbax_analysis_bundle
@@ -67,13 +67,386 @@ stages:
         required: false
       - role: rlrmp-gru-postrun-legacy-regeneration-spec
         required: false
+  - name: perturbation_bank_eval
+    kind: evaluation
+    mode: grouped
+    evaluation_type: rlrmp.eval.perturbation_response_bank
+    states_custody: cache
+    params:
+      schema_id: rlrmp.eval.perturbation_response_bank.params
+      schema_version: rlrmp.eval.perturbation_response_bank.params.v2
+      legacy_payload_mode: true
+      checkpoint_bank_ref:
+        kind: CheckpointSelectionManifest
+        id: gru_postrun_bundle_placeholder_bank
+      perturbation_battery:
+        bank_id: gru_postrun_selected_perturbation_classes
+        perturbations:
+          - perturbation_id: command_input_pulse__bundle_placeholder
+            channel: command_input
+            family: command_input_pulse
+            amplitude: 1.0
+            units: N
+            axis: x
+            basis: command_cartesian_force_xy
+            sign: 1
+            timing:
+              start_time_index: 1
+              duration_steps: 1
+            adapter: feedbax.additive_channel_adapter.command_input
+            description: Bundle placeholder row for command-input pulse class.
+          - perturbation_id: target_aligned_lateral_command_load_pulse__bundle_placeholder
+            channel: command_input
+            family: target_aligned_lateral_command_load_pulse
+            amplitude: 1.0
+            units: N
+            axis: y
+            basis: target_aligned_radial_tangential_force
+            sign: 1
+            timing:
+              start_time_index: 1
+              duration_steps: 1
+            adapter: feedbax.additive_channel_adapter.command_input
+            description: Bundle placeholder row for lateral command-load class.
+          - perturbation_id: process_epsilon_force_state_xy__bundle_placeholder
+            channel: process_epsilon
+            family: process_epsilon_force_state_xy
+            amplitude: 0.01
+            units: epsilon
+            axis: y
+            basis: cs_lss_process_epsilon_current_physical_block
+            sign: 1
+            timing:
+              start_time_index: 1
+              duration_steps: 1
+            adapter: "task_trial_spec.inputs['epsilon']"
+            description: Bundle placeholder row for force-state process-epsilon class.
+          - perturbation_id: target_stream_jump__bundle_placeholder
+            channel: target_stream
+            family: target_stream_jump
+            amplitude: 0.01
+            units: m
+            axis: x
+            basis: target_cartesian_xy
+            sign: 1
+            timing:
+              start_time_index: 1
+              duration_steps: 1
+            adapter: task_trial_spec.target
+            description: Bundle placeholder row for target-stream jump class.
+      response_tensors:
+        runs: {}
+      bundle_contract:
+        primary: feedbax_analysis_bundle
+        role: shared_perturbation_response_eval
+        states_custody: cache
+    outputs:
+      - role: manifest
+        required: true
+  - name: perturbation_class_command_input_pulse
+    kind: analysis
+    mode: grouped
+    depends_on: [perturbation_bank_eval]
+    analysis_type: rlrmp.perturbation_class_response
+    params:
+      family: command_input_pulse
+    outputs:
+      - role: manifest
+        required: true
+      - role: rlrmp-perturbation-class-response
+        required: true
+  - name: perturbation_class_lateral_command_load
+    kind: analysis
+    mode: grouped
+    depends_on: [perturbation_bank_eval]
+    analysis_type: rlrmp.perturbation_class_response
+    params:
+      family: target_aligned_lateral_command_load_pulse
+    outputs:
+      - role: manifest
+        required: true
+      - role: rlrmp-perturbation-class-response
+        required: true
+  - name: perturbation_class_process_force_state
+    kind: analysis
+    mode: grouped
+    depends_on: [perturbation_bank_eval]
+    analysis_type: rlrmp.perturbation_class_response
+    params:
+      family: process_epsilon_force_state_xy
+    outputs:
+      - role: manifest
+        required: true
+      - role: rlrmp-perturbation-class-response
+        required: true
+  - name: perturbation_class_target_stream_jump
+    kind: analysis
+    mode: grouped
+    depends_on: [perturbation_bank_eval]
+    analysis_type: rlrmp.perturbation_class_response
+    params:
+      family: target_stream_jump
+    outputs:
+      - role: manifest
+        required: true
+      - role: rlrmp-perturbation-class-response
+        required: true
+  - name: perturbation_bank_aggregate
+    kind: analysis
+    mode: grouped
+    depends_on:
+      - perturbation_class_command_input_pulse
+      - perturbation_class_lateral_command_load
+      - perturbation_class_process_force_state
+      - perturbation_class_target_stream_jump
+    analysis_type: rlrmp.perturbation_bank_aggregate
+    params:
+      bank_mode: raw
+    outputs:
+      - role: manifest
+        required: true
+      - role: rlrmp-gru-perturbation-response-manifest
+        required: true
+  - name: postrun_report
+    kind: report
+    mode: grouped
+    depends_on: [postrun_diagnostics]
+    report_type: rlrmp.report.gru_postrun_summary
+    params:
+      schema_id: rlrmp.report.gru_postrun_summary.params
+      schema_version: rlrmp.report.gru_postrun_summary.params.v1
+      title: GRU Postrun Report
+      source_artifact_roles:
+        - rlrmp-gru-standard-certificate-note
+        - rlrmp-gru-objective-comparator-note
+        - rlrmp-gru-map-decomposition-note
+        - rlrmp-gru-perturbation-response-note
+        - rlrmp-gru-feedback-ablation-note
+      include_json_artifact: true
+      narrative: Feedbax-custody report render for the tracked GRU postrun notes.
+    outputs:
+      - role: report_render
+        required: true
+      - role: rlrmp-gru-postrun-report-render
+        required: false
+  - name: bridge_certificate_report
+    kind: report
+    mode: grouped
+    depends_on: [postrun_diagnostics]
+    report_type: rlrmp.report.bridge_certificate_notes
+    params:
+      schema_id: rlrmp.report.bridge_certificate_notes.params
+      schema_version: rlrmp.report.bridge_certificate_notes.params.v1
+      title: Bridge Certificate Notes
+      source_artifact_roles:
+        - rlrmp-gru-standard-certificate-note
+        - rlrmp-bridge-standard-certificate-note
+      include_json_artifact: true
+      narrative: Feedbax-custody report render for standard-certificate Markdown.
+    outputs:
+      - role: report_render
+        required: true
+      - role: rlrmp-bridge-certificate-report-render
+        required: false
+  - name: evaluation_diagnostics
+    kind: materialization
+    mode: grouped
+    analysis_type: rlrmp.feedback_quality.evaluation_diagnostics
+    params:
+      experiment_metadata_key: rlrmp_experiment
+      output_tag: validation_selected
+      use_validation_selected_checkpoints: true
+      materialize_evaluation_diagnostics: false
+    run_condition:
+      kind: any
+      exprs:
+        - kind: compare
+          item: evaluation_run
+          op: exists
+        - kind: compare
+          item: params
+          path: materialize_evaluation_diagnostics
+          op: eq
+          value: true
+    outputs:
+      - role: rlrmp-feedback-quality-evaluation-diagnostics-status
+        required: false
+  - name: objective_comparator
+    kind: materialization
+    mode: grouped
+    analysis_type: rlrmp.feedback_quality.objective_comparator
+    params:
+      experiment_metadata_key: rlrmp_experiment
+      output_tag: validation_selected
+      use_validation_selected_checkpoints: true
+      materialize_objective_comparator: false
+    run_condition:
+      kind: any
+      exprs:
+        - kind: compare
+          item: evaluation_run
+          op: exists
+        - kind: compare
+          item: params
+          path: materialize_objective_comparator
+          op: eq
+          value: true
+    outputs:
+      - role: rlrmp-feedback-quality-objective-comparator-status
+        required: false
+  - name: perturbation_response
+    kind: materialization
+    mode: grouped
+    analysis_type: rlrmp.feedback_quality.perturbation_response
+    params:
+      experiment_metadata_key: rlrmp_experiment
+      output_tag: validation_selected
+      use_validation_selected_checkpoints: true
+      materialize_perturbation_response: false
+    run_condition:
+      kind: any
+      exprs:
+        - kind: compare
+          item: evaluation_run
+          op: exists
+        - kind: compare
+          item: params
+          path: materialize_perturbation_response
+          op: eq
+          value: true
+    outputs:
+      - role: rlrmp-feedback-quality-perturbation-response-status
+        required: false
+      - role: rlrmp-feedback-quality-perturbation-response-manifest
+        required: false
+  - name: feedback_ablation
+    kind: materialization
+    mode: grouped
+    analysis_type: rlrmp.feedback_quality.feedback_ablation
+    params:
+      experiment_metadata_key: rlrmp_experiment
+      output_tag: validation_selected
+      use_validation_selected_checkpoints: true
+      materialize_feedback_ablation: false
+    run_condition:
+      kind: any
+      exprs:
+        - kind: compare
+          item: evaluation_run
+          op: exists
+        - kind: compare
+          item: params
+          path: materialize_feedback_ablation
+          op: eq
+          value: true
+    outputs:
+      - role: rlrmp-feedback-quality-feedback-ablation-status
+        required: false
+  - name: perturbation_calibration
+    kind: materialization
+    mode: grouped
+    analysis_type: rlrmp.feedback_quality.perturbation_calibration
+    params:
+      experiment_metadata_key: rlrmp_experiment
+      output_tag: validation_selected
+      use_validation_selected_checkpoints: true
+      materialize_perturbation_calibration: false
+    run_condition:
+      kind: compare
+      item: params
+      path: materialize_perturbation_calibration
+      op: eq
+      value: true
+    outputs:
+      - role: rlrmp-feedback-quality-perturbation-calibration-status
+        required: false
+  - name: response_norm_plots
+    kind: materialization
+    mode: grouped
+    include_bundle_inputs: true
+    depends_on_roles:
+      - stage: perturbation_response
+        role: rlrmp-feedback-quality-perturbation-response-manifest
+        required: false
+    analysis_type: rlrmp.feedback_quality.response_norm_plots
+    params:
+      experiment_metadata_key: rlrmp_experiment
+      output_tag: validation_selected
+      use_validation_selected_checkpoints: true
+      materialize_response_norm_plots: false
+    run_condition:
+      kind: all
+      exprs:
+        - kind: compare
+          item: params
+          path: materialize_response_norm_plots
+          op: eq
+          value: true
+        - kind: compare
+          item: rlrmp-feedback-quality-perturbation-response-manifest
+          op: exists
+    outputs:
+      - role: rlrmp-feedback-quality-response-norm-plots-status
+        required: false
   - name: feedback_quality_lens
     kind: materialization
-    depends_on: [postrun_diagnostics]
+    mode: grouped
+    include_bundle_inputs: true
+    depends_on:
+      - evaluation_diagnostics
+      - objective_comparator
+      - perturbation_response
+      - feedback_ablation
+      - perturbation_calibration
+      - response_norm_plots
+    depends_on_roles:
+      - stage: evaluation_diagnostics
+        role: rlrmp-feedback-quality-evaluation-diagnostics-status
+        required: false
+      - stage: objective_comparator
+        role: rlrmp-feedback-quality-objective-comparator-status
+        required: false
+      - stage: perturbation_response
+        role: rlrmp-feedback-quality-perturbation-response-status
+        required: false
+      - stage: feedback_ablation
+        role: rlrmp-feedback-quality-feedback-ablation-status
+        required: false
+      - stage: perturbation_calibration
+        role: rlrmp-feedback-quality-perturbation-calibration-status
+        required: false
+      - stage: response_norm_plots
+        role: rlrmp-feedback-quality-response-norm-plots-status
+        required: false
+    analysis_type: rlrmp.feedback_quality_lens
+    params:
+      experiment_metadata_key: rlrmp_experiment
+      output_tag: validation_selected
+      use_validation_selected_checkpoints: true
+    run_condition:
+      kind: all
+      exprs:
+        - kind: compare
+          item: rlrmp-feedback-quality-evaluation-diagnostics-status
+          op: exists
+        - kind: compare
+          item: rlrmp-feedback-quality-objective-comparator-status
+          op: exists
+        - kind: compare
+          item: rlrmp-feedback-quality-perturbation-response-status
+          op: exists
+        - kind: compare
+          item: rlrmp-feedback-quality-feedback-ablation-status
+          op: exists
+        - kind: compare
+          item: rlrmp-feedback-quality-perturbation-calibration-status
+          op: exists
+        - kind: compare
+          item: rlrmp-feedback-quality-response-norm-plots-status
+          op: exists
     outputs:
       - role: rlrmp-feedback-quality-lens
         required: false
-    not_applicable_reason: "Sibling-owned by af77a06; not part of this bundle migration."
   - name: robustness_phenotype_aggregation
     kind: materialization
     depends_on: [postrun_diagnostics]

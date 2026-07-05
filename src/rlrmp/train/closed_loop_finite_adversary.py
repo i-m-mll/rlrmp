@@ -9,6 +9,8 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
+from rlrmp.runtime.training_run_specs import finite_adversary_policy_metadata_payload
+
 FiniteAdversaryPolicyClass = Literal["linear_no_bias", "affine"]
 
 LINEAR_NO_BIAS_POLICY: FiniteAdversaryPolicyClass = "linear_no_bias"
@@ -67,31 +69,6 @@ class FiniteAdversaryPolicyMetadata:
         if not self.has_bias:
             return None
         return (int(self.horizon), int(self.epsilon_dim))
-
-    def to_json(self) -> dict[str, Any]:
-        """Return JSON-serializable policy metadata for run specs and audits."""
-
-        return {
-            "policy_class": self.policy_class,
-            "horizon": int(self.horizon),
-            "feature_dim": int(self.feature_dim),
-            "epsilon_dim": int(self.epsilon_dim),
-            "feature_basis": self.feature_basis,
-            "live_feature_source": self.live_feature_source,
-            "shared_across_trials_in_batch": bool(self.shared_across_trials_in_batch),
-            "time_varying": bool(self.time_varying),
-            "centered_features": bool(self.centered_features),
-            "has_bias": bool(self.has_bias),
-            "gain_shape": list(self.gain_shape),
-            "bias_shape": None if self.bias_shape is None else list(self.bias_shape),
-            "zero_feature_behavior": (
-                "zero_epsilon" if self.policy_class == LINEAR_NO_BIAS_POLICY else "bias_epsilon"
-            ),
-            "semantics": (
-                "epsilon_t is evaluated from live perturbed rollout features at time t; "
-                "the finite policy parameters are shared across every trial in the batch."
-            ),
-        }
 
 
 class FiniteLinearNoBiasPolicy(eqx.Module):
@@ -269,7 +246,7 @@ def finite_policy_contract(metadata: FiniteAdversaryPolicyMetadata) -> dict[str,
 
     return {
         "kind": "closed_loop_finite_time_varying_epsilon_policy",
-        "metadata": metadata.to_json(),
+        "metadata": finite_adversary_policy_metadata_payload(metadata),
         "scientific_constraint": "soft_energy_penalty_or_audit_cap_not_hard_projection",
         "batch_sharing": "one_policy_instance_shared_across_batch_trials",
         "closed_loop_semantics": (

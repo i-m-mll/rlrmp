@@ -9,15 +9,38 @@ from feedbax.contracts.migrations import SpecSchemaRegistry, UnknownSpecFamily, 
 
 from rlrmp.runtime.spec_migrations import (
     ArchiveOnlySpecError,
+    BRIDGE_CERTIFICATE_REPORT_PARAMS_KIND,
+    BRIDGE_CERTIFICATE_REPORT_PARAMS_SCHEMA_ID,
+    BRIDGE_CERTIFICATE_REPORT_PARAMS_SCHEMA_VERSION,
+    CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND,
+    CENTER_OUT_ENSEMBLE_EVAL_PARAMS_SCHEMA_ID,
+    CENTER_OUT_ENSEMBLE_EVAL_PARAMS_SCHEMA_VERSION,
     CS_GRU_STANDARD_CERTIFICATES_KIND,
     CS_GRU_STANDARD_CERTIFICATES_SCHEMA_ID,
     CS_GRU_STANDARD_CERTIFICATES_SCHEMA_VERSION,
     DELAYED_DIAGNOSTIC_BUNDLE_KIND,
     DELAYED_DIAGNOSTIC_BUNDLE_SCHEMA_ID,
     DELAYED_DIAGNOSTIC_BUNDLE_SCHEMA_VERSION,
+    DELAYED_REACH_BANK_EVAL_PARAMS_KIND,
+    DELAYED_REACH_BANK_EVAL_PARAMS_SCHEMA_ID,
+    DELAYED_REACH_BANK_EVAL_PARAMS_SCHEMA_VERSION,
+    DELAYED_REACH_EVAL_BANK_KIND,
+    DELAYED_REACH_EVAL_BANK_LEGACY_VERSION,
+    DELAYED_REACH_EVAL_BANK_SCHEMA_ID,
+    DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION,
+    FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
+    FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_ID,
+    FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION,
     FEEDBACK_QUALITY_LENS_KIND,
+    FEEDBACK_QUALITY_LENS_REPORT_PARAMS_KIND,
+    FEEDBACK_QUALITY_LENS_REPORT_PARAMS_SCHEMA_ID,
+    FEEDBACK_QUALITY_LENS_REPORT_PARAMS_SCHEMA_VERSION,
     FEEDBACK_QUALITY_LENS_SCHEMA_ID,
     FEEDBACK_QUALITY_LENS_SCHEMA_VERSION,
+    FIXED_BANK_GRU_CHECKPOINT_RESCORE_KIND,
+    FIXED_BANK_GRU_CHECKPOINT_RESCORE_LEGACY_VERSION,
+    FIXED_BANK_GRU_CHECKPOINT_RESCORE_SCHEMA_ID,
+    FIXED_BANK_GRU_CHECKPOINT_RESCORE_SCHEMA_VERSION,
     GRU_BROAD_EPSILON_ATTRIBUTION_KIND,
     GRU_BROAD_EPSILON_ATTRIBUTION_SCHEMA_ID,
     GRU_BROAD_EPSILON_ATTRIBUTION_SCHEMA_VERSION,
@@ -33,6 +56,9 @@ from rlrmp.runtime.spec_migrations import (
     GRU_PERTURBATION_BANK_KIND,
     GRU_PERTURBATION_BANK_SCHEMA_ID,
     GRU_PERTURBATION_BANK_SCHEMA_VERSION,
+    GRU_POSTRUN_REPORT_PARAMS_KIND,
+    GRU_POSTRUN_REPORT_PARAMS_SCHEMA_ID,
+    GRU_POSTRUN_REPORT_PARAMS_SCHEMA_VERSION,
     GRU_PERTURBATION_RESPONSE_NORM_PLOTS_KIND,
     GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_ID,
     GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_VERSION,
@@ -46,12 +72,34 @@ from rlrmp.runtime.spec_migrations import (
     OBJECTIVE_COMPARATOR_SIDECAR_KIND,
     OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_ID,
     OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_VERSION,
+    PERTURBATION_CLASS_RESPONSE_KIND,
+    PERTURBATION_CLASS_RESPONSE_SCHEMA_ID,
+    PERTURBATION_CLASS_RESPONSE_SCHEMA_VERSION,
     PERTURBATION_OPEN_LOOP_CALIBRATION_KIND,
     PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_ID,
     PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_VERSION,
+    PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND,
+    PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_ID,
+    PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION,
+    ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_KIND,
+    ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_SCHEMA_ID,
+    ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_SCHEMA_VERSION,
     RUN_SPEC_KIND,
     RUN_SPEC_SCHEMA_ID,
     RUN_SPEC_SCHEMA_VERSION,
+    RUN_SPEC_SCHEMA_VERSION_LEGACY_CS_GRU,
+    RUN_SPEC_SCHEMA_VERSION_V1,
+    STANDARD_MATRIX_EVAL_PARAMS_KIND,
+    STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_ID,
+    STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION,
+    STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION_V1,
+    VALIDATION_SELECTED_GRU_CHECKPOINTS_KIND,
+    VALIDATION_SELECTED_GRU_CHECKPOINTS_LEGACY_VERSION,
+    VALIDATION_SELECTED_GRU_CHECKPOINTS_SCHEMA_ID,
+    VALIDATION_SELECTED_GRU_CHECKPOINTS_SCHEMA_VERSION,
+    WORST_CASE_EPSILON_EVAL_PARAMS_KIND,
+    WORST_CASE_EPSILON_EVAL_PARAMS_SCHEMA_ID,
+    WORST_CASE_EPSILON_EVAL_PARAMS_SCHEMA_VERSION,
     accept_rlrmp_spec_payload,
     ensure_rlrmp_spec_families,
     load_rlrmp_spec_payload,
@@ -89,6 +137,11 @@ def test_rlrmp_spec_policy_registers_current_families_and_rejects_v0() -> None:
                 "rlrmp.gru_perturbation_bank.v2",
                 "rlrmp.gru_perturbation_response.v2",
             ),
+        ),
+        PERTURBATION_CLASS_RESPONSE_KIND: (
+            PERTURBATION_CLASS_RESPONSE_SCHEMA_ID,
+            PERTURBATION_CLASS_RESPONSE_SCHEMA_VERSION,
+            ("rlrmp.perturbation_class_response.v0",),
         ),
         GRU_PERTURBATION_RESPONSE_NORM_PLOTS_KIND: (
             GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_ID,
@@ -141,6 +194,74 @@ def test_rlrmp_spec_policy_registers_current_families_and_rejects_v0() -> None:
             FEEDBACK_QUALITY_LENS_SCHEMA_VERSION,
             ("rlrmp.feedback_quality_lens.v0",),
         ),
+        GRU_POSTRUN_REPORT_PARAMS_KIND: (
+            GRU_POSTRUN_REPORT_PARAMS_SCHEMA_ID,
+            GRU_POSTRUN_REPORT_PARAMS_SCHEMA_VERSION,
+            ("rlrmp.report.gru_postrun_summary.params.v0",),
+        ),
+        BRIDGE_CERTIFICATE_REPORT_PARAMS_KIND: (
+            BRIDGE_CERTIFICATE_REPORT_PARAMS_SCHEMA_ID,
+            BRIDGE_CERTIFICATE_REPORT_PARAMS_SCHEMA_VERSION,
+            ("rlrmp.report.bridge_certificate_notes.params.v0",),
+        ),
+        FEEDBACK_QUALITY_LENS_REPORT_PARAMS_KIND: (
+            FEEDBACK_QUALITY_LENS_REPORT_PARAMS_SCHEMA_ID,
+            FEEDBACK_QUALITY_LENS_REPORT_PARAMS_SCHEMA_VERSION,
+            ("rlrmp.report.feedback_quality_lens_summary.params.v0",),
+        ),
+        ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_KIND: (
+            ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_SCHEMA_ID,
+            ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_SCHEMA_VERSION,
+            ("rlrmp.report.robustness_phenotype_markdown.params.v0",),
+        ),
+        VALIDATION_SELECTED_GRU_CHECKPOINTS_KIND: (
+            VALIDATION_SELECTED_GRU_CHECKPOINTS_SCHEMA_ID,
+            VALIDATION_SELECTED_GRU_CHECKPOINTS_SCHEMA_VERSION,
+            (VALIDATION_SELECTED_GRU_CHECKPOINTS_LEGACY_VERSION,),
+        ),
+        FIXED_BANK_GRU_CHECKPOINT_RESCORE_KIND: (
+            FIXED_BANK_GRU_CHECKPOINT_RESCORE_SCHEMA_ID,
+            FIXED_BANK_GRU_CHECKPOINT_RESCORE_SCHEMA_VERSION,
+            (FIXED_BANK_GRU_CHECKPOINT_RESCORE_LEGACY_VERSION,),
+        ),
+        DELAYED_REACH_EVAL_BANK_KIND: (
+            DELAYED_REACH_EVAL_BANK_SCHEMA_ID,
+            DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION,
+            (DELAYED_REACH_EVAL_BANK_LEGACY_VERSION,),
+        ),
+        CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND: (
+            CENTER_OUT_ENSEMBLE_EVAL_PARAMS_SCHEMA_ID,
+            CENTER_OUT_ENSEMBLE_EVAL_PARAMS_SCHEMA_VERSION,
+            ("rlrmp.eval.center_out_ensemble.params.v0",),
+        ),
+        PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND: (
+            PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_ID,
+            PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION,
+            (
+                "rlrmp.eval.perturbation_response_bank.params.v0",
+                "rlrmp.eval.perturbation_response_bank.params.v1",
+            ),
+        ),
+        FEEDBACK_ABLATION_EVAL_PARAMS_KIND: (
+            FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_ID,
+            FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION,
+            ("rlrmp.eval.feedback_ablation.params.v0",),
+        ),
+        WORST_CASE_EPSILON_EVAL_PARAMS_KIND: (
+            WORST_CASE_EPSILON_EVAL_PARAMS_SCHEMA_ID,
+            WORST_CASE_EPSILON_EVAL_PARAMS_SCHEMA_VERSION,
+            ("rlrmp.eval.worst_case_epsilon.params.v0",),
+        ),
+        DELAYED_REACH_BANK_EVAL_PARAMS_KIND: (
+            DELAYED_REACH_BANK_EVAL_PARAMS_SCHEMA_ID,
+            DELAYED_REACH_BANK_EVAL_PARAMS_SCHEMA_VERSION,
+            ("rlrmp.eval.delayed_reach_bank.params.v0",),
+        ),
+        STANDARD_MATRIX_EVAL_PARAMS_KIND: (
+            STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_ID,
+            STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION,
+            (STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION_V1,),
+        ),
         RUN_SPEC_KIND: (
             RUN_SPEC_SCHEMA_ID,
             RUN_SPEC_SCHEMA_VERSION,
@@ -154,6 +275,12 @@ def test_rlrmp_spec_policy_registers_current_families_and_rejects_v0() -> None:
         assert family.current_version == current_version
         assert family.policy is not None
         assert family.policy.owner_module == "rlrmp.runtime.spec_migrations"
+        if kind == RUN_SPEC_KIND:
+            assert family.policy.stance == "migrate"
+            assert set(family.policy.supported_old_versions) == {
+                RUN_SPEC_SCHEMA_VERSION_V1,
+                RUN_SPEC_SCHEMA_VERSION_LEGACY_CS_GRU,
+            }
 
         result = registry.migrate(kind, {"schema_version": current_version})
         assert result.target_version == current_version
@@ -197,6 +324,20 @@ def test_representative_historical_artifacts_load_or_reject_by_policy() -> None:
     )
     assert run_spec.schema_id == RUN_SPEC_SCHEMA_ID
     assert run_spec.target_version == RUN_SPEC_SCHEMA_VERSION
+
+    migrated_cs_gru = load_rlrmp_spec_payload(
+        RUN_SPEC_KIND,
+        REPO_ROOT
+        / "results"
+        / "30f2313"
+        / "runs"
+        / "cs_stochastic_gru__hidden_penalty"
+        / "run.json",
+    )
+    assert migrated_cs_gru.source_version == RUN_SPEC_SCHEMA_VERSION_LEGACY_CS_GRU
+    assert migrated_cs_gru.target_version == RUN_SPEC_SCHEMA_VERSION
+    assert migrated_cs_gru.migrated
+    assert migrated_cs_gru.payload["migration_policy"] == "migrated_active_v1_to_v2"
 
     evaluation_manifest = load_rlrmp_spec_payload(
         GRU_EVALUATION_DIAGNOSTICS_KIND,
@@ -369,8 +510,6 @@ def test_generic_feedbax_custody_families_are_not_registered_in_rlrmp() -> None:
     registry = ensure_rlrmp_spec_families(SpecSchemaRegistry())
     generic_or_sibling_owned_kinds = (
         "RLRMPDiagnosticRegenerationSpec",
-        "RLRMPValidationSelectedGRUCheckpoints",
-        "RLRMPFixedBankGRUCheckpointRescore",
         "RLRMPGRUPostrunMaterialization",
         "RLRMPDiagnosticOutputStatus",
         "RLRMPArtifactGroup",

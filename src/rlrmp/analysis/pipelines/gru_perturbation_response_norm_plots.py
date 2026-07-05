@@ -18,6 +18,7 @@ from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     _build_extlqg_comparator_context,
     _simulate_extlqg_perturbed,
 )
+from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
@@ -277,13 +278,15 @@ def materialize_response_norm_plots(
     manifest_output.parent.mkdir(parents=True, exist_ok=True)
     manifest_output.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     note.parent.mkdir(parents=True, exist_ok=True)
-    note.write_text(
+    update_marked_section(
+        note,
+        "perturbation_response_norm_plots",
         render_response_norm_note(
             manifest,
             spec_path=spec_path,
             manifest_path=manifest_output,
             repo_root=repo_root,
-        )
+        ),
     )
     if regeneration_spec_output is not None:
         _write_response_norm_regeneration_spec(

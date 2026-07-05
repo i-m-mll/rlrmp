@@ -26,7 +26,11 @@ from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     load_validation_selected_checkpoint_model,
     materialize_validation_selected_checkpoint_manifest,
 )
+from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path
+from rlrmp.paths import run_spec_path as tracked_run_spec_path
+from rlrmp.runtime.run_spec_access import require_run_seed
+from rlrmp.runtime.run_specs import resolve_run_record
 from rlrmp.train.cs_nominal_gru import _where_train
 from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_TRAINING_MODE,
@@ -146,9 +150,10 @@ def materialize_broad_epsilon_attribution(
     csv_path = notes_dir / f"{output_tag}.csv"
     json_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     csv_path.write_text(render_summary_csv(rows), encoding="utf-8")
-    md_path.write_text(
+    update_marked_section(
+        md_path,
+        "gru_broad_epsilon_attribution",
         render_markdown(manifest, csv_path=csv_path, repo_root=repo_root),
-        encoding="utf-8",
     )
     manifest["outputs"] = {
         "json": repo_relative(json_path, repo_root=repo_root),
@@ -173,7 +178,7 @@ def evaluate_run_broad_epsilon_attribution(
 
     hps = dict_to_namespace(normalize_gru_hps(run.run_spec["hps"]), to_type=TreeNamespace)
     n_replicates = int(hps.model.n_replicates)
-    seed = int(run.run_spec.get("seed", 42))
+    seed = require_run_seed(run.run_spec, source=run.run_spec_path)
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
     model, checkpoint_selection = load_model_for_run(
         run,
@@ -378,13 +383,14 @@ def discover_broad_epsilon_run_ids(
     if not run_root.exists():
         raise FileNotFoundError(f"Missing run-spec root: {run_root}")
     run_ids = []
-    for path in sorted(run_root.glob("*/run.json")):
-        run_spec = json.loads(path.read_text(encoding="utf-8"))
+    for path in sorted(run_root.glob("*.json")):
+        run_id = path.stem
+        run_spec = resolve_run_record(experiment, run_id, repo_root=repo_root)
         broad = broad_epsilon_metadata(run_spec)
         if broad.get("enabled") is True:
-            if not include_smoke and path.parent.name.startswith("smoke__"):
+            if not include_smoke and run_id.startswith("smoke__"):
                 continue
-            run_ids.append(path.parent.name)
+            run_ids.append(run_id)
     return tuple(run_ids)
 
 
@@ -398,7 +404,7 @@ def resolve_run_inputs(
 
     runs = []
     for run_id in run_ids:
-        run_spec_path = repo_root / "results" / experiment / "runs" / run_id / "run.json"
+        run_spec_path = tracked_run_spec_path(experiment, run_id, repo_root=repo_root)
         artifact_dir = repo_root / "_artifacts" / experiment / "runs" / run_id
         if not run_spec_path.exists():
             raise FileNotFoundError(f"Missing run spec: {run_spec_path}")
@@ -409,7 +415,7 @@ def resolve_run_inputs(
                 run_id=run_id,
                 run_spec_path=run_spec_path,
                 artifact_dir=artifact_dir,
-                run_spec=json.loads(run_spec_path.read_text(encoding="utf-8")),
+                run_spec=resolve_run_record(experiment, run_id, repo_root=repo_root),
             )
         )
     return runs

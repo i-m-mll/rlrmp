@@ -48,6 +48,8 @@ from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     materialize_validation_selected_checkpoint_manifest,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path, run_spec_path
+from rlrmp.runtime.run_spec_access import require_run_dt, require_run_seed
+from rlrmp.runtime.run_specs import resolve_run_record
 from rlrmp.train.task_model import setup_task_model_pair
 
 DEFAULT_FIGURE_SUBDIR = "tmp_figures/gru_pilot"
@@ -259,7 +261,7 @@ def resolve_run_inputs(
                 label=label,
                 run_spec_path=resolved_run_spec_path,
                 artifact_dir=artifact_dir,
-                run_spec=json.loads(resolved_run_spec_path.read_text(encoding="utf-8")),
+                run_spec=resolve_run_record(experiment, run_id, repo_root=repo_root),
             )
         )
     return runs
@@ -384,7 +386,7 @@ def evaluate_stochastic_forward_velocity_profile(
 
     hps = dict_to_namespace(normalize_gru_hps(run.run_spec["hps"]), to_type=TreeNamespace)
     n_replicates = int(hps.model.n_replicates)
-    seed = int(run.run_spec.get("seed", 42))
+    seed = require_run_seed(run.run_spec, source=run.run_spec_path)
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
     if use_validation_selected_checkpoints:
         model, checkpoint_selection = load_validation_selected_checkpoint_model(
@@ -434,7 +436,7 @@ def evaluate_stochastic_forward_velocity_profile(
     velocity_np = np.asarray(velocity, dtype=np.float64)
     forward = velocity_np[..., 0]
     pooled = forward.reshape(n_replicates * n_rollout_trials, forward.shape[-1])
-    dt = float(run.run_spec.get("game_card", {}).get("dt", getattr(hps, "dt", 0.01)))
+    dt = require_run_dt(run.run_spec, hps, source=run.run_spec_path)
     return VelocityProfile(
         run_id=run.run_id,
         label=run.label,

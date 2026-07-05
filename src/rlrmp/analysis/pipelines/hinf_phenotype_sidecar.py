@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 from rlrmp.analysis.pipelines.diagnostic_provenance import repo_relative, write_regeneration_spec
+from rlrmp.io import read_json, update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT
 
 
@@ -112,7 +112,9 @@ def load_hinf_phenotype_sources(
                 "reason": "source path does not exist",
             }
             continue
-        payload = _read_json(path)
+        payload = read_json(path)
+        if not isinstance(payload, dict):
+            raise ValueError(f"{path} did not contain a JSON object")
         loaded[name] = {
             "status": "available",
             "source_path": _repo_relative(path, repo_root=repo_root),
@@ -139,8 +141,12 @@ def write_hinf_phenotype_sidecar(
             regeneration_spec_path,
             repo_root=repo_root,
         )
-    json_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    markdown_path.write_text(render_hinf_phenotype_markdown(payload), encoding="utf-8")
+    write_compact_json(json_path, payload)
+    update_marked_section(
+        markdown_path,
+        "hinf_phenotype_sidecar",
+        render_hinf_phenotype_markdown(payload),
+    )
     if regeneration_spec_path is not None:
         _write_hinf_regeneration_spec(
             sidecar=payload,
@@ -1036,14 +1042,6 @@ def _count_by(values: Sequence[str] | Any) -> dict[str, int]:
         label = str(value)
         counts[label] = counts.get(label, 0) + 1
     return counts
-
-
-def _read_json(path: Path) -> dict[str, Any]:
-    with path.open("r", encoding="utf-8") as handle:
-        payload = json.load(handle)
-    if not isinstance(payload, dict):
-        raise ValueError(f"{path} did not contain a JSON object")
-    return payload
 
 
 def _repo_relative(path: Path, *, repo_root: Path) -> str:

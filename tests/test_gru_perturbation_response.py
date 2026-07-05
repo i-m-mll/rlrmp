@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import jax.numpy as jnp
 import jax.random as jr
@@ -15,6 +16,7 @@ from feedbax.runtime.state import CartesianState
 
 import rlrmp.analysis.pipelines.gru_perturbation_bank as perturbation_bank
 from rlrmp.analysis.math.cs_game_card import build_canonical_game, build_no_integrator_game
+from rlrmp.analysis.perturbation_rows import PerturbationChannel, PerturbationSpec
 from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import RolloutEvaluation
 from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     GRAPH_ADAPTER_INPUT_PREFIX,
@@ -68,6 +70,70 @@ def _delayed_trial_specs(
         inputs=inputs,
         timeline=TrialTimeline(n_steps=n_steps, epoch_bounds=epoch_bounds),
     )
+
+
+def _perturbation_row(
+    *,
+    channel: PerturbationChannel,
+    family: str,
+    amplitude: float,
+    axis: str,
+    sign: int,
+    timing: dict[str, Any] | None = None,
+    perturbation_id: str | None = None,
+    units: str | None = None,
+    basis: str | None = None,
+    adapter: str | None = None,
+    description: str | None = None,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    defaults = {
+        "initial_state": (
+            "model_state_units",
+            "plant_cartesian_xy",
+            "task_trial_spec.inits",
+        ),
+        "command_input": (
+            "N",
+            "command_cartesian_force_xy",
+            "feedbax.additive_channel_adapter.command_input",
+        ),
+        "process_epsilon": (
+            "epsilon",
+            "cs_lss_process_epsilon_current_physical_block",
+            "task_trial_spec.inputs['epsilon']",
+        ),
+        "sensory_feedback": (
+            "model_feedback_units",
+            "sensory_feedback_named_channel",
+            "feedbax.additive_channel_adapter.sensory_feedback",
+        ),
+        "delayed_observation": (
+            "model_feedback_units",
+            "delayed_observation_named_channel",
+            "feedbax.additive_channel_adapter.delayed_observation",
+        ),
+        "target_stream": (
+            "m",
+            "target_cartesian_xy",
+            "not_applicable_current_fixed_target_checkpoint",
+        ),
+    }
+    default_units, default_basis, default_adapter = defaults[channel]
+    return PerturbationSpec(
+        perturbation_id=perturbation_id or f"{family}__{axis}_{'pos' if sign > 0 else 'neg'}",
+        channel=channel,
+        family=family,
+        amplitude=amplitude,
+        units=units or default_units,
+        axis=axis,
+        basis=basis or default_basis,
+        sign=sign,
+        timing=timing or {"start_time_index": 0, "duration_steps": 1},
+        adapter=adapter or default_adapter,
+        description=description or f"Test {channel} perturbation row.",
+        **kwargs,
+    ).to_json()
 
 
 def test_default_bank_is_json_serializable_with_required_channels() -> None:
@@ -311,13 +377,14 @@ def test_initial_position_adapter_offsets_cartesian_state_without_mutating_sourc
         targets={},
         inputs={"effector_target": CartesianState(pos=np.zeros((2, 3, 2)))},
     )
-    perturbation = {
-        "channel": "initial_state",
-        "family": "initial_position_offset",
-        "amplitude": 0.01,
-        "axis": "x",
-        "sign": 1,
-    }
+    perturbation = _perturbation_row(
+        channel="initial_state",
+        family="initial_position_offset",
+        amplitude=0.01,
+        axis="x",
+        sign=1,
+        timing={"epoch": "initial_condition", "time_index": 0},
+    )
 
     result = apply_perturbation_to_trial_specs(trial_specs, perturbation)
 
@@ -338,13 +405,14 @@ def test_initial_velocity_adapter_offsets_vector_state() -> None:
         targets={},
         inputs={"effector_target": CartesianState(pos=np.zeros((2, 3, 2)))},
     )
-    perturbation = {
-        "channel": "initial_state",
-        "family": "initial_velocity_offset",
-        "amplitude": 0.05,
-        "axis": "y",
-        "sign": -1,
-    }
+    perturbation = _perturbation_row(
+        channel="initial_state",
+        family="initial_velocity_offset",
+        amplitude=0.05,
+        axis="y",
+        sign=-1,
+        timing={"epoch": "initial_condition", "time_index": 0},
+    )
 
     result = apply_perturbation_to_trial_specs(trial_specs, perturbation)
 
@@ -359,15 +427,15 @@ def test_command_input_pulse_adapter_sets_external_graph_input_payload() -> None
         targets={},
         inputs={"effector_target": CartesianState(pos=np.zeros((2, 10, 2)))},
     )
-    perturbation = {
-        "perturbation_id": "command_input_pulse__t3_y_neg",
-        "channel": "command_input",
-        "family": "command_input_pulse",
-        "amplitude": 2.0,
-        "axis": "y",
-        "sign": -1,
-        "timing": {"start_time_index": 3, "duration_steps": 2},
-    }
+    perturbation = _perturbation_row(
+        perturbation_id="command_input_pulse__t3_y_neg",
+        channel="command_input",
+        family="command_input_pulse",
+        amplitude=2.0,
+        axis="y",
+        sign=-1,
+        timing={"start_time_index": 3, "duration_steps": 2},
+    )
 
     result = apply_perturbation_to_trial_specs(trial_specs, perturbation)
 
@@ -385,15 +453,15 @@ def test_command_input_pulse_adapter_sets_external_graph_input_payload() -> None
 def test_movement_indexed_graph_adapter_shifts_per_trial_delayed_go_cues() -> None:
     go_steps = np.asarray([10, 20], dtype=np.int32)
     trial_specs = _delayed_trial_specs(go_steps)
-    perturbation = {
-        "perturbation_id": "command_input_pulse__movement_early_x_pos",
-        "channel": "command_input",
-        "family": "command_input_pulse",
-        "amplitude": 2.0,
-        "axis": "x",
-        "sign": 1,
-        "timing": {"epoch": "movement_indexed", "start_time_index": 5, "duration_steps": 2},
-    }
+    perturbation = _perturbation_row(
+        perturbation_id="command_input_pulse__movement_early_x_pos",
+        channel="command_input",
+        family="command_input_pulse",
+        amplitude=2.0,
+        axis="x",
+        sign=1,
+        timing={"epoch": "movement_indexed", "start_time_index": 5, "duration_steps": 2},
+    )
 
     result = apply_perturbation_to_trial_specs(trial_specs, perturbation)
 
@@ -417,15 +485,15 @@ def test_movement_indexed_graph_adapter_preserves_immediate_start_without_timeli
         targets={},
         inputs={"effector_target": CartesianState(pos=np.zeros((2, 10, 2)))},
     )
-    perturbation = {
-        "perturbation_id": "command_input_pulse__movement_early_y_neg",
-        "channel": "command_input",
-        "family": "command_input_pulse",
-        "amplitude": 1.0,
-        "axis": "y",
-        "sign": -1,
-        "timing": {"epoch": "movement_indexed", "start_time_index": 3, "duration_steps": 2},
-    }
+    perturbation = _perturbation_row(
+        perturbation_id="command_input_pulse__movement_early_y_neg",
+        channel="command_input",
+        family="command_input_pulse",
+        amplitude=1.0,
+        axis="y",
+        sign=-1,
+        timing={"epoch": "movement_indexed", "start_time_index": 3, "duration_steps": 2},
+    )
 
     result = apply_perturbation_to_trial_specs(trial_specs, perturbation)
 
@@ -447,15 +515,15 @@ def test_command_input_graph_adapter_inserts_external_node_on_force_edge() -> No
         inputs={"effector_target": CartesianState(pos=np.zeros((2, 10, 2)))},
     )
     graph = build_cs_lss_gru_graph(hidden_size=3, key=jr.PRNGKey(0))
-    perturbation = {
-        "perturbation_id": "command_input_pulse__t3_x_pos",
-        "channel": "command_input",
-        "family": "command_input_pulse",
-        "amplitude": 1.0,
-        "axis": "x",
-        "sign": 1,
-        "timing": {"start_time_index": 3, "duration_steps": 2},
-    }
+    perturbation = _perturbation_row(
+        perturbation_id="command_input_pulse__t3_x_pos",
+        channel="command_input",
+        family="command_input_pulse",
+        amplitude=1.0,
+        axis="x",
+        sign=1,
+        timing={"start_time_index": 3, "duration_steps": 2},
+    )
 
     result = apply_perturbation_to_trial_specs(trial_specs, perturbation, model=graph)
 
@@ -509,14 +577,14 @@ def test_process_epsilon_pulse_adapter_offsets_epsilon_input() -> None:
             "epsilon": np.zeros((2, 10, 8), dtype=np.float64),
         },
     )
-    perturbation = {
-        "channel": "process_epsilon",
-        "family": "process_epsilon_pulse",
-        "amplitude": 0.25,
-        "axis": "x",
-        "sign": 1,
-        "timing": {"start_time_index": 3, "duration_steps": 2},
-    }
+    perturbation = _perturbation_row(
+        channel="process_epsilon",
+        family="process_epsilon_pulse",
+        amplitude=0.25,
+        axis="x",
+        sign=1,
+        timing={"start_time_index": 3, "duration_steps": 2},
+    )
 
     graph = build_cs_lss_gru_graph(
         hidden_size=3,
@@ -538,17 +606,17 @@ def test_process_epsilon_pulse_adapter_offsets_epsilon_input() -> None:
 def test_movement_indexed_process_epsilon_adapter_shifts_per_trial_delayed_go_cues() -> None:
     go_steps = np.asarray([10, 20], dtype=np.int32)
     trial_specs = _delayed_trial_specs(go_steps, include_epsilon=True)
-    perturbation = {
-        "perturbation_id": "process_epsilon_pulse__force_state_x__early_t5_pos",
-        "channel": "process_epsilon",
-        "family": "process_epsilon_force_state_xy",
-        "epsilon_component": "force_state_x",
-        "epsilon_index": 4,
-        "amplitude": 0.25,
-        "axis": "x",
-        "sign": 1,
-        "timing": {"epoch": "movement_indexed", "start_time_index": 5, "duration_steps": 2},
-    }
+    perturbation = _perturbation_row(
+        perturbation_id="process_epsilon_pulse__force_state_x__early_t5_pos",
+        channel="process_epsilon",
+        family="process_epsilon_force_state_xy",
+        epsilon_component="force_state_x",
+        epsilon_index=4,
+        amplitude=0.25,
+        axis="x",
+        sign=1,
+        timing={"epoch": "movement_indexed", "start_time_index": 5, "duration_steps": 2},
+    )
 
     result = apply_perturbation_to_trial_specs(trial_specs, perturbation)
 
@@ -571,16 +639,16 @@ def test_process_epsilon_adapter_uses_explicit_force_state_epsilon_index() -> No
             "epsilon": np.zeros((2, 10, 8), dtype=np.float64),
         },
     )
-    perturbation = {
-        "channel": "process_epsilon",
-        "family": "process_epsilon_force_state_xy",
-        "epsilon_component": "force_state_y",
-        "epsilon_index": 5,
-        "amplitude": 0.25,
-        "axis": "y",
-        "sign": -1,
-        "timing": {"start_time_index": 3, "duration_steps": 2},
-    }
+    perturbation = _perturbation_row(
+        channel="process_epsilon",
+        family="process_epsilon_force_state_xy",
+        epsilon_component="force_state_y",
+        epsilon_index=5,
+        amplitude=0.25,
+        axis="y",
+        sign=-1,
+        timing={"start_time_index": 3, "duration_steps": 2},
+    )
 
     result = apply_perturbation_to_trial_specs(trial_specs, perturbation)
 
@@ -599,14 +667,14 @@ def test_process_epsilon_adapter_blocks_without_epsilon_input() -> None:
         targets={},
         inputs={"effector_target": CartesianState(pos=np.zeros((2, 10, 2)))},
     )
-    perturbation = {
-        "channel": "process_epsilon",
-        "family": "process_epsilon_pulse",
-        "amplitude": 0.25,
-        "axis": "x",
-        "sign": 1,
-        "timing": {"start_time_index": 3, "duration_steps": 2},
-    }
+    perturbation = _perturbation_row(
+        channel="process_epsilon",
+        family="process_epsilon_pulse",
+        amplitude=0.25,
+        axis="x",
+        sign=1,
+        timing={"start_time_index": 3, "duration_steps": 2},
+    )
 
     result = apply_perturbation_to_trial_specs(trial_specs, perturbation)
 
@@ -617,14 +685,14 @@ def test_process_epsilon_adapter_blocks_without_epsilon_input() -> None:
 def test_delayed_initial_state_rows_use_movement_onset_epsilon_impulses() -> None:
     go_steps = np.asarray([10, 20], dtype=np.int32)
     trial_specs = _delayed_trial_specs(go_steps, include_epsilon=True)
-    perturbation = {
-        "channel": "initial_state",
-        "family": "initial_velocity_offset",
-        "amplitude": 0.05,
-        "axis": "y",
-        "sign": -1,
-        "timing": {"epoch": "initial_condition", "time_index": 0},
-    }
+    perturbation = _perturbation_row(
+        channel="initial_state",
+        family="initial_velocity_offset",
+        amplitude=0.05,
+        axis="y",
+        sign=-1,
+        timing={"epoch": "initial_condition", "time_index": 0},
+    )
 
     result = apply_perturbation_to_trial_specs(trial_specs, perturbation)
 
@@ -648,14 +716,14 @@ def test_immediate_initial_state_rows_remain_trial_start_init_offsets() -> None:
             "epsilon": np.zeros((2, 10, 8), dtype=np.float64),
         },
     )
-    perturbation = {
-        "channel": "initial_state",
-        "family": "initial_position_offset",
-        "amplitude": 0.01,
-        "axis": "x",
-        "sign": 1,
-        "timing": {"epoch": "initial_condition", "time_index": 0},
-    }
+    perturbation = _perturbation_row(
+        channel="initial_state",
+        family="initial_position_offset",
+        amplitude=0.01,
+        axis="x",
+        sign=1,
+        timing={"epoch": "initial_condition", "time_index": 0},
+    )
 
     result = apply_perturbation_to_trial_specs(trial_specs, perturbation)
 
@@ -671,15 +739,15 @@ def test_sensory_adapter_uses_external_graph_channel_payload() -> None:
         targets={},
         inputs={"effector_target": CartesianState(pos=np.zeros((2, 10, 2)))},
     )
-    perturbation = {
-        "perturbation_id": "sensory_feedback_offset__x_pos",
-        "channel": "sensory_feedback",
-        "family": "sensory_feedback_offset",
-        "amplitude": 0.01,
-        "axis": "x",
-        "sign": 1,
-        "timing": {"start_time_index": 0, "duration_steps": 10},
-    }
+    perturbation = _perturbation_row(
+        perturbation_id="sensory_feedback_offset__x_pos",
+        channel="sensory_feedback",
+        family="sensory_feedback_offset",
+        amplitude=0.01,
+        axis="x",
+        sign=1,
+        timing={"start_time_index": 0, "duration_steps": 10},
+    )
 
     result = apply_perturbation_to_trial_specs(trial_specs, perturbation)
 
@@ -715,21 +783,21 @@ def test_sensory_adapter_applies_force_filter_feedback_row_to_payload_index() ->
     )
     trial_specs = add_zero_graph_channel_inputs(trial_specs, force_filter_feedback=True)
     specs = graph_adapter_specs(force_filter_feedback=True)
-    perturbation = {
-        "perturbation_id": "sensory_feedback_offset__force_filter__x_pos",
-        "channel": "sensory_feedback",
-        "family": "sensory_feedback_offset",
-        "amplitude": 0.25,
-        "units": "N",
-        "axis": "x",
-        "sign": 1,
-        "timing": {"start_time_index": 0, "duration_steps": 10},
-        "channel_provenance": {
+    perturbation = _perturbation_row(
+        perturbation_id="sensory_feedback_offset__force_filter__x_pos",
+        channel="sensory_feedback",
+        family="sensory_feedback_offset",
+        amplitude=0.25,
+        units="N",
+        axis="x",
+        sign=1,
+        timing={"start_time_index": 0, "duration_steps": 10},
+        channel_provenance={
             "feedback_quantity": "force_filter",
             "feedback_payload_index": 4,
             "force_filter_feedback_only": True,
         },
-    }
+    )
 
     result = apply_perturbation_to_trial_specs(trial_specs, perturbation, model=graph)
 
@@ -766,21 +834,21 @@ def test_delayed_observation_adapter_applies_force_filter_feedback_row_to_payloa
     )
     trial_specs = add_zero_graph_channel_inputs(trial_specs, force_filter_feedback=True)
     specs = graph_adapter_specs(force_filter_feedback=True)
-    perturbation = {
-        "perturbation_id": "delayed_observation_offset__force_filter__y_neg",
-        "channel": "delayed_observation",
-        "family": "delayed_observation_offset",
-        "amplitude": 0.5,
-        "units": "N",
-        "axis": "y",
-        "sign": -1,
-        "timing": {"start_time_index": 0, "duration_steps": 10},
-        "channel_provenance": {
+    perturbation = _perturbation_row(
+        perturbation_id="delayed_observation_offset__force_filter__y_neg",
+        channel="delayed_observation",
+        family="delayed_observation_offset",
+        amplitude=0.5,
+        units="N",
+        axis="y",
+        sign=-1,
+        timing={"start_time_index": 0, "duration_steps": 10},
+        channel_provenance={
             "feedback_quantity": "force_filter",
             "feedback_payload_index": 5,
             "force_filter_feedback_only": True,
         },
-    }
+    )
 
     result = apply_perturbation_to_trial_specs(trial_specs, perturbation, model=graph)
 
@@ -806,16 +874,16 @@ def test_extlqg_6d_context_skips_8d_only_process_epsilon_rows() -> None:
     assert getattr(context["base_evaluation"], "mechanics_vector").shape[-1] == 36
 
     result = evaluate_extlqg_perturbation_comparator(
-        {
-            "perturbation_id": "process_epsilon_pulse__integrator_x_pos",
-            "channel": "process_epsilon",
-            "family": "process_epsilon_pulse",
-            "amplitude": 0.01,
-            "axis": "x",
-            "sign": 1,
-            "timing": {"start_time_index": 0, "duration_steps": 1},
-            "epsilon_index": 6,
-        },
+        _perturbation_row(
+            perturbation_id="process_epsilon_pulse__integrator_x_pos",
+            channel="process_epsilon",
+            family="process_epsilon_pulse",
+            amplitude=0.01,
+            axis="x",
+            sign=1,
+            timing={"start_time_index": 0, "duration_steps": 1},
+            epsilon_index=6,
+        ),
         context=context,
         gru_metrics={},
     )
@@ -924,15 +992,15 @@ def test_delayed_observation_adapter_uses_clean_pre_noise_graph_channel() -> Non
         targets={},
         inputs={"effector_target": CartesianState(pos=np.zeros((2, 10, 2)))},
     )
-    perturbation = {
-        "perturbation_id": "delayed_observation_offset__x_pos",
-        "channel": "delayed_observation",
-        "family": "delayed_observation_offset",
-        "amplitude": 0.01,
-        "axis": "x",
-        "sign": 1,
-        "timing": {"start_time_index": 0, "duration_steps": 10},
-    }
+    perturbation = _perturbation_row(
+        perturbation_id="delayed_observation_offset__x_pos",
+        channel="delayed_observation",
+        family="delayed_observation_offset",
+        amplitude=0.01,
+        axis="x",
+        sign=1,
+        timing={"start_time_index": 0, "duration_steps": 10},
+    )
 
     result = apply_perturbation_to_trial_specs(trial_specs, perturbation)
 
@@ -1549,14 +1617,14 @@ def test_extlqg_comparator_evaluates_sensory_and_delayed_observation_offsets(
         ("delayed_observation", "delayed_observation_offset", "fake_delayed_observation"),
     ):
         comparator = evaluate_extlqg_perturbation_comparator(
-            {
-                "channel": channel,
-                "family": family,
-                "axis": "x",
-                "amplitude": 0.01,
-                "sign": 1,
-                "timing": {"start_time_index": 0, "duration_steps": 2},
-            },
+            _perturbation_row(
+                channel=channel,
+                family=family,
+                axis="x",
+                amplitude=0.01,
+                sign=1,
+                timing={"start_time_index": 0, "duration_steps": 2},
+            ),
             context=context,
             gru_metrics={"delta_action_norm": {"mean": 1.0}},
         )
@@ -1570,14 +1638,14 @@ def test_extlqg_comparator_evaluates_sensory_and_delayed_observation_offsets(
 
 def test_extlqg_comparator_requires_context_for_command_input() -> None:
     comparator = evaluate_extlqg_perturbation_comparator(
-        {
-            "channel": "command_input",
-            "family": "command_input_pulse",
-            "axis": "x",
-            "amplitude": 1.0,
-            "sign": 1,
-            "timing": {"start_time_index": 0, "duration_steps": 1},
-        },
+        _perturbation_row(
+            channel="command_input",
+            family="command_input_pulse",
+            axis="x",
+            amplitude=1.0,
+            sign=1,
+            timing={"start_time_index": 0, "duration_steps": 1},
+        ),
         context={},
         gru_metrics={},
     )
@@ -1635,14 +1703,14 @@ def test_robust_output_feedback_comparator_reports_available_and_not_applicable(
     }
 
     comparator = evaluate_robust_output_feedback_perturbation_comparator(
-        {
-            "channel": "command_input",
-            "family": "target_aligned_lateral_command_load_pulse",
-            "axis": "y",
-            "amplitude": 1.0,
-            "sign": 1,
-            "timing": {"start_time_index": 0, "duration_steps": 1},
-        },
+        _perturbation_row(
+            channel="command_input",
+            family="target_aligned_lateral_command_load_pulse",
+            axis="y",
+            amplitude=1.0,
+            sign=1,
+            timing={"start_time_index": 0, "duration_steps": 1},
+        ),
         context=context,
         gru_metrics={"delta_action_norm": {"mean": 1.0}},
     )
