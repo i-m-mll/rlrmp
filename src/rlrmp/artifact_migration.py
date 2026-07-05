@@ -26,6 +26,7 @@ from feedbax.contracts.expressions import (
     Compare,
     ContextItem,
     ExpressionContext,
+    ExpressionPathMissing,
     ExpressionSelectAmbiguous,
     Select,
     ValueQuery,
@@ -287,7 +288,7 @@ def _manifest_parent(manifest: ModelArtifactManifest, kind: str) -> ParentRef:
                 }
             ),
         )
-    except ExpressionSelectAmbiguous as exc:
+    except (ExpressionSelectAmbiguous, ExpressionPathMissing) as exc:
         matches = [parent for parent in manifest.provenance.parents if parent.kind == kind]
         raise ValueError(
             f"Expected exactly one {kind!r} parent in manifest {manifest.id}; found {len(matches)}."
