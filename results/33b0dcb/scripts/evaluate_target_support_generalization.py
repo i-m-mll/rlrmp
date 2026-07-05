@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import math
 from collections import defaultdict
@@ -109,17 +110,26 @@ def main() -> None:
         profile_records.extend(result["profiles"])
 
     csv_path = notes_dir / "target_support_generalization_summary.csv"
-    profile_csv_path = notes_dir / "target_support_velocity_profiles.csv"
+    profile_csv_path = bulk_dir / "target_support_velocity_profiles.csv"
+    profile_pointer_path = notes_dir / "target_support_velocity_profiles_pointer.json"
     json_path = notes_dir / "target_support_generalization_manifest.json"
     note_path = notes_dir / "target_support_generalization.md"
     write_csv(csv_path, records)
     write_profile_csv(profile_csv_path, profile_records)
+    profile_pointer = write_profile_pointer(
+        profile_pointer_path,
+        profile_csv_path=profile_csv_path,
+        profile_records=profile_records,
+        repo_root=repo_root,
+    )
     manifest = build_manifest(
         runs=runs,
         records=records,
         run_manifests=run_manifests,
         csv_path=csv_path,
         profile_csv_path=profile_csv_path,
+        profile_pointer_path=profile_pointer_path,
+        profile_pointer=profile_pointer,
         repo_root=repo_root,
         include_length_diagnostic=not args.no_length_diagnostic,
     )
@@ -631,6 +641,8 @@ def build_manifest(
     run_manifests: Mapping[str, Any],
     csv_path: Path,
     profile_csv_path: Path,
+    profile_pointer_path: Path,
+    profile_pointer: Mapping[str, Any],
     repo_root: Path,
     include_length_diagnostic: bool,
 ) -> dict[str, Any]:
@@ -667,6 +679,8 @@ def build_manifest(
         "outputs": {
             "summary_csv": str(csv_path.relative_to(repo_root)),
             "velocity_profile_csv": str(profile_csv_path.relative_to(repo_root)),
+            "velocity_profile_pointer": str(profile_pointer_path.relative_to(repo_root)),
+            "velocity_profile_bulk": profile_pointer["bulk_artifact"],
             "note": f"results/{ISSUE}/notes/target_support_generalization.md",
         },
         "headline": headline,
@@ -788,7 +802,10 @@ def render_note(manifest: Mapping[str, Any]) -> str:
             "## Output Files",
             "",
             f"- Summary CSV: `{manifest['outputs']['summary_csv']}`",
-            f"- Normalized radial velocity profiles: `{manifest['outputs']['velocity_profile_csv']}`",
+            "- Normalized radial velocity profiles bulk CSV: "
+            f"`{manifest['outputs']['velocity_profile_csv']}`",
+            "- Tracked velocity profile pointer: "
+            f"`{manifest['outputs']['velocity_profile_pointer']}`",
             "",
             "Objective-comparator note: this pass reports rollout kinematics and task-target "
             "split behavior. It does not materialize the heavier analytical objective "
@@ -841,6 +858,49 @@ def fmt(value: Any) -> str:
     if value is None:
         return "NA"
     return f"{float(value):.6g}"
+
+
+def write_profile_pointer(
+    path: Path,
+    *,
+    profile_csv_path: Path,
+    profile_records: Sequence[Mapping[str, Any]],
+    repo_root: Path,
+) -> dict[str, Any]:
+    """Write the tracked pointer for the gitignored per-time velocity CSV."""
+
+    data = profile_csv_path.read_bytes()
+    rel_profile_csv = str(profile_csv_path.relative_to(repo_root))
+    pointer = {
+        "schema_version": "rlrmp.bulk_artifact_pointer.v1",
+        "issue": ISSUE,
+        "tracked_artifact": f"results/{ISSUE}/notes/target_support_velocity_profiles_pointer.json",
+        "bulk_artifact": {
+            "path": rel_profile_csv,
+            "format": "csv",
+            "sha256": hashlib.sha256(data).hexdigest(),
+            "bytes": len(data),
+            "data_rows": len(profile_records),
+            "header_rows": 1,
+            "contains": (
+                "per-row, per-split normalized target-radial velocity time profiles "
+                "for the 33b0dcb target-support evaluation"
+            ),
+        },
+        "regenerate": {
+            "command": "PYTHONPATH=$PWD/src uv run --no-sync python "
+            "results/33b0dcb/scripts/evaluate_target_support_generalization.py",
+            "writes": [
+                f"results/{ISSUE}/notes/target_support_generalization_summary.csv",
+                rel_profile_csv,
+                f"results/{ISSUE}/notes/target_support_velocity_profiles_pointer.json",
+                f"results/{ISSUE}/notes/target_support_generalization_manifest.json",
+                f"results/{ISSUE}/notes/target_support_generalization.md",
+            ],
+        },
+    }
+    path.write_text(json.dumps(pointer, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return pointer
 
 
 if __name__ == "__main__":

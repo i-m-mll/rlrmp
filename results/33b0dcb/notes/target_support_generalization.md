@@ -88,7 +88,8 @@ Diagnostic-only crossed 0.10/0.12/0.15/0.18 m by 72-direction grid.
 ## Output Files
 
 - Summary CSV: `results/33b0dcb/notes/target_support_generalization_summary.csv`
-- Normalized radial velocity profiles: `results/33b0dcb/notes/target_support_velocity_profiles.csv`
+- Normalized radial velocity profiles bulk CSV: `_artifacts/33b0dcb/target_support_eval/target_support_velocity_profiles.csv`
+- Tracked velocity profile pointer: `results/33b0dcb/notes/target_support_velocity_profiles_pointer.json`
 
 Objective-comparator note: this pass reports rollout kinematics and task-target split behavior. It does not materialize the heavier analytical objective comparator sidecar.
 <!-- /AUTO-GENERATED -->
