@@ -8,6 +8,10 @@ from typing import Any
 
 import numpy as np
 
+from rlrmp.analysis.manifest_queries import (
+    certificate_component_summary,
+    standard_row_by_source_run_id,
+)
 from rlrmp.analysis.pipelines.gru_checkpoint_selection import load_materialized_fixed_bank_manifest
 from rlrmp.io import read_json, update_marked_section
 from rlrmp.paths import REPO_ROOT
@@ -493,29 +497,18 @@ def _source_run_ids_from_standard_manifest(manifest: dict[str, Any]) -> tuple[st
 
 
 def _find_standard_row(manifest: dict[str, Any], run_id: str) -> dict[str, Any] | None:
-    for row in manifest.get("rows", ()):
-        if row.get("spec", {}).get("parameters", {}).get("source_run_id") == run_id:
-            spec = row.get("spec", {})
-            return {
-                "run_id": spec.get("run_id"),
-                "status": row.get("status"),
-                "observation_history_to_action_map_mismatch": _component_summary(
-                    row,
-                    "observation_history_to_action_map_mismatch",
-                ),
-            }
-    return None
-
-
-def _component_summary(row: dict[str, Any], component_name: str) -> dict[str, Any] | None:
-    for component in row.get("certificate_components", ()):
-        if component.get("name") == component_name:
-            return {
-                "status": component.get("status"),
-                "summary": component.get("summary"),
-                "reason": component.get("reason"),
-            }
-    return None
+    row = standard_row_by_source_run_id(manifest, run_id)
+    if row is None:
+        return None
+    spec = row.get("spec", {})
+    return {
+        "run_id": spec.get("run_id"),
+        "status": row.get("status"),
+        "observation_history_to_action_map_mismatch": certificate_component_summary(
+            row,
+            "observation_history_to_action_map_mismatch",
+        ),
+    }
 
 
 def _repo_relative(path: Path, *, repo_root: Path) -> str:

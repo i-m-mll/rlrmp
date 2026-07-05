@@ -22,6 +22,15 @@ from feedbax.contracts.graphs.materialization import (
     materialize_array_store,
     materialize_model_artifact,
 )
+from feedbax.contracts.expressions import (
+    Compare,
+    ContextItem,
+    ExpressionContext,
+    ExpressionSelectAmbiguous,
+    Select,
+    ValueQuery,
+    evaluate_query,
+)
 from feedbax.contracts.manifest import ModelArtifactManifest, ParentRef, sha256_file
 
 from rlrmp.eval.minimax_io import (
@@ -262,12 +271,27 @@ def _read_legacy_npz_array_store(path: Path) -> ArrayStore:
 
 
 def _manifest_parent(manifest: ModelArtifactManifest, kind: str) -> ParentRef:
-    matches = [parent for parent in manifest.provenance.parents if parent.kind == kind]
-    if len(matches) != 1:
+    query = ValueQuery(
+        item="manifest",
+        path="provenance.parents",
+        select=Select(
+            where=Compare(item="entry", path="kind", op="eq", value=kind),
+        ),
+    )
+    try:
+        return evaluate_query(
+            query,
+            ExpressionContext(
+                items={
+                    "manifest": ContextItem(kind="ModelArtifactManifest", payload=manifest),
+                }
+            ),
+        )
+    except ExpressionSelectAmbiguous as exc:
+        matches = [parent for parent in manifest.provenance.parents if parent.kind == kind]
         raise ValueError(
             f"Expected exactly one {kind!r} parent in manifest {manifest.id}; found {len(matches)}."
-        )
-    return matches[0]
+        ) from exc
 
 
 def _normalized_cli_flags(run_spec: dict[str, Any]) -> dict[str, Any]:

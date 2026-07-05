@@ -19,6 +19,7 @@ from feedbax.runtime.channel import Channel
 from feedbax.runtime.graph import init_state_from_component
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 
+from rlrmp.analysis.manifest_queries import certificate_component_summary_value
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     materialize_reference,
@@ -1259,13 +1260,28 @@ def _markdown_row_table(rows: list[dict[str, Any]], failure_rows: list[dict[str,
     for row in rows:
         by_name = {component["name"]: component for component in row["certificate_components"]}
         run_id = row["spec"]["run_id"]
+        action_mismatch = certificate_component_summary_value(
+            row,
+            "state_weighted_action_mismatch",
+            "aggregate_mismatch_ratio",
+        )
+        obs_action_mismatch = certificate_component_summary_value(
+            row,
+            "observation_history_to_action_map_mismatch",
+            "aggregate_mismatch_ratio",
+        )
+        cov_weighted_obs_action_mismatch = certificate_component_summary_value(
+            row,
+            "observation_history_to_action_map_mismatch",
+            "covariance_weighted_aggregate_mismatch_ratio",
+        )
         lines.append(
             "| "
             f"{run_id} | "
             f"{row['status']} | "
-            f"{_fmt(_summary(by_name, 'state_weighted_action_mismatch', 'aggregate_mismatch_ratio'))} | "
-            f"{_fmt(_summary(by_name, 'observation_history_to_action_map_mismatch', 'aggregate_mismatch_ratio'))} | "
-            f"{_fmt(_summary(by_name, 'observation_history_to_action_map_mismatch', 'covariance_weighted_aggregate_mismatch_ratio'))} | "
+            f"{_fmt(action_mismatch)} | "
+            f"{_fmt(obs_action_mismatch)} | "
+            f"{_fmt(cov_weighted_obs_action_mismatch)} | "
             f"{by_name[CLOSED_LOOP_TRANSITION_MISMATCH]['status']} | "
             f"{by_name[VALUE_POLICY_GAP]['status']} | "
             f"{by_name[BELLMAN_HESSIAN_RESIDUAL]['status']} | "
@@ -1369,10 +1385,6 @@ def _classification_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
         label = row["classification"]["classification"]
         counts[label] = counts.get(label, 0) + 1
     return dict(sorted(counts.items()))
-
-
-def _summary(components: dict[str, dict[str, Any]], name: str, key: str) -> Any:
-    return components.get(name, {}).get("summary", {}).get(key)
 
 
 def _fmt(value: Any) -> str:
