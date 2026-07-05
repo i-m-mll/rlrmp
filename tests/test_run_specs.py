@@ -9,6 +9,7 @@ import pytest
 from rlrmp.runtime.run_specs import (
     CS_LSS_PLANT_BACKEND,
     RunSpecValidationError,
+    _is_cs_lss_run_spec,
     validate_nominal_gru_run_spec,
     validate_nominal_gru_run_spec_file,
 )
@@ -185,6 +186,26 @@ def test_nominal_gru_run_spec_accepts_legacy_verified_cs_lss_selector(tmp_path) 
     )
 
     validate_nominal_gru_run_spec(run_spec, spec_dir=tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("patch", "expected"),
+    [
+        ({"model_summary": {"plant_backend": CS_LSS_PLANT_BACKEND}}, True),
+        ({"training_summary": {"plant_backend": CS_LSS_PLANT_BACKEND}}, True),
+        ({"fidelity_status": {"plant_backend": CS_LSS_PLANT_BACKEND}}, True),
+        ({"hps": {"model": {"plant_backend": CS_LSS_PLANT_BACKEND}}}, True),
+        ({"model_summary": {"exact_cs_linear_state_space": True}}, True),
+        ({"model_summary": {"plant_backend": "point_mass"}}, False),
+        ({"model_summary": {"exact_cs_linear_state_space": False}}, False),
+        ({}, False),
+    ],
+)
+def test_cs_lss_run_spec_predicate_uses_declared_paths(
+    patch: dict[str, object],
+    expected: bool,
+) -> None:
+    assert _is_cs_lss_run_spec(patch) is expected
 
 
 def test_nominal_gru_run_spec_file_loads_json_and_checks_sidecars(tmp_path) -> None:

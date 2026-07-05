@@ -17,6 +17,17 @@ from feedbax.analysis.materialization import (
     materialization_metadata,
 )
 from feedbax.analysis.specs import AnalysisRecipeResult, register_analysis_recipe
+from feedbax.contracts.expressions import (
+    AllOf,
+    AnyOf,
+    Compare,
+    ContextItem,
+    Expr,
+    ExpressionContext,
+    Not,
+    canonical_expression_json,
+    evaluate_expr,
+)
 from feedbax.contracts.manifest import AnalysisRunSpec, ParentRef
 from feedbax.analysis.types import AnalysisInputData
 from feedbax.config.namespace import TreeNamespace
@@ -166,7 +177,18 @@ class FeedbackQualityComponentRegistration:
     artifact_role: str
     logical_name: str
     live_materializer: str
-    gating_spec: str
+    gating_label: str
+    gating_expr: Expr
+
+
+@dataclass(frozen=True)
+class FeedbackQualityGatingDecision:
+    """Evaluated feedback-quality component gate state."""
+
+    included: bool
+    not_applicable: bool
+    eligible: bool
+    should_materialize: bool
 
 
 class RLRMPManifestAnalysis(AbstractAnalysis):
@@ -1013,7 +1035,12 @@ def _feedback_quality_component_recipe(
             metadata={
                 "component": registration.name,
                 "live_materializer": registration.live_materializer,
-                "gating_spec": registration.gating_spec,
+                "gating_label": registration.gating_label,
+                "gating_expr": registration.gating_expr.model_dump(
+                    mode="json",
+                    exclude_none=True,
+                ),
+                "gating_expr_canonical": canonical_expression_json(registration.gating_expr),
             },
         )
         return AnalysisRecipeResult(
@@ -1333,6 +1360,82 @@ def _materialize_gru_postrun(
     )
 
 
+_COMPONENT_STATUS_UNAVAILABLE_EXPR = Compare(
+    item="component_status",
+    path="status",
+    op="eq",
+    value="unavailable",
+)
+
+
+def _feedback_quality_component_gate_expr(name: str) -> Expr:
+    return AllOf(
+        exprs=[
+            _feedback_quality_include_flag_expr(name),
+            Not(expr=_feedback_quality_not_applicable_expr(name)),
+        ]
+    )
+
+
+def _feedback_quality_include_flag_expr(name: str) -> Expr:
+    return AnyOf(
+        exprs=[
+            Not(expr=Compare(item="params", path=f"include_{name}", op="exists")),
+            Compare(item="params", path=f"include_{name}", op="eq", value=True),
+        ]
+    )
+
+
+def _feedback_quality_not_applicable_expr(name: str) -> Expr:
+    return AllOf(
+        exprs=[
+            Compare(item="params", path="not_applicable_components", op="exists"),
+            Compare(
+                item="params",
+                path="not_applicable_components",
+                op="contains",
+                value=name,
+            ),
+        ]
+    )
+
+
+def _feedback_quality_gating_decision(
+    registration: FeedbackQualityComponentRegistration,
+    *,
+    params: Mapping[str, Any],
+    component_status: Mapping[str, Any],
+) -> FeedbackQualityGatingDecision:
+    params_payload = dict(params)
+    normalized_not_applicable = _optional_str_sequence(
+        params_payload.get("not_applicable_components")
+    )
+    if normalized_not_applicable is not None:
+        params_payload["not_applicable_components"] = normalized_not_applicable
+    ctx = ExpressionContext(
+        items={
+            "params": ContextItem(kind="params", payload=params_payload),
+            "component_status": ContextItem(
+                kind="component_status",
+                payload=dict(component_status),
+            ),
+        }
+    )
+    included = evaluate_expr(_feedback_quality_include_flag_expr(registration.name), ctx)
+    not_applicable = evaluate_expr(_feedback_quality_not_applicable_expr(registration.name), ctx)
+    eligible = evaluate_expr(registration.gating_expr, ctx)
+    should_materialize = evaluate_expr(
+        AllOf(exprs=[registration.gating_expr, _COMPONENT_STATUS_UNAVAILABLE_EXPR]),
+        ctx,
+    )
+    return FeedbackQualityGatingDecision(
+        included=included,
+        not_applicable=not_applicable,
+        eligible=eligible,
+        should_materialize=should_materialize,
+    )
+
+
 def _feedback_quality_component_registrations() -> dict[str, FeedbackQualityComponentRegistration]:
     return {
         "evaluation_diagnostics": FeedbackQualityComponentRegistration(
@@ -1344,7 +1447,8 @@ def _feedback_quality_component_registrations() -> dict[str, FeedbackQualityComp
                 "rlrmp.analysis.pipelines.gru_evaluation_diagnostics."
                 "materialize_gru_evaluation_diagnostics"
             ),
-            gating_spec="evaluation_run_present_or_materialize_flag",
+            gating_label="include flag and applicable component",
+            gating_expr=_feedback_quality_component_gate_expr("evaluation_diagnostics"),
         ),
         "objective_comparator": FeedbackQualityComponentRegistration(
             name="objective_comparator",
@@ -1355,7 +1459,8 @@ def _feedback_quality_component_registrations() -> dict[str, FeedbackQualityComp
                 "rlrmp.analysis.pipelines.objective_comparator."
                 "materialize_gru_objective_comparator_sidecar"
             ),
-            gating_spec="evaluation_run_present_or_materialize_flag",
+            gating_label="include flag and applicable component",
+            gating_expr=_feedback_quality_component_gate_expr("objective_comparator"),
         ),
         "perturbation_response": FeedbackQualityComponentRegistration(
             name="perturbation_response",
@@ -1366,7 +1471,8 @@ def _feedback_quality_component_registrations() -> dict[str, FeedbackQualityComp
                 "rlrmp.analysis.pipelines.gru_perturbation_bank."
                 "materialize_gru_perturbation_response"
             ),
-            gating_spec="evaluation_run_present_or_materialize_flag",
+            gating_label="include flag and applicable component",
+            gating_expr=_feedback_quality_component_gate_expr("perturbation_response"),
         ),
         "feedback_ablation": FeedbackQualityComponentRegistration(
             name="feedback_ablation",
@@ -1377,7 +1483,8 @@ def _feedback_quality_component_registrations() -> dict[str, FeedbackQualityComp
                 "rlrmp.analysis.pipelines.gru_feedback_ablation."
                 "materialize_gru_feedback_ablation"
             ),
-            gating_spec="evaluation_run_present_or_materialize_flag",
+            gating_label="include flag and applicable component",
+            gating_expr=_feedback_quality_component_gate_expr("feedback_ablation"),
         ),
         "response_norm_plots": FeedbackQualityComponentRegistration(
             name="response_norm_plots",
@@ -1388,7 +1495,8 @@ def _feedback_quality_component_registrations() -> dict[str, FeedbackQualityComp
                 "rlrmp.analysis.pipelines.gru_perturbation_response_norm_plots."
                 "materialize_response_norm_plots"
             ),
-            gating_spec="materialize_flag_and_perturbation_response_role_present",
+            gating_label="include flag and applicable component",
+            gating_expr=_feedback_quality_component_gate_expr("response_norm_plots"),
         ),
         "perturbation_calibration": FeedbackQualityComponentRegistration(
             name="perturbation_calibration",
@@ -1399,7 +1507,8 @@ def _feedback_quality_component_registrations() -> dict[str, FeedbackQualityComp
                 "rlrmp.analysis.pipelines.gru_perturbation_calibration."
                 "materialize_perturbation_open_loop_calibration"
             ),
-            gating_spec="materialize_flag",
+            gating_label="include flag and applicable component",
+            gating_expr=_feedback_quality_component_gate_expr("perturbation_calibration"),
         ),
     }
 
@@ -1424,19 +1533,21 @@ def _materialize_feedback_quality_component(
         run_ids=run_ids,
         repo_root=repo_root,
     )
-    not_applicable = set(_optional_str_sequence(params.get("not_applicable_components")) or [])
     component = _feedback_quality_components(plan, params=params, repo_root=repo_root)[
         registration.name
     ]
     output, existing, groups = _feedback_quality_component_output(
-        registration.name,
+        registration,
         component,
-        include=bool(params.get(f"include_{registration.name}", True)),
-        not_applicable=registration.name in not_applicable,
+        params=params,
         repo_root=repo_root,
     )
     materialization_mode = "live_analysis_node"
-    if output["status"] == "unavailable":
+    if _feedback_quality_gating_decision(
+        registration,
+        params=params,
+        component_status=output,
+    ).should_materialize:
         raw_output = registration.materializer(
             context,
             params,
@@ -1446,10 +1557,9 @@ def _materialize_feedback_quality_component(
             repo_root,
         )
         refreshed, existing, groups = _feedback_quality_component_output(
-            registration.name,
+            registration,
             component,
-            include=bool(params.get(f"include_{registration.name}", True)),
-            not_applicable=registration.name in not_applicable,
+            params=params,
             repo_root=repo_root,
         )
         output = _feedback_quality_live_output(
@@ -2617,11 +2727,10 @@ def _feedback_quality_components(
 
 
 def _feedback_quality_component_output(
-    name: str,
+    registration: FeedbackQualityComponentRegistration,
     component: Mapping[str, Any],
     *,
-    include: bool,
-    not_applicable: bool,
+    params: Mapping[str, Any],
     repo_root: Path,
 ) -> tuple[dict[str, Any], tuple[ExistingAnalysisArtifact, ...], tuple[AnalysisArtifactGroup, ...]]:
     paths = _component_paths(component)
@@ -2631,11 +2740,16 @@ def _feedback_quality_component_output(
         "paths": {key: _repo_relative(path, repo_root=repo_root) for key, path in paths.items()},
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
     }
-    if not include:
+    gate = _feedback_quality_gating_decision(
+        registration,
+        params=params,
+        component_status=payload,
+    )
+    if not gate.included:
         payload["status"] = "skipped"
         payload["reason"] = "component disabled by feedback-quality lens params"
         return payload, (), ()
-    if not_applicable:
+    if gate.not_applicable:
         payload["status"] = "not_applicable"
         payload["reason"] = "component is not meaningful for this manifest set"
         return payload, (), ()
@@ -2672,7 +2786,7 @@ def _feedback_quality_component_output(
         ]
         payload["artifact_group_ids"] = [group.group_id for group in groups]
     else:
-        payload["reason"] = f"{name} outputs were not found at configured paths"
+        payload["reason"] = f"{registration.name} outputs were not found at configured paths"
     return payload, tuple(existing), tuple(groups)
 
 
