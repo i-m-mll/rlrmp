@@ -8,8 +8,8 @@ import json
 from pathlib import Path
 
 from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
-    DEFAULT_AMPLITUDE_FACTORS,
     DEFAULT_RESULT_EXPERIMENT,
+    default_amplitude_factors,
     materialize_perturbation_open_loop_calibration,
 )
 from rlrmp.paths import REPO_ROOT
@@ -24,7 +24,7 @@ def main() -> None:
     parser.add_argument("--regeneration-spec-path", type=Path)
     args = parser.parse_args()
     manifest = materialize_perturbation_open_loop_calibration(
-        amplitude_factors=tuple(args.factors or DEFAULT_AMPLITUDE_FACTORS),
+        amplitude_factors=tuple(args.factors) if args.factors else default_amplitude_factors(),
         result_experiment=args.result_experiment,
         output_path=args.output_path,
         note_path=args.note_path,

@@ -61,13 +61,14 @@ from rlrmp.analysis.pipelines.standard_certificate_materialization import (
     materialization_summary,
     repo_relative,
 )
-from rlrmp.io import update_marked_section
+from rlrmp.io import read_json, update_marked_section
 from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path, run_spec_path
 from rlrmp.runtime.spec_migrations import (
     CS_GRU_STANDARD_CERTIFICATES_KIND,
     CS_GRU_STANDARD_CERTIFICATES_SCHEMA_VERSION,
     stamp_current_schema,
 )
+from rlrmp.runtime.run_spec_access import require_run_seed
 from rlrmp.runtime.run_specs import resolve_run_record
 from rlrmp.model.stochastic_runtime import (
     PLANT_PROCESS_FORCE_NOISE_LABEL,
@@ -317,7 +318,7 @@ def materialize_gru_standard_row(
         experiment=experiment,
         repo_root=repo_root,
     )
-    training_summary = _read_json(training_summary_path) if training_summary_path.exists() else {}
+    training_summary = read_json(training_summary_path) if training_summary_path.exists() else {}
     reference_actions, reference_metadata = cs_output_feedback_reference_actions()
     reference_map, response_reference_metadata = cs_output_feedback_observation_action_map()
     action_weight = reference_metadata["action_weight"]
@@ -417,7 +418,7 @@ def materialize_gru_standard_row_from_evaluation_state(
         experiment=experiment,
         repo_root=repo_root,
     )
-    training_summary = _read_json(training_summary_path) if training_summary_path.exists() else {}
+    training_summary = read_json(training_summary_path) if training_summary_path.exists() else {}
     reference_actions, reference_metadata = cs_output_feedback_reference_actions()
     reference_map, response_reference_metadata = cs_output_feedback_observation_action_map()
     action_weight = reference_metadata["action_weight"]
@@ -717,7 +718,15 @@ def evaluate_gru_clean_actions(
     run_spec = run_spec or resolve_run_record(experiment, run_id, repo_root=repo_root)
     hps = dict_to_namespace(normalize_gru_hps(run_spec["hps"]), to_type=TreeNamespace)
     n_replicates = int(hps.model.n_replicates)
-    pair = setup_task_model_pair(hps, key=jr.PRNGKey(int(run_spec.get("seed", 42))))
+    pair = setup_task_model_pair(
+        hps,
+        key=jr.PRNGKey(
+            require_run_seed(
+                run_spec,
+                source=run_spec_path(experiment, run_id, repo_root=repo_root),
+            )
+        ),
+    )
     if use_validation_selected_checkpoints:
         from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
             load_validation_selected_checkpoint_model,
@@ -1373,10 +1382,6 @@ def _fmt(value: Any) -> str:
         return f"{float(value):.6g}"
     except (TypeError, ValueError):
         return str(value)
-
-
-def _read_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _default_model_path(

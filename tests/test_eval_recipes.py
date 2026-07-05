@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import pickle
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,14 +13,21 @@ import rlrmp
 from feedbax.analysis.evaluation import EvaluationRecipeExecutionError, execute_evaluation_run_spec
 from feedbax.contracts.manifest import EvaluationRunSpec, ParentRef, evaluation_run_manifest_id
 from feedbax.plugins.registry import ExperimentRegistry
+from pydantic import BaseModel, ValidationError
 from rlrmp.analysis.matrix import STANDARD_MATRIX_EVALUATION_TYPE
 from rlrmp.eval.recipes import (
     CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,
+    CenterOutEnsembleEvalParams,
     DELAYED_REACH_BANK_EVALUATION_TYPE,
+    DelayedReachBankEvalParams,
     FEEDBACK_ABLATION_EVALUATION_TYPE,
+    FeedbackAblationEvalParams,
+    PerturbationResponseBankEvalParams,
     PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
+    WorstCaseEpsilonEvalParams,
     WORST_CASE_EPSILON_EVALUATION_TYPE,
 )
+from rlrmp.runtime.params_models import params_model_for, registered_params_models
 from rlrmp.runtime.spec_migrations import (
     CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND,
     DELAYED_REACH_BANK_EVAL_PARAMS_KIND,
@@ -45,6 +54,29 @@ def _spec(evaluation_type: str, params: dict[str, Any]) -> EvaluationRunSpec:
         inputs=[_training_ref()],
         params=params,
     )
+
+
+def _canonical_sha256(payload: dict[str, Any]) -> str:
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def _identity_changed_params(evaluation_type: str, params: dict[str, Any]) -> dict[str, Any]:
+    changed = dict(params)
+    if evaluation_type == CENTER_OUT_ENSEMBLE_EVALUATION_TYPE:
+        changed["seed"] = 999
+    elif evaluation_type == PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE:
+        changed["bank_status"] = {"training-run-a": {"changed": 1}}
+    elif evaluation_type == FEEDBACK_ABLATION_EVALUATION_TYPE:
+        changed["rollout_pairs"] = [{"pair": "changed"}]
+    elif evaluation_type == WORST_CASE_EPSILON_EVALUATION_TYPE:
+        changed["audit_inputs"] = {"changed": True}
+    elif evaluation_type == DELAYED_REACH_BANK_EVALUATION_TYPE:
+        changed["bank_tensors"] = {"changed": True}
+    else:
+        raise AssertionError(f"missing identity-change fixture for {evaluation_type}")
+    return changed
 
 
 def _perturbation_row(
@@ -82,6 +114,155 @@ def _bank() -> dict[str, Any]:
             ),
         ],
     }
+
+
+@pytest.mark.parametrize(
+    ("model_class", "expected_defaults"),
+    [
+        (
+            CenterOutEnsembleEvalParams,
+            {
+                "schema_id": None,
+                "schema_version": None,
+                "consumed_data_identities": [],
+                "task": None,
+                "checkpoint_selector": None,
+                "replicate_selector": None,
+                "n_directions": None,
+                "n_trials_per_direction": None,
+                "n_trials": None,
+                "directions": None,
+                "task_conditions": None,
+                "perturbation": None,
+                "pert_axis": None,
+                "sisu_values": [],
+                "seed": None,
+                "trajectories": [],
+                "kinematics_summary": {},
+                "legacy_diagnostics_manifest": None,
+                "legacy_bulk_arrays": {},
+                "gru_standard_certificate": None,
+            },
+        ),
+        (
+            PerturbationResponseBankEvalParams,
+            {
+                "schema_id": None,
+                "schema_version": None,
+                "consumed_data_identities": [],
+                "checkpoint_bank_ref": None,
+                "checkpoint_bank": None,
+                "perturbation_battery": None,
+                "bank": None,
+                "alignment_mode": "reach_locked",
+                "response_tensors": None,
+                "class_index_map": None,
+                "bank_status": {},
+                "bundle_contract": {},
+                "states_custody": None,
+                "legacy_payload_mode": False,
+                "source_experiment": None,
+                "experiment": None,
+                "run_ids": None,
+                "labels": None,
+                "class_set": None,
+                "families": None,
+                "family_set": None,
+                "perturbation_families": None,
+                "perturbation_ids": None,
+                "consume_open_loop_calibration": False,
+                "bank_mode": None,
+                "mode": "raw",
+                "calibration_level": None,
+                "calibration_reach": None,
+                "feedback_scale_manifest": None,
+                "feedback_scale_manifest_path": None,
+                "repo_root": None,
+                "bulk_dir": None,
+                "write_bulk_arrays": False,
+                "n_rollout_trials": 8,
+                "extlqg_physical_dim": 8,
+                "preferred_checkpoint_manifest_path": None,
+                "checkpoint_selection_mode": "sparse_history",
+            },
+        ),
+        (
+            FeedbackAblationEvalParams,
+            {
+                "schema_id": None,
+                "schema_version": None,
+                "consumed_data_identities": [],
+                "ablation_masks": None,
+                "ablation_mask_set": None,
+                "base_task": {},
+                "rollout_pairs": [],
+            },
+        ),
+        (
+            WorstCaseEpsilonEvalParams,
+            {
+                "schema_id": None,
+                "schema_version": None,
+                "consumed_data_identities": [],
+                "epsilon_budget_data_product_identity": None,
+                "epsilon_budget_identity": None,
+                "optimizer": {},
+                "audit_inputs": {},
+                "worst_case_rollouts": [],
+            },
+        ),
+        (
+            DelayedReachBankEvalParams,
+            {
+                "schema_id": None,
+                "schema_version": None,
+                "consumed_data_identities": [],
+                "bank_spec": {},
+                "bank_tensors": {},
+                "selection_inputs": {},
+            },
+        ),
+    ],
+)
+def test_eval_params_model_defaults_match_recipe_literals(
+    model_class: type[BaseModel],
+    expected_defaults: dict[str, Any],
+) -> None:
+    model = model_class.model_validate({})
+
+    assert model.model_dump(mode="json") == expected_defaults
+
+
+@pytest.mark.parametrize(
+    "model_class",
+    [
+        CenterOutEnsembleEvalParams,
+        PerturbationResponseBankEvalParams,
+        FeedbackAblationEvalParams,
+        WorstCaseEpsilonEvalParams,
+        DelayedReachBankEvalParams,
+    ],
+)
+def test_eval_params_models_reject_extra_fields(model_class: type[BaseModel]) -> None:
+    with pytest.raises(ValidationError):
+        model_class.model_validate({"unknown": True})
+
+
+def test_eval_params_model_table_resolves_registered_recipes() -> None:
+    _register()
+
+    expected = {
+        CENTER_OUT_ENSEMBLE_EVALUATION_TYPE: CenterOutEnsembleEvalParams,
+        PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE: PerturbationResponseBankEvalParams,
+        FEEDBACK_ABLATION_EVALUATION_TYPE: FeedbackAblationEvalParams,
+        WORST_CASE_EPSILON_EVALUATION_TYPE: WorstCaseEpsilonEvalParams,
+        DELAYED_REACH_BANK_EVALUATION_TYPE: DelayedReachBankEvalParams,
+    }
+    for recipe_name, model_class in expected.items():
+        assert params_model_for(recipe_name) is model_class
+    assert expected.items() <= registered_params_models().items()
+    with pytest.raises(KeyError):
+        params_model_for("rlrmp.eval.unknown")
 
 
 @pytest.mark.parametrize(
@@ -156,12 +337,14 @@ def test_registered_eval_recipes_execute_and_reuse_states_cache(
     _register()
     stamped = stamp_current_schema(params_kind, params)
     spec = _spec(evaluation_type, stamped)
+    expected_manifest_id = evaluation_run_manifest_id(spec)
+    expected_params_sha = _canonical_sha256(stamped)
 
     manifest, path = execute_evaluation_run_spec(spec, root=tmp_path, force=True)
     cached_manifest, cached_path = execute_evaluation_run_spec(spec, root=tmp_path)
 
     assert path == cached_path
-    assert manifest.id == evaluation_run_manifest_id(spec)
+    assert manifest.id == expected_manifest_id
     assert cached_manifest.id == manifest.id
     assert cached_manifest.metadata["cache"]["states_cache_hit"] is True
     assert cached_manifest.metadata["rlrmp_evaluation_recipe"] == evaluation_type
@@ -172,6 +355,7 @@ def test_registered_eval_recipes_execute_and_reuse_states_cache(
     states_path = tmp_path / "cache" / "states"
     assert any(states_path.glob("*.pkl"))
     assert manifest.metadata["params_schema_version"] == stamped["schema_version"]
+    assert manifest.metadata["params_sha256"] == expected_params_sha
     assert manifest.metadata["cache"]["states_cache_key"] == manifest.id
     assert manifest.summary_metrics["consumed_data_identity_count"] == len(
         stamped.get("consumed_data_identities", [])
@@ -186,8 +370,7 @@ def test_registered_eval_recipes_execute_and_reuse_states_cache(
     assert manifest.metadata["cache"]["states_cache_hit"] is False
     assert manifest.metadata["cache"]["states_cache_saved"] is True
 
-    changed_params = dict(stamped)
-    changed_params["seed"] = 999
+    changed_params = _identity_changed_params(evaluation_type, stamped)
     changed_spec = _spec(evaluation_type, changed_params)
     changed_manifest, _changed_path = execute_evaluation_run_spec(
         changed_spec,

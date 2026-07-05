@@ -38,6 +38,7 @@ from rlrmp.train.task_model import (
     get_disturbance_params,
     setup_task_model_pair,
 )
+from rlrmp.train.minimax import MinimaxConfig
 
 __all__ = ["load_adversary", "load_config", "load_model"]
 
@@ -94,7 +95,7 @@ def _setup_legacy_minimax_model(hps, *, key):
         key=key,
         n_extra_inputs=1,
         hidden_type=getattr(hps, "hidden_type", None),
-        sisu_gating=str(getattr(hps, "sisu_gating", "additive")),
+        sisu_gating=str(getattr(hps, "sisu_gating", _default_sisu_gating())),
         intervention_type=_intervention_component_type(hps.pert.type),
     )
     task = task.add_input(name="sisu", input_fn=SISU_FNS[hps.method])
@@ -116,6 +117,13 @@ def _intervention_component_type(pert_type: str) -> str:
     if pert_type == "dynamics_matrix":
         return "DynamicsMatrixPerturb"
     raise ValueError(f"Unknown perturbation type: {pert_type!r}")
+
+
+def _default_sisu_gating() -> str:
+    default = MinimaxConfig.model_fields["sisu_gating"].default
+    if not isinstance(default, str):
+        raise TypeError("MinimaxConfig sisu_gating default must be a string")
+    return default
 
 
 def normalize_loaded_minimax_runtime(model, hps, *, key, current_model=None):

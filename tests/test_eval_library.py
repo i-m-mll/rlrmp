@@ -41,6 +41,19 @@ def test_rlrmp_eval_minimax_io_loaders_importable():
     assert callable(minimax_io.load_adversary)
 
 
+def test_minimax_io_uses_minimax_config_sisu_gating_default():
+    """Eval-side minimax loading reads the training config's SISU default."""
+    from pathlib import Path
+
+    from rlrmp.eval import minimax_io
+    from rlrmp.train.minimax import MinimaxConfig
+
+    assert minimax_io._default_sisu_gating() == MinimaxConfig.model_fields["sisu_gating"].default
+    source = Path(minimax_io.__file__).read_text(encoding="utf-8")
+    assert '"additive"' not in source
+    assert "'additive'" not in source
+
+
 def test_n_replicates_constant():
     """`N_REPLICATES` is the project-wide default of 5."""
     from rlrmp.eval.ensemble import N_REPLICATES

@@ -70,6 +70,7 @@ from rlrmp.model.feedback_descriptors import (
 )
 from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.runtime.run_spec_access import require_run_seed
 
 
 SCHEMA_VERSION = "rlrmp.gru_perturbation_bank.v3"
@@ -131,10 +132,9 @@ def default_cs_perturbation_bank(
     if mode != "raw":
         raise ValueError(f"unsupported perturbation bank mode {mode!r}")
 
-    from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
-        DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS,
-        DEFAULT_PLANT_TIMING_BINS,
-    )
+    from rlrmp.data_products.calibration import load_perturbation_calibration_defaults
+
+    calibration_defaults = load_perturbation_calibration_defaults()
 
     perturbations: list[PerturbationSpec] = []
     for family, units, amplitude in (
@@ -178,7 +178,7 @@ def default_cs_perturbation_bank(
         ("integrator", "x", 6, "integrator_x"),
         ("integrator", "y", 7, "integrator_y"),
     )
-    for timing_bin in DEFAULT_PLANT_TIMING_BINS:
+    for timing_bin in calibration_defaults.plant_timing_bins:
         start = int(timing_bin.start_time_index)
         duration = int(timing_bin.duration_steps)
         for axis in ("x", "y"):
@@ -306,7 +306,7 @@ def default_cs_perturbation_bank(
                         ),
                     )
                 )
-    for timing_bin in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS:
+    for timing_bin in calibration_defaults.controller_visible_timing_bins:
         start = int(timing_bin.start_time_index)
         duration = int(timing_bin.duration_steps)
         for channel, family, basis, description, semantic_family, provenance in (
@@ -484,9 +484,12 @@ def default_cs_perturbation_bank(
             ],
         },
         "timing_bin_conventions": {
-            "plant_side": [timing_bin.to_json() for timing_bin in DEFAULT_PLANT_TIMING_BINS],
+            "plant_side": [
+                timing_bin.to_json() for timing_bin in calibration_defaults.plant_timing_bins
+            ],
             "controller_visible": [
-                timing_bin.to_json() for timing_bin in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS
+                timing_bin.to_json()
+                for timing_bin in calibration_defaults.controller_visible_timing_bins
             ],
             "policy": (
                 "Initial-condition rows stay at t=0. Plant-side command_input and "
@@ -510,24 +513,24 @@ def default_cs_calibrated_perturbation_bank(
     """Return a reach-relative calibrated C&S perturbation-response bank."""
 
     from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
-        DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS,
-        DEFAULT_PLANT_TIMING_BINS,
-        DEFAULT_REACH_CALIBRATION_POINTS,
-        DEFAULT_REACH_RELATIVE_LEVELS,
         calibrated_amplitude_from_unit_sensitivity,
     )
-    from rlrmp.data_products.calibration import load_open_loop_calibration
+    from rlrmp.data_products.calibration import (
+        load_open_loop_calibration,
+        load_perturbation_calibration_defaults,
+    )
 
     calibration = load_open_loop_calibration()
+    calibration_defaults = load_perturbation_calibration_defaults()
     controller_visible_velocity_scale_m_s = calibration.controller_visible_velocity_scale_m_s
 
     reach = _select_reach_calibration_point(
         calibration_reach,
-        reach_points=DEFAULT_REACH_CALIBRATION_POINTS,
+        reach_points=calibration_defaults.reach_calibration_points,
     )
     levels = _select_reach_relative_levels(
         calibration_level,
-        levels=DEFAULT_REACH_RELATIVE_LEVELS,
+        levels=calibration_defaults.reach_relative_levels,
     )
     feedback_scale_manifest = _load_feedback_scale_manifest(
         feedback_scale_manifest,
@@ -624,7 +627,7 @@ def default_cs_calibrated_perturbation_bank(
                         )
                     )
 
-        for timing_bin in DEFAULT_PLANT_TIMING_BINS:
+    for timing_bin in calibration_defaults.plant_timing_bins:
             start = int(timing_bin.start_time_index)
             duration = int(timing_bin.duration_steps)
             for family, channel, units, basis, adapter, extra in (
@@ -765,7 +768,7 @@ def default_cs_calibrated_perturbation_bank(
                             )
                         )
 
-        for timing_bin in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS:
+    for timing_bin in calibration_defaults.controller_visible_timing_bins:
             start = int(timing_bin.start_time_index)
             duration = int(timing_bin.duration_steps)
             for channel, family, basis, semantic_family, channel_provenance in (
@@ -1732,7 +1735,7 @@ def evaluate_run_perturbation_bank(
 
     hps = dict_to_namespace(normalize_gru_hps(run.run_spec["hps"]), to_type=TreeNamespace)
     n_replicates = int(hps.model.n_replicates)
-    seed = int(run.run_spec.get("seed", 42))
+    seed = require_run_seed(run.run_spec, source=run.run_spec_path)
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
     model, checkpoint_selection = load_validation_selected_checkpoint_model(
         experiment=source_experiment,

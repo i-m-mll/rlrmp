@@ -17,7 +17,7 @@ from feedbax.contracts.manifest import ArtifactRef, TrainingRunManifest
 from feedbax.analysis.types import AnalysisInputData
 from feedbax.config.namespace import TreeNamespace
 
-from rlrmp.io import update_marked_section
+from rlrmp.io import read_json, update_marked_section
 from rlrmp.paths import REPO_ROOT
 
 TRAINING_DIAGNOSTICS_ANALYSIS_TYPE = "rlrmp.training_diagnostics_summary"
@@ -156,8 +156,16 @@ def summarize_training_diagnostics(
         "alerts": [],
         "latest": {},
     }
-    manifest = _read_json(manifest_path) if manifest_path is not None else None
-    training_summary = _read_json(summary_path) if summary_path is not None else None
+    manifest = (
+        read_json(manifest_path)
+        if manifest_path is not None and manifest_path.exists()
+        else None
+    )
+    training_summary = (
+        read_json(summary_path)
+        if summary_path is not None and summary_path.exists()
+        else None
+    )
     if manifest is not None:
         result["manifest_completed_batches"] = manifest.get("completed_batches")
     if training_summary is not None:
@@ -423,12 +431,6 @@ def _add_metric_alerts(result: dict[str, Any]) -> None:
     if gap_min is not None and gap_min < -1e-6:
         result["ok"] = False
         result["alerts"].append(f"PGD best/final gap is negative: {gap_min:.6g}")
-
-
-def _read_json(path: Path | None) -> dict[str, Any] | None:
-    if path is None or not path.exists():
-        return None
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _json_scalar(value: Any) -> float | int | bool:

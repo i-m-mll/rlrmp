@@ -22,11 +22,6 @@ from feedbax.contracts.graph import (
 )
 from jaxtyping import PRNGKeyArray
 
-from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
-    DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS,
-    DEFAULT_PLANT_TIMING_BINS,
-    DEFAULT_REACH_RELATIVE_LEVELS,
-)
 from rlrmp.data_products.broad_epsilon import (
     consumed_broad_epsilon_identity,
     load_broad_epsilon_anchors,
@@ -36,6 +31,7 @@ from rlrmp.data_products.calibration import (
     CALIBRATION_PRODUCT_ROLE,
     consumed_calibration_identity,
     load_open_loop_calibration,
+    load_perturbation_calibration_defaults,
 )
 from rlrmp.model.feedbax_channel_adapters import (
     additive_channel_payload_dim,
@@ -201,7 +197,8 @@ GRAPH_CHANNEL_BINS: tuple[PerturbationBin, ...] = (
 PLANT_TIMED_BINS: tuple[PerturbationBin, ...] = ("process_epsilon", "command_input")
 CONTROLLER_VISIBLE_TIMED_BINS: tuple[PerturbationBin, ...] = ("sensory_feedback",)
 REACH_RELATIVE_LEVELS: dict[str, float] = {
-    level.name: float(level.fraction_of_reach) for level in DEFAULT_REACH_RELATIVE_LEVELS
+    level.name: float(level.fraction_of_reach)
+    for level in load_perturbation_calibration_defaults().reach_relative_levels
 }
 TRAINING_REACH_RELATIVE_LEVELS: tuple[str, ...] = ("small", "moderate")
 EVAL_ONLY_REACH_RELATIVE_LEVELS: tuple[str, ...] = ("stress",)
@@ -215,9 +212,12 @@ PROCESS_EPSILON_COMPONENT_FAMILIES: tuple[str, ...] = (
     "process_epsilon_integrator_xy",
     "process_epsilon_integrator_xy",
 )
-TIMING_LABELS_PLANT = tuple(bin_.label for bin_ in DEFAULT_PLANT_TIMING_BINS)
+TIMING_LABELS_PLANT = tuple(
+    bin_.label for bin_ in load_perturbation_calibration_defaults().plant_timing_bins
+)
 TIMING_LABELS_CONTROLLER_VISIBLE = tuple(
-    bin_.label for bin_ in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS
+    bin_.label
+    for bin_ in load_perturbation_calibration_defaults().controller_visible_timing_bins
 )
 BROAD_EPSILON_DIM = 8
 BROAD_EPSILON_REFERENCE_REACH_M = 0.15
@@ -2003,8 +2003,11 @@ def calibrated_timing_basis_manifest(
 def calibrated_timing_bins_manifest(movement_age_timing: bool = False) -> dict[str, Any]:
     """Return the calibrated timing-bin contract for training/run specs."""
 
-    plant_bins = [bin_.to_json() for bin_ in DEFAULT_PLANT_TIMING_BINS]
-    visible_bins = [bin_.to_json() for bin_ in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS]
+    defaults = load_perturbation_calibration_defaults()
+    plant_timing_bins = defaults.plant_timing_bins
+    controller_visible_timing_bins = defaults.controller_visible_timing_bins
+    plant_bins = [bin_.to_json() for bin_ in plant_timing_bins]
+    visible_bins = [bin_.to_json() for bin_ in controller_visible_timing_bins]
     start_time_kind = (
         "movement_start_relative_offsets" if movement_age_timing else "absolute_trial_indices"
     )
@@ -2055,7 +2058,7 @@ def calibrated_timing_bins_manifest(movement_age_timing: bool = False) -> dict[s
             **{
                 family: {
                     "start_time_indices": [
-                        int(bin_.start_time_index) for bin_ in DEFAULT_PLANT_TIMING_BINS
+                        int(bin_.start_time_index) for bin_ in plant_timing_bins
                     ],
                     "duration_steps": 5,
                     "timing_set": "plant_side",
@@ -2067,7 +2070,7 @@ def calibrated_timing_bins_manifest(movement_age_timing: bool = False) -> dict[s
                 family: {
                     "start_time_indices": [
                         int(bin_.start_time_index)
-                        for bin_ in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS
+                        for bin_ in controller_visible_timing_bins
                     ],
                     "duration_steps": 5,
                     "timing_set": "controller_visible",
@@ -2377,16 +2380,19 @@ def perturbation_training_mixture_semantics(
 def config_from_target_hps(config: Any) -> TargetRelativeMultiTargetTrainingConfig:
     """Normalize an hps target-distribution payload to a dataclass."""
 
-    enabled = bool(getattr(config, "enabled", False))
-    force_filter_feedback = getattr(config, "force_filter_feedback", False)
+    enabled = bool(_payload_get(config, "enabled", False))
+    force_filter_feedback = _payload_get(config, "force_filter_feedback", False)
     if not isinstance(force_filter_feedback, bool):
-        force_filter_feedback = bool(getattr(force_filter_feedback, "enabled", False))
-    target_distribution = getattr(config, "target_distribution", None)
+        force_filter_feedback = bool(_payload_get(force_filter_feedback, "enabled", False))
+    target_distribution = _payload_get(config, "target_distribution", None)
 
-    def target_value(name: str, default: Any) -> Any:
-        return getattr(config, name, getattr(target_distribution, name, default))
-
-    profile = str(target_value("target_support_profile", DEFAULT_TARGET_SUPPORT_PROFILE))
+    profile = str(
+        _first_payload_value(
+            (config, "target_support_profile"),
+            (target_distribution, "target_support_profile"),
+            default=DEFAULT_TARGET_SUPPORT_PROFILE,
+        )
+    )
     default_config = target_relative_target_support_config(
         profile=profile,
         enabled=enabled,
@@ -2398,40 +2404,49 @@ def config_from_target_hps(config: Any) -> TargetRelativeMultiTargetTrainingConf
         target_support_profile=profile,
         seen_directions_deg=tuple(
             float(x)
-            for x in target_value(
-                "seen_directions_deg",
-                default_config.seen_directions_deg,
+            for x in _first_payload_value(
+                (config, "seen_directions_deg"),
+                (target_distribution, "seen_directions_deg"),
+                default=default_config.seen_directions_deg,
             )
         ),
         held_out_directions_deg=tuple(
             float(x)
-            for x in target_value(
-                "held_out_directions_deg",
-                default_config.held_out_directions_deg,
+            for x in _first_payload_value(
+                (config, "held_out_directions_deg"),
+                (target_distribution, "held_out_directions_deg"),
+                default=default_config.held_out_directions_deg,
             )
         ),
         seen_amplitudes_m=tuple(
             float(x)
-            for x in target_value(
-                "seen_amplitudes_m",
-                default_config.seen_amplitudes_m,
+            for x in _first_payload_value(
+                (config, "seen_amplitudes_m"),
+                (target_distribution, "seen_amplitudes_m"),
+                default=default_config.seen_amplitudes_m,
             )
         ),
         held_out_amplitudes_m=tuple(
             float(x)
-            for x in target_value(
-                "held_out_amplitudes_m",
-                default_config.held_out_amplitudes_m,
+            for x in _first_payload_value(
+                (config, "held_out_amplitudes_m"),
+                (target_distribution, "held_out_amplitudes_m"),
+                default=default_config.held_out_amplitudes_m,
             )
         ),
         original_target_anchor_m=tuple(
             float(x)
-            for x in target_value(
-                "original_target_anchor_m",
-                default_config.original_target_anchor_m,
+            for x in _first_payload_value(
+                (config, "original_target_anchor_m"),
+                (target_distribution, "original_target_anchor_m"),
+                default=default_config.original_target_anchor_m,
             )
         ),
-        support_metadata=target_value("support_metadata", default_config.support_metadata),
+        support_metadata=_first_payload_value(
+            (config, "support_metadata"),
+            (target_distribution, "support_metadata"),
+            default=default_config.support_metadata,
+        ),
     )
 
 
@@ -5632,11 +5647,17 @@ def _pulse_tensor_from_start(
 
 
 def _plant_timing_starts() -> tuple[int, ...]:
-    return tuple(int(bin_.start_time_index) for bin_ in DEFAULT_PLANT_TIMING_BINS)
+    return tuple(
+        int(bin_.start_time_index)
+        for bin_ in load_perturbation_calibration_defaults().plant_timing_bins
+    )
 
 
 def _controller_visible_timing_starts() -> tuple[int, ...]:
-    return tuple(int(bin_.start_time_index) for bin_ in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS)
+    return tuple(
+        int(bin_.start_time_index)
+        for bin_ in load_perturbation_calibration_defaults().controller_visible_timing_bins
+    )
 
 
 def _calibrated_timing_basis(

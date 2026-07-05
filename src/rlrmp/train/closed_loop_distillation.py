@@ -26,6 +26,7 @@ from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 from feedbax.objectives.loss import AbstractLoss, TermTree
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
 from rlrmp.model.trainable import staged_network_trainable_parts
+from rlrmp.runtime.run_spec_access import require_run_seed
 from rlrmp.runtime.training_run_specs import (
     CLOSED_LOOP_DISTILLATION_METHOD_REF,
     attach_distillation_training_specs,
@@ -385,6 +386,7 @@ def build_closed_loop_distillation_spec(args: argparse.Namespace) -> dict[str, A
                 _arg_value(args, "teacher_gains_key", DEFAULT_TEACHER_GAINS_KEY)
             ),
             "required_package_key": DEFAULT_TEACHER_GAINS_KEY,
+            "horizon": 60,
             "matched_inputs": [
                 "seeds",
                 "trial specifications",
@@ -980,7 +982,7 @@ def run_closed_loop_distillation_training(
         n_replicates=train_replicates,
         hidden_size=train_hidden,
     )
-    train_key = jr.PRNGKey(int(spec.get("seed", 0))) if key is None else key
+    train_key = jr.PRNGKey(require_run_seed(spec)) if key is None else key
     key_init, key_train = jr.split(train_key, 2)
     pair = setup_pair_fn(hps, key=key_init)
     trainer = trainer_factory(spec, n_batches=train_batches)

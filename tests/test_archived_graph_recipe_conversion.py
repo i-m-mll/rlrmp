@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from feedbax.component_registry import ComponentRegistry
 from feedbax.contracts.graph import GraphSpec
 from feedbax.contracts.graphs.serialization import spec_to_graph
 from feedbax.runtime.graph import Graph
@@ -123,6 +124,7 @@ def test_converted_recipe_set_is_hash_pinned_by_conversion_manifest() -> None:
 
 def test_every_converted_recipe_loads_with_plain_feedbax_spec_to_graph() -> None:
     conversion = _conversion_manifest()
+    registry = ComponentRegistry(load_user_components=False, discover_plugins=False)
     loaded = 0
 
     for entry in conversion["entries"]:
@@ -170,7 +172,7 @@ def test_every_converted_recipe_loads_with_plain_feedbax_spec_to_graph() -> None
 
         expected_cell = "VanillaRNN" if entry["controller_kind"] == "vanilla_rnn" else "GRU"
         assert payload["subgraphs"]["net"]["nodes"]["cell"]["type"] == expected_cell
-        graph = spec_to_graph(GraphSpec.model_validate(payload))
+        graph = spec_to_graph(GraphSpec.model_validate(payload), component_registry=registry)
         assert isinstance(graph.nodes["net"], Graph)
         assert graph.nodes["net"].nodes["cell"].__class__.__name__ == expected_cell
         loaded += 1

@@ -8,6 +8,7 @@ import math
 import subprocess
 import sys
 import warnings
+from dataclasses import asdict
 from functools import partial
 from pathlib import Path
 
@@ -59,11 +60,13 @@ import rlrmp.train.cs_perturbation_training as cs_perturbation_training
 from rlrmp.train.cs_nominal_gru import (
     AdaptiveEpsilonState,
     CS_DELAYED_REACH_TASK_TYPE,
+    CsNominalGruConfig,
     DEFAULT_DELAYED_P_CATCH_TRIAL,
     DEFAULT_STOCHASTIC_PRESET,
     DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON,
     DELAYED_REACH_TRAINING_MODE,
     GradientDiagnosticsState,
+    SCHEMA_VERSION,
     TrainingState,
     UpdateDiagnosticsState,
     build_graph_bundle,
@@ -71,6 +74,7 @@ from rlrmp.train.cs_nominal_gru import (
     build_hps,
     build_parser,
     build_run_spec_execution_context,
+    cs_nominal_gru_config_from_args,
     derive_spec_dir,
     derive_spec_path,
     _adaptive_epsilon_damage_target,
@@ -209,6 +213,36 @@ def _args(**overrides) -> argparse.Namespace:
     return args
 
 
+def _cs_nominal_gru_golden_fixture() -> dict:
+    return json.loads(
+        Path("tests/fixtures/cs_nominal_gru_config_golden.json").read_text(encoding="utf-8")
+    )
+
+
+def _stable_golden_run_spec_payload(payload: dict) -> dict:
+    fixture = _cs_nominal_gru_golden_fixture()
+    stable = {key: payload[key] for key in fixture["stable_run_spec_keys"]}
+    canonical = json.loads(
+        json.dumps(
+            stable,
+            sort_keys=True,
+        )
+    )
+    canonical["rlrmp_run_spec"]["provenance"]["git"]["rlrmp_commit"] = "<current-commit>"
+    return canonical
+
+
+def _cs_stochastic_gru_run_spec_paths() -> list[Path]:
+    paths: list[Path] = []
+    for path in sorted(Path("results").rglob("*.json")):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if payload.get("schema_version") != SCHEMA_VERSION:
+            continue
+        if {"hps", "feedbax_graph", "training_script"}.issubset(payload):
+            paths.append(path)
+    return paths
+
+
 def _parse_planned_training_command(command: list[str]) -> argparse.Namespace:
     script_index = command.index("scripts/train_cs_nominal_gru.py")
     return build_parser().parse_args(command[script_index + 1 :])
@@ -307,6 +341,71 @@ def test_target_support_cli_default_is_band16_fixed_reach() -> None:
 
     assert DEFAULT_TARGET_SUPPORT_PROFILE == TARGET_SUPPORT_PROFILE_CONST_BAND16
     assert args.target_support_profile == TARGET_SUPPORT_PROFILE_CONST_BAND16
+
+
+def test_cs_nominal_gru_config_defaults_match_pre_refactor_fixture() -> None:
+    fixture = _cs_nominal_gru_golden_fixture()
+    expected = dict(fixture["cases"]["default"]["parsed_args"])
+    expected["dry_run"] = False
+
+    assert CsNominalGruConfig().model_dump(mode="python") == expected
+    assert vars(build_parser().parse_args([])) == expected
+
+
+def test_cs_nominal_gru_config_rejects_extra_fields() -> None:
+    with pytest.raises(ValidationError):
+        CsNominalGruConfig.model_validate({"seed": 42, "unknown_field": True})
+
+
+def test_cs_nominal_gru_argparse_defaults_and_choices_derive_from_config() -> None:
+    parser = build_parser()
+    help_text = parser.format_help()
+
+    assert parser.parse_args(["--seed", "7"]).seed == 7
+    assert parser.parse_args(
+        ["--target-support-profile", "const_sparse8"]
+    ).target_support_profile == (TARGET_SUPPORT_PROFILE_CONST_SPARSE8)
+    assert parser.parse_args(
+        ["--broad-epsilon-pgd-inner-optimizer-method", "adam"]
+    ).broad_epsilon_pgd_inner_optimizer_method == (BROAD_EPSILON_PGD_ADAM)
+    assert "--seed SEED" in help_text
+    assert "(default: 42)" in help_text
+    assert "{old_020a65b,const_dense_all,const_sparse8,const_band8,const_band16,const_band36}" in (
+        help_text
+    )
+    assert "{projected_gradient_ascent,adam}" in help_text
+
+
+def test_cs_nominal_gru_pre_refactor_golden_payloads_stay_stable() -> None:
+    fixture = _cs_nominal_gru_golden_fixture()
+    parser = build_parser()
+
+    for case in fixture["cases"].values():
+        args = parser.parse_args(case["argv"])
+        config = cs_nominal_gru_config_from_args(args)
+        payload = write_run_spec(args)["run_spec"]
+
+        assert config.model_dump(mode="python") == case["parsed_args"]
+        assert _stable_golden_run_spec_payload(payload) == case["stable_run_spec_payload"]
+
+
+def test_cs_nominal_gru_config_validates_tracked_cs_stochastic_gru_corpus() -> None:
+    paths = _cs_stochastic_gru_run_spec_paths()
+    clean_paths = []
+    fail_closed: set[Path] = set()
+
+    assert len(paths) == 134
+    for path in paths:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        try:
+            CsNominalGruConfig.model_validate(cs_nominal_gru._args_values_from_run_spec(payload))
+        except ValidationError:
+            fail_closed.add(path)
+        else:
+            clean_paths.append(path)
+
+    assert len(clean_paths) == 134
+    assert fail_closed == set()
 
 
 def _where_train() -> dict[int, object]:
@@ -829,16 +928,12 @@ def test_resume_optimizer_diagnostics_resize_pads_cross_length_buffers() -> None
 def test_adaptive_epsilon_zero_adversary_guard_stops_after_two_active_checkpoints() -> None:
     guard = _initial_adaptive_epsilon_zero_guard(enabled=True)
     inactive_zero = {
-        "adaptive_epsilon_adaptive_update_inner_selected_objective_gain_over_zero": np.array(
-            [0.0]
-        ),
+        "adaptive_epsilon_adaptive_update_inner_selected_objective_gain_over_zero": np.array([0.0]),
         "adaptive_epsilon_target_damage": np.array([0.0]),
         "adaptive_epsilon_outer_weight": np.array([0.0]),
     }
     active_zero = {
-        "adaptive_epsilon_adaptive_update_inner_selected_objective_gain_over_zero": np.array(
-            [0.0]
-        ),
+        "adaptive_epsilon_adaptive_update_inner_selected_objective_gain_over_zero": np.array([0.0]),
         "adaptive_epsilon_target_damage": np.array([100.0]),
         "adaptive_epsilon_outer_weight": np.array([1.0]),
     }
@@ -874,9 +969,7 @@ def test_adaptive_epsilon_zero_adversary_guard_stops_after_two_active_checkpoint
 
 def test_adaptive_epsilon_zero_guard_survives_checkpoint_resume(tmp_path: Path) -> None:
     active_zero = {
-        "adaptive_epsilon_adaptive_update_inner_selected_objective_gain_over_zero": np.array(
-            [0.0]
-        ),
+        "adaptive_epsilon_adaptive_update_inner_selected_objective_gain_over_zero": np.array([0.0]),
         "adaptive_epsilon_target_damage": np.array([100.0]),
         "adaptive_epsilon_outer_weight": np.array([1.0]),
     }
@@ -1011,9 +1104,7 @@ def test_adaptive_epsilon_lambda_update_uses_clipped_log_ratio() -> None:
         target_damage=100.0,
         measured_damage=1.0e9,
     )
-    assert clipped_diagnostics["lambda_log_step"] == pytest.approx(
-        cfg.lambda_update.max_log_step
-    )
+    assert clipped_diagnostics["lambda_log_step"] == pytest.approx(cfg.lambda_update.max_log_step)
     assert clipped_state.lambda_value == pytest.approx(
         base_state.lambda_value * math.exp(cfg.lambda_update.max_log_step)
     )
@@ -2765,6 +2856,7 @@ def test_feedbax_training_run_spec_rejects_cs_fields(tmp_path: Path) -> None:
             spec_dir=str(tmp_path / "spec"),
             smoke=True,
             dry_run=True,
+            gradient_clip_norm=5.0,
         )
     )
     feedbax_spec = result["run_spec"][FEEDBAX_TRAINING_RUN_SPEC_KEY]
@@ -2809,6 +2901,7 @@ def test_cs_gru_hps_adapter_matches_expected_training_run_spec(
         spec_dir=str(tmp_path / variant / "spec"),
         smoke=True,
         dry_run=True,
+        gradient_clip_norm=5.0,
         **overrides,
     )
     result = write_run_spec(args)
@@ -2831,6 +2924,7 @@ def test_training_run_spec_graph_guard_rejects_diverging_hps(tmp_path: Path) -> 
         spec_dir=str(tmp_path / "spec"),
         smoke=True,
         dry_run=True,
+        gradient_clip_norm=5.0,
     )
     payload = write_run_spec(args)["run_spec"]
     diverging_hps = build_hps(_args(hidden_size=5, n_replicates=1))
@@ -3629,6 +3723,7 @@ def test_movement_age_timing_run_spec_distinguishes_timing_basis(tmp_path: Path)
             ),
             parser=parser,
         )
+
 
 def test_target_relative_feedback_sign_contract() -> None:
     spec = build_cs_lss_gru_graph_spec(
@@ -5577,6 +5672,69 @@ def test_target_hps_without_profile_normalizes_to_band16_default() -> None:
     assert config.held_out_amplitudes_m == (TARGET_SUPPORT_CONST_REACH_M,)
 
 
+def test_target_hps_normalization_matches_frozen_override_outputs() -> None:
+    cases = {
+        "nested_old": TreeNamespace(
+            enabled=True,
+            force_filter_feedback=TreeNamespace(enabled=True),
+            target_distribution=TreeNamespace(
+                target_support_profile=TARGET_SUPPORT_PROFILE_020A65B,
+                seen_directions_deg=(0.0, 90.0),
+                held_out_directions_deg=(180.0,),
+                seen_amplitudes_m=(0.15,),
+                held_out_amplitudes_m=(0.2,),
+                original_target_anchor_m=(0.15, 0.0),
+                support_metadata={"source": "nested"},
+            ),
+        ),
+        "top_level_overrides_nested": TreeNamespace(
+            enabled=True,
+            force_filter_feedback=False,
+            target_support_profile=TARGET_SUPPORT_PROFILE_CONST_SPARSE8,
+            seen_directions_deg=(0.0, 180.0),
+            held_out_directions_deg=(90.0, 270.0),
+            seen_amplitudes_m=(0.15,),
+            held_out_amplitudes_m=(0.12,),
+            original_target_anchor_m=(0.15, 0.0),
+            support_metadata={"source": "top"},
+            target_distribution=TreeNamespace(
+                target_support_profile=TARGET_SUPPORT_PROFILE_020A65B,
+                seen_directions_deg=(45.0,),
+                support_metadata={"source": "nested"},
+            ),
+        ),
+    }
+
+    frozen_outputs = {
+        "nested_old": {
+            "enabled": True,
+            "force_filter_feedback": True,
+            "target_support_profile": TARGET_SUPPORT_PROFILE_020A65B,
+            "seen_directions_deg": (0.0, 90.0),
+            "held_out_directions_deg": (180.0,),
+            "seen_amplitudes_m": (0.15,),
+            "held_out_amplitudes_m": (0.2,),
+            "original_target_anchor_m": (0.15, 0.0),
+            "support_metadata": (("source", "nested"),),
+        },
+        "top_level_overrides_nested": {
+            "enabled": True,
+            "force_filter_feedback": False,
+            "target_support_profile": TARGET_SUPPORT_PROFILE_CONST_SPARSE8,
+            "seen_directions_deg": (0.0, 180.0),
+            "held_out_directions_deg": (90.0, 270.0),
+            "seen_amplitudes_m": (0.15,),
+            "held_out_amplitudes_m": (0.12,),
+            "original_target_anchor_m": (0.15, 0.0),
+            "support_metadata": (("source", "top"),),
+        },
+    }
+
+    assert {name: asdict(config_from_target_hps(case)) for name, case in cases.items()} == (
+        frozen_outputs
+    )
+
+
 def test_33b0dcb_target_support_planned_rows_and_specs(tmp_path: Path) -> None:
     rows = planned_33b0dcb_target_support_rows()
 
@@ -5895,6 +6053,7 @@ def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Pat
     )
     assert diagnostics_manifest["completed_batches"] == 4
     assert diagnostics_manifest["gradient_clip_active"] is False
+    assert diagnostics_manifest["gradient_clip_norm"] is None
     assert diagnostics_manifest["training_history_path"] == str(output_dir / "training_history.eqx")
     assert "optimizer_gradient_norm_pre_clip" in diagnostics_manifest["arrays"]
     assert summary["training_duration_seconds"] > 0

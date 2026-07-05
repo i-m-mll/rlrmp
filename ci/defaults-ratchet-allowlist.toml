@@ -1,0 +1,1954 @@
+# Shrink-only defaults-ratchet allowlist for issue 5b3aabe.
+#
+# Enforced by tests/test_defaults_ratchet.py and
+# src/rlrmp/runtime/defaults_scan.py. This file pins the current
+# inventory of .get("key", literal_default) and getattr(obj, "key",
+# literal_default) fallback sites in the scan targets named by the scanner.
+#
+# Direction rules:
+#   - Removing code sites never fails the test; stale entries may remain here
+#     while sibling lanes delete defaults in parallel.
+#   - Adding a new or extra occurrence of a (path, key, literal_repr) triple
+#     fails unless this allowlist is deliberately updated with an owning issue.
+#
+# Phase-2 pruning: this file was regenerated against the current 5b3aabe
+# worktree, reducing the frozen occurrence count from 420 to 367.
+#
+# Owner groups used for this seed:
+#   - 9f6d2a5: Seed/dt/benchmark fallback remediation lane.
+#   - 1d59c4d: Training-run spec fallback remediation lane.
+#   - cc3a61f: Recipe/report/training fallback remediation lane.
+#   - 7cfe941: Calibration pipeline/data-product fallback remediation lane.
+#   - 5b3aabe: Phase-1 defaults ratchet catch-all until a narrower owner is split.
+
+schema_version = 1
+owning_issue = "5b3aabe"
+
+# 9f6d2a5: Seed/dt/benchmark fallback remediation lane.
+[[default_fallback_sites]]
+path = "src/rlrmp/benchmarks/packing.py"
+key = "cpu_threads_per_worker"
+literal_repr = "1"
+count = 1
+owner = "9f6d2a5"
+note = "Seed/dt/benchmark fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/benchmarks/packing.py"
+key = "enabled"
+literal_repr = "False"
+count = 3
+owner = "9f6d2a5"
+note = "Seed/dt/benchmark fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/benchmarks/packing.py"
+key = "level"
+literal_repr = "'not_applicable'"
+count = 2
+owner = "9f6d2a5"
+note = "Seed/dt/benchmark fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/benchmarks/packing.py"
+key = "n_steps"
+literal_repr = "0"
+count = 1
+owner = "9f6d2a5"
+note = "Seed/dt/benchmark fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/benchmarks/packing.py"
+key = "step_size_fraction_of_l2_radius"
+literal_repr = "0.0"
+count = 1
+owner = "9f6d2a5"
+note = "Seed/dt/benchmark fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/benchmarks/packing.py"
+key = "xla_cpu_thread_flags"
+literal_repr = "True"
+count = 1
+owner = "9f6d2a5"
+note = "Seed/dt/benchmark fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "seed"
+literal_repr = "42"
+count = 1
+owner = "9f6d2a5"
+note = "Seed/dt/benchmark fallback remediation lane."
+
+
+# 1d59c4d: Training-run spec fallback remediation lane.
+[[default_fallback_sites]]
+path = "src/rlrmp/runtime/training_run_specs.py"
+key = "dirty"
+literal_repr = "False"
+count = 1
+owner = "1d59c4d"
+note = "Training-run spec fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/runtime/training_run_specs.py"
+key = "module"
+literal_repr = "'rlrmp.train.closed_loop_distillation'"
+count = 1
+owner = "1d59c4d"
+note = "Training-run spec fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/runtime/training_run_specs.py"
+key = "n_train_batches"
+literal_repr = "0"
+count = 1
+owner = "1d59c4d"
+note = "Training-run spec fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/runtime/training_run_specs.py"
+key = "run_spec_path"
+literal_repr = "'run.json'"
+count = 1
+owner = "1d59c4d"
+note = "Training-run spec fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/runtime/training_run_specs.py"
+key = "setup_function"
+literal_repr = "'rlrmp.train.task_model.setup_task_model_pair'"
+count = 1
+owner = "1d59c4d"
+note = "Training-run spec fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/runtime/training_run_specs.py"
+key = "trainer"
+literal_repr = "'rlrmp.train.guided_distillation.run_guided_distillation_training'"
+count = 1
+owner = "1d59c4d"
+note = "Training-run spec fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/runtime/training_run_specs.py"
+key = "type"
+literal_repr = "'rlrmp_task'"
+count = 1
+owner = "1d59c4d"
+note = "Training-run spec fallback remediation lane."
+
+
+# cc3a61f: Recipe/report/training fallback remediation lane.
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py"
+key = "direction"
+literal_repr = "(0.0, 0.0)"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/reports.py"
+key = "logical_name"
+literal_repr = "'unknown'"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/reports.py"
+key = "role"
+literal_repr = "'unknown'"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/reports.py"
+key = "status"
+literal_repr = "'unavailable'"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/eval/recipes.py"
+key = "alignment_mode"
+literal_repr = "'reach_locked'"
+count = 2
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/eval/recipes.py"
+key = "checkpoint_selection_mode"
+literal_repr = "'sparse_history'"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/eval/recipes.py"
+key = "extlqg_physical_dim"
+literal_repr = "8"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/eval/recipes.py"
+key = "mode"
+literal_repr = "'precomputed'"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/eval/recipes.py"
+key = "mode"
+literal_repr = "'raw'"
+count = 2
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/eval/recipes.py"
+key = "n_rollout_trials"
+literal_repr = "8"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/eval/recipes.py"
+key = "use_validation_selected_checkpoints"
+literal_repr = "False"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/eval/recipes.py"
+key = "write_bulk_arrays"
+literal_repr = "False"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "__version__"
+literal_repr = "'unknown'"
+count = 2
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "adam_b1"
+literal_repr = "0.9"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "adam_b2"
+literal_repr = "0.999"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "adam_eps"
+literal_repr = "1e-08"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "adam_learning_rate"
+literal_repr = "0.0003"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "adaptive_epsilon_curriculum"
+literal_repr = "False"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "batch_size"
+literal_repr = "250"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "budget_scale"
+literal_repr = "1.0"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "budget_schedule_mode"
+literal_repr = "'fixed'"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "calibrated_timing"
+literal_repr = "False"
+count = 4
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "calibration_regime"
+literal_repr = "'open_loop_all'"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "catch_weight"
+literal_repr = "1.0"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "checkpoints_seen"
+literal_repr = "0"
+count = 2
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "combined_amplitude_scale"
+literal_repr = "0.5"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "combined_fraction"
+literal_repr = "0.1"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "completed_batches"
+literal_repr = "0"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "consecutive_active_zero_adversary_checkpoints"
+literal_repr = "0"
+count = 2
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "constant_lr_iterations"
+literal_repr = "0"
+count = 2
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "cosine_annealing_alpha"
+literal_repr = "1.0"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "delayed_pre_go_force_filter_hold"
+literal_repr = "0.0"
+count = 2
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "delayed_pre_go_start_pos_hold"
+literal_repr = "0.0"
+count = 2
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "delayed_pre_go_start_pos_hold_norm"
+literal_repr = "'l2'"
+count = 2
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "delayed_pre_go_zero_vel_hold"
+literal_repr = "0.0"
+count = 2
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "depth"
+literal_repr = "2"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "effector_final_vel"
+literal_repr = "0.0"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "enabled"
+literal_repr = "False"
+count = 19
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "energy_penalty_gamma"
+literal_repr = "1.0"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "energy_penalty_scale"
+literal_repr = "1.0"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "force_filter_feedback"
+literal_repr = "False"
+count = 4
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "has_bias"
+literal_repr = "False"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "hidden_size"
+literal_repr = "180"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "initial_hidden_encoder"
+literal_repr = "False"
+count = 2
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "learning_rate"
+literal_repr = "0.0003"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "learning_rate_0"
+literal_repr = "0.01"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "level"
+literal_repr = "'moderate'"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "lr_schedule"
+literal_repr = "'delayed_cosine'"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "movement_age_timing"
+literal_repr = "False"
+count = 2
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "n_ascent_steps_per_controller_step"
+literal_repr = "5"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "n_batches_condition"
+literal_repr = "12000"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "n_input_only"
+literal_repr = "0"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "n_readout_only"
+literal_repr = "0"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "n_recurrent_only"
+literal_repr = "0"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "n_replicates"
+literal_repr = "1"
+count = 4
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "n_replicates"
+literal_repr = "5"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "n_steps"
+literal_repr = "3"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "nn_hidden"
+literal_repr = "0.0"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "nn_output_jerk"
+literal_repr = "0.0"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "nn_output_pre_go"
+literal_repr = "0.0"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "no_catch_weight"
+literal_repr = "1.0"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "no_integrator_state"
+literal_repr = "False"
+count = 4
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "nominal_fraction"
+literal_repr = "0.45"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "physical_level"
+literal_repr = "'moderate'"
+count = 2
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "physical_level_fraction_of_reach"
+literal_repr = "0.1"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "physical_state_dim"
+literal_repr = "6"
+count = 3
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "physical_state_dim"
+literal_repr = "8"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "reach_length_scaling"
+literal_repr = "True"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "schedule_start_batch"
+literal_repr = "0"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "seed_validation"
+literal_repr = "0"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "shape"
+literal_repr = "(0,)"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "should_stop"
+literal_repr = "False"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "single_fraction"
+literal_repr = "0.45"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "sisu_condition_input"
+literal_repr = "'auto'"
+count = 2
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "sisu_gating"
+literal_repr = "'additive'"
+count = 2
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "state_dim"
+literal_repr = "36"
+count = 2
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "state_dim"
+literal_repr = "48"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "step_size_fraction"
+literal_repr = "0.25"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "training_diagnostics"
+literal_repr = "True"
+count = 4
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "update_count"
+literal_repr = "0"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "warmup_init_fraction"
+literal_repr = "0.0"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "warmup_init_fraction"
+literal_repr = "0.1"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "weight"
+literal_repr = "1.0"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "width"
+literal_repr = "64"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_perturbation_training.py"
+key = "budget_scale"
+literal_repr = "1.0"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_perturbation_training.py"
+key = "calibrated_timing"
+literal_repr = "False"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_perturbation_training.py"
+key = "combined_amplitude_scale"
+literal_repr = "0.5"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_perturbation_training.py"
+key = "combined_fraction"
+literal_repr = "0.1"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_perturbation_training.py"
+key = "command_input_pulse_n"
+literal_repr = "1.0"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_perturbation_training.py"
+key = "delayed_observation_offset_m"
+literal_repr = "0.01"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_perturbation_training.py"
+key = "enabled"
+literal_repr = "False"
+count = 4
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_perturbation_training.py"
+key = "force_filter_feedback"
+literal_repr = "False"
+count = 2
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_perturbation_training.py"
+key = "initial_position_offset_m"
+literal_repr = "0.01"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_perturbation_training.py"
+key = "initial_velocity_offset_m_s"
+literal_repr = "0.05"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_perturbation_training.py"
+key = "level"
+literal_repr = "'moderate'"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_perturbation_training.py"
+key = "movement_age_timing"
+literal_repr = "False"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_perturbation_training.py"
+key = "movement_epoch_only"
+literal_repr = "False"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_perturbation_training.py"
+key = "nominal_fraction"
+literal_repr = "0.45"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_perturbation_training.py"
+key = "physical_level"
+literal_repr = "'moderate'"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_perturbation_training.py"
+key = "process_epsilon_scale"
+literal_repr = "0.01"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_perturbation_training.py"
+key = "pulse_duration_steps"
+literal_repr = "5"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_perturbation_training.py"
+key = "pulse_start_step"
+literal_repr = "20"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_perturbation_training.py"
+key = "reach_length_scaling"
+literal_repr = "True"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_perturbation_training.py"
+key = "sensory_feedback_offset_m"
+literal_repr = "0.01"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_perturbation_training.py"
+key = "single_fraction"
+literal_repr = "0.45"
+count = 1
+owner = "cc3a61f"
+note = "Recipe/report/training fallback remediation lane."
+
+
+# 7cfe941: Calibration pipeline/data-product fallback remediation lane.
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py"
+key = "axis"
+literal_repr = "'axis'"
+count = 1
+owner = "7cfe941"
+note = "Calibration pipeline/data-product fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py"
+key = "bulk_manifest_path"
+literal_repr = "'not_materialized'"
+count = 1
+owner = "7cfe941"
+note = "Calibration pipeline/data-product fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py"
+key = "duration_steps"
+literal_repr = "1"
+count = 1
+owner = "7cfe941"
+note = "Calibration pipeline/data-product fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py"
+key = "regeneration_spec_path"
+literal_repr = "'not_materialized'"
+count = 1
+owner = "7cfe941"
+note = "Calibration pipeline/data-product fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py"
+key = "sign"
+literal_repr = "1"
+count = 3
+owner = "7cfe941"
+note = "Calibration pipeline/data-product fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py"
+key = "start_time_index"
+literal_repr = "0"
+count = 2
+owner = "7cfe941"
+note = "Calibration pipeline/data-product fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py"
+key = "timing_bin"
+literal_repr = "'initial_condition'"
+count = 1
+owner = "7cfe941"
+note = "Calibration pipeline/data-product fallback remediation lane."
+
+
+# 5b3aabe: Phase-1 defaults ratchet catch-all until a narrower owner is split.
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/bridge_certificates.py"
+key = "status"
+literal_repr = "'missing'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py"
+key = "checkpoint_policy"
+literal_repr = "'evaluation_manifest'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py"
+key = "graph_spec_path"
+literal_repr = "'model.graph.json'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/delayed_diagnostic_bundle.py"
+key = "baseline_window"
+literal_repr = "(0, 5)"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/delayed_diagnostic_bundle.py"
+key = "role"
+literal_repr = "'other'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/delayed_diagnostic_bundle.py"
+key = "source"
+literal_repr = "'caller_supplied'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/delayed_diagnostic_bundle.py"
+key = "units"
+literal_repr = "'arbitrary'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_broad_epsilon_attribution.py"
+key = "enabled"
+literal_repr = "True"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_broad_epsilon_attribution.py"
+key = "status"
+literal_repr = "'evaluated'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_broad_epsilon_attribution.py"
+key = "status"
+literal_repr = "'not_evaluated'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_broad_epsilon_attribution.py"
+key = "status"
+literal_repr = "'unknown'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py"
+key = "final_vs_selected_validation_degradation"
+literal_repr = "0.0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py"
+key = "replicate"
+literal_repr = "0"
+count = 2
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py"
+key = "scoring_validation_objective"
+literal_repr = "0.0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py"
+key = "family"
+literal_repr = "'unknown_family'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py"
+key = "feedback_minus_validation_batches"
+literal_repr = "0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py"
+key = "label"
+literal_repr = "'inconclusive'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py"
+key = "n_available_feedback_bins"
+literal_repr = "0"
+count = 2
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py"
+key = "sign"
+literal_repr = "0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py"
+key = "status"
+literal_repr = "'inconclusive'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py"
+key = "status"
+literal_repr = "'not_available'"
+count = 4
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py"
+key = "status"
+literal_repr = "'unknown'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_map_error_decomposition.py"
+key = "status"
+literal_repr = "'not_available'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+key = "allow_zero_graph_effect"
+literal_repr = "False"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+key = "amplitude"
+literal_repr = "1.0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+key = "axis_filter"
+literal_repr = "('x', 'y')"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+key = "blocked"
+literal_repr = "0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+key = "duration_steps"
+literal_repr = "1"
+count = 6
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+key = "evaluated"
+literal_repr = "0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+key = "n_rows"
+literal_repr = "0"
+count = 2
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+key = "not_applicable"
+literal_repr = "0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+key = "not_implemented"
+literal_repr = "0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+key = "reason"
+literal_repr = "'unspecified'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+key = "start_time_index"
+literal_repr = "0"
+count = 6
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+key = "statistic"
+literal_repr = "'p95_norm'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+key = "status"
+literal_repr = "'available'"
+count = 2
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+key = "status"
+literal_repr = "'not_available'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_postrun_materialization.py"
+key = "materialization_status"
+literal_repr = "'unknown'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_postrun_materialization.py"
+key = "reason"
+literal_repr = "'feedback_ablation_not_materialized'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_postrun_materialization.py"
+key = "status"
+literal_repr = "'not_available'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_postrun_materialization.py"
+key = "status"
+literal_repr = "'unknown'"
+count = 2
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_worst_case_epsilon_audit.py"
+key = "budget_scale"
+literal_repr = "1.0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_worst_case_epsilon_audit.py"
+key = "enabled"
+literal_repr = "False"
+count = 3
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_worst_case_epsilon_audit.py"
+key = "ndim"
+literal_repr = "0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_worst_case_epsilon_audit.py"
+key = "reach_length_scaling"
+literal_repr = "False"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_worst_case_epsilon_audit.py"
+key = "reference_reach_m"
+literal_repr = "0.15"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_worst_case_epsilon_audit.py"
+key = "shape"
+literal_repr = "(0,)"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/hinf_phenotype_sidecar.py"
+key = "blocker"
+literal_repr = "'see sidecar JSON'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/hinf_phenotype_sidecar.py"
+key = "formal_hinf_equivalence"
+literal_repr = "'not_claimed'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/hinf_phenotype_sidecar.py"
+key = "reason"
+literal_repr = "'source missing'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/hinf_phenotype_sidecar.py"
+key = "reason"
+literal_repr = "'source path not provided'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/hinf_phenotype_sidecar.py"
+key = "regeneration_spec_path"
+literal_repr = "'not_materialized'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/hinf_phenotype_sidecar.py"
+key = "status"
+literal_repr = "'available'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/hinf_phenotype_sidecar.py"
+key = "status"
+literal_repr = "'unknown'"
+count = 4
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/objective_comparator.py"
+key = "reason"
+literal_repr = "'not available'"
+count = 2
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/objective_comparator.py"
+key = "status"
+literal_repr = "'declared'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/objective_comparator.py"
+key = "status"
+literal_repr = "'not_available'"
+count = 6
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/output_feedback_interpolated_starts.py"
+key = "optimizer"
+literal_repr = "'lbfgsb'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/output_feedback_linear_recurrent.py"
+key = "lens_kind"
+literal_repr = "'unknown'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/output_feedback_linear_recurrent.py"
+key = "lens_source"
+literal_repr = "'unknown'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/output_feedback_linear_recurrent.py"
+key = "runtime_seconds"
+literal_repr = "0.0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/output_feedback_phase_modulated_recurrent.py"
+key = "is_reward_trained"
+literal_repr = "False"
+count = 8
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/output_feedback_phase_modulated_recurrent.py"
+key = "is_supervised_trained"
+literal_repr = "False"
+count = 9
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/output_feedback_phase_modulated_recurrent.py"
+key = "runtime_seconds"
+literal_repr = "0.0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/output_feedback_phase_modulated_recurrent.py"
+key = "supervised_objective"
+literal_repr = "'action'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/output_feedback_time_constrained.py"
+key = "runtime_seconds"
+literal_repr = "0.0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/cs_lss_gru.py"
+key = "h0_context_source"
+literal_repr = "'target_relative_delayed_feedback'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/cs_lss_gru.py"
+key = "hidden_type"
+literal_repr = "'GRUCell'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/cs_lss_gru.py"
+key = "n_input_only"
+literal_repr = "0"
+count = 2
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/cs_lss_gru.py"
+key = "n_input_readout"
+literal_repr = "0"
+count = 2
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/cs_lss_gru.py"
+key = "n_readout_only"
+literal_repr = "0"
+count = 2
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/cs_lss_gru.py"
+key = "n_recurrent_only"
+literal_repr = "0"
+count = 2
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/cs_lss_gru.py"
+key = "output_block_size"
+literal_repr = "1"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/cs_lss_gru.py"
+key = "shape"
+literal_repr = "(0,)"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/cs_lss_gru.py"
+key = "sisu_gating"
+literal_repr = "'additive'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "K_init_scale"
+literal_repr = "0.0"
+count = 2
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "activation"
+literal_repr = "'identity'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "baseline"
+literal_repr = "1.0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "bias_init"
+literal_repr = "0.0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "gain_init"
+literal_repr = "0.0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "hidden_size"
+literal_repr = "1"
+count = 2
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "hidden_type"
+literal_repr = "'GRUCell'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "input_size"
+literal_repr = "1"
+count = 2
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "n_controls"
+literal_repr = "2"
+count = 3
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "n_input_only"
+literal_repr = "0"
+count = 3
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "n_input_readout"
+literal_repr = "0"
+count = 3
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "n_readout_only"
+literal_repr = "0"
+count = 3
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "n_recurrent_only"
+literal_repr = "0"
+count = 3
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "n_replicates"
+literal_repr = "1"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "n_states"
+literal_repr = "4"
+count = 2
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "noise_role"
+literal_repr = "'plant_process_load'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "noise_std"
+literal_repr = "0.0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "noise_timing"
+literal_repr = "'post_force_filter_pre_mechanics'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "out_size"
+literal_repr = "2"
+count = 2
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "output_size"
+literal_repr = "1"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "shape"
+literal_repr = "(0,)"
+count = 2
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "sisu_gating"
+literal_repr = "'additive'"
+count = 3
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "tau_rise"
+literal_repr = "0.0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "type"
+literal_repr = "'gusts'"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "u_ff_init_scale"
+literal_repr = "0.0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "use_bias"
+literal_repr = "True"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "zero_bias"
+literal_repr = "False"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/feedbax_graph.py"
+key = "zero_weight"
+literal_repr = "False"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/stochastic_runtime.py"
+key = "feedback_noise_std"
+literal_repr = "0.0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/model/stochastic_runtime.py"
+key = "motor_noise_std"
+literal_repr = "0.0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/closed_loop_distillation.py"
+key = "action_force_trajectory"
+literal_repr = "1.0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/closed_loop_distillation.py"
+key = "directional_input_output_jvp"
+literal_repr = "0.25"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/closed_loop_distillation.py"
+key = "enabled"
+literal_repr = "False"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/closed_loop_distillation.py"
+key = "endpoint"
+literal_repr = "1.0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/closed_loop_distillation.py"
+key = "kinematics_trajectory"
+literal_repr = "1.0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/closed_loop_distillation.py"
+key = "perturbation_response_trajectory"
+literal_repr = "1.0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/closed_loop_distillation.py"
+key = "settling"
+literal_repr = "0.5"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/closed_loop_distillation.py"
+key = "task_qr_rollout"
+literal_repr = "0.0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/closed_loop_distillation.py"
+key = "velocity"
+literal_repr = "1.0"
+count = 1
+owner = "5b3aabe"
+note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."

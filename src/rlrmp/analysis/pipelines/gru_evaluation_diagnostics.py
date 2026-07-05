@@ -39,6 +39,7 @@ from rlrmp.model.feedback_descriptors import (
     resolve_controller_feedback_view_from_gru_input,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path
+from rlrmp.runtime.run_spec_access import require_run_dt, require_run_seed
 from rlrmp.runtime.spec_migrations import (
     GRU_EVALUATION_DIAGNOSTICS_KIND,
     GRU_EVALUATION_DIAGNOSTICS_SCHEMA_VERSION,
@@ -432,7 +433,7 @@ def _evaluate_run_rollout_product(
 
     hps = dict_to_namespace(normalize_gru_hps(run.run_spec["hps"]), to_type=TreeNamespace)
     n_replicates = int(hps.model.n_replicates)
-    seed = int(run.run_spec.get("seed", 42))
+    seed = require_run_seed(run.run_spec, source=run.run_spec_path)
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
     if use_validation_selected_checkpoints:
         model, checkpoint_selection = load_validation_selected_checkpoint_model(
@@ -472,7 +473,7 @@ def _evaluate_run_rollout_product(
         model_arrays,
         jr.split(jr.PRNGKey(0), n_replicates),
     )
-    dt = float(run.run_spec.get("game_card", {}).get("dt", getattr(hps, "dt", 0.01)))
+    dt = require_run_dt(run.run_spec, hps, source=run.run_spec_path)
     return (
         SelectedEvalRolloutProduct.from_states(
             states,

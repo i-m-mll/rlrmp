@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from feedbax.analysis.reports import (
     REPORT_RENDER_ROLE,
@@ -19,12 +19,15 @@ from feedbax.contracts.manifest import (
     store_bytes_artifact,
     store_json_artifact,
 )
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from rlrmp.runtime.params_models import params_model_for, register_params_model
 from rlrmp.runtime.spec_migrations import (
     BRIDGE_CERTIFICATE_REPORT_PARAMS_KIND,
     FEEDBACK_QUALITY_LENS_REPORT_PARAMS_KIND,
     GRU_POSTRUN_REPORT_PARAMS_KIND,
     ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_KIND,
+    accept_rlrmp_spec_payload,
     stamp_current_schema,
 )
 
@@ -38,24 +41,6 @@ GRU_POSTRUN_REPORT_RENDER_ROLE = "rlrmp-gru-postrun-report-render"
 BRIDGE_CERTIFICATE_REPORT_RENDER_ROLE = "rlrmp-bridge-certificate-report-render"
 FEEDBACK_QUALITY_LENS_REPORT_RENDER_ROLE = "rlrmp-feedback-quality-lens-report-render"
 ROBUSTNESS_PHENOTYPE_REPORT_RENDER_ROLE = "rlrmp-robustness-phenotype-report-render"
-
-_DEFAULT_SOURCE_ROLES_BY_REPORT_TYPE = {
-    GRU_POSTRUN_REPORT_TYPE: (
-        "rlrmp-gru-standard-certificate-note",
-        "rlrmp-gru-objective-comparator-note",
-        "rlrmp-gru-map-decomposition-note",
-        "rlrmp-gru-perturbation-response-note",
-        "rlrmp-gru-feedback-ablation-note",
-    ),
-    BRIDGE_CERTIFICATE_REPORT_TYPE: (
-        "rlrmp-gru-standard-certificate-note",
-        "rlrmp-bridge-standard-certificate-note",
-    ),
-    FEEDBACK_QUALITY_LENS_REPORT_TYPE: ("rlrmp-feedback-quality-lens",),
-    ROBUSTNESS_PHENOTYPE_REPORT_TYPE: (
-        "rlrmp-robustness-phenotype-sidecar-note",
-    ),
-}
 
 _REPORT_KIND_BY_TYPE = {
     GRU_POSTRUN_REPORT_TYPE: GRU_POSTRUN_REPORT_PARAMS_KIND,
@@ -71,18 +56,68 @@ _RENDER_ROLE_BY_TYPE = {
     ROBUSTNESS_PHENOTYPE_REPORT_TYPE: ROBUSTNESS_PHENOTYPE_REPORT_RENDER_ROLE,
 }
 
-_TITLE_BY_TYPE = {
-    GRU_POSTRUN_REPORT_TYPE: "GRU Postrun Report",
-    BRIDGE_CERTIFICATE_REPORT_TYPE: "Bridge Certificate Notes",
-    FEEDBACK_QUALITY_LENS_REPORT_TYPE: "Feedback-Quality Lens Summary",
-    ROBUSTNESS_PHENOTYPE_REPORT_TYPE: "Robustness Phenotype Report",
-}
+
+class ReportStageParams(BaseModel):
+    """Params for rlrmp markdown report-stage recipes."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_roles_by_report_type: ClassVar[dict[str, tuple[str, ...]]] = {
+        GRU_POSTRUN_REPORT_TYPE: (
+            "rlrmp-gru-standard-certificate-note",
+            "rlrmp-gru-objective-comparator-note",
+            "rlrmp-gru-map-decomposition-note",
+            "rlrmp-gru-perturbation-response-note",
+            "rlrmp-gru-feedback-ablation-note",
+        ),
+        BRIDGE_CERTIFICATE_REPORT_TYPE: (
+            "rlrmp-gru-standard-certificate-note",
+            "rlrmp-bridge-standard-certificate-note",
+        ),
+        FEEDBACK_QUALITY_LENS_REPORT_TYPE: ("rlrmp-feedback-quality-lens",),
+        ROBUSTNESS_PHENOTYPE_REPORT_TYPE: (
+            "rlrmp-robustness-phenotype-sidecar-note",
+        ),
+    }
+    title_by_report_type: ClassVar[dict[str, str]] = {
+        GRU_POSTRUN_REPORT_TYPE: "GRU Postrun Report",
+        BRIDGE_CERTIFICATE_REPORT_TYPE: "Bridge Certificate Notes",
+        FEEDBACK_QUALITY_LENS_REPORT_TYPE: "Feedback-Quality Lens Summary",
+        ROBUSTNESS_PHENOTYPE_REPORT_TYPE: "Robustness Phenotype Report",
+    }
+
+    report_type: str = Field(exclude=True)
+    schema_id: str | None = None
+    schema_version: str | None = None
+    source_artifact_roles: list[str] = Field(default_factory=list)
+    title: str = "RLRMP Report"
+    include_json_artifact: bool = True
+    narrative: str | None = Field(
+        default=None,
+        description="Optional introductory Markdown copied from declarative bundle params.",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _fill_report_defaults(cls, data: Any) -> Any:
+        if not isinstance(data, Mapping):
+            return data
+        values = dict(data)
+        report_type = str(values.get("report_type", ""))
+        if values.get("source_artifact_roles") is None:
+            values["source_artifact_roles"] = list(
+                cls.source_roles_by_report_type.get(report_type, ())
+            )
+        if values.get("title") is None or values.get("title") == "":
+            values["title"] = cls.title_by_report_type.get(report_type, "RLRMP Report")
+        return values
 
 
 def register_rlrmp_report_recipes(*, replace: bool = True) -> None:
     """Register rlrmp report recipes with Feedbax."""
 
     for report_type in _REPORT_KIND_BY_TYPE:
+        register_params_model(report_type, ReportStageParams, replace=replace)
         register_report_recipe(report_type, artifact_markdown_report_recipe, replace=replace)
 
 
@@ -96,14 +131,31 @@ def report_stage_params(
     """Return schema-stamped params for an rlrmp report-stage recipe."""
 
     kind = _REPORT_KIND_BY_TYPE[report_type]
-    params = {
-        "source_artifact_roles": list(
-            source_artifact_roles or _DEFAULT_SOURCE_ROLES_BY_REPORT_TYPE[report_type]
-        ),
-        "title": title or _TITLE_BY_TYPE[report_type],
-        "include_json_artifact": include_json_artifact,
-    }
+    model = ReportStageParams.model_validate(
+        {
+            "report_type": report_type,
+            "source_artifact_roles": None
+            if not source_artifact_roles
+            else list(source_artifact_roles),
+            "title": title or None,
+            "include_json_artifact": include_json_artifact,
+        }
+    )
+    params = model.model_dump(mode="json", exclude_none=True)
     return stamp_current_schema(kind, params)
+
+
+def _validated_stage_params(report_spec: ReportSpec) -> ReportStageParams:
+    params = _stage_params_payload(report_spec)
+    kind = _REPORT_KIND_BY_TYPE[report_spec.report_type]
+    accepted = accept_rlrmp_spec_payload(kind, params)
+    model_class = params_model_for(report_spec.report_type)
+    return model_class.model_validate(
+        {
+            "report_type": report_spec.report_type,
+            **dict(accepted.payload),
+        }
+    )
 
 
 def artifact_markdown_report_recipe(
@@ -113,14 +165,8 @@ def artifact_markdown_report_recipe(
 ) -> ReportRecipeResult:
     """Render markdown by copying selected upstream analysis artifacts."""
 
-    params = _stage_params(report_spec)
-    source_roles = tuple(
-        str(role)
-        for role in params.get(
-            "source_artifact_roles",
-            _DEFAULT_SOURCE_ROLES_BY_REPORT_TYPE.get(report_spec.report_type, ()),
-        )
-    )
+    params = _validated_stage_params(report_spec)
+    source_roles = tuple(str(role) for role in params.source_artifact_roles)
     if not source_roles:
         raise ValueError(f"{report_spec.report_type} requires source_artifact_roles")
 
@@ -140,10 +186,10 @@ def artifact_markdown_report_recipe(
                 continue
             sections.append(_section_for_artifact(artifact))
 
-    title = str(params.get("title") or _TITLE_BY_TYPE.get(report_spec.report_type, "RLRMP Report"))
+    title = params.title
     markdown = _render_sections_markdown(
         title=title,
-        narrative=report_spec.narrative,
+        narrative=report_spec.narrative or params.narrative,
         report_type=report_spec.report_type,
         source_roles=source_roles,
         sections=sections,
@@ -161,12 +207,12 @@ def artifact_markdown_report_recipe(
         },
     )
     artifacts = [render]
-    if bool(params.get("include_json_artifact", True)):
+    if params.include_json_artifact:
         artifacts.append(
             store_json_artifact(
                 {
-                    "schema_id": params.get("schema_id"),
-                    "schema_version": params.get("schema_version"),
+                    "schema_id": params.schema_id,
+                    "schema_version": params.schema_version,
                     "report_type": report_spec.report_type,
                     "source_artifact_roles": list(source_roles),
                     "sections": sections,
@@ -184,13 +230,13 @@ def artifact_markdown_report_recipe(
             "source_roles": len(source_roles),
         },
         metadata={
-            "schema_id": params.get("schema_id"),
-            "schema_version": params.get("schema_version"),
+            "schema_id": params.schema_id,
+            "schema_version": params.schema_version,
         },
     )
 
 
-def _stage_params(report_spec: ReportSpec) -> dict[str, Any]:
+def _stage_params_payload(report_spec: ReportSpec) -> dict[str, Any]:
     """Return bundled or direct report params."""
 
     params = dict(report_spec.params)
@@ -286,6 +332,7 @@ __all__ = [
     "FEEDBACK_QUALITY_LENS_REPORT_TYPE",
     "GRU_POSTRUN_REPORT_RENDER_ROLE",
     "GRU_POSTRUN_REPORT_TYPE",
+    "ReportStageParams",
     "ROBUSTNESS_PHENOTYPE_REPORT_RENDER_ROLE",
     "ROBUSTNESS_PHENOTYPE_REPORT_TYPE",
     "artifact_markdown_report_recipe",

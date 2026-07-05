@@ -17,7 +17,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, NamedTuple
+from typing import Any, Callable, Literal, NamedTuple, Union, get_args, get_origin
 
 import equinox as eqx
 import jax
@@ -47,6 +47,7 @@ from feedbax.tasks import (
 )
 from jax_cookbook.tree import array_set as tree_set
 from jax_cookbook.tree import filter_spec_leaves
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from rlrmp.analysis.math.cs_game_card import (
     INIT_POS,
@@ -79,7 +80,6 @@ from rlrmp.model.feedbax_graph import (
 )
 from rlrmp.loss import (
     CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
-    CS_LOSS_OBJECTIVES,
     CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
     CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
 )
@@ -116,8 +116,6 @@ from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
     BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM,
     BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE,
-    BROAD_EPSILON_PGD_INNER_OPTIMIZER_METHODS,
-    BROAD_EPSILON_PGD_MECHANISMS,
     BROAD_EPSILON_PGD_PROJECTED_GRADIENT_ASCENT,
     BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
     BROAD_EPSILON_PGD_TRAINING_MODE,
@@ -129,11 +127,9 @@ from rlrmp.train.cs_perturbation_training import (
     POLICY_ADVERSARY_ENERGY_MODE,
     POLICY_ADVERSARY_MEMORYLESS_MLP,
     POLICY_ADVERSARY_PLAIN_MODE,
-    POLICY_ADVERSARY_POLICY_CLASSES,
     POLICY_ADVERSARY_TRAINING_MODE,
     FINITE_POLICY_BIAS_INPUT,
     FINITE_POLICY_GAINS_INPUT,
-    TARGET_SUPPORT_PROFILES,
     TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
     TARGET_RELATIVE_MULTITARGET_TRAINING_MODE,
     BroadFullStateEpsilonTrainingConfig,
@@ -169,11 +165,6 @@ from rlrmp.model.trainable import staged_network_trainable_parts, staged_network
 
 ISSUE_ID = "30f2313"
 SCHEMA_VERSION = "rlrmp.cs_stochastic_gru.v1"
-DEFAULT_EXPERIMENT = ISSUE_ID
-DEFAULT_RUN = "cs_stochastic_gru__no_hidden_penalty"
-DEFAULT_OUTPUT_DIR = f"_artifacts/{DEFAULT_EXPERIMENT}/runs/{DEFAULT_RUN}"
-DEFAULT_STOCHASTIC_PRESET = "cs2019-rollout"
-DEFAULT_CHECKPOINT_INTERVAL_BATCHES = 500
 CS_STAGE_COUNT = 60
 CS_FEEDBAX_N_STEPS = CS_STAGE_COUNT + 1
 CS_POSITION_SCALE = 1e6
@@ -184,9 +175,6 @@ CS_DELAYED_REACH_TASK_TYPE = "delayed_reach"
 CS_DELAYED_REACH_TASK_PRESET = "delayed_center_out"
 LEGACY_CS_DELAYED_REACH_TASK_TYPE = "cs_delayed_center_out_reach"
 DELAYED_REACH_TRAINING_MODE = "delayed_reach_target_visible_go_cue"
-DEFAULT_DELAYED_GO_CUE_MIN_STEP = 10
-DEFAULT_DELAYED_GO_CUE_MAX_STEP = 30
-DEFAULT_DELAYED_P_CATCH_TRIAL = 0.5
 DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW = "canonical_window"
 DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON = "flat_after_canonical_horizon"
 DELAYED_MOVEMENT_COST_TAIL_MODES = (
@@ -200,6 +188,265 @@ ADAPTIVE_EPSILON_ZERO_ADVERSARY_STOP_REASON = (
     "adaptive_epsilon_zero_adversary_two_consecutive_checkpoints"
 )
 VolumeCommit = Callable[[], None]
+
+
+class CsNominalGruConfig(BaseModel):
+    """Flat nominal-GRU trainer config whose fields own all authoring defaults."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    run_spec: str | None = None
+    output_dir: str = Field(f"_artifacts/{ISSUE_ID}/runs/cs_stochastic_gru__no_hidden_penalty")
+    spec_dir: str | None = None
+    issue: str = ISSUE_ID
+    seed: int = 42
+
+    n_train_batches: int = Field(12000, ge=0)
+    batch_size: int = Field(250, gt=0)
+    controller_lr: float = Field(1e-2, gt=0.0)
+    lr_warmup_batches: int = Field(0, ge=0)
+    lr_warmup_init_fraction: float = Field(0.1, ge=0.0)
+    lr_cosine_alpha: float = Field(1.0, ge=0.0)
+    gradient_clip_norm: float | None = None
+    n_replicates: int = Field(5, gt=0)
+    hidden_size: int = Field(180, gt=0)
+
+    plant_backend: Literal["cs_lss", "legacy_causal_simplefeedback"] = "cs_lss"
+    no_integrator_state: bool = False
+    stochastic_preset: Literal["cs2019-rollout"] = "cs2019-rollout"
+    target_m: float = float(TARGET_POS[0])
+    n_input_only: int = Field(0, ge=0)
+    n_readout_only: int = Field(0, ge=0)
+    n_recurrent_only: int = Field(0, ge=0)
+
+    effector_pos_running: float = CS_POSITION_SCALE
+    effector_vel_running: float = CS_VELOCITY_SCALE
+    effector_terminal_pos: float = CS_POSITION_SCALE
+    effector_terminal_vel: float = CS_VELOCITY_SCALE
+    effector_final_vel: float = 0.0
+    nn_output: float = CS_CONTROL_SCALE
+    nn_output_jerk: float = 0.0
+    nn_output_pre_go: float | None = None
+    delayed_pre_go_force_filter_hold: float = 0.0
+    delayed_pre_go_start_pos_hold: float = 0.0
+    delayed_pre_go_start_pos_hold_norm: Literal["l2", "l1"] = "l2"
+    delayed_pre_go_zero_vel_hold: float = 0.0
+    loss_objective: Literal[
+        "partial_feedbax_terms",
+        "partial_net_output_force_filter",
+        "full_analytical_qrf",
+    ] = "partial_feedbax_terms"
+    regularized_fidelity: bool = False
+
+    perturbation_training: bool | None = None
+    perturbation_nominal_fraction: float = 0.45
+    perturbation_single_fraction: float = 0.45
+    perturbation_combined_fraction: float = 0.10
+    perturbation_combined_amplitude_scale: float = 0.5
+    perturbation_initial_position_offset_m: float = 0.01
+    perturbation_initial_velocity_offset_m_s: float = 0.05
+    perturbation_process_epsilon_scale: float = 0.01
+    perturbation_command_input_pulse_n: float = 1.0
+    perturbation_sensory_feedback_offset_m: float = 0.01
+    perturbation_delayed_observation_offset_m: float = 0.01
+    perturbation_pulse_start_step: int = 20
+    perturbation_pulse_duration_steps: int = 5
+    perturbation_calibrated_timing: bool | None = None
+    perturbation_movement_age_timing: bool | None = None
+    perturbation_physical_level: Literal["small", "moderate", "stress"] | None = None
+    perturbation_calibration_regime: Literal[
+        "open_loop_all",
+        "closed_loop_sensory",
+        "closed_loop_sensory_command_lateral",
+    ] = "open_loop_all"
+    perturbation_closed_loop_calibration_table: str | None = None
+
+    target_relative_multitarget: bool = False
+    target_support_profile: Literal[
+        "old_020a65b",
+        "const_dense_all",
+        "const_sparse8",
+        "const_band8",
+        "const_band16",
+        "const_band36",
+    ] = DEFAULT_TARGET_SUPPORT_PROFILE
+    delayed_reach: bool = False
+    delayed_reach_go_cue_min_step: int = 10
+    delayed_reach_go_cue_max_step: int = 30
+    delayed_reach_p_catch_trial: float = 0.5
+    delayed_movement_cost_tail_mode: Literal[
+        "canonical_window",
+        "flat_after_canonical_horizon",
+    ] = DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW
+    delayed_reach_trial_type_normalized_loss: bool = False
+    delayed_reach_no_catch_qrf_weight: float = 1.0
+    delayed_reach_catch_qrf_weight: float = 1.0
+    force_filter_feedback: bool | None = None
+
+    broad_epsilon_training: bool = False
+    broad_epsilon_pgd_training: bool = False
+    broad_epsilon_level: Literal["moderate", "strong"] = "moderate"
+    broad_epsilon_budget_scale: float = 1.0
+    broad_epsilon_pgd_fixed_radius_15cm: float | None = None
+    broad_epsilon_pgd_fixed_radius_source: str | None = None
+    broad_epsilon_reach_scaling: bool = True
+    broad_epsilon_pgd_steps: int = Field(3, gt=0)
+    broad_epsilon_pgd_step_size_fraction: float = 0.25
+    broad_epsilon_pgd_inner_optimizer_method: Literal[
+        "projected_gradient_ascent",
+        "adam",
+    ] = "projected_gradient_ascent"
+    broad_epsilon_pgd_adam_lr: float = 3e-4
+    broad_epsilon_pgd_adam_b1: float = 0.9
+    broad_epsilon_pgd_adam_b2: float = 0.999
+    broad_epsilon_pgd_adam_eps: float = 1e-8
+    broad_epsilon_pgd_mechanism: Literal[
+        "direct_epsilon",
+        "linear_no_bias",
+        "affine",
+    ] = "direct_epsilon"
+    broad_epsilon_pgd_objective: Literal["hard_l2", "soft_energy"] = "hard_l2"
+    broad_epsilon_pgd_energy_gamma_star: float | None = None
+    broad_epsilon_pgd_energy_gamma_factor: float | None = None
+    broad_epsilon_pgd_energy_gamma: float | None = None
+    broad_epsilon_pgd_energy_penalty_scale: float = 1.0
+    broad_epsilon_pgd_energy_lambda: float | None = None
+    broad_epsilon_pgd_safety_cap_15cm: float | None = None
+    broad_epsilon_pgd_safety_cap_source: str | None = None
+    broad_epsilon_pgd_budget_schedule: Literal["fixed", "sisu_energy_fraction"] = "fixed"
+    broad_epsilon_pgd_sisu_condition_input: Literal["auto", "input", "sisu"] = "auto"
+    broad_epsilon_pgd_sisu_max_radius: float | None = None
+    broad_epsilon_pgd_sisu_max_radius_source: str | None = None
+
+    adaptive_epsilon_curriculum: bool = False
+    adaptive_epsilon_damage_start: float = 0.0
+    adaptive_epsilon_damage_peak: float = 3500.0
+    adaptive_epsilon_damage_final: float = 1000.0
+    adaptive_epsilon_damage_ramp_batches: int = 2500
+    adaptive_epsilon_damage_anneal_batches: int = 5000
+    adaptive_epsilon_update_interval_batches: int = 50
+    adaptive_epsilon_ema_alpha: float = 0.1
+    adaptive_epsilon_eta: float = 0.1
+    adaptive_epsilon_deadband_frac: float = 0.10
+    adaptive_epsilon_lambda_min: float = 1e-12
+    adaptive_epsilon_lambda_max: float | None = None
+    adaptive_epsilon_max_log_step: float = 0.25
+    adaptive_epsilon_outer_weight_start: float = 0.0
+    adaptive_epsilon_outer_weight_final: float = 1.0
+    adaptive_epsilon_outer_weight_ramp_batches: int = 2500
+
+    policy_adversary_training: bool = False
+    policy_adversary_policy_class: Literal["memoryless_mlp", "linear_no_bias", "affine"] = (
+        "memoryless_mlp"
+    )
+    policy_adversary_mode: Literal["plain", "energy"] = "plain"
+    policy_adversary_width: int = Field(64, gt=0)
+    policy_adversary_depth: int = Field(2, ge=0)
+    policy_adversary_steps: int = Field(5, gt=0)
+    policy_adversary_lr: float = 3e-4
+    policy_adversary_energy_gamma: float = 1.0
+    policy_adversary_radius_15cm: float | None = None
+    policy_adversary_radius_source: str | None = None
+
+    initial_hidden_encoder: bool = False
+    planned_perturbation_rows: bool = False
+    planned_target_relative_rows: bool = False
+    planned_target_relative_h0_rows: bool = False
+    planned_020a65b_h0_pgd_rows: bool = False
+    planned_33b0dcb_target_support_rows: bool = False
+    planned_e901a20_policy_adversary_rows: bool = False
+    planned_e4800d6_sisu_spectrum_rows: bool = False
+    planned_ef9c882_start_pos_hold_rows: bool = False
+    planned_246182c_post_movement_cost_tail_rows: bool = False
+    planned_7c1f7ed_delayed_sisu_spectrum_rows: bool = False
+
+    smoke: bool = False
+    full_train: bool = False
+    resume: bool = False
+    stop_after_batches: int | None = None
+    training_diagnostics: bool = True
+    checkpoint_interval_batches: int = 500
+    log_step: int = 100
+    disable_progress: bool = False
+    quiet_progress: bool = True
+    dry_run: bool = False
+
+    @model_validator(mode="after")
+    def _validate_config(self) -> "CsNominalGruConfig":
+        if self.delayed_reach_go_cue_min_step < 0:
+            raise ValueError("delayed_reach_go_cue_min_step must be nonnegative")
+        if self.delayed_reach_go_cue_max_step < self.delayed_reach_go_cue_min_step:
+            raise ValueError(
+                "delayed_reach_go_cue_max_step must be >= delayed_reach_go_cue_min_step"
+            )
+        if not 0.0 <= self.delayed_reach_p_catch_trial <= 1.0:
+            raise ValueError("delayed_reach_p_catch_trial must be between 0 and 1")
+        if self.n_input_only + self.n_readout_only + self.n_recurrent_only > self.hidden_size:
+            raise ValueError("population subgroup counts must not exceed hidden_size")
+        return self
+
+
+DEFAULT_EXPERIMENT = ISSUE_ID
+DEFAULT_RUN = "cs_stochastic_gru__no_hidden_penalty"
+DEFAULT_OUTPUT_DIR = str(CsNominalGruConfig.model_fields["output_dir"].default)
+DEFAULT_STOCHASTIC_PRESET = str(CsNominalGruConfig.model_fields["stochastic_preset"].default)
+DEFAULT_CHECKPOINT_INTERVAL_BATCHES = int(
+    CsNominalGruConfig.model_fields["checkpoint_interval_batches"].default
+)
+DEFAULT_DELAYED_GO_CUE_MIN_STEP = int(
+    CsNominalGruConfig.model_fields["delayed_reach_go_cue_min_step"].default
+)
+DEFAULT_DELAYED_GO_CUE_MAX_STEP = int(
+    CsNominalGruConfig.model_fields["delayed_reach_go_cue_max_step"].default
+)
+DEFAULT_DELAYED_P_CATCH_TRIAL = float(
+    CsNominalGruConfig.model_fields["delayed_reach_p_catch_trial"].default
+)
+
+
+def _config_payload_from_args(args: argparse.Namespace | Mapping[str, Any]) -> dict[str, Any]:
+    """Return a config payload from a namespace or mapping without unknown attrs."""
+
+    raw = vars(args) if isinstance(args, argparse.Namespace) else dict(args)
+    return {key: raw[key] for key in CsNominalGruConfig.model_fields if key in raw}
+
+
+def cs_nominal_gru_config_from_args(
+    args: argparse.Namespace | Mapping[str, Any] | CsNominalGruConfig,
+) -> CsNominalGruConfig:
+    """Validate a nominal-GRU config from CLI-compatible args."""
+
+    if isinstance(args, CsNominalGruConfig):
+        return args
+    return CsNominalGruConfig.model_validate(_config_payload_from_args(args))
+
+
+def _config_namespace(
+    args: argparse.Namespace | Mapping[str, Any] | CsNominalGruConfig,
+) -> argparse.Namespace:
+    config = cs_nominal_gru_config_from_args(args)
+    return argparse.Namespace(**config.model_dump(mode="python"))
+
+
+def _config_default(field_name: str) -> Any:
+    return CsNominalGruConfig.model_fields[field_name].default
+
+
+def _literal_values(annotation: Any) -> list[Any]:
+    origin = get_origin(annotation)
+    if origin is Literal:
+        return list(get_args(annotation))
+    if origin in {Union, type(int | str)}:
+        values: list[Any] = []
+        for arg in get_args(annotation):
+            values.extend(_literal_values(arg))
+        return values
+    return []
+
+
+def _config_choices(field_name: str) -> list[Any] | None:
+    values = _literal_values(CsNominalGruConfig.model_fields[field_name].annotation)
+    return values or None
 
 
 @dataclass(frozen=True)
@@ -533,8 +780,7 @@ def resolve_run_spec_execution_args(
         raise ValueError(
             "CLI overrides conflict with the validated run spec. "
             "Run identity, graph identity, checkpoint policy, artifact routes, "
-            "and scientific payload must come from the spec: "
-            + "; ".join(mismatches)
+            "and scientific payload must come from the spec: " + "; ".join(mismatches)
         )
     return argparse.Namespace(**values)
 
@@ -572,8 +818,7 @@ def _validate_composed_training_spec_payload(run_spec: dict[str, Any]) -> None:
     ]
     if missing:
         raise ValueError(
-            "C&S GRU run spec must embed composed TrainingRunSpec payloads: "
-            + ", ".join(missing)
+            "C&S GRU run spec must embed composed TrainingRunSpec payloads: " + ", ".join(missing)
         )
     feedbax_training_run_spec_from_payload(run_spec)
     extension = run_spec[RLRMP_RUN_SPEC_PAYLOAD_KEY]
@@ -666,7 +911,7 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
     population = _dict_value(model, "population_structure")
     pgd_inner = _dict_value(broad_pgd, "inner_maximizer")
 
-    return {
+    values = {
         "output_dir": str(run_spec.get("artifact_output_dir", DEFAULT_OUTPUT_DIR)),
         "spec_dir": str(run_spec.get("spec_dir")) if run_spec.get("spec_dir") else None,
         "issue": str(run_spec.get("issue", ISSUE_ID)),
@@ -932,6 +1177,7 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
         "stop_after_batches": None,
         "smoke": False,
     }
+    return CsNominalGruConfig.model_validate(values).model_dump(mode="python")
 
 
 def _dict_value(mapping: dict[str, Any], key: str) -> dict[str, Any]:
@@ -1035,7 +1281,9 @@ def _resolve_auto_bool(value: bool | None, *, default: bool) -> bool:
 def build_hps(args: argparse.Namespace) -> TreeNamespace:
     """Build nominal C&S-aligned GRU hyperparameters from CLI arguments."""
 
+    args = _config_namespace(args)
     args = _apply_smoke_overrides(args)
+    args = _config_namespace(args)
     if (
         str(args.loss_objective)
         in {
@@ -1056,24 +1304,17 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "--loss-objective full_analytical_qrf because nn_hidden is not an analytical "
             "Q/R/Q_f objective term."
         )
-    no_integrator_state = bool(getattr(args, "no_integrator_state", False))
+    no_integrator_state = bool(args.no_integrator_state)
     if no_integrator_state and str(args.plant_backend) != CS_LSS_PLANT_BACKEND:
         raise ValueError("--no-integrator-state requires --plant-backend cs_lss.")
     plant, schedule = build_no_integrator_game() if no_integrator_state else build_canonical_game()
     preset = stochastic_preset(args.stochastic_preset)
-    delayed_reach = bool(getattr(args, "delayed_reach", False))
-    delayed_go_min = int(getattr(args, "delayed_reach_go_cue_min_step", 10))
-    delayed_go_max = int(getattr(args, "delayed_reach_go_cue_max_step", 30))
-    delayed_p_catch_trial = float(
-        getattr(args, "delayed_reach_p_catch_trial", DEFAULT_DELAYED_P_CATCH_TRIAL)
-    )
+    delayed_reach = bool(args.delayed_reach)
+    delayed_go_min = int(args.delayed_reach_go_cue_min_step)
+    delayed_go_max = int(args.delayed_reach_go_cue_max_step)
+    delayed_p_catch_trial = float(args.delayed_reach_p_catch_trial)
     delayed_movement_cost_tail_mode = str(
-        getattr(
-            args,
-            "delayed_movement_cost_tail_mode",
-            DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW,
-        )
-        or DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW
+        args.delayed_movement_cost_tail_mode or DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW
     )
     if int(schedule.T) != CS_STAGE_COUNT:
         raise ValueError(f"Expected C&S stage count {CS_STAGE_COUNT}, got {schedule.T}")
@@ -1093,9 +1334,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         and not delayed_reach
     ):
         raise ValueError("--delayed-movement-cost-tail-mode requires --delayed-reach.")
-    delayed_trial_type_normalized_loss = bool(
-        getattr(args, "delayed_reach_trial_type_normalized_loss", False)
-    )
+    delayed_trial_type_normalized_loss = bool(args.delayed_reach_trial_type_normalized_loss)
     if delayed_trial_type_normalized_loss and not delayed_reach:
         raise ValueError("--delayed-reach-trial-type-normalized-loss requires --delayed-reach.")
     if (
@@ -1109,21 +1348,15 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
     nn_hidden = CS_REGULARIZED_NN_HIDDEN if args.regularized_fidelity else 0.0
     nn_output_pre_go = (
         1.0
-        if delayed_reach and getattr(args, "nn_output_pre_go", None) is None
-        else float(getattr(args, "nn_output_pre_go", 0.0) or 0.0)
+        if delayed_reach and args.nn_output_pre_go is None
+        else float(args.nn_output_pre_go or 0.0)
     )
-    delayed_pre_go_force_filter_hold = float(
-        getattr(args, "delayed_pre_go_force_filter_hold", 0.0) or 0.0
-    )
-    delayed_pre_go_start_pos_hold = float(
-        getattr(args, "delayed_pre_go_start_pos_hold", 0.0) or 0.0
-    )
-    delayed_pre_go_start_pos_hold_norm = str(
-        getattr(args, "delayed_pre_go_start_pos_hold_norm", "l2") or "l2"
-    )
+    delayed_pre_go_force_filter_hold = float(args.delayed_pre_go_force_filter_hold or 0.0)
+    delayed_pre_go_start_pos_hold = float(args.delayed_pre_go_start_pos_hold or 0.0)
+    delayed_pre_go_start_pos_hold_norm = str(args.delayed_pre_go_start_pos_hold_norm or "l2")
     if delayed_pre_go_start_pos_hold_norm not in {"l2", "l1"}:
         raise ValueError("--delayed-pre-go-start-pos-hold-norm must be one of: l2, l1")
-    delayed_pre_go_zero_vel_hold = float(getattr(args, "delayed_pre_go_zero_vel_hold", 0.0) or 0.0)
+    delayed_pre_go_zero_vel_hold = float(args.delayed_pre_go_zero_vel_hold or 0.0)
     delayed_pre_go_aux_weights = {
         "delayed_pre_go_force_filter_hold": delayed_pre_go_force_filter_hold,
         "delayed_pre_go_start_pos_hold": delayed_pre_go_start_pos_hold,
@@ -1143,24 +1376,23 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             f"n_recurrent_only={args.n_recurrent_only}"
         )
     force_filter_feedback = _resolve_auto_bool(
-        getattr(args, "force_filter_feedback", None),
+        args.force_filter_feedback,
         default=delayed_reach,
     )
     perturbation_training_enabled = _resolve_auto_bool(
-        getattr(args, "perturbation_training", None),
+        args.perturbation_training,
         default=delayed_reach,
     )
     perturbation_calibrated_timing = _resolve_auto_bool(
-        getattr(args, "perturbation_calibrated_timing", None),
+        args.perturbation_calibrated_timing,
         default=delayed_reach and perturbation_training_enabled,
     )
     perturbation_movement_age_timing = _resolve_auto_bool(
-        getattr(args, "perturbation_movement_age_timing", None),
+        args.perturbation_movement_age_timing,
         default=delayed_reach and perturbation_training_enabled and perturbation_calibrated_timing,
     )
     perturbation_physical_level = str(
-        getattr(args, "perturbation_physical_level", None)
-        or ("small" if delayed_reach else "moderate")
+        args.perturbation_physical_level or ("small" if delayed_reach else "moderate")
     )
     perturbation_training = FixedTargetPerturbationTrainingConfig(
         enabled=perturbation_training_enabled,
@@ -1916,6 +2148,7 @@ def build_run_spec(
 ) -> dict[str, Any]:
     """Build the JSON payload for ``run.json``."""
 
+    args = _config_namespace(args)
     hps = build_hps(args)
     training_distribution = _training_distribution_metadata(hps)
     validation_bins = _validation_bins_metadata(hps)
@@ -2001,7 +2234,9 @@ def build_run_spec(
 def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
     """Write, or dry-run, the stochastic C&S GRU spec artifacts."""
 
+    args = _config_namespace(args)
     args = _apply_smoke_overrides(args)
+    args = _config_namespace(args)
     output_dir = Path(args.output_dir)
     explicit_spec_dir = args.spec_dir is not None
     spec_dir = Path(args.spec_dir) if explicit_spec_dir else derive_spec_dir(output_dir)
@@ -3081,9 +3316,7 @@ def _cs_checkpoint_slots(
     if state.adversary_policy is not None:
         slots["adversary_policy"] = serialize_pytree_slot(state.adversary_policy)
     if state.adversary_optimizer_state is not None:
-        slots["adversary_optimizer"] = serialize_pytree_slot(
-            state.adversary_optimizer_state
-        )
+        slots["adversary_optimizer"] = serialize_pytree_slot(state.adversary_optimizer_state)
     if state.adaptive_epsilon_state is not None:
         slots["adaptive_epsilon_state"] = state.adaptive_epsilon_state
     return slots
@@ -3133,10 +3366,7 @@ def _training_state_from_cs_slots(
                 adversary_optimizer_state_template,
                 slot="adversary_optimizer",
             )
-            if (
-                adversary_optimizer_state_template is not None
-                and "adversary_optimizer" in slots
-            )
+            if (adversary_optimizer_state_template is not None and "adversary_optimizer" in slots)
             else None
         )
     except Exception as exc:
@@ -3161,6 +3391,41 @@ def latest_checkpoint_path(checkpoint_root: Path) -> Path:
     return checkpoint_root / "checkpoint_latest"
 
 
+def _add_config_argument(
+    parser: argparse.ArgumentParser,
+    *flags: str,
+    config_field: str,
+    **kwargs: Any,
+) -> argparse.Action:
+    if "default" not in kwargs:
+        kwargs["default"] = _config_default(config_field)
+    if "choices" not in kwargs:
+        choices = _config_choices(config_field)
+        if choices is not None:
+            kwargs["choices"] = choices
+    return parser.add_argument(*flags, **kwargs)
+
+
+def _apply_config_parser_defaults(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    defaults = CsNominalGruConfig().model_dump(mode="python")
+    for action in parser._actions:
+        if action.dest not in defaults:
+            continue
+        action.default = defaults[action.dest]
+        choices = _config_choices(action.dest)
+        if choices is not None and action.choices is None:
+            action.choices = choices
+        if action.help is argparse.SUPPRESS:
+            continue
+        default_text = f"(default: {action.default!r})"
+        if action.help is None or not action.help.strip():
+            action.help = default_text
+        elif "default:" not in action.help:
+            action.help = f"{action.help} {default_text}"
+    parser.set_defaults(**defaults)
+    return parser
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the CLI parser."""
 
@@ -3169,23 +3434,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--run-spec",
-        default=None,
+        default=_config_default("run_spec"),
         help=(
             "Replay a modern tracked nominal-GRU run.json through the current "
             "training/spec writer. Explicit CLI flags override the run spec."
         ),
     )
-    parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
-    parser.add_argument("--spec-dir", default=None)
-    parser.add_argument("--issue", default=ISSUE_ID)
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--n-train-batches", type=int, default=12000)
-    parser.add_argument("--batch-size", type=int, default=250)
-    parser.add_argument("--controller-lr", type=float, default=1e-2)
+    parser.add_argument("--output-dir", default=_config_default("output_dir"))
+    parser.add_argument("--spec-dir", default=_config_default("spec_dir"))
+    parser.add_argument("--issue", default=_config_default("issue"))
+    parser.add_argument("--seed", type=int, default=_config_default("seed"))
+    parser.add_argument("--n-train-batches", type=int, default=_config_default("n_train_batches"))
+    parser.add_argument("--batch-size", type=int, default=_config_default("batch_size"))
+    parser.add_argument("--controller-lr", type=float, default=_config_default("controller_lr"))
     parser.add_argument(
         "--lr-warmup-batches",
         type=int,
-        default=0,
+        default=_config_default("lr_warmup_batches"),
         help=(
             "If positive, linearly warm the controller LR from "
             "--lr-warmup-init-fraction * --controller-lr to --controller-lr over this "
@@ -3195,22 +3460,24 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--lr-warmup-init-fraction",
         type=float,
-        default=0.1,
+        default=_config_default("lr_warmup_init_fraction"),
         help="Initial LR fraction for warmup-cosine schedules.",
     )
     parser.add_argument(
         "--lr-cosine-alpha",
         type=float,
-        default=1.0,
+        default=_config_default("lr_cosine_alpha"),
         help="Final LR fraction for cosine schedules.",
     )
-    parser.add_argument("--gradient-clip-norm", type=float, default=None)
-    parser.add_argument("--n-replicates", type=int, default=5)
-    parser.add_argument("--hidden-size", type=int, default=180)
+    parser.add_argument(
+        "--gradient-clip-norm", type=float, default=_config_default("gradient_clip_norm")
+    )
+    parser.add_argument("--n-replicates", type=int, default=_config_default("n_replicates"))
+    parser.add_argument("--hidden-size", type=int, default=_config_default("hidden_size"))
     parser.add_argument(
         "--plant-backend",
-        choices=[CS_LSS_PLANT_BACKEND, LEGACY_CAUSAL_PLANT_BACKEND],
-        default=CS_LSS_PLANT_BACKEND,
+        choices=_config_choices("plant_backend"),
+        default=_config_default("plant_backend"),
         help=(
             "Plant backend for nominal GRU training. The default uses exact C&S "
             "LinearStateSpace mechanics; legacy_causal_simplefeedback preserves the "
@@ -3227,8 +3494,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--stochastic-preset",
-        choices=[DEFAULT_STOCHASTIC_PRESET],
-        default=DEFAULT_STOCHASTIC_PRESET,
+        choices=_config_choices("stochastic_preset"),
+        default=_config_default("stochastic_preset"),
         help=(
             "Named stochastic rollout contract. The preset fixes sensory, command, "
             "signal-dependent, and plant/load force noise and records concrete "
@@ -3238,23 +3505,33 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--target-m",
         type=float,
-        default=float(TARGET_POS[0]),
+        default=_config_default("target_m"),
         help=argparse.SUPPRESS,
     )
-    parser.add_argument("--n-input-only", type=int, default=0)
-    parser.add_argument("--n-readout-only", type=int, default=0)
-    parser.add_argument("--n-recurrent-only", type=int, default=0)
-    parser.add_argument("--effector-pos-running", type=float, default=CS_POSITION_SCALE)
-    parser.add_argument("--effector-vel-running", type=float, default=CS_VELOCITY_SCALE)
-    parser.add_argument("--effector-terminal-pos", type=float, default=CS_POSITION_SCALE)
-    parser.add_argument("--effector-terminal-vel", type=float, default=CS_VELOCITY_SCALE)
-    parser.add_argument("--effector-final-vel", type=float, default=0.0)
-    parser.add_argument("--nn-output", type=float, default=CS_CONTROL_SCALE)
-    parser.add_argument("--nn-output-jerk", type=float, default=0.0)
+    parser.add_argument("--n-input-only", type=int, default=_config_default("n_input_only"))
+    parser.add_argument("--n-readout-only", type=int, default=_config_default("n_readout_only"))
+    parser.add_argument("--n-recurrent-only", type=int, default=_config_default("n_recurrent_only"))
+    parser.add_argument(
+        "--effector-pos-running", type=float, default=_config_default("effector_pos_running")
+    )
+    parser.add_argument(
+        "--effector-vel-running", type=float, default=_config_default("effector_vel_running")
+    )
+    parser.add_argument(
+        "--effector-terminal-pos", type=float, default=_config_default("effector_terminal_pos")
+    )
+    parser.add_argument(
+        "--effector-terminal-vel", type=float, default=_config_default("effector_terminal_vel")
+    )
+    parser.add_argument(
+        "--effector-final-vel", type=float, default=_config_default("effector_final_vel")
+    )
+    parser.add_argument("--nn-output", type=float, default=_config_default("nn_output"))
+    parser.add_argument("--nn-output-jerk", type=float, default=_config_default("nn_output_jerk"))
     parser.add_argument(
         "--nn-output-pre-go",
         type=float,
-        default=None,
+        default=_config_default("nn_output_pre_go"),
         help=(
             "Anti-anticipation controller-output penalty during delayed-reach prep. "
             "Defaults to 1.0 only when --delayed-reach is active; otherwise 0.0."
@@ -3263,7 +3540,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--delayed-pre-go-force-filter-hold",
         type=float,
-        default=0.0,
+        default=_config_default("delayed_pre_go_force_filter_hold"),
         help=(
             "Prep-only delayed-reach auxiliary penalty on the C&S force/filter state. "
             "Default 0.0 preserves the movement-window Q/R/Q_f comparator."
@@ -3272,7 +3549,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--delayed-pre-go-start-pos-hold",
         type=float,
-        default=0.0,
+        default=_config_default("delayed_pre_go_start_pos_hold"),
         help=(
             "Prep-only delayed-reach auxiliary penalty on effector position away from "
             "the sampled start position. Default 0.0."
@@ -3280,8 +3557,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--delayed-pre-go-start-pos-hold-norm",
-        choices=["l2", "l1"],
-        default="l2",
+        choices=_config_choices("delayed_pre_go_start_pos_hold_norm"),
+        default=_config_default("delayed_pre_go_start_pos_hold_norm"),
         help=(
             "Norm for --delayed-pre-go-start-pos-hold. l2 preserves the existing "
             "squared-distance penalty; l1 scores absolute coordinate displacement."
@@ -3290,7 +3567,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--delayed-pre-go-zero-vel-hold",
         type=float,
-        default=0.0,
+        default=_config_default("delayed_pre_go_zero_vel_hold"),
         help=(
             "Prep-only delayed-reach auxiliary penalty on nonzero effector velocity "
             "before the go cue. Default 0.0."
@@ -3298,8 +3575,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--loss-objective",
-        choices=CS_LOSS_OBJECTIVES,
-        default=CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
+        choices=_config_choices("loss_objective"),
+        default=_config_default("loss_objective"),
         help=(
             "Training objective. Default partial_feedbax_terms preserves the historical "
             "Feedbax pos/vel/control term subset. full_analytical_qrf uses the canonical "
@@ -3314,37 +3591,81 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--perturbation-training",
         action=argparse.BooleanOptionalAction,
-        default=None,
+        default=_config_default("perturbation_training"),
         help=(
             "Enable fixed-target perturbation-generalized training using external "
             "task/plant/channel adapters. Defaults to on for --delayed-reach and off "
             "otherwise. Target-position streams are not added."
         ),
     )
-    parser.add_argument("--perturbation-nominal-fraction", type=float, default=0.45)
-    parser.add_argument("--perturbation-single-fraction", type=float, default=0.45)
-    parser.add_argument("--perturbation-combined-fraction", type=float, default=0.10)
-    parser.add_argument("--perturbation-combined-amplitude-scale", type=float, default=0.5)
-    parser.add_argument("--perturbation-initial-position-offset-m", type=float, default=0.01)
-    parser.add_argument("--perturbation-initial-velocity-offset-m-s", type=float, default=0.05)
-    parser.add_argument("--perturbation-process-epsilon-scale", type=float, default=0.01)
-    parser.add_argument("--perturbation-command-input-pulse-n", type=float, default=1.0)
-    parser.add_argument("--perturbation-sensory-feedback-offset-m", type=float, default=0.01)
+    parser.add_argument(
+        "--perturbation-nominal-fraction",
+        type=float,
+        default=_config_default("perturbation_nominal_fraction"),
+    )
+    parser.add_argument(
+        "--perturbation-single-fraction",
+        type=float,
+        default=_config_default("perturbation_single_fraction"),
+    )
+    parser.add_argument(
+        "--perturbation-combined-fraction",
+        type=float,
+        default=_config_default("perturbation_combined_fraction"),
+    )
+    parser.add_argument(
+        "--perturbation-combined-amplitude-scale",
+        type=float,
+        default=_config_default("perturbation_combined_amplitude_scale"),
+    )
+    parser.add_argument(
+        "--perturbation-initial-position-offset-m",
+        type=float,
+        default=_config_default("perturbation_initial_position_offset_m"),
+    )
+    parser.add_argument(
+        "--perturbation-initial-velocity-offset-m-s",
+        type=float,
+        default=_config_default("perturbation_initial_velocity_offset_m_s"),
+    )
+    parser.add_argument(
+        "--perturbation-process-epsilon-scale",
+        type=float,
+        default=_config_default("perturbation_process_epsilon_scale"),
+    )
+    parser.add_argument(
+        "--perturbation-command-input-pulse-n",
+        type=float,
+        default=_config_default("perturbation_command_input_pulse_n"),
+    )
+    parser.add_argument(
+        "--perturbation-sensory-feedback-offset-m",
+        type=float,
+        default=_config_default("perturbation_sensory_feedback_offset_m"),
+    )
     parser.add_argument(
         "--perturbation-delayed-observation-offset-m",
         type=float,
-        default=0.01,
+        default=_config_default("perturbation_delayed_observation_offset_m"),
         help=(
             "Legacy run-spec compatibility only; delayed_observation is no longer "
             "sampled or validated in the active final perturbation bank."
         ),
     )
-    parser.add_argument("--perturbation-pulse-start-step", type=int, default=20)
-    parser.add_argument("--perturbation-pulse-duration-steps", type=int, default=5)
+    parser.add_argument(
+        "--perturbation-pulse-start-step",
+        type=int,
+        default=_config_default("perturbation_pulse_start_step"),
+    )
+    parser.add_argument(
+        "--perturbation-pulse-duration-steps",
+        type=int,
+        default=_config_default("perturbation_pulse_duration_steps"),
+    )
     parser.add_argument(
         "--perturbation-calibrated-timing",
         action=argparse.BooleanOptionalAction,
-        default=None,
+        default=_config_default("perturbation_calibrated_timing"),
         help=(
             "Use timing-bin calibrated perturbation training: plant process/command "
             "pulses sample starts 5/15/35 uniformly and controller-visible sensory "
@@ -3355,7 +3676,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--perturbation-movement-age-timing",
         action=argparse.BooleanOptionalAction,
-        default=None,
+        default=_config_default("perturbation_movement_age_timing"),
         help=(
             "Index calibrated perturbation timing bins by movement age: plant "
             "process/command pulses use movement_start + 5/15/35, controller-visible "
@@ -3367,8 +3688,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--perturbation-physical-level",
-        choices=("small", "moderate", "stress"),
-        default=None,
+        choices=_config_choices("perturbation_physical_level"),
+        default=_config_default("perturbation_physical_level"),
         help=(
             "Declared reach-relative perturbation level for calibrated screens. "
             "Small/moderate are training rows; stress is reserved for evaluation. "
@@ -3377,12 +3698,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--perturbation-calibration-regime",
-        choices=(
-            "open_loop_all",
-            "closed_loop_sensory",
-            "closed_loop_sensory_command_lateral",
-        ),
-        default="open_loop_all",
+        choices=_config_choices("perturbation_calibration_regime"),
+        default=_config_default("perturbation_calibration_regime"),
         help=(
             "Select how calibrated perturbation families resolve amplitudes: all "
             "families from open-loop calibration, sensory feedback from the "
@@ -3392,7 +3709,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--perturbation-closed-loop-calibration-table",
-        default=None,
+        default=_config_default("perturbation_closed_loop_calibration_table"),
         help=(
             "Path to a closed-loop calibration table used by mixed "
             "perturbation-calibration regimes."
@@ -3409,8 +3726,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--target-support-profile",
-        choices=TARGET_SUPPORT_PROFILES,
-        default=DEFAULT_TARGET_SUPPORT_PROFILE,
+        choices=_config_choices("target_support_profile"),
+        default=_config_default("target_support_profile"),
         help=(
             "Named finite target-support profile for --target-relative-multitarget. "
             "Defaults to const_band16: fixed 0.15 m reaches on the dense validation "
@@ -3430,19 +3747,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--delayed-reach-go-cue-min-step",
         type=int,
-        default=DEFAULT_DELAYED_GO_CUE_MIN_STEP,
+        default=_config_default("delayed_reach_go_cue_min_step"),
         help="Inclusive minimum sampled go-cue/prep length for --delayed-reach.",
     )
     parser.add_argument(
         "--delayed-reach-go-cue-max-step",
         type=int,
-        default=DEFAULT_DELAYED_GO_CUE_MAX_STEP,
+        default=_config_default("delayed_reach_go_cue_max_step"),
         help="Inclusive maximum sampled go-cue/prep length for --delayed-reach.",
     )
     parser.add_argument(
         "--delayed-reach-p-catch-trial",
         type=float,
-        default=DEFAULT_DELAYED_P_CATCH_TRIAL,
+        default=_config_default("delayed_reach_p_catch_trial"),
         help=(
             "Probability of delayed-reach no-go catch trials. Catch trials keep the "
             "target visible but keep the go cue at 0 and score holding the initial "
@@ -3451,8 +3768,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--delayed-movement-cost-tail-mode",
-        choices=DELAYED_MOVEMENT_COST_TAIL_MODES,
-        default=DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW,
+        choices=_config_choices("delayed_movement_cost_tail_mode"),
+        default=_config_default("delayed_movement_cost_tail_mode"),
         help=(
             "Delayed-reach full-Q/R/Qf tail support. canonical_window preserves the "
             "60 movement-age stage objective; flat_after_canonical_horizon reuses the "
@@ -3474,7 +3791,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--delayed-reach-no-catch-qrf-weight",
         type=float,
-        default=1.0,
+        default=_config_default("delayed_reach_no_catch_qrf_weight"),
         help=(
             "Explicit weight for the no-catch movement Q/R/Q_f mean when "
             "--delayed-reach-trial-type-normalized-loss is active."
@@ -3483,7 +3800,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--delayed-reach-catch-qrf-weight",
         type=float,
-        default=1.0,
+        default=_config_default("delayed_reach_catch_qrf_weight"),
         help=(
             "Explicit weight for the catch/no-go Q/R/Q_f mean when "
             "--delayed-reach-trial-type-normalized-loss is active."
@@ -3493,7 +3810,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--force-filter-feedback",
         "--proprioceptive-feedback",
         action=argparse.BooleanOptionalAction,
-        default=None,
+        default=_config_default("force_filter_feedback"),
         help=(
             "Extend target-relative delayed feedback with delayed force/filter x/y "
             "coordinates. Defaults to on for --delayed-reach and off otherwise. "
@@ -3518,18 +3835,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--broad-epsilon-level",
-        choices=("moderate", "strong"),
-        default="moderate",
+        choices=_config_choices("broad_epsilon_level"),
+        default=_config_default("broad_epsilon_level"),
         help=(
             "Analytical broad-epsilon budget anchor. moderate uses gamma factor 1.4; "
             "strong uses gamma factor 1.05."
         ),
     )
-    parser.add_argument("--broad-epsilon-budget-scale", type=float, default=1.0)
+    parser.add_argument(
+        "--broad-epsilon-budget-scale",
+        type=float,
+        default=_config_default("broad_epsilon_budget_scale"),
+    )
     parser.add_argument(
         "--broad-epsilon-pgd-fixed-radius-15cm",
         type=float,
-        default=None,
+        default=_config_default("broad_epsilon_pgd_fixed_radius_15cm"),
         help=(
             "Override the fixed broad-epsilon PGD L2 radius at the 15 cm reference reach. "
             "Use with --broad-epsilon-pgd-fixed-radius-source for provenance."
@@ -3537,29 +3858,33 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--broad-epsilon-pgd-fixed-radius-source",
-        default=None,
+        default=_config_default("broad_epsilon_pgd_fixed_radius_source"),
         help="Provenance key for --broad-epsilon-pgd-fixed-radius-15cm.",
     )
     parser.add_argument(
         "--broad-epsilon-reach-scaling",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=_config_default("broad_epsilon_reach_scaling"),
         help=(
             "Scale the 15 cm analytical epsilon L2 radius by sampled reach length. "
             "This is an explicit multi-target normalization choice."
         ),
     )
-    parser.add_argument("--broad-epsilon-pgd-steps", type=int, default=3)
+    parser.add_argument(
+        "--broad-epsilon-pgd-steps",
+        type=int,
+        default=_config_default("broad_epsilon_pgd_steps"),
+    )
     parser.add_argument(
         "--broad-epsilon-pgd-step-size-fraction",
         type=float,
-        default=0.25,
+        default=_config_default("broad_epsilon_pgd_step_size_fraction"),
         help="PGD ascent step size as a fraction of each trial's L2 radius.",
     )
     parser.add_argument(
         "--broad-epsilon-pgd-inner-optimizer-method",
-        choices=BROAD_EPSILON_PGD_INNER_OPTIMIZER_METHODS,
-        default=BROAD_EPSILON_PGD_PROJECTED_GRADIENT_ASCENT,
+        choices=_config_choices("broad_epsilon_pgd_inner_optimizer_method"),
+        default=_config_default("broad_epsilon_pgd_inner_optimizer_method"),
         help=(
             "Inner optimizer for broad-epsilon adversary selection. "
             f"{BROAD_EPSILON_PGD_PROJECTED_GRADIENT_ASCENT} preserves the historical "
@@ -3571,19 +3896,31 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--broad-epsilon-pgd-adam-lr",
         type=float,
-        default=3e-4,
+        default=_config_default("broad_epsilon_pgd_adam_lr"),
         help=(
             "Adam ascent learning rate for broad-epsilon direct-epsilon sequences "
             "or live finite-policy mechanisms."
         ),
     )
-    parser.add_argument("--broad-epsilon-pgd-adam-b1", type=float, default=0.9)
-    parser.add_argument("--broad-epsilon-pgd-adam-b2", type=float, default=0.999)
-    parser.add_argument("--broad-epsilon-pgd-adam-eps", type=float, default=1e-8)
+    parser.add_argument(
+        "--broad-epsilon-pgd-adam-b1",
+        type=float,
+        default=_config_default("broad_epsilon_pgd_adam_b1"),
+    )
+    parser.add_argument(
+        "--broad-epsilon-pgd-adam-b2",
+        type=float,
+        default=_config_default("broad_epsilon_pgd_adam_b2"),
+    )
+    parser.add_argument(
+        "--broad-epsilon-pgd-adam-eps",
+        type=float,
+        default=_config_default("broad_epsilon_pgd_adam_eps"),
+    )
     parser.add_argument(
         "--broad-epsilon-pgd-mechanism",
-        choices=BROAD_EPSILON_PGD_MECHANISMS,
-        default=BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM,
+        choices=_config_choices("broad_epsilon_pgd_mechanism"),
+        default=_config_default("broad_epsilon_pgd_mechanism"),
         help=(
             "Adversary mechanism for broad-epsilon PGD. direct_epsilon preserves the "
             "existing exogenous epsilon-sequence path; finite mechanisms install live "
@@ -3592,33 +3929,45 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--broad-epsilon-pgd-objective",
-        choices=(BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE, BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE),
-        default=BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE,
+        choices=_config_choices("broad_epsilon_pgd_objective"),
+        default=_config_default("broad_epsilon_pgd_objective"),
         help=(
             "Inner PGD objective. hard_l2 preserves the existing projected objective; "
             "soft_energy maximizes task_loss - lambda * epsilon_energy with an explicit "
             "stabilization cap."
         ),
     )
-    parser.add_argument("--broad-epsilon-pgd-energy-gamma-star", type=float, default=None)
-    parser.add_argument("--broad-epsilon-pgd-energy-gamma-factor", type=float, default=None)
-    parser.add_argument("--broad-epsilon-pgd-energy-gamma", type=float, default=None)
+    parser.add_argument(
+        "--broad-epsilon-pgd-energy-gamma-star",
+        type=float,
+        default=_config_default("broad_epsilon_pgd_energy_gamma_star"),
+    )
+    parser.add_argument(
+        "--broad-epsilon-pgd-energy-gamma-factor",
+        type=float,
+        default=_config_default("broad_epsilon_pgd_energy_gamma_factor"),
+    )
+    parser.add_argument(
+        "--broad-epsilon-pgd-energy-gamma",
+        type=float,
+        default=_config_default("broad_epsilon_pgd_energy_gamma"),
+    )
     parser.add_argument(
         "--broad-epsilon-pgd-energy-penalty-scale",
         type=float,
-        default=1.0,
+        default=_config_default("broad_epsilon_pgd_energy_penalty_scale"),
         help="Soft-energy c multiplier in lambda = c * gamma^2 unless lambda is explicit.",
     )
     parser.add_argument(
         "--broad-epsilon-pgd-energy-lambda",
         type=float,
-        default=None,
+        default=_config_default("broad_epsilon_pgd_energy_lambda"),
         help="Explicit soft-energy lambda; otherwise derived as c * gamma^2.",
     )
     parser.add_argument(
         "--broad-epsilon-pgd-safety-cap-15cm",
         type=float,
-        default=None,
+        default=_config_default("broad_epsilon_pgd_safety_cap_15cm"),
         help=(
             "Optional 15 cm L2 trust-region cap for soft-energy PGD stabilization. "
             "This cap is metadata-marked as not the scientific hard-budget constraint."
@@ -3627,13 +3976,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--broad-epsilon-pgd-safety-cap-source",
         type=str,
-        default=None,
+        default=_config_default("broad_epsilon_pgd_safety_cap_source"),
         help="Provenance key/source for --broad-epsilon-pgd-safety-cap-15cm.",
     )
     parser.add_argument(
         "--broad-epsilon-pgd-budget-schedule",
-        choices=("fixed", "sisu_energy_fraction"),
-        default="fixed",
+        choices=_config_choices("broad_epsilon_pgd_budget_schedule"),
+        default=_config_default("broad_epsilon_pgd_budget_schedule"),
         help=(
             "Select the PGD L2 budget schedule. fixed preserves the existing single "
             "radius; sisu_energy_fraction maps SISU to radius via sqrt(SISU)."
@@ -3641,8 +3990,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--broad-epsilon-pgd-sisu-condition-input",
-        choices=("auto", "input", "sisu"),
-        default="auto",
+        choices=_config_choices("broad_epsilon_pgd_sisu_condition_input"),
+        default=_config_default("broad_epsilon_pgd_sisu_condition_input"),
         help=(
             "Trial input that carries the scalar SISU value for sisu_energy_fraction PGD budgets."
         ),
@@ -3650,13 +3999,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--broad-epsilon-pgd-sisu-max-radius",
         type=float,
-        default=None,
+        default=_config_default("broad_epsilon_pgd_sisu_max_radius"),
         help=("Maximum 15 cm PGD L2 radius at SISU=1 for sisu_energy_fraction budgets."),
     )
     parser.add_argument(
         "--broad-epsilon-pgd-sisu-max-radius-source",
         type=str,
-        default=None,
+        default=_config_default("broad_epsilon_pgd_sisu_max_radius_source"),
         help=(
             "Metadata key/source for the SISU PGD max radius, e.g. "
             "raw_strong_gamma_1p05_radius or effective_020a65b_pgd_training_radius."
@@ -3671,21 +4020,81 @@ def build_parser() -> argparse.ArgumentParser:
             "and --broad-epsilon-pgd-objective soft_energy."
         ),
     )
-    parser.add_argument("--adaptive-epsilon-damage-start", type=float, default=0.0)
-    parser.add_argument("--adaptive-epsilon-damage-peak", type=float, default=3500.0)
-    parser.add_argument("--adaptive-epsilon-damage-final", type=float, default=1000.0)
-    parser.add_argument("--adaptive-epsilon-damage-ramp-batches", type=int, default=2500)
-    parser.add_argument("--adaptive-epsilon-damage-anneal-batches", type=int, default=5000)
-    parser.add_argument("--adaptive-epsilon-update-interval-batches", type=int, default=50)
-    parser.add_argument("--adaptive-epsilon-ema-alpha", type=float, default=0.1)
-    parser.add_argument("--adaptive-epsilon-eta", type=float, default=0.1)
-    parser.add_argument("--adaptive-epsilon-deadband-frac", type=float, default=0.10)
-    parser.add_argument("--adaptive-epsilon-lambda-min", type=float, default=1e-12)
-    parser.add_argument("--adaptive-epsilon-lambda-max", type=float, default=None)
-    parser.add_argument("--adaptive-epsilon-max-log-step", type=float, default=0.25)
-    parser.add_argument("--adaptive-epsilon-outer-weight-start", type=float, default=0.0)
-    parser.add_argument("--adaptive-epsilon-outer-weight-final", type=float, default=1.0)
-    parser.add_argument("--adaptive-epsilon-outer-weight-ramp-batches", type=int, default=2500)
+    parser.add_argument(
+        "--adaptive-epsilon-damage-start",
+        type=float,
+        default=_config_default("adaptive_epsilon_damage_start"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-damage-peak",
+        type=float,
+        default=_config_default("adaptive_epsilon_damage_peak"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-damage-final",
+        type=float,
+        default=_config_default("adaptive_epsilon_damage_final"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-damage-ramp-batches",
+        type=int,
+        default=_config_default("adaptive_epsilon_damage_ramp_batches"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-damage-anneal-batches",
+        type=int,
+        default=_config_default("adaptive_epsilon_damage_anneal_batches"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-update-interval-batches",
+        type=int,
+        default=_config_default("adaptive_epsilon_update_interval_batches"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-ema-alpha",
+        type=float,
+        default=_config_default("adaptive_epsilon_ema_alpha"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-eta",
+        type=float,
+        default=_config_default("adaptive_epsilon_eta"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-deadband-frac",
+        type=float,
+        default=_config_default("adaptive_epsilon_deadband_frac"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-lambda-min",
+        type=float,
+        default=_config_default("adaptive_epsilon_lambda_min"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-lambda-max",
+        type=float,
+        default=_config_default("adaptive_epsilon_lambda_max"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-max-log-step",
+        type=float,
+        default=_config_default("adaptive_epsilon_max_log_step"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-outer-weight-start",
+        type=float,
+        default=_config_default("adaptive_epsilon_outer_weight_start"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-outer-weight-final",
+        type=float,
+        default=_config_default("adaptive_epsilon_outer_weight_final"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-outer-weight-ramp-batches",
+        type=int,
+        default=_config_default("adaptive_epsilon_outer_weight_ramp_batches"),
+    )
     parser.add_argument(
         "--policy-adversary-training",
         action="store_true",
@@ -3697,8 +4106,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--policy-adversary-policy-class",
-        choices=POLICY_ADVERSARY_POLICY_CLASSES,
-        default=POLICY_ADVERSARY_MEMORYLESS_MLP,
+        choices=_config_choices("policy_adversary_policy_class"),
+        default=_config_default("policy_adversary_policy_class"),
         help=(
             "Adversary policy parameterization: memoryless_mlp for the existing MLP lane, "
             "or linear_no_bias/affine for finite time-varying policies optimized by Adam."
@@ -3706,21 +4115,37 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--policy-adversary-mode",
-        choices=(POLICY_ADVERSARY_PLAIN_MODE, POLICY_ADVERSARY_ENERGY_MODE),
-        default=POLICY_ADVERSARY_PLAIN_MODE,
+        choices=_config_choices("policy_adversary_mode"),
+        default=_config_default("policy_adversary_mode"),
         help=(
             "plain uses hard projection only; energy adds an H-infinity-style "
             "energy stabilizer to the adversary objective."
         ),
     )
-    parser.add_argument("--policy-adversary-width", type=int, default=64)
-    parser.add_argument("--policy-adversary-depth", type=int, default=2)
-    parser.add_argument("--policy-adversary-steps", type=int, default=5)
-    parser.add_argument("--policy-adversary-lr", type=float, default=3e-4)
+    parser.add_argument(
+        "--policy-adversary-width",
+        type=int,
+        default=_config_default("policy_adversary_width"),
+    )
+    parser.add_argument(
+        "--policy-adversary-depth",
+        type=int,
+        default=_config_default("policy_adversary_depth"),
+    )
+    parser.add_argument(
+        "--policy-adversary-steps",
+        type=int,
+        default=_config_default("policy_adversary_steps"),
+    )
+    parser.add_argument(
+        "--policy-adversary-lr",
+        type=float,
+        default=_config_default("policy_adversary_lr"),
+    )
     parser.add_argument(
         "--policy-adversary-energy-gamma",
         type=float,
-        default=1.0,
+        default=_config_default("policy_adversary_energy_gamma"),
         help=(
             "Multiplier on epsilon energy in energy mode. This is a stabilizer "
             "term, not a formal H-infinity certificate parameter."
@@ -3729,7 +4154,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--policy-adversary-radius-15cm",
         type=float,
-        default=None,
+        default=_config_default("policy_adversary_radius_15cm"),
         help=(
             "Explicit 15 cm L2 epsilon radius for policy-adversary training. "
             "Required when --policy-adversary-training is enabled."
@@ -3738,7 +4163,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--policy-adversary-radius-source",
         type=str,
-        default=None,
+        default=_config_default("policy_adversary_radius_source"),
         help=(
             "Metadata key/source for --policy-adversary-radius-15cm. Required when "
             "--policy-adversary-training is enabled."
@@ -3814,7 +4239,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--stop-after-batches",
         type=int,
-        default=None,
+        default=_config_default("stop_after_batches"),
         help=(
             "For full-train checkpoint-gate smoke runs, stop cleanly after the "
             "first checkpoint at or beyond this completed-batch count while "
@@ -3824,7 +4249,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--training-diagnostics",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=_config_default("training_diagnostics"),
         help=(
             "Write compact optimizer/loss scalar sidecars for full training runs. "
             "Use --no-training-diagnostics to opt out."
@@ -3833,17 +4258,25 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--checkpoint-interval-batches",
         type=int,
-        default=DEFAULT_CHECKPOINT_INTERVAL_BATCHES,
+        default=_config_default("checkpoint_interval_batches"),
     )
-    parser.add_argument("--log-step", type=int, default=100)
-    parser.add_argument("--disable-progress", action="store_true", default=False)
-    parser.add_argument("--quiet-progress", action="store_true", default=True)
+    parser.add_argument("--log-step", type=int, default=_config_default("log_step"))
+    parser.add_argument(
+        "--disable-progress",
+        action="store_true",
+        default=_config_default("disable_progress"),
+    )
+    parser.add_argument(
+        "--quiet-progress",
+        action="store_true",
+        default=_config_default("quiet_progress"),
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print the would-write payload without creating files.",
     )
-    return parser
+    return _apply_config_parser_defaults(parser)
 
 
 def main(

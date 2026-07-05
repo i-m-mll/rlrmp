@@ -11,6 +11,7 @@ import jax.numpy as jnp
 from feedbax.training.train import TaskTrainer
 import pytest
 
+from rlrmp.runtime.training_run_specs import MissingTrainingRunSpecFieldError
 from rlrmp.train import closed_loop_distillation
 
 
@@ -259,11 +260,12 @@ def test_closed_loop_distillation_cli_full_train_returns_approval_guard(
     assert "No Feedbax hook blocker" in payload["message"]
 
 
-def test_tracked_a378b34_run_spec_parses_and_validates() -> None:
+def test_tracked_a378b34_run_spec_fails_closed_without_horizon() -> None:
     spec_path = closed_loop_distillation.DEFAULT_SPEC_PATH
     spec = json.loads(spec_path.read_text(encoding="utf-8"))
 
-    closed_loop_distillation.validate_run_spec(spec)
+    with pytest.raises(MissingTrainingRunSpecFieldError, match="teacher_contract.horizon"):
+        closed_loop_distillation.validate_run_spec(spec)
     assert spec["expected_artifacts"]["tracked_run_spec"] == str(spec_path)
     assert spec["expected_artifacts"]["bulk_output_dir"] == (
         "_artifacts/a378b34/runs/h0_extlqg_6d_closed_loop_distillation"
