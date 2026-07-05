@@ -237,6 +237,8 @@ no production caller beyond tests.
 Used by: no production issue was found in the audit; the custody allowlist owner
 was [issue:c223bb8] (closed).
 
+Revival: [issue:21f4638] covers reviving exactly this bundle.
+
 Keep-signal: Keep only as dormant provenance and schema context unless a future
 delayed-reach report explicitly revives it.
 

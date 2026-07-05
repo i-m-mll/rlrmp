@@ -464,7 +464,6 @@ def build_minimax_training_run_spec(
             metadata={
                 "effective_phase_fingerprint": fingerprint,
                 "checkpoint_custody_owner": "feedbax",
-                "rlrmp_legacy_checkpoint_writer": "deferred_to_799fcb9",
             },
         ),
         metadata={
