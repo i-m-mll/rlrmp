@@ -120,7 +120,7 @@ observed sites are LEGACY, results-scripts, or genuinely computational).
 
 - **D1 — grammar-blocked migrations** (blocked by F): `standard_matrix` near-A
   extraction + fail-closed gates, rollout_cleanup resolver chains,
-  `hinf_phenotype_sidecar` extraction cluster, `eval/recipes` coalesces.
+  `hinf_phenotype_sidecar` extraction cluster, `eval/recipes` coalesces. Resolved 2026-07-05: all four targets rejected on re-adjudication — see `results/86e1dd1/notes/post_grammar_adjudication.md`.
 - **D2 — results-script extraction-product conversions** (expressible today,
   low priority): `results/27dece3/.../materialize_scale_spec_lock.py`,
   `results/4d79e07/.../materialize_delayed_pgd_comparison.py` (pure-extraction
