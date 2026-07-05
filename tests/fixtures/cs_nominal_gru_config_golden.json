@@ -5,6 +5,7 @@
         "--dry-run"
       ],
       "parsed_args": {
+        "adaptive_epsilon_controller_training_mode": "loss_blend",
         "adaptive_epsilon_curriculum": false,
         "adaptive_epsilon_damage_anneal_batches": 5000,
         "adaptive_epsilon_damage_final": 1000.0,
@@ -216,6 +217,7 @@
         "full_training_launch": "not_requested",
         "hps": {
           "adaptive_epsilon_curriculum": {
+            "controller_training_mode": "loss_blend",
             "damage_schedule": {
               "anneal_batches": 5000,
               "final": 1000.0,
@@ -5385,6 +5387,7 @@
           },
           "hps": {
             "adaptive_epsilon_curriculum": {
+              "controller_training_mode": "loss_blend",
               "damage_schedule": {
                 "anneal_batches": 5000,
                 "final": 1000.0,
@@ -9923,7 +9926,7 @@
               "rlrmp": "local"
             },
             "git": {
-              "rlrmp_branch": "integration/d1f90ac-defaults-cascade",
+              "rlrmp_branch": "<current-branch>",
               "rlrmp_commit": "<current-commit>"
             },
             "gpu": {
@@ -12677,6 +12680,7 @@
         "5"
       ],
       "parsed_args": {
+        "adaptive_epsilon_controller_training_mode": "loss_blend",
         "adaptive_epsilon_curriculum": false,
         "adaptive_epsilon_damage_anneal_batches": 5000,
         "adaptive_epsilon_damage_final": 1000.0,
@@ -12923,6 +12927,7 @@
         "full_training_launch": "not_requested",
         "hps": {
           "adaptive_epsilon_curriculum": {
+            "controller_training_mode": "loss_blend",
             "damage_schedule": {
               "anneal_batches": 5000,
               "final": 1000.0,
@@ -22421,6 +22426,7 @@
           },
           "hps": {
             "adaptive_epsilon_curriculum": {
+              "controller_training_mode": "loss_blend",
               "damage_schedule": {
                 "anneal_batches": 5000,
                 "final": 1000.0,
@@ -31144,7 +31150,7 @@
               "rlrmp": "local"
             },
             "git": {
-              "rlrmp_branch": "integration/d1f90ac-defaults-cascade",
+              "rlrmp_branch": "<current-branch>",
               "rlrmp_commit": "<current-commit>"
             },
             "gpu": {
@@ -60932,6 +60938,7 @@
         "43"
       ],
       "parsed_args": {
+        "adaptive_epsilon_controller_training_mode": "loss_blend",
         "adaptive_epsilon_curriculum": false,
         "adaptive_epsilon_damage_anneal_batches": 5000,
         "adaptive_epsilon_damage_final": 1000.0,
@@ -61149,6 +61156,7 @@
         "full_training_launch": "not_requested",
         "hps": {
           "adaptive_epsilon_curriculum": {
+            "controller_training_mode": "loss_blend",
             "damage_schedule": {
               "anneal_batches": 5000,
               "final": 1000.0,
@@ -69667,6 +69675,7 @@
           },
           "hps": {
             "adaptive_epsilon_curriculum": {
+              "controller_training_mode": "loss_blend",
               "damage_schedule": {
                 "anneal_batches": 5000,
                 "final": 1000.0,
@@ -77548,7 +77557,7 @@
               "rlrmp": "local"
             },
             "git": {
-              "rlrmp_branch": "integration/d1f90ac-defaults-cascade",
+              "rlrmp_branch": "<current-branch>",
               "rlrmp_commit": "<current-commit>"
             },
             "gpu": {

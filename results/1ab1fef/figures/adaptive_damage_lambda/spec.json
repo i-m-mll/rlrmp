@@ -1,0 +1,28 @@
+{
+  "figure_kind": "adaptive_damage_lambda_epsilon_scale",
+  "inputs": [
+    "results/1ab1fef/runs/epsilon_scaled_short_3500to1000.json",
+    "_artifacts/1ab1fef/runs/epsilon_scaled_short_3500to1000/training_diagnostics.npz",
+    "_artifacts/91a090c/figures/adaptive_damage_lambda/summary.json"
+  ],
+  "issue": "1ab1fef",
+  "outputs": {
+    "csv": "_artifacts/1ab1fef/figures/adaptive_damage_lambda/series.csv",
+    "html": "_artifacts/1ab1fef/figures/adaptive_damage_lambda/figure.html",
+    "spec": "results/1ab1fef/figures/adaptive_damage_lambda/spec.json",
+    "spec_symlink": "results/1ab1fef/figures/adaptive_damage_lambda/figure.html",
+    "summary": "_artifacts/1ab1fef/figures/adaptive_damage_lambda/summary.json"
+  },
+  "schema_version": "rlrmp.figure_spec.v1",
+  "topic": "adaptive_damage_lambda",
+  "transform": [
+    {
+      "kwargs": {},
+      "name": "summarize_epsilon_scaled_training_diagnostics"
+    },
+    {
+      "kwargs": {},
+      "name": "reuse_91a090c_damage_lambda_summary"
+    }
+  ]
+}

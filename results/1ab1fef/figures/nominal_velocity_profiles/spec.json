@@ -1,0 +1,32 @@
+{
+  "figure_kind": "nominal_forward_velocity_overlay",
+  "inputs": [
+    "results/1ab1fef/runs/epsilon_scaled_short_3500to1000.json",
+    "_artifacts/1ab1fef/runs/epsilon_scaled_short_3500to1000/trained_model.eqx",
+    "_artifacts/91a090c/figures/nominal_velocity_profiles/summary.json",
+    "_artifacts/91a090c/figures/nominal_velocity_profiles/profiles.csv"
+  ],
+  "issue": "1ab1fef",
+  "outputs": {
+    "csv": "_artifacts/1ab1fef/figures/nominal_velocity_profiles/profiles.csv",
+    "html": "_artifacts/1ab1fef/figures/nominal_velocity_profiles/figure.html",
+    "spec": "results/1ab1fef/figures/nominal_velocity_profiles/spec.json",
+    "spec_symlink": "results/1ab1fef/figures/nominal_velocity_profiles/figure.html",
+    "summary": "_artifacts/1ab1fef/figures/nominal_velocity_profiles/summary.json"
+  },
+  "schema_version": "rlrmp.figure_spec.v1",
+  "topic": "nominal_velocity_profiles",
+  "transform": [
+    {
+      "kwargs": {
+        "n_rollout_trials": 64,
+        "seed": 0
+      },
+      "name": "evaluate_epsilon_scaled_final_checkpoint"
+    },
+    {
+      "kwargs": {},
+      "name": "reuse_91a090c_comparison_profiles"
+    }
+  ]
+}

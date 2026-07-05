@@ -1,0 +1,196 @@
+{
+  "checkpoint_policy": "validation_selected_per_replicate",
+  "history_validation_log_note": "Validation history contains sparse positive records and zero padding. Durable models are only available at numbered checkpoints, so each checkpoint is scored by the most recent positive validation record at or before that checkpoint.",
+  "issue": "b413bb0",
+  "runs": {
+    "affine": [
+      {
+        "best_logged_validation_batch": 11601,
+        "best_logged_validation_objective": 4560.536627799051,
+        "checkpoint_batches": 12000,
+        "checkpoint_path": "_artifacts/b413bb0/runs/affine/checkpoints/checkpoint_0012000",
+        "final_validation_objective": 4593.076650050458,
+        "final_vs_selected_validation_degradation": 0.0,
+        "replicate": 0,
+        "scoring_validation_log_batch": 12000,
+        "scoring_validation_objective": 4593.076650050458,
+        "selection_source": "sparse_history_fallback"
+      },
+      {
+        "best_logged_validation_batch": 101,
+        "best_logged_validation_objective": 170342.8430875477,
+        "checkpoint_batches": 5000,
+        "checkpoint_path": "_artifacts/b413bb0/runs/affine/checkpoints/checkpoint_0005000",
+        "final_validation_objective": 171522.1900236424,
+        "final_vs_selected_validation_degradation": 265.63488343229983,
+        "replicate": 1,
+        "scoring_validation_log_batch": 5000,
+        "scoring_validation_objective": 171256.5551402101,
+        "selection_source": "sparse_history_fallback"
+      },
+      {
+        "best_logged_validation_batch": 101,
+        "best_logged_validation_objective": 169352.31300415355,
+        "checkpoint_batches": 4000,
+        "checkpoint_path": "_artifacts/b413bb0/runs/affine/checkpoints/checkpoint_0004000",
+        "final_validation_objective": 171399.7070113409,
+        "final_vs_selected_validation_degradation": 889.0309011834324,
+        "replicate": 2,
+        "scoring_validation_log_batch": 4000,
+        "scoring_validation_objective": 170510.67611015748,
+        "selection_source": "sparse_history_fallback"
+      },
+      {
+        "best_logged_validation_batch": 7401,
+        "best_logged_validation_objective": 170962.77415109967,
+        "checkpoint_batches": 11500,
+        "checkpoint_path": "_artifacts/b413bb0/runs/affine/checkpoints/checkpoint_0011500",
+        "final_validation_objective": 171543.72217574384,
+        "final_vs_selected_validation_degradation": 6.403650075022597,
+        "replicate": 3,
+        "scoring_validation_log_batch": 11500,
+        "scoring_validation_objective": 171537.31852566882,
+        "selection_source": "sparse_history_fallback"
+      },
+      {
+        "best_logged_validation_batch": 8501,
+        "best_logged_validation_objective": 4706.794578511735,
+        "checkpoint_batches": 11500,
+        "checkpoint_path": "_artifacts/b413bb0/runs/affine/checkpoints/checkpoint_0011500",
+        "final_validation_objective": 4907.428976745863,
+        "final_vs_selected_validation_degradation": 115.81919014077812,
+        "replicate": 4,
+        "scoring_validation_log_batch": 11500,
+        "scoring_validation_objective": 4791.609786605085,
+        "selection_source": "sparse_history_fallback"
+      }
+    ],
+    "direct_epsilon": [
+      {
+        "best_logged_validation_batch": 10000,
+        "best_logged_validation_objective": 4391.062908779876,
+        "checkpoint_batches": 10000,
+        "checkpoint_path": "_artifacts/b413bb0/runs/direct_epsilon/checkpoints/checkpoint_0010000",
+        "final_validation_objective": 4393.641655899364,
+        "final_vs_selected_validation_degradation": 2.578747119488071,
+        "replicate": 0,
+        "scoring_validation_log_batch": 10000,
+        "scoring_validation_objective": 4391.062908779876,
+        "selection_source": "sparse_history_fallback"
+      },
+      {
+        "best_logged_validation_batch": 10901,
+        "best_logged_validation_objective": 4390.8245418841225,
+        "checkpoint_batches": 11500,
+        "checkpoint_path": "_artifacts/b413bb0/runs/direct_epsilon/checkpoints/checkpoint_0011500",
+        "final_validation_objective": 4392.667966112756,
+        "final_vs_selected_validation_degradation": 1.7488614511066771,
+        "replicate": 1,
+        "scoring_validation_log_batch": 11500,
+        "scoring_validation_objective": 4390.91910466165,
+        "selection_source": "sparse_history_fallback"
+      },
+      {
+        "best_logged_validation_batch": 11201,
+        "best_logged_validation_objective": 4392.849783502738,
+        "checkpoint_batches": 12000,
+        "checkpoint_path": "_artifacts/b413bb0/runs/direct_epsilon/checkpoints/checkpoint_0012000",
+        "final_validation_objective": 4396.112444753443,
+        "final_vs_selected_validation_degradation": 0.0,
+        "replicate": 2,
+        "scoring_validation_log_batch": 12000,
+        "scoring_validation_objective": 4396.112444753443,
+        "selection_source": "sparse_history_fallback"
+      },
+      {
+        "best_logged_validation_batch": 11701,
+        "best_logged_validation_objective": 4390.576046453682,
+        "checkpoint_batches": 12000,
+        "checkpoint_path": "_artifacts/b413bb0/runs/direct_epsilon/checkpoints/checkpoint_0012000",
+        "final_validation_objective": 4391.387917500144,
+        "final_vs_selected_validation_degradation": 0.0,
+        "replicate": 3,
+        "scoring_validation_log_batch": 12000,
+        "scoring_validation_objective": 4391.387917500144,
+        "selection_source": "sparse_history_fallback"
+      },
+      {
+        "best_logged_validation_batch": 11901,
+        "best_logged_validation_objective": 4391.00548425532,
+        "checkpoint_batches": 12000,
+        "checkpoint_path": "_artifacts/b413bb0/runs/direct_epsilon/checkpoints/checkpoint_0012000",
+        "final_validation_objective": 4392.964833790294,
+        "final_vs_selected_validation_degradation": 0.0,
+        "replicate": 4,
+        "scoring_validation_log_batch": 12000,
+        "scoring_validation_objective": 4392.964833790294,
+        "selection_source": "sparse_history_fallback"
+      }
+    ],
+    "linear_no_bias": [
+      {
+        "best_logged_validation_batch": 11801,
+        "best_logged_validation_objective": 143415.40614570127,
+        "checkpoint_batches": 12000,
+        "checkpoint_path": "_artifacts/b413bb0/runs/linear_no_bias/checkpoints/checkpoint_0012000",
+        "final_validation_objective": 144569.3494898431,
+        "final_vs_selected_validation_degradation": 0.0,
+        "replicate": 0,
+        "scoring_validation_log_batch": 12000,
+        "scoring_validation_objective": 144569.3494898431,
+        "selection_source": "sparse_history_fallback"
+      },
+      {
+        "best_logged_validation_batch": 11001,
+        "best_logged_validation_objective": 4393.273901133241,
+        "checkpoint_batches": 11500,
+        "checkpoint_path": "_artifacts/b413bb0/runs/linear_no_bias/checkpoints/checkpoint_0011500",
+        "final_validation_objective": 4404.821671300811,
+        "final_vs_selected_validation_degradation": 7.274407679215074,
+        "replicate": 1,
+        "scoring_validation_log_batch": 11500,
+        "scoring_validation_objective": 4397.547263621596,
+        "selection_source": "sparse_history_fallback"
+      },
+      {
+        "best_logged_validation_batch": 12000,
+        "best_logged_validation_objective": 162794.03496165245,
+        "checkpoint_batches": 12000,
+        "checkpoint_path": "_artifacts/b413bb0/runs/linear_no_bias/checkpoints/checkpoint_0012000",
+        "final_validation_objective": 162794.03496165245,
+        "final_vs_selected_validation_degradation": 0.0,
+        "replicate": 2,
+        "scoring_validation_log_batch": 12000,
+        "scoring_validation_objective": 162794.03496165245,
+        "selection_source": "sparse_history_fallback"
+      },
+      {
+        "best_logged_validation_batch": 12000,
+        "best_logged_validation_objective": 4389.710901572029,
+        "checkpoint_batches": 12000,
+        "checkpoint_path": "_artifacts/b413bb0/runs/linear_no_bias/checkpoints/checkpoint_0012000",
+        "final_validation_objective": 4389.710901572029,
+        "final_vs_selected_validation_degradation": 0.0,
+        "replicate": 3,
+        "scoring_validation_log_batch": 12000,
+        "scoring_validation_objective": 4389.710901572029,
+        "selection_source": "sparse_history_fallback"
+      },
+      {
+        "best_logged_validation_batch": 11901,
+        "best_logged_validation_objective": 98480.63110599773,
+        "checkpoint_batches": 12000,
+        "checkpoint_path": "_artifacts/b413bb0/runs/linear_no_bias/checkpoints/checkpoint_0012000",
+        "final_validation_objective": 98559.69785176046,
+        "final_vs_selected_validation_degradation": 0.0,
+        "replicate": 4,
+        "scoring_validation_log_batch": 12000,
+        "scoring_validation_objective": 98559.69785176046,
+        "selection_source": "sparse_history_fallback"
+      }
+    ]
+  },
+  "schema_version": "rlrmp.validation_selected_gru_checkpoints.v1",
+  "selection_policy": "per-replicate checkpoint selected by minimum positive rollout validation objective among available durable checkpoints; analytical action and I/O metrics are audit-only",
+  "selection_source": "sparse_history_fallback"
+}
