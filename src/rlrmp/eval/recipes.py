@@ -517,9 +517,18 @@ def _uses_open_loop_calibration(params: Mapping[str, Any]) -> bool:
 
 
 def _consumed_open_loop_calibration_identity() -> dict[str, str]:
-    from rlrmp.data_products.calibration import consumed_calibration_identity
+    from rlrmp.data_products.calibration import (
+        CALIBRATION_PRODUCT_ROLE,
+        CALIBRATION_PRODUCT_SCHEMA_VERSION,
+        load_open_loop_calibration,
+    )
+    from rlrmp.data_products.envelope import consumed_identity
 
-    return consumed_calibration_identity()
+    return consumed_identity(
+        load_open_loop_calibration(),
+        role=CALIBRATION_PRODUCT_ROLE,
+        schema=CALIBRATION_PRODUCT_SCHEMA_VERSION,
+    )
 
 
 def _perturbation_bank_from_params(params: Mapping[str, Any]) -> dict[str, Any]:

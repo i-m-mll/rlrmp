@@ -15,9 +15,7 @@ EXPECTED_PACKAGE_ALL = {
     "DataProductError",
     "OpenLoopCalibration",
     "PerturbationCalibrationDefaults",
-    "consumed_broad_epsilon_identity",
-    "consumed_calibration_identity",
-    "consumed_perturbation_calibration_defaults_identity",
+    "consumed_identity",
     "load_broad_epsilon_anchors",
     "load_data_product",
     "load_open_loop_calibration",
@@ -26,6 +24,7 @@ EXPECTED_PACKAGE_ALL = {
 
 EXPECTED_MODULE_FUNCTIONS = {
     "rlrmp.data_products.envelope": {
+        "consumed_identity",
         "load_data_product",
         "read_data_product",
         "validate_data_product",
@@ -34,14 +33,11 @@ EXPECTED_MODULE_FUNCTIONS = {
     "rlrmp.data_products.calibration": {
         "calibration_data_product_requirement",
         "calibration_defaults_data_product_requirement",
-        "consumed_calibration_identity",
-        "consumed_perturbation_calibration_defaults_identity",
         "load_open_loop_calibration",
         "load_perturbation_calibration_defaults",
     },
     "rlrmp.data_products.broad_epsilon": {
         "broad_epsilon_data_product_requirement",
-        "consumed_broad_epsilon_identity",
         "load_broad_epsilon_anchors",
     },
     "rlrmp.data_products.registry": {

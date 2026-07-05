@@ -6,6 +6,14 @@ import json
 from pathlib import Path
 from typing import Any
 
+from feedbax.contracts.expressions import (
+    AllOf,
+    AnyOf,
+    Compare,
+    ContextItem,
+    ExpressionContext,
+    evaluate_expr,
+)
 from feedbax.contracts.manifest import TrainingRunManifest, load_manifest
 
 from rlrmp.paths import REPO_ROOT, flat_run_spec_path, run_spec_path
@@ -81,6 +89,40 @@ CS_LSS_FEEDBACK_COMPONENT_TYPES = frozenset(
         "RLRMPCsLssTargetRelativeDelayedFeedback",
         "RLRMPCsLssTargetRelativeDelayedProprioceptiveFeedback",
     }
+)
+
+_CS_LSS_PLANT_BACKEND_EXPR = AnyOf(
+    exprs=[
+        AllOf(
+            exprs=[
+                Compare(item="run_spec", path=path, op="exists"),
+                Compare(item="run_spec", path=path, op="eq", value=CS_LSS_PLANT_BACKEND),
+            ]
+        )
+        for path in (
+            "model_summary.plant_backend",
+            "training_summary.plant_backend",
+            "fidelity_status.plant_backend",
+            "hps.model.plant_backend",
+        )
+    ]
+    + [
+        AllOf(
+            exprs=[
+                Compare(
+                    item="run_spec",
+                    path="model_summary.exact_cs_linear_state_space",
+                    op="exists",
+                ),
+                Compare(
+                    item="run_spec",
+                    path="model_summary.exact_cs_linear_state_space",
+                    op="eq",
+                    value=True,
+                ),
+            ]
+        )
+    ]
 )
 # Legacy point-mass graph node types accepted by run-spec validation. The clean
 # targets are the Feedbax-native ``PointMass``/``FirstOrderFilter`` (and native
@@ -265,25 +307,12 @@ def _mapping(mapping: dict[str, Any], key: str) -> dict[str, Any]:
 
 
 def _is_cs_lss_run_spec(run_spec: dict[str, Any]) -> bool:
-    for path in (
-        ("model_summary", "plant_backend"),
-        ("training_summary", "plant_backend"),
-        ("fidelity_status", "plant_backend"),
-        ("hps", "model", "plant_backend"),
-    ):
-        value = _nested_get(run_spec, path)
-        if value == CS_LSS_PLANT_BACKEND:
-            return True
-    return _nested_get(run_spec, ("model_summary", "exact_cs_linear_state_space")) is True
-
-
-def _nested_get(mapping: dict[str, Any], path: tuple[str, ...]) -> Any:
-    value: Any = mapping
-    for key in path:
-        if not isinstance(value, dict):
-            return None
-        value = value.get(key)
-    return value
+    return evaluate_expr(
+        _CS_LSS_PLANT_BACKEND_EXPR,
+        ExpressionContext(
+            items={"run_spec": ContextItem(kind="run_spec", payload=run_spec)}
+        ),
+    )
 
 
 def _validate_cs_lss_graph_spec_sidecar(graph_spec_path: Path) -> None:

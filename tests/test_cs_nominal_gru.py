@@ -214,9 +214,29 @@ def _args(**overrides) -> argparse.Namespace:
 
 
 def _cs_nominal_gru_golden_fixture() -> dict:
-    return json.loads(
+    return _normalize_golden_fixture_paths(json.loads(
         Path("tests/fixtures/cs_nominal_gru_config_golden.json").read_text(encoding="utf-8")
-    )
+    ))
+
+
+def _normalize_golden_fixture_paths(value, *, key: str | None = None):
+    if key == "rlrmp_branch":
+        return "<current-branch>"
+    if isinstance(value, dict):
+        return {
+            child_key: _normalize_golden_fixture_paths(item, key=child_key)
+            for child_key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_normalize_golden_fixture_paths(item) for item in value]
+    if isinstance(value, str):
+        marker = "/worktrees/"
+        if marker in value:
+            prefix, suffix = value.split(marker, 1)
+            worktree_parts = suffix.split("/", 1)
+            if len(worktree_parts) == 2 and prefix.endswith("/rlrmp"):
+                return str(REPO_ROOT / worktree_parts[1])
+    return value
 
 
 def _stable_golden_run_spec_payload(payload: dict) -> dict:
@@ -229,6 +249,7 @@ def _stable_golden_run_spec_payload(payload: dict) -> dict:
         )
     )
     canonical["rlrmp_run_spec"]["provenance"]["git"]["rlrmp_commit"] = "<current-commit>"
+    canonical["rlrmp_run_spec"]["provenance"]["git"]["rlrmp_branch"] = "<current-branch>"
     return canonical
 
 

@@ -273,6 +273,138 @@ def test_feedback_quality_lens_bundle_resource_loads() -> None:
     )
 
 
+def test_feedback_quality_component_gating_expr_census_table() -> None:
+    registrations = dm._feedback_quality_component_registrations()
+    component_statuses = [
+        ("unavailable", True),
+        ("materialized", False),
+    ]
+
+    for name in dm.FEEDBACK_QUALITY_COMPONENT_NAMES:
+        registration = registrations[name]
+        decision_rows = [
+            (
+                "default_include",
+                {},
+                "unavailable",
+                True,
+                False,
+                True,
+                True,
+            ),
+            (
+                "explicit_include",
+                {f"include_{name}": True},
+                "unavailable",
+                True,
+                False,
+                True,
+                True,
+            ),
+            (
+                "disabled",
+                {f"include_{name}": False},
+                "unavailable",
+                False,
+                False,
+                False,
+                False,
+            ),
+            (
+                "not_applicable",
+                {"not_applicable_components": [name]},
+                "unavailable",
+                True,
+                True,
+                False,
+                False,
+            ),
+        ]
+        for status, should_materialize in component_statuses:
+            decision_rows.append(
+                (
+                    f"default_include_{status}",
+                    {},
+                    status,
+                    True,
+                    False,
+                    True,
+                    should_materialize,
+                )
+            )
+
+        for (
+            _case,
+            params,
+            status,
+            included,
+            not_applicable,
+            eligible,
+            should_materialize,
+        ) in decision_rows:
+            decision = dm._feedback_quality_gating_decision(
+                registration,
+                params=params,
+                component_status={"status": status},
+            )
+            assert decision.included is included
+            assert decision.not_applicable is not_applicable
+            assert decision.eligible is eligible
+            assert decision.should_materialize is should_materialize
+
+    example = registrations["evaluation_diagnostics"].gating_expr.model_dump(
+        mode="json",
+        exclude_none=True,
+    )
+    assert example == {
+        "kind": "all",
+        "exprs": [
+            {
+                "kind": "any",
+                "exprs": [
+                    {
+                        "kind": "not",
+                        "expr": {
+                            "kind": "compare",
+                            "item": "params",
+                            "path": "include_evaluation_diagnostics",
+                            "op": "exists",
+                        },
+                    },
+                    {
+                        "kind": "compare",
+                        "item": "params",
+                        "path": "include_evaluation_diagnostics",
+                        "op": "eq",
+                        "value": True,
+                    },
+                ],
+            },
+            {
+                "kind": "not",
+                "expr": {
+                    "kind": "all",
+                    "exprs": [
+                        {
+                            "kind": "compare",
+                            "item": "params",
+                            "path": "not_applicable_components",
+                            "op": "exists",
+                        },
+                        {
+                            "kind": "compare",
+                            "item": "params",
+                            "path": "not_applicable_components",
+                            "op": "contains",
+                            "value": "evaluation_diagnostics",
+                        },
+                    ],
+                },
+            },
+        ],
+    }
+
+
 def test_gru_postrun_bundle_declares_perturbation_leaf_aggregate_stages() -> None:
     registry = ExperimentRegistry()
     rlrmp.register_experiment_package(registry)

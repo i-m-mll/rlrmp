@@ -12,13 +12,15 @@ import numpy as np
 
 from rlrmp.analysis.pipelines.diagnostic_provenance import repo_relative, write_regeneration_spec
 from rlrmp.data_products.calibration import (
+    CALIBRATION_DEFAULTS_PRODUCT_ROLE,
+    CALIBRATION_DEFAULTS_PRODUCT_SCHEMA_VERSION,
     NativeConvention,
     ReachCalibrationPoint,
     ReachRelativeLevel,
     TimingCalibrationBin,
-    consumed_perturbation_calibration_defaults_identity,
     load_perturbation_calibration_defaults,
 )
+from rlrmp.data_products.envelope import consumed_identity
 from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
@@ -943,7 +945,11 @@ def _consumed_default_identities() -> list[dict[str, str]]:
 
     spec = add_consumed_data_identity(
         {},
-        **consumed_perturbation_calibration_defaults_identity(),
+        **consumed_identity(
+            load_perturbation_calibration_defaults(),
+            role=CALIBRATION_DEFAULTS_PRODUCT_ROLE,
+            schema=CALIBRATION_DEFAULTS_PRODUCT_SCHEMA_VERSION,
+        ),
     )
     return list(spec.get("consumed_data_identities", []))
 

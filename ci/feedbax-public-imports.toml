@@ -163,6 +163,25 @@ symbols = [
 ]
 
 [[canonical_homes]]
+module = "feedbax.contracts.expressions"
+symbols = [
+  "AllOf",
+  "AnyOf",
+  "Compare",
+  "ContextItem",
+  "Expr",
+  "ExpressionContext",
+  "ExpressionEvaluationError",
+  "ExpressionSelectAmbiguous",
+  "Not",
+  "Select",
+  "ValueQuery",
+  "canonical_expression_json",
+  "evaluate_expr",
+  "evaluate_query",
+]
+
+[[canonical_homes]]
 module = "feedbax.contracts.graphs.materialization"
 symbols = ["materialize_array_store", "materialize_model_artifact"]
 

@@ -8,9 +8,11 @@ import jax.random as jr
 import jax.tree_util as jtu
 import numpy as np
 import pytest
+from feedbax.contracts.manifest import ModelArtifactManifest
 
 from rlrmp.artifact_migration import (
     _DEFAULT_MINIMAX_ARGS,
+    _manifest_parent,
     load_migrated_model_artifact,
     minimax_args_from_run_spec,
 )
@@ -57,6 +59,35 @@ def test_minimax_args_from_run_spec_normalizes_historical_cli_flags() -> None:
     assert args.streaming_loss is False
     assert args.nn_hidden_derivative == 0.001
     assert args.n_adversary_batches == 0
+
+
+def test_manifest_parent_preserves_exactly_one_error_behavior() -> None:
+    manifest = ModelArtifactManifest.model_validate(
+        {
+            "kind": "ModelArtifactManifest",
+            "id": "unit-manifest",
+            "graph_spec": {"kind": "graph_spec", "id": "graph"},
+            "provenance": {
+                "parents": [
+                    {"kind": "legacy_run_spec", "id": "run-spec-1"},
+                    {"kind": "legacy_run_spec", "id": "run-spec-2"},
+                    {"kind": "legacy_checkpoint", "id": "checkpoint"},
+                ]
+            },
+        }
+    )
+
+    assert _manifest_parent(manifest, "legacy_checkpoint").id == "checkpoint"
+    with pytest.raises(
+        ValueError,
+        match="Expected exactly one 'legacy_run_spec' parent in manifest unit-manifest; found 2.",
+    ):
+        _manifest_parent(manifest, "legacy_run_spec")
+    with pytest.raises(
+        ValueError,
+        match="Expected exactly one 'missing' parent in manifest unit-manifest; found 0.",
+    ):
+        _manifest_parent(manifest, "missing")
 
 
 def test_frozen_minimax_defaults_only_diverge_on_allowlisted_keys() -> None:

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from pydantic import ValidationError as PydanticValidationError
 
@@ -38,6 +39,7 @@ from feedbax.contracts.manifest import (
 
 __all__ = [
     "DataProductError",
+    "consumed_identity",
     "load_data_product",
     "read_data_product",
     "validate_data_product",
@@ -52,6 +54,16 @@ class DataProductError(RuntimeError):
         super().__init__(message)
         self.kind = kind
         self.mismatch_class = mismatch_class
+
+
+def consumed_identity(product: Any, *, role: str, schema: str) -> dict[str, str]:
+    """Return the run-spec consumed-identity record for a loaded data product."""
+
+    return {
+        "role": role,
+        "schema": schema,
+        "hash": str(product.product_identity_hash),
+    }
 
 
 def read_data_product(path: Path | str) -> AnalysisDataProduct:
