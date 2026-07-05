@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+import math
 from pathlib import Path
 from typing import Any
 
 import equinox as eqx
+import jax.numpy as jnp
 from feedbax.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts
 from feedbax.analysis.context import AnalysisArtifactFile, AnalysisRunContext
 from feedbax.analysis.materialization import (
@@ -31,6 +33,7 @@ from feedbax.contracts.expressions import (
 from feedbax.contracts.manifest import AnalysisRunSpec, ParentRef
 from feedbax.analysis.types import AnalysisInputData
 from feedbax.config.namespace import TreeNamespace
+from pydantic import BaseModel, ConfigDict, Field
 
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import (
     MATERIALIZER_ISSUE_ID,
@@ -69,7 +72,19 @@ from rlrmp.eval.recipes import (
     CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,
     PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
 )
+from rlrmp.eval.policy_diagnostics import (
+    PolicyAbsentInputBlock,
+    PolicyInputSchema,
+    directional_gain_summary,
+    feedback_jacobian_sisu_modulation,
+    policy_jacobian,
+    signed_pair_odd_even_summary,
+    singular_value_summary,
+    validate_policy_jacobian,
+)
+from rlrmp.eval.recurrent_jacobians import compute_recurrent_jacobian_bank
 from rlrmp.paths import REPO_ROOT
+from rlrmp.runtime.params_models import register_params_model
 from rlrmp.runtime.spec_migrations import (
     GRU_PERTURBATION_BANK_SCHEMA_VERSION,
     PERTURBATION_CLASS_RESPONSE_SCHEMA_ID,
@@ -82,6 +97,8 @@ GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE = "rlrmp.diagnostic.gru_evaluation"
 GRU_POSTRUN_ANALYSIS_TYPE = "rlrmp.gru_postrun"
 PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE = "rlrmp.perturbation_class_response"
 PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE = "rlrmp.perturbation_bank_aggregate"
+POLICY_DIAGNOSTICS_ANALYSIS_TYPE = "rlrmp.diagnostic.policy_local"
+RECURRENT_JACOBIAN_ANALYSIS_TYPE = "rlrmp.diagnostic.recurrent_jacobian"
 FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE = "rlrmp.feedback_quality_lens"
 ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE = "rlrmp.robustness_phenotype"
 OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE = (
@@ -114,6 +131,8 @@ EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE = {
         PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
     ),
     PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE: ("analysis_run",),
+    POLICY_DIAGNOSTICS_ANALYSIS_TYPE: ("evaluation_run",),
+    RECURRENT_JACOBIAN_ANALYSIS_TYPE: ("evaluation_run",),
     FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE: ("analysis_run",),
     ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE: ("evaluation_run",),
 }
@@ -189,6 +208,41 @@ class FeedbackQualityGatingDecision:
     not_applicable: bool
     eligible: bool
     should_materialize: bool
+
+
+class PolicyDiagnosticsAnalysisParams(BaseModel):
+    """Params for controller-local policy diagnostic-bank analysis."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_id: str | None = None
+    schema_version: str | None = None
+    source_key: str = "policy_diagnostics"
+    row_ids: list[str] | None = None
+    include_arrays: bool = False
+    include_finite_difference: bool = False
+    finite_difference_epsilon: float = Field(1e-3, gt=0.0)
+    finite_difference_atol: float = Field(1e-4, ge=0.0)
+    finite_difference_rtol: float = Field(1e-3, ge=0.0)
+    finite_difference_batch_size: int | None = Field(128, ge=1)
+    feedback_block: str = "feedback"
+    sisu_block: str = "sisu"
+    sisu_values: list[float] | None = None
+
+
+class RecurrentJacobianAnalysisParams(BaseModel):
+    """Params for staged recurrent Jacobian diagnostic-bank analysis."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_id: str | None = None
+    schema_version: str | None = None
+    source_key: str = "recurrent_jacobians"
+    row_ids: list[str] | None = None
+    include_arrays: bool = False
+    include_finite_difference: bool = False
+    finite_difference_epsilon: float = Field(1e-4, gt=0.0)
+    finite_difference_batch_size: int | None = Field(128, ge=1)
 
 
 class RLRMPManifestAnalysis(AbstractAnalysis):
@@ -528,6 +582,16 @@ class RobustnessPhenotypeAnalysis(AbstractAnalysis):
 def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
     """Register rlrmp certificate/diagnostic analysis recipes with Feedbax."""
 
+    register_params_model(
+        POLICY_DIAGNOSTICS_ANALYSIS_TYPE,
+        PolicyDiagnosticsAnalysisParams,
+        replace=True,
+    )
+    register_params_model(
+        RECURRENT_JACOBIAN_ANALYSIS_TYPE,
+        RecurrentJacobianAnalysisParams,
+        replace=True,
+    )
     register_analysis_recipe(
         GRU_STANDARD_ANALYSIS_TYPE,
         gru_standard_certificate_recipe,
@@ -551,6 +615,16 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
     register_analysis_recipe(
         PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE,
         perturbation_bank_aggregate_recipe,
+        replace=replace,
+    )
+    register_analysis_recipe(
+        POLICY_DIAGNOSTICS_ANALYSIS_TYPE,
+        policy_diagnostics_recipe,
+        replace=replace,
+    )
+    register_analysis_recipe(
+        RECURRENT_JACOBIAN_ANALYSIS_TYPE,
+        recurrent_jacobian_recipe,
         replace=replace,
     )
     for registration in _feedback_quality_component_registrations().values():
@@ -762,6 +836,60 @@ def perturbation_bank_aggregate_spec(
     return AnalysisRunSpec(
         analysis_type=PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE,
         inputs=list(leaf_manifest_refs),
+        params=params,
+    )
+
+
+def policy_diagnostics_spec(
+    *,
+    evaluation_manifest_id: str | None = None,
+    evaluation_manifest_uri: Path | str | None = None,
+    row_ids: Sequence[str] | None = None,
+    include_arrays: bool = False,
+    include_finite_difference: bool = False,
+    sisu_values: Sequence[float] | None = None,
+) -> AnalysisRunSpec:
+    """Return declarative spec data for controller-local policy diagnostics."""
+
+    params = PolicyDiagnosticsAnalysisParams(
+        row_ids=None if row_ids is None else [str(row_id) for row_id in row_ids],
+        include_arrays=include_arrays,
+        include_finite_difference=include_finite_difference,
+        sisu_values=None if sisu_values is None else [float(value) for value in sisu_values],
+    ).model_dump(mode="json", exclude_none=True)
+    inputs = _evaluation_parent_refs(
+        evaluation_manifest_id=evaluation_manifest_id,
+        evaluation_manifest_uri=evaluation_manifest_uri,
+    )
+    return AnalysisRunSpec(
+        analysis_type=POLICY_DIAGNOSTICS_ANALYSIS_TYPE,
+        inputs=inputs,
+        params=params,
+    )
+
+
+def recurrent_jacobian_spec(
+    *,
+    evaluation_manifest_id: str | None = None,
+    evaluation_manifest_uri: Path | str | None = None,
+    row_ids: Sequence[str] | None = None,
+    include_arrays: bool = False,
+    include_finite_difference: bool = False,
+) -> AnalysisRunSpec:
+    """Return declarative spec data for staged recurrent Jacobian diagnostics."""
+
+    params = RecurrentJacobianAnalysisParams(
+        row_ids=None if row_ids is None else [str(row_id) for row_id in row_ids],
+        include_arrays=include_arrays,
+        include_finite_difference=include_finite_difference,
+    ).model_dump(mode="json", exclude_none=True)
+    inputs = _evaluation_parent_refs(
+        evaluation_manifest_id=evaluation_manifest_id,
+        evaluation_manifest_uri=evaluation_manifest_uri,
+    )
+    return AnalysisRunSpec(
+        analysis_type=RECURRENT_JACOBIAN_ANALYSIS_TYPE,
+        inputs=inputs,
         params=params,
     )
 
@@ -999,6 +1127,60 @@ def perturbation_bank_aggregate_recipe(
     return AnalysisRecipeResult(
         analyses={"perturbation_bank_aggregate": analysis},
         data=_empty_analysis_data(),
+    )
+
+
+def policy_diagnostics_recipe(
+    spec: AnalysisRunSpec,
+    _root: Path,
+    inputs: Sequence[Any],
+) -> AnalysisRecipeResult:
+    """Build controller-local policy diagnostic-bank analysis from eval states."""
+
+    params = PolicyDiagnosticsAnalysisParams.model_validate(spec.params)
+    evaluation_input = _primary_evaluation_input(inputs)
+    if evaluation_input is None:
+        raise ValueError("policy diagnostics analysis requires an EvaluationRunManifest input")
+    analysis = RLRMPManifestAnalysis(
+        materializer=lambda context, data: _materialize_policy_diagnostics(
+            context,
+            params,
+            evaluation_input=evaluation_input,
+        ),
+        artifact_role="rlrmp-policy-diagnostics-bank",
+        logical_name="policy_diagnostics_bank.json",
+        schema_boundary="rlrmp-owned controller-local policy diagnostics payload",
+    )
+    return AnalysisRecipeResult(
+        analyses={"policy_diagnostics_bank": analysis},
+        data=_analysis_data_from_evaluation_input(evaluation_input),
+    )
+
+
+def recurrent_jacobian_recipe(
+    spec: AnalysisRunSpec,
+    _root: Path,
+    inputs: Sequence[Any],
+) -> AnalysisRecipeResult:
+    """Build staged recurrent Jacobian diagnostic-bank analysis from eval states."""
+
+    params = RecurrentJacobianAnalysisParams.model_validate(spec.params)
+    evaluation_input = _primary_evaluation_input(inputs)
+    if evaluation_input is None:
+        raise ValueError("recurrent Jacobian analysis requires an EvaluationRunManifest input")
+    analysis = RLRMPManifestAnalysis(
+        materializer=lambda context, data: _materialize_recurrent_jacobians(
+            context,
+            params,
+            evaluation_input=evaluation_input,
+        ),
+        artifact_role="rlrmp-recurrent-jacobian-bank",
+        logical_name="recurrent_jacobian_bank.json",
+        schema_boundary="rlrmp-owned staged recurrent Jacobian diagnostics payload",
+    )
+    return AnalysisRecipeResult(
+        analyses={"recurrent_jacobian_bank": analysis},
+        data=_analysis_data_from_evaluation_input(evaluation_input),
     )
 
 
@@ -1358,6 +1540,438 @@ def _materialize_gru_postrun(
         payload=payload,
         existing_artifacts=tuple(_postrun_existing_artifacts(manifest, plan, repo_root=repo_root)),
     )
+
+
+def _materialize_policy_diagnostics(
+    context: AnalysisRunContext,
+    params: PolicyDiagnosticsAnalysisParams,
+    *,
+    evaluation_input: Any,
+) -> MaterializationResult:
+    states = _required_evaluation_states(evaluation_input, analysis_name="policy diagnostics")
+    rows = _selected_diagnostic_rows(
+        states,
+        source_key=params.source_key,
+        row_ids=params.row_ids,
+        analysis_name="policy diagnostics",
+    )
+    payload = {
+        "schema_id": "rlrmp.policy_diagnostics_bank",
+        "schema_version": "rlrmp.policy_diagnostics_bank.v1",
+        "analysis_type": POLICY_DIAGNOSTICS_ANALYSIS_TYPE,
+        "source_key": params.source_key,
+        "evaluation_manifest_dependency": _evaluation_dependency_metadata(evaluation_input),
+        "adapter": {
+            "input_contract": "evaluation_manifest_cached_local_linear_policy_rows",
+            "rollout_policy": "analysis_consumes_cached_evaluation_states_never_reruns_rollouts",
+            "kernel_module": "rlrmp.eval.policy_diagnostics",
+        },
+        "rows": [
+            _policy_diagnostic_row_payload(row, params=params, row_index=index)
+            for index, row in enumerate(rows)
+        ],
+        "declarative_analysis": _declarative_metadata(context),
+    }
+    return MaterializationResult(
+        payload=_json_ready(payload),
+        payload_metadata={
+            "analysis_type": POLICY_DIAGNOSTICS_ANALYSIS_TYPE,
+            "source_key": params.source_key,
+        },
+    )
+
+
+def _materialize_recurrent_jacobians(
+    context: AnalysisRunContext,
+    params: RecurrentJacobianAnalysisParams,
+    *,
+    evaluation_input: Any,
+) -> MaterializationResult:
+    states = _required_evaluation_states(evaluation_input, analysis_name="recurrent Jacobian")
+    rows = _selected_diagnostic_rows(
+        states,
+        source_key=params.source_key,
+        row_ids=params.row_ids,
+        analysis_name="recurrent Jacobian",
+    )
+    payload = {
+        "schema_id": "rlrmp.recurrent_jacobian_bank",
+        "schema_version": "rlrmp.recurrent_jacobian_bank.v1",
+        "analysis_type": RECURRENT_JACOBIAN_ANALYSIS_TYPE,
+        "source_key": params.source_key,
+        "evaluation_manifest_dependency": _evaluation_dependency_metadata(evaluation_input),
+        "adapter": {
+            "input_contract": "evaluation_manifest_cached_staged_recurrent_linearization_rows",
+            "rollout_policy": "analysis_consumes_cached_evaluation_states_never_reruns_rollouts",
+            "kernel_module": "rlrmp.eval.recurrent_jacobians",
+        },
+        "rows": [
+            _recurrent_jacobian_row_payload(row, params=params, row_index=index)
+            for index, row in enumerate(rows)
+        ],
+        "declarative_analysis": _declarative_metadata(context),
+    }
+    return MaterializationResult(
+        payload=_json_ready(payload),
+        payload_metadata={
+            "analysis_type": RECURRENT_JACOBIAN_ANALYSIS_TYPE,
+            "source_key": params.source_key,
+        },
+    )
+
+
+def _required_evaluation_states(
+    evaluation_input: Any,
+    *,
+    analysis_name: str,
+) -> Mapping[str, Any]:
+    states = _resolved_input_states(evaluation_input)
+    if states is None:
+        raise ValueError(f"{analysis_name} analysis requires evaluation states")
+    return states
+
+
+def _selected_diagnostic_rows(
+    states: Mapping[str, Any],
+    *,
+    source_key: str,
+    row_ids: Sequence[str] | None,
+    analysis_name: str,
+) -> tuple[Mapping[str, Any], ...]:
+    source = states.get(source_key)
+    if not isinstance(source, Mapping):
+        raise ValueError(
+            f"{analysis_name} evaluation states lack mapping payload {source_key!r}"
+        )
+    raw_rows = source.get("rows")
+    if not isinstance(raw_rows, Sequence) or isinstance(raw_rows, (str, bytes)):
+        raise ValueError(f"{analysis_name} payload {source_key!r} must contain rows")
+    rows = tuple(row for row in raw_rows if isinstance(row, Mapping))
+    if len(rows) != len(raw_rows):
+        raise TypeError(f"{analysis_name} rows must all be mappings")
+    if row_ids is None:
+        if not rows:
+            raise ValueError(f"{analysis_name} payload {source_key!r} contains no rows")
+        return rows
+
+    wanted = {str(row_id) for row_id in row_ids}
+    selected = tuple(row for row in rows if _row_id(row, row_index=-1) in wanted)
+    found = {_row_id(row, row_index=-1) for row in selected}
+    missing = sorted(wanted.difference(found))
+    if missing:
+        available = sorted(_row_id(row, row_index=index) for index, row in enumerate(rows))
+        raise ValueError(
+            f"{analysis_name} requested missing row_ids {missing}; available rows: {available}"
+        )
+    return selected
+
+
+def _policy_diagnostic_row_payload(
+    row: Mapping[str, Any],
+    *,
+    params: PolicyDiagnosticsAnalysisParams,
+    row_index: int,
+) -> dict[str, Any]:
+    row_id = _row_id(row, row_index=row_index)
+    values = _policy_block_values(row)
+    schema = PolicyInputSchema.from_values(
+        values,
+        roles=_string_mapping(row.get("roles")),
+        interpretations=_string_mapping(row.get("interpretations")),
+        absent_blocks=_policy_absent_blocks(row.get("absent_blocks")),
+    )
+    action = _required_array(row, "action").reshape(-1)
+    full_map = _policy_linear_map(row, schema=schema, output_size=action.size)
+    flat0 = schema.flatten(values)
+    action_shape = tuple(int(dim) for dim in _required_array(row, "action").shape)
+
+    def local_policy(blocks: Mapping[str, Any]) -> jnp.ndarray:
+        flat = schema.flatten(blocks)
+        output = action + full_map @ (flat - flat0)
+        return output.reshape(action_shape)
+
+    jacobian = policy_jacobian(local_policy, values, schema=schema)
+    block_summaries = {
+        name: {
+            "singular_values": singular_value_summary(matrix),
+            "directional_gains": directional_gain_summary(
+                matrix,
+                _optional_direction_matrix(row, name),
+            ),
+        }
+        for name, matrix in jacobian.by_block.items()
+    }
+    finite_difference = (
+        validate_policy_jacobian(
+            local_policy,
+            values,
+            schema=schema,
+            epsilon=params.finite_difference_epsilon,
+            finite_difference_batch_size=params.finite_difference_batch_size,
+            atol=params.finite_difference_atol,
+            rtol=params.finite_difference_rtol,
+        ).to_summary()
+        if params.include_finite_difference
+        else {"status": "skipped"}
+    )
+    sisu_values = params.sisu_values
+    if sisu_values is None and isinstance(row.get("sisu_values"), Sequence):
+        sisu_values = [float(value) for value in row["sisu_values"]]
+    sisu_modulation = (
+        feedback_jacobian_sisu_modulation(
+            local_policy,
+            values,
+            sisu_values=jnp.asarray(sisu_values),
+            schema=schema,
+            feedback_block=params.feedback_block,
+            sisu_block=params.sisu_block,
+        )
+        if sisu_values is not None
+        and params.feedback_block in schema.block_names
+        and params.sisu_block in schema.block_names
+        else {"status": "not_applicable", "reason": "sisu_values_or_blocks_absent"}
+    )
+    payload: dict[str, Any] = {
+        "row_id": row_id,
+        "metadata": dict(row.get("metadata", {})) if isinstance(row.get("metadata"), Mapping) else {},
+        "policy_point": {
+            "input_schema": schema.to_json(),
+            "action_shape": list(action_shape),
+        },
+        "jacobian": jacobian.to_summary(),
+        "block_summaries": block_summaries,
+        "finite_difference": finite_difference,
+        "sisu_modulation": sisu_modulation,
+        "signed_pairs": _policy_signed_pair_payloads(row),
+    }
+    if params.include_arrays:
+        payload["arrays"] = {
+            "jacobian": jacobian.full,
+            "blocks": dict(jacobian.by_block),
+        }
+    return payload
+
+
+def _recurrent_jacobian_row_payload(
+    row: Mapping[str, Any],
+    *,
+    params: RecurrentJacobianAnalysisParams,
+    row_index: int,
+) -> dict[str, Any]:
+    row_id = _row_id(row, row_index=row_index)
+    blocks = _required_mapping(row, "blocks")
+    h_pre = _required_array(row, "h_pre")
+    feedback = _required_array(row, "feedback")
+    sisu = _required_array(row, "sisu")
+    context = _optional_array(row.get("context"))
+    h_post = _required_array(row, "h_post").reshape(-1)
+    action = _required_array(row, "u").reshape(-1)
+    A = _required_block_matrix(blocks, "A")
+    B_y = _required_block_matrix(blocks, "B_y")
+    B_s = _required_block_matrix(blocks, "B_s")
+    B_c = _optional_array(blocks.get("B_c"))
+    W = _required_block_matrix(blocks, "W")
+    h0 = h_pre.reshape(-1)
+    y0 = feedback.reshape(-1)
+    s0 = sisu.reshape(-1)
+    c0 = None if context is None else context.reshape(-1)
+
+    def staged_update(
+        h_value: jnp.ndarray,
+        feedback_value: jnp.ndarray,
+        sisu_value: jnp.ndarray,
+        context_value: jnp.ndarray | None,
+    ) -> jnp.ndarray:
+        delta = A @ (jnp.ravel(h_value) - h0)
+        delta = delta + B_y @ (jnp.ravel(feedback_value) - y0)
+        delta = delta + B_s @ (jnp.ravel(sisu_value) - s0)
+        if B_c is not None and c0 is not None and context_value is not None:
+            delta = delta + B_c @ (jnp.ravel(context_value) - c0)
+        return (h_post + delta).reshape(_required_array(row, "h_post").shape)
+
+    def readout(h_value: jnp.ndarray) -> jnp.ndarray:
+        return action + W @ (jnp.ravel(h_value) - h_post)
+
+    bank = compute_recurrent_jacobian_bank(
+        staged_update=staged_update,
+        readout=readout,
+        h_pre=h_pre,
+        feedback=feedback,
+        sisu=sisu,
+        context=context,
+        finite_difference=params.include_finite_difference,
+        finite_difference_epsilon=params.finite_difference_epsilon,
+        finite_difference_batch_size=params.finite_difference_batch_size,
+    )
+    payload = bank.as_dict(include_arrays=params.include_arrays)
+    payload["row_id"] = row_id
+    row_metadata = dict(row.get("metadata", {})) if isinstance(row.get("metadata"), Mapping) else {}
+    payload["metadata"] = {
+        **row_metadata,
+        **dict(payload.get("metadata", {})),
+    }
+    return payload
+
+
+def _row_id(row: Mapping[str, Any], *, row_index: int) -> str:
+    value = row.get("row_id", row.get("id"))
+    if value is not None:
+        return str(value)
+    if row_index < 0:
+        return "<missing-row-id>"
+    return f"row_{row_index}"
+
+
+def _policy_block_values(row: Mapping[str, Any]) -> dict[str, jnp.ndarray]:
+    raw_blocks = row.get("blocks")
+    if raw_blocks is None and isinstance(row.get("policy_point"), Mapping):
+        raw_blocks = row["policy_point"].get("blocks")
+    if not isinstance(raw_blocks, Mapping):
+        raise ValueError("policy diagnostic row requires blocks mapping")
+    return {str(name): jnp.asarray(value) for name, value in raw_blocks.items()}
+
+
+def _policy_absent_blocks(value: Any) -> tuple[PolicyAbsentInputBlock, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        raise TypeError("absent_blocks must be a sequence of mappings")
+    blocks = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            raise TypeError("absent_blocks entries must be mappings")
+        blocks.append(
+            PolicyAbsentInputBlock(
+                name=str(item["name"]),
+                role=str(item["role"]),
+                reason=str(item["reason"]),
+            )
+        )
+    return tuple(blocks)
+
+
+def _policy_linear_map(
+    row: Mapping[str, Any],
+    *,
+    schema: PolicyInputSchema,
+    output_size: int,
+) -> jnp.ndarray:
+    if "linear_map" in row:
+        matrix = jnp.asarray(row["linear_map"])
+        return _validate_matrix_shape(matrix, rows=output_size, cols=schema.size, name="linear_map")
+    block_maps = row.get("block_maps")
+    if block_maps is None:
+        block_maps = row.get("linear_maps")
+    if not isinstance(block_maps, Mapping):
+        raise ValueError("policy diagnostic row requires linear_map or block_maps")
+    matrices = []
+    for block in schema.blocks:
+        if block.name not in block_maps:
+            raise ValueError(f"policy diagnostic row lacks block map {block.name!r}")
+        matrices.append(
+            _validate_matrix_shape(
+                jnp.asarray(block_maps[block.name]),
+                rows=output_size,
+                cols=block.size,
+                name=f"block_maps.{block.name}",
+            )
+        )
+    return jnp.concatenate(matrices, axis=1) if matrices else jnp.zeros((output_size, 0))
+
+
+def _policy_signed_pair_payloads(row: Mapping[str, Any]) -> list[dict[str, Any]]:
+    raw_pairs = row.get("signed_pairs", ())
+    if raw_pairs is None:
+        return []
+    if not isinstance(raw_pairs, Sequence) or isinstance(raw_pairs, (str, bytes)):
+        raise TypeError("signed_pairs must be a sequence of mappings")
+    pairs = []
+    for index, pair in enumerate(raw_pairs):
+        if not isinstance(pair, Mapping):
+            raise TypeError("signed_pairs entries must be mappings")
+        payload = signed_pair_odd_even_summary(
+            _required_array(pair, "positive_response"),
+            _required_array(pair, "negative_response"),
+            baseline=_optional_array(pair.get("baseline_response")),
+        )
+        payload["pair_id"] = str(pair.get("pair_id", f"pair_{index}"))
+        pairs.append(payload)
+    return pairs
+
+
+def _optional_direction_matrix(row: Mapping[str, Any], block_name: str) -> jnp.ndarray | None:
+    directions = row.get("directions")
+    if not isinstance(directions, Mapping) or block_name not in directions:
+        return None
+    return jnp.asarray(directions[block_name])
+
+
+def _required_mapping(row: Mapping[str, Any], key: str) -> Mapping[str, Any]:
+    value = row.get(key)
+    if not isinstance(value, Mapping):
+        raise ValueError(f"diagnostic row requires mapping {key!r}")
+    return value
+
+
+def _required_array(row: Mapping[str, Any], key: str) -> jnp.ndarray:
+    if key not in row:
+        raise ValueError(f"diagnostic row requires array {key!r}")
+    return jnp.asarray(row[key])
+
+
+def _optional_array(value: Any) -> jnp.ndarray | None:
+    return None if value is None else jnp.asarray(value)
+
+
+def _required_block_matrix(blocks: Mapping[str, Any], key: str) -> jnp.ndarray:
+    if key not in blocks:
+        raise ValueError(f"recurrent diagnostic row requires block {key!r}")
+    matrix = jnp.asarray(blocks[key])
+    if matrix.ndim != 2:
+        raise ValueError(f"recurrent block {key!r} must be 2D, got shape {matrix.shape}")
+    return matrix
+
+
+def _validate_matrix_shape(
+    matrix: jnp.ndarray,
+    *,
+    rows: int,
+    cols: int,
+    name: str,
+) -> jnp.ndarray:
+    if matrix.shape != (rows, cols):
+        raise ValueError(f"{name} has shape {matrix.shape}, expected {(rows, cols)}")
+    return matrix
+
+
+def _string_mapping(value: Any) -> dict[str, str] | None:
+    if value is None:
+        return None
+    if not isinstance(value, Mapping):
+        raise TypeError("expected a mapping")
+    return {str(key): str(item) for key, item in value.items()}
+
+
+def _json_ready(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _json_ready(item) for key, item in value.items()}
+    if (
+        hasattr(value, "tolist")
+        and hasattr(value, "shape")
+        and not isinstance(value, (str, bytes))
+    ):
+        return _json_ready(value.tolist())
+    if isinstance(value, tuple):
+        return [_json_ready(item) for item in value]
+    if isinstance(value, list):
+        return [_json_ready(item) for item in value]
+    if isinstance(value, float):
+        if math.isfinite(value):
+            return value
+        if math.isnan(value):
+            return "nan"
+        return "inf" if value > 0 else "-inf"
+    return value
 
 
 _COMPONENT_STATUS_UNAVAILABLE_EXPR = Compare(

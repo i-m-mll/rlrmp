@@ -29,12 +29,14 @@ from feedbax.contracts.manifest import (
     write_manifest,
 )
 from feedbax.plugins.registry import ExperimentRegistry
+from pydantic import ValidationError
 
 from rlrmp.analysis import declarative_materialization as dm
 from rlrmp.eval.recipes import (
     CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,
     PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
 )
+from rlrmp.runtime.params_models import params_model_for
 from rlrmp.runtime.spec_migrations import (
     CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND,
     PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND,
@@ -71,6 +73,8 @@ def _unregister_declarative_recipes() -> None:
     unregister_analysis_recipe(dm.GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE)
     unregister_analysis_recipe(dm.PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE)
     unregister_analysis_recipe(dm.PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE)
+    unregister_analysis_recipe(dm.POLICY_DIAGNOSTICS_ANALYSIS_TYPE)
+    unregister_analysis_recipe(dm.RECURRENT_JACOBIAN_ANALYSIS_TYPE)
     for analysis_type in dm.FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES.values():
         unregister_analysis_recipe(analysis_type)
     unregister_analysis_recipe(dm.FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE)
@@ -166,6 +170,70 @@ def _run_payload() -> dict[str, object]:
     }
 
 
+def _policy_diagnostics_payload() -> dict[str, object]:
+    return {
+        "schema_id": "rlrmp.eval.policy_diagnostics.fixture",
+        "rows": [
+            {
+                "row_id": "policy-row-a",
+                "blocks": {
+                    "feedback": [1.0, -1.0],
+                    "sisu": [0.25],
+                },
+                "roles": {
+                    "feedback": "controller_visible_feedback",
+                    "sisu": "sisu",
+                },
+                "absent_blocks": [
+                    {
+                        "name": "context",
+                        "role": "context",
+                        "reason": "no_hold_context",
+                    }
+                ],
+                "action": [0.5, -0.25],
+                "linear_map": [
+                    [2.0, 0.0, 1.0],
+                    [0.0, 3.0, -1.0],
+                ],
+                "sisu_values": [0.0, 1.0],
+                "signed_pairs": [
+                    {
+                        "pair_id": "feedback-x",
+                        "positive_response": [3.0, -1.0],
+                        "negative_response": [-2.0, 1.0],
+                        "baseline_response": [0.0, 0.0],
+                    }
+                ],
+            }
+        ],
+    }
+
+
+def _recurrent_jacobians_payload() -> dict[str, object]:
+    return {
+        "schema_id": "rlrmp.eval.recurrent_jacobians.fixture",
+        "rows": [
+            {
+                "row_id": "recurrent-row-a",
+                "h_pre": [0.1, -0.2],
+                "feedback": [1.0, 2.0],
+                "sisu": [0.5],
+                "context": [1.0],
+                "h_post": [0.25, -0.75],
+                "u": [1.5, -0.5],
+                "blocks": {
+                    "A": [[0.8, 0.1], [0.0, 0.7]],
+                    "B_y": [[1.0, 0.0], [0.5, -0.5]],
+                    "B_s": [[0.2], [0.4]],
+                    "B_c": [[0.1], [-0.2]],
+                    "W": [[1.0, 2.0], [-1.0, 0.5]],
+                },
+            }
+        ],
+    }
+
+
 def test_declarative_recipes_use_feedbax_context_materializers() -> None:
     standard = dm.gru_standard_certificate_recipe(
         dm.gru_standard_certificate_spec(),
@@ -236,6 +304,117 @@ def test_declarative_recipes_use_feedbax_context_materializers() -> None:
         perturbation_leaf.analyses["command_input_pulse"],
         AbstractAnalysis,
     )
+
+
+def test_diagnostic_bank_recipes_register_params_models_and_eval_dependencies() -> None:
+    rlrmp.register_experiment_package(ExperimentRegistry())
+
+    assert params_model_for(dm.POLICY_DIAGNOSTICS_ANALYSIS_TYPE) is (
+        dm.PolicyDiagnosticsAnalysisParams
+    )
+    assert params_model_for(dm.RECURRENT_JACOBIAN_ANALYSIS_TYPE) is (
+        dm.RecurrentJacobianAnalysisParams
+    )
+    with pytest.raises(ValidationError):
+        dm.PolicyDiagnosticsAnalysisParams.model_validate({"unknown": True})
+    with pytest.raises(ValidationError):
+        dm.RecurrentJacobianAnalysisParams.model_validate({"unknown": True})
+    assert dm.EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE[
+        dm.POLICY_DIAGNOSTICS_ANALYSIS_TYPE
+    ] == ("evaluation_run",)
+    assert dm.EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE[
+        dm.RECURRENT_JACOBIAN_ANALYSIS_TYPE
+    ] == ("evaluation_run",)
+
+
+def test_policy_diagnostics_recipe_consumes_cached_eval_states_and_records_custody(
+    tmp_path: Path,
+) -> None:
+    registry = ExperimentRegistry()
+    rlrmp.register_experiment_package(registry)
+    eval_manifest, eval_path = execute_evaluation_run_spec(
+        EvaluationRunSpec(
+            evaluation_type=CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,
+            inputs=[_training_ref()],
+            params=stamp_current_schema(
+                CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND,
+                {
+                    "task": "center_out",
+                    "policy_diagnostics": _policy_diagnostics_payload(),
+                },
+            ),
+        ),
+        root=tmp_path,
+        force=True,
+    )
+
+    analysis_manifest, _path = execute_analysis_run_spec(
+        dm.policy_diagnostics_spec(
+            evaluation_manifest_id=eval_manifest.id,
+            evaluation_manifest_uri=eval_path,
+            include_finite_difference=True,
+        ),
+        root=tmp_path,
+        issues=["a3a3716"],
+    )
+
+    payload = _artifact_payload(analysis_manifest, "rlrmp-policy-diagnostics-bank")
+    row = payload["rows"][0]
+    assert analysis_manifest.inputs[0].kind == "EvaluationRunManifest"
+    assert analysis_manifest.provenance.parents[0].id == eval_manifest.id
+    assert payload["adapter"]["kernel_module"] == "rlrmp.eval.policy_diagnostics"
+    assert payload["evaluation_manifest_dependency"]["manifest_id"] == eval_manifest.id
+    assert row["row_id"] == "policy-row-a"
+    assert row["finite_difference"]["passed"] is True
+    assert row["sisu_modulation"]["status"] == "available"
+    assert row["signed_pairs"][0]["pair_id"] == "feedback-x"
+    assert row["jacobian"]["blocks"]["feedback"]["shape"] == [2, 2]
+    assert row["block_summaries"]["feedback"]["singular_values"]["status"] == "available"
+
+
+def test_recurrent_jacobian_recipe_consumes_cached_eval_states_and_records_custody(
+    tmp_path: Path,
+) -> None:
+    registry = ExperimentRegistry()
+    rlrmp.register_experiment_package(registry)
+    eval_manifest, eval_path = execute_evaluation_run_spec(
+        EvaluationRunSpec(
+            evaluation_type=CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,
+            inputs=[_training_ref()],
+            params=stamp_current_schema(
+                CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND,
+                {
+                    "task": "center_out",
+                    "recurrent_jacobians": _recurrent_jacobians_payload(),
+                },
+            ),
+        ),
+        root=tmp_path,
+        force=True,
+    )
+
+    analysis_manifest, _path = execute_analysis_run_spec(
+        dm.recurrent_jacobian_spec(
+            evaluation_manifest_id=eval_manifest.id,
+            evaluation_manifest_uri=eval_path,
+            include_finite_difference=True,
+        ),
+        root=tmp_path,
+        issues=["061a879"],
+    )
+
+    payload = _artifact_payload(analysis_manifest, "rlrmp-recurrent-jacobian-bank")
+    row = payload["rows"][0]
+    assert analysis_manifest.inputs[0].kind == "EvaluationRunManifest"
+    assert analysis_manifest.provenance.parents[0].id == eval_manifest.id
+    assert payload["adapter"]["kernel_module"] == "rlrmp.eval.recurrent_jacobians"
+    assert payload["evaluation_manifest_dependency"]["manifest_id"] == eval_manifest.id
+    assert row["row_id"] == "recurrent-row-a"
+    assert row["metadata"]["domains"]["context"]["status"] == "available"
+    assert row["summaries"]["matrix_summaries"]["K_y"]["status"] == "available"
+    assert row["summaries"]["matrix_summaries"]["B_c"]["shape"] == [2, 1]
+    assert row["finite_difference"]["A"]["status"] == "available"
+    assert row["finite_difference"]["A"]["max_abs_error"] < 1e-3
 
 
 def test_output_feedback_bridge_bundle_resource_loads() -> None:

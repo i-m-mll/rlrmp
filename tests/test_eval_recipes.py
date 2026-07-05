@@ -142,6 +142,8 @@ def _bank() -> dict[str, Any]:
                 "legacy_diagnostics_manifest": None,
                 "legacy_bulk_arrays": {},
                 "gru_standard_certificate": None,
+                "policy_diagnostics": None,
+                "recurrent_jacobians": None,
             },
         ),
         (

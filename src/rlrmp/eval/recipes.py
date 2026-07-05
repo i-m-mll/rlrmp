@@ -73,6 +73,8 @@ class CenterOutEnsembleEvalParams(_StrictParamsModel):
     legacy_diagnostics_manifest: Any | None = None
     legacy_bulk_arrays: dict[str, Any] = Field(default_factory=dict)
     gru_standard_certificate: dict[str, Any] | None = None
+    policy_diagnostics: dict[str, Any] | None = None
+    recurrent_jacobians: dict[str, Any] | None = None
 
 
 class PerturbationResponseBankEvalParams(_StrictParamsModel):
@@ -223,6 +225,8 @@ def center_out_ensemble_recipe(
                 params,
                 root=root,
             ),
+            "policy_diagnostics": p.policy_diagnostics,
+            "recurrent_jacobians": p.recurrent_jacobians,
         },
     )
 
