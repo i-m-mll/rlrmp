@@ -25,6 +25,7 @@ EXPECTED_PACKAGE_ALL = {
 EXPECTED_MODULE_FUNCTIONS = {
     "rlrmp.data_products.envelope": {
         "consumed_identity",
+        "consumed_identity_from_loader",
         "load_data_product",
         "read_data_product",
         "validate_data_product",

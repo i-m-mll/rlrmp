@@ -508,9 +508,19 @@ def _model_driven_perturbation_response_bank_payload(
 def _with_eval_consumed_calibration_identity(params: Mapping[str, Any]) -> dict[str, Any]:
     if not _uses_open_loop_calibration(params):
         return dict(params)
+    from rlrmp.data_products.calibration import (
+        CALIBRATION_PRODUCT_ROLE,
+        CALIBRATION_PRODUCT_SCHEMA_VERSION,
+        load_open_loop_calibration,
+    )
+    from rlrmp.data_products.envelope import consumed_identity_from_loader
     from rlrmp.runtime.training_run_specs import add_consumed_data_identity
 
-    identity = _consumed_open_loop_calibration_identity()
+    identity = consumed_identity_from_loader(
+        load_product=load_open_loop_calibration,
+        role=CALIBRATION_PRODUCT_ROLE,
+        schema=CALIBRATION_PRODUCT_SCHEMA_VERSION,
+    )
     return add_consumed_data_identity(dict(params), **identity)
 
 
@@ -518,21 +528,6 @@ def _uses_open_loop_calibration(params: Mapping[str, Any]) -> bool:
     if params.get("consume_open_loop_calibration") is True:
         return True
     return str(params.get("bank_mode", params.get("mode", "raw"))) == "calibrated"
-
-
-def _consumed_open_loop_calibration_identity() -> dict[str, str]:
-    from rlrmp.data_products.calibration import (
-        CALIBRATION_PRODUCT_ROLE,
-        CALIBRATION_PRODUCT_SCHEMA_VERSION,
-        load_open_loop_calibration,
-    )
-    from rlrmp.data_products.envelope import consumed_identity
-
-    return consumed_identity(
-        load_open_loop_calibration(),
-        role=CALIBRATION_PRODUCT_ROLE,
-        schema=CALIBRATION_PRODUCT_SCHEMA_VERSION,
-    )
 
 
 def _perturbation_bank_from_params(params: Mapping[str, Any]) -> dict[str, Any]:
