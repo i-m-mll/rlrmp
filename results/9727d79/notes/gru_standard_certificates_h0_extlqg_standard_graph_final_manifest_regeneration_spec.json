@@ -1,0 +1,142 @@
+{
+  "command": {
+    "argv": [
+      "unknown"
+    ],
+    "cwd": ".",
+    "metadata": {
+      "materializer": "rlrmp.analysis.pipelines.cs_gru_standard_materialization.write_gru_standard_result",
+      "status": "not_recorded"
+    }
+  },
+  "inputs": [
+    {
+      "logical_name": "results/9727d79/runs/h0_extlqg_6d_standard_graph_distillation.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "de12e24d0076a728d13eab1107d84e1fea7de7dff766926312209146b1713e30",
+        "size_bytes": 59781
+      },
+      "role": "run_spec",
+      "sha256": "de12e24d0076a728d13eab1107d84e1fea7de7dff766926312209146b1713e30",
+      "size_bytes": 59781,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/9727d79/runs/h0_extlqg_6d_standard_graph_distillation.json"
+    },
+    {
+      "logical_name": "_artifacts/9727d79/runs/h0_extlqg_6d_standard_graph_distillation/trained_model.eqx",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "46ad995a328899a78d850c0fe75f54f4534dbef08da5632003e2267fcbb25a6a",
+        "size_bytes": 4312740
+      },
+      "role": "model_or_checkpoint_artifact",
+      "sha256": "46ad995a328899a78d850c0fe75f54f4534dbef08da5632003e2267fcbb25a6a",
+      "size_bytes": 4312740,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/9727d79/runs/h0_extlqg_6d_standard_graph_distillation/trained_model.eqx"
+    }
+  ],
+  "metadata": {
+    "diagnostic_name": "gru_standard_certificate",
+    "materializer": "rlrmp.analysis.pipelines.cs_gru_standard_materialization.write_gru_standard_result",
+    "notes": [
+      "Standard certificate is in scope for regeneration specs.",
+      "This spec records materialization provenance only; certificate values remain in the manifest."
+    ],
+    "schema_boundary": "rlrmp diagnostic payload; Feedbax regeneration custody"
+  },
+  "outputs": [
+    {
+      "logical_name": "results/9727d79/notes/gru_standard_certificates_h0_extlqg_standard_graph_final_manifest.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "edb94f05102e2a84ca108880a3d743e5f68b8118e0852382f66dbfb2a718c865",
+        "size_bytes": 20637
+      },
+      "role": "standard_certificate_manifest",
+      "sha256": "edb94f05102e2a84ca108880a3d743e5f68b8118e0852382f66dbfb2a718c865",
+      "size_bytes": 20637,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/9727d79/notes/gru_standard_certificates_h0_extlqg_standard_graph_final_manifest.json"
+    },
+    {
+      "logical_name": "results/9727d79/notes/gru_standard_certificates_h0_extlqg_standard_graph_final.md",
+      "media_type": "text/markdown",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "9ec10982532b5c68e142161768afcd4243d7fa3d1f43ea93c7c1e470409805c2",
+        "size_bytes": 1365
+      },
+      "role": "standard_certificate_note",
+      "sha256": "9ec10982532b5c68e142161768afcd4243d7fa3d1f43ea93c7c1e470409805c2",
+      "size_bytes": 1365,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/9727d79/notes/gru_standard_certificates_h0_extlqg_standard_graph_final.md"
+    }
+  ],
+  "parameters": {
+    "checkpoint_policy": "final_checkpoint",
+    "experiment": "9727d79",
+    "materializer_issue_id": "e6a32b8",
+    "run_ids": [
+      "h0_extlqg_6d_standard_graph_distillation"
+    ]
+  },
+  "provenance": {
+    "dirty": true,
+    "entrypoint": {
+      "kind": "rlrmp-diagnostic-materializer",
+      "metadata": {},
+      "name": "rlrmp.analysis.pipelines.cs_gru_standard_materialization.write_gru_standard_result"
+    },
+    "issues": [],
+    "metadata": {
+      "status_porcelain": [
+        "M .issue",
+        " M src/rlrmp/analysis/pipelines/gru_pilot_figures.py",
+        "?? results/9727d79/notes/gru_evaluation_diagnostics_h0_extlqg_standard_graph_final_regeneration_spec.json",
+        "?? results/9727d79/notes/gru_standard_certificates_h0_extlqg_standard_graph_final.md",
+        "?? results/9727d79/notes/gru_standard_certificates_h0_extlqg_standard_graph_final_manifest.json",
+        "?? results/9727d79/notes/gru_standard_certificates_h0_extlqg_standard_graph_final_manifest_regeneration_spec.json"
+      ]
+    },
+    "parents": [],
+    "source_branch": "feature/9727d79-extlqg-postrun",
+    "source_commit": "890e11327423dec418b595d50c66951d69dc0f62",
+    "source_repo": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__9727d79-extlqg-postrun"
+  },
+  "schema_id": "feedbax.spec.regeneration",
+  "schema_version": "feedbax.spec.regeneration.v1",
+  "source_files": [
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py",
+      "role": "source_file",
+      "sha256": "009f11e6aaac4942cfb6e7a19ed9798dda03b591470be2990d82b2976cfd4808",
+      "size_bytes": 48428
+    },
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/bridge_certificates.py",
+      "role": "source_file",
+      "sha256": "91ea1a5fafa36d8ee6c77c338720f07041e43545a79bcbca07492763f2de2926",
+      "size_bytes": 62529
+    },
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/standard_certificate_materialization.py",
+      "role": "source_file",
+      "sha256": "e6cf1fcb633cd15e47afdcdd788483061c17fe30038c804b882cea0968bb03ba",
+      "size_bytes": 3976
+    }
+  ],
+  "source_trees": []
+}

@@ -171,14 +171,12 @@ def materialize_gru_pilot_figures(
         else None
     )
 
-    histories = {
-        run.label: load_gru_training_history(
-            run.run_spec,
-            resolve_run_artifact_path(run.artifact_dir, "training_history.eqx"),
-        )
-        for run in runs
-    }
-    loss_files = write_loss_figures(histories, output_dir=output_dir)
+    histories = {}
+    for run in runs:
+        history_path = resolve_run_artifact_path(run.artifact_dir, "training_history.eqx")
+        if history_path.is_file():
+            histories[run.label] = load_gru_training_history(run.run_spec, history_path)
+    loss_files = write_loss_figures(histories, output_dir=output_dir) if histories else []
 
     velocity_profiles = [
         evaluate_stochastic_forward_velocity_profile(
