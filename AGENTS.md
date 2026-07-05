@@ -68,6 +68,24 @@ The neural networks are not the endpoint as an ML benchmark. They are model syst
   in that wave unless blocked by an explicit user decision or external
   infrastructure.
 
+### Integration verification bar
+
+- Before any commit lands on an integration or auth path, run the full test
+  suite (`PYTHONPATH="$PWD/src" uv run --no-sync python -m pytest tests/ -q`).
+  Targeted `-k`/subset runs are development aids, not an integration bar.
+  `feedbax_contract`-marked tests cannot be skipped by construction.
+- The suite includes a feedbax pin-drift check
+  (`tests/test_feedbax_ref_pin.py`): it fails when `ci/feedbax-ref.toml` no
+  longer matches the feedbax checkout the editable install runs against. The
+  fix is to bump the pin in the same wave as the feedbax change and rerun the
+  full suite — never to skip or delete the check. (Precedent escape: `7766182`
+  sat undetected on `main` because local feedbax had advanced past the CI
+  pin.)
+- Auth-request specs for changes that produce durable outputs must name the
+  registered surfaces (recipes, manifests, custody routes) those outputs route
+  through; an output that bypasses them must be called out and justified in
+  the spec.
+
 ### Analysis pipeline policy
 
 The current analysis pipeline is feedbax-native and manifest-canonical:
@@ -111,6 +129,20 @@ why an exception is still required.
 | `import_boundary` | rlrmp imports feedbax through public, canonical APIs only. |
 | `graph_spec_contract` and `artifact_manifest_normalization` | Graph specs and manifests remain schema-compatible with feedbax. |
 | `reaccretion_ratchet`, `lane_b_terminal_gate`, `lane_c_terminal_gate` | Deleted or remediated residual classes cannot quietly return. |
+
+### Query-language adoption is authoring-time, not retrofit
+
+Feedbax expression-grammar declarations (`Coalesce`, `Filter`, defaults,
+optional sources) belong on governed spec surfaces — documents, registrations,
+manifests — declared when the surface is authored. Do not retrofit in-function
+Python into expression ASTs: the per-target adjudication in
+`results/96ac0e5/notes/adjudication.md` (resolved in
+`results/86e1dd1/notes/post_grammar_adjudication.md`) rejected every such
+migration. Migrate only when the expression lands on a governed surface or
+kills cross-file duplication of one selection/gating shape. Semantic-drift
+caveat: `Coalesce`'s absence class is path-missing/zero-match only — it is not
+Python `or`-falsiness, and it treats an explicit null as a hit, unlike
+`is None`-advance idioms.
 
 ### LEGACY-banner convention
 
