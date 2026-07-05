@@ -1,0 +1,62 @@
+{
+  "figure_kind": "adaptive_damage_lambda",
+  "inputs": [
+    {
+      "path": "_artifacts/91a090c/runs/short_3500to1000/training_diagnostics.npz",
+      "sha256": "dd15e18ba7c8f797c653d1729cfb5738b441c769228080cc1fd276aad9194b06"
+    },
+    {
+      "path": "_artifacts/91a090c/runs/medium_3500to1000/training_diagnostics.npz",
+      "sha256": "9e16dd5f334df83d5f30bcfa33922b82226126f1c53d288a611a35b71a55c589"
+    },
+    {
+      "path": "_artifacts/91a090c/runs/short_3500to1000/training_diagnostics.json",
+      "sha256": "ac62821f022e0fdc002776cc8f2569b0adee11452d0c041ad03dd74fb224d64b"
+    },
+    {
+      "path": "_artifacts/91a090c/runs/medium_3500to1000/training_diagnostics.json",
+      "sha256": "335f3378d92fe0232e898c5568d456a41eeaf499f0948628e2e1eafcbc2f72ad"
+    },
+    {
+      "path": "results/91a090c/runs/short_3500to1000.json",
+      "sha256": "27ef3216a913d697609bf78757195825ca2bc5b76b6a6863674c2c9b75f0ed3f"
+    },
+    {
+      "path": "results/91a090c/runs/medium_3500to1000.json",
+      "sha256": "73800b7c4619449009d10be4049c54bc7eb2c5375bfaed9a31d83da640c75a37"
+    }
+  ],
+  "issue": "91a090c",
+  "plot_kwargs": {
+    "primary_y": "actual damage, damage EMA, target damage",
+    "rows": [
+      "short_3500to1000",
+      "medium_3500to1000"
+    ],
+    "secondary_y": true,
+    "secondary_y_axis": "adaptive lambda (post-update)",
+    "secondary_y_type": "log"
+  },
+  "timestamp": "2026-07-02T05:05:13.772792+00:00",
+  "transform": [
+    {
+      "kwargs": {
+        "damage_ema_key": "adaptive_epsilon_damage_ema",
+        "damage_key": "adaptive_epsilon_adaptive_update_damage_raw",
+        "damage_reduction": "replicate_mean",
+        "lambda_key": "adaptive_epsilon_lambda_value",
+        "target_damage_key": "adaptive_epsilon_target_damage",
+        "x_key": "adaptive_epsilon_global_batch"
+      },
+      "name": "adaptive_damage_lambda_trace"
+    }
+  ],
+  "versions": {
+    "equinox": "0.13.4",
+    "feedbax": "0.1.2",
+    "jax": "0.9.0",
+    "numpy": "2.4.1",
+    "plotly": "6.5.2",
+    "rlrmp": "0.1.0"
+  }
+}
