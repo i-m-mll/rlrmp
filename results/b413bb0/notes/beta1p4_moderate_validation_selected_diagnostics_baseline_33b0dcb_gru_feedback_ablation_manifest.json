@@ -1,0 +1,786 @@
+{
+  "ablation_modes": [
+    "normal",
+    "frozen_nominal_observation_tape",
+    "zeroed_perturbation_observation_deviation",
+    "shuffled_observation_history",
+    "lagged_observation_history",
+    "position_only_observation",
+    "velocity_only_observation"
+  ],
+  "analytical_action_io_metrics_role": "audit_only_not_used_for_checkpoint_selection",
+  "bank": {
+    "bank_id": "cs_calibrated_perturbation_response_v3",
+    "calibration_metadata_hooks": {
+      "calibration_mode": "reach_relative_peak_delta_x",
+      "controller_feedback_scale_manifest": "results/b413bb0/notes/beta1p4_moderate_validation_selected_diagnostics_baseline_33b0dcb_gru_evaluation_diagnostics.json",
+      "controller_feedback_scales": {
+        "force_filter": {
+          "aggregation": "mean_reference_scale_across_manifest_runs",
+          "component": "force_filter",
+          "reference_scale": 7.197019124847841,
+          "runs": [
+            {
+              "feedback_basis": "target_relative_delayed_feedback_plus_force_filter",
+              "feedback_basis_indices": [
+                4,
+                5
+              ],
+              "feedback_dim": 6,
+              "gru_input_indices": [
+                4,
+                5
+              ],
+              "reference_scale": 7.197019124847841,
+              "reference_scale_statistic": "p95_norm",
+              "run_id": "h0_no_pgd_targetsupport__const_band16_lr3e-3_clip5_b64",
+              "units": "N"
+            }
+          ]
+        },
+        "position": {
+          "aggregation": "mean_reference_scale_across_manifest_runs",
+          "component": "position",
+          "reference_scale": 0.15266244041716837,
+          "runs": [
+            {
+              "feedback_basis": "target_relative_delayed_feedback_plus_force_filter",
+              "feedback_basis_indices": [
+                0,
+                1
+              ],
+              "feedback_dim": 6,
+              "gru_input_indices": [
+                0,
+                1
+              ],
+              "reference_scale": 0.15266244041716837,
+              "reference_scale_statistic": "p95_norm",
+              "run_id": "h0_no_pgd_targetsupport__const_band16_lr3e-3_clip5_b64",
+              "units": "m"
+            }
+          ]
+        },
+        "velocity": {
+          "aggregation": "mean_reference_scale_across_manifest_runs",
+          "component": "velocity",
+          "reference_scale": 0.7177859315864432,
+          "runs": [
+            {
+              "feedback_basis": "target_relative_delayed_feedback_plus_force_filter",
+              "feedback_basis_indices": [
+                2,
+                3
+              ],
+              "feedback_dim": 6,
+              "gru_input_indices": [
+                2,
+                3
+              ],
+              "reference_scale": 0.7177859315864432,
+              "reference_scale_statistic": "p95_norm",
+              "run_id": "h0_no_pgd_targetsupport__const_band16_lr3e-3_clip5_b64",
+              "units": "m/s"
+            }
+          ]
+        }
+      },
+      "coordinating_issue": "1ad3c16",
+      "level_definitions": [
+        {
+          "fraction_of_reach": 0.1,
+          "name": "moderate",
+          "role": "moderate_probe"
+        }
+      ],
+      "reach_label": "fixed_0.15m",
+      "reach_length_m": 0.15,
+      "source": "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT, native conventions, and nominal-rollout controller feedback scale manifest",
+      "status": "bound_to_reach_relative_defaults"
+    },
+    "n_perturbations": 111
+  },
+  "bank_mode": "calibrated",
+  "bulk_detail_manifest": {
+    "contains": "full per-run feedback-ablation rows plus full feedback checkpoint rescore checkpoint-score details",
+    "format": "json",
+    "path": "_artifacts/b413bb0/feedback_ablation/beta1p4_moderate_validation_selected_diagnostics/baseline_33b0dcb/beta1p4_moderate_validation_selected_diagnostics_baseline_33b0dcb_gru_feedback_ablation_detail.json"
+  },
+  "checkpoint_policy": "validation_selected_per_replicate",
+  "evaluation_bins": {
+    "delayed_observation": null,
+    "initial_state": "initial_position_offset__moderate__x_pos",
+    "nominal": null,
+    "process_epsilon": "process_epsilon_force_state_xy__moderate__mid_t15_x_pos",
+    "sensory_feedback": "sensory_feedback_offset__position_moderate__mid_visible_t20_x_pos"
+  },
+  "feedback_checkpoint_rescore_policy": "audit_only_per_replicate_argmin_on_feedback_score",
+  "feedback_checkpoint_selection_audit": {
+    "candidate_granularity": "checkpoint_batch_per_replicate",
+    "checkpoint_scores_detail_manifest": "_artifacts/b413bb0/feedback_ablation/beta1p4_moderate_validation_selected_diagnostics/baseline_33b0dcb/beta1p4_moderate_validation_selected_diagnostics_baseline_33b0dcb_gru_feedback_ablation_detail.json",
+    "feedback_selection_policy": "per-replicate minimum family-balanced signed-pair-aware absolute/excess feedback perturbation score",
+    "note": "Feedback-selected checkpoints are reported for audit only. The primary materialization path still loads validation-selected checkpoints.",
+    "primary_checkpoint_policy": "validation_selected_per_replicate",
+    "runs": {
+      "h0_no_pgd_targetsupport__const_band16_lr3e-3_clip5_b64": {
+        "checkpoint_scores_detail_manifest": "_artifacts/b413bb0/feedback_ablation/beta1p4_moderate_validation_selected_diagnostics/baseline_33b0dcb/beta1p4_moderate_validation_selected_diagnostics_baseline_33b0dcb_gru_feedback_ablation_detail.json",
+        "feedback_bank_bins": [
+          "initial_state",
+          "process_epsilon",
+          "sensory_feedback"
+        ],
+        "feedback_scoring_policy": {
+          "family_balance": "mean over families after within-family row/pair aggregation",
+          "nominal_quality_gate": {
+            "endpoint_warn_m": 0.08,
+            "finite_full_qrf_cost_required": true,
+            "terminal_speed_warn_m_s": 0.35
+          },
+          "penalties": {
+            "command_energy_ratio": "available",
+            "command_oscillation_ratio": "available when command horizon has >=3 steps",
+            "command_smoothness_ratio": "available when command horizon has >=2 steps",
+            "fail_ratio": 4.0,
+            "warn_ratio": 2.0
+          },
+          "primary_policy_invariance": "feedback audit is not a hidden selector; the effective checkpoint policy is whichever manifest the materializer is explicitly given",
+          "response_cost": "absolute paired full-Q/R/Q_f perturbation delta; excess positive delta is also reported so negative signed improvements cannot win by sign alone",
+          "score_orientation": "lower_is_better",
+          "selection_role": "audit_only_not_primary_selection",
+          "signed_pair_handling": "rows with available +/- counterparts are averaged by signed_pair_key before family balancing; missing counterparts emit warnings"
+        },
+        "feedback_selected_checkpoints": [
+          {
+            "feedback_minus_validation_batches": -4000,
+            "feedback_score": 289.20220114150317,
+            "feedback_score_components": [
+              {
+                "family": "initial_position_offset",
+                "members": [
+                  "initial_position_offset__moderate__x_pos",
+                  "initial_position_offset__moderate__x_neg"
+                ],
+                "score": 542.2284058905962,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"plant_cartesian_xy\", \"channel\": \"initial_state\", \"epsilon_component\": null, \"epsilon_index\": null, \"family\": \"initial_position_offset\", \"initial_position_case\": \"D_current_state_immediately_visible\", \"timing\": [[\"epoch\", \"initial_condition\"], [\"time_index\", 0]]}",
+                "type": "signed_pair"
+              },
+              {
+                "family": "process_epsilon_force_state_xy",
+                "members": [
+                  "process_epsilon_force_state_xy__moderate__mid_t15_x_pos",
+                  "process_epsilon_force_state_xy__moderate__mid_t15_x_neg"
+                ],
+                "score": 235.19777927535003,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"cs_lss_process_epsilon_current_physical_block\", \"channel\": \"process_epsilon\", \"epsilon_component\": \"force_state_x\", \"epsilon_index\": 4, \"family\": \"process_epsilon_force_state_xy\", \"initial_position_case\": null, \"timing\": [[\"duration_steps\", 5], [\"epoch\", \"movement_indexed\"], [\"start_time_index\", 15], [\"timing_bin\", \"mid\"], [\"timing_bin_role\", \"plant_side_open_loop_calibration\"]]}",
+                "type": "signed_pair"
+              },
+              {
+                "family": "false_feedback_offset",
+                "members": [
+                  "sensory_feedback_offset__position_moderate__mid_visible_t20_x_pos",
+                  "sensory_feedback_offset__position_moderate__mid_visible_t20_x_neg"
+                ],
+                "score": 90.18041825856335,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"sensory_feedback_named_channel\", \"channel\": \"sensory_feedback\", \"epsilon_component\": null, \"epsilon_index\": null, \"family\": \"sensory_feedback_offset\", \"initial_position_case\": null, \"timing\": [[\"duration_steps\", 5], [\"epoch\", \"controller_visible\"], [\"start_time_index\", 20], [\"timing_bin\", \"mid_visible\"], [\"timing_bin_role\", \"controller_visible_offset_convention\"]]}",
+                "type": "signed_pair"
+              }
+            ],
+            "feedback_selected_checkpoint_batches": 3500,
+            "n_available_feedback_bins": 6,
+            "replicate": 0,
+            "selection_role": "audit_only_not_primary_selection",
+            "status": "available",
+            "validation_selected_checkpoint_batches": 7500
+          },
+          {
+            "feedback_minus_validation_batches": 5000,
+            "feedback_score": 308.2190510480478,
+            "feedback_score_components": [
+              {
+                "family": "initial_position_offset",
+                "members": [
+                  "initial_position_offset__moderate__x_pos",
+                  "initial_position_offset__moderate__x_neg"
+                ],
+                "score": 800.5143499954205,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"plant_cartesian_xy\", \"channel\": \"initial_state\", \"epsilon_component\": null, \"epsilon_index\": null, \"family\": \"initial_position_offset\", \"initial_position_case\": \"D_current_state_immediately_visible\", \"timing\": [[\"epoch\", \"initial_condition\"], [\"time_index\", 0]]}",
+                "type": "signed_pair"
+              },
+              {
+                "family": "process_epsilon_force_state_xy",
+                "members": [
+                  "process_epsilon_force_state_xy__moderate__mid_t15_x_pos",
+                  "process_epsilon_force_state_xy__moderate__mid_t15_x_neg"
+                ],
+                "score": 92.54570826579942,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"cs_lss_process_epsilon_current_physical_block\", \"channel\": \"process_epsilon\", \"epsilon_component\": \"force_state_x\", \"epsilon_index\": 4, \"family\": \"process_epsilon_force_state_xy\", \"initial_position_case\": null, \"timing\": [[\"duration_steps\", 5], [\"epoch\", \"movement_indexed\"], [\"start_time_index\", 15], [\"timing_bin\", \"mid\"], [\"timing_bin_role\", \"plant_side_open_loop_calibration\"]]}",
+                "type": "signed_pair"
+              },
+              {
+                "family": "false_feedback_offset",
+                "members": [
+                  "sensory_feedback_offset__position_moderate__mid_visible_t20_x_pos",
+                  "sensory_feedback_offset__position_moderate__mid_visible_t20_x_neg"
+                ],
+                "score": 31.597094882923486,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"sensory_feedback_named_channel\", \"channel\": \"sensory_feedback\", \"epsilon_component\": null, \"epsilon_index\": null, \"family\": \"sensory_feedback_offset\", \"initial_position_case\": null, \"timing\": [[\"duration_steps\", 5], [\"epoch\", \"controller_visible\"], [\"start_time_index\", 20], [\"timing_bin\", \"mid_visible\"], [\"timing_bin_role\", \"controller_visible_offset_convention\"]]}",
+                "type": "signed_pair"
+              }
+            ],
+            "feedback_selected_checkpoint_batches": 11000,
+            "n_available_feedback_bins": 6,
+            "replicate": 1,
+            "selection_role": "audit_only_not_primary_selection",
+            "status": "available",
+            "validation_selected_checkpoint_batches": 6000
+          },
+          {
+            "feedback_minus_validation_batches": 1000,
+            "feedback_score": 311.0662682676876,
+            "feedback_score_components": [
+              {
+                "family": "initial_position_offset",
+                "members": [
+                  "initial_position_offset__moderate__x_pos",
+                  "initial_position_offset__moderate__x_neg"
+                ],
+                "score": 806.8705936608334,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"plant_cartesian_xy\", \"channel\": \"initial_state\", \"epsilon_component\": null, \"epsilon_index\": null, \"family\": \"initial_position_offset\", \"initial_position_case\": \"D_current_state_immediately_visible\", \"timing\": [[\"epoch\", \"initial_condition\"], [\"time_index\", 0]]}",
+                "type": "signed_pair"
+              },
+              {
+                "family": "process_epsilon_force_state_xy",
+                "members": [
+                  "process_epsilon_force_state_xy__moderate__mid_t15_x_pos",
+                  "process_epsilon_force_state_xy__moderate__mid_t15_x_neg"
+                ],
+                "score": 96.96750380665192,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"cs_lss_process_epsilon_current_physical_block\", \"channel\": \"process_epsilon\", \"epsilon_component\": \"force_state_x\", \"epsilon_index\": 4, \"family\": \"process_epsilon_force_state_xy\", \"initial_position_case\": null, \"timing\": [[\"duration_steps\", 5], [\"epoch\", \"movement_indexed\"], [\"start_time_index\", 15], [\"timing_bin\", \"mid\"], [\"timing_bin_role\", \"plant_side_open_loop_calibration\"]]}",
+                "type": "signed_pair"
+              },
+              {
+                "family": "false_feedback_offset",
+                "members": [
+                  "sensory_feedback_offset__position_moderate__mid_visible_t20_x_pos",
+                  "sensory_feedback_offset__position_moderate__mid_visible_t20_x_neg"
+                ],
+                "score": 29.360707335577317,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"sensory_feedback_named_channel\", \"channel\": \"sensory_feedback\", \"epsilon_component\": null, \"epsilon_index\": null, \"family\": \"sensory_feedback_offset\", \"initial_position_case\": null, \"timing\": [[\"duration_steps\", 5], [\"epoch\", \"controller_visible\"], [\"start_time_index\", 20], [\"timing_bin\", \"mid_visible\"], [\"timing_bin_role\", \"controller_visible_offset_convention\"]]}",
+                "type": "signed_pair"
+              }
+            ],
+            "feedback_selected_checkpoint_batches": 12000,
+            "n_available_feedback_bins": 6,
+            "replicate": 2,
+            "selection_role": "audit_only_not_primary_selection",
+            "status": "available",
+            "validation_selected_checkpoint_batches": 11000
+          },
+          {
+            "feedback_minus_validation_batches": -7000,
+            "feedback_score": 290.14082558365754,
+            "feedback_score_components": [
+              {
+                "family": "initial_position_offset",
+                "members": [
+                  "initial_position_offset__moderate__x_pos",
+                  "initial_position_offset__moderate__x_neg"
+                ],
+                "score": 680.7725010422934,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"plant_cartesian_xy\", \"channel\": \"initial_state\", \"epsilon_component\": null, \"epsilon_index\": null, \"family\": \"initial_position_offset\", \"initial_position_case\": \"D_current_state_immediately_visible\", \"timing\": [[\"epoch\", \"initial_condition\"], [\"time_index\", 0]]}",
+                "type": "signed_pair"
+              },
+              {
+                "family": "process_epsilon_force_state_xy",
+                "members": [
+                  "process_epsilon_force_state_xy__moderate__mid_t15_x_pos",
+                  "process_epsilon_force_state_xy__moderate__mid_t15_x_neg"
+                ],
+                "score": 153.15028729696533,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"cs_lss_process_epsilon_current_physical_block\", \"channel\": \"process_epsilon\", \"epsilon_component\": \"force_state_x\", \"epsilon_index\": 4, \"family\": \"process_epsilon_force_state_xy\", \"initial_position_case\": null, \"timing\": [[\"duration_steps\", 5], [\"epoch\", \"movement_indexed\"], [\"start_time_index\", 15], [\"timing_bin\", \"mid\"], [\"timing_bin_role\", \"plant_side_open_loop_calibration\"]]}",
+                "type": "signed_pair"
+              },
+              {
+                "family": "false_feedback_offset",
+                "members": [
+                  "sensory_feedback_offset__position_moderate__mid_visible_t20_x_pos",
+                  "sensory_feedback_offset__position_moderate__mid_visible_t20_x_neg"
+                ],
+                "score": 36.49968841171396,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"sensory_feedback_named_channel\", \"channel\": \"sensory_feedback\", \"epsilon_component\": null, \"epsilon_index\": null, \"family\": \"sensory_feedback_offset\", \"initial_position_case\": null, \"timing\": [[\"duration_steps\", 5], [\"epoch\", \"controller_visible\"], [\"start_time_index\", 20], [\"timing_bin\", \"mid_visible\"], [\"timing_bin_role\", \"controller_visible_offset_convention\"]]}",
+                "type": "signed_pair"
+              }
+            ],
+            "feedback_selected_checkpoint_batches": 3500,
+            "n_available_feedback_bins": 6,
+            "replicate": 3,
+            "selection_role": "audit_only_not_primary_selection",
+            "status": "available",
+            "validation_selected_checkpoint_batches": 10500
+          },
+          {
+            "feedback_minus_validation_batches": -7000,
+            "feedback_score": 300.5098578318947,
+            "feedback_score_components": [
+              {
+                "family": "initial_position_offset",
+                "members": [
+                  "initial_position_offset__moderate__x_pos",
+                  "initial_position_offset__moderate__x_neg"
+                ],
+                "score": 776.0191144503298,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"plant_cartesian_xy\", \"channel\": \"initial_state\", \"epsilon_component\": null, \"epsilon_index\": null, \"family\": \"initial_position_offset\", \"initial_position_case\": \"D_current_state_immediately_visible\", \"timing\": [[\"epoch\", \"initial_condition\"], [\"time_index\", 0]]}",
+                "type": "signed_pair"
+              },
+              {
+                "family": "process_epsilon_force_state_xy",
+                "members": [
+                  "process_epsilon_force_state_xy__moderate__mid_t15_x_pos",
+                  "process_epsilon_force_state_xy__moderate__mid_t15_x_neg"
+                ],
+                "score": 106.15532996371195,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"cs_lss_process_epsilon_current_physical_block\", \"channel\": \"process_epsilon\", \"epsilon_component\": \"force_state_x\", \"epsilon_index\": 4, \"family\": \"process_epsilon_force_state_xy\", \"initial_position_case\": null, \"timing\": [[\"duration_steps\", 5], [\"epoch\", \"movement_indexed\"], [\"start_time_index\", 15], [\"timing_bin\", \"mid\"], [\"timing_bin_role\", \"plant_side_open_loop_calibration\"]]}",
+                "type": "signed_pair"
+              },
+              {
+                "family": "false_feedback_offset",
+                "members": [
+                  "sensory_feedback_offset__position_moderate__mid_visible_t20_x_pos",
+                  "sensory_feedback_offset__position_moderate__mid_visible_t20_x_neg"
+                ],
+                "score": 19.35512908164231,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"sensory_feedback_named_channel\", \"channel\": \"sensory_feedback\", \"epsilon_component\": null, \"epsilon_index\": null, \"family\": \"sensory_feedback_offset\", \"initial_position_case\": null, \"timing\": [[\"duration_steps\", 5], [\"epoch\", \"controller_visible\"], [\"start_time_index\", 20], [\"timing_bin\", \"mid_visible\"], [\"timing_bin_role\", \"controller_visible_offset_convention\"]]}",
+                "type": "signed_pair"
+              }
+            ],
+            "feedback_selected_checkpoint_batches": 2500,
+            "n_available_feedback_bins": 6,
+            "replicate": 4,
+            "selection_role": "audit_only_not_primary_selection",
+            "status": "available",
+            "validation_selected_checkpoint_batches": 9500
+          }
+        ],
+        "n_checkpoint_candidates": 24,
+        "selection_leakage_guard": "feedback-selected checkpoints are reported only in this sidecar; they become the effective loaded checkpoints only when materialized through an explicit fixed-bank checkpoint manifest",
+        "selection_policy": "per-replicate argmin of family-balanced signed-pair-aware absolute/excess perturbation response score with nominal-quality gates and available command-energy/smoothness/oscillation penalties",
+        "selection_role": "audit_only_not_primary_selection",
+        "source_checkpoint_policy": "validation_selected_per_replicate",
+        "status": "materialized"
+      }
+    },
+    "schema_version": "rlrmp.gru_feedback_checkpoint_selection_audit.v1",
+    "selection_use": "audit_only_not_primary_selection",
+    "status": "materialized"
+  },
+  "issue": "b413bb0",
+  "labels": [
+    "no-PGD H0 const_band16"
+  ],
+  "manifest_role": "tracked_summary",
+  "preferred_checkpoint_manifest_path": null,
+  "regeneration_spec": "results/b413bb0/notes/beta1p4_moderate_validation_selected_diagnostics_baseline_33b0dcb_gru_feedback_ablation_manifest_regeneration_spec.json",
+  "runs": {
+    "h0_no_pgd_targetsupport__const_band16_lr3e-3_clip5_b64": {
+      "ablation_rows_detail_manifest": "_artifacts/b413bb0/feedback_ablation/beta1p4_moderate_validation_selected_diagnostics/baseline_33b0dcb/beta1p4_moderate_validation_selected_diagnostics_baseline_33b0dcb_gru_feedback_ablation_detail.json",
+      "artifact_dir": "_artifacts/33b0dcb/runs/h0_no_pgd_targetsupport__const_band16_lr3e-3_clip5_b64",
+      "checkpoint_selection": [
+        {
+          "best_logged_validation_batch": 6201,
+          "best_logged_validation_objective": 4444.277580777984,
+          "checkpoint_batches": 7500,
+          "checkpoint_path": "_artifacts/33b0dcb/runs/h0_no_pgd_targetsupport__const_band16_lr3e-3_clip5_b64/checkpoints/checkpoint_0007500",
+          "final_validation_objective": 4458.722523496944,
+          "final_vs_selected_validation_degradation": 10.505411624090812,
+          "replicate": 0,
+          "scoring_validation_log_batch": 7500,
+          "scoring_validation_objective": 4448.217111872853,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 9001,
+          "best_logged_validation_objective": 4451.613654434585,
+          "checkpoint_batches": 6000,
+          "checkpoint_path": "_artifacts/33b0dcb/runs/h0_no_pgd_targetsupport__const_band16_lr3e-3_clip5_b64/checkpoints/checkpoint_0006000",
+          "final_validation_objective": 4463.530645892384,
+          "final_vs_selected_validation_degradation": 7.570676785326214,
+          "replicate": 1,
+          "scoring_validation_log_batch": 6000,
+          "scoring_validation_objective": 4455.959969107058,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 9801,
+          "best_logged_validation_objective": 4450.561014982226,
+          "checkpoint_batches": 11000,
+          "checkpoint_path": "_artifacts/33b0dcb/runs/h0_no_pgd_targetsupport__const_band16_lr3e-3_clip5_b64/checkpoints/checkpoint_0011000",
+          "final_validation_objective": 4463.5100899033005,
+          "final_vs_selected_validation_degradation": 0.0,
+          "replicate": 2,
+          "scoring_validation_log_batch": 11000,
+          "scoring_validation_objective": 4463.5100899033005,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10701,
+          "best_logged_validation_objective": 4449.200515991944,
+          "checkpoint_batches": 10500,
+          "checkpoint_path": "_artifacts/33b0dcb/runs/h0_no_pgd_targetsupport__const_band16_lr3e-3_clip5_b64/checkpoints/checkpoint_0010500",
+          "final_validation_objective": 4457.977624619323,
+          "final_vs_selected_validation_degradation": 2.7047948550871297,
+          "replicate": 3,
+          "scoring_validation_log_batch": 10500,
+          "scoring_validation_objective": 4455.272829764236,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 8201,
+          "best_logged_validation_objective": 4451.041768097024,
+          "checkpoint_batches": 9500,
+          "checkpoint_path": "_artifacts/33b0dcb/runs/h0_no_pgd_targetsupport__const_band16_lr3e-3_clip5_b64/checkpoints/checkpoint_0009500",
+          "final_validation_objective": 4468.854146179542,
+          "final_vs_selected_validation_degradation": 15.183158615299362,
+          "replicate": 4,
+          "scoring_validation_log_batch": 9500,
+          "scoring_validation_objective": 4453.670987564243,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "dt_s": 0.01,
+      "feedback_checkpoint_rescore": {
+        "checkpoint_scores_detail_manifest": "_artifacts/b413bb0/feedback_ablation/beta1p4_moderate_validation_selected_diagnostics/baseline_33b0dcb/beta1p4_moderate_validation_selected_diagnostics_baseline_33b0dcb_gru_feedback_ablation_detail.json",
+        "feedback_bank_bins": [
+          "initial_state",
+          "process_epsilon",
+          "sensory_feedback"
+        ],
+        "feedback_scoring_policy": {
+          "family_balance": "mean over families after within-family row/pair aggregation",
+          "nominal_quality_gate": {
+            "endpoint_warn_m": 0.08,
+            "finite_full_qrf_cost_required": true,
+            "terminal_speed_warn_m_s": 0.35
+          },
+          "penalties": {
+            "command_energy_ratio": "available",
+            "command_oscillation_ratio": "available when command horizon has >=3 steps",
+            "command_smoothness_ratio": "available when command horizon has >=2 steps",
+            "fail_ratio": 4.0,
+            "warn_ratio": 2.0
+          },
+          "primary_policy_invariance": "feedback audit is not a hidden selector; the effective checkpoint policy is whichever manifest the materializer is explicitly given",
+          "response_cost": "absolute paired full-Q/R/Q_f perturbation delta; excess positive delta is also reported so negative signed improvements cannot win by sign alone",
+          "score_orientation": "lower_is_better",
+          "selection_role": "audit_only_not_primary_selection",
+          "signed_pair_handling": "rows with available +/- counterparts are averaged by signed_pair_key before family balancing; missing counterparts emit warnings"
+        },
+        "feedback_selected_checkpoints": [
+          {
+            "feedback_minus_validation_batches": -4000,
+            "feedback_score": 289.20220114150317,
+            "feedback_score_components": [
+              {
+                "family": "initial_position_offset",
+                "members": [
+                  "initial_position_offset__moderate__x_pos",
+                  "initial_position_offset__moderate__x_neg"
+                ],
+                "score": 542.2284058905962,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"plant_cartesian_xy\", \"channel\": \"initial_state\", \"epsilon_component\": null, \"epsilon_index\": null, \"family\": \"initial_position_offset\", \"initial_position_case\": \"D_current_state_immediately_visible\", \"timing\": [[\"epoch\", \"initial_condition\"], [\"time_index\", 0]]}",
+                "type": "signed_pair"
+              },
+              {
+                "family": "process_epsilon_force_state_xy",
+                "members": [
+                  "process_epsilon_force_state_xy__moderate__mid_t15_x_pos",
+                  "process_epsilon_force_state_xy__moderate__mid_t15_x_neg"
+                ],
+                "score": 235.19777927535003,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"cs_lss_process_epsilon_current_physical_block\", \"channel\": \"process_epsilon\", \"epsilon_component\": \"force_state_x\", \"epsilon_index\": 4, \"family\": \"process_epsilon_force_state_xy\", \"initial_position_case\": null, \"timing\": [[\"duration_steps\", 5], [\"epoch\", \"movement_indexed\"], [\"start_time_index\", 15], [\"timing_bin\", \"mid\"], [\"timing_bin_role\", \"plant_side_open_loop_calibration\"]]}",
+                "type": "signed_pair"
+              },
+              {
+                "family": "false_feedback_offset",
+                "members": [
+                  "sensory_feedback_offset__position_moderate__mid_visible_t20_x_pos",
+                  "sensory_feedback_offset__position_moderate__mid_visible_t20_x_neg"
+                ],
+                "score": 90.18041825856335,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"sensory_feedback_named_channel\", \"channel\": \"sensory_feedback\", \"epsilon_component\": null, \"epsilon_index\": null, \"family\": \"sensory_feedback_offset\", \"initial_position_case\": null, \"timing\": [[\"duration_steps\", 5], [\"epoch\", \"controller_visible\"], [\"start_time_index\", 20], [\"timing_bin\", \"mid_visible\"], [\"timing_bin_role\", \"controller_visible_offset_convention\"]]}",
+                "type": "signed_pair"
+              }
+            ],
+            "feedback_selected_checkpoint_batches": 3500,
+            "n_available_feedback_bins": 6,
+            "replicate": 0,
+            "selection_role": "audit_only_not_primary_selection",
+            "status": "available",
+            "validation_selected_checkpoint_batches": 7500
+          },
+          {
+            "feedback_minus_validation_batches": 5000,
+            "feedback_score": 308.2190510480478,
+            "feedback_score_components": [
+              {
+                "family": "initial_position_offset",
+                "members": [
+                  "initial_position_offset__moderate__x_pos",
+                  "initial_position_offset__moderate__x_neg"
+                ],
+                "score": 800.5143499954205,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"plant_cartesian_xy\", \"channel\": \"initial_state\", \"epsilon_component\": null, \"epsilon_index\": null, \"family\": \"initial_position_offset\", \"initial_position_case\": \"D_current_state_immediately_visible\", \"timing\": [[\"epoch\", \"initial_condition\"], [\"time_index\", 0]]}",
+                "type": "signed_pair"
+              },
+              {
+                "family": "process_epsilon_force_state_xy",
+                "members": [
+                  "process_epsilon_force_state_xy__moderate__mid_t15_x_pos",
+                  "process_epsilon_force_state_xy__moderate__mid_t15_x_neg"
+                ],
+                "score": 92.54570826579942,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"cs_lss_process_epsilon_current_physical_block\", \"channel\": \"process_epsilon\", \"epsilon_component\": \"force_state_x\", \"epsilon_index\": 4, \"family\": \"process_epsilon_force_state_xy\", \"initial_position_case\": null, \"timing\": [[\"duration_steps\", 5], [\"epoch\", \"movement_indexed\"], [\"start_time_index\", 15], [\"timing_bin\", \"mid\"], [\"timing_bin_role\", \"plant_side_open_loop_calibration\"]]}",
+                "type": "signed_pair"
+              },
+              {
+                "family": "false_feedback_offset",
+                "members": [
+                  "sensory_feedback_offset__position_moderate__mid_visible_t20_x_pos",
+                  "sensory_feedback_offset__position_moderate__mid_visible_t20_x_neg"
+                ],
+                "score": 31.597094882923486,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"sensory_feedback_named_channel\", \"channel\": \"sensory_feedback\", \"epsilon_component\": null, \"epsilon_index\": null, \"family\": \"sensory_feedback_offset\", \"initial_position_case\": null, \"timing\": [[\"duration_steps\", 5], [\"epoch\", \"controller_visible\"], [\"start_time_index\", 20], [\"timing_bin\", \"mid_visible\"], [\"timing_bin_role\", \"controller_visible_offset_convention\"]]}",
+                "type": "signed_pair"
+              }
+            ],
+            "feedback_selected_checkpoint_batches": 11000,
+            "n_available_feedback_bins": 6,
+            "replicate": 1,
+            "selection_role": "audit_only_not_primary_selection",
+            "status": "available",
+            "validation_selected_checkpoint_batches": 6000
+          },
+          {
+            "feedback_minus_validation_batches": 1000,
+            "feedback_score": 311.0662682676876,
+            "feedback_score_components": [
+              {
+                "family": "initial_position_offset",
+                "members": [
+                  "initial_position_offset__moderate__x_pos",
+                  "initial_position_offset__moderate__x_neg"
+                ],
+                "score": 806.8705936608334,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"plant_cartesian_xy\", \"channel\": \"initial_state\", \"epsilon_component\": null, \"epsilon_index\": null, \"family\": \"initial_position_offset\", \"initial_position_case\": \"D_current_state_immediately_visible\", \"timing\": [[\"epoch\", \"initial_condition\"], [\"time_index\", 0]]}",
+                "type": "signed_pair"
+              },
+              {
+                "family": "process_epsilon_force_state_xy",
+                "members": [
+                  "process_epsilon_force_state_xy__moderate__mid_t15_x_pos",
+                  "process_epsilon_force_state_xy__moderate__mid_t15_x_neg"
+                ],
+                "score": 96.96750380665192,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"cs_lss_process_epsilon_current_physical_block\", \"channel\": \"process_epsilon\", \"epsilon_component\": \"force_state_x\", \"epsilon_index\": 4, \"family\": \"process_epsilon_force_state_xy\", \"initial_position_case\": null, \"timing\": [[\"duration_steps\", 5], [\"epoch\", \"movement_indexed\"], [\"start_time_index\", 15], [\"timing_bin\", \"mid\"], [\"timing_bin_role\", \"plant_side_open_loop_calibration\"]]}",
+                "type": "signed_pair"
+              },
+              {
+                "family": "false_feedback_offset",
+                "members": [
+                  "sensory_feedback_offset__position_moderate__mid_visible_t20_x_pos",
+                  "sensory_feedback_offset__position_moderate__mid_visible_t20_x_neg"
+                ],
+                "score": 29.360707335577317,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"sensory_feedback_named_channel\", \"channel\": \"sensory_feedback\", \"epsilon_component\": null, \"epsilon_index\": null, \"family\": \"sensory_feedback_offset\", \"initial_position_case\": null, \"timing\": [[\"duration_steps\", 5], [\"epoch\", \"controller_visible\"], [\"start_time_index\", 20], [\"timing_bin\", \"mid_visible\"], [\"timing_bin_role\", \"controller_visible_offset_convention\"]]}",
+                "type": "signed_pair"
+              }
+            ],
+            "feedback_selected_checkpoint_batches": 12000,
+            "n_available_feedback_bins": 6,
+            "replicate": 2,
+            "selection_role": "audit_only_not_primary_selection",
+            "status": "available",
+            "validation_selected_checkpoint_batches": 11000
+          },
+          {
+            "feedback_minus_validation_batches": -7000,
+            "feedback_score": 290.14082558365754,
+            "feedback_score_components": [
+              {
+                "family": "initial_position_offset",
+                "members": [
+                  "initial_position_offset__moderate__x_pos",
+                  "initial_position_offset__moderate__x_neg"
+                ],
+                "score": 680.7725010422934,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"plant_cartesian_xy\", \"channel\": \"initial_state\", \"epsilon_component\": null, \"epsilon_index\": null, \"family\": \"initial_position_offset\", \"initial_position_case\": \"D_current_state_immediately_visible\", \"timing\": [[\"epoch\", \"initial_condition\"], [\"time_index\", 0]]}",
+                "type": "signed_pair"
+              },
+              {
+                "family": "process_epsilon_force_state_xy",
+                "members": [
+                  "process_epsilon_force_state_xy__moderate__mid_t15_x_pos",
+                  "process_epsilon_force_state_xy__moderate__mid_t15_x_neg"
+                ],
+                "score": 153.15028729696533,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"cs_lss_process_epsilon_current_physical_block\", \"channel\": \"process_epsilon\", \"epsilon_component\": \"force_state_x\", \"epsilon_index\": 4, \"family\": \"process_epsilon_force_state_xy\", \"initial_position_case\": null, \"timing\": [[\"duration_steps\", 5], [\"epoch\", \"movement_indexed\"], [\"start_time_index\", 15], [\"timing_bin\", \"mid\"], [\"timing_bin_role\", \"plant_side_open_loop_calibration\"]]}",
+                "type": "signed_pair"
+              },
+              {
+                "family": "false_feedback_offset",
+                "members": [
+                  "sensory_feedback_offset__position_moderate__mid_visible_t20_x_pos",
+                  "sensory_feedback_offset__position_moderate__mid_visible_t20_x_neg"
+                ],
+                "score": 36.49968841171396,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"sensory_feedback_named_channel\", \"channel\": \"sensory_feedback\", \"epsilon_component\": null, \"epsilon_index\": null, \"family\": \"sensory_feedback_offset\", \"initial_position_case\": null, \"timing\": [[\"duration_steps\", 5], [\"epoch\", \"controller_visible\"], [\"start_time_index\", 20], [\"timing_bin\", \"mid_visible\"], [\"timing_bin_role\", \"controller_visible_offset_convention\"]]}",
+                "type": "signed_pair"
+              }
+            ],
+            "feedback_selected_checkpoint_batches": 3500,
+            "n_available_feedback_bins": 6,
+            "replicate": 3,
+            "selection_role": "audit_only_not_primary_selection",
+            "status": "available",
+            "validation_selected_checkpoint_batches": 10500
+          },
+          {
+            "feedback_minus_validation_batches": -7000,
+            "feedback_score": 300.5098578318947,
+            "feedback_score_components": [
+              {
+                "family": "initial_position_offset",
+                "members": [
+                  "initial_position_offset__moderate__x_pos",
+                  "initial_position_offset__moderate__x_neg"
+                ],
+                "score": 776.0191144503298,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"plant_cartesian_xy\", \"channel\": \"initial_state\", \"epsilon_component\": null, \"epsilon_index\": null, \"family\": \"initial_position_offset\", \"initial_position_case\": \"D_current_state_immediately_visible\", \"timing\": [[\"epoch\", \"initial_condition\"], [\"time_index\", 0]]}",
+                "type": "signed_pair"
+              },
+              {
+                "family": "process_epsilon_force_state_xy",
+                "members": [
+                  "process_epsilon_force_state_xy__moderate__mid_t15_x_pos",
+                  "process_epsilon_force_state_xy__moderate__mid_t15_x_neg"
+                ],
+                "score": 106.15532996371195,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"cs_lss_process_epsilon_current_physical_block\", \"channel\": \"process_epsilon\", \"epsilon_component\": \"force_state_x\", \"epsilon_index\": 4, \"family\": \"process_epsilon_force_state_xy\", \"initial_position_case\": null, \"timing\": [[\"duration_steps\", 5], [\"epoch\", \"movement_indexed\"], [\"start_time_index\", 15], [\"timing_bin\", \"mid\"], [\"timing_bin_role\", \"plant_side_open_loop_calibration\"]]}",
+                "type": "signed_pair"
+              },
+              {
+                "family": "false_feedback_offset",
+                "members": [
+                  "sensory_feedback_offset__position_moderate__mid_visible_t20_x_pos",
+                  "sensory_feedback_offset__position_moderate__mid_visible_t20_x_neg"
+                ],
+                "score": 19.35512908164231,
+                "signed_pair_key": "{\"axis\": \"x\", \"basis\": \"sensory_feedback_named_channel\", \"channel\": \"sensory_feedback\", \"epsilon_component\": null, \"epsilon_index\": null, \"family\": \"sensory_feedback_offset\", \"initial_position_case\": null, \"timing\": [[\"duration_steps\", 5], [\"epoch\", \"controller_visible\"], [\"start_time_index\", 20], [\"timing_bin\", \"mid_visible\"], [\"timing_bin_role\", \"controller_visible_offset_convention\"]]}",
+                "type": "signed_pair"
+              }
+            ],
+            "feedback_selected_checkpoint_batches": 2500,
+            "n_available_feedback_bins": 6,
+            "replicate": 4,
+            "selection_role": "audit_only_not_primary_selection",
+            "status": "available",
+            "validation_selected_checkpoint_batches": 9500
+          }
+        ],
+        "n_checkpoint_candidates": 24,
+        "selection_leakage_guard": "feedback-selected checkpoints are reported only in this sidecar; they become the effective loaded checkpoints only when materialized through an explicit fixed-bank checkpoint manifest",
+        "selection_policy": "per-replicate argmin of family-balanced signed-pair-aware absolute/excess perturbation response score with nominal-quality gates and available command-energy/smoothness/oscillation penalties",
+        "selection_role": "audit_only_not_primary_selection",
+        "source_checkpoint_policy": "validation_selected_per_replicate",
+        "status": "materialized"
+      },
+      "feedback_pass_audit": {
+        "components": {
+          "command_energy_reasonableness": {
+            "fail_ratio": 4.0,
+            "max_to_median_action_norm_ratio": 1.0332094233878433,
+            "status": "pass",
+            "warn_ratio": 2.0
+          },
+          "feedback_ablation_dependence": {
+            "ablation_dependence_index": 2.938259357910617,
+            "status": "pass",
+            "threshold": 0.01
+          },
+          "nominal_quality_gate": {
+            "endpoint_error_m": 0.0015819762294724308,
+            "full_qrf_cost": 4492.080311664415,
+            "status": "pass",
+            "terminal_speed_m_s": 0.008141730115017435,
+            "thresholds": {
+              "endpoint_warn_m": 0.08,
+              "terminal_speed_warn_m_s": 0.35
+            },
+            "warnings": []
+          },
+          "sensory_delayed_stability": {
+            "evaluated_bins": [
+              "sensory_feedback",
+              "delayed_observation"
+            ],
+            "status": "pass",
+            "unstable_bins": []
+          },
+          "small_calibrated_perturbation_attenuation_readiness": {
+            "mean_normal_perturbed_full_qrf_cost": 4389.758171518624,
+            "n_perturbation_bins": 4,
+            "status": "pass"
+          }
+        },
+        "criterion_role": "audit_reporting_only",
+        "selection_role": "audit_only_not_primary_selection",
+        "status": "pass",
+        "warnings": []
+      },
+      "interpretation": {
+        "label": "feedback_sensitive",
+        "max_channel_delta_action_norm_mean": 9.561275910032979,
+        "max_feedback_delta_action_norm_mean": 0.5446033702359786,
+        "reason": "observation tape ablations changed actions above the diagnostic threshold"
+      },
+      "label": "no-PGD H0 const_band16",
+      "n_ablation_rows": 35,
+      "n_replicates": 5,
+      "n_rollout_trials_per_replicate": 64,
+      "n_time_steps": 60,
+      "normalized_feedback_use": {
+        "ablation_dependence_index": {
+          "normalization": "max_delta_action_norm_mean_over_baseline_action_norm_mean",
+          "status": "available",
+          "value": 2.938259357910617
+        },
+        "correction_index_vs_open_loop": {
+          "reason": "open_loop_reference_not_supplied",
+          "status": "not_available"
+        },
+        "perturbation_rescue_index": {
+          "normalization": "max_ablation_extra_full_qrf_cost_over_ablated_full_qrf_cost",
+          "status": "available",
+          "value": 0.41616883170915475
+        },
+        "score": 1.677214094809886,
+        "score_components": [
+          "ablation_dependence_index",
+          "perturbation_rescue_index"
+        ],
+        "selection_role": "audit_only_not_primary_selection",
+        "status": "available",
+        "warnings": [
+          "correction_index_vs_open_loop not available: open-loop data not supplied"
+        ]
+      },
+      "run_spec_path": "results/33b0dcb/runs/h0_no_pgd_targetsupport__const_band16_lr3e-3_clip5_b64.json",
+      "status_counts": {
+        "evaluated": 35
+      }
+    }
+  },
+  "schema_version": "rlrmp.gru_feedback_ablation.v1",
+  "scope": "beta1p4_moderate_feedback_ablation",
+  "selection_role": "validation_selected_checkpoints_only",
+  "source_experiment": "33b0dcb"
+}

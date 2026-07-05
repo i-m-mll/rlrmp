@@ -1,0 +1,141 @@
+{
+  "command": {
+    "argv": [
+      "unknown"
+    ],
+    "cwd": ".",
+    "metadata": {
+      "materializer": "rlrmp.analysis.pipelines.gru_evaluation_diagnostics.materialize_gru_evaluation_diagnostics",
+      "status": "not_recorded"
+    }
+  },
+  "inputs": [
+    {
+      "logical_name": "results/33b0dcb/runs/h0_no_pgd_targetsupport__const_band16_lr3e-3_clip5_b64.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "f609d06eb4e7c71e2778cab86a6c4766556bbcb924712e6e884fbc5c7d64fa76",
+        "size_bytes": 320300
+      },
+      "role": "run_spec",
+      "sha256": "f609d06eb4e7c71e2778cab86a6c4766556bbcb924712e6e884fbc5c7d64fa76",
+      "size_bytes": 320300,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/33b0dcb/runs/h0_no_pgd_targetsupport__const_band16_lr3e-3_clip5_b64.json"
+    },
+    {
+      "logical_name": "_artifacts/33b0dcb/runs/h0_no_pgd_targetsupport__const_band16_lr3e-3_clip5_b64",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 126,
+        "hash_file_count": 126,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "9af95b38906fdbee4d21797cdcede47253c5dfcf4b272ae22e0fed1d2b2acc35",
+        "total_bytes": 222534024
+      },
+      "role": "run_artifact_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/33b0dcb/runs/h0_no_pgd_targetsupport__const_band16_lr3e-3_clip5_b64"
+    }
+  ],
+  "metadata": {
+    "diagnostic_name": "gru_evaluation_diagnostics",
+    "materializer": "rlrmp.analysis.pipelines.gru_evaluation_diagnostics.materialize_gru_evaluation_diagnostics",
+    "notes": [
+      "Evaluation diagnostics are non-certificate sidecars.",
+      "Bulk rollout arrays may be deleted and regenerated from this spec if checkpoints remain."
+    ],
+    "schema_boundary": "rlrmp diagnostic payload; Feedbax regeneration custody"
+  },
+  "outputs": [
+    {
+      "logical_name": "results/b413bb0/notes/beta1p4_moderate_validation_selected_diagnostics_baseline_33b0dcb_gru_evaluation_diagnostics.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "f1f2c68ba080fb0483fb35ad48094c37839eb34d5aa4caba690ae9d7c3a710e8",
+        "size_bytes": 46200
+      },
+      "role": "evaluation_diagnostics_manifest",
+      "sha256": "f1f2c68ba080fb0483fb35ad48094c37839eb34d5aa4caba690ae9d7c3a710e8",
+      "size_bytes": 46200,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/b413bb0/notes/beta1p4_moderate_validation_selected_diagnostics_baseline_33b0dcb_gru_evaluation_diagnostics.json"
+    },
+    {
+      "logical_name": "_artifacts/b413bb0/perturbation_response/beta1p4_moderate_validation_selected_diagnostics/baseline_33b0dcb/evaluation",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": false
+      },
+      "role": "bulk_rollout_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/b413bb0/perturbation_response/beta1p4_moderate_validation_selected_diagnostics/baseline_33b0dcb/evaluation"
+    }
+  ],
+  "parameters": {
+    "experiment": "33b0dcb",
+    "jacobian_timepoints": [
+      "first",
+      "peak_forward_velocity",
+      "terminal"
+    ],
+    "labels": [
+      "no-PGD H0 const_band16"
+    ],
+    "n_rollout_trials": 64,
+    "preferred_checkpoint_manifest_path": null,
+    "run_ids": [
+      "h0_no_pgd_targetsupport__const_band16_lr3e-3_clip5_b64"
+    ],
+    "use_validation_selected_checkpoints": true,
+    "write_bulk_arrays": false
+  },
+  "provenance": {
+    "dirty": true,
+    "entrypoint": {
+      "kind": "rlrmp-diagnostic-materializer",
+      "metadata": {},
+      "name": "rlrmp.analysis.pipelines.gru_evaluation_diagnostics.materialize_gru_evaluation_diagnostics"
+    },
+    "issues": [],
+    "metadata": {
+      "status_porcelain": [
+        "?? results/b413bb0/figures/beta1p4_nominal_velocity_profiles/figure.html",
+        "?? results/b413bb0/figures/beta1p4_nominal_velocity_profiles/spec.json",
+        "?? results/b413bb0/notes/beta1p4_nominal_velocity_profiles.md",
+        "?? results/b413bb0/scripts/materialize_beta1p4_feedback_robustness_summary.py",
+        "?? results/b413bb0/scripts/materialize_beta1p4_nominal_velocity_profiles.py",
+        "?? results/b413bb0/scripts/materialize_beta1p4_stabilization_diagnostics.py"
+      ]
+    },
+    "parents": [],
+    "source_branch": "feature/b413bb0-beta1p4-run-lock",
+    "source_commit": "5f75d66462b4f807c5a4e339d89d008bc989e092",
+    "source_repo": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__b413bb0-beta1p4-run-lock"
+  },
+  "schema_id": "feedbax.spec.regeneration",
+  "schema_version": "feedbax.spec.regeneration.v1",
+  "source_files": [
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py",
+      "role": "source_file",
+      "sha256": "4aee7fbd1a4f168b1c8b257a53aa35ff0d5f9f5d403dfcbf50709678b15ada65",
+      "size_bytes": 35885
+    },
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py",
+      "role": "source_file",
+      "sha256": "69ab124d78fa1a4792fed62bd8ea9c83c5e7dd9df6dac0f5b93dc62a4d064196",
+      "size_bytes": 58432
+    }
+  ],
+  "source_trees": []
+}
