@@ -58,6 +58,8 @@ from rlrmp.paths import REPO_ROOT, run_artifact_dir, run_spec_dir
 import rlrmp.train.cs_nominal_gru as cs_nominal_gru
 import rlrmp.train.cs_perturbation_training as cs_perturbation_training
 from rlrmp.train.cs_nominal_gru import (
+    ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER,
+    ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
     AdaptiveEpsilonState,
     CS_DELAYED_REACH_TASK_TYPE,
     CsNominalGruConfig,
@@ -91,6 +93,7 @@ from rlrmp.train.cs_nominal_gru import (
     _resize_optimizer_diagnostics_for_batches,
     _sample_adaptive_epsilon_damage_eval_batch,
     _sample_adaptive_epsilon_training_batch,
+    _scale_direct_epsilon_trial_specs,
     _update_adaptive_epsilon_state,
     load_latest_checkpoint,
     planned_246182c_post_movement_cost_tail_rows,
@@ -415,7 +418,7 @@ def test_cs_nominal_gru_config_validates_tracked_cs_stochastic_gru_corpus() -> N
     clean_paths = []
     fail_closed: set[Path] = set()
 
-    assert len(paths) == 140
+    assert len(paths) == 141
     for path in paths:
         payload = json.loads(path.read_text(encoding="utf-8"))
         try:
@@ -425,7 +428,7 @@ def test_cs_nominal_gru_config_validates_tracked_cs_stochastic_gru_corpus() -> N
         else:
             clean_paths.append(path)
 
-    assert len(clean_paths) == 140
+    assert len(clean_paths) == 141
     assert fail_closed == set()
 
 
@@ -774,6 +777,7 @@ def test_adaptive_epsilon_curriculum_hps_contract() -> None:
 
     cfg = hps.adaptive_epsilon_curriculum
     assert cfg.enabled is True
+    assert cfg.controller_training_mode == ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND
     assert cfg.damage_schedule.peak == pytest.approx(3500.0)
     assert cfg.damage_schedule.final == pytest.approx(1000.0)
     assert cfg.damage_schedule.ramp_batches == 2500
@@ -800,6 +804,9 @@ def test_adaptive_epsilon_run_spec_replay_preserves_curriculum(tmp_path: Path) -
         broad_epsilon_pgd_objective=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
         broad_epsilon_pgd_energy_lambda=2.5,
         adaptive_epsilon_curriculum=True,
+        adaptive_epsilon_controller_training_mode=(
+            ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER
+        ),
         adaptive_epsilon_damage_peak=3500.0,
         adaptive_epsilon_damage_final=1000.0,
         adaptive_epsilon_damage_ramp_batches=1,
@@ -817,6 +824,10 @@ def test_adaptive_epsilon_run_spec_replay_preserves_curriculum(tmp_path: Path) -
     replay_args = resolve_run_spec_args(_args(run_spec=result["run_spec_path"]))
 
     assert replay_args.adaptive_epsilon_curriculum is True
+    assert (
+        replay_args.adaptive_epsilon_controller_training_mode
+        == ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER
+    )
     assert replay_args.adaptive_epsilon_damage_peak == pytest.approx(3500.0)
     assert replay_args.adaptive_epsilon_damage_final == pytest.approx(1000.0)
     assert replay_args.adaptive_epsilon_damage_ramp_batches == 1
@@ -831,6 +842,28 @@ def test_adaptive_epsilon_run_spec_replay_preserves_curriculum(tmp_path: Path) -
 
     hps = build_hps(replay_args)
     assert hps.adaptive_epsilon_curriculum.enabled is True
+
+
+def test_adaptive_epsilon_scaled_outer_training_hps_contract() -> None:
+    hps = build_hps(
+        _args(
+            broad_epsilon_pgd_training=True,
+            broad_epsilon_pgd_objective=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+            broad_epsilon_pgd_energy_lambda=2.5,
+            adaptive_epsilon_curriculum=True,
+            adaptive_epsilon_controller_training_mode=(
+                ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER
+            ),
+            target_relative_multitarget=True,
+        )
+    )
+
+    cfg = hps.adaptive_epsilon_curriculum
+    assert cfg.controller_training_mode == ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER
+    assert (
+        cfg.outer_adversarial_weight.applies_to
+        == "optimized_direct_epsilon_channel_scale_for_controller_rollout"
+    )
 
 
 def test_adaptive_epsilon_curriculum_requires_soft_direct_pgd() -> None:
@@ -938,6 +971,48 @@ def test_adaptive_epsilon_continuation_schedule_is_relative_to_resume_start() ->
 
     assert _adaptive_epsilon_schedule_batch(scratch_state, 0) == 0
     assert _adaptive_epsilon_schedule_batch(scratch_state, 2500) == 2500
+
+
+def test_scale_direct_epsilon_trial_specs_scales_only_epsilon_channel() -> None:
+    clean = TaskTrialSpec(
+        inits=WhereDict({}),
+        targets=WhereDict(
+            {
+                "mechanics.effector.pos": TargetSpec(
+                    value=jnp.zeros((2, 1, 1), dtype=jnp.float32),
+                )
+            }
+        ),
+        inputs={
+            "epsilon": jnp.asarray([[[1.0]], [[2.0]]], dtype=jnp.float32),
+            "cue": jnp.asarray([[[5.0]], [[6.0]]], dtype=jnp.float32),
+        },
+        timeline=TrialTimeline(n_steps=1),
+    )
+    adversarial = TaskTrialSpec(
+        inits=clean.inits,
+        targets=clean.targets,
+        inputs={
+            "epsilon": jnp.asarray([[[5.0]], [[10.0]]], dtype=jnp.float32),
+            "cue": jnp.asarray([[[50.0]], [[60.0]]], dtype=jnp.float32),
+        },
+        timeline=clean.timeline,
+    )
+
+    scaled = _scale_direct_epsilon_trial_specs(
+        clean_specs=clean,
+        adv_specs=adversarial,
+        epsilon_scale=jnp.asarray(0.25, dtype=jnp.float32),
+    )
+
+    np.testing.assert_allclose(
+        np.asarray(scaled.inputs["epsilon"]),
+        np.asarray([[[2.0]], [[4.0]]], dtype=np.float32),
+    )
+    np.testing.assert_allclose(
+        np.asarray(scaled.inputs["cue"]),
+        np.asarray(adversarial.inputs["cue"]),
+    )
 
 
 def test_resume_optimizer_diagnostics_resize_pads_cross_length_buffers() -> None:
@@ -1257,6 +1332,8 @@ def test_adaptive_epsilon_damage_eval_batch_is_nominal_when_training_batch_is_pe
         jr.PRNGKey(2),
         batch_info=batch_info,
         batch_size=4,
+        include_graph_adapter_inputs=True,
+        force_filter_feedback=True,
     )
     eval_specs_again, second_keys_init, second_keys_model = (
         _sample_adaptive_epsilon_damage_eval_batch(
@@ -1264,6 +1341,8 @@ def test_adaptive_epsilon_damage_eval_batch_is_nominal_when_training_batch_is_pe
             jr.PRNGKey(2),
             batch_info=batch_info,
             batch_size=4,
+            include_graph_adapter_inputs=True,
+            force_filter_feedback=True,
         )
     )
 
@@ -1272,6 +1351,10 @@ def test_adaptive_epsilon_damage_eval_batch_is_nominal_when_training_batch_is_pe
     np.testing.assert_allclose(eval_specs.inputs["perturbation_marker"], 0.0)
     assert "perturbation_bank" in eval_specs.intervene
     np.testing.assert_allclose(eval_specs.intervene["perturbation_bank"].active, False)
+    for spec in graph_adapter_specs(force_filter_feedback=True).values():
+        assert spec.input_key in eval_specs.inputs
+        np.testing.assert_allclose(eval_specs.inputs[spec.input_key], 0.0)
+        assert eval_specs.inputs[spec.input_key].shape[-1] == spec.payload_shape[-1]
     np.testing.assert_allclose(
         eval_specs.inputs["perturbation_marker"],
         eval_specs_again.inputs["perturbation_marker"],
@@ -7051,6 +7134,91 @@ def test_pgd_broad_epsilon_full_training_emits_inner_diagnostics(
         ).all()
         assert np.all(diagnostics["pgd_broad_epsilon_inner_objective_final_endpoint_gap"] >= -1e-6)
         assert np.any(diagnostics["pgd_broad_epsilon_epsilon_norm_mean"] > 0.0)
+
+
+def test_adaptive_epsilon_scaled_outer_full_training_emits_explicit_diagnostics(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "bulk"
+    spec_dir = tmp_path / "spec"
+    args = _args(
+        output_dir=str(output_dir),
+        spec_dir=str(spec_dir),
+        issue="1ab1fef",
+        n_train_batches=2,
+        batch_size=1,
+        n_replicates=5,
+        hidden_size=4,
+        target_relative_multitarget=True,
+        force_filter_feedback=True,
+        broad_epsilon_pgd_training=True,
+        broad_epsilon_pgd_steps=1,
+        broad_epsilon_pgd_step_size_fraction=0.5,
+        broad_epsilon_pgd_objective=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+        broad_epsilon_pgd_energy_lambda=1.0,
+        adaptive_epsilon_curriculum=True,
+        adaptive_epsilon_controller_training_mode=(
+            ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER
+        ),
+        adaptive_epsilon_update_interval_batches=1,
+        adaptive_epsilon_outer_weight_start=0.25,
+        adaptive_epsilon_outer_weight_final=0.25,
+        adaptive_epsilon_outer_weight_ramp_batches=0,
+        loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+        full_train=True,
+        checkpoint_interval_batches=1,
+        controller_lr=1e-3,
+        gradient_clip_norm=5.0,
+        lr_warmup_batches=1,
+        lr_warmup_init_fraction=0.1,
+        lr_cosine_alpha=0.01,
+        log_step=1,
+        disable_progress=True,
+        quiet_progress=True,
+    )
+
+    result = run_full_training(args)
+    run_spec = json.loads(Path(result["run_spec_path"]).read_text())
+    diagnostics_manifest = json.loads((output_dir / "training_diagnostics.json").read_text())
+
+    cfg = run_spec["hps"]["adaptive_epsilon_curriculum"]
+    assert cfg["controller_training_mode"] == ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER
+    assert (
+        cfg["outer_adversarial_weight"]["applies_to"]
+        == "optimized_direct_epsilon_channel_scale_for_controller_rollout"
+    )
+    assert "adaptive_epsilon_target_damage" in diagnostics_manifest["arrays"]
+    assert "adaptive_epsilon_lambda_value" in diagnostics_manifest["arrays"]
+    assert "adaptive_epsilon_outer_weight" in diagnostics_manifest["arrays"]
+    assert (
+        "adaptive_epsilon_training_batch_full_strength_damage_raw"
+        in diagnostics_manifest["arrays"]
+    )
+    assert (
+        "adaptive_epsilon_training_batch_applied_scaled_damage_raw"
+        in diagnostics_manifest["arrays"]
+    )
+    assert (
+        "adaptive_epsilon_adaptive_update_full_strength_damage_raw"
+        in diagnostics_manifest["arrays"]
+    )
+    assert (
+        "adaptive_epsilon_adaptive_update_applied_scaled_damage_raw"
+        in diagnostics_manifest["arrays"]
+    )
+    with np.load(output_dir / "training_diagnostics.npz") as diagnostics:
+        assert diagnostics["adaptive_epsilon_outer_weight"].tolist() == [
+            pytest.approx(0.25),
+            pytest.approx(0.25),
+        ]
+        assert diagnostics["adaptive_epsilon_epsilon_scale_used"].shape == (2, 5)
+        assert diagnostics[
+            "adaptive_epsilon_controller_training_mode_is_epsilon_scaled_outer"
+        ].tolist() == [[True, True, True, True, True], [True, True, True, True, True]]
+        np.testing.assert_allclose(
+            diagnostics["adaptive_epsilon_training_batch_weighted_loss_total"],
+            diagnostics["adaptive_epsilon_training_batch_applied_scaled_loss_total"],
+        )
 
 
 def test_full_training_smoke_can_disable_diagnostics(
