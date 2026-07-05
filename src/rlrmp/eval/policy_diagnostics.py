@@ -15,7 +15,6 @@ from typing import Any
 import jax
 import jax.numpy as jnp
 import numpy as np
-from feedbax.analysis.grad import matricize_block_in
 from jaxtyping import Array
 
 POLICY_DIAGNOSTICS_SCHEMA_VERSION = 1
@@ -25,6 +24,12 @@ NOT_APPLICABLE = "not_applicable"
 
 BlockValues = Mapping[str, Array]
 PolicyCallable = Callable[[BlockValues], Array]
+
+
+def _matricize_flat_input_block(block: Array, flat_input: Array) -> Array:
+    """Reshape a dense Jacobian block with trailing flat input axes into 2D."""
+    in_dim = int(np.asarray(flat_input).size)
+    return jnp.asarray(block).reshape((-1, in_dim))
 
 
 @dataclass(frozen=True)
@@ -303,7 +308,7 @@ def policy_jacobian(
         return jnp.asarray(policy(schema.unflatten(flat)))
 
     raw_jacobian = jax.jacobian(policy_from_flat)(flat0)
-    full = matricize_block_in(raw_jacobian, flat0)
+    full = _matricize_flat_input_block(raw_jacobian, flat0)
     block_names = tuple(wrt_blocks) if wrt_blocks is not None else schema.block_names
     by_block = {
         name: full[:, schema.block_slice(name)]
@@ -341,7 +346,7 @@ def policy_block_jacobian(
         return jnp.asarray(policy(block_values))
 
     raw_jacobian = jax.jacobian(policy_from_block)(flat0)
-    return matricize_block_in(raw_jacobian, flat0)
+    return _matricize_flat_input_block(raw_jacobian, flat0)
 
 
 def finite_difference_jacobian(
