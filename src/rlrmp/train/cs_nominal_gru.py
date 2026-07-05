@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import math
 import os
 import subprocess
@@ -142,6 +143,8 @@ from rlrmp.train.cs_perturbation_training import (
     make_broad_epsilon_pgd_pre_step,
     make_policy_adversary,
     make_policy_adversary_pre_step,
+    _batch_shape,
+    add_zero_graph_channel_inputs,
     planned_33b0dcb_target_support_rows,
     planned_020a65b_h0_pgd_rows,
     planned_7c1f7ed_delayed_sisu_spectrum_rows,
@@ -162,6 +165,8 @@ from rlrmp.train.task_model import (
     setup_task_model_pair,
 )
 from rlrmp.model.trainable import staged_network_trainable_parts, staged_network_trainable_paths
+
+logger = logging.getLogger(__name__)
 
 ISSUE_ID = "30f2313"
 SCHEMA_VERSION = "rlrmp.cs_stochastic_gru.v1"
@@ -902,6 +907,10 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
     broad_pgd_mechanism = _dict_value(broad_pgd, "mechanism")
     broad_pgd_safety_cap = _dict_value(broad_pgd, "safety_cap")
     broad_pgd_safety_cap_source = _dict_value(broad_pgd_safety_cap, "source")
+    adaptive_epsilon = _dict_value(hps, "adaptive_epsilon_curriculum")
+    adaptive_damage = _dict_value(adaptive_epsilon, "damage_schedule")
+    adaptive_lambda = _dict_value(adaptive_epsilon, "lambda_update")
+    adaptive_outer_weight = _dict_value(adaptive_epsilon, "outer_adversarial_weight")
     target_relative = _dict_value(hps, "target_relative_multitarget")
     target_distribution = _dict_value(target_relative, "target_distribution")
     delayed = _dict_value(hps, "delayed_reach")
@@ -1131,6 +1140,30 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
         "broad_epsilon_pgd_sisu_max_radius_source": broad_pgd_max_radius_source.get(
             "key",
             broad_pgd.get("sisu_max_radius_source"),
+        ),
+        "adaptive_epsilon_curriculum": bool(adaptive_epsilon.get("enabled", False)),
+        "adaptive_epsilon_damage_start": float(adaptive_damage.get("start", 0.0)),
+        "adaptive_epsilon_damage_peak": float(adaptive_damage.get("peak", 3500.0)),
+        "adaptive_epsilon_damage_final": float(adaptive_damage.get("final", 1000.0)),
+        "adaptive_epsilon_damage_ramp_batches": int(
+            adaptive_damage.get("ramp_batches", 2500)
+        ),
+        "adaptive_epsilon_damage_anneal_batches": int(
+            adaptive_damage.get("anneal_batches", 5000)
+        ),
+        "adaptive_epsilon_update_interval_batches": int(
+            adaptive_lambda.get("interval_batches", 50)
+        ),
+        "adaptive_epsilon_ema_alpha": float(adaptive_lambda.get("ema_alpha", 0.1)),
+        "adaptive_epsilon_eta": float(adaptive_lambda.get("eta", 0.1)),
+        "adaptive_epsilon_deadband_frac": float(adaptive_lambda.get("deadband_frac", 0.10)),
+        "adaptive_epsilon_lambda_min": float(adaptive_lambda.get("lambda_min", 1e-12)),
+        "adaptive_epsilon_lambda_max": adaptive_lambda.get("lambda_max"),
+        "adaptive_epsilon_max_log_step": float(adaptive_lambda.get("max_log_step", 0.25)),
+        "adaptive_epsilon_outer_weight_start": float(adaptive_outer_weight.get("start", 0.0)),
+        "adaptive_epsilon_outer_weight_final": float(adaptive_outer_weight.get("final", 1.0)),
+        "adaptive_epsilon_outer_weight_ramp_batches": int(
+            adaptive_outer_weight.get("ramp_batches", 2500)
         ),
         "policy_adversary_training": bool(policy_adversary.get("enabled", False)),
         "policy_adversary_policy_class": str(
@@ -2983,6 +3016,17 @@ def _run_full_training_from_context(
             args=args,
             run_spec=run_spec,
         )
+        if _training_diagnostics_enabled(args):
+            write_training_diagnostics_sidecar(
+                output_dir,
+                args=args,
+                run_spec=run_spec,
+                state=state,
+                training_history_path=output_dir / "training_history.eqx",
+                pgd_diagnostic_chunks=pgd_diagnostic_chunks,
+                policy_adversary_diagnostic_chunks=policy_adversary_diagnostic_chunks,
+                adaptive_epsilon_diagnostic_chunks=adaptive_epsilon_diagnostic_chunks,
+            )
         _commit_volume(volume_commit)
         chunks.append(
             {
@@ -5469,6 +5513,7 @@ def _run_adaptive_epsilon_training_chunk(
             0,
             None,
             None,
+            None,
         ),
         out_axes=(
             eqx.if_array(0),
@@ -5510,6 +5555,7 @@ def _run_adaptive_epsilon_training_chunk(
             batch_size=batch_size,
         )
     )(eval_keys)
+    eval_trial_specs_arr_spec = jt.map(_ensemble_in_axis, eval_trial_specs)
     damage_eval_step = eqx.filter_vmap(
         _adaptive_epsilon_damage_eval_step,
         in_axes=(
@@ -5518,7 +5564,8 @@ def _run_adaptive_epsilon_training_chunk(
             flat_model_arr_spec,
             None,
             None,
-            0,
+            None,
+            eval_trial_specs_arr_spec,
             0,
             0,
             None,
@@ -5562,6 +5609,7 @@ def _run_adaptive_epsilon_training_chunk(
             key_train,
             jnp.asarray(adaptive_state.lambda_value, dtype=jnp.float32),
             jnp.asarray(outer_weight, dtype=jnp.float32),
+            bool(getattr(hps.model, "force_filter_feedback", False)),
         )
         eval_diagnostics = damage_eval_step(
             task,
@@ -5569,6 +5617,7 @@ def _run_adaptive_epsilon_training_chunk(
             flat_model,
             treedef_model,
             hps.broad_epsilon_pgd_training,
+            bool(getattr(hps.model, "force_filter_feedback", False)),
             eval_trial_specs,
             eval_keys_init,
             eval_keys_model,
@@ -5686,6 +5735,7 @@ def _adaptive_epsilon_train_step(
     key: Any,
     energy_lambda: Any,
     outer_weight: Any,
+    force_filter_feedback: bool,
 ) -> tuple[Any, Any, Any, Any, Any, dict[str, jnp.ndarray]]:
     key_trials, key_init, key_model = jr.split(key, 3)
     keys_trials = jr.split(key_trials, batch_info.size)
@@ -5697,6 +5747,11 @@ def _adaptive_epsilon_train_step(
         keys_trials=keys_trials,
     )
     model = jtu.tree_unflatten(treedef_model, flat_model)
+    trial_specs = add_zero_graph_channel_inputs(
+        trial_specs,
+        force_filter_feedback=force_filter_feedback,
+    )
+    trial_specs = _with_default_intervention_inputs(model, trial_specs)
     adv_specs, inner_diagnostics = run_broad_epsilon_pgd_inner_maximizer(
         task,
         model,
@@ -5787,11 +5842,45 @@ def _sample_adaptive_epsilon_damage_eval_batch(
     keys_trials = jr.split(key_trials, batch_size)
     trial_specs = eqx.filter_vmap(
         partial(
-            task.get_train_trial,
+            _sample_nominal_trial_with_inactive_interventions,
+            task,
             batch_info=batch_info,
         )
     )(keys_trials)
     return trial_specs, jr.split(key_init, batch_size), jr.split(key_model, batch_size)
+
+
+def _sample_nominal_trial_with_inactive_interventions(
+    task: Any,
+    key: Any,
+    *,
+    batch_info: BatchInfo,
+) -> "TaskTrialSpec":
+    trial_spec = task.get_train_trial(key, batch_info=batch_info)
+    intervention_trial_spec = task.get_train_trial_with_intervenor_params(
+        key,
+        batch_info=batch_info,
+    )
+    if not intervention_trial_spec.intervene:
+        return trial_spec
+    return replace(
+        trial_spec,
+        intervene=_inactive_interventions(intervention_trial_spec.intervene),
+    )
+
+
+def _inactive_interventions(intervene: Any) -> Any:
+    def inactive_params(params: Any) -> Any:
+        if not hasattr(params, "active"):
+            return params
+        active = getattr(params, "active")
+        if isinstance(active, TimeSeriesParam):
+            inactive = TimeSeriesParam(jnp.zeros_like(jnp.asarray(active.value), dtype=bool))
+        else:
+            inactive = jnp.zeros_like(jnp.asarray(active), dtype=bool)
+        return eqx.tree_at(lambda item: item.active, params, inactive)
+
+    return {label: inactive_params(params) for label, params in intervene.items()}
 
 
 @eqx.filter_jit
@@ -5801,6 +5890,7 @@ def _adaptive_epsilon_damage_eval_step(
     flat_model: Any,
     treedef_model: Any,
     pgd_config: Any,
+    force_filter_feedback: bool,
     trial_specs: "TaskTrialSpec",
     keys_init: Any,
     keys_model: Any,
@@ -5809,6 +5899,11 @@ def _adaptive_epsilon_damage_eval_step(
     """Measure paired clean/adversarial damage on the fixed nominal update batch."""
 
     model = jtu.tree_unflatten(treedef_model, flat_model)
+    trial_specs = add_zero_graph_channel_inputs(
+        trial_specs,
+        force_filter_feedback=force_filter_feedback,
+    )
+    trial_specs = _with_default_intervention_inputs(model, trial_specs)
     adv_specs, inner_diagnostics = run_broad_epsilon_pgd_inner_maximizer(
         task,
         model,
@@ -5851,6 +5946,35 @@ def _adaptive_epsilon_damage_eval_step(
         {f"adaptive_update_inner_{name}": value for name, value in inner_diagnostics.items()}
     )
     return diagnostics
+
+
+def _with_default_intervention_inputs(model: Any, trial_specs: "TaskTrialSpec") -> "TaskTrialSpec":
+    if not hasattr(model, "intervention_state_indices"):
+        return trial_specs
+    intervention_indices = model.intervention_state_indices()
+    if not intervention_indices:
+        return trial_specs
+
+    inputs = dict(trial_specs.inputs)
+    batch_shape = _batch_shape(trial_specs)
+    n_steps = int(trial_specs.timeline.n_steps)
+    init_state = init_state_from_component(model)
+    changed = False
+    for label, idx in intervention_indices.items():
+        input_key = f"intervene:{label}"
+        if input_key in inputs:
+            continue
+        params = init_state.get(idx)
+
+        def broadcast_leaf(leaf: Any) -> jnp.ndarray:
+            arr = jnp.asarray(leaf)
+            return jnp.broadcast_to(arr, (*batch_shape, n_steps, *arr.shape))
+
+        inputs[input_key] = jt.map(broadcast_leaf, params)
+        changed = True
+    if not changed:
+        return trial_specs
+    return replace(trial_specs, inputs=inputs)
 
 
 def _weighted_loss_tree(clean_losses: Any, adv_losses: Any, outer_weight: Any) -> Any:
@@ -6720,6 +6844,73 @@ def _combine_history_diagnostic_chunks(
     return combined
 
 
+def _axis_removed_shape(shape: tuple[int, ...], axis: int) -> tuple[int, ...]:
+    return (*shape[:axis], *shape[axis + 1 :])
+
+
+def _slice_axis(array: np.ndarray, axis: int, start: int) -> np.ndarray:
+    slices = [slice(None)] * array.ndim
+    slices[axis] = slice(start, None)
+    return array[tuple(slices)]
+
+
+def _has_time_axis(array: np.ndarray, completed_batches: int) -> bool:
+    return any(dim == int(completed_batches) for dim in array.shape)
+
+
+def _stitch_training_diagnostic_array(
+    previous: np.ndarray,
+    current: np.ndarray,
+    *,
+    completed_batches: int,
+) -> np.ndarray | None:
+    """Stitch one diagnostic array while preserving its non-time axes.
+
+    Resumed diagnostics can be time-major, e.g. ``(batch, replicate)``, or
+    replicate-major, e.g. ``(replicate, batch)``.  Repeated checkpoint-cadence
+    sidecar writes also mean ``previous`` may already contain a prefix of the
+    in-memory continuation.  Infer the append axis from the only dimension pair
+    that can produce ``completed_batches`` after removing any overlap.
+    """
+
+    completed = int(completed_batches)
+    candidates: list[tuple[int, int, int, int]] = []
+    for previous_axis in range(previous.ndim):
+        previous_len = int(previous.shape[previous_axis])
+        for current_axis in range(current.ndim):
+            if _axis_removed_shape(previous.shape, previous_axis) != _axis_removed_shape(
+                current.shape,
+                current_axis,
+            ):
+                continue
+            current_len = int(current.shape[current_axis])
+            continuation_start = completed - current_len
+            if continuation_start < 0:
+                continue
+            overlap = previous_len - continuation_start
+            if 0 <= overlap <= current_len and previous_len + current_len - overlap == completed:
+                same_axis = int(previous_axis != current_axis)
+                nonzero_overlap = int(overlap > 0)
+                candidates.append((same_axis, nonzero_overlap, previous_axis, current_axis))
+
+    if not candidates:
+        return None
+
+    _, _, previous_axis, current_axis = sorted(candidates)[0]
+    aligned_current = (
+        current
+        if current_axis == previous_axis
+        else np.moveaxis(current, current_axis, previous_axis)
+    )
+    overlap = int(previous.shape[previous_axis]) - (
+        int(completed_batches) - int(aligned_current.shape[previous_axis])
+    )
+    current_suffix = _slice_axis(aligned_current, previous_axis, max(0, overlap))
+    if current_suffix.shape[previous_axis] == 0:
+        return previous
+    return np.concatenate([previous, current_suffix], axis=previous_axis)
+
+
 def _prepend_existing_training_diagnostics(
     npz_path: Path,
     arrays: dict[str, np.ndarray],
@@ -6736,35 +6927,41 @@ def _prepend_existing_training_diagnostics(
     for name, current in arrays.items():
         if name == "batch_index" or current.ndim == 0:
             continue
-        if current.shape[0] == int(completed_batches):
+        if _has_time_axis(current, completed_batches):
             continue
         previous = prior.get(name)
         if previous is None:
-            raise ValueError(
-                f"Cannot stitch resumed training diagnostics for {name!r}: "
-                "no prior array is available."
+            logger.warning(
+                "Cannot stitch resumed training diagnostics for %r: no prior array is "
+                "available; writing continuation-only array with shape %s.",
+                name,
+                current.shape,
             )
-        if (
-            previous.ndim == current.ndim
-            and previous.shape[1:] == current.shape[:-1]
-            and previous.shape[0] + current.shape[-1] == int(completed_batches)
-        ):
-            current = np.moveaxis(current, -1, 0)
-        if previous.ndim != current.ndim or previous.shape[1:] != current.shape[1:]:
-            raise ValueError(
-                f"Cannot stitch resumed training diagnostics for {name!r}: "
-                f"prior shape {previous.shape} and current shape {current.shape} differ."
+            continue
+        stitched_array = _stitch_training_diagnostic_array(
+            previous,
+            current,
+            completed_batches=completed_batches,
+        )
+        if stitched_array is None:
+            if _has_time_axis(previous, completed_batches):
+                stitched[name] = previous
+                continue
+            logger.warning(
+                "Cannot stitch resumed training diagnostics for %r: prior shape %s "
+                "and current shape %s are not axis-compatible for %d completed batches; "
+                "writing continuation-only array.",
+                name,
+                previous.shape,
+                current.shape,
+                int(completed_batches),
             )
-        if previous.shape[0] + current.shape[0] != int(completed_batches):
-            raise ValueError(
-                f"Cannot stitch resumed training diagnostics for {name!r}: "
-                f"{previous.shape[0]} + {current.shape[0]} != {completed_batches}."
-            )
-        stitched[name] = np.concatenate([previous, current], axis=0)
+            continue
+        stitched[name] = stitched_array
     for name, previous in prior.items():
         if name in stitched or name == "batch_index" or previous.ndim == 0:
             continue
-        if previous.shape[0] == int(completed_batches):
+        if _has_time_axis(previous, completed_batches):
             stitched[name] = previous
     return stitched
 

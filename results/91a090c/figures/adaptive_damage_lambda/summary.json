@@ -1,0 +1,118 @@
+{
+  "issue": "91a090c",
+  "rows": {
+    "medium_3500to1000": {
+      "adaptive_lambda": {
+        "final_record": 717146.9375,
+        "max": 396718208.0,
+        "min": 717146.9375,
+        "near_intended_endpoint": 717146.9375,
+        "range": 396001061.0625
+      },
+      "completed_batches": 19000,
+      "damage_ema": {
+        "final_record": 1059.5577392578125,
+        "max": 1742.43603515625,
+        "min": 518.923828125,
+        "near_intended_endpoint": 1077.526611328125,
+        "range": 1223.51220703125
+      },
+      "damage_mean": {
+        "final_record": 1056.7246675342317,
+        "max": 1832.8944153635507,
+        "min": 443.77025487685006,
+        "near_intended_endpoint": 1086.8528642510641,
+        "range": 1389.1241604867007
+      },
+      "damage_replica_count": 5,
+      "damage_schedule": {
+        "anneal_batches": 3750,
+        "final": 1000.0,
+        "kind": "linear_ramp_then_cosine_anneal",
+        "peak": 3500.0,
+        "ramp_batches": 1500,
+        "start": 0.0
+      },
+      "diagnostics_json_path": "_artifacts/91a090c/runs/medium_3500to1000/training_diagnostics.json",
+      "diagnostics_path": "_artifacts/91a090c/runs/medium_3500to1000/training_diagnostics.npz",
+      "extends_past_intended_endpoint": true,
+      "first_global_batch": 12000.0,
+      "intended_final_global_batch": 17250,
+      "label": "medium 3500 to 1000",
+      "last_global_batch": 18999.0,
+      "n_batches_condition": 17250,
+      "nearest_intended_global_batch": 17250.0,
+      "record_count": 7000,
+      "run_spec_path": "results/91a090c/runs/medium_3500to1000.json",
+      "status_note": "continued past intended 17250 and was stopped at 19000.",
+      "target_damage": {
+        "final_record": 1000.0,
+        "max": 3500.0,
+        "min": 0.0,
+        "near_intended_endpoint": 1000.0,
+        "range": 3500.0
+      },
+      "x_source": "adaptive_epsilon_global_batch"
+    },
+    "short_3500to1000": {
+      "adaptive_lambda": {
+        "final_record": 5543810.5,
+        "max": 365058560.0,
+        "min": 5543810.5,
+        "near_intended_endpoint": 5543810.5,
+        "range": 359514749.5
+      },
+      "completed_batches": 19500,
+      "damage_ema": {
+        "final_record": 1051.505615234375,
+        "max": 1736.9656982421875,
+        "min": 589.4024658203125,
+        "near_intended_endpoint": 1086.8836669921875,
+        "range": 1147.563232421875
+      },
+      "damage_mean": {
+        "final_record": 1050.215337361874,
+        "max": 1823.4527587478376,
+        "min": 487.00158469605486,
+        "near_intended_endpoint": 1110.559036291606,
+        "range": 1336.4511740517828
+      },
+      "damage_replica_count": 5,
+      "damage_schedule": {
+        "anneal_batches": 2500,
+        "final": 1000.0,
+        "kind": "linear_ramp_then_cosine_anneal",
+        "peak": 3500.0,
+        "ramp_batches": 1000,
+        "start": 0.0
+      },
+      "diagnostics_json_path": "_artifacts/91a090c/runs/short_3500to1000/training_diagnostics.json",
+      "diagnostics_path": "_artifacts/91a090c/runs/short_3500to1000/training_diagnostics.npz",
+      "extends_past_intended_endpoint": true,
+      "first_global_batch": 12000.0,
+      "intended_final_global_batch": 15500,
+      "label": "short 3500 to 1000",
+      "last_global_batch": 19499.0,
+      "n_batches_condition": 15500,
+      "nearest_intended_global_batch": 15500.0,
+      "record_count": 7500,
+      "run_spec_path": "results/91a090c/runs/short_3500to1000.json",
+      "status_note": "overran beyond intended 15500; data extend to 19499/19500.",
+      "target_damage": {
+        "final_record": 1000.0,
+        "max": 3500.0,
+        "min": 0.0,
+        "near_intended_endpoint": 1000.0,
+        "range": 3500.0
+      },
+      "x_source": "adaptive_epsilon_global_batch"
+    }
+  },
+  "saved": {
+    "render_path": "_artifacts/91a090c/figures/adaptive_damage_lambda/figure.html",
+    "spec_path": "results/91a090c/figures/adaptive_damage_lambda/spec.json",
+    "symlink_path": "results/91a090c/figures/adaptive_damage_lambda/figure.html"
+  },
+  "schema_version": "rlrmp.91a090c.adaptive_damage_lambda.v1",
+  "topic": "adaptive_damage_lambda"
+}
