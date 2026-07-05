@@ -60,8 +60,6 @@ __all__ = [
     "TimingCalibrationBin",
     "calibration_data_product_requirement",
     "calibration_defaults_data_product_requirement",
-    "consumed_calibration_identity",
-    "consumed_perturbation_calibration_defaults_identity",
     "load_perturbation_calibration_defaults",
     "load_open_loop_calibration",
 ]
@@ -384,28 +382,6 @@ def load_perturbation_calibration_defaults() -> PerturbationCalibrationDefaults:
         product_identity_hash=str(product.product_identity_hash),
         payload_sha256=str(artifact.sha256),
     )
-
-
-def consumed_calibration_identity() -> dict[str, str]:
-    """Return the ``{role, schema, hash}`` consumed-identity record for run specs."""
-
-    calibration = load_open_loop_calibration()
-    return {
-        "role": CALIBRATION_PRODUCT_ROLE,
-        "schema": CALIBRATION_PRODUCT_SCHEMA_VERSION,
-        "hash": calibration.product_identity_hash,
-    }
-
-
-def consumed_perturbation_calibration_defaults_identity() -> dict[str, str]:
-    """Return the consumed-identity record for adopted calibration defaults."""
-
-    defaults = load_perturbation_calibration_defaults()
-    return {
-        "role": CALIBRATION_DEFAULTS_PRODUCT_ROLE,
-        "schema": CALIBRATION_DEFAULTS_PRODUCT_SCHEMA_VERSION,
-        "hash": defaults.product_identity_hash,
-    }
 
 
 def _calibration_defaults_payload_artifact(product: AnalysisDataProduct) -> ArtifactRef:

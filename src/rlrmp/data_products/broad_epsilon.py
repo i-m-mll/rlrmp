@@ -47,7 +47,6 @@ __all__ = [
     "BROAD_EPSILON_EXTRACTION_SPEC_PATH",
     "BroadEpsilonAnchors",
     "broad_epsilon_data_product_requirement",
-    "consumed_broad_epsilon_identity",
     "load_broad_epsilon_anchors",
 ]
 
@@ -191,13 +190,3 @@ def load_broad_epsilon_anchors() -> BroadEpsilonAnchors:
         product_identity_hash=str(product.product_identity_hash),
     )
 
-
-def consumed_broad_epsilon_identity() -> dict[str, str]:
-    """Return the ``{role, schema, hash}`` consumed-identity record for run specs."""
-
-    anchors = load_broad_epsilon_anchors()
-    return {
-        "role": BROAD_EPSILON_PRODUCT_ROLE,
-        "schema": BROAD_EPSILON_PRODUCT_SCHEMA_VERSION,
-        "hash": anchors.product_identity_hash,
-    }

@@ -23,16 +23,18 @@ from feedbax.contracts.graph import (
 from jaxtyping import PRNGKeyArray
 
 from rlrmp.data_products.broad_epsilon import (
-    consumed_broad_epsilon_identity,
+    BROAD_EPSILON_PRODUCT_ROLE,
+    BROAD_EPSILON_PRODUCT_SCHEMA_VERSION,
     load_broad_epsilon_anchors,
 )
 from rlrmp.data_products.calibration import (
     CALIBRATION_PRODUCT_RELPATH,
     CALIBRATION_PRODUCT_ROLE,
-    consumed_calibration_identity,
+    CALIBRATION_PRODUCT_SCHEMA_VERSION,
     load_open_loop_calibration,
     load_perturbation_calibration_defaults,
 )
+from rlrmp.data_products.envelope import consumed_identity
 from rlrmp.model.feedbax_channel_adapters import (
     additive_channel_payload_dim,
     additive_channel_provenance,
@@ -2185,9 +2187,21 @@ def consumed_calibration_budget_identities(
 
     identities: list[dict[str, str]] = []
     if calibration_consumed:
-        identities.append(consumed_calibration_identity())
+        identities.append(
+            consumed_identity(
+                load_open_loop_calibration(),
+                role=CALIBRATION_PRODUCT_ROLE,
+                schema=CALIBRATION_PRODUCT_SCHEMA_VERSION,
+            )
+        )
     if broad_epsilon_consumed:
-        identities.append(consumed_broad_epsilon_identity())
+        identities.append(
+            consumed_identity(
+                load_broad_epsilon_anchors(),
+                role=BROAD_EPSILON_PRODUCT_ROLE,
+                schema=BROAD_EPSILON_PRODUCT_SCHEMA_VERSION,
+            )
+        )
     return identities
 
 
