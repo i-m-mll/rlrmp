@@ -1,4 +1,10 @@
-"""Materialize non-H0 no-PGD velocity profiles against extLQG."""
+"""Materialize non-H0 no-PGD velocity profiles against extLQG.
+
+Integration note: on 2026-07-05 this legacy checkpoint patch was mechanically
+ported from direct Equinox-module mutation to ``eqx.tree_at`` against Feedbax
+pin 17710f1c without re-execution, because this script's required non-H0
+020a65b input checkpoints are not stored under ``_artifacts/e901a20/``.
+"""
 
 from __future__ import annotations
 
@@ -80,10 +86,15 @@ def load_nonh0_checkpoint_model_compatible(helper: Any) -> Any:
         model = eqx.tree_deserialise_leaves(path, jt.map(cast_floating_leaf, template))
         net = model.nodes["net"]
         if getattr(net, "dtype", None) is not jnp.float64:
-            object.__setattr__(net, "dtype", jnp.float64)
+            model = eqx.tree_at(lambda tree: tree.nodes["net"].dtype, model, jnp.float64)
+            net = model.nodes["net"]
         if hasattr(net, "_initial_state"):
             initial_state = jt.map(cast_floating_leaf, net._initial_state)
-            object.__setattr__(net, "_initial_state", initial_state)
+            model = eqx.tree_at(
+                lambda tree: tree.nodes["net"]._initial_state,
+                model,
+                initial_state,
+            )
         return model
 
     return load
@@ -315,7 +326,7 @@ def write_outputs(
         ),
         "local_compatibility_patches": [
             "cast non-H0 SimpleStagedNetwork checkpoint floating leaves to float64",
-            "set loaded SimpleStagedNetwork dtype/static initial state to float64",
+            "update loaded SimpleStagedNetwork dtype/static initial state to float64 via eqx.tree_at",
             "cast nominal trial specs to float64",
             "pad zero sensory/delayed perturbation inputs from 4D to 6D for nominal-clean force/filter feedback graph",
         ],
