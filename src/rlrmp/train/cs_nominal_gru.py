@@ -4058,9 +4058,17 @@ def _cs_expected_slots(
     adversary_optimizer_state_template: Any | None,
 ) -> dict[str, Any]:
     expected: dict[str, Any] = {
+        "model": serialize_pytree_slot(model_template),
+        "optimizer": serialize_pytree_slot(optimizer_state_template),
         "prng": jnp.asarray([0, 0], dtype=jnp.uint32),
         "completed_batches": jnp.asarray(0, dtype=jnp.int32),
     }
+    if adversary_policy_template is not None:
+        expected["adversary_policy"] = serialize_pytree_slot(adversary_policy_template)
+    if adversary_optimizer_state_template is not None:
+        expected["adversary_optimizer"] = serialize_pytree_slot(
+            adversary_optimizer_state_template
+        )
     return expected
 
 

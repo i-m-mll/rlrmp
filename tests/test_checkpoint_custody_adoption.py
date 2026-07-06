@@ -92,6 +92,14 @@ def _standard_training_spec() -> TrainingRunSpec:
         objective=ObjectiveSlotSpec(kind="external", payload={"loss": "toy"}),
         method_ref=standard_supervised_method_ref(),
         method_payload=standard_supervised_method_payload(),
+        method_extensions={
+            "metadata": {
+                "runner": "rlrmp.tests.checkpoint_custody_adoption",
+                "rlrmp_training_mode": "standard",
+                "rlrmp_loss_objective": "test_objective",
+                "adversarial_phase": "none",
+            }
+        },
         worker_execution=WorkerExecutionSpec(
             method_contract=standard_supervised_method_contract(),
             effective_phase=standard_supervised_effective_phase_spec(),
@@ -103,6 +111,18 @@ def _cs_run_spec() -> dict[str, object]:
     return {
         "schema_version": "rlrmp.test",
         "issue": "799fcb9",
+        "training_summary": {
+            "training_mode": "standard",
+            "n_train_batches": 4,
+            "batch_size": 2,
+            "controller_lr": 0.001,
+            "lr_schedule": "constant",
+            "gradient_clip_norm": None,
+        },
+        "checkpointing": {"interval_batches": 2},
+        "optimizer": {"name": "adam", "learning_rate": 0.001},
+        "training_diagnostics": {},
+        "hps": {},
         FEEDBAX_TRAINING_RUN_SPEC_KEY: _standard_training_spec().model_dump(
             mode="json",
             exclude_none=True,
@@ -202,7 +222,7 @@ def test_cs_checkpoint_incompatible_model_abi_fails_closed(tmp_path: Path) -> No
     run_spec = _cs_run_spec()
     save_training_checkpoint(tmp_path, state, args=_args(), run_spec=run_spec)
 
-    with pytest.raises(CheckpointCompatibilityError, match="resume template"):
+    with pytest.raises(CheckpointCompatibilityError, match="structural ABI mismatch"):
         load_latest_checkpoint(
             tmp_path,
             model_template=jnp.asarray([1.0, 2.0, 3.0], dtype=jnp.float32),
