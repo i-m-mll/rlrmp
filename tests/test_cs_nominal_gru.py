@@ -108,6 +108,7 @@ from rlrmp.runtime.training_run_specs import (
     FEEDBAX_TRAINING_RUN_SPEC_KEY,
     assert_runtime_graph_matches_training_spec,
     build_feedbax_training_run_spec,
+    feedbax_training_run_spec_from_payload,
 )
 from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_ADAM,
@@ -6494,6 +6495,146 @@ def test_full_training_stop_after_batches_resumes_to_full_count(tmp_path: Path) 
         assert np.isfinite(diagnostics["train_loss__total"]).all()
         assert diagnostics["validation_loss__total"].shape == (4, 2)
         assert np.isfinite(diagnostics["validation_loss__total"]).all()
+
+
+def test_cs_supervised_full_training_uses_native_executor(tmp_path: Path) -> None:
+    native_dir = tmp_path / "native"
+    common = dict(
+        n_train_batches=2,
+        batch_size=2,
+        n_replicates=1,
+        hidden_size=4,
+        full_train=True,
+        resume=True,
+        checkpoint_interval_batches=1,
+        controller_lr=1e-3,
+        gradient_clip_norm=5.0,
+        lr_warmup_batches=1,
+        lr_warmup_init_fraction=0.1,
+        lr_cosine_alpha=0.01,
+        log_step=1,
+        disable_progress=True,
+        quiet_progress=True,
+    )
+    native_args = _args(
+        output_dir=str(native_dir / "bulk"),
+        spec_dir=str(native_dir / "spec"),
+        **common,
+    )
+
+    native_result = run_full_training(native_args)
+    run_spec = json.loads(Path(native_result["run_spec_path"]).read_text(encoding="utf-8"))
+    training_spec = feedbax_training_run_spec_from_payload(run_spec)
+    summary = json.loads(
+        (Path(native_args.output_dir) / "training_summary.json").read_text(encoding="utf-8")
+    )
+
+    assert native_result["completed_batches"] == 2
+    assert training_spec.method_ref.key == "rlrmp/cs_supervised/v1"
+    assert (
+        training_spec.worker_execution.metadata["native_executor"]
+        == "feedbax.training.executor.execute_training_run_spec"
+    )
+    assert summary["completed_batches"] == 2
+    assert Path(native_result["training_manifest_path"]).exists()
+
+
+def test_cs_supervised_native_same_length_resume_equivalence(tmp_path: Path) -> None:
+    full_dir = tmp_path / "full"
+    resumed_dir = tmp_path / "resumed"
+    common = dict(
+        n_train_batches=4,
+        batch_size=2,
+        n_replicates=1,
+        hidden_size=4,
+        full_train=True,
+        resume=True,
+        checkpoint_interval_batches=2,
+        controller_lr=1e-3,
+        gradient_clip_norm=5.0,
+        lr_warmup_batches=1,
+        lr_warmup_init_fraction=0.1,
+        lr_cosine_alpha=0.01,
+        log_step=1,
+        disable_progress=True,
+        quiet_progress=True,
+    )
+    full_args = _args(
+        output_dir=str(full_dir / "bulk"),
+        spec_dir=str(full_dir / "spec"),
+        **common,
+    )
+    partial_args = _args(
+        output_dir=str(resumed_dir / "bulk"),
+        spec_dir=str(resumed_dir / "spec"),
+        stop_after_batches=2,
+        **common,
+    )
+    resume_args = _args(
+        output_dir=str(resumed_dir / "bulk"),
+        spec_dir=str(resumed_dir / "spec"),
+        stop_after_batches=None,
+        **common,
+    )
+
+    full = run_full_training(full_args)
+    partial = run_full_training(partial_args)
+    resumed = run_full_training(resume_args)
+
+    full_state = _load_materialized_training_state(full_args)
+    resumed_state = _load_materialized_training_state(resume_args)
+    assert partial["completed_batches"] == 2
+    assert full["completed_batches"] == resumed["completed_batches"] == 4
+    _assert_pytree_close(full_state.model, resumed_state.model)
+    _assert_pytree_close(full_state.optimizer_state, resumed_state.optimizer_state)
+    np.testing.assert_allclose(
+        _loss_series(Path(full_args.output_dir)),
+        _loss_series(Path(resume_args.output_dir)),
+        rtol=0,
+        atol=1e-7,
+    )
+
+
+def _load_materialized_training_state(args: argparse.Namespace) -> TrainingState:
+    hps = build_hps(args)
+    key_init, key_train, _key_adversary = jr.split(jr.PRNGKey(int(args.seed)), 3)
+    pair = setup_task_model_pair(hps, key=key_init)
+    trainer = cs_nominal_gru._build_trainer(hps)
+    template_state = cs_nominal_gru._initial_training_state(
+        model=pair.model,
+        trainer=trainer,
+        where_train=cs_nominal_gru._where_train()[0],
+        key=key_train,
+    )
+    return load_latest_checkpoint(
+        Path(args.output_dir) / "checkpoints",
+        model_template=pair.model,
+        optimizer_state_template=template_state.optimizer_state,
+    )
+
+
+def _assert_pytree_close(left: object, right: object, *, atol: float = 1e-7) -> None:
+    left_leaves = tuple(jt.leaves(eqx.filter(left, eqx.is_array)))
+    right_leaves = tuple(jt.leaves(eqx.filter(right, eqx.is_array)))
+    assert len(left_leaves) == len(right_leaves)
+    for left_leaf, right_leaf in zip(left_leaves, right_leaves, strict=True):
+        left_array = jnp.asarray(left_leaf)
+        right_array = jnp.asarray(right_leaf)
+        assert left_array.shape == right_array.shape
+        if left_array.dtype == jnp.bool_:
+            np.testing.assert_array_equal(np.asarray(left_array), np.asarray(right_array))
+        else:
+            np.testing.assert_allclose(
+                np.asarray(left_array),
+                np.asarray(right_array),
+                rtol=0,
+                atol=atol,
+            )
+
+
+def _loss_series(output_dir: Path) -> np.ndarray:
+    with np.load(output_dir / "training_diagnostics.npz") as diagnostics:
+        return np.asarray(diagnostics["train_loss__total"])
 
 
 def test_target_relative_h0_full_training_smoke_emits_diagnostics(tmp_path: Path) -> None:

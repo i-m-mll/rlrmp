@@ -1029,7 +1029,6 @@ def _loss_for_batch(
     return result.total, result.components
 
 
-@eqx.filter_jit
 def _train_step(
     trainable_model: Any,
     frozen_model: Any,
@@ -1039,24 +1038,17 @@ def _train_step(
     config: CSH0DistillationConfig,
     student_forcing_fraction: float,
 ) -> tuple[Any, optax.OptState, jax.Array, dict[str, jax.Array]]:
-    def loss_for_trainable(trainable_model: Any) -> tuple[jax.Array, dict[str, jax.Array]]:
-        return _loss_for_batch(
-            eqx.combine(trainable_model, frozen_model),
-            batch,
-            config,
-            student_forcing_fraction=student_forcing_fraction,
-        )
+    from rlrmp.train.distillation_native import guided_distillation_train_step
 
-    (loss, components), grads = eqx.filter_value_and_grad(loss_for_trainable, has_aux=True)(
+    return guided_distillation_train_step(
         trainable_model,
-    )
-    updates, optimizer_state = optimizer.update(
-        grads,
+        frozen_model,
         optimizer_state,
-        trainable_model,
+        optimizer,
+        batch,
+        config,
+        student_forcing_fraction,
     )
-    trainable_model = eqx.apply_updates(trainable_model, updates)
-    return trainable_model, optimizer_state, loss, components
 
 
 def _init_standard_model_ensemble(

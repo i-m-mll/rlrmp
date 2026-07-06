@@ -8,14 +8,16 @@ GraphSpec; ``--full-train`` performs the explicitly launched training path.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import math
 import os
 import subprocess
+import tempfile
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Literal, NamedTuple, Union, get_args, get_origin
@@ -35,10 +37,12 @@ from feedbax.intervene.schedule import TimeSeriesParam
 from feedbax.runtime.batch import BatchInfo
 from feedbax.runtime.graph import init_state_from_component
 from feedbax.runtime.iteration import run_component
-from feedbax.runtime.parameter_constraints import project_component_parameters
 from feedbax.training.checkpoint_custody import CheckpointCompatibilityError
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule
 from feedbax.training.trainer import get_model_parameters, init_task_trainer_history
+from feedbax.objectives.loss import AbstractLoss
+from feedbax.objectives.service import LossService, LoweredObjective
+from feedbax.objectives.spec import ObjectiveExecutionRequirements
 from feedbax.tasks import (
     extract_timeseries_params,
     infer_n_steps,
@@ -106,11 +110,23 @@ from rlrmp.runtime.training_run_specs import (
 )
 from rlrmp.runtime.spec_migrations import (
     RUN_SPEC_KIND,
+    RUN_SPEC_SCHEMA_ID,
+    RUN_SPEC_SCHEMA_VERSION,
     accept_rlrmp_spec_payload,
 )
 from rlrmp.model.stochastic_runtime import (
     graphspec_noise_contract,
     stochastic_runtime_config_from_model,
+)
+from rlrmp.train.executor.adapters import ChunkKernelAdapter, RLRMP_RUNTIME_CONTEXT_KEY
+from rlrmp.train.executor.initial_slots import RlrmpRuntime, split_initial_keys
+from rlrmp.train.executor.slots import (
+    COMPLETED_BATCHES,
+    HISTORY_CHUNK_BYTES,
+    MODEL,
+    OPTIMIZER,
+    PRNG,
+    TRAIN_LOSS,
 )
 from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_ADAM,
@@ -142,7 +158,6 @@ from rlrmp.train.cs_perturbation_training import (
     config_from_policy_adversary_hps,
     consumed_calibration_budget_identities,
     make_broad_epsilon_pgd_pre_step,
-    make_policy_adversary,
     make_policy_adversary_pre_step,
     _batch_shape,
     planned_33b0dcb_target_support_rows,
@@ -549,6 +564,36 @@ class TrainingState:
     adversary_policy: Any | None = None
     adversary_optimizer_state: Any | None = None
     adaptive_epsilon_state: AdaptiveEpsilonState | None = None
+
+
+@dataclass(frozen=True)
+class CsSupervisedNativeChunkRecord:
+    """Host-side record for one native cs-supervised executor chunk."""
+
+    state: TrainingState
+    history_chunk: Any
+    pgd_diagnostics: dict[str, np.ndarray]
+    chunk_batches: int
+    duration_seconds: float
+
+
+@dataclass
+class CsSupervisedNativeRuntime:
+    """Runtime-only objects used by the native cs-supervised chunk kernel."""
+
+    args: argparse.Namespace
+    hps: TreeNamespace
+    pair: Any
+    trainer: TaskTrainer
+    where_train: Callable[[Any], Any]
+    model_array_template: Any
+    optimizer_template: Any
+    pre_step_fn: Callable[..., Any] | None
+    current_model: Any | None = None
+    current_optimizer_state: Any | None = None
+    current_completed_batches: int = 0
+    history: Any | None = None
+    records: list[CsSupervisedNativeChunkRecord] = field(default_factory=list)
 
 
 class GradientDiagnosticsState(NamedTuple):
@@ -2790,18 +2835,134 @@ def run_full_training(
     return _run_full_training_from_context(context, volume_commit=volume_commit)
 
 
-def _run_full_training_from_context(
+class CsSupervisedExternalObjectiveLoss(AbstractLoss):
+    """Placeholder lowered loss for runtime-owned C&S supervised objectives."""
+
+    label: str = "rlrmp_cs_supervised_external_objective"
+
+    def term(self, states: Any, trial_specs: Any, model: Any) -> Any:
+        del states, trial_specs, model
+        return jnp.asarray(0.0)
+
+
+class CsSupervisedExternalObjectiveLossService(LossService):
+    """Lower the governed C&S external objective for native execution."""
+
+    def lower_objective_slot(
+        self,
+        slot: Any,
+        *,
+        graph: Any = None,
+        trial_axis: str = "batch",
+        path: str = "/objective",
+    ) -> LoweredObjective:
+        if slot.kind == "external" and slot.schema_id == "rlrmp.cs_gru_objective":
+            del graph, trial_axis, path
+            return LoweredObjective(
+                loss=CsSupervisedExternalObjectiveLoss(),
+                requirements=ObjectiveExecutionRequirements(),
+                source_kind="objective_spec",
+            )
+        return super().lower_objective_slot(
+            slot,
+            graph=graph,
+            trial_axis=trial_axis,
+            path=path,
+        )
+
+
+def _cs_supervised_native_supported(hps: TreeNamespace) -> bool:
+    """Return whether this run belongs to the R2 native executor lane."""
+
+    return not (
+        _adaptive_epsilon_curriculum_enabled(hps)
+        or _policy_adversary_training_enabled(hps)
+    )
+
+
+def build_cs_supervised_native_initial_slots(
+    *,
+    run_spec: Mapping[str, Any],
+    hps: TreeNamespace,
+    args: argparse.Namespace,
+    key: Any,
+) -> tuple[dict[str, Any], RlrmpRuntime]:
+    """Build cs-supervised native-executor initial slots and runtime context."""
+
+    del run_spec
+    key_init, key_train, _key_adversary = split_initial_keys(key)
+    pair = setup_task_model_pair(hps, key=key_init)
+    trainer = _build_trainer(hps)
+    where_train = _where_train()[0]
+    template_state = _initial_training_state(
+        model=pair.model,
+        trainer=trainer,
+        where_train=where_train,
+        key=key_train,
+    )
+    history_base = _native_resume_history_base(
+        output_dir=Path(args.output_dir),
+        args=args,
+        model_template=pair.model,
+        optimizer_state_template=template_state.optimizer_state,
+    )
+    model_array_template = eqx.filter(pair.model, eqx.is_array)
+    runtime = CsSupervisedNativeRuntime(
+        args=args,
+        hps=hps,
+        pair=pair,
+        trainer=trainer,
+        where_train=where_train,
+        model_array_template=model_array_template,
+        optimizer_template=template_state.optimizer_state,
+        pre_step_fn=make_broad_epsilon_pgd_pre_step(hps.broad_epsilon_pgd_training),
+        current_model=pair.model,
+        current_optimizer_state=template_state.optimizer_state,
+        history=history_base,
+    )
+    return (
+        {
+            MODEL: _cs_model_slot(pair.model, model_array_template),
+            OPTIMIZER: _cs_optimizer_slot(template_state.optimizer_state),
+            PRNG: key_train,
+            COMPLETED_BATCHES: jnp.asarray(0, dtype=jnp.int32),
+            TRAIN_LOSS: 0.0,
+            HISTORY_CHUNK_BYTES: b"",
+        },
+        RlrmpRuntime(
+            components={"cs_supervised": runtime},
+            stop_after_batches=args.stop_after_batches,
+        ),
+    )
+
+
+def cs_supervised_update_kernels(payload: Any) -> Mapping[str, Any]:
+    """Return Feedbax update kernels for the native C&S supervised method."""
+
+    return {
+        "rlrmp.cs_supervised.train_chunk": ChunkKernelAdapter(
+            chunk_fn=_cs_supervised_train_chunk,
+            reads=(MODEL, OPTIMIZER, PRNG, COMPLETED_BATCHES),
+            writes=(
+                MODEL,
+                OPTIMIZER,
+                PRNG,
+                COMPLETED_BATCHES,
+                TRAIN_LOSS,
+                HISTORY_CHUNK_BYTES,
+            ),
+            metric_slots=(TRAIN_LOSS,),
+            name="cs-supervised train chunk",
+        ).to_kernel(payload)
+    }
+
+
+def _run_cs_supervised_native_from_context(
     context: RunSpecExecutionContext,
     *,
     volume_commit: VolumeCommit | None = None,
 ) -> dict[str, Any]:
-    """Run chunked stochastic C&S GRU training with durable checkpoints.
-
-    Feedbax's trainer can accept an optimizer state, but its checkpoint restore
-    path is model-centric. This wrapper owns the resume contract explicitly:
-    checkpoints store model leaves, optimizer state, completed batch count,
-    PRNG state, run/config metadata, and training history snapshots.
-    """
+    from feedbax.training.executor import execute_training_run_spec
 
     args = context.args
     run_spec = context.run_spec
@@ -2820,277 +2981,294 @@ def _run_full_training_from_context(
 
     spec_result = _spec_result_from_execution_context(context)
     output_dir = mkdir_p(Path(args.output_dir))
-    key_init, key_train, key_adversary = jr.split(jr.PRNGKey(int(args.seed)), 3)
-    pair = setup_task_model_pair(hps, key=key_init)
-    runtime_graph_bundle = build_runtime_rlrmp_feedbax_graph_bundle(hps, pair.model)
+    key_init, _key_train, _key_adversary = split_initial_keys(jr.PRNGKey(int(args.seed)))
+    pair_for_graph = setup_task_model_pair(hps, key=key_init)
+    runtime_graph_bundle = build_runtime_rlrmp_feedbax_graph_bundle(hps, pair_for_graph.model)
     assert_runtime_graph_matches_training_spec(
         run_spec,
         graph_spec=runtime_graph_bundle.graph_spec,
     )
-    trainer = _build_trainer(hps)
-    adaptive_epsilon_enabled = _adaptive_epsilon_curriculum_enabled(hps)
-    pre_step_fn = (
-        None
-        if adaptive_epsilon_enabled
-        else make_broad_epsilon_pgd_pre_step(hps.broad_epsilon_pgd_training)
+    training_spec = feedbax_training_run_spec_from_payload(run_spec)
+    initial_slots, runtime = build_cs_supervised_native_initial_slots(
+        run_spec=run_spec,
+        hps=hps,
+        args=args,
+        key=jr.PRNGKey(int(args.seed)),
     )
-    policy_adversary_enabled = _policy_adversary_training_enabled(hps)
-    policy_adversary_optimizer = None
-    adversary_policy_template = None
-    adversary_optimizer_state_template = None
-    if policy_adversary_enabled:
-        adversary_cfg = config_from_policy_adversary_hps(hps.policy_adversary_training)
-        adversary_policy_template = make_policy_adversary(
-            adversary_cfg,
-            key=key_adversary,
-            horizon=max(1, int(hps.task.n_steps) - 1),
-        )
-        policy_adversary_optimizer = optax.adam(float(adversary_cfg.learning_rate))
-        adversary_optimizer_state_template = policy_adversary_optimizer.init(
-            eqx.filter(adversary_policy_template, eqx.is_array)
-        )
-    where_train = _where_train()
-    template_state = _initial_training_state(
-        model=pair.model,
-        trainer=trainer,
-        where_train=where_train[0],
-        key=key_train,
-    )
-    if adaptive_epsilon_enabled:
-        template_state = replace(
-            template_state,
-            adaptive_epsilon_state=_initial_adaptive_epsilon_state(hps),
-        )
     checkpoint_root = output_dir / "checkpoints"
-    checkpoint_path = latest_checkpoint_path(checkpoint_root)
-    resume_from_checkpoint = bool(
-        args.resume and (has_custody_checkpoint(checkpoint_root) or checkpoint_path.exists())
+    resume_native = bool(args.resume and has_custody_checkpoint(checkpoint_root))
+    started = time.perf_counter()
+    execution = execute_training_run_spec(
+        training_spec,
+        run_id=_cs_supervised_native_run_id(args, run_spec_path),
+        initial_slots=initial_slots,
+        kernel_context={RLRMP_RUNTIME_CONTEXT_KEY: runtime},
+        manifest_root=REPO_ROOT / "_artifacts" / "feedbax_runs",
+        checkpoint_root=checkpoint_root,
+        loss_service=CsSupervisedExternalObjectiveLossService(),
+        training_spec_payload=run_spec.get(RLRMP_RUN_SPEC_PAYLOAD_KEY),
+        training_spec_payload_kind=RUN_SPEC_KIND,
+        training_spec_payload_schema_id=RUN_SPEC_SCHEMA_ID,
+        training_spec_payload_schema_version=RUN_SPEC_SCHEMA_VERSION,
+        training_spec_payload_ref=str(run_spec_path),
+        resume=resume_native,
+        issues=[str(args.issue)],
     )
-    checkpoint_completed_batches = None
-    optimizer_state_template = template_state.optimizer_state
-    if resume_from_checkpoint:
-        checkpoint_metadata = json.loads(
-            (checkpoint_path / "metadata.json").read_text(encoding="utf-8")
-        )
-        checkpoint_completed_batches = int(checkpoint_metadata.get("completed_batches", 0))
-        checkpoint_diagnostic_batches = int(
-            checkpoint_metadata.get("n_train_batches", checkpoint_completed_batches)
-        )
-        optimizer_state_template = _resize_optimizer_diagnostics_for_batches(
-            optimizer_state_template,
-            checkpoint_diagnostic_batches,
-        )
-    state = (
-        load_latest_checkpoint(
-            checkpoint_root,
-            model_template=pair.model,
-            optimizer_state_template=optimizer_state_template,
-            history_template=None,
-            adversary_policy_template=adversary_policy_template,
-            adversary_optimizer_state_template=adversary_optimizer_state_template,
-            run_spec=run_spec,
-        )
-        if resume_from_checkpoint
-        else template_state
+    training_duration_seconds = time.perf_counter() - started
+    native_runtime = runtime.component("cs_supervised")
+    if not isinstance(native_runtime, CsSupervisedNativeRuntime):
+        raise TypeError("cs_supervised runtime context was not installed")
+    return _materialize_cs_supervised_native_result(
+        context=context,
+        spec_result={
+            **spec_result,
+            "training_manifest_path": str(execution.manifest_path),
+        },
+        runtime=native_runtime,
+        training_duration_seconds=training_duration_seconds,
+        stop_after_batches=stop_after_batches,
+        volume_commit=volume_commit,
     )
-    if resume_from_checkpoint and checkpoint_completed_batches is not None:
-        state = replace(
-            state,
-            optimizer_state=_resize_optimizer_diagnostics_for_batches(
-                state.optimizer_state,
-                max(int(args.n_train_batches), checkpoint_completed_batches),
-            ),
-        )
-    if policy_adversary_enabled:
-        if state.adversary_policy is None:
-            state = replace(
-                state,
-                adversary_policy=adversary_policy_template,
-            )
-        if state.adversary_optimizer_state is None:
-            state = replace(
-                state,
-                adversary_optimizer_state=adversary_optimizer_state_template,
-            )
-    if adaptive_epsilon_enabled and state.adaptive_epsilon_state is None:
-        state = replace(
-            state,
-            adaptive_epsilon_state=_initial_adaptive_epsilon_state(
-                hps,
-                schedule_start_batch=state.completed_batches,
-            ),
-        )
 
-    chunks: list[dict[str, float | int | str]] = []
-    pgd_diagnostic_chunks: list[dict[str, np.ndarray]] = []
-    adaptive_epsilon_diagnostic_chunks: list[dict[str, np.ndarray]] = []
-    policy_adversary_diagnostic_chunks: list[dict[str, np.ndarray]] = []
-    adaptive_epsilon_zero_adversary_guard = _adaptive_epsilon_zero_guard_from_state(
-        state.adaptive_epsilon_state,
-        enabled=adaptive_epsilon_enabled,
-    )
-    stop_reason: str | None = None
-    training_started = time.perf_counter()
-    while state.completed_batches < int(args.n_train_batches):
-        if stop_after_batches is not None and state.completed_batches >= stop_after_batches:
-            break
-        remaining = int(args.n_train_batches) - state.completed_batches
-        chunk_batches = min(
-            int(args.checkpoint_interval_batches),
-            remaining,
+
+def _cs_supervised_native_run_id(args: argparse.Namespace, run_spec_path: Path) -> str:
+    base = Path(run_spec_path).stem
+    output_hash = hashlib.sha256(str(Path(args.output_dir).resolve()).encode()).hexdigest()[:8]
+    if args.stop_after_batches is None:
+        return f"{base}-{output_hash}"
+    return f"{base}-{output_hash}-stop-after-{int(args.stop_after_batches)}"
+
+
+def _cs_model_slot(model: Any, array_template: Any) -> tuple[Any, ...]:
+    del array_template
+    return tuple(jt.leaves(eqx.filter(model, eqx.is_array)))
+
+
+def _cs_model_from_slot(slot: Any, runtime: CsSupervisedNativeRuntime) -> Any:
+    arrays = jt.unflatten(jt.structure(runtime.model_array_template), tuple(slot))
+    return eqx.combine(arrays, runtime.pair.model)
+
+
+def _cs_optimizer_slot(optimizer_state: Any) -> tuple[Any, ...]:
+    return tuple(jt.leaves(optimizer_state))
+
+
+def _cs_optimizer_from_slot(slot: Any, runtime: CsSupervisedNativeRuntime) -> Any:
+    return jt.unflatten(jt.structure(runtime.optimizer_template), tuple(slot))
+
+
+def _cs_runtime_model(
+    chunk_slots: Mapping[str, Any],
+    runtime: CsSupervisedNativeRuntime,
+    *,
+    completed_batches: int,
+) -> Any:
+    if (
+        runtime.current_model is not None
+        and runtime.current_completed_batches == completed_batches
+    ):
+        return runtime.current_model
+    return _cs_model_from_slot(chunk_slots[MODEL], runtime)
+
+
+def _cs_runtime_optimizer(
+    chunk_slots: Mapping[str, Any],
+    runtime: CsSupervisedNativeRuntime,
+    *,
+    completed_batches: int,
+) -> Any:
+    if (
+        runtime.current_optimizer_state is not None
+        and runtime.current_completed_batches == completed_batches
+    ):
+        return runtime.current_optimizer_state
+    return _cs_optimizer_from_slot(chunk_slots[OPTIMIZER], runtime)
+
+
+def _cs_supervised_train_chunk(
+    runtime: RlrmpRuntime,
+    payload: Any,
+    chunk_slots: Mapping[str, Any],
+    coordinate: Any,
+) -> Mapping[str, Any]:
+    del payload, coordinate
+    native = runtime.component("cs_supervised")
+    if not isinstance(native, CsSupervisedNativeRuntime):
+        raise TypeError("missing cs_supervised native runtime")
+    args = native.args
+    completed_batches = int(chunk_slots[COMPLETED_BATCHES])
+    remaining = int(args.n_train_batches) - completed_batches
+    chunk_batches = min(int(args.checkpoint_interval_batches), remaining)
+    if runtime.stop_after_batches is not None:
+        chunk_batches = min(chunk_batches, int(runtime.stop_after_batches) - completed_batches)
+    if chunk_batches < 1:
+        chunk_batches = 0
+        history_chunk = None
+        model = _cs_runtime_model(chunk_slots, native, completed_batches=completed_batches)
+        optimizer_state = _cs_runtime_optimizer(
+            chunk_slots,
+            native,
+            completed_batches=completed_batches,
         )
-        if stop_after_batches is not None:
-            chunk_batches = min(chunk_batches, stop_after_batches - state.completed_batches)
-        key_chunk, key_next = jr.split(state.key, 2)
-        chunk_started = time.perf_counter()
+        key_next = chunk_slots[PRNG]
         pgd_diagnostics: dict[str, np.ndarray] = {}
-        policy_adversary_diagnostics = None
-        adaptive_epsilon_diagnostics = None
-        if policy_adversary_enabled:
-            if policy_adversary_optimizer is None:
-                raise ValueError("Policy adversary optimizer was not initialized.")
-            (
-                model,
-                history_chunk,
-                optimizer_state,
-                adversary_policy,
-                adversary_optimizer_state,
-                policy_adversary_diagnostics,
-            ) = _run_policy_adversary_training_chunk(
-                trainer=trainer,
-                task=pair.task,
-                model=state.model,
-                optimizer_state=state.optimizer_state,
-                adversary_policy=state.adversary_policy,
-                adversary_optimizer_state=state.adversary_optimizer_state,
-                adversary_optimizer=policy_adversary_optimizer,
-                hps=hps,
-                where_train=where_train[0],
-                key=key_chunk,
-                start_batch=state.completed_batches,
-                chunk_batches=chunk_batches,
-                log_progress=not bool(args.disable_progress),
-            )
-        elif adaptive_epsilon_enabled:
-            (
-                model,
-                history_chunk,
-                optimizer_state,
-                adaptive_epsilon_state,
-                adaptive_epsilon_diagnostics,
-            ) = _run_adaptive_epsilon_training_chunk(
-                trainer=trainer,
-                task=pair.task,
-                model=state.model,
-                optimizer_state=state.optimizer_state,
-                adaptive_state=state.adaptive_epsilon_state,
-                hps=hps,
-                where_train=where_train[0],
-                key=key_chunk,
-                start_batch=state.completed_batches,
-                chunk_batches=chunk_batches,
-                log_progress=not bool(args.disable_progress),
-            )
-            adversary_policy = state.adversary_policy
-            adversary_optimizer_state = state.adversary_optimizer_state
-            state = replace(state, adaptive_epsilon_state=adaptive_epsilon_state)
-        else:
-            adversary_policy = state.adversary_policy
-            adversary_optimizer_state = state.adversary_optimizer_state
-            model, history_chunk, optimizer_state = trainer(
-                pair.task,
-                state.model,
-                n_batches=chunk_batches,
-                # Keep Feedbax's batch index local to the chunk: its PRNG key array
-                # is chunk-local. Passing the stable selector function avoids the
-                # dict-at-local-batch-0 path that would reinitialise optimizer state.
-                idx_start=0,
-                opt_state=state.optimizer_state,
-                key=key_chunk,
-                ensembled=True,
-                loss_func=pair.task.loss_func,
-                where_train=where_train[0],
-                batch_size=int(hps.batch_size),
-                log_step=max(1, int(args.log_step)),
-                disable_progress=bool(args.disable_progress),
-                verbose_progress=not bool(args.quiet_progress),
-                pre_step_fn=pre_step_fn,
-            )
-        chunk_duration_seconds = time.perf_counter() - chunk_started
-        completed = state.completed_batches + chunk_batches
-        history = _append_history(state.history, history_chunk)
+    else:
+        key_chunk, key_next = jr.split(chunk_slots[PRNG])
+        model_in = _cs_runtime_model(chunk_slots, native, completed_batches=completed_batches)
+        optimizer_in = _cs_runtime_optimizer(
+            chunk_slots,
+            native,
+            completed_batches=completed_batches,
+        )
+        started = time.perf_counter()
+        model, history_chunk, optimizer_state = native.trainer(
+            native.pair.task,
+            model_in,
+            n_batches=chunk_batches,
+            idx_start=0,
+            opt_state=optimizer_in,
+            key=key_chunk,
+            ensembled=True,
+            loss_func=native.pair.task.loss_func,
+            where_train=native.where_train,
+            batch_size=int(native.hps.batch_size),
+            log_step=max(1, int(args.log_step)),
+            disable_progress=bool(args.disable_progress),
+            verbose_progress=not bool(args.quiet_progress),
+            pre_step_fn=native.pre_step_fn,
+        )
+        duration_seconds = time.perf_counter() - started
+        completed = completed_batches + chunk_batches
+        pgd_diagnostics = {}
         if _training_diagnostics_enabled(args):
             pgd_diagnostics = _broad_epsilon_pgd_diagnostics_arrays(
-                pair.task,
+                native.pair.task,
                 model,
-                hps,
+                native.hps,
                 key=key_chunk,
                 batch_index=completed - 1,
                 chunk_batches=chunk_batches,
             )
-            if pgd_diagnostics:
-                pgd_diagnostic_chunks.append(pgd_diagnostics)
-            if adaptive_epsilon_diagnostics:
-                adaptive_epsilon_diagnostic_chunks.append(adaptive_epsilon_diagnostics)
-            if policy_adversary_diagnostics:
-                policy_adversary_diagnostic_chunks.append(
-                    _policy_adversary_diagnostics_arrays(
-                        policy_adversary_diagnostics,
-                        batch_index=completed - 1,
-                        chunk_batches=chunk_batches,
-                    )
-                )
-        if not bool(args.disable_progress):
-            _emit_checkpoint_progress(
-                history_chunk,
-                pgd_diagnostics,
-                chunk_batches=chunk_batches,
-                completed_batches=completed,
-                total_batches=int(args.n_train_batches),
-                elapsed_seconds=time.perf_counter() - training_started,
-            )
-        history_chunk_path = output_dir / "history_chunks" / f"history_{completed:07d}.eqx"
-        history_chunk_path.parent.mkdir(parents=True, exist_ok=True)
-        _save_pytree(history_chunk_path, history_chunk)
-        state = replace(
-            state,
+        native.history = _append_history(native.history, history_chunk)
+        native.current_model = model
+        native.current_optimizer_state = optimizer_state
+        native.current_completed_batches = completed
+        state = TrainingState(
             model=model,
             optimizer_state=optimizer_state,
             completed_batches=completed,
             key=key_next,
-            history=history,
-            adversary_policy=adversary_policy,
-            adversary_optimizer_state=adversary_optimizer_state,
+            history=native.history,
         )
-        if adaptive_epsilon_enabled and adaptive_epsilon_diagnostics:
-            adaptive_epsilon_zero_adversary_guard = _update_adaptive_epsilon_zero_guard(
-                adaptive_epsilon_zero_adversary_guard,
-                adaptive_epsilon_diagnostics,
+        native.records.append(
+            CsSupervisedNativeChunkRecord(
+                state=state,
+                history_chunk=history_chunk,
+                pgd_diagnostics=pgd_diagnostics,
+                chunk_batches=chunk_batches,
+                duration_seconds=duration_seconds,
             )
-        if state.adaptive_epsilon_state is not None:
-            state = replace(
-                state,
-                adaptive_epsilon_state=replace(
-                    state.adaptive_epsilon_state,
-                    zero_adversary_guard=adaptive_epsilon_zero_adversary_guard,
-                ),
-            )
-        checkpoint_path = save_training_checkpoint(
+        )
+    completed = completed_batches + chunk_batches
+    train_loss = 0.0
+    if history_chunk is not None:
+        loss_scalars = _latest_loss_scalars(history_chunk, chunk_batches=chunk_batches)
+        if "total" not in loss_scalars:
+            raise KeyError("C&S supervised history chunk did not include total loss")
+        train_loss = loss_scalars["total"]
+    return {
+        MODEL: _cs_model_slot(model, native.model_array_template),
+        OPTIMIZER: _cs_optimizer_slot(optimizer_state),
+        PRNG: key_next,
+        COMPLETED_BATCHES: jnp.asarray(completed, dtype=jnp.int32),
+        TRAIN_LOSS: float(train_loss),
+        HISTORY_CHUNK_BYTES: _history_chunk_bytes(history_chunk),
+    }
+
+
+def _native_resume_history_base(
+    *,
+    output_dir: Path,
+    args: argparse.Namespace,
+    model_template: Any,
+    optimizer_state_template: Any,
+) -> Any | None:
+    if not bool(args.resume):
+        return None
+    checkpoint_path = latest_checkpoint_path(output_dir / "checkpoints")
+    if not checkpoint_path.exists():
+        return None
+    try:
+        state = _load_latest_checkpoint_materialization(
+            output_dir / "checkpoints",
+            model_template=model_template,
+            optimizer_state_template=optimizer_state_template,
+            history_template=None,
+            adversary_policy_template=None,
+            adversary_optimizer_state_template=None,
+        )
+    except Exception:
+        return None
+    return state.history
+
+
+def _history_chunk_bytes(history_chunk: Any) -> bytes:
+    if history_chunk is None:
+        return b""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        path = Path(tmp_dir) / "history_chunk.eqx"
+        _save_pytree(path, history_chunk)
+        return path.read_bytes()
+
+
+def _materialize_cs_supervised_native_result(
+    *,
+    context: RunSpecExecutionContext,
+    spec_result: dict[str, Any],
+    runtime: CsSupervisedNativeRuntime,
+    training_duration_seconds: float,
+    stop_after_batches: int | None,
+    volume_commit: VolumeCommit | None,
+) -> dict[str, Any]:
+    args = context.args
+    run_spec = context.run_spec
+    run_spec_path = context.run_spec_path
+    output_dir = mkdir_p(Path(args.output_dir))
+    checkpoint_root = output_dir / "checkpoints"
+    history_chunks_dir = output_dir / "history_chunks"
+    chunks: list[dict[str, float | int | str]] = []
+    pgd_diagnostic_chunks: list[dict[str, np.ndarray]] = []
+    training_started = time.perf_counter() - training_duration_seconds
+    final_state: TrainingState | None = None
+    for record in runtime.records:
+        completed = int(record.state.completed_batches)
+        history_chunk_path = history_chunks_dir / f"history_{completed:07d}.eqx"
+        history_chunk_path.parent.mkdir(parents=True, exist_ok=True)
+        _save_pytree(history_chunk_path, record.history_chunk)
+        checkpoint_path = _save_training_checkpoint_materialization(
             checkpoint_root,
-            state,
-            args=args,
-            run_spec=run_spec,
+            record.state,
+            metadata=_training_checkpoint_metadata(args, record.state, run_spec),
         )
+        if record.pgd_diagnostics:
+            pgd_diagnostic_chunks.append(record.pgd_diagnostics)
         if _training_diagnostics_enabled(args):
             write_training_diagnostics_sidecar(
                 output_dir,
                 args=args,
                 run_spec=run_spec,
-                state=state,
+                state=record.state,
                 training_history_path=output_dir / "training_history.eqx",
                 pgd_diagnostic_chunks=pgd_diagnostic_chunks,
-                policy_adversary_diagnostic_chunks=policy_adversary_diagnostic_chunks,
-                adaptive_epsilon_diagnostic_chunks=adaptive_epsilon_diagnostic_chunks,
+            )
+        if not bool(args.disable_progress):
+            _emit_checkpoint_progress(
+                record.history_chunk,
+                record.pgd_diagnostics,
+                chunk_batches=record.chunk_batches,
+                completed_batches=completed,
+                total_batches=int(args.n_train_batches),
+                elapsed_seconds=time.perf_counter() - training_started,
             )
         _commit_volume(volume_commit)
         chunks.append(
@@ -3098,66 +3276,52 @@ def _run_full_training_from_context(
                 "completed_batches": completed,
                 "checkpoint": str(checkpoint_path),
                 "history_chunk": str(history_chunk_path),
-                "chunk_batches": chunk_batches,
-                "duration_seconds": chunk_duration_seconds,
-                "batches_per_second": chunk_batches / chunk_duration_seconds,
+                "chunk_batches": record.chunk_batches,
+                "duration_seconds": record.duration_seconds,
+                "batches_per_second": record.chunk_batches / record.duration_seconds,
             }
         )
-        if adaptive_epsilon_zero_adversary_guard["should_stop"] and state.completed_batches < int(
-            args.n_train_batches
-        ):
-            stop_reason = ADAPTIVE_EPSILON_ZERO_ADVERSARY_STOP_REASON
-            break
-        if stop_after_batches is not None and state.completed_batches >= stop_after_batches:
-            stop_reason = "checkpoint_gate_stop_after_batches"
-            break
-    training_duration_seconds = time.perf_counter() - training_started
+        final_state = record.state
+    if final_state is None:
+        raise RuntimeError("native cs-supervised executor produced no training chunks")
 
     final_model_path = output_dir / "trained_model.eqx"
-    final_adversary_policy_path = output_dir / "trained_policy_adversary.eqx"
     final_history_path = output_dir / "training_history.eqx"
     final_summary_path = output_dir / "training_summary.json"
-    _save_pytree(final_model_path, state.model, hyperparameters=run_spec)
-    if state.adversary_policy is not None:
-        _save_pytree(final_adversary_policy_path, state.adversary_policy, hyperparameters=run_spec)
-    if state.history is not None:
-        _save_pytree(final_history_path, state.history)
+    _save_pytree(final_model_path, final_state.model, hyperparameters=run_spec)
+    if final_state.history is not None:
+        _save_pytree(final_history_path, final_state.history)
     diagnostics_metadata = write_training_diagnostics_sidecar(
         output_dir,
         args=args,
         run_spec=run_spec,
-        state=state,
+        state=final_state,
         training_history_path=final_history_path,
         pgd_diagnostic_chunks=pgd_diagnostic_chunks,
-        policy_adversary_diagnostic_chunks=policy_adversary_diagnostic_chunks,
-        adaptive_epsilon_diagnostic_chunks=adaptive_epsilon_diagnostic_chunks,
+    )
+    stopped_for_gate = (
+        stop_after_batches is not None and final_state.completed_batches < int(args.n_train_batches)
     )
     final_summary = {
         "schema_version": f"{SCHEMA_VERSION}.training.v1",
         "issue": str(args.issue),
-        "completed_batches": state.completed_batches,
+        "completed_batches": final_state.completed_batches,
         "n_train_batches": int(args.n_train_batches),
-        "stopped_early_for_checkpoint_gate": (
-            stop_after_batches is not None and state.completed_batches < int(args.n_train_batches)
-        ),
-        "stopped_early_for_adaptive_epsilon_zero_adversary": (
-            stop_reason == ADAPTIVE_EPSILON_ZERO_ADVERSARY_STOP_REASON
-        ),
-        "stop_reason": stop_reason,
+        "stopped_early_for_checkpoint_gate": stopped_for_gate,
+        "stopped_early_for_adaptive_epsilon_zero_adversary": False,
+        "stop_reason": "checkpoint_gate_stop_after_batches" if stopped_for_gate else None,
         "stop_after_batches": stop_after_batches,
-        "adaptive_epsilon_zero_adversary_guard": adaptive_epsilon_zero_adversary_guard,
+        "adaptive_epsilon_zero_adversary_guard": None,
         "training_duration_seconds": training_duration_seconds,
         "training_batches_per_second": (
-            state.completed_batches / training_duration_seconds
+            final_state.completed_batches / training_duration_seconds
             if training_duration_seconds > 0
             else None
         ),
         "checkpoint_interval_batches": int(args.checkpoint_interval_batches),
         "latest_checkpoint": str(latest_checkpoint_path(checkpoint_root)),
         "final_model_path": str(final_model_path),
-        "final_adversary_policy_path": (
-            str(final_adversary_policy_path) if state.adversary_policy is not None else None
-        ),
+        "final_adversary_policy_path": None,
         "training_history_path": str(final_history_path),
         "run_spec_path": str(run_spec_path),
         "graph_spec_path": spec_result["graph_spec_path"],
@@ -3169,10 +3333,470 @@ def _run_full_training_from_context(
     return {
         **spec_result,
         "final_model_path": str(final_model_path),
-        "final_adversary_policy_path": (
-            str(final_adversary_policy_path) if state.adversary_policy is not None else None
-        ),
+        "final_adversary_policy_path": None,
         "training_history_path": str(final_history_path),
+        "training_summary_path": str(final_summary_path),
+        "latest_checkpoint": str(latest_checkpoint_path(checkpoint_root)),
+        "completed_batches": final_state.completed_batches,
+    }
+
+
+def _run_full_training_from_context(
+    context: RunSpecExecutionContext,
+    *,
+    volume_commit: VolumeCommit | None = None,
+) -> dict[str, Any]:
+    """Run a validated C&S training spec through the owned execution path."""
+
+    if _adaptive_epsilon_curriculum_enabled(context.hps):
+        return _run_adaptive_epsilon_native_from_context(
+            context,
+            volume_commit=volume_commit,
+        )
+    if _policy_adversary_training_enabled(context.hps):
+        return _run_policy_adversary_native_from_context(
+            context,
+            volume_commit=volume_commit,
+        )
+    if _cs_supervised_native_supported(context.hps):
+        return _run_cs_supervised_native_from_context(
+            context,
+            volume_commit=volume_commit,
+        )
+    raise ValueError(
+        "This C&S run is not covered by a registered native executor method. "
+        "Legacy full-training loop fallback has been deleted."
+    )
+
+
+def _run_adaptive_epsilon_native_from_context(
+    context: RunSpecExecutionContext,
+    *,
+    volume_commit: VolumeCommit | None = None,
+) -> dict[str, Any]:
+    from feedbax.training.executor import execute_training_run_spec
+    from rlrmp.train.adaptive_epsilon_native import (
+        AdaptiveEpsilonNativeRuntime,
+        AdaptiveEpsilonExternalObjectiveLossService,
+        _resume_slot_transform,
+        build_adaptive_epsilon_native_initial_slots,
+    )
+
+    args = context.args
+    run_spec = context.run_spec
+    run_spec_path = context.run_spec_path
+    hps = context.hps
+    if int(args.n_train_batches) < 1:
+        raise ValueError("--n-train-batches must be positive for --full-train")
+    if int(args.checkpoint_interval_batches) < 1:
+        raise ValueError("--checkpoint-interval-batches must be positive")
+    stop_after_batches = None if args.stop_after_batches is None else int(args.stop_after_batches)
+    if stop_after_batches is not None:
+        if stop_after_batches < 1:
+            raise ValueError("--stop-after-batches must be positive when provided")
+        if stop_after_batches > int(args.n_train_batches):
+            raise ValueError("--stop-after-batches cannot exceed --n-train-batches")
+
+    spec_result = _spec_result_from_execution_context(context)
+    output_dir = mkdir_p(Path(args.output_dir))
+    key_init, _key_train, _key_adversary = split_initial_keys(jr.PRNGKey(int(args.seed)))
+    pair_for_graph = setup_task_model_pair(hps, key=key_init)
+    runtime_graph_bundle = build_runtime_rlrmp_feedbax_graph_bundle(hps, pair_for_graph.model)
+    assert_runtime_graph_matches_training_spec(
+        run_spec,
+        graph_spec=runtime_graph_bundle.graph_spec,
+    )
+    training_spec = feedbax_training_run_spec_from_payload(run_spec)
+    initial_slots, runtime = build_adaptive_epsilon_native_initial_slots(
+        run_spec=run_spec,
+        hps=hps,
+        args=args,
+        key=jr.PRNGKey(int(args.seed)),
+    )
+    checkpoint_root = output_dir / "checkpoints"
+    resume_native = bool(args.resume and has_custody_checkpoint(checkpoint_root))
+    started = time.perf_counter()
+    execution = execute_training_run_spec(
+        training_spec,
+        run_id=_cs_supervised_native_run_id(args, run_spec_path),
+        initial_slots=initial_slots,
+        kernel_context={RLRMP_RUNTIME_CONTEXT_KEY: runtime},
+        manifest_root=REPO_ROOT / "_artifacts" / "feedbax_runs",
+        checkpoint_root=checkpoint_root,
+        loss_service=AdaptiveEpsilonExternalObjectiveLossService(),
+        training_spec_payload=run_spec.get(RLRMP_RUN_SPEC_PAYLOAD_KEY),
+        training_spec_payload_kind=RUN_SPEC_KIND,
+        training_spec_payload_schema_id=RUN_SPEC_SCHEMA_ID,
+        training_spec_payload_schema_version=RUN_SPEC_SCHEMA_VERSION,
+        training_spec_payload_ref=str(run_spec_path),
+        resume=resume_native,
+        resume_slot_transform=_resume_slot_transform(None),
+        issues=[str(args.issue)],
+    )
+    training_duration_seconds = time.perf_counter() - started
+    native_runtime = runtime.component("adaptive_epsilon")
+    if not isinstance(native_runtime, AdaptiveEpsilonNativeRuntime):
+        raise TypeError("adaptive_epsilon runtime context was not installed")
+    return _materialize_adaptive_epsilon_native_result(
+        context=context,
+        spec_result={
+            **spec_result,
+            "training_manifest_path": str(execution.manifest_path),
+        },
+        runtime=native_runtime,
+        final_slots=execution.final_slots,
+        training_duration_seconds=training_duration_seconds,
+        stop_after_batches=stop_after_batches,
+        volume_commit=volume_commit,
+    )
+
+
+def _run_policy_adversary_native_from_context(
+    context: RunSpecExecutionContext,
+    *,
+    volume_commit: VolumeCommit | None = None,
+) -> dict[str, Any]:
+    from feedbax.training.executor import execute_training_run_spec
+    from rlrmp.train.policy_adversary_native import (
+        PolicyAdversaryExternalObjectiveLossService,
+        PolicyAdversaryNativeRuntime,
+        _resume_slot_transform,
+        build_policy_adversary_native_initial_slots,
+    )
+
+    args = context.args
+    run_spec = context.run_spec
+    run_spec_path = context.run_spec_path
+    hps = context.hps
+    if int(args.n_train_batches) < 1:
+        raise ValueError("--n-train-batches must be positive for --full-train")
+    if int(args.checkpoint_interval_batches) < 1:
+        raise ValueError("--checkpoint-interval-batches must be positive")
+    stop_after_batches = None if args.stop_after_batches is None else int(args.stop_after_batches)
+    if stop_after_batches is not None:
+        if stop_after_batches < 1:
+            raise ValueError("--stop-after-batches must be positive when provided")
+        if stop_after_batches > int(args.n_train_batches):
+            raise ValueError("--stop-after-batches cannot exceed --n-train-batches")
+
+    spec_result = _spec_result_from_execution_context(context)
+    output_dir = mkdir_p(Path(args.output_dir))
+    key_init, _key_train, _key_adversary = split_initial_keys(jr.PRNGKey(int(args.seed)))
+    pair_for_graph = setup_task_model_pair(hps, key=key_init)
+    runtime_graph_bundle = build_runtime_rlrmp_feedbax_graph_bundle(hps, pair_for_graph.model)
+    assert_runtime_graph_matches_training_spec(
+        run_spec,
+        graph_spec=runtime_graph_bundle.graph_spec,
+    )
+    training_spec = feedbax_training_run_spec_from_payload(run_spec)
+    initial_slots, runtime = build_policy_adversary_native_initial_slots(
+        run_spec=run_spec,
+        hps=hps,
+        args=args,
+        key=jr.PRNGKey(int(args.seed)),
+    )
+    checkpoint_root = output_dir / "checkpoints"
+    resume_native = bool(args.resume and has_custody_checkpoint(checkpoint_root))
+    started = time.perf_counter()
+    execution = execute_training_run_spec(
+        training_spec,
+        run_id=_cs_supervised_native_run_id(args, run_spec_path),
+        initial_slots=initial_slots,
+        kernel_context={RLRMP_RUNTIME_CONTEXT_KEY: runtime},
+        manifest_root=REPO_ROOT / "_artifacts" / "feedbax_runs",
+        checkpoint_root=checkpoint_root,
+        loss_service=PolicyAdversaryExternalObjectiveLossService(),
+        training_spec_payload=run_spec.get(RLRMP_RUN_SPEC_PAYLOAD_KEY),
+        training_spec_payload_kind=RUN_SPEC_KIND,
+        training_spec_payload_schema_id=RUN_SPEC_SCHEMA_ID,
+        training_spec_payload_schema_version=RUN_SPEC_SCHEMA_VERSION,
+        training_spec_payload_ref=str(run_spec_path),
+        resume=resume_native,
+        resume_slot_transform=_resume_slot_transform(None),
+        issues=[str(args.issue)],
+    )
+    training_duration_seconds = time.perf_counter() - started
+    native_runtime = runtime.component("policy_adversary")
+    if not isinstance(native_runtime, PolicyAdversaryNativeRuntime):
+        raise TypeError("policy_adversary runtime context was not installed")
+    return _materialize_policy_adversary_native_result(
+        context=context,
+        spec_result={
+            **spec_result,
+            "training_manifest_path": str(execution.manifest_path),
+        },
+        runtime=native_runtime,
+        final_slots=execution.final_slots,
+        training_duration_seconds=training_duration_seconds,
+        stop_after_batches=stop_after_batches,
+        volume_commit=volume_commit,
+    )
+
+
+def _materialize_policy_adversary_native_result(
+    *,
+    context: RunSpecExecutionContext,
+    spec_result: dict[str, Any],
+    runtime: Any,
+    final_slots: Mapping[str, Any],
+    training_duration_seconds: float,
+    stop_after_batches: int | None,
+    volume_commit: VolumeCommit | None,
+) -> dict[str, Any]:
+    from rlrmp.train.policy_adversary_native import (
+        ADVERSARY_OPTIMIZER,
+        ADVERSARY_POLICY,
+        MODEL,
+        OPTIMIZER,
+        PRNG,
+        _deserialize_pytree_slot_value,
+    )
+
+    args = context.args
+    run_spec = context.run_spec
+    run_spec_path = context.run_spec_path
+    output_dir = mkdir_p(Path(args.output_dir))
+    checkpoint_root = output_dir / "checkpoints"
+    state = TrainingState(
+        model=_deserialize_pytree_slot_value(final_slots[MODEL], runtime.model_template, slot=MODEL),
+        optimizer_state=_deserialize_pytree_slot_value(
+            final_slots[OPTIMIZER],
+            runtime.optimizer_template,
+            slot=OPTIMIZER,
+        ),
+        completed_batches=int(final_slots[COMPLETED_BATCHES]),
+        key=jnp.asarray(final_slots[PRNG], dtype=jnp.uint32),
+        history=getattr(runtime, "history", None),
+        adversary_policy=_deserialize_pytree_slot_value(
+            final_slots[ADVERSARY_POLICY],
+            runtime.adversary_policy_template,
+            slot=ADVERSARY_POLICY,
+        ),
+        adversary_optimizer_state=_deserialize_pytree_slot_value(
+            final_slots[ADVERSARY_OPTIMIZER],
+            runtime.adversary_optimizer_template,
+            slot=ADVERSARY_OPTIMIZER,
+        ),
+    )
+    checkpoint_path = _save_training_checkpoint_materialization(
+        checkpoint_root,
+        state,
+        metadata=_training_checkpoint_metadata(args, state, run_spec),
+    )
+    records = list(getattr(runtime, "records", []))
+    history_chunk_dir = mkdir_p(output_dir / "history_chunks")
+    chunks: list[dict[str, float | int | str | None]] = []
+    per_chunk_duration = (
+        training_duration_seconds / len(records)
+        if records and training_duration_seconds > 0
+        else None
+    )
+    for record in records:
+        completed = int(record["completed_batches"])
+        chunk_batches = int(record["chunk_batches"])
+        history_chunk_path = history_chunk_dir / f"history_{completed:07d}.eqx"
+        _save_pytree(history_chunk_path, record["history_chunk"])
+        chunks.append(
+            {
+                "completed_batches": completed,
+                "checkpoint": str(checkpoint_path) if completed == state.completed_batches else None,
+                "history_chunk": str(history_chunk_path),
+                "chunk_batches": chunk_batches,
+                "duration_seconds": per_chunk_duration,
+                "batches_per_second": (
+                    chunk_batches / per_chunk_duration if per_chunk_duration else None
+                ),
+            }
+        )
+    final_model_path = output_dir / "trained_model.eqx"
+    final_adversary_policy_path = output_dir / "trained_policy_adversary.eqx"
+    final_history_path = output_dir / "training_history.eqx"
+    final_summary_path = output_dir / "training_summary.json"
+    _save_pytree(final_model_path, state.model, hyperparameters=run_spec)
+    _save_pytree(final_adversary_policy_path, state.adversary_policy, hyperparameters=run_spec)
+    if state.history is not None:
+        _save_pytree(final_history_path, state.history)
+    policy_diagnostic_chunks = [record["diagnostics"] for record in records]
+    diagnostics_metadata = write_training_diagnostics_sidecar(
+        output_dir,
+        args=args,
+        run_spec=run_spec,
+        state=state,
+        training_history_path=final_history_path,
+        policy_adversary_diagnostic_chunks=policy_diagnostic_chunks,
+    )
+    stopped_for_gate = (
+        stop_after_batches is not None and state.completed_batches < int(args.n_train_batches)
+    )
+    final_summary = {
+        "schema_version": f"{SCHEMA_VERSION}.training.v1",
+        "issue": str(args.issue),
+        "completed_batches": state.completed_batches,
+        "n_train_batches": int(args.n_train_batches),
+        "stopped_early_for_checkpoint_gate": stopped_for_gate,
+        "stopped_early_for_adaptive_epsilon_zero_adversary": False,
+        "stop_reason": "checkpoint_gate_stop_after_batches" if stopped_for_gate else None,
+        "stop_after_batches": stop_after_batches,
+        "adaptive_epsilon_zero_adversary_guard": None,
+        "training_duration_seconds": training_duration_seconds,
+        "training_batches_per_second": (
+            state.completed_batches / training_duration_seconds
+            if training_duration_seconds > 0
+            else None
+        ),
+        "checkpoint_interval_batches": int(args.checkpoint_interval_batches),
+        "latest_checkpoint": str(latest_checkpoint_path(checkpoint_root)),
+        "final_model_path": str(final_model_path),
+        "final_adversary_policy_path": str(final_adversary_policy_path),
+        "training_history_path": str(final_history_path) if state.history is not None else None,
+        "run_spec_path": str(run_spec_path),
+        "graph_spec_path": spec_result["graph_spec_path"],
+        "training_diagnostics": diagnostics_metadata,
+        "chunks": chunks,
+    }
+    _atomic_write_json(final_summary_path, final_summary)
+    _commit_volume(volume_commit)
+    return {
+        **spec_result,
+        "final_model_path": str(final_model_path),
+        "final_adversary_policy_path": str(final_adversary_policy_path),
+        "training_history_path": str(final_history_path) if state.history is not None else None,
+        "training_summary_path": str(final_summary_path),
+        "latest_checkpoint": str(latest_checkpoint_path(checkpoint_root)),
+        "completed_batches": state.completed_batches,
+    }
+
+
+def _materialize_adaptive_epsilon_native_result(
+    *,
+    context: RunSpecExecutionContext,
+    spec_result: dict[str, Any],
+    runtime: Any,
+    final_slots: Mapping[str, Any],
+    training_duration_seconds: float,
+    stop_after_batches: int | None,
+    volume_commit: VolumeCommit | None,
+) -> dict[str, Any]:
+    from rlrmp.train.adaptive_epsilon_native import (
+        ADAPTIVE_EPSILON_STATE,
+        MODEL,
+        OPTIMIZER,
+        PRNG,
+        ZERO_ADVERSARY_GUARD,
+        _adaptive_state_from_slot,
+        _deserialize_pytree_slot_value,
+        _guard_from_slot,
+    )
+
+    args = context.args
+    run_spec = context.run_spec
+    run_spec_path = context.run_spec_path
+    hps = context.hps
+    output_dir = mkdir_p(Path(args.output_dir))
+    checkpoint_root = output_dir / "checkpoints"
+    key_init, _key_train, _key_adversary = split_initial_keys(jr.PRNGKey(int(args.seed)))
+    pair = setup_task_model_pair(hps, key=key_init)
+    trainer = _build_trainer(hps)
+    template_state = _initial_training_state(
+        model=pair.model,
+        trainer=trainer,
+        where_train=_where_train()[0],
+        key=jr.PRNGKey(int(args.seed)),
+    )
+    adaptive_state = _adaptive_state_from_slot(final_slots[ADAPTIVE_EPSILON_STATE])
+    zero_guard = _guard_from_slot(final_slots[ZERO_ADVERSARY_GUARD])
+    if adaptive_state is not None:
+        adaptive_state = replace(adaptive_state, zero_adversary_guard=zero_guard)
+    state = TrainingState(
+        model=_deserialize_pytree_slot_value(final_slots[MODEL], pair.model, slot=MODEL),
+        optimizer_state=_deserialize_pytree_slot_value(
+            final_slots[OPTIMIZER],
+            template_state.optimizer_state,
+            slot=OPTIMIZER,
+        ),
+        completed_batches=int(final_slots[COMPLETED_BATCHES]),
+        key=jnp.asarray(final_slots[PRNG], dtype=jnp.uint32),
+        history=getattr(runtime, "history", None),
+        adaptive_epsilon_state=adaptive_state,
+    )
+    checkpoint_path = _save_training_checkpoint_materialization(
+        checkpoint_root,
+        state,
+        metadata=_training_checkpoint_metadata(args, state, run_spec),
+    )
+    diagnostics_metadata = write_training_diagnostics_sidecar(
+        output_dir,
+        args=args,
+        run_spec=run_spec,
+        state=state,
+        training_history_path=output_dir / "training_history.eqx",
+        adaptive_epsilon_diagnostic_chunks=[
+            record["diagnostics"] for record in getattr(runtime, "records", [])
+        ],
+    )
+    final_model_path = output_dir / "trained_model.eqx"
+    final_history_path = output_dir / "training_history.eqx"
+    final_summary_path = output_dir / "training_summary.json"
+    _save_pytree(final_model_path, state.model, hyperparameters=run_spec)
+    if state.history is not None:
+        _save_pytree(final_history_path, state.history)
+    stopped_for_gate = (
+        stop_after_batches is not None and state.completed_batches < int(args.n_train_batches)
+    )
+    stopped_for_zero = bool(zero_guard.get("should_stop")) and state.completed_batches < int(
+        args.n_train_batches
+    )
+    stop_reason = None
+    if stopped_for_zero:
+        stop_reason = ADAPTIVE_EPSILON_ZERO_ADVERSARY_STOP_REASON
+    elif stopped_for_gate:
+        stop_reason = "checkpoint_gate_stop_after_batches"
+    final_summary = {
+        "schema_version": f"{SCHEMA_VERSION}.training.v1",
+        "issue": str(args.issue),
+        "completed_batches": state.completed_batches,
+        "n_train_batches": int(args.n_train_batches),
+        "stopped_early_for_checkpoint_gate": stopped_for_gate,
+        "stopped_early_for_adaptive_epsilon_zero_adversary": stopped_for_zero,
+        "stop_reason": stop_reason,
+        "stop_after_batches": stop_after_batches,
+        "adaptive_epsilon_zero_adversary_guard": zero_guard,
+        "training_duration_seconds": training_duration_seconds,
+        "training_batches_per_second": (
+            state.completed_batches / training_duration_seconds
+            if training_duration_seconds > 0
+            else None
+        ),
+        "checkpoint_interval_batches": int(args.checkpoint_interval_batches),
+        "latest_checkpoint": str(latest_checkpoint_path(checkpoint_root)),
+        "final_model_path": str(final_model_path),
+        "final_adversary_policy_path": None,
+        "training_history_path": str(final_history_path) if state.history is not None else None,
+        "run_spec_path": str(run_spec_path),
+        "graph_spec_path": spec_result["graph_spec_path"],
+        "training_diagnostics": diagnostics_metadata,
+        "chunks": [
+            {
+                "completed_batches": state.completed_batches,
+                "checkpoint": str(checkpoint_path),
+                "history_chunk": None,
+                "chunk_batches": state.completed_batches,
+                "duration_seconds": training_duration_seconds,
+                "batches_per_second": (
+                    state.completed_batches / training_duration_seconds
+                    if training_duration_seconds > 0
+                    else None
+                ),
+            }
+        ],
+    }
+    _atomic_write_json(final_summary_path, final_summary)
+    _commit_volume(volume_commit)
+    return {
+        **spec_result,
+        "final_model_path": str(final_model_path),
+        "final_adversary_policy_path": None,
+        "training_history_path": str(final_history_path) if state.history is not None else None,
         "training_summary_path": str(final_summary_path),
         "latest_checkpoint": str(latest_checkpoint_path(checkpoint_root)),
         "completed_batches": state.completed_batches,
@@ -5830,7 +6454,6 @@ def _run_adaptive_epsilon_training_chunk(
     )
 
 
-@eqx.filter_jit
 def _adaptive_epsilon_train_step(
     task: Any,
     loss_func: Any,
@@ -5848,153 +6471,25 @@ def _adaptive_epsilon_train_step(
     force_filter_feedback: bool,
     controller_training_mode: str,
 ) -> tuple[Any, Any, Any, Any, Any, dict[str, jnp.ndarray]]:
-    key_trials, key_init, key_model = jr.split(key, 3)
-    keys_trials = jr.split(key_trials, batch_info.size)
-    keys_init = jr.split(key_init, batch_info.size)
-    keys_model = jr.split(key_model, batch_info.size)
-    trial_specs = _sample_adaptive_epsilon_training_batch(
+    from rlrmp.train.adaptive_epsilon_native import _adaptive_epsilon_train_step as native_step
+
+    return native_step(
         task,
-        batch_info=batch_info,
-        keys_trials=keys_trials,
-    )
-    model = jtu.tree_unflatten(treedef_model, flat_model)
-    trial_specs = add_zero_graph_channel_inputs(
-        trial_specs,
-        force_filter_feedback=force_filter_feedback,
-    )
-    trial_specs = _with_default_intervention_inputs(model, trial_specs)
-    adv_specs, inner_diagnostics = run_broad_epsilon_pgd_inner_maximizer(
-        task,
-        model,
-        trial_specs,
         loss_func,
-        keys_model,
-        config=pgd_config,
-        soft_energy_lambda_override=energy_lambda,
-        return_diagnostics=True,
+        batch_info,
+        flat_model,
+        treedef_model,
+        flat_opt_state,
+        treedef_opt_state,
+        where_train_spec,
+        optimizer,
+        pgd_config,
+        key,
+        energy_lambda,
+        outer_weight,
+        force_filter_feedback,
+        controller_training_mode,
     )
-    adv_specs = jt.map(
-        lambda value: jax.lax.stop_gradient(value) if eqx.is_array(value) else value,
-        adv_specs,
-    )
-    init_states = eqx.filter_vmap(lambda _: init_state_from_component(model))(keys_init)
-    init_states = eqx.filter_vmap(
-        lambda state, trial_spec: _apply_trial_spec_initial_state(model, state, trial_spec)
-    )(init_states, trial_specs)
-    diff_model, static_model = eqx.partition(model, where_train_spec)
-    opt_state = jtu.tree_unflatten(treedef_opt_state, flat_opt_state)
-
-    def paired_loss(current_diff_model):
-        current_model = eqx.combine(current_diff_model, static_model)
-        clean_states = _eval_trial_specs_for_training(
-            current_model,
-            trial_specs,
-            init_states,
-            keys_model,
-        )
-        adv_states = _eval_trial_specs_for_training(
-            current_model,
-            adv_specs,
-            init_states,
-            keys_model,
-        )
-        clean_losses = loss_func(clean_states, trial_specs, current_model)
-        adv_losses = loss_func(adv_states, adv_specs, current_model)
-        weighted_losses = _weighted_loss_tree(clean_losses, adv_losses, outer_weight)
-        diagnostics = {
-            "training_batch_damage_raw": jnp.asarray(adv_losses.total - clean_losses.total),
-            "training_batch_full_strength_damage_raw": jnp.asarray(
-                adv_losses.total - clean_losses.total
-            ),
-            "training_batch_applied_scaled_damage_raw": jnp.asarray(
-                adv_losses.total - clean_losses.total
-            ),
-            "training_batch_clean_loss_total": jnp.asarray(clean_losses.total),
-            "training_batch_adversarial_loss_total": jnp.asarray(adv_losses.total),
-            "training_batch_full_strength_adversarial_loss_total": jnp.asarray(
-                adv_losses.total
-            ),
-            "training_batch_applied_scaled_loss_total": jnp.asarray(adv_losses.total),
-            "training_batch_weighted_loss_total": jnp.asarray(weighted_losses.total),
-            "energy_lambda_used": jnp.asarray(energy_lambda, dtype=jnp.float32),
-            "outer_weight_used": jnp.asarray(outer_weight, dtype=jnp.float32),
-            "epsilon_scale_used": jnp.asarray(outer_weight, dtype=jnp.float32),
-            "controller_training_mode_is_epsilon_scaled_outer": jnp.asarray(False),
-        }
-        diagnostics.update({f"inner_{name}": value for name, value in inner_diagnostics.items()})
-        return weighted_losses.total, (weighted_losses, diagnostics)
-
-    def epsilon_scaled_outer_loss(current_diff_model):
-        current_model = eqx.combine(current_diff_model, static_model)
-        applied_specs = _scale_direct_epsilon_trial_specs(
-            clean_specs=trial_specs,
-            adv_specs=adv_specs,
-            epsilon_scale=outer_weight,
-        )
-        applied_states = _eval_trial_specs_for_training(
-            current_model,
-            applied_specs,
-            init_states,
-            keys_model,
-        )
-        applied_losses = loss_func(applied_states, applied_specs, current_model)
-        clean_states = _eval_trial_specs_for_training(
-            current_model,
-            trial_specs,
-            init_states,
-            keys_model,
-        )
-        full_adv_states = _eval_trial_specs_for_training(
-            current_model,
-            adv_specs,
-            init_states,
-            keys_model,
-        )
-        clean_losses = loss_func(clean_states, trial_specs, current_model)
-        full_adv_losses = loss_func(full_adv_states, adv_specs, current_model)
-        diagnostics = {
-            "training_batch_damage_raw": jnp.asarray(
-                full_adv_losses.total - clean_losses.total
-            ),
-            "training_batch_full_strength_damage_raw": jnp.asarray(
-                full_adv_losses.total - clean_losses.total
-            ),
-            "training_batch_applied_scaled_damage_raw": jnp.asarray(
-                applied_losses.total - clean_losses.total
-            ),
-            "training_batch_clean_loss_total": jnp.asarray(clean_losses.total),
-            "training_batch_adversarial_loss_total": jnp.asarray(full_adv_losses.total),
-            "training_batch_full_strength_adversarial_loss_total": jnp.asarray(
-                full_adv_losses.total
-            ),
-            "training_batch_applied_scaled_loss_total": jnp.asarray(applied_losses.total),
-            "training_batch_weighted_loss_total": jnp.asarray(applied_losses.total),
-            "energy_lambda_used": jnp.asarray(energy_lambda, dtype=jnp.float32),
-            "outer_weight_used": jnp.asarray(outer_weight, dtype=jnp.float32),
-            "epsilon_scale_used": jnp.asarray(outer_weight, dtype=jnp.float32),
-            "controller_training_mode_is_epsilon_scaled_outer": jnp.asarray(True),
-        }
-        diagnostics.update({f"inner_{name}": value for name, value in inner_diagnostics.items()})
-        return applied_losses.total, (applied_losses, diagnostics)
-
-    if controller_training_mode == ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND:
-        loss_fn = paired_loss
-    elif controller_training_mode == ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER:
-        loss_fn = epsilon_scaled_outer_loss
-    else:
-        raise ValueError(
-            f"Unknown adaptive epsilon controller training mode: {controller_training_mode}"
-        )
-    (_, (losses, diagnostics)), grads = eqx.filter_value_and_grad(
-        loss_fn,
-        has_aux=True,
-    )(diff_model)
-    updates, opt_state = optimizer.update(grads, opt_state, model)
-    model = eqx.apply_updates(model, updates)
-    model = project_component_parameters(model)
-    flat_model = jtu.tree_leaves(model)
-    flat_opt_state = jtu.tree_leaves(opt_state)
-    return losses, adv_specs, flat_model, flat_opt_state, grads, diagnostics
 
 
 def _scale_direct_epsilon_trial_specs(
@@ -6576,7 +7071,6 @@ def _advance_policy_adversary(
     return policy, optimizer_state, arrays
 
 
-@eqx.filter_jit
 def _advance_policy_adversary_compiled(
     policy: Any,
     optimizer_state: Any,
@@ -6587,39 +7081,20 @@ def _advance_policy_adversary_compiled(
     key: Any,
     batch_index: Any,
 ) -> tuple[Any, Any, dict[str, jnp.ndarray]]:
-    """Run the persistent policy-adversary ascent steps in one compiled update."""
+    from rlrmp.train.policy_adversary_native import (
+        _advance_policy_adversary_compiled as native_step,
+    )
 
-    cfg = config_from_policy_adversary_hps(hps.policy_adversary_training)
-
-    def loss_for_policy(candidate_policy):
-        objective, diagnostics = _policy_adversary_batch_objective(
-            candidate_policy,
-            task,
-            model,
-            hps,
-            key=key,
-            batch_index=batch_index,
-        )
-        return -objective, diagnostics
-
-    diagnostics = {}
-    for _ in range(int(cfg.n_steps)):
-        (_loss, diagnostics), grads = eqx.filter_value_and_grad(
-            loss_for_policy,
-            has_aux=True,
-        )(policy)
-        updates, optimizer_state = optimizer.update(
-            grads,
-            optimizer_state,
-            eqx.filter(policy, eqx.is_array),
-        )
-        policy = eqx.apply_updates(policy, updates)
-    diagnostics = {
-        **diagnostics,
-        "n_ascent_steps": jnp.asarray(cfg.n_steps, dtype=jnp.float32),
-        "learning_rate": jnp.asarray(cfg.learning_rate, dtype=jnp.float32),
-    }
-    return policy, optimizer_state, diagnostics
+    return native_step(
+        policy,
+        optimizer_state,
+        optimizer,
+        task,
+        model,
+        hps,
+        key,
+        batch_index,
+    )
 
 
 def _policy_adversary_batch_objective(

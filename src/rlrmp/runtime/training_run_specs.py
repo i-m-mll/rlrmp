@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import subprocess
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -36,10 +37,6 @@ from feedbax.contracts.training import (
     TrainingMethodRegistration,
     TrainingRunSpec,
     WorkerExecutionSpec,
-    standard_supervised_effective_phase_spec,
-    standard_supervised_method_contract,
-    standard_supervised_method_payload,
-    standard_supervised_method_ref,
 )
 from feedbax.contracts.worker import (
     AxisSpec,
@@ -47,9 +44,12 @@ from feedbax.contracts.worker import (
     CheckpointSlotSpec,
     EffectivePhaseSpec,
     MethodContractSpec,
+    MetricGuardSpec,
     OptimizerTargetBinding,
     PhaseProgramSpec,
     PhaseSpec,
+    PhaseTransitionSpec,
+    ResumeCoordinateSpec,
     StateSlotSpec,
     UpdateKernelSpec,
     UpdateStepSpec,
@@ -62,12 +62,30 @@ from rlrmp.model.feedback_descriptors import (
 )
 from rlrmp.model.feedbax_graph import graph_spec_payload
 from rlrmp.runtime.spec_migrations import (
+    FeedbaxTrainingRunSpecMigrationError,
     FINITE_ADVERSARY_POLICY_METADATA_KIND,
+    LEGACY_FEEDBAX_STANDARD_SUPERVISED_METHOD_REF,
     RUN_SPEC_KIND,
     RUN_SPEC_SCHEMA_ID,
     RUN_SPEC_SCHEMA_VERSION,
+    SEMANTIC_METHOD_EXTENSION_METADATA_KEYS,
     ensure_rlrmp_spec_families,
     stamp_current_schema,
+)
+from rlrmp.train.executor.guards import make_stop_predicate
+from rlrmp.train.executor.slots import (
+    COMPLETED_BATCHES,
+    CS_SUPERVISED_METHOD_REF,
+    CS_SUPERVISED_SCHEMA,
+    HISTORY_CHUNK_BYTES,
+    MODEL,
+    OBJECTIVE,
+    OPTIMIZER,
+    PRNG,
+    TRAIN_LOSS,
+    artifact_sink_specs,
+    checkpoint_slot_specs,
+    supervised_state_slots,
 )
 
 
@@ -93,6 +111,13 @@ GUIDED_DISTILLATION_PAYLOAD_SCHEMA_ID = (
 GUIDED_DISTILLATION_PAYLOAD_SCHEMA_VERSION = (
     "rlrmp.spec.training_method.guided_distillation_payload.v1"
 )
+CS_SUPERVISED_METHOD_PAYLOAD_SCHEMA_ID = "rlrmp.spec.training_method.cs_supervised_payload"
+CS_SUPERVISED_METHOD_PAYLOAD_SCHEMA_VERSION = (
+    "rlrmp.spec.training_method.cs_supervised_payload.v1"
+)
+CS_SUPERVISED_CHUNK_KERNEL_REF = "rlrmp.cs_supervised.train_chunk"
+CS_SUPERVISED_STOP_PREDICATE_REF = "rlrmp.cs_supervised.training_complete"
+CS_SUPERVISED_BARRIER = "after_train_chunk"
 
 
 class MissingTrainingRunSpecFieldError(ValueError):
@@ -403,10 +428,45 @@ class GuidedDistillationMethodPayload(_StrictPayloadModel):
     checkpointing: DistillationCheckpointingPayload
 
 
+class CsSupervisedPreStepPayload(_StrictPayloadModel):
+    """Optional pre-step perturbation optimizer applied before supervised descent."""
+
+    kind: str
+    enabled: bool
+    config: dict[str, Any]
+
+
+class CsSupervisedCheckpointPolicyPayload(_StrictPayloadModel):
+    """Checkpoint and artifact policy owned by the cs-supervised method payload."""
+
+    checkpoint_interval_batches: int
+    artifact_root: str
+    tracked_spec_dir: str
+
+
+class CsSupervisedMethodPayload(_StrictPayloadModel):
+    """Governed payload for plain and PGD-pre-step C&S supervised training."""
+
+    training_mode: str
+    n_train_batches: int
+    batch_size: int
+    optimizer_policy: dict[str, Any]
+    gradient_clip_norm: float | None = None
+    training_diagnostics: dict[str, Any]
+    pre_step: CsSupervisedPreStepPayload | None = None
+    checkpoint_policy: CsSupervisedCheckpointPolicyPayload
+
+
 def training_arg_parser(*args: Any, **kwargs: Any) -> argparse.ArgumentParser:
     """Return an argparse parser outside the scanned training-entry module set."""
 
     return argparse.ArgumentParser(*args, **kwargs)
+
+
+def cs_supervised_method_ref() -> MethodRefSpec:
+    """Return the RLRMP method ref for native C&S supervised training."""
+
+    return MethodRefSpec(package="rlrmp", name="cs_supervised", version="v1")
 
 
 def closed_loop_distillation_method_ref() -> MethodRefSpec:
@@ -419,6 +479,25 @@ def guided_distillation_method_ref() -> MethodRefSpec:
     """Return the RLRMP method ref for guided distillation."""
 
     return MethodRefSpec(package="rlrmp", name="guided_distillation", version="v1")
+
+
+def register_rlrmp_cs_supervised_method() -> None:
+    """Register the native RLRMP C&S supervised method with Feedbax."""
+
+    _register_method_once(
+        TrainingMethodRegistration(
+            method_ref=CS_SUPERVISED_METHOD_REF,
+            payload_schema_id=CS_SUPERVISED_METHOD_PAYLOAD_SCHEMA_ID,
+            payload_schema_version=CS_SUPERVISED_METHOD_PAYLOAD_SCHEMA_VERSION,
+            payload_model=CsSupervisedMethodPayload,
+            contract_factory=cs_supervised_method_contract,
+            update_kernels_factory=_cs_supervised_update_kernels,
+            guard_predicates_factory=_cs_supervised_guard_predicates,
+            rejected_payload_versions=("rlrmp.spec.training_method.cs_supervised_payload.v0",),
+            owner="rlrmp.runtime.training_run_specs",
+            package="rlrmp",
+        )
+    )
 
 
 def register_rlrmp_distillation_methods() -> None:
@@ -544,6 +623,186 @@ def guided_distillation_method_payload(run_spec: dict[str, Any]) -> MethodPayloa
     )
 
 
+def cs_supervised_method_payload(
+    run_spec: dict[str, Any],
+    *,
+    output_dir: Path,
+    spec_dir: Path,
+) -> MethodPayloadEnvelope:
+    """Return the governed payload envelope for native C&S supervised training."""
+
+    training_summary = _mapping(run_spec, "training_summary")
+    hps = _mapping(run_spec, "hps")
+    pgd_config = _mapping(hps, "broad_epsilon_pgd_training")
+    pre_step = None
+    if "enabled" in pgd_config and bool(pgd_config["enabled"]):
+        pre_step = CsSupervisedPreStepPayload(
+            kind="broad_epsilon_pgd_pre_step",
+            enabled=True,
+            config=pgd_config,
+        )
+    payload = CsSupervisedMethodPayload(
+        training_mode=str(
+            _required_recording_field(run_spec, "training_summary.training_mode")
+        ),
+        n_train_batches=int(
+            _required_recording_field(run_spec, "training_summary.n_train_batches")
+        ),
+        batch_size=int(_required_recording_field(run_spec, "training_summary.batch_size")),
+        optimizer_policy={
+            "optimizer": _mapping(run_spec, "optimizer"),
+            "controller_lr": training_summary.get("controller_lr"),
+            "lr_schedule": training_summary.get("lr_schedule"),
+        },
+        gradient_clip_norm=training_summary.get("gradient_clip_norm"),
+        training_diagnostics=_mapping(run_spec, "training_diagnostics"),
+        pre_step=pre_step,
+        checkpoint_policy=CsSupervisedCheckpointPolicyPayload(
+            checkpoint_interval_batches=int(
+                _required_recording_field(run_spec, "checkpointing.interval_batches")
+            ),
+            artifact_root=str(output_dir),
+            tracked_spec_dir=str(spec_dir),
+        ),
+    )
+    return MethodPayloadEnvelope(
+        schema_id=CS_SUPERVISED_METHOD_PAYLOAD_SCHEMA_ID,
+        schema_version=CS_SUPERVISED_METHOD_PAYLOAD_SCHEMA_VERSION,
+        payload=payload.model_dump(mode="json", exclude_none=True),
+    )
+
+
+def cs_supervised_method_contract() -> MethodContractSpec:
+    """Return the chunked native-executor contract for C&S supervised training."""
+
+    program = PhaseProgramSpec(
+        phases=[
+            PhaseSpec(
+                name="train_chunk",
+                kind="custom",
+                reads=[MODEL, OPTIMIZER, PRNG, COMPLETED_BATCHES, OBJECTIVE],
+                writes=[
+                    MODEL,
+                    OPTIMIZER,
+                    PRNG,
+                    COMPLETED_BATCHES,
+                    TRAIN_LOSS,
+                    HISTORY_CHUNK_BYTES,
+                ],
+                update_steps=["cs_supervised_chunk"],
+                legal_next=["done", "train_chunk"],
+                checkpoint_barrier=CS_SUPERVISED_BARRIER,
+                loop_axis="batch",
+                metadata={"native_kernel_granularity": "checkpoint_interval_chunk"},
+            ),
+            PhaseSpec(
+                name="done",
+                kind="evaluation",
+                reads=[MODEL, OPTIMIZER, PRNG, COMPLETED_BATCHES, TRAIN_LOSS],
+            ),
+        ],
+        initial_phase="train_chunk",
+        transitions=[
+            PhaseTransitionSpec(
+                source="train_chunk",
+                target="done",
+                barrier=CS_SUPERVISED_BARRIER,
+                guard=MetricGuardSpec(
+                    predicate_ref=CS_SUPERVISED_STOP_PREDICATE_REF,
+                    metric_slots=[TRAIN_LOSS],
+                    bookkeeping_slots=[COMPLETED_BATCHES],
+                ),
+            ),
+            PhaseTransitionSpec(
+                source="train_chunk",
+                target="train_chunk",
+                barrier=CS_SUPERVISED_BARRIER,
+            ),
+        ],
+        update_steps=[
+            UpdateStepSpec(
+                name="cs_supervised_chunk",
+                kind="gradient",
+                kernel=UpdateKernelSpec(kernel_ref=CS_SUPERVISED_CHUNK_KERNEL_REF),
+                reads=[MODEL, OPTIMIZER, PRNG, COMPLETED_BATCHES, OBJECTIVE],
+                writes=[
+                    MODEL,
+                    OPTIMIZER,
+                    PRNG,
+                    COMPLETED_BATCHES,
+                    TRAIN_LOSS,
+                    HISTORY_CHUNK_BYTES,
+                ],
+                axes=["batch", "replicate"],
+                optimizer_binding="optimizer_to_model",
+                metadata={"direction": "minimize", "pre_step": "method_payload.pre_step"},
+            )
+        ],
+        optimizer_bindings=[
+            OptimizerTargetBinding(
+                name="optimizer_to_model",
+                optimizer_slot=OPTIMIZER,
+                target_slot=MODEL,
+                direction="minimize",
+                projection="after_step",
+                phase_scope=["train_chunk"],
+                objective_reads=[OBJECTIVE],
+            )
+        ],
+        checkpoint_barriers=[
+            CheckpointBarrierSpec(
+                name=CS_SUPERVISED_BARRIER,
+                phase="train_chunk",
+                slots=[
+                    slot
+                    for slot in checkpoint_slot_specs(CS_SUPERVISED_SCHEMA)
+                    if slot.slot != TRAIN_LOSS
+                ],
+                artifact_sinks=artifact_sink_specs(CS_SUPERVISED_SCHEMA),
+            )
+        ],
+        metadata={
+            "phase_program_identity": "rlrmp.cs_supervised.chunked_supervised.v1",
+            "checkpoint_barrier_policy": "after_each_training_chunk",
+        },
+    )
+    return MethodContractSpec(
+        method_ref=CS_SUPERVISED_METHOD_REF,
+        method_payload_schema_version=CS_SUPERVISED_METHOD_PAYLOAD_SCHEMA_VERSION,
+        axes=[
+            AxisSpec(name="batch", role="batch"),
+            AxisSpec(name="replicate", role="replicate"),
+        ],
+        state_slots=supervised_state_slots(CS_SUPERVISED_SCHEMA),
+        phase_program=program,
+        objective_reducers=[
+            {"axis": "batch", "owner": "objective", "path": "/objective/payload/loss_summary"}
+        ],
+        worker_reducers=[
+            {"axis": "replicate", "owner": "worker", "path": "/risk_aggregation/replicate"}
+        ],
+        metadata={
+            "runtime_context": "rlrmp_runtime.components.cs_supervised",
+            "supported_modes": ["plain_supervised", "broad_epsilon_pgd_pre_step"],
+        },
+    )
+
+
+def cs_supervised_effective_phase_spec(
+    contract: MethodContractSpec | None = None,
+) -> EffectivePhaseSpec:
+    """Return the effective phase spec corresponding to the cs-supervised contract."""
+
+    active_contract = contract or cs_supervised_method_contract()
+    return EffectivePhaseSpec(
+        method_ref=active_contract.method_ref,
+        axes=active_contract.axes,
+        state_slots=active_contract.state_slots,
+        phase_program=active_contract.phase_program,
+        consistency_predicate=derive_consistency_predicate(active_contract.phase_program),
+    )
+
+
 def closed_loop_distillation_method_contract() -> MethodContractSpec:
     """Return worker axes, slots, and phase program for closed-loop distillation."""
 
@@ -561,7 +820,7 @@ def closed_loop_distillation_method_contract() -> MethodContractSpec:
         metadata={
             "teacher_location": "method_payload.teacher_contract",
             "teacher_is_worker_axis": False,
-            "execution_follow_through_deferred_to": "54b0c2e",
+            "native_executor": "rlrmp.train.distillation_native",
         },
     )
 
@@ -589,7 +848,7 @@ def guided_distillation_method_contract() -> MethodContractSpec:
             "teacher_location": "method_payload.teacher_contract",
             "teacher_is_worker_axis": False,
             "phase_schedule_location": "method_payload.training_schedule",
-            "execution_follow_through_deferred_to": "54b0c2e",
+            "native_executor": "rlrmp.train.distillation_native",
         },
     )
 
@@ -654,9 +913,7 @@ def build_distillation_training_run_spec(
             method_contract=contract,
             effective_phase=effective_phase,
             metadata={
-                "legacy_runner_retained_until_native_executor": _distillation_runner(
-                    run_spec, method=method
-                ),
+                "native_executor": "rlrmp.train.distillation_native",
                 "teacher_configuration_location": "method_payload",
             },
         ),
@@ -764,6 +1021,133 @@ def write_distillation_run_spec(path: Path, run_spec: dict[str, Any], *, method:
     return payload
 
 
+def _method_ref_key_from_payload(method_ref: Any) -> str | None:
+    if isinstance(method_ref, MethodRefSpec):
+        return method_ref.key
+    if isinstance(method_ref, Mapping):
+        package = method_ref.get("package")
+        name = method_ref.get("name")
+        version = method_ref.get("version")
+        if package is not None and name is not None and version is not None:
+            return f"{package}/{name}/{version}"
+    if isinstance(method_ref, str):
+        return method_ref
+    return None
+
+
+def _semantic_method_metadata_keys(spec_payload: Mapping[str, Any]) -> set[str]:
+    extensions = spec_payload.get("method_extensions")
+    if not isinstance(extensions, Mapping):
+        return set()
+    metadata = extensions.get("metadata")
+    if not isinstance(metadata, Mapping):
+        return set()
+    return set(metadata) & SEMANTIC_METHOD_EXTENSION_METADATA_KEYS
+
+
+def _method_extension_provenance_metadata(spec_payload: Mapping[str, Any]) -> dict[str, Any]:
+    extensions = spec_payload.get("method_extensions")
+    if not isinstance(extensions, Mapping):
+        return {"rlrmp_extension_payload": RLRMP_RUN_SPEC_PAYLOAD_KEY}
+    metadata = extensions.get("metadata")
+    if not isinstance(metadata, Mapping):
+        return {"rlrmp_extension_payload": RLRMP_RUN_SPEC_PAYLOAD_KEY}
+    provenance = {
+        key: value
+        for key, value in metadata.items()
+        if key not in SEMANTIC_METHOD_EXTENSION_METADATA_KEYS
+    }
+    provenance.setdefault("rlrmp_extension_payload", RLRMP_RUN_SPEC_PAYLOAD_KEY)
+    return provenance
+
+
+def _spec_payload_artifact_root(spec_payload: Mapping[str, Any], run_spec: Mapping[str, Any]) -> Path:
+    artifacts = spec_payload.get("artifacts")
+    if isinstance(artifacts, Mapping) and artifacts.get("artifact_root") is not None:
+        return Path(str(artifacts["artifact_root"]))
+    return Path(str(run_spec.get("artifact_output_dir", "")))
+
+
+def _spec_payload_spec_dir(spec_payload: Mapping[str, Any]) -> Path:
+    artifacts = spec_payload.get("artifacts")
+    metadata: Any = None
+    if isinstance(artifacts, Mapping):
+        metadata = artifacts.get("metadata")
+    if isinstance(metadata, Mapping) and metadata.get("tracked_spec_dir") is not None:
+        return Path(str(metadata["tracked_spec_dir"]))
+    return Path("")
+
+
+def _migrate_legacy_standard_supervised_training_run_spec(
+    run_spec: dict[str, Any],
+    spec_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    register_rlrmp_cs_supervised_method()
+    payload = dict(spec_payload)
+    method_payload = cs_supervised_method_payload(
+        run_spec,
+        output_dir=_spec_payload_artifact_root(payload, run_spec),
+        spec_dir=_spec_payload_spec_dir(payload),
+    )
+    method_contract = cs_supervised_method_contract()
+    effective_phase = cs_supervised_effective_phase_spec(method_contract)
+    graph = payload.get("graph")
+    graph_payload = graph.get("inline") if isinstance(graph, Mapping) else {}
+    if not isinstance(graph_payload, Mapping):
+        graph_payload = {}
+    fingerprint = _effective_phase_fingerprint(
+        graph_payload=graph_payload,
+        effective_phase=effective_phase,
+        method_payload=method_payload.model_dump(mode="json", exclude_none=True),
+    )
+    payload["method_ref"] = cs_supervised_method_ref().model_dump(
+        mode="json",
+        exclude_none=True,
+    )
+    payload["method_payload"] = method_payload.model_dump(mode="json", exclude_none=True)
+    payload["method_extensions"] = {
+        "metadata": _method_extension_provenance_metadata(spec_payload)
+    }
+    payload["worker_execution"] = WorkerExecutionSpec(
+        method_contract=method_contract,
+        effective_phase=effective_phase,
+        metadata={
+            "native_executor": "feedbax.training.executor.execute_training_run_spec",
+            "effective_phase_fingerprint": fingerprint,
+            "migrated_from_method_ref": LEGACY_FEEDBAX_STANDARD_SUPERVISED_METHOD_REF,
+        },
+    ).model_dump(mode="json", exclude_none=True)
+    metadata = dict(payload.get("metadata") if isinstance(payload.get("metadata"), Mapping) else {})
+    metadata["effective_phase_fingerprint"] = fingerprint
+    metadata["feedbax_training_run_spec_migration"] = {
+        "source_method_ref": LEGACY_FEEDBAX_STANDARD_SUPERVISED_METHOD_REF,
+        "target_method_ref": CS_SUPERVISED_METHOD_REF,
+        "semantic_metadata_keys_removed": sorted(
+            _semantic_method_metadata_keys(spec_payload)
+        ),
+    }
+    payload["metadata"] = metadata
+    return payload
+
+
+def _migrate_feedbax_training_run_spec_payload(
+    run_spec: dict[str, Any],
+    spec_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    method_ref = _method_ref_key_from_payload(spec_payload.get("method_ref"))
+    semantic_keys = _semantic_method_metadata_keys(spec_payload)
+    if method_ref == LEGACY_FEEDBAX_STANDARD_SUPERVISED_METHOD_REF and semantic_keys:
+        return _migrate_legacy_standard_supervised_training_run_spec(run_spec, spec_payload)
+    if semantic_keys:
+        raise FeedbaxTrainingRunSpecMigrationError(
+            "Embedded feedbax_training_run_spec carries semantic method identity in "
+            f"method_extensions.metadata for unsupported method_ref={method_ref!r}: "
+            f"keys={sorted(semantic_keys)}. Add an explicit migration or regenerate "
+            "the run spec through the current native method builder."
+        )
+    return dict(spec_payload)
+
+
 def finite_adversary_policy_metadata_payload(metadata: Any) -> dict[str, Any]:
     """Return governed finite-policy metadata without a standalone serializer."""
 
@@ -822,12 +1206,13 @@ def _distillation_contract(
         StateSlotSpec(name="model", role="model", axis="replicate"),
         StateSlotSpec(name="optimizer", role="optimizer", axis="replicate"),
         StateSlotSpec(name="prng", role="prng", axis="replicate"),
+        StateSlotSpec(name="completed_batches", role="auxiliary"),
         StateSlotSpec(name="objective", role="objective"),
         *extra_slots,
         StateSlotSpec(name="train_loss", role="metric", axis="replicate", required=False),
     ]
     phases: list[PhaseSpec] = []
-    for index, phase_name in enumerate(phase_names):
+    for phase_name in phase_names:
         phases.append(
             PhaseSpec(
                 name=phase_name,
@@ -836,15 +1221,23 @@ def _distillation_contract(
                     "model",
                     "optimizer",
                     "prng",
+                    "completed_batches",
                     "objective",
                     *[slot.name for slot in extra_slots],
                 ],
-                writes=["model", "optimizer", "prng", "train_loss"],
+                writes=["model", "optimizer", "prng", "completed_batches", "train_loss"],
                 update_steps=[update_step_name],
-                legal_next=list(phase_names[index + 1 : index + 2]),
+                legal_next=[],
                 checkpoint_barrier=f"after_{phase_name}",
             )
         )
+    phases.append(
+        PhaseSpec(
+            name="done",
+            kind="evaluation",
+            reads=["model", "optimizer", "prng", "completed_batches", "train_loss"],
+        )
+    )
     program = PhaseProgramSpec(
         phases=phases,
         initial_phase=phase_names[0],
@@ -857,10 +1250,11 @@ def _distillation_contract(
                     "model",
                     "optimizer",
                     "prng",
+                    "completed_batches",
                     "objective",
                     *[slot.name for slot in extra_slots],
                 ],
-                writes=["model", "optimizer", "prng", "train_loss"],
+                writes=["model", "optimizer", "prng", "completed_batches", "train_loss"],
                 axes=[axis.name for axis in axes],
                 optimizer_binding="optimizer_to_model",
             )
@@ -881,10 +1275,13 @@ def _distillation_contract(
                 phase=phase_name,
                 slots=[
                     CheckpointSlotSpec(slot="model", axis="replicate"),
-                    CheckpointSlotSpec(slot="optimizer", axis="replicate"),
                     CheckpointSlotSpec(slot="prng", axis="replicate"),
-                    CheckpointSlotSpec(slot="train_loss", axis="replicate", required=False),
+                    CheckpointSlotSpec(slot="completed_batches"),
                 ],
+                resume_coordinate=ResumeCoordinateSpec(
+                    phase="done",
+                    completed_barrier=f"after_{phase_name}",
+                ),
             )
             for phase_name in phase_names
         ],
@@ -901,23 +1298,27 @@ def _distillation_contract(
 
 
 def _closed_loop_distillation_update_kernels(
-    _payload: BaseModel | None = None,
+    payload: BaseModel | None = None,
 ) -> dict[str, Any]:
-    return {"rlrmp.train.closed_loop_distillation.closed_loop_gradient_update": _no_op_kernel}
+    from rlrmp.train.distillation_native import distillation_update_kernels
+
+    return dict(distillation_update_kernels("closed_loop_distillation", payload))
 
 
-def _guided_distillation_update_kernels(_payload: BaseModel | None = None) -> dict[str, Any]:
-    return {"rlrmp.train.guided_distillation.guided_gradient_update": _no_op_kernel}
+def _guided_distillation_update_kernels(payload: BaseModel | None = None) -> dict[str, Any]:
+    from rlrmp.train.distillation_native import distillation_update_kernels
+
+    return dict(distillation_update_kernels("guided_distillation", payload))
 
 
-def _no_op_kernel(slots: dict[str, Any], coordinate: Any, context: dict[str, Any]) -> dict[str, Any]:
-    del coordinate, context
-    return {
-        "model": slots["model"],
-        "optimizer": slots["optimizer"],
-        "prng": slots["prng"],
-        "train_loss": 0.0,
-    }
+def _cs_supervised_update_kernels(payload: BaseModel | None = None) -> dict[str, Any]:
+    from rlrmp.train.cs_nominal_gru import cs_supervised_update_kernels
+
+    return cs_supervised_update_kernels(payload)
+
+
+def _cs_supervised_guard_predicates(payload: BaseModel | None = None) -> dict[str, Any]:
+    return {CS_SUPERVISED_STOP_PREDICATE_REF: make_stop_predicate(payload)}
 
 
 def _distillation_method_parts(
@@ -1350,10 +1751,11 @@ def build_feedbax_training_run_spec(
 ) -> TrainingRunSpec:
     """Build the composed Feedbax ``TrainingRunSpec`` for one C&S GRU run."""
 
-    training_summary = _mapping(run_spec, "training_summary")
+    register_rlrmp_cs_supervised_method()
     checkpointing = _mapping(run_spec, "checkpointing")
     training_diagnostics = _mapping(run_spec, "training_diagnostics")
     training_config = _cs_training_config(run_spec, spec_dir=spec_dir)
+    graph_payload = graph_spec_payload(graph_spec)
     feedback_descriptors = controller_feedback_descriptor_from_container(
         _mapping(run_spec, "model_summary"),
         feedback_dim=_feedback_dim_from_run_spec(run_spec),
@@ -1365,16 +1767,107 @@ def build_feedbax_training_run_spec(
         "fidelity_status": run_spec.get("fidelity_status"),
         DESCRIPTOR_PAYLOAD_KEY: feedback_descriptors,
     }
+    method_payload = cs_supervised_method_payload(
+        run_spec,
+        output_dir=output_dir,
+        spec_dir=spec_dir,
+    )
+    method_contract = cs_supervised_method_contract()
+    effective_phase = cs_supervised_effective_phase_spec(method_contract)
+    effective_phase_fingerprint = _effective_phase_fingerprint(
+        graph_payload=graph_payload,
+        effective_phase=effective_phase,
+        method_payload=method_payload.model_dump(mode="json", exclude_none=True),
+    )
     method_metadata = {
         "runner": "rlrmp.train.cs_nominal_gru",
-        "rlrmp_training_mode": training_summary.get("training_mode"),
-        "rlrmp_loss_objective": run_spec.get("loss_objective"),
-        "adversarial_phase": run_spec.get("adversarial_phase"),
         "rlrmp_extension_payload": RLRMP_RUN_SPEC_PAYLOAD_KEY,
     }
+    task = TaskSpec(
+        type=str(_mapping(run_spec, "task_timing").get("type", "rlrmp_task")),
+        params=_mapping(run_spec, "task_timing"),
+    )
+    objective = ObjectiveSlotSpec(
+        kind="external",
+        payload=objective_payload,
+        schema_id="rlrmp.cs_gru_objective",
+        schema_version="rlrmp.cs_gru_objective.v1",
+        metadata={"rlrmp_loss_objective": run_spec.get("loss_objective")},
+    )
+    risk_aggregation = RiskAggregationSpec(
+        realization="mean",
+        replicate="mean",
+        metadata={"source": "$.training_summary"},
+    )
+    execution = ExecutionPolicySpec(
+        mode="local",
+        require_review=bool(run_spec.get("full_training_launch") != "requested"),
+        allow_cloud=False,
+        metadata={"launch_mode": run_spec.get("mode")},
+    )
+    artifacts = ArtifactPolicySpec(
+        manifest_root="_artifacts/feedbax_runs",
+        artifact_root=str(output_dir),
+        custody="local",
+        metadata={"tracked_spec_dir": str(spec_dir)},
+    )
+    checkpoint_progress = CheckpointProgressPolicySpec(
+        checkpoint_interval=training_config.snapshot_interval,
+        # Training diagnostics are optional progress metadata, not run topology.
+        progress_interval=(
+            None if training_diagnostics.get("enabled") is False else training_config.snapshot_interval
+        ),
+        metadata={"checkpoint_dir": checkpointing.get("checkpoint_dir")},
+    )
+    metadata = {
+        "composed_with": RLRMP_RUN_SPEC_PAYLOAD_KEY,
+        "serialize_do_not_rederive": True,
+        DESCRIPTOR_PAYLOAD_KEY: feedback_descriptors,
+        "descriptor_basis_hash": feedback_descriptors["descriptor_basis_hash"],
+    }
+    if _adaptive_epsilon_run_spec_enabled(run_spec):
+        from rlrmp.train.adaptive_epsilon_native import (
+            build_adaptive_epsilon_training_run_spec,
+        )
+
+        return build_adaptive_epsilon_training_run_spec(
+            run_spec,
+            graph_spec=graph_spec,
+            output_dir=output_dir,
+            spec_dir=spec_dir,
+            training_config=training_config,
+            objective=objective,
+            task=task,
+            risk_aggregation=risk_aggregation,
+            method_extensions={"metadata": method_metadata},
+            execution=execution,
+            artifacts=artifacts,
+            checkpoint_progress=checkpoint_progress,
+            metadata=metadata,
+        )
+    if _policy_adversary_run_spec_enabled(run_spec):
+        from rlrmp.train.policy_adversary_native import (
+            build_policy_adversary_training_run_spec,
+        )
+
+        return build_policy_adversary_training_run_spec(
+            run_spec,
+            graph_spec=graph_spec,
+            output_dir=output_dir,
+            spec_dir=spec_dir,
+            training_config=training_config,
+            objective=objective,
+            task=task,
+            risk_aggregation=risk_aggregation,
+            method_extensions={"metadata": method_metadata},
+            execution=execution,
+            artifacts=artifacts,
+            checkpoint_progress=checkpoint_progress,
+            metadata=metadata,
+        )
     return TrainingRunSpec(
         graph=GraphTopologySourceSpec(
-            inline=graph_spec_payload(graph_spec),
+            inline=graph_payload,
             schema_id=getattr(graph_spec, "schema_id", None),
             schema_version=getattr(graph_spec, "schema_version", None),
             metadata={
@@ -1384,59 +1877,27 @@ def build_feedbax_training_run_spec(
                 "descriptor_basis_hash": feedback_descriptors["descriptor_basis_hash"],
             },
         ),
-        task=TaskSpec(
-            type=str(_mapping(run_spec, "task_timing").get("type", "rlrmp_task")),
-            params=_mapping(run_spec, "task_timing"),
-        ),
+        task=task,
         training_config=training_config,
-        objective=ObjectiveSlotSpec(
-            kind="external",
-            payload=objective_payload,
-            schema_id="rlrmp.cs_gru_objective",
-            schema_version="rlrmp.cs_gru_objective.v1",
-            metadata={"rlrmp_loss_objective": run_spec.get("loss_objective")},
-        ),
-        risk_aggregation=RiskAggregationSpec(
-            realization="mean",
-            replicate="mean",
-            metadata={"source": "$.training_summary"},
-        ),
-        method_ref=standard_supervised_method_ref(),
-        method_payload=standard_supervised_method_payload(),
+        objective=objective,
+        risk_aggregation=risk_aggregation,
+        method_ref=cs_supervised_method_ref(),
+        method_payload=method_payload,
         method_extensions={"metadata": method_metadata},
         worker_execution=WorkerExecutionSpec(
-            method_contract=standard_supervised_method_contract(),
-            effective_phase=standard_supervised_effective_phase_spec(),
+            method_contract=method_contract,
+            effective_phase=effective_phase,
             metadata={
-                "legacy_runner": "rlrmp.train.cs_nominal_gru.run_full_training",
-                "full_feedbax_executor_deferred_to": "54b0c2e",
+                "native_executor": "feedbax.training.executor.execute_training_run_spec",
+                "effective_phase_fingerprint": effective_phase_fingerprint,
             },
         ),
-        execution=ExecutionPolicySpec(
-            mode="local",
-            require_review=bool(run_spec.get("full_training_launch") != "requested"),
-            allow_cloud=False,
-            metadata={"launch_mode": run_spec.get("mode")},
-        ),
-        artifacts=ArtifactPolicySpec(
-            manifest_root="_artifacts/feedbax_runs",
-            artifact_root=str(output_dir),
-            custody="local",
-            metadata={"tracked_spec_dir": str(spec_dir)},
-        ),
-        checkpoint_progress=CheckpointProgressPolicySpec(
-            checkpoint_interval=training_config.snapshot_interval,
-            # Training diagnostics are optional progress metadata, not run topology.
-            progress_interval=(
-                None if training_diagnostics.get("enabled") is False else training_config.snapshot_interval
-            ),
-            metadata={"checkpoint_dir": checkpointing.get("checkpoint_dir")},
-        ),
+        execution=execution,
+        artifacts=artifacts,
+        checkpoint_progress=checkpoint_progress,
         metadata={
-            "composed_with": RLRMP_RUN_SPEC_PAYLOAD_KEY,
-            "serialize_do_not_rederive": True,
-            DESCRIPTOR_PAYLOAD_KEY: feedback_descriptors,
-            "descriptor_basis_hash": feedback_descriptors["descriptor_basis_hash"],
+            **metadata,
+            "effective_phase_fingerprint": effective_phase_fingerprint,
         },
     )
 
@@ -1469,7 +1930,11 @@ def attach_composed_training_specs(
 def feedbax_training_run_spec_from_payload(run_spec: dict[str, Any]) -> TrainingRunSpec:
     """Load the composed Feedbax ``TrainingRunSpec`` from a tracked recipe."""
 
-    return TrainingRunSpec.model_validate(run_spec[FEEDBAX_TRAINING_RUN_SPEC_KEY])
+    raw_spec = run_spec[FEEDBAX_TRAINING_RUN_SPEC_KEY]
+    if not isinstance(raw_spec, Mapping):
+        raise TypeError(f"{FEEDBAX_TRAINING_RUN_SPEC_KEY} must be a JSON object")
+    spec_payload = _migrate_feedbax_training_run_spec_payload(run_spec, raw_spec)
+    return TrainingRunSpec.model_validate(spec_payload)
 
 
 def assert_runtime_graph_matches_training_spec(
@@ -1633,6 +2098,39 @@ def attach_post_run_provenance(
 def _mapping(mapping: dict[str, Any], key: str) -> dict[str, Any]:
     value = mapping.get(key)
     return value if isinstance(value, dict) else {}
+
+
+def _effective_phase_fingerprint(
+    *,
+    graph_payload: Mapping[str, Any],
+    effective_phase: EffectivePhaseSpec,
+    method_payload: Mapping[str, Any],
+) -> str:
+    parity = {
+        "graph": graph_payload,
+        "effective_phase": effective_phase.model_dump(mode="json", exclude_none=True),
+        "method_payload": method_payload,
+    }
+    encoded = json.dumps(parity, sort_keys=True, separators=(",", ":"), default=str).encode(
+        "utf-8"
+    )
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _policy_adversary_run_spec_enabled(run_spec: Mapping[str, Any]) -> bool:
+    hps = run_spec.get("hps")
+    if not isinstance(hps, Mapping):
+        return False
+    policy_adversary = hps.get("policy_adversary_training")
+    return isinstance(policy_adversary, Mapping) and policy_adversary.get("enabled") is True
+
+
+def _adaptive_epsilon_run_spec_enabled(run_spec: Mapping[str, Any]) -> bool:
+    hps = run_spec.get("hps")
+    if not isinstance(hps, Mapping):
+        return False
+    adaptive = hps.get("adaptive_epsilon_curriculum")
+    return isinstance(adaptive, Mapping) and adaptive.get("enabled") is True
 
 
 def _feedback_dim_from_run_spec(run_spec: dict[str, Any]) -> int:

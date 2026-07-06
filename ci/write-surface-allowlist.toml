@@ -83,15 +83,6 @@ owner = "0efc92d"
 role = "run_spec"
 conditional = false
 
-[[durable_write_sites]]
-path = "scripts/train_minimax.py"
-function = "run_training"
-kind = "open_w"
-target = "spec_path"
-owner = "0efc92d"
-role = "run_spec"
-conditional = false
-
 # The minimax final-output emitters (warmup/adversarial model, trained
 # adversary/adversaries, adversarial_losses, and the `_log_*` adversary
 # diagnostics) were routed onto the terminal feedbax custody transaction and

@@ -153,6 +153,15 @@ expected_collection_pattern = "tests/test_reaccretion_ratchet.py::"
 minimum_non_skipped = 5
 
 [[families]]
+name = "native_executor_deletion_gate"
+owner = "b13e0e4"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_native_executor_deletion_gate.py::"
+minimum_non_skipped = 3
+negative_canary = "tests/test_native_executor_deletion_gate.py::test_native_executor_deletion_gate_negative_canary_flags_optimizer_loop"
+
+[[families]]
 name = "generated_data_constant_scan"
 owner = "ea6ccb4"
 status = "live"
