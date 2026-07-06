@@ -442,7 +442,6 @@ def build_minimax_training_run_spec(
             metadata={
                 "effective_phase_fingerprint": fingerprint,
                 "pre_execution_parity": "compare_requested_serialized_spec",
-                "legacy_loop_backend": "scripts.train_minimax.run_training",
             },
         ),
         execution=ExecutionPolicySpec(
