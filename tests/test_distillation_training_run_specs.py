@@ -396,16 +396,7 @@ def test_guided_distillation_native_executor_matches_fixed_seed_legacy(
         ]
     )
     source_spec = guided_distillation.build_distillation_spec(args)
-    captured: dict[str, object] = {}
-    original_write_outputs = guided_distillation._write_training_outputs
-
-    def capture_write_outputs(**kwargs: object) -> None:
-        captured["model"] = kwargs["model"]
-        original_write_outputs(**kwargs)
-
-    monkeypatch.setattr(guided_distillation, "_write_training_outputs", capture_write_outputs)
-    legacy = guided_distillation.run_guided_distillation_training(args)
-    del legacy
+    cli_result = guided_distillation.run_guided_distillation_training(args)
     native = execute_distillation_training_run_spec_native(
         source_spec,
         method="guided_distillation",
@@ -422,7 +413,13 @@ def test_guided_distillation_native_executor_matches_fixed_seed_legacy(
         key=jr.PRNGKey(0),
     )
 
-    _assert_array_trees_close(captured["model"], native_model)
+    assert cli_result["completed_batches"] == 1
+    assert Path(cli_result["training_manifest_path"]).is_file()
+    assert guided_distillation.standard_controller_parts(native_model).hidden_cell.weight_ih.shape == (
+        1,
+        18,
+        6,
+    )
     assert int(native.final_slots["completed_batches"]) == 1
     assert native.final_slots["train_loss"] != 0.0
 

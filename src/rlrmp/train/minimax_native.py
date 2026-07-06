@@ -13,8 +13,9 @@ import jax.random as jr
 import jax.tree as jt
 import jax.tree_util as jtu
 import optax
-from feedbax import prepare_trial
+from feedbax import TaskTrialSpec, prepare_trial
 from feedbax.contracts.training import ObjectiveSlotSpec
+from feedbax.intervene import TimeSeriesParam
 from feedbax.objectives.loss import AbstractLoss
 from feedbax.objectives.service import LossService, LoweredObjective
 from feedbax.objectives.spec import ObjectiveExecutionRequirements
@@ -23,11 +24,8 @@ from feedbax.runtime.batch import BatchInfo
 from feedbax.runtime.iteration import run_component
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
 
+from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.intervention_compat import LINEAR_DYNAMICS_ADVERSARY_COMPONENT_PARAMETER_TARGET
-from rlrmp.train.adversarial_training import (
-    _inject_adversary_delta_A,
-    _inject_adversary_forces,
-)
 from rlrmp.train.adversary import GaussianBumpAdversary, LinearDynamicsAdversary
 from rlrmp.train.executor.adapters import ChunkKernelAdapter, UpdateKernel
 from rlrmp.train.executor.guards import make_stop_after_batches_predicate
@@ -52,6 +50,62 @@ PROJECTION_KERNEL_REF = "rlrmp.minimax.frobenius_ball_projection"
 OUTER_DESCENT_KERNEL_REF = "rlrmp.minimax.outer_controller_descent"
 NO_ADVERSARIAL_BATCHES_REF = "rlrmp.minimax.no_adversarial_batches"
 ADVERSARIAL_COMPLETE_REF = "rlrmp.minimax.adversarial_complete"
+
+
+def _inject_adversary_forces(
+    trial_specs: TaskTrialSpec,
+    forces: Any,
+) -> TaskTrialSpec:
+    """Return trial specs with the plant intervenor force field replaced."""
+
+    new_field = TimeSeriesParam(forces)
+    new_intervene = eqx.tree_at(
+        lambda spec: spec.field,
+        trial_specs.intervene[PLANT_INTERVENOR_LABEL],
+        new_field,
+    )
+    return eqx.tree_at(
+        lambda ts: ts.intervene[PLANT_INTERVENOR_LABEL],
+        trial_specs,
+        new_intervene,
+    )
+
+
+def _inject_adversary_delta_A(
+    trial_specs: TaskTrialSpec,
+    delta_A: Any,
+    batch_size: int,
+) -> TaskTrialSpec:
+    """Return trial specs with a broadcast linear-dynamics adversary matrix."""
+
+    n_steps = _infer_trial_input_steps(trial_specs)
+    delta_A_batched = jnp.broadcast_to(
+        delta_A[None, None, ...], (batch_size, n_steps, *delta_A.shape)
+    )
+    active = jnp.ones((batch_size, n_steps), dtype=bool)
+    new_intervene = eqx.tree_at(
+        lambda spec: (spec.active, spec.delta_A),
+        trial_specs.intervene[PLANT_INTERVENOR_LABEL],
+        (TimeSeriesParam(active), TimeSeriesParam(delta_A_batched)),
+    )
+    return eqx.tree_at(
+        lambda ts: ts.intervene[PLANT_INTERVENOR_LABEL],
+        trial_specs,
+        new_intervene,
+    )
+
+
+def _infer_trial_input_steps(trial_specs: TaskTrialSpec) -> int:
+    """Infer rollout input length for adversary parameter overrides."""
+
+    leaves = [
+        leaf
+        for leaf in jt.leaves(trial_specs.inputs)
+        if eqx.is_array(leaf) and leaf.ndim >= 2
+    ]
+    if not leaves:
+        raise ValueError("cannot infer trial input length for adversary delta_A injection")
+    return int(leaves[0].shape[1])
 
 
 @dataclass(frozen=True)

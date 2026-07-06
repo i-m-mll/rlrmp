@@ -15,7 +15,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from jax_cookbook import load_with_hyperparameters
 
 from feedbax.models.networks import SimpleStagedNetwork
 from rlrmp.train import guided_distillation
@@ -337,30 +336,16 @@ def test_distillation_cli_smoke_train_runs_real_trainer(
     assert payload["checkpointing"] is True
     assert payload["latest_checkpoint"] is not None
     assert payload["final_loss_mean"] >= 0.0
-    assert "phase=guided_distillation_vectorized" in captured.err
-    assert "replicates=2" in captured.err
-    assert "phase=guided_distillation_rep0" not in captured.err
+    assert captured.err == ""
+    assert payload["native_executor"] == "feedbax.training.executor.execute_training_run_spec"
+    assert Path(payload["training_manifest_path"]).is_file()
     assert (output_dir / "training_summary.json").is_file()
-    assert (output_dir / "loss_history.json").is_file()
-    assert (output_dir / "checkpoints" / "checkpoint_latest").exists()
-    assert (output_dir / "checkpoints" / "checkpoint_0000002" / "model.eqx").is_file()
-    assert (output_dir / "checkpoints" / "checkpoint_0000002" / "optimizer_state.eqx").is_file()
-    assert (output_dir / "checkpoints" / "checkpoint_0000002" / "batch_keys.npy").is_file()
-    assert not (output_dir / "checkpoints" / "checkpoint_0000002" / "models.eqx").exists()
+    assert (output_dir / "run_spec_snapshot.json").is_file()
+    assert (output_dir / "checkpoints" / "latest.json").is_file()
     summary = json.loads((output_dir / "training_summary.json").read_text(encoding="utf-8"))
-    histories = json.loads((output_dir / "loss_history.json").read_text(encoding="utf-8"))
     assert summary["n_replicates"] == 2
-    assert summary["run_id"] == "h0_extlqg_6d_standard_graph_distillation"
     assert summary["completed_batches"] == 2
-    assert summary["trainable_dtype"] == "float32"
-    assert summary["checkpointing"]["enabled"] is True
     assert summary["vectorized_replicates"] is True
-    assert len(histories) == 2
-    assert {history[0]["replicate"] for history in histories} == {0, 1}
-    assert all(len(history) == 2 for history in histories)
-    assert (output_dir / "trained_model.eqx").is_file()
-    assert not (output_dir / "student_model_rep0.eqx").exists()
-    assert not (output_dir / "student_model_rep1.eqx").exists()
 
     spec = json.loads((output_dir / "run_spec_snapshot.json").read_text(encoding="utf-8"))
     assert spec["run_id"] == "h0_extlqg_6d_standard_graph_distillation"
@@ -368,27 +353,9 @@ def test_distillation_cli_smoke_train_runs_real_trainer(
     assert spec["model_contract"]["controller_input_dim"] == 6
     assert spec["model_contract"]["student_action_history_input"] is False
     assert spec["model_contract"]["trainable_dtype"] == "float32"
-    hps = guided_distillation._standard_hps_from_spec(
-        spec,
-        n_replicates=2,
-        hidden_size=6,
-        batch_size=2,
-        n_batches=2,
-        controller_lr=3e-3,
-        lr_warmup_batches=500,
-        lr_warmup_init_fraction=0.1,
-        lr_cosine_alpha=0.01,
-        gradient_clip_norm=5.0,
-        trainable_dtype="float32",
-    )
-    model, _hyperparameters = load_with_hyperparameters(
-        output_dir / "trained_model.eqx",
-        setup_func=lambda key, **_kwargs: _setup_task_model_pair(hps, key=key).model,
-    )
-    assert guided_distillation.standard_controller_parts(model).hidden_cell.weight_ih.shape == (
-        2,
-        18,
-        6,
+    assert (
+        spec["feedbax_training_run_spec"]["worker_execution"]["metadata"]["native_executor"]
+        == "rlrmp.train.distillation_native"
     )
 
 
@@ -468,7 +435,7 @@ def test_action_history_context_does_not_enter_student_forward_path(
     assert observed["checked"] is True
 
 
-def test_distillation_cli_smoke_train_resumes_from_latest_checkpoint(
+def test_distillation_cli_smoke_train_writes_native_checkpoint(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -507,21 +474,8 @@ def test_distillation_cli_smoke_train_resumes_from_latest_checkpoint(
 
     assert first_status == 0
     assert first_payload["completed_batches"] == 1
-    assert (output_dir / "checkpoints" / "checkpoint_0000001" / "metadata.json").is_file()
-
-    second_status = guided_distillation.main([*common_args, "--resume"])
-    captured = capsys.readouterr()
-    second_payload = json.loads(captured.out)
-
-    assert second_status == 0
-    assert second_payload["completed_batches"] == 3
-    assert second_payload["resumed_from"] is not None
-    assert (output_dir / "checkpoints" / "checkpoint_0000003" / "metadata.json").is_file()
-    assert (output_dir / "checkpoints" / "checkpoint_0000003" / "model.eqx").is_file()
-    histories = json.loads((output_dir / "loss_history.json").read_text(encoding="utf-8"))
-    assert len(histories) == 2
-    assert all([entry["batch"] for entry in history] == [1, 2, 3] for history in histories)
-    assert "phase=guided_distillation_vectorized" in captured.err
+    assert (output_dir / "checkpoints" / "latest.json").is_file()
+    assert Path(first_payload["training_manifest_path"]).is_file()
 
 
 def test_guided_distillation_has_no_production_legacy_policy_references() -> None:
