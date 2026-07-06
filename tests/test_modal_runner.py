@@ -324,7 +324,13 @@ def test_local_spec_lock_renders_without_provider_payload() -> None:
     payload = spec_lock_payload(bundle)
 
     assert payload["backend"] == "local"
-    assert payload["cloud_payload"] == {}
+    local_cloud_payload = payload["cloud_payload"]
+    assert local_cloud_payload["provider"] == "none"
+    assert "runpodctl_create" not in local_cloud_payload
+    assert "pod_request" not in local_cloud_payload
+    assert "generated_app" not in local_cloud_payload
+    assert local_cloud_payload["readiness"] == []
+    assert local_cloud_payload["cells"] == []
     assert payload["gpu_cloud"] == {"gpu": None, "cloud_type": "local"}
     assert payload["training_run_spec"]["content_sha256"]
     assert payload["rlrmp_run_spec"]["content_sha256"]

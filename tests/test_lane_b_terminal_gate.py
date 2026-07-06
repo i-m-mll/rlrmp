@@ -242,9 +242,15 @@ def test_cloud_plans_render_for_all_backends_without_provider_contact() -> None:
         assert payload["backend"] == backend
         assert GENERIC_EXECUTOR_COMMAND in payload["derived_runner_command"]
 
-    # Local rendering carries no provider payload; runpod carries a rendered (not executed)
-    # provider command. Neither contacts a provider.
-    assert per_backend["local"]["cloud_payload"] == {}
+    # Local rendering carries the normalized provider-neutral payload; runpod carries a
+    # rendered (not executed) provider command. Neither contacts a provider.
+    local_cloud_payload = per_backend["local"]["cloud_payload"]
+    assert local_cloud_payload["provider"] == "none"
+    assert "runpodctl_create" not in local_cloud_payload
+    assert "pod_request" not in local_cloud_payload
+    assert "generated_app" not in local_cloud_payload
+    assert local_cloud_payload["readiness"] == []
+    assert local_cloud_payload["cells"] == []
     assert per_backend["runpod"]["cloud_payload"]["provider"] == "runpod"
     assert "runpodctl pod create" in per_backend["runpod"]["cloud_payload"]["runpodctl_create"]
 
