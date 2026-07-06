@@ -207,6 +207,7 @@ venv.bak/
 .mypy_cache/
 .dmypy.json
 dmypy.json
+.testmondata*
 
 # Pyre type checker
 .pyre/

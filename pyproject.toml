@@ -20,6 +20,8 @@ rlrmp = "rlrmp:register_experiment_package"
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "pytest-testmon>=2.1",
+    "pytest-xdist>=3.6",
     "ruff>=0.15.16",
 ]
 
