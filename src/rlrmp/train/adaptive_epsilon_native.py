@@ -9,8 +9,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import equinox as eqx
+import jax
 import jax.numpy as jnp
 import jax.random as jr
+import jax.tree as jt
+import jax.tree_util as jtu
+import optax
 from feedbax.contracts.training import (
     DEFAULT_TRAINING_METHOD_REGISTRY,
     ArtifactPolicySpec,
@@ -46,6 +51,9 @@ from feedbax.contracts.worker import (
 from feedbax.objectives.loss import AbstractLoss
 from feedbax.objectives.service import LossService, LoweredObjective
 from feedbax.objectives.spec import ObjectiveExecutionRequirements
+from feedbax.runtime.batch import BatchInfo
+from feedbax.runtime.graph import init_state_from_component
+from feedbax.runtime.parameter_constraints import project_component_parameters
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from rlrmp.model.feedback_descriptors import DESCRIPTOR_PAYLOAD_KEY
@@ -283,10 +291,8 @@ def build_adaptive_epsilon_training_run_spec(
             method_contract=contract,
             effective_phase=effective_phase,
             metadata={
-                "legacy_equivalence_source": (
-                    "rlrmp.train.cs_nominal_gru._run_adaptive_epsilon_training_chunk"
-                ),
                 "native_executor": "feedbax.training.executor.execute_training_run_spec",
+                "kernel_owner": "rlrmp.train.adaptive_epsilon_native",
             },
         ),
         execution=execution,
@@ -504,6 +510,188 @@ def adaptive_epsilon_guard_predicates(payload: BaseModel | None = None) -> Mappi
     """Return adaptive-epsilon native phase-transition predicates."""
 
     return {STOP_PREDICATE_REF: make_stop_predicate(payload)}
+
+
+@eqx.filter_jit
+def _adaptive_epsilon_train_step(
+    task: Any,
+    loss_func: Any,
+    batch_info: BatchInfo,
+    flat_model: Any,
+    treedef_model: Any,
+    flat_opt_state: Any,
+    treedef_opt_state: Any,
+    where_train_spec: Any,
+    optimizer: optax.GradientTransformation,
+    pgd_config: Any,
+    key: Any,
+    energy_lambda: Any,
+    outer_weight: Any,
+    force_filter_feedback: bool,
+    controller_training_mode: str,
+) -> tuple[Any, Any, Any, Any, Any, dict[str, jnp.ndarray]]:
+    from rlrmp.train.cs_nominal_gru import (
+        ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER,
+        ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+        _apply_trial_spec_initial_state,
+        _eval_trial_specs_for_training,
+        _sample_adaptive_epsilon_training_batch,
+        _scale_direct_epsilon_trial_specs,
+        _weighted_loss_tree,
+        _with_default_intervention_inputs,
+    )
+    from rlrmp.train.cs_perturbation_training import (
+        add_zero_graph_channel_inputs,
+        run_broad_epsilon_pgd_inner_maximizer,
+    )
+
+    key_trials, key_init, key_model = jr.split(key, 3)
+    keys_trials = jr.split(key_trials, batch_info.size)
+    keys_init = jr.split(key_init, batch_info.size)
+    keys_model = jr.split(key_model, batch_info.size)
+    trial_specs = _sample_adaptive_epsilon_training_batch(
+        task,
+        batch_info=batch_info,
+        keys_trials=keys_trials,
+    )
+    model = jtu.tree_unflatten(treedef_model, flat_model)
+    trial_specs = add_zero_graph_channel_inputs(
+        trial_specs,
+        force_filter_feedback=force_filter_feedback,
+    )
+    trial_specs = _with_default_intervention_inputs(model, trial_specs)
+    adv_specs, inner_diagnostics = run_broad_epsilon_pgd_inner_maximizer(
+        task,
+        model,
+        trial_specs,
+        loss_func,
+        keys_model,
+        config=pgd_config,
+        soft_energy_lambda_override=energy_lambda,
+        return_diagnostics=True,
+    )
+    adv_specs = jt.map(
+        lambda value: jax.lax.stop_gradient(value) if eqx.is_array(value) else value,
+        adv_specs,
+    )
+    init_states = eqx.filter_vmap(lambda _: init_state_from_component(model))(keys_init)
+    init_states = eqx.filter_vmap(
+        lambda state, trial_spec: _apply_trial_spec_initial_state(model, state, trial_spec)
+    )(init_states, trial_specs)
+    diff_model, static_model = eqx.partition(model, where_train_spec)
+    opt_state = jtu.tree_unflatten(treedef_opt_state, flat_opt_state)
+
+    def paired_loss(current_diff_model):
+        current_model = eqx.combine(current_diff_model, static_model)
+        clean_states = _eval_trial_specs_for_training(
+            current_model,
+            trial_specs,
+            init_states,
+            keys_model,
+        )
+        adv_states = _eval_trial_specs_for_training(
+            current_model,
+            adv_specs,
+            init_states,
+            keys_model,
+        )
+        clean_losses = loss_func(clean_states, trial_specs, current_model)
+        adv_losses = loss_func(adv_states, adv_specs, current_model)
+        weighted_losses = _weighted_loss_tree(clean_losses, adv_losses, outer_weight)
+        diagnostics = {
+            "training_batch_damage_raw": jnp.asarray(adv_losses.total - clean_losses.total),
+            "training_batch_full_strength_damage_raw": jnp.asarray(
+                adv_losses.total - clean_losses.total
+            ),
+            "training_batch_applied_scaled_damage_raw": jnp.asarray(
+                adv_losses.total - clean_losses.total
+            ),
+            "training_batch_clean_loss_total": jnp.asarray(clean_losses.total),
+            "training_batch_adversarial_loss_total": jnp.asarray(adv_losses.total),
+            "training_batch_full_strength_adversarial_loss_total": jnp.asarray(
+                adv_losses.total
+            ),
+            "training_batch_applied_scaled_loss_total": jnp.asarray(adv_losses.total),
+            "training_batch_weighted_loss_total": jnp.asarray(weighted_losses.total),
+            "energy_lambda_used": jnp.asarray(energy_lambda, dtype=jnp.float32),
+            "outer_weight_used": jnp.asarray(outer_weight, dtype=jnp.float32),
+            "epsilon_scale_used": jnp.asarray(outer_weight, dtype=jnp.float32),
+            "controller_training_mode_is_epsilon_scaled_outer": jnp.asarray(False),
+        }
+        diagnostics.update({f"inner_{name}": value for name, value in inner_diagnostics.items()})
+        return weighted_losses.total, (weighted_losses, diagnostics)
+
+    def epsilon_scaled_outer_loss(current_diff_model):
+        current_model = eqx.combine(current_diff_model, static_model)
+        applied_specs = _scale_direct_epsilon_trial_specs(
+            clean_specs=trial_specs,
+            adv_specs=adv_specs,
+            epsilon_scale=outer_weight,
+        )
+        applied_states = _eval_trial_specs_for_training(
+            current_model,
+            applied_specs,
+            init_states,
+            keys_model,
+        )
+        applied_losses = loss_func(applied_states, applied_specs, current_model)
+        clean_states = _eval_trial_specs_for_training(
+            current_model,
+            trial_specs,
+            init_states,
+            keys_model,
+        )
+        full_adv_states = _eval_trial_specs_for_training(
+            current_model,
+            adv_specs,
+            init_states,
+            keys_model,
+        )
+        clean_losses = loss_func(clean_states, trial_specs, current_model)
+        full_adv_losses = loss_func(full_adv_states, adv_specs, current_model)
+        diagnostics = {
+            "training_batch_damage_raw": jnp.asarray(
+                full_adv_losses.total - clean_losses.total
+            ),
+            "training_batch_full_strength_damage_raw": jnp.asarray(
+                full_adv_losses.total - clean_losses.total
+            ),
+            "training_batch_applied_scaled_damage_raw": jnp.asarray(
+                applied_losses.total - clean_losses.total
+            ),
+            "training_batch_clean_loss_total": jnp.asarray(clean_losses.total),
+            "training_batch_adversarial_loss_total": jnp.asarray(full_adv_losses.total),
+            "training_batch_full_strength_adversarial_loss_total": jnp.asarray(
+                full_adv_losses.total
+            ),
+            "training_batch_applied_scaled_loss_total": jnp.asarray(applied_losses.total),
+            "training_batch_weighted_loss_total": jnp.asarray(applied_losses.total),
+            "energy_lambda_used": jnp.asarray(energy_lambda, dtype=jnp.float32),
+            "outer_weight_used": jnp.asarray(outer_weight, dtype=jnp.float32),
+            "epsilon_scale_used": jnp.asarray(outer_weight, dtype=jnp.float32),
+            "controller_training_mode_is_epsilon_scaled_outer": jnp.asarray(True),
+        }
+        diagnostics.update({f"inner_{name}": value for name, value in inner_diagnostics.items()})
+        return applied_losses.total, (applied_losses, diagnostics)
+
+    if controller_training_mode == ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND:
+        loss_fn = paired_loss
+    elif controller_training_mode == ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER:
+        loss_fn = epsilon_scaled_outer_loss
+    else:
+        raise ValueError(
+            f"Unknown adaptive epsilon controller training mode: {controller_training_mode}"
+        )
+    (_, (losses, diagnostics)), grads = eqx.filter_value_and_grad(
+        loss_fn,
+        has_aux=True,
+    )(diff_model)
+    updates, opt_state = optimizer.update(grads, opt_state, model)
+    model = eqx.apply_updates(model, updates)
+    model = project_component_parameters(model)
+    flat_model = jtu.tree_leaves(model)
+    flat_opt_state = jtu.tree_leaves(opt_state)
+    return losses, adv_specs, flat_model, flat_opt_state, grads, diagnostics
 
 
 def build_adaptive_epsilon_native_initial_slots(

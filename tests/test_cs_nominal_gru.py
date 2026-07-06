@@ -108,6 +108,7 @@ from rlrmp.runtime.training_run_specs import (
     FEEDBAX_TRAINING_RUN_SPEC_KEY,
     assert_runtime_graph_matches_training_spec,
     build_feedbax_training_run_spec,
+    feedbax_training_run_spec_from_payload,
 )
 from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_ADAM,
@@ -6496,8 +6497,7 @@ def test_full_training_stop_after_batches_resumes_to_full_count(tmp_path: Path) 
         assert np.isfinite(diagnostics["validation_loss__total"]).all()
 
 
-def test_cs_supervised_native_matches_legacy_fixed_seed_smoke(tmp_path: Path) -> None:
-    legacy_dir = tmp_path / "legacy"
+def test_cs_supervised_full_training_uses_native_executor(tmp_path: Path) -> None:
     native_dir = tmp_path / "native"
     common = dict(
         n_train_batches=2,
@@ -6516,37 +6516,27 @@ def test_cs_supervised_native_matches_legacy_fixed_seed_smoke(tmp_path: Path) ->
         disable_progress=True,
         quiet_progress=True,
     )
-    legacy_args = _args(
-        output_dir=str(legacy_dir / "bulk"),
-        spec_dir=str(legacy_dir / "spec"),
-        **common,
-    )
     native_args = _args(
         output_dir=str(native_dir / "bulk"),
         spec_dir=str(native_dir / "spec"),
         **common,
     )
 
-    legacy_spec = write_run_spec(legacy_args)
-    legacy_context = build_run_spec_execution_context(
-        argparse.Namespace(
-            **{**vars(legacy_args), "run_spec": legacy_spec["run_spec_path"], "smoke": False}
-        ),
-        parser=build_parser(),
-    )
-    legacy_result = cs_nominal_gru._run_full_training_legacy_from_context(legacy_context)
     native_result = run_full_training(native_args)
-
-    legacy_state = _load_materialized_training_state(legacy_args)
-    native_state = _load_materialized_training_state(native_args)
-    assert legacy_result["completed_batches"] == native_result["completed_batches"] == 2
-    _assert_pytree_close(legacy_state.model, native_state.model, atol=2e-3)
-    np.testing.assert_allclose(
-        _loss_series(Path(legacy_args.output_dir)),
-        _loss_series(Path(native_args.output_dir)),
-        rtol=5e-3,
-        atol=1e-7,
+    run_spec = json.loads(Path(native_result["run_spec_path"]).read_text(encoding="utf-8"))
+    training_spec = feedbax_training_run_spec_from_payload(run_spec)
+    summary = json.loads(
+        (Path(native_args.output_dir) / "training_summary.json").read_text(encoding="utf-8")
     )
+
+    assert native_result["completed_batches"] == 2
+    assert training_spec.method_ref.key == "rlrmp/cs_supervised/v1"
+    assert (
+        training_spec.worker_execution.metadata["native_executor"]
+        == "feedbax.training.executor.execute_training_run_spec"
+    )
+    assert summary["completed_batches"] == 2
+    assert Path(native_result["training_manifest_path"]).exists()
 
 
 def test_cs_supervised_native_same_length_resume_equivalence(tmp_path: Path) -> None:

@@ -914,7 +914,6 @@ def build_distillation_training_run_spec(
             effective_phase=effective_phase,
             metadata={
                 "native_executor": "rlrmp.train.distillation_native",
-                "legacy_runner_equivalence_reference": _distillation_runner(run_spec, method=method),
                 "teacher_configuration_location": "method_payload",
             },
         ),
