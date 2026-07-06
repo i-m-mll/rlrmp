@@ -1138,6 +1138,14 @@ def _migrate_feedbax_training_run_spec_payload(
     semantic_keys = _semantic_method_metadata_keys(spec_payload)
     if method_ref == LEGACY_FEEDBAX_STANDARD_SUPERVISED_METHOD_REF and semantic_keys:
         return _migrate_legacy_standard_supervised_training_run_spec(run_spec, spec_payload)
+    if method_ref == LEGACY_FEEDBAX_STANDARD_SUPERVISED_METHOD_REF:
+        raise FeedbaxTrainingRunSpecMigrationError(
+            "Embedded feedbax_training_run_spec uses legacy "
+            f"method_ref={LEGACY_FEEDBAX_STANDARD_SUPERVISED_METHOD_REF!r} without "
+            "the semantic method_extensions.metadata keys required for safe migration. "
+            "See Mandible issue dfa0cd5; restore the original metadata or regenerate "
+            "the run spec through the current native method builder."
+        )
     if semantic_keys:
         raise FeedbaxTrainingRunSpecMigrationError(
             "Embedded feedbax_training_run_spec carries semantic method identity in "
