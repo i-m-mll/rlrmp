@@ -79,13 +79,21 @@ The neural networks are not the endpoint as an ML benchmark. They are model syst
   any component is dirty or unresolved, the memo fails closed and the full suite
   runs. The legacy underlying command is
   `PYTHONPATH="$PWD/src" uv run --no-sync python -m pytest tests/ -q`.
-  Targeted `-k`/subset runs are development aids, not an integration bar.
   `feedbax_contract`-marked tests cannot be skipped by construction.
-- For development-loop selection, use pytest-testmon explicitly:
-  `PYTHONPATH="$PWD/src" uv run --no-sync python -m pytest --testmon tests/`.
-  Testmon is never an auth/integration gate. Its first instrumented run can be
-  slower, JAX tracing can make coverage coarse, and stale `.testmondata` after
-  rebases should be deleted rather than trusted.
+- While iterating on a fix, run the narrowest relevant tests first: explicit
+  node IDs or paths, `-k`, `pytest --lf`, or the repo's selective runner when
+  one exists. In this repo, use `scripts/dev_tests.sh` for that inner loop:
+  it accepts pytest node IDs, paths, `-k`, and `--lf` passthrough, supports
+  `--testmon`, and records branch/HEAD/merge-base metadata so stale
+  `.testmondata` is deleted on branch switches or rebases before selection is
+  trusted. The first instrumented testmon run can be slower, and JAX tracing
+  can make coverage coarse.
+- Run the repo's full integration bar only at lane closeout before work lands
+  on an integration or auth path, and at most once or twice per lane when a
+  rerun is justified. Do not use the full bar to check whether a single fix
+  worked. Repo instructions define the integration bar; this norm governs how
+  often to pay it. Targeted `-k`/subset runs, `--lf`, and testmon are
+  development aids, never auth/integration gates.
 - New tests must be safe under `pytest-xdist`: write only to `tmp_path` or a
   unique per-test directory, do not write to shared `_artifacts/` locations
   unless the path includes a test-unique segment, and restore any process-global
