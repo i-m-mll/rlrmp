@@ -2,14 +2,19 @@
 
 import json
 from pathlib import Path
+from typing import Any
 
 import jax.numpy as jnp
 import jax.random as jr
+import jax.tree as jt
 import pytest
 
 from feedbax.contracts.training import TrainingRunSpec
+from feedbax.contracts.worker import ProgressCoordinate
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.model.feedbax_graph import build_rlrmp_feedbax_graph_bundle
+from rlrmp.train.executor.adapters import RLRMP_RUNTIME_CONTEXT_KEY
+from rlrmp.train.executor.equivalence import compare_pytrees
 from rlrmp.train.minimax import (
     MINIMAX_METHOD_REF,
     MINIMAX_METHOD_PAYLOAD_SCHEMA_VERSION,
@@ -18,6 +23,8 @@ from rlrmp.train.minimax import (
     _minimax_method_payload,
     build_hps,
     build_minimax_training_run_spec,
+    build_minimax_native_initial_slots,
+    execute_minimax_training_run_spec_native,
     legacy_cli_args_to_minimax_config,
     minimax_config_namespace,
     minimax_effective_phase_fingerprint,
@@ -26,6 +33,14 @@ from rlrmp.train.minimax import (
     minimax_training_run_spec_from_file,
     minimax_training_run_spec_to_config,
     validate_minimax_run_spec,
+)
+from rlrmp.train.minimax_native import (
+    INNER_ASCENT_KERNEL_REF,
+    OUTER_DESCENT_KERNEL_REF,
+    PROJECTION_KERNEL_REF,
+    WARMUP_KERNEL_REF,
+    MinimaxControllerState,
+    minimax_update_kernels,
 )
 from rlrmp.train.task_model import build_task_base
 
@@ -73,6 +88,84 @@ def _payload(tmp_path: Path, argv: list[str]) -> dict:
         ]
     )
     return _payload_from_config(tmp_path, config)
+
+
+def _native_smoke_spec(tmp_path: Path, *, n_adversary_batches: int = 1) -> TrainingRunSpec:
+    config = legacy_cli_args_to_minimax_config(
+        [
+            "--n-warmup-batches",
+            "0",
+            "--n-adversary-batches",
+            str(n_adversary_batches),
+            "--n-adversary-steps",
+            "1",
+            "--batch-size",
+            "1",
+            "--adv-batch-size",
+            "1",
+            "--n-replicates",
+            "1",
+            "--output-dir",
+            str(tmp_path / "_artifacts" / "62a658d" / "runs" / "native_smoke"),
+        ]
+    )
+    payload = _payload_from_config(tmp_path, config)
+    return TrainingRunSpec.model_validate(payload["feedbax_training_run_spec"])
+
+
+def _manual_minimax_kernel_loop(
+    spec: TrainingRunSpec,
+    *,
+    key: Any,
+) -> dict[str, object]:
+    config = minimax_training_run_spec_to_config(spec)
+    args = minimax_config_namespace(config)
+    hps = build_hps(args)
+    slots, runtime = build_minimax_native_initial_slots(
+        run_spec=spec,
+        hps=hps,
+        args=args,
+        key=key,
+    )
+    payload = MinimaxMethodPayload.model_validate(spec.method_payload.payload)
+    kernels = minimax_update_kernels(payload)
+    context = {
+        RLRMP_RUNTIME_CONTEXT_KEY: runtime,
+        "run_spec": spec,
+        "method_payload": payload,
+    }
+    coordinate = ProgressCoordinate(run_id="manual-minimax", phase="warmup")
+    slots.update(kernels[WARMUP_KERNEL_REF](slots, coordinate, context))
+    coordinate = coordinate.model_copy(update={"global_step": 1, "phase": "adversarial"})
+    for _ in range(int(args.n_adversary_batches)):
+        for kernel_ref in (
+            INNER_ASCENT_KERNEL_REF,
+            PROJECTION_KERNEL_REF,
+            OUTER_DESCENT_KERNEL_REF,
+        ):
+            slots.update(kernels[kernel_ref](slots, coordinate, context))
+        coordinate = coordinate.model_copy(update={"global_step": coordinate.global_step + 1})
+    return slots
+
+
+def _comparable_native_slots(slots: dict[str, object]) -> dict[str, object]:
+    controller = slots["controller"]
+    assert isinstance(controller, MinimaxControllerState)
+    comparable = {
+        "controller": controller.per_replicate_leaves,
+        "controller_optimizer": slots["controller_optimizer"],
+        "adversary_population": slots["adversary_population"],
+        "adversary_optimizer": slots["adversary_optimizer"],
+        "rng": slots["rng"],
+        "controller_loss": slots["controller_loss"],
+        "adversary_loss": slots["adversary_loss"],
+    }
+    return jt.map(
+        lambda leaf: leaf.astype(jnp.int8)
+        if getattr(getattr(leaf, "dtype", None), "kind", None) == "b"
+        else leaf,
+        comparable,
+    )
 
 
 def test_warmup_only_minimax_cli_round_trips_to_training_run_spec(tmp_path: Path) -> None:
@@ -257,3 +350,103 @@ def test_minimax_cli_adapter_preserves_flag_forms_and_help() -> None:
 def test_minimax_config_validation_replaces_legacy_validator(argv: list[str]) -> None:
     with pytest.raises(ValueError):
         legacy_cli_args_to_minimax_config(argv)
+
+
+def test_minimax_native_executor_matches_fixed_seed_manual_kernel_loop(
+    tmp_path: Path,
+) -> None:
+    spec = _native_smoke_spec(tmp_path, n_adversary_batches=1)
+    manual_slots = _manual_minimax_kernel_loop(spec, key=jr.PRNGKey(0))
+
+    result = execute_minimax_training_run_spec_native(
+        spec,
+        run_id="native-minimax-fixed-seed",
+        key=jr.PRNGKey(0),
+        manifest_root=tmp_path / "manifests" / "executor",
+        checkpoint_root=tmp_path / "checkpoints" / "executor",
+        manifest_conflict_policy="reuse-identical",
+    )
+
+    diffs = compare_pytrees(
+        _comparable_native_slots(manual_slots),
+        _comparable_native_slots(result.final_slots),
+    )
+    assert max((diff.max_abs_diff for diff in diffs), default=0.0) <= 1e-6
+    assert result.final_coordinate.phase == "done"
+    assert result.final_slots["controller_loss"] != 0.0
+    assert result.final_slots["adversary_loss"] != 0.0
+
+
+def test_minimax_native_executor_resume_matches_uninterrupted(
+    tmp_path: Path,
+) -> None:
+    spec = _native_smoke_spec(tmp_path, n_adversary_batches=2)
+    full = execute_minimax_training_run_spec_native(
+        spec,
+        run_id="native-minimax-full",
+        key=jr.PRNGKey(1),
+        manifest_root=tmp_path / "manifests" / "full",
+        checkpoint_root=tmp_path / "checkpoints" / "full",
+        manifest_conflict_policy="reuse-identical",
+    )
+    checkpoint_root = tmp_path / "checkpoints" / "resume"
+    partial = execute_minimax_training_run_spec_native(
+        spec,
+        run_id="native-minimax-resume",
+        key=jr.PRNGKey(1),
+        manifest_root=tmp_path / "manifests" / "resume-partial",
+        checkpoint_root=checkpoint_root,
+        stop_after_barrier="after_adversarial",
+        manifest_conflict_policy="reuse-identical",
+    )
+    resumed = execute_minimax_training_run_spec_native(
+        spec,
+        run_id="native-minimax-resume",
+        key=jr.PRNGKey(1),
+        manifest_root=tmp_path / "manifests" / "resume-final",
+        checkpoint_root=checkpoint_root,
+        resume=True,
+        manifest_conflict_policy="reuse-identical",
+    )
+
+    diffs = compare_pytrees(
+        _comparable_native_slots(full.final_slots),
+        _comparable_native_slots(resumed.final_slots),
+    )
+    assert partial.final_coordinate.completed_barrier == "after_adversarial"
+    assert max((diff.max_abs_diff for diff in diffs), default=0.0) <= 1e-6
+
+
+def test_linear_dynamics_minimax_native_executor_keeps_legacy_backend_explicit(
+    tmp_path: Path,
+) -> None:
+    payload = _payload(
+        tmp_path,
+        [
+            "--adversary-type",
+            "linear_dynamics",
+            "--n-warmup-batches",
+            "0",
+            "--n-adversary-batches",
+            "1",
+            "--n-adversary-steps",
+            "1",
+            "--batch-size",
+            "1",
+            "--adv-batch-size",
+            "1",
+            "--n-replicates",
+            "1",
+        ],
+    )
+    spec = TrainingRunSpec.model_validate(payload["feedbax_training_run_spec"])
+
+    with pytest.raises(NotImplementedError, match="linear_dynamics minimax native execution"):
+        execute_minimax_training_run_spec_native(
+            spec,
+            run_id="native-minimax-linear-dynamics",
+            key=jr.PRNGKey(2),
+            manifest_root=tmp_path / "manifests" / "linear",
+            checkpoint_root=tmp_path / "checkpoints" / "linear",
+            manifest_conflict_policy="reuse-identical",
+        )
