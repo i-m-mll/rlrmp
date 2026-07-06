@@ -12,18 +12,12 @@ from rlrmp.train.executor.guards import (
     make_stop_predicate,
     make_zero_adversary_predicate,
 )
-from rlrmp.train.executor.initial_slots import (
-    CsSupervisedInitialSlotsBuilder,
-    InitialSlotsBuilder,
-    RlrmpRuntime,
-)
+from rlrmp.train.executor.initial_slots import RlrmpRuntime
 
 __all__ = [
     "ChunkKernelAdapter",
     "ChunkKernelAdapterError",
     "ChunkResult",
-    "CsSupervisedInitialSlotsBuilder",
-    "InitialSlotsBuilder",
     "RLRMP_RUNTIME_CONTEXT_KEY",
     "RlrmpRuntime",
     "make_completion_predicate",
