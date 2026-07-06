@@ -66,6 +66,11 @@ from rlrmp.train.executor.slots import (
     artifact_sink_specs,
     checkpoint_slot_specs,
 )
+from rlrmp.train.cs_nominal_gru import (
+    GradientDiagnosticsState,
+    UpdateDiagnosticsState,
+    _cs_supervised_resume_slot_transform,
+)
 
 
 @dataclass(frozen=True)
@@ -247,6 +252,50 @@ def test_resume_structural_abi_rejects_resized_diagnostics_buffer(tmp_path: Path
         )
 
 
+def test_cs_supervised_resume_transform_accepts_larger_n_train_batches(
+    tmp_path: Path,
+) -> None:
+    resumed_n_train_batches = 4
+    run_spec = _training_run_spec(tmp_path)
+    program = _toy_program()
+    coordinate = ProgressCoordinate(
+        run_id="cs-resize-transform",
+        phase="train_chunk",
+        global_step=1,
+        completed_barrier=TOY_BARRIER,
+    )
+    slots = _toy_initial_slots(seed=0)
+    slots[OPTIMIZER] = _diagnostic_optimizer_state(2)
+    write_checkpoint_transaction(
+        tmp_path / "checkpoints",
+        run_spec=run_spec,
+        phase_program=program,
+        barrier_name=TOY_BARRIER,
+        coordinate=coordinate,
+        slots=slots,
+    )
+    expected_slots = dict(slots)
+    expected_slots[OPTIMIZER] = _diagnostic_optimizer_state(resumed_n_train_batches)
+
+    loaded = load_latest_checkpoint(
+        tmp_path / "checkpoints",
+        expected_run_spec=run_spec,
+        expected_phase_program=program,
+        expected_slots=expected_slots,
+        resume_slot_transform=_cs_supervised_resume_slot_transform(
+            n_batches=resumed_n_train_batches
+        ),
+    )
+
+    optimizer = loaded.slots[OPTIMIZER]
+    assert optimizer["gradient"].gradient_norm_pre_clip.shape == (resumed_n_train_batches,)
+    assert optimizer["update"].update_norm.shape == (resumed_n_train_batches,)
+    assert optimizer["gradient"].gradient_clipped.tolist() == [True, False, False, False]
+    assert jnp.isnan(optimizer["gradient"].gradient_norm_pre_clip[2:]).all()
+    assert jnp.isnan(optimizer["update"].update_norm[2:]).all()
+    assert loaded.slots[TRAIN_LOSS] == 0.0
+
+
 def _training_run_spec(tmp_path: Path) -> TrainingRunSpec:
     contract = standard_supervised_method_contract()
     return TrainingRunSpec(
@@ -264,6 +313,27 @@ def _training_run_spec(tmp_path: Path) -> TrainingRunSpec:
         ),
         artifacts=ArtifactPolicySpec(manifest_root=str(tmp_path / "manifests")),
     )
+
+
+def _diagnostic_optimizer_state(n_batches: int) -> dict[str, object]:
+    return {
+        "step": jnp.asarray(2, dtype=jnp.int32),
+        "gradient": GradientDiagnosticsState(
+            count=jnp.asarray(2, dtype=jnp.int32),
+            gradient_norm_pre_clip=jnp.arange(n_batches, dtype=jnp.float32),
+            gradient_clipped=jnp.asarray(
+                [index == 0 for index in range(n_batches)],
+                dtype=bool,
+            ),
+            learning_rate=jnp.arange(n_batches, dtype=jnp.float32) + 0.5,
+        ),
+        "update": UpdateDiagnosticsState(
+            count=jnp.asarray(2, dtype=jnp.int32),
+            update_norm=jnp.arange(n_batches, dtype=jnp.float32) + 1.0,
+            parameter_norm=jnp.arange(n_batches, dtype=jnp.float32) + 2.0,
+            update_parameter_norm_ratio=jnp.arange(n_batches, dtype=jnp.float32) + 3.0,
+        ),
+    }
 
 
 def _minimal_graph() -> dict[str, object]:

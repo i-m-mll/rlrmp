@@ -3004,6 +3004,9 @@ def _run_cs_supervised_native_from_context(
         training_spec_payload_schema_version=RUN_SPEC_SCHEMA_VERSION,
         training_spec_payload_ref=str(run_spec_path),
         resume=resume_native,
+        resume_slot_transform=_cs_supervised_resume_slot_transform(
+            n_batches=int(args.n_train_batches),
+        ),
         issues=[str(args.issue)],
     )
     training_duration_seconds = time.perf_counter() - started
@@ -5262,6 +5265,26 @@ def _resize_optimizer_diagnostics_for_batches(optimizer_state: Any, n_batches: i
         optimizer_state,
         is_leaf=lambda leaf: isinstance(leaf, (GradientDiagnosticsState, UpdateDiagnosticsState)),
     )
+
+
+def _cs_supervised_resume_slot_transform(
+    *,
+    n_batches: int,
+    transform: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+) -> Callable[[Mapping[str, Any]], Mapping[str, Any]]:
+    """Return the cs_supervised native checkpoint resume slot normalizer."""
+
+    def normalize(slots: Mapping[str, Any]) -> Mapping[str, Any]:
+        payload = dict(transform(slots) if transform is not None else slots)
+        if OPTIMIZER in payload:
+            payload[OPTIMIZER] = _resize_optimizer_diagnostics_for_batches(
+                payload[OPTIMIZER],
+                n_batches,
+            )
+        payload[TRAIN_LOSS] = 0.0
+        return payload
+
+    return normalize
 
 
 def _resize_diagnostic_series(series: Any, n_batches: int) -> Any:
