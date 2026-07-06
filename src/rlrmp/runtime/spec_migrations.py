@@ -290,12 +290,37 @@ def load_rlrmp_spec_payload(
         )
     if not isinstance(payload, Mapping):
         raise TypeError(f"RLRMP spec payload must be a JSON object: {payload_path}")
+    source_version = _historical_run_spec_source_version(kind, payload)
     return accept_rlrmp_spec_payload(
         kind,
         payload,
+        source_version=source_version,
         registry=registry,
         path=str(payload_path),
     )
+
+
+def _historical_run_spec_source_version(kind: str, payload: Mapping[str, Any]) -> str | None:
+    if kind != RUN_SPEC_KIND or payload.get("schema_version") is not None:
+        return None
+    provider = payload.get("provider")
+    training_summary = payload.get("training_summary")
+    artifacts = payload.get("artifacts")
+    if not (
+        isinstance(provider, Mapping)
+        and isinstance(training_summary, Mapping)
+        and isinstance(artifacts, Mapping)
+    ):
+        return None
+    if provider.get("tracked_spec_role") != "results-run-spec":
+        return None
+    if not {"run", "issue"} <= set(payload):
+        return None
+    if not {"training_mode", "n_train_batches"} <= set(training_summary):
+        return None
+    if "feedbax_manifest_root" not in artifacts:
+        return None
+    return RUN_SPEC_SCHEMA_VERSION_V1
 
 
 def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
