@@ -119,7 +119,7 @@ def test_cs_composed_spec_validates_as_feedbax_training_run_spec(tmp_path: Path)
 
     spec = feedbax_training_run_spec_from_payload(payload)
     assert isinstance(spec, TrainingRunSpec)
-    assert spec.method_ref.key == "feedbax/standard_supervised/v1"
+    assert spec.method_ref.key == "rlrmp/cs_supervised/v1"
     assert spec.graph.inline is not None
 
 

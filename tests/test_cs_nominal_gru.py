@@ -6496,6 +6496,157 @@ def test_full_training_stop_after_batches_resumes_to_full_count(tmp_path: Path) 
         assert np.isfinite(diagnostics["validation_loss__total"]).all()
 
 
+def test_cs_supervised_native_matches_legacy_fixed_seed_smoke(tmp_path: Path) -> None:
+    legacy_dir = tmp_path / "legacy"
+    native_dir = tmp_path / "native"
+    common = dict(
+        n_train_batches=2,
+        batch_size=2,
+        n_replicates=1,
+        hidden_size=4,
+        full_train=True,
+        resume=True,
+        checkpoint_interval_batches=1,
+        controller_lr=1e-3,
+        gradient_clip_norm=5.0,
+        lr_warmup_batches=1,
+        lr_warmup_init_fraction=0.1,
+        lr_cosine_alpha=0.01,
+        log_step=1,
+        disable_progress=True,
+        quiet_progress=True,
+    )
+    legacy_args = _args(
+        output_dir=str(legacy_dir / "bulk"),
+        spec_dir=str(legacy_dir / "spec"),
+        **common,
+    )
+    native_args = _args(
+        output_dir=str(native_dir / "bulk"),
+        spec_dir=str(native_dir / "spec"),
+        **common,
+    )
+
+    legacy_spec = write_run_spec(legacy_args)
+    legacy_context = build_run_spec_execution_context(
+        argparse.Namespace(
+            **{**vars(legacy_args), "run_spec": legacy_spec["run_spec_path"], "smoke": False}
+        ),
+        parser=build_parser(),
+    )
+    legacy_result = cs_nominal_gru._run_full_training_legacy_from_context(legacy_context)
+    native_result = run_full_training(native_args)
+
+    legacy_state = _load_materialized_training_state(legacy_args)
+    native_state = _load_materialized_training_state(native_args)
+    assert legacy_result["completed_batches"] == native_result["completed_batches"] == 2
+    _assert_pytree_close(legacy_state.model, native_state.model, atol=2e-3)
+    np.testing.assert_allclose(
+        _loss_series(Path(legacy_args.output_dir)),
+        _loss_series(Path(native_args.output_dir)),
+        rtol=5e-3,
+        atol=1e-7,
+    )
+
+
+def test_cs_supervised_native_same_length_resume_equivalence(tmp_path: Path) -> None:
+    full_dir = tmp_path / "full"
+    resumed_dir = tmp_path / "resumed"
+    common = dict(
+        n_train_batches=4,
+        batch_size=2,
+        n_replicates=1,
+        hidden_size=4,
+        full_train=True,
+        resume=True,
+        checkpoint_interval_batches=2,
+        controller_lr=1e-3,
+        gradient_clip_norm=5.0,
+        lr_warmup_batches=1,
+        lr_warmup_init_fraction=0.1,
+        lr_cosine_alpha=0.01,
+        log_step=1,
+        disable_progress=True,
+        quiet_progress=True,
+    )
+    full_args = _args(
+        output_dir=str(full_dir / "bulk"),
+        spec_dir=str(full_dir / "spec"),
+        **common,
+    )
+    partial_args = _args(
+        output_dir=str(resumed_dir / "bulk"),
+        spec_dir=str(resumed_dir / "spec"),
+        stop_after_batches=2,
+        **common,
+    )
+    resume_args = _args(
+        output_dir=str(resumed_dir / "bulk"),
+        spec_dir=str(resumed_dir / "spec"),
+        stop_after_batches=None,
+        **common,
+    )
+
+    full = run_full_training(full_args)
+    partial = run_full_training(partial_args)
+    resumed = run_full_training(resume_args)
+
+    full_state = _load_materialized_training_state(full_args)
+    resumed_state = _load_materialized_training_state(resume_args)
+    assert partial["completed_batches"] == 2
+    assert full["completed_batches"] == resumed["completed_batches"] == 4
+    _assert_pytree_close(full_state.model, resumed_state.model)
+    _assert_pytree_close(full_state.optimizer_state, resumed_state.optimizer_state)
+    np.testing.assert_allclose(
+        _loss_series(Path(full_args.output_dir)),
+        _loss_series(Path(resume_args.output_dir)),
+        rtol=0,
+        atol=1e-7,
+    )
+
+
+def _load_materialized_training_state(args: argparse.Namespace) -> TrainingState:
+    hps = build_hps(args)
+    key_init, key_train, _key_adversary = jr.split(jr.PRNGKey(int(args.seed)), 3)
+    pair = setup_task_model_pair(hps, key=key_init)
+    trainer = cs_nominal_gru._build_trainer(hps)
+    template_state = cs_nominal_gru._initial_training_state(
+        model=pair.model,
+        trainer=trainer,
+        where_train=cs_nominal_gru._where_train()[0],
+        key=key_train,
+    )
+    return load_latest_checkpoint(
+        Path(args.output_dir) / "checkpoints",
+        model_template=pair.model,
+        optimizer_state_template=template_state.optimizer_state,
+    )
+
+
+def _assert_pytree_close(left: object, right: object, *, atol: float = 1e-7) -> None:
+    left_leaves = tuple(jt.leaves(eqx.filter(left, eqx.is_array)))
+    right_leaves = tuple(jt.leaves(eqx.filter(right, eqx.is_array)))
+    assert len(left_leaves) == len(right_leaves)
+    for left_leaf, right_leaf in zip(left_leaves, right_leaves, strict=True):
+        left_array = jnp.asarray(left_leaf)
+        right_array = jnp.asarray(right_leaf)
+        assert left_array.shape == right_array.shape
+        if left_array.dtype == jnp.bool_:
+            np.testing.assert_array_equal(np.asarray(left_array), np.asarray(right_array))
+        else:
+            np.testing.assert_allclose(
+                np.asarray(left_array),
+                np.asarray(right_array),
+                rtol=0,
+                atol=atol,
+            )
+
+
+def _loss_series(output_dir: Path) -> np.ndarray:
+    with np.load(output_dir / "training_diagnostics.npz") as diagnostics:
+        return np.asarray(diagnostics["train_loss__total"])
+
+
 def test_target_relative_h0_full_training_smoke_emits_diagnostics(tmp_path: Path) -> None:
     output_dir = tmp_path / "bulk"
     spec_dir = tmp_path / "spec"
