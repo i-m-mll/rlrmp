@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
@@ -11,6 +12,7 @@ import pytest
 
 from feedbax.contracts.training import TrainingRunSpec
 from feedbax.contracts.worker import ProgressCoordinate
+from jax_cookbook import save as fbx_save
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.model.feedbax_graph import build_rlrmp_feedbax_graph_bundle
 from rlrmp.train.executor.adapters import RLRMP_RUNTIME_CONTEXT_KEY
@@ -40,6 +42,7 @@ from rlrmp.train.minimax_native import (
     PROJECTION_KERNEL_REF,
     WARMUP_KERNEL_REF,
     MinimaxControllerState,
+    _controller_state_from_model,
     _prepare_adversarial_batch,
     _vmapped_controller_descent,
     _vmapped_gaussian_adversary_ascent,
@@ -489,6 +492,66 @@ def test_minimax_native_executor_matches_fixed_seed_manual_kernel_loop(
     assert result.final_coordinate.phase == "done"
     assert result.final_slots["controller_loss"] != 0.0
     assert result.final_slots["adversary_loss"] != 0.0
+
+
+def test_minimax_native_initial_slots_honor_explicit_warmup_model(
+    tmp_path: Path,
+) -> None:
+    spec = _native_smoke_spec(tmp_path, n_adversary_batches=1)
+    config = minimax_training_run_spec_to_config(spec)
+    args = minimax_config_namespace(config)
+    hps = build_hps(args)
+    fresh_slots, fresh_runtime_context = build_minimax_native_initial_slots(
+        run_spec=spec,
+        hps=hps,
+        args=args,
+        key=jr.PRNGKey(0),
+    )
+    fresh_runtime = fresh_runtime_context.component("minimax")
+    fresh_model = fresh_runtime.pair.model
+    shifted_net = jt.map(
+        lambda leaf: leaf + 0.125
+        if eqx.is_array(leaf) and jnp.issubdtype(leaf.dtype, jnp.floating)
+        else leaf,
+        fresh_model.get_node("net"),
+        is_leaf=eqx.is_array,
+    )
+    sentinel_model = eqx.tree_at(
+        lambda model: model.get_node("net"),
+        fresh_model,
+        shifted_net,
+    )
+    warmup_model_path = tmp_path / "warmup_model.eqx"
+    fbx_save(warmup_model_path, sentinel_model)
+
+    warmup_config = {**config, "warmup_model": str(warmup_model_path)}
+    warmup_spec = TrainingRunSpec.model_validate(
+        _payload_from_config(tmp_path, warmup_config)["feedbax_training_run_spec"]
+    )
+    warmup_args = minimax_config_namespace(warmup_config)
+    warmup_slots, warmup_runtime_context = build_minimax_native_initial_slots(
+        run_spec=warmup_spec,
+        hps=hps,
+        args=warmup_args,
+        key=jr.PRNGKey(0),
+    )
+    warmup_runtime = warmup_runtime_context.component("minimax")
+    expected_controller = _controller_state_from_model(
+        sentinel_model,
+        warmup_runtime.controller_layout,
+    )
+
+    loaded_diffs = compare_pytrees(
+        _bool_leaves_as_ints(warmup_slots["controller"].per_replicate_leaves),
+        _bool_leaves_as_ints(expected_controller.per_replicate_leaves),
+    )
+    fresh_diffs = compare_pytrees(
+        _bool_leaves_as_ints(fresh_slots["controller"].per_replicate_leaves),
+        _bool_leaves_as_ints(warmup_slots["controller"].per_replicate_leaves),
+    )
+    assert max((diff.max_abs_diff for diff in loaded_diffs), default=0.0) <= 1e-6
+    assert max((diff.max_abs_diff for diff in fresh_diffs), default=0.0) > 0.0
+    assert warmup_runtime.pair.model is not fresh_runtime.pair.model
 
 
 def test_minimax_native_executor_resume_matches_uninterrupted(
