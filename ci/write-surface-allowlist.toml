@@ -26,11 +26,11 @@
 #     (test_allowlist_has_no_dead_entries): the custody inventory must stay
 #     accurate. Because keys are structural (path/function/kind/target-label),
 #     ordinary line moves do not churn the list.
-#   - `conditional` must equal the AST-generated branch-matrix conditionality
-#     (test_conditional_flag_matches_generated_branch_matrix), so the matrix
-#     stays generated-from-emitter-sites, never hand-curated. `conditional=true`
-#     means the emitter sits behind an `if`/`else` guard or a ternary dispatch
-#     over emitter functions -- a leg a single toy run may skip.
+#   - `conditional` must equal the AST-generated writer control flow
+#     (test_conditional_flag_matches_generated_control_flow), so the metadata
+#     stays generated from code, never hand-curated. `conditional=true` means
+#     the writer sits behind an `if` guard or a ternary dispatch over writer
+#     functions.
 #
 # KEY FIELDS: path, function, kind, target (all four form the structural key),
 # plus owner (7-char ledger issue) and role.
@@ -89,9 +89,10 @@ conditional = false
 # their output_dir materializations converted to atomic tmp-staged (ephemeral)
 # writes (issue 7e71950). They are content-addressed and published through the
 # custody latest-pointer run record, so they are no longer raw durable writes
-# and their allowlist entries were removed. The conditional single- vs
-# multi-adversary and force-profile vs delta_A emitter structure remains and is
-# still enumerated by the generated branch matrix.
+# and their allowlist entries were removed. The old conditional-emitter branch
+# matrix no longer represents a live durable raw-write surface; if conditional
+# durable writers reappear, the guard must grow a new explicit non-vacuous
+# assertion instead of passing through an empty matrix.
 
 # --- src/rlrmp/train/closed_loop_distillation.py -----------------------------
 

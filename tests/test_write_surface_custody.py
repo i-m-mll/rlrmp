@@ -22,13 +22,12 @@ It enforces two things as executable, gate-registered checks (family
     Every *durable* raw-write site must be named in
     ``ci/write-surface-allowlist.toml`` with an owning issue and a role.
     A new, unlisted durable raw-write fails the gate: deny-by-default custody by
-    construction, not by spot-check. The conditional-emitter branch matrix is
-    **generated from the emitter sites** (enclosing ``if``/``else`` guards and
-    ternary dispatch over emitter functions), not hand-curated, so a single toy
-    run -- which can only exercise one leg of each mutually-exclusive emitter --
-    cannot certify the surface. See the allowlist header for the documented
-    escape modes (subprocess / native-library / remote-object-store writes,
-    symlink / hardlink traversal) that this static guard does not by itself close.
+    construction, not by spot-check. The ``conditional`` metadata is generated
+    from AST control flow (enclosing ``if`` guards and ternary dispatch over
+    writer functions), not hand-curated. See the allowlist header for the
+    documented escape modes (subprocess / native-library /
+    remote-object-store writes, symlink / hardlink traversal) that this static
+    guard does not by itself close.
 
 2.  **Six provenance-lineage invariants (assert-integrate).** Invariants 1-6 from
     the issue body are enforced here as marked checks that reference and
@@ -225,7 +224,7 @@ def _terminal_label(expr: ast.expr) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Scan: durable + ephemeral sites, with the generated branch matrix
+# Scan: durable + ephemeral sites
 # ---------------------------------------------------------------------------
 
 
@@ -252,8 +251,8 @@ def _module_conditional_dispatch(tree: ast.Module) -> dict[str, set[str]]:
     return pairs
 
 
-def _scan_file(path: Path) -> tuple[list[WriteSite], list[frozenset[tuple]]]:
-    """Return (write sites, mutually-exclusive groups) for one domain file."""
+def _scan_file(path: Path) -> list[WriteSite]:
+    """Return write sites for one domain file."""
 
     source = path.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(path))
@@ -262,14 +261,8 @@ def _scan_file(path: Path) -> tuple[list[WriteSite], list[frozenset[tuple]]]:
 
     # Attach parent + guard context by a manual DFS with a stack.
     sites: list[WriteSite] = []
-    # If-nodes (with an else leg) paired with their enclosing function name, so
-    # the exclusion matrix carries function context.
-    if_nodes: list[tuple[ast.If, str]] = []
-
     def visit(node: ast.AST, stack: list[ast.AST]) -> None:
         function = _enclosing_function(stack)
-        if isinstance(node, ast.If) and node.orelse:
-            if_nodes.append((node, function))
         if isinstance(node, ast.Call) and _is_raw_write_call(node):
             target_expr = _write_target_expr(node)
             root = _target_root_name(target_expr)
@@ -290,76 +283,14 @@ def _scan_file(path: Path) -> tuple[list[WriteSite], list[frozenset[tuple]]]:
             visit(child, stack + [node])
 
     visit(tree, [])
-
-    # Build mutually-exclusive groups (tuples include the emitter function so
-    # two emitters that write the same target-label but can never both fire in
-    # one run stay distinct).
-    groups: list[frozenset[tuple]] = []
-
-    # (a) same-function if/else: emitter writes in body vs orelse.
-    for if_node, function in if_nodes:
-        body_targets = _emitter_targets_in(if_node.body, relpath, function)
-        else_targets = _emitter_targets_in(if_node.orelse, relpath, function)
-        if body_targets and else_targets:
-            groups.append(frozenset(body_targets | else_targets))
-
-    # (b) ternary dispatch over emitter functions: emitter writes in A vs B.
-    func_defs = {n.name: n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
-    seen_pairs: set[frozenset[str]] = set()
-    for a, partners in dispatch.items():
-        for b in partners:
-            pair = frozenset({a, b})
-            if pair in seen_pairs or a not in func_defs or b not in func_defs:
-                continue
-            seen_pairs.add(pair)
-            a_targets = _emitter_targets_in(func_defs[a].body, relpath, a)
-            b_targets = _emitter_targets_in(func_defs[b].body, relpath, b)
-            if a_targets and b_targets:
-                groups.append(frozenset(a_targets | b_targets))
-
-    return sites, groups
+    return sites
 
 
-def _emitter_targets_in(body: list[ast.AST], relpath: str, function: str) -> set[tuple]:
-    """Raw-write emitter targets under ``body``, keyed with function context.
-
-    Includes both durable and ephemeral (tmp-staged) emitter sites: the branch
-    matrix tracks the conditional *emitter structure* (which mutually-exclusive
-    legs exist), not the durable/ephemeral classification. Once a final-output
-    emitter is routed onto the custody writer and its local materialization
-    becomes an atomically-staged tmp write (issue 7e71950), the conditional leg
-    is still a genuine emitter a single toy run cannot jointly exercise, so it
-    must remain enumerated here even though it no longer needs an allowlist
-    entry.
-
-    ``function`` is the enclosing function name; it is updated when descending
-    into a nested ``FunctionDef`` so nested helper writes are attributed
-    correctly.
-    """
-
-    found: set[tuple] = set()
-
-    def collect(node: ast.AST, fn: str) -> None:
-        cur = node.name if isinstance(node, ast.FunctionDef) else fn
-        if isinstance(node, ast.Call) and _is_raw_write_call(node):
-            target_expr = _write_target_expr(node)
-            found.add((relpath, cur, _call_kind(node), _target_label(target_expr)))
-        for child in ast.iter_child_nodes(node):
-            collect(child, cur)
-
-    for root_node in body:
-        collect(root_node, function)
-    return found
-
-
-def _scan_domain() -> tuple[list[WriteSite], list[frozenset[tuple]]]:
+def _scan_domain() -> list[WriteSite]:
     all_sites: list[WriteSite] = []
-    all_groups: list[frozenset[tuple]] = []
     for path in _domain_files():
-        sites, groups = _scan_file(path)
-        all_sites.extend(sites)
-        all_groups.extend(groups)
-    return all_sites, all_groups
+        all_sites.extend(_scan_file(path))
+    return all_sites
 
 
 def _durable_sites(sites: list[WriteSite]) -> list[WriteSite]:
@@ -386,7 +317,7 @@ def _allowlist_index(allowlist: dict) -> dict[tuple[str, str, str, str], dict]:
 def test_domain_scan_is_non_vacuous() -> None:
     """The scan must actually see the training-emission write surface."""
 
-    sites, _ = _scan_domain()
+    sites = _scan_domain()
     durable = _durable_sites(sites)
     assert durable, "Durable write-site scan found zero sites; scan scope is broken"
     scanned_files = {s.relpath for s in durable}
@@ -399,7 +330,7 @@ def test_domain_scan_is_non_vacuous() -> None:
 def test_durable_write_sites_match_allowlist() -> None:
     """Deny-by-default: every durable raw-write must be allowlisted."""
 
-    sites, _ = _scan_domain()
+    sites = _scan_domain()
     allowlist = _load_allowlist()
     allowed = _allowlist_index(allowlist)
 
@@ -418,7 +349,7 @@ def test_durable_write_sites_match_allowlist() -> None:
 def test_allowlist_has_no_dead_entries() -> None:
     """Every allowlisted durable site must still exist in the tree."""
 
-    sites, _ = _scan_domain()
+    sites = _scan_domain()
     allowlist = _load_allowlist()
     found_keys = {s.key for s in _durable_sites(sites)}
     dead = sorted(set(_allowlist_index(allowlist)) - found_keys)
@@ -456,15 +387,14 @@ def test_allowlist_entries_carry_owner_and_role() -> None:
         )
 
 
-def test_conditional_flag_matches_generated_branch_matrix() -> None:
+def test_conditional_flag_matches_generated_control_flow() -> None:
     """Allowlisted `conditional` must equal the AST-generated conditionality.
 
-    This is what keeps the branch matrix *generated from emitter sites* rather
-    than hand-curated: the declared conditionality cannot drift from the guard
-    structure actually present in the code.
+    The declared conditionality cannot drift from the writer control flow
+    actually present in the code.
     """
 
-    sites, _ = _scan_domain()
+    sites = _scan_domain()
     allowlist = _load_allowlist()
     allowed = _allowlist_index(allowlist)
 
@@ -478,42 +408,33 @@ def test_conditional_flag_matches_generated_branch_matrix() -> None:
                 (site.key, f"declared={entry['conditional']} generated={site.conditional}")
             )
     assert not mismatches, (
-        f"Allowlisted conditional flag disagrees with the generated branch matrix: {mismatches}"
+        f"Allowlisted conditional flag disagrees with generated control flow: {mismatches}"
     )
 
 
-def test_conditional_emitter_branch_matrix_matches_live_emitters() -> None:
-    """Mutually-exclusive emitters are enumerated when the live surface has them."""
+def test_conditional_durable_write_surface_is_absent() -> None:
+    """The old conditional-emitter branch matrix is gone, not silently empty."""
 
-    _, groups = _scan_domain()
-    if not groups:
-        return
-    # The two structural exclusions on the minimax path that a toy run cannot
-    # jointly exercise: (1) single- vs multi-adversary artifact layout (an
-    # in-function if/else materializing `trained_adversary.eqx` vs
-    # `adversaries/*`), and (2) force-profile vs delta_A adversary-log dispatch
-    # (a ternary over two emitter functions). These emitters are now routed onto
-    # the terminal custody transaction with atomically-staged local
-    # materializations (issue 7e71950), so their leg targets are tmp-rooted
-    # (e.g. `tmp_trained_adversary_path`, `tmp_adv_path`); the branch matrix
-    # still enumerates them via the emitter structure. Tuple shape:
-    # (relpath, function, kind, target).
-    all_targets = {t for group in groups for t in group}
-    functions = {t[1] for t in all_targets}
-    labels = {t[3] for t in all_targets}
-    assert any("trained_adversary" in lb for lb in labels) and any(
-        "adv_path" in lb for lb in labels
-    ), f"single-vs-multi adversary exclusion not captured; labels={sorted(labels)}"
-    assert {"_log_adversary_force_profiles", "_log_linear_dynamics_adversary"} <= functions, (
-        "force-profile vs delta_A log-dispatch exclusion not captured; "
-        f"functions={sorted(functions)}"
+    sites = _scan_domain()
+    conditional_durable = sorted(s.key for s in _durable_sites(sites) if s.conditional)
+    assert not conditional_durable, (
+        "Conditional durable raw-write site(s) reappeared. Restore an explicit "
+        "non-vacuous guard for that surface instead of relying on the deleted "
+        f"branch-matrix machinery: {conditional_durable}"
+    )
+    conditional_entries = [
+        entry for entry in _load_allowlist().get("durable_write_sites", []) if entry["conditional"]
+    ]
+    assert not conditional_entries, (
+        "Allowlist declares conditional durable entries even though the live "
+        f"durable conditional surface is absent: {conditional_entries}"
     )
 
 
 def test_ephemeral_writes_are_tmp_staged() -> None:
     """Ephemeral classification is sound: every ephemeral site is tmp-rooted."""
 
-    sites, _ = _scan_domain()
+    sites = _scan_domain()
     ephemeral = [s for s in sites if s.ephemeral]
     assert ephemeral, "No ephemeral (atomic-staging) writes found; classification suspect"
     for site in ephemeral:
