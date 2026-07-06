@@ -9,10 +9,10 @@ local smoke path that proves the CLI can call the intended loss surface.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import copy
 import json
 import os
-import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,7 +29,7 @@ import optax
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 from jax_cookbook import save as fbx_save
 from jax_cookbook.tree import filter_spec_leaves
-from rlrmp.paths import mkdir_p
+from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.model.trainable import staged_network_trainable_parts
 from rlrmp.runtime.training_run_specs import (
     GUIDED_DISTILLATION_METHOD_REF,
@@ -369,7 +369,10 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
             "spec_command": default_distillation_command(spec_path=run_spec_path),
             "command": full_train_command(spec_path=run_spec_path),
             "full_train_status": "implemented_no_launch",
-            "trainer": "rlrmp.train.guided_distillation.run_guided_distillation_training",
+            "trainer": (
+                "rlrmp.train.distillation_native."
+                "execute_distillation_training_run_spec_native"
+            ),
             "replicate_execution": "vectorized with eqx.filter_vmap over the replicate axis",
         },
         "checkpointing": {
@@ -1332,9 +1335,10 @@ def _write_training_outputs(
 
 
 def run_guided_distillation_training(args: argparse.Namespace) -> dict[str, Any]:
-    """Run the executable analytical-teacher guided-distillation trainer."""
+    """Run guided distillation through Feedbax's native training executor."""
 
     spec = build_distillation_spec(args)
+    spec_path = _resolve_run_spec_path(args, _resolve_run_id(args, spec))
     if _arg_value(args, "run_spec") is not None:
         run_spec_path = Path(args.run_spec)
         if not run_spec_path.is_file():
@@ -1346,8 +1350,7 @@ def run_guided_distillation_training(args: argparse.Namespace) -> dict[str, Any]
                 f"{loaded_spec.get('schema_version')!r}; expected {SCHEMA_VERSION!r}."
             )
         spec = loaded_spec
-    validate_distillation_training_run_spec(spec, method="guided_distillation")
-
+        spec_path = run_spec_path
     n_batches = int(args.n_batches)
     batch_size = int(args.batch_size)
     n_replicates = int(args.n_replicates)
@@ -1367,8 +1370,7 @@ def run_guided_distillation_training(args: argparse.Namespace) -> dict[str, Any]
     if n_batches <= 0 or batch_size <= 0 or n_replicates <= 0:
         raise ValueError("n_batches, batch_size, and n_replicates must be positive.")
     checkpoint_interval_batches = int(args.checkpoint_interval_batches)
-    checkpoint_enabled = bool(args.checkpoint)
-    if checkpoint_enabled and checkpoint_interval_batches < 1:
+    if bool(args.checkpoint) and checkpoint_interval_batches < 1:
         raise ValueError("--checkpoint-interval-batches must be positive when checkpointing.")
     stop_after_batches = None if args.stop_after_batches is None else int(args.stop_after_batches)
     if stop_after_batches is not None:
@@ -1377,59 +1379,17 @@ def run_guided_distillation_training(args: argparse.Namespace) -> dict[str, Any]
         if stop_after_batches > n_batches:
             raise ValueError("--stop-after-batches cannot exceed --n-batches.")
     target_batches = n_batches if stop_after_batches is None else stop_after_batches
-    effective_args = argparse.Namespace(**vars(args))
-    effective_args.n_batches = n_batches
-    effective_args.batch_size = batch_size
-    effective_args.n_replicates = n_replicates
-    effective_args.hidden_size = hidden_size
-    effective_args.horizon = horizon
-    effective_args.n_jvp_directions = n_jvp_directions
-    effective_args.checkpoint_interval_batches = checkpoint_interval_batches
 
-    teacher_gains_key = str(
-        spec.get("teacher_bank", {}).get(
-            "teacher_gains_key",
-            spec.get("teacher_bank", {}).get("teacher", args.teacher_gains_key),
-        )
-    )
-    teacher_package_path = str(
-        spec.get("teacher_contract", {}).get("teacher_package", args.teacher_package)
-    )
-    package = load_teacher_package(
-        teacher_package_path,
-        teacher_gains_key=teacher_gains_key,
-    )
-    teacher_horizon = int(package["controller_gains"].shape[0])
-    if horizon > teacher_horizon:
-        raise ValueError(f"Requested horizon {horizon} exceeds teacher horizon {teacher_horizon}.")
-    feedback_dim = int(package["observation_matrix"].shape[0])
-    config = cs_h0_distillation_config(
-        weights=DistillationLossWeights(
-            clean_action=float(args.clean_action_weight),
-            perturbation_response=float(args.perturbation_response_weight),
-            input_output_jvp=float(args.input_output_jvp_weight),
-            student_forced_rollout_anchor=float(args.rollout_anchor_weight),
-        ),
-        n_jvp_directions=n_jvp_directions,
-    )
-    optimizer = _make_optimizer(
-        learning_rate=float(args.controller_lr),
-        n_batches=n_batches,
-        warmup_batches=int(args.lr_warmup_batches),
-        warmup_init_fraction=float(args.lr_warmup_init_fraction),
-        cosine_alpha=float(args.lr_cosine_alpha),
-        gradient_clip_norm=float(args.gradient_clip_norm),
-    )
-
-    root_key = jr.PRNGKey(int(args.seed))
-    model_key, _unused = jr.split(root_key)
-    batch_keys = _replicate_keys(root_key, offset=10_000, n_replicates=n_replicates)
-    hps = _standard_hps_from_spec(
-        spec,
+    spec = copy.deepcopy(spec)
+    spec["batch_size"] = batch_size
+    spec["n_train_batches"] = target_batches
+    spec["controller_lr"] = float(args.controller_lr)
+    spec["artifact_output_dir"] = _resolve_output_dir(args, _spec_run_id(spec), spec)
+    spec["hps"] = _standard_hps_dict(
         n_replicates=n_replicates,
         hidden_size=hidden_size,
         batch_size=batch_size,
-        n_batches=n_batches,
+        n_batches=target_batches,
         controller_lr=float(args.controller_lr),
         lr_warmup_batches=int(args.lr_warmup_batches),
         lr_warmup_init_fraction=float(args.lr_warmup_init_fraction),
@@ -1438,164 +1398,77 @@ def run_guided_distillation_training(args: argparse.Namespace) -> dict[str, Any]
         trainable_dtype=trainable_dtype.name,
         population_mask_mode=population_mask_mode,
     )
-    model = _init_standard_model_ensemble(hps=hps, key=model_key)
-    model_feedback_dim = standard_controller_feedback_dim(model)
-    if feedback_dim != model_feedback_dim:
-        raise ValueError(
-            f"Teacher package feedback_dim={feedback_dim}, but the standard Feedbax graph "
-            f"expects {model_feedback_dim} controller feedback channels."
-        )
-    where_train_spec = _where_train_spec(model)
-    model = _enforce_trainable_float_dtype(
-        model,
-        where_train_spec,
-        trainable_dtype,
-        context="standard guided-distillation model",
-    )
-    optimizer_state = _init_optimizer_state(
-        model=model,
-        optimizer=optimizer,
-        where_train_spec=where_train_spec,
-    )
-    histories: list[list[dict[str, Any]]] = [[] for _ in range(n_replicates)]
-    output_dir = Path(_resolve_output_dir(args, _spec_run_id(spec), spec))
-    checkpoint_root = output_dir / "checkpoints"
-    state = GuidedDistillationTrainingState(
-        model=model,
-        optimizer_state=optimizer_state,
-        completed_batches=0,
-        batch_keys=batch_keys,
-        histories=histories,
-    )
-    resumed_from: Path | None = None
-    if args.resume and latest_checkpoint_path(checkpoint_root).exists():
-        state = load_latest_checkpoint(
-            checkpoint_root,
-            model_template=model,
-            optimizer_state_template=optimizer_state,
-            n_replicates=n_replicates,
-        )
-        state = GuidedDistillationTrainingState(
-            model=_enforce_trainable_float_dtype(
-                state.model,
-                where_train_spec,
-                trainable_dtype,
-                context="resumed guided-distillation checkpoint",
-            ),
-            optimizer_state=state.optimizer_state,
-            completed_batches=state.completed_batches,
-            batch_keys=state.batch_keys,
-            histories=state.histories,
-        )
-        resumed_from = latest_checkpoint_path(checkpoint_root)
-        if state.completed_batches > n_batches:
-            raise ValueError(
-                f"Latest checkpoint completed {state.completed_batches} batches, "
-                f"but --n-batches is {n_batches}."
-            )
+    spec["model_contract"] = {
+        **spec["model_contract"],
+        "batch_size": batch_size,
+        "hidden_size": hidden_size,
+        "n_replicates": n_replicates,
+        "trainable_dtype": trainable_dtype.name,
+        "population_mask_mode": population_mask_mode,
+    }
+    spec["optimizer"] = {
+        **spec["optimizer"],
+        "controller_lr": float(args.controller_lr),
+        "gradient_clip_norm": float(args.gradient_clip_norm),
+        "lr_warmup_batches": int(args.lr_warmup_batches),
+        "lr_warmup_init_fraction": float(args.lr_warmup_init_fraction),
+        "lr_cosine_alpha": float(args.lr_cosine_alpha),
+    }
+    spec["teacher_bank"] = {**spec["teacher_bank"], "horizon": horizon}
+    surface = copy.deepcopy(spec["distillation_surface"])
+    surface["config"] = {
+        **surface["config"],
+        "n_jvp_directions": n_jvp_directions,
+    }
+    spec["distillation_surface"] = surface
+    spec["checkpointing"] = {
+        **spec["checkpointing"],
+        "enabled": bool(args.checkpoint),
+        "interval_batches": checkpoint_interval_batches,
+    }
+    validate_distillation_training_run_spec(spec, method="guided_distillation")
 
-    started = time.perf_counter()
-    log_step = max(1, int(args.log_step))
-    latest_checkpoint: Path | None = (
-        latest_checkpoint_path(checkpoint_root)
-        if checkpoint_enabled and latest_checkpoint_path(checkpoint_root).exists()
-        else None
-    )
-    for batch_index in range(state.completed_batches, target_batches):
-        next_batch_keys, batches = _materialize_replicate_batches(
-            package,
-            keys=state.batch_keys,
-            batch_size=batch_size,
-            horizon=horizon,
-            n_jvp_directions=n_jvp_directions,
-        )
-        forcing_fraction = forcing_fraction_for_batch(spec, batch_index)
-        model, optimizer_state, losses, components = _batched_train_step(
-            state.model,
-            state.optimizer_state,
-            optimizer,
-            where_train_spec,
-            batches,
-            config,
-            forcing_fraction,
-        )
-        losses_host, components_host = jax.device_get((losses, components))
-        losses_host = np.asarray(losses_host)
-        components_host = {name: np.asarray(value) for name, value in components_host.items()}
-        for replicate_index in range(n_replicates):
-            state.histories[replicate_index].append(
-                {
-                    "replicate": replicate_index,
-                    "batch": batch_index + 1,
-                    "student_forcing_fraction": forcing_fraction,
-                    "loss_total": float(losses_host[replicate_index]),
-                    "components": {
-                        name: float(value[replicate_index])
-                        for name, value in components_host.items()
-                    },
-                }
-            )
-        state = GuidedDistillationTrainingState(
-            model=model,
-            optimizer_state=optimizer_state,
-            completed_batches=batch_index + 1,
-            batch_keys=next_batch_keys,
-            histories=state.histories,
-        )
-        if (
-            args.smoke_train
-            or batch_index == 0
-            or (batch_index + 1) % log_step == 0
-            or batch_index + 1 == n_batches
-        ):
-            elapsed = time.perf_counter() - started
-            print(
-                "BATCH "
-                "phase=guided_distillation_vectorized "
-                f"batch={batch_index + 1}/{n_batches} "
-                f"loss={float(np.mean(losses_host)):.8g} "
-                f"replicates={n_replicates} "
-                f"elapsed={elapsed:.1f}s",
-                file=sys.stderr,
-                flush=True,
-            )
-        if checkpoint_enabled and (
-            state.completed_batches % checkpoint_interval_batches == 0
-            or state.completed_batches == n_batches
-            or state.completed_batches == target_batches
-        ):
-            latest_checkpoint = save_training_checkpoint(
-                checkpoint_root,
-                state,
-                args=effective_args,
-                spec=spec,
-            )
-
-    _write_training_outputs(
+    output_dir = mkdir_p(Path(spec["artifact_output_dir"]))
+    native_spec = attach_distillation_training_specs(
+        spec,
+        method="guided_distillation",
         output_dir=output_dir,
-        spec=spec,
-        histories=state.histories,
-        model=state.model,
-        completed_batches=state.completed_batches,
-        requested_batches=n_batches,
-        checkpoint_root=checkpoint_root,
-        checkpoint_enabled=checkpoint_enabled,
-        latest_checkpoint=latest_checkpoint,
+        spec_path=spec_path,
     )
-    final_losses = [history[-1]["loss_total"] for history in state.histories if history]
-    return {
+    from rlrmp.train.distillation_native import execute_distillation_training_run_spec_native
+
+    run_hash = hashlib.sha256(str(output_dir.resolve()).encode()).hexdigest()[:8]
+    started = time.perf_counter()
+    execution = execute_distillation_training_run_spec_native(
+        native_spec,
+        method="guided_distillation",
+        run_id=f"{_spec_run_id(spec)}-{run_hash}",
+        manifest_root=REPO_ROOT / "_artifacts" / "feedbax_runs",
+        checkpoint_root=output_dir / "checkpoints",
+        resume=bool(args.resume),
+        manifest_conflict_policy="reuse-identical",
+        issues=[ISSUE_ID, IMPLEMENTATION_ISSUE_ID],
+    )
+    duration = time.perf_counter() - started
+    result = {
         "output_dir": str(output_dir),
         "n_replicates": n_replicates,
-        "n_batches": state.completed_batches,
-        "completed_batches": state.completed_batches,
+        "n_batches": int(execution.final_slots["completed_batches"]),
+        "completed_batches": int(execution.final_slots["completed_batches"]),
         "requested_batches": n_batches,
         "vectorized_replicates": True,
-        "checkpointing": checkpoint_enabled,
-        "latest_checkpoint": str(latest_checkpoint) if latest_checkpoint is not None else None,
-        "resumed_from": str(resumed_from) if resumed_from is not None else None,
-        "final_loss_mean": float(np.mean(final_losses)) if final_losses else None,
+        "checkpointing": bool(args.checkpoint),
+        "latest_checkpoint": str(output_dir / "checkpoints" / "latest.json"),
+        "resumed_from": str(output_dir / "checkpoints" / "latest.json") if args.resume else None,
+        "final_loss_mean": float(execution.final_slots["train_loss"]),
         "backend": str(jax.default_backend()),
+        "native_executor": "feedbax.training.executor.execute_training_run_spec",
+        "training_manifest_path": str(execution.manifest_path),
+        "training_duration_seconds": duration,
     }
+    _atomic_write_json(output_dir / "run_spec_snapshot.json", native_spec)
+    _atomic_write_json(output_dir / "training_summary.json", result)
+    return result
 
 
 def smoke_distillation_loss() -> dict[str, Any]:

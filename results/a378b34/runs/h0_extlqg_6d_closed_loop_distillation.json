@@ -52,8 +52,8 @@
   "local_acceptance_checks": [
     "JSON run spec parses and validates with rlrmp.train.closed_loop_distillation.",
     "Dry-run smoke checks full local-Jacobian basis-JVP code path.",
-    "--smoke-train exercises Feedbax TaskTrainer/train_pair with a custom loss.",
-    "--full-train requires explicit user launch approval, not a Feedbax hook blocker."
+    "--smoke-train exercises the native distillation executor on a tiny local run.",
+    "--full-train reaches the native executor only after explicit user launch approval."
   ],
   "locked_spec_summary": {
     "batch_size": 64,
@@ -174,7 +174,7 @@
   "tracker_issue": "7792ef1",
   "training_entry": {
     "artifact_output_dir": "_artifacts/a378b34/runs/h0_extlqg_6d_closed_loop_distillation",
-    "failure_guard": "run_closed_loop_distillation_training requires explicit --confirm-full-train approval before a non-smoke full run.",
+    "failure_guard": "native closed-loop distillation training requires explicit --confirm-full-train approval before a non-smoke full run.",
     "full_train_status": "implemented_no_launch_pending_user_approval",
     "intended_full_train_command": [
       "env",
@@ -223,7 +223,7 @@
       "--smoke-batch-size",
       "1"
     ],
-    "trainer_path": "setup_task_model_pair -> Feedbax TaskTrainer/train_pair -> ClosedLoopDistillationLoss"
+    "trainer_path": "rlrmp.train.distillation_native.execute_distillation_training_run_spec_native"
   },
   "umbrella_issue": "40e1911",
   "user_confirmed": true
