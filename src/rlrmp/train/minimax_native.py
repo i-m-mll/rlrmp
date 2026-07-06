@@ -134,7 +134,7 @@ class MinimaxControllerState(NamedTuple):
     per_replicate_leaves: tuple[Any, ...]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class MinimaxNativeRuntime:
     """Runtime-only minimax objects passed through Feedbax kernel context."""
 
@@ -522,6 +522,7 @@ def _prepare_adversarial_batch(
     )
 
 
+@eqx.filter_jit
 def _vmapped_gaussian_adversary_ascent(
     runtime: MinimaxNativeRuntime,
     controller: Any,
@@ -552,6 +553,7 @@ def _vmapped_gaussian_adversary_ascent(
     return adversary, adv_opt_state, loss_vals
 
 
+@eqx.filter_jit
 def _vmapped_linear_adversary_ascent(
     runtime: MinimaxNativeRuntime,
     controller: Any,
@@ -576,6 +578,7 @@ def _vmapped_linear_adversary_ascent(
     return adversary, adv_opt_state, loss_vals
 
 
+@eqx.filter_jit
 def _vmapped_controller_descent(
     runtime: MinimaxNativeRuntime,
     controller: Any,
