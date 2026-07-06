@@ -1696,6 +1696,26 @@ def build_feedbax_training_run_spec(
         DESCRIPTOR_PAYLOAD_KEY: feedback_descriptors,
         "descriptor_basis_hash": feedback_descriptors["descriptor_basis_hash"],
     }
+    if _adaptive_epsilon_run_spec_enabled(run_spec):
+        from rlrmp.train.adaptive_epsilon_native import (
+            build_adaptive_epsilon_training_run_spec,
+        )
+
+        return build_adaptive_epsilon_training_run_spec(
+            run_spec,
+            graph_spec=graph_spec,
+            output_dir=output_dir,
+            spec_dir=spec_dir,
+            training_config=training_config,
+            objective=objective,
+            task=task,
+            risk_aggregation=risk_aggregation,
+            method_extensions={"metadata": method_metadata},
+            execution=execution,
+            artifacts=artifacts,
+            checkpoint_progress=checkpoint_progress,
+            metadata=metadata,
+        )
     if _policy_adversary_run_spec_enabled(run_spec):
         from rlrmp.train.policy_adversary_native import (
             build_policy_adversary_training_run_spec,
@@ -1970,6 +1990,14 @@ def _policy_adversary_run_spec_enabled(run_spec: Mapping[str, Any]) -> bool:
         return False
     policy_adversary = hps.get("policy_adversary_training")
     return isinstance(policy_adversary, Mapping) and policy_adversary.get("enabled") is True
+
+
+def _adaptive_epsilon_run_spec_enabled(run_spec: Mapping[str, Any]) -> bool:
+    hps = run_spec.get("hps")
+    if not isinstance(hps, Mapping):
+        return False
+    adaptive = hps.get("adaptive_epsilon_curriculum")
+    return isinstance(adaptive, Mapping) and adaptive.get("enabled") is True
 
 
 def _feedback_dim_from_run_spec(run_spec: dict[str, Any]) -> int:

@@ -3350,12 +3350,235 @@ def _run_full_training_from_context(
 ) -> dict[str, Any]:
     """Run a validated C&S training spec through the owned execution path."""
 
+    if _adaptive_epsilon_curriculum_enabled(context.hps):
+        return _run_adaptive_epsilon_native_from_context(
+            context,
+            volume_commit=volume_commit,
+        )
     if _cs_supervised_native_supported(context.hps):
         return _run_cs_supervised_native_from_context(
             context,
             volume_commit=volume_commit,
         )
     return _run_full_training_legacy_from_context(context, volume_commit=volume_commit)
+
+
+def _run_adaptive_epsilon_native_from_context(
+    context: RunSpecExecutionContext,
+    *,
+    volume_commit: VolumeCommit | None = None,
+) -> dict[str, Any]:
+    from feedbax.training.executor import execute_training_run_spec
+    from rlrmp.train.adaptive_epsilon_native import (
+        AdaptiveEpsilonNativeRuntime,
+        AdaptiveEpsilonExternalObjectiveLossService,
+        _resume_slot_transform,
+        build_adaptive_epsilon_native_initial_slots,
+    )
+
+    args = context.args
+    run_spec = context.run_spec
+    run_spec_path = context.run_spec_path
+    hps = context.hps
+    if int(args.n_train_batches) < 1:
+        raise ValueError("--n-train-batches must be positive for --full-train")
+    if int(args.checkpoint_interval_batches) < 1:
+        raise ValueError("--checkpoint-interval-batches must be positive")
+    stop_after_batches = None if args.stop_after_batches is None else int(args.stop_after_batches)
+    if stop_after_batches is not None:
+        if stop_after_batches < 1:
+            raise ValueError("--stop-after-batches must be positive when provided")
+        if stop_after_batches > int(args.n_train_batches):
+            raise ValueError("--stop-after-batches cannot exceed --n-train-batches")
+
+    spec_result = _spec_result_from_execution_context(context)
+    output_dir = mkdir_p(Path(args.output_dir))
+    key_init, _key_train, _key_adversary = split_initial_keys(jr.PRNGKey(int(args.seed)))
+    pair_for_graph = setup_task_model_pair(hps, key=key_init)
+    runtime_graph_bundle = build_runtime_rlrmp_feedbax_graph_bundle(hps, pair_for_graph.model)
+    assert_runtime_graph_matches_training_spec(
+        run_spec,
+        graph_spec=runtime_graph_bundle.graph_spec,
+    )
+    training_spec = feedbax_training_run_spec_from_payload(run_spec)
+    initial_slots, runtime = build_adaptive_epsilon_native_initial_slots(
+        run_spec=run_spec,
+        hps=hps,
+        args=args,
+        key=jr.PRNGKey(int(args.seed)),
+    )
+    checkpoint_root = output_dir / "checkpoints"
+    resume_native = bool(args.resume and has_custody_checkpoint(checkpoint_root))
+    started = time.perf_counter()
+    execution = execute_training_run_spec(
+        training_spec,
+        run_id=_cs_supervised_native_run_id(args, run_spec_path),
+        initial_slots=initial_slots,
+        kernel_context={RLRMP_RUNTIME_CONTEXT_KEY: runtime},
+        manifest_root=REPO_ROOT / "_artifacts" / "feedbax_runs",
+        checkpoint_root=checkpoint_root,
+        loss_service=AdaptiveEpsilonExternalObjectiveLossService(),
+        training_spec_payload=run_spec.get(RLRMP_RUN_SPEC_PAYLOAD_KEY),
+        training_spec_payload_kind=RUN_SPEC_KIND,
+        training_spec_payload_schema_id=RUN_SPEC_SCHEMA_ID,
+        training_spec_payload_schema_version=RUN_SPEC_SCHEMA_VERSION,
+        training_spec_payload_ref=str(run_spec_path),
+        resume=resume_native,
+        resume_slot_transform=_resume_slot_transform(None),
+        issues=[str(args.issue)],
+    )
+    training_duration_seconds = time.perf_counter() - started
+    native_runtime = runtime.component("adaptive_epsilon")
+    if not isinstance(native_runtime, AdaptiveEpsilonNativeRuntime):
+        raise TypeError("adaptive_epsilon runtime context was not installed")
+    return _materialize_adaptive_epsilon_native_result(
+        context=context,
+        spec_result={
+            **spec_result,
+            "training_manifest_path": str(execution.manifest_path),
+        },
+        runtime=native_runtime,
+        final_slots=execution.final_slots,
+        training_duration_seconds=training_duration_seconds,
+        stop_after_batches=stop_after_batches,
+        volume_commit=volume_commit,
+    )
+
+
+def _materialize_adaptive_epsilon_native_result(
+    *,
+    context: RunSpecExecutionContext,
+    spec_result: dict[str, Any],
+    runtime: Any,
+    final_slots: Mapping[str, Any],
+    training_duration_seconds: float,
+    stop_after_batches: int | None,
+    volume_commit: VolumeCommit | None,
+) -> dict[str, Any]:
+    from rlrmp.train.adaptive_epsilon_native import (
+        ADAPTIVE_EPSILON_STATE,
+        MODEL,
+        OPTIMIZER,
+        PRNG,
+        ZERO_ADVERSARY_GUARD,
+        _adaptive_state_from_slot,
+        _deserialize_pytree_slot_value,
+        _guard_from_slot,
+    )
+
+    args = context.args
+    run_spec = context.run_spec
+    run_spec_path = context.run_spec_path
+    hps = context.hps
+    output_dir = mkdir_p(Path(args.output_dir))
+    checkpoint_root = output_dir / "checkpoints"
+    key_init, _key_train, _key_adversary = split_initial_keys(jr.PRNGKey(int(args.seed)))
+    pair = setup_task_model_pair(hps, key=key_init)
+    trainer = _build_trainer(hps)
+    template_state = _initial_training_state(
+        model=pair.model,
+        trainer=trainer,
+        where_train=_where_train()[0],
+        key=jr.PRNGKey(int(args.seed)),
+    )
+    adaptive_state = _adaptive_state_from_slot(final_slots[ADAPTIVE_EPSILON_STATE])
+    zero_guard = _guard_from_slot(final_slots[ZERO_ADVERSARY_GUARD])
+    if adaptive_state is not None:
+        adaptive_state = replace(adaptive_state, zero_adversary_guard=zero_guard)
+    state = TrainingState(
+        model=_deserialize_pytree_slot_value(final_slots[MODEL], pair.model, slot=MODEL),
+        optimizer_state=_deserialize_pytree_slot_value(
+            final_slots[OPTIMIZER],
+            template_state.optimizer_state,
+            slot=OPTIMIZER,
+        ),
+        completed_batches=int(final_slots[COMPLETED_BATCHES]),
+        key=jnp.asarray(final_slots[PRNG], dtype=jnp.uint32),
+        history=getattr(runtime, "history", None),
+        adaptive_epsilon_state=adaptive_state,
+    )
+    checkpoint_path = _save_training_checkpoint_materialization(
+        checkpoint_root,
+        state,
+        metadata=_training_checkpoint_metadata(args, state, run_spec),
+    )
+    diagnostics_metadata = write_training_diagnostics_sidecar(
+        output_dir,
+        args=args,
+        run_spec=run_spec,
+        state=state,
+        training_history_path=output_dir / "training_history.eqx",
+        adaptive_epsilon_diagnostic_chunks=[
+            record["diagnostics"] for record in getattr(runtime, "records", [])
+        ],
+    )
+    final_model_path = output_dir / "trained_model.eqx"
+    final_history_path = output_dir / "training_history.eqx"
+    final_summary_path = output_dir / "training_summary.json"
+    _save_pytree(final_model_path, state.model, hyperparameters=run_spec)
+    if state.history is not None:
+        _save_pytree(final_history_path, state.history)
+    stopped_for_gate = (
+        stop_after_batches is not None and state.completed_batches < int(args.n_train_batches)
+    )
+    stopped_for_zero = bool(zero_guard.get("should_stop")) and state.completed_batches < int(
+        args.n_train_batches
+    )
+    stop_reason = None
+    if stopped_for_zero:
+        stop_reason = ADAPTIVE_EPSILON_ZERO_ADVERSARY_STOP_REASON
+    elif stopped_for_gate:
+        stop_reason = "checkpoint_gate_stop_after_batches"
+    final_summary = {
+        "schema_version": f"{SCHEMA_VERSION}.training.v1",
+        "issue": str(args.issue),
+        "completed_batches": state.completed_batches,
+        "n_train_batches": int(args.n_train_batches),
+        "stopped_early_for_checkpoint_gate": stopped_for_gate,
+        "stopped_early_for_adaptive_epsilon_zero_adversary": stopped_for_zero,
+        "stop_reason": stop_reason,
+        "stop_after_batches": stop_after_batches,
+        "adaptive_epsilon_zero_adversary_guard": zero_guard,
+        "training_duration_seconds": training_duration_seconds,
+        "training_batches_per_second": (
+            state.completed_batches / training_duration_seconds
+            if training_duration_seconds > 0
+            else None
+        ),
+        "checkpoint_interval_batches": int(args.checkpoint_interval_batches),
+        "latest_checkpoint": str(latest_checkpoint_path(checkpoint_root)),
+        "final_model_path": str(final_model_path),
+        "final_adversary_policy_path": None,
+        "training_history_path": str(final_history_path) if state.history is not None else None,
+        "run_spec_path": str(run_spec_path),
+        "graph_spec_path": spec_result["graph_spec_path"],
+        "training_diagnostics": diagnostics_metadata,
+        "chunks": [
+            {
+                "completed_batches": state.completed_batches,
+                "checkpoint": str(checkpoint_path),
+                "history_chunk": None,
+                "chunk_batches": state.completed_batches,
+                "duration_seconds": training_duration_seconds,
+                "batches_per_second": (
+                    state.completed_batches / training_duration_seconds
+                    if training_duration_seconds > 0
+                    else None
+                ),
+            }
+        ],
+    }
+    _atomic_write_json(final_summary_path, final_summary)
+    _commit_volume(volume_commit)
+    return {
+        **spec_result,
+        "final_model_path": str(final_model_path),
+        "final_adversary_policy_path": None,
+        "training_history_path": str(final_history_path) if state.history is not None else None,
+        "training_summary_path": str(final_summary_path),
+        "latest_checkpoint": str(latest_checkpoint_path(checkpoint_root)),
+        "completed_batches": state.completed_batches,
+    }
 
 
 def _run_full_training_legacy_from_context(

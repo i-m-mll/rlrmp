@@ -31,6 +31,7 @@ from rlrmp.runtime.training_run_specs import (
 
 
 CS_BARRIER = "after_train_batch"
+ADAPTIVE_EPSILON_BARRIER = "after_adaptive_epsilon_train_chunk"
 POLICY_ADVERSARY_BARRIER = "after_policy_adversary_train_chunk"
 MINIMAX_WARMUP_BARRIER = "after_warmup"
 MINIMAX_ADVERSARIAL_BARRIER = "after_adversarial"
@@ -99,6 +100,7 @@ def cs_custody_training_spec(run_spec: Mapping[str, Any]) -> TrainingRunSpec:
         extra_state_slots=_CS_EXTRA_SLOTS,
         barrier_slots={
             CS_BARRIER: _CS_BARRIER_SLOTS,
+            ADAPTIVE_EPSILON_BARRIER: _CS_BARRIER_SLOTS,
             POLICY_ADVERSARY_BARRIER: _CS_BARRIER_SLOTS,
         },
         consistency_mode="barrier-coordinate",
@@ -173,6 +175,8 @@ def _cs_checkpoint_barrier_name(spec: TrainingRunSpec) -> str:
         return CS_BARRIER
     if "after_train_chunk" in names:
         return "after_train_chunk"
+    if ADAPTIVE_EPSILON_BARRIER in names:
+        return ADAPTIVE_EPSILON_BARRIER
     if POLICY_ADVERSARY_BARRIER in names:
         return POLICY_ADVERSARY_BARRIER
     raise ValueError(f"C&S TrainingRunSpec has no known checkpoint barrier: {sorted(names)!r}")
