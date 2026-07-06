@@ -274,9 +274,11 @@ symbols = ["ValueSchema"]
 module = "feedbax.contracts.worker"
 symbols = [
   "AxisSpec",
+  "BarrierArtifactSinkSpec",
   "CheckpointBarrierSpec",
   "CheckpointSlotSpec",
   "EffectivePhaseSpec",
+  "MetricGuardSpec",
   "MethodContractSpec",
   "OptimizerTargetBinding",
   "PhaseProgramSpec",
@@ -483,6 +485,10 @@ symbols = ["TaskTrainerHistory", "init_task_trainer_history"]
 [[canonical_homes]]
 module = "feedbax.training.loss"
 symbols = ["get_readout_norm_loss"]
+
+[[canonical_homes]]
+module = "feedbax.training.phase_executor"
+symbols = ["InMemoryCheckpointStore", "PhaseProgramExecutor"]
 
 [[canonical_homes]]
 module = "feedbax.training.checkpoint_custody"
