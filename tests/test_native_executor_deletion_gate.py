@@ -63,6 +63,12 @@ ALLOWED_NON_TRAINING_OPTIMIZER_LOOPS = {
         "_run_finite_broad_epsilon_pgd_inner_maximizer",
     ),
 }
+ALLOWED_NATIVE_OPTIMIZER_LOOPS = {
+    (
+        Path("src/rlrmp/train/cs_nominal_gru.py"),
+        "_supervised_train_step",
+    ),
+}
 
 
 def test_training_optimizer_loops_live_only_in_registered_native_modules() -> None:
@@ -229,7 +235,10 @@ def _optimizer_loop_findings_for_tree(tree: ast.AST, *, rel_path: Path) -> list[
         module_has_optimizer_update = module_has_optimizer_update or has_optimizer_update
         module_has_apply_updates = module_has_apply_updates or has_apply_updates
         if has_grad and has_optimizer_update and has_apply_updates:
-            if (rel_path, node.name) in ALLOWED_NON_TRAINING_OPTIMIZER_LOOPS:
+            if (
+                (rel_path, node.name) in ALLOWED_NON_TRAINING_OPTIMIZER_LOOPS
+                or (rel_path, node.name) in ALLOWED_NATIVE_OPTIMIZER_LOOPS
+            ):
                 allowed_direct_loop = True
                 continue
             findings.append(f"{rel_path}:{node.lineno}:{node.name}")

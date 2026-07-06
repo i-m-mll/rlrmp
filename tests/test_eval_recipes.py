@@ -62,6 +62,14 @@ def _canonical_sha256(payload: dict[str, Any]) -> str:
     ).hexdigest()
 
 
+def _load_cached_states(manifest) -> dict[str, Any]:
+    with Path(manifest.metadata["cache"]["states_path"]).open("rb") as stream:
+        payload = pickle.load(stream)
+    if isinstance(payload, dict) and set(payload) >= {"manifest_id", "schema_version", "states"}:
+        return payload["states"]
+    return payload
+
+
 def _identity_changed_params(evaluation_type: str, params: dict[str, Any]) -> dict[str, Any]:
     changed = dict(params)
     if evaluation_type == CENTER_OUT_ENSEMBLE_EVALUATION_TYPE:
@@ -498,8 +506,7 @@ def test_perturbation_response_bank_model_driven_emits_class_index_map(
     spec = _spec(PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE, params)
 
     manifest, _path = execute_evaluation_run_spec(spec, root=tmp_path, force=True)
-    with Path(manifest.metadata["cache"]["states_path"]).open("rb") as stream:
-        states = pickle.load(stream)
+    states = _load_cached_states(manifest)
 
     class_index = states["class_index_map"]
     assert manifest.metadata["legacy_payload_mode"] is False
@@ -559,8 +566,7 @@ def test_perturbation_response_bank_stamps_eval_time_calibration_identity(
     spec = _spec(PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE, params)
 
     manifest, _path = execute_evaluation_run_spec(spec, root=tmp_path, force=True)
-    with Path(manifest.metadata["cache"]["states_path"]).open("rb") as stream:
-        states = pickle.load(stream)
+    states = _load_cached_states(manifest)
 
     assert states["consumed_data_identities"] == [
         {

@@ -201,123 +201,10 @@ def run_parent(args: argparse.Namespace) -> int:
 def run_worker(config: WorkerConfig) -> int:
     os.environ[PREALLOC_ENV] = "false"
     os.environ[JAX_PLATFORM_ENV] = "cpu"
-
-    import argparse as _argparse
-    from functools import partial
-
-    import jax.random as jr
-    import optax
-    from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
-    from feedbax.training.types import TaskModelPair
-
-    from rlrmp.train.task_model import setup_task_model_pair
-    from rlrmp.train.cs_nominal_gru import build_hps, build_parser as build_nominal_parser
-
-    output_dir = Path(config.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    status_path = output_dir / "status.json"
-    summary_path = output_dir / "summary.json"
-    _write_json(status_path, {"status": "starting", "captured_at": _utc_now()})
-
-    nominal_args = build_nominal_parser().parse_args([])
-    overrides = {
-        "seed": config.seed,
-        "batch_size": config.batch_size,
-        "n_replicates": config.n_replicates,
-        "hidden_size": config.hidden_size,
-        "n_input_only": 0,
-        "n_readout_only": 0,
-        "n_recurrent_only": 0,
-        "controller_lr": config.controller_lr,
-        "stochastic_preset": config.stochastic_preset,
-        "n_train_batches": max(1, config.warmup_batches + config.chunk_batches),
-        "regularized_fidelity": config.regularized_fidelity,
-        "plant_backend": config.plant_backend,
-    }
-    nominal_args = _argparse.Namespace(**{**vars(nominal_args), **overrides})
-    hps = build_hps(nominal_args)
-
-    key = jr.PRNGKey(config.seed)
-    key_init, key_warmup, key_burn, key_measure = jr.split(key, 4)
-    pair = setup_task_model_pair(hps, key=key_init)
-    where_train = _make_where_train()
-
-    def make_trainer(total_steps: int) -> TaskTrainer:
-        schedule = make_delayed_cosine_schedule(
-            config.controller_lr,
-            constant_steps=0,
-            total_steps=max(1, total_steps),
-        )
-        optimizer = optax.inject_hyperparams(partial(optax.adamw, weight_decay=0.0))(
-            learning_rate=schedule
-        )
-        return TaskTrainer(optimizer=optimizer, checkpointing=False)
-
-    _write_json(status_path, {"status": "compiling", "captured_at": _utc_now()})
-    compile_start = time.monotonic()
-    model, _history = train_pair(
-        make_trainer(config.warmup_batches),
-        pair,
-        n_batches=config.warmup_batches,
-        key=key_warmup,
-        ensembled=True,
-        loss_func=pair.task.loss_func,
-        where_train=where_train,
-        batch_size=config.batch_size,
-        log_step=max(1, config.warmup_batches),
-        disable_progress=True,
-        verbose_progress=False,
+    raise RuntimeError(
+        "local_parallel benchmark worker used the retired Feedbax trainer path; "
+        "port this benchmark to the RLRMP native executor before running it."
     )
-    compile_seconds = time.monotonic() - compile_start
-    _write_json(
-        status_path,
-        {
-            "status": "ready",
-            "captured_at": _utc_now(),
-            "compile_and_warmup_seconds": compile_seconds,
-            "config": asdict(config),
-        },
-    )
-
-    start_file = Path(config.start_file)
-    while not start_file.exists():
-        time.sleep(0.1)
-
-    burn = _timed_train(
-        trainer=make_trainer(max(1, config.chunk_batches)),
-        pair=pair,
-        model=model,
-        seconds=config.burn_in_seconds,
-        chunk_batches=config.chunk_batches,
-        key=key_burn,
-        where_train=where_train,
-        batch_size=config.batch_size,
-    )
-    measured = _timed_train(
-        trainer=make_trainer(max(1, config.chunk_batches)),
-        pair=TaskModelPair(pair.task, burn["model"]),
-        model=burn["model"],
-        seconds=config.measure_seconds,
-        chunk_batches=config.chunk_batches,
-        key=key_measure,
-        where_train=where_train,
-        batch_size=config.batch_size,
-    )
-    payload = {
-        "status": "done",
-        "captured_at": _utc_now(),
-        "worker_index": config.worker_index,
-        "pid": os.getpid(),
-        "preallocation_env": os.environ.get(PREALLOC_ENV),
-        "jax_platform": os.environ.get(JAX_PLATFORM_ENV),
-        "compile_and_warmup_seconds": compile_seconds,
-        "burn_in": _strip_model(burn),
-        "measured": _strip_model(measured),
-        "config": asdict(config),
-    }
-    _write_json(summary_path, payload)
-    _write_json(status_path, payload)
-    return 0
 
 
 def _timed_train(
@@ -331,44 +218,10 @@ def _timed_train(
     where_train: Any,
     batch_size: int,
 ) -> dict[str, Any]:
-    import jax.random as jr
-    from feedbax.training.train import train_pair
-    from feedbax.training.types import TaskModelPair
-
-    deadline = time.monotonic() + max(0.0, seconds)
-    total_batches = 0
-    chunks = 0
-    chunk_times: list[float] = []
-    current_model = model
-    while time.monotonic() < deadline or chunks == 0:
-        key, key_chunk = jr.split(key)
-        chunk_start = time.monotonic()
-        current_model, _history = train_pair(
-            trainer,
-            TaskModelPair(pair.task, current_model),
-            n_batches=max(1, chunk_batches),
-            key=key_chunk,
-            ensembled=True,
-            loss_func=pair.task.loss_func,
-            where_train=where_train,
-            batch_size=batch_size,
-            log_step=max(1, chunk_batches),
-            disable_progress=True,
-            verbose_progress=False,
-        )
-        elapsed = time.monotonic() - chunk_start
-        chunk_times.append(elapsed)
-        total_batches += max(1, chunk_batches)
-        chunks += 1
-    total_seconds = sum(chunk_times)
-    return {
-        "model": current_model,
-        "chunks": chunks,
-        "batches": total_batches,
-        "seconds": total_seconds,
-        "batches_per_second": total_batches / total_seconds if total_seconds > 0 else None,
-        "chunk_seconds": chunk_times,
-    }
+    raise RuntimeError(
+        "local_parallel timed training used the retired Feedbax trainer path; "
+        "port this benchmark to the RLRMP native executor before running it."
+    )
 
 
 def _make_where_train() -> dict[int, Any]:

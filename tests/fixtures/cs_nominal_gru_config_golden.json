@@ -4633,7 +4633,7 @@
             ],
             "schema_version": "rlrmp.cs_stochastic_gru.v1.training_diagnostics.v1",
             "sidecar_path": "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/training_diagnostics.npz",
-            "source": "optimizer_state plus Feedbax TaskTrainer history; no raw gradients, batches, or activations are persisted"
+            "source": "optimizer_state plus RLRMP executor history; no raw gradients, batches, or activations are persisted"
           },
           "warmup_batches": 0,
           "warmup_init_fraction": 0.1,
@@ -9910,7 +9910,7 @@
               ],
               "schema_version": "rlrmp.cs_stochastic_gru.v1.training_diagnostics.v1",
               "sidecar_path": "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/training_diagnostics.npz",
-              "source": "optimizer_state plus Feedbax TaskTrainer history; no raw gradients, batches, or activations are persisted"
+              "source": "optimizer_state plus RLRMP executor history; no raw gradients, batches, or activations are persisted"
             },
             "warmup_batches": 0,
             "warmup_init_fraction": 0.1,
@@ -10117,7 +10117,7 @@
             ],
             "schema_version": "rlrmp.cs_stochastic_gru.v1.training_diagnostics.v1",
             "sidecar_path": "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/training_diagnostics.npz",
-            "source": "optimizer_state plus Feedbax TaskTrainer history; no raw gradients, batches, or activations are persisted"
+            "source": "optimizer_state plus RLRMP executor history; no raw gradients, batches, or activations are persisted"
           },
           "training_distribution": {
             "fixed_target_only": true,
@@ -10542,7 +10542,7 @@
               ],
               "schema_version": "rlrmp.cs_stochastic_gru.v1.training_diagnostics.v1",
               "sidecar_path": "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/training_diagnostics.npz",
-              "source": "optimizer_state plus Feedbax TaskTrainer history; no raw gradients, batches, or activations are persisted"
+              "source": "optimizer_state plus RLRMP executor history; no raw gradients, batches, or activations are persisted"
             },
             "training_distribution": {
               "fixed_target_only": true,
@@ -11426,7 +11426,7 @@
           ],
           "schema_version": "rlrmp.cs_stochastic_gru.v1.training_diagnostics.v1",
           "sidecar_path": "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/training_diagnostics.npz",
-          "source": "optimizer_state plus Feedbax TaskTrainer history; no raw gradients, batches, or activations are persisted"
+          "source": "optimizer_state plus RLRMP executor history; no raw gradients, batches, or activations are persisted"
         },
         "training_distribution": {
           "fixed_target_only": true,
@@ -11851,7 +11851,7 @@
             ],
             "schema_version": "rlrmp.cs_stochastic_gru.v1.training_diagnostics.v1",
             "sidecar_path": "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/training_diagnostics.npz",
-            "source": "optimizer_state plus Feedbax TaskTrainer history; no raw gradients, batches, or activations are persisted"
+            "source": "optimizer_state plus RLRMP executor history; no raw gradients, batches, or activations are persisted"
           },
           "training_distribution": {
             "fixed_target_only": true,
@@ -21447,7 +21447,7 @@
             ],
             "schema_version": "rlrmp.cs_stochastic_gru.v1.training_diagnostics.v1",
             "sidecar_path": "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/training_diagnostics.npz",
-            "source": "optimizer_state plus Feedbax TaskTrainer history; no raw gradients, batches, or activations are persisted"
+            "source": "optimizer_state plus RLRMP executor history; no raw gradients, batches, or activations are persisted"
           },
           "warmup_batches": 0,
           "warmup_init_fraction": 0.1,
@@ -31134,7 +31134,7 @@
               ],
               "schema_version": "rlrmp.cs_stochastic_gru.v1.training_diagnostics.v1",
               "sidecar_path": "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/training_diagnostics.npz",
-              "source": "optimizer_state plus Feedbax TaskTrainer history; no raw gradients, batches, or activations are persisted"
+              "source": "optimizer_state plus RLRMP executor history; no raw gradients, batches, or activations are persisted"
             },
             "warmup_batches": 0,
             "warmup_init_fraction": 0.1,
@@ -34229,7 +34229,7 @@
             ],
             "schema_version": "rlrmp.cs_stochastic_gru.v1.training_diagnostics.v1",
             "sidecar_path": "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/training_diagnostics.npz",
-            "source": "optimizer_state plus Feedbax TaskTrainer history; no raw gradients, batches, or activations are persisted"
+            "source": "optimizer_state plus RLRMP executor history; no raw gradients, batches, or activations are persisted"
           },
           "training_distribution": {
             "adversarial_phase": "none",
@@ -38647,7 +38647,7 @@
               ],
               "schema_version": "rlrmp.cs_stochastic_gru.v1.training_diagnostics.v1",
               "sidecar_path": "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/training_diagnostics.npz",
-              "source": "optimizer_state plus Feedbax TaskTrainer history; no raw gradients, batches, or activations are persisted"
+              "source": "optimizer_state plus RLRMP executor history; no raw gradients, batches, or activations are persisted"
             },
             "training_distribution": {
               "adversarial_phase": "none",
@@ -47609,7 +47609,7 @@
           ],
           "schema_version": "rlrmp.cs_stochastic_gru.v1.training_diagnostics.v1",
           "sidecar_path": "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/training_diagnostics.npz",
-          "source": "optimizer_state plus Feedbax TaskTrainer history; no raw gradients, batches, or activations are persisted"
+          "source": "optimizer_state plus RLRMP executor history; no raw gradients, batches, or activations are persisted"
         },
         "training_distribution": {
           "adversarial_phase": "none",
@@ -52027,7 +52027,7 @@
             ],
             "schema_version": "rlrmp.cs_stochastic_gru.v1.training_diagnostics.v1",
             "sidecar_path": "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/training_diagnostics.npz",
-            "source": "optimizer_state plus Feedbax TaskTrainer history; no raw gradients, batches, or activations are persisted"
+            "source": "optimizer_state plus RLRMP executor history; no raw gradients, batches, or activations are persisted"
           },
           "training_distribution": {
             "adversarial_phase": "none",
@@ -68915,7 +68915,7 @@
             ],
             "schema_version": "rlrmp.cs_stochastic_gru.v1.training_diagnostics.v1",
             "sidecar_path": "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/training_diagnostics.npz",
-            "source": "optimizer_state plus Feedbax TaskTrainer history; no raw gradients, batches, or activations are persisted"
+            "source": "optimizer_state plus RLRMP executor history; no raw gradients, batches, or activations are persisted"
           },
           "warmup_batches": 0,
           "warmup_init_fraction": 0.1,
@@ -77541,7 +77541,7 @@
               ],
               "schema_version": "rlrmp.cs_stochastic_gru.v1.training_diagnostics.v1",
               "sidecar_path": "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/training_diagnostics.npz",
-              "source": "optimizer_state plus Feedbax TaskTrainer history; no raw gradients, batches, or activations are persisted"
+              "source": "optimizer_state plus RLRMP executor history; no raw gradients, batches, or activations are persisted"
             },
             "warmup_batches": 0,
             "warmup_init_fraction": 0.1,
@@ -80714,7 +80714,7 @@
             ],
             "schema_version": "rlrmp.cs_stochastic_gru.v1.training_diagnostics.v1",
             "sidecar_path": "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/training_diagnostics.npz",
-            "source": "optimizer_state plus Feedbax TaskTrainer history; no raw gradients, batches, or activations are persisted"
+            "source": "optimizer_state plus RLRMP executor history; no raw gradients, batches, or activations are persisted"
           },
           "training_distribution": {
             "adversarial_phase": "broad_epsilon_pgd_direct_epsilon",
@@ -84443,7 +84443,7 @@
               ],
               "schema_version": "rlrmp.cs_stochastic_gru.v1.training_diagnostics.v1",
               "sidecar_path": "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/training_diagnostics.npz",
-              "source": "optimizer_state plus Feedbax TaskTrainer history; no raw gradients, batches, or activations are persisted"
+              "source": "optimizer_state plus RLRMP executor history; no raw gradients, batches, or activations are persisted"
             },
             "training_distribution": {
               "adversarial_phase": "broad_epsilon_pgd_direct_epsilon",
@@ -92793,7 +92793,7 @@
           ],
           "schema_version": "rlrmp.cs_stochastic_gru.v1.training_diagnostics.v1",
           "sidecar_path": "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/training_diagnostics.npz",
-          "source": "optimizer_state plus Feedbax TaskTrainer history; no raw gradients, batches, or activations are persisted"
+          "source": "optimizer_state plus RLRMP executor history; no raw gradients, batches, or activations are persisted"
         },
         "training_distribution": {
           "adversarial_phase": "broad_epsilon_pgd_direct_epsilon",
@@ -96522,7 +96522,7 @@
             ],
             "schema_version": "rlrmp.cs_stochastic_gru.v1.training_diagnostics.v1",
             "sidecar_path": "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/training_diagnostics.npz",
-            "source": "optimizer_state plus Feedbax TaskTrainer history; no raw gradients, batches, or activations are persisted"
+            "source": "optimizer_state plus RLRMP executor history; no raw gradients, batches, or activations are persisted"
           },
           "training_distribution": {
             "adversarial_phase": "broad_epsilon_pgd_direct_epsilon",

@@ -14,7 +14,6 @@ from feedbax.runtime.graph import init_state_from_component
 from feedbax.contracts.graphs.serialization import spec_to_graph
 from feedbax.runtime.state_feedback import StateFeedbackSelector
 from jax_cookbook.tree import filter_spec_leaves
-from feedbax.training.trainer import get_model_parameters
 
 from rlrmp.analysis.math.cs_game_card import build_canonical_game, build_no_integrator_game
 from rlrmp.model.cs_lss_gru import (
@@ -38,6 +37,7 @@ from rlrmp.model.cs_lss_gru import (
     register_cs_lss_graph_components,
 )
 from rlrmp.model.feedbax_graph import graph_spec_from_model, graph_spec_payload
+from rlrmp.train.cs_nominal_gru import get_model_parameters
 from rlrmp.train.closed_loop_finite_adversary import (
     AFFINE_POLICY,
     FINITE_POLICY_BIAS_INPUT,

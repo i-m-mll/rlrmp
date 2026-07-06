@@ -306,7 +306,7 @@ def load_gru_training_history(run_spec: Mapping[str, Any], path: Path) -> Simple
     """Load a GRU pilot training history from the current temporary stream format.
 
     The 30f2313 histories were saved without a metadata skeleton. Reconstructing
-    the small ``TaskTrainerHistory`` surface needed by ``loss_history_compare`` is
+    the small training-history surface needed by ``loss_history_compare`` is
     sufficient here and avoids broad training-loader changes.
     """
 

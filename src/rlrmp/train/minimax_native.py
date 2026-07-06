@@ -24,11 +24,11 @@ from feedbax.objectives.spec import ObjectiveExecutionRequirements
 from feedbax.objectives.streaming import make_streaming_loss_fn
 from feedbax.runtime.batch import BatchInfo
 from feedbax.runtime.iteration import run_component
-from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
 
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.intervention_compat import LINEAR_DYNAMICS_ADVERSARY_COMPONENT_PARAMETER_TARGET
 from rlrmp.train.adversary import GaussianBumpAdversary, LinearDynamicsAdversary
+from rlrmp.train.cs_nominal_gru import make_delayed_cosine_schedule
 from rlrmp.train.executor.adapters import ChunkKernelAdapter, UpdateKernel
 from rlrmp.train.executor.guards import make_stop_after_batches_predicate
 from rlrmp.train.executor.initial_slots import RlrmpRuntime, split_initial_keys
@@ -359,9 +359,8 @@ def _warmup_controller_descent(
         minimax.controller_layout,
         ensembled=True,
     )
-    history = None
+    controller_loss = 0.0
     if int(args.n_warmup_batches) > 0:
-        pair = minimax.pair._replace(model=controller)
         warmup_schedule = make_delayed_cosine_schedule(
             args.controller_lr,
             constant_steps=0,
@@ -370,20 +369,30 @@ def _warmup_controller_descent(
         warmup_optimizer = optax.inject_hyperparams(
             lambda learning_rate: optax.adamw(learning_rate, weight_decay=0.0)
         )(learning_rate=warmup_schedule)
-        trainer = TaskTrainer(optimizer=warmup_optimizer, checkpointing=False)
-        controller, history = train_pair(
-            trainer,
-            pair,
-            n_batches=args.n_warmup_batches,
-            key=minimax.key_warmup,
+        warmup_opt_state = _init_controller_opt_state_with_optimizer(
+            controller,
+            minimax,
+            warmup_optimizer,
+        )
+        keys = jr.split(minimax.key_warmup, int(args.n_warmup_batches))
+        controller_state = _controller_state_from_model(controller, minimax.controller_layout)
+        for batch_index in range(int(args.n_warmup_batches)):
+            prepared = _prepare_warmup_batch(minimax, keys[batch_index], batch_index)
+            controller_state, warmup_opt_state, loss_vals = _vmapped_warmup_controller_descent(
+                minimax,
+                controller_state,
+                warmup_opt_state,
+                warmup_optimizer,
+                prepared.trial_specs,
+                prepared.trial_keys,
+            )
+            controller_loss = _metric_mean(loss_vals)
+        controller = _model_from_controller_state(
+            controller_state,
+            minimax.controller_layout,
             ensembled=True,
-            loss_func=minimax.pair.task.loss_func,
-            where_train=_make_where_train(sisu_gating=args.sisu_gating),
-            batch_size=minimax.hps.batch_size,
-            log_step=max(1, args.n_warmup_batches),
         )
     ctrl_opt_state = _init_controller_opt_state(controller, minimax)
-    controller_loss = _last_history_loss(history)
     return {
         CONTROLLER: _controller_state_from_model(controller, minimax.controller_layout),
         CONTROLLER_OPTIMIZER: ctrl_opt_state,
@@ -556,6 +565,59 @@ def _prepare_adversarial_batch(
     )
 
 
+def _prepare_warmup_batch(
+    runtime: MinimaxNativeRuntime,
+    key: Any,
+    batch_index: int,
+) -> MinimaxPreparedBatch:
+    trial_keys = jr.split(key, int(runtime.hps.batch_size))
+    batch_info = BatchInfo(
+        size=jnp.int32(runtime.hps.batch_size),
+        current=jnp.int32(batch_index),
+        total=jnp.int32(runtime.args.n_warmup_batches),
+    )
+    trial_specs = jax.vmap(
+        lambda trial_key: runtime.pair.task.get_train_trial_with_intervenor_params(
+            trial_key,
+            batch_info,
+        )
+    )(trial_keys)
+    trial_specs = eqx.tree_at(
+        lambda specs: specs.timeline.n_steps,
+        trial_specs,
+        int(runtime.hps.task.n_steps),
+    )
+    return MinimaxPreparedBatch(
+        trial_specs=trial_specs,
+        trial_keys=trial_keys,
+        batch_index=batch_index,
+        active_member_index=-1,
+    )
+
+
+@eqx.filter_jit
+def _vmapped_warmup_controller_descent(
+    runtime: MinimaxNativeRuntime,
+    controller: Any,
+    ctrl_opt_state: Any,
+    optimizer: optax.GradientTransformation,
+    trial_specs: Any,
+    trial_keys: Any,
+) -> tuple[Any, Any, Any]:
+    models = controller.per_replicate_leaves
+    updated_models, updated_opt_state, loss_vals = eqx.filter_vmap(
+        lambda model, opt_state: _single_rep_warmup_controller_step(
+            runtime,
+            model,
+            opt_state,
+            optimizer,
+            trial_specs,
+            trial_keys,
+        )
+    )(models, ctrl_opt_state)
+    return MinimaxControllerState(tuple(updated_models)), updated_opt_state, loss_vals
+
+
 @eqx.filter_jit
 def _vmapped_gaussian_adversary_ascent(
     runtime: MinimaxNativeRuntime,
@@ -714,6 +776,33 @@ def _single_rep_controller_step(
     loss_val, grads = eqx.filter_value_and_grad(ctrl_loss)(model)
     trainable_grads = eqx.filter(_get_trainable(grads), eqx.is_array)
     updates, new_opt_state = runtime.controller_optimizer.update(
+        trainable_grads,
+        ctrl_opt_state,
+        eqx.filter(_get_trainable(model), eqx.is_array),
+    )
+    updated_trainable = eqx.apply_updates(_get_trainable(model), updates)
+    new_model = eqx.tree_at(_trainable_where(model), model, updated_trainable)
+    return tuple(_per_rep_leaves_from_single_model(new_model, runtime.controller_layout)), (
+        new_opt_state
+    ), loss_val
+
+
+def _single_rep_warmup_controller_step(
+    runtime: MinimaxNativeRuntime,
+    per_rep_leaves: Any,
+    ctrl_opt_state: Any,
+    optimizer: optax.GradientTransformation,
+    trial_specs: Any,
+    trial_keys: Any,
+) -> tuple[Any, Any, Any]:
+    model = _single_model_from_leaves(per_rep_leaves, runtime.controller_layout)
+
+    def ctrl_loss(model_candidate: Any) -> Any:
+        return _compute_loss(runtime, model_candidate, trial_specs, trial_keys)
+
+    loss_val, grads = eqx.filter_value_and_grad(ctrl_loss)(model)
+    trainable_grads = eqx.filter(_get_trainable(grads), eqx.is_array)
+    updates, new_opt_state = optimizer.update(
         trainable_grads,
         ctrl_opt_state,
         eqx.filter(_get_trainable(model), eqx.is_array),
@@ -898,14 +987,24 @@ def _init_vmapped_adversary_opt_state(
 
 
 def _init_controller_opt_state(controller: Any, runtime: MinimaxNativeRuntime) -> Any:
+    return _init_controller_opt_state_with_optimizer(
+        controller,
+        runtime,
+        runtime.controller_optimizer,
+    )
+
+
+def _init_controller_opt_state_with_optimizer(
+    controller: Any,
+    runtime: MinimaxNativeRuntime,
+    optimizer: optax.GradientTransformation,
+) -> Any:
     single_model = _single_replicate_model(
         controller,
         runtime.n_replicates,
         runtime.controller_layout,
     )
-    single_state = runtime.controller_optimizer.init(
-        eqx.filter(_get_trainable(single_model), eqx.is_array)
-    )
+    single_state = optimizer.init(eqx.filter(_get_trainable(single_model), eqx.is_array))
     return jt.map(
         lambda value: jnp.stack([value] * runtime.n_replicates)
         if eqx.is_array(value)

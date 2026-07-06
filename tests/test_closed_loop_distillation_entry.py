@@ -8,7 +8,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import jax.numpy as jnp
-from feedbax.training.train import TaskTrainer
 import pytest
 
 from rlrmp.runtime.training_run_specs import MissingTrainingRunSpecFieldError
@@ -160,7 +159,7 @@ def test_full_training_artifact_writer_materializes_summary_and_pytrees(tmp_path
     assert summary["artifacts"]["training_summary"] == str(output_dir / "training_summary.json")
 
 
-def test_closed_loop_distillation_smoke_train_uses_tasktrainer_train_pair() -> None:
+def test_closed_loop_distillation_smoke_train_uses_injected_executor_hook() -> None:
     spec = closed_loop_distillation.build_closed_loop_distillation_spec(_default_spec_args())
     observed = {}
 
@@ -182,7 +181,7 @@ def test_closed_loop_distillation_smoke_train_uses_tasktrainer_train_pair() -> N
         **kwargs,
     ):
         del pair, key, where_train, kwargs
-        observed["trainer_is_tasktrainer"] = isinstance(trainer, TaskTrainer)
+        observed["trainer"] = trainer
         observed["n_batches"] = n_batches
         observed["batch_size"] = batch_size
         observed["ensembled"] = ensembled
@@ -205,9 +204,9 @@ def test_closed_loop_distillation_smoke_train_uses_tasktrainer_train_pair() -> N
     )
 
     assert result["mode"] == "smoke_train"
-    assert result["trainer_path"] == "Feedbax TaskTrainer/train_pair"
+    assert result["trainer_path"] == "injected_executor_training_fn"
     assert result["completed_batches"] == 1
-    assert observed["trainer_is_tasktrainer"] is True
+    assert observed["trainer"] is None
     assert observed["ensembled"] is True
     assert observed["loss_type"] == "ClosedLoopDistillationLoss"
     assert observed["hps"].model.hidden_size == 6

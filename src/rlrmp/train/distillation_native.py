@@ -22,6 +22,11 @@ from feedbax.training.executor import execute_training_run_spec
 
 from rlrmp.runtime.training_run_specs import FEEDBAX_TRAINING_RUN_SPEC_KEY
 from rlrmp.train import closed_loop_distillation, guided_distillation
+from rlrmp.train.cs_nominal_gru import (
+    _initial_training_state,
+    _run_cs_supervised_training_chunk,
+    make_delayed_cosine_schedule,
+)
 from rlrmp.train.executor.adapters import ChunkKernelAdapter, UpdateKernel
 from rlrmp.train.executor.initial_slots import RlrmpRuntime
 from rlrmp.train.minimax_native import (
@@ -53,7 +58,8 @@ class ClosedLoopNativeRuntime:
     source_run_spec: Mapping[str, Any]
     pair: Any
     model_layout: Any
-    trainer: Any
+    hps: Any
+    optimizer: Any
     loss_func: Any
     batch_size: int
     n_batches: int
@@ -271,11 +277,19 @@ def _build_closed_loop_initial_slots(
     hps = closed_loop_distillation._training_hps_from_spec(source_run_spec)
     pair = setup_task_model_pair(hps, key=key_init)
     model_layout = _controller_layout(pair.model, int(source_run_spec["student_contract"]["n_replicates"]))
+    optimizer = _closed_loop_optimizer(source_run_spec)
+    initial = _initial_training_state(
+        model=pair.model,
+        trainer=optimizer,
+        where_train=closed_loop_distillation._where_train_fn,
+        key=key_train,
+    )
     runtime = ClosedLoopNativeRuntime(
         source_run_spec=source_run_spec,
         pair=pair,
         model_layout=model_layout,
-        trainer=closed_loop_distillation.build_closed_loop_trainer(source_run_spec),
+        hps=hps,
+        optimizer=optimizer,
         loss_func=closed_loop_distillation.build_closed_loop_loss(source_run_spec),
         batch_size=int(source_run_spec["student_contract"]["batch_size"]),
         n_batches=int(source_run_spec["student_contract"]["n_train_batches"]),
@@ -283,7 +297,7 @@ def _build_closed_loop_initial_slots(
     return (
         {
             MODEL: _controller_state_from_model(pair.model, model_layout),
-            OPTIMIZER: None,
+            OPTIMIZER: initial.optimizer_state,
             PRNG: key_train,
             COMPLETED_BATCHES: jnp.asarray(0, dtype=jnp.int32),
             OBJECTIVE: None,
@@ -292,6 +306,20 @@ def _build_closed_loop_initial_slots(
             TRAIN_LOSS: 0.0,
         },
         RlrmpRuntime(components={"closed_loop_distillation": runtime}),
+    )
+
+
+def _closed_loop_optimizer(source_run_spec: Mapping[str, Any]) -> optax.GradientTransformation:
+    student = source_run_spec["student_contract"]
+    schedule = make_delayed_cosine_schedule(
+        float(student["controller_lr"]),
+        constant_steps=0,
+        total_steps=max(1, int(student["n_train_batches"])),
+        alpha=float(student["lr_cosine_alpha"]),
+    )
+    return optax.chain(
+        optax.clip_by_global_norm(float(student["gradient_clip_norm"])),
+        optax.inject_hyperparams(optax.adamw)(learning_rate=schedule, weight_decay=0.0),
     )
 
 
@@ -422,23 +450,24 @@ def _closed_loop_training_chunk(
         native.model_layout,
         ensembled=True,
     )
-    pair = native.pair._replace(model=model)
-    trained_model, history = closed_loop_distillation.train_pair(
-        native.trainer,
-        pair,
-        n_batches=remaining,
-        key=chunk_slots[PRNG],
-        ensembled=True,
+    trained_model, history, optimizer_state = _run_cs_supervised_training_chunk(
+        optimizer=native.optimizer,
+        task=native.pair.task,
         loss_func=native.loss_func,
+        model=model,
+        optimizer_state=chunk_slots[OPTIMIZER],
+        hps=native.hps,
         where_train=closed_loop_distillation._where_train_fn,
-        batch_size=native.batch_size,
-        log_step=max(1, remaining),
-        disable_progress=True,
-        verbose_progress=False,
+        key=chunk_slots[PRNG],
+        start_batch=completed,
+        chunk_batches=remaining,
+        log_progress=False,
+        log_every=max(1, remaining),
+        pre_step_fn=None,
     )
     return {
         MODEL: _controller_state_from_model(trained_model, native.model_layout),
-        OPTIMIZER: chunk_slots[OPTIMIZER],
+        OPTIMIZER: optimizer_state,
         PRNG: chunk_slots[PRNG],
         COMPLETED_BATCHES: jnp.asarray(native.n_batches, dtype=jnp.int32),
         TRAIN_LOSS: _last_history_loss(history),

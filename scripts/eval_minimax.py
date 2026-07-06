@@ -14,7 +14,7 @@ Expected directory layout (produced by train_minimax.py):
     adversarial_model.eqx     — post-adversarial model (present after training completes)
     trained_adversary.eqx     — saved adversary
     adversary_force_profiles.npz  — pre-computed force profiles at SISU=0..1
-    warmup_history.eqx        — TaskTrainer history (warmup phase)
+    warmup_history.eqx        — executor warmup history (warmup phase)
     adversarial_losses.npz    — ctrl_losses and adv_losses (adversarial phase)
 
 Usage:

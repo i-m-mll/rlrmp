@@ -9,7 +9,6 @@ import subprocess
 import sys
 import warnings
 from dataclasses import asdict
-from functools import partial
 from pathlib import Path
 
 import equinox as eqx
@@ -26,7 +25,6 @@ from feedbax.objectives.loss import AbstractLoss, TargetSpec
 from feedbax.mechanics import LinearStateSpace
 from feedbax.runtime.batch import BatchInfo
 from feedbax.runtime.state_feedback import StateFeedbackSelector
-from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
 from feedbax.config.namespace import TreeNamespace
 from pydantic import ValidationError
 
@@ -7462,28 +7460,26 @@ def test_setup_task_model_pair_trains_tiny_nominal_simple_reach_smoke() -> None:
     )
     hps = build_hps(args)
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
-    schedule = make_delayed_cosine_schedule(
-        float(hps.learning_rate_0),
-        constant_steps=0,
-        total_steps=n_batches,
-    )
-    optimizer = optax.inject_hyperparams(partial(optax.adamw, weight_decay=0.0))(
-        learning_rate=schedule
-    )
-    trainer = TaskTrainer(optimizer=optimizer, checkpointing=False)
-
-    trained, _history = train_pair(
-        trainer,
-        pair,
-        n_batches=n_batches,
+    optimizer = cs_nominal_gru._build_optimizer(hps)
+    initial = cs_nominal_gru._initial_training_state(
+        model=pair.model,
+        trainer=optimizer,
+        where_train=_where_train()[0],
         key=jr.PRNGKey(1),
-        ensembled=True,
-        loss_func=pair.task.loss_func,
-        where_train=_where_train(),
-        batch_size=2,
-        log_step=1,
-        disable_progress=True,
-        verbose_progress=False,
+    )
+    trained, _history, _optimizer_state = cs_nominal_gru._run_cs_supervised_training_chunk(
+        optimizer=optimizer,
+        task=pair.task,
+        model=pair.model,
+        optimizer_state=initial.optimizer_state,
+        hps=hps,
+        where_train=_where_train()[0],
+        key=jr.PRNGKey(2),
+        start_batch=0,
+        chunk_batches=n_batches,
+        log_progress=False,
+        log_every=1,
+        pre_step_fn=None,
     )
 
     assert trained is not None
@@ -7512,10 +7508,9 @@ def test_lss_backend_excludes_fixed_plant_matrices_from_training() -> None:
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
     where_train = _where_train()[0]
     from jax_cookbook.tree import filter_spec_leaves
-    from feedbax.training.trainer import get_model_parameters
 
     where_train_spec = filter_spec_leaves(pair.model, where_train)
-    trainable = get_model_parameters(pair.model, where_train_spec)
+    trainable = cs_nominal_gru.get_model_parameters(pair.model, where_train_spec)
     trainable_arrays = [leaf for leaf in jax.tree.leaves(trainable) if eqx.is_array(leaf)]
 
     assert trainable.nodes["mechanics"].A is None
