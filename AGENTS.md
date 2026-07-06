@@ -71,9 +71,26 @@ The neural networks are not the endpoint as an ML benchmark. They are model syst
 ### Integration verification bar
 
 - Before any commit lands on an integration or auth path, run the full test
-  suite (`PYTHONPATH="$PWD/src" uv run --no-sync python -m pytest tests/ -q`).
+  suite through the memoized wrapper: `scripts/full_suite.sh`. The wrapper
+  keeps the integration bar as the whole `tests/` tree, runs it with
+  `pytest-xdist` (`-n auto`) when the memo does not apply, and records a green
+  result only for a clean tree whose fingerprint includes the rlrmp tree,
+  feedbax editable checkout HEAD, `uv.lock` hash, and Python/JAX versions. If
+  any component is dirty or unresolved, the memo fails closed and the full suite
+  runs. The legacy underlying command is
+  `PYTHONPATH="$PWD/src" uv run --no-sync python -m pytest tests/ -q`.
   Targeted `-k`/subset runs are development aids, not an integration bar.
   `feedbax_contract`-marked tests cannot be skipped by construction.
+- For development-loop selection, use pytest-testmon explicitly:
+  `PYTHONPATH="$PWD/src" uv run --no-sync python -m pytest --testmon tests/`.
+  Testmon is never an auth/integration gate. Its first instrumented run can be
+  slower, JAX tracing can make coverage coarse, and stale `.testmondata` after
+  rebases should be deleted rather than trusted.
+- New tests must be safe under `pytest-xdist`: write only to `tmp_path` or a
+  unique per-test directory, do not write to shared `_artifacts/` locations
+  unless the path includes a test-unique segment, and restore any process-global
+  JAX, registry, environment, or cwd changes before the test exits. Tests must
+  not depend on collection or execution order.
 - The suite includes a feedbax pin-drift check
   (`tests/test_feedbax_ref_pin.py`): it fails when `ci/feedbax-ref.toml` no
   longer matches the feedbax checkout the editable install runs against. The
