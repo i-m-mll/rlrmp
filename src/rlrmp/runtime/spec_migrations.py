@@ -157,6 +157,15 @@ RUN_SPEC_SCHEMA_VERSION = "rlrmp.run_spec.v2"
 RUN_SPEC_SCHEMA_VERSION_V1 = "rlrmp.run_spec.v1"
 RUN_SPEC_SCHEMA_VERSION_LEGACY_CS_GRU = "rlrmp.cs_stochastic_gru.v1"
 
+LEGACY_FEEDBAX_STANDARD_SUPERVISED_METHOD_REF = "feedbax/standard_supervised/v1"
+SEMANTIC_METHOD_EXTENSION_METADATA_KEYS = frozenset(
+    {
+        "adversarial_phase",
+        "rlrmp_loss_objective",
+        "rlrmp_training_mode",
+    }
+)
+
 FINITE_ADVERSARY_POLICY_METADATA_KIND = "RLRMPFiniteAdversaryPolicyMetadata"
 FINITE_ADVERSARY_POLICY_METADATA_SCHEMA_ID = "rlrmp.finite_adversary_policy_metadata"
 FINITE_ADVERSARY_POLICY_METADATA_SCHEMA_VERSION = "rlrmp.finite_adversary_policy_metadata.v1"
@@ -168,6 +177,10 @@ LEGACY_TRAINING_CONFIG_SCHEMA_VERSION = "rlrmp.legacy_training_config.archive.v1
 
 class ArchiveOnlySpecError(ValueError):
     """Raised when a historical JSON artifact is intentionally archive-only."""
+
+
+class FeedbaxTrainingRunSpecMigrationError(ValueError):
+    """Raised when an embedded Feedbax TrainingRunSpec has no safe migration."""
 
 
 def ensure_rlrmp_spec_families(
@@ -758,6 +771,7 @@ __all__ = [
     "FINITE_ADVERSARY_POLICY_METADATA_KIND",
     "FINITE_ADVERSARY_POLICY_METADATA_SCHEMA_ID",
     "FINITE_ADVERSARY_POLICY_METADATA_SCHEMA_VERSION",
+    "FeedbaxTrainingRunSpecMigrationError",
     "FIXED_BANK_GRU_CHECKPOINT_RESCORE_KIND",
     "FIXED_BANK_GRU_CHECKPOINT_RESCORE_LEGACY_VERSION",
     "FIXED_BANK_GRU_CHECKPOINT_RESCORE_SCHEMA_ID",
@@ -790,6 +804,7 @@ __all__ = [
     "HINF_PHENOTYPE_SIDECAR_SCHEMA_ID",
     "HINF_PHENOTYPE_SIDECAR_SCHEMA_VERSION",
     "LEGACY_TRAINING_CONFIG_KIND",
+    "LEGACY_FEEDBAX_STANDARD_SUPERVISED_METHOD_REF",
     "OBJECTIVE_COMPARATOR_SIDECAR_KIND",
     "OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_ID",
     "OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_VERSION",
@@ -807,6 +822,7 @@ __all__ = [
     "RUN_SPEC_SCHEMA_VERSION",
     "RUN_SPEC_SCHEMA_VERSION_LEGACY_CS_GRU",
     "RUN_SPEC_SCHEMA_VERSION_V1",
+    "SEMANTIC_METHOD_EXTENSION_METADATA_KEYS",
     "STANDARD_MATRIX_EVAL_PARAMS_KIND",
     "STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_ID",
     "STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION",

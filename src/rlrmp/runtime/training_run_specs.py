@@ -62,10 +62,13 @@ from rlrmp.model.feedback_descriptors import (
 )
 from rlrmp.model.feedbax_graph import graph_spec_payload
 from rlrmp.runtime.spec_migrations import (
+    FeedbaxTrainingRunSpecMigrationError,
     FINITE_ADVERSARY_POLICY_METADATA_KIND,
+    LEGACY_FEEDBAX_STANDARD_SUPERVISED_METHOD_REF,
     RUN_SPEC_KIND,
     RUN_SPEC_SCHEMA_ID,
     RUN_SPEC_SCHEMA_VERSION,
+    SEMANTIC_METHOD_EXTENSION_METADATA_KEYS,
     ensure_rlrmp_spec_families,
     stamp_current_schema,
 )
@@ -1019,6 +1022,133 @@ def write_distillation_run_spec(path: Path, run_spec: dict[str, Any], *, method:
     return payload
 
 
+def _method_ref_key_from_payload(method_ref: Any) -> str | None:
+    if isinstance(method_ref, MethodRefSpec):
+        return method_ref.key
+    if isinstance(method_ref, Mapping):
+        package = method_ref.get("package")
+        name = method_ref.get("name")
+        version = method_ref.get("version")
+        if package is not None and name is not None and version is not None:
+            return f"{package}/{name}/{version}"
+    if isinstance(method_ref, str):
+        return method_ref
+    return None
+
+
+def _semantic_method_metadata_keys(spec_payload: Mapping[str, Any]) -> set[str]:
+    extensions = spec_payload.get("method_extensions")
+    if not isinstance(extensions, Mapping):
+        return set()
+    metadata = extensions.get("metadata")
+    if not isinstance(metadata, Mapping):
+        return set()
+    return set(metadata) & SEMANTIC_METHOD_EXTENSION_METADATA_KEYS
+
+
+def _method_extension_provenance_metadata(spec_payload: Mapping[str, Any]) -> dict[str, Any]:
+    extensions = spec_payload.get("method_extensions")
+    if not isinstance(extensions, Mapping):
+        return {"rlrmp_extension_payload": RLRMP_RUN_SPEC_PAYLOAD_KEY}
+    metadata = extensions.get("metadata")
+    if not isinstance(metadata, Mapping):
+        return {"rlrmp_extension_payload": RLRMP_RUN_SPEC_PAYLOAD_KEY}
+    provenance = {
+        key: value
+        for key, value in metadata.items()
+        if key not in SEMANTIC_METHOD_EXTENSION_METADATA_KEYS
+    }
+    provenance.setdefault("rlrmp_extension_payload", RLRMP_RUN_SPEC_PAYLOAD_KEY)
+    return provenance
+
+
+def _spec_payload_artifact_root(spec_payload: Mapping[str, Any], run_spec: Mapping[str, Any]) -> Path:
+    artifacts = spec_payload.get("artifacts")
+    if isinstance(artifacts, Mapping) and artifacts.get("artifact_root") is not None:
+        return Path(str(artifacts["artifact_root"]))
+    return Path(str(run_spec.get("artifact_output_dir", "")))
+
+
+def _spec_payload_spec_dir(spec_payload: Mapping[str, Any]) -> Path:
+    artifacts = spec_payload.get("artifacts")
+    metadata: Any = None
+    if isinstance(artifacts, Mapping):
+        metadata = artifacts.get("metadata")
+    if isinstance(metadata, Mapping) and metadata.get("tracked_spec_dir") is not None:
+        return Path(str(metadata["tracked_spec_dir"]))
+    return Path("")
+
+
+def _migrate_legacy_standard_supervised_training_run_spec(
+    run_spec: dict[str, Any],
+    spec_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    register_rlrmp_cs_supervised_method()
+    payload = dict(spec_payload)
+    method_payload = cs_supervised_method_payload(
+        run_spec,
+        output_dir=_spec_payload_artifact_root(payload, run_spec),
+        spec_dir=_spec_payload_spec_dir(payload),
+    )
+    method_contract = cs_supervised_method_contract()
+    effective_phase = cs_supervised_effective_phase_spec(method_contract)
+    graph = payload.get("graph")
+    graph_payload = graph.get("inline") if isinstance(graph, Mapping) else {}
+    if not isinstance(graph_payload, Mapping):
+        graph_payload = {}
+    fingerprint = _effective_phase_fingerprint(
+        graph_payload=graph_payload,
+        effective_phase=effective_phase,
+        method_payload=method_payload.model_dump(mode="json", exclude_none=True),
+    )
+    payload["method_ref"] = cs_supervised_method_ref().model_dump(
+        mode="json",
+        exclude_none=True,
+    )
+    payload["method_payload"] = method_payload.model_dump(mode="json", exclude_none=True)
+    payload["method_extensions"] = {
+        "metadata": _method_extension_provenance_metadata(spec_payload)
+    }
+    payload["worker_execution"] = WorkerExecutionSpec(
+        method_contract=method_contract,
+        effective_phase=effective_phase,
+        metadata={
+            "native_executor": "feedbax.training.executor.execute_training_run_spec",
+            "effective_phase_fingerprint": fingerprint,
+            "migrated_from_method_ref": LEGACY_FEEDBAX_STANDARD_SUPERVISED_METHOD_REF,
+        },
+    ).model_dump(mode="json", exclude_none=True)
+    metadata = dict(payload.get("metadata") if isinstance(payload.get("metadata"), Mapping) else {})
+    metadata["effective_phase_fingerprint"] = fingerprint
+    metadata["feedbax_training_run_spec_migration"] = {
+        "source_method_ref": LEGACY_FEEDBAX_STANDARD_SUPERVISED_METHOD_REF,
+        "target_method_ref": CS_SUPERVISED_METHOD_REF,
+        "semantic_metadata_keys_removed": sorted(
+            _semantic_method_metadata_keys(spec_payload)
+        ),
+    }
+    payload["metadata"] = metadata
+    return payload
+
+
+def _migrate_feedbax_training_run_spec_payload(
+    run_spec: dict[str, Any],
+    spec_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    method_ref = _method_ref_key_from_payload(spec_payload.get("method_ref"))
+    semantic_keys = _semantic_method_metadata_keys(spec_payload)
+    if method_ref == LEGACY_FEEDBAX_STANDARD_SUPERVISED_METHOD_REF and semantic_keys:
+        return _migrate_legacy_standard_supervised_training_run_spec(run_spec, spec_payload)
+    if semantic_keys:
+        raise FeedbaxTrainingRunSpecMigrationError(
+            "Embedded feedbax_training_run_spec carries semantic method identity in "
+            f"method_extensions.metadata for unsupported method_ref={method_ref!r}: "
+            f"keys={sorted(semantic_keys)}. Add an explicit migration or regenerate "
+            "the run spec through the current native method builder."
+        )
+    return dict(spec_payload)
+
+
 def finite_adversary_policy_metadata_payload(metadata: Any) -> dict[str, Any]:
     """Return governed finite-policy metadata without a standalone serializer."""
 
@@ -1801,7 +1931,11 @@ def attach_composed_training_specs(
 def feedbax_training_run_spec_from_payload(run_spec: dict[str, Any]) -> TrainingRunSpec:
     """Load the composed Feedbax ``TrainingRunSpec`` from a tracked recipe."""
 
-    return TrainingRunSpec.model_validate(run_spec[FEEDBAX_TRAINING_RUN_SPEC_KEY])
+    raw_spec = run_spec[FEEDBAX_TRAINING_RUN_SPEC_KEY]
+    if not isinstance(raw_spec, Mapping):
+        raise TypeError(f"{FEEDBAX_TRAINING_RUN_SPEC_KEY} must be a JSON object")
+    spec_payload = _migrate_feedbax_training_run_spec_payload(run_spec, raw_spec)
+    return TrainingRunSpec.model_validate(spec_payload)
 
 
 def assert_runtime_graph_matches_training_spec(
