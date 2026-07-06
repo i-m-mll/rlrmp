@@ -1647,6 +1647,68 @@ def build_feedbax_training_run_spec(
         "runner": "rlrmp.train.cs_nominal_gru",
         "rlrmp_extension_payload": RLRMP_RUN_SPEC_PAYLOAD_KEY,
     }
+    task = TaskSpec(
+        type=str(_mapping(run_spec, "task_timing").get("type", "rlrmp_task")),
+        params=_mapping(run_spec, "task_timing"),
+    )
+    objective = ObjectiveSlotSpec(
+        kind="external",
+        payload=objective_payload,
+        schema_id="rlrmp.cs_gru_objective",
+        schema_version="rlrmp.cs_gru_objective.v1",
+        metadata={"rlrmp_loss_objective": run_spec.get("loss_objective")},
+    )
+    risk_aggregation = RiskAggregationSpec(
+        realization="mean",
+        replicate="mean",
+        metadata={"source": "$.training_summary"},
+    )
+    execution = ExecutionPolicySpec(
+        mode="local",
+        require_review=bool(run_spec.get("full_training_launch") != "requested"),
+        allow_cloud=False,
+        metadata={"launch_mode": run_spec.get("mode")},
+    )
+    artifacts = ArtifactPolicySpec(
+        manifest_root="_artifacts/feedbax_runs",
+        artifact_root=str(output_dir),
+        custody="local",
+        metadata={"tracked_spec_dir": str(spec_dir)},
+    )
+    checkpoint_progress = CheckpointProgressPolicySpec(
+        checkpoint_interval=training_config.snapshot_interval,
+        # Training diagnostics are optional progress metadata, not run topology.
+        progress_interval=(
+            None if training_diagnostics.get("enabled") is False else training_config.snapshot_interval
+        ),
+        metadata={"checkpoint_dir": checkpointing.get("checkpoint_dir")},
+    )
+    metadata = {
+        "composed_with": RLRMP_RUN_SPEC_PAYLOAD_KEY,
+        "serialize_do_not_rederive": True,
+        DESCRIPTOR_PAYLOAD_KEY: feedback_descriptors,
+        "descriptor_basis_hash": feedback_descriptors["descriptor_basis_hash"],
+    }
+    if _policy_adversary_run_spec_enabled(run_spec):
+        from rlrmp.train.policy_adversary_native import (
+            build_policy_adversary_training_run_spec,
+        )
+
+        return build_policy_adversary_training_run_spec(
+            run_spec,
+            graph_spec=graph_spec,
+            output_dir=output_dir,
+            spec_dir=spec_dir,
+            training_config=training_config,
+            objective=objective,
+            task=task,
+            risk_aggregation=risk_aggregation,
+            method_extensions={"metadata": method_metadata},
+            execution=execution,
+            artifacts=artifacts,
+            checkpoint_progress=checkpoint_progress,
+            metadata=metadata,
+        )
     return TrainingRunSpec(
         graph=GraphTopologySourceSpec(
             inline=graph_payload,
@@ -1659,23 +1721,10 @@ def build_feedbax_training_run_spec(
                 "descriptor_basis_hash": feedback_descriptors["descriptor_basis_hash"],
             },
         ),
-        task=TaskSpec(
-            type=str(_mapping(run_spec, "task_timing").get("type", "rlrmp_task")),
-            params=_mapping(run_spec, "task_timing"),
-        ),
+        task=task,
         training_config=training_config,
-        objective=ObjectiveSlotSpec(
-            kind="external",
-            payload=objective_payload,
-            schema_id="rlrmp.cs_gru_objective",
-            schema_version="rlrmp.cs_gru_objective.v1",
-            metadata={"rlrmp_loss_objective": run_spec.get("loss_objective")},
-        ),
-        risk_aggregation=RiskAggregationSpec(
-            realization="mean",
-            replicate="mean",
-            metadata={"source": "$.training_summary"},
-        ),
+        objective=objective,
+        risk_aggregation=risk_aggregation,
         method_ref=cs_supervised_method_ref(),
         method_payload=method_payload,
         method_extensions={"metadata": method_metadata},
@@ -1687,31 +1736,11 @@ def build_feedbax_training_run_spec(
                 "effective_phase_fingerprint": effective_phase_fingerprint,
             },
         ),
-        execution=ExecutionPolicySpec(
-            mode="local",
-            require_review=bool(run_spec.get("full_training_launch") != "requested"),
-            allow_cloud=False,
-            metadata={"launch_mode": run_spec.get("mode")},
-        ),
-        artifacts=ArtifactPolicySpec(
-            manifest_root="_artifacts/feedbax_runs",
-            artifact_root=str(output_dir),
-            custody="local",
-            metadata={"tracked_spec_dir": str(spec_dir)},
-        ),
-        checkpoint_progress=CheckpointProgressPolicySpec(
-            checkpoint_interval=training_config.snapshot_interval,
-            # Training diagnostics are optional progress metadata, not run topology.
-            progress_interval=(
-                None if training_diagnostics.get("enabled") is False else training_config.snapshot_interval
-            ),
-            metadata={"checkpoint_dir": checkpointing.get("checkpoint_dir")},
-        ),
+        execution=execution,
+        artifacts=artifacts,
+        checkpoint_progress=checkpoint_progress,
         metadata={
-            "composed_with": RLRMP_RUN_SPEC_PAYLOAD_KEY,
-            "serialize_do_not_rederive": True,
-            DESCRIPTOR_PAYLOAD_KEY: feedback_descriptors,
-            "descriptor_basis_hash": feedback_descriptors["descriptor_basis_hash"],
+            **metadata,
             "effective_phase_fingerprint": effective_phase_fingerprint,
         },
     )
@@ -1926,6 +1955,14 @@ def _effective_phase_fingerprint(
         "utf-8"
     )
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _policy_adversary_run_spec_enabled(run_spec: Mapping[str, Any]) -> bool:
+    hps = run_spec.get("hps")
+    if not isinstance(hps, Mapping):
+        return False
+    policy_adversary = hps.get("policy_adversary_training")
+    return isinstance(policy_adversary, Mapping) and policy_adversary.get("enabled") is True
 
 
 def _feedback_dim_from_run_spec(run_spec: dict[str, Any]) -> int:
