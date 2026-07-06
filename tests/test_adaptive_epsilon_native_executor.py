@@ -42,7 +42,7 @@ from rlrmp.train.cs_nominal_gru import (
     build_parser,
     write_run_spec,
 )
-from rlrmp.train.executor.equivalence import compare_pytrees
+from rlrmp.train.executor.equivalence import assert_paired_equivalent, run_paired_equivalence
 from rlrmp.train.executor.slots import (
     ADAPTIVE_EPSILON_CURRICULUM_METHOD_REF,
     ADAPTIVE_EPSILON_STATE,
@@ -96,7 +96,7 @@ def test_adaptive_epsilon_run_spec_uses_native_method(
         ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER,
     ],
 )
-def test_adaptive_epsilon_native_executor_matches_legacy_chunk_loop(
+def test_adaptive_epsilon_native_executor_matches_driver_chunk_loop(
     tmp_path: Path,
     controller_mode: str,
 ) -> None:
@@ -113,11 +113,15 @@ def test_adaptive_epsilon_native_executor_matches_legacy_chunk_loop(
         manifest_conflict_policy="reuse-identical",
     )
 
-    diffs = compare_pytrees(
-        _comparable_slots(legacy_slots, legacy_runtime),
-        _comparable_slots(result.final_slots, legacy_runtime),
+    report = run_paired_equivalence(
+        f"adaptive_epsilon.{controller_mode}.driver",
+        lambda: legacy_slots,
+        lambda: result.final_slots,
+        comparable=lambda slots: _comparable_slots(slots, legacy_runtime),
+        left_label="driver_chunk_loop",
+        right_label="native_executor",
     )
-    assert max((diff.max_abs_diff for diff in diffs), default=0.0) <= 1e-6
+    assert_paired_equivalent(report)
     assert int(result.final_slots[COMPLETED_BATCHES]) == 2
     assert result.final_coordinate.phase == "done"
     assert result.final_slots[TRAIN_LOSS] != 0.0
@@ -160,12 +164,16 @@ def test_adaptive_epsilon_native_executor_resume_matches_uninterrupted(
         manifest_conflict_policy="reuse-identical",
     )
 
-    diffs = compare_pytrees(
-        _comparable_slots(full.final_slots, template_runtime),
-        _comparable_slots(resumed.final_slots, template_runtime),
+    report = run_paired_equivalence(
+        "adaptive_epsilon.resume",
+        lambda: full.final_slots,
+        lambda: resumed.final_slots,
+        comparable=lambda slots: _comparable_slots(slots, template_runtime),
+        left_label="uninterrupted",
+        right_label="resumed",
     )
     assert partial.final_coordinate.completed_barrier == "after_adaptive_epsilon_train_chunk"
-    assert max((diff.max_abs_diff for diff in diffs), default=0.0) <= 1e-6
+    assert_paired_equivalent(report)
 
 
 def _adaptive_epsilon_training_spec(
