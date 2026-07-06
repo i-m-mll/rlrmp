@@ -40,6 +40,10 @@ from rlrmp.train.minimax_native import (
     PROJECTION_KERNEL_REF,
     WARMUP_KERNEL_REF,
     MinimaxControllerState,
+    _prepare_adversarial_batch,
+    _vmapped_controller_descent,
+    _vmapped_gaussian_adversary_ascent,
+    _vmapped_linear_adversary_ascent,
     minimax_update_kernels,
 )
 from rlrmp.train.task_model import build_task_base
@@ -178,6 +182,15 @@ def _comparable_native_slots(slots: dict[str, object]) -> dict[str, object]:
         if getattr(getattr(leaf, "dtype", None), "kind", None) == "b"
         else leaf,
         comparable,
+    )
+
+
+def _bool_leaves_as_ints(tree: Any) -> Any:
+    return jt.map(
+        lambda leaf: leaf.astype(jnp.int8)
+        if getattr(getattr(leaf, "dtype", None), "kind", None) == "b"
+        else leaf,
+        tree,
     )
 
 
@@ -363,6 +376,94 @@ def test_minimax_cli_adapter_preserves_flag_forms_and_help() -> None:
 def test_minimax_config_validation_replaces_legacy_validator(argv: list[str]) -> None:
     with pytest.raises(ValueError):
         legacy_cli_args_to_minimax_config(argv)
+
+
+@pytest.mark.parametrize(
+    ("adversary_type", "step_fn_name"),
+    [
+        ("gaussian_bump", "_vmapped_gaussian_adversary_ascent"),
+        ("linear_dynamics", "_vmapped_linear_adversary_ascent"),
+    ],
+)
+def test_minimax_jitted_adversary_step_matches_eager_fixed_seed(
+    tmp_path: Path,
+    adversary_type: str,
+    step_fn_name: str,
+) -> None:
+    spec = _native_smoke_spec(tmp_path, adversary_type=adversary_type, n_adversary_batches=1)
+    config = minimax_training_run_spec_to_config(spec)
+    args = minimax_config_namespace(config)
+    hps = build_hps(args)
+    slots, runtime_context = build_minimax_native_initial_slots(
+        run_spec=spec,
+        hps=hps,
+        args=args,
+        key=jr.PRNGKey(10),
+    )
+    runtime = runtime_context.component("minimax")
+    prepared = _prepare_adversarial_batch(runtime, slots["rng"], batch_index=0)
+    adversary = slots["adversary_population"][prepared.active_member_index]
+    adv_opt_state = slots["adversary_optimizer"][prepared.active_member_index]
+    step_fn = {
+        "_vmapped_gaussian_adversary_ascent": _vmapped_gaussian_adversary_ascent,
+        "_vmapped_linear_adversary_ascent": _vmapped_linear_adversary_ascent,
+    }[step_fn_name]
+
+    eager = step_fn.__wrapped__(
+        runtime,
+        slots["controller"],
+        adversary,
+        adv_opt_state,
+        prepared.trial_specs,
+        prepared.trial_keys,
+    )
+    jitted = step_fn(
+        runtime,
+        slots["controller"],
+        adversary,
+        adv_opt_state,
+        prepared.trial_specs,
+        prepared.trial_keys,
+    )
+
+    diffs = compare_pytrees(_bool_leaves_as_ints(eager), _bool_leaves_as_ints(jitted))
+    assert max((diff.max_abs_diff for diff in diffs), default=0.0) <= 1e-6
+
+
+def test_minimax_jitted_controller_step_matches_eager_fixed_seed(tmp_path: Path) -> None:
+    spec = _native_smoke_spec(tmp_path, n_adversary_batches=1)
+    config = minimax_training_run_spec_to_config(spec)
+    args = minimax_config_namespace(config)
+    hps = build_hps(args)
+    slots, runtime_context = build_minimax_native_initial_slots(
+        run_spec=spec,
+        hps=hps,
+        args=args,
+        key=jr.PRNGKey(11),
+    )
+    runtime = runtime_context.component("minimax")
+    prepared = _prepare_adversarial_batch(runtime, slots["rng"], batch_index=0)
+    adversary = slots["adversary_population"][prepared.active_member_index]
+
+    eager = _vmapped_controller_descent.__wrapped__(
+        runtime,
+        slots["controller"],
+        slots["controller_optimizer"],
+        adversary,
+        prepared.trial_specs,
+        prepared.trial_keys,
+    )
+    jitted = _vmapped_controller_descent(
+        runtime,
+        slots["controller"],
+        slots["controller_optimizer"],
+        adversary,
+        prepared.trial_specs,
+        prepared.trial_keys,
+    )
+
+    diffs = compare_pytrees(_bool_leaves_as_ints(eager), _bool_leaves_as_ints(jitted))
+    assert max((diff.max_abs_diff for diff in diffs), default=0.0) <= 1e-6
 
 
 def test_minimax_native_executor_matches_fixed_seed_manual_kernel_loop(

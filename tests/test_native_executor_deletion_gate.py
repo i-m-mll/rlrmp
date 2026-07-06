@@ -48,6 +48,11 @@ REGISTERED_METHOD_CLI_WIRING = {
     },
 }
 NATIVE_EXECUTOR_CALL = "execute_distillation_training_run_spec_native"
+MINIMAX_JITTED_STEP_FUNCTIONS = {
+    "_vmapped_gaussian_adversary_ascent",
+    "_vmapped_linear_adversary_ascent",
+    "_vmapped_controller_descent",
+}
 ALLOWED_NON_TRAINING_OPTIMIZER_LOOPS = {
     (
         Path("src/rlrmp/train/cs_perturbation_training.py"),
@@ -99,6 +104,30 @@ def test_registered_distillation_cli_paths_reach_native_executor() -> None:
             findings.append(f"{method_ref}:{wiring['module']}:native_executor_unreachable")
 
     assert not findings, "Registered method CLI does not reach native executor: " + ", ".join(
+        findings
+    )
+
+
+def test_minimax_native_step_functions_stay_jitted() -> None:
+    module_path = REPO_ROOT / "src" / "rlrmp" / "train" / "minimax_native.py"
+    tree = ast.parse(module_path.read_text(encoding="utf-8"))
+    functions = {
+        node.name: node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+    }
+
+    findings: list[str] = []
+    for name in sorted(MINIMAX_JITTED_STEP_FUNCTIONS):
+        node = functions.get(name)
+        if node is None:
+            findings.append(f"{name}:missing")
+            continue
+        decorators = {_call_name(decorator) for decorator in node.decorator_list}
+        if "eqx.filter_jit" not in decorators:
+            findings.append(f"{name}:missing_filter_jit")
+
+    assert not findings, "Minimax native step function(s) lost eqx.filter_jit: " + ", ".join(
         findings
     )
 
