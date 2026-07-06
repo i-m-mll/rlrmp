@@ -37,6 +37,7 @@ from rlrmp.runtime.spec_migrations import (
     FEEDBACK_QUALITY_LENS_REPORT_PARAMS_SCHEMA_VERSION,
     FEEDBACK_QUALITY_LENS_SCHEMA_ID,
     FEEDBACK_QUALITY_LENS_SCHEMA_VERSION,
+    FeedbaxTrainingRunSpecMigrationError,
     FIXED_BANK_GRU_CHECKPOINT_RESCORE_KIND,
     FIXED_BANK_GRU_CHECKPOINT_RESCORE_LEGACY_VERSION,
     FIXED_BANK_GRU_CHECKPOINT_RESCORE_SCHEMA_ID,
@@ -69,6 +70,7 @@ from rlrmp.runtime.spec_migrations import (
     HINF_PHENOTYPE_SIDECAR_SCHEMA_ID,
     HINF_PHENOTYPE_SIDECAR_SCHEMA_VERSION,
     LEGACY_TRAINING_CONFIG_KIND,
+    LEGACY_FEEDBAX_STANDARD_SUPERVISED_METHOD_REF,
     OBJECTIVE_COMPARATOR_SIDECAR_KIND,
     OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_ID,
     OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_VERSION,
@@ -89,6 +91,7 @@ from rlrmp.runtime.spec_migrations import (
     RUN_SPEC_SCHEMA_VERSION,
     RUN_SPEC_SCHEMA_VERSION_LEGACY_CS_GRU,
     RUN_SPEC_SCHEMA_VERSION_V1,
+    SEMANTIC_METHOD_EXTENSION_METADATA_KEYS,
     STANDARD_MATRIX_EVAL_PARAMS_KIND,
     STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_ID,
     STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION,
@@ -105,6 +108,12 @@ from rlrmp.runtime.spec_migrations import (
     load_rlrmp_spec_payload,
     stamp_current_schema,
 )
+from rlrmp.runtime.training_run_specs import (
+    CS_SUPERVISED_METHOD_PAYLOAD_SCHEMA_VERSION,
+    FEEDBAX_TRAINING_RUN_SPEC_KEY,
+    feedbax_training_run_spec_from_payload,
+)
+from rlrmp.train.executor.slots import CS_SUPERVISED_METHOD_REF
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -368,6 +377,77 @@ def test_representative_historical_artifacts_load_or_reject_by_policy() -> None:
     message = str(excinfo.value)
     assert "Archive-only RLRMP legacy training config" in message
     assert "2ef67ca-era config.json files" in message
+
+
+def test_historical_feedbax_training_run_spec_migrates_standard_supervised() -> None:
+    payload = json.loads(
+        (
+            REPO_ROOT
+            / "results"
+            / "1ab1fef"
+            / "runs"
+            / "epsilon_scaled_short_3500to1000.json"
+        ).read_text(encoding="utf-8")
+    )
+    original = payload[FEEDBAX_TRAINING_RUN_SPEC_KEY]
+    assert (
+        f"{original['method_ref']['package']}/"
+        f"{original['method_ref']['name']}/"
+        f"{original['method_ref']['version']}"
+        == LEGACY_FEEDBAX_STANDARD_SUPERVISED_METHOD_REF
+    )
+
+    training_spec = feedbax_training_run_spec_from_payload(payload)
+
+    assert training_spec.method_ref.key == CS_SUPERVISED_METHOD_REF
+    assert training_spec.method_payload.schema_version == (
+        CS_SUPERVISED_METHOD_PAYLOAD_SCHEMA_VERSION
+    )
+    assert (
+        training_spec.method_payload.payload["training_mode"]
+        == payload["training_summary"]["training_mode"]
+    )
+    assert training_spec.method_payload.payload["pre_step"]["kind"] == (
+        "broad_epsilon_pgd_pre_step"
+    )
+    method_metadata = training_spec.method_extensions.metadata
+    assert not (set(method_metadata) & SEMANTIC_METHOD_EXTENSION_METADATA_KEYS)
+    assert method_metadata["runner"] == "rlrmp.train.cs_nominal_gru"
+    assert training_spec.worker_execution.metadata["migrated_from_method_ref"] == (
+        LEGACY_FEEDBAX_STANDARD_SUPERVISED_METHOD_REF
+    )
+    assert training_spec.metadata["feedbax_training_run_spec_migration"] == {
+        "source_method_ref": LEGACY_FEEDBAX_STANDARD_SUPERVISED_METHOD_REF,
+        "target_method_ref": CS_SUPERVISED_METHOD_REF,
+        "semantic_metadata_keys_removed": sorted(SEMANTIC_METHOD_EXTENSION_METADATA_KEYS),
+    }
+
+
+def test_unsupported_semantic_feedbax_training_run_spec_fails_explicitly() -> None:
+    payload = json.loads(
+        (
+            REPO_ROOT
+            / "results"
+            / "1ab1fef"
+            / "runs"
+            / "epsilon_scaled_short_3500to1000.json"
+        ).read_text(encoding="utf-8")
+    )
+    feedbax_spec = dict(payload[FEEDBAX_TRAINING_RUN_SPEC_KEY])
+    feedbax_spec["method_ref"] = {
+        "package": "rlrmp",
+        "name": "unsupported_historical_method",
+        "version": "v1",
+    }
+    payload[FEEDBAX_TRAINING_RUN_SPEC_KEY] = feedbax_spec
+
+    with pytest.raises(FeedbaxTrainingRunSpecMigrationError) as excinfo:
+        feedbax_training_run_spec_from_payload(payload)
+
+    message = str(excinfo.value)
+    assert "unsupported_historical_method" in message
+    assert "method_extensions.metadata" in message
+    assert "rlrmp_training_mode" in message
 
 
 def test_checked_in_current_gru_diagnostics_can_be_schema_stamped() -> None:
