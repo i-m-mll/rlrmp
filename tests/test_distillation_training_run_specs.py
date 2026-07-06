@@ -6,6 +6,10 @@ import copy
 import json
 from pathlib import Path
 
+import equinox as eqx
+import jax.numpy as jnp
+import jax.random as jr
+import jax.tree as jt
 import pytest
 from feedbax.contracts.training import TrainingConfig, TrainingRunSpec
 from pydantic import BaseModel, ValidationError
@@ -26,6 +30,11 @@ from rlrmp.runtime.training_run_specs import (
     guided_distillation_method_payload,
 )
 from rlrmp.train import closed_loop_distillation, guided_distillation
+from rlrmp.train.distillation_native import (
+    execute_distillation_training_run_spec_native,
+    native_distillation_model_from_slot,
+)
+from rlrmp.train.executor.equivalence import compare_pytrees
 
 
 DISTILLATION_PAYLOAD_SPECS = (
@@ -72,6 +81,29 @@ def _collect_model_instances(model: BaseModel) -> list[BaseModel]:
                 if isinstance(item, BaseModel):
                     instances.extend(_collect_model_instances(item))
     return instances
+
+
+def _array_tree(value: object) -> object:
+    return eqx.filter(value, eqx.is_array)
+
+
+def _assert_array_trees_close(left: object, right: object, *, atol: float = 1e-6) -> None:
+    left_tree = _array_tree(left)
+    right_tree = _array_tree(right)
+    if jt.structure(left_tree) != jt.structure(right_tree):
+        left_leaves = jt.leaves(left_tree)
+        right_leaves = jt.leaves(right_tree)
+        assert [leaf.shape for leaf in left_leaves] == [leaf.shape for leaf in right_leaves]
+        assert max(
+            (
+                float(jnp.max(jnp.abs(left_leaf - right_leaf)))
+                for left_leaf, right_leaf in zip(left_leaves, right_leaves, strict=True)
+            ),
+            default=0.0,
+        ) <= atol
+        return
+    diffs = compare_pytrees(left_tree, right_tree)
+    assert max((diff.max_abs_diff for diff in diffs), default=0.0) <= atol
 
 
 def _legacy_distillation_training_config(run_spec: dict, *, method: str) -> TrainingConfig:
@@ -276,11 +308,213 @@ def test_guided_distillation_training_run_spec_round_trips() -> None:
         "teacher_forced_warm_start",
         "mixed_teacher_student_forcing",
         "mostly_student_forced",
+        "done",
     ]
     assert "teacher_bank" in {
         slot.name for slot in training_spec.worker_execution.method_contract.state_slots
     }
     assert round_tripped == training_spec
+
+
+def test_closed_loop_distillation_native_executor_matches_fixed_seed_legacy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        closed_loop_distillation,
+        "DEFAULT_OUTPUT_DIR",
+        str(tmp_path / "legacy-closed-loop"),
+    )
+    args = closed_loop_distillation._build_parser().parse_args(
+        [
+            "--n-batches",
+            "1",
+            "--batch-size",
+            "1",
+            "--n-replicates",
+            "1",
+            "--hidden-size",
+            "6",
+            "--output-dir",
+            str(tmp_path / "legacy-closed-loop"),
+        ]
+    )
+    source_spec = closed_loop_distillation.build_closed_loop_distillation_spec(args)
+    legacy = closed_loop_distillation.run_closed_loop_distillation_training(
+        spec=source_spec,
+        key=jr.PRNGKey(0),
+        n_batches=1,
+        batch_size=1,
+        n_replicates=1,
+        hidden_size=6,
+        confirm_full_train=True,
+    )
+    native = execute_distillation_training_run_spec_native(
+        source_spec,
+        method="closed_loop_distillation",
+        run_id="native-closed-loop-fixed-seed",
+        key=jr.PRNGKey(0),
+        manifest_root=tmp_path / "manifests" / "closed-loop-native",
+        checkpoint_root=tmp_path / "checkpoints" / "closed-loop-native",
+        manifest_conflict_policy="reuse-identical",
+    )
+    native_model = native_distillation_model_from_slot(
+        native.final_slots["model"],
+        source_run_spec=source_spec,
+        method="closed_loop_distillation",
+        key=jr.PRNGKey(0),
+    )
+    legacy_model = eqx.tree_deserialise_leaves(
+        Path(legacy["artifacts"]["trained_model"]),
+        native_model,
+    )
+
+    _assert_array_trees_close(legacy_model, native_model)
+    assert int(native.final_slots["completed_batches"]) == 1
+    assert native.final_slots["train_loss"] != 0.0
+
+
+def test_guided_distillation_native_executor_matches_fixed_seed_legacy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    args = guided_distillation.build_parser().parse_args(
+        [
+            "--n-batches",
+            "1",
+            "--batch-size",
+            "1",
+            "--n-replicates",
+            "1",
+            "--hidden-size",
+            "6",
+            "--n-jvp-directions",
+            "1",
+            "--output-dir",
+            str(tmp_path / "legacy-guided"),
+            "--no-checkpoint",
+        ]
+    )
+    source_spec = guided_distillation.build_distillation_spec(args)
+    captured: dict[str, object] = {}
+    original_write_outputs = guided_distillation._write_training_outputs
+
+    def capture_write_outputs(**kwargs: object) -> None:
+        captured["model"] = kwargs["model"]
+        original_write_outputs(**kwargs)
+
+    monkeypatch.setattr(guided_distillation, "_write_training_outputs", capture_write_outputs)
+    legacy = guided_distillation.run_guided_distillation_training(args)
+    del legacy
+    native = execute_distillation_training_run_spec_native(
+        source_spec,
+        method="guided_distillation",
+        run_id="native-guided-fixed-seed",
+        key=jr.PRNGKey(0),
+        manifest_root=tmp_path / "manifests" / "guided-native",
+        checkpoint_root=tmp_path / "checkpoints" / "guided-native",
+        manifest_conflict_policy="reuse-identical",
+    )
+    native_model = native_distillation_model_from_slot(
+        native.final_slots["model"],
+        source_run_spec=source_spec,
+        method="guided_distillation",
+        key=jr.PRNGKey(0),
+    )
+
+    _assert_array_trees_close(captured["model"], native_model)
+    assert int(native.final_slots["completed_batches"]) == 1
+    assert native.final_slots["train_loss"] != 0.0
+
+
+@pytest.mark.parametrize(
+    ("method", "barrier"),
+    [
+        ("closed_loop_distillation", "after_closed_loop_rollout_distillation"),
+        ("guided_distillation", "after_teacher_forced_warm_start"),
+    ],
+)
+def test_distillation_native_executor_same_length_resume_matches_uninterrupted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    method: str,
+    barrier: str,
+) -> None:
+    if method == "closed_loop_distillation":
+        monkeypatch.setattr(
+            closed_loop_distillation,
+            "DEFAULT_OUTPUT_DIR",
+            str(tmp_path / "closed-loop"),
+        )
+        args = closed_loop_distillation._build_parser().parse_args(
+            [
+                "--n-batches",
+                "1",
+                "--batch-size",
+                "1",
+                "--n-replicates",
+                "1",
+                "--hidden-size",
+                "6",
+                "--output-dir",
+                str(tmp_path / "closed-loop"),
+            ]
+        )
+        source_spec = closed_loop_distillation.build_closed_loop_distillation_spec(args)
+    else:
+        args = guided_distillation.build_parser().parse_args(
+            [
+                "--n-batches",
+                "1",
+                "--batch-size",
+                "1",
+                "--n-replicates",
+                "1",
+                "--hidden-size",
+                "6",
+                "--n-jvp-directions",
+                "1",
+                "--output-dir",
+                str(tmp_path / "guided"),
+                "--no-checkpoint",
+            ]
+        )
+        source_spec = guided_distillation.build_distillation_spec(args)
+
+    full = execute_distillation_training_run_spec_native(
+        source_spec,
+        method=method,
+        run_id=f"native-{method}-full",
+        key=jr.PRNGKey(3),
+        manifest_root=tmp_path / "manifests" / "full",
+        checkpoint_root=tmp_path / "checkpoints" / "full",
+        manifest_conflict_policy="reuse-identical",
+    )
+    checkpoint_root = tmp_path / "checkpoints" / "resume"
+    stopped = execute_distillation_training_run_spec_native(
+        source_spec,
+        method=method,
+        run_id=f"native-{method}-resume",
+        key=jr.PRNGKey(3),
+        manifest_root=tmp_path / "manifests" / "stopped",
+        checkpoint_root=checkpoint_root,
+        stop_after_barrier=barrier,
+        manifest_conflict_policy="reuse-identical",
+    )
+    resumed = execute_distillation_training_run_spec_native(
+        source_spec,
+        method=method,
+        run_id=f"native-{method}-resume",
+        key=jr.PRNGKey(3),
+        manifest_root=tmp_path / "manifests" / "resumed",
+        checkpoint_root=checkpoint_root,
+        resume=True,
+        manifest_conflict_policy="reuse-identical",
+    )
+
+    _assert_array_trees_close(full.final_slots["model"], resumed.final_slots["model"])
+    assert stopped.final_coordinate.completed_barrier == barrier
+    assert resumed.final_coordinate.phase == "done"
 
 
 @pytest.mark.parametrize(
