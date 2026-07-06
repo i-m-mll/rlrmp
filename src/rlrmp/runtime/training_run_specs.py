@@ -50,6 +50,7 @@ from feedbax.contracts.worker import (
     OptimizerTargetBinding,
     PhaseProgramSpec,
     PhaseSpec,
+    ResumeCoordinateSpec,
     StateSlotSpec,
     UpdateKernelSpec,
     UpdateStepSpec,
@@ -561,7 +562,7 @@ def closed_loop_distillation_method_contract() -> MethodContractSpec:
         metadata={
             "teacher_location": "method_payload.teacher_contract",
             "teacher_is_worker_axis": False,
-            "execution_follow_through_deferred_to": "54b0c2e",
+            "native_executor": "rlrmp.train.distillation_native",
         },
     )
 
@@ -589,7 +590,7 @@ def guided_distillation_method_contract() -> MethodContractSpec:
             "teacher_location": "method_payload.teacher_contract",
             "teacher_is_worker_axis": False,
             "phase_schedule_location": "method_payload.training_schedule",
-            "execution_follow_through_deferred_to": "54b0c2e",
+            "native_executor": "rlrmp.train.distillation_native",
         },
     )
 
@@ -654,9 +655,8 @@ def build_distillation_training_run_spec(
             method_contract=contract,
             effective_phase=effective_phase,
             metadata={
-                "legacy_runner_retained_until_native_executor": _distillation_runner(
-                    run_spec, method=method
-                ),
+                "native_executor": "rlrmp.train.distillation_native",
+                "legacy_runner_equivalence_reference": _distillation_runner(run_spec, method=method),
                 "teacher_configuration_location": "method_payload",
             },
         ),
@@ -822,12 +822,13 @@ def _distillation_contract(
         StateSlotSpec(name="model", role="model", axis="replicate"),
         StateSlotSpec(name="optimizer", role="optimizer", axis="replicate"),
         StateSlotSpec(name="prng", role="prng", axis="replicate"),
+        StateSlotSpec(name="completed_batches", role="auxiliary"),
         StateSlotSpec(name="objective", role="objective"),
         *extra_slots,
         StateSlotSpec(name="train_loss", role="metric", axis="replicate", required=False),
     ]
     phases: list[PhaseSpec] = []
-    for index, phase_name in enumerate(phase_names):
+    for phase_name in phase_names:
         phases.append(
             PhaseSpec(
                 name=phase_name,
@@ -836,15 +837,23 @@ def _distillation_contract(
                     "model",
                     "optimizer",
                     "prng",
+                    "completed_batches",
                     "objective",
                     *[slot.name for slot in extra_slots],
                 ],
-                writes=["model", "optimizer", "prng", "train_loss"],
+                writes=["model", "optimizer", "prng", "completed_batches", "train_loss"],
                 update_steps=[update_step_name],
-                legal_next=list(phase_names[index + 1 : index + 2]),
+                legal_next=[],
                 checkpoint_barrier=f"after_{phase_name}",
             )
         )
+    phases.append(
+        PhaseSpec(
+            name="done",
+            kind="evaluation",
+            reads=["model", "optimizer", "prng", "completed_batches", "train_loss"],
+        )
+    )
     program = PhaseProgramSpec(
         phases=phases,
         initial_phase=phase_names[0],
@@ -857,10 +866,11 @@ def _distillation_contract(
                     "model",
                     "optimizer",
                     "prng",
+                    "completed_batches",
                     "objective",
                     *[slot.name for slot in extra_slots],
                 ],
-                writes=["model", "optimizer", "prng", "train_loss"],
+                writes=["model", "optimizer", "prng", "completed_batches", "train_loss"],
                 axes=[axis.name for axis in axes],
                 optimizer_binding="optimizer_to_model",
             )
@@ -881,10 +891,13 @@ def _distillation_contract(
                 phase=phase_name,
                 slots=[
                     CheckpointSlotSpec(slot="model", axis="replicate"),
-                    CheckpointSlotSpec(slot="optimizer", axis="replicate"),
                     CheckpointSlotSpec(slot="prng", axis="replicate"),
-                    CheckpointSlotSpec(slot="train_loss", axis="replicate", required=False),
+                    CheckpointSlotSpec(slot="completed_batches"),
                 ],
+                resume_coordinate=ResumeCoordinateSpec(
+                    phase="done",
+                    completed_barrier=f"after_{phase_name}",
+                ),
             )
             for phase_name in phase_names
         ],
@@ -901,23 +914,17 @@ def _distillation_contract(
 
 
 def _closed_loop_distillation_update_kernels(
-    _payload: BaseModel | None = None,
+    payload: BaseModel | None = None,
 ) -> dict[str, Any]:
-    return {"rlrmp.train.closed_loop_distillation.closed_loop_gradient_update": _no_op_kernel}
+    from rlrmp.train.distillation_native import distillation_update_kernels
+
+    return dict(distillation_update_kernels("closed_loop_distillation", payload))
 
 
-def _guided_distillation_update_kernels(_payload: BaseModel | None = None) -> dict[str, Any]:
-    return {"rlrmp.train.guided_distillation.guided_gradient_update": _no_op_kernel}
+def _guided_distillation_update_kernels(payload: BaseModel | None = None) -> dict[str, Any]:
+    from rlrmp.train.distillation_native import distillation_update_kernels
 
-
-def _no_op_kernel(slots: dict[str, Any], coordinate: Any, context: dict[str, Any]) -> dict[str, Any]:
-    del coordinate, context
-    return {
-        "model": slots["model"],
-        "optimizer": slots["optimizer"],
-        "prng": slots["prng"],
-        "train_loss": 0.0,
-    }
+    return dict(distillation_update_kernels("guided_distillation", payload))
 
 
 def _distillation_method_parts(
