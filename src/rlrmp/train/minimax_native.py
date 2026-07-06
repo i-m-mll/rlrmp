@@ -148,12 +148,6 @@ def build_minimax_native_initial_slots(
     """Return native minimax slots plus runtime context for one run."""
 
     del run_spec
-    if args.adversary_type == "linear_dynamics":
-        raise NotImplementedError(
-            "linear_dynamics minimax native execution is blocked by the "
-            "declared component-parameter input shape gap; use the explicit "
-            "legacy_loop_backend path until that residual is resolved"
-        )
     key_init, key_warmup, key_adv = split_initial_keys(key)
     pair = setup_task_model_pair(hps, key=key_init)
     controller_layout = _controller_layout(pair.model, int(hps.model.n_replicates))
@@ -675,8 +669,40 @@ def _compute_loss(
             trial_keys,
             runtime.pair.task.loss_func,
         )
-    states = runtime.pair.task.eval_trials(model, trial_specs, trial_keys)
+    states = _eval_trials_with_declarative_component_parameter_inputs(
+        runtime.pair.task,
+        model,
+        trial_specs,
+        trial_keys,
+    )
     return runtime.pair.task.loss_func(states, trial_specs, model).total.mean()
+
+
+def _eval_trials_with_declarative_component_parameter_inputs(
+    task: Any,
+    model: Any,
+    trial_specs: Any,
+    keys: Any,
+) -> Any:
+    del task
+
+    def eval_single(trial_spec: Any, key: Any) -> Any:
+        key_run = jr.split(key, 2)[1]
+        prepared = prepare_trial(model, trial_spec)
+        prepared_inputs = _with_declarative_component_parameter_inputs(
+            model,
+            prepared.inputs,
+        )
+        _outputs, _final_state, state_history = run_component(
+            model,
+            prepared_inputs,
+            prepared.init_state,
+            key=key_run,
+            n_steps=prepared.n_steps,
+        )
+        return jt.map(lambda x: x[1:] if x is not None else x, state_history)
+
+    return eqx.filter_vmap(eval_single)(trial_specs, keys)
 
 
 def _eval_trials_streaming(
@@ -719,7 +745,12 @@ def _with_declarative_component_parameter_inputs(model: Any, inputs: Any) -> Any
         and declared_key in getattr(model, "input_ports", ())
         and declared_key not in inputs
     ):
-        return {**inputs, declared_key: inputs[legacy_key]}
+        primary_inputs = {
+            key: value
+            for key, value in inputs.items()
+            if key != legacy_key and not key.startswith("task:")
+        }
+        return {"input": primary_inputs, declared_key: inputs[legacy_key]}
     return inputs
 
 

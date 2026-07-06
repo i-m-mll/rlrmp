@@ -90,9 +90,16 @@ def _payload(tmp_path: Path, argv: list[str]) -> dict:
     return _payload_from_config(tmp_path, config)
 
 
-def _native_smoke_spec(tmp_path: Path, *, n_adversary_batches: int = 1) -> TrainingRunSpec:
+def _native_smoke_spec(
+    tmp_path: Path,
+    *,
+    adversary_type: str = "gaussian_bump",
+    n_adversary_batches: int = 1,
+) -> TrainingRunSpec:
     config = legacy_cli_args_to_minimax_config(
         [
+            "--adversary-type",
+            adversary_type,
             "--n-warmup-batches",
             "0",
             "--n-adversary-batches",
@@ -106,7 +113,13 @@ def _native_smoke_spec(tmp_path: Path, *, n_adversary_batches: int = 1) -> Train
             "--n-replicates",
             "1",
             "--output-dir",
-            str(tmp_path / "_artifacts" / "62a658d" / "runs" / "native_smoke"),
+            str(
+                tmp_path
+                / "_artifacts"
+                / "62a658d"
+                / "runs"
+                / f"native_smoke_{adversary_type}"
+            ),
         ]
     )
     payload = _payload_from_config(tmp_path, config)
@@ -417,36 +430,66 @@ def test_minimax_native_executor_resume_matches_uninterrupted(
     assert max((diff.max_abs_diff for diff in diffs), default=0.0) <= 1e-6
 
 
-def test_linear_dynamics_minimax_native_executor_keeps_legacy_backend_explicit(
+def test_linear_dynamics_minimax_native_executor_matches_fixed_seed_manual_kernel_loop(
     tmp_path: Path,
 ) -> None:
-    payload = _payload(
-        tmp_path,
-        [
-            "--adversary-type",
-            "linear_dynamics",
-            "--n-warmup-batches",
-            "0",
-            "--n-adversary-batches",
-            "1",
-            "--n-adversary-steps",
-            "1",
-            "--batch-size",
-            "1",
-            "--adv-batch-size",
-            "1",
-            "--n-replicates",
-            "1",
-        ],
-    )
-    spec = TrainingRunSpec.model_validate(payload["feedbax_training_run_spec"])
+    spec = _native_smoke_spec(tmp_path, adversary_type="linear_dynamics", n_adversary_batches=1)
+    manual_slots = _manual_minimax_kernel_loop(spec, key=jr.PRNGKey(2))
 
-    with pytest.raises(NotImplementedError, match="linear_dynamics minimax native execution"):
-        execute_minimax_training_run_spec_native(
-            spec,
-            run_id="native-minimax-linear-dynamics",
-            key=jr.PRNGKey(2),
-            manifest_root=tmp_path / "manifests" / "linear",
-            checkpoint_root=tmp_path / "checkpoints" / "linear",
-            manifest_conflict_policy="reuse-identical",
-        )
+    result = execute_minimax_training_run_spec_native(
+        spec,
+        run_id="native-minimax-linear-dynamics-fixed-seed",
+        key=jr.PRNGKey(2),
+        manifest_root=tmp_path / "manifests" / "linear",
+        checkpoint_root=tmp_path / "checkpoints" / "linear",
+        manifest_conflict_policy="reuse-identical",
+    )
+
+    diffs = compare_pytrees(
+        _comparable_native_slots(manual_slots),
+        _comparable_native_slots(result.final_slots),
+    )
+    assert max((diff.max_abs_diff for diff in diffs), default=0.0) <= 1e-6
+    assert result.final_coordinate.phase == "done"
+    assert result.final_slots["controller_loss"] != 0.0
+    assert result.final_slots["adversary_loss"] != 0.0
+
+
+def test_linear_dynamics_minimax_native_executor_resume_matches_uninterrupted(
+    tmp_path: Path,
+) -> None:
+    spec = _native_smoke_spec(tmp_path, adversary_type="linear_dynamics", n_adversary_batches=2)
+    full = execute_minimax_training_run_spec_native(
+        spec,
+        run_id="native-minimax-linear-dynamics-full",
+        key=jr.PRNGKey(3),
+        manifest_root=tmp_path / "manifests" / "linear-full",
+        checkpoint_root=tmp_path / "checkpoints" / "linear-full",
+        manifest_conflict_policy="reuse-identical",
+    )
+    checkpoint_root = tmp_path / "checkpoints" / "linear-resume"
+    partial = execute_minimax_training_run_spec_native(
+        spec,
+        run_id="native-minimax-linear-dynamics-resume",
+        key=jr.PRNGKey(3),
+        manifest_root=tmp_path / "manifests" / "linear-resume-partial",
+        checkpoint_root=checkpoint_root,
+        stop_after_barrier="after_adversarial",
+        manifest_conflict_policy="reuse-identical",
+    )
+    resumed = execute_minimax_training_run_spec_native(
+        spec,
+        run_id="native-minimax-linear-dynamics-resume",
+        key=jr.PRNGKey(3),
+        manifest_root=tmp_path / "manifests" / "linear-resume-final",
+        checkpoint_root=checkpoint_root,
+        resume=True,
+        manifest_conflict_policy="reuse-identical",
+    )
+
+    diffs = compare_pytrees(
+        _comparable_native_slots(full.final_slots),
+        _comparable_native_slots(resumed.final_slots),
+    )
+    assert partial.final_coordinate.completed_barrier == "after_adversarial"
+    assert max((diff.max_abs_diff for diff in diffs), default=0.0) <= 1e-6
