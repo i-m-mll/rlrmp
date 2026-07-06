@@ -41,12 +41,12 @@ from feedbax.contracts.worker import (
     CheckpointBarrierSpec,
     CheckpointSlotSpec,
     EffectivePhaseSpec,
+    MetricGuardSpec,
     MethodContractSpec,
     OptimizerTargetBinding,
     PhaseProgramSpec,
     PhaseSpec,
     PhaseTransitionSpec,
-    ProgressCoordinate,
     ResumeCoordinateSpec,
     StateSlotSpec,
     UpdateKernelSpec,
@@ -73,7 +73,9 @@ __all__ = [
     "MinimaxMethodPayload",
     "build_hps",
     "build_minimax_training_run_spec",
+    "build_minimax_native_initial_slots",
     "ensure_minimax_training_method_registered",
+    "execute_minimax_training_run_spec_native",
     "legacy_cli_args_to_minimax_config",
     "minimax_config_namespace",
     "minimax_effective_phase_fingerprint",
@@ -504,6 +506,64 @@ def minimax_training_run_spec_to_config(spec: TrainingRunSpec) -> dict[str, Any]
     return validated.config.model_dump(mode="python")
 
 
+def build_minimax_native_initial_slots(
+    *,
+    run_spec: Mapping[str, Any] | TrainingRunSpec,
+    hps: TreeNamespace,
+    args: Any,
+    key: Any,
+):
+    """Build minimax native-executor initial slots and runtime context."""
+
+    from rlrmp.train.minimax_native import build_minimax_native_initial_slots as _build
+
+    return _build(run_spec=run_spec, hps=hps, args=args, key=key)
+
+
+def execute_minimax_training_run_spec_native(
+    spec: TrainingRunSpec | Mapping[str, Any],
+    *,
+    run_id: str | None = None,
+    key: Any | None = None,
+    manifest_root: Path | str | None = None,
+    checkpoint_root: Path | str | None = None,
+    resume: bool = False,
+    stop_after_barrier: str | None = None,
+    **kwargs: Any,
+):
+    """Execute an RLRMP minimax TrainingRunSpec through Feedbax's native executor."""
+
+    import jax.random as jr
+    from feedbax.training.executor import execute_training_run_spec
+    from rlrmp.train.executor.adapters import RLRMP_RUNTIME_CONTEXT_KEY
+    from rlrmp.train.minimax_native import MinimaxExternalObjectiveLossService
+
+    ensure_minimax_training_method_registered()
+    training_spec = (
+        spec if isinstance(spec, TrainingRunSpec) else TrainingRunSpec.model_validate(spec)
+    )
+    args = minimax_config_namespace(minimax_training_run_spec_to_config(training_spec))
+    hps = build_hps(args)
+    initial_slots, runtime = build_minimax_native_initial_slots(
+        run_spec=training_spec,
+        hps=hps,
+        args=args,
+        key=key if key is not None else jr.PRNGKey(args.seed),
+    )
+    return execute_training_run_spec(
+        training_spec,
+        run_id=run_id,
+        initial_slots=initial_slots,
+        kernel_context={RLRMP_RUNTIME_CONTEXT_KEY: runtime},
+        manifest_root=manifest_root,
+        checkpoint_root=checkpoint_root,
+        loss_service=kwargs.pop("loss_service", MinimaxExternalObjectiveLossService()),
+        resume=resume,
+        stop_after_barrier=stop_after_barrier,
+        **kwargs,
+    )
+
+
 def validate_minimax_run_spec(
     run_spec: dict[str, Any],
     *,
@@ -582,6 +642,7 @@ def ensure_minimax_training_method_registered() -> None:
             payload_model=MinimaxMethodPayload,
             contract_factory=minimax_method_contract,
             update_kernels_factory=_minimax_update_kernels,
+            guard_predicates_factory=_minimax_guard_predicates,
             rejected_payload_versions=("rlrmp.spec.training_method.minimax_payload.v0",),
             owner="rlrmp.train.minimax",
             package="rlrmp",
@@ -600,11 +661,12 @@ def minimax_method_contract() -> MethodContractSpec:
                 reads=["controller", "controller_optimizer", "rng", "objective"],
                 writes=["controller", "controller_optimizer", "rng", "controller_loss"],
                 update_steps=["warmup_controller_descent"],
-                legal_next=["adversarial"],
+                legal_next=["done", "adversarial"],
                 checkpoint_barrier="after_warmup",
                 loop_axis="batch",
                 metadata={
                     "activation_binding": "linear_dynamics_adversary_params.active=false",
+                    "native_kernel_granularity": "full_warmup_phase",
                     "frozen_slots": ["adversary_population", "adversary_optimizer"],
                 },
             ),
@@ -625,6 +687,7 @@ def minimax_method_contract() -> MethodContractSpec:
                     "controller_optimizer",
                     "adversary_population",
                     "adversary_optimizer",
+                    "trial_batch",
                     "rng",
                     "controller_loss",
                     "adversary_loss",
@@ -634,6 +697,7 @@ def minimax_method_contract() -> MethodContractSpec:
                     "adversary_projection",
                     "outer_controller_descent",
                 ],
+                legal_next=["done", "adversarial"],
                 checkpoint_barrier="after_adversarial",
                 loop_axis="batch",
                 metadata={
@@ -645,16 +709,53 @@ def minimax_method_contract() -> MethodContractSpec:
                         "fused": "same reads/writes/barriers as decomposed",
                         "decomposed": "same reads/writes/barriers as fused",
                     },
+                    "native_kernel_granularity": "one_adversarial_batch",
                 },
+            ),
+            PhaseSpec(
+                name="done",
+                kind="evaluation",
+                reads=[
+                    "controller",
+                    "controller_optimizer",
+                    "adversary_population",
+                    "adversary_optimizer",
+                    "rng",
+                    "controller_loss",
+                    "adversary_loss",
+                ],
             ),
         ],
         initial_phase="warmup",
         transitions=[
             PhaseTransitionSpec(
                 source="warmup",
+                target="done",
+                barrier="after_warmup",
+                guard=MetricGuardSpec(
+                    predicate_ref="rlrmp.minimax.no_adversarial_batches",
+                    metric_slots=["controller_loss"],
+                ),
+            ),
+            PhaseTransitionSpec(
+                source="warmup",
                 target="adversarial",
                 barrier="after_warmup",
-            )
+            ),
+            PhaseTransitionSpec(
+                source="adversarial",
+                target="done",
+                barrier="after_adversarial",
+                guard=MetricGuardSpec(
+                    predicate_ref="rlrmp.minimax.adversarial_complete",
+                    metric_slots=["controller_loss", "adversary_loss"],
+                ),
+            ),
+            PhaseTransitionSpec(
+                source="adversarial",
+                target="adversarial",
+                barrier="after_adversarial",
+            ),
         ],
         update_steps=[
             UpdateStepSpec(
@@ -672,7 +773,13 @@ def minimax_method_contract() -> MethodContractSpec:
                 kind="gradient",
                 kernel=UpdateKernelSpec(kernel_ref="rlrmp.minimax.inner_adversary_ascent"),
                 reads=["controller", "adversary_population", "adversary_optimizer", "rng"],
-                writes=["adversary_population", "adversary_optimizer", "rng", "adversary_loss"],
+                writes=[
+                    "adversary_population",
+                    "adversary_optimizer",
+                    "trial_batch",
+                    "rng",
+                    "adversary_loss",
+                ],
                 axes=["inner_step", "adversary_member", "replicate"],
                 optimizer_binding="adversary_optimizer_to_active_member",
                 metadata={"direction": "maximize"},
@@ -681,7 +788,7 @@ def minimax_method_contract() -> MethodContractSpec:
                 name="adversary_projection",
                 kind="projection",
                 kernel=UpdateKernelSpec(kernel_ref="rlrmp.minimax.frobenius_ball_projection"),
-                reads=["adversary_population"],
+                reads=["adversary_population", "trial_batch"],
                 writes=["adversary_population"],
                 axes=["adversary_member", "replicate"],
                 metadata={
@@ -695,7 +802,12 @@ def minimax_method_contract() -> MethodContractSpec:
                 name="outer_controller_descent",
                 kind="gradient",
                 kernel=UpdateKernelSpec(kernel_ref="rlrmp.minimax.outer_controller_descent"),
-                reads=["controller", "controller_optimizer", "adversary_population", "rng"],
+                reads=[
+                    "controller",
+                    "controller_optimizer",
+                    "adversary_population",
+                    "trial_batch",
+                ],
                 writes=["controller", "controller_optimizer", "rng", "controller_loss"],
                 axes=["batch", "replicate"],
                 optimizer_binding="controller_optimizer_to_controller_adversarial",
@@ -851,30 +963,17 @@ def minimax_effective_phase_fingerprint(
 
 
 def _minimax_update_kernels(
-    _payload: BaseModel | None = None,
+    payload: BaseModel | None = None,
 ) -> Mapping[str, Any]:
-    def _identity_kernel(
-        slots: Mapping[str, Any],
-        coordinate: ProgressCoordinate,
-        context: Mapping[str, Any],
-    ) -> Mapping[str, Any]:
-        del context
-        return {
-            "controller": slots.get("controller"),
-            "controller_optimizer": slots.get("controller_optimizer"),
-            "adversary_population": slots.get("adversary_population"),
-            "adversary_optimizer": slots.get("adversary_optimizer"),
-            "rng": slots.get("rng"),
-            "controller_loss": float(coordinate.global_step),
-            "adversary_loss": float(coordinate.global_step),
-        }
+    from rlrmp.train.minimax_native import minimax_update_kernels
 
-    return {
-        "rlrmp.minimax.warmup_controller_descent": _identity_kernel,
-        "rlrmp.minimax.inner_adversary_ascent": _identity_kernel,
-        "rlrmp.minimax.frobenius_ball_projection": _identity_kernel,
-        "rlrmp.minimax.outer_controller_descent": _identity_kernel,
-    }
+    return minimax_update_kernels(payload)
+
+
+def _minimax_guard_predicates(payload: BaseModel | None = None) -> Mapping[str, Any]:
+    from rlrmp.train.minimax_native import minimax_guard_predicates
+
+    return minimax_guard_predicates(payload)
 
 
 def _minimax_method_payload(

@@ -389,6 +389,14 @@ symbols = [
 ]
 
 [[canonical_homes]]
+module = "feedbax.objectives.service"
+symbols = ["LossService", "LoweredObjective"]
+
+[[canonical_homes]]
+module = "feedbax.objectives.spec"
+symbols = ["ObjectiveExecutionRequirements"]
+
+[[canonical_homes]]
 module = "feedbax.objectives.streaming"
 symbols = ["make_streaming_loss_fn"]
 
@@ -481,6 +489,10 @@ symbols = [
 [[canonical_homes]]
 module = "feedbax.train"
 symbols = ["TaskTrainerHistory", "init_task_trainer_history"]
+
+[[canonical_homes]]
+module = "feedbax.training.executor"
+symbols = ["execute_training_run_spec"]
 
 [[canonical_homes]]
 module = "feedbax.training.loss"
