@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -39,6 +39,8 @@ from rlrmp.train.executor.slots import (
 
 LEAF_ATOL = 1e-7
 LEAF_RTOL = 0.0
+FAMILY_ATOL = 1e-6
+FAMILY_RTOL = 0.0
 TOY_KERNEL_REF = "rlrmp.executor.toy_chunk"
 TOY_STOP_PREDICATE_REF = "rlrmp.executor.toy_stop"
 TOY_BARRIER = "after_train_chunk"
@@ -53,6 +55,33 @@ class LeafDiff:
 
 
 @dataclass(frozen=True)
+class EquivalenceTolerance:
+    """Governed numeric tolerance for fixed-seed executor comparisons."""
+
+    name: str
+    atol: float
+    rtol: float
+    rationale: str
+
+
+STRICT_TOLERANCE = EquivalenceTolerance(
+    name="strict_leaf",
+    atol=LEAF_ATOL,
+    rtol=LEAF_RTOL,
+    rationale="R0 toy harness exactness budget for deterministic scaffolding checks.",
+)
+FAMILY_TOLERANCE = EquivalenceTolerance(
+    name="family_executor",
+    atol=FAMILY_ATOL,
+    rtol=FAMILY_RTOL,
+    rationale=(
+        "Issue 8f7c282/9c0ad75: method-family executor comparisons tolerate "
+        "one extra float32 roundoff scale, but the value is governed in one place."
+    ),
+)
+
+
+@dataclass(frozen=True)
 class EquivalenceReport:
     """Result of one equivalence check."""
 
@@ -61,6 +90,10 @@ class EquivalenceReport:
     completed_batches: tuple[int, int]
     loss_series: tuple[tuple[float, ...], tuple[float, ...]]
     mode: str = "fixed_seed"
+    family: str = "unknown"
+    tolerance: EquivalenceTolerance = STRICT_TOLERANCE
+    left_label: str = "reference"
+    right_label: str = "candidate"
 
     @property
     def max_abs_diff(self) -> float:
@@ -130,6 +163,50 @@ def compare_pytrees(left: Any, right: Any) -> tuple[LeafDiff, ...]:
     return tuple(
         LeafDiff(path=f"leaf_{index}", max_abs_diff=_max_abs_diff(left_leaf, right_leaf))
         for index, (left_leaf, right_leaf) in enumerate(zip(left_leaves, right_leaves, strict=True))
+    )
+
+
+def run_paired_equivalence(
+    family: str,
+    left: Callable[[], Any],
+    right: Callable[[], Any],
+    *,
+    comparable: Callable[[Any], Any] = lambda value: value,
+    tolerance: EquivalenceTolerance = FAMILY_TOLERANCE,
+    left_label: str = "reference",
+    right_label: str = "candidate",
+) -> EquivalenceReport:
+    """Run and compare one fixed-seed pair through the governed harness.
+
+    The callables are deliberately zero-argument so tests construct each side
+    next to its local fixture setup, while numeric comparison and tolerance
+    policy stay in one shared module.
+    """
+
+    left_value = left()
+    right_value = right()
+    leaf_diffs = compare_pytrees(comparable(left_value), comparable(right_value))
+    passed = all(_leaf_within_tolerance(diff, tolerance) for diff in leaf_diffs)
+    return EquivalenceReport(
+        passed=passed,
+        leaf_diffs=leaf_diffs,
+        completed_batches=(0, 0),
+        loss_series=((), ()),
+        family=family,
+        tolerance=tolerance,
+        left_label=left_label,
+        right_label=right_label,
+    )
+
+
+def assert_paired_equivalent(report: EquivalenceReport) -> None:
+    """Assert that a governed equivalence report passed, with useful context."""
+
+    assert report.passed, (
+        f"{report.family} {report.left_label} vs {report.right_label} failed "
+        f"{report.tolerance.name} tolerance: max_abs_diff={report.max_abs_diff:.9g}, "
+        f"atol={report.tolerance.atol:.9g}, rtol={report.tolerance.rtol:.9g}; "
+        f"rationale={report.tolerance.rationale}"
     )
 
 
@@ -342,7 +419,7 @@ def _build_report(
         abs(left - right) for left, right in zip(legacy_losses, executor_losses, strict=True)
     ]
     passed = (
-        all(diff.max_abs_diff <= LEAF_ATOL for diff in leaf_diffs)
+        all(_leaf_within_tolerance(diff, STRICT_TOLERANCE) for diff in leaf_diffs)
         and all(diff <= LEAF_ATOL for diff in loss_diffs)
         and int(legacy_slots[COMPLETED_BATCHES]) == int(executor_slots[COMPLETED_BATCHES])
     )
@@ -354,6 +431,10 @@ def _build_report(
             int(executor_slots[COMPLETED_BATCHES]),
         ),
         loss_series=(legacy_losses, executor_losses),
+        family="toy",
+        tolerance=STRICT_TOLERANCE,
+        left_label="legacy",
+        right_label="executor",
     )
 
 
@@ -385,3 +466,7 @@ def _max_abs_diff(left: Any, right: Any) -> float:
     if left_array.size == 0:
         return 0.0
     return float(jax.device_get(jnp.max(jnp.abs(left_array - right_array))))
+
+
+def _leaf_within_tolerance(diff: LeafDiff, tolerance: EquivalenceTolerance) -> bool:
+    return diff.max_abs_diff <= tolerance.atol

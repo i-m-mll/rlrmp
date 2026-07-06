@@ -16,7 +16,7 @@ from jax_cookbook import save as fbx_save
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.model.feedbax_graph import build_rlrmp_feedbax_graph_bundle
 from rlrmp.train.executor.adapters import RLRMP_RUNTIME_CONTEXT_KEY
-from rlrmp.train.executor.equivalence import compare_pytrees
+from rlrmp.train.executor.equivalence import assert_paired_equivalent, run_paired_equivalence
 from rlrmp.train.minimax import (
     MINIMAX_METHOD_REF,
     MINIMAX_METHOD_PAYLOAD_SCHEMA_VERSION,
@@ -484,11 +484,15 @@ def test_minimax_native_executor_matches_fixed_seed_manual_kernel_loop(
         manifest_conflict_policy="reuse-identical",
     )
 
-    diffs = compare_pytrees(
-        _comparable_native_slots(manual_slots),
-        _comparable_native_slots(result.final_slots),
+    report = run_paired_equivalence(
+        "minimax.gaussian_bump.driver",
+        lambda: manual_slots,
+        lambda: result.final_slots,
+        comparable=_comparable_native_slots,
+        left_label="manual_kernel_loop",
+        right_label="native_executor",
     )
-    assert max((diff.max_abs_diff for diff in diffs), default=0.0) <= 1e-6
+    assert_paired_equivalent(report)
     assert result.final_coordinate.phase == "done"
     assert result.final_slots["controller_loss"] != 0.0
     assert result.final_slots["adversary_loss"] != 0.0
@@ -586,12 +590,16 @@ def test_minimax_native_executor_resume_matches_uninterrupted(
         manifest_conflict_policy="reuse-identical",
     )
 
-    diffs = compare_pytrees(
-        _comparable_native_slots(full.final_slots),
-        _comparable_native_slots(resumed.final_slots),
+    report = run_paired_equivalence(
+        "minimax.gaussian_bump.resume",
+        lambda: full.final_slots,
+        lambda: resumed.final_slots,
+        comparable=_comparable_native_slots,
+        left_label="uninterrupted",
+        right_label="resumed",
     )
     assert partial.final_coordinate.completed_barrier == "after_adversarial"
-    assert max((diff.max_abs_diff for diff in diffs), default=0.0) <= 1e-6
+    assert_paired_equivalent(report)
 
 
 def test_linear_dynamics_minimax_native_executor_matches_fixed_seed_manual_kernel_loop(
@@ -609,11 +617,15 @@ def test_linear_dynamics_minimax_native_executor_matches_fixed_seed_manual_kerne
         manifest_conflict_policy="reuse-identical",
     )
 
-    diffs = compare_pytrees(
-        _comparable_native_slots(manual_slots),
-        _comparable_native_slots(result.final_slots),
+    report = run_paired_equivalence(
+        "minimax.linear_dynamics.driver",
+        lambda: manual_slots,
+        lambda: result.final_slots,
+        comparable=_comparable_native_slots,
+        left_label="manual_kernel_loop",
+        right_label="native_executor",
     )
-    assert max((diff.max_abs_diff for diff in diffs), default=0.0) <= 1e-6
+    assert_paired_equivalent(report)
     assert result.final_coordinate.phase == "done"
     assert result.final_slots["controller_loss"] != 0.0
     assert result.final_slots["adversary_loss"] != 0.0
@@ -651,9 +663,13 @@ def test_linear_dynamics_minimax_native_executor_resume_matches_uninterrupted(
         manifest_conflict_policy="reuse-identical",
     )
 
-    diffs = compare_pytrees(
-        _comparable_native_slots(full.final_slots),
-        _comparable_native_slots(resumed.final_slots),
+    report = run_paired_equivalence(
+        "minimax.linear_dynamics.resume",
+        lambda: full.final_slots,
+        lambda: resumed.final_slots,
+        comparable=_comparable_native_slots,
+        left_label="uninterrupted",
+        right_label="resumed",
     )
     assert partial.final_coordinate.completed_barrier == "after_adversarial"
-    assert max((diff.max_abs_diff for diff in diffs), default=0.0) <= 1e-6
+    assert_paired_equivalent(report)

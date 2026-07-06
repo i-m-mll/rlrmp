@@ -34,7 +34,11 @@ from rlrmp.train.distillation_native import (
     execute_distillation_training_run_spec_native,
     native_distillation_model_from_slot,
 )
-from rlrmp.train.executor.equivalence import compare_pytrees
+from rlrmp.train.executor.equivalence import (
+    FAMILY_TOLERANCE,
+    assert_paired_equivalent,
+    run_paired_equivalence,
+)
 
 
 DISTILLATION_PAYLOAD_SPECS = (
@@ -87,7 +91,7 @@ def _array_tree(value: object) -> object:
     return eqx.filter(value, eqx.is_array)
 
 
-def _assert_array_trees_close(left: object, right: object, *, atol: float = 1e-6) -> None:
+def _assert_array_trees_close(left: object, right: object) -> None:
     left_tree = _array_tree(left)
     right_tree = _array_tree(right)
     if jt.structure(left_tree) != jt.structure(right_tree):
@@ -100,10 +104,16 @@ def _assert_array_trees_close(left: object, right: object, *, atol: float = 1e-6
                 for left_leaf, right_leaf in zip(left_leaves, right_leaves, strict=True)
             ),
             default=0.0,
-        ) <= atol
+        ) <= FAMILY_TOLERANCE.atol
         return
-    diffs = compare_pytrees(left_tree, right_tree)
-    assert max((diff.max_abs_diff for diff in diffs), default=0.0) <= atol
+    report = run_paired_equivalence(
+        "distillation.array_tree",
+        lambda: left_tree,
+        lambda: right_tree,
+        left_label="left",
+        right_label="right",
+    )
+    assert_paired_equivalent(report)
 
 
 def _legacy_distillation_training_config(run_spec: dict, *, method: str) -> TrainingConfig:
@@ -374,7 +384,7 @@ def test_closed_loop_distillation_native_executor_matches_fixed_seed_legacy(
     assert native.final_slots["train_loss"] != 0.0
 
 
-def test_guided_distillation_native_executor_matches_fixed_seed_legacy(
+def test_guided_distillation_native_executor_matches_fixed_seed_driver(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
