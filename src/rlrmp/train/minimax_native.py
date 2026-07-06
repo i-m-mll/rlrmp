@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, NamedTuple
 
 import equinox as eqx
@@ -204,6 +206,13 @@ def build_minimax_native_initial_slots(
     del run_spec
     key_init, key_warmup, key_adv = split_initial_keys(key)
     pair = setup_task_model_pair(hps, key=key_init)
+    if args.warmup_model is not None:
+        pair = pair._replace(
+            model=_load_warmup_model(
+                Path(args.warmup_model),
+                current_model=pair.model,
+            )
+        )
     controller_layout = _controller_layout(pair.model, int(hps.model.n_replicates))
     adv_batch_size = int(args.adv_batch_size or hps.batch_size)
     adversary_optimizer = optax.adam(
@@ -243,6 +252,31 @@ def build_minimax_native_initial_slots(
         },
         RlrmpRuntime(components={"minimax": runtime}),
     )
+
+
+def _load_warmup_model(path: Path, *, current_model: Any) -> Any:
+    """Load an explicit warmup controller with legacy-compatible templates."""
+
+    from jax_cookbook import load as fbx_load
+
+    try:
+        return fbx_load(path, setup_func=lambda **_kwargs: current_model)
+    except (RuntimeError, ValueError):
+        pass
+
+    def model_from_standard_hyperparameters(
+        key: Any = jr.PRNGKey(0),
+        **stored_hps: Any,
+    ) -> Any:
+        from rlrmp.train.standard import build_hps as build_standard_hps
+
+        values = dict(stored_hps)
+        for name in ("git", "output_dir", "checkpoint_every", "resume"):
+            values.pop(name, None)
+        hps = build_standard_hps(SimpleNamespace(**values))
+        return setup_task_model_pair(hps, key=key).model
+
+    return fbx_load(path, setup_func=model_from_standard_hyperparameters)
 
 
 def minimax_update_kernels(payload: Any) -> Mapping[str, UpdateKernel]:
