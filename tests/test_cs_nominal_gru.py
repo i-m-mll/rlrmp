@@ -2147,6 +2147,59 @@ def test_policy_adversary_historical_spec_with_explicit_radius_and_source_parses
     assert parsed.budget_source == "effective_020a65b_pgd_training_radius"
 
 
+def test_policy_adversary_run_spec_replay_preserves_payload_fields(tmp_path: Path) -> None:
+    output_dir = tmp_path / "_artifacts" / "8f7c282" / "runs" / "policy"
+    spec_dir = tmp_path / "results" / "8f7c282" / "runs" / "policy"
+    args = _args(
+        output_dir=str(output_dir),
+        spec_dir=str(spec_dir),
+        issue="8f7c282",
+        target_relative_multitarget=True,
+        force_filter_feedback=True,
+        initial_hidden_encoder=True,
+        perturbation_training=True,
+        perturbation_calibrated_timing=True,
+        perturbation_physical_level="small",
+        policy_adversary_training=True,
+        policy_adversary_policy_class=POLICY_ADVERSARY_MEMORYLESS_MLP,
+        policy_adversary_mode=POLICY_ADVERSARY_ENERGY_MODE,
+        policy_adversary_width=11,
+        policy_adversary_depth=3,
+        policy_adversary_steps=7,
+        policy_adversary_lr=1e-3,
+        policy_adversary_energy_gamma=1.7,
+        policy_adversary_radius_15cm=HISTORICAL_020A65B_PGD_RADIUS_15CM,
+        policy_adversary_radius_source="effective_020a65b_pgd_training_radius",
+        broad_epsilon_reach_scaling=True,
+        loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+    )
+
+    result = write_run_spec(args)
+    replay_args = resolve_run_spec_args(_args(run_spec=result["run_spec_path"]))
+
+    assert replay_args.policy_adversary_training is True
+    assert replay_args.policy_adversary_policy_class == POLICY_ADVERSARY_MEMORYLESS_MLP
+    assert replay_args.policy_adversary_mode == POLICY_ADVERSARY_ENERGY_MODE
+    assert replay_args.policy_adversary_width == 11
+    assert replay_args.policy_adversary_depth == 3
+    assert replay_args.policy_adversary_steps == 7
+    assert replay_args.policy_adversary_lr == pytest.approx(1e-3)
+    assert replay_args.policy_adversary_energy_gamma == pytest.approx(1.7)
+    assert replay_args.policy_adversary_radius_15cm == pytest.approx(
+        HISTORICAL_020A65B_PGD_RADIUS_15CM
+    )
+    assert (
+        replay_args.policy_adversary_radius_source
+        == "effective_020a65b_pgd_training_radius"
+    )
+
+    hps = build_hps(replay_args)
+    cfg = config_from_policy_adversary_hps(hps.policy_adversary_training)
+    assert cfg.enabled is True
+    assert cfg.policy_class == POLICY_ADVERSARY_MEMORYLESS_MLP
+    assert cfg.mode == POLICY_ADVERSARY_ENERGY_MODE
+
+
 @pytest.mark.parametrize("policy_class", [LINEAR_NO_BIAS_POLICY, AFFINE_POLICY])
 def test_finite_policy_adversary_hps_declares_active_adam_and_excludes_pgd(
     policy_class: str,
