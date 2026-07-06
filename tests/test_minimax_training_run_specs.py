@@ -16,7 +16,11 @@ from jax_cookbook import save as fbx_save
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.model.feedbax_graph import build_rlrmp_feedbax_graph_bundle
 from rlrmp.train.executor.adapters import RLRMP_RUNTIME_CONTEXT_KEY
-from rlrmp.train.executor.equivalence import assert_paired_equivalent, run_paired_equivalence
+from rlrmp.train.executor.equivalence import (
+    assert_paired_equivalent,
+    compare_pytrees,
+    run_paired_equivalence,
+)
 from rlrmp.train.minimax import (
     MINIMAX_METHOD_REF,
     MINIMAX_METHOD_PAYLOAD_SCHEMA_VERSION,
