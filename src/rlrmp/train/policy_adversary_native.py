@@ -5,7 +5,7 @@ from __future__ import annotations
 import io
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -122,7 +122,7 @@ class SerializedPyTreeSlot:
         return "SerializedPyTreeSlot(payload=<bytes>)"
 
 
-@dataclass(frozen=True)
+@dataclass
 class PolicyAdversaryNativeRuntime:
     """Runtime-only objects used by policy-adversary native kernels."""
 
@@ -136,6 +136,8 @@ class PolicyAdversaryNativeRuntime:
     optimizer_template: Any
     adversary_policy_template: Any
     adversary_optimizer_template: Any
+    history: Any | None = None
+    records: list[dict[str, Any]] = field(default_factory=list)
 
 
 class PolicyAdversaryExternalObjectiveLoss(AbstractLoss):
@@ -274,10 +276,8 @@ def build_policy_adversary_training_run_spec(
             method_contract=contract,
             effective_phase=effective_phase,
             metadata={
-                "legacy_equivalence_source": (
-                    "rlrmp.train.cs_nominal_gru._run_policy_adversary_training_chunk"
-                ),
                 "native_executor": "feedbax.training.executor.execute_training_run_spec",
+                "kernel_owner": "rlrmp.train.policy_adversary_native",
             },
         ),
         execution=execution,
@@ -499,6 +499,54 @@ def policy_adversary_guard_predicates(payload: BaseModel | None = None) -> Mappi
     return {STOP_PREDICATE_REF: make_stop_predicate(payload)}
 
 
+@eqx.filter_jit
+def _advance_policy_adversary_compiled(
+    policy: Any,
+    optimizer_state: Any,
+    optimizer: optax.GradientTransformation,
+    task: Any,
+    model: Any,
+    hps: Any,
+    key: Any,
+    batch_index: Any,
+) -> tuple[Any, Any, dict[str, jnp.ndarray]]:
+    """Run the persistent policy-adversary ascent steps in one compiled update."""
+
+    from rlrmp.train.cs_nominal_gru import _policy_adversary_batch_objective
+
+    cfg = config_from_policy_adversary_hps(hps.policy_adversary_training)
+
+    def loss_for_policy(candidate_policy):
+        objective, diagnostics = _policy_adversary_batch_objective(
+            candidate_policy,
+            task,
+            model,
+            hps,
+            key=key,
+            batch_index=batch_index,
+        )
+        return -objective, diagnostics
+
+    diagnostics = {}
+    for _ in range(int(cfg.n_steps)):
+        (_loss, diagnostics), grads = eqx.filter_value_and_grad(
+            loss_for_policy,
+            has_aux=True,
+        )(policy)
+        updates, optimizer_state = optimizer.update(
+            grads,
+            optimizer_state,
+            eqx.filter(policy, eqx.is_array),
+        )
+        policy = eqx.apply_updates(policy, updates)
+    diagnostics = {
+        **diagnostics,
+        "n_ascent_steps": jnp.asarray(cfg.n_steps, dtype=jnp.float32),
+        "learning_rate": jnp.asarray(cfg.learning_rate, dtype=jnp.float32),
+    }
+    return policy, optimizer_state, diagnostics
+
+
 def build_policy_adversary_native_initial_slots(
     *,
     run_spec: Mapping[str, Any] | TrainingRunSpec,
@@ -633,6 +681,7 @@ def _policy_adversary_train_chunk(
 ) -> Mapping[str, Any]:
     del coordinate
     from rlrmp.train.cs_nominal_gru import (
+        _append_history,
         _latest_loss_scalars,
         _policy_adversary_diagnostics_arrays,
         _run_policy_adversary_training_chunk,
@@ -706,6 +755,15 @@ def _policy_adversary_train_chunk(
         diagnostics,
         batch_index=next_completed - 1,
         chunk_batches=chunk_batches,
+    )
+    native.history = _append_history(native.history, history_chunk)
+    native.records.append(
+        {
+            "completed_batches": next_completed,
+            "chunk_batches": chunk_batches,
+            "history_chunk": history_chunk,
+            "diagnostics": diagnostic_arrays,
+        }
     )
     return {
         MODEL: SerializedPyTreeSlot(serialize_pytree_slot(model)),

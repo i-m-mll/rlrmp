@@ -7,10 +7,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
+import optax
 
 from feedbax.contracts.training import ObjectiveSlotSpec, TrainingRunSpec
 from feedbax.objectives.loss import AbstractLoss
@@ -223,6 +225,38 @@ def distillation_update_kernels(method: str, payload: Any = None) -> Mapping[str
             ).to_kernel(None)
         }
     raise ValueError(f"unknown distillation method {method!r}")
+
+
+@eqx.filter_jit
+def guided_distillation_train_step(
+    trainable_model: Any,
+    frozen_model: Any,
+    optimizer_state: optax.OptState,
+    optimizer: optax.GradientTransformation,
+    batch: dict[str, jax.Array],
+    config: Any,
+    student_forcing_fraction: float,
+) -> tuple[Any, optax.OptState, jax.Array, dict[str, jax.Array]]:
+    """Run one guided-distillation optimizer step in the native kernel module."""
+
+    def loss_for_trainable(trainable_model: Any) -> tuple[jax.Array, dict[str, jax.Array]]:
+        return guided_distillation._loss_for_batch(
+            eqx.combine(trainable_model, frozen_model),
+            batch,
+            config,
+            student_forcing_fraction=student_forcing_fraction,
+        )
+
+    (loss, components), grads = eqx.filter_value_and_grad(loss_for_trainable, has_aux=True)(
+        trainable_model,
+    )
+    updates, optimizer_state = optimizer.update(
+        grads,
+        optimizer_state,
+        trainable_model,
+    )
+    trainable_model = eqx.apply_updates(trainable_model, updates)
+    return trainable_model, optimizer_state, loss, components
 
 
 def _build_closed_loop_initial_slots(
