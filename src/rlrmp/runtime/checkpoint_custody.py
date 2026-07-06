@@ -126,17 +126,18 @@ def write_cs_checkpoint_transaction(
     """Write a Feedbax custody transaction for C&S chunked training."""
 
     custody_spec = cs_custody_training_spec(run_spec)
+    barrier_name = _cs_checkpoint_barrier_name(custody_spec)
     coordinate = ProgressCoordinate(
         run_id=_run_id(run_spec, prefix="rlrmp-cs"),
-        phase="train_batch",
+        phase=_cs_checkpoint_barrier_phase(custody_spec, barrier_name),
         global_step=int(completed_batches),
-        completed_barrier=CS_BARRIER,
+        completed_barrier=barrier_name,
     )
     return write_checkpoint_transaction(
         root,
         run_spec=custody_spec,
         phase_program=custody_spec.worker_execution.method_contract.phase_program,
-        barrier_name=CS_BARRIER,
+        barrier_name=barrier_name,
         coordinate=coordinate,
         slots=slots,
         status=status,
@@ -159,6 +160,24 @@ def load_cs_checkpoint_transaction(
         expected_phase_program=custody_spec.worker_execution.method_contract.phase_program,
         expected_slots=expected_slots,
     )
+
+
+def _cs_checkpoint_barrier_name(spec: TrainingRunSpec) -> str:
+    barriers = spec.worker_execution.method_contract.phase_program.checkpoint_barriers
+    names = {barrier.name for barrier in barriers}
+    if CS_BARRIER in names:
+        return CS_BARRIER
+    if "after_train_chunk" in names:
+        return "after_train_chunk"
+    raise ValueError(f"C&S TrainingRunSpec has no known checkpoint barrier: {sorted(names)!r}")
+
+
+def _cs_checkpoint_barrier_phase(spec: TrainingRunSpec, barrier_name: str) -> str:
+    barriers = spec.worker_execution.method_contract.phase_program.checkpoint_barriers
+    for barrier in barriers:
+        if barrier.name == barrier_name:
+            return barrier.phase
+    return "train_batch"
 
 
 def write_minimax_checkpoint_transaction(

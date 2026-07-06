@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import subprocess
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -36,10 +37,6 @@ from feedbax.contracts.training import (
     TrainingMethodRegistration,
     TrainingRunSpec,
     WorkerExecutionSpec,
-    standard_supervised_effective_phase_spec,
-    standard_supervised_method_contract,
-    standard_supervised_method_payload,
-    standard_supervised_method_ref,
 )
 from feedbax.contracts.worker import (
     AxisSpec,
@@ -47,9 +44,11 @@ from feedbax.contracts.worker import (
     CheckpointSlotSpec,
     EffectivePhaseSpec,
     MethodContractSpec,
+    MetricGuardSpec,
     OptimizerTargetBinding,
     PhaseProgramSpec,
     PhaseSpec,
+    PhaseTransitionSpec,
     StateSlotSpec,
     UpdateKernelSpec,
     UpdateStepSpec,
@@ -68,6 +67,21 @@ from rlrmp.runtime.spec_migrations import (
     RUN_SPEC_SCHEMA_VERSION,
     ensure_rlrmp_spec_families,
     stamp_current_schema,
+)
+from rlrmp.train.executor.guards import make_stop_predicate
+from rlrmp.train.executor.slots import (
+    COMPLETED_BATCHES,
+    CS_SUPERVISED_METHOD_REF,
+    CS_SUPERVISED_SCHEMA,
+    HISTORY_CHUNK_BYTES,
+    MODEL,
+    OBJECTIVE,
+    OPTIMIZER,
+    PRNG,
+    TRAIN_LOSS,
+    artifact_sink_specs,
+    checkpoint_slot_specs,
+    supervised_state_slots,
 )
 
 
@@ -93,6 +107,13 @@ GUIDED_DISTILLATION_PAYLOAD_SCHEMA_ID = (
 GUIDED_DISTILLATION_PAYLOAD_SCHEMA_VERSION = (
     "rlrmp.spec.training_method.guided_distillation_payload.v1"
 )
+CS_SUPERVISED_METHOD_PAYLOAD_SCHEMA_ID = "rlrmp.spec.training_method.cs_supervised_payload"
+CS_SUPERVISED_METHOD_PAYLOAD_SCHEMA_VERSION = (
+    "rlrmp.spec.training_method.cs_supervised_payload.v1"
+)
+CS_SUPERVISED_CHUNK_KERNEL_REF = "rlrmp.cs_supervised.train_chunk"
+CS_SUPERVISED_STOP_PREDICATE_REF = "rlrmp.cs_supervised.training_complete"
+CS_SUPERVISED_BARRIER = "after_train_chunk"
 
 
 class MissingTrainingRunSpecFieldError(ValueError):
@@ -403,10 +424,45 @@ class GuidedDistillationMethodPayload(_StrictPayloadModel):
     checkpointing: DistillationCheckpointingPayload
 
 
+class CsSupervisedPreStepPayload(_StrictPayloadModel):
+    """Optional pre-step perturbation optimizer applied before supervised descent."""
+
+    kind: str
+    enabled: bool
+    config: dict[str, Any]
+
+
+class CsSupervisedCheckpointPolicyPayload(_StrictPayloadModel):
+    """Checkpoint and artifact policy owned by the cs-supervised method payload."""
+
+    checkpoint_interval_batches: int
+    artifact_root: str
+    tracked_spec_dir: str
+
+
+class CsSupervisedMethodPayload(_StrictPayloadModel):
+    """Governed payload for plain and PGD-pre-step C&S supervised training."""
+
+    training_mode: str
+    n_train_batches: int
+    batch_size: int
+    optimizer_policy: dict[str, Any]
+    gradient_clip_norm: float | None = None
+    training_diagnostics: dict[str, Any]
+    pre_step: CsSupervisedPreStepPayload | None = None
+    checkpoint_policy: CsSupervisedCheckpointPolicyPayload
+
+
 def training_arg_parser(*args: Any, **kwargs: Any) -> argparse.ArgumentParser:
     """Return an argparse parser outside the scanned training-entry module set."""
 
     return argparse.ArgumentParser(*args, **kwargs)
+
+
+def cs_supervised_method_ref() -> MethodRefSpec:
+    """Return the RLRMP method ref for native C&S supervised training."""
+
+    return MethodRefSpec(package="rlrmp", name="cs_supervised", version="v1")
 
 
 def closed_loop_distillation_method_ref() -> MethodRefSpec:
@@ -419,6 +475,25 @@ def guided_distillation_method_ref() -> MethodRefSpec:
     """Return the RLRMP method ref for guided distillation."""
 
     return MethodRefSpec(package="rlrmp", name="guided_distillation", version="v1")
+
+
+def register_rlrmp_cs_supervised_method() -> None:
+    """Register the native RLRMP C&S supervised method with Feedbax."""
+
+    _register_method_once(
+        TrainingMethodRegistration(
+            method_ref=CS_SUPERVISED_METHOD_REF,
+            payload_schema_id=CS_SUPERVISED_METHOD_PAYLOAD_SCHEMA_ID,
+            payload_schema_version=CS_SUPERVISED_METHOD_PAYLOAD_SCHEMA_VERSION,
+            payload_model=CsSupervisedMethodPayload,
+            contract_factory=cs_supervised_method_contract,
+            update_kernels_factory=_cs_supervised_update_kernels,
+            guard_predicates_factory=_cs_supervised_guard_predicates,
+            rejected_payload_versions=("rlrmp.spec.training_method.cs_supervised_payload.v0",),
+            owner="rlrmp.runtime.training_run_specs",
+            package="rlrmp",
+        )
+    )
 
 
 def register_rlrmp_distillation_methods() -> None:
@@ -541,6 +616,186 @@ def guided_distillation_method_payload(run_spec: dict[str, Any]) -> MethodPayloa
         schema_id=GUIDED_DISTILLATION_PAYLOAD_SCHEMA_ID,
         schema_version=GUIDED_DISTILLATION_PAYLOAD_SCHEMA_VERSION,
         payload=validated.model_dump(mode="json", exclude_none=True),
+    )
+
+
+def cs_supervised_method_payload(
+    run_spec: dict[str, Any],
+    *,
+    output_dir: Path,
+    spec_dir: Path,
+) -> MethodPayloadEnvelope:
+    """Return the governed payload envelope for native C&S supervised training."""
+
+    training_summary = _mapping(run_spec, "training_summary")
+    hps = _mapping(run_spec, "hps")
+    pgd_config = _mapping(hps, "broad_epsilon_pgd_training")
+    pre_step = None
+    if "enabled" in pgd_config and bool(pgd_config["enabled"]):
+        pre_step = CsSupervisedPreStepPayload(
+            kind="broad_epsilon_pgd_pre_step",
+            enabled=True,
+            config=pgd_config,
+        )
+    payload = CsSupervisedMethodPayload(
+        training_mode=str(
+            _required_recording_field(run_spec, "training_summary.training_mode")
+        ),
+        n_train_batches=int(
+            _required_recording_field(run_spec, "training_summary.n_train_batches")
+        ),
+        batch_size=int(_required_recording_field(run_spec, "training_summary.batch_size")),
+        optimizer_policy={
+            "optimizer": _mapping(run_spec, "optimizer"),
+            "controller_lr": training_summary.get("controller_lr"),
+            "lr_schedule": training_summary.get("lr_schedule"),
+        },
+        gradient_clip_norm=training_summary.get("gradient_clip_norm"),
+        training_diagnostics=_mapping(run_spec, "training_diagnostics"),
+        pre_step=pre_step,
+        checkpoint_policy=CsSupervisedCheckpointPolicyPayload(
+            checkpoint_interval_batches=int(
+                _required_recording_field(run_spec, "checkpointing.interval_batches")
+            ),
+            artifact_root=str(output_dir),
+            tracked_spec_dir=str(spec_dir),
+        ),
+    )
+    return MethodPayloadEnvelope(
+        schema_id=CS_SUPERVISED_METHOD_PAYLOAD_SCHEMA_ID,
+        schema_version=CS_SUPERVISED_METHOD_PAYLOAD_SCHEMA_VERSION,
+        payload=payload.model_dump(mode="json", exclude_none=True),
+    )
+
+
+def cs_supervised_method_contract() -> MethodContractSpec:
+    """Return the chunked native-executor contract for C&S supervised training."""
+
+    program = PhaseProgramSpec(
+        phases=[
+            PhaseSpec(
+                name="train_chunk",
+                kind="custom",
+                reads=[MODEL, OPTIMIZER, PRNG, COMPLETED_BATCHES, OBJECTIVE],
+                writes=[
+                    MODEL,
+                    OPTIMIZER,
+                    PRNG,
+                    COMPLETED_BATCHES,
+                    TRAIN_LOSS,
+                    HISTORY_CHUNK_BYTES,
+                ],
+                update_steps=["cs_supervised_chunk"],
+                legal_next=["done", "train_chunk"],
+                checkpoint_barrier=CS_SUPERVISED_BARRIER,
+                loop_axis="batch",
+                metadata={"native_kernel_granularity": "checkpoint_interval_chunk"},
+            ),
+            PhaseSpec(
+                name="done",
+                kind="evaluation",
+                reads=[MODEL, OPTIMIZER, PRNG, COMPLETED_BATCHES, TRAIN_LOSS],
+            ),
+        ],
+        initial_phase="train_chunk",
+        transitions=[
+            PhaseTransitionSpec(
+                source="train_chunk",
+                target="done",
+                barrier=CS_SUPERVISED_BARRIER,
+                guard=MetricGuardSpec(
+                    predicate_ref=CS_SUPERVISED_STOP_PREDICATE_REF,
+                    metric_slots=[TRAIN_LOSS],
+                    bookkeeping_slots=[COMPLETED_BATCHES],
+                ),
+            ),
+            PhaseTransitionSpec(
+                source="train_chunk",
+                target="train_chunk",
+                barrier=CS_SUPERVISED_BARRIER,
+            ),
+        ],
+        update_steps=[
+            UpdateStepSpec(
+                name="cs_supervised_chunk",
+                kind="gradient",
+                kernel=UpdateKernelSpec(kernel_ref=CS_SUPERVISED_CHUNK_KERNEL_REF),
+                reads=[MODEL, OPTIMIZER, PRNG, COMPLETED_BATCHES, OBJECTIVE],
+                writes=[
+                    MODEL,
+                    OPTIMIZER,
+                    PRNG,
+                    COMPLETED_BATCHES,
+                    TRAIN_LOSS,
+                    HISTORY_CHUNK_BYTES,
+                ],
+                axes=["batch", "replicate"],
+                optimizer_binding="optimizer_to_model",
+                metadata={"direction": "minimize", "pre_step": "method_payload.pre_step"},
+            )
+        ],
+        optimizer_bindings=[
+            OptimizerTargetBinding(
+                name="optimizer_to_model",
+                optimizer_slot=OPTIMIZER,
+                target_slot=MODEL,
+                direction="minimize",
+                projection="after_step",
+                phase_scope=["train_chunk"],
+                objective_reads=[OBJECTIVE],
+            )
+        ],
+        checkpoint_barriers=[
+            CheckpointBarrierSpec(
+                name=CS_SUPERVISED_BARRIER,
+                phase="train_chunk",
+                slots=[
+                    slot
+                    for slot in checkpoint_slot_specs(CS_SUPERVISED_SCHEMA)
+                    if slot.slot != TRAIN_LOSS
+                ],
+                artifact_sinks=artifact_sink_specs(CS_SUPERVISED_SCHEMA),
+            )
+        ],
+        metadata={
+            "phase_program_identity": "rlrmp.cs_supervised.chunked_supervised.v1",
+            "checkpoint_barrier_policy": "after_each_training_chunk",
+        },
+    )
+    return MethodContractSpec(
+        method_ref=CS_SUPERVISED_METHOD_REF,
+        method_payload_schema_version=CS_SUPERVISED_METHOD_PAYLOAD_SCHEMA_VERSION,
+        axes=[
+            AxisSpec(name="batch", role="batch"),
+            AxisSpec(name="replicate", role="replicate"),
+        ],
+        state_slots=supervised_state_slots(CS_SUPERVISED_SCHEMA),
+        phase_program=program,
+        objective_reducers=[
+            {"axis": "batch", "owner": "objective", "path": "/objective/payload/loss_summary"}
+        ],
+        worker_reducers=[
+            {"axis": "replicate", "owner": "worker", "path": "/risk_aggregation/replicate"}
+        ],
+        metadata={
+            "runtime_context": "rlrmp_runtime.components.cs_supervised",
+            "supported_modes": ["plain_supervised", "broad_epsilon_pgd_pre_step"],
+        },
+    )
+
+
+def cs_supervised_effective_phase_spec(
+    contract: MethodContractSpec | None = None,
+) -> EffectivePhaseSpec:
+    """Return the effective phase spec corresponding to the cs-supervised contract."""
+
+    active_contract = contract or cs_supervised_method_contract()
+    return EffectivePhaseSpec(
+        method_ref=active_contract.method_ref,
+        axes=active_contract.axes,
+        state_slots=active_contract.state_slots,
+        phase_program=active_contract.phase_program,
+        consistency_predicate=derive_consistency_predicate(active_contract.phase_program),
     )
 
 
@@ -908,6 +1163,16 @@ def _closed_loop_distillation_update_kernels(
 
 def _guided_distillation_update_kernels(_payload: BaseModel | None = None) -> dict[str, Any]:
     return {"rlrmp.train.guided_distillation.guided_gradient_update": _no_op_kernel}
+
+
+def _cs_supervised_update_kernels(payload: BaseModel | None = None) -> dict[str, Any]:
+    from rlrmp.train.cs_nominal_gru import cs_supervised_update_kernels
+
+    return cs_supervised_update_kernels(payload)
+
+
+def _cs_supervised_guard_predicates(payload: BaseModel | None = None) -> dict[str, Any]:
+    return {CS_SUPERVISED_STOP_PREDICATE_REF: make_stop_predicate(payload)}
 
 
 def _no_op_kernel(slots: dict[str, Any], coordinate: Any, context: dict[str, Any]) -> dict[str, Any]:
@@ -1350,10 +1615,11 @@ def build_feedbax_training_run_spec(
 ) -> TrainingRunSpec:
     """Build the composed Feedbax ``TrainingRunSpec`` for one C&S GRU run."""
 
-    training_summary = _mapping(run_spec, "training_summary")
+    register_rlrmp_cs_supervised_method()
     checkpointing = _mapping(run_spec, "checkpointing")
     training_diagnostics = _mapping(run_spec, "training_diagnostics")
     training_config = _cs_training_config(run_spec, spec_dir=spec_dir)
+    graph_payload = graph_spec_payload(graph_spec)
     feedback_descriptors = controller_feedback_descriptor_from_container(
         _mapping(run_spec, "model_summary"),
         feedback_dim=_feedback_dim_from_run_spec(run_spec),
@@ -1365,16 +1631,25 @@ def build_feedbax_training_run_spec(
         "fidelity_status": run_spec.get("fidelity_status"),
         DESCRIPTOR_PAYLOAD_KEY: feedback_descriptors,
     }
+    method_payload = cs_supervised_method_payload(
+        run_spec,
+        output_dir=output_dir,
+        spec_dir=spec_dir,
+    )
+    method_contract = cs_supervised_method_contract()
+    effective_phase = cs_supervised_effective_phase_spec(method_contract)
+    effective_phase_fingerprint = _effective_phase_fingerprint(
+        graph_payload=graph_payload,
+        effective_phase=effective_phase,
+        method_payload=method_payload.model_dump(mode="json", exclude_none=True),
+    )
     method_metadata = {
         "runner": "rlrmp.train.cs_nominal_gru",
-        "rlrmp_training_mode": training_summary.get("training_mode"),
-        "rlrmp_loss_objective": run_spec.get("loss_objective"),
-        "adversarial_phase": run_spec.get("adversarial_phase"),
         "rlrmp_extension_payload": RLRMP_RUN_SPEC_PAYLOAD_KEY,
     }
     return TrainingRunSpec(
         graph=GraphTopologySourceSpec(
-            inline=graph_spec_payload(graph_spec),
+            inline=graph_payload,
             schema_id=getattr(graph_spec, "schema_id", None),
             schema_version=getattr(graph_spec, "schema_version", None),
             metadata={
@@ -1401,15 +1676,15 @@ def build_feedbax_training_run_spec(
             replicate="mean",
             metadata={"source": "$.training_summary"},
         ),
-        method_ref=standard_supervised_method_ref(),
-        method_payload=standard_supervised_method_payload(),
+        method_ref=cs_supervised_method_ref(),
+        method_payload=method_payload,
         method_extensions={"metadata": method_metadata},
         worker_execution=WorkerExecutionSpec(
-            method_contract=standard_supervised_method_contract(),
-            effective_phase=standard_supervised_effective_phase_spec(),
+            method_contract=method_contract,
+            effective_phase=effective_phase,
             metadata={
-                "legacy_runner": "rlrmp.train.cs_nominal_gru.run_full_training",
-                "full_feedbax_executor_deferred_to": "54b0c2e",
+                "native_executor": "feedbax.training.executor.execute_training_run_spec",
+                "effective_phase_fingerprint": effective_phase_fingerprint,
             },
         ),
         execution=ExecutionPolicySpec(
@@ -1437,6 +1712,7 @@ def build_feedbax_training_run_spec(
             "serialize_do_not_rederive": True,
             DESCRIPTOR_PAYLOAD_KEY: feedback_descriptors,
             "descriptor_basis_hash": feedback_descriptors["descriptor_basis_hash"],
+            "effective_phase_fingerprint": effective_phase_fingerprint,
         },
     )
 
@@ -1633,6 +1909,23 @@ def attach_post_run_provenance(
 def _mapping(mapping: dict[str, Any], key: str) -> dict[str, Any]:
     value = mapping.get(key)
     return value if isinstance(value, dict) else {}
+
+
+def _effective_phase_fingerprint(
+    *,
+    graph_payload: Mapping[str, Any],
+    effective_phase: EffectivePhaseSpec,
+    method_payload: Mapping[str, Any],
+) -> str:
+    parity = {
+        "graph": graph_payload,
+        "effective_phase": effective_phase.model_dump(mode="json", exclude_none=True),
+        "method_payload": method_payload,
+    }
+    encoded = json.dumps(parity, sort_keys=True, separators=(",", ":"), default=str).encode(
+        "utf-8"
+    )
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _feedback_dim_from_run_spec(run_spec: dict[str, Any]) -> int:
