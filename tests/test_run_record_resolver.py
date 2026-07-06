@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from feedbax.contracts.manifest import ArtifactRef, Provenance, TrainingRunManifest, spec_payload
 
+from rlrmp.runtime import run_specs
 from rlrmp.runtime.run_specs import RunSpecValidationError, resolve_run_record
 from rlrmp.runtime.spec_migrations import (
     RUN_SPEC_KIND,
@@ -62,30 +63,41 @@ def _write_manifest(
     run: str = "fixture__ok",
     run_spec: dict[str, Any] | None = None,
     root: Path | None = None,
+    manifest_id: str | None = None,
+    job_id: str | None = None,
+    status: str = "completed",
+    summary_metrics: dict[str, Any] | None = None,
+    provenance_metadata: dict[str, Any] | None = None,
+    artifact_roles: tuple[str, ...] = ("tracked_run_spec",),
+    training_spec_ref: str | None = None,
+    artifact_uri: str | None = None,
 ) -> Path:
     ensure_rlrmp_spec_families()
     payload = rlrmp_extension_payload(run_spec or _run_spec(exp=exp, run=run))
     rel_spec = f"results/{exp}/runs/{run}.json"
     manifest = TrainingRunManifest(
-        id=f"feedbax-training-run:rlrmp-{exp}-{run}",
-        status="completed",
-        job_id=run,
-        training_spec=spec_payload(RUN_SPEC_KIND, payload, ref=rel_spec),
+        id=manifest_id or f"feedbax-training-run:rlrmp-{exp}-{run}",
+        status=status,
+        job_id=job_id or run,
+        training_spec=spec_payload(RUN_SPEC_KIND, payload, ref=training_spec_ref or rel_spec),
         provenance=Provenance(
             source_repo="https://github.com/i-m-mll/rlrmp.git",
             dirty=False,
             issues=[exp],
+            metadata=provenance_metadata or {},
         ),
         artifacts=[
             ArtifactRef(
-                role="tracked_run_spec",
+                role=role,
                 logical_name=f"{run}.json",
                 artifact_id=f"repo://rlrmp/{rel_spec}",
-                uri=rel_spec,
+                uri=artifact_uri or rel_spec,
                 media_type="application/json",
                 storage_backend="rlrmp-results",
             )
+            for role in artifact_roles
         ],
+        summary_metrics=summary_metrics or {},
     )
     root = root or repo / "_artifacts" / "feedbax_runs"
     path = root / "manifests" / "training_runs" / f"{manifest.id}.json"
@@ -152,6 +164,64 @@ def test_resolve_run_record_same_id_different_content_fails(tmp_path: Path) -> N
     duplicate.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     with pytest.raises(RunSpecValidationError, match="same TrainingRunManifest id"):
+        resolve_run_record("731fdf7", "fixture__ok", repo_root=repo)
+
+
+def test_resolve_run_record_prefers_completed_native_over_placeholder(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    exp = "c56ed2c"
+    run = "native__ok"
+
+    _write_manifest(
+        repo,
+        exp=exp,
+        run=run,
+        manifest_id=f"feedbax-training-run:rlrmp-{exp}-{run}",
+        job_id=run,
+        summary_metrics={"planned_batches": 3},
+        provenance_metadata={"producer": "rlrmp.train.cs_nominal_gru.write_run_spec"},
+    )
+    native_path = _write_manifest(
+        repo,
+        exp=exp,
+        run=run,
+        manifest_id=f"feedbax-training-run:{run}-native",
+        job_id=f"{run}-native",
+        summary_metrics={"train_loss": 0.125},
+        artifact_roles=("tracked_run_spec", "final_model", "training_summary"),
+        training_spec_ref=f"/tmp/{run}.json",
+        artifact_uri=f"/tmp/{run}.json",
+    )
+
+    selected_path, selected = run_specs._resolve_training_manifest(exp, run, repo_root=repo)
+    resolved = resolve_run_record(exp, run, repo_root=repo)
+
+    assert selected_path == native_path
+    assert selected.summary_metrics == {"train_loss": 0.125}
+    assert selected.job_id == f"{run}-native"
+    assert resolved["run"] == run
+
+
+def test_resolve_run_record_keeps_ambiguous_distinct_manifest_failure(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    _write_manifest(
+        repo,
+        manifest_id="feedbax-training-run:fixture__ok-a",
+        job_id="fixture__ok-a",
+        summary_metrics={"train_loss": 0.1},
+    )
+    _write_manifest(
+        repo,
+        manifest_id="feedbax-training-run:fixture__ok-b",
+        job_id="fixture__ok-b",
+        summary_metrics={"train_loss": 0.2},
+    )
+
+    with pytest.raises(RunSpecValidationError, match="multiple TrainingRunManifest records"):
         resolve_run_record("731fdf7", "fixture__ok", repo_root=repo)
 
 

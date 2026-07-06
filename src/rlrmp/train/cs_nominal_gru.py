@@ -106,7 +106,6 @@ from rlrmp.runtime.training_run_specs import (
     attach_post_run_provenance,
     assert_runtime_graph_matches_training_spec,
     feedbax_training_run_spec_from_payload,
-    write_training_run_manifest_for_spec,
 )
 from rlrmp.runtime.spec_migrations import (
     RUN_SPEC_KIND,
@@ -2440,18 +2439,11 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
     )
     validate_nominal_gru_run_spec(payload, spec_dir=spec_dir)
     run_path.write_text(_json_dumps(payload), encoding="utf-8")
-    manifest_path = write_training_run_manifest_for_spec(
-        run_spec_path=run_path,
-        run_spec=payload,
-        manifest_root=REPO_ROOT / "_artifacts" / "feedbax_runs",
-        graph_manifest_path=spec_dir / "model.graph.manifest.json",
-        graph_spec_path=graph_path,
-    )
     return {
         "run_spec_path": str(run_path),
         "graph_spec_path": None if graph_path is None else str(graph_path),
         "graph_manifest_path": str(spec_dir / "model.graph.manifest.json"),
-        "training_manifest_path": str(manifest_path),
+        "training_manifest_path": None,
     }
 
 
