@@ -106,7 +106,6 @@ from rlrmp.runtime.training_run_specs import (
     attach_post_run_provenance,
     assert_runtime_graph_matches_training_spec,
     feedbax_training_run_spec_from_payload,
-    write_training_run_manifest_for_spec,
 )
 from rlrmp.runtime.spec_migrations import (
     RUN_SPEC_KIND,
@@ -2440,18 +2439,11 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
     )
     validate_nominal_gru_run_spec(payload, spec_dir=spec_dir)
     run_path.write_text(_json_dumps(payload), encoding="utf-8")
-    manifest_path = write_training_run_manifest_for_spec(
-        run_spec_path=run_path,
-        run_spec=payload,
-        manifest_root=REPO_ROOT / "_artifacts" / "feedbax_runs",
-        graph_manifest_path=spec_dir / "model.graph.manifest.json",
-        graph_spec_path=graph_path,
-    )
     return {
         "run_spec_path": str(run_path),
         "graph_spec_path": None if graph_path is None else str(graph_path),
         "graph_manifest_path": str(spec_dir / "model.graph.manifest.json"),
-        "training_manifest_path": str(manifest_path),
+        "training_manifest_path": None,
     }
 
 
@@ -3012,6 +3004,9 @@ def _run_cs_supervised_native_from_context(
         training_spec_payload_schema_version=RUN_SPEC_SCHEMA_VERSION,
         training_spec_payload_ref=str(run_spec_path),
         resume=resume_native,
+        resume_slot_transform=_cs_supervised_resume_slot_transform(
+            n_batches=int(args.n_train_batches),
+        ),
         issues=[str(args.issue)],
     )
     training_duration_seconds = time.perf_counter() - started
@@ -4063,9 +4058,17 @@ def _cs_expected_slots(
     adversary_optimizer_state_template: Any | None,
 ) -> dict[str, Any]:
     expected: dict[str, Any] = {
+        "model": serialize_pytree_slot(model_template),
+        "optimizer": serialize_pytree_slot(optimizer_state_template),
         "prng": jnp.asarray([0, 0], dtype=jnp.uint32),
         "completed_batches": jnp.asarray(0, dtype=jnp.int32),
     }
+    if adversary_policy_template is not None:
+        expected["adversary_policy"] = serialize_pytree_slot(adversary_policy_template)
+    if adversary_optimizer_state_template is not None:
+        expected["adversary_optimizer"] = serialize_pytree_slot(
+            adversary_optimizer_state_template
+        )
     return expected
 
 
@@ -5270,6 +5273,26 @@ def _resize_optimizer_diagnostics_for_batches(optimizer_state: Any, n_batches: i
         optimizer_state,
         is_leaf=lambda leaf: isinstance(leaf, (GradientDiagnosticsState, UpdateDiagnosticsState)),
     )
+
+
+def _cs_supervised_resume_slot_transform(
+    *,
+    n_batches: int,
+    transform: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+) -> Callable[[Mapping[str, Any]], Mapping[str, Any]]:
+    """Return the cs_supervised native checkpoint resume slot normalizer."""
+
+    def normalize(slots: Mapping[str, Any]) -> Mapping[str, Any]:
+        payload = dict(transform(slots) if transform is not None else slots)
+        if OPTIMIZER in payload:
+            payload[OPTIMIZER] = _resize_optimizer_diagnostics_for_batches(
+                payload[OPTIMIZER],
+                n_batches,
+            )
+        payload[TRAIN_LOSS] = 0.0
+        return payload
+
+    return normalize
 
 
 def _resize_diagnostic_series(series: Any, n_batches: int) -> Any:

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
@@ -11,10 +12,15 @@ import pytest
 
 from feedbax.contracts.training import TrainingRunSpec
 from feedbax.contracts.worker import ProgressCoordinate
+from jax_cookbook import save as fbx_save
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.model.feedbax_graph import build_rlrmp_feedbax_graph_bundle
 from rlrmp.train.executor.adapters import RLRMP_RUNTIME_CONTEXT_KEY
-from rlrmp.train.executor.equivalence import compare_pytrees
+from rlrmp.train.executor.equivalence import (
+    assert_paired_equivalent,
+    compare_pytrees,
+    run_paired_equivalence,
+)
 from rlrmp.train.minimax import (
     MINIMAX_METHOD_REF,
     MINIMAX_METHOD_PAYLOAD_SCHEMA_VERSION,
@@ -40,6 +46,11 @@ from rlrmp.train.minimax_native import (
     PROJECTION_KERNEL_REF,
     WARMUP_KERNEL_REF,
     MinimaxControllerState,
+    _controller_state_from_model,
+    _prepare_adversarial_batch,
+    _vmapped_controller_descent,
+    _vmapped_gaussian_adversary_ascent,
+    _vmapped_linear_adversary_ascent,
     minimax_update_kernels,
 )
 from rlrmp.train.task_model import build_task_base
@@ -178,6 +189,15 @@ def _comparable_native_slots(slots: dict[str, object]) -> dict[str, object]:
         if getattr(getattr(leaf, "dtype", None), "kind", None) == "b"
         else leaf,
         comparable,
+    )
+
+
+def _bool_leaves_as_ints(tree: Any) -> Any:
+    return jt.map(
+        lambda leaf: leaf.astype(jnp.int8)
+        if getattr(getattr(leaf, "dtype", None), "kind", None) == "b"
+        else leaf,
+        tree,
     )
 
 
@@ -365,6 +385,94 @@ def test_minimax_config_validation_replaces_legacy_validator(argv: list[str]) ->
         legacy_cli_args_to_minimax_config(argv)
 
 
+@pytest.mark.parametrize(
+    ("adversary_type", "step_fn_name"),
+    [
+        ("gaussian_bump", "_vmapped_gaussian_adversary_ascent"),
+        ("linear_dynamics", "_vmapped_linear_adversary_ascent"),
+    ],
+)
+def test_minimax_jitted_adversary_step_matches_eager_fixed_seed(
+    tmp_path: Path,
+    adversary_type: str,
+    step_fn_name: str,
+) -> None:
+    spec = _native_smoke_spec(tmp_path, adversary_type=adversary_type, n_adversary_batches=1)
+    config = minimax_training_run_spec_to_config(spec)
+    args = minimax_config_namespace(config)
+    hps = build_hps(args)
+    slots, runtime_context = build_minimax_native_initial_slots(
+        run_spec=spec,
+        hps=hps,
+        args=args,
+        key=jr.PRNGKey(10),
+    )
+    runtime = runtime_context.component("minimax")
+    prepared = _prepare_adversarial_batch(runtime, slots["rng"], batch_index=0)
+    adversary = slots["adversary_population"][prepared.active_member_index]
+    adv_opt_state = slots["adversary_optimizer"][prepared.active_member_index]
+    step_fn = {
+        "_vmapped_gaussian_adversary_ascent": _vmapped_gaussian_adversary_ascent,
+        "_vmapped_linear_adversary_ascent": _vmapped_linear_adversary_ascent,
+    }[step_fn_name]
+
+    eager = step_fn.__wrapped__(
+        runtime,
+        slots["controller"],
+        adversary,
+        adv_opt_state,
+        prepared.trial_specs,
+        prepared.trial_keys,
+    )
+    jitted = step_fn(
+        runtime,
+        slots["controller"],
+        adversary,
+        adv_opt_state,
+        prepared.trial_specs,
+        prepared.trial_keys,
+    )
+
+    diffs = compare_pytrees(_bool_leaves_as_ints(eager), _bool_leaves_as_ints(jitted))
+    assert max((diff.max_abs_diff for diff in diffs), default=0.0) <= 1e-6
+
+
+def test_minimax_jitted_controller_step_matches_eager_fixed_seed(tmp_path: Path) -> None:
+    spec = _native_smoke_spec(tmp_path, n_adversary_batches=1)
+    config = minimax_training_run_spec_to_config(spec)
+    args = minimax_config_namespace(config)
+    hps = build_hps(args)
+    slots, runtime_context = build_minimax_native_initial_slots(
+        run_spec=spec,
+        hps=hps,
+        args=args,
+        key=jr.PRNGKey(11),
+    )
+    runtime = runtime_context.component("minimax")
+    prepared = _prepare_adversarial_batch(runtime, slots["rng"], batch_index=0)
+    adversary = slots["adversary_population"][prepared.active_member_index]
+
+    eager = _vmapped_controller_descent.__wrapped__(
+        runtime,
+        slots["controller"],
+        slots["controller_optimizer"],
+        adversary,
+        prepared.trial_specs,
+        prepared.trial_keys,
+    )
+    jitted = _vmapped_controller_descent(
+        runtime,
+        slots["controller"],
+        slots["controller_optimizer"],
+        adversary,
+        prepared.trial_specs,
+        prepared.trial_keys,
+    )
+
+    diffs = compare_pytrees(_bool_leaves_as_ints(eager), _bool_leaves_as_ints(jitted))
+    assert max((diff.max_abs_diff for diff in diffs), default=0.0) <= 1e-6
+
+
 def test_minimax_native_executor_matches_fixed_seed_manual_kernel_loop(
     tmp_path: Path,
 ) -> None:
@@ -380,14 +488,78 @@ def test_minimax_native_executor_matches_fixed_seed_manual_kernel_loop(
         manifest_conflict_policy="reuse-identical",
     )
 
-    diffs = compare_pytrees(
-        _comparable_native_slots(manual_slots),
-        _comparable_native_slots(result.final_slots),
+    report = run_paired_equivalence(
+        "minimax.gaussian_bump.driver",
+        lambda: manual_slots,
+        lambda: result.final_slots,
+        comparable=_comparable_native_slots,
+        left_label="manual_kernel_loop",
+        right_label="native_executor",
     )
-    assert max((diff.max_abs_diff for diff in diffs), default=0.0) <= 1e-6
+    assert_paired_equivalent(report)
     assert result.final_coordinate.phase == "done"
     assert result.final_slots["controller_loss"] != 0.0
     assert result.final_slots["adversary_loss"] != 0.0
+
+
+def test_minimax_native_initial_slots_honor_explicit_warmup_model(
+    tmp_path: Path,
+) -> None:
+    spec = _native_smoke_spec(tmp_path, n_adversary_batches=1)
+    config = minimax_training_run_spec_to_config(spec)
+    args = minimax_config_namespace(config)
+    hps = build_hps(args)
+    fresh_slots, fresh_runtime_context = build_minimax_native_initial_slots(
+        run_spec=spec,
+        hps=hps,
+        args=args,
+        key=jr.PRNGKey(0),
+    )
+    fresh_runtime = fresh_runtime_context.component("minimax")
+    fresh_model = fresh_runtime.pair.model
+    shifted_net = jt.map(
+        lambda leaf: leaf + 0.125
+        if eqx.is_array(leaf) and jnp.issubdtype(leaf.dtype, jnp.floating)
+        else leaf,
+        fresh_model.get_node("net"),
+        is_leaf=eqx.is_array,
+    )
+    sentinel_model = eqx.tree_at(
+        lambda model: model.get_node("net"),
+        fresh_model,
+        shifted_net,
+    )
+    warmup_model_path = tmp_path / "warmup_model.eqx"
+    fbx_save(warmup_model_path, sentinel_model)
+
+    warmup_config = {**config, "warmup_model": str(warmup_model_path)}
+    warmup_spec = TrainingRunSpec.model_validate(
+        _payload_from_config(tmp_path, warmup_config)["feedbax_training_run_spec"]
+    )
+    warmup_args = minimax_config_namespace(warmup_config)
+    warmup_slots, warmup_runtime_context = build_minimax_native_initial_slots(
+        run_spec=warmup_spec,
+        hps=hps,
+        args=warmup_args,
+        key=jr.PRNGKey(0),
+    )
+    warmup_runtime = warmup_runtime_context.component("minimax")
+    expected_controller = _controller_state_from_model(
+        sentinel_model,
+        warmup_runtime.controller_layout,
+    )
+
+    loaded_diffs = compare_pytrees(
+        _bool_leaves_as_ints(warmup_slots["controller"].per_replicate_leaves),
+        _bool_leaves_as_ints(expected_controller.per_replicate_leaves),
+    )
+    fresh_diffs = compare_pytrees(
+        _bool_leaves_as_ints(fresh_slots["controller"].per_replicate_leaves),
+        _bool_leaves_as_ints(warmup_slots["controller"].per_replicate_leaves),
+    )
+    assert max((diff.max_abs_diff for diff in loaded_diffs), default=0.0) <= 1e-6
+    assert max((diff.max_abs_diff for diff in fresh_diffs), default=0.0) > 0.0
+    assert warmup_runtime.pair.model is not fresh_runtime.pair.model
 
 
 def test_minimax_native_executor_resume_matches_uninterrupted(
@@ -422,12 +594,16 @@ def test_minimax_native_executor_resume_matches_uninterrupted(
         manifest_conflict_policy="reuse-identical",
     )
 
-    diffs = compare_pytrees(
-        _comparable_native_slots(full.final_slots),
-        _comparable_native_slots(resumed.final_slots),
+    report = run_paired_equivalence(
+        "minimax.gaussian_bump.resume",
+        lambda: full.final_slots,
+        lambda: resumed.final_slots,
+        comparable=_comparable_native_slots,
+        left_label="uninterrupted",
+        right_label="resumed",
     )
     assert partial.final_coordinate.completed_barrier == "after_adversarial"
-    assert max((diff.max_abs_diff for diff in diffs), default=0.0) <= 1e-6
+    assert_paired_equivalent(report)
 
 
 def test_linear_dynamics_minimax_native_executor_matches_fixed_seed_manual_kernel_loop(
@@ -445,11 +621,15 @@ def test_linear_dynamics_minimax_native_executor_matches_fixed_seed_manual_kerne
         manifest_conflict_policy="reuse-identical",
     )
 
-    diffs = compare_pytrees(
-        _comparable_native_slots(manual_slots),
-        _comparable_native_slots(result.final_slots),
+    report = run_paired_equivalence(
+        "minimax.linear_dynamics.driver",
+        lambda: manual_slots,
+        lambda: result.final_slots,
+        comparable=_comparable_native_slots,
+        left_label="manual_kernel_loop",
+        right_label="native_executor",
     )
-    assert max((diff.max_abs_diff for diff in diffs), default=0.0) <= 1e-6
+    assert_paired_equivalent(report)
     assert result.final_coordinate.phase == "done"
     assert result.final_slots["controller_loss"] != 0.0
     assert result.final_slots["adversary_loss"] != 0.0
@@ -487,9 +667,13 @@ def test_linear_dynamics_minimax_native_executor_resume_matches_uninterrupted(
         manifest_conflict_policy="reuse-identical",
     )
 
-    diffs = compare_pytrees(
-        _comparable_native_slots(full.final_slots),
-        _comparable_native_slots(resumed.final_slots),
+    report = run_paired_equivalence(
+        "minimax.linear_dynamics.resume",
+        lambda: full.final_slots,
+        lambda: resumed.final_slots,
+        comparable=_comparable_native_slots,
+        left_label="uninterrupted",
+        right_label="resumed",
     )
     assert partial.final_coordinate.completed_barrier == "after_adversarial"
-    assert max((diff.max_abs_diff for diff in diffs), default=0.0) <= 1e-6
+    assert_paired_equivalent(report)

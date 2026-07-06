@@ -75,7 +75,7 @@ def test_closed_loop_distillation_builds_a378b34_contract() -> None:
     assert spec["training_entry"]["full_train_status"] == (
         "implemented_no_launch_pending_user_approval"
     )
-    assert "TaskTrainer/train_pair" in spec["training_entry"]["trainer_path"]
+    assert "execute_distillation_training_run_spec_native" in spec["training_entry"]["trainer_path"]
     assert spec["teacher_contract"]["teacher_package"] == (
         "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers.npz"
     )

@@ -76,7 +76,40 @@ def test_fingerprint_refuses_dirty_feedbax_checkout(tmp_path: Path) -> None:
     _write_project_files(repo, feedbax)
     _commit_all(repo, "project files")
 
-    (feedbax / "feedbax.txt").write_text("dirty\n", encoding="utf-8")
+    (feedbax / "initial.txt").write_text("dirty\n", encoding="utf-8")
+
+    fingerprint = full_suite.build_fingerprint(repo)
+    assert not fingerprint.ok
+    assert fingerprint.digest is None
+    assert "feedbax checkout has tracked or untracked changes" in fingerprint.reason
+
+
+def test_untracked_dependency_docs_do_not_block_memo_recording(tmp_path: Path) -> None:
+    memo_dir = tmp_path / "memo"
+    repo = _make_repo(tmp_path / "repo")
+    feedbax = _make_repo(tmp_path / "feedbax")
+    _write_project_files(repo, feedbax)
+    _commit_all(repo, "project files")
+
+    docs_path = feedbax / "docs" / "foo.md"
+    docs_path.parent.mkdir()
+    docs_path.write_text("# local notes\n", encoding="utf-8")
+
+    fingerprint = full_suite.build_fingerprint(repo)
+    assert fingerprint.ok, fingerprint.reason
+    full_suite.record_green(memo_dir, fingerprint, command=["pytest"])
+    assert full_suite.memo_has_green(memo_dir, fingerprint)
+
+
+def test_untracked_dependency_package_file_blocks_memo_recording(tmp_path: Path) -> None:
+    repo = _make_repo(tmp_path / "repo")
+    feedbax = _make_repo(tmp_path / "feedbax")
+    _write_project_files(repo, feedbax)
+    _commit_all(repo, "project files")
+
+    package_path = feedbax / "feedbax" / "foo.py"
+    package_path.parent.mkdir()
+    package_path.write_text("VALUE = 1\n", encoding="utf-8")
 
     fingerprint = full_suite.build_fingerprint(repo)
     assert not fingerprint.ok

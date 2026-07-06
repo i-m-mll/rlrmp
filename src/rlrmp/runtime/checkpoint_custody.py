@@ -31,6 +31,7 @@ from rlrmp.runtime.training_run_specs import (
 
 
 CS_BARRIER = "after_train_batch"
+CS_SUPERVISED_NATIVE_BARRIER = "after_train_chunk"
 ADAPTIVE_EPSILON_BARRIER = "after_adaptive_epsilon_train_chunk"
 POLICY_ADVERSARY_BARRIER = "after_policy_adversary_train_chunk"
 MINIMAX_WARMUP_BARRIER = "after_warmup"
@@ -100,6 +101,7 @@ def cs_custody_training_spec(run_spec: Mapping[str, Any]) -> TrainingRunSpec:
         extra_state_slots=_CS_EXTRA_SLOTS,
         barrier_slots={
             CS_BARRIER: _CS_BARRIER_SLOTS,
+            CS_SUPERVISED_NATIVE_BARRIER: _CS_BARRIER_SLOTS,
             ADAPTIVE_EPSILON_BARRIER: _CS_BARRIER_SLOTS,
             POLICY_ADVERSARY_BARRIER: _CS_BARRIER_SLOTS,
         },
@@ -173,8 +175,8 @@ def _cs_checkpoint_barrier_name(spec: TrainingRunSpec) -> str:
     names = {barrier.name for barrier in barriers}
     if CS_BARRIER in names:
         return CS_BARRIER
-    if "after_train_chunk" in names:
-        return "after_train_chunk"
+    if CS_SUPERVISED_NATIVE_BARRIER in names:
+        return CS_SUPERVISED_NATIVE_BARRIER
     if ADAPTIVE_EPSILON_BARRIER in names:
         return ADAPTIVE_EPSILON_BARRIER
     if POLICY_ADVERSARY_BARRIER in names:

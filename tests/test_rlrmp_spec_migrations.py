@@ -423,6 +423,36 @@ def test_historical_feedbax_training_run_spec_migrates_standard_supervised() -> 
     }
 
 
+def test_stripped_legacy_feedbax_training_run_spec_fails_closed() -> None:
+    payload = json.loads(
+        (
+            REPO_ROOT
+            / "results"
+            / "1ab1fef"
+            / "runs"
+            / "epsilon_scaled_short_3500to1000.json"
+        ).read_text(encoding="utf-8")
+    )
+    feedbax_spec = dict(payload[FEEDBAX_TRAINING_RUN_SPEC_KEY])
+    method_extensions = dict(feedbax_spec["method_extensions"])
+    metadata = {
+        key: value
+        for key, value in dict(method_extensions["metadata"]).items()
+        if key not in SEMANTIC_METHOD_EXTENSION_METADATA_KEYS
+    }
+    method_extensions["metadata"] = metadata
+    feedbax_spec["method_extensions"] = method_extensions
+    payload[FEEDBAX_TRAINING_RUN_SPEC_KEY] = feedbax_spec
+
+    with pytest.raises(FeedbaxTrainingRunSpecMigrationError) as excinfo:
+        feedbax_training_run_spec_from_payload(payload)
+
+    message = str(excinfo.value)
+    assert LEGACY_FEEDBAX_STANDARD_SUPERVISED_METHOD_REF in message
+    assert "method_extensions.metadata" in message
+    assert "dfa0cd5" in message
+
+
 def test_unsupported_semantic_feedbax_training_run_spec_fails_explicitly() -> None:
     payload = json.loads(
         (

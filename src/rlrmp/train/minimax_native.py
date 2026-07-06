@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, NamedTuple
 
 import equinox as eqx
@@ -13,8 +15,9 @@ import jax.random as jr
 import jax.tree as jt
 import jax.tree_util as jtu
 import optax
-from feedbax import prepare_trial
+from feedbax import TaskTrialSpec, prepare_trial
 from feedbax.contracts.training import ObjectiveSlotSpec
+from feedbax.intervene import TimeSeriesParam
 from feedbax.objectives.loss import AbstractLoss
 from feedbax.objectives.service import LossService, LoweredObjective
 from feedbax.objectives.spec import ObjectiveExecutionRequirements
@@ -23,11 +26,8 @@ from feedbax.runtime.batch import BatchInfo
 from feedbax.runtime.iteration import run_component
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
 
+from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.intervention_compat import LINEAR_DYNAMICS_ADVERSARY_COMPONENT_PARAMETER_TARGET
-from rlrmp.train.adversarial_training import (
-    _inject_adversary_delta_A,
-    _inject_adversary_forces,
-)
 from rlrmp.train.adversary import GaussianBumpAdversary, LinearDynamicsAdversary
 from rlrmp.train.executor.adapters import ChunkKernelAdapter, UpdateKernel
 from rlrmp.train.executor.guards import make_stop_after_batches_predicate
@@ -52,6 +52,62 @@ PROJECTION_KERNEL_REF = "rlrmp.minimax.frobenius_ball_projection"
 OUTER_DESCENT_KERNEL_REF = "rlrmp.minimax.outer_controller_descent"
 NO_ADVERSARIAL_BATCHES_REF = "rlrmp.minimax.no_adversarial_batches"
 ADVERSARIAL_COMPLETE_REF = "rlrmp.minimax.adversarial_complete"
+
+
+def _inject_adversary_forces(
+    trial_specs: TaskTrialSpec,
+    forces: Any,
+) -> TaskTrialSpec:
+    """Return trial specs with the plant intervenor force field replaced."""
+
+    new_field = TimeSeriesParam(forces)
+    new_intervene = eqx.tree_at(
+        lambda spec: spec.field,
+        trial_specs.intervene[PLANT_INTERVENOR_LABEL],
+        new_field,
+    )
+    return eqx.tree_at(
+        lambda ts: ts.intervene[PLANT_INTERVENOR_LABEL],
+        trial_specs,
+        new_intervene,
+    )
+
+
+def _inject_adversary_delta_A(
+    trial_specs: TaskTrialSpec,
+    delta_A: Any,
+    batch_size: int,
+) -> TaskTrialSpec:
+    """Return trial specs with a broadcast linear-dynamics adversary matrix."""
+
+    n_steps = _infer_trial_input_steps(trial_specs)
+    delta_A_batched = jnp.broadcast_to(
+        delta_A[None, None, ...], (batch_size, n_steps, *delta_A.shape)
+    )
+    active = jnp.ones((batch_size, n_steps), dtype=bool)
+    new_intervene = eqx.tree_at(
+        lambda spec: (spec.active, spec.delta_A),
+        trial_specs.intervene[PLANT_INTERVENOR_LABEL],
+        (TimeSeriesParam(active), TimeSeriesParam(delta_A_batched)),
+    )
+    return eqx.tree_at(
+        lambda ts: ts.intervene[PLANT_INTERVENOR_LABEL],
+        trial_specs,
+        new_intervene,
+    )
+
+
+def _infer_trial_input_steps(trial_specs: TaskTrialSpec) -> int:
+    """Infer rollout input length for adversary parameter overrides."""
+
+    leaves = [
+        leaf
+        for leaf in jt.leaves(trial_specs.inputs)
+        if eqx.is_array(leaf) and leaf.ndim >= 2
+    ]
+    if not leaves:
+        raise ValueError("cannot infer trial input length for adversary delta_A injection")
+    return int(leaves[0].shape[1])
 
 
 @dataclass(frozen=True)
@@ -80,7 +136,7 @@ class MinimaxControllerState(NamedTuple):
     per_replicate_leaves: tuple[Any, ...]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class MinimaxNativeRuntime:
     """Runtime-only minimax objects passed through Feedbax kernel context."""
 
@@ -150,6 +206,13 @@ def build_minimax_native_initial_slots(
     del run_spec
     key_init, key_warmup, key_adv = split_initial_keys(key)
     pair = setup_task_model_pair(hps, key=key_init)
+    if args.warmup_model is not None:
+        pair = pair._replace(
+            model=_load_warmup_model(
+                Path(args.warmup_model),
+                current_model=pair.model,
+            )
+        )
     controller_layout = _controller_layout(pair.model, int(hps.model.n_replicates))
     adv_batch_size = int(args.adv_batch_size or hps.batch_size)
     adversary_optimizer = optax.adam(
@@ -189,6 +252,31 @@ def build_minimax_native_initial_slots(
         },
         RlrmpRuntime(components={"minimax": runtime}),
     )
+
+
+def _load_warmup_model(path: Path, *, current_model: Any) -> Any:
+    """Load an explicit warmup controller with legacy-compatible templates."""
+
+    from jax_cookbook import load as fbx_load
+
+    try:
+        return fbx_load(path, setup_func=lambda **_kwargs: current_model)
+    except (RuntimeError, ValueError):
+        pass
+
+    def model_from_standard_hyperparameters(
+        key: Any = jr.PRNGKey(0),
+        **stored_hps: Any,
+    ) -> Any:
+        from rlrmp.train.standard import build_hps as build_standard_hps
+
+        values = dict(stored_hps)
+        for name in ("git", "output_dir", "checkpoint_every", "resume"):
+            values.pop(name, None)
+        hps = build_standard_hps(SimpleNamespace(**values))
+        return setup_task_model_pair(hps, key=key).model
+
+    return fbx_load(path, setup_func=model_from_standard_hyperparameters)
 
 
 def minimax_update_kernels(payload: Any) -> Mapping[str, UpdateKernel]:
@@ -468,6 +556,7 @@ def _prepare_adversarial_batch(
     )
 
 
+@eqx.filter_jit
 def _vmapped_gaussian_adversary_ascent(
     runtime: MinimaxNativeRuntime,
     controller: Any,
@@ -498,6 +587,7 @@ def _vmapped_gaussian_adversary_ascent(
     return adversary, adv_opt_state, loss_vals
 
 
+@eqx.filter_jit
 def _vmapped_linear_adversary_ascent(
     runtime: MinimaxNativeRuntime,
     controller: Any,
@@ -522,6 +612,7 @@ def _vmapped_linear_adversary_ascent(
     return adversary, adv_opt_state, loss_vals
 
 
+@eqx.filter_jit
 def _vmapped_controller_descent(
     runtime: MinimaxNativeRuntime,
     controller: Any,

@@ -11,8 +11,10 @@ from __future__ import annotations
 import argparse
 import copy
 from dataclasses import asdict, dataclass
+import hashlib
 import json
 from pathlib import Path
+import time
 from typing import Any
 
 import equinox as eqx
@@ -25,6 +27,7 @@ import optax
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 from feedbax.objectives.loss import AbstractLoss, TermTree
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
+from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.model.trainable import staged_network_trainable_parts
 from rlrmp.runtime.run_spec_access import require_run_seed
 from rlrmp.runtime.training_run_specs import (
@@ -351,12 +354,12 @@ def build_closed_loop_distillation_spec(args: argparse.Namespace) -> dict[str, A
             "intended_full_train_command": full_train_command(spec_path=run_spec_path),
             "full_train_status": "implemented_no_launch_pending_user_approval",
             "failure_guard": (
-                "run_closed_loop_distillation_training requires explicit "
+                "native closed-loop distillation training requires explicit "
                 "--confirm-full-train approval before a non-smoke full run."
             ),
             "trainer_path": (
-                "setup_task_model_pair -> Feedbax TaskTrainer/train_pair -> "
-                "ClosedLoopDistillationLoss"
+                "rlrmp.train.distillation_native."
+                "execute_distillation_training_run_spec_native"
             ),
         },
         "student_contract": {
@@ -562,8 +565,8 @@ def validate_run_spec(spec: dict[str, Any]) -> None:
     if entry.get("full_train_status") != "implemented_no_launch_pending_user_approval":
         raise ValueError("Full-train entry must remain pending explicit user launch approval.")
     trainer_path = str(entry.get("trainer_path", ""))
-    if "TaskTrainer/train_pair" not in trainer_path:
-        raise ValueError("Training entry must use Feedbax TaskTrainer/train_pair.")
+    if "execute_distillation_training_run_spec_native" not in trainer_path:
+        raise ValueError("Training entry must use the native distillation executor.")
     validate_distillation_training_run_spec(spec, method="closed_loop_distillation")
 
 
@@ -1022,6 +1025,95 @@ def run_closed_loop_distillation_training(
     return result
 
 
+def run_closed_loop_distillation_training_native(
+    *,
+    spec: dict[str, Any],
+    args: argparse.Namespace,
+    smoke: bool = False,
+) -> dict[str, Any]:
+    """Run closed-loop distillation through Feedbax's native training executor."""
+
+    validate_run_spec(spec)
+    if not smoke and not bool(args.confirm_full_train):
+        raise FullTrainingApprovalRequiredError(
+            "Full closed-loop extLQG distillation is wired through the native "
+            "Feedbax training executor but requires explicit user launch approval. "
+            "No Feedbax hook blocker is being asserted."
+        )
+    train_batches = int(args.smoke_n_batches if smoke else spec["student_contract"]["n_train_batches"])
+    train_batch_size = int(args.smoke_batch_size if smoke else spec["student_contract"]["batch_size"])
+    train_replicates = int(1 if smoke else spec["student_contract"]["n_replicates"])
+    train_hidden = int(6 if smoke else spec["student_contract"]["hidden_size"])
+    if train_batches <= 0 or train_batch_size <= 0 or train_replicates <= 0:
+        raise ValueError("n_batches, batch_size, and n_replicates must be positive.")
+
+    source_spec = copy.deepcopy(spec)
+    output_dir = mkdir_p(Path(str(source_spec.get("artifact_output_dir", args.output_dir))))
+    source_spec["artifact_output_dir"] = str(output_dir)
+    source_spec["student_contract"] = {
+        **source_spec["student_contract"],
+        "n_train_batches": train_batches,
+        "batch_size": train_batch_size,
+        "n_replicates": train_replicates,
+        "hidden_size": train_hidden,
+    }
+    source_spec["checkpointing"] = {
+        **source_spec["checkpointing"],
+        "interval_batches": int(args.checkpoint_interval_batches),
+    }
+    source_spec["training_entry"] = {
+        **source_spec["training_entry"],
+        "full_train_status": "native_executor_implemented_no_launch_pending_user_approval",
+        "trainer_path": (
+            "rlrmp.train.distillation_native."
+            "execute_distillation_training_run_spec_native"
+        ),
+    }
+    spec_path = Path(args.run_spec) if args.run_spec is not None else Path(args.run_spec_output)
+    native_spec = attach_distillation_training_specs(
+        source_spec,
+        method="closed_loop_distillation",
+        output_dir=output_dir,
+        spec_path=spec_path,
+    )
+    from rlrmp.train.distillation_native import execute_distillation_training_run_spec_native
+
+    run_hash = hashlib.sha256(str(output_dir.resolve()).encode()).hexdigest()[:8]
+    started = time.perf_counter()
+    execution = execute_distillation_training_run_spec_native(
+        native_spec,
+        method="closed_loop_distillation",
+        run_id=f"{source_spec['run_id']}-{run_hash}",
+        manifest_root=REPO_ROOT / "_artifacts" / "feedbax_runs",
+        checkpoint_root=output_dir / "checkpoints",
+        resume=bool(args.resume),
+        manifest_conflict_policy="reuse-identical",
+        issues=[ISSUE_ID, TRACKER_ISSUE_ID],
+    )
+    duration = time.perf_counter() - started
+    result = {
+        "run_id": source_spec["run_id"],
+        "mode": "smoke_train" if smoke else "full_train",
+        "trainer_path": (
+            "rlrmp.train.distillation_native."
+            "execute_distillation_training_run_spec_native"
+        ),
+        "native_executor": "feedbax.training.executor.execute_training_run_spec",
+        "completed_batches": int(execution.final_slots["completed_batches"]),
+        "batch_size": train_batch_size,
+        "n_replicates": train_replicates,
+        "hidden_size": train_hidden,
+        "final_loss_mean": float(execution.final_slots["train_loss"]),
+        "output_dir": str(output_dir),
+        "latest_checkpoint": str(output_dir / "checkpoints" / "latest.json"),
+        "training_manifest_path": str(execution.manifest_path),
+        "training_duration_seconds": duration,
+    }
+    _write_json(output_dir / "run_spec_snapshot.json", native_spec)
+    _write_json(output_dir / "training_summary.json", result)
+    return result
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -1086,19 +1178,16 @@ def main(argv: list[str] | None = None) -> int:
         write_run_spec(args.run_spec_output, spec)
     train_result = None
     if args.smoke_train:
-        train_result = run_closed_loop_distillation_training(
+        train_result = run_closed_loop_distillation_training_native(
             spec=spec,
-            n_batches=args.smoke_n_batches,
-            batch_size=args.smoke_batch_size,
-            n_replicates=1,
-            hidden_size=6,
+            args=args,
             smoke=True,
         )
     if args.full_train:
         try:
-            train_result = run_closed_loop_distillation_training(
+            train_result = run_closed_loop_distillation_training_native(
                 spec=spec,
-                confirm_full_train=args.confirm_full_train,
+                args=args,
             )
         except FullTrainingApprovalRequiredError as exc:
             print(

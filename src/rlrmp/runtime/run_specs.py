@@ -386,6 +386,9 @@ def _resolve_training_manifest(
         by_id[manifest.id] = (path, manifest, dumped)
     distinct = [(path, manifest) for path, manifest, _dumped in by_id.values()]
     if len(distinct) > 1:
+        selected = _select_preferred_training_manifest(distinct)
+        if selected is not None:
+            return selected
         raise RunSpecValidationError(
             f"multiple TrainingRunManifest records match {exp}/{run}: "
             + ", ".join(str(path) for path, _manifest in distinct)
@@ -427,7 +430,54 @@ def _manifest_matches(
         original_uri = artifact.metadata.get("original_uri")
         if isinstance(original_uri, str):
             refs.add(original_uri)
-    return bool(refs & rel_paths) or manifest.job_id == run or manifest.id.endswith(run)
+    return (
+        bool(refs & rel_paths)
+        or _run_label_matches(manifest.job_id, run=run)
+        or _run_label_matches(manifest.id, run=run)
+        or manifest.id.endswith(run)
+    )
+
+
+def _run_label_matches(value: str | None, *, run: str) -> bool:
+    if value is None:
+        return False
+    text = str(value)
+    tail = text.rsplit(":", maxsplit=1)[-1].rsplit("/", maxsplit=1)[-1]
+    return tail == run or tail.startswith(f"{run}-")
+
+
+def _select_preferred_training_manifest(
+    manifests: list[tuple[Path, TrainingRunManifest]],
+) -> tuple[Path, TrainingRunManifest] | None:
+    materialized = [
+        item for item in manifests if not _is_spec_authoring_placeholder_manifest(item[1])
+    ]
+    if len(materialized) == 1:
+        return materialized[0]
+
+    completed = [
+        item
+        for item in materialized
+        if str(item[1].status).lower() == "completed"
+        and not _has_planned_only_summary(item[1])
+    ]
+    if len(completed) == 1:
+        return completed[0]
+    return None
+
+
+def _is_spec_authoring_placeholder_manifest(manifest: TrainingRunManifest) -> bool:
+    metadata = getattr(manifest.provenance, "metadata", None) or {}
+    return (
+        isinstance(metadata, dict)
+        and metadata.get("producer") == "rlrmp.train.cs_nominal_gru.write_run_spec"
+        and _has_planned_only_summary(manifest)
+    )
+
+
+def _has_planned_only_summary(manifest: TrainingRunManifest) -> bool:
+    metrics = manifest.summary_metrics or {}
+    return set(metrics) == {"planned_batches"}
 
 
 def _repo_relative(path: Path, repo_root: Path) -> str:

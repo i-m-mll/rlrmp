@@ -23,6 +23,14 @@ from typing import Any, Callable, Sequence
 SCHEMA_VERSION = 1
 DEFAULT_MEMO_DIR = Path("_artifacts") / "test_cache" / "full_suite_memo"
 DEFAULT_PYTEST_ARGS = ("tests/", "-q")
+EXECUTION_RELEVANT_UNTRACKED_PATHS = (
+    "feedbax/",
+    "pyproject.toml",
+    "scripts/",
+    "src/",
+    "tests/",
+    "uv.lock",
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -246,7 +254,23 @@ def _git_dirty(repo: Path, run: CommandRunner) -> bool | None:
     result = run(["git", "status", "--porcelain"], repo)
     if result.returncode != 0:
         return None
-    return bool(result.stdout.strip())
+    for line in result.stdout.splitlines():
+        if not line:
+            continue
+        status = line[:2]
+        if status != "??":
+            return True
+        path = line[3:]
+        if _is_execution_relevant_untracked_path(path):
+            return True
+    return False
+
+
+def _is_execution_relevant_untracked_path(path: str) -> bool:
+    return any(
+        path == relevant_path.rstrip("/") or path.startswith(relevant_path)
+        for relevant_path in EXECUTION_RELEVANT_UNTRACKED_PATHS
+    )
 
 
 def _git_stdout(repo: Path, args: Sequence[str], run: CommandRunner) -> str | None:
