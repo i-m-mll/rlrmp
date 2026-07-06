@@ -8,7 +8,7 @@ tell a live run from a hung one while checkpoints silently advance.
 
 This module provides a single stable line format that monitors can grep for the
 last batch seen, plus small helpers for the cadence and for wiring the line into
-feedbax's :class:`~feedbax.training.trainer.TaskTrainer` ``batch_callbacks``
+legacy Feedbax trainer-style ``batch_callbacks``
 hook.
 
 Line contract (consumed by ``poll_run.sh`` — do not reorder ``phase`` /
@@ -129,7 +129,7 @@ def make_batch_log_callbacks(
     logger: Optional[logging.Logger] = None,
     clock: Callable[[], float] = time.monotonic,
 ) -> Mapping[int, Sequence[Callable[[], None]]]:
-    """Build a ``batch_callbacks`` mapping for feedbax's :class:`TaskTrainer`.
+    """Build a legacy ``batch_callbacks`` mapping.
 
     feedbax invokes ``batch_callbacks[batch]`` with no arguments on the host
     side of its training loop (outside the JIT-compiled step), so the callbacks
@@ -150,8 +150,7 @@ def make_batch_log_callbacks(
 
     Returns:
         Mapping ``{batch_index: [callback]}`` suitable for the
-        ``batch_callbacks`` keyword of ``TaskTrainer.__call__`` /
-        ``feedbax.training.train.train_pair``.
+        ``batch_callbacks`` keyword of the retired Feedbax trainer path.
     """
     log = logger if logger is not None else logging.getLogger(__name__)
     step = every if every is not None else batch_log_every(total)

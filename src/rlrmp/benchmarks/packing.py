@@ -446,8 +446,9 @@ def build_cs_nominal_gru_scenario(
     return CsNominalGruRuntime(
         pair=pair,
         trainer=_build_trainer(hps),
+        hps=hps,
         pre_step_fn=make_broad_epsilon_pgd_pre_step(hps.broad_epsilon_pgd_training),
-        where_train=_make_cs_nominal_gru_where_train(),
+        where_train=_make_cs_nominal_gru_where_train()[0],
         batch_size=int(hps.batch_size),
         key=jr.PRNGKey(seed + 1),
         metadata=_cs_nominal_gru_metadata(hps),
@@ -458,6 +459,7 @@ def build_cs_nominal_gru_scenario(
 class CsNominalGruRuntime:
     pair: Any
     trainer: Any
+    hps: Any
     pre_step_fn: Any
     where_train: Any
     batch_size: int
@@ -480,22 +482,29 @@ class CsNominalGruRuntime:
 
     def _train(self, *, pair: Any, n_batches: int) -> Any:
         import jax.random as jr
-        from feedbax.training.train import train_pair
+        from rlrmp.train.cs_nominal_gru import _initial_training_state
+        from rlrmp.train.cs_nominal_gru import _run_cs_supervised_training_chunk
 
         self.key, key_chunk = jr.split(self.key)
-        model, _history = train_pair(
-            self.trainer,
-            pair,
-            n_batches=max(1, n_batches),
+        state = _initial_training_state(
+            model=pair.model,
+            trainer=self.trainer,
+            where_train=self.where_train,
             key=key_chunk,
-            ensembled=True,
-            loss_func=pair.task.loss_func,
+        )
+        model, _history, _optimizer_state = _run_cs_supervised_training_chunk(
+            optimizer=self.trainer,
+            task=pair.task,
+            model=pair.model,
+            optimizer_state=state.optimizer_state,
+            hps=self.hps,
             pre_step_fn=self.pre_step_fn,
             where_train=self.where_train,
-            batch_size=self.batch_size,
-            log_step=max(1, n_batches),
-            disable_progress=True,
-            verbose_progress=False,
+            key=key_chunk,
+            start_batch=0,
+            chunk_batches=max(1, n_batches),
+            log_progress=False,
+            log_every=max(1, n_batches),
         )
         return model
 

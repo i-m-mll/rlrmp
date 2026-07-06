@@ -17,7 +17,6 @@ import jax.random as jr
 import numpy as np
 from jax_cookbook import load_with_hyperparameters
 from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476 — project-config routing
-from feedbax.training.trainer import init_task_trainer_history
 
 from rlrmp.eval import (
     N_REPLICATES,
@@ -26,6 +25,7 @@ from rlrmp.eval import (
     set_sisu,
 )
 from rlrmp.paths import figure_artifact_dir, figure_spec_dir, run_artifact_dir
+from rlrmp.train.cs_nominal_gru import init_training_history
 from rlrmp.train.standard import build_hps
 from rlrmp.train.task_model import setup_task_model_pair
 
@@ -74,11 +74,12 @@ def load_condition(cond_name: str, cond_dir: Path):
 
     # Load training history
     loss_func = pair.task.loss_func
-    history_skeleton = init_task_trainer_history(
+    history_skeleton = init_training_history(
         loss_func=loss_func,
         n_batches=config["n_batches"],
         n_replicates=N_REPLICATES,
         ensembled=True,
+        task=pair.task,
     )
     with open(cond_dir / "train_history.eqx", "rb") as f:
         f.readline()  # skip hyperparameters line

@@ -326,7 +326,7 @@ def test_guided_distillation_training_run_spec_round_trips() -> None:
     assert round_tripped == training_spec
 
 
-def test_closed_loop_distillation_native_executor_matches_fixed_seed_legacy(
+def test_closed_loop_distillation_native_executor_runs_fixed_seed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -350,15 +350,16 @@ def test_closed_loop_distillation_native_executor_matches_fixed_seed_legacy(
         ]
     )
     source_spec = closed_loop_distillation.build_closed_loop_distillation_spec(args)
-    legacy = closed_loop_distillation.run_closed_loop_distillation_training(
-        spec=source_spec,
-        key=jr.PRNGKey(0),
-        n_batches=1,
-        batch_size=1,
-        n_replicates=1,
-        hidden_size=6,
-        confirm_full_train=True,
-    )
+    with pytest.raises(RuntimeError, match="Legacy Feedbax train_pair support has been removed"):
+        closed_loop_distillation.run_closed_loop_distillation_training(
+            spec=source_spec,
+            key=jr.PRNGKey(0),
+            n_batches=1,
+            batch_size=1,
+            n_replicates=1,
+            hidden_size=6,
+            confirm_full_train=True,
+        )
     native = execute_distillation_training_run_spec_native(
         source_spec,
         method="closed_loop_distillation",
@@ -374,12 +375,8 @@ def test_closed_loop_distillation_native_executor_matches_fixed_seed_legacy(
         method="closed_loop_distillation",
         key=jr.PRNGKey(0),
     )
-    legacy_model = eqx.tree_deserialise_leaves(
-        Path(legacy["artifacts"]["trained_model"]),
-        native_model,
-    )
 
-    _assert_array_trees_close(legacy_model, native_model)
+    assert native_model is not None
     assert int(native.final_slots["completed_batches"]) == 1
     assert native.final_slots["train_loss"] != 0.0
 

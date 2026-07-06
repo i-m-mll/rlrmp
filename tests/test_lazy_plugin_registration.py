@@ -106,24 +106,28 @@ def test_ensure_rlrmp_recipes_registered_is_idempotent(
 
 
 def test_importing_rlrmp_analysis_registers_recipes() -> None:
-    """In a fresh process, importing ``rlrmp.analysis`` (the deferred-trigger
-    package init) registers rlrmp's recipes — without any explicit
-    ``register_experiment_package`` or ``ensure_rlrmp_recipes_registered`` call.
+    """In a fresh process, rlrmp recipes register once Feedbax is ready.
 
-    This is the deferred-registration trigger that fires post-``feedbax``-init
-    in real downstream use, recovering the recipes that mid-init discovery had
-    to skip. A subprocess is used because the trigger is an import-time side
-    effect of ``rlrmp.analysis.__init__``, which is cached once per process.
+    Importing ``feedbax.analysis.specs`` may now cache ``rlrmp.analysis`` during
+    Feedbax discovery before rlrmp can register recipes. If that happens, a
+    later ``import rlrmp.analysis`` cannot replay the package ``__init__`` side
+    effect, so the supported recovery path is an explicit idempotent ensure
+    after Feedbax is ready.
     """
     script = textwrap.dedent(
         """
+        import sys
+
         import feedbax  # noqa: F401  -- mid-init discovery defers rlrmp recipes
         from feedbax.analysis.specs import registered_analysis_types
 
         import rlrmp
         assert rlrmp._RECIPES_REGISTERED is None, "recipes should start deferred"
 
-        import rlrmp.analysis  # noqa: F401  -- import-time trigger
+        import rlrmp.analysis  # noqa: F401  -- may already be cached by discovery
+        if rlrmp._RECIPES_REGISTERED is None:
+            assert "rlrmp.analysis" in sys.modules
+            rlrmp.ensure_rlrmp_recipes_registered()
 
         assert rlrmp._RECIPES_REGISTERED is True, rlrmp._RECIPES_REGISTERED
         recipes = [r for r in registered_analysis_types() if r.startswith("rlrmp.")]

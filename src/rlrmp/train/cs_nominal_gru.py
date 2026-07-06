@@ -37,9 +37,8 @@ from feedbax.intervene.schedule import TimeSeriesParam
 from feedbax.runtime.batch import BatchInfo
 from feedbax.runtime.graph import init_state_from_component
 from feedbax.runtime.iteration import run_component
+from feedbax.runtime.parameter_constraints import project_component_parameters
 from feedbax.training.checkpoint_custody import CheckpointCompatibilityError
-from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule
-from feedbax.training.trainer import get_model_parameters, init_task_trainer_history
 from feedbax.objectives.loss import AbstractLoss
 from feedbax.objectives.service import LossService, LoweredObjective
 from feedbax.objectives.spec import ObjectiveExecutionRequirements
@@ -551,6 +550,16 @@ class AdaptiveEpsilonState:
         return payload
 
 
+class TrainingHistory(eqx.Module):
+    """Batch-indexable training history retained for RLRMP training summaries."""
+
+    loss: Any
+    loss_validation: Any
+    learning_rate: Any
+    model_parameters: Any | None = None
+    trial_specs: dict[int, Any] = field(default_factory=dict)
+
+
 @dataclass(frozen=True)
 class TrainingState:
     """Serializable state needed to resume the chunked C&S GRU training loop."""
@@ -583,7 +592,7 @@ class CsSupervisedNativeRuntime:
     args: argparse.Namespace
     hps: TreeNamespace
     pair: Any
-    trainer: TaskTrainer
+    optimizer: optax.GradientTransformation
     where_train: Callable[[Any], Any]
     model_array_template: Any
     optimizer_template: Any
@@ -2884,11 +2893,11 @@ def build_cs_supervised_native_initial_slots(
     del run_spec
     key_init, key_train, _key_adversary = split_initial_keys(key)
     pair = setup_task_model_pair(hps, key=key_init)
-    trainer = _build_trainer(hps)
+    optimizer = _build_optimizer(hps)
     where_train = _where_train()[0]
     template_state = _initial_training_state(
         model=pair.model,
-        trainer=trainer,
+        trainer=optimizer,
         where_train=where_train,
         key=key_train,
     )
@@ -2903,7 +2912,7 @@ def build_cs_supervised_native_initial_slots(
         args=args,
         hps=hps,
         pair=pair,
-        trainer=trainer,
+        optimizer=optimizer,
         where_train=where_train,
         model_array_template=model_array_template,
         optimizer_template=template_state.optimizer_state,
@@ -3116,20 +3125,18 @@ def _cs_supervised_train_chunk(
             completed_batches=completed_batches,
         )
         started = time.perf_counter()
-        model, history_chunk, optimizer_state = native.trainer(
-            native.pair.task,
-            model_in,
-            n_batches=chunk_batches,
-            idx_start=0,
-            opt_state=optimizer_in,
-            key=key_chunk,
-            ensembled=True,
-            loss_func=native.pair.task.loss_func,
+        model, history_chunk, optimizer_state = _run_cs_supervised_training_chunk(
+            optimizer=native.optimizer,
+            task=native.pair.task,
+            model=model_in,
+            optimizer_state=optimizer_in,
+            hps=native.hps,
             where_train=native.where_train,
-            batch_size=int(native.hps.batch_size),
-            log_step=max(1, int(args.log_step)),
-            disable_progress=bool(args.disable_progress),
-            verbose_progress=not bool(args.quiet_progress),
+            key=key_chunk,
+            start_batch=completed_batches,
+            chunk_batches=chunk_batches,
+            log_progress=not bool(args.disable_progress) and not bool(args.quiet_progress),
+            log_every=max(1, int(args.log_step)),
             pre_step_fn=native.pre_step_fn,
         )
         duration_seconds = time.perf_counter() - started
@@ -3691,10 +3698,10 @@ def _materialize_adaptive_epsilon_native_result(
     checkpoint_root = output_dir / "checkpoints"
     key_init, _key_train, _key_adversary = split_initial_keys(jr.PRNGKey(int(args.seed)))
     pair = setup_task_model_pair(hps, key=key_init)
-    trainer = _build_trainer(hps)
+    optimizer = _build_optimizer(hps)
     template_state = _initial_training_state(
         model=pair.model,
-        trainer=trainer,
+        trainer=optimizer,
         where_train=_where_train()[0],
         key=jr.PRNGKey(int(args.seed)),
     )
@@ -5313,7 +5320,7 @@ def _resize_diagnostic_series(series: Any, n_batches: int) -> Any:
     return jnp.concatenate([values, pad], axis=-1)
 
 
-def _build_trainer(hps: TreeNamespace) -> TaskTrainer:
+def _build_optimizer(hps: TreeNamespace) -> optax.GradientTransformation:
     schedule = _learning_rate_schedule(hps)
     transforms = []
     if bool(getattr(hps, "training_diagnostics", True)):
@@ -5330,11 +5337,16 @@ def _build_trainer(hps: TreeNamespace) -> TaskTrainer:
         optax.inject_hyperparams(partial(optax.adamw, weight_decay=float(hps.weight_decay)))(
             learning_rate=schedule
         )
-    )
+        )
     if bool(getattr(hps, "training_diagnostics", True)):
         transforms.append(_update_diagnostics_transform(n_batches=int(hps.n_batches_condition)))
-    optimizer = optax.chain(*transforms)
-    return TaskTrainer(optimizer=optimizer, checkpointing=False)
+    return optax.chain(*transforms)
+
+
+def _build_trainer(hps: TreeNamespace) -> optax.GradientTransformation:
+    """Return the controller optimizer for legacy native-runtime call sites."""
+
+    return _build_optimizer(hps)
 
 
 def _learning_rate_schedule(hps: TreeNamespace) -> Callable[[Any], Any]:
@@ -5368,6 +5380,27 @@ def _learning_rate_schedule(hps: TreeNamespace) -> Callable[[Any], Any]:
     raise ValueError(f"Unsupported learning-rate schedule {schedule_name!r}")
 
 
+def make_delayed_cosine_schedule(
+    init_lr: float,
+    constant_steps: int,
+    total_steps: int,
+    alpha: float = 0.001,
+) -> optax.Schedule:
+    """Return a constant-then-cosine learning-rate schedule."""
+
+    return optax.join_schedules(
+        schedules=[
+            optax.constant_schedule(init_lr),
+            optax.cosine_decay_schedule(
+                init_value=init_lr,
+                decay_steps=max(0, int(total_steps) - int(constant_steps)),
+                alpha=alpha,
+            ),
+        ],
+        boundaries=[int(constant_steps)],
+    )
+
+
 def _where_train() -> dict[int, Callable[[Any], tuple[Any, ...]]]:
     def where_train_fn(model):
         net = model.nodes["net"]
@@ -5379,19 +5412,49 @@ def _where_train() -> dict[int, Callable[[Any], tuple[Any, ...]]]:
 def _initial_training_state(
     *,
     model: Any,
-    trainer: TaskTrainer,
+    trainer: optax.GradientTransformation,
     where_train: Callable[[Any], Any],
     key: Any,
 ) -> TrainingState:
     where_train_spec = filter_spec_leaves(model, where_train)
     model_parameters = get_model_parameters(model, where_train_spec)
-    optimizer_state = eqx.filter_vmap(trainer.optimizer.init)(model_parameters)
+    optimizer_state = eqx.filter_vmap(trainer.init)(model_parameters)
     return TrainingState(
         model=model,
         optimizer_state=optimizer_state,
         completed_batches=0,
         key=key,
         history=None,
+    )
+
+
+def get_model_parameters(model: Any, where_train_spec: Any) -> Any:
+    """Return trainable array parameters selected by a where-train spec."""
+
+    return eqx.filter(eqx.filter(model, where_train_spec), eqx.is_array)
+
+
+def init_training_history(
+    loss_func: Any,
+    n_batches: int,
+    n_replicates: int,
+    *,
+    ensembled: bool,
+    start_batch: int = 0,
+    task: Any | None = None,
+) -> TrainingHistory:
+    """Initialize the RLRMP history shape used by native executor loops."""
+
+    batch_dims = (
+        (int(n_batches) - int(start_batch), int(n_replicates))
+        if ensembled
+        else (int(n_batches) - int(start_batch),)
+    )
+    validation_loss = task.loss_func if task is not None else loss_func
+    return TrainingHistory(
+        loss=loss_func.skeleton(batch_dims),
+        loss_validation=validation_loss.skeleton(batch_dims),
+        learning_rate=jnp.empty(batch_dims),
     )
 
 
@@ -5411,6 +5474,152 @@ def _append_history_leaf(left: Any, right: Any) -> Any:
             return right
         return jnp.concatenate([left, right], axis=0)
     return right
+
+
+def _run_cs_supervised_training_chunk(
+    *,
+    optimizer: optax.GradientTransformation,
+    task: Any,
+    loss_func: Any | None = None,
+    model: Any,
+    optimizer_state: Any,
+    hps: TreeNamespace,
+    where_train: Callable[[Any], Any],
+    key: Any,
+    start_batch: int,
+    chunk_batches: int,
+    log_progress: bool,
+    log_every: int,
+    pre_step_fn: Callable[..., Any] | None,
+) -> tuple[Any, Any, Any]:
+    """Run one C&S supervised checkpoint-sized chunk through the native executor."""
+
+    if chunk_batches < 1:
+        raise ValueError("chunk_batches must be positive")
+    n_replicates = int(hps.model.n_replicates)
+    batch_size = int(hps.batch_size)
+    active_loss = task.loss_func if loss_func is None else loss_func
+    where_train_spec = filter_spec_leaves(model, where_train)
+    flat_model, treedef_model = jtu.tree_flatten(model)
+    flat_opt_state, treedef_opt_state = jtu.tree_flatten(optimizer_state)
+
+    def _ensemble_in_axis(leaf):
+        if _is_replicate_axis_array(leaf, n_replicates):
+            return 0
+        return None
+
+    flat_model_arr_spec = jt.map(_ensemble_in_axis, flat_model)
+    train_step = eqx.filter_vmap(
+        _supervised_train_step,
+        in_axes=(
+            None,
+            None,
+            None,
+            flat_model_arr_spec,
+            None,
+            0,
+            None,
+            None,
+            None,
+            0,
+            None,
+            None,
+        ),
+        out_axes=(
+            eqx.if_array(0),
+            0,
+            flat_model_arr_spec,
+            eqx.if_array(0),
+            eqx.if_array(0),
+        ),
+    )
+    history = init_training_history(
+        active_loss,
+        chunk_batches,
+        n_replicates,
+        ensembled=True,
+        start_batch=0,
+        task=task,
+    )
+    keys = jr.split(key, chunk_batches)
+    chunk_started = time.perf_counter()
+    key_eval = keys[-1]
+    for local_batch in range(chunk_batches):
+        global_batch = int(start_batch) + local_batch
+        key_train, key_eval = jr.split(keys[local_batch], 2)
+        batch_info = BatchInfo(
+            size=batch_size,
+            start=jnp.asarray(0),
+            current=jnp.asarray(global_batch),
+            total=jnp.asarray(hps.n_batches_condition),
+        )
+        key_train = jr.split(key_train, n_replicates)
+        losses, _trial_specs, flat_model, flat_opt_state, _grads = train_step(
+            task,
+            active_loss,
+            batch_info,
+            flat_model,
+            treedef_model,
+            flat_opt_state,
+            treedef_opt_state,
+            where_train_spec,
+            optimizer,
+            key_train,
+            None,
+            pre_step_fn,
+        )
+        history = eqx.tree_at(
+            lambda history: history.loss,
+            history,
+            tree_set(
+                history.loss,
+                losses.map(lambda arr: jnp.mean(arr, axis=-1)),
+                local_batch,
+            ),
+        )
+        opt_state_for_history = jtu.tree_unflatten(treedef_opt_state, flat_opt_state)
+        if (hyperparams := getattr(opt_state_for_history, "hyperparams", None)) is not None:
+            history = eqx.tree_at(
+                lambda history: history.learning_rate,
+                history,
+                history.learning_rate.at[local_batch].set(hyperparams["learning_rate"]),
+            )
+        if log_progress and should_log_batch(
+            global_batch,
+            int(hps.n_batches_condition),
+            every=log_every,
+        ):
+            loss_mean = losses.map(jnp.mean)
+            print(
+                format_batch_line(
+                    "cs_supervised",
+                    global_batch,
+                    int(hps.n_batches_condition),
+                    loss=float(jax.device_get(loss_mean.total)),
+                    elapsed=time.perf_counter() - chunk_started,
+                ),
+                flush=True,
+            )
+
+    model = jtu.tree_unflatten(treedef_model, flat_model)
+    optimizer_state = jtu.tree_unflatten(treedef_opt_state, flat_opt_state)
+    states_validation, losses_validation = task.eval_ensemble_with_loss(
+        model,
+        n_replicates,
+        key_eval,
+        ensemble_random_trials=True,
+    )
+    del states_validation
+    history = eqx.tree_at(
+        lambda history: history.loss_validation,
+        history,
+        tree_set(
+            history.loss_validation,
+            losses_validation.map(lambda arr: jnp.mean(arr, axis=-1)),
+            chunk_batches - 1,
+        ),
+    )
+    return model, history, optimizer_state
 
 
 def _checkpoint_metadata(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
@@ -5930,7 +6139,7 @@ def _training_diagnostics_metadata(
             str(Path(output_dir) / TRAINING_DIAGNOSTICS_MANIFEST) if enabled else None
         ),
         "source": (
-            "optimizer_state plus Feedbax TaskTrainer history; no raw gradients, "
+            "optimizer_state plus RLRMP executor history; no raw gradients, "
             "batches, or activations are persisted"
         ),
         "scalar_groups": [
@@ -6204,7 +6413,7 @@ def _make_policy_adversary_pre_step(policy: Any, config: Any) -> Callable:
 
 def _run_adaptive_epsilon_training_chunk(
     *,
-    trainer: TaskTrainer,
+    trainer: optax.GradientTransformation,
     task: Any,
     model: Any,
     optimizer_state: Any,
@@ -6265,17 +6474,13 @@ def _run_adaptive_epsilon_training_chunk(
             eqx.if_array(0),
         ),
     )
-    history = init_task_trainer_history(
+    history = init_training_history(
         task.loss_func,
         chunk_batches,
         n_replicates,
         ensembled=True,
-        ensemble_random_trials=True,
         start_batch=0,
         task=task,
-        batch_size=batch_size,
-        model=model,
-        where_train=where_train,
     )
     keys = jr.split(key, chunk_batches)
     eval_batch_info = BatchInfo(
@@ -6359,7 +6564,7 @@ def _run_adaptive_epsilon_training_chunk(
             flat_opt_state,
             treedef_opt_state,
             where_train_spec,
-            trainer.optimizer,
+            trainer,
             hps.broad_epsilon_pgd_training,
             key_train,
             jnp.asarray(adaptive_state.lambda_value, dtype=jnp.float32),
@@ -6513,6 +6718,69 @@ def _adaptive_epsilon_train_step(
         force_filter_feedback,
         controller_training_mode,
     )
+
+
+@eqx.filter_jit
+def _supervised_train_step(
+    task: Any,
+    loss_func: Any,
+    batch_info: BatchInfo,
+    flat_model: Any,
+    treedef_model: Any,
+    flat_opt_state: Any,
+    treedef_opt_state: Any,
+    where_train_spec: Any,
+    optimizer: optax.GradientTransformation,
+    key: Any,
+    loss_reduction_fn: Callable[[Any], Any] | None = None,
+    pre_step_fn: Callable[..., Any] | None = None,
+) -> tuple[Any, Any, Any, Any, Any]:
+    """Run one supervised controller update without the retired Feedbax trainer."""
+
+    key_trials, key_init, key_model = jr.split(key, 3)
+    keys_trials = jr.split(key_trials, batch_info.size)
+    keys_init = jr.split(key_init, batch_info.size)
+    keys_model = jr.split(key_model, batch_info.size)
+    trial_specs = eqx.filter_vmap(
+        partial(
+            task.get_train_trial_with_intervenor_params,
+            batch_info=batch_info,
+        )
+    )(keys_trials)
+    model = jtu.tree_unflatten(treedef_model, flat_model)
+    if pre_step_fn is not None:
+        trial_specs = pre_step_fn(task, model, trial_specs, loss_func, keys_model)
+    init_states = eqx.filter_vmap(lambda _: init_state_from_component(model))(keys_init)
+    init_states = eqx.filter_vmap(
+        lambda state, trial_spec: _apply_trial_spec_initial_state(model, state, trial_spec)
+    )(init_states, trial_specs)
+    diff_model, static_model = eqx.partition(model, where_train_spec)
+    opt_state = jtu.tree_unflatten(treedef_opt_state, flat_opt_state)
+
+    def train_loss(current_diff_model: Any) -> tuple[Any, tuple[Any, Any]]:
+        current_model = eqx.combine(current_diff_model, static_model)
+        states = _eval_trial_specs_for_training(
+            current_model,
+            trial_specs,
+            init_states,
+            keys_model,
+        )
+        losses = loss_func(states, trial_specs, current_model)
+        if loss_reduction_fn is None:
+            scalar_loss = losses.total
+        else:
+            scalar_loss = loss_reduction_fn(losses)
+        return scalar_loss, (losses, states)
+
+    (_, (losses, states)), grads = eqx.filter_value_and_grad(
+        train_loss,
+        has_aux=True,
+    )(diff_model)
+    updates, opt_state = optimizer.update(grads, opt_state, model)
+    model = eqx.apply_updates(model, updates)
+    del states
+    model = project_component_parameters(model)
+    return losses, trial_specs, jtu.tree_leaves(model), jtu.tree_leaves(opt_state), grads
 
 
 def _scale_direct_epsilon_trial_specs(
@@ -6887,7 +7155,7 @@ def _adaptive_epsilon_diagnostics_arrays(
 
 def _run_policy_adversary_training_chunk(
     *,
-    trainer: TaskTrainer,
+    trainer: optax.GradientTransformation,
     task: Any,
     model: Any,
     optimizer_state: Any,
@@ -6918,7 +7186,7 @@ def _run_policy_adversary_training_chunk(
 
     flat_model_arr_spec = jt.map(_ensemble_in_axis, flat_model)
     train_step = eqx.filter_vmap(
-        trainer._train_step,
+        _supervised_train_step,
         in_axes=(
             None,
             None,
@@ -6941,17 +7209,13 @@ def _run_policy_adversary_training_chunk(
             eqx.if_array(0),
         ),
     )
-    history = init_task_trainer_history(
+    history = init_training_history(
         task.loss_func,
         chunk_batches,
         n_replicates,
         ensembled=True,
-        ensemble_random_trials=True,
         start_batch=0,
         task=task,
-        batch_size=batch_size,
-        model=model,
-        where_train=where_train,
     )
     keys = jr.split(key, chunk_batches)
     progress_every = batch_log_every(int(hps.n_batches_condition))
@@ -6996,7 +7260,7 @@ def _run_policy_adversary_training_chunk(
             flat_opt_state,
             treedef_opt_state,
             where_train_spec,
-            [],
+            trainer,
             key_train,
             None,
             pre_step_fn,

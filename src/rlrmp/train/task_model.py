@@ -19,7 +19,6 @@ from feedbax.intervene import (
 from rlrmp.misc import get_field_amplitude, vector_with_gaussian_length
 from feedbax.models.networks import PopulationStructure
 from feedbax.runtime.state import CartesianState
-from feedbax.training.train import always_active, bernoulli_active
 from feedbax.config.namespace import TreeNamespace
 from feedbax.training.types import TaskModelPair
 from jax_cookbook import LDict
@@ -80,6 +79,28 @@ LEGACY_CAUSAL_BACKEND_WARNING = (
     "timing problem. Use plant_backend='cs_lss' for the exact C&S LinearStateSpace "
     "plant."
 )
+
+
+def bernoulli_active(p: float):
+    """Return a trial activation schedule with Bernoulli probability ``p``."""
+
+    def active_fn(trial_spec, batch_info, key):
+        del trial_spec, batch_info
+        return jr.bernoulli(key, p=p)
+
+    return active_fn
+
+
+def always_active(_: float):
+    """Return a trial activation schedule that is always active."""
+
+    one = jnp.array(1.0)
+
+    def active_fn(trial_spec, batch_info, key):
+        del trial_spec, batch_info, key
+        return one
+
+    return active_fn
 
 
 P_PERTURBED = LDict.of("train__method")(
