@@ -202,7 +202,7 @@ Total checkpoint rows: 1426
 | `08483d5/runs/h0_6d_no_pgd_const_band16_cpu` | `checkpoint_0010500` | `899278bb30006153c28a0c92aee9dffedc6c4633` | `results/08483d5/runs/h0_6d_no_pgd_const_band16_cpu.json` | commit_known |
 | `08483d5/runs/h0_6d_no_pgd_const_band16_cpu` | `checkpoint_0011000` | `899278bb30006153c28a0c92aee9dffedc6c4633` | `results/08483d5/runs/h0_6d_no_pgd_const_band16_cpu.json` | commit_known |
 | `08483d5/runs/h0_6d_no_pgd_const_band16_cpu` | `checkpoint_0011500` | `899278bb30006153c28a0c92aee9dffedc6c4633` | `results/08483d5/runs/h0_6d_no_pgd_const_band16_cpu.json` | commit_known |
-| `08483d5/runs/h0_6d_no_pgd_const_band16_cpu` | `checkpoint_0012000` | `899278bb30006153c28a0c92aee9dffedc6c4633` | `results/08483d5/runs/h0_6d_no_pgd_const_band16_cpu.json` | commit_known |
+| `08483d5/runs/h0_6d_no_pgd_const_band16_cpu` | `checkpoint_0012000` | `899278bb30006153c28a0c92aee9dffedc6c4633` | `results/08483d5/runs/h0_6d_no_pgd_const_band16_cpu.json` | commit_known; leaf_manifest_present |
 | `1ab1fef/runs/epsilon_scaled_short_3500to1000` | `checkpoint_0000500` | `899278bb30006153c28a0c92aee9dffedc6c4633` | `results/1ab1fef/runs/epsilon_scaled_short_3500to1000.json` | commit_known |
 | `1ab1fef/runs/epsilon_scaled_short_3500to1000` | `checkpoint_0001000` | `899278bb30006153c28a0c92aee9dffedc6c4633` | `results/1ab1fef/runs/epsilon_scaled_short_3500to1000.json` | commit_known |
 | `1ab1fef/runs/epsilon_scaled_short_3500to1000` | `checkpoint_0001500` | `899278bb30006153c28a0c92aee9dffedc6c4633` | `results/1ab1fef/runs/epsilon_scaled_short_3500to1000.json` | commit_known |

@@ -16,13 +16,15 @@ import jax.random as jr
 
 REPO = Path(__file__).resolve().parents[3]
 FEEDBAX_TOOL = Path(
-    "/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax"
+    "/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax/"
+    "worktrees/feature__48b8b91-legacy-checkpoint-adoption"
 )
 LEGACY_FEEDBAX_API = Path(
     "/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax/"
     "worktrees/feature__f9a8524-migration-trainability"
 )
-LEGACY_COMMIT = "9f919c65e52b0042181d615d4a40e1cc6fab5d0b"
+ISSUE_RECORDED_COMMIT = "9f919c65e52b0042181d615d4a40e1cc6fab5d0b"
+LEGACY_COMMIT = "899278bb30006153c28a0c92aee9dffedc6c4633"
 LEGACY_SPEC = REPO / "results/08483d5/runs/h0_6d_no_pgd_const_band16_cpu.json"
 LEGACY_CHECKPOINT = (
     REPO
@@ -35,6 +37,7 @@ FEEDBAX_SPEC_PATH = (
 )
 CURRENT_SLOTS_SUMMARY_PATH = REPO / "results/3cd018b/notes/current_slot_summary.json"
 ADOPTION_CONTEXT_PATH = REPO / "results/183cba9/notes/adoption_context.json"
+PATH_MAPPING_PATH = REPO / "results/183cba9/notes/legacy_path_mapping.json"
 ADOPTION_RESULT_PATH = REPO / "results/3cd018b/notes/legacy_baseline_adoption.json"
 CHECKPOINT_ROOT = REPO / "_artifacts/3cd018b/runs/ramp3500_to1000/checkpoints"
 
@@ -54,6 +57,7 @@ def main() -> int:
     if not args.skip_manifest:
         _dump_leaf_manifest()
     if not args.skip_adopt:
+        _write_path_mapping_note()
         _adopt_checkpoint(current_slots)
     _write_adoption_summary()
     return 0
@@ -113,6 +117,7 @@ def _write_current_run_spec() -> None:
         json.dumps(
             {
                 "legacy_commit": LEGACY_COMMIT,
+                "issue_recorded_commit": ISSUE_RECORDED_COMMIT,
                 "legacy_spec": _rel(LEGACY_SPEC),
                 "legacy_checkpoint": _rel(LEGACY_CHECKPOINT),
                 "manifest": _rel(MANIFEST_PATH),
@@ -255,6 +260,8 @@ def _adopt_checkpoint(current_slots: dict[str, Any]) -> None:
     from feedbax.contracts.training import TrainingRunSpec
     from feedbax.contracts.worker import ProgressCoordinate
     from feedbax.training.legacy_checkpoint_adoption import (
+        DROP_PATH,
+        PathMappingRule,
         adopt_legacy_checkpoint,
         load_leaf_manifest,
     )
@@ -278,6 +285,11 @@ def _adopt_checkpoint(current_slots: dict[str, Any]) -> None:
         leaf_manifest=load_leaf_manifest(MANIFEST_PATH),
         model_stream=LEGACY_CHECKPOINT / "model.eqx",
         optimizer_stream=LEGACY_CHECKPOINT / "optimizer_state.eqx",
+        model_mapping_rules=_model_mapping_rules(PathMappingRule, DROP_PATH),
+        optimizer_mapping_rules=_optimizer_mapping_rules(PathMappingRule, DROP_PATH),
+        model_keep_current_paths=[
+            "/nodes/net/nodes/cell/state_index/init/output",
+        ],
         resume_slot_transform=adaptive_epsilon_adoption_resume_transform,
     )
     print(
@@ -287,6 +299,7 @@ def _adopt_checkpoint(current_slots: dict[str, Any]) -> None:
                 "manifest_path": str(result.write.manifest_path),
                 "latest_pointer_path": str(result.write.latest_pointer_path),
                 "model_assigned_paths": len(result.model_report.assigned_paths),
+                "model_dropped_paths": len(result.model_report.dropped_paths),
                 "optimizer_assigned_paths": (
                     len(result.optimizer_report.assigned_paths)
                     if result.optimizer_report is not None
@@ -306,6 +319,7 @@ def _write_adoption_summary() -> None:
     payload = {
         "status": "adopted" if latest.exists() else "not_adopted",
         "legacy_commit": LEGACY_COMMIT,
+        "issue_recorded_commit": ISSUE_RECORDED_COMMIT,
         "legacy_checkpoint": _rel(LEGACY_CHECKPOINT),
         "leaf_manifest": _rel(MANIFEST_PATH),
         "leaf_manifest_model_entries": len(manifest.get("model", [])),
@@ -313,6 +327,7 @@ def _write_adoption_summary() -> None:
         "run_spec": _rel(RUN_SPEC_PATH),
         "feedbax_training_run_spec": _rel(FEEDBAX_SPEC_PATH),
         "current_slot_summary": _rel(CURRENT_SLOTS_SUMMARY_PATH),
+        "path_mapping": _rel(PATH_MAPPING_PATH),
         "checkpoint_root": _rel(CHECKPOINT_ROOT),
         "latest_pointer": _rel(latest) if latest.exists() else None,
         "latest_transaction_id": latest_payload.get("transaction_id"),
@@ -326,6 +341,162 @@ def _write_adoption_summary() -> None:
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+
+
+def _write_path_mapping_note() -> None:
+    PATH_MAPPING_PATH.parent.mkdir(parents=True, exist_ok=True)
+    PATH_MAPPING_PATH.write_text(
+        json.dumps(
+            {
+                "schema_id": "rlrmp.legacy_checkpoint_path_mapping_note",
+                "schema_version": "rlrmp.legacy_checkpoint_path_mapping_note.v1",
+                "model_rules": _model_mapping_payload("__drop__"),
+                "optimizer_rules": _optimizer_mapping_payload("__drop__"),
+                "model_keep_current_paths": [
+                    "/nodes/net/nodes/cell/state_index/init/output",
+                ],
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _model_mapping_rules(rule_type: Any, drop_path: str) -> list[Any]:
+    return [
+        rule_type(old_path=rule["old_path"], new_path=rule["new_path"])
+        for rule in _model_mapping_payload(drop_path)
+    ]
+
+
+def _optimizer_mapping_rules(rule_type: Any, drop_path: str) -> list[Any]:
+    return [
+        rule_type(old_path=rule["old_path"], new_path=rule["new_path"])
+        for rule in _optimizer_mapping_payload(drop_path)
+    ]
+
+
+def _model_mapping_payload(drop_path: str) -> list[dict[str, str]]:
+    return [
+        {
+            "old_path": "/nodes/net/net/hidden/weight_ih",
+            "new_path": "/nodes/net/nodes/cell/cell/weight_ih",
+        },
+        {
+            "old_path": "/nodes/net/net/hidden/weight_hh",
+            "new_path": "/nodes/net/nodes/cell/cell/weight_hh",
+        },
+        {
+            "old_path": "/nodes/net/net/hidden/bias",
+            "new_path": "/nodes/net/nodes/cell/cell/bias",
+        },
+        {
+            "old_path": "/nodes/net/net/hidden/bias_n",
+            "new_path": "/nodes/net/nodes/cell/cell/bias_n",
+        },
+        {
+            "old_path": "/nodes/net/net/readout/linear/weight",
+            "new_path": "/nodes/net/nodes/readout/layer/weight",
+        },
+        {
+            "old_path": "/nodes/net/net/readout/linear/bias",
+            "new_path": "/nodes/net/nodes/readout/layer/bias",
+        },
+        {
+            "old_path": "/nodes/net/net/state_index/init/hidden",
+            "new_path": "/nodes/net/nodes/cell/state_index/init/hidden",
+        },
+        {
+            "old_path": "/nodes/net/h0_encoder/weight",
+            "new_path": "/nodes/net/nodes/h0_encoder/layer/weight",
+        },
+        {
+            "old_path": "/nodes/net/h0_encoder/bias",
+            "new_path": "/nodes/net/nodes/h0_encoder/layer/bias",
+        },
+        {"old_path": "/nodes/net/net/readout/mask", "new_path": drop_path},
+        {
+            "old_path": "/nodes/net/net/population_structure/input_indices",
+            "new_path": drop_path,
+        },
+        {
+            "old_path": "/nodes/net/net/population_structure/readout_indices",
+            "new_path": drop_path,
+        },
+        {
+            "old_path": "/nodes/net/net/population_structure/input_only_indices",
+            "new_path": drop_path,
+        },
+        {
+            "old_path": "/nodes/net/net/population_structure/readout_only_indices",
+            "new_path": drop_path,
+        },
+        {
+            "old_path": "/nodes/net/net/population_structure/recurrent_only_indices",
+            "new_path": drop_path,
+        },
+        {
+            "old_path": "/nodes/net/net/population_structure/input_readout_indices",
+            "new_path": drop_path,
+        },
+        {"old_path": "/nodes/net/net/state_index/init/input", "new_path": drop_path},
+        {"old_path": "/nodes/net/net/state_index/init/output", "new_path": drop_path},
+        {"old_path": "/nodes/net/h0_state_index/init", "new_path": drop_path},
+    ]
+
+
+def _optimizer_mapping_payload(drop_path: str) -> list[dict[str, str]]:
+    rules: list[dict[str, str]] = []
+    for prefix in ("/2/inner_state/0/mu", "/2/inner_state/0/nu"):
+        rules.extend(
+            {
+                "old_path": prefix + rule["old_path"],
+                "new_path": (
+                    drop_path if rule["new_path"] == drop_path else prefix + rule["new_path"]
+                ),
+            }
+            for rule in [
+                {
+                    "old_path": "/nodes/net/net/hidden/weight_ih",
+                    "new_path": "/nodes/net/nodes/cell/cell/weight_ih",
+                },
+                {
+                    "old_path": "/nodes/net/net/hidden/weight_hh",
+                    "new_path": "/nodes/net/nodes/cell/cell/weight_hh",
+                },
+                {
+                    "old_path": "/nodes/net/net/hidden/bias",
+                    "new_path": "/nodes/net/nodes/cell/cell/bias",
+                },
+                {
+                    "old_path": "/nodes/net/net/hidden/bias_n",
+                    "new_path": "/nodes/net/nodes/cell/cell/bias_n",
+                },
+                {
+                    "old_path": "/nodes/net/net/readout/linear/weight",
+                    "new_path": "/nodes/net/nodes/readout/layer/weight",
+                },
+                {
+                    "old_path": "/nodes/net/net/readout/linear/bias",
+                    "new_path": "/nodes/net/nodes/readout/layer/bias",
+                },
+                {
+                    "old_path": "/nodes/net/net/readout/mask",
+                    "new_path": drop_path,
+                },
+                {
+                    "old_path": "/nodes/net/h0_encoder/weight",
+                    "new_path": "/nodes/net/nodes/h0_encoder/layer/weight",
+                },
+                {
+                    "old_path": "/nodes/net/h0_encoder/bias",
+                    "new_path": "/nodes/net/nodes/h0_encoder/layer/bias",
+                },
+            ]
+        )
+    return rules
 
 
 def _run(command: list[str], *, cwd: Path, env: dict[str, str]) -> None:

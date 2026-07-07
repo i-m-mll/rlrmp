@@ -56,20 +56,67 @@ def cs_nominal_gru_model_optimizer(spec_payload: Mapping[str, Any]) -> dict[str,
 
 
 def _install_legacy_import_shims() -> None:
+    class Figure:
+        pass
+
+    plotly = sys.modules.setdefault("plotly", types.ModuleType("plotly"))
+    graph_objects = types.ModuleType("plotly.graph_objects")
+    graph_objects.Figure = Figure
+    sys.modules.setdefault("plotly.graph_objects", graph_objects)
+    sys.modules.setdefault("plotly.graph_objs", graph_objects)
+    plotly_io = types.ModuleType("plotly.io")
+    plotly_io.templates = types.SimpleNamespace(default="plotly_white")
+    sys.modules.setdefault("plotly.io", plotly_io)
+    setattr(plotly, "graph_objects", graph_objects)
+    setattr(plotly, "graph_objs", graph_objects)
+    setattr(plotly, "io", plotly_io)
+
+    feedbax_plot = types.ModuleType("feedbax.plot")
+    feedbax_plot.utils = types.ModuleType("feedbax.plot.utils")
+    feedbax_plot.utils.savefig = lambda *args, **kwargs: None
+    sys.modules.setdefault("feedbax.plot", feedbax_plot)
+    sys.modules.setdefault("feedbax.plot.utils", feedbax_plot.utils)
+
+    analysis = types.ModuleType("feedbax.analysis")
+    aligned = types.ModuleType("feedbax.analysis.aligned")
+    aligned.get_aligned_vars = lambda *args, **kwargs: None
+    aligned.get_reach_origins_directions = lambda *args, **kwargs: None
+    state_utils = types.ModuleType("feedbax.analysis.state_utils")
+    state_utils.get_pos_endpoints = lambda *args, **kwargs: None
+    state_utils.vmap_eval_ensemble = lambda *args, **kwargs: None
+    setup = types.ModuleType("feedbax.analysis.setup")
+    setup.setup_models_only = lambda *args, **kwargs: None
+    setup.setup_tasks_only = lambda *args, **kwargs: None
+    sys.modules.setdefault("feedbax.analysis", analysis)
+    sys.modules.setdefault("feedbax.analysis.aligned", aligned)
+    sys.modules.setdefault("feedbax.analysis.state_utils", state_utils)
+    sys.modules.setdefault("feedbax.analysis.setup", setup)
+
     persistence = types.ModuleType("feedbax.persistence")
     database = types.ModuleType("feedbax.persistence.database")
 
     class ModelRecord:
         pass
 
+    class EvaluationRecord:
+        pass
+
     def _unavailable(*args: Any, **kwargs: Any) -> Any:
         del args, kwargs
         raise RuntimeError("legacy manifest builder does not support database operations")
 
+    database.MODEL_RECORD_BASE_ATTRS = ()
+    database.EvaluationRecord = EvaluationRecord
     database.ModelRecord = ModelRecord
+    database._cleanup_new_paths = _unavailable
+    database.add_evaluation = _unavailable
+    database.add_evaluation_figure = _unavailable
+    database.check_model_files = _unavailable
     database.db_session = _unavailable
     database.get_db_session = _unavailable
     database.get_record = _unavailable
+    database.load_tree_with_hps = _unavailable
+    database.query_model_records = _unavailable
     database.save_model_and_add_record = _unavailable
     persistence.database = database
     sys.modules.setdefault("feedbax.persistence", persistence)
