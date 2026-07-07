@@ -36,6 +36,8 @@ from feedbax.contracts.training import (
     TrainingConfig,
     TrainingMethodRegistration,
     TrainingRunSpec,
+    TRAINING_RUN_SPEC_SCHEMA_ID as FEEDBAX_TRAINING_RUN_SPEC_SCHEMA_ID,
+    TRAINING_RUN_SPEC_SCHEMA_VERSION as FEEDBAX_TRAINING_RUN_SPEC_SCHEMA_VERSION,
     WorkerExecutionSpec,
 )
 from feedbax.contracts.worker import (
@@ -1084,6 +1086,8 @@ def _migrate_legacy_standard_supervised_training_run_spec(
 ) -> dict[str, Any]:
     register_rlrmp_cs_supervised_method()
     payload = dict(spec_payload)
+    payload["schema_id"] = FEEDBAX_TRAINING_RUN_SPEC_SCHEMA_ID
+    payload["schema_version"] = FEEDBAX_TRAINING_RUN_SPEC_SCHEMA_VERSION
     method_payload = cs_supervised_method_payload(
         run_spec,
         output_dir=_spec_payload_artifact_root(payload, run_spec),

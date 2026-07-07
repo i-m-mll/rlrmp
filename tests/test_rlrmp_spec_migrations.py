@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from feedbax.contracts.manifest import TrainingRunManifest, load_manifest
 from feedbax.contracts.migrations import SpecSchemaRegistry, UnknownSpecFamily, UnsupportedSpecVersion
+from feedbax.contracts.training import TRAINING_RUN_SPEC_SCHEMA_VERSION
 
 from rlrmp.runtime.spec_migrations import (
     ArchiveOnlySpecError,
@@ -399,6 +400,8 @@ def test_historical_feedbax_training_run_spec_migrates_standard_supervised() -> 
 
     training_spec = feedbax_training_run_spec_from_payload(payload)
 
+    assert training_spec.schema_version == TRAINING_RUN_SPEC_SCHEMA_VERSION
+    assert training_spec.on_nan == "raise"
     assert training_spec.method_ref.key == CS_SUPERVISED_METHOD_REF
     assert training_spec.method_payload.schema_version == (
         CS_SUPERVISED_METHOD_PAYLOAD_SCHEMA_VERSION
