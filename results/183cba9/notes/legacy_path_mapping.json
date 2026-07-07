@@ -1,0 +1,159 @@
+{
+  "model_keep_current_paths": [
+    "/nodes/net/nodes/cell/state_index/init/output"
+  ],
+  "model_rules": [
+    {
+      "new_path": "/nodes/net/nodes/cell/cell/weight_ih",
+      "old_path": "/nodes/net/net/hidden/weight_ih"
+    },
+    {
+      "new_path": "/nodes/net/nodes/cell/cell/weight_hh",
+      "old_path": "/nodes/net/net/hidden/weight_hh"
+    },
+    {
+      "new_path": "/nodes/net/nodes/cell/cell/bias",
+      "old_path": "/nodes/net/net/hidden/bias"
+    },
+    {
+      "new_path": "/nodes/net/nodes/cell/cell/bias_n",
+      "old_path": "/nodes/net/net/hidden/bias_n"
+    },
+    {
+      "new_path": "/nodes/net/nodes/readout/layer/weight",
+      "old_path": "/nodes/net/net/readout/linear/weight"
+    },
+    {
+      "new_path": "/nodes/net/nodes/readout/layer/bias",
+      "old_path": "/nodes/net/net/readout/linear/bias"
+    },
+    {
+      "new_path": "/nodes/net/nodes/cell/state_index/init/hidden",
+      "old_path": "/nodes/net/net/state_index/init/hidden"
+    },
+    {
+      "new_path": "/nodes/net/nodes/h0_encoder/layer/weight",
+      "old_path": "/nodes/net/h0_encoder/weight"
+    },
+    {
+      "new_path": "/nodes/net/nodes/h0_encoder/layer/bias",
+      "old_path": "/nodes/net/h0_encoder/bias"
+    },
+    {
+      "new_path": "__drop__",
+      "old_path": "/nodes/net/net/readout/mask"
+    },
+    {
+      "new_path": "__drop__",
+      "old_path": "/nodes/net/net/population_structure/input_indices"
+    },
+    {
+      "new_path": "__drop__",
+      "old_path": "/nodes/net/net/population_structure/readout_indices"
+    },
+    {
+      "new_path": "__drop__",
+      "old_path": "/nodes/net/net/population_structure/input_only_indices"
+    },
+    {
+      "new_path": "__drop__",
+      "old_path": "/nodes/net/net/population_structure/readout_only_indices"
+    },
+    {
+      "new_path": "__drop__",
+      "old_path": "/nodes/net/net/population_structure/recurrent_only_indices"
+    },
+    {
+      "new_path": "__drop__",
+      "old_path": "/nodes/net/net/population_structure/input_readout_indices"
+    },
+    {
+      "new_path": "__drop__",
+      "old_path": "/nodes/net/net/state_index/init/input"
+    },
+    {
+      "new_path": "__drop__",
+      "old_path": "/nodes/net/net/state_index/init/output"
+    },
+    {
+      "new_path": "__drop__",
+      "old_path": "/nodes/net/h0_state_index/init"
+    }
+  ],
+  "optimizer_rules": [
+    {
+      "new_path": "/2/inner_state/0/mu/nodes/net/nodes/cell/cell/weight_ih",
+      "old_path": "/2/inner_state/0/mu/nodes/net/net/hidden/weight_ih"
+    },
+    {
+      "new_path": "/2/inner_state/0/mu/nodes/net/nodes/cell/cell/weight_hh",
+      "old_path": "/2/inner_state/0/mu/nodes/net/net/hidden/weight_hh"
+    },
+    {
+      "new_path": "/2/inner_state/0/mu/nodes/net/nodes/cell/cell/bias",
+      "old_path": "/2/inner_state/0/mu/nodes/net/net/hidden/bias"
+    },
+    {
+      "new_path": "/2/inner_state/0/mu/nodes/net/nodes/cell/cell/bias_n",
+      "old_path": "/2/inner_state/0/mu/nodes/net/net/hidden/bias_n"
+    },
+    {
+      "new_path": "/2/inner_state/0/mu/nodes/net/nodes/readout/layer/weight",
+      "old_path": "/2/inner_state/0/mu/nodes/net/net/readout/linear/weight"
+    },
+    {
+      "new_path": "/2/inner_state/0/mu/nodes/net/nodes/readout/layer/bias",
+      "old_path": "/2/inner_state/0/mu/nodes/net/net/readout/linear/bias"
+    },
+    {
+      "new_path": "__drop__",
+      "old_path": "/2/inner_state/0/mu/nodes/net/net/readout/mask"
+    },
+    {
+      "new_path": "/2/inner_state/0/mu/nodes/net/nodes/h0_encoder/layer/weight",
+      "old_path": "/2/inner_state/0/mu/nodes/net/h0_encoder/weight"
+    },
+    {
+      "new_path": "/2/inner_state/0/mu/nodes/net/nodes/h0_encoder/layer/bias",
+      "old_path": "/2/inner_state/0/mu/nodes/net/h0_encoder/bias"
+    },
+    {
+      "new_path": "/2/inner_state/0/nu/nodes/net/nodes/cell/cell/weight_ih",
+      "old_path": "/2/inner_state/0/nu/nodes/net/net/hidden/weight_ih"
+    },
+    {
+      "new_path": "/2/inner_state/0/nu/nodes/net/nodes/cell/cell/weight_hh",
+      "old_path": "/2/inner_state/0/nu/nodes/net/net/hidden/weight_hh"
+    },
+    {
+      "new_path": "/2/inner_state/0/nu/nodes/net/nodes/cell/cell/bias",
+      "old_path": "/2/inner_state/0/nu/nodes/net/net/hidden/bias"
+    },
+    {
+      "new_path": "/2/inner_state/0/nu/nodes/net/nodes/cell/cell/bias_n",
+      "old_path": "/2/inner_state/0/nu/nodes/net/net/hidden/bias_n"
+    },
+    {
+      "new_path": "/2/inner_state/0/nu/nodes/net/nodes/readout/layer/weight",
+      "old_path": "/2/inner_state/0/nu/nodes/net/net/readout/linear/weight"
+    },
+    {
+      "new_path": "/2/inner_state/0/nu/nodes/net/nodes/readout/layer/bias",
+      "old_path": "/2/inner_state/0/nu/nodes/net/net/readout/linear/bias"
+    },
+    {
+      "new_path": "__drop__",
+      "old_path": "/2/inner_state/0/nu/nodes/net/net/readout/mask"
+    },
+    {
+      "new_path": "/2/inner_state/0/nu/nodes/net/nodes/h0_encoder/layer/weight",
+      "old_path": "/2/inner_state/0/nu/nodes/net/h0_encoder/weight"
+    },
+    {
+      "new_path": "/2/inner_state/0/nu/nodes/net/nodes/h0_encoder/layer/bias",
+      "old_path": "/2/inner_state/0/nu/nodes/net/h0_encoder/bias"
+    }
+  ],
+  "schema_id": "rlrmp.legacy_checkpoint_path_mapping_note",
+  "schema_version": "rlrmp.legacy_checkpoint_path_mapping_note.v1"
+}

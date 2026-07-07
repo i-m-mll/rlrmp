@@ -1,0 +1,11 @@
+{
+  "completed_batches": 12000,
+  "continuation_batches": 500,
+  "issue_recorded_commit": "9f919c65e52b0042181d615d4a40e1cc6fab5d0b",
+  "legacy_checkpoint": "_artifacts/08483d5/runs/h0_6d_no_pgd_const_band16_cpu/checkpoints/checkpoint_0012000",
+  "legacy_commit": "899278bb30006153c28a0c92aee9dffedc6c4633",
+  "legacy_spec": "results/08483d5/runs/h0_6d_no_pgd_const_band16_cpu.json",
+  "manifest": "_artifacts/08483d5/runs/h0_6d_no_pgd_const_band16_cpu/checkpoints/checkpoint_0012000/leaf_manifest.json",
+  "stop_after_batches": 12500,
+  "target_n_train_batches": 16500
+}
