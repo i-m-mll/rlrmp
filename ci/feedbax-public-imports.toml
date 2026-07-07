@@ -545,6 +545,15 @@ symbols = [
 ]
 
 [[canonical_homes]]
+module = "feedbax.training.legacy_checkpoint_adoption"
+symbols = [
+  "DROP_PATH",
+  "PathMappingRule",
+  "adopt_legacy_checkpoint",
+  "load_leaf_manifest",
+]
+
+[[canonical_homes]]
 module = "feedbax.training.types"
 symbols = ["TaskModelPair"]
 

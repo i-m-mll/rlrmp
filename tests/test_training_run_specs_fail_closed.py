@@ -329,7 +329,7 @@ def test_tracked_training_config_adapter_corpus_census() -> None:
         else:
             clean_paths.append(path)
 
-    assert len(clean_paths) == 67
+    assert len(clean_paths) == 68
     assert fail_closed == EXPECTED_TRACKED_FAIL_CLOSED
 
 
