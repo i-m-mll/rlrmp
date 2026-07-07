@@ -16,8 +16,10 @@ import jax.random as jr
 
 REPO = Path(__file__).resolve().parents[3]
 FEEDBAX_TOOL = Path(
-    "/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax/"
-    "worktrees/feature__48b8b91-legacy-checkpoint-adoption"
+    os.environ.get(
+        "FEEDBAX_TOOL_ROOT",
+        "/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax",
+    )
 )
 LEGACY_FEEDBAX_API = Path(
     "/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax/"
