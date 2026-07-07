@@ -161,6 +161,7 @@ class MinimaxConfig(BaseModel):
     checkpoint: bool = False
     checkpoint_every: int = 500
     resume: bool = False
+    allow_fresh_start: bool = False
     fused: bool = True
     streaming_loss: bool = False
 

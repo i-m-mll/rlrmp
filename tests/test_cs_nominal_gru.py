@@ -417,7 +417,7 @@ def test_cs_nominal_gru_config_validates_tracked_cs_stochastic_gru_corpus() -> N
     clean_paths = []
     fail_closed: set[Path] = set()
 
-    assert len(paths) == 141
+    assert len(paths) == 142
     for path in paths:
         payload = json.loads(path.read_text(encoding="utf-8"))
         try:
@@ -427,7 +427,7 @@ def test_cs_nominal_gru_config_validates_tracked_cs_stochastic_gru_corpus() -> N
         else:
             clean_paths.append(path)
 
-    assert len(clean_paths) == 141
+    assert len(clean_paths) == 142
     assert fail_closed == set()
 
 
@@ -6282,6 +6282,7 @@ def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Pat
         hidden_size=4,
         full_train=True,
         resume=True,
+        allow_fresh_start=True,
         checkpoint_interval_batches=2,
         controller_lr=1e-3,
         lr_warmup_batches=1,
@@ -6356,6 +6357,7 @@ def test_policy_adversary_full_training_uses_checkpoint_sized_chunks(tmp_path: P
         hidden_size=4,
         full_train=True,
         resume=True,
+        allow_fresh_start=True,
         checkpoint_interval_batches=2,
         controller_lr=1e-3,
         lr_warmup_batches=1,
@@ -6410,6 +6412,7 @@ def test_finite_affine_policy_adversary_full_training_persists_adam_state(
         hidden_size=4,
         full_train=True,
         resume=True,
+        allow_fresh_start=True,
         checkpoint_interval_batches=2,
         controller_lr=1e-3,
         lr_warmup_batches=1,
@@ -6464,6 +6467,7 @@ def test_full_training_stop_after_batches_resumes_to_full_count(tmp_path: Path) 
         hidden_size=4,
         full_train=True,
         resume=True,
+        allow_fresh_start=True,
         checkpoint_interval_batches=2,
         stop_after_batches=2,
         controller_lr=1e-3,
@@ -6502,6 +6506,7 @@ def test_full_training_stop_after_batches_resumes_to_full_count(tmp_path: Path) 
         hidden_size=4,
         full_train=True,
         resume=True,
+        allow_fresh_start=True,
         checkpoint_interval_batches=2,
         stop_after_batches=None,
         controller_lr=1e-3,
@@ -6557,6 +6562,7 @@ def test_cs_supervised_full_training_uses_native_executor(tmp_path: Path) -> Non
         hidden_size=4,
         full_train=True,
         resume=True,
+        allow_fresh_start=True,
         checkpoint_interval_batches=1,
         controller_lr=1e-3,
         gradient_clip_norm=5.0,
@@ -6600,6 +6606,7 @@ def test_cs_supervised_native_same_length_resume_equivalence(tmp_path: Path) -> 
         hidden_size=4,
         full_train=True,
         resume=True,
+        allow_fresh_start=True,
         checkpoint_interval_batches=2,
         controller_lr=1e-3,
         gradient_clip_norm=5.0,

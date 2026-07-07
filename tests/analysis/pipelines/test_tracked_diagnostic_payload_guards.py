@@ -49,6 +49,11 @@ HISTORICAL_SIZE_EXCEPTIONS: dict[Path, tuple[int, str]] = {
         "payload is dominated by row-level certificate components rather than "
         "duplicated provenance or bulk arrays.",
     ),
+    Path("results/3cd018b/runs/ramp3500_to1000.json"): (
+        800 * 1024,
+        "Adopted legacy baseline run spec retains the full Feedbax TrainingRunSpec "
+        "needed to resume from the custody checkpoint.",
+    ),
 }
 
 
