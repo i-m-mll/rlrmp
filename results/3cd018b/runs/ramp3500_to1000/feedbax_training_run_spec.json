@@ -7864,6 +7864,7 @@
         "adaptive_epsilon_outer_weight_ramp_batches": 2500,
         "adaptive_epsilon_outer_weight_start": 0.0,
         "adaptive_epsilon_update_interval_batches": 50,
+        "allow_fresh_start": false,
         "batch_size": 64,
         "broad_epsilon_budget_scale": 1.0,
         "broad_epsilon_level": "moderate",
