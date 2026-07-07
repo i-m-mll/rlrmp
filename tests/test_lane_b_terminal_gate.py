@@ -137,7 +137,13 @@ def test_cs_spec_first_smoke_emits_resolvable_training_run_manifest(
 
     output_dir = tmp_path / "bulk"
     spec_dir = tmp_path / "cs_smoke"
-    args = _smoke_cs_args(output_dir=output_dir, spec_dir=spec_dir, full_train=True, resume=True)
+    args = _smoke_cs_args(
+        output_dir=output_dir,
+        spec_dir=spec_dir,
+        full_train=True,
+        resume=True,
+        allow_fresh_start=True,
+    )
 
     result = run_full_training(args)
 

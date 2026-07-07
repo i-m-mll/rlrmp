@@ -79,6 +79,7 @@ _DEFAULT_MINIMAX_ARGS: dict[str, Any] = {
     "checkpoint": True,
     "checkpoint_every": 1000,
     "resume": False,
+    "allow_fresh_start": False,
     "loss_update_enabled": False,
     "loss_update_ratio": 0.5,
     "fused": True,
