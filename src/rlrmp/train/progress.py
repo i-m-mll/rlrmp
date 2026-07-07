@@ -34,7 +34,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable, Mapping, Sequence
-from typing import Optional
+from typing import Any, Optional
 
 #: Literal token every progress line starts with. Monitors grep for this.
 BATCH_LINE_TOKEN = "BATCH"
@@ -166,3 +166,58 @@ def make_batch_log_callbacks(
 
         callbacks.setdefault(batch, []).append(_emit)
     return callbacks
+
+
+def make_executor_batch_log_callback(
+    phase_totals: Mapping[str, int],
+    *,
+    every: Mapping[str, int] | None = None,
+    batch_index: Callable[[Mapping[str, Any], int, int], int] | None = None,
+    logger: Optional[logging.Logger] = None,
+    clock: Callable[[], float] = time.monotonic,
+) -> Callable[[Mapping[str, Any]], None]:
+    """Build a Feedbax executor ``progress_callback`` that emits BATCH lines.
+
+    Feedbax's native executor reports copied progress-coordinate events on the
+    host. This adapter maps those coordinates onto the existing grep-friendly
+    line contract without reading metric arrays or otherwise forcing a new
+    device-to-host transfer.
+
+    Args:
+        phase_totals: Total conceptual batch count per executor phase.
+        every: Optional per-phase logging cadence override.
+        batch_index: Optional resolver called as ``(coordinate, seen, total)``.
+            The default treats each executor progress event as one batch.
+        logger: Logger to emit lines on; defaults to this module's logger.
+        clock: Monotonic clock; injectable for tests.
+
+    Returns:
+        A callback suitable for Feedbax ``execute_training_run_spec``.
+    """
+    log = logger if logger is not None else logging.getLogger(__name__)
+    totals = {phase: int(total) for phase, total in phase_totals.items()}
+    intervals = dict(every or {})
+    started = clock()
+    seen_by_phase: dict[str, int] = {}
+
+    def _callback(event: Mapping[str, Any]) -> None:
+        raw_coordinate = event.get("coordinate", event)
+        if not isinstance(raw_coordinate, Mapping):
+            return
+        phase = raw_coordinate.get("phase")
+        if not isinstance(phase, str):
+            return
+        total = totals.get(phase, 0)
+        if total <= 0:
+            return
+
+        seen = seen_by_phase.get(phase, 0)
+        seen_by_phase[phase] = seen + 1
+        raw_batch = batch_index(raw_coordinate, seen, total) if batch_index is not None else seen
+        batch = min(max(int(raw_batch), 0), total - 1)
+        step = intervals.get(phase, batch_log_every(total))
+        if not should_log_batch(batch, total, every=step):
+            return
+        log.info(format_batch_line(phase, batch, total, elapsed=clock() - started))
+
+    return _callback

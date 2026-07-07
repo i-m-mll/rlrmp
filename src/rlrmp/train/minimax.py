@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+import time
 from collections.abc import Mapping, Sequence
 from functools import partial
 from pathlib import Path
@@ -56,14 +58,18 @@ from feedbax.contracts.worker import (
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
+from rlrmp.io import write_compact_json
 from rlrmp.model.feedbax_graph import graph_spec_payload
+from rlrmp.model.trainable import staged_network_trainable_paths
 from rlrmp.runtime.spec_migrations import (
     RUN_SPEC_KIND,
     RUN_SPEC_SCHEMA_ID,
     RUN_SPEC_SCHEMA_VERSION,
     stamp_current_schema,
 )
-from rlrmp.model.trainable import staged_network_trainable_paths
+from rlrmp.train.progress import make_executor_batch_log_callback
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "MINIMAX_METHOD_REF",
@@ -549,7 +555,8 @@ def execute_minimax_training_run_spec_native(
         args=args,
         key=key if key is not None else jr.PRNGKey(args.seed),
     )
-    return execute_training_run_spec(
+    started = time.monotonic()
+    result = execute_training_run_spec(
         training_spec,
         run_id=run_id,
         initial_slots=initial_slots,
@@ -559,8 +566,110 @@ def execute_minimax_training_run_spec_native(
         loss_service=kwargs.pop("loss_service", MinimaxExternalObjectiveLossService()),
         resume=resume,
         stop_after_barrier=stop_after_barrier,
+        progress_callback=kwargs.pop(
+            "progress_callback",
+            make_executor_batch_log_callback(
+                {
+                    "warmup": int(args.n_warmup_batches),
+                    "adversarial": int(args.n_adversary_batches),
+                },
+                batch_index=_minimax_executor_batch_index,
+                logger=logger,
+            ),
+        ),
         **kwargs,
     )
+    _write_minimax_training_summary(
+        training_spec,
+        result,
+        duration_seconds=time.monotonic() - started,
+    )
+    return result
+
+
+def _minimax_executor_batch_index(
+    coordinate: Mapping[str, Any],
+    seen: int,
+    total: int,
+) -> int:
+    """Map minimax executor coordinates onto conceptual batch indices."""
+
+    if coordinate.get("phase") == "warmup":
+        return total - 1
+    if coordinate.get("phase") == "adversarial":
+        global_step = coordinate.get("global_step")
+        if isinstance(global_step, int):
+            return global_step - 2
+    return seen
+
+
+def _write_minimax_training_summary(
+    training_spec: TrainingRunSpec,
+    result: Any,
+    *,
+    duration_seconds: float,
+) -> None:
+    """Write the post-run summary JSON consumed by ``scripts/post_run.sh``."""
+
+    config = minimax_training_run_spec_to_config(training_spec)
+    normalized = MinimaxConfig.model_validate(config)
+    output_dir = Path(normalized.output_dir)
+    summary = _minimax_training_summary_payload(
+        normalized,
+        result,
+        duration_seconds=duration_seconds,
+    )
+    write_compact_json(output_dir / "training_summary.json", summary, atomic=True)
+
+
+def _minimax_training_summary_payload(
+    config: MinimaxConfig,
+    result: Any,
+    *,
+    duration_seconds: float,
+) -> dict[str, Any]:
+    training_mode = "minimax"
+    if config.adversary_type == "linear_dynamics":
+        training_mode += "+linear_dynamics"
+    n_train_batches = int(config.n_warmup_batches) + int(config.n_adversary_batches)
+    completed_batches = _minimax_completed_batches(config, result)
+    summary: dict[str, Any] = {
+        "training_mode": training_mode,
+        "n_warmup_batches": int(config.n_warmup_batches),
+        "n_adversary_batches": int(config.n_adversary_batches),
+        "n_train_batches": n_train_batches,
+        "batch_size": int(config.batch_size),
+        "adv_batch_size": int(config.adv_batch_size),
+        "n_replicates": int(config.n_replicates),
+        "completed_batches": completed_batches,
+        "training_duration_seconds": float(duration_seconds),
+        "run_id": result.run_id,
+        "executor_status": result.status,
+        "final_phase": result.final_coordinate.phase,
+        "final_global_step": result.final_coordinate.global_step,
+        "manifest_path": str(result.manifest_path),
+    }
+    if result.final_coordinate.completed_barrier is not None:
+        summary["completed_barrier"] = result.final_coordinate.completed_barrier
+    return summary
+
+
+def _minimax_completed_batches(config: MinimaxConfig, result: Any) -> int:
+    n_warmup = int(config.n_warmup_batches)
+    n_adversary = int(config.n_adversary_batches)
+    n_train_batches = n_warmup + n_adversary
+    if result.final_coordinate.phase == "done":
+        return n_train_batches
+
+    phase_counts = {"warmup": 0, "adversarial": 0}
+    for event in result.history_events:
+        coordinate = event.get("coordinate", {}) if isinstance(event, Mapping) else {}
+        phase = coordinate.get("phase") if isinstance(coordinate, Mapping) else None
+        if phase in phase_counts:
+            phase_counts[phase] += 1
+    completed_warmup = n_warmup if n_warmup > 0 and phase_counts["warmup"] else 0
+    completed_adversarial = min(n_adversary, phase_counts["adversarial"])
+    return min(n_train_batches, completed_warmup + completed_adversarial)
 
 
 def validate_minimax_run_spec(

@@ -22,6 +22,7 @@ from rlrmp.train.progress import (
     batch_log_every,
     format_batch_line,
     make_batch_log_callbacks,
+    make_executor_batch_log_callback,
     should_log_batch,
 )
 
@@ -147,12 +148,44 @@ class TestMakeBatchLogCallbacks:
         assert any("phase=train batch=" in m for m in lines)
 
 
-class TestTrainScriptWiring:
-    """The live training entry-point wires zero-arg BATCH-progress callbacks."""
+class TestMakeExecutorBatchLogCallback:
+    def test_executor_progress_events_emit_batch_lines(self, caplog) -> None:
+        log = logging.getLogger("test_executor_progress")
+        clock_values = iter([100.0, 101.0, 102.0, 103.0])
+        callback = make_executor_batch_log_callback(
+            {"train": 3},
+            logger=log,
+            clock=lambda: next(clock_values),
+        )
 
-    def test_minimax_imports_progress_helper(self) -> None:
+        with caplog.at_level(logging.INFO, logger="test_executor_progress"):
+            for global_step in range(1, 4):
+                callback(
+                    {
+                        "type": "training_progress",
+                        "coordinate": {
+                            "phase": "train",
+                            "global_step": global_step,
+                            "metrics": {"loss": object()},
+                        },
+                    }
+                )
+
+        lines = [r.message for r in caplog.records]
+        assert lines == [
+            "BATCH phase=train batch=0/3 elapsed=1.0s",
+            "BATCH phase=train batch=1/3 elapsed=2.0s",
+            "BATCH phase=train batch=2/3 elapsed=3.0s",
+        ]
+        assert all("loss=" not in line for line in lines)
+
+
+class TestTrainScriptWiring:
+    """The live training entry-point delegates progress to the native executor."""
+
+    def test_minimax_no_longer_imports_legacy_batch_callbacks(self) -> None:
         module = _load_script_module(
             "train_minimax_progress_wiring",
             REPO_ROOT / "scripts" / "train_minimax.py",
         )
-        assert hasattr(module, "make_batch_log_callbacks")
+        assert not hasattr(module, "make_batch_log_callbacks")

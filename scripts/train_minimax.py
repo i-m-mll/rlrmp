@@ -49,7 +49,6 @@ from rlrmp.train.minimax import (
     minimax_training_run_spec_to_config,
     validate_minimax_run_spec,
 )
-from rlrmp.train.progress import make_batch_log_callbacks  # noqa: F401
 from rlrmp.train.task_model import setup_task_model_pair
 
 logger = logging.getLogger(__name__)
