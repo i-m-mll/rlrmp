@@ -1,0 +1,25 @@
+{
+  "adaptive_epsilon_state_json": {
+    "damage_ema": null,
+    "lambda_value": 281032999.21861446,
+    "last_update_batch": null,
+    "schedule_start_batch": 12000,
+    "update_count": 0
+  },
+  "completed_batches": 12000,
+  "optimizer_diagnostic_target_batches": 16500,
+  "slots": [
+    "adaptive_epsilon_diagnostics_bytes",
+    "adaptive_epsilon_state",
+    "completed_batches",
+    "damage_metric",
+    "epsilon_scale",
+    "history_chunk_bytes",
+    "model",
+    "objective",
+    "optimizer",
+    "prng",
+    "train_loss",
+    "zero_adversary_guard"
+  ]
+}
