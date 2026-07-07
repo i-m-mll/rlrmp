@@ -172,6 +172,7 @@ from rlrmp.train.cs_perturbation_training import (
     validation_bin_manifest,
 )
 from rlrmp.train.progress import batch_log_every, format_batch_line, should_log_batch
+from rlrmp.train.resume_control import emit_launch_continuation, resolve_launch_continuation
 from rlrmp.train.task_model import (
     CS_LSS_PLANT_BACKEND,
     LEGACY_CAUSAL_PLANT_BACKEND,
@@ -391,6 +392,7 @@ class CsNominalGruConfig(BaseModel):
     smoke: bool = False
     full_train: bool = False
     resume: bool = False
+    allow_fresh_start: bool = False
     stop_after_batches: int | None = None
     training_diagnostics: bool = True
     checkpoint_interval_batches: int = 500
@@ -492,6 +494,7 @@ RUN_SPEC_RUNTIME_OVERRIDE_KEYS = frozenset(
         "run_spec",
         "dry_run",
         "resume",
+        "allow_fresh_start",
         "stop_after_batches",
         "disable_progress",
         "quiet_progress",
@@ -1325,6 +1328,7 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
         ),
         "dry_run": False,
         "resume": False,
+        "allow_fresh_start": False,
         "stop_after_batches": None,
         "smoke": False,
     }
@@ -2990,14 +2994,19 @@ def _run_cs_supervised_native_from_context(
         graph_spec=runtime_graph_bundle.graph_spec,
     )
     training_spec = feedbax_training_run_spec_from_payload(run_spec)
+    checkpoint_root = output_dir / "checkpoints"
+    context, resume_native = _resolve_full_train_launch_context(
+        context,
+        checkpoint_root=checkpoint_root,
+        stop_after_batches=stop_after_batches,
+    )
+    args = context.args
     initial_slots, runtime = build_cs_supervised_native_initial_slots(
         run_spec=run_spec,
         hps=hps,
         args=args,
         key=jr.PRNGKey(int(args.seed)),
     )
-    checkpoint_root = output_dir / "checkpoints"
-    resume_native = bool(args.resume and has_custody_checkpoint(checkpoint_root))
     started = time.perf_counter()
     execution = execute_training_run_spec(
         training_spec,
@@ -3041,6 +3050,29 @@ def _cs_supervised_native_run_id(args: argparse.Namespace, run_spec_path: Path) 
     if args.stop_after_batches is None:
         return f"{base}-{output_hash}"
     return f"{base}-{output_hash}-stop-after-{int(args.stop_after_batches)}"
+
+
+def _resolve_full_train_launch_context(
+    context: RunSpecExecutionContext,
+    *,
+    checkpoint_root: Path,
+    stop_after_batches: int | None,
+) -> tuple[RunSpecExecutionContext, bool]:
+    """Emit launch continuation summary and return executor resume semantics."""
+
+    args = context.args
+    stop_target = int(stop_after_batches if stop_after_batches is not None else args.n_train_batches)
+    continuation = resolve_launch_continuation(
+        checkpoint_root=checkpoint_root,
+        resume_requested=bool(args.resume),
+        allow_fresh_start=bool(args.allow_fresh_start),
+        stop_target_batches=stop_target,
+    )
+    emit_launch_continuation(continuation, logger=logger)
+    if continuation.resume == bool(args.resume):
+        return context, continuation.resume
+    resolved_args = argparse.Namespace(**{**vars(args), "resume": continuation.resume})
+    return replace(context, args=resolved_args), continuation.resume
 
 
 def _cs_model_slot(model: Any, array_template: Any) -> tuple[Any, ...]:
@@ -3409,14 +3441,19 @@ def _run_adaptive_epsilon_native_from_context(
         graph_spec=runtime_graph_bundle.graph_spec,
     )
     training_spec = feedbax_training_run_spec_from_payload(run_spec)
+    checkpoint_root = output_dir / "checkpoints"
+    context, resume_native = _resolve_full_train_launch_context(
+        context,
+        checkpoint_root=checkpoint_root,
+        stop_after_batches=stop_after_batches,
+    )
+    args = context.args
     initial_slots, runtime = build_adaptive_epsilon_native_initial_slots(
         run_spec=run_spec,
         hps=hps,
         args=args,
         key=jr.PRNGKey(int(args.seed)),
     )
-    checkpoint_root = output_dir / "checkpoints"
-    resume_native = bool(args.resume and has_custody_checkpoint(checkpoint_root))
     started = time.perf_counter()
     execution = execute_training_run_spec(
         training_spec,
@@ -3491,14 +3528,19 @@ def _run_policy_adversary_native_from_context(
         graph_spec=runtime_graph_bundle.graph_spec,
     )
     training_spec = feedbax_training_run_spec_from_payload(run_spec)
+    checkpoint_root = output_dir / "checkpoints"
+    context, resume_native = _resolve_full_train_launch_context(
+        context,
+        checkpoint_root=checkpoint_root,
+        stop_after_batches=stop_after_batches,
+    )
+    args = context.args
     initial_slots, runtime = build_policy_adversary_native_initial_slots(
         run_spec=run_spec,
         hps=hps,
         args=args,
         key=jr.PRNGKey(int(args.seed)),
     )
-    checkpoint_root = output_dir / "checkpoints"
-    resume_native = bool(args.resume and has_custody_checkpoint(checkpoint_root))
     started = time.perf_counter()
     execution = execute_training_run_spec(
         training_spec,
@@ -4991,13 +5033,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--full-train", action="store_true")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument(
+        "--allow-fresh-start",
+        action="store_true",
+        help=(
+            "Allow --resume to start from batch 0 when the expected "
+            "checkpoints/latest.json resume pointer is absent."
+        ),
+    )
+    parser.add_argument(
         "--stop-after-batches",
         type=int,
         default=_config_default("stop_after_batches"),
         help=(
-            "For full-train checkpoint-gate smoke runs, stop cleanly after the "
-            "first checkpoint at or beyond this completed-batch count while "
-            "preserving the original --n-train-batches run contract for resume."
+            "Global completed-batch index at which a full-train checkpoint-gate "
+            "run may stop cleanly; this is not a relative count after resume. "
+            "The original --n-train-batches run contract is preserved for resume."
         ),
     )
     parser.add_argument(

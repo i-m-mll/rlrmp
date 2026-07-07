@@ -49,6 +49,7 @@ from rlrmp.train.minimax import (
     minimax_training_run_spec_to_config,
     validate_minimax_run_spec,
 )
+from rlrmp.train.resume_control import emit_launch_continuation, resolve_launch_continuation
 from rlrmp.train.task_model import setup_task_model_pair
 
 logger = logging.getLogger(__name__)
@@ -597,14 +598,50 @@ def run_training(training_run_spec: TrainingRunSpec | dict[str, Any]) -> Any:
     args = minimax_config_namespace(minimax_training_run_spec_to_config(spec))
     _configure_jax_runtime(args)
     checkpoint_root = Path(args.output_dir) / "checkpoints_adversarial"
+    stop_target_batches = int(args.n_warmup_batches) + int(args.n_adversary_batches)
+    continuation = resolve_launch_continuation(
+        checkpoint_root=checkpoint_root,
+        resume_requested=bool(args.resume),
+        allow_fresh_start=bool(args.allow_fresh_start),
+        stop_target_batches=stop_target_batches,
+        completed_batches_from_latest=lambda latest_path: _minimax_completed_batches_from_latest(
+            latest_path,
+            n_warmup_batches=int(args.n_warmup_batches),
+            n_adversary_batches=int(args.n_adversary_batches),
+        ),
+    )
+    emit_launch_continuation(continuation, logger=logger)
     return execute_minimax_training_run_spec_native(
         spec,
         run_id=Path(args.output_dir).name,
         manifest_root=REPO_ROOT / "_artifacts" / "feedbax_runs",
         checkpoint_root=checkpoint_root,
-        resume=bool(args.resume),
+        resume=continuation.resume,
         manifest_conflict_policy="reuse-identical",
     )
+
+
+def _minimax_completed_batches_from_latest(
+    latest_path: Path,
+    *,
+    n_warmup_batches: int,
+    n_adversary_batches: int,
+) -> int:
+    payload = json.loads(latest_path.read_text(encoding="utf-8"))
+    coordinate = payload.get("completed_coordinate")
+    if not isinstance(coordinate, dict):
+        raise ValueError(f"checkpoint latest pointer lacks completed_coordinate: {latest_path}")
+    phase = coordinate.get("phase")
+    barrier = coordinate.get("completed_barrier")
+    global_step = int(coordinate.get("global_step", 0))
+    total_batches = int(n_warmup_batches) + int(n_adversary_batches)
+    if phase == "done":
+        return total_batches
+    if barrier == MINIMAX_WARMUP_BARRIER or phase == "warmup":
+        return int(n_warmup_batches)
+    if barrier == MINIMAX_ADVERSARIAL_BARRIER or phase == "adversarial":
+        return min(total_batches, int(n_warmup_batches) + global_step)
+    raise ValueError(f"unsupported minimax checkpoint coordinate in {latest_path}: {coordinate!r}")
 
 
 if __name__ == "__main__":
