@@ -295,6 +295,8 @@ symbols = [
   "TrainingConfig",
   "TrainingMethodRegistration",
   "TrainingRunSpec",
+  "TRAINING_RUN_SPEC_SCHEMA_ID",
+  "TRAINING_RUN_SPEC_SCHEMA_VERSION",
   "WorkerExecutionSpec",
   "standard_supervised_effective_phase_spec",
   "standard_supervised_method_contract",

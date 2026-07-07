@@ -1,6 +1,7 @@
 """Spec-first minimax training contracts."""
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -500,6 +501,43 @@ def test_minimax_native_executor_matches_fixed_seed_manual_kernel_loop(
     assert result.final_coordinate.phase == "done"
     assert result.final_slots["controller_loss"] != 0.0
     assert result.final_slots["adversary_loss"] != 0.0
+
+
+def test_minimax_native_executor_emits_post_run_protocol_inputs(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    spec = _native_smoke_spec(tmp_path, n_adversary_batches=2)
+    output_dir = Path(minimax_training_run_spec_to_config(spec)["output_dir"])
+
+    with caplog.at_level(logging.INFO, logger="rlrmp.train.minimax"):
+        result = execute_minimax_training_run_spec_native(
+            spec,
+            run_id="native-minimax-post-run-protocol",
+            key=jr.PRNGKey(0),
+            manifest_root=tmp_path / "manifests" / "post-run",
+            checkpoint_root=tmp_path / "checkpoints" / "post-run",
+            manifest_conflict_policy="reuse-identical",
+        )
+
+    summary_path = output_dir / "training_summary.json"
+    assert summary_path.is_file()
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert summary["training_mode"] == "minimax"
+    assert summary["n_train_batches"] == 2
+    assert summary["completed_batches"] == 2
+    assert summary["run_id"] == result.run_id
+    assert summary["manifest_path"] == str(result.manifest_path)
+    assert "final_train_loss" not in summary
+    assert "final_validation_loss" not in summary
+
+    progress_lines = [
+        record.message
+        for record in caplog.records
+        if record.name == "rlrmp.train.minimax" and record.message.startswith("BATCH ")
+    ]
+    assert any("phase=adversarial batch=0/2" in line for line in progress_lines)
+    assert any("phase=adversarial batch=1/2" in line for line in progress_lines)
 
 
 def test_minimax_native_initial_slots_honor_explicit_warmup_model(
