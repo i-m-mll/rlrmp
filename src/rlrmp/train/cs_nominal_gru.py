@@ -16,8 +16,9 @@ import os
 import subprocess
 import tempfile
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Literal, NamedTuple, Union, get_args, get_origin
@@ -53,6 +54,7 @@ from jax_cookbook.tree import array_set as tree_set
 from jax_cookbook.tree import filter_spec_leaves
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from rlrmp.runtime.jax_config import assert_jax_x64_disabled
 from rlrmp.analysis.math.cs_game_card import (
     INIT_POS,
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
@@ -399,6 +401,7 @@ class CsNominalGruConfig(BaseModel):
     log_step: int = 100
     disable_progress: bool = False
     quiet_progress: bool = True
+    allow_x64: bool = False
     dry_run: bool = False
 
     @model_validator(mode="after")
@@ -3040,6 +3043,7 @@ def _run_cs_supervised_native_from_context(
         runtime=native_runtime,
         training_duration_seconds=training_duration_seconds,
         stop_after_batches=stop_after_batches,
+        checkpoint_writes=execution.checkpoint_writes,
         volume_commit=volume_commit,
     )
 
@@ -3262,6 +3266,7 @@ def _materialize_cs_supervised_native_result(
     runtime: CsSupervisedNativeRuntime,
     training_duration_seconds: float,
     stop_after_batches: int | None,
+    checkpoint_writes: Sequence[Any],
     volume_commit: VolumeCommit | None,
 ) -> dict[str, Any]:
     args = context.args
@@ -3274,15 +3279,19 @@ def _materialize_cs_supervised_native_result(
     pgd_diagnostic_chunks: list[dict[str, np.ndarray]] = []
     training_started = time.perf_counter() - training_duration_seconds
     final_state: TrainingState | None = None
+    custody_by_completed = _checkpoint_writes_by_completed_batch(checkpoint_writes)
     for record in runtime.records:
         completed = int(record.state.completed_batches)
         history_chunk_path = history_chunks_dir / f"history_{completed:07d}.eqx"
         history_chunk_path.parent.mkdir(parents=True, exist_ok=True)
         _save_pytree(history_chunk_path, record.history_chunk)
-        checkpoint_path = _save_training_checkpoint_materialization(
+        checkpoint_path = save_training_checkpoint(
             checkpoint_root,
             record.state,
-            metadata=_training_checkpoint_metadata(args, record.state, run_spec),
+            args=args,
+            run_spec=run_spec,
+            write_custody=False,
+            custody_result=custody_by_completed.get(int(record.state.completed_batches)),
         )
         if record.pgd_diagnostics:
             pgd_diagnostic_chunks.append(record.pgd_diagnostics)
@@ -3486,6 +3495,7 @@ def _run_adaptive_epsilon_native_from_context(
         final_slots=execution.final_slots,
         training_duration_seconds=training_duration_seconds,
         stop_after_batches=stop_after_batches,
+        checkpoint_writes=execution.checkpoint_writes,
         volume_commit=volume_commit,
     )
 
@@ -3573,6 +3583,7 @@ def _run_policy_adversary_native_from_context(
         final_slots=execution.final_slots,
         training_duration_seconds=training_duration_seconds,
         stop_after_batches=stop_after_batches,
+        checkpoint_writes=execution.checkpoint_writes,
         volume_commit=volume_commit,
     )
 
@@ -3585,6 +3596,7 @@ def _materialize_policy_adversary_native_result(
     final_slots: Mapping[str, Any],
     training_duration_seconds: float,
     stop_after_batches: int | None,
+    checkpoint_writes: Sequence[Any],
     volume_commit: VolumeCommit | None,
 ) -> dict[str, Any]:
     from rlrmp.train.policy_adversary_native import (
@@ -3622,10 +3634,13 @@ def _materialize_policy_adversary_native_result(
             slot=ADVERSARY_OPTIMIZER,
         ),
     )
-    checkpoint_path = _save_training_checkpoint_materialization(
+    checkpoint_path = save_training_checkpoint(
         checkpoint_root,
         state,
-        metadata=_training_checkpoint_metadata(args, state, run_spec),
+        args=args,
+        run_spec=run_spec,
+        write_custody=False,
+        custody_result=_latest_checkpoint_write(checkpoint_writes),
     )
     records = list(getattr(runtime, "records", []))
     history_chunk_dir = mkdir_p(output_dir / "history_chunks")
@@ -3719,6 +3734,7 @@ def _materialize_adaptive_epsilon_native_result(
     final_slots: Mapping[str, Any],
     training_duration_seconds: float,
     stop_after_batches: int | None,
+    checkpoint_writes: Sequence[Any],
     volume_commit: VolumeCommit | None,
 ) -> dict[str, Any]:
     from rlrmp.train.adaptive_epsilon_native import (
@@ -3763,10 +3779,13 @@ def _materialize_adaptive_epsilon_native_result(
         history=getattr(runtime, "history", None),
         adaptive_epsilon_state=adaptive_state,
     )
-    checkpoint_path = _save_training_checkpoint_materialization(
+    checkpoint_path = save_training_checkpoint(
         checkpoint_root,
         state,
-        metadata=_training_checkpoint_metadata(args, state, run_spec),
+        args=args,
+        run_spec=run_spec,
+        write_custody=False,
+        custody_result=_latest_checkpoint_write(checkpoint_writes),
     )
     diagnostics_metadata = write_training_diagnostics_sidecar(
         output_dir,
@@ -3870,21 +3889,25 @@ def save_training_checkpoint(
     *,
     args: argparse.Namespace,
     run_spec: dict[str, Any],
+    write_custody: bool = True,
+    custody_result: Any | None = None,
 ) -> Path:
     """Write a Feedbax custody checkpoint and compatibility materialization."""
 
     metadata = _training_checkpoint_metadata(args, state, run_spec)
-    if has_feedbax_training_spec(run_spec):
-        write_cs_checkpoint_transaction(
+    if write_custody and has_feedbax_training_spec(run_spec):
+        custody_result = write_cs_checkpoint_transaction(
             checkpoint_root,
             run_spec=run_spec,
             completed_batches=state.completed_batches,
             slots=_cs_checkpoint_slots(state, metadata),
+            status=_checkpoint_transaction_status(args, state),
         )
     return _save_training_checkpoint_materialization(
         checkpoint_root,
         state,
         metadata=metadata,
+        custody_result=custody_result,
     )
 
 
@@ -3893,10 +3916,12 @@ def _save_training_checkpoint_materialization(
     state: TrainingState,
     *,
     metadata: dict[str, Any],
+    custody_result: Any | None = None,
 ) -> Path:
     """Write the historical numbered checkpoint directory for compatibility."""
 
     checkpoint_root.mkdir(parents=True, exist_ok=True)
+    _remove_stale_legacy_materializations(checkpoint_root, issue=str(metadata.get("issue", "")))
     checkpoint_name = f"checkpoint_{state.completed_batches:07d}"
     target = checkpoint_root / checkpoint_name
     tmp = checkpoint_root / f".{checkpoint_name}.tmp"
@@ -3916,6 +3941,13 @@ def _save_training_checkpoint_materialization(
     if state.history is not None:
         _save_pytree(tmp / "history.eqx", state.history)
     _atomic_write_json(tmp / "metadata.json", metadata)
+    _atomic_write_json(
+        tmp / "provenance.json",
+        _legacy_checkpoint_provenance(
+            metadata=metadata,
+            custody_result=custody_result,
+        ),
+    )
     if target.exists():
         _remove_tree(target)
     os.replace(tmp, target)
@@ -3929,6 +3961,106 @@ def _save_training_checkpoint_materialization(
         },
     )
     return target
+
+
+def _checkpoint_transaction_status(
+    args: argparse.Namespace,
+    state: TrainingState,
+) -> Literal["partial", "final"]:
+    try:
+        n_train_batches = int(args.n_train_batches)
+    except (TypeError, ValueError):
+        return "partial"
+    return "final" if int(state.completed_batches) >= n_train_batches else "partial"
+
+
+def _legacy_checkpoint_provenance(
+    *,
+    metadata: Mapping[str, Any],
+    custody_result: Any | None,
+) -> dict[str, Any]:
+    return {
+        "schema_version": "rlrmp.legacy_checkpoint_provenance.v1",
+        "issue": str(metadata.get("issue", "")),
+        "source_transaction_id": _custody_transaction_id(custody_result),
+        "materialized_at": datetime.now(UTC).isoformat(),
+        "writer": "rlrmp.train.cs_nominal_gru._save_training_checkpoint_materialization",
+        "authoritative": False,
+    }
+
+
+def _custody_transaction_id(custody_result: Any | None) -> str | None:
+    if custody_result is None:
+        return None
+    manifest = getattr(custody_result, "manifest", None)
+    transaction_id = getattr(manifest, "transaction_id", None)
+    if transaction_id:
+        return str(transaction_id)
+    latest_pointer = getattr(custody_result, "latest_pointer", None)
+    transaction_id = getattr(latest_pointer, "transaction_id", None)
+    return None if transaction_id is None else str(transaction_id)
+
+
+def _checkpoint_writes_by_completed_batch(
+    checkpoint_writes: Sequence[Any],
+) -> dict[int, Any]:
+    """Index Feedbax executor checkpoint writes by completed global step."""
+
+    indexed: dict[int, Any] = {}
+    for write in checkpoint_writes:
+        coordinate = getattr(getattr(write, "manifest", None), "coordinate", None)
+        completed = getattr(coordinate, "global_step", None)
+        if completed is None:
+            continue
+        indexed[int(completed)] = write
+    return indexed
+
+
+def _latest_checkpoint_write(checkpoint_writes: Sequence[Any]) -> Any | None:
+    return checkpoint_writes[-1] if checkpoint_writes else None
+
+
+def _remove_stale_legacy_materializations(checkpoint_root: Path, *, issue: str) -> None:
+    """Remove legacy checkpoint dirs whose metadata belongs to another issue."""
+
+    for path in checkpoint_root.glob("checkpoint_[0-9]*"):
+        if not path.is_dir() or path.is_symlink():
+            continue
+        legacy_issue = _legacy_materialization_issue(path)
+        if legacy_issue != issue:
+            _remove_tree(path)
+
+    latest = checkpoint_root / "checkpoint_latest"
+    if not latest.exists() and not latest.is_symlink():
+        return
+    try:
+        latest_issue = _legacy_materialization_issue(latest.resolve())
+    except FileNotFoundError:
+        latest_issue = None
+    if latest_issue != issue:
+        if latest.is_dir() and not latest.is_symlink():
+            _remove_tree(latest)
+        else:
+            latest.unlink()
+
+
+def _legacy_materialization_issue(path: Path) -> str | None:
+    provenance_path = path / "provenance.json"
+    provenance = _read_json_if_present(provenance_path)
+    if isinstance(provenance, dict) and provenance.get("issue"):
+        return str(provenance["issue"])
+
+    metadata = _read_json_if_present(path / "metadata.json")
+    if isinstance(metadata, dict) and metadata.get("issue"):
+        return str(metadata["issue"])
+    return None
+
+
+def _read_json_if_present(path: Path) -> Any | None:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
 
 
 def load_latest_checkpoint(
@@ -4096,6 +4228,9 @@ def _cs_checkpoint_slots(
         slots["adversary_optimizer"] = serialize_pytree_slot(state.adversary_optimizer_state)
     if state.adaptive_epsilon_state is not None:
         slots["adaptive_epsilon_state"] = state.adaptive_epsilon_state
+        zero_guard = getattr(state.adaptive_epsilon_state, "zero_adversary_guard", None)
+        if isinstance(zero_guard, dict):
+            slots["zero_adversary_guard"] = dict(zero_guard)
     return slots
 
 
@@ -4228,6 +4363,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", default=_config_default("output_dir"))
     parser.add_argument("--spec-dir", default=_config_default("spec_dir"))
     parser.add_argument("--issue", default=_config_default("issue"))
+    parser.add_argument(
+        "--allow-x64",
+        action="store_true",
+        default=False,
+        help="Allow a training/spec process to start after process-global JAX x64 was enabled.",
+    )
     parser.add_argument("--seed", type=int, default=_config_default("seed"))
     parser.add_argument("--n-train-batches", type=int, default=_config_default("n_train_batches"))
     parser.add_argument("--batch-size", type=int, default=_config_default("batch_size"))
@@ -5128,6 +5269,7 @@ def main(
             end="",
         )
         return 0
+    assert_jax_x64_disabled("C&S nominal GRU training/spec entry", allow_x64=args.allow_x64)
     if args.run_spec is not None:
         context = build_run_spec_execution_context(args, parser=parser)
         if context.args.dry_run:
@@ -6678,7 +6820,9 @@ def _run_adaptive_epsilon_training_chunk(
             ),
         )
         opt_state_for_history = jtu.tree_unflatten(treedef_opt_state, flat_opt_state)
+        learning_rate = None
         if (hyperparams := getattr(opt_state_for_history, "hyperparams", None)) is not None:
+            learning_rate = float(jax.device_get(hyperparams["learning_rate"]))
             history = eqx.tree_at(
                 lambda history: history.learning_rate,
                 history,
@@ -6690,15 +6834,24 @@ def _run_adaptive_epsilon_training_chunk(
             every=progress_every,
         ):
             loss_mean = losses.map(jnp.mean)
+            clean_loss = float(
+                np.asarray(host_diagnostics["adaptive_update_clean_loss_total"]).mean()
+            )
+            epsilon_scale = float(
+                np.asarray(host_diagnostics["adaptive_update_epsilon_scale_used"]).mean()
+            )
             print(
                 format_batch_line(
                     "adaptive_epsilon",
                     global_batch,
                     int(hps.n_batches_condition),
                     loss=float(jax.device_get(loss_mean.total)),
+                    clean_loss=clean_loss,
                     damage=adaptive_update_damage_raw,
+                    epsilon_scale=epsilon_scale,
                     target=target_damage,
-                    lambda_value=float(adaptive_state.lambda_value),
+                    **{"lambda": float(adaptive_state.lambda_value)},
+                    lr=learning_rate if learning_rate is not None else float("nan"),
                     outer=outer_weight,
                     elapsed=time.perf_counter() - chunk_started,
                 ),

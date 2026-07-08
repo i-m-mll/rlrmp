@@ -171,6 +171,15 @@ minimum_non_skipped = 6
 negative_canary = "tests/test_data_lint_generated_constants.py::test_data_lint_flags_the_two_named_generated_tables"
 
 [[families]]
+name = "import_time_jax_config_scan"
+owner = "15178d7"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_import_time_jax_config.py::"
+minimum_non_skipped = 4
+negative_canary = "tests/test_import_time_jax_config.py::test_import_lint_negative_canary_flags_module_level_x64_update"
+
+[[families]]
 name = "defaults_schema_ownership_scan"
 owner = "5b3aabe"
 status = "live"

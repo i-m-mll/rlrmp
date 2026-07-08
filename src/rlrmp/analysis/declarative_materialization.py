@@ -210,6 +210,16 @@ class FeedbackQualityGatingDecision:
     should_materialize: bool
 
 
+@dataclass(frozen=True)
+class _AnalysisEvaluationInput:
+    """Minimal resolved evaluation input reconstructed from AnalysisInputData."""
+
+    states: Mapping[str, Any] | None
+    path: Path | None
+    ref: ParentRef | None
+    manifest: Any | None = None
+
+
 class PolicyDiagnosticsAnalysisParams(BaseModel):
     """Params for controller-local policy diagnostic-bank analysis."""
 
@@ -255,6 +265,15 @@ class RLRMPManifestAnalysis(AbstractAnalysis):
     logical_name: str = eqx.field(kw_only=True, static=True)
     schema_boundary: str | None = eqx.field(default=None, static=True)
     metadata: dict[str, Any] = eqx.field(default_factory=dict, static=True)
+
+    @property
+    def _field_params(self) -> dict[str, Any]:
+        return {
+            "artifact_role": self.artifact_role,
+            "logical_name": self.logical_name,
+            "schema_boundary": self.schema_boundary,
+            "metadata": self.metadata,
+        }
 
     def compute(self, data: AnalysisInputData, **kwargs: Any) -> dict[str, Any]:
         del data, kwargs
@@ -1023,7 +1042,7 @@ def gru_standard_certificate_recipe(
         materializer=lambda context, data: _materialize_gru_standard(
             context,
             params,
-            evaluation_input=evaluation_input,
+            evaluation_input=_evaluation_input_from_analysis_data(data),
         ),
         artifact_role="rlrmp-bridge-standard-certificate",
         logical_name="gru_standard_certificates.json",
@@ -1048,7 +1067,7 @@ def gru_evaluation_diagnostics_recipe(
         materializer=lambda context, data: _materialize_gru_evaluation_diagnostics(
             context,
             params,
-            evaluation_input=evaluation_input,
+            evaluation_input=_evaluation_input_from_analysis_data(data),
         ),
         artifact_role="rlrmp-gru-evaluation-diagnostics",
         logical_name="gru_evaluation_diagnostics.json",
@@ -1077,7 +1096,7 @@ def gru_postrun_recipe(
             params,
             experiment=experiment,
             run_ids=resolved_run_ids,
-            evaluation_input=evaluation_input,
+            evaluation_input=_evaluation_input_from_analysis_data(data),
         ),
         artifact_role="rlrmp-gru-postrun-manifest",
         logical_name="gru_postrun_materialization.json",
@@ -1145,7 +1164,7 @@ def policy_diagnostics_recipe(
         materializer=lambda context, data: _materialize_policy_diagnostics(
             context,
             params,
-            evaluation_input=evaluation_input,
+            evaluation_input=_evaluation_input_from_analysis_data(data),
         ),
         artifact_role="rlrmp-policy-diagnostics-bank",
         logical_name="policy_diagnostics_bank.json",
@@ -1172,7 +1191,7 @@ def recurrent_jacobian_recipe(
         materializer=lambda context, data: _materialize_recurrent_jacobians(
             context,
             params,
-            evaluation_input=evaluation_input,
+            evaluation_input=_evaluation_input_from_analysis_data(data),
         ),
         artifact_role="rlrmp-recurrent-jacobian-bank",
         logical_name="recurrent_jacobian_bank.json",
@@ -1208,7 +1227,7 @@ def _feedback_quality_component_recipe(
                 params=params,
                 experiment=experiment,
                 run_ids=resolved_run_ids,
-                evaluation_input=evaluation_input,
+                evaluation_input=_evaluation_input_from_analysis_data(data),
                 repo_root=repo_root,
             ),
             artifact_role=registration.artifact_role,
@@ -2973,15 +2992,32 @@ def _analysis_data_from_evaluation_input(evaluation_input: Any | None) -> Analys
     if evaluation_input is None:
         return _empty_analysis_data()
     ref = getattr(evaluation_input, "ref", None)
+    path = _resolved_input_path(evaluation_input)
     return AnalysisInputData(
         models={},
         tasks={},
         states={
             "evaluation": _resolved_input_states(evaluation_input),
             "evaluation_manifest_id": getattr(ref, "id", None),
+            "evaluation_manifest_path": None if path is None else str(path),
         },
         hps={},
         extras=TreeNamespace(),
+    )
+
+
+def _evaluation_input_from_analysis_data(data: AnalysisInputData) -> _AnalysisEvaluationInput | None:
+    states = data.states.get("evaluation")
+    if states is None:
+        return None
+    manifest_id = data.states.get("evaluation_manifest_id")
+    path = data.states.get("evaluation_manifest_path")
+    return _AnalysisEvaluationInput(
+        states=states if isinstance(states, Mapping) else None,
+        path=Path(path) if path not in (None, "") else None,
+        ref=ParentRef(kind="EvaluationRunManifest", id=str(manifest_id))
+        if manifest_id not in (None, "")
+        else None,
     )
 
 

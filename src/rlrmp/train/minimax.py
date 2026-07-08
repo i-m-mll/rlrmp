@@ -158,6 +158,7 @@ class MinimaxConfig(BaseModel):
     spec_dir: str | None = None
     jax_cache_dir: str | None = None
     jax_explain_cache_misses: bool = False
+    allow_x64: bool = False
     checkpoint: bool = False
     checkpoint_every: int = 500
     resume: bool = False

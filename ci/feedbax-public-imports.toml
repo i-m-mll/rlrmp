@@ -122,6 +122,10 @@ module = "feedbax.analysis.types"
 symbols = ["AnalysisInputData"]
 
 [[canonical_homes]]
+module = "feedbax.training.checkpoint_custody"
+symbols = ["fork_checkpoint_transaction"]
+
+[[canonical_homes]]
 module = "feedbax.component_registry"
 symbols = ["ComponentMigration", "ComponentMigrationPack", "get_component_registry"]
 

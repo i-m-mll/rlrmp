@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import subprocess
 import sys
 import warnings
@@ -5480,7 +5481,6 @@ def test_flat_run_spec_replay_does_not_require_adjacent_graph_manifest(
 
 def test_full_train_run_spec_replay_dry_run_stays_on_spec_path(
     tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
     result = write_run_spec(
         _args(
@@ -5499,8 +5499,33 @@ def test_full_train_run_spec_replay_dry_run_stays_on_spec_path(
     flat_run_spec = tmp_path / "flat_full_train.json"
     flat_run_spec.write_text(Path(result["run_spec_path"]).read_text(), encoding="utf-8")
 
-    assert main(["--run-spec", str(flat_run_spec), "--dry-run"]) == 0
-    payload = json.loads(capsys.readouterr().out)
+    repo_root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{repo_root / 'src'}{os.pathsep}{env.get('PYTHONPATH', '')}"
+    env["JAX_ENABLE_X64"] = "False"
+
+    replay_code = "\n".join(
+        [
+            "from rlrmp.runtime.checkpoint_fork_gate import register_rlrmp_training_methods",
+            "from rlrmp.train.cs_nominal_gru import main",
+            "register_rlrmp_training_methods()",
+            (
+                "raise SystemExit(main(['--run-spec', "
+                f"{json.dumps(str(flat_run_spec))}, '--dry-run']))"
+            ),
+        ]
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", replay_code],
+        cwd=repo_root,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    payload = json.loads(completed.stdout)
 
     assert "would_write" in payload
     assert payload["would_execute"]["entrypoint"].endswith("_run_full_training_from_context")

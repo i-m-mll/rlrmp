@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import re
 from pathlib import Path
 from types import SimpleNamespace
@@ -204,11 +205,80 @@ def test_cs_checkpoint_custody_roundtrips_and_materializes_legacy_latest(
     assert (checkpoint_root / "transactions").is_dir()
     assert materialized == checkpoint_root / "checkpoint_0000002"
     assert (checkpoint_root / "checkpoint_latest" / "model.eqx").is_file()
+    provenance = json.loads((materialized / "provenance.json").read_text(encoding="utf-8"))
+    latest_pointer = json.loads((checkpoint_root / "latest.json").read_text(encoding="utf-8"))
+    assert provenance["schema_version"] == "rlrmp.legacy_checkpoint_provenance.v1"
+    assert provenance["issue"] == "799fcb9"
+    assert provenance["source_transaction_id"] == latest_pointer["transaction_id"]
+    assert provenance["writer"] == (
+        "rlrmp.train.cs_nominal_gru._save_training_checkpoint_materialization"
+    )
+    assert provenance["authoritative"] is False
     assert loaded.completed_batches == 2
     assert loaded.model.tolist() == [1.0, 2.0]
     assert loaded.optimizer_state["count"].tolist() == 2
     assert loaded.key.tolist() == [3, 4]
     assert loaded.history["loss"].tolist() == [0.5, 0.25]
+
+
+def test_cs_checkpoint_materialization_clears_foreign_legacy_dirs(tmp_path: Path) -> None:
+    checkpoint_root = tmp_path / "checkpoints"
+    stale = checkpoint_root / "checkpoint_0000001"
+    stale.mkdir(parents=True)
+    (stale / "metadata.json").write_text(
+        json.dumps({"issue": "foreign", "completed_batches": 1}),
+        encoding="utf-8",
+    )
+    (stale / "model.eqx").write_text("foreign", encoding="utf-8")
+    (checkpoint_root / "checkpoint_latest").symlink_to(stale.name)
+    state = TrainingState(
+        model=jnp.asarray([1.0, 2.0], dtype=jnp.float32),
+        optimizer_state={"count": jnp.asarray(2, dtype=jnp.int32)},
+        completed_batches=2,
+        key=jnp.asarray([3, 4], dtype=jnp.uint32),
+        history={"loss": jnp.asarray([0.5, 0.25], dtype=jnp.float32)},
+    )
+
+    materialized = save_training_checkpoint(
+        checkpoint_root,
+        state,
+        args=_args(),
+        run_spec=_cs_run_spec(),
+    )
+
+    assert not stale.exists()
+    assert materialized == checkpoint_root / "checkpoint_0000002"
+    assert (checkpoint_root / "checkpoint_latest").resolve() == materialized
+    assert not (checkpoint_root / "checkpoint_latest" / "metadata.json").read_text(
+        encoding="utf-8"
+    ).count("foreign")
+
+
+def test_cs_terminal_checkpoint_is_final_custody_transaction(tmp_path: Path) -> None:
+    state = TrainingState(
+        model=jnp.asarray([1.0, 2.0], dtype=jnp.float32),
+        optimizer_state={"count": jnp.asarray(4, dtype=jnp.int32)},
+        completed_batches=4,
+        key=jnp.asarray([5, 6], dtype=jnp.uint32),
+        history=None,
+    )
+    run_spec = _cs_run_spec()
+
+    materialized = save_training_checkpoint(
+        tmp_path,
+        state,
+        args=_args(),
+        run_spec=run_spec,
+    )
+    provenance = json.loads((materialized / "provenance.json").read_text(encoding="utf-8"))
+    latest_pointer = json.loads((tmp_path / "latest.json").read_text(encoding="utf-8"))
+    manifest = json.loads(
+        (tmp_path / latest_pointer["manifest_relative_path"]).read_text(encoding="utf-8")
+    )
+
+    assert manifest["status"] == "final"
+    assert manifest["transaction_id"] == latest_pointer["transaction_id"]
+    assert provenance["source_transaction_id"] == manifest["transaction_id"]
 
 
 def test_cs_checkpoint_incompatible_model_abi_fails_closed(tmp_path: Path) -> None:

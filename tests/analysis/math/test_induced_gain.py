@@ -28,7 +28,7 @@ Bug: 74bfd86 -- production induced-gain analyser. The tests cover:
   returns finite ``peak_forward_velocity`` and ``peak_lateral_velocity``
   scalars under the worst-case ``w*``.
 
-Tests use double precision (the module enables x64 on import).
+Tests use double precision via the analysis-math test configuration.
 """
 
 from __future__ import annotations

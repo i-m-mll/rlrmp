@@ -38,10 +38,8 @@ from rlrmp.analysis.math.rerun_metadata import (
     DEFAULT_LANE,
     build_rerun_metadata,
 )
+from rlrmp.analysis.math import require_jax_x64
 from rlrmp.paths import REPO_ROOT, mkdir_p
-
-
-jax.config.update("jax_enable_x64", True)
 
 ISSUE_ID = "d01c35a"
 PHASE3_ISSUE_ID = "6f5c79e"
@@ -476,6 +474,7 @@ def run_linear_equivalence_certificate(
 ) -> LinearEquivalenceCertificateResult:
     """Run the d01c35a certificate against the current Phase 3 controllers."""
 
+    require_jax_x64("linear equivalence certificate analysis")
     phase3 = run_phase3_linear_round_trip(
         training_config=training_config,
         quasi_newton_config=quasi_newton_config,
@@ -692,6 +691,7 @@ def write_outputs(
     apply to the math core.
     """
 
+    require_jax_x64("linear equivalence certificate materialization")
     result = run_linear_equivalence_certificate()
     summary = result_summary(result, discretization=discretization, lane=lane)
     results_dir = mkdir_p(REPO_ROOT / "results" / issue_id)

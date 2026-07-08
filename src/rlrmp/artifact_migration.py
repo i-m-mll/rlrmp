@@ -75,6 +75,7 @@ _DEFAULT_MINIMAX_ARGS: dict[str, Any] = {
     "spec_dir": None,
     "jax_cache_dir": None,
     "jax_explain_cache_misses": False,
+    "allow_x64": False,
     "seed": 42,
     "checkpoint": True,
     "checkpoint_every": 1000,

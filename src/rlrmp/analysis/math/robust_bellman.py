@@ -39,10 +39,8 @@ from rlrmp.analysis.math.rerun_metadata import (
     DEFAULT_LANE,
     build_rerun_metadata,
 )
+from rlrmp.analysis.math import require_jax_x64
 from rlrmp.paths import REPO_ROOT, mkdir_p
-
-
-jax.config.update("jax_enable_x64", True)
 
 ISSUE_ID = "583d764"
 UMBRELLA_ID = "43e8728"
@@ -1599,6 +1597,7 @@ def analyze_robust_bellman(
 ) -> dict[str, Any]:
     """Run deterministic and output-feedback robust Bellman diagnostics."""
 
+    require_jax_x64("robust Bellman analysis")
     reference = materialize_reference(gamma_factors=gamma_factors)
     deterministic_fits = tuple(
         train_deterministic_robust_bellman(
@@ -2182,6 +2181,7 @@ def write_outputs(
     apply to the math core.
     """
 
+    require_jax_x64("robust Bellman materialization")
     summary = analyze_robust_bellman(discretization=discretization, lane=lane)
     results_dir = mkdir_p(REPO_ROOT / "results" / issue_id)
     notes_dir = mkdir_p(results_dir / "notes")

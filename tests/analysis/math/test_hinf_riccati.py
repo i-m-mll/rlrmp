@@ -39,7 +39,7 @@ of exceptions:
 - ``test_cs_qr_vs_rlrmp_qr_on_cs_plant``: Comparative test capturing the
   Q-shape sensitivity finding from synthesis_review section 10.
 
-Tests use double precision throughout (the module enables x64 on import).
+Tests use double precision throughout via the analysis-math test configuration.
 """
 
 from __future__ import annotations

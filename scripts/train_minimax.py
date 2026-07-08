@@ -39,6 +39,7 @@ from rlrmp.runtime.checkpoint_custody import (
     spec_digests,
     write_minimax_checkpoint_transaction,
 )
+from rlrmp.runtime.jax_config import assert_jax_x64_disabled
 from rlrmp.train.minimax import (
     build_hps,
     build_minimax_training_run_spec,
@@ -596,6 +597,7 @@ def run_training(training_run_spec: TrainingRunSpec | dict[str, Any]) -> Any:
         else TrainingRunSpec.model_validate(training_run_spec)
     )
     args = minimax_config_namespace(minimax_training_run_spec_to_config(spec))
+    assert_jax_x64_disabled("minimax training", allow_x64=bool(args.allow_x64))
     _configure_jax_runtime(args)
     checkpoint_root = Path(args.output_dir) / "checkpoints_adversarial"
     stop_target_batches = int(args.n_warmup_batches) + int(args.n_adversary_batches)

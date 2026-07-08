@@ -1,3 +1,4 @@
+# ruff: noqa: F821
 """Finite-horizon discrete-time H-infinity LQ-game Riccati on the rlrmp plant.
 
 This module implements the finite-horizon, discrete-time H-infinity Riccati
@@ -56,8 +57,8 @@ Phase 2's quick standalone implementation blew up near the Riccati boundary.
 This implementation uses three guards:
 
 1. **Double precision.** All matrices are cast to ``float64`` before
-   recursion. The module's public API also enables ``jax_enable_x64`` once at
-   import time (idempotent).
+   recursion. Entry points that need JAX double precision must explicitly
+   enable ``jax_enable_x64`` before calling the numerical routines.
 2. **Linear solve, not explicit inverse.** The bracket inversion is done via
    ``jnp.linalg.solve`` on a 6x6 system at each timestep (``B R^{-1} B^T -
    gamma^{-2} B_w B_w^T`` premultiplied by ``P_{t+1}``, plus identity).
@@ -186,11 +187,6 @@ import jax.scipy.linalg as jsla
 import jax.tree as jt
 from feedbax.mechanics.skeleton.pointmass import PointMass
 from jaxtyping import Array, Float
-
-# Enable x64 once on import. Idempotent and only triggers if x64 isn't already
-# on. The Riccati recursion is numerically sensitive near the gamma boundary
-# and double precision is non-negotiable here.
-jax.config.update("jax_enable_x64", True)
 
 logger = logging.getLogger(__name__)
 
@@ -1538,7 +1534,6 @@ def solve_hinf_riccati(
     Bw = plant.Bw.astype(jnp.float64)
     n = A.shape[0]
     m_u = B.shape[1]
-    m_w = Bw.shape[1]
     T = schedule.T
 
     if schedule.Q.shape[1:] != (n, n):
@@ -1554,7 +1549,6 @@ def solve_hinf_riccati(
     Q_seq = schedule.Q.astype(jnp.float64)
     R_seq = schedule.R.astype(jnp.float64)
     I_n = jnp.eye(n, dtype=jnp.float64)
-    I_mw = jnp.eye(m_w, dtype=jnp.float64)
     inv_gamma2 = 1.0 / (gamma * gamma)
 
     P_list = [Q_f]
@@ -1691,8 +1685,6 @@ def solve_lqr(plant: PlantLinearization, schedule: CostSchedule) -> RiccatiSolut
     """
     A = plant.A.astype(jnp.float64)
     B = plant.B.astype(jnp.float64)
-    n = A.shape[0]
-    m_u = B.shape[1]
     T = schedule.T
 
     Q_f = schedule.Q_f.astype(jnp.float64)
@@ -2065,8 +2057,6 @@ def simulate_closed_loop(
     B = plant.B.astype(jnp.float64)
     Bw = plant.Bw.astype(jnp.float64)
     T = K.shape[0]
-    n = A.shape[0]
-    m_u = B.shape[1]
     m_w = Bw.shape[1]
     if w is None:
         w_seq = jnp.zeros((T, m_w), dtype=jnp.float64)

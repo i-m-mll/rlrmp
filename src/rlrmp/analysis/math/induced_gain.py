@@ -58,15 +58,12 @@ import jax.numpy as jnp
 from feedbax.analysis import GraphControllerAdapter
 from jaxtyping import Array, Float
 
+from rlrmp.analysis.math import require_jax_x64
 from rlrmp.analysis.math.hinf_riccati import (
     CostSchedule,
     PlantLinearization,
     make_reach_initial_state,
 )
-
-# Enable x64. Idempotent. The induced-gain power iteration accumulates many
-# matrix-vector products and can drift in float32 on long horizons.
-jax.config.update("jax_enable_x64", True)
 
 logger = logging.getLogger(__name__)
 
@@ -1455,6 +1452,8 @@ def induced_gain(
     Returns:
         A dict mapping method name to ``InducedGainResult``.
     """
+
+    require_jax_x64("induced-gain analysis")
     w_channel = _validate_w_channel(w_channel)
     z_channel = _validate_z_channel(z_channel)
 

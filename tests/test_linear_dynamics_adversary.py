@@ -170,11 +170,10 @@ class TestDynamicsMatrixPerturbIntegration:
             n_state=4, n_dim=2, eta_max=0.5, key=jr.PRNGKey(2),
         )
         # Set delta_A to a known matrix so the analytical answer is trivial.
-        # Use the state's default dtype so x64-mode (enabled elsewhere in the
-        # suite, e.g. by test_hinf_riccati) doesn't cause a dtype mismatch
-        # against the StateIndex's stored params.
+        # Keep the component state and adversary parameter dtype explicit so
+        # this test does not depend on suite-level JAX x64 state.
         comp = DynamicsMatrixPerturb(mass=1.0)
-        default_dtype = comp._initial_state.delta_A.dtype
+        default_dtype = jnp.dtype(jnp.float32)
         delta_A = jnp.array(
             [[0.0, 0.0, 0.3, 0.0], [0.0, 0.0, 0.0, 0.3]], dtype=default_dtype,
         )

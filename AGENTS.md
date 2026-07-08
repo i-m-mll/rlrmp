@@ -367,6 +367,30 @@ Residual invariants the scripts do not fully own (agent judgment still required)
 
 ### Smoke test
 
+For multi-row launches forked from one source checkpoint, use the tracked
+pre-launch gate instead of pod-local wrapper scripts. The spec-lock table or
+`RUN_PLAN.md` must contain an explicit line such as
+`LR continuation schedule: continue` or `LR continuation schedule: restart`.
+Run the gate from the owning feature worktree and point all checkpoint roots at
+tmp or launch-owned locations, not shared `_artifacts` test scratch:
+
+```bash
+PYTHONPATH=src uv run --no-sync python scripts/fork_checkpoint_gate.py \
+  --source-checkpoint-root /workspace/source/checkpoints_adversarial \
+  --run-plan results/<issue>/RUN_PLAN.md \
+  --parity-output results/<issue>/notes/fork_parity.json \
+  --target row_a=results/<issue>/runs/row_a.json:/workspace/row_a/checkpoints_adversarial \
+  --target row_b=results/<issue>/runs/row_b.json:/workspace/row_b/checkpoints_adversarial
+```
+
+The gate registers RLRMP training methods, extracts nested
+`feedbax_training_run_spec` payloads before wrapper validation, performs the
+one-source fork, reads the target fork manifests, writes a row-by-slot digest
+table, and fails nonzero with `row=<id> slot=<slot>` if a target digest differs
+from the source. It also emits `LR_CONTINUATION step=<n> lr=<x>` from the first
+target row's declared continuation mode, so the launch log records whether LR
+semantics restart or continue.
+
 ```bash
 cd /workspace/rlrmp
 uv run --no-sync python scripts/train_minimax.py \
@@ -390,8 +414,8 @@ possible as the deterministic handoff step. It owns the mechanical protocol:
 artifact sync from local, Modal, or pod sources; tracked run-spec creation under
 `results/<issue>/runs/<run>.json`; bulk artifact placement under
 `_artifacts/<issue>/runs/<run>/`; metrics-table rendering from
-`training_summary.json`; `git add`; `agent-commit` through the wrapper; and Mandible auth request
-submission.
+`training_summary.json`; `git add`; `agent-commit` through the wrapper; Mandible
+auth request submission; and the terminal run-status checkpoint.
 
 Run it from the feature worktree that should own the post-run commit:
 
@@ -408,6 +432,28 @@ Use the dry run first when source paths, volume names, or branch state are not
 obvious. If the script cannot cover the source shape, preserve its layout and
 auth/commit conventions when doing the fallback manually, and report the script
 gap on the tracking issue or a workflow issue.
+
+Run-management sessions that are not authorized to commit or submit auth should
+use sync-only mode first:
+
+```bash
+scripts/post_run.sh --issue <tracking-issue> --run <group>__<variant> \
+  --artifacts-src <local:/path|/path|modal[:volume]|pod:user@host:/path> \
+  --sync-only --dry-run
+
+scripts/post_run.sh --issue <tracking-issue> --run <group>__<variant> \
+  --artifacts-src <local:/path|/path|modal[:volume]|pod:user@host:/path> \
+  --sync-only
+```
+
+`--sync-only` performs the artifact sync, verifies the synced artifact payload,
+renders the metrics table from `training_summary.json`, emits the one terminal
+`run-status` checkpoint, and writes
+`_artifacts/<issue>/runs/<run>/.post_run_synced.json`. It deliberately skips
+run-spec creation, `git add`, commit, and auth request submission. A later
+authorized full invocation re-verifies the synced artifacts, writes/commits the
+tracked run spec, and skips both re-transfer and duplicate run-status emission.
+Pass `--force-sync` only when the source should be transferred again.
 
 The residual agent-owned judgment after `scripts/post_run.sh` is:
 

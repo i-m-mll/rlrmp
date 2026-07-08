@@ -14,7 +14,6 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-import jax
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
@@ -45,10 +44,8 @@ from rlrmp.analysis.math.output_feedback import (
     rollout_with_robust_estimator_policy,
 )
 from rlrmp.analysis.math.rerun_metadata import build_rerun_metadata
+from rlrmp.analysis.math import require_jax_x64
 from rlrmp.paths import REPO_ROOT, mkdir_p
-
-
-jax.config.update("jax_enable_x64", True)
 
 ISSUE_ID = "dd232cd"
 PHASE3_ISSUE_ID = "7a459bb"
@@ -226,6 +223,7 @@ def run_phase3_process_noise_sweep(
 ) -> Phase3ProcessNoiseSweepResult:
     """Evaluate Phase 3 controllers across released-stochastic process-noise scales."""
 
+    require_jax_x64("C&S stochastic phase3 process-noise sweep")
     if not process_covariance_scales:
         raise ValueError("At least one process covariance scale is required.")
 
@@ -267,6 +265,7 @@ def run_phase3_stochastic_evaluation(
 ) -> Phase3StochasticResult:
     """Evaluate deterministic Phase 3 controllers with released stochastic noise."""
 
+    require_jax_x64("C&S stochastic phase3 evaluation")
     reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
     gamma_ref = reference.gamma_references[0]
     plant = reference.plant
@@ -572,6 +571,7 @@ def write_outputs(
 ) -> dict[str, Any]:
     """Write tracked stochastic Phase 3 note/manifest and bulk metric arrays."""
 
+    require_jax_x64("C&S stochastic phase3 materialization")
     result = run_phase3_stochastic_evaluation(config=config)
     summary = result_summary(result)
     results_dir = mkdir_p(REPO_ROOT / "results" / issue_id)
