@@ -57,10 +57,8 @@ from rlrmp.analysis.math.rerun_metadata import (
     DEFAULT_LANE,
     build_rerun_metadata,
 )
+from rlrmp.analysis.math import require_jax_x64
 from rlrmp.paths import REPO_ROOT, mkdir_p
-
-
-jax.config.update("jax_enable_x64", True)
 
 ISSUE_ID = "6f5c79e"
 UMBRELLA_ID = "43e8728"
@@ -499,6 +497,7 @@ def run_phase3_linear_round_trip(
 ) -> Phase3LinearRoundTripResult:
     """Run the local Phase 3 analytical round-trip checks."""
 
+    require_jax_x64("linear round-trip analysis")
     reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
     gamma_ref = reference.gamma_references[0]
     lqr_training = train_lqr_gradient_controller(reference, training_config)
@@ -950,6 +949,7 @@ def write_outputs(
     apply to the math core.
     """
 
+    require_jax_x64("linear round-trip materialization")
     result = run_phase3_linear_round_trip()
     summary = result_summary(result, discretization=discretization, lane=lane)
     results_dir = mkdir_p(REPO_ROOT / "results" / issue_id)

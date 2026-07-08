@@ -60,8 +60,8 @@ OPEN_LOOP_LEARNING_RATE = 3e-2
 PGD_CONVERGENCE_TOL = 1e-3
 RESTART_STABILITY_TOL = 2e-3
 EQUIVALENCE_REL_TOL = 1e-2
-INIT_POS = jnp.array([0.0, 0.0], dtype=jnp.float64)
-TARGET_POS = jnp.array([0.15, 0.0], dtype=jnp.float64)
+INIT_POS = np.array([0.0, 0.0], dtype=np.float64)
+TARGET_POS = np.array([0.15, 0.0], dtype=np.float64)
 
 
 @dataclass(frozen=True)

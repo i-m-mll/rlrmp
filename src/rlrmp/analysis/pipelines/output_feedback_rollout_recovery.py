@@ -44,11 +44,9 @@ from rlrmp.analysis.math.rerun_metadata import (
     DEFAULT_LANE,
     build_rerun_metadata,
 )
+from rlrmp.analysis.math import require_jax_x64
 from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT, mkdir_p
-
-
-jax.config.update("jax_enable_x64", True)
 
 ISSUE_ID = "7a459bb"
 UMBRELLA_ID = "43e8728"
@@ -1259,6 +1257,7 @@ def run_output_feedback_rollout_recovery(
 ) -> RolloutRecoveryResult:
     """Run the requested clean output-feedback rollout-recovery matrix."""
 
+    require_jax_x64("output-feedback rollout recovery")
     reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
     gamma_ref = reference.gamma_references[0]
     plant = reference.plant
@@ -1653,6 +1652,7 @@ def run_initial_state_variability_sweep(
 ) -> dict[str, Any]:
     """Run the coupled basis/random synthetic initial-state scale sweep."""
 
+    require_jax_x64("output-feedback initial-state variability sweep")
     cells = []
     for factor in scale_factors:
         training_config = _scale_initial_state_config(base_training_config, factor)
@@ -1892,6 +1892,7 @@ def write_outputs(
 ) -> dict[str, Any]:
     """Write tracked rollout-recovery note/manifest and bulk arrays."""
 
+    require_jax_x64("output-feedback rollout-recovery materialization")
     result = run_output_feedback_rollout_recovery()
     summary = result_summary(result, discretization=discretization, lane=lane)
     active_root = Path(repo_root)

@@ -17,6 +17,7 @@ import numpy as np
 import pytest
 
 from feedbax.models.networks import SimpleStagedNetwork
+from rlrmp.runtime.jax_config import require_jax_x64
 from rlrmp.train import guided_distillation
 
 
@@ -179,8 +180,7 @@ def test_standard_graph_distillation_trainable_leaves_default_to_float32() -> No
 
 
 def test_standard_graph_distillation_preserves_explicit_float64_request() -> None:
-    if not jax.config.jax_enable_x64:
-        pytest.skip("explicit float64 trainable dtype requires jax_enable_x64")
+    require_jax_x64("explicit float64 guided-distillation test")
     spec = guided_distillation.build_distillation_spec(
         _default_spec_args(trainable_dtype="float64")
     )

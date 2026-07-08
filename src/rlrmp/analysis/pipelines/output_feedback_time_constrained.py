@@ -59,11 +59,9 @@ from rlrmp.analysis.math.rerun_metadata import (
     DEFAULT_LANE,
     build_rerun_metadata,
 )
+from rlrmp.analysis.math import require_jax_x64
 from rlrmp.io import write_compact_json
 from rlrmp.paths import REPO_ROOT, mkdir_p
-
-
-jax.config.update("jax_enable_x64", True)
 
 ISSUE_ID = "87edaae"
 UMBRELLA_ID = "43e8728"
@@ -208,6 +206,7 @@ def run_time_basis_bridge(
 ) -> TimeBasisResult:
     """Run projection checks and bounded training rows."""
 
+    require_jax_x64("output-feedback time-basis bridge")
     reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
     gamma_ref = reference.gamma_references[0]
     plant = reference.plant

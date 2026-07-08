@@ -72,10 +72,8 @@ from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
     _state_scales,
     _training_ensemble,
 )
+from rlrmp.analysis.math import require_jax_x64
 from rlrmp.paths import REPO_ROOT, mkdir_p
-
-
-jax.config.update("jax_enable_x64", True)
 
 ISSUE_ID = "50c260d"
 UMBRELLA_ID = "43e8728"
@@ -560,6 +558,7 @@ def run_affine_tracker_bridge(
 ) -> AffineTrackerResult:
     """Run affine tracker rows and keep bulk arrays for certificates."""
 
+    require_jax_x64("output-feedback affine-tracker bridge")
     if conditions is None:
         conditions = staged_curriculum_conditions(maxiter=maxiter)
         if include_selected_coverage:
