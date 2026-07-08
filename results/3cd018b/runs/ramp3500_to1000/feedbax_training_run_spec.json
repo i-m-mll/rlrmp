@@ -1554,12 +1554,12 @@
                 0.0
               ],
               [
-                0.1515151560306549,
+                0.1515151411294937,
                 0.0
               ],
               [
                 0.0,
-                0.1515151560306549
+                0.1515151411294937
               ],
               [
                 0.0,
@@ -7843,16 +7843,16 @@
         "interval_batches": 500,
         "latest_checkpoint": "_artifacts/3cd018b/runs/ramp3500_to1000/checkpoints/checkpoint_latest",
         "numbered_pattern": "checkpoint_{completed_batches:07d}",
-        "resume": true
+        "resume": false
       },
       "chunk_batches": 500,
       "config": {
-        "adaptive_epsilon_controller_training_mode": "loss_blend",
+        "adaptive_epsilon_controller_training_mode": "epsilon_scaled_outer_training",
         "adaptive_epsilon_curriculum": true,
-        "adaptive_epsilon_damage_anneal_batches": 5000,
+        "adaptive_epsilon_damage_anneal_batches": 2500,
         "adaptive_epsilon_damage_final": 1000.0,
         "adaptive_epsilon_damage_peak": 3500.0,
-        "adaptive_epsilon_damage_ramp_batches": 2500,
+        "adaptive_epsilon_damage_ramp_batches": 1000,
         "adaptive_epsilon_damage_start": 0.0,
         "adaptive_epsilon_deadband_frac": 0.1,
         "adaptive_epsilon_ema_alpha": 0.1,
@@ -7861,10 +7861,9 @@
         "adaptive_epsilon_lambda_min": 1e-12,
         "adaptive_epsilon_max_log_step": 0.1,
         "adaptive_epsilon_outer_weight_final": 1.0,
-        "adaptive_epsilon_outer_weight_ramp_batches": 2500,
+        "adaptive_epsilon_outer_weight_ramp_batches": 1000,
         "adaptive_epsilon_outer_weight_start": 0.0,
         "adaptive_epsilon_update_interval_batches": 50,
-        "allow_fresh_start": false,
         "batch_size": 64,
         "broad_epsilon_budget_scale": 1.0,
         "broad_epsilon_level": "moderate",
@@ -7969,8 +7968,8 @@
         "policy_adversary_lr": 0.0003,
         "policy_adversary_mode": "plain",
         "policy_adversary_policy_class": "memoryless_mlp",
-        "policy_adversary_radius_15cm": 0.004545500088363065,
-        "policy_adversary_radius_source": "effective_020a65b_pgd_training_radius",
+        "policy_adversary_radius_15cm": null,
+        "policy_adversary_radius_source": null,
         "policy_adversary_steps": 5,
         "policy_adversary_training": false,
         "policy_adversary_width": 64,
@@ -7988,13 +7987,13 @@
         "target_support_profile": "const_band16",
         "training_diagnostics": true
       },
-      "controller_training_mode": "loss_blend",
+      "controller_training_mode": "epsilon_scaled_outer_training",
       "damage_schedule": {
-        "anneal_batches": 5000,
+        "anneal_batches": 2500,
         "final": 1000.0,
         "kind": "linear_ramp_then_cosine_anneal",
         "peak": 3500.0,
-        "ramp_batches": 2500,
+        "ramp_batches": 1000,
         "start": 0.0
       },
       "lambda_update": {
@@ -8008,11 +8007,11 @@
       },
       "n_train_batches": 16500,
       "outer_adversarial_weight": {
-        "applies_to": "optimized_direct_epsilon_loss_only",
+        "applies_to": "optimized_direct_epsilon_channel_scale_for_controller_rollout",
         "final": 1.0,
         "kind": "linear_ramp_then_hold",
         "perturbation_bank_policy": "orthogonal_unweighted_by_outer_adversarial_weight",
-        "ramp_batches": 2500,
+        "ramp_batches": 1000,
         "start": 0.0
       },
       "pgd_inner_maximizer": {
