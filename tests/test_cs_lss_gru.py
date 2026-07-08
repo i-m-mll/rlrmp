@@ -37,6 +37,7 @@ from rlrmp.model.cs_lss_gru import (
     register_cs_lss_graph_components,
 )
 from rlrmp.model.feedbax_graph import graph_spec_from_model, graph_spec_payload
+from rlrmp.runtime.jax_config import require_jax_x64
 from rlrmp.train.cs_nominal_gru import get_model_parameters
 from rlrmp.train.closed_loop_finite_adversary import (
     AFFINE_POLICY,
@@ -854,8 +855,7 @@ def test_initial_hidden_encoder_defaults_to_float32_even_with_float64_mechanics(
 
 
 def test_initial_hidden_encoder_preserves_explicit_float64_trainable_dtype() -> None:
-    if not jax.config.jax_enable_x64:
-        pytest.skip("explicit float64 trainable dtype requires jax_enable_x64")
+    require_jax_x64("explicit float64 trainable dtype test")
     spec = build_cs_lss_gru_graph_spec(
         hidden_size=7,
         bind_epsilon_input=True,

@@ -53,6 +53,7 @@ from jax_cookbook.tree import array_set as tree_set
 from jax_cookbook.tree import filter_spec_leaves
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from rlrmp.runtime.jax_config import assert_jax_x64_disabled
 from rlrmp.analysis.math.cs_game_card import (
     INIT_POS,
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
@@ -4228,6 +4229,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", default=_config_default("output_dir"))
     parser.add_argument("--spec-dir", default=_config_default("spec_dir"))
     parser.add_argument("--issue", default=_config_default("issue"))
+    parser.add_argument(
+        "--allow-x64",
+        action="store_true",
+        default=False,
+        help="Allow a training/spec process to start after process-global JAX x64 was enabled.",
+    )
     parser.add_argument("--seed", type=int, default=_config_default("seed"))
     parser.add_argument("--n-train-batches", type=int, default=_config_default("n_train_batches"))
     parser.add_argument("--batch-size", type=int, default=_config_default("batch_size"))
@@ -5128,6 +5135,7 @@ def main(
             end="",
         )
         return 0
+    assert_jax_x64_disabled("C&S nominal GRU training/spec entry", allow_x64=args.allow_x64)
     if args.run_spec is not None:
         context = build_run_spec_execution_context(args, parser=parser)
         if context.args.dry_run:

@@ -11,11 +11,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import jax
 import jax.numpy as jnp
 import jax.random as jr
 from jaxtyping import Array, Float
 
+from rlrmp.analysis.math import require_jax_x64
 from rlrmp.analysis.math.cs_game_card import TARGET_POS
 from rlrmp.analysis.math.hinf_riccati import CostSchedule, PlantLinearization, RiccatiSolution
 from rlrmp.analysis.math.output_feedback import (
@@ -27,10 +27,6 @@ from rlrmp.analysis.math.output_feedback import (
     robust_estimator_covariances,
     robust_output_feedback_gains,
 )
-
-
-jax.config.update("jax_enable_x64", True)
-
 
 EXTLQG_MATLAB_FUNCTION_CHAIN = ("extLQG", "computeOFC", "computeExtKalman")
 
@@ -306,6 +302,7 @@ def build_extlqg_comparator_path(
     with the extLQG gains.
     """
 
+    require_jax_x64("C&S released-code ExtLQG comparator")
     if schedule is not None:
         result = solve_extlqg_fixed_point(
             plant,

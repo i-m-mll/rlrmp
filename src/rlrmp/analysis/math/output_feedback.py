@@ -54,10 +54,8 @@ from rlrmp.analysis.math.rerun_metadata import (
     DEFAULT_LANE,
     build_rerun_metadata,
 )
+from rlrmp.analysis.math import require_jax_x64
 from rlrmp.paths import REPO_ROOT, mkdir_p
-
-
-jax.config.update("jax_enable_x64", True)
 
 ISSUE_ID = "83fc5b5"
 UMBRELLA_ID = "43e8728"
@@ -1302,6 +1300,7 @@ def analyze_phase0b_output_feedback(
     banner does not apply to the math core.
     """
 
+    require_jax_x64("output-feedback phase0b analysis")
     reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
     gamma_ref = reference.gamma_references[0]
     x0 = make_cs_output_feedback_initial_state(reference.plant, config)
@@ -1479,6 +1478,7 @@ def analyze_phase1_output_feedback(
     banner does not apply to the math core.
     """
 
+    require_jax_x64("output-feedback phase1 analysis")
     reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
     gamma_ref = reference.gamma_references[0]
     x0 = make_cs_output_feedback_initial_state(reference.plant, config)
@@ -1709,6 +1709,7 @@ def analyze_output_feedback_gamma_sweep(
 ) -> dict[str, Any]:
     """Sweep gamma factors for robust output-feedback feasibility and audit metrics."""
 
+    require_jax_x64("output-feedback gamma sweep")
     reference = materialize_reference(gamma_factors=tuple(gamma_factors))
     x0 = make_cs_output_feedback_initial_state(reference.plant, config)
     rows = []
@@ -1910,6 +1911,7 @@ def analyze_phase3_output_feedback(
     banner does not apply to the math core.
     """
 
+    require_jax_x64("output-feedback phase3 analysis")
     reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
     gamma_ref = reference.gamma_references[0]
     x0 = make_cs_output_feedback_initial_state(reference.plant, config)
@@ -2756,6 +2758,7 @@ def write_outputs(
     apply to the math core.
     """
 
+    require_jax_x64("output-feedback materialization")
     phase0b = analyze_phase0b_output_feedback()
     phase1 = analyze_phase1_output_feedback()
     phase3 = analyze_phase3_output_feedback()

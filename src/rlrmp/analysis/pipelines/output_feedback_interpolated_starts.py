@@ -14,7 +14,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-import jax
 import jax.numpy as jnp
 import numpy as np
 from jaxtyping import Array, Float
@@ -28,7 +27,6 @@ from rlrmp.analysis.math.output_feedback import (
     OutputFeedbackConfig,
     exact_output_feedback_adversary_audit,
     make_cs_output_feedback_initial_state,
-    output_feedback_cost,
     output_feedback_lqr_bellman_objective,
     robust_estimator_covariances,
     robust_estimator_fixed_adversary_policy,
@@ -52,10 +50,8 @@ from rlrmp.analysis.math.rerun_metadata import (
     DEFAULT_LANE,
     build_rerun_metadata,
 )
+from rlrmp.analysis.math import require_jax_x64
 from rlrmp.paths import REPO_ROOT, mkdir_p
-
-
-jax.config.update("jax_enable_x64", True)
 
 ISSUE_ID = "7cea1b7"
 SOURCE_ISSUE_ID = "7a459bb"
@@ -175,6 +171,7 @@ def run_interpolated_start_probe(
 ) -> InterpolatedStartResult:
     """Run L-BFGS-B from K_alpha starts without changing the base recovery runner."""
 
+    require_jax_x64("output-feedback interpolated-start probe")
     reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
     gamma_ref = reference.gamma_references[0]
     plant = reference.plant
@@ -485,6 +482,7 @@ def write_outputs(
 ) -> dict[str, Any]:
     """Write tracked interpolated-start note/manifest and bulk arrays."""
 
+    require_jax_x64("output-feedback interpolated-start materialization")
     result = run_interpolated_start_probe(source_artifact=source_artifact)
     summary = result_summary(result, discretization=discretization, lane=lane)
     results_dir = mkdir_p(REPO_ROOT / "results" / issue_id)

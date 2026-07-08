@@ -65,8 +65,8 @@ DEFAULT_GAMMA_FACTORS = (
     2.0,
     3.0,
 )
-INIT_POS = jnp.array([0.0, 0.0], dtype=jnp.float64)
-TARGET_POS = jnp.array([0.15, 0.0], dtype=jnp.float64)
+INIT_POS = np.array([0.0, 0.0], dtype=np.float64)
+TARGET_POS = np.array([0.15, 0.0], dtype=np.float64)
 
 
 @dataclass(frozen=True)
