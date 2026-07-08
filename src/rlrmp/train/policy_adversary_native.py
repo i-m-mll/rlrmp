@@ -52,6 +52,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from rlrmp.model.feedback_descriptors import DESCRIPTOR_PAYLOAD_KEY
 from rlrmp.model.feedbax_graph import graph_spec_payload
+from rlrmp.paths import portable_repo_path
 from rlrmp.train.cs_perturbation_training import (
     config_from_policy_adversary_hps,
     make_policy_adversary,
@@ -212,8 +213,16 @@ def policy_adversary_method_payload(run_spec: Mapping[str, Any]) -> MethodPayloa
 
     hps = _mapping(run_spec, "hps")
     policy_adversary = _mapping(hps, "policy_adversary_training")
+    config = _args_values_from_run_spec(dict(run_spec))
+    for key in ("output_dir", "spec_dir"):
+        if config.get(key) is not None:
+            config[key] = portable_repo_path(str(config[key]))
+    checkpointing = _mapping(run_spec, "checkpointing")
+    for key in ("checkpoint_dir", "latest_checkpoint"):
+        if checkpointing.get(key) is not None:
+            checkpointing[key] = portable_repo_path(str(checkpointing[key]))
     payload = PolicyAdversaryMethodPayload(
-        config=_args_values_from_run_spec(dict(run_spec)),
+        config=config,
         n_train_batches=int(run_spec.get("n_train_batches", 1)),
         chunk_batches=max(
             1,
@@ -222,7 +231,7 @@ def policy_adversary_method_payload(run_spec: Mapping[str, Any]) -> MethodPayloa
         policy=_mapping(policy_adversary, "policy"),
         inner_optimizer=_mapping(policy_adversary, "inner_optimizer"),
         objective=_mapping(policy_adversary, "objective"),
-        checkpointing=_mapping(run_spec, "checkpointing"),
+        checkpointing=checkpointing,
     )
     return MethodPayloadEnvelope(
         schema_id=POLICY_ADVERSARY_METHOD_PAYLOAD_SCHEMA_ID,
