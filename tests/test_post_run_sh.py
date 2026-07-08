@@ -43,7 +43,9 @@ def init_git_repo(path: Path) -> None:
     run_command(["git", "init"], cwd=path)
     run_command(["git", "config", "user.email", "test@example.invalid"], cwd=path)
     run_command(["git", "config", "user.name", "Post Run Test"], cwd=path)
-    run_command(["git", "commit", "--allow-empty", "-m", "init"], cwd=path)
+    (path / ".gitignore").write_text("_artifacts\n", encoding="utf-8")
+    run_command(["git", "add", ".gitignore"], cwd=path)
+    run_command(["git", "commit", "-m", "init"], cwd=path)
 
 
 def write_json(path: Path, payload: dict[str, object]) -> str:
@@ -421,6 +423,166 @@ def test_dry_run_previews_run_status_checkpoint_without_writing(tmp_path: Path) 
     # Nothing is written on a dry run.
     assert not (repo / "results").exists()
     assert not (repo / "_artifacts").exists()
+
+
+def test_dry_run_sync_only_previews_only_sync_steps(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    source = tmp_path / "source"
+    init_git_repo(repo)
+    write_run_source(source)
+
+    output = run_command(
+        [
+            "bash",
+            str(SCRIPT),
+            "--repo-root",
+            str(repo),
+            "--issue",
+            "731fdf7",
+            "--run",
+            "fixture__ok",
+            "--artifacts-src",
+            f"local:{source}",
+            "--sync-only",
+            "--dry-run",
+        ],
+        cwd=REPO_ROOT,
+    )
+
+    assert "mode: sync-only" in output
+    assert "DRY-RUN: mkdir -p" in output
+    assert "DRY-RUN: rsync -a" in output
+    assert "DRY-RUN: would verify synced artifacts" in output
+    assert "DRY-RUN: would write sync marker" in output
+    assert "Run-status checkpoint (preview, not written)" in output
+    assert "would write/verify tracked run spec" not in output
+    assert "would git add" not in output
+    assert "agent-commit" not in output
+    assert "mandible auth request" not in output
+    assert not (repo / "results").exists()
+    assert not (repo / "_artifacts").exists()
+
+
+def test_sync_only_syncs_artifacts_marker_and_checkpoint_without_git_or_auth(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    source = tmp_path / "source"
+    bin_dir = tmp_path / "bin"
+    auth_record = tmp_path / "auth_args.txt"
+    init_git_repo(repo)
+    write_run_source(source)
+    _fake_agent_commit, fake_mandible = write_fake_commands(bin_dir, auth_record)
+
+    env = os.environ.copy()
+    env["POST_RUN_MANDIBLE_AUTH"] = str(fake_mandible)
+
+    output = run_command(
+        [
+            "bash",
+            str(SCRIPT),
+            "--repo-root",
+            str(repo),
+            "--issue",
+            "731fdf7",
+            "--run",
+            "fixture__ok",
+            "--artifacts-src",
+            f"local:{source}",
+            "--sync-only",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    artifact_dir = repo / "_artifacts" / "731fdf7" / "runs" / "fixture__ok"
+    marker = artifact_dir / ".post_run_synced.json"
+    assert (artifact_dir / "training_summary.json").is_file()
+    assert marker.is_file()
+    marker_payload = json.loads(marker.read_text(encoding="utf-8"))
+    assert marker_payload["schema_version"] == "rlrmp.post_run_sync.v1"
+    assert marker_payload["checkpoint_emitted"] is True
+    assert marker_payload["artifact_dir"] == "_artifacts/731fdf7/runs/fixture__ok"
+    assert "| `completed_batches` | 3 |" in output
+    assert "Sync-only mode complete" in output
+    assert not (repo / "results").exists()
+    assert not auth_record.exists()
+
+    checkpoint_record = Path(str(auth_record) + ".checkpoint")
+    assert checkpoint_record.is_file()
+    checkpoint_text = checkpoint_record.read_text(encoding="utf-8")
+    assert "issue checkpoint add 731fdf7 --kind run-status --payload-file -" in checkpoint_text
+    payload = json.loads(checkpoint_text.partition("---PAYLOAD---")[2])
+    assert payload["phase"] == "completed"
+    assert payload["run_spec_path"] == "results/731fdf7/runs/fixture__ok.json"
+    assert run_command(["git", "status", "--short"], cwd=repo) == ""
+
+
+def test_full_run_after_sync_only_skips_resync_and_duplicate_checkpoint(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    source = tmp_path / "source"
+    bin_dir = tmp_path / "bin"
+    auth_record = tmp_path / "auth_args.txt"
+    init_git_repo(repo)
+    write_run_source(source)
+    fake_agent_commit, fake_mandible = write_fake_commands(bin_dir, auth_record)
+
+    env = os.environ.copy()
+    env["POST_RUN_AGENT_COMMIT"] = str(fake_agent_commit)
+    env["POST_RUN_MANDIBLE_AUTH"] = str(fake_mandible)
+
+    run_command(
+        [
+            "bash",
+            str(SCRIPT),
+            "--repo-root",
+            str(repo),
+            "--issue",
+            "731fdf7",
+            "--run",
+            "fixture__ok",
+            "--artifacts-src",
+            f"local:{source}",
+            "--sync-only",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+    )
+    artifact_dir = repo / "_artifacts" / "731fdf7" / "runs" / "fixture__ok"
+    checkpoint_record = Path(str(auth_record) + ".checkpoint")
+    first_checkpoint = checkpoint_record.read_text(encoding="utf-8")
+
+    (source / "trained_model.eqx").write_text("changed source model\n", encoding="utf-8")
+    output = run_command(
+        [
+            "bash",
+            str(SCRIPT),
+            "--repo-root",
+            str(repo),
+            "--issue",
+            "731fdf7",
+            "--run",
+            "fixture__ok",
+            "--artifacts-src",
+            f"local:{source}",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    assert "Sync marker found" in output
+    assert "reusing existing artifacts" in output
+    assert "Skipping terminal run-status checkpoint" in output
+    assert (artifact_dir / "trained_model.eqx").read_text(encoding="utf-8") == "fixture model\n"
+    assert checkpoint_record.read_text(encoding="utf-8") == first_checkpoint
+    assert auth_record.exists()
+
+    spec_path = repo / "results" / "731fdf7" / "runs" / "fixture__ok.json"
+    assert spec_path.is_file()
+    log = run_command(["git", "log", "--oneline", "-1"], cwd=repo)
+    assert "record post-run spec fixture__ok" in log
 
 
 def test_legacy_nested_run_spec_raises_explicit_error(tmp_path: Path) -> None:

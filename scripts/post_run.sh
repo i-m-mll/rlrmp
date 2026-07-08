@@ -3,6 +3,8 @@
 #
 # Usage:
 #   scripts/post_run.sh --issue <id> --run <label> [--artifacts-src <source>] [--dry-run]
+#   scripts/post_run.sh --issue <id> --run <label> --sync-only [--force-sync] \
+#     [--artifacts-src <source>] [--dry-run]
 #
 # Source forms:
 #   local:/path/to/run-dir      Copy a local run directory into _artifacts/.
@@ -13,6 +15,13 @@
 # Emergency override:
 #   POST_RUN_ALLOW_DIRTY_UV_LOCK=1 skips the uv.lock cleanliness guard. Use only
 #   when the lockfile change is deliberate and already accounted for elsewhere.
+#
+# Sync-only mode:
+#   --sync-only is for run-management sessions that may sync artifacts and record
+#   the terminal run-status checkpoint, but must not create run specs, commit, or
+#   submit auth. It writes _artifacts/<issue>/runs/<run>/.post_run_synced.json.
+#   Later full invocations re-verify the synced artifacts, skip re-transfer
+#   unless --force-sync is passed, and do not emit a duplicate checkpoint.
 
 set -euo pipefail
 
@@ -159,6 +168,21 @@ PY
     )
 }
 
+verify_synced_artifacts() {
+    [[ -d "$ARTIFACT_DIR" ]] || die "missing artifact directory: $ARTIFACT_DIR"
+    [[ -f "$SUMMARY_PATH" ]] || die "missing training summary: $SUMMARY_PATH"
+    (
+        cd "$SCRIPT_REPO_ROOT"
+        uv run --no-sync python -m json.tool "$SUMMARY_PATH" >/dev/null
+    )
+    if [[ -f "$ARTIFACT_DIR/run.json" ]]; then
+        (
+            cd "$SCRIPT_REPO_ROOT"
+            uv run --no-sync python -m json.tool "$ARTIFACT_DIR/run.json" >/dev/null
+        )
+    fi
+}
+
 # Build the run-status checkpoint payload JSON (kind=run-status,
 # schema_version=1) on stdout. The payload references the tracked run.json by
 # repo-relative path and embeds only the scalar metrics summary — never the
@@ -239,6 +263,94 @@ payload = {
 print(json.dumps(payload, indent=2, sort_keys=True))
 PY
     )
+}
+
+marker_checkpoint_emitted() {
+    [[ -f "$SYNC_MARKER" ]] || return 1
+    (
+        cd "$SCRIPT_REPO_ROOT"
+        uv run --no-sync python - "$SYNC_MARKER" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    raise SystemExit(1)
+raise SystemExit(0 if payload.get("checkpoint_emitted") is True else 1)
+PY
+    )
+}
+
+write_sync_marker() {
+    local checkpoint_emitted="$1"
+    (
+        cd "$SCRIPT_REPO_ROOT"
+        uv run --no-sync python - \
+            "$SYNC_MARKER" "$ISSUE" "$RUN_LABEL" "$REPO_ROOT" "$ARTIFACT_DIR" \
+            "$ARTIFACTS_SRC" "$checkpoint_emitted" <<'PY'
+from __future__ import annotations
+
+import datetime as _dt
+import json
+import sys
+from pathlib import Path
+
+marker_path = Path(sys.argv[1])
+issue = sys.argv[2]
+run_id = sys.argv[3]
+repo_root = Path(sys.argv[4]).resolve()
+artifact_dir = Path(sys.argv[5]).resolve()
+artifacts_src = sys.argv[6]
+checkpoint_emitted = sys.argv[7] == "1"
+
+try:
+    artifact_rel = str(artifact_dir.relative_to(repo_root))
+except ValueError:
+    artifact_rel = str(artifact_dir)
+
+payload = {
+    "schema_version": "rlrmp.post_run_sync.v1",
+    "tool": "scripts/post_run.sh",
+    "issue": issue,
+    "run_id": run_id,
+    "artifact_dir": artifact_rel,
+    "artifacts_src": artifacts_src,
+    "checkpoint_emitted": checkpoint_emitted,
+    "synced_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+}
+marker_path.parent.mkdir(parents=True, exist_ok=True)
+marker_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+    )
+}
+
+emit_run_status_checkpoint() {
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        echo "Run-status checkpoint (preview, not written)"
+        echo "  command: $MANDIBLE issue checkpoint add $ISSUE --kind run-status --payload-file -"
+        if [[ -f "$SUMMARY_PATH" ]]; then
+            build_run_status_payload "completed" "$SUMMARY_PATH"
+        else
+            echo "  (training_summary.json absent; payload metrics_summary would be empty)"
+            build_run_status_payload "completed" "$SUMMARY_PATH" 2>/dev/null || true
+        fi
+        return 0
+    fi
+
+    if marker_checkpoint_emitted; then
+        echo "Skipping terminal run-status checkpoint; sync marker already recorded one."
+        return 0
+    fi
+
+    echo "Emitting terminal run-status checkpoint (phase=completed) on $ISSUE"
+    RUN_STATUS_PAYLOAD="$(build_run_status_payload "completed" "$SUMMARY_PATH")"
+    printf '%s\n' "$RUN_STATUS_PAYLOAD" \
+        | "$MANDIBLE" issue checkpoint add "$ISSUE" --kind run-status --payload-file -
 }
 
 run_post_run_contract() {
@@ -630,6 +742,8 @@ ISSUE=""
 RUN_LABEL=""
 ARTIFACTS_SRC=""
 DRY_RUN=0
+SYNC_ONLY=0
+FORCE_SYNC=0
 REPO_ROOT=""
 
 while [[ $# -gt 0 ]]; do
@@ -651,6 +765,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         --dry-run)
             DRY_RUN=1
+            shift
+            ;;
+        --sync-only)
+            SYNC_ONLY=1
+            shift
+            ;;
+        --force-sync)
+            FORCE_SYNC=1
             shift
             ;;
         --repo-root)
@@ -687,6 +809,7 @@ SPEC_PATH="$RUNS_DIR/$RUN_LABEL.json"
 LEGACY_SPEC_DIR="$RUNS_DIR/$RUN_LABEL"
 ARTIFACT_DIR="$REPO_ROOT/_artifacts/$HASH/runs/$RUN_LABEL"
 SUMMARY_PATH="$ARTIFACT_DIR/training_summary.json"
+SYNC_MARKER="$ARTIFACT_DIR/.post_run_synced.json"
 
 AGENT_COMMIT="${POST_RUN_AGENT_COMMIT:-agent-commit}"
 MANDIBLE="${POST_RUN_MANDIBLE_AUTH:-mandible}"
@@ -707,9 +830,21 @@ echo "  run: $RUN_LABEL"
 echo "  run spec: $SPEC_PATH"
 echo "  artifacts: $ARTIFACT_DIR"
 echo "  feedbax manifests: $FEEDBAX_MANIFEST_ROOT"
+if [[ "$SYNC_ONLY" -eq 1 ]]; then
+    echo "  mode: sync-only"
+fi
 
-if [[ "$DRY_RUN" -eq 0 ]]; then
+if [[ "$DRY_RUN" -eq 0 && "$SYNC_ONLY" -eq 0 ]]; then
     require_clean_index
+fi
+
+SKIP_SYNC=0
+if [[ -f "$SYNC_MARKER" && "$FORCE_SYNC" -eq 0 ]]; then
+    SKIP_SYNC=1
+    echo "Sync marker found: $SYNC_MARKER"
+    echo "Sync: reusing existing artifacts; pass --force-sync to transfer again."
+elif [[ -f "$SYNC_MARKER" && "$FORCE_SYNC" -eq 1 ]]; then
+    echo "Sync marker found, but --force-sync was requested; transferring again."
 fi
 
 case "$ARTIFACTS_SRC" in
@@ -720,11 +855,14 @@ case "$ARTIFACTS_SRC" in
         ;;
     local:*)
         SOURCE_DIR="${ARTIFACTS_SRC#local:}"
-        [[ -d "$SOURCE_DIR" ]] || die "local artifact source does not exist: $SOURCE_DIR"
-        INPUT_SPEC_PATH="$SOURCE_DIR/run.json"
+        INPUT_SPEC_PATH="$ARTIFACT_DIR/run.json"
         SOURCE_FEEDBAX_RUNS_DIR="$SOURCE_DIR/feedbax_runs"
-        run_or_print mkdir -p "$ARTIFACT_DIR"
-        run_or_print rsync -a --exclude feedbax_runs/ "$SOURCE_DIR"/ "$ARTIFACT_DIR"/
+        if [[ "$SKIP_SYNC" -eq 0 ]]; then
+            [[ -d "$SOURCE_DIR" ]] || die "local artifact source does not exist: $SOURCE_DIR"
+            INPUT_SPEC_PATH="$SOURCE_DIR/run.json"
+            run_or_print mkdir -p "$ARTIFACT_DIR"
+            run_or_print rsync -a --exclude feedbax_runs/ "$SOURCE_DIR"/ "$ARTIFACT_DIR"/
+        fi
         ;;
     modal|modal:*)
         VOLUME_NAME="$MODAL_VOLUME_DEFAULT"
@@ -733,23 +871,30 @@ case "$ARTIFACTS_SRC" in
         fi
         INPUT_SPEC_PATH=""
         SOURCE_FEEDBAX_RUNS_DIR=""
-        run_or_print mkdir -p "$RUNS_DIR" "$ARTIFACT_DIR"
-        run_or_print modal volume get --force "$VOLUME_NAME" \
-            "results/$HASH/runs/$RUN_LABEL" "$RUNS_DIR"
-        run_or_print modal volume get --force "$VOLUME_NAME" \
-            "_artifacts/$HASH/runs/$RUN_LABEL" "$ARTIFACT_DIR/.."
+        if [[ "$SKIP_SYNC" -eq 0 ]]; then
+            run_or_print mkdir -p "$RUNS_DIR" "$ARTIFACT_DIR"
+            run_or_print modal volume get --force "$VOLUME_NAME" \
+                "results/$HASH/runs/$RUN_LABEL" "$RUNS_DIR"
+            run_or_print modal volume get --force "$VOLUME_NAME" \
+                "_artifacts/$HASH/runs/$RUN_LABEL" "$ARTIFACT_DIR/.."
+        fi
         ;;
     pod:*)
         RSYNC_SOURCE="${ARTIFACTS_SRC#pod:}"
-        [[ -n "$RSYNC_SOURCE" ]] || die "pod source must include an rsync source"
         INPUT_SPEC_PATH=""
         SOURCE_FEEDBAX_RUNS_DIR=""
-        run_or_print mkdir -p "$ARTIFACT_DIR"
-        run_or_print rsync -az --stats --no-owner --no-group \
-            "$RSYNC_SOURCE"/ "$ARTIFACT_DIR"/
+        if [[ "$SKIP_SYNC" -eq 0 ]]; then
+            [[ -n "$RSYNC_SOURCE" ]] || die "pod source must include an rsync source"
+            run_or_print mkdir -p "$ARTIFACT_DIR"
+            run_or_print rsync -az --stats --no-owner --no-group \
+                "$RSYNC_SOURCE"/ "$ARTIFACT_DIR"/
+        fi
         ;;
     *)
-        if [[ -d "$ARTIFACTS_SRC" ]]; then
+        if [[ "$SKIP_SYNC" -eq 1 ]]; then
+            INPUT_SPEC_PATH="$ARTIFACT_DIR/run.json"
+            SOURCE_FEEDBAX_RUNS_DIR=""
+        elif [[ -d "$ARTIFACTS_SRC" ]]; then
             INPUT_SPEC_PATH="$ARTIFACTS_SRC/run.json"
             SOURCE_FEEDBAX_RUNS_DIR="$ARTIFACTS_SRC/feedbax_runs"
             run_or_print mkdir -p "$ARTIFACT_DIR"
@@ -760,34 +905,52 @@ case "$ARTIFACTS_SRC" in
         ;;
 esac
 
-if [[ -n "$SOURCE_FEEDBAX_RUNS_DIR" && -d "$SOURCE_FEEDBAX_RUNS_DIR" ]]; then
+if [[ "$SKIP_SYNC" -eq 0 && -n "$SOURCE_FEEDBAX_RUNS_DIR" && -d "$SOURCE_FEEDBAX_RUNS_DIR" ]]; then
     run_or_print mkdir -p "$FEEDBAX_MANIFEST_ROOT"
     run_or_print rsync -a "$SOURCE_FEEDBAX_RUNS_DIR"/ "$FEEDBAX_MANIFEST_ROOT"/
 fi
 
-if [[ "$DRY_RUN" -eq 1 ]]; then
-    echo "DRY-RUN: would write/verify tracked run spec at $SPEC_PATH"
-    run_post_run_contract "dry-run" "$INPUT_SPEC_PATH"
-    echo "DRY-RUN: would render metrics table from $SUMMARY_PATH"
-    echo "DRY-RUN: would git add $SPEC_PATH before agent-commit"
-else
-    mkdir -p "$FEEDBAX_MANIFEST_ROOT"
-    mkdir -p "$RUNS_DIR"
-    if [[ -f "$ARTIFACT_DIR/run.json" ]]; then
-        cp "$ARTIFACT_DIR/run.json" "$SPEC_PATH"
-    elif [[ -f "$SPEC_PATH" ]]; then
-        :
-    elif [[ -f "$LEGACY_SPEC_DIR/run.json" ]]; then
-        # A run that wrote its recipe to the legacy nested
-        # results/<hash>/runs/<run>/run.json path. The training scripts now
-        # emit the flat results/<hash>/runs/<run>.json recipe (W8/e926665), so
-        # this is a non-conforming run; refuse rather than silently promoting it.
-        die "legacy nested run spec at $LEGACY_SPEC_DIR/run.json; expected the flat recipe at $SPEC_PATH. Re-run training with the updated scripts (which write the flat path) or move the recipe to $SPEC_PATH before re-running post_run.sh."
+if [[ "$SYNC_ONLY" -eq 1 ]]; then
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        echo "DRY-RUN: would verify synced artifacts at $ARTIFACT_DIR"
+        echo "DRY-RUN: would render metrics table from $SUMMARY_PATH"
+        echo "DRY-RUN: would write sync marker at $SYNC_MARKER"
     else
-        die "could not find run spec; expected $ARTIFACT_DIR/run.json or $SPEC_PATH"
+        verify_synced_artifacts
     fi
-    (cd "$SCRIPT_REPO_ROOT" && uv run --no-sync python -m json.tool "$SPEC_PATH" >/dev/null)
-    run_post_run_contract "write" "$INPUT_SPEC_PATH"
+else
+    if [[ "$SKIP_SYNC" -eq 1 ]]; then
+        if [[ "$DRY_RUN" -eq 1 ]]; then
+            echo "DRY-RUN: would re-verify synced artifacts at $ARTIFACT_DIR"
+        else
+            verify_synced_artifacts
+        fi
+    fi
+
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        echo "DRY-RUN: would write/verify tracked run spec at $SPEC_PATH"
+        run_post_run_contract "dry-run" "$INPUT_SPEC_PATH"
+        echo "DRY-RUN: would render metrics table from $SUMMARY_PATH"
+        echo "DRY-RUN: would git add $SPEC_PATH before agent-commit"
+    else
+        mkdir -p "$FEEDBAX_MANIFEST_ROOT"
+        mkdir -p "$RUNS_DIR"
+        if [[ -f "$ARTIFACT_DIR/run.json" ]]; then
+            cp "$ARTIFACT_DIR/run.json" "$SPEC_PATH"
+        elif [[ -f "$SPEC_PATH" ]]; then
+            :
+        elif [[ -f "$LEGACY_SPEC_DIR/run.json" ]]; then
+            # A run that wrote its recipe to the legacy nested
+            # results/<hash>/runs/<run>/run.json path. The training scripts now
+            # emit the flat results/<hash>/runs/<run>.json recipe (W8/e926665), so
+            # this is a non-conforming run; refuse rather than silently promoting it.
+            die "legacy nested run spec at $LEGACY_SPEC_DIR/run.json; expected the flat recipe at $SPEC_PATH. Re-run training with the updated scripts (which write the flat path) or move the recipe to $SPEC_PATH before re-running post_run.sh."
+        else
+            die "could not find run spec; expected $ARTIFACT_DIR/run.json or $SPEC_PATH"
+        fi
+        (cd "$SCRIPT_REPO_ROOT" && uv run --no-sync python -m json.tool "$SPEC_PATH" >/dev/null)
+        run_post_run_contract "write" "$INPUT_SPEC_PATH"
+    fi
 fi
 
 echo
@@ -812,6 +975,18 @@ echo "- Outcome: TODO(agent)"
 echo "- Key metric movement: TODO(agent)"
 echo "- Residuals/blockers: TODO(agent)"
 echo
+
+if [[ "$SYNC_ONLY" -eq 1 ]]; then
+    echo
+    emit_run_status_checkpoint
+    if [[ "$DRY_RUN" -eq 0 ]]; then
+        write_sync_marker 1
+        echo "Sync marker: $SYNC_MARKER"
+    fi
+    echo
+    echo "Sync-only mode complete; skipped run-spec creation, git add, commit, and auth request."
+    exit 0
+fi
 
 if [[ "$DRY_RUN" -eq 0 ]]; then
     require_uv_lock_clean
@@ -850,20 +1025,10 @@ run_in_repo_or_print "$MANDIBLE" auth request "$BRANCH" \
 # from an in-flight one. Transient poll/retry detail stays in chat/nohup logs.
 # See CLAUDE.md RunPod runbook §9 and issue e8b5b3b.
 echo
-if [[ "$DRY_RUN" -eq 1 ]]; then
-    echo "Run-status checkpoint (preview, not written)"
-    echo "  command: $MANDIBLE issue checkpoint add $ISSUE --kind run-status --payload-file -"
-    if [[ -f "$SUMMARY_PATH" ]]; then
-        build_run_status_payload "completed" "$SUMMARY_PATH"
-    else
-        echo "  (training_summary.json absent; payload metrics_summary would be empty)"
-        build_run_status_payload "completed" "$SUMMARY_PATH" 2>/dev/null || true
-    fi
-else
-    echo "Emitting terminal run-status checkpoint (phase=completed) on $ISSUE"
-    RUN_STATUS_PAYLOAD="$(build_run_status_payload "completed" "$SUMMARY_PATH")"
-    printf '%s\n' "$RUN_STATUS_PAYLOAD" \
-        | "$MANDIBLE" issue checkpoint add "$ISSUE" --kind run-status --payload-file -
+emit_run_status_checkpoint
+if [[ "$DRY_RUN" -eq 0 && "$SKIP_SYNC" -eq 0 ]]; then
+    write_sync_marker 1
+    echo "Sync marker: $SYNC_MARKER"
 fi
 
 echo

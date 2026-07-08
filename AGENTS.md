@@ -390,8 +390,8 @@ possible as the deterministic handoff step. It owns the mechanical protocol:
 artifact sync from local, Modal, or pod sources; tracked run-spec creation under
 `results/<issue>/runs/<run>.json`; bulk artifact placement under
 `_artifacts/<issue>/runs/<run>/`; metrics-table rendering from
-`training_summary.json`; `git add`; `agent-commit` through the wrapper; and Mandible auth request
-submission.
+`training_summary.json`; `git add`; `agent-commit` through the wrapper; Mandible
+auth request submission; and the terminal run-status checkpoint.
 
 Run it from the feature worktree that should own the post-run commit:
 
@@ -408,6 +408,28 @@ Use the dry run first when source paths, volume names, or branch state are not
 obvious. If the script cannot cover the source shape, preserve its layout and
 auth/commit conventions when doing the fallback manually, and report the script
 gap on the tracking issue or a workflow issue.
+
+Run-management sessions that are not authorized to commit or submit auth should
+use sync-only mode first:
+
+```bash
+scripts/post_run.sh --issue <tracking-issue> --run <group>__<variant> \
+  --artifacts-src <local:/path|/path|modal[:volume]|pod:user@host:/path> \
+  --sync-only --dry-run
+
+scripts/post_run.sh --issue <tracking-issue> --run <group>__<variant> \
+  --artifacts-src <local:/path|/path|modal[:volume]|pod:user@host:/path> \
+  --sync-only
+```
+
+`--sync-only` performs the artifact sync, verifies the synced artifact payload,
+renders the metrics table from `training_summary.json`, emits the one terminal
+`run-status` checkpoint, and writes
+`_artifacts/<issue>/runs/<run>/.post_run_synced.json`. It deliberately skips
+run-spec creation, `git add`, commit, and auth request submission. A later
+authorized full invocation re-verifies the synced artifacts, writes/commits the
+tracked run spec, and skips both re-transfer and duplicate run-status emission.
+Pass `--force-sync` only when the source should be transferred again.
 
 The residual agent-owned judgment after `scripts/post_run.sh` is:
 
