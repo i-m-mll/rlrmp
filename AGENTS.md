@@ -367,6 +367,30 @@ Residual invariants the scripts do not fully own (agent judgment still required)
 
 ### Smoke test
 
+For multi-row launches forked from one source checkpoint, use the tracked
+pre-launch gate instead of pod-local wrapper scripts. The spec-lock table or
+`RUN_PLAN.md` must contain an explicit line such as
+`LR continuation schedule: continue` or `LR continuation schedule: restart`.
+Run the gate from the owning feature worktree and point all checkpoint roots at
+tmp or launch-owned locations, not shared `_artifacts` test scratch:
+
+```bash
+PYTHONPATH=src uv run --no-sync python scripts/fork_checkpoint_gate.py \
+  --source-checkpoint-root /workspace/source/checkpoints_adversarial \
+  --run-plan results/<issue>/RUN_PLAN.md \
+  --parity-output results/<issue>/notes/fork_parity.json \
+  --target row_a=results/<issue>/runs/row_a.json:/workspace/row_a/checkpoints_adversarial \
+  --target row_b=results/<issue>/runs/row_b.json:/workspace/row_b/checkpoints_adversarial
+```
+
+The gate registers RLRMP training methods, extracts nested
+`feedbax_training_run_spec` payloads before wrapper validation, performs the
+one-source fork, reads the target fork manifests, writes a row-by-slot digest
+table, and fails nonzero with `row=<id> slot=<slot>` if a target digest differs
+from the source. It also emits `LR_CONTINUATION step=<n> lr=<x>` from the first
+target row's declared continuation mode, so the launch log records whether LR
+semantics restart or continue.
+
 ```bash
 cd /workspace/rlrmp
 uv run --no-sync python scripts/train_minimax.py \

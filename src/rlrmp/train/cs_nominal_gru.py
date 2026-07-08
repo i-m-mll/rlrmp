@@ -6678,7 +6678,9 @@ def _run_adaptive_epsilon_training_chunk(
             ),
         )
         opt_state_for_history = jtu.tree_unflatten(treedef_opt_state, flat_opt_state)
+        learning_rate = None
         if (hyperparams := getattr(opt_state_for_history, "hyperparams", None)) is not None:
+            learning_rate = float(jax.device_get(hyperparams["learning_rate"]))
             history = eqx.tree_at(
                 lambda history: history.learning_rate,
                 history,
@@ -6690,15 +6692,24 @@ def _run_adaptive_epsilon_training_chunk(
             every=progress_every,
         ):
             loss_mean = losses.map(jnp.mean)
+            clean_loss = float(
+                np.asarray(host_diagnostics["adaptive_update_clean_loss_total"]).mean()
+            )
+            epsilon_scale = float(
+                np.asarray(host_diagnostics["adaptive_update_epsilon_scale_used"]).mean()
+            )
             print(
                 format_batch_line(
                     "adaptive_epsilon",
                     global_batch,
                     int(hps.n_batches_condition),
                     loss=float(jax.device_get(loss_mean.total)),
+                    clean_loss=clean_loss,
                     damage=adaptive_update_damage_raw,
+                    epsilon_scale=epsilon_scale,
                     target=target_damage,
-                    lambda_value=float(adaptive_state.lambda_value),
+                    **{"lambda": float(adaptive_state.lambda_value)},
+                    lr=learning_rate if learning_rate is not None else float("nan"),
                     outer=outer_weight,
                     elapsed=time.perf_counter() - chunk_started,
                 ),
