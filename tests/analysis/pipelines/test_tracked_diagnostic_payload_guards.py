@@ -37,6 +37,11 @@ RUN_DETAIL_PAYLOAD_KEYS = frozenset(
 )
 MAX_SCALAR_VALUES = 16
 MAX_TRACKED_RESULTS_JSON_BYTES = 500 * 1024
+HISTORICAL_3CD018B_FULL_RUN_SPEC_BYTES = 735 * 1024
+HISTORICAL_3CD018B_FULL_RUN_SPEC_REASON = (
+    "Reconciled 3cd018b launched recipe retains the full Feedbax TrainingRunSpec "
+    "needed for spec-first resume/fork provenance."
+)
 HISTORICAL_SIZE_EXCEPTIONS: dict[Path, tuple[int, str]] = {
     Path("results/40e1911/notes/perturbation_response_npz_deletion_manifest.json"): (
         600 * 1024,
@@ -49,10 +54,37 @@ HISTORICAL_SIZE_EXCEPTIONS: dict[Path, tuple[int, str]] = {
         "payload is dominated by row-level certificate components rather than "
         "duplicated provenance or bulk arrays.",
     ),
+    Path("results/3cd018b/runs/const1000.json"): (
+        HISTORICAL_3CD018B_FULL_RUN_SPEC_BYTES,
+        HISTORICAL_3CD018B_FULL_RUN_SPEC_REASON,
+    ),
+    Path("results/3cd018b/runs/const1750.json"): (
+        HISTORICAL_3CD018B_FULL_RUN_SPEC_BYTES,
+        HISTORICAL_3CD018B_FULL_RUN_SPEC_REASON,
+    ),
+    Path("results/3cd018b/runs/const250.json"): (
+        HISTORICAL_3CD018B_FULL_RUN_SPEC_BYTES,
+        HISTORICAL_3CD018B_FULL_RUN_SPEC_REASON,
+    ),
+    Path("results/3cd018b/runs/hold1750_to1000.json"): (
+        HISTORICAL_3CD018B_FULL_RUN_SPEC_BYTES,
+        HISTORICAL_3CD018B_FULL_RUN_SPEC_REASON,
+    ),
+    Path("results/3cd018b/runs/hold1750_to250.json"): (
+        HISTORICAL_3CD018B_FULL_RUN_SPEC_BYTES,
+        HISTORICAL_3CD018B_FULL_RUN_SPEC_REASON,
+    ),
+    Path("results/3cd018b/runs/hold3500_to1000.json"): (
+        HISTORICAL_3CD018B_FULL_RUN_SPEC_BYTES,
+        HISTORICAL_3CD018B_FULL_RUN_SPEC_REASON,
+    ),
+    Path("results/3cd018b/runs/hold3500_to250.json"): (
+        HISTORICAL_3CD018B_FULL_RUN_SPEC_BYTES,
+        HISTORICAL_3CD018B_FULL_RUN_SPEC_REASON,
+    ),
     Path("results/3cd018b/runs/ramp3500_to1000.json"): (
-        800 * 1024,
-        "Adopted legacy baseline run spec retains the full Feedbax TrainingRunSpec "
-        "needed to resume from the custody checkpoint.",
+        HISTORICAL_3CD018B_FULL_RUN_SPEC_BYTES,
+        HISTORICAL_3CD018B_FULL_RUN_SPEC_REASON,
     ),
 }
 

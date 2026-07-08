@@ -440,7 +440,7 @@ def test_cs_nominal_gru_config_validates_tracked_cs_stochastic_gru_corpus() -> N
     clean_paths = []
     fail_closed: set[Path] = set()
 
-    assert len(paths) == 142
+    assert len(paths) == 149
     for path in paths:
         payload = json.loads(path.read_text(encoding="utf-8"))
         try:
@@ -450,7 +450,7 @@ def test_cs_nominal_gru_config_validates_tracked_cs_stochastic_gru_corpus() -> N
         else:
             clean_paths.append(path)
 
-    assert len(clean_paths) == 142
+    assert len(clean_paths) == 149
     assert fail_closed == set()
 
 
