@@ -58,6 +58,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from rlrmp.model.feedback_descriptors import DESCRIPTOR_PAYLOAD_KEY
 from rlrmp.model.feedbax_graph import graph_spec_payload
+from rlrmp.paths import portable_repo_path
 from rlrmp.train.executor.adapters import ChunkKernelAdapter, RLRMP_RUNTIME_CONTEXT_KEY
 from rlrmp.train.executor.guards import make_stop_predicate
 from rlrmp.train.executor.initial_slots import RlrmpRuntime, split_initial_keys
@@ -221,8 +222,16 @@ def adaptive_epsilon_method_payload(run_spec: Mapping[str, Any]) -> MethodPayloa
 
     hps = _mapping(run_spec, "hps")
     adaptive = _mapping(hps, "adaptive_epsilon_curriculum")
+    config = _args_values_from_run_spec(dict(run_spec))
+    for key in ("output_dir", "spec_dir"):
+        if config.get(key) is not None:
+            config[key] = portable_repo_path(str(config[key]))
+    checkpointing = _mapping(run_spec, "checkpointing")
+    for key in ("checkpoint_dir", "latest_checkpoint"):
+        if checkpointing.get(key) is not None:
+            checkpointing[key] = portable_repo_path(str(checkpointing[key]))
     payload = AdaptiveEpsilonMethodPayload(
-        config=_args_values_from_run_spec(dict(run_spec)),
+        config=config,
         n_train_batches=int(run_spec.get("n_train_batches", 1)),
         chunk_batches=max(
             1,
@@ -236,7 +245,7 @@ def adaptive_epsilon_method_payload(run_spec: Mapping[str, Any]) -> MethodPayloa
             _mapping(hps, "broad_epsilon_pgd_training"),
             "inner_maximizer",
         ),
-        checkpointing=_mapping(run_spec, "checkpointing"),
+        checkpointing=checkpointing,
     )
     return MethodPayloadEnvelope(
         schema_id=ADAPTIVE_EPSILON_METHOD_PAYLOAD_SCHEMA_ID,

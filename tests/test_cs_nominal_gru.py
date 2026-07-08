@@ -11,6 +11,7 @@ import sys
 import warnings
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 
 import equinox as eqx
 import jax
@@ -214,6 +215,27 @@ def _args(**overrides) -> argparse.Namespace:
     for key, value in overrides.items():
         setattr(args, key, value)
     return args
+
+
+def _absolute_string_leaves(value: Any, *, path: str = "$") -> list[tuple[str, str]]:
+    if isinstance(value, str):
+        return [(path, value)] if Path(value).is_absolute() else []
+    if isinstance(value, dict):
+        leaves: list[tuple[str, str]] = []
+        for key, child in value.items():
+            leaves.extend(_absolute_string_leaves(child, path=f"{path}.{key}"))
+        return leaves
+    if isinstance(value, list):
+        leaves = []
+        for index, child in enumerate(value):
+            leaves.extend(_absolute_string_leaves(child, path=f"{path}[{index}]"))
+        return leaves
+    return []
+
+
+def _assert_no_absolute_string_leaves(value: Any) -> None:
+    absolute = _absolute_string_leaves(value)
+    assert absolute == []
 
 
 def _cs_nominal_gru_golden_fixture() -> dict:
@@ -3086,6 +3108,50 @@ def test_feedbax_training_run_spec_rejects_cs_fields(tmp_path: Path) -> None:
     ):
         with pytest.raises(ValidationError):
             TrainingRunSpec.model_validate({**feedbax_spec, field_name: "not allowed"})
+
+
+def test_feedbax_training_run_spec_authoring_uses_portable_binding_paths(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(AssertionError):
+        _assert_no_absolute_string_leaves(
+            {"method_payload": {"payload": {"config": {"spec_dir": str(tmp_path / "spec")}}}}
+        )
+
+    def authored_payload(root: Path) -> dict[str, Any]:
+        output_dir = root / "_artifacts" / "81e3d8d" / "runs" / "adaptive"
+        spec_dir = root / "results" / "81e3d8d" / "runs" / "adaptive"
+        result = write_run_spec(
+            _args(
+                output_dir=str(output_dir),
+                spec_dir=str(spec_dir),
+                issue="81e3d8d",
+                smoke=True,
+                dry_run=True,
+                gradient_clip_norm=5.0,
+                target_relative_multitarget=True,
+                broad_epsilon_pgd_training=True,
+                broad_epsilon_pgd_objective=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+                broad_epsilon_pgd_energy_lambda=2.5,
+                adaptive_epsilon_curriculum=True,
+            )
+        )
+        return result["run_spec"][FEEDBAX_TRAINING_RUN_SPEC_KEY]
+
+    first = authored_payload(tmp_path / "worktree_a")
+    second = authored_payload(tmp_path / "worktree_b")
+    method_payload = first["method_payload"]
+
+    _assert_no_absolute_string_leaves(method_payload)
+    assert first["artifacts"]["artifact_root"] == "_artifacts/81e3d8d/runs/adaptive"
+    assert first["artifacts"]["metadata"]["tracked_spec_dir"] == (
+        "results/81e3d8d/runs/adaptive"
+    )
+    assert method_payload["payload"]["config"]["output_dir"] == (
+        "_artifacts/81e3d8d/runs/adaptive"
+    )
+    assert method_payload["payload"]["config"]["spec_dir"] == "results/81e3d8d/runs/adaptive"
+    assert first["method_payload"] == second["method_payload"]
 
 
 @pytest.mark.parametrize(

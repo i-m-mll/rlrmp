@@ -63,6 +63,7 @@ from rlrmp.model.feedback_descriptors import (
     controller_feedback_descriptor_from_container,
 )
 from rlrmp.model.feedbax_graph import graph_spec_payload
+from rlrmp.paths import portable_repo_path
 from rlrmp.runtime.spec_migrations import (
     FeedbaxTrainingRunSpecMigrationError,
     FINITE_ADVERSARY_POLICY_METADATA_KIND,
@@ -663,8 +664,8 @@ def cs_supervised_method_payload(
             checkpoint_interval_batches=int(
                 _required_recording_field(run_spec, "checkpointing.interval_batches")
             ),
-            artifact_root=str(output_dir),
-            tracked_spec_dir=str(spec_dir),
+            artifact_root=portable_repo_path(output_dir),
+            tracked_spec_dir=portable_repo_path(spec_dir),
         ),
     )
     return MethodPayloadEnvelope(
@@ -1819,9 +1820,9 @@ def build_feedbax_training_run_spec(
     )
     artifacts = ArtifactPolicySpec(
         manifest_root="_artifacts/feedbax_runs",
-        artifact_root=str(output_dir),
+        artifact_root=portable_repo_path(output_dir),
         custody="local",
-        metadata={"tracked_spec_dir": str(spec_dir)},
+        metadata={"tracked_spec_dir": portable_repo_path(spec_dir)},
     )
     checkpoint_progress = CheckpointProgressPolicySpec(
         checkpoint_interval=training_config.snapshot_interval,
