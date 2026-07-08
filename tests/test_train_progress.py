@@ -86,6 +86,25 @@ class TestFormatBatchLine:
         line = format_batch_line("adversarial", 1, 10, adv_loss=0.5)
         assert "adv_loss=0.5" in line
 
+    def test_smoke_diagnostic_fields_fit_batch_contract(self) -> None:
+        line = format_batch_line(
+            "adaptive_epsilon",
+            0,
+            3,
+            loss=1.2,
+            clean_loss=1.0,
+            damage=0.2,
+            epsilon_scale=0.5,
+            **{"lambda": 3.0},
+            lr=0.001,
+        )
+
+        assert "clean_loss=1" in line
+        assert "damage=0.2" in line
+        assert "epsilon_scale=0.5" in line
+        assert "lambda=3" in line
+        assert "lr=0.001" in line
+
     def test_phase_rejects_spaces(self) -> None:
         with pytest.raises(ValueError):
             format_batch_line("bad phase", 0, 1)
