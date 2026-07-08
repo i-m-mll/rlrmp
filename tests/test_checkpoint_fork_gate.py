@@ -9,8 +9,11 @@ import jax.numpy as jnp
 import pytest
 from feedbax.contracts.training import (
     STANDARD_SUPERVISED_METHOD_PAYLOAD_SCHEMA_VERSION,
+    LrScheduleSpec,
+    MethodPayloadEnvelope,
     LossTermSpec,
     ObjectiveSlotSpec,
+    OptimizerSpec,
     TaskSpec,
     TrainingConfig,
     TrainingRunSpec,
@@ -87,6 +90,26 @@ def _training_spec() -> TrainingRunSpec:
             method_contract=method_contract,
             effective_phase=effective_phase,
         ),
+    )
+
+
+def _training_spec_with_optimizer_schedule() -> TrainingRunSpec:
+    spec = _training_spec()
+    payload = spec.method_payload.model_dump(mode="json", exclude_none=True)
+    payload["payload"]["optimizer"] = OptimizerSpec(
+        type="adamw",
+        params={"weight_decay": 0.0},
+        lr_schedule=LrScheduleSpec(
+            kind="warmup_cosine",
+            learning_rate_0=3e-4,
+            total_steps=10,
+            constant_lr_iterations=4,
+            warmup_init_fraction=0.1,
+            cosine_annealing_alpha=0.1,
+        ),
+    ).model_dump(mode="json", exclude_none=True)
+    return spec.model_copy(
+        update={"method_payload": MethodPayloadEnvelope.model_validate(payload)}
     )
 
 
@@ -196,6 +219,29 @@ def test_fork_gate_writes_parity_table_and_lr_line(
     assert output.is_file()
     assert {row["row_id"] for row in table["targets"]} == {"row-a", "row-b"}
     assert all(row["ok"] for row in table["targets"])
+
+
+def test_fork_gate_reports_declared_feedbax_lr_schedule(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    spec = _training_spec_with_optimizer_schedule()
+    source_root = _source_checkpoint(tmp_path, spec)
+    target = _target(tmp_path, spec, "row-a")
+    payload = json.loads(target.spec_path.read_text(encoding="utf-8"))
+    payload.pop("hps")
+    _write_json(target.spec_path, payload)
+
+    table = fork_checkpoints_with_parity(
+        source_checkpoint_root=source_root,
+        targets=[target],
+        run_plan_path=_run_plan(tmp_path),
+        parity_output_path=tmp_path / "parity.json",
+    )
+
+    captured = capsys.readouterr()
+    assert "LR_CONTINUATION step=3 lr=" in captured.out
+    assert table["lr_continuation"]["lr"] == pytest.approx(0.0002325)
 
 
 def test_fork_gate_reports_tampered_slot_digest_by_row_and_slot(

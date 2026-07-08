@@ -13,8 +13,9 @@ from typing import Any
 import jax
 import optax
 from feedbax.config.namespace import dict_to_namespace
-from feedbax.contracts.training import TrainingRunSpec
+from feedbax.contracts.training import OptimizerSpec, TrainingRunSpec
 from feedbax.training.checkpoint_custody import fork_checkpoint_transaction
+from feedbax.training.optimizers import learning_rate_at_step
 
 from rlrmp.runtime.training_run_specs import (
     FEEDBAX_TRAINING_RUN_SPEC_KEY,
@@ -342,6 +343,17 @@ def _learning_rate_at_step(
     row_spec: TrainingRunSpec,
     step: int,
 ) -> float:
+    optimizer_spec = _declared_optimizer_spec(row_spec)
+    if optimizer_spec is not None and optimizer_spec.lr_schedule is not None:
+        return float(
+            jax.device_get(
+                learning_rate_at_step(
+                    optimizer_spec.lr_schedule,
+                    current_step=int(step),
+                    schedule_origin_step=0,
+                )
+            )
+        )
     hps = row_payload.get("hps")
     if isinstance(hps, Mapping) and "learning_rate_0" in hps:
         schedule = _learning_rate_schedule(dict_to_namespace(dict(hps)))
@@ -361,6 +373,15 @@ def _learning_rate_at_step(
         return learning_rate
     schedule = optax.constant_schedule(0.0)
     return float(jax.device_get(schedule(int(step))))
+
+
+def _declared_optimizer_spec(row_spec: TrainingRunSpec) -> OptimizerSpec | None:
+    payload = row_spec.method_payload.payload
+    for key in ("controller_optimizer", "optimizer"):
+        candidate = payload.get(key)
+        if isinstance(candidate, Mapping):
+            return OptimizerSpec.model_validate(candidate)
+    return None
 
 
 def _constant_learning_rate(row_payload: Mapping[str, Any]) -> float | None:

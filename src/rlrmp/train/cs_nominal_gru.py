@@ -3746,6 +3746,7 @@ def _materialize_adaptive_epsilon_native_result(
         _adaptive_state_from_slot,
         _deserialize_pytree_slot_value,
         _guard_from_slot,
+        build_adaptive_epsilon_controller_optimizer,
     )
 
     args = context.args
@@ -3756,7 +3757,7 @@ def _materialize_adaptive_epsilon_native_result(
     checkpoint_root = output_dir / "checkpoints"
     key_init, _key_train, _key_adversary = split_initial_keys(jr.PRNGKey(int(args.seed)))
     pair = setup_task_model_pair(hps, key=key_init)
-    optimizer = _build_optimizer(hps)
+    optimizer = build_adaptive_epsilon_controller_optimizer(run_spec, hps)
     template_state = _initial_training_state(
         model=pair.model,
         trainer=optimizer,

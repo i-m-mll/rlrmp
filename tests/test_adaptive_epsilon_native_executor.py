@@ -13,7 +13,13 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 import pytest
-from feedbax.contracts.training import DEFAULT_TRAINING_METHOD_REGISTRY, TrainingRunSpec
+from feedbax.contracts.training import (
+    DEFAULT_TRAINING_METHOD_REGISTRY,
+    LrScheduleSpec,
+    MethodPayloadEnvelope,
+    OptimizerSpec,
+    TrainingRunSpec,
+)
 
 from rlrmp.runtime.checkpoint_custody import deserialize_pytree_slot, serialize_pytree_slot
 from rlrmp.train.adaptive_epsilon_native import (
@@ -21,6 +27,7 @@ from rlrmp.train.adaptive_epsilon_native import (
     AdaptiveEpsilonNativeRuntime,
     SerializedPyTreeSlot,
     _adaptive_state_from_slot,
+    adaptive_epsilon_controller_optimizer_spec,
     _adaptive_state_slot,
     _guard_from_slot,
     _json_slot,
@@ -83,10 +90,94 @@ def test_adaptive_epsilon_run_spec_uses_native_method(
     )
     assert isinstance(payload, AdaptiveEpsilonMethodPayload)
     assert payload.controller_training_mode == controller_mode
+    assert payload.controller_optimizer is not None
+    assert payload.controller_optimizer.lr_schedule is not None
+    assert payload.controller_optimizer.lr_schedule.kind == "warmup_cosine"
+    assert payload.controller_optimizer.lr_schedule.learning_rate_0 == pytest.approx(1e-3)
+    assert payload.controller_optimizer.lr_schedule.constant_lr_iterations == 1
+    assert "learning_rate" not in payload.controller_optimizer.params
     assert payload.n_train_batches == 2
     assert payload.chunk_batches == 1
     slot_names = {slot.name for slot in spec.worker_execution.method_contract.state_slots}
     assert {ADAPTIVE_EPSILON_STATE, ZERO_ADVERSARY_GUARD} <= slot_names
+
+
+def test_adaptive_epsilon_optimizer_spec_expresses_constant_lr() -> None:
+    optimizer = adaptive_epsilon_controller_optimizer_spec(
+        {
+            "n_train_batches": 4,
+            "hps": {
+                "lr_schedule": "constant",
+                "learning_rate_0": 3e-5,
+                "n_batches_condition": 4,
+                "weight_decay": 0.0,
+            },
+        }
+    )
+
+    assert optimizer.type == "adamw"
+    assert optimizer.lr_schedule is not None
+    assert optimizer.lr_schedule.kind == "constant"
+    assert optimizer.lr_schedule.learning_rate_0 == pytest.approx(3e-5)
+
+
+def test_adaptive_epsilon_runtime_consumes_declared_constant_lr(
+    tmp_path: Path,
+) -> None:
+    spec = _adaptive_epsilon_training_spec(
+        tmp_path,
+        controller_mode=ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+    )
+    constant_optimizer = OptimizerSpec(
+        type="adamw",
+        params={"weight_decay": 0.0},
+        lr_schedule=LrScheduleSpec(kind="constant", learning_rate_0=3e-5),
+    )
+    spec = _with_controller_optimizer(spec, constant_optimizer)
+    payload = DEFAULT_TRAINING_METHOD_REGISTRY.validate_payload(
+        spec.method_ref,
+        spec.method_payload,
+        path="/method_payload",
+    )
+    assert isinstance(payload, AdaptiveEpsilonMethodPayload)
+    args = _config_namespace(payload.config)
+    hps = build_hps(args)
+
+    _slots, runtime = build_adaptive_epsilon_native_initial_slots(
+        run_spec=spec,
+        hps=hps,
+        args=args,
+        key=jr.PRNGKey(0),
+    )
+    native = runtime.component("adaptive_epsilon")
+    assert isinstance(native, AdaptiveEpsilonNativeRuntime)
+
+    assert _scheduled_learning_rate(native.optimizer_template) == pytest.approx(3e-5)
+
+
+def test_adaptive_epsilon_optimizer_spec_expresses_rewarm_schedule() -> None:
+    optimizer = adaptive_epsilon_controller_optimizer_spec(
+        {
+            "n_train_batches": 4500,
+            "optimizer": {
+                "name": "adamw",
+                "lr_schedule": "warmup_cosine",
+                "learning_rate_0": 3e-4,
+                "lr_warmup_batches": 1000,
+                "lr_warmup_init_fraction": 0.1,
+                "lr_cosine_alpha": 0.1,
+                "total_steps": 3500,
+                "weight_decay": 0.0,
+            },
+        }
+    )
+
+    assert optimizer.lr_schedule is not None
+    assert optimizer.lr_schedule.kind == "warmup_cosine"
+    assert optimizer.lr_schedule.learning_rate_0 == pytest.approx(3e-4)
+    assert optimizer.lr_schedule.constant_lr_iterations == 1000
+    assert optimizer.lr_schedule.total_steps == 3500
+    assert optimizer.lr_schedule.cosine_annealing_alpha == pytest.approx(0.1)
 
 
 @pytest.mark.parametrize(
@@ -226,6 +317,31 @@ def _adaptive_epsilon_args(**overrides: Any) -> argparse.Namespace:
     for key, value in {**defaults, **overrides}.items():
         setattr(args, key, value)
     return args
+
+
+def _with_controller_optimizer(
+    spec: TrainingRunSpec,
+    optimizer: OptimizerSpec,
+) -> TrainingRunSpec:
+    method_payload = spec.method_payload.model_dump(mode="json", exclude_none=True)
+    payload = dict(method_payload["payload"])
+    payload["controller_optimizer"] = optimizer.model_dump(mode="json", exclude_none=True)
+    method_payload["payload"] = payload
+    return spec.model_copy(
+        update={"method_payload": MethodPayloadEnvelope.model_validate(method_payload)}
+    )
+
+
+def _scheduled_learning_rate(opt_state: Any) -> float:
+    for leaf in jt.leaves(opt_state, is_leaf=_is_injected_hyperparams_state):
+        if _is_injected_hyperparams_state(leaf):
+            return float(jnp.asarray(leaf.hyperparams["learning_rate"]).reshape(-1)[0])
+    raise AssertionError("optimizer state does not contain injected learning rate")
+
+
+def _is_injected_hyperparams_state(value: Any) -> bool:
+    fields = getattr(value, "_fields", ())
+    return {"hyperparams", "inner_state"}.issubset(set(fields))
 
 
 def _legacy_adaptive_epsilon_chunk_loop(
