@@ -16,7 +16,7 @@ import os
 import subprocess
 import tempfile
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from functools import partial
@@ -401,6 +401,7 @@ class CsNominalGruConfig(BaseModel):
     log_step: int = 100
     disable_progress: bool = False
     quiet_progress: bool = True
+    allow_x64: bool = False
     dry_run: bool = False
 
     @model_validator(mode="after")
@@ -3042,6 +3043,7 @@ def _run_cs_supervised_native_from_context(
         runtime=native_runtime,
         training_duration_seconds=training_duration_seconds,
         stop_after_batches=stop_after_batches,
+        checkpoint_writes=execution.checkpoint_writes,
         volume_commit=volume_commit,
     )
 
@@ -3264,6 +3266,7 @@ def _materialize_cs_supervised_native_result(
     runtime: CsSupervisedNativeRuntime,
     training_duration_seconds: float,
     stop_after_batches: int | None,
+    checkpoint_writes: Sequence[Any],
     volume_commit: VolumeCommit | None,
 ) -> dict[str, Any]:
     args = context.args
@@ -3276,6 +3279,7 @@ def _materialize_cs_supervised_native_result(
     pgd_diagnostic_chunks: list[dict[str, np.ndarray]] = []
     training_started = time.perf_counter() - training_duration_seconds
     final_state: TrainingState | None = None
+    custody_by_completed = _checkpoint_writes_by_completed_batch(checkpoint_writes)
     for record in runtime.records:
         completed = int(record.state.completed_batches)
         history_chunk_path = history_chunks_dir / f"history_{completed:07d}.eqx"
@@ -3286,6 +3290,8 @@ def _materialize_cs_supervised_native_result(
             record.state,
             args=args,
             run_spec=run_spec,
+            write_custody=False,
+            custody_result=custody_by_completed.get(int(record.state.completed_batches)),
         )
         if record.pgd_diagnostics:
             pgd_diagnostic_chunks.append(record.pgd_diagnostics)
@@ -3489,6 +3495,7 @@ def _run_adaptive_epsilon_native_from_context(
         final_slots=execution.final_slots,
         training_duration_seconds=training_duration_seconds,
         stop_after_batches=stop_after_batches,
+        checkpoint_writes=execution.checkpoint_writes,
         volume_commit=volume_commit,
     )
 
@@ -3576,6 +3583,7 @@ def _run_policy_adversary_native_from_context(
         final_slots=execution.final_slots,
         training_duration_seconds=training_duration_seconds,
         stop_after_batches=stop_after_batches,
+        checkpoint_writes=execution.checkpoint_writes,
         volume_commit=volume_commit,
     )
 
@@ -3588,6 +3596,7 @@ def _materialize_policy_adversary_native_result(
     final_slots: Mapping[str, Any],
     training_duration_seconds: float,
     stop_after_batches: int | None,
+    checkpoint_writes: Sequence[Any],
     volume_commit: VolumeCommit | None,
 ) -> dict[str, Any]:
     from rlrmp.train.policy_adversary_native import (
@@ -3630,6 +3639,8 @@ def _materialize_policy_adversary_native_result(
         state,
         args=args,
         run_spec=run_spec,
+        write_custody=False,
+        custody_result=_latest_checkpoint_write(checkpoint_writes),
     )
     records = list(getattr(runtime, "records", []))
     history_chunk_dir = mkdir_p(output_dir / "history_chunks")
@@ -3723,6 +3734,7 @@ def _materialize_adaptive_epsilon_native_result(
     final_slots: Mapping[str, Any],
     training_duration_seconds: float,
     stop_after_batches: int | None,
+    checkpoint_writes: Sequence[Any],
     volume_commit: VolumeCommit | None,
 ) -> dict[str, Any]:
     from rlrmp.train.adaptive_epsilon_native import (
@@ -3772,6 +3784,8 @@ def _materialize_adaptive_epsilon_native_result(
         state,
         args=args,
         run_spec=run_spec,
+        write_custody=False,
+        custody_result=_latest_checkpoint_write(checkpoint_writes),
     )
     diagnostics_metadata = write_training_diagnostics_sidecar(
         output_dir,
@@ -3875,12 +3889,13 @@ def save_training_checkpoint(
     *,
     args: argparse.Namespace,
     run_spec: dict[str, Any],
+    write_custody: bool = True,
+    custody_result: Any | None = None,
 ) -> Path:
     """Write a Feedbax custody checkpoint and compatibility materialization."""
 
     metadata = _training_checkpoint_metadata(args, state, run_spec)
-    custody_result = None
-    if has_feedbax_training_spec(run_spec):
+    if write_custody and has_feedbax_training_spec(run_spec):
         custody_result = write_cs_checkpoint_transaction(
             checkpoint_root,
             run_spec=run_spec,
@@ -3984,6 +3999,25 @@ def _custody_transaction_id(custody_result: Any | None) -> str | None:
     latest_pointer = getattr(custody_result, "latest_pointer", None)
     transaction_id = getattr(latest_pointer, "transaction_id", None)
     return None if transaction_id is None else str(transaction_id)
+
+
+def _checkpoint_writes_by_completed_batch(
+    checkpoint_writes: Sequence[Any],
+) -> dict[int, Any]:
+    """Index Feedbax executor checkpoint writes by completed global step."""
+
+    indexed: dict[int, Any] = {}
+    for write in checkpoint_writes:
+        coordinate = getattr(getattr(write, "manifest", None), "coordinate", None)
+        completed = getattr(coordinate, "global_step", None)
+        if completed is None:
+            continue
+        indexed[int(completed)] = write
+    return indexed
+
+
+def _latest_checkpoint_write(checkpoint_writes: Sequence[Any]) -> Any | None:
+    return checkpoint_writes[-1] if checkpoint_writes else None
 
 
 def _remove_stale_legacy_materializations(checkpoint_root: Path, *, issue: str) -> None:
@@ -4194,6 +4228,9 @@ def _cs_checkpoint_slots(
         slots["adversary_optimizer"] = serialize_pytree_slot(state.adversary_optimizer_state)
     if state.adaptive_epsilon_state is not None:
         slots["adaptive_epsilon_state"] = state.adaptive_epsilon_state
+        zero_guard = getattr(state.adaptive_epsilon_state, "zero_adversary_guard", None)
+        if isinstance(zero_guard, dict):
+            slots["zero_adversary_guard"] = dict(zero_guard)
     return slots
 
 
