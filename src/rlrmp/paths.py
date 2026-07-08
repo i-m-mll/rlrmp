@@ -14,6 +14,7 @@ repository root (detected once at import time via ``__file__``).
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -146,6 +147,41 @@ def run_artifact_dir(exp: str, run: str) -> Path:
         Absolute path: ``<repo_root>/_artifacts/<exp>/runs/<run>/``.
     """
     return _artifact_root() / exp / "runs" / run
+
+
+def portable_repo_path(path: Path | str, *, repo_root: Path | None = None) -> str:
+    """Return a non-absolute path string for portable spec records.
+
+    Paths under the active checkout are made repo-relative. Canonical rlrmp
+    mirror-tree paths under ``results/`` or ``_artifacts/`` are also normalized
+    by their marker, which keeps authored specs stable across worktree roots.
+    Other absolute paths are made relative to the checkout root instead of
+    leaking machine-specific prefixes into binding-hashed spec payloads.
+    """
+
+    candidate = Path(path)
+    if not candidate.is_absolute():
+        return candidate.as_posix()
+
+    root = REPO_ROOT if repo_root is None else repo_root
+    for base in (root, root.resolve(strict=False)):
+        try:
+            return candidate.relative_to(base).as_posix()
+        except ValueError:
+            pass
+
+    resolved = candidate.resolve(strict=False)
+    try:
+        return resolved.relative_to(root.resolve(strict=False)).as_posix()
+    except ValueError:
+        pass
+
+    for marker in ("results", "_artifacts"):
+        if marker in candidate.parts:
+            marker_index = candidate.parts.index(marker)
+            return Path(*candidate.parts[marker_index:]).as_posix()
+
+    return Path(os.path.relpath(candidate, root)).as_posix()
 
 
 def resolve_run_artifact_path(artifact_dir: Path, *parts: str) -> Path:
