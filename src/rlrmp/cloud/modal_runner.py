@@ -774,59 +774,6 @@ def dry_run_payload(config: NominalGruRunConfig) -> dict[str, Any]:
         "remote_artifact_dir": str(config.remote_artifact_dir()),
         "modal_volume_pull_commands": modal_volume_pull_commands(config),
         "modal_volume_sync_command": modal_volume_sync_command(config),
-        "planned_stochastic_runs": planned_stochastic_runs(config),
-    }
-
-
-def planned_stochastic_runs(config: NominalGruRunConfig) -> dict[str, dict[str, Any]]:
-    """Return the two planned stochastic C&S GRU run commands."""
-
-    base = {
-        **config.__dict__,
-        "run": DEFAULT_RUN,
-        "regularized_fidelity": False,
-        "extra_args": config.extra_args,
-    }
-    regularized = {
-        **config.__dict__,
-        "run": REGULARIZED_RUN,
-        "regularized_fidelity": True,
-        "extra_args": config.extra_args,
-    }
-    no_hidden_config = NominalGruRunConfig(**base)
-    hidden_config = NominalGruRunConfig(**regularized)
-    no_hidden_modal_lock = spec_lock_payload(
-        build_launcher_spec_bundle(no_hidden_config, backend="modal")
-    )
-    try:
-        hidden_local_command = build_training_command(hidden_config, remote=False)
-        hidden_remote_command = build_training_command(hidden_config, remote=True)
-        hidden_modal_lock = spec_lock_payload(
-            build_launcher_spec_bundle(hidden_config, backend="modal")
-        )
-    except ValueError as exc:
-        hidden_local_command = []
-        hidden_remote_command = []
-        hidden_modal_lock = {"unavailable": str(exc)}
-    return {
-        "stochastic_no_hidden_penalty": {
-            "run": DEFAULT_RUN,
-            "nn_hidden": 0.0,
-            "local_training_command": build_training_command(no_hidden_config, remote=False),
-            "remote_training_command": build_training_command(no_hidden_config, remote=True),
-            "modal_spec_lock": no_hidden_modal_lock,
-            "modal_volume_pull_commands": modal_volume_pull_commands(no_hidden_config),
-            "modal_volume_sync_command": modal_volume_sync_command(no_hidden_config),
-        },
-        "stochastic_hidden_penalty": {
-            "run": REGULARIZED_RUN,
-            "nn_hidden": 1e-5,
-            "local_training_command": hidden_local_command,
-            "remote_training_command": hidden_remote_command,
-            "modal_spec_lock": hidden_modal_lock,
-            "modal_volume_pull_commands": modal_volume_pull_commands(hidden_config),
-            "modal_volume_sync_command": modal_volume_sync_command(hidden_config),
-        },
     }
 
 

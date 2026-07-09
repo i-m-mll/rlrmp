@@ -1,0 +1,10 @@
+{
+  "hold__start_pos_zero_vel_lr1e-2": "feedbax-training-run:b540fa8972e78a8fbcb3e05802d8469d",
+  "hold__start_pos_zero_vel_lr3e-2": "feedbax-training-run:4682ffcc06a317036e3c532a3b19cf16",
+  "hold_start_pos_l1_ffpert__w1e5_lr1e-2": "feedbax-training-run:827758640813ab435d52ca0464162da4",
+  "hold_start_pos_l1_ffpert__w1e5_lr3e-3": "feedbax-training-run:6efa510cfe8ed3e65e05004888c91aaf",
+  "hold_start_pos_l1_ffpert__w1e6_lr3e-3": "feedbax-training-run:2f45305f237779683e4a180434cf1a0f",
+  "hold_start_pos_l2_ffpert__w1e6_lr3e-3": "feedbax-training-run:fe292d28617cb9c02dcd1f6b3e621f62",
+  "hold_start_pos_l2_ffpert__w1e8_lr1e-2": "feedbax-training-run:1cd9bc81c4bceb571a8ee433e5919059",
+  "hold_start_pos_l2_ffpert__w1e8_lr3e-3": "feedbax-training-run:a70690c3846a5a299a51003fff6d0d78"
+}
