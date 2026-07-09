@@ -1,11 +1,12 @@
+# ruff: noqa: E402
 """Induced-gain analyser on flavor-(b) (LinearDynamicsAdversary) trained checkpoints.
 
 Bug: 74bfd86 — second cross-method run, focused on the 9 flavor-(b) trained
 configurations from issue ``c723082`` (eta_max in {0.03, 0.10, 0.30} x seed
 in {0, 1, 2}, with 5 internal vmap replicates per config = 45 controllers).
 
-Mirrors ``scripts/run_induced_gain_part2_5.py``'s structure (loader, network-only
-adapter, channel set, output schema). Differences:
+Mirrors ``results/c723082/scripts/run_induced_gain_part2_5.py``'s structure
+(loader, network-only adapter, channel set, output schema). Differences:
 
 - **Per-replicate analysis**: each of the 5 replicates is analysed and saved
   individually. ``summary.json`` rolls per-replicate values up to per-config
@@ -24,7 +25,7 @@ Pre-registered headline metric: ``gamma_sd x qr_cost`` — induced gain on the
 completeness.
 
 Usage:
-    uv run python scripts/run_induced_gain_flavor_b.py
+    uv run python results/c723082/scripts/run_induced_gain_flavor_b.py
 """
 
 from __future__ import annotations
@@ -45,6 +46,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 import numpy as np
+from feedbax.analysis import GraphControllerAdapter
 from jax_cookbook import load_with_hyperparameters
 
 from rlrmp.analysis.math.hinf_riccati import (
@@ -59,12 +61,11 @@ from rlrmp.analysis.math.induced_gain import (
     W_SENSORY_PERTURBATION,
     W_STRUCTURAL_DA,
     Z_QR_COST,
-    Controller,
     induced_gain,
 )
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.intervention_compat import swap_plant_intervenor_to_dynamics_matrix
-from rlrmp.paths import REPO_ROOT, mkdir_p, run_artifact_dir, run_spec_dir
+from rlrmp.paths import mkdir_p, run_artifact_dir, run_spec_dir
 from rlrmp.train.task_model import setup_task_model_pair
 
 logger = logging.getLogger(__name__)
@@ -331,7 +332,7 @@ def build_network_controller(
     target_pos: jnp.ndarray,
     sisu: float = 0.5,
     key: jnp.ndarray = jr.PRNGKey(0),
-) -> Controller:
+) -> GraphControllerAdapter:
     net = model.nodes["net"]
 
     full_state = model.init_state(key=jr.PRNGKey(0))
@@ -368,11 +369,11 @@ def build_network_controller(
                 delay = int(ch_leaves[0].delay)
 
     leaves = jt.leaves(net_state_template)
-    leaf_shapes = tuple(tuple(jnp.asarray(l).shape) for l in leaves)
-    leaf_sizes = tuple(int(jnp.asarray(l).size) for l in leaves)
+    leaf_shapes = tuple(tuple(jnp.asarray(leaf).shape) for leaf in leaves)
+    leaf_sizes = tuple(int(jnp.asarray(leaf).size) for leaf in leaves)
     treedef = jt.structure(net_state_template)
     net_flat = jnp.concatenate(
-        [jnp.asarray(l, dtype=jnp.float64).reshape(-1) for l in leaves], axis=0
+        [jnp.asarray(leaf, dtype=jnp.float64).reshape(-1) for leaf in leaves], axis=0
     )
     queue_flat = jnp.zeros((delay * n_obs,), dtype=jnp.float64)
     h0 = jnp.concatenate([net_flat, queue_flat], axis=0)
@@ -407,7 +408,7 @@ def _build_plant_and_schedule(horizon: int) -> tuple[PlantLinearization, object]
 
 
 def analyse_replicate(
-    ctrl: Controller,
+    ctrl: GraphControllerAdapter,
     *,
     plant: PlantLinearization,
     schedule,
