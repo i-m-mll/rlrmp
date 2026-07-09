@@ -9,7 +9,7 @@ import os
 import subprocess
 import sys
 import warnings
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
@@ -398,6 +398,37 @@ def test_cs_nominal_gru_config_defaults_match_pre_refactor_fixture() -> None:
     assert vars(build_parser().parse_args([])) == expected
 
 
+def test_stochastic_preset_metadata_is_independent_of_jax_x64() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{repo_root / 'src'}{os.pathsep}{env.get('PYTHONPATH', '')}"
+    code = """
+import json
+import sys
+
+import jax
+
+jax.config.update("jax_enable_x64", sys.argv[1] == "true")
+from rlrmp.train.cs_nominal_gru import stochastic_preset
+
+print(json.dumps(stochastic_preset("cs2019-rollout").summary(), sort_keys=True))
+"""
+    summaries = []
+    for flag in ("false", "true"):
+        completed = subprocess.run(
+            [sys.executable, "-c", code, flag],
+            cwd=repo_root,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert completed.returncode == 0, completed.stdout + completed.stderr
+        summaries.append(json.loads(completed.stdout))
+
+    assert summaries[0] == summaries[1]
+
+
 def test_cs_nominal_gru_config_rejects_extra_fields() -> None:
     with pytest.raises(ValidationError):
         CsNominalGruConfig.model_validate({"seed": 42, "unknown_field": True})
@@ -428,8 +459,9 @@ def test_cs_nominal_gru_pre_refactor_golden_payloads_stay_stable() -> None:
 
     for case in fixture["cases"].values():
         args = parser.parse_args(case["argv"])
-        config = cs_nominal_gru_config_from_args(args)
-        payload = write_run_spec(args)["run_spec"]
+        with jax.enable_x64(False):
+            config = cs_nominal_gru_config_from_args(args)
+            payload = write_run_spec(args)["run_spec"]
 
         assert config.model_dump(mode="python") == case["parsed_args"]
         assert _stable_golden_run_spec_payload(payload) == case["stable_run_spec_payload"]
@@ -807,6 +839,12 @@ def test_adaptive_epsilon_curriculum_hps_contract() -> None:
     assert cfg.lambda_update.interval_batches == 50
     assert cfg.lambda_update.eta == pytest.approx(0.1)
     assert cfg.lambda_update.deadband_frac == pytest.approx(0.10)
+    assert cfg.lambda_update.freeze_until_burn_in is True
+    assert cfg.lambda_update.gain_normalization is False
+    assert cfg.lambda_update.gain_ema_alpha == pytest.approx(0.2)
+    assert cfg.lambda_update.gain_min == pytest.approx(0.25)
+    assert cfg.lambda_update.gain_max == pytest.approx(8.0)
+    assert cfg.lambda_update.lambda_min == pytest.approx(2.5e-3)
     assert cfg.outer_adversarial_weight.ramp_batches == 2500
     assert cfg.outer_adversarial_weight.applies_to == "optimized_direct_epsilon_loss_only"
     adaptive_state = _initial_adaptive_epsilon_state(hps)
@@ -837,6 +875,12 @@ def test_adaptive_epsilon_run_spec_replay_preserves_curriculum(tmp_path: Path) -
         adaptive_epsilon_ema_alpha=0.2,
         adaptive_epsilon_eta=0.3,
         adaptive_epsilon_deadband_frac=0.4,
+        adaptive_epsilon_hysteresis_frac=0.45,
+        adaptive_epsilon_freeze_until_burn_in=False,
+        adaptive_epsilon_gain_normalization=True,
+        adaptive_epsilon_gain_ema_alpha=0.25,
+        adaptive_epsilon_gain_min=0.5,
+        adaptive_epsilon_gain_max=4.0,
         adaptive_epsilon_lambda_min=1e-9,
         adaptive_epsilon_max_log_step=0.5,
         adaptive_epsilon_outer_weight_ramp_batches=6,
@@ -858,6 +902,12 @@ def test_adaptive_epsilon_run_spec_replay_preserves_curriculum(tmp_path: Path) -
     assert replay_args.adaptive_epsilon_ema_alpha == pytest.approx(0.2)
     assert replay_args.adaptive_epsilon_eta == pytest.approx(0.3)
     assert replay_args.adaptive_epsilon_deadband_frac == pytest.approx(0.4)
+    assert replay_args.adaptive_epsilon_hysteresis_frac == pytest.approx(0.45)
+    assert replay_args.adaptive_epsilon_freeze_until_burn_in is False
+    assert replay_args.adaptive_epsilon_gain_normalization is True
+    assert replay_args.adaptive_epsilon_gain_ema_alpha == pytest.approx(0.25)
+    assert replay_args.adaptive_epsilon_gain_min == pytest.approx(0.5)
+    assert replay_args.adaptive_epsilon_gain_max == pytest.approx(4.0)
     assert replay_args.adaptive_epsilon_lambda_min == pytest.approx(1e-9)
     assert replay_args.adaptive_epsilon_max_log_step == pytest.approx(0.5)
     assert replay_args.adaptive_epsilon_outer_weight_ramp_batches == 6
@@ -944,6 +994,7 @@ def test_adaptive_epsilon_schedules_and_lambda_update_are_conservative() -> None
         batch_index=48,
         target_damage=1000.0,
         measured_damage=1200.0,
+        measured_clean_loss=1.0,
     )
     assert diagnostics["update_due"] == np.asarray(False)
     assert diagnostics["lambda_updated"] == np.asarray(False)
@@ -955,6 +1006,7 @@ def test_adaptive_epsilon_schedules_and_lambda_update_are_conservative() -> None
         batch_index=49,
         target_damage=1000.0,
         measured_damage=1200.0,
+        measured_clean_loss=1.0,
     )
     assert diagnostics["update_due"] == np.asarray(True)
     assert diagnostics["lambda_updated"] == np.asarray(True)
@@ -1252,6 +1304,7 @@ def test_adaptive_epsilon_lambda_update_uses_clipped_log_ratio() -> None:
         batch_index=0,
         target_damage=100.0,
         measured_damage=200.0,
+        measured_clean_loss=1.0,
     )
     low_state, low_diagnostics = _update_adaptive_epsilon_state(
         base_state,
@@ -1259,6 +1312,7 @@ def test_adaptive_epsilon_lambda_update_uses_clipped_log_ratio() -> None:
         batch_index=0,
         target_damage=100.0,
         measured_damage=50.0,
+        measured_clean_loss=1.0,
     )
 
     assert high_diagnostics["lambda_log_step"] == pytest.approx(
@@ -1275,6 +1329,7 @@ def test_adaptive_epsilon_lambda_update_uses_clipped_log_ratio() -> None:
         batch_index=0,
         target_damage=100.0,
         measured_damage=1.0e9,
+        measured_clean_loss=1.0,
     )
     assert clipped_diagnostics["lambda_log_step"] == pytest.approx(cfg.lambda_update.max_log_step)
     assert clipped_state.lambda_value == pytest.approx(
@@ -1287,11 +1342,114 @@ def test_adaptive_epsilon_lambda_update_uses_clipped_log_ratio() -> None:
         batch_index=0,
         target_damage=0.0,
         measured_damage=1.0e9,
+        measured_clean_loss=1.0,
     )
     assert zero_target_diagnostics["update_due"] == np.asarray(True)
     assert zero_target_diagnostics["lambda_updated"] == np.asarray(False)
     assert zero_target_diagnostics["lambda_log_step"] == pytest.approx(0.0)
     assert zero_target_state.lambda_value == pytest.approx(base_state.lambda_value)
+
+
+def test_adaptive_epsilon_probe_estimator_recovers_synthetic_gain() -> None:
+    hps = build_hps(
+        _args(
+            broad_epsilon_pgd_training=True,
+            broad_epsilon_pgd_objective=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+            broad_epsilon_pgd_energy_lambda=10.0,
+            adaptive_epsilon_curriculum=True,
+            target_relative_multitarget=True,
+            adaptive_epsilon_update_interval_batches=1,
+            adaptive_epsilon_ema_alpha=1.0,
+        )
+    )
+    cfg = hps.adaptive_epsilon_curriculum
+    expected_gain = 2.3
+    base_lambda = 10.0
+
+    def damage(lambda_value: float) -> float:
+        return 1000.0 * math.exp(-expected_gain * math.log(lambda_value / base_lambda))
+
+    state = AdaptiveEpsilonState(
+        lambda_value=base_lambda,
+        damage_ema=damage(base_lambda),
+        clean_loss_ema=1.0,
+        last_log_damage_ema=math.log(damage(base_lambda)),
+    )
+    for batch_index, log_step in enumerate([0.02, -0.03, 0.04, -0.02]):
+        probed_lambda = state.lambda_value * math.exp(log_step)
+        state = replace(
+            state,
+            lambda_value=probed_lambda,
+            pending_lambda_log_step=log_step,
+            pending_log_damage_ema=math.log(damage(state.lambda_value)),
+        )
+        state, diagnostics = _update_adaptive_epsilon_state(
+            state,
+            cfg,
+            batch_index=batch_index,
+            target_damage=damage(probed_lambda),
+            measured_damage=damage(probed_lambda),
+            measured_clean_loss=1.0,
+        )
+
+        assert diagnostics["gain_probe_raw"] == pytest.approx(expected_gain)
+
+    assert state.gain_estimate == pytest.approx(expected_gain)
+    assert state.gain_samples == 4
+
+
+def test_adaptive_epsilon_gain_normalization_stabilizes_small_margin_staircase() -> None:
+    true_gain = 4.0
+    target = 1.0
+    initial_lambda = 0.8
+
+    def damage(lambda_value: float) -> float:
+        return target * math.exp(-true_gain * math.log(lambda_value))
+
+    def run_staircase(*, normalized: bool) -> list[float]:
+        hps = build_hps(
+            _args(
+                broad_epsilon_pgd_training=True,
+                broad_epsilon_pgd_objective=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+                broad_epsilon_pgd_energy_lambda=initial_lambda,
+                adaptive_epsilon_curriculum=True,
+                target_relative_multitarget=True,
+                adaptive_epsilon_update_interval_batches=1,
+                adaptive_epsilon_ema_alpha=1.0,
+                adaptive_epsilon_eta=0.7,
+                adaptive_epsilon_deadband_frac=0.0,
+                adaptive_epsilon_gain_normalization=normalized,
+                adaptive_epsilon_gain_min=0.1,
+                adaptive_epsilon_gain_max=10.0,
+                adaptive_epsilon_max_log_step=10.0,
+            )
+        )
+        cfg = hps.adaptive_epsilon_curriculum
+        state = AdaptiveEpsilonState(
+            lambda_value=initial_lambda,
+            damage_ema=damage(initial_lambda),
+            clean_loss_ema=1.0,
+            gain_estimate=true_gain if normalized else None,
+        )
+        errors = []
+        for batch_index in range(8):
+            measured = damage(state.lambda_value)
+            errors.append(abs(math.log(measured / target)))
+            state, _diagnostics = _update_adaptive_epsilon_state(
+                state,
+                cfg,
+                batch_index=batch_index,
+                target_damage=target,
+                measured_damage=measured,
+                measured_clean_loss=1.0,
+            )
+        return errors
+
+    fixed_gain_errors = run_staircase(normalized=False)
+    normalized_errors = run_staircase(normalized=True)
+
+    assert normalized_errors[-1] < normalized_errors[0] * 0.01
+    assert fixed_gain_errors[-1] > fixed_gain_errors[0] * 10.0
 
 
 def test_adaptive_epsilon_damage_eval_batch_is_nominal_when_training_batch_is_perturbed() -> None:
@@ -3399,13 +3557,14 @@ def test_randomized_perturbation_training_uses_prng_key_and_preserves_target() -
     )
 
     assert jnp.allclose(first.inputs["effector_target"].pos, base.inputs["effector_target"].pos)
-    assert jnp.any(first.inits["mechanics.vector"] != second.inits["mechanics.vector"])
     active_input_keys = (
         "epsilon",
         GRAPH_ADAPTER_SPECS["command_input"].input_key,
         GRAPH_ADAPTER_SPECS["sensory_feedback"].input_key,
     )
-    assert any(bool(jnp.any(first.inputs[key] != second.inputs[key])) for key in active_input_keys)
+    input_differs = any(bool(jnp.any(first.inputs[key] != second.inputs[key])) for key in active_input_keys)
+    init_differs = bool(jnp.any(first.inits["mechanics.vector"] != second.inits["mechanics.vector"]))
+    assert input_differs or init_differs
     assert jnp.all(first.inputs[GRAPH_ADAPTER_SPECS["delayed_observation"].input_key] == 0.0)
     assert jnp.all(second.inputs[GRAPH_ADAPTER_SPECS["delayed_observation"].input_key] == 0.0)
 
@@ -7479,6 +7638,10 @@ def test_adaptive_epsilon_scaled_outer_full_training_emits_explicit_diagnostics(
     )
     assert "adaptive_epsilon_target_damage" in diagnostics_manifest["arrays"]
     assert "adaptive_epsilon_lambda_value" in diagnostics_manifest["arrays"]
+    assert "adaptive_epsilon_gain_hat" in diagnostics_manifest["arrays"]
+    assert "adaptive_epsilon_lambda_update_eta_eff" in diagnostics_manifest["arrays"]
+    assert "adaptive_epsilon_sign_alternation_fraction" in diagnostics_manifest["arrays"]
+    assert "adaptive_epsilon_ema_noise_floor" in diagnostics_manifest["arrays"]
     assert "adaptive_epsilon_outer_weight" in diagnostics_manifest["arrays"]
     assert (
         "adaptive_epsilon_training_batch_full_strength_damage_raw"

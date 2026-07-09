@@ -1,0 +1,33 @@
+schema_id: feedbax.spec.analysis_bundle
+schema_version: feedbax.spec.analysis_bundle.v2
+name: robustness_margin
+description: Robustness-margin sidecar for soft-constraint rows.
+predicate:
+  manifest_kind: EvaluationRunManifest
+metadata:
+  package: rlrmp
+  bundle_family: rlrmp/robustness_margin
+  issue: 1ec6ae5
+  primary_contract: feedbax_analysis_bundle
+  scientific_schema_owner: rlrmp
+  input_contract:
+    consumes: upstream evaluation states with robustness_margin_rows or margin_inputs
+    reruns_rollouts: false
+  output_conventions:
+    artifact_custody: feedbax.AnalysisRunManifest
+stages:
+  - name: robustness_margin_sidecar
+    kind: analysis
+    mode: grouped
+    analysis_type: rlrmp.robustness_margin_sidecar
+    requested_outputs: [robustness_margin_sidecar]
+    params:
+      issue_id: 1ec6ae5
+      scope: soft_constraint_robustness_margin
+      headline_quantile: 0.9
+      threshold_multiplier: 10.0
+    outputs:
+      - role: manifest
+        required: true
+      - role: rlrmp-robustness-margin-sidecar
+        required: true
