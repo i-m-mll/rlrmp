@@ -58,6 +58,21 @@ SELF_EXCLUDED_RELPATHS = frozenset(
 
 MODULE_SCOPE = "<module>"
 
+RETIRED_STANDALONE_MATERIALIZER_MODULES = frozenset(
+    {
+        "materialize_adversary_equivalence",
+        "materialize_analytical_game_card",
+        "materialize_cs_stochastic_phase1",
+        "materialize_cs_stochastic_phase3",
+        "materialize_linear_equivalence_certificate",
+        "materialize_linear_round_trip",
+    }
+)
+
+RETIRED_STANDALONE_MATERIALIZER_PATHS = frozenset(
+    f"scripts/{module}.py" for module in RETIRED_STANDALONE_MATERIALIZER_MODULES
+)
+
 
 # --------------------------------------------------------------------------- #
 # Inventory + allowlist loading
@@ -179,6 +194,21 @@ def _scan_python(relpath: str, inventory: frozenset[str], errors: list[str]) -> 
     return [_Occurrence(relpath, cid, qual, lineno) for cid, qual, lineno in visitor.hits]
 
 
+class _RetiredEntrypointImportVisitor(ast.NodeVisitor):
+    def __init__(self, inventory: frozenset[str]) -> None:
+        self._inventory = inventory
+        self.hits: list[tuple[str, int]] = []
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            if alias.name in self._inventory:
+                self.hits.append((alias.name, node.lineno))
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        if node.module in self._inventory:
+            self.hits.append((node.module, node.lineno))
+
+
 def _iter_json_strings(node: object):
     if isinstance(node, str):
         yield node
@@ -217,6 +247,40 @@ def _collect_occurrences(
     for relpath in json_files:
         occurrences.extend(_scan_json(relpath, inventory, errors))
     return occurrences, errors
+
+
+def _retired_entrypoint_import_hits(
+    source: str,
+    *,
+    relpath: str,
+    inventory: frozenset[str] = RETIRED_STANDALONE_MATERIALIZER_MODULES,
+) -> list[str]:
+    tree = ast.parse(source, filename=relpath)
+    visitor = _RetiredEntrypointImportVisitor(inventory)
+    visitor.visit(tree)
+    return [f"{relpath}:{lineno}: {module}" for module, lineno in visitor.hits]
+
+
+def _scan_retired_entrypoint_imports() -> tuple[list[str], list[str]]:
+    hits: list[str] = []
+    errors: list[str] = []
+    for root in ("src", "tests", "scripts"):
+        for path in sorted((REPO_ROOT / root).rglob("*.py")):
+            relpath = path.relative_to(REPO_ROOT).as_posix()
+            if relpath in RETIRED_STANDALONE_MATERIALIZER_PATHS:
+                continue
+            if relpath in SELF_EXCLUDED_RELPATHS:
+                continue
+            try:
+                hits.extend(
+                    _retired_entrypoint_import_hits(
+                        path.read_text(encoding="utf-8"),
+                        relpath=relpath,
+                    )
+                )
+            except (SyntaxError, UnicodeDecodeError, OSError) as exc:
+                errors.append(f"{relpath}: unparseable/unreadable in-scope python file: {exc}")
+    return hits, errors
 
 
 # --------------------------------------------------------------------------- #
@@ -316,6 +380,32 @@ def test_confinement_allowlist_entries_carry_owner_category_and_note() -> None:
             assert entry.get("note"), f"[[{family}]] entry {entry} is missing a note"
 
 
+def test_retired_standalone_materializer_entrypoints_stay_deleted() -> None:
+    remaining = sorted(
+        relpath
+        for relpath in RETIRED_STANDALONE_MATERIALIZER_PATHS
+        if (REPO_ROOT / relpath).exists()
+    )
+    assert not remaining, (
+        "Retired standalone legacy materializer entrypoint(s) reappeared. "
+        "Restore from git history only for archaeology, or file a new native "
+        f"materialization issue before reviving: {remaining}"
+    )
+
+
+def test_retired_standalone_materializers_are_not_imported_by_active_code() -> None:
+    hits, errors = _scan_retired_entrypoint_imports()
+    assert not errors, (
+        "in-scope files could not be scanned for retired materializer imports:\n"
+        + "\n".join(errors)
+    )
+    assert not hits, (
+        "Active src/tests/scripts code imports retired standalone materializer "
+        "entrypoint(s):\n"
+        + "\n".join(hits)
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Negative canaries (teeth)
 # --------------------------------------------------------------------------- #
@@ -366,3 +456,11 @@ def test_scan_negative_canary_treats_unreadable_file_as_error_not_skip() -> None
     missing = _scan_python("results/does_not_exist_synthetic.py", sentinel, errors)
     assert missing == []
     assert errors
+
+
+def test_entrypoint_negative_canary_flags_import_of_retired_materializer() -> None:
+    hits = _retired_entrypoint_import_hits(
+        "import materialize_linear_round_trip\n",
+        relpath="tests/test_new_legacy_call.py",
+    )
+    assert hits == ["tests/test_new_legacy_call.py:1: materialize_linear_round_trip"]
