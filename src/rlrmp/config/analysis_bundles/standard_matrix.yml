@@ -22,49 +22,12 @@ metadata:
     - notes
   cell_metadata: {}
   label_fields: []
-templates:
-  - name: forward_velocity_profiles
+stages:
+  - name: figure_payload
+    kind: analysis
     mode: grouped
     analysis_type: rlrmp.standard_matrix
-    requested_outputs: [forward_velocity_profiles]
-    params:
-      profile_key: forward_velocity
-      figure_routing:
-        package: rlrmp
-        experiment: standard_matrix
-        topic: forward_velocity_profiles
-        extra_packages: [rlrmp]
-        spec:
-          standard_matrix_output: forward_velocity_profiles
-  - name: hold_drift_profiles
-    mode: grouped
-    analysis_type: rlrmp.standard_matrix
-    requested_outputs: [hold_drift_profiles]
-    params:
-      profile_key: hold_drift
-      figure_routing:
-        package: rlrmp
-        experiment: standard_matrix
-        topic: hold_drift_profiles
-        extra_packages: [rlrmp]
-        spec:
-          standard_matrix_output: hold_drift_profiles
-  - name: peak_velocity_distributions
-    mode: grouped
-    analysis_type: rlrmp.standard_matrix
-    requested_outputs: [peak_velocity_distributions]
-    params:
-      figure_routing:
-        package: rlrmp
-        experiment: standard_matrix
-        topic: peak_velocity_distributions
-        extra_packages: [rlrmp]
-        spec:
-          standard_matrix_output: peak_velocity_distributions
-  - name: summary_metrics
-    mode: grouped
-    analysis_type: rlrmp.standard_matrix
-    requested_outputs: [summary_metrics]
+    requested_outputs: [figure_payload]
     params:
       metric_order:
         - velocity_rmse
@@ -74,48 +37,147 @@ templates:
       figure_routing:
         package: rlrmp
         experiment: standard_matrix
+        topic: standard_matrix
+        extra_packages: [rlrmp]
+  - name: forward_velocity_profiles
+    kind: figure
+    mode: grouped
+    depends_on: [figure_payload]
+    figure:
+      name: standard-matrix-forward-velocity-profiles
+      template: rlrmp.profile_comparison
+      assembler_params:
+        output: forward_velocity_profiles
+        profile_key: forward_velocity
+        title: Forward Velocity Profiles
+      figure_routing:
+        package: rlrmp
+        experiment: standard_matrix
+        topic: forward_velocity_profiles
+        extra_packages: [rlrmp]
+        render_format: html
+      metadata:
+        output: forward_velocity_profiles
+        profile_key: forward_velocity
+        title: Forward Velocity Profiles
+  - name: hold_drift_profiles
+    kind: figure
+    mode: grouped
+    depends_on: [figure_payload]
+    figure:
+      name: standard-matrix-hold-drift-profiles
+      template: rlrmp.profile_comparison
+      assembler_params:
+        output: hold_drift_profiles
+        profile_key: hold_drift
+        title: Hold Drift Profiles
+      figure_routing:
+        package: rlrmp
+        experiment: standard_matrix
+        topic: hold_drift_profiles
+        extra_packages: [rlrmp]
+        render_format: html
+      metadata:
+        output: hold_drift_profiles
+        profile_key: hold_drift
+        title: Hold Drift Profiles
+  - name: peak_velocity_distributions
+    kind: figure
+    mode: grouped
+    depends_on: [figure_payload]
+    figure:
+      name: standard-matrix-peak-velocity-distributions
+      assembler: rlrmp.standard_matrix_figure
+      assembler_params:
+        output: peak_velocity_distributions
+        title: Peak Velocity Distributions
+      figure_routing:
+        package: rlrmp
+        experiment: standard_matrix
+        topic: peak_velocity_distributions
+        extra_packages: [rlrmp]
+        render_format: html
+      metadata:
+        output: peak_velocity_distributions
+        title: Peak Velocity Distributions
+  - name: summary_metrics
+    kind: figure
+    mode: grouped
+    depends_on: [figure_payload]
+    figure:
+      name: standard-matrix-summary-metrics
+      assembler: rlrmp.standard_matrix_figure
+      assembler_params:
+        output: summary_metrics
+        title: Summary Metrics
+      figure_routing:
+        package: rlrmp
+        experiment: standard_matrix
         topic: summary_metrics
         extra_packages: [rlrmp]
-        spec:
-          standard_matrix_output: summary_metrics
+        render_format: html
+      metadata:
+        output: summary_metrics
+        title: Summary Metrics
   - name: rmse_ratio_comparison
+    kind: figure
     mode: grouped
-    analysis_type: rlrmp.standard_matrix
-    requested_outputs: [rmse_ratio_comparison]
-    params:
-      optional: true
+    depends_on: [figure_payload]
+    figure:
+      name: standard-matrix-rmse-ratio-comparison
+      assembler: rlrmp.standard_matrix_figure
+      assembler_params:
+        output: rmse_ratio_comparison
+        title: RMSE Ratio Comparison
       figure_routing:
         package: rlrmp
         experiment: standard_matrix
         topic: rmse_ratio_comparison
         extra_packages: [rlrmp]
-        spec:
-          standard_matrix_output: rmse_ratio_comparison
+        render_format: html
+      metadata:
+        output: rmse_ratio_comparison
+        title: RMSE Ratio Comparison
   - name: training_loss
+    kind: figure
     mode: per-run
-    analysis_type: rlrmp.standard_matrix
-    requested_outputs: [training_loss]
-    params:
+    depends_on: [figure_payload]
+    figure:
+      name: standard-matrix-training-loss
+      assembler: rlrmp.standard_matrix_figure
+      assembler_params:
+        output: training_loss
+        title: Training Loss
       figure_routing:
         package: rlrmp
         experiment: standard_matrix
         topic: training_loss
         extra_packages: [rlrmp]
-        spec:
-          standard_matrix_output: training_loss
+        render_format: html
+      metadata:
+        output: training_loss
+        title: Training Loss
   - name: training_loss_per_term
+    kind: figure
     mode: per-run
-    analysis_type: rlrmp.standard_matrix
-    requested_outputs: [training_loss_per_term]
-    params:
+    depends_on: [figure_payload]
+    figure:
+      name: standard-matrix-training-loss-per-term
+      assembler: rlrmp.standard_matrix_figure
+      assembler_params:
+        output: training_loss_per_term
+        title: Training Loss Per Term
       figure_routing:
         package: rlrmp
         experiment: standard_matrix
         topic: training_loss_per_term
         extra_packages: [rlrmp]
-        spec:
-          standard_matrix_output: training_loss_per_term
+        render_format: html
+      metadata:
+        output: training_loss_per_term
+        title: Training Loss Per Term
   - name: notes
+    kind: analysis
     mode: grouped
     analysis_type: rlrmp.standard_matrix
     requested_outputs: [notes]

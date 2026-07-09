@@ -152,8 +152,10 @@ def ensure_rlrmp_recipes_registered(
         from rlrmp.analysis.training_diagnostics import (
             register_training_diagnostics_recipes,
         )
+        from rlrmp.figures import register_rlrmp_figure_surfaces
 
         ensure_rlrmp_spec_families()
+        register_rlrmp_figure_surfaces()
         register_rlrmp_evaluation_recipes(replace=True)
         register_standard_matrix_recipes()
         register_declarative_materialization_recipes(replace=True)
