@@ -459,8 +459,9 @@ def test_cs_nominal_gru_pre_refactor_golden_payloads_stay_stable() -> None:
 
     for case in fixture["cases"].values():
         args = parser.parse_args(case["argv"])
-        config = cs_nominal_gru_config_from_args(args)
-        payload = write_run_spec(args)["run_spec"]
+        with jax.enable_x64(False):
+            config = cs_nominal_gru_config_from_args(args)
+            payload = write_run_spec(args)["run_spec"]
 
         assert config.model_dump(mode="python") == case["parsed_args"]
         assert _stable_golden_run_spec_payload(payload) == case["stable_run_spec_payload"]

@@ -2490,16 +2490,15 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
         spec_dir=spec_dir,
         explicit_spec_dir=explicit_spec_dir,
     )
-    with jax.enable_x64(False):
-        hps = build_hps(args)
-        graph_bundle = build_graph_bundle(hps)
-        training_run_graph_spec = build_training_run_graph_spec(hps, seed=int(args.seed))
-        payload = build_run_spec(
-            args,
-            output_dir=output_dir,
-            spec_dir=spec_dir,
-            graph_bundle=graph_bundle,
-        )
+    hps = build_hps(args)
+    graph_bundle = build_graph_bundle(hps)
+    training_run_graph_spec = build_training_run_graph_spec(hps, seed=int(args.seed))
+    payload = build_run_spec(
+        args,
+        output_dir=output_dir,
+        spec_dir=spec_dir,
+        graph_bundle=graph_bundle,
+    )
 
     if args.dry_run:
         would_write = [str(run_path), str(spec_dir / "model.graph.manifest.json")]
