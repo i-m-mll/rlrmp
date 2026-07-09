@@ -92,7 +92,7 @@ ADAPTIVE_EPSILON_METHOD_PAYLOAD_SCHEMA_ID = (
     "rlrmp.spec.training_method.adaptive_epsilon_curriculum_payload"
 )
 ADAPTIVE_EPSILON_METHOD_PAYLOAD_SCHEMA_VERSION = (
-    "rlrmp.spec.training_method.adaptive_epsilon_curriculum_payload.v1"
+    "rlrmp.spec.training_method.adaptive_epsilon_curriculum_payload.v2"
 )
 TRAIN_CHUNK_KERNEL_REF = "rlrmp.adaptive_epsilon_curriculum.train_chunk"
 STOP_PREDICATE_REF = "rlrmp.adaptive_epsilon_curriculum.stop"
@@ -124,6 +124,12 @@ class AdaptiveEpsilonMethodPayload(BaseModel):
     def _validate_payload(self) -> "AdaptiveEpsilonMethodPayload":
         if not bool(self.config.get("adaptive_epsilon_curriculum", False)):
             raise ValueError("adaptive-epsilon native payload requires enabled curriculum")
+        if self.damage_schedule.get("setpoint_basis") != "damage_to_clean_loss_ratio":
+            raise ValueError(
+                "adaptive-epsilon native payload requires damage_schedule.setpoint_basis="
+                "'damage_to_clean_loss_ratio'; older absolute damage setpoints are "
+                "archival-only and cannot be used for new launches"
+            )
         if self.chunk_batches > self.n_train_batches:
             raise ValueError("chunk_batches cannot exceed n_train_batches")
         if self.controller_training_mode not in {
@@ -246,6 +252,7 @@ def ensure_adaptive_epsilon_training_method_registered() -> None:
             guard_predicates_factory=adaptive_epsilon_guard_predicates,
             rejected_payload_versions=(
                 "rlrmp.spec.training_method.adaptive_epsilon_curriculum_payload.v0",
+                "rlrmp.spec.training_method.adaptive_epsilon_curriculum_payload.v1",
             ),
             owner="rlrmp.train.adaptive_epsilon_native",
             package="rlrmp",
@@ -1289,6 +1296,11 @@ def _adaptive_state_from_slot(value: Any) -> Any:
         lambda_value=float(payload["lambda_value"]),
         damage_ema=(
             None if payload.get("damage_ema") is None else float(payload["damage_ema"])
+        ),
+        clean_loss_ema=(
+            None
+            if payload.get("clean_loss_ema") is None
+            else float(payload["clean_loss_ema"])
         ),
         last_update_batch=payload.get("last_update_batch"),
         update_count=int(payload.get("update_count", 0)),

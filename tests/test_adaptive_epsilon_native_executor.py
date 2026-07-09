@@ -23,6 +23,7 @@ from feedbax.contracts.training import (
 
 from rlrmp.runtime.checkpoint_custody import deserialize_pytree_slot, serialize_pytree_slot
 from rlrmp.train.adaptive_epsilon_native import (
+    ADAPTIVE_EPSILON_METHOD_PAYLOAD_SCHEMA_VERSION,
     AdaptiveEpsilonMethodPayload,
     AdaptiveEpsilonNativeRuntime,
     SerializedPyTreeSlot,
@@ -40,12 +41,14 @@ from rlrmp.train.adaptive_epsilon_native import (
 from rlrmp.train.cs_nominal_gru import (
     ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER,
     ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+    AdaptiveEpsilonState,
     BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
     CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
     _adaptive_epsilon_zero_guard_from_state,
     _config_namespace,
     _latest_loss_scalars,
     _run_adaptive_epsilon_training_chunk,
+    _update_adaptive_epsilon_state,
     _update_adaptive_epsilon_zero_guard,
     build_hps,
     build_parser,
@@ -98,10 +101,100 @@ def test_adaptive_epsilon_run_spec_uses_native_method(
     assert payload.controller_optimizer.lr_schedule.learning_rate_0 == pytest.approx(1e-3)
     assert payload.controller_optimizer.lr_schedule.constant_lr_iterations == 1
     assert "learning_rate" not in payload.controller_optimizer.params
+    assert spec.method_payload.schema_version == ADAPTIVE_EPSILON_METHOD_PAYLOAD_SCHEMA_VERSION
+    assert payload.damage_schedule["setpoint_basis"] == "damage_to_clean_loss_ratio"
     assert payload.n_train_batches == 2
     assert payload.chunk_batches == 1
     slot_names = {slot.name for slot in spec.worker_execution.method_contract.state_slots}
     assert {ADAPTIVE_EPSILON_STATE, ZERO_ADVERSARY_GUARD} <= slot_names
+
+
+def test_adaptive_epsilon_rejects_old_absolute_setpoint_payload(
+    tmp_path: Path,
+) -> None:
+    spec = _adaptive_epsilon_training_spec(
+        tmp_path,
+        controller_mode=ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+    )
+    method_payload = spec.method_payload.model_dump(mode="json", exclude_none=True)
+    method_payload["schema_version"] = (
+        "rlrmp.spec.training_method.adaptive_epsilon_curriculum_payload.v1"
+    )
+    legacy_payload = MethodPayloadEnvelope.model_validate(method_payload)
+
+    ensure_adaptive_epsilon_training_method_registered()
+
+    with pytest.raises(ValueError, match="v1|absolute|rejected|payload"):
+        DEFAULT_TRAINING_METHOD_REGISTRY.validate_payload(
+            spec.method_ref,
+            legacy_payload,
+            path="/method_payload",
+        )
+
+
+def test_adaptive_epsilon_payload_requires_ratio_setpoint_basis() -> None:
+    with pytest.raises(ValueError, match="setpoint_basis"):
+        AdaptiveEpsilonMethodPayload(
+            config={"adaptive_epsilon_curriculum": True},
+            n_train_batches=1,
+            chunk_batches=1,
+            controller_training_mode=ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+            damage_schedule={
+                "kind": "linear_ramp_then_cosine_anneal",
+                "start": 1.0,
+                "peak": 1.0,
+                "final": 1.0,
+                "ramp_batches": 0,
+                "anneal_batches": 0,
+            },
+            lambda_update={},
+            outer_adversarial_weight={},
+            pgd_inner_maximizer={},
+            checkpointing={},
+        )
+
+
+def test_adaptive_epsilon_ratio_update_is_loss_scale_invariant() -> None:
+    config = argparse.Namespace(
+        lambda_update=argparse.Namespace(
+            interval_batches=1,
+            ema_alpha=1.0,
+            eta=1.0,
+            deadband_frac=0.0,
+            lambda_min=1e-12,
+            lambda_max=None,
+            max_log_step=10.0,
+        )
+    )
+
+    base_state, base_diagnostics = _update_adaptive_epsilon_state(
+        AdaptiveEpsilonState(lambda_value=2.0),
+        config,
+        batch_index=0,
+        target_damage=0.25,
+        measured_damage=50.0,
+        measured_clean_loss=100.0,
+    )
+    scaled_state, scaled_diagnostics = _update_adaptive_epsilon_state(
+        AdaptiveEpsilonState(lambda_value=2.0),
+        config,
+        batch_index=0,
+        target_damage=0.25,
+        measured_damage=500.0,
+        measured_clean_loss=1000.0,
+    )
+
+    assert base_state.lambda_value == pytest.approx(scaled_state.lambda_value)
+    assert base_state.lambda_value == pytest.approx(4.0)
+    assert base_state.damage_ema == pytest.approx(50.0)
+    assert scaled_state.damage_ema == pytest.approx(500.0)
+    assert base_state.clean_loss_ema == pytest.approx(100.0)
+    assert scaled_state.clean_loss_ema == pytest.approx(1000.0)
+    assert float(base_diagnostics["damage_ratio_ema"]) == pytest.approx(0.5)
+    assert float(scaled_diagnostics["damage_ratio_ema"]) == pytest.approx(0.5)
+    assert float(base_diagnostics["target_damage_ratio"]) == pytest.approx(0.25)
+    restored = _adaptive_state_from_slot(_adaptive_state_slot(base_state))
+    assert restored.clean_loss_ema == pytest.approx(100.0)
 
 
 def test_adaptive_epsilon_optimizer_spec_expresses_constant_lr() -> None:
@@ -634,6 +727,9 @@ def _numeric_state_payload(state: Any) -> dict[str, Any]:
     return {
         "lambda_value": payload["lambda_value"],
         "damage_ema": -1.0 if payload["damage_ema"] is None else payload["damage_ema"],
+        "clean_loss_ema": (
+            -1.0 if payload["clean_loss_ema"] is None else payload["clean_loss_ema"]
+        ),
         "last_update_batch": (
             -1 if payload["last_update_batch"] is None else payload["last_update_batch"]
         ),
