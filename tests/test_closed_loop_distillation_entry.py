@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from types import SimpleNamespace
 
 import jax.numpy as jnp
 import pytest
@@ -142,74 +141,19 @@ def test_closed_loop_distillation_cli_dry_run_smoke(
     assert written["run_id"] == "h0_extlqg_6d_closed_loop_distillation"
 
 
-def test_full_training_artifact_writer_materializes_summary_and_pytrees(tmp_path: Path) -> None:
-    output_dir = tmp_path / "artifacts"
-    paths = closed_loop_distillation._save_full_training_artifacts(
-        spec={"artifact_output_dir": str(output_dir), "run_id": closed_loop_distillation.RUN_ID},
-        trained_model={"weight": jnp.ones((2,), dtype=jnp.float32)},
-        history={"loss": jnp.array([1.0], dtype=jnp.float32)},
-        summary={"mode": "full_train", "completed_batches": 1},
-    )
-
-    summary = json.loads((output_dir / "training_summary.json").read_text(encoding="utf-8"))
-    assert Path(paths["trained_model"]).is_file()
-    assert Path(paths["training_history"]).is_file()
-    assert (output_dir / "run_spec_snapshot.json").is_file()
-    assert summary["mode"] == "full_train"
-    assert summary["artifacts"]["training_summary"] == str(output_dir / "training_summary.json")
-
-
-def test_closed_loop_distillation_smoke_train_uses_injected_executor_hook() -> None:
+def test_closed_loop_distillation_legacy_injected_runtime_is_retired() -> None:
     spec = closed_loop_distillation.build_closed_loop_distillation_spec(_default_spec_args())
-    observed = {}
 
-    def fake_setup_pair(hps, *, key):
-        observed["hps"] = hps
-        observed["key_shape"] = tuple(key.shape)
-        return SimpleNamespace(task=object(), model=SimpleNamespace(nodes={"net": object()}))
-
-    def fake_train_pair(
-        trainer,
-        pair,
-        *,
-        n_batches,
-        key,
-        ensembled,
-        loss_func,
-        where_train,
-        batch_size,
-        **kwargs,
-    ):
-        del pair, key, where_train, kwargs
-        observed["trainer"] = trainer
-        observed["n_batches"] = n_batches
-        observed["batch_size"] = batch_size
-        observed["ensembled"] = ensembled
-        observed["loss_type"] = type(loss_func).__name__
-        return object(), object()
-
-    result = closed_loop_distillation.run_closed_loop_distillation_training(
-        spec=spec,
-        n_batches=1,
-        batch_size=2,
-        n_replicates=1,
-        hidden_size=6,
-        smoke=True,
-        setup_pair_fn=fake_setup_pair,
-        train_pair_fn=fake_train_pair,
-        loss_factory=lambda spec: closed_loop_distillation.ClosedLoopDistillationLoss(
-            reference=_toy_reference(),
-            weights=closed_loop_distillation.ClosedLoopLossWeights(),
-        ),
-    )
-
-    assert result["mode"] == "smoke_train"
-    assert result["trainer_path"] == "injected_executor_training_fn"
-    assert result["completed_batches"] == 1
-    assert observed["trainer"] is None
-    assert observed["ensembled"] is True
-    assert observed["loss_type"] == "ClosedLoopDistillationLoss"
-    assert observed["hps"].model.hidden_size == 6
+    with pytest.raises(RuntimeError, match="Legacy injected closed-loop distillation"):
+        closed_loop_distillation.run_closed_loop_distillation_training(
+            spec=spec,
+            n_batches=1,
+            batch_size=2,
+            n_replicates=1,
+            hidden_size=6,
+            smoke=True,
+            train_pair_fn=lambda *args, **kwargs: (object(), object()),
+        )
 
 
 def test_extlqg_reference_rollout_matches_shared_shapes() -> None:
@@ -232,12 +176,12 @@ def test_extlqg_reference_rollout_matches_shared_shapes() -> None:
 def test_closed_loop_distillation_full_train_requires_approval() -> None:
     spec = closed_loop_distillation.build_closed_loop_distillation_spec(_default_spec_args())
 
-    with pytest.raises(closed_loop_distillation.FullTrainingApprovalRequiredError) as exc:
+    with pytest.raises(RuntimeError) as exc:
         closed_loop_distillation.run_closed_loop_distillation_training(spec=spec)
 
     message = str(exc.value)
-    assert "requires explicit user launch approval" in message
-    assert "No Feedbax hook blocker" in message
+    assert "Legacy injected closed-loop distillation training has been removed" in message
+    assert "run_closed_loop_distillation_training_native" in message
 
 
 def test_closed_loop_distillation_cli_full_train_returns_approval_guard(

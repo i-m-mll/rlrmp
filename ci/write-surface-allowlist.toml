@@ -105,24 +105,6 @@ owner = "f5d9695"
 role = "write_helper"
 conditional = false
 
-[[durable_write_sites]]
-path = "src/rlrmp/train/closed_loop_distillation.py"
-function = "_save_full_training_artifacts"
-kind = "tree_serialise_leaves"
-target = "paths[trained_model]"
-owner = "f5d9695"
-role = "model_artifact"
-conditional = false
-
-[[durable_write_sites]]
-path = "src/rlrmp/train/closed_loop_distillation.py"
-function = "_save_full_training_artifacts"
-kind = "tree_serialise_leaves"
-target = "paths[training_history]"
-owner = "f5d9695"
-role = "history_artifact"
-conditional = false
-
 # --- src/rlrmp/train/guided_distillation.py ----------------------------------
 
 [[durable_write_sites]]
