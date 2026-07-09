@@ -401,6 +401,11 @@ def test_historical_feedbax_training_run_spec_migrates_standard_supervised() -> 
     training_spec = feedbax_training_run_spec_from_payload(payload)
 
     assert training_spec.schema_version == TRAINING_RUN_SPEC_SCHEMA_VERSION
+    assert training_spec.graph.inline["schema_version"] == "feedbax.spec.graph.v4"
+    assert {
+        subgraph["schema_version"]
+        for subgraph in training_spec.graph.inline.get("subgraphs", {}).values()
+    } == {"feedbax.spec.graph.v4"}
     assert training_spec.on_nan == "raise"
     assert training_spec.method_ref.key == CS_SUPERVISED_METHOD_REF
     assert training_spec.method_payload.schema_version == (

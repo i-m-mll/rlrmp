@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import io
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import equinox as eqx
 import jax
@@ -21,10 +21,12 @@ from feedbax.contracts.training import (
     ArtifactPolicySpec,
     CheckpointProgressPolicySpec,
     ExecutionPolicySpec,
+    LrScheduleSpec,
     GraphTopologySourceSpec,
     MethodPayloadEnvelope,
     MethodRefSpec,
     ObjectiveSlotSpec,
+    OptimizerSpec,
     RiskAggregationSpec,
     TaskSpec,
     TrainingConfig,
@@ -54,6 +56,10 @@ from feedbax.objectives.spec import ObjectiveExecutionRequirements
 from feedbax.runtime.batch import BatchInfo
 from feedbax.runtime.graph import init_state_from_component
 from feedbax.runtime.parameter_constraints import project_component_parameters
+from feedbax.training.optimizers import (
+    build_optimizer as build_feedbax_optimizer,
+    learning_rate_schedule as feedbax_learning_rate_schedule,
+)
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from rlrmp.model.feedback_descriptors import DESCRIPTOR_PAYLOAD_KEY
@@ -91,6 +97,9 @@ ADAPTIVE_EPSILON_METHOD_PAYLOAD_SCHEMA_VERSION = (
 TRAIN_CHUNK_KERNEL_REF = "rlrmp.adaptive_epsilon_curriculum.train_chunk"
 STOP_PREDICATE_REF = "rlrmp.adaptive_epsilon_curriculum.stop"
 TRAIN_CHUNK_BARRIER = "after_adaptive_epsilon_train_chunk"
+LR_CONTINUATION_RESTART = "restart"
+LR_CONTINUATION_CONTINUE = "continue"
+LRContinuationMode = Literal["restart", "continue"]
 
 
 class AdaptiveEpsilonMethodPayload(BaseModel):
@@ -99,6 +108,7 @@ class AdaptiveEpsilonMethodPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     config: dict[str, Any]
+    controller_optimizer: OptimizerSpec | None = None
     n_train_batches: int = Field(gt=0)
     chunk_batches: int = Field(gt=0)
     controller_training_mode: str
@@ -107,6 +117,7 @@ class AdaptiveEpsilonMethodPayload(BaseModel):
     outer_adversarial_weight: dict[str, Any]
     pgd_inner_maximizer: dict[str, Any]
     checkpointing: dict[str, Any]
+    lr_continuation_mode: LRContinuationMode | None = None
     rlrmp_extension_payload: str = "rlrmp_run_spec"
 
     @model_validator(mode="after")
@@ -120,6 +131,11 @@ class AdaptiveEpsilonMethodPayload(BaseModel):
             "epsilon_scaled_outer_training",
         }:
             raise ValueError(f"unknown adaptive-epsilon mode {self.controller_training_mode!r}")
+        if (
+            self.controller_optimizer is not None
+            and self.controller_optimizer.lr_schedule is None
+        ):
+            raise ValueError("adaptive-epsilon controller_optimizer requires lr_schedule")
         return self
 
 
@@ -144,8 +160,30 @@ class AdaptiveEpsilonNativeRuntime:
     where_train: Any
     model_template: Any
     optimizer_template: Any
+    run_spec: Mapping[str, Any] | TrainingRunSpec
+    lr_continuation_mode: LRContinuationMode | None = None
+    trainer_resume_context: "LRResumeContext | None" = None
+    optimizer_hyperparams_aligned: bool = False
     history: Any | None = None
     records: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class LRResumeContext:
+    """Schedule context used to align injected Optax counts with run steps."""
+
+    mode: LRContinuationMode
+    schedule_origin_step: int
+    current_step: int
+    optimizer_count_at_current_step: int
+
+
+@dataclass(frozen=True)
+class AdaptiveEpsilonControllerOptimizerBuild:
+    """Shared optimizer-build result for execution and LR reporting."""
+
+    optimizer: optax.GradientTransformation
+    learning_rate_schedule: optax.Schedule
 
 
 class AdaptiveEpsilonExternalObjectiveLoss(AbstractLoss):
@@ -232,6 +270,7 @@ def adaptive_epsilon_method_payload(run_spec: Mapping[str, Any]) -> MethodPayloa
             checkpointing[key] = portable_repo_path(str(checkpointing[key]))
     payload = AdaptiveEpsilonMethodPayload(
         config=config,
+        controller_optimizer=adaptive_epsilon_controller_optimizer_spec(run_spec),
         n_train_batches=int(run_spec.get("n_train_batches", 1)),
         chunk_batches=max(
             1,
@@ -246,11 +285,82 @@ def adaptive_epsilon_method_payload(run_spec: Mapping[str, Any]) -> MethodPayloa
             "inner_maximizer",
         ),
         checkpointing=checkpointing,
+        lr_continuation_mode=_lr_continuation_mode_from_run_spec(run_spec),
     )
     return MethodPayloadEnvelope(
         schema_id=ADAPTIVE_EPSILON_METHOD_PAYLOAD_SCHEMA_ID,
         schema_version=ADAPTIVE_EPSILON_METHOD_PAYLOAD_SCHEMA_VERSION,
         payload=payload.model_dump(mode="json", exclude_none=True),
+    )
+
+
+def adaptive_epsilon_controller_optimizer_spec(
+    run_spec: Mapping[str, Any],
+) -> OptimizerSpec:
+    """Return the Feedbax optimizer contract for an adaptive-epsilon controller."""
+
+    hps = _mapping(run_spec, "hps")
+    optimizer = _mapping(run_spec, "optimizer")
+    learning_rate = _float_from_sources(
+        optimizer,
+        hps,
+        keys=("learning_rate_0", "controller_lr", "learning_rate"),
+        default=1e-2,
+    )
+    schedule_name = str(
+        optimizer.get(
+            "lr_schedule",
+            hps.get("lr_schedule", "delayed_cosine"),
+        )
+    )
+    total_steps = int(
+        _float_from_sources(
+            optimizer,
+            hps,
+            keys=("total_steps", "n_batches_condition", "n_train_batches"),
+            default=float(run_spec.get("n_train_batches", 1)),
+        )
+    )
+    constant_lr_iterations = int(
+        _float_from_sources(
+            optimizer,
+            hps,
+            keys=("constant_lr_iterations", "lr_warmup_batches"),
+            default=0.0,
+        )
+    )
+    schedule_kwargs: dict[str, Any] = {
+        "kind": schedule_name,
+        "learning_rate_0": learning_rate,
+        "constant_lr_iterations": constant_lr_iterations,
+        "warmup_init_fraction": _float_from_sources(
+            optimizer,
+            hps,
+            keys=("warmup_init_fraction", "lr_warmup_init_fraction"),
+            default=0.0,
+        ),
+        "cosine_annealing_alpha": _float_from_sources(
+            optimizer,
+            hps,
+            keys=("cosine_annealing_alpha", "lr_cosine_alpha"),
+            default=0.0,
+        ),
+    }
+    if schedule_name != "constant":
+        schedule_kwargs["total_steps"] = total_steps
+    optimizer_type = str(optimizer.get("type", optimizer.get("name", "adamw")))
+    params = {
+        "weight_decay": _float_from_sources(
+            optimizer,
+            hps,
+            keys=("weight_decay",),
+            default=0.0,
+        )
+    }
+    return OptimizerSpec(
+        type=optimizer_type,
+        params=params,
+        lr_schedule=LrScheduleSpec(**schedule_kwargs),
     )
 
 
@@ -709,13 +819,12 @@ def build_adaptive_epsilon_native_initial_slots(
     hps: Any,
     args: Any,
     key: Any,
+    lr_continuation_mode: str | None = None,
 ) -> tuple[dict[str, Any], RlrmpRuntime]:
     """Return adaptive-epsilon native initial slots plus runtime context."""
 
-    del run_spec
     from rlrmp.runtime.checkpoint_custody import serialize_pytree_slot
     from rlrmp.train.cs_nominal_gru import (
-        _build_trainer,
         _initial_adaptive_epsilon_state,
         _initial_adaptive_epsilon_zero_guard,
         _initial_training_state,
@@ -727,7 +836,7 @@ def build_adaptive_epsilon_native_initial_slots(
         raise ValueError("adaptive-epsilon native initial slots require enabled curriculum")
     key_init, key_train, _key_adversary = split_initial_keys(key)
     pair = setup_task_model_pair(hps, key=key_init)
-    trainer = _build_trainer(hps)
+    trainer = build_adaptive_epsilon_controller_optimizer(run_spec, hps)
     where_train = _where_train()[0]
     state = _initial_training_state(
         model=pair.model,
@@ -745,6 +854,11 @@ def build_adaptive_epsilon_native_initial_slots(
         where_train=where_train,
         model_template=state.model,
         optimizer_template=state.optimizer_state,
+        run_spec=run_spec,
+        lr_continuation_mode=_resolve_lr_continuation_mode(
+            lr_continuation_mode,
+            _lr_continuation_mode_from_run_spec(run_spec),
+        ),
     )
     return (
         {
@@ -765,6 +879,150 @@ def build_adaptive_epsilon_native_initial_slots(
             components={"adaptive_epsilon": runtime},
             stop_after_batches=getattr(args, "stop_after_batches", None),
         ),
+    )
+
+
+def build_adaptive_epsilon_controller_optimizer(
+    run_spec: Mapping[str, Any] | TrainingRunSpec,
+    hps: Any,
+    *,
+    schedule_origin_step: int = 0,
+    current_step: int = 0,
+    optimizer_count_at_current_step: int = 0,
+) -> optax.GradientTransformation:
+    """Build the adaptive-epsilon controller optimizer from the Feedbax spec."""
+
+    return _build_adaptive_epsilon_controller_optimizer_parts(
+        run_spec,
+        hps,
+        schedule_origin_step=schedule_origin_step,
+        current_step=current_step,
+        optimizer_count_at_current_step=optimizer_count_at_current_step,
+    ).optimizer
+
+
+def adaptive_epsilon_controller_lr_points(
+    run_spec: Mapping[str, Any] | TrainingRunSpec,
+    hps: Any,
+    *,
+    schedule_origin_step: int,
+    current_step: int,
+    optimizer_count_at_current_step: int,
+    schedule_steps: Sequence[int],
+) -> list[dict[str, Any]]:
+    """Evaluate controller LRs through the same optimizer-build path as execution."""
+
+    built = _build_adaptive_epsilon_controller_optimizer_parts(
+        run_spec,
+        hps,
+        schedule_origin_step=schedule_origin_step,
+        current_step=current_step,
+        optimizer_count_at_current_step=optimizer_count_at_current_step,
+    )
+    schedule_position = int(current_step) - int(schedule_origin_step)
+    rows: list[dict[str, Any]] = []
+    for step in schedule_steps:
+        count = int(optimizer_count_at_current_step) + (int(step) - schedule_position)
+        lr = float(jax.device_get(built.learning_rate_schedule(jnp.asarray(count))))
+        rows.append(
+            {
+                "step": int(step),
+                "global_step": int(schedule_origin_step) + int(step),
+                "optimizer_count": int(count),
+                "lr": lr,
+            }
+        )
+    return rows
+
+
+def lr_resume_context_for_mode(
+    *,
+    mode: str | None,
+    completed_batches: int,
+    optimizer_count_at_current_step: int,
+) -> LRResumeContext:
+    """Return the runtime LR schedule context for a resume/fork mode."""
+
+    normalized = _resolve_lr_continuation_mode(mode, None) or LR_CONTINUATION_CONTINUE
+    completed = int(completed_batches)
+    if normalized == LR_CONTINUATION_RESTART:
+        return LRResumeContext(
+            mode=normalized,
+            schedule_origin_step=completed,
+            current_step=completed,
+            optimizer_count_at_current_step=int(optimizer_count_at_current_step),
+        )
+    return LRResumeContext(
+        mode=normalized,
+        schedule_origin_step=0,
+        current_step=completed,
+        optimizer_count_at_current_step=int(optimizer_count_at_current_step),
+    )
+
+
+def lr_report_schedule_steps(schedule_spec: LrScheduleSpec, *, start_position: int) -> list[int]:
+    """Return discriminating origin-relative LR positions for gate/reporting."""
+
+    start = max(0, int(start_position))
+    steps = {start}
+    warmup_end = max(0, int(schedule_spec.constant_lr_iterations or 0))
+    total_steps = int(schedule_spec.total_steps or max(start, warmup_end, 1))
+    if start <= warmup_end:
+        steps.add((start + warmup_end) // 2)
+        steps.add(warmup_end)
+    elif warmup_end > 0:
+        steps.add(warmup_end)
+    steps.add(total_steps)
+    if total_steps > 0:
+        steps.add(max(start, total_steps - 1))
+    return sorted(steps)
+
+
+def _build_adaptive_epsilon_controller_optimizer_parts(
+    run_spec: Mapping[str, Any] | TrainingRunSpec,
+    hps: Any,
+    *,
+    schedule_origin_step: int = 0,
+    current_step: int = 0,
+    optimizer_count_at_current_step: int = 0,
+) -> AdaptiveEpsilonControllerOptimizerBuild:
+    """Build the adaptive controller optimizer and expose its realized schedule."""
+
+    from rlrmp.train.cs_nominal_gru import (
+        _gradient_diagnostics_transform,
+        _update_diagnostics_transform,
+    )
+
+    optimizer_spec = _controller_optimizer_spec_from_run(run_spec, hps)
+    schedule = _shifted_schedule(
+        optimizer_spec.lr_schedule,
+        schedule_origin_step=schedule_origin_step,
+        current_step=current_step,
+        optimizer_count_at_current_step=optimizer_count_at_current_step,
+    )
+    transforms: list[optax.GradientTransformation] = []
+    if bool(getattr(hps, "training_diagnostics", True)):
+        transforms.append(
+            _gradient_diagnostics_transform(
+                schedule=schedule,
+                n_batches=int(hps.n_batches_condition),
+                gradient_clip_norm=getattr(hps, "gradient_clip_norm", None),
+            )
+        )
+    transforms.append(
+        build_feedbax_optimizer(
+            optimizer_spec,
+            schedule_origin_step=schedule_origin_step,
+            current_step=current_step,
+            optimizer_count_at_current_step=optimizer_count_at_current_step,
+            gradient_clip=getattr(hps, "gradient_clip_norm", None),
+        )
+    )
+    if bool(getattr(hps, "training_diagnostics", True)):
+        transforms.append(_update_diagnostics_transform(n_batches=int(hps.n_batches_condition)))
+    return AdaptiveEpsilonControllerOptimizerBuild(
+        optimizer=optax.chain(*transforms),
+        learning_rate_schedule=schedule,
     )
 
 
@@ -797,11 +1055,13 @@ def execute_adaptive_epsilon_training_run_spec_native(
         raise TypeError("TrainingRunSpec does not carry an adaptive-epsilon method payload")
     args = _config_namespace(payload.config)
     hps = build_hps(args)
+    explicit_lr_continuation_mode = kwargs.pop("lr_continuation_mode", None)
     initial_slots, runtime = build_adaptive_epsilon_native_initial_slots(
         run_spec=training_spec,
         hps=hps,
         args=args,
         key=key if key is not None else jr.PRNGKey(args.seed),
+        lr_continuation_mode=explicit_lr_continuation_mode,
     )
     resume_slot_transform = kwargs.pop("resume_slot_transform", None)
     return execute_training_run_spec(
@@ -870,6 +1130,14 @@ def _adaptive_epsilon_train_chunk(
         native.optimizer_template,
         slot=OPTIMIZER,
     )
+    trainer = _trainer_for_chunk(
+        native,
+        optimizer_state=optimizer_state,
+        completed_batches=completed,
+    )
+    if not native.optimizer_hyperparams_aligned:
+        optimizer_state = _align_optimizer_learning_rate(native, optimizer_state)
+        native.optimizer_hyperparams_aligned = True
     (
         model,
         history_chunk,
@@ -877,7 +1145,7 @@ def _adaptive_epsilon_train_chunk(
         adaptive_state,
         diagnostics,
     ) = _run_adaptive_epsilon_training_chunk(
-        trainer=native.trainer,
+        trainer=trainer,
         task=native.task,
         model=model,
         optimizer_state=optimizer_state,
@@ -887,7 +1155,8 @@ def _adaptive_epsilon_train_chunk(
         key=chunk_slots[PRNG],
         start_batch=completed,
         chunk_batches=chunk_batches,
-        log_progress=False,
+        log_progress=not bool(getattr(native.args, "disable_progress", False))
+        and not bool(getattr(native.args, "quiet_progress", False)),
     )
     diagnostic_arrays = dict(diagnostics)
     next_completed = completed + chunk_batches
@@ -941,6 +1210,62 @@ def _runtime(runtime: RlrmpRuntime) -> AdaptiveEpsilonNativeRuntime:
     if not isinstance(value, AdaptiveEpsilonNativeRuntime):
         raise TypeError("missing adaptive_epsilon native runtime component")
     return value
+
+
+def _trainer_for_chunk(
+    native: AdaptiveEpsilonNativeRuntime,
+    *,
+    optimizer_state: Any,
+    completed_batches: int,
+) -> optax.GradientTransformation:
+    """Finalize and cache the LR-shifted trainer from the actual restored slot."""
+
+    if native.trainer_resume_context is not None:
+        return native.trainer
+    optimizer_count = optimizer_count_at_current_step(optimizer_state)
+    context = lr_resume_context_for_mode(
+        mode=native.lr_continuation_mode,
+        completed_batches=completed_batches,
+        optimizer_count_at_current_step=optimizer_count,
+    )
+    native.trainer = build_adaptive_epsilon_controller_optimizer(
+        native.run_spec,
+        native.hps,
+        schedule_origin_step=context.schedule_origin_step,
+        current_step=context.current_step,
+        optimizer_count_at_current_step=context.optimizer_count_at_current_step,
+    )
+    native.trainer_resume_context = context
+    return native.trainer
+
+
+def _align_optimizer_learning_rate(
+    native: AdaptiveEpsilonNativeRuntime,
+    optimizer_state: Any,
+) -> Any:
+    context = native.trainer_resume_context
+    if context is None:
+        return optimizer_state
+    schedule_position = context.current_step - context.schedule_origin_step
+    point = adaptive_epsilon_controller_lr_points(
+        native.run_spec,
+        native.hps,
+        schedule_origin_step=context.schedule_origin_step,
+        current_step=context.current_step,
+        optimizer_count_at_current_step=context.optimizer_count_at_current_step,
+        schedule_steps=[schedule_position],
+    )[0]
+    lr = jnp.asarray(point["lr"], dtype=jnp.float32)
+
+    def replace_lr(leaf: Any) -> Any:
+        if not _is_injected_hyperparams_state(leaf):
+            return leaf
+        hyperparams = dict(leaf.hyperparams)
+        current = jnp.asarray(hyperparams["learning_rate"])
+        hyperparams["learning_rate"] = jnp.full_like(current, lr)
+        return leaf._replace(hyperparams=hyperparams)
+
+    return jt.map(replace_lr, optimizer_state, is_leaf=_is_injected_hyperparams_state)
 
 
 def _deserialize_pytree_slot_value(value: Any, template: Any, *, slot: str) -> Any:
@@ -997,6 +1322,158 @@ def _resume_slot_transform(transform: Any | None) -> Any:
 def _mapping(value: Mapping[str, Any], key: str) -> dict[str, Any]:
     item = value.get(key)
     return dict(item) if isinstance(item, Mapping) else {}
+
+
+def _lr_continuation_mode_from_run_spec(
+    run_spec: Mapping[str, Any] | TrainingRunSpec,
+) -> LRContinuationMode | None:
+    if isinstance(run_spec, TrainingRunSpec):
+        payload = DEFAULT_TRAINING_METHOD_REGISTRY.validate_payload(
+            run_spec.method_ref,
+            run_spec.method_payload,
+            path="/method_payload",
+        )
+        if isinstance(payload, AdaptiveEpsilonMethodPayload):
+            return payload.lr_continuation_mode
+        return None
+    raw_payload = _mapping(_mapping(run_spec, "method_payload"), "payload")
+    for source in (raw_payload, run_spec, _mapping(run_spec, "optimizer")):
+        mode = _resolve_lr_continuation_mode(
+            source.get("lr_continuation_mode"),
+            source.get("learning_rate_continuation_mode"),
+        )
+        if mode is not None:
+            return mode
+    lr_continuation = run_spec.get("lr_continuation")
+    if isinstance(lr_continuation, Mapping):
+        return _resolve_lr_continuation_mode(lr_continuation.get("mode"), None)
+    return None
+
+
+def _resolve_lr_continuation_mode(
+    primary: Any,
+    fallback: Any,
+) -> LRContinuationMode | None:
+    value = primary if primary is not None else fallback
+    if value is None:
+        return None
+    mode = str(value).lower().strip()
+    if mode in {LR_CONTINUATION_RESTART, LR_CONTINUATION_CONTINUE}:
+        return mode  # type: ignore[return-value]
+    raise ValueError(
+        "lr_continuation_mode must be 'restart' or 'continue'; "
+        f"got {value!r}"
+    )
+
+
+def _is_injected_hyperparams_state(value: Any) -> bool:
+    fields = getattr(value, "_fields", ())
+    return {"count", "hyperparams", "inner_state"}.issubset(set(fields))
+
+
+def _injected_learning_rate_schedule_count(value: Any) -> Any:
+    hyperparams_states = getattr(value, "hyperparams_states", None)
+    if isinstance(hyperparams_states, Mapping):
+        learning_rate_state = hyperparams_states.get("learning_rate")
+        count = getattr(learning_rate_state, "count", None)
+        if count is not None:
+            return count
+    return value.count
+
+
+def optimizer_count_at_current_step(optimizer_state: Any) -> int:
+    """Return the injected Optax schedule count stored in an optimizer state."""
+
+    for leaf in jt.leaves(optimizer_state, is_leaf=_is_injected_hyperparams_state):
+        if not _is_injected_hyperparams_state(leaf):
+            continue
+        counts = jnp.asarray(_injected_learning_rate_schedule_count(leaf)).reshape(-1)
+        if counts.size == 0:
+            continue
+        first = int(jax.device_get(counts[0]))
+        if bool(jax.device_get(jnp.any(counts != counts[0]))):
+            raise ValueError(
+                "adaptive-epsilon optimizer count differs across replicated states; "
+                "cannot derive one LR resume context"
+            )
+        return first
+    raise ValueError(
+        "adaptive-epsilon optimizer state lacks injected-hyperparameter count; "
+        "cannot derive LR resume context"
+    )
+
+
+def _float_from_sources(
+    *sources: Mapping[str, Any],
+    keys: tuple[str, ...],
+    default: float,
+) -> float:
+    for source in sources:
+        for key in keys:
+            value = source.get(key)
+            if value is not None:
+                return float(value)
+    return float(default)
+
+
+def _controller_optimizer_spec_from_run(
+    run_spec: Mapping[str, Any] | TrainingRunSpec,
+    hps: Any,
+) -> OptimizerSpec:
+    if isinstance(run_spec, TrainingRunSpec):
+        payload = DEFAULT_TRAINING_METHOD_REGISTRY.validate_payload(
+            run_spec.method_ref,
+            run_spec.method_payload,
+            path="/method_payload",
+        )
+        if (
+            isinstance(payload, AdaptiveEpsilonMethodPayload)
+            and payload.controller_optimizer is not None
+        ):
+            return payload.controller_optimizer
+    elif isinstance(run_spec, Mapping):
+        raw_payload = _mapping(_mapping(run_spec, "method_payload"), "payload")
+        raw_optimizer = raw_payload.get("controller_optimizer")
+        if isinstance(raw_optimizer, Mapping):
+            return OptimizerSpec.model_validate(raw_optimizer)
+        if "hps" in run_spec:
+            return adaptive_epsilon_controller_optimizer_spec(run_spec)
+    hps_mapping = {
+        "learning_rate_0": getattr(hps, "learning_rate_0", 1e-2),
+        "lr_schedule": getattr(hps, "lr_schedule", "delayed_cosine"),
+        "constant_lr_iterations": getattr(hps, "constant_lr_iterations", 0),
+        "n_batches_condition": getattr(hps, "n_batches_condition", 1),
+        "warmup_init_fraction": getattr(hps, "warmup_init_fraction", 0.0),
+        "cosine_annealing_alpha": getattr(hps, "cosine_annealing_alpha", 0.0),
+        "weight_decay": getattr(hps, "weight_decay", 0.0),
+    }
+    return adaptive_epsilon_controller_optimizer_spec({"hps": hps_mapping})
+
+
+def _shifted_schedule(
+    schedule_spec: LrScheduleSpec | None,
+    *,
+    schedule_origin_step: int,
+    current_step: int,
+    optimizer_count_at_current_step: int,
+) -> optax.Schedule:
+    if schedule_spec is None:
+        raise ValueError("adaptive-epsilon controller optimizer requires lr_schedule")
+    base_schedule = feedbax_learning_rate_schedule(schedule_spec)
+    schedule_position = int(current_step) - int(schedule_origin_step)
+    if schedule_position < 0:
+        raise ValueError(
+            "current_step must be greater than or equal to schedule_origin_step; "
+            f"got current_step={current_step}, schedule_origin_step={schedule_origin_step}"
+        )
+    count_origin = int(optimizer_count_at_current_step)
+
+    def schedule(count: Any) -> Any:
+        return base_schedule(
+            (jnp.asarray(count, dtype=jnp.int32) - count_origin) + schedule_position
+        )
+
+    return schedule
 
 
 def _diagnostic_scalar(diagnostics: Mapping[str, Any], key: str) -> float:
