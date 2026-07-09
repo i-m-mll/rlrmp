@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, replace
-from pathlib import Path
 from typing import Any
 
 import jax
@@ -45,8 +43,6 @@ from rlrmp.analysis.math.rerun_metadata import (
     build_rerun_metadata,
 )
 from rlrmp.analysis.math import require_jax_x64
-from rlrmp.io import update_marked_section
-from rlrmp.paths import REPO_ROOT, mkdir_p
 
 ISSUE_ID = "7a459bb"
 UMBRELLA_ID = "43e8728"
@@ -151,6 +147,15 @@ class RolloutRecoveryResult:
     fits: tuple[RolloutRecoveryFit, ...]
     bellman_initialization_gain_relative_error: float
     diagnostics: dict[str, Any]
+    arrays: dict[str, np.ndarray]
+
+
+@dataclass(frozen=True)
+class RolloutRecoveryMaterialization:
+    """Custody-ready rollout recovery payload and bulk arrays."""
+
+    summary: dict[str, Any]
+    markdown: str
     arrays: dict[str, np.ndarray]
 
 
@@ -458,16 +463,22 @@ def _coverage_state_objective(
     gains = kalman_estimator_gains(plant, K, config)
 
     def one_cost(x, xhat, start_time):
-        return _kalman_masked_suffix_task_cost(
+        canonical_clean_cost = output_feedback_clean_objective(
             plant,
             schedule,
             K,
-            gains,
-            x,
-            xhat,
-            start_time,
+            x[None],
+            jnp.ones((1,), dtype=jnp.float64),
             config,
         )
+        suffix_cost = _kalman_masked_suffix_task_cost(
+            plant, schedule, K, gains, x, xhat, start_time, config
+        )
+        canonical_overlap = jnp.logical_and(
+            start_time == 0,
+            jnp.all(jnp.isclose(x, xhat, rtol=1e-10, atol=1e-12)),
+        )
+        return jnp.where(canonical_overlap, canonical_clean_cost, suffix_cost)
 
     costs = jax.vmap(one_cost)(coverage_x, coverage_xhat, coverage_times)
     return jnp.sum(coverage_state_weights * costs) / jnp.maximum(
@@ -1880,81 +1891,30 @@ def _rollout_recovery_verdict(summary: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def write_outputs(
+def materialize_output_feedback_rollout_recovery(
     issue_id: str = ISSUE_ID,
     *,
     discretization: str = DEFAULT_DISCRETIZATION,
     lane: str = DEFAULT_LANE,
-    note_path: Path | str | None = None,
-    manifest_path: Path | str | None = None,
-    artifact_path: Path | str | None = None,
-    repo_root: Path | str = REPO_ROOT,
-) -> dict[str, Any]:
-    """Write tracked rollout-recovery note/manifest and bulk arrays."""
+) -> RolloutRecoveryMaterialization:
+    """Run rollout recovery and return custody-ready payload, markdown, and arrays."""
 
     require_jax_x64("output-feedback rollout-recovery materialization")
     result = run_output_feedback_rollout_recovery()
     summary = result_summary(result, discretization=discretization, lane=lane)
-    active_root = Path(repo_root)
-    results_dir = mkdir_p(active_root / "results" / issue_id)
-    notes_dir = mkdir_p(results_dir / "notes")
-    default_artifact_dir = active_root / "_artifacts" / issue_id / "output_feedback_rollout_recovery"
-    artifact_dir = mkdir_p(default_artifact_dir)
-    readme = results_dir / "README.md"
-    if not readme.exists():
-        readme.write_text(
-            "Output-feedback rollout-recovery diagnostics for the Phase 3 linear bridge. "
-            "See `notes/output_feedback_rollout_recovery.md`.\n",
-            encoding="utf-8",
-        )
-    npz_path = _resolve_output_path(
-        artifact_path,
-        default=artifact_dir / "output_feedback_rollout_recovery.npz",
-        repo_root=active_root,
-    )
-    mkdir_p(npz_path.parent)
-    np.savez_compressed(npz_path, **result.arrays)
-    note_output = _resolve_output_path(
-        note_path,
-        default=notes_dir / "output_feedback_rollout_recovery.md",
-        repo_root=active_root,
-    )
-    manifest_output = _resolve_output_path(
-        manifest_path,
-        default=notes_dir / "output_feedback_rollout_recovery_manifest.json",
-        repo_root=active_root,
-    )
-    mkdir_p(note_output.parent)
-    mkdir_p(manifest_output.parent)
-    summary["tracked_note"] = _repo_relative(note_output, repo_root=active_root)
-    summary["tracked_manifest"] = _repo_relative(manifest_output, repo_root=active_root)
-    summary["artifact_npz"] = _repo_relative(npz_path, repo_root=active_root)
+    summary["issue"] = issue_id
     summary["artifact_npz_keys"] = sorted(result.arrays.keys())
-    update_marked_section(note_output, "output_feedback_rollout_recovery", render_markdown(summary))
-    manifest_output.write_text(
-        json.dumps(summary, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
+    summary["custody"] = {
+        "mode": "feedbax_analysis_artifacts",
+        "payload_role": "rlrmp-output-feedback-rollout-recovery",
+        "markdown_role": "rlrmp-output-feedback-rollout-recovery-note",
+        "bulk_role": "rlrmp-output-feedback-rollout-recovery-bulk",
+    }
+    return RolloutRecoveryMaterialization(
+        summary=summary,
+        markdown=render_markdown(summary),
+        arrays=result.arrays,
     )
-    return summary
-
-
-def _resolve_output_path(
-    path: Path | str | None,
-    *,
-    default: Path,
-    repo_root: Path,
-) -> Path:
-    if path is None:
-        return default
-    output_path = Path(path).expanduser()
-    return output_path if output_path.is_absolute() else repo_root / output_path
-
-
-def _repo_relative(path: Path, *, repo_root: Path) -> str:
-    try:
-        return str(path.relative_to(repo_root))
-    except ValueError:
-        return str(path)
 
 
 __all__ = [
@@ -1963,15 +1923,16 @@ __all__ = [
     "ObserverErrorCoverageConfig",
     "RolloutRecoveryCondition",
     "RolloutRecoveryFit",
+    "RolloutRecoveryMaterialization",
     "RolloutRecoveryResult",
     "STRONG_OPTIMIZER_WHITENED",
     "adamw_optimizer_whitened",
     "eigenspectrum_coverage_conditions",
     "observer_error_coverage_conditions",
     "render_markdown",
+    "materialize_output_feedback_rollout_recovery",
     "run_initial_state_variability_sweep",
     "result_summary",
     "run_output_feedback_rollout_recovery",
     "strong_optimizer_whitened_with_observer_error_coverage",
-    "write_outputs",
 ]

@@ -322,6 +322,9 @@ def test_diagnostic_bank_recipes_register_params_models_and_eval_dependencies() 
     assert params_model_for(dm.FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["feedback_ablation"]) is (
         dm.FeedbackAblationAnalysisParams
     )
+    assert params_model_for(dm.OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE) is (
+        dm.OutputFeedbackRolloutRecoveryParams
+    )
     assert params_model_for(dm.POLICY_DIAGNOSTICS_ANALYSIS_TYPE) is (
         dm.PolicyDiagnosticsAnalysisParams
     )
@@ -1424,35 +1427,31 @@ def test_output_feedback_rollout_recovery_recipe_records_manifest_and_bulk_group
         repo_root / "_artifacts" / "7a459bb" / "output_feedback_rollout_recovery" / "rollout.npz"
     )
 
-    def fake_write_outputs(**kwargs):
-        kwargs["note_path"].parent.mkdir(parents=True, exist_ok=True)
-        kwargs["manifest_path"].parent.mkdir(parents=True, exist_ok=True)
-        kwargs["artifact_path"].parent.mkdir(parents=True, exist_ok=True)
-        kwargs["note_path"].write_text("# rollout recovery\n", encoding="utf-8")
+    def fake_materialize(**kwargs):
         payload = {
             "issue": kwargs["issue_id"],
             "scope": "output-feedback bridge rollout recovery",
             "fits": [{"label": "unit__scratch"}],
-            "tracked_note": "results/7a459bb/notes/rollout.md",
-            "tracked_manifest": "results/7a459bb/notes/rollout_manifest.json",
-            "artifact_npz": "_artifacts/7a459bb/output_feedback_rollout_recovery/rollout.npz",
             "artifact_npz_keys": ["gain", "rollout"],
             "rerun_metadata": {
                 "discretization": kwargs["discretization"],
                 "lane": kwargs["lane"],
             },
         }
-        kwargs["manifest_path"].write_text(
-            json.dumps(payload, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
+        from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
+            RolloutRecoveryMaterialization,
         )
-        np.savez_compressed(kwargs["artifact_path"], gain=np.ones((1,)), rollout=np.zeros((1,)))
-        return payload
+
+        return RolloutRecoveryMaterialization(
+            summary=payload,
+            markdown="# rollout recovery\n",
+            arrays={"gain": np.ones((1,)), "rollout": np.zeros((1,))},
+        )
 
     monkeypatch.setattr(
         dm,
-        "write_output_feedback_rollout_recovery_outputs",
-        fake_write_outputs,
+        "materialize_output_feedback_rollout_recovery",
+        fake_materialize,
     )
     dm.register_certificate_analysis_recipes(replace=True)
     try:
@@ -1475,7 +1474,6 @@ def test_output_feedback_rollout_recovery_recipe_records_manifest_and_bulk_group
         )
         assert manifest.provenance.issues == ["c4416c5"]
         assert "rlrmp-output-feedback-rollout-recovery" in _artifact_roles(manifest)
-        assert "rlrmp-output-feedback-rollout-recovery-manifest" in _artifact_roles(manifest)
         assert "rlrmp-output-feedback-rollout-recovery-note" in _artifact_roles(manifest)
         assert "rlrmp-output-feedback-rollout-recovery-bulk" in _artifact_roles(manifest)
         bulk_artifact = next(
@@ -1490,6 +1488,7 @@ def test_output_feedback_rollout_recovery_recipe_records_manifest_and_bulk_group
         assert bulk_artifact.metadata["artifact_group"]["member_role"] == (
             "rollout_recovery_arrays"
         )
+        assert bulk_artifact.metadata["array_keys"] == ["gain", "rollout"]
         payload_artifact = next(
             artifact
             for artifact in manifest.artifacts
@@ -1498,6 +1497,10 @@ def test_output_feedback_rollout_recovery_recipe_records_manifest_and_bulk_group
         payload = json.loads(Path(payload_artifact.uri).read_text(encoding="utf-8"))
         assert payload["issue"] == "7a459bb"
         assert payload["declarative_analysis"]["schema_owner"] == "rlrmp"
+        assert payload["markdown_artifact"]["role"] == (
+            "rlrmp-output-feedback-rollout-recovery-note"
+        )
+        assert payload["bulk_artifact"]["role"] == "rlrmp-output-feedback-rollout-recovery-bulk"
         assert load_manifest(path).id == manifest.id
     finally:
         _unregister_declarative_recipes()
