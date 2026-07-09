@@ -359,7 +359,13 @@ class CsNominalGruConfig(BaseModel):
     adaptive_epsilon_ema_alpha: float = 0.1
     adaptive_epsilon_eta: float = 0.1
     adaptive_epsilon_deadband_frac: float = 0.10
-    adaptive_epsilon_lambda_min: float = 1e-12
+    adaptive_epsilon_hysteresis_frac: float | None = None
+    adaptive_epsilon_freeze_until_burn_in: bool = True
+    adaptive_epsilon_gain_normalization: bool = False
+    adaptive_epsilon_gain_ema_alpha: float = 0.2
+    adaptive_epsilon_gain_min: float = 0.25
+    adaptive_epsilon_gain_max: float = 8.0
+    adaptive_epsilon_lambda_min: float | None = None
     adaptive_epsilon_lambda_max: float | None = None
     adaptive_epsilon_max_log_step: float = 0.25
     adaptive_epsilon_outer_weight_start: float = 0.0
@@ -543,6 +549,15 @@ class AdaptiveEpsilonState:
     update_count: int = 0
     schedule_start_batch: int = 0
     zero_adversary_guard: dict[str, Any] | None = None
+    gain_estimate: float | None = None
+    gain_samples: int = 0
+    pending_lambda_log_step: float | None = None
+    pending_log_damage_ema: float | None = None
+    last_log_damage_ema: float | None = None
+    ema_noise_floor: float | None = None
+    last_lambda_step_sign: int = 0
+    lambda_step_count: int = 0
+    lambda_step_alternations: int = 0
 
     def to_json(self) -> dict[str, Any]:
         payload = {
@@ -554,6 +569,29 @@ class AdaptiveEpsilonState:
             "last_update_batch": self.last_update_batch,
             "update_count": int(self.update_count),
             "schedule_start_batch": int(self.schedule_start_batch),
+            "gain_estimate": (
+                None if self.gain_estimate is None else float(self.gain_estimate)
+            ),
+            "gain_samples": int(self.gain_samples),
+            "pending_lambda_log_step": (
+                None
+                if self.pending_lambda_log_step is None
+                else float(self.pending_lambda_log_step)
+            ),
+            "pending_log_damage_ema": (
+                None
+                if self.pending_log_damage_ema is None
+                else float(self.pending_log_damage_ema)
+            ),
+            "last_log_damage_ema": (
+                None if self.last_log_damage_ema is None else float(self.last_log_damage_ema)
+            ),
+            "ema_noise_floor": (
+                None if self.ema_noise_floor is None else float(self.ema_noise_floor)
+            ),
+            "last_lambda_step_sign": int(self.last_lambda_step_sign),
+            "lambda_step_count": int(self.lambda_step_count),
+            "lambda_step_alternations": int(self.lambda_step_alternations),
         }
         if self.zero_adversary_guard is not None:
             payload["zero_adversary_guard"] = dict(self.zero_adversary_guard)
@@ -1262,11 +1300,44 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
                 _config_default("adaptive_epsilon_deadband_frac"),
             )
         ),
-        "adaptive_epsilon_lambda_min": float(
+        "adaptive_epsilon_hysteresis_frac": adaptive_lambda.get(
+            "hysteresis_frac",
+            _config_default("adaptive_epsilon_hysteresis_frac"),
+        ),
+        "adaptive_epsilon_freeze_until_burn_in": bool(
             adaptive_lambda.get(
-                "lambda_min",
-                _config_default("adaptive_epsilon_lambda_min"),
+                "freeze_until_burn_in",
+                _config_default("adaptive_epsilon_freeze_until_burn_in"),
             )
+        ),
+        "adaptive_epsilon_gain_normalization": bool(
+            adaptive_lambda.get(
+                "gain_normalization",
+                _config_default("adaptive_epsilon_gain_normalization"),
+            )
+        ),
+        "adaptive_epsilon_gain_ema_alpha": float(
+            adaptive_lambda.get(
+                "gain_ema_alpha",
+                _config_default("adaptive_epsilon_gain_ema_alpha"),
+            )
+        ),
+        "adaptive_epsilon_gain_min": float(
+            adaptive_lambda.get(
+                "gain_min",
+                _config_default("adaptive_epsilon_gain_min"),
+            )
+        ),
+        "adaptive_epsilon_gain_max": float(
+            adaptive_lambda.get(
+                "gain_max",
+                _config_default("adaptive_epsilon_gain_max"),
+            )
+        ),
+        "adaptive_epsilon_lambda_min": (
+            None
+            if adaptive_lambda.get("lambda_min", None) is None
+            else float(adaptive_lambda["lambda_min"])
         ),
         "adaptive_epsilon_lambda_max": adaptive_lambda.get("lambda_max"),
         "adaptive_epsilon_max_log_step": float(
@@ -1634,6 +1705,17 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             raise ValueError(
                 "--adaptive-epsilon-curriculum requires --broad-epsilon-pgd-objective soft_energy."
             )
+        adaptive_lambda = adaptive_epsilon_curriculum["lambda_update"]
+        if adaptive_lambda["lambda_min"] is None:
+            seed_lambda = getattr(broad_epsilon_pgd_training, "energy_lambda", None)
+            adaptive_lambda["lambda_min"] = (
+                1.0e-3 * float(seed_lambda)
+                if seed_lambda is not None and float(seed_lambda) > 0.0
+                else 1.0e-12
+            )
+        lambda_max = adaptive_lambda.get("lambda_max")
+        if lambda_max is not None and float(lambda_max) <= float(adaptive_lambda["lambda_min"]):
+            raise ValueError("Adaptive epsilon lambda_max must be greater than lambda_min.")
     policy_adversary_training = PolicyFullStateEpsilonTrainingConfig(
         enabled=bool(args.policy_adversary_training),
         policy_class=str(args.policy_adversary_policy_class),
@@ -4182,6 +4264,37 @@ def _load_latest_checkpoint_materialization(
                 if isinstance(adaptive_payload.get("zero_adversary_guard"), dict)
                 else None
             ),
+            gain_estimate=(
+                None
+                if adaptive_payload.get("gain_estimate") is None
+                else float(adaptive_payload["gain_estimate"])
+            ),
+            gain_samples=int(adaptive_payload.get("gain_samples", 0)),
+            pending_lambda_log_step=(
+                None
+                if adaptive_payload.get("pending_lambda_log_step") is None
+                else float(adaptive_payload["pending_lambda_log_step"])
+            ),
+            pending_log_damage_ema=(
+                None
+                if adaptive_payload.get("pending_log_damage_ema") is None
+                else float(adaptive_payload["pending_log_damage_ema"])
+            ),
+            last_log_damage_ema=(
+                None
+                if adaptive_payload.get("last_log_damage_ema") is None
+                else float(adaptive_payload["last_log_damage_ema"])
+            ),
+            ema_noise_floor=(
+                None
+                if adaptive_payload.get("ema_noise_floor") is None
+                else float(adaptive_payload["ema_noise_floor"])
+            ),
+            last_lambda_step_sign=int(adaptive_payload.get("last_lambda_step_sign", 0)),
+            lambda_step_count=int(adaptive_payload.get("lambda_step_count", 0)),
+            lambda_step_alternations=int(
+                adaptive_payload.get("lambda_step_alternations", 0)
+            ),
         )
         if isinstance(adaptive_payload, dict)
         else None
@@ -5011,6 +5124,36 @@ def build_parser() -> argparse.ArgumentParser:
         "--adaptive-epsilon-deadband-frac",
         type=float,
         default=_config_default("adaptive_epsilon_deadband_frac"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-hysteresis-frac",
+        type=float,
+        default=_config_default("adaptive_epsilon_hysteresis_frac"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-freeze-until-burn-in",
+        action=argparse.BooleanOptionalAction,
+        default=_config_default("adaptive_epsilon_freeze_until_burn_in"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-gain-normalization",
+        action=argparse.BooleanOptionalAction,
+        default=_config_default("adaptive_epsilon_gain_normalization"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-gain-ema-alpha",
+        type=float,
+        default=_config_default("adaptive_epsilon_gain_ema_alpha"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-gain-min",
+        type=float,
+        default=_config_default("adaptive_epsilon_gain_min"),
+    )
+    parser.add_argument(
+        "--adaptive-epsilon-gain-max",
+        type=float,
+        default=_config_default("adaptive_epsilon_gain_max"),
     )
     parser.add_argument(
         "--adaptive-epsilon-lambda-min",
@@ -5953,7 +6096,21 @@ def _adaptive_epsilon_curriculum_config_from_args(args: argparse.Namespace) -> d
             "ema_alpha": float(args.adaptive_epsilon_ema_alpha),
             "eta": float(args.adaptive_epsilon_eta),
             "deadband_frac": float(args.adaptive_epsilon_deadband_frac),
-            "lambda_min": float(args.adaptive_epsilon_lambda_min),
+            "hysteresis_frac": (
+                None
+                if args.adaptive_epsilon_hysteresis_frac is None
+                else float(args.adaptive_epsilon_hysteresis_frac)
+            ),
+            "freeze_until_burn_in": bool(args.adaptive_epsilon_freeze_until_burn_in),
+            "gain_normalization": bool(args.adaptive_epsilon_gain_normalization),
+            "gain_ema_alpha": float(args.adaptive_epsilon_gain_ema_alpha),
+            "gain_min": float(args.adaptive_epsilon_gain_min),
+            "gain_max": float(args.adaptive_epsilon_gain_max),
+            "lambda_min": (
+                None
+                if args.adaptive_epsilon_lambda_min is None
+                else float(args.adaptive_epsilon_lambda_min)
+            ),
             "lambda_max": (
                 None
                 if args.adaptive_epsilon_lambda_max is None
@@ -5994,10 +6151,25 @@ def _adaptive_epsilon_curriculum_config_from_args(args: argparse.Namespace) -> d
         raise ValueError("Adaptive epsilon eta must be positive.")
     if cfg["lambda_update"]["deadband_frac"] < 0.0:
         raise ValueError("Adaptive epsilon deadband fraction must be nonnegative.")
-    if cfg["lambda_update"]["lambda_min"] <= 0.0:
+    if (
+        cfg["lambda_update"]["hysteresis_frac"] is not None
+        and cfg["lambda_update"]["hysteresis_frac"] < 0.0
+    ):
+        raise ValueError("Adaptive epsilon hysteresis fraction must be nonnegative.")
+    if not 0.0 < cfg["lambda_update"]["gain_ema_alpha"] <= 1.0:
+        raise ValueError("Adaptive epsilon gain EMA alpha must be in (0, 1].")
+    if cfg["lambda_update"]["gain_min"] <= 0.0:
+        raise ValueError("Adaptive epsilon gain_min must be positive.")
+    if cfg["lambda_update"]["gain_max"] < cfg["lambda_update"]["gain_min"]:
+        raise ValueError("Adaptive epsilon gain_max must be greater than or equal to gain_min.")
+    if (
+        cfg["lambda_update"]["lambda_min"] is not None
+        and cfg["lambda_update"]["lambda_min"] <= 0.0
+    ):
         raise ValueError("Adaptive epsilon lambda_min must be positive.")
     if (
         cfg["lambda_update"]["lambda_max"] is not None
+        and cfg["lambda_update"]["lambda_min"] is not None
         and cfg["lambda_update"]["lambda_max"] <= cfg["lambda_update"]["lambda_min"]
     ):
         raise ValueError("Adaptive epsilon lambda_max must be greater than lambda_min.")
@@ -7315,46 +7487,107 @@ def _update_adaptive_epsilon_state(
 ) -> tuple[AdaptiveEpsilonState, dict[str, np.ndarray]]:
     update_cfg = getattr(config, "lambda_update")
     alpha = float(update_cfg.ema_alpha)
-    damage_ema = (
-        float(measured_damage)
-        if state.damage_ema is None
-        else (1.0 - alpha) * float(state.damage_ema) + alpha * float(measured_damage)
-    )
-    clean_loss_ema = (
-        float(measured_clean_loss)
-        if state.clean_loss_ema is None
-        else (1.0 - alpha) * float(state.clean_loss_ema)
-        + alpha * float(measured_clean_loss)
-    )
     completed_batches = int(batch_index) + 1
     interval = int(update_cfg.interval_batches)
     update_due = completed_batches % interval == 0
     target = float(target_damage)
     ratio_eps = 1e-12
+    frozen_for_burn_in = bool(
+        getattr(update_cfg, "freeze_until_burn_in", True)
+    ) and target <= 0.0
+    if frozen_for_burn_in:
+        damage_ema = state.damage_ema
+        clean_loss_ema = state.clean_loss_ema
+    else:
+        damage_ema = (
+            float(measured_damage)
+            if state.damage_ema is None
+            else (1.0 - alpha) * float(state.damage_ema) + alpha * float(measured_damage)
+        )
+        clean_loss_ema = (
+            float(measured_clean_loss)
+            if state.clean_loss_ema is None
+            else (1.0 - alpha) * float(state.clean_loss_ema)
+            + alpha * float(measured_clean_loss)
+        )
     measured_damage_ratio = float(measured_damage) / max(float(measured_clean_loss), ratio_eps)
-    damage_ratio_ema = damage_ema / max(clean_loss_ema, ratio_eps)
+    damage_ratio_ema = (
+        None
+        if damage_ema is None or clean_loss_ema is None
+        else float(damage_ema) / max(float(clean_loss_ema), ratio_eps)
+    )
+    signal_for_math = ratio_eps if damage_ratio_ema is None else max(damage_ratio_ema, ratio_eps)
+    current_log_damage_ema = (
+        math.log(signal_for_math)
+        if damage_ratio_ema is not None and signal_for_math > 0.0
+        else None
+    )
+    raw_gain = _adaptive_epsilon_probe_gain(
+        previous_log_damage=state.pending_log_damage_ema,
+        current_log_damage=current_log_damage_ema,
+        lambda_log_step=state.pending_lambda_log_step,
+    )
+    gain_estimate = _adaptive_epsilon_running_gain(
+        previous=state.gain_estimate,
+        sample=raw_gain,
+        alpha=float(getattr(update_cfg, "gain_ema_alpha", alpha)),
+    )
+    gain_samples = state.gain_samples + (1 if raw_gain is not None else 0)
+    ema_noise_floor = _adaptive_epsilon_running_noise_floor(
+        previous=state.ema_noise_floor,
+        previous_log_damage=state.last_log_damage_ema,
+        current_log_damage=current_log_damage_ema,
+        alpha=float(getattr(update_cfg, "gain_ema_alpha", alpha)),
+    )
     relative_error = (
-        (damage_ratio_ema - target) / max(target, ratio_eps) if target > 0.0 else 0.0
+        (signal_for_math - target) / max(target, ratio_eps) if target > 0.0 else 0.0
     )
     log_ratio_error = (
-        math.log(max(damage_ratio_ema, ratio_eps) / max(target, ratio_eps))
-        if target > 0.0
-        else 0.0
+        math.log(signal_for_math / max(target, ratio_eps)) if target > 0.0 else 0.0
     )
     deadband = float(update_cfg.deadband_frac)
+    hysteresis = getattr(update_cfg, "hysteresis_frac", None)
+    update_threshold = deadband
+    if (
+        hysteresis is not None
+        and state.last_lambda_step_sign != 0
+        and relative_error * float(state.last_lambda_step_sign) < 0.0
+    ):
+        update_threshold = max(update_threshold, float(hysteresis))
     lambda_value = float(state.lambda_value)
     updated = False
     log_step = 0.0
-    if update_due and target > 0.0 and abs(relative_error) > deadband:
-        eta = float(update_cfg.eta)
+    eta = float(update_cfg.eta)
+    eta_eff = _adaptive_epsilon_effective_eta(update_cfg, eta=eta, gain_estimate=gain_estimate)
+    if (
+        update_due
+        and not frozen_for_burn_in
+        and target > 0.0
+        and abs(relative_error) > update_threshold
+    ):
         max_log_step = float(update_cfg.max_log_step)
-        log_step = max(-max_log_step, min(max_log_step, eta * log_ratio_error))
+        log_step = max(-max_log_step, min(max_log_step, eta_eff * log_ratio_error))
         lambda_value *= math.exp(log_step)
-        lambda_value = max(lambda_value, float(update_cfg.lambda_min))
+        lambda_value = max(
+            lambda_value,
+            _adaptive_epsilon_lambda_min(update_cfg, analytical_seed=state.lambda_value),
+        )
         lambda_max = getattr(update_cfg, "lambda_max", None)
         if lambda_max is not None:
             lambda_value = min(lambda_value, float(lambda_max))
         updated = True
+    step_sign = 0
+    if updated and log_step != 0.0:
+        step_sign = 1 if log_step > 0.0 else -1
+    lambda_step_count = state.lambda_step_count + (1 if step_sign != 0 else 0)
+    lambda_step_alternations = state.lambda_step_alternations
+    if step_sign != 0 and state.last_lambda_step_sign != 0:
+        lambda_step_alternations += int(step_sign != state.last_lambda_step_sign)
+    sign_alternation_fraction = (
+        lambda_step_alternations / float(lambda_step_count - 1)
+        if lambda_step_count > 1
+        else 0.0
+    )
     next_state = AdaptiveEpsilonState(
         lambda_value=lambda_value,
         damage_ema=damage_ema,
@@ -7363,20 +7596,131 @@ def _update_adaptive_epsilon_state(
         update_count=state.update_count + (1 if updated else 0),
         schedule_start_batch=state.schedule_start_batch,
         zero_adversary_guard=state.zero_adversary_guard,
+        gain_estimate=gain_estimate,
+        gain_samples=gain_samples,
+        pending_lambda_log_step=log_step if updated and current_log_damage_ema is not None else None,
+        pending_log_damage_ema=(
+            current_log_damage_ema if updated and current_log_damage_ema is not None else None
+        ),
+        last_log_damage_ema=(
+            current_log_damage_ema
+            if current_log_damage_ema is not None
+            else state.last_log_damage_ema
+        ),
+        ema_noise_floor=ema_noise_floor,
+        last_lambda_step_sign=step_sign or state.last_lambda_step_sign,
+        lambda_step_count=lambda_step_count,
+        lambda_step_alternations=lambda_step_alternations,
     )
     return next_state, {
-        "damage_ema": np.asarray(damage_ema, dtype=np.float32),
-        "clean_loss_ema": np.asarray(clean_loss_ema, dtype=np.float32),
+        "damage_ema": np.asarray(np.nan if damage_ema is None else damage_ema, dtype=np.float32),
+        "clean_loss_ema": np.asarray(
+            np.nan if clean_loss_ema is None else clean_loss_ema,
+            dtype=np.float32,
+        ),
         "measured_damage_ratio": np.asarray(measured_damage_ratio, dtype=np.float32),
-        "damage_ratio_ema": np.asarray(damage_ratio_ema, dtype=np.float32),
+        "damage_ratio_ema": np.asarray(
+            np.nan if damage_ratio_ema is None else damage_ratio_ema,
+            dtype=np.float32,
+        ),
         "target_damage_ratio": np.asarray(target, dtype=np.float32),
         "relative_error": np.asarray(relative_error, dtype=np.float32),
         "log_ratio_error": np.asarray(log_ratio_error, dtype=np.float32),
         "lambda_updated": np.asarray(updated, dtype=bool),
         "lambda_log_step": np.asarray(log_step, dtype=np.float32),
+        "lambda_update_eta_eff": np.asarray(eta_eff, dtype=np.float32),
         "update_due": np.asarray(update_due, dtype=bool),
         "update_count": np.asarray(next_state.update_count, dtype=np.float32),
+        "burn_in_frozen": np.asarray(frozen_for_burn_in, dtype=bool),
+        "deadband_threshold": np.asarray(update_threshold, dtype=np.float32),
+        "gain_normalization_enabled": np.asarray(
+            bool(getattr(update_cfg, "gain_normalization", False)),
+            dtype=bool,
+        ),
+        "gain_probe_raw": np.asarray(np.nan if raw_gain is None else raw_gain, dtype=np.float32),
+        "gain_hat": np.asarray(
+            np.nan if next_state.gain_estimate is None else next_state.gain_estimate,
+            dtype=np.float32,
+        ),
+        "gain_samples": np.asarray(next_state.gain_samples, dtype=np.float32),
+        "sign_alternation_fraction": np.asarray(sign_alternation_fraction, dtype=np.float32),
+        "ema_noise_floor": np.asarray(
+            np.nan if next_state.ema_noise_floor is None else next_state.ema_noise_floor,
+            dtype=np.float32,
+        ),
     }
+
+
+def _adaptive_epsilon_probe_gain(
+    *,
+    previous_log_damage: float | None,
+    current_log_damage: float | None,
+    lambda_log_step: float | None,
+) -> float | None:
+    if previous_log_damage is None or current_log_damage is None or lambda_log_step is None:
+        return None
+    if not all(math.isfinite(value) for value in (previous_log_damage, current_log_damage)):
+        return None
+    if not math.isfinite(lambda_log_step) or abs(lambda_log_step) < 1e-12:
+        return None
+    gain = -(current_log_damage - previous_log_damage) / lambda_log_step
+    if not math.isfinite(gain) or gain <= 0.0:
+        return None
+    return gain
+
+
+def _adaptive_epsilon_running_gain(
+    *,
+    previous: float | None,
+    sample: float | None,
+    alpha: float,
+) -> float | None:
+    if sample is None:
+        return previous
+    if previous is None or not math.isfinite(previous):
+        return float(sample)
+    return (1.0 - alpha) * float(previous) + alpha * float(sample)
+
+
+def _adaptive_epsilon_running_noise_floor(
+    *,
+    previous: float | None,
+    previous_log_damage: float | None,
+    current_log_damage: float | None,
+    alpha: float,
+) -> float | None:
+    if previous_log_damage is None or current_log_damage is None:
+        return previous
+    sample = abs(current_log_damage - previous_log_damage)
+    if not math.isfinite(sample):
+        return previous
+    if previous is None or not math.isfinite(previous):
+        return sample
+    return (1.0 - alpha) * float(previous) + alpha * sample
+
+
+def _adaptive_epsilon_effective_eta(
+    update_cfg: Any,
+    *,
+    eta: float,
+    gain_estimate: float | None,
+) -> float:
+    if not bool(getattr(update_cfg, "gain_normalization", False)):
+        return eta
+    if gain_estimate is None or not math.isfinite(gain_estimate) or gain_estimate <= 0.0:
+        return eta
+    gain = min(
+        float(getattr(update_cfg, "gain_max", 8.0)),
+        max(float(getattr(update_cfg, "gain_min", 0.25)), float(gain_estimate)),
+    )
+    return eta / gain
+
+
+def _adaptive_epsilon_lambda_min(update_cfg: Any, *, analytical_seed: float) -> float:
+    explicit = getattr(update_cfg, "lambda_min", None)
+    if explicit is not None:
+        return float(explicit)
+    return max(1e-12, 1e-3 * float(analytical_seed))
 
 
 def _append_adaptive_epsilon_diagnostics(

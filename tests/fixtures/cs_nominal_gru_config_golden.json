@@ -15,8 +15,14 @@
         "adaptive_epsilon_deadband_frac": 0.1,
         "adaptive_epsilon_ema_alpha": 0.1,
         "adaptive_epsilon_eta": 0.1,
+        "adaptive_epsilon_freeze_until_burn_in": true,
+        "adaptive_epsilon_gain_ema_alpha": 0.2,
+        "adaptive_epsilon_gain_max": 8.0,
+        "adaptive_epsilon_gain_min": 0.25,
+        "adaptive_epsilon_gain_normalization": false,
+        "adaptive_epsilon_hysteresis_frac": null,
         "adaptive_epsilon_lambda_max": null,
-        "adaptive_epsilon_lambda_min": 1e-12,
+        "adaptive_epsilon_lambda_min": null,
         "adaptive_epsilon_max_log_step": 0.25,
         "adaptive_epsilon_outer_weight_final": 1.0,
         "adaptive_epsilon_outer_weight_ramp_batches": 2500,
@@ -234,9 +240,15 @@
               "deadband_frac": 0.1,
               "ema_alpha": 0.1,
               "eta": 0.1,
+              "freeze_until_burn_in": true,
+              "gain_ema_alpha": 0.2,
+              "gain_max": 8.0,
+              "gain_min": 0.25,
+              "gain_normalization": false,
+              "hysteresis_frac": null,
               "interval_batches": 50,
               "lambda_max": null,
-              "lambda_min": 1e-12,
+              "lambda_min": null,
               "max_log_step": 0.25
             },
             "outer_adversarial_weight": {
@@ -502,7 +514,7 @@
               "n_readout_only": 0,
               "n_recurrent_only": 0
             },
-            "sensory_noise_std": 0.004791329788133908,
+            "sensory_noise_std": 0.004791329614818096,
             "signal_dependent_motor_noise_std": 0.02,
             "state_dim": 48,
             "stochastic_preset": "cs2019-rollout",
@@ -4477,7 +4489,7 @@
             "descriptor_basis_hash": "sha256:896a27a4ae65c96bd7566594db4eaa3cdc2b6b637c0333c72279886b5e75a146",
             "dimension": 4,
             "noise_role": "sensory_feedback",
-            "noise_std": 0.004791329788133908,
+            "noise_std": 0.004791329614818096,
             "noise_timing": "Feedbax sensory Channel after delayed LSS feedback selector"
           },
           "fixed_plant_parameters": [
@@ -4548,7 +4560,7 @@
               "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
               "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
             },
-            "sensory_noise_std": 0.004791329788133908,
+            "sensory_noise_std": 0.004791329614818096,
             "signal_dependent_motor_noise_std": 0.02,
             "source_contract": {
               "additive_motor_covariance": "input_image_state_covariance_B_B_T",
@@ -4566,14 +4578,14 @@
               ],
               "process_noise": "separate_output_feedback_process_covariance",
               "sensory_covariance_diag": [
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05
               ],
               "sensory_noise_scale": 1.0,
               "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
@@ -4590,7 +4602,7 @@
             "command_runtime": "Feedbax efferent Channel immediately before LinearStateSpace.force; additive and signal-dependent motor noise are both command-channel noise",
             "plant_process_force_noise_std": 0.03162277660168379,
             "plant_process_runtime": "Task-sampled physical-process/load epsilon bound to LinearStateSpace.epsilon",
-            "sensory_noise_std": 0.004791329788133908,
+            "sensory_noise_std": 0.004791329614818096,
             "sensory_runtime": "Feedbax sensory Channel after the 4D delayed LSS feedback selector; the delay itself is represented by the C&S 48D LSS state",
             "signal_dependent_motor_noise_std": 0.02,
             "state_diffusion": "mechanics.epsilon"
@@ -5405,9 +5417,15 @@
                 "deadband_frac": 0.1,
                 "ema_alpha": 0.1,
                 "eta": 0.1,
+                "freeze_until_burn_in": true,
+                "gain_ema_alpha": 0.2,
+                "gain_max": 8.0,
+                "gain_min": 0.25,
+                "gain_normalization": false,
+                "hysteresis_frac": null,
                 "interval_batches": 50,
                 "lambda_max": null,
-                "lambda_min": 1e-12,
+                "lambda_min": null,
                 "max_log_step": 0.25
               },
               "outer_adversarial_weight": {
@@ -5673,7 +5691,7 @@
                 "n_readout_only": 0,
                 "n_recurrent_only": 0
               },
-              "sensory_noise_std": 0.004791329788133908,
+              "sensory_noise_std": 0.004791329614818096,
               "signal_dependent_motor_noise_std": 0.02,
               "state_dim": 48,
               "stochastic_preset": "cs2019-rollout",
@@ -9755,7 +9773,7 @@
               "descriptor_basis_hash": "sha256:896a27a4ae65c96bd7566594db4eaa3cdc2b6b637c0333c72279886b5e75a146",
               "dimension": 4,
               "noise_role": "sensory_feedback",
-              "noise_std": 0.004791329788133908,
+              "noise_std": 0.004791329614818096,
               "noise_timing": "Feedbax sensory Channel after delayed LSS feedback selector"
             },
             "fixed_plant_parameters": [
@@ -9826,7 +9844,7 @@
                 "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
                 "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
               },
-              "sensory_noise_std": 0.004791329788133908,
+              "sensory_noise_std": 0.004791329614818096,
               "signal_dependent_motor_noise_std": 0.02,
               "source_contract": {
                 "additive_motor_covariance": "input_image_state_covariance_B_B_T",
@@ -9844,14 +9862,14 @@
                 ],
                 "process_noise": "separate_output_feedback_process_covariance",
                 "sensory_covariance_diag": [
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05
                 ],
                 "sensory_noise_scale": 1.0,
                 "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
@@ -9868,7 +9886,7 @@
               "command_runtime": "Feedbax efferent Channel immediately before LinearStateSpace.force; additive and signal-dependent motor noise are both command-channel noise",
               "plant_process_force_noise_std": 0.03162277660168379,
               "plant_process_runtime": "Task-sampled physical-process/load epsilon bound to LinearStateSpace.epsilon",
-              "sensory_noise_std": 0.004791329788133908,
+              "sensory_noise_std": 0.004791329614818096,
               "sensory_runtime": "Feedbax sensory Channel after the 4D delayed LSS feedback selector; the delay itself is represented by the C&S 48D LSS state",
               "signal_dependent_motor_noise_std": 0.02,
               "state_diffusion": "mechanics.epsilon"
@@ -9962,7 +9980,7 @@
           "schema_version": "rlrmp.run_spec.v2",
           "seed": 42,
           "source_schema_version": "rlrmp.cs_stochastic_gru.v1",
-          "spec_dir": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/integration__d1f90ac-defaults-cascade/results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty",
+          "spec_dir": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__e1afa46-clamp-gain-normalization/results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty",
           "stochastic_preset": {
             "additive_motor_noise_std": 1e-05,
             "name": "cs2019-rollout",
@@ -9974,7 +9992,7 @@
               "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
               "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
             },
-            "sensory_noise_std": 0.004791329788133908,
+            "sensory_noise_std": 0.004791329614818096,
             "signal_dependent_motor_noise_std": 0.02,
             "source_contract": {
               "additive_motor_covariance": "input_image_state_covariance_B_B_T",
@@ -9992,14 +10010,14 @@
               ],
               "process_noise": "separate_output_feedback_process_covariance",
               "sensory_covariance_diag": [
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05
               ],
               "sensory_noise_scale": 1.0,
               "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
@@ -10475,7 +10493,7 @@
                 "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
                 "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
               },
-              "sensory_noise_std": 0.004791329788133908,
+              "sensory_noise_std": 0.004791329614818096,
               "signal_dependent_motor_noise_std": 0.02,
               "source_contract": {
                 "additive_motor_covariance": "input_image_state_covariance_B_B_T",
@@ -10493,14 +10511,14 @@
                 ],
                 "process_noise": "separate_output_feedback_process_covariance",
                 "sensory_covariance_diag": [
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05
                 ],
                 "sensory_noise_scale": 1.0,
                 "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
@@ -10517,7 +10535,7 @@
               "command_runtime": "Feedbax efferent Channel immediately before LinearStateSpace.force; additive and signal-dependent motor noise are both command-channel noise",
               "plant_process_force_noise_std": 0.03162277660168379,
               "plant_process_runtime": "Task-sampled physical-process/load epsilon bound to LinearStateSpace.epsilon",
-              "sensory_noise_std": 0.004791329788133908,
+              "sensory_noise_std": 0.004791329614818096,
               "sensory_runtime": "Feedbax sensory Channel after the 4D delayed LSS feedback selector; the delay itself is represented by the C&S 48D LSS state",
               "signal_dependent_motor_noise_std": 0.02,
               "state_diffusion": "mechanics.epsilon"
@@ -11361,7 +11379,7 @@
         },
         "schema_version": "rlrmp.cs_stochastic_gru.v1",
         "seed": 42,
-        "spec_dir": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/integration__d1f90ac-defaults-cascade/results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty",
+        "spec_dir": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__e1afa46-clamp-gain-normalization/results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty",
         "stochastic_preset": {
           "additive_motor_noise_std": 1e-05,
           "name": "cs2019-rollout",
@@ -11373,7 +11391,7 @@
             "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
             "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
           },
-          "sensory_noise_std": 0.004791329788133908,
+          "sensory_noise_std": 0.004791329614818096,
           "signal_dependent_motor_noise_std": 0.02,
           "source_contract": {
             "additive_motor_covariance": "input_image_state_covariance_B_B_T",
@@ -11391,14 +11409,14 @@
             ],
             "process_noise": "separate_output_feedback_process_covariance",
             "sensory_covariance_diag": [
-              2.2956841138659323e-05,
-              2.2956841138659323e-05,
-              2.2956841138659323e-05,
-              2.2956841138659323e-05,
-              2.2956841138659323e-05,
-              2.2956841138659323e-05,
-              2.2956841138659323e-05,
-              2.2956841138659323e-05
+              2.2956839529797435e-05,
+              2.2956839529797435e-05,
+              2.2956839529797435e-05,
+              2.2956839529797435e-05,
+              2.2956839529797435e-05,
+              2.2956839529797435e-05,
+              2.2956839529797435e-05,
+              2.2956839529797435e-05
             ],
             "sensory_noise_scale": 1.0,
             "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
@@ -11784,7 +11802,7 @@
               "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
               "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
             },
-            "sensory_noise_std": 0.004791329788133908,
+            "sensory_noise_std": 0.004791329614818096,
             "signal_dependent_motor_noise_std": 0.02,
             "source_contract": {
               "additive_motor_covariance": "input_image_state_covariance_B_B_T",
@@ -11802,14 +11820,14 @@
               ],
               "process_noise": "separate_output_feedback_process_covariance",
               "sensory_covariance_diag": [
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05
               ],
               "sensory_noise_scale": 1.0,
               "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
@@ -11826,7 +11844,7 @@
             "command_runtime": "Feedbax efferent Channel immediately before LinearStateSpace.force; additive and signal-dependent motor noise are both command-channel noise",
             "plant_process_force_noise_std": 0.03162277660168379,
             "plant_process_runtime": "Task-sampled physical-process/load epsilon bound to LinearStateSpace.epsilon",
-            "sensory_noise_std": 0.004791329788133908,
+            "sensory_noise_std": 0.004791329614818096,
             "sensory_runtime": "Feedbax sensory Channel after the 4D delayed LSS feedback selector; the delay itself is represented by the C&S 48D LSS state",
             "signal_dependent_motor_noise_std": 0.02,
             "state_diffusion": "mechanics.epsilon"
@@ -12694,8 +12712,14 @@
         "adaptive_epsilon_deadband_frac": 0.1,
         "adaptive_epsilon_ema_alpha": 0.1,
         "adaptive_epsilon_eta": 0.1,
+        "adaptive_epsilon_freeze_until_burn_in": true,
+        "adaptive_epsilon_gain_ema_alpha": 0.2,
+        "adaptive_epsilon_gain_max": 8.0,
+        "adaptive_epsilon_gain_min": 0.25,
+        "adaptive_epsilon_gain_normalization": false,
+        "adaptive_epsilon_hysteresis_frac": null,
         "adaptive_epsilon_lambda_max": null,
-        "adaptive_epsilon_lambda_min": 1e-12,
+        "adaptive_epsilon_lambda_min": null,
         "adaptive_epsilon_max_log_step": 0.25,
         "adaptive_epsilon_outer_weight_final": 1.0,
         "adaptive_epsilon_outer_weight_ramp_batches": 2500,
@@ -12948,9 +12972,15 @@
               "deadband_frac": 0.1,
               "ema_alpha": 0.1,
               "eta": 0.1,
+              "freeze_until_burn_in": true,
+              "gain_ema_alpha": 0.2,
+              "gain_max": 8.0,
+              "gain_min": 0.25,
+              "gain_normalization": false,
+              "hysteresis_frac": null,
               "interval_batches": 50,
               "lambda_max": null,
-              "lambda_min": 1e-12,
+              "lambda_min": null,
               "max_log_step": 0.25
             },
             "outer_adversarial_weight": {
@@ -13268,7 +13298,7 @@
               "n_readout_only": 0,
               "n_recurrent_only": 0
             },
-            "sensory_noise_std": 0.004791329788133908,
+            "sensory_noise_std": 0.004791329614818096,
             "signal_dependent_motor_noise_std": 0.02,
             "state_dim": 48,
             "stochastic_preset": "cs2019-rollout",
@@ -17393,7 +17423,7 @@
             "descriptor_basis_hash": "sha256:9aa362a08f1539df112ec837aa7241967cac9810c71399e9edffe4457d602b3d",
             "dimension": 6,
             "noise_role": "sensory_feedback",
-            "noise_std": 0.004791329788133908,
+            "noise_std": 0.004791329614818096,
             "noise_timing": "Feedbax sensory Channel after delayed LSS feedback selector"
           },
           "fixed_plant_parameters": [
@@ -17464,7 +17494,7 @@
               "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
               "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
             },
-            "sensory_noise_std": 0.004791329788133908,
+            "sensory_noise_std": 0.004791329614818096,
             "signal_dependent_motor_noise_std": 0.02,
             "source_contract": {
               "additive_motor_covariance": "input_image_state_covariance_B_B_T",
@@ -17482,14 +17512,14 @@
               ],
               "process_noise": "separate_output_feedback_process_covariance",
               "sensory_covariance_diag": [
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05
               ],
               "sensory_noise_scale": 1.0,
               "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
@@ -17506,7 +17536,7 @@
             "command_runtime": "Feedbax efferent Channel immediately before LinearStateSpace.force; additive and signal-dependent motor noise are both command-channel noise",
             "plant_process_force_noise_std": 0.03162277660168379,
             "plant_process_runtime": "Task-sampled physical-process/load epsilon bound to LinearStateSpace.epsilon",
-            "sensory_noise_std": 0.004791329788133908,
+            "sensory_noise_std": 0.004791329614818096,
             "sensory_runtime": "Feedbax sensory Channel after the 4D delayed LSS feedback selector; the delay itself is represented by the C&S 48D LSS state",
             "signal_dependent_motor_noise_std": 0.02,
             "state_diffusion": "mechanics.epsilon"
@@ -22448,9 +22478,15 @@
                 "deadband_frac": 0.1,
                 "ema_alpha": 0.1,
                 "eta": 0.1,
+                "freeze_until_burn_in": true,
+                "gain_ema_alpha": 0.2,
+                "gain_max": 8.0,
+                "gain_min": 0.25,
+                "gain_normalization": false,
+                "hysteresis_frac": null,
                 "interval_batches": 50,
                 "lambda_max": null,
-                "lambda_min": 1e-12,
+                "lambda_min": null,
                 "max_log_step": 0.25
               },
               "outer_adversarial_weight": {
@@ -22768,7 +22804,7 @@
                 "n_readout_only": 0,
                 "n_recurrent_only": 0
               },
-              "sensory_noise_std": 0.004791329788133908,
+              "sensory_noise_std": 0.004791329614818096,
               "signal_dependent_motor_noise_std": 0.02,
               "state_dim": 48,
               "stochastic_preset": "cs2019-rollout",
@@ -26441,28 +26477,28 @@
               },
               "state_running_q": {
                 "initial_diag_first_block": [
-                  3.572245084590764e-06,
-                  3.572245084590764e-06,
-                  3.5722450845907636e-07,
-                  3.5722450845907636e-07,
-                  0.16666666666666666,
-                  0.16666666666666666,
-                  0.16666666666666666,
-                  0.16666666666666666
+                  3.5722464417631272e-06,
+                  3.5722464417631272e-06,
+                  3.572246214389452e-07,
+                  3.572246214389452e-07,
+                  0.1666666716337204,
+                  0.1666666716337204,
+                  0.1666666716337204,
+                  0.1666666716337204
                 ],
                 "source": "canonical delay-augmented C&S schedule.Q",
                 "term": "mechanics.vector^T Q_t mechanics.vector"
               },
               "terminal_q_f": {
                 "diag_first_block": [
-                  166666.66666666666,
-                  166666.66666666666,
-                  16666.666666666664,
-                  16666.666666666664,
-                  0.16666666666666666,
-                  0.16666666666666666,
-                  0.16666666666666666,
-                  0.16666666666666666
+                  166666.671875,
+                  166666.671875,
+                  16666.66796875,
+                  16666.66796875,
+                  0.1666666716337204,
+                  0.1666666716337204,
+                  0.1666666716337204,
+                  0.1666666716337204
                 ],
                 "source": "canonical delay-augmented C&S schedule.Q_f",
                 "term": "mechanics.vector_T^T Q_f mechanics.vector_T"
@@ -27081,7 +27117,7 @@
               "descriptor_basis_hash": "sha256:9aa362a08f1539df112ec837aa7241967cac9810c71399e9edffe4457d602b3d",
               "dimension": 6,
               "noise_role": "sensory_feedback",
-              "noise_std": 0.004791329788133908,
+              "noise_std": 0.004791329614818096,
               "noise_timing": "Feedbax sensory Channel after delayed LSS feedback selector"
             },
             "fixed_plant_parameters": [
@@ -27152,7 +27188,7 @@
                 "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
                 "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
               },
-              "sensory_noise_std": 0.004791329788133908,
+              "sensory_noise_std": 0.004791329614818096,
               "signal_dependent_motor_noise_std": 0.02,
               "source_contract": {
                 "additive_motor_covariance": "input_image_state_covariance_B_B_T",
@@ -27170,14 +27206,14 @@
                 ],
                 "process_noise": "separate_output_feedback_process_covariance",
                 "sensory_covariance_diag": [
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05
                 ],
                 "sensory_noise_scale": 1.0,
                 "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
@@ -27194,7 +27230,7 @@
               "command_runtime": "Feedbax efferent Channel immediately before LinearStateSpace.force; additive and signal-dependent motor noise are both command-channel noise",
               "plant_process_force_noise_std": 0.03162277660168379,
               "plant_process_runtime": "Task-sampled physical-process/load epsilon bound to LinearStateSpace.epsilon",
-              "sensory_noise_std": 0.004791329788133908,
+              "sensory_noise_std": 0.004791329614818096,
               "sensory_runtime": "Feedbax sensory Channel after the 4D delayed LSS feedback selector; the delay itself is represented by the C&S 48D LSS state",
               "signal_dependent_motor_noise_std": 0.02,
               "state_diffusion": "mechanics.epsilon"
@@ -31190,7 +31226,7 @@
           "schema_version": "rlrmp.run_spec.v2",
           "seed": 42,
           "source_schema_version": "rlrmp.cs_stochastic_gru.v1",
-          "spec_dir": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/integration__d1f90ac-defaults-cascade/results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty",
+          "spec_dir": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__e1afa46-clamp-gain-normalization/results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty",
           "stochastic_preset": {
             "additive_motor_noise_std": 1e-05,
             "name": "cs2019-rollout",
@@ -31202,7 +31238,7 @@
               "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
               "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
             },
-            "sensory_noise_std": 0.004791329788133908,
+            "sensory_noise_std": 0.004791329614818096,
             "signal_dependent_motor_noise_std": 0.02,
             "source_contract": {
               "additive_motor_covariance": "input_image_state_covariance_B_B_T",
@@ -31220,14 +31256,14 @@
               ],
               "process_noise": "separate_output_feedback_process_covariance",
               "sensory_covariance_diag": [
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05
               ],
               "sensory_noise_scale": 1.0,
               "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
@@ -38584,7 +38620,7 @@
                 "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
                 "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
               },
-              "sensory_noise_std": 0.004791329788133908,
+              "sensory_noise_std": 0.004791329614818096,
               "signal_dependent_motor_noise_std": 0.02,
               "source_contract": {
                 "additive_motor_covariance": "input_image_state_covariance_B_B_T",
@@ -38602,14 +38638,14 @@
                 ],
                 "process_noise": "separate_output_feedback_process_covariance",
                 "sensory_covariance_diag": [
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05
                 ],
                 "sensory_noise_scale": 1.0,
                 "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
@@ -38626,7 +38662,7 @@
               "command_runtime": "Feedbax efferent Channel immediately before LinearStateSpace.force; additive and signal-dependent motor noise are both command-channel noise",
               "plant_process_force_noise_std": 0.03162277660168379,
               "plant_process_runtime": "Task-sampled physical-process/load epsilon bound to LinearStateSpace.epsilon",
-              "sensory_noise_std": 0.004791329788133908,
+              "sensory_noise_std": 0.004791329614818096,
               "sensory_runtime": "Feedbax sensory Channel after the 4D delayed LSS feedback selector; the delay itself is represented by the C&S 48D LSS state",
               "signal_dependent_motor_noise_std": 0.02,
               "state_diffusion": "mechanics.epsilon"
@@ -47548,7 +47584,7 @@
         },
         "schema_version": "rlrmp.cs_stochastic_gru.v1",
         "seed": 42,
-        "spec_dir": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/integration__d1f90ac-defaults-cascade/results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty",
+        "spec_dir": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__e1afa46-clamp-gain-normalization/results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty",
         "stochastic_preset": {
           "additive_motor_noise_std": 1e-05,
           "name": "cs2019-rollout",
@@ -47560,7 +47596,7 @@
             "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
             "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
           },
-          "sensory_noise_std": 0.004791329788133908,
+          "sensory_noise_std": 0.004791329614818096,
           "signal_dependent_motor_noise_std": 0.02,
           "source_contract": {
             "additive_motor_covariance": "input_image_state_covariance_B_B_T",
@@ -47578,14 +47614,14 @@
             ],
             "process_noise": "separate_output_feedback_process_covariance",
             "sensory_covariance_diag": [
-              2.2956841138659323e-05,
-              2.2956841138659323e-05,
-              2.2956841138659323e-05,
-              2.2956841138659323e-05,
-              2.2956841138659323e-05,
-              2.2956841138659323e-05,
-              2.2956841138659323e-05,
-              2.2956841138659323e-05
+              2.2956839529797435e-05,
+              2.2956839529797435e-05,
+              2.2956839529797435e-05,
+              2.2956839529797435e-05,
+              2.2956839529797435e-05,
+              2.2956839529797435e-05,
+              2.2956839529797435e-05,
+              2.2956839529797435e-05
             ],
             "sensory_noise_scale": 1.0,
             "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
@@ -51964,7 +52000,7 @@
               "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
               "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
             },
-            "sensory_noise_std": 0.004791329788133908,
+            "sensory_noise_std": 0.004791329614818096,
             "signal_dependent_motor_noise_std": 0.02,
             "source_contract": {
               "additive_motor_covariance": "input_image_state_covariance_B_B_T",
@@ -51982,14 +52018,14 @@
               ],
               "process_noise": "separate_output_feedback_process_covariance",
               "sensory_covariance_diag": [
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05
               ],
               "sensory_noise_scale": 1.0,
               "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
@@ -52006,7 +52042,7 @@
             "command_runtime": "Feedbax efferent Channel immediately before LinearStateSpace.force; additive and signal-dependent motor noise are both command-channel noise",
             "plant_process_force_noise_std": 0.03162277660168379,
             "plant_process_runtime": "Task-sampled physical-process/load epsilon bound to LinearStateSpace.epsilon",
-            "sensory_noise_std": 0.004791329788133908,
+            "sensory_noise_std": 0.004791329614818096,
             "sensory_runtime": "Feedbax sensory Channel after the 4D delayed LSS feedback selector; the delay itself is represented by the C&S 48D LSS state",
             "signal_dependent_motor_noise_std": 0.02,
             "state_diffusion": "mechanics.epsilon"
@@ -60956,8 +60992,14 @@
         "adaptive_epsilon_deadband_frac": 0.1,
         "adaptive_epsilon_ema_alpha": 0.1,
         "adaptive_epsilon_eta": 0.1,
+        "adaptive_epsilon_freeze_until_burn_in": true,
+        "adaptive_epsilon_gain_ema_alpha": 0.2,
+        "adaptive_epsilon_gain_max": 8.0,
+        "adaptive_epsilon_gain_min": 0.25,
+        "adaptive_epsilon_gain_normalization": false,
+        "adaptive_epsilon_hysteresis_frac": null,
         "adaptive_epsilon_lambda_max": null,
-        "adaptive_epsilon_lambda_min": 1e-12,
+        "adaptive_epsilon_lambda_min": null,
         "adaptive_epsilon_max_log_step": 0.25,
         "adaptive_epsilon_outer_weight_final": 1.0,
         "adaptive_epsilon_outer_weight_ramp_batches": 2500,
@@ -61181,9 +61223,15 @@
               "deadband_frac": 0.1,
               "ema_alpha": 0.1,
               "eta": 0.1,
+              "freeze_until_burn_in": true,
+              "gain_ema_alpha": 0.2,
+              "gain_max": 8.0,
+              "gain_min": 0.25,
+              "gain_normalization": false,
+              "hysteresis_frac": null,
               "interval_batches": 50,
               "lambda_max": null,
-              "lambda_min": 1e-12,
+              "lambda_min": null,
               "max_log_step": 0.25
             },
             "outer_adversarial_weight": {
@@ -61487,7 +61535,7 @@
               "n_readout_only": 0,
               "n_recurrent_only": 0
             },
-            "sensory_noise_std": 0.004791329788133908,
+            "sensory_noise_std": 0.004791329614818096,
             "signal_dependent_motor_noise_std": 0.02,
             "state_dim": 48,
             "stochastic_preset": "cs2019-rollout",
@@ -65463,7 +65511,7 @@
             "descriptor_basis_hash": "sha256:5d4ad5971853288a4416d4e0100a614201d67e0cad9fd3f1a42d5e285a6410e1",
             "dimension": 4,
             "noise_role": "sensory_feedback",
-            "noise_std": 0.004791329788133908,
+            "noise_std": 0.004791329614818096,
             "noise_timing": "Feedbax sensory Channel after delayed LSS feedback selector"
           },
           "fixed_plant_parameters": [
@@ -65534,7 +65582,7 @@
               "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
               "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
             },
-            "sensory_noise_std": 0.004791329788133908,
+            "sensory_noise_std": 0.004791329614818096,
             "signal_dependent_motor_noise_std": 0.02,
             "source_contract": {
               "additive_motor_covariance": "input_image_state_covariance_B_B_T",
@@ -65552,14 +65600,14 @@
               ],
               "process_noise": "separate_output_feedback_process_covariance",
               "sensory_covariance_diag": [
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05
               ],
               "sensory_noise_scale": 1.0,
               "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
@@ -65576,7 +65624,7 @@
             "command_runtime": "Feedbax efferent Channel immediately before LinearStateSpace.force; additive and signal-dependent motor noise are both command-channel noise",
             "plant_process_force_noise_std": 0.03162277660168379,
             "plant_process_runtime": "Task-sampled physical-process/load epsilon bound to LinearStateSpace.epsilon",
-            "sensory_noise_std": 0.004791329788133908,
+            "sensory_noise_std": 0.004791329614818096,
             "sensory_runtime": "Feedbax sensory Channel after the 4D delayed LSS feedback selector; the delay itself is represented by the C&S 48D LSS state",
             "signal_dependent_motor_noise_std": 0.02,
             "state_diffusion": "mechanics.epsilon"
@@ -69701,9 +69749,15 @@
                 "deadband_frac": 0.1,
                 "ema_alpha": 0.1,
                 "eta": 0.1,
+                "freeze_until_burn_in": true,
+                "gain_ema_alpha": 0.2,
+                "gain_max": 8.0,
+                "gain_min": 0.25,
+                "gain_normalization": false,
+                "hysteresis_frac": null,
                 "interval_batches": 50,
                 "lambda_max": null,
-                "lambda_min": 1e-12,
+                "lambda_min": null,
                 "max_log_step": 0.25
               },
               "outer_adversarial_weight": {
@@ -70007,7 +70061,7 @@
                 "n_readout_only": 0,
                 "n_recurrent_only": 0
               },
-              "sensory_noise_std": 0.004791329788133908,
+              "sensory_noise_std": 0.004791329614818096,
               "signal_dependent_motor_noise_std": 0.02,
               "state_dim": 48,
               "stochastic_preset": "cs2019-rollout",
@@ -74090,7 +74144,7 @@
               "descriptor_basis_hash": "sha256:5d4ad5971853288a4416d4e0100a614201d67e0cad9fd3f1a42d5e285a6410e1",
               "dimension": 4,
               "noise_role": "sensory_feedback",
-              "noise_std": 0.004791329788133908,
+              "noise_std": 0.004791329614818096,
               "noise_timing": "Feedbax sensory Channel after delayed LSS feedback selector"
             },
             "fixed_plant_parameters": [
@@ -74161,7 +74215,7 @@
                 "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
                 "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
               },
-              "sensory_noise_std": 0.004791329788133908,
+              "sensory_noise_std": 0.004791329614818096,
               "signal_dependent_motor_noise_std": 0.02,
               "source_contract": {
                 "additive_motor_covariance": "input_image_state_covariance_B_B_T",
@@ -74179,14 +74233,14 @@
                 ],
                 "process_noise": "separate_output_feedback_process_covariance",
                 "sensory_covariance_diag": [
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05
                 ],
                 "sensory_noise_scale": 1.0,
                 "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
@@ -74203,7 +74257,7 @@
               "command_runtime": "Feedbax efferent Channel immediately before LinearStateSpace.force; additive and signal-dependent motor noise are both command-channel noise",
               "plant_process_force_noise_std": 0.03162277660168379,
               "plant_process_runtime": "Task-sampled physical-process/load epsilon bound to LinearStateSpace.epsilon",
-              "sensory_noise_std": 0.004791329788133908,
+              "sensory_noise_std": 0.004791329614818096,
               "sensory_runtime": "Feedbax sensory Channel after the 4D delayed LSS feedback selector; the delay itself is represented by the C&S 48D LSS state",
               "signal_dependent_motor_noise_std": 0.02,
               "state_diffusion": "mechanics.epsilon"
@@ -77601,7 +77655,7 @@
           "schema_version": "rlrmp.run_spec.v2",
           "seed": 43,
           "source_schema_version": "rlrmp.cs_stochastic_gru.v1",
-          "spec_dir": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/integration__d1f90ac-defaults-cascade/results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty",
+          "spec_dir": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__e1afa46-clamp-gain-normalization/results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty",
           "stochastic_preset": {
             "additive_motor_noise_std": 1e-05,
             "name": "cs2019-rollout",
@@ -77613,7 +77667,7 @@
               "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
               "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
             },
-            "sensory_noise_std": 0.004791329788133908,
+            "sensory_noise_std": 0.004791329614818096,
             "signal_dependent_motor_noise_std": 0.02,
             "source_contract": {
               "additive_motor_covariance": "input_image_state_covariance_B_B_T",
@@ -77631,14 +77685,14 @@
               ],
               "process_noise": "separate_output_feedback_process_covariance",
               "sensory_covariance_diag": [
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05
               ],
               "sensory_noise_scale": 1.0,
               "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
@@ -84383,7 +84437,7 @@
                 "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
                 "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
               },
-              "sensory_noise_std": 0.004791329788133908,
+              "sensory_noise_std": 0.004791329614818096,
               "signal_dependent_motor_noise_std": 0.02,
               "source_contract": {
                 "additive_motor_covariance": "input_image_state_covariance_B_B_T",
@@ -84401,14 +84455,14 @@
                 ],
                 "process_noise": "separate_output_feedback_process_covariance",
                 "sensory_covariance_diag": [
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05,
-                  2.2956841138659323e-05
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05,
+                  2.2956839529797435e-05
                 ],
                 "sensory_noise_scale": 1.0,
                 "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
@@ -84425,7 +84479,7 @@
               "command_runtime": "Feedbax efferent Channel immediately before LinearStateSpace.force; additive and signal-dependent motor noise are both command-channel noise",
               "plant_process_force_noise_std": 0.03162277660168379,
               "plant_process_runtime": "Task-sampled physical-process/load epsilon bound to LinearStateSpace.epsilon",
-              "sensory_noise_std": 0.004791329788133908,
+              "sensory_noise_std": 0.004791329614818096,
               "sensory_runtime": "Feedbax sensory Channel after the 4D delayed LSS feedback selector; the delay itself is represented by the C&S 48D LSS state",
               "signal_dependent_motor_noise_std": 0.02,
               "state_diffusion": "mechanics.epsilon"
@@ -92736,7 +92790,7 @@
         },
         "schema_version": "rlrmp.cs_stochastic_gru.v1",
         "seed": 43,
-        "spec_dir": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/integration__d1f90ac-defaults-cascade/results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty",
+        "spec_dir": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__e1afa46-clamp-gain-normalization/results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty",
         "stochastic_preset": {
           "additive_motor_noise_std": 1e-05,
           "name": "cs2019-rollout",
@@ -92748,7 +92802,7 @@
             "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
             "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
           },
-          "sensory_noise_std": 0.004791329788133908,
+          "sensory_noise_std": 0.004791329614818096,
           "signal_dependent_motor_noise_std": 0.02,
           "source_contract": {
             "additive_motor_covariance": "input_image_state_covariance_B_B_T",
@@ -92766,14 +92820,14 @@
             ],
             "process_noise": "separate_output_feedback_process_covariance",
             "sensory_covariance_diag": [
-              2.2956841138659323e-05,
-              2.2956841138659323e-05,
-              2.2956841138659323e-05,
-              2.2956841138659323e-05,
-              2.2956841138659323e-05,
-              2.2956841138659323e-05,
-              2.2956841138659323e-05,
-              2.2956841138659323e-05
+              2.2956839529797435e-05,
+              2.2956839529797435e-05,
+              2.2956839529797435e-05,
+              2.2956839529797435e-05,
+              2.2956839529797435e-05,
+              2.2956839529797435e-05,
+              2.2956839529797435e-05,
+              2.2956839529797435e-05
             ],
             "sensory_noise_scale": 1.0,
             "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
@@ -96462,7 +96516,7 @@
               "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
               "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
             },
-            "sensory_noise_std": 0.004791329788133908,
+            "sensory_noise_std": 0.004791329614818096,
             "signal_dependent_motor_noise_std": 0.02,
             "source_contract": {
               "additive_motor_covariance": "input_image_state_covariance_B_B_T",
@@ -96480,14 +96534,14 @@
               ],
               "process_noise": "separate_output_feedback_process_covariance",
               "sensory_covariance_diag": [
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05,
-                2.2956841138659323e-05
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05,
+                2.2956839529797435e-05
               ],
               "sensory_noise_scale": 1.0,
               "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
@@ -96504,7 +96558,7 @@
             "command_runtime": "Feedbax efferent Channel immediately before LinearStateSpace.force; additive and signal-dependent motor noise are both command-channel noise",
             "plant_process_force_noise_std": 0.03162277660168379,
             "plant_process_runtime": "Task-sampled physical-process/load epsilon bound to LinearStateSpace.epsilon",
-            "sensory_noise_std": 0.004791329788133908,
+            "sensory_noise_std": 0.004791329614818096,
             "sensory_runtime": "Feedbax sensory Channel after the 4D delayed LSS feedback selector; the delay itself is represented by the C&S 48D LSS state",
             "signal_dependent_motor_noise_std": 0.02,
             "state_diffusion": "mechanics.epsilon"
@@ -104815,8 +104869,6 @@
       }
     }
   },
-  "provenance": "Regenerated 2026-07-04 on integration/d1f90ac-defaults-cascade because the original hash-only fixture captured unreproducible workspace state; typed-config assertions were never violated.",
-  "schema_version": 1,
   "stable_run_spec_keys": [
     "adversarial_phase",
     "artifact_output_dir",

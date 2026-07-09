@@ -1350,6 +1350,31 @@ def _adaptive_state_from_slot(value: Any) -> Any:
             if isinstance(payload.get("zero_adversary_guard"), Mapping)
             else None
         ),
+        gain_estimate=(
+            None if payload.get("gain_estimate") is None else float(payload["gain_estimate"])
+        ),
+        gain_samples=int(payload.get("gain_samples", 0)),
+        pending_lambda_log_step=(
+            None
+            if payload.get("pending_lambda_log_step") is None
+            else float(payload["pending_lambda_log_step"])
+        ),
+        pending_log_damage_ema=(
+            None
+            if payload.get("pending_log_damage_ema") is None
+            else float(payload["pending_log_damage_ema"])
+        ),
+        last_log_damage_ema=(
+            None
+            if payload.get("last_log_damage_ema") is None
+            else float(payload["last_log_damage_ema"])
+        ),
+        ema_noise_floor=(
+            None if payload.get("ema_noise_floor") is None else float(payload["ema_noise_floor"])
+        ),
+        last_lambda_step_sign=int(payload.get("last_lambda_step_sign", 0)),
+        lambda_step_count=int(payload.get("lambda_step_count", 0)),
+        lambda_step_alternations=int(payload.get("lambda_step_alternations", 0)),
     )
 
 
