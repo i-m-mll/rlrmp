@@ -538,6 +538,7 @@ class AdaptiveEpsilonState:
 
     lambda_value: float
     damage_ema: float | None = None
+    clean_loss_ema: float | None = None
     last_update_batch: int | None = None
     update_count: int = 0
     schedule_start_batch: int = 0
@@ -547,6 +548,9 @@ class AdaptiveEpsilonState:
         payload = {
             "lambda_value": float(self.lambda_value),
             "damage_ema": None if self.damage_ema is None else float(self.damage_ema),
+            "clean_loss_ema": (
+                None if self.clean_loss_ema is None else float(self.clean_loss_ema)
+            ),
             "last_update_batch": self.last_update_batch,
             "update_count": int(self.update_count),
             "schedule_start_batch": int(self.schedule_start_batch),
@@ -4162,6 +4166,11 @@ def _load_latest_checkpoint_materialization(
                 if adaptive_payload.get("damage_ema") is None
                 else float(adaptive_payload["damage_ema"])
             ),
+            clean_loss_ema=(
+                None
+                if adaptive_payload.get("clean_loss_ema") is None
+                else float(adaptive_payload["clean_loss_ema"])
+            ),
             last_update_batch=adaptive_payload.get("last_update_batch"),
             update_count=int(adaptive_payload.get("update_count", 0)),
             schedule_start_batch=int(adaptive_payload.get("schedule_start_batch", 0)),
@@ -5932,6 +5941,7 @@ def _adaptive_epsilon_curriculum_config_from_args(args: argparse.Namespace) -> d
         "controller_training_mode": controller_training_mode,
         "damage_schedule": {
             "kind": "linear_ramp_then_cosine_anneal",
+            "setpoint_basis": "damage_to_clean_loss_ratio",
             "start": float(args.adaptive_epsilon_damage_start),
             "peak": float(args.adaptive_epsilon_damage_peak),
             "final": float(args.adaptive_epsilon_damage_final),
@@ -6781,12 +6791,18 @@ def _run_adaptive_epsilon_training_chunk(
         adaptive_update_damage_raw = float(
             np.asarray(jax.device_get(jnp.mean(eval_diagnostics["adaptive_update_damage_raw"])))
         )
+        adaptive_update_clean_loss_total = float(
+            np.asarray(
+                jax.device_get(jnp.mean(eval_diagnostics["adaptive_update_clean_loss_total"]))
+            )
+        )
         adaptive_state, update_diagnostics = _update_adaptive_epsilon_state(
             adaptive_state,
             hps.adaptive_epsilon_curriculum,
             batch_index=global_batch,
             target_damage=target_damage,
             measured_damage=adaptive_update_damage_raw,
+            measured_clean_loss=adaptive_update_clean_loss_total,
         )
         host_diagnostics = {
             name: np.asarray(jax.device_get(value))
@@ -7143,13 +7159,18 @@ def _adaptive_epsilon_damage_eval_step(
     clean_losses = loss_func(clean_states, trial_specs, model)
     adv_losses = loss_func(adv_states, adv_specs, model)
     applied_losses = loss_func(applied_states, applied_specs, model)
+    ratio_eps = jnp.asarray(1e-12, dtype=clean_losses.total.dtype)
+    full_strength_damage = adv_losses.total - clean_losses.total
+    applied_scaled_damage = applied_losses.total - clean_losses.total
     diagnostics = {
-        "adaptive_update_damage_raw": jnp.asarray(adv_losses.total - clean_losses.total),
-        "adaptive_update_full_strength_damage_raw": jnp.asarray(
-            adv_losses.total - clean_losses.total
+        "adaptive_update_damage_raw": jnp.asarray(full_strength_damage),
+        "adaptive_update_full_strength_damage_raw": jnp.asarray(full_strength_damage),
+        "adaptive_update_applied_scaled_damage_raw": jnp.asarray(applied_scaled_damage),
+        "adaptive_update_damage_ratio_raw": jnp.asarray(
+            full_strength_damage / jnp.maximum(clean_losses.total, ratio_eps)
         ),
-        "adaptive_update_applied_scaled_damage_raw": jnp.asarray(
-            applied_losses.total - clean_losses.total
+        "adaptive_update_applied_scaled_damage_ratio_raw": jnp.asarray(
+            applied_scaled_damage / jnp.maximum(clean_losses.total, ratio_eps)
         ),
         "adaptive_update_clean_loss_total": jnp.asarray(clean_losses.total),
         "adaptive_update_adversarial_loss_total": jnp.asarray(adv_losses.total),
@@ -7290,6 +7311,7 @@ def _update_adaptive_epsilon_state(
     batch_index: int,
     target_damage: float,
     measured_damage: float,
+    measured_clean_loss: float,
 ) -> tuple[AdaptiveEpsilonState, dict[str, np.ndarray]]:
     update_cfg = getattr(config, "lambda_update")
     alpha = float(update_cfg.ema_alpha)
@@ -7298,14 +7320,26 @@ def _update_adaptive_epsilon_state(
         if state.damage_ema is None
         else (1.0 - alpha) * float(state.damage_ema) + alpha * float(measured_damage)
     )
+    clean_loss_ema = (
+        float(measured_clean_loss)
+        if state.clean_loss_ema is None
+        else (1.0 - alpha) * float(state.clean_loss_ema)
+        + alpha * float(measured_clean_loss)
+    )
     completed_batches = int(batch_index) + 1
     interval = int(update_cfg.interval_batches)
     update_due = completed_batches % interval == 0
     target = float(target_damage)
     ratio_eps = 1e-12
-    relative_error = (damage_ema - target) / max(target, ratio_eps) if target > 0.0 else 0.0
+    measured_damage_ratio = float(measured_damage) / max(float(measured_clean_loss), ratio_eps)
+    damage_ratio_ema = damage_ema / max(clean_loss_ema, ratio_eps)
+    relative_error = (
+        (damage_ratio_ema - target) / max(target, ratio_eps) if target > 0.0 else 0.0
+    )
     log_ratio_error = (
-        math.log(max(damage_ema, ratio_eps) / max(target, ratio_eps)) if target > 0.0 else 0.0
+        math.log(max(damage_ratio_ema, ratio_eps) / max(target, ratio_eps))
+        if target > 0.0
+        else 0.0
     )
     deadband = float(update_cfg.deadband_frac)
     lambda_value = float(state.lambda_value)
@@ -7324,6 +7358,7 @@ def _update_adaptive_epsilon_state(
     next_state = AdaptiveEpsilonState(
         lambda_value=lambda_value,
         damage_ema=damage_ema,
+        clean_loss_ema=clean_loss_ema,
         last_update_batch=int(batch_index) if updated else state.last_update_batch,
         update_count=state.update_count + (1 if updated else 0),
         schedule_start_batch=state.schedule_start_batch,
@@ -7331,6 +7366,10 @@ def _update_adaptive_epsilon_state(
     )
     return next_state, {
         "damage_ema": np.asarray(damage_ema, dtype=np.float32),
+        "clean_loss_ema": np.asarray(clean_loss_ema, dtype=np.float32),
+        "measured_damage_ratio": np.asarray(measured_damage_ratio, dtype=np.float32),
+        "damage_ratio_ema": np.asarray(damage_ratio_ema, dtype=np.float32),
+        "target_damage_ratio": np.asarray(target, dtype=np.float32),
         "relative_error": np.asarray(relative_error, dtype=np.float32),
         "log_ratio_error": np.asarray(log_ratio_error, dtype=np.float32),
         "lambda_updated": np.asarray(updated, dtype=bool),

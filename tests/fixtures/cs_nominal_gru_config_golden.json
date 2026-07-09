@@ -226,6 +226,7 @@
               "kind": "linear_ramp_then_cosine_anneal",
               "peak": 3500.0,
               "ramp_batches": 2500,
+              "setpoint_basis": "damage_to_clean_loss_ratio",
               "start": 0.0
             },
             "enabled": false,
@@ -5396,6 +5397,7 @@
                 "kind": "linear_ramp_then_cosine_anneal",
                 "peak": 3500.0,
                 "ramp_batches": 2500,
+                "setpoint_basis": "damage_to_clean_loss_ratio",
                 "start": 0.0
               },
               "enabled": false,
@@ -12938,6 +12940,7 @@
               "kind": "linear_ramp_then_cosine_anneal",
               "peak": 3500.0,
               "ramp_batches": 2500,
+              "setpoint_basis": "damage_to_clean_loss_ratio",
               "start": 0.0
             },
             "enabled": false,
@@ -22437,6 +22440,7 @@
                 "kind": "linear_ramp_then_cosine_anneal",
                 "peak": 3500.0,
                 "ramp_batches": 2500,
+                "setpoint_basis": "damage_to_clean_loss_ratio",
                 "start": 0.0
               },
               "enabled": false,
@@ -61169,6 +61173,7 @@
               "kind": "linear_ramp_then_cosine_anneal",
               "peak": 3500.0,
               "ramp_batches": 2500,
+              "setpoint_basis": "damage_to_clean_loss_ratio",
               "start": 0.0
             },
             "enabled": false,
@@ -69688,6 +69693,7 @@
                 "kind": "linear_ramp_then_cosine_anneal",
                 "peak": 3500.0,
                 "ramp_batches": 2500,
+                "setpoint_basis": "damage_to_clean_loss_ratio",
                 "start": 0.0
               },
               "enabled": false,

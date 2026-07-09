@@ -944,6 +944,7 @@ def test_adaptive_epsilon_schedules_and_lambda_update_are_conservative() -> None
         batch_index=48,
         target_damage=1000.0,
         measured_damage=1200.0,
+        measured_clean_loss=1.0,
     )
     assert diagnostics["update_due"] == np.asarray(False)
     assert diagnostics["lambda_updated"] == np.asarray(False)
@@ -955,6 +956,7 @@ def test_adaptive_epsilon_schedules_and_lambda_update_are_conservative() -> None
         batch_index=49,
         target_damage=1000.0,
         measured_damage=1200.0,
+        measured_clean_loss=1.0,
     )
     assert diagnostics["update_due"] == np.asarray(True)
     assert diagnostics["lambda_updated"] == np.asarray(True)
@@ -1252,6 +1254,7 @@ def test_adaptive_epsilon_lambda_update_uses_clipped_log_ratio() -> None:
         batch_index=0,
         target_damage=100.0,
         measured_damage=200.0,
+        measured_clean_loss=1.0,
     )
     low_state, low_diagnostics = _update_adaptive_epsilon_state(
         base_state,
@@ -1259,6 +1262,7 @@ def test_adaptive_epsilon_lambda_update_uses_clipped_log_ratio() -> None:
         batch_index=0,
         target_damage=100.0,
         measured_damage=50.0,
+        measured_clean_loss=1.0,
     )
 
     assert high_diagnostics["lambda_log_step"] == pytest.approx(
@@ -1275,6 +1279,7 @@ def test_adaptive_epsilon_lambda_update_uses_clipped_log_ratio() -> None:
         batch_index=0,
         target_damage=100.0,
         measured_damage=1.0e9,
+        measured_clean_loss=1.0,
     )
     assert clipped_diagnostics["lambda_log_step"] == pytest.approx(cfg.lambda_update.max_log_step)
     assert clipped_state.lambda_value == pytest.approx(
@@ -1287,6 +1292,7 @@ def test_adaptive_epsilon_lambda_update_uses_clipped_log_ratio() -> None:
         batch_index=0,
         target_damage=0.0,
         measured_damage=1.0e9,
+        measured_clean_loss=1.0,
     )
     assert zero_target_diagnostics["update_due"] == np.asarray(True)
     assert zero_target_diagnostics["lambda_updated"] == np.asarray(False)
