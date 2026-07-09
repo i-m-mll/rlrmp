@@ -26,9 +26,18 @@ active path to `src/rlrmp/analysis/declarative_materialization.py` and
 | `materialize_output_feedback_observer_error_coverage.py` | Historical coverage-sweep writer feeding the `7a459bb` notes. |
 | `materialize_output_feedback_sweep_certificates.py` | Legacy active-reference writer for standard certificate rows; math/mode generalization remains on `e6a32b8` before further custody migration. |
 | `materialize_output_feedback_failure_decomposition.py` | Legacy companion failure-decomposition writer; keep semantics aligned with standard certificates until migrated. |
-| `materialize_output_feedback_time_constrained.py` | Legacy `87edaae` time-constrained bridge writer; use as source for a future spec runner rather than extending its direct writer surface. |
-| `materialize_output_feedback_linear_recurrent.py` | Historical `5e55f69` linear recurrent bridge writer. |
-| `materialize_output_feedback_phase_modulated_recurrent.py` | Historical phase-modulated recurrent bridge writer. |
 | `materialize_output_feedback_interpolated_starts.py` | Historical interpolated-starts bridge writer. |
 | `materialize_output_feedback_optimizer_basin_diagnostic.py` | Historical `1c014e5` optimizer-basin writer. |
-| `materialize_output_feedback_affine_tracker.py` | Historical `50c260d` affine-tracker writer. |
+
+## Retired Writers
+
+These writers were deleted on `feature/dd8523c-frozen-of-bridge-retirement`.
+Recover them from tag `legacy/output-feedback-materializers-retired` only for
+archaeology, not as active materializer surfaces.
+
+| script | retired owner |
+|---|---|
+| `materialize_output_feedback_affine_tracker.py` | `50c260d` |
+| `materialize_output_feedback_linear_recurrent.py` | `5e55f69` |
+| `materialize_output_feedback_phase_modulated_recurrent.py` | `d6d25d6` |
+| `materialize_output_feedback_time_constrained.py` | `87edaae` |
