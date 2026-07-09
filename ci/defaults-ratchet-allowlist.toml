@@ -19,6 +19,7 @@
 #   - 1d59c4d: Training-run spec fallback remediation lane.
 #   - cc3a61f: Recipe/report/training fallback remediation lane.
 #   - 7cfe941: Calibration pipeline/data-product fallback remediation lane.
+#   - e1afa46: Clamp gain-normalization diagnostics lane.
 #   - 5b3aabe: Phase-1 defaults ratchet catch-all until a narrower owner is split.
 
 schema_version = 1
@@ -284,6 +285,70 @@ literal_repr = "False"
 count = 1
 owner = "cc3a61f"
 note = "Recipe/report/training fallback remediation lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "freeze_until_burn_in"
+literal_repr = "True"
+count = 1
+owner = "e1afa46"
+note = "Clamp gain-normalization diagnostics lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "gain_max"
+literal_repr = "8.0"
+count = 1
+owner = "e1afa46"
+note = "Clamp gain-normalization diagnostics lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "gain_min"
+literal_repr = "0.25"
+count = 1
+owner = "e1afa46"
+note = "Clamp gain-normalization diagnostics lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "gain_normalization"
+literal_repr = "False"
+count = 2
+owner = "e1afa46"
+note = "Clamp gain-normalization diagnostics lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "gain_samples"
+literal_repr = "0"
+count = 1
+owner = "e1afa46"
+note = "Clamp gain-normalization diagnostics lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "lambda_step_alternations"
+literal_repr = "0"
+count = 1
+owner = "e1afa46"
+note = "Clamp gain-normalization diagnostics lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "lambda_step_count"
+literal_repr = "0"
+count = 1
+owner = "e1afa46"
+note = "Clamp gain-normalization diagnostics lane."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/train/cs_nominal_gru.py"
+key = "last_lambda_step_sign"
+literal_repr = "0"
+count = 1
+owner = "e1afa46"
+note = "Clamp gain-normalization diagnostics lane."
 
 [[default_fallback_sites]]
 path = "src/rlrmp/train/cs_nominal_gru.py"
