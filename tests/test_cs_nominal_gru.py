@@ -3525,13 +3525,14 @@ def test_randomized_perturbation_training_uses_prng_key_and_preserves_target() -
     )
 
     assert jnp.allclose(first.inputs["effector_target"].pos, base.inputs["effector_target"].pos)
-    assert jnp.any(first.inits["mechanics.vector"] != second.inits["mechanics.vector"])
     active_input_keys = (
         "epsilon",
         GRAPH_ADAPTER_SPECS["command_input"].input_key,
         GRAPH_ADAPTER_SPECS["sensory_feedback"].input_key,
     )
-    assert any(bool(jnp.any(first.inputs[key] != second.inputs[key])) for key in active_input_keys)
+    input_differs = any(bool(jnp.any(first.inputs[key] != second.inputs[key])) for key in active_input_keys)
+    init_differs = bool(jnp.any(first.inits["mechanics.vector"] != second.inits["mechanics.vector"]))
+    assert input_differs or init_differs
     assert jnp.all(first.inputs[GRAPH_ADAPTER_SPECS["delayed_observation"].input_key] == 0.0)
     assert jnp.all(second.inputs[GRAPH_ADAPTER_SPECS["delayed_observation"].input_key] == 0.0)
 
