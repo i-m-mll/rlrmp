@@ -21,18 +21,11 @@ import argparse
 import json
 from pathlib import Path
 
-import equinox as eqx
-import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
 from jax_cookbook import load_with_hyperparameters
 
-from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
-from rlrmp.eval import (
-    compute_kinematics,
-    eval_ensemble_on_trials,
-    set_sisu,
-)
+from rlrmp.eval.pert import eval_at_pert_scale as _canonical_eval_at_pert_scale
 from rlrmp.train.standard import build_hps
 from rlrmp.train.task_model import setup_task_model_pair
 
@@ -117,19 +110,14 @@ def eval_at_sisu_pert(task, model, sisu: float, pert_scale: float, *, key, ref_t
     Returns:
         km: dict with peak_velocity, max_lateral_deviation, endpoint_error.
     """
-    source_task = ref_task if (ref_task is not None and pert_scale > 0) else task
-    val_trials = source_task.validation_trials
-    trial_specs = set_sisu(val_trials, sisu)
-
-    # Set perturbation scale (zero it out when pert_scale=0)
-    trial_specs = eqx.tree_at(
-        lambda t: t.intervene[PLANT_INTERVENOR_LABEL].scale,
-        trial_specs,
-        jnp.full(trial_specs.intervene[PLANT_INTERVENOR_LABEL].scale.shape, pert_scale),
+    return _canonical_eval_at_pert_scale(
+        task,
+        model,
+        sisu,
+        pert_scale,
+        key=key,
+        ref_task=ref_task,
     )
-
-    states = eval_ensemble_on_trials(task, model, trial_specs, key=key)
-    return compute_kinematics(states, trial_specs)
 
 
 # ---------------------------------------------------------------------------
