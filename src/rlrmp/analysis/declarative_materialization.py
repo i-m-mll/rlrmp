@@ -30,7 +30,7 @@ from feedbax.contracts.expressions import (
     canonical_expression_json,
     evaluate_expr,
 )
-from feedbax.contracts.manifest import AnalysisRunSpec, ParentRef
+from feedbax.contracts.manifest import AnalysisRunSpec, EvaluationRunSpec, ParentRef
 from feedbax.analysis.types import AnalysisInputData
 from feedbax.config.namespace import TreeNamespace
 from pydantic import BaseModel, ConfigDict, Field
@@ -66,6 +66,13 @@ from rlrmp.analysis.pipelines.hinf_phenotype_sidecar import (
 from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
     ISSUE_ID as OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ISSUE_ID,
     write_outputs as write_output_feedback_rollout_recovery_outputs,
+)
+from rlrmp.analysis.pipelines.sisu_spectrum_diagnostics import (
+    SISU_SPECTRUM_ANALYSIS_TYPE,
+    SISU_SPECTRUM_EVALUATION_TYPE,
+    SisuSpectrumEvaluationParams,
+    register_sisu_spectrum_recipes,
+    sisu_spectrum_evaluation_spec_params,
 )
 from rlrmp.analysis.math.rerun_metadata import DEFAULT_DISCRETIZATION, DEFAULT_LANE
 from rlrmp.eval.recipes import (
@@ -135,6 +142,7 @@ EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE = {
     RECURRENT_JACOBIAN_ANALYSIS_TYPE: ("evaluation_run",),
     FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE: ("analysis_run",),
     ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE: ("evaluation_run",),
+    SISU_SPECTRUM_ANALYSIS_TYPE: (SISU_SPECTRUM_EVALUATION_TYPE,),
 }
 
 FEEDBACK_QUALITY_COMPONENT_NAMES = (
@@ -611,6 +619,11 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
         RecurrentJacobianAnalysisParams,
         replace=True,
     )
+    register_params_model(
+        SISU_SPECTRUM_EVALUATION_TYPE,
+        SisuSpectrumEvaluationParams,
+        replace=True,
+    )
     register_analysis_recipe(
         GRU_STANDARD_ANALYSIS_TYPE,
         gru_standard_certificate_recipe,
@@ -667,6 +680,7 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
         output_feedback_rollout_recovery_recipe,
         replace=replace,
     )
+    register_sisu_spectrum_recipes(replace=replace)
 
 
 def register_declarative_materialization_recipes(*, replace: bool = False) -> None:
@@ -910,6 +924,64 @@ def recurrent_jacobian_spec(
         analysis_type=RECURRENT_JACOBIAN_ANALYSIS_TYPE,
         inputs=inputs,
         params=params,
+    )
+
+
+def sisu_spectrum_evaluation_spec(
+    *,
+    experiment: str,
+    run_ids: Sequence[str],
+    labels: Sequence[str],
+    topic: str = "sisu_spectrum_velocity_profiles",
+    sisu_levels: Sequence[float] = (0.0, 0.5, 1.0),
+    n_rollout_trials: int = 64,
+    reference_samples: int = 128,
+    use_validation_selected_checkpoints: bool = True,
+    output_stem: str = "sisu_spectrum_special",
+    note_marker: str = "sisu_spectrum_special",
+    note_output: Path | str | None = None,
+) -> EvaluationRunSpec:
+    """Return declarative evaluation spec data for SISU-spectrum diagnostics."""
+
+    params = sisu_spectrum_evaluation_spec_params(
+        experiment=experiment,
+        run_ids=run_ids,
+        labels=labels,
+        topic=topic,
+        sisu_levels=sisu_levels,
+        n_rollout_trials=n_rollout_trials,
+        reference_samples=reference_samples,
+        use_validation_selected_checkpoints=use_validation_selected_checkpoints,
+        output_stem=output_stem,
+        note_marker=note_marker,
+        note_output=note_output,
+    )
+    return EvaluationRunSpec(
+        evaluation_type=SISU_SPECTRUM_EVALUATION_TYPE,
+        training_run_ids=[str(run_id) for run_id in run_ids],
+        inputs=[
+            ParentRef(kind="TrainingRunManifest", id=str(run_id), role="training_run")
+            for run_id in run_ids
+        ],
+        params=params,
+    )
+
+
+def sisu_spectrum_spec(
+    *,
+    evaluation_manifest_id: str | None = None,
+    evaluation_manifest_uri: Path | str | None = None,
+) -> AnalysisRunSpec:
+    """Return declarative analysis spec data for SISU-spectrum diagnostics."""
+
+    inputs = _evaluation_parent_refs(
+        evaluation_manifest_id=evaluation_manifest_id,
+        evaluation_manifest_uri=evaluation_manifest_uri,
+    )
+    return AnalysisRunSpec(
+        analysis_type=SISU_SPECTRUM_ANALYSIS_TYPE,
+        inputs=inputs,
+        params={},
     )
 
 
@@ -3605,6 +3677,8 @@ __all__ = [
     "PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE",
     "PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE",
     "ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE",
+    "SISU_SPECTRUM_ANALYSIS_TYPE",
+    "SISU_SPECTRUM_EVALUATION_TYPE",
     "feedback_quality_lens_recipe",
     "feedback_quality_lens_spec",
     "gru_evaluation_diagnostics_spec",
@@ -3623,4 +3697,6 @@ __all__ = [
     "register_declarative_materialization_recipes",
     "robustness_phenotype_recipe",
     "robustness_phenotype_spec",
+    "sisu_spectrum_evaluation_spec",
+    "sisu_spectrum_spec",
 ]

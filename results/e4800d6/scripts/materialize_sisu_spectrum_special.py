@@ -4,27 +4,39 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Any
 
+import numpy as np
 import rlrmp
 from feedbax.plugins import EXPERIMENT_REGISTRY
 from feedbax.plot import save_figure
 
 from rlrmp.analysis.pipelines.sisu_spectrum_diagnostics import (
-    DEFAULT_LABELS,
     DEFAULT_N_ROLLOUT_TRIALS,
-    DEFAULT_RUN_IDS,
     DEFAULT_SISU_LEVELS,
-    EXPERIMENT,
-    TOPIC,
+    DEFAULT_TOPIC,
     analytical_reference_curves,
     build_manifest,
     build_velocity_profile_figure,
     evaluate_sisu_profiles,
-    write_compact_arrays,
-    write_note,
+    render_markdown,
 )
+from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT
+
+
+EXPERIMENT = "e4800d6"
+TOPIC = DEFAULT_TOPIC
+DEFAULT_RUN_IDS = (
+    "cs_gru_h0_sisu_spectrum__raw_strong_gamma_1p05_radius_lr3e-3_clip5_b64",
+    "cs_gru_h0_sisu_spectrum__effective_020a65b_pgd_radius_lr3e-3_clip5_b64",
+)
+DEFAULT_LABELS = (
+    "A: raw strong gamma=1.05 radius",
+    "B: effective 020a65b PGD radius",
+)
 
 
 def main() -> None:
@@ -152,6 +164,46 @@ def parse_args() -> argparse.Namespace:
     if len(args.run_ids) != len(args.labels):
         raise SystemExit("--run-id and --label must be passed the same number of times")
     return args
+
+
+def write_compact_arrays(
+    *,
+    profiles: Sequence[Any],
+    references: Sequence[Any],
+    path: Path,
+) -> None:
+    """Write compact regenerable velocity profile arrays for this experiment."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    arrays: dict[str, np.ndarray] = {}
+    for profile_idx, profile in enumerate(profiles):
+        prefix = f"run_{profile_idx}"
+        arrays[f"{prefix}_run_id"] = np.asarray(profile.run_id)
+        for curve in profile.curves:
+            sisu_tag = str(curve.sisu).replace(".", "p")
+            arrays[f"{prefix}_sisu_{sisu_tag}_time_s"] = curve.time_s
+            arrays[f"{prefix}_sisu_{sisu_tag}_mean_forward_velocity_m_s"] = (
+                curve.mean_forward_velocity_m_s
+            )
+            arrays[f"{prefix}_sisu_{sisu_tag}_std_forward_velocity_m_s"] = (
+                curve.std_forward_velocity_m_s
+            )
+            arrays[f"{prefix}_sisu_{sisu_tag}_replicate_mean_forward_velocity_m_s"] = (
+                curve.replicate_mean_forward_velocity_m_s
+            )
+    for reference_idx, reference in enumerate(references):
+        prefix = f"reference_{reference_idx}"
+        arrays[f"{prefix}_label"] = np.asarray(reference.label)
+        arrays[f"{prefix}_time_s"] = reference.time_s
+        arrays[f"{prefix}_forward_velocity_m_s"] = reference.forward_velocity_m_s
+        arrays[f"{prefix}_std_forward_velocity_m_s"] = reference.std_forward_velocity_m_s
+    np.savez_compressed(path, **arrays)
+
+
+def write_note(path: Path, manifest: Mapping[str, Any]) -> None:
+    """Write or update the SISU special Markdown note for this experiment."""
+
+    update_marked_section(path, "sisu_spectrum_special", render_markdown(manifest))
 
 
 if __name__ == "__main__":
