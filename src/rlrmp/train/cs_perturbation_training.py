@@ -3029,6 +3029,250 @@ def _memoryless_policy_sequence(
     return flat_epsilon.reshape((*state_features.shape[:-1], flat_epsilon.shape[-1]))
 
 
+@dataclass(frozen=True)
+class _PgdAscentResult:
+    objective_initial: jnp.ndarray
+    objective_final_endpoint: jnp.ndarray
+    best_candidate: Any
+    best_objective: jnp.ndarray
+    final_candidate: Any
+    objective_nan_seen: jnp.ndarray
+    objective_overflow_seen: jnp.ndarray
+
+
+def _run_broad_epsilon_pgd_ascent(
+    zero_candidate: Any,
+    *,
+    objective: Callable[[Any], jnp.ndarray],
+    objective_and_grad: Callable[[Any], tuple[jnp.ndarray, Any]],
+    proposal_from_gradient: Callable[[Any, Any], Any],
+    mask_candidate: Callable[[Any], Any],
+    cfg: PgdFullStateEpsilonTrainingConfig,
+) -> _PgdAscentResult:
+    """Run the shared broad-epsilon PGD/Adam ascent loop for one parameterization."""
+
+    objective_initial, grad_initial = objective_and_grad(zero_candidate)
+    grad_initial = mask_candidate(grad_initial)
+
+    def select_best(best_candidate, best_objective, candidate, candidate_objective):
+        improved = jnp.logical_and(
+            jnp.isfinite(candidate_objective),
+            candidate_objective > best_objective,
+        )
+        best_candidate = jax.tree.map(
+            lambda best, current: jnp.where(improved, current, best),
+            best_candidate,
+            candidate,
+        )
+        best_objective = jnp.where(improved, candidate_objective, best_objective)
+        return best_candidate, best_objective
+
+    def run_projected_gradient_ascent():
+        def body(_, state):
+            (
+                candidate_current,
+                _current_objective,
+                grad_current,
+                best_candidate,
+                best_objective,
+                objective_nan_seen,
+                objective_overflow_seen,
+            ) = state
+            proposal = proposal_from_gradient(candidate_current, grad_current)
+            proposal_objective, proposal_grad = objective_and_grad(proposal)
+            proposal_grad = mask_candidate(proposal_grad)
+            objective_nan_seen = jnp.logical_or(
+                objective_nan_seen,
+                jnp.isnan(proposal_objective),
+            )
+            objective_overflow_seen = jnp.logical_or(
+                objective_overflow_seen,
+                jnp.isinf(proposal_objective),
+            )
+            best_candidate, best_objective = select_best(
+                best_candidate,
+                best_objective,
+                proposal,
+                proposal_objective,
+            )
+            return (
+                proposal,
+                proposal_objective,
+                proposal_grad,
+                best_candidate,
+                best_objective,
+                objective_nan_seen,
+                objective_overflow_seen,
+            )
+
+        candidate_current = zero_candidate
+        current_objective = objective_initial
+        grad_current = grad_initial
+        best_candidate = zero_candidate
+        objective_best = objective_initial
+        objective_nan_seen = jnp.isnan(objective_initial)
+        objective_overflow_seen = jnp.isinf(objective_initial)
+        if int(cfg.n_steps) > 1:
+            (
+                candidate_current,
+                current_objective,
+                grad_current,
+                best_candidate,
+                objective_best,
+                objective_nan_seen,
+                objective_overflow_seen,
+            ) = jax.lax.fori_loop(
+                0,
+                int(cfg.n_steps) - 1,
+                body,
+                (
+                    candidate_current,
+                    current_objective,
+                    grad_current,
+                    best_candidate,
+                    objective_best,
+                    objective_nan_seen,
+                    objective_overflow_seen,
+                ),
+            )
+
+        final_candidate = proposal_from_gradient(candidate_current, grad_current)
+        objective_final_endpoint = objective(final_candidate)
+        objective_nan_seen = jnp.logical_or(
+            objective_nan_seen,
+            jnp.isnan(objective_final_endpoint),
+        )
+        objective_overflow_seen = jnp.logical_or(
+            objective_overflow_seen,
+            jnp.isinf(objective_final_endpoint),
+        )
+        best_candidate, objective_best = select_best(
+            best_candidate,
+            objective_best,
+            final_candidate,
+            objective_final_endpoint,
+        )
+        return (
+            final_candidate,
+            objective_final_endpoint,
+            best_candidate,
+            objective_best,
+            objective_nan_seen,
+            objective_overflow_seen,
+        )
+
+    def run_adam_ascent():
+        optimizer = optax.adam(
+            learning_rate=float(cfg.adam_learning_rate),
+            b1=float(cfg.adam_b1),
+            b2=float(cfg.adam_b2),
+            eps=float(cfg.adam_eps),
+        )
+        opt_state0 = optimizer.init(zero_candidate)
+
+        def body(_, state):
+            (
+                candidate_current,
+                _current_objective,
+                grad_current,
+                opt_state,
+                best_candidate,
+                best_objective,
+                objective_nan_seen,
+                objective_overflow_seen,
+            ) = state
+            ascent_grad = jax.tree.map(lambda grad: -grad, grad_current)
+            updates, opt_state = optimizer.update(ascent_grad, opt_state, candidate_current)
+            proposal = mask_candidate(eqx.apply_updates(candidate_current, updates))
+            proposal_objective, proposal_grad = objective_and_grad(proposal)
+            proposal_grad = mask_candidate(proposal_grad)
+            objective_nan_seen = jnp.logical_or(
+                objective_nan_seen,
+                jnp.isnan(proposal_objective),
+            )
+            objective_overflow_seen = jnp.logical_or(
+                objective_overflow_seen,
+                jnp.isinf(proposal_objective),
+            )
+            best_candidate, best_objective = select_best(
+                best_candidate,
+                best_objective,
+                proposal,
+                proposal_objective,
+            )
+            return (
+                proposal,
+                proposal_objective,
+                proposal_grad,
+                opt_state,
+                best_candidate,
+                best_objective,
+                objective_nan_seen,
+                objective_overflow_seen,
+            )
+
+        (
+            final_candidate,
+            objective_final_endpoint,
+            _grad_final,
+            _opt_state_final,
+            best_candidate,
+            objective_best,
+            objective_nan_seen,
+            objective_overflow_seen,
+        ) = jax.lax.fori_loop(
+            0,
+            int(cfg.n_steps),
+            body,
+            (
+                zero_candidate,
+                objective_initial,
+                grad_initial,
+                opt_state0,
+                zero_candidate,
+                objective_initial,
+                jnp.isnan(objective_initial),
+                jnp.isinf(objective_initial),
+            ),
+        )
+        return (
+            final_candidate,
+            objective_final_endpoint,
+            best_candidate,
+            objective_best,
+            objective_nan_seen,
+            objective_overflow_seen,
+        )
+
+    if cfg.inner_optimizer_method == BROAD_EPSILON_PGD_ADAM:
+        (
+            final_candidate,
+            objective_final_endpoint,
+            best_candidate,
+            objective_best,
+            objective_nan_seen,
+            objective_overflow_seen,
+        ) = run_adam_ascent()
+    else:
+        (
+            final_candidate,
+            objective_final_endpoint,
+            best_candidate,
+            objective_best,
+            objective_nan_seen,
+            objective_overflow_seen,
+        ) = run_projected_gradient_ascent()
+    return _PgdAscentResult(
+        objective_initial=objective_initial,
+        objective_final_endpoint=objective_final_endpoint,
+        best_candidate=best_candidate,
+        best_objective=objective_best,
+        final_candidate=final_candidate,
+        objective_nan_seen=objective_nan_seen,
+        objective_overflow_seen=objective_overflow_seen,
+    )
+
+
 def run_broad_epsilon_pgd_inner_maximizer(
     task: Any,
     model: Any,
@@ -3104,8 +3348,6 @@ def run_broad_epsilon_pgd_inner_maximizer(
         return jax.value_and_grad(objective)(delta_candidate)
 
     zero_delta = jnp.zeros_like(base_epsilon)
-    objective_initial, grad_initial = objective_and_grad(zero_delta)
-    grad_initial = grad_initial * time_mask
     if radius is None:
         step_scale = jnp.asarray(cfg.step_size_fraction, dtype=base_epsilon.dtype)
     else:
@@ -3121,210 +3363,21 @@ def run_broad_epsilon_pgd_inner_maximizer(
             return proposal
         return _project_flattened_per_trial_l2_ball(proposal, radius)
 
-    def select_best(best_delta, best_objective, candidate_delta, candidate_objective):
-        improved = jnp.logical_and(
-            jnp.isfinite(candidate_objective),
-            candidate_objective > best_objective,
-        )
-        best_delta = jnp.where(
-            _expand_bool_like(improved, candidate_delta),
-            candidate_delta,
-            best_delta,
-        )
-        best_objective = jnp.where(improved, candidate_objective, best_objective)
-        return best_delta, best_objective
-
-    def run_projected_gradient_ascent():
-        def body(_, state):
-            (
-                delta_current,
-                _current_objective,
-                grad_current,
-                best_delta,
-                best_objective,
-                objective_nan_seen,
-                objective_overflow_seen,
-            ) = state
-            proposal = proposal_from_gradient(delta_current, grad_current)
-            proposal_objective, proposal_grad = objective_and_grad(proposal)
-            proposal_grad = proposal_grad * time_mask
-            objective_nan_seen = jnp.logical_or(objective_nan_seen, jnp.isnan(proposal_objective))
-            objective_overflow_seen = jnp.logical_or(
-                objective_overflow_seen,
-                jnp.isinf(proposal_objective),
-            )
-            best_delta, best_objective = select_best(
-                best_delta,
-                best_objective,
-                proposal,
-                proposal_objective,
-            )
-            return (
-                proposal,
-                proposal_objective,
-                proposal_grad,
-                best_delta,
-                best_objective,
-                objective_nan_seen,
-                objective_overflow_seen,
-            )
-
-        delta_current = zero_delta
-        current_objective = objective_initial
-        grad_current = grad_initial
-        best_delta = zero_delta
-        objective_best = objective_initial
-        objective_nan_seen = jnp.isnan(objective_initial)
-        objective_overflow_seen = jnp.isinf(objective_initial)
-        if int(cfg.n_steps) > 1:
-            (
-                delta_current,
-                current_objective,
-                grad_current,
-                best_delta,
-                objective_best,
-                objective_nan_seen,
-                objective_overflow_seen,
-            ) = jax.lax.fori_loop(
-                0,
-                int(cfg.n_steps) - 1,
-                body,
-                (
-                    delta_current,
-                    current_objective,
-                    grad_current,
-                    best_delta,
-                    objective_best,
-                    objective_nan_seen,
-                    objective_overflow_seen,
-                ),
-            )
-
-        final_delta = proposal_from_gradient(delta_current, grad_current)
-        objective_final_endpoint = objective(final_delta)
-        objective_nan_seen = jnp.logical_or(
-            objective_nan_seen,
-            jnp.isnan(objective_final_endpoint),
-        )
-        objective_overflow_seen = jnp.logical_or(
-            objective_overflow_seen,
-            jnp.isinf(objective_final_endpoint),
-        )
-        best_delta, objective_best = select_best(
-            best_delta,
-            objective_best,
-            final_delta,
-            objective_final_endpoint,
-        )
-        return (
-            final_delta,
-            objective_final_endpoint,
-            best_delta,
-            objective_best,
-            objective_nan_seen,
-            objective_overflow_seen,
-        )
-
-    def run_adam_ascent():
-        optimizer = optax.adam(
-            learning_rate=float(cfg.adam_learning_rate),
-            b1=float(cfg.adam_b1),
-            b2=float(cfg.adam_b2),
-            eps=float(cfg.adam_eps),
-        )
-        opt_state0 = optimizer.init(zero_delta)
-
-        def body(_, state):
-            (
-                delta_current,
-                _current_objective,
-                grad_current,
-                opt_state,
-                best_delta,
-                best_objective,
-                objective_nan_seen,
-                objective_overflow_seen,
-            ) = state
-            ascent_grad = -grad_current
-            updates, opt_state = optimizer.update(ascent_grad, opt_state, delta_current)
-            proposal = eqx.apply_updates(delta_current, updates) * time_mask
-            if radius is not None:
-                proposal = _project_flattened_per_trial_l2_ball(proposal, radius)
-            proposal_objective, proposal_grad = objective_and_grad(proposal)
-            proposal_grad = proposal_grad * time_mask
-            objective_nan_seen = jnp.logical_or(objective_nan_seen, jnp.isnan(proposal_objective))
-            objective_overflow_seen = jnp.logical_or(
-                objective_overflow_seen,
-                jnp.isinf(proposal_objective),
-            )
-            best_delta, best_objective = select_best(
-                best_delta,
-                best_objective,
-                proposal,
-                proposal_objective,
-            )
-            return (
-                proposal,
-                proposal_objective,
-                proposal_grad,
-                opt_state,
-                best_delta,
-                best_objective,
-                objective_nan_seen,
-                objective_overflow_seen,
-            )
-
-        (
-            final_delta,
-            objective_final_endpoint,
-            _grad_final,
-            _opt_state_final,
-            best_delta,
-            objective_best,
-            objective_nan_seen,
-            objective_overflow_seen,
-        ) = jax.lax.fori_loop(
-            0,
-            int(cfg.n_steps),
-            body,
-            (
-                zero_delta,
-                objective_initial,
-                grad_initial,
-                opt_state0,
-                zero_delta,
-                objective_initial,
-                jnp.isnan(objective_initial),
-                jnp.isinf(objective_initial),
-            ),
-        )
-        return (
-            final_delta,
-            objective_final_endpoint,
-            best_delta,
-            objective_best,
-            objective_nan_seen,
-            objective_overflow_seen,
-        )
-
-    if cfg.inner_optimizer_method == BROAD_EPSILON_PGD_ADAM:
-        (
-            final_delta,
-            objective_final_endpoint,
-            best_delta,
-            objective_best,
-            objective_nan_seen,
-            objective_overflow_seen,
-        ) = run_adam_ascent()
-    else:
-        (
-            final_delta,
-            objective_final_endpoint,
-            best_delta,
-            objective_best,
-            objective_nan_seen,
-            objective_overflow_seen,
-        ) = run_projected_gradient_ascent()
+    ascent = _run_broad_epsilon_pgd_ascent(
+        zero_delta,
+        objective=objective,
+        objective_and_grad=objective_and_grad,
+        proposal_from_gradient=proposal_from_gradient,
+        mask_candidate=lambda delta_candidate: delta_candidate * time_mask,
+        cfg=cfg,
+    )
+    objective_initial = ascent.objective_initial
+    final_delta = ascent.final_candidate
+    objective_final_endpoint = ascent.objective_final_endpoint
+    best_delta = ascent.best_candidate
+    objective_best = ascent.best_objective
+    objective_nan_seen = ascent.objective_nan_seen
+    objective_overflow_seen = ascent.objective_overflow_seen
     delta = jax.lax.stop_gradient(best_delta * time_mask)
     updated = _set_input(specs, "epsilon", base_epsilon + delta)
     if not return_diagnostics:
@@ -3483,235 +3536,37 @@ def _run_finite_broad_epsilon_pgd_inner_maximizer(
     def objective_and_grad(params):
         return jax.value_and_grad(objective)(params)
 
-    objective_initial, grad_initial = objective_and_grad(zero_params)
+    step_size = jnp.asarray(cfg.step_size_fraction, dtype=base_epsilon.dtype) * jnp.mean(radius)
 
-    def select_best(best_params, best_objective, candidate_params, candidate_objective):
-        improved = jnp.logical_and(
-            jnp.isfinite(candidate_objective),
-            candidate_objective > best_objective,
-        )
-        best_params = jax.tree.map(
-            lambda best, candidate: jnp.where(improved, candidate, best),
-            best_params,
-            candidate_params,
-        )
-        best_objective = jnp.where(improved, candidate_objective, best_objective)
-        return best_params, best_objective
-
-    def run_projected_gradient_ascent():
-        step_size = jnp.asarray(cfg.step_size_fraction, dtype=base_epsilon.dtype) * jnp.mean(radius)
-
-        def proposal_from_gradient(params_current, grad_current):
-            grad_norm = _finite_policy_tree_norm(grad_current)
-            scaled = jax.tree.map(
-                lambda param, grad: (
-                    param
-                    + step_size
-                    * grad
-                    / jnp.maximum(grad_norm, jnp.asarray(1e-12, dtype=step_size.dtype))
-                ),
-                params_current,
-                grad_current,
-            )
-            return _mask_finite_policy_params(scaled, policy_mask)
-
-        def body(_, state):
-            (
-                params_current,
-                _current_objective,
-                grad_current,
-                best_params,
-                best_objective,
-                objective_nan_seen,
-                objective_overflow_seen,
-            ) = state
-            proposal = proposal_from_gradient(params_current, grad_current)
-            proposal_objective, proposal_grad = objective_and_grad(proposal)
-            objective_nan_seen = jnp.logical_or(
-                objective_nan_seen,
-                jnp.isnan(proposal_objective),
-            )
-            objective_overflow_seen = jnp.logical_or(
-                objective_overflow_seen,
-                jnp.isinf(proposal_objective),
-            )
-            best_params, best_objective = select_best(
-                best_params,
-                best_objective,
-                proposal,
-                proposal_objective,
-            )
-            return (
-                proposal,
-                proposal_objective,
-                proposal_grad,
-                best_params,
-                best_objective,
-                objective_nan_seen,
-                objective_overflow_seen,
-            )
-
-        params_current = zero_params
-        current_objective = objective_initial
-        grad_current = grad_initial
-        best_params = zero_params
-        objective_best = objective_initial
-        objective_nan_seen = jnp.isnan(objective_initial)
-        objective_overflow_seen = jnp.isinf(objective_initial)
-        if int(cfg.n_steps) > 1:
-            (
-                params_current,
-                current_objective,
-                grad_current,
-                best_params,
-                objective_best,
-                objective_nan_seen,
-                objective_overflow_seen,
-            ) = jax.lax.fori_loop(
-                0,
-                int(cfg.n_steps) - 1,
-                body,
-                (
-                    params_current,
-                    current_objective,
-                    grad_current,
-                    best_params,
-                    objective_best,
-                    objective_nan_seen,
-                    objective_overflow_seen,
-                ),
-            )
-
-        final_params = proposal_from_gradient(params_current, grad_current)
-        objective_final_endpoint = objective(final_params)
-        objective_nan_seen = jnp.logical_or(
-            objective_nan_seen,
-            jnp.isnan(objective_final_endpoint),
-        )
-        objective_overflow_seen = jnp.logical_or(
-            objective_overflow_seen,
-            jnp.isinf(objective_final_endpoint),
-        )
-        best_params, objective_best = select_best(
-            best_params,
-            objective_best,
-            final_params,
-            objective_final_endpoint,
-        )
-        return (
-            final_params,
-            objective_final_endpoint,
-            best_params,
-            objective_best,
-            objective_nan_seen,
-            objective_overflow_seen,
-        )
-
-    def run_adam_ascent():
-        optimizer = optax.adam(
-            learning_rate=float(cfg.adam_learning_rate),
-            b1=float(cfg.adam_b1),
-            b2=float(cfg.adam_b2),
-            eps=float(cfg.adam_eps),
-        )
-        opt_state0 = optimizer.init(zero_params)
-
-        def body(step_index, state):
-            del step_index
-            (
-                params_current,
-                current_objective,
-                grad_current,
-                opt_state,
-                best_params,
-                best_objective,
-                objective_nan_seen,
-                objective_overflow_seen,
-            ) = state
-            del current_objective
-            ascent_grad = jax.tree.map(lambda grad: -grad, grad_current)
-            updates, opt_state = optimizer.update(ascent_grad, opt_state, params_current)
-            proposal = _mask_finite_policy_params(
-                eqx.apply_updates(params_current, updates),
-                policy_mask,
-            )
-            proposal_objective, proposal_grad = objective_and_grad(proposal)
-            objective_nan_seen = jnp.logical_or(
-                objective_nan_seen,
-                jnp.isnan(proposal_objective),
-            )
-            objective_overflow_seen = jnp.logical_or(
-                objective_overflow_seen,
-                jnp.isinf(proposal_objective),
-            )
-            best_params, best_objective = select_best(
-                best_params,
-                best_objective,
-                proposal,
-                proposal_objective,
-            )
-            return (
-                proposal,
-                proposal_objective,
-                proposal_grad,
-                opt_state,
-                best_params,
-                best_objective,
-                objective_nan_seen,
-                objective_overflow_seen,
-            )
-
-        (
-            final_params,
-            objective_final_endpoint,
-            _grad_final,
-            _opt_state_final,
-            best_params,
-            objective_best,
-            objective_nan_seen,
-            objective_overflow_seen,
-        ) = jax.lax.fori_loop(
-            0,
-            int(cfg.n_steps),
-            body,
-            (
-                zero_params,
-                objective_initial,
-                grad_initial,
-                opt_state0,
-                zero_params,
-                objective_initial,
-                jnp.isnan(objective_initial),
-                jnp.isinf(objective_initial),
+    def proposal_from_gradient(params_current, grad_current):
+        grad_norm = _finite_policy_tree_norm(grad_current)
+        scaled = jax.tree.map(
+            lambda param, grad: (
+                param
+                + step_size
+                * grad
+                / jnp.maximum(grad_norm, jnp.asarray(1e-12, dtype=step_size.dtype))
             ),
+            params_current,
+            grad_current,
         )
-        return (
-            final_params,
-            objective_final_endpoint,
-            best_params,
-            objective_best,
-            objective_nan_seen,
-            objective_overflow_seen,
-        )
+        return _mask_finite_policy_params(scaled, policy_mask)
 
-    if cfg.inner_optimizer_method == BROAD_EPSILON_PGD_ADAM:
-        (
-            final_params,
-            objective_final_endpoint,
-            best_params,
-            objective_best,
-            objective_nan_seen,
-            objective_overflow_seen,
-        ) = run_adam_ascent()
-    else:
-        (
-            final_params,
-            objective_final_endpoint,
-            best_params,
-            objective_best,
-            objective_nan_seen,
-            objective_overflow_seen,
-        ) = run_projected_gradient_ascent()
+    ascent = _run_broad_epsilon_pgd_ascent(
+        zero_params,
+        objective=objective,
+        objective_and_grad=objective_and_grad,
+        proposal_from_gradient=proposal_from_gradient,
+        mask_candidate=lambda params: _mask_finite_policy_params(params, policy_mask),
+        cfg=cfg,
+    )
+    objective_initial = ascent.objective_initial
+    final_params = ascent.final_candidate
+    objective_final_endpoint = ascent.objective_final_endpoint
+    best_params = ascent.best_candidate
+    objective_best = ascent.best_objective
+    objective_nan_seen = ascent.objective_nan_seen
+    objective_overflow_seen = ascent.objective_overflow_seen
     best_params = jax.tree.map(jax.lax.stop_gradient, best_params)
     updated = candidate_specs(best_params)
     if not return_diagnostics:

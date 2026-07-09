@@ -166,6 +166,7 @@ from rlrmp.train.cs_perturbation_training import (
     _flattened_per_trial_norm,
     _normalize_flattened_per_trial,
     _project_flattened_per_trial_l2_ball,
+    _run_finite_broad_epsilon_pgd_inner_maximizer,
     _set_input,
     _target_aligned_lateral_direction_pulse,
     calibration_regime_manifest,
@@ -194,6 +195,7 @@ from rlrmp.train.cs_perturbation_training import (
     target_relative_validation_manifest,
     validation_bin_manifest,
 )
+from rlrmp.train.executor.equivalence import assert_paired_equivalent, run_paired_equivalence
 from rlrmp.train.task_model import (
     CS_LSS_PLANT_BACKEND,
     LEGACY_CAUSAL_BACKEND_WARNING,
@@ -1969,6 +1971,156 @@ def test_direct_epsilon_pgd_does_not_install_finite_policy_inputs(
     assert "finite_policy_delta_zero_energy_mean" not in diagnostics
     assert diagnostics["inner_optimizer_method_is_adam"].tolist() is expected_adam
     assert updated.inputs["epsilon"].shape == (1, 2, 2)
+
+
+def test_direct_epsilon_pgd_dict_and_config_routing_are_equivalent() -> None:
+    class EchoTask:
+        def eval_trials(self, model, trial_specs, keys_model):
+            del model, keys_model
+            return trial_specs.inputs["epsilon"]
+
+    target = jnp.asarray(
+        [[[0.006, -0.003], [0.001, 0.004]]],
+        dtype=jnp.float32,
+    )
+
+    class ShiftedQuadraticLoss:
+        def __call__(self, states, trial_specs, model):
+            del states, model
+            epsilon = trial_specs.inputs["epsilon"]
+            return TreeNamespace(total=-jnp.sum((epsilon - target) ** 2))
+
+    trial_specs = TaskTrialSpec(
+        inits=WhereDict({}),
+        targets=WhereDict(
+            {
+                "mechanics.effector.pos": TargetSpec(
+                    value=jnp.zeros((1, 2, 2), dtype=jnp.float32),
+                )
+            }
+        ),
+        inputs={"epsilon": jnp.zeros((1, 2, 2), dtype=jnp.float32)},
+        timeline=TrialTimeline(n_steps=2),
+    )
+    config = {
+        "enabled": True,
+        "level": "moderate",
+        "budget_scale": 2.0,
+        "reach_length_scaling": False,
+        "n_steps": 4,
+        "step_size_fraction": 0.4,
+        "epsilon_dim": 2,
+    }
+
+    def run(config_value):
+        updated, diagnostics = run_broad_epsilon_pgd_inner_maximizer(
+            EchoTask(),
+            model=None,
+            trial_specs=trial_specs,
+            loss_func=ShiftedQuadraticLoss(),
+            keys_model=None,
+            config=config_value,
+            return_diagnostics=True,
+        )
+        return {
+            "epsilon": updated.inputs["epsilon"],
+            "inner_objective_after": diagnostics["inner_objective_after"],
+            "inner_objective_best": diagnostics["inner_objective_best"],
+            "inner_objective_final_endpoint": diagnostics["inner_objective_final_endpoint"],
+        }
+
+    report = run_paired_equivalence(
+        "pgd_direct_epsilon_inner_maximizer",
+        lambda: run(config),
+        lambda: run(config_from_broad_epsilon_pgd_hps(config)),
+        left_label="dict_config",
+        right_label="model_config",
+    )
+
+    assert_paired_equivalent(report)
+
+
+def test_finite_pgd_public_routing_matches_finite_core_equivalence() -> None:
+    class FiniteInputOnlyTask:
+        def eval_trials(self, model, trial_specs, keys_model):
+            del model, keys_model
+            gains = jnp.asarray(trial_specs.inputs[FINITE_POLICY_GAINS_INPUT])
+            return TreeNamespace(
+                mechanics=TreeNamespace(
+                    vector=jnp.sum(gains, axis=-2),
+                )
+            )
+
+    class SumVectorLoss:
+        def __call__(self, states, trial_specs, model):
+            del trial_specs, model
+            return TreeNamespace(total=jnp.sum(states.mechanics.vector))
+
+    cfg = PgdFullStateEpsilonTrainingConfig(
+        enabled=True,
+        adversary_mechanism=LINEAR_NO_BIAS_POLICY,
+        reach_length_scaling=False,
+        n_steps=2,
+        epsilon_dim=2,
+        objective_kind=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+        energy_lambda=1e-6,
+        safety_cap_l2_radius_15cm=1.0,
+        safety_cap_source="unit_test_cap",
+        inner_optimizer_method=BROAD_EPSILON_PGD_ADAM,
+        adam_learning_rate=1e-2,
+    )
+    trial_specs = TaskTrialSpec(
+        inits=WhereDict({"mechanics.vector": jnp.zeros((1, 4), dtype=jnp.float32)}),
+        targets=WhereDict(
+            {
+                "mechanics.effector.pos": TargetSpec(
+                    value=jnp.zeros((1, 2, 2), dtype=jnp.float32),
+                )
+            }
+        ),
+        inputs={"epsilon": jnp.zeros((1, 2, 2), dtype=jnp.float32)},
+        timeline=TrialTimeline(n_steps=2),
+    )
+
+    def comparable(result):
+        updated, diagnostics = result
+        return {
+            "gains": updated.inputs[FINITE_POLICY_GAINS_INPUT],
+            "epsilon": updated.inputs["epsilon"],
+            "inner_objective_after": diagnostics["inner_objective_after"],
+            "inner_objective_best": diagnostics["inner_objective_best"],
+            "inner_objective_final_endpoint": diagnostics["inner_objective_final_endpoint"],
+            "finite_policy_final_endpoint_energy_mean": diagnostics[
+                "finite_policy_final_endpoint_energy_mean"
+            ],
+        }
+
+    report = run_paired_equivalence(
+        "pgd_finite_policy_inner_maximizer",
+        lambda: run_broad_epsilon_pgd_inner_maximizer(
+            FiniteInputOnlyTask(),
+            model=None,
+            trial_specs=trial_specs,
+            loss_func=SumVectorLoss(),
+            keys_model=None,
+            config=cfg,
+            return_diagnostics=True,
+        ),
+        lambda: _run_finite_broad_epsilon_pgd_inner_maximizer(
+            FiniteInputOnlyTask(),
+            model=None,
+            trial_specs=trial_specs,
+            loss_func=SumVectorLoss(),
+            keys_model=None,
+            cfg=cfg,
+            return_diagnostics=True,
+        ),
+        comparable=comparable,
+        left_label="public_router",
+        right_label="finite_core",
+    )
+
+    assert_paired_equivalent(report)
 
 
 def test_pgd_sisu_budget_radius_uses_sqrt_energy_fraction() -> None:
