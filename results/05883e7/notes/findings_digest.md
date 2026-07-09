@@ -90,20 +90,19 @@ objects, and a judgment of whether its content reads as general framework
 infrastructure (`framework_general`) or as something shaped by one specific
 downstream project's needs (`project_smell` or `unclear`).
 
-**Coverage was checked against the filesystem, not trusted from the fan-out.**
-The catalog states its own coverage audit up front: a plain filesystem walk of
-`feedbax/feedbax` found 302 modules; the merged catalog covers all 302 with no
+**Coverage was checked against the filesystem, not trusted from the fan-out —
+and the check caught a real gap.** The catalog's first fan-out pass used an
+agent-transcribed module listing that silently dropped 15 modules (287 records
+against 302 modules actually on disk). A deterministic filesystem walk of
+`feedbax/feedbax` caught the shortfall by comparing the transcription against
+ground truth rather than trusting the fan-out's own count. A gap-fill pass then
+cataloged the 15 missing modules (`chunk_60.jsonl`, 8 records; `chunk_61.jsonl`,
+7 records) and the merged catalog was rebuilt to exactly 302/302, with no
 missing and no extra relpaths. This is the standing lesson worth generalizing:
 an agent transcribing a large tree into a structured catalog can silently drop
 entries, and the only way to know it didn't is to check the transcription
 against an independent, deterministic ground truth (here, a directory walk)
-rather than trust the fan-out's own bookkeeping. The mechanism visibly still
-works in this run — the catalog's chunk-file sequence jumps from
-`chunk_58.jsonl` to `chunk_60.jsonl` (`chunk_59.jsonl` is simply absent from
-disk), and the coverage check is precisely what confirms that gap didn't cost
-any module content: all 302 modules are present across the 61 files that do
-exist, so nothing was lost, but the anomaly is flagged as a residual
-generation-process question worth checking if the catalog is regenerated.
+rather than trust the fan-out's own bookkeeping.
 
 **34 of 302 modules (11%) are not `framework_general`** — 13 flagged
 `project_smell`, 21 `unclear`. These are concrete, named findings, not a
