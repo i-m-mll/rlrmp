@@ -56,11 +56,7 @@ MINIMAX_JITTED_STEP_FUNCTIONS = {
 ALLOWED_NON_TRAINING_OPTIMIZER_LOOPS = {
     (
         Path("src/rlrmp/train/cs_perturbation_training.py"),
-        "run_broad_epsilon_pgd_inner_maximizer",
-    ),
-    (
-        Path("src/rlrmp/train/cs_perturbation_training.py"),
-        "_run_finite_broad_epsilon_pgd_inner_maximizer",
+        "_run_broad_epsilon_pgd_ascent",
     ),
 }
 ALLOWED_NATIVE_OPTIMIZER_LOOPS = {
@@ -234,11 +230,15 @@ def _optimizer_loop_findings_for_tree(tree: ast.AST, *, rel_path: Path) -> list[
         module_has_grad = module_has_grad or has_grad
         module_has_optimizer_update = module_has_optimizer_update or has_optimizer_update
         module_has_apply_updates = module_has_apply_updates or has_apply_updates
+        if (
+            has_optimizer_update
+            and has_apply_updates
+            and (rel_path, node.name) in ALLOWED_NON_TRAINING_OPTIMIZER_LOOPS
+        ):
+            allowed_direct_loop = True
+            continue
         if has_grad and has_optimizer_update and has_apply_updates:
-            if (
-                (rel_path, node.name) in ALLOWED_NON_TRAINING_OPTIMIZER_LOOPS
-                or (rel_path, node.name) in ALLOWED_NATIVE_OPTIMIZER_LOOPS
-            ):
+            if (rel_path, node.name) in ALLOWED_NATIVE_OPTIMIZER_LOOPS:
                 allowed_direct_loop = True
                 continue
             findings.append(f"{rel_path}:{node.lineno}:{node.name}")
