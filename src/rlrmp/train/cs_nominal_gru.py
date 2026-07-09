@@ -55,6 +55,7 @@ from jax_cookbook.tree import filter_spec_leaves
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from rlrmp.runtime.jax_config import assert_jax_x64_disabled
+from rlrmp.runtime.params_models import register_params_model
 from rlrmp.analysis.math.cs_game_card import (
     INIT_POS,
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
@@ -101,6 +102,7 @@ from rlrmp.runtime.checkpoint_custody import (
     write_cs_checkpoint_transaction,
 )
 from rlrmp.runtime.training_run_specs import (
+    CS_SUPERVISED_METHOD_REF,
     FEEDBAX_TRAINING_RUN_SPEC_KEY,
     RLRMP_RUN_SPEC_PAYLOAD_KEY,
     attach_composed_training_specs,
@@ -129,7 +131,6 @@ from rlrmp.train.executor.slots import (
     TRAIN_LOSS,
 )
 from rlrmp.train.cs_perturbation_training import (
-    BROAD_EPSILON_PGD_ADAM,
     BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
     BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM,
     BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE,
@@ -137,11 +138,9 @@ from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
     BROAD_EPSILON_PGD_TRAINING_MODE,
     BROAD_EPSILON_TRAINING_MODE,
-    HISTORICAL_020A65B_PGD_RADIUS_15CM,
     DEFAULT_TARGET_SUPPORT_PROFILE,
     LEGACY_PERTURBATION_TRAINING_MODE,
     PERTURBATION_TRAINING_MODE,
-    POLICY_ADVERSARY_ENERGY_MODE,
     POLICY_ADVERSARY_MEMORYLESS_MLP,
     POLICY_ADVERSARY_PLAIN_MODE,
     POLICY_ADVERSARY_TRAINING_MODE,
@@ -160,13 +159,6 @@ from rlrmp.train.cs_perturbation_training import (
     make_broad_epsilon_pgd_pre_step,
     make_policy_adversary_pre_step,
     _batch_shape,
-    planned_33b0dcb_target_support_rows,
-    planned_020a65b_h0_pgd_rows,
-    planned_7c1f7ed_delayed_sisu_spectrum_rows,
-    planned_e4800d6_sisu_spectrum_rows,
-    planned_fixed_target_perturbation_rows,
-    planned_target_relative_multitarget_h0_rows,
-    planned_target_relative_multitarget_rows,
     policy_adversary_objective,
     run_broad_epsilon_pgd_inner_maximizer,
     target_relative_target_support_config,
@@ -386,17 +378,6 @@ class CsNominalGruConfig(BaseModel):
     policy_adversary_radius_source: str | None = None
 
     initial_hidden_encoder: bool = False
-    planned_perturbation_rows: bool = False
-    planned_target_relative_rows: bool = False
-    planned_target_relative_h0_rows: bool = False
-    planned_020a65b_h0_pgd_rows: bool = False
-    planned_33b0dcb_target_support_rows: bool = False
-    planned_e901a20_policy_adversary_rows: bool = False
-    planned_e4800d6_sisu_spectrum_rows: bool = False
-    planned_ef9c882_start_pos_hold_rows: bool = False
-    planned_246182c_post_movement_cost_tail_rows: bool = False
-    planned_7c1f7ed_delayed_sisu_spectrum_rows: bool = False
-
     smoke: bool = False
     full_train: bool = False
     resume: bool = False
@@ -442,6 +423,8 @@ DEFAULT_DELAYED_P_CATCH_TRIAL = float(
     CsNominalGruConfig.model_fields["delayed_reach_p_catch_trial"].default
 )
 
+CS_NOMINAL_GRU_PARAMS_REF = "rlrmp.train.cs_nominal_gru"
+
 
 def _config_payload_from_args(args: argparse.Namespace | Mapping[str, Any]) -> dict[str, Any]:
     """Return a config payload from a namespace or mapping without unknown attrs."""
@@ -486,6 +469,188 @@ def _literal_values(annotation: Any) -> list[Any]:
 def _config_choices(field_name: str) -> list[Any] | None:
     values = _literal_values(CsNominalGruConfig.model_fields[field_name].annotation)
     return values or None
+
+
+_CLI_HELP: dict[str, str] = {
+    "run_spec": (
+        "Replay a modern tracked nominal-GRU run.json through the current training/spec "
+        "writer. Explicit CLI flags override the run spec."
+    ),
+    "allow_x64": (
+        "Allow a training/spec process to start after process-global JAX x64 was enabled."
+    ),
+    "lr_warmup_batches": (
+        "If positive, linearly warm the controller LR from --lr-warmup-init-fraction * "
+        "--controller-lr to --controller-lr over this many batches, then cosine-decay."
+    ),
+    "lr_warmup_init_fraction": "Initial LR fraction for warmup-cosine schedules.",
+    "plant_backend": (
+        "Plant backend for nominal GRU training. The default uses exact C&S "
+        "LinearStateSpace mechanics."
+    ),
+    "target_m": argparse.SUPPRESS,
+    "stochastic_preset": "Named stochastic rollout contract.",
+    "nn_output_pre_go": (
+        "Anti-anticipation controller-output penalty during delayed-reach prep."
+    ),
+    "loss_objective": "Training objective.",
+    "perturbation_training": (
+        "Enable fixed-target perturbation-generalized training. Defaults to on for "
+        "--delayed-reach and off otherwise."
+    ),
+    "perturbation_delayed_observation_offset_m": (
+        "Legacy run-spec compatibility only; delayed_observation is no longer sampled."
+    ),
+    "perturbation_calibrated_timing": (
+        "Use timing-bin calibrated perturbation training."
+    ),
+    "perturbation_movement_age_timing": (
+        "Index calibrated perturbation timing bins by movement age."
+    ),
+    "target_relative_multitarget": "Enable static target-relative multi-target training.",
+    "target_support_profile": "Named finite target-support profile.",
+    "delayed_reach": "Use the explicit delayed-reach C&S task contract.",
+    "delayed_reach_trial_type_normalized_loss": (
+        "Split delayed Q/R/Q_f into no-catch and catch trial terms before weighting."
+    ),
+    "force_filter_feedback": (
+        "Extend target-relative delayed feedback with delayed force/filter coordinates."
+    ),
+    "broad_epsilon_training": "Enable randomized full-state C&S epsilon training.",
+    "broad_epsilon_pgd_training": (
+        "Enable training-time projected-gradient ascent over the full C&S epsilon channel."
+    ),
+    "broad_epsilon_level": "Analytical broad-epsilon budget anchor.",
+    "broad_epsilon_pgd_inner_optimizer_method": "Inner optimizer for broad-epsilon adversary selection.",
+    "broad_epsilon_pgd_mechanism": "Adversary mechanism for broad-epsilon PGD.",
+    "broad_epsilon_pgd_objective": "Inner PGD objective.",
+    "broad_epsilon_pgd_energy_penalty_scale": (
+        "Soft-energy c multiplier in lambda = c * gamma^2 unless lambda is explicit."
+    ),
+    "broad_epsilon_pgd_budget_schedule": "Select the PGD L2 budget schedule.",
+    "broad_epsilon_pgd_sisu_condition_input": (
+        "Trial input that carries the scalar SISU value for sisu_energy_fraction PGD budgets."
+    ),
+    "adaptive_epsilon_curriculum": (
+        "Enable adaptive-lambda soft-energy direct-epsilon training."
+    ),
+    "policy_adversary_training": "Enable learned full-state epsilon policy-adversary training.",
+    "policy_adversary_policy_class": "Adversary policy parameterization.",
+    "policy_adversary_mode": "Policy-adversary objective mode.",
+    "policy_adversary_energy_gamma": (
+        "Multiplier on epsilon energy in energy mode; this is a stabilizer term."
+    ),
+    "initial_hidden_encoder": "Enable the conservative C&S GRU H0 path.",
+    "smoke": "Use tiny local values; with --full-train this runs a one-batch smoke.",
+    "allow_fresh_start": (
+        "Allow --resume to start from batch 0 when the expected resume pointer is absent."
+    ),
+    "stop_after_batches": (
+        "Global completed-batch index at which a full-train checkpoint-gate run may stop; "
+        "not a relative count."
+    ),
+    "training_diagnostics": "Write compact optimizer/loss scalar sidecars.",
+    "dry_run": "Print the would-write payload without creating files.",
+}
+
+_CLI_ALIASES: dict[str, tuple[str, ...]] = {
+    "delayed_reach_trial_type_normalized_loss": (
+        "--delayed-reach-trial-type-normalization",
+    ),
+    "force_filter_feedback": ("--proprioceptive-feedback",),
+    "initial_hidden_encoder": ("--h0-encoder",),
+}
+
+_BOOLEAN_OPTIONAL_FIELDS = frozenset(
+    {
+        "perturbation_training",
+        "perturbation_calibrated_timing",
+        "perturbation_movement_age_timing",
+        "force_filter_feedback",
+        "broad_epsilon_reach_scaling",
+        "adaptive_epsilon_freeze_until_burn_in",
+        "adaptive_epsilon_gain_normalization",
+        "training_diagnostics",
+        "quiet_progress",
+    }
+)
+
+
+def _optional_arg_type(annotation: Any) -> Any:
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+    if origin in {Union, type(int | str)}:
+        non_none = [arg for arg in args if arg is not type(None)]
+        if len(non_none) == 1:
+            return _optional_arg_type(non_none[0])
+    if origin is Literal:
+        values = [value for value in args if value is not None]
+        if values:
+            return type(values[0])
+    if annotation in {str, int, float}:
+        return annotation
+    return str
+
+
+def _is_bool_annotation(annotation: Any) -> bool:
+    if annotation is bool:
+        return True
+    origin = get_origin(annotation)
+    if origin in {Union, type(int | str)}:
+        return any(arg is bool for arg in get_args(annotation))
+    return False
+
+
+def _add_model_field_argument(
+    parser: argparse.ArgumentParser,
+    field_name: str,
+    *,
+    default: Any,
+) -> None:
+    field = CsNominalGruConfig.model_fields[field_name]
+    flag = f"--{field_name.replace('_', '-')}"
+    aliases = _CLI_ALIASES.get(field_name, ())
+    help_text = _CLI_HELP.get(field_name)
+    choices = _config_choices(field_name)
+    options: dict[str, Any] = {
+        "dest": field_name,
+        "default": default,
+        "help": help_text,
+    }
+    if help_text is argparse.SUPPRESS:
+        options["help"] = argparse.SUPPRESS
+    if _is_bool_annotation(field.annotation) or isinstance(default, bool):
+        if field_name in _BOOLEAN_OPTIONAL_FIELDS:
+            options["action"] = argparse.BooleanOptionalAction
+        else:
+            options["action"] = "store_true"
+            options["default"] = default
+    else:
+        options["type"] = _optional_arg_type(field.annotation)
+        if choices is not None:
+            options["choices"] = choices
+    parser.add_argument(flag, *aliases, **options)
+
+
+def _build_config_generated_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Prepare a stochastic C&S-fidelity GRU run spec.",
+    )
+    defaults = CsNominalGruConfig().model_dump(mode="python")
+    for field_name, default in defaults.items():
+        _add_model_field_argument(parser, field_name, default=default)
+    parser.set_defaults(**defaults)
+    return _apply_config_parser_defaults(parser)
+
+
+def register_training_config_params_models(*, replace: bool = True) -> None:
+    """Register training params models for run-matrix validation."""
+
+    register_params_model(CS_NOMINAL_GRU_PARAMS_REF, CsNominalGruConfig, replace=replace)
+    register_params_model(CS_SUPERVISED_METHOD_REF, CsNominalGruConfig, replace=replace)
+
+
+register_training_config_params_models()
 
 
 @dataclass(frozen=True)
@@ -976,8 +1141,6 @@ def _cli_values_match(left: Any, right: Any) -> bool:
 def _run_spec_override_category(key: str) -> str:
     if key in RUN_SPEC_OVERRIDE_CATEGORIES:
         return RUN_SPEC_OVERRIDE_CATEGORIES[key]
-    if key.startswith("planned_"):
-        return "CLI planning mode"
     if key.startswith("perturbation_") or key.startswith("broad_epsilon_"):
         return "scientific payload"
     if key.startswith("policy_adversary_") or key.startswith("adaptive_epsilon_"):
@@ -2550,368 +2713,6 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def planned_ef9c882_start_pos_hold_rows(
-    *,
-    experiment: str = "ef9c882",
-) -> list[dict[str, Any]]:
-    """Return the locked delayed pre-go start-position hold rows for ef9c882."""
-
-    common_command = [
-        "env",
-        "PYTHONPATH=src",
-        "uv",
-        "run",
-        "--no-sync",
-        "python",
-        "scripts/train_cs_nominal_gru.py",
-        "--issue",
-        experiment,
-        "--n-train-batches",
-        "12000",
-        "--batch-size",
-        "64",
-        "--gradient-clip-norm",
-        "5",
-        "--lr-warmup-batches",
-        "500",
-        "--lr-warmup-init-fraction",
-        "0.1",
-        "--lr-cosine-alpha",
-        "0.1",
-        "--n-replicates",
-        "5",
-        "--hidden-size",
-        "180",
-        "--loss-objective",
-        CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
-        "--delayed-reach",
-        "--delayed-reach-go-cue-min-step",
-        "10",
-        "--delayed-reach-go-cue-max-step",
-        "30",
-        "--delayed-reach-p-catch-trial",
-        "0.5",
-        "--target-relative-multitarget",
-        "--force-filter-feedback",
-        "--perturbation-training",
-        "--perturbation-calibrated-timing",
-        "--perturbation-movement-age-timing",
-        "--perturbation-physical-level",
-        "small",
-        "--nn-output-pre-go",
-        "0",
-        "--delayed-pre-go-force-filter-hold",
-        "0",
-    ]
-    row_specs = [
-        ("hold_start_pos_l2_ffpert__w1e6_lr3e-3", "l2", 1e6, 3e-3, 0.0),
-        ("hold_start_pos_l2_ffpert__w1e8_lr3e-3", "l2", 1e8, 3e-3, 0.0),
-        ("hold_start_pos_l1_ffpert__w1e6_lr3e-3", "l1", 1e6, 3e-3, 0.0),
-        ("hold_start_pos_l1_ffpert__w1e5_lr3e-3", "l1", 1e5, 3e-3, 0.0),
-        ("hold_start_pos_l2_ffpert__w1e8_lr1e-2", "l2", 1e8, 1e-2, 0.0),
-        ("hold_start_pos_l1_ffpert__w1e5_lr1e-2", "l1", 1e5, 1e-2, 0.0),
-        ("hold__start_pos_zero_vel_lr1e-2", "l2", 1e6, 1e-2, 1e5),
-        ("hold__start_pos_zero_vel_lr3e-2", "l2", 1e6, 3e-2, 1e5),
-    ]
-    rows = []
-    for run, norm, weight, controller_lr, zero_vel_hold in row_specs:
-        command = [
-            *common_command,
-            "--controller-lr",
-            f"{controller_lr:g}",
-            "--delayed-pre-go-zero-vel-hold",
-            f"{zero_vel_hold:g}",
-            "--delayed-pre-go-start-pos-hold",
-            f"{weight:g}",
-            "--delayed-pre-go-start-pos-hold-norm",
-            norm,
-            "--output-dir",
-            f"_artifacts/{experiment}/runs/{run}",
-        ]
-        rows.append(
-            {
-                "experiment": experiment,
-                "run": run,
-                "row_kind": "full_training_contract",
-                "adversarial_phase": "none",
-                "broad_epsilon_pgd_training": False,
-                "delayed_reach": True,
-                "target_visible_from_start": True,
-                "go_cue_min_step": 10,
-                "go_cue_max_step": 30,
-                "p_catch_trial": 0.5,
-                "loss_objective": CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
-                "movement_period_position_error_norm": "l2",
-                "movement_window_qrf_comparator": "full_analytical_qrf_movement_age",
-                "nn_output_pre_go": 0.0,
-                "delayed_pre_go_force_filter_hold": 0.0,
-                "delayed_pre_go_zero_vel_hold": float(zero_vel_hold),
-                "delayed_pre_go_start_pos_hold": float(weight),
-                "delayed_pre_go_start_pos_hold_norm": norm,
-                "force_filter_feedback": True,
-                "perturbation_training": True,
-                "perturbation_calibrated_timing": True,
-                "perturbation_movement_age_timing": True,
-                "perturbation_physical_level": "small",
-                "hidden_size": 180,
-                "batch_size": 64,
-                "controller_lr": float(controller_lr),
-                "lr_schedule": "warmup_cosine",
-                "lr_warmup_batches": 500,
-                "lr_warmup_init_fraction": 0.1,
-                "lr_cosine_alpha": 0.1,
-                "gradient_clip_norm": 5.0,
-                "n_replicates": 5,
-                "n_train_batches": 12000,
-                "n_adversary_batches": 0,
-                "eval_bank": "current_corrected_fixed_delayed_movement_bank",
-                "spec_command": [*command, "--dry-run"],
-                "command": [*command, "--full-train", "--resume"],
-            }
-        )
-    return rows
-
-
-def planned_246182c_post_movement_cost_tail_rows(
-    *,
-    experiment: str = "246182c",
-) -> list[dict[str, Any]]:
-    """Return the locked delayed movement cost-tail diagnostic row for 246182c."""
-
-    run = "hold__start_pos_zero_vel_lr1e-2_flat_tail"
-    command = [
-        "env",
-        "PYTHONPATH=src",
-        "uv",
-        "run",
-        "--no-sync",
-        "python",
-        "scripts/train_cs_nominal_gru.py",
-        "--issue",
-        experiment,
-        "--n-train-batches",
-        "12000",
-        "--batch-size",
-        "64",
-        "--gradient-clip-norm",
-        "5",
-        "--lr-warmup-batches",
-        "500",
-        "--lr-warmup-init-fraction",
-        "0.1",
-        "--lr-cosine-alpha",
-        "0.1",
-        "--n-replicates",
-        "5",
-        "--hidden-size",
-        "180",
-        "--loss-objective",
-        CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
-        "--delayed-reach",
-        "--delayed-reach-go-cue-min-step",
-        "10",
-        "--delayed-reach-go-cue-max-step",
-        "30",
-        "--delayed-reach-p-catch-trial",
-        "0.5",
-        "--delayed-movement-cost-tail-mode",
-        DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON,
-        "--target-relative-multitarget",
-        "--force-filter-feedback",
-        "--perturbation-training",
-        "--perturbation-calibrated-timing",
-        "--perturbation-movement-age-timing",
-        "--perturbation-physical-level",
-        "small",
-        "--nn-output-pre-go",
-        "0",
-        "--delayed-pre-go-force-filter-hold",
-        "0",
-        "--controller-lr",
-        "0.01",
-        "--delayed-pre-go-zero-vel-hold",
-        "100000",
-        "--delayed-pre-go-start-pos-hold",
-        "1000000",
-        "--delayed-pre-go-start-pos-hold-norm",
-        "l2",
-        "--output-dir",
-        f"_artifacts/{experiment}/runs/{run}",
-    ]
-    return [
-        {
-            "experiment": experiment,
-            "run": run,
-            "row_kind": "full_training_contract",
-            "comparator": "ef9c882/hold__start_pos_zero_vel_lr1e-2",
-            "adversarial_phase": "none",
-            "broad_epsilon_pgd_training": False,
-            "delayed_reach": True,
-            "target_visible_from_start": True,
-            "go_cue_min_step": 10,
-            "go_cue_max_step": 30,
-            "p_catch_trial": 0.5,
-            "loss_objective": CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
-            "movement_window_qrf_comparator": "full_analytical_qrf_movement_age",
-            "delayed_movement_cost_tail_mode": DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON,
-            "cost_tail_semantics": (
-                "canonical movement-age Q/R stages 0..59, then stage 59 Q/R held "
-                "flat through the remaining sampled trial tail; Q_f scores the final "
-                "rollout state"
-            ),
-            "nn_output_pre_go": 0.0,
-            "delayed_pre_go_force_filter_hold": 0.0,
-            "delayed_pre_go_zero_vel_hold": 1e5,
-            "delayed_pre_go_start_pos_hold": 1e6,
-            "delayed_pre_go_start_pos_hold_norm": "l2",
-            "force_filter_feedback": True,
-            "perturbation_training": True,
-            "perturbation_calibrated_timing": True,
-            "perturbation_movement_age_timing": True,
-            "perturbation_physical_level": "small",
-            "hidden_size": 180,
-            "batch_size": 64,
-            "controller_lr": 1e-2,
-            "lr_schedule": "warmup_cosine",
-            "lr_warmup_batches": 500,
-            "lr_warmup_init_fraction": 0.1,
-            "lr_cosine_alpha": 0.1,
-            "gradient_clip_norm": 5.0,
-            "n_replicates": 5,
-            "n_train_batches": 12000,
-            "n_adversary_batches": 0,
-            "planned_run_spec_path": f"results/{experiment}/runs/{run}.json",
-            "spec_command": [*command, "--dry-run"],
-            "command": [*command, "--full-train", "--resume"],
-        }
-    ]
-
-
-def planned_e901a20_policy_adversary_rows(
-    *,
-    experiment: str = "e901a20",
-) -> list[dict[str, Any]]:
-    """Return the two H0 policy-adversary gate rows for e901a20."""
-
-    common_command = [
-        "env",
-        "PYTHONPATH=src",
-        "uv",
-        "run",
-        "--no-sync",
-        "python",
-        "scripts/train_cs_nominal_gru.py",
-        "--issue",
-        experiment,
-        "--n-train-batches",
-        "12000",
-        "--stop-after-batches",
-        "1000",
-        "--batch-size",
-        "64",
-        "--controller-lr",
-        "0.003",
-        "--gradient-clip-norm",
-        "5",
-        "--lr-warmup-batches",
-        "500",
-        "--lr-warmup-init-fraction",
-        "0.1",
-        "--lr-cosine-alpha",
-        "0.01",
-        "--n-replicates",
-        "5",
-        "--hidden-size",
-        "180",
-        "--loss-objective",
-        CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
-        "--target-relative-multitarget",
-        "--force-filter-feedback",
-        "--initial-hidden-encoder",
-        "--perturbation-training",
-        "--perturbation-calibrated-timing",
-        "--perturbation-physical-level",
-        "small",
-        "--policy-adversary-training",
-        "--policy-adversary-width",
-        "64",
-        "--policy-adversary-depth",
-        "2",
-        "--policy-adversary-steps",
-        "5",
-        "--policy-adversary-lr",
-        "0.0003",
-        "--policy-adversary-radius-15cm",
-        f"{HISTORICAL_020A65B_PGD_RADIUS_15CM:.18g}",
-        "--policy-adversary-radius-source",
-        "effective_020a65b_pgd_training_radius",
-    ]
-    rows = []
-    for label in (POLICY_ADVERSARY_PLAIN_MODE, POLICY_ADVERSARY_ENERGY_MODE):
-        run = f"h0_policy_adversary__{label}"
-        command = [
-            *common_command,
-            "--policy-adversary-mode",
-            label,
-            "--output-dir",
-            f"_artifacts/{experiment}/runs/{run}",
-        ]
-        if label == POLICY_ADVERSARY_ENERGY_MODE:
-            command.extend(["--policy-adversary-energy-gamma", "1"])
-        rows.append(
-            {
-                "experiment": experiment,
-                "run": run,
-                "row": label,
-                "row_kind": "checkpoint_gate_contract",
-                "base_contract": "latest 020a65b H0 PGD row excluding PGD",
-                "adversarial_phase": "learned_memoryless_policy_adversary",
-                "policy_adversary_mode": label,
-                "policy_width": 64,
-                "policy_depth": 2,
-                "policy_output_dim": 8,
-                "policy_ascent_steps_per_controller_step": 5,
-                "policy_weights_persist_across_batches": True,
-                "h_infinity_style_energy_stabilizer": label == POLICY_ADVERSARY_ENERGY_MODE,
-                "formal_certificate": False,
-                "broad_epsilon_pgd_training": False,
-                "broad_epsilon_reach_scaling": True,
-                "effective_l2_radius_15cm": HISTORICAL_020A65B_PGD_RADIUS_15CM,
-                "radius_source": "effective_020a65b_pgd_training_radius",
-                "single_fixed_budget": True,
-                "sisu_modulation": False,
-                "force_filter_feedback": True,
-                "initial_hidden_encoder": True,
-                "perturbation_training": True,
-                "perturbation_calibrated_timing": True,
-                "perturbation_physical_level": "small",
-                "loss_objective": CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
-                "batch_size": 64,
-                "controller_lr": 3e-3,
-                "gradient_clip_norm": 5.0,
-                "lr_schedule": "warmup_cosine",
-                "lr_warmup_batches": 500,
-                "lr_warmup_init_fraction": 0.1,
-                "lr_cosine_alpha": 0.01,
-                "n_replicates": 5,
-                "n_train_batches": 12000,
-                "stop_after_batches": 1000,
-                "gate_batches": "500-1000; planner command stops at 1000",
-                "diagnostics": [
-                    "policy_adversary_epsilon_norm_radius_ratio",
-                    "policy_adversary_epsilon_energy",
-                    "policy_adversary_boundary_fraction",
-                    "policy_adversary_adversary_objective",
-                    "policy_adversary_controller_loss",
-                    "policy_adversary_stabilizer_term",
-                ],
-                "spec_command": [*command, "--dry-run"],
-                "command": [*command, "--full-train", "--resume"],
-            }
-        )
-    return rows
-
-
 def run_full_training(
     args: argparse.Namespace,
     *,
@@ -4471,911 +4272,9 @@ def _apply_config_parser_defaults(parser: argparse.ArgumentParser) -> argparse.A
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the CLI parser."""
+    """Build the CLI parser from the config model."""
 
-    parser = argparse.ArgumentParser(
-        description="Prepare a stochastic C&S-fidelity GRU run spec.",
-    )
-    parser.add_argument(
-        "--run-spec",
-        default=_config_default("run_spec"),
-        help=(
-            "Replay a modern tracked nominal-GRU run.json through the current "
-            "training/spec writer. Explicit CLI flags override the run spec."
-        ),
-    )
-    parser.add_argument("--output-dir", default=_config_default("output_dir"))
-    parser.add_argument("--spec-dir", default=_config_default("spec_dir"))
-    parser.add_argument("--issue", default=_config_default("issue"))
-    parser.add_argument(
-        "--allow-x64",
-        action="store_true",
-        default=False,
-        help="Allow a training/spec process to start after process-global JAX x64 was enabled.",
-    )
-    parser.add_argument("--seed", type=int, default=_config_default("seed"))
-    parser.add_argument("--n-train-batches", type=int, default=_config_default("n_train_batches"))
-    parser.add_argument("--batch-size", type=int, default=_config_default("batch_size"))
-    parser.add_argument("--controller-lr", type=float, default=_config_default("controller_lr"))
-    parser.add_argument(
-        "--lr-warmup-batches",
-        type=int,
-        default=_config_default("lr_warmup_batches"),
-        help=(
-            "If positive, linearly warm the controller LR from "
-            "--lr-warmup-init-fraction * --controller-lr to --controller-lr over this "
-            "many batches, then cosine-decay."
-        ),
-    )
-    parser.add_argument(
-        "--lr-warmup-init-fraction",
-        type=float,
-        default=_config_default("lr_warmup_init_fraction"),
-        help="Initial LR fraction for warmup-cosine schedules.",
-    )
-    parser.add_argument(
-        "--lr-cosine-alpha",
-        type=float,
-        default=_config_default("lr_cosine_alpha"),
-        help="Final LR fraction for cosine schedules.",
-    )
-    parser.add_argument(
-        "--gradient-clip-norm", type=float, default=_config_default("gradient_clip_norm")
-    )
-    parser.add_argument("--n-replicates", type=int, default=_config_default("n_replicates"))
-    parser.add_argument("--hidden-size", type=int, default=_config_default("hidden_size"))
-    parser.add_argument(
-        "--plant-backend",
-        choices=_config_choices("plant_backend"),
-        default=_config_default("plant_backend"),
-        help=(
-            "Plant backend for nominal GRU training. The default uses exact C&S "
-            "LinearStateSpace mechanics; legacy_causal_simplefeedback preserves the "
-            "old point-mass/force-filter path and emits a timing warning."
-        ),
-    )
-    parser.add_argument(
-        "--no-integrator-state",
-        action="store_true",
-        help=(
-            "Use the reduced C&S LSS comparator with 6D physical state "
-            "[pos, vel, force/filter] and no disturbance-integrator coordinates."
-        ),
-    )
-    parser.add_argument(
-        "--stochastic-preset",
-        choices=_config_choices("stochastic_preset"),
-        default=_config_default("stochastic_preset"),
-        help=(
-            "Named stochastic rollout contract. The preset fixes sensory, command, "
-            "signal-dependent, and plant/load force noise and records concrete "
-            "values in run.json."
-        ),
-    )
-    parser.add_argument(
-        "--target-m",
-        type=float,
-        default=_config_default("target_m"),
-        help=argparse.SUPPRESS,
-    )
-    parser.add_argument("--n-input-only", type=int, default=_config_default("n_input_only"))
-    parser.add_argument("--n-readout-only", type=int, default=_config_default("n_readout_only"))
-    parser.add_argument("--n-recurrent-only", type=int, default=_config_default("n_recurrent_only"))
-    parser.add_argument(
-        "--effector-pos-running", type=float, default=_config_default("effector_pos_running")
-    )
-    parser.add_argument(
-        "--effector-vel-running", type=float, default=_config_default("effector_vel_running")
-    )
-    parser.add_argument(
-        "--effector-terminal-pos", type=float, default=_config_default("effector_terminal_pos")
-    )
-    parser.add_argument(
-        "--effector-terminal-vel", type=float, default=_config_default("effector_terminal_vel")
-    )
-    parser.add_argument(
-        "--effector-final-vel", type=float, default=_config_default("effector_final_vel")
-    )
-    parser.add_argument("--nn-output", type=float, default=_config_default("nn_output"))
-    parser.add_argument("--nn-output-jerk", type=float, default=_config_default("nn_output_jerk"))
-    parser.add_argument(
-        "--nn-output-pre-go",
-        type=float,
-        default=_config_default("nn_output_pre_go"),
-        help=(
-            "Anti-anticipation controller-output penalty during delayed-reach prep. "
-            "Defaults to 1.0 only when --delayed-reach is active; otherwise 0.0."
-        ),
-    )
-    parser.add_argument(
-        "--delayed-pre-go-force-filter-hold",
-        type=float,
-        default=_config_default("delayed_pre_go_force_filter_hold"),
-        help=(
-            "Prep-only delayed-reach auxiliary penalty on the C&S force/filter state. "
-            "Default 0.0 preserves the movement-window Q/R/Q_f comparator."
-        ),
-    )
-    parser.add_argument(
-        "--delayed-pre-go-start-pos-hold",
-        type=float,
-        default=_config_default("delayed_pre_go_start_pos_hold"),
-        help=(
-            "Prep-only delayed-reach auxiliary penalty on effector position away from "
-            "the sampled start position. Default 0.0."
-        ),
-    )
-    parser.add_argument(
-        "--delayed-pre-go-start-pos-hold-norm",
-        choices=_config_choices("delayed_pre_go_start_pos_hold_norm"),
-        default=_config_default("delayed_pre_go_start_pos_hold_norm"),
-        help=(
-            "Norm for --delayed-pre-go-start-pos-hold. l2 preserves the existing "
-            "squared-distance penalty; l1 scores absolute coordinate displacement."
-        ),
-    )
-    parser.add_argument(
-        "--delayed-pre-go-zero-vel-hold",
-        type=float,
-        default=_config_default("delayed_pre_go_zero_vel_hold"),
-        help=(
-            "Prep-only delayed-reach auxiliary penalty on nonzero effector velocity "
-            "before the go cue. Default 0.0."
-        ),
-    )
-    parser.add_argument(
-        "--loss-objective",
-        choices=_config_choices("loss_objective"),
-        default=_config_default("loss_objective"),
-        help=(
-            "Training objective. Default partial_feedbax_terms preserves the historical "
-            "Feedbax pos/vel/control term subset. full_analytical_qrf uses the canonical "
-            "C&S Q/R/Q_f matrices on the cs_lss 48D state plus command history."
-        ),
-    )
-    parser.add_argument(
-        "--regularized-fidelity",
-        action="store_true",
-        help="Mark the paired non-exact run and use nn_hidden=1e-5.",
-    )
-    parser.add_argument(
-        "--perturbation-training",
-        action=argparse.BooleanOptionalAction,
-        default=_config_default("perturbation_training"),
-        help=(
-            "Enable fixed-target perturbation-generalized training using external "
-            "task/plant/channel adapters. Defaults to on for --delayed-reach and off "
-            "otherwise. Target-position streams are not added."
-        ),
-    )
-    parser.add_argument(
-        "--perturbation-nominal-fraction",
-        type=float,
-        default=_config_default("perturbation_nominal_fraction"),
-    )
-    parser.add_argument(
-        "--perturbation-single-fraction",
-        type=float,
-        default=_config_default("perturbation_single_fraction"),
-    )
-    parser.add_argument(
-        "--perturbation-combined-fraction",
-        type=float,
-        default=_config_default("perturbation_combined_fraction"),
-    )
-    parser.add_argument(
-        "--perturbation-combined-amplitude-scale",
-        type=float,
-        default=_config_default("perturbation_combined_amplitude_scale"),
-    )
-    parser.add_argument(
-        "--perturbation-initial-position-offset-m",
-        type=float,
-        default=_config_default("perturbation_initial_position_offset_m"),
-    )
-    parser.add_argument(
-        "--perturbation-initial-velocity-offset-m-s",
-        type=float,
-        default=_config_default("perturbation_initial_velocity_offset_m_s"),
-    )
-    parser.add_argument(
-        "--perturbation-process-epsilon-scale",
-        type=float,
-        default=_config_default("perturbation_process_epsilon_scale"),
-    )
-    parser.add_argument(
-        "--perturbation-command-input-pulse-n",
-        type=float,
-        default=_config_default("perturbation_command_input_pulse_n"),
-    )
-    parser.add_argument(
-        "--perturbation-sensory-feedback-offset-m",
-        type=float,
-        default=_config_default("perturbation_sensory_feedback_offset_m"),
-    )
-    parser.add_argument(
-        "--perturbation-delayed-observation-offset-m",
-        type=float,
-        default=_config_default("perturbation_delayed_observation_offset_m"),
-        help=(
-            "Legacy run-spec compatibility only; delayed_observation is no longer "
-            "sampled or validated in the active final perturbation bank."
-        ),
-    )
-    parser.add_argument(
-        "--perturbation-pulse-start-step",
-        type=int,
-        default=_config_default("perturbation_pulse_start_step"),
-    )
-    parser.add_argument(
-        "--perturbation-pulse-duration-steps",
-        type=int,
-        default=_config_default("perturbation_pulse_duration_steps"),
-    )
-    parser.add_argument(
-        "--perturbation-calibrated-timing",
-        action=argparse.BooleanOptionalAction,
-        default=_config_default("perturbation_calibrated_timing"),
-        help=(
-            "Use timing-bin calibrated perturbation training: plant process/command "
-            "pulses sample starts 5/15/35 uniformly and controller-visible sensory "
-            "feedback offsets sample starts 10/20/40 uniformly, all with 5-step "
-            "pulses. Defaults to on for --delayed-reach perturbation training."
-        ),
-    )
-    parser.add_argument(
-        "--perturbation-movement-age-timing",
-        action=argparse.BooleanOptionalAction,
-        default=_config_default("perturbation_movement_age_timing"),
-        help=(
-            "Index calibrated perturbation timing bins by movement age: plant "
-            "process/command pulses use movement_start + 5/15/35, controller-visible "
-            "sensory-feedback pulses use movement_start + 10/20/40, and "
-            "initial position/velocity diagnostics use movement-onset process-epsilon "
-            "impulses. Requires --perturbation-calibrated-timing and defaults to on "
-            "for --delayed-reach perturbation training."
-        ),
-    )
-    parser.add_argument(
-        "--perturbation-physical-level",
-        choices=_config_choices("perturbation_physical_level"),
-        default=_config_default("perturbation_physical_level"),
-        help=(
-            "Declared reach-relative perturbation level for calibrated screens. "
-            "Small/moderate are training rows; stress is reserved for evaluation. "
-            "Defaults to small for --delayed-reach and moderate otherwise."
-        ),
-    )
-    parser.add_argument(
-        "--perturbation-calibration-regime",
-        choices=_config_choices("perturbation_calibration_regime"),
-        default=_config_default("perturbation_calibration_regime"),
-        help=(
-            "Select how calibrated perturbation families resolve amplitudes: all "
-            "families from open-loop calibration, sensory feedback from the "
-            "closed-loop table, or sensory plus command/random force plus "
-            "target-aligned lateral loads from the closed-loop table."
-        ),
-    )
-    parser.add_argument(
-        "--perturbation-closed-loop-calibration-table",
-        default=_config_default("perturbation_closed_loop_calibration_table"),
-        help=(
-            "Path to a closed-loop calibration table used by mixed "
-            "perturbation-calibration regimes."
-        ),
-    )
-    parser.add_argument(
-        "--target-relative-multitarget",
-        action="store_true",
-        help=(
-            "Enable static target-relative multi-target training. The C&S LSS GRU "
-            "receives [target_x - delayed_x, target_y - delayed_y, -delayed_vx, "
-            "-delayed_vy] feedback and uses structured seen/held-out target bins."
-        ),
-    )
-    parser.add_argument(
-        "--target-support-profile",
-        choices=_config_choices("target_support_profile"),
-        default=_config_default("target_support_profile"),
-        help=(
-            "Named finite target-support profile for --target-relative-multitarget. "
-            "Defaults to const_band16: fixed 0.15 m reaches on the dense validation "
-            "grid with 16 held-out angular-band directions. Pass old_020a65b to "
-            "replay the old seen/held-out target bank."
-        ),
-    )
-    parser.add_argument(
-        "--delayed-reach",
-        action="store_true",
-        help=(
-            "Use the explicit delayed-reach C&S task contract: target-relative "
-            "multi-target feedback plus one scalar go-cue input, target visible "
-            "from trial start, and movement-epoch scoring."
-        ),
-    )
-    parser.add_argument(
-        "--delayed-reach-go-cue-min-step",
-        type=int,
-        default=_config_default("delayed_reach_go_cue_min_step"),
-        help="Inclusive minimum sampled go-cue/prep length for --delayed-reach.",
-    )
-    parser.add_argument(
-        "--delayed-reach-go-cue-max-step",
-        type=int,
-        default=_config_default("delayed_reach_go_cue_max_step"),
-        help="Inclusive maximum sampled go-cue/prep length for --delayed-reach.",
-    )
-    parser.add_argument(
-        "--delayed-reach-p-catch-trial",
-        type=float,
-        default=_config_default("delayed_reach_p_catch_trial"),
-        help=(
-            "Probability of delayed-reach no-go catch trials. Catch trials keep the "
-            "target visible but keep the go cue at 0 and score holding the initial "
-            "position. Ignored unless --delayed-reach is active."
-        ),
-    )
-    parser.add_argument(
-        "--delayed-movement-cost-tail-mode",
-        choices=_config_choices("delayed_movement_cost_tail_mode"),
-        default=_config_default("delayed_movement_cost_tail_mode"),
-        help=(
-            "Delayed-reach full-Q/R/Qf tail support. canonical_window preserves the "
-            "60 movement-age stage objective; flat_after_canonical_horizon reuses the "
-            "terminal running Q/R stage after movement age 59 through the trial tail."
-        ),
-    )
-    parser.add_argument(
-        "--delayed-reach-trial-type-normalized-loss",
-        "--delayed-reach-trial-type-normalization",
-        action="store_true",
-        dest="delayed_reach_trial_type_normalized_loss",
-        help=(
-            "For delayed full_analytical_qrf rows, split Q/R/Q_f into no-catch and "
-            "catch trial terms and normalize each over its own selected trials before "
-            "applying explicit weights. This separates p_catch sampling from objective "
-            "weighting."
-        ),
-    )
-    parser.add_argument(
-        "--delayed-reach-no-catch-qrf-weight",
-        type=float,
-        default=_config_default("delayed_reach_no_catch_qrf_weight"),
-        help=(
-            "Explicit weight for the no-catch movement Q/R/Q_f mean when "
-            "--delayed-reach-trial-type-normalized-loss is active."
-        ),
-    )
-    parser.add_argument(
-        "--delayed-reach-catch-qrf-weight",
-        type=float,
-        default=_config_default("delayed_reach_catch_qrf_weight"),
-        help=(
-            "Explicit weight for the catch/no-go Q/R/Q_f mean when "
-            "--delayed-reach-trial-type-normalized-loss is active."
-        ),
-    )
-    parser.add_argument(
-        "--force-filter-feedback",
-        "--proprioceptive-feedback",
-        action=argparse.BooleanOptionalAction,
-        default=_config_default("force_filter_feedback"),
-        help=(
-            "Extend target-relative delayed feedback with delayed force/filter x/y "
-            "coordinates. Defaults to on for --delayed-reach and off otherwise. "
-            "Requires --target-relative-multitarget."
-        ),
-    )
-    parser.add_argument(
-        "--broad-epsilon-training",
-        action="store_true",
-        help=(
-            "Enable randomized full-state C&S epsilon training: iid 8D epsilon over "
-            "time/components, projected per trial to the declared L2 budget."
-        ),
-    )
-    parser.add_argument(
-        "--broad-epsilon-pgd-training",
-        action="store_true",
-        help=(
-            "Enable training-time projected-gradient ascent over the full T x 8 "
-            "C&S epsilon channel before each controller update."
-        ),
-    )
-    parser.add_argument(
-        "--broad-epsilon-level",
-        choices=_config_choices("broad_epsilon_level"),
-        default=_config_default("broad_epsilon_level"),
-        help=(
-            "Analytical broad-epsilon budget anchor. moderate uses gamma factor 1.4; "
-            "strong uses gamma factor 1.05."
-        ),
-    )
-    parser.add_argument(
-        "--broad-epsilon-budget-scale",
-        type=float,
-        default=_config_default("broad_epsilon_budget_scale"),
-    )
-    parser.add_argument(
-        "--broad-epsilon-pgd-fixed-radius-15cm",
-        type=float,
-        default=_config_default("broad_epsilon_pgd_fixed_radius_15cm"),
-        help=(
-            "Override the fixed broad-epsilon PGD L2 radius at the 15 cm reference reach. "
-            "Use with --broad-epsilon-pgd-fixed-radius-source for provenance."
-        ),
-    )
-    parser.add_argument(
-        "--broad-epsilon-pgd-fixed-radius-source",
-        default=_config_default("broad_epsilon_pgd_fixed_radius_source"),
-        help="Provenance key for --broad-epsilon-pgd-fixed-radius-15cm.",
-    )
-    parser.add_argument(
-        "--broad-epsilon-reach-scaling",
-        action=argparse.BooleanOptionalAction,
-        default=_config_default("broad_epsilon_reach_scaling"),
-        help=(
-            "Scale the 15 cm analytical epsilon L2 radius by sampled reach length. "
-            "This is an explicit multi-target normalization choice."
-        ),
-    )
-    parser.add_argument(
-        "--broad-epsilon-pgd-steps",
-        type=int,
-        default=_config_default("broad_epsilon_pgd_steps"),
-    )
-    parser.add_argument(
-        "--broad-epsilon-pgd-step-size-fraction",
-        type=float,
-        default=_config_default("broad_epsilon_pgd_step_size_fraction"),
-        help="PGD ascent step size as a fraction of each trial's L2 radius.",
-    )
-    parser.add_argument(
-        "--broad-epsilon-pgd-inner-optimizer-method",
-        choices=_config_choices("broad_epsilon_pgd_inner_optimizer_method"),
-        default=_config_default("broad_epsilon_pgd_inner_optimizer_method"),
-        help=(
-            "Inner optimizer for broad-epsilon adversary selection. "
-            f"{BROAD_EPSILON_PGD_PROJECTED_GRADIENT_ASCENT} preserves the historical "
-            "normalized projected-gradient ascent behavior; "
-            f"{BROAD_EPSILON_PGD_ADAM} runs Adam ascent over live finite-policy "
-            "graph-component parameters."
-        ),
-    )
-    parser.add_argument(
-        "--broad-epsilon-pgd-adam-lr",
-        type=float,
-        default=_config_default("broad_epsilon_pgd_adam_lr"),
-        help=(
-            "Adam ascent learning rate for broad-epsilon direct-epsilon sequences "
-            "or live finite-policy mechanisms."
-        ),
-    )
-    parser.add_argument(
-        "--broad-epsilon-pgd-adam-b1",
-        type=float,
-        default=_config_default("broad_epsilon_pgd_adam_b1"),
-    )
-    parser.add_argument(
-        "--broad-epsilon-pgd-adam-b2",
-        type=float,
-        default=_config_default("broad_epsilon_pgd_adam_b2"),
-    )
-    parser.add_argument(
-        "--broad-epsilon-pgd-adam-eps",
-        type=float,
-        default=_config_default("broad_epsilon_pgd_adam_eps"),
-    )
-    parser.add_argument(
-        "--broad-epsilon-pgd-mechanism",
-        choices=_config_choices("broad_epsilon_pgd_mechanism"),
-        default=_config_default("broad_epsilon_pgd_mechanism"),
-        help=(
-            "Adversary mechanism for broad-epsilon PGD. direct_epsilon preserves the "
-            "existing exogenous epsilon-sequence path; finite mechanisms install live "
-            "graph-component policy inputs for closed-loop rollout evaluation."
-        ),
-    )
-    parser.add_argument(
-        "--broad-epsilon-pgd-objective",
-        choices=_config_choices("broad_epsilon_pgd_objective"),
-        default=_config_default("broad_epsilon_pgd_objective"),
-        help=(
-            "Inner PGD objective. hard_l2 preserves the existing projected objective; "
-            "soft_energy maximizes task_loss - lambda * epsilon_energy with an explicit "
-            "stabilization cap."
-        ),
-    )
-    parser.add_argument(
-        "--broad-epsilon-pgd-energy-gamma-star",
-        type=float,
-        default=_config_default("broad_epsilon_pgd_energy_gamma_star"),
-    )
-    parser.add_argument(
-        "--broad-epsilon-pgd-energy-gamma-factor",
-        type=float,
-        default=_config_default("broad_epsilon_pgd_energy_gamma_factor"),
-    )
-    parser.add_argument(
-        "--broad-epsilon-pgd-energy-gamma",
-        type=float,
-        default=_config_default("broad_epsilon_pgd_energy_gamma"),
-    )
-    parser.add_argument(
-        "--broad-epsilon-pgd-energy-penalty-scale",
-        type=float,
-        default=_config_default("broad_epsilon_pgd_energy_penalty_scale"),
-        help="Soft-energy c multiplier in lambda = c * gamma^2 unless lambda is explicit.",
-    )
-    parser.add_argument(
-        "--broad-epsilon-pgd-energy-lambda",
-        type=float,
-        default=_config_default("broad_epsilon_pgd_energy_lambda"),
-        help="Explicit soft-energy lambda; otherwise derived as c * gamma^2.",
-    )
-    parser.add_argument(
-        "--broad-epsilon-pgd-safety-cap-15cm",
-        type=float,
-        default=_config_default("broad_epsilon_pgd_safety_cap_15cm"),
-        help=(
-            "Optional 15 cm L2 trust-region cap for soft-energy PGD stabilization. "
-            "This cap is metadata-marked as not the scientific hard-budget constraint."
-        ),
-    )
-    parser.add_argument(
-        "--broad-epsilon-pgd-safety-cap-source",
-        type=str,
-        default=_config_default("broad_epsilon_pgd_safety_cap_source"),
-        help="Provenance key/source for --broad-epsilon-pgd-safety-cap-15cm.",
-    )
-    parser.add_argument(
-        "--broad-epsilon-pgd-budget-schedule",
-        choices=_config_choices("broad_epsilon_pgd_budget_schedule"),
-        default=_config_default("broad_epsilon_pgd_budget_schedule"),
-        help=(
-            "Select the PGD L2 budget schedule. fixed preserves the existing single "
-            "radius; sisu_energy_fraction maps SISU to radius via sqrt(SISU)."
-        ),
-    )
-    parser.add_argument(
-        "--broad-epsilon-pgd-sisu-condition-input",
-        choices=_config_choices("broad_epsilon_pgd_sisu_condition_input"),
-        default=_config_default("broad_epsilon_pgd_sisu_condition_input"),
-        help=(
-            "Trial input that carries the scalar SISU value for sisu_energy_fraction PGD budgets."
-        ),
-    )
-    parser.add_argument(
-        "--broad-epsilon-pgd-sisu-max-radius",
-        type=float,
-        default=_config_default("broad_epsilon_pgd_sisu_max_radius"),
-        help=("Maximum 15 cm PGD L2 radius at SISU=1 for sisu_energy_fraction budgets."),
-    )
-    parser.add_argument(
-        "--broad-epsilon-pgd-sisu-max-radius-source",
-        type=str,
-        default=_config_default("broad_epsilon_pgd_sisu_max_radius_source"),
-        help=(
-            "Metadata key/source for the SISU PGD max radius, e.g. "
-            "raw_strong_gamma_1p05_radius or effective_020a65b_pgd_training_radius."
-        ),
-    )
-    parser.add_argument(
-        "--adaptive-epsilon-curriculum",
-        action="store_true",
-        help=(
-            "Enable adaptive-lambda soft-energy direct-epsilon training with a paired "
-            "controller-training mode. Requires --broad-epsilon-pgd-training and "
-            "--broad-epsilon-pgd-objective soft_energy."
-        ),
-    )
-    parser.add_argument(
-        "--adaptive-epsilon-controller-training-mode",
-        choices=_config_choices("adaptive_epsilon_controller_training_mode"),
-        default=_config_default("adaptive_epsilon_controller_training_mode"),
-        help=(
-            "Controller update semantics for adaptive epsilon. loss_blend preserves the "
-            "legacy clean/adversarial loss blend. epsilon_scaled_outer_training optimizes "
-            "the full-strength direct-epsilon adversary, stop-gradients it, then trains "
-            "on one rollout with the epsilon channel physically scaled by the outer schedule."
-        ),
-    )
-    parser.add_argument(
-        "--adaptive-epsilon-damage-start",
-        type=float,
-        default=_config_default("adaptive_epsilon_damage_start"),
-    )
-    parser.add_argument(
-        "--adaptive-epsilon-damage-peak",
-        type=float,
-        default=_config_default("adaptive_epsilon_damage_peak"),
-    )
-    parser.add_argument(
-        "--adaptive-epsilon-damage-final",
-        type=float,
-        default=_config_default("adaptive_epsilon_damage_final"),
-    )
-    parser.add_argument(
-        "--adaptive-epsilon-damage-ramp-batches",
-        type=int,
-        default=_config_default("adaptive_epsilon_damage_ramp_batches"),
-    )
-    parser.add_argument(
-        "--adaptive-epsilon-damage-anneal-batches",
-        type=int,
-        default=_config_default("adaptive_epsilon_damage_anneal_batches"),
-    )
-    parser.add_argument(
-        "--adaptive-epsilon-update-interval-batches",
-        type=int,
-        default=_config_default("adaptive_epsilon_update_interval_batches"),
-    )
-    parser.add_argument(
-        "--adaptive-epsilon-ema-alpha",
-        type=float,
-        default=_config_default("adaptive_epsilon_ema_alpha"),
-    )
-    parser.add_argument(
-        "--adaptive-epsilon-eta",
-        type=float,
-        default=_config_default("adaptive_epsilon_eta"),
-    )
-    parser.add_argument(
-        "--adaptive-epsilon-deadband-frac",
-        type=float,
-        default=_config_default("adaptive_epsilon_deadband_frac"),
-    )
-    parser.add_argument(
-        "--adaptive-epsilon-hysteresis-frac",
-        type=float,
-        default=_config_default("adaptive_epsilon_hysteresis_frac"),
-    )
-    parser.add_argument(
-        "--adaptive-epsilon-freeze-until-burn-in",
-        action=argparse.BooleanOptionalAction,
-        default=_config_default("adaptive_epsilon_freeze_until_burn_in"),
-    )
-    parser.add_argument(
-        "--adaptive-epsilon-gain-normalization",
-        action=argparse.BooleanOptionalAction,
-        default=_config_default("adaptive_epsilon_gain_normalization"),
-    )
-    parser.add_argument(
-        "--adaptive-epsilon-gain-ema-alpha",
-        type=float,
-        default=_config_default("adaptive_epsilon_gain_ema_alpha"),
-    )
-    parser.add_argument(
-        "--adaptive-epsilon-gain-min",
-        type=float,
-        default=_config_default("adaptive_epsilon_gain_min"),
-    )
-    parser.add_argument(
-        "--adaptive-epsilon-gain-max",
-        type=float,
-        default=_config_default("adaptive_epsilon_gain_max"),
-    )
-    parser.add_argument(
-        "--adaptive-epsilon-lambda-min",
-        type=float,
-        default=_config_default("adaptive_epsilon_lambda_min"),
-    )
-    parser.add_argument(
-        "--adaptive-epsilon-lambda-max",
-        type=float,
-        default=_config_default("adaptive_epsilon_lambda_max"),
-    )
-    parser.add_argument(
-        "--adaptive-epsilon-max-log-step",
-        type=float,
-        default=_config_default("adaptive_epsilon_max_log_step"),
-    )
-    parser.add_argument(
-        "--adaptive-epsilon-outer-weight-start",
-        type=float,
-        default=_config_default("adaptive_epsilon_outer_weight_start"),
-    )
-    parser.add_argument(
-        "--adaptive-epsilon-outer-weight-final",
-        type=float,
-        default=_config_default("adaptive_epsilon_outer_weight_final"),
-    )
-    parser.add_argument(
-        "--adaptive-epsilon-outer-weight-ramp-batches",
-        type=int,
-        default=_config_default("adaptive_epsilon_outer_weight_ramp_batches"),
-    )
-    parser.add_argument(
-        "--policy-adversary-training",
-        action="store_true",
-        help=(
-            "Enable learned full-state epsilon policy-adversary training. "
-            "This replaces PGD for policy-adversary rows and keeps adversary weights "
-            "persistent across controller batches."
-        ),
-    )
-    parser.add_argument(
-        "--policy-adversary-policy-class",
-        choices=_config_choices("policy_adversary_policy_class"),
-        default=_config_default("policy_adversary_policy_class"),
-        help=(
-            "Adversary policy parameterization: memoryless_mlp for the existing MLP lane, "
-            "or linear_no_bias/affine for finite time-varying policies optimized by Adam."
-        ),
-    )
-    parser.add_argument(
-        "--policy-adversary-mode",
-        choices=_config_choices("policy_adversary_mode"),
-        default=_config_default("policy_adversary_mode"),
-        help=(
-            "plain uses hard projection only; energy adds an H-infinity-style "
-            "energy stabilizer to the adversary objective."
-        ),
-    )
-    parser.add_argument(
-        "--policy-adversary-width",
-        type=int,
-        default=_config_default("policy_adversary_width"),
-    )
-    parser.add_argument(
-        "--policy-adversary-depth",
-        type=int,
-        default=_config_default("policy_adversary_depth"),
-    )
-    parser.add_argument(
-        "--policy-adversary-steps",
-        type=int,
-        default=_config_default("policy_adversary_steps"),
-    )
-    parser.add_argument(
-        "--policy-adversary-lr",
-        type=float,
-        default=_config_default("policy_adversary_lr"),
-    )
-    parser.add_argument(
-        "--policy-adversary-energy-gamma",
-        type=float,
-        default=_config_default("policy_adversary_energy_gamma"),
-        help=(
-            "Multiplier on epsilon energy in energy mode. This is a stabilizer "
-            "term, not a formal H-infinity certificate parameter."
-        ),
-    )
-    parser.add_argument(
-        "--policy-adversary-radius-15cm",
-        type=float,
-        default=_config_default("policy_adversary_radius_15cm"),
-        help=(
-            "Explicit 15 cm L2 epsilon radius for policy-adversary training. "
-            "Required when --policy-adversary-training is enabled."
-        ),
-    )
-    parser.add_argument(
-        "--policy-adversary-radius-source",
-        type=str,
-        default=_config_default("policy_adversary_radius_source"),
-        help=(
-            "Metadata key/source for --policy-adversary-radius-15cm. Required when "
-            "--policy-adversary-training is enabled."
-        ),
-    )
-    parser.add_argument(
-        "--initial-hidden-encoder",
-        "--h0-encoder",
-        action="store_true",
-        help=(
-            "Enable the conservative C&S GRU H0 path: a zero-initialized affine map "
-            "from the first controller-visible target-relative delayed feedback vector "
-            "to the GRU hidden state. Requires --target-relative-multitarget."
-        ),
-    )
-    parser.add_argument(
-        "--planned-perturbation-rows",
-        action="store_true",
-        help="Print the two planned issue aacb9ed local training row commands and exit.",
-    )
-    parser.add_argument(
-        "--planned-target-relative-rows",
-        action="store_true",
-        help="Print the planned issue ba82f3d smoke/main target-relative rows and exit.",
-    )
-    parser.add_argument(
-        "--planned-target-relative-h0-rows",
-        action="store_true",
-        help="Print the planned issue 643f101 smoke/main target-relative H0 rows and exit.",
-    )
-    parser.add_argument(
-        "--planned-020a65b-h0-pgd-rows",
-        action="store_true",
-        help="Print the two planned local issue 020a65b H0 no-PGD/PGD gate rows and exit.",
-    )
-    parser.add_argument(
-        "--planned-33b0dcb-target-support-rows",
-        action="store_true",
-        help="Print the planned issue 33b0dcb no-PGD H0 target-support rows and exit.",
-    )
-    parser.add_argument(
-        "--planned-e901a20-policy-adversary-rows",
-        action="store_true",
-        help="Print the two planned issue e901a20 H0 policy-adversary gate rows and exit.",
-    )
-    parser.add_argument(
-        "--planned-e4800d6-sisu-spectrum-rows",
-        action="store_true",
-        help="Print the two planned local issue e4800d6 SISU-conditioned PGD rows and exit.",
-    )
-    parser.add_argument(
-        "--planned-ef9c882-start-pos-hold-rows",
-        action="store_true",
-        help="Print the five planned issue ef9c882 delayed pre-go start-position hold rows.",
-    )
-    parser.add_argument(
-        "--planned-246182c-post-movement-cost-tail-rows",
-        action="store_true",
-        help="Print the planned issue 246182c delayed post-movement cost-tail row.",
-    )
-    parser.add_argument(
-        "--planned-7c1f7ed-delayed-sisu-spectrum-rows",
-        action="store_true",
-        help="Print the two planned issue 7c1f7ed delayed SISU-conditioned PGD rows and exit.",
-    )
-    parser.add_argument(
-        "--smoke",
-        action="store_true",
-        help="Use tiny local values; with --full-train this runs a one-batch smoke.",
-    )
-    parser.add_argument("--full-train", action="store_true")
-    parser.add_argument("--resume", action="store_true")
-    parser.add_argument(
-        "--allow-fresh-start",
-        action="store_true",
-        help=(
-            "Allow --resume to start from batch 0 when the expected "
-            "checkpoints/latest.json resume pointer is absent."
-        ),
-    )
-    parser.add_argument(
-        "--stop-after-batches",
-        type=int,
-        default=_config_default("stop_after_batches"),
-        help=(
-            "Global completed-batch index at which a full-train checkpoint-gate "
-            "run may stop cleanly; this is not a relative count after resume. "
-            "The original --n-train-batches run contract is preserved for resume."
-        ),
-    )
-    parser.add_argument(
-        "--training-diagnostics",
-        action=argparse.BooleanOptionalAction,
-        default=_config_default("training_diagnostics"),
-        help=(
-            "Write compact optimizer/loss scalar sidecars for full training runs. "
-            "Use --no-training-diagnostics to opt out."
-        ),
-    )
-    parser.add_argument(
-        "--checkpoint-interval-batches",
-        type=int,
-        default=_config_default("checkpoint_interval_batches"),
-    )
-    parser.add_argument("--log-step", type=int, default=_config_default("log_step"))
-    parser.add_argument(
-        "--disable-progress",
-        action="store_true",
-        default=_config_default("disable_progress"),
-    )
-    parser.add_argument(
-        "--quiet-progress",
-        action="store_true",
-        default=_config_default("quiet_progress"),
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Print the would-write payload without creating files.",
-    )
-    return _apply_config_parser_defaults(parser)
+    return _build_config_generated_parser()
 
 
 def main(
@@ -5387,42 +4286,6 @@ def main(
 
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.planned_perturbation_rows:
-        print(_json_dumps({"planned_rows": planned_fixed_target_perturbation_rows()}), end="")
-        return 0
-    if args.planned_target_relative_rows:
-        print(_json_dumps({"planned_rows": planned_target_relative_multitarget_rows()}), end="")
-        return 0
-    if args.planned_target_relative_h0_rows:
-        print(_json_dumps({"planned_rows": planned_target_relative_multitarget_h0_rows()}), end="")
-        return 0
-    if args.planned_020a65b_h0_pgd_rows:
-        print(_json_dumps({"planned_rows": planned_020a65b_h0_pgd_rows()}), end="")
-        return 0
-    if args.planned_33b0dcb_target_support_rows:
-        print(_json_dumps({"planned_rows": planned_33b0dcb_target_support_rows()}), end="")
-        return 0
-    if args.planned_e901a20_policy_adversary_rows:
-        print(_json_dumps({"planned_rows": planned_e901a20_policy_adversary_rows()}), end="")
-        return 0
-    if args.planned_e4800d6_sisu_spectrum_rows:
-        print(_json_dumps({"planned_rows": planned_e4800d6_sisu_spectrum_rows()}), end="")
-        return 0
-    if args.planned_ef9c882_start_pos_hold_rows:
-        print(_json_dumps({"planned_rows": planned_ef9c882_start_pos_hold_rows()}), end="")
-        return 0
-    if args.planned_246182c_post_movement_cost_tail_rows:
-        print(
-            _json_dumps({"planned_rows": planned_246182c_post_movement_cost_tail_rows()}),
-            end="",
-        )
-        return 0
-    if args.planned_7c1f7ed_delayed_sisu_spectrum_rows:
-        print(
-            _json_dumps({"planned_rows": planned_7c1f7ed_delayed_sisu_spectrum_rows()}),
-            end="",
-        )
-        return 0
     assert_jax_x64_disabled("C&S nominal GRU training/spec entry", allow_x64=args.allow_x64)
     if args.run_spec is not None:
         context = build_run_spec_execution_context(args, parser=parser)

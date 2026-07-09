@@ -18,7 +18,44 @@ from rlrmp.eval.ensemble import eval_ensemble_on_trials
 from rlrmp.eval.kinematics import compute_kinematics
 from rlrmp.eval.sisu import set_sisu
 
-__all__ = ["eval_at_pert0", "eval_at_pert_scale"]
+__all__ = ["eval_at_pert0", "eval_at_pert_scale", "eval_states_at_pert_scale"]
+
+
+def eval_states_at_pert_scale(
+    task,
+    model,
+    sisu: float,
+    pert_scale: float,
+    *,
+    key,
+    ref_task=None,
+):
+    """Run an ensemble evaluation at a fixed SISU and perturbation scale.
+
+    Args:
+        task: Task used to run the model.
+        model: Ensembled model PyTree.
+        sisu: SISU level to evaluate at.
+        pert_scale: Constant perturbation scale to apply across all trials.
+        key: PRNG key.
+        ref_task: Optional task whose validation trials provide the evaluation
+            trial specs when ``pert_scale > 0``. This preserves archived
+            comparison scripts that use one reference perturbation set while
+            running each model with its own task.
+
+    Returns:
+        Tuple of ``(states, trial_specs)`` from the ensemble evaluation.
+    """
+    source_task = ref_task if (ref_task is not None and pert_scale > 0) else task
+    trial_specs = set_sisu(source_task.validation_trials, sisu)
+    pert_shape = trial_specs.intervene[PLANT_INTERVENOR_LABEL].scale.shape
+    trial_specs = eqx.tree_at(
+        lambda t: t.intervene[PLANT_INTERVENOR_LABEL].scale,
+        trial_specs,
+        jnp.full(pert_shape, pert_scale),
+    )
+    states = eval_ensemble_on_trials(task, model, trial_specs, key=key)
+    return states, trial_specs
 
 
 def eval_at_pert0(task, model, sisu: float, *, key) -> dict[str, np.ndarray]:
@@ -37,20 +74,24 @@ def eval_at_pert0(task, model, sisu: float, *, key) -> dict[str, np.ndarray]:
     Returns:
         Kinematics dict from :func:`compute_kinematics`.
     """
-    val_trials = task.validation_trials
-    trial_specs = set_sisu(val_trials, sisu)
-    pert_shape = trial_specs.intervene[PLANT_INTERVENOR_LABEL].scale.shape
-    trial_specs = eqx.tree_at(
-        lambda t: t.intervene[PLANT_INTERVENOR_LABEL].scale,
-        trial_specs,
-        jnp.zeros(pert_shape),
+    states, trial_specs = eval_states_at_pert_scale(
+        task,
+        model,
+        sisu,
+        0.0,
+        key=key,
     )
-    states = eval_ensemble_on_trials(task, model, trial_specs, key=key)
     return compute_kinematics(states, trial_specs)
 
 
 def eval_at_pert_scale(
-    task, model, sisu: float, pert_scale: float, *, key,
+    task,
+    model,
+    sisu: float,
+    pert_scale: float,
+    *,
+    key,
+    ref_task=None,
 ) -> dict[str, np.ndarray]:
     """Evaluate ``model`` at a given ``pert_scale`` and ``sisu`` level.
 
@@ -64,17 +105,18 @@ def eval_at_pert_scale(
         sisu: SISU level to evaluate at.
         pert_scale: Constant perturbation scale to apply across all trials.
         key: PRNG key.
+        ref_task: Optional task whose validation trials provide the evaluation
+            trial specs when ``pert_scale > 0``.
 
     Returns:
         Kinematics dict from :func:`compute_kinematics`.
     """
-    val_trials = task.validation_trials
-    trial_specs = set_sisu(val_trials, sisu)
-    pert_shape = trial_specs.intervene[PLANT_INTERVENOR_LABEL].scale.shape
-    trial_specs = eqx.tree_at(
-        lambda t: t.intervene[PLANT_INTERVENOR_LABEL].scale,
-        trial_specs,
-        jnp.full(pert_shape, pert_scale),
+    states, trial_specs = eval_states_at_pert_scale(
+        task,
+        model,
+        sisu,
+        pert_scale,
+        key=key,
+        ref_task=ref_task,
     )
-    states = eval_ensemble_on_trials(task, model, trial_specs, key=key)
     return compute_kinematics(states, trial_specs)

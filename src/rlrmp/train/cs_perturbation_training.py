@@ -21,6 +21,7 @@ from feedbax.contracts.graph import (
     AdditiveGraphChannelTargetSpec,
 )
 from jaxtyping import PRNGKeyArray
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from rlrmp.data_products.broad_epsilon import (
     BROAD_EPSILON_PRODUCT_ROLE,
@@ -49,6 +50,7 @@ from rlrmp.model.cs_lss_gru import (
     FINITE_EPSILON_POLICY_GRAPH_COMPONENT,
     FINITE_EPSILON_POLICY_NODE_LABEL,
 )
+from rlrmp.runtime.params_models import register_params_model
 from rlrmp.train.closed_loop_finite_adversary import (
     AFFINE_POLICY,
     FINITE_POLICY_BIAS_INPUT,
@@ -60,6 +62,21 @@ from rlrmp.train.closed_loop_finite_adversary import (
     zero_finite_linear_no_bias_policy,
 )
 
+
+class CsPerturbationTrainingConfig(BaseModel):
+    """Shared strict base for C&S perturbation training config models."""
+
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        extra="forbid",
+        frozen=True,
+    )
+
+    def to_json(self) -> dict[str, Any]:
+        """Return run-spec metadata for this config."""
+
+        return self.to_hps_dict()
+
 PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_randomized"
 CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_calibrated_timing"
 LEGACY_PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_generalized"
@@ -68,6 +85,13 @@ TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE = "target_relative_multitarget_stat
 BROAD_EPSILON_TRAINING_MODE = "broad_full_state_epsilon_l2"
 BROAD_EPSILON_PGD_TRAINING_MODE = "broad_full_state_epsilon_pgd_l2"
 POLICY_ADVERSARY_TRAINING_MODE = "broad_full_state_epsilon_policy_l2"
+FIXED_TARGET_PERTURBATION_PARAMS_REF = (
+    "rlrmp.train.fixed_target_perturbation_training.v1"
+)
+TARGET_RELATIVE_MULTITARGET_PARAMS_REF = "rlrmp.train.target_relative_multitarget.v1"
+BROAD_EPSILON_PARAMS_REF = "rlrmp.train.broad_full_state_epsilon.v1"
+BROAD_EPSILON_PGD_PARAMS_REF = "rlrmp.train.broad_full_state_epsilon_pgd.v1"
+POLICY_ADVERSARY_PARAMS_REF = "rlrmp.train.broad_full_state_epsilon_policy.v1"
 POLICY_ADVERSARY_MEMORYLESS_MLP = "memoryless_mlp"
 POLICY_ADVERSARY_PLAIN_MODE = "plain"
 POLICY_ADVERSARY_ENERGY_MODE = "energy"
@@ -279,8 +303,7 @@ PGD_SISU_MAX_RADIUS_SOURCES: dict[str, dict[str, Any]] = {
 }
 
 
-@dataclass(frozen=True)
-class BroadFullStateEpsilonTrainingConfig:
+class BroadFullStateEpsilonTrainingConfig(CsPerturbationTrainingConfig):
     """Random full-state epsilon training lane for the C&S analytical game."""
 
     enabled: bool = False
@@ -291,7 +314,8 @@ class BroadFullStateEpsilonTrainingConfig:
     movement_epoch_only: bool = False
     epsilon_dim: int = BROAD_EPSILON_DIM
 
-    def __post_init__(self) -> None:
+    @model_validator(mode="after")
+    def _validate_config(self) -> "BroadFullStateEpsilonTrainingConfig":
         anchors = load_broad_epsilon_anchors()
         if self.level not in anchors:
             levels = ", ".join(anchors.keys())
@@ -304,6 +328,7 @@ class BroadFullStateEpsilonTrainingConfig:
             raise ValueError("broad epsilon nominal_reach_length_m must be positive.")
         if int(self.epsilon_dim) < 1:
             raise ValueError("broad epsilon epsilon_dim must be positive.")
+        return self
 
     @property
     def level_contract(self) -> dict[str, Any]:
@@ -362,14 +387,7 @@ class BroadFullStateEpsilonTrainingConfig:
             },
         }
 
-    def to_json(self) -> dict[str, Any]:
-        """Return JSON-serializable broad-epsilon metadata."""
-
-        return self.to_hps_dict()
-
-
-@dataclass(frozen=True)
-class PgdFullStateEpsilonTrainingConfig:
+class PgdFullStateEpsilonTrainingConfig(BroadFullStateEpsilonTrainingConfig):
     """Training-time PGD lane on the C&S full-state epsilon channel."""
 
     enabled: bool = False
@@ -405,7 +423,8 @@ class PgdFullStateEpsilonTrainingConfig:
     safety_cap_l2_radius_15cm: float | None = None
     safety_cap_source: str | None = None
 
-    def __post_init__(self) -> None:
+    @model_validator(mode="after")
+    def _validate_config(self) -> "PgdFullStateEpsilonTrainingConfig":
         if self.adversary_mechanism not in BROAD_EPSILON_PGD_MECHANISMS:
             mechanisms = ", ".join(BROAD_EPSILON_PGD_MECHANISMS)
             raise ValueError(
@@ -494,6 +513,7 @@ class PgdFullStateEpsilonTrainingConfig:
                     "Finite-policy PGD soft-energy objectives require an explicit "
                     "safety-cap radius."
                 )
+        return self
 
     @property
     def level_contract(self) -> dict[str, Any]:
@@ -624,14 +644,7 @@ class PgdFullStateEpsilonTrainingConfig:
             },
         }
 
-    def to_json(self) -> dict[str, Any]:
-        """Return JSON-serializable PGD broad-epsilon metadata."""
-
-        return self.to_hps_dict()
-
-
-@dataclass(frozen=True)
-class PolicyFullStateEpsilonTrainingConfig:
+class PolicyFullStateEpsilonTrainingConfig(CsPerturbationTrainingConfig):
     """Learned policy lane on the C&S full-state epsilon channel."""
 
     enabled: bool = False
@@ -650,7 +663,8 @@ class PolicyFullStateEpsilonTrainingConfig:
     state_feature_dim: int = BROAD_EPSILON_DIM * 6
     budget_source: str | None = None
 
-    def __post_init__(self) -> None:
+    @model_validator(mode="after")
+    def _validate_config(self) -> "PolicyFullStateEpsilonTrainingConfig":
         if self.policy_class not in POLICY_ADVERSARY_POLICY_CLASSES:
             raise ValueError(
                 "Policy adversary policy_class must be one of: "
@@ -685,6 +699,7 @@ class PolicyFullStateEpsilonTrainingConfig:
             raise ValueError("Policy adversary epsilon_dim must be positive.")
         if int(self.state_feature_dim) < 1:
             raise ValueError("Policy adversary state_feature_dim must be positive.")
+        return self
 
     @property
     def reference_l2_radius(self) -> float:
@@ -1263,8 +1278,7 @@ def _widen_controller_visible_adapter(
     )
 
 
-@dataclass(frozen=True)
-class FixedTargetPerturbationTrainingConfig:
+class FixedTargetPerturbationTrainingConfig(CsPerturbationTrainingConfig):
     """Mixture and amplitudes for fixed-target C&S GRU perturbation training."""
 
     enabled: bool = False
@@ -1287,7 +1301,8 @@ class FixedTargetPerturbationTrainingConfig:
     calibration_regime: TrainingCalibrationRegime = OPEN_LOOP_ALL_CALIBRATION_REGIME
     closed_loop_calibration_table_path: str | None = None
 
-    def __post_init__(self) -> None:
+    @model_validator(mode="after")
+    def _validate_config(self) -> "FixedTargetPerturbationTrainingConfig":
         total = self.nominal_fraction + self.single_fraction + self.combined_fraction
         if not np.isclose(total, 1.0):
             raise ValueError(f"Perturbation-training fractions must sum to 1.0; got {total:.6g}.")
@@ -1321,6 +1336,7 @@ class FixedTargetPerturbationTrainingConfig:
                     "Mixed calibration regimes require closed_loop_calibration_table_path."
                 )
             _load_closed_loop_calibration_table(str(self.closed_loop_calibration_table_path))
+        return self
 
     @property
     def mode(self) -> str:
@@ -1495,8 +1511,7 @@ class FixedTargetPerturbationTrainingConfig:
         return payload
 
 
-@dataclass(frozen=True)
-class TargetRelativeMultiTargetTrainingConfig:
+class TargetRelativeMultiTargetTrainingConfig(CsPerturbationTrainingConfig):
     """Structured static-target distribution for target-relative GRU training."""
 
     enabled: bool = False
@@ -1507,11 +1522,14 @@ class TargetRelativeMultiTargetTrainingConfig:
     seen_amplitudes_m: tuple[float, ...] = DEFAULT_SEEN_TARGET_AMPLITUDES_M
     held_out_amplitudes_m: tuple[float, ...] = DEFAULT_HELD_OUT_TARGET_AMPLITUDES_M
     original_target_anchor_m: tuple[float, float] = ORIGINAL_TARGET_ANCHOR_M
-    support_metadata: Any = ()
+    support_metadata: Any = Field(default_factory=tuple)
 
-    def __post_init__(self) -> None:
+    @model_validator(mode="after")
+    def _validate_config(self) -> "TargetRelativeMultiTargetTrainingConfig":
         object.__setattr__(
-            self, "support_metadata", _freeze_target_support_metadata(self.support_metadata)
+            self,
+            "support_metadata",
+            _freeze_target_support_metadata(self.support_metadata),
         )
         if self.target_support_profile not in TARGET_SUPPORT_PROFILES:
             profiles = ", ".join(TARGET_SUPPORT_PROFILES)
@@ -1543,6 +1561,7 @@ class TargetRelativeMultiTargetTrainingConfig:
         overlap = set(seen).intersection(set(held_out))
         if overlap:
             raise ValueError(f"Seen and held-out target sets overlap: {sorted(overlap)!r}")
+        return self
 
     @property
     def seen_targets_m(self) -> tuple[tuple[float, float], ...]:
@@ -1605,6 +1624,35 @@ class TargetRelativeMultiTargetTrainingConfig:
         """Return run-spec metadata."""
 
         return self.to_hps_dict()
+
+
+def register_perturbation_training_params_models(*, replace: bool = True) -> None:
+    """Register C&S perturbation training config models for run-matrix validation."""
+
+    register_params_model(
+        FIXED_TARGET_PERTURBATION_PARAMS_REF,
+        FixedTargetPerturbationTrainingConfig,
+        replace=replace,
+    )
+    register_params_model(
+        TARGET_RELATIVE_MULTITARGET_PARAMS_REF,
+        TargetRelativeMultiTargetTrainingConfig,
+        replace=replace,
+    )
+    register_params_model(BROAD_EPSILON_PARAMS_REF, BroadFullStateEpsilonTrainingConfig, replace=replace)
+    register_params_model(
+        BROAD_EPSILON_PGD_PARAMS_REF,
+        PgdFullStateEpsilonTrainingConfig,
+        replace=replace,
+    )
+    register_params_model(
+        POLICY_ADVERSARY_PARAMS_REF,
+        PolicyFullStateEpsilonTrainingConfig,
+        replace=replace,
+    )
+
+
+register_perturbation_training_params_models()
 
 
 def target_relative_target_support_config(
@@ -3029,6 +3077,250 @@ def _memoryless_policy_sequence(
     return flat_epsilon.reshape((*state_features.shape[:-1], flat_epsilon.shape[-1]))
 
 
+@dataclass(frozen=True)
+class _PgdAscentResult:
+    objective_initial: jnp.ndarray
+    objective_final_endpoint: jnp.ndarray
+    best_candidate: Any
+    best_objective: jnp.ndarray
+    final_candidate: Any
+    objective_nan_seen: jnp.ndarray
+    objective_overflow_seen: jnp.ndarray
+
+
+def _run_broad_epsilon_pgd_ascent(
+    zero_candidate: Any,
+    *,
+    objective: Callable[[Any], jnp.ndarray],
+    objective_and_grad: Callable[[Any], tuple[jnp.ndarray, Any]],
+    proposal_from_gradient: Callable[[Any, Any], Any],
+    mask_candidate: Callable[[Any], Any],
+    cfg: PgdFullStateEpsilonTrainingConfig,
+) -> _PgdAscentResult:
+    """Run the shared broad-epsilon PGD/Adam ascent loop for one parameterization."""
+
+    objective_initial, grad_initial = objective_and_grad(zero_candidate)
+    grad_initial = mask_candidate(grad_initial)
+
+    def select_best(best_candidate, best_objective, candidate, candidate_objective):
+        improved = jnp.logical_and(
+            jnp.isfinite(candidate_objective),
+            candidate_objective > best_objective,
+        )
+        best_candidate = jax.tree.map(
+            lambda best, current: jnp.where(improved, current, best),
+            best_candidate,
+            candidate,
+        )
+        best_objective = jnp.where(improved, candidate_objective, best_objective)
+        return best_candidate, best_objective
+
+    def run_projected_gradient_ascent():
+        def body(_, state):
+            (
+                candidate_current,
+                _current_objective,
+                grad_current,
+                best_candidate,
+                best_objective,
+                objective_nan_seen,
+                objective_overflow_seen,
+            ) = state
+            proposal = proposal_from_gradient(candidate_current, grad_current)
+            proposal_objective, proposal_grad = objective_and_grad(proposal)
+            proposal_grad = mask_candidate(proposal_grad)
+            objective_nan_seen = jnp.logical_or(
+                objective_nan_seen,
+                jnp.isnan(proposal_objective),
+            )
+            objective_overflow_seen = jnp.logical_or(
+                objective_overflow_seen,
+                jnp.isinf(proposal_objective),
+            )
+            best_candidate, best_objective = select_best(
+                best_candidate,
+                best_objective,
+                proposal,
+                proposal_objective,
+            )
+            return (
+                proposal,
+                proposal_objective,
+                proposal_grad,
+                best_candidate,
+                best_objective,
+                objective_nan_seen,
+                objective_overflow_seen,
+            )
+
+        candidate_current = zero_candidate
+        current_objective = objective_initial
+        grad_current = grad_initial
+        best_candidate = zero_candidate
+        objective_best = objective_initial
+        objective_nan_seen = jnp.isnan(objective_initial)
+        objective_overflow_seen = jnp.isinf(objective_initial)
+        if int(cfg.n_steps) > 1:
+            (
+                candidate_current,
+                current_objective,
+                grad_current,
+                best_candidate,
+                objective_best,
+                objective_nan_seen,
+                objective_overflow_seen,
+            ) = jax.lax.fori_loop(
+                0,
+                int(cfg.n_steps) - 1,
+                body,
+                (
+                    candidate_current,
+                    current_objective,
+                    grad_current,
+                    best_candidate,
+                    objective_best,
+                    objective_nan_seen,
+                    objective_overflow_seen,
+                ),
+            )
+
+        final_candidate = proposal_from_gradient(candidate_current, grad_current)
+        objective_final_endpoint = objective(final_candidate)
+        objective_nan_seen = jnp.logical_or(
+            objective_nan_seen,
+            jnp.isnan(objective_final_endpoint),
+        )
+        objective_overflow_seen = jnp.logical_or(
+            objective_overflow_seen,
+            jnp.isinf(objective_final_endpoint),
+        )
+        best_candidate, objective_best = select_best(
+            best_candidate,
+            objective_best,
+            final_candidate,
+            objective_final_endpoint,
+        )
+        return (
+            final_candidate,
+            objective_final_endpoint,
+            best_candidate,
+            objective_best,
+            objective_nan_seen,
+            objective_overflow_seen,
+        )
+
+    def run_adam_ascent():
+        optimizer = optax.adam(
+            learning_rate=float(cfg.adam_learning_rate),
+            b1=float(cfg.adam_b1),
+            b2=float(cfg.adam_b2),
+            eps=float(cfg.adam_eps),
+        )
+        opt_state0 = optimizer.init(zero_candidate)
+
+        def body(_, state):
+            (
+                candidate_current,
+                _current_objective,
+                grad_current,
+                opt_state,
+                best_candidate,
+                best_objective,
+                objective_nan_seen,
+                objective_overflow_seen,
+            ) = state
+            ascent_grad = jax.tree.map(lambda grad: -grad, grad_current)
+            updates, opt_state = optimizer.update(ascent_grad, opt_state, candidate_current)
+            proposal = mask_candidate(eqx.apply_updates(candidate_current, updates))
+            proposal_objective, proposal_grad = objective_and_grad(proposal)
+            proposal_grad = mask_candidate(proposal_grad)
+            objective_nan_seen = jnp.logical_or(
+                objective_nan_seen,
+                jnp.isnan(proposal_objective),
+            )
+            objective_overflow_seen = jnp.logical_or(
+                objective_overflow_seen,
+                jnp.isinf(proposal_objective),
+            )
+            best_candidate, best_objective = select_best(
+                best_candidate,
+                best_objective,
+                proposal,
+                proposal_objective,
+            )
+            return (
+                proposal,
+                proposal_objective,
+                proposal_grad,
+                opt_state,
+                best_candidate,
+                best_objective,
+                objective_nan_seen,
+                objective_overflow_seen,
+            )
+
+        (
+            final_candidate,
+            objective_final_endpoint,
+            _grad_final,
+            _opt_state_final,
+            best_candidate,
+            objective_best,
+            objective_nan_seen,
+            objective_overflow_seen,
+        ) = jax.lax.fori_loop(
+            0,
+            int(cfg.n_steps),
+            body,
+            (
+                zero_candidate,
+                objective_initial,
+                grad_initial,
+                opt_state0,
+                zero_candidate,
+                objective_initial,
+                jnp.isnan(objective_initial),
+                jnp.isinf(objective_initial),
+            ),
+        )
+        return (
+            final_candidate,
+            objective_final_endpoint,
+            best_candidate,
+            objective_best,
+            objective_nan_seen,
+            objective_overflow_seen,
+        )
+
+    if cfg.inner_optimizer_method == BROAD_EPSILON_PGD_ADAM:
+        (
+            final_candidate,
+            objective_final_endpoint,
+            best_candidate,
+            objective_best,
+            objective_nan_seen,
+            objective_overflow_seen,
+        ) = run_adam_ascent()
+    else:
+        (
+            final_candidate,
+            objective_final_endpoint,
+            best_candidate,
+            objective_best,
+            objective_nan_seen,
+            objective_overflow_seen,
+        ) = run_projected_gradient_ascent()
+    return _PgdAscentResult(
+        objective_initial=objective_initial,
+        objective_final_endpoint=objective_final_endpoint,
+        best_candidate=best_candidate,
+        best_objective=objective_best,
+        final_candidate=final_candidate,
+        objective_nan_seen=objective_nan_seen,
+        objective_overflow_seen=objective_overflow_seen,
+    )
+
+
 def run_broad_epsilon_pgd_inner_maximizer(
     task: Any,
     model: Any,
@@ -3104,8 +3396,6 @@ def run_broad_epsilon_pgd_inner_maximizer(
         return jax.value_and_grad(objective)(delta_candidate)
 
     zero_delta = jnp.zeros_like(base_epsilon)
-    objective_initial, grad_initial = objective_and_grad(zero_delta)
-    grad_initial = grad_initial * time_mask
     if radius is None:
         step_scale = jnp.asarray(cfg.step_size_fraction, dtype=base_epsilon.dtype)
     else:
@@ -3121,210 +3411,21 @@ def run_broad_epsilon_pgd_inner_maximizer(
             return proposal
         return _project_flattened_per_trial_l2_ball(proposal, radius)
 
-    def select_best(best_delta, best_objective, candidate_delta, candidate_objective):
-        improved = jnp.logical_and(
-            jnp.isfinite(candidate_objective),
-            candidate_objective > best_objective,
-        )
-        best_delta = jnp.where(
-            _expand_bool_like(improved, candidate_delta),
-            candidate_delta,
-            best_delta,
-        )
-        best_objective = jnp.where(improved, candidate_objective, best_objective)
-        return best_delta, best_objective
-
-    def run_projected_gradient_ascent():
-        def body(_, state):
-            (
-                delta_current,
-                _current_objective,
-                grad_current,
-                best_delta,
-                best_objective,
-                objective_nan_seen,
-                objective_overflow_seen,
-            ) = state
-            proposal = proposal_from_gradient(delta_current, grad_current)
-            proposal_objective, proposal_grad = objective_and_grad(proposal)
-            proposal_grad = proposal_grad * time_mask
-            objective_nan_seen = jnp.logical_or(objective_nan_seen, jnp.isnan(proposal_objective))
-            objective_overflow_seen = jnp.logical_or(
-                objective_overflow_seen,
-                jnp.isinf(proposal_objective),
-            )
-            best_delta, best_objective = select_best(
-                best_delta,
-                best_objective,
-                proposal,
-                proposal_objective,
-            )
-            return (
-                proposal,
-                proposal_objective,
-                proposal_grad,
-                best_delta,
-                best_objective,
-                objective_nan_seen,
-                objective_overflow_seen,
-            )
-
-        delta_current = zero_delta
-        current_objective = objective_initial
-        grad_current = grad_initial
-        best_delta = zero_delta
-        objective_best = objective_initial
-        objective_nan_seen = jnp.isnan(objective_initial)
-        objective_overflow_seen = jnp.isinf(objective_initial)
-        if int(cfg.n_steps) > 1:
-            (
-                delta_current,
-                current_objective,
-                grad_current,
-                best_delta,
-                objective_best,
-                objective_nan_seen,
-                objective_overflow_seen,
-            ) = jax.lax.fori_loop(
-                0,
-                int(cfg.n_steps) - 1,
-                body,
-                (
-                    delta_current,
-                    current_objective,
-                    grad_current,
-                    best_delta,
-                    objective_best,
-                    objective_nan_seen,
-                    objective_overflow_seen,
-                ),
-            )
-
-        final_delta = proposal_from_gradient(delta_current, grad_current)
-        objective_final_endpoint = objective(final_delta)
-        objective_nan_seen = jnp.logical_or(
-            objective_nan_seen,
-            jnp.isnan(objective_final_endpoint),
-        )
-        objective_overflow_seen = jnp.logical_or(
-            objective_overflow_seen,
-            jnp.isinf(objective_final_endpoint),
-        )
-        best_delta, objective_best = select_best(
-            best_delta,
-            objective_best,
-            final_delta,
-            objective_final_endpoint,
-        )
-        return (
-            final_delta,
-            objective_final_endpoint,
-            best_delta,
-            objective_best,
-            objective_nan_seen,
-            objective_overflow_seen,
-        )
-
-    def run_adam_ascent():
-        optimizer = optax.adam(
-            learning_rate=float(cfg.adam_learning_rate),
-            b1=float(cfg.adam_b1),
-            b2=float(cfg.adam_b2),
-            eps=float(cfg.adam_eps),
-        )
-        opt_state0 = optimizer.init(zero_delta)
-
-        def body(_, state):
-            (
-                delta_current,
-                _current_objective,
-                grad_current,
-                opt_state,
-                best_delta,
-                best_objective,
-                objective_nan_seen,
-                objective_overflow_seen,
-            ) = state
-            ascent_grad = -grad_current
-            updates, opt_state = optimizer.update(ascent_grad, opt_state, delta_current)
-            proposal = eqx.apply_updates(delta_current, updates) * time_mask
-            if radius is not None:
-                proposal = _project_flattened_per_trial_l2_ball(proposal, radius)
-            proposal_objective, proposal_grad = objective_and_grad(proposal)
-            proposal_grad = proposal_grad * time_mask
-            objective_nan_seen = jnp.logical_or(objective_nan_seen, jnp.isnan(proposal_objective))
-            objective_overflow_seen = jnp.logical_or(
-                objective_overflow_seen,
-                jnp.isinf(proposal_objective),
-            )
-            best_delta, best_objective = select_best(
-                best_delta,
-                best_objective,
-                proposal,
-                proposal_objective,
-            )
-            return (
-                proposal,
-                proposal_objective,
-                proposal_grad,
-                opt_state,
-                best_delta,
-                best_objective,
-                objective_nan_seen,
-                objective_overflow_seen,
-            )
-
-        (
-            final_delta,
-            objective_final_endpoint,
-            _grad_final,
-            _opt_state_final,
-            best_delta,
-            objective_best,
-            objective_nan_seen,
-            objective_overflow_seen,
-        ) = jax.lax.fori_loop(
-            0,
-            int(cfg.n_steps),
-            body,
-            (
-                zero_delta,
-                objective_initial,
-                grad_initial,
-                opt_state0,
-                zero_delta,
-                objective_initial,
-                jnp.isnan(objective_initial),
-                jnp.isinf(objective_initial),
-            ),
-        )
-        return (
-            final_delta,
-            objective_final_endpoint,
-            best_delta,
-            objective_best,
-            objective_nan_seen,
-            objective_overflow_seen,
-        )
-
-    if cfg.inner_optimizer_method == BROAD_EPSILON_PGD_ADAM:
-        (
-            final_delta,
-            objective_final_endpoint,
-            best_delta,
-            objective_best,
-            objective_nan_seen,
-            objective_overflow_seen,
-        ) = run_adam_ascent()
-    else:
-        (
-            final_delta,
-            objective_final_endpoint,
-            best_delta,
-            objective_best,
-            objective_nan_seen,
-            objective_overflow_seen,
-        ) = run_projected_gradient_ascent()
+    ascent = _run_broad_epsilon_pgd_ascent(
+        zero_delta,
+        objective=objective,
+        objective_and_grad=objective_and_grad,
+        proposal_from_gradient=proposal_from_gradient,
+        mask_candidate=lambda delta_candidate: delta_candidate * time_mask,
+        cfg=cfg,
+    )
+    objective_initial = ascent.objective_initial
+    final_delta = ascent.final_candidate
+    objective_final_endpoint = ascent.objective_final_endpoint
+    best_delta = ascent.best_candidate
+    objective_best = ascent.best_objective
+    objective_nan_seen = ascent.objective_nan_seen
+    objective_overflow_seen = ascent.objective_overflow_seen
     delta = jax.lax.stop_gradient(best_delta * time_mask)
     updated = _set_input(specs, "epsilon", base_epsilon + delta)
     if not return_diagnostics:
@@ -3483,235 +3584,37 @@ def _run_finite_broad_epsilon_pgd_inner_maximizer(
     def objective_and_grad(params):
         return jax.value_and_grad(objective)(params)
 
-    objective_initial, grad_initial = objective_and_grad(zero_params)
+    step_size = jnp.asarray(cfg.step_size_fraction, dtype=base_epsilon.dtype) * jnp.mean(radius)
 
-    def select_best(best_params, best_objective, candidate_params, candidate_objective):
-        improved = jnp.logical_and(
-            jnp.isfinite(candidate_objective),
-            candidate_objective > best_objective,
-        )
-        best_params = jax.tree.map(
-            lambda best, candidate: jnp.where(improved, candidate, best),
-            best_params,
-            candidate_params,
-        )
-        best_objective = jnp.where(improved, candidate_objective, best_objective)
-        return best_params, best_objective
-
-    def run_projected_gradient_ascent():
-        step_size = jnp.asarray(cfg.step_size_fraction, dtype=base_epsilon.dtype) * jnp.mean(radius)
-
-        def proposal_from_gradient(params_current, grad_current):
-            grad_norm = _finite_policy_tree_norm(grad_current)
-            scaled = jax.tree.map(
-                lambda param, grad: (
-                    param
-                    + step_size
-                    * grad
-                    / jnp.maximum(grad_norm, jnp.asarray(1e-12, dtype=step_size.dtype))
-                ),
-                params_current,
-                grad_current,
-            )
-            return _mask_finite_policy_params(scaled, policy_mask)
-
-        def body(_, state):
-            (
-                params_current,
-                _current_objective,
-                grad_current,
-                best_params,
-                best_objective,
-                objective_nan_seen,
-                objective_overflow_seen,
-            ) = state
-            proposal = proposal_from_gradient(params_current, grad_current)
-            proposal_objective, proposal_grad = objective_and_grad(proposal)
-            objective_nan_seen = jnp.logical_or(
-                objective_nan_seen,
-                jnp.isnan(proposal_objective),
-            )
-            objective_overflow_seen = jnp.logical_or(
-                objective_overflow_seen,
-                jnp.isinf(proposal_objective),
-            )
-            best_params, best_objective = select_best(
-                best_params,
-                best_objective,
-                proposal,
-                proposal_objective,
-            )
-            return (
-                proposal,
-                proposal_objective,
-                proposal_grad,
-                best_params,
-                best_objective,
-                objective_nan_seen,
-                objective_overflow_seen,
-            )
-
-        params_current = zero_params
-        current_objective = objective_initial
-        grad_current = grad_initial
-        best_params = zero_params
-        objective_best = objective_initial
-        objective_nan_seen = jnp.isnan(objective_initial)
-        objective_overflow_seen = jnp.isinf(objective_initial)
-        if int(cfg.n_steps) > 1:
-            (
-                params_current,
-                current_objective,
-                grad_current,
-                best_params,
-                objective_best,
-                objective_nan_seen,
-                objective_overflow_seen,
-            ) = jax.lax.fori_loop(
-                0,
-                int(cfg.n_steps) - 1,
-                body,
-                (
-                    params_current,
-                    current_objective,
-                    grad_current,
-                    best_params,
-                    objective_best,
-                    objective_nan_seen,
-                    objective_overflow_seen,
-                ),
-            )
-
-        final_params = proposal_from_gradient(params_current, grad_current)
-        objective_final_endpoint = objective(final_params)
-        objective_nan_seen = jnp.logical_or(
-            objective_nan_seen,
-            jnp.isnan(objective_final_endpoint),
-        )
-        objective_overflow_seen = jnp.logical_or(
-            objective_overflow_seen,
-            jnp.isinf(objective_final_endpoint),
-        )
-        best_params, objective_best = select_best(
-            best_params,
-            objective_best,
-            final_params,
-            objective_final_endpoint,
-        )
-        return (
-            final_params,
-            objective_final_endpoint,
-            best_params,
-            objective_best,
-            objective_nan_seen,
-            objective_overflow_seen,
-        )
-
-    def run_adam_ascent():
-        optimizer = optax.adam(
-            learning_rate=float(cfg.adam_learning_rate),
-            b1=float(cfg.adam_b1),
-            b2=float(cfg.adam_b2),
-            eps=float(cfg.adam_eps),
-        )
-        opt_state0 = optimizer.init(zero_params)
-
-        def body(step_index, state):
-            del step_index
-            (
-                params_current,
-                current_objective,
-                grad_current,
-                opt_state,
-                best_params,
-                best_objective,
-                objective_nan_seen,
-                objective_overflow_seen,
-            ) = state
-            del current_objective
-            ascent_grad = jax.tree.map(lambda grad: -grad, grad_current)
-            updates, opt_state = optimizer.update(ascent_grad, opt_state, params_current)
-            proposal = _mask_finite_policy_params(
-                eqx.apply_updates(params_current, updates),
-                policy_mask,
-            )
-            proposal_objective, proposal_grad = objective_and_grad(proposal)
-            objective_nan_seen = jnp.logical_or(
-                objective_nan_seen,
-                jnp.isnan(proposal_objective),
-            )
-            objective_overflow_seen = jnp.logical_or(
-                objective_overflow_seen,
-                jnp.isinf(proposal_objective),
-            )
-            best_params, best_objective = select_best(
-                best_params,
-                best_objective,
-                proposal,
-                proposal_objective,
-            )
-            return (
-                proposal,
-                proposal_objective,
-                proposal_grad,
-                opt_state,
-                best_params,
-                best_objective,
-                objective_nan_seen,
-                objective_overflow_seen,
-            )
-
-        (
-            final_params,
-            objective_final_endpoint,
-            _grad_final,
-            _opt_state_final,
-            best_params,
-            objective_best,
-            objective_nan_seen,
-            objective_overflow_seen,
-        ) = jax.lax.fori_loop(
-            0,
-            int(cfg.n_steps),
-            body,
-            (
-                zero_params,
-                objective_initial,
-                grad_initial,
-                opt_state0,
-                zero_params,
-                objective_initial,
-                jnp.isnan(objective_initial),
-                jnp.isinf(objective_initial),
+    def proposal_from_gradient(params_current, grad_current):
+        grad_norm = _finite_policy_tree_norm(grad_current)
+        scaled = jax.tree.map(
+            lambda param, grad: (
+                param
+                + step_size
+                * grad
+                / jnp.maximum(grad_norm, jnp.asarray(1e-12, dtype=step_size.dtype))
             ),
+            params_current,
+            grad_current,
         )
-        return (
-            final_params,
-            objective_final_endpoint,
-            best_params,
-            objective_best,
-            objective_nan_seen,
-            objective_overflow_seen,
-        )
+        return _mask_finite_policy_params(scaled, policy_mask)
 
-    if cfg.inner_optimizer_method == BROAD_EPSILON_PGD_ADAM:
-        (
-            final_params,
-            objective_final_endpoint,
-            best_params,
-            objective_best,
-            objective_nan_seen,
-            objective_overflow_seen,
-        ) = run_adam_ascent()
-    else:
-        (
-            final_params,
-            objective_final_endpoint,
-            best_params,
-            objective_best,
-            objective_nan_seen,
-            objective_overflow_seen,
-        ) = run_projected_gradient_ascent()
+    ascent = _run_broad_epsilon_pgd_ascent(
+        zero_params,
+        objective=objective,
+        objective_and_grad=objective_and_grad,
+        proposal_from_gradient=proposal_from_gradient,
+        mask_candidate=lambda params: _mask_finite_policy_params(params, policy_mask),
+        cfg=cfg,
+    )
+    objective_initial = ascent.objective_initial
+    final_params = ascent.final_candidate
+    objective_final_endpoint = ascent.objective_final_endpoint
+    best_params = ascent.best_candidate
+    objective_best = ascent.best_objective
+    objective_nan_seen = ascent.objective_nan_seen
+    objective_overflow_seen = ascent.objective_overflow_seen
     best_params = jax.tree.map(jax.lax.stop_gradient, best_params)
     updated = candidate_specs(best_params)
     if not return_diagnostics:
@@ -6289,828 +6192,3 @@ def _dedupe_targets(targets: tuple[tuple[float, float], ...]) -> tuple[tuple[flo
         seen.add(key)
         rows.append(key)
     return tuple(rows)
-
-
-def planned_fixed_target_perturbation_rows(
-    *,
-    experiment: str = "aacb9ed",
-) -> list[dict[str, Any]]:
-    """Return the first two planned local perturbation-generalized run rows."""
-
-    rows = []
-    for lr_label, lr in (("lr1e-3", 1e-3), ("lr3e-3", 3e-3)):
-        run = f"fixed_target_random_perturb_fullqrf_warmcos__{lr_label}_clip5_b64"
-        rows.append(
-            {
-                "experiment": experiment,
-                "run": run,
-                "controller_lr": lr,
-                "batch_size": 64,
-                "gradient_clip_norm": 5.0,
-                "n_replicates": 5,
-                "loss_objective": "full_analytical_qrf",
-                "lr_schedule": "warmup_cosine",
-                "perturbation_training": PERTURBATION_TRAINING_MODE,
-                "checkpoint_selection": "generalized_held_out_perturbation_validation",
-                "command": [
-                    "uv",
-                    "run",
-                    "python",
-                    "scripts/train_cs_nominal_gru.py",
-                    "--issue",
-                    "aacb9ed",
-                    "--output-dir",
-                    f"_artifacts/{experiment}/runs/{run}",
-                    "--n-train-batches",
-                    "12000",
-                    "--batch-size",
-                    "64",
-                    "--controller-lr",
-                    str(lr),
-                    "--gradient-clip-norm",
-                    "5",
-                    "--lr-warmup-batches",
-                    "500",
-                    "--lr-warmup-init-fraction",
-                    "0.1",
-                    "--lr-cosine-alpha",
-                    "0.01",
-                    "--n-replicates",
-                    "5",
-                    "--loss-objective",
-                    "full_analytical_qrf",
-                    "--perturbation-training",
-                    "--full-train",
-                    "--resume",
-                ],
-            }
-        )
-    return rows
-
-
-def planned_target_relative_multitarget_rows(
-    *,
-    experiment: str = "ba82f3d",
-) -> list[dict[str, Any]]:
-    """Return the planned target-relative smoke/main run rows."""
-
-    rows = [
-        {
-            "experiment": experiment,
-            "run": "target_relative_multitarget_fullqrf_smoke",
-            "controller_lr": 1e-3,
-            "batch_size": 2,
-            "gradient_clip_norm": 5.0,
-            "n_replicates": 1,
-            "loss_objective": "full_analytical_qrf",
-            "row_kind": "smoke",
-            "training": TARGET_RELATIVE_MULTITARGET_TRAINING_MODE,
-            "command": [
-                "uv",
-                "run",
-                "python",
-                "scripts/train_cs_nominal_gru.py",
-                "--issue",
-                "ba82f3d",
-                "--output-dir",
-                f"/tmp/{experiment}_target_relative_smoke",
-                "--target-relative-multitarget",
-                "--perturbation-training",
-                "--loss-objective",
-                "full_analytical_qrf",
-                "--controller-lr",
-                "0.001",
-                "--gradient-clip-norm",
-                "5",
-                "--smoke",
-                "--full-train",
-                "--resume",
-            ],
-        }
-    ]
-    for lr_label, lr in (("lr1e-3", 1e-3), ("lr3e-3", 3e-3)):
-        run = f"target_relative_multitarget_fullqrf_warmcos__{lr_label}_clip5_b64"
-        rows.append(
-            {
-                "experiment": experiment,
-                "run": run,
-                "controller_lr": lr,
-                "batch_size": 64,
-                "gradient_clip_norm": 5.0,
-                "n_replicates": 5,
-                "loss_objective": "full_analytical_qrf",
-                "lr_schedule": "warmup_cosine",
-                "row_kind": "main",
-                "training": TARGET_RELATIVE_MULTITARGET_TRAINING_MODE,
-                "checkpoint_selection": "target_relative_multitarget_rollout_validation",
-                "command": [
-                    "uv",
-                    "run",
-                    "python",
-                    "scripts/train_cs_nominal_gru.py",
-                    "--issue",
-                    "ba82f3d",
-                    "--output-dir",
-                    f"_artifacts/{experiment}/runs/{run}",
-                    "--n-train-batches",
-                    "12000",
-                    "--batch-size",
-                    "64",
-                    "--controller-lr",
-                    str(lr),
-                    "--gradient-clip-norm",
-                    "5",
-                    "--lr-warmup-batches",
-                    "500",
-                    "--lr-warmup-init-fraction",
-                    "0.1",
-                    "--lr-cosine-alpha",
-                    "0.01",
-                    "--n-replicates",
-                    "5",
-                    "--loss-objective",
-                    "full_analytical_qrf",
-                    "--target-relative-multitarget",
-                    "--perturbation-training",
-                    "--full-train",
-                    "--resume",
-                ],
-            }
-        )
-    return rows
-
-
-def planned_target_relative_multitarget_h0_rows(
-    *,
-    experiment: str = "643f101",
-) -> list[dict[str, Any]]:
-    """Return the planned H0 target-relative smoke/main run rows."""
-
-    rows = [
-        {
-            "experiment": experiment,
-            "run": "target_relative_multitarget_h0_fullqrf_smoke",
-            "controller_lr": 1e-3,
-            "batch_size": 2,
-            "gradient_clip_norm": 5.0,
-            "n_replicates": 1,
-            "loss_objective": "full_analytical_qrf",
-            "row_kind": "smoke",
-            "training": TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
-            "initial_hidden_encoder": "zero_affine_target_relative_feedback",
-            "command": [
-                "uv",
-                "run",
-                "python",
-                "scripts/train_cs_nominal_gru.py",
-                "--issue",
-                "643f101",
-                "--output-dir",
-                f"/tmp/{experiment}_target_relative_h0_smoke",
-                "--target-relative-multitarget",
-                "--initial-hidden-encoder",
-                "--perturbation-training",
-                "--loss-objective",
-                "full_analytical_qrf",
-                "--controller-lr",
-                "0.001",
-                "--gradient-clip-norm",
-                "5",
-                "--smoke",
-                "--full-train",
-                "--resume",
-            ],
-        }
-    ]
-    for lr_label, lr in (("lr1e-3", 1e-3), ("lr3e-3", 3e-3)):
-        run = f"target_relative_multitarget_h0_fullqrf_warmcos__{lr_label}_clip5_b64"
-        rows.append(
-            {
-                "experiment": experiment,
-                "run": run,
-                "controller_lr": lr,
-                "batch_size": 64,
-                "gradient_clip_norm": 5.0,
-                "n_replicates": 5,
-                "n_train_batches": 12000,
-                "loss_objective": "full_analytical_qrf",
-                "lr_schedule": "warmup_cosine",
-                "row_kind": "main",
-                "training": TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
-                "initial_hidden_encoder": "zero_affine_target_relative_feedback",
-                "training_diagnostics": "default_enabled",
-                "checkpoint_selection": "target_relative_multitarget_rollout_validation",
-                "comparison_rows": [
-                    (
-                        "results/ba82f3d/runs/"
-                        f"target_relative_multitarget_fullqrf_warmcos__{lr_label}_clip5_b64"
-                    )
-                ],
-                "command": [
-                    "uv",
-                    "run",
-                    "python",
-                    "scripts/train_cs_nominal_gru.py",
-                    "--issue",
-                    "643f101",
-                    "--output-dir",
-                    f"_artifacts/{experiment}/runs/{run}",
-                    "--n-train-batches",
-                    "12000",
-                    "--batch-size",
-                    "64",
-                    "--controller-lr",
-                    str(lr),
-                    "--gradient-clip-norm",
-                    "5",
-                    "--lr-warmup-batches",
-                    "500",
-                    "--lr-warmup-init-fraction",
-                    "0.1",
-                    "--lr-cosine-alpha",
-                    "0.01",
-                    "--n-replicates",
-                    "5",
-                    "--loss-objective",
-                    "full_analytical_qrf",
-                    "--target-relative-multitarget",
-                    "--initial-hidden-encoder",
-                    "--perturbation-training",
-                    "--full-train",
-                    "--resume",
-                ],
-            }
-        )
-    return rows
-
-
-def planned_020a65b_h0_pgd_rows(
-    *,
-    experiment: str = "020a65b",
-) -> list[dict[str, Any]]:
-    """Return the two local H0 replication rows for the 020a65b PGD lane."""
-
-    common_command = [
-        "env",
-        "JAX_PLATFORM_NAME=cpu",
-        "PYTHONPATH=src",
-        "uv",
-        "run",
-        "--no-sync",
-        "python",
-        "scripts/train_cs_nominal_gru.py",
-        "--issue",
-        "020a65b",
-        "--n-train-batches",
-        "12000",
-        "--batch-size",
-        "64",
-        "--controller-lr",
-        "0.003",
-        "--gradient-clip-norm",
-        "5",
-        "--lr-warmup-batches",
-        "500",
-        "--lr-warmup-init-fraction",
-        "0.1",
-        "--lr-cosine-alpha",
-        "0.01",
-        "--n-replicates",
-        "5",
-        "--loss-objective",
-        "full_analytical_qrf",
-        "--target-relative-multitarget",
-        "--initial-hidden-encoder",
-        "--force-filter-feedback",
-        "--perturbation-training",
-        "--perturbation-calibrated-timing",
-        "--perturbation-physical-level",
-        "small",
-    ]
-
-    rows = []
-    for pgd_enabled in (False, True):
-        pgd_label = "pgd_ofb" if pgd_enabled else "no_pgd"
-        run = (
-            "target_relative_multitarget_h0_fullqrf_warmcos__"
-            f"proprio_cal_small_{pgd_label}_lr3e-3_clip5_b64"
-        )
-        command = [
-            *common_command,
-            "--output-dir",
-            f"_artifacts/{experiment}/runs/{run}",
-        ]
-        if pgd_enabled:
-            command.extend(
-                [
-                    "--broad-epsilon-pgd-training",
-                    "--broad-epsilon-level",
-                    "moderate",
-                    "--broad-epsilon-budget-scale",
-                    "3.688240371719434",
-                    "--broad-epsilon-pgd-steps",
-                    "10",
-                    "--broad-epsilon-pgd-step-size-fraction",
-                    "0.25",
-                ]
-            )
-        full_resume_command = [*command, "--full-train", "--resume"]
-        rows.append(
-            {
-                "experiment": experiment,
-                "run": run,
-                "controller_lr": 3e-3,
-                "batch_size": 64,
-                "gradient_clip_norm": 5.0,
-                "n_replicates": 5,
-                "n_train_batches": 12000,
-                "stop_after_batches": 1000,
-                "loss_objective": "full_analytical_qrf",
-                "lr_schedule": "warmup_cosine",
-                "row_kind": "checkpoint_gate",
-                "remote_device": "runpod_rtx_5090",
-                "training": TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
-                "force_filter_feedback": True,
-                "perturbation_training": "fixed_target_perturbation_calibrated_timing",
-                "perturbation_physical_level": "small",
-                "initial_hidden_encoder": "zero_affine_target_relative_feedback_plus_force_filter",
-                "broad_epsilon_pgd_training": pgd_enabled,
-                "broad_epsilon_level": "moderate" if pgd_enabled else None,
-                "broad_epsilon_budget_scale": 3.688240371719434 if pgd_enabled else None,
-                "broad_epsilon_pgd_steps": 10 if pgd_enabled else None,
-                "broad_epsilon_pgd_step_size_fraction": 0.25 if pgd_enabled else None,
-                "checkpoint_selection": "target_relative_multitarget_rollout_validation",
-                "full_training_contract_command": full_resume_command,
-                "command": [
-                    *full_resume_command,
-                    "--stop-after-batches",
-                    "1000",
-                ],
-            }
-        )
-    return rows
-
-
-def planned_33b0dcb_target_support_rows(
-    *,
-    experiment: str = "33b0dcb",
-) -> list[dict[str, Any]]:
-    """Return the no-PGD H0 target-support generalization rows."""
-
-    common_command = [
-        "env",
-        "PYTHONPATH=src",
-        "uv",
-        "run",
-        "--no-sync",
-        "python",
-        "scripts/train_cs_nominal_gru.py",
-        "--issue",
-        experiment,
-        "--n-train-batches",
-        "12000",
-        "--batch-size",
-        "64",
-        "--controller-lr",
-        "0.003",
-        "--gradient-clip-norm",
-        "5",
-        "--lr-warmup-batches",
-        "500",
-        "--lr-warmup-init-fraction",
-        "0.1",
-        "--lr-cosine-alpha",
-        "0.01",
-        "--n-replicates",
-        "5",
-        "--loss-objective",
-        "full_analytical_qrf",
-        "--target-relative-multitarget",
-        "--initial-hidden-encoder",
-        "--force-filter-feedback",
-        "--perturbation-training",
-        "--perturbation-calibrated-timing",
-        "--perturbation-physical-level",
-        "small",
-    ]
-    row_specs = [
-        {
-            "row": "A",
-            "label": "old_replicate",
-            "target_support_profile": TARGET_SUPPORT_PROFILE_020A65B,
-            "purpose": "exact 020a65b no-PGD H0 target-support replay",
-        },
-        {
-            "row": "B",
-            "label": "const_dense_all",
-            "target_support_profile": TARGET_SUPPORT_PROFILE_CONST_DENSE_ALL,
-            "purpose": "fixed 0.15 m dense all-angle training with no held-out directions",
-        },
-        {
-            "row": "C",
-            "label": "const_sparse8",
-            "target_support_profile": TARGET_SUPPORT_PROFILE_CONST_SPARSE8,
-            "purpose": "fixed 0.15 m sparse 8-direction training with dense held-out validation",
-        },
-        {
-            "row": "D",
-            "label": "const_band8",
-            "target_support_profile": TARGET_SUPPORT_PROFILE_CONST_BAND8,
-            "purpose": "fixed 0.15 m dense training excluding eight directions in four angular bands",
-        },
-        {
-            "row": "E",
-            "label": "const_band16",
-            "target_support_profile": TARGET_SUPPORT_PROFILE_CONST_BAND16,
-            "purpose": "fixed 0.15 m dense training excluding 16 directions in four angular bands",
-        },
-        {
-            "row": "F",
-            "label": "const_band36",
-            "target_support_profile": TARGET_SUPPORT_PROFILE_CONST_BAND36,
-            "purpose": "fixed 0.15 m dense training excluding 36 directions in four angular bands",
-        },
-    ]
-
-    rows = []
-    for row_spec in row_specs:
-        run = f"h0_no_pgd_targetsupport__{row_spec['label']}_lr3e-3_clip5_b64"
-        config = target_relative_target_support_config(
-            profile=str(row_spec["target_support_profile"]),
-            enabled=True,
-            force_filter_feedback=True,
-        )
-        full_resume_command = [
-            *common_command,
-            "--target-support-profile",
-            str(row_spec["target_support_profile"]),
-            "--output-dir",
-            f"_artifacts/{experiment}/runs/{run}",
-            "--full-train",
-            "--resume",
-        ]
-        rows.append(
-            {
-                "experiment": experiment,
-                "issue": experiment,
-                "row": row_spec["row"],
-                "run": run,
-                "controller_lr": 3e-3,
-                "batch_size": 64,
-                "gradient_clip_norm": 5.0,
-                "n_replicates": 5,
-                "n_train_batches": 12000,
-                "stop_after_batches": 1000,
-                "loss_objective": "full_analytical_qrf",
-                "lr_schedule": "warmup_cosine",
-                "row_kind": "checkpoint_gate",
-                "remote_device": "runpod_secure_rtx_5090",
-                "training": TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
-                "force_filter_feedback": True,
-                "perturbation_training": CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE,
-                "perturbation_physical_level": "small",
-                "initial_hidden_encoder": "zero_affine_target_relative_feedback_plus_force_filter",
-                "broad_epsilon_pgd_training": False,
-                "target_support_profile": row_spec["target_support_profile"],
-                "target_support": config.to_json()["target_distribution"],
-                "seen_target_count": len(config.seen_targets_m),
-                "held_out_target_count": len(config.held_out_targets_m),
-                "purpose": row_spec["purpose"],
-                "checkpoint_selection": "target_relative_multitarget_rollout_validation",
-                "full_training_contract_command": full_resume_command,
-                "command": [
-                    *full_resume_command,
-                    "--stop-after-batches",
-                    "1000",
-                ],
-            }
-        )
-    return rows
-
-
-def planned_e4800d6_sisu_spectrum_rows(
-    *,
-    experiment: str = "e4800d6",
-) -> list[dict[str, Any]]:
-    """Return the two pre-launch SISU-conditioned PGD spectrum rows."""
-
-    common_command = [
-        "env",
-        "PYTHONPATH=src",
-        "uv",
-        "run",
-        "--no-sync",
-        "python",
-        "scripts/train_cs_nominal_gru.py",
-        "--issue",
-        experiment,
-        "--n-train-batches",
-        "12000",
-        "--batch-size",
-        "64",
-        "--controller-lr",
-        "0.01",
-        "--gradient-clip-norm",
-        "5",
-        "--lr-warmup-batches",
-        "500",
-        "--lr-warmup-init-fraction",
-        "0.1",
-        "--lr-cosine-alpha",
-        "0.1",
-        "--n-replicates",
-        "5",
-        "--target-relative-multitarget",
-        "--initial-hidden-encoder",
-        "--force-filter-feedback",
-        "--perturbation-training",
-        "--perturbation-calibrated-timing",
-        "--perturbation-physical-level",
-        "small",
-        "--loss-objective",
-        "full_analytical_qrf",
-        "--broad-epsilon-pgd-training",
-        "--broad-epsilon-pgd-budget-schedule",
-        BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
-        "--broad-epsilon-pgd-sisu-condition-input",
-        "input",
-        "--no-broad-epsilon-reach-scaling",
-        "--broad-epsilon-pgd-steps",
-        "10",
-        "--broad-epsilon-pgd-step-size-fraction",
-        "0.25",
-    ]
-    row_specs = [
-        {
-            "row": "A",
-            "label": "raw_strong_gamma_1p05_radius",
-            "max_l2_radius_15cm": RAW_STRONG_GAMMA_1P05_RADIUS_15CM,
-            "max_radius_source": "raw_strong_gamma_1p05_radius",
-        },
-        {
-            "row": "B",
-            "label": "effective_020a65b_pgd_radius",
-            "max_l2_radius_15cm": HISTORICAL_020A65B_PGD_RADIUS_15CM,
-            "max_radius_source": "effective_020a65b_pgd_training_radius",
-        },
-    ]
-
-    rows = []
-    for row_spec in row_specs:
-        run = f"cs_gru_h0_sisu_spectrum_targetfix__{row_spec['label']}_lr3e-3_clip5_b64"
-        full_resume_command = [
-            *common_command,
-            "--broad-epsilon-pgd-sisu-max-radius",
-            str(row_spec["max_l2_radius_15cm"]),
-            "--broad-epsilon-pgd-sisu-max-radius-source",
-            str(row_spec["max_radius_source"]),
-            "--output-dir",
-            f"_artifacts/{experiment}/runs/{run}",
-            "--full-train",
-            "--resume",
-        ]
-        rows.append(
-            {
-                "experiment": experiment,
-                "issue": experiment,
-                "row": row_spec["row"],
-                "run": run,
-                "controller_lr": 3e-3,
-                "lr_schedule": "warmup_cosine",
-                "lr_warmup_batches": 500,
-                "lr_warmup_init_fraction": 0.1,
-                "lr_cosine_alpha": 0.1,
-                "final_learning_rate": 3e-4,
-                "batch_size": 64,
-                "gradient_clip_norm": 5.0,
-                "n_replicates": 5,
-                "n_train_batches": 12000,
-                "stop_after_batches": None,
-                "loss_objective": "full_analytical_qrf",
-                "row_kind": "full_train",
-                "remote_device": "runpod_rtx_5090",
-                "training": (
-                    f"{TARGET_RELATIVE_MULTITARGET_TRAINING_MODE}+"
-                    f"{CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE}+"
-                    f"{BROAD_EPSILON_PGD_TRAINING_MODE}"
-                ),
-                "force_filter_feedback": True,
-                "initial_hidden_encoder": (
-                    "zero_affine_target_relative_feedback_plus_force_filter"
-                ),
-                "perturbation_training": CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE,
-                "perturbation_physical_level": "small",
-                "broad_epsilon_pgd_training": True,
-                "broad_epsilon_pgd_budget_schedule": BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
-                "sisu_levels": list(DEFAULT_PGD_SISU_LEVELS),
-                "sisu_probabilities": list(
-                    _sisu_level_probabilities(
-                        DEFAULT_PGD_SISU_LEVELS,
-                        DEFAULT_PGD_SISU_EXACT_ZERO_MASS,
-                    )
-                ),
-                "sisu_exact_zero_mass": DEFAULT_PGD_SISU_EXACT_ZERO_MASS,
-                "sisu_mapping_rule": "epsilon_l2_radius = Rmax * sqrt(SISU)",
-                "sisu_condition_input": "input",
-                "broad_epsilon_reach_scaling": False,
-                "max_l2_radius_15cm": row_spec["max_l2_radius_15cm"],
-                "max_radius_source": row_spec["max_radius_source"],
-                "max_radius_source_metadata": PGD_SISU_MAX_RADIUS_SOURCES[
-                    str(row_spec["max_radius_source"])
-                ],
-                "broad_epsilon_pgd_steps": 10,
-                "broad_epsilon_pgd_step_size_fraction": 0.25,
-                "teacher_or_distillation": "not_used",
-                "checkpoint_selection": "target_relative_multitarget_rollout_validation",
-                "full_training_contract_command": full_resume_command,
-                "checkpoint_gate_command": [
-                    *full_resume_command,
-                    "--stop-after-batches",
-                    "1000",
-                ],
-                "command": full_resume_command,
-            }
-        )
-    return rows
-
-
-def planned_7c1f7ed_delayed_sisu_spectrum_rows(
-    *,
-    experiment: str = "7c1f7ed",
-) -> list[dict[str, Any]]:
-    """Return the two delayed SISU-conditioned PGD spectrum rows."""
-
-    common_command = [
-        "env",
-        "PYTHONPATH=src",
-        "uv",
-        "run",
-        "--no-sync",
-        "python",
-        "scripts/train_cs_nominal_gru.py",
-        "--issue",
-        experiment,
-        "--n-train-batches",
-        "12000",
-        "--batch-size",
-        "64",
-        "--controller-lr",
-        "0.01",
-        "--gradient-clip-norm",
-        "5",
-        "--lr-warmup-batches",
-        "500",
-        "--lr-warmup-init-fraction",
-        "0.1",
-        "--lr-cosine-alpha",
-        "0.1",
-        "--n-replicates",
-        "5",
-        "--hidden-size",
-        "180",
-        "--target-relative-multitarget",
-        "--delayed-reach",
-        "--delayed-reach-go-cue-min-step",
-        "10",
-        "--delayed-reach-go-cue-max-step",
-        "30",
-        "--delayed-reach-p-catch-trial",
-        "0.5",
-        "--force-filter-feedback",
-        "--perturbation-training",
-        "--perturbation-calibrated-timing",
-        "--perturbation-movement-age-timing",
-        "--perturbation-physical-level",
-        "small",
-        "--loss-objective",
-        "full_analytical_qrf",
-        "--nn-output-pre-go",
-        "0",
-        "--delayed-pre-go-force-filter-hold",
-        "0",
-        "--delayed-pre-go-start-pos-hold",
-        "1e6",
-        "--delayed-pre-go-start-pos-hold-norm",
-        "l2",
-        "--delayed-pre-go-zero-vel-hold",
-        "1e5",
-        "--broad-epsilon-pgd-training",
-        "--broad-epsilon-pgd-budget-schedule",
-        BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
-        "--broad-epsilon-pgd-sisu-condition-input",
-        "sisu",
-        "--no-broad-epsilon-reach-scaling",
-        "--broad-epsilon-pgd-steps",
-        "10",
-        "--broad-epsilon-pgd-step-size-fraction",
-        "0.25",
-    ]
-    row_specs = [
-        {
-            "row": "A",
-            "label": "raw_strong_gamma_1p05_radius",
-            "max_l2_radius_15cm": RAW_STRONG_GAMMA_1P05_RADIUS_15CM,
-            "max_radius_source": "raw_strong_gamma_1p05_radius",
-        },
-        {
-            "row": "B",
-            "label": "effective_020a65b_pgd_radius",
-            "max_l2_radius_15cm": HISTORICAL_020A65B_PGD_RADIUS_15CM,
-            "max_radius_source": "effective_020a65b_pgd_training_radius",
-        },
-    ]
-
-    rows = []
-    for row_spec in row_specs:
-        run = f"delayed_sisu_spectrum__{row_spec['label']}_lr1e-2_clip5_b64"
-        full_resume_command = [
-            *common_command,
-            "--broad-epsilon-pgd-sisu-max-radius",
-            str(row_spec["max_l2_radius_15cm"]),
-            "--broad-epsilon-pgd-sisu-max-radius-source",
-            str(row_spec["max_radius_source"]),
-            "--output-dir",
-            f"_artifacts/{experiment}/runs/{run}",
-            "--full-train",
-            "--resume",
-        ]
-        rows.append(
-            {
-                "experiment": experiment,
-                "issue": experiment,
-                "row": row_spec["row"],
-                "run": run,
-                "base_row": "ef9c882/hold__start_pos_zero_vel_lr1e-2",
-                "controller_lr": 1e-2,
-                "lr_schedule": "warmup_cosine",
-                "lr_warmup_batches": 500,
-                "lr_warmup_init_fraction": 0.1,
-                "lr_cosine_alpha": 0.1,
-                "final_learning_rate": 1e-3,
-                "batch_size": 64,
-                "gradient_clip_norm": 5.0,
-                "hidden_size": 180,
-                "n_replicates": 5,
-                "n_train_batches": 12000,
-                "stop_after_batches": None,
-                "loss_objective": "full_analytical_qrf",
-                "row_kind": "full_train",
-                "remote_device": "runpod_rtx_5090",
-                "training": (
-                    "delayed_reach_target_visible_go_cue+"
-                    f"{TARGET_RELATIVE_MULTITARGET_TRAINING_MODE}+"
-                    f"{CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE}+"
-                    f"{BROAD_EPSILON_PGD_TRAINING_MODE}"
-                ),
-                "delayed_reach": {
-                    "target_visibility": "visible_from_trial_start",
-                    "go_cue_step_range": [10, 30],
-                    "p_catch_trial": 0.5,
-                    "movement_cost_indexing": "movement_age",
-                    "go_cue_input": "input[..., 0]",
-                    "sisu_budget_input": "sisu",
-                    "controller_input_vector": "input = [go_cue, sisu]",
-                },
-                "force_filter_feedback": True,
-                "initial_hidden_encoder": "not_used",
-                "nn_output_pre_go": 0.0,
-                "delayed_pre_go_force_filter_hold": 0.0,
-                "delayed_pre_go_start_pos_hold": 1e6,
-                "delayed_pre_go_start_pos_hold_norm": "l2",
-                "delayed_pre_go_zero_vel_hold": 1e5,
-                "perturbation_training": CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE,
-                "perturbation_timing": "movement_age",
-                "perturbation_physical_level": "small",
-                "broad_epsilon_pgd_training": True,
-                "broad_epsilon_pgd_budget_schedule": BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
-                "broad_epsilon_pgd_scope": "movement_epoch_only",
-                "sisu_levels": list(DEFAULT_PGD_SISU_LEVELS),
-                "sisu_probabilities": list(
-                    _sisu_level_probabilities(
-                        DEFAULT_PGD_SISU_LEVELS,
-                        DEFAULT_PGD_SISU_EXACT_ZERO_MASS,
-                    )
-                ),
-                "sisu_exact_zero_mass": DEFAULT_PGD_SISU_EXACT_ZERO_MASS,
-                "sisu_mapping_rule": "epsilon_l2_radius = Rmax * sqrt(SISU)",
-                "sisu_condition_input": "sisu",
-                "broad_epsilon_reach_scaling": False,
-                "max_l2_radius_15cm": row_spec["max_l2_radius_15cm"],
-                "max_radius_source": row_spec["max_radius_source"],
-                "max_radius_source_metadata": PGD_SISU_MAX_RADIUS_SOURCES[
-                    str(row_spec["max_radius_source"])
-                ],
-                "broad_epsilon_pgd_steps": 10,
-                "broad_epsilon_pgd_step_size_fraction": 0.25,
-                "teacher_or_distillation": "not_used",
-                "checkpoint_selection": "delayed_fixed_no_catch_catch_eval_banks",
-                "full_training_contract_command": full_resume_command,
-                "checkpoint_gate_command": [
-                    *full_resume_command,
-                    "--stop-after-batches",
-                    "1000",
-                ],
-                "command": full_resume_command,
-            }
-        )
-    return rows

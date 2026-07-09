@@ -7,9 +7,6 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-import plotly.graph_objects as go
-
 from feedbax.analysis.analysis import AbstractAnalysis
 from feedbax.analysis.context import AnalysisRunContext
 from feedbax.analysis.evaluation import EvaluationRecipeResult, register_evaluation_recipe
@@ -27,12 +24,13 @@ from rlrmp.runtime.spec_migrations import (
     STANDARD_MATRIX_EVAL_PARAMS_KIND,
     accept_rlrmp_spec_payload,
 )
-from rlrmp.viz import profile_comparison_grid
+from rlrmp.figures import STANDARD_MATRIX_PAYLOAD_ROLE, standard_matrix_payload
 
 STANDARD_MATRIX_ANALYSIS_TYPE = "rlrmp.standard_matrix"
 STANDARD_MATRIX_EVALUATION_TYPE = "rlrmp.standard_matrix_evaluation"
 
 STANDARD_MATRIX_OUTPUTS = (
+    "figure_payload",
     "forward_velocity_profiles",
     "hold_drift_profiles",
     "peak_velocity_distributions",
@@ -78,11 +76,6 @@ class StandardMatrixAnalysis(AbstractAnalysis):
             return _notes_markdown(cells, data.extras.get("params", {}))
         return {"cells": cells, "params": data.extras.get("params", {})}
 
-    def make_figs(self, data: AnalysisInputData, *, result, **kwargs):
-        if self.output == "notes":
-            return None
-        return {self.output: _figure_for_output(self.output, result["cells"], result["params"])}
-
     def emit_artifacts(
         self,
         context: AnalysisRunContext,
@@ -91,6 +84,15 @@ class StandardMatrixAnalysis(AbstractAnalysis):
         result,
         **kwargs,
     ):
+        if self.output == "figure_payload":
+            artifact = context.record_json_artifact(
+                standard_matrix_payload(result["cells"], result["params"]),
+                role=STANDARD_MATRIX_PAYLOAD_ROLE,
+                logical_name="standard_matrix/payload.json",
+                metadata={"standard_matrix": True},
+            )
+            return {"payload": result, "artifact_refs": {"payload": artifact}}
+
         if self.output != "notes":
             return None
 
@@ -295,191 +297,6 @@ def _figure_params(params: Mapping[str, Any]) -> dict[str, Any]:
     return output
 
 
-def _figure_for_output(output: str, cells: Sequence[Mapping[str, Any]], params: Mapping[str, Any]):
-    if output == "forward_velocity_profiles":
-        return _profile_figure(
-            cells, profile_key=str(params.get("profile_key", "forward_velocity"))
-        )
-    if output == "hold_drift_profiles":
-        return _profile_figure(cells, profile_key=str(params.get("profile_key", "hold_drift")))
-    if output == "peak_velocity_distributions":
-        return _peak_velocity_figure(cells)
-    if output == "summary_metrics":
-        return _summary_metrics_figure(cells, params=params)
-    if output == "training_loss":
-        return _training_loss_figure(cells)
-    if output == "training_loss_per_term":
-        return _training_loss_per_term_figure(cells)
-    if output == "rmse_ratio_comparison":
-        return _rmse_ratio_figure(cells)
-    raise ValueError(f"Unknown standard matrix output {output!r}")
-
-
-def _profile_figure(cells: Sequence[Mapping[str, Any]], *, profile_key: str) -> go.Figure:
-    fig = profile_comparison_grid(
-        max(1, len(cells)),
-        subplot_titles=[str(cell["display_name"]) for cell in cells] or [profile_key],
-        vertical_spacing=0.04,
-    )
-    for row, cell in enumerate(cells, start=1):
-        profile = _mapping(cell.get(profile_key, {}))
-        x = _series(profile.get("time", cell.get("time")), default_len=_profile_len(profile))
-        mean = _series(profile.get("mean", profile.get("value", [])))
-        color = cell.get("color")
-        fig.add_trace(
-            go.Scatter(
-                x=x,
-                y=mean,
-                mode="lines",
-                name=str(cell["display_name"]),
-                line={"color": color} if color else None,
-            ),
-            row=row,
-            col=1,
-        )
-        lower = profile.get("lower")
-        upper = profile.get("upper")
-        if lower is not None and upper is not None:
-            upper_values = _series(upper)
-            lower_values = _series(lower)
-            fig.add_trace(
-                go.Scatter(
-                    x=x,
-                    y=upper_values,
-                    mode="lines",
-                    line={"width": 0, "color": color} if color else {"width": 0},
-                    showlegend=False,
-                    hoverinfo="skip",
-                ),
-                row=row,
-                col=1,
-            )
-            fig.add_trace(
-                go.Scatter(
-                    x=x,
-                    y=lower_values,
-                    mode="lines",
-                    fill="tonexty",
-                    line={"width": 0, "color": color} if color else {"width": 0},
-                    showlegend=False,
-                    hoverinfo="skip",
-                ),
-                row=row,
-                col=1,
-            )
-    fig.update_layout(template="plotly_white", title=profile_key.replace("_", " ").title())
-    fig.update_xaxes(title_text="Time")
-    fig.update_yaxes(title_text=profile_key.replace("_", " ").title())
-    return fig
-
-
-def _peak_velocity_figure(cells: Sequence[Mapping[str, Any]]) -> go.Figure:
-    fig = go.Figure()
-    for cell in cells:
-        values = _series(cell.get("peak_velocity", []))
-        fig.add_trace(
-            go.Box(
-                y=values,
-                name=str(cell["display_name"]),
-                marker={"color": cell.get("color")} if cell.get("color") else None,
-            )
-        )
-    fig.update_layout(template="plotly_white", title="Peak Velocity Distributions")
-    fig.update_yaxes(title_text="Peak velocity")
-    return fig
-
-
-def _summary_metrics_figure(
-    cells: Sequence[Mapping[str, Any]],
-    *,
-    params: Mapping[str, Any],
-) -> go.Figure:
-    metric_order = list(params.get("metric_order") or _observed_metric_order(cells))
-    fig = go.Figure()
-    for metric in metric_order:
-        values = [_metric_value(cell, metric) for cell in cells]
-        fig.add_trace(
-            go.Bar(
-                x=[str(cell["display_name"]) for cell in cells],
-                y=values,
-                name=metric.replace("_", " ").title(),
-            )
-        )
-    fig.update_layout(
-        barmode="group",
-        template="plotly_white",
-        title="Summary Metrics",
-        xaxis_title="Cell",
-    )
-    return fig
-
-
-def _training_loss_figure(cells: Sequence[Mapping[str, Any]]) -> go.Figure:
-    fig = go.Figure()
-    for cell in cells:
-        loss = _mapping(cell.get("training_loss", {}))
-        steps = _series(
-            loss.get("step", loss.get("steps")), default_len=len(_series(loss.get("loss", [])))
-        )
-        values = _series(loss.get("loss", loss.get("value", [])))
-        fig.add_trace(
-            go.Scatter(
-                x=steps,
-                y=values,
-                mode="lines",
-                name=str(cell["display_name"]),
-                line={"color": cell.get("color")} if cell.get("color") else None,
-            )
-        )
-    fig.update_layout(template="plotly_white", title="Training Loss", xaxis_title="Step")
-    fig.update_yaxes(title_text="Loss")
-    return fig
-
-
-def _training_loss_per_term_figure(cells: Sequence[Mapping[str, Any]]) -> go.Figure:
-    fig = go.Figure()
-    for cell in cells:
-        loss = _mapping(cell.get("training_loss_per_term", {}))
-        terms = _mapping(loss.get("terms", {}))
-        for term, raw_values in terms.items():
-            values = _series(raw_values)
-            steps = _series(loss.get("step", loss.get("steps")), default_len=len(values))
-            fig.add_trace(
-                go.Scatter(
-                    x=steps,
-                    y=values,
-                    mode="lines",
-                    name=f"{cell['display_name']} {term}",
-                )
-            )
-    fig.update_layout(template="plotly_white", title="Training Loss Per Term", xaxis_title="Step")
-    fig.update_yaxes(title_text="Loss")
-    return fig
-
-
-def _rmse_ratio_figure(cells: Sequence[Mapping[str, Any]]) -> go.Figure:
-    fig = go.Figure()
-    plotted = False
-    for cell in cells:
-        value = cell.get("rmse_ratio", _metric_value(cell, "rmse_ratio"))
-        if value is None:
-            continue
-        plotted = True
-        fig.add_trace(
-            go.Bar(
-                x=[str(cell["display_name"])],
-                y=[float(value)],
-                name=str(cell["display_name"]),
-                marker={"color": cell.get("color")} if cell.get("color") else None,
-            )
-        )
-    if not plotted:
-        fig.add_annotation(text="No matched-control RMSE ratio data", showarrow=False)
-    fig.update_layout(template="plotly_white", title="RMSE Ratio Comparison")
-    fig.update_yaxes(title_text="RMSE ratio")
-    return fig
-
-
 def _notes_markdown(cells: Sequence[Mapping[str, Any]], params: Mapping[str, Any]) -> str:
     metric_order = list(params.get("metric_order") or _observed_metric_order(cells))
     lines = ["## Standard Matrix Summary", "", "| Cell | " + " | ".join(metric_order) + " |"]
@@ -529,24 +346,6 @@ def _format_metric(value: float | None) -> str:
 
 def _mapping(value: Any) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
-
-
-def _series(value: Any, *, default_len: int | None = None) -> list[float]:
-    if value is None:
-        if default_len is None:
-            return []
-        return [float(i) for i in range(default_len)]
-    array = np.asarray(value, dtype=float)
-    if array.ndim == 0:
-        return [float(array)]
-    return [float(item) for item in array.reshape(-1)]
-
-
-def _profile_len(profile: Mapping[str, Any]) -> int | None:
-    for key in ("mean", "value", "lower", "upper"):
-        if key in profile:
-            return len(_series(profile[key]))
-    return None
 
 
 def dump_standard_matrix_payload(path: Path | str, payload: Mapping[str, Any]) -> None:

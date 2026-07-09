@@ -53,7 +53,7 @@ Outputs
   via ``feedbax.plot.save_figure`` (auto-mirrored into ``results/...``).
 
 Usage (from feature worktree):
-    JAX_PLATFORMS=cpu uv run python scripts/analyse_linear_decoupling_mvp.py
+    JAX_PLATFORMS=cpu uv run python results/410d7ac/scripts/analyse_linear_decoupling_mvp.py
 """
 
 from __future__ import annotations

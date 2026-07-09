@@ -13,6 +13,8 @@ import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
+
+from rlrmp.analysis.math.summary_stats import summary_stats as _summary_stats
 from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT, run_spec_path
 from rlrmp.runtime.run_spec_access import require_run_seed
@@ -1647,22 +1649,6 @@ def _summary_with_values(values: Any) -> dict[str, Any]:
         **_summary_stats(array),
         "shape": list(array.shape),
         "values": array.tolist(),
-    }
-
-
-def _summary_stats(values: Any) -> dict[str, float | int]:
-    array = np.asarray(values, dtype=np.float64)
-    if array.size == 0:
-        return {"count": 0, "mean": np.nan, "std": np.nan, "min": np.nan, "max": np.nan}
-    flat = array.reshape(-1)
-    return {
-        "count": int(flat.size),
-        "mean": float(np.mean(flat)),
-        "std": float(np.std(flat)),
-        "min": float(np.min(flat)),
-        "max": float(np.max(flat)),
-        "p50": float(np.quantile(flat, 0.50)),
-        "p95": float(np.quantile(flat, 0.95)),
     }
 
 

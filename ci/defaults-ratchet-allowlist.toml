@@ -1570,69 +1570,6 @@ count = 1
 owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/output_feedback_linear_recurrent.py"
-key = "lens_kind"
-literal_repr = "'unknown'"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/output_feedback_linear_recurrent.py"
-key = "lens_source"
-literal_repr = "'unknown'"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/output_feedback_linear_recurrent.py"
-key = "runtime_seconds"
-literal_repr = "0.0"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/output_feedback_phase_modulated_recurrent.py"
-key = "is_reward_trained"
-literal_repr = "False"
-count = 8
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/output_feedback_phase_modulated_recurrent.py"
-key = "is_supervised_trained"
-literal_repr = "False"
-count = 9
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/output_feedback_phase_modulated_recurrent.py"
-key = "runtime_seconds"
-literal_repr = "0.0"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/output_feedback_phase_modulated_recurrent.py"
-key = "supervised_objective"
-literal_repr = "'action'"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/output_feedback_time_constrained.py"
-key = "runtime_seconds"
-literal_repr = "0.0"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
 path = "src/rlrmp/model/cs_lss_gru.py"
@@ -2017,3 +1954,19 @@ literal_repr = "1.0"
 count = 1
 owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+key = "sign"
+literal_repr = "0"
+count = 1
+owner = "31aaa31"
+note = "Umbrella integration: perturbation-bank filtering treats missing sign metadata as neutral."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py"
+key = "issue"
+literal_repr = "'unknown'"
+count = 1
+owner = "31aaa31"
+note = "Umbrella integration: SISU spectrum manifest provenance keeps an explicit unknown marker."

@@ -42,13 +42,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from feedbax.plot.io import save_figure_with_spec
-from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
-from rlrmp.eval import (
-    N_REPLICATES,
-    compute_kinematics,
-    eval_ensemble_on_trials,
-    set_sisu,
-)
+from rlrmp.eval import N_REPLICATES
+from rlrmp.eval.pert import eval_at_pert_scale as _canonical_eval_at_pert_scale
 from rlrmp.eval.minimax_io import load_adversary, load_config, load_model
 from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.train.minimax import build_hps
@@ -253,23 +248,13 @@ def _eval_at_pert(task, model, sisu: float, pert_scale: float, *, key):
         Dict with arrays shaped (n_replicates, n_trials):
             "peak_velocity", "endpoint_error", "max_lateral_deviation".
     """
-    val_trials = task.validation_trials
-    trial_specs = set_sisu(val_trials, sisu)
-    pert_shape = trial_specs.intervene[PLANT_INTERVENOR_LABEL].scale.shape
-    if pert_scale == 0.0:
-        trial_specs = eqx.tree_at(
-            lambda t: t.intervene[PLANT_INTERVENOR_LABEL].scale,
-            trial_specs,
-            jnp.zeros(pert_shape),
-        )
-    else:
-        trial_specs = eqx.tree_at(
-            lambda t: t.intervene[PLANT_INTERVENOR_LABEL].scale,
-            trial_specs,
-            jnp.full(pert_shape, pert_scale),
-        )
-    states = eval_ensemble_on_trials(task, model, trial_specs, key=key)
-    return compute_kinematics(states, trial_specs)
+    return _canonical_eval_at_pert_scale(
+        task,
+        model,
+        sisu,
+        pert_scale,
+        key=key,
+    )
 
 
 def _mean_std(arr: np.ndarray) -> tuple[float, float]:
@@ -395,9 +380,9 @@ def report_eval_metrics(
     print()
     print("  Notes:")
     print(f"    vel_unpert  = peak velocity without perturbation (SISU={SISU_PERT})")
-    print(f"    vel_pert    = peak velocity under perturbation — aggregate robustening metric")
+    print("    vel_pert    = peak velocity under perturbation — aggregate robustening metric")
     print(f"    ep_err_pert = endpoint error under perturbation (pert_scale={pert_scale})")
-    print(f"    lat_dev_pert = max lateral deviation under perturbation")
+    print("    lat_dev_pert = max lateral deviation under perturbation")
     print()
 
 

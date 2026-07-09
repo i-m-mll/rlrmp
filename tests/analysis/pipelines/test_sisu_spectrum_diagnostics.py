@@ -7,13 +7,23 @@ import jax.numpy as jnp
 import numpy as np
 
 from rlrmp.analysis.pipelines.sisu_spectrum_diagnostics import (
+    DEFAULT_TOPIC,
     ReferenceCurve,
     RunSisuProfile,
+    SISU_SPECTRUM_ANALYSIS_TYPE,
+    SISU_SPECTRUM_EVALUATION_TYPE,
+    SisuSpectrumEvaluationParams,
     SisuCurve,
     build_velocity_profile_figure,
     robustification_comparison,
+    sisu_spectrum_evaluation_spec_params,
     set_sisu_condition,
     zero_disturbance_payload,
+)
+from rlrmp.analysis.declarative_materialization import (
+    register_certificate_analysis_recipes,
+    sisu_spectrum_evaluation_spec,
+    sisu_spectrum_spec,
 )
 from rlrmp.analysis.pipelines.sisu_perturbation_comparison import (
     compare_summary_groups,
@@ -134,6 +144,47 @@ def test_velocity_profile_figure_uses_shared_y_axis() -> None:
     fig = build_velocity_profile_figure(profiles, references)
 
     assert fig.layout.yaxis2.matches == "y"
+
+
+def test_sisu_spectrum_params_require_explicit_runs_and_labels() -> None:
+    params = sisu_spectrum_evaluation_spec_params(
+        experiment="example",
+        run_ids=("run_a", "run_b"),
+        labels=("A", "B"),
+    )
+
+    assert params["experiment"] == "example"
+    assert params["topic"] == DEFAULT_TOPIC
+    assert params["run_ids"] == ["run_a", "run_b"]
+    assert "e4800d6" not in repr(SisuSpectrumEvaluationParams.model_json_schema())
+
+
+def test_sisu_spectrum_specs_use_manifest_parent_refs() -> None:
+    eval_spec = sisu_spectrum_evaluation_spec(
+        experiment="example",
+        run_ids=("run_a",),
+        labels=("A",),
+    )
+    analysis_spec = sisu_spectrum_spec(evaluation_manifest_id="eval_manifest_1")
+
+    assert eval_spec.evaluation_type == SISU_SPECTRUM_EVALUATION_TYPE
+    assert eval_spec.training_run_ids == ["run_a"]
+    assert eval_spec.inputs[0].kind == "TrainingRunManifest"
+    assert analysis_spec.analysis_type == SISU_SPECTRUM_ANALYSIS_TYPE
+    assert analysis_spec.inputs[0].kind == "EvaluationRunManifest"
+    assert analysis_spec.inputs[0].role == "evaluation_run"
+
+
+def test_sisu_spectrum_recipes_register_with_declarative_materialization() -> None:
+    from feedbax.analysis.evaluation import get_evaluation_recipe
+    from feedbax.analysis.specs import get_analysis_recipe
+
+    register_certificate_analysis_recipes(replace=True)
+
+    assert get_evaluation_recipe(SISU_SPECTRUM_EVALUATION_TYPE).__name__ == (
+        "sisu_spectrum_evaluation_recipe"
+    )
+    assert get_analysis_recipe(SISU_SPECTRUM_ANALYSIS_TYPE).__name__ == "sisu_spectrum_recipe"
 
 
 def test_sisu_perturbation_metric_mean_reads_flat_and_nested_metrics() -> None:

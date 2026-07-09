@@ -27,6 +27,14 @@ Banner status: Scoped math-module pointer added; `write_outputs` has the
 legacy writer banner. The top-level script has the full module banner, while
 `materialize_reference` is explicitly left LIVE library code.
 
+Retired 2026-07-09 under [issue:e158a74]: the standalone entrypoint
+`scripts/materialize_analytical_game_card.py` was deleted. The last tree
+carrying the file is `acbdf8d7008a073b3fe9375b5b915288ac05183d`, tagged as
+`legacy/e158a74-standalone-materializers-retired`; recover with
+`git show legacy/e158a74-standalone-materializers-retired:scripts/materialize_analytical_game_card.py`.
+The `src/rlrmp/analysis/math/cs_game_card.py` math and writer provenance remain
+for historical context.
+
 ## Adversary equivalence
 
 Files: `src/rlrmp/analysis/math/adversary_equivalence.py` writer surface and
@@ -46,6 +54,14 @@ as a source for any later report-native explanation of the same comparison.
 Banner status: Scoped math-module pointer added; `write_outputs` has the
 legacy writer banner. The top-level script has the full module banner.
 
+Retired 2026-07-09 under [issue:e158a74]: the standalone entrypoint
+`scripts/materialize_adversary_equivalence.py` was deleted. The last tree
+carrying the file is `acbdf8d7008a073b3fe9375b5b915288ac05183d`, tagged as
+`legacy/e158a74-standalone-materializers-retired`; recover with
+`git show legacy/e158a74-standalone-materializers-retired:scripts/materialize_adversary_equivalence.py`.
+The `src/rlrmp/analysis/math/adversary_equivalence.py` comparison logic and
+writer provenance remain for historical context.
+
 ## Linear round trip
 
 Files: `src/rlrmp/analysis/math/linear_round_trip.py` writer surface and
@@ -63,6 +79,14 @@ context for what the local linear objective did and did not establish.
 
 Banner status: Scoped math-module pointer added; `write_outputs` has the
 legacy writer banner. The top-level script has the full module banner.
+
+Retired 2026-07-09 under [issue:e158a74]: the standalone entrypoint
+`scripts/materialize_linear_round_trip.py` was deleted. The last tree carrying
+the file is `acbdf8d7008a073b3fe9375b5b915288ac05183d`, tagged as
+`legacy/e158a74-standalone-materializers-retired`; recover with
+`git show legacy/e158a74-standalone-materializers-retired:scripts/materialize_linear_round_trip.py`.
+The `src/rlrmp/analysis/math/linear_round_trip.py` bridge evidence remains for
+historical context.
 
 ## Linear equivalence certificate
 
@@ -82,6 +106,14 @@ not contract-native.
 
 Banner status: Scoped math-module pointer added; `write_outputs` has the
 legacy writer banner. The top-level script has the full module banner.
+
+Retired 2026-07-09 under [issue:e158a74]: the standalone entrypoint
+`scripts/materialize_linear_equivalence_certificate.py` was deleted. The last
+tree carrying the file is `acbdf8d7008a073b3fe9375b5b915288ac05183d`, tagged as
+`legacy/e158a74-standalone-materializers-retired`; recover with
+`git show legacy/e158a74-standalone-materializers-retired:scripts/materialize_linear_equivalence_certificate.py`.
+The `src/rlrmp/analysis/math/linear_equivalence_certificate.py` certificate
+logic remains for historical context.
 
 ## Robust Bellman diagnostics
 
@@ -157,6 +189,14 @@ compared with the deterministic Phase 1 analytical target.
 
 Banner status: Full module banner added to the pipeline and top-level script.
 
+Retired 2026-07-09 under [issue:e158a74]: the standalone entrypoint
+`scripts/materialize_cs_stochastic_phase1.py` was deleted. The last tree
+carrying the file is `acbdf8d7008a073b3fe9375b5b915288ac05183d`, tagged as
+`legacy/e158a74-standalone-materializers-retired`; recover with
+`git show legacy/e158a74-standalone-materializers-retired:scripts/materialize_cs_stochastic_phase1.py`.
+The `src/rlrmp/analysis/pipelines/cs_stochastic_phase1.py` provenance module
+remains frozen; no report-stage equivalent is introduced here.
+
 ## C&S stochastic Phase 3
 
 Files: `src/rlrmp/analysis/pipelines/cs_stochastic_phase3.py` and
@@ -172,6 +212,14 @@ Keep-signal: Keep as the old stochastic comparison layer until equivalent
 report-stage or bundle-native materialization exists.
 
 Banner status: Full module banner added to the pipeline and top-level script.
+
+Retired 2026-07-09 under [issue:e158a74]: the standalone entrypoint
+`scripts/materialize_cs_stochastic_phase3.py` was deleted. The last tree
+carrying the file is `acbdf8d7008a073b3fe9375b5b915288ac05183d`, tagged as
+`legacy/e158a74-standalone-materializers-retired`; recover with
+`git show legacy/e158a74-standalone-materializers-retired:scripts/materialize_cs_stochastic_phase3.py`.
+The `src/rlrmp/analysis/pipelines/cs_stochastic_phase3.py` provenance module
+remains frozen; no report-stage equivalent is introduced here.
 
 ## SISU perturbation comparison
 
@@ -261,6 +309,20 @@ report-stage era decides whether to port or delete it.
 
 Banner status: Full module banner added to the pipeline and top-level script.
 
+Retired 2026-07-09 by [issue:dd8523c] on
+`feature/dd8523c-frozen-of-bridge-retirement`. Deletion commit: this branch's
+retirement commit; final hash is recorded in the issue closeout. Last-tree
+commit carrying the code: `acbdf8d7008a073b3fe9375b5b915288ac05183d`, also
+tagged locally as `legacy/output-feedback-materializers-retired`.
+
+Deleted files:
+- `src/rlrmp/analysis/pipelines/output_feedback_affine_tracker.py`
+- `scripts/materialize_output_feedback_affine_tracker.py`
+- `tests/analysis/pipelines/test_output_feedback_affine_tracker.py`
+
+Recovery shape: `git show legacy/output-feedback-materializers-retired:<path>`
+or `git show acbdf8d7008a073b3fe9375b5b915288ac05183d:<path>`.
+
 ## Output-feedback interpolated starts
 
 Files: `src/rlrmp/analysis/pipelines/output_feedback_interpolated_starts.py`
@@ -342,6 +404,20 @@ and still informs recurrent certificate interpretation.
 
 Banner status: Full module banner added to the pipeline and top-level script.
 
+Retired 2026-07-09 by [issue:dd8523c] on
+`feature/dd8523c-frozen-of-bridge-retirement`. Deletion commit: this branch's
+retirement commit; final hash is recorded in the issue closeout. Last-tree
+commit carrying the code: `acbdf8d7008a073b3fe9375b5b915288ac05183d`, also
+tagged locally as `legacy/output-feedback-materializers-retired`.
+
+Deleted files:
+- `src/rlrmp/analysis/pipelines/output_feedback_linear_recurrent.py`
+- `scripts/materialize_output_feedback_linear_recurrent.py`
+- `tests/analysis/pipelines/test_output_feedback_linear_recurrent.py`
+
+Recovery shape: `git show legacy/output-feedback-materializers-retired:<path>`
+or `git show acbdf8d7008a073b3fe9375b5b915288ac05183d:<path>`.
+
 ## Output-feedback phase-modulated recurrent
 
 Files:
@@ -360,6 +436,20 @@ for deciding which rows deserve a native report-stage successor.
 
 Banner status: Full module banner added to the pipeline and top-level script.
 
+Retired 2026-07-09 by [issue:dd8523c] on
+`feature/dd8523c-frozen-of-bridge-retirement`. Deletion commit: this branch's
+retirement commit; final hash is recorded in the issue closeout. Last-tree
+commit carrying the code: `acbdf8d7008a073b3fe9375b5b915288ac05183d`, also
+tagged locally as `legacy/output-feedback-materializers-retired`.
+
+Deleted files:
+- `src/rlrmp/analysis/pipelines/output_feedback_phase_modulated_recurrent.py`
+- `scripts/materialize_output_feedback_phase_modulated_recurrent.py`
+- `tests/analysis/pipelines/test_output_feedback_phase_modulated_recurrent.py`
+
+Recovery shape: `git show legacy/output-feedback-materializers-retired:<path>`
+or `git show acbdf8d7008a073b3fe9375b5b915288ac05183d:<path>`.
+
 ## Output-feedback time constrained
 
 Files: `src/rlrmp/analysis/pipelines/output_feedback_time_constrained.py` and
@@ -376,3 +466,17 @@ Keep-signal: Keep as source material for future spec-runner conversion and for
 publication-time delete-or-port decisions.
 
 Banner status: Full module banner added to the pipeline and top-level script.
+
+Retired 2026-07-09 by [issue:dd8523c] on
+`feature/dd8523c-frozen-of-bridge-retirement`. Deletion commit: this branch's
+retirement commit; final hash is recorded in the issue closeout. Last-tree
+commit carrying the code: `acbdf8d7008a073b3fe9375b5b915288ac05183d`, also
+tagged locally as `legacy/output-feedback-materializers-retired`.
+
+Deleted files:
+- `src/rlrmp/analysis/pipelines/output_feedback_time_constrained.py`
+- `scripts/materialize_output_feedback_time_constrained.py`
+- `tests/analysis/pipelines/test_output_feedback_time_constrained.py`
+
+Recovery shape: `git show legacy/output-feedback-materializers-retired:<path>`
+or `git show acbdf8d7008a073b3fe9375b5b915288ac05183d:<path>`.

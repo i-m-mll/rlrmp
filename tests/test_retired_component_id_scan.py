@@ -58,6 +58,50 @@ SELF_EXCLUDED_RELPATHS = frozenset(
 
 MODULE_SCOPE = "<module>"
 
+RETIRED_STANDALONE_MATERIALIZER_MODULES = frozenset(
+    {
+        "materialize_adversary_equivalence",
+        "materialize_analytical_game_card",
+        "materialize_cs_stochastic_phase1",
+        "materialize_cs_stochastic_phase3",
+        "materialize_linear_equivalence_certificate",
+        "materialize_linear_round_trip",
+    }
+)
+
+RETIRED_STANDALONE_MATERIALIZER_PATHS = frozenset(
+    f"scripts/{module}.py" for module in RETIRED_STANDALONE_MATERIALIZER_MODULES
+)
+
+RETIRED_OUTPUT_FEEDBACK_MATERIALIZER_PATHS = (
+    "src/rlrmp/analysis/pipelines/output_feedback_affine_tracker.py",
+    "src/rlrmp/analysis/pipelines/output_feedback_linear_recurrent.py",
+    "src/rlrmp/analysis/pipelines/output_feedback_phase_modulated_recurrent.py",
+    "src/rlrmp/analysis/pipelines/output_feedback_time_constrained.py",
+    "scripts/materialize_output_feedback_affine_tracker.py",
+    "scripts/materialize_output_feedback_linear_recurrent.py",
+    "scripts/materialize_output_feedback_phase_modulated_recurrent.py",
+    "scripts/materialize_output_feedback_time_constrained.py",
+    "tests/analysis/pipelines/test_output_feedback_affine_tracker.py",
+    "tests/analysis/pipelines/test_output_feedback_linear_recurrent.py",
+    "tests/analysis/pipelines/test_output_feedback_phase_modulated_recurrent.py",
+    "tests/analysis/pipelines/test_output_feedback_time_constrained.py",
+)
+
+RETIRED_OUTPUT_FEEDBACK_MATERIALIZER_IDENTIFIERS = (
+    "rlrmp.analysis.pipelines.output_feedback_affine_tracker",
+    "rlrmp.analysis.pipelines.output_feedback_linear_recurrent",
+    "rlrmp.analysis.pipelines.output_feedback_phase_modulated_recurrent",
+    "rlrmp.analysis.pipelines.output_feedback_time_constrained",
+    "materialize_output_feedback_affine_tracker",
+    "materialize_output_feedback_linear_recurrent",
+    "materialize_output_feedback_phase_modulated_recurrent",
+    "materialize_output_feedback_time_constrained",
+    "rlrmp.output_feedback_affine_tracker.v1",
+    "rlrmp.output_feedback_linear_recurrent.v2",
+    "rlrmp.output_feedback_phase_modulated_recurrent.v2",
+    "rlrmp.output_feedback_time_constrained.v1",
+)
 
 # --------------------------------------------------------------------------- #
 # Inventory + allowlist loading
@@ -144,6 +188,29 @@ def _in_scope_relpaths() -> tuple[list[str], list[str]]:
     return sorted(py), sorted(js)
 
 
+def _active_python_relpaths() -> list[str]:
+    """Return active Python surfaces checked for retired materializer re-entry."""
+
+    py: set[str] = set()
+    for root in ("src", "tests", "scripts"):
+        py.update(p.relative_to(REPO_ROOT).as_posix() for p in (REPO_ROOT / root).rglob("*.py"))
+    py -= SELF_EXCLUDED_RELPATHS
+    return sorted(py)
+
+
+def _retired_materializer_identifier_hits(
+    relpath: str,
+    text: str,
+    identifiers: tuple[str, ...] = RETIRED_OUTPUT_FEEDBACK_MATERIALIZER_IDENTIFIERS,
+) -> list[str]:
+    hits: list[str] = []
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        for identifier in identifiers:
+            if identifier in line:
+                hits.append(f"{relpath}:{lineno}: {identifier}")
+    return hits
+
+
 class _ConstantScopeVisitor(ast.NodeVisitor):
     def __init__(self, inventory: frozenset[str]) -> None:
         self._inventory = inventory
@@ -177,6 +244,21 @@ def _scan_python(relpath: str, inventory: frozenset[str], errors: list[str]) -> 
     visitor = _ConstantScopeVisitor(inventory)
     visitor.visit(tree)
     return [_Occurrence(relpath, cid, qual, lineno) for cid, qual, lineno in visitor.hits]
+
+
+class _RetiredEntrypointImportVisitor(ast.NodeVisitor):
+    def __init__(self, inventory: frozenset[str]) -> None:
+        self._inventory = inventory
+        self.hits: list[tuple[str, int]] = []
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            if alias.name in self._inventory:
+                self.hits.append((alias.name, node.lineno))
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        if node.module in self._inventory:
+            self.hits.append((node.module, node.lineno))
 
 
 def _iter_json_strings(node: object):
@@ -217,6 +299,40 @@ def _collect_occurrences(
     for relpath in json_files:
         occurrences.extend(_scan_json(relpath, inventory, errors))
     return occurrences, errors
+
+
+def _retired_entrypoint_import_hits(
+    source: str,
+    *,
+    relpath: str,
+    inventory: frozenset[str] = RETIRED_STANDALONE_MATERIALIZER_MODULES,
+) -> list[str]:
+    tree = ast.parse(source, filename=relpath)
+    visitor = _RetiredEntrypointImportVisitor(inventory)
+    visitor.visit(tree)
+    return [f"{relpath}:{lineno}: {module}" for module, lineno in visitor.hits]
+
+
+def _scan_retired_entrypoint_imports() -> tuple[list[str], list[str]]:
+    hits: list[str] = []
+    errors: list[str] = []
+    for root in ("src", "tests", "scripts"):
+        for path in sorted((REPO_ROOT / root).rglob("*.py")):
+            relpath = path.relative_to(REPO_ROOT).as_posix()
+            if relpath in RETIRED_STANDALONE_MATERIALIZER_PATHS:
+                continue
+            if relpath in SELF_EXCLUDED_RELPATHS:
+                continue
+            try:
+                hits.extend(
+                    _retired_entrypoint_import_hits(
+                        path.read_text(encoding="utf-8"),
+                        relpath=relpath,
+                    )
+                )
+            except (SyntaxError, UnicodeDecodeError, OSError) as exc:
+                errors.append(f"{relpath}: unparseable/unreadable in-scope python file: {exc}")
+    return hits, errors
 
 
 # --------------------------------------------------------------------------- #
@@ -316,6 +432,57 @@ def test_confinement_allowlist_entries_carry_owner_category_and_note() -> None:
             assert entry.get("note"), f"[[{family}]] entry {entry} is missing a note"
 
 
+def test_retired_standalone_materializer_entrypoints_stay_deleted() -> None:
+    remaining = sorted(
+        relpath
+        for relpath in RETIRED_STANDALONE_MATERIALIZER_PATHS
+        if (REPO_ROOT / relpath).exists()
+    )
+    assert not remaining, (
+        "Retired standalone legacy materializer entrypoint(s) reappeared. "
+        "Restore from git history only for archaeology, or file a new native "
+        f"materialization issue before reviving: {remaining}"
+    )
+
+
+def test_retired_standalone_materializers_are_not_imported_by_active_code() -> None:
+    hits, errors = _scan_retired_entrypoint_imports()
+    assert not errors, (
+        "in-scope files could not be scanned for retired materializer imports:\n"
+        + "\n".join(errors)
+    )
+    assert not hits, (
+        "Active src/tests/scripts code imports retired standalone materializer "
+        "entrypoint(s):\n"
+        + "\n".join(hits)
+    )
+
+
+def test_retired_output_feedback_materializer_paths_do_not_exist() -> None:
+    existing = [
+        relpath for relpath in RETIRED_OUTPUT_FEEDBACK_MATERIALIZER_PATHS if (REPO_ROOT / relpath).exists()
+    ]
+    assert not existing, (
+        "Retired output-feedback materializer path(s) reappeared:\n"
+        + "\n".join(f"  {relpath}" for relpath in existing)
+        + "\n\nRevival must be a new bundle-native analysis, not restoration of "
+        "the frozen writer surface retired by dd8523c."
+    )
+
+
+def test_no_retired_output_feedback_materializer_identifier_in_active_python() -> None:
+    hits: list[str] = []
+    for relpath in _active_python_relpaths():
+        text = (REPO_ROOT / relpath).read_text(encoding="utf-8")
+        hits.extend(_retired_materializer_identifier_hits(relpath, text))
+    assert not hits, (
+        "Retired output-feedback materializer identifier(s) found in active Python:\n"
+        + "\n".join(f"  {hit}" for hit in hits)
+        + "\n\nArchived results and prose notes may cite these surfaces, but active "
+        "src/scripts/tests code must not import, emit, or recreate them."
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Negative canaries (teeth)
 # --------------------------------------------------------------------------- #
@@ -339,6 +506,17 @@ def test_scan_negative_canary_flags_unconfined_active_emission() -> None:
     )
     uncovered = _uncovered_occurrences([unconfined, confined], index)
     assert uncovered == [unconfined]
+
+
+def test_scan_negative_canary_flags_retired_output_feedback_materializer_import() -> None:
+    text = (
+        "from rlrmp.analysis.pipelines.output_feedback_linear_recurrent "
+        "import materialize\n"
+    )
+    assert _retired_materializer_identifier_hits("src/rlrmp/analysis/pipelines/new.py", text) == [
+        "src/rlrmp/analysis/pipelines/new.py:1: "
+        "rlrmp.analysis.pipelines.output_feedback_linear_recurrent"
+    ]
 
 
 def test_scan_negative_canary_flags_retired_id_in_new_function_of_allowlisted_file() -> None:
@@ -366,3 +544,11 @@ def test_scan_negative_canary_treats_unreadable_file_as_error_not_skip() -> None
     missing = _scan_python("results/does_not_exist_synthetic.py", sentinel, errors)
     assert missing == []
     assert errors
+
+
+def test_entrypoint_negative_canary_flags_import_of_retired_materializer() -> None:
+    hits = _retired_entrypoint_import_hits(
+        "import materialize_linear_round_trip\n",
+        relpath="tests/test_new_legacy_call.py",
+    )
+    assert hits == ["tests/test_new_legacy_call.py:1: materialize_linear_round_trip"]

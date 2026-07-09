@@ -41,7 +41,6 @@ from feedbax.contracts.training import (
 from feedbax.contracts.worker import (
     AxisSpec,
     CheckpointBarrierSpec,
-    CheckpointSlotSpec,
     EffectivePhaseSpec,
     MetricGuardSpec,
     MethodContractSpec,
@@ -67,6 +66,7 @@ from rlrmp.runtime.spec_migrations import (
     RUN_SPEC_SCHEMA_VERSION,
     stamp_current_schema,
 )
+from rlrmp.train.executor.slots import minimax_checkpoint_slot_specs
 from rlrmp.train.progress import make_executor_batch_log_callback
 
 logger = logging.getLogger(__name__)
@@ -959,13 +959,7 @@ def minimax_method_contract() -> MethodContractSpec:
             CheckpointBarrierSpec(
                 name="after_warmup",
                 phase="warmup",
-                slots=[
-                    CheckpointSlotSpec(slot="controller", axis="replicate"),
-                    CheckpointSlotSpec(slot="controller_optimizer", axis="replicate"),
-                    CheckpointSlotSpec(slot="adversary_population", axis="adversary_member"),
-                    CheckpointSlotSpec(slot="adversary_optimizer", axis="adversary_member"),
-                    CheckpointSlotSpec(slot="rng"),
-                ],
+                slots=minimax_checkpoint_slot_specs(),
                 resume_coordinate=ResumeCoordinateSpec(
                     phase="adversarial",
                     completed_barrier="after_warmup",
@@ -975,13 +969,7 @@ def minimax_method_contract() -> MethodContractSpec:
             CheckpointBarrierSpec(
                 name="after_adversarial",
                 phase="adversarial",
-                slots=[
-                    CheckpointSlotSpec(slot="controller", axis="replicate"),
-                    CheckpointSlotSpec(slot="controller_optimizer", axis="replicate"),
-                    CheckpointSlotSpec(slot="adversary_population", axis="adversary_member"),
-                    CheckpointSlotSpec(slot="adversary_optimizer", axis="adversary_member"),
-                    CheckpointSlotSpec(slot="rng"),
-                ],
+                slots=minimax_checkpoint_slot_specs(),
             ),
         ],
         metadata={

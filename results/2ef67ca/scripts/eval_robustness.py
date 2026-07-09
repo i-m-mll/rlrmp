@@ -36,13 +36,11 @@ from feedbax.plot import save_figure  # noqa: E402  # Bug: f485c26 — project-c
 from feedbax.train import init_task_trainer_history
 from plotly.subplots import make_subplots
 
-from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.eval import (
     N_REPLICATES,
     compute_kinematics,
-    eval_ensemble_on_trials,
-    set_sisu,
 )
+from rlrmp.eval.pert import eval_states_at_pert_scale
 
 # ---------------------------------------------------------------------------
 # Path setup
@@ -243,20 +241,14 @@ def eval_fixed_pert(task, model, sisu: float, pert_amp: float, *, key, ref_task=
         states: model states, shape (n_rep, n_trials, n_steps, ...).
         trial_specs: the modified trial specs used.
     """
-    # Use ref_task's trials for perturbed conditions so that models trained
-    # without perturbations (pert_std=0) still receive non-zero gusts.
-    source_task = (ref_task if (ref_task is not None and pert_amp > 0) else task)
-    val_trials = source_task.validation_trials
-    # Set SISU
-    trial_specs = set_sisu(val_trials, sisu)
-    # Set perturbation amplitude (scale)
-    trial_specs = eqx.tree_at(
-        lambda t: t.intervene[PLANT_INTERVENOR_LABEL].scale,
-        trial_specs,
-        jnp.full(trial_specs.intervene[PLANT_INTERVENOR_LABEL].scale.shape, pert_amp),
+    return eval_states_at_pert_scale(
+        task,
+        model,
+        sisu,
+        pert_amp,
+        key=key,
+        ref_task=ref_task,
     )
-    states = eval_ensemble_on_trials(task, model, trial_specs, key=key)
-    return states, trial_specs
 
 
 def get_go_idx(trial_specs):

@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 """Empirical peak-forward-velocity Δv on flavor-(b) trained controllers vs baseline.
 
 Bug: c723082 — fills the "operating-point sensitivity" gap flagged in
@@ -17,12 +18,12 @@ issue ``f90bf74``)::
 where ``peak_forward_velocity = max_t (vel_t · unit(target - init))`` —
 signed projection of velocity onto the reach axis (positive = toward target).
 
-Pipeline mirrors ``scripts/run_induced_gain_flavor_b.py`` for loading; uses
-``feedbax.task.eval_trials`` for the actual rollout (no synthetic w-channel,
-unlike the induced-gain analyser).
+Pipeline mirrors ``results/c723082/scripts/run_induced_gain_flavor_b.py`` for
+loading; uses ``feedbax.task.eval_trials`` for the actual rollout (no synthetic
+w-channel, unlike the induced-gain analyser).
 
 Usage:
-    uv run python scripts/run_peak_velocity_flavor_b.py
+    uv run python results/c723082/scripts/run_peak_velocity_flavor_b.py
 """
 
 from __future__ import annotations

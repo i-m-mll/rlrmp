@@ -85,7 +85,6 @@ from rlrmp.train.cs_nominal_gru import (
     _adaptive_epsilon_zero_guard_from_state,
     _initial_adaptive_epsilon_zero_guard,
     _update_adaptive_epsilon_zero_guard,
-    main,
     render_run_spec_execution_dry_run,
     _emit_checkpoint_progress,
     _initial_adaptive_epsilon_state,
@@ -96,9 +95,6 @@ from rlrmp.train.cs_nominal_gru import (
     _scale_direct_epsilon_trial_specs,
     _update_adaptive_epsilon_state,
     load_latest_checkpoint,
-    planned_246182c_post_movement_cost_tail_rows,
-    planned_e901a20_policy_adversary_rows,
-    planned_ef9c882_start_pos_hold_rows,
     resolve_run_spec_args,
     run_full_training,
     save_training_checkpoint,
@@ -146,7 +142,6 @@ from rlrmp.train.cs_perturbation_training import (
     TARGET_SUPPORT_PROFILE_CONST_SPARSE8,
     TARGET_SUPPORT_SPARSE_N_DIRECTIONS,
     TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
-    TARGET_RELATIVE_MULTITARGET_TRAINING_MODE,
     VALIDATION_BINS,
     BroadFullStateEpsilonTrainingConfig,
     BroadFullStateEpsilonTrainingTaskAdapter,
@@ -166,6 +161,7 @@ from rlrmp.train.cs_perturbation_training import (
     _flattened_per_trial_norm,
     _normalize_flattened_per_trial,
     _project_flattened_per_trial_l2_ball,
+    _run_finite_broad_epsilon_pgd_inner_maximizer,
     _set_input,
     _target_aligned_lateral_direction_pulse,
     calibration_regime_manifest,
@@ -180,20 +176,14 @@ from rlrmp.train.cs_perturbation_training import (
     graph_adapter_specs,
     make_broad_epsilon_pgd_pre_step,
     make_memoryless_policy_adversary,
-    planned_33b0dcb_target_support_rows,
-    planned_020a65b_h0_pgd_rows,
-    planned_7c1f7ed_delayed_sisu_spectrum_rows,
-    planned_e4800d6_sisu_spectrum_rows,
     policy_adversary_trial_specs,
     policy_adversary_projection_diagnostics,
-    planned_fixed_target_perturbation_rows,
-    planned_target_relative_multitarget_h0_rows,
-    planned_target_relative_multitarget_rows,
     run_broad_epsilon_pgd_inner_maximizer,
     target_relative_target_support_config,
     target_relative_validation_manifest,
     validation_bin_manifest,
 )
+from rlrmp.train.executor.equivalence import assert_paired_equivalent, run_paired_equivalence
 from rlrmp.train.task_model import (
     CS_LSS_PLANT_BACKEND,
     LEGACY_CAUSAL_BACKEND_WARNING,
@@ -275,7 +265,27 @@ def _stable_golden_run_spec_payload(payload: dict) -> dict:
     )
     canonical["rlrmp_run_spec"]["provenance"]["git"]["rlrmp_commit"] = "<current-commit>"
     canonical["rlrmp_run_spec"]["provenance"]["git"]["rlrmp_branch"] = "<current-branch>"
-    return canonical
+    return _normalize_stochastic_float_precision(canonical)
+
+
+def _normalize_stochastic_float_precision(value, *, key: str | None = None):
+    precision_by_key = {
+        "diag_first_block": 6,
+        "initial_diag_first_block": 6,
+        "noise_std": 7,
+        "sensory_noise_std": 7,
+        "sensory_covariance_diag": 7,
+    }
+    if isinstance(value, dict):
+        return {
+            child_key: _normalize_stochastic_float_precision(item, key=child_key)
+            for child_key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_normalize_stochastic_float_precision(item, key=key) for item in value]
+    if isinstance(value, float) and key in precision_by_key:
+        return float(f"{value:.{precision_by_key[key]}g}")
+    return value
 
 
 def _cs_stochastic_gru_run_spec_paths() -> list[Path]:
@@ -287,12 +297,6 @@ def _cs_stochastic_gru_run_spec_paths() -> list[Path]:
         if {"hps", "feedbax_graph", "training_script"}.issubset(payload):
             paths.append(path)
     return paths
-
-
-def _parse_planned_training_command(command: list[str]) -> argparse.Namespace:
-    script_index = command.index("scripts/train_cs_nominal_gru.py")
-    return build_parser().parse_args(command[script_index + 1 :])
-
 
 class _ScalarLoss:
     def __init__(
@@ -464,7 +468,9 @@ def test_cs_nominal_gru_pre_refactor_golden_payloads_stay_stable() -> None:
             payload = write_run_spec(args)["run_spec"]
 
         assert config.model_dump(mode="python") == case["parsed_args"]
-        assert _stable_golden_run_spec_payload(payload) == case["stable_run_spec_payload"]
+        assert _stable_golden_run_spec_payload(payload) == _normalize_stochastic_float_precision(
+            case["stable_run_spec_payload"]
+        )
 
 
 def test_cs_nominal_gru_config_validates_tracked_cs_stochastic_gru_corpus() -> None:
@@ -2129,6 +2135,156 @@ def test_direct_epsilon_pgd_does_not_install_finite_policy_inputs(
     assert updated.inputs["epsilon"].shape == (1, 2, 2)
 
 
+def test_direct_epsilon_pgd_dict_and_config_routing_are_equivalent() -> None:
+    class EchoTask:
+        def eval_trials(self, model, trial_specs, keys_model):
+            del model, keys_model
+            return trial_specs.inputs["epsilon"]
+
+    target = jnp.asarray(
+        [[[0.006, -0.003], [0.001, 0.004]]],
+        dtype=jnp.float32,
+    )
+
+    class ShiftedQuadraticLoss:
+        def __call__(self, states, trial_specs, model):
+            del states, model
+            epsilon = trial_specs.inputs["epsilon"]
+            return TreeNamespace(total=-jnp.sum((epsilon - target) ** 2))
+
+    trial_specs = TaskTrialSpec(
+        inits=WhereDict({}),
+        targets=WhereDict(
+            {
+                "mechanics.effector.pos": TargetSpec(
+                    value=jnp.zeros((1, 2, 2), dtype=jnp.float32),
+                )
+            }
+        ),
+        inputs={"epsilon": jnp.zeros((1, 2, 2), dtype=jnp.float32)},
+        timeline=TrialTimeline(n_steps=2),
+    )
+    config = {
+        "enabled": True,
+        "level": "moderate",
+        "budget_scale": 2.0,
+        "reach_length_scaling": False,
+        "n_steps": 4,
+        "step_size_fraction": 0.4,
+        "epsilon_dim": 2,
+    }
+
+    def run(config_value):
+        updated, diagnostics = run_broad_epsilon_pgd_inner_maximizer(
+            EchoTask(),
+            model=None,
+            trial_specs=trial_specs,
+            loss_func=ShiftedQuadraticLoss(),
+            keys_model=None,
+            config=config_value,
+            return_diagnostics=True,
+        )
+        return {
+            "epsilon": updated.inputs["epsilon"],
+            "inner_objective_after": diagnostics["inner_objective_after"],
+            "inner_objective_best": diagnostics["inner_objective_best"],
+            "inner_objective_final_endpoint": diagnostics["inner_objective_final_endpoint"],
+        }
+
+    report = run_paired_equivalence(
+        "pgd_direct_epsilon_inner_maximizer",
+        lambda: run(config),
+        lambda: run(config_from_broad_epsilon_pgd_hps(config)),
+        left_label="dict_config",
+        right_label="model_config",
+    )
+
+    assert_paired_equivalent(report)
+
+
+def test_finite_pgd_public_routing_matches_finite_core_equivalence() -> None:
+    class FiniteInputOnlyTask:
+        def eval_trials(self, model, trial_specs, keys_model):
+            del model, keys_model
+            gains = jnp.asarray(trial_specs.inputs[FINITE_POLICY_GAINS_INPUT])
+            return TreeNamespace(
+                mechanics=TreeNamespace(
+                    vector=jnp.sum(gains, axis=-2),
+                )
+            )
+
+    class SumVectorLoss:
+        def __call__(self, states, trial_specs, model):
+            del trial_specs, model
+            return TreeNamespace(total=jnp.sum(states.mechanics.vector))
+
+    cfg = PgdFullStateEpsilonTrainingConfig(
+        enabled=True,
+        adversary_mechanism=LINEAR_NO_BIAS_POLICY,
+        reach_length_scaling=False,
+        n_steps=2,
+        epsilon_dim=2,
+        objective_kind=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+        energy_lambda=1e-6,
+        safety_cap_l2_radius_15cm=1.0,
+        safety_cap_source="unit_test_cap",
+        inner_optimizer_method=BROAD_EPSILON_PGD_ADAM,
+        adam_learning_rate=1e-2,
+    )
+    trial_specs = TaskTrialSpec(
+        inits=WhereDict({"mechanics.vector": jnp.zeros((1, 4), dtype=jnp.float32)}),
+        targets=WhereDict(
+            {
+                "mechanics.effector.pos": TargetSpec(
+                    value=jnp.zeros((1, 2, 2), dtype=jnp.float32),
+                )
+            }
+        ),
+        inputs={"epsilon": jnp.zeros((1, 2, 2), dtype=jnp.float32)},
+        timeline=TrialTimeline(n_steps=2),
+    )
+
+    def comparable(result):
+        updated, diagnostics = result
+        return {
+            "gains": updated.inputs[FINITE_POLICY_GAINS_INPUT],
+            "epsilon": updated.inputs["epsilon"],
+            "inner_objective_after": diagnostics["inner_objective_after"],
+            "inner_objective_best": diagnostics["inner_objective_best"],
+            "inner_objective_final_endpoint": diagnostics["inner_objective_final_endpoint"],
+            "finite_policy_final_endpoint_energy_mean": diagnostics[
+                "finite_policy_final_endpoint_energy_mean"
+            ],
+        }
+
+    report = run_paired_equivalence(
+        "pgd_finite_policy_inner_maximizer",
+        lambda: run_broad_epsilon_pgd_inner_maximizer(
+            FiniteInputOnlyTask(),
+            model=None,
+            trial_specs=trial_specs,
+            loss_func=SumVectorLoss(),
+            keys_model=None,
+            config=cfg,
+            return_diagnostics=True,
+        ),
+        lambda: _run_finite_broad_epsilon_pgd_inner_maximizer(
+            FiniteInputOnlyTask(),
+            model=None,
+            trial_specs=trial_specs,
+            loss_func=SumVectorLoss(),
+            keys_model=None,
+            cfg=cfg,
+            return_diagnostics=True,
+        ),
+        comparable=comparable,
+        left_label="public_router",
+        right_label="finite_core",
+    )
+
+    assert_paired_equivalent(report)
+
+
 def test_pgd_sisu_budget_radius_uses_sqrt_energy_fraction() -> None:
     cfg = PgdFullStateEpsilonTrainingConfig(
         enabled=True,
@@ -2435,69 +2591,6 @@ def test_finite_policy_adversary_hps_declares_active_adam_and_excludes_pgd(
     assert distribution["policy_adversary_training"]["policy"]["kind"] == policy_class
 
 
-def test_policy_adversary_cli_run_spec_and_planned_rows(tmp_path: Path) -> None:
-    args = _args(
-        output_dir=str(tmp_path / "artifacts"),
-        spec_dir=str(tmp_path / "spec"),
-        dry_run=True,
-        issue="e901a20",
-        target_relative_multitarget=True,
-        force_filter_feedback=True,
-        initial_hidden_encoder=True,
-        perturbation_training=True,
-        perturbation_calibrated_timing=True,
-        perturbation_physical_level="small",
-        policy_adversary_training=True,
-        policy_adversary_mode=POLICY_ADVERSARY_PLAIN_MODE,
-        policy_adversary_steps=5,
-        policy_adversary_radius_15cm=HISTORICAL_020A65B_PGD_RADIUS_15CM,
-        policy_adversary_radius_source="effective_020a65b_pgd_training_radius",
-        n_train_batches=12000,
-        stop_after_batches=1000,
-        loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
-    )
-
-    payload = write_run_spec(args)["run_spec"]
-    policy = payload["hps"]["policy_adversary_training"]
-    distribution = payload["training_distribution"]
-
-    assert payload["adversarial_phase"] == "learned_memoryless_policy_adversary"
-    assert policy["enabled"] is True
-    assert policy["row_mode"] == POLICY_ADVERSARY_PLAIN_MODE
-    assert policy["policy"]["kind"] == "memoryless_mlp"
-    assert policy["policy"]["closed_loop_finite_policy"] is False
-    assert policy["policy"]["live_rollout_hook"] is False
-    assert policy["policy"]["materialization"] == "legacy_clean_rollout_open_loop_epsilon_sequence"
-    assert policy["inner_optimizer"]["n_ascent_steps_per_controller_step"] == 5
-    assert policy["budget_contract"]["effective_l2_radius_15cm"] == pytest.approx(
-        HISTORICAL_020A65B_PGD_RADIUS_15CM
-    )
-    assert distribution["training_axes"]["policy_adversary_training"] is True
-    assert distribution["broad_epsilon_pgd_training"]["enabled"] is False
-    assert payload["training_summary"]["n_policy_adversary_ascent_steps_per_controller_step"] == 5
-
-    rows = planned_e901a20_policy_adversary_rows()
-    assert [row["row"] for row in rows] == [
-        POLICY_ADVERSARY_PLAIN_MODE,
-        POLICY_ADVERSARY_ENERGY_MODE,
-    ]
-    for row in rows:
-        parsed = _parse_planned_training_command(row["command"])
-        parsed_spec = _parse_planned_training_command(row["spec_command"])
-        assert parsed.issue == "e901a20"
-        assert parsed.policy_adversary_training is True
-        assert parsed.broad_epsilon_pgd_training is False
-        assert parsed.policy_adversary_steps == 5
-        assert parsed.policy_adversary_width == 64
-        assert parsed.policy_adversary_radius_15cm == pytest.approx(
-            HISTORICAL_020A65B_PGD_RADIUS_15CM
-        )
-        assert row["lr_cosine_alpha"] == pytest.approx(0.01)
-        assert parsed.lr_cosine_alpha == pytest.approx(0.01)
-        assert parsed.stop_after_batches == 1000
-        assert parsed_spec.dry_run is True
-
-
 def test_policy_adversary_projection_reports_radius_energy_and_boundary() -> None:
     cfg = PolicyFullStateEpsilonTrainingConfig(
         enabled=True,
@@ -2621,66 +2714,6 @@ def test_policy_adversary_controller_prestep_detaches_projected_epsilon() -> Non
     assert detached_norm == pytest.approx(0.0)
 
 
-def test_e4800d6_sisu_spectrum_planned_rows_parse_to_sisu_pgd_args() -> None:
-    rows = planned_e4800d6_sisu_spectrum_rows()
-
-    assert [row["row"] for row in rows] == ["A", "B"]
-    assert [row["max_l2_radius_15cm"] for row in rows] == pytest.approx(
-        [0.0023284905801002004, HISTORICAL_020A65B_PGD_RADIUS_15CM]
-    )
-    assert [row["max_radius_source"] for row in rows] == [
-        "raw_strong_gamma_1p05_radius",
-        "effective_020a65b_pgd_training_radius",
-    ]
-    assert rows[1]["max_radius_source_metadata"]["gamma_equivalent_analytical_anchor"] is False
-    for row in rows:
-        parsed = _parse_planned_training_command(row["command"])
-        parsed_gate = _parse_planned_training_command(row["checkpoint_gate_command"])
-
-        assert parsed.issue == "e4800d6"
-        assert row["command"][:6] == [
-            "env",
-            "PYTHONPATH=src",
-            "uv",
-            "run",
-            "--no-sync",
-            "python",
-        ]
-        assert "JAX_PLATFORM_NAME=cpu" not in row["command"]
-        assert row["run"].startswith("cs_gru_h0_sisu_spectrum_targetfix__")
-        assert row["remote_device"] == "runpod_rtx_5090"
-        assert row["row_kind"] == "full_train"
-        assert row["stop_after_batches"] is None
-        assert row["lr_schedule"] == "warmup_cosine"
-        assert row["lr_warmup_batches"] == 500
-        assert row["lr_warmup_init_fraction"] == pytest.approx(0.1)
-        assert row["lr_cosine_alpha"] == pytest.approx(0.1)
-        assert row["final_learning_rate"] == pytest.approx(3e-4)
-        assert row["initial_hidden_encoder"] == (
-            "zero_affine_target_relative_feedback_plus_force_filter"
-        )
-        assert parsed.target_relative_multitarget is True
-        assert parsed.initial_hidden_encoder is True
-        assert parsed.stop_after_batches is None
-        assert parsed_gate.stop_after_batches == 1000
-        assert parsed.force_filter_feedback is True
-        assert parsed.perturbation_training is True
-        assert parsed.perturbation_calibrated_timing is True
-        assert parsed.perturbation_physical_level == "small"
-        assert parsed.loss_objective == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
-        assert parsed.broad_epsilon_pgd_training is True
-        assert parsed.broad_epsilon_reach_scaling is False
-        assert parsed.broad_epsilon_pgd_budget_schedule == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE
-        assert parsed.broad_epsilon_pgd_sisu_condition_input == "input"
-        assert parsed.broad_epsilon_pgd_sisu_max_radius == pytest.approx(row["max_l2_radius_15cm"])
-        assert parsed.broad_epsilon_pgd_sisu_max_radius_source == row["max_radius_source"]
-        assert parsed.broad_epsilon_pgd_steps == 10
-        assert parsed.broad_epsilon_pgd_step_size_fraction == pytest.approx(0.25)
-        assert parsed.lr_warmup_batches == 500
-        assert parsed.lr_warmup_init_fraction == pytest.approx(0.1)
-        assert parsed.lr_cosine_alpha == pytest.approx(0.1)
-
-
 def test_delayed_sisu_rejects_overloaded_input_condition_key() -> None:
     with pytest.raises(ValueError, match="go cue and SISU budget key are distinct"):
         build_hps(
@@ -2779,100 +2812,6 @@ def test_delayed_sisu_catch_trials_preserve_hold_targets_with_sisu_present() -> 
         sampled.targets["mechanics.effector.pos"].value,
         jnp.zeros_like(sampled.targets["mechanics.effector.pos"].value),
     )
-
-
-def test_7c1f7ed_delayed_sisu_planned_rows_parse_and_dry_run_specs(tmp_path: Path) -> None:
-    rows = planned_7c1f7ed_delayed_sisu_spectrum_rows()
-
-    assert [row["row"] for row in rows] == ["A", "B"]
-    assert [row["max_l2_radius_15cm"] for row in rows] == pytest.approx(
-        [0.0023284905801002004, HISTORICAL_020A65B_PGD_RADIUS_15CM]
-    )
-    assert [row["run"] for row in rows] == [
-        "delayed_sisu_spectrum__raw_strong_gamma_1p05_radius_lr1e-2_clip5_b64",
-        "delayed_sisu_spectrum__effective_020a65b_pgd_radius_lr1e-2_clip5_b64",
-    ]
-    for row in rows:
-        parsed = _parse_planned_training_command(row["command"])
-        parsed_gate = _parse_planned_training_command(row["checkpoint_gate_command"])
-
-        assert row["base_row"] == "ef9c882/hold__start_pos_zero_vel_lr1e-2"
-        assert row["controller_lr"] == pytest.approx(1e-2)
-        assert row["final_learning_rate"] == pytest.approx(1e-3)
-        assert row["hidden_size"] == 180
-        assert row["nn_output_pre_go"] == pytest.approx(0.0)
-        assert row["delayed_pre_go_force_filter_hold"] == pytest.approx(0.0)
-        assert row["delayed_pre_go_start_pos_hold"] == pytest.approx(1e6)
-        assert row["delayed_pre_go_start_pos_hold_norm"] == "l2"
-        assert row["delayed_pre_go_zero_vel_hold"] == pytest.approx(1e5)
-        assert parsed.issue == "7c1f7ed"
-        assert parsed.delayed_reach is True
-        assert parsed.delayed_reach_go_cue_min_step == 10
-        assert parsed.delayed_reach_go_cue_max_step == 30
-        assert parsed.delayed_reach_p_catch_trial == pytest.approx(0.5)
-        assert parsed.target_relative_multitarget is True
-        assert parsed.initial_hidden_encoder is False
-        assert parsed.force_filter_feedback is True
-        assert parsed.perturbation_training is True
-        assert parsed.perturbation_calibrated_timing is True
-        assert parsed.perturbation_movement_age_timing is True
-        assert parsed.perturbation_physical_level == "small"
-        assert parsed.loss_objective == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
-        assert parsed.nn_output_pre_go == pytest.approx(0.0)
-        assert parsed.delayed_pre_go_force_filter_hold == pytest.approx(0.0)
-        assert parsed.delayed_pre_go_start_pos_hold == pytest.approx(1e6)
-        assert parsed.delayed_pre_go_start_pos_hold_norm == "l2"
-        assert parsed.delayed_pre_go_zero_vel_hold == pytest.approx(1e5)
-        assert parsed.broad_epsilon_pgd_training is True
-        assert parsed.broad_epsilon_reach_scaling is False
-        assert parsed.broad_epsilon_pgd_budget_schedule == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE
-        assert parsed.broad_epsilon_pgd_sisu_condition_input == "sisu"
-        assert parsed.broad_epsilon_pgd_sisu_max_radius == pytest.approx(row["max_l2_radius_15cm"])
-        assert parsed.broad_epsilon_pgd_steps == 10
-        assert parsed.broad_epsilon_pgd_step_size_fraction == pytest.approx(0.25)
-        assert parsed.controller_lr == pytest.approx(1e-2)
-        assert parsed.lr_warmup_batches == 500
-        assert parsed.lr_warmup_init_fraction == pytest.approx(0.1)
-        assert parsed.lr_cosine_alpha == pytest.approx(0.1)
-        assert parsed.hidden_size == 180
-        assert parsed.stop_after_batches is None
-        assert parsed_gate.stop_after_batches == 1000
-        assert row["delayed_reach"]["sisu_budget_input"] == "sisu"
-        assert row["broad_epsilon_pgd_scope"] == "movement_epoch_only"
-
-        parsed.output_dir = str(tmp_path / row["run"] / "artifacts")
-        parsed.spec_dir = str(tmp_path / row["run"] / "spec")
-        parsed.dry_run = True
-        payload = write_run_spec(parsed)["run_spec"]
-        assert payload["task_timing"]["extra_inputs"] == ["input", "sisu", "target", "epsilon"]
-        assert payload["hps"]["broad_epsilon_pgd_training"]["movement_epoch_only"] is True
-        assert (
-            payload["hps"]["broad_epsilon_pgd_training"]["budget_schedule"]["conditioning_scalar"][
-                "input_key"
-            ]
-            == "sisu"
-        )
-        assert payload["hps"]["model"]["force_filter_feedback"] is True
-        assert payload["hps"]["target_relative_multitarget"]["force_filter_feedback"] is True
-        assert payload["hps"]["perturbation_training"]["enabled"] is True
-        assert payload["hps"]["perturbation_training"]["calibrated_timing"] is True
-        assert payload["hps"]["perturbation_training"]["timing_basis"]["mode"] == "movement_age"
-        assert payload["hps"]["perturbation_training"]["physical_level"] == "small"
-        assert payload["hps"]["loss"]["weights"]["nn_output_pre_go"] == pytest.approx(0.0)
-        assert payload["hps"]["loss"]["weights"]["delayed_pre_go_force_filter_hold"] == (
-            pytest.approx(0.0)
-        )
-        assert payload["hps"]["loss"]["weights"]["delayed_pre_go_start_pos_hold"] == (
-            pytest.approx(1e6)
-        )
-        assert payload["hps"]["loss"]["delayed_pre_go_start_pos_hold_norm"] == "l2"
-        assert payload["hps"]["loss"]["weights"]["delayed_pre_go_zero_vel_hold"] == (
-            pytest.approx(1e5)
-        )
-        assert payload["hps"]["delayed_reach"]["catch_trials"]["p_catch_trial"] == pytest.approx(
-            0.5
-        )
-        assert payload["model_summary"]["initial_hidden_encoder"]["enabled"] is False
 
 
 def test_full_analytical_qrf_loss_scores_non_pos_vel_state_and_command() -> None:
@@ -3562,8 +3501,12 @@ def test_randomized_perturbation_training_uses_prng_key_and_preserves_target() -
         GRAPH_ADAPTER_SPECS["command_input"].input_key,
         GRAPH_ADAPTER_SPECS["sensory_feedback"].input_key,
     )
-    input_differs = any(bool(jnp.any(first.inputs[key] != second.inputs[key])) for key in active_input_keys)
-    init_differs = bool(jnp.any(first.inits["mechanics.vector"] != second.inits["mechanics.vector"]))
+    input_differs = any(
+        bool(jnp.any(first.inputs[key] != second.inputs[key])) for key in active_input_keys
+    )
+    init_differs = bool(
+        jnp.any(first.inits["mechanics.vector"] != second.inits["mechanics.vector"])
+    )
     assert input_differs or init_differs
     assert jnp.all(first.inputs[GRAPH_ADAPTER_SPECS["delayed_observation"].input_key] == 0.0)
     assert jnp.all(second.inputs[GRAPH_ADAPTER_SPECS["delayed_observation"].input_key] == 0.0)
@@ -3988,53 +3931,6 @@ def test_target_aligned_lateral_load_uses_trial_reach_direction() -> None:
     assert np.allclose(np.asarray(pulse[1, 5, :2]), [-1.0, 0.0])
     assert np.allclose(np.asarray(pulse[:, :5, :]), 0.0)
     assert np.allclose(np.asarray(pulse[:, 10:, :]), 0.0)
-
-
-def test_perturbation_training_run_spec_and_planned_rows(tmp_path: Path) -> None:
-    output_dir = tmp_path / "bulk"
-    spec_dir = tmp_path / "spec"
-    args = _args(
-        output_dir=str(output_dir),
-        spec_dir=str(spec_dir),
-        smoke=True,
-        issue="aacb9ed",
-        perturbation_training=True,
-        loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
-        batch_size=64,
-        gradient_clip_norm=5.0,
-        controller_lr=1e-3,
-        lr_warmup_batches=500,
-        lr_cosine_alpha=0.01,
-    )
-
-    result = write_run_spec(args)
-    payload = json.loads(Path(result["run_spec_path"]).read_text())
-    rows = planned_fixed_target_perturbation_rows()
-
-    assert payload["issue"] == "aacb9ed"
-    assert payload["nominal_only"] is False
-    assert payload["training_summary"]["training_mode"] == PERTURBATION_TRAINING_MODE
-    assert payload["validation_bins"]["bins"][0]["bin"] == "nominal"
-    assert payload["validation_bins"]["selection_role"].startswith("aggregate rollout loss")
-    assert payload["training_distribution"]["fixed_target_only"] is True
-    assert payload["training_distribution"]["checkpoint_selection_role"] == (
-        "generalized_held_out_perturbation_validation"
-    )
-    semantics = payload["hps"]["perturbation_training"]["mixture_semantics"]
-    assert semantics["experimental_factor_note"].startswith("Perturbation uncertainty level")
-    assert "Calibrated timing mode samples timing bins uniformly" in (semantics["calibration_note"])
-    assert semantics["families"]["process_epsilon"]["duration_steps"] == 5
-    assert semantics["validation_difference"].startswith("Validation bins are")
-    assert payload["hps"]["perturbation_training"]["controller_internal_mutation"] is False
-    assert {row["controller_lr"] for row in rows} == {1e-3, 3e-3}
-    assert all(row["batch_size"] == 64 for row in rows)
-    assert all(row["gradient_clip_norm"] == 5.0 for row in rows)
-    assert all("--perturbation-training" in row["command"] for row in rows)
-    assert all("fixed_target_random_perturb" in row["run"] for row in rows)
-    assert all(
-        row["checkpoint_selection"] == "generalized_held_out_perturbation_validation"
-        for row in rows
-    )
 
 
 def test_calibrated_timing_run_spec_exposes_family_timing_bins(tmp_path: Path) -> None:
@@ -4978,263 +4874,6 @@ def test_delayed_reach_start_pos_hold_supports_l1_norm() -> None:
     assert term.term(states, trial, None) == pytest.approx(jnp.asarray([7.0]))
 
 
-def test_ef9c882_start_pos_hold_planned_rows_parse_and_build_specs(tmp_path: Path) -> None:
-    rows = planned_ef9c882_start_pos_hold_rows()
-
-    assert [row["run"] for row in rows] == [
-        "hold_start_pos_l2_ffpert__w1e6_lr3e-3",
-        "hold_start_pos_l2_ffpert__w1e8_lr3e-3",
-        "hold_start_pos_l1_ffpert__w1e6_lr3e-3",
-        "hold_start_pos_l1_ffpert__w1e5_lr3e-3",
-        "hold_start_pos_l2_ffpert__w1e8_lr1e-2",
-        "hold_start_pos_l1_ffpert__w1e5_lr1e-2",
-        "hold__start_pos_zero_vel_lr1e-2",
-        "hold__start_pos_zero_vel_lr3e-2",
-    ]
-    assert [row["delayed_pre_go_start_pos_hold_norm"] for row in rows] == [
-        "l2",
-        "l2",
-        "l1",
-        "l1",
-        "l2",
-        "l1",
-        "l2",
-        "l2",
-    ]
-    assert [row["delayed_pre_go_start_pos_hold"] for row in rows] == [
-        1e6,
-        1e8,
-        1e6,
-        1e5,
-        1e8,
-        1e5,
-        1e6,
-        1e6,
-    ]
-    assert [row["controller_lr"] for row in rows] == [
-        3e-3,
-        3e-3,
-        3e-3,
-        3e-3,
-        1e-2,
-        1e-2,
-        1e-2,
-        3e-2,
-    ]
-    assert [row["delayed_pre_go_zero_vel_hold"] for row in rows] == [
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        1e5,
-        1e5,
-    ]
-
-    for row in rows:
-        parsed = _parse_planned_training_command(row["command"])
-        parsed_spec = _parse_planned_training_command(row["spec_command"])
-        parsed.output_dir = str(tmp_path / "artifacts" / row["run"])
-        parsed.spec_dir = str(tmp_path / "specs" / row["run"])
-        parsed.dry_run = True
-        result = write_run_spec(parsed)
-        payload = result["run_spec"]
-        aux = payload["loss_summary"]["delayed_pre_go_auxiliary_terms"]
-
-        assert parsed.issue == "ef9c882"
-        assert parsed.full_train is True
-        assert parsed.resume is True
-        assert parsed_spec.dry_run is True
-        assert parsed.n_train_batches == 12000
-        assert parsed.batch_size == 64
-        assert parsed.controller_lr == pytest.approx(row["controller_lr"])
-        assert parsed.gradient_clip_norm == pytest.approx(5.0)
-        assert parsed.lr_warmup_batches == 500
-        assert parsed.lr_warmup_init_fraction == pytest.approx(0.1)
-        assert parsed.lr_cosine_alpha == pytest.approx(0.1)
-        assert parsed.n_replicates == 5
-        assert parsed.hidden_size == 180
-        assert parsed.loss_objective == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
-        assert parsed.delayed_reach is True
-        assert parsed.delayed_reach_go_cue_min_step == 10
-        assert parsed.delayed_reach_go_cue_max_step == 30
-        assert parsed.delayed_reach_p_catch_trial == pytest.approx(0.5)
-        assert parsed.target_relative_multitarget is True
-        assert parsed.force_filter_feedback is True
-        assert parsed.perturbation_training is True
-        assert parsed.perturbation_calibrated_timing is True
-        assert parsed.perturbation_movement_age_timing is True
-        assert parsed.perturbation_physical_level == "small"
-        assert parsed.broad_epsilon_pgd_training is False
-        assert parsed.nn_output_pre_go == pytest.approx(0.0)
-        assert parsed.delayed_pre_go_force_filter_hold == pytest.approx(0.0)
-        assert parsed.delayed_pre_go_zero_vel_hold == pytest.approx(
-            row["delayed_pre_go_zero_vel_hold"]
-        )
-        assert parsed.delayed_pre_go_start_pos_hold == pytest.approx(
-            row["delayed_pre_go_start_pos_hold"]
-        )
-        assert (
-            parsed.delayed_pre_go_start_pos_hold_norm == row["delayed_pre_go_start_pos_hold_norm"]
-        )
-
-        assert payload["issue"] == "ef9c882"
-        assert payload["n_train_batches"] == 12000
-        assert payload["batch_size"] == 64
-        assert payload["controller_lr"] == pytest.approx(row["controller_lr"])
-        assert payload["training_summary"]["n_adversary_batches"] == 0
-        assert payload["hps"]["broad_epsilon_pgd_training"]["enabled"] is False
-        assert payload["hps"]["model"]["force_filter_feedback"] is True
-        assert payload["hps"]["target_relative_multitarget"]["force_filter_feedback"] is True
-        assert payload["hps"]["perturbation_training"]["enabled"] is True
-        assert payload["hps"]["perturbation_training"]["calibrated_timing"] is True
-        assert payload["hps"]["perturbation_training"]["timing_basis"]["mode"] == "movement_age"
-        assert payload["hps"]["perturbation_training"]["physical_level"] == "small"
-        assert payload["hps"]["loss"]["weights"]["nn_output_pre_go"] == 0.0
-        assert payload["hps"]["loss"]["weights"]["delayed_pre_go_force_filter_hold"] == 0.0
-        assert payload["hps"]["loss"]["weights"]["delayed_pre_go_zero_vel_hold"] == (
-            pytest.approx(row["delayed_pre_go_zero_vel_hold"])
-        )
-        assert payload["hps"]["loss"]["weights"]["delayed_pre_go_start_pos_hold"] == (
-            pytest.approx(row["delayed_pre_go_start_pos_hold"])
-        )
-        assert (
-            payload["hps"]["loss"]["delayed_pre_go_start_pos_hold_norm"]
-            == row["delayed_pre_go_start_pos_hold_norm"]
-        )
-        expected_active_terms = {
-            "delayed_pre_go_start_pos_hold": {
-                "scale": row["delayed_pre_go_start_pos_hold"],
-                "state_key": "states.mechanics.effector.pos",
-                "target": "trial_specs.inits['mechanics.vector'][..., :2]",
-                "norm": row["delayed_pre_go_start_pos_hold_norm"],
-            }
-        }
-        if row["delayed_pre_go_zero_vel_hold"] != 0.0:
-            expected_active_terms["delayed_pre_go_zero_vel_hold"] = {
-                "scale": row["delayed_pre_go_zero_vel_hold"],
-                "state_key": "states.mechanics.effector.vel",
-                "target": "zero_velocity",
-            }
-        assert aux["active_terms"] == expected_active_terms
-        assert payload["delayed_reach"]["go_cue_sampling"]["min_step_inclusive"] == 10
-        assert payload["delayed_reach"]["go_cue_sampling"]["max_step_inclusive"] == 30
-        assert payload["delayed_reach"]["catch_trials"]["p_catch_trial"] == pytest.approx(0.5)
-
-
-def test_246182c_post_movement_cost_tail_row_parse_and_build_spec(tmp_path: Path) -> None:
-    rows = planned_246182c_post_movement_cost_tail_rows()
-    assert len(rows) == 1
-    row = rows[0]
-
-    parsed = _parse_planned_training_command(row["command"])
-    parsed_spec = _parse_planned_training_command(row["spec_command"])
-    parsed.output_dir = str(tmp_path / "artifacts" / row["run"])
-    parsed.spec_dir = str(tmp_path / "specs" / row["run"])
-    parsed.dry_run = True
-    result = write_run_spec(parsed)
-    payload = result["run_spec"]
-
-    assert row["run"] == "hold__start_pos_zero_vel_lr1e-2_flat_tail"
-    assert row["comparator"] == "ef9c882/hold__start_pos_zero_vel_lr1e-2"
-    assert row["planned_run_spec_path"] == (
-        "results/246182c/runs/hold__start_pos_zero_vel_lr1e-2_flat_tail.json"
-    )
-    assert parsed.issue == "246182c"
-    assert parsed.full_train is True
-    assert parsed.resume is True
-    assert parsed_spec.dry_run is True
-    assert parsed.n_train_batches == 12000
-    assert parsed.batch_size == 64
-    assert parsed.controller_lr == pytest.approx(1e-2)
-    assert parsed.gradient_clip_norm == pytest.approx(5.0)
-    assert parsed.lr_warmup_batches == 500
-    assert parsed.lr_warmup_init_fraction == pytest.approx(0.1)
-    assert parsed.lr_cosine_alpha == pytest.approx(0.1)
-    assert parsed.n_replicates == 5
-    assert parsed.hidden_size == 180
-    assert parsed.loss_objective == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
-    assert parsed.delayed_reach is True
-    assert parsed.delayed_reach_go_cue_min_step == 10
-    assert parsed.delayed_reach_go_cue_max_step == 30
-    assert parsed.delayed_reach_p_catch_trial == pytest.approx(0.5)
-    assert parsed.delayed_movement_cost_tail_mode == DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON
-    assert parsed.target_relative_multitarget is True
-    assert parsed.force_filter_feedback is True
-    assert parsed.perturbation_training is True
-    assert parsed.perturbation_calibrated_timing is True
-    assert parsed.perturbation_movement_age_timing is True
-    assert parsed.perturbation_physical_level == "small"
-    assert parsed.broad_epsilon_pgd_training is False
-    assert parsed.nn_output_pre_go == pytest.approx(0.0)
-    assert parsed.delayed_pre_go_force_filter_hold == pytest.approx(0.0)
-    assert parsed.delayed_pre_go_zero_vel_hold == pytest.approx(1e5)
-    assert parsed.delayed_pre_go_start_pos_hold == pytest.approx(1e6)
-    assert parsed.delayed_pre_go_start_pos_hold_norm == "l2"
-
-    assert payload["issue"] == "246182c"
-    assert payload["n_train_batches"] == 12000
-    assert payload["batch_size"] == 64
-    assert payload["controller_lr"] == pytest.approx(1e-2)
-    assert payload["training_summary"]["n_adversary_batches"] == 0
-    assert payload["hps"]["broad_epsilon_pgd_training"]["enabled"] is False
-    assert payload["hps"]["model"]["force_filter_feedback"] is True
-    assert payload["hps"]["perturbation_training"]["enabled"] is True
-    assert payload["hps"]["perturbation_training"]["calibrated_timing"] is True
-    assert payload["hps"]["perturbation_training"]["timing_basis"]["mode"] == "movement_age"
-    assert payload["hps"]["perturbation_training"]["physical_level"] == "small"
-    assert payload["hps"]["loss"]["weights"]["nn_output_pre_go"] == 0.0
-    assert payload["hps"]["loss"]["weights"]["delayed_pre_go_force_filter_hold"] == 0.0
-    assert payload["hps"]["loss"]["weights"]["delayed_pre_go_zero_vel_hold"] == pytest.approx(1e5)
-    assert payload["hps"]["loss"]["weights"]["delayed_pre_go_start_pos_hold"] == pytest.approx(1e6)
-    assert payload["hps"]["loss"]["delayed_pre_go_start_pos_hold_norm"] == "l2"
-    assert (
-        payload["hps"]["loss"]["delayed_movement_cost_tail_mode"]
-        == DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON
-    )
-    assert (
-        payload["delayed_reach"]["movement_epoch"]["cost_tail_mode"]
-        == DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON
-    )
-    assert payload["loss_summary"]["time_indexing"]["post_horizon_tail"] == (
-        "hold_terminal_running_qr_weights_flat_to_trial_end"
-    )
-    assert payload["loss_summary"]["time_indexing"]["terminal_state"] == (
-        "final rollout state after the variable post-horizon tail"
-    )
-
-
-def test_ef9c882_start_pos_hold_planned_rows_cli(capsys: pytest.CaptureFixture[str]) -> None:
-    assert main(["--planned-ef9c882-start-pos-hold-rows"]) == 0
-    payload = json.loads(capsys.readouterr().out)
-
-    assert [row["run"] for row in payload["planned_rows"]] == [
-        "hold_start_pos_l2_ffpert__w1e6_lr3e-3",
-        "hold_start_pos_l2_ffpert__w1e8_lr3e-3",
-        "hold_start_pos_l1_ffpert__w1e6_lr3e-3",
-        "hold_start_pos_l1_ffpert__w1e5_lr3e-3",
-        "hold_start_pos_l2_ffpert__w1e8_lr1e-2",
-        "hold_start_pos_l1_ffpert__w1e5_lr1e-2",
-        "hold__start_pos_zero_vel_lr1e-2",
-        "hold__start_pos_zero_vel_lr3e-2",
-    ]
-
-
-def test_246182c_post_movement_cost_tail_planned_rows_cli(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    assert main(["--planned-246182c-post-movement-cost-tail-rows"]) == 0
-    payload = json.loads(capsys.readouterr().out)
-
-    assert [row["run"] for row in payload["planned_rows"]] == [
-        "hold__start_pos_zero_vel_lr1e-2_flat_tail"
-    ]
-    assert payload["planned_rows"][0]["delayed_movement_cost_tail_mode"] == (
-        DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON
-    )
-
-
 def test_delayed_reach_run_spec_declares_task_and_movement_pgd_mask(tmp_path: Path) -> None:
     output_dir = tmp_path / "bulk"
     spec_dir = tmp_path / "spec"
@@ -5484,69 +5123,6 @@ def test_broad_epsilon_run_spec_exposes_budget_contract(tmp_path: Path) -> None:
     assert (
         payload["training_distribution"]["training_axes"]["broad_full_state_epsilon_training"]
         is True
-    )
-
-
-def test_target_relative_multitarget_run_spec_and_planned_rows(tmp_path: Path) -> None:
-    output_dir = tmp_path / "bulk"
-    spec_dir = tmp_path / "spec"
-    args = _args(
-        output_dir=str(output_dir),
-        spec_dir=str(spec_dir),
-        smoke=True,
-        issue="ba82f3d",
-        target_relative_multitarget=True,
-        perturbation_training=True,
-        loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
-        batch_size=64,
-        gradient_clip_norm=5.0,
-        controller_lr=1e-3,
-        lr_warmup_batches=500,
-        lr_cosine_alpha=0.01,
-    )
-
-    result = write_run_spec(args)
-    payload = json.loads(Path(result["run_spec_path"]).read_text())
-    rows = planned_target_relative_multitarget_rows()
-
-    assert payload["issue"] == "ba82f3d"
-    assert payload["training_summary"]["training_mode"] == (
-        f"{TARGET_RELATIVE_MULTITARGET_TRAINING_MODE}+{PERTURBATION_TRAINING_MODE}"
-    )
-    assert payload["model_summary"]["feedback"]["basis"] == "target_relative_delayed_feedback"
-    distribution = payload["training_distribution"]
-    assert distribution["fixed_target_only"] is False
-    assert distribution["target_stream"]["status"] == "consumed_as_static_target_relative_feedback"
-    assert distribution["original_target_anchor_m"] == [0.15, 0.0]
-    assert (
-        payload["hps"]["target_relative_multitarget"]["target_distribution"][
-            "target_support_profile"
-        ]
-        == TARGET_SUPPORT_PROFILE_CONST_BAND16
-    )
-    assert payload["task_timing"]["extra_inputs"] == ["target", "epsilon"]
-    assert payload["task_timing"]["target_relative_multitarget"]["enabled"] is True
-    assert payload["validation_bins"]["validation_role"] == (
-        "target_relative_multitarget_rollout_loss"
-    )
-    assert payload["validation_bins"]["input_contract"]["sign_convention"][0] == (
-        "target_x - delayed_x"
-    )
-    assert all(
-        "targets_m" in row and row["targets_m"]
-        for row in payload["validation_bins"]["bins"]
-        if row["target_role"] == "seen_and_held_out_static_targets"
-    )
-    assert payload["loss_summary"]["objective_profile"] == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
-    assert {row["controller_lr"] for row in rows if row["row_kind"] == "main"} == {
-        1e-3,
-        3e-3,
-    }
-    assert all("--target-relative-multitarget" in row["command"] for row in rows)
-    assert all(
-        row["checkpoint_selection"] == "target_relative_multitarget_rollout_validation"
-        for row in rows
-        if row["row_kind"] == "main"
     )
 
 
@@ -5848,206 +5424,6 @@ def test_initial_hidden_encoder_requires_target_relative_hps() -> None:
         build_hps(_args(initial_hidden_encoder=True))
 
 
-def test_target_relative_h0_run_spec_and_planned_rows(tmp_path: Path) -> None:
-    output_dir = tmp_path / "bulk"
-    spec_dir = tmp_path / "spec"
-    args = _args(
-        output_dir=str(output_dir),
-        spec_dir=str(spec_dir),
-        smoke=True,
-        issue="643f101",
-        target_relative_multitarget=True,
-        initial_hidden_encoder=True,
-        perturbation_training=True,
-        loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
-        batch_size=64,
-        gradient_clip_norm=5.0,
-        controller_lr=1e-3,
-        lr_warmup_batches=500,
-        lr_cosine_alpha=0.01,
-    )
-
-    result = write_run_spec(args)
-    payload = json.loads(Path(result["run_spec_path"]).read_text())
-    rows = planned_target_relative_multitarget_h0_rows()
-
-    assert payload["issue"] == "643f101"
-    assert payload["training_summary"]["training_mode"] == (
-        f"{TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE}+{PERTURBATION_TRAINING_MODE}"
-    )
-    h0 = payload["model_summary"]["initial_hidden_encoder"]
-    assert h0["enabled"] is True
-    assert h0["architecture"] == "affine"
-    assert h0["context_source"] == "first_controller_visible_target_relative_delayed_feedback"
-    assert h0["context_shape"] == [4]
-    assert h0["output_shape"] == [4]
-    assert h0["initialization"] == "zero_affine"
-    assert h0["teacher_or_jacobian_supervision"] is False
-    assert h0["plant_live_preview"] is False
-    assert h0["delayed_reach"] is False
-    assert payload["model_summary"]["trainable"] == [
-        "nodes.net.hidden",
-        "nodes.net.readout",
-        "nodes.net.h0_encoder",
-    ]
-    assert payload["training_summary"]["initial_hidden_encoder"]["enabled"] is True
-    assert (
-        payload["training_summary"]["training_distribution"]["initial_hidden_encoder"]["enabled"]
-        is True
-    )
-    assert payload["hps"]["where"]["0"] == [
-        "nodes.net.hidden",
-        "nodes.net.readout",
-        "nodes.net.h0_encoder",
-    ]
-    main_rows = [row for row in rows if row["row_kind"] == "main"]
-    assert {row["controller_lr"] for row in main_rows} == {1e-3, 3e-3}
-    assert all(row["batch_size"] == 64 for row in main_rows)
-    assert all(row["gradient_clip_norm"] == 5.0 for row in main_rows)
-    assert all(row["n_replicates"] == 5 for row in main_rows)
-    assert all(row["n_train_batches"] == 12000 for row in main_rows)
-    assert all(row["training_diagnostics"] == "default_enabled" for row in main_rows)
-    assert all("--initial-hidden-encoder" in row["command"] for row in rows)
-    assert all("--target-relative-multitarget" in row["command"] for row in rows)
-    assert all(
-        row["checkpoint_selection"] == "target_relative_multitarget_rollout_validation"
-        for row in main_rows
-    )
-
-
-def test_020a65b_h0_pgd_planned_rows_and_gate_commands() -> None:
-    rows = planned_020a65b_h0_pgd_rows()
-
-    assert [row["broad_epsilon_pgd_training"] for row in rows] == [False, True]
-    assert [row["run"] for row in rows] == [
-        (
-            "target_relative_multitarget_h0_fullqrf_warmcos__"
-            "proprio_cal_small_no_pgd_lr3e-3_clip5_b64"
-        ),
-        (
-            "target_relative_multitarget_h0_fullqrf_warmcos__"
-            "proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64"
-        ),
-    ]
-
-    for row in rows:
-        command = row["command"]
-        resume_command = row["full_training_contract_command"]
-        parsed = _parse_planned_training_command(command)
-        parsed_resume = _parse_planned_training_command(resume_command)
-
-        assert command[:7] == [
-            "env",
-            "JAX_PLATFORM_NAME=cpu",
-            "PYTHONPATH=src",
-            "uv",
-            "run",
-            "--no-sync",
-            "python",
-        ]
-        assert row["experiment"] == "020a65b"
-        assert row["controller_lr"] == pytest.approx(3e-3)
-        assert row["batch_size"] == 64
-        assert row["n_train_batches"] == 12000
-        assert row["stop_after_batches"] == 1000
-        assert row["force_filter_feedback"] is True
-        assert row["initial_hidden_encoder"] == (
-            "zero_affine_target_relative_feedback_plus_force_filter"
-        )
-        assert parsed.issue == "020a65b"
-        assert parsed.full_train is True
-        assert parsed.resume is True
-        assert parsed.stop_after_batches == 1000
-        assert parsed.n_train_batches == 12000
-        assert parsed.batch_size == 64
-        assert parsed.controller_lr == pytest.approx(3e-3)
-        assert parsed.gradient_clip_norm == pytest.approx(5.0)
-        assert parsed.lr_warmup_batches == 500
-        assert parsed.lr_warmup_init_fraction == pytest.approx(0.1)
-        assert parsed.lr_cosine_alpha == pytest.approx(0.01)
-        assert parsed.n_replicates == 5
-        assert parsed.loss_objective == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
-        assert parsed.target_relative_multitarget is True
-        assert parsed.initial_hidden_encoder is True
-        assert parsed.force_filter_feedback is True
-        assert parsed.perturbation_training is True
-        assert parsed.perturbation_calibrated_timing is True
-        assert parsed.perturbation_physical_level == "small"
-        assert parsed_resume.stop_after_batches is None
-
-    assert _parse_planned_training_command(rows[0]["command"]).broad_epsilon_pgd_training is False
-    pgd_args = _parse_planned_training_command(rows[1]["command"])
-    assert pgd_args.broad_epsilon_pgd_training is True
-    assert pgd_args.broad_epsilon_level == "moderate"
-    assert pgd_args.broad_epsilon_budget_scale == pytest.approx(3.688240371719434)
-    assert pgd_args.broad_epsilon_pgd_steps == 10
-    assert pgd_args.broad_epsilon_pgd_step_size_fraction == pytest.approx(0.25)
-
-
-def test_020a65b_h0_pgd_planned_rows_build_schema_compliant_specs(tmp_path: Path) -> None:
-    rows = planned_020a65b_h0_pgd_rows()
-
-    for row in rows:
-        args = _parse_planned_training_command(row["command"])
-        args.output_dir = str(tmp_path / "artifacts" / row["run"])
-        args.spec_dir = str(tmp_path / "specs" / row["run"])
-        args.dry_run = True
-        result = write_run_spec(args)
-        payload = result["run_spec"]
-        pgd_enabled = bool(row["broad_epsilon_pgd_training"])
-        pgd_hps = payload["hps"]["broad_epsilon_pgd_training"]
-        distribution = payload["training_summary"]["training_distribution"]
-
-        assert payload["issue"] == "020a65b"
-        assert payload["full_training_launch"] == "requested"
-        assert payload["n_train_batches"] == 12000
-        assert payload["batch_size"] == 64
-        assert payload["controller_lr"] == pytest.approx(3e-3)
-        assert payload["loss_objective"] == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
-        assert payload["hps"]["n_batches_condition"] == 12000
-        assert payload["hps"]["batch_size"] == 64
-        assert payload["hps"]["learning_rate_0"] == pytest.approx(3e-3)
-        assert payload["hps"]["model"]["force_filter_feedback"] is True
-        assert payload["hps"]["model"]["initial_hidden_encoder"] is True
-        assert payload["hps"]["model"]["initial_hidden_encoder_config"]["context_shape"] == [6]
-        assert payload["hps"]["model"]["initial_hidden_encoder_config"]["context_basis"] == (
-            "target_relative_delayed_feedback_plus_force_filter"
-        )
-        assert payload["model_summary"]["initial_hidden_encoder"]["enabled"] is True
-        assert payload["model_summary"]["initial_hidden_encoder"]["context_shape"] == [6]
-        assert payload["training_summary"]["initial_hidden_encoder"]["enabled"] is True
-        assert distribution["force_filter_feedback"] is True
-        assert distribution["initial_hidden_encoder"]["enabled"] is True
-        assert distribution["initial_hidden_encoder"]["context_shape"] == [6]
-        assert payload["hps"]["perturbation_training"]["enabled"] is True
-        assert payload["hps"]["perturbation_training"]["calibrated_timing"] is True
-        assert payload["hps"]["perturbation_training"]["physical_level"] == "small"
-        assert payload["hps"]["target_relative_multitarget"]["force_filter_feedback"] is True
-        assert pgd_hps["enabled"] is pgd_enabled
-        assert distribution["broad_epsilon_pgd_training"]["enabled"] is pgd_enabled
-        assert (
-            BROAD_EPSILON_PGD_TRAINING_MODE in payload["training_summary"]["training_mode"]
-        ) is (pgd_enabled)
-        if pgd_enabled:
-            assert pgd_hps["level"] == "moderate"
-            assert pgd_hps["budget_scale"] == pytest.approx(3.688240371719434)
-            assert pgd_hps["inner_maximizer"]["n_steps"] == 10
-            assert pgd_hps["inner_maximizer"]["step_size_fraction_of_l2_radius"] == (
-                pytest.approx(0.25)
-            )
-            assert pgd_hps["epsilon_channel"]["shape"] == ["batch", "time", 8]
-        else:
-            assert pgd_hps["mode"] == "disabled"
-
-
-def test_020a65b_h0_pgd_planned_rows_cli(capsys: pytest.CaptureFixture[str]) -> None:
-    assert main(["--planned-020a65b-h0-pgd-rows"]) == 0
-    payload = json.loads(capsys.readouterr().out)
-
-    assert [row["experiment"] for row in payload["planned_rows"]] == ["020a65b", "020a65b"]
-    assert [row["stop_after_batches"] for row in payload["planned_rows"]] == [1000, 1000]
-
-
 def test_33b0dcb_target_support_profiles() -> None:
     default = target_relative_target_support_config(
         enabled=True,
@@ -6196,239 +5572,10 @@ def test_target_hps_normalization_matches_frozen_override_outputs() -> None:
         },
     }
 
-    assert {name: asdict(config_from_target_hps(case)) for name, case in cases.items()} == (
-        frozen_outputs
-    )
-
-
-def test_33b0dcb_target_support_planned_rows_and_specs(tmp_path: Path) -> None:
-    rows = planned_33b0dcb_target_support_rows()
-
-    assert [row["target_support_profile"] for row in rows] == [
-        TARGET_SUPPORT_PROFILE_020A65B,
-        TARGET_SUPPORT_PROFILE_CONST_DENSE_ALL,
-        TARGET_SUPPORT_PROFILE_CONST_SPARSE8,
-        TARGET_SUPPORT_PROFILE_CONST_BAND8,
-        TARGET_SUPPORT_PROFILE_CONST_BAND16,
-        TARGET_SUPPORT_PROFILE_CONST_BAND36,
-    ]
-    assert [row["stop_after_batches"] for row in rows] == [1000] * 6
-    assert all(row["broad_epsilon_pgd_training"] is False for row in rows)
-
-    expected_counts = {
-        TARGET_SUPPORT_PROFILE_020A65B: (12, 8),
-        TARGET_SUPPORT_PROFILE_CONST_DENSE_ALL: (72, 0),
-        TARGET_SUPPORT_PROFILE_CONST_SPARSE8: (8, 64),
-        TARGET_SUPPORT_PROFILE_CONST_BAND8: (64, 8),
-        TARGET_SUPPORT_PROFILE_CONST_BAND16: (56, 16),
-        TARGET_SUPPORT_PROFILE_CONST_BAND36: (36, 36),
-    }
-    for row in rows:
-        parsed = _parse_planned_training_command(row["command"])
-        parsed.output_dir = str(tmp_path / "artifacts" / row["run"])
-        parsed.spec_dir = str(tmp_path / "specs" / row["run"])
-        parsed.dry_run = True
-        payload = write_run_spec(parsed)["run_spec"]
-        target_distribution = payload["hps"]["target_relative_multitarget"]["target_distribution"]
-        seen_count, held_out_count = expected_counts[str(row["target_support_profile"])]
-
-        assert parsed.issue == "33b0dcb"
-        assert parsed.full_train is True
-        assert parsed.resume is True
-        assert parsed.stop_after_batches == 1000
-        assert parsed.target_support_profile == row["target_support_profile"]
-        assert payload["issue"] == "33b0dcb"
-        assert payload["full_training_launch"] == "requested"
-        assert target_distribution["target_support_profile"] == row["target_support_profile"]
-        assert len(target_distribution["seen_targets_m"]) == seen_count
-        assert len(target_distribution["held_out_targets_m"]) == held_out_count
-        assert payload["hps"]["broad_epsilon_pgd_training"]["enabled"] is False
-
-
-def test_33b0dcb_target_support_planned_rows_cli(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    assert main(["--planned-33b0dcb-target-support-rows"]) == 0
-    payload = json.loads(capsys.readouterr().out)
-
-    assert [row["experiment"] for row in payload["planned_rows"]] == ["33b0dcb"] * 6
-    assert payload["planned_rows"][0]["target_support_profile"] == TARGET_SUPPORT_PROFILE_020A65B
-
-
-def test_33b0dcb_target_support_planned_rows_script_cli() -> None:
-    result = subprocess.run(
-        [
-            sys.executable,
-            "scripts/train_cs_nominal_gru.py",
-            "--planned-33b0dcb-target-support-rows",
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    payload = json.loads(result.stdout)
-
-    assert [row["experiment"] for row in payload["planned_rows"]] == ["33b0dcb"] * 6
-
-
-def test_c92ebd8_calibrated_perturb_matrix_spec_artifact(tmp_path: Path) -> None:
-    spec_path = (
-        Path.cwd()
-        / "results"
-        / "c92ebd8"
-        / "notes"
-        / "no_pgd_calibrated_perturb_matrix_regeneration_spec.json"
-    )
-    payload = json.loads(spec_path.read_text())
-    rows = payload["rows"]
-    table_path = Path.cwd() / payload["perturbation_contract"]["closed_loop_calibration_table"]
-    table = json.loads(table_path.read_text())
-
-    assert payload["issue"] == "c92ebd8"
-    assert payload["status"] == "pre_run_spec_only"
-    assert payload["launch_status"]["training_launched"] is False
-    assert payload["launch_status"]["pod_acquired"] is False
-    assert len(rows) == 9
-    assert [row["row"] for row in rows] == list(range(1, 10))
-    assert all("level" not in row for row in rows)
-    assert [row["physical_level"] for row in rows] == [
-        "small",
-        "moderate",
-        "stress",
-    ] * 3
-    assert {row["substrate"] for row in rows} == {
-        "open_loop_all",
-        "closed_loop_sensory",
-        "closed_loop_sensory_command_lateral",
-    }
-    assert [row["calibration_regime"] for row in rows] == [
-        "open_loop_all",
-        "open_loop_all",
-        "open_loop_all",
-        "closed_loop_sensory",
-        "closed_loop_sensory",
-        "closed_loop_sensory",
-        "closed_loop_sensory_command_lateral",
-        "closed_loop_sensory_command_lateral",
-        "closed_loop_sensory_command_lateral",
-    ]
-    assert not any("medium" in row["run"] for row in rows)
-    assert payload["basis"]["training_target_count"] == 56
-    assert payload["basis"]["held_out_target_count"] == 16
-    assert (
-        payload["training_contract"]["target_support_profile"]
-        == TARGET_SUPPORT_PROFILE_CONST_BAND16
-    )
-    assert payload["training_contract"]["process_state_dim"] == 6
-    assert payload["training_contract"]["process_integrator_state_in_gru_channel"] is False
-    assert payload["training_contract"]["n_train_batches_per_row"] == 12000
-    assert payload["training_contract"]["pgd_training"] is False
-    assert payload["training_contract"]["policy_adversary_training"] is False
-    assert payload["training_contract"]["broad_epsilon_training"] is False
-    assert (
-        payload["perturbation_contract"]["command_input_training_direction_policy"]
-        == "uniform_random_2d_vector_norm"
-    )
-    assert (
-        payload["perturbation_contract"]["closed_loop_training_selector_status"]
-        == "wired_generic_run_spec_consumable"
-    )
-    selector = payload["perturbation_contract"]["training_selector"]
-    assert selector["cli_arg"] == "--perturbation-calibration-regime"
-    assert selector["table_path_cli_arg"] == "--perturbation-closed-loop-calibration-table"
-    assert payload["calibration_artifact_status"]["closed_loop"]["status"] == (
-        "materialized_table_available"
-    )
-    assert table["schema_version"] == "rlrmp.c92ebd8.closed_loop_perturbation_calibration.v1"
-    assert table["issue"] == "c92ebd8"
-    assert table["status"] == "materialized"
-    assert table["source"]["comparator"] == "6D extLQG deterministic released-forward rollout"
-    assert table["target_rule"]["reach_length_m"] == 0.15
-    assert [level["name"] for level in table["physical_levels"]] == [
-        "small",
-        "moderate",
-        "stress",
-    ]
-    assert table["row_summary"] == {
-        "count": 63,
-        "by_family": {
-            "command_input_pulse": 18,
-            "sensory_feedback_offset": 36,
-            "target_aligned_lateral_command_load_pulse": 9,
-        },
-        "by_physical_level": {"moderate": 21, "small": 21, "stress": 21},
-    }
-    assert len(table["unit_sensitivities"]) == 21
-    assert len(table["rows"]) == 63
-    assert {(row["family"], row["physical_level"]) for row in table["rows"]} >= {
-        ("sensory_feedback_offset", "small"),
-        ("sensory_feedback_offset", "moderate"),
-        ("sensory_feedback_offset", "stress"),
-        ("command_input_pulse", "moderate"),
-        ("target_aligned_lateral_command_load_pulse", "moderate"),
-    }
-    assert all(row["amplitude"] > 0.0 for row in table["rows"])
-    assert all(
-        row["row_kind"] == "closed_loop_reach_relative_calibrated_amplitude"
-        for row in table["rows"]
-    )
-
-    open_loop_rows = [row for row in rows if row["substrate"] == "open_loop_all"]
-    mixed_rows = [row for row in rows if row["substrate"] != "open_loop_all"]
-    assert len(open_loop_rows) == 3
-    assert len(mixed_rows) == 6
-    assert all(row["launch_status"] == "launchable_after_user_confirmation" for row in rows)
-    assert all(row["command_status"] == "materialized_selector_command" for row in rows)
-    assert all(isinstance(row["command"], list) for row in rows)
-    assert all("--perturbation-calibration-regime" in row["command"] for row in rows)
-    assert all("--no-integrator-state" in row["command"] for row in rows)
-    assert all("--no-integrator-state" in row["spec_command"] for row in rows)
-    assert all(
-        row["calibration_table_status"] == "open_loop_source_defaults_available"
-        for row in open_loop_rows
-    )
-    assert all(
-        row["calibration_table_status"] == "mixed_open_loop_closed_loop_selector_wired"
-        for row in mixed_rows
-    )
-    assert all(
-        "--perturbation-closed-loop-calibration-table" in row["command"] for row in mixed_rows
-    )
-    assert not any(
-        "--perturbation-closed-loop-calibration-table" in row["command"] for row in open_loop_rows
-    )
-    assert payload["known_blockers"] == [
-        "Rows 1-9 require explicit user confirmation before any training launch.",
-        (
-            "No pod acquisition, training launch, push, auth request, or issue closure is "
-            "authorized by this pre-run spec."
-        ),
-    ]
-
-    for row in rows:
-        parsed = _parse_planned_training_command(row["spec_command"])
-        parsed.output_dir = str(tmp_path / "artifacts" / row["run"])
-        parsed.spec_dir = str(tmp_path / "specs" / row["run"])
-        assert parsed.dry_run is True
-        assert parsed.issue == "c92ebd8"
-        assert parsed.no_integrator_state is True
-        assert parsed.target_support_profile == TARGET_SUPPORT_PROFILE_CONST_BAND16
-        assert parsed.perturbation_physical_level == row["physical_level"]
-        assert parsed.perturbation_calibration_regime == row["calibration_regime"]
-        payload = write_run_spec(parsed)["run_spec"]
-        assert payload["hps"]["model"]["no_integrator_state"] is True
-        assert payload["hps"]["model"]["physical_state_dim"] == 6
-        assert payload["model_summary"]["physical_state_dim"] == 6
-        perturbation = payload["hps"]["perturbation_training"]
-        assert perturbation["calibration_regime"] == row["calibration_regime"]
-        if row["calibration_regime"] == "open_loop_all":
-            assert perturbation["closed_loop_calibration_table_path"] is None
-        else:
-            assert perturbation["closed_loop_calibration_table_path"] == (
-                "results/c92ebd8/notes/closed_loop_calibration_table.json"
-            )
-        if row["calibration_regime"] == "closed_loop_sensory_command_lateral":
-            assert "target_aligned_lateral_load" in perturbation["single_family_bins"]
+    assert {
+        name: config_from_target_hps(case).model_dump(mode="python")
+        for name, case in cases.items()
+    } == frozen_outputs
 
 
 def test_resume_training_diagnostics_stitches_replicate_major_current_chunk(

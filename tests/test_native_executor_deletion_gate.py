@@ -53,14 +53,16 @@ MINIMAX_JITTED_STEP_FUNCTIONS = {
     "_vmapped_linear_adversary_ascent",
     "_vmapped_controller_descent",
 }
+RETIRED_GUIDED_CHECKPOINT_APIS = {
+    "GuidedDistillationTrainingState",
+    "latest_checkpoint_path",
+    "save_training_checkpoint",
+    "load_latest_checkpoint",
+}
 ALLOWED_NON_TRAINING_OPTIMIZER_LOOPS = {
     (
         Path("src/rlrmp/train/cs_perturbation_training.py"),
-        "run_broad_epsilon_pgd_inner_maximizer",
-    ),
-    (
-        Path("src/rlrmp/train/cs_perturbation_training.py"),
-        "_run_finite_broad_epsilon_pgd_inner_maximizer",
+        "_run_broad_epsilon_pgd_ascent",
     ),
 }
 ALLOWED_NATIVE_OPTIMIZER_LOOPS = {
@@ -114,6 +116,27 @@ def test_registered_distillation_cli_paths_reach_native_executor() -> None:
     )
 
 
+def test_train_minimax_cli_adapter_reaches_native_executor() -> None:
+    script_path = REPO_ROOT / "scripts" / "train_minimax.py"
+    script_tree = ast.parse(script_path.read_text(encoding="utf-8"))
+    script_calls = _module_call_names(script_tree)
+
+    findings: list[str] = []
+    for call in ("training_run_spec_from_argv", "run_training"):
+        if call not in script_calls:
+            findings.append(f"scripts/train_minimax.py:does_not_call_{call}")
+    if not _function_reaches_call(
+        script_tree,
+        entrypoint="run_training",
+        target_leaf="execute_minimax_training_run_spec_native",
+    ):
+        findings.append("scripts/train_minimax.py:run_training_native_executor_unreachable")
+
+    assert not findings, "train_minimax CLI adapter lost native-executor dispatch: " + ", ".join(
+        findings
+    )
+
+
 def test_minimax_native_step_functions_stay_jitted() -> None:
     module_path = REPO_ROOT / "src" / "rlrmp" / "train" / "minimax_native.py"
     tree = ast.parse(module_path.read_text(encoding="utf-8"))
@@ -136,6 +159,38 @@ def test_minimax_native_step_functions_stay_jitted() -> None:
     assert not findings, "Minimax native step function(s) lost eqx.filter_jit: " + ", ".join(
         findings
     )
+
+
+def test_retired_guided_checkpoint_runtime_apis_stay_deleted() -> None:
+    module_path = REPO_ROOT / "src" / "rlrmp" / "train" / "guided_distillation.py"
+    tree = ast.parse(module_path.read_text(encoding="utf-8"))
+    definitions = {
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
+    }
+
+    revived = sorted(definitions & RETIRED_GUIDED_CHECKPOINT_APIS)
+
+    assert not revived, "Retired guided checkpoint API(s) reappeared: " + ", ".join(revived)
+
+
+def test_minimax_checkpoint_slots_are_executor_owned() -> None:
+    minimax_path = REPO_ROOT / "src" / "rlrmp" / "train" / "minimax.py"
+    slots_path = REPO_ROOT / "src" / "rlrmp" / "train" / "executor" / "slots.py"
+    minimax_tree = ast.parse(minimax_path.read_text(encoding="utf-8"))
+    slots_tree = ast.parse(slots_path.read_text(encoding="utf-8"))
+
+    minimax_calls = _module_call_names(minimax_tree)
+    slots_defs = {
+        node.name
+        for node in ast.walk(slots_tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+    }
+
+    assert "minimax_checkpoint_slot_specs" in slots_defs
+    assert "minimax_checkpoint_slot_specs" in minimax_calls
+    assert "CheckpointSlotSpec" not in _module_call_names(minimax_tree)
 
 
 def test_native_executor_deletion_gate_negative_canary_flags_optimizer_loop() -> None:
@@ -234,11 +289,15 @@ def _optimizer_loop_findings_for_tree(tree: ast.AST, *, rel_path: Path) -> list[
         module_has_grad = module_has_grad or has_grad
         module_has_optimizer_update = module_has_optimizer_update or has_optimizer_update
         module_has_apply_updates = module_has_apply_updates or has_apply_updates
+        if (
+            has_optimizer_update
+            and has_apply_updates
+            and (rel_path, node.name) in ALLOWED_NON_TRAINING_OPTIMIZER_LOOPS
+        ):
+            allowed_direct_loop = True
+            continue
         if has_grad and has_optimizer_update and has_apply_updates:
-            if (
-                (rel_path, node.name) in ALLOWED_NON_TRAINING_OPTIMIZER_LOOPS
-                or (rel_path, node.name) in ALLOWED_NATIVE_OPTIMIZER_LOOPS
-            ):
+            if (rel_path, node.name) in ALLOWED_NATIVE_OPTIMIZER_LOOPS:
                 allowed_direct_loop = True
                 continue
             findings.append(f"{rel_path}:{node.lineno}:{node.name}")
