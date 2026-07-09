@@ -152,8 +152,11 @@ symbols = [
   "AdditiveGraphChannelTargetSpec",
   "AnalysisDataProductRequirement",
   "ComponentSpec",
+  "GRAPH_SPEC_SCHEMA_ID",
+  "GRAPH_SPEC_SCHEMA_VERSION",
   "GraphMetadata",
   "GraphSpec",
+  "LEGACY_GRAPH_SPEC_SCHEMA_VERSION",
   "RetainedObservableSpec",
   "RetainedObservableTargetSpec",
   "RetentionPolicySpec",
@@ -280,6 +283,7 @@ symbols = [
   "UnknownSpecFamily",
   "UnsupportedSpecVersion",
   "default_spec_registry",
+  "migrate_graph_spec",
   "migrate_structured_spec_payload",
 ]
 
