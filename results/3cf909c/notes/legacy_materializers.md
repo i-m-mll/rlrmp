@@ -309,6 +309,20 @@ report-stage era decides whether to port or delete it.
 
 Banner status: Full module banner added to the pipeline and top-level script.
 
+Retired 2026-07-09 by [issue:dd8523c] on
+`feature/dd8523c-frozen-of-bridge-retirement`. Deletion commit: this branch's
+retirement commit; final hash is recorded in the issue closeout. Last-tree
+commit carrying the code: `acbdf8d7008a073b3fe9375b5b915288ac05183d`, also
+tagged locally as `legacy/output-feedback-materializers-retired`.
+
+Deleted files:
+- `src/rlrmp/analysis/pipelines/output_feedback_affine_tracker.py`
+- `scripts/materialize_output_feedback_affine_tracker.py`
+- `tests/analysis/pipelines/test_output_feedback_affine_tracker.py`
+
+Recovery shape: `git show legacy/output-feedback-materializers-retired:<path>`
+or `git show acbdf8d7008a073b3fe9375b5b915288ac05183d:<path>`.
+
 ## Output-feedback interpolated starts
 
 Files: `src/rlrmp/analysis/pipelines/output_feedback_interpolated_starts.py`
@@ -390,6 +404,20 @@ and still informs recurrent certificate interpretation.
 
 Banner status: Full module banner added to the pipeline and top-level script.
 
+Retired 2026-07-09 by [issue:dd8523c] on
+`feature/dd8523c-frozen-of-bridge-retirement`. Deletion commit: this branch's
+retirement commit; final hash is recorded in the issue closeout. Last-tree
+commit carrying the code: `acbdf8d7008a073b3fe9375b5b915288ac05183d`, also
+tagged locally as `legacy/output-feedback-materializers-retired`.
+
+Deleted files:
+- `src/rlrmp/analysis/pipelines/output_feedback_linear_recurrent.py`
+- `scripts/materialize_output_feedback_linear_recurrent.py`
+- `tests/analysis/pipelines/test_output_feedback_linear_recurrent.py`
+
+Recovery shape: `git show legacy/output-feedback-materializers-retired:<path>`
+or `git show acbdf8d7008a073b3fe9375b5b915288ac05183d:<path>`.
+
 ## Output-feedback phase-modulated recurrent
 
 Files:
@@ -408,6 +436,20 @@ for deciding which rows deserve a native report-stage successor.
 
 Banner status: Full module banner added to the pipeline and top-level script.
 
+Retired 2026-07-09 by [issue:dd8523c] on
+`feature/dd8523c-frozen-of-bridge-retirement`. Deletion commit: this branch's
+retirement commit; final hash is recorded in the issue closeout. Last-tree
+commit carrying the code: `acbdf8d7008a073b3fe9375b5b915288ac05183d`, also
+tagged locally as `legacy/output-feedback-materializers-retired`.
+
+Deleted files:
+- `src/rlrmp/analysis/pipelines/output_feedback_phase_modulated_recurrent.py`
+- `scripts/materialize_output_feedback_phase_modulated_recurrent.py`
+- `tests/analysis/pipelines/test_output_feedback_phase_modulated_recurrent.py`
+
+Recovery shape: `git show legacy/output-feedback-materializers-retired:<path>`
+or `git show acbdf8d7008a073b3fe9375b5b915288ac05183d:<path>`.
+
 ## Output-feedback time constrained
 
 Files: `src/rlrmp/analysis/pipelines/output_feedback_time_constrained.py` and
@@ -424,3 +466,17 @@ Keep-signal: Keep as source material for future spec-runner conversion and for
 publication-time delete-or-port decisions.
 
 Banner status: Full module banner added to the pipeline and top-level script.
+
+Retired 2026-07-09 by [issue:dd8523c] on
+`feature/dd8523c-frozen-of-bridge-retirement`. Deletion commit: this branch's
+retirement commit; final hash is recorded in the issue closeout. Last-tree
+commit carrying the code: `acbdf8d7008a073b3fe9375b5b915288ac05183d`, also
+tagged locally as `legacy/output-feedback-materializers-retired`.
+
+Deleted files:
+- `src/rlrmp/analysis/pipelines/output_feedback_time_constrained.py`
+- `scripts/materialize_output_feedback_time_constrained.py`
+- `tests/analysis/pipelines/test_output_feedback_time_constrained.py`
+
+Recovery shape: `git show legacy/output-feedback-materializers-retired:<path>`
+or `git show acbdf8d7008a073b3fe9375b5b915288ac05183d:<path>`.

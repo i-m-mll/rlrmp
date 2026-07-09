@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ import numpy as np
 from jax_cookbook import load_with_hyperparameters
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 
+from rlrmp.analysis.math.summary_stats import summary_stats
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
 from rlrmp.analysis.pipelines.diagnostic_provenance import write_regeneration_spec
 from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
@@ -55,6 +57,7 @@ CONTROLLER_FEEDBACK_SCALE_STATISTIC = "p95_norm"
 GATE_SATURATION_LOW = 0.05
 GATE_SATURATION_HIGH = 0.95
 SIGN_CHANGE_EPS = 1e-6
+_summary_stats = partial(summary_stats, quantiles=(0.05, 0.5, 0.95))
 
 
 @dataclass(frozen=True)
@@ -867,23 +870,6 @@ def _velocity_profile_summary(forward_velocity: Any, dt: float) -> dict[str, Any
         "mean_profile_peak_forward_velocity_m_s": float(mean_profile[peak_idx]),
         "mean_profile_time_to_peak_forward_velocity_s": float(peak_idx * dt),
         "mean_profile_terminal_forward_velocity_m_s": float(mean_profile[-1]),
-    }
-
-
-def _summary_stats(values: Any) -> dict[str, float | int | list[float]]:
-    array = np.asarray(values, dtype=np.float64)
-    if array.size == 0:
-        return {"count": 0, "mean": np.nan, "std": np.nan, "min": np.nan, "max": np.nan}
-    flat = array.reshape(-1)
-    return {
-        "count": int(flat.size),
-        "mean": float(np.mean(flat)),
-        "std": float(np.std(flat)),
-        "min": float(np.min(flat)),
-        "max": float(np.max(flat)),
-        "p05": float(np.quantile(flat, 0.05)),
-        "p50": float(np.quantile(flat, 0.50)),
-        "p95": float(np.quantile(flat, 0.95)),
     }
 
 

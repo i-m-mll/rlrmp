@@ -20,14 +20,12 @@ from typing import Any
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-import jax.random as jr
 import numpy as np
 
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 from feedbax.objectives.loss import AbstractLoss, TermTree
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.model.trainable import staged_network_trainable_parts
-from rlrmp.runtime.run_spec_access import require_run_seed
 from rlrmp.runtime.training_run_specs import (
     CLOSED_LOOP_DISTILLATION_METHOD_REF,
     attach_distillation_training_specs,
@@ -909,31 +907,6 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def _save_full_training_artifacts(
-    *,
-    spec: dict[str, Any],
-    trained_model: Any,
-    history: Any,
-    summary: dict[str, Any],
-) -> dict[str, str]:
-    """Write the required full-run artifacts for the closed-loop row."""
-
-    output_dir = Path(spec["artifact_output_dir"])
-    output_dir.mkdir(parents=True, exist_ok=True)
-    paths = {
-        "output_dir": str(output_dir),
-        "run_spec_snapshot": str(output_dir / "run_spec_snapshot.json"),
-        "training_summary": str(output_dir / "training_summary.json"),
-        "trained_model": str(output_dir / "trained_model.eqx"),
-        "training_history": str(output_dir / "training_history.eqx"),
-    }
-    _write_json(Path(paths["run_spec_snapshot"]), spec)
-    _write_json(Path(paths["training_summary"]), {**summary, "artifacts": paths})
-    eqx.tree_serialise_leaves(paths["trained_model"], trained_model)
-    eqx.tree_serialise_leaves(paths["training_history"], history)
-    return paths
-
-
 def run_closed_loop_distillation_training(
     *,
     spec: dict[str, Any],
@@ -949,76 +922,26 @@ def run_closed_loop_distillation_training(
     train_pair_fn=None,
     loss_factory=build_closed_loop_loss,
 ) -> dict[str, Any]:
-    """Run smoke or approved full training through an injected/native executor hook."""
+    """Fail closed for the retired injected closed-loop training runtime."""
 
-    validate_run_spec(spec)
-    if not smoke and not confirm_full_train:
-        raise FullTrainingApprovalRequiredError(
-            "Full closed-loop extLQG distillation is wired through the Feedbax "
-            "native executor but requires explicit user launch approval. "
-            "No Feedbax hook blocker is being asserted."
-        )
-    if train_pair_fn is None:
-        raise RuntimeError(
-            "Legacy Feedbax train_pair support has been removed; use "
-            "run_closed_loop_distillation_training_native for real runs."
-        )
-    if setup_pair_fn is None:
-        import rlrmp.analysis  # noqa: F401
-        from rlrmp.train.task_model import setup_task_model_pair
-
-        setup_pair_fn = setup_task_model_pair
-    train_batches = int(n_batches or (1 if smoke else spec["student_contract"]["n_train_batches"]))
-    train_batch_size = int(batch_size or (1 if smoke else spec["student_contract"]["batch_size"]))
-    train_replicates = int(
-        n_replicates or (1 if smoke else spec["student_contract"]["n_replicates"])
-    )
-    train_hidden = int(hidden_size or (6 if smoke else spec["student_contract"]["hidden_size"]))
-    hps = _training_hps_from_spec(
+    del (
         spec,
-        n_batches=train_batches,
-        batch_size=train_batch_size,
-        n_replicates=train_replicates,
-        hidden_size=train_hidden,
+        key,
+        n_batches,
+        batch_size,
+        n_replicates,
+        hidden_size,
+        confirm_full_train,
+        smoke,
+        setup_pair_fn,
+        trainer_factory,
+        train_pair_fn,
+        loss_factory,
     )
-    train_key = jr.PRNGKey(require_run_seed(spec)) if key is None else key
-    key_init, key_train = jr.split(train_key, 2)
-    pair = setup_pair_fn(hps, key=key_init)
-    trainer = None if trainer_factory is None else trainer_factory(spec, n_batches=train_batches)
-    loss_func = loss_factory(spec)
-    trained_model, history = train_pair_fn(
-        trainer,
-        pair,
-        n_batches=train_batches,
-        key=key_train,
-        ensembled=True,
-        loss_func=loss_func,
-        where_train=_where_train_fn,
-        batch_size=train_batch_size,
-        log_step=max(1, train_batches),
-        disable_progress=True,
-        verbose_progress=False,
+    raise RuntimeError(
+        "Legacy injected closed-loop distillation training has been removed; "
+        "use run_closed_loop_distillation_training_native."
     )
-    result = {
-        "run_id": spec["run_id"],
-        "mode": "smoke_train" if smoke else "full_train",
-        "trainer_path": "injected_executor_training_fn",
-        "completed_batches": train_batches,
-        "batch_size": train_batch_size,
-        "n_replicates": train_replicates,
-        "hidden_size": train_hidden,
-        "custom_loss": type(loss_func).__name__,
-        "trained_model_type": type(trained_model).__name__,
-        "history_type": type(history).__name__,
-    }
-    if not smoke:
-        result["artifacts"] = _save_full_training_artifacts(
-            spec=spec,
-            trained_model=trained_model,
-            history=history,
-            summary=result,
-        )
-    return result
 
 
 def run_closed_loop_distillation_training_native(

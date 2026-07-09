@@ -6,10 +6,12 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 import math
 from pathlib import Path
+import tempfile
 from typing import Any
 
 import equinox as eqx
 import jax.numpy as jnp
+from numpy import savez_compressed as _savez_compressed
 from feedbax.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts
 from feedbax.analysis.context import AnalysisArtifactFile, AnalysisRunContext
 from feedbax.analysis.materialization import (
@@ -30,7 +32,7 @@ from feedbax.contracts.expressions import (
     canonical_expression_json,
     evaluate_expr,
 )
-from feedbax.contracts.manifest import AnalysisRunSpec, ParentRef
+from feedbax.contracts.manifest import AnalysisRunSpec, EvaluationRunSpec, ParentRef
 from feedbax.analysis.types import AnalysisInputData
 from feedbax.config.namespace import TreeNamespace
 from pydantic import BaseModel, ConfigDict, Field
@@ -49,6 +51,11 @@ from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import (
     DEFAULT_OUTPUT_FILENAME,
     materialize_gru_evaluation_diagnostics,
 )
+from rlrmp.analysis.pipelines.gru_feedback_ablation import (
+    FEEDBACK_ABLATION_ANALYSIS_TYPE,
+    FeedbackAblationAnalysisParams,
+    feedback_ablation_recipe,
+)
 from rlrmp.analysis.pipelines.gru_postrun_materialization import (
     DEFAULT_OUTPUT_TAG,
     materialize_gru_postrun_analysis,
@@ -65,11 +72,19 @@ from rlrmp.analysis.pipelines.hinf_phenotype_sidecar import (
 )
 from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
     ISSUE_ID as OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ISSUE_ID,
-    write_outputs as write_output_feedback_rollout_recovery_outputs,
+    materialize_output_feedback_rollout_recovery,
+)
+from rlrmp.analysis.pipelines.sisu_spectrum_diagnostics import (
+    SISU_SPECTRUM_ANALYSIS_TYPE,
+    SISU_SPECTRUM_EVALUATION_TYPE,
+    SisuSpectrumEvaluationParams,
+    register_sisu_spectrum_recipes,
+    sisu_spectrum_evaluation_spec_params,
 )
 from rlrmp.analysis.math.rerun_metadata import DEFAULT_DISCRETIZATION, DEFAULT_LANE
 from rlrmp.eval.recipes import (
     CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,
+    FEEDBACK_ABLATION_EVALUATION_TYPE,
     PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
 )
 from rlrmp.eval.policy_diagnostics import (
@@ -125,6 +140,7 @@ ROBUSTNESS_PHENOTYPE_SOURCE_ROLES = {
 
 EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE = {
     GRU_STANDARD_ANALYSIS_TYPE: (CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,),
+    FEEDBACK_ABLATION_ANALYSIS_TYPE: (FEEDBACK_ABLATION_EVALUATION_TYPE,),
     GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE: ("evaluation_run",),
     GRU_POSTRUN_ANALYSIS_TYPE: ("evaluation_run",),
     PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE: (
@@ -135,6 +151,7 @@ EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE = {
     RECURRENT_JACOBIAN_ANALYSIS_TYPE: ("evaluation_run",),
     FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE: ("analysis_run",),
     ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE: ("evaluation_run",),
+    SISU_SPECTRUM_ANALYSIS_TYPE: (SISU_SPECTRUM_EVALUATION_TYPE,),
 }
 
 FEEDBACK_QUALITY_COMPONENT_NAMES = (
@@ -168,7 +185,7 @@ EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE.update(
             "params.materialize_perturbation_response",
         ),
         FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["feedback_ablation"]: (
-            "evaluation_run",
+            FEEDBACK_ABLATION_EVALUATION_TYPE,
             "params.materialize_feedback_ablation",
         ),
         FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["response_norm_plots"]: (
@@ -253,6 +270,44 @@ class RecurrentJacobianAnalysisParams(BaseModel):
     include_finite_difference: bool = False
     finite_difference_epsilon: float = Field(1e-4, gt=0.0)
     finite_difference_batch_size: int | None = Field(128, ge=1)
+
+class PerturbationClassResponseAnalysisParams(BaseModel):
+    """Params for one perturbation-family response analysis leaf."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_id: str | None = None
+    schema_version: str | None = None
+    family: str
+    row_ids: list[str] | None = None
+    expected_calibration_identity: dict[str, Any] | None = None
+    calibration_identity: dict[str, Any] | None = None
+
+
+class PerturbationBankAggregateAnalysisParams(BaseModel):
+    """Params for aggregating perturbation-family response leaves."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_id: str | None = None
+    schema_version: str | None = None
+    issue: str | None = None
+    source_experiment: str | None = None
+    bank_mode: str | None = None
+
+
+class OutputFeedbackRolloutRecoveryParams(BaseModel):
+    """Params for the output-feedback rollout-recovery recipe."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    issue_id: str = OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ISSUE_ID
+    discretization: str | None = None
+    lane: str | None = None
+    note_output: str | None = None
+    manifest_output: str | None = None
+    artifact_output: str | None = None
+    repo_root: str | None = None
 
 
 class RLRMPManifestAnalysis(AbstractAnalysis):
@@ -611,6 +666,36 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
         RecurrentJacobianAnalysisParams,
         replace=True,
     )
+    register_params_model(
+        SISU_SPECTRUM_EVALUATION_TYPE,
+        SisuSpectrumEvaluationParams,
+        replace=True,
+    )
+    register_params_model(
+        FEEDBACK_ABLATION_ANALYSIS_TYPE,
+        FeedbackAblationAnalysisParams,
+        replace=True,
+    )
+    register_params_model(
+        FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["feedback_ablation"],
+        FeedbackAblationAnalysisParams,
+        replace=True,
+    )
+    register_params_model(
+        PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE,
+        PerturbationClassResponseAnalysisParams,
+        replace=True,
+    )
+    register_params_model(
+        PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE,
+        PerturbationBankAggregateAnalysisParams,
+        replace=True,
+    )
+    register_params_model(
+        OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE,
+        OutputFeedbackRolloutRecoveryParams,
+        replace=True,
+    )
     register_analysis_recipe(
         GRU_STANDARD_ANALYSIS_TYPE,
         gru_standard_certificate_recipe,
@@ -624,6 +709,11 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
     register_analysis_recipe(
         GRU_POSTRUN_ANALYSIS_TYPE,
         gru_postrun_recipe,
+        replace=replace,
+    )
+    register_analysis_recipe(
+        FEEDBACK_ABLATION_ANALYSIS_TYPE,
+        feedback_ablation_recipe,
         replace=replace,
     )
     register_analysis_recipe(
@@ -647,9 +737,14 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
         replace=replace,
     )
     for registration in _feedback_quality_component_registrations().values():
+        recipe = (
+            feedback_quality_feedback_ablation_recipe
+            if registration.name == "feedback_ablation"
+            else _feedback_quality_component_recipe(registration.name)
+        )
         register_analysis_recipe(
             FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES[registration.name],
-            _feedback_quality_component_recipe(registration.name),
+            recipe,
             replace=replace,
         )
     register_analysis_recipe(
@@ -667,6 +762,7 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
         output_feedback_rollout_recovery_recipe,
         replace=replace,
     )
+    register_sisu_spectrum_recipes(replace=replace)
 
 
 def register_declarative_materialization_recipes(*, replace: bool = False) -> None:
@@ -913,6 +1009,64 @@ def recurrent_jacobian_spec(
     )
 
 
+def sisu_spectrum_evaluation_spec(
+    *,
+    experiment: str,
+    run_ids: Sequence[str],
+    labels: Sequence[str],
+    topic: str = "sisu_spectrum_velocity_profiles",
+    sisu_levels: Sequence[float] = (0.0, 0.5, 1.0),
+    n_rollout_trials: int = 64,
+    reference_samples: int = 128,
+    use_validation_selected_checkpoints: bool = True,
+    output_stem: str = "sisu_spectrum_special",
+    note_marker: str = "sisu_spectrum_special",
+    note_output: Path | str | None = None,
+) -> EvaluationRunSpec:
+    """Return declarative evaluation spec data for SISU-spectrum diagnostics."""
+
+    params = sisu_spectrum_evaluation_spec_params(
+        experiment=experiment,
+        run_ids=run_ids,
+        labels=labels,
+        topic=topic,
+        sisu_levels=sisu_levels,
+        n_rollout_trials=n_rollout_trials,
+        reference_samples=reference_samples,
+        use_validation_selected_checkpoints=use_validation_selected_checkpoints,
+        output_stem=output_stem,
+        note_marker=note_marker,
+        note_output=note_output,
+    )
+    return EvaluationRunSpec(
+        evaluation_type=SISU_SPECTRUM_EVALUATION_TYPE,
+        training_run_ids=[str(run_id) for run_id in run_ids],
+        inputs=[
+            ParentRef(kind="TrainingRunManifest", id=str(run_id), role="training_run")
+            for run_id in run_ids
+        ],
+        params=params,
+    )
+
+
+def sisu_spectrum_spec(
+    *,
+    evaluation_manifest_id: str | None = None,
+    evaluation_manifest_uri: Path | str | None = None,
+) -> AnalysisRunSpec:
+    """Return declarative analysis spec data for SISU-spectrum diagnostics."""
+
+    inputs = _evaluation_parent_refs(
+        evaluation_manifest_id=evaluation_manifest_id,
+        evaluation_manifest_uri=evaluation_manifest_uri,
+    )
+    return AnalysisRunSpec(
+        analysis_type=SISU_SPECTRUM_ANALYSIS_TYPE,
+        inputs=inputs,
+        params={},
+    )
+
+
 def feedback_quality_lens_spec(
     *,
     experiment: str | None = None,
@@ -1115,7 +1269,9 @@ def perturbation_class_response_recipe(
 ) -> AnalysisRecipeResult:
     """Build one perturbation-family response analysis from shared eval states."""
 
-    params = dict(spec.params)
+    params = PerturbationClassResponseAnalysisParams.model_validate(spec.params).model_dump(
+        exclude_none=True
+    )
     evaluation_input = _primary_evaluation_input(inputs)
     if evaluation_input is None:
         raise ValueError("perturbation class response requires an EvaluationRunManifest input")
@@ -1137,7 +1293,9 @@ def perturbation_bank_aggregate_recipe(
 ) -> AnalysisRecipeResult:
     """Build an aggregate perturbation bank from class-response leaf products."""
 
-    params = dict(spec.params)
+    params = PerturbationBankAggregateAnalysisParams.model_validate(spec.params).model_dump(
+        exclude_none=True
+    )
     leaf_products = tuple(_load_perturbation_class_product(resolved) for resolved in inputs)
     analysis = PerturbationBankAggregateAnalysis(
         params=params,
@@ -1253,6 +1411,21 @@ def _feedback_quality_component_recipe(
     return _recipe
 
 
+def feedback_quality_feedback_ablation_recipe(
+    spec: AnalysisRunSpec,
+    root: Path,
+    inputs: Sequence[Any],
+) -> AnalysisRecipeResult:
+    """Route feedback-ablation alias inputs to the appropriate contract path."""
+
+    if any(
+        resolved.ref.kind == "EvaluationRunManifest" or resolved.states is not None
+        for resolved in inputs
+    ):
+        return feedback_ablation_recipe(spec, root, inputs)
+    return _feedback_quality_component_recipe("feedback_ablation")(spec, root, inputs)
+
+
 def output_feedback_rollout_recovery_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
@@ -1260,7 +1433,9 @@ def output_feedback_rollout_recovery_recipe(
 ) -> AnalysisRecipeResult:
     """Build the declarative output-feedback rollout-recovery recipe."""
 
-    params = dict(spec.params)
+    params = OutputFeedbackRolloutRecoveryParams.model_validate(spec.params).model_dump(
+        exclude_none=True
+    )
     analysis = RLRMPManifestAnalysis(
         materializer=lambda context, data: _materialize_output_feedback_rollout_recovery(
             context,
@@ -1972,6 +2147,8 @@ def _string_mapping(value: Any) -> dict[str, str] | None:
 
 
 def _json_ready(value: Any) -> Any:
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json", exclude_none=True)
     if isinstance(value, Mapping):
         return {str(key): _json_ready(item) for key, item in value.items()}
     if (
@@ -2467,64 +2644,68 @@ def _materialize_output_feedback_rollout_recovery(
     context: AnalysisRunContext,
     params: Mapping[str, Any],
 ) -> MaterializationResult:
-    repo_root = _repo_root_from_params(params)
     issue_id = str(params.get("issue_id", OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ISSUE_ID))
-    note_path = _optional_path(params.get("note_output"), repo_root=repo_root) or (
-        context.results_cache_dir / "output_feedback_rollout_recovery.md"
-    )
-    manifest_path = _optional_path(params.get("manifest_output"), repo_root=repo_root) or (
-        context.results_cache_dir / "output_feedback_rollout_recovery_manifest.json"
-    )
-    artifact_path = _optional_path(params.get("artifact_output"), repo_root=repo_root) or (
-        context.results_cache_dir / "bulk" / "output_feedback_rollout_recovery.npz"
-    )
-    summary = write_output_feedback_rollout_recovery_outputs(
+    materialized = materialize_output_feedback_rollout_recovery(
         issue_id=issue_id,
         discretization=str(params.get("discretization", DEFAULT_DISCRETIZATION)),
         lane=str(params.get("lane", DEFAULT_LANE)),
-        note_path=note_path,
-        manifest_path=manifest_path,
-        artifact_path=artifact_path,
-        repo_root=repo_root,
     )
-    existing_artifacts = tuple(
-        artifact
-        for artifact in (
-            _existing_file(
-                manifest_path,
-                role="rlrmp-output-feedback-rollout-recovery-manifest",
-                logical_name="legacy/output_feedback_rollout_recovery_manifest.json",
-            ),
-            _existing_file(
-                note_path,
-                role="rlrmp-output-feedback-rollout-recovery-note",
-                logical_name="legacy/output_feedback_rollout_recovery.md",
-            ),
-        )
-        if artifact is not None
-    )
-    artifact_groups = _single_file_artifact_group(
-        artifact_path,
-        role="rlrmp-output-feedback-rollout-recovery-bulk",
-        logical_name="bulk/output_feedback_rollout_recovery.npz",
-        group_id="output_feedback_rollout_recovery_bulk",
-        member_role="rollout_recovery_arrays",
-        repo_root=repo_root,
-    )
-    return MaterializationResult(
-        payload={
-            **summary,
-            "declarative_analysis": _declarative_metadata(context),
-            "evaluation_dependency_policy": {
-                "status": "not_applicable",
-                "reason": (
-                    "Analytical output-feedback rollouts take fitted gains, not "
-                    "model artifacts, and remain analysis-internal per e1ad278 Q2."
-                ),
+    legacy_hints = {
+        key: value
+        for key, value in {
+            "note_output": params.get("note_output"),
+            "manifest_output": params.get("manifest_output"),
+            "artifact_output": params.get("artifact_output"),
+        }.items()
+        if value is not None
+    }
+    with tempfile.NamedTemporaryFile(suffix=".md") as note_file:
+        note_file.write(materialized.markdown.encode("utf-8"))
+        note_file.flush()
+        note_ref = context.record_artifact(
+            note_file.name,
+            role="rlrmp-output-feedback-rollout-recovery-note",
+            logical_name="output_feedback_rollout_recovery.md",
+            media_type="text/markdown",
+            metadata={
+                "custody": "feedbax_analysis_artifact",
+                "legacy_output_hints": legacy_hints,
             },
+        )
+    with tempfile.NamedTemporaryFile(suffix=".npz") as arrays_file:
+        _savez_compressed(arrays_file.name, **materialized.arrays)
+        arrays_file.flush()
+        bulk_ref = context.record_artifact(
+            arrays_file.name,
+            role="rlrmp-output-feedback-rollout-recovery-bulk",
+            logical_name="bulk/output_feedback_rollout_recovery.npz",
+            media_type="application/vnd.numpy.npz",
+            metadata={
+                "array_keys": sorted(materialized.arrays.keys()),
+                "legacy_output_hints": legacy_hints,
+            },
+            group_id="output_feedback_rollout_recovery_bulk",
+            group_role="rollout_recovery_arrays",
+            group_metadata={"schema": "rollout_recovery_arrays"},
+        )
+    payload = {
+        **materialized.summary,
+        "markdown_artifact": _json_ready(note_ref),
+        "bulk_artifact": _json_ready(bulk_ref),
+        "legacy_output_hints": legacy_hints,
+        "declarative_analysis": _declarative_metadata(context),
+        "evaluation_dependency_policy": {
+            "status": "not_applicable",
+            "reason": (
+                "Analytical output-feedback rollouts take fitted gains, not "
+                "model artifacts, and remain analysis-internal per e1ad278 Q2."
+            ),
         },
-        existing_artifacts=existing_artifacts,
-        artifact_groups=artifact_groups,
+    }
+    return MaterializationResult(
+        payload=payload,
+        artifact_refs=(note_ref, bulk_ref),
+        payload_metadata={"custody": "feedbax_analysis_artifacts"},
     )
 
 
@@ -3598,13 +3779,19 @@ __all__ = [
     "FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES",
     "FEEDBACK_QUALITY_COMPONENT_NAMES",
     "FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE",
+    "FEEDBACK_ABLATION_ANALYSIS_TYPE",
+    "FeedbackAblationAnalysisParams",
     "GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE",
     "GRU_POSTRUN_ANALYSIS_TYPE",
     "GRU_STANDARD_ANALYSIS_TYPE",
     "OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE",
     "PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE",
+    "PerturbationBankAggregateAnalysisParams",
     "PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE",
+    "PerturbationClassResponseAnalysisParams",
     "ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE",
+    "SISU_SPECTRUM_ANALYSIS_TYPE",
+    "SISU_SPECTRUM_EVALUATION_TYPE",
     "feedback_quality_lens_recipe",
     "feedback_quality_lens_spec",
     "gru_evaluation_diagnostics_spec",
@@ -3623,4 +3810,6 @@ __all__ = [
     "register_declarative_materialization_recipes",
     "robustness_phenotype_recipe",
     "robustness_phenotype_spec",
+    "sisu_spectrum_evaluation_spec",
+    "sisu_spectrum_spec",
 ]

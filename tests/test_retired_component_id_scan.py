@@ -73,6 +73,35 @@ RETIRED_STANDALONE_MATERIALIZER_PATHS = frozenset(
     f"scripts/{module}.py" for module in RETIRED_STANDALONE_MATERIALIZER_MODULES
 )
 
+RETIRED_OUTPUT_FEEDBACK_MATERIALIZER_PATHS = (
+    "src/rlrmp/analysis/pipelines/output_feedback_affine_tracker.py",
+    "src/rlrmp/analysis/pipelines/output_feedback_linear_recurrent.py",
+    "src/rlrmp/analysis/pipelines/output_feedback_phase_modulated_recurrent.py",
+    "src/rlrmp/analysis/pipelines/output_feedback_time_constrained.py",
+    "scripts/materialize_output_feedback_affine_tracker.py",
+    "scripts/materialize_output_feedback_linear_recurrent.py",
+    "scripts/materialize_output_feedback_phase_modulated_recurrent.py",
+    "scripts/materialize_output_feedback_time_constrained.py",
+    "tests/analysis/pipelines/test_output_feedback_affine_tracker.py",
+    "tests/analysis/pipelines/test_output_feedback_linear_recurrent.py",
+    "tests/analysis/pipelines/test_output_feedback_phase_modulated_recurrent.py",
+    "tests/analysis/pipelines/test_output_feedback_time_constrained.py",
+)
+
+RETIRED_OUTPUT_FEEDBACK_MATERIALIZER_IDENTIFIERS = (
+    "rlrmp.analysis.pipelines.output_feedback_affine_tracker",
+    "rlrmp.analysis.pipelines.output_feedback_linear_recurrent",
+    "rlrmp.analysis.pipelines.output_feedback_phase_modulated_recurrent",
+    "rlrmp.analysis.pipelines.output_feedback_time_constrained",
+    "materialize_output_feedback_affine_tracker",
+    "materialize_output_feedback_linear_recurrent",
+    "materialize_output_feedback_phase_modulated_recurrent",
+    "materialize_output_feedback_time_constrained",
+    "rlrmp.output_feedback_affine_tracker.v1",
+    "rlrmp.output_feedback_linear_recurrent.v2",
+    "rlrmp.output_feedback_phase_modulated_recurrent.v2",
+    "rlrmp.output_feedback_time_constrained.v1",
+)
 
 # --------------------------------------------------------------------------- #
 # Inventory + allowlist loading
@@ -157,6 +186,29 @@ def _in_scope_relpaths() -> tuple[list[str], list[str]]:
     py -= SELF_EXCLUDED_RELPATHS
     js -= SELF_EXCLUDED_RELPATHS
     return sorted(py), sorted(js)
+
+
+def _active_python_relpaths() -> list[str]:
+    """Return active Python surfaces checked for retired materializer re-entry."""
+
+    py: set[str] = set()
+    for root in ("src", "tests", "scripts"):
+        py.update(p.relative_to(REPO_ROOT).as_posix() for p in (REPO_ROOT / root).rglob("*.py"))
+    py -= SELF_EXCLUDED_RELPATHS
+    return sorted(py)
+
+
+def _retired_materializer_identifier_hits(
+    relpath: str,
+    text: str,
+    identifiers: tuple[str, ...] = RETIRED_OUTPUT_FEEDBACK_MATERIALIZER_IDENTIFIERS,
+) -> list[str]:
+    hits: list[str] = []
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        for identifier in identifiers:
+            if identifier in line:
+                hits.append(f"{relpath}:{lineno}: {identifier}")
+    return hits
 
 
 class _ConstantScopeVisitor(ast.NodeVisitor):
@@ -406,6 +458,31 @@ def test_retired_standalone_materializers_are_not_imported_by_active_code() -> N
     )
 
 
+def test_retired_output_feedback_materializer_paths_do_not_exist() -> None:
+    existing = [
+        relpath for relpath in RETIRED_OUTPUT_FEEDBACK_MATERIALIZER_PATHS if (REPO_ROOT / relpath).exists()
+    ]
+    assert not existing, (
+        "Retired output-feedback materializer path(s) reappeared:\n"
+        + "\n".join(f"  {relpath}" for relpath in existing)
+        + "\n\nRevival must be a new bundle-native analysis, not restoration of "
+        "the frozen writer surface retired by dd8523c."
+    )
+
+
+def test_no_retired_output_feedback_materializer_identifier_in_active_python() -> None:
+    hits: list[str] = []
+    for relpath in _active_python_relpaths():
+        text = (REPO_ROOT / relpath).read_text(encoding="utf-8")
+        hits.extend(_retired_materializer_identifier_hits(relpath, text))
+    assert not hits, (
+        "Retired output-feedback materializer identifier(s) found in active Python:\n"
+        + "\n".join(f"  {hit}" for hit in hits)
+        + "\n\nArchived results and prose notes may cite these surfaces, but active "
+        "src/scripts/tests code must not import, emit, or recreate them."
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Negative canaries (teeth)
 # --------------------------------------------------------------------------- #
@@ -429,6 +506,17 @@ def test_scan_negative_canary_flags_unconfined_active_emission() -> None:
     )
     uncovered = _uncovered_occurrences([unconfined, confined], index)
     assert uncovered == [unconfined]
+
+
+def test_scan_negative_canary_flags_retired_output_feedback_materializer_import() -> None:
+    text = (
+        "from rlrmp.analysis.pipelines.output_feedback_linear_recurrent "
+        "import materialize\n"
+    )
+    assert _retired_materializer_identifier_hits("src/rlrmp/analysis/pipelines/new.py", text) == [
+        "src/rlrmp/analysis/pipelines/new.py:1: "
+        "rlrmp.analysis.pipelines.output_feedback_linear_recurrent"
+    ]
 
 
 def test_scan_negative_canary_flags_retired_id_in_new_function_of_allowlisted_file() -> None:

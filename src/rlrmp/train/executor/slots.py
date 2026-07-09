@@ -139,6 +139,17 @@ def minimax_state_slots() -> list[StateSlotSpec]:
     ]
 
 
+def minimax_checkpoint_slot_specs() -> list[CheckpointSlotSpec]:
+    """Return minimax checkpoint slots for both native executor barriers."""
+    return [
+        CheckpointSlotSpec(slot=CONTROLLER, axis="replicate"),
+        CheckpointSlotSpec(slot=CONTROLLER_OPTIMIZER, axis="replicate"),
+        CheckpointSlotSpec(slot=ADVERSARY_POPULATION, axis="adversary_member"),
+        CheckpointSlotSpec(slot=ADVERSARY_OPTIMIZER, axis="adversary_member"),
+        CheckpointSlotSpec(slot=RNG),
+    ]
+
+
 def checkpoint_slot_specs(schema: SlotSchema) -> list[CheckpointSlotSpec]:
     """Return custody slots, intentionally excluding sink-only artifact slots."""
     return [

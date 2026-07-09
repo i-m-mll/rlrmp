@@ -13,10 +13,17 @@ import jax.tree as jt
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
-from feedbax.runtime.graph import Component, Wire
+from feedbax.analysis.analysis import AbstractAnalysis
+from feedbax.analysis.context import AnalysisRunContext
+from feedbax.analysis.specs import AnalysisRecipeResult, ResolvedAnalysisInput
+from feedbax.analysis.types import AnalysisInputData
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
+from feedbax.contracts.manifest import AnalysisRunSpec, ParentRef
+from feedbax.runtime.graph import Component, Wire
 from jaxtyping import PRNGKeyArray, PyTree
+from pydantic import BaseModel, ConfigDict, Field
 
+from rlrmp.analysis.math.summary_stats import summary_stats as _summary_stats
 from rlrmp.analysis.pipelines.diagnostic_provenance import write_regeneration_spec
 from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     FIXED_BANK_CHECKPOINT_POLICY,
@@ -58,6 +65,7 @@ from rlrmp.runtime.run_spec_access import require_run_seed
 from rlrmp.runtime.run_specs import resolve_run_record
 
 
+FEEDBACK_ABLATION_ANALYSIS_TYPE = "rlrmp.feedback_ablation"
 SCHEMA_VERSION = "rlrmp.gru_feedback_ablation.v1"
 FEEDBACK_SELECTION_SCHEMA_VERSION = "rlrmp.gru_feedback_checkpoint_selection_audit.v1"
 FEEDBACK_AUDIT_SELECTION_ROLE = "audit_only_not_primary_selection"
@@ -98,6 +106,223 @@ NOMINAL_ENDPOINT_WARN_M = 0.08
 NOMINAL_TERMINAL_SPEED_WARN_M_S = 0.35
 COMMAND_RATIO_WARN = 2.0
 COMMAND_RATIO_FAIL = 4.0
+DEFAULT_ABLATION_MODES: tuple[AblationMode, ...] = (
+    "normal",
+    "frozen_nominal_observation_tape",
+    "zeroed_perturbation_observation_deviation",
+    "shuffled_observation_history",
+    "lagged_observation_history",
+    "position_only_observation",
+    "velocity_only_observation",
+)
+DEFAULT_EVALUATION_BINS: dict[EvaluationBin, str | None] = {
+    "nominal": None,
+    "initial_state": "initial_position_offset__x_pos",
+    "process_epsilon": "process_epsilon_pulse__force_state_x__mid_t15_pos",
+    "sensory_feedback": "sensory_feedback_offset__position__mid_visible_t20_x_pos",
+    "delayed_observation": "delayed_observation_offset__position__mid_visible_t20_x_pos",
+}
+
+
+class FeedbackAblationAnalysisParams(BaseModel):
+    """Params for the registered feedback-ablation scoring analysis."""
+
+    model_config = ConfigDict(extra="allow")
+
+    schema_id: str | None = None
+    schema_version: str | None = SCHEMA_VERSION
+    experiment: str | None = None
+    scope: str = DEFAULT_SCOPE
+    source_experiment: str | None = None
+    result_experiment: str | None = None
+    output_tag: str = "feedback_ablation"
+    run_ids: list[str] = Field(default_factory=list)
+    labels: list[str] | None = None
+    ablation_modes: list[AblationMode] = Field(default_factory=lambda: list(DEFAULT_ABLATION_MODES))
+    evaluation_bins: dict[EvaluationBin, str | None] = Field(
+        default_factory=lambda: dict(DEFAULT_EVALUATION_BINS)
+    )
+    bank: dict[str, Any] | None = None
+    bank_mode: str = "params"
+    feedback_selection_level: str = "small"
+    checkpoint_policy: str = "evaluation_manifest"
+    include_checkpoint_rescore: bool = False
+
+
+class FeedbackAblationAnalysis(AbstractAnalysis):
+    """Aggregate cached feedback-ablation evaluation states into a custody payload."""
+
+    params: dict[str, Any] = eqx.field(default_factory=dict, static=True)
+    evaluation_refs: tuple[dict[str, Any], ...] = eqx.field(default_factory=tuple, static=True)
+    analysis_type: str = eqx.field(default=FEEDBACK_ABLATION_ANALYSIS_TYPE, static=True)
+    artifact_role: str = eqx.field(
+        default="rlrmp-gru-feedback-ablation-manifest",
+        static=True,
+    )
+    logical_name: str = eqx.field(
+        default="feedback_ablation/feedback_ablation_manifest.json",
+        static=True,
+    )
+    report_role: str = eqx.field(
+        default="rlrmp-gru-feedback-ablation-report-render",
+        static=True,
+    )
+    report_logical_name: str = eqx.field(
+        default="feedback_ablation/feedback_ablation_report.json",
+        static=True,
+    )
+
+    def compute(self, data: AnalysisInputData, **kwargs: Any) -> dict[str, Any]:
+        del kwargs
+        params = FeedbackAblationAnalysisParams.model_validate(self.params)
+        runs = _feedback_ablation_runs_from_states(data.states, params=params)
+        manifest = {
+            "schema_version": params.schema_version or SCHEMA_VERSION,
+            "analysis_type": self.analysis_type,
+            "issue": params.result_experiment or params.experiment or DEFAULT_RESULT_EXPERIMENT,
+            "source_experiment": (
+                params.source_experiment or params.experiment or DEFAULT_SOURCE_EXPERIMENT
+            ),
+            "scope": params.scope,
+            "checkpoint_policy": params.checkpoint_policy,
+            "selection_role": FEEDBACK_AUDIT_SELECTION_ROLE,
+            "ablation_modes": list(params.ablation_modes),
+            "evaluation_bins": dict(params.evaluation_bins),
+            "bank_mode": params.bank_mode,
+            "bank": params.bank,
+            "feedback_selection_level": params.feedback_selection_level,
+            "evaluation_manifest_dependencies": list(self.evaluation_refs),
+            "runs": runs,
+        }
+        manifest["status_counts"] = _manifest_status_counts(runs)
+        manifest["feedback_checkpoint_selection_audit"] = feedback_checkpoint_selection_audit(
+            manifest
+        )
+        return manifest
+
+    def emit_artifacts(
+        self,
+        context: AnalysisRunContext,
+        data: AnalysisInputData,
+        *,
+        result: Mapping[str, Any],
+        **kwargs: Any,
+    ) -> Mapping[str, Any]:
+        del data, kwargs
+        context.record_json_artifact(
+            dict(result),
+            role=self.artifact_role,
+            logical_name=self.logical_name,
+            metadata={
+                "schema_boundary": "rlrmp-owned feedback-ablation scoring payload",
+                "analysis_type": self.analysis_type,
+                "evaluation_manifest_dependencies": list(self.evaluation_refs),
+            },
+        )
+        markdown = render_feedback_ablation_markdown(result)
+        context.record_json_artifact(
+            {
+                "schema_version": "rlrmp.gru_feedback_ablation_report.v1",
+                "analysis_type": self.analysis_type,
+                "markdown": markdown,
+            },
+            role=self.report_role,
+            logical_name=self.report_logical_name,
+            metadata={"rendered_from": self.artifact_role},
+        )
+        return result
+
+
+def feedback_ablation_recipe(
+    spec: AnalysisRunSpec,
+    _root: Path,
+    inputs: Sequence[ResolvedAnalysisInput],
+) -> AnalysisRecipeResult:
+    """Build the registered feedback-ablation analysis from evaluation manifests."""
+
+    params = FeedbackAblationAnalysisParams.model_validate(spec.params)
+    evaluation_inputs = [
+        resolved
+        for resolved in inputs
+        if resolved.ref.kind == "EvaluationRunManifest" or resolved.states is not None
+    ]
+    if not evaluation_inputs:
+        raise ValueError("feedback-ablation analysis requires EvaluationRunManifest input")
+    states = {
+        "evaluations": [
+            {
+                "ref": _parent_ref_json(resolved.ref),
+                "manifest_id": None if resolved.manifest is None else resolved.manifest.id,
+                "states": resolved.states or {},
+            }
+            for resolved in evaluation_inputs
+        ]
+    }
+    evaluation_refs = tuple(
+        {
+            "kind": resolved.ref.kind,
+            "id": resolved.ref.id,
+            "role": resolved.ref.role,
+            "uri": resolved.ref.uri,
+            "manifest_id": None if resolved.manifest is None else resolved.manifest.id,
+        }
+        for resolved in evaluation_inputs
+    )
+    analysis = FeedbackAblationAnalysis(
+        variant="feedback_ablation",
+        params=params.model_dump(mode="json", exclude_none=True),
+        evaluation_refs=evaluation_refs,
+        analysis_type=spec.analysis_type,
+        **_feedback_ablation_artifact_roles(spec.analysis_type),
+    )
+    data = AnalysisInputData(
+        models={},
+        tasks={},
+        states=states,
+        hps={"feedback_ablation": TreeNamespace(n_evaluations=len(evaluation_inputs))},
+        extras={"params": params.model_dump(mode="json", exclude_none=True)},
+    )
+    return AnalysisRecipeResult(analyses={"feedback_ablation": analysis}, data=data)
+
+
+def feedback_ablation_spec(
+    *,
+    evaluation_manifest_id: str,
+    evaluation_manifest_uri: Path | str | None = None,
+    params: Mapping[str, Any] | None = None,
+) -> AnalysisRunSpec:
+    """Return an analysis spec for cached feedback-ablation evaluation states."""
+
+    ref = ParentRef(
+        kind="EvaluationRunManifest",
+        id=evaluation_manifest_id,
+        role="evaluation_run",
+        uri=None if evaluation_manifest_uri is None else str(evaluation_manifest_uri),
+    )
+    return AnalysisRunSpec(
+        analysis_type=FEEDBACK_ABLATION_ANALYSIS_TYPE,
+        inputs=[ref],
+        params=dict(params or {}),
+    )
+
+
+feedback_ablation_recipe.EVAL_DEPENDENCIES = ("rlrmp.eval.feedback_ablation",)
+
+
+def _feedback_ablation_artifact_roles(analysis_type: str) -> dict[str, str]:
+    if analysis_type == "rlrmp.feedback_quality.feedback_ablation":
+        return {
+            "artifact_role": "rlrmp-feedback-quality-feedback-ablation-status",
+            "logical_name": "feedback_quality/feedback_ablation_status.json",
+            "report_role": "rlrmp-feedback-quality-feedback-ablation-note",
+            "report_logical_name": "feedback_quality/feedback_ablation_report.json",
+        }
+    return {
+        "artifact_role": "rlrmp-gru-feedback-ablation-manifest",
+        "logical_name": "feedback_ablation/feedback_ablation_manifest.json",
+        "report_role": "rlrmp-gru-feedback-ablation-report-render",
+        "report_logical_name": "feedback_ablation/feedback_ablation_report.json",
+    }
 
 
 @dataclass(frozen=True)
@@ -202,27 +427,162 @@ class ObservationMask(Component):
 def default_ablation_modes() -> tuple[AblationMode, ...]:
     """Return the standard feedback-ablation mode order."""
 
-    return (
-        "normal",
-        "frozen_nominal_observation_tape",
-        "zeroed_perturbation_observation_deviation",
-        "shuffled_observation_history",
-        "lagged_observation_history",
-        "position_only_observation",
-        "velocity_only_observation",
-    )
+    return tuple(FeedbackAblationAnalysisParams().ablation_modes)
 
 
 def selected_feedback_ablation_bins() -> dict[EvaluationBin, str | None]:
     """Return representative perturbation rows for the standard evaluation bins."""
 
+    return dict(FeedbackAblationAnalysisParams().evaluation_bins)
+
+
+def _parent_ref_json(ref: ParentRef) -> dict[str, Any]:
+    return ref.model_dump(mode="json", exclude_none=True)
+
+
+def _feedback_ablation_runs_from_states(
+    states: Any,
+    *,
+    params: FeedbackAblationAnalysisParams,
+) -> dict[str, Any]:
+    """Normalize cached evaluation states into the historical manifest run map."""
+
+    runs: dict[str, Any] = {}
+    evaluations = []
+    if isinstance(states, Mapping):
+        raw_evaluations = states.get("evaluations")
+        if isinstance(raw_evaluations, Sequence) and not isinstance(raw_evaluations, (str, bytes)):
+            evaluations = list(raw_evaluations)
+        else:
+            evaluations = [{"states": states, "ref": None, "manifest_id": None}]
+    for index, item in enumerate(evaluations):
+        if not isinstance(item, Mapping):
+            continue
+        eval_states = item.get("states")
+        if not isinstance(eval_states, Mapping):
+            eval_states = {}
+        ref = item.get("ref") if isinstance(item.get("ref"), Mapping) else {}
+        run_id = _feedback_ablation_run_id(
+            eval_states,
+            ref=ref,
+            index=index,
+            params=params,
+        )
+        run_payload = _feedback_ablation_run_payload(
+            eval_states,
+            ref=ref,
+            manifest_id=item.get("manifest_id"),
+            params=params,
+        )
+        runs[run_id] = run_payload
+    return runs
+
+
+def _feedback_ablation_run_id(
+    states: Mapping[str, Any],
+    *,
+    ref: Mapping[str, Any],
+    index: int,
+    params: FeedbackAblationAnalysisParams,
+) -> str:
+    if index < len(params.run_ids):
+        return str(params.run_ids[index])
+    metadata = ref.get("metadata") if isinstance(ref.get("metadata"), Mapping) else {}
+    for value in (
+        states.get("run_id"),
+        states.get("training_run_id"),
+        metadata.get("run_id"),
+        ref.get("id"),
+    ):
+        if value:
+            return str(value)
+    return f"feedback_ablation_eval_{index}"
+
+
+def _feedback_ablation_run_payload(
+    states: Mapping[str, Any],
+    *,
+    ref: Mapping[str, Any],
+    manifest_id: Any,
+    params: FeedbackAblationAnalysisParams,
+) -> dict[str, Any]:
+    rows = _feedback_ablation_rows_from_states(states, params=params)
+    checkpoint_rescore = states.get("feedback_checkpoint_rescore")
+    if not isinstance(checkpoint_rescore, Mapping):
+        checkpoint_rescore = {
+            "status": "skipped",
+            "reason": "not_present_in_evaluation_manifest",
+            "selection_role": FEEDBACK_AUDIT_SELECTION_ROLE,
+        }
+    label = states.get("label")
+    metadata = ref.get("metadata") if isinstance(ref.get("metadata"), Mapping) else {}
+    if label is None:
+        label = metadata.get("label") or ref.get("id") or manifest_id
     return {
-        "nominal": None,
-        "initial_state": "initial_position_offset__x_pos",
-        "process_epsilon": "process_epsilon_pulse__force_state_x__mid_t15_pos",
-        "sensory_feedback": "sensory_feedback_offset__position__mid_visible_t20_x_pos",
-        "delayed_observation": "delayed_observation_offset__position__mid_visible_t20_x_pos",
+        "label": None if label is None else str(label),
+        "evaluation_manifest_id": manifest_id or ref.get("id"),
+        "evaluation_manifest_ref": dict(ref),
+        "n_replicates": states.get("n_replicates"),
+        "n_rollout_trials_per_replicate": states.get("n_rollout_trials_per_replicate"),
+        "n_time_steps": states.get("n_time_steps"),
+        "dt_s": states.get("dt_s"),
+        "status_counts": _status_counts(rows),
+        "interpretation": interpret_run_feedback_ablation(rows),
+        "normalized_feedback_use": summarize_normalized_feedback_use(rows),
+        "feedback_pass_audit": summarize_feedback_pass_audit(rows),
+        "feedback_checkpoint_rescore": dict(checkpoint_rescore),
+        "ablation_modes": list(params.ablation_modes),
+        "evaluation_bins": dict(params.evaluation_bins),
+        "ablations": rows,
     }
+
+
+def _feedback_ablation_rows_from_states(
+    states: Mapping[str, Any],
+    *,
+    params: FeedbackAblationAnalysisParams,
+) -> list[dict[str, Any]]:
+    rows = states.get("ablations", states.get("rows"))
+    if isinstance(rows, Sequence) and not isinstance(rows, (str, bytes)):
+        return [dict(row) for row in rows if isinstance(row, Mapping)]
+    rollout_pairs = states.get("rollout_pairs")
+    if isinstance(rollout_pairs, Sequence) and not isinstance(rollout_pairs, (str, bytes)):
+        return [
+            _feedback_ablation_row_from_pair(pair, params=params)
+            for pair in rollout_pairs
+        ]
+    return []
+
+
+def _feedback_ablation_row_from_pair(
+    pair: Any,
+    *,
+    params: FeedbackAblationAnalysisParams,
+) -> dict[str, Any]:
+    if isinstance(pair, Mapping):
+        row = dict(pair)
+    else:
+        row = {"payload": pair}
+    if "bin" not in row:
+        row["bin"] = row["evaluation_bin"] if "evaluation_bin" in row else next(
+            iter(params.evaluation_bins)
+        )
+    if "mode" not in row:
+        row["mode"] = row["ablation_mode"] if "ablation_mode" in row else params.ablation_modes[0]
+    if "status" not in row:
+        row["status"] = "available" if row.get("metrics") else "not_available"
+    row.setdefault("metrics", row.get("metrics", {}))
+    return row
+
+
+def _manifest_status_counts(runs: Mapping[str, Any]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for run in runs.values():
+        if not isinstance(run, Mapping):
+            continue
+        for status, count in dict(run.get("status_counts", {})).items():
+            counts[str(status)] = counts.get(str(status), 0) + int(count)
+    return counts
 
 
 def selected_feedback_ablation_bins_for_bank(
@@ -2626,22 +2986,6 @@ def _terminal_speed(evaluation: RolloutEvaluation) -> np.ndarray:
     return np.linalg.norm(evaluation.velocity[:, :, -1, :], axis=-1)
 
 
-def _summary_stats(values: Any) -> dict[str, float | int]:
-    array = np.asarray(values, dtype=np.float64)
-    if array.size == 0:
-        return {"count": 0, "mean": np.nan, "std": np.nan, "min": np.nan, "max": np.nan}
-    flat = array.reshape(-1)
-    return {
-        "count": int(flat.size),
-        "mean": float(np.mean(flat)),
-        "std": float(np.std(flat)),
-        "min": float(np.min(flat)),
-        "max": float(np.max(flat)),
-        "p50": float(np.quantile(flat, 0.50)),
-        "p95": float(np.quantile(flat, 0.95)),
-    }
-
-
 def _metric_mean(row: Mapping[str, Any], metric: str) -> float | None:
     return _summary_mean(row.get("metrics", {}).get(metric))
 
@@ -2690,13 +3034,18 @@ __all__ = [
     "DEFAULT_RUN_IDS",
     "DEFAULT_SCOPE",
     "DEFAULT_SOURCE_EXPERIMENT",
+    "FEEDBACK_ABLATION_ANALYSIS_TYPE",
     "FEEDBACK_AUDIT_SELECTION_ROLE",
+    "FeedbackAblationAnalysis",
+    "FeedbackAblationAnalysisParams",
     "ObservationAblationSpec",
     "SCHEMA_VERSION",
     "build_observation_ablation_spec",
     "build_observation_tape",
     "default_ablation_modes",
     "evaluate_run_feedback_ablation",
+    "feedback_ablation_recipe",
+    "feedback_ablation_spec",
     "feedback_checkpoint_selection_audit",
     "insert_observation_ablation",
     "interpret_run_feedback_ablation",

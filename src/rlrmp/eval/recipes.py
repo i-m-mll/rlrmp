@@ -82,6 +82,7 @@ class PerturbationResponseBankEvalParams(_StrictParamsModel):
 
     checkpoint_bank_ref: Any | None = None
     checkpoint_bank: Any | None = None
+    bank_params: dict[str, Any] | None = None
     perturbation_battery: Any | None = None
     bank: Any | None = None
     alignment_mode: Literal["reach_locked"] = "reach_locked"
@@ -159,6 +160,12 @@ def register_rlrmp_evaluation_recipes(*, replace: bool = True) -> None:
 
     for recipe_name, model_class in _PARAMS_MODEL_BY_RECIPE.items():
         register_params_model(recipe_name, model_class, replace=replace)
+    from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+        PERTURBATION_BANK_PARAMS_TYPE,
+        PerturbationBankParams,
+    )
+
+    register_params_model(PERTURBATION_BANK_PARAMS_TYPE, PerturbationBankParams, replace=replace)
     register_evaluation_recipe(
         CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,
         center_out_ensemble_recipe,
@@ -573,17 +580,24 @@ def _perturbation_bank_from_params(params: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _default_perturbation_bank(params: Mapping[str, Any]) -> dict[str, Any]:
-    from rlrmp.analysis.pipelines.gru_perturbation_bank import default_cs_perturbation_bank
+    from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+        PerturbationBankParams,
+        expand_perturbation_bank,
+    )
 
     feedback_scale_manifest_path = params.get("feedback_scale_manifest_path")
-    return default_cs_perturbation_bank(
-        mode=str(params.get("bank_mode", params.get("mode", "raw"))),
-        calibration_level=params.get("calibration_level"),
-        calibration_reach=params.get("calibration_reach"),
-        feedback_scale_manifest=params.get("feedback_scale_manifest"),
-        feedback_scale_manifest_path=(
-            None if feedback_scale_manifest_path is None else Path(str(feedback_scale_manifest_path))
-        ),
+    bank_params = dict(params.get("bank_params") or {})
+    bank_params.setdefault("mode", params.get("bank_mode", params.get("mode", "raw")))
+    if params.get("calibration_level") is not None:
+        bank_params.setdefault("calibration_level", params.get("calibration_level"))
+    if params.get("calibration_reach") is not None:
+        bank_params.setdefault("calibration_reach", params.get("calibration_reach"))
+    if params.get("feedback_scale_manifest") is not None:
+        bank_params.setdefault("feedback_scale_manifest", params.get("feedback_scale_manifest"))
+    if feedback_scale_manifest_path is not None:
+        bank_params.setdefault("feedback_scale_manifest_path", str(feedback_scale_manifest_path))
+    return expand_perturbation_bank(
+        PerturbationBankParams.model_validate(bank_params),
     )
 
 
