@@ -19,17 +19,11 @@ import argparse
 import json
 from pathlib import Path
 
-import equinox as eqx
-import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
 from jax_cookbook import load_with_hyperparameters
 
-from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
-from rlrmp.eval import (
-    eval_ensemble_on_trials,
-    set_sisu,
-)
+from rlrmp.eval.pert import eval_states_at_pert_scale
 from rlrmp.train.standard import build_hps
 from rlrmp.train.task_model import setup_task_model_pair
 
@@ -148,16 +142,13 @@ def eval_hidden_states(task, model, sisu: float, *, key) -> np.ndarray:
     Returns:
         h: (n_replicates, n_trials, n_timesteps, hidden_size) hidden states.
     """
-    val_trials = task.validation_trials
-    trial_specs = set_sisu(val_trials, sisu)
-    # Zero out perturbation scale
-    pert_shape = trial_specs.intervene[PLANT_INTERVENOR_LABEL].scale.shape
-    trial_specs = eqx.tree_at(
-        lambda t: t.intervene[PLANT_INTERVENOR_LABEL].scale,
-        trial_specs,
-        jnp.zeros(pert_shape),
+    states, _ = eval_states_at_pert_scale(
+        task,
+        model,
+        sisu,
+        0.0,
+        key=key,
     )
-    states = eval_ensemble_on_trials(task, model, trial_specs, key=key)
     return np.array(states.net.hidden)  # (n_rep, n_trials, n_timesteps, hidden_size)
 
 
