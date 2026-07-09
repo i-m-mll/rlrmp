@@ -202,7 +202,7 @@ def test_live_tree_matches_committed_baseline() -> None:
     assert violations(REPO_ROOT) == []
 
 
-def test_live_planned_row_functions_are_covered_by_argv_detector() -> None:
+def test_live_planned_row_functions_have_been_drained() -> None:
     findings = scan_tree(REPO_ROOT)
     planned_row_findings = [
         finding
@@ -210,7 +210,7 @@ def test_live_planned_row_functions_are_covered_by_argv_detector() -> None:
         if finding.detector == "argv_rows" and "planned_" in finding.qualname
     ]
 
-    assert len(planned_row_findings) >= 10
+    assert planned_row_findings == []
 
 
 def test_write_baseline_refuses_growth(tmp_path: Path) -> None:

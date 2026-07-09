@@ -93,6 +93,7 @@ HP_NAME_LEXICON = (
 
 _NUMERIC_STRING_RE = re.compile(r"[-+]?\d+(\.\d+)?([eE][-+]?\d+)?")
 _DIMENSION_NAME_TOKENS = frozenset({"DIM", "DIMS", "DIMENSION", "DIMENSIONS", "SHAPE"})
+_SCHEMA_REFERENCE_SUFFIXES = ("_PARAMS_REF",)
 _SPEC_CONSTRUCTOR_SEEDS = frozenset(
     {
         "EvaluationRunSpec",
@@ -698,6 +699,8 @@ def _is_default_bundle_dict(node: ast.Dict) -> bool:
 
 
 def _hp_name_matches(name: str) -> bool:
+    if name.upper().endswith(_SCHEMA_REFERENCE_SUFFIXES):
+        return False
     tokens = tuple(token for token in re.split(r"[^A-Za-z0-9]+", name.upper()) if token)
     if not tokens or any(token in _DIMENSION_NAME_TOKENS for token in tokens):
         return False
