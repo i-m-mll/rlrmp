@@ -64,6 +64,7 @@ from rlrmp.model.feedback_descriptors import (
 )
 from rlrmp.model.feedbax_graph import graph_spec_payload
 from rlrmp.paths import portable_repo_path
+from rlrmp.runtime.graph_spec_migrations import migrate_feedbax_graph_payload
 from rlrmp.runtime.spec_migrations import (
     FeedbaxTrainingRunSpecMigrationError,
     FINITE_ADVERSARY_POLICY_METADATA_KIND,
@@ -1139,10 +1140,11 @@ def _migrate_feedbax_training_run_spec_payload(
     run_spec: dict[str, Any],
     spec_payload: Mapping[str, Any],
 ) -> dict[str, Any]:
+    payload = _migrate_feedbax_training_run_spec_graph_payload(spec_payload)
     method_ref = _method_ref_key_from_payload(spec_payload.get("method_ref"))
     semantic_keys = _semantic_method_metadata_keys(spec_payload)
     if method_ref == LEGACY_FEEDBAX_STANDARD_SUPERVISED_METHOD_REF and semantic_keys:
-        return _migrate_legacy_standard_supervised_training_run_spec(run_spec, spec_payload)
+        return _migrate_legacy_standard_supervised_training_run_spec(run_spec, payload)
     if method_ref == LEGACY_FEEDBAX_STANDARD_SUPERVISED_METHOD_REF:
         raise FeedbaxTrainingRunSpecMigrationError(
             "Embedded feedbax_training_run_spec uses legacy "
@@ -1158,7 +1160,27 @@ def _migrate_feedbax_training_run_spec_payload(
             f"keys={sorted(semantic_keys)}. Add an explicit migration or regenerate "
             "the run spec through the current native method builder."
         )
-    return dict(spec_payload)
+    return payload
+
+
+def _migrate_feedbax_training_run_spec_graph_payload(
+    spec_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    payload = dict(spec_payload)
+    graph = payload.get("graph")
+    if not isinstance(graph, Mapping):
+        return payload
+    inline = graph.get("inline")
+    if not isinstance(inline, Mapping):
+        return payload
+
+    migrated_inline = migrate_feedbax_graph_payload(inline)
+    migrated_graph = dict(graph)
+    migrated_graph["inline"] = migrated_inline
+    migrated_graph["schema_id"] = migrated_inline.get("schema_id")
+    migrated_graph["schema_version"] = migrated_inline.get("schema_version")
+    payload["graph"] = migrated_graph
+    return payload
 
 
 def finite_adversary_policy_metadata_payload(metadata: Any) -> dict[str, Any]:

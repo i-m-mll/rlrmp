@@ -17,6 +17,7 @@ from rlrmp.runtime.run_specs import (
     CS_LSS_FEEDBACK_COMPONENT_TYPES,
     LEGACY_POINT_MASS_GRAPH_TYPES,
 )
+from rlrmp.runtime.graph_spec_migrations import migrate_feedbax_graph_payload
 
 
 pytestmark = pytest.mark.feedbax_contract
@@ -172,7 +173,8 @@ def test_every_converted_recipe_loads_with_plain_feedbax_spec_to_graph() -> None
 
         expected_cell = "VanillaRNN" if entry["controller_kind"] == "vanilla_rnn" else "GRU"
         assert payload["subgraphs"]["net"]["nodes"]["cell"]["type"] == expected_cell
-        graph = spec_to_graph(GraphSpec.model_validate(payload), component_registry=registry)
+        graph_payload = migrate_feedbax_graph_payload(payload)
+        graph = spec_to_graph(GraphSpec.model_validate(graph_payload), component_registry=registry)
         assert isinstance(graph.nodes["net"], Graph)
         assert graph.nodes["net"].nodes["cell"].__class__.__name__ == expected_cell
         loaded += 1

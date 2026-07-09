@@ -68,7 +68,7 @@ def _load_train_minimax_module():
 def _minimal_graph() -> dict[str, object]:
     return {
         "schema_id": "feedbax.spec.graph",
-        "schema_version": "feedbax.spec.graph.v1",
+        "schema_version": "feedbax.spec.graph.v4",
         "nodes": {
             "gain": {
                 "type": "Gain",
