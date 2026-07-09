@@ -710,22 +710,23 @@ def stochastic_preset(name: str) -> StochasticPreset:
         raise ValueError(
             f"Unknown stochastic preset {name!r}; expected {DEFAULT_STOCHASTIC_PRESET!r}"
         )
-    plant, _schedule = build_canonical_game()
     output_config = OutputFeedbackConfig()
     noise_config = DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG
-    covariances = default_cs_noise_covariances(
-        plant,
-        output_config,
-        motor_covariance_scale=noise_config.motor_covariance_scale,
-        process_covariance_scale=noise_config.process_covariance_scale,
-        signal_dependent_scale=noise_config.signal_dependent_scale,
-    )
-    sensory_diag = jnp.diag(covariances.sensory)
-    if not bool(jnp.allclose(sensory_diag, sensory_diag[0])):
+    with jax.enable_x64(False):
+        plant, _schedule = build_canonical_game()
+        covariances = default_cs_noise_covariances(
+            plant,
+            output_config,
+            motor_covariance_scale=noise_config.motor_covariance_scale,
+            process_covariance_scale=noise_config.process_covariance_scale,
+            signal_dependent_scale=noise_config.signal_dependent_scale,
+        )
+    sensory_diag = np.asarray(jax.device_get(jnp.diag(covariances.sensory)), dtype=np.float32)
+    if not bool(np.allclose(sensory_diag, sensory_diag[0])):
         raise ValueError("C&S sensory covariance projection expects isotropic diagonal covariance")
     return StochasticPreset(
         name=name,
-        sensory_noise_std=float(jnp.sqrt(sensory_diag[0])),
+        sensory_noise_std=float(np.sqrt(sensory_diag[0])),
         additive_motor_noise_std=math.sqrt(noise_config.motor_covariance_scale),
         signal_dependent_motor_noise_std=noise_config.signal_dependent_scale,
         plant_process_force_noise_std=math.sqrt(

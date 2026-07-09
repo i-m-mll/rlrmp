@@ -398,6 +398,37 @@ def test_cs_nominal_gru_config_defaults_match_pre_refactor_fixture() -> None:
     assert vars(build_parser().parse_args([])) == expected
 
 
+def test_stochastic_preset_metadata_is_independent_of_jax_x64() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{repo_root / 'src'}{os.pathsep}{env.get('PYTHONPATH', '')}"
+    code = """
+import json
+import sys
+
+import jax
+
+jax.config.update("jax_enable_x64", sys.argv[1] == "true")
+from rlrmp.train.cs_nominal_gru import stochastic_preset
+
+print(json.dumps(stochastic_preset("cs2019-rollout").summary(), sort_keys=True))
+"""
+    summaries = []
+    for flag in ("false", "true"):
+        completed = subprocess.run(
+            [sys.executable, "-c", code, flag],
+            cwd=repo_root,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert completed.returncode == 0, completed.stdout + completed.stderr
+        summaries.append(json.loads(completed.stdout))
+
+    assert summaries[0] == summaries[1]
+
+
 def test_cs_nominal_gru_config_rejects_extra_fields() -> None:
     with pytest.raises(ValidationError):
         CsNominalGruConfig.model_validate({"seed": 42, "unknown_field": True})
