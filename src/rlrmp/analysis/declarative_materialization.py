@@ -49,6 +49,11 @@ from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import (
     DEFAULT_OUTPUT_FILENAME,
     materialize_gru_evaluation_diagnostics,
 )
+from rlrmp.analysis.pipelines.gru_feedback_ablation import (
+    FEEDBACK_ABLATION_ANALYSIS_TYPE,
+    FeedbackAblationAnalysisParams,
+    feedback_ablation_recipe,
+)
 from rlrmp.analysis.pipelines.gru_postrun_materialization import (
     DEFAULT_OUTPUT_TAG,
     materialize_gru_postrun_analysis,
@@ -70,6 +75,7 @@ from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
 from rlrmp.analysis.math.rerun_metadata import DEFAULT_DISCRETIZATION, DEFAULT_LANE
 from rlrmp.eval.recipes import (
     CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,
+    FEEDBACK_ABLATION_EVALUATION_TYPE,
     PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
 )
 from rlrmp.eval.policy_diagnostics import (
@@ -125,6 +131,7 @@ ROBUSTNESS_PHENOTYPE_SOURCE_ROLES = {
 
 EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE = {
     GRU_STANDARD_ANALYSIS_TYPE: (CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,),
+    FEEDBACK_ABLATION_ANALYSIS_TYPE: (FEEDBACK_ABLATION_EVALUATION_TYPE,),
     GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE: ("evaluation_run",),
     GRU_POSTRUN_ANALYSIS_TYPE: ("evaluation_run",),
     PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE: (
@@ -168,7 +175,7 @@ EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE.update(
             "params.materialize_perturbation_response",
         ),
         FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["feedback_ablation"]: (
-            "evaluation_run",
+            FEEDBACK_ABLATION_EVALUATION_TYPE,
             "params.materialize_feedback_ablation",
         ),
         FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["response_norm_plots"]: (
@@ -611,6 +618,16 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
         RecurrentJacobianAnalysisParams,
         replace=True,
     )
+    register_params_model(
+        FEEDBACK_ABLATION_ANALYSIS_TYPE,
+        FeedbackAblationAnalysisParams,
+        replace=True,
+    )
+    register_params_model(
+        FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["feedback_ablation"],
+        FeedbackAblationAnalysisParams,
+        replace=True,
+    )
     register_analysis_recipe(
         GRU_STANDARD_ANALYSIS_TYPE,
         gru_standard_certificate_recipe,
@@ -624,6 +641,11 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
     register_analysis_recipe(
         GRU_POSTRUN_ANALYSIS_TYPE,
         gru_postrun_recipe,
+        replace=replace,
+    )
+    register_analysis_recipe(
+        FEEDBACK_ABLATION_ANALYSIS_TYPE,
+        feedback_ablation_recipe,
         replace=replace,
     )
     register_analysis_recipe(
@@ -647,6 +669,13 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
         replace=replace,
     )
     for registration in _feedback_quality_component_registrations().values():
+        if registration.name == "feedback_ablation":
+            register_analysis_recipe(
+                FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES[registration.name],
+                feedback_ablation_recipe,
+                replace=replace,
+            )
+            continue
         register_analysis_recipe(
             FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES[registration.name],
             _feedback_quality_component_recipe(registration.name),
@@ -3598,6 +3627,8 @@ __all__ = [
     "FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES",
     "FEEDBACK_QUALITY_COMPONENT_NAMES",
     "FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE",
+    "FEEDBACK_ABLATION_ANALYSIS_TYPE",
+    "FeedbackAblationAnalysisParams",
     "GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE",
     "GRU_POSTRUN_ANALYSIS_TYPE",
     "GRU_STANDARD_ANALYSIS_TYPE",

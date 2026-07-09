@@ -34,11 +34,13 @@ from pydantic import ValidationError
 from rlrmp.analysis import declarative_materialization as dm
 from rlrmp.eval.recipes import (
     CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,
+    FEEDBACK_ABLATION_EVALUATION_TYPE,
     PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
 )
 from rlrmp.runtime.params_models import params_model_for
 from rlrmp.runtime.spec_migrations import (
     CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND,
+    FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
     PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND,
     stamp_current_schema,
 )
@@ -70,6 +72,7 @@ def _feedback_quality_parity_payload(payload: dict) -> dict:
 
 def _unregister_declarative_recipes() -> None:
     unregister_analysis_recipe(dm.GRU_STANDARD_ANALYSIS_TYPE)
+    unregister_analysis_recipe(dm.FEEDBACK_ABLATION_ANALYSIS_TYPE)
     unregister_analysis_recipe(dm.GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE)
     unregister_analysis_recipe(dm.PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE)
     unregister_analysis_recipe(dm.PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE)
@@ -309,6 +312,12 @@ def test_declarative_recipes_use_feedbax_context_materializers() -> None:
 def test_diagnostic_bank_recipes_register_params_models_and_eval_dependencies() -> None:
     rlrmp.register_experiment_package(ExperimentRegistry())
 
+    assert params_model_for(dm.FEEDBACK_ABLATION_ANALYSIS_TYPE) is (
+        dm.FeedbackAblationAnalysisParams
+    )
+    assert params_model_for(dm.FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["feedback_ablation"]) is (
+        dm.FeedbackAblationAnalysisParams
+    )
     assert params_model_for(dm.POLICY_DIAGNOSTICS_ANALYSIS_TYPE) is (
         dm.PolicyDiagnosticsAnalysisParams
     )
@@ -320,11 +329,116 @@ def test_diagnostic_bank_recipes_register_params_models_and_eval_dependencies() 
     with pytest.raises(ValidationError):
         dm.RecurrentJacobianAnalysisParams.model_validate({"unknown": True})
     assert dm.EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE[
+        dm.FEEDBACK_ABLATION_ANALYSIS_TYPE
+    ] == (FEEDBACK_ABLATION_EVALUATION_TYPE,)
+    assert dm.EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE[
         dm.POLICY_DIAGNOSTICS_ANALYSIS_TYPE
     ] == ("evaluation_run",)
     assert dm.EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE[
+        dm.FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["feedback_ablation"]
+    ] == (FEEDBACK_ABLATION_EVALUATION_TYPE, "params.materialize_feedback_ablation")
+    assert dm.EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE[
         dm.RECURRENT_JACOBIAN_ANALYSIS_TYPE
     ] == ("evaluation_run",)
+
+
+def test_feedback_ablation_recipe_consumes_cached_eval_states_and_records_custody(
+    tmp_path: Path,
+) -> None:
+    registry = ExperimentRegistry()
+    rlrmp.register_experiment_package(registry)
+    eval_manifest, eval_path = execute_evaluation_run_spec(
+        EvaluationRunSpec(
+            evaluation_type=FEEDBACK_ABLATION_EVALUATION_TYPE,
+            inputs=[_training_ref()],
+            params=stamp_current_schema(
+                FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
+                {
+                    "ablation_masks": {"normal": None},
+                    "rollout_pairs": [
+                        {
+                            "bin": "nominal",
+                            "mode": "normal",
+                            "status": "evaluated",
+                            "metrics": {
+                                "baseline_action_norm": {"mean": 1.0},
+                                "baseline_endpoint_error_m": {"mean": 0.01},
+                                "baseline_terminal_speed_m_s": {"mean": 0.01},
+                                "baseline_full_qrf_cost": {"total": {"mean": 1.0}},
+                            },
+                        },
+                        {
+                            "bin": "initial_state",
+                            "mode": "lagged_observation_history",
+                            "status": "evaluated",
+                            "metrics": {
+                                "baseline_action_norm": {"mean": 1.0},
+                                "delta_action_norm": {"mean": 0.5},
+                            },
+                        },
+                    ],
+                },
+            ),
+        ),
+        root=tmp_path,
+        force=True,
+    )
+
+    analysis_manifest, _path = execute_analysis_run_spec(
+        AnalysisRunSpec(
+            analysis_type=dm.FEEDBACK_ABLATION_ANALYSIS_TYPE,
+            inputs=[
+                ParentRef(
+                    kind="EvaluationRunManifest",
+                    id=eval_manifest.id,
+                    role="evaluation_run",
+                    uri=str(eval_path),
+                )
+            ],
+            params={"experiment": "unit", "scope": "cached_eval_fixture"},
+        ),
+        root=tmp_path,
+        issues=["d0189db"],
+    )
+
+    payload = _artifact_payload(analysis_manifest, "rlrmp-gru-feedback-ablation-manifest")
+    report = _artifact_payload(analysis_manifest, "rlrmp-gru-feedback-ablation-report-render")
+    assert analysis_manifest.inputs[0].kind == "EvaluationRunManifest"
+    assert analysis_manifest.provenance.parents[0].id == eval_manifest.id
+    assert payload["analysis_type"] == dm.FEEDBACK_ABLATION_ANALYSIS_TYPE
+    assert payload["scope"] == "cached_eval_fixture"
+    run = next(iter(payload["runs"].values()))
+    assert run["status_counts"] == {"evaluated": 2}
+    assert run["normalized_feedback_use"]["status"] == "available"
+    assert "GRU Feedback Ablation Diagnostic" in report["markdown"]
+
+    component_manifest, _component_path = execute_analysis_run_spec(
+        AnalysisRunSpec(
+            analysis_type=dm.FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["feedback_ablation"],
+            inputs=[
+                ParentRef(
+                    kind="EvaluationRunManifest",
+                    id=eval_manifest.id,
+                    role="evaluation_run",
+                    uri=str(eval_path),
+                )
+            ],
+            params={"experiment": "unit", "scope": "cached_eval_component_fixture"},
+        ),
+        root=tmp_path,
+        issues=["d0189db"],
+    )
+
+    component_payload = _artifact_payload(
+        component_manifest,
+        "rlrmp-feedback-quality-feedback-ablation-status",
+    )
+    assert component_payload["analysis_type"] == (
+        dm.FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["feedback_ablation"]
+    )
+    assert "rlrmp-feedback-quality-feedback-ablation-note" in _artifact_roles(
+        component_manifest
+    )
 
 
 def test_policy_diagnostics_recipe_consumes_cached_eval_states_and_records_custody(
