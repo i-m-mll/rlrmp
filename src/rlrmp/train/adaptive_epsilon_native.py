@@ -92,7 +92,7 @@ ADAPTIVE_EPSILON_METHOD_PAYLOAD_SCHEMA_ID = (
     "rlrmp.spec.training_method.adaptive_epsilon_curriculum_payload"
 )
 ADAPTIVE_EPSILON_METHOD_PAYLOAD_SCHEMA_VERSION = (
-    "rlrmp.spec.training_method.adaptive_epsilon_curriculum_payload.v1"
+    "rlrmp.spec.training_method.adaptive_epsilon_curriculum_payload.v2"
 )
 TRAIN_CHUNK_KERNEL_REF = "rlrmp.adaptive_epsilon_curriculum.train_chunk"
 STOP_PREDICATE_REF = "rlrmp.adaptive_epsilon_curriculum.stop"
@@ -124,6 +124,12 @@ class AdaptiveEpsilonMethodPayload(BaseModel):
     def _validate_payload(self) -> "AdaptiveEpsilonMethodPayload":
         if not bool(self.config.get("adaptive_epsilon_curriculum", False)):
             raise ValueError("adaptive-epsilon native payload requires enabled curriculum")
+        if self.damage_schedule.get("setpoint_basis") != "damage_to_clean_loss_ratio":
+            raise ValueError(
+                "adaptive-epsilon native payload requires damage_schedule.setpoint_basis="
+                "'damage_to_clean_loss_ratio'; older absolute damage setpoints are "
+                "archival-only and cannot be used for new launches"
+            )
         if self.chunk_batches > self.n_train_batches:
             raise ValueError("chunk_batches cannot exceed n_train_batches")
         if self.controller_training_mode not in {
@@ -246,6 +252,7 @@ def ensure_adaptive_epsilon_training_method_registered() -> None:
             guard_predicates_factory=adaptive_epsilon_guard_predicates,
             rejected_payload_versions=(
                 "rlrmp.spec.training_method.adaptive_epsilon_curriculum_payload.v0",
+                "rlrmp.spec.training_method.adaptive_epsilon_curriculum_payload.v1",
             ),
             owner="rlrmp.train.adaptive_epsilon_native",
             package="rlrmp",
@@ -1073,7 +1080,10 @@ def execute_adaptive_epsilon_training_run_spec_native(
         checkpoint_root=checkpoint_root,
         loss_service=kwargs.pop("loss_service", AdaptiveEpsilonExternalObjectiveLossService()),
         resume=resume,
-        resume_slot_transform=_resume_slot_transform(resume_slot_transform),
+        resume_slot_transform=_resume_slot_transform(
+            resume_slot_transform,
+            n_batches=int(payload.n_train_batches),
+        ),
         stop_after_barrier=stop_after_barrier,
         **kwargs,
     )
@@ -1125,10 +1135,10 @@ def _adaptive_epsilon_train_chunk(
         native.model_template,
         slot=MODEL,
     )
-    optimizer_state = _deserialize_pytree_slot_value(
+    optimizer_state = _deserialize_optimizer_slot_value(
         chunk_slots[OPTIMIZER],
         native.optimizer_template,
-        slot=OPTIMIZER,
+        target_n_batches=int(payload.n_train_batches),
     )
     trainer = _trainer_for_chunk(
         native,
@@ -1275,6 +1285,43 @@ def _deserialize_pytree_slot_value(value: Any, template: Any, *, slot: str) -> A
     return deserialize_pytree_slot(payload, template, slot=slot)
 
 
+def _deserialize_optimizer_slot_value(
+    value: Any,
+    template: Any,
+    *,
+    target_n_batches: int,
+) -> Any:
+    from rlrmp.runtime.checkpoint_custody import deserialize_pytree_slot
+    from rlrmp.train.cs_nominal_gru import _resize_optimizer_diagnostics_for_batches
+
+    payload = value.payload if isinstance(value, SerializedPyTreeSlot) else value
+    try:
+        return deserialize_pytree_slot(payload, template, slot=OPTIMIZER)
+    except RuntimeError as exc:
+        source_n_batches = _serialized_optimizer_diagnostic_horizon(exc)
+        if source_n_batches is None:
+            raise
+        source_template = _resize_optimizer_diagnostics_for_batches(template, source_n_batches)
+        optimizer_state = deserialize_pytree_slot(payload, source_template, slot=OPTIMIZER)
+        return _resize_optimizer_diagnostics_for_batches(optimizer_state, target_n_batches)
+
+
+def _serialized_optimizer_diagnostic_horizon(exc: RuntimeError) -> int | None:
+    import re
+
+    match = re.search(r"to \(([^)]*)\) on disk", str(exc))
+    if match is None:
+        return None
+    shape = tuple(
+        int(part.strip())
+        for part in match.group(1).split(",")
+        if part.strip().isdigit()
+    )
+    if not shape:
+        return None
+    return int(shape[-1])
+
+
 def _adaptive_state_slot(state: Any) -> bytes:
     return _json_slot(None if state is None else state.to_json())
 
@@ -1290,6 +1337,11 @@ def _adaptive_state_from_slot(value: Any) -> Any:
         damage_ema=(
             None if payload.get("damage_ema") is None else float(payload["damage_ema"])
         ),
+        clean_loss_ema=(
+            None
+            if payload.get("clean_loss_ema") is None
+            else float(payload["clean_loss_ema"])
+        ),
         last_update_batch=payload.get("last_update_batch"),
         update_count=int(payload.get("update_count", 0)),
         schedule_start_batch=int(payload.get("schedule_start_batch", 0)),
@@ -1298,6 +1350,31 @@ def _adaptive_state_from_slot(value: Any) -> Any:
             if isinstance(payload.get("zero_adversary_guard"), Mapping)
             else None
         ),
+        gain_estimate=(
+            None if payload.get("gain_estimate") is None else float(payload["gain_estimate"])
+        ),
+        gain_samples=int(payload.get("gain_samples", 0)),
+        pending_lambda_log_step=(
+            None
+            if payload.get("pending_lambda_log_step") is None
+            else float(payload["pending_lambda_log_step"])
+        ),
+        pending_log_damage_ema=(
+            None
+            if payload.get("pending_log_damage_ema") is None
+            else float(payload["pending_log_damage_ema"])
+        ),
+        last_log_damage_ema=(
+            None
+            if payload.get("last_log_damage_ema") is None
+            else float(payload["last_log_damage_ema"])
+        ),
+        ema_noise_floor=(
+            None if payload.get("ema_noise_floor") is None else float(payload["ema_noise_floor"])
+        ),
+        last_lambda_step_sign=int(payload.get("last_lambda_step_sign", 0)),
+        lambda_step_count=int(payload.get("lambda_step_count", 0)),
+        lambda_step_alternations=int(payload.get("lambda_step_alternations", 0)),
     )
 
 
@@ -1308,9 +1385,16 @@ def _guard_from_slot(value: Any) -> dict[str, Any]:
     return _normalize_adaptive_epsilon_zero_guard(payload, enabled=True)
 
 
-def _resume_slot_transform(transform: Any | None) -> Any:
+def _resume_slot_transform(transform: Any | None, *, n_batches: int | None = None) -> Any:
     def normalize(slots: Mapping[str, Any]) -> Mapping[str, Any]:
+        from rlrmp.train.cs_nominal_gru import _resize_optimizer_diagnostics_for_batches
+
         payload = dict(transform(slots) if transform is not None else slots)
+        if n_batches is not None and OPTIMIZER in payload:
+            payload[OPTIMIZER] = _resize_optimizer_diagnostics_for_batches(
+                payload[OPTIMIZER],
+                n_batches,
+            )
         payload[TRAIN_LOSS] = 0.0
         payload[DAMAGE_METRIC] = 0.0
         payload[EPSILON_SCALE] = 0.0

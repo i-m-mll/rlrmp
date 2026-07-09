@@ -20,18 +20,22 @@ from feedbax.contracts.training import (
     OptimizerSpec,
     TrainingRunSpec,
 )
+from feedbax.contracts.worker import ProgressCoordinate
+from feedbax.training.checkpoint_custody import write_checkpoint_transaction
 
 from rlrmp.runtime.checkpoint_custody import deserialize_pytree_slot, serialize_pytree_slot
 from rlrmp.train.adaptive_epsilon_native import (
+    ADAPTIVE_EPSILON_METHOD_PAYLOAD_SCHEMA_VERSION,
     AdaptiveEpsilonMethodPayload,
     AdaptiveEpsilonNativeRuntime,
     SerializedPyTreeSlot,
     _adaptive_state_from_slot,
     _adaptive_epsilon_train_chunk,
-    adaptive_epsilon_controller_optimizer_spec,
     _adaptive_state_slot,
+    _deserialize_optimizer_slot_value,
     _guard_from_slot,
     _json_slot,
+    adaptive_epsilon_controller_optimizer_spec,
     build_adaptive_epsilon_native_initial_slots,
     ensure_adaptive_epsilon_training_method_registered,
     execute_adaptive_epsilon_training_run_spec_native,
@@ -40,12 +44,17 @@ from rlrmp.train.adaptive_epsilon_native import (
 from rlrmp.train.cs_nominal_gru import (
     ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER,
     ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+    AdaptiveEpsilonState,
     BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
     CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+    GradientDiagnosticsState,
+    UpdateDiagnosticsState,
     _adaptive_epsilon_zero_guard_from_state,
     _config_namespace,
     _latest_loss_scalars,
     _run_adaptive_epsilon_training_chunk,
+    _resize_optimizer_diagnostics_for_batches,
+    _update_adaptive_epsilon_state,
     _update_adaptive_epsilon_zero_guard,
     build_hps,
     build_parser,
@@ -98,10 +107,100 @@ def test_adaptive_epsilon_run_spec_uses_native_method(
     assert payload.controller_optimizer.lr_schedule.learning_rate_0 == pytest.approx(1e-3)
     assert payload.controller_optimizer.lr_schedule.constant_lr_iterations == 1
     assert "learning_rate" not in payload.controller_optimizer.params
+    assert spec.method_payload.schema_version == ADAPTIVE_EPSILON_METHOD_PAYLOAD_SCHEMA_VERSION
+    assert payload.damage_schedule["setpoint_basis"] == "damage_to_clean_loss_ratio"
     assert payload.n_train_batches == 2
     assert payload.chunk_batches == 1
     slot_names = {slot.name for slot in spec.worker_execution.method_contract.state_slots}
     assert {ADAPTIVE_EPSILON_STATE, ZERO_ADVERSARY_GUARD} <= slot_names
+
+
+def test_adaptive_epsilon_rejects_old_absolute_setpoint_payload(
+    tmp_path: Path,
+) -> None:
+    spec = _adaptive_epsilon_training_spec(
+        tmp_path,
+        controller_mode=ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+    )
+    method_payload = spec.method_payload.model_dump(mode="json", exclude_none=True)
+    method_payload["schema_version"] = (
+        "rlrmp.spec.training_method.adaptive_epsilon_curriculum_payload.v1"
+    )
+    legacy_payload = MethodPayloadEnvelope.model_validate(method_payload)
+
+    ensure_adaptive_epsilon_training_method_registered()
+
+    with pytest.raises(ValueError, match="v1|absolute|rejected|payload"):
+        DEFAULT_TRAINING_METHOD_REGISTRY.validate_payload(
+            spec.method_ref,
+            legacy_payload,
+            path="/method_payload",
+        )
+
+
+def test_adaptive_epsilon_payload_requires_ratio_setpoint_basis() -> None:
+    with pytest.raises(ValueError, match="setpoint_basis"):
+        AdaptiveEpsilonMethodPayload(
+            config={"adaptive_epsilon_curriculum": True},
+            n_train_batches=1,
+            chunk_batches=1,
+            controller_training_mode=ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+            damage_schedule={
+                "kind": "linear_ramp_then_cosine_anneal",
+                "start": 1.0,
+                "peak": 1.0,
+                "final": 1.0,
+                "ramp_batches": 0,
+                "anneal_batches": 0,
+            },
+            lambda_update={},
+            outer_adversarial_weight={},
+            pgd_inner_maximizer={},
+            checkpointing={},
+        )
+
+
+def test_adaptive_epsilon_ratio_update_is_loss_scale_invariant() -> None:
+    config = argparse.Namespace(
+        lambda_update=argparse.Namespace(
+            interval_batches=1,
+            ema_alpha=1.0,
+            eta=1.0,
+            deadband_frac=0.0,
+            lambda_min=1e-12,
+            lambda_max=None,
+            max_log_step=10.0,
+        )
+    )
+
+    base_state, base_diagnostics = _update_adaptive_epsilon_state(
+        AdaptiveEpsilonState(lambda_value=2.0),
+        config,
+        batch_index=0,
+        target_damage=0.25,
+        measured_damage=50.0,
+        measured_clean_loss=100.0,
+    )
+    scaled_state, scaled_diagnostics = _update_adaptive_epsilon_state(
+        AdaptiveEpsilonState(lambda_value=2.0),
+        config,
+        batch_index=0,
+        target_damage=0.25,
+        measured_damage=500.0,
+        measured_clean_loss=1000.0,
+    )
+
+    assert base_state.lambda_value == pytest.approx(scaled_state.lambda_value)
+    assert base_state.lambda_value == pytest.approx(4.0)
+    assert base_state.damage_ema == pytest.approx(50.0)
+    assert scaled_state.damage_ema == pytest.approx(500.0)
+    assert base_state.clean_loss_ema == pytest.approx(100.0)
+    assert scaled_state.clean_loss_ema == pytest.approx(1000.0)
+    assert float(base_diagnostics["damage_ratio_ema"]) == pytest.approx(0.5)
+    assert float(scaled_diagnostics["damage_ratio_ema"]) == pytest.approx(0.5)
+    assert float(base_diagnostics["target_damage_ratio"]) == pytest.approx(0.25)
+    restored = _adaptive_state_from_slot(_adaptive_state_slot(base_state))
+    assert restored.clean_loss_ema == pytest.approx(100.0)
 
 
 def test_adaptive_epsilon_optimizer_spec_expresses_constant_lr() -> None:
@@ -121,6 +220,113 @@ def test_adaptive_epsilon_optimizer_spec_expresses_constant_lr() -> None:
     assert optimizer.lr_schedule is not None
     assert optimizer.lr_schedule.kind == "constant"
     assert optimizer.lr_schedule.learning_rate_0 == pytest.approx(3e-5)
+
+
+def test_serialized_optimizer_slot_resizes_diagnostic_horizon_on_deserialize() -> None:
+    """Covers checkpoint resume diagnostic buffer mismatch in serialized slots."""
+
+    source = _diagnostic_optimizer_state(2)
+    template = _diagnostic_optimizer_state(4)
+    slot = SerializedPyTreeSlot(serialize_pytree_slot(source))
+
+    optimizer = _deserialize_optimizer_slot_value(
+        slot,
+        template,
+        target_n_batches=4,
+    )
+
+    assert optimizer["gradient"].gradient_norm_pre_clip.shape == (4,)
+    assert optimizer["update"].update_norm.shape == (4,)
+    assert optimizer["gradient"].gradient_clipped.tolist() == [True, False, False, False]
+    assert jnp.isnan(optimizer["gradient"].gradient_norm_pre_clip[2:]).all()
+    assert jnp.isnan(optimizer["update"].update_norm[2:]).all()
+    assert int(optimizer["gradient"].count) == 2
+    assert int(optimizer["update"].count) == 2
+
+
+def test_checkpoint_resume_resizes_serialized_optimizer_slot_from_shorter_horizon(
+    tmp_path: Path,
+) -> None:
+    """Regression for checkpoint resume diagnostic buffer mismatch on serialized slots."""
+
+    spec = _adaptive_epsilon_training_spec(
+        tmp_path,
+        controller_mode=ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER,
+        n_train_batches=4,
+    )
+    payload = DEFAULT_TRAINING_METHOD_REGISTRY.validate_payload(
+        spec.method_ref,
+        spec.method_payload,
+        path="/method_payload",
+    )
+    assert isinstance(payload, AdaptiveEpsilonMethodPayload)
+    args = _config_namespace(payload.config)
+    hps = build_hps(args)
+    key = jr.PRNGKey(5)
+    initial_slots, runtime = build_adaptive_epsilon_native_initial_slots(
+        run_spec=spec,
+        hps=hps,
+        args=args,
+        key=key,
+    )
+    native = runtime.component("adaptive_epsilon")
+    assert isinstance(native, AdaptiveEpsilonNativeRuntime)
+    short_optimizer = _resize_optimizer_diagnostics_for_batches(native.optimizer_template, 2)
+    checkpoint_slots = dict(initial_slots)
+    checkpoint_slots[OPTIMIZER] = SerializedPyTreeSlot(serialize_pytree_slot(short_optimizer))
+    checkpoint_slots[COMPLETED_BATCHES] = jnp.asarray(1, dtype=jnp.int32)
+    checkpoint_root = tmp_path / "checkpoints" / "serialized-short"
+    write_checkpoint_transaction(
+        checkpoint_root,
+        run_spec=spec,
+        phase_program=spec.worker_execution.method_contract.phase_program,
+        barrier_name="after_adaptive_epsilon_train_chunk",
+        coordinate=ProgressCoordinate(
+            run_id="adaptive-epsilon-serialized-short-resume",
+            phase="train_chunk",
+            global_step=1,
+            completed_barrier="after_adaptive_epsilon_train_chunk",
+        ),
+        slots=checkpoint_slots,
+        status="partial",
+    )
+
+    resumed = execute_adaptive_epsilon_training_run_spec_native(
+        spec,
+        run_id="adaptive-epsilon-serialized-short-resume",
+        key=key,
+        manifest_root=tmp_path / "manifests" / "serialized-short",
+        checkpoint_root=checkpoint_root,
+        resume=True,
+        manifest_conflict_policy="reuse-identical",
+    )
+
+    assert int(resumed.final_slots[COMPLETED_BATCHES]) == 4
+    optimizer = _deserialize_optimizer_slot_value(
+        resumed.final_slots[OPTIMIZER],
+        native.optimizer_template,
+        target_n_batches=4,
+    )
+    gradient_states = [
+        leaf
+        for leaf in jt.leaves(
+            optimizer,
+            is_leaf=lambda leaf: isinstance(leaf, GradientDiagnosticsState),
+        )
+        if isinstance(leaf, GradientDiagnosticsState)
+    ]
+    update_states = [
+        leaf
+        for leaf in jt.leaves(
+            optimizer,
+            is_leaf=lambda leaf: isinstance(leaf, UpdateDiagnosticsState),
+        )
+        if isinstance(leaf, UpdateDiagnosticsState)
+    ]
+    assert gradient_states
+    assert update_states
+    assert all(state.gradient_norm_pre_clip.shape[-1] == 4 for state in gradient_states)
+    assert all(state.update_norm.shape[-1] == 4 for state in update_states)
 
 
 def test_adaptive_epsilon_runtime_consumes_declared_constant_lr(
@@ -617,6 +823,27 @@ def _slot_payload(value: Any) -> bytes:
     return value.payload if isinstance(value, SerializedPyTreeSlot) else value
 
 
+def _diagnostic_optimizer_state(n_batches: int) -> dict[str, object]:
+    return {
+        "step": jnp.asarray(2, dtype=jnp.int32),
+        "gradient": GradientDiagnosticsState(
+            count=jnp.asarray(2, dtype=jnp.int32),
+            gradient_norm_pre_clip=jnp.arange(n_batches, dtype=jnp.float32),
+            gradient_clipped=jnp.asarray(
+                [index == 0 for index in range(n_batches)],
+                dtype=bool,
+            ),
+            learning_rate=jnp.arange(n_batches, dtype=jnp.float32) + 0.5,
+        ),
+        "update": UpdateDiagnosticsState(
+            count=jnp.asarray(2, dtype=jnp.int32),
+            update_norm=jnp.arange(n_batches, dtype=jnp.float32) + 1.0,
+            parameter_norm=jnp.arange(n_batches, dtype=jnp.float32) + 2.0,
+            update_parameter_norm_ratio=jnp.arange(n_batches, dtype=jnp.float32) + 3.0,
+        ),
+    }
+
+
 def _array_leaves(value: Any) -> Any:
     return jt.map(_cast_bool_array, eqx.filter(value, eqx.is_array))
 
@@ -634,6 +861,9 @@ def _numeric_state_payload(state: Any) -> dict[str, Any]:
     return {
         "lambda_value": payload["lambda_value"],
         "damage_ema": -1.0 if payload["damage_ema"] is None else payload["damage_ema"],
+        "clean_loss_ema": (
+            -1.0 if payload["clean_loss_ema"] is None else payload["clean_loss_ema"]
+        ),
         "last_update_batch": (
             -1 if payload["last_update_batch"] is None else payload["last_update_batch"]
         ),
