@@ -171,6 +171,18 @@ minimum_non_skipped = 6
 negative_canary = "tests/test_data_lint_generated_constants.py::test_data_lint_flags_the_two_named_generated_tables"
 
 [[families]]
+name = "data_in_code_scan"
+owner = "caa3f1b"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_data_in_code_scan.py::"
+minimum_non_skipped = 10
+negative_canary = [
+    "tests/test_data_in_code_scan.py::test_negative_canary_flags_argv_row_function",
+    "tests/test_data_in_code_scan.py::test_negative_canary_flags_scalar_hp_default",
+]
+
+[[families]]
 name = "import_time_jax_config_scan"
 owner = "15178d7"
 status = "live"
