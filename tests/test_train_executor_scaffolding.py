@@ -59,6 +59,8 @@ from rlrmp.train.executor.initial_slots import RlrmpRuntime
 from rlrmp.train.executor.slots import (
     COMPLETED_BATCHES,
     CS_SUPERVISED_SCHEMA,
+    DAMAGE_METRIC,
+    EPSILON_SCALE,
     HISTORY_CHUNK_BYTES,
     MODEL,
     OPTIMIZER,
@@ -70,6 +72,9 @@ from rlrmp.train.cs_nominal_gru import (
     GradientDiagnosticsState,
     UpdateDiagnosticsState,
     _cs_supervised_resume_slot_transform,
+)
+from rlrmp.train.adaptive_epsilon_native import (
+    _resume_slot_transform as _adaptive_epsilon_resume_slot_transform,
 )
 
 
@@ -294,6 +299,55 @@ def test_cs_supervised_resume_transform_accepts_larger_n_train_batches(
     assert jnp.isnan(optimizer["gradient"].gradient_norm_pre_clip[2:]).all()
     assert jnp.isnan(optimizer["update"].update_norm[2:]).all()
     assert loaded.slots[TRAIN_LOSS] == 0.0
+
+
+def test_adaptive_epsilon_resume_transform_accepts_larger_n_train_batches(
+    tmp_path: Path,
+) -> None:
+    resumed_n_train_batches = 4
+    run_spec = _training_run_spec(tmp_path)
+    program = _toy_program()
+    coordinate = ProgressCoordinate(
+        run_id="adaptive-epsilon-resize-transform",
+        phase="train_chunk",
+        global_step=1,
+        completed_barrier=TOY_BARRIER,
+    )
+    slots = _toy_initial_slots(seed=0)
+    slots[OPTIMIZER] = _diagnostic_optimizer_state(2)
+    slots[DAMAGE_METRIC] = 3.0
+    slots[EPSILON_SCALE] = 0.5
+    write_checkpoint_transaction(
+        tmp_path / "checkpoints",
+        run_spec=run_spec,
+        phase_program=program,
+        barrier_name=TOY_BARRIER,
+        coordinate=coordinate,
+        slots=slots,
+    )
+    expected_slots = dict(slots)
+    expected_slots[OPTIMIZER] = _diagnostic_optimizer_state(resumed_n_train_batches)
+
+    loaded = load_latest_checkpoint(
+        tmp_path / "checkpoints",
+        expected_run_spec=run_spec,
+        expected_phase_program=program,
+        expected_slots=expected_slots,
+        resume_slot_transform=_adaptive_epsilon_resume_slot_transform(
+            None,
+            n_batches=resumed_n_train_batches,
+        ),
+    )
+
+    optimizer = loaded.slots[OPTIMIZER]
+    assert optimizer["gradient"].gradient_norm_pre_clip.shape == (resumed_n_train_batches,)
+    assert optimizer["update"].update_norm.shape == (resumed_n_train_batches,)
+    assert optimizer["gradient"].gradient_clipped.tolist() == [True, False, False, False]
+    assert jnp.isnan(optimizer["gradient"].gradient_norm_pre_clip[2:]).all()
+    assert jnp.isnan(optimizer["update"].update_norm[2:]).all()
+    assert loaded.slots[TRAIN_LOSS] == 0.0
+    assert loaded.slots[DAMAGE_METRIC] == 0.0
+    assert loaded.slots[EPSILON_SCALE] == 0.0
 
 
 def _training_run_spec(tmp_path: Path) -> TrainingRunSpec:
