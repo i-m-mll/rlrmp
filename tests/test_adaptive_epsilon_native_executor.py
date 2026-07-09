@@ -27,6 +27,7 @@ from rlrmp.train.adaptive_epsilon_native import (
     AdaptiveEpsilonNativeRuntime,
     SerializedPyTreeSlot,
     _adaptive_state_from_slot,
+    _adaptive_epsilon_train_chunk,
     adaptive_epsilon_controller_optimizer_spec,
     _adaptive_state_slot,
     _guard_from_slot,
@@ -34,6 +35,7 @@ from rlrmp.train.adaptive_epsilon_native import (
     build_adaptive_epsilon_native_initial_slots,
     ensure_adaptive_epsilon_training_method_registered,
     execute_adaptive_epsilon_training_run_spec_native,
+    optimizer_count_at_current_step,
 )
 from rlrmp.train.cs_nominal_gru import (
     ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER,
@@ -180,6 +182,69 @@ def test_adaptive_epsilon_optimizer_spec_expresses_rewarm_schedule() -> None:
     assert optimizer.lr_schedule.cosine_annealing_alpha == pytest.approx(0.1)
 
 
+def test_adaptive_epsilon_runtime_shifts_restored_count_for_restart_vs_continue(
+    tmp_path: Path,
+) -> None:
+    spec = _adaptive_epsilon_training_spec(
+        tmp_path,
+        controller_mode=ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+        n_train_batches=6,
+    )
+    optimizer = OptimizerSpec(
+        type="adamw",
+        params={"weight_decay": 0.0},
+        lr_schedule=LrScheduleSpec(
+            kind="warmup_cosine",
+            learning_rate_0=1e-3,
+            total_steps=4,
+            constant_lr_iterations=2,
+            warmup_init_fraction=0.01,
+            cosine_annealing_alpha=0.1,
+        ),
+    )
+    restart_lr = _realized_lr_after_restored_count(
+        _with_controller_optimizer(_with_lr_continuation_mode(spec, "restart"), optimizer),
+        restored_count=9,
+        completed_batches=5,
+    )
+    continue_lr = _realized_lr_after_restored_count(
+        _with_controller_optimizer(_with_lr_continuation_mode(spec, "continue"), optimizer),
+        restored_count=9,
+        completed_batches=5,
+    )
+
+    assert restart_lr == pytest.approx(1e-5, rel=1e-4)
+    assert continue_lr == pytest.approx(1e-4, rel=1e-4)
+
+
+def test_adaptive_epsilon_native_executor_emits_batch_progress(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    spec = _adaptive_epsilon_training_spec(
+        tmp_path,
+        controller_mode=ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+        n_train_batches=2,
+    )
+    spec = _with_payload_config(spec, disable_progress=False, quiet_progress=False)
+
+    execute_adaptive_epsilon_training_run_spec_native(
+        spec,
+        run_id="adaptive-epsilon-progress",
+        key=jr.PRNGKey(7),
+        manifest_root=tmp_path / "manifests" / "progress",
+        checkpoint_root=tmp_path / "checkpoints" / "progress",
+        manifest_conflict_policy="reuse-identical",
+    )
+
+    progress_lines = [
+        line for line in capsys.readouterr().out.splitlines() if line.startswith("BATCH ")
+    ]
+    assert progress_lines
+    assert progress_lines[0].startswith("BATCH phase=adaptive_epsilon batch=0/2")
+    assert "loss=" in progress_lines[0]
+
+
 @pytest.mark.parametrize(
     "controller_mode",
     [
@@ -271,11 +336,13 @@ def _adaptive_epsilon_training_spec(
     tmp_path: Path,
     *,
     controller_mode: str,
+    **overrides: Any,
 ) -> TrainingRunSpec:
     args = _adaptive_epsilon_args(
         output_dir=str(tmp_path / controller_mode / "bulk"),
         spec_dir=str(tmp_path / controller_mode / "spec"),
         adaptive_epsilon_controller_training_mode=controller_mode,
+        **overrides,
     )
     payload = write_run_spec(args)["run_spec"]
     return TrainingRunSpec.model_validate(payload["feedbax_training_run_spec"])
@@ -332,6 +399,31 @@ def _with_controller_optimizer(
     )
 
 
+def _with_lr_continuation_mode(
+    spec: TrainingRunSpec,
+    mode: str,
+) -> TrainingRunSpec:
+    method_payload = spec.method_payload.model_dump(mode="json", exclude_none=True)
+    payload = dict(method_payload["payload"])
+    payload["lr_continuation_mode"] = mode
+    method_payload["payload"] = payload
+    return spec.model_copy(
+        update={"method_payload": MethodPayloadEnvelope.model_validate(method_payload)}
+    )
+
+
+def _with_payload_config(spec: TrainingRunSpec, **updates: Any) -> TrainingRunSpec:
+    method_payload = spec.method_payload.model_dump(mode="json", exclude_none=True)
+    payload = dict(method_payload["payload"])
+    config = dict(payload["config"])
+    config.update(updates)
+    payload["config"] = config
+    method_payload["payload"] = payload
+    return spec.model_copy(
+        update={"method_payload": MethodPayloadEnvelope.model_validate(method_payload)}
+    )
+
+
 def _scheduled_learning_rate(opt_state: Any) -> float:
     for leaf in jt.leaves(opt_state, is_leaf=_is_injected_hyperparams_state):
         if _is_injected_hyperparams_state(leaf):
@@ -342,6 +434,73 @@ def _scheduled_learning_rate(opt_state: Any) -> float:
 def _is_injected_hyperparams_state(value: Any) -> bool:
     fields = getattr(value, "_fields", ())
     return {"hyperparams", "inner_state"}.issubset(set(fields))
+
+
+def _with_injected_count(opt_state: Any, count: int) -> Any:
+    def replace_learning_rate_count(hyperparams_states: Any) -> Any:
+        if not isinstance(hyperparams_states, Mapping):
+            return hyperparams_states
+        learning_rate_state = hyperparams_states.get("learning_rate")
+        if learning_rate_state is None or not hasattr(learning_rate_state, "count"):
+            return hyperparams_states
+        return {
+            **hyperparams_states,
+            "learning_rate": learning_rate_state._replace(
+                count=jnp.full_like(learning_rate_state.count, count)
+            ),
+        }
+
+    def replace_count(leaf: Any) -> Any:
+        if _is_injected_hyperparams_state(leaf):
+            return leaf._replace(
+                count=jnp.full_like(leaf.count, count),
+                hyperparams_states=replace_learning_rate_count(leaf.hyperparams_states),
+            )
+        return leaf
+
+    return jt.map(replace_count, opt_state, is_leaf=_is_injected_hyperparams_state)
+
+
+def _realized_lr_after_restored_count(
+    spec: TrainingRunSpec,
+    *,
+    restored_count: int,
+    completed_batches: int,
+) -> float:
+    payload = DEFAULT_TRAINING_METHOD_REGISTRY.validate_payload(
+        spec.method_ref,
+        spec.method_payload,
+        path="/method_payload",
+    )
+    assert isinstance(payload, AdaptiveEpsilonMethodPayload)
+    args = _config_namespace(payload.config)
+    hps = build_hps(args)
+    slots, runtime = build_adaptive_epsilon_native_initial_slots(
+        run_spec=spec,
+        hps=hps,
+        args=args,
+        key=jr.PRNGKey(3),
+    )
+    native = runtime.component("adaptive_epsilon")
+    assert isinstance(native, AdaptiveEpsilonNativeRuntime)
+    optimizer_state = _with_injected_count(
+        _deserialize_slot(slots[OPTIMIZER], native.optimizer_template, slot=OPTIMIZER),
+        restored_count,
+    )
+    assert optimizer_count_at_current_step(optimizer_state) == restored_count
+    chunk_slots = dict(slots)
+    chunk_slots[OPTIMIZER] = SerializedPyTreeSlot(serialize_pytree_slot(optimizer_state))
+    chunk_slots[COMPLETED_BATCHES] = jnp.asarray(completed_batches, dtype=jnp.int32)
+
+    result = _adaptive_epsilon_train_chunk(runtime, payload, chunk_slots, coordinate=None)
+
+    assert native.trainer_resume_context is not None
+    optimizer_state = _deserialize_slot(
+        result[OPTIMIZER],
+        native.optimizer_template,
+        slot=OPTIMIZER,
+    )
+    return _scheduled_learning_rate(optimizer_state)
 
 
 def _legacy_adaptive_epsilon_chunk_loop(
