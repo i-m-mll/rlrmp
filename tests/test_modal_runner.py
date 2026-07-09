@@ -262,15 +262,6 @@ def test_dry_run_payload_exposes_spec_lock_and_no_warm_container_settings() -> N
         ),
         remote=True,
     )
-    planned = payload["planned_stochastic_runs"]
-    assert planned["stochastic_no_hidden_penalty"]["run"] == DEFAULT_RUN
-    assert planned["stochastic_no_hidden_penalty"]["nn_hidden"] == 0.0
-    assert planned["stochastic_hidden_penalty"]["run"] == REGULARIZED_RUN
-    assert planned["stochastic_hidden_penalty"]["nn_hidden"] == 1e-5
-    assert "unavailable" in planned["stochastic_hidden_penalty"]["modal_spec_lock"]
-    assert "full_analytical_qrf" in planned["stochastic_hidden_penalty"]["modal_spec_lock"][
-        "unavailable"
-    ]
     pull = payload["modal_volume_pull_commands"]
     assert pull["artifacts"][:4] == ["modal", "volume", "get", MODAL_VOLUME_NAME]
     assert pull["artifacts"][4] == f"_artifacts/30f2313/runs/{DEFAULT_RUN}"

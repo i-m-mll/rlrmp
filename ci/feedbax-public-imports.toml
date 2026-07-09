@@ -288,6 +288,10 @@ symbols = [
 ]
 
 [[canonical_homes]]
+module = "feedbax.contracts.run_matrix"
+symbols = ["TrainingRunMatrixSpec"]
+
+[[canonical_homes]]
 module = "feedbax.contracts.training"
 symbols = [
   "ArtifactPolicySpec",
@@ -338,6 +342,15 @@ symbols = [
   "UpdateKernelSpec",
   "UpdateStepSpec",
   "derive_consistency_predicate",
+]
+
+[[canonical_homes]]
+module = "feedbax.training.run_matrix"
+symbols = [
+  "ForkParityError",
+  "fork_matrix_checkpoints",
+  "materialize_run_matrix",
+  "render_spec_lock_table",
 ]
 
 [[canonical_homes]]

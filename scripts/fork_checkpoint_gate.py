@@ -16,6 +16,12 @@ from rlrmp.runtime.checkpoint_fork_gate import (
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--matrix",
+        required=True,
+        type=Path,
+        help="TrainingRunMatrixSpec JSON document.",
+    )
+    parser.add_argument(
         "--source-checkpoint-root",
         required=True,
         type=Path,
@@ -26,13 +32,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="append",
         type=parse_target,
         required=True,
-        help="Target row as ROW=SPEC_JSON:CHECKPOINT_ROOT; may be repeated.",
-    )
-    parser.add_argument(
-        "--run-plan",
-        required=True,
-        type=Path,
-        help="RUN_PLAN/spec-lock file declaring LR continuation schedule.",
+        help="Target row as ROW=CHECKPOINT_ROOT; may be repeated.",
     )
     parser.add_argument(
         "--parity-output",
@@ -52,9 +52,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
         fork_checkpoints_with_parity(
+            matrix_path=args.matrix,
             source_checkpoint_root=args.source_checkpoint_root,
             targets=args.target,
-            run_plan_path=args.run_plan,
             parity_output_path=args.parity_output,
             skip_fork=args.skip_fork,
         )
