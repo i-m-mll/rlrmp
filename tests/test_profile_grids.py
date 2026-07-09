@@ -8,7 +8,16 @@ from __future__ import annotations
 
 import pytest
 
+import rlrmp.viz as viz
 from rlrmp.viz.profile_grids import profile_comparison_grid
+
+
+def test_viz_public_surface_is_pinned():
+    """Only the live shared profile grid helper is exported from ``rlrmp.viz``."""
+
+    assert viz.__all__ == ["profile_comparison_grid"]
+    assert viz.profile_comparison_grid is profile_comparison_grid
+    assert not hasattr(viz, "visualize_loss_structure")
 
 
 def test_default_shares_yaxes_all():
