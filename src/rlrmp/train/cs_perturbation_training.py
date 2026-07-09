@@ -21,6 +21,7 @@ from feedbax.contracts.graph import (
     AdditiveGraphChannelTargetSpec,
 )
 from jaxtyping import PRNGKeyArray
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from rlrmp.data_products.broad_epsilon import (
     BROAD_EPSILON_PRODUCT_ROLE,
@@ -49,6 +50,7 @@ from rlrmp.model.cs_lss_gru import (
     FINITE_EPSILON_POLICY_GRAPH_COMPONENT,
     FINITE_EPSILON_POLICY_NODE_LABEL,
 )
+from rlrmp.runtime.params_models import register_params_model
 from rlrmp.train.closed_loop_finite_adversary import (
     AFFINE_POLICY,
     FINITE_POLICY_BIAS_INPUT,
@@ -60,6 +62,21 @@ from rlrmp.train.closed_loop_finite_adversary import (
     zero_finite_linear_no_bias_policy,
 )
 
+
+class CsPerturbationTrainingConfig(BaseModel):
+    """Shared strict base for C&S perturbation training config models."""
+
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        extra="forbid",
+        frozen=True,
+    )
+
+    def to_json(self) -> dict[str, Any]:
+        """Return run-spec metadata for this config."""
+
+        return self.to_hps_dict()
+
 PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_randomized"
 CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_calibrated_timing"
 LEGACY_PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_generalized"
@@ -68,6 +85,13 @@ TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE = "target_relative_multitarget_stat
 BROAD_EPSILON_TRAINING_MODE = "broad_full_state_epsilon_l2"
 BROAD_EPSILON_PGD_TRAINING_MODE = "broad_full_state_epsilon_pgd_l2"
 POLICY_ADVERSARY_TRAINING_MODE = "broad_full_state_epsilon_policy_l2"
+FIXED_TARGET_PERTURBATION_PARAMS_REF = (
+    "rlrmp.train.fixed_target_perturbation_training.v1"
+)
+TARGET_RELATIVE_MULTITARGET_PARAMS_REF = "rlrmp.train.target_relative_multitarget.v1"
+BROAD_EPSILON_PARAMS_REF = "rlrmp.train.broad_full_state_epsilon.v1"
+BROAD_EPSILON_PGD_PARAMS_REF = "rlrmp.train.broad_full_state_epsilon_pgd.v1"
+POLICY_ADVERSARY_PARAMS_REF = "rlrmp.train.broad_full_state_epsilon_policy.v1"
 POLICY_ADVERSARY_MEMORYLESS_MLP = "memoryless_mlp"
 POLICY_ADVERSARY_PLAIN_MODE = "plain"
 POLICY_ADVERSARY_ENERGY_MODE = "energy"
@@ -279,8 +303,7 @@ PGD_SISU_MAX_RADIUS_SOURCES: dict[str, dict[str, Any]] = {
 }
 
 
-@dataclass(frozen=True)
-class BroadFullStateEpsilonTrainingConfig:
+class BroadFullStateEpsilonTrainingConfig(CsPerturbationTrainingConfig):
     """Random full-state epsilon training lane for the C&S analytical game."""
 
     enabled: bool = False
@@ -291,7 +314,8 @@ class BroadFullStateEpsilonTrainingConfig:
     movement_epoch_only: bool = False
     epsilon_dim: int = BROAD_EPSILON_DIM
 
-    def __post_init__(self) -> None:
+    @model_validator(mode="after")
+    def _validate_config(self) -> "BroadFullStateEpsilonTrainingConfig":
         anchors = load_broad_epsilon_anchors()
         if self.level not in anchors:
             levels = ", ".join(anchors.keys())
@@ -304,6 +328,7 @@ class BroadFullStateEpsilonTrainingConfig:
             raise ValueError("broad epsilon nominal_reach_length_m must be positive.")
         if int(self.epsilon_dim) < 1:
             raise ValueError("broad epsilon epsilon_dim must be positive.")
+        return self
 
     @property
     def level_contract(self) -> dict[str, Any]:
@@ -362,14 +387,7 @@ class BroadFullStateEpsilonTrainingConfig:
             },
         }
 
-    def to_json(self) -> dict[str, Any]:
-        """Return JSON-serializable broad-epsilon metadata."""
-
-        return self.to_hps_dict()
-
-
-@dataclass(frozen=True)
-class PgdFullStateEpsilonTrainingConfig:
+class PgdFullStateEpsilonTrainingConfig(BroadFullStateEpsilonTrainingConfig):
     """Training-time PGD lane on the C&S full-state epsilon channel."""
 
     enabled: bool = False
@@ -405,7 +423,8 @@ class PgdFullStateEpsilonTrainingConfig:
     safety_cap_l2_radius_15cm: float | None = None
     safety_cap_source: str | None = None
 
-    def __post_init__(self) -> None:
+    @model_validator(mode="after")
+    def _validate_config(self) -> "PgdFullStateEpsilonTrainingConfig":
         if self.adversary_mechanism not in BROAD_EPSILON_PGD_MECHANISMS:
             mechanisms = ", ".join(BROAD_EPSILON_PGD_MECHANISMS)
             raise ValueError(
@@ -494,6 +513,7 @@ class PgdFullStateEpsilonTrainingConfig:
                     "Finite-policy PGD soft-energy objectives require an explicit "
                     "safety-cap radius."
                 )
+        return self
 
     @property
     def level_contract(self) -> dict[str, Any]:
@@ -624,14 +644,7 @@ class PgdFullStateEpsilonTrainingConfig:
             },
         }
 
-    def to_json(self) -> dict[str, Any]:
-        """Return JSON-serializable PGD broad-epsilon metadata."""
-
-        return self.to_hps_dict()
-
-
-@dataclass(frozen=True)
-class PolicyFullStateEpsilonTrainingConfig:
+class PolicyFullStateEpsilonTrainingConfig(CsPerturbationTrainingConfig):
     """Learned policy lane on the C&S full-state epsilon channel."""
 
     enabled: bool = False
@@ -650,7 +663,8 @@ class PolicyFullStateEpsilonTrainingConfig:
     state_feature_dim: int = BROAD_EPSILON_DIM * 6
     budget_source: str | None = None
 
-    def __post_init__(self) -> None:
+    @model_validator(mode="after")
+    def _validate_config(self) -> "PolicyFullStateEpsilonTrainingConfig":
         if self.policy_class not in POLICY_ADVERSARY_POLICY_CLASSES:
             raise ValueError(
                 "Policy adversary policy_class must be one of: "
@@ -685,6 +699,7 @@ class PolicyFullStateEpsilonTrainingConfig:
             raise ValueError("Policy adversary epsilon_dim must be positive.")
         if int(self.state_feature_dim) < 1:
             raise ValueError("Policy adversary state_feature_dim must be positive.")
+        return self
 
     @property
     def reference_l2_radius(self) -> float:
@@ -1263,8 +1278,7 @@ def _widen_controller_visible_adapter(
     )
 
 
-@dataclass(frozen=True)
-class FixedTargetPerturbationTrainingConfig:
+class FixedTargetPerturbationTrainingConfig(CsPerturbationTrainingConfig):
     """Mixture and amplitudes for fixed-target C&S GRU perturbation training."""
 
     enabled: bool = False
@@ -1287,7 +1301,8 @@ class FixedTargetPerturbationTrainingConfig:
     calibration_regime: TrainingCalibrationRegime = OPEN_LOOP_ALL_CALIBRATION_REGIME
     closed_loop_calibration_table_path: str | None = None
 
-    def __post_init__(self) -> None:
+    @model_validator(mode="after")
+    def _validate_config(self) -> "FixedTargetPerturbationTrainingConfig":
         total = self.nominal_fraction + self.single_fraction + self.combined_fraction
         if not np.isclose(total, 1.0):
             raise ValueError(f"Perturbation-training fractions must sum to 1.0; got {total:.6g}.")
@@ -1321,6 +1336,7 @@ class FixedTargetPerturbationTrainingConfig:
                     "Mixed calibration regimes require closed_loop_calibration_table_path."
                 )
             _load_closed_loop_calibration_table(str(self.closed_loop_calibration_table_path))
+        return self
 
     @property
     def mode(self) -> str:
@@ -1495,8 +1511,7 @@ class FixedTargetPerturbationTrainingConfig:
         return payload
 
 
-@dataclass(frozen=True)
-class TargetRelativeMultiTargetTrainingConfig:
+class TargetRelativeMultiTargetTrainingConfig(CsPerturbationTrainingConfig):
     """Structured static-target distribution for target-relative GRU training."""
 
     enabled: bool = False
@@ -1507,11 +1522,14 @@ class TargetRelativeMultiTargetTrainingConfig:
     seen_amplitudes_m: tuple[float, ...] = DEFAULT_SEEN_TARGET_AMPLITUDES_M
     held_out_amplitudes_m: tuple[float, ...] = DEFAULT_HELD_OUT_TARGET_AMPLITUDES_M
     original_target_anchor_m: tuple[float, float] = ORIGINAL_TARGET_ANCHOR_M
-    support_metadata: Any = ()
+    support_metadata: Any = Field(default_factory=tuple)
 
-    def __post_init__(self) -> None:
+    @model_validator(mode="after")
+    def _validate_config(self) -> "TargetRelativeMultiTargetTrainingConfig":
         object.__setattr__(
-            self, "support_metadata", _freeze_target_support_metadata(self.support_metadata)
+            self,
+            "support_metadata",
+            _freeze_target_support_metadata(self.support_metadata),
         )
         if self.target_support_profile not in TARGET_SUPPORT_PROFILES:
             profiles = ", ".join(TARGET_SUPPORT_PROFILES)
@@ -1543,6 +1561,7 @@ class TargetRelativeMultiTargetTrainingConfig:
         overlap = set(seen).intersection(set(held_out))
         if overlap:
             raise ValueError(f"Seen and held-out target sets overlap: {sorted(overlap)!r}")
+        return self
 
     @property
     def seen_targets_m(self) -> tuple[tuple[float, float], ...]:
@@ -1605,6 +1624,35 @@ class TargetRelativeMultiTargetTrainingConfig:
         """Return run-spec metadata."""
 
         return self.to_hps_dict()
+
+
+def register_perturbation_training_params_models(*, replace: bool = True) -> None:
+    """Register C&S perturbation training config models for run-matrix validation."""
+
+    register_params_model(
+        FIXED_TARGET_PERTURBATION_PARAMS_REF,
+        FixedTargetPerturbationTrainingConfig,
+        replace=replace,
+    )
+    register_params_model(
+        TARGET_RELATIVE_MULTITARGET_PARAMS_REF,
+        TargetRelativeMultiTargetTrainingConfig,
+        replace=replace,
+    )
+    register_params_model(BROAD_EPSILON_PARAMS_REF, BroadFullStateEpsilonTrainingConfig, replace=replace)
+    register_params_model(
+        BROAD_EPSILON_PGD_PARAMS_REF,
+        PgdFullStateEpsilonTrainingConfig,
+        replace=replace,
+    )
+    register_params_model(
+        POLICY_ADVERSARY_PARAMS_REF,
+        PolicyFullStateEpsilonTrainingConfig,
+        replace=replace,
+    )
+
+
+register_perturbation_training_params_models()
 
 
 def target_relative_target_support_config(
