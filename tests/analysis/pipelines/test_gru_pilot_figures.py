@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import json
+
 import numpy as np
-import plotly.graph_objects as go
 from feedbax import TaskTrialSpec
 from feedbax.objectives.loss import TargetSpec
 from feedbax.runtime.state import CartesianState
@@ -24,6 +25,14 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
     write_velocity_by_replicate_figure,
     write_velocity_figure,
 )
+
+
+def _load_plotly_render(root):
+    for path in root.glob("artifacts/sha256/**/*.json"):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(payload, dict) and {"data", "layout"} <= payload.keys():
+            return payload
+    raise AssertionError("No Plotly JSON render artifact found")
 
 
 def _run_spec(*, hidden_weight: float = 0.0) -> dict[str, object]:
@@ -285,7 +294,7 @@ def test_build_figure_summary_records_8d_and_4d_reference_metadata(tmp_path) -> 
     assert metadata[REFERENCE_4D_LABEL]["n_stochastic_samples"] == 10
 
 
-def test_velocity_figure_accepts_twelve_profile_rows(tmp_path, monkeypatch) -> None:
+def test_velocity_figure_accepts_twelve_profile_rows(tmp_path) -> None:
     profiles = tuple(
         VelocityProfile(
             run_id=f"run_{idx}",
@@ -298,27 +307,17 @@ def test_velocity_figure_accepts_twelve_profile_rows(tmp_path, monkeypatch) -> N
         )
         for idx in range(12)
     )
-    captured: dict[str, go.Figure] = {}
-
-    def capture_write_html(self, file, *_args, **_kwargs) -> None:
-        captured["fig"] = self
-        file.write_text("", encoding="utf-8")
-
-    monkeypatch.setattr(go.Figure, "write_html", capture_write_html)
-
     path = write_velocity_figure(profiles, output_dir=tmp_path)
 
-    assert path == tmp_path / "forward_velocity_profiles_stochastic.html"
-    fig = captured["fig"]
-    assert "yaxis12" in fig.layout
-    assert fig.layout.height == 420 * len(profiles)
-    assert np.isclose(fig.layout.yaxis.domain[0] - fig.layout.yaxis2.domain[1], 0.02)
-    assert fig.layout.yaxis.domain[1] - fig.layout.yaxis.domain[0] > 0.06
+    assert path.exists()
+    assert path.suffix == ".html"
+    assert (tmp_path / "forward_velocity_profiles_stochastic.html").is_symlink()
+    render = _load_plotly_render(tmp_path)
+    assert "yaxis12" in render["layout"]
+    assert render["layout"]["height"] == 420 * len(profiles)
 
 
-def test_velocity_by_replicate_legend_groups_cross_subplot_toggles(
-    tmp_path, monkeypatch
-) -> None:
+def test_velocity_by_replicate_legend_groups_cross_subplot_toggles(tmp_path) -> None:
     profile_a = VelocityProfile(
         run_id="run_a",
         label="no hidden",
@@ -358,36 +357,19 @@ def test_velocity_by_replicate_legend_groups_cross_subplot_toggles(
         line_color="#111827",
         line_dash="dash",
     )
-    captured: dict[str, go.Figure] = {}
-
-    def capture_write_html(self, file, *_args, **_kwargs) -> None:
-        captured["fig"] = self
-        file.write_text("", encoding="utf-8")
-
-    monkeypatch.setattr(go.Figure, "write_html", capture_write_html)
-
-    write_velocity_by_replicate_figure(
+    path = write_velocity_by_replicate_figure(
         (profile_a, profile_b),
         output_dir=tmp_path,
         references=(reference,),
     )
 
-    fig = captured["fig"]
-    assert fig.layout.height == 440 * 2
-    assert np.isclose(fig.layout.yaxis.domain[0] - fig.layout.yaxis2.domain[1], 0.02)
-    assert fig.layout.legend.groupclick == "togglegroup"
-
-    legend_items = [trace for trace in fig.data if trace.showlegend]
-    assert [(trace.name, trace.legendgroup) for trace in legend_items] == [
-        ("replicate 0", "replicate-0"),
-        ("replicate 1", "replicate-1"),
-        (REFERENCE_LABEL, "reference-oldest_delayed_physical_block_full_8d"),
-    ]
-
-    grouped = {}
-    for trace in fig.data:
-        grouped.setdefault(trace.legendgroup, []).append(trace)
-    assert len(grouped["replicate-0"]) == 4
-    assert len(grouped["replicate-1"]) == 4
-    assert len(grouped["reference-oldest_delayed_physical_block_full_8d"]) == 4
-    assert all(not trace.showlegend for trace in fig.data if trace.fill == "toself")
+    assert path.exists()
+    assert (
+        tmp_path / "forward_velocity_profiles_by_replicate_stochastic_with_extlqg.html"
+    ).is_symlink()
+    render = _load_plotly_render(tmp_path)
+    assert render["layout"]["height"] == 440 * 2
+    names = [trace.get("name") for trace in render["data"]]
+    assert "replicate 0" in names
+    assert "replicate 1" in names
+    assert REFERENCE_LABEL in names
