@@ -403,6 +403,9 @@ def sisu_spectrum_recipe(
     )
 
 
+sisu_spectrum_recipe.EVAL_DEPENDENCIES = (SISU_SPECTRUM_EVALUATION_TYPE,)
+
+
 def robustification_comparison(curves: Sequence[SisuCurve]) -> dict[str, float]:
     """Compare SISU=1 against SISU=0 within one trained network."""
 

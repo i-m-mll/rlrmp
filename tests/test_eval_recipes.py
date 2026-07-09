@@ -164,6 +164,7 @@ def _bank() -> dict[str, Any]:
                 "checkpoint_bank": None,
                 "perturbation_battery": None,
                 "bank": None,
+                "bank_params": None,
                 "alignment_mode": "reach_locked",
                 "response_tensors": None,
                 "class_index_map": None,

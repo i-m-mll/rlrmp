@@ -540,7 +540,8 @@ _CLI_HELP: dict[str, str] = {
         "Allow --resume to start from batch 0 when the expected resume pointer is absent."
     ),
     "stop_after_batches": (
-        "Global completed-batch index at which a full-train checkpoint-gate run may stop."
+        "Global completed-batch index at which a full-train checkpoint-gate run may stop; "
+        "not a relative count."
     ),
     "training_diagnostics": "Write compact optimizer/loss scalar sidecars.",
     "dry_run": "Print the would-write payload without creating files.",

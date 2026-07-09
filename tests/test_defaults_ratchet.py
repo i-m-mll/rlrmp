@@ -132,6 +132,15 @@ VALUE_DRIFT_EXCEPTIONS: tuple[DefaultValueDriftException, ...] = (
             "uses sign as a directional pulse parameter."
         ),
     ),
+    DefaultValueDriftException(
+        key="sign",
+        path="src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+        literal_repr="0",
+        reason=(
+            "Perturbation-bank filtering treats absent sign metadata as neutral; perturbation "
+            "calibration uses sign as a directional pulse parameter."
+        ),
+    ),
 )
 
 

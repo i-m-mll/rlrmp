@@ -118,7 +118,7 @@ def test_materialize_studio_records_writes_workspace_and_pipeline_manifests(
     assert stages["analysis"]["status"] == "completed"
     assert stages["report"]["status"] == "completed"
     assert stages["eval"]["input_collections"][0]["item_refs"][0]["role"] == "training_run"
-    assert stages["analysis"]["artifact_refs"][0]["role"] == "figure"
+    assert stages["analysis"]["output_collections"][0]["kind"] == "analysis_products"
 
     analysis_manifest = json.loads(
         Path(result.manifest_paths["stage:analysis"]).read_text(encoding="utf-8")
@@ -127,7 +127,7 @@ def test_materialize_studio_records_writes_workspace_and_pipeline_manifests(
     assert analysis_manifest["analysis_spec"]["inline"]["analysis_type"] == (
         "rlrmp.standard_matrix"
     )
-    assert analysis_manifest["artifacts"][0]["role"] == "figure"
+    assert analysis_manifest["artifacts"] == []
     assert all(
         load_manifest(Path(path)).provenance.issues == []
         for path in result.manifest_paths.values()

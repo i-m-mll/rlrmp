@@ -1889,3 +1889,19 @@ literal_repr = "1.0"
 count = 1
 owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+key = "sign"
+literal_repr = "0"
+count = 1
+owner = "31aaa31"
+note = "Umbrella integration: perturbation-bank filtering treats missing sign metadata as neutral."
+
+[[default_fallback_sites]]
+path = "src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py"
+key = "issue"
+literal_repr = "'unknown'"
+count = 1
+owner = "31aaa31"
+note = "Umbrella integration: SISU spectrum manifest provenance keeps an explicit unknown marker."

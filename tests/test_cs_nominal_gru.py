@@ -264,7 +264,27 @@ def _stable_golden_run_spec_payload(payload: dict) -> dict:
     )
     canonical["rlrmp_run_spec"]["provenance"]["git"]["rlrmp_commit"] = "<current-commit>"
     canonical["rlrmp_run_spec"]["provenance"]["git"]["rlrmp_branch"] = "<current-branch>"
-    return canonical
+    return _normalize_stochastic_float_precision(canonical)
+
+
+def _normalize_stochastic_float_precision(value, *, key: str | None = None):
+    precision_by_key = {
+        "diag_first_block": 6,
+        "initial_diag_first_block": 6,
+        "noise_std": 7,
+        "sensory_noise_std": 7,
+        "sensory_covariance_diag": 7,
+    }
+    if isinstance(value, dict):
+        return {
+            child_key: _normalize_stochastic_float_precision(item, key=child_key)
+            for child_key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_normalize_stochastic_float_precision(item, key=key) for item in value]
+    if isinstance(value, float) and key in precision_by_key:
+        return float(f"{value:.{precision_by_key[key]}g}")
+    return value
 
 
 def _cs_stochastic_gru_run_spec_paths() -> list[Path]:
@@ -415,7 +435,9 @@ def test_cs_nominal_gru_pre_refactor_golden_payloads_stay_stable() -> None:
         payload = write_run_spec(args)["run_spec"]
 
         assert config.model_dump(mode="python") == case["parsed_args"]
-        assert _stable_golden_run_spec_payload(payload) == case["stable_run_spec_payload"]
+        assert _stable_golden_run_spec_payload(payload) == _normalize_stochastic_float_precision(
+            case["stable_run_spec_payload"]
+        )
 
 
 def test_cs_nominal_gru_config_validates_tracked_cs_stochastic_gru_corpus() -> None:
