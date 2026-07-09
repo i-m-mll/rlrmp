@@ -16,11 +16,11 @@ from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     summarize_perturbation_response,
 )
 from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
-    DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS,
-    DEFAULT_PLANT_TIMING_BINS,
-    DEFAULT_REACH_RELATIVE_LEVELS,
     ReachRelativeLevel,
     TimingCalibrationBin,
+    default_controller_visible_timing_bins,
+    default_plant_timing_bins,
+    default_reach_relative_levels,
 )
 from rlrmp.io import write_compact_json
 from rlrmp.paths import mkdir_p
@@ -30,6 +30,9 @@ SCHEMA_VERSION = "rlrmp.c92ebd8.closed_loop_perturbation_calibration.v1"
 ISSUE = "c92ebd8"
 DEFAULT_REACH_LENGTH_M = 0.15
 DEFAULT_OUTPUT_PATH = Path("results") / ISSUE / "notes" / "closed_loop_calibration_table.json"
+DEFAULT_REACH_RELATIVE_LEVELS = default_reach_relative_levels()
+DEFAULT_PLANT_TIMING_BINS = default_plant_timing_bins()
+DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS = default_controller_visible_timing_bins()
 
 
 def materialize_closed_loop_calibration(

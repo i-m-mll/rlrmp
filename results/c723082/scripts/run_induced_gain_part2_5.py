@@ -51,6 +51,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 import numpy as np
+from feedbax.analysis import GraphControllerAdapter
 from jax_cookbook import load_with_hyperparameters
 
 from rlrmp.analysis.math.hinf_riccati import (
@@ -65,7 +66,6 @@ from rlrmp.analysis.math.induced_gain import (
     W_SENSORY_PERTURBATION,
     W_STRUCTURAL_DA,
     Z_QR_COST,
-    Controller,
     induced_gain,
 )
 from rlrmp.analysis.feedbax_controllers import simple_feedback_induced_gain_controller
@@ -333,7 +333,7 @@ def build_network_controller(
     target_pos: jnp.ndarray,
     sisu: float = 0.5,
     key: jnp.ndarray = jr.PRNGKey(0),
-) -> Controller:
+) -> GraphControllerAdapter:
     """Build a Feedbax-backed controller adapter for a Part 2.5 model.
 
     Args:
