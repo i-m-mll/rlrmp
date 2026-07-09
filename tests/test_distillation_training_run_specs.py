@@ -350,7 +350,7 @@ def test_closed_loop_distillation_native_executor_runs_fixed_seed(
         ]
     )
     source_spec = closed_loop_distillation.build_closed_loop_distillation_spec(args)
-    with pytest.raises(RuntimeError, match="Legacy Feedbax train_pair support has been removed"):
+    with pytest.raises(RuntimeError, match="Legacy injected closed-loop distillation"):
         closed_loop_distillation.run_closed_loop_distillation_training(
             spec=source_spec,
             key=jr.PRNGKey(0),

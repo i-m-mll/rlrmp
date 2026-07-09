@@ -53,6 +53,12 @@ MINIMAX_JITTED_STEP_FUNCTIONS = {
     "_vmapped_linear_adversary_ascent",
     "_vmapped_controller_descent",
 }
+RETIRED_GUIDED_CHECKPOINT_APIS = {
+    "GuidedDistillationTrainingState",
+    "latest_checkpoint_path",
+    "save_training_checkpoint",
+    "load_latest_checkpoint",
+}
 ALLOWED_NON_TRAINING_OPTIMIZER_LOOPS = {
     (
         Path("src/rlrmp/train/cs_perturbation_training.py"),
@@ -132,6 +138,38 @@ def test_minimax_native_step_functions_stay_jitted() -> None:
     assert not findings, "Minimax native step function(s) lost eqx.filter_jit: " + ", ".join(
         findings
     )
+
+
+def test_retired_guided_checkpoint_runtime_apis_stay_deleted() -> None:
+    module_path = REPO_ROOT / "src" / "rlrmp" / "train" / "guided_distillation.py"
+    tree = ast.parse(module_path.read_text(encoding="utf-8"))
+    definitions = {
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
+    }
+
+    revived = sorted(definitions & RETIRED_GUIDED_CHECKPOINT_APIS)
+
+    assert not revived, "Retired guided checkpoint API(s) reappeared: " + ", ".join(revived)
+
+
+def test_minimax_checkpoint_slots_are_executor_owned() -> None:
+    minimax_path = REPO_ROOT / "src" / "rlrmp" / "train" / "minimax.py"
+    slots_path = REPO_ROOT / "src" / "rlrmp" / "train" / "executor" / "slots.py"
+    minimax_tree = ast.parse(minimax_path.read_text(encoding="utf-8"))
+    slots_tree = ast.parse(slots_path.read_text(encoding="utf-8"))
+
+    minimax_calls = _module_call_names(minimax_tree)
+    slots_defs = {
+        node.name
+        for node in ast.walk(slots_tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+    }
+
+    assert "minimax_checkpoint_slot_specs" in slots_defs
+    assert "minimax_checkpoint_slot_specs" in minimax_calls
+    assert "CheckpointSlotSpec" not in _module_call_names(minimax_tree)
 
 
 def test_native_executor_deletion_gate_negative_canary_flags_optimizer_loop() -> None:
