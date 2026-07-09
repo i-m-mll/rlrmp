@@ -22,6 +22,7 @@ from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
     ObserverErrorCoverageConfig,
     RolloutRecoveryCondition,
     _eigenspectrum_coverage_samples,
+    _coverage_state_objective,
     _make_parameter_maps,
     _observer_error_coverage_samples,
     _scale_initial_state_config,
@@ -271,6 +272,36 @@ def test_observer_error_coverage_samples_are_time_indexed_signed_pairs() -> None
         reference.plant.m_w,
     )
     assert arrays["coverage_observer_error"].shape == coverage_x.shape
+
+
+def test_coverage_state_objective_uses_clean_objective_for_zero_time_overlap() -> None:
+    reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
+    x0 = make_cs_output_feedback_initial_state(reference.plant)
+    states = jnp.stack([x0, 0.5 * x0])
+    weights = jnp.asarray([2.0, 0.5], dtype=jnp.float64)
+    output_config = OutputFeedbackConfig()
+
+    coverage_objective = _coverage_state_objective(
+        reference.plant,
+        reference.schedule,
+        reference.lqr_solution.K,
+        states,
+        states,
+        jnp.zeros((states.shape[0],), dtype=jnp.int32),
+        weights,
+        output_config,
+    )
+    normalized_clean_weights = weights / jnp.sum(weights) * states.shape[0]
+    clean_objective = output_feedback_clean_objective(
+        reference.plant,
+        reference.schedule,
+        reference.lqr_solution.K,
+        states,
+        normalized_clean_weights,
+        output_config,
+    )
+
+    assert jnp.allclose(coverage_objective, clean_objective)
 
 
 def test_initial_state_scale_sweep_preserves_reach_weight() -> None:

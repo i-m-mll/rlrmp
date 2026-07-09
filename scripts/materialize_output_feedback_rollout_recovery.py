@@ -1,4 +1,4 @@
-"""Write the 7a459bb output-feedback rollout-recovery artifacts."""
+"""Materialize the 7a459bb output-feedback rollout-recovery artifacts."""
 
 from __future__ import annotations
 
@@ -42,19 +42,28 @@ def parse_args() -> argparse.Namespace:
         "--note-output",
         type=Path,
         default=None,
-        help="Tracked markdown note path. Defaults to results/7a459bb/notes/...",
+        help=(
+            "Legacy markdown output hint recorded in the Feedbax payload; "
+            "durable bytes are emitted as Feedbax artifacts."
+        ),
     )
     parser.add_argument(
         "--manifest-output",
         type=Path,
         default=None,
-        help="Tracked JSON manifest path. Defaults to results/7a459bb/notes/...",
+        help=(
+            "Legacy JSON output hint recorded in the Feedbax payload; "
+            "the AnalysisRunManifest owns the payload artifact."
+        ),
     )
     parser.add_argument(
         "--artifact-output",
         type=Path,
         default=None,
-        help="Bulk NPZ artifact path. Defaults to _artifacts/7a459bb/...",
+        help=(
+            "Legacy NPZ output hint recorded in the Feedbax payload; "
+            "bulk arrays are emitted as a Feedbax artifact group."
+        ),
     )
     parser.add_argument(
         "--feedbax-runs-root",
@@ -97,11 +106,9 @@ def main() -> None:
         root=args.feedbax_runs_root,
         issues=[MATERIALIZER_ISSUE_ID, issue_id],
     )
-    print(f"Wrote {note_output}")
-    print(f"Wrote {manifest_output}")
-    print(f"Wrote {artifact_output}")
     print(f"Wrote {feedbax_manifest_path}")
     print(f"Feedbax analysis manifest: {manifest.id}")
+    print(f"Legacy output hints: {note_output}, {manifest_output}, {artifact_output}")
 
 
 if __name__ == "__main__":
