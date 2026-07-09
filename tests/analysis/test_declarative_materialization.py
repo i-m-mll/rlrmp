@@ -37,6 +37,10 @@ from rlrmp.eval.recipes import (
     FEEDBACK_ABLATION_EVALUATION_TYPE,
     PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
 )
+from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+    PERTURBATION_BANK_PARAMS_TYPE,
+    PerturbationBankParams,
+)
 from rlrmp.runtime.params_models import params_model_for
 from rlrmp.runtime.spec_migrations import (
     CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND,
@@ -324,10 +328,21 @@ def test_diagnostic_bank_recipes_register_params_models_and_eval_dependencies() 
     assert params_model_for(dm.RECURRENT_JACOBIAN_ANALYSIS_TYPE) is (
         dm.RecurrentJacobianAnalysisParams
     )
+    assert params_model_for(dm.PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE) is (
+        dm.PerturbationClassResponseAnalysisParams
+    )
+    assert params_model_for(dm.PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE) is (
+        dm.PerturbationBankAggregateAnalysisParams
+    )
+    assert params_model_for(PERTURBATION_BANK_PARAMS_TYPE) is PerturbationBankParams
     with pytest.raises(ValidationError):
         dm.PolicyDiagnosticsAnalysisParams.model_validate({"unknown": True})
     with pytest.raises(ValidationError):
         dm.RecurrentJacobianAnalysisParams.model_validate({"unknown": True})
+    with pytest.raises(ValidationError):
+        dm.PerturbationClassResponseAnalysisParams.model_validate({"unknown": True})
+    with pytest.raises(ValidationError):
+        dm.PerturbationBankAggregateAnalysisParams.model_validate({"unknown": True})
     assert dm.EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE[
         dm.FEEDBACK_ABLATION_ANALYSIS_TYPE
     ] == (FEEDBACK_ABLATION_EVALUATION_TYPE,)

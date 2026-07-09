@@ -20,12 +20,14 @@ from rlrmp.analysis.perturbation_rows import PerturbationChannel, PerturbationSp
 from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import RolloutEvaluation
 from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     GRAPH_ADAPTER_INPUT_PREFIX,
+    PerturbationBankParams,
     SCHEMA_VERSION,
     apply_perturbation_to_trial_specs,
     default_cs_perturbation_bank,
     delta_full_qrf_cost_summary,
     evaluate_extlqg_perturbation_comparator,
     evaluate_robust_output_feedback_perturbation_comparator,
+    expand_perturbation_bank,
     extlqg_comparator_status,
     full_qrf_cost_summary,
     render_perturbation_response_markdown,
@@ -207,6 +209,28 @@ def test_default_bank_is_json_serializable_with_required_channels() -> None:
         for row in lateral_rows
     )
     assert len(decoded["perturbations"]) == 111
+
+
+def test_bank_params_select_condition_rows_through_single_expander() -> None:
+    bank = expand_perturbation_bank(
+        PerturbationBankParams(
+            families=("command_input_pulse",),
+            axes=("x",),
+            signs=(1,),
+            timing_bins=("early",),
+            amplitude_policy="raw_default",
+        )
+    )
+
+    rows = bank["perturbations"]
+    assert [row["perturbation_id"] for row in rows] == [
+        "command_input_pulse__early_t5_x_pos"
+    ]
+    assert bank["condition_source"]["type"] == "registered_params_model"
+    assert bank["bank_params"]["families"] == ["command_input_pulse"]
+    assert bank["bank_params"]["axes"] == ["x"]
+    assert bank["bank_params"]["signs"] == [1]
+    assert bank["bank_params"]["timing_bins"] == ["early"]
 
 
 def test_default_bank_emits_timing_bin_specific_rows() -> None:

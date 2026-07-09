@@ -18,6 +18,7 @@ from feedbax.contracts.graph import (
     AdditiveGraphChannelTargetSpec,
 )
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
+from pydantic import BaseModel, ConfigDict, Field
 
 from rlrmp.analysis.perturbation_rows import PerturbationChannel, PerturbationSpec
 from rlrmp.analysis.math.cs_game_card import (
@@ -77,6 +78,7 @@ from rlrmp.runtime.run_spec_access import require_run_seed
 SCHEMA_VERSION = "rlrmp.gru_perturbation_bank.v3"
 DEFAULT_BANK_ID = "cs_standard_perturbation_response_v3"
 CALIBRATED_BANK_ID = "cs_calibrated_perturbation_response_v3"
+PERTURBATION_BANK_PARAMS_TYPE = "rlrmp.perturbation_bank"
 DEFAULT_OUTPUT_FILENAME = "gru_perturbation_response_fullqrf_validation_selected_manifest.json"
 DEFAULT_NOTE_FILENAME = "gru_perturbation_response_fullqrf_validation_selected.md"
 DEFAULT_BULK_SUBDIR = "perturbation_response/gru_fullqrf_validation_selected"
@@ -91,6 +93,29 @@ PerturbationStatus = Literal["evaluated", "blocked", "not_implemented", "not_app
 
 GRAPH_ADAPTER_INPUT_PREFIX = "perturbation.channel"
 PerturbationEvaluationBackend = Literal["serial"]
+PerturbationBankMode = Literal["raw", "calibrated"]
+PerturbationAmplitudePolicy = Literal["raw_default", "reach_relative_calibrated"]
+
+
+class PerturbationBankParams(BaseModel):
+    """Spec params for expanding the standard C&S perturbation-response bank."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_id: str | None = None
+    schema_version: str | None = None
+    mode: PerturbationBankMode = "raw"
+    families: tuple[str, ...] | None = None
+    axes: tuple[str, ...] | None = None
+    signs: tuple[int, ...] | None = None
+    timing_bins: tuple[str, ...] | None = None
+    amplitude_policy: PerturbationAmplitudePolicy | None = None
+    calibration_role: str | None = None
+    calibration_level: str | tuple[str, ...] | None = None
+    calibration_reach: str | float | None = None
+    feedback_scale_manifest: Mapping[str, Any] | None = None
+    feedback_scale_manifest_path: Path | str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -120,18 +145,49 @@ def default_cs_perturbation_bank(
     calibration_reach: str | float | None = None,
     feedback_scale_manifest: Mapping[str, Any] | None = None,
     feedback_scale_manifest_path: Path | None = None,
+    bank_params: PerturbationBankParams | Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return the JSON-serializable default C&S perturbation-response bank."""
 
-    if mode == "calibrated":
-        return default_cs_calibrated_perturbation_bank(
-            calibration_level=calibration_level,
-            calibration_reach=calibration_reach,
-            feedback_scale_manifest=feedback_scale_manifest,
-            feedback_scale_manifest_path=feedback_scale_manifest_path,
+    params_payload = dict(bank_params or {})
+    params_payload.setdefault("mode", mode)
+    if calibration_level is not None:
+        params_payload["calibration_level"] = calibration_level
+    if calibration_reach is not None:
+        params_payload["calibration_reach"] = calibration_reach
+    if feedback_scale_manifest is not None:
+        params_payload["feedback_scale_manifest"] = dict(feedback_scale_manifest)
+    if feedback_scale_manifest_path is not None:
+        params_payload["feedback_scale_manifest_path"] = feedback_scale_manifest_path
+    return expand_perturbation_bank(PerturbationBankParams.model_validate(params_payload))
+
+
+def expand_perturbation_bank(
+    params: PerturbationBankParams | Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Expand one perturbation-bank params object into a validated bank payload."""
+
+    resolved = PerturbationBankParams.model_validate(params or {})
+    if resolved.mode == "calibrated":
+        bank = default_cs_calibrated_perturbation_bank(
+            calibration_level=resolved.calibration_level,
+            calibration_reach=resolved.calibration_reach,
+            feedback_scale_manifest=resolved.feedback_scale_manifest,
+            feedback_scale_manifest_path=(
+                None
+                if resolved.feedback_scale_manifest_path is None
+                else Path(resolved.feedback_scale_manifest_path)
+            ),
         )
-    if mode != "raw":
-        raise ValueError(f"unsupported perturbation bank mode {mode!r}")
+    elif resolved.mode == "raw":
+        bank = _expand_default_cs_raw_perturbation_bank()
+    else:
+        raise ValueError(f"unsupported perturbation bank mode {resolved.mode!r}")
+    return _apply_perturbation_bank_params(bank, resolved)
+
+
+def _expand_default_cs_raw_perturbation_bank() -> dict[str, Any]:
+    """Return the unfiltered raw default C&S perturbation-response bank."""
 
     from rlrmp.data_products.calibration import load_perturbation_calibration_defaults
 
@@ -1046,6 +1102,59 @@ def default_cs_calibrated_perturbation_bank(
         }
     )
     return bank
+
+
+def _apply_perturbation_bank_params(
+    bank: Mapping[str, Any],
+    params: PerturbationBankParams,
+) -> dict[str, Any]:
+    payload = dict(bank)
+    rows = payload.get("perturbations", ())
+    if not isinstance(rows, Sequence) or isinstance(rows, (str, bytes)):
+        raise TypeError("perturbation bank rows must be a sequence")
+    filtered = [dict(row) for row in rows if isinstance(row, Mapping)]
+    if params.families is not None:
+        families = set(params.families)
+        filtered = [row for row in filtered if str(row.get("family")) in families]
+    if params.axes is not None:
+        axes = set(params.axes)
+        filtered = [row for row in filtered if str(row.get("axis")) in axes]
+    if params.signs is not None:
+        signs = {int(sign) for sign in params.signs}
+        filtered = [row for row in filtered if int(row.get("sign", 0)) in signs]
+    if params.timing_bins is not None:
+        timing_bins = set(params.timing_bins)
+        filtered = [row for row in filtered if str(row.get("timing_bin")) in timing_bins]
+    if params.calibration_role is not None:
+        filtered = [
+            row
+            for row in filtered
+            if row.get("calibration_role") == params.calibration_role
+            or (
+                isinstance(row.get("calibration_provenance"), Mapping)
+                and row["calibration_provenance"].get("calibration_role")
+                == params.calibration_role
+            )
+        ]
+    if not filtered:
+        raise ValueError("perturbation bank params selected no perturbation rows")
+
+    params_payload = params.model_dump(mode="json", exclude_none=True)
+    payload["perturbations"] = filtered
+    payload["bank_params"] = params_payload
+    payload["condition_source"] = {
+        "type": "registered_params_model",
+        "model": "rlrmp.analysis.pipelines.gru_perturbation_bank.PerturbationBankParams",
+        "policy": (
+            "Perturbation condition rows are selected by params on the evaluation "
+            "or bundle spec; Python defaults only expand the named standard bank."
+        ),
+    }
+    if params.amplitude_policy is not None:
+        payload["amplitude_policy"] = params.amplitude_policy
+    if params.metadata:
+        payload["params_metadata"] = dict(params.metadata)
+    return payload
 
 
 def _load_feedback_scale_manifest(
@@ -5209,12 +5318,15 @@ __all__ = [
     "SCHEMA_VERSION",
     "AdapterResult",
     "PerturbationChannel",
+    "PerturbationBankParams",
+    "PERTURBATION_BANK_PARAMS_TYPE",
     "PerturbationSpec",
     "apply_perturbation_to_trial_specs",
     "compare_response_metric_summaries",
     "default_cs_calibrated_perturbation_bank",
     "default_cs_perturbation_bank",
     "delta_full_qrf_cost_summary",
+    "expand_perturbation_bank",
     "evaluate_extlqg_perturbation_comparator",
     "evaluate_robust_output_feedback_perturbation_comparator",
     "evaluate_run_perturbation_bank",

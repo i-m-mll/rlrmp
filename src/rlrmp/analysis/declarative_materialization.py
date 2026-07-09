@@ -270,6 +270,31 @@ class RecurrentJacobianAnalysisParams(BaseModel):
     finite_difference_batch_size: int | None = Field(128, ge=1)
 
 
+class PerturbationClassResponseAnalysisParams(BaseModel):
+    """Params for one perturbation-family response analysis leaf."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_id: str | None = None
+    schema_version: str | None = None
+    family: str
+    row_ids: list[str] | None = None
+    expected_calibration_identity: dict[str, Any] | None = None
+    calibration_identity: dict[str, Any] | None = None
+
+
+class PerturbationBankAggregateAnalysisParams(BaseModel):
+    """Params for aggregating perturbation-family response leaves."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_id: str | None = None
+    schema_version: str | None = None
+    issue: str | None = None
+    source_experiment: str | None = None
+    bank_mode: str | None = None
+
+
 class RLRMPManifestAnalysis(AbstractAnalysis):
     """Context-aware rlrmp analysis node that records Feedbax-owned artifacts."""
 
@@ -639,6 +664,16 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
     register_params_model(
         FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["feedback_ablation"],
         FeedbackAblationAnalysisParams,
+        replace=True,
+    )
+    register_params_model(
+        PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE,
+        PerturbationClassResponseAnalysisParams,
+        replace=True,
+    )
+    register_params_model(
+        PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE,
+        PerturbationBankAggregateAnalysisParams,
         replace=True,
     )
     register_analysis_recipe(
@@ -1216,7 +1251,9 @@ def perturbation_class_response_recipe(
 ) -> AnalysisRecipeResult:
     """Build one perturbation-family response analysis from shared eval states."""
 
-    params = dict(spec.params)
+    params = PerturbationClassResponseAnalysisParams.model_validate(spec.params).model_dump(
+        exclude_none=True
+    )
     evaluation_input = _primary_evaluation_input(inputs)
     if evaluation_input is None:
         raise ValueError("perturbation class response requires an EvaluationRunManifest input")
@@ -1238,7 +1275,9 @@ def perturbation_bank_aggregate_recipe(
 ) -> AnalysisRecipeResult:
     """Build an aggregate perturbation bank from class-response leaf products."""
 
-    params = dict(spec.params)
+    params = PerturbationBankAggregateAnalysisParams.model_validate(spec.params).model_dump(
+        exclude_none=True
+    )
     leaf_products = tuple(_load_perturbation_class_product(resolved) for resolved in inputs)
     analysis = PerturbationBankAggregateAnalysis(
         params=params,
@@ -3706,7 +3745,9 @@ __all__ = [
     "GRU_STANDARD_ANALYSIS_TYPE",
     "OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE",
     "PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE",
+    "PerturbationBankAggregateAnalysisParams",
     "PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE",
+    "PerturbationClassResponseAnalysisParams",
     "ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE",
     "SISU_SPECTRUM_ANALYSIS_TYPE",
     "SISU_SPECTRUM_EVALUATION_TYPE",
