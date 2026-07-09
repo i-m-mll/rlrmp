@@ -17,6 +17,7 @@ from feedbax.runtime.graph import Component, Wire
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 from jaxtyping import PRNGKeyArray, PyTree
 
+from rlrmp.analysis.math.summary_stats import summary_stats as _summary_stats
 from rlrmp.analysis.pipelines.diagnostic_provenance import write_regeneration_spec
 from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     FIXED_BANK_CHECKPOINT_POLICY,
@@ -2624,22 +2625,6 @@ def _endpoint_error(evaluation: RolloutEvaluation) -> np.ndarray:
 
 def _terminal_speed(evaluation: RolloutEvaluation) -> np.ndarray:
     return np.linalg.norm(evaluation.velocity[:, :, -1, :], axis=-1)
-
-
-def _summary_stats(values: Any) -> dict[str, float | int]:
-    array = np.asarray(values, dtype=np.float64)
-    if array.size == 0:
-        return {"count": 0, "mean": np.nan, "std": np.nan, "min": np.nan, "max": np.nan}
-    flat = array.reshape(-1)
-    return {
-        "count": int(flat.size),
-        "mean": float(np.mean(flat)),
-        "std": float(np.std(flat)),
-        "min": float(np.min(flat)),
-        "max": float(np.max(flat)),
-        "p50": float(np.quantile(flat, 0.50)),
-        "p95": float(np.quantile(flat, 0.95)),
-    }
 
 
 def _metric_mean(row: Mapping[str, Any], metric: str) -> float | None:

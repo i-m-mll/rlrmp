@@ -27,6 +27,7 @@ from rlrmp.analysis.math.cs_game_card import (
     build_no_integrator_game,
     materialize_reference,
 )
+from rlrmp.analysis.math.summary_stats import summary_stats as _summary_stats
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
 from rlrmp.analysis.math.cs_released_simulation import (
     build_extlqg_comparator_path,
@@ -4973,22 +4974,6 @@ def _scalar_delta_ratio(value: float | None, reference: float | None) -> dict[st
         "extlqg_mean": float(reference),
         "delta_mean": float(value - reference),
         "ratio_to_extlqg": ratio,
-    }
-
-
-def _summary_stats(values: Any) -> dict[str, float | int]:
-    array = np.asarray(values, dtype=np.float64)
-    if array.size == 0:
-        return {"count": 0, "mean": np.nan, "std": np.nan, "min": np.nan, "max": np.nan}
-    flat = array.reshape(-1)
-    return {
-        "count": int(flat.size),
-        "mean": float(np.mean(flat)),
-        "std": float(np.std(flat)),
-        "min": float(np.min(flat)),
-        "max": float(np.max(flat)),
-        "p50": float(np.quantile(flat, 0.50)),
-        "p95": float(np.quantile(flat, 0.95)),
     }
 
 

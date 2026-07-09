@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any, Literal
 
@@ -17,6 +18,7 @@ from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 from jaxtyping import Array, Float
 
 from rlrmp.analysis.math.cs_game_card import TARGET_POS, build_canonical_game
+from rlrmp.analysis.math.summary_stats import summary_stats
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
 from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     CheckpointSelectionMode,
@@ -45,6 +47,7 @@ DEFAULT_RUN_IDS = ("smoke__broad_strong_cal_small",)
 DEFAULT_OUTPUT_FILENAME = "gru_worst_case_epsilon_audit_manifest.json"
 DEFAULT_NOTE_FILENAME = "gru_worst_case_epsilon_audit.md"
 DEFAULT_BULK_SUBDIR = "worst_case_epsilon_audit"
+_summary_stats = partial(summary_stats, count_key="n", quantiles=())
 
 ObjectiveFn = Callable[[Float[Array, "T m_w"]], Float[Array, ""]]
 EpsilonOptimizerBackend = Literal["serial", "staged"]
@@ -1186,25 +1189,6 @@ def _is_replicate_array(leaf: Any, n_replicates: int) -> bool:
         and getattr(leaf, "ndim", 0) >= 1
         and int(getattr(leaf, "shape", (0,))[0]) == int(n_replicates)
     )
-
-
-def _summary_stats(values: Any) -> dict[str, float | int]:
-    arr = np.asarray(values, dtype=np.float64)
-    if arr.size == 0:
-        return {
-            "n": 0,
-            "mean": float("nan"),
-            "std": float("nan"),
-            "min": float("nan"),
-            "max": float("nan"),
-        }
-    return {
-        "n": int(arr.size),
-        "mean": float(np.mean(arr)),
-        "std": float(np.std(arr)),
-        "min": float(np.min(arr)),
-        "max": float(np.max(arr)),
-    }
 
 
 def render_worst_case_epsilon_markdown(manifest: Mapping[str, Any]) -> str:
