@@ -114,6 +114,27 @@ def test_registered_distillation_cli_paths_reach_native_executor() -> None:
     )
 
 
+def test_train_minimax_cli_adapter_reaches_native_executor() -> None:
+    script_path = REPO_ROOT / "scripts" / "train_minimax.py"
+    script_tree = ast.parse(script_path.read_text(encoding="utf-8"))
+    script_calls = _module_call_names(script_tree)
+
+    findings: list[str] = []
+    for call in ("training_run_spec_from_argv", "run_training"):
+        if call not in script_calls:
+            findings.append(f"scripts/train_minimax.py:does_not_call_{call}")
+    if not _function_reaches_call(
+        script_tree,
+        entrypoint="run_training",
+        target_leaf="execute_minimax_training_run_spec_native",
+    ):
+        findings.append("scripts/train_minimax.py:run_training_native_executor_unreachable")
+
+    assert not findings, "train_minimax CLI adapter lost native-executor dispatch: " + ", ".join(
+        findings
+    )
+
+
 def test_minimax_native_step_functions_stay_jitted() -> None:
     module_path = REPO_ROOT / "src" / "rlrmp" / "train" / "minimax_native.py"
     tree = ast.parse(module_path.read_text(encoding="utf-8"))
