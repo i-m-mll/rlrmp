@@ -22,7 +22,6 @@ from rlrmp.runtime.spec_migrations import (
     accept_rlrmp_spec_payload,
     ensure_rlrmp_spec_families,
 )
-from rlrmp.runtime.training_run_specs import hydrate_compact_run_spec_envelope
 from rlrmp.train.minimax_native import (
     validate_minimax_run_spec,
     validate_minimax_run_spec_file,
@@ -302,6 +301,8 @@ def validate_nominal_gru_run_spec_file(run_spec_path: Path | str) -> None:
     raw_payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw_payload, dict):
         raise RunSpecValidationError("nominal GRU run spec file must contain a JSON object")
+    from rlrmp.runtime.training_run_specs import hydrate_compact_run_spec_envelope
+
     validate_nominal_gru_run_spec(
         hydrate_compact_run_spec_envelope(raw_payload),
         spec_dir=run_spec_sidecar_dir(path),
