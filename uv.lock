@@ -548,7 +548,7 @@ wheels = [
 [[package]]
 name = "feedbax"
 version = "0.1.2"
-source = { editable = "../../../20 Feedbax/feedbax" }
+source = { editable = "../20 Feedbax/feedbax" }
 dependencies = [
     { name = "crc32c" },
     { name = "diffrax" },
@@ -2139,7 +2139,7 @@ dev = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.15.1" },
     { name = "dill", specifier = ">=0.3.9" },
-    { name = "feedbax", editable = "../../../20 Feedbax/feedbax" },
+    { name = "feedbax", editable = "../20 Feedbax/feedbax" },
     { name = "ipyfilechooser", specifier = ">=0.6.0" },
     { name = "ipywidgets", specifier = ">=8.1.8" },
     { name = "matplotlib", specifier = ">=3.10.1" },
