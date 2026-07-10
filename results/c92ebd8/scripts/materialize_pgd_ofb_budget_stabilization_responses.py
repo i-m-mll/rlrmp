@@ -10,7 +10,6 @@ from typing import Any
 
 import numpy as np
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 import materialize_pgd_1p05_stabilization_diagnostics as base
 from materialize_pgd_1p05_perturbation_response_overlays import (
@@ -23,6 +22,7 @@ from rlrmp.analysis.pipelines.gru_perturbation_bank import (
 )
 from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.viz.figures import build_stabilization_family_figure
 
 
 ISSUE = "c92ebd8"
@@ -209,9 +209,7 @@ def materialize_figures(
                 },
                 "html": base.repo_relative(html_path, repo_root),
                 "png": (
-                    base.repo_relative(png_path, repo_root)
-                    if png_status == "written"
-                    else None
+                    base.repo_relative(png_path, repo_root) if png_status == "written" else None
                 ),
                 "png_status": png_status,
                 "png_renderer": png_renderer,
@@ -235,167 +233,134 @@ def build_family_figure(
     extlqg_context: Mapping[str, Any],
     robust_context: Mapping[str, Any],
 ) -> tuple[go.Figure, list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    """Build one 3x2 response-state-by-PGD-budget family figure."""
+    """Build one response-state-by-budget grid through the canonical iterator."""
 
-    subplot_titles = [
-        f"{base.RESPONSE_VARIABLE_SPECS[response]['label']} - {budget}"
-        for response in base.RESPONSE_VARIABLE_ORDER
-        for budget, _run_id in BUDGET_COLUMNS
-    ]
-    fig = make_subplots(
-        rows=3,
-        cols=2,
-        subplot_titles=subplot_titles,
-        shared_xaxes=True,
-        shared_yaxes=True,
-        horizontal_spacing=0.07,
-        vertical_spacing=0.09,
-    )
-    coverage: list[dict[str, Any]] = []
-    event_markers: list[dict[str, Any]] = []
-    unavailable: list[dict[str, Any]] = []
-    legend_seen: set[tuple[str, str]] = set()
-    analytical_cache: dict[tuple[str, str, str], dict[str, Any]] = {}
-
-    for row_index, response_variable in enumerate(base.RESPONSE_VARIABLE_ORDER, start=1):
-        response_spec = base.RESPONSE_VARIABLE_SPECS[response_variable]
-        for col_index, (budget, pgd_run_id) in enumerate(BUDGET_COLUMNS, start=1):
-            run_sources = (
-                ("no_pgd_gru", "open_loop_moderate"),
-                (f"pgd_{budget}_gru", pgd_run_id),
+    def render_cell(
+        fig: Any,
+        response_variable: str,
+        column: tuple[str, str],
+        row_index: int,
+        col_index: int,
+        legend_seen: set[tuple[str, str]],
+        outputs: dict[str, Any],
+    ) -> None:
+        budget, pgd_run_id = column
+        timing = summary_by_run["open_loop_moderate"]["timing"]
+        dt = float(summary_by_run["open_loop_moderate"]["dt_s"])
+        baseline_rows = family_rows(
+            detail=detail,
+            run_id="open_loop_moderate",
+            family=family,
+        )
+        for source, run_id in (
+            ("no_pgd_gru", "open_loop_moderate"),
+            (f"pgd_{budget}_gru", pgd_run_id),
+        ):
+            profile = base.aggregate_family_response_profile(
+                family_rows(detail=detail, run_id=run_id, family=family),
+                response_variable=response_variable,
             )
-            timing = summary_by_run["open_loop_moderate"]["timing"]
-            dt = float(summary_by_run["open_loop_moderate"]["dt_s"])
-            family_rows_for_marker = family_rows(
-                detail=detail,
-                run_id="open_loop_moderate",
-                family=family,
+            add_profile_traces(
+                fig,
+                profile=profile,
+                source=source,
+                dt=dt,
+                row=row_index,
+                col=col_index,
+                legend_seen=legend_seen,
             )
-
-            for source, run_id in run_sources:
-                profile = base.aggregate_family_response_profile(
-                    family_rows(detail=detail, run_id=run_id, family=family),
+            outputs["coverage"].append(
+                coverage_row(
+                    source=source,
+                    family=family,
                     response_variable=response_variable,
+                    budget=budget,
+                    run_id=run_id,
+                    profile=profile,
+                    analytical_status="not_applicable",
                 )
+            )
+        for source in ANALYTICAL_SOURCES:
+            cache_key = (source, family, response_variable)
+            if cache_key not in outputs["cache"]:
+                outputs["cache"][cache_key] = analytical_profile(
+                    source=source,
+                    family=family,
+                    response_variable=response_variable,
+                    baseline_rows=baseline_rows,
+                    extlqg_context=extlqg_context,
+                    robust_context=robust_context,
+                    timing=timing,
+                )
+            result = outputs["cache"][cache_key]
+            if result["status"] == "available":
                 add_profile_traces(
                     fig,
-                    profile=profile,
+                    profile=result["profile"],
                     source=source,
                     dt=dt,
                     row=row_index,
                     col=col_index,
                     legend_seen=legend_seen,
                 )
-                coverage.append(
+                outputs["coverage"].append(
                     coverage_row(
                         source=source,
                         family=family,
                         response_variable=response_variable,
                         budget=budget,
-                        run_id=run_id,
-                        profile=profile,
-                        analytical_status="not_applicable",
+                        run_id=None,
+                        profile=result["profile"],
+                        analytical_status="available",
                     )
                 )
-
-            for source in ANALYTICAL_SOURCES:
-                cache_key = (source, family, response_variable)
-                if cache_key not in analytical_cache:
-                    analytical_cache[cache_key] = analytical_profile(
-                        source=source,
-                        family=family,
-                        response_variable=response_variable,
-                        baseline_rows=family_rows_for_marker,
-                        extlqg_context=extlqg_context,
-                        robust_context=robust_context,
-                        timing=timing,
-                    )
-                result = analytical_cache[cache_key]
-                if result["status"] == "available":
-                    add_profile_traces(
+            else:
+                outputs["unavailable"].append(
+                    {
+                        "source": source,
+                        "family": family,
+                        "response_variable": response_variable,
+                        "budget_column": budget,
+                        "status": result["status"],
+                        "reason": result["reason"],
+                    }
+                )
+                if source == "robust_output_feedback6d":
+                    add_unsupported_annotation(
                         fig,
-                        profile=result["profile"],
-                        source=source,
-                        dt=dt,
+                        text="H-inf replay unsupported",
                         row=row_index,
                         col=col_index,
-                        legend_seen=legend_seen,
                     )
-                    coverage.append(
-                        coverage_row(
-                            source=source,
-                            family=family,
-                            response_variable=response_variable,
-                            budget=budget,
-                            run_id=None,
-                            profile=result["profile"],
-                            analytical_status="available",
-                        )
-                    )
-                else:
-                    unavailable.append(
-                        {
-                            "source": source,
-                            "family": family,
-                            "response_variable": response_variable,
-                            "budget_column": budget,
-                            "status": result["status"],
-                            "reason": result["reason"],
-                        }
-                    )
-                    if source == "robust_output_feedback6d":
-                        add_unsupported_annotation(
-                            fig,
-                            text="H-inf replay unsupported",
-                            row=row_index,
-                            col=col_index,
-                        )
+        marker = base.infer_perturbation_event_marker(
+            family_rows=baseline_rows,
+            summary_timing=timing,
+            dt=dt,
+        )
+        base.add_perturbation_event_marker(fig, marker=marker, row=row_index, col=col_index)
+        outputs["event_markers"].append(
+            {
+                "family": family,
+                "response_variable": response_variable,
+                "budget_column": budget,
+                **marker,
+            }
+        )
 
-            marker = base.infer_perturbation_event_marker(
-                family_rows=family_rows_for_marker,
-                summary_timing=timing,
-                dt=dt,
-            )
-            base.add_perturbation_event_marker(fig, marker=marker, row=row_index, col=col_index)
-            event_markers.append(
-                {
-                    "family": family,
-                    "response_variable": response_variable,
-                    "budget_column": budget,
-                    **marker,
-                }
-            )
-            if col_index == 1:
-                fig.update_yaxes(
-                    title_text=response_spec["axis_title"],
-                    row=row_index,
-                    col=col_index,
-                )
-            if row_index == len(base.RESPONSE_VARIABLE_ORDER):
-                fig.update_xaxes(
-                    title_text="time from perturbation onset (s)",
-                    row=row_index,
-                    col=col_index,
-                )
-    fig.update_layout(
+    return build_stabilization_family_figure(
+        response_variables=base.RESPONSE_VARIABLE_ORDER,
+        columns=BUDGET_COLUMNS,
+        response_label=lambda response: base.RESPONSE_VARIABLE_SPECS[response]["label"],
+        column_label=lambda column: column[0],
+        response_axis_title=lambda response: base.RESPONSE_VARIABLE_SPECS[response]["axis_title"],
+        render_cell=render_cell,
         title=(
             "c92 output-feedback-budget PGD stabilization task response: "
             f"{base.FAMILY_LABELS[family]}"
         ),
-        template="plotly_white",
         width=1180,
-        height=900,
-        margin={"l": 78, "r": 28, "t": 96, "b": 112},
-        hovermode="x unified",
-        legend={
-            "orientation": "h",
-            "yanchor": "top",
-            "y": -0.09,
-            "xanchor": "center",
-            "x": 0.5,
-        },
+        horizontal_spacing=0.07,
     )
-    return fig, coverage, event_markers, unavailable
 
 
 def family_rows(*, detail: Mapping[str, Any], run_id: str, family: str) -> list[Mapping[str, Any]]:
@@ -658,14 +623,10 @@ def build_spec(
             "col_axis": "pgd_output_feedback_budget",
             "col_order": [column for column, _run_id in BUDGET_COLUMNS],
             "baseline_row": "open_loop_moderate",
-            "pgd_rows": {
-                budget: run_id for budget, run_id in BUDGET_COLUMNS
-            },
+            "pgd_rows": {budget: run_id for budget, run_id in BUDGET_COLUMNS},
             "response_states_are_not_perturbation_types": True,
             "perturbation_families_are_separate_figures": True,
-            "trace_sources": {
-                key: value["label"] for key, value in SOURCE_STYLES.items()
-            },
+            "trace_sources": {key: value["label"] for key, value in SOURCE_STYLES.items()},
             "analytical_comparator_contract": {
                 "extlqg": {
                     "label": "6D extLQG",

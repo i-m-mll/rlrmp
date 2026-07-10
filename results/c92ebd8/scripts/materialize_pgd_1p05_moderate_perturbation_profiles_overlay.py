@@ -50,7 +50,7 @@ from rlrmp.analysis.pipelines.gru_perturbation_bank import (
 )
 from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT
-from rlrmp.viz import profile_comparison_grid
+from rlrmp.viz.figures import build_profile_family_figure
 
 
 SOURCE_TOPIC = "moderate_perturbation_profiles"
@@ -63,8 +63,12 @@ SOURCE_SPEC = FIGURE_ROOT / SOURCE_TOPIC / "spec.json"
 SOURCE_MANIFEST = NOTES_DIR / f"gru_perturbation_response_{SOURCE_TAG}_manifest.json"
 PGD_MANIFEST = NOTES_DIR / f"gru_perturbation_response_{OUTPUT_TAG}_manifest.json"
 PGD_NOTE = NOTES_DIR / f"gru_perturbation_response_{OUTPUT_TAG}.md"
-PGD_REGEN_SPEC = NOTES_DIR / f"gru_perturbation_response_{OUTPUT_TAG}_manifest_regeneration_spec.json"
-FEEDBACK_SCALE_MANIFEST = NOTES_DIR / "gru_evaluation_diagnostics_pgd_1p05_reach_context_diagnostics.json"
+PGD_REGEN_SPEC = (
+    NOTES_DIR / f"gru_perturbation_response_{OUTPUT_TAG}_manifest_regeneration_spec.json"
+)
+FEEDBACK_SCALE_MANIFEST = (
+    NOTES_DIR / "gru_evaluation_diagnostics_pgd_1p05_reach_context_diagnostics.json"
+)
 OVERLAY_SPEC = FIGURE_ROOT / OVERLAY_TOPIC / "spec.json"
 OVERLAY_BULK = REPO_ROOT / "_artifacts" / ISSUE / "figures" / OVERLAY_TOPIC
 PGD_BULK = REPO_ROOT / "_artifacts" / ISSUE / OVERLAY_TOPIC / "perturbation_response"
@@ -275,40 +279,16 @@ def build_overlay_figure(
     title: str,
     trace_summary: "TraceSummary",
 ) -> go.Figure:
-    timing_bins = timing_bins_for_rows(rows)
-    n_cols = len(timing_bins)
-    subplot_titles = [
-        f"{quantity_label}: {timing_label}"
-        for quantity_label, _quantity_name, _unit in QUANTITY_SPECS
-        for timing_label in timing_bins
-    ]
-    fig = profile_comparison_grid(
-        n_panels=len(QUANTITY_SPECS) * n_cols,
-        rows=len(QUANTITY_SPECS),
-        cols=n_cols,
-        subplot_titles=subplot_titles,
-        shared_yaxes="rows",
-        vertical_spacing=0.08,
-        horizontal_spacing=0.045,
-    )
-    legend_seen: set[tuple[str, str, str]] = set()
-    for col_index, timing_label in enumerate(timing_bins, start=1):
-        timing_rows = [row for row in rows if row_timing_label(row) == timing_label]
-        timing = representative_timing(timing_rows)
-        if timing is not None:
-            x0, x1 = perturbation_interval_bounds(timing)
-            for row_index in range(1, len(QUANTITY_SPECS) + 1):
-                fig.add_vrect(
-                    x0=x0,
-                    x1=x1,
-                    fillcolor="rgba(234,179,8,0.18)",
-                    line={"color": "rgba(120,80,0,0.55)", "width": 1, "dash": "dot"},
-                    layer="below",
-                    row=row_index,
-                    col=col_index,
-                    exclude_empty_subplots=False,
-                )
-        traces = collect_overlay_traces(
+    """Build a PGD overlay through the canonical perturbation profile grid."""
+
+    return build_profile_family_figure(
+        rows,
+        quantity_specs=QUANTITY_SPECS,
+        timing_bins_for_rows=timing_bins_for_rows,
+        row_timing_label=row_timing_label,
+        representative_timing=representative_timing,
+        perturbation_interval_bounds=perturbation_interval_bounds,
+        collect_traces=lambda timing_rows: collect_overlay_traces(
             timing_rows,
             source_run=source_run,
             pgd_run=pgd_run,
@@ -317,44 +297,33 @@ def build_overlay_figure(
             robust_context=robust_context,
             figure_kind=figure_kind,
             trace_summary=trace_summary,
-        )
-        for row_index, (quantity, _quantity_name, unit) in enumerate(QUANTITY_SPECS, start=1):
-            for source in SOURCE_ORDER:
-                variants = ("clean", "perturbed") if figure_kind == "trajectory" else ("residual",)
-                for variant in variants:
-                    for coord in ("orthogonal", "along"):
-                        samples = traces.get((source, variant, quantity, coord))
-                        if samples is None or samples.size == 0:
-                            continue
-                        add_profile_trace(
-                            fig,
-                            samples,
-                            source=source,
-                            variant=variant,
-                            quantity=quantity,
-                            coord=coord,
-                            figure_kind=figure_kind,
-                            row=row_index,
-                            col=col_index,
-                            showlegend=(source, variant, coord) not in legend_seen,
-                        )
-                        legend_seen.add((source, variant, coord))
-            fig.update_yaxes(
-                title_text=axis_unit(quantity, figure_kind=figure_kind, native_unit=unit),
-                row=row_index,
-                col=1,
-            )
-    fig.update_layout(
+        ),
+        trace_key=lambda source, variant, quantity, coord: (
+            source,
+            variant,
+            quantity,
+            coord,
+        ),
+        add_trace=lambda fig, samples, **kwargs: add_profile_trace(
+            fig,
+            samples,
+            figure_kind=figure_kind,
+            **kwargs,
+        ),
+        sources=SOURCE_ORDER,
+        variants=("clean", "perturbed") if figure_kind == "trajectory" else ("residual",),
+        axis_unit=lambda quantity, unit: axis_unit(
+            quantity,
+            figure_kind=figure_kind,
+            native_unit=unit,
+        ),
+        figure_kind=figure_kind,
         title=title,
-        template="plotly_white",
-        width=max(1080, 300 * n_cols),
+        width_min=1080,
+        width_per_column=300,
         height=860,
-        legend_title_text="Source / trace",
         margin={"l": 72, "r": 24, "t": 100, "b": 70},
     )
-    for col_index in range(1, n_cols + 1):
-        fig.update_xaxes(title_text="time from movement onset (s)", row=len(QUANTITY_SPECS), col=col_index)
-    return fig
 
 
 def collect_overlay_traces(
@@ -427,13 +396,13 @@ def collect_overlay_traces(
             trace_summary.robust_unsupported.append(
                 {
                     "perturbation_id": perturbation_id,
-                    "channel": str(row.get("channel") or row.get("perturbation", {}).get("channel")),
+                    "channel": str(
+                        row.get("channel") or row.get("perturbation", {}).get("channel")
+                    ),
                 }
             )
     return {
-        key: np.concatenate(samples, axis=0)
-        for key, samples in trace_samples.items()
-        if samples
+        key: np.concatenate(samples, axis=0) for key, samples in trace_samples.items() if samples
     }
 
 
@@ -471,18 +440,34 @@ def build_robust_output_feedback_6d_context() -> dict[str, Any]:
 
 
 def add_profile_trace(
-    fig: go.Figure, samples: np.ndarray, *, source: str, variant: str, quantity: str,
-    coord: str, figure_kind: Literal["trajectory", "residual"], row: int, col: int,
+    fig: go.Figure,
+    samples: np.ndarray,
+    *,
+    source: str,
+    variant: str,
+    quantity: str,
+    coord: str,
+    figure_kind: Literal["trajectory", "residual"],
+    row: int,
+    col: int,
     showlegend: bool,
 ) -> None:
     samples = scale_profile_samples(samples, quantity=quantity, figure_kind=figure_kind)
     add_reduced_sample_trace(
-        fig, samples, reducer=mean_band, row=row, col=col,
+        fig,
+        samples,
+        reducer=mean_band,
+        row=row,
+        col=col,
         name=f"{source_label(source)} {variant} {coord}",
-        legendgroup=f"{source}-{variant}-{coord}", color=SOURCE_COLORS[source],
-        band_fill_color=band_color(source), dash=COORD_DASH[coord],
+        legendgroup=f"{source}-{variant}-{coord}",
+        color=SOURCE_COLORS[source],
+        band_fill_color=band_color(source),
+        dash=COORD_DASH[coord],
         width=1.25 if variant == "clean" else 2.25,
-        opacity=0.42 if variant == "clean" else 0.95, showlegend=showlegend, dt=DT,
+        opacity=0.42 if variant == "clean" else 0.95,
+        showlegend=showlegend,
+        dt=DT,
     )
 
 
@@ -514,8 +499,8 @@ def overlay_plot_contract(robust_context: Mapping[str, Any]) -> dict[str, Any]:
         for source in SOURCE_ORDER
     }
     contract["comparator_contract"]["output_feedback_hinf"] = robust_context["contract"]
-    contract["comparator_contract"]["output_feedback_hinf"]["supported_perturbation_channels"] = sorted(
-        ROBUST_SUPPORTED_CHANNELS
+    contract["comparator_contract"]["output_feedback_hinf"]["supported_perturbation_channels"] = (
+        sorted(ROBUST_SUPPORTED_CHANNELS)
     )
     contract["comparator_contract"]["output_feedback_hinf"]["unsupported_perturbation_channels"] = (
         "sensory_feedback, delayed_observation, and target_stream are not replayed by "
