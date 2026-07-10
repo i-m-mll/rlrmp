@@ -3198,10 +3198,14 @@ def _aggregate_leaf_runs(leaf_products: Sequence[Mapping[str, Any]]) -> dict[str
             run["perturbations"] = [
                 dict(row) for row in rows if isinstance(row, Mapping)
             ]
-            run["bulk_files"] = {
+            bulk_files = {
                 **dict(run.get("bulk_files", {}) or {}),
                 **dict(run_payload.get("bulk_files", {}) or {}),
             }
+            if bulk_files:
+                run["bulk_files"] = bulk_files
+            else:
+                run.pop("bulk_files", None)
     for run in runs.values():
         rows = list(run.get("perturbations", ()))
         rows.sort(key=lambda row: int(row.get("class_response_row_index", 0)))

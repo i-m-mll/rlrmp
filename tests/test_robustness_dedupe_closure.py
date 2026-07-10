@@ -143,7 +143,6 @@ def test_feedback_orchestration_preserves_materialization_contract(
         run_ids=("row-a",),
         labels=("Row A",),
         evaluation_bulk_dir=tmp_path / "evaluation-bulk",
-        perturbation_bulk_dir=tmp_path / "perturbation-bulk",
         feedback_scope="feedback-scope",
         materialize_extensions=lambda _paths, _components: {
             "stabilization": {"schema_version": "stabilization.v1"}

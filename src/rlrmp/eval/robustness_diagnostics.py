@@ -288,7 +288,6 @@ def run_feedback_robustness_diagnostics(
     run_ids: Sequence[str],
     labels: Sequence[str],
     evaluation_bulk_dir: Path,
-    perturbation_bulk_dir: Path,
     feedback_scope: str,
     build_rows: Callable[[Mapping[str, Any]], list[dict[str, Any]]],
     build_summary_payload: Callable[
@@ -358,16 +357,11 @@ def run_feedback_robustness_diagnostics(
             run_ids=run_ids,
             labels=labels,
             n_rollout_trials=n_rollout_trials,
-            output_path=paths["perturbation"],
-            note_path=paths["perturbation_note"],
-            bulk_dir=perturbation_bulk_dir,
-            regeneration_spec_path=paths["perturbation_regeneration_spec"],
             bank_mode="calibrated",
             calibration_level="moderate",
             calibration_reach=0.15,
             feedback_scale_manifest_path=paths["evaluation"],
             extlqg_physical_dim=6,
-            write_bulk_arrays=False,
             repo_root=repo_root,
         )
     )

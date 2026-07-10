@@ -876,24 +876,16 @@ def test_perturbation_class_leaf_absent_family_fails_closed(tmp_path: Path) -> N
     assert "contains families" in str(excinfo.value.__cause__)
 
 
-def test_legacy_perturbation_materializer_routes_to_leaf_aggregate_without_raw_outputs(
+def test_perturbation_adapter_rejects_obsolete_output_requests(
     tmp_path: Path,
 ) -> None:
     from rlrmp.analysis.pipelines import gru_perturbation_bank
-
-    output_path = tmp_path / "legacy_manifest.json"
-    note_path = tmp_path / "legacy_note.md"
-    bulk_dir = tmp_path / "legacy_bulk"
 
     manifest = gru_perturbation_bank.materialize_gru_perturbation_response(
         source_experiment="unit-exp",
         result_experiment="e32c8bb",
         run_ids=("training-run-a",),
         evaluate=False,
-        write_bulk_arrays=True,
-        output_path=output_path,
-        note_path=note_path,
-        bulk_dir=bulk_dir,
         repo_root=tmp_path,
     )
 
@@ -906,11 +898,23 @@ def test_legacy_perturbation_materializer_routes_to_leaf_aggregate_without_raw_o
     assert manifest["compatibility_adapter"]["route"] == (
         "feedbax_evaluation_manifest_to_perturbation_class_leaf_aggregate"
     )
-    assert manifest["compatibility_adapter"]["write_bulk_arrays_requested"] is True
-    assert manifest["compatibility_adapter"]["write_bulk_arrays_effective"] is False
-    assert not output_path.exists()
-    assert not note_path.exists()
-    assert not bulk_dir.exists()
+    assert manifest["compatibility_adapter"]["custody"] == (
+        "feedbax_evaluation_and_analysis_manifests"
+    )
+    assert "legacy_output_paths_ignored" not in manifest["compatibility_adapter"]
+    obsolete_requests = {
+        "write_bulk_arrays": True,
+        "output_path": tmp_path / "legacy_manifest.json",
+        "note_path": tmp_path / "legacy_note.md",
+        "bulk_dir": tmp_path / "legacy_bulk",
+        "regeneration_spec_path": tmp_path / "legacy_regeneration.json",
+    }
+    for name, value in obsolete_requests.items():
+        with pytest.raises(TypeError, match=name):
+            gru_perturbation_bank.materialize_gru_perturbation_response(
+                evaluate=False,
+                **{name: value},
+            )
 
 
 def test_feedback_quality_lens_bundle_executes_fixture_and_groups_artifacts(

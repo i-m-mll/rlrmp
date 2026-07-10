@@ -53,7 +53,6 @@ def main() -> None:
         run_ids=SOFT_RUN_IDS,
         labels=tuple(row.label for row in SOFT_ROWS),
         evaluation_bulk_dir=EVALUATION_BULK_DIR,
-        perturbation_bulk_dir=PERTURBATION_BULK_DIR,
         feedback_scope="soft_pgd_feedback_robustness_ablation",
         materialize_extensions=lambda current_paths, _components: {
             "stabilization": ofb.materialize_stabilization(

@@ -264,10 +264,14 @@ def classify_manifest(name: str, manifest: Mapping[str, Any]) -> dict[str, Any] 
     ):
         return {
             "diagnostic_name": "gru_perturbation_response_bank",
-            "materializer": "rlrmp.analysis.pipelines.gru_perturbation_bank.materialize_gru_perturbation_response",
+            "materializer": (
+                "rlrmp.analysis.declarative_materialization."
+                "perturbation_bank_aggregate_recipe"
+            ),
             "source_files": [
+                "src/rlrmp/analysis/declarative_materialization.py",
                 "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
-                "src/rlrmp/analysis/math/cs_released_simulation.py",
+                "src/rlrmp/eval/recipes.py",
             ],
         }
     if schema.startswith("rlrmp.gru_feedback_ablation") or name.startswith(

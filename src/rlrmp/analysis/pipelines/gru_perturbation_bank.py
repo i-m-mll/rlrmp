@@ -56,7 +56,6 @@ from rlrmp.analysis.math.output_feedback import (
     robust_output_feedback_gains,
 )
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
-from rlrmp.eval.ensemble import eval_ensemble_on_trials
 from rlrmp.model.feedbax_channel_adapters import (
     additive_channel_payload_dim,
     additive_channel_provenance,
@@ -1210,11 +1209,6 @@ def materialize_gru_perturbation_response(
     labels: Sequence[str] | None = None,
     n_rollout_trials: int = 8,
     evaluate: bool = True,
-    write_bulk_arrays: bool = True,
-    output_path: Path | None = None,
-    note_path: Path | None = None,
-    bulk_dir: Path | None = None,
-    regeneration_spec_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
     bank_mode: Literal["raw", "calibrated"] = "raw",
     calibration_level: str | Sequence[str] | None = None,
@@ -1224,13 +1218,11 @@ def materialize_gru_perturbation_response(
     preferred_checkpoint_manifest_path: Path | None = None,
     checkpoint_selection_mode: CheckpointSelectionMode = "sparse_history",
 ) -> dict[str, Any]:
-    """Compatibility adapter for the retired monolithic bank materializer.
+    """Return a perturbation bank through the registered evaluation and analysis path.
 
-    The durable file-writing entry point now routes through the P1b spec path:
-    a perturbation-response evaluation manifest, per-family leaf payloads, and
-    the aggregate legacy bank shape. Legacy path arguments are accepted so
-    existing callers fail less abruptly, but this adapter does not write tracked
-    JSON, Markdown notes, regeneration specs, or per-row NPZ bulk arrays.
+    This adapter returns the aggregate payload in memory. Durable artifacts must
+    be requested through Feedbax evaluation/analysis custody; obsolete output-path
+    and raw-array arguments are intentionally absent so they fail at the call site.
     """
 
     eval_manifest, eval_manifest_path, eval_states = _execute_perturbation_bank_eval_adapter(
@@ -1265,16 +1257,7 @@ def materialize_gru_perturbation_response(
         "route": "feedbax_evaluation_manifest_to_perturbation_class_leaf_aggregate",
         "evaluation_manifest_id": eval_manifest.id,
         "evaluation_manifest_path": str(eval_manifest_path),
-        "legacy_output_paths_ignored": {
-            "output_path": None if output_path is None else str(output_path),
-            "note_path": None if note_path is None else str(note_path),
-            "bulk_dir": None if bulk_dir is None else str(bulk_dir),
-            "regeneration_spec_path": (
-                None if regeneration_spec_path is None else str(regeneration_spec_path)
-            ),
-        },
-        "write_bulk_arrays_requested": bool(write_bulk_arrays),
-        "write_bulk_arrays_effective": False,
+        "custody": "feedbax_evaluation_and_analysis_manifests",
     }
     return manifest
 
@@ -1446,109 +1429,6 @@ def _adapter_bank_summary(bank: Any) -> dict[str, Any]:
     }
 
 
-def _regeneration_spec_path(path: Path) -> Path:
-    return path.with_name(f"{path.stem}_regeneration_spec.json")
-
-
-def _slim_perturbation_response_manifest(
-    manifest: Mapping[str, Any],
-    *,
-    detail_manifest_path: Path | None,
-    repo_root: Path,
-) -> dict[str, Any]:
-    """Remove per-row response payloads from the tracked response manifest."""
-
-    slim = dict(manifest)
-    bank = slim.pop("bank", None)
-    if detail_manifest_path is not None:
-        if isinstance(bank, Mapping):
-            slim["bank_summary"] = _slim_perturbation_bank_summary(
-                bank,
-                detail_manifest_path=detail_manifest_path,
-                repo_root=repo_root,
-            )
-        slim["bulk_detail_manifest"] = {
-            "path": _repo_relative(detail_manifest_path, repo_root=repo_root),
-            "format": "json",
-            "contains": "full per-run perturbation rows and row-level metric summaries",
-        }
-    slim_runs: dict[str, Any] = {}
-    for run_id, run_payload in dict(manifest.get("runs", {})).items():
-        run = dict(run_payload)
-        perturbations = run.pop("perturbations", [])
-        robust_summary = run.pop("robust_response_summary", None)
-        bulk_files = run.pop("bulk_files", None)
-        run["n_perturbation_rows"] = (
-            len(perturbations) if isinstance(perturbations, Sequence) else 0
-        )
-        if isinstance(bulk_files, Mapping):
-            run["bulk_files_count"] = len(bulk_files)
-        if detail_manifest_path is not None:
-            run["perturbation_rows_detail_manifest"] = _repo_relative(
-                detail_manifest_path,
-                repo_root=repo_root,
-            )
-            if robust_summary is not None:
-                run["robust_response_summary_detail_manifest"] = _repo_relative(
-                    detail_manifest_path,
-                    repo_root=repo_root,
-                )
-            if isinstance(bulk_files, Mapping):
-                run["bulk_files_detail_manifest"] = _repo_relative(
-                    detail_manifest_path,
-                    repo_root=repo_root,
-                )
-        if isinstance(robust_summary, Mapping):
-            run["robust_response_summary_status"] = robust_summary.get("status", "available")
-        slim_runs[str(run_id)] = run
-    slim["runs"] = slim_runs
-    return slim
-
-
-def _slim_perturbation_bank_summary(
-    bank: Mapping[str, Any],
-    *,
-    detail_manifest_path: Path,
-    repo_root: Path,
-) -> dict[str, Any]:
-    """Return tracked bank metadata without the full perturbation row list."""
-
-    perturbations = bank.get("perturbations")
-    if not isinstance(perturbations, Sequence):
-        perturbations = []
-    families = sorted(
-        {
-            str(row.get("family"))
-            for row in perturbations
-            if isinstance(row, Mapping) and row.get("family") is not None
-        }
-    )
-    channels = sorted(
-        {
-            str(row.get("channel"))
-            for row in perturbations
-            if isinstance(row, Mapping) and row.get("channel") is not None
-        }
-    )
-    timing_bins = sorted(
-        {
-            str(row.get("timing_bin"))
-            for row in perturbations
-            if isinstance(row, Mapping) and row.get("timing_bin") is not None
-        }
-    )
-    return {
-        "bank_id": bank.get("bank_id"),
-        "schema_version": bank.get("schema_version"),
-        "n_perturbations": len(perturbations),
-        "families": families,
-        "channels": channels,
-        "timing_bins": timing_bins,
-        "detail_manifest": _repo_relative(detail_manifest_path, repo_root=repo_root),
-        "detail_contains": "full perturbation bank including per-row perturbation definitions",
-    }
-
-
 def _effective_checkpoint_policy_from_manifest(
     experiment: str,
     *,
@@ -1715,7 +1595,6 @@ def evaluate_run_perturbation_bank(
         "status_counts": _status_counts(rows),
         "robust_response_summary": summarize_perturbation_bank(rows),
         "perturbations": rows,
-        "bulk_files": {},
     }
 
 
@@ -1827,7 +1706,6 @@ def _evaluated_perturbation_row(
         or {"status": "passed", "guard": "command_input_nonzero_payload_nonzero_effect"},
         "extlqg_comparator": extlqg_comparator,
         "robust_output_feedback_comparator": robust_comparator,
-        "bulk_arrays": None,
     }
 
 
@@ -3478,6 +3356,8 @@ def _evaluate_model_rollout_product(
     n_replicates: int,
     seed: int,
 ) -> SelectedEvalRolloutProduct:
+    from rlrmp.eval.ensemble import eval_ensemble_on_trials
+
     states = eval_ensemble_on_trials(
         task,
         model,

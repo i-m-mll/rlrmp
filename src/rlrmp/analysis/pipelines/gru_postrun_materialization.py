@@ -188,6 +188,11 @@ def materialize_gru_postrun_analysis(
     values remain audit sidecars and are never used for checkpoint selection.
     """
 
+    if write_perturbation_bulk_arrays:
+        raise ValueError(
+            "direct perturbation bulk-array writes are retired; run the registered "
+            "evaluation and analysis bundle to obtain Feedbax-custody artifacts"
+        )
     run_ids = tuple(run_ids)
     plan = plan_gru_postrun_materialization(
         experiment=experiment,
@@ -305,16 +310,11 @@ def materialize_gru_postrun_analysis(
             run_ids=run_ids,
             labels=labels,
             n_rollout_trials=n_rollout_trials,
-            output_path=plan.perturbation_response_json_path,
-            note_path=plan.perturbation_response_note_path,
-            bulk_dir=plan.perturbation_response_bulk_dir,
             bank_mode=perturbation_bank_mode,
             calibration_level=perturbation_calibration_level,
             calibration_reach=perturbation_calibration_reach,
-            write_bulk_arrays=write_perturbation_bulk_arrays,
             feedback_scale_manifest_path=plan.evaluation_manifest_path,
             preferred_checkpoint_manifest_path=effective_checkpoint_manifest_path,
-            regeneration_spec_path=_regeneration_spec_path(plan.perturbation_response_json_path),
             repo_root=repo_root,
         )
         if include_perturbation_response
@@ -845,16 +845,11 @@ def materialize_optional_perturbation_response(
     run_ids: Sequence[str],
     labels: Sequence[str] | None,
     n_rollout_trials: int,
-    output_path: Path,
-    note_path: Path,
-    bulk_dir: Path,
     bank_mode: str = "raw",
     calibration_level: str | Sequence[str] | None = None,
     calibration_reach: str | float | None = None,
-    write_bulk_arrays: bool = False,
     feedback_scale_manifest_path: Path | None = None,
     preferred_checkpoint_manifest_path: Path | None = None,
-    regeneration_spec_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
     """Call the optional perturbation-response bank materializer."""
@@ -881,10 +876,6 @@ def materialize_optional_perturbation_response(
             labels=None if labels is None else tuple(labels),
             n_rollout_trials=n_rollout_trials,
             evaluate=True,
-            write_bulk_arrays=write_bulk_arrays,
-            output_path=output_path,
-            note_path=note_path,
-            bulk_dir=bulk_dir,
             bank_mode=bank_mode,
             calibration_level=calibration_level,
             calibration_reach=calibration_reach,
@@ -895,7 +886,6 @@ def materialize_optional_perturbation_response(
                 if preferred_checkpoint_manifest_path is not None
                 else "sparse_history"
             ),
-            regeneration_spec_path=regeneration_spec_path,
             repo_root=repo_root,
         )
     except (FileNotFoundError, ValueError, KeyError, AttributeError) as exc:
@@ -903,8 +893,6 @@ def materialize_optional_perturbation_response(
             "status": "skipped",
             "reason": "perturbation_response_inputs_unavailable",
             "detail": str(exc),
-            "json_path": _repo_relative(output_path, repo_root=repo_root),
-            "note_path": _repo_relative(note_path, repo_root=repo_root),
             "selection_role": "audit_only_not_used_for_checkpoint_selection",
         }
 
@@ -913,15 +901,7 @@ def materialize_optional_perturbation_response(
     perturbations = bank.get("perturbations", ()) if isinstance(bank, dict) else ()
     return {
         "status": "materialized",
-        "json_path": _repo_relative(output_path, repo_root=repo_root),
-        "note_path": _repo_relative(note_path, repo_root=repo_root),
-        "bulk_dir": _repo_relative(bulk_dir, repo_root=repo_root),
-        "bulk_arrays_written": bool(write_bulk_arrays),
-        "regeneration_spec": (
-            None
-            if regeneration_spec_path is None
-            else _repo_relative(regeneration_spec_path, repo_root=repo_root)
-        ),
+        "custody": "feedbax_evaluation_and_analysis_manifests",
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
         "result": {
             "schema_version": result.get("schema_version") if isinstance(result, dict) else None,

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import inspect
+from pathlib import Path
 from typing import Any
 
 import jax.numpy as jnp
@@ -1758,9 +1760,49 @@ def test_perturbation_evaluation_has_no_direct_writer_or_rollout_rerun() -> None
 
     assert not hasattr(perturbation_bank, "_write_perturbation_bulk_arrays")
     assert "savez_compressed" not in source
+    assert '"bulk_arrays": None' not in source
+    assert "legacy_output_paths_ignored" not in source
+    assert "write_bulk_arrays_effective" not in source
     rollout_source = inspect.getsource(perturbation_bank._evaluate_model_rollout_product)
     assert "eval_ensemble_on_trials" in rollout_source
     assert ".eval_trials" not in rollout_source
+
+
+def test_repo_callers_do_not_request_retired_perturbation_outputs() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    obsolete = {
+        "write_bulk_arrays",
+        "output_path",
+        "note_path",
+        "bulk_dir",
+        "regeneration_spec_path",
+    }
+    violations: list[str] = []
+    for source_root in (repo_root / "src", repo_root / "scripts", repo_root / "results"):
+        for path in source_root.rglob("*.py"):
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                function_name = (
+                    node.func.id
+                    if isinstance(node.func, ast.Name)
+                    else node.func.attr
+                    if isinstance(node.func, ast.Attribute)
+                    else None
+                )
+                if function_name != "materialize_gru_perturbation_response":
+                    continue
+                bad = sorted(
+                    keyword.arg
+                    for keyword in node.keywords
+                    if keyword.arg is not None and keyword.arg in obsolete
+                )
+                if bad:
+                    relative = path.relative_to(repo_root)
+                    violations.append(f"{relative}:{node.lineno}: {', '.join(bad)}")
+
+    assert violations == []
 
 
 def test_summarize_perturbation_response_accepts_jax_backed_rollout_with_parity() -> None:

@@ -33,7 +33,6 @@ def main() -> None:
         perturbation_bank_mode=args.perturbation_bank_mode,
         perturbation_calibration_level=args.perturbation_calibration_level,
         perturbation_calibration_reach=args.perturbation_calibration_reach,
-        write_perturbation_bulk_arrays=args.write_perturbation_bulk_arrays,
         feedback_selection_level=args.feedback_selection_level,
         repo_root=args.repo_root,
     )
@@ -120,15 +119,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--perturbation-calibration-reach",
         help="Calibrated perturbation reach selector, e.g. canonical_15cm or a meter value.",
-    )
-    parser.add_argument(
-        "--write-perturbation-bulk-arrays",
-        action="store_true",
-        help=(
-            "Write raw per-row perturbation-response NPZ arrays. By default the "
-            "post-run bundle keeps summaries/manifests only; use the standalone "
-            "perturbation materializer for row-array archaeology."
-        ),
     )
     parser.add_argument(
         "--feedback-selection-level",
