@@ -94,6 +94,19 @@ The neural networks are not the endpoint as an ML benchmark. They are model syst
   worked. Repo instructions define the integration bar; this norm governs how
   often to pay it. Targeted `-k`/subset runs, `--lf`, and testmon are
   development aids, never auth/integration gates.
+- During integration and debugging, targeted selection
+  (`scripts/dev_tests.sh`, explicit node IDs, `-k`, `--lf`) is the default
+  tool, and the full suite is a scarce, serialized resource to be spent
+  deliberately, not a routine check.
+- **Full-suite invocations must NEVER run in parallel.** Never run two
+  `scripts/full_suite.sh` (or raw `pytest tests/`) invocations at the same
+  time — not two in one checkout, not one per worktree across this repo's
+  worktrees, and not via concurrently-dispatched subagents each kicking off
+  their own run. The full suite claims shared GPU/JAX/compilation resources
+  and the memo's fingerprinting assumes a single writer; concurrent runs
+  produce spurious failures and corrupt the memoized result. Any session that
+  delegates work to subagents must pass this constraint down explicitly to
+  every subagent it spawns, not assume it is inherited.
 - New tests must be safe under `pytest-xdist`: write only to `tmp_path` or a
   unique per-test directory, do not write to shared `_artifacts/` locations
   unless the path includes a test-unique segment, and restore any process-global
