@@ -39,7 +39,7 @@
         "rlrmp-feedback-quality-feedback-ablation-note"
       ],
       "component_node": "feedback_ablation",
-      "live_materializer": "rlrmp.analysis.pipelines.gru_feedback_ablation.materialize_gru_feedback_ablation",
+      "live_materializer": "rlrmp.analysis.pipelines.gru_feedback_ablation.execute_feedback_ablation_pipeline",
       "materialization_mode": "live_analysis_node",
       "paths": {
         "notes": "results/5f70333/notes/gru_feedback_ablation_validation_selected.md",

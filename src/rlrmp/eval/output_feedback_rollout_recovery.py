@@ -48,6 +48,7 @@ from rlrmp.analysis.math.rerun_metadata import (
     build_rerun_metadata,
 )
 from rlrmp.analysis.math import require_jax_x64
+from rlrmp.runtime.params_models import register_params_model
 
 ISSUE_ID = "7a459bb"
 UMBRELLA_ID = "43e8728"
@@ -1726,6 +1727,11 @@ def register_output_feedback_rollout_recovery_evaluation_recipe(
 ) -> None:
     """Register the governed analytical rollout-recovery evaluation."""
 
+    register_params_model(
+        OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_EVALUATION_TYPE,
+        OutputFeedbackRolloutRecoveryEvaluationParams,
+        replace=replace,
+    )
     register_evaluation_recipe(
         OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_EVALUATION_TYPE,
         output_feedback_rollout_recovery_evaluation_recipe,

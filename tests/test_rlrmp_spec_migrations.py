@@ -255,7 +255,10 @@ def test_rlrmp_spec_policy_registers_current_families_and_rejects_v0() -> None:
         FEEDBACK_ABLATION_EVAL_PARAMS_KIND: (
             FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_ID,
             FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION,
-            ("rlrmp.eval.feedback_ablation.params.v0",),
+            (
+                "rlrmp.eval.feedback_ablation.params.v0",
+                "rlrmp.eval.feedback_ablation.params.v1",
+            ),
         ),
         WORST_CASE_EPSILON_EVAL_PARAMS_KIND: (
             WORST_CASE_EPSILON_EVAL_PARAMS_SCHEMA_ID,

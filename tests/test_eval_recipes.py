@@ -77,7 +77,7 @@ def _identity_changed_params(evaluation_type: str, params: dict[str, Any]) -> di
     elif evaluation_type == PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE:
         changed["bank_status"] = {"training-run-a": {"changed": 1}}
     elif evaluation_type == FEEDBACK_ABLATION_EVALUATION_TYPE:
-        changed["rollout_pairs"] = [{"pair": "changed"}]
+        changed["n_rollout_trials"] = int(changed["n_rollout_trials"]) + 1
     elif evaluation_type == WORST_CASE_EPSILON_EVALUATION_TYPE:
         changed["audit_inputs"] = {"changed": True}
     elif evaluation_type == DELAYED_REACH_BANK_EVALUATION_TYPE:
@@ -201,10 +201,21 @@ def _bank() -> dict[str, Any]:
                 "schema_id": None,
                 "schema_version": None,
                 "consumed_data_identities": [],
-                "ablation_masks": None,
-                "ablation_mask_set": None,
-                "base_task": {},
-                "rollout_pairs": [],
+                "source_experiment": "",
+                "run_ids": [],
+                "labels": None,
+                "scope": "feedback_ablation",
+                "n_rollout_trials": 4,
+                "include_checkpoint_rescore": True,
+                "bank_mode": "raw",
+                "calibration_level": None,
+                "calibration_reach": None,
+                "feedback_selection_level": "small",
+                "feedback_scale_manifest_path": None,
+                "preferred_checkpoint_manifest_path": None,
+                "repo_root": None,
+                "bank": None,
+                "evaluation_bins": None,
             },
         ),
         (
@@ -307,8 +318,10 @@ def test_eval_params_model_table_resolves_registered_recipes() -> None:
             FEEDBACK_ABLATION_EVALUATION_TYPE,
             FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
             {
-                "ablation_masks": [{"name": "no_feedback", "channels": ["vision"]}],
-                "base_task": {"task": "center_out"},
+                "source_experiment": "unit",
+                "run_ids": ["training-run-a"],
+                "n_rollout_trials": 2,
+                "repo_root": ".",
             },
             "feedback_ablation_rollouts",
         ),
@@ -338,12 +351,28 @@ def test_eval_params_model_table_resolves_registered_recipes() -> None:
 )
 def test_registered_eval_recipes_execute_and_reuse_states_cache(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
     evaluation_type: str,
     params_kind: str,
     params: dict[str, Any],
     product_role: str,
 ) -> None:
     _register()
+    if evaluation_type == FEEDBACK_ABLATION_EVALUATION_TYPE:
+        monkeypatch.setattr(
+            "rlrmp.eval.recipes.evaluate_feedback_ablation_runs",
+            lambda _params, **_kwargs: {
+                "source_experiment": "unit",
+                "run_ids": ["training-run-a"],
+                "labels": None,
+                "scope": "fixture",
+                "bank_mode": "raw",
+                "bank": {"bank_id": "fixture", "n_perturbations": 0},
+                "evaluation_bins": {"nominal": None},
+                "ablation_modes": ["normal"],
+                "runs": {"training-run-a": {"ablations": []}},
+            },
+        )
     stamped = stamp_current_schema(params_kind, params)
     spec = _spec(evaluation_type, stamped)
     expected_manifest_id = evaluation_run_manifest_id(spec)

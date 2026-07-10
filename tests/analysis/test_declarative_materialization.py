@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -397,9 +398,53 @@ def test_diagnostic_bank_recipes_register_params_models_and_eval_dependencies() 
 
 def test_feedback_ablation_recipe_consumes_cached_eval_states_and_records_custody(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     registry = ExperimentRegistry()
     rlrmp.register_experiment_package(registry)
+    rollout_rows = [
+        {
+            "bin": "nominal",
+            "mode": "normal",
+            "status": "evaluated",
+            "metrics": {
+                "baseline_action_norm": {"mean": 1.0},
+                "baseline_endpoint_error_m": {"mean": 0.01},
+                "baseline_terminal_speed_m_s": {"mean": 0.01},
+                "baseline_full_qrf_cost": {"total": {"mean": 1.0}},
+            },
+        },
+        {
+            "bin": "initial_state",
+            "mode": "lagged_observation_history",
+            "status": "evaluated",
+            "metrics": {
+                "baseline_action_norm": {"mean": 1.0},
+                "delta_action_norm": {"mean": 0.5},
+            },
+        },
+    ]
+    monkeypatch.setattr(
+        "rlrmp.eval.recipes.evaluate_feedback_ablation_runs",
+        lambda _params, **_kwargs: {
+            "source_experiment": "unit",
+            "run_ids": ["training-run-a"],
+            "labels": ["Training A"],
+            "scope": "cached_eval_fixture",
+            "bank_mode": "raw",
+            "bank": {"bank_id": "fixture", "n_perturbations": 0},
+            "evaluation_bins": {"nominal": None, "initial_state": None},
+            "ablation_modes": ["normal", "lagged_observation_history"],
+            "runs": {
+                "training-run-a": {
+                    "label": "Training A",
+                    "n_replicates": 1,
+                    "n_rollout_trials_per_replicate": 2,
+                    "ablations": rollout_rows,
+                }
+            },
+        },
+    )
     eval_manifest, eval_path = execute_evaluation_run_spec(
         EvaluationRunSpec(
             evaluation_type=FEEDBACK_ABLATION_EVALUATION_TYPE,
@@ -407,29 +452,10 @@ def test_feedback_ablation_recipe_consumes_cached_eval_states_and_records_custod
             params=stamp_current_schema(
                 FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
                 {
-                    "ablation_masks": {"normal": None},
-                    "rollout_pairs": [
-                        {
-                            "bin": "nominal",
-                            "mode": "normal",
-                            "status": "evaluated",
-                            "metrics": {
-                                "baseline_action_norm": {"mean": 1.0},
-                                "baseline_endpoint_error_m": {"mean": 0.01},
-                                "baseline_terminal_speed_m_s": {"mean": 0.01},
-                                "baseline_full_qrf_cost": {"total": {"mean": 1.0}},
-                            },
-                        },
-                        {
-                            "bin": "initial_state",
-                            "mode": "lagged_observation_history",
-                            "status": "evaluated",
-                            "metrics": {
-                                "baseline_action_norm": {"mean": 1.0},
-                                "delta_action_norm": {"mean": 0.5},
-                            },
-                        },
-                    ],
+                    "source_experiment": "unit",
+                    "run_ids": ["training-run-a"],
+                    "n_rollout_trials": 2,
+                    "repo_root": str(tmp_path),
                 },
             ),
         ),
@@ -492,6 +518,71 @@ def test_feedback_ablation_recipe_consumes_cached_eval_states_and_records_custod
     assert "rlrmp-feedback-quality-feedback-ablation-note" in _artifact_roles(
         component_manifest
     )
+
+
+def test_feedback_quality_feedback_ablation_training_alias_routes_manifest_pipeline(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = ExperimentRegistry()
+    rlrmp.register_experiment_package(registry)
+    run_id = "training-run-a"
+    training_manifest = TrainingRunManifest(
+        id=run_id,
+        job_id="feedback-alias-fixture",
+        status="completed",
+        metadata={"rlrmp_experiment": "unit"},
+    )
+    training_path = write_manifest(training_manifest, root=tmp_path, index=False)
+    calls: list[dict] = []
+
+    def fake_pipeline(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            payload={"schema_version": "rlrmp.gru_feedback_ablation.v1", "runs": {}},
+            evaluation_manifest=SimpleNamespace(id="eval-feedback"),
+            analysis_manifest=SimpleNamespace(id="analysis-feedback"),
+            analysis_manifest_path=tmp_path / "analysis-feedback.json",
+        )
+
+    monkeypatch.setattr(
+        "rlrmp.analysis.pipelines.gru_feedback_ablation.execute_feedback_ablation_pipeline",
+        fake_pipeline,
+    )
+    manifest, _path = execute_analysis_run_spec(
+        AnalysisRunSpec(
+            analysis_type=dm.FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["feedback_ablation"],
+            inputs=[
+                ParentRef(
+                    kind="TrainingRunManifest",
+                    id=run_id,
+                    role="training_run",
+                    uri=str(training_path),
+                )
+            ],
+            params={
+                "experiment": "unit",
+                "run_ids": [run_id],
+                "repo_root": str(tmp_path),
+                "include_feedback_ablation": True,
+            },
+        ),
+        root=tmp_path,
+        issues=["d0189db"],
+        force=True,
+    )
+
+    payload = _artifact_payload(
+        manifest,
+        "rlrmp-feedback-quality-feedback-ablation-status",
+    )
+    assert payload["status"] == "materialized"
+    assert payload["evaluation_manifest_id"] == "eval-feedback"
+    assert payload["analysis_manifest_id"] == "analysis-feedback"
+    assert payload["custody_route"] == "EvaluationRunManifest->AnalysisRunManifest"
+    assert len(calls) == 1
+    assert calls[0]["source_experiment"] == "unit"
+    assert calls[0]["run_ids"] == (run_id,)
 
 
 def test_policy_diagnostics_recipe_consumes_cached_eval_states_and_records_custody(

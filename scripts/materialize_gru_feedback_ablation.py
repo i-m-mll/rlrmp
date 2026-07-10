@@ -11,7 +11,7 @@ from rlrmp.analysis.pipelines.gru_feedback_ablation import (
     DEFAULT_RUN_IDS,
     DEFAULT_SCOPE,
     DEFAULT_SOURCE_EXPERIMENT,
-    materialize_gru_feedback_ablation,
+    execute_feedback_ablation_pipeline,
 )
 from rlrmp.paths import REPO_ROOT
 
@@ -52,11 +52,14 @@ def main() -> None:
         type=Path,
         help="Optional fixed-bank-style manifest selecting checkpoints to load.",
     )
-    parser.add_argument("--output-path", type=Path)
-    parser.add_argument("--note-path", type=Path)
+    parser.add_argument(
+        "--feedbax-runs-root",
+        type=Path,
+        help="Feedbax manifest/artifact root. Defaults to Feedbax's configured root.",
+    )
     args = parser.parse_args()
 
-    manifest = materialize_gru_feedback_ablation(
+    execution = execute_feedback_ablation_pipeline(
         source_experiment=args.source_experiment,
         result_experiment=args.result_experiment,
         scope=args.scope,
@@ -68,11 +71,14 @@ def main() -> None:
         calibration_reach=args.calibration_reach,
         feedback_selection_level=args.feedback_selection_level,
         preferred_checkpoint_manifest_path=args.preferred_checkpoint_manifest,
-        output_path=args.output_path,
-        note_path=args.note_path,
         repo_root=REPO_ROOT,
+        feedbax_runs_root=args.feedbax_runs_root,
+        issues=("d0189db",),
     )
-    print(f"Wrote feedback-ablation diagnostic for {len(manifest['runs'])} run(s).")
+    print(f"Wrote {execution.analysis_manifest_path}")
+    print(f"Feedbax evaluation manifest: {execution.evaluation_manifest.id}")
+    print(f"Feedbax analysis manifest: {execution.analysis_manifest.id}")
+    print(f"Materialized feedback-ablation diagnostic for {len(execution.payload['runs'])} run(s).")
 
 
 if __name__ == "__main__":

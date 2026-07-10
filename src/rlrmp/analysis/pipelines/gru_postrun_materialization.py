@@ -488,23 +488,14 @@ def materialize_optional_feedback_ablation(
     regeneration_spec_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
-    """Call the optional feedback-ablation sidecar materializer."""
+    """Execute the optional feedback-ablation analysis through Feedbax manifests."""
+
+    from rlrmp.analysis.pipelines.gru_feedback_ablation import (
+        execute_feedback_ablation_pipeline,
+    )
 
     try:
-        module = importlib.import_module("rlrmp.analysis.pipelines.gru_feedback_ablation")
-        materializer = getattr(module, "materialize_gru_feedback_ablation")
-    except (ImportError, AttributeError) as exc:
-        return {
-            "status": "skipped",
-            "reason": "optional_feedback_ablation_unavailable",
-            "detail": str(exc),
-            "expected_hook": (
-                "rlrmp.analysis.pipelines.gru_feedback_ablation.materialize_gru_feedback_ablation"
-            ),
-        }
-
-    try:
-        result = materializer(
+        execution = execute_feedback_ablation_pipeline(
             source_experiment=experiment,
             result_experiment=experiment,
             scope="postrun_feedback_ablation",
@@ -517,10 +508,9 @@ def materialize_optional_feedback_ablation(
             feedback_selection_level=feedback_selection_level,
             feedback_scale_manifest_path=feedback_scale_manifest_path,
             preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
-            output_path=output_path,
-            note_path=note_path,
-            regeneration_spec_path=regeneration_spec_path,
             repo_root=repo_root,
+            feedbax_runs_root=repo_root / "_artifacts" / experiment / "feedbax_runs",
+            issues=(experiment,),
         )
     except (FileNotFoundError, ValueError, KeyError, AttributeError) as exc:
         return {
@@ -532,22 +522,20 @@ def materialize_optional_feedback_ablation(
             "selection_role": "audit_only_not_used_for_checkpoint_selection",
         }
 
+    result = execution.payload
     runs = result.get("runs", {}) if isinstance(result, dict) else {}
     audit = (
         result.get("feedback_checkpoint_selection_audit", {}) if isinstance(result, dict) else {}
     )
     return {
         "status": "materialized",
-        "json_path": _repo_relative(output_path, repo_root=repo_root),
-        "note_path": _repo_relative(note_path, repo_root=repo_root),
-        "bulk_detail_manifest": (
-            result.get("bulk_detail_manifest") if isinstance(result, dict) else None
-        ),
-        "regeneration_spec": (
-            None
-            if regeneration_spec_path is None
-            else _repo_relative(regeneration_spec_path, repo_root=repo_root)
-        ),
+        "json_path": str(execution.analysis_manifest_path),
+        "note_path": None,
+        "bulk_detail_manifest": None,
+        "regeneration_spec": None,
+        "evaluation_manifest_id": execution.evaluation_manifest.id,
+        "analysis_manifest_id": execution.analysis_manifest.id,
+        "custody_route": "EvaluationRunManifest->AnalysisRunManifest",
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
         "result": {
             "schema_version": result.get("schema_version") if isinstance(result, dict) else None,
