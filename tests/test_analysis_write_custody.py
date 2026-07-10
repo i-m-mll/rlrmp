@@ -105,6 +105,29 @@ def test_analysis_write_allowlist_entries_carry_owner_and_reason() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("relative_path", "function_name"),
+    (
+        ("src/rlrmp/analysis/multi_cell_driver.py", "_write_multi_cell_report"),
+        ("src/rlrmp/analysis/soft_lambda.py", "run_soft_lambda_materializer"),
+    ),
+)
+def test_analysis_json_sidecars_use_governed_writer(
+    relative_path: str,
+    function_name: str,
+) -> None:
+    tree = ast.parse((REPO_ROOT / relative_path).read_text(encoding="utf-8"))
+    function = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == function_name
+    )
+    calls = {_function_name(node.func) for node in ast.walk(function) if isinstance(node, ast.Call)}
+
+    assert "write_json" in calls
+    assert not any(name.endswith(".write_text") for name in calls)
+
+
 def test_analysis_write_negative_canary_flags_unlisted_durable_write() -> None:
     found = _site_counts(
         _scan_source(

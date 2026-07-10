@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import importlib
-import json
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -16,7 +15,7 @@ import numpy as np
 from feedbax.plot import save_figure
 
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
-from rlrmp.io import update_marked_section
+from rlrmp.io import update_marked_section, write_json
 
 
 _TRAINING_ARG_PROFILES: dict[str, dict[str, Any]] = {
@@ -652,7 +651,13 @@ def _write_multi_cell_report(
         },
     }
     stats_path = notes_dir / "variance_analysis_data.json"
-    stats_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    write_json(
+        stats_path,
+        payload,
+        indent=2,
+        sort_keys=False,
+        trailing_newline=False,
+    )
     print(f"Saved stats JSON: {stats_path}")
     print("\nDone.")
 
