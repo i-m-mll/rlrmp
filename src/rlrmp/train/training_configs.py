@@ -39,7 +39,7 @@ from rlrmp.model.feedback_descriptors import (
     COMPONENT_FORCE_FILTER,
     resolve_controller_feedback_view,
 )
-from rlrmp.model.cs_lss_gru import (
+from rlrmp.model.cs_lss_contracts import (
     FINITE_EPSILON_POLICY_GRAPH_COMPONENT,
     FINITE_EPSILON_POLICY_NODE_LABEL,
 )
