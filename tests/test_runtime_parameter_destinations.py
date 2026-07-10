@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 from types import SimpleNamespace
 from typing import Any
 
@@ -20,6 +21,7 @@ from rlrmp.model import cs_lss_gru, feedbax_graph, presets as model_presets
 from rlrmp.runtime import parameter_presets
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+SOURCE_COMMIT = "470ffe0928712fcdbc7cbaf8f3042b5e919f8008"
 
 
 def test_loss_defaults_load_from_registered_typed_preset() -> None:
@@ -145,7 +147,14 @@ def test_all_destination_presets_are_registered() -> None:
 
 def test_runtime_resolution_manifest_covers_exact_partition() -> None:
     baseline = set(
-        json.loads((REPO_ROOT / "ci/data_in_code_baseline.json").read_text(encoding="utf-8"))
+        json.loads(
+            subprocess.run(
+                ["git", "show", f"{SOURCE_COMMIT}:ci/data_in_code_baseline.json"],
+                cwd=REPO_ROOT,
+                check=True,
+                capture_output=True,
+            ).stdout
+        )
     )
     owned_source_prefixes = (
         "src/rlrmp/cloud/modal_runner.py::",
