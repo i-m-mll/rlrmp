@@ -8,7 +8,13 @@ from typing import Any
 
 import jax.random as jr
 import numpy as np
+import plotly.graph_objects as go
 
+from rlrmp.analysis.math.trial_alignment import (
+    align_trials,
+    pooled_trial_mean_with_band,
+    replicate_mean_curves,
+)
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     build_no_integrator_game,
@@ -28,7 +34,257 @@ from rlrmp.analysis.math.output_feedback import (
     robust_output_feedback_gains,
 )
 from rlrmp.viz.profile_grids import profile_comparison_grid
+from rlrmp.viz.colors import hex_to_rgba
 from rlrmp.viz.traces import add_profile_line
+
+
+def build_forward_velocity_figure(
+    cell_kms: Mapping[str, Mapping[str, Any]],
+    *,
+    labels: Sequence[str],
+    display_names: Mapping[str, str],
+    colors: Mapping[str, str],
+    trace_mode: str,
+    title: str,
+    width: int,
+    height_per_cell: int,
+    vertical_spacing: float,
+    dt: float = 0.01,
+) -> go.Figure:
+    """Build a go-cue-aligned multi-cell forward-velocity figure."""
+
+    labels_present = [label for label in labels if label in cell_kms]
+    n_cells = len(labels_present)
+    if n_cells == 0:
+        return go.Figure()
+    if trace_mode not in {"pooled", "replicate"}:
+        raise ValueError(f"unknown trace mode: {trace_mode}")
+
+    fig = profile_comparison_grid(
+        n_panels=n_cells,
+        subplot_titles=[display_names[label] for label in labels_present],
+        vertical_spacing=vertical_spacing,
+    )
+    for row, label in enumerate(labels_present, start=1):
+        velocity = cell_kms[label]["forward_vel_profile"]
+        aligned, center = align_trials(velocity, cell_kms[label]["go_idx"])
+        color = colors[label]
+        if trace_mode == "pooled":
+            mean, lower, upper, window = pooled_trial_mean_with_band(aligned, band="sd")
+            time = ((np.arange(aligned.shape[-1]) - center) * dt)[window]
+            _add_pooled_band(
+                fig,
+                time=time,
+                mean=mean,
+                lower=lower,
+                upper=upper,
+                color=color,
+                name=display_names[label],
+                row=row,
+            )
+        else:
+            curves, window = replicate_mean_curves(aligned)
+            time = ((np.arange(aligned.shape[-1]) - center) * dt)[window]
+            _add_replicate_curves(fig, time, curves, color=color, row=row)
+        fig.add_vline(
+            x=0.0,
+            line={"color": "black", "dash": "dash", "width": 1},
+            row=row,
+            col=1,
+        )
+
+    _finish_multi_cell_figure(
+        fig,
+        n_cells=n_cells,
+        title=title,
+        width=width,
+        height_per_cell=height_per_cell,
+        yaxis_title="Fwd vel (m/s)",
+    )
+    return fig
+
+
+def build_hold_drift_figure(
+    cell_kms: Mapping[str, Mapping[str, Any]],
+    *,
+    labels: Sequence[str],
+    display_names: Mapping[str, str],
+    colors: Mapping[str, str],
+    trace_mode: str,
+    title: str,
+    width: int,
+    height_per_cell: int,
+    vertical_spacing: float,
+    pre_go_window_steps: int | None = None,
+    dt: float = 0.01,
+) -> go.Figure:
+    """Build a go-cue-aligned multi-cell pre-go position-drift figure."""
+
+    labels_present = [label for label in labels if label in cell_kms]
+    n_cells = len(labels_present)
+    if n_cells == 0:
+        return go.Figure()
+    if trace_mode not in {"pooled", "replicate"}:
+        raise ValueError(f"unknown trace mode: {trace_mode}")
+
+    fig = profile_comparison_grid(
+        n_panels=n_cells,
+        subplot_titles=[display_names[label] for label in labels_present],
+        vertical_spacing=vertical_spacing,
+    )
+    for row, label in enumerate(labels_present, start=1):
+        position = cell_kms[label]["pos_forward_profile"]
+        aligned, center = align_trials(position, cell_kms[label]["go_idx"])
+        time = np.arange(aligned.shape[-1]) - center
+        color = colors[label]
+        if trace_mode == "pooled":
+            mean, lower, upper, window = pooled_trial_mean_with_band(aligned, band="sd")
+            time = (time * dt)[window]
+            keep = time <= 0.0
+            if pre_go_window_steps is not None:
+                keep &= time >= -pre_go_window_steps * dt
+            _add_pooled_band(
+                fig,
+                time=time[keep],
+                mean=mean[keep] * 1000.0,
+                lower=lower[keep] * 1000.0,
+                upper=upper[keep] * 1000.0,
+                color=color,
+                name=display_names[label],
+                row=row,
+            )
+        else:
+            curves, window = replicate_mean_curves(aligned)
+            time = (time * dt)[window]
+            keep = time <= 0.0
+            if pre_go_window_steps is not None:
+                keep &= time >= -pre_go_window_steps * dt
+            _add_replicate_curves(
+                fig,
+                time[keep],
+                curves[:, keep] * 1000.0,
+                color=color,
+                row=row,
+            )
+        fig.add_hline(
+            y=0,
+            line={"color": "grey", "dash": "dot", "width": 1},
+            row=row,
+            col=1,
+        )
+        if pre_go_window_steps is not None:
+            fig.add_vline(
+                x=-pre_go_window_steps * dt,
+                line={"color": "red", "dash": "dot", "width": 1},
+                row=row,
+                col=1,
+            )
+
+    _finish_multi_cell_figure(
+        fig,
+        n_cells=n_cells,
+        title=title,
+        width=width,
+        height_per_cell=height_per_cell,
+        yaxis_title="Fwd pos (mm)",
+    )
+    return fig
+
+
+def _add_pooled_band(
+    fig: go.Figure,
+    *,
+    time: np.ndarray,
+    mean: np.ndarray,
+    lower: np.ndarray,
+    upper: np.ndarray,
+    color: str,
+    name: str,
+    row: int,
+) -> None:
+    fig.add_trace(
+        go.Scatter(
+            x=time,
+            y=upper,
+            mode="lines",
+            line={"color": "rgba(0,0,0,0)"},
+            hoverinfo="skip",
+            showlegend=False,
+        ),
+        row=row,
+        col=1,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=time,
+            y=lower,
+            mode="lines",
+            line={"color": "rgba(0,0,0,0)"},
+            fill="tonexty",
+            fillcolor=hex_to_rgba(color, 0.25),
+            hoverinfo="skip",
+            showlegend=False,
+        ),
+        row=row,
+        col=1,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=time,
+            y=mean,
+            mode="lines",
+            line={"color": color, "width": 2},
+            name=name,
+            showlegend=False,
+        ),
+        row=row,
+        col=1,
+    )
+
+
+def _add_replicate_curves(
+    fig: go.Figure,
+    time: np.ndarray,
+    curves: np.ndarray,
+    *,
+    color: str,
+    row: int,
+) -> None:
+    for replicate, curve in enumerate(curves):
+        fig.add_trace(
+            go.Scatter(
+                x=time,
+                y=curve,
+                mode="lines",
+                name=f"Rep {replicate}",
+                line={"color": hex_to_rgba(color, 0.7), "width": 1.5},
+                showlegend=row == 1,
+                legendgroup=f"rep{replicate}",
+            ),
+            row=row,
+            col=1,
+        )
+
+
+def _finish_multi_cell_figure(
+    fig: go.Figure,
+    *,
+    n_cells: int,
+    title: str,
+    width: int,
+    height_per_cell: int,
+    yaxis_title: str,
+) -> None:
+    fig.update_layout(
+        title=title,
+        width=width,
+        height=height_per_cell * n_cells + 100,
+        margin={"l": 70, "r": 60, "t": 80, "b": 60},
+        hovermode="x unified",
+    )
+    fig.update_xaxes(title_text="Time relative to go cue (s)", row=n_cells, col=1)
+    for row in range(1, n_cells + 1):
+        fig.update_yaxes(title_text=yaxis_title, row=row, col=1)
 
 
 @dataclass(frozen=True)

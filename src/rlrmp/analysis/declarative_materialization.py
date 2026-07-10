@@ -98,7 +98,7 @@ from rlrmp.eval.policy_diagnostics import (
     validate_policy_jacobian,
 )
 from rlrmp.eval.recurrent_jacobians import compute_recurrent_jacobian_bank
-from rlrmp.paths import REPO_ROOT
+from rlrmp.paths import REPO_ROOT, portable_repo_path
 from rlrmp.runtime.params_models import register_params_model
 from rlrmp.runtime.spec_migrations import (
     GRU_PERTURBATION_BANK_SCHEMA_VERSION,
@@ -3427,7 +3427,7 @@ def _postrun_existing_artifacts(
 
 
 def _legacy_logical_name(path: Path, repo_root: Path) -> str:
-    return f"legacy/{_repo_relative(path, repo_root=repo_root)}"
+    return f"legacy/{portable_repo_path(path, repo_root=repo_root)}"
 
 
 def _feedback_quality_components(
@@ -3592,7 +3592,9 @@ def _feedback_quality_component_output(
     payload = {
         "status": "unavailable",
         "schema_kind": component["schema_kind"],
-        "paths": {key: _repo_relative(path, repo_root=repo_root) for key, path in paths.items()},
+        "paths": {
+            key: portable_repo_path(path, repo_root=repo_root) for key, path in paths.items()
+        },
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
     }
     gate = _feedback_quality_gating_decision(
@@ -3714,7 +3716,9 @@ def _single_file_artifact_group(
                     path=path,
                     role=role,
                     logical_name=logical_name,
-                    metadata={"repo_relative_path": _repo_relative(path, repo_root=repo_root)},
+                    metadata={
+                        "repo_relative_path": portable_repo_path(path, repo_root=repo_root)
+                    },
                     group_role=member_role,
                 ),
             ),
@@ -3740,8 +3744,8 @@ def _directory_artifact_group(
         AnalysisArtifactFile(
             path=item,
             role=role,
-            logical_name=_repo_relative(item, repo_root=repo_root),
-            metadata={"repo_relative_path": _repo_relative(item, repo_root=repo_root)},
+            logical_name=portable_repo_path(item, repo_root=repo_root),
+            metadata={"repo_relative_path": portable_repo_path(item, repo_root=repo_root)},
             group_role=member_role,
         )
         for item in files
@@ -3759,13 +3763,6 @@ def _read_json_payload(path: Path) -> dict[str, Any]:
     import json
 
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _repo_relative(path: Path, *, repo_root: Path) -> str:
-    try:
-        return str(path.relative_to(repo_root))
-    except ValueError:
-        return str(path)
 
 
 def _declarative_metadata(context: AnalysisRunContext) -> dict[str, Any]:

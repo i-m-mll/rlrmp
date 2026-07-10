@@ -19,6 +19,8 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import cs_output_feedback_refere
 from rlrmp.io import update_marked_section
 from rlrmp.paths import figure_artifact_dir, figure_spec_dir, mkdir_p, run_spec_path
 from rlrmp.viz import profile_comparison_grid
+from rlrmp.viz.traces import add_band_trace as canonical_add_band_trace
+from rlrmp.viz.traces import add_line as canonical_add_line
 
 
 EXPERIMENT = "e901a20"
@@ -122,38 +124,21 @@ def add_profile_trace(
     showlegend: bool,
 ) -> None:
     """Add a mean profile and one-SD band to one subplot row."""
-
-    upper = profile.mean + profile.std
-    lower = profile.mean - profile.std
-    fig.add_trace(
-        go.Scatter(
-            x=np.concatenate([profile.time_s, profile.time_s[::-1]]),
-            y=np.concatenate([upper, lower[::-1]]),
-            fill="toself",
-            fillcolor=hex_to_rgba(color, 0.12),
-            line={"color": "rgba(0,0,0,0)"},
-            hoverinfo="skip",
-            name=f"{label} +/- 1 SD",
-            showlegend=False,
-        ),
+    canonical_add_band_trace(
+        fig,
+        x=profile.time_s,
+        mean=profile.mean,
+        spread=profile.std,
         row=row,
         col=1,
-    )
-    line: dict[str, Any] = {"color": color, "width": 2.4}
-    if dash is not None:
-        line["dash"] = dash
-    fig.add_trace(
-        go.Scatter(
-            x=profile.time_s,
-            y=profile.mean,
-            mode="lines",
-            line=line,
-            name=label,
-            legendgroup=label,
-            showlegend=showlegend,
-        ),
-        row=row,
-        col=1,
+        color=color,
+        name=label,
+        legendgroup=label,
+        showlegend=showlegend,
+        fill_alpha=0.12,
+        line_width=2.4,
+        line_dash=dash,
+        band_label=f"{label} +/- 1 SD",
     )
 
 
@@ -168,19 +153,18 @@ def add_reference_trace(
     showlegend: bool,
 ) -> None:
     """Add the normalized extLQG reference line to one subplot row."""
-
-    fig.add_trace(
-        go.Scatter(
-            x=time_s,
-            y=mean,
-            mode="lines",
-            line={"color": color, "width": 2.0, "dash": "dash"},
-            name=label,
-            legendgroup=label,
-            showlegend=showlegend,
-        ),
+    canonical_add_line(
+        fig,
+        x=time_s,
+        y=mean,
         row=row,
         col=1,
+        color=color,
+        name=label,
+        legendgroup=label,
+        showlegend=showlegend,
+        width=2.0,
+        dash="dash",
     )
 
 

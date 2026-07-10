@@ -32,7 +32,7 @@ from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
 from rlrmp.analysis.pipelines.standard_certificate_materialization import (
     deterministic_output_feedback_rows,
 )
-from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.paths import REPO_ROOT, mkdir_p, portable_repo_path
 
 
 ISSUE_ID = "3becdec"
@@ -396,7 +396,7 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 def _repo_relative(path: Path) -> str:
-    return str(path.relative_to(REPO_ROOT))
+    return portable_repo_path(path, repo_root=REPO_ROOT)
 
 
 def _fmt(value: Any) -> str:

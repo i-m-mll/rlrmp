@@ -46,7 +46,7 @@ from rlrmp.analysis.pipelines.failure_decomposition import output_feedback_failu
 from rlrmp.analysis.pipelines.standard_certificate_materialization import (
     deterministic_output_feedback_rows,
 )
-from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.paths import REPO_ROOT, mkdir_p, portable_repo_path
 
 
 ISSUE_ID = "1c014e5"
@@ -512,10 +512,7 @@ def _lr_label(lr: float) -> str:
 
 
 def _repo_relative(path: Path) -> str:
-    try:
-        return str(path.relative_to(REPO_ROOT))
-    except ValueError:
-        return str(path)
+    return portable_repo_path(path, repo_root=REPO_ROOT)
 
 
 def _is_under_repo(path: Path) -> bool:
