@@ -8,9 +8,13 @@ without disturbing hand-edited preambles or appended commentary.
 
 from __future__ import annotations
 
+import csv
+import importlib.util
 import json
 import os
 import re
+import sys
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Callable
 
@@ -26,6 +30,68 @@ _MARKER_OPEN_RE = re.compile(r"<!-- AUTO-GENERATED: (\S+) -->")
 _MARKER_CLOSE_LITERAL = "<!-- /AUTO-GENERATED -->"
 
 
+def write_csv_rows(
+    path: Path,
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    fieldnames: Sequence[str] | None = None,
+) -> None:
+    """Write mappings to CSV using an explicit or first-row column contract.
+
+    The explicit field list is also a projection policy: additional mapping
+    keys are ignored and missing declared keys fail closed with ``KeyError``.
+    """
+
+    rows = list(rows)
+    columns = list(fieldnames if fieldnames is not None else (rows[0].keys() if rows else ()))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=columns, lineterminator="\n")
+        writer.writeheader()
+        writer.writerows({key: row[key] for key in columns} for row in rows)
+
+
+def json_ready(value: Any) -> Any:
+    """Recursively convert array/scalar containers to JSON-serializable values."""
+
+    if isinstance(value, dict):
+        return {str(key): json_ready(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_ready(item) for item in value]
+    if hasattr(value, "tolist"):
+        return json_ready(value.tolist())
+    if hasattr(value, "item"):
+        return value.item()
+    return value
+
+
+def load_python_module(path: Path, *, module_name: str | None = None) -> Any:
+    """Load a Python source file as a module with deterministic error handling."""
+
+    name = module_name or f"rlrmp_dynamic_{path.stem}"
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load Python module from {path}")
+    module = importlib.util.module_from_spec(spec)
+    previous = sys.modules.get(name)
+    sys.modules[name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        if previous is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = previous
+        raise
+    return module
+
+
+def load_named_python_module(module_name: str, path: Path) -> Any:
+    """Load ``path`` using an explicit import-module name."""
+
+    return load_python_module(path, module_name=module_name)
+
+
 def compact_json_dumps(
     payload: Any,
     *,
@@ -33,12 +99,15 @@ def compact_json_dumps(
 ) -> str:
     """Return stable compact machine JSON with one trailing newline."""
 
-    return json.dumps(
-        payload,
-        default=default,
-        separators=(",", ":"),
-        sort_keys=True,
-    ) + "\n"
+    return (
+        json.dumps(
+            payload,
+            default=default,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        + "\n"
+    )
 
 
 def write_compact_json(
@@ -130,9 +199,7 @@ def update_marked_section(
         pair with its own close marker.
     """
     if " " in marker_name:
-        raise ValueError(
-            f"marker_name must not contain spaces; got {marker_name!r}"
-        )
+        raise ValueError(f"marker_name must not contain spaces; got {marker_name!r}")
 
     block = _make_block(marker_name, content)
 

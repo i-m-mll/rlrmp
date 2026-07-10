@@ -1,9 +1,11 @@
 """Materialize raw-vs-clipped closed-loop policy audits for 3b850d6."""
 
 from __future__ import annotations
+from rlrmp.analysis.soft_lambda import base_parser, run_soft_lambda_materializer
+from rlrmp.analysis.soft_lambda import load_frozen_batch as _load_frozen_batch
+from rlrmp.analysis.soft_lambda import soft_pgd_config as soft_pgd_config
 
 import argparse
-import csv
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,33 +14,23 @@ from typing import Any
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-import jax.random as jr
 import jax.tree as jt
 import numpy as np
 from feedbax.config.namespace import TreeNamespace
-from feedbax.runtime.batch import BatchInfo
-from jax_cookbook import load_with_hyperparameters
 
-from rlrmp.io import update_marked_section
-from rlrmp.paths import mkdir_p
 from rlrmp.train import cs_nominal_gru as nominal
 from rlrmp.train.cs_perturbation_training import (
-    BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
-    _broad_epsilon_pgd_trust_radius,
-    _epsilon_time_mask,
-    _ensure_broad_epsilon_input,
     _flattened_per_trial_norm,
     _project_flattened_per_trial_l2_ball,
     _set_input,
-    config_from_broad_epsilon_pgd_hps,
     run_broad_epsilon_pgd_inner_maximizer,
 )
-from rlrmp.train.task_model import setup_task_model_pair
 
 
 RUN_IDS = ("open_loop_small", "open_loop_moderate", "open_loop_stress")
 DEFAULT_AMPLITUDES = (0.0, 0.25, 0.5, 1.0, 2.0, 4.0)
 DEFAULT_LAMBDA_MULTIPLIERS = (2.0, 4.0)
+CSV_FIELDS = ('run_id', 'direction', 'mechanism', 'lambda_multiplier', 'lambda', 'amplitude', 'raw_policy_norm_mean', 'selected_clipped_norm_mean', 'raw_to_selected_norm_ratio_mean', 'cap_violation_fraction_before_projection', 'raw_energy_penalty', 'selected_clipped_energy_penalty', 'raw_task_loss_gain_over_zero', 'raw_objective_gain_over_zero', 'selected_objective_gain_over_zero', 'raw_finite_status', 'selected_finite_status')
 CAP_RADIUS_15CM = 0.004545500088363065
 CAP_SOURCE = "ofb_6d_no_integrator_gamma_1p4_rollout_radius"
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -66,61 +58,35 @@ class PolicyDirection:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--experiment", default="c92ebd8")
-    parser.add_argument("--issue", default="3b850d6")
-    parser.add_argument("--batch-size", type=int, default=8)
-    parser.add_argument("--replicate-index", type=int, default=0)
+    parser = base_parser(
+        description=None, experiment="c92ebd8", issue="3b850d6", batch_size=8, replicate_index=0
+    )
     parser.add_argument("--pgd-steps", type=int, default=8)
     parser.add_argument("--pgd-step-size-fraction", type=float, default=0.25)
     parser.add_argument("--fixed-point-steps", type=int, default=3)
-    parser.add_argument("--ridge-alpha", type=float, default=1e-3)
+    parser.add_argument("--ridge-alpha", type=float, default=0.001)
     parser.add_argument(
-        "--lambda-multipliers",
-        type=float,
-        nargs="+",
-        default=list(DEFAULT_LAMBDA_MULTIPLIERS),
+        "--lambda-multipliers", type=float, nargs="+", default=list(DEFAULT_LAMBDA_MULTIPLIERS)
     )
-    parser.add_argument(
-        "--amplitudes",
-        type=float,
-        nargs="+",
-        default=list(DEFAULT_AMPLITUDES),
-    )
-    parser.add_argument(
-        "--output-json",
-        default="results/3b850d6/closed_loop_policy_audit.json",
-    )
-    parser.add_argument(
-        "--output-csv",
-        default="results/3b850d6/closed_loop_policy_audit.csv",
-    )
-    parser.add_argument(
-        "--output-md",
-        default="results/3b850d6/notes/closed_loop_policy_audit.md",
-    )
+    parser.add_argument("--amplitudes", type=float, nargs="+", default=list(DEFAULT_AMPLITUDES))
+    parser.add_argument("--output-json", default="results/3b850d6/closed_loop_policy_audit.json")
+    parser.add_argument("--output-csv", default="results/3b850d6/closed_loop_policy_audit.csv")
+    parser.add_argument("--output-md", default="results/3b850d6/notes/closed_loop_policy_audit.md")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    payload = materialize(args)
-    output_json = REPO_ROOT / args.output_json
-    output_csv = REPO_ROOT / args.output_csv
-    output_md = REPO_ROOT / args.output_md
-    mkdir_p(output_json.parent)
-    mkdir_p(output_csv.parent)
-    mkdir_p(output_md.parent)
-    output_json.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
-    write_csv(output_csv, payload)
-    update_marked_section(output_md, "closed_loop_policy_audit", render_markdown(payload))
-    print(
-        json.dumps(
-            {"json": str(output_json), "csv": str(output_csv), "markdown": str(output_md)},
-            indent=2,
-        )
+    return run_soft_lambda_materializer(
+        args=args,
+        repo_root=REPO_ROOT,
+        materialize=materialize,
+        csv_rows=_audit_csv_rows,
+        csv_fields=CSV_FIELDS,
+        render_markdown=render_markdown,
+        marker="closed_loop_policy_audit",
+        json_indent=2,
     )
-    return 0
 
 
 def materialize(args: argparse.Namespace) -> dict[str, Any]:
@@ -130,7 +96,9 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
         frozen = load_frozen_batch(args, run_id)
         center_lambda = float(lambda_source[run_id]["center_lambda"])
         transition_multiplier = float(lambda_source[run_id]["transition_multiplier"])
-        multipliers = sorted(set(float(value) for value in args.lambda_multipliers) | {transition_multiplier})
+        multipliers = sorted(
+            set(float(value) for value in args.lambda_multipliers) | {transition_multiplier}
+        )
         lambda_rows = []
         for multiplier in multipliers:
             lambda_value = center_lambda * multiplier
@@ -225,78 +193,7 @@ def load_lambda_source(path: Path) -> dict[str, dict[str, Any]]:
 
 
 def load_frozen_batch(args: argparse.Namespace, run_id: str) -> FrozenBatch:
-    run_spec_path = REPO_ROOT / "results" / args.experiment / "runs" / f"{run_id}.json"
-    artifact_dir = REPO_ROOT / "_artifacts" / args.experiment / "runs" / run_id
-    run_spec = json.loads(run_spec_path.read_text(encoding="utf-8"))
-    parser = nominal.build_parser()
-    replay_args = nominal.resolve_run_spec_args(
-        parser.parse_args(["--run-spec", str(run_spec_path)]),
-        parser=parser,
-    )
-    hps = nominal.build_hps(replay_args)
-    seed = int(run_spec.get("seed", 42))
-    pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
-    model, _ = load_with_hyperparameters(
-        artifact_dir / "trained_model.eqx",
-        setup_func=lambda key, **_kwargs: setup_task_model_pair(hps, key=key).model,
-    )
-    model = select_replicate_model(model, hps, int(args.replicate_index))
-    batch_size = int(args.batch_size)
-    key = jr.fold_in(jr.PRNGKey(seed), stable_run_fold(run_id))
-    key_trials, key_model = jr.split(key)
-    batch_info = BatchInfo(size=batch_size, start=0, current=0, total=int(hps.n_batches_condition))
-    trial_specs = eqx.filter_vmap(
-        lambda k: pair.task.get_train_trial_with_intervenor_params(k, batch_info=batch_info)
-    )(jr.split(key_trials, batch_size))
-    trial_specs = _ensure_broad_epsilon_input(trial_specs, epsilon_dim=6)
-    audit_hps = hps | {
-        "broad_epsilon_pgd_training": soft_pgd_config(
-            lambda_value=1.0,
-            n_steps=1,
-            step_size_fraction=0.25,
-        )
-    }
-    cfg = config_from_broad_epsilon_pgd_hps(audit_hps.broad_epsilon_pgd_training)
-    epsilon = jnp.asarray(trial_specs.inputs["epsilon"])
-    radius = _broad_epsilon_pgd_trust_radius(trial_specs, cfg).astype(epsilon.dtype)
-    time_mask = _epsilon_time_mask(trial_specs, epsilon, cfg.movement_epoch_only)
-    return FrozenBatch(
-        task=pair.task,
-        model=model,
-        trial_specs=trial_specs,
-        keys_model=jr.split(key_model, batch_size),
-        hps=hps,
-        run_spec=run_spec,
-        radius=radius,
-        time_mask=time_mask,
-    )
-
-
-def soft_pgd_config(
-    *,
-    lambda_value: float,
-    n_steps: int,
-    step_size_fraction: float,
-) -> TreeNamespace:
-    return TreeNamespace(
-        **{
-            "enabled": True,
-            "level": "moderate",
-            "budget_scale": 1.0,
-            "reach_length_scaling": False,
-            "objective": {
-                "kind": BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
-                "lambda": float(lambda_value),
-            },
-            "safety_cap": {
-                "l2_radius_15cm": CAP_RADIUS_15CM,
-                "source": {"key": CAP_SOURCE},
-            },
-            "n_steps": int(n_steps),
-            "step_size_fraction": float(step_size_fraction),
-            "epsilon_dim": 6,
-        }
-    )
+    return _load_frozen_batch(args, run_id, repo_root=REPO_ROOT)
 
 
 def select_replicate_model(model: Any, hps: TreeNamespace, replicate_index: int) -> Any:
@@ -346,7 +243,9 @@ def direct_epsilon_direction(
         return_diagnostics=True,
     )
     delta = (updated.inputs["epsilon"] - frozen.trial_specs.inputs["epsilon"]) * frozen.time_mask
-    plain_diagnostics = {key: np.asarray(jax.device_get(value)) for key, value in diagnostics.items()}
+    plain_diagnostics = {
+        key: np.asarray(jax.device_get(value)) for key, value in diagnostics.items()
+    }
     return delta, plain_diagnostics
 
 
@@ -360,7 +259,9 @@ def build_policy_directions(
     zero_features = live_features(frozen, jnp.zeros_like(epsilon))
     affine_bias = jnp.mean(direct_delta, axis=0)
     affine_params = (
-        jnp.zeros((epsilon.shape[1], epsilon.shape[2], zero_features.shape[-1]), dtype=epsilon.dtype),
+        jnp.zeros(
+            (epsilon.shape[1], epsilon.shape[2], zero_features.shape[-1]), dtype=epsilon.dtype
+        ),
         affine_bias,
     )
     linear_weights, linear_fit = fit_linear_no_bias_policy(
@@ -446,7 +347,9 @@ def fit_linear_no_bias_policy(
         "fit_method": "per_time_ridge_from_zero_live_features_to_direct_epsilon",
         "ridge_alpha": float(ridge_alpha),
         "active_trial_steps": active_steps,
-        "feature_rms": float(np.sqrt(np.mean(np.square(features_np[mask_np])))) if active_steps else 0.0,
+        "feature_rms": float(np.sqrt(np.mean(np.square(features_np[mask_np]))))
+        if active_steps
+        else 0.0,
         "target_norm": target_norm,
         "residual_norm": residual_norm,
         "relative_residual_norm": residual_norm / max(target_norm, 1e-12),
@@ -484,10 +387,13 @@ def evaluate_policy_direction(
         amplitude=amplitude,
         fixed_point_steps=fixed_point_steps,
     )
-    selected_delta = _project_flattened_per_trial_l2_ball(
-        raw_delta * frozen.time_mask,
-        frozen.radius,
-    ) * frozen.time_mask
+    selected_delta = (
+        _project_flattened_per_trial_l2_ball(
+            raw_delta * frozen.time_mask,
+            frozen.radius,
+        )
+        * frozen.time_mask
+    )
     zero_delta = jnp.zeros_like(raw_delta)
     raw_metrics = score_delta(frozen, raw_delta, lambda_value=lambda_value)
     selected_metrics = score_delta(frozen, selected_delta, lambda_value=lambda_value)
@@ -633,7 +539,10 @@ def best_rows_by_direction(audits: list[dict[str, Any]]) -> dict[str, dict[str, 
     best = {}
     for row in audits:
         key = row["direction"]
-        if key not in best or row["raw_objective_gain_over_zero"] > best[key]["raw_objective_gain_over_zero"]:
+        if (
+            key not in best
+            or row["raw_objective_gain_over_zero"] > best[key]["raw_objective_gain_over_zero"]
+        ):
             best[key] = row
     return best
 
@@ -750,33 +659,13 @@ def plain_json(value: Any) -> Any:
     return array.tolist()
 
 
-def write_csv(path: Path, payload: dict[str, Any]) -> None:
-    fields = [
-        "run_id",
-        "direction",
-        "mechanism",
-        "lambda_multiplier",
-        "lambda",
-        "amplitude",
-        "raw_policy_norm_mean",
-        "selected_clipped_norm_mean",
-        "raw_to_selected_norm_ratio_mean",
-        "cap_violation_fraction_before_projection",
-        "raw_energy_penalty",
-        "selected_clipped_energy_penalty",
-        "raw_task_loss_gain_over_zero",
-        "raw_objective_gain_over_zero",
-        "selected_objective_gain_over_zero",
-        "raw_finite_status",
-        "selected_finite_status",
+def _audit_csv_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {"run_id": row["run_id"], **{key: audit[key] for key in CSV_FIELDS[1:]}}
+        for row in payload["rows"]
+        for lambda_row in row["lambda_rows"]
+        for audit in lambda_row["audits"]
     ]
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")
-        writer.writeheader()
-        for row in payload["rows"]:
-            for lambda_row in row["lambda_rows"]:
-                for audit in lambda_row["audits"]:
-                    writer.writerow({"run_id": row["run_id"], **{key: audit[key] for key in fields[1:]}})
 
 
 def render_markdown(payload: dict[str, Any]) -> str:

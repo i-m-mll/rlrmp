@@ -18,10 +18,10 @@ import numpy as np
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from _common import stochastic_policy_rollout
+
 from rlrmp.analysis.math.cs_game_card import TARGET_POS, build_no_integrator_game
 from rlrmp.analysis.math.cs_released_simulation import (
-    CSForwardNoiseDraws,
-    CSStochasticRollout,
     default_cs_noise_covariances,
     sample_forward_noise_draws,
 )
@@ -98,104 +98,7 @@ def _rollout_summary(plant, x, u, epsilon, schedule, gamma: float | None) -> dic
     }
 
 
-def _stochastic_policy_rollout(
-    plant,
-    schedule,
-    solution,
-    x0,
-    draws: CSForwardNoiseDraws,
-    covariances,
-    gains,
-    policy,
-    *,
-    adversarial: bool,
-    config: OutputFeedbackConfig,
-) -> CSStochasticRollout:
-    T = int(gains.shape[0])
-    H = delayed_observation_matrix(plant, config)
-    estimator_covariances = robust_estimator_covariances(plant, schedule, solution.gamma, config)
-    inv_gamma2 = 1.0 / (solution.gamma * solution.gamma)
-
-    x_seq = [x0.astype(jnp.float64)]
-    xhat_seq = [x0.astype(jnp.float64)]
-    y_clean_seq = []
-    y_seq = []
-    u_command_seq = []
-    u_applied_seq = []
-    motor_seq = []
-    sdn_seq = []
-    process_seq = []
-    sensory_seq = []
-    eps_seq = []
-    zero_eps = jnp.zeros((plant.m_w,), dtype=jnp.float64)
-
-    for t in range(T):
-        x_t = x_seq[-1]
-        xhat_t = xhat_seq[-1]
-        Sigma = estimator_covariances[t]
-        precision = jnp.linalg.inv(Sigma) + H.T @ H - inv_gamma2 * schedule.Q[t]
-        middle = jnp.linalg.inv(precision)
-        y_clean = H @ x_t
-        sensory = draws.sensory[t]
-        y_t = y_clean + sensory
-        u_command = -gains[t] @ xhat_t
-        eps_t = policy[t] @ jnp.concatenate([x_t, xhat_t], axis=0) if adversarial else zero_eps
-        motor = draws.motor[t]
-        signal_dependent = jnp.einsum(
-            "j,nmj,m->n",
-            draws.signal_dependent_standard[t],
-            covariances.signal_dependent_state,
-            u_command,
-        )
-        process = draws.process[t]
-        innovation = y_t - H @ xhat_t
-        correction = inv_gamma2 * schedule.Q[t] @ xhat_t + H.T @ innovation
-        xhat_next = plant.A @ xhat_t + plant.B @ u_command + plant.A @ middle @ correction
-        x_next = (
-            plant.A @ x_t
-            + plant.B @ u_command
-            + plant.Bw @ eps_t
-            + motor
-            + signal_dependent
-            + process
-        )
-        y_clean_seq.append(y_clean)
-        y_seq.append(y_t)
-        u_command_seq.append(u_command)
-        u_applied_seq.append(u_command)
-        motor_seq.append(motor)
-        sdn_seq.append(signal_dependent)
-        process_seq.append(process)
-        sensory_seq.append(sensory)
-        eps_seq.append(eps_t)
-        x_seq.append(x_next)
-        xhat_seq.append(xhat_next)
-
-    x = jnp.stack(x_seq, axis=0)
-    u_applied = jnp.stack(u_applied_seq, axis=0)
-    vel = x[:, plant.vel_slice[0] : plant.vel_slice[1]]
-    forward = vel @ jnp.array([1.0, 0.0], dtype=jnp.float64)
-    pos = x[:, plant.pos_slice[0] : plant.pos_slice[1]]
-    pos_abs = pos + TARGET_POS[None, :]
-    return CSStochasticRollout(
-        x=x,
-        x_hat=jnp.stack(xhat_seq, axis=0),
-        y_clean=jnp.stack(y_clean_seq, axis=0),
-        y=jnp.stack(y_seq, axis=0),
-        u_command=jnp.stack(u_command_seq, axis=0),
-        u_applied=u_applied,
-        motor_noise=jnp.stack(motor_seq, axis=0),
-        signal_dependent_standard=draws.signal_dependent_standard,
-        signal_dependent_noise=jnp.stack(sdn_seq, axis=0),
-        process_noise=jnp.stack(process_seq, axis=0),
-        sensory_noise=jnp.stack(sensory_seq, axis=0),
-        adversary_epsilon=jnp.stack(eps_seq, axis=0),
-        perturbations=jnp.zeros((T, plant.n), dtype=jnp.float64),
-        peak_forward_velocity=_float(jnp.max(forward)),
-        peak_forward_velocity_idx=int(jnp.argmax(forward)),
-        terminal_position_error=_float(jnp.linalg.norm(pos_abs[-1] - TARGET_POS)),
-        control_effort=_float(jnp.sum(u_applied**2)),
-    )
+_stochastic_policy_rollout = stochastic_policy_rollout
 
 
 def _rollout_damage(plant, schedule, solution, x0, gains, policy, config) -> dict[str, Any]:

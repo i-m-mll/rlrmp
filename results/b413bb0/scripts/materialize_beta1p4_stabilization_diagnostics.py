@@ -10,6 +10,9 @@ from pathlib import Path
 from typing import Any
 
 from rlrmp.io import update_marked_section, write_compact_json
+from rlrmp.eval.robustness_diagnostics import (
+    evaluate_stabilization_row as canonical_evaluate_stabilization_row,
+)
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
@@ -184,133 +187,18 @@ def evaluate_row_allowing_missing_families(
 ) -> dict[str, Any]:
     """Evaluate one row while preserving unsupported stabilization probes as missing."""
 
-    try:
-        return helper.evaluate_row(row_spec, repo_root=repo_root)
-    except KeyError as exc:
-        if exc.args != ("process_epsilon_force_state_xy",):
-            raise
-
-    run = helper.resolve_run_inputs(
-        experiment=helper.ISSUE,
-        run_ids=[row_spec.run_id],
-        labels=[row_spec.run_id],
+    return canonical_evaluate_stabilization_row(
+        row_spec,
         repo_root=repo_root,
-    )[0]
-    hps = helper.dict_to_namespace(
-        helper.normalize_gru_hps(run.run_spec["hps"]),
-        to_type=helper.TreeNamespace,
+        hooks=helper,
+        source_experiment=helper.ISSUE,
+        row_metadata=lambda row: {
+            "run_id": row.run_id,
+            "training": row.training,
+            "physical_level": row.physical_level,
+        },
+        allowed_missing_families=("process_epsilon_force_state_xy",),
     )
-    seed = int(run.run_spec.get("seed", 42))
-    pair = helper.setup_task_model_pair(hps, key=helper.jr.PRNGKey(seed))
-    n_replicates = int(hps.model.n_replicates)
-    model, checkpoint_selection = helper.load_validation_selected_checkpoint_model(
-        experiment=helper.ISSUE,
-        run_id=run.run_id,
-        run_spec=run.run_spec,
-        checkpoint_selection_mode="sparse_history",
-        repo_root=repo_root,
-    )
-    base_trials = helper.repeat_single_validation_trial(
-        pair.task.validation_trials,
-        helper.DEFAULT_N_ROLLOUT_TRIALS,
-    )
-    steady_trials, timing = helper.make_steady_state_trial_specs(
-        base_trials,
-        delayed=False,
-        target_position=helper.np.asarray(
-            helper._target_position(run, base_trials),
-            dtype=helper.np.float64,
-        ),
-        pulse_duration_steps=helper.DEFAULT_PULSE_DURATION_STEPS,
-        min_post_onset_steps=helper.DEFAULT_POST_ONSET_FIGURE_STEPS,
-    )
-    steady_trials = helper.pad_feedback_offset_inputs(
-        steady_trials,
-        expected_feedback_dim=helper._expected_feedback_dim_from_hps(hps),
-    )
-    steady_trials = helper.zero_disturbance_payload(steady_trials)
-    feedback_dim = helper._feedback_dim(steady_trials)
-    probes = helper.build_probes(
-        feedback_dim=feedback_dim,
-        pulse_start=int(timing["pulse_start_step"]),
-        pulse_duration=int(timing["pulse_duration_steps"]),
-    )
-    base = helper._evaluate_model_on_trial_specs(
-        model=model,
-        task=pair.task,
-        trial_specs=steady_trials,
-        n_replicates=n_replicates,
-        seed=0,
-    )
-    details = []
-    for probe in probes:
-        adapter = helper.apply_perturbation_to_trial_specs(steady_trials, probe.row, model=model)
-        if adapter.status != "evaluated":
-            details.append(
-                {
-                    "perturbation_id": probe.perturbation_id,
-                    "group": probe.group,
-                    "family": probe.family,
-                    "status": adapter.status,
-                    "reason": adapter.reason,
-                    "adapter": adapter.to_json(),
-                }
-            )
-            continue
-        perturbed = helper._evaluate_model_on_trial_specs(
-            model=adapter.model if adapter.model is not None else model,
-            task=pair.task,
-            trial_specs=adapter.trial_specs,
-            n_replicates=n_replicates,
-            seed=0,
-        )
-        details.append(
-            helper.summarize_probe(
-                probe=probe,
-                base=base,
-                perturbed=perturbed,
-                pulse_start=int(timing["pulse_start_step"]),
-            )
-            | {"status": "evaluated", "adapter": adapter.to_json()}
-        )
-    family_summary = helper.summarize_by_family(details)
-    group_summary = helper.summarize_by_group(details)
-    feedback_group = group_summary.get("feedback", {})
-    mechanical_group = group_summary.get("mechanical", {})
-    command_family = family_summary.get("command_input_pulse", {})
-    process_family = family_summary.get("process_epsilon_force_state_xy", {})
-    return {
-        "run_id": row_spec.run_id,
-        "training": row_spec.training,
-        "physical_level": row_spec.physical_level,
-        "run_spec_path": helper.repo_relative(run.run_spec_path, repo_root),
-        "artifact_dir": helper.repo_relative(run.artifact_dir, repo_root),
-        "checkpoint_selection_summary": helper.checkpoint_selection_summary(
-            checkpoint_selection
-        ),
-        "response_label": helper.response_label(
-            helper.washin_diagnostics(base, pulse_start=timing["pulse_start_step"])
-        ),
-        "dt_s": float(base.dt),
-        "timing": timing,
-        "n_replicates": int(base.command.shape[0]),
-        "n_rollout_trials_per_replicate": int(base.command.shape[1]),
-        "feedback_dim": int(feedback_dim),
-        "washin": helper.washin_diagnostics(base, pulse_start=timing["pulse_start_step"]),
-        "feedback_auc_mm_s": feedback_group.get("auc_displacement_mm_s_mean"),
-        "mechanical_auc_mm_s": mechanical_group.get("auc_displacement_mm_s_mean"),
-        "command_input_auc_mm_s": command_family.get("auc_displacement_mm_s_mean"),
-        "process_force_auc_mm_s": process_family.get("auc_displacement_mm_s_mean"),
-        "feedback_peak_mm": feedback_group.get("peak_displacement_mm_mean"),
-        "mechanical_peak_mm": mechanical_group.get("peak_displacement_mm_mean"),
-        "family_summary": family_summary,
-        "missing_families": [
-            family
-            for family in ("process_epsilon_force_state_xy",)
-            if family not in family_summary
-        ],
-        "per_probe_detail": details,
-    }
 
 
 def comparisons_vs_baseline(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:

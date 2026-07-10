@@ -7,6 +7,8 @@ The original PGD-only and no-PGD-only figures are left intact.
 """
 
 from __future__ import annotations
+from rlrmp.paths import portable_repo_path
+from rlrmp.viz.colors import hex_to_rgba
 
 import base64
 import json
@@ -353,18 +355,10 @@ def profile_delta(pgd: dict[str, Any], baseline: dict[str, Any]) -> dict[str, An
     }
 
 
-def rgba(hex_color: str, alpha: float) -> str:
-    """Return an rgba color string from ``#rrggbb``."""
-
-    color = hex_color.lstrip("#")
-    red, green, blue = (int(color[idx : idx + 2], 16) for idx in (0, 2, 4))
-    return f"rgba({red},{green},{blue},{alpha})"
+rgba = hex_to_rgba
 
 
-def repo_rel(path: Path) -> str:
-    """Return a POSIX path relative to the repository root."""
-
-    return path.relative_to(REPO_ROOT).as_posix()
+repo_rel = portable_repo_path
 
 
 if __name__ == "__main__":

@@ -1,13 +1,12 @@
 """Materialize practical frozen-audit critical lambda estimates for 1697bdc."""
 
 from __future__ import annotations
+from rlrmp.analysis.soft_lambda import base_parser, run_soft_lambda_materializer
+from rlrmp.io import load_named_python_module
 
 import argparse
-import csv
-import importlib.util
 import json
 import math
-import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,8 +17,7 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 
-from rlrmp.io import update_marked_section
-from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.paths import REPO_ROOT
 
 
 RUN_IDS = ("open_loop_small", "open_loop_moderate", "open_loop_stress")
@@ -33,6 +31,7 @@ DEFAULT_LINE_SEARCH_AMPLITUDES = (0.0, 0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0)
 MECHANISMS = ("direct_epsilon", "linear_no_bias", "affine")
 CLOSED_LOOP_MECHANISMS = ("linear_no_bias", "affine")
 CLOSED_LOOP_OPTIMIZERS = ("line_search_known_direction", "adam", "lbfgsb")
+CSV_FIELDS = ('run_id', 'mechanism', 'optimizer', 'phase', 'point_index', 'lambda_multiplier', 'lambda', 'objective_gain_over_zero', 'task_loss_gain_over_zero', 'energy_penalty', 'energy_mean', 'max_norm_over_cap', 'mean_norm_over_cap', 'cap_bound_fraction', 'finite_status', 'gradient_status', 'gradient_norm', 'useful', 'interior', 'valid', 'failure_mode', 'optimizer_success', 'optimizer_status', 'optimizer_iterations', 'optimizer_evaluations')
 SOURCE_LAMBDA_SWEEP = REPO_ROOT / "results" / "093d949" / "soft_lambda_sweep.json"
 REFERENCE_POLICY_AUDIT = (
     REPO_ROOT / "results" / "3b850d6" / "scripts" / "materialize_closed_loop_policy_audit.py"
@@ -119,65 +118,35 @@ class ThetaCodec:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--experiment", default="c92ebd8")
-    parser.add_argument("--issue", default="1697bdc")
-    parser.add_argument("--batch-size", type=int, default=8)
-    parser.add_argument("--replicate-index", type=int, default=0)
-    parser.add_argument("--pgd-steps", type=int, default=8)
-    parser.add_argument("--pgd-step-size-fraction", type=float, default=0.25)
-    parser.add_argument("--fixed-point-steps", type=int, default=2)
-    parser.add_argument("--adam-steps", type=int, default=12)
-    parser.add_argument("--adam-learning-rate", type=float, default=5e-5)
-    parser.add_argument("--lbfgsb-maxiter", type=int, default=8)
-    parser.add_argument("--bisection-rel-tol", type=float, default=1.10)
-    parser.add_argument("--max-bisection-steps", type=int, default=8)
-    parser.add_argument(
-        "--closed-loop-probes",
-        type=float,
-        nargs="+",
-        default=list(DEFAULT_CLOSED_LOOP_PROBES),
-    )
-    parser.add_argument(
-        "--line-search-amplitudes",
-        type=float,
-        nargs="+",
-        default=list(DEFAULT_LINE_SEARCH_AMPLITUDES),
-    )
-    parser.add_argument(
-        "--output-json",
-        default="results/1697bdc/critical_lambda_search.json",
-    )
-    parser.add_argument(
-        "--output-csv",
-        default="results/1697bdc/critical_lambda_search.csv",
-    )
-    parser.add_argument(
-        "--output-md",
-        default="results/1697bdc/notes/critical_lambda_search.md",
-    )
+    parser = base_parser(description=None, experiment='c92ebd8', issue='1697bdc', batch_size=8, replicate_index=0)
+    parser.add_argument('--pgd-steps', type=int, default=8)
+    parser.add_argument('--pgd-step-size-fraction', type=float, default=0.25)
+    parser.add_argument('--fixed-point-steps', type=int, default=2)
+    parser.add_argument('--adam-steps', type=int, default=12)
+    parser.add_argument('--adam-learning-rate', type=float, default=5e-05)
+    parser.add_argument('--lbfgsb-maxiter', type=int, default=8)
+    parser.add_argument('--bisection-rel-tol', type=float, default=1.1)
+    parser.add_argument('--max-bisection-steps', type=int, default=8)
+    parser.add_argument('--closed-loop-probes', type=float, nargs='+', default=list(DEFAULT_CLOSED_LOOP_PROBES))
+    parser.add_argument('--line-search-amplitudes', type=float, nargs='+', default=list(DEFAULT_LINE_SEARCH_AMPLITUDES))
+    parser.add_argument('--output-json', default='results/1697bdc/critical_lambda_search.json')
+    parser.add_argument('--output-csv', default='results/1697bdc/critical_lambda_search.csv')
+    parser.add_argument('--output-md', default='results/1697bdc/notes/critical_lambda_search.md')
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    payload = materialize(args)
-    output_json = REPO_ROOT / args.output_json
-    output_csv = REPO_ROOT / args.output_csv
-    output_md = REPO_ROOT / args.output_md
-    mkdir_p(output_json.parent)
-    mkdir_p(output_csv.parent)
-    mkdir_p(output_md.parent)
-    output_json.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    write_csv(output_csv, payload)
-    update_marked_section(output_md, "critical_lambda_search", render_markdown(payload))
-    print(
-        json.dumps(
-            {"json": str(output_json), "csv": str(output_csv), "markdown": str(output_md)},
-            indent=2,
-        )
+    return run_soft_lambda_materializer(
+        args=args,
+        repo_root=REPO_ROOT,
+        materialize=materialize,
+        csv_rows=lambda payload: payload["rows"],
+        csv_fields=CSV_FIELDS,
+        render_markdown=render_markdown,
+        marker="critical_lambda_search",
+        json_indent=2,
     )
-    return 0
 
 
 def materialize(args: argparse.Namespace) -> dict[str, Any]:
@@ -190,7 +159,9 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
         center_lambda = float(lambda_source[run_id]["center_lambda"])
         direct_points = run_direct_search(reference, frozen, run_id, center_lambda, args)
         all_rows.extend(point.as_dict() for point in direct_points)
-        summaries.append(summarize_search(run_id, "direct_epsilon", "pgd_projected_epsilon", direct_points))
+        summaries.append(
+            summarize_search(run_id, "direct_epsilon", "pgd_projected_epsilon", direct_points)
+        )
         direction_cache = build_line_search_direction_cache(reference, frozen, center_lambda, args)
         for mechanism in CLOSED_LOOP_MECHANISMS:
             for optimizer in CLOSED_LOOP_OPTIMIZERS:
@@ -255,16 +226,9 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def load_reference_module() -> Any:
-    spec = importlib.util.spec_from_file_location(
-        "closed_loop_policy_audit_reference_3b850d6",
-        REFERENCE_POLICY_AUDIT,
+    return load_named_python_module(
+        "closed_loop_policy_audit_reference_3b850d6", REFERENCE_POLICY_AUDIT
     )
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Could not load reference module at {REFERENCE_POLICY_AUDIT}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
 
 
 def load_lambda_source(path: Path) -> dict[str, dict[str, Any]]:
@@ -332,7 +296,9 @@ def evaluate_direct_point(
     args: argparse.Namespace,
 ) -> SearchPoint:
     lambda_value = center_lambda * float(multiplier)
-    delta, diagnostics = reference.direct_epsilon_direction(frozen, lambda_value=lambda_value, args=args)
+    delta, diagnostics = reference.direct_epsilon_direction(
+        frozen, lambda_value=lambda_value, args=args
+    )
     summary = reference.direct_summary(delta, frozen.radius, diagnostics=diagnostics)
     gradient_status = "finite" if summary["finite_status"] == "finite" else "nonfinite"
     return make_point(
@@ -484,7 +450,12 @@ def make_theta_codec(reference: Any, frozen: Any, mechanism: str) -> ThetaCodec:
     epsilon_dim = int(zero.shape[2])
     weight_shape = (time_steps, epsilon_dim, feature_dim)
     if mechanism == "linear_no_bias":
-        return ThetaCodec(mechanism=mechanism, weight_shape=weight_shape, bias_shape=None, size=math.prod(weight_shape))
+        return ThetaCodec(
+            mechanism=mechanism,
+            weight_shape=weight_shape,
+            bias_shape=None,
+            size=math.prod(weight_shape),
+        )
     if mechanism == "affine":
         bias_shape = (time_steps, epsilon_dim)
         return ThetaCodec(
@@ -534,7 +505,9 @@ def score_closed_loop_delta(
     lambda_value: jnp.ndarray,
 ) -> dict[str, jnp.ndarray]:
     epsilon = jnp.asarray(frozen.trial_specs.inputs["epsilon"])
-    candidate = reference._set_input(frozen.trial_specs, "epsilon", epsilon + delta * frozen.time_mask)
+    candidate = reference._set_input(
+        frozen.trial_specs, "epsilon", epsilon + delta * frozen.time_mask
+    )
     states = frozen.task.eval_trials(frozen.model, candidate, frozen.keys_model)
     task_loss_value = jnp.asarray(frozen.task.loss_func(states, candidate, frozen.model).total)
     energy = jnp.mean(per_trial_energy(delta * frozen.time_mask))
@@ -563,7 +536,9 @@ def optimize_with_adam(
         if finite and float(value) > float(best_value):
             best_value = value
             best_theta = theta
-        updates, opt_state = optimizer.update(jax.tree.map(lambda item: -item, grad), opt_state, theta)
+        updates, opt_state = optimizer.update(
+            jax.tree.map(lambda item: -item, grad), opt_state, theta
+        )
         theta = optax.apply_updates(theta, updates)
         final_grad = grad
         if not finite:
@@ -748,10 +723,10 @@ def line_search_gradient_norm(
     fixed_point_steps: int,
 ) -> float:
     def scalar_objective(scale: jnp.ndarray) -> jnp.ndarray:
-        delta = known_direction_raw_delta(
-            reference, frozen, direction, scale, fixed_point_steps
-        )
-        return score_closed_loop_delta(reference, frozen, delta, jnp.asarray(lambda_value))["objective"]
+        delta = known_direction_raw_delta(reference, frozen, direction, scale, fixed_point_steps)
+        return score_closed_loop_delta(reference, frozen, delta, jnp.asarray(lambda_value))[
+            "objective"
+        ]
 
     grad = jax.grad(scalar_objective)(jnp.asarray(amplitude, dtype=jnp.float32))
     return float(jnp.abs(grad))
@@ -1083,41 +1058,6 @@ def plain_json(value: Any) -> Any:
             return int(scalar)
         return float(scalar)
     return array.tolist()
-
-
-def write_csv(path: Path, payload: dict[str, Any]) -> None:
-    fields = [
-        "run_id",
-        "mechanism",
-        "optimizer",
-        "phase",
-        "point_index",
-        "lambda_multiplier",
-        "lambda",
-        "objective_gain_over_zero",
-        "task_loss_gain_over_zero",
-        "energy_penalty",
-        "energy_mean",
-        "max_norm_over_cap",
-        "mean_norm_over_cap",
-        "cap_bound_fraction",
-        "finite_status",
-        "gradient_status",
-        "gradient_norm",
-        "useful",
-        "interior",
-        "valid",
-        "failure_mode",
-        "optimizer_success",
-        "optimizer_status",
-        "optimizer_iterations",
-        "optimizer_evaluations",
-    ]
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")
-        writer.writeheader()
-        for row in payload["rows"]:
-            writer.writerow({key: row[key] for key in fields})
 
 
 def render_markdown(payload: dict[str, Any]) -> str:

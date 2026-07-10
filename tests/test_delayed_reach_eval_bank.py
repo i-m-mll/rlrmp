@@ -228,6 +228,72 @@ def test_delayed_velocity_input_update_preserves_composite_go_cue_sisu_width() -
     np.testing.assert_allclose(np.asarray(updated["sisu"]), 0.25)
 
 
+def test_delayed_materializer_adapters_preserve_bank_and_sisu_arguments(monkeypatch) -> None:
+    materializer = load_delayed_timing_velocity_materializer()
+    sentinel_bank = object()
+    sentinel_profile = object()
+    calls = {}
+
+    def fake_bank(trial_specs, **kwargs):
+        calls["bank"] = (trial_specs, kwargs)
+        return sentinel_bank
+
+    def fake_evaluate(run, **kwargs):
+        calls["evaluate"] = (run, kwargs)
+        return sentinel_profile
+
+    monkeypatch.setattr(materializer, "canonical_make_delayed_eval_bank", fake_bank)
+    monkeypatch.setattr(materializer, "canonical_evaluate_velocity_profile", fake_evaluate)
+    trial_specs = object()
+    run = object()
+
+    bank = materializer.make_delayed_eval_bank(
+        trial_specs,
+        bank_kind="catch",
+        go_cue_steps=(10, 20),
+        direction_count=4,
+        reach_length_m=0.15,
+        movement_horizon_steps=60,
+        sisu_level=0.25,
+    )
+    profile = materializer.evaluate_velocity_profile(
+        run,
+        bank_kind="no_catch",
+        go_cue_steps=(10, 20),
+        direction_count=4,
+        reach_length_m=0.15,
+        pre_go_context_steps=10,
+        sisu_level=0.75,
+    )
+
+    assert bank is sentinel_bank
+    assert profile is sentinel_profile
+    assert calls["bank"] == (
+        trial_specs,
+        {
+            "bank_kind": "catch",
+            "go_cue_steps": (10, 20),
+            "direction_count": 4,
+            "reach_length_m": 0.15,
+            "movement_horizon_steps": 60,
+            "sisu_level": 0.25,
+            "include_sisu_metadata": True,
+        },
+    )
+    assert calls["evaluate"] == (
+        run,
+        {
+            "bank_kind": "no_catch",
+            "go_cue_steps": (10, 20),
+            "direction_count": 4,
+            "reach_length_m": 0.15,
+            "pre_go_context_steps": 10,
+            "sisu_level": 0.75,
+            "include_sisu_metadata": True,
+        },
+    )
+
+
 def test_delayed_fixed_rescore_plan_uses_delayed_selection_source(tmp_path) -> None:
     bank = delayed_reach_fixed_rescore_bank_spec(direction_count=4)
 

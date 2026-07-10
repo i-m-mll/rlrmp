@@ -3,6 +3,7 @@ from __future__ import annotations
 # ruff: noqa: E402
 
 import argparse
+from functools import partial
 import json
 import math
 import sys
@@ -35,11 +36,13 @@ from rlrmp.analysis.frozen_policy_gate import validate_direct_hvp_lambda_source
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
 from rlrmp.analysis.pipelines.gru_broad_epsilon_attribution import infer_batch_size
 from rlrmp.io import update_marked_section
+from rlrmp.paths import portable_repo_path
 from rlrmp.train.cs_nominal_gru import _is_replicate_axis_array
 from rlrmp.train.task_model import setup_task_model_pair
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+repo_rel = partial(portable_repo_path, repo_root=REPO_ROOT)
 ISSUE = "08483d5"
 RUN_ID = "h0_6d_no_pgd_const_band16_cpu"
 RUN_SPEC_PATH = REPO_ROOT / "results" / ISSUE / "runs" / f"{RUN_ID}.json"
@@ -845,13 +848,6 @@ def shell_quote(value: str) -> str:
 
 def _read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-def repo_rel(path: Path) -> str:
-    try:
-        return str(Path(path).absolute().relative_to(REPO_ROOT.absolute()))
-    except ValueError:
-        return str(path)
 
 
 if __name__ == "__main__":

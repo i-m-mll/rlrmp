@@ -1,31 +1,26 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
 import jax
-import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
 
+from compute_output_feedback_recursion_damage import main as _run_recursion_damage
+
 from rlrmp.analysis.math.cs_game_card import (
     TARGET_POS,
-    build_no_integrator_game,
 )
 from rlrmp.analysis.math.cs_released_simulation import (
     default_cs_noise_covariances,
     sample_forward_noise_draws,
 )
-from rlrmp.analysis.math.hinf_riccati import find_gamma_star, solve_hinf_riccati
+from rlrmp.analysis.math.hinf_riccati import find_gamma_star
 from rlrmp.analysis.math.output_feedback import (
     OutputFeedbackConfig,
     delayed_observation_matrix,
-    make_cs_output_feedback_initial_state,
     robust_estimator_covariances,
-    robust_estimator_fixed_adversary_policy,
-    robust_estimator_joint_matrices,
-    robust_output_feedback_gains,
 )
 
 
@@ -413,163 +408,15 @@ def _markdown(payload: dict[str, Any]) -> str:
 
 
 def main() -> None:
-    rollout_payload = json.loads(ROLLOUT_JSON_PATH.read_text())
-    config = OutputFeedbackConfig(n_phys=6)
-    plant, schedule = build_no_integrator_game()
-    gamma_star = find_gamma_star(plant, schedule)
-    gamma_factor = float(
-        rollout_payload.get("contract", {}).get(
-            "gamma_factor", BETA_GAMMA_FACTOR
-        )
-    )
-    gamma = gamma_factor * gamma_star
-    solution = solve_hinf_riccati(plant, schedule, gamma)
-    if not solution.admissible:
-        raise RuntimeError(f"gamma={gamma} is not admissible")
-    x0 = np.asarray(make_cs_output_feedback_initial_state(plant, config), dtype=np.float64)
-    z0 = np.concatenate([x0, x0])
-    covs = robust_estimator_covariances(plant, schedule, solution.gamma, config)
-    gains = np.asarray(
-        robust_output_feedback_gains(plant, schedule, solution, covs, config),
-        dtype=np.float64,
-    )
-    policy = np.asarray(
-        robust_estimator_fixed_adversary_policy(
-            plant, schedule, solution, jnp.asarray(gains), covs, config
-        ),
-        dtype=np.float64,
-    )
-    A_joint, G_joint = robust_estimator_joint_matrices(
-        plant, schedule, solution, jnp.asarray(gains), covs, config
-    )
-    A_joint = np.asarray(A_joint, dtype=np.float64)
-    G_joint = np.asarray(G_joint, dtype=np.float64)
-    stage_costs, terminal_cost = _stage_cost_matrices(schedule, gains)
+    """Run the shared recursion comparison for the beta=1.05 payload."""
 
-    det_clean_M, det_clean_b, det_clean_F = _deterministic_matrices(
-        A_joint, G_joint, policy, adversarial=False
+    _run_recursion_damage(
+        rollout_json_path=ROLLOUT_JSON_PATH,
+        json_path=JSON_PATH,
+        markdown_path=MD_PATH,
+        default_gamma_factor=BETA_GAMMA_FACTOR,
+        script_path="results/08483d5/scripts/compute_output_feedback_recursion_damage_beta1p05.py",
     )
-    det_adv_M, det_adv_b, det_adv_F = _deterministic_matrices(
-        A_joint, G_joint, policy, adversarial=True
-    )
-    stochastic_clean_M, stochastic_clean_b, stochastic_clean_F, stochastic_noise = (
-        _known_noise_matrices(
-            plant,
-            schedule,
-            solution,
-            config,
-            A_joint,
-            G_joint,
-            gains,
-            policy,
-            adversarial=False,
-        )
-    )
-    stochastic_adv_M, stochastic_adv_b, stochastic_adv_F, stochastic_noise_adv = (
-        _known_noise_matrices(
-            plant,
-            schedule,
-            solution,
-            config,
-            A_joint,
-            G_joint,
-            gains,
-            policy,
-            adversarial=True,
-        )
-    )
-    if stochastic_noise != stochastic_noise_adv:
-        raise RuntimeError("Shared-noise summary drifted between clean and adversarial construction")
-
-    comparisons = {
-        "deterministic_noise_off": _mode_result(
-            "deterministic_noise_off",
-            plant,
-            schedule,
-            gains,
-            stage_costs,
-            terminal_cost,
-            z0,
-            rollout_payload["rollouts"]["deterministic_noise_off"],
-            det_clean_M,
-            det_clean_b,
-            det_clean_F,
-            det_adv_M,
-            det_adv_b,
-            det_adv_F,
-        ),
-        "nominal_noise_paired_single_seed": _mode_result(
-            "nominal_noise_paired_single_seed",
-            plant,
-            schedule,
-            gains,
-            stage_costs,
-            terminal_cost,
-            z0,
-            rollout_payload["rollouts"]["nominal_noise_paired"],
-            stochastic_clean_M,
-            stochastic_clean_b,
-            stochastic_clean_F,
-            stochastic_adv_M,
-            stochastic_adv_b,
-            stochastic_adv_F,
-            noise_summary=stochastic_noise,
-        ),
-    }
-    headline_abs_diffs = []
-    for result in comparisons.values():
-        headline_abs_diffs.extend(
-            [
-                result["clean"]["cost_comparison"]["abs_diff"],
-                result["adversarial"]["cost_comparison"]["abs_diff"],
-                result["paired_damage"]["abs_diff"],
-                result["adversarial"]["disturbance_energy_comparison"]["abs_diff"],
-            ]
-        )
-    max_abs_diff = float(max(headline_abs_diffs))
-    second_iteration = bool(max_abs_diff > 1e-6)
-    assessment = {
-        "match_status": "matches_rollout_within_float_tolerance"
-        if not second_iteration
-        else "mismatch_requires_followup",
-        "max_headline_abs_diff": max_abs_diff,
-        "second_iteration_recommended": second_iteration,
-        "reason": (
-            "The deterministic and paired single-seed noisy affine recursions reproduce the "
-            "rollout costs, damage, and disturbance energies to floating-point precision."
-            if not second_iteration
-            else "At least one headline cost/damage/energy value differs by more than 1e-6."
-        ),
-    }
-    payload = {
-        "schema_version": "rlrmp.recursion_damage_comparison.v1",
-        "source": {
-            "rollout_json": str(ROLLOUT_JSON_PATH),
-            "teacher_package": str(TEACHER_PACKAGE),
-            "script": "results/08483d5/scripts/compute_output_feedback_recursion_damage_beta1p05.py",
-        },
-        "contract": {
-            "gamma_factor": gamma_factor,
-            "gamma_star": float(gamma_star),
-            "gamma": float(solution.gamma),
-            "state_basis": rollout_payload["contract"]["state_basis"],
-            "horizon_steps": int(schedule.T),
-            "target_convention": rollout_payload["contract"]["target_convention"],
-            "cost_contract": rollout_payload["contract"]["cost_contract"],
-            "noise_recursion": (
-                "single-seed known-noise recursion with time-varying linear "
-                "signal-dependent command term and affine sensory/motor/process offsets"
-            ),
-        },
-        "comparisons": comparisons,
-        "assessment": assessment,
-        "teacher_package_verification": _teacher_package_check(
-            plant, schedule, solution, x0, gains, covs
-        ),
-    }
-    JSON_PATH.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
-    MD_PATH.write_text(_markdown(payload))
-    print(json.dumps({"json": str(JSON_PATH), "markdown": str(MD_PATH)}, indent=2))
 
 
 if __name__ == "__main__":

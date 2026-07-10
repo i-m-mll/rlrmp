@@ -1,9 +1,8 @@
 """Focused tests for the 3b850d6 closed-loop policy audit helpers."""
 
 from __future__ import annotations
+from rlrmp.io import load_named_python_module
 
-import importlib.util
-import sys
 from pathlib import Path
 
 import jax.numpy as jnp
@@ -22,13 +21,7 @@ SCRIPT = (
 
 @pytest.fixture(scope="module")
 def audit_module():
-    spec = importlib.util.spec_from_file_location("closed_loop_policy_audit_3b850d6", SCRIPT)
-    assert spec is not None
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    return load_named_python_module('closed_loop_policy_audit_3b850d6', SCRIPT)
 
 
 def test_linear_no_bias_ridge_recovers_known_mapping(audit_module) -> None:

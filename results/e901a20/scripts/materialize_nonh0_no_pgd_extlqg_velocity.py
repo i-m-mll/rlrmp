@@ -7,13 +7,13 @@ pin 17710f1c without re-execution, because this script's required non-H0
 """
 
 from __future__ import annotations
+from rlrmp.io import load_named_python_module
+from rlrmp.viz.colors import hex_to_rgba as hex_to_rgba
 
 import csv
-import importlib.util
 import json
 import os
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +32,7 @@ from rlrmp.paths import (
     mkdir_p,
     run_spec_path,
 )
+from rlrmp.viz.traces import add_band_trace as canonical_add_band_trace
 
 
 EXPERIMENT = "e901a20"
@@ -59,17 +60,7 @@ def repo_relative(path: Path) -> str:
 
 
 def load_helper() -> Any:
-    """Load the sibling e901a20 materializer as a module."""
-
-    spec = importlib.util.spec_from_file_location("e901a20_velocity_helper", SOURCE_HELPER)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Could not load helper module from {SOURCE_HELPER}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    module.load_checkpoint_model_compatible = load_nonh0_checkpoint_model_compatible(module)
-    module.nominalize_trial_specs = nominalize_trial_specs_float64(module.nominalize_trial_specs)
-    return module
+    return load_named_python_module('e901a20_velocity_helper', SOURCE_HELPER)
 
 
 def load_nonh0_checkpoint_model_compatible(helper: Any) -> Any:
@@ -170,29 +161,16 @@ def profile_metrics(
 
 def add_profile_trace(fig: go.Figure, profile: Any, *, label: str, color: str) -> None:
     """Add a mean profile plus one-SD band."""
-
-    upper = profile.mean + profile.std
-    lower = profile.mean - profile.std
-    fig.add_trace(
-        go.Scatter(
-            x=np.concatenate([profile.time_s, profile.time_s[::-1]]),
-            y=np.concatenate([upper, lower[::-1]]),
-            fill="toself",
-            fillcolor=hex_to_rgba(color, 0.13),
-            line={"color": "rgba(0,0,0,0)"},
-            hoverinfo="skip",
-            name=f"{label} +/- 1 SD",
-            showlegend=False,
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=profile.time_s,
-            y=profile.mean,
-            mode="lines",
-            line={"color": color, "width": 2.5},
-            name=label,
-        )
+    canonical_add_band_trace(
+        fig,
+        x=profile.time_s,
+        mean=profile.mean,
+        spread=profile.std,
+        color=color,
+        name=label,
+        fill_alpha=0.13,
+        line_width=2.5,
+        band_label=f"{label} +/- 1 SD",
     )
 
 
@@ -207,37 +185,20 @@ def add_reference_trace(
     dash: str,
 ) -> None:
     """Add a normalized extLQG reference trace."""
-
-    upper = mean + std
-    lower = mean - std
-    fig.add_trace(
-        go.Scatter(
-            x=np.concatenate([time_s, time_s[::-1]]),
-            y=np.concatenate([upper, lower[::-1]]),
-            fill="toself",
-            fillcolor=hex_to_rgba(color, 0.08),
-            line={"color": "rgba(0,0,0,0)"},
-            hoverinfo="skip",
-            name=f"{label} +/- 1 SD",
-            showlegend=False,
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=time_s,
-            y=mean,
-            mode="lines",
-            line={"color": color, "width": 2.2, "dash": dash},
-            name=label,
-        )
+    canonical_add_band_trace(
+        fig,
+        x=time_s,
+        mean=mean,
+        spread=std,
+        color=color,
+        name=label,
+        fill_alpha=0.08,
+        line_width=2.2,
+        line_dash=dash,
+        band_label=f"{label} +/- 1 SD",
     )
 
 
-def hex_to_rgba(color: str, alpha: float) -> str:
-    """Convert ``#rrggbb`` to Plotly rgba."""
-
-    color = color.lstrip("#")
-    return f"rgba({int(color[0:2], 16)},{int(color[2:4], 16)},{int(color[4:6], 16)},{alpha})"
 
 
 def write_outputs(

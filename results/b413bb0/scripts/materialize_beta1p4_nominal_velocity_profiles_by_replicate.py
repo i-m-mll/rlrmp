@@ -2,6 +2,9 @@
 """Materialize beta 1.4 nominal velocity profiles split by GRU replicate."""
 
 from __future__ import annotations
+from rlrmp.viz.figures import build_nominal_profile_figure
+from rlrmp.viz.figures import build_nominal_velocity_spec
+from rlrmp.viz.traces import add_profile_line
 
 import json
 from collections.abc import Mapping
@@ -13,7 +16,6 @@ from feedbax.plot import save_figure
 
 from materialize_beta1p4_nominal_velocity_profiles import (
     COMPARATOR_COLORS,
-    DT,
     ISSUE,
     RUN_ROWS,
     build_robust_output_feedback_6d_context,
@@ -30,7 +32,6 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
 from rlrmp.analysis.pipelines.gru_perturbation_bank import _build_extlqg_comparator_context
 from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT
-from rlrmp.viz import profile_comparison_grid
 
 
 TOPIC = "beta1p4_nominal_velocity_profiles_by_replicate"
@@ -103,88 +104,16 @@ def forward_velocity_profiles_by_replicate(velocity: Any) -> np.ndarray:
     return np.nanmean(forward, axis=sample_axes)
 
 
-def materialize_figure(
-    *,
-    run_profiles: Mapping[str, np.ndarray],
-    extlqg_context: Mapping[str, Any],
-    robust_context: Mapping[str, Any],
-) -> dict[str, Any]:
+def materialize_figure(*, run_profiles: Mapping[str, np.ndarray], extlqg_context: Mapping[str, Any], robust_context: Mapping[str, Any]) -> dict[str, Any]:
     """Build and save the beta 1.4 by-replicate nominal velocity figure."""
-
-    fig = profile_comparison_grid(
-        n_panels=len(RUN_ROWS),
-        rows=len(RUN_ROWS),
-        cols=1,
-        subplot_titles=[str(row["label"]) for row in RUN_ROWS],
-        vertical_spacing=0.075,
-    )
-    ext_profile = forward_velocity_profile(extlqg_context["base_evaluation"].velocity)
-    robust_profile = forward_velocity_profile(robust_context["velocity"])
-
-    for row_index, row_spec in enumerate(RUN_ROWS, start=1):
-        row_profiles = np.asarray(run_profiles[str(row_spec["run_id"])], dtype=np.float64)
-        add_replicate_lines(
-            fig,
-            row_profiles,
-            row=row_index,
-            col=1,
-            name_prefix=f"{row_spec['label']} GRU",
-        )
-        add_line(
-            fig,
-            ext_profile,
-            row=row_index,
-            col=1,
-            name="6D extLQG",
-            color=COMPARATOR_COLORS["extlqg6d"],
-            dash="dash",
-            showlegend=row_index == 1,
-            width=2.8,
-        )
-        add_line(
-            fig,
-            robust_profile,
-            row=row_index,
-            col=1,
-            name="6D output-feedback H-infinity",
-            color=COMPARATOR_COLORS["robust_output_feedback6d"],
-            dash="dot",
-            showlegend=row_index == 1,
-            width=2.8,
-        )
-        fig.update_yaxes(title_text="m/s", row=row_index, col=1)
-    fig.update_xaxes(title_text="time from movement onset (s)", row=len(RUN_ROWS), col=1)
-    fig.update_layout(
-        title="b413 beta 1.4 nominal forward velocity profiles by replicate",
-        template="plotly_white",
-        width=1040,
-        height=820,
-        legend_title_text="profile",
-        margin={"l": 78, "r": 24, "t": 90, "b": 70},
-    )
-
+    def add_runs(fig: go.Figure, row_spec: Mapping[str, Any], row_index: int) -> None:
+        add_replicate_lines(fig, np.asarray(run_profiles[str(row_spec["run_id"])], dtype=np.float64), row=row_index, col=1, name_prefix=f"{row_spec['label']} GRU")
+    fig = build_nominal_profile_figure(rows=RUN_ROWS, add_run_profiles=add_runs, ext_profile=forward_velocity_profile(extlqg_context["base_evaluation"].velocity), robust_profile=forward_velocity_profile(robust_context["velocity"]), comparator_colors=COMPARATOR_COLORS, title="b413 beta 1.4 nominal forward velocity profiles by replicate", height=820)
     spec = build_spec(robust_context=robust_context, run_profiles=run_profiles)
-    saved = save_figure(
-        fig=fig,
-        spec=spec,
-        package="rlrmp",
-        experiment=ISSUE,
-        topic=TOPIC,
-        extra_packages=["rlrmp"],
-    )
+    saved = save_figure(fig=fig, spec=spec, package="rlrmp", experiment=ISSUE, topic=TOPIC, extra_packages=["rlrmp"])
     png_export = write_png_output(fig=fig, html_path=HTML_PATH, png_path=PNG_PATH)
     append_png_export_to_spec(png_export)
-    return {
-        "status": "materialized",
-        "topic": TOPIC,
-        "save_result": json_safe(saved),
-        "spec": repo_rel(SPEC_PATH),
-        "html": repo_rel(HTML_PATH),
-        "png": repo_rel(PNG_PATH) if png_export["status"] == "written" else None,
-        "png_export": png_export,
-        "rows": row_summaries(run_profiles),
-        "analytical_comparator_contract": spec["analytical_comparator_contract"],
-    }
+    return {"status": "materialized", "topic": TOPIC, "save_result": json_safe(saved), "spec": repo_rel(SPEC_PATH), "html": repo_rel(HTML_PATH), "png": repo_rel(PNG_PATH) if png_export["status"] == "written" else None, "png_export": png_export, "rows": row_summaries(run_profiles), "analytical_comparator_contract": spec["analytical_comparator_contract"]}
 
 
 def add_replicate_lines(
@@ -214,108 +143,19 @@ def add_replicate_lines(
         )
 
 
-def add_line(
-    fig: go.Figure,
-    profile: np.ndarray,
-    *,
-    row: int,
-    col: int,
-    name: str,
-    color: str,
-    dash: str,
-    showlegend: bool,
-    width: float = 2.1,
-) -> None:
-    """Add a single profile line to a subplot."""
-
-    line_profile = np.asarray(profile, dtype=np.float64)
-    if line_profile.ndim == 2:
-        line_profile = np.nanmean(line_profile, axis=0)
-    if line_profile.ndim != 1:
-        raise ValueError(f"expected a 1D profile line, got shape {line_profile.shape}")
-    time = np.arange(line_profile.shape[0], dtype=np.float64) * DT
-    fig.add_trace(
-        go.Scatter(
-            x=time,
-            y=line_profile,
-            mode="lines",
-            name=name,
-            legendgroup=name,
-            showlegend=showlegend,
-            line={"color": color, "dash": dash, "width": width},
-        ),
-        row=row,
-        col=col,
-    )
+add_line = add_profile_line
 
 
-def build_spec(
-    *,
-    robust_context: Mapping[str, Any],
-    run_profiles: Mapping[str, np.ndarray],
-) -> dict[str, Any]:
+def build_spec(*, robust_context: Mapping[str, Any], run_profiles: Mapping[str, np.ndarray]) -> dict[str, Any]:
     """Return the tracked by-replicate figure specification."""
-
-    return {
-        "schema_version": "rlrmp.b413_beta1p4_nominal_velocity_profiles_by_replicate.v1",
-        "issue": ISSUE,
-        "figure_kind": "beta1p4_nominal_forward_velocity_profiles_by_replicate",
-        "analytical_comparator_contract": {
-            "extlqg": {
-                "label": "6D extLQG",
-                "state_dim": 36,
-                "physical_dim": 6,
-                "disturbance_integrators_exposed": False,
-                "source": (
-                    "rlrmp.analysis.pipelines.gru_perturbation_bank."
-                    "_build_extlqg_comparator_context(physical_dim=6)"
-                ),
-                "game_contract": "6D no-integrator C&S comparator",
-            },
-            "output_feedback_hinf": robust_context["contract"],
-        },
-        "inputs": [
-            {
-                "role": "run_spec",
-                "path": f"results/{ISSUE}/runs/{row['run_id']}.json",
-                "label": row["label"],
-                "adversary_mechanism": row["adversary_mechanism"],
-                "artifact_dir": f"_artifacts/{ISSUE}/runs/{row['run_id']}",
-            }
-            for row in RUN_ROWS
-        ],
-        "transform": [
-            {
-                "name": "final_checkpoint_forward_velocity_profile_by_replicate",
-                "kwargs": {
-                    "row_labels": {str(row["run_id"]): row["label"] for row in RUN_ROWS},
-                    "n_rollout_trials_per_replicate": DEFAULT_N_ROLLOUT_TRIALS,
-                    "use_validation_selected_checkpoints": False,
-                    "gru_curve_contract": (
-                        "one trace per replicate; each trace is the mean forward "
-                        "velocity over the fixed validation rollout bank"
-                    ),
-                    "analytical_comparators": [
-                        "6d_output_feedback_extlqg",
-                        "6d_output_feedback_hinf",
-                    ],
-                },
-            }
-        ],
-        "replicate_curve_summary": row_summaries(run_profiles),
-        "plot_kwargs": {
-            "grid_helper": "rlrmp.viz.profile_comparison_grid",
-            "shared_yaxes": "all",
-            "rows": len(RUN_ROWS),
-            "physical_state_dim": 6,
-            "state_dim": 36,
-            "disturbance_integrators_exposed": False,
-        },
-        "outputs": {
-            "html": repo_rel(HTML_PATH),
-            "png": repo_rel(PNG_PATH),
-        },
-    }
+    inputs = [{"role": "run_spec", "path": f"results/{ISSUE}/runs/{row['run_id']}.json", "label": row["label"], "adversary_mechanism": row["adversary_mechanism"], "artifact_dir": f"_artifacts/{ISSUE}/runs/{row['run_id']}"} for row in RUN_ROWS]
+    return build_nominal_velocity_spec(
+        schema_version="rlrmp.b413_beta1p4_nominal_velocity_profiles_by_replicate.v1", issue=ISSUE,
+        figure_kind="beta1p4_nominal_forward_velocity_profiles_by_replicate", robust_contract=robust_context["contract"], inputs=inputs,
+        transform_name="final_checkpoint_forward_velocity_profile_by_replicate",
+        transform_kwargs={"row_labels": {str(row["run_id"]): row["label"] for row in RUN_ROWS}, "n_rollout_trials_per_replicate": DEFAULT_N_ROLLOUT_TRIALS, "use_validation_selected_checkpoints": False, "gru_curve_contract": "one trace per replicate; each trace is the mean forward velocity over the fixed validation rollout bank", "analytical_comparators": ["6d_output_feedback_extlqg", "6d_output_feedback_hinf"]},
+        rows=len(RUN_ROWS), outputs={"html": repo_rel(HTML_PATH), "png": repo_rel(PNG_PATH)}, extra={"replicate_curve_summary": row_summaries(run_profiles)},
+    )
 
 
 def row_summaries(run_profiles: Mapping[str, np.ndarray]) -> list[dict[str, Any]]:

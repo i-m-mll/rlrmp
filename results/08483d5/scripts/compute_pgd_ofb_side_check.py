@@ -3,6 +3,7 @@ from __future__ import annotations
 # ruff: noqa: E402
 
 import json
+from functools import partial
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -11,39 +12,26 @@ import jax
 
 jax.config.update("jax_enable_x64", True)
 
-import jax.numpy as jnp
-import jax.random as jr
 import numpy as np
-from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 
-from compute_gru_pgd_damage_sanity import (
-    declared_active_radius,
-    delta_summary,
-    full_qrf_cost_context,
+from _common import (
+    DamageComputation,
+    compute_damage_row as canonical_compute_damage_row,
+    damage_payload,
     json_ready,
-    normalize_per_trial,
-    project_per_trial_l2,
-    rollout_costs,
-    summarize_costs,
-    summarize_epsilon,
-    trial_target_position,
-    with_epsilon_delta,
 )
-from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
-from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
-    load_validation_selected_checkpoint_model,
-)
+from rlrmp.paths import portable_repo_path
+
 from rlrmp.analysis.pipelines.gru_pilot_figures import (
     DEFAULT_N_ROLLOUT_TRIALS,
     evaluate_stochastic_forward_velocity_profile,
-    repeat_single_validation_trial,
     resolve_run_inputs,
 )
 from rlrmp.io import update_marked_section
-from rlrmp.train.task_model import setup_task_model_pair
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+repo_rel = partial(portable_repo_path, repo_root=REPO_ROOT)
 OUTPUT_JSON = REPO_ROOT / "results" / "08483d5" / "notes" / "pgd_ofb_side_check.json"
 OUTPUT_MD = REPO_ROOT / "results" / "08483d5" / "notes" / "pgd_ofb_side_check.md"
 TARGET_DAMAGE = 6131.6906765
@@ -181,137 +169,47 @@ def compute_velocity_row(row: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def compute_damage_row(row: Mapping[str, Any]) -> dict[str, Any]:
-    run = resolve_run_inputs(
-        experiment=str(row["experiment"]),
-        run_ids=(str(row["run_id"]),),
-        labels=(str(row["label"]),),
-        repo_root=REPO_ROOT,
-    )[0]
-    run_spec = run.run_spec
-    hps = dict_to_namespace(normalize_gru_hps(run_spec["hps"]), to_type=TreeNamespace)
-    n_replicates = int(hps.model.n_replicates)
-    pair = setup_task_model_pair(hps, key=jr.PRNGKey(int(run_spec.get("seed", SEED))))
-    model, checkpoint_selection = load_validation_selected_checkpoint_model(
+    """Compute and format one PGD side-check damage row."""
+
+    computation = canonical_compute_damage_row(
         experiment=str(row["experiment"]),
         run_id=str(row["run_id"]),
-        run_spec=run_spec,
-        checkpoint_selection_mode="sparse_history",
+        label=str(row["label"]),
         repo_root=REPO_ROOT,
+        n_trials=N_TRIALS,
+        n_steps=N_STEPS,
+        seed=SEED,
     )
-    trial_specs = repeat_single_validation_trial(pair.task.validation_trials, N_TRIALS)
-    base_epsilon = jnp.asarray(trial_specs.inputs["epsilon"], dtype=jnp.float64)
-    radius = declared_active_radius(run_spec, trial_specs)
-    step_radius = radius * 0.25
-    keys = jr.split(jr.PRNGKey(SEED), n_replicates)
-    cost_context = full_qrf_cost_context(
-        initial_states=jnp.asarray(trial_specs.inits["mechanics.vector"], dtype=jnp.float64),
-        target_pos=trial_target_position(trial_specs),
-    )
+    return format_damage_row(row, computation)
 
-    def objective(delta: jnp.ndarray) -> jnp.ndarray:
-        candidate = with_epsilon_delta(trial_specs, delta)
-        costs = rollout_costs(
-            model=model,
-            task=pair.task,
-            trial_specs=candidate,
-            n_replicates=n_replicates,
-            keys=keys,
-            context=cost_context,
-        )
-        return jnp.mean(costs["total"])
 
-    value_and_grad = jax.value_and_grad(objective)
-    delta = jnp.zeros_like(base_epsilon)
-    best_delta = delta
-    best_objective = objective(delta)
-    history = [
-        {
-            "step": 0,
-            "objective": float(best_objective),
-            "best_objective": float(best_objective),
-            "epsilon_l2_mean": 0.0,
-            "epsilon_l2_max": 0.0,
-        }
-    ]
-    for step in range(1, N_STEPS + 1):
-        value, grad = value_and_grad(delta)
-        proposal = project_per_trial_l2(
-            delta + normalize_per_trial(grad) * step_radius,
-            radius,
-        )
-        proposal_objective = objective(proposal)
-        improved = proposal_objective > best_objective
-        best_delta = jnp.where(improved, proposal, best_delta)
-        best_objective = jnp.where(improved, proposal_objective, best_objective)
-        delta = proposal
-        norms = flattened_per_trial_norm(proposal)
-        history.append(
-            {
-                "step": step,
-                "objective": float(proposal_objective),
-                "best_objective": float(best_objective),
-                "pre_step_objective": float(value),
-                "epsilon_l2_mean": float(jnp.mean(norms)),
-                "epsilon_l2_max": float(jnp.max(norms)),
-                "gradient_l2_mean": float(jnp.mean(flattened_per_trial_norm(grad))),
-            }
-        )
-
-    clean_costs = summarize_costs(
-        rollout_costs(
-            model=model,
-            task=pair.task,
-            trial_specs=trial_specs,
-            n_replicates=n_replicates,
-            keys=keys,
-            context=cost_context,
-        )
-    )
-    adversarial_specs = with_epsilon_delta(trial_specs, best_delta)
-    adversarial_costs = summarize_costs(
-        rollout_costs(
-            model=model,
-            task=pair.task,
-            trial_specs=adversarial_specs,
-            n_replicates=n_replicates,
-            keys=keys,
-            context=cost_context,
-        )
-    )
-    damage = delta_summary(adversarial_costs, clean_costs)
+def format_damage_row(
+    row: Mapping[str, Any], computation: DamageComputation
+) -> dict[str, Any]:
+    run_spec = computation["run_spec"]
     contract = run_spec["hps"]["broad_epsilon_pgd_training"]["budget_contract"]
+    shared = damage_payload(computation)
     return {
         "label": row["label"],
         "experiment": row["experiment"],
         "run_id": row["run_id"],
-        "run_spec_path": repo_rel(run.run_spec_path),
-        "artifact_dir": repo_rel(run.artifact_dir),
+        "run_spec_path": repo_rel(computation["run"].run_spec_path),
+        "artifact_dir": repo_rel(computation["run"].artifact_dir),
         "model_identity": model_identity(run_spec),
         "checkpoint_policy": "validation_selected_per_replicate",
-        "checkpoint_selection": checkpoint_selection_json(checkpoint_selection),
+        "checkpoint_selection": checkpoint_selection_json(computation["checkpoint_selection"]),
         "adversary_recomputed": True,
         "adversary": {
-            "mechanism": "direct_epsilon_open_loop_sequence_per_trial",
-            "optimizer": "projected_gradient_ascent",
-            "n_steps": N_STEPS,
-            "step_size_fraction_of_l2_radius": 0.25,
-            "l2_radius_per_trial": float(radius),
+            **shared["adversary"],
             "budget_contract": {
                 "active_max_l2_radius_15cm": float(contract["active_max_l2_radius_15cm"]),
                 "effective_l2_radius_15cm": float(contract["effective_l2_radius_15cm"]),
                 "gamma_factor": float(contract["gamma_factor"]),
                 "budget_source": contract.get("budget_source"),
             },
-            "history": history,
-            "selected_epsilon": summarize_epsilon(best_delta, radius=radius),
-            "base_epsilon": summarize_epsilon(base_epsilon, radius=None),
         },
-        "costs": {
-            "clean": clean_costs,
-            "adversarial": adversarial_costs,
-            "paired_damage": damage,
-            "damage_over_target": float(damage["total"]["mean"] / TARGET_DAMAGE),
-        },
+        "costs": shared["costs"]
+        | {"damage_over_target": float(computation["damage"]["total"]["mean"] / TARGET_DAMAGE)},
     }
 
 
@@ -343,10 +241,6 @@ def checkpoint_selection_json(selections: Sequence[Any]) -> list[dict[str, Any]]
         else:
             out.append(json_ready(selection))
     return out
-
-
-def flattened_per_trial_norm(delta: jnp.ndarray) -> jnp.ndarray:
-    return jnp.linalg.norm(delta.reshape((delta.shape[0], -1)), axis=-1)
 
 
 def velocity_relative_to(row: Mapping[str, Any], baseline: Mapping[str, Any]) -> dict[str, float]:
@@ -484,10 +378,6 @@ def summary_for_stdout(result: Mapping[str, Any]) -> dict[str, Any]:
             "markdown": repo_rel(OUTPUT_MD),
         },
     }
-
-
-def repo_rel(path: Path) -> str:
-    return str(path.relative_to(REPO_ROOT))
 
 
 if __name__ == "__main__":

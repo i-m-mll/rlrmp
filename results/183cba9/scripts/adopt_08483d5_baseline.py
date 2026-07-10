@@ -1,6 +1,7 @@
 """Adopt the 08483d5 legacy C&S baseline into Feedbax checkpoint custody."""
 
 from __future__ import annotations
+from rlrmp.paths import portable_repo_path as _rel
 
 import argparse
 import json
@@ -506,11 +507,6 @@ def _run(command: list[str], *, cwd: Path, env: dict[str, str]) -> None:
     subprocess.run(command, cwd=cwd, env=env, check=True)
 
 
-def _rel(path: Path) -> str:
-    try:
-        return str(path.relative_to(REPO))
-    except ValueError:
-        return str(path)
 
 
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ from feedbax.contracts.expressions import (
 )
 from feedbax.contracts.manifest import TrainingRunManifest, load_manifest
 
-from rlrmp.paths import REPO_ROOT, flat_run_spec_path, run_spec_path
+from rlrmp.paths import REPO_ROOT, flat_run_spec_path, portable_repo_path, run_spec_path
 from rlrmp.runtime.spec_migrations import (
     RUN_SPEC_KIND,
     accept_rlrmp_spec_payload,
@@ -360,8 +360,12 @@ def _resolve_training_manifest(
     *,
     repo_root: Path,
 ) -> tuple[Path, TrainingRunManifest]:
-    rel_flat = _repo_relative(flat_run_spec_path(exp, run, repo_root=repo_root), repo_root)
-    rel_existing = _repo_relative(run_spec_path(exp, run, repo_root=repo_root), repo_root)
+    rel_flat = portable_repo_path(
+        flat_run_spec_path(exp, run, repo_root=repo_root), repo_root=repo_root
+    )
+    rel_existing = portable_repo_path(
+        run_spec_path(exp, run, repo_root=repo_root), repo_root=repo_root
+    )
     matches: list[tuple[Path, TrainingRunManifest]] = []
     for path in _iter_training_manifest_paths(exp, run, repo_root=repo_root):
         loaded = load_manifest(path)
@@ -478,13 +482,6 @@ def _is_spec_authoring_placeholder_manifest(manifest: TrainingRunManifest) -> bo
 def _has_planned_only_summary(manifest: TrainingRunManifest) -> bool:
     metrics = manifest.summary_metrics or {}
     return set(metrics) == {"planned_batches"}
-
-
-def _repo_relative(path: Path, repo_root: Path) -> str:
-    try:
-        return str(path.resolve().relative_to(repo_root.resolve()))
-    except ValueError:
-        return str(path)
 
 
 def _missing_keys(mapping: dict[str, Any], required_keys: frozenset[str]) -> list[str]:

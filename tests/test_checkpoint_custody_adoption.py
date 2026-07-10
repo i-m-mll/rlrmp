@@ -1,8 +1,8 @@
 """RLRMP adoption tests for Feedbax checkpoint custody."""
 
 from __future__ import annotations
+from rlrmp.io import load_named_python_module
 
-import importlib.util
 import json
 import re
 from pathlib import Path
@@ -54,15 +54,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _load_train_minimax_module():
-    spec = importlib.util.spec_from_file_location(
-        "train_minimax_checkpoint_custody_under_test",
-        REPO_ROOT / "scripts" / "train_minimax.py",
-    )
-    assert spec is not None
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
+    return load_named_python_module('train_minimax_checkpoint_custody_under_test', REPO_ROOT / 'scripts' / 'train_minimax.py')
 
 
 def _minimal_graph() -> dict[str, object]:

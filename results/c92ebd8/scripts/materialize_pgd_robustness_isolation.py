@@ -3,6 +3,7 @@
 # ruff: noqa: E402
 
 from __future__ import annotations
+from rlrmp.io import write_csv_rows
 
 import csv
 import json
@@ -14,53 +15,24 @@ from typing import Any
 
 import jax
 import numpy as np
-from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 jax.config.update("jax_enable_x64", True)
 
-import jax.random as jr
-
 from materialize_pgd_1p05_stabilization_diagnostics import (
-    DEFAULT_N_ROLLOUT_TRIALS,
-    DEFAULT_POST_ONSET_FIGURE_STEPS,
-    DEFAULT_PULSE_DURATION_STEPS,
     TRAINING_STYLES,
     add_mean_sem_trace,
     aggregate_family_response_profile,
-    build_probes,
-    checkpoint_selection_summary,
     probe_contract,
     ratio,
     repo_relative,
-    response_label,
-    summarize_by_family,
-    summarize_by_group,
-    summarize_probe,
 )
-from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
-from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
-    load_validation_selected_checkpoint_model,
+from rlrmp.eval.robustness_diagnostics import (
+    evaluate_stabilization_row as canonical_evaluate_stabilization_row,
 )
-from rlrmp.analysis.pipelines.gru_perturbation_bank import apply_perturbation_to_trial_specs
-from rlrmp.analysis.pipelines.gru_pilot_figures import (
-    repeat_single_validation_trial,
-    resolve_run_inputs,
-)
-from rlrmp.analysis.pipelines.gru_steady_state_perturbation_bank import (
-    _evaluate_model_on_trial_specs,
-    _expected_feedback_dim_from_hps,
-    _feedback_dim,
-    _target_position,
-    make_steady_state_trial_specs,
-    pad_feedback_offset_inputs,
-    washin_diagnostics,
-)
-from rlrmp.analysis.pipelines.sisu_spectrum_diagnostics import zero_disturbance_payload
 from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT, mkdir_p
-from rlrmp.train.task_model import setup_task_model_pair
 
 
 ISSUE = "c92ebd8"
@@ -260,115 +232,24 @@ def evaluate_stabilization_row(
 ) -> dict[str, Any]:
     """Evaluate one saved checkpoint on the stabilization-task probe bank."""
 
-    run = resolve_run_inputs(
-        experiment=row_spec.source_experiment,
-        run_ids=[row_spec.run_id],
-        labels=[row_spec.run_id],
+    return canonical_evaluate_stabilization_row(
+        row_spec,
         repo_root=repo_root,
-    )[0]
-    run_spec = legacy_compatible_run_spec(run.run_spec, source_experiment=row_spec.source_experiment)
-    hps = dict_to_namespace(normalize_gru_hps(run_spec["hps"]), to_type=TreeNamespace)
-    pair = setup_task_model_pair(hps, key=jr.PRNGKey(int(run_spec.get("seed", 42))))
-    model, checkpoint_selection = load_validation_selected_checkpoint_model(
-        experiment=row_spec.source_experiment,
-        run_id=run.run_id,
-        run_spec=run_spec,
-        checkpoint_selection_mode="sparse_history",
-        repo_root=repo_root,
+        hooks=globals(),
+        source_experiment=row_spec.source_experiment,
+        row_metadata=lambda row: {
+            "source_experiment": row.source_experiment,
+            "run_id": row.run_id,
+            "training_key": row.training_key,
+            "training_label": row.training_label,
+            "physical_level": row.physical_level,
+            "factor_notes": row.factor_notes,
+        },
+        run_spec_transform=lambda run_spec: legacy_compatible_run_spec(
+            run_spec,
+            source_experiment=row_spec.source_experiment,
+        ),
     )
-    base_trials = repeat_single_validation_trial(
-        pair.task.validation_trials,
-        DEFAULT_N_ROLLOUT_TRIALS,
-    )
-    steady_trials, timing = make_steady_state_trial_specs(
-        base_trials,
-        delayed=False,
-        target_position=np.asarray(_target_position(run, base_trials), dtype=np.float64),
-        pulse_duration_steps=DEFAULT_PULSE_DURATION_STEPS,
-        min_post_onset_steps=DEFAULT_POST_ONSET_FIGURE_STEPS,
-    )
-    steady_trials = pad_feedback_offset_inputs(
-        steady_trials,
-        expected_feedback_dim=_expected_feedback_dim_from_hps(hps),
-    )
-    steady_trials = zero_disturbance_payload(steady_trials)
-    feedback_dim = _feedback_dim(steady_trials)
-    probes = build_probes(
-        feedback_dim=feedback_dim,
-        pulse_start=int(timing["pulse_start_step"]),
-        pulse_duration=int(timing["pulse_duration_steps"]),
-    )
-    base = _evaluate_model_on_trial_specs(
-        model=model,
-        task=pair.task,
-        trial_specs=steady_trials,
-        n_replicates=int(hps.model.n_replicates),
-        seed=0,
-    )
-    details = []
-    for probe in probes:
-        adapter = apply_perturbation_to_trial_specs(steady_trials, probe.row, model=model)
-        if adapter.status != "evaluated":
-            details.append(
-                {
-                    "perturbation_id": probe.perturbation_id,
-                    "group": probe.group,
-                    "family": probe.family,
-                    "status": adapter.status,
-                    "reason": adapter.reason,
-                    "adapter": adapter.to_json(),
-                }
-            )
-            continue
-        perturbed = _evaluate_model_on_trial_specs(
-            model=adapter.model if adapter.model is not None else model,
-            task=pair.task,
-            trial_specs=adapter.trial_specs,
-            n_replicates=int(hps.model.n_replicates),
-            seed=0,
-        )
-        details.append(
-            summarize_probe(
-                probe=probe,
-                base=base,
-                perturbed=perturbed,
-                pulse_start=int(timing["pulse_start_step"]),
-            )
-            | {"status": "evaluated", "adapter": adapter.to_json()}
-        )
-
-    family_summary = summarize_by_family(details)
-    group_summary = summarize_by_group(details)
-    return {
-        "source_experiment": row_spec.source_experiment,
-        "run_id": row_spec.run_id,
-        "training_key": row_spec.training_key,
-        "training_label": row_spec.training_label,
-        "physical_level": row_spec.physical_level,
-        "factor_notes": row_spec.factor_notes,
-        "run_spec_path": repo_relative(run.run_spec_path, repo_root),
-        "artifact_dir": repo_relative(run.artifact_dir, repo_root),
-        "checkpoint_selection_summary": checkpoint_selection_summary(checkpoint_selection),
-        "response_label": response_label(washin_diagnostics(base, pulse_start=timing["pulse_start_step"])),
-        "dt_s": float(base.dt),
-        "timing": timing,
-        "n_replicates": int(base.command.shape[0]),
-        "n_rollout_trials_per_replicate": int(base.command.shape[1]),
-        "feedback_dim": int(feedback_dim),
-        "washin": washin_diagnostics(base, pulse_start=timing["pulse_start_step"]),
-        "feedback_auc_mm_s": group_summary["feedback"]["auc_displacement_mm_s_mean"],
-        "mechanical_auc_mm_s": group_summary["mechanical"]["auc_displacement_mm_s_mean"],
-        "command_input_auc_mm_s": family_summary["command_input_pulse"][
-            "auc_displacement_mm_s_mean"
-        ],
-        "process_force_auc_mm_s": family_summary["process_epsilon_force_state_xy"][
-            "auc_displacement_mm_s_mean"
-        ],
-        "feedback_peak_mm": group_summary["feedback"]["peak_displacement_mm_mean"],
-        "mechanical_peak_mm": group_summary["mechanical"]["peak_displacement_mm_mean"],
-        "family_summary": family_summary,
-        "per_probe_detail": details,
-    }
 
 
 def stabilization_pairwise_comparisons(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
@@ -1184,25 +1065,9 @@ def write_summary_csv(path: Path, summary: Mapping[str, Any]) -> None:
 
 
 def write_reach_csv(path: Path, rows: Sequence[Mapping[str, Any]]) -> None:
-    """Write matched reach-context family rows."""
-
-    fields = (
-        "experiment",
-        "physical_level",
-        "training_key",
-        "training_label",
-        "run_id",
-        "group_key",
-        "family",
-        "status",
-        "auc_dx_mm_s",
-        "peak_dx_over_open_loop",
-    )
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({field: row.get(field) for field in fields})
+    fields = ('experiment', 'physical_level', 'training_key', 'training_label', 'run_id', 'group_key', 'family', 'status', 'auc_dx_mm_s', 'peak_dx_over_open_loop')
+    selected = [{field: row.get(field) for field in fields} for row in rows]
+    write_csv_rows(path, selected, fieldnames=fields)
 
 
 def mean_available(rows: Sequence[Mapping[str, Any]], key: str) -> float | None:

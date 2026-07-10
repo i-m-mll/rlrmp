@@ -1,9 +1,8 @@
 """Focused tests for the 1697bdc critical-lambda search helpers."""
 
 from __future__ import annotations
+from rlrmp.io import load_named_python_module
 
-import importlib.util
-import sys
 from pathlib import Path
 
 import pytest
@@ -20,13 +19,7 @@ SCRIPT = (
 
 @pytest.fixture(scope="module")
 def search_module():
-    spec = importlib.util.spec_from_file_location("critical_lambda_search_1697bdc", SCRIPT)
-    assert spec is not None
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    return load_named_python_module('critical_lambda_search_1697bdc', SCRIPT)
 
 
 def make_point(search_module, multiplier: float, *, valid: bool):

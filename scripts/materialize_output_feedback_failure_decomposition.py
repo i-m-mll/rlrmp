@@ -49,6 +49,7 @@ from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
     result_summary as rollout_result_summary,
     run_output_feedback_rollout_recovery,
 )
+from rlrmp.paths import portable_repo_path as _repo_relative
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
@@ -859,13 +860,6 @@ def _fmt(value: Any) -> str:
 
 def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _repo_relative(path: Path) -> str:
-    try:
-        return str(path.absolute().relative_to(REPO_ROOT))
-    except ValueError:
-        return str(path)
 
 
 if __name__ == "__main__":

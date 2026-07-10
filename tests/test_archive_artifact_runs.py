@@ -1,7 +1,6 @@
 from __future__ import annotations
+from rlrmp.io import load_named_python_module
 
-import importlib.util
-import sys
 from pathlib import Path
 from types import ModuleType
 
@@ -13,13 +12,7 @@ SCRIPT = REPO_ROOT / "scripts" / "archive_artifact_runs.py"
 
 
 def load_archive_module() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("archive_artifact_runs", SCRIPT)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["archive_artifact_runs"] = module
-    spec.loader.exec_module(module)
-    return module
+    return load_named_python_module('archive_artifact_runs', SCRIPT)
 
 
 archive = load_archive_module()
