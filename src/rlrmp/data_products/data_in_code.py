@@ -291,11 +291,11 @@ _OWNING_SCHEMA_DEFAULT_ALLOWLIST = (
     "src/rlrmp/analysis/pipelines/cs_stochastic_phase3.py::Phase3StochasticConfig::default_bundle",
     "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py::DelayedReachEvalBankSpec::default_bundle",
     "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py::SteadyStatePerturbationBankConfig::default_bundle",
-    "src/rlrmp/analysis/pipelines/output_feedback_rollout_recovery.py::EigenspectrumCoverageConfig::default_bundle",
-    "src/rlrmp/analysis/pipelines/output_feedback_rollout_recovery.py::ObserverErrorCoverageConfig::default_bundle",
-    "src/rlrmp/analysis/pipelines/output_feedback_rollout_recovery.py::RolloutRecoveryCondition::default_bundle",
     "src/rlrmp/analysis/robustness_margin.py::RobustnessMarginParams::default_bundle",
     "src/rlrmp/cloud/modal_runner.py::NominalGruRunConfig::default_bundle",
+    "src/rlrmp/eval/output_feedback_rollout_recovery.py::EigenspectrumCoverageConfig::default_bundle",
+    "src/rlrmp/eval/output_feedback_rollout_recovery.py::ObserverErrorCoverageConfig::default_bundle",
+    "src/rlrmp/eval/output_feedback_rollout_recovery.py::RolloutRecoveryCondition::default_bundle",
     "src/rlrmp/model/stochastic_runtime.py::StochasticRuntimeConfig::default_bundle",
 )
 

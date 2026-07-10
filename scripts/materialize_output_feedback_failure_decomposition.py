@@ -37,7 +37,7 @@ from rlrmp.analysis.pipelines.failure_decomposition import (
     interpolation_curve,
     objective_gradient_summary,
 )
-from rlrmp.analysis.math.linear_round_trip import LinearTrainingConfig
+from rlrmp.analysis.math.linear_round_trip import LinearOptimizationConfig
 from rlrmp.analysis.math.output_feedback import (
     OutputFeedbackConfig,
     output_feedback_clean_objective,
@@ -46,8 +46,7 @@ from rlrmp.eval.output_feedback_rollout_recovery import (
     STRONG_OPTIMIZER_WHITENED,
     _training_ensemble,
     eigenspectrum_coverage_conditions,
-    result_summary as rollout_result_summary,
-    run_output_feedback_rollout_recovery,
+    execute_governed_output_feedback_rollout_recovery,
 )
 from rlrmp.paths import portable_repo_path as _repo_relative
 from rlrmp.paths import REPO_ROOT, mkdir_p
@@ -99,6 +98,7 @@ COVERAGE_CACHE_DIR = (
 )
 COVERAGE_ARRAY_CACHE = COVERAGE_CACHE_DIR / "deterministic_coverage_arrays.npz"
 COVERAGE_SUMMARY_CACHE = COVERAGE_CACHE_DIR / "deterministic_coverage_summary.json"
+ROLLOUT_RECOVERY_RUNS_ROOT = COVERAGE_CACHE_DIR / "feedbax_runs"
 NOTE_PATH = (
     REPO_ROOT / "results" / SOURCE_ISSUE_ID / "notes" / "output_feedback_failure_decomposition.md"
 )
@@ -168,7 +168,9 @@ def materialize(
 
     reference = materialize_reference()
     output_config = OutputFeedbackConfig(**rollout_manifest["diagnostics"]["output_config"])
-    training_config = LinearTrainingConfig(**rollout_manifest["diagnostics"]["training_config"])
+    training_config = LinearOptimizationConfig(
+        **rollout_manifest["diagnostics"]["training_config"]
+    )
     training_states, training_weights = _training_ensemble(
         reference.plant,
         training_config,
@@ -289,7 +291,7 @@ def _load_or_run_coverage_cache(
         / "notes"
         / "output_feedback_initial_state_variability_sweep_manifest.json"
     )
-    base_config = LinearTrainingConfig(**initial_manifest["base_training_config"])
+    base_config = LinearOptimizationConfig(**initial_manifest["base_training_config"])
     summaries: dict[str, Any] = {"initial_state": [], "eigenspectrum": None}
     arrays: dict[str, np.ndarray] = {}
 
@@ -299,24 +301,30 @@ def _load_or_run_coverage_cache(
             basis_scale=cell["basis_scale"],
             random_state_scale=cell["random_state_scale"],
         )
-        result = run_output_feedback_rollout_recovery(
+        product = execute_governed_output_feedback_rollout_recovery(
             conditions=(STRONG_OPTIMIZER_WHITENED,),
             training_config=training_config,
             output_config=output_config,
+            root=ROLLOUT_RECOVERY_RUNS_ROOT,
+            issue_id=ISSUE_ID,
+            issues=(ISSUE_ID, SOURCE_ISSUE_ID),
         )
-        summary = rollout_result_summary(result)
+        summary = product.summary
         summaries["initial_state"].append({"cell": cell, "summary": summary})
         prefix = f"initial_state_coverage__{cell['label']}"
-        for key, value in result.arrays.items():
+        for key, value in product.arrays.items():
             arrays[f"{prefix}__{key}"] = value
 
-    eigen_result = run_output_feedback_rollout_recovery(
+    eigen_product = execute_governed_output_feedback_rollout_recovery(
         conditions=eigenspectrum_coverage_conditions(),
-        training_config=LinearTrainingConfig(),
+        training_config=LinearOptimizationConfig(),
         output_config=output_config,
+        root=ROLLOUT_RECOVERY_RUNS_ROOT,
+        issue_id=ISSUE_ID,
+        issues=(ISSUE_ID, SOURCE_ISSUE_ID),
     )
-    summaries["eigenspectrum"] = rollout_result_summary(eigen_result)
-    for key, value in eigen_result.arrays.items():
+    summaries["eigenspectrum"] = eigen_product.summary
+    for key, value in eigen_product.arrays.items():
         arrays[f"eigenspectrum__{key}"] = value
     _normalize_cached_common_arrays(arrays)
 

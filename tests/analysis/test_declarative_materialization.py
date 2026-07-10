@@ -1465,13 +1465,6 @@ def test_output_feedback_rollout_recovery_recipe_records_manifest_and_bulk_group
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    repo_root = tmp_path / "repo"
-    note_output = repo_root / "results" / "7a459bb" / "notes" / "rollout.md"
-    manifest_output = repo_root / "results" / "7a459bb" / "notes" / "rollout_manifest.json"
-    artifact_output = (
-        repo_root / "_artifacts" / "7a459bb" / "output_feedback_rollout_recovery" / "rollout.npz"
-    )
-
     from rlrmp.eval import output_feedback_rollout_recovery as rollout_eval
 
     fake_result = rollout_eval.RolloutRecoveryResult(
@@ -1495,7 +1488,7 @@ def test_output_feedback_rollout_recovery_recipe_records_manifest_and_bulk_group
                 "lane": kwargs["lane"],
             },
         }
-        from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
+        from rlrmp.eval.output_feedback_rollout_recovery import (
             RolloutRecoveryMaterialization,
         )
 
@@ -1510,40 +1503,54 @@ def test_output_feedback_rollout_recovery_recipe_records_manifest_and_bulk_group
         "materialize_output_feedback_rollout_recovery",
         fake_materialize,
     )
-    monkeypatch.setattr(
-        rollout_eval,
-        "run_output_feedback_rollout_recovery",
-        lambda: fake_result,
-    )
+    observed_run_kwargs = {}
+
+    def fake_run(**kwargs):
+        observed_run_kwargs.update(kwargs)
+        return fake_result
+
+    monkeypatch.setattr(rollout_eval, "run_output_feedback_rollout_recovery", fake_run)
     dm.register_certificate_analysis_recipes(replace=True)
     try:
-        eval_manifest, eval_path = execute_evaluation_run_spec(
-            dm.output_feedback_rollout_recovery_evaluation_spec(),
+        condition = rollout_eval.RolloutRecoveryCondition(
+            label="unit_condition",
+            maxiter=7,
+            initializations=("scratch",),
+            eigenspectrum_coverage=rollout_eval.EigenspectrumCoverageConfig(
+                n_modes=1,
+                scale=0.3,
+            ),
+        )
+        training_config = rollout_eval.LinearOptimizationConfig(
+            n_steps=11,
+            seed=3,
+            n_random_states=2,
+        )
+        output_config = rollout_eval.OutputFeedbackConfig(sensory_noise_scale=0.25)
+        product = rollout_eval.execute_governed_output_feedback_rollout_recovery(
+            conditions=(condition,),
+            training_config=training_config,
+            output_config=output_config,
             root=tmp_path,
+            issue_id="7a459bb",
+            issues=("c4416c5", "7a459bb"),
             force=True,
         )
-        spec = dm.output_feedback_rollout_recovery_spec(
-            issue_id="7a459bb",
-            evaluation_manifest_id=eval_manifest.id,
-            evaluation_manifest_uri=eval_path,
-            discretization="jaxley",
-            lane="analysis",
-            note_output=note_output,
-            manifest_output=manifest_output,
-            artifact_output=artifact_output,
-            repo_root=repo_root,
-        )
+        eval_manifest = load_manifest(product.evaluation_manifest_path)
+        manifest = load_manifest(product.analysis_manifest_path)
 
-        manifest, path = execute_analysis_run_spec(spec, root=tmp_path, issues=["c4416c5"])
-
-        assert path.exists()
+        assert product.analysis_manifest_path.exists()
         assert manifest.status == "completed"
         assert manifest.inputs[0].kind == "EvaluationRunManifest"
-        assert manifest.inputs[0].id == eval_manifest.id
+        assert manifest.inputs[0].id == product.evaluation_manifest_id
         assert manifest.analysis_spec.inline["analysis_type"] == (
             dm.OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE
         )
-        assert manifest.provenance.issues == ["c4416c5"]
+        assert manifest.provenance.issues == ["c4416c5", "7a459bb"]
+        assert eval_manifest.evaluation_spec.inline["params"]["schema_version"] == "v2"
+        assert observed_run_kwargs["conditions"] == (condition,)
+        assert observed_run_kwargs["training_config"] == training_config
+        assert observed_run_kwargs["output_config"] == output_config
         assert "rlrmp-output-feedback-rollout-recovery" in _artifact_roles(manifest)
         assert "rlrmp-output-feedback-rollout-recovery-note" in _artifact_roles(manifest)
         assert "rlrmp-output-feedback-rollout-recovery-bulk" in _artifact_roles(manifest)
@@ -1573,6 +1580,28 @@ def test_output_feedback_rollout_recovery_recipe_records_manifest_and_bulk_group
         )
         assert payload["bulk_artifact"]["role"] == "rlrmp-output-feedback-rollout-recovery-bulk"
         assert payload["evaluation_dependency_policy"]["status"] == "consumed"
-        assert load_manifest(path).id == manifest.id
+        assert product.summary == payload
+        assert set(product.arrays) == {"gain", "rollout"}
+        assert product.payload_path == Path(payload_artifact.uri)
+        assert product.markdown_path.read_text(encoding="utf-8") == "# rollout recovery\n"
+        with np.load(product.arrays_path) as archive:
+            assert sorted(archive.files) == ["gain", "rollout"]
+        assert load_manifest(product.analysis_manifest_path).id == manifest.id
     finally:
         _unregister_declarative_recipes()
+
+
+def test_output_feedback_rollout_recovery_params_reject_v1() -> None:
+    from pydantic import ValidationError
+
+    from rlrmp.eval.output_feedback_rollout_recovery import (
+        OutputFeedbackRolloutRecoveryEvaluationParams,
+    )
+
+    with pytest.raises(ValidationError, match="v2"):
+        OutputFeedbackRolloutRecoveryEvaluationParams.model_validate(
+            {
+                "schema_id": "rlrmp.eval.output_feedback_rollout_recovery.params",
+                "schema_version": "v1",
+            }
+        )
