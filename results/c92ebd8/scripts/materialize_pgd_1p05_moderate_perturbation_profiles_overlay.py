@@ -2,6 +2,10 @@
 """Materialize c92 no-PGD perturbation profiles with PGD/H-infinity overlays."""
 
 from __future__ import annotations
+from rlrmp.viz.traces import add_reduced_sample_trace
+from rlrmp.eval.robustness_diagnostics import (
+    build_robust_output_feedback_6d_context as _build_robust_output_feedback_6d_context,
+)
 
 import argparse
 import json
@@ -37,19 +41,6 @@ from materialize_post_training_figures import (
 from rlrmp.io import write_compact_json
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
-    build_no_integrator_game,
-)
-from rlrmp.analysis.math.cs_released_simulation import (
-    simulate_robust_released_forward,
-    zero_forward_noise_draws,
-    zero_noise_covariances,
-)
-from rlrmp.analysis.math.hinf_riccati import find_gamma_star, solve_hinf_riccati
-from rlrmp.analysis.math.output_feedback import (
-    OutputFeedbackConfig,
-    make_cs_output_feedback_initial_state,
-    robust_estimator_covariances,
-    robust_output_feedback_gains,
 )
 from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     _build_extlqg_comparator_context,
@@ -471,134 +462,27 @@ def simulate_robust_arrays(
 
 
 def build_robust_output_feedback_6d_context() -> dict[str, Any]:
-    plant, schedule = build_no_integrator_game()
-    config = OutputFeedbackConfig(n_phys=6)
-    gamma_star = find_gamma_star(plant, schedule)
-    solution = solve_hinf_riccati(
-        plant,
-        schedule,
-        OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR * gamma_star,
+    """Build this script's canonical robust output-feedback context."""
+
+    return _build_robust_output_feedback_6d_context(
+        evaluation_from_rollout=_evaluation_from_extlqg_rollout,
+        gamma_factor=OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     )
-    covariances = robust_estimator_covariances(
-        plant,
-        schedule,
-        solution.gamma,
-        config,
-    )
-    gains = robust_output_feedback_gains(
-        plant,
-        schedule,
-        solution,
-        covariances,
-        config,
-    )
-    x0 = make_cs_output_feedback_initial_state(plant, config)
-    base_rollout = simulate_robust_released_forward(
-        plant,
-        schedule,
-        solution,
-        x0,
-        draws=zero_forward_noise_draws(T=schedule.T, plant=plant, config=config),
-        covariances=zero_noise_covariances(plant, config),
-        gains=gains,
-        config=config,
-    )
-    contract = {
-        "label": "6D output-feedback H-infinity",
-        "state_dim": int(plant.n),
-        "physical_dim": int(config.n_phys),
-        "disturbance_dim": int(plant.m_w),
-        "control_dim": int(plant.m_u),
-        "delay_steps": int(config.delay_steps),
-        "disturbance_integrators_exposed": False,
-        "game_source": "rlrmp.analysis.math.cs_game_card.build_no_integrator_game",
-        "config": "rlrmp.analysis.math.output_feedback.OutputFeedbackConfig(n_phys=6)",
-        "gamma_factor": float(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR),
-        "gamma_star": float(gamma_star),
-        "gamma": float(solution.gamma),
-        "admissible": bool(solution.admissible),
-    }
-    if contract["state_dim"] != 36 or contract["physical_dim"] != 6:
-        raise ValueError(f"unexpected 6D H-infinity contract: {contract}")
-    return {
-        "plant": plant,
-        "schedule": schedule,
-        "config": config,
-        "solution": solution,
-        "gains": gains,
-        "gamma_factor": OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
-        "gamma": solution.gamma,
-        "base_initial_state": np.asarray(x0, dtype=np.float64),
-        "base_evaluation": _evaluation_from_extlqg_rollout(base_rollout, initial_state=x0),
-        "contract": contract,
-    }
 
 
 def add_profile_trace(
-    fig: go.Figure,
-    samples: np.ndarray,
-    *,
-    source: str,
-    variant: str,
-    quantity: str,
-    coord: str,
-    figure_kind: Literal["trajectory", "residual"],
-    row: int,
-    col: int,
+    fig: go.Figure, samples: np.ndarray, *, source: str, variant: str, quantity: str,
+    coord: str, figure_kind: Literal["trajectory", "residual"], row: int, col: int,
     showlegend: bool,
 ) -> None:
     samples = scale_profile_samples(samples, quantity=quantity, figure_kind=figure_kind)
-    mean, low, high = mean_band(samples)
-    time = np.arange(mean.shape[0], dtype=np.float64) * DT
-    color = SOURCE_COLORS[source]
-    label = f"{source_label(source)} {variant} {coord}"
-    legend_group = f"{source}-{variant}-{coord}"
-    if samples.shape[0] > 1:
-        fig.add_trace(
-            go.Scatter(
-                x=time,
-                y=high,
-                mode="lines",
-                line={"color": "rgba(0,0,0,0)", "width": 0},
-                hoverinfo="skip",
-                showlegend=False,
-                legendgroup=legend_group,
-            ),
-            row=row,
-            col=col,
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=time,
-                y=low,
-                mode="lines",
-                fill="tonexty",
-                fillcolor=band_color(source),
-                line={"color": "rgba(0,0,0,0)", "width": 0},
-                hoverinfo="skip",
-                showlegend=False,
-                legendgroup=legend_group,
-            ),
-            row=row,
-            col=col,
-        )
-    fig.add_trace(
-        go.Scatter(
-            x=time,
-            y=mean,
-            mode="lines",
-            name=label,
-            legendgroup=legend_group,
-            showlegend=showlegend,
-            line={
-                "color": color,
-                "dash": COORD_DASH[coord],
-                "width": 1.25 if variant == "clean" else 2.25,
-            },
-            opacity=0.42 if variant == "clean" else 0.95,
-        ),
-        row=row,
-        col=col,
+    add_reduced_sample_trace(
+        fig, samples, reducer=mean_band, row=row, col=col,
+        name=f"{source_label(source)} {variant} {coord}",
+        legendgroup=f"{source}-{variant}-{coord}", color=SOURCE_COLORS[source],
+        band_fill_color=band_color(source), dash=COORD_DASH[coord],
+        width=1.25 if variant == "clean" else 2.25,
+        opacity=0.42 if variant == "clean" else 0.95, showlegend=showlegend, dt=DT,
     )
 
 

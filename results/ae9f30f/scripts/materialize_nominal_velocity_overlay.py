@@ -1,6 +1,8 @@
 """Materialize the ae9f30f nominal velocity overlay figure."""
 
 from __future__ import annotations
+from rlrmp.viz.traces import add_band_trace as canonical_add_band_trace, add_line as canonical_add_line
+from rlrmp.viz.colors import hex_to_rgba
 
 import json
 from typing import Any
@@ -88,51 +90,24 @@ def _extlqg_reference_profile() -> dict[str, Any]:
 
 
 def _add_profile(
-    fig: go.Figure,
-    *,
-    profile: dict[str, Any],
-    row: int,
-    color: str,
-    name: str,
-    dash: str | None = None,
-    band_alpha: float = 0.14,
+    fig: go.Figure, *, profile: dict[str, Any], row: int, color: str, name: str,
+    dash: str | None = None, band_alpha: float = 0.14,
 ) -> None:
-    time_s = profile["time_s"]
-    mean = profile["mean"]
-    std = profile["std"]
-    if np.any(std):
-        fig.add_trace(
-            go.Scatter(
-                x=np.concatenate([time_s, time_s[::-1]]),
-                y=np.concatenate([mean + std, (mean - std)[::-1]]),
-                fill="toself",
-                fillcolor=_rgba(color, band_alpha),
-                line={"color": "rgba(0,0,0,0)"},
-                hoverinfo="skip",
-                name=f"{name} +/- 1 SD",
-                showlegend=row == 1,
-            ),
-            row=row,
-            col=1,
+    """Add one nominal profile and its optional standard-deviation band."""
+    if np.any(profile["std"]):
+        canonical_add_band_trace(
+            fig, x=profile["time_s"], mean=profile["mean"], spread=profile["std"],
+            row=row, col=1, color=color, name=name, line_dash=dash, line_width=2.0,
+            fill_alpha=band_alpha, band_label=f"{name} +/- 1 SD", band_showlegend=row == 1,
         )
-    fig.add_trace(
-        go.Scatter(
-            x=time_s,
-            y=mean,
-            mode="lines",
-            line={"color": color, "width": 2, **({"dash": dash} if dash else {})},
-            name=name,
-            showlegend=True,
-        ),
-        row=row,
-        col=1,
-    )
+    else:
+        canonical_add_line(
+            fig, x=profile["time_s"], y=profile["mean"], row=row, col=1, color=color,
+            name=name, dash=dash, width=2.0,
+        )
 
 
-def _rgba(hex_color: str, alpha: float) -> str:
-    raw = hex_color.lstrip("#")
-    r, g, b = (int(raw[i : i + 2], 16) for i in (0, 2, 4))
-    return f"rgba({r},{g},{b},{alpha})"
+_rgba = hex_to_rgba
 
 
 def main() -> None:

@@ -6,6 +6,8 @@ without launching training or touching remote resources.
 """
 
 from __future__ import annotations
+from rlrmp.paths import portable_repo_path
+from rlrmp.viz.colors import hex_to_rgba
 
 import json
 from dataclasses import dataclass
@@ -615,18 +617,10 @@ def write_note(summary: dict[str, Any], spec_path: Path, distillation_plan_path:
     update_marked_section(NOTE_PATH, "six_d_velocity_profiles", "\n".join(lines) + "\n")
 
 
-def repo_ref(path: Path) -> str:
-    """Return a repo-relative reference string."""
-
-    return str(path.relative_to(CHECKOUT_ROOT))
+repo_ref = portable_repo_path
 
 
-def rgba(hex_color: str, alpha: float) -> str:
-    """Convert #RRGGBB to an rgba() CSS string."""
-
-    value = hex_color.lstrip("#")
-    r, g, b = (int(value[i : i + 2], 16) for i in (0, 2, 4))
-    return f"rgba({r},{g},{b},{alpha})"
+rgba = hex_to_rgba
 
 
 if __name__ == "__main__":

@@ -2,10 +2,16 @@
 """Materialize PGD 1.05 nominal velocity profiles for c92."""
 
 from __future__ import annotations
+from rlrmp.viz.traces import add_sample_band
+from rlrmp.eval.robustness_diagnostics import (
+    build_robust_output_feedback_6d_context as _build_robust_output_feedback_6d_context,
+)
+from rlrmp.io import json_ready
+from rlrmp.paths import portable_repo_path
+from rlrmp.viz.traces import add_profile_line
 
 import json
-from collections.abc import Mapping, Sequence
-from pathlib import Path
+from collections.abc import Mapping
 from typing import Any
 
 import numpy as np
@@ -14,26 +20,16 @@ from feedbax.plot import save_figure
 
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
-    build_no_integrator_game,
-)
-from rlrmp.analysis.math.cs_released_simulation import (
-    simulate_robust_released_forward,
-    zero_forward_noise_draws,
-    zero_noise_covariances,
-)
-from rlrmp.analysis.math.hinf_riccati import find_gamma_star, solve_hinf_riccati
-from rlrmp.analysis.math.output_feedback import (
-    OutputFeedbackConfig,
-    make_cs_output_feedback_initial_state,
-    robust_estimator_covariances,
-    robust_output_feedback_gains,
 )
 from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import evaluate_run_rollouts
 from rlrmp.analysis.pipelines.gru_pilot_figures import (
     DEFAULT_N_ROLLOUT_TRIALS,
     resolve_run_inputs,
 )
-from rlrmp.analysis.pipelines.gru_perturbation_bank import _build_extlqg_comparator_context
+from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+    _build_extlqg_comparator_context,
+    _evaluation_from_extlqg_rollout,
+)
 from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT
 from rlrmp.viz import profile_comparison_grid
@@ -246,65 +242,12 @@ def materialize_figure(
 
 
 def build_robust_output_feedback_6d_context() -> dict[str, Any]:
-    """Build the requested 6D no-integrator output-feedback H-infinity path."""
+    """Build this script's canonical robust output-feedback context."""
 
-    plant, schedule = build_no_integrator_game()
-    config = OutputFeedbackConfig(n_phys=6)
-    gamma_star = find_gamma_star(plant, schedule)
-    solution = solve_hinf_riccati(
-        plant,
-        schedule,
-        OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR * gamma_star,
+    return _build_robust_output_feedback_6d_context(
+        evaluation_from_rollout=_evaluation_from_extlqg_rollout,
+        gamma_factor=OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     )
-    covariances = robust_estimator_covariances(
-        plant,
-        schedule,
-        solution.gamma,
-        config,
-    )
-    gains = robust_output_feedback_gains(
-        plant,
-        schedule,
-        solution,
-        covariances,
-        config,
-    )
-    x0 = make_cs_output_feedback_initial_state(plant, config)
-    rollout = simulate_robust_released_forward(
-        plant,
-        schedule,
-        solution,
-        x0,
-        draws=zero_forward_noise_draws(T=schedule.T, plant=plant, config=config),
-        covariances=zero_noise_covariances(plant, config),
-        gains=gains,
-        config=config,
-    )
-    contract = {
-        "label": "6D output-feedback H-infinity",
-        "state_dim": int(plant.n),
-        "physical_dim": int(config.n_phys),
-        "disturbance_dim": int(plant.m_w),
-        "control_dim": int(plant.m_u),
-        "delay_steps": int(config.delay_steps),
-        "disturbance_integrators_exposed": False,
-        "game_source": "rlrmp.analysis.math.cs_game_card.build_no_integrator_game",
-        "config": "rlrmp.analysis.math.output_feedback.OutputFeedbackConfig(n_phys=6)",
-        "gamma_factor": float(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR),
-        "gamma_star": float(gamma_star),
-        "gamma": float(solution.gamma),
-        "admissible": bool(solution.admissible),
-        "nominal_profile_convention": (
-            "zero-noise released-forward rollout, x[1:] velocity to match "
-            "60-step GRU diagnostics"
-        ),
-    }
-    if contract["state_dim"] != 36 or contract["physical_dim"] != 6:
-        raise ValueError(f"unexpected 6D H-infinity contract: {contract}")
-    return {
-        "velocity": np.asarray(rollout.x[1:, 2:4], dtype=np.float64)[None, None, :, :],
-        "contract": contract,
-    }
 
 
 def forward_velocity_profile(velocity: Any) -> np.ndarray:
@@ -333,83 +276,22 @@ def add_mean_band(
     color: str,
     showlegend: bool,
 ) -> None:
-    """Add a mean line and central 80 percent band."""
+    """Add this script's central sample band."""
 
-    mean, low, high = mean_band(samples)
-    time = np.arange(mean.shape[0], dtype=np.float64) * DT
-    fig.add_trace(
-        go.Scatter(
-            x=time,
-            y=high,
-            mode="lines",
-            line={"color": "rgba(0,0,0,0)", "width": 0},
-            hoverinfo="skip",
-            showlegend=False,
-            legendgroup=name,
-        ),
-        row=row,
-        col=col,
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=time,
-            y=low,
-            mode="lines",
-            fill="tonexty",
-            fillcolor=band_color(color),
-            line={"color": "rgba(0,0,0,0)", "width": 0},
-            hoverinfo="skip",
-            showlegend=False,
-            legendgroup=name,
-        ),
-        row=row,
-        col=col,
-    )
-    add_line(
+    add_sample_band(
         fig,
-        mean,
+        samples,
+        reducer=mean_band,
         row=row,
         col=col,
         name=name,
         color=color,
-        dash="solid",
         showlegend=showlegend,
+        dt=DT,
     )
 
 
-def add_line(
-    fig: go.Figure,
-    profile: np.ndarray,
-    *,
-    row: int,
-    col: int,
-    name: str,
-    color: str,
-    dash: str,
-    showlegend: bool,
-    width: float = 2.1,
-) -> None:
-    """Add a single profile line to a subplot."""
-
-    line_profile = np.asarray(profile, dtype=np.float64)
-    if line_profile.ndim == 2:
-        line_profile = np.nanmean(line_profile, axis=0)
-    if line_profile.ndim != 1:
-        raise ValueError(f"expected a 1D profile line, got shape {line_profile.shape}")
-    time = np.arange(line_profile.shape[0], dtype=np.float64) * DT
-    fig.add_trace(
-        go.Scatter(
-            x=time,
-            y=line_profile,
-            mode="lines",
-            name=name,
-            legendgroup=name,
-            showlegend=showlegend,
-            line={"color": color, "dash": dash, "width": width},
-        ),
-        row=row,
-        col=col,
-    )
+add_line = add_profile_line
 
 
 def mean_band(samples: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -450,25 +332,10 @@ def write_note(output: Mapping[str, Any]) -> None:
     update_marked_section(NOTE_PATH, TOPIC, "\n".join(lines) + "\n")
 
 
-def repo_rel(path: Path) -> str:
-    """Return a repository-relative path."""
-
-    return str(path.relative_to(REPO_ROOT))
+repo_rel = portable_repo_path
 
 
-def json_safe(value: Any) -> Any:
-    """Convert common path/container values to JSON-safe objects."""
-
-    if isinstance(value, Path):
-        try:
-            return repo_rel(value)
-        except ValueError:
-            return str(value)
-    if isinstance(value, Mapping):
-        return {str(key): json_safe(item) for key, item in value.items()}
-    if isinstance(value, Sequence) and not isinstance(value, str | bytes):
-        return [json_safe(item) for item in value]
-    return value
+json_safe = json_ready
 
 
 if __name__ == "__main__":
