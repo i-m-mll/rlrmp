@@ -22,7 +22,7 @@ import jax.numpy as jnp
 import jax.random as jr
 from jax_cookbook import load_with_hyperparameters
 
-from rlrmp.train.distillation_native.guided import (
+from rlrmp.train.distillation_native.guided_kernel import (
     DEFAULT_OUTPUT_DIR,
     DEFAULT_SPEC_PATH,
     _save_pytree,

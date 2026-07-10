@@ -46,7 +46,7 @@ def test_minimax_io_uses_minimax_config_sisu_gating_default():
     from pathlib import Path
 
     from rlrmp.eval import minimax_io
-    from rlrmp.train.minimax import MinimaxConfig
+    from rlrmp.train.minimax_native import MinimaxConfig
 
     assert minimax_io._default_sisu_gating() == MinimaxConfig.model_fields["sisu_gating"].default
     source = Path(minimax_io.__file__).read_text(encoding="utf-8")
@@ -72,12 +72,12 @@ def test_rlrmp_train_public_surface():
 
 
 def test_build_hps_minimax_signature_matches():
-    """`rlrmp.train.minimax.build_hps` accepts an argparse Namespace with the
+    """`rlrmp.train.minimax_native.build_hps` accepts an argparse Namespace with the
     documented minimum field set, and returns a TreeNamespace with the same
     top-level structure as the legacy in-script `build_hps`.
     """
     from feedbax.config.namespace import TreeNamespace
-    from rlrmp.train.minimax import build_hps
+    from rlrmp.train.minimax_native import build_hps
 
     args = argparse.Namespace(
         n_warmup_batches=10,

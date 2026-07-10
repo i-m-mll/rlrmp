@@ -15,7 +15,7 @@ from rlrmp.model.stochastic_runtime import (
     PLANT_PROCESS_FORCE_NOISE_LABEL,
     stochastic_runtime_config_from_model,
 )
-from rlrmp.train.minimax import build_hps
+from rlrmp.train.minimax_native import build_hps
 
 
 def _args(**overrides):

@@ -21,7 +21,7 @@ from feedbax.runtime.state import CartesianState
 from rlrmp.train.adversary import LinearDynamicsAdversary, _frobenius_project
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.intervention_compat import LINEAR_DYNAMICS_ADVERSARY_COMPONENT_PARAMETER_TARGET
-from rlrmp.train.minimax import build_hps
+from rlrmp.train.minimax_native import build_hps
 from rlrmp.train.minimax_native import _inject_adversary_delta_A
 from rlrmp.train.task_model import setup_task_model_pair
 

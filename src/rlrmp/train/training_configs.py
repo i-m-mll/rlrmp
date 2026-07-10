@@ -2461,6 +2461,7 @@ class ClosedLoopDistillationConfig(BaseModel):
     output_dir: str = "_artifacts/a378b34/runs/h0_extlqg_6d_closed_loop_distillation"
     teacher_package: str = "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers.npz"
     teacher_gains_key: str = "extlqg_controller_gains"
+    horizon: int = Field(60, gt=0)
     seed: int = 0
     n_replicates: int = Field(5, gt=0)
     hidden_size: int = Field(180, gt=0)

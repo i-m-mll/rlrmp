@@ -2033,7 +2033,7 @@
     "action_context": "teacher action histories for teacher-forced phases and a stop-gradient student/teacher blend for mixed/student-forced phases",
     "approximation": "The first executable trainer uses analytical plant rollouts and a local observation-space affine teacher derived from K_t @ pinv(C). It preserves the external 6D feedback and 2D action-history loss contract, but it is not a full Feedbax task rollout or a formal output-feedback certificate materializer.",
     "horizon": 60,
-    "materializer": "rlrmp.train.distillation_native.guided.materialize_teacher_batch",
+    "materializer": "rlrmp.train.distillation_native.guided_kernel.materialize_teacher_batch",
     "observation_perturbation_std": 0.05,
     "sampled_initial_state_std": 0.02,
     "source": "analytical linear teacher package",
@@ -2070,7 +2070,7 @@
     "full_train_status": "implemented_no_launch",
     "loss_function": "rlrmp.train.distillation_native.losses.guided_distillation_loss",
     "loss_module": "rlrmp.train.distillation_native.losses",
-    "module": "rlrmp.train.guided_distillation",
+    "module": "rlrmp.train.distillation_entry",
     "replicate_execution": "vectorized with eqx.filter_vmap over the replicate axis",
     "run_spec_path": "results/9727d79/runs/h0_hinf_6d_standard_graph_distillation.json",
     "script": "scripts/train_guided_distillation.py",
@@ -2087,7 +2087,7 @@
       "--dry-run",
       "--smoke-loss"
     ],
-    "trainer": "rlrmp.train.guided_distillation.run_guided_distillation_training"
+    "trainer": "rlrmp.train.distillation_entry.run_distillation_config"
   },
   "training_schedule": {
     "phases": [

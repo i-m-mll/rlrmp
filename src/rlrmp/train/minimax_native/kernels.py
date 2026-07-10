@@ -964,11 +964,6 @@ def _trainable_where(model: Any) -> Any:
     return lambda candidate: staged_network_trainable_parts(candidate.get_node("net"))
 
 
-def _make_where_train(sisu_gating: str = "additive") -> dict[int, Any]:
-    del sisu_gating
-    return {0: _trainable_where}
-
-
 def _init_vmapped_adversary_opt_state(
     adversary: Any,
     *,
@@ -1125,21 +1120,6 @@ def _stop_gradient_arrays(value: Any) -> Any:
 
 def _metric_mean(values: Any) -> float:
     return float(jax.device_get(jnp.mean(values)))
-
-
-def _last_history_loss(history: Any) -> float:
-    if history is None:
-        return 0.0
-    loss = getattr(history, "loss", None)
-    if loss is None:
-        losses = getattr(history, "losses", None)
-        if losses is None:
-            return 0.0
-        loss = losses
-    array = jnp.asarray(loss)
-    if array.size == 0:
-        return 0.0
-    return float(jax.device_get(array.reshape(-1)[-1]))
 
 
 def _runtime(runtime: RlrmpRuntime) -> MinimaxNativeRuntime:

@@ -15,9 +15,8 @@ from rlrmp.train.cs_nominal_gru import (
     build_parser,
 )
 from rlrmp.train.run_spec_authoring import build_parser as authoring_build_parser
-from rlrmp.train.distillation_native import closed_loop as closed_loop_distillation
-from rlrmp.train.distillation_native import guided as guided_distillation
-from rlrmp.train.minimax import MinimaxConfig
+from rlrmp.train.config_cli import build_config_parser
+from rlrmp.train.minimax_native import MinimaxConfig
 from rlrmp.train.training_configs import (
     CLOSED_LOOP_DISTILLATION_PARAMS_REF,
     GUIDED_DISTILLATION_PARAMS_REF,
@@ -158,8 +157,11 @@ def test_native_trainer_configs_share_unified_definition_module() -> None:
     assert params_model_for(GUIDED_DISTILLATION_PARAMS_REF) is GuidedDistillationConfig
     assert params_model_for(CLOSED_LOOP_DISTILLATION_PARAMS_REF) is ClosedLoopDistillationConfig
 
-    guided_args = guided_distillation.build_parser().parse_args([])
-    closed_args = closed_loop_distillation._build_parser().parse_args([])
+    guided_args = build_config_parser(GuidedDistillationConfig, description="guided").parse_args([])
+    closed_args = build_config_parser(
+        ClosedLoopDistillationConfig,
+        description="closed-loop",
+    ).parse_args([])
     assert vars(guided_args) == GuidedDistillationConfig().model_dump(mode="python")
     assert vars(closed_args) == ClosedLoopDistillationConfig().model_dump(mode="python")
 
@@ -179,7 +181,7 @@ def test_legacy_training_config_translator_definitions_are_retired() -> None:
 
 
 def test_minimax_hps_entrypoint_is_a_thin_validated_constructor() -> None:
-    path = REPO_ROOT / "src/rlrmp/train/minimax_native/authoring.py"
+    path = REPO_ROOT / "src/rlrmp/train/minimax_native/method.py"
     tree = ast.parse(path.read_text(encoding="utf-8"))
     build_hps = next(
         node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "build_hps"

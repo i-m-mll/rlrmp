@@ -24,7 +24,7 @@ TRAINING_SOURCE_ROOTS = (
 REGISTERED_NATIVE_KERNEL_MODULES = {
     Path("src/rlrmp/train/adaptive_epsilon_native.py"),
     Path("src/rlrmp/train/distillation_native/executor.py"),
-    Path("src/rlrmp/train/distillation_native/guided.py"),
+    Path("src/rlrmp/train/distillation_native/guided_kernel.py"),
     Path("src/rlrmp/train/minimax_native/kernels.py"),
     Path("src/rlrmp/train/policy_adversary_native.py"),
 }
@@ -39,13 +39,13 @@ FORBIDDEN_SPEC_MARKERS = (
 REGISTERED_METHOD_CLI_WIRING = {
     CLOSED_LOOP_DISTILLATION_METHOD_REF: {
         "script": Path("scripts/train_closed_loop_distillation.py"),
-        "module": Path("src/rlrmp/train/distillation_native/closed_loop.py"),
-        "entrypoint": "main",
+        "module": Path("src/rlrmp/train/distillation_entry.py"),
+        "entrypoint": "run_distillation_config",
     },
     GUIDED_DISTILLATION_METHOD_REF: {
         "script": Path("scripts/train_guided_distillation.py"),
-        "module": Path("src/rlrmp/train/distillation_native/guided.py"),
-        "entrypoint": "main",
+        "module": Path("src/rlrmp/train/distillation_entry.py"),
+        "entrypoint": "run_distillation_config",
     },
 }
 NATIVE_EXECUTOR_CALL = "execute_distillation_training_run_spec_native"
@@ -59,6 +59,28 @@ RETIRED_GUIDED_CHECKPOINT_APIS = {
     "latest_checkpoint_path",
     "save_training_checkpoint",
     "load_latest_checkpoint",
+}
+RETIRED_TRAINER_MODULES = {
+    Path("src/rlrmp/train/minimax.py"),
+    Path("src/rlrmp/train/distillation.py"),
+    Path("src/rlrmp/train/guided_distillation.py"),
+    Path("src/rlrmp/train/closed_loop_distillation.py"),
+}
+RETIRED_RUNTIME_DEFINITIONS = {
+    "build_parser",
+    "_build_parser",
+    "main",
+    "build_distillation_spec",
+    "build_closed_loop_distillation_spec",
+    "run_guided_distillation_training",
+    "run_closed_loop_distillation_training_native",
+    "write_run_spec",
+    "_atomic_write_json",
+    "legacy_cli_args_to_minimax_config",
+    "minimax_config_namespace",
+    "_legacy_minimax_run_spec_payload",
+    "_rlrmp_minimax_extension_payload",
+    "_minimax_method_payload",
 }
 ALLOWED_NON_TRAINING_OPTIMIZER_LOOPS = {
     (
@@ -104,8 +126,8 @@ def test_registered_distillation_cli_paths_reach_native_executor() -> None:
         script_path = REPO_ROOT / wiring["script"]
         module_path = REPO_ROOT / wiring["module"]
         script_calls = _module_call_names(ast.parse(script_path.read_text(encoding="utf-8")))
-        if "main" not in script_calls:
-            findings.append(f"{method_ref}:{wiring['script']}:does_not_call_main")
+        if "distillation_main" not in script_calls:
+            findings.append(f"{method_ref}:{wiring['script']}:does_not_call_generated_entry")
             continue
         module_tree = ast.parse(module_path.read_text(encoding="utf-8"))
         if not _function_reaches_call(
@@ -166,7 +188,7 @@ def test_minimax_native_step_functions_stay_jitted() -> None:
 
 
 def test_retired_guided_checkpoint_runtime_apis_stay_deleted() -> None:
-    module_path = REPO_ROOT / "src" / "rlrmp" / "train" / "distillation_native" / "guided.py"
+    module_path = REPO_ROOT / "src" / "rlrmp" / "train" / "distillation_native" / "guided_kernel.py"
     tree = ast.parse(module_path.read_text(encoding="utf-8"))
     definitions = {
         node.name
@@ -180,7 +202,7 @@ def test_retired_guided_checkpoint_runtime_apis_stay_deleted() -> None:
 
 
 def test_minimax_checkpoint_slots_are_executor_owned() -> None:
-    minimax_path = REPO_ROOT / "src" / "rlrmp" / "train" / "minimax_native" / "authoring.py"
+    minimax_path = REPO_ROOT / "src" / "rlrmp" / "train" / "minimax_native" / "method.py"
     slots_path = REPO_ROOT / "src" / "rlrmp" / "train" / "executor" / "slots.py"
     minimax_tree = ast.parse(minimax_path.read_text(encoding="utf-8"))
     slots_tree = ast.parse(slots_path.read_text(encoding="utf-8"))
@@ -197,40 +219,70 @@ def test_minimax_checkpoint_slots_are_executor_owned() -> None:
     assert "CheckpointSlotSpec" not in _module_call_names(minimax_tree)
 
 
-def test_pre_native_entry_modules_stay_thin_and_runtime_free() -> None:
-    facades = {
-        Path("src/rlrmp/train/minimax.py"): "rlrmp.train.minimax_native",
-        Path("src/rlrmp/train/guided_distillation.py"): ("rlrmp.train.distillation_native.guided"),
-        Path("src/rlrmp/train/closed_loop_distillation.py"): (
-            "rlrmp.train.distillation_native.closed_loop"
-        ),
+def test_pre_native_trainer_modules_are_deleted_not_reexported() -> None:
+    revived = sorted(str(path) for path in RETIRED_TRAINER_MODULES if (REPO_ROOT / path).exists())
+    assert not revived, "Retired trainer module(s) reappeared: " + ", ".join(revived)
+
+
+def test_native_packages_do_not_hide_relocated_authoring_or_writer_bodies() -> None:
+    caps = {
+        Path("src/rlrmp/train/minimax_native/method.py"): 900,
+        Path("src/rlrmp/train/distillation_native/guided_kernel.py"): 600,
+        Path("src/rlrmp/train/distillation_native/closed_loop_kernel.py"): 525,
     }
     findings: list[str] = []
-    for rel_path, owner in facades.items():
-        path = REPO_ROOT / rel_path
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        definitions = [
+    for rel_path, line_cap in caps.items():
+        text = (REPO_ROOT / rel_path).read_text(encoding="utf-8")
+        tree = ast.parse(text)
+        definitions = {
             node.name
-            for node in tree.body
+            for node in ast.walk(tree)
             if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
-        ]
-        imported_from = {
+        }
+        for name in sorted(definitions & RETIRED_RUNTIME_DEFINITIONS):
+            findings.append(f"{rel_path}:{name}")
+        if len(text.splitlines()) > line_cap:
+            findings.append(f"{rel_path}:exceeds_{line_cap}_line_cap")
+    assert not findings, "Retired runtime/authoring body moved under native package: " + ", ".join(
+        findings
+    )
+
+
+def test_distillation_kernel_dependency_is_acyclic() -> None:
+    kernel_paths = (
+        Path("src/rlrmp/train/distillation_native/guided_kernel.py"),
+        Path("src/rlrmp/train/distillation_native/closed_loop_kernel.py"),
+    )
+    findings: list[str] = []
+    for rel_path in kernel_paths:
+        tree = ast.parse((REPO_ROOT / rel_path).read_text(encoding="utf-8"))
+        imported = {
             node.module
-            for node in tree.body
+            for node in ast.walk(tree)
             if isinstance(node, ast.ImportFrom) and node.module is not None
         }
-        if definitions:
-            findings.append(f"{rel_path}:definitions={definitions}")
-        if imported_from != {owner}:
-            findings.append(f"{rel_path}:imports={sorted(imported_from)}")
-        if len(path.read_text(encoding="utf-8").splitlines()) >= 100:
-            findings.append(f"{rel_path}:not_thin")
+        if "rlrmp.train.distillation_native.executor" in imported:
+            findings.append(f"{rel_path}:imports_executor")
+    assert not findings, "Distillation kernel/executor cycle reappeared: " + ", ".join(findings)
 
-    retired = REPO_ROOT / "src" / "rlrmp" / "train" / "distillation.py"
-    if retired.exists():
-        findings.append("src/rlrmp/train/distillation.py:still_exists")
 
-    assert not findings, "Pre-native trainer surface reappeared: " + ", ".join(findings)
+def test_train_minimax_contains_no_script_local_checkpoint_or_optimizer_runtime() -> None:
+    path = REPO_ROOT / "scripts" / "train_minimax.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    definitions = {
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
+    }
+    forbidden = {
+        "_save_adversarial_checkpoint",
+        "_load_adversarial_checkpoint",
+        "_write_warmup_boundary_checkpoint",
+        "_write_final_minimax_custody_transaction",
+        "_eval_trials_streaming",
+    }
+    assert not definitions & forbidden
+    assert len(path.read_text(encoding="utf-8").splitlines()) < 160
 
 
 def test_native_executor_deletion_gate_negative_canary_flags_optimizer_loop() -> None:

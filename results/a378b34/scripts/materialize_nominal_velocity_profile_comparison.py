@@ -16,7 +16,7 @@ import plotly.graph_objects as go
 
 import rlrmp.analysis  # noqa: F401 - registers analysis/task surfaces used by setup.
 from rlrmp.io import update_marked_section
-from rlrmp.train.distillation_native.closed_loop import (
+from rlrmp.train.distillation_native.closed_loop_kernel import (
     ExtLQGClosedLoopReference,
     _initial_vector,
     _target_position,

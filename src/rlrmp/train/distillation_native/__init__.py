@@ -9,12 +9,9 @@ from rlrmp.train.distillation_native.executor import (
     DistillationExternalObjectiveLoss,
     DistillationExternalObjectiveLossService,
     GuidedNativeRuntime,
-    _closed_loop_training_chunk,
-    _guided_training_chunk,
     build_distillation_native_initial_slots,
     distillation_update_kernels,
     execute_distillation_training_run_spec_native,
-    guided_distillation_train_step,
     native_distillation_model_from_slot,
 )
 from rlrmp.train.distillation_native.losses import (

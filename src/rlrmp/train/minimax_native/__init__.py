@@ -1,24 +1,21 @@
-"""Canonical minimax authoring, execution, and kernel capability."""
+"""Canonical minimax method contract, execution, and numerical kernels."""
 
 # ruff: noqa: F401
 
 from importlib import import_module
 from typing import Any
 
-from rlrmp.train.minimax_native.authoring import (
+from rlrmp.train.minimax_native.method import (
     MINIMAX_METHOD_PAYLOAD_SCHEMA_ID,
     MINIMAX_METHOD_PAYLOAD_SCHEMA_VERSION,
     MINIMAX_METHOD_REF,
     MinimaxConfig,
     MinimaxMethodPayload,
-    _minimax_method_payload,
     build_hps,
     build_minimax_native_initial_slots,
     build_minimax_training_run_spec,
     ensure_minimax_training_method_registered,
     execute_minimax_training_run_spec_native,
-    legacy_cli_args_to_minimax_config,
-    minimax_config_namespace,
     minimax_effective_phase_fingerprint,
     minimax_effective_phase_spec,
     minimax_method_contract,
@@ -89,8 +86,6 @@ __all__ = [
     "build_minimax_training_run_spec",
     "ensure_minimax_training_method_registered",
     "execute_minimax_training_run_spec_native",
-    "legacy_cli_args_to_minimax_config",
-    "minimax_config_namespace",
     "minimax_effective_phase_fingerprint",
     "minimax_effective_phase_spec",
     "minimax_guard_predicates",

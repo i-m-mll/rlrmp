@@ -1,207 +1,76 @@
-"""Tests for the closed-loop extLQG distillation preflight surface."""
+"""Generated-config entry tests for native closed-loop distillation."""
 
 from __future__ import annotations
 
-import argparse
-import json
-from pathlib import Path
+import importlib.util
 
 import jax.numpy as jnp
 import pytest
 
-from rlrmp.runtime.training_run_specs import MissingTrainingRunSpecFieldError
-from rlrmp.train.distillation_native import closed_loop as closed_loop_distillation
+from rlrmp.train.config_cli import build_config_parser, parse_config
+from rlrmp.train.distillation_entry import (
+    load_distillation_run_spec,
+    run_distillation_config,
+)
+from rlrmp.train.distillation_native import closed_loop_kernel
+from rlrmp.train.training_configs import ClosedLoopDistillationConfig
 
 
-def _default_spec_args(**overrides) -> argparse.Namespace:
-    values = {
-        "run_id": closed_loop_distillation.RUN_ID,
-        "run_spec_output": closed_loop_distillation.DEFAULT_SPEC_PATH,
-        "output_dir": closed_loop_distillation.DEFAULT_OUTPUT_DIR,
-        "teacher_package": closed_loop_distillation.DEFAULT_TEACHER_PACKAGE,
-        "teacher_gains_key": closed_loop_distillation.DEFAULT_TEACHER_GAINS_KEY,
-        "seed": 0,
-        "n_replicates": 5,
-        "hidden_size": 180,
-        "batch_size": 64,
-        "n_batches": 12000,
-        "controller_lr": 3e-3,
-        "lr_warmup_batches": 500,
-        "lr_cosine_alpha": 0.01,
-        "gradient_clip_norm": 5.0,
-        "trainable_dtype": closed_loop_distillation.DEFAULT_TRAINABLE_DTYPE,
-        "kinematics_trajectory_weight": 1.0,
-        "velocity_weight": 1.0,
-        "endpoint_weight": 0.0,
-        "settling_weight": 0.0,
-        "action_force_weight": 1.0,
-        "perturbation_response_weight": 1.0,
-        "input_output_jvp_weight": 0.25,
-        "task_rollout_loss_weight": 0.0,
-        "checkpoint_interval_batches": 500,
-    }
-    values.update(overrides)
-    return argparse.Namespace(**values)
-
-
-def _toy_reference() -> closed_loop_distillation.ExtLQGClosedLoopReference:
-    plant_a = jnp.eye(6, dtype=jnp.float32)
-    plant_b = jnp.zeros((6, 2), dtype=jnp.float32)
-    gains = jnp.zeros((3, 2, 6), dtype=jnp.float32)
-    observation = jnp.eye(6, dtype=jnp.float32)
-    return closed_loop_distillation.ExtLQGClosedLoopReference(
-        plant_a=plant_a,
-        plant_b=plant_b,
-        controller_gains=gains,
-        observation_matrix=observation,
-        feedback_gains=gains,
-        state_dim=6,
+def test_closed_loop_cli_is_generated_from_config_model() -> None:
+    parser = build_config_parser(
+        ClosedLoopDistillationConfig,
+        description="test closed-loop distillation",
     )
+    options = {option for action in parser._actions for option in action.option_strings}
+    for name in ClosedLoopDistillationConfig.model_fields:
+        assert f"--{name.replace('_', '-')}" in options
 
-
-def test_closed_loop_distillation_builds_a378b34_contract() -> None:
-    spec = closed_loop_distillation.build_closed_loop_distillation_spec(_default_spec_args())
-
-    closed_loop_distillation.validate_run_spec(spec)
-    assert spec["issue"] == "a378b34"
-    assert spec["run_id"] == "h0_extlqg_6d_closed_loop_distillation"
-    assert spec["user_confirmed"] is False
-    assert spec["artifact_output_dir"] == (
-        "_artifacts/a378b34/runs/h0_extlqg_6d_closed_loop_distillation"
+    config = parse_config(
+        ClosedLoopDistillationConfig,
+        ["--n-batches", "3", "--batch-size", "2", "--dry-run"],
+        description="test closed-loop distillation",
     )
-    assert spec["training_entry"]["script"] == "scripts/train_closed_loop_distillation.py"
-    assert spec["training_entry"]["full_train_status"] == (
-        "implemented_no_launch_pending_user_approval"
+    assert isinstance(config, ClosedLoopDistillationConfig)
+    assert config.n_batches == 3
+    assert config.batch_size == 2
+    assert config.dry_run is True
+
+
+def test_closed_loop_typed_config_loads_and_refreshes_tracked_native_spec() -> None:
+    config = ClosedLoopDistillationConfig(n_batches=3, batch_size=2, n_replicates=1)
+    spec = load_distillation_run_spec(config, method="closed_loop_distillation")
+
+    assert spec["student_contract"]["n_train_batches"] == 3
+    assert spec["student_contract"]["batch_size"] == 2
+    assert spec["student_contract"]["n_replicates"] == 1
+    assert spec["training_entry"]["module"] == "rlrmp.train.distillation_entry"
+    assert spec["schema_version"] == "rlrmp.closed_loop_distillation.training_entry.v2"
+
+
+def test_closed_loop_reference_math_remains_a_distinct_kernel() -> None:
+    reference = closed_loop_kernel.ExtLQGClosedLoopReference(
+        plant_a=jnp.eye(2),
+        plant_b=jnp.eye(2),
+        controller_gains=jnp.zeros((2, 2, 2)),
+        observation_matrix=jnp.eye(2),
+        feedback_gains=jnp.zeros((2, 2, 2)),
+        state_dim=2,
     )
-    assert "execute_distillation_training_run_spec_native" in spec["training_entry"]["trainer_path"]
-    assert spec["teacher_contract"]["teacher_package"] == (
-        "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers.npz"
-    )
-    assert spec["teacher_contract"]["teacher_gains_key"] == "extlqg_controller_gains"
-    assert spec["student_contract"]["setup_function"] == (
-        "rlrmp.train.task_model.setup_task_model_pair"
-    )
-    assert spec["student_contract"]["controller_input_dim"] == 6
-    assert spec["student_contract"]["force_filter_feedback"] is True
-    assert spec["student_contract"]["initial_hidden_encoder"] is True
-    assert spec["student_contract"]["hidden_size"] == 180
-    assert spec["student_contract"]["n_replicates"] == 5
-    assert spec["student_contract"]["batch_size"] == 64
-    assert spec["student_contract"]["controller_lr"] == pytest.approx(3e-3)
-    assert spec["student_contract"]["lr_cosine_alpha"] == pytest.approx(0.01)
-    assert spec["student_contract"]["gradient_clip_norm"] == pytest.approx(5.0)
-    assert spec["student_contract"]["broad_epsilon_pgd_training"] is False
-    assert spec["student_contract"]["trainable_dtype"] == "float32"
-    assert spec["closed_loop_semantics"]["student_actions_feed_future_observations"] is True
-    assert spec["closed_loop_semantics"]["teacher_forced_feedback_bank_imitation"] is False
-    assert spec["closed_loop_semantics"]["old_guided_trainer_is_main_path"] is False
-    assert spec["loss_surface"]["weights"]["task_qr_rollout"] == 0.0
-    assert spec["loss_surface"]["weights"]["endpoint"] == 0.0
-    assert spec["loss_surface"]["weights"]["settling"] == 0.0
-    assert spec["loss_surface"]["task_qr_rollout_loss_can_be_enabled_later"] is True
-    assert spec["execution_target"]["billable_launch_authorized"] is False
-    assert spec["checkpointing"]["interval_batches"] == 500
-    assert spec["locked_spec_summary"]["n_batches"] == 12000
-    assert spec["loss_surface"]["components"]["directional_input_output_jvp"]["basis"] == (
-        "full_6d_coordinate_basis"
-    )
-    assert spec["loss_surface"]["components"]["directional_input_output_jvp"]["jacobian_shape"] == [
-        2,
-        6,
-    ]
-    assert (
-        "full local 2x6 feedback-to-action Jacobian"
-        in (spec["loss_surface"]["components"]["directional_input_output_jvp"]["implementation"])
-    )
-
-
-def test_closed_loop_distillation_cli_dry_run_smoke(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    spec_path = tmp_path / "run.json"
-
-    status = closed_loop_distillation.main(
-        [
-            "--run-spec-output",
-            str(spec_path),
-            "--write-run-spec",
-            "--dry-run",
-            "--smoke-preflight",
-        ]
-    )
-
-    payload = json.loads(capsys.readouterr().out)
-    written = json.loads(spec_path.read_text(encoding="utf-8"))
-    assert status == 0
-    assert payload["run_spec"]["issue"] == "a378b34"
-    assert payload["smoke_preflight"]["finite"] is True
-    assert payload["smoke_preflight"]["implementation"] == "full_local_jacobian_basis_jvp_vmap"
-    assert payload["smoke_preflight"]["shape"] == [6, 2, 1, 2]
-    assert written["run_id"] == "h0_extlqg_6d_closed_loop_distillation"
-
-
-def test_closed_loop_distillation_legacy_injected_runtime_is_retired() -> None:
-    assert not hasattr(closed_loop_distillation, "run_closed_loop_distillation_training")
-
-
-def test_extlqg_reference_rollout_matches_shared_shapes() -> None:
-    reference = _toy_reference()
-    initial_vector = jnp.asarray([[0.0, 0.0, 0.1, 0.0, 0.2, 0.0]], dtype=jnp.float32)
-    target_pos = jnp.asarray([[0.15, 0.0]], dtype=jnp.float32)
-
     rollout = reference.rollout(
-        initial_vector=initial_vector,
-        target_pos=target_pos,
-        n_steps=3,
+        initial_vector=jnp.zeros((1, 2)),
+        target_pos=jnp.zeros((1, 2)),
+        n_steps=2,
     )
-
-    assert rollout["position"].shape == (1, 3, 2)
-    assert rollout["velocity"].shape == (1, 3, 2)
-    assert rollout["force_filter"].shape == (1, 3, 2)
-    assert rollout["action"].shape == (1, 3, 2)
+    assert rollout["position"].shape == (1, 2, 2)
+    assert rollout["action"].shape == (1, 2, 2)
 
 
-def test_closed_loop_distillation_full_train_requires_approval() -> None:
-    spec = closed_loop_distillation.build_closed_loop_distillation_spec(_default_spec_args())
-    args = closed_loop_distillation._build_parser().parse_args([])
+def test_closed_loop_full_train_requires_both_confirmation_flags() -> None:
+    config = ClosedLoopDistillationConfig(full_train=True)
 
-    with pytest.raises(closed_loop_distillation.FullTrainingApprovalRequiredError) as exc:
-        closed_loop_distillation.run_closed_loop_distillation_training_native(
-            spec=spec,
-            args=args,
-        )
-
-    message = str(exc.value)
-    assert "requires explicit user launch approval" in message
+    with pytest.raises(PermissionError, match="requires both"):
+        run_distillation_config(config, method="closed_loop_distillation")
 
 
-def test_closed_loop_distillation_cli_full_train_returns_approval_guard(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    spec_path = tmp_path / "run.json"
-    spec = closed_loop_distillation.build_closed_loop_distillation_spec(
-        _default_spec_args(run_spec_output=spec_path)
-    )
-    closed_loop_distillation.write_run_spec(spec_path, spec)
-
-    status = closed_loop_distillation.main(["--run-spec", str(spec_path), "--full-train"])
-
-    payload = json.loads(capsys.readouterr().out)
-    assert status == 2
-    assert payload["error"] == "full_training_requires_user_approval"
-    assert payload["run_spec"]["run_id"] == "h0_extlqg_6d_closed_loop_distillation"
-    assert "No Feedbax hook blocker" in payload["message"]
-
-
-def test_tracked_a378b34_run_spec_fails_closed_without_horizon() -> None:
-    spec_path = closed_loop_distillation.DEFAULT_SPEC_PATH
-    spec = json.loads(spec_path.read_text(encoding="utf-8"))
-
-    with pytest.raises(MissingTrainingRunSpecFieldError, match="teacher_contract.horizon"):
-        closed_loop_distillation.validate_run_spec(spec)
-    assert spec["expected_artifacts"]["tracked_run_spec"] == str(spec_path)
-    assert spec["expected_artifacts"]["bulk_output_dir"] == (
-        "_artifacts/a378b34/runs/h0_extlqg_6d_closed_loop_distillation"
-    )
+def test_retired_closed_loop_public_module_is_absent() -> None:
+    assert importlib.util.find_spec("rlrmp.train.closed_loop_distillation") is None

@@ -1712,11 +1712,11 @@ def _distillation_setup_function(run_spec: dict[str, Any], *, method: str) -> st
 def _distillation_runner(run_spec: dict[str, Any], *, method: str) -> str:
     entry = _mapping(run_spec, "training_entry")
     if method == "closed_loop_distillation":
-        return str(entry.get("module", "rlrmp.train.closed_loop_distillation"))
+        return str(entry.get("module", "rlrmp.train.distillation_entry"))
     return str(
         entry.get(
             "trainer",
-            "rlrmp.train.distillation_native.guided.run_guided_distillation_training",
+            "rlrmp.train.distillation_entry.run_distillation_config",
         )
     )
 

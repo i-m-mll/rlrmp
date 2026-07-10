@@ -39,7 +39,7 @@ from rlrmp.eval.minimax_io import (
     normalize_loaded_minimax_runtime,
 )
 from rlrmp.train.task_model import setup_task_model_pair
-from rlrmp.train.minimax import build_hps
+from rlrmp.train.minimax_native import build_hps
 
 
 LEGACY_EXECUTION_BACKEND = "rlrmp.legacy_simple_feedback_compat"
@@ -51,7 +51,7 @@ _LEGACY_ARRAY_STORE_SCHEMA_VERSION = "feedbax.array_store.v1"
 # Frozen fallback defaults for reconstructing historical (pre-migration) run
 # specs (issue b41c940). This dict is pinned to the CLI defaults in effect
 # when those runs launched and must NOT be kept in sync with live
-# MINIMAX_CONFIG_DEFAULTS in rlrmp.train.minimax. The two are allowed to
+# MINIMAX_CONFIG_DEFAULTS in rlrmp.train.minimax_native. The two are allowed to
 # diverge on keys whose live defaults changed after those runs were recorded.
 # See tests/test_artifact_migration.py for the allowlisted drift guard.
 _DEFAULT_MINIMAX_ARGS: dict[str, Any] = {
