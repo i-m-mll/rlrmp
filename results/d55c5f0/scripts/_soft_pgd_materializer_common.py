@@ -1,11 +1,11 @@
 """Shared constants and guarded c92-loader helpers for d55 soft-PGD materializers."""
 
 from __future__ import annotations
+from rlrmp.paths import portable_repo_path
 
 import importlib.util
 import sys
 from dataclasses import dataclass
-from pathlib import Path
 from types import ModuleType
 
 from rlrmp.paths import REPO_ROOT
@@ -95,7 +95,4 @@ def load_c92_module(module_name: str, filename: str) -> ModuleType:
     return module
 
 
-def repo_rel(path: Path) -> str:
-    """Return a repository-relative path."""
-
-    return str(path.relative_to(REPO_ROOT))
+repo_rel = portable_repo_path

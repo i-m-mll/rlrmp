@@ -1,6 +1,10 @@
 """Materialize nominal velocity profiles for 91a090c wave-1 checkpoints."""
 
 from __future__ import annotations
+from rlrmp.viz.figures import materialize_analytical_profiles
+from rlrmp.eval.kinematics import initial_effector_velocity
+from rlrmp.io import json_ready
+from rlrmp.paths import portable_repo_path
 
 # ruff: noqa: E402
 
@@ -24,24 +28,6 @@ import rlrmp
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 from feedbax.plot import save_figure
 
-from rlrmp.analysis.math.cs_game_card import (
-    OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
-    build_no_integrator_game,
-)
-from rlrmp.analysis.math.cs_released_simulation import (
-    build_extlqg_comparator_path,
-    default_cs_noise_covariances,
-    sample_forward_noise_draws,
-    simulate_lqg_released_forward,
-    simulate_robust_released_forward,
-)
-from rlrmp.analysis.math.hinf_riccati import find_gamma_star, solve_hinf_riccati, solve_lqr
-from rlrmp.analysis.math.output_feedback import (
-    OutputFeedbackConfig,
-    make_cs_output_feedback_initial_state,
-    robust_estimator_covariances,
-    robust_output_feedback_gains,
-)
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
 from rlrmp.analysis.pipelines.gru_pilot_figures import (
     DEFAULT_N_ROLLOUT_TRIALS,
@@ -293,122 +279,6 @@ def evaluate_gru_checkpoint_profile(spec: CheckpointSpec) -> Profile:
     )
 
 
-def materialize_analytical_profiles(*, n_samples: int) -> tuple[Profile, Profile]:
-    """Build 6D extLQG and H-infinity nominal profiles with common random draws."""
-
-    plant, schedule = build_no_integrator_game()
-    config = OutputFeedbackConfig(n_phys=6)
-    gamma_star = find_gamma_star(plant, schedule)
-    lqr_solution = solve_lqr(plant, schedule)
-    hinf_solution = solve_hinf_riccati(
-        plant,
-        schedule,
-        OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR * gamma_star,
-    )
-    x0 = make_cs_output_feedback_initial_state(plant, config)
-    covariances = default_cs_noise_covariances(plant, config)
-    extlqg_path = build_extlqg_comparator_path(
-        plant,
-        lqr_solution.K,
-        covariances,
-        schedule=schedule,
-        config=config,
-    )
-    robust_covariances = robust_estimator_covariances(
-        plant,
-        schedule,
-        hinf_solution.gamma,
-        config,
-    )
-    robust_gains = robust_output_feedback_gains(
-        plant,
-        schedule,
-        hinf_solution,
-        robust_covariances,
-        config,
-    )
-
-    extlqg_rollouts = []
-    hinf_rollouts = []
-    for key in jr.split(jr.PRNGKey(ANALYTICAL_SEED), n_samples):
-        draws = sample_forward_noise_draws(key, T=schedule.T, covariances=covariances)
-        extlqg_rollouts.append(
-            simulate_lqg_released_forward(
-                plant,
-                extlqg_path.controller_gains,
-                x0,
-                draws=draws,
-                covariances=covariances,
-                estimator_gains=extlqg_path.estimator_gains,
-                config=config,
-            )
-        )
-        hinf_rollouts.append(
-            simulate_robust_released_forward(
-                plant,
-                schedule,
-                hinf_solution,
-                x0,
-                draws=draws,
-                covariances=covariances,
-                gains=robust_gains,
-                config=config,
-            )
-        )
-
-    vel_lo, _vel_hi = plant.vel_slice
-    extlqg_forward = np.stack(
-        [np.asarray(rollout.x[:, vel_lo], dtype=np.float64) for rollout in extlqg_rollouts],
-        axis=0,
-    )
-    hinf_forward = np.stack(
-        [np.asarray(rollout.x[:, vel_lo], dtype=np.float64) for rollout in hinf_rollouts],
-        axis=0,
-    )
-    time_s = np.arange(schedule.T + 1, dtype=np.float64) * float(plant.dt)
-    return (
-        Profile(
-            row="analytical",
-            label="6D analytical extLQG nominal",
-            kind="analytical_extlqg_6d_output_feedback",
-            time_s=time_s,
-            mean=np.mean(extlqg_forward, axis=0),
-            std=np.std(extlqg_forward, axis=0),
-            n_samples=n_samples,
-            source="rlrmp.analysis.math.cs_released_simulation",
-            line_color="#111827",
-            line_dash="dash",
-            terminal_position_error_m=float(
-                np.mean([rollout.terminal_position_error for rollout in extlqg_rollouts])
-            ),
-            endpoint_spread_m=float(
-                np.std([rollout.terminal_position_error for rollout in extlqg_rollouts])
-            ),
-            parity_status=extlqg_path.parity_status,
-        ),
-        Profile(
-            row="analytical",
-            label="6D output-feedback H-infinity nominal",
-            kind="analytical_hinf_6d_output_feedback",
-            time_s=time_s,
-            mean=np.mean(hinf_forward, axis=0),
-            std=np.std(hinf_forward, axis=0),
-            n_samples=n_samples,
-            source="rlrmp.analysis.math.cs_released_simulation",
-            line_color="#dc2626",
-            line_dash="dot",
-            terminal_position_error_m=float(
-                np.mean([rollout.terminal_position_error for rollout in hinf_rollouts])
-            ),
-            endpoint_spread_m=float(
-                np.std([rollout.terminal_position_error for rollout in hinf_rollouts])
-            ),
-            parity_status=(
-                "6D no-integrator output-feedback robust estimator/controller; "
-                f"gamma_factor={OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR:g}"
-            ),
-        ),
-    )
 
 
 def make_plotly_figure(profiles_by_row: dict[str, tuple[Profile, ...]]) -> go.Figure:
@@ -733,17 +603,6 @@ def final_goal_position(trial_specs: Any) -> jnp.ndarray:
     return target[:, -1, :]
 
 
-def initial_effector_velocity(trial_specs: Any) -> jnp.ndarray:
-    """Return the trial initial effector velocity array."""
-
-    for init_state in trial_specs.inits.values():
-        velocity = getattr(init_state, "vel", None)
-        if velocity is not None:
-            return velocity
-        shape = getattr(init_state, "shape", None)
-        if shape is not None and len(shape) >= 1 and shape[-1] >= 4:
-            return jnp.asarray(init_state)[..., 2:4]
-    raise ValueError("Trial spec does not include an effector velocity initial state")
 
 
 def is_replicate_array(leaf: Any, n_replicates: int) -> bool:
@@ -752,10 +611,7 @@ def is_replicate_array(leaf: Any, n_replicates: int) -> bool:
     return eqx.is_array(leaf) and leaf.ndim >= 1 and leaf.shape[0] == n_replicates
 
 
-def repo_ref(path: Path) -> str:
-    """Return a repo-relative path string."""
-
-    return str(path.relative_to(REPO_ROOT))
+repo_ref = portable_repo_path
 
 
 def require_path(path: Any) -> Path:
@@ -786,18 +642,7 @@ def format_optional_float(value: float | None) -> str:
     return f"{value:.6g}"
 
 
-def json_ready(value: Any) -> Any:
-    """Convert paths and NumPy scalars for JSON output."""
-
-    if isinstance(value, Path):
-        return str(value)
-    if isinstance(value, np.generic):
-        return value.item()
-    if isinstance(value, dict):
-        return {str(key): json_ready(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [json_ready(item) for item in value]
-    return value
+json_ready = json_ready
 
 
 if __name__ == "__main__":

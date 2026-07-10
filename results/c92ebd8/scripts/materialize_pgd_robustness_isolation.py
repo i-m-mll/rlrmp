@@ -3,6 +3,7 @@
 # ruff: noqa: E402
 
 from __future__ import annotations
+from rlrmp.io import write_csv_rows
 
 import csv
 import json
@@ -1184,25 +1185,9 @@ def write_summary_csv(path: Path, summary: Mapping[str, Any]) -> None:
 
 
 def write_reach_csv(path: Path, rows: Sequence[Mapping[str, Any]]) -> None:
-    """Write matched reach-context family rows."""
-
-    fields = (
-        "experiment",
-        "physical_level",
-        "training_key",
-        "training_label",
-        "run_id",
-        "group_key",
-        "family",
-        "status",
-        "auc_dx_mm_s",
-        "peak_dx_over_open_loop",
-    )
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({field: row.get(field) for field in fields})
+    fields = ('experiment', 'physical_level', 'training_key', 'training_label', 'run_id', 'group_key', 'family', 'status', 'auc_dx_mm_s', 'peak_dx_over_open_loop')
+    selected = [{field: row.get(field) for field in fields} for row in rows]
+    write_csv_rows(path, selected, fieldnames=fields)
 
 
 def mean_available(rows: Sequence[Mapping[str, Any]], key: str) -> float | None:

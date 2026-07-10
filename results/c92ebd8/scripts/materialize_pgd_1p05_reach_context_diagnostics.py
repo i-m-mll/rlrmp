@@ -1,8 +1,9 @@
 """Materialize PGD 1.05 reach-context feedback and robustness diagnostics."""
 
 from __future__ import annotations
+from rlrmp.io import write_csv_rows
+from rlrmp.paths import portable_repo_path
 
-import csv
 import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -458,25 +459,8 @@ def interpret_rows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
 
 
 def write_csv(rows: Sequence[Mapping[str, Any]]) -> None:
-    """Write the compact comparison table as CSV."""
-
-    fields = [
-        "row",
-        "training_condition",
-        "physical_level",
-        "peak_velocity_m_s",
-        "fb_delta_u",
-        "ablation_idx",
-        "sensory_auc_dx_mm_s",
-        "non_sensory_auc_dx_mm_s",
-        "peak_dx_over_open_loop",
-        "formal_hinf_claim",
-    ]
-    with SUMMARY_CSV.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({field: row[field] for field in fields})
+    fields = ['row', 'training_condition', 'physical_level', 'peak_velocity_m_s', 'fb_delta_u', 'ablation_idx', 'sensory_auc_dx_mm_s', 'non_sensory_auc_dx_mm_s', 'peak_dx_over_open_loop', 'formal_hinf_claim']
+    write_csv_rows(SUMMARY_CSV, list(rows), fieldnames=fields)
 
 
 def render_markdown(summary: Mapping[str, Any]) -> str:
@@ -538,10 +522,7 @@ def run_label(run_id: str) -> str:
     return f"{TRAINING_CONDITIONS[run_id]} / {PHYSICAL_LEVELS[run_id]}"
 
 
-def repo_rel(path: Path) -> str:
-    """Return a repo-relative path."""
-
-    return str(path.relative_to(REPO_ROOT))
+repo_rel = portable_repo_path
 
 
 def load_json(path: Path) -> Any:
