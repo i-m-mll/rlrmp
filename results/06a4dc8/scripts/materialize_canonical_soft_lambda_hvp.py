@@ -1,13 +1,11 @@
 """Materialize canonical HVP/Lanczos soft-lambda estimates for 06a4dc8."""
 
 from __future__ import annotations
-from rlrmp.analysis.soft_lambda import base_parser
+from rlrmp.analysis.soft_lambda import base_parser, run_soft_lambda_materializer
 from rlrmp.analysis.soft_lambda import load_frozen_batch as _load_frozen_batch
 from rlrmp.analysis.soft_lambda import soft_pgd_config as soft_pgd_config
 
 import argparse
-import csv
-import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,7 +19,6 @@ import jax.tree as jt
 import numpy as np
 from feedbax.config.namespace import TreeNamespace
 
-from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.train import cs_nominal_gru as nominal
 from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
@@ -33,6 +30,7 @@ from rlrmp.train.cs_perturbation_training import (
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RUN_IDS = ("open_loop_small", "open_loop_moderate", "open_loop_stress")
 BETA_VALUES = (0.95, 1.05, 1.2, 1.4, 1.8)
+CSV_FIELDS = ('run_id', 'trial_index', 'zero_loss', 'gradient_norm', 'radius', 'active_dimension', 'eigmax_largest_algebraic', 'lambda_star', 'hvp_evaluations', 'lanczos_residual_norm_estimate')
 FINITE_DIFFERENCE_STEPS = (1e-7, 3e-7, 1e-6, 3e-6, 1e-5, 3e-5)
 PRIMARY_PERCENTILE = 90.0
 CAP_RADIUS_15CM = 0.004545500088363065
@@ -64,42 +62,43 @@ class LanczosEstimate:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = base_parser(description='Estimate corrected per-trial soft lambda_star for c92 no-PGD frozen substrates using Hessian-vector products and Lanczos.', experiment='c92ebd8', issue='06a4dc8', batch_size=8, replicate_index=0)
-    parser.add_argument('--run-ids', nargs='+', default=list(RUN_IDS))
-    parser.add_argument('--max-trials-per-run', type=int, default=None)
-    parser.add_argument('--lanczos-steps', type=int, default=12)
-    parser.add_argument('--lanczos-seed', type=int, default=60931)
-    parser.add_argument('--fd-trial-limit', type=int, default=1)
-    parser.add_argument('--fd-steps', type=float, nargs='+', default=list(FINITE_DIFFERENCE_STEPS))
-    parser.add_argument('--betas', type=float, nargs='+', default=list(BETA_VALUES))
-    parser.add_argument('--analytic-gamma-star', type=float, default=ANALYTIC_GAMMA_STAR)
-    parser.add_argument('--output-json', default='results/06a4dc8/canonical_soft_lambda_hvp.json')
-    parser.add_argument('--output-csv', default='results/06a4dc8/canonical_soft_lambda_hvp_trials.csv')
-    parser.add_argument('--output-md', default='results/06a4dc8/notes/canonical_soft_lambda_hvp.md')
+    parser = base_parser(
+        description="Estimate corrected per-trial soft lambda_star for c92 no-PGD frozen substrates using Hessian-vector products and Lanczos.",
+        experiment="c92ebd8",
+        issue="06a4dc8",
+        batch_size=8,
+        replicate_index=0,
+    )
+    parser.add_argument("--run-ids", nargs="+", default=list(RUN_IDS))
+    parser.add_argument("--max-trials-per-run", type=int, default=None)
+    parser.add_argument("--lanczos-steps", type=int, default=12)
+    parser.add_argument("--lanczos-seed", type=int, default=60931)
+    parser.add_argument("--fd-trial-limit", type=int, default=1)
+    parser.add_argument("--fd-steps", type=float, nargs="+", default=list(FINITE_DIFFERENCE_STEPS))
+    parser.add_argument("--betas", type=float, nargs="+", default=list(BETA_VALUES))
+    parser.add_argument("--analytic-gamma-star", type=float, default=ANALYTIC_GAMMA_STAR)
+    parser.add_argument("--output-json", default="results/06a4dc8/canonical_soft_lambda_hvp.json")
+    parser.add_argument(
+        "--output-csv", default="results/06a4dc8/canonical_soft_lambda_hvp_trials.csv"
+    )
+    parser.add_argument("--output-md", default="results/06a4dc8/notes/canonical_soft_lambda_hvp.md")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    payload = materialize(args)
-    output_json = REPO_ROOT / args.output_json
-    output_csv = REPO_ROOT / args.output_csv
-    output_md = REPO_ROOT / args.output_md
-    write_compact_json(output_json, payload)
-    write_trial_csv(output_csv, payload)
-    update_marked_section(output_md, "canonical_soft_lambda_hvp", render_markdown(payload))
-    print(
-        json.dumps(
-            {
-                "json": str(output_json),
-                "csv": str(output_csv),
-                "markdown": str(output_md),
-                "primary_p90_lambda_star": payload["pooled_summary"]["lambda_star_p90"],
-            },
-            indent=2,
-        )
+    return run_soft_lambda_materializer(
+        args=args,
+        repo_root=REPO_ROOT,
+        materialize=materialize,
+        csv_rows=_trial_csv_rows,
+        csv_fields=CSV_FIELDS,
+        render_markdown=render_markdown,
+        marker="canonical_soft_lambda_hvp",
+        extra_summary=lambda payload: {
+            "primary_p90_lambda_star": payload["pooled_summary"]["lambda_star_p90"]
+        },
     )
-    return 0
 
 
 def materialize(args: argparse.Namespace) -> dict[str, Any]:
@@ -191,8 +190,6 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
 
 def load_frozen_batch(args: argparse.Namespace, run_id: str) -> FrozenBatch:
     return _load_frozen_batch(args, run_id, repo_root=REPO_ROOT)
-
-
 
 
 def select_replicate_model(model: Any, hps: TreeNamespace, replicate_index: int) -> Any:
@@ -471,44 +468,16 @@ def analytic_gamma_comparison(lambda_star: float, gamma_star: float) -> dict[str
     }
 
 
-def write_trial_csv(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(
-            handle,
-            fieldnames=[
-                "run_id",
-                "trial_index",
-                "zero_loss",
-                "gradient_norm",
-                "radius",
-                "active_dimension",
-                "eigmax_largest_algebraic",
-                "lambda_star",
-                "hvp_evaluations",
-                "lanczos_residual_norm_estimate",
-            ],
-            lineterminator="\n",
-        )
-        writer.writeheader()
-        for row in payload["rows"]:
-            for trial in row["trials"]:
-                writer.writerow(
-                    {
-                        "run_id": trial["run_id"],
-                        "trial_index": trial["trial_index"],
-                        "zero_loss": trial["zero_loss"],
-                        "gradient_norm": trial["gradient_norm"],
-                        "radius": trial["radius"],
-                        "active_dimension": trial["active_dimension"],
-                        "eigmax_largest_algebraic": trial["eigmax_largest_algebraic"],
-                        "lambda_star": trial["lambda_star"],
-                        "hvp_evaluations": trial["lanczos"]["hvp_evaluations"],
-                        "lanczos_residual_norm_estimate": trial["lanczos"][
-                            "residual_norm_estimate"
-                        ],
-                    }
-                )
+def _trial_csv_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            **{key: trial[key] for key in CSV_FIELDS[:8]},
+            "hvp_evaluations": trial["lanczos"]["hvp_evaluations"],
+            "lanczos_residual_norm_estimate": trial["lanczos"]["residual_norm_estimate"],
+        }
+        for row in payload["rows"]
+        for trial in row["trials"]
+    ]
 
 
 def render_markdown(payload: dict[str, Any]) -> str:
