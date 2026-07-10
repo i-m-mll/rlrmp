@@ -7,10 +7,20 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.15.1",
+    "dill>=0.3.9",
     "feedbax",
     "ipyfilechooser>=0.6.0",
     "ipywidgets>=8.1.8",
+    "matplotlib>=3.10.1",
     "modal>=1.1.4",
+    "plotly>=6.0.0",
+    "polars>=1.24.0",
+    "pyexiv2>=2.15.3",
+    "pyperclip>=1.9.0",
+    "scikit-learn>=1.6.1",
+    "scipy>=1.17.0",
+    "sqlalchemy>=2.0",
 ]
 
 [project.entry-points."feedbax.plugins"]
@@ -18,6 +28,7 @@ rlrmp = "rlrmp:register_experiment_package"
 
 [dependency-groups]
 dev = [
+    "kaleido==0.2.1",
     "pytest>=8.0",
     "pytest-testmon>=2.1",
     "pytest-xdist>=3.6",

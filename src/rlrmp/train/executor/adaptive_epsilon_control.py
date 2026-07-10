@@ -136,6 +136,48 @@ def _adaptive_epsilon_schedule_batch(
     return max(0, int(global_batch) - int(adaptive_state.schedule_start_batch))
 
 
+def _finalize_training_chunk(
+    *,
+    task: Any,
+    n_replicates: int,
+    key_eval: Any,
+    treedef_model: Any,
+    flat_model: Any,
+    treedef_opt_state: Any,
+    flat_opt_state: Any,
+    history: TrainingHistory,
+    chunk_batches: int,
+) -> tuple[Any, Any, TrainingHistory]:
+    """Rebuild chunk-final model/optimizer state and record validation loss.
+
+    Shared tail of the training-chunk executors: unflattens ``model`` and
+    ``optimizer_state`` from their per-batch flattened representations, runs
+    one validation-trial evaluation, and writes the resulting validation loss
+    into the last batch slot of ``history``. Callers assemble their own
+    trailing return values (adversary/adaptive state, diagnostics) around this
+    shared result.
+    """
+    model = jtu.tree_unflatten(treedef_model, flat_model)
+    optimizer_state = jtu.tree_unflatten(treedef_opt_state, flat_opt_state)
+    states_validation, losses_validation = task.eval_ensemble_with_loss(
+        model,
+        n_replicates,
+        key_eval,
+        ensemble_random_trials=True,
+    )
+    del states_validation
+    history = eqx.tree_at(
+        lambda history: history.loss_validation,
+        history,
+        tree_set(
+            history.loss_validation,
+            losses_validation.map(lambda arr: jnp.mean(arr, axis=-1)),
+            chunk_batches - 1,
+        ),
+    )
+    return model, optimizer_state, history
+
+
 def _run_adaptive_epsilon_training_chunk(
     *,
     trainer: optax.GradientTransformation,
@@ -397,23 +439,16 @@ def _run_adaptive_epsilon_training_chunk(
                 flush=True,
             )
 
-    model = jtu.tree_unflatten(treedef_model, flat_model)
-    optimizer_state = jtu.tree_unflatten(treedef_opt_state, flat_opt_state)
-    states_validation, losses_validation = task.eval_ensemble_with_loss(
-        model,
-        n_replicates,
-        key_eval,
-        ensemble_random_trials=True,
-    )
-    del states_validation
-    history = eqx.tree_at(
-        lambda history: history.loss_validation,
-        history,
-        tree_set(
-            history.loss_validation,
-            losses_validation.map(lambda arr: jnp.mean(arr, axis=-1)),
-            chunk_batches - 1,
-        ),
+    model, optimizer_state, history = _finalize_training_chunk(
+        task=task,
+        n_replicates=n_replicates,
+        key_eval=key_eval,
+        treedef_model=treedef_model,
+        flat_model=flat_model,
+        treedef_opt_state=treedef_opt_state,
+        flat_opt_state=flat_opt_state,
+        history=history,
+        chunk_batches=chunk_batches,
     )
     return (
         model,
@@ -1021,6 +1056,7 @@ __all__ = [
     "_cast_to_state_dtypes",
     "_eval_trial_specs_for_training",
     "_extract_intervene_inputs",
+    "_finalize_training_chunk",
     "_inactive_interventions",
     "_initial_adaptive_epsilon_state",
     "_is_replicate_axis_array",
