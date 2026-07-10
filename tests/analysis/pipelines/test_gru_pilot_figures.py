@@ -22,6 +22,7 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
     load_gru_training_history,
     repeat_single_validation_trial,
     trial_effector_target_position,
+    write_loss_figures,
     write_velocity_by_replicate_figure,
     write_velocity_figure,
 )
@@ -116,6 +117,25 @@ def test_load_gru_training_history_rebuilds_feedbax_loss_tree(tmp_path) -> None:
     assert np.asarray(history.loss.children[4].value).shape == (3, 2)
     assert float(history.loss.children[4].weight) == 5.0
     assert np.asarray(history.learning_rate).shape == (3, 2)
+
+
+def test_loss_history_figures_use_manifest_custody_and_legacy_aliases(tmp_path) -> None:
+    labels = active_loss_term_labels(_run_spec(hidden_weight=0.0))
+    path = tmp_path / "training_history.eqx"
+    _write_history(path, labels)
+    history = load_gru_training_history(_run_spec(hidden_weight=0.0), path)
+
+    aliases = write_loss_figures({"run-a": history}, output_dir=tmp_path)
+
+    assert [alias.name for alias in aliases] == ["loss_training.html", "loss_validation.html"]
+    assert all(alias.is_symlink() for alias in aliases)
+    manifests = list((tmp_path / "manifests" / "FigureManifest").glob("*.json"))
+    assert len(manifests) == 2
+    for manifest_path in manifests:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        assert manifest["status"] == "completed"
+        assert manifest["template_name"] == "rlrmp.loss_history"
+        assert "rlrmp.loss_history_curves" in manifest["constructor_versions"]
 
 
 def test_repeat_single_validation_trial_preserves_initial_velocity() -> None:
