@@ -151,7 +151,7 @@ symbols = ["deep_merge"]
 
 [[canonical_homes]]
 module = "feedbax.contracts.figures"
-symbols = ["FigurePiece", "FigureSpec", "FigureTemplate", "SlotSpec"]
+symbols = ["FigurePiece", "FigureSpec", "FigureTemplate", "SlotSpec", "TraceBinding"]
 
 [[canonical_homes]]
 module = "feedbax.contracts.graph"
@@ -487,6 +487,10 @@ symbols = [
   "register_figure_piece",
   "register_figure_template",
 ]
+
+[[canonical_homes]]
+module = "feedbax.plot.color_setup"
+symbols = ["ColorConfig", "ColorscaleSpec", "get_color_config", "register_color_config"]
 
 [[canonical_homes]]
 module = "feedbax.plot.io"

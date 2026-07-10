@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import inspect
 
 from feedbax.contracts.run_matrix import (
     TRAINING_RUN_MATRIX_SPEC_SCHEMA_ID,
@@ -21,6 +22,7 @@ from feedbax.contracts.training import (
 )
 
 from rlrmp.runtime.checkpoint_fork_gate import fork_checkpoints_with_parity, parse_target
+from rlrmp.runtime.lr_continuation import RlrmpLrContinuationReporter
 
 
 def _training_run_payload() -> dict[str, object]:
@@ -86,6 +88,56 @@ def test_parse_target_accepts_matrix_row_checkpoint_root() -> None:
 
     assert target.row_id == "lr_hi"
     assert target.checkpoint_root == Path("/tmp/checkpoints")
+
+
+def test_lr_continuation_reporter_public_api_handles_restart_and_continue(
+    tmp_path: Path,
+) -> None:
+    row_payload = _training_run_payload()
+    row_spec = TrainingRunSpec.model_validate(row_payload)
+    reporter = RlrmpLrContinuationReporter(source_checkpoint_root=tmp_path)
+
+    continued = reporter.points(
+        source_manifest={"completed_training_batches": 5},
+        row_payload=row_payload,
+        row_spec=row_spec,
+        declared_mode="continue",
+    )
+    restarted = reporter.points(
+        source_manifest={"completed_training_batches": 5},
+        row_payload=row_payload,
+        row_spec=row_spec,
+        declared_mode="restart",
+    )
+
+    assert continued == [
+        {
+            "step": 5,
+            "global_step": 5,
+            "optimizer_count": 5,
+            "lr": 0.01,
+            "mode": "continue",
+            "completed_batches": 5,
+        }
+    ]
+    assert restarted[0] == {
+        **continued[0],
+        "step": 0,
+        "global_step": 0,
+        "optimizer_count": 0,
+        "mode": "restart",
+    }
+
+
+def test_checkpoint_fork_gate_has_no_lr_reporter_implementation_residue() -> None:
+    from rlrmp.runtime import checkpoint_fork_gate
+
+    source = inspect.getsource(checkpoint_fork_gate)
+
+    assert RlrmpLrContinuationReporter.__module__ == "rlrmp.runtime.lr_continuation"
+    assert "class RlrmpLrContinuationReporter" not in source
+    assert "def _learning_rate_at_step" not in source
+    assert "def _adaptive_epsilon_lr_continuation_points" not in source
 
 
 def test_fork_checkpoints_with_parity_delegates_matrix_skip_fork(tmp_path: Path) -> None:

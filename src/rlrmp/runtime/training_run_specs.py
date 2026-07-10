@@ -7,8 +7,9 @@ import hashlib
 import json
 import subprocess
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
@@ -134,6 +135,95 @@ class MissingTrainingRunSpecFieldError(ValueError):
             "TrainingRunSpec recording adapter missing required field "
             f"{field_path!r} in {spec_identity}"
         )
+
+
+@dataclass(frozen=True)
+class TrainingRunSpecScaffold:
+    """Shared top-level policies for RLRMP-authored ``TrainingRunSpec`` records."""
+
+    risk_aggregation: RiskAggregationSpec
+    execution: ExecutionPolicySpec
+    artifacts: ArtifactPolicySpec
+    checkpoint_progress: CheckpointProgressPolicySpec
+    metadata: dict[str, Any]
+
+    def build(
+        self,
+        *,
+        graph: GraphTopologySourceSpec,
+        task: TaskSpec,
+        training_config: TrainingConfig,
+        objective: ObjectiveSlotSpec,
+        method_ref: MethodRefSpec,
+        method_payload: MethodPayloadEnvelope,
+        method_extensions: Mapping[str, Any],
+        method_contract: MethodContractSpec,
+        effective_phase: EffectivePhaseSpec,
+        worker_metadata: Mapping[str, Any],
+        metadata: Mapping[str, Any] | None = None,
+    ) -> TrainingRunSpec:
+        """Build one complete run spec around method-specific fields."""
+        return TrainingRunSpec(
+            graph=graph,
+            task=task,
+            training_config=training_config,
+            objective=objective,
+            risk_aggregation=self.risk_aggregation,
+            method_ref=method_ref,
+            method_payload=method_payload,
+            method_extensions=dict(method_extensions),
+            worker_execution=WorkerExecutionSpec(
+                method_contract=method_contract,
+                effective_phase=effective_phase,
+                metadata=dict(worker_metadata),
+            ),
+            execution=self.execution,
+            artifacts=self.artifacts,
+            checkpoint_progress=self.checkpoint_progress,
+            metadata={**dict(metadata or {}), **self.metadata},
+        )
+
+
+def build_training_run_spec_scaffold(
+    *,
+    risk_metadata: Mapping[str, Any],
+    execution_mode: Literal["dry_run", "local", "remote"],
+    require_review: bool,
+    allow_cloud: bool,
+    execution_metadata: Mapping[str, Any],
+    artifact_root: str,
+    artifact_metadata: Mapping[str, Any],
+    checkpoint_interval: int | None,
+    progress_interval: int | None,
+    checkpoint_metadata: Mapping[str, Any],
+    metadata: Mapping[str, Any],
+) -> TrainingRunSpecScaffold:
+    """Build the shared RLRMP policy preset for a Feedbax training run."""
+    return TrainingRunSpecScaffold(
+        risk_aggregation=RiskAggregationSpec(
+            realization="mean",
+            replicate="mean",
+            metadata=dict(risk_metadata),
+        ),
+        execution=ExecutionPolicySpec(
+            mode=execution_mode,
+            require_review=require_review,
+            allow_cloud=allow_cloud,
+            metadata=dict(execution_metadata),
+        ),
+        artifacts=ArtifactPolicySpec(
+            manifest_root=PINNED_MANIFEST_ROOT,
+            artifact_root=artifact_root,
+            custody="local",
+            metadata=dict(artifact_metadata),
+        ),
+        checkpoint_progress=CheckpointProgressPolicySpec(
+            checkpoint_interval=checkpoint_interval,
+            progress_interval=progress_interval,
+            metadata=dict(checkpoint_metadata),
+        ),
+        metadata={**dict(metadata), "serialize_do_not_rederive": True},
+    )
 
 
 class _StrictPayloadModel(BaseModel):
@@ -879,7 +969,22 @@ def build_distillation_training_run_spec(
         phase_program=contract.phase_program,
         consistency_predicate=derive_consistency_predicate(contract.phase_program),
     )
-    return TrainingRunSpec(
+    scaffold = build_training_run_spec_scaffold(
+        risk_metadata={"source": "distillation_adapter"},
+        execution_mode=(
+            "dry_run" if run_spec.get("launch_status") in {"not_launched"} else "local"
+        ),
+        require_review=True,
+        allow_cloud=False,
+        execution_metadata={"full_train_authorized": False},
+        artifact_root=str(output_dir),
+        artifact_metadata={"tracked_run_spec": str(spec_path)},
+        checkpoint_interval=training_config.snapshot_interval,
+        progress_interval=training_config.snapshot_interval,
+        checkpoint_metadata={"latest_pointer": checkpointing.get("latest_pointer")},
+        metadata={"composed_with": RLRMP_RUN_SPEC_PAYLOAD_KEY},
+    )
+    return scaffold.build(
         graph=GraphTopologySourceSpec(
             ref=str(_distillation_graph_ref(run_spec)),
             metadata={
@@ -900,11 +1005,6 @@ def build_distillation_training_run_spec(
             schema_version=f"{method_ref.package}.{method_ref.name}.objective.v1",
             metadata={"lowering": "method_payload_governed_external_loss"},
         ),
-        risk_aggregation=RiskAggregationSpec(
-            realization="mean",
-            replicate="mean",
-            metadata={"source": "distillation_adapter"},
-        ),
         method_ref=method_ref,
         method_payload=method_payload,
         method_extensions={
@@ -913,34 +1013,11 @@ def build_distillation_training_run_spec(
                 "rlrmp_extension_payload": RLRMP_RUN_SPEC_PAYLOAD_KEY,
             }
         },
-        worker_execution=WorkerExecutionSpec(
-            method_contract=contract,
-            effective_phase=effective_phase,
-            metadata={
-                "native_executor": "rlrmp.train.distillation_native",
-                "teacher_configuration_location": "method_payload",
-            },
-        ),
-        execution=ExecutionPolicySpec(
-            mode="dry_run" if run_spec.get("launch_status") in {"not_launched"} else "local",
-            require_review=True,
-            allow_cloud=False,
-            metadata={"full_train_authorized": False},
-        ),
-        artifacts=ArtifactPolicySpec(
-            manifest_root="_artifacts/feedbax_runs",
-            artifact_root=str(output_dir),
-            custody="local",
-            metadata={"tracked_run_spec": str(spec_path)},
-        ),
-        checkpoint_progress=CheckpointProgressPolicySpec(
-            checkpoint_interval=training_config.snapshot_interval,
-            progress_interval=training_config.snapshot_interval,
-            metadata={"latest_pointer": checkpointing.get("latest_pointer")},
-        ),
-        metadata={
-            "composed_with": RLRMP_RUN_SPEC_PAYLOAD_KEY,
-            "serialize_do_not_rederive": True,
+        method_contract=contract,
+        effective_phase=effective_phase,
+        worker_metadata={
+            "native_executor": "rlrmp.train.distillation_native",
+            "teacher_configuration_location": "method_payload",
         },
     )
 
@@ -1829,37 +1906,29 @@ def build_feedbax_training_run_spec(
         schema_version="rlrmp.cs_gru_objective.v1",
         metadata={"rlrmp_loss_objective": run_spec.get("loss_objective")},
     )
-    risk_aggregation = RiskAggregationSpec(
-        realization="mean",
-        replicate="mean",
-        metadata={"source": "$.training_summary"},
-    )
-    execution = ExecutionPolicySpec(
-        mode="local",
-        require_review=bool(run_spec.get("full_training_launch") != "requested"),
-        allow_cloud=False,
-        metadata={"launch_mode": run_spec.get("mode")},
-    )
-    artifacts = ArtifactPolicySpec(
-        manifest_root="_artifacts/feedbax_runs",
-        artifact_root=portable_repo_path(output_dir),
-        custody="local",
-        metadata={"tracked_spec_dir": portable_repo_path(spec_dir)},
-    )
-    checkpoint_progress = CheckpointProgressPolicySpec(
-        checkpoint_interval=training_config.snapshot_interval,
-        # Training diagnostics are optional progress metadata, not run topology.
-        progress_interval=(
-            None if training_diagnostics.get("enabled") is False else training_config.snapshot_interval
-        ),
-        metadata={"checkpoint_dir": checkpointing.get("checkpoint_dir")},
-    )
     metadata = {
         "composed_with": RLRMP_RUN_SPEC_PAYLOAD_KEY,
-        "serialize_do_not_rederive": True,
         DESCRIPTOR_PAYLOAD_KEY: feedback_descriptors,
         "descriptor_basis_hash": feedback_descriptors["descriptor_basis_hash"],
     }
+    scaffold = build_training_run_spec_scaffold(
+        risk_metadata={"source": "$.training_summary"},
+        execution_mode="local",
+        require_review=bool(run_spec.get("full_training_launch") != "requested"),
+        allow_cloud=False,
+        execution_metadata={"launch_mode": run_spec.get("mode")},
+        artifact_root=portable_repo_path(output_dir),
+        artifact_metadata={"tracked_spec_dir": portable_repo_path(spec_dir)},
+        checkpoint_interval=training_config.snapshot_interval,
+        # Training diagnostics are optional progress metadata, not run topology.
+        progress_interval=(
+            None
+            if training_diagnostics.get("enabled") is False
+            else training_config.snapshot_interval
+        ),
+        checkpoint_metadata={"checkpoint_dir": checkpointing.get("checkpoint_dir")},
+        metadata=metadata,
+    )
     if _adaptive_epsilon_run_spec_enabled(run_spec):
         from rlrmp.train.adaptive_epsilon_native import (
             build_adaptive_epsilon_training_run_spec,
@@ -1873,12 +1942,12 @@ def build_feedbax_training_run_spec(
             training_config=training_config,
             objective=objective,
             task=task,
-            risk_aggregation=risk_aggregation,
+            risk_aggregation=scaffold.risk_aggregation,
             method_extensions={"metadata": method_metadata},
-            execution=execution,
-            artifacts=artifacts,
-            checkpoint_progress=checkpoint_progress,
-            metadata=metadata,
+            execution=scaffold.execution,
+            artifacts=scaffold.artifacts,
+            checkpoint_progress=scaffold.checkpoint_progress,
+            metadata=scaffold.metadata,
         )
     if _policy_adversary_run_spec_enabled(run_spec):
         from rlrmp.train.policy_adversary_native import (
@@ -1893,14 +1962,14 @@ def build_feedbax_training_run_spec(
             training_config=training_config,
             objective=objective,
             task=task,
-            risk_aggregation=risk_aggregation,
+            risk_aggregation=scaffold.risk_aggregation,
             method_extensions={"metadata": method_metadata},
-            execution=execution,
-            artifacts=artifacts,
-            checkpoint_progress=checkpoint_progress,
-            metadata=metadata,
+            execution=scaffold.execution,
+            artifacts=scaffold.artifacts,
+            checkpoint_progress=scaffold.checkpoint_progress,
+            metadata=scaffold.metadata,
         )
-    return TrainingRunSpec(
+    return scaffold.build(
         graph=GraphTopologySourceSpec(
             inline=graph_payload,
             schema_id=getattr(graph_spec, "schema_id", None),
@@ -1915,23 +1984,16 @@ def build_feedbax_training_run_spec(
         task=task,
         training_config=training_config,
         objective=objective,
-        risk_aggregation=risk_aggregation,
         method_ref=cs_supervised_method_ref(),
         method_payload=method_payload,
         method_extensions={"metadata": method_metadata},
-        worker_execution=WorkerExecutionSpec(
-            method_contract=method_contract,
-            effective_phase=effective_phase,
-            metadata={
-                "native_executor": "feedbax.training.executor.execute_training_run_spec",
-                "effective_phase_fingerprint": effective_phase_fingerprint,
-            },
-        ),
-        execution=execution,
-        artifacts=artifacts,
-        checkpoint_progress=checkpoint_progress,
+        method_contract=method_contract,
+        effective_phase=effective_phase,
+        worker_metadata={
+            "native_executor": "feedbax.training.executor.execute_training_run_spec",
+            "effective_phase_fingerprint": effective_phase_fingerprint,
+        },
         metadata={
-            **metadata,
             "effective_phase_fingerprint": effective_phase_fingerprint,
         },
     )

@@ -7,7 +7,7 @@ predicate:
 metadata:
   figure_routing:
     package: rlrmp
-    experiment: standard_matrix
+    experiment: 9977ff0
     topic: standard_matrix
     extra_packages: [rlrmp]
   standard_outputs:
@@ -36,7 +36,7 @@ stages:
         - hold_drift
       figure_routing:
         package: rlrmp
-        experiment: standard_matrix
+        experiment: 9977ff0
         topic: standard_matrix
         extra_packages: [rlrmp]
   - name: forward_velocity_profiles
@@ -46,20 +46,26 @@ stages:
     figure:
       name: standard-matrix-forward-velocity-profiles
       template: rlrmp.profile_comparison
-      assembler_params:
-        output: forward_velocity_profiles
-        profile_key: forward_velocity
-        title: Forward Velocity Profiles
+      slot_bindings:
+        profiles:
+          name: profiles
+          constructor: rlrmp.profile_series
+          data:
+            cell: {item: facet_values, path: condition}
+            profile_key: forward_velocity
+      panels:
+        - name: profile
+          title: {item: condition}
+          axes_labels: {x: Time, y: Forward velocity}
+      facet_bindings:
+        condition: {item: manifest, path: metadata.figure_payload.facets.forward_velocity_profiles}
       figure_routing:
         package: rlrmp
-        experiment: standard_matrix
+        experiment: 9977ff0
         topic: forward_velocity_profiles
         extra_packages: [rlrmp]
         render_format: html
-      metadata:
-        output: forward_velocity_profiles
-        profile_key: forward_velocity
-        title: Forward Velocity Profiles
+      metadata: {output: forward_velocity_profiles, profile_key: forward_velocity}
   - name: hold_drift_profiles
     kind: figure
     mode: grouped
@@ -67,115 +73,146 @@ stages:
     figure:
       name: standard-matrix-hold-drift-profiles
       template: rlrmp.profile_comparison
-      assembler_params:
-        output: hold_drift_profiles
-        profile_key: hold_drift
-        title: Hold Drift Profiles
+      slot_bindings:
+        profiles:
+          name: profiles
+          constructor: rlrmp.profile_series
+          data:
+            cell: {item: facet_values, path: condition}
+            profile_key: hold_drift
+      panels:
+        - name: profile
+          title: {item: condition}
+          axes_labels: {x: Time, y: Hold drift}
+      facet_bindings:
+        condition: {item: manifest, path: metadata.figure_payload.facets.hold_drift_profiles}
       figure_routing:
         package: rlrmp
-        experiment: standard_matrix
+        experiment: 9977ff0
         topic: hold_drift_profiles
         extra_packages: [rlrmp]
         render_format: html
-      metadata:
-        output: hold_drift_profiles
-        profile_key: hold_drift
-        title: Hold Drift Profiles
+      metadata: {output: hold_drift_profiles, profile_key: hold_drift}
   - name: peak_velocity_distributions
     kind: figure
     mode: grouped
     depends_on: [figure_payload]
     figure:
       name: standard-matrix-peak-velocity-distributions
-      assembler: rlrmp.standard_matrix_figure
-      assembler_params:
-        output: peak_velocity_distributions
-        title: Peak Velocity Distributions
+      template: rlrmp.distribution_comparison
+      slot_bindings:
+        values:
+          name: peak-velocity
+          constructor: rlrmp.box_values
+          data:
+            payload: {item: facet_values, path: condition}
+      panels:
+        - {name: distribution, title: {item: condition}, axes_labels: {y: Peak velocity}}
+      facet_bindings:
+        condition: {item: manifest, path: metadata.figure_payload.facets.peak_velocity_distributions}
       figure_routing:
         package: rlrmp
-        experiment: standard_matrix
+        experiment: 9977ff0
         topic: peak_velocity_distributions
         extra_packages: [rlrmp]
         render_format: html
-      metadata:
-        output: peak_velocity_distributions
-        title: Peak Velocity Distributions
+      metadata: {output: peak_velocity_distributions}
   - name: summary_metrics
     kind: figure
     mode: grouped
     depends_on: [figure_payload]
     figure:
       name: standard-matrix-summary-metrics
-      assembler: rlrmp.standard_matrix_figure
-      assembler_params:
-        output: summary_metrics
-        title: Summary Metrics
+      template: rlrmp.metric_comparison
+      slot_bindings:
+        values:
+          name: summary-metric
+          constructor: rlrmp.bar_values
+          data:
+            payload: {item: facet_values, path: metric}
+      panels:
+        - {name: metric, title: {item: metric}}
+      facet_bindings:
+        metric: {item: manifest, path: metadata.figure_payload.facets.summary_metrics}
       figure_routing:
         package: rlrmp
-        experiment: standard_matrix
+        experiment: 9977ff0
         topic: summary_metrics
         extra_packages: [rlrmp]
         render_format: html
-      metadata:
-        output: summary_metrics
-        title: Summary Metrics
+      metadata: {output: summary_metrics}
   - name: rmse_ratio_comparison
     kind: figure
     mode: grouped
     depends_on: [figure_payload]
     figure:
       name: standard-matrix-rmse-ratio-comparison
-      assembler: rlrmp.standard_matrix_figure
-      assembler_params:
-        output: rmse_ratio_comparison
-        title: RMSE Ratio Comparison
+      template: rlrmp.metric_comparison
+      slot_bindings:
+        values:
+          name: rmse-ratio
+          constructor: rlrmp.bar_values
+          data:
+            payload: {item: facet_values, path: metric}
+      panels:
+        - {name: metric, title: {item: metric}}
+      facet_bindings:
+        metric: {item: manifest, path: metadata.figure_payload.facets.rmse_ratio_comparison}
       figure_routing:
         package: rlrmp
-        experiment: standard_matrix
+        experiment: 9977ff0
         topic: rmse_ratio_comparison
         extra_packages: [rlrmp]
         render_format: html
-      metadata:
-        output: rmse_ratio_comparison
-        title: RMSE Ratio Comparison
+      metadata: {output: rmse_ratio_comparison}
   - name: training_loss
     kind: figure
-    mode: per-run
+    mode: grouped
     depends_on: [figure_payload]
     figure:
       name: standard-matrix-training-loss
-      assembler: rlrmp.standard_matrix_figure
-      assembler_params:
-        output: training_loss
-        title: Training Loss
+      template: rlrmp.history_comparison
+      slot_bindings:
+        series:
+          name: training-loss
+          constructor: rlrmp.line_series
+          data:
+            payload: {item: facet_values, path: condition}
+      panels:
+        - {name: history, title: {item: condition}, axes_labels: {x: Step, y: Loss}}
+      facet_bindings:
+        condition: {item: manifest, path: metadata.figure_payload.facets.training_loss}
       figure_routing:
         package: rlrmp
-        experiment: standard_matrix
+        experiment: 9977ff0
         topic: training_loss
         extra_packages: [rlrmp]
         render_format: html
-      metadata:
-        output: training_loss
-        title: Training Loss
+      metadata: {output: training_loss}
   - name: training_loss_per_term
     kind: figure
-    mode: per-run
+    mode: grouped
     depends_on: [figure_payload]
     figure:
       name: standard-matrix-training-loss-per-term
-      assembler: rlrmp.standard_matrix_figure
-      assembler_params:
-        output: training_loss_per_term
-        title: Training Loss Per Term
+      template: rlrmp.history_comparison
+      slot_bindings:
+        series:
+          name: training-loss-per-term
+          constructor: rlrmp.line_series
+          data:
+            payload: {item: facet_values, path: condition}
+      panels:
+        - {name: history, title: {item: condition}, axes_labels: {x: Step, y: Loss}}
+      facet_bindings:
+        condition: {item: manifest, path: metadata.figure_payload.facets.training_loss_per_term}
       figure_routing:
         package: rlrmp
-        experiment: standard_matrix
+        experiment: 9977ff0
         topic: training_loss_per_term
         extra_packages: [rlrmp]
         render_format: html
-      metadata:
-        output: training_loss_per_term
-        title: Training Loss Per Term
+      metadata: {output: training_loss_per_term}
   - name: notes
     kind: analysis
     mode: grouped
@@ -186,6 +223,6 @@ stages:
       note_marker: standard_matrix
       figure_routing:
         package: rlrmp
-        experiment: standard_matrix
+        experiment: 9977ff0
         topic: notes
         extra_packages: [rlrmp]

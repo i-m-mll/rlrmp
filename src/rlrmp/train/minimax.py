@@ -24,19 +24,14 @@ from typing import Any, Literal
 import equinox as eqx
 from feedbax.contracts.training import (
     DEFAULT_TRAINING_METHOD_REGISTRY,
-    ArtifactPolicySpec,
-    CheckpointProgressPolicySpec,
-    ExecutionPolicySpec,
     GraphTopologySourceSpec,
     MethodPayloadEnvelope,
     MethodRefSpec,
     ObjectiveSlotSpec,
-    RiskAggregationSpec,
     TaskSpec,
     TrainingConfig,
     TrainingMethodRegistration,
     TrainingRunSpec,
-    WorkerExecutionSpec,
 )
 from feedbax.contracts.worker import (
     AxisSpec,
@@ -66,6 +61,7 @@ from rlrmp.runtime.spec_migrations import (
     RUN_SPEC_SCHEMA_VERSION,
     stamp_current_schema,
 )
+from rlrmp.runtime.training_run_specs import build_training_run_spec_scaffold
 from rlrmp.train.executor.slots import minimax_checkpoint_slot_specs
 from rlrmp.train.progress import make_executor_batch_log_callback
 
@@ -388,7 +384,30 @@ def build_minimax_training_run_spec(
         graph_payload=graph_spec_payload(graph_spec),
         method_payload=method_payload.model_dump(mode="json", exclude_none=True),
     )
-    feedbax_spec = TrainingRunSpec(
+    checkpoint_interval = max(1, normalized.checkpoint_every or 1)
+    scaffold = build_training_run_spec_scaffold(
+        risk_metadata={"population_member": "active_member_only"},
+        execution_mode="local",
+        require_review=False,
+        allow_cloud=False,
+        execution_metadata={"entrypoint": "scripts/train_minimax.py"},
+        artifact_root=str(output_dir),
+        artifact_metadata={
+            "tracked_spec_dir": str(spec_dir),
+            "bulk_outputs": str(output_dir),
+        },
+        checkpoint_interval=checkpoint_interval,
+        progress_interval=checkpoint_interval,
+        checkpoint_metadata={
+            "effective_phase_fingerprint": fingerprint,
+            "checkpoint_custody_owner": "feedbax",
+        },
+        metadata={
+            "composed_with": "rlrmp_run_spec",
+            "effective_phase_fingerprint": fingerprint,
+        },
+    )
+    feedbax_spec = scaffold.build(
         graph=GraphTopologySourceSpec(
             inline=graph_spec_payload(graph_spec),
             schema_id=getattr(graph_spec, "schema_id", None),
@@ -431,11 +450,6 @@ def build_minimax_training_run_spec(
             schema_version="rlrmp.minimax_objective.v1",
             metadata={"lowering_owner": "rlrmp.train.minimax"},
         ),
-        risk_aggregation=RiskAggregationSpec(
-            realization="mean",
-            replicate="mean",
-            metadata={"population_member": "active_member_only"},
-        ),
         method_ref=MethodRefSpec(package="rlrmp", name="minimax", version="v1"),
         method_payload=method_payload,
         method_extensions={
@@ -444,41 +458,11 @@ def build_minimax_training_run_spec(
                 "scientific_semantics_owner": "rlrmp.train.adversary",
             }
         },
-        worker_execution=WorkerExecutionSpec(
-            method_contract=contract,
-            effective_phase=effective_phase,
-            metadata={
-                "effective_phase_fingerprint": fingerprint,
-                "pre_execution_parity": "compare_requested_serialized_spec",
-            },
-        ),
-        execution=ExecutionPolicySpec(
-            mode="local",
-            require_review=False,
-            allow_cloud=False,
-            metadata={"entrypoint": "scripts/train_minimax.py"},
-        ),
-        artifacts=ArtifactPolicySpec(
-            manifest_root="_artifacts/feedbax_runs",
-            artifact_root=str(output_dir),
-            custody="local",
-            metadata={
-                "tracked_spec_dir": str(spec_dir),
-                "bulk_outputs": str(output_dir),
-            },
-        ),
-        checkpoint_progress=CheckpointProgressPolicySpec(
-            checkpoint_interval=max(1, normalized.checkpoint_every or 1),
-            progress_interval=max(1, normalized.checkpoint_every or 1),
-            metadata={
-                "effective_phase_fingerprint": fingerprint,
-                "checkpoint_custody_owner": "feedbax",
-            },
-        ),
-        metadata={
-            "composed_with": "rlrmp_run_spec",
-            "serialize_do_not_rederive": True,
+        method_contract=contract,
+        effective_phase=effective_phase,
+        worker_metadata={
             "effective_phase_fingerprint": fingerprint,
+            "pre_execution_parity": "compare_requested_serialized_spec",
         },
     )
     payload["rlrmp_run_spec"] = extension

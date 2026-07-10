@@ -92,7 +92,7 @@ def register_experiment_package(registry):
 def ensure_rlrmp_recipes_registered(
     *, defer_if_feedbax_initializing: bool = False, force: bool = False
 ) -> None:
-    """Idempotently register rlrmp's spec families and analysis recipes.
+    """Idempotently register rlrmp's Feedbax-backed project surfaces.
 
     The recipe-registration modules import the full feedbax public API
     (``feedbax.analysis.*``, ``feedbax.contracts.*``), so this can only run once
@@ -154,8 +154,12 @@ def ensure_rlrmp_recipes_registered(
             register_training_diagnostics_recipes,
         )
         from rlrmp.figures import register_rlrmp_figure_surfaces
+        from rlrmp.viz.color_config import register_rlrmp_color_config
 
         ensure_rlrmp_spec_families()
+        # This deferred tail is invoked by register_experiment_package once Feedbax's
+        # plotting API is safe to import; keep color registration out of mid-init discovery.
+        register_rlrmp_color_config()
         register_rlrmp_figure_surfaces()
         register_rlrmp_evaluation_recipes(replace=True)
         register_standard_matrix_recipes()

@@ -24,6 +24,7 @@ from feedbax.contracts.manifest import (
     load_manifest,
 )
 from feedbax.plugins.registry import ExperimentRegistry
+from feedbax.plot.constructors import get_figure_constructor, get_figure_template
 from rlrmp.analysis.matrix import STANDARD_MATRIX_ANALYSIS_TYPE, STANDARD_MATRIX_EVALUATION_TYPE
 from rlrmp.analysis.matrix.standard_matrix import _notes_path
 from rlrmp.paths import REPO_ROOT
@@ -66,9 +67,39 @@ def test_standard_matrix_bundle_loads_expands_and_executes_lightweight_routed_pa
     assert bundle.stages[1].depends_on == ["figure_payload"]
 
 
+def test_standard_matrix_figures_use_native_slot_facet_composition() -> None:
+    bundle = _load_standard_matrix_bundle(_registry())
+    figure_stages = [stage for stage in bundle.stages if stage.kind == "figure"]
+
+    assert [stage.name for stage in figure_stages] == [
+        "forward_velocity_profiles",
+        "hold_drift_profiles",
+        "peak_velocity_distributions",
+        "summary_metrics",
+        "rmse_ratio_comparison",
+        "training_loss",
+        "training_loss_per_term",
+    ]
+    for stage in figure_stages:
+        figure = stage.figure
+        assert figure.assembler is None
+        assert figure.template is not None
+        assert figure.slot_bindings
+        assert figure.facet_bindings
+        template = get_figure_template(figure.template)
+        assert get_figure_constructor(template.assembler).tier == "figure"
+        assert all(
+            get_figure_constructor(binding.constructor).tier == "trace"
+            for binding in figure.slot_bindings.values()
+        )
+        assert figure.figure_routing["experiment"] == "9977ff0"
+
+
 def test_registered_standard_matrix_recipe_executes_profile_with_routing(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr("rlrmp.analysis.matrix.standard_matrix.REPO_ROOT", tmp_path)
     registry = _registry()
     payload = {
         "cells": [
@@ -126,6 +157,8 @@ def test_registered_standard_matrix_recipe_executes_profile_with_routing(
     )
 
     bundle = _load_standard_matrix_bundle(registry)
+    notes_stage = next(stage for stage in bundle.stages if stage.name == "notes")
+    notes_stage.params["notes_path"] = str(tmp_path / "matrix_results.md")
     execution = execute_staged_analysis_bundle(
         bundle,
         root=tmp_path,
