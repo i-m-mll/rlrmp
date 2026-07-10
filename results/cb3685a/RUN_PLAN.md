@@ -104,9 +104,7 @@ damage EMA both operate from batch 0; the ramp is diagnostic-only.
 Use a secure RTX 4090 as the default operational environment. This document
 and `runs/harmonized_nominal_h0_const_band16_lr3e-3_clip5_b64.json` authorize
 specification only. The billable launch remains blocked on the Stage-2
-prelaunch-contract work and a separate explicit user confirmation. Before a
-launch is attempted, also repair the current flat-recipe replay gap: the
-nominal-GRU `--run-spec` path must register the RLRMP C&S supervised training
-method, and the file-validator helper must resolve graph sidecars from the
-recipe's sibling sidecar directory. The writer-side validation already passes
-with that directory, but neither runtime gap is a launch-time exception.
+prelaunch-contract work and a separate explicit user confirmation. The
+nominal-GRU `--run-spec` path has passed its non-billable dry run against this
+compact recipe, including RLRMP-method registration and sibling graph-sidecar
+resolution.
