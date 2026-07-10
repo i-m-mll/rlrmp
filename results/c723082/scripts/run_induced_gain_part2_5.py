@@ -233,7 +233,7 @@ def _cast_to_float32(tree):
 def _build_hps_for_group(group: GroupSpec, config: dict):
     """Resolve the build_hps callable for a group and return populated hps."""
     if group.build_hps_module == "train_minimax":
-        from rlrmp.train.minimax import build_hps as build_hps_fn
+        from rlrmp.train.minimax_native import build_hps as build_hps_fn
     elif group.build_hps_module == "train_part2_5":
         from rlrmp.train.standard import build_hps as build_hps_fn
     else:

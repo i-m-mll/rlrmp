@@ -46,7 +46,7 @@ from rlrmp.eval import N_REPLICATES
 from rlrmp.eval.pert import eval_at_pert_scale as _canonical_eval_at_pert_scale
 from rlrmp.eval.minimax_io import load_adversary, load_config, load_model
 from rlrmp.train.task_model import setup_task_model_pair
-from rlrmp.train.minimax import build_hps
+from rlrmp.train.minimax_native import build_hps
 
 
 # ---------------------------------------------------------------------------

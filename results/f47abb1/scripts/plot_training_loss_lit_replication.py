@@ -41,7 +41,7 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from rlrmp.train.minimax import build_hps
+from rlrmp.train.minimax_native import build_hps
 from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476 -- project-config routing
 from rlrmp.train.task_model import setup_task_model_pair
 

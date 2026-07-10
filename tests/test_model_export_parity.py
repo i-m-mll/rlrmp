@@ -38,7 +38,7 @@ from rlrmp.model.feedbax_graph import (
     graph_spec_payload,
     materialize_rlrmp_graph_spec,
 )
-from rlrmp.train.minimax import build_hps
+from rlrmp.train.minimax_native import build_hps
 from rlrmp.train.task_model import build_task_base, setup_task_model_pair
 
 

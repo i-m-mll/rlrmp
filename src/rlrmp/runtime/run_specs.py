@@ -22,7 +22,7 @@ from rlrmp.runtime.spec_migrations import (
     accept_rlrmp_spec_payload,
     ensure_rlrmp_spec_families,
 )
-from rlrmp.train.minimax import (
+from rlrmp.train.minimax_native import (
     validate_minimax_run_spec,
     validate_minimax_run_spec_file,
 )

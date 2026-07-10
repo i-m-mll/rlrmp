@@ -68,7 +68,7 @@ from rlrmp.analysis.math.trial_alignment import (
 )
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.paths import REPO_ROOT  # Bug: 8404108 — was __file__-relative
-from rlrmp.train.minimax import build_hps
+from rlrmp.train.minimax_native import build_hps
 from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.viz.figures import (
     build_forward_velocity_figure as canonical_forward_velocity_figure,

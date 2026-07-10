@@ -101,9 +101,7 @@ def _infer_trial_input_steps(trial_specs: TaskTrialSpec) -> int:
     """Infer rollout input length for adversary parameter overrides."""
 
     leaves = [
-        leaf
-        for leaf in jt.leaves(trial_specs.inputs)
-        if eqx.is_array(leaf) and leaf.ndim >= 2
+        leaf for leaf in jt.leaves(trial_specs.inputs) if eqx.is_array(leaf) and leaf.ndim >= 2
     ]
     if not leaves:
         raise ValueError("cannot infer trial input length for adversary delta_A injection")
@@ -782,9 +780,11 @@ def _single_rep_controller_step(
     )
     updated_trainable = eqx.apply_updates(_get_trainable(model), updates)
     new_model = eqx.tree_at(_trainable_where(model), model, updated_trainable)
-    return tuple(_per_rep_leaves_from_single_model(new_model, runtime.controller_layout)), (
-        new_opt_state
-    ), loss_val
+    return (
+        tuple(_per_rep_leaves_from_single_model(new_model, runtime.controller_layout)),
+        (new_opt_state),
+        loss_val,
+    )
 
 
 def _single_rep_warmup_controller_step(
@@ -809,9 +809,11 @@ def _single_rep_warmup_controller_step(
     )
     updated_trainable = eqx.apply_updates(_get_trainable(model), updates)
     new_model = eqx.tree_at(_trainable_where(model), model, updated_trainable)
-    return tuple(_per_rep_leaves_from_single_model(new_model, runtime.controller_layout)), (
-        new_opt_state
-    ), loss_val
+    return (
+        tuple(_per_rep_leaves_from_single_model(new_model, runtime.controller_layout)),
+        (new_opt_state),
+        loss_val,
+    )
 
 
 def _adversary_update(
@@ -962,11 +964,6 @@ def _trainable_where(model: Any) -> Any:
     return lambda candidate: staged_network_trainable_parts(candidate.get_node("net"))
 
 
-def _make_where_train(sisu_gating: str = "additive") -> dict[int, Any]:
-    del sisu_gating
-    return {0: _trainable_where}
-
-
 def _init_vmapped_adversary_opt_state(
     adversary: Any,
     *,
@@ -1006,9 +1003,7 @@ def _init_controller_opt_state_with_optimizer(
     )
     single_state = optimizer.init(eqx.filter(_get_trainable(single_model), eqx.is_array))
     return jt.map(
-        lambda value: jnp.stack([value] * runtime.n_replicates)
-        if eqx.is_array(value)
-        else value,
+        lambda value: jnp.stack([value] * runtime.n_replicates) if eqx.is_array(value) else value,
         single_state,
         is_leaf=eqx.is_array,
     )
@@ -1088,9 +1083,7 @@ def _per_rep_leaves_from_single_model(
 ) -> tuple[Any, ...]:
     flat_leaves = jtu.tree_flatten(model)[0]
     return tuple(
-        leaf
-        for leaf, per_rep in zip(flat_leaves, layout.is_per_replicate, strict=True)
-        if per_rep
+        leaf for leaf, per_rep in zip(flat_leaves, layout.is_per_replicate, strict=True) if per_rep
     )
 
 
@@ -1127,21 +1120,6 @@ def _stop_gradient_arrays(value: Any) -> Any:
 
 def _metric_mean(values: Any) -> float:
     return float(jax.device_get(jnp.mean(values)))
-
-
-def _last_history_loss(history: Any) -> float:
-    if history is None:
-        return 0.0
-    loss = getattr(history, "loss", None)
-    if loss is None:
-        losses = getattr(history, "losses", None)
-        if losses is None:
-            return 0.0
-        loss = losses
-    array = jnp.asarray(loss)
-    if array.size == 0:
-        return 0.0
-    return float(jax.device_get(array.reshape(-1)[-1]))
 
 
 def _runtime(runtime: RlrmpRuntime) -> MinimaxNativeRuntime:

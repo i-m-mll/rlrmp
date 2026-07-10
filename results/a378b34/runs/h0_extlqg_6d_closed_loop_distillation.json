@@ -50,7 +50,7 @@
   "issue": "a378b34",
   "launch_status": "implemented_no_launch_pending_user_approval",
   "local_acceptance_checks": [
-    "JSON run spec parses and validates with rlrmp.train.closed_loop_distillation.",
+    "JSON run spec parses and validates with rlrmp.train.distillation_entry.",
     "Dry-run smoke checks full local-Jacobian basis-JVP code path.",
     "--smoke-train exercises the native distillation executor on a tiny local run.",
     "--full-train reaches the native executor only after explicit user launch approval."
@@ -120,7 +120,7 @@
   ],
   "prior_guided_issue": "9727d79",
   "run_id": "h0_extlqg_6d_closed_loop_distillation",
-  "schema_version": "rlrmp.closed_loop_distillation.training_entry.v1",
+  "schema_version": "rlrmp.closed_loop_distillation.training_entry.v2",
   "seed": 0,
   "stopping_and_debug": {
     "monitoring": [
@@ -190,7 +190,7 @@
       "--confirm-full-train",
       "--resume"
     ],
-    "module": "rlrmp.train.closed_loop_distillation",
+    "module": "rlrmp.train.distillation_entry",
     "preflight_command": [
       "env",
       "PYTHONPATH=src",

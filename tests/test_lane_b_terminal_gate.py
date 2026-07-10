@@ -54,15 +54,15 @@ from rlrmp.runtime.training_run_specs import (
     feedbax_training_run_spec_from_payload,
 )
 from rlrmp.train.cs_nominal_gru import build_parser, run_full_training, write_run_spec
-from rlrmp.train.minimax import (
+from rlrmp.train.config_cli import parse_config
+from rlrmp.train.minimax_native import (
     MINIMAX_METHOD_REF,
     build_hps as build_minimax_hps,
     build_minimax_training_run_spec,
-    legacy_cli_args_to_minimax_config,
-    minimax_config_namespace,
     validate_minimax_run_spec,
 )
 from rlrmp.train.task_model import build_task_base
+from rlrmp.train.training_configs import MinimaxConfig
 
 
 pytestmark = pytest.mark.feedbax_contract
@@ -166,7 +166,8 @@ def test_cs_spec_first_smoke_emits_resolvable_training_run_manifest(
 
 
 def _minimax_payload(tmp_path: Path, argv: list[str]) -> dict:
-    config = legacy_cli_args_to_minimax_config(
+    parsed = parse_config(
+        MinimaxConfig,
         [
             "--n-warmup-batches",
             "1",
@@ -179,9 +180,12 @@ def _minimax_payload(tmp_path: Path, argv: list[str]) -> dict:
             "--output-dir",
             str(tmp_path / "_artifacts" / "54b0c2e" / "runs" / "spec"),
             *argv,
-        ]
+        ],
+        description="test minimax config",
     )
-    args = minimax_config_namespace(config)
+    assert isinstance(parsed, MinimaxConfig)
+    args = parsed
+    config = parsed.model_dump(mode="python")
     hps = build_minimax_hps(args)
     graph_bundle = build_rlrmp_feedbax_graph_bundle(
         hps,
@@ -196,8 +200,6 @@ def _minimax_payload(tmp_path: Path, argv: list[str]) -> dict:
         graph_spec=graph_bundle.graph_spec,
         output_dir=Path(args.output_dir),
         spec_dir=tmp_path / "results" / "54b0c2e" / "runs" / "spec",
-        git={"commit": "test"},
-        gpu_info={"available": False},
         feedbax_graph={"graph_spec_path": "graph_spec.json", "manifest_path": "manifest.json"},
     )
 

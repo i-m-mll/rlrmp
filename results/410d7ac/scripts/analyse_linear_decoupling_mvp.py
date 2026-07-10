@@ -83,7 +83,7 @@ from rlrmp.intervention_compat import (
     swap_task_intervention_to_dynamics_matrix,
 )
 from rlrmp.paths import REPO_ROOT  # Bug: 8404108 — was __file__-relative
-from rlrmp.train.minimax import build_hps
+from rlrmp.train.minimax_native import build_hps
 from rlrmp.train.task_model import setup_task_model_pair
 
 EXPERIMENT = "410d7ac"

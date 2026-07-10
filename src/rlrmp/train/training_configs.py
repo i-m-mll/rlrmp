@@ -2400,6 +2400,190 @@ DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW = "canonical_window"
 
 ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND = "loss_blend"
 
+MINIMAX_PARAMS_REF = "rlrmp/minimax/v1"
+
+GUIDED_DISTILLATION_PARAMS_REF = "rlrmp/guided_distillation/v1"
+
+CLOSED_LOOP_DISTILLATION_PARAMS_REF = "rlrmp/closed_loop_distillation/v1"
+
+
+class GuidedDistillationConfig(BaseModel):
+    """Unified authoring config for guided distillation CLI/spec surfaces."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    run_id: str = "h0_extlqg_6d_standard_graph_distillation"
+    run_spec: str | None = None
+    run_spec_output: str | None = None
+    output_dir: str | None = None
+    teacher_package: str = "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers.npz"
+    teacher_manifest: str = (
+        "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers_manifest.json"
+    )
+    teacher_gains_key: str = "extlqg_controller_gains"
+    clean_action_weight: float = 1.0
+    perturbation_response_weight: float = 1.0
+    input_output_jvp_weight: float = 0.25
+    rollout_anchor_weight: float = 0.25
+    n_jvp_directions: int = Field(16, gt=0)
+    n_batches: int = Field(12000, gt=0)
+    batch_size: int = Field(64, gt=0)
+    n_replicates: int = Field(5, gt=0)
+    hidden_size: int = Field(180, gt=0)
+    horizon: int = Field(60, gt=0)
+    seed: int = 0
+    controller_lr: float = Field(3e-3, gt=0.0)
+    lr_warmup_batches: int = Field(500, ge=0)
+    lr_warmup_init_fraction: float = Field(0.1, ge=0.0)
+    lr_cosine_alpha: float = Field(0.01, ge=0.0)
+    gradient_clip_norm: float = Field(5.0, gt=0.0)
+    trainable_dtype: str = "float32"
+    population_mask_mode: str = "plain_all_ones"
+    log_step: int = Field(10, gt=0)
+    checkpoint: bool = True
+    checkpoint_interval_batches: int = Field(500, gt=0)
+    stop_after_batches: int | None = Field(None, gt=0)
+    smoke_loss: bool = False
+    smoke_train: bool = False
+    full_train: bool = False
+    resume: bool = False
+    dry_run: bool = False
+
+
+class ClosedLoopDistillationConfig(BaseModel):
+    """Unified authoring config for closed-loop distillation CLI/spec surfaces."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    run_id: str = "h0_extlqg_6d_closed_loop_distillation"
+    run_spec: Path | None = None
+    run_spec_output: Path = Path("results/a378b34/runs/h0_extlqg_6d_closed_loop_distillation.json")
+    output_dir: str = "_artifacts/a378b34/runs/h0_extlqg_6d_closed_loop_distillation"
+    teacher_package: str = "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers.npz"
+    teacher_gains_key: str = "extlqg_controller_gains"
+    horizon: int = Field(60, gt=0)
+    seed: int = 0
+    n_replicates: int = Field(5, gt=0)
+    hidden_size: int = Field(180, gt=0)
+    batch_size: int = Field(64, gt=0)
+    n_batches: int = Field(12000, gt=0)
+    controller_lr: float = Field(3e-3, gt=0.0)
+    lr_warmup_batches: int = Field(500, ge=0)
+    lr_cosine_alpha: float = Field(0.01, ge=0.0)
+    gradient_clip_norm: float = Field(5.0, gt=0.0)
+    checkpoint_interval_batches: int = Field(500, gt=0)
+    trainable_dtype: str = "float32"
+    kinematics_trajectory_weight: float = 1.0
+    velocity_weight: float = 1.0
+    endpoint_weight: float = 0.0
+    settling_weight: float = 0.0
+    action_force_weight: float = 1.0
+    perturbation_response_weight: float = 1.0
+    input_output_jvp_weight: float = 0.25
+    task_rollout_loss_weight: float = 0.0
+    write_run_spec: bool = False
+    dry_run: bool = False
+    smoke_preflight: bool = False
+    smoke_train: bool = False
+    smoke_n_batches: int = Field(1, gt=0)
+    smoke_batch_size: int = Field(1, gt=0)
+    full_train: bool = False
+    confirm_full_train: bool = False
+    resume: bool = False
+    user_confirmed: bool = False
+
+
+class MinimaxConfig(BaseModel):
+    """Flat minimax method config whose fields own all authoring defaults."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    n_warmup_batches: int = Field(2000, ge=0)
+    n_adversary_batches: int = Field(8000, ge=0)
+    n_adversary_steps: int = Field(5, gt=0)
+    batch_size: int = Field(250, gt=0)
+    adv_batch_size: int | None = None
+    n_replicates: int = Field(5, gt=0)
+    seed: int = 42
+
+    controller_lr: float = 1e-4
+    adversary_lr: float = 3e-4
+    loss_update_enabled: bool = False
+    loss_update_ratio: float = 0.5
+
+    adversary_type: Literal["gaussian_bump", "linear_dynamics"] = "gaussian_bump"
+    n_adversaries: int = Field(1, gt=0)
+    n_bumps: int = 3
+    force_max: float = 1.0
+    linear_dynamics_eta_max: float = 0.1
+    linear_dynamics_pgd_steps: int = 5
+    linear_dynamics_lr: float = 1e-2
+
+    hidden_type: Literal["gru", "vanilla_rnn", "linear", "linear_tracker"] = "gru"
+    sisu_gating: Literal["additive", "multiplicative"] = "additive"
+
+    nn_output: float = 1e-5
+    nn_hidden: float = 1e-5
+    nn_hidden_derivative: float = 0.0
+    nn_output_jerk: float = 0.0
+    nn_output_pre_go: float = 0.0
+    nn_hidden_derivative_pre_go: float = 0.0
+    effector_hold_pos: float = 10.0
+    effector_hold_vel: float = 10.0
+    effector_final_vel: float = 0.0
+    effector_vel_late: float = 0.1
+    effector_pos_running: float = 1.0
+    effector_pos_late_weight: float = 0.5
+    effector_pos_late_final_scale: float = 2.0
+    effector_pos_late_start_step: int = 80
+
+    effector_pos_running_schedule: Literal["flat", "powerlaw", "movement_ramp"] = "flat"
+    effector_hold_pos_schedule: Literal["flat", "powerlaw"] = "flat"
+    position_powerlaw_power: float = 6.0
+    movement_ramp_shape: Literal["linear", "cosine", "power"] = "linear"
+    movement_ramp_duration_steps: int = 60
+    movement_ramp_power: float = 2.0
+
+    p_catch_trial: float = 0.5
+
+    warmup_model: str | None = None
+    output_dir: str = "_artifacts/minimax/minimax_test"
+    spec_dir: str | None = None
+    jax_cache_dir: str | None = None
+    jax_explain_cache_misses: bool = False
+    allow_x64: bool = False
+    checkpoint: bool = False
+    checkpoint_every: int = 500
+    resume: bool = False
+    allow_fresh_start: bool = False
+    fused: bool = True
+    streaming_loss: bool = False
+
+    @model_validator(mode="after")
+    def _validate_config(self) -> "MinimaxConfig":
+        if self.adversary_type == "linear_dynamics" and not self.fused:
+            raise ValueError("linear_dynamics minimax requires fused execution")
+        return self
+
+
+def register_native_training_params_models(*, replace: bool = True) -> None:
+    """Register native trainer configs for typed run-matrix authoring."""
+
+    register_params_model(MINIMAX_PARAMS_REF, MinimaxConfig, replace=replace)
+    register_params_model(
+        GUIDED_DISTILLATION_PARAMS_REF,
+        GuidedDistillationConfig,
+        replace=replace,
+    )
+    register_params_model(
+        CLOSED_LOOP_DISTILLATION_PARAMS_REF,
+        ClosedLoopDistillationConfig,
+        replace=replace,
+    )
+
+
+register_native_training_params_models()
+
 
 class CsNominalGruConfig(BaseModel):
     """Flat nominal-GRU trainer config whose fields own all authoring defaults."""

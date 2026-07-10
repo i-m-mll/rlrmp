@@ -1,25 +1,15 @@
-"""Hyperparameter construction for the minimax adversarial trainer.
-
-Bug: 8404108 — extracted from ``scripts/train_minimax.py`` so analysis /
-eval / diagnostic scripts can reconstruct the same hyperparameter tree
-from a saved ``config.json`` without ``sys.path``-injecting the training
-script.
-
-The corresponding training loop lives in ``scripts/train_minimax.py``; only
-the hyperparameter construction is library-grade.
-"""
+"""Native minimax method contract and hyperparameter construction."""
 
 from __future__ import annotations
 
 import hashlib
 import json
 import logging
-import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Literal
+from typing import Any
 
 import equinox as eqx
 from feedbax.contracts.training import (
@@ -50,22 +40,15 @@ from feedbax.contracts.worker import (
     derive_consistency_predicate,
 )
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
+from pydantic import BaseModel, ConfigDict
 
-from rlrmp.io import write_compact_json
 from rlrmp.model.feedbax_graph import graph_spec_payload
 from rlrmp.model.trainable import staged_network_trainable_paths
-from rlrmp.runtime.spec_migrations import (
-    RUN_SPEC_KIND,
-    RUN_SPEC_SCHEMA_ID,
-    RUN_SPEC_SCHEMA_VERSION,
-    stamp_current_schema,
-)
 from rlrmp.runtime.training_run_specs import build_training_run_spec_scaffold
 from rlrmp.train.executor.slots import minimax_checkpoint_slot_specs
-from rlrmp.train.progress import make_executor_batch_log_callback
+from rlrmp.train.training_configs import MinimaxConfig
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("rlrmp.train.minimax_native")
 
 __all__ = [
     "MINIMAX_METHOD_REF",
@@ -78,8 +61,6 @@ __all__ = [
     "build_minimax_native_initial_slots",
     "ensure_minimax_training_method_registered",
     "execute_minimax_training_run_spec_native",
-    "legacy_cli_args_to_minimax_config",
-    "minimax_config_namespace",
     "minimax_effective_phase_fingerprint",
     "minimax_training_run_spec_from_file",
     "minimax_training_run_spec_to_config",
@@ -96,283 +77,39 @@ MINIMAX_METHOD_PAYLOAD_SCHEMA_ID = "rlrmp.spec.training_method.minimax_payload"
 MINIMAX_METHOD_PAYLOAD_SCHEMA_VERSION = "rlrmp.spec.training_method.minimax_payload.v1"
 
 
-class MinimaxConfig(BaseModel):
-    """Flat minimax method config whose fields own all authoring defaults."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    n_warmup_batches: int = Field(2000, ge=0)
-    n_adversary_batches: int = Field(8000, ge=0)
-    n_adversary_steps: int = Field(5, gt=0)
-    batch_size: int = Field(250, gt=0)
-    adv_batch_size: int | None = None
-    n_replicates: int = Field(5, gt=0)
-    seed: int = 42
-
-    controller_lr: float = 1e-4
-    adversary_lr: float = 3e-4
-    loss_update_enabled: bool = False
-    loss_update_ratio: float = 0.5
-
-    adversary_type: Literal["gaussian_bump", "linear_dynamics"] = "gaussian_bump"
-    n_adversaries: int = Field(1, gt=0)
-    n_bumps: int = 3
-    force_max: float = 1.0
-    linear_dynamics_eta_max: float = 0.1
-    linear_dynamics_pgd_steps: int = 5
-    linear_dynamics_lr: float = 1e-2
-
-    hidden_type: Literal["gru", "vanilla_rnn", "linear", "linear_tracker"] = "gru"
-    sisu_gating: Literal["additive", "multiplicative"] = "additive"
-
-    nn_output: float = 1e-5
-    nn_hidden: float = 1e-5
-    nn_hidden_derivative: float = 0.0
-    nn_output_jerk: float = 0.0
-    nn_output_pre_go: float = 0.0
-    nn_hidden_derivative_pre_go: float = 0.0
-    effector_hold_pos: float = 10.0
-    effector_hold_vel: float = 10.0
-    effector_final_vel: float = 0.0
-    effector_vel_late: float = 0.1
-    effector_pos_running: float = 1.0
-    effector_pos_late_weight: float = 0.5
-    effector_pos_late_final_scale: float = 2.0
-    effector_pos_late_start_step: int = 80
-
-    effector_pos_running_schedule: Literal["flat", "powerlaw", "movement_ramp"] = "flat"
-    effector_hold_pos_schedule: Literal["flat", "powerlaw"] = "flat"
-    position_powerlaw_power: float = 6.0
-    movement_ramp_shape: Literal["linear", "cosine", "power"] = "linear"
-    movement_ramp_duration_steps: int = 60
-    movement_ramp_power: float = 2.0
-
-    p_catch_trial: float = 0.5
-
-    warmup_model: str | None = None
-    output_dir: str = "_artifacts/minimax/minimax_test"
-    spec_dir: str | None = None
-    jax_cache_dir: str | None = None
-    jax_explain_cache_misses: bool = False
-    allow_x64: bool = False
-    checkpoint: bool = False
-    checkpoint_every: int = 500
-    resume: bool = False
-    allow_fresh_start: bool = False
-    fused: bool = True
-    streaming_loss: bool = False
-
-    @model_validator(mode="after")
-    def _validate_config(self) -> "MinimaxConfig":
-        if self.adversary_type == "linear_dynamics" and not self.fused:
-            raise ValueError("linear_dynamics minimax requires fused execution")
-        return self
-
-
-class MinimaxWarmupSpec(BaseModel):
-    """Typed warmup phase view derived from :class:`MinimaxConfig`."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    n_batches: int = Field(ge=0)
-    optimizer: Literal["adamw"] = "adamw"
-    direction: Literal["minimize"] = "minimize"
-    target: Literal["controller"] = "controller"
-
-
-class MinimaxAdversarialSpec(BaseModel):
-    """Typed adversarial phase view derived from :class:`MinimaxConfig`."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    n_batches: int = Field(ge=0)
-    inner_steps: int = Field(gt=0)
-    active_member: str = "batch_idx % n_adversaries"
-    kernel_variant: Literal["fused", "decomposed"]
-    frozen_controller: bool = True
-    outer_direction: Literal["minimize"] = "minimize"
-    inner_direction: Literal["maximize"] = "maximize"
-
-
-class MinimaxProjectionSpec(BaseModel):
-    """Typed projection policy view derived from :class:`MinimaxConfig`."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    target: str
-    operator: Literal["frobenius_ball"] = "frobenius_ball"
-    radius: float
-    radius_source: str = "linear_dynamics_eta_max"
-    timing: str = "after_each_adversary_step"
-    phase_scope: str = "adversarial"
-
-
-class MinimaxOptimizerPolicySpec(BaseModel):
-    """Typed optimizer policy view derived from :class:`MinimaxConfig`."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    controller_lr: float
-    adversary_lr: float
-    controller_optimizer: str = "adamw"
-    adversary_optimizer: str = "adam"
-
-
-class MinimaxCheckpointPolicySpec(BaseModel):
-    """Typed checkpoint policy view derived from :class:`MinimaxConfig`."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    checkpoint_every: int
-    barriers: list[str]
-    custody: str = "feedbax"
-
-
-class MinimaxOutputArtifactsSpec(BaseModel):
-    """Typed output artifact policy view derived from :class:`MinimaxConfig`."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    artifact_root: str
-    tracked_spec_dir: str
-    training_run_spec: str = "feedbax_training_run_spec"
-
-
 class MinimaxMethodPayload(BaseModel):
-    """RLRMP-governed minimax method payload embedded in TrainingRunSpec."""
+    """Minimal native method payload owned by the unified config model."""
 
     model_config = ConfigDict(extra="forbid")
 
     config: MinimaxConfig
-    adversary_type: Literal["gaussian_bump", "linear_dynamics"]
-    warmup: MinimaxWarmupSpec
-    adversarial: MinimaxAdversarialSpec
-    projection: MinimaxProjectionSpec
-    optimizer_policy: MinimaxOptimizerPolicySpec
-    checkpoint_policy: MinimaxCheckpointPolicySpec
-    output_artifacts: MinimaxOutputArtifactsSpec
-    rlrmp_extension_payload: str = "rlrmp_run_spec"
-
-    @field_serializer("config")
-    def _serialize_config(self, config: MinimaxConfig, info: Any) -> dict[str, Any]:
-        return config.model_dump(mode=info.mode, exclude_none=False)
-
-    @model_validator(mode="after")
-    def _validate_payload(self) -> "MinimaxMethodPayload":
-        config = self.config
-        expected_projection_target = "adversary_population[active_member].delta_A"
-        expected_adversary_lr = (
-            config.linear_dynamics_lr
-            if config.adversary_type == "linear_dynamics"
-            else config.adversary_lr
-        )
-        checks = {
-            "adversary_type": self.adversary_type == config.adversary_type,
-            "warmup.n_batches": self.warmup.n_batches == config.n_warmup_batches,
-            "adversarial.n_batches": (self.adversarial.n_batches == config.n_adversary_batches),
-            "adversarial.inner_steps": (self.adversarial.inner_steps == config.n_adversary_steps),
-            "adversarial.kernel_variant": (
-                self.adversarial.kernel_variant == ("fused" if config.fused else "decomposed")
-            ),
-            "projection.radius": self.projection.radius == config.linear_dynamics_eta_max,
-            "projection.target": self.projection.target == expected_projection_target,
-            "optimizer_policy.controller_lr": (
-                self.optimizer_policy.controller_lr == config.controller_lr
-            ),
-            "optimizer_policy.adversary_lr": (
-                self.optimizer_policy.adversary_lr == expected_adversary_lr
-            ),
-            "checkpoint_policy.checkpoint_every": (
-                self.checkpoint_policy.checkpoint_every == config.checkpoint_every
-            ),
-        }
-        mismatches = [name for name, ok in checks.items() if not ok]
-        if mismatches:
-            raise ValueError(
-                "minimax method payload derived views disagree with config: "
-                + ", ".join(mismatches)
-            )
-        if self.adversary_type == "linear_dynamics" and self.projection.target != (
-            expected_projection_target
-        ):
-            raise ValueError(
-                "linear_dynamics minimax payload must project "
-                "adversary_population[active_member].delta_A"
-            )
-        return self
-
-
-def legacy_cli_args_to_minimax_config(argv: Sequence[str]) -> dict[str, Any]:
-    """Translate legacy minimax CLI flags into a validated config mapping.
-
-    This preserves existing command-line launch ergonomics while making CLI
-    parsing an authoring step. The training runner consumes the resulting
-    ``TrainingRunSpec``, never a raw parser namespace.
-    """
-
-    raw_overrides: dict[str, Any] = {}
-    index = 0
-    while index < len(argv):
-        token = argv[index]
-        if token in {"-h", "--help"}:
-            raise SystemExit(_minimax_cli_help())
-        if not token.startswith("--"):
-            raise ValueError(f"unexpected positional argument for minimax spec authoring: {token}")
-        raw_name = token[2:]
-        value_text: str | None = None
-        if "=" in raw_name:
-            raw_name, value_text = raw_name.split("=", 1)
-        negate = raw_name.startswith("no-")
-        name = raw_name[3:] if negate else raw_name
-        field = name.replace("-", "_")
-        if field not in MinimaxConfig.model_fields:
-            raise ValueError(f"unknown minimax option: --{raw_name}")
-        if MinimaxConfig.model_fields[field].annotation is bool:
-            raw_overrides[field] = not negate
-            if value_text is not None:
-                raw_overrides[field] = _parse_bool(value_text, field=field)
-        else:
-            if negate:
-                raise ValueError(f"--no-{name} is only valid for boolean minimax options")
-            if value_text is None:
-                index += 1
-                if index >= len(argv):
-                    raise ValueError(f"missing value for --{name}")
-                value_text = argv[index]
-            raw_overrides[field] = value_text
-        index += 1
-    return MinimaxConfig.model_validate(raw_overrides).model_dump(mode="python")
-
-
-def minimax_config_namespace(config: Mapping[str, Any]) -> SimpleNamespace:
-    """Return attribute-style access for an already validated minimax config."""
-
-    normalized = MinimaxConfig.model_validate(dict(config))
-    return SimpleNamespace(**normalized.model_dump(mode="python"))
 
 
 def build_minimax_training_run_spec(
-    config: Mapping[str, Any],
+    config: Mapping[str, Any] | MinimaxConfig,
     *,
     graph_spec: Any,
     output_dir: Path,
     spec_dir: Path,
-    git: Mapping[str, Any] | None = None,
-    gpu_info: Mapping[str, Any] | None = None,
     feedbax_graph: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the tracked minimax recipe with a composed Feedbax TrainingRunSpec."""
 
     ensure_minimax_training_method_registered()
-    normalized = MinimaxConfig.model_validate(dict(config))
-    payload = _legacy_minimax_run_spec_payload(
-        normalized,
-        git=dict(git or {}),
-        gpu_info=dict(gpu_info or {}),
-        feedbax_graph=dict(feedbax_graph or {}),
+    normalized = (
+        config if isinstance(config, MinimaxConfig) else MinimaxConfig.model_validate(dict(config))
     )
-    extension = stamp_current_schema(RUN_SPEC_KIND, _rlrmp_minimax_extension_payload(payload))
-    method_payload = _minimax_method_payload(normalized, output_dir=output_dir, spec_dir=spec_dir)
+    payload: dict[str, Any] = {
+        "schema_id": "rlrmp.minimax.native_run_spec",
+        "schema_version": "rlrmp.minimax.native_run_spec.v1",
+        "config": normalized.model_dump(mode="json"),
+        "feedbax_graph": dict(feedbax_graph or {}),
+    }
+    method_payload = MethodPayloadEnvelope(
+        schema_id=MINIMAX_METHOD_PAYLOAD_SCHEMA_ID,
+        schema_version=MINIMAX_METHOD_PAYLOAD_SCHEMA_VERSION,
+        payload=MinimaxMethodPayload(config=normalized).model_dump(mode="json"),
+    )
     contract = minimax_method_contract()
     effective_phase = minimax_effective_phase_spec(contract)
     fingerprint = minimax_effective_phase_fingerprint(
@@ -442,13 +179,12 @@ def build_minimax_training_run_spec(
             },
             schema_id="rlrmp.minimax_objective",
             schema_version="rlrmp.minimax_objective.v1",
-            metadata={"lowering_owner": "rlrmp.train.minimax"},
+            metadata={"lowering_owner": "rlrmp.train.minimax_native"},
         ),
         method_ref=MethodRefSpec(package="rlrmp", name="minimax", version="v1"),
         method_payload=method_payload,
         method_extensions={
             "metadata": {
-                "rlrmp_extension_payload": "rlrmp_run_spec",
                 "scientific_semantics_owner": "rlrmp.train.adversary",
             }
         },
@@ -459,7 +195,6 @@ def build_minimax_training_run_spec(
             "pre_execution_parity": "compare_requested_serialized_spec",
         },
     )
-    payload["rlrmp_run_spec"] = extension
     payload["feedbax_training_run_spec"] = feedbax_spec.model_dump(
         mode="json",
         exclude_none=True,
@@ -500,7 +235,7 @@ def build_minimax_native_initial_slots(
 ):
     """Build minimax native-executor initial slots and runtime context."""
 
-    from rlrmp.train.minimax_native import build_minimax_native_initial_slots as _build
+    from rlrmp.train.minimax_native.kernels import build_minimax_native_initial_slots as _build
 
     return _build(run_spec=run_spec, hps=hps, args=args, key=key)
 
@@ -521,22 +256,21 @@ def execute_minimax_training_run_spec_native(
     import jax.random as jr
     from feedbax.training.executor import execute_training_run_spec
     from rlrmp.train.executor.adapters import RLRMP_RUNTIME_CONTEXT_KEY
-    from rlrmp.train.minimax_native import MinimaxExternalObjectiveLossService
+    from rlrmp.train.minimax_native.kernels import MinimaxExternalObjectiveLossService
 
     ensure_minimax_training_method_registered()
     training_spec = (
         spec if isinstance(spec, TrainingRunSpec) else TrainingRunSpec.model_validate(spec)
     )
-    args = minimax_config_namespace(minimax_training_run_spec_to_config(training_spec))
-    hps = build_hps(args)
+    config = MinimaxConfig.model_validate(minimax_training_run_spec_to_config(training_spec))
+    hps = build_hps(config)
     initial_slots, runtime = build_minimax_native_initial_slots(
         run_spec=training_spec,
         hps=hps,
-        args=args,
-        key=key if key is not None else jr.PRNGKey(args.seed),
+        args=config,
+        key=key if key is not None else jr.PRNGKey(config.seed),
     )
-    started = time.monotonic()
-    result = execute_training_run_spec(
+    return execute_training_run_spec(
         training_spec,
         run_id=run_id,
         initial_slots=initial_slots,
@@ -546,110 +280,8 @@ def execute_minimax_training_run_spec_native(
         loss_service=kwargs.pop("loss_service", MinimaxExternalObjectiveLossService()),
         resume=resume,
         stop_after_barrier=stop_after_barrier,
-        progress_callback=kwargs.pop(
-            "progress_callback",
-            make_executor_batch_log_callback(
-                {
-                    "warmup": int(args.n_warmup_batches),
-                    "adversarial": int(args.n_adversary_batches),
-                },
-                batch_index=_minimax_executor_batch_index,
-                logger=logger,
-            ),
-        ),
         **kwargs,
     )
-    _write_minimax_training_summary(
-        training_spec,
-        result,
-        duration_seconds=time.monotonic() - started,
-    )
-    return result
-
-
-def _minimax_executor_batch_index(
-    coordinate: Mapping[str, Any],
-    seen: int,
-    total: int,
-) -> int:
-    """Map minimax executor coordinates onto conceptual batch indices."""
-
-    if coordinate.get("phase") == "warmup":
-        return total - 1
-    if coordinate.get("phase") == "adversarial":
-        global_step = coordinate.get("global_step")
-        if isinstance(global_step, int):
-            return global_step - 2
-    return seen
-
-
-def _write_minimax_training_summary(
-    training_spec: TrainingRunSpec,
-    result: Any,
-    *,
-    duration_seconds: float,
-) -> None:
-    """Write the post-run summary JSON consumed by ``scripts/post_run.sh``."""
-
-    config = minimax_training_run_spec_to_config(training_spec)
-    normalized = MinimaxConfig.model_validate(config)
-    output_dir = Path(normalized.output_dir)
-    summary = _minimax_training_summary_payload(
-        normalized,
-        result,
-        duration_seconds=duration_seconds,
-    )
-    write_compact_json(output_dir / "training_summary.json", summary, atomic=True)
-
-
-def _minimax_training_summary_payload(
-    config: MinimaxConfig,
-    result: Any,
-    *,
-    duration_seconds: float,
-) -> dict[str, Any]:
-    training_mode = "minimax"
-    if config.adversary_type == "linear_dynamics":
-        training_mode += "+linear_dynamics"
-    n_train_batches = int(config.n_warmup_batches) + int(config.n_adversary_batches)
-    completed_batches = _minimax_completed_batches(config, result)
-    summary: dict[str, Any] = {
-        "training_mode": training_mode,
-        "n_warmup_batches": int(config.n_warmup_batches),
-        "n_adversary_batches": int(config.n_adversary_batches),
-        "n_train_batches": n_train_batches,
-        "batch_size": int(config.batch_size),
-        "adv_batch_size": int(config.adv_batch_size),
-        "n_replicates": int(config.n_replicates),
-        "completed_batches": completed_batches,
-        "training_duration_seconds": float(duration_seconds),
-        "run_id": result.run_id,
-        "executor_status": result.status,
-        "final_phase": result.final_coordinate.phase,
-        "final_global_step": result.final_coordinate.global_step,
-        "manifest_path": str(result.manifest_path),
-    }
-    if result.final_coordinate.completed_barrier is not None:
-        summary["completed_barrier"] = result.final_coordinate.completed_barrier
-    return summary
-
-
-def _minimax_completed_batches(config: MinimaxConfig, result: Any) -> int:
-    n_warmup = int(config.n_warmup_batches)
-    n_adversary = int(config.n_adversary_batches)
-    n_train_batches = n_warmup + n_adversary
-    if result.final_coordinate.phase == "done":
-        return n_train_batches
-
-    phase_counts = {"warmup": 0, "adversarial": 0}
-    for event in result.history_events:
-        coordinate = event.get("coordinate", {}) if isinstance(event, Mapping) else {}
-        phase = coordinate.get("phase") if isinstance(coordinate, Mapping) else None
-        if phase in phase_counts:
-            phase_counts[phase] += 1
-    completed_warmup = n_warmup if n_warmup > 0 and phase_counts["warmup"] else 0
-    completed_adversarial = min(n_adversary, phase_counts["adversarial"])
-    return min(n_train_batches, completed_warmup + completed_adversarial)
 
 
 def validate_minimax_run_spec(
@@ -660,29 +292,21 @@ def validate_minimax_run_spec(
 ) -> None:
     """Validate the tracked minimax run-spec contract."""
 
-    del require_graph_sidecars
+    del spec_dir, require_graph_sidecars
     ensure_minimax_training_method_registered()
     required = {
         "schema_id",
         "schema_version",
-        "mode",
-        "training_script",
-        "training_summary",
-        "adversary",
-        "phase_program",
-        "projection",
-        "optimizer",
-        "checkpointing",
+        "config",
         "feedbax_graph",
-        "rlrmp_run_spec",
         "feedbax_training_run_spec",
     }
     missing = sorted(required - set(run_spec))
     if missing:
         raise ValueError("minimax run spec is missing required keys: " + ", ".join(missing))
-    if run_spec["schema_id"] != RUN_SPEC_SCHEMA_ID:
+    if run_spec["schema_id"] != "rlrmp.minimax.native_run_spec":
         raise ValueError(f"unsupported minimax run spec schema_id: {run_spec['schema_id']!r}")
-    if run_spec["schema_version"] != RUN_SPEC_SCHEMA_VERSION:
+    if run_spec["schema_version"] != "rlrmp.minimax.native_run_spec.v1":
         raise ValueError(
             f"unsupported minimax run spec schema_version: {run_spec['schema_version']!r}"
         )
@@ -703,8 +327,6 @@ def validate_minimax_run_spec(
             "minimax TrainingRunSpec effective-phase fingerprint mismatch: "
             f"stored={expected!r}, actual={actual!r}"
         )
-    if spec_dir is None:
-        raise ValueError("spec_dir is required for minimax run spec validation")
 
 
 def validate_minimax_run_spec_file(path: Path | str) -> None:
@@ -732,7 +354,7 @@ def ensure_minimax_training_method_registered() -> None:
             update_kernels_factory=_minimax_update_kernels,
             guard_predicates_factory=_minimax_guard_predicates,
             rejected_payload_versions=("rlrmp.spec.training_method.minimax_payload.v0",),
-            owner="rlrmp.train.minimax",
+            owner="rlrmp.train.minimax_native",
             package="rlrmp",
         )
     )
@@ -1039,171 +661,15 @@ def minimax_effective_phase_fingerprint(
 def _minimax_update_kernels(
     payload: BaseModel | None = None,
 ) -> Mapping[str, Any]:
-    from rlrmp.train.minimax_native import minimax_update_kernels
+    from rlrmp.train.minimax_native.kernels import minimax_update_kernels
 
     return minimax_update_kernels(payload)
 
 
 def _minimax_guard_predicates(payload: BaseModel | None = None) -> Mapping[str, Any]:
-    from rlrmp.train.minimax_native import minimax_guard_predicates
+    from rlrmp.train.minimax_native.kernels import minimax_guard_predicates
 
     return minimax_guard_predicates(payload)
-
-
-def _minimax_method_payload(
-    config: Mapping[str, Any] | MinimaxConfig,
-    *,
-    output_dir: Path,
-    spec_dir: Path,
-) -> MethodPayloadEnvelope:
-    normalized = (
-        config if isinstance(config, MinimaxConfig) else MinimaxConfig.model_validate(dict(config))
-    )
-    payload = MinimaxMethodPayload(
-        config=normalized,
-        adversary_type=normalized.adversary_type,
-        warmup=MinimaxWarmupSpec(n_batches=normalized.n_warmup_batches),
-        adversarial=MinimaxAdversarialSpec(
-            n_batches=normalized.n_adversary_batches,
-            inner_steps=normalized.n_adversary_steps,
-            kernel_variant="fused" if normalized.fused else "decomposed",
-        ),
-        projection=MinimaxProjectionSpec(
-            target="adversary_population[active_member].delta_A",
-            radius=normalized.linear_dynamics_eta_max,
-        ),
-        optimizer_policy=MinimaxOptimizerPolicySpec(
-            controller_lr=normalized.controller_lr,
-            adversary_lr=(
-                normalized.linear_dynamics_lr
-                if normalized.adversary_type == "linear_dynamics"
-                else normalized.adversary_lr
-            ),
-        ),
-        checkpoint_policy=MinimaxCheckpointPolicySpec(
-            checkpoint_every=normalized.checkpoint_every,
-            barriers=["after_warmup", "after_adversarial"],
-        ),
-        output_artifacts=MinimaxOutputArtifactsSpec(
-            artifact_root=str(output_dir),
-            tracked_spec_dir=str(spec_dir),
-        ),
-    )
-    return MethodPayloadEnvelope(
-        schema_id=MINIMAX_METHOD_PAYLOAD_SCHEMA_ID,
-        schema_version=MINIMAX_METHOD_PAYLOAD_SCHEMA_VERSION,
-        payload=payload.model_dump(mode="json", exclude_none=True),
-    )
-
-
-def _legacy_minimax_run_spec_payload(
-    config: MinimaxConfig,
-    *,
-    git: Mapping[str, Any],
-    gpu_info: Mapping[str, Any],
-    feedbax_graph: Mapping[str, Any],
-) -> dict[str, Any]:
-    training_mode = "minimax"
-    if config.adversary_type == "linear_dynamics":
-        training_mode += "+linear_dynamics"
-    config_dict = config.model_dump(mode="python")
-    return stamp_current_schema(
-        RUN_SPEC_KIND,
-        {
-            **config_dict,
-            "mode": "train_minimax",
-            "training_script": "scripts/train_minimax.py",
-            "git": dict(git),
-            "gpu_info": dict(gpu_info),
-            "feedbax_graph": dict(feedbax_graph),
-            "training_summary": {
-                "training_mode": training_mode,
-                "n_warmup_batches": config.n_warmup_batches,
-                "n_adversary_batches": config.n_adversary_batches,
-                "batch_size": config.batch_size,
-                "adv_batch_size": config.adv_batch_size,
-                "n_replicates": config.n_replicates,
-            },
-            "adversary": {
-                "type": config.adversary_type,
-                "n_adversaries": config.n_adversaries,
-                "n_inner_steps": config.n_adversary_steps,
-                "n_bumps": config.n_bumps,
-                "force_max": config.force_max,
-                "linear_dynamics": {
-                    "eta_max": config.linear_dynamics_eta_max,
-                    "pgd_steps": config.linear_dynamics_pgd_steps,
-                    "learning_rate": config.linear_dynamics_lr,
-                },
-            },
-            "phase_program": {
-                "warmup": "controller_descent",
-                "adversarial": [
-                    "inner_adversary_ascent",
-                    "frobenius_ball_projection",
-                    "outer_controller_descent",
-                ],
-                "kernel_variant": "fused" if config.fused else "decomposed",
-            },
-            "projection": {
-                "target": "adversary_population[active_member].delta_A",
-                "operator": "frobenius_ball",
-                "radius_source": "linear_dynamics_eta_max",
-                "radius": config.linear_dynamics_eta_max,
-            },
-            "optimizer": {
-                "controller": {"type": "adamw", "learning_rate": config.controller_lr},
-                "adversary": {
-                    "type": "adam",
-                    "learning_rate": (
-                        config.linear_dynamics_lr
-                        if config.adversary_type == "linear_dynamics"
-                        else config.adversary_lr
-                    ),
-                },
-            },
-            "checkpointing": {
-                "checkpoint_every": config.checkpoint_every,
-                "resume": config.resume,
-                "custody": "feedbax",
-            },
-        },
-    )
-
-
-def _rlrmp_minimax_extension_payload(run_spec: Mapping[str, Any]) -> dict[str, Any]:
-    return {
-        "issue": "54b0c2e",
-        "mode": run_spec.get("mode"),
-        "training_script": run_spec.get("training_script"),
-        "training_summary": run_spec.get("training_summary"),
-        "adversary": run_spec.get("adversary"),
-        "phase_program": run_spec.get("phase_program"),
-        "projection": run_spec.get("projection"),
-        "optimizer": run_spec.get("optimizer"),
-        "checkpointing": run_spec.get("checkpointing"),
-        "feedbax_graph": run_spec.get("feedbax_graph"),
-    }
-
-
-def _parse_bool(value: str, *, field: str) -> bool:
-    lowered = value.lower()
-    if lowered in {"1", "true", "yes", "on"}:
-        return True
-    if lowered in {"0", "false", "no", "off"}:
-        return False
-    raise ValueError(f"{field} expects a boolean value, found {value!r}")
-
-
-def _minimax_cli_help() -> str:
-    options = "\n".join(
-        f"  --{name.replace('_', '-')} (default: {field.default!r})"
-        for name, field in sorted(MinimaxConfig.model_fields.items())
-    )
-    return "Minimax adversarial training spec authoring options:\n" + options
-
-
-ensure_minimax_training_method_registered()
 
 
 def _trainable_paths_for_hidden_type(hidden_type: str, sisu_gating: str) -> list[str]:
@@ -1247,7 +713,7 @@ def _resolve_hidden_type(hidden_type_str: str, dt: float):
 
 
 def _build_hps_from_config(args: Any) -> TreeNamespace:
-    """Materialize legacy task/model hyperparameters from the validated config.
+    """Materialize task/model hyperparameters from the validated config.
 
     Uses the same task config as :func:`rlrmp.train.standard.build_hps`
     (running_cost loss mode), so the two trainers produce comparable models.

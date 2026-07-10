@@ -15,6 +15,15 @@ from rlrmp.train.cs_nominal_gru import (
     build_parser,
 )
 from rlrmp.train.run_spec_authoring import build_parser as authoring_build_parser
+from rlrmp.train.config_cli import build_config_parser
+from rlrmp.train.minimax_native import MinimaxConfig
+from rlrmp.train.training_configs import (
+    CLOSED_LOOP_DISTILLATION_PARAMS_REF,
+    GUIDED_DISTILLATION_PARAMS_REF,
+    MINIMAX_PARAMS_REF,
+    ClosedLoopDistillationConfig,
+    GuidedDistillationConfig,
+)
 from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_PARAMS_REF,
     FIXED_TARGET_PERTURBATION_PARAMS_REF,
@@ -135,6 +144,28 @@ def test_training_config_family_has_one_definition_module() -> None:
     assert {path for path, _name in definitions} == {"src/rlrmp/train/training_configs.py"}
 
 
+def test_native_trainer_configs_share_unified_definition_module() -> None:
+    config_classes = (
+        MinimaxConfig,
+        GuidedDistillationConfig,
+        ClosedLoopDistillationConfig,
+    )
+    assert {config_type.__module__ for config_type in config_classes} == {
+        "rlrmp.train.training_configs"
+    }
+    assert params_model_for(MINIMAX_PARAMS_REF) is MinimaxConfig
+    assert params_model_for(GUIDED_DISTILLATION_PARAMS_REF) is GuidedDistillationConfig
+    assert params_model_for(CLOSED_LOOP_DISTILLATION_PARAMS_REF) is ClosedLoopDistillationConfig
+
+    guided_args = build_config_parser(GuidedDistillationConfig, description="guided").parse_args([])
+    closed_args = build_config_parser(
+        ClosedLoopDistillationConfig,
+        description="closed-loop",
+    ).parse_args([])
+    assert vars(guided_args) == GuidedDistillationConfig().model_dump(mode="python")
+    assert vars(closed_args) == ClosedLoopDistillationConfig().model_dump(mode="python")
+
+
 def test_legacy_training_config_translator_definitions_are_retired() -> None:
     offenders: list[str] = []
     for path in (REPO_ROOT / "src").rglob("*.py"):
@@ -150,7 +181,7 @@ def test_legacy_training_config_translator_definitions_are_retired() -> None:
 
 
 def test_minimax_hps_entrypoint_is_a_thin_validated_constructor() -> None:
-    path = REPO_ROOT / "src/rlrmp/train/minimax.py"
+    path = REPO_ROOT / "src/rlrmp/train/minimax_native/method.py"
     tree = ast.parse(path.read_text(encoding="utf-8"))
     build_hps = next(
         node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "build_hps"

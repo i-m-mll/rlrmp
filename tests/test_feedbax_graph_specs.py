@@ -47,7 +47,7 @@ from rlrmp.intervention_compat import (
 from rlrmp.controllers.linear import LinearController, LinearTrackerController
 from rlrmp.train.task_model import build_task_base, setup_task_model_pair
 from rlrmp.model.stochastic_runtime import PLANT_PROCESS_FORCE_NOISE_LABEL
-from rlrmp.train.minimax import build_hps
+from rlrmp.train.minimax_native import build_hps
 
 
 pytestmark = pytest.mark.feedbax_contract

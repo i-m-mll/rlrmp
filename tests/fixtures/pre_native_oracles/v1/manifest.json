@@ -1,0 +1,3550 @@
+{
+  "schema_id": "rlrmp.pre_native_training_oracle",
+  "schema_version": "rlrmp.pre_native_training_oracle.v1",
+  "source_commit": "0ee30e6f",
+  "python": "3.13.5",
+  "jax": "0.9.0",
+  "jaxlib": "0.9.0",
+  "cases": {
+    "minimax_gaussian_bump": {
+      "file": "minimax_gaussian_bump.npz",
+      "seed": 1,
+      "spec_sha256": "e4ea6bc21a2d2be441e81bfaece9d2279387b630863d743cb4185fd169f7026d",
+      "tolerance": {
+        "atol": 1e-06,
+        "rtol": 1e-06
+      },
+      "leaves": [
+        {
+          "key": "leaf_0000",
+          "path": "['full']['adversary_loss']",
+          "shape": [],
+          "dtype": "float64"
+        },
+        {
+          "key": "leaf_0001",
+          "path": "['full']['adversary_optimizer'][0][0].count",
+          "shape": [
+            1
+          ],
+          "dtype": "int32"
+        },
+        {
+          "key": "leaf_0002",
+          "path": "['full']['adversary_optimizer'][0][0].mu.bump_centers",
+          "shape": [
+            1,
+            3
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0003",
+          "path": "['full']['adversary_optimizer'][0][0].mu.bump_widths_raw",
+          "shape": [
+            1,
+            3
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0004",
+          "path": "['full']['adversary_optimizer'][0][0].mu.bump_amplitudes_raw",
+          "shape": [
+            1,
+            3
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0005",
+          "path": "['full']['adversary_optimizer'][0][0].mu.bump_directions",
+          "shape": [
+            1,
+            3,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0006",
+          "path": "['full']['adversary_optimizer'][0][0].nu.bump_centers",
+          "shape": [
+            1,
+            3
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0007",
+          "path": "['full']['adversary_optimizer'][0][0].nu.bump_widths_raw",
+          "shape": [
+            1,
+            3
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0008",
+          "path": "['full']['adversary_optimizer'][0][0].nu.bump_amplitudes_raw",
+          "shape": [
+            1,
+            3
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0009",
+          "path": "['full']['adversary_optimizer'][0][0].nu.bump_directions",
+          "shape": [
+            1,
+            3,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0010",
+          "path": "['full']['adversary_population'][0].bump_centers",
+          "shape": [
+            1,
+            3
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0011",
+          "path": "['full']['adversary_population'][0].bump_widths_raw",
+          "shape": [
+            1,
+            3
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0012",
+          "path": "['full']['adversary_population'][0].bump_amplitudes_raw",
+          "shape": [
+            1,
+            3
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0013",
+          "path": "['full']['adversary_population'][0].bump_directions",
+          "shape": [
+            1,
+            3,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0014",
+          "path": "['full']['controller'][0]",
+          "shape": [
+            1
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0015",
+          "path": "['full']['controller'][1]",
+          "shape": [
+            1
+          ],
+          "dtype": "int8"
+        },
+        {
+          "key": "leaf_0016",
+          "path": "['full']['controller'][2]",
+          "shape": [
+            1
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0017",
+          "path": "['full']['controller'][3]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0018",
+          "path": "['full']['controller'][4]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0019",
+          "path": "['full']['controller'][5]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0020",
+          "path": "['full']['controller'][6]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0021",
+          "path": "['full']['controller'][7]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0022",
+          "path": "['full']['controller'][8]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0023",
+          "path": "['full']['controller'][9]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0024",
+          "path": "['full']['controller'][10]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0025",
+          "path": "['full']['controller'][11]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0026",
+          "path": "['full']['controller'][12]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0027",
+          "path": "['full']['controller'][13]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0028",
+          "path": "['full']['controller'][14]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0029",
+          "path": "['full']['controller'][15]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0030",
+          "path": "['full']['controller'][16]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0031",
+          "path": "['full']['controller'][17]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0032",
+          "path": "['full']['controller'][18]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0033",
+          "path": "['full']['controller'][19]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0034",
+          "path": "['full']['controller'][20]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0035",
+          "path": "['full']['controller'][21]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0036",
+          "path": "['full']['controller'][22]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0037",
+          "path": "['full']['controller'][23]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0038",
+          "path": "['full']['controller'][24]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0039",
+          "path": "['full']['controller'][25]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0040",
+          "path": "['full']['controller'][26]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0041",
+          "path": "['full']['controller'][27]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0042",
+          "path": "['full']['controller'][28]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0043",
+          "path": "['full']['controller'][29]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0044",
+          "path": "['full']['controller'][30]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0045",
+          "path": "['full']['controller'][31]",
+          "shape": [
+            1,
+            540,
+            11
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0046",
+          "path": "['full']['controller'][32]",
+          "shape": [
+            1,
+            540,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0047",
+          "path": "['full']['controller'][33]",
+          "shape": [
+            1,
+            540
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0048",
+          "path": "['full']['controller'][34]",
+          "shape": [
+            1,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0049",
+          "path": "['full']['controller'][35]",
+          "shape": [
+            1,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0050",
+          "path": "['full']['controller'][36]",
+          "shape": [
+            1,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0051",
+          "path": "['full']['controller'][37]",
+          "shape": [
+            1,
+            2,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0052",
+          "path": "['full']['controller'][38]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0053",
+          "path": "['full']['controller_loss']",
+          "shape": [],
+          "dtype": "float64"
+        },
+        {
+          "key": "leaf_0054",
+          "path": "['full']['controller_optimizer'][0].count",
+          "shape": [
+            1
+          ],
+          "dtype": "int32"
+        },
+        {
+          "key": "leaf_0055",
+          "path": "['full']['controller_optimizer'][0].mu[0].weight_ih",
+          "shape": [
+            1,
+            540,
+            11
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0056",
+          "path": "['full']['controller_optimizer'][0].mu[0].weight_hh",
+          "shape": [
+            1,
+            540,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0057",
+          "path": "['full']['controller_optimizer'][0].mu[0].bias",
+          "shape": [
+            1,
+            540
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0058",
+          "path": "['full']['controller_optimizer'][0].mu[0].bias_n",
+          "shape": [
+            1,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0059",
+          "path": "['full']['controller_optimizer'][0].mu[1].weight",
+          "shape": [
+            1,
+            2,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0060",
+          "path": "['full']['controller_optimizer'][0].mu[1].bias",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0061",
+          "path": "['full']['controller_optimizer'][0].nu[0].weight_ih",
+          "shape": [
+            1,
+            540,
+            11
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0062",
+          "path": "['full']['controller_optimizer'][0].nu[0].weight_hh",
+          "shape": [
+            1,
+            540,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0063",
+          "path": "['full']['controller_optimizer'][0].nu[0].bias",
+          "shape": [
+            1,
+            540
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0064",
+          "path": "['full']['controller_optimizer'][0].nu[0].bias_n",
+          "shape": [
+            1,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0065",
+          "path": "['full']['controller_optimizer'][0].nu[1].weight",
+          "shape": [
+            1,
+            2,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0066",
+          "path": "['full']['controller_optimizer'][0].nu[1].bias",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0067",
+          "path": "['full']['rng']",
+          "shape": [
+            2
+          ],
+          "dtype": "uint32"
+        },
+        {
+          "key": "leaf_0068",
+          "path": "['resumed']['adversary_loss']",
+          "shape": [],
+          "dtype": "float64"
+        },
+        {
+          "key": "leaf_0069",
+          "path": "['resumed']['adversary_optimizer'][0][0].count",
+          "shape": [
+            1
+          ],
+          "dtype": "int32"
+        },
+        {
+          "key": "leaf_0070",
+          "path": "['resumed']['adversary_optimizer'][0][0].mu.bump_centers",
+          "shape": [
+            1,
+            3
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0071",
+          "path": "['resumed']['adversary_optimizer'][0][0].mu.bump_widths_raw",
+          "shape": [
+            1,
+            3
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0072",
+          "path": "['resumed']['adversary_optimizer'][0][0].mu.bump_amplitudes_raw",
+          "shape": [
+            1,
+            3
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0073",
+          "path": "['resumed']['adversary_optimizer'][0][0].mu.bump_directions",
+          "shape": [
+            1,
+            3,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0074",
+          "path": "['resumed']['adversary_optimizer'][0][0].nu.bump_centers",
+          "shape": [
+            1,
+            3
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0075",
+          "path": "['resumed']['adversary_optimizer'][0][0].nu.bump_widths_raw",
+          "shape": [
+            1,
+            3
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0076",
+          "path": "['resumed']['adversary_optimizer'][0][0].nu.bump_amplitudes_raw",
+          "shape": [
+            1,
+            3
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0077",
+          "path": "['resumed']['adversary_optimizer'][0][0].nu.bump_directions",
+          "shape": [
+            1,
+            3,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0078",
+          "path": "['resumed']['adversary_population'][0].bump_centers",
+          "shape": [
+            1,
+            3
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0079",
+          "path": "['resumed']['adversary_population'][0].bump_widths_raw",
+          "shape": [
+            1,
+            3
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0080",
+          "path": "['resumed']['adversary_population'][0].bump_amplitudes_raw",
+          "shape": [
+            1,
+            3
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0081",
+          "path": "['resumed']['adversary_population'][0].bump_directions",
+          "shape": [
+            1,
+            3,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0082",
+          "path": "['resumed']['controller'][0]",
+          "shape": [
+            1
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0083",
+          "path": "['resumed']['controller'][1]",
+          "shape": [
+            1
+          ],
+          "dtype": "int8"
+        },
+        {
+          "key": "leaf_0084",
+          "path": "['resumed']['controller'][2]",
+          "shape": [
+            1
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0085",
+          "path": "['resumed']['controller'][3]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0086",
+          "path": "['resumed']['controller'][4]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0087",
+          "path": "['resumed']['controller'][5]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0088",
+          "path": "['resumed']['controller'][6]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0089",
+          "path": "['resumed']['controller'][7]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0090",
+          "path": "['resumed']['controller'][8]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0091",
+          "path": "['resumed']['controller'][9]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0092",
+          "path": "['resumed']['controller'][10]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0093",
+          "path": "['resumed']['controller'][11]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0094",
+          "path": "['resumed']['controller'][12]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0095",
+          "path": "['resumed']['controller'][13]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0096",
+          "path": "['resumed']['controller'][14]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0097",
+          "path": "['resumed']['controller'][15]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0098",
+          "path": "['resumed']['controller'][16]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0099",
+          "path": "['resumed']['controller'][17]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0100",
+          "path": "['resumed']['controller'][18]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0101",
+          "path": "['resumed']['controller'][19]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0102",
+          "path": "['resumed']['controller'][20]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0103",
+          "path": "['resumed']['controller'][21]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0104",
+          "path": "['resumed']['controller'][22]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0105",
+          "path": "['resumed']['controller'][23]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0106",
+          "path": "['resumed']['controller'][24]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0107",
+          "path": "['resumed']['controller'][25]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0108",
+          "path": "['resumed']['controller'][26]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0109",
+          "path": "['resumed']['controller'][27]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0110",
+          "path": "['resumed']['controller'][28]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0111",
+          "path": "['resumed']['controller'][29]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0112",
+          "path": "['resumed']['controller'][30]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0113",
+          "path": "['resumed']['controller'][31]",
+          "shape": [
+            1,
+            540,
+            11
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0114",
+          "path": "['resumed']['controller'][32]",
+          "shape": [
+            1,
+            540,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0115",
+          "path": "['resumed']['controller'][33]",
+          "shape": [
+            1,
+            540
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0116",
+          "path": "['resumed']['controller'][34]",
+          "shape": [
+            1,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0117",
+          "path": "['resumed']['controller'][35]",
+          "shape": [
+            1,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0118",
+          "path": "['resumed']['controller'][36]",
+          "shape": [
+            1,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0119",
+          "path": "['resumed']['controller'][37]",
+          "shape": [
+            1,
+            2,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0120",
+          "path": "['resumed']['controller'][38]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0121",
+          "path": "['resumed']['controller_loss']",
+          "shape": [],
+          "dtype": "float64"
+        },
+        {
+          "key": "leaf_0122",
+          "path": "['resumed']['controller_optimizer'][0].count",
+          "shape": [
+            1
+          ],
+          "dtype": "int32"
+        },
+        {
+          "key": "leaf_0123",
+          "path": "['resumed']['controller_optimizer'][0].mu[0].weight_ih",
+          "shape": [
+            1,
+            540,
+            11
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0124",
+          "path": "['resumed']['controller_optimizer'][0].mu[0].weight_hh",
+          "shape": [
+            1,
+            540,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0125",
+          "path": "['resumed']['controller_optimizer'][0].mu[0].bias",
+          "shape": [
+            1,
+            540
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0126",
+          "path": "['resumed']['controller_optimizer'][0].mu[0].bias_n",
+          "shape": [
+            1,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0127",
+          "path": "['resumed']['controller_optimizer'][0].mu[1].weight",
+          "shape": [
+            1,
+            2,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0128",
+          "path": "['resumed']['controller_optimizer'][0].mu[1].bias",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0129",
+          "path": "['resumed']['controller_optimizer'][0].nu[0].weight_ih",
+          "shape": [
+            1,
+            540,
+            11
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0130",
+          "path": "['resumed']['controller_optimizer'][0].nu[0].weight_hh",
+          "shape": [
+            1,
+            540,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0131",
+          "path": "['resumed']['controller_optimizer'][0].nu[0].bias",
+          "shape": [
+            1,
+            540
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0132",
+          "path": "['resumed']['controller_optimizer'][0].nu[0].bias_n",
+          "shape": [
+            1,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0133",
+          "path": "['resumed']['controller_optimizer'][0].nu[1].weight",
+          "shape": [
+            1,
+            2,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0134",
+          "path": "['resumed']['controller_optimizer'][0].nu[1].bias",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0135",
+          "path": "['resumed']['rng']",
+          "shape": [
+            2
+          ],
+          "dtype": "uint32"
+        }
+      ],
+      "method": "minimax",
+      "adversary_type": "gaussian_bump",
+      "stopped_barrier": "after_adversarial",
+      "final_phase": "done"
+    },
+    "minimax_linear_dynamics": {
+      "file": "minimax_linear_dynamics.npz",
+      "seed": 3,
+      "spec_sha256": "75ad9686d054c0f376e3115d5a5823c908b8d471d828bd1256b940c621e37d31",
+      "tolerance": {
+        "atol": 1e-06,
+        "rtol": 1e-06
+      },
+      "leaves": [
+        {
+          "key": "leaf_0000",
+          "path": "['full']['adversary_loss']",
+          "shape": [],
+          "dtype": "float64"
+        },
+        {
+          "key": "leaf_0001",
+          "path": "['full']['adversary_optimizer'][0][0].count",
+          "shape": [
+            1
+          ],
+          "dtype": "int32"
+        },
+        {
+          "key": "leaf_0002",
+          "path": "['full']['adversary_optimizer'][0][0].mu.delta_A",
+          "shape": [
+            1,
+            2,
+            4
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0003",
+          "path": "['full']['adversary_optimizer'][0][0].nu.delta_A",
+          "shape": [
+            1,
+            2,
+            4
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0004",
+          "path": "['full']['adversary_population'][0].delta_A",
+          "shape": [
+            1,
+            2,
+            4
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0005",
+          "path": "['full']['controller'][0]",
+          "shape": [
+            1
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0006",
+          "path": "['full']['controller'][1]",
+          "shape": [
+            1
+          ],
+          "dtype": "int8"
+        },
+        {
+          "key": "leaf_0007",
+          "path": "['full']['controller'][2]",
+          "shape": [
+            1,
+            2,
+            4
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0008",
+          "path": "['full']['controller'][3]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0009",
+          "path": "['full']['controller'][4]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0010",
+          "path": "['full']['controller'][5]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0011",
+          "path": "['full']['controller'][6]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0012",
+          "path": "['full']['controller'][7]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0013",
+          "path": "['full']['controller'][8]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0014",
+          "path": "['full']['controller'][9]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0015",
+          "path": "['full']['controller'][10]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0016",
+          "path": "['full']['controller'][11]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0017",
+          "path": "['full']['controller'][12]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0018",
+          "path": "['full']['controller'][13]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0019",
+          "path": "['full']['controller'][14]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0020",
+          "path": "['full']['controller'][15]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0021",
+          "path": "['full']['controller'][16]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0022",
+          "path": "['full']['controller'][17]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0023",
+          "path": "['full']['controller'][18]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0024",
+          "path": "['full']['controller'][19]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0025",
+          "path": "['full']['controller'][20]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0026",
+          "path": "['full']['controller'][21]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0027",
+          "path": "['full']['controller'][22]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0028",
+          "path": "['full']['controller'][23]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0029",
+          "path": "['full']['controller'][24]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0030",
+          "path": "['full']['controller'][25]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0031",
+          "path": "['full']['controller'][26]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0032",
+          "path": "['full']['controller'][27]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0033",
+          "path": "['full']['controller'][28]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0034",
+          "path": "['full']['controller'][29]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0035",
+          "path": "['full']['controller'][30]",
+          "shape": [
+            1,
+            540,
+            11
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0036",
+          "path": "['full']['controller'][31]",
+          "shape": [
+            1,
+            540,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0037",
+          "path": "['full']['controller'][32]",
+          "shape": [
+            1,
+            540
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0038",
+          "path": "['full']['controller'][33]",
+          "shape": [
+            1,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0039",
+          "path": "['full']['controller'][34]",
+          "shape": [
+            1,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0040",
+          "path": "['full']['controller'][35]",
+          "shape": [
+            1,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0041",
+          "path": "['full']['controller'][36]",
+          "shape": [
+            1,
+            2,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0042",
+          "path": "['full']['controller'][37]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0043",
+          "path": "['full']['controller_loss']",
+          "shape": [],
+          "dtype": "float64"
+        },
+        {
+          "key": "leaf_0044",
+          "path": "['full']['controller_optimizer'][0].count",
+          "shape": [
+            1
+          ],
+          "dtype": "int32"
+        },
+        {
+          "key": "leaf_0045",
+          "path": "['full']['controller_optimizer'][0].mu[0].weight_ih",
+          "shape": [
+            1,
+            540,
+            11
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0046",
+          "path": "['full']['controller_optimizer'][0].mu[0].weight_hh",
+          "shape": [
+            1,
+            540,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0047",
+          "path": "['full']['controller_optimizer'][0].mu[0].bias",
+          "shape": [
+            1,
+            540
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0048",
+          "path": "['full']['controller_optimizer'][0].mu[0].bias_n",
+          "shape": [
+            1,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0049",
+          "path": "['full']['controller_optimizer'][0].mu[1].weight",
+          "shape": [
+            1,
+            2,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0050",
+          "path": "['full']['controller_optimizer'][0].mu[1].bias",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0051",
+          "path": "['full']['controller_optimizer'][0].nu[0].weight_ih",
+          "shape": [
+            1,
+            540,
+            11
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0052",
+          "path": "['full']['controller_optimizer'][0].nu[0].weight_hh",
+          "shape": [
+            1,
+            540,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0053",
+          "path": "['full']['controller_optimizer'][0].nu[0].bias",
+          "shape": [
+            1,
+            540
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0054",
+          "path": "['full']['controller_optimizer'][0].nu[0].bias_n",
+          "shape": [
+            1,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0055",
+          "path": "['full']['controller_optimizer'][0].nu[1].weight",
+          "shape": [
+            1,
+            2,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0056",
+          "path": "['full']['controller_optimizer'][0].nu[1].bias",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0057",
+          "path": "['full']['rng']",
+          "shape": [
+            2
+          ],
+          "dtype": "uint32"
+        },
+        {
+          "key": "leaf_0058",
+          "path": "['resumed']['adversary_loss']",
+          "shape": [],
+          "dtype": "float64"
+        },
+        {
+          "key": "leaf_0059",
+          "path": "['resumed']['adversary_optimizer'][0][0].count",
+          "shape": [
+            1
+          ],
+          "dtype": "int32"
+        },
+        {
+          "key": "leaf_0060",
+          "path": "['resumed']['adversary_optimizer'][0][0].mu.delta_A",
+          "shape": [
+            1,
+            2,
+            4
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0061",
+          "path": "['resumed']['adversary_optimizer'][0][0].nu.delta_A",
+          "shape": [
+            1,
+            2,
+            4
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0062",
+          "path": "['resumed']['adversary_population'][0].delta_A",
+          "shape": [
+            1,
+            2,
+            4
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0063",
+          "path": "['resumed']['controller'][0]",
+          "shape": [
+            1
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0064",
+          "path": "['resumed']['controller'][1]",
+          "shape": [
+            1
+          ],
+          "dtype": "int8"
+        },
+        {
+          "key": "leaf_0065",
+          "path": "['resumed']['controller'][2]",
+          "shape": [
+            1,
+            2,
+            4
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0066",
+          "path": "['resumed']['controller'][3]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0067",
+          "path": "['resumed']['controller'][4]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0068",
+          "path": "['resumed']['controller'][5]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0069",
+          "path": "['resumed']['controller'][6]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0070",
+          "path": "['resumed']['controller'][7]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0071",
+          "path": "['resumed']['controller'][8]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0072",
+          "path": "['resumed']['controller'][9]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0073",
+          "path": "['resumed']['controller'][10]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0074",
+          "path": "['resumed']['controller'][11]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0075",
+          "path": "['resumed']['controller'][12]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0076",
+          "path": "['resumed']['controller'][13]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0077",
+          "path": "['resumed']['controller'][14]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0078",
+          "path": "['resumed']['controller'][15]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0079",
+          "path": "['resumed']['controller'][16]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0080",
+          "path": "['resumed']['controller'][17]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0081",
+          "path": "['resumed']['controller'][18]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0082",
+          "path": "['resumed']['controller'][19]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0083",
+          "path": "['resumed']['controller'][20]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0084",
+          "path": "['resumed']['controller'][21]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0085",
+          "path": "['resumed']['controller'][22]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0086",
+          "path": "['resumed']['controller'][23]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0087",
+          "path": "['resumed']['controller'][24]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0088",
+          "path": "['resumed']['controller'][25]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0089",
+          "path": "['resumed']['controller'][26]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0090",
+          "path": "['resumed']['controller'][27]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0091",
+          "path": "['resumed']['controller'][28]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0092",
+          "path": "['resumed']['controller'][29]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0093",
+          "path": "['resumed']['controller'][30]",
+          "shape": [
+            1,
+            540,
+            11
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0094",
+          "path": "['resumed']['controller'][31]",
+          "shape": [
+            1,
+            540,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0095",
+          "path": "['resumed']['controller'][32]",
+          "shape": [
+            1,
+            540
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0096",
+          "path": "['resumed']['controller'][33]",
+          "shape": [
+            1,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0097",
+          "path": "['resumed']['controller'][34]",
+          "shape": [
+            1,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0098",
+          "path": "['resumed']['controller'][35]",
+          "shape": [
+            1,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0099",
+          "path": "['resumed']['controller'][36]",
+          "shape": [
+            1,
+            2,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0100",
+          "path": "['resumed']['controller'][37]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0101",
+          "path": "['resumed']['controller_loss']",
+          "shape": [],
+          "dtype": "float64"
+        },
+        {
+          "key": "leaf_0102",
+          "path": "['resumed']['controller_optimizer'][0].count",
+          "shape": [
+            1
+          ],
+          "dtype": "int32"
+        },
+        {
+          "key": "leaf_0103",
+          "path": "['resumed']['controller_optimizer'][0].mu[0].weight_ih",
+          "shape": [
+            1,
+            540,
+            11
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0104",
+          "path": "['resumed']['controller_optimizer'][0].mu[0].weight_hh",
+          "shape": [
+            1,
+            540,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0105",
+          "path": "['resumed']['controller_optimizer'][0].mu[0].bias",
+          "shape": [
+            1,
+            540
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0106",
+          "path": "['resumed']['controller_optimizer'][0].mu[0].bias_n",
+          "shape": [
+            1,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0107",
+          "path": "['resumed']['controller_optimizer'][0].mu[1].weight",
+          "shape": [
+            1,
+            2,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0108",
+          "path": "['resumed']['controller_optimizer'][0].mu[1].bias",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0109",
+          "path": "['resumed']['controller_optimizer'][0].nu[0].weight_ih",
+          "shape": [
+            1,
+            540,
+            11
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0110",
+          "path": "['resumed']['controller_optimizer'][0].nu[0].weight_hh",
+          "shape": [
+            1,
+            540,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0111",
+          "path": "['resumed']['controller_optimizer'][0].nu[0].bias",
+          "shape": [
+            1,
+            540
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0112",
+          "path": "['resumed']['controller_optimizer'][0].nu[0].bias_n",
+          "shape": [
+            1,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0113",
+          "path": "['resumed']['controller_optimizer'][0].nu[1].weight",
+          "shape": [
+            1,
+            2,
+            180
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0114",
+          "path": "['resumed']['controller_optimizer'][0].nu[1].bias",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0115",
+          "path": "['resumed']['rng']",
+          "shape": [
+            2
+          ],
+          "dtype": "uint32"
+        }
+      ],
+      "method": "minimax",
+      "adversary_type": "linear_dynamics",
+      "stopped_barrier": "after_adversarial",
+      "final_phase": "done"
+    },
+    "guided_distillation": {
+      "file": "guided_distillation.npz",
+      "seed": 3,
+      "spec_sha256": "5bbc791373b7cbe72be267e8302875dc9774969fc20122f4eb34f2e8b07484f9",
+      "tolerance": {
+        "atol": 1e-06,
+        "rtol": 1e-06
+      },
+      "leaves": [
+        {
+          "key": "leaf_0000",
+          "path": "['full']['completed_batches']",
+          "shape": [],
+          "dtype": "int32"
+        },
+        {
+          "key": "leaf_0001",
+          "path": "['full']['model'].per_replicate_leaves[0]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0002",
+          "path": "['full']['model'].per_replicate_leaves[1]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0003",
+          "path": "['full']['model'].per_replicate_leaves[2]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0004",
+          "path": "['full']['model'].per_replicate_leaves[3]",
+          "shape": [
+            1,
+            48,
+            48
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0005",
+          "path": "['full']['model'].per_replicate_leaves[4]",
+          "shape": [
+            1,
+            48,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0006",
+          "path": "['full']['model'].per_replicate_leaves[5]",
+          "shape": [
+            1,
+            48,
+            8
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0007",
+          "path": "['full']['model'].per_replicate_leaves[6]",
+          "shape": [
+            1,
+            48
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0008",
+          "path": "['full']['model'].per_replicate_leaves[7]",
+          "shape": [
+            1,
+            18,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0009",
+          "path": "['full']['model'].per_replicate_leaves[8]",
+          "shape": [
+            1,
+            18,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0010",
+          "path": "['full']['model'].per_replicate_leaves[9]",
+          "shape": [
+            1,
+            18
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0011",
+          "path": "['full']['model'].per_replicate_leaves[10]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0012",
+          "path": "['full']['model'].per_replicate_leaves[11]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0013",
+          "path": "['full']['model'].per_replicate_leaves[12]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0014",
+          "path": "['full']['model'].per_replicate_leaves[13]",
+          "shape": [
+            1,
+            6,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0015",
+          "path": "['full']['model'].per_replicate_leaves[14]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0016",
+          "path": "['full']['model'].per_replicate_leaves[15]",
+          "shape": [
+            1,
+            2,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0017",
+          "path": "['full']['model'].per_replicate_leaves[16]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0018",
+          "path": "['full']['model'].per_replicate_leaves[17]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0019",
+          "path": "['full']['model'].per_replicate_leaves[18]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0020",
+          "path": "['full']['model'].per_replicate_leaves[19]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0021",
+          "path": "['full']['optimizer'][1][0].count",
+          "shape": [
+            1
+          ],
+          "dtype": "int32"
+        },
+        {
+          "key": "leaf_0022",
+          "path": "['full']['optimizer'][1][0].mu.nodes['net'].nodes['cell'].cell.weight_ih",
+          "shape": [
+            1,
+            18,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0023",
+          "path": "['full']['optimizer'][1][0].mu.nodes['net'].nodes['cell'].cell.weight_hh",
+          "shape": [
+            1,
+            18,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0024",
+          "path": "['full']['optimizer'][1][0].mu.nodes['net'].nodes['cell'].cell.bias",
+          "shape": [
+            1,
+            18
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0025",
+          "path": "['full']['optimizer'][1][0].mu.nodes['net'].nodes['cell'].cell.bias_n",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0026",
+          "path": "['full']['optimizer'][1][0].mu.nodes['net'].nodes['h0_encoder'].layer.weight",
+          "shape": [
+            1,
+            6,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0027",
+          "path": "['full']['optimizer'][1][0].mu.nodes['net'].nodes['h0_encoder'].layer.bias",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0028",
+          "path": "['full']['optimizer'][1][0].mu.nodes['net'].nodes['readout'].layer.weight",
+          "shape": [
+            1,
+            2,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0029",
+          "path": "['full']['optimizer'][1][0].mu.nodes['net'].nodes['readout'].layer.bias",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0030",
+          "path": "['full']['optimizer'][1][0].nu.nodes['net'].nodes['cell'].cell.weight_ih",
+          "shape": [
+            1,
+            18,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0031",
+          "path": "['full']['optimizer'][1][0].nu.nodes['net'].nodes['cell'].cell.weight_hh",
+          "shape": [
+            1,
+            18,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0032",
+          "path": "['full']['optimizer'][1][0].nu.nodes['net'].nodes['cell'].cell.bias",
+          "shape": [
+            1,
+            18
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0033",
+          "path": "['full']['optimizer'][1][0].nu.nodes['net'].nodes['cell'].cell.bias_n",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0034",
+          "path": "['full']['optimizer'][1][0].nu.nodes['net'].nodes['h0_encoder'].layer.weight",
+          "shape": [
+            1,
+            6,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0035",
+          "path": "['full']['optimizer'][1][0].nu.nodes['net'].nodes['h0_encoder'].layer.bias",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0036",
+          "path": "['full']['optimizer'][1][0].nu.nodes['net'].nodes['readout'].layer.weight",
+          "shape": [
+            1,
+            2,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0037",
+          "path": "['full']['optimizer'][1][0].nu.nodes['net'].nodes['readout'].layer.bias",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0038",
+          "path": "['full']['optimizer'][1][2].count",
+          "shape": [
+            1
+          ],
+          "dtype": "int32"
+        },
+        {
+          "key": "leaf_0039",
+          "path": "['full']['prng']",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "uint32"
+        },
+        {
+          "key": "leaf_0040",
+          "path": "['full']['train_loss']",
+          "shape": [],
+          "dtype": "float64"
+        },
+        {
+          "key": "leaf_0041",
+          "path": "['resumed']['completed_batches']",
+          "shape": [],
+          "dtype": "int32"
+        },
+        {
+          "key": "leaf_0042",
+          "path": "['resumed']['model'].per_replicate_leaves[0]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0043",
+          "path": "['resumed']['model'].per_replicate_leaves[1]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0044",
+          "path": "['resumed']['model'].per_replicate_leaves[2]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0045",
+          "path": "['resumed']['model'].per_replicate_leaves[3]",
+          "shape": [
+            1,
+            48,
+            48
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0046",
+          "path": "['resumed']['model'].per_replicate_leaves[4]",
+          "shape": [
+            1,
+            48,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0047",
+          "path": "['resumed']['model'].per_replicate_leaves[5]",
+          "shape": [
+            1,
+            48,
+            8
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0048",
+          "path": "['resumed']['model'].per_replicate_leaves[6]",
+          "shape": [
+            1,
+            48
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0049",
+          "path": "['resumed']['model'].per_replicate_leaves[7]",
+          "shape": [
+            1,
+            18,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0050",
+          "path": "['resumed']['model'].per_replicate_leaves[8]",
+          "shape": [
+            1,
+            18,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0051",
+          "path": "['resumed']['model'].per_replicate_leaves[9]",
+          "shape": [
+            1,
+            18
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0052",
+          "path": "['resumed']['model'].per_replicate_leaves[10]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0053",
+          "path": "['resumed']['model'].per_replicate_leaves[11]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0054",
+          "path": "['resumed']['model'].per_replicate_leaves[12]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0055",
+          "path": "['resumed']['model'].per_replicate_leaves[13]",
+          "shape": [
+            1,
+            6,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0056",
+          "path": "['resumed']['model'].per_replicate_leaves[14]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0057",
+          "path": "['resumed']['model'].per_replicate_leaves[15]",
+          "shape": [
+            1,
+            2,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0058",
+          "path": "['resumed']['model'].per_replicate_leaves[16]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0059",
+          "path": "['resumed']['model'].per_replicate_leaves[17]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0060",
+          "path": "['resumed']['model'].per_replicate_leaves[18]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0061",
+          "path": "['resumed']['model'].per_replicate_leaves[19]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0062",
+          "path": "['resumed']['prng']",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "uint32"
+        }
+      ],
+      "method": "guided_distillation",
+      "stopped_barrier": "after_teacher_forced_warm_start",
+      "final_phase": "done"
+    },
+    "closed_loop_distillation": {
+      "file": "closed_loop_distillation.npz",
+      "seed": 3,
+      "spec_sha256": "ec3077c09616015a75bc10f046df761290a7ac8ab0a7df9d25508d3e1ccc79e1",
+      "tolerance": {
+        "atol": 1e-06,
+        "rtol": 1e-06
+      },
+      "leaves": [
+        {
+          "key": "leaf_0000",
+          "path": "['full']['completed_batches']",
+          "shape": [],
+          "dtype": "int32"
+        },
+        {
+          "key": "leaf_0001",
+          "path": "['full']['model'].per_replicate_leaves[0]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0002",
+          "path": "['full']['model'].per_replicate_leaves[1]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0003",
+          "path": "['full']['model'].per_replicate_leaves[2]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0004",
+          "path": "['full']['model'].per_replicate_leaves[3]",
+          "shape": [
+            1,
+            48,
+            48
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0005",
+          "path": "['full']['model'].per_replicate_leaves[4]",
+          "shape": [
+            1,
+            48,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0006",
+          "path": "['full']['model'].per_replicate_leaves[5]",
+          "shape": [
+            1,
+            48,
+            8
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0007",
+          "path": "['full']['model'].per_replicate_leaves[6]",
+          "shape": [
+            1,
+            48
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0008",
+          "path": "['full']['model'].per_replicate_leaves[7]",
+          "shape": [
+            1,
+            18,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0009",
+          "path": "['full']['model'].per_replicate_leaves[8]",
+          "shape": [
+            1,
+            18,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0010",
+          "path": "['full']['model'].per_replicate_leaves[9]",
+          "shape": [
+            1,
+            18
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0011",
+          "path": "['full']['model'].per_replicate_leaves[10]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0012",
+          "path": "['full']['model'].per_replicate_leaves[11]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0013",
+          "path": "['full']['model'].per_replicate_leaves[12]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0014",
+          "path": "['full']['model'].per_replicate_leaves[13]",
+          "shape": [
+            1,
+            6,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0015",
+          "path": "['full']['model'].per_replicate_leaves[14]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0016",
+          "path": "['full']['model'].per_replicate_leaves[15]",
+          "shape": [
+            1,
+            2,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0017",
+          "path": "['full']['model'].per_replicate_leaves[16]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0018",
+          "path": "['full']['model'].per_replicate_leaves[17]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0019",
+          "path": "['full']['model'].per_replicate_leaves[18]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0020",
+          "path": "['full']['model'].per_replicate_leaves[19]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0021",
+          "path": "['full']['optimizer'][1].count",
+          "shape": [
+            1
+          ],
+          "dtype": "int32"
+        },
+        {
+          "key": "leaf_0022",
+          "path": "['full']['optimizer'][1].hyperparams['b1']",
+          "shape": [
+            1
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0023",
+          "path": "['full']['optimizer'][1].hyperparams['b2']",
+          "shape": [
+            1
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0024",
+          "path": "['full']['optimizer'][1].hyperparams['eps']",
+          "shape": [
+            1
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0025",
+          "path": "['full']['optimizer'][1].hyperparams['eps_root']",
+          "shape": [
+            1
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0026",
+          "path": "['full']['optimizer'][1].hyperparams['learning_rate']",
+          "shape": [
+            1
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0027",
+          "path": "['full']['optimizer'][1].hyperparams['weight_decay']",
+          "shape": [
+            1
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0028",
+          "path": "['full']['optimizer'][1].hyperparams_states['learning_rate'].count",
+          "shape": [
+            1
+          ],
+          "dtype": "int32"
+        },
+        {
+          "key": "leaf_0029",
+          "path": "['full']['optimizer'][1].inner_state[0].count",
+          "shape": [
+            1
+          ],
+          "dtype": "int32"
+        },
+        {
+          "key": "leaf_0030",
+          "path": "['full']['optimizer'][1].inner_state[0].mu.nodes['net'].nodes['cell'].cell.weight_ih",
+          "shape": [
+            1,
+            18,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0031",
+          "path": "['full']['optimizer'][1].inner_state[0].mu.nodes['net'].nodes['cell'].cell.weight_hh",
+          "shape": [
+            1,
+            18,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0032",
+          "path": "['full']['optimizer'][1].inner_state[0].mu.nodes['net'].nodes['cell'].cell.bias",
+          "shape": [
+            1,
+            18
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0033",
+          "path": "['full']['optimizer'][1].inner_state[0].mu.nodes['net'].nodes['cell'].cell.bias_n",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0034",
+          "path": "['full']['optimizer'][1].inner_state[0].mu.nodes['net'].nodes['h0_encoder'].layer.weight",
+          "shape": [
+            1,
+            6,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0035",
+          "path": "['full']['optimizer'][1].inner_state[0].mu.nodes['net'].nodes['h0_encoder'].layer.bias",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0036",
+          "path": "['full']['optimizer'][1].inner_state[0].mu.nodes['net'].nodes['readout'].layer.weight",
+          "shape": [
+            1,
+            2,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0037",
+          "path": "['full']['optimizer'][1].inner_state[0].mu.nodes['net'].nodes['readout'].layer.bias",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0038",
+          "path": "['full']['optimizer'][1].inner_state[0].nu.nodes['net'].nodes['cell'].cell.weight_ih",
+          "shape": [
+            1,
+            18,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0039",
+          "path": "['full']['optimizer'][1].inner_state[0].nu.nodes['net'].nodes['cell'].cell.weight_hh",
+          "shape": [
+            1,
+            18,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0040",
+          "path": "['full']['optimizer'][1].inner_state[0].nu.nodes['net'].nodes['cell'].cell.bias",
+          "shape": [
+            1,
+            18
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0041",
+          "path": "['full']['optimizer'][1].inner_state[0].nu.nodes['net'].nodes['cell'].cell.bias_n",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0042",
+          "path": "['full']['optimizer'][1].inner_state[0].nu.nodes['net'].nodes['h0_encoder'].layer.weight",
+          "shape": [
+            1,
+            6,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0043",
+          "path": "['full']['optimizer'][1].inner_state[0].nu.nodes['net'].nodes['h0_encoder'].layer.bias",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0044",
+          "path": "['full']['optimizer'][1].inner_state[0].nu.nodes['net'].nodes['readout'].layer.weight",
+          "shape": [
+            1,
+            2,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0045",
+          "path": "['full']['optimizer'][1].inner_state[0].nu.nodes['net'].nodes['readout'].layer.bias",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0046",
+          "path": "['full']['prng']",
+          "shape": [
+            2
+          ],
+          "dtype": "uint32"
+        },
+        {
+          "key": "leaf_0047",
+          "path": "['full']['train_loss']",
+          "shape": [],
+          "dtype": "float64"
+        },
+        {
+          "key": "leaf_0048",
+          "path": "['resumed']['completed_batches']",
+          "shape": [],
+          "dtype": "int32"
+        },
+        {
+          "key": "leaf_0049",
+          "path": "['resumed']['model'].per_replicate_leaves[0]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0050",
+          "path": "['resumed']['model'].per_replicate_leaves[1]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0051",
+          "path": "['resumed']['model'].per_replicate_leaves[2]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0052",
+          "path": "['resumed']['model'].per_replicate_leaves[3]",
+          "shape": [
+            1,
+            48,
+            48
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0053",
+          "path": "['resumed']['model'].per_replicate_leaves[4]",
+          "shape": [
+            1,
+            48,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0054",
+          "path": "['resumed']['model'].per_replicate_leaves[5]",
+          "shape": [
+            1,
+            48,
+            8
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0055",
+          "path": "['resumed']['model'].per_replicate_leaves[6]",
+          "shape": [
+            1,
+            48
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0056",
+          "path": "['resumed']['model'].per_replicate_leaves[7]",
+          "shape": [
+            1,
+            18,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0057",
+          "path": "['resumed']['model'].per_replicate_leaves[8]",
+          "shape": [
+            1,
+            18,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0058",
+          "path": "['resumed']['model'].per_replicate_leaves[9]",
+          "shape": [
+            1,
+            18
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0059",
+          "path": "['resumed']['model'].per_replicate_leaves[10]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0060",
+          "path": "['resumed']['model'].per_replicate_leaves[11]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0061",
+          "path": "['resumed']['model'].per_replicate_leaves[12]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0062",
+          "path": "['resumed']['model'].per_replicate_leaves[13]",
+          "shape": [
+            1,
+            6,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0063",
+          "path": "['resumed']['model'].per_replicate_leaves[14]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0064",
+          "path": "['resumed']['model'].per_replicate_leaves[15]",
+          "shape": [
+            1,
+            2,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0065",
+          "path": "['resumed']['model'].per_replicate_leaves[16]",
+          "shape": [
+            1,
+            2
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0066",
+          "path": "['resumed']['model'].per_replicate_leaves[17]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0067",
+          "path": "['resumed']['model'].per_replicate_leaves[18]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0068",
+          "path": "['resumed']['model'].per_replicate_leaves[19]",
+          "shape": [
+            1,
+            6
+          ],
+          "dtype": "float32"
+        },
+        {
+          "key": "leaf_0069",
+          "path": "['resumed']['prng']",
+          "shape": [
+            2
+          ],
+          "dtype": "uint32"
+        }
+      ],
+      "method": "closed_loop_distillation",
+      "stopped_barrier": "after_closed_loop_rollout_distillation",
+      "final_phase": "done"
+    }
+  }
+}

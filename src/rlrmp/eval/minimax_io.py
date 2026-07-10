@@ -38,7 +38,7 @@ from rlrmp.train.task_model import (
     get_disturbance_params,
     setup_task_model_pair,
 )
-from rlrmp.train.minimax import MinimaxConfig
+from rlrmp.train.minimax_native import MinimaxConfig
 
 __all__ = ["load_adversary", "load_config", "load_model"]
 
@@ -208,7 +208,7 @@ def load_model(results_dir: Path, filename: str, hps, config: dict):
         filename: Model filename (e.g. ``"warmup_model.eqx"``,
             ``"adversarial_model.eqx"``).
         hps: Hyperparameter ``TreeNamespace`` (typically from
-            ``rlrmp.train.minimax.build_hps``).
+            ``rlrmp.train.minimax_native.build_hps``).
         config: Parsed ``config.json`` (unused at present but kept for
             future template-construction overrides).
 
