@@ -221,6 +221,7 @@ def deterministic_standard_rows_from_manifest_entries(
     issue_id: str,
     source_manifest: Path,
     default_family: str,
+    default_source_group: str = "saved",
     default_training_distribution: str = "mixed",
     default_optimizer_label: str = "lbfgsb_strong_optimizer_whitened",
     default_architecture: str = "time_constrained_free_gain",
@@ -234,9 +235,8 @@ def deterministic_standard_rows_from_manifest_entries(
     for entry in entries:
         fit = entry.get("fit", entry)
         label = fit["label"]
-        run_parts = tuple(
-            entry.get("run_parts", (entry.get("source_group", "saved"), label))
-        )
+        source_group = entry.get("source_group", default_source_group)
+        run_parts = tuple(entry.get("run_parts", (source_group, label)))
         row_manifests = deterministic_output_feedback_rows(
             fit=fit,
             arrays=arrays,

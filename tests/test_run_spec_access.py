@@ -28,6 +28,8 @@ CONVERTED_SEED_FILES = (
     "src/rlrmp/analysis/pipelines/gru_worst_case_epsilon_audit.py",
     "src/rlrmp/analysis/pipelines/objective_comparator.py",
     "src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py",
+    "src/rlrmp/eval/ensemble.py",
+    "src/rlrmp/eval/robustness_diagnostics.py",
     "src/rlrmp/model/cs_lss_gru.py",
     "src/rlrmp/model/feedbax_graph.py",
     "src/rlrmp/train/closed_loop_distillation.py",
