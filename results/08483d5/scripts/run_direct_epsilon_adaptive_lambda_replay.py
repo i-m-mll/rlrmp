@@ -24,6 +24,7 @@ import numpy as np
 from feedbax.runtime.batch import BatchInfo
 
 from rlrmp.analysis.frozen_policy_gate import validate_direct_hvp_lambda_source
+from rlrmp.paths import portable_repo_path
 from rlrmp.train.cs_nominal_gru import (
     _args_values_from_run_spec,
     _is_replicate_axis_array,
@@ -210,10 +211,10 @@ def main() -> None:
                 "status": "compatibility_replay_on_materialized_6d_direct_epsilon_checkpoint",
                 "source_issue": args.source_issue,
                 "source_run": args.source_run,
-                "run_spec_path": _repo_rel(repo_root, run_spec_path),
-                "checkpoint_path": _repo_rel(repo_root, checkpoint_dir),
+                "run_spec_path": portable_repo_path(run_spec_path, repo_root=repo_root),
+                "checkpoint_path": portable_repo_path(checkpoint_dir, repo_root=repo_root),
                 "checkpoint_batches": int(args.checkpoint_batches),
-                "model_path": _repo_rel(repo_root, model_path),
+                "model_path": portable_repo_path(model_path, repo_root=repo_root),
                 "replicate_index": int(args.replicate_index),
                 "batch_size": int(args.batch_size),
                 "batch_index": int(batch_index),
@@ -227,7 +228,7 @@ def main() -> None:
             },
         },
         "lambda_source": {
-            "path": _repo_rel(repo_root, lambda_source_path),
+            "path": portable_repo_path(lambda_source_path, repo_root=repo_root),
             "lambda_curv_p90": lambda_curv,
             "lambda0_beta_1p05": lambda0,
             "validated_source": direct_lambda_source,
@@ -473,13 +474,6 @@ def _replicate_model(model: Any, hps: Any, replicate_index: int) -> Any:
 
 def _read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _repo_rel(repo_root: Path, path: Path) -> str:
-    try:
-        return str(path.resolve().relative_to(repo_root.resolve()))
-    except ValueError:
-        return str(path)
 
 
 if __name__ == "__main__":

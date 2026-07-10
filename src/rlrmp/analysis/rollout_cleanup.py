@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
 from rlrmp.io import read_json, write_compact_json
+from rlrmp.paths import portable_repo_path as _repo_relative
 
 
 SCHEMA_VERSION = "rlrmp.raw_rollout_cleanup.v1"
@@ -327,13 +328,6 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-def _repo_relative(path: Path, *, repo_root: Path) -> str:
-    try:
-        return str(path.resolve().relative_to(repo_root.resolve()))
-    except ValueError:
-        return str(path)
 
 
 def _is_relative_to(path: Path, parent: Path) -> bool:

@@ -16,7 +16,33 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-__all__ = ["compute_kinematics"]
+__all__ = ["compute_kinematics", "initial_effector_position", "initial_effector_velocity"]
+
+
+def initial_effector_position(trial_specs) -> np.ndarray:
+    """Return initial effector positions with shape ``(n_trials, 2)``."""
+
+    for init_state in trial_specs.inits.values():
+        position = getattr(init_state, "pos", None)
+        if position is not None:
+            return np.asarray(position, dtype=np.float64)
+        shape = getattr(init_state, "shape", None)
+        if shape is not None and len(shape) >= 1 and shape[-1] >= 2:
+            return np.asarray(init_state, dtype=np.float64)[..., :2]
+    raise ValueError("trial spec does not include effector position initial state")
+
+
+def initial_effector_velocity(trial_specs) -> np.ndarray:
+    """Return initial effector velocities with shape ``(n_trials, 2)``."""
+
+    for init_state in trial_specs.inits.values():
+        velocity = getattr(init_state, "vel", None)
+        if velocity is not None:
+            return np.asarray(velocity, dtype=np.float64)
+        shape = getattr(init_state, "shape", None)
+        if shape is not None and len(shape) >= 1 and shape[-1] >= 4:
+            return np.asarray(init_state, dtype=np.float64)[..., 2:4]
+    raise ValueError("trial spec does not include effector velocity initial state")
 
 
 def compute_kinematics(states, trial_specs) -> dict[str, np.ndarray]:

@@ -402,14 +402,23 @@ def _markdown(payload: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def main() -> None:
-    rollout_payload = json.loads(ROLLOUT_JSON_PATH.read_text())
+def main(
+    *,
+    rollout_json_path: Path = ROLLOUT_JSON_PATH,
+    json_path: Path = JSON_PATH,
+    markdown_path: Path = MD_PATH,
+    default_gamma_factor: float = OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
+    script_path: str | None = None,
+) -> None:
+    """Compare affine recursion damage against a rollout-damage payload."""
+
+    rollout_payload = json.loads(rollout_json_path.read_text())
     config = OutputFeedbackConfig(n_phys=6)
     plant, schedule = build_no_integrator_game()
     gamma_star = find_gamma_star(plant, schedule)
     gamma_factor = float(
         rollout_payload.get("contract", {}).get(
-            "gamma_factor", OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR
+            "gamma_factor", default_gamma_factor
         )
     )
     gamma = gamma_factor * gamma_star
@@ -534,9 +543,9 @@ def main() -> None:
     payload = {
         "schema_version": "rlrmp.recursion_damage_comparison.v1",
         "source": {
-            "rollout_json": str(ROLLOUT_JSON_PATH),
+            "rollout_json": str(rollout_json_path),
             "teacher_package": str(TEACHER_PACKAGE),
-            "script": str(OUT_DIR / "compute_recursion_damage.py"),
+            "script": script_path or str(OUT_DIR / "compute_recursion_damage.py"),
         },
         "contract": {
             "gamma_factor": gamma_factor,
@@ -557,9 +566,9 @@ def main() -> None:
             plant, schedule, solution, x0, gains, covs
         ),
     }
-    JSON_PATH.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
-    MD_PATH.write_text(_markdown(payload))
-    print(json.dumps({"json": str(JSON_PATH), "markdown": str(MD_PATH)}, indent=2))
+    json_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    markdown_path.write_text(_markdown(payload))
+    print(json.dumps({"json": str(json_path), "markdown": str(markdown_path)}, indent=2))
 
 
 if __name__ == "__main__":
