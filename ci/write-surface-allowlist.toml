@@ -77,7 +77,7 @@
 [[durable_write_sites]]
 path = "scripts/train_minimax.py"
 function = "author_minimax_training_run_spec"
-kind = "open_w"
+kind = "write_text"
 target = "spec_path"
 owner = "0efc92d"
 role = "run_spec"
@@ -94,53 +94,22 @@ conditional = false
 # durable writers reappear, the guard must grow a new explicit non-vacuous
 # assertion instead of passing through an empty matrix.
 
-# --- src/rlrmp/train/closed_loop_distillation.py -----------------------------
+# --- src/rlrmp/train/run_spec_authoring.py ----------------------------------
 
 [[durable_write_sites]]
-path = "src/rlrmp/train/closed_loop_distillation.py"
-function = "_write_json"
-kind = "write_text"
-target = "path"
-owner = "f5d9695"
-role = "write_helper"
-conditional = false
-
-# --- src/rlrmp/train/guided_distillation.py ----------------------------------
-
-[[durable_write_sites]]
-path = "src/rlrmp/train/guided_distillation.py"
-function = "_save_pytree"
-kind = "fbx_save"
-target = "path"
-owner = "f5d9695"
-role = "write_helper"
-conditional = false
-
-# --- src/rlrmp/train/cs_nominal_gru.py ---------------------------------------
-
-[[durable_write_sites]]
-path = "src/rlrmp/train/cs_nominal_gru.py"
-function = "_save_pytree"
-kind = "fbx_save"
-target = "path"
-owner = "f5d9695"
-role = "write_helper"
-conditional = false
-
-[[durable_write_sites]]
-path = "src/rlrmp/train/cs_nominal_gru.py"
-function = "write_run_spec"
-kind = "write_text"
-target = "run_path"
-owner = "0efc92d"
-role = "run_spec"
-conditional = false
-
-[[durable_write_sites]]
-path = "src/rlrmp/train/cs_nominal_gru.py"
+path = "src/rlrmp/train/run_spec_authoring.py"
 function = "_write_graph_bundle_for_backend"
 kind = "write_text"
 target = "manifest_path"
 owner = "f5d9695"
 role = "write_helper"
+conditional = false
+
+[[durable_write_sites]]
+path = "src/rlrmp/train/run_spec_authoring.py"
+function = "write_run_spec"
+kind = "write_text"
+target = "run_path"
+owner = "0efc92d"
+role = "run_spec"
 conditional = false

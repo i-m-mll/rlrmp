@@ -79,7 +79,11 @@ symbols = ["AnalysisArtifactFile", "AnalysisRunContext"]
 
 [[canonical_homes]]
 module = "feedbax.analysis.evaluation"
-symbols = ["EvaluationRecipeResult", "register_evaluation_recipe"]
+symbols = [
+  "EvaluationRecipeResult",
+  "execute_evaluation_run_spec",
+  "register_evaluation_recipe",
+]
 
 [[canonical_homes]]
 module = "feedbax.analysis.figures"

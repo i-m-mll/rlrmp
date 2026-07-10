@@ -17,9 +17,8 @@ EXPECTED_STATE_COUNTS = {
     "cross_repo_resolved": 3,
     "excluded_cross_repo": 2,
     "excluded_pipeline_lane": 29,
-    "preserved_distinct": 2,
-    "removed": 93,
-    "thin_adapter": 144,
+    "removed": 95,
+    "thin_adapter": 142,
 }
 
 
@@ -98,11 +97,11 @@ def _assert_member_state(cluster_id: str, member: Mapping[str, Any]) -> None:
 def test_all_confirm_clusters_have_enforced_final_reconciliation() -> None:
     binding = [row for row in _jsonl(BINDING_PATH) if row["verdict"] == "CONFIRM"]
     reconciliation = _jsonl(FIXTURE_PATH)
-    assert len(binding) == len(reconciliation) == 43
+    assert len(binding) == len(reconciliation) == 42
 
     binding_by_id = {row["cluster_id"]: row for row in binding}
     reconciliation_by_id = {row["cluster_id"]: row for row in reconciliation}
-    assert len(binding_by_id) == len(reconciliation_by_id) == 43
+    assert len(binding_by_id) == len(reconciliation_by_id) == 42
     assert reconciliation_by_id.keys() == binding_by_id.keys()
 
     state_counts: Counter[str] = Counter()
@@ -131,13 +130,9 @@ def test_all_confirm_clusters_have_enforced_final_reconciliation() -> None:
     assert dict(state_counts) == EXPECTED_STATE_COUNTS
     assert disposition_counts == {
         "resolved": 40,
-        "corrected_false_positive": 1,
         "resolved_destination_deviation": 1,
         "resolved_cross_repo": 1,
     }
-    assert reconciliation_by_id["dup_0026"]["final_disposition"] == (
-        "corrected_false_positive"
-    )
     assert reconciliation_by_id["dup_0041"]["final_disposition"] == (
         "resolved_destination_deviation"
     )

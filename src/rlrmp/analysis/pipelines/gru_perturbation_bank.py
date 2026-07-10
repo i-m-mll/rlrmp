@@ -689,7 +689,7 @@ def _calibrated_perturbation_row(
     family = str(row["family"])
     channel = str(row["channel"])
     axis = str(row["axis"])
-    timing_bin = str(row.get("timing_bin", "initial_condition"))
+    timing_bin = str(row["timing_bin"])
     sign = int(row["sign"])
     target_peak = float(reach.reach_length_m) * float(level.fraction_of_reach)
     provenance = _calibration_provenance(level=level, reach=reach)
