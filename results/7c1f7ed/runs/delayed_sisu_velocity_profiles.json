@@ -7,5 +7,6 @@
   "run_refs": [
     "7c1f7ed/delayed_sisu_spectrum__raw_strong_gamma_1p05_radius_lr1e-2_clip5_b64=raw strong gamma-1.05 delayed SISU",
     "7c1f7ed/delayed_sisu_spectrum__effective_020a65b_pgd_radius_lr1e-2_clip5_b64=effective 020a65b PGD delayed SISU"
-  ]
+  ],
+  "content_sha256": "69bd5ac3f9c39760457cf5d716c842a6f21e0c9bb275ad8dad24776dbda434c8"
 }
