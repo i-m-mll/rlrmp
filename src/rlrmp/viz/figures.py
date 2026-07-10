@@ -125,6 +125,7 @@ def build_nominal_profile_figure(
     comparator_colors: Mapping[str, str],
     title: str,
     height: int,
+    vertical_spacing: float = 0.075,
 ) -> Any:
     """Build a shared-y-axis nominal profile comparison grid."""
 
@@ -133,7 +134,7 @@ def build_nominal_profile_figure(
         rows=len(rows),
         cols=1,
         subplot_titles=[str(row["label"]) for row in rows],
-        vertical_spacing=0.075,
+        vertical_spacing=vertical_spacing,
     )
     for row_index, row_spec in enumerate(rows, start=1):
         add_run_profiles(fig, row_spec, row_index)
@@ -286,3 +287,188 @@ def materialize_analytical_profiles(
             ),
         ),
     )
+
+
+def build_profile_family_figure(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    quantity_specs: Sequence[tuple[str, str, str]],
+    timing_bins_for_rows: Callable[[Sequence[Mapping[str, Any]]], Sequence[str]],
+    row_timing_label: Callable[[Mapping[str, Any]], str],
+    representative_timing: Callable[[Sequence[Mapping[str, Any]]], Mapping[str, Any] | None],
+    perturbation_interval_bounds: Callable[[Mapping[str, Any]], tuple[float, float]],
+    collect_traces: Callable[[Sequence[Mapping[str, Any]]], Mapping[tuple[Any, ...], Any]],
+    trace_key: Callable[[str, str, str, str], tuple[Any, ...]],
+    add_trace: Callable[..., None],
+    sources: Sequence[str],
+    variants: Sequence[str],
+    axis_unit: Callable[[str, str], str],
+    figure_kind: str,
+    title: str,
+    width_min: int,
+    width_per_column: int,
+    height: int,
+    legend_title: str = "Source / trace",
+    vertical_spacing: float = 0.08,
+    horizontal_spacing: float = 0.045,
+    margin: Mapping[str, int] | None = None,
+) -> Any:
+    """Build the shared perturbation-profile quantity-by-timing grid."""
+
+    timing_bins = tuple(timing_bins_for_rows(rows))
+    n_cols = len(timing_bins)
+    subplot_titles = [
+        f"{quantity_label}: {timing_label}"
+        for _quantity, quantity_label, _unit in quantity_specs
+        for timing_label in timing_bins
+    ]
+    fig = profile_comparison_grid(
+        n_panels=len(quantity_specs) * n_cols,
+        rows=len(quantity_specs),
+        cols=n_cols,
+        subplot_titles=subplot_titles,
+        shared_yaxes="rows",
+        vertical_spacing=vertical_spacing,
+        horizontal_spacing=horizontal_spacing,
+    )
+    legend_seen: set[tuple[str, str, str]] = set()
+    for col_index, timing_label in enumerate(timing_bins, start=1):
+        timing_rows = [row for row in rows if row_timing_label(row) == timing_label]
+        timing = representative_timing(timing_rows)
+        if timing is not None:
+            x0, x1 = perturbation_interval_bounds(timing)
+            for row_index in range(1, len(quantity_specs) + 1):
+                fig.add_vrect(
+                    x0=x0,
+                    x1=x1,
+                    fillcolor="rgba(234,179,8,0.18)",
+                    line={"color": "rgba(120,80,0,0.55)", "width": 1, "dash": "dot"},
+                    layer="below",
+                    row=row_index,
+                    col=col_index,
+                    exclude_empty_subplots=False,
+                )
+        traces = collect_traces(timing_rows)
+        for row_index, (quantity, _quantity_label, unit) in enumerate(
+            quantity_specs,
+            start=1,
+        ):
+            for source in sources:
+                for variant in variants:
+                    for coord in ("orthogonal", "along"):
+                        samples = traces.get(trace_key(source, variant, quantity, coord))
+                        if samples is None or samples.size == 0:
+                            continue
+                        legend_key = (source, variant, coord)
+                        add_trace(
+                            fig,
+                            samples,
+                            source=source,
+                            variant=variant,
+                            quantity=quantity,
+                            coord=coord,
+                            row=row_index,
+                            col=col_index,
+                            showlegend=legend_key not in legend_seen,
+                        )
+                        legend_seen.add(legend_key)
+            fig.update_yaxes(
+                title_text=axis_unit(quantity, unit),
+                row=row_index,
+                col=1,
+            )
+    fig.update_layout(
+        title=title,
+        template="plotly_white",
+        width=max(width_min, width_per_column * n_cols),
+        height=height,
+        legend_title_text=legend_title,
+        margin=dict(margin or {"l": 70, "r": 24, "t": 96, "b": 70}),
+    )
+    for col_index in range(1, n_cols + 1):
+        fig.update_xaxes(
+            title_text="time from movement onset (s)",
+            row=len(quantity_specs),
+            col=col_index,
+        )
+    return fig
+
+
+def build_stabilization_family_figure(
+    *,
+    response_variables: Sequence[str],
+    columns: Sequence[Any],
+    response_label: Callable[[str], str],
+    column_label: Callable[[Any], str],
+    response_axis_title: Callable[[str], str],
+    render_cell: Callable[[Any, str, Any, int, int, set[tuple[str, str]], dict], None],
+    title: str,
+    width: int,
+    horizontal_spacing: float,
+) -> tuple[Any, list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Build a stabilization response grid while delegating cell semantics."""
+
+    from plotly.subplots import make_subplots
+
+    fig = make_subplots(
+        rows=len(response_variables),
+        cols=len(columns),
+        subplot_titles=[
+            f"{response_label(response)} - {column_label(column)}"
+            for response in response_variables
+            for column in columns
+        ],
+        shared_xaxes=True,
+        shared_yaxes=True,
+        horizontal_spacing=horizontal_spacing,
+        vertical_spacing=0.09,
+    )
+    coverage: list[dict[str, Any]] = []
+    event_markers: list[dict[str, Any]] = []
+    unavailable: list[dict[str, Any]] = []
+    outputs = {
+        "coverage": coverage,
+        "event_markers": event_markers,
+        "unavailable": unavailable,
+    }
+    legend_seen: set[tuple[str, str]] = set()
+    cache: dict[Any, Any] = {}
+    for row_index, response in enumerate(response_variables, start=1):
+        for col_index, column in enumerate(columns, start=1):
+            render_cell(
+                fig,
+                response,
+                column,
+                row_index,
+                col_index,
+                legend_seen,
+                {**outputs, "cache": cache},
+            )
+            if col_index == 1:
+                fig.update_yaxes(
+                    title_text=response_axis_title(response),
+                    row=row_index,
+                    col=col_index,
+                )
+            if row_index == len(response_variables):
+                fig.update_xaxes(
+                    title_text="time from perturbation onset (s)",
+                    row=row_index,
+                    col=col_index,
+                )
+    fig.update_layout(
+        title=title,
+        template="plotly_white",
+        width=width,
+        height=900,
+        margin={"l": 78, "r": 28, "t": 96, "b": 112},
+        hovermode="x unified",
+        legend={
+            "orientation": "h",
+            "yanchor": "top",
+            "y": -0.09,
+            "xanchor": "center",
+            "x": 0.5,
+        },
+    )
+    return fig, coverage, event_markers, unavailable

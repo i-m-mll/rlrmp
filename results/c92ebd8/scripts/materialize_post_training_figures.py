@@ -33,7 +33,7 @@ from rlrmp.analysis.pipelines.gru_perturbation_bank import (
 )
 from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT
-from rlrmp.viz import profile_comparison_grid
+from rlrmp.viz.figures import build_nominal_profile_figure, build_profile_family_figure
 
 
 ISSUE = "c92ebd8"
@@ -208,82 +208,46 @@ def build_family_figure(
     figure_kind: Literal["trajectory", "residual"],
     title: str,
 ) -> go.Figure:
-    timing_bins = timing_bins_for_rows(rows)
-    n_cols = len(timing_bins)
-    subplot_titles = [
-        f"{quantity_label}: {timing_label}"
-        for quantity_label, _quantity_name, _unit in QUANTITY_SPECS
-        for timing_label in timing_bins
-    ]
-    fig = profile_comparison_grid(
-        n_panels=len(QUANTITY_SPECS) * n_cols,
-        rows=len(QUANTITY_SPECS),
-        cols=n_cols,
-        subplot_titles=subplot_titles,
-        shared_yaxes="rows",
-        vertical_spacing=0.08,
-        horizontal_spacing=0.045,
-    )
-    legend_seen: set[tuple[str, str, str]] = set()
-    for col_index, timing_label in enumerate(timing_bins, start=1):
-        timing_rows = [row for row in rows if row_timing_label(row) == timing_label]
-        timing = representative_timing(timing_rows)
-        if timing is not None:
-            x0, x1 = perturbation_interval_bounds(timing)
-            for row_index in range(1, len(QUANTITY_SPECS) + 1):
-                fig.add_vrect(
-                    x0=x0,
-                    x1=x1,
-                    fillcolor="rgba(234,179,8,0.18)",
-                    line={"color": "rgba(120,80,0,0.55)", "width": 1, "dash": "dot"},
-                    layer="below",
-                    row=row_index,
-                    col=col_index,
-                    exclude_empty_subplots=False,
-                )
-        traces = collect_traces_for_rows(
+    """Build a post-training family figure through the canonical profile grid."""
+
+    return build_profile_family_figure(
+        rows,
+        quantity_specs=QUANTITY_SPECS,
+        timing_bins_for_rows=timing_bins_for_rows,
+        row_timing_label=row_timing_label,
+        representative_timing=representative_timing,
+        perturbation_interval_bounds=perturbation_interval_bounds,
+        collect_traces=lambda timing_rows: collect_traces_for_rows(
             timing_rows,
             run=run,
             extlqg_context=extlqg_context,
             figure_kind=figure_kind,
-        )
-        for row_index, (quantity, _quantity_name, unit) in enumerate(QUANTITY_SPECS, start=1):
-            for source in ("gru", "extlqg6d"):
-                variants = ("clean", "perturbed") if figure_kind == "trajectory" else ("residual",)
-                for variant in variants:
-                    for coord in ("orthogonal", "along"):
-                        samples = traces.get((source, variant, quantity, coord))
-                        if samples is None or samples.size == 0:
-                            continue
-                        add_profile_trace(
-                            fig,
-                            samples,
-                            source=source,
-                            variant=variant,
-                            quantity=quantity,
-                            coord=coord,
-                            figure_kind=figure_kind,
-                            row=row_index,
-                            col=col_index,
-                            showlegend=(source, variant, coord) not in legend_seen,
-                        )
-                        legend_seen.add((source, variant, coord))
-            fig.update_yaxes(
-                title_text=axis_unit(quantity, figure_kind=figure_kind, native_unit=unit),
-                row=row_index,
-                col=1,
-            )
-    fig.update_layout(
+        ),
+        trace_key=lambda source, variant, quantity, coord: (
+            source,
+            variant,
+            quantity,
+            coord,
+        ),
+        add_trace=lambda fig, samples, **kwargs: add_profile_trace(
+            fig,
+            samples,
+            figure_kind=figure_kind,
+            **kwargs,
+        ),
+        sources=("gru", "extlqg6d"),
+        variants=("clean", "perturbed") if figure_kind == "trajectory" else ("residual",),
+        axis_unit=lambda quantity, unit: axis_unit(
+            quantity,
+            figure_kind=figure_kind,
+            native_unit=unit,
+        ),
+        figure_kind=figure_kind,
         title=title,
-        template="plotly_white",
-        width=max(980, 280 * n_cols),
+        width_min=980,
+        width_per_column=280,
         height=840,
-        legend_title_text="Source / trace",
-        margin={"l": 70, "r": 24, "t": 96, "b": 70},
     )
-    for col_index in range(1, n_cols + 1):
-        fig.update_xaxes(title_text="time from movement onset (s)", row=len(QUANTITY_SPECS), col=col_index)
-    return fig
 
 
 def collect_traces_for_rows(
@@ -320,9 +284,7 @@ def collect_traces_for_rows(
                     figure_kind=figure_kind,
                 )
     return {
-        key: np.concatenate(samples, axis=0)
-        for key, samples in trace_samples.items()
-        if samples
+        key: np.concatenate(samples, axis=0) for key, samples in trace_samples.items() if samples
     }
 
 
@@ -386,16 +348,11 @@ def materialize_nominal_velocity_profiles(
 ) -> dict[str, Any]:
     manifest = read_json(EVAL_MANIFEST)
     robust_contract = robust_context["contract"]
-    fig = profile_comparison_grid(
-        n_panels=len(RUN_ORDER),
-        rows=len(RUN_ORDER),
-        cols=1,
-        subplot_titles=[RUN_LABELS[run_id] for run_id in RUN_ORDER],
-        vertical_spacing=0.018,
-    )
     ext_profile = forward_velocity_profile(extlqg_context["base_evaluation"].velocity)
     robust_profile = forward_velocity_profile(robust_context["velocity"])
-    for row_index, run_id in enumerate(RUN_ORDER, start=1):
+
+    def add_run_profiles(fig: Any, row_spec: Mapping[str, Any], row_index: int) -> None:
+        run_id = str(row_spec["run_id"])
         run = manifest["runs"][run_id]
         with np.load(REPO_ROOT / run["bulk_arrays"]["path"]) as arrays:
             gru_samples = forward_velocity_profile(arrays["velocity"])
@@ -408,37 +365,16 @@ def materialize_nominal_velocity_profiles(
             color=SOURCE_COLORS["gru"],
             showlegend=row_index == 1,
         )
-        add_line(
-            fig,
-            ext_profile,
-            row=row_index,
-            col=1,
-            name="6D extLQG",
-            color=SOURCE_COLORS["extlqg6d"],
-            dash="dash",
-            showlegend=row_index == 1,
-            width=2.8,
-        )
-        add_line(
-            fig,
-            robust_profile,
-            row=row_index,
-            col=1,
-            name="6D output-feedback H-infinity",
-            color=SOURCE_COLORS["robust_output_feedback6d"],
-            dash="dot",
-            showlegend=row_index == 1,
-            width=2.8,
-        )
-        fig.update_yaxes(title_text="m/s", row=row_index, col=1)
-    fig.update_xaxes(title_text="time from movement onset (s)", row=len(RUN_ORDER), col=1)
-    fig.update_layout(
+
+    fig = build_nominal_profile_figure(
+        rows=[{"label": RUN_LABELS[run_id], "run_id": run_id} for run_id in RUN_ORDER],
+        add_run_profiles=add_run_profiles,
+        ext_profile=ext_profile,
+        robust_profile=robust_profile,
+        comparator_colors=SOURCE_COLORS,
         title="c92 nominal forward velocity profiles",
-        template="plotly_white",
-        width=1040,
         height=1500,
-        legend_title_text="profile",
-        margin={"l": 78, "r": 24, "t": 90, "b": 70},
+        vertical_spacing=0.018,
     )
     spec = {
         "schema_version": "rlrmp.c92_nominal_velocity_profiles.v1",
@@ -541,18 +477,34 @@ add_line = add_profile_line
 
 
 def add_profile_trace(
-    fig: go.Figure, samples: np.ndarray, *, source: str, variant: str, quantity: str,
-    coord: str, figure_kind: Literal["trajectory", "residual"], row: int, col: int,
+    fig: go.Figure,
+    samples: np.ndarray,
+    *,
+    source: str,
+    variant: str,
+    quantity: str,
+    coord: str,
+    figure_kind: Literal["trajectory", "residual"],
+    row: int,
+    col: int,
     showlegend: bool,
 ) -> None:
     samples = scale_profile_samples(samples, quantity=quantity, figure_kind=figure_kind)
     add_reduced_sample_trace(
-        fig, samples, reducer=mean_band, row=row, col=col,
+        fig,
+        samples,
+        reducer=mean_band,
+        row=row,
+        col=col,
         name=f"{source_label(source)} {variant} {coord}",
-        legendgroup=f"{source}-{variant}-{coord}", color=SOURCE_COLORS[source],
-        band_fill_color=band_color(source), dash=COORD_DASH[coord],
+        legendgroup=f"{source}-{variant}-{coord}",
+        color=SOURCE_COLORS[source],
+        band_fill_color=band_color(source),
+        dash=COORD_DASH[coord],
         width=1.25 if variant == "clean" else 2.25,
-        opacity=0.42 if variant == "clean" else 0.95, showlegend=showlegend, dt=DT,
+        opacity=0.42 if variant == "clean" else 0.95,
+        showlegend=showlegend,
+        dt=DT,
     )
 
 

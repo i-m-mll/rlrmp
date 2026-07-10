@@ -11,7 +11,6 @@ from typing import Any
 
 import numpy as np
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 from _soft_pgd_materializer_common import (
     ISSUE,
@@ -27,6 +26,7 @@ from rlrmp.analysis.pipelines.gru_perturbation_bank import (
 )
 from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.viz.figures import build_stabilization_family_figure
 
 
 TOPIC = "soft_pgd_stabilization_perturbation_responses"
@@ -249,162 +249,129 @@ def build_family_figure(
     extlqg_context: Mapping[str, Any],
     robust_context: Mapping[str, Any],
 ) -> tuple[go.Figure, list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    """Build one 3x3 response-state-by-soft-row family figure."""
+    """Build one response-state-by-soft-row grid through the canonical iterator."""
 
-    subplot_titles = [
-        f"{base.RESPONSE_VARIABLE_SPECS[response]['label']} - {row.label}"
-        for response in base.RESPONSE_VARIABLE_ORDER
-        for row in SOFT_ROWS
-    ]
-    fig = make_subplots(
-        rows=3,
-        cols=3,
-        subplot_titles=subplot_titles,
-        shared_xaxes=True,
-        shared_yaxes=True,
-        horizontal_spacing=0.055,
-        vertical_spacing=0.09,
-    )
-    coverage: list[dict[str, Any]] = []
-    event_markers: list[dict[str, Any]] = []
-    unavailable: list[dict[str, Any]] = []
-    legend_seen: set[tuple[str, str]] = set()
-    analytical_cache: dict[tuple[str, str, str, str], dict[str, Any]] = {}
-
-    for row_index, response_variable in enumerate(base.RESPONSE_VARIABLE_ORDER, start=1):
-        response_spec = base.RESPONSE_VARIABLE_SPECS[response_variable]
-        for col_index, soft_row in enumerate(SOFT_ROWS, start=1):
-            timing = summary_by_run[soft_row.run_id]["timing"]
-            dt = float(summary_by_run[soft_row.run_id]["dt_s"])
-            family_rows_for_marker = family_rows(
-                detail=detail,
-                run_id=soft_row.run_id,
-                family=family,
-            )
-
-            profile = base.aggregate_family_response_profile(
-                family_rows_for_marker,
-                response_variable=response_variable,
-            )
-            add_profile_traces(
-                base,
-                fig,
-                profile=profile,
+    def render_cell(
+        fig: Any,
+        response_variable: str,
+        soft_row: Any,
+        row_index: int,
+        col_index: int,
+        legend_seen: set[tuple[str, str]],
+        outputs: dict[str, Any],
+    ) -> None:
+        timing = summary_by_run[soft_row.run_id]["timing"]
+        dt = float(summary_by_run[soft_row.run_id]["dt_s"])
+        baseline_rows = family_rows(
+            detail=detail,
+            run_id=soft_row.run_id,
+            family=family,
+        )
+        profile = base.aggregate_family_response_profile(
+            baseline_rows,
+            response_variable=response_variable,
+        )
+        add_profile_traces(
+            base,
+            fig,
+            profile=profile,
+            source=soft_row.run_id,
+            dt=dt,
+            row=row_index,
+            col=col_index,
+            legend_seen=legend_seen,
+        )
+        outputs["coverage"].append(
+            coverage_row(
                 source=soft_row.run_id,
-                dt=dt,
-                row=row_index,
-                col=col_index,
-                legend_seen=legend_seen,
+                family=family,
+                response_variable=response_variable,
+                column=soft_row.run_id,
+                run_id=soft_row.run_id,
+                profile=profile,
+                analytical_status="not_applicable",
             )
-            coverage.append(
-                coverage_row(
-                    source=soft_row.run_id,
+        )
+        for source in ANALYTICAL_SOURCES:
+            cache_key = (source, soft_row.run_id, family, response_variable)
+            if cache_key not in outputs["cache"]:
+                outputs["cache"][cache_key] = analytical_profile(
+                    base=base,
+                    source=source,
                     family=family,
                     response_variable=response_variable,
-                    column=soft_row.run_id,
-                    run_id=soft_row.run_id,
-                    profile=profile,
-                    analytical_status="not_applicable",
+                    baseline_rows=baseline_rows,
+                    extlqg_context=extlqg_context,
+                    robust_context=robust_context,
+                    timing=timing,
                 )
-            )
-
-            for source in ANALYTICAL_SOURCES:
-                cache_key = (source, soft_row.run_id, family, response_variable)
-                if cache_key not in analytical_cache:
-                    analytical_cache[cache_key] = analytical_profile(
-                        base=base,
+            result = outputs["cache"][cache_key]
+            if result["status"] == "available":
+                add_profile_traces(
+                    base,
+                    fig,
+                    profile=result["profile"],
+                    source=source,
+                    dt=dt,
+                    row=row_index,
+                    col=col_index,
+                    legend_seen=legend_seen,
+                )
+                outputs["coverage"].append(
+                    coverage_row(
                         source=source,
                         family=family,
                         response_variable=response_variable,
-                        baseline_rows=family_rows_for_marker,
-                        extlqg_context=extlqg_context,
-                        robust_context=robust_context,
-                        timing=timing,
-                    )
-                result = analytical_cache[cache_key]
-                if result["status"] == "available":
-                    add_profile_traces(
-                        base,
-                        fig,
+                        column=soft_row.run_id,
+                        run_id=None,
                         profile=result["profile"],
-                        source=source,
-                        dt=dt,
+                        analytical_status="available",
+                    )
+                )
+            else:
+                outputs["unavailable"].append(
+                    {
+                        "source": source,
+                        "family": family,
+                        "response_variable": response_variable,
+                        "soft_row": soft_row.run_id,
+                        "status": result["status"],
+                        "reason": result["reason"],
+                    }
+                )
+                if source == "robust_output_feedback6d":
+                    add_unsupported_annotation(
+                        fig,
+                        text="H-inf replay unsupported",
                         row=row_index,
                         col=col_index,
-                        legend_seen=legend_seen,
                     )
-                    coverage.append(
-                        coverage_row(
-                            source=source,
-                            family=family,
-                            response_variable=response_variable,
-                            column=soft_row.run_id,
-                            run_id=None,
-                            profile=result["profile"],
-                            analytical_status="available",
-                        )
-                    )
-                else:
-                    unavailable.append(
-                        {
-                            "source": source,
-                            "family": family,
-                            "response_variable": response_variable,
-                            "soft_row": soft_row.run_id,
-                            "status": result["status"],
-                            "reason": result["reason"],
-                        }
-                    )
-                    if source == "robust_output_feedback6d":
-                        add_unsupported_annotation(
-                            fig,
-                            text="H-inf replay unsupported",
-                            row=row_index,
-                            col=col_index,
-                        )
+        marker = base.infer_perturbation_event_marker(
+            family_rows=baseline_rows,
+            summary_timing=timing,
+            dt=dt,
+        )
+        base.add_perturbation_event_marker(fig, marker=marker, row=row_index, col=col_index)
+        outputs["event_markers"].append(
+            {
+                "family": family,
+                "response_variable": response_variable,
+                "soft_row": soft_row.run_id,
+                **marker,
+            }
+        )
 
-            marker = base.infer_perturbation_event_marker(
-                family_rows=family_rows_for_marker,
-                summary_timing=timing,
-                dt=dt,
-            )
-            base.add_perturbation_event_marker(fig, marker=marker, row=row_index, col=col_index)
-            event_markers.append(
-                {
-                    "family": family,
-                    "response_variable": response_variable,
-                    "soft_row": soft_row.run_id,
-                    **marker,
-                }
-            )
-            if col_index == 1:
-                fig.update_yaxes(
-                    title_text=response_spec["axis_title"],
-                    row=row_index,
-                    col=col_index,
-                )
-            if row_index == len(base.RESPONSE_VARIABLE_ORDER):
-                fig.update_xaxes(
-                    title_text="time from perturbation onset (s)",
-                    row=row_index,
-                    col=col_index,
-                )
-    fig.update_layout(
+    return build_stabilization_family_figure(
+        response_variables=base.RESPONSE_VARIABLE_ORDER,
+        columns=SOFT_ROWS,
+        response_label=lambda response: base.RESPONSE_VARIABLE_SPECS[response]["label"],
+        column_label=lambda row: row.label,
+        response_axis_title=lambda response: base.RESPONSE_VARIABLE_SPECS[response]["axis_title"],
+        render_cell=render_cell,
         title=f"d55 soft-PGD stabilization task response: {base.FAMILY_LABELS[family]}",
-        template="plotly_white",
         width=1420,
-        height=900,
-        margin={"l": 78, "r": 28, "t": 96, "b": 112},
-        hovermode="x unified",
-        legend={
-            "orientation": "h",
-            "yanchor": "top",
-            "y": -0.09,
-            "xanchor": "center",
-            "x": 0.5,
-        },
+        horizontal_spacing=0.055,
     )
-    return fig, coverage, event_markers, unavailable
 
 
 def family_rows(*, detail: Mapping[str, Any], run_id: str, family: str) -> list[Mapping[str, Any]]:
