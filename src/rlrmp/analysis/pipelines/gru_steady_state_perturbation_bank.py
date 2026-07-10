@@ -18,6 +18,7 @@ from feedbax.plot import save_figure
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 
+from rlrmp.analysis.data_products import load_analysis_parameter_preset
 from rlrmp.analysis.perturbation_rows import PerturbationSpec
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
 from rlrmp.analysis.pipelines.diagnostic_provenance import repo_relative, write_regeneration_spec
@@ -52,16 +53,17 @@ from rlrmp.train.task_model import setup_task_model_pair
 
 SCHEMA_VERSION = "rlrmp.gru_steady_state_perturbation_bank.v1"
 ISSUE = "87424a4"
-DEFAULT_PRE_GO_STEPS = 10
-DEFAULT_POST_GO_WASHIN_STEPS = 30
-DEFAULT_PULSE_DURATION_STEPS = 5
-DEFAULT_FINAL_WINDOW_STEPS = 10
-DEFAULT_N_ROLLOUT_TRIALS = 4
-DEFAULT_POSITION_SCALE_M = 0.1
-DEFAULT_VELOCITY_SCALE_M_S = 0.5
-DEFAULT_FORCE_FILTER_SCALE = 10.0
-DEFAULT_PRE_ONSET_FIGURE_STEPS = 10
-DEFAULT_POST_ONSET_FIGURE_STEPS = 50
+_ANALYSIS_PRESET = load_analysis_parameter_preset("gru_steady_state_perturbation_bank").parameters
+DEFAULT_PRE_GO_STEPS = int(_ANALYSIS_PRESET["pre_go_steps"])
+DEFAULT_POST_GO_WASHIN_STEPS = int(_ANALYSIS_PRESET["post_go_washin_steps"])
+DEFAULT_PULSE_DURATION_STEPS = int(_ANALYSIS_PRESET["pulse_duration_steps"])
+DEFAULT_FINAL_WINDOW_STEPS = int(_ANALYSIS_PRESET["final_window_steps"])
+DEFAULT_N_ROLLOUT_TRIALS = int(_ANALYSIS_PRESET["n_rollout_trials"])
+DEFAULT_POSITION_SCALE_M = float(_ANALYSIS_PRESET["position_scale_m"])
+DEFAULT_VELOCITY_SCALE_M_S = float(_ANALYSIS_PRESET["velocity_scale_m_s"])
+DEFAULT_FORCE_FILTER_SCALE = float(_ANALYSIS_PRESET["force_filter_scale"])
+DEFAULT_PRE_ONSET_FIGURE_STEPS = int(_ANALYSIS_PRESET["pre_onset_figure_steps"])
+DEFAULT_POST_ONSET_FIGURE_STEPS = int(_ANALYSIS_PRESET["post_onset_figure_steps"])
 SUMMARY_MARKER = "steady_state_perturbation_bank"
 SUMMARY_FILENAME = "steady_state_perturbation_bank_summary.json"
 DETAIL_FILENAME = "steady_state_perturbation_bank_detail.json"
@@ -215,7 +217,9 @@ def default_feedback_perturbations(
     velocity_scale_m_s = (
         config.velocity_scale_m_s if velocity_scale_m_s is None else velocity_scale_m_s
     )
-    force_filter_scale = config.force_filter_scale if force_filter_scale is None else force_filter_scale
+    force_filter_scale = (
+        config.force_filter_scale if force_filter_scale is None else force_filter_scale
+    )
     rows: list[FeedbackPerturbation] = []
     descriptor_view = resolve_controller_feedback_view(
         None,
@@ -667,9 +671,7 @@ def make_steady_state_trial_specs(
     config = config or SteadyStatePerturbationBankConfig()
     pre_go_steps = config.pre_go_steps if pre_go_steps is None else pre_go_steps
     post_go_washin_steps = (
-        config.post_go_washin_steps
-        if post_go_washin_steps is None
-        else post_go_washin_steps
+        config.post_go_washin_steps if post_go_washin_steps is None else post_go_washin_steps
     )
     pulse_duration_steps = (
         config.pulse_duration_steps if pulse_duration_steps is None else pulse_duration_steps
@@ -1668,9 +1670,7 @@ def settling_step(profile: np.ndarray, *, tolerance: float) -> int | None:
     return None
 
 
-def _washin_contract(
-    *, config: SteadyStatePerturbationBankConfig | None = None
-) -> dict[str, Any]:
+def _washin_contract(*, config: SteadyStatePerturbationBankConfig | None = None) -> dict[str, Any]:
     config = config or SteadyStatePerturbationBankConfig()
     return {
         "schema_version": SCHEMA_VERSION,
@@ -1681,8 +1681,7 @@ def _washin_contract(
         ),
         "noise": "epsilon inputs are zeroed before evaluation.",
         "delayed_go_cue": (
-            f"go cue off for {int(config.pre_go_steps)} steps, then on; "
-            "target visible throughout."
+            f"go cue off for {int(config.pre_go_steps)} steps, then on; target visible throughout."
         ),
         "fanout_policy": (
             "prefix_equivalent_batched_trials because the current Feedbax eval API "

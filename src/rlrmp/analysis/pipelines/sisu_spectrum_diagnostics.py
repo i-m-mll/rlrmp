@@ -24,6 +24,7 @@ from feedbax.contracts.manifest import EvaluationRunSpec
 from jax_cookbook import load_with_hyperparameters
 from pydantic import BaseModel, ConfigDict, Field
 
+from rlrmp.analysis.data_products import load_analysis_parameter_preset
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     materialize_reference,
@@ -60,9 +61,10 @@ SISU_SPECTRUM_ANALYSIS_TYPE = "rlrmp.sisu_spectrum"
 SISU_SPECTRUM_EVALUATION_TYPE = "rlrmp.sisu_spectrum_evaluation"
 SISU_SPECTRUM_STATES_SCHEMA = "rlrmp.sisu_spectrum.states.v1"
 DEFAULT_TOPIC = "sisu_spectrum_velocity_profiles"
-DEFAULT_SISU_LEVELS = (0.0, 0.5, 1.0)
-DEFAULT_N_ROLLOUT_TRIALS = 64
-DEFAULT_REFERENCE_SAMPLES = 128
+_ANALYSIS_PRESET = load_analysis_parameter_preset("sisu_spectrum_diagnostics").parameters
+DEFAULT_SISU_LEVELS = tuple(_ANALYSIS_PRESET["sisu_levels"])
+DEFAULT_N_ROLLOUT_TRIALS = int(_ANALYSIS_PRESET["n_rollout_trials"])
+DEFAULT_REFERENCE_SAMPLES = int(_ANALYSIS_PRESET["reference_samples"])
 CHECKPOINT_POLICY = "validation_selected_per_replicate"
 
 LOW_SISU_ENDPOINT_REACH_THRESHOLD_M = 0.05
@@ -95,10 +97,7 @@ class SisuCurve:
     @property
     def final_position_mean_m(self) -> list[float]:
         """Mean final position over replicates."""
-        return [
-            float(value)
-            for value in np.mean(self.final_position_by_replicate_m, axis=0)
-        ]
+        return [float(value) for value in np.mean(self.final_position_by_replicate_m, axis=0)]
 
 
 @dataclass(frozen=True)
@@ -533,7 +532,9 @@ def evaluate_sisu_profiles(
                 label=run.label,
                 input_key=input_key,
                 target_final_position_m=[float(value) for value in np.mean(target, axis=0)],
-                validation_input_unique=sorted(float(value) for value in np.unique(validation_input)),
+                validation_input_unique=sorted(
+                    float(value) for value in np.unique(validation_input)
+                ),
                 validation_epsilon_l2_mean=float(
                     np.mean(
                         np.linalg.norm(
@@ -767,8 +768,7 @@ def build_manifest(
                     selection.to_json() for selection in profile.checkpoint_selection
                 ],
                 "curves": {
-                    f"sisu_{curve.sisu:g}": curve_summary(curve)
-                    for curve in profile.curves
+                    f"sisu_{curve.sisu:g}": curve_summary(curve) for curve in profile.curves
                 },
                 "within_network_robustification_sisu_1_vs_0": robustification_comparison(
                     profile.curves
@@ -792,13 +792,11 @@ def summarize_low_sisu_behavior(profiles: Sequence[RunSisuProfile]) -> str:
                 continue
             if curve.endpoint_error_mean_m > LOW_SISU_ENDPOINT_REACH_THRESHOLD_M:
                 failures.append(
-                    f"{profile.label} SISU={sisu:g} endpoint "
-                    f"{curve.endpoint_error_mean_m:.4f}m"
+                    f"{profile.label} SISU={sisu:g} endpoint {curve.endpoint_error_mean_m:.4f}m"
                 )
             if curve.peak_velocity_mean_m_s < LOW_SISU_PEAK_SPEED_THRESHOLD_M_S:
                 failures.append(
-                    f"{profile.label} SISU={sisu:g} peak "
-                    f"{curve.peak_velocity_mean_m_s:.4f}m/s"
+                    f"{profile.label} SISU={sisu:g} peak {curve.peak_velocity_mean_m_s:.4f}m/s"
                 )
     if failures:
         return (

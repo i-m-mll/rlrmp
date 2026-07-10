@@ -29,6 +29,7 @@ from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
 )
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.eval.kinematics import initial_effector_position, initial_effector_velocity
+from rlrmp.runtime.parameter_presets import EvaluationEnsemblePreset, load_runtime_preset
 from rlrmp.train.task_model import setup_task_model_pair
 
 __all__ = [
@@ -47,7 +48,10 @@ __all__ = [
 #: Kept here as a module-level constant for backwards compatibility with the
 #: legacy ``eval_part2_5_figures.py`` API. New code should prefer passing
 #: ``n_replicates=`` explicitly to :func:`eval_ensemble_on_trials`.
-N_REPLICATES: int = 5
+N_REPLICATES: int = load_runtime_preset(
+    "rlrmp.evaluation_ensemble.default",
+    EvaluationEnsemblePreset,
+).n_replicates
 
 
 def eval_ensemble_on_trials(task, model, trial_specs, *, key, n_replicates: int = N_REPLICATES):

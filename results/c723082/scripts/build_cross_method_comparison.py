@@ -23,35 +23,9 @@ from pathlib import Path
 
 import numpy as np
 
+from rlrmp.analysis.data_products import load_first_run_baselines
 
-# Hard-coded from results/c723082/notes/induced_gain_first_run.md.
-# Single replicate (replicate 0) per group. The mult_single rep-0 row is the
-# documented degenerate replicate; the corrected rep-2 value is also recorded
-# for reference.
-FIRST_RUN_BASELINES: list[dict] = [
-    {"group": "baseline_standard_12k", "g_af": 0.1237, "g_sd": 148.5024, "g_sp": 2.6132,
-     "category": "flavor-A baseline (warmup only)"},
-    {"group": "vanilla_single",       "g_af": 0.2481, "g_sd": 169.2627, "g_sp": 4.3254,
-     "category": "flavor-A baseline (no adversary)"},
-    {"group": "vanilla_pop5",         "g_af": 0.1458, "g_sd": 164.6446, "g_sp": 4.4057,
-     "category": "flavor-A baseline (no adversary)"},
-    {"group": "minimax_single_seed0", "g_af": 0.1446, "g_sd": 153.3508, "g_sp": 2.1396,
-     "category": "flavor-A APT minimax"},
-    {"group": "minimax_single_seed1", "g_af": 0.1563, "g_sd": 162.8198, "g_sp": 1.3214,
-     "category": "flavor-A APT minimax"},
-    {"group": "minimax_single_seed2", "g_af": 0.1556, "g_sd": 162.9178, "g_sp": 1.4541,
-     "category": "flavor-A APT minimax"},
-    {"group": "mult_single (rep0; degen.)", "g_af": 15.6446, "g_sd": 5863.8732, "g_sp": 605.3933,
-     "category": "flagged degenerate"},
-    {"group": "mult_single (rep2; replacement)", "g_af": 0.1834, "g_sd": float("nan"), "g_sp": float("nan"),
-     "category": "flavor-A multiplicative (corrected)"},
-    {"group": "mult_pop5",            "g_af": 0.1789, "g_sd": 165.0563, "g_sp": 4.2192,
-     "category": "flavor-A multiplicative"},
-    {"group": "ratio03_single",       "g_af": 0.1709, "g_sd": 163.3942, "g_sp": 2.6417,
-     "category": "flavor-A ratio03"},
-    {"group": "ratio03_pop5",         "g_af": 0.1585, "g_sd": 164.5323, "g_sp": 2.1005,
-     "category": "flavor-A ratio03"},
-]
+FIRST_RUN_BASELINES = load_first_run_baselines().rows
 
 
 def _aggregate_by_eta(summary_groups: list[dict], ch_label: str) -> dict[float, dict]:
@@ -72,18 +46,24 @@ def _aggregate_by_eta(summary_groups: list[dict], ch_label: str) -> dict[float, 
     for eta, vals in by_eta.items():
         if not vals:
             out[eta] = {
-                "median": float("nan"), "mad": float("nan"), "n_kept": 0,
+                "median": float("nan"),
+                "mad": float("nan"),
+                "n_kept": 0,
                 "n_outliers": by_eta_outliers.get(eta, 0),
-                "min": float("nan"), "max": float("nan"),
+                "min": float("nan"),
+                "max": float("nan"),
             }
             continue
         arr = np.asarray(vals)
         med = float(np.median(arr))
         mad = float(np.median(np.abs(arr - med)))
         out[eta] = {
-            "median": med, "mad": mad, "n_kept": len(arr),
+            "median": med,
+            "mad": mad,
+            "n_kept": len(arr),
             "n_outliers": by_eta_outliers.get(eta, 0),
-            "min": float(arr.min()), "max": float(arr.max()),
+            "min": float(arr.min()),
+            "max": float(arr.max()),
         }
     return out
 
@@ -103,8 +83,11 @@ def render(summary_path: Path, out_path: Path):
 
     # Flavor-A baselines: cross-method median for the headline channel,
     # excluding the documented degenerate ``mult_single`` rep-0 row.
-    flavor_a_sd_vals = [b["g_sd"] for b in FIRST_RUN_BASELINES
-                        if np.isfinite(b["g_sd"]) and "degen" not in b["group"]]
+    flavor_a_sd_vals = [
+        b["g_sd"]
+        for b in FIRST_RUN_BASELINES
+        if np.isfinite(b["g_sd"]) and "degen" not in b["group"]
+    ]
     flavor_a_sd_median = float(np.median(flavor_a_sd_vals)) if flavor_a_sd_vals else float("nan")
 
     # Build the document.
@@ -118,13 +101,23 @@ def render(summary_path: Path, out_path: Path):
     lines.append("")
     lines.append("## Setup")
     lines.append("")
-    lines.append("- Plant: rlrmp regime, `linearize_pointmass(mass=1.0, damping=10.0, tau=0.05, dt=0.01)`.")
-    lines.append(f"- Cost: `cost_schedule_from_spec(CostSpec(n_steps={summary.get('horizon')}))` (`Q_f=1.0`).")
-    lines.append("- Reach: `(0,0) -> (0.15, 0.0)` (15 cm forward), held mid-movement (hold=0, go=1).")
+    lines.append(
+        "- Plant: rlrmp regime, `linearize_pointmass(mass=1.0, damping=10.0, tau=0.05, dt=0.01)`."
+    )
+    lines.append(
+        f"- Cost: `cost_schedule_from_spec(CostSpec(n_steps={summary.get('horizon')}))` (`Q_f=1.0`)."
+    )
+    lines.append(
+        "- Reach: `(0,0) -> (0.15, 0.0)` (15 cm forward), held mid-movement (hold=0, go=1)."
+    )
     lines.append("- SISU: 0.5.")
-    lines.append(f"- Algorithm: power iteration only (3 restarts, max_iter={summary.get('max_iter')}, **rtol={summary.get('rtol')}**, post-probe canonical).")
+    lines.append(
+        f"- Algorithm: power iteration only (3 restarts, max_iter={summary.get('max_iter')}, **rtol={summary.get('rtol')}**, post-probe canonical)."
+    )
     lines.append(f"- Riccati baseline: `gamma_star = {g_star:.6f}`.")
-    lines.append("- Replicate hygiene rule: flag `gamma > 10x` from group median (or `< median / 10`); flagged replicates excluded from per-eta medians.")
+    lines.append(
+        "- Replicate hygiene rule: flag `gamma > 10x` from group median (or `< median / 10`); flagged replicates excluded from per-eta medians."
+    )
     lines.append("")
     lines.append("Pre-registered headline metric: **`gamma_sd x qr_cost`** (induced gain on the")
     lines.append("`structural_da` w channel against cost-matched z). This is the channel that")
@@ -135,10 +128,14 @@ def render(summary_path: Path, out_path: Path):
     lines.append("## Table 1 — Headline `gamma_sd x qr_cost`")
     lines.append("")
     lines.append("Flavor-A first-run values from `results/c723082/notes/induced_gain_first_run.md`")
-    lines.append("(single replicate per group, replicate 0). Flavor-B values from this run; per-eta")
+    lines.append(
+        "(single replicate per group, replicate 0). Flavor-B values from this run; per-eta"
+    )
     lines.append("median + MAD across **non-outlier** replicates (3 seeds × 5 reps − flagged).")
     lines.append("")
-    lines.append("| Method / config | `gamma_sd` (median) | spread | `gamma_sd / gstar` | n_kept / n_outliers | Notes |")
+    lines.append(
+        "| Method / config | `gamma_sd` (median) | spread | `gamma_sd / gstar` | n_kept / n_outliers | Notes |"
+    )
     lines.append("|---|---|---|---|---|---|")
     for b in FIRST_RUN_BASELINES:
         if "degen" in b["group"]:
@@ -147,7 +144,9 @@ def render(summary_path: Path, out_path: Path):
             note = b["category"]
         if np.isfinite(b["g_sd"]):
             ratio = b["g_sd"] / g_star
-            lines.append(f"| `{b['group']}` | {b['g_sd']:.2f} | (single rep) | {ratio:.0f} | 1/0 | {note} |")
+            lines.append(
+                f"| `{b['group']}` | {b['g_sd']:.2f} | (single rep) | {ratio:.0f} | 1/0 | {note} |"
+            )
         else:
             lines.append(f"| `{b['group']}` | — | — | — | 1/0 | {note} |")
     for eta in sorted(sd_by_eta.keys()):
@@ -165,18 +164,30 @@ def render(summary_path: Path, out_path: Path):
                 f"0/{s['n_outliers']} | flavor-B (this run) — all replicates flagged |"
             )
     lines.append("")
-    lines.append(f"Flavor-A cross-method median (excluding `mult_single` rep-0 degenerate): **{flavor_a_sd_median:.2f}**.")
+    lines.append(
+        f"Flavor-A cross-method median (excluding `mult_single` rep-0 degenerate): **{flavor_a_sd_median:.2f}**."
+    )
     lines.append("")
     # Headline ratio
     flavor_b_overall = []
     for s in sd_by_eta.values():
         if np.isfinite(s["median"]):
             flavor_b_overall.append(s["median"])
-    flavor_b_overall_median = float(np.median(flavor_b_overall)) if flavor_b_overall else float("nan")
-    if np.isfinite(flavor_b_overall_median) and np.isfinite(flavor_a_sd_median) and flavor_a_sd_median > 0:
+    flavor_b_overall_median = (
+        float(np.median(flavor_b_overall)) if flavor_b_overall else float("nan")
+    )
+    if (
+        np.isfinite(flavor_b_overall_median)
+        and np.isfinite(flavor_a_sd_median)
+        and flavor_a_sd_median > 0
+    ):
         ratio = flavor_b_overall_median / flavor_a_sd_median
-        lines.append(f"**Headline ratio**: flavor-B `gamma_sd` median = **{flavor_b_overall_median:.2f}**, ")
-        lines.append(f"flavor-A `gamma_sd` median = **{flavor_a_sd_median:.2f}**, ratio = **{ratio:.3f}**.")
+        lines.append(
+            f"**Headline ratio**: flavor-B `gamma_sd` median = **{flavor_b_overall_median:.2f}**, "
+        )
+        lines.append(
+            f"flavor-A `gamma_sd` median = **{flavor_a_sd_median:.2f}**, ratio = **{ratio:.3f}**."
+        )
     lines.append("")
 
     lines.append("## Table 2 — Auxiliary channels (`gamma_af`, `gamma_sp`)")
@@ -194,15 +205,25 @@ def render(summary_path: Path, out_path: Path):
     for eta in sorted(af_by_eta.keys()):
         a = af_by_eta[eta]
         s = sp_by_eta[eta]
-        af_str = f"{a['median']:.4f} (MAD={a['mad']:.4f}, n={a['n_kept']}/{a['n_outliers']})" if np.isfinite(a["median"]) else "—"
-        sp_str = f"{s['median']:.2f} (MAD={s['mad']:.2f}, n={s['n_kept']}/{s['n_outliers']})" if np.isfinite(s["median"]) else "—"
+        af_str = (
+            f"{a['median']:.4f} (MAD={a['mad']:.4f}, n={a['n_kept']}/{a['n_outliers']})"
+            if np.isfinite(a["median"])
+            else "—"
+        )
+        sp_str = (
+            f"{s['median']:.2f} (MAD={s['mad']:.2f}, n={s['n_kept']}/{s['n_outliers']})"
+            if np.isfinite(s["median"])
+            else "—"
+        )
         lines.append(f"| **`flavor_b_eta{eta:.2f}`** | {af_str} | {sp_str} |")
     lines.append("")
 
     # Per-(eta, seed) detail
     lines.append("## Table 3 — Per-(eta, seed) flavor-B detail")
     lines.append("")
-    lines.append("| Group | n_kept / n_outliers | `gamma_sd` median | `gamma_af` median | `gamma_sp` median |")
+    lines.append(
+        "| Group | n_kept / n_outliers | `gamma_sd` median | `gamma_af` median | `gamma_sp` median |"
+    )
     lines.append("|---|---|---|---|---|")
     for g in groups:
         sd = g.get(sd_label, {})
@@ -243,11 +264,13 @@ def render(summary_path: Path, out_path: Path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--summary-path", type=Path,
+        "--summary-path",
+        type=Path,
         default=Path("_artifacts/c723082/runs/induced_gain_flavor_b/summary.json"),
     )
     parser.add_argument(
-        "--out-path", type=Path,
+        "--out-path",
+        type=Path,
         default=Path("results/c723082/notes/induced_gain_cross_method_comparison.md"),
     )
     args = parser.parse_args()

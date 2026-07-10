@@ -21,6 +21,7 @@ import jax.numpy as jnp
 import numpy as np
 from jaxtyping import Array, Float
 
+from rlrmp.analysis.data_products import load_analysis_parameter_preset
 from rlrmp.analysis.math.hinf_riccati import (
     ClosedLoopRollout,
     CostSchedule,
@@ -46,27 +47,23 @@ from rlrmp.paths import REPO_ROOT, mkdir_p
 
 ISSUE_ID = "cb98e58"
 UMBRELLA_ID = "43e8728"
+_ANALYSIS_PRESET = load_analysis_parameter_preset("cs_game_card").parameters
 # Full-state deterministic C&S speed-matching reference. This is not the
 # default for output-feedback robustness certificates; see
 # OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR below.
-PRIMARY_GAMMA_FACTOR = 1.05
+PRIMARY_GAMMA_FACTOR = float(_ANALYSIS_PRESET["primary_gamma_factor"])
 # Working output-feedback robustness target selected from the gamma sweep on
 # 97604a8. Keep output-feedback Phase 1/3 diagnostics tied to this named value
 # so rerunning the sweep requires updating one contract instead of silently
 # falling back to the full-state speed-matching gamma.
-OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR = 1.4
-OUTPUT_FEEDBACK_GAMMA_SELECTION_ISSUE_ID = "97604a8"
-DIAGNOSTIC_GAMMA_FACTOR = 1.5
-DEFAULT_GAMMA_FACTORS = (
-    1.001,
-    PRIMARY_GAMMA_FACTOR,
-    OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
-    DIAGNOSTIC_GAMMA_FACTOR,
-    2.0,
-    3.0,
+OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR = float(
+    _ANALYSIS_PRESET["output_feedback_certificate_gamma_factor"]
 )
-INIT_POS = np.array([0.0, 0.0], dtype=np.float64)
-TARGET_POS = np.array([0.15, 0.0], dtype=np.float64)
+OUTPUT_FEEDBACK_GAMMA_SELECTION_ISSUE_ID = "97604a8"
+DIAGNOSTIC_GAMMA_FACTOR = float(_ANALYSIS_PRESET["diagnostic_gamma_factor"])
+DEFAULT_GAMMA_FACTORS = tuple(_ANALYSIS_PRESET["default_gamma_factors"])
+INIT_POS = np.asarray(_ANALYSIS_PRESET["initial_position_m"], dtype=np.float64)
+TARGET_POS = np.asarray(_ANALYSIS_PRESET["target_position_m"], dtype=np.float64)
 
 
 @dataclass(frozen=True)

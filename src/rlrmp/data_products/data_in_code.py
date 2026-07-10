@@ -229,14 +229,121 @@ def _empirical_allowlist() -> dict[str, str]:
     }
 
 
+_CD137D8_CONFIG_TIER_ALLOWLIST = (
+    "src/rlrmp/train/closed_loop_distillation.py::ClosedLoopLossWeights::default_bundle",
+    "src/rlrmp/train/closed_loop_distillation.py::DEFAULT_CHECKPOINT_INTERVAL_BATCHES::hp_constant",
+    "src/rlrmp/train/cs_nominal_gru.py::AdaptiveEpsilonState::default_bundle",
+    "src/rlrmp/train/cs_nominal_gru.py::CS_CONTROL_SCALE::hp_constant",
+    "src/rlrmp/train/cs_nominal_gru.py::CS_POSITION_SCALE::hp_constant",
+    "src/rlrmp/train/cs_nominal_gru.py::CS_REGULARIZED_NN_HIDDEN::hp_constant",
+    "src/rlrmp/train/cs_nominal_gru.py::CS_STAGE_COUNT::hp_constant",
+    "src/rlrmp/train/cs_nominal_gru.py::CS_VELOCITY_SCALE::hp_constant",
+    "src/rlrmp/train/cs_nominal_gru.py::CsNominalGruConfig::default_bundle",
+    "src/rlrmp/train/cs_nominal_gru.py::build_hps::default_bundle",
+    "src/rlrmp/train/cs_perturbation_training.py::AMPLITUDE_LEVELS::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::BROAD_EPSILON_REFERENCE_REACH_M::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::BroadFullStateEpsilonTrainingConfig::default_bundle",
+    "src/rlrmp/train/cs_perturbation_training.py::DEFAULT_HELD_OUT_TARGET_AMPLITUDES_M::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::DEFAULT_HELD_OUT_TARGET_DIRECTIONS_DEG::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::DEFAULT_PGD_SISU_EXACT_ZERO_MASS::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::DEFAULT_PGD_SISU_LEVELS::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::DEFAULT_SEEN_TARGET_AMPLITUDES_M::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::DEFAULT_SEEN_TARGET_DIRECTIONS_DEG::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::FixedTargetPerturbationTrainingConfig::default_bundle",
+    "src/rlrmp/train/cs_perturbation_training.py::HISTORICAL_020A65B_PGD_RADIUS_15CM::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::ORIGINAL_TARGET_ANCHOR_M::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::PGD_SISU_MAX_RADIUS_SOURCES::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::PgdFullStateEpsilonTrainingConfig::default_bundle",
+    "src/rlrmp/train/cs_perturbation_training.py::PolicyFullStateEpsilonTrainingConfig::default_bundle",
+    "src/rlrmp/train/cs_perturbation_training.py::RAW_STRONG_GAMMA_1P05_RADIUS_15CM::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_BAND16_HELD_OUT_DIRECTIONS::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_BAND36_HELD_OUT_DIRECTIONS::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_BAND8_HELD_OUT_DIRECTIONS::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_BAND_CENTERS_DEG::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_CONST_REACH_M::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_DENSE_N_DIRECTIONS::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_SPARSE_N_DIRECTIONS::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::TargetRelativeMultiTargetTrainingConfig::default_bundle",
+    "src/rlrmp/train/distillation.py::CSH0DistillationConfig::default_bundle",
+    "src/rlrmp/train/distillation.py::DistillationLossWeights::default_bundle",
+    "src/rlrmp/train/guided_distillation.py::DEFAULT_CHECKPOINT_INTERVAL_BATCHES::hp_constant",
+    "src/rlrmp/train/minimax.py::MinimaxConfig::default_bundle",
+    "src/rlrmp/train/minimax.py::build_hps::default_bundle",
+    "src/rlrmp/train/standard.py::_base_hps::default_bundle",
+    "src/rlrmp/train/standard.py::_loss_cfg_combined::default_bundle",
+    "src/rlrmp/train/standard.py::_loss_cfg_default::default_bundle",
+    "src/rlrmp/train/standard.py::_loss_cfg_running_cost::default_bundle",
+    "src/rlrmp/train/standard.py::_loss_cfg_softmin::default_bundle",
+)
+
+_E04BD36_USER_HOLD_ALLOWLIST = (
+    "src/rlrmp/fb_response.py::InstantFBResponse::default_bundle",
+    "src/rlrmp/model/cs_lss_gru.py::CS_DELAY_BLOCKS::hp_constant",
+    "src/rlrmp/model/feedbax_graph.py::_linear_controller_params::default_bundle",
+)
+
+_OWNING_SCHEMA_DEFAULT_ALLOWLIST = (
+    "src/rlrmp/analysis/math/adversary_equivalence.py::OpenLoopOptimizationConfig::default_bundle",
+    "src/rlrmp/analysis/math/cs_released_simulation.py::CSReleasedStochasticNoiseConfig::default_bundle",
+    "src/rlrmp/analysis/math/hinf_riccati.py::CostSpec::default_bundle",
+    "src/rlrmp/analysis/math/linear_equivalence_certificate.py::CertificateConfig::default_bundle",
+    "src/rlrmp/analysis/math/linear_round_trip.py::LinearTrainingConfig::default_bundle",
+    "src/rlrmp/analysis/math/linear_round_trip.py::TeacherFitConfig::default_bundle",
+    "src/rlrmp/analysis/math/output_feedback.py::OutputFeedbackConfig::default_bundle",
+    "src/rlrmp/analysis/pipelines/cs_stochastic_phase3.py::Phase3StochasticConfig::default_bundle",
+    "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py::DelayedReachEvalBankSpec::default_bundle",
+    "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py::SteadyStatePerturbationBankConfig::default_bundle",
+    "src/rlrmp/analysis/pipelines/output_feedback_rollout_recovery.py::EigenspectrumCoverageConfig::default_bundle",
+    "src/rlrmp/analysis/pipelines/output_feedback_rollout_recovery.py::ObserverErrorCoverageConfig::default_bundle",
+    "src/rlrmp/analysis/pipelines/output_feedback_rollout_recovery.py::RolloutRecoveryCondition::default_bundle",
+    "src/rlrmp/analysis/robustness_margin.py::RobustnessMarginParams::default_bundle",
+    "src/rlrmp/cloud/modal_runner.py::NominalGruRunConfig::default_bundle",
+    "src/rlrmp/model/stochastic_runtime.py::StochasticRuntimeConfig::default_bundle",
+)
+
+_PURPOSE_CONSTANT_ALLOWLIST = (
+    "src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py::LOW_SISU_ENDPOINT_REACH_THRESHOLD_M::hp_constant",
+    "src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py::LOW_SISU_PEAK_SPEED_THRESHOLD_M_S::hp_constant",
+)
+
+
 DATA_IN_CODE_ALLOWLIST: dict[str, str] = {
     **_empirical_allowlist(),
-    (
-        "src/rlrmp/train/closed_loop_distillation.py::"
-        "smoke_train_command::argv_rows"
-    ): (
+    ("src/rlrmp/train/closed_loop_distillation.py::smoke_train_command::argv_rows"): (
         "The numeric literals are fixed one-batch smoke safety bounds, not experiment "
         "parameters; the governed run spec remains caller-supplied through --run-spec."
+    ),
+    **{
+        key: (
+            "Explicitly excluded config-tier surface owned by issue cd137d8; it remains "
+            "visible here until that unified training-schema and pre-native retirement work lands."
+        )
+        for key in _CD137D8_CONFIG_TIER_ALLOWLIST
+    },
+    **{
+        key: (
+            "Deletion or migration is explicitly held by the user on issue e04bd36; preserving "
+            "the live value with a named exception prevents this lane from claiming held work."
+        )
+        for key in _E04BD36_USER_HOLD_ALLOWLIST
+    },
+    **{
+        key: (
+            "The typed config or params class is already the owning schema-default surface; "
+            "the detector reports its field defaults because the schema is colocated with its consumer."
+        )
+        for key in _OWNING_SCHEMA_DEFAULT_ALLOWLIST
+    },
+    **{
+        key: (
+            "This value is a diagnostic classification threshold, not a run or evaluation "
+            "parameter; the audited inventory independently classified it as a legitimate constant."
+        )
+        for key in _PURPOSE_CONSTANT_ALLOWLIST
+    },
+    ("src/rlrmp/cloud/modal_runner.py::DEFAULT_TRAIN_TIMEOUT_SECONDS::hp_constant"): (
+        "Operational cloud job timeout rather than a scientific run parameter; it remains a "
+        "runner safety bound and is intentionally separate from the governed training spec."
     ),
 }
 
@@ -307,9 +414,7 @@ def scan_tree(repo_root: Path) -> list[DataInCodeFinding]:
         except OSError:
             continue
         try:
-            findings.extend(
-                scan_source(text, relpath, constructor_names=constructor_names)
-            )
+            findings.extend(scan_source(text, relpath, constructor_names=constructor_names))
         except SyntaxError as error:
             raise DataInCodePolicyError(
                 f"cannot scan syntactically invalid Python source {relpath}: {error}"
@@ -327,10 +432,7 @@ def violations(repo_root: Path) -> list[DataInCodeFinding]:
         if finding.key not in DATA_IN_CODE_ALLOWLIST
         and (
             policy_for_finding(finding) == "enforced"
-            or (
-                policy_for_finding(finding) == "ratchet"
-                and finding.key not in baseline
-            )
+            or (policy_for_finding(finding) == "ratchet" and finding.key not in baseline)
         )
     ]
 
@@ -406,8 +508,7 @@ def write_baseline(repo_root: Path, *, allow_growth: bool = False) -> list[str]:
     current = sorted(
         finding.key
         for finding in scan_tree(repo_root)
-        if policy_for_finding(finding) == "ratchet"
-        and finding.key not in DATA_IN_CODE_ALLOWLIST
+        if policy_for_finding(finding) == "ratchet" and finding.key not in DATA_IN_CODE_ALLOWLIST
     )
     path = baseline_path(repo_root)
     existing = load_baseline(repo_root)
@@ -547,8 +648,10 @@ class _DataInCodeVisitor(ast.NodeVisitor):
         name = _call_name(node.func)
         if name not in self.constructor_names:
             return
-        if any(keyword.arg is not None and _literal_contains_numeric(keyword.value)
-               for keyword in node.keywords):
+        if any(
+            keyword.arg is not None and _literal_contains_numeric(keyword.value)
+            for keyword in node.keywords
+        ):
             self._emit(
                 detector="spec_flow",
                 lineno=node.lineno,
@@ -727,13 +830,8 @@ def _empirical_findings(text: str, relpath: str, tier: str) -> list[DataInCodeFi
 
 
 def _is_spec_builder_name(name: str) -> bool:
-    return (
-        name.startswith("build_")
-        and (
-            name.endswith("_run_spec")
-            or name.endswith("_training_run_spec")
-            or name.endswith("_spec")
-        )
+    return name.startswith("build_") and (
+        name.endswith("_run_spec") or name.endswith("_training_run_spec") or name.endswith("_spec")
     )
 
 
@@ -837,11 +935,7 @@ def _is_default_bundle_dict(node: ast.Dict) -> bool:
     string_keys = list(_dict_string_keys(node))
     if len(string_keys) < 3:
         return False
-    numeric_values = sum(
-        1
-        for child in ast.walk(node)
-        if _is_numeric_constant(child)
-    )
+    numeric_values = sum(1 for child in ast.walk(node) if _is_numeric_constant(child))
     if numeric_values < 2:
         return False
     return any(_hp_name_matches(key) for key in string_keys)

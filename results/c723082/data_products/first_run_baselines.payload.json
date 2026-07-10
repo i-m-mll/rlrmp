@@ -1,0 +1,18 @@
+{
+  "schema_id": "rlrmp.cross_method_first_run_baselines.payload",
+  "schema_version": "rlrmp.cross_method_first_run_baselines.payload.v1",
+  "role": "cross_method_first_run_baselines",
+  "rows": [
+    {"group": "baseline_standard_12k", "g_af": 0.1237, "g_sd": 148.5024, "g_sp": 2.6132, "category": "flavor-A baseline (warmup only)"},
+    {"group": "vanilla_single", "g_af": 0.2481, "g_sd": 169.2627, "g_sp": 4.3254, "category": "flavor-A baseline (no adversary)"},
+    {"group": "vanilla_pop5", "g_af": 0.1458, "g_sd": 164.6446, "g_sp": 4.4057, "category": "flavor-A baseline (no adversary)"},
+    {"group": "minimax_single_seed0", "g_af": 0.1446, "g_sd": 153.3508, "g_sp": 2.1396, "category": "flavor-A APT minimax"},
+    {"group": "minimax_single_seed1", "g_af": 0.1563, "g_sd": 162.8198, "g_sp": 1.3214, "category": "flavor-A APT minimax"},
+    {"group": "minimax_single_seed2", "g_af": 0.1556, "g_sd": 162.9178, "g_sp": 1.4541, "category": "flavor-A APT minimax"},
+    {"group": "mult_single (rep0; degen.)", "g_af": 15.6446, "g_sd": 5863.8732, "g_sp": 605.3933, "category": "flagged degenerate"},
+    {"group": "mult_single (rep2; replacement)", "g_af": 0.1834, "g_sd": null, "g_sp": null, "category": "flavor-A multiplicative (corrected)"},
+    {"group": "mult_pop5", "g_af": 0.1789, "g_sd": 165.0563, "g_sp": 4.2192, "category": "flavor-A multiplicative"},
+    {"group": "ratio03_single", "g_af": 0.1709, "g_sd": 163.3942, "g_sp": 2.6417, "category": "flavor-A ratio03"},
+    {"group": "ratio03_pop5", "g_af": 0.1585, "g_sd": 164.5323, "g_sp": 2.1005, "category": "flavor-A ratio03"}
+  ]
+}

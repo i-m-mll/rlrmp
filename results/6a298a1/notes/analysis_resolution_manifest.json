@@ -1,0 +1,255 @@
+{
+  "issue": "6a298a1",
+  "resolution_count": 43,
+  "resolutions": {
+    "results/7c1f7ed/scripts/materialize_delayed_sisu_velocity_profiles.py::main::argv_rows": {
+      "destination": "results/7c1f7ed/runs/delayed_sisu_velocity_profiles.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_analysis_parameter_destinations.py::test_delayed_sisu_driver_spec_loads"
+      },
+      "rationale": "Historical delayed-SISU condition arguments now load from a versioned tracked driver/evaluation spec before argv construction.",
+      "route": "tracked_evaluation_spec"
+    },
+    "results/c723082/scripts/build_cross_method_comparison.py::FIRST_RUN_BASELINES::empirical_table": {
+      "destination": "results/c723082/data_products/first_run_baselines.json + first_run_baselines.payload.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_analysis_parameter_destinations.py::test_first_run_baselines_data_product_loads"
+      },
+      "rationale": "Adopted empirical comparison rows now live in a schema/version/product-hash and artifact-hash governed AnalysisDataProduct loaded fail-closed.",
+      "route": "governed_analysis_data_product"
+    },
+    "scripts/materialize_output_feedback_failure_decomposition.py::INTERPOLATION_ALPHAS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/failure_decomposition.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/math/adversary_equivalence.py::INIT_POS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/adversary_equivalence.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/math/adversary_equivalence.py::OPEN_LOOP_LEARNING_RATE::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/adversary_equivalence.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/math/adversary_equivalence.py::OPEN_LOOP_RESTARTS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/adversary_equivalence.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/math/adversary_equivalence.py::OPEN_LOOP_STEP_SWEEP::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/adversary_equivalence.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_analysis_parameter_destinations.py::test_adversary_equivalence_defaults_load"
+      },
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/math/adversary_equivalence.py::TARGET_POS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/adversary_equivalence.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/math/cs_game_card.py::DIAGNOSTIC_GAMMA_FACTOR::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/cs_game_card.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/math/cs_game_card.py::INIT_POS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/cs_game_card.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/math/cs_game_card.py::OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/cs_game_card.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/math/cs_game_card.py::PRIMARY_GAMMA_FACTOR::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/cs_game_card.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/math/cs_game_card.py::TARGET_POS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/cs_game_card.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/math/output_feedback.py::GAMMA_SWEEP_FACTORS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/output_feedback_gamma_sweep.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_analysis_parameter_destinations.py::test_gamma_sweep_factors_load"
+      },
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/math/robust_bellman.py::EXACT_INNER_TIME_INDICES::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/robust_bellman.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/math/robust_bellman.py::NUMERICAL_MINMAX_TIME_INDICES::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/robust_bellman.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py::DEFAULT_RESPONSE_MAP_ROLLOUT_TRIALS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/cs_gru_standard_materialization.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/delayed_diagnostic_bundle.py::DEFAULT_DECAY_THRESHOLDS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/delayed_diagnostic_bundle.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/delayed_diagnostic_bundle.py::DEFAULT_SUPPORT_WINDOWS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/delayed_diagnostic_bundle.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_analysis_parameter_destinations.py::test_delayed_diagnostic_bundle_defaults_load"
+      },
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/diagnostic_provenance.py::DEFAULT_MAX_TREE_HASH_FILES::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/diagnostic_provenance.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py::DEFAULT_DELAYED_REACH_DIRECTION_COUNT::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_checkpoint_selection.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py::DEFAULT_DELAYED_REACH_UNIFORM_REACH_LENGTH_M::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_checkpoint_selection.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py::DEFAULT_CONTROLLER_VISIBLE_FORCE_FILTER_SCALE_N::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_perturbation_calibration.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_perturbation_response_norm_plots.py::EXTLQG_WIDTH::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_perturbation_response_norm_plots.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_perturbation_response_norm_plots.py::TRAINING_WIDTHS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_perturbation_response_norm_plots.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_analysis_parameter_destinations.py::test_training_widths_load"
+      },
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_pilot_figures.py::DEFAULT_N_ROLLOUT_TRIALS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_pilot_figures.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py::DEFAULT_FINAL_WINDOW_STEPS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_steady_state_perturbation_bank.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py::DEFAULT_FORCE_FILTER_SCALE::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_steady_state_perturbation_bank.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py::DEFAULT_N_ROLLOUT_TRIALS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_steady_state_perturbation_bank.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py::DEFAULT_POSITION_SCALE_M::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_steady_state_perturbation_bank.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py::DEFAULT_POST_GO_WASHIN_STEPS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_steady_state_perturbation_bank.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py::DEFAULT_POST_ONSET_FIGURE_STEPS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_steady_state_perturbation_bank.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py::DEFAULT_PRE_GO_STEPS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_steady_state_perturbation_bank.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py::DEFAULT_PRE_ONSET_FIGURE_STEPS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_steady_state_perturbation_bank.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py::DEFAULT_PULSE_DURATION_STEPS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_steady_state_perturbation_bank.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py::DEFAULT_VELOCITY_SCALE_M_S::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_steady_state_perturbation_bank.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/objective_comparator.py::STATE_COMPONENT_SLICES::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/objective_comparator.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_analysis_parameter_destinations.py::test_state_component_slices_load"
+      },
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/output_feedback_interpolated_starts.py::INTERPOLATED_ALPHAS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/output_feedback_interpolated_starts.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/sisu_perturbation_comparison.py::DEFAULT_N_ROLLOUT_TRIALS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/sisu_perturbation_comparison.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/sisu_perturbation_comparison.py::DEFAULT_SISU_LEVELS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/sisu_perturbation_comparison.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py::DEFAULT_N_ROLLOUT_TRIALS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/sisu_spectrum_diagnostics.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py::DEFAULT_REFERENCE_SAMPLES::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/sisu_spectrum_diagnostics.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_analysis_parameter_destinations.py::test_all_registered_analysis_presets_load_with_pinned_hashes"
+      },
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py::DEFAULT_SISU_LEVELS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/sisu_spectrum_diagnostics.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    }
+  },
+  "schema_id": "rlrmp.data_in_code_resolution_fragment",
+  "schema_version": "rlrmp.data_in_code_resolution_fragment.v1"
+}

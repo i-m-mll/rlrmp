@@ -1,0 +1,215 @@
+{
+  "issue": "6a298a1",
+  "resolution_count": 23,
+  "resolutions": {
+    "src/rlrmp/cloud/modal_runner.py::DEFAULT_BATCH_SIZE::hp_constant": {
+      "destination": "src/rlrmp/config/runtime_presets/modal_runner.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_runtime_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "Reusable remote-execution defaults now load from an individually registered schema/version/content-hash validated runtime preset; the Python literal was removed.",
+      "route": "registered_runtime_parameter_preset"
+    },
+    "src/rlrmp/cloud/modal_runner.py::DEFAULT_CHECKPOINT_INTERVAL_BATCHES::hp_constant": {
+      "destination": "src/rlrmp/config/runtime_presets/modal_runner.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_runtime_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "Reusable remote-execution defaults now load from an individually registered schema/version/content-hash validated runtime preset; the Python literal was removed.",
+      "route": "registered_runtime_parameter_preset"
+    },
+    "src/rlrmp/cloud/modal_runner.py::DEFAULT_HIDDEN_SIZE::hp_constant": {
+      "destination": "src/rlrmp/config/runtime_presets/modal_runner.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_runtime_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "Reusable remote-execution defaults now load from an individually registered schema/version/content-hash validated runtime preset; the Python literal was removed.",
+      "route": "registered_runtime_parameter_preset"
+    },
+    "src/rlrmp/cloud/modal_runner.py::DEFAULT_N_REPLICATES::hp_constant": {
+      "destination": "src/rlrmp/config/runtime_presets/modal_runner.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_runtime_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "Reusable remote-execution defaults now load from an individually registered schema/version/content-hash validated runtime preset; the Python literal was removed.",
+      "route": "registered_runtime_parameter_preset"
+    },
+    "src/rlrmp/cloud/modal_runner.py::DEFAULT_N_TRAIN_BATCHES::hp_constant": {
+      "destination": "src/rlrmp/config/runtime_presets/modal_runner.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_runtime_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "Reusable remote-execution defaults now load from an individually registered schema/version/content-hash validated runtime preset; the Python literal was removed.",
+      "route": "registered_runtime_parameter_preset"
+    },
+    "src/rlrmp/cloud/modal_runner.py::DEFAULT_TIMEOUT_SECONDS::hp_constant": {
+      "destination": "src/rlrmp/config/runtime_presets/modal_runner.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_runtime_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "Reusable remote-execution defaults now load from an individually registered schema/version/content-hash validated runtime preset; the Python literal was removed.",
+      "route": "registered_runtime_parameter_preset"
+    },
+    "src/rlrmp/data_products/broad_epsilon.py::BROAD_EPSILON_REFERENCE_REACH_M::hp_constant": {
+      "destination": "results/ea6ccb4/data_products/broad_epsilon_budget_anchors.json + broad_epsilon_budget_anchors.extraction.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_governed_products_load_reference_reach_and_force_convention"
+      },
+      "rationale": "The canonical reference reach now loads from the existing schema/version/identity-hash governed broad-epsilon AnalysisDataProduct and remains available through the legacy module export.",
+      "route": "governed_analysis_data_product"
+    },
+    "src/rlrmp/data_products/calibration.py::CONTROLLER_VISIBLE_FORCE_FILTER_SCALE_CONVENTION::hp_constant": {
+      "destination": "results/ea6ccb4/data_products/perturbation_open_loop_calibration.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_governed_products_load_reference_reach_and_force_convention"
+      },
+      "rationale": "The native force/filter convention now loads from the schema/version/identity-hash governed open-loop calibration AnalysisDataProduct; the Python literal was removed.",
+      "route": "governed_analysis_data_product"
+    },
+    "src/rlrmp/eval/ensemble.py::N_REPLICATES::hp_constant": {
+      "destination": "src/rlrmp/config/runtime_presets/evaluation_ensemble.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_runtime_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "The reusable evaluation replicate count now loads from an individually registered schema/version/content-hash validated runtime preset; the Python literal was removed.",
+      "route": "registered_runtime_parameter_preset"
+    },
+    "src/rlrmp/loss.py::DEFAULT_EFFECTOR_POS_LATE_PARAMS::hp_constant": {
+      "destination": "src/rlrmp/config/loss_presets/default.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_loss_defaults_load_from_registered_typed_preset"
+      },
+      "rationale": "The reusable loss parameter table now loads from the typed registered schema/version/content-hash validated default-loss preset; the Python literal was removed.",
+      "route": "registered_typed_loss_preset"
+    },
+    "src/rlrmp/loss.py::DEFAULT_EFFECTOR_POS_MID_PARAMS::hp_constant": {
+      "destination": "src/rlrmp/config/loss_presets/default.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_loss_defaults_load_from_registered_typed_preset"
+      },
+      "rationale": "The reusable loss parameter table now loads from the typed registered schema/version/content-hash validated default-loss preset; the Python literal was removed.",
+      "route": "registered_typed_loss_preset"
+    },
+    "src/rlrmp/loss.py::DEFAULT_EFFECTOR_VEL_LATE_PARAMS::hp_constant": {
+      "destination": "src/rlrmp/config/loss_presets/default.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_loss_defaults_load_from_registered_typed_preset"
+      },
+      "rationale": "The reusable loss parameter table now loads from the typed registered schema/version/content-hash validated default-loss preset; the Python literal was removed.",
+      "route": "registered_typed_loss_preset"
+    },
+    "src/rlrmp/loss.py::DEFAULT_EFFECTOR_VEL_MID_PARAMS::hp_constant": {
+      "destination": "src/rlrmp/config/loss_presets/default.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_loss_defaults_load_from_registered_typed_preset"
+      },
+      "rationale": "The reusable loss parameter table now loads from the typed registered schema/version/content-hash validated default-loss preset; the Python literal was removed.",
+      "route": "registered_typed_loss_preset"
+    },
+    "src/rlrmp/loss.py::DEFAULT_GOAL_HIT_PARAMS::hp_constant": {
+      "destination": "src/rlrmp/config/loss_presets/default.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_loss_defaults_load_from_registered_typed_preset"
+      },
+      "rationale": "The reusable loss parameter table now loads from the typed registered schema/version/content-hash validated default-loss preset; the Python literal was removed.",
+      "route": "registered_typed_loss_preset"
+    },
+    "src/rlrmp/loss.py::DEFAULT_GOAL_HIT_SUBWEIGHTS::hp_constant": {
+      "destination": "src/rlrmp/config/loss_presets/default.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_loss_defaults_load_from_registered_typed_preset"
+      },
+      "rationale": "The reusable loss parameter table now loads from the typed registered schema/version/content-hash validated default-loss preset; the Python literal was removed.",
+      "route": "registered_typed_loss_preset"
+    },
+    "src/rlrmp/loss.py::DEFAULT_TOP_WEIGHTS::hp_constant": {
+      "destination": "src/rlrmp/config/loss_presets/default.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_loss_defaults_load_from_registered_typed_preset"
+      },
+      "rationale": "The reusable loss parameter table now loads from the typed registered schema/version/content-hash validated default-loss preset; the Python literal was removed.",
+      "route": "registered_typed_loss_preset"
+    },
+    "src/rlrmp/model/cs_lss_gru.py::CS_DELAYED_POS_VEL_FORCE_INDICES::hp_constant": {
+      "destination": "src/rlrmp/config/model_presets/cs_lss_gru.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_model_and_graph_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "Reusable C&S LSS GRU construction defaults now load from an individually registered schema/version/content-hash validated model preset; the Python literal was removed.",
+      "route": "registered_model_parameter_preset"
+    },
+    "src/rlrmp/model/cs_lss_gru.py::CS_DELAYED_POS_VEL_INDICES::hp_constant": {
+      "destination": "src/rlrmp/config/model_presets/cs_lss_gru.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_model_and_graph_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "Reusable C&S LSS GRU construction defaults now load from an individually registered schema/version/content-hash validated model preset; the Python literal was removed.",
+      "route": "registered_model_parameter_preset"
+    },
+    "src/rlrmp/model/cs_lss_gru.py::_population_structure_params::default_bundle": {
+      "destination": "src/rlrmp/config/model_presets/cs_lss_gru.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_model_and_graph_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "Reusable C&S LSS GRU construction defaults now load from an individually registered schema/version/content-hash validated model preset; the Python literal was removed.",
+      "route": "registered_model_parameter_preset"
+    },
+    "src/rlrmp/model/feedbax_graph.py::DEFAULT_GRAPH_COMPONENT_SEED::hp_constant": {
+      "destination": "src/rlrmp/config/model_presets/feedbax_graph.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_model_and_graph_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "Reusable graph construction defaults now load from an individually registered schema/version/content-hash validated model/graph preset; the Python literal was removed.",
+      "route": "registered_model_parameter_preset"
+    },
+    "src/rlrmp/model/feedbax_graph.py::_migrate_legacy_plant_process_force_noise_params::default_bundle": {
+      "destination": "src/rlrmp/config/model_presets/feedbax_graph.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_model_and_graph_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "Legacy force-noise migration defaults now load from the versioned, content-hash validated graph preset before compatibility migration; the inline fallback bundle was removed.",
+      "route": "versioned_graph_migration_preset"
+    },
+    "src/rlrmp/model/feedbax_graph.py::_population_structure_params::default_bundle": {
+      "destination": "src/rlrmp/config/model_presets/feedbax_graph.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_model_and_graph_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "Reusable graph construction defaults now load from an individually registered schema/version/content-hash validated model/graph preset; the Python literal was removed.",
+      "route": "registered_model_parameter_preset"
+    },
+    "src/rlrmp/model/feedbax_graph.py::_runtime_population_structure_params::default_bundle": {
+      "destination": "src/rlrmp/config/model_presets/feedbax_graph.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_model_and_graph_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "Reusable graph construction defaults now load from an individually registered schema/version/content-hash validated model/graph preset; the Python literal was removed.",
+      "route": "registered_model_parameter_preset"
+    }
+  },
+  "schema_id": "rlrmp.data_in_code_resolution_fragment",
+  "schema_version": "rlrmp.data_in_code_resolution_fragment.v1"
+}

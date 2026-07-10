@@ -117,11 +117,7 @@ CONTROLLER_VISIBLE_VELOCITY_SCALE_ADOPTION = {
     "description": "C&S faithful-plant LQR peak forward velocity used as the "
     "controller-visible native velocity scale",
 }
-CONTROLLER_VISIBLE_FORCE_FILTER_SCALE_CONVENTION = {
-    "value_n": 1.0,
-    "description": "native 1 N reference offset for force/filter controller-visible "
-    "components; unit convention, not generated data",
-}
+
 
 @dataclass(frozen=True)
 class OpenLoopCalibration:
@@ -130,6 +126,7 @@ class OpenLoopCalibration:
     peak_delta_x_per_unit: dict[str, dict[str, float]]
     controller_visible_velocity_scale_m_s: float
     controller_visible_force_filter_scale_n: float
+    controller_visible_force_filter_scale_convention: dict[str, Any]
     reference_reach_m: float
     product_identity_hash: str
 
@@ -299,6 +296,9 @@ def load_open_loop_calibration() -> OpenLoopCalibration:
         ),
         controller_visible_force_filter_scale_n=float(
             params["controller_visible_force_filter_scale_n"]
+        ),
+        controller_visible_force_filter_scale_convention=dict(
+            params["scale_provenance"]["controller_visible_force_filter_scale_n"]
         ),
         reference_reach_m=float(params["reference_reach_m"]),
         product_identity_hash=str(product.product_identity_hash),
