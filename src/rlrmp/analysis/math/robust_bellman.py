@@ -16,6 +16,7 @@ import numpy as np
 import scipy.optimize as scipy_opt
 from jaxtyping import Array, Float
 
+from rlrmp.analysis.data_products import load_analysis_parameter_preset
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     TARGET_POS,
@@ -46,8 +47,9 @@ ISSUE_ID = "583d764"
 UMBRELLA_ID = "43e8728"
 GAMMA_SWEEP_ISSUE_ID = "97604a8"
 GAMMA_FACTORS = (1.35, OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR, 1.5)
-NUMERICAL_MINMAX_TIME_INDICES = (0, 1, 10, 30, -1)
-EXACT_INNER_TIME_INDICES = (0, 1, 10, 30, -1)
+_ANALYSIS_PRESET = load_analysis_parameter_preset("robust_bellman").parameters
+NUMERICAL_MINMAX_TIME_INDICES = tuple(_ANALYSIS_PRESET["numerical_minmax_time_indices"])
+EXACT_INNER_TIME_INDICES = tuple(_ANALYSIS_PRESET["exact_inner_time_indices"])
 PRIMARY_EXACT_INNER_GAMMA_FACTORS = (OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,)
 
 

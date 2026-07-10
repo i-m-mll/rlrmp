@@ -1,0 +1,44 @@
+{
+  "schema_id": "feedbax.manifest.analysis_data_product",
+  "schema_version": "feedbax.manifest.analysis_data_product.v1",
+  "product_schema_id": "rlrmp.cross_method_first_run_baselines",
+  "product_schema_version": "rlrmp.cross_method_first_run_baselines.v1",
+  "role": "cross_method_first_run_baselines",
+  "logical_name": "c723082_first_run_baselines",
+  "producer_manifest_id": "rlrmp.analysis.data_products.cross_method_baselines.adopt_first_run_baselines",
+  "parent_manifests": [],
+  "checkpoint_policy": {},
+  "rollout_policy": {},
+  "parameters": {
+    "payload_schema_id": "rlrmp.cross_method_first_run_baselines.payload",
+    "payload_schema_version": "rlrmp.cross_method_first_run_baselines.payload.v1",
+    "payload_artifact_uri": "results/c723082/data_products/first_run_baselines.payload.json",
+    "adoption_source": "results/c723082/notes/induced_gain_first_run.md",
+    "row_count": 11
+  },
+  "artifacts": [
+    {
+      "role": "cross_method_first_run_baselines_payload",
+      "logical_name": "c723082_first_run_baselines_payload",
+      "sha256": "ccc74ac8620aa2d655bbac4e1544e6d21a076a38d03b508721809ae88ce518ba",
+      "media_type": "application/json",
+      "storage_backend": "git",
+      "uri": "results/c723082/data_products/first_run_baselines.payload.json",
+      "metadata": {
+        "schema_id": "rlrmp.cross_method_first_run_baselines.payload",
+        "schema_version": "rlrmp.cross_method_first_run_baselines.payload.v1"
+      }
+    }
+  ],
+  "materialization": {
+    "materializer": "rlrmp.analysis.data_products.cross_method_baselines.adopt_first_run_baselines",
+    "source": "adopted from results/c723082/notes/induced_gain_first_run.md"
+  },
+  "regeneration": [],
+  "product_identity_hash": "c881652ee47d4261ea13f90167fb3ea03a4a662a0d1c418bc81442251a4f4664",
+  "metadata": {
+    "issue": "c723082",
+    "source_file": "results/c723082/scripts/build_cross_method_comparison.py",
+    "source_constant": "FIRST_RUN_BASELINES"
+  }
+}

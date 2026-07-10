@@ -20,6 +20,7 @@ from feedbax.runtime.graph import init_state_from_component
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 
 from rlrmp.analysis.manifest_queries import certificate_component_summary_value
+from rlrmp.analysis.data_products import load_analysis_parameter_preset
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     materialize_reference,
@@ -84,7 +85,11 @@ RUN_IDS = (
     "cs_stochastic_gru__no_hidden_penalty",
     "cs_stochastic_gru__hidden_penalty",
 )
-DEFAULT_RESPONSE_MAP_ROLLOUT_TRIALS = 16
+DEFAULT_RESPONSE_MAP_ROLLOUT_TRIALS = int(
+    load_analysis_parameter_preset("cs_gru_standard_materialization").parameters[
+        "response_map_rollout_trials"
+    ]
+)
 RESULT_RUN_ROOT = REPO_ROOT / "results" / SOURCE_ISSUE_ID / "runs"
 ARTIFACT_RUN_ROOT = REPO_ROOT / "_artifacts" / SOURCE_ISSUE_ID / "runs"
 NOTE_PATH = REPO_ROOT / "results" / SOURCE_ISSUE_ID / "notes" / "gru_standard_certificates.md"
@@ -500,11 +505,7 @@ def _align_candidate_actions_to_reference_window(
 
     candidate = np.asarray(candidate_actions)
     reference = np.asarray(reference_actions)
-    if (
-        candidate.ndim != 3
-        or reference.ndim != 2
-        or candidate.shape[1] == reference.shape[0]
-    ):
+    if candidate.ndim != 3 or reference.ndim != 2 or candidate.shape[1] == reference.shape[0]:
         return candidate_actions
     if not _is_delayed_reach_run_spec(run_spec) or candidate.shape[1] < reference.shape[0]:
         evaluation_metadata["action_alignment"] = {

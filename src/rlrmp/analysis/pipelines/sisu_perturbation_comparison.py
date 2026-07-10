@@ -16,6 +16,7 @@ from typing import Any
 
 import numpy as np
 
+from rlrmp.analysis.data_products import load_analysis_parameter_preset
 from rlrmp.analysis.pipelines.diagnostic_provenance import repo_relative, write_regeneration_spec
 from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     CheckpointSelectionMode,
@@ -28,8 +29,9 @@ from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
 SCHEMA_VERSION = "rlrmp.sisu_perturbation_class_comparison.v1"
-DEFAULT_SISU_LEVELS = (0.0, 1.0)
-DEFAULT_N_ROLLOUT_TRIALS = 64
+_ANALYSIS_PRESET = load_analysis_parameter_preset("sisu_perturbation_comparison").parameters
+DEFAULT_SISU_LEVELS = tuple(_ANALYSIS_PRESET["sisu_levels"])
+DEFAULT_N_ROLLOUT_TRIALS = int(_ANALYSIS_PRESET["n_rollout_trials"])
 DEFAULT_OUTPUT_STEM = "sisu_perturbation_class_comparison_targetfix"
 
 METRIC_SPECS: tuple[dict[str, str], ...] = (
@@ -202,18 +204,14 @@ def materialize_sisu_perturbation_comparison(
             "checkpoint_selection_mode": checkpoint_selection_mode,
             "write_bulk_arrays": False,
         },
-        inputs=[
-            {"role": "run_spec", "path": run.run_spec_path}
-            for run in runs
-        ]
-        + [
-            {"role": "run_artifact_dir", "path": run.artifact_dir}
-            for run in runs
-        ]
+        inputs=[{"role": "run_spec", "path": run.run_spec_path} for run in runs]
+        + [{"role": "run_artifact_dir", "path": run.artifact_dir} for run in runs]
         + (
             []
             if feedback_scale_manifest_path is None
-            else [{"role": "controller_feedback_scale_manifest", "path": feedback_scale_manifest_path}]
+            else [
+                {"role": "controller_feedback_scale_manifest", "path": feedback_scale_manifest_path}
+            ]
         )
         + (
             []
@@ -317,9 +315,7 @@ def build_comparison_manifest(
             "raw_rollout_arrays_written": False,
         },
         "metric_policy": {
-            "lower_is_better": [
-                spec["slug"] for spec in METRIC_SPECS if spec["better"] == "lower"
-            ],
+            "lower_is_better": [spec["slug"] for spec in METRIC_SPECS if spec["better"] == "lower"],
             "diagnostic_signed": [
                 spec["slug"]
                 for spec in METRIC_SPECS

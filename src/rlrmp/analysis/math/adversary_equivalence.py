@@ -26,6 +26,7 @@ import numpy as np
 import optax
 from jaxtyping import Array, Float
 
+from rlrmp.analysis.data_products import load_analysis_parameter_preset
 from rlrmp.analysis.math.cs_game_card import (
     ISSUE_ID as GAME_CARD_ISSUE_ID,
     PRIMARY_GAMMA_FACTOR,
@@ -54,14 +55,15 @@ from rlrmp.paths import REPO_ROOT, mkdir_p
 
 ISSUE_ID = "a7dad8a"
 UMBRELLA_ID = "43e8728"
-OPEN_LOOP_STEP_SWEEP = (50, 200, 800)
-OPEN_LOOP_RESTARTS = 8
-OPEN_LOOP_LEARNING_RATE = 3e-2
+_ANALYSIS_PRESET = load_analysis_parameter_preset("adversary_equivalence").parameters
+OPEN_LOOP_STEP_SWEEP = tuple(_ANALYSIS_PRESET["open_loop_step_sweep"])
+OPEN_LOOP_RESTARTS = int(_ANALYSIS_PRESET["open_loop_restarts"])
+OPEN_LOOP_LEARNING_RATE = float(_ANALYSIS_PRESET["open_loop_learning_rate"])
 PGD_CONVERGENCE_TOL = 1e-3
 RESTART_STABILITY_TOL = 2e-3
 EQUIVALENCE_REL_TOL = 1e-2
-INIT_POS = np.array([0.0, 0.0], dtype=np.float64)
-TARGET_POS = np.array([0.15, 0.0], dtype=np.float64)
+INIT_POS = np.asarray(_ANALYSIS_PRESET["initial_position_m"], dtype=np.float64)
+TARGET_POS = np.asarray(_ANALYSIS_PRESET["target_position_m"], dtype=np.float64)
 
 
 @dataclass(frozen=True)

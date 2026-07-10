@@ -24,6 +24,7 @@ from feedbax.objectives.loss import TermTree
 from feedbax.plot import loss_history_compare
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 
+from rlrmp.analysis.data_products import load_analysis_parameter_preset
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     materialize_reference,
@@ -59,7 +60,9 @@ from rlrmp.runtime.run_specs import resolve_run_record
 from rlrmp.train.task_model import setup_task_model_pair
 
 DEFAULT_FIGURE_SUBDIR = "tmp_figures/gru_pilot"
-DEFAULT_N_ROLLOUT_TRIALS = 64
+DEFAULT_N_ROLLOUT_TRIALS = int(
+    load_analysis_parameter_preset("gru_pilot_figures").parameters["n_rollout_trials"]
+)
 LOSS_TERMS_MODE = "union"
 REFERENCE_LABEL = "C&S extLQG/output-feedback 8D"
 REFERENCE_4D_LABEL = "C&S extLQG/output-feedback 4D pos+vel"
@@ -377,7 +380,9 @@ def active_loss_term_labels(run_spec: Mapping[str, Any]) -> tuple[str, ...]:
         "mechanics_force_filter",
         "nn_output",
     )
-    active = tuple(label for label in candidate_order if float(weights.get(label, 0.0) or 0.0) != 0.0)
+    active = tuple(
+        label for label in candidate_order if float(weights.get(label, 0.0) or 0.0) != 0.0
+    )
     if not active:
         raise ValueError("Run spec has no active loss terms")
     return active
@@ -734,7 +739,7 @@ def _execute_velocity_figure_spec(
                 "title": title,
                 "row_height": row_height,
                 "width": width,
-            }
+            },
         },
         deep=True,
     )
@@ -842,7 +847,9 @@ def build_figure_summary(
             "n_pooled_samples": profile.n_pooled_samples,
             "n_time_steps": int(profile.mean.shape[0]),
             "peak_mean_forward_velocity_m_s": float(np.max(profile.mean)),
-            "time_of_peak_mean_forward_velocity_s": float(profile.time_s[int(np.argmax(profile.mean))]),
+            "time_of_peak_mean_forward_velocity_s": float(
+                profile.time_s[int(np.argmax(profile.mean))]
+            ),
             "replicates": _replicate_velocity_summaries(profile),
             "checkpoint_selection": [
                 selection.to_json() for selection in profile.checkpoint_selection

@@ -1,0 +1,1 @@
+{"schema_id":"rlrmp.analysis_parameter_preset","schema_version":"rlrmp.analysis_parameter_preset.v1","preset_id":"sisu_spectrum_diagnostics","source_issue":"6a298a1","parameters":{"sisu_levels":[0.0,0.5,1.0],"n_rollout_trials":64,"reference_samples":128},"content_sha256":"d6da87b7cbd940cdb6c46cdda42e326a99119c15b16e3e7b6aab86017d9f7155"}

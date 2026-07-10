@@ -1,0 +1,1 @@
+{"schema_id":"rlrmp.analysis_parameter_preset","schema_version":"rlrmp.analysis_parameter_preset.v1","preset_id":"cs_gru_standard_materialization","source_issue":"e6a32b8","parameters":{"response_map_rollout_trials":16},"content_sha256":"195e414d3f2b539004853536665b19a0ca9c759af565050fdfd166ec3e0927ed"}

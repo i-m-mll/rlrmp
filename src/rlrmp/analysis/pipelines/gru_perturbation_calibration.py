@@ -11,6 +11,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from rlrmp.analysis.pipelines.diagnostic_provenance import repo_relative, write_regeneration_spec
+from rlrmp.analysis.data_products import load_analysis_parameter_preset
 from rlrmp.data_products.calibration import (
     CALIBRATION_DEFAULTS_PRODUCT_ROLE,
     CALIBRATION_DEFAULTS_PRODUCT_SCHEMA_VERSION,
@@ -60,7 +61,11 @@ TIMED_PLANT_SIDE_FAMILIES = {
 # rlrmp.data_products.calibration. See issue ea6ccb4.
 # The force/filter native scale below is a unit convention (1 N reference offset),
 # not generated data, and stays as a source constant.
-DEFAULT_CONTROLLER_VISIBLE_FORCE_FILTER_SCALE_N = 1.0
+DEFAULT_CONTROLLER_VISIBLE_FORCE_FILTER_SCALE_N = float(
+    load_analysis_parameter_preset("gru_perturbation_calibration").parameters[
+        "controller_visible_force_filter_scale_n"
+    ]
+)
 
 
 def materialize_perturbation_open_loop_calibration(
@@ -98,9 +103,7 @@ def materialize_perturbation_open_loop_calibration(
         amplitude_factors = (
             defaults.amplitude_factors if amplitude_factors is None else amplitude_factors
         )
-        reach_points = (
-            defaults.reach_calibration_points if reach_points is None else reach_points
-        )
+        reach_points = defaults.reach_calibration_points if reach_points is None else reach_points
         levels = defaults.reach_relative_levels if levels is None else levels
         plant_timing_bins = (
             defaults.plant_timing_bins if plant_timing_bins is None else plant_timing_bins
@@ -218,7 +221,7 @@ def materialize_perturbation_open_loop_calibration(
                 "the canonical 0.15 m +x target. The reach-relative calibration "
                 "varies the requested physical-effect target by declared reach "
                 "length; it does not retrain or rebuild multi-target extLQG rows."
-            )
+            ),
         },
         "open_loop_reference": {
             "controller": "extLQG nominal command replay",
@@ -230,9 +233,7 @@ def materialize_perturbation_open_loop_calibration(
             ),
         },
         "nominal_gru_baseline_for_later_closed_loop_calibration": DEFAULT_NOMINAL_GRU_BASELINE,
-        "consumed_data_identities": _consumed_default_identities()
-        if defaults_used
-        else [],
+        "consumed_data_identities": _consumed_default_identities() if defaults_used else [],
         "bulk_manifest_path": _repo_relative(output_path, repo_root=repo_root),
         "regeneration_spec_path": repo_relative(regeneration_spec_path, repo_root=repo_root),
         "rows": rows,
@@ -677,8 +678,12 @@ def _family_sensitivities(
                 base=base,
                 base_cost=base_cost,
             )
-            peak = _metric_mean(row["open_loop"]["response_metrics"], "delta_position_response_m.max")
-            auc = _metric_mean(row["open_loop"]["response_metrics"], "delta_position_response_m.auc")
+            peak = _metric_mean(
+                row["open_loop"]["response_metrics"], "delta_position_response_m.max"
+            )
+            auc = _metric_mean(
+                row["open_loop"]["response_metrics"], "delta_position_response_m.auc"
+            )
             if peak is None or abs(peak) <= 1e-12:
                 sensitivities[sensitivity_id] = {
                     "status": "blocked",
@@ -761,8 +766,7 @@ def _representative_perturbation(rows: Sequence[Mapping[str, Any]]) -> Mapping[s
 def _representative_selection_rule(family: str) -> str:
     if family in TIMED_PLANT_SIDE_FAMILIES:
         return (
-            "family x timing_bin unit sensitivity; x axis, positive sign, "
-            "perturbation_id tie-break"
+            "family x timing_bin unit sensitivity; x axis, positive sign, perturbation_id tie-break"
         )
     return "initial-condition unit sensitivity; x axis, positive sign, perturbation_id tie-break"
 
@@ -823,9 +827,7 @@ def _summarize_reach_relative_rows(rows: Sequence[Mapping[str, Any]]) -> dict[st
 
 
 def _summarize_reach_relative_family(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-    available = [
-        row for row in rows if row.get("open_loop", {}).get("status") == "available"
-    ]
+    available = [row for row in rows if row.get("open_loop", {}).get("status") == "available"]
     targets = []
     for row in rows:
         targets.append(

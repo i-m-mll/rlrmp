@@ -18,6 +18,7 @@ import jax.numpy as jnp
 import numpy as np
 from jaxtyping import Array, Float
 
+from rlrmp.analysis.data_products import load_analysis_parameter_preset
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     materialize_reference,
@@ -59,7 +60,11 @@ UMBRELLA_ID = "43e8728"
 ADAMW_BRIDGE_ISSUE_ID = "1c014e5"
 STANDARD_CERTIFICATE_ISSUE_ID = "d01c35a"
 FAILURE_DECOMPOSITION_ISSUE_ID = "c45adde"
-INTERPOLATED_ALPHAS: tuple[float, ...] = (0.1, 0.25, 0.5, 0.75)
+INTERPOLATED_ALPHAS: tuple[float, ...] = tuple(
+    load_analysis_parameter_preset("output_feedback_interpolated_starts").parameters[
+        "interpolated_alphas"
+    ]
+)
 DEFAULT_SOURCE_ARTIFACT = (
     REPO_ROOT
     / "_artifacts"
@@ -69,7 +74,9 @@ DEFAULT_SOURCE_ARTIFACT = (
 )
 DEFAULT_CONDITION = replace(
     STRONG_OPTIMIZER_WHITENED,
-    initializations=tuple(f"k_alpha_{str(alpha).replace('.', 'p')}" for alpha in INTERPOLATED_ALPHAS),
+    initializations=tuple(
+        f"k_alpha_{str(alpha).replace('.', 'p')}" for alpha in INTERPOLATED_ALPHAS
+    ),
 )
 
 
@@ -487,7 +494,9 @@ def write_outputs(
     summary = result_summary(result, discretization=discretization, lane=lane)
     results_dir = mkdir_p(REPO_ROOT / "results" / issue_id)
     notes_dir = mkdir_p(results_dir / "notes")
-    artifact_dir = mkdir_p(REPO_ROOT / "_artifacts" / issue_id / "output_feedback_interpolated_starts")
+    artifact_dir = mkdir_p(
+        REPO_ROOT / "_artifacts" / issue_id / "output_feedback_interpolated_starts"
+    )
     readme = results_dir / "README.md"
     if not readme.exists():
         readme.write_text(
