@@ -105,186 +105,92 @@ def _base_hps(args: argparse.Namespace) -> dict:
 # Loss-mode configurations
 # ---------------------------------------------------------------------------
 
-def _loss_cfg_running_cost() -> dict:
-    """Loss config for running-cost mode: uniform position penalty during movement."""
-    return {
-        "loss": {
-            "weights": {
-                "goal_hit_in_window": 0.0,
-                "effector_pos": 0.0,
-                "effector_pos_running": 1.0,
-                "effector_pos_mid": 0.0,
-                "effector_vel_mid": 0.0,
-                "effector_pos_late": 0.5,
-                "effector_vel_late": 0.1,
-                "effector_hold_pos": 10.0,
-                "effector_hold_vel": 10.0,
-                "nn_output": 1e-5,
-                "nn_hidden": 1e-5,
-            },
-            "effector_pos_late": {
-                "start_step_after_go": 80,
-                "final_scale_factor": 2.0,
-            },
-            "effector_vel_late": {
-                "start_step_after_go": 80,
-                "final_scale_factor": 1.0,
-            },
+_LOSS_WEIGHT_OVERRIDES = {
+    "running_cost": (0.0, 1.0, 0.0, 0.5),
+    "softmin": (1.0, 0.0, 1.0, 0.5),
+    "combined": (1.0, 0.3, 0.0, 0.3),
+    "default": (0.0, 0.0, 1.0, 1.0),
+}
+
+
+def _loss_cfg(mode: str) -> dict:
+    """Build one loss-mode config from the common standard-trainer schema."""
+
+    goal_hit, running, mid, late = _LOSS_WEIGHT_OVERRIDES[mode]
+    late_scale = {"running_cost": 2.0, "default": 3.0}.get(mode, 1.0)
+    goal_terms = {
+        "running_cost": ["effector_pos_running", "effector_pos_late"],
+        "combined": ["effector_pos_running", "effector_pos_late"],
+    }.get(mode, ["effector_pos_mid", "effector_pos_late"])
+    loss = {
+        "weights": {
+            "goal_hit_in_window": goal_hit,
+            "effector_pos": 0.0,
+            "effector_pos_running": running,
+            "effector_pos_mid": mid,
+            "effector_vel_mid": 0.0,
+            "effector_pos_late": late,
+            "effector_vel_late": 0.1,
+            "effector_hold_pos": 10.0,
+            "effector_hold_vel": 10.0,
+            "nn_output": 1e-5,
+            "nn_hidden": 1e-5,
         },
+        "effector_pos_late": {
+            "start_step_after_go": 80,
+            "final_scale_factor": late_scale,
+        },
+        "effector_vel_late": {
+            "start_step_after_go": 80,
+            "final_scale_factor": 3.0 if mode == "default" else 1.0,
+        },
+    }
+    if mode in {"softmin", "default"}:
+        loss["effector_pos_mid"] = {
+            "start_step_after_go": 0,
+            "end_step_after_go": 80,
+            "ramp_init_weight": 0.0,
+            "ramp_final_weight": 0.1,
+        }
+    if mode in {"softmin", "combined"}:
+        loss["goal_hit_in_window"] = {
+            "start_step_after_go": 60,
+            "end_step_after_go": 80,
+            "softmin_tau": 0.2,
+            "post_pos_sigma_t": 5.0,
+            "weights": {"pos": 1.0, "vel": 0.1, "post_pos": 1.0},
+        }
+    return {
+        "loss": loss,
         "loss_update": {
-            "enabled": False,  # Disabled by default; enable with --target-ratio to use adaptive control penalty
+            "enabled": False,
             "target_ratio": 0.5,
             "alpha": 0.005,
             "control_term": "nn_output",
-            "goal_term": ["effector_pos_running", "effector_pos_late"],
+            "goal_term": goal_terms,
             "start_iteration": 0,
         },
     }
+
+
+def _loss_cfg_running_cost() -> dict:
+    """Loss config for running-cost mode: uniform position penalty during movement."""
+    return _loss_cfg("running_cost")
 
 
 def _loss_cfg_softmin() -> dict:
     """Loss config for softmin mode: goal-hit-in-window objective."""
-    return {
-        "loss": {
-            "weights": {
-                "goal_hit_in_window": 1.0,
-                "effector_pos": 0.0,
-                "effector_pos_running": 0.0,
-                "effector_pos_mid": 1.0,
-                "effector_vel_mid": 0.0,
-                "effector_pos_late": 0.5,
-                "effector_vel_late": 0.1,
-                "effector_hold_pos": 10.0,
-                "effector_hold_vel": 10.0,
-                "nn_output": 1e-5,
-                "nn_hidden": 1e-5,
-            },
-            "effector_pos_mid": {
-                "start_step_after_go": 0,
-                "end_step_after_go": 80,
-                "ramp_init_weight": 0.0,
-                "ramp_final_weight": 0.1,
-            },
-            "effector_pos_late": {
-                "start_step_after_go": 80,
-                "final_scale_factor": 1.0,
-            },
-            "effector_vel_late": {
-                "start_step_after_go": 80,
-                "final_scale_factor": 1.0,
-            },
-            "goal_hit_in_window": {
-                "start_step_after_go": 60,
-                "end_step_after_go": 80,
-                "softmin_tau": 0.2,
-                "post_pos_sigma_t": 5.0,
-                "weights": {
-                    "pos": 1.0,
-                    "vel": 0.1,
-                    "post_pos": 1.0,
-                },
-            },
-        },
-        "loss_update": {
-            "enabled": False,
-            "target_ratio": 0.5,
-            "alpha": 0.005,
-            "control_term": "nn_output",
-            "goal_term": ["effector_pos_mid", "effector_pos_late"],
-            "start_iteration": 0,
-        },
-    }
+    return _loss_cfg("softmin")
 
 
 def _loss_cfg_combined() -> dict:
     """Loss config for combined mode: weak running cost + strong goal-hit window."""
-    return {
-        "loss": {
-            "weights": {
-                "goal_hit_in_window": 1.0,
-                "effector_pos": 0.0,
-                "effector_pos_running": 0.3,
-                "effector_pos_mid": 0.0,
-                "effector_vel_mid": 0.0,
-                "effector_pos_late": 0.3,
-                "effector_vel_late": 0.1,
-                "effector_hold_pos": 10.0,
-                "effector_hold_vel": 10.0,
-                "nn_output": 1e-5,
-                "nn_hidden": 1e-5,
-            },
-            "effector_pos_late": {
-                "start_step_after_go": 80,
-                "final_scale_factor": 1.0,
-            },
-            "effector_vel_late": {
-                "start_step_after_go": 80,
-                "final_scale_factor": 1.0,
-            },
-            "goal_hit_in_window": {
-                "start_step_after_go": 60,
-                "end_step_after_go": 80,
-                "softmin_tau": 0.2,
-                "post_pos_sigma_t": 5.0,
-                "weights": {
-                    "pos": 1.0,
-                    "vel": 0.1,
-                    "post_pos": 1.0,
-                },
-            },
-        },
-        "loss_update": {
-            "enabled": False,
-            "target_ratio": 0.5,
-            "alpha": 0.005,
-            "control_term": "nn_output",
-            "goal_term": ["effector_pos_running", "effector_pos_late"],
-            "start_iteration": 0,
-        },
-    }
+    return _loss_cfg("combined")
 
 
 def _loss_cfg_default() -> dict:
     """Loss config for default mode: structured mid/late terms (standard Part 2 config)."""
-    return {
-        "loss": {
-            "weights": {
-                "goal_hit_in_window": 0.0,
-                "effector_pos": 0.0,
-                "effector_pos_running": 0.0,
-                "effector_pos_mid": 1.0,
-                "effector_vel_mid": 0.0,
-                "effector_pos_late": 1.0,
-                "effector_vel_late": 0.1,
-                "effector_hold_pos": 10.0,
-                "effector_hold_vel": 10.0,
-                "nn_output": 1e-5,
-                "nn_hidden": 1e-5,
-            },
-            "effector_pos_late": {
-                "start_step_after_go": 80,
-                "final_scale_factor": 3.0,
-            },
-            "effector_vel_late": {
-                "start_step_after_go": 80,
-                "final_scale_factor": 3.0,
-            },
-            "effector_pos_mid": {
-                "start_step_after_go": 0,
-                "end_step_after_go": 80,
-                "ramp_init_weight": 0.0,
-                "ramp_final_weight": 0.1,
-            },
-        },
-        "loss_update": {
-            "enabled": False,
-            "target_ratio": 0.5,
-            "alpha": 0.005,
-            "control_term": "nn_output",
-            "goal_term": ["effector_pos_mid", "effector_pos_late"],
-            "start_iteration": 0,
-        },
-    }
+    return _loss_cfg("default")
 
 
 LOSS_MODE_CONFIGS = {

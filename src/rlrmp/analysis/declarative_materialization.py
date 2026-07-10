@@ -1183,6 +1183,39 @@ def robustness_phenotype_spec(
     )
 
 
+def _recipe_result(
+    analysis_name: str,
+    analysis: Any,
+    data: Mapping[str, Any],
+) -> AnalysisRecipeResult:
+    """Return the common one-analysis declarative recipe shape."""
+
+    return AnalysisRecipeResult(analyses={analysis_name: analysis}, data=data)
+
+
+def _manifest_recipe(
+    *,
+    analysis_name: str,
+    materializer: Callable[..., Any],
+    artifact_role: str,
+    logical_name: str,
+    schema_boundary: str,
+    data: Mapping[str, Any],
+) -> AnalysisRecipeResult:
+    """Build the common single-manifest analysis recipe."""
+
+    return _recipe_result(
+        analysis_name,
+        RLRMPManifestAnalysis(
+            materializer=materializer,
+            artifact_role=artifact_role,
+            logical_name=logical_name,
+            schema_boundary=schema_boundary,
+        ),
+        data,
+    )
+
+
 def gru_standard_certificate_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
@@ -1192,7 +1225,8 @@ def gru_standard_certificate_recipe(
 
     params = dict(spec.params)
     evaluation_input = _primary_evaluation_input(inputs)
-    analysis = RLRMPManifestAnalysis(
+    return _manifest_recipe(
+        analysis_name="gru_standard_certificate",
         materializer=lambda context, data: _materialize_gru_standard(
             context,
             params,
@@ -1201,9 +1235,6 @@ def gru_standard_certificate_recipe(
         artifact_role="rlrmp-bridge-standard-certificate",
         logical_name="gru_standard_certificates.json",
         schema_boundary="rlrmp-owned BridgeRunManifest/certificate payload",
-    )
-    return AnalysisRecipeResult(
-        analyses={"gru_standard_certificate": analysis},
         data=_analysis_data_from_evaluation_input(evaluation_input),
     )
 
@@ -1217,7 +1248,8 @@ def gru_evaluation_diagnostics_recipe(
 
     params = dict(spec.params)
     evaluation_input = _primary_evaluation_input(inputs)
-    analysis = RLRMPManifestAnalysis(
+    return _manifest_recipe(
+        analysis_name="gru_evaluation_diagnostics",
         materializer=lambda context, data: _materialize_gru_evaluation_diagnostics(
             context,
             params,
@@ -1226,9 +1258,6 @@ def gru_evaluation_diagnostics_recipe(
         artifact_role="rlrmp-gru-evaluation-diagnostics",
         logical_name="gru_evaluation_diagnostics.json",
         schema_boundary="rlrmp-owned GRU diagnostic payload",
-    )
-    return AnalysisRecipeResult(
-        analyses={"gru_evaluation_diagnostics": analysis},
         data=_analysis_data_from_evaluation_input(evaluation_input),
     )
 
@@ -1244,7 +1273,8 @@ def gru_postrun_recipe(
     resolved_run_ids = _run_ids_from_params_or_inputs(params, inputs)
     experiment = _experiment_from_params_or_inputs(params, inputs)
     evaluation_input = _primary_evaluation_input(inputs)
-    analysis = RLRMPManifestAnalysis(
+    return _manifest_recipe(
+        analysis_name="gru_postrun_materialization",
         materializer=lambda context, data: _materialize_gru_postrun(
             context,
             params,
@@ -1255,9 +1285,6 @@ def gru_postrun_recipe(
         artifact_role="rlrmp-gru-postrun-manifest",
         logical_name="gru_postrun_materialization.json",
         schema_boundary="rlrmp-owned GRU post-run diagnostic bundle payload",
-    )
-    return AnalysisRecipeResult(
-        analyses={"gru_postrun_materialization": analysis},
         data=_analysis_data_from_evaluation_input(evaluation_input),
     )
 
@@ -1280,9 +1307,10 @@ def perturbation_class_response_recipe(
         evaluation_input=evaluation_input,
     )
     family = str(params.get("family", "perturbation_class"))
-    return AnalysisRecipeResult(
-        analyses={family: analysis},
-        data=_analysis_data_from_evaluation_input(evaluation_input),
+    return _recipe_result(
+        family,
+        analysis,
+        _analysis_data_from_evaluation_input(evaluation_input),
     )
 
 
@@ -1301,9 +1329,10 @@ def perturbation_bank_aggregate_recipe(
         params=params,
         leaf_products=leaf_products,
     )
-    return AnalysisRecipeResult(
-        analyses={"perturbation_bank_aggregate": analysis},
-        data=_empty_analysis_data(),
+    return _recipe_result(
+        "perturbation_bank_aggregate",
+        analysis,
+        _empty_analysis_data(),
     )
 
 
@@ -1318,7 +1347,8 @@ def policy_diagnostics_recipe(
     evaluation_input = _primary_evaluation_input(inputs)
     if evaluation_input is None:
         raise ValueError("policy diagnostics analysis requires an EvaluationRunManifest input")
-    analysis = RLRMPManifestAnalysis(
+    return _manifest_recipe(
+        analysis_name="policy_diagnostics_bank",
         materializer=lambda context, data: _materialize_policy_diagnostics(
             context,
             params,
@@ -1327,9 +1357,6 @@ def policy_diagnostics_recipe(
         artifact_role="rlrmp-policy-diagnostics-bank",
         logical_name="policy_diagnostics_bank.json",
         schema_boundary="rlrmp-owned controller-local policy diagnostics payload",
-    )
-    return AnalysisRecipeResult(
-        analyses={"policy_diagnostics_bank": analysis},
         data=_analysis_data_from_evaluation_input(evaluation_input),
     )
 
@@ -1345,7 +1372,8 @@ def recurrent_jacobian_recipe(
     evaluation_input = _primary_evaluation_input(inputs)
     if evaluation_input is None:
         raise ValueError("recurrent Jacobian analysis requires an EvaluationRunManifest input")
-    analysis = RLRMPManifestAnalysis(
+    return _manifest_recipe(
+        analysis_name="recurrent_jacobian_bank",
         materializer=lambda context, data: _materialize_recurrent_jacobians(
             context,
             params,
@@ -1354,9 +1382,6 @@ def recurrent_jacobian_recipe(
         artifact_role="rlrmp-recurrent-jacobian-bank",
         logical_name="recurrent_jacobian_bank.json",
         schema_boundary="rlrmp-owned staged recurrent Jacobian diagnostics payload",
-    )
-    return AnalysisRecipeResult(
-        analyses={"recurrent_jacobian_bank": analysis},
         data=_analysis_data_from_evaluation_input(evaluation_input),
     )
 
@@ -1436,7 +1461,8 @@ def output_feedback_rollout_recovery_recipe(
     params = OutputFeedbackRolloutRecoveryParams.model_validate(spec.params).model_dump(
         exclude_none=True
     )
-    analysis = RLRMPManifestAnalysis(
+    return _manifest_recipe(
+        analysis_name="output_feedback_rollout_recovery",
         materializer=lambda context, data: _materialize_output_feedback_rollout_recovery(
             context,
             params,
@@ -1447,9 +1473,6 @@ def output_feedback_rollout_recovery_recipe(
             "rlrmp-owned output-feedback bridge diagnostic payload; analytical "
             "rollouts stay analysis-internal per e1ad278 Q2"
         ),
-    )
-    return AnalysisRecipeResult(
-        analyses={"output_feedback_rollout_recovery": analysis},
         data=_empty_analysis_data(),
     )
 
@@ -1507,9 +1530,10 @@ def robustness_phenotype_recipe(
         params=params,
         resolved_inputs=tuple(inputs),
     )
-    return AnalysisRecipeResult(
-        analyses={"robustness_phenotype": analysis},
-        data=_analysis_data_from_evaluation_input(_primary_evaluation_input(inputs)),
+    return _recipe_result(
+        "robustness_phenotype",
+        analysis,
+        _analysis_data_from_evaluation_input(_primary_evaluation_input(inputs)),
     )
 
 
