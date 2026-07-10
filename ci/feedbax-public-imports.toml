@@ -489,6 +489,10 @@ symbols = [
 ]
 
 [[canonical_homes]]
+module = "feedbax.plot.color_setup"
+symbols = ["ColorConfig", "ColorscaleSpec", "get_color_config", "register_color_config"]
+
+[[canonical_homes]]
 module = "feedbax.plot.io"
 symbols = ["save_figure_with_spec"]
 
