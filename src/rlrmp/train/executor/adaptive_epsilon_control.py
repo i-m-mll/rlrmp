@@ -3,11 +3,9 @@
 
 from __future__ import annotations
 
-from rlrmp.train.executor.cs_supervised import (
-    _adaptive_epsilon_curriculum_enabled,
-    _config_default,
-)
+from rlrmp.train.executor.cs_supervised import _adaptive_epsilon_curriculum_enabled
 from rlrmp.train.run_spec_authoring import (
+    _config_default,
     _perturbation_training_enabled,
 )
 import math

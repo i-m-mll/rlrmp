@@ -4,8 +4,20 @@
 from __future__ import annotations
 
 from rlrmp.train.run_spec_authoring import (
+    _BOOLEAN_OPTIONAL_FIELDS,
+    _CLI_ALIASES,
+    _CLI_HELP,
+    _add_model_field_argument,
+    _apply_config_parser_defaults,
+    _build_config_generated_parser,
+    _config_choices,
+    _config_default,
+    _is_bool_annotation,
+    _literal_values,
+    _optional_arg_type,
     _policy_adversary_training_enabled,
     _training_diagnostics_metadata,
+    build_parser,
     write_run_spec,
 )
 from rlrmp.train.config_materialization import (
@@ -24,7 +36,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Literal, NamedTuple, Union, get_args, get_origin
+from typing import Any, Callable, NamedTuple
 import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
@@ -124,191 +136,6 @@ DEFAULT_DELAYED_GO_CUE_MAX_STEP = int(
 DEFAULT_DELAYED_P_CATCH_TRIAL = float(
     CsNominalGruConfig.model_fields["delayed_reach_p_catch_trial"].default
 )
-
-
-def _config_default(field_name: str) -> Any:
-    return CsNominalGruConfig.model_fields[field_name].default
-
-
-def _literal_values(annotation: Any) -> list[Any]:
-    origin = get_origin(annotation)
-    if origin is Literal:
-        return list(get_args(annotation))
-    if origin in {Union, type(int | str)}:
-        values: list[Any] = []
-        for arg in get_args(annotation):
-            values.extend(_literal_values(arg))
-        return values
-    return []
-
-
-def _config_choices(field_name: str) -> list[Any] | None:
-    values = _literal_values(CsNominalGruConfig.model_fields[field_name].annotation)
-    return values or None
-
-
-_CLI_HELP: dict[str, str] = {
-    "run_spec": (
-        "Replay a modern tracked nominal-GRU run.json through the current training/spec "
-        "writer. Explicit CLI flags override the run spec."
-    ),
-    "allow_x64": (
-        "Allow a training/spec process to start after process-global JAX x64 was enabled."
-    ),
-    "lr_warmup_batches": (
-        "If positive, linearly warm the controller LR from --lr-warmup-init-fraction * "
-        "--controller-lr to --controller-lr over this many batches, then cosine-decay."
-    ),
-    "lr_warmup_init_fraction": "Initial LR fraction for warmup-cosine schedules.",
-    "plant_backend": (
-        "Plant backend for nominal GRU training. The default uses exact C&S "
-        "LinearStateSpace mechanics."
-    ),
-    "target_m": argparse.SUPPRESS,
-    "stochastic_preset": "Named stochastic rollout contract.",
-    "nn_output_pre_go": ("Anti-anticipation controller-output penalty during delayed-reach prep."),
-    "loss_objective": "Training objective.",
-    "perturbation_training": (
-        "Enable fixed-target perturbation-generalized training. Defaults to on for "
-        "--delayed-reach and off otherwise."
-    ),
-    "perturbation_delayed_observation_offset_m": (
-        "Legacy run-spec compatibility only; delayed_observation is no longer sampled."
-    ),
-    "perturbation_calibrated_timing": ("Use timing-bin calibrated perturbation training."),
-    "perturbation_movement_age_timing": (
-        "Index calibrated perturbation timing bins by movement age."
-    ),
-    "target_relative_multitarget": "Enable static target-relative multi-target training.",
-    "target_support_profile": "Named finite target-support profile.",
-    "delayed_reach": "Use the explicit delayed-reach C&S task contract.",
-    "delayed_reach_trial_type_normalized_loss": (
-        "Split delayed Q/R/Q_f into no-catch and catch trial terms before weighting."
-    ),
-    "force_filter_feedback": (
-        "Extend target-relative delayed feedback with delayed force/filter coordinates."
-    ),
-    "broad_epsilon_training": "Enable randomized full-state C&S epsilon training.",
-    "broad_epsilon_pgd_training": (
-        "Enable training-time projected-gradient ascent over the full C&S epsilon channel."
-    ),
-    "broad_epsilon_level": "Analytical broad-epsilon budget anchor.",
-    "broad_epsilon_pgd_inner_optimizer_method": "Inner optimizer for broad-epsilon adversary selection.",
-    "broad_epsilon_pgd_mechanism": "Adversary mechanism for broad-epsilon PGD.",
-    "broad_epsilon_pgd_objective": "Inner PGD objective.",
-    "broad_epsilon_pgd_energy_penalty_scale": (
-        "Soft-energy c multiplier in lambda = c * gamma^2 unless lambda is explicit."
-    ),
-    "broad_epsilon_pgd_budget_schedule": "Select the PGD L2 budget schedule.",
-    "broad_epsilon_pgd_sisu_condition_input": (
-        "Trial input that carries the scalar SISU value for sisu_energy_fraction PGD budgets."
-    ),
-    "adaptive_epsilon_curriculum": ("Enable adaptive-lambda soft-energy direct-epsilon training."),
-    "policy_adversary_training": "Enable learned full-state epsilon policy-adversary training.",
-    "policy_adversary_policy_class": "Adversary policy parameterization.",
-    "policy_adversary_mode": "Policy-adversary objective mode.",
-    "policy_adversary_energy_gamma": (
-        "Multiplier on epsilon energy in energy mode; this is a stabilizer term."
-    ),
-    "initial_hidden_encoder": "Enable the conservative C&S GRU H0 path.",
-    "smoke": "Use tiny local values; with --full-train this runs a one-batch smoke.",
-    "allow_fresh_start": (
-        "Allow --resume to start from batch 0 when the expected resume pointer is absent."
-    ),
-    "stop_after_batches": (
-        "Global completed-batch index at which a full-train checkpoint-gate run may stop; "
-        "not a relative count."
-    ),
-    "training_diagnostics": "Write compact optimizer/loss scalar sidecars.",
-    "dry_run": "Print the would-write payload without creating files.",
-}
-
-_CLI_ALIASES: dict[str, tuple[str, ...]] = {
-    "delayed_reach_trial_type_normalized_loss": ("--delayed-reach-trial-type-normalization",),
-    "force_filter_feedback": ("--proprioceptive-feedback",),
-    "initial_hidden_encoder": ("--h0-encoder",),
-}
-
-_BOOLEAN_OPTIONAL_FIELDS = frozenset(
-    {
-        "perturbation_training",
-        "perturbation_calibrated_timing",
-        "perturbation_movement_age_timing",
-        "force_filter_feedback",
-        "broad_epsilon_reach_scaling",
-        "adaptive_epsilon_freeze_until_burn_in",
-        "adaptive_epsilon_gain_normalization",
-        "training_diagnostics",
-        "quiet_progress",
-    }
-)
-
-
-def _optional_arg_type(annotation: Any) -> Any:
-    origin = get_origin(annotation)
-    args = get_args(annotation)
-    if origin in {Union, type(int | str)}:
-        non_none = [arg for arg in args if arg is not type(None)]
-        if len(non_none) == 1:
-            return _optional_arg_type(non_none[0])
-    if origin is Literal:
-        values = [value for value in args if value is not None]
-        if values:
-            return type(values[0])
-    if annotation in {str, int, float}:
-        return annotation
-    return str
-
-
-def _is_bool_annotation(annotation: Any) -> bool:
-    if annotation is bool:
-        return True
-    origin = get_origin(annotation)
-    if origin in {Union, type(int | str)}:
-        return any(arg is bool for arg in get_args(annotation))
-    return False
-
-
-def _add_model_field_argument(
-    parser: argparse.ArgumentParser,
-    field_name: str,
-    *,
-    default: Any,
-) -> None:
-    field = CsNominalGruConfig.model_fields[field_name]
-    flag = f"--{field_name.replace('_', '-')}"
-    aliases = _CLI_ALIASES.get(field_name, ())
-    help_text = _CLI_HELP.get(field_name)
-    choices = _config_choices(field_name)
-    options: dict[str, Any] = {
-        "dest": field_name,
-        "default": default,
-        "help": help_text,
-    }
-    if help_text is argparse.SUPPRESS:
-        options["help"] = argparse.SUPPRESS
-    if _is_bool_annotation(field.annotation) or isinstance(default, bool):
-        if field_name in _BOOLEAN_OPTIONAL_FIELDS:
-            options["action"] = argparse.BooleanOptionalAction
-        else:
-            options["action"] = "store_true"
-            options["default"] = default
-    else:
-        options["type"] = _optional_arg_type(field.annotation)
-        if choices is not None:
-            options["choices"] = choices
-    parser.add_argument(flag, *aliases, **options)
-
-
-def _build_config_generated_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Prepare a stochastic C&S-fidelity GRU run spec.",
-    )
-    defaults = CsNominalGruConfig().model_dump(mode="python")
-    for field_name, default in defaults.items():
-        _add_model_field_argument(parser, field_name, default=default)
-    parser.set_defaults(**defaults)
-    return _apply_config_parser_defaults(parser)
 
 
 @dataclass(frozen=True)
@@ -1907,32 +1734,6 @@ def _checkpoint_writes_by_completed_batch(
 
 def _latest_checkpoint_write(checkpoint_writes: Sequence[Any]) -> Any | None:
     return checkpoint_writes[-1] if checkpoint_writes else None
-
-
-def _apply_config_parser_defaults(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    defaults = CsNominalGruConfig().model_dump(mode="python")
-    for action in parser._actions:
-        if action.dest not in defaults:
-            continue
-        action.default = defaults[action.dest]
-        choices = _config_choices(action.dest)
-        if choices is not None and action.choices is None:
-            action.choices = choices
-        if action.help is argparse.SUPPRESS:
-            continue
-        default_text = f"(default: {action.default!r})"
-        if action.help is None or not action.help.strip():
-            action.help = default_text
-        elif "default:" not in action.help:
-            action.help = f"{action.help} {default_text}"
-    parser.set_defaults(**defaults)
-    return parser
-
-
-def build_parser() -> argparse.ArgumentParser:
-    """Build the CLI parser from the config model."""
-
-    return _build_config_generated_parser()
 
 
 def _tree_global_norm(tree: Any) -> Any:
