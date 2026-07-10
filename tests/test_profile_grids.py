@@ -9,15 +9,31 @@ from __future__ import annotations
 import pytest
 
 import rlrmp.viz as viz
+from rlrmp.viz.colors import hex_to_rgba
 from rlrmp.viz.profile_grids import profile_comparison_grid
+from rlrmp.viz.traces import add_band_trace
 
 
 def test_viz_public_surface_is_pinned():
-    """Only the live shared profile grid helper is exported from ``rlrmp.viz``."""
+    """Only root imports used by live callers or focused contracts are public."""
 
-    assert viz.__all__ == ["profile_comparison_grid"]
+    assert viz.__all__ == [
+        "add_band_trace",
+        "hex_to_rgba",
+        "profile_comparison_grid",
+    ]
+    assert viz.add_band_trace is add_band_trace
+    assert viz.hex_to_rgba is hex_to_rgba
     assert viz.profile_comparison_grid is profile_comparison_grid
-    assert not hasattr(viz, "visualize_loss_structure")
+    for submodule_only_name in (
+        "add_line",
+        "add_profile_line",
+        "add_reference_trace",
+        "add_reduced_sample_trace",
+        "add_sample_band",
+        "visualize_loss_structure",
+    ):
+        assert not hasattr(viz, submodule_only_name)
 
 
 def test_default_shares_yaxes_all():
