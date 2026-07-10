@@ -344,7 +344,16 @@ def _build_config_generated_parser() -> argparse.ArgumentParser:
 def build_parser() -> argparse.ArgumentParser:
     """Build the nominal-GRU CLI directly from the canonical config model."""
 
-    return _build_config_generated_parser()
+    parser = _build_config_generated_parser()
+    parser.add_argument(
+        "--compact-run-spec",
+        action="store_true",
+        help=(
+            "Write the tracked recipe as a compact envelope backed by its full "
+            "rlrmp_run_spec payload."
+        ),
+    )
+    return parser
 
 
 def derive_spec_dir(output_dir: Path) -> Path:
@@ -903,6 +912,7 @@ def build_run_spec(
 def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
     """Write, or dry-run, the stochastic C&S GRU spec artifacts."""
 
+    compact_run_spec = bool(getattr(args, "compact_run_spec", False))
     args = _config_namespace(args)
     args = _apply_smoke_overrides(args)
     args = _config_namespace(args)
@@ -928,12 +938,16 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
         would_write = [str(run_path), str(spec_dir / "model.graph.manifest.json")]
         if _should_write_graph_spec(hps):
             would_write.append(str(spec_dir / "model.graph.json"))
+        composed_payload = attach_composed_training_specs(
+            payload,
+            graph_spec=training_run_graph_spec,
+            output_dir=output_dir,
+            spec_dir=spec_dir,
+        )
         return {
-            "run_spec": attach_composed_training_specs(
-                payload,
-                graph_spec=training_run_graph_spec,
-                output_dir=output_dir,
-                spec_dir=spec_dir,
+            "run_spec": compact_run_spec_if_needed(
+                composed_payload,
+                requested=compact_run_spec,
             ),
             "would_write": would_write,
         }
@@ -965,7 +979,7 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
         spec_dir=spec_dir,
     )
     validate_nominal_gru_run_spec(payload, spec_dir=spec_dir)
-    payload = compact_run_spec_if_needed(payload)
+    payload = compact_run_spec_if_needed(payload, requested=compact_run_spec)
     run_path.write_text(_json_dumps(payload), encoding="utf-8")
     return {
         "run_spec_path": str(run_path),
@@ -2013,8 +2027,12 @@ def _json_dumps(payload: dict[str, Any]) -> str:
     return compact_json_dumps(payload)
 
 
-def compact_run_spec_if_needed(payload: dict[str, Any]) -> dict[str, Any]:
-    """Return a compact envelope when a composed recipe exceeds the JSON budget.
+def compact_run_spec_if_needed(
+    payload: dict[str, Any],
+    *,
+    requested: bool,
+) -> dict[str, Any]:
+    """Return a compact envelope only when explicit authoring requests it.
 
     ``rlrmp_run_spec`` is the full, stamped RLRMP payload used for durable
     manifest custody. The compact envelope keeps it authoritative rather than
@@ -2023,7 +2041,7 @@ def compact_run_spec_if_needed(payload: dict[str, Any]) -> dict[str, Any]:
     hydration, plus the immutable Feedbax training spec and graph pointers.
     """
 
-    if len(_json_dumps(payload).encode("utf-8")) <= MAX_TRACKED_RUN_SPEC_BYTES:
+    if not requested:
         return payload
 
     extension = payload.get(RLRMP_RUN_SPEC_PAYLOAD_KEY)
