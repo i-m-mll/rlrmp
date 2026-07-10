@@ -109,6 +109,7 @@ from rlrmp.runtime.training_run_specs import (
     feedbax_training_run_spec_from_payload,
     hydrate_compact_run_spec_envelope,
 )
+from rlrmp.runtime.run_specs import validate_nominal_gru_run_spec_file
 from rlrmp.train.executor.slots import (
     ADAPTIVE_EPSILON_CURRICULUM_METHOD_REF,
     CS_SUPERVISED_METHOD_REF,
@@ -5410,6 +5411,54 @@ def _compact_run_spec(payload: dict[str, Any]) -> dict[str, Any]:
         FEEDBAX_TRAINING_RUN_SPEC_KEY: payload[FEEDBAX_TRAINING_RUN_SPEC_KEY],
         RLRMP_RUN_SPEC_PAYLOAD_KEY: payload[RLRMP_RUN_SPEC_PAYLOAD_KEY],
     }
+
+
+def _write_flat_recipe_sidecars(recipe_path: Path, payload: dict[str, Any]) -> None:
+    sidecar_dir = recipe_path.with_suffix("")
+    sidecar_dir.mkdir(parents=True)
+    graph = payload["feedbax_graph"]
+    for key in ("graph_spec_path", "manifest_path"):
+        pointer = graph[key]
+        if pointer is None:
+            continue
+        sidecar_path = sidecar_dir / pointer
+        sidecar_path.parent.mkdir(parents=True, exist_ok=True)
+        sidecar_payload = (
+            {
+                "nodes": {
+                    "mechanics": {"type": "LinearStateSpace"},
+                    "feedback": {"type": "StateFeedbackSelector"},
+                }
+            }
+            if key == "graph_spec_path"
+            else {}
+        )
+        sidecar_path.write_text(json.dumps(sidecar_payload), encoding="utf-8")
+
+
+def test_generic_loader_resolves_flat_recipe_sibling_sidecars(tmp_path: Path) -> None:
+    payload = _native_method_run_spec_payload(tmp_path, CS_SUPERVISED_METHOD_REF)
+    recipe_path = tmp_path / "runs" / "baseline.json"
+    recipe_path.parent.mkdir()
+    recipe_path.write_text(json.dumps(payload), encoding="utf-8")
+    _write_flat_recipe_sidecars(recipe_path, payload)
+
+    _path, loaded = cs_supervised_executor.load_validated_run_spec(
+        recipe_path,
+        require_graph_sidecars=True,
+    )
+
+    assert loaded["feedbax_graph"] == payload["feedbax_graph"]
+
+
+def test_public_flat_recipe_validator_hydrates_compact_envelope(tmp_path: Path) -> None:
+    payload = _native_method_run_spec_payload(tmp_path, CS_SUPERVISED_METHOD_REF)
+    recipe_path = tmp_path / "runs" / "baseline.json"
+    recipe_path.parent.mkdir()
+    recipe_path.write_text(json.dumps(_compact_run_spec(payload)), encoding="utf-8")
+    _write_flat_recipe_sidecars(recipe_path, payload)
+
+    validate_nominal_gru_run_spec_file(recipe_path)
 
 
 def test_compact_run_spec_loader_hydrates_authoritative_extension(tmp_path: Path) -> None:

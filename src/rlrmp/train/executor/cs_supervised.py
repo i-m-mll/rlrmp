@@ -55,7 +55,7 @@ from rlrmp.loss import (
     CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p
-from rlrmp.runtime.run_specs import validate_nominal_gru_run_spec
+from rlrmp.runtime.run_specs import run_spec_sidecar_dir, validate_nominal_gru_run_spec
 from rlrmp.runtime.training_run_specs import (
     FEEDBAX_TRAINING_RUN_SPEC_KEY,
     RLRMP_RUN_SPEC_PAYLOAD_KEY,
@@ -251,7 +251,7 @@ def load_validated_run_spec(
     payload = hydrate_compact_run_spec_envelope(raw_payload)
     validate_nominal_gru_run_spec(
         payload,
-        spec_dir=payload_path.parent,
+        spec_dir=run_spec_sidecar_dir(payload_path),
         require_graph_sidecars=require_graph_sidecars,
     )
     _validate_composed_training_spec_payload(payload)

@@ -22,6 +22,7 @@ from rlrmp.runtime.spec_migrations import (
     accept_rlrmp_spec_payload,
     ensure_rlrmp_spec_families,
 )
+from rlrmp.runtime.training_run_specs import hydrate_compact_run_spec_envelope
 from rlrmp.train.minimax_native import (
     validate_minimax_run_spec,
     validate_minimax_run_spec_file,
@@ -298,13 +299,16 @@ def validate_nominal_gru_run_spec_file(run_spec_path: Path | str) -> None:
     """
 
     path = Path(run_spec_path)
+    raw_payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw_payload, dict):
+        raise RunSpecValidationError("nominal GRU run spec file must contain a JSON object")
     validate_nominal_gru_run_spec(
-        json.loads(path.read_text(encoding="utf-8")),
-        spec_dir=_run_spec_sidecar_dir(path),
+        hydrate_compact_run_spec_envelope(raw_payload),
+        spec_dir=run_spec_sidecar_dir(path),
     )
 
 
-def _run_spec_sidecar_dir(run_spec_path: Path) -> Path:
+def run_spec_sidecar_dir(run_spec_path: Path) -> Path:
     """Return the contract-owned graph-sidecar directory for one recipe path."""
 
     if run_spec_path.name == "run.json":
@@ -512,6 +516,7 @@ __all__ = [
     "NOMINAL_GRU_REQUIRED_TOP_LEVEL_KEYS",
     "NOMINAL_GRU_TRAINING_MODES",
     "RunSpecValidationError",
+    "run_spec_sidecar_dir",
     "resolve_run_record",
     "validate_nominal_gru_run_spec",
     "validate_nominal_gru_run_spec_file",
