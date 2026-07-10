@@ -313,7 +313,11 @@ def _cs_stochastic_gru_run_spec_paths() -> list[Path]:
         payload = hydrate_compact_run_spec_envelope(
             json.loads(path.read_text(encoding="utf-8"))
         )
-        if payload.get("schema_version") != SCHEMA_VERSION:
+        schema_versions = {
+            payload.get("schema_version"),
+            payload.get("source_schema_version"),
+        }
+        if SCHEMA_VERSION not in schema_versions:
             continue
         if {"hps", "feedbax_graph", "training_script"}.issubset(payload):
             paths.append(path)
