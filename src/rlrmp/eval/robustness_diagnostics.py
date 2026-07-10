@@ -25,6 +25,7 @@ from rlrmp.analysis.math.output_feedback import (
     robust_estimator_covariances,
     robust_output_feedback_gains,
 )
+from rlrmp.runtime.run_spec_access import require_run_seed
 
 
 def build_robust_output_feedback_6d_context(
@@ -155,7 +156,7 @@ def evaluate_stabilization_row(
     if run_spec_transform is not None:
         run_spec = run_spec_transform(run_spec)
     hps = dict_to_namespace(normalize_gru_hps(run_spec["hps"]), to_type=TreeNamespace)
-    seed = int(run_spec.get("seed", 42))
+    seed = require_run_seed(run_spec, source=run.run_spec_path)
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
     n_replicates = int(hps.model.n_replicates)
     model, checkpoint_selection = load_validation_selected_checkpoint_model(

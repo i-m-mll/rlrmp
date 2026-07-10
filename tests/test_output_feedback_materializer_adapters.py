@@ -89,6 +89,42 @@ def test_standard_adapter_uses_arbitrary_array_prefix_and_preserves_schema(monke
     assert np.array_equal(calls[0]["candidate_gain"], arrays["smooth_cell_K"])
 
 
+def test_standard_adapter_routes_saved_source_group_through_api_default(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        certificates,
+        "_output_feedback_standard_components",
+        lambda **_kwargs: (),
+    )
+    arrays = {"cell_a_K": np.ones((2, 1, 2))}
+
+    rows = certificates.deterministic_standard_rows_from_manifest_entries(
+        entries=[{"fit": _fit("cell_a")}],
+        arrays=arrays,
+        reference=object(),
+        output_config=object(),
+        issue_id="87edaae",
+        source_manifest=tmp_path / "manifest.json",
+        default_family="saved array family",
+    )
+
+    assert [row["spec"]["run_id"] for row in rows] == [
+        "saved__cell_a__nominal_clean",
+        "saved__cell_a__riccati_epsilon_response",
+    ]
+
+    overridden = certificates.deterministic_standard_rows_from_manifest_entries(
+        entries=[{"fit": _fit("cell_a")}],
+        arrays=arrays,
+        reference=object(),
+        output_config=object(),
+        issue_id="87edaae",
+        source_manifest=tmp_path / "manifest.json",
+        default_family="imported array family",
+        default_source_group="imported",
+    )
+    assert overridden[0]["spec"]["run_id"].startswith("imported__cell_a__")
+
+
 def test_failure_adapter_joins_standard_rows_by_generated_run_id(monkeypatch):
     monkeypatch.setattr(
         failure,

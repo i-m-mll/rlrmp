@@ -196,6 +196,33 @@ def test_fixed_bank_projection_direction_uses_intended_target_for_catch() -> Non
     assert direction == pytest.approx(expected)
 
 
+@pytest.mark.parametrize(
+    "metadata",
+    (
+        {"bank_family": "delayed_reach_fixed_eval_bank"},
+        {
+            "bank_family": "delayed_reach_fixed_eval_bank",
+            "target_angles_rad": [0.0],
+        },
+        {
+            "bank_family": "delayed_reach_fixed_eval_bank",
+            "direction_count": 4,
+        },
+        {
+            "bank_family": "delayed_reach_fixed_eval_bank",
+            "direction_count": 0,
+            "target_angles_rad": [],
+        },
+    ),
+)
+def test_fixed_bank_projection_direction_preserves_incomplete_metadata_fallback(
+    metadata: dict[str, object],
+) -> None:
+    materializer = load_delayed_timing_velocity_materializer()
+
+    assert materializer.fixed_bank_projection_direction(metadata, trial_count=4) is None
+
+
 def test_delayed_velocity_input_update_preserves_composite_go_cue_sisu_width() -> None:
     materializer = load_delayed_timing_velocity_materializer()
     existing = {

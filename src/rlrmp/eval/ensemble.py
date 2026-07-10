@@ -30,6 +30,7 @@ from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.eval.kinematics import initial_effector_position, initial_effector_velocity
 from rlrmp.runtime.parameter_presets import EvaluationEnsemblePreset, load_runtime_preset
+from rlrmp.runtime.run_spec_access import require_run_dt, require_run_seed
 from rlrmp.train.task_model import setup_task_model_pair
 
 __all__ = [
@@ -149,7 +150,7 @@ def evaluate_velocity_profile(
 
     hps = dict_to_namespace(normalize_gru_hps(run.run_spec["hps"]), to_type=TreeNamespace)
     n_replicates = int(hps.model.n_replicates)
-    seed = int(run.run_spec.get("seed", 42))
+    seed = require_run_seed(run.run_spec, source=run.run_spec_path)
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
     movement_horizon_steps = _canonical_movement_horizon(run.run_spec)
     bank = make_delayed_eval_bank(
@@ -212,7 +213,7 @@ def evaluate_velocity_profile(
     std = np.nanstd(flat, axis=0, ddof=1)
     replicate_mean = np.nanmean(window, axis=1)
     replicate_std = np.nanstd(window, axis=1, ddof=1)
-    dt = float(run.run_spec.get("game_card", {}).get("dt", getattr(hps, "dt", 0.01)))
+    dt = require_run_dt(run.run_spec, hps, source=run.run_spec_path)
     time_s = (np.arange(start, stop, dtype=np.float64) - float(center)) * dt
     alignment = {
         "time_basis": "go_cue_aligned_canonical_movement_window",
@@ -582,8 +583,11 @@ def fixed_bank_projection_direction(
     if bank_metadata.get("bank_family") != "delayed_reach_fixed_eval_bank":
         return None
     angles = bank_metadata.get("target_angles_rad")
-    direction_count = int(bank_metadata.get("direction_count", 0))
-    if angles is None or direction_count <= 0:
+    direction_count_value = bank_metadata.get("direction_count")
+    if angles is None or direction_count_value is None:
+        return None
+    direction_count = int(direction_count_value)
+    if direction_count <= 0:
         return None
     angles_array = np.asarray(angles, dtype=np.float64)
     if angles_array.shape != (direction_count,):
