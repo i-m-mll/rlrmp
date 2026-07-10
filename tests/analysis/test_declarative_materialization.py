@@ -255,10 +255,38 @@ def test_declarative_recipes_use_feedbax_context_materializers() -> None:
         Path("."),
         (),
     )
+    from rlrmp.eval.output_feedback_rollout_recovery import RolloutRecoveryResult
+
     rollout_recovery = dm.output_feedback_rollout_recovery_recipe(
-        dm.output_feedback_rollout_recovery_spec(),
+        dm.output_feedback_rollout_recovery_spec(
+            evaluation_manifest_id="rollout-eval",
+        ),
         Path("."),
-        (),
+        [
+            type(
+                "Resolved",
+                (),
+                {
+                    "ref": ParentRef(
+                        kind="EvaluationRunManifest",
+                        id="rollout-eval",
+                        role="evaluation_run",
+                    ),
+                    "states": {
+                        "result": RolloutRecoveryResult(
+                            issue_id="7a459bb",
+                            conditions=(),
+                            fits=(),
+                            bellman_initialization_gain_relative_error=0.0,
+                            diagnostics={},
+                            arrays={},
+                        )
+                    },
+                    "manifest": None,
+                    "path": None,
+                },
+            )()
+        ],
     )
 
     assert isinstance(standard.analyses["gru_standard_certificate"], AbstractAnalysis)
@@ -1427,7 +1455,19 @@ def test_output_feedback_rollout_recovery_recipe_records_manifest_and_bulk_group
         repo_root / "_artifacts" / "7a459bb" / "output_feedback_rollout_recovery" / "rollout.npz"
     )
 
-    def fake_materialize(**kwargs):
+    from rlrmp.eval import output_feedback_rollout_recovery as rollout_eval
+
+    fake_result = rollout_eval.RolloutRecoveryResult(
+        issue_id="7a459bb",
+        conditions=(),
+        fits=(),
+        bellman_initialization_gain_relative_error=0.0,
+        diagnostics={},
+        arrays={},
+    )
+
+    def fake_materialize(result, **kwargs):
+        assert isinstance(result, rollout_eval.RolloutRecoveryResult)
         payload = {
             "issue": kwargs["issue_id"],
             "scope": "output-feedback bridge rollout recovery",
@@ -1453,10 +1493,22 @@ def test_output_feedback_rollout_recovery_recipe_records_manifest_and_bulk_group
         "materialize_output_feedback_rollout_recovery",
         fake_materialize,
     )
+    monkeypatch.setattr(
+        rollout_eval,
+        "run_output_feedback_rollout_recovery",
+        lambda: fake_result,
+    )
     dm.register_certificate_analysis_recipes(replace=True)
     try:
+        eval_manifest, eval_path = execute_evaluation_run_spec(
+            dm.output_feedback_rollout_recovery_evaluation_spec(),
+            root=tmp_path,
+            force=True,
+        )
         spec = dm.output_feedback_rollout_recovery_spec(
             issue_id="7a459bb",
+            evaluation_manifest_id=eval_manifest.id,
+            evaluation_manifest_uri=eval_path,
             discretization="jaxley",
             lane="analysis",
             note_output=note_output,
@@ -1469,6 +1521,8 @@ def test_output_feedback_rollout_recovery_recipe_records_manifest_and_bulk_group
 
         assert path.exists()
         assert manifest.status == "completed"
+        assert manifest.inputs[0].kind == "EvaluationRunManifest"
+        assert manifest.inputs[0].id == eval_manifest.id
         assert manifest.analysis_spec.inline["analysis_type"] == (
             dm.OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE
         )
@@ -1501,6 +1555,7 @@ def test_output_feedback_rollout_recovery_recipe_records_manifest_and_bulk_group
             "rlrmp-output-feedback-rollout-recovery-note"
         )
         assert payload["bulk_artifact"]["role"] == "rlrmp-output-feedback-rollout-recovery-bulk"
+        assert payload["evaluation_dependency_policy"]["status"] == "consumed"
         assert load_manifest(path).id == manifest.id
     finally:
         _unregister_declarative_recipes()

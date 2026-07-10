@@ -5,9 +5,11 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from feedbax.analysis.evaluation import execute_evaluation_run_spec
 from feedbax.analysis.specs import execute_analysis_run_spec
 from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import ISSUE_ID
 from rlrmp.analysis.declarative_materialization import (
+    output_feedback_rollout_recovery_evaluation_spec,
     output_feedback_rollout_recovery_spec,
     register_certificate_analysis_recipes,
 )
@@ -93,8 +95,14 @@ def main() -> None:
         / "output_feedback_rollout_recovery.npz"
     )
     register_certificate_analysis_recipes(replace=True)
+    evaluation_manifest, evaluation_manifest_path = execute_evaluation_run_spec(
+        output_feedback_rollout_recovery_evaluation_spec(),
+        root=args.feedbax_runs_root,
+    )
     spec = output_feedback_rollout_recovery_spec(
         issue_id=issue_id,
+        evaluation_manifest_id=evaluation_manifest.id,
+        evaluation_manifest_uri=evaluation_manifest_path,
         discretization=args.discretization,
         lane=args.lane,
         note_output=note_output,
@@ -107,6 +115,7 @@ def main() -> None:
         issues=[MATERIALIZER_ISSUE_ID, issue_id],
     )
     print(f"Wrote {feedbax_manifest_path}")
+    print(f"Feedbax evaluation manifest: {evaluation_manifest.id}")
     print(f"Feedbax analysis manifest: {manifest.id}")
     print(f"Legacy output hints: {note_output}, {manifest_output}, {artifact_output}")
 

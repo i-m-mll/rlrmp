@@ -42,7 +42,7 @@ from rlrmp.analysis.math.output_feedback import (
     OutputFeedbackConfig,
     output_feedback_clean_objective,
 )
-from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
+from rlrmp.eval.output_feedback_rollout_recovery import (
     STRONG_OPTIMIZER_WHITENED,
     _training_ensemble,
     eigenspectrum_coverage_conditions,

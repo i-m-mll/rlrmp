@@ -35,7 +35,7 @@ from rlrmp.analysis.math.output_feedback import (
     rollout_with_kalman_estimator,
     rollout_with_robust_estimator_policy,
 )
-from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
+from rlrmp.eval.output_feedback_rollout_recovery import (
     STRONG_OPTIMIZER_WHITENED,
     RolloutRecoveryCondition,
     RolloutRecoveryFit,
