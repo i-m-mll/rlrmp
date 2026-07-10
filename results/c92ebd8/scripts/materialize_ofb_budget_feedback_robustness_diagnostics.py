@@ -87,7 +87,6 @@ def main() -> None:
         run_ids=ROW_IDS,
         labels=tuple(run_label(row) for row in ROWS),
         evaluation_bulk_dir=EVALUATION_BULK_DIR,
-        perturbation_bulk_dir=PERTURBATION_BULK_DIR,
         feedback_scope="output_feedback_budget_feedback_ablation",
         materialize_extensions=lambda current_paths, _components: {
             "stabilization": materialize_stabilization(

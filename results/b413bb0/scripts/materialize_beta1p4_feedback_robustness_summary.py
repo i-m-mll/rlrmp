@@ -23,7 +23,6 @@ from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import (
     materialize_gru_evaluation_diagnostics,
 )
 from rlrmp.analysis.pipelines.gru_feedback_ablation import materialize_gru_feedback_ablation
-from rlrmp.analysis.pipelines.gru_perturbation_bank import materialize_gru_perturbation_response
 from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
@@ -184,27 +183,9 @@ def materialize_component_manifests(*, force: bool) -> dict[str, dict[str, Any]]
                 repo_root=REPO_ROOT,
             ),
         )
-        perturbation = load_or_materialize(
+        perturbation = load_existing_perturbation_manifest(
             paths["perturbation"],
             force=force,
-            materializer=lambda: materialize_gru_perturbation_response(
-                source_experiment=source_experiment,
-                result_experiment=ISSUE,
-                run_ids=run_ids,
-                labels=labels,
-                n_rollout_trials=64,
-                output_path=paths["perturbation"],
-                note_path=paths["perturbation_note"],
-                bulk_dir=paths["perturbation_bulk_dir"],
-                regeneration_spec_path=paths["perturbation_regeneration_spec"],
-                bank_mode="calibrated",
-                calibration_level="moderate",
-                calibration_reach=0.15,
-                feedback_scale_manifest_path=paths["evaluation"],
-                extlqg_physical_dim=6,
-                write_bulk_arrays=False,
-                repo_root=REPO_ROOT,
-            ),
         )
         feedback = load_or_materialize(
             paths["feedback"],
@@ -285,6 +266,17 @@ def load_or_materialize(
     if path.exists() and not force:
         return load_json(path)
     return materializer()
+
+
+def load_existing_perturbation_manifest(path: Path, *, force: bool) -> dict[str, Any]:
+    """Load governed perturbation output or fail before requesting retired writes."""
+
+    if path.exists() and not force:
+        return load_json(path)
+    raise RuntimeError(
+        "direct perturbation output regeneration is retired; execute the registered "
+        "perturbation evaluation/analysis bundle through Feedbax custody first"
+    )
 
 
 def table_row(

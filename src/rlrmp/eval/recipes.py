@@ -109,8 +109,6 @@ class PerturbationResponseBankEvalParams(_StrictParamsModel):
     feedback_scale_manifest: Any | None = None
     feedback_scale_manifest_path: str | None = None
     repo_root: str | None = None
-    bulk_dir: str | None = None
-    write_bulk_arrays: bool = False
     n_rollout_trials: int = Field(8, ge=1)
     extlqg_physical_dim: Literal[6, 8] = 8
     preferred_checkpoint_manifest_path: str | None = None
@@ -440,7 +438,11 @@ def _legacy_perturbation_response_bank_payload(
         ("checkpoint_bank_ref", "checkpoint_bank"),
         recipe=PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
     )
-    bank = _normalized_perturbation_bank(params.get("perturbation_battery", {}))
+    raw_bank = params.get("perturbation_battery")
+    if raw_bank is None:
+        raw_bank = _default_perturbation_bank(params)
+    bank = _normalized_perturbation_bank(raw_bank)
+    bank_params = _canonical_perturbation_bank_params(params)
     class_index_map = params.get("class_index_map")
     if class_index_map is None:
         class_index_map = _perturbation_class_index_map(bank)
@@ -453,6 +455,7 @@ def _legacy_perturbation_response_bank_payload(
         params=params,
         state_payload={
             "production_mode": "legacy_payload",
+            "bank_params": bank_params,
             "checkpoint_bank": params.get("checkpoint_bank_ref", params.get("checkpoint_bank")),
             "perturbation_battery": bank,
             "alignment_mode": params.get("alignment_mode", "reach_locked"),
@@ -473,6 +476,7 @@ def _model_driven_perturbation_response_bank_payload(
 ) -> _PerturbationResponseBankPayload:
     params_with_identity = _with_eval_consumed_calibration_identity(params)
     bank = _perturbation_bank_from_params(params_with_identity)
+    bank_params = _canonical_perturbation_bank_params(params_with_identity)
     class_index_map = _perturbation_class_index_map(bank)
     run_summaries = _evaluate_perturbation_bank_runs(
         run_spec,
@@ -494,6 +498,7 @@ def _model_driven_perturbation_response_bank_payload(
         params=params_with_identity,
         state_payload={
             "production_mode": "model_driven",
+            "bank_params": bank_params,
             "checkpoint_bank": params_with_identity.get(
                 "checkpoint_bank_ref",
                 params_with_identity.get("checkpoint_bank"),
@@ -585,19 +590,27 @@ def _default_perturbation_bank(params: Mapping[str, Any]) -> dict[str, Any]:
         expand_perturbation_bank,
     )
 
-    feedback_scale_manifest_path = params.get("feedback_scale_manifest_path")
+    return expand_perturbation_bank(
+        PerturbationBankParams.model_validate(_canonical_perturbation_bank_params(params)),
+    )
+
+
+def _canonical_perturbation_bank_params(params: Mapping[str, Any]) -> dict[str, Any]:
+    from rlrmp.analysis.pipelines.gru_perturbation_bank import PerturbationBankParams
+
     bank_params = dict(params.get("bank_params") or {})
     bank_params.setdefault("mode", params.get("bank_mode", params.get("mode", "raw")))
-    if params.get("calibration_level") is not None:
-        bank_params.setdefault("calibration_level", params.get("calibration_level"))
-    if params.get("calibration_reach") is not None:
-        bank_params.setdefault("calibration_reach", params.get("calibration_reach"))
-    if params.get("feedback_scale_manifest") is not None:
-        bank_params.setdefault("feedback_scale_manifest", params.get("feedback_scale_manifest"))
-    if feedback_scale_manifest_path is not None:
-        bank_params.setdefault("feedback_scale_manifest_path", str(feedback_scale_manifest_path))
-    return expand_perturbation_bank(
-        PerturbationBankParams.model_validate(bank_params),
+    for key in (
+        "calibration_level",
+        "calibration_reach",
+        "feedback_scale_manifest",
+        "feedback_scale_manifest_path",
+    ):
+        if params.get(key) is not None:
+            bank_params.setdefault(key, params[key])
+    return PerturbationBankParams.model_validate(bank_params).model_dump(
+        mode="json",
+        exclude_none=True,
     )
 
 
@@ -743,18 +756,12 @@ def _evaluate_perturbation_bank_runs(
         labels=labels,
         repo_root=_repo_root_for_eval(params, root=root),
     )
-    bulk_dir = _perturbation_eval_bulk_dir(params, root=root)
-    write_bulk_arrays = bool(params.get("write_bulk_arrays", False))
-    if write_bulk_arrays:
-        bulk_dir.mkdir(parents=True, exist_ok=True)
     return {
         run.run_id: _evaluate_single_perturbation_bank_run(
             run,
             source_experiment=source_experiment,
             bank=bank,
             n_rollout_trials=int(params.get("n_rollout_trials", 8)),
-            write_bulk_arrays=write_bulk_arrays,
-            bulk_dir=bulk_dir,
             extlqg_physical_dim=int(params.get("extlqg_physical_dim", 8)),
             preferred_checkpoint_manifest_path=_optional_path(
                 params.get("preferred_checkpoint_manifest_path")
@@ -784,13 +791,6 @@ def _repo_root_for_eval(params: Mapping[str, Any], *, root: Path) -> Path:
     return REPO_ROOT if REPO_ROOT is not None else root
 
 
-def _perturbation_eval_bulk_dir(params: Mapping[str, Any], *, root: Path) -> Path:
-    bulk_dir = params.get("bulk_dir")
-    if bulk_dir is not None:
-        return Path(str(bulk_dir))
-    return root / "cache" / "perturbation_response_bank"
-
-
 def _optional_path(value: Any) -> Path | None:
     return None if value is None else Path(str(value))
 
@@ -818,8 +818,6 @@ def _evaluate_single_perturbation_bank_run(
     source_experiment: str,
     bank: Mapping[str, Any],
     n_rollout_trials: int,
-    write_bulk_arrays: bool,
-    bulk_dir: Path,
     extlqg_physical_dim: int,
     preferred_checkpoint_manifest_path: Path | None,
     checkpoint_selection_mode: str,
@@ -832,8 +830,6 @@ def _evaluate_single_perturbation_bank_run(
         source_experiment=source_experiment,
         bank=bank,
         n_rollout_trials=n_rollout_trials,
-        write_bulk_arrays=write_bulk_arrays,
-        bulk_dir=bulk_dir,
         extlqg_physical_dim=extlqg_physical_dim,  # type: ignore[arg-type]
         preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
         checkpoint_selection_mode=checkpoint_selection_mode,  # type: ignore[arg-type]

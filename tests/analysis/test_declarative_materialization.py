@@ -304,6 +304,7 @@ def test_declarative_recipes_use_feedbax_context_materializers() -> None:
     perturbation_leaf = dm.perturbation_class_response_recipe(
         dm.perturbation_class_response_spec(
             family="command_input_pulse",
+            bank_params={"mode": "raw"},
             evaluation_manifest_id="eval-manifest",
         ),
         Path("."),
@@ -320,6 +321,7 @@ def test_declarative_recipes_use_feedbax_context_materializers() -> None:
                     "states": {
                         "evaluation_type": PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
                         "evaluation_manifest_id": "eval-manifest",
+                        "bank_params": {"mode": "raw", "metadata": {}},
                         "perturbation_battery": {"perturbations": []},
                         "response_tensors": {"runs": {}},
                         "class_index_map": {
@@ -374,6 +376,11 @@ def test_diagnostic_bank_recipes_register_params_models_and_eval_dependencies() 
         dm.PerturbationClassResponseAnalysisParams.model_validate({"unknown": True})
     with pytest.raises(ValidationError):
         dm.PerturbationBankAggregateAnalysisParams.model_validate({"unknown": True})
+    with pytest.raises(ValueError, match="do not match the evaluation contract"):
+        dm._validated_perturbation_bank_params(
+            {"bank_params": {"mode": "raw"}},
+            {"bank_params": {"mode": "calibrated"}},
+        )
     assert dm.EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE[
         dm.FEEDBACK_ABLATION_ANALYSIS_TYPE
     ] == (FEEDBACK_ABLATION_EVALUATION_TYPE,)
@@ -754,18 +761,22 @@ def test_gru_postrun_bundle_declares_perturbation_leaf_aggregate_stages() -> Non
     assert stages["perturbation_bank_eval"].evaluation_type == (
         PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE
     )
+    bank_params = stages["perturbation_bank_eval"].params["bank_params"]
+    assert "perturbation_battery" not in stages["perturbation_bank_eval"].params
     assert stages["perturbation_class_command_input_pulse"].analysis_type == (
         dm.PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE
     )
     assert stages["perturbation_class_command_input_pulse"].depends_on == [
         "perturbation_bank_eval"
     ]
+    assert stages["perturbation_class_command_input_pulse"].params["bank_params"] == bank_params
     assert stages["perturbation_bank_aggregate"].analysis_type == (
         dm.PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE
     )
     assert "perturbation_class_command_input_pulse" in (
         stages["perturbation_bank_aggregate"].depends_on
     )
+    assert stages["perturbation_bank_aggregate"].params["bank_params"] == bank_params
 
 
 def test_perturbation_class_leaves_aggregate_to_legacy_bank_payload(
@@ -806,6 +817,7 @@ def test_perturbation_class_leaves_aggregate_to_legacy_bank_payload(
         manifest, path = execute_analysis_run_spec(
             dm.perturbation_class_response_spec(
                 family=family,
+                bank_params={"mode": "raw"},
                 evaluation_manifest_id=eval_manifest.id,
                 evaluation_manifest_uri=eval_path,
                 expected_calibration_identity={"hash": "sha256:unit-calibration"},
@@ -826,10 +838,10 @@ def test_perturbation_class_leaves_aggregate_to_legacy_bank_payload(
 
     aggregate_manifest, _aggregate_path = execute_analysis_run_spec(
         dm.perturbation_bank_aggregate_spec(
+            bank_params={"mode": "raw"},
             leaf_manifest_refs=leaf_manifests,
             issue="unit",
             source_experiment="unit-exp",
-            bank_mode="raw",
         ),
         root=tmp_path,
     )
@@ -882,6 +894,7 @@ def test_perturbation_class_leaf_absent_family_fails_closed(tmp_path: Path) -> N
         execute_analysis_run_spec(
             dm.perturbation_class_response_spec(
                 family="missing_family",
+                bank_params={"mode": "raw"},
                 evaluation_manifest_id=eval_manifest.id,
                 evaluation_manifest_uri=eval_path,
             ),
@@ -891,24 +904,16 @@ def test_perturbation_class_leaf_absent_family_fails_closed(tmp_path: Path) -> N
     assert "contains families" in str(excinfo.value.__cause__)
 
 
-def test_legacy_perturbation_materializer_routes_to_leaf_aggregate_without_raw_outputs(
+def test_perturbation_adapter_rejects_obsolete_output_requests(
     tmp_path: Path,
 ) -> None:
     from rlrmp.analysis.pipelines import gru_perturbation_bank
-
-    output_path = tmp_path / "legacy_manifest.json"
-    note_path = tmp_path / "legacy_note.md"
-    bulk_dir = tmp_path / "legacy_bulk"
 
     manifest = gru_perturbation_bank.materialize_gru_perturbation_response(
         source_experiment="unit-exp",
         result_experiment="e32c8bb",
         run_ids=("training-run-a",),
         evaluate=False,
-        write_bulk_arrays=True,
-        output_path=output_path,
-        note_path=note_path,
-        bulk_dir=bulk_dir,
         repo_root=tmp_path,
     )
 
@@ -921,11 +926,23 @@ def test_legacy_perturbation_materializer_routes_to_leaf_aggregate_without_raw_o
     assert manifest["compatibility_adapter"]["route"] == (
         "feedbax_evaluation_manifest_to_perturbation_class_leaf_aggregate"
     )
-    assert manifest["compatibility_adapter"]["write_bulk_arrays_requested"] is True
-    assert manifest["compatibility_adapter"]["write_bulk_arrays_effective"] is False
-    assert not output_path.exists()
-    assert not note_path.exists()
-    assert not bulk_dir.exists()
+    assert manifest["compatibility_adapter"]["custody"] == (
+        "feedbax_evaluation_and_analysis_manifests"
+    )
+    assert "legacy_output_paths_ignored" not in manifest["compatibility_adapter"]
+    obsolete_requests = {
+        "write_bulk_arrays": True,
+        "output_path": tmp_path / "legacy_manifest.json",
+        "note_path": tmp_path / "legacy_note.md",
+        "bulk_dir": tmp_path / "legacy_bulk",
+        "regeneration_spec_path": tmp_path / "legacy_regeneration.json",
+    }
+    for name, value in obsolete_requests.items():
+        with pytest.raises(TypeError, match=name):
+            gru_perturbation_bank.materialize_gru_perturbation_response(
+                evaluate=False,
+                **{name: value},
+            )
 
 
 def test_feedback_quality_lens_bundle_executes_fixture_and_groups_artifacts(
