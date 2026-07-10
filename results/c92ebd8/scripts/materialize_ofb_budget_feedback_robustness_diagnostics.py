@@ -1,8 +1,9 @@
 """Materialize c92 output-feedback-budget PGD feedback/robustness diagnostics."""
 
 from __future__ import annotations
+from rlrmp.io import write_csv_rows
+from rlrmp.paths import portable_repo_path
 
-import csv
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -540,31 +541,8 @@ def aggregation_contract() -> dict[str, str]:
 
 
 def write_csv(rows: Sequence[Mapping[str, Any]]) -> None:
-    """Write the compact comparison table as CSV."""
-
-    fields = [
-        "row",
-        "training_condition",
-        "physical_level",
-        "active_l2_radius_15cm",
-        "pgd_budget_source",
-        "peak_velocity_m_s",
-        "fb_delta_u",
-        "ablation_idx",
-        "sensory_auc_dx_mm_s",
-        "non_sensory_auc_dx_mm_s",
-        "peak_dx_over_open_loop",
-        "stabilization_feedback_auc_mm_s",
-        "stabilization_mechanical_auc_mm_s",
-        "stabilization_command_auc_mm_s",
-        "stabilization_process_force_auc_mm_s",
-        "formal_hinf_claim",
-    ]
-    with SUMMARY_CSV.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({field: row[field] for field in fields})
+    fields = ['row', 'training_condition', 'physical_level', 'active_l2_radius_15cm', 'pgd_budget_source', 'peak_velocity_m_s', 'fb_delta_u', 'ablation_idx', 'sensory_auc_dx_mm_s', 'non_sensory_auc_dx_mm_s', 'peak_dx_over_open_loop', 'stabilization_feedback_auc_mm_s', 'stabilization_mechanical_auc_mm_s', 'stabilization_command_auc_mm_s', 'stabilization_process_force_auc_mm_s', 'formal_hinf_claim']
+    write_csv_rows(SUMMARY_CSV, list(rows), fieldnames=fields)
 
 
 def render_markdown(summary: Mapping[str, Any]) -> str:
@@ -674,10 +652,7 @@ def run_label(row: RowSpec) -> str:
     )
 
 
-def repo_rel(path: Path) -> str:
-    """Return a repo-relative path."""
-
-    return str(path.relative_to(REPO_ROOT))
+repo_rel = portable_repo_path
 
 
 def load_json(path: Path) -> Any:

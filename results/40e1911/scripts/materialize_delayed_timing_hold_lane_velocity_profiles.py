@@ -9,6 +9,9 @@ while the presentation becomes a six-row comparison.
 """
 
 from __future__ import annotations
+from rlrmp.eval.kinematics import initial_effector_position, initial_effector_velocity
+from rlrmp.viz.colors import hex_to_rgba
+from rlrmp.viz.traces import add_band_trace as canonical_add_band_trace, add_reference_trace as canonical_add_reference_trace
 
 import argparse
 import json
@@ -22,7 +25,6 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 import numpy as np
-import plotly.graph_objects as go
 from feedbax import DelayedReachTaskInputs, TaskTrialSpec, TrialTimeline, WhereDict
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 from feedbax.objectives.loss import TargetSpec
@@ -730,30 +732,8 @@ def like_existing_array(existing: Any, value: np.ndarray) -> jnp.ndarray:
     return jnp.asarray(value, dtype=jnp.asarray(existing).dtype)
 
 
-def initial_effector_position(trial_specs: Any) -> np.ndarray:
-    """Return initial effector position, shape ``(trials, 2)``."""
-
-    for init_state in trial_specs.inits.values():
-        position = getattr(init_state, "pos", None)
-        if position is not None:
-            return np.asarray(position, dtype=np.float64)
-        shape = getattr(init_state, "shape", None)
-        if shape is not None and len(shape) >= 1 and shape[-1] >= 2:
-            return np.asarray(init_state, dtype=np.float64)[..., 0:2]
-    raise ValueError("Trial spec does not include effector position initial state")
 
 
-def initial_effector_velocity(trial_specs: Any) -> jnp.ndarray:
-    """Return initial effector velocity, shape ``(trials, 2)``."""
-
-    for init_state in trial_specs.inits.values():
-        velocity = getattr(init_state, "vel", None)
-        if velocity is not None:
-            return velocity
-        shape = getattr(init_state, "shape", None)
-        if shape is not None and len(shape) >= 1 and shape[-1] >= 4:
-            return jnp.asarray(init_state)[..., 2:4]
-    raise ValueError("Trial spec does not include effector velocity initial state")
 
 
 def target_position_sequence(trial_specs: Any) -> np.ndarray:
@@ -1069,98 +1049,10 @@ def write_velocity_by_replicate_figure(
     return path
 
 
-def add_band_trace(
-    fig: go.Figure,
-    *,
-    x: np.ndarray,
-    mean: np.ndarray,
-    std: np.ndarray,
-    row: int,
-    color: str,
-    name: str,
-    legendgroup: str,
-    showlegend: bool,
-    fill_alpha: float = 0.16,
-    line_width: float = 2.4,
-) -> None:
-    """Add mean +/- SD band and mean line to a subplot."""
-
-    upper = mean + std
-    lower = mean - std
-    fig.add_trace(
-        go.Scatter(
-            x=np.concatenate([x, x[::-1]]),
-            y=np.concatenate([upper, lower[::-1]]),
-            fill="toself",
-            fillcolor=rgba(color, fill_alpha),
-            line={"color": "rgba(0,0,0,0)"},
-            hoverinfo="skip",
-            name=f"{name} mean +/- 1 SD",
-            legendgroup=legendgroup,
-            showlegend=False,
-        ),
-        row=row,
-        col=1,
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=x,
-            y=mean,
-            mode="lines",
-            line={"color": color, "width": line_width},
-            name=name,
-            legendgroup=legendgroup,
-            showlegend=showlegend,
-        ),
-        row=row,
-        col=1,
-    )
+add_band_trace = canonical_add_band_trace
 
 
-def add_reference_trace(
-    fig: go.Figure,
-    *,
-    reference: Any,
-    row: int,
-    showlegend: bool,
-) -> None:
-    """Add one extLQG reference profile."""
-
-    upper = reference.forward_velocity + reference.forward_velocity_std
-    lower = reference.forward_velocity - reference.forward_velocity_std
-    legendgroup = f"reference-{reference.observation_channel}"
-    fig.add_trace(
-        go.Scatter(
-            x=np.concatenate([reference.time_s, reference.time_s[::-1]]),
-            y=np.concatenate([upper, lower[::-1]]),
-            fill="toself",
-            fillcolor=rgba(reference.line_color, 0.08),
-            line={"color": "rgba(0,0,0,0)"},
-            hoverinfo="skip",
-            name=f"{reference.label} mean +/- 1 SD",
-            legendgroup=legendgroup,
-            showlegend=False,
-        ),
-        row=row,
-        col=1,
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=reference.time_s,
-            y=reference.forward_velocity,
-            mode="lines",
-            line={
-                "color": reference.line_color or REFERENCE_COLOR,
-                "width": 2.2,
-                "dash": reference.line_dash,
-            },
-            name=reference.label,
-            legendgroup=legendgroup,
-            showlegend=showlegend,
-        ),
-        row=row,
-        col=1,
-    )
+add_reference_trace = canonical_add_reference_trace
 
 
 def build_bank_summary(
@@ -1416,13 +1308,7 @@ def replicate_summary(profile: VelocityProfile, rep_idx: int) -> dict[str, float
     }
 
 
-def rgba(hex_color: str, alpha: float) -> str:
-    """Return CSS rgba text for a hex color."""
-
-    red = int(hex_color[1:3], 16)
-    green = int(hex_color[3:5], 16)
-    blue = int(hex_color[5:7], 16)
-    return f"rgba({red},{green},{blue},{alpha})"
+rgba = hex_to_rgba
 
 
 def repo_relative(path: Path, *, repo_root: Path = REPO_ROOT) -> str:

@@ -16,3 +16,9 @@ def hex_to_rgba(color: str, alpha: float) -> str:
     if not 0.0 <= alpha <= 1.0:
         raise ValueError(f"alpha must be in [0, 1], got {alpha}")
     return f"rgba({red},{green},{blue},{alpha})"
+
+
+def band_color(color: str, *, alpha: float = 0.12) -> str:
+    """Return the conventional translucent band color for a line."""
+
+    return hex_to_rgba(color, alpha)

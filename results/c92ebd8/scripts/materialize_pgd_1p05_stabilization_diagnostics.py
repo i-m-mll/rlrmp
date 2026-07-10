@@ -1,8 +1,9 @@
 """Materialize c92 PGD 1.05 stabilization-task perturbation diagnostics."""
 
 from __future__ import annotations
+from rlrmp.viz.traces import add_band_trace as canonical_add_band_trace
+from rlrmp.io import write_csv_rows
 
-import csv
 import subprocess
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
@@ -719,25 +720,8 @@ def probe_contract() -> dict[str, Any]:
 
 
 def write_csv(path: Path, rows: Sequence[Mapping[str, Any]]) -> None:
-    """Write the concise table as CSV."""
-
-    columns = (
-        "run_id",
-        "training",
-        "physical_level",
-        "feedback_auc_mm_s",
-        "mechanical_auc_mm_s",
-        "command_input_auc_mm_s",
-        "process_force_auc_mm_s",
-        "feedback_peak_mm",
-        "mechanical_peak_mm",
-        "response_label",
-    )
-    with path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=columns)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({column: row[column] for column in columns})
+    columns = ('run_id', 'training', 'physical_level', 'feedback_auc_mm_s', 'mechanical_auc_mm_s', 'command_input_auc_mm_s', 'process_force_auc_mm_s', 'feedback_peak_mm', 'mechanical_peak_mm', 'response_label')
+    write_csv_rows(path, list(rows), fieldnames=columns)
 
 
 def render_markdown(summary: Mapping[str, Any]) -> str:
@@ -1220,48 +1204,14 @@ def add_perturbation_event_marker(
 
 
 def add_mean_sem_trace(
-    fig: go.Figure,
-    *,
-    x: np.ndarray,
-    mean: np.ndarray,
-    sem: np.ndarray,
-    name: str,
-    legendgroup: str,
-    color: str,
-    band_color: str,
-    row: int,
-    col: int,
-    showlegend: bool,
+    fig: go.Figure, *, x: np.ndarray, mean: np.ndarray, sem: np.ndarray, name: str,
+    legendgroup: str, color: str, band_color: str, row: int, col: int, showlegend: bool,
 ) -> None:
     """Add a mean trace plus SEM band."""
-
-    fig.add_trace(
-        go.Scatter(
-            x=np.concatenate([x, x[::-1]]),
-            y=np.concatenate([mean - sem, (mean + sem)[::-1]]),
-            mode="lines",
-            line={"width": 0, "color": color},
-            fill="toself",
-            fillcolor=band_color,
-            hoverinfo="skip",
-            showlegend=False,
-            legendgroup=legendgroup,
-        ),
-        row=row,
-        col=col,
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=x,
-            y=mean,
-            mode="lines",
-            name=name,
-            legendgroup=legendgroup,
-            showlegend=showlegend,
-            line={"color": color, "width": 2.2},
-        ),
-        row=row,
-        col=col,
+    canonical_add_band_trace(
+        fig, x=x, mean=mean, spread=sem, name=name, legendgroup=legendgroup,
+        color=color, band_fill_color=band_color, band_line_color=color, band_mode="lines",
+        row=row, col=col, showlegend=showlegend, line_width=2.2,
     )
 
 

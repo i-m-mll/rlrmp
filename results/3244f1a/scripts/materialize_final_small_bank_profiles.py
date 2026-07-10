@@ -2,6 +2,7 @@
 """Materialize calibrated perturbation-bank profile figures for issue 3244f1a."""
 
 from __future__ import annotations
+from rlrmp.viz.traces import add_reduced_sample_trace
 
 import argparse
 import json
@@ -470,81 +471,19 @@ def _simulate_extlqg_arrays(
 
 
 def _add_profile_trace(
-    fig: go.Figure,
-    samples: np.ndarray,
-    *,
-    source: str,
-    variant: str,
-    quantity: str,
-    coord: str,
-    figure_kind: Literal["trajectory", "residual"],
-    extlqg_peak_velocity: float,
-    row: int,
-    col: int,
-    showlegend: bool,
+    fig: go.Figure, samples: np.ndarray, *, source: str, variant: str, quantity: str,
+    coord: str, figure_kind: Literal["trajectory", "residual"], extlqg_peak_velocity: float,
+    row: int, col: int, showlegend: bool,
 ) -> None:
-    samples = _scale_profile_samples(
-        samples,
-        quantity=quantity,
-        figure_kind=figure_kind,
-        extlqg_peak_velocity=extlqg_peak_velocity,
-    )
-    mean, low, high = _mean_band(samples)
-    time = np.arange(mean.shape[0], dtype=np.float64) * DT
-    color = SOURCE_COLORS[source]
-    dash = COORD_DASH[coord]
+    samples = _scale_profile_samples(samples, quantity=quantity, figure_kind=figure_kind, extlqg_peak_velocity=extlqg_peak_velocity)
     label = f"{_source_label(source)} {variant} {coord}"
-    if samples.shape[0] > 1:
-        fig.add_trace(
-            go.Scatter(
-                x=time,
-                y=high,
-                mode="lines",
-                line={"color": "rgba(0,0,0,0)", "width": 0},
-                hoverinfo="skip",
-                showlegend=False,
-                legendgroup=f"{source}-{variant}-{coord}",
-            ),
-            row=row,
-            col=col,
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=time,
-                y=low,
-                mode="lines",
-                fill="tonexty",
-                fillcolor=_band_color(source),
-                line={"color": "rgba(0,0,0,0)", "width": 0},
-                hoverinfo="skip",
-                showlegend=False,
-                legendgroup=f"{source}-{variant}-{coord}",
-            ),
-            row=row,
-            col=col,
-        )
-    fig.add_trace(
-        go.Scatter(
-            x=time,
-            y=mean,
-            mode="lines",
-            name=label,
-            legendgroup=f"{source}-{variant}-{coord}",
-            showlegend=showlegend,
-            line={
-                "color": color,
-                "dash": dash,
-                "width": 1.25 if variant == "clean" else 2.25,
-            },
-            opacity=0.42 if variant == "clean" else 0.95,
-            customdata=np.full(mean.shape, samples.shape[0]),
-            hovertemplate=(
-                f"{label}<br>{quantity}: %{{y:.4g}}<br>"
-                "time: %{x:.3f}s<br>n: %{customdata}<extra></extra>"
-            ),
-        ),
-        row=row,
-        col=col,
+    add_reduced_sample_trace(
+        fig, samples, reducer=_mean_band, row=row, col=col, name=label,
+        legendgroup=f"{source}-{variant}-{coord}", color=SOURCE_COLORS[source],
+        band_fill_color=_band_color(source), dash=COORD_DASH[coord],
+        width=1.25 if variant == "clean" else 2.25,
+        opacity=0.42 if variant == "clean" else 0.95, showlegend=showlegend, dt=DT,
+        hovertemplate=f"{label}<br>{quantity}: %{{y:.4g}}<br>time: %{{x:.3f}}s<br>n: %{{customdata}}<extra></extra>",
     )
 
 

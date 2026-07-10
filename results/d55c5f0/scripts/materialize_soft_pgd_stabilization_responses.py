@@ -1,6 +1,7 @@
 """Materialize d55 soft-PGD stabilization perturbation response figures."""
 
 from __future__ import annotations
+from rlrmp.viz.colors import band_color as canonical_band_color
 
 import json
 from collections import defaultdict
@@ -40,14 +41,7 @@ FEEDBACK_QUANTITY_BY_FAMILY = {
 }
 
 
-def band_color(color: str, *, alpha: float) -> str:
-    """Return an rgba fill color for one hex color."""
-
-    hex_color = color.lstrip("#")
-    red = int(hex_color[0:2], 16)
-    green = int(hex_color[2:4], 16)
-    blue = int(hex_color[4:6], 16)
-    return f"rgba({red},{green},{blue},{alpha})"
+band_color = canonical_band_color
 
 
 SOURCE_STYLES = {

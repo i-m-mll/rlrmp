@@ -1,6 +1,7 @@
 """Materialize nominal velocity profiles for the a378b34 distillation run."""
 
 from __future__ import annotations
+from rlrmp.viz.traces import add_band_trace as canonical_add_band_trace
 
 import argparse
 import csv
@@ -107,30 +108,14 @@ def _mean_sem(samples: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 
 def _add_profile(
-    fig: go.Figure, *, time_s: np.ndarray, mean: np.ndarray, sem: np.ndarray, label: str, color: str
+    fig: go.Figure, *, time_s: np.ndarray, mean: np.ndarray, sem: np.ndarray,
+    label: str, color: str,
 ) -> None:
-    upper = mean + sem
-    lower = mean - sem
-    fig.add_trace(
-        go.Scatter(
-            x=np.concatenate([time_s, time_s[::-1]]),
-            y=np.concatenate([upper, lower[::-1]]),
-            fill="toself",
-            fillcolor=color.replace("1)", "0.16)"),
-            line={"color": "rgba(0,0,0,0)"},
-            hoverinfo="skip",
-            name=f"{label} SEM",
-            showlegend=False,
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=time_s,
-            y=mean,
-            mode="lines",
-            line={"color": color, "width": 2.4},
-            name=label,
-        )
+    """Add one mean profile and SEM band."""
+    canonical_add_band_trace(
+        fig, x=time_s, mean=mean, spread=sem, color=color, name=label,
+        band_fill_color=color.replace("1)", "0.16)"), band_label=f"{label} SEM",
+        line_width=2.4, row=None, col=None,
     )
 
 
