@@ -34,6 +34,8 @@ The combined manifest has 136/136 resolutions and 31 passed load proofs. Resolut
 All migrated preset loaders fail closed on exact schema identity/version and content hash.
 The c723 empirical table and the upgraded broad-epsilon/calibration products additionally
 pin product identity and payload hashes.
+The retroactive delayed-SISU driver spec is likewise pinned by an external semantic hash;
+its loader rejects schema-identity drift and self-consistent changes to any historical field.
 
 ## Inventory replay
 
