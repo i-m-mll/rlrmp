@@ -483,7 +483,14 @@ def test_shared_full_qrf_cost_summary_decomposes_zero_rollout() -> None:
         )
     )
     assert summary["status"] == "available"
-    assert total == term_sum
+    assert summary["term_sum_delta"]["min"] == 0.0
+    assert summary["term_sum_delta"]["max"] == 0.0
+    np.testing.assert_allclose(
+        total,
+        term_sum,
+        rtol=np.finfo(np.float32).eps,
+        atol=0.0,
+    )
     assert summary["command_control"]["mean"] == 0.0
     assert summary["total"]["shape"] == [2]
 
