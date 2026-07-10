@@ -582,15 +582,6 @@ def _apply_command_input_to_open_loop_command(
     return result.at[start:end, axis].add(sign * amp)
 
 
-def _scale_perturbation(perturbation: Mapping[str, Any], *, factor: float) -> dict[str, Any]:
-    row = dict(perturbation)
-    row["base_amplitude"] = float(perturbation["amplitude"])
-    row["amplitude_factor"] = float(factor)
-    row["amplitude"] = float(perturbation["amplitude"]) * float(factor)
-    row["perturbation_id"] = f"{perturbation['perturbation_id']}__scale_{factor:g}"
-    return row
-
-
 def _set_perturbation_amplitude(
     perturbation: Mapping[str, Any],
     *,
@@ -602,39 +593,6 @@ def _set_perturbation_amplitude(
     row["amplitude"] = float(amplitude)
     row["perturbation_id"] = f"{perturbation['perturbation_id']}__{suffix}"
     return row
-
-
-def _unsupported_open_loop_row(
-    perturbation: Mapping[str, Any],
-    *,
-    reach: ReachCalibrationPoint | None = None,
-    level: ReachRelativeLevel | None = None,
-    target_peak_delta_x_m: float | None = None,
-    reason: str | None = None,
-) -> dict[str, Any]:
-    return {
-        "row_kind": "reach_relative_calibrated_amplitude"
-        if reach is not None
-        else "unsupported_open_loop_family",
-        "reach_label": None if reach is None else reach.label,
-        "reach_split": None if reach is None else reach.split,
-        "reach_length_m": None if reach is None else float(reach.reach_length_m),
-        "level_name": None if level is None else level.name,
-        "level_fraction_of_reach": None if level is None else float(level.fraction_of_reach),
-        "target_peak_delta_x_m": target_peak_delta_x_m,
-        "perturbation_id": perturbation["perturbation_id"],
-        "channel": perturbation["channel"],
-        "family": perturbation["family"],
-        "axis": perturbation.get("axis"),
-        "sign": perturbation.get("sign"),
-        "amplitude": perturbation["amplitude"],
-        "status": "not_applicable",
-        "reason": reason
-        or (
-            "open-loop command replay has no feedback channel, so sensory/delayed/"
-            "target perturbations do not define a physical open-loop effect size"
-        ),
-    }
 
 
 def _family_sensitivities(

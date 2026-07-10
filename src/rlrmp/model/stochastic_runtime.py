@@ -14,13 +14,11 @@ from dataclasses import dataclass
 from typing import Any
 
 import equinox as eqx
-import jax.tree as jt
 from feedbax.runtime.channel import Channel
 from equinox import field
 from equinox.nn import State
 from feedbax.runtime.graph import Component, Wire
 from feedbax.runtime.noise import Multiplicative, Normal
-from jax_cookbook import is_module
 from jaxtyping import PRNGKeyArray, PyTree
 
 
@@ -182,25 +180,6 @@ def apply_stochastic_runtime_to_model(
     if include_plant_process_force_noise and config.has_plant_process_force_noise:
         model = add_plant_process_force_noise(model, config.plant_process_force_noise_std)
     return model
-
-
-def apply_stochastic_runtime_to_ensemble(
-    models: PyTree,
-    config: StochasticRuntimeConfig,
-    *,
-    include_plant_process_force_noise: bool = True,
-) -> PyTree:
-    """Apply explicit stochastic runtime wiring across an ensemble tree."""
-
-    return jt.map(
-        lambda model: apply_stochastic_runtime_to_model(
-            model,
-            config,
-            include_plant_process_force_noise=include_plant_process_force_noise,
-        ),
-        models,
-        is_leaf=is_module,
-    )
 
 
 def add_plant_process_force_noise(

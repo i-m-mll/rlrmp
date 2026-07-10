@@ -41,7 +41,6 @@ ISSUE = "c92ebd8"
 DT = 0.01
 REACH_LENGTH_M = 0.15
 OUTPUT_TAG = "validation_selected_moderate"
-RUNS_DIR = REPO_ROOT / "results" / ISSUE / "runs"
 NOTES_DIR = REPO_ROOT / "results" / ISSUE / "notes"
 PERT_MANIFEST = NOTES_DIR / f"gru_perturbation_response_{OUTPUT_TAG}_manifest.json"
 EVAL_MANIFEST = NOTES_DIR / f"gru_evaluation_diagnostics_{OUTPUT_TAG}.json"

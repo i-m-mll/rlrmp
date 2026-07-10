@@ -1,4 +1,3 @@
-import logging
 from collections.abc import Callable, Mapping
 from functools import partial
 from typing import Any, Optional
@@ -34,8 +33,6 @@ from rlrmp.analysis.math.cs_game_card import (
     build_no_integrator_game,
 )
 from rlrmp.loss_presets import load_loss_preset
-
-logger = logging.getLogger(__name__)
 
 CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE = "full_analytical_qrf"
 CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE = "partial_net_output_force_filter"

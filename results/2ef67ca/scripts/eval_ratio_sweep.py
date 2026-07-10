@@ -37,7 +37,6 @@ from rlrmp.train.standard import build_hps
 from rlrmp.train.task_model import setup_task_model_pair
 
 RESULTS_BASE = Path(__file__).resolve().parent.parent
-WORKTREE = RESULTS_BASE.parent.parent
 MODELS_BASE = RESULTS_BASE / "models"
 
 # (index, ratio_label, ratio_value, update, model_dir)

@@ -36,7 +36,6 @@ N_ROLLOUT_TRIALS = 8
 DT = 0.01
 
 NOTES_DIR = REPO_ROOT / "results" / ISSUE / "notes"
-SCRIPTS_DIR = REPO_ROOT / "results" / ISSUE / "scripts"
 FIGURE_SPEC_ROOT = REPO_ROOT / "results" / ISSUE / "figures" / "final_calibrated_bank_profiles"
 FIGURE_BULK_ROOT = REPO_ROOT / "_artifacts" / ISSUE / "figures" / "final_calibrated_bank_profiles"
 EVAL_BULK_DIR = REPO_ROOT / "_artifacts" / ISSUE / "evaluation_diagnostics"

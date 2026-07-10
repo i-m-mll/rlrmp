@@ -1724,10 +1724,6 @@ def _feedback_offset_scales(
     }
 
 
-def _feedback_offset_scale_defaults() -> dict[str, float]:
-    return _feedback_offset_scales(config=SteadyStatePerturbationBankConfig())
-
-
 def _update_summary_markdown(path: Path, content: str) -> None:
     """Update the generated Markdown block, migrating the legacy whole-file summary."""
 

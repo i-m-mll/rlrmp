@@ -90,8 +90,6 @@ DEFAULT_RESPONSE_MAP_ROLLOUT_TRIALS = int(
         "response_map_rollout_trials"
     ]
 )
-RESULT_RUN_ROOT = REPO_ROOT / "results" / SOURCE_ISSUE_ID / "runs"
-ARTIFACT_RUN_ROOT = REPO_ROOT / "_artifacts" / SOURCE_ISSUE_ID / "runs"
 NOTE_PATH = REPO_ROOT / "results" / SOURCE_ISSUE_ID / "notes" / "gru_standard_certificates.md"
 MANIFEST_PATH = (
     REPO_ROOT / "results" / SOURCE_ISSUE_ID / "notes" / "gru_standard_certificates_manifest.json"

@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from rlrmp.benchmarks._common import run_parent_processes
-from rlrmp.model.trainable import staged_network_trainable_parts
 
 
 PREALLOC_ENV = "XLA_PYTHON_CLIENT_PREALLOCATE"
@@ -155,31 +154,6 @@ def run_worker(config: WorkerConfig) -> int:
     )
 
 
-def _timed_train(
-    *,
-    trainer: Any,
-    pair: Any,
-    model: Any,
-    seconds: float,
-    chunk_batches: int,
-    key: Any,
-    where_train: Any,
-    batch_size: int,
-) -> dict[str, Any]:
-    raise RuntimeError(
-        "local_parallel timed training used the retired Feedbax trainer path; "
-        "port this benchmark to the RLRMP native executor before running it."
-    )
-
-
-def _make_where_train() -> dict[int, Any]:
-    def where_train_fn(model: Any) -> tuple[Any, ...]:
-        net = model.nodes["net"]
-        return staged_network_trainable_parts(net)
-
-    return {0: where_train_fn}
-
-
 def _wait_for_ready(
     output_dir: Path,
     n_workers: int,
@@ -294,14 +268,6 @@ def _aggregate(
         "max_total_rss_mib": max(total_rss) if total_rss else None,
         "max_worker_rss_mib": max(max_worker_rss) if max_worker_rss else None,
     }
-
-
-def _strip_model(payload: dict[str, Any]) -> dict[str, Any]:
-    return {k: v for k, v in payload.items() if k != "model"}
-
-
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.write_text(_json(payload), encoding="utf-8")
 
 
 def _json(payload: Any) -> str:

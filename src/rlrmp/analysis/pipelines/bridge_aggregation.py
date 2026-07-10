@@ -53,12 +53,6 @@ class BridgeManifestValidationError(ValueError):
     """Raised when a bridge manifest is missing required aggregation fields."""
 
 
-def read_bridge_manifests(paths: Iterable[Path]) -> tuple[BridgeRunManifest, ...]:
-    """Read one or more bridge manifest JSON files."""
-
-    return tuple(read_bridge_manifest(Path(path)) for path in paths)
-
-
 def validate_bridge_manifest(
     manifest: BridgeRunManifest,
     *,
@@ -292,7 +286,6 @@ __all__ = [
     "BridgeManifestValidationError",
     "bridge_manifest_row",
     "bridge_markdown_columns",
-    "read_bridge_manifests",
     "read_bridge_summary",
     "render_bridge_summary_markdown",
     "summarize_bridge_manifests",

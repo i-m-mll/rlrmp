@@ -32,10 +32,7 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
     repeat_single_validation_trial,
     resolve_run_inputs,
 )
-from rlrmp.analysis.pipelines._selected_eval_rollouts import (
-    SelectedEvalRolloutProduct,
-    initial_effector_position as rollout_initial_effector_position,
-)
+from rlrmp.analysis.pipelines._selected_eval_rollouts import SelectedEvalRolloutProduct
 from rlrmp.model.feedback_descriptors import (
     DESCRIPTOR_PAYLOAD_KEY,
     resolve_controller_feedback_view_from_gru_input,
@@ -977,10 +974,6 @@ def _jacobian_sample_times(
         if entry not in times:
             times.append(entry)
     return times
-
-
-def _initial_effector_position(trial_specs: Any) -> jnp.ndarray:
-    return rollout_initial_effector_position(trial_specs)
 
 
 def _select_replicate_tree(tree: Any, replicate: int, n_replicates: int) -> Any:

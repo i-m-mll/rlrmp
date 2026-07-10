@@ -12,7 +12,6 @@ import csv
 import importlib.util
 import json
 import os
-import re
 import sys
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
@@ -22,13 +21,6 @@ from typing import Any, Callable
 # ---------------------------------------------------------------------------
 # Auto-generated section helpers
 # ---------------------------------------------------------------------------
-
-_MARKER_OPEN_PATTERN = r"<!-- AUTO-GENERATED: {name} -->"
-_MARKER_CLOSE_PATTERN = r"<!-- /AUTO-GENERATED -->"
-
-_MARKER_OPEN_RE = re.compile(r"<!-- AUTO-GENERATED: (\S+) -->")
-_MARKER_CLOSE_LITERAL = "<!-- /AUTO-GENERATED -->"
-
 
 def write_csv_rows(
     path: Path,

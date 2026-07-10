@@ -14,10 +14,6 @@ import sys
 import types
 from typing import Any, Mapping
 
-import equinox as eqx
-import jax.numpy as jnp
-
-
 def cs_nominal_gru_model_optimizer(spec_payload: Mapping[str, Any]) -> dict[str, Any]:
     """Return legacy model/optimizer templates for ``cs_nominal_gru`` checkpoints."""
 
@@ -160,20 +156,3 @@ def _target_n_batches() -> int:
         return 12500
     payload = json.loads(path.read_text(encoding="utf-8"))
     return int(payload.get("target_n_train_batches", 12500))
-
-
-def leaf_summary(value: Any) -> dict[str, Any]:
-    """Return a compact structural summary for local verification output."""
-
-    arrays = []
-    for path, leaf in __import__("jax").tree.leaves_with_path(value):
-        if not eqx.is_array(leaf):
-            continue
-        arrays.append(
-            {
-                "path": "/" + "/".join(str(getattr(k, "name", getattr(k, "idx", k))) for k in path),
-                "shape": tuple(int(dim) for dim in jnp.asarray(leaf).shape),
-                "dtype": str(jnp.asarray(leaf).dtype),
-            }
-        )
-    return {"array_count": len(arrays), "arrays": arrays[:8]}
