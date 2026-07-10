@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any, Literal
 
 import equinox as eqx
-import jax.tree as jt
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
@@ -35,7 +34,6 @@ from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     validation_objective_history,
     write_checkpoint_selection_manifest_from_legacy_payload,
 )
-from rlrmp.analysis.pipelines._selected_eval_rollouts import SelectedEvalRolloutProduct
 from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import RolloutEvaluation
 from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     apply_perturbation_to_trial_specs,
@@ -60,7 +58,11 @@ from rlrmp.paths import (
     mkdir_p,
     resolve_run_artifact_path,
 )
-from rlrmp.io import update_marked_section
+from rlrmp.eval.feedback_ablation import (
+    DetailedRolloutEvaluation,
+    evaluate_model_on_trial_specs,
+)
+from rlrmp.io import update_marked_section, write_json
 from rlrmp.runtime.run_spec_access import require_run_seed
 from rlrmp.runtime.run_specs import resolve_run_record
 
@@ -353,19 +355,6 @@ class ObservationAblationSpec:
             "checkpoint_selection_role": "selected_checkpoint_per_replicate",
             "analytical_metrics_role": "audit_only_not_used_for_checkpoint_selection",
         }
-
-
-@dataclass(frozen=True)
-class DetailedRolloutEvaluation:
-    """Rollout arrays needed for feedback-ablation scoring.
-
-    Array shapes follow ``[replicate, trial, time, feature]`` unless stated
-    otherwise.
-    """
-
-    rollout: Any
-    feedback: Any
-    mechanics_vector: Any
 
 
 class ObservationOverride(Component):
@@ -1184,11 +1173,8 @@ def materialize_gru_feedback_ablation(
         repo_root=repo_root,
     )
     mkdir_p(detail_manifest_path.parent)
-    detail_manifest_path.write_text(
-        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    output_path.write_text(json.dumps(tracked_manifest, indent=2, sort_keys=True) + "\n")
+    write_json(detail_manifest_path, manifest, indent=2)
+    write_json(output_path, tracked_manifest, indent=2)
     update_marked_section(
         note_path,
         "gru_feedback_ablation",
@@ -1552,7 +1538,7 @@ def evaluate_run_feedback_ablation(
     bank = bank or default_cs_perturbation_bank()
     perturbations = {str(row["perturbation_id"]): row for row in bank["perturbations"]}
     evaluation_bins = evaluation_bins or selected_feedback_ablation_bins_for_bank(bank)
-    nominal = _evaluate_model_on_trial_specs(
+    nominal = evaluate_model_on_trial_specs(
         model=model,
         task=pair.task,
         trial_specs=base_trial_specs,
@@ -1587,7 +1573,7 @@ def evaluate_run_feedback_ablation(
         if perturbation_id is None and bin_model is model and trial_specs is base_trial_specs:
             baseline = nominal
         else:
-            baseline = _evaluate_model_on_trial_specs(
+            baseline = evaluate_model_on_trial_specs(
                 model=bin_model,
                 task=pair.task,
                 trial_specs=trial_specs,
@@ -1642,7 +1628,7 @@ def evaluate_run_feedback_ablation(
                     }
                 )
                 continue
-            ablated = _evaluate_model_on_trial_specs(
+            ablated = evaluate_model_on_trial_specs(
                 model=ablated_model,
                 task=pair.task,
                 trial_specs=ablated_trial_specs,
@@ -1836,7 +1822,7 @@ def _score_feedback_checkpoint_batch(
 ) -> dict[str, Any]:
     """Score one checkpoint on normal-controller feedback perturbation bins."""
 
-    baseline = _evaluate_model_on_trial_specs(
+    baseline = evaluate_model_on_trial_specs(
         model=model,
         task=task,
         trial_specs=trial_specs,
@@ -1873,7 +1859,7 @@ def _score_feedback_checkpoint_batch(
                 }
             )
             continue
-        perturbed = _evaluate_model_on_trial_specs(
+        perturbed = evaluate_model_on_trial_specs(
             model=adapter.model if adapter.model is not None else model,
             task=task,
             trial_specs=adapter.trial_specs,
@@ -2826,67 +2812,6 @@ def _index_value(normalized: Mapping[str, Any], key: str) -> float | None:
     return float(value)
 
 
-def _evaluate_model_on_trial_specs(
-    *,
-    model: Any,
-    task: Any,
-    trial_specs: Any,
-    n_replicates: int,
-    seed: int,
-) -> DetailedRolloutEvaluation:
-    model_arrays, model_other = eqx.partition(
-        model,
-        lambda leaf: _is_replicate_array(leaf, n_replicates),
-    )
-
-    def eval_one_replicate(model_array_leaves: Any, key: Any) -> Any:
-        replicate_model = eqx.combine(model_array_leaves, model_other)
-        return task.eval_trials(
-            replicate_model,
-            trial_specs,
-            jr.split(key, _infer_batch_size(trial_specs)),
-        )
-
-    if _has_replicate_specific_trial_inputs(trial_specs, n_replicates):
-        keys = jr.split(jr.PRNGKey(seed), n_replicates)
-        states_by_replicate = []
-        for replicate in range(n_replicates):
-            replicate_model = eqx.combine(
-                _select_replicate_tree(model_arrays, replicate, n_replicates),
-                model_other,
-            )
-            replicate_trial_specs = _select_replicate_trial_inputs(
-                trial_specs,
-                replicate,
-                n_replicates,
-            )
-            states_by_replicate.append(
-                task.eval_trials(
-                    replicate_model,
-                    replicate_trial_specs,
-                    jr.split(keys[replicate], _infer_batch_size(replicate_trial_specs)),
-                )
-            )
-        states = jt.map(lambda *xs: jnp.stack(xs, axis=0), *states_by_replicate)
-    else:
-        states = eqx.filter_vmap(eval_one_replicate, in_axes=(0, 0))(
-            model_arrays,
-            jr.split(jr.PRNGKey(seed), n_replicates),
-        )
-    rollout = SelectedEvalRolloutProduct.from_states(
-        states,
-        trial_specs,
-        dt=0.01,
-        include_mechanics_vector=True,
-        include_feedback=True,
-    )
-    return DetailedRolloutEvaluation(
-        rollout=rollout,
-        feedback=rollout.feedback,
-        mechanics_vector=rollout.mechanics_vector,
-    )
-
-
 def _not_available_rows(
     *,
     bin_id: str,
@@ -2914,66 +2839,6 @@ def _add_trial_input(trial_specs: Any, key: str, value: Any) -> Any:
         trial_specs,
         {**trial_specs.inputs, key: value},
     )
-
-
-def _has_replicate_specific_trial_inputs(trial_specs: Any, n_replicates: int) -> bool:
-    return any(
-        key.startswith(f"{OBSERVATION_ABLATION_INPUT_PREFIX}:")
-        and getattr(value, "shape", ())[:1] == (n_replicates,)
-        for key, value in trial_specs.inputs.items()
-    )
-
-
-def _select_replicate_trial_inputs(trial_specs: Any, replicate: int, n_replicates: int) -> Any:
-    inputs = {}
-    for key, value in trial_specs.inputs.items():
-        if key.startswith(f"{OBSERVATION_ABLATION_INPUT_PREFIX}:") and getattr(value, "shape", ())[
-            :1
-        ] == (n_replicates,):
-            inputs[key] = value[replicate]
-        else:
-            inputs[key] = value
-    return eqx.tree_at(lambda ts: ts.inputs, trial_specs, inputs)
-
-
-def _select_replicate_tree(tree: Any, replicate: int, n_replicates: int) -> Any:
-    return jt.map(
-        lambda leaf: leaf[replicate] if _is_replicate_array(leaf, n_replicates) else leaf,
-        tree,
-    )
-
-
-def _infer_batch_size(trial_specs: Any) -> int:
-    for value in trial_specs.inputs.values():
-        shape = getattr(value, "shape", None)
-        if shape is not None and len(shape) >= 1:
-            return int(shape[0])
-        pos = getattr(value, "pos", None)
-        if pos is not None:
-            return int(pos.shape[0])
-    for value in trial_specs.inits.values():
-        shape = getattr(value, "shape", None)
-        if shape is not None and len(shape) >= 1:
-            return int(shape[0])
-        pos = getattr(value, "pos", None)
-        if pos is not None:
-            return int(pos.shape[0])
-    raise ValueError("could not infer trial batch size")
-
-
-def _initial_effector_position(trial_specs: Any) -> jnp.ndarray:
-    for init_state in trial_specs.inits.values():
-        position = getattr(init_state, "pos", None)
-        if position is not None:
-            return position
-        shape = getattr(init_state, "shape", None)
-        if shape is not None and len(shape) >= 1 and shape[-1] >= 2:
-            return jnp.asarray(init_state)[..., 0:2]
-    raise ValueError("trial spec does not include an effector position initial state")
-
-
-def _is_replicate_array(leaf: Any, n_replicates: int) -> bool:
-    return eqx.is_array(leaf) and leaf.ndim >= 1 and leaf.shape[0] == n_replicates
 
 
 def _endpoint_error(evaluation: RolloutEvaluation) -> np.ndarray:
