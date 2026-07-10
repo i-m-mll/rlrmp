@@ -18,9 +18,11 @@ from feedbax.runtime.batch import BatchInfo
 from jax_cookbook import load_with_hyperparameters
 
 from rlrmp.train import cs_nominal_gru as nominal
+from rlrmp.analysis.data_products import load_analysis_parameter_preset
 from rlrmp.io import update_marked_section, write_compact_json, write_csv_rows
 from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+    HISTORICAL_020A65B_PGD_RADIUS_15CM as CAP_RADIUS_15CM,
     _broad_epsilon_pgd_trust_radius,
     _ensure_broad_epsilon_input,
     _epsilon_time_mask,
@@ -29,7 +31,6 @@ from rlrmp.train.cs_perturbation_training import (
 from rlrmp.train.task_model import setup_task_model_pair
 
 
-CAP_RADIUS_15CM = 0.004545500088363065
 CAP_SOURCE = "ofb_6d_no_integrator_gamma_1p4_rollout_radius"
 
 
@@ -55,23 +56,21 @@ def soft_pgd_config(
 ) -> TreeNamespace:
     """Return the canonical moderate soft-energy PGD configuration."""
 
-    return TreeNamespace(
-        enabled=True,
-        level="moderate",
-        budget_scale=1.0,
-        reach_length_scaling=False,
-        objective={
-            "kind": BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
-            "lambda": float(lambda_value),
-        },
-        safety_cap={
-            "l2_radius_15cm": CAP_RADIUS_15CM,
-            "source": {"key": CAP_SOURCE},
-        },
-        n_steps=int(n_steps),
-        step_size_fraction=float(step_size_fraction),
-        epsilon_dim=6,
-    )
+    parameters = dict(load_analysis_parameter_preset("soft_lambda_pgd_contract").parameters)
+    parameters["objective"] = {
+        **parameters["objective"],
+        "kind": BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+        "lambda": float(lambda_value),
+    }
+    parameters["safety_cap"] = {
+        "l2_radius_15cm": CAP_RADIUS_15CM,
+        **parameters["safety_cap"],
+    }
+    epsilon_dim = parameters.pop("epsilon_dim")
+    parameters["n_steps"] = int(n_steps)
+    parameters["step_size_fraction"] = float(step_size_fraction)
+    parameters["epsilon_dim"] = epsilon_dim
+    return TreeNamespace(**parameters)
 
 
 def load_frozen_batch(

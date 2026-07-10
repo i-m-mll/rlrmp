@@ -11,6 +11,7 @@ import pytest
 from rlrmp.analysis.soft_lambda import (
     materialize_write_print,
     run_soft_lambda_materializer,
+    soft_pgd_config,
 )
 from rlrmp.io import load_python_module, write_csv_rows
 
@@ -88,6 +89,23 @@ def test_write_csv_rows_projects_generator_with_stable_schema(tmp_path: Path) ->
     assert path.read_text(encoding="utf-8") == "a,b\n0,1\n1,2\n"
     with pytest.raises(KeyError, match="missing"):
         write_csv_rows(tmp_path / "bad.csv", [{"present": 1}], fieldnames=("missing",))
+
+
+def test_soft_pgd_config_composes_registered_contract_with_runtime_values() -> None:
+    config = soft_pgd_config(lambda_value=3.5, n_steps=7, step_size_fraction=0.125)
+
+    assert config.enabled is True
+    assert config.level == "moderate"
+    assert config.budget_scale == 1.0
+    assert config.reach_length_scaling is False
+    assert config.objective == {"kind": "soft_energy", "lambda": 3.5}
+    assert config.safety_cap == {
+        "l2_radius_15cm": 0.004545500088363065,
+        "source": {"key": "ofb_6d_no_integrator_gamma_1p4_rollout_radius"},
+    }
+    assert config.n_steps == 7
+    assert config.step_size_fraction == 0.125
+    assert config.epsilon_dim == 6
 
 
 def test_materialize_drivers_materialize_once_and_preserve_order(

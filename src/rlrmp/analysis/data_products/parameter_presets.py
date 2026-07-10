@@ -117,6 +117,7 @@ def _register_defaults() -> None:
         "robust_bellman",
         "sisu_perturbation_comparison",
         "sisu_spectrum_diagnostics",
+        "soft_lambda_pgd_contract",
     ):
         register_analysis_parameter_preset(
             preset_id=preset_id,

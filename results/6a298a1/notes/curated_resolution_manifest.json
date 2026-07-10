@@ -7,11 +7,26 @@
         "src/rlrmp/train/"
       ],
       "exclude_keys": [
-        "src/rlrmp/train/minimax.py::build_minimax_training_run_spec::spec_flow"
+        "src/rlrmp/train/minimax.py::build_minimax_training_run_spec::spec_flow",
+        "src/rlrmp/train/standard.py::_loss_cfg_combined::default_bundle",
+        "src/rlrmp/train/standard.py::_loss_cfg_default::default_bundle",
+        "src/rlrmp/train/standard.py::_loss_cfg_running_cost::default_bundle",
+        "src/rlrmp/train/standard.py::_loss_cfg_softmin::default_bundle"
       ],
       "route": "curated_allowlist",
       "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
       "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    {
+      "keys": [
+        "src/rlrmp/train/standard.py::_loss_cfg_combined::default_bundle",
+        "src/rlrmp/train/standard.py::_loss_cfg_default::default_bundle",
+        "src/rlrmp/train/standard.py::_loss_cfg_running_cost::default_bundle",
+        "src/rlrmp/train/standard.py::_loss_cfg_softmin::default_bundle"
+      ],
+      "route": "integrated_sibling_resolution",
+      "destination": "rlrmp commit 4bbdf319",
+      "rationale": "The 8d69758 consolidation split the monolithic loss-default bundles into small named loss-config builders. Historical values remain in standard.py, while the four scanner findings disappeared; the curated keys are removed as stale only after live-tree verification."
     },
     {
       "keys": [

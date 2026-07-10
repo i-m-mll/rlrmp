@@ -46,7 +46,7 @@ DELAYED_SISU_DRIVER_GOLDEN = {
 def test_all_registered_analysis_presets_load_with_pinned_hashes() -> None:
     registrations = registered_analysis_parameter_presets()
 
-    assert len(registrations) == 17
+    assert len(registrations) == 18
     for preset_id in registrations:
         preset = load_analysis_parameter_preset(preset_id)
         assert preset.preset_id == preset_id
@@ -219,16 +219,25 @@ def test_analysis_resolution_manifest_covers_exact_partition() -> None:
     assert sum("load_proof" in resolution for resolution in payload["resolutions"].values()) >= 6
 
 
+@pytest.mark.parametrize(
+    ("preset_id", "parameter_key"),
+    (
+        ("adversary_equivalence", "open_loop_restarts"),
+        ("soft_lambda_pgd_contract", "budget_scale"),
+    ),
+)
 def test_parameter_preset_tamper_fails_closed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    preset_id: str,
+    parameter_key: str,
 ) -> None:
     preset_dir = tmp_path / "analysis_presets"
     preset_dir.mkdir()
-    source = REPO_ROOT / "src/rlrmp/config/analysis_presets/adversary_equivalence.json"
+    source = REPO_ROOT / f"src/rlrmp/config/analysis_presets/{preset_id}.json"
     payload = json.loads(source.read_text(encoding="utf-8"))
-    payload["parameters"]["open_loop_restarts"] += 1
-    (preset_dir / "adversary_equivalence.json").write_text(
+    payload["parameters"][parameter_key] = "tampered"
+    (preset_dir / f"{preset_id}.json").write_text(
         json.dumps(payload),
         encoding="utf-8",
     )
@@ -236,6 +245,6 @@ def test_parameter_preset_tamper_fails_closed(
     parameter_presets.load_analysis_parameter_preset.cache_clear()
 
     with pytest.raises(ValueError, match="stale content hash"):
-        parameter_presets.load_analysis_parameter_preset("adversary_equivalence")
+        parameter_presets.load_analysis_parameter_preset(preset_id)
 
     parameter_presets.load_analysis_parameter_preset.cache_clear()
