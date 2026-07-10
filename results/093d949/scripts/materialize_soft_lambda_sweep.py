@@ -6,10 +6,8 @@ from rlrmp.analysis.soft_lambda import load_frozen_batch as _load_frozen_batch
 from rlrmp.analysis.soft_lambda import soft_pgd_config as soft_pgd_config
 
 import argparse
-import csv
 import json
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import equinox as eqx
@@ -20,7 +18,7 @@ import jax.tree as jt
 import numpy as np
 from feedbax.config.namespace import TreeNamespace
 
-from rlrmp.io import update_marked_section
+from rlrmp.io import update_marked_section, write_csv_rows
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.train import cs_nominal_gru as nominal
 from rlrmp.train.cs_perturbation_training import (
@@ -33,6 +31,7 @@ from rlrmp.train.cs_perturbation_training import (
 
 RUN_IDS = ("open_loop_small", "open_loop_moderate", "open_loop_stress")
 SWEEP_MULTIPLIERS = (0.25, 0.5, 1.0, 2.0, 4.0)
+CSV_FIELDS = ('run_id', 'lambda', 'multiplier', 'selected_epsilon_norm_mean', 'selected_epsilon_norm_max', 'radius_mean', 'radius_max', 'selected_norm_cap_ratio_mean', 'selected_norm_cap_ratio_max', 'cap_bound_fraction', 'raw_loss_gain', 'energy_mean', 'energy_penalty', 'penalized_gain_over_zero', 'finite_status')
 CAP_RADIUS_15CM = 0.004545500088363065
 CAP_SOURCE = "ofb_6d_no_integrator_gamma_1p4_rollout_radius"
 
@@ -73,7 +72,7 @@ def main() -> int:
     mkdir_p(output_csv.parent)
     mkdir_p(output_md.parent)
     output_json.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
-    write_sweep_csv(output_csv, payload)
+    write_csv_rows(output_csv, _sweep_csv_rows(payload), fieldnames=CSV_FIELDS)
     update_marked_section(output_md, "soft_lambda_sweep", render_markdown(payload))
     print(json.dumps({"json": str(output_json), "csv": str(output_csv), "markdown": str(output_md)}, indent=2))
     return 0
@@ -152,8 +151,6 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
 
 def load_frozen_batch(args: argparse.Namespace, run_id: str) -> FrozenBatch:
     return _load_frozen_batch(args, run_id, repo_root=REPO_ROOT)
-
-
 
 
 def select_replicate_model(model: Any, hps: TreeNamespace, replicate_index: int) -> Any:
@@ -542,30 +539,12 @@ def plain_json(value: Any) -> Any:
     return array.tolist()
 
 
-def write_sweep_csv(path: Path, payload: dict[str, Any]) -> None:
-    fieldnames = [
-        "run_id",
-        "lambda",
-        "multiplier",
-        "selected_epsilon_norm_mean",
-        "selected_epsilon_norm_max",
-        "radius_mean",
-        "radius_max",
-        "selected_norm_cap_ratio_mean",
-        "selected_norm_cap_ratio_max",
-        "cap_bound_fraction",
-        "raw_loss_gain",
-        "energy_mean",
-        "energy_penalty",
-        "penalized_gain_over_zero",
-        "finite_status",
+def _sweep_csv_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {"run_id": row["run_id"], **{key: sweep[key] for key in CSV_FIELDS[1:]}}
+        for row in payload["rows"]
+        for sweep in row["sweep"]
     ]
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
-        writer.writeheader()
-        for row in payload["rows"]:
-            for sweep in row["sweep"]:
-                writer.writerow({"run_id": row["run_id"], **{key: sweep[key] for key in fieldnames[1:]}})
 
 
 def render_markdown(payload: dict[str, Any]) -> str:

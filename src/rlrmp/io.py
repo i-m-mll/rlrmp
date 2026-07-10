@@ -14,6 +14,7 @@ import json
 import os
 import re
 import sys
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Callable
 
@@ -31,12 +32,17 @@ _MARKER_CLOSE_LITERAL = "<!-- /AUTO-GENERATED -->"
 
 def write_csv_rows(
     path: Path,
-    rows: list[dict[str, Any]],
+    rows: Iterable[Mapping[str, Any]],
     *,
-    fieldnames: list[str] | tuple[str, ...] | None = None,
+    fieldnames: Sequence[str] | None = None,
 ) -> None:
-    """Write mappings to CSV using an explicit or first-row column contract."""
+    """Write mappings to CSV using an explicit or first-row column contract.
 
+    The explicit field list is also a projection policy: additional mapping
+    keys are ignored and missing declared keys fail closed with ``KeyError``.
+    """
+
+    rows = list(rows)
     columns = list(fieldnames if fieldnames is not None else (rows[0].keys() if rows else ()))
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as handle:
@@ -93,12 +99,15 @@ def compact_json_dumps(
 ) -> str:
     """Return stable compact machine JSON with one trailing newline."""
 
-    return json.dumps(
-        payload,
-        default=default,
-        separators=(",", ":"),
-        sort_keys=True,
-    ) + "\n"
+    return (
+        json.dumps(
+            payload,
+            default=default,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        + "\n"
+    )
 
 
 def write_compact_json(
@@ -190,9 +199,7 @@ def update_marked_section(
         pair with its own close marker.
     """
     if " " in marker_name:
-        raise ValueError(
-            f"marker_name must not contain spaces; got {marker_name!r}"
-        )
+        raise ValueError(f"marker_name must not contain spaces; got {marker_name!r}")
 
     block = _make_block(marker_name, content)
 

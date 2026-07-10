@@ -1,12 +1,15 @@
 """Materialize direct-epsilon soft-lambda redo rows for 7180984."""
 
 from __future__ import annotations
-from rlrmp.analysis.soft_lambda import base_parser
+from rlrmp.analysis.soft_lambda import (
+    base_parser,
+    render_soft_lambda_redo_markdown,
+    run_soft_lambda_materializer,
+)
 from rlrmp.analysis.soft_lambda import load_frozen_batch as _load_frozen_batch
 from rlrmp.analysis.soft_lambda import soft_pgd_config as soft_pgd_config
 
 import argparse
-import csv
 import json
 import sys
 from dataclasses import dataclass
@@ -20,7 +23,6 @@ import jax.tree as jt
 import numpy as np
 from feedbax.config.namespace import TreeNamespace
 
-from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.train import cs_nominal_gru as nominal
 from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
@@ -33,6 +35,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 RUN_IDS = ("open_loop_small", "open_loop_moderate", "open_loop_stress")
 BETA_VALUES = (0.95, 1.05, 1.2, 1.4, 1.8)
 HVP_SOURCE_JSON = "results/06a4dc8/canonical_soft_lambda_hvp.json"
+CSV_FIELDS = ('run_id', 'beta', 'beta_role', 'lambda', 'lambda_star_summary', 'lambda_star_summary_value', 'finite_status', 'selected_nonzero', 'classification', 'penalized_gain_over_zero', 'task_loss_gain', 'energy_mean', 'energy_max', 'energy_penalty', 'penalty_minus_task_gain', 'penalty_over_task_gain_abs', 'selected_epsilon_norm_mean', 'selected_epsilon_norm_max', 'old_cap_ratio_mean_sidecar', 'old_cap_ratio_max_sidecar', 'old_cap_boundary_fraction_sidecar', 'old_cap_used_as_criterion')
 PRIMARY_LAMBDA_SUMMARY = "lambda_star_p90"
 CAP_RADIUS_15CM = 0.004545500088363065
 CAP_SOURCE = "ofb_6d_no_integrator_gamma_1p4_rollout_radius"
@@ -54,39 +57,44 @@ class FrozenBatch:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = base_parser(description='Evaluate frozen c92 no-PGD direct-epsilon optima at HVP/Lanczos p90 soft-lambda beta scales.', experiment='c92ebd8', issue='7180984', batch_size=2, replicate_index=0)
-    parser.add_argument('--run-ids', nargs='+', default=list(RUN_IDS))
-    parser.add_argument('--hvp-source-json', default=HVP_SOURCE_JSON)
-    parser.add_argument('--betas', type=float, nargs='+', default=list(BETA_VALUES))
-    parser.add_argument('--pgd-steps', type=int, default=8)
-    parser.add_argument('--pgd-step-size-fraction', type=float, default=0.25)
-    parser.add_argument('--output-json', default='results/7180984/direct_epsilon_soft_lambda_redo.json')
-    parser.add_argument('--output-csv', default='results/7180984/direct_epsilon_soft_lambda_redo.csv')
-    parser.add_argument('--output-md', default='results/7180984/notes/direct_epsilon_soft_lambda_redo.md')
+    parser = base_parser(
+        description="Evaluate frozen c92 no-PGD direct-epsilon optima at HVP/Lanczos p90 soft-lambda beta scales.",
+        experiment="c92ebd8",
+        issue="7180984",
+        batch_size=2,
+        replicate_index=0,
+    )
+    parser.add_argument("--run-ids", nargs="+", default=list(RUN_IDS))
+    parser.add_argument("--hvp-source-json", default=HVP_SOURCE_JSON)
+    parser.add_argument("--betas", type=float, nargs="+", default=list(BETA_VALUES))
+    parser.add_argument("--pgd-steps", type=int, default=8)
+    parser.add_argument("--pgd-step-size-fraction", type=float, default=0.25)
+    parser.add_argument(
+        "--output-json", default="results/7180984/direct_epsilon_soft_lambda_redo.json"
+    )
+    parser.add_argument(
+        "--output-csv", default="results/7180984/direct_epsilon_soft_lambda_redo.csv"
+    )
+    parser.add_argument(
+        "--output-md", default="results/7180984/notes/direct_epsilon_soft_lambda_redo.md"
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    payload = materialize(args)
-    output_json = REPO_ROOT / args.output_json
-    output_csv = REPO_ROOT / args.output_csv
-    output_md = REPO_ROOT / args.output_md
-    write_compact_json(output_json, payload)
-    write_sweep_csv(output_csv, payload)
-    update_marked_section(output_md, "direct_epsilon_soft_lambda_redo", render_markdown(payload))
-    print(
-        json.dumps(
-            {
-                "json": str(output_json),
-                "csv": str(output_csv),
-                "markdown": str(output_md),
-                "hvp_source_json": str((REPO_ROOT / args.hvp_source_json).resolve()),
-            },
-            indent=2,
-        )
+    return run_soft_lambda_materializer(
+        args=args,
+        repo_root=REPO_ROOT,
+        materialize=materialize,
+        csv_rows=_sweep_csv_rows,
+        csv_fields=CSV_FIELDS,
+        render_markdown=render_markdown,
+        marker="direct_epsilon_soft_lambda_redo",
+        extra_summary=lambda _payload: {
+            "hvp_source_json": str((REPO_ROOT / args.hvp_source_json).resolve()),
+        },
     )
-    return 0
 
 
 def materialize(args: argparse.Namespace) -> dict[str, Any]:
@@ -232,8 +240,6 @@ def beta_mapping_from_source(
 
 def load_frozen_batch(args: argparse.Namespace, run_id: str) -> FrozenBatch:
     return _load_frozen_batch(args, run_id, repo_root=REPO_ROOT)
-
-
 
 
 def select_replicate_model(model: Any, hps: TreeNamespace, replicate_index: int) -> Any:
@@ -416,145 +422,56 @@ def classification_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
     return dict(sorted(counts.items()))
 
 
-def write_sweep_csv(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = [
-        "run_id",
-        "beta",
-        "beta_role",
-        "lambda",
-        "lambda_star_summary",
-        "lambda_star_summary_value",
-        "finite_status",
-        "selected_nonzero",
-        "classification",
-        "penalized_gain_over_zero",
-        "task_loss_gain",
-        "energy_mean",
-        "energy_max",
-        "energy_penalty",
-        "penalty_minus_task_gain",
-        "penalty_over_task_gain_abs",
-        "selected_epsilon_norm_mean",
-        "selected_epsilon_norm_max",
-        "old_cap_ratio_mean_sidecar",
-        "old_cap_ratio_max_sidecar",
-        "old_cap_boundary_fraction_sidecar",
-        "old_cap_used_as_criterion",
+def _sweep_csv_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {"run_id": row["run_id"], **{key: sweep[key] for key in CSV_FIELDS[1:]}}
+        for row in payload["rows"]
+        for sweep in row["sweep"]
     ]
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
-        writer.writeheader()
-        for row in payload["rows"]:
-            for sweep in row["sweep"]:
-                writer.writerow(
-                    {
-                        "run_id": row["run_id"],
-                        **{key: sweep[key] for key in fieldnames[1:]},
-                    }
-                )
 
 
 def render_markdown(payload: dict[str, Any]) -> str:
-    lines = [
-        "# Direct-epsilon soft-lambda redo",
-        "",
-        f"Issue: `{payload['issue']}`. Source no-PGD substrates: `c92ebd8`.",
-        "",
-        (
-            "No controller weights were updated. This deterministic local materializer "
-            "loads frozen c92 no-PGD substrates and evaluates direct-epsilon optima "
-            "at beta-scaled lambda values from the corrected HVP/Lanczos p90 source."
+    return render_soft_lambda_redo_markdown(
+        payload,
+        title="Direct-epsilon soft-lambda redo",
+        introduction=(
+            "No controller weights were updated. This deterministic local materializer loads "
+            "frozen c92 no-PGD substrates and evaluates direct-epsilon optima at beta-scaled "
+            "lambda values from the corrected HVP/Lanczos p90 source."
         ),
-        "",
-        "## Source contract",
-        "",
-        (
-            f"HVP source: `{payload['hvp_source']['path']}` "
-            f"(`{payload['hvp_source']['schema_version']}`). Primary scale: "
-            f"`{payload['hvp_source']['primary_continuity_summary']}`."
-        ),
-        "",
-        (
-            "Beta mapping: `lambda(beta) = beta^2 * substrate_p90(lambda_star_i)`. "
-            "Beta `0.95` is diagnostic only. Cap/interiority is not used as a "
-            "criterion; old-cap ratios below are sidecars only."
-        ),
-        "",
-        "## HVP/p90 beta mapping",
-        "",
-        "| substrate | beta | role | lambda_star p90 | lambda | source |",
-        "|---|---:|---|---:|---:|---|",
-    ]
-    for row in payload["rows"]:
-        for mapping in row["beta_mapping"]:
-            lines.append(
-                f"| `{row['run_id']}` | {mapping['beta']:.3g} | {mapping['role']} | "
-                f"{mapping['lambda_star_summary_value']:.6g} | {mapping['lambda']:.6g} | "
-                f"{mapping['lambda_source']} |"
-            )
-    lines.extend(
-        [
-            "",
-            "## Direct-epsilon objective rows",
-            "",
+        objective_title="Direct-epsilon objective rows",
+        objective_header=(
             "| substrate | beta | finite | selected | class | penalized gain | task gain | "
-            "energy | penalty | norm | old-cap ratio |",
-            "|---|---:|---|---:|---|---:|---:|---:|---:|---:|---:|",
-        ]
-    )
-    for row in payload["rows"]:
-        for sweep in row["sweep"]:
-            lines.append(
-                f"| `{row['run_id']}` | {sweep['beta']:.3g} | {sweep['finite_status']} | "
-                f"{str(sweep['selected_nonzero']).lower()} | `{sweep['classification']}` | "
-                f"{sweep['penalized_gain_over_zero']:.6g} | {sweep['task_loss_gain']:.6g} | "
-                f"{sweep['energy_mean']:.6g} | {sweep['energy_penalty']:.6g} | "
-                f"{sweep['selected_epsilon_norm_max']:.6g} | "
-                f"{sweep['old_cap_ratio_max_sidecar']:.6g} |"
-            )
-    lines.extend(
-        [
-            "",
-            "## Classification counts",
-            "",
-            "| substrate | counts |",
-            "|---|---|",
-        ]
-    )
-    for row in payload["rows"]:
-        counts = ", ".join(
-            f"`{label}`: {count}" for label, count in row["objective_classification_counts"].items()
-        )
-        lines.append(f"| `{row['run_id']}` | {counts} |")
-    command = " ".join(
-        [
-            "PYTHONPATH=src",
-            "uv run --no-sync python",
-            "results/7180984/scripts/materialize_direct_epsilon_soft_lambda_redo.py",
-        ]
-    )
-    lines.extend(
-        [
-            "",
+            "energy | penalty | norm | old-cap ratio |"
+        ),
+        objective_alignment="|---|---:|---|---:|---|---:|---:|---:|---:|---:|---:|",
+        objective_rows=(
+            f"| `{row['run_id']}` | {sweep['beta']:.3g} | {sweep['finite_status']} | "
+            f"{str(sweep['selected_nonzero']).lower()} | `{sweep['classification']}` | "
+            f"{sweep['penalized_gain_over_zero']:.6g} | {sweep['task_loss_gain']:.6g} | "
+            f"{sweep['energy_mean']:.6g} | {sweep['energy_penalty']:.6g} | "
+            f"{sweep['selected_epsilon_norm_max']:.6g} | "
+            f"{sweep['old_cap_ratio_max_sidecar']:.6g} |"
+            for row in payload["rows"]
+            for sweep in row["sweep"]
+        ),
+        footer=(
             "## Deterministic local audit command",
             "",
-            f"`{command}`",
+            "`PYTHONPATH=src uv run --no-sync python "
+            "results/7180984/scripts/materialize_direct_epsilon_soft_lambda_redo.py`",
             "",
             "Focused smoke example:",
             "",
-            (
-                "`PYTHONPATH=src uv run --no-sync python "
-                "results/7180984/scripts/materialize_direct_epsilon_soft_lambda_redo.py "
-                "--run-ids open_loop_small --pgd-steps 2 "
-                "--output-json results/7180984/smoke/direct_epsilon_soft_lambda_redo.json "
-                "--output-csv results/7180984/smoke/direct_epsilon_soft_lambda_redo.csv "
-                "--output-md results/7180984/smoke/direct_epsilon_soft_lambda_redo.md`"
-            ),
+            "`PYTHONPATH=src uv run --no-sync python "
+            "results/7180984/scripts/materialize_direct_epsilon_soft_lambda_redo.py "
+            "--run-ids open_loop_small --pgd-steps 2 "
+            "--output-json results/7180984/smoke/direct_epsilon_soft_lambda_redo.json "
+            "--output-csv results/7180984/smoke/direct_epsilon_soft_lambda_redo.csv "
+            "--output-md results/7180984/smoke/direct_epsilon_soft_lambda_redo.md`",
             "",
-        ]
+        ),
     )
-    return "\n".join(lines)
 
 
 if __name__ == "__main__":
