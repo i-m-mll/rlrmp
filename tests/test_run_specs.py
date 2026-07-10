@@ -220,6 +220,29 @@ def test_nominal_gru_run_spec_file_loads_json_and_checks_sidecars(tmp_path) -> N
     validate_nominal_gru_run_spec_file(tmp_path / "run.json")
 
 
+def test_flat_nominal_gru_run_spec_file_loads_sibling_sidecars(tmp_path) -> None:
+    runs_dir = tmp_path / "runs"
+    run_spec_path = runs_dir / "baseline.json"
+    sidecar_dir = runs_dir / "baseline"
+    runs_dir.mkdir()
+    sidecar_dir.mkdir()
+    _write_graph_sidecars(sidecar_dir, {})
+    run_spec_path.write_text(json.dumps(_valid_nominal_gru_run_spec()), encoding="utf-8")
+
+    validate_nominal_gru_run_spec_file(run_spec_path)
+
+
+def test_flat_nominal_gru_run_spec_file_rejects_non_sibling_sidecars(tmp_path) -> None:
+    runs_dir = tmp_path / "runs"
+    run_spec_path = runs_dir / "baseline.json"
+    runs_dir.mkdir()
+    _write_graph_sidecars(runs_dir, {})
+    run_spec_path.write_text(json.dumps(_valid_nominal_gru_run_spec()), encoding="utf-8")
+
+    with pytest.raises(RunSpecValidationError, match=r"baseline/model\.graph\.json"):
+        validate_nominal_gru_run_spec_file(run_spec_path)
+
+
 def _write_graph_sidecars(tmp_path, graph_payload: dict) -> None:
     (tmp_path / "model.graph.json").write_text(
         json.dumps(graph_payload),

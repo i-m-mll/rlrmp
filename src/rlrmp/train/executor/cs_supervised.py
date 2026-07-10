@@ -61,6 +61,7 @@ from rlrmp.runtime.training_run_specs import (
     RLRMP_RUN_SPEC_PAYLOAD_KEY,
     assert_runtime_graph_matches_training_spec,
     feedbax_training_run_spec_from_payload,
+    hydrate_compact_run_spec_envelope,
 )
 from rlrmp.runtime.spec_migrations import (
     RUN_SPEC_KIND,
@@ -244,7 +245,10 @@ def load_validated_run_spec(
     """Load and validate a composed C&S GRU ``TrainingRunSpec`` recipe."""
 
     payload_path = Path(run_spec_path)
-    payload = json.loads(payload_path.read_text(encoding="utf-8"))
+    raw_payload = json.loads(payload_path.read_text(encoding="utf-8"))
+    if not isinstance(raw_payload, Mapping):
+        raise ValueError("C&S GRU run spec must be a JSON object")
+    payload = hydrate_compact_run_spec_envelope(raw_payload)
     validate_nominal_gru_run_spec(
         payload,
         spec_dir=payload_path.parent,
