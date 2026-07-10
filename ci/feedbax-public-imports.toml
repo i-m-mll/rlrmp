@@ -151,7 +151,7 @@ symbols = ["deep_merge"]
 
 [[canonical_homes]]
 module = "feedbax.contracts.figures"
-symbols = ["FigurePiece", "FigureSpec", "FigureTemplate", "SlotSpec"]
+symbols = ["FigurePiece", "FigureSpec", "FigureTemplate", "SlotSpec", "TraceBinding"]
 
 [[canonical_homes]]
 module = "feedbax.contracts.graph"
