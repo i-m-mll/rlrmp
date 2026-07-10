@@ -690,10 +690,10 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
             "hysteresis_frac",
             _config_default("adaptive_epsilon_hysteresis_frac"),
         ),
-        "adaptive_epsilon_freeze_until_burn_in": bool(
+        "adaptive_epsilon_freeze_during_application_ramp": bool(
             adaptive_lambda.get(
-                "freeze_until_burn_in",
-                _config_default("adaptive_epsilon_freeze_until_burn_in"),
+                "freeze_during_application_ramp",
+                _config_default("adaptive_epsilon_freeze_during_application_ramp"),
             )
         ),
         "adaptive_epsilon_gain_normalization": bool(
