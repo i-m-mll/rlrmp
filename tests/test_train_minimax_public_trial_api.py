@@ -4,7 +4,6 @@ from __future__ import annotations
 from rlrmp.io import load_named_python_module
 
 import argparse
-import importlib.util
 
 import equinox as eqx
 import jax.numpy as jnp

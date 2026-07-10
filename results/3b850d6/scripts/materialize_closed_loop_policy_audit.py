@@ -15,28 +15,19 @@ from typing import Any
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-import jax.random as jr
 import jax.tree as jt
 import numpy as np
 from feedbax.config.namespace import TreeNamespace
-from feedbax.runtime.batch import BatchInfo
-from jax_cookbook import load_with_hyperparameters
 
 from rlrmp.io import update_marked_section
 from rlrmp.paths import mkdir_p
 from rlrmp.train import cs_nominal_gru as nominal
 from rlrmp.train.cs_perturbation_training import (
-    BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
-    _broad_epsilon_pgd_trust_radius,
-    _epsilon_time_mask,
-    _ensure_broad_epsilon_input,
     _flattened_per_trial_norm,
     _project_flattened_per_trial_l2_ball,
     _set_input,
-    config_from_broad_epsilon_pgd_hps,
     run_broad_epsilon_pgd_inner_maximizer,
 )
-from rlrmp.train.task_model import setup_task_model_pair
 
 
 RUN_IDS = ("open_loop_small", "open_loop_moderate", "open_loop_stress")
