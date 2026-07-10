@@ -15,16 +15,12 @@ from materialize_pgd_1p05_stabilization_diagnostics import (
     evaluate_row as evaluate_stabilization_row,
     probe_contract as stabilization_probe_contract,
 )
-from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
-    materialize_validation_selected_checkpoint_manifest,
+from rlrmp.eval.robustness_diagnostics import (
+    build_summary as canonical_build_summary,
+    run_feedback_robustness_diagnostics,
 )
-from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import (
-    materialize_gru_evaluation_diagnostics,
-)
-from rlrmp.analysis.pipelines.gru_feedback_ablation import materialize_gru_feedback_ablation
-from rlrmp.analysis.pipelines.gru_perturbation_bank import materialize_gru_perturbation_response
 from rlrmp.io import update_marked_section, write_compact_json
-from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.paths import REPO_ROOT
 
 
 ISSUE = "c92ebd8"
@@ -81,106 +77,54 @@ ROW_IDS = tuple(row.run_id for row in ROWS)
 def main() -> None:
     """Materialize sidecars and write the compact OFB-budget comparison."""
 
-    mkdir_p(NOTES_DIR)
-    mkdir_p(EVALUATION_BULK_DIR)
-    mkdir_p(PERTURBATION_BULK_DIR)
-    mkdir_p(STABILIZATION_BULK_DIR)
     paths = output_paths()
-    labels = tuple(run_label(row) for row in ROWS)
-
-    checkpoint_manifest = (
-        load_json(paths["checkpoint_manifest"])
-        if paths["checkpoint_manifest"].exists()
-        else materialize_validation_selected_checkpoint_manifest(
-            experiment=ISSUE,
-            run_ids=ROW_IDS,
-            output_path=paths["checkpoint_manifest"],
-            repo_root=REPO_ROOT,
-        )
-    )
-    evaluation = (
-        load_json(paths["evaluation"])
-        if paths["evaluation"].exists()
-        else materialize_gru_evaluation_diagnostics(
-            experiment=ISSUE,
-            run_ids=ROW_IDS,
-            labels=labels,
-            output_path=paths["evaluation"],
-            bulk_dir=EVALUATION_BULK_DIR,
-            n_rollout_trials=64,
-            write_bulk_arrays=True,
-            regeneration_spec_path=paths["evaluation_regeneration_spec"],
-            repo_root=REPO_ROOT,
-        )
-    )
-    perturbation = (
-        load_json(paths["perturbation"])
-        if perturbation_output_is_current(paths["perturbation"], expected_trials=64)
-        else materialize_gru_perturbation_response(
-            source_experiment=ISSUE,
-            result_experiment=ISSUE,
-            run_ids=ROW_IDS,
-            labels=labels,
-            n_rollout_trials=64,
-            output_path=paths["perturbation"],
-            note_path=paths["perturbation_note"],
-            bulk_dir=PERTURBATION_BULK_DIR,
-            regeneration_spec_path=paths["perturbation_regeneration_spec"],
-            bank_mode="calibrated",
-            calibration_level="moderate",
-            calibration_reach=0.15,
-            feedback_scale_manifest_path=paths["evaluation"],
-            extlqg_physical_dim=6,
-            write_bulk_arrays=False,
-            repo_root=REPO_ROOT,
-        )
-    )
-    feedback = (
-        load_json(paths["feedback"])
-        if run_output_is_current(paths["feedback"], expected_trials=64)
-        else materialize_gru_feedback_ablation(
-            source_experiment=ISSUE,
-            result_experiment=ISSUE,
-            scope="output_feedback_budget_feedback_ablation",
-            run_ids=ROW_IDS,
-            labels=labels,
-            n_rollout_trials=64,
-            bank_mode="calibrated",
-            calibration_level="moderate",
-            calibration_reach=0.15,
-            feedback_selection_level="moderate",
-            feedback_scale_manifest_path=paths["evaluation"],
-            output_path=paths["feedback"],
-            note_path=paths["feedback_note"],
-            regeneration_spec_path=paths["feedback_regeneration_spec"],
-            repo_root=REPO_ROOT,
-        )
-    )
-    perturbation_detail = load_json(Path(perturbation["bulk_detail_manifest"]["path"]))
-    stabilization = materialize_stabilization(paths["stabilization_detail"])
-    rows = [
-        table_row(
-            row_spec,
-            evaluation=evaluation,
-            feedback=feedback,
-            perturbation_detail=perturbation_detail,
-            stabilization=stabilization,
-        )
-        for row_spec in ROWS
-    ]
-    summary = build_summary(
-        rows,
-        checkpoint_manifest=checkpoint_manifest,
-        evaluation=evaluation,
-        perturbation=perturbation,
-        feedback=feedback,
-        stabilization=stabilization,
+    result = run_feedback_robustness_diagnostics(
+        hooks=globals(),
         paths=paths,
+        output_dirs=(NOTES_DIR, EVALUATION_BULK_DIR, PERTURBATION_BULK_DIR, STABILIZATION_BULK_DIR),
+        issue=ISSUE,
+        repo_root=REPO_ROOT,
+        run_ids=ROW_IDS,
+        labels=tuple(run_label(row) for row in ROWS),
+        evaluation_bulk_dir=EVALUATION_BULK_DIR,
+        perturbation_bulk_dir=PERTURBATION_BULK_DIR,
+        feedback_scope="output_feedback_budget_feedback_ablation",
+        materialize_extensions=lambda current_paths, _components: {
+            "stabilization": materialize_stabilization(
+                current_paths["stabilization_detail"]
+            )
+        },
+        build_rows=lambda components: [
+            table_row(
+                row_spec,
+                evaluation=components["evaluation"],
+                feedback=components["feedback"],
+                perturbation_detail=components["perturbation_detail"],
+                stabilization=components["stabilization"],
+            )
+            for row_spec in ROWS
+        ],
+        build_summary_payload=lambda rows, components: build_summary(
+            rows,
+            checkpoint_manifest=components["checkpoint_manifest"],
+            evaluation=components["evaluation"],
+            perturbation=components["perturbation"],
+            feedback=components["feedback"],
+            stabilization=components["stabilization"],
+            paths=paths,
+        ),
+        write_outputs=_write_outputs,
     )
+    print(json.dumps({"summary": repo_rel(SUMMARY_JSON), "rows": result["rows"]}, indent=2))
+
+
+def _write_outputs(
+    summary: Mapping[str, Any],
+    rows: Sequence[Mapping[str, Any]],
+) -> None:
     write_compact_json(SUMMARY_JSON, summary)
     write_csv(rows)
     update_marked_section(SUMMARY_MD, MARKER, render_markdown(summary))
-    print(json.dumps({"summary": repo_rel(SUMMARY_JSON), "rows": rows}, indent=2))
 
 
 def output_paths() -> dict[str, Path]:
@@ -350,16 +294,40 @@ def build_summary(
 ) -> dict[str, Any]:
     """Return the combined JSON summary payload."""
 
-    return {
-        "schema_version": SCHEMA_VERSION,
-        "issue": ISSUE,
-        "scope": (
+    components = {
+        "checkpoint_manifest": checkpoint_manifest,
+        "evaluation": evaluation,
+        "perturbation": perturbation,
+        "feedback": feedback,
+        "stabilization": stabilization,
+    }
+    return canonical_build_summary(
+        rows,
+        schema_version=SCHEMA_VERSION,
+        issue=ISSUE,
+        scope=(
             "OFB-budget PGD reach-context feedback/robustness and stabilization "
             "diagnostics for c92 moderate rows"
         ),
-        "row_order": list(ROW_IDS),
+        row_order=ROW_IDS,
+        paths=paths,
+        repo_relative=repo_rel,
+        components=components,
+        component_schema_names=tuple(components),
+        extensions=_summary_extensions(rows),
+        source_output_extensions={
+            "summary_json": repo_rel(SUMMARY_JSON),
+            "summary_markdown": repo_rel(SUMMARY_MD),
+            "summary_csv": repo_rel(SUMMARY_CSV),
+            "perturbation_detail_manifest": perturbation["bulk_detail_manifest"],
+            "stabilization_detail": repo_rel(DETAIL_JSON),
+        },
+    )
+
+
+def _summary_extensions(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    return {
         "baseline_row": "open_loop_moderate",
-        "rows": list(rows),
         "comparisons_vs_baseline": comparisons_vs_baseline(rows),
         "budget_comparison": compare_budgets(rows),
         "interpretation": interpret_rows(rows),
@@ -368,23 +336,6 @@ def build_summary(
             "No formal H-infinity claim is made here. These are empirical GRU "
             "feedback/robustness diagnostics plus budget provenance."
         ),
-        "source_outputs": {
-            key: repo_rel(path) for key, path in paths.items()
-        }
-        | {
-            "summary_json": repo_rel(SUMMARY_JSON),
-            "summary_markdown": repo_rel(SUMMARY_MD),
-            "summary_csv": repo_rel(SUMMARY_CSV),
-            "perturbation_detail_manifest": perturbation["bulk_detail_manifest"],
-            "stabilization_detail": repo_rel(DETAIL_JSON),
-        },
-        "component_schemas": {
-            "checkpoint_manifest": checkpoint_manifest.get("schema_version"),
-            "evaluation": evaluation.get("schema_version"),
-            "perturbation": perturbation.get("schema_version"),
-            "feedback": feedback.get("schema_version"),
-            "stabilization": stabilization.get("schema_version"),
-        },
     }
 
 
