@@ -5522,6 +5522,34 @@ def test_public_flat_recipe_validator_hydrates_compact_envelope(tmp_path: Path) 
     validate_nominal_gru_run_spec_file(recipe_path)
 
 
+def test_executor_first_import_replays_compact_flat_recipe(tmp_path: Path) -> None:
+    payload = _native_method_run_spec_payload(tmp_path, CS_SUPERVISED_METHOD_REF)
+    recipe_path = tmp_path / "runs" / "baseline.json"
+    recipe_path.parent.mkdir()
+    recipe_path.write_text(json.dumps(_compact_run_spec(payload)), encoding="utf-8")
+
+    repo_root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{repo_root / 'src'}{os.pathsep}{env.get('PYTHONPATH', '')}"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from rlrmp.train.executor.cs_supervised import load_validated_run_spec; "
+                f"load_validated_run_spec({str(recipe_path)!r})"
+            ),
+        ],
+        cwd=repo_root,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
 def test_compact_run_spec_loader_hydrates_authoritative_extension(tmp_path: Path) -> None:
     payload = _native_method_run_spec_payload(tmp_path, CS_SUPERVISED_METHOD_REF)
     compact = _compact_run_spec(payload)
