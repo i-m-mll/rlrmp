@@ -269,11 +269,9 @@ _CD137D8_CONFIG_TIER_ALLOWLIST = (
     "src/rlrmp/train/guided_distillation.py::DEFAULT_CHECKPOINT_INTERVAL_BATCHES::hp_constant",
     "src/rlrmp/train/minimax.py::MinimaxConfig::default_bundle",
     "src/rlrmp/train/minimax.py::build_hps::default_bundle",
+    "src/rlrmp/train/standard.py::_LOSS_WEIGHT_OVERRIDES::hp_constant",
     "src/rlrmp/train/standard.py::_base_hps::default_bundle",
-    "src/rlrmp/train/standard.py::_loss_cfg_combined::default_bundle",
-    "src/rlrmp/train/standard.py::_loss_cfg_default::default_bundle",
-    "src/rlrmp/train/standard.py::_loss_cfg_running_cost::default_bundle",
-    "src/rlrmp/train/standard.py::_loss_cfg_softmin::default_bundle",
+    "src/rlrmp/train/standard.py::_loss_cfg::default_bundle",
 )
 
 _E04BD36_USER_HOLD_ALLOWLIST = (

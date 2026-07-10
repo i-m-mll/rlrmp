@@ -7,15 +7,20 @@ The lane started from the 136-key baseline at integration commit
 
 ## Final scanner state
 
-The final scan reports 249 findings: 181 advisory, 66 ratchet, and 2 enforced. All 68
+The reconciled scan reports 235 findings: 169 advisory, 64 ratchet, and 2 enforced. All 66
 enforced/ratchet findings are curated rationale-bearing exceptions. The generated ratchet
 baseline contains zero keys and `violations()` returns zero.
 
-The curated set consists of 44 config-tier keys explicitly owned by `cd137d8`, three
+The curated set consists of 42 live config-tier keys explicitly owned by `cd137d8`, three
 objects under the user hold on `e04bd36`, 16 typed models already owning their schema
 defaults, three legitimate diagnostic/operational constants, and the two pre-existing
 enforced exceptions. No `e04bd36` object was modified; the worker verified the held ASTs
 were identical before and after migration.
+
+The soft-lambda consolidation exposed one duplicate historical cap constant and one
+analysis-time config bundle. The cap now imports the existing curated historical training
+constant, while the fixed soft-PGD contract is loaded from the registered, hash-pinned
+`soft_lambda_pgd_contract` analysis preset; neither requires a new curated exception.
 
 ## Preservation manifest and load proof
 
@@ -27,9 +32,9 @@ The combined manifest has 136/136 resolutions and 31 passed load proofs. Resolut
 - 6 registered model parameter presets and one versioned graph-migration preset;
 - 3 governed `AnalysisDataProduct` migrations;
 - one tracked historical evaluation spec;
-- 16 owning-schema defaults, 3 legitimate constants, and 47 curated ownership/hold
+- 16 owning-schema defaults, 3 legitimate constants, and 43 curated ownership/hold
   exceptions;
-- 4 stale keys removed only after integrated sibling work removed their live findings.
+- 8 stale keys removed only after integrated sibling work removed their live findings.
 
 All migrated preset loaders fail closed on exact schema identity/version and content hash.
 The c723 empirical table and the upgraded broad-epsilon/calibration products additionally
