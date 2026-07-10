@@ -36,7 +36,7 @@ from rlrmp.analysis.math.output_feedback import (
     rollout_with_robust_estimator_policy,
     train_output_feedback_lqr_bellman_controller,
 )
-from rlrmp.analysis.math.linear_round_trip import LinearTrainingConfig, ensemble_initial_states
+from rlrmp.analysis.math.linear_round_trip import LinearOptimizationConfig, ensemble_initial_states
 
 
 def test_output_feedback_initial_history_matches_cs_kron() -> None:
@@ -325,7 +325,7 @@ def test_output_feedback_bellman_objective_prefers_reference_to_zero() -> None:
     K_ref = reference.lqr_solution.K
     states, weights = ensemble_initial_states(
         reference.plant,
-        LinearTrainingConfig(n_random_states=4),
+        LinearOptimizationConfig(n_random_states=4),
     )
     reference_objective = output_feedback_lqr_bellman_objective(
         reference.plant,

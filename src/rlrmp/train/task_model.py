@@ -60,10 +60,10 @@ from rlrmp.train.cs_perturbation_training import (
     BroadFullStateEpsilonTrainingTaskAdapter,
     FixedTargetPerturbationTrainingTaskAdapter,
     TargetRelativeMultiTargetTrainingTaskAdapter,
-    config_from_broad_epsilon_pgd_hps,
-    config_from_broad_epsilon_hps,
-    config_from_hps,
-    config_from_target_hps,
+    BroadFullStateEpsilonTrainingConfig,
+    FixedTargetPerturbationTrainingConfig,
+    PgdFullStateEpsilonTrainingConfig,
+    TargetRelativeMultiTargetTrainingConfig,
     install_perturbation_training_graph_adapters,
 )
 
@@ -341,7 +341,7 @@ def setup_task_model_pair(
     if hps.method == "nominal-cs-gru" and plant_backend == CS_LSS_PLANT_BACKEND:
         if isinstance(hidden_type, str) and hidden_type in LINEAR_HIDDEN_TYPES:
             raise ValueError("The C&S LSS nominal GRU backend requires a recurrent cell type.")
-        target_training = config_from_target_hps(
+        target_training = TargetRelativeMultiTargetTrainingConfig.from_payload(
             getattr(hps, "target_relative_multitarget", TreeNamespace(enabled=False))
         )
         no_integrator_state = bool(getattr(hps.model, "no_integrator_state", False))
@@ -381,12 +381,12 @@ def setup_task_model_pair(
         )
         if target_training.enabled:
             task = TargetRelativeMultiTargetTrainingTaskAdapter(task, target_training)
-        broad_epsilon_training = config_from_broad_epsilon_hps(
+        broad_epsilon_training = BroadFullStateEpsilonTrainingConfig.from_payload(
             getattr(hps, "broad_epsilon_training", TreeNamespace(enabled=False))
         )
         if broad_epsilon_training.enabled:
             task = BroadFullStateEpsilonTrainingTaskAdapter(task, broad_epsilon_training)
-        perturbation_training = config_from_hps(
+        perturbation_training = FixedTargetPerturbationTrainingConfig.from_payload(
             getattr(hps, "perturbation_training", TreeNamespace(enabled=False))
         )
         if perturbation_training.enabled:
@@ -638,9 +638,7 @@ def _add_cs_lss_task_inputs(
         ),
     )
     if initial_hidden_encoder:
-        context_dim = (
-            CS_PROPRIOCEPTIVE_FEEDBACK_DIM if force_filter_feedback else CS_FEEDBACK_DIM
-        )
+        context_dim = CS_PROPRIOCEPTIVE_FEEDBACK_DIM if force_filter_feedback else CS_FEEDBACK_DIM
         task = task.add_input(
             name=CS_H0_CONTEXT_INPUT,
             input_fn=lambda trial_spec, key: _zero_h0_context_input(
@@ -931,7 +929,7 @@ def _create_cs_lss_gru_ensemble(
     keys = jr.split(key_models, int(hps.model.n_replicates))
 
     def build_one(key_one):
-        target_training = config_from_target_hps(
+        target_training = TargetRelativeMultiTargetTrainingConfig.from_payload(
             getattr(hps, "target_relative_multitarget", TreeNamespace(enabled=False))
         )
         no_integrator_state = bool(getattr(hps.model, "no_integrator_state", False))
@@ -978,7 +976,7 @@ def _create_cs_lss_gru_ensemble(
 
 
 def _finite_epsilon_policy_mechanism(hps: TreeNamespace) -> str | None:
-    cfg = config_from_broad_epsilon_pgd_hps(
+    cfg = PgdFullStateEpsilonTrainingConfig.from_payload(
         getattr(hps, "broad_epsilon_pgd_training", TreeNamespace(enabled=False))
     )
     if not cfg.enabled:

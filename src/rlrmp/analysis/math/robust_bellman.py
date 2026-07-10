@@ -24,7 +24,7 @@ from rlrmp.analysis.math.cs_game_card import (
     materialize_reference,
 )
 from rlrmp.analysis.math.hinf_riccati import CostSchedule, PlantLinearization, simulate_closed_loop
-from rlrmp.analysis.math.linear_round_trip import LinearTrainingConfig, ensemble_initial_states
+from rlrmp.analysis.math.linear_round_trip import LinearOptimizationConfig, ensemble_initial_states
 from rlrmp.analysis.math.output_feedback import (
     OutputFeedbackConfig,
     exact_output_feedback_adversary_audit,
@@ -590,7 +590,7 @@ def train_deterministic_robust_bellman(
     reference: GameCardReference,
     *,
     gamma_factor: float,
-    config: LinearTrainingConfig = LinearTrainingConfig(n_steps=250),
+    config: LinearOptimizationConfig = LinearOptimizationConfig(n_steps=250),
 ) -> RobustBellmanFit:
     """Fit full-state robust gains against the deterministic H-infinity Bellman objective."""
 
@@ -696,7 +696,7 @@ def train_deterministic_numerical_minmax_bellman(
     *,
     gamma_factor: float,
     time_indices: tuple[int, ...] = NUMERICAL_MINMAX_TIME_INDICES,
-    config: LinearTrainingConfig = LinearTrainingConfig(n_steps=80, n_random_states=8),
+    config: LinearOptimizationConfig = LinearOptimizationConfig(n_steps=80, n_random_states=8),
 ) -> tuple[NumericalMinmaxFit, ...]:
     """Fit full-state robust gains with a numerical inner-outer saddle optimizer."""
 
@@ -744,7 +744,7 @@ def train_deterministic_numerical_minmax_bellman(
 
 def joint_state_ensemble(
     plant: PlantLinearization,
-    config: LinearTrainingConfig,
+    config: LinearOptimizationConfig,
 ) -> tuple[Float[Array, "batch two_n"], Float[Array, " batch"]]:
     """Build full-rank diagnostic states for ``z=[x,xhat]``."""
 
@@ -849,7 +849,7 @@ def train_output_feedback_joint_robust_bellman(
     reference: GameCardReference,
     *,
     gamma_factor: float,
-    config: LinearTrainingConfig = LinearTrainingConfig(n_steps=250),
+    config: LinearOptimizationConfig = LinearOptimizationConfig(n_steps=250),
     output_feedback_config: OutputFeedbackConfig = OutputFeedbackConfig(),
 ) -> dict[str, Any]:
     """Fit C&S output-feedback gains against a joint-state robust Bellman diagnostic."""
@@ -994,7 +994,7 @@ def train_output_feedback_information_state_numerical_minmax_bellman(
     *,
     gamma_factor: float,
     time_indices: tuple[int, ...] = NUMERICAL_MINMAX_TIME_INDICES,
-    config: LinearTrainingConfig = LinearTrainingConfig(n_steps=80, n_random_states=8),
+    config: LinearOptimizationConfig = LinearOptimizationConfig(n_steps=80, n_random_states=8),
     output_feedback_config: OutputFeedbackConfig = OutputFeedbackConfig(),
 ) -> dict[str, Any]:
     """Fit the formal time-indexed information-state robust Bellman saddle."""
@@ -1081,7 +1081,7 @@ def train_output_feedback_information_state_exact_inner_bellman(
     *,
     gamma_factor: float,
     time_indices: tuple[int, ...] = EXACT_INNER_TIME_INDICES,
-    config: LinearTrainingConfig = LinearTrainingConfig(n_steps=80, n_random_states=8),
+    config: LinearOptimizationConfig = LinearOptimizationConfig(n_steps=80, n_random_states=8),
     output_feedback_config: OutputFeedbackConfig = OutputFeedbackConfig(),
 ) -> dict[str, Any]:
     """Fit the information-state Bellman objective with exact hidden-state max."""
@@ -1165,7 +1165,7 @@ def train_output_feedback_information_state_exact_inner_persistent_index(
     *,
     gamma_factor: float,
     time_indices: tuple[int, ...] = EXACT_INNER_TIME_INDICES,
-    config: LinearTrainingConfig = LinearTrainingConfig(n_steps=80, n_random_states=8),
+    config: LinearOptimizationConfig = LinearOptimizationConfig(n_steps=80, n_random_states=8),
     output_feedback_config: OutputFeedbackConfig = OutputFeedbackConfig(),
 ) -> dict[str, Any]:
     """Fit the C&S-code-fidelity persistent-index exact-inner objective."""
@@ -1384,7 +1384,7 @@ def train_output_feedback_flattened_epsilon_exact_inner(
     reference: GameCardReference,
     *,
     gamma_factor: float = OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
-    config: LinearTrainingConfig = LinearTrainingConfig(n_steps=25),
+    config: LinearOptimizationConfig = LinearOptimizationConfig(n_steps=25),
     output_feedback_config: OutputFeedbackConfig = OutputFeedbackConfig(),
 ) -> FlattenedEpsilonFit:
     """Minimize the full-horizon exact flattened epsilon objective over gains."""
@@ -1586,13 +1586,17 @@ def _flattened_epsilon_summary(fit: FlattenedEpsilonFit) -> dict[str, Any]:
 
 def analyze_robust_bellman(
     gamma_factors: tuple[float, ...] = GAMMA_FACTORS,
-    config: LinearTrainingConfig = LinearTrainingConfig(n_steps=250),
-    numerical_config: LinearTrainingConfig = LinearTrainingConfig(n_steps=80, n_random_states=8),
+    config: LinearOptimizationConfig = LinearOptimizationConfig(n_steps=250),
+    numerical_config: LinearOptimizationConfig = LinearOptimizationConfig(
+        n_steps=80, n_random_states=8
+    ),
     numerical_time_indices: tuple[int, ...] = NUMERICAL_MINMAX_TIME_INDICES,
     exact_inner_gamma_factors: tuple[float, ...] = PRIMARY_EXACT_INNER_GAMMA_FACTORS,
     exact_inner_time_indices: tuple[int, ...] = EXACT_INNER_TIME_INDICES,
-    exact_inner_config: LinearTrainingConfig = LinearTrainingConfig(n_steps=80, n_random_states=8),
-    flattened_config: LinearTrainingConfig = LinearTrainingConfig(n_steps=25),
+    exact_inner_config: LinearOptimizationConfig = LinearOptimizationConfig(
+        n_steps=80, n_random_states=8
+    ),
+    flattened_config: LinearOptimizationConfig = LinearOptimizationConfig(n_steps=25),
     output_feedback_config: OutputFeedbackConfig = OutputFeedbackConfig(),
     discretization: str = DEFAULT_DISCRETIZATION,
     lane: str = DEFAULT_LANE,

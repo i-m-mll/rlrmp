@@ -45,7 +45,7 @@ from rlrmp.analysis.math.hinf_riccati import (
     simulate_closed_loop,
 )
 from rlrmp.analysis.math.linear_round_trip import (
-    LinearTrainingConfig,
+    LinearOptimizationConfig,
     LinearTrainingResult,
     ensemble_initial_states,
     rollout_task_cost,
@@ -1040,9 +1040,9 @@ def output_feedback_clean_objective(
 
 def train_output_feedback_lqr_controller(
     reference: GameCardReference,
-    training_config: LinearTrainingConfig = LinearTrainingConfig(),
+    training_config: LinearOptimizationConfig = LinearOptimizationConfig(),
     *,
-    quasi_newton_config: LinearTrainingConfig = LinearTrainingConfig(n_steps=500),
+    quasi_newton_config: LinearOptimizationConfig = LinearOptimizationConfig(n_steps=500),
     config: OutputFeedbackConfig = OutputFeedbackConfig(),
 ) -> tuple[LinearTrainingResult, LinearTrainingResult, LinearTrainingResult]:
     """Train clean LQR gains through the estimator-in-loop rollout from zero.
@@ -1216,7 +1216,7 @@ def output_feedback_lqr_bellman_objective(
 
 def train_output_feedback_lqr_bellman_controller(
     reference: GameCardReference,
-    config: LinearTrainingConfig = LinearTrainingConfig(n_steps=200),
+    config: LinearOptimizationConfig = LinearOptimizationConfig(n_steps=200),
 ) -> LinearTrainingResult:
     """Train an output-feedback LQR controller with the one-step Bellman objective."""
 
@@ -1878,8 +1878,8 @@ def gamma_sweep_summary(sweep: dict[str, Any]) -> dict[str, Any]:
 
 def analyze_phase3_output_feedback(
     config: OutputFeedbackConfig = OutputFeedbackConfig(),
-    training_config: LinearTrainingConfig = LinearTrainingConfig(),
-    quasi_newton_config: LinearTrainingConfig = LinearTrainingConfig(n_steps=500),
+    training_config: LinearOptimizationConfig = LinearOptimizationConfig(),
+    quasi_newton_config: LinearOptimizationConfig = LinearOptimizationConfig(n_steps=500),
 ) -> OutputFeedbackPhase3Result:
     """LEGACY (frozen 2026-07-03, issue 64d5f13).
 
@@ -1951,7 +1951,7 @@ def analyze_phase3_output_feedback(
     )
     bellman_training = train_output_feedback_lqr_bellman_controller(
         reference,
-        LinearTrainingConfig(n_steps=200),
+        LinearOptimizationConfig(n_steps=200),
     )
     output_feedback_trainings = (*output_feedback_trainings, bellman_training)
     output_feedback_training_audits = tuple(

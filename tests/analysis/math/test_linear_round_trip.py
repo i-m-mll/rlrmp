@@ -6,7 +6,7 @@ import jax.numpy as jnp
 
 from rlrmp.analysis.math.cs_game_card import PRIMARY_GAMMA_FACTOR, materialize_reference
 from rlrmp.analysis.math.linear_round_trip import (
-    LinearTrainingConfig,
+    LinearOptimizationConfig,
     ensemble_clean_objective,
     ensemble_initial_states,
     result_summary,
@@ -18,7 +18,7 @@ from rlrmp.analysis.math.linear_round_trip import (
 
 def test_ensemble_initial_states_are_full_rank_and_overweight_reach() -> None:
     reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
-    config = LinearTrainingConfig(n_random_states=2)
+    config = LinearOptimizationConfig(n_random_states=2)
 
     states, weights = ensemble_initial_states(reference.plant, config)
 
@@ -29,7 +29,7 @@ def test_ensemble_initial_states_are_full_rank_and_overweight_reach() -> None:
 
 def test_reference_lqr_beats_zero_gain_on_full_rank_training_objective() -> None:
     reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
-    config = LinearTrainingConfig(n_random_states=4)
+    config = LinearOptimizationConfig(n_random_states=4)
     states, weights = ensemble_initial_states(reference.plant, config)
 
     reference_objective = ensemble_clean_objective(
@@ -64,8 +64,8 @@ def test_rollout_task_cost_matches_reference_lqr_cost() -> None:
 
 def test_phase3_smoke_reports_optimizer_status() -> None:
     result = run_phase3_linear_round_trip(
-        training_config=LinearTrainingConfig(n_steps=3, n_random_states=2),
-        quasi_newton_config=LinearTrainingConfig(n_steps=1, n_random_states=2),
+        training_config=LinearOptimizationConfig(n_steps=3, n_random_states=2),
+        quasi_newton_config=LinearOptimizationConfig(n_steps=1, n_random_states=2),
         heldout_step_sweep=(0,),
         heldout_restarts=1,
     )
@@ -103,7 +103,7 @@ def test_quasi_newton_smoke_runs_same_objective_contract() -> None:
 
     result = train_lqr_quasi_newton_controller(
         reference,
-        LinearTrainingConfig(n_steps=1, n_random_states=2),
+        LinearOptimizationConfig(n_steps=1, n_random_states=2),
     )
 
     assert result.label == "lbfgsb_lqr_fit"

@@ -285,7 +285,7 @@ _OWNING_SCHEMA_DEFAULT_ALLOWLIST = (
     "src/rlrmp/analysis/math/cs_released_simulation.py::CSReleasedStochasticNoiseConfig::default_bundle",
     "src/rlrmp/analysis/math/hinf_riccati.py::CostSpec::default_bundle",
     "src/rlrmp/analysis/math/linear_equivalence_certificate.py::CertificateConfig::default_bundle",
-    "src/rlrmp/analysis/math/linear_round_trip.py::LinearTrainingConfig::default_bundle",
+    "src/rlrmp/analysis/math/linear_round_trip.py::LinearOptimizationConfig::default_bundle",
     "src/rlrmp/analysis/math/linear_round_trip.py::TeacherFitConfig::default_bundle",
     "src/rlrmp/analysis/math/output_feedback.py::OutputFeedbackConfig::default_bundle",
     "src/rlrmp/analysis/pipelines/cs_stochastic_phase3.py::Phase3StochasticConfig::default_bundle",

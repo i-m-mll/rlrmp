@@ -23,7 +23,7 @@ from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     materialize_reference,
 )
-from rlrmp.analysis.math.linear_round_trip import LinearTrainingConfig
+from rlrmp.analysis.math.linear_round_trip import LinearOptimizationConfig
 from rlrmp.analysis.math.output_feedback import (
     OutputFeedbackConfig,
     exact_output_feedback_adversary_audit,
@@ -172,7 +172,7 @@ def run_interpolated_start_probe(
     *,
     source_artifact: Path = DEFAULT_SOURCE_ARTIFACT,
     condition: RolloutRecoveryCondition = DEFAULT_CONDITION,
-    training_config: LinearTrainingConfig = LinearTrainingConfig(n_steps=500),
+    training_config: LinearOptimizationConfig = LinearOptimizationConfig(n_steps=500),
     output_config: OutputFeedbackConfig = OutputFeedbackConfig(),
     alphas: tuple[float, ...] = INTERPOLATED_ALPHAS,
 ) -> InterpolatedStartResult:

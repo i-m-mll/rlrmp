@@ -9,7 +9,7 @@ import os
 import subprocess
 import sys
 import warnings
-from dataclasses import asdict, replace
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -170,9 +170,6 @@ from rlrmp.train.cs_perturbation_training import (
     apply_training_target_distribution,
     apply_validation_bin,
     apply_validation_target_distribution,
-    config_from_broad_epsilon_pgd_hps,
-    config_from_policy_adversary_hps,
-    config_from_target_hps,
     graph_adapter_specs,
     make_broad_epsilon_pgd_pre_step,
     make_memoryless_policy_adversary,
@@ -229,9 +226,11 @@ def _assert_no_absolute_string_leaves(value: Any) -> None:
 
 
 def _cs_nominal_gru_golden_fixture() -> dict:
-    return _normalize_golden_fixture_paths(json.loads(
-        Path("tests/fixtures/cs_nominal_gru_config_golden.json").read_text(encoding="utf-8")
-    ))
+    return _normalize_golden_fixture_paths(
+        json.loads(
+            Path("tests/fixtures/cs_nominal_gru_config_golden.json").read_text(encoding="utf-8")
+        )
+    )
 
 
 def _normalize_golden_fixture_paths(value, *, key: str | None = None):
@@ -297,6 +296,7 @@ def _cs_stochastic_gru_run_spec_paths() -> list[Path]:
         if {"hps", "feedbax_graph", "training_script"}.issubset(payload):
             paths.append(path)
     return paths
+
 
 class _ScalarLoss:
     def __init__(
@@ -436,6 +436,17 @@ print(json.dumps(stochastic_preset("cs2019-rollout").summary(), sort_keys=True))
 def test_cs_nominal_gru_config_rejects_extra_fields() -> None:
     with pytest.raises(ValidationError):
         CsNominalGruConfig.model_validate({"seed": 42, "unknown_field": True})
+
+
+def test_build_hps_accepts_legacy_namespace_extras_and_validates_canonical_fields() -> None:
+    args = _args(batch_size=3)
+    args.legacy_payload_marker = {"source": "historical-run-spec"}
+
+    hps = build_hps(args)
+
+    assert hps.batch_size == 3
+    with pytest.raises(ValidationError):
+        build_hps(_args(batch_size=0))
 
 
 def test_cs_nominal_gru_argparse_defaults_and_choices_derive_from_config() -> None:
@@ -606,7 +617,7 @@ def test_pgd_broad_epsilon_hps_declares_inner_maximizer() -> None:
         )
     )
 
-    cfg = config_from_broad_epsilon_pgd_hps(hps.broad_epsilon_pgd_training)
+    cfg = PgdFullStateEpsilonTrainingConfig.from_payload(hps.broad_epsilon_pgd_training)
 
     assert cfg.enabled is True
     assert hps.broad_epsilon_pgd_training.mode == BROAD_EPSILON_PGD_TRAINING_MODE
@@ -646,9 +657,9 @@ def test_pgd_broad_epsilon_hps_parser_consumes_nested_and_legacy_fields() -> Non
         },
     }
 
-    parsed_nested = config_from_broad_epsilon_pgd_hps(nested)
-    parsed_legacy = config_from_broad_epsilon_pgd_hps(legacy)
-    parsed_dict = config_from_broad_epsilon_pgd_hps(nested_dict)
+    parsed_nested = PgdFullStateEpsilonTrainingConfig.from_payload(nested)
+    parsed_legacy = PgdFullStateEpsilonTrainingConfig.from_payload(legacy)
+    parsed_dict = PgdFullStateEpsilonTrainingConfig.from_payload(nested_dict)
 
     assert parsed_nested.level == "strong"
     assert parsed_nested.n_steps == 9
@@ -689,7 +700,7 @@ def test_pgd_sisu_budget_schedule_metadata_and_parser_round_trip() -> None:
         HISTORICAL_020A65B_PGD_RADIUS_15CM
     )
 
-    parsed = config_from_broad_epsilon_pgd_hps(payload)
+    parsed = PgdFullStateEpsilonTrainingConfig.from_payload(payload)
     assert parsed.budget_schedule == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE
     assert parsed.sisu_condition_input == "input"
     assert parsed.sisu_levels == DEFAULT_PGD_SISU_LEVELS
@@ -719,7 +730,7 @@ def test_pgd_fixed_radius_metadata_and_parser_round_trip() -> None:
     assert budget["budget_source"]["gamma_factor"] == pytest.approx(1.4)
     assert budget["budget_source"]["epsilon_dim"] == 6
 
-    parsed = config_from_broad_epsilon_pgd_hps(payload)
+    parsed = PgdFullStateEpsilonTrainingConfig.from_payload(payload)
     assert parsed.fixed_l2_radius_15cm == pytest.approx(radius)
     assert parsed.fixed_radius_source == source
     assert parsed.reference_l2_radius == pytest.approx(radius)
@@ -756,7 +767,7 @@ def test_pgd_soft_energy_metadata_lambda_mapping_and_parser_round_trip() -> None
     assert safety_cap["hard_budget_scientific_constraint"] is False
     assert payload["budget_contract"]["scientific_constraint"] == "soft_energy_penalty"
 
-    parsed = config_from_broad_epsilon_pgd_hps(payload)
+    parsed = PgdFullStateEpsilonTrainingConfig.from_payload(payload)
     assert parsed.objective_kind == BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE
     assert parsed.soft_energy_gamma == pytest.approx(gamma_star * gamma_factor)
     assert parsed.soft_energy_lambda == pytest.approx((gamma_star * gamma_factor) ** 2)
@@ -810,7 +821,7 @@ def test_pgd_explicit_radius_and_safety_cap_require_provenance() -> None:
     assert payload["budget_contract"]["budget_source"] is None
     assert payload["budget_contract"]["scientific_constraint"] == "soft_energy_penalty_cap_free"
 
-    parsed = config_from_broad_epsilon_pgd_hps(payload)
+    parsed = PgdFullStateEpsilonTrainingConfig.from_payload(payload)
     assert parsed.objective_kind == BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE
     assert parsed.soft_energy_lambda == pytest.approx(1.0)
     assert parsed.safety_cap_l2_radius_15cm is None
@@ -1572,7 +1583,7 @@ def test_pgd_inner_optimizer_metadata_and_parser_round_trip() -> None:
     assert optimizer["adam"]["b2"] == pytest.approx(0.95)
     assert optimizer["adam"]["eps"] == pytest.approx(1e-6)
 
-    parsed = config_from_broad_epsilon_pgd_hps(payload)
+    parsed = PgdFullStateEpsilonTrainingConfig.from_payload(payload)
     assert parsed.inner_optimizer_method == BROAD_EPSILON_PGD_ADAM
     assert parsed.adam_learning_rate == pytest.approx(1e-3)
     assert parsed.adam_b1 == pytest.approx(0.8)
@@ -1635,7 +1646,7 @@ def test_pgd_finite_mechanism_serializes_live_graph_contract() -> None:
     assert payload["mechanism"]["runtime_inputs"]["gains"] == (
         f"TaskTrialSpec.inputs[{FINITE_POLICY_GAINS_INPUT!r}]"
     )
-    parsed = config_from_broad_epsilon_pgd_hps(payload)
+    parsed = PgdFullStateEpsilonTrainingConfig.from_payload(payload)
     assert parsed.adversary_mechanism == LINEAR_NO_BIAS_POLICY
 
     assert make_broad_epsilon_pgd_pre_step(payload) is not None
@@ -2194,7 +2205,7 @@ def test_direct_epsilon_pgd_dict_and_config_routing_are_equivalent() -> None:
     report = run_paired_equivalence(
         "pgd_direct_epsilon_inner_maximizer",
         lambda: run(config),
-        lambda: run(config_from_broad_epsilon_pgd_hps(config)),
+        lambda: run(PgdFullStateEpsilonTrainingConfig.from_payload(config)),
         left_label="dict_config",
         right_label="model_config",
     )
@@ -2402,7 +2413,7 @@ def test_policy_adversary_hps_declares_memoryless_policy_and_excludes_pgd() -> N
             loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
         )
     )
-    cfg = config_from_policy_adversary_hps(hps.policy_adversary_training)
+    cfg = PolicyFullStateEpsilonTrainingConfig.from_payload(hps.policy_adversary_training)
 
     assert cfg.enabled is True
     assert cfg.mode == POLICY_ADVERSARY_ENERGY_MODE
@@ -2468,7 +2479,7 @@ def test_policy_adversary_training_requires_explicit_radius_and_source() -> None
 
 
 def test_policy_adversary_historical_spec_with_explicit_radius_and_source_parses() -> None:
-    parsed = config_from_policy_adversary_hps(
+    parsed = PolicyFullStateEpsilonTrainingConfig.from_payload(
         {
             "enabled": True,
             "budget_contract": {
@@ -2523,13 +2534,10 @@ def test_policy_adversary_run_spec_replay_preserves_payload_fields(tmp_path: Pat
     assert replay_args.policy_adversary_radius_15cm == pytest.approx(
         HISTORICAL_020A65B_PGD_RADIUS_15CM
     )
-    assert (
-        replay_args.policy_adversary_radius_source
-        == "effective_020a65b_pgd_training_radius"
-    )
+    assert replay_args.policy_adversary_radius_source == "effective_020a65b_pgd_training_radius"
 
     hps = build_hps(replay_args)
-    cfg = config_from_policy_adversary_hps(hps.policy_adversary_training)
+    cfg = PolicyFullStateEpsilonTrainingConfig.from_payload(hps.policy_adversary_training)
     assert cfg.enabled is True
     assert cfg.policy_class == POLICY_ADVERSARY_MEMORYLESS_MLP
     assert cfg.mode == POLICY_ADVERSARY_ENERGY_MODE
@@ -2563,7 +2571,7 @@ def test_finite_policy_adversary_hps_declares_active_adam_and_excludes_pgd(
     )
 
     hps = build_hps(args)
-    cfg = config_from_policy_adversary_hps(hps.policy_adversary_training)
+    cfg = PolicyFullStateEpsilonTrainingConfig.from_payload(hps.policy_adversary_training)
     payload = write_run_spec(args)["run_spec"]
     policy = payload["hps"]["policy_adversary_training"]["policy"]
     optimizer = payload["hps"]["policy_adversary_training"]["inner_optimizer"]
@@ -2764,7 +2772,7 @@ def test_delayed_sisu_uses_separate_budget_key_and_composite_controller_input() 
 
     radius = _broad_epsilon_l2_radius(
         trial,
-        config_from_broad_epsilon_pgd_hps(hps.broad_epsilon_pgd_training),
+        PgdFullStateEpsilonTrainingConfig.from_payload(hps.broad_epsilon_pgd_training),
     )
     expected_radius = HISTORICAL_020A65B_PGD_RADIUS_15CM * jnp.sqrt(jnp.mean(trial.inputs["sisu"]))
     assert radius == pytest.approx(float(expected_radius))
@@ -3241,12 +3249,8 @@ def test_feedbax_training_run_spec_authoring_uses_portable_binding_paths(
 
     _assert_no_absolute_string_leaves(method_payload)
     assert first["artifacts"]["artifact_root"] == "_artifacts/81e3d8d/runs/adaptive"
-    assert first["artifacts"]["metadata"]["tracked_spec_dir"] == (
-        "results/81e3d8d/runs/adaptive"
-    )
-    assert method_payload["payload"]["config"]["output_dir"] == (
-        "_artifacts/81e3d8d/runs/adaptive"
-    )
+    assert first["artifacts"]["metadata"]["tracked_spec_dir"] == ("results/81e3d8d/runs/adaptive")
+    assert method_payload["payload"]["config"]["output_dir"] == ("_artifacts/81e3d8d/runs/adaptive")
     assert method_payload["payload"]["config"]["spec_dir"] == "results/81e3d8d/runs/adaptive"
     assert first["method_payload"] == second["method_payload"]
 
@@ -5499,7 +5503,7 @@ def test_33b0dcb_target_support_profiles() -> None:
 
 
 def test_target_hps_without_profile_normalizes_to_band16_default() -> None:
-    config = config_from_target_hps(
+    config = TargetRelativeMultiTargetTrainingConfig.from_payload(
         TreeNamespace(
             enabled=True,
             force_filter_feedback=True,
@@ -5573,7 +5577,7 @@ def test_target_hps_normalization_matches_frozen_override_outputs() -> None:
     }
 
     assert {
-        name: config_from_target_hps(case).model_dump(mode="python")
+        name: TargetRelativeMultiTargetTrainingConfig.from_payload(case).model_dump(mode="python")
         for name, case in cases.items()
     } == frozen_outputs
 
@@ -6238,7 +6242,7 @@ def test_pgd_broad_epsilon_value_and_grad_matches_reference_ascent() -> None:
     }
 
     def reference_inner_maximizer():
-        cfg = config_from_broad_epsilon_pgd_hps(config)
+        cfg = PgdFullStateEpsilonTrainingConfig.from_payload(config)
         specs = _ensure_broad_epsilon_input(trial_specs, epsilon_dim=cfg.epsilon_dim)
         base_epsilon = jnp.asarray(specs.inputs["epsilon"])
         radius = _broad_epsilon_l2_radius(specs, cfg).astype(base_epsilon.dtype)
@@ -6791,8 +6795,7 @@ def test_adaptive_epsilon_scaled_outer_full_training_emits_explicit_diagnostics(
     assert "adaptive_epsilon_ema_noise_floor" in diagnostics_manifest["arrays"]
     assert "adaptive_epsilon_outer_weight" in diagnostics_manifest["arrays"]
     assert (
-        "adaptive_epsilon_training_batch_full_strength_damage_raw"
-        in diagnostics_manifest["arrays"]
+        "adaptive_epsilon_training_batch_full_strength_damage_raw" in diagnostics_manifest["arrays"]
     )
     assert (
         "adaptive_epsilon_training_batch_applied_scaled_damage_raw"
