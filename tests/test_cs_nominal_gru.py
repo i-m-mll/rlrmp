@@ -425,7 +425,9 @@ def test_cs_nominal_gru_config_defaults_match_pre_refactor_fixture() -> None:
     expected["dry_run"] = False
 
     assert CsNominalGruConfig().model_dump(mode="python") == expected
-    assert vars(build_parser().parse_args([])) == expected
+    parsed_defaults = vars(build_parser().parse_args([]))
+    assert parsed_defaults.pop("compact_run_spec") is False
+    assert parsed_defaults == expected
 
 
 def test_stochastic_preset_metadata_is_independent_of_jax_x64() -> None:
@@ -486,7 +488,10 @@ def test_cs_nominal_gru_argparse_defaults_and_choices_derive_from_config() -> No
     assert parser.parse_args(
         ["--broad-epsilon-pgd-inner-optimizer-method", "adam"]
     ).broad_epsilon_pgd_inner_optimizer_method == (BROAD_EPSILON_PGD_ADAM)
+    assert parser.parse_args([]).compact_run_spec is False
+    assert parser.parse_args(["--compact-run-spec"]).compact_run_spec is True
     assert "--seed SEED" in help_text
+    assert "--compact-run-spec" in help_text
     assert "(default: 42)" in help_text
     assert "{old_020a65b,const_dense_all,const_sparse8,const_band8,const_band16,const_band36}" in (
         help_text
@@ -3253,6 +3258,7 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     assert manifest_path == spec_dir / "model.graph.manifest.json"
     assert not (spec_dir / "model.graph.json").exists()
     assert payload["schema_version"] == "rlrmp.cs_stochastic_gru.v1"
+    assert COMPACT_RUN_SPEC_KEY not in payload
     assert payload["issue"] == "30f2313"
     assert payload["model_summary"]["hidden_size"] == 4
     assert payload["model_summary"]["controller_kind"] == "gru"
@@ -3323,7 +3329,15 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     assert REPO_ROOT not in output_dir.parents
 
 
-def test_large_composed_run_spec_uses_compact_authoritative_envelope(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "compact_run_spec",
+    (False, True),
+    ids=("default_full_payload", "explicit_compact_envelope"),
+)
+def test_large_composed_run_spec_compaction_is_opt_in(
+    tmp_path: Path,
+    compact_run_spec: bool,
+) -> None:
     output_dir = tmp_path / "bulk"
     spec_dir = tmp_path / "spec"
     result = write_run_spec(
@@ -3350,12 +3364,19 @@ def test_large_composed_run_spec_uses_compact_authoritative_envelope(tmp_path: P
             perturbation_calibrated_timing=True,
             perturbation_physical_level="moderate",
             loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+            compact_run_spec=compact_run_spec,
         )
     )
 
     run_path = Path(result["run_spec_path"])
     payload = json.loads(run_path.read_text(encoding="utf-8"))
     authoritative = payload[RLRMP_RUN_SPEC_PAYLOAD_KEY]
+
+    if not compact_run_spec:
+        assert COMPACT_RUN_SPEC_KEY not in payload
+        assert run_path.stat().st_size > MAX_TRACKED_RUN_SPEC_BYTES
+        assert payload["hps"]["model"]["hidden_size"] == 180
+        return
 
     assert run_path.stat().st_size <= MAX_TRACKED_RUN_SPEC_BYTES
     assert set(payload) == {
@@ -3373,6 +3394,11 @@ def test_large_composed_run_spec_uses_compact_authoritative_envelope(tmp_path: P
     }
     assert payload["feedbax_graph"] == authoritative["feedbax_graph"]
     assert isinstance(payload[FEEDBAX_TRAINING_RUN_SPEC_KEY], dict)
+
+    replay_args = resolve_run_spec_args(_args(run_spec=str(run_path)))
+    assert replay_args.hidden_size == 180
+    assert replay_args.target_support_profile == "const_band16"
+    assert replay_args.perturbation_calibrated_timing is True
 
 
 def test_feedbax_training_run_spec_rejects_cs_fields(tmp_path: Path) -> None:
