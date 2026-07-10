@@ -40,15 +40,18 @@ Usage (from a worktree of rlrmp):
 """
 
 from __future__ import annotations
-from rlrmp.analysis.multi_cell_driver import compute_kinematics_per_replicate
+from rlrmp.analysis.multi_cell_driver import (
+    args_namespace,
+    compute_kinematics_per_replicate,
+    legacy_task_trainer_history_skeleton,
+)
 from rlrmp.viz.colors import hex_to_rgba as _color_rgba
 
 import argparse
 import json
 import warnings
 from pathlib import Path
-
-warnings.filterwarnings("ignore")
+from typing import Any
 
 import equinox as eqx
 import jax
@@ -59,7 +62,6 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476
-from feedbax.train import init_task_trainer_history, TaskTrainerHistory
 
 from rlrmp.paths import REPO_ROOT  # Bug: 8404108 — was __file__-relative
 from rlrmp.io import update_marked_section
@@ -70,10 +72,14 @@ from rlrmp.eval.ensemble import N_REPLICATES, eval_ensemble_on_trials
 from rlrmp.eval.minimax_io import load_config, load_model
 from rlrmp.analysis.math.trial_alignment import (
     align_trials,
-    pooled_trial_mean_with_band,
     replicate_mean_curves,
 )
-from rlrmp.viz import profile_comparison_grid
+from rlrmp.viz.figures import (
+    build_forward_velocity_figure as canonical_forward_velocity_figure,
+    build_hold_drift_figure as canonical_hold_drift_figure,
+)
+
+warnings.filterwarnings("ignore")
 
 
 # ---------------------------------------------------------------------------
@@ -179,39 +185,12 @@ def _make_args_namespace(label: str) -> argparse.Namespace:
     Shared defaults mirror the b399efc RUN_PLAN; per-cell overrides
     (``movement_ramp_*`` + ``nn_output_pre_go``) come from ``CELL_EXTRA_ARGS``.
     """
-    defaults = dict(
+    return args_namespace(
+        profile="movement_ramp",
         n_warmup_batches=N_WARMUP_BATCHES,
-        n_adversary_batches=0,
-        batch_size=250,
         n_replicates=N_REPLICATES,
-        seed=42,
-        hidden_type="gru",
-        sisu_gating="additive",
-        loss_update_enabled=False,
-        loss_update_ratio=0.5,
-        # Shared loss-weight defaults for b399efc (Bug: b399efc — see RUN_PLAN).
-        effector_pos_running=1.0,
-        effector_hold_pos=0.0,
-        effector_hold_vel=0.0,
-        effector_pos_late_weight=0.0,
-        effector_vel_late=0.0,
-        effector_final_vel=0.0,
-        effector_pos_late_final_scale=2.0,
-        effector_pos_late_start_step=80,
-        p_catch_trial=0.5,
-        nn_output=1e-5,
-        nn_hidden=1e-5,
-        nn_output_jerk=0.0,
-        nn_hidden_derivative=0.001,
-        nn_hidden_derivative_pre_go=0.0,
-        # Schedule shape: movement_ramp for running cost, flat for hold.
-        effector_pos_running_schedule="movement_ramp",
-        effector_hold_pos_schedule="flat",
-        position_powerlaw_power=6.0,
-        controller_lr=1e-4,
+        overrides=CELL_EXTRA_ARGS[label],
     )
-    defaults.update(CELL_EXTRA_ARGS[label])
-    return argparse.Namespace(**defaults)
 
 
 def _count_replicates_in_model(model, *, expected: int = N_REPLICATES) -> int:
@@ -279,7 +258,7 @@ def load_cell_model(label: str, artifact_base: Path):
     return model, task, hps, n_reps
 
 
-def load_cell_history(label: str, artifact_base: Path, hps) -> TaskTrainerHistory | None:
+def load_cell_history(label: str, artifact_base: Path, hps) -> Any | None:
     """Load warmup_history.eqx for ``label`` by building the proper skeleton.
 
     Returns ``None`` if the history file is absent or fails to deserialise.
@@ -290,7 +269,7 @@ def load_cell_history(label: str, artifact_base: Path, hps) -> TaskTrainerHistor
         return None
 
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(_make_args_namespace(label).seed))
-    skeleton = init_task_trainer_history(
+    skeleton = legacy_task_trainer_history_skeleton(
         loss_func=pair.task.loss_func,
         n_batches=N_WARMUP_BATCHES,
         n_replicates=N_REPLICATES,
@@ -390,138 +369,42 @@ def make_forward_velocity_profile_figure(
     dt: float = 0.01,
 ) -> go.Figure:
     """Per-cell pooled-trial-mean forward velocity profile, go-cue-aligned."""
-    labels_present = [l for l in CELL_VARIANTS if l in cell_kms]
-    n_cells = len(labels_present)
-    if n_cells == 0:
-        return go.Figure()
-
-    fig = profile_comparison_grid(
-        n_panels=n_cells,
-        subplot_titles=[CELL_DISPLAY_NAMES[l] for l in labels_present],
-        vertical_spacing=0.025,
-    )
-
-    for row, label in enumerate(labels_present, start=1):
-        km = cell_kms[label]
-        v_fwd = km["forward_vel_profile"]
-        go_idx = km["go_idx"]
-        color = CELL_COLORS[label]
-
-        aligned_v, center = align_trials(v_fwd, go_idx)
-        mean, lower, upper, sl = pooled_trial_mean_with_band(aligned_v, band="sd")
-        t = ((np.arange(aligned_v.shape[-1]) - center) * dt)[sl]
-
-        # SD band (upper invisible, lower filled to upper)
-        fig.add_trace(go.Scatter(
-            x=t, y=upper, mode="lines",
-            line=dict(color="rgba(0,0,0,0)"),
-            hoverinfo="skip", showlegend=False,
-        ), row=row, col=1)
-        fig.add_trace(go.Scatter(
-            x=t, y=lower, mode="lines",
-            line=dict(color="rgba(0,0,0,0)"),
-            fill="tonexty", fillcolor=_color_rgba(color, 0.25),
-            hoverinfo="skip", showlegend=False,
-        ), row=row, col=1)
-        fig.add_trace(go.Scatter(
-            x=t, y=mean, mode="lines",
-            line=dict(color=color, width=2),
-            name=CELL_DISPLAY_NAMES[label], showlegend=False,
-        ), row=row, col=1)
-
-        fig.add_vline(
-            x=0.0,
-            line=dict(color="black", dash="dash", width=1),
-            row=row, col=1,
-        )
-
-    fig.update_layout(
+    return canonical_forward_velocity_figure(
+        cell_kms,
+        labels=CELL_VARIANTS,
+        display_names=CELL_DISPLAY_NAMES,
+        colors=CELL_COLORS,
+        trace_mode="pooled",
         title=(
             "Forward velocity profiles (go-cue-aligned, pooled trial mean ± SD) — "
             "7-cell movement-ramp matrix (b399efc)"
         ),
         width=1000,
-        height=170 * n_cells + 100,
-        margin=dict(l=70, r=60, t=80, b=60),
-        hovermode="x unified",
+        height_per_cell=170,
+        vertical_spacing=0.025,
+        dt=dt,
     )
-    fig.update_xaxes(title_text="Time relative to go cue (s)", row=n_cells, col=1)
-    for row in range(1, n_cells + 1):
-        fig.update_yaxes(title_text="Fwd vel (m/s)", row=row, col=1)
-
-    return fig
-
 
 def make_hold_drift_figure(
     cell_kms: dict[str, dict],
     dt: float = 0.01,
 ) -> go.Figure:
     """Per-cell pooled-trial-mean pre-go forward-position drift."""
-    labels_present = [l for l in CELL_VARIANTS if l in cell_kms]
-    n_cells = len(labels_present)
-    if n_cells == 0:
-        return go.Figure()
-
-    fig = profile_comparison_grid(
-        n_panels=n_cells,
-        subplot_titles=[CELL_DISPLAY_NAMES[l] for l in labels_present],
-        vertical_spacing=0.025,
-    )
-
-    for row, label in enumerate(labels_present, start=1):
-        km = cell_kms[label]
-        pos_fwd = km["pos_forward_profile"]
-        go_idx = km["go_idx"]
-        color = CELL_COLORS[label]
-
-        aligned_pos, center = align_trials(pos_fwd, go_idx)
-        mean_m, lower_m, upper_m, sl = pooled_trial_mean_with_band(aligned_pos, band="sd")
-        mean = mean_m * 1000.0
-        lower = lower_m * 1000.0
-        upper = upper_m * 1000.0
-
-        t_rel = ((np.arange(aligned_pos.shape[-1]) - center) * dt)[sl]
-        keep = t_rel <= 0.0
-        t_pre = t_rel[keep]
-        mean = mean[keep]
-        lower = lower[keep]
-        upper = upper[keep]
-
-        fig.add_trace(go.Scatter(
-            x=t_pre, y=upper, mode="lines",
-            line=dict(color="rgba(0,0,0,0)"),
-            hoverinfo="skip", showlegend=False,
-        ), row=row, col=1)
-        fig.add_trace(go.Scatter(
-            x=t_pre, y=lower, mode="lines",
-            line=dict(color="rgba(0,0,0,0)"),
-            fill="tonexty", fillcolor=_color_rgba(color, 0.25),
-            hoverinfo="skip", showlegend=False,
-        ), row=row, col=1)
-        fig.add_trace(go.Scatter(
-            x=t_pre, y=mean, mode="lines",
-            line=dict(color=color, width=2),
-            name=CELL_DISPLAY_NAMES[label], showlegend=False,
-        ), row=row, col=1)
-
-        fig.add_hline(y=0, line=dict(color="grey", dash="dot", width=1), row=row, col=1)
-
-    fig.update_layout(
+    return canonical_hold_drift_figure(
+        cell_kms,
+        labels=CELL_VARIANTS,
+        display_names=CELL_DISPLAY_NAMES,
+        colors=CELL_COLORS,
+        trace_mode="pooled",
         title=(
             "Pre-go forward position drift (go-cue-aligned, pooled trial mean ± SD) — "
             "7-cell movement-ramp matrix (b399efc)"
         ),
         width=1000,
-        height=170 * n_cells + 100,
-        margin=dict(l=70, r=60, t=80, b=60),
-        hovermode="x unified",
+        height_per_cell=170,
+        vertical_spacing=0.025,
+        dt=dt,
     )
-    fig.update_xaxes(title_text="Time relative to go cue (s)", row=n_cells, col=1)
-    for row in range(1, n_cells + 1):
-        fig.update_yaxes(title_text="Fwd pos (mm)", row=row, col=1)
-
-    return fig
-
 
 def make_peak_velocity_figure(cell_stats: dict[str, dict]) -> go.Figure:
     """Per-cell per-replicate peak forward velocity (violin + points)."""
@@ -680,7 +563,7 @@ def _add_band_traces(
     ), **kw)
 
 
-def make_training_loss_figure(histories: dict[str, TaskTrainerHistory]) -> tuple[go.Figure, dict]:
+def make_training_loss_figure(histories: dict[str, Any]) -> tuple[go.Figure, dict]:
     """Total weighted training-loss curve per cell, mean ± SD over replicates."""
     fig = go.Figure()
     end_stats: dict[str, dict] = {}
@@ -724,7 +607,7 @@ def make_training_loss_figure(histories: dict[str, TaskTrainerHistory]) -> tuple
     return fig, end_stats
 
 
-def make_training_loss_per_term_figure(histories: dict[str, TaskTrainerHistory]) -> go.Figure:
+def make_training_loss_per_term_figure(histories: dict[str, Any]) -> go.Figure:
     """Per-term weighted training-loss decomposition for all cells."""
     all_term_keys: set[str] = set()
     term_data: dict[str, dict[str, np.ndarray]] = {}
@@ -910,7 +793,7 @@ def main():
     # -----------------------------------------------------------------------
     cell_stats: dict[str, dict] = {}
     cell_kms: dict[str, dict] = {}
-    histories: dict[str, TaskTrainerHistory] = {}
+    histories: dict[str, Any] = {}
     input_artifacts: list[dict] = []
 
     for label in CELL_VARIANTS:

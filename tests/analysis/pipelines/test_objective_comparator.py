@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import equinox as eqx
@@ -12,6 +13,8 @@ import jax.random as jr
 import numpy as np
 
 import rlrmp.analysis.pipelines.objective_comparator as objective_comparator
+from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
+from rlrmp.eval.ensemble import eval_ensemble_on_trials
 from rlrmp.analysis.pipelines.objective_comparator import (
     SCHEMA_VERSION,
     ExtLQGCostDecomposition,
@@ -660,22 +663,20 @@ def _legacy_evaluate_replicate_model_states(
     n_replicates: int,
     seed: int,
 ) -> Any:
-    model_arrays, model_other = eqx.partition(
-        model,
-        lambda leaf: objective_comparator._is_replicate_array(leaf, n_replicates),
+    n_trials = objective_comparator.bank_batch_size(trial_specs)
+    adapted_specs = SimpleNamespace(
+        inits=trial_specs.inits,
+        inputs=trial_specs.inputs,
+        intervene={
+            PLANT_INTERVENOR_LABEL: SimpleNamespace(scale=jnp.zeros((n_trials,)))
+        },
     )
-
-    def eval_one_replicate(model_array_leaves: Any, key: Any) -> Any:
-        replicate_model = eqx.combine(model_array_leaves, model_other)
-        return task.eval_trials(
-            replicate_model,
-            trial_specs,
-            jr.split(key, objective_comparator.bank_batch_size(trial_specs)),
-        )
-
-    return eqx.filter_vmap(eval_one_replicate, in_axes=(0, 0))(
-        model_arrays,
-        jr.split(jr.PRNGKey(seed), n_replicates),
+    return eval_ensemble_on_trials(
+        task,
+        model,
+        adapted_specs,
+        key=jr.PRNGKey(seed),
+        n_replicates=n_replicates,
     )
 
 

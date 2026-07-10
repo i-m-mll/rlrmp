@@ -27,8 +27,6 @@ import argparse
 import warnings
 from pathlib import Path
 
-warnings.filterwarnings("ignore")
-
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -40,10 +38,13 @@ from jax_cookbook import load_with_hyperparameters
 from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476
 from plotly.subplots import make_subplots
 
+from rlrmp.analysis.multi_cell_driver import args_namespace
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.paths import REPO_ROOT  # Bug: 8404108 — was __file__-relative
 from rlrmp.train.minimax import build_hps
 from rlrmp.train.task_model import setup_task_model_pair
+
+warnings.filterwarnings("ignore")
 
 COMBO_LABEL = "gru__jerk_motor_smooth_combo"
 N_REPLICATES = 5
@@ -60,30 +61,12 @@ REP_COLORS = [
 
 
 def _make_args_namespace():
-    defaults = dict(
+    return args_namespace(
+        profile="anti_anticipation",
         n_warmup_batches=N_WARMUP_BATCHES,
-        n_adversary_batches=0,
-        batch_size=250,
         n_replicates=N_REPLICATES,
-        nn_output_jerk=1e5,
-        seed=42,
-        hidden_type="gru",
-        sisu_gating="additive",
-        loss_update_enabled=False,
-        loss_update_ratio=0.5,
-        effector_pos_running=1.0,
-        effector_pos_late_weight=0.5,
-        effector_vel_late=0.1,
-        effector_final_vel=0.0,
-        effector_pos_late_final_scale=2.0,
-        effector_pos_late_start_step=80,
-        nn_hidden_derivative=0.0,
-        nn_output_pre_go=0.0,
-        nn_hidden_derivative_pre_go=0.0,
-        controller_lr=1e-4,
+        overrides=COMBO_EXTRA_ARGS,
     )
-    defaults.update(COMBO_EXTRA_ARGS)
-    return argparse.Namespace(**defaults)
 
 
 def load_combo_model(artifact_base: Path):

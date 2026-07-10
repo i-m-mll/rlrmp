@@ -38,15 +38,18 @@ Usage (from repo root):
 """
 
 from __future__ import annotations
-from rlrmp.analysis.multi_cell_driver import compute_kinematics_per_replicate
+from rlrmp.analysis.multi_cell_driver import (
+    args_namespace,
+    compute_kinematics_per_replicate,
+    legacy_task_trainer_history_skeleton,
+)
 from rlrmp.viz.colors import hex_to_rgba as _color_rgba
 
 import argparse
 import json
 import warnings
 from pathlib import Path
-
-warnings.filterwarnings("ignore")
+from typing import Any
 
 import equinox as eqx
 import jax
@@ -57,19 +60,22 @@ import numpy as np
 import plotly.graph_objects as go
 from jax_cookbook import load_with_hyperparameters
 from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476 -- project-config routing
-from feedbax.train import TaskTrainerHistory, init_task_trainer_history
 from plotly.subplots import make_subplots
 
 from rlrmp.analysis.math.trial_alignment import (
     align_trials,
-    pooled_trial_mean_with_band,
     replicate_mean_curves,
 )
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.paths import REPO_ROOT  # Bug: 8404108 — was __file__-relative
 from rlrmp.train.minimax import build_hps
 from rlrmp.train.task_model import setup_task_model_pair
-from rlrmp.viz import profile_comparison_grid
+from rlrmp.viz.figures import (
+    build_forward_velocity_figure as canonical_forward_velocity_figure,
+    build_hold_drift_figure as canonical_hold_drift_figure,
+)
+
+warnings.filterwarnings("ignore")
 
 # ---------------------------------------------------------------------------
 # Cell definitions
@@ -227,40 +233,12 @@ EXPERIMENT = "3702f54"
 
 def _make_args_namespace(label: str) -> argparse.Namespace:
     """Build argparse.Namespace with the correct per-cell CLI flags."""
-    defaults = dict(
+    return args_namespace(
+        profile="lit_replication",
         n_warmup_batches=N_WARMUP_BATCHES,
-        n_adversary_batches=0,
-        batch_size=250,
         n_replicates=N_REPLICATES,
-        nn_output_jerk=0.0,
-        seed=42,
-        hidden_type="gru",
-        sisu_gating="additive",
-        loss_update_enabled=False,
-        loss_update_ratio=0.5,
-        # Shared loss weights (per RUN_PLAN.md)
-        effector_pos_running=1.0,
-        effector_hold_pos=1.0,
-        effector_hold_vel=0.0,
-        effector_pos_late_weight=0.0,
-        effector_vel_late=0.0,
-        effector_final_vel=0.0,
-        effector_pos_late_final_scale=2.0,
-        effector_pos_late_start_step=80,
-        p_catch_trial=0.5,
-        nn_output=1e-5,
-        nn_hidden=1e-5,
-        nn_hidden_derivative=1e-3,  # explicit on 3702f54 (and f47abb1 baselines)
-        nn_output_pre_go=0.0,
-        nn_hidden_derivative_pre_go=0.0,
-        # Power-law schedule (per-cell overrides)
-        effector_pos_running_schedule="flat",
-        effector_hold_pos_schedule="flat",
-        position_powerlaw_power=6.0,
-        controller_lr=1e-4,
+        overrides=CELL_EXTRA_ARGS[label],
     )
-    defaults.update(CELL_EXTRA_ARGS[label])
-    return argparse.Namespace(**defaults)
 
 
 # ---------------------------------------------------------------------------
@@ -301,7 +279,7 @@ def _count_replicates(model) -> int:
     return 1
 
 
-def load_warmup_history(label: str, artifact_base: Path) -> TaskTrainerHistory:
+def load_warmup_history(label: str, artifact_base: Path) -> Any:
     """Load `warmup_history.eqx` for per-cell loss-decomposition figure."""
     experiment = CELL_ARTIFACT_EXPERIMENT[label]
     cell_dir = artifact_base / experiment / "runs" / label
@@ -313,7 +291,7 @@ def load_warmup_history(label: str, artifact_base: Path) -> TaskTrainerHistory:
     hps = build_hps(args)
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(42))
 
-    skeleton = init_task_trainer_history(
+    skeleton = legacy_task_trainer_history_skeleton(
         loss_func=pair.task.loss_func,
         n_batches=N_WARMUP_BATCHES,
         n_replicates=N_REPLICATES,
@@ -438,168 +416,47 @@ def make_forward_velocity_profile_figure(
     dt: float = 0.01,
 ) -> go.Figure:
     """Forward velocity time series faceted by cell, mean +/- SD across replicates."""
-    labels_present = [l for l in CELL_LABELS if l in cell_kms]
-    n_cells = len(labels_present)
-    if n_cells == 0:
-        return go.Figure()
-
-    # Bug: 06f7faf — profile_comparison_grid applies shared y-axes by default
-    # so cells are visually comparable across panels.
-    fig = profile_comparison_grid(
-        n_panels=n_cells,
-        subplot_titles=[CELL_DISPLAY_NAMES[l] for l in labels_present],
-        vertical_spacing=0.025,
-    )
-
-    for row, label in enumerate(labels_present, start=1):
-        km = cell_kms[label]
-        v_fwd = km["forward_vel_profile"]  # (n_rep, n_trials, n_steps)
-        go_idx = km["go_idx"]
-        n_rep, n_trials, n_steps = v_fwd.shape
-        color = CELL_COLORS[label]
-
-        # Bug: 06f7faf — go-cue alignment + pooled (replicate, trial) band.
-        # Each trial is re-locked to its own go cue (column = center); the
-        # plotted band represents inter-trial variability over the full pooled
-        # (n_rep * n_trials) population. Aggregator trims the choppy NaN-edge
-        # columns to the strict full-support window and returns the slice.
-        aligned_v, center = align_trials(v_fwd, go_idx)
-        mean, lower, upper, sl = pooled_trial_mean_with_band(aligned_v, band="sd")
-        # Time axis relative to go cue (t=0 at go), trimmed to match the curve.
-        t = ((np.arange(aligned_v.shape[-1]) - center) * dt)[sl]
-
-        # Upper band
-        fig.add_trace(go.Scatter(
-            x=t, y=upper, mode="lines",
-            line=dict(color="rgba(0,0,0,0)"),
-            hoverinfo="skip", showlegend=False,
-        ), row=row, col=1)
-        # Lower band w/ fill
-        fig.add_trace(go.Scatter(
-            x=t, y=lower, mode="lines",
-            line=dict(color="rgba(0,0,0,0)"),
-            fill="tonexty", fillcolor=_color_rgba(color, 0.25),
-            hoverinfo="skip", showlegend=False,
-        ), row=row, col=1)
-        # Mean line
-        fig.add_trace(go.Scatter(
-            x=t, y=mean, mode="lines",
-            line=dict(color=color, width=2),
-            name=CELL_DISPLAY_NAMES[label], showlegend=False,
-        ), row=row, col=1)
-
-        # Go cue is now at t=0 by construction (per-trial alignment).
-        fig.add_vline(
-            x=0.0,
-            line=dict(color="black", dash="dash", width=1),
-            row=row, col=1,
-        )
-
-    fig.update_layout(
+    return canonical_forward_velocity_figure(
+        cell_kms,
+        labels=CELL_LABELS,
+        display_names=CELL_DISPLAY_NAMES,
+        colors=CELL_COLORS,
+        trace_mode="pooled",
         title=(
-            "Forward velocity profiles (go-cue-aligned, pooled trial mean ± SD) — pre-go matrix (3702f54)<br>"
-            "<sup>Each trial re-locked to its go cue (t=0). Band is across pooled "
-            "(replicate × trial) samples. Baselines at top. Bug: 06f7faf.</sup>"
+            "Forward velocity profiles (go-cue-aligned, pooled trial mean ± SD) — "
+            "pre-go matrix (3702f54)<br><sup>Each trial re-locked to its go cue (t=0). "
+            "Band is across pooled (replicate × trial) samples. Baselines at top. "
+            "Bug: 06f7faf.</sup>"
         ),
         width=1000,
-        height=180 * n_cells + 100,
-        margin=dict(l=70, r=60, t=80, b=60),
-        hovermode="x unified",
+        height_per_cell=180,
+        vertical_spacing=0.025,
+        dt=dt,
     )
-    fig.update_xaxes(title_text="Time relative to go cue (s)", row=n_cells, col=1)
-    for row in range(1, n_cells + 1):
-        fig.update_yaxes(title_text="Fwd vel (m/s)", row=row, col=1)
-
-    return fig
-
 
 def make_hold_drift_figure(
     cell_kms: dict[str, dict],
     dt: float = 0.01,
 ) -> go.Figure:
     """Pre-go forward position (anticipation) per cell."""
-    labels_present = [l for l in CELL_LABELS if l in cell_kms]
-    n_cells = len(labels_present)
-    if n_cells == 0:
-        return go.Figure()
-
-    # Bug: 06f7faf — shared y-axes via profile_comparison_grid; hold-drift
-    # plots compare anticipation amplitude across cells, so visual comparability
-    # is essential.
-    fig = profile_comparison_grid(
-        n_panels=n_cells,
-        subplot_titles=[CELL_DISPLAY_NAMES[l] for l in labels_present],
-        vertical_spacing=0.025,
-    )
-
-    for row, label in enumerate(labels_present, start=1):
-        km = cell_kms[label]
-        pos_fwd = km["pos_forward_profile"]  # (n_rep, n_trials, n_steps)
-        go_idx = km["go_idx"]
-        n_rep, n_trials, n_steps = pos_fwd.shape
-        color = CELL_COLORS[label]
-
-        # Bug: 06f7faf — align to go cue, then clip to the pre-go window
-        # (t in [-window, 0]). Pooled-trial band; aggregator trims the
-        # choppy NaN-edge columns to full-support before reducing.
-        aligned_pos, center = align_trials(pos_fwd, go_idx)
-        mean_m, lower_m, upper_m, sl = pooled_trial_mean_with_band(aligned_pos, band="sd")
-        # Convert to mm
-        mean = mean_m * 1000.0
-        lower = lower_m * 1000.0
-        upper = upper_m * 1000.0
-
-        # Time axis relative to go cue, trimmed to the full-support window.
-        t_rel = ((np.arange(aligned_pos.shape[-1]) - center) * dt)[sl]
-        # Clip to pre-go window (-PRE_GO_WINDOW_STEPS to 0)
-        keep = (t_rel >= -PRE_GO_WINDOW_STEPS * dt) & (t_rel <= 0.0)
-        t_pre = t_rel[keep]
-        mean = mean[keep]
-        lower = lower[keep]
-        upper = upper[keep]
-
-        fig.add_trace(go.Scatter(
-            x=t_pre, y=upper, mode="lines",
-            line=dict(color="rgba(0,0,0,0)"),
-            hoverinfo="skip", showlegend=False,
-        ), row=row, col=1)
-        fig.add_trace(go.Scatter(
-            x=t_pre, y=lower, mode="lines",
-            line=dict(color="rgba(0,0,0,0)"),
-            fill="tonexty", fillcolor=_color_rgba(color, 0.25),
-            hoverinfo="skip", showlegend=False,
-        ), row=row, col=1)
-        fig.add_trace(go.Scatter(
-            x=t_pre, y=mean, mode="lines",
-            line=dict(color=color, width=2),
-            name=CELL_DISPLAY_NAMES[label], showlegend=False,
-        ), row=row, col=1)
-
-        fig.add_hline(y=0, line=dict(color="grey", dash="dot", width=1), row=row, col=1)
-        # Mark pre-go window onset (-PRE_GO_WINDOW_STEPS*dt)
-        fig.add_vline(
-            x=-PRE_GO_WINDOW_STEPS * dt,
-            line=dict(color="red", dash="dot", width=1),
-            row=row, col=1,
-        )
-
-    fig.update_layout(
+    return canonical_hold_drift_figure(
+        cell_kms,
+        labels=CELL_LABELS,
+        display_names=CELL_DISPLAY_NAMES,
+        colors=CELL_COLORS,
+        trace_mode="pooled",
         title=(
-            "Pre-go forward position drift (anticipation, go-cue-aligned) — pre-go matrix (3702f54)<br>"
-            "<sup>Pooled (replicate × trial) mean ± SD. Red dotted = pre-go window onset (-200 ms). "
-            "t=0 is the go cue per trial. Baselines at top. Bug: 06f7faf.</sup>"
+            "Pre-go forward position drift (anticipation, go-cue-aligned) — "
+            "pre-go matrix (3702f54)<br><sup>Pooled (replicate × trial) mean ± SD. "
+            "Red dotted = pre-go window onset (-200 ms). t=0 is the go cue per trial. "
+            "Baselines at top. Bug: 06f7faf.</sup>"
         ),
         width=1000,
-        height=180 * n_cells + 100,
-        margin=dict(l=70, r=60, t=80, b=60),
-        hovermode="x unified",
+        height_per_cell=180,
+        vertical_spacing=0.025,
+        pre_go_window_steps=PRE_GO_WINDOW_STEPS,
+        dt=dt,
     )
-    fig.update_xaxes(title_text="Time relative to go cue (s)", row=n_cells, col=1)
-    for row in range(1, n_cells + 1):
-        fig.update_yaxes(title_text="Fwd pos (mm)", row=row, col=1)
-
-    return fig
-
 
 def make_peak_velocity_figure(cell_stats: dict[str, dict]) -> go.Figure:
     """Strip/violin plot of per-replicate peak forward velocity."""
@@ -720,7 +577,7 @@ def make_summary_metrics_figure(cell_stats: dict[str, dict]) -> go.Figure:
     return fig
 
 
-def make_training_loss_per_term_figure(histories: dict[str, TaskTrainerHistory]) -> go.Figure:
+def make_training_loss_per_term_figure(histories: dict[str, Any]) -> go.Figure:
     """Per-term training loss decomposition for all loaded cells."""
     all_term_keys: set[str] = set()
     term_data: dict[str, dict[str, np.ndarray]] = {}
@@ -1046,7 +903,7 @@ def main():
     # Figure 5: Training loss per term
     if not args.skip_training_loss:
         print("\n--- Loading warmup histories for per-term loss figure ---")
-        histories: dict[str, TaskTrainerHistory] = {}
+        histories: dict[str, Any] = {}
         history_inputs: list[dict] = []
         for label in CELL_LABELS:
             if label not in cell_stats:

@@ -43,6 +43,7 @@ from rlrmp.train.cs_perturbation_training import (
 )
 from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.viz import profile_comparison_grid
+from rlrmp.viz.traces import add_band_trace as canonical_add_band_trace
 
 jax.config.update("jax_enable_x64", True)
 
@@ -1083,50 +1084,48 @@ def evaluate_no_pgd_crossed_panels() -> list[CrossedPanel]:
 
 def add_band_trace(fig: go.Figure, profile: VelocityProfile) -> None:
     """Add a mean velocity trace with a one-standard-deviation band."""
-
-    upper = profile.mean + profile.std
-    lower = profile.mean - profile.std
     color = profile.run.color
     legend_group = f"{profile.run.experiment}::{profile.run.run_id}"
-    fig.add_trace(
-        go.Scatter(
-            x=np.concatenate([profile.time_s, profile.time_s[::-1]]),
-            y=np.concatenate([upper, lower[::-1]]),
-            fill="toself",
-            fillcolor=hex_to_rgba(color, 0.13),
-            line={"color": "rgba(0,0,0,0)"},
-            hoverinfo="skip",
-            legendgroup=legend_group,
-            name=profile.run.label,
-            showlegend=False,
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=profile.time_s,
-            y=profile.mean,
-            mode="lines",
-            line={"color": color, "width": 2.5},
-            legendgroup=legend_group,
-            name=profile.run.label,
-        )
+    canonical_add_band_trace(
+        fig,
+        x=profile.time_s,
+        mean=profile.mean,
+        spread=profile.std,
+        color=color,
+        name=profile.run.label,
+        legendgroup=legend_group,
+        fill_alpha=0.13,
+        line_width=2.5,
+        band_label=profile.run.label,
     )
 
 
+def _write_profile_outputs(
+    profiles: list[Any],
+    *,
+    topic: str,
+    marker: str,
+    title: str,
+    yaxis_title: str,
+    html_stem: str,
+    schema_version: str,
+    trace_adder: Callable[[go.Figure, Any], None],
+    data_arrays: dict[str, Any],
+    manifest_extra: dict[str, Any],
+    spec_extra: dict[str, Any],
+    inputs: list[dict[str, Any]],
+    note_lines: list[str],
+) -> dict[str, Any]:
+    """Write one profile figure, data archive, manifest, spec, and tracked note."""
 
-
-def write_outputs(profiles: list[VelocityProfile]) -> dict[str, Any]:
-    """Write figure, data, manifest, and note outputs."""
-
-    figure_dir = mkdir_p(figure_artifact_dir(EXPERIMENT, TOPIC))
-    spec_dir = mkdir_p(figure_spec_dir(EXPERIMENT, TOPIC))
+    figure_dir = mkdir_p(figure_artifact_dir(EXPERIMENT, topic))
+    spec_dir = mkdir_p(figure_spec_dir(EXPERIMENT, topic))
     notes_dir = mkdir_p(REPO_ROOT / "results" / EXPERIMENT / "notes")
-
     fig = go.Figure()
     for profile in profiles:
-        add_band_trace(fig, profile)
+        trace_adder(fig, profile)
     fig.update_layout(
-        title="Nominal length-normalized target-radial velocity profiles",
+        title=title,
         width=960,
         height=560,
         margin={"l": 72, "r": 24, "t": 72, "b": 68},
@@ -1134,26 +1133,66 @@ def write_outputs(profiles: list[VelocityProfile]) -> dict[str, Any]:
         legend={"orientation": "h", "y": -0.22, "x": 0.0, "groupclick": "togglegroup"},
     )
     fig.update_xaxes(title_text="Time (s)", zeroline=False)
-    fig.update_yaxes(title_text="Target-radial velocity / reach length (1/s)", zeroline=True)
+    fig.update_yaxes(title_text=yaxis_title, zeroline=True)
 
-    html_path = figure_dir / "nominal_forward_velocity_profiles.html"
+    html_path = figure_dir / f"{html_stem}.html"
+    data_path = figure_dir / f"{html_stem}.npz"
+    manifest_path = figure_dir / "manifest.json"
     fig.write_html(html_path, include_plotlyjs="cdn")
-    data_path = figure_dir / "nominal_forward_velocity_profiles.npz"
-    np.savez_compressed(
-        data_path,
-        **{
-            f"{profile.run.experiment}__{profile.run.run_id}__time_s": profile.time_s
-            for profile in profiles
-        },
-        **{
-            f"{profile.run.experiment}__{profile.run.run_id}__mean": profile.mean
-            for profile in profiles
-        },
-        **{
-            f"{profile.run.experiment}__{profile.run.run_id}__std": profile.std
-            for profile in profiles
-        },
+    np.savez_compressed(data_path, **data_arrays)
+    manifest = {
+        "schema_version": schema_version,
+        "figure": repo_relative(html_path),
+        "data": repo_relative(data_path),
+        **manifest_extra,
+    }
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
     )
+    figure_link = spec_dir / "figure.html"
+    if figure_link.exists() or figure_link.is_symlink():
+        figure_link.unlink()
+    figure_link.symlink_to(os.path.relpath(html_path, start=figure_link.parent))
+    spec = {
+        "schema_version": "rlrmp.figure_spec.v1",
+        "topic": topic,
+        "source_script": repo_relative(Path(__file__)),
+        "manifest": repo_relative(manifest_path),
+        "figure": repo_relative(html_path),
+        "figure_link": repo_relative(figure_link),
+        "data": repo_relative(data_path),
+        **spec_extra,
+        "inputs": inputs,
+    }
+    (spec_dir / "spec.json").write_text(
+        json.dumps(spec, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    note = "\n".join(
+        [
+            *note_lines,
+            "",
+            f"- Figure: `{repo_relative(html_path)}`",
+            f"- Data: `{repo_relative(data_path)}`",
+            f"- Manifest: `{repo_relative(manifest_path)}`",
+            "",
+        ]
+    )
+    note_path = notes_dir / f"{topic}.md"
+    update_marked_section(note_path, marker, note)
+    manifest["note"] = repo_relative(note_path)
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return manifest
+
+
+
+
+def write_outputs(profiles: list[VelocityProfile]) -> dict[str, Any]:
+    """Write figure, data, manifest, and note outputs."""
 
     rows = [
         {
@@ -1172,35 +1211,56 @@ def write_outputs(profiles: list[VelocityProfile]) -> dict[str, Any]:
         }
         for profile in profiles
     ]
-    manifest = {
-        "schema_version": "rlrmp.e901a20.nominal_velocity_profile_comparison.v1",
-        "figure": repo_relative(html_path),
-        "data": repo_relative(data_path),
-        "evaluation_lens": "nominal_clean_validation_trials",
-        "velocity_definition": (
-            "effector velocity projected onto each trial's target direction, divided by "
-            "that trial's reach length"
-        ),
-        "runs": rows,
-    }
-    manifest_path = figure_dir / "manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    figure_link = spec_dir / "figure.html"
-    if figure_link.exists() or figure_link.is_symlink():
-        figure_link.unlink()
-    figure_link.symlink_to(os.path.relpath(html_path, start=figure_link.parent))
-    spec = {
-        "schema_version": "rlrmp.figure_spec.v1",
-        "topic": TOPIC,
-        "source_script": repo_relative(Path(__file__)),
-        "manifest": repo_relative(manifest_path),
-        "figure": repo_relative(html_path),
-        "figure_link": repo_relative(figure_link),
-        "data": repo_relative(data_path),
-        "evaluation_lens": manifest["evaluation_lens"],
-        "velocity_definition": manifest["velocity_definition"],
-        "runs": rows,
-        "inputs": [
+    velocity_definition = (
+        "effector velocity projected onto each trial's target direction, divided by "
+        "that trial's reach length"
+    )
+    table_lines = [
+        "| Row | Peak mean normalized velocity (1/s) | Time of peak (s) | Reach lengths (m) | Pooled profiles |",
+        "|---|---:|---:|---:|---:|",
+        *[
+            f"| `{row['label']}` | "
+            f"{row['peak_mean_length_normalized_forward_velocity_1_s']:.4f} | "
+            f"{row['time_of_peak_mean_forward_velocity_s']:.3f} | "
+            f"{row['target_distance_min_m']:.2f}-{row['target_distance_max_m']:.2f} | "
+            f"{row['n_pooled_profiles']} |"
+            for row in rows
+        ],
+    ]
+    return _write_profile_outputs(
+        profiles,
+        topic=TOPIC,
+        marker=NOMINAL_MARKER,
+        title="Nominal length-normalized target-radial velocity profiles",
+        yaxis_title="Target-radial velocity / reach length (1/s)",
+        html_stem="nominal_forward_velocity_profiles",
+        schema_version="rlrmp.e901a20.nominal_velocity_profile_comparison.v1",
+        trace_adder=add_band_trace,
+        data_arrays={
+            **{
+                f"{profile.run.experiment}__{profile.run.run_id}__time_s": profile.time_s
+                for profile in profiles
+            },
+            **{
+                f"{profile.run.experiment}__{profile.run.run_id}__mean": profile.mean
+                for profile in profiles
+            },
+            **{
+                f"{profile.run.experiment}__{profile.run.run_id}__std": profile.std
+                for profile in profiles
+            },
+        },
+        manifest_extra={
+            "evaluation_lens": "nominal_clean_validation_trials",
+            "velocity_definition": velocity_definition,
+            "runs": rows,
+        },
+        spec_extra={
+            "evaluation_lens": "nominal_clean_validation_trials",
+            "velocity_definition": velocity_definition,
+            "runs": rows,
+        },
+        inputs=[
             {
                 "run_spec": repo_relative(run_spec_path(ref.experiment, ref.run_id)),
                 "trained_model": repo_relative(
@@ -1209,24 +1269,7 @@ def write_outputs(profiles: list[VelocityProfile]) -> dict[str, Any]:
             }
             for ref in RUNS
         ],
-    }
-    spec_path = spec_dir / "spec.json"
-    spec_path.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-    table_lines = [
-        "| Row | Peak mean normalized velocity (1/s) | Time of peak (s) | Reach lengths (m) | Pooled profiles |",
-        "|---|---:|---:|---:|---:|",
-    ]
-    for row in rows:
-        table_lines.append(
-            f"| `{row['label']}` | "
-            f"{row['peak_mean_length_normalized_forward_velocity_1_s']:.4f} | "
-            f"{row['time_of_peak_mean_forward_velocity_s']:.3f} | "
-            f"{row['target_distance_min_m']:.2f}-{row['target_distance_max_m']:.2f} | "
-            f"{row['n_pooled_profiles']} |"
-        )
-    note = "\n".join(
-        [
+        note_lines=[
             "## Nominal velocity profile comparison",
             "",
             "Nominal-clean validation trials with perturbation inputs zeroed. Curves show "
@@ -1235,109 +1278,71 @@ def write_outputs(profiles: list[VelocityProfile]) -> dict[str, Any]:
             "length-normalized profiles.",
             "",
             *table_lines,
-            "",
-            f"- Figure: `{repo_relative(html_path)}`",
-            f"- Data: `{repo_relative(data_path)}`",
-            f"- Manifest: `{repo_relative(manifest_path)}`",
-            "",
-        ]
+        ],
     )
-    note_path = notes_dir / f"{TOPIC}.md"
-    update_marked_section(note_path, NOMINAL_MARKER, note)
-    manifest["note"] = repo_relative(note_path)
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    return manifest
-
 
 def write_no_pgd_split_outputs(profiles: list[VelocityProfile]) -> dict[str, Any]:
     """Write no-PGD held-out split figure, data, manifest, and note outputs."""
 
-    figure_dir = mkdir_p(figure_artifact_dir(EXPERIMENT, NO_PGD_SPLIT_TOPIC))
-    spec_dir = mkdir_p(figure_spec_dir(EXPERIMENT, NO_PGD_SPLIT_TOPIC))
-    notes_dir = mkdir_p(REPO_ROOT / "results" / EXPERIMENT / "notes")
-
-    fig = go.Figure()
-    for profile in profiles:
-        add_band_trace(fig, profile)
-    fig.update_layout(
-        title="No-PGD nominal velocity: non-held-out vs held-out validation targets",
-        width=960,
-        height=560,
-        margin={"l": 72, "r": 24, "t": 72, "b": 68},
-        hovermode="x unified",
-        legend={"orientation": "h", "y": -0.22, "x": 0.0, "groupclick": "togglegroup"},
+    rows = [profile_summary_row(profile.run.label, profile) for profile in profiles]
+    velocity_definition = (
+        "effector velocity projected onto each trial's target direction, divided by "
+        "that trial's reach length"
     )
-    fig.update_xaxes(title_text="Time (s)", zeroline=False)
-    fig.update_yaxes(title_text="Target-radial velocity / reach length (1/s)", zeroline=True)
-
-    html_path = figure_dir / "no_pgd_heldout_split.html"
-    fig.write_html(html_path, include_plotlyjs="cdn")
-    data_path = figure_dir / "no_pgd_heldout_split.npz"
-    np.savez_compressed(
-        data_path,
-        **{f"{profile.run.label}__time_s": profile.time_s for profile in profiles},
-        **{f"{profile.run.label}__mean": profile.mean for profile in profiles},
-        **{f"{profile.run.label}__std": profile.std for profile in profiles},
+    split_definition = (
+        "held_out_targets_m from the no-PGD run spec versus all remaining validation targets"
     )
-
-    rows = [
-        {
-            "label": profile.run.label,
-            "n_replicates": profile.n_replicates,
-            "n_trials": profile.n_trials,
-            "n_pooled_profiles": profile.n_replicates * profile.n_trials,
-            "target_distance_min_m": profile.target_distance_min_m,
-            "target_distance_max_m": profile.target_distance_max_m,
-            "peak_mean_length_normalized_forward_velocity_1_s": (
-                profile.peak_mean_length_normalized_forward_velocity_1_s
-            ),
-            "time_of_peak_mean_forward_velocity_s": profile.time_of_peak_mean_forward_velocity_s,
-        }
-        for profile in profiles
-    ]
-    manifest = {
-        "schema_version": "rlrmp.e901a20.no_pgd_heldout_split.v1",
-        "figure": repo_relative(html_path),
-        "data": repo_relative(data_path),
-        "evaluation_lens": "nominal_clean_validation_trials",
-        "source_run": {
-            "experiment": NO_PGD_REF.experiment,
-            "run_id": NO_PGD_REF.run_id,
-            "label": NO_PGD_REF.label,
-        },
-        "split_definition": (
-            "held_out_targets_m from the no-PGD run spec versus all remaining validation targets"
-        ),
-        "velocity_definition": (
-            "effector velocity projected onto each trial's target direction, divided by "
-            "that trial's reach length"
-        ),
-        "band_definition": (
-            "one standard deviation over replicate x validation-target profiles within each split"
-        ),
-        "splits": rows,
+    band_definition = (
+        "one standard deviation over replicate x validation-target profiles within each split"
+    )
+    source_run = {
+        "experiment": NO_PGD_REF.experiment,
+        "run_id": NO_PGD_REF.run_id,
+        "label": NO_PGD_REF.label,
     }
-    manifest_path = figure_dir / "manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    figure_link = spec_dir / "figure.html"
-    if figure_link.exists() or figure_link.is_symlink():
-        figure_link.unlink()
-    figure_link.symlink_to(os.path.relpath(html_path, start=figure_link.parent))
-    spec = {
-        "schema_version": "rlrmp.figure_spec.v1",
-        "topic": NO_PGD_SPLIT_TOPIC,
-        "source_script": repo_relative(Path(__file__)),
-        "manifest": repo_relative(manifest_path),
-        "figure": repo_relative(html_path),
-        "figure_link": repo_relative(figure_link),
-        "data": repo_relative(data_path),
-        "evaluation_lens": manifest["evaluation_lens"],
-        "split_definition": manifest["split_definition"],
-        "velocity_definition": manifest["velocity_definition"],
-        "band_definition": manifest["band_definition"],
-        "source_run": manifest["source_run"],
-        "splits": rows,
-        "inputs": [
+    table_lines = [
+        "| Split | Peak mean normalized velocity (1/s) | Time of peak (s) | Reach lengths (m) | Pooled profiles |",
+        "|---|---:|---:|---:|---:|",
+        *[
+            f"| `{row['label']}` | "
+            f"{row['peak_mean_length_normalized_forward_velocity_1_s']:.4f} | "
+            f"{row['time_of_peak_mean_forward_velocity_s']:.3f} | "
+            f"{row['target_distance_min_m']:.2f}-{row['target_distance_max_m']:.2f} | "
+            f"{row['n_pooled_profiles']} |"
+            for row in rows
+        ],
+    ]
+    return _write_profile_outputs(
+        profiles,
+        topic=NO_PGD_SPLIT_TOPIC,
+        marker=NO_PGD_SPLIT_MARKER,
+        title="No-PGD nominal velocity: non-held-out vs held-out validation targets",
+        yaxis_title="Target-radial velocity / reach length (1/s)",
+        html_stem="no_pgd_heldout_split",
+        schema_version="rlrmp.e901a20.no_pgd_heldout_split.v1",
+        trace_adder=add_band_trace,
+        data_arrays={
+            **{f"{profile.run.label}__time_s": profile.time_s for profile in profiles},
+            **{f"{profile.run.label}__mean": profile.mean for profile in profiles},
+            **{f"{profile.run.label}__std": profile.std for profile in profiles},
+        },
+        manifest_extra={
+            "evaluation_lens": "nominal_clean_validation_trials",
+            "source_run": source_run,
+            "split_definition": split_definition,
+            "velocity_definition": velocity_definition,
+            "band_definition": band_definition,
+            "splits": rows,
+        },
+        spec_extra={
+            "evaluation_lens": "nominal_clean_validation_trials",
+            "split_definition": split_definition,
+            "velocity_definition": velocity_definition,
+            "band_definition": band_definition,
+            "source_run": source_run,
+            "splits": rows,
+        },
+        inputs=[
             {
                 "run_spec": repo_relative(run_spec_path(NO_PGD_REF.experiment, NO_PGD_REF.run_id)),
                 "trained_model": repo_relative(
@@ -1345,24 +1350,7 @@ def write_no_pgd_split_outputs(profiles: list[VelocityProfile]) -> dict[str, Any
                 ),
             }
         ],
-    }
-    spec_path = spec_dir / "spec.json"
-    spec_path.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-    table_lines = [
-        "| Split | Peak mean normalized velocity (1/s) | Time of peak (s) | Reach lengths (m) | Pooled profiles |",
-        "|---|---:|---:|---:|---:|",
-    ]
-    for row in rows:
-        table_lines.append(
-            f"| `{row['label']}` | "
-            f"{row['peak_mean_length_normalized_forward_velocity_1_s']:.4f} | "
-            f"{row['time_of_peak_mean_forward_velocity_s']:.3f} | "
-            f"{row['target_distance_min_m']:.2f}-{row['target_distance_max_m']:.2f} | "
-            f"{row['n_pooled_profiles']} |"
-        )
-    note = "\n".join(
-        [
+        note_lines=[
             "## No-PGD held-out split",
             "",
             "Nominal-clean validation trials for the 020a65b no-PGD H0 comparator only. "
@@ -1372,19 +1360,8 @@ def write_no_pgd_split_outputs(profiles: list[VelocityProfile]) -> dict[str, Any
             "deviation over pooled replicate x validation-target profiles within each split.",
             "",
             *table_lines,
-            "",
-            f"- Figure: `{repo_relative(html_path)}`",
-            f"- Data: `{repo_relative(data_path)}`",
-            f"- Manifest: `{repo_relative(manifest_path)}`",
-            "",
-        ]
+        ],
     )
-    note_path = notes_dir / f"{NO_PGD_SPLIT_TOPIC}.md"
-    update_marked_section(note_path, NO_PGD_SPLIT_MARKER, note)
-    manifest["note"] = repo_relative(note_path)
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    return manifest
-
 
 def profile_summary_row(label: str, profile: VelocityProfile) -> dict[str, Any]:
     """Return manifest metadata for one profile."""
@@ -1445,35 +1422,19 @@ def add_panel_trace(
     col: int = 1,
 ) -> None:
     """Add a profile trace and band to a subplot panel."""
-
-    upper = profile.mean + profile.std
-    lower = profile.mean - profile.std
-    fig.add_trace(
-        go.Scatter(
-            x=np.concatenate([profile.time_s, profile.time_s[::-1]]),
-            y=np.concatenate([upper, lower[::-1]]),
-            fill="toself",
-            fillcolor=hex_to_rgba(color, 0.13),
-            line={"color": "rgba(0,0,0,0)"},
-            hoverinfo="skip",
-            legendgroup=legend_group,
-            name=label,
-            showlegend=False,
-        ),
+    canonical_add_band_trace(
+        fig,
+        x=profile.time_s,
+        mean=profile.mean,
+        spread=profile.std,
         row=row,
         col=col,
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=profile.time_s,
-            y=profile.mean,
-            mode="lines",
-            line={"color": color, "width": 2.5},
-            legendgroup=legend_group,
-            name=label,
-        ),
-        row=row,
-        col=col,
+        color=color,
+        name=label,
+        legendgroup=legend_group,
+        fill_alpha=0.13,
+        line_width=2.5,
+        band_label=label,
     )
 
 
@@ -1658,33 +1619,19 @@ def write_no_pgd_crossed_outputs(panels: list[CrossedPanel]) -> dict[str, Any]:
 
 def add_companion_trace(fig: go.Figure, profile: CompanionProfile) -> None:
     """Add a companion mean trace with a paired one-SD band."""
-
-    upper = profile.mean + profile.std
-    lower = profile.mean - profile.std
     color = profile.run.color
     legend_group = f"{profile.run.experiment}::{profile.run.run_id}"
-    fig.add_trace(
-        go.Scatter(
-            x=np.concatenate([profile.time_s, profile.time_s[::-1]]),
-            y=np.concatenate([upper, lower[::-1]]),
-            fill="toself",
-            fillcolor=hex_to_rgba(color, 0.13),
-            line={"color": "rgba(0,0,0,0)"},
-            hoverinfo="skip",
-            legendgroup=legend_group,
-            name=profile.run.label,
-            showlegend=False,
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=profile.time_s,
-            y=profile.mean,
-            mode="lines",
-            line={"color": color, "width": 2.5},
-            legendgroup=legend_group,
-            name=profile.run.label,
-        )
+    canonical_add_band_trace(
+        fig,
+        x=profile.time_s,
+        mean=profile.mean,
+        spread=profile.std,
+        color=color,
+        name=profile.run.label,
+        legendgroup=legend_group,
+        fill_alpha=0.13,
+        line_width=2.5,
+        band_label=profile.run.label,
     )
 
 
@@ -1724,123 +1671,80 @@ def write_old_compatible_outputs(
 ) -> dict[str, Any]:
     """Write one old-compatible companion figure, data, manifest, spec, and note."""
 
-    figure_dir = mkdir_p(figure_artifact_dir(EXPERIMENT, topic))
-    spec_dir = mkdir_p(figure_spec_dir(EXPERIMENT, topic))
-    notes_dir = mkdir_p(REPO_ROOT / "results" / EXPERIMENT / "notes")
-
-    fig = go.Figure()
-    for profile in profiles:
-        add_companion_trace(fig, profile)
-    fig.update_layout(
-        title=title,
-        width=960,
-        height=560,
-        margin={"l": 72, "r": 24, "t": 72, "b": 68},
-        hovermode="x unified",
-        legend={"orientation": "h", "y": -0.22, "x": 0.0, "groupclick": "togglegroup"},
-    )
-    fig.update_xaxes(title_text="Time (s)", zeroline=False)
-    fig.update_yaxes(title_text=yaxis_title, zeroline=True)
-
-    html_path = figure_dir / f"{topic}.html"
-    fig.write_html(html_path, include_plotlyjs="cdn")
-    data_path = figure_dir / f"{topic}.npz"
-    np.savez_compressed(
-        data_path,
-        **{
-            f"{profile.run.experiment}__{profile.run.run_id}__time_s": profile.time_s
-            for profile in profiles
-        },
-        **{
-            f"{profile.run.experiment}__{profile.run.run_id}__mean": profile.mean
-            for profile in profiles
-        },
-        **{
-            f"{profile.run.experiment}__{profile.run.run_id}__std": profile.std
-            for profile in profiles
-        },
-    )
-
     rows = [companion_profile_row(profile) for profile in profiles]
     feedbax_commit = os.environ.get("RLRMP_COMPAT_FEEDBAX_COMMIT")
     runtime_provenance = {
         "feedbax_package": feedbax.__name__,
-        "feedbax_runtime": (
-            "feedbax git archive"
-            if feedbax_commit
-            else "current Python import path"
-        ),
+        "feedbax_runtime": "feedbax git archive" if feedbax_commit else "current Python import path",
         "feedbax_commit": feedbax_commit,
         "runtime_note": (
             "Old-compatible velocity figures should be generated with pre-1e1c94f5 "
             "Feedbax network semantics for legacy MaskedLinear readout checkpoints."
         ),
     }
-    manifest = {
-        "schema_version": f"rlrmp.e901a20.{topic}.v1",
-        "figure": repo_relative(html_path),
-        "data": repo_relative(data_path),
+    band_definition = (
+        "one standard deviation over pooled replicate x target-condition x stochastic "
+        "rollout profiles"
+    )
+    checkpoint_policy = "validation_selected_per_replicate_sparse_history"
+    stochastic_runtime_policy = (
+        f"{OLD_COMPAT_N_ROLLOUT_REPEATS} stochastic repeats per target condition per "
+        "replicate, using jr.split(PRNGKey(0), n_replicates)"
+    )
+    table_lines = [
+        f"| Row | Peak mean velocity ({unit_label}) | Time of peak (s) | Targets | Repeats/target/rep | Pooled profiles |",
+        "|---|---:|---:|---:|---:|---:|",
+        *[
+            f"| `{row['label']}` | {row['peak_mean_velocity']:.4f} | "
+            f"{row['time_of_peak_mean_velocity_s']:.3f} | "
+            f"{row['n_target_conditions']} | "
+            f"{row['n_rollout_repeats_per_target_per_replicate']} | "
+            f"{row['n_pooled_profiles']} |"
+            for row in rows
+        ],
+    ]
+    shared = {
         "evaluation_lens": evaluation_lens,
         "velocity_definition": velocity_definition,
-        "band_definition": (
-            "one standard deviation over pooled replicate x target-condition x stochastic "
-            "rollout profiles"
-        ),
-        "checkpoint_policy": "validation_selected_per_replicate_sparse_history",
-        "stochastic_runtime_policy": (
-            f"{OLD_COMPAT_N_ROLLOUT_REPEATS} stochastic repeats per target condition per "
-            "replicate, using jr.split(PRNGKey(0), n_replicates)"
-        ),
+        "band_definition": band_definition,
+        "checkpoint_policy": checkpoint_policy,
+        "stochastic_runtime_policy": stochastic_runtime_policy,
         "runtime_provenance": runtime_provenance,
         "runs": rows,
     }
-    manifest_path = figure_dir / "manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    figure_link = spec_dir / "figure.html"
-    if figure_link.exists() or figure_link.is_symlink():
-        figure_link.unlink()
-    figure_link.symlink_to(os.path.relpath(html_path, start=figure_link.parent))
-    spec = {
-        "schema_version": "rlrmp.figure_spec.v1",
-        "topic": topic,
-        "source_script": repo_relative(Path(__file__)),
-        "manifest": repo_relative(manifest_path),
-        "figure": repo_relative(html_path),
-        "figure_link": repo_relative(figure_link),
-        "data": repo_relative(data_path),
-        "evaluation_lens": evaluation_lens,
-        "velocity_definition": velocity_definition,
-        "band_definition": manifest["band_definition"],
-        "checkpoint_policy": manifest["checkpoint_policy"],
-        "stochastic_runtime_policy": manifest["stochastic_runtime_policy"],
-        "runtime_provenance": runtime_provenance,
-        "runs": rows,
-        "inputs": [
+    return _write_profile_outputs(
+        profiles,
+        topic=topic,
+        marker=marker,
+        title=title,
+        yaxis_title=yaxis_title,
+        html_stem=topic,
+        schema_version=f"rlrmp.e901a20.{topic}.v1",
+        trace_adder=add_companion_trace,
+        data_arrays={
+            **{
+                f"{profile.run.experiment}__{profile.run.run_id}__time_s": profile.time_s
+                for profile in profiles
+            },
+            **{
+                f"{profile.run.experiment}__{profile.run.run_id}__mean": profile.mean
+                for profile in profiles
+            },
+            **{
+                f"{profile.run.experiment}__{profile.run.run_id}__std": profile.std
+                for profile in profiles
+            },
+        },
+        manifest_extra=shared,
+        spec_extra=shared,
+        inputs=[
             {
                 "run_spec": repo_relative(run_spec_path(profile.run.experiment, profile.run.run_id)),
                 "artifact_dir": repo_relative(artifact_dir(profile.run)),
             }
             for profile in profiles
         ],
-    }
-    spec_path = spec_dir / "spec.json"
-    spec_path.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-    table_lines = [
-        f"| Row | Peak mean velocity ({unit_label}) | Time of peak (s) | Targets | Repeats/target/rep | Pooled profiles |",
-        "|---|---:|---:|---:|---:|---:|",
-    ]
-    for row in rows:
-        table_lines.append(
-            f"| `{row['label']}` | "
-            f"{row['peak_mean_velocity']:.4f} | "
-            f"{row['time_of_peak_mean_velocity_s']:.3f} | "
-            f"{row['n_target_conditions']} | "
-            f"{row['n_rollout_repeats_per_target_per_replicate']} | "
-            f"{row['n_pooled_profiles']} |"
-        )
-    note = "\n".join(
-        [
+        note_lines=[
             f"## {title}",
             "",
             velocity_definition,
@@ -1858,19 +1762,8 @@ def write_old_compatible_outputs(
             ),
             "",
             *table_lines,
-            "",
-            f"- Figure: `{repo_relative(html_path)}`",
-            f"- Data: `{repo_relative(data_path)}`",
-            f"- Manifest: `{repo_relative(manifest_path)}`",
-            "",
-        ]
+        ],
     )
-    note_path = notes_dir / f"{topic}.md"
-    update_marked_section(note_path, marker, note)
-    manifest["note"] = repo_relative(note_path)
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    return manifest
-
 
 def main() -> None:
     """Evaluate all rows and materialize outputs."""
