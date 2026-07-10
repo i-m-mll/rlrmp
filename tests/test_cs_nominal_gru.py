@@ -22,7 +22,7 @@ import numpy as np
 import optax
 import pytest
 from feedbax import TaskTrialSpec, TrialTimeline, WhereDict
-from feedbax.contracts.training import TrainingRunSpec
+from feedbax.contracts.training import DEFAULT_TRAINING_METHOD_REGISTRY, TrainingRunSpec
 from feedbax.objectives.loss import AbstractLoss, TargetSpec
 from feedbax.mechanics import LinearStateSpace
 from feedbax.runtime.batch import BatchInfo
@@ -108,6 +108,12 @@ from rlrmp.runtime.training_run_specs import (
     build_feedbax_training_run_spec,
     feedbax_training_run_spec_from_payload,
     hydrate_compact_run_spec_envelope,
+)
+from rlrmp.runtime.run_specs import validate_nominal_gru_run_spec_file
+from rlrmp.train.executor.slots import (
+    ADAPTIVE_EPSILON_CURRICULUM_METHOD_REF,
+    CS_SUPERVISED_METHOD_REF,
+    POLICY_ADVERSARY_SUPERVISED_METHOD_REF,
 )
 from rlrmp.train.run_spec_authoring import COMPACT_RUN_SPEC_KEY, MAX_TRACKED_RUN_SPEC_BYTES
 from rlrmp.train.cs_perturbation_training import (
@@ -206,6 +212,16 @@ def _args(**overrides) -> argparse.Namespace:
     for key, value in overrides.items():
         setattr(args, key, value)
     return args
+
+
+def _remove_training_method_registration(
+    monkeypatch: pytest.MonkeyPatch,
+    method_ref: str,
+) -> None:
+    registrations = dict(DEFAULT_TRAINING_METHOD_REGISTRY._registrations)
+    registrations.pop(method_ref, None)
+    monkeypatch.setattr(DEFAULT_TRAINING_METHOD_REGISTRY, "_registrations", registrations)
+    assert method_ref not in DEFAULT_TRAINING_METHOD_REGISTRY.available_keys()
 
 
 def _absolute_string_leaves(value: Any, *, path: str = "$") -> list[tuple[str, str]]:
@@ -864,7 +880,7 @@ def test_adaptive_epsilon_curriculum_hps_contract() -> None:
     assert cfg.lambda_update.interval_batches == 50
     assert cfg.lambda_update.eta == pytest.approx(0.1)
     assert cfg.lambda_update.deadband_frac == pytest.approx(0.10)
-    assert cfg.lambda_update.freeze_until_burn_in is True
+    assert cfg.lambda_update.freeze_during_application_ramp is False
     assert cfg.lambda_update.gain_normalization is False
     assert cfg.lambda_update.gain_ema_alpha == pytest.approx(0.2)
     assert cfg.lambda_update.gain_min == pytest.approx(0.25)
@@ -901,7 +917,7 @@ def test_adaptive_epsilon_run_spec_replay_preserves_curriculum(tmp_path: Path) -
         adaptive_epsilon_eta=0.3,
         adaptive_epsilon_deadband_frac=0.4,
         adaptive_epsilon_hysteresis_frac=0.45,
-        adaptive_epsilon_freeze_until_burn_in=False,
+        adaptive_epsilon_freeze_during_application_ramp=True,
         adaptive_epsilon_gain_normalization=True,
         adaptive_epsilon_gain_ema_alpha=0.25,
         adaptive_epsilon_gain_min=0.5,
@@ -928,7 +944,7 @@ def test_adaptive_epsilon_run_spec_replay_preserves_curriculum(tmp_path: Path) -
     assert replay_args.adaptive_epsilon_eta == pytest.approx(0.3)
     assert replay_args.adaptive_epsilon_deadband_frac == pytest.approx(0.4)
     assert replay_args.adaptive_epsilon_hysteresis_frac == pytest.approx(0.45)
-    assert replay_args.adaptive_epsilon_freeze_until_burn_in is False
+    assert replay_args.adaptive_epsilon_freeze_during_application_ramp is True
     assert replay_args.adaptive_epsilon_gain_normalization is True
     assert replay_args.adaptive_epsilon_gain_ema_alpha == pytest.approx(0.25)
     assert replay_args.adaptive_epsilon_gain_min == pytest.approx(0.5)
@@ -1373,6 +1389,108 @@ def test_adaptive_epsilon_lambda_update_uses_clipped_log_ratio() -> None:
     assert zero_target_diagnostics["lambda_updated"] == np.asarray(False)
     assert zero_target_diagnostics["lambda_log_step"] == pytest.approx(0.0)
     assert zero_target_state.lambda_value == pytest.approx(base_state.lambda_value)
+
+
+def test_adaptive_epsilon_application_ramp_freeze_holds_then_seeds_ema() -> None:
+    hps = build_hps(
+        _args(
+            broad_epsilon_pgd_training=True,
+            broad_epsilon_pgd_objective=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+            broad_epsilon_pgd_energy_lambda=10.0,
+            adaptive_epsilon_curriculum=True,
+            target_relative_multitarget=True,
+            adaptive_epsilon_update_interval_batches=1,
+            adaptive_epsilon_ema_alpha=0.1,
+            adaptive_epsilon_outer_weight_ramp_batches=2,
+            adaptive_epsilon_freeze_during_application_ramp=True,
+        )
+    )
+    cfg = hps.adaptive_epsilon_curriculum
+    state = _initial_adaptive_epsilon_state(hps)
+    assert state is not None
+
+    held_state, held_diagnostics = _update_adaptive_epsilon_state(
+        state,
+        cfg,
+        batch_index=0,
+        target_damage=1.0,
+        measured_damage=2.0,
+        measured_clean_loss=1.0,
+    )
+    assert held_state == state
+    assert held_diagnostics["application_ramp_frozen"] == np.asarray(True)
+    assert held_diagnostics["lambda_updated"] == np.asarray(False)
+    assert np.isnan(held_diagnostics["damage_ema"])
+
+    seeded_state, seeded_diagnostics = _update_adaptive_epsilon_state(
+        held_state,
+        cfg,
+        batch_index=2,
+        target_damage=1.0,
+        measured_damage=2.0,
+        measured_clean_loss=1.0,
+    )
+    assert seeded_diagnostics["application_ramp_frozen"] == np.asarray(False)
+    assert seeded_diagnostics["ema_seeded_post_ramp"] == np.asarray(True)
+    assert seeded_diagnostics["lambda_updated"] == np.asarray(False)
+    assert seeded_state.damage_ema == pytest.approx(2.0)
+    assert seeded_state.clean_loss_ema == pytest.approx(1.0)
+    assert seeded_state.lambda_value == pytest.approx(state.lambda_value)
+
+    updated_state, updated_diagnostics = _update_adaptive_epsilon_state(
+        seeded_state,
+        cfg,
+        batch_index=3,
+        target_damage=1.0,
+        measured_damage=2.0,
+        measured_clean_loss=1.0,
+    )
+    assert updated_diagnostics["ema_seeded_post_ramp"] == np.asarray(False)
+    assert updated_diagnostics["lambda_updated"] == np.asarray(True)
+    assert updated_state.lambda_value > seeded_state.lambda_value
+
+
+def test_adaptive_epsilon_application_ramp_freeze_default_off_and_zero_target_is_not_special() -> (
+    None
+):
+    hps = build_hps(
+        _args(
+            broad_epsilon_pgd_training=True,
+            broad_epsilon_pgd_objective=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+            broad_epsilon_pgd_energy_lambda=10.0,
+            adaptive_epsilon_curriculum=True,
+            target_relative_multitarget=True,
+            adaptive_epsilon_update_interval_batches=1,
+            adaptive_epsilon_outer_weight_ramp_batches=2,
+        )
+    )
+    cfg = hps.adaptive_epsilon_curriculum
+    assert cfg.lambda_update.freeze_during_application_ramp is False
+    state = _initial_adaptive_epsilon_state(hps)
+    assert state is not None
+
+    live_state, live_diagnostics = _update_adaptive_epsilon_state(
+        state,
+        cfg,
+        batch_index=0,
+        target_damage=1.0,
+        measured_damage=2.0,
+        measured_clean_loss=1.0,
+    )
+    assert live_diagnostics["application_ramp_frozen"] == np.asarray(False)
+    assert live_state.damage_ema == pytest.approx(2.0)
+    assert live_diagnostics["lambda_updated"] == np.asarray(True)
+
+    zero_target_state, zero_target_diagnostics = _update_adaptive_epsilon_state(
+        state,
+        cfg,
+        batch_index=0,
+        target_damage=0.0,
+        measured_damage=2.0,
+        measured_clean_loss=1.0,
+    )
+    assert zero_target_diagnostics["application_ramp_frozen"] == np.asarray(False)
+    assert zero_target_state.damage_ema == pytest.approx(2.0)
 
 
 def test_adaptive_epsilon_probe_estimator_recovers_synthetic_gain() -> None:
@@ -5244,6 +5362,202 @@ def test_modern_run_spec_replays_to_current_training_args(tmp_path: Path) -> Non
     assert replay_args.force_filter_feedback is True
     assert replay_args.broad_epsilon_training is False
     assert replay_args.broad_epsilon_pgd_training is False
+
+
+def _native_method_run_spec_payload(tmp_path: Path, method_ref: str) -> dict[str, Any]:
+    common = {
+        "output_dir": str(tmp_path / method_ref.replace("/", "_") / "artifacts"),
+        "spec_dir": str(tmp_path / method_ref.replace("/", "_") / "spec"),
+        "dry_run": True,
+    }
+    if method_ref == CS_SUPERVISED_METHOD_REF:
+        return write_run_spec(
+            _args(
+                **common,
+                target_relative_multitarget=True,
+                perturbation_training=True,
+                perturbation_calibrated_timing=True,
+                perturbation_physical_level="small",
+            )
+        )["run_spec"]
+    if method_ref == ADAPTIVE_EPSILON_CURRICULUM_METHOD_REF:
+        return write_run_spec(
+            _args(
+                **common,
+                target_relative_multitarget=True,
+                broad_epsilon_pgd_training=True,
+                broad_epsilon_pgd_objective=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+                broad_epsilon_pgd_energy_lambda=2.5,
+                adaptive_epsilon_curriculum=True,
+                adaptive_epsilon_controller_training_mode=(
+                    ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER
+                ),
+                adaptive_epsilon_damage_peak=3500.0,
+                adaptive_epsilon_damage_final=1000.0,
+                adaptive_epsilon_damage_ramp_batches=1,
+                adaptive_epsilon_damage_anneal_batches=2,
+                adaptive_epsilon_update_interval_batches=3,
+                adaptive_epsilon_ema_alpha=0.2,
+                adaptive_epsilon_eta=0.3,
+                adaptive_epsilon_deadband_frac=0.4,
+                adaptive_epsilon_lambda_min=1e-9,
+                adaptive_epsilon_max_log_step=0.5,
+                adaptive_epsilon_outer_weight_ramp_batches=6,
+            )
+        )["run_spec"]
+    if method_ref == POLICY_ADVERSARY_SUPERVISED_METHOD_REF:
+        return write_run_spec(
+            _args(
+                **common,
+                target_relative_multitarget=True,
+                force_filter_feedback=True,
+                initial_hidden_encoder=True,
+                perturbation_training=True,
+                perturbation_calibrated_timing=True,
+                perturbation_physical_level="small",
+                policy_adversary_training=True,
+                policy_adversary_mode=POLICY_ADVERSARY_PLAIN_MODE,
+                policy_adversary_steps=5,
+                policy_adversary_radius_15cm=HISTORICAL_020A65B_PGD_RADIUS_15CM,
+                policy_adversary_radius_source="effective_020a65b_pgd_training_radius",
+                n_train_batches=12000,
+                stop_after_batches=1000,
+                loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+            )
+        )["run_spec"]
+    raise AssertionError(f"unsupported native method reference: {method_ref}")
+
+
+@pytest.mark.parametrize(
+    "method_ref",
+    (
+        CS_SUPERVISED_METHOD_REF,
+        ADAPTIVE_EPSILON_CURRICULUM_METHOD_REF,
+        POLICY_ADVERSARY_SUPERVISED_METHOD_REF,
+    ),
+)
+def test_generic_run_spec_loader_registers_native_method(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    method_ref: str,
+) -> None:
+    payload = _native_method_run_spec_payload(tmp_path, method_ref)
+    recipe_path = tmp_path / "runs" / f"{method_ref.split('/')[1]}.json"
+    recipe_path.parent.mkdir()
+    recipe_path.write_text(json.dumps(payload), encoding="utf-8")
+    _remove_training_method_registration(monkeypatch, method_ref)
+
+    _path, loaded = cs_supervised_executor.load_validated_run_spec(recipe_path)
+
+    assert loaded[FEEDBAX_TRAINING_RUN_SPEC_KEY]["method_ref"] == {
+        "package": "rlrmp",
+        "name": method_ref.split("/")[1],
+        "version": "v1",
+    }
+    assert method_ref in DEFAULT_TRAINING_METHOD_REGISTRY.available_keys()
+
+
+def _compact_run_spec(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "compact_run_spec": True,
+        "game_card": payload["game_card"],
+        "training_distribution": {
+            "perturbation_training": payload["training_distribution"]["perturbation_training"],
+        },
+        "feedbax_graph": payload["feedbax_graph"],
+        FEEDBAX_TRAINING_RUN_SPEC_KEY: payload[FEEDBAX_TRAINING_RUN_SPEC_KEY],
+        RLRMP_RUN_SPEC_PAYLOAD_KEY: payload[RLRMP_RUN_SPEC_PAYLOAD_KEY],
+    }
+
+
+def _write_flat_recipe_sidecars(recipe_path: Path, payload: dict[str, Any]) -> None:
+    sidecar_dir = recipe_path.with_suffix("")
+    sidecar_dir.mkdir(parents=True)
+    graph = payload["feedbax_graph"]
+    for key in ("graph_spec_path", "manifest_path"):
+        pointer = graph[key]
+        if pointer is None:
+            continue
+        sidecar_path = sidecar_dir / pointer
+        sidecar_path.parent.mkdir(parents=True, exist_ok=True)
+        sidecar_payload = (
+            {
+                "nodes": {
+                    "mechanics": {"type": "LinearStateSpace"},
+                    "feedback": {"type": "StateFeedbackSelector"},
+                }
+            }
+            if key == "graph_spec_path"
+            else {}
+        )
+        sidecar_path.write_text(json.dumps(sidecar_payload), encoding="utf-8")
+
+
+def test_generic_loader_resolves_flat_recipe_sibling_sidecars(tmp_path: Path) -> None:
+    payload = _native_method_run_spec_payload(tmp_path, CS_SUPERVISED_METHOD_REF)
+    recipe_path = tmp_path / "runs" / "baseline.json"
+    recipe_path.parent.mkdir()
+    recipe_path.write_text(json.dumps(payload), encoding="utf-8")
+    _write_flat_recipe_sidecars(recipe_path, payload)
+
+    _path, loaded = cs_supervised_executor.load_validated_run_spec(
+        recipe_path,
+        require_graph_sidecars=True,
+    )
+
+    assert loaded["feedbax_graph"] == payload["feedbax_graph"]
+
+
+def test_public_flat_recipe_validator_hydrates_compact_envelope(tmp_path: Path) -> None:
+    payload = _native_method_run_spec_payload(tmp_path, CS_SUPERVISED_METHOD_REF)
+    recipe_path = tmp_path / "runs" / "baseline.json"
+    recipe_path.parent.mkdir()
+    recipe_path.write_text(json.dumps(_compact_run_spec(payload)), encoding="utf-8")
+    _write_flat_recipe_sidecars(recipe_path, payload)
+
+    validate_nominal_gru_run_spec_file(recipe_path)
+
+
+def test_compact_run_spec_loader_hydrates_authoritative_extension(tmp_path: Path) -> None:
+    payload = _native_method_run_spec_payload(tmp_path, CS_SUPERVISED_METHOD_REF)
+    compact = _compact_run_spec(payload)
+    recipe_path = tmp_path / "runs" / "baseline.json"
+    recipe_path.parent.mkdir()
+    recipe_path.write_text(json.dumps(compact), encoding="utf-8")
+
+    _path, hydrated = cs_supervised_executor.load_validated_run_spec(recipe_path)
+
+    assert "compact_run_spec" not in hydrated
+    assert hydrated["hps"] == payload["hps"]
+    assert hydrated["game_card"] == payload["game_card"]
+    assert hydrated["training_distribution"] == payload["training_distribution"]
+    assert hydrated["feedbax_graph"] == payload["feedbax_graph"]
+    assert hydrated[FEEDBAX_TRAINING_RUN_SPEC_KEY] == payload[FEEDBAX_TRAINING_RUN_SPEC_KEY]
+
+
+@pytest.mark.parametrize(
+    ("mutation", "match"),
+    (
+        (lambda payload: payload.__setitem__("compact_run_spec", False), "boolean true"),
+        (lambda payload: payload.pop(RLRMP_RUN_SPEC_PAYLOAD_KEY), "rlrmp_run_spec"),
+        (lambda payload: payload.__setitem__(RLRMP_RUN_SPEC_PAYLOAD_KEY, []), "rlrmp_run_spec"),
+        (
+            lambda payload: payload.__setitem__("game_card", {"issue_id": "mismatched-identity"}),
+            "game_card",
+        ),
+    ),
+)
+def test_compact_run_spec_loader_rejects_missing_or_mismatched_extension(
+    tmp_path: Path,
+    mutation,
+    match: str,
+) -> None:
+    payload = _native_method_run_spec_payload(tmp_path, CS_SUPERVISED_METHOD_REF)
+    compact = _compact_run_spec(payload)
+    mutation(compact)
+
+    with pytest.raises(ValueError, match=match):
+        hydrate_compact_run_spec_envelope(compact)
 
 
 def test_run_spec_replay_rejects_artifact_route_override(tmp_path: Path) -> None:

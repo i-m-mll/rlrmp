@@ -183,6 +183,9 @@ _CLI_HELP: dict[str, str] = {
         "Trial input that carries the scalar SISU value for sisu_energy_fraction PGD budgets."
     ),
     "adaptive_epsilon_curriculum": ("Enable adaptive-lambda soft-energy direct-epsilon training."),
+    "adaptive_epsilon_freeze_during_application_ramp": (
+        "Hold lambda-clamp updates and damage EMA until the epsilon-application ramp completes."
+    ),
     "policy_adversary_training": ("Enable learned full-state epsilon policy-adversary training."),
     "policy_adversary_policy_class": "Adversary policy parameterization.",
     "policy_adversary_mode": "Policy-adversary objective mode.",
@@ -215,7 +218,7 @@ _BOOLEAN_OPTIONAL_FIELDS = frozenset(
         "perturbation_movement_age_timing",
         "force_filter_feedback",
         "broad_epsilon_reach_scaling",
-        "adaptive_epsilon_freeze_until_burn_in",
+        "adaptive_epsilon_freeze_during_application_ramp",
         "adaptive_epsilon_gain_normalization",
         "training_diagnostics",
         "quiet_progress",

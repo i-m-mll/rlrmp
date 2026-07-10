@@ -55,12 +55,13 @@ from rlrmp.loss import (
     CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p
-from rlrmp.runtime.run_specs import validate_nominal_gru_run_spec
+from rlrmp.runtime.run_specs import run_spec_sidecar_dir, validate_nominal_gru_run_spec
 from rlrmp.runtime.training_run_specs import (
     FEEDBAX_TRAINING_RUN_SPEC_KEY,
     RLRMP_RUN_SPEC_PAYLOAD_KEY,
     assert_runtime_graph_matches_training_spec,
     feedbax_training_run_spec_from_payload,
+    hydrate_compact_run_spec_envelope,
 )
 from rlrmp.runtime.spec_migrations import (
     RUN_SPEC_KIND,
@@ -244,10 +245,13 @@ def load_validated_run_spec(
     """Load and validate a composed C&S GRU ``TrainingRunSpec`` recipe."""
 
     payload_path = Path(run_spec_path)
-    payload = json.loads(payload_path.read_text(encoding="utf-8"))
+    raw_payload = json.loads(payload_path.read_text(encoding="utf-8"))
+    if not isinstance(raw_payload, Mapping):
+        raise ValueError("C&S GRU run spec must be a JSON object")
+    payload = hydrate_compact_run_spec_envelope(raw_payload)
     validate_nominal_gru_run_spec(
         payload,
-        spec_dir=payload_path.parent,
+        spec_dir=run_spec_sidecar_dir(payload_path),
         require_graph_sidecars=require_graph_sidecars,
     )
     _validate_composed_training_spec_payload(payload)
@@ -690,10 +694,10 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
             "hysteresis_frac",
             _config_default("adaptive_epsilon_hysteresis_frac"),
         ),
-        "adaptive_epsilon_freeze_until_burn_in": bool(
+        "adaptive_epsilon_freeze_during_application_ramp": bool(
             adaptive_lambda.get(
-                "freeze_until_burn_in",
-                _config_default("adaptive_epsilon_freeze_until_burn_in"),
+                "freeze_during_application_ramp",
+                _config_default("adaptive_epsilon_freeze_during_application_ramp"),
             )
         ),
         "adaptive_epsilon_gain_normalization": bool(
