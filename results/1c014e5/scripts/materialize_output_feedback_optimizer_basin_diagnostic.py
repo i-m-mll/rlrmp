@@ -25,8 +25,6 @@ from typing import Any
 
 import numpy as np
 
-import materialize_output_feedback_failure_decomposition as failure
-import materialize_output_feedback_sweep_certificates as certificates
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     materialize_reference,
@@ -43,6 +41,10 @@ from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
     adamw_optimizer_whitened,
     result_summary as rollout_result_summary,
     run_output_feedback_rollout_recovery,
+)
+from rlrmp.analysis.pipelines.failure_decomposition import output_feedback_failure_rows
+from rlrmp.analysis.pipelines.standard_certificate_materialization import (
+    deterministic_output_feedback_rows,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
@@ -260,7 +262,7 @@ def materialize(
     failure_rows = []
     for group, summary, group_arrays in groups:
         failure_rows.extend(
-            failure._rollout_summary_rows(
+            output_feedback_failure_rows(
                 summary=summary,
                 arrays=group_arrays,
                 standard_by_id=standard_by_id,
@@ -394,7 +396,7 @@ def _fit_standard_rows(
     group: str,
     manifest_path: Path,
 ) -> list[dict[str, Any]]:
-    rows = certificates._deterministic_fit_rows(
+    rows = deterministic_output_feedback_rows(
         fit=fit,
         arrays=arrays,
         reference=reference,
@@ -408,6 +410,7 @@ def _fit_standard_rows(
             "Full standard certificate computed for the optimizer-basin diagnostic "
             f"group {group}."
         ),
+        issue_id=ISSUE_ID,
     )
     row_dicts = []
     for row in rows:

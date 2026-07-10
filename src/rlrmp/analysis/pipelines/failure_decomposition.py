@@ -22,6 +22,7 @@ from typing import Any, Literal
 
 import numpy as np
 
+from rlrmp.analysis.math.cs_game_card import materialize_reference
 from rlrmp.analysis.pipelines.bridge_certificates import (
     DISTURBANCE_HISTORY_TO_ACTION_MAP_MISMATCH,
     DISTURBANCE_HISTORY_TO_OUTPUT_MAP_MISMATCH,
@@ -30,6 +31,7 @@ from rlrmp.analysis.pipelines.bridge_certificates import (
     MEASUREMENT_HISTORY_TO_OUTPUT_MAP_MISMATCH,
     OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH,
     STATE_WEIGHTED_ACTION_MISMATCH,
+    state_weighted_action_mismatch_component,
 )
 
 FailureClass = Literal[
@@ -57,6 +59,11 @@ EXTERNAL_RESPONSE_MAP_COMPONENTS = (
     DISTURBANCE_HISTORY_TO_ACTION_MAP_MISMATCH,
     DISTURBANCE_HISTORY_TO_STATE_MAP_MISMATCH,
     DISTURBANCE_HISTORY_TO_OUTPUT_MAP_MISMATCH,
+)
+
+OUTPUT_FEEDBACK_EVALUATION_LENSES = (
+    ("nominal_clean", "clean"),
+    ("riccati_epsilon_response", "under_eps"),
 )
 
 ObjectiveFn = Callable[[np.ndarray], float]
@@ -627,6 +634,227 @@ def _mean_sum(rows: Sequence[Mapping[str, Any]], keys: Sequence[str]) -> float:
     return float(np.mean([sum(float(row[key]) for key in keys) for row in rows]))
 
 
+def output_feedback_failure_rows(
+    *,
+    summary: dict[str, Any],
+    arrays: dict[str, np.ndarray],
+    standard_by_id: dict[str, dict[str, Any]],
+    run_id_prefix: Callable[[dict[str, Any]], tuple[str, ...]],
+    array_prefix: Callable[[dict[str, Any]], str],
+    source_group: str,
+    row_parameters: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Build output-feedback failure rows from fit summaries and saved arrays."""
+
+    reference_gain = arrays["lqr_reference_K"]
+    action_weight = np.asarray(materialize_reference().schedule.R)
+    rows = []
+    for fit in summary["fits"]:
+        label = fit["label"]
+        prefix = array_prefix(fit)
+        learned_gain = arrays[f"{prefix}_K"]
+        objective_summary = _fit_objective_summary(fit)
+        for lens, suffix in OUTPUT_FEEDBACK_EVALUATION_LENSES:
+            run_id = "__".join((*run_id_prefix(fit), lens))
+            standard_row = standard_by_id[run_id]
+            x_hat = arrays[f"{prefix}_{suffix}_x_hat"]
+            decomposition = gain_error_subspace_decomposition(
+                gain_delta=learned_gain - reference_gain,
+                state_covariances=covariances_from_states(x_hat[None, :, :]),
+            )
+            interpolation = interpolation_curve(
+                learned=learned_gain,
+                reference=reference_gain,
+                metric_fns={
+                    "state_weighted_action_mismatch": (
+                        lambda gains, x_hat=x_hat: _output_feedback_action_mismatch(
+                            gains=gains,
+                            reference_gain=reference_gain,
+                            x_hat=x_hat,
+                            action_weight=action_weight,
+                        )
+                    ),
+                },
+                alphas=(0.0, 0.25, 0.5, 0.75, 1.0),
+            )
+            certificate_mismatch = _certificate_component_summary(
+                standard_row,
+                STATE_WEIGHTED_ACTION_MISMATCH,
+                "mismatch_ratio_mean",
+            )
+            classification = classify_failure(
+                objective_ratio=objective_summary[
+                    "learned_to_reference_objective_ratio"
+                ],
+                learned_gradient_norm=objective_summary[
+                    "learned_projected_gradient_norm"
+                ],
+                reference_gradient_norm=objective_summary[
+                    "reference_projected_gradient_norm"
+                ],
+                certificate_mismatch_ratio=certificate_mismatch,
+                subspace_decomposition=decomposition,
+            )
+            rows.append(
+                {
+                    "run_id": run_id,
+                    "source_group": source_group,
+                    "controller_label": label,
+                    "evaluation_lens": lens,
+                    "row_parameters": row_parameters
+                    or _output_feedback_coverage_parameters(fit.get("condition", {})),
+                    "source_standard_status": standard_row["status"],
+                    "source_standard_distribution": standard_row["spec"]["parameters"][
+                        "distribution_family"
+                    ],
+                    "objective": objective_summary,
+                    "source_optimizer": {
+                        key: fit.get(key)
+                        for key in (
+                            "optimizer_status",
+                            "optimizer_success",
+                            "n_iterations",
+                            "n_function_evaluations",
+                        )
+                    },
+                    "certificate": {
+                        "state_weighted_action_mismatch": certificate_mismatch,
+                        "bellman_hessian_residual": _certificate_component_summary(
+                            standard_row,
+                            "bellman_hessian_residual",
+                            "residual_ratio_mean",
+                        ),
+                        "closed_loop_transition_mismatch": (
+                            _certificate_component_summary(
+                                standard_row,
+                                "closed_loop_transition_mismatch",
+                                "mismatch_ratio_mean",
+                            )
+                        ),
+                        "value_gap": _certificate_component_summary(
+                            standard_row,
+                            "value_policy_gap",
+                            "gap_ratio_mean",
+                        ),
+                    },
+                    "gain_error_decomposition": decomposition,
+                    "interpolation": interpolation,
+                    "classification": classification,
+                }
+            )
+    return rows
+
+
+def failure_rows_from_manifest_entries(
+    *,
+    entries: list[dict[str, Any]],
+    arrays: dict[str, np.ndarray],
+    standard_rows: dict[str, Any] | list[dict[str, Any]],
+    default_source_group: str,
+) -> list[dict[str, Any]]:
+    """Build failure rows from reusable deterministic row descriptors."""
+
+    standard_by_id = _standard_rows_by_id(standard_rows)
+    rows: list[dict[str, Any]] = []
+    for entry in entries:
+        fit = entry.get("fit", entry)
+        label = fit["label"]
+        run_parts = tuple(
+            entry.get(
+                "run_parts",
+                (entry.get("source_group", default_source_group), label),
+            )
+        )
+        prefix = entry.get("array_prefix", label)
+        source_group = entry.get("source_group", default_source_group)
+        rows.extend(
+            output_feedback_failure_rows(
+                summary={"fits": [fit]},
+                arrays=arrays,
+                standard_by_id=standard_by_id,
+                run_id_prefix=lambda _fit, run_parts=run_parts: run_parts,
+                array_prefix=lambda _fit, prefix=prefix: prefix,
+                source_group=source_group,
+                row_parameters=entry.get(
+                    "row_parameters",
+                    entry.get("parameters", {}),
+                ),
+            )
+        )
+    return rows
+
+
+def _standard_rows_by_id(
+    standard_rows: dict[str, Any] | list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    if isinstance(standard_rows, dict):
+        if "standard_certificate" in standard_rows:
+            rows = standard_rows["standard_certificate"]["rows"]
+        elif "rows" in standard_rows:
+            rows = standard_rows["rows"]
+        else:
+            rows = list(standard_rows.values())
+    else:
+        rows = standard_rows
+    return {row["spec"]["run_id"]: row for row in rows}
+
+
+def _fit_objective_summary(fit: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "learned_objective": fit.get("objective_final"),
+        "reference_objective": fit.get("objective_reference"),
+        "learned_to_reference_objective_ratio": fit.get(
+            "objective_ratio_to_reference"
+        ),
+        "learned_gradient_norm": fit.get("gradient_norm_final"),
+        "reference_gradient_norm": None,
+        "learned_projected_gradient_norm": (
+            fit.get("projected_gradient_norm_final")
+            if fit.get("projected_gradient_norm_final") is not None
+            else fit.get("gradient_norm_final")
+        ),
+        "reference_projected_gradient_norm": None,
+        "source": "rollout_fit_summary",
+    }
+
+
+def _output_feedback_coverage_parameters(condition: dict[str, Any]) -> dict[str, Any]:
+    return (
+        condition.get("eigenspectrum_coverage")
+        or condition.get("observer_error_coverage")
+        or {}
+    )
+
+
+def _output_feedback_action_mismatch(
+    *,
+    gains: np.ndarray,
+    reference_gain: np.ndarray,
+    x_hat: np.ndarray,
+    action_weight: np.ndarray,
+) -> float:
+    component = state_weighted_action_mismatch_component(
+        states=x_hat[None, :, :],
+        candidate_gain=gains,
+        reference_gain=reference_gain,
+        action_weight=action_weight,
+        state_label="evaluation_estimated_state",
+        action_label="control",
+    )
+    return float(component.summary["mismatch_ratio_mean"])
+
+
+def _certificate_component_summary(
+    row: dict[str, Any],
+    name: str,
+    summary_key: str,
+) -> Any:
+    for component in row["certificate_components"]:
+        if component["name"] == name:
+            return component.get("summary", {}).get(summary_key)
+    return None
+
+
 __all__ = [
     "FailureClass",
     "FailureDecompositionNumerics",
@@ -638,9 +866,11 @@ __all__ = [
     "classify_failure",
     "covariances_from_states",
     "external_response_map_representation_summary",
+    "failure_rows_from_manifest_entries",
     "failure_diagnostic_from_standard_row",
     "gain_error_subspace_decomposition",
     "is_sidecar_improving_non_equivalent",
     "interpolation_curve",
     "objective_gradient_summary",
+    "output_feedback_failure_rows",
 ]

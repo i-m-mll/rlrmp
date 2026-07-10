@@ -23,11 +23,11 @@ active path to `src/rlrmp/analysis/declarative_materialization.py` and
 |---|---|
 | `materialize_output_feedback_gamma_sweep.py` | Historical `97604a8` gamma-sweep sidecar writer. |
 | `materialize_output_feedback_lane.py` | Historical `83fc5b5` lane-summary writer. |
-| `materialize_output_feedback_observer_error_coverage.py` | Historical coverage-sweep writer feeding the `7a459bb` notes. |
+| `results/3becdec/scripts/materialize_output_feedback_observer_error_coverage.py` | Historical coverage-sweep writer feeding the `7a459bb` notes. |
 | `materialize_output_feedback_sweep_certificates.py` | Legacy active-reference writer for standard certificate rows; math/mode generalization remains on `e6a32b8` before further custody migration. |
 | `materialize_output_feedback_failure_decomposition.py` | Legacy companion failure-decomposition writer; keep semantics aligned with standard certificates until migrated. |
 | `materialize_output_feedback_interpolated_starts.py` | Historical interpolated-starts bridge writer. |
-| `materialize_output_feedback_optimizer_basin_diagnostic.py` | Historical `1c014e5` optimizer-basin writer. |
+| `results/1c014e5/scripts/materialize_output_feedback_optimizer_basin_diagnostic.py` | Historical `1c014e5` optimizer-basin writer. |
 
 ## Retired Writers
 

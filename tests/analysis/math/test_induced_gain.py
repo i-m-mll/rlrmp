@@ -291,7 +291,7 @@ def test_riccati_round_trip_qr_cost():
     artefact of the finite-horizon ``find_gamma_star`` bisection finding a
     smaller infimum than the long-horizon limit. We therefore use a long
     horizon (n=200) for this test to land cleanly in the (gamma_star,
-    gamma_design] band. See ``scripts/probe_round_trip_ratio.py`` and bug
+    gamma_design] band. See ``results/72fb8d9/scripts/probe_round_trip_ratio.py`` and bug
     ``3c74e3b``.
     """
     plant = linearize_pointmass(mass=1.0, damping=10.0, tau=0.05, dt=0.01)

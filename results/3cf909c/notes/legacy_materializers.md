@@ -342,7 +342,7 @@ Banner status: Full module banner added to the pipeline and top-level script.
 
 ## Output-feedback optimizer basin
 
-Files: `scripts/materialize_output_feedback_optimizer_basin_diagnostic.py`.
+Files: `results/1c014e5/scripts/materialize_output_feedback_optimizer_basin_diagnostic.py`.
 
 Purpose: This top-level writer compared optimizer-basin fits for the free
 output-feedback bridge using saved rollout-recovery and interpolated-starts
@@ -374,7 +374,7 @@ Banner status: Full module banner added to the top-level script.
 
 ## Output-feedback observer-error coverage
 
-Files: `scripts/materialize_output_feedback_observer_error_coverage.py`.
+Files: `results/3becdec/scripts/materialize_output_feedback_observer_error_coverage.py`.
 
 Purpose: This top-level writer generated an observer-error coverage sweep used
 to interpret output-feedback rollout-recovery rows. It feeds notes under the
