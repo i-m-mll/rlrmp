@@ -19,6 +19,10 @@ from rlrmp.viz.traces import (
     add_band_trace as canonical_add_band_trace,
     add_reference_trace as canonical_add_reference_trace,
 )
+from rlrmp.viz.figures import (
+    write_velocity_by_replicate_figure as canonical_write_velocity_by_replicate_figure,
+    write_velocity_figure as canonical_write_velocity_figure,
+)
 
 import argparse
 import json
@@ -391,52 +395,15 @@ def write_velocity_figure(
     output_dir: Path,
     references: Sequence[Any],
 ) -> Path:
-    """Write the pooled fixed-bank velocity profile."""
-
-    if not profiles:
-        raise ValueError("At least one profile is required")
-    bank_kind = profiles[0].bank_kind
     grouped = group_sisu_profiles(profiles)
     if grouped is not None:
         return write_sisu_velocity_figure(
-            grouped,
-            bank_kind=bank_kind,
-            output_dir=output_dir,
-            references=references,
+            grouped, bank_kind=profiles[0].bank_kind, output_dir=output_dir, references=references
         )
-    fig = profile_comparison_grid(
-        n_panels=len(profiles),
-        subplot_titles=[profile.label for profile in profiles],
-        vertical_spacing=0.025,
+    return canonical_write_velocity_figure(
+        profiles, output_dir=output_dir, references=references,
+        title="Delayed timing / pre-go hold target-radial velocity ({bank_kind})"
     )
-    colors = ("#2563eb", "#dc2626", "#059669", "#7c3aed", "#ea580c", "#0891b2")
-    for row, profile in enumerate(profiles, start=1):
-        add_band_trace(
-            fig,
-            x=profile.time_s,
-            mean=profile.mean,
-            std=profile.std,
-            row=row,
-            color=colors[(row - 1) % len(colors)],
-            name=profile.label,
-            legendgroup=f"run-{profile.experiment}-{profile.run_id}",
-            showlegend=True,
-        )
-        for reference in references:
-            add_reference_trace(fig, reference=reference, row=row, showlegend=row == 1)
-        fig.add_vline(x=0.0, line={"color": "black", "dash": "dash", "width": 1}, row=row, col=1)
-    fig.update_layout(
-        title=f"Delayed timing / pre-go hold target-radial velocity ({bank_kind})",
-        width=980,
-        height=max(520, 260 * len(profiles)),
-        margin={"l": 72, "r": 24, "t": 76, "b": 72},
-        hovermode="x unified",
-    )
-    fig.update_xaxes(title_text="Time relative to go cue (s)", row=len(profiles), col=1)
-    fig.update_yaxes(title_text="Target-radial velocity (m/s)", zeroline=True)
-    path = output_dir / "forward_velocity_profiles_stochastic.html"
-    fig.write_html(path)
-    return path
 
 
 def group_sisu_profiles(
@@ -526,48 +493,10 @@ def write_velocity_by_replicate_figure(
     output_dir: Path,
     references: Sequence[Any],
 ) -> Path:
-    """Write replicate-resolved fixed-bank velocity profiles."""
-
-    if not profiles:
-        raise ValueError("At least one profile is required")
-    bank_kind = profiles[0].bank_kind
-    fig = profile_comparison_grid(
-        n_panels=len(profiles),
-        subplot_titles=[profile.label for profile in profiles],
-        vertical_spacing=0.025,
+    return canonical_write_velocity_by_replicate_figure(
+        profiles, output_dir=output_dir, references=references,
+        title="Delayed timing / pre-go hold target-radial velocity by replicate ({bank_kind})"
     )
-    colors = ("#2563eb", "#dc2626", "#059669", "#7c3aed", "#ea580c", "#0891b2", "#be123c")
-    for row, profile in enumerate(profiles, start=1):
-        for rep_idx in range(profile.n_replicates):
-            add_band_trace(
-                fig,
-                x=profile.time_s,
-                mean=profile.replicate_mean[rep_idx],
-                std=profile.replicate_std[rep_idx],
-                row=row,
-                color=colors[rep_idx % len(colors)],
-                name=f"replicate {rep_idx}",
-                legendgroup=f"replicate-{rep_idx}",
-                showlegend=row == 1,
-                fill_alpha=0.10,
-                line_width=1.8,
-            )
-        for reference in references:
-            add_reference_trace(fig, reference=reference, row=row, showlegend=row == 1)
-        fig.add_vline(x=0.0, line={"color": "black", "dash": "dash", "width": 1}, row=row, col=1)
-    fig.update_layout(
-        title=(f"Delayed timing / pre-go hold target-radial velocity by replicate ({bank_kind})"),
-        width=1020,
-        height=max(560, 280 * len(profiles)),
-        margin={"l": 72, "r": 24, "t": 76, "b": 76},
-        hovermode="x unified",
-        legend={"groupclick": "togglegroup"},
-    )
-    fig.update_xaxes(title_text="Time relative to go cue (s)", row=len(profiles), col=1)
-    fig.update_yaxes(title_text="Target-radial velocity (m/s)", zeroline=True)
-    path = output_dir / "forward_velocity_profiles_by_replicate_stochastic.html"
-    fig.write_html(path)
-    return path
 
 
 add_band_trace = canonical_add_band_trace
