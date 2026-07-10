@@ -124,8 +124,41 @@ def write_compact_json(
     machine reads.
     """
 
+    write_json(
+        path,
+        payload,
+        default=default,
+        atomic=atomic,
+    )
+
+
+def write_json(
+    path: Path,
+    payload: Any,
+    *,
+    indent: int | None = None,
+    sort_keys: bool = True,
+    trailing_newline: bool = True,
+    default: Callable[[Any], Any] | None = None,
+    atomic: bool = False,
+) -> None:
+    """Write deterministic JSON with an explicit presentation contract.
+
+    ``indent=None`` selects compact separators. Callers that preserve a
+    historical artifact format can independently control key ordering and the
+    final newline while retaining one governed JSON write surface.
+    """
+
     path.parent.mkdir(parents=True, exist_ok=True)
-    encoded = compact_json_dumps(payload, default=default)
+    encoded = json.dumps(
+        payload,
+        default=default,
+        indent=indent,
+        separators=(",", ":") if indent is None else None,
+        sort_keys=sort_keys,
+    )
+    if trailing_newline:
+        encoded += "\n"
     if not atomic:
         path.write_text(encoded, encoding="utf-8")
         return

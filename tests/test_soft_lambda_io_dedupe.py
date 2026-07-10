@@ -161,6 +161,29 @@ def test_materialize_drivers_materialize_once_and_preserve_order(
     assert json.loads(capsys.readouterr().out)["extra"] is True
 
 
+def test_soft_lambda_materializer_preserves_pretty_json_bytes(tmp_path: Path) -> None:
+    payload = {"b": 2, "a": 1}
+
+    run_soft_lambda_materializer(
+        args=argparse.Namespace(
+            output_json="nested/out.json",
+            output_csv="out.csv",
+            output_md="out.md",
+        ),
+        repo_root=tmp_path,
+        materialize=lambda _args: payload,
+        csv_rows=lambda _payload: (),
+        csv_fields=("a",),
+        render_markdown=lambda _payload: "rendered",
+        marker="test",
+        json_indent=2,
+    )
+
+    assert (tmp_path / "nested" / "out.json").read_text(encoding="utf-8") == (
+        '{\n  "a": 1,\n  "b": 2\n}\n'
+    )
+
+
 def test_soft_lambda_scripts_cannot_reaccrete_csv_or_main_drivers() -> None:
     for relative_path in SCRIPT_PATHS:
         tree = ast.parse((REPO_ROOT / relative_path).read_text(encoding="utf-8"))

@@ -19,7 +19,7 @@ from jax_cookbook import load_with_hyperparameters
 
 from rlrmp.train import cs_nominal_gru as nominal
 from rlrmp.analysis.data_products import load_analysis_parameter_preset
-from rlrmp.io import update_marked_section, write_compact_json, write_csv_rows
+from rlrmp.io import update_marked_section, write_csv_rows, write_json
 from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
     HISTORICAL_020A65B_PGD_RADIUS_15CM as CAP_RADIUS_15CM,
@@ -223,14 +223,7 @@ def run_soft_lambda_materializer(
     output_csv = repo_root / args.output_csv
     output_md = repo_root / args.output_md
     if json_writer is None:
-        if json_indent is None:
-            write_compact_json(output_json, payload)
-        else:
-            output_json.parent.mkdir(parents=True, exist_ok=True)
-            output_json.write_text(
-                json.dumps(payload, indent=json_indent, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
+        write_json(output_json, payload, indent=json_indent)
         json_metadata: Mapping[str, Any] = {}
     else:
         json_metadata = json_writer(output_json, payload) or {}
