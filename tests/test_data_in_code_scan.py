@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import rlrmp.data_products.data_in_code as data_in_code
 from rlrmp.data_products.data_in_code import (
     DATA_IN_CODE_ALLOWLIST,
     HP_NAME_LEXICON,
@@ -37,6 +38,7 @@ def planned_rows():
     )
 
     assert _keys(findings) == ["src/rlrmp/example.py::planned_rows::argv_rows"]
+    assert policy_for_finding(findings[0]) == "enforced"
 
 
 def test_argv_row_detector_ignores_argparse_setup() -> None:
@@ -101,6 +103,50 @@ def _base_hps():
     assert findings == []
 
 
+def test_default_bundle_flags_assigned_and_expanded_hp_dict() -> None:
+    findings = scan_source(
+        """
+def build_hps():
+    defaults = {
+        "batch_size": 256,
+        "controller_lr": 0.003,
+        "seed": 1,
+        "loss": {"velocity_weight": 0.2, "position_weight": 1.0},
+    }
+    return Namespace(**defaults)
+""",
+        "src/rlrmp/train/example.py",
+    )
+
+    assert _keys(findings) == ["src/rlrmp/train/example.py::build_hps::default_bundle"]
+
+
+def test_default_bundle_flags_incrementally_updated_hp_dict() -> None:
+    findings = scan_source(
+        """
+def build_hps():
+    defaults = {"label": "run"}
+    defaults.update(batch_size=256, controller_lr=0.003, seed=1)
+    return defaults
+""",
+        "src/rlrmp/train/example.py",
+    )
+
+    assert _keys(findings) == ["src/rlrmp/train/example.py::build_hps::default_bundle"]
+
+
+def test_default_bundle_ignores_non_parameter_result_mapping() -> None:
+    findings = scan_source(
+        """
+def result_summary():
+    return {"count": 12, "duration": 3.0, "seed": 1, "label": "complete"}
+""",
+        "src/rlrmp/train/example.py",
+    )
+
+    assert findings == []
+
+
 def test_negative_canary_flags_scalar_hp_default() -> None:
     findings = scan_source(
         "DEFAULT_LEARNING_RATE = 3e-3\n",
@@ -118,6 +164,44 @@ _ATOL = 1e-9
 PERTURBATION_LABELS = ("nominal", "strong")
 """,
         "src/rlrmp/example.py",
+    )
+
+    assert findings == []
+
+
+def test_hp_constant_flags_plural_and_compound_parameter_names() -> None:
+    findings = scan_source(
+        """
+DEFAULT_SUPPORT_WINDOWS = (0.1, 0.2, 0.4)
+BETA_VALUES = (0.0, 0.5, 1.0)
+TARGET_SUPPORT_BAND_CENTERS_DEG = (-30.0, 0.0, 30.0)
+LENGTH_DIAGNOSTIC_RADII_M = (0.1, 0.2, 0.3)
+DEFAULT_GOAL_HIT_SUBWEIGHTS = (0.5, 1.0)
+D_REF = 6131.6906765
+""",
+        "src/rlrmp/train/example.py",
+    )
+
+    assert _keys(findings) == [
+        "src/rlrmp/train/example.py::BETA_VALUES::hp_constant",
+        "src/rlrmp/train/example.py::DEFAULT_GOAL_HIT_SUBWEIGHTS::hp_constant",
+        "src/rlrmp/train/example.py::DEFAULT_SUPPORT_WINDOWS::hp_constant",
+        "src/rlrmp/train/example.py::D_REF::hp_constant",
+        "src/rlrmp/train/example.py::LENGTH_DIAGNOSTIC_RADII_M::hp_constant",
+        "src/rlrmp/train/example.py::TARGET_SUPPORT_BAND_CENTERS_DEG::hp_constant",
+    ]
+
+
+def test_hp_constant_ignores_schema_paths_and_string_only_values() -> None:
+    findings = scan_source(
+        """
+PARAM_SCHEMA_VERSION = 4
+DEFAULT_CHECKPOINT_PATH = "checkpoint.json"
+DEFAULT_LABELS = ("nominal", "strong")
+STATE_DIMS = (4, 2)
+LOSS_RTOL = 1e-8
+""",
+        "src/rlrmp/train/example.py",
     )
 
     assert findings == []
@@ -213,6 +297,15 @@ def test_live_planned_row_functions_have_been_drained() -> None:
     assert planned_row_findings == []
 
 
+def test_tree_scan_rejects_unparseable_source_instead_of_skipping(tmp_path: Path) -> None:
+    src = tmp_path / "src" / "rlrmp"
+    src.mkdir(parents=True)
+    (src / "broken.py").write_text("def broken(:\n", encoding="utf-8")
+
+    with pytest.raises(DataInCodePolicyError, match="syntactically invalid Python source"):
+        scan_tree(tmp_path)
+
+
 def test_write_baseline_refuses_growth(tmp_path: Path) -> None:
     repo_root = tmp_path
     src = repo_root / "src" / "rlrmp"
@@ -246,6 +339,42 @@ def test_write_baseline_excludes_advisory_findings(tmp_path: Path) -> None:
     keys = write_baseline(repo_root)
 
     assert keys == []
+
+
+def test_enforced_findings_cannot_be_hidden_in_baseline(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(data_in_code, "DATA_IN_CODE_ALLOWLIST", {})
+    repo_root = tmp_path
+    src = repo_root / "src" / "rlrmp"
+    src.mkdir(parents=True)
+    (repo_root / "ci").mkdir()
+    key = "src/rlrmp/example.py::planned_rows::argv_rows"
+    (repo_root / "ci" / "data_in_code_baseline.json").write_text(
+        json.dumps([key]) + "\n",
+        encoding="utf-8",
+    )
+    (src / "example.py").write_text(
+        'def planned_rows():\n    return [["--seed", "1"]]\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(DataInCodePolicyError, match="enforced data-in-code findings"):
+        validate_findings(repo_root)
+    assert _keys(violations(repo_root)) == [key]
+
+
+def test_write_baseline_excludes_enforced_findings(tmp_path: Path) -> None:
+    repo_root = tmp_path
+    src = repo_root / "src" / "rlrmp"
+    src.mkdir(parents=True)
+    (src / "example.py").write_text(
+        'def planned_rows():\n    return [["--seed", "1"]]\n',
+        encoding="utf-8",
+    )
+
+    assert write_baseline(repo_root) == []
 
 
 def _keys(findings: list) -> list[str]:
