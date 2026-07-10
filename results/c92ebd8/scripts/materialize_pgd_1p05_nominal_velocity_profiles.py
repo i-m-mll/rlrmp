@@ -6,7 +6,6 @@ from rlrmp.viz.traces import add_sample_band
 from rlrmp.eval.robustness_diagnostics import (
     build_robust_output_feedback_6d_context as _build_robust_output_feedback_6d_context,
 )
-from rlrmp.io import json_ready
 from rlrmp.paths import portable_repo_path
 from rlrmp.viz.traces import add_profile_line
 
@@ -16,7 +15,6 @@ from typing import Any
 
 import numpy as np
 import plotly.graph_objects as go
-from feedbax.plot import save_figure
 
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
@@ -32,7 +30,9 @@ from rlrmp.analysis.pipelines.gru_perturbation_bank import (
 )
 from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT
-from rlrmp.viz.figures import build_nominal_profile_figure
+from rlrmp.viz.figures import (
+    materialize_nominal_velocity_figure as canonical_materialize_nominal_velocity_figure,
+)
 
 
 ISSUE = "c92ebd8"
@@ -55,6 +55,63 @@ SOURCE_COLORS = {
     "no_pgd": "#f97316",
     "extlqg6d": "#c2410c",
     "robust_output_feedback6d": "#15803d",
+}
+EXTLQG_CONTRACT = {
+    "label": "6D extLQG",
+    "state_dim": 36,
+    "physical_dim": 6,
+    "disturbance_integrators_exposed": False,
+    "source": (
+        "rlrmp.analysis.pipelines.gru_perturbation_bank."
+        "_build_extlqg_comparator_context(physical_dim=6)"
+    ),
+}
+NOMINAL_INPUTS = [
+    {"role": "run_spec", "path": f"results/{ISSUE}/runs/{run_id}.json"}
+    for run_id in tuple(PGD_RUNS.values()) + tuple(NO_PGD_RUNS.values())
+]
+NOMINAL_TRANSFORM = [
+    {
+        "name": "final_checkpoint_forward_velocity_profile_mean_band",
+        "kwargs": {
+            "physical_levels": list(PHYSICAL_LEVELS),
+            "pgd_runs": PGD_RUNS,
+            "no_pgd_runs": NO_PGD_RUNS,
+            "n_rollout_trials": DEFAULT_N_ROLLOUT_TRIALS,
+            "analytical_comparators": [
+                "6d_output_feedback_extlqg",
+                "6d_output_feedback_hinf",
+            ],
+        },
+    }
+]
+NOMINAL_PLOT_KWARGS = {
+    "grid_helper": "rlrmp.viz.profile_comparison_grid",
+    "shared_yaxes": "all",
+    "rows": len(PHYSICAL_LEVELS),
+    "physical_state_dim": 6,
+    "state_dim": 36,
+    "disturbance_integrators_exposed": False,
+}
+NOMINAL_RUN_PAIRS = [
+    {
+        "physical_level": level,
+        "pgd_run": PGD_RUNS[level],
+        "no_pgd_run": NO_PGD_RUNS[level],
+    }
+    for level in PHYSICAL_LEVELS
+]
+NOMINAL_FIGURE_CONFIG = {
+    "title": "c92 PGD 1.05 nominal forward velocity profiles",
+    "height": 760,
+    "issue": ISSUE,
+    "topic": TOPIC,
+    "schema_version": "rlrmp.c92_pgd_1p05_nominal_velocity_profiles.v1",
+    "figure_kind": "pgd_1p05_nominal_forward_velocity_profile_comparison",
+    "ext_contract": EXTLQG_CONTRACT,
+    "inputs": NOMINAL_INPUTS,
+    "transform": NOMINAL_TRANSFORM,
+    "plot_kwargs": NOMINAL_PLOT_KWARGS,
 }
 
 
@@ -128,89 +185,23 @@ def materialize_figure(
             showlegend=row_index == 1,
         )
 
-    fig = build_nominal_profile_figure(
+    return canonical_materialize_nominal_velocity_figure(
         rows=[{"label": level, "level": level} for level in PHYSICAL_LEVELS],
         add_run_profiles=add_run_profiles,
         ext_profile=ext_profile,
         robust_profile=robust_profile,
         comparator_colors=SOURCE_COLORS,
-        title="c92 PGD 1.05 nominal forward velocity profiles",
-        height=760,
-    )
-
-    spec = {
-        "schema_version": "rlrmp.c92_pgd_1p05_nominal_velocity_profiles.v1",
-        "issue": ISSUE,
-        "figure_kind": "pgd_1p05_nominal_forward_velocity_profile_comparison",
-        "analytical_comparator_contract": {
-            "extlqg": {
-                "label": "6D extLQG",
-                "state_dim": 36,
-                "physical_dim": 6,
-                "disturbance_integrators_exposed": False,
-                "source": (
-                    "rlrmp.analysis.pipelines.gru_perturbation_bank."
-                    "_build_extlqg_comparator_context(physical_dim=6)"
-                ),
-            },
+        config=NOMINAL_FIGURE_CONFIG,
+        robust_contract=robust_context["contract"],
+        result_extra={
+            "bulk_html": f"_artifacts/{ISSUE}/figures/{TOPIC}/figure.html",
+            "run_pairs": NOMINAL_RUN_PAIRS,
+        },
+        result_contract={
+            "extlqg": EXTLQG_CONTRACT,
             "output_feedback_hinf": robust_context["contract"],
         },
-        "inputs": [
-            {"role": "run_spec", "path": f"results/{ISSUE}/runs/{run_id}.json"}
-            for run_id in tuple(PGD_RUNS.values()) + tuple(NO_PGD_RUNS.values())
-        ],
-        "transform": [
-            {
-                "name": "final_checkpoint_forward_velocity_profile_mean_band",
-                "kwargs": {
-                    "physical_levels": list(PHYSICAL_LEVELS),
-                    "pgd_runs": PGD_RUNS,
-                    "no_pgd_runs": NO_PGD_RUNS,
-                    "n_rollout_trials": DEFAULT_N_ROLLOUT_TRIALS,
-                    "analytical_comparators": [
-                        "6d_output_feedback_extlqg",
-                        "6d_output_feedback_hinf",
-                    ],
-                },
-            }
-        ],
-        "plot_kwargs": {
-            "grid_helper": "rlrmp.viz.profile_comparison_grid",
-            "shared_yaxes": "all",
-            "rows": len(PHYSICAL_LEVELS),
-            "physical_state_dim": 6,
-            "state_dim": 36,
-            "disturbance_integrators_exposed": False,
-        },
-    }
-    saved = save_figure(
-        fig=fig,
-        spec=spec,
-        package="rlrmp",
-        experiment=ISSUE,
-        topic=TOPIC,
-        extra_packages=["rlrmp"],
     )
-    return {
-        "status": "materialized",
-        "topic": TOPIC,
-        "save_result": json_safe(saved),
-        "spec": f"results/{ISSUE}/figures/{TOPIC}/spec.json",
-        "html": f"results/{ISSUE}/figures/{TOPIC}/figure.html",
-        "bulk_html": f"_artifacts/{ISSUE}/figures/{TOPIC}/figure.html",
-        "run_pairs": [
-            {
-                "physical_level": level,
-                "pgd_run": PGD_RUNS[level],
-                "no_pgd_run": NO_PGD_RUNS[level],
-            }
-            for level in PHYSICAL_LEVELS
-        ],
-        "analytical_comparator_contract": {
-            "extlqg": spec["analytical_comparator_contract"]["extlqg"],
-            "output_feedback_hinf": robust_context["contract"],
-        },
-    }
 
 
 def build_robust_output_feedback_6d_context() -> dict[str, Any]:
@@ -305,9 +296,6 @@ def write_note(output: Mapping[str, Any]) -> None:
 
 
 repo_rel = portable_repo_path
-
-
-json_safe = json_ready
 
 
 if __name__ == "__main__":
