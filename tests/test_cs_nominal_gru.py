@@ -857,7 +857,7 @@ def test_adaptive_epsilon_curriculum_hps_contract() -> None:
     assert cfg.lambda_update.interval_batches == 50
     assert cfg.lambda_update.eta == pytest.approx(0.1)
     assert cfg.lambda_update.deadband_frac == pytest.approx(0.10)
-    assert cfg.lambda_update.freeze_until_burn_in is True
+    assert cfg.lambda_update.freeze_during_application_ramp is False
     assert cfg.lambda_update.gain_normalization is False
     assert cfg.lambda_update.gain_ema_alpha == pytest.approx(0.2)
     assert cfg.lambda_update.gain_min == pytest.approx(0.25)
@@ -894,7 +894,7 @@ def test_adaptive_epsilon_run_spec_replay_preserves_curriculum(tmp_path: Path) -
         adaptive_epsilon_eta=0.3,
         adaptive_epsilon_deadband_frac=0.4,
         adaptive_epsilon_hysteresis_frac=0.45,
-        adaptive_epsilon_freeze_until_burn_in=False,
+        adaptive_epsilon_freeze_during_application_ramp=True,
         adaptive_epsilon_gain_normalization=True,
         adaptive_epsilon_gain_ema_alpha=0.25,
         adaptive_epsilon_gain_min=0.5,
@@ -921,7 +921,7 @@ def test_adaptive_epsilon_run_spec_replay_preserves_curriculum(tmp_path: Path) -
     assert replay_args.adaptive_epsilon_eta == pytest.approx(0.3)
     assert replay_args.adaptive_epsilon_deadband_frac == pytest.approx(0.4)
     assert replay_args.adaptive_epsilon_hysteresis_frac == pytest.approx(0.45)
-    assert replay_args.adaptive_epsilon_freeze_until_burn_in is False
+    assert replay_args.adaptive_epsilon_freeze_during_application_ramp is True
     assert replay_args.adaptive_epsilon_gain_normalization is True
     assert replay_args.adaptive_epsilon_gain_ema_alpha == pytest.approx(0.25)
     assert replay_args.adaptive_epsilon_gain_min == pytest.approx(0.5)
@@ -1366,6 +1366,108 @@ def test_adaptive_epsilon_lambda_update_uses_clipped_log_ratio() -> None:
     assert zero_target_diagnostics["lambda_updated"] == np.asarray(False)
     assert zero_target_diagnostics["lambda_log_step"] == pytest.approx(0.0)
     assert zero_target_state.lambda_value == pytest.approx(base_state.lambda_value)
+
+
+def test_adaptive_epsilon_application_ramp_freeze_holds_then_seeds_ema() -> None:
+    hps = build_hps(
+        _args(
+            broad_epsilon_pgd_training=True,
+            broad_epsilon_pgd_objective=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+            broad_epsilon_pgd_energy_lambda=10.0,
+            adaptive_epsilon_curriculum=True,
+            target_relative_multitarget=True,
+            adaptive_epsilon_update_interval_batches=1,
+            adaptive_epsilon_ema_alpha=0.1,
+            adaptive_epsilon_outer_weight_ramp_batches=2,
+            adaptive_epsilon_freeze_during_application_ramp=True,
+        )
+    )
+    cfg = hps.adaptive_epsilon_curriculum
+    state = _initial_adaptive_epsilon_state(hps)
+    assert state is not None
+
+    held_state, held_diagnostics = _update_adaptive_epsilon_state(
+        state,
+        cfg,
+        batch_index=0,
+        target_damage=1.0,
+        measured_damage=2.0,
+        measured_clean_loss=1.0,
+    )
+    assert held_state == state
+    assert held_diagnostics["application_ramp_frozen"] == np.asarray(True)
+    assert held_diagnostics["lambda_updated"] == np.asarray(False)
+    assert np.isnan(held_diagnostics["damage_ema"])
+
+    seeded_state, seeded_diagnostics = _update_adaptive_epsilon_state(
+        held_state,
+        cfg,
+        batch_index=2,
+        target_damage=1.0,
+        measured_damage=2.0,
+        measured_clean_loss=1.0,
+    )
+    assert seeded_diagnostics["application_ramp_frozen"] == np.asarray(False)
+    assert seeded_diagnostics["ema_seeded_post_ramp"] == np.asarray(True)
+    assert seeded_diagnostics["lambda_updated"] == np.asarray(False)
+    assert seeded_state.damage_ema == pytest.approx(2.0)
+    assert seeded_state.clean_loss_ema == pytest.approx(1.0)
+    assert seeded_state.lambda_value == pytest.approx(state.lambda_value)
+
+    updated_state, updated_diagnostics = _update_adaptive_epsilon_state(
+        seeded_state,
+        cfg,
+        batch_index=3,
+        target_damage=1.0,
+        measured_damage=2.0,
+        measured_clean_loss=1.0,
+    )
+    assert updated_diagnostics["ema_seeded_post_ramp"] == np.asarray(False)
+    assert updated_diagnostics["lambda_updated"] == np.asarray(True)
+    assert updated_state.lambda_value > seeded_state.lambda_value
+
+
+def test_adaptive_epsilon_application_ramp_freeze_default_off_and_zero_target_is_not_special() -> (
+    None
+):
+    hps = build_hps(
+        _args(
+            broad_epsilon_pgd_training=True,
+            broad_epsilon_pgd_objective=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+            broad_epsilon_pgd_energy_lambda=10.0,
+            adaptive_epsilon_curriculum=True,
+            target_relative_multitarget=True,
+            adaptive_epsilon_update_interval_batches=1,
+            adaptive_epsilon_outer_weight_ramp_batches=2,
+        )
+    )
+    cfg = hps.adaptive_epsilon_curriculum
+    assert cfg.lambda_update.freeze_during_application_ramp is False
+    state = _initial_adaptive_epsilon_state(hps)
+    assert state is not None
+
+    live_state, live_diagnostics = _update_adaptive_epsilon_state(
+        state,
+        cfg,
+        batch_index=0,
+        target_damage=1.0,
+        measured_damage=2.0,
+        measured_clean_loss=1.0,
+    )
+    assert live_diagnostics["application_ramp_frozen"] == np.asarray(False)
+    assert live_state.damage_ema == pytest.approx(2.0)
+    assert live_diagnostics["lambda_updated"] == np.asarray(True)
+
+    zero_target_state, zero_target_diagnostics = _update_adaptive_epsilon_state(
+        state,
+        cfg,
+        batch_index=0,
+        target_damage=0.0,
+        measured_damage=2.0,
+        measured_clean_loss=1.0,
+    )
+    assert zero_target_diagnostics["application_ramp_frozen"] == np.asarray(False)
+    assert zero_target_state.damage_ema == pytest.approx(2.0)
 
 
 def test_adaptive_epsilon_probe_estimator_recovers_synthetic_gain() -> None:

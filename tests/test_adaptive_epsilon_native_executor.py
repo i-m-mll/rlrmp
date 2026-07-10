@@ -170,6 +170,7 @@ def test_adaptive_epsilon_ratio_update_is_loss_scale_invariant() -> None:
             lambda_min=1e-12,
             lambda_max=None,
             max_log_step=10.0,
+            freeze_during_application_ramp=True,
         )
     )
 
@@ -196,6 +197,8 @@ def test_adaptive_epsilon_ratio_update_is_loss_scale_invariant() -> None:
     assert scaled_state.damage_ema == pytest.approx(500.0)
     assert base_state.clean_loss_ema == pytest.approx(100.0)
     assert scaled_state.clean_loss_ema == pytest.approx(1000.0)
+    assert bool(base_diagnostics["application_ramp_frozen"]) is False
+    assert bool(base_diagnostics["ema_seeded_post_ramp"]) is False
     assert float(base_diagnostics["damage_ratio_ema"]) == pytest.approx(0.5)
     assert float(scaled_diagnostics["damage_ratio_ema"]) == pytest.approx(0.5)
     assert float(base_diagnostics["target_damage_ratio"]) == pytest.approx(0.25)

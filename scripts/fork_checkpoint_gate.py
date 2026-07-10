@@ -8,6 +8,7 @@ from pathlib import Path
 
 from rlrmp.runtime.checkpoint_fork_gate import (
     ForkParityError,
+    format_ratio_setpoint_report,
     fork_checkpoints_with_parity,
     parse_target,
 )
@@ -51,7 +52,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
-        fork_checkpoints_with_parity(
+        table = fork_checkpoints_with_parity(
             matrix_path=args.matrix,
             source_checkpoint_root=args.source_checkpoint_root,
             targets=args.target,
@@ -61,6 +62,9 @@ def main(argv: list[str] | None = None) -> int:
     except ForkParityError as exc:
         print(str(exc), file=sys.stderr)
         return 1
+    ratio_setpoint = table.get("ratio_setpoint")
+    if isinstance(ratio_setpoint, dict):
+        print(format_ratio_setpoint_report(ratio_setpoint))
     return 0
 
 

@@ -2728,7 +2728,7 @@ class CsNominalGruConfig(BaseModel):
     adaptive_epsilon_eta: float = 0.1
     adaptive_epsilon_deadband_frac: float = 0.10
     adaptive_epsilon_hysteresis_frac: float | None = None
-    adaptive_epsilon_freeze_until_burn_in: bool = True
+    adaptive_epsilon_freeze_during_application_ramp: bool = False
     adaptive_epsilon_gain_normalization: bool = False
     adaptive_epsilon_gain_ema_alpha: float = 0.2
     adaptive_epsilon_gain_min: float = 0.25

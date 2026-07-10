@@ -850,7 +850,9 @@ def _adaptive_epsilon_curriculum_config_from_args(args: argparse.Namespace) -> d
                 if args.adaptive_epsilon_hysteresis_frac is None
                 else float(args.adaptive_epsilon_hysteresis_frac)
             ),
-            "freeze_until_burn_in": bool(args.adaptive_epsilon_freeze_until_burn_in),
+            "freeze_during_application_ramp": bool(
+                args.adaptive_epsilon_freeze_during_application_ramp
+            ),
             "gain_normalization": bool(args.adaptive_epsilon_gain_normalization),
             "gain_ema_alpha": float(args.adaptive_epsilon_gain_ema_alpha),
             "gain_min": float(args.adaptive_epsilon_gain_min),

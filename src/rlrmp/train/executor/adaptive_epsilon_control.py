@@ -113,6 +113,16 @@ def _adaptive_epsilon_outer_weight(config: Any, batch_index: int) -> float:
     return start + frac * (final - start)
 
 
+def _adaptive_epsilon_application_ramp_incomplete(config: Any, batch_index: int) -> bool:
+    """Return whether the epsilon-application ramp has not reached full strength."""
+
+    schedule = getattr(config, "outer_adversarial_weight", None)
+    if schedule is None:
+        return False
+    ramp_batches = int(schedule.ramp_batches)
+    return ramp_batches > 0 and max(0, int(batch_index)) < ramp_batches
+
+
 def _initial_adaptive_epsilon_state(
     hps: TreeNamespace,
     *,
@@ -789,10 +799,31 @@ def _update_adaptive_epsilon_state(
     update_due = completed_batches % interval == 0
     target = float(target_damage)
     ratio_eps = 1e-12
-    frozen_for_burn_in = bool(getattr(update_cfg, "freeze_until_burn_in", True)) and target <= 0.0
-    if frozen_for_burn_in:
+    schedule_batch = _adaptive_epsilon_schedule_batch(state, batch_index)
+    freeze_during_application_ramp = bool(
+        getattr(update_cfg, "freeze_during_application_ramp", False)
+    )
+    application_ramp_incomplete = _adaptive_epsilon_application_ramp_incomplete(
+        config,
+        schedule_batch,
+    )
+    application_ramp_frozen = freeze_during_application_ramp and application_ramp_incomplete
+    application_ramp = getattr(config, "outer_adversarial_weight", None)
+    application_ramp_batches = (
+        0 if application_ramp is None else int(getattr(application_ramp, "ramp_batches", 0))
+    )
+    ema_seeded_post_ramp = (
+        freeze_during_application_ramp
+        and not application_ramp_incomplete
+        and application_ramp_batches > 0
+        and (state.damage_ema is None or state.clean_loss_ema is None)
+    )
+    if application_ramp_frozen:
         damage_ema = state.damage_ema
         clean_loss_ema = state.clean_loss_ema
+    elif ema_seeded_post_ramp:
+        damage_ema = float(measured_damage)
+        clean_loss_ema = float(measured_clean_loss)
     else:
         damage_ema = (
             float(measured_damage)
@@ -821,18 +852,24 @@ def _update_adaptive_epsilon_state(
         current_log_damage=current_log_damage_ema,
         lambda_log_step=state.pending_lambda_log_step,
     )
-    gain_estimate = _adaptive_epsilon_running_gain(
-        previous=state.gain_estimate,
-        sample=raw_gain,
-        alpha=float(getattr(update_cfg, "gain_ema_alpha", alpha)),
-    )
-    gain_samples = state.gain_samples + (1 if raw_gain is not None else 0)
-    ema_noise_floor = _adaptive_epsilon_running_noise_floor(
-        previous=state.ema_noise_floor,
-        previous_log_damage=state.last_log_damage_ema,
-        current_log_damage=current_log_damage_ema,
-        alpha=float(getattr(update_cfg, "gain_ema_alpha", alpha)),
-    )
+    if application_ramp_frozen:
+        raw_gain = None
+        gain_estimate = state.gain_estimate
+        gain_samples = state.gain_samples
+        ema_noise_floor = state.ema_noise_floor
+    else:
+        gain_estimate = _adaptive_epsilon_running_gain(
+            previous=state.gain_estimate,
+            sample=raw_gain,
+            alpha=float(getattr(update_cfg, "gain_ema_alpha", alpha)),
+        )
+        gain_samples = state.gain_samples + (1 if raw_gain is not None else 0)
+        ema_noise_floor = _adaptive_epsilon_running_noise_floor(
+            previous=state.ema_noise_floor,
+            previous_log_damage=state.last_log_damage_ema,
+            current_log_damage=current_log_damage_ema,
+            alpha=float(getattr(update_cfg, "gain_ema_alpha", alpha)),
+        )
     relative_error = (signal_for_math - target) / max(target, ratio_eps) if target > 0.0 else 0.0
     log_ratio_error = math.log(signal_for_math / max(target, ratio_eps)) if target > 0.0 else 0.0
     deadband = float(update_cfg.deadband_frac)
@@ -851,7 +888,8 @@ def _update_adaptive_epsilon_state(
     eta_eff = _adaptive_epsilon_effective_eta(update_cfg, eta=eta, gain_estimate=gain_estimate)
     if (
         update_due
-        and not frozen_for_burn_in
+        and not application_ramp_frozen
+        and not ema_seeded_post_ramp
         and target > 0.0
         and abs(relative_error) > update_threshold
     ):
@@ -876,31 +914,35 @@ def _update_adaptive_epsilon_state(
     sign_alternation_fraction = (
         lambda_step_alternations / float(lambda_step_count - 1) if lambda_step_count > 1 else 0.0
     )
-    next_state = AdaptiveEpsilonState(
-        lambda_value=lambda_value,
-        damage_ema=damage_ema,
-        clean_loss_ema=clean_loss_ema,
-        last_update_batch=int(batch_index) if updated else state.last_update_batch,
-        update_count=state.update_count + (1 if updated else 0),
-        schedule_start_batch=state.schedule_start_batch,
-        zero_adversary_guard=state.zero_adversary_guard,
-        gain_estimate=gain_estimate,
-        gain_samples=gain_samples,
-        pending_lambda_log_step=log_step
-        if updated and current_log_damage_ema is not None
-        else None,
-        pending_log_damage_ema=(
-            current_log_damage_ema if updated and current_log_damage_ema is not None else None
-        ),
-        last_log_damage_ema=(
-            current_log_damage_ema
-            if current_log_damage_ema is not None
-            else state.last_log_damage_ema
-        ),
-        ema_noise_floor=ema_noise_floor,
-        last_lambda_step_sign=step_sign or state.last_lambda_step_sign,
-        lambda_step_count=lambda_step_count,
-        lambda_step_alternations=lambda_step_alternations,
+    next_state = (
+        state
+        if application_ramp_frozen
+        else AdaptiveEpsilonState(
+            lambda_value=lambda_value,
+            damage_ema=damage_ema,
+            clean_loss_ema=clean_loss_ema,
+            last_update_batch=int(batch_index) if updated else state.last_update_batch,
+            update_count=state.update_count + (1 if updated else 0),
+            schedule_start_batch=state.schedule_start_batch,
+            zero_adversary_guard=state.zero_adversary_guard,
+            gain_estimate=gain_estimate,
+            gain_samples=gain_samples,
+            pending_lambda_log_step=(
+                log_step if updated and current_log_damage_ema is not None else None
+            ),
+            pending_log_damage_ema=(
+                current_log_damage_ema if updated and current_log_damage_ema is not None else None
+            ),
+            last_log_damage_ema=(
+                current_log_damage_ema
+                if current_log_damage_ema is not None
+                else state.last_log_damage_ema
+            ),
+            ema_noise_floor=ema_noise_floor,
+            last_lambda_step_sign=step_sign or state.last_lambda_step_sign,
+            lambda_step_count=lambda_step_count,
+            lambda_step_alternations=lambda_step_alternations,
+        )
     )
     return next_state, {
         "damage_ema": np.asarray(np.nan if damage_ema is None else damage_ema, dtype=np.float32),
@@ -921,7 +963,8 @@ def _update_adaptive_epsilon_state(
         "lambda_update_eta_eff": np.asarray(eta_eff, dtype=np.float32),
         "update_due": np.asarray(update_due, dtype=bool),
         "update_count": np.asarray(next_state.update_count, dtype=np.float32),
-        "burn_in_frozen": np.asarray(frozen_for_burn_in, dtype=bool),
+        "application_ramp_frozen": np.asarray(application_ramp_frozen, dtype=bool),
+        "ema_seeded_post_ramp": np.asarray(ema_seeded_post_ramp, dtype=bool),
         "deadband_threshold": np.asarray(update_threshold, dtype=np.float32),
         "gain_normalization_enabled": np.asarray(
             bool(getattr(update_cfg, "gain_normalization", False)),
@@ -1044,6 +1087,7 @@ __all__ = [
     "_adaptive_epsilon_damage_target",
     "_adaptive_epsilon_diagnostics_arrays",
     "_adaptive_epsilon_effective_eta",
+    "_adaptive_epsilon_application_ramp_incomplete",
     "_adaptive_epsilon_lambda_min",
     "_adaptive_epsilon_outer_weight",
     "_adaptive_epsilon_probe_gain",
