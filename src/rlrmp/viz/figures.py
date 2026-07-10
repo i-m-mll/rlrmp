@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Protocol
 
 import jax.random as jr
 import numpy as np
@@ -35,7 +36,128 @@ from rlrmp.analysis.math.output_feedback import (
 )
 from rlrmp.viz.profile_grids import profile_comparison_grid
 from rlrmp.viz.colors import hex_to_rgba
-from rlrmp.viz.traces import add_profile_line
+from rlrmp.viz.traces import add_band_trace, add_profile_line, add_reference_trace
+
+
+_VELOCITY_COLORS = ("#2563eb", "#dc2626", "#059669", "#7c3aed", "#ea580c", "#0891b2")
+
+
+class VelocityFigureProfile(Protocol):
+    """Structural input contract for fixed-bank velocity figures."""
+
+    label: str
+    bank_kind: str
+    time_s: np.ndarray
+    mean: np.ndarray
+    std: np.ndarray
+    replicate_mean: np.ndarray
+    replicate_std: np.ndarray
+    n_replicates: int
+
+
+def write_velocity_figure(
+    profiles: VelocityFigureProfile | Sequence[VelocityFigureProfile],
+    *,
+    output_dir: Path,
+    references: Sequence[Any],
+    title: str,
+) -> Path:
+    """Write pooled fixed-bank profiles using single- or multi-run presentation."""
+
+    return _write_velocity_profiles(
+        profiles, output_dir=output_dir, references=references, title=title, by_replicate=False
+    )
+
+
+def write_velocity_by_replicate_figure(
+    profiles: VelocityFigureProfile | Sequence[VelocityFigureProfile],
+    *,
+    output_dir: Path,
+    references: Sequence[Any],
+    title: str,
+) -> Path:
+    """Write replicate-resolved fixed-bank velocity profiles."""
+
+    return _write_velocity_profiles(
+        profiles, output_dir=output_dir, references=references, title=title, by_replicate=True
+    )
+
+
+def _write_velocity_profiles(
+    profiles: VelocityFigureProfile | Sequence[VelocityFigureProfile],
+    *,
+    output_dir: Path,
+    references: Sequence[Any],
+    title: str,
+    by_replicate: bool,
+) -> Path:
+    is_sequence = isinstance(profiles, Sequence)
+    rows = tuple(profiles) if is_sequence else (profiles,)
+    if not rows:
+        raise ValueError("At least one profile is required")
+    bank_kind = rows[0].bank_kind
+    suffix = " by replicate" if by_replicate else ""
+    fig = profile_comparison_grid(
+        n_panels=len(rows),
+        subplot_titles=(
+            [profile.label for profile in rows]
+            if is_sequence
+            else [f"{rows[0].label}{suffix} ({bank_kind})"]
+        ),
+        vertical_spacing=0.025 if is_sequence else 0.04,
+    )
+    for row, profile in enumerate(rows, start=1):
+        for index in range(profile.n_replicates if by_replicate else 1):
+            mean = profile.replicate_mean[index] if by_replicate else profile.mean
+            std = profile.replicate_std[index] if by_replicate else profile.std
+            color = (
+                (*_VELOCITY_COLORS, "#be123c")[index % 7]
+                if by_replicate
+                else _VELOCITY_COLORS[(row - 1) % 6]
+            )
+            name = f"replicate {index}" if by_replicate else profile.label
+            legendgroup = f"replicate-{index}" if by_replicate else "gru"
+            if not by_replicate and is_sequence:
+                legendgroup = f"run-{getattr(profile, 'experiment')}-{getattr(profile, 'run_id')}"
+            add_band_trace(
+                fig,
+                x=profile.time_s,
+                mean=mean,
+                std=std,
+                row=row,
+                color=color,
+                name=name,
+                legendgroup=legendgroup,
+                showlegend=row == 1 if by_replicate else True,
+                fill_alpha=0.10 if by_replicate else 0.16,
+                line_width=1.8 if by_replicate else 2.4,
+            )
+        for reference in references:
+            add_reference_trace(fig, reference=reference, row=row, showlegend=row == 1)
+        fig.add_vline(
+            x=0.0,
+            line={"color": "black", "dash": "dash", "width": 1},
+            row=row,
+            col=1,
+        )
+
+    layout: dict[str, Any] = dict(
+        title=title.format(bank_kind=bank_kind),
+        width=(1020 if by_replicate else 980) if is_sequence else (940 if by_replicate else 900),
+        height=(max(560, 280 * len(rows)) if by_replicate else max(520, 260 * len(rows)))
+        if is_sequence
+        else (560 if by_replicate else 520),
+        margin={"l": 72, "r": 24, "t": 76, "b": 76 if by_replicate else 72},
+        hovermode="x unified",
+    )
+    if by_replicate:
+        layout["legend"] = {"groupclick": "togglegroup"}
+    fig.update_layout(**layout)
+    fig.update_xaxes(title_text="Time relative to go cue (s)", row=len(rows), col=1)
+    fig.update_yaxes(title_text="Target-radial velocity (m/s)", zeroline=True)
+    path = output_dir / f"forward_velocity_profiles{suffix.replace(' ', '_')}_stochastic.html"
+    fig.write_html(path)
+    return path
 
 
 def build_forward_velocity_figure(
