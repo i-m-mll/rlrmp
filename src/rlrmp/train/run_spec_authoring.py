@@ -53,6 +53,8 @@ from rlrmp.io import compact_json_dumps
 from rlrmp.paths import REPO_ROOT, mkdir_p, run_spec_path
 from rlrmp.runtime.run_specs import validate_nominal_gru_run_spec
 from rlrmp.runtime.training_run_specs import (
+    FEEDBAX_TRAINING_RUN_SPEC_KEY,
+    RLRMP_RUN_SPEC_PAYLOAD_KEY,
     attach_composed_training_specs,
     attach_post_run_provenance,
 )
@@ -114,6 +116,13 @@ from rlrmp.train.executor.checkpoints import (
 TRAINING_DIAGNOSTICS_NPZ = "training_diagnostics.npz"
 
 TRAINING_DIAGNOSTICS_MANIFEST = "training_diagnostics.json"
+
+# Keep active tracked recipes under the generic results-JSON guard in
+# tests/analysis/pipelines/test_tracked_diagnostic_payload_guards.py. Large
+# composed records retain their full RLRMP extension for manifest custody, but
+# avoid serializing that extension's fields a second time at the recipe root.
+MAX_TRACKED_RUN_SPEC_BYTES = 500 * 1024
+COMPACT_RUN_SPEC_KEY = "compact_run_spec"
 
 _CLI_HELP: dict[str, str] = {
     "run_spec": (
@@ -953,6 +962,7 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
         spec_dir=spec_dir,
     )
     validate_nominal_gru_run_spec(payload, spec_dir=spec_dir)
+    payload = compact_run_spec_if_needed(payload)
     run_path.write_text(_json_dumps(payload), encoding="utf-8")
     return {
         "run_spec_path": str(run_path),
@@ -2000,7 +2010,61 @@ def _json_dumps(payload: dict[str, Any]) -> str:
     return compact_json_dumps(payload)
 
 
+def compact_run_spec_if_needed(payload: dict[str, Any]) -> dict[str, Any]:
+    """Return a compact envelope when a composed recipe exceeds the JSON budget.
+
+    ``rlrmp_run_spec`` is the full, stamped RLRMP payload used for durable
+    manifest custody. The compact envelope keeps it authoritative rather than
+    duplicating its graph-heavy and governed-bank fields at the recipe root.
+    The root mirrors only the task identity the Stage-2 fork gate needs before
+    hydration, plus the immutable Feedbax training spec and graph pointers.
+    """
+
+    if len(_json_dumps(payload).encode("utf-8")) <= MAX_TRACKED_RUN_SPEC_BYTES:
+        return payload
+
+    extension = payload.get(RLRMP_RUN_SPEC_PAYLOAD_KEY)
+    if not isinstance(extension, dict):
+        raise TypeError(f"{RLRMP_RUN_SPEC_PAYLOAD_KEY} must be an object before compaction")
+    feedbax_training_spec = payload.get(FEEDBAX_TRAINING_RUN_SPEC_KEY)
+    if not isinstance(feedbax_training_spec, dict):
+        raise TypeError(
+            f"{FEEDBAX_TRAINING_RUN_SPEC_KEY} must be an object before compaction"
+        )
+    training_distribution = payload.get("training_distribution")
+    if not isinstance(training_distribution, dict):
+        raise TypeError("training_distribution must be an object before compaction")
+    if "perturbation_training" not in training_distribution:
+        raise ValueError("training_distribution.perturbation_training is required before compaction")
+    game_card = payload.get("game_card")
+    if not isinstance(game_card, dict):
+        raise TypeError("game_card must be an object before compaction")
+    feedbax_graph = payload.get("feedbax_graph")
+    if not isinstance(feedbax_graph, dict):
+        raise TypeError("feedbax_graph must be an object before compaction")
+
+    compact_payload = {
+        COMPACT_RUN_SPEC_KEY: True,
+        RLRMP_RUN_SPEC_PAYLOAD_KEY: extension,
+        FEEDBAX_TRAINING_RUN_SPEC_KEY: feedbax_training_spec,
+        "game_card": game_card,
+        "training_distribution": {
+            "perturbation_training": training_distribution["perturbation_training"],
+        },
+        "feedbax_graph": feedbax_graph,
+    }
+    compact_size = len(_json_dumps(compact_payload).encode("utf-8"))
+    if compact_size > MAX_TRACKED_RUN_SPEC_BYTES:
+        raise ValueError(
+            "compact composed run spec remains above the tracked JSON budget: "
+            f"{compact_size} > {MAX_TRACKED_RUN_SPEC_BYTES} bytes"
+        )
+    return compact_payload
+
+
 __all__ = [
+    "COMPACT_RUN_SPEC_KEY",
+    "MAX_TRACKED_RUN_SPEC_BYTES",
     "TRAINING_DIAGNOSTICS_MANIFEST",
     "TRAINING_DIAGNOSTICS_NPZ",
     "_BOOLEAN_OPTIONAL_FIELDS",
@@ -2058,6 +2122,7 @@ __all__ = [
     "build_parser",
     "build_run_spec",
     "build_training_run_graph_spec",
+    "compact_run_spec_if_needed",
     "derive_spec_dir",
     "derive_spec_path",
     "write_run_spec",
