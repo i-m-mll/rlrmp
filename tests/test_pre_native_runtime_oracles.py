@@ -34,6 +34,14 @@ ORACLE_ROOT = Path("tests/fixtures/pre_native_oracles/v1")
 ORACLE_MANIFEST = json.loads((ORACLE_ROOT / "manifest.json").read_text(encoding="utf-8"))
 
 
+@pytest.fixture(autouse=True)
+def _oracle_uses_captured_x64_mode():
+    """Match the float32 JAX mode used to capture the frozen 0ee30e6f oracles."""
+
+    with jax.enable_x64(False):
+        yield
+
+
 def _minimax_spec(tmp_path: Path, adversary_type: str) -> TrainingRunSpec:
     config = MinimaxConfig(
         adversary_type=adversary_type,

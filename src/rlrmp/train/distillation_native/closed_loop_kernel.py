@@ -115,17 +115,23 @@ class ExtLQGClosedLoopReference(eqx.Module):
 
         x0 = self._initial_teacher_state(initial_vector, target_pos)
         indices = jnp.clip(jnp.arange(int(n_steps)), 0, self.controller_gains.shape[0] - 1)
-        gains = self.controller_gains[indices]
+        # Keep the scan carry contract stable even when an earlier test or an
+        # analysis process enabled JAX x64 before constructing this module.
+        # Training state is intentionally float32; teacher packages or direct
+        # constructors may otherwise supply float64 matrices.
+        gains = jnp.asarray(self.controller_gains[indices], dtype=x0.dtype)
+        plant_a = jnp.asarray(self.plant_a, dtype=x0.dtype)
+        plant_b = jnp.asarray(self.plant_b, dtype=x0.dtype)
 
         def step(state: jax.Array, gain: jax.Array) -> tuple[jax.Array, tuple[jax.Array, ...]]:
             action = -jnp.einsum("us,...s->...u", gain, state)
-            next_state = state @ self.plant_a.T + action @ self.plant_b.T
+            next_state = state @ plant_a.T + action @ plant_b.T
             return next_state, (next_state, action)
 
         _, (relative_states_t, actions_t) = jax.lax.scan(step, x0, gains)
         relative_states = jnp.moveaxis(relative_states_t, 0, -2)
         actions = jnp.moveaxis(actions_t, 0, -2)
-        target = jnp.expand_dims(target_pos, axis=-2)
+        target = jnp.expand_dims(jnp.asarray(target_pos, dtype=relative_states.dtype), axis=-2)
         return {
             "position": relative_states[..., 0:2] + target,
             "velocity": relative_states[..., 2:4],
@@ -211,7 +217,7 @@ def _normalize_serialized_hps(hps: dict[str, Any]) -> dict[str, Any]:
     if "intervention_scaleup_batches" not in normalized:
         normalized["intervention_scaleup_batches"] = [0, 0]
     pgd = normalized.get("broad_epsilon_pgd_training")
-    if isinstance(pgd, dict) and not pgd.get("enabled", False):
+    if isinstance(pgd, dict) and not pgd.get("enabled"):
         budget_contract = pgd.get("budget_contract")
         if isinstance(budget_contract, dict) and budget_contract.get("effective_l2_radius_15cm"):
             budget_contract.setdefault(
@@ -445,7 +451,7 @@ def build_closed_loop_loss(
 ) -> ClosedLoopDistillationLoss:
     """Build the custom Feedbax loss from the run-spec weights."""
 
-    weights = spec.get("loss_surface", {}).get("weights", {})
+    weights = spec["loss_surface"]["weights"]
     teacher = spec["teacher_contract"]
     reference = reference or ExtLQGClosedLoopReference.from_package(
         teacher["teacher_package"],
@@ -454,16 +460,14 @@ def build_closed_loop_loss(
     return ClosedLoopDistillationLoss(
         reference=reference,
         weights=ClosedLoopLossWeights(
-            kinematics_trajectory=float(weights.get("kinematics_trajectory", 1.0)),
-            velocity=float(weights.get("velocity", 1.0)),
-            endpoint=float(weights.get("endpoint", 1.0)),
-            settling=float(weights.get("settling", 0.5)),
-            action_force_trajectory=float(weights.get("action_force_trajectory", 1.0)),
-            perturbation_response_trajectory=float(
-                weights.get("perturbation_response_trajectory", 1.0)
-            ),
-            directional_input_output_jvp=float(weights.get("directional_input_output_jvp", 0.25)),
-            task_qr_rollout=float(weights.get("task_qr_rollout", 0.0)),
+            kinematics_trajectory=float(weights["kinematics_trajectory"]),
+            velocity=float(weights["velocity"]),
+            endpoint=float(weights["endpoint"]),
+            settling=float(weights["settling"]),
+            action_force_trajectory=float(weights["action_force_trajectory"]),
+            perturbation_response_trajectory=float(weights["perturbation_response_trajectory"]),
+            directional_input_output_jvp=float(weights["directional_input_output_jvp"]),
+            task_qr_rollout=float(weights["task_qr_rollout"]),
         ),
     )
 

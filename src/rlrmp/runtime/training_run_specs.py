@@ -1711,14 +1711,12 @@ def _distillation_setup_function(run_spec: dict[str, Any], *, method: str) -> st
 
 def _distillation_runner(run_spec: dict[str, Any], *, method: str) -> str:
     entry = _mapping(run_spec, "training_entry")
-    if method == "closed_loop_distillation":
-        return str(entry.get("module", "rlrmp.train.distillation_entry"))
-    return str(
-        entry.get(
-            "trainer",
-            "rlrmp.train.distillation_entry.run_distillation_config",
-        )
-    )
+    field = "module" if method == "closed_loop_distillation" else "trainer"
+    try:
+        runner = entry[field]
+    except KeyError as exc:
+        raise ValueError(f"{method} training_entry requires {field!r}") from exc
+    return str(runner)
 
 
 def _optimizer_payload_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:

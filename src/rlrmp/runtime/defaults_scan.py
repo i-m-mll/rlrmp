@@ -19,7 +19,8 @@ SCAN_TARGETS = (
     "src/rlrmp/train/cs_perturbation_training.py",
     "src/rlrmp/benchmarks/packing.py",
     "src/rlrmp/model/",
-    "src/rlrmp/train/closed_loop_distillation.py",
+    "src/rlrmp/train/distillation_entry.py",
+    "src/rlrmp/train/distillation_native/closed_loop_kernel.py",
     "src/rlrmp/eval/minimax_io.py",
 )
 
@@ -106,7 +107,9 @@ def scan_default_fallback_sites(
 ) -> Counter[DefaultFallbackSite]:
     """Count meaningful literal fallback sites in the production scan set."""
 
-    return count_default_fallback_sites(scan_default_fallback_site_instances(repo_root, scan_targets))
+    return count_default_fallback_sites(
+        scan_default_fallback_site_instances(repo_root, scan_targets)
+    )
 
 
 def count_default_fallback_sites(
@@ -190,9 +193,7 @@ def find_value_drifts(
     """Find same-key literal defaults that disagree across files."""
 
     exception_list = tuple(exceptions)
-    by_key: dict[str, dict[str, list[DefaultFallbackSite]]] = defaultdict(
-        lambda: defaultdict(list)
-    )
+    by_key: dict[str, dict[str, list[DefaultFallbackSite]]] = defaultdict(lambda: defaultdict(list))
     for site in sites:
         if any(exception.matches(site) for exception in exception_list):
             continue

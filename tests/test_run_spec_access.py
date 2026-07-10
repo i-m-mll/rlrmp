@@ -32,7 +32,8 @@ CONVERTED_SEED_FILES = (
     "src/rlrmp/eval/robustness_diagnostics.py",
     "src/rlrmp/model/cs_lss_gru.py",
     "src/rlrmp/model/feedbax_graph.py",
-    "src/rlrmp/train/closed_loop_distillation.py",
+    "src/rlrmp/train/distillation_entry.py",
+    "src/rlrmp/train/distillation_native/closed_loop_kernel.py",
 )
 SEED_LITERAL_FALLBACK = re.compile(r"\.get\(\s*['\"]seed['\"]\s*,\s*(?:0|42)\s*\)")
 

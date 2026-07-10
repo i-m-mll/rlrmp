@@ -28,6 +28,7 @@ from rlrmp.train.minimax_native import (
     execute_minimax_training_run_spec_native,
     minimax_training_run_spec_from_file,
     minimax_training_run_spec_to_config,
+    validate_minimax_run_spec,
 )
 from rlrmp.train.run_spec_authoring import derive_spec_dir, derive_spec_path
 from rlrmp.train.resume_control import emit_launch_continuation, resolve_launch_continuation
@@ -57,6 +58,7 @@ def author_minimax_training_run_spec(config: MinimaxConfig) -> TrainingRunSpec:
         spec_dir=spec_dir,
         feedbax_graph=graph_bundle.to_run_metadata(graph_spec_path=graph_path.name),
     )
+    validate_minimax_run_spec(payload, spec_dir=spec_dir)
     spec_path.write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")
     return TrainingRunSpec.model_validate(payload["feedbax_training_run_spec"])
 
