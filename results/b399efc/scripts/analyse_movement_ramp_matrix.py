@@ -88,7 +88,6 @@ warnings.filterwarnings("ignore")
 
 EXPERIMENT = "b399efc"
 N_WARMUP_BATCHES = 12000
-PRE_GO_WINDOW_STEPS = 20  # 200 ms at dt=0.01
 
 CELL_VARIANTS = [
     "movement_ramp__linear",

@@ -80,7 +80,6 @@ DEFAULT_BANK_ID = "cs_standard_perturbation_response_v3"
 CALIBRATED_BANK_ID = "cs_calibrated_perturbation_response_v3"
 PERTURBATION_BANK_PARAMS_TYPE = "rlrmp.perturbation_bank"
 DEFAULT_OUTPUT_FILENAME = "gru_perturbation_response_fullqrf_validation_selected_manifest.json"
-DEFAULT_NOTE_FILENAME = "gru_perturbation_response_fullqrf_validation_selected.md"
 DEFAULT_BULK_SUBDIR = "perturbation_response/gru_fullqrf_validation_selected"
 DEFAULT_SOURCE_EXPERIMENT = "5f70333"
 DEFAULT_RESULT_EXPERIMENT = "3992394"
@@ -4637,15 +4636,6 @@ def _scalar_delta_ratio(value: float | None, reference: float | None) -> dict[st
         "delta_mean": float(value - reference),
         "ratio_to_extlqg": ratio,
     }
-
-
-def _nested_metric_max(metrics: Mapping[str, Any], outer: str, inner: str) -> float:
-    value = metrics.get(outer, {})
-    if isinstance(value, Mapping):
-        value = value.get(inner, {})
-    if isinstance(value, Mapping):
-        value = value.get("max", np.nan)
-    return float(value)
 
 
 def _summary_mean(metrics: Mapping[str, Any], key: str) -> float | None:

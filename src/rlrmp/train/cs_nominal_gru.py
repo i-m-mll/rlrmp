@@ -602,21 +602,6 @@ def _history_chunk_bytes(history_chunk: Any) -> bytes:
         return path.read_bytes()
 
 
-def _add_config_argument(
-    parser: argparse.ArgumentParser,
-    *flags: str,
-    config_field: str,
-    **kwargs: Any,
-) -> argparse.Action:
-    if "default" not in kwargs:
-        kwargs["default"] = _config_default(config_field)
-    if "choices" not in kwargs:
-        choices = _config_choices(config_field)
-        if choices is not None:
-            kwargs["choices"] = choices
-    return parser.add_argument(*flags, **kwargs)
-
-
 def main(
     argv: list[str] | None = None,
     *,
@@ -840,42 +825,6 @@ def _run_cs_supervised_training_chunk(
         ),
     )
     return model, history, optimizer_state
-
-
-def _optimizer_diagnostics_arrays(
-    optimizer_state: Any,
-    *,
-    start_batches: int = 0,
-    completed_batches: int,
-) -> dict[str, np.ndarray]:
-    """Return scalar optimizer diagnostics for one completed batch range."""
-
-    arrays: dict[str, np.ndarray] = {}
-    gradient_state = _find_diagnostics_state(
-        optimizer_state,
-        GradientDiagnosticsState,
-    )
-    update_state = _find_diagnostics_state(
-        optimizer_state,
-        UpdateDiagnosticsState,
-    )
-    if gradient_state is not None:
-        arrays.update(
-            _gradient_diagnostics_arrays(
-                gradient_state,
-                completed_batches,
-                start_batches=start_batches,
-            )
-        )
-    if update_state is not None:
-        arrays.update(
-            _update_diagnostics_arrays(
-                update_state,
-                completed_batches,
-                start_batches=start_batches,
-            )
-        )
-    return arrays
 
 
 def _diagnostic_series_range(array: Any, start_batches: int, completed_batches: int) -> np.ndarray:

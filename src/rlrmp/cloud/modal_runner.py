@@ -588,20 +588,6 @@ def build_training_command(
     return ["bash", "-lc", plan.command]
 
 
-def build_training_script_args(
-    config: NominalGruRunConfig,
-    *,
-    remote: bool = False,
-) -> list[str]:
-    """Return compatibility argv that generates the spec consumed by the plan."""
-
-    return _legacy_training_script_args(
-        config,
-        backend="modal" if remote else "local",
-        dry_run=False,
-    )
-
-
 def cs_nominal_gru_scenario_config(config: NominalGruRunConfig) -> dict[str, Any]:
     """Return the C&S nominal GRU scenario payload for the packing benchmark."""
 

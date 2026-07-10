@@ -952,16 +952,6 @@ def _history_term_labels(term_labels: Sequence[str], n_leaves: int) -> tuple[str
     )
 
 
-def _read_loss_tree(stream: Any, term_labels: Sequence[str]) -> TermTree:
-    children: dict[str, TermTree] = {}
-    for label in term_labels:
-        value = np.load(stream, allow_pickle=False)
-        weight = _scalar_weight(np.load(stream, allow_pickle=False))
-        children[label] = TermTree.leaf(label, jnp.asarray(value), weight=weight)
-    branch_weight = _scalar_weight(np.load(stream, allow_pickle=False))
-    return TermTree.branch("reach_loss", children, weight=branch_weight)
-
-
 def _scalar_weight(value: np.ndarray) -> float:
     """Return a scalar plotting weight from Feedbax history weight records."""
 

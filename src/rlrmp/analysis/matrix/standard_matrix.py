@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -351,8 +350,3 @@ def _format_metric(value: float | None) -> str:
 
 def _mapping(value: Any) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
-
-
-def dump_standard_matrix_payload(path: Path | str, payload: Mapping[str, Any]) -> None:
-    """Write a stable JSON payload useful for standard-matrix evaluation specs."""
-    Path(path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")

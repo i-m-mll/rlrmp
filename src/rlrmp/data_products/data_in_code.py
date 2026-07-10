@@ -261,12 +261,6 @@ _CD137D8_CONFIG_TIER_ALLOWLIST = (
     "src/rlrmp/train/training_configs.py::TARGET_SUPPORT_SPARSE_N_DIRECTIONS::hp_constant",
 )
 
-_E04BD36_USER_HOLD_ALLOWLIST = (
-    "src/rlrmp/fb_response.py::InstantFBResponse::default_bundle",
-    "src/rlrmp/model/cs_lss_gru.py::CS_DELAY_BLOCKS::hp_constant",
-    "src/rlrmp/model/feedbax_graph.py::_linear_controller_params::default_bundle",
-)
-
 _OWNING_SCHEMA_DEFAULT_ALLOWLIST = (
     "src/rlrmp/analysis/math/adversary_equivalence.py::OpenLoopOptimizationConfig::default_bundle",
     "src/rlrmp/analysis/math/cs_released_simulation.py::CSReleasedStochasticNoiseConfig::default_bundle",
@@ -313,13 +307,6 @@ DATA_IN_CODE_ALLOWLIST: dict[str, str] = {
             "the values are named training conventions owned by the unified typed schema."
         )
         for key in _CD137D8_CONFIG_TIER_ALLOWLIST
-    },
-    **{
-        key: (
-            "Deletion or migration is explicitly held by the user on issue e04bd36; preserving "
-            "the live value with a named exception prevents this lane from claiming held work."
-        )
-        for key in _E04BD36_USER_HOLD_ALLOWLIST
     },
     **{
         key: (

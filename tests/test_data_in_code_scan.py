@@ -285,7 +285,6 @@ def test_allowlist_entries_exist_and_have_rationales() -> None:
 def test_curated_allowlist_groups_are_sorted_and_disjoint() -> None:
     groups = (
         data_in_code._CD137D8_CONFIG_TIER_ALLOWLIST,
-        data_in_code._E04BD36_USER_HOLD_ALLOWLIST,
         data_in_code._OWNING_SCHEMA_DEFAULT_ALLOWLIST,
         data_in_code._PURPOSE_CONSTANT_ALLOWLIST,
     )

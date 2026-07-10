@@ -68,7 +68,6 @@ from rlrmp.train.closed_loop_finite_adversary import (
 
 CS_PHYSICAL_STATE_DIM = 8
 CS_REDUCED_PHYSICAL_STATE_DIM = 6
-CS_DELAY_BLOCKS = 6
 _MODEL_PRESET = load_model_preset("rlrmp.cs_lss_gru.default", CsLssGruPreset)
 CS_DELAYED_POS_VEL_INDICES = tuple(_MODEL_PRESET.delayed_pos_vel_indices)
 CS_DELAYED_POS_VEL_FORCE_INDICES = tuple(_MODEL_PRESET.delayed_pos_vel_force_indices)

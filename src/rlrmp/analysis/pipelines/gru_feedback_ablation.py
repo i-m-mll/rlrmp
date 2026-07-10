@@ -29,14 +29,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from rlrmp.analysis.math.summary_stats import summary_stats as _summary_stats
 from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
-    FIXED_BANK_CHECKPOINT_POLICY,
-    LEGACY_FIXED_BANK_SCHEMA_VERSION,
     available_checkpoint_batches,
     checkpoint_path_for_batches,
     load_materialized_fixed_bank_manifest,
     load_validation_selected_checkpoint_model,
-    validation_objective_history,
-    write_checkpoint_selection_manifest_from_legacy_payload,
 )
 from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import RolloutEvaluation
 from rlrmp.analysis.pipelines.gru_perturbation_bank import (
@@ -56,17 +52,13 @@ from rlrmp.model.feedback_descriptors import (
     resolve_controller_feedback_view,
 )
 from rlrmp.train.task_model import setup_task_model_pair
-from rlrmp.paths import (
-    REPO_ROOT,
-    resolve_run_artifact_path,
-)
+from rlrmp.paths import REPO_ROOT
 from rlrmp.eval.feedback_ablation import (
     DetailedRolloutEvaluation,
     evaluate_model_on_trial_specs,
 )
 from rlrmp.eval.recipes import FEEDBACK_ABLATION_EVALUATION_TYPE
 from rlrmp.runtime.run_spec_access import require_run_seed
-from rlrmp.runtime.run_specs import resolve_run_record
 from rlrmp.runtime.spec_migrations import (
     FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
     stamp_current_schema,
@@ -1307,161 +1299,6 @@ def _effective_checkpoint_policy_from_manifest(
     if manifest is not None:
         return str(manifest.get("checkpoint_policy") or "fixed_bank_rescored_per_replicate")
     return "validation_selected_per_replicate"
-
-
-def materialize_feedback_selected_checkpoint_manifest(
-    *,
-    feedback_ablation_manifest_path: Path,
-    output_path: Path,
-    experiment: str,
-    repo_root: Path = REPO_ROOT,
-) -> dict[str, Any]:
-    """Write a fixed-bank-compatible manifest from feedback-audit selections."""
-
-    feedback_manifest = json.loads(feedback_ablation_manifest_path.read_text(encoding="utf-8"))
-    audit = feedback_manifest.get("feedback_checkpoint_selection_audit", {})
-    if not isinstance(audit, Mapping) or audit.get("status") != "materialized":
-        raise ValueError("feedback checkpoint selection audit is not materialized")
-    audit_runs = audit.get("runs", {})
-    if not isinstance(audit_runs, Mapping):
-        raise ValueError("feedback checkpoint selection audit has no run map")
-
-    runs: dict[str, list[dict[str, Any]]] = {}
-    for run_id, run_audit in audit_runs.items():
-        if not isinstance(run_audit, Mapping):
-            continue
-        artifact_dir = repo_root / "_artifacts" / experiment / "runs" / str(run_id)
-        run_spec = resolve_run_record(experiment, str(run_id), repo_root=repo_root)
-        validation_objective, valid_records = validation_objective_history(
-            run_spec=run_spec,
-            history_path=resolve_run_artifact_path(artifact_dir, "training_history.eqx"),
-        )
-        selected_rows = run_audit.get("feedback_selected_checkpoints", ())
-        if not isinstance(selected_rows, Sequence):
-            continue
-        run_rows: list[dict[str, Any]] = []
-        for row in selected_rows:
-            if not isinstance(row, Mapping) or row.get("status") != "available":
-                continue
-            checkpoint_batches = int(row["feedback_selected_checkpoint_batches"])
-            replicate = int(row["replicate"])
-            validation_score = _validation_objective_for_checkpoint(
-                validation_objective,
-                valid_records,
-                checkpoint_batches=checkpoint_batches,
-                replicate=replicate,
-            )
-            best_validation = _best_logged_validation_objective(
-                validation_objective,
-                valid_records,
-                replicate=replicate,
-            )
-            checkpoint_path = checkpoint_path_for_batches(artifact_dir, checkpoint_batches)
-            feedback_score = float(row["feedback_score"])
-            run_rows.append(
-                {
-                    "replicate": replicate,
-                    "checkpoint_batches": checkpoint_batches,
-                    "checkpoint_path": _repo_relative(checkpoint_path, repo_root=repo_root),
-                    "selection_source": "feedback_rescore_audit",
-                    "selection_role": FEEDBACK_AUDIT_SELECTION_ROLE,
-                    "selection_metric": "family_balanced_feedback_response_score",
-                    "feedback_score": feedback_score,
-                    "feedback_score_components": list(row.get("feedback_score_components", ())),
-                    "scoring_validation_log_batch": validation_score["scoring_batch"],
-                    "scoring_validation_objective": validation_score["objective"],
-                    "best_logged_validation_batch": best_validation["batch"],
-                    "best_logged_validation_objective": best_validation["objective"],
-                    "final_validation_objective": float(validation_objective[-1, replicate]),
-                    "final_vs_selected_validation_degradation": float(
-                        validation_objective[-1, replicate] - validation_score["objective"]
-                    ),
-                    "validation_selected_checkpoint_batches": int(
-                        row.get("validation_selected_checkpoint_batches", checkpoint_batches)
-                    ),
-                    "feedback_minus_validation_batches": int(
-                        row.get("feedback_minus_validation_batches", 0)
-                    ),
-                    "n_available_feedback_bins": int(row.get("n_available_feedback_bins", 0)),
-                }
-            )
-        if run_rows:
-            runs[str(run_id)] = sorted(run_rows, key=lambda item: int(item["replicate"]))
-
-    if not runs:
-        raise ValueError("feedback audit did not contain any available checkpoint selections")
-
-    manifest = {
-        "schema_version": LEGACY_FIXED_BANK_SCHEMA_VERSION,
-        "issue": experiment,
-        "checkpoint_policy": FIXED_BANK_CHECKPOINT_POLICY,
-        "materialization_status": "materialized",
-        "selection_source": "feedback_rescore_audit",
-        "selection_policy": (
-            "Per-replicate checkpoint selected by minimum family-balanced "
-            "signed-pair-aware feedback-response score from the feedback-ablation audit."
-        ),
-        "selection_role": FEEDBACK_AUDIT_SELECTION_ROLE,
-        "selection_metric": "family_balanced_feedback_response_score",
-        "selection_use": "audit_only_feedback_selected_checkpoint_loading",
-        "source_feedback_ablation_manifest": _repo_relative(
-            feedback_ablation_manifest_path,
-            repo_root=repo_root,
-        ),
-        "feedback_selection_level": feedback_manifest.get("feedback_selection_level")
-        or feedback_manifest.get("bank", {}).get("feedback_selection_level"),
-        "bank_mode": feedback_manifest.get("bank_mode"),
-        "bank": feedback_manifest.get("bank"),
-        "runs": runs,
-    }
-    write_checkpoint_selection_manifest_from_legacy_payload(
-        manifest,
-        output_path=output_path,
-        repo_root=repo_root,
-    )
-    return manifest
-
-
-def _validation_objective_for_checkpoint(
-    objective: np.ndarray,
-    valid_records: np.ndarray,
-    *,
-    checkpoint_batches: int,
-    replicate: int,
-) -> dict[str, float | int]:
-    """Return the latest logged validation objective at or before a checkpoint."""
-
-    valid_batches = np.flatnonzero(valid_records[:, replicate]) + 1
-    eligible_batches = valid_batches[valid_batches <= checkpoint_batches]
-    if eligible_batches.size == 0:
-        raise ValueError(
-            f"No validation objective available for replicate {replicate} "
-            f"at checkpoint {checkpoint_batches}"
-        )
-    scoring_batch = int(eligible_batches[-1])
-    return {
-        "scoring_batch": scoring_batch,
-        "objective": float(objective[scoring_batch - 1, replicate]),
-    }
-
-
-def _best_logged_validation_objective(
-    objective: np.ndarray,
-    valid_records: np.ndarray,
-    *,
-    replicate: int,
-) -> dict[str, float | int]:
-    """Return the best logged validation objective for a replicate."""
-
-    valid_batches = np.flatnonzero(valid_records[:, replicate]) + 1
-    if valid_batches.size == 0:
-        raise ValueError(f"No validation objective available for replicate {replicate}")
-    valid_values = objective[valid_batches - 1, replicate]
-    best_index = int(np.argmin(valid_values))
-    return {
-        "batch": int(valid_batches[best_index]),
-        "objective": float(valid_values[best_index]),
-    }
 
 
 def _execute_feedback_ablation_run(

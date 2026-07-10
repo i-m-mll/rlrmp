@@ -14,7 +14,7 @@ import base64
 import json
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import numpy as np
 import plotly.graph_objects as go
@@ -34,9 +34,6 @@ HINF_SOURCE_HTML = (
     "nominal_velocity_overlay_3e3_pgd_vs_baseline_with_analytical/"
     "nominal_forward_velocity_overlay_3e3_pgd_vs_baseline_with_analytical.html"
 )
-BankKind = Literal["no_catch", "catch"]
-
-
 def main() -> None:
     """CLI entry point."""
 

@@ -39,7 +39,6 @@ POLICY_ADVERSARY_DIAGNOSTICS_BYTES = "policy_adversary_diagnostics_bytes"
 CS_SUPERVISED_METHOD_REF = "rlrmp/cs_supervised/v1"
 ADAPTIVE_EPSILON_CURRICULUM_METHOD_REF = "rlrmp/adaptive_epsilon_curriculum/v1"
 POLICY_ADVERSARY_SUPERVISED_METHOD_REF = "rlrmp/policy_adversary_supervised/v1"
-MINIMAX_METHOD_REF = "rlrmp/minimax/v1"
 
 
 @dataclass(frozen=True)
@@ -93,14 +92,6 @@ POLICY_ADVERSARY_SCHEMA = SlotSchema(
     sinks=(HISTORY_CHUNK_BYTES, POLICY_ADVERSARY_DIAGNOSTICS_BYTES),
     transient=(OBJECTIVE,),
 )
-MINIMAX_SCHEMA = SlotSchema(
-    family=MINIMAX_METHOD_REF,
-    persistent=(CONTROLLER, CONTROLLER_OPTIMIZER, ADVERSARY_POPULATION, ADVERSARY_OPTIMIZER, RNG),
-    metrics=(CONTROLLER_LOSS, ADVERSARY_LOSS),
-    transient=(TRIAL_BATCH, OBJECTIVE),
-)
-
-
 def supervised_state_slots(schema: SlotSchema = CS_SUPERVISED_SCHEMA) -> list[StateSlotSpec]:
     """Return Feedbax state-slot declarations for supervised-style families."""
     slots = [
@@ -122,21 +113,6 @@ def supervised_state_slots(schema: SlotSchema = CS_SUPERVISED_SCHEMA) -> list[St
         )
     slots.append(StateSlotSpec(name=OBJECTIVE, role="objective", required=False))
     return slots
-
-
-def minimax_state_slots() -> list[StateSlotSpec]:
-    """Return the existing minimax slot names without renaming them."""
-    return [
-        StateSlotSpec(name=CONTROLLER, role="model"),
-        StateSlotSpec(name=CONTROLLER_OPTIMIZER, role="optimizer"),
-        StateSlotSpec(name=ADVERSARY_POPULATION, role="population", axis="adversary_member"),
-        StateSlotSpec(name=ADVERSARY_OPTIMIZER, role="optimizer", axis="adversary_member"),
-        StateSlotSpec(name=RNG, role="prng"),
-        StateSlotSpec(name=TRIAL_BATCH, role="environment", lifetime="per-outer-step-init"),
-        StateSlotSpec(name=OBJECTIVE, role="objective"),
-        StateSlotSpec(name=CONTROLLER_LOSS, role="metric", required=False),
-        StateSlotSpec(name=ADVERSARY_LOSS, role="metric", required=False),
-    ]
 
 
 def minimax_checkpoint_slot_specs() -> list[CheckpointSlotSpec]:

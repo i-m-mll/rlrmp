@@ -1560,23 +1560,6 @@ def _prepare_replicate_model_evaluator(
     )
 
 
-def _evaluate_replicate_model_states(
-    *,
-    model: Any,
-    task: Any,
-    trial_specs: Any,
-    n_replicates: int,
-    seed: int,
-) -> Any:
-    evaluator = _prepare_replicate_model_evaluator(
-        model=model,
-        task=task,
-        n_replicates=n_replicates,
-        seed=seed,
-    )
-    return evaluator.evaluate(trial_specs)
-
-
 def bank_batch_size(trial_specs: Any) -> int:
     for initial_state in trial_specs.inits.values():
         shape = getattr(initial_state, "shape", None)

@@ -175,7 +175,6 @@ Three public uses:
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal, Optional, Tuple
@@ -187,9 +186,6 @@ import jax.scipy.linalg as jsla
 import jax.tree as jt
 from feedbax.mechanics.skeleton.pointmass import PointMass
 from jaxtyping import Array, Float
-
-logger = logging.getLogger(__name__)
-
 
 # =============================================================================
 # Data classes

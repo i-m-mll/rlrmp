@@ -6,7 +6,6 @@ import re
 import rlrmp.analysis.pipelines.cs_gru_standard_materialization as cs_standard
 import rlrmp.analysis.pipelines.gru_broad_epsilon_attribution as broad_epsilon
 import rlrmp.analysis.pipelines.gru_checkpoint_selection as checkpoint_selection
-import rlrmp.analysis.pipelines.gru_feedback_ablation as feedback_ablation
 import rlrmp.analysis.pipelines.gru_map_error_decomposition as map_error
 import rlrmp.analysis.pipelines.gru_pilot_figures as pilot_figures
 import rlrmp.analysis.pipelines.objective_comparator as objective_comparator
@@ -17,7 +16,6 @@ CONSUMERS = (
     pilot_figures,
     checkpoint_selection,
     objective_comparator,
-    feedback_ablation,
     map_error,
     broad_epsilon,
 )

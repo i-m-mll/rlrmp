@@ -172,7 +172,6 @@ FINITE_ADVERSARY_POLICY_METADATA_SCHEMA_VERSION = "rlrmp.finite_adversary_policy
 
 LEGACY_TRAINING_CONFIG_KIND = "RLRMPLegacyTrainingConfig"
 LEGACY_TRAINING_CONFIG_SCHEMA_ID = "rlrmp.legacy_training_config"
-LEGACY_TRAINING_CONFIG_SCHEMA_VERSION = "rlrmp.legacy_training_config.archive.v1"
 
 
 class ArchiveOnlySpecError(ValueError):

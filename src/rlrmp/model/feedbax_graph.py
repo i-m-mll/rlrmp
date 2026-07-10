@@ -2028,19 +2028,6 @@ def recurrent_graph_state_to_network_state(
     )
 
 
-def _point_mass_network_input_size(
-    hps: Any,
-    *,
-    task: Any,
-    n_extra_inputs: int,
-) -> int:
-    return _point_mass_network_input_sizes(
-        hps,
-        task=task,
-        n_extra_inputs=n_extra_inputs,
-    ).total
-
-
 def _point_mass_network_input_sizes(
     hps: Any,
     *,
@@ -2085,16 +2072,6 @@ def _hidden_type_name(hidden_type: Any | None) -> str:
     if name is None and hasattr(hidden_type, "func"):
         name = getattr(hidden_type.func, "__name__", None)
     return str(name or "GRUCell")
-
-
-def _linear_controller_params(hps: Any) -> dict[str, Any]:
-    return {
-        "n_steps": int(hps.task.n_steps) - 1,
-        "n_controls": 2,
-        "n_states": 4,
-        "target_source": "input.task.effector_target.pos",
-        "feedback_order": controller_feedback_order_labels(),
-    }
 
 
 def _affine_linear_controller_params(

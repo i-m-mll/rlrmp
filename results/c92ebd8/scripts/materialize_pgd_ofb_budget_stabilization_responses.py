@@ -42,11 +42,6 @@ ROW_SPECS: tuple[base.RowSpec, ...] = (
     base.RowSpec("moderate_pgd_ofb1p05", "pgd_ofb1p05", "moderate"),
     base.RowSpec("moderate_pgd_ofb1p4", "pgd_ofb1p4", "moderate"),
 )
-RUN_LABELS = {
-    "open_loop_moderate": "No-PGD open-loop moderate GRU",
-    "moderate_pgd_ofb1p05": "PGD OFB gamma 1.05 budget GRU",
-    "moderate_pgd_ofb1p4": "PGD OFB gamma 1.4 budget GRU",
-}
 SOURCE_STYLES = {
     "no_pgd_gru": {
         "label": "No-PGD open-loop moderate GRU",

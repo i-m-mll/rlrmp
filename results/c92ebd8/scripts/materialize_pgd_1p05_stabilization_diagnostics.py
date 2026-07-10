@@ -55,11 +55,6 @@ FAMILY_LABELS = {
     "command_input_pulse": "Command-input pulse",
     "process_epsilon_force_state_xy": "Process-epsilon force-state pulse",
 }
-COMPONENT_LABELS = {
-    "command": "Command",
-    "position": "Position",
-    "velocity": "Velocity",
-}
 RESPONSE_VARIABLE_SPECS = {
     "command": {
         "label": "Command",

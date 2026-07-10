@@ -1001,24 +1001,6 @@ def _single_bin_amount(
     raise ValueError(f"Unsupported perturbation bin {bin_name!r}.")
 
 
-def _cycle_amplitude(
-    index: jnp.ndarray,
-    *,
-    single_indices: tuple[int, ...],
-    combined_indices: tuple[int, ...],
-    cfg: FixedTargetPerturbationTrainingConfig,
-) -> jnp.ndarray:
-    single = jnp.zeros_like(index, dtype=jnp.float32)
-    for value in single_indices:
-        single = single + (index == value).astype(jnp.float32)
-    combined = jnp.zeros_like(index, dtype=jnp.float32)
-    for value in combined_indices:
-        combined = combined + (index == value).astype(jnp.float32)
-    return single.astype(jnp.float32) + combined.astype(jnp.float32) * float(
-        cfg.combined_amplitude_scale
-    )
-
-
 def _offset_initial_vector(
     trial_specs: TaskTrialSpec,
     *,

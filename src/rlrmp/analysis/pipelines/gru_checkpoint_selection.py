@@ -1909,13 +1909,6 @@ def _n_replicates_from_run_spec(run_spec: Mapping[str, Any]) -> int:
     return int(model["n_replicates"])
 
 
-def _skip_loss_tree(stream: Any, labels: Sequence[str]) -> None:
-    for _label in labels:
-        np.load(stream, allow_pickle=False)
-        np.load(stream, allow_pickle=False)
-    np.load(stream, allow_pickle=False)
-
-
 def _read_history_arrays(stream: Any) -> list[np.ndarray]:
     """Read all NumPy arrays from a simple Feedbax history stream."""
 

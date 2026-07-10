@@ -303,12 +303,6 @@ def peak_forward_velocity(states, trial_specs) -> np.ndarray:
     return np.asarray(peak), np.asarray(fwd_vel), np.asarray(after_go)
 
 
-def forward_velocity_profile(states, trial_specs) -> np.ndarray:
-    """Per-step forward velocity (n_rep, n_trials, n_steps)."""
-    peak, fwd_vel, _ = peak_forward_velocity(states, trial_specs)
-    return fwd_vel
-
-
 def u_ff_diagnostic(model, args: argparse.Namespace) -> dict | None:
     """If model is a LinearTrackerController ensemble, return |u_ff| stats.
 

@@ -41,7 +41,6 @@ from rlrmp.train.standard import build_hps
 from rlrmp.train.task_model import setup_task_model_pair
 
 RESULTS_BASE = Path(__file__).resolve().parent.parent  # legacy Part 2.5 archive (Bug: f485c26)
-WORKTREE = RESULTS_BASE.parent.parent
 MODELS_BASE = RESULTS_BASE / "models"
 
 # (index, method, pert_std, update, ratio, model_dir)

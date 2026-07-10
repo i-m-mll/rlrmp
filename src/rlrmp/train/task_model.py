@@ -2,8 +2,6 @@
 
 import warnings
 from collections.abc import Callable, Mapping
-from typing import Literal as L
-from typing import TypeAlias
 
 import equinox as eqx
 import jax
@@ -66,9 +64,6 @@ from rlrmp.train.cs_perturbation_training import (
     TargetRelativeMultiTargetTrainingConfig,
     install_perturbation_training_graph_adapters,
 )
-
-TrainingMethodLabel: TypeAlias = L["bcs", "dai", "pai-asf", "pai-n", "nominal-cs-gru"]
-PlantBackendLabel: TypeAlias = L["cs_lss", "legacy_causal_simplefeedback"]
 
 CS_LSS_PLANT_BACKEND = "cs_lss"
 LEGACY_CAUSAL_PLANT_BACKEND = "legacy_causal_simplefeedback"

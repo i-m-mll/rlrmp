@@ -28,7 +28,6 @@ DIRECT_BRACKETS = {
 }
 DEFAULT_CLOSED_LOOP_PROBES = (0.5, 1.0, 2.0, 4.0, 8.0)
 DEFAULT_LINE_SEARCH_AMPLITUDES = (0.0, 0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0)
-MECHANISMS = ("direct_epsilon", "linear_no_bias", "affine")
 CLOSED_LOOP_MECHANISMS = ("linear_no_bias", "affine")
 CLOSED_LOOP_OPTIMIZERS = ("line_search_known_direction", "adam", "lbfgsb")
 CSV_FIELDS = ('run_id', 'mechanism', 'optimizer', 'phase', 'point_index', 'lambda_multiplier', 'lambda', 'objective_gain_over_zero', 'task_loss_gain_over_zero', 'energy_penalty', 'energy_mean', 'max_norm_over_cap', 'mean_norm_over_cap', 'cap_bound_fraction', 'finite_status', 'gradient_status', 'gradient_norm', 'useful', 'interior', 'valid', 'failure_mode', 'optimizer_success', 'optimizer_status', 'optimizer_iterations', 'optimizer_evaluations')

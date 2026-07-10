@@ -57,10 +57,6 @@ def cs_delayed_center_out_reaches(*, loss_func, **kwargs) -> DelayedReaches:
     return _delayed_center_out_reaches(loss_func=loss_func, **kwargs)
 
 
-CenterOutDelayedReaches = center_out_delayed_reaches
-CsDelayedCenterOutReaches = cs_delayed_center_out_reaches
-
-
 TASK_TYPES = {
     "simple_reach": SimpleReaches,
     "fixed_simple_reach": SimpleReaches,
