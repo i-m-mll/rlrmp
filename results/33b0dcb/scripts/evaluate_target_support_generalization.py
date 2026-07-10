@@ -6,6 +6,9 @@ target-grid behavior split by the training row's seen and held-out support.
 """
 
 from __future__ import annotations
+from rlrmp.io import write_csv_rows
+from rlrmp.eval.ensemble import eval_ensemble_on_trials as evaluate_replicates
+from rlrmp.eval.kinematics import initial_effector_position, initial_effector_velocity
 
 import argparse
 import csv
@@ -355,28 +358,6 @@ def first_trial_template(trial_specs: Any) -> Any:
     )
 
 
-def evaluate_replicates(
-    task: Any,
-    model: Any,
-    trial_specs: Any,
-    *,
-    n_replicates: int,
-    key: Any,
-) -> Any:
-    model_arrays, model_other = eqx.partition(
-        model,
-        lambda leaf: eqx.is_array(leaf) and leaf.ndim >= 1 and leaf.shape[0] == n_replicates,
-    )
-    n_trials = int(trial_specs.inputs["target"].shape[0])
-
-    def eval_one_replicate(model_array_leaves: Any, replicate_key: Any) -> Any:
-        replicate_model = eqx.combine(model_array_leaves, model_other)
-        return task.eval_trials(replicate_model, trial_specs, jr.split(replicate_key, n_trials))
-
-    return eqx.filter_vmap(eval_one_replicate, in_axes=(0, 0))(
-        model_arrays,
-        jr.split(key, n_replicates),
-    )
 
 
 def summarize_bank(
@@ -448,27 +429,8 @@ def summarize_bank(
     return {"splits": splits, "velocity_profiles": profiles}
 
 
-def initial_effector_position(trial_specs: Any) -> np.ndarray:
-    for init_state in trial_specs.inits.values():
-        position = getattr(init_state, "pos", None)
-        if position is not None:
-            return np.asarray(position, dtype=np.float64)
-        shape = getattr(init_state, "shape", None)
-        if shape is not None and len(shape) >= 1 and shape[-1] >= 2:
-            return np.asarray(init_state, dtype=np.float64)[..., 0:2]
-    raise ValueError("Trial spec does not include an effector position initial state")
 
 
-def initial_effector_velocity(trial_specs: Any) -> np.ndarray:
-    for init_state in trial_specs.inits.values():
-        velocity = getattr(init_state, "vel", None)
-        if velocity is not None:
-            return np.asarray(velocity, dtype=np.float64)
-        shape = getattr(init_state, "shape", None)
-        if shape is not None and len(shape) >= 1 and shape[-1] >= 4:
-            return np.asarray(init_state, dtype=np.float64)[..., 2:4]
-    target = np.asarray(trial_specs.inputs["target"], dtype=np.float64)
-    return np.zeros(target.shape[:-2] + (2,), dtype=np.float64)
 
 
 def reach_direction(
@@ -616,22 +578,8 @@ def write_csv(path: Path, records: Sequence[Mapping[str, Any]]) -> None:
 
 
 def write_profile_csv(path: Path, records: Sequence[Mapping[str, Any]]) -> None:
-    fieldnames = [
-        "row",
-        "profile",
-        "run_id",
-        "bank",
-        "split",
-        "time_s",
-        "normalized_radial_velocity_mean_s_inv",
-        "normalized_radial_velocity_sd_s_inv",
-    ]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as stream:
-        writer = csv.DictWriter(stream, fieldnames=fieldnames)
-        writer.writeheader()
-        for record in records:
-            writer.writerow({name: record.get(name) for name in fieldnames})
+    fieldnames = ['row', 'profile', 'run_id', 'bank', 'split', 'time_s', 'normalized_radial_velocity_mean_s_inv', 'normalized_radial_velocity_sd_s_inv']
+    write_csv_rows(path, list(records), fieldnames=fieldnames)
 
 
 def build_manifest(

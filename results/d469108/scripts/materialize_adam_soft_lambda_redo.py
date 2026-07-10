@@ -1,6 +1,8 @@
 """Materialize corrected frozen Adam soft-lambda matching for d469108."""
 
 from __future__ import annotations
+from rlrmp.io import write_csv_rows
+from rlrmp.io import load_named_python_module as load_module
 
 import argparse
 import csv
@@ -689,54 +691,8 @@ def interpret_overall(rows: list[dict[str, Any]]) -> str:
 
 
 def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = [
-        "run_id",
-        "mechanism",
-        "beta",
-        "beta_role",
-        "lambda",
-        "adam_steps",
-        "adam_learning_rate",
-        "finite_status",
-        "gradient_status",
-        "optimizer_success",
-        "optimizer_status",
-        "optimizer_iterations",
-        "optimizer_evaluations",
-        "selected_nonzero",
-        "classification",
-        "adam_objective_level_success",
-        "penalized_gain_over_zero",
-        "task_loss_gain",
-        "energy_mean",
-        "energy_max",
-        "energy_penalty",
-        "penalty_minus_task_gain",
-        "penalty_over_task_gain_abs",
-        "selected_policy_norm_mean",
-        "selected_policy_norm_max",
-        "old_cap_ratio_mean_sidecar",
-        "old_cap_ratio_max_sidecar",
-        "old_cap_boundary_fraction_sidecar",
-        "old_cap_used_as_criterion",
-        "reference_optimizer",
-        "reference_classification",
-        "reference_objective_level_success",
-        "reference_selected_nonzero",
-        "reference_penalized_gain_over_zero",
-        "reference_task_loss_gain",
-        "matches_reference_success",
-        "matches_reference_classification",
-        "matches_reference_selected_nonzero",
-        "agreement",
-        "gradient_norm",
-    ]
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({key: row[key] for key in fieldnames})
+    fieldnames = ['run_id', 'mechanism', 'beta', 'beta_role', 'lambda', 'adam_steps', 'adam_learning_rate', 'finite_status', 'gradient_status', 'optimizer_success', 'optimizer_status', 'optimizer_iterations', 'optimizer_evaluations', 'selected_nonzero', 'classification', 'adam_objective_level_success', 'penalized_gain_over_zero', 'task_loss_gain', 'energy_mean', 'energy_max', 'energy_penalty', 'penalty_minus_task_gain', 'penalty_over_task_gain_abs', 'selected_policy_norm_mean', 'selected_policy_norm_max', 'old_cap_ratio_mean_sidecar', 'old_cap_ratio_max_sidecar', 'old_cap_boundary_fraction_sidecar', 'old_cap_used_as_criterion', 'reference_optimizer', 'reference_classification', 'reference_objective_level_success', 'reference_selected_nonzero', 'reference_penalized_gain_over_zero', 'reference_task_loss_gain', 'matches_reference_success', 'matches_reference_classification', 'matches_reference_selected_nonzero', 'agreement', 'gradient_norm']
+    write_csv_rows(path, list(rows), fieldnames=fieldnames)
 
 
 def render_markdown(payload: dict[str, Any]) -> str:
@@ -914,14 +870,6 @@ def representative_rows_by_group(rows: list[dict[str, Any]]) -> list[dict[str, A
     return selected
 
 
-def load_module(name: str, path: Path) -> Any:
-    spec = importlib.util.spec_from_file_location(name, path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Could not load module at {path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
 
 
 def force_module_roots(*modules: Any) -> None:

@@ -24,6 +24,7 @@ Usage (from repo root):
 """
 
 import argparse
+from rlrmp.viz.colors import hex_to_rgba as _color_with_alpha
 import json
 from pathlib import Path
 
@@ -117,11 +118,6 @@ EXPERIMENT = "f47abb1"
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _color_with_alpha(hex_color: str, alpha: float) -> str:
-    """Convert #rrggbb + alpha to rgba(r,g,b,a)."""
-    h = hex_color.lstrip("#")
-    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
-    return f"rgba({r},{g},{b},{alpha})"
 
 
 def _make_args_namespace(label: str) -> argparse.Namespace:

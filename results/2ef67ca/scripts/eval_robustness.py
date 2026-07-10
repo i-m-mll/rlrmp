@@ -17,6 +17,7 @@ Usage:
 """
 
 import warnings
+from rlrmp.viz.colors import hex_to_rgba as _hex_to_rgba
 
 warnings.filterwarnings("ignore")
 
@@ -329,13 +330,6 @@ def add_mean_std_band(
     )
 
 
-def _hex_to_rgba(hex_color: str, alpha: float = 0.3) -> str:
-    """Convert hex color string to rgba string."""
-    hex_color = hex_color.lstrip("#")
-    if len(hex_color) == 3:
-        hex_color = "".join(c * 2 for c in hex_color)
-    r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
-    return f"rgba({r},{g},{b},{alpha})"
 
 
 # Gust timing constants (must match disturbance.py get_fixed_gust_fn defaults)

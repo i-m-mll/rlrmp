@@ -22,6 +22,7 @@ authoritative oracle for whether a path would be tracked.
 """
 
 from __future__ import annotations
+from rlrmp.io import load_named_python_module as _load_module
 
 import importlib.util
 import subprocess
@@ -421,19 +422,6 @@ class TestFigureDirMirrorInvariant:
 # ---------------------------------------------------------------------------
 
 
-def _load_module(module_name: str, file_path: Path):
-    """Import a script-style module by file path without executing as __main__.
-
-    Loading via importlib.util avoids ``sys.path`` collisions with the
-    ``scripts/`` directory and tolerates the heavy top-level imports those
-    files do (we only touch the small helper functions defined in them).
-    """
-    spec = importlib.util.spec_from_file_location(module_name, file_path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Could not load {module_name} from {file_path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 @pytest.fixture(scope="module")

@@ -1,6 +1,7 @@
 """Materialize closed-loop soft-lambda redo rows for 6cfa892."""
 
 from __future__ import annotations
+from rlrmp.io import load_named_python_module as load_module
 
 import argparse
 import csv
@@ -381,14 +382,6 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def load_module(name: str, path: Path) -> Any:
-    spec = importlib.util.spec_from_file_location(name, path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Could not load reference module at {path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
 
 
 def read_optional_json(path: Path) -> dict[str, Any] | None:

@@ -1,6 +1,7 @@
 """Regression tests for the minimax trainer's public Feedbax trial API use."""
 
 from __future__ import annotations
+from rlrmp.io import load_named_python_module
 
 import argparse
 import importlib.util
@@ -19,14 +20,7 @@ from rlrmp.train.task_model import setup_task_model_pair
 
 
 def _load_train_minimax_module():
-    spec = importlib.util.spec_from_file_location(
-        "train_minimax_under_test",
-        REPO_ROOT / "scripts" / "train_minimax.py",
-    )
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
+    return load_named_python_module('train_minimax_under_test', REPO_ROOT / 'scripts' / 'train_minimax.py')
 
 
 class _NodeState(eqx.Module):

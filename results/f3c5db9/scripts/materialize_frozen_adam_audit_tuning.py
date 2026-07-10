@@ -1,6 +1,9 @@
 """Materialize frozen-batch Adam reliability tuning for f3c5db9."""
 
 from __future__ import annotations
+from rlrmp.io import write_csv_rows
+from rlrmp.analysis.soft_lambda import base_parser
+from rlrmp.io import load_named_python_module
 
 import argparse
 import csv
@@ -36,36 +39,18 @@ REFERENCE_OPTIMIZER_BY_MECHANISM = {
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--experiment", default="c92ebd8")
-    parser.add_argument("--issue", default="f3c5db9")
-    parser.add_argument("--batch-size", type=int, default=8)
-    parser.add_argument("--replicate-index", type=int, default=0)
-    parser.add_argument("--pgd-steps", type=int, default=8)
-    parser.add_argument("--pgd-step-size-fraction", type=float, default=0.25)
-    parser.add_argument("--fixed-point-steps", type=int, default=2)
-    parser.add_argument("--stage1-steps", type=int, nargs="+", default=[12, 32, 64, 128])
-    parser.add_argument(
-        "--stage1-learning-rates",
-        type=float,
-        nargs="+",
-        default=[1e-5, 3e-5, 1e-4, 3e-4],
-    )
-    parser.add_argument("--stage2-steps", type=int, default=128)
-    parser.add_argument("--stage2-learning-rate", type=float, default=1e-4)
-    parser.add_argument("--skip-stage2", action="store_true")
-    parser.add_argument(
-        "--output-json",
-        default="results/f3c5db9/frozen_adam_audit_tuning.json",
-    )
-    parser.add_argument(
-        "--output-csv",
-        default="results/f3c5db9/frozen_adam_audit_tuning.csv",
-    )
-    parser.add_argument(
-        "--output-md",
-        default="results/f3c5db9/notes/frozen_adam_audit_tuning.md",
-    )
+    parser = base_parser(description=None, experiment='c92ebd8', issue='f3c5db9', batch_size=8, replicate_index=0)
+    parser.add_argument('--pgd-steps', type=int, default=8)
+    parser.add_argument('--pgd-step-size-fraction', type=float, default=0.25)
+    parser.add_argument('--fixed-point-steps', type=int, default=2)
+    parser.add_argument('--stage1-steps', type=int, nargs='+', default=[12, 32, 64, 128])
+    parser.add_argument('--stage1-learning-rates', type=float, nargs='+', default=[1e-05, 3e-05, 0.0001, 0.0003])
+    parser.add_argument('--stage2-steps', type=int, default=128)
+    parser.add_argument('--stage2-learning-rate', type=float, default=0.0001)
+    parser.add_argument('--skip-stage2', action='store_true')
+    parser.add_argument('--output-json', default='results/f3c5db9/frozen_adam_audit_tuning.json')
+    parser.add_argument('--output-csv', default='results/f3c5db9/frozen_adam_audit_tuning.csv')
+    parser.add_argument('--output-md', default='results/f3c5db9/notes/frozen_adam_audit_tuning.md')
     return parser.parse_args()
 
 
@@ -156,16 +141,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def load_search_module() -> Any:
-    spec = importlib.util.spec_from_file_location("critical_lambda_search_1697bdc", SOURCE_SEARCH)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Could not load {SOURCE_SEARCH}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    module.REPO_ROOT = REPO_ROOT
-    module.SOURCE_LAMBDA_SWEEP = SOURCE_LAMBDA_SWEEP
-    module.REFERENCE_POLICY_AUDIT = REFERENCE_POLICY_AUDIT
-    return module
+    return load_named_python_module('critical_lambda_search_1697bdc', SOURCE_SEARCH)
 
 
 def load_reference_summary(path: Path) -> dict[tuple[str, str], dict[str, Any]]:
@@ -617,40 +593,8 @@ def recommend(summaries: list[dict[str, Any]], common_settings: list[dict[str, A
 
 
 def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
-    fields = [
-        "run_id",
-        "mechanism",
-        "stage",
-        "lambda_multiplier",
-        "reference_lambda_multiplier",
-        "reference_bracket_low_multiplier",
-        "reference_bracket_high_multiplier",
-        "adam_steps",
-        "adam_learning_rate",
-        "initialization",
-        "objective_gain_over_zero",
-        "task_loss_gain_over_zero",
-        "energy_penalty",
-        "energy_mean",
-        "max_norm_over_cap",
-        "mean_norm_over_cap",
-        "cap_bound_fraction",
-        "finite_status",
-        "gradient_status",
-        "gradient_norm",
-        "useful",
-        "interior",
-        "valid",
-        "failure_mode",
-        "optimizer_success",
-        "optimizer_status",
-        "match_reference_region",
-    ]
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({field: row[field] for field in fields})
+    fields = ['run_id', 'mechanism', 'stage', 'lambda_multiplier', 'reference_lambda_multiplier', 'reference_bracket_low_multiplier', 'reference_bracket_high_multiplier', 'adam_steps', 'adam_learning_rate', 'initialization', 'objective_gain_over_zero', 'task_loss_gain_over_zero', 'energy_penalty', 'energy_mean', 'max_norm_over_cap', 'mean_norm_over_cap', 'cap_bound_fraction', 'finite_status', 'gradient_status', 'gradient_norm', 'useful', 'interior', 'valid', 'failure_mode', 'optimizer_success', 'optimizer_status', 'match_reference_region']
+    write_csv_rows(path, list(rows), fieldnames=fields)
 
 
 def render_markdown(payload: dict[str, Any]) -> str:

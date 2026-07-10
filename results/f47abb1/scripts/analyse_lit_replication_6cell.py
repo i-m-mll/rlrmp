@@ -49,6 +49,8 @@ Usage (from repo root):
 """
 
 from __future__ import annotations
+from rlrmp.analysis.multi_cell_driver import compute_kinematics_per_replicate
+from rlrmp.viz.colors import hex_to_rgba as _color_rgba
 
 import argparse
 import json
@@ -161,10 +163,6 @@ EXPERIMENT = "f47abb1"
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _color_rgba(hex_color: str, alpha: float) -> str:
-    h = hex_color.lstrip("#")
-    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
-    return f"rgba({r},{g},{b},{alpha})"
 
 
 def _make_args_namespace(label: str) -> argparse.Namespace:
@@ -310,75 +308,6 @@ def eval_ensemble(task, model, trial_specs, *, key: jax.Array, n_replicates: int
 # Kinematics computation
 # ---------------------------------------------------------------------------
 
-def compute_kinematics_per_replicate(states, trial_specs) -> dict[str, np.ndarray]:
-    """Compute per-replicate kinematic metrics.
-
-    Args:
-        states: (n_rep, n_trials, n_steps, ...)
-        trial_specs: TaskTrialSpec for the trials.
-
-    Returns dict with:
-        - "peak_forward_velocity": (n_rep, n_trials) m/s
-        - "time_to_peak": (n_rep, n_trials) in steps
-        - "forward_vel_profile": (n_rep, n_trials, n_steps) signed projection
-        - "pos_forward_profile": (n_rep, n_trials, n_steps) position in reach dir
-        - "hold_drift_mm": (n_rep, n_trials) pre-go forward displacement in mm
-        - "go_idx": (n_trials,) step index of go cue
-    """
-    pos = states.mechanics.effector.pos  # (n_rep, n_trials, n_steps, 2)
-    vel = states.mechanics.effector.vel  # (n_rep, n_trials, n_steps, 2)
-
-    target_key = list(trial_specs.targets.keys())[0]
-    goal_seq = trial_specs.targets[target_key].value  # (n_trials, n_steps, 2)
-    goal = goal_seq[:, -1, :]  # (n_trials, 2)
-
-    # epoch_bounds: (n_trials, 4) -- columns [0, end_hold, go_cue, n_steps-1]
-    go_idx = trial_specs.timeline.epoch_bounds[:, 2]  # (n_trials,) int
-
-    n_rep, n_trials, n_steps, _ = pos.shape
-    t_arr = jnp.arange(n_steps)
-    after_go = t_arr[None, None, :] >= go_idx[None, :, None]  # (1, n_trials, n_steps)
-    before_go = t_arr[None, None, :] < go_idx[None, :, None]  # (1, n_trials, n_steps)
-
-    # Reach direction: goal - pos_at_go_cue
-    def _pos_at_go(pos_rep, go_arr):
-        return jax.vmap(lambda p, idx: p[idx])(pos_rep, go_arr)
-
-    pos_at_go = jax.vmap(_pos_at_go, in_axes=(0, None))(pos, go_idx)  # (n_rep, n_trials, 2)
-    direction = goal[None, :, :] - pos_at_go  # (n_rep, n_trials, 2)
-    d_norm = jnp.linalg.norm(direction, axis=-1, keepdims=True)
-    d_unit = direction / jnp.maximum(d_norm, 1e-12)  # (n_rep, n_trials, 2)
-
-    # Forward velocity profile (signed, projected onto reach axis)
-    v_fwd = jnp.sum(vel * d_unit[:, :, None, :], axis=-1)  # (n_rep, n_trials, n_steps)
-    v_fwd_post_go = jnp.where(after_go, v_fwd, 0.0)
-
-    # Peak forward velocity (after go cue)
-    peak_fwd = jnp.max(v_fwd_post_go, axis=-1)  # (n_rep, n_trials)
-
-    # Time-to-peak (index)
-    time_to_peak = jnp.argmax(v_fwd_post_go, axis=-1)  # (n_rep, n_trials)
-
-    # Forward position profile (projected onto reach axis from pos_at_start=pos[:,0])
-    pos_at_start = pos[:, :, 0, :]  # (n_rep, n_trials, 2) -- initial position
-    pos_rel = pos - pos_at_start[:, :, None, :]  # (n_rep, n_trials, n_steps, 2)
-    pos_fwd = jnp.sum(pos_rel * d_unit[:, :, None, :], axis=-1)  # (n_rep, n_trials, n_steps)
-
-    # Hold drift (mm): max forward displacement during pre-go window
-    # Positive = moved toward target before go cue (anticipation)
-    pos_fwd_pre_go = jnp.where(before_go, pos_fwd, -jnp.inf)
-    hold_drift_m = jnp.max(pos_fwd_pre_go, axis=-1)  # (n_rep, n_trials)
-    hold_drift_m = jnp.where(jnp.isinf(hold_drift_m), 0.0, hold_drift_m)
-    hold_drift_mm = hold_drift_m * 1000.0
-
-    return {
-        "peak_forward_velocity": np.array(peak_fwd),       # (n_rep, n_trials)
-        "time_to_peak": np.array(time_to_peak),             # (n_rep, n_trials)
-        "forward_vel_profile": np.array(v_fwd),             # (n_rep, n_trials, n_steps)
-        "pos_forward_profile": np.array(pos_fwd),           # (n_rep, n_trials, n_steps)
-        "hold_drift_mm": np.array(hold_drift_mm),           # (n_rep, n_trials)
-        "go_idx": np.array(go_idx),                         # (n_trials,)
-    }
 
 
 # ---------------------------------------------------------------------------

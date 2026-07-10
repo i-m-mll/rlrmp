@@ -1,6 +1,8 @@
 """Materialize practical frozen-audit critical lambda estimates for 1697bdc."""
 
 from __future__ import annotations
+from rlrmp.analysis.soft_lambda import base_parser
+from rlrmp.io import load_named_python_module
 
 import argparse
 import csv
@@ -119,43 +121,20 @@ class ThetaCodec:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--experiment", default="c92ebd8")
-    parser.add_argument("--issue", default="1697bdc")
-    parser.add_argument("--batch-size", type=int, default=8)
-    parser.add_argument("--replicate-index", type=int, default=0)
-    parser.add_argument("--pgd-steps", type=int, default=8)
-    parser.add_argument("--pgd-step-size-fraction", type=float, default=0.25)
-    parser.add_argument("--fixed-point-steps", type=int, default=2)
-    parser.add_argument("--adam-steps", type=int, default=12)
-    parser.add_argument("--adam-learning-rate", type=float, default=5e-5)
-    parser.add_argument("--lbfgsb-maxiter", type=int, default=8)
-    parser.add_argument("--bisection-rel-tol", type=float, default=1.10)
-    parser.add_argument("--max-bisection-steps", type=int, default=8)
-    parser.add_argument(
-        "--closed-loop-probes",
-        type=float,
-        nargs="+",
-        default=list(DEFAULT_CLOSED_LOOP_PROBES),
-    )
-    parser.add_argument(
-        "--line-search-amplitudes",
-        type=float,
-        nargs="+",
-        default=list(DEFAULT_LINE_SEARCH_AMPLITUDES),
-    )
-    parser.add_argument(
-        "--output-json",
-        default="results/1697bdc/critical_lambda_search.json",
-    )
-    parser.add_argument(
-        "--output-csv",
-        default="results/1697bdc/critical_lambda_search.csv",
-    )
-    parser.add_argument(
-        "--output-md",
-        default="results/1697bdc/notes/critical_lambda_search.md",
-    )
+    parser = base_parser(description=None, experiment='c92ebd8', issue='1697bdc', batch_size=8, replicate_index=0)
+    parser.add_argument('--pgd-steps', type=int, default=8)
+    parser.add_argument('--pgd-step-size-fraction', type=float, default=0.25)
+    parser.add_argument('--fixed-point-steps', type=int, default=2)
+    parser.add_argument('--adam-steps', type=int, default=12)
+    parser.add_argument('--adam-learning-rate', type=float, default=5e-05)
+    parser.add_argument('--lbfgsb-maxiter', type=int, default=8)
+    parser.add_argument('--bisection-rel-tol', type=float, default=1.1)
+    parser.add_argument('--max-bisection-steps', type=int, default=8)
+    parser.add_argument('--closed-loop-probes', type=float, nargs='+', default=list(DEFAULT_CLOSED_LOOP_PROBES))
+    parser.add_argument('--line-search-amplitudes', type=float, nargs='+', default=list(DEFAULT_LINE_SEARCH_AMPLITUDES))
+    parser.add_argument('--output-json', default='results/1697bdc/critical_lambda_search.json')
+    parser.add_argument('--output-csv', default='results/1697bdc/critical_lambda_search.csv')
+    parser.add_argument('--output-md', default='results/1697bdc/notes/critical_lambda_search.md')
     return parser.parse_args()
 
 
@@ -255,16 +234,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def load_reference_module() -> Any:
-    spec = importlib.util.spec_from_file_location(
-        "closed_loop_policy_audit_reference_3b850d6",
-        REFERENCE_POLICY_AUDIT,
-    )
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Could not load reference module at {REFERENCE_POLICY_AUDIT}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    return load_named_python_module('closed_loop_policy_audit_reference_3b850d6', REFERENCE_POLICY_AUDIT)
 
 
 def load_lambda_source(path: Path) -> dict[str, dict[str, Any]]:

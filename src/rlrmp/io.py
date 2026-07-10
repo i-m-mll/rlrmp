@@ -13,6 +13,7 @@ import importlib.util
 import json
 import os
 import re
+import sys
 from pathlib import Path
 from typing import Any, Callable
 
@@ -66,8 +67,23 @@ def load_python_module(path: Path, *, module_name: str | None = None) -> Any:
     if spec is None or spec.loader is None:
         raise ImportError(f"cannot load Python module from {path}")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    previous = sys.modules.get(name)
+    sys.modules[name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        if previous is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = previous
+        raise
     return module
+
+
+def load_named_python_module(module_name: str, path: Path) -> Any:
+    """Load ``path`` using an explicit import-module name."""
+
+    return load_python_module(path, module_name=module_name)
 
 
 def compact_json_dumps(

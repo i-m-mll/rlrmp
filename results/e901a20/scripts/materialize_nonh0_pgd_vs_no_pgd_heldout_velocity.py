@@ -1,6 +1,8 @@
 """Materialize non-H0 PGD vs no-PGD held-out velocity profiles."""
 
 from __future__ import annotations
+from rlrmp.io import load_named_python_module
+from rlrmp.viz.colors import hex_to_rgba as hex_to_rgba
 
 import csv
 import importlib.util
@@ -52,15 +54,7 @@ def repo_relative(path: Path) -> str:
 
 
 def load_nonh0_materializer() -> Any:
-    """Load the existing non-H0 no-PGD materializer helper."""
-
-    spec = importlib.util.spec_from_file_location("e901a20_nonh0_materializer", NONH0_HELPER_PATH)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Could not load helper module from {NONH0_HELPER_PATH}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    return load_named_python_module('e901a20_nonh0_materializer', NONH0_HELPER_PATH)
 
 
 def evaluate_profiles(materializer: Any, ref: Any) -> dict[str, Any]:
@@ -192,11 +186,6 @@ def add_reference_trace(
     )
 
 
-def hex_to_rgba(color: str, alpha: float) -> str:
-    """Convert ``#rrggbb`` to Plotly rgba."""
-
-    color = color.lstrip("#")
-    return f"rgba({int(color[0:2], 16)},{int(color[2:4], 16)},{int(color[4:6], 16)},{alpha})"
 
 
 def write_outputs(

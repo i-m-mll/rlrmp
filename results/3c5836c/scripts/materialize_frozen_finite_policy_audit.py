@@ -12,6 +12,7 @@ from typing import Any
 import numpy as np
 
 from rlrmp.analysis.frozen_adversary_audit import summarize_active_broad_epsilon_optimizer
+from rlrmp.paths import portable_repo_path
 
 ISSUE_ID = "3c5836c"
 SOURCE_ISSUE_ID = "ae9f30f"
@@ -595,10 +596,7 @@ def _sample_metric_mean(
 
 
 def _repo_rel(repo_root: Path, path: Path) -> str:
-    try:
-        return str(path.relative_to(repo_root))
-    except ValueError:
-        return str(path)
+    return portable_repo_path(path, repo_root=repo_root)
 
 
 def _fmt(value: Any) -> str:

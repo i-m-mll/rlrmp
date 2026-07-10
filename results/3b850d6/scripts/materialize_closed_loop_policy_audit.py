@@ -1,6 +1,9 @@
 """Materialize raw-vs-clipped closed-loop policy audits for 3b850d6."""
 
 from __future__ import annotations
+from rlrmp.analysis.soft_lambda import base_parser
+from rlrmp.analysis.soft_lambda import load_frozen_batch as _load_frozen_batch
+from rlrmp.analysis.soft_lambda import soft_pgd_config as soft_pgd_config
 
 import argparse
 import csv
@@ -66,39 +69,16 @@ class PolicyDirection:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--experiment", default="c92ebd8")
-    parser.add_argument("--issue", default="3b850d6")
-    parser.add_argument("--batch-size", type=int, default=8)
-    parser.add_argument("--replicate-index", type=int, default=0)
-    parser.add_argument("--pgd-steps", type=int, default=8)
-    parser.add_argument("--pgd-step-size-fraction", type=float, default=0.25)
-    parser.add_argument("--fixed-point-steps", type=int, default=3)
-    parser.add_argument("--ridge-alpha", type=float, default=1e-3)
-    parser.add_argument(
-        "--lambda-multipliers",
-        type=float,
-        nargs="+",
-        default=list(DEFAULT_LAMBDA_MULTIPLIERS),
-    )
-    parser.add_argument(
-        "--amplitudes",
-        type=float,
-        nargs="+",
-        default=list(DEFAULT_AMPLITUDES),
-    )
-    parser.add_argument(
-        "--output-json",
-        default="results/3b850d6/closed_loop_policy_audit.json",
-    )
-    parser.add_argument(
-        "--output-csv",
-        default="results/3b850d6/closed_loop_policy_audit.csv",
-    )
-    parser.add_argument(
-        "--output-md",
-        default="results/3b850d6/notes/closed_loop_policy_audit.md",
-    )
+    parser = base_parser(description=None, experiment='c92ebd8', issue='3b850d6', batch_size=8, replicate_index=0)
+    parser.add_argument('--pgd-steps', type=int, default=8)
+    parser.add_argument('--pgd-step-size-fraction', type=float, default=0.25)
+    parser.add_argument('--fixed-point-steps', type=int, default=3)
+    parser.add_argument('--ridge-alpha', type=float, default=0.001)
+    parser.add_argument('--lambda-multipliers', type=float, nargs='+', default=list(DEFAULT_LAMBDA_MULTIPLIERS))
+    parser.add_argument('--amplitudes', type=float, nargs='+', default=list(DEFAULT_AMPLITUDES))
+    parser.add_argument('--output-json', default='results/3b850d6/closed_loop_policy_audit.json')
+    parser.add_argument('--output-csv', default='results/3b850d6/closed_loop_policy_audit.csv')
+    parser.add_argument('--output-md', default='results/3b850d6/notes/closed_loop_policy_audit.md')
     return parser.parse_args()
 
 
@@ -225,78 +205,9 @@ def load_lambda_source(path: Path) -> dict[str, dict[str, Any]]:
 
 
 def load_frozen_batch(args: argparse.Namespace, run_id: str) -> FrozenBatch:
-    run_spec_path = REPO_ROOT / "results" / args.experiment / "runs" / f"{run_id}.json"
-    artifact_dir = REPO_ROOT / "_artifacts" / args.experiment / "runs" / run_id
-    run_spec = json.loads(run_spec_path.read_text(encoding="utf-8"))
-    parser = nominal.build_parser()
-    replay_args = nominal.resolve_run_spec_args(
-        parser.parse_args(["--run-spec", str(run_spec_path)]),
-        parser=parser,
-    )
-    hps = nominal.build_hps(replay_args)
-    seed = int(run_spec.get("seed", 42))
-    pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
-    model, _ = load_with_hyperparameters(
-        artifact_dir / "trained_model.eqx",
-        setup_func=lambda key, **_kwargs: setup_task_model_pair(hps, key=key).model,
-    )
-    model = select_replicate_model(model, hps, int(args.replicate_index))
-    batch_size = int(args.batch_size)
-    key = jr.fold_in(jr.PRNGKey(seed), stable_run_fold(run_id))
-    key_trials, key_model = jr.split(key)
-    batch_info = BatchInfo(size=batch_size, start=0, current=0, total=int(hps.n_batches_condition))
-    trial_specs = eqx.filter_vmap(
-        lambda k: pair.task.get_train_trial_with_intervenor_params(k, batch_info=batch_info)
-    )(jr.split(key_trials, batch_size))
-    trial_specs = _ensure_broad_epsilon_input(trial_specs, epsilon_dim=6)
-    audit_hps = hps | {
-        "broad_epsilon_pgd_training": soft_pgd_config(
-            lambda_value=1.0,
-            n_steps=1,
-            step_size_fraction=0.25,
-        )
-    }
-    cfg = config_from_broad_epsilon_pgd_hps(audit_hps.broad_epsilon_pgd_training)
-    epsilon = jnp.asarray(trial_specs.inputs["epsilon"])
-    radius = _broad_epsilon_pgd_trust_radius(trial_specs, cfg).astype(epsilon.dtype)
-    time_mask = _epsilon_time_mask(trial_specs, epsilon, cfg.movement_epoch_only)
-    return FrozenBatch(
-        task=pair.task,
-        model=model,
-        trial_specs=trial_specs,
-        keys_model=jr.split(key_model, batch_size),
-        hps=hps,
-        run_spec=run_spec,
-        radius=radius,
-        time_mask=time_mask,
-    )
+    return _load_frozen_batch(args, run_id, repo_root=REPO_ROOT)
 
 
-def soft_pgd_config(
-    *,
-    lambda_value: float,
-    n_steps: int,
-    step_size_fraction: float,
-) -> TreeNamespace:
-    return TreeNamespace(
-        **{
-            "enabled": True,
-            "level": "moderate",
-            "budget_scale": 1.0,
-            "reach_length_scaling": False,
-            "objective": {
-                "kind": BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
-                "lambda": float(lambda_value),
-            },
-            "safety_cap": {
-                "l2_radius_15cm": CAP_RADIUS_15CM,
-                "source": {"key": CAP_SOURCE},
-            },
-            "n_steps": int(n_steps),
-            "step_size_fraction": float(step_size_fraction),
-            "epsilon_dim": 6,
-        }
-    )
 
 
 def select_replicate_model(model: Any, hps: TreeNamespace, replicate_index: int) -> Any:
