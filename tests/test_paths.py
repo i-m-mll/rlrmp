@@ -24,7 +24,6 @@ authoritative oracle for whether a path would be tracked.
 from __future__ import annotations
 from rlrmp.io import load_named_python_module as _load_module
 
-import importlib.util
 import subprocess
 from pathlib import Path
 

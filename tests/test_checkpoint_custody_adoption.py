@@ -3,7 +3,6 @@
 from __future__ import annotations
 from rlrmp.io import load_named_python_module
 
-import importlib.util
 import json
 import re
 from pathlib import Path

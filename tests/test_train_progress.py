@@ -9,7 +9,6 @@ reading any JAX array (no per-step device->host sync is introduced).
 from __future__ import annotations
 from rlrmp.io import load_named_python_module as _load_script_module
 
-import importlib.util
 import logging
 import re
 from pathlib import Path
