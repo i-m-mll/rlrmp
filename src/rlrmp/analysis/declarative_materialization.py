@@ -78,7 +78,10 @@ from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
 )
 from rlrmp.analysis.pipelines.sisu_spectrum_diagnostics import (
     SISU_SPECTRUM_ANALYSIS_TYPE,
+    SISU_SPECTRUM_ANALYSIS_PARAMS_SCHEMA,
     SISU_SPECTRUM_EVALUATION_TYPE,
+    SISU_SPECTRUM_MANIFEST_SCHEMA,
+    SisuSpectrumAnalysisParams,
     SisuSpectrumEvaluationParams,
     register_sisu_spectrum_recipes,
     sisu_spectrum_evaluation_spec_params,
@@ -680,6 +683,11 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
         replace=True,
     )
     register_params_model(
+        SISU_SPECTRUM_ANALYSIS_TYPE,
+        SisuSpectrumAnalysisParams,
+        replace=True,
+    )
+    register_params_model(
         FEEDBACK_ABLATION_ANALYSIS_TYPE,
         FeedbackAblationAnalysisParams,
         replace=True,
@@ -1076,7 +1084,11 @@ def sisu_spectrum_spec(
     return AnalysisRunSpec(
         analysis_type=SISU_SPECTRUM_ANALYSIS_TYPE,
         inputs=inputs,
-        params={},
+        params=SisuSpectrumAnalysisParams(
+            schema_id=SISU_SPECTRUM_ANALYSIS_PARAMS_SCHEMA,
+            schema_version="v1",
+            manifest_schema=SISU_SPECTRUM_MANIFEST_SCHEMA,
+        ).model_dump(mode="json"),
     )
 
 
