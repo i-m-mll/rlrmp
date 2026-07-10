@@ -32,7 +32,7 @@ from rlrmp.analysis.pipelines.gru_perturbation_bank import (
 )
 from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT
-from rlrmp.viz import profile_comparison_grid
+from rlrmp.viz.figures import build_nominal_profile_figure
 
 
 ISSUE = "c92ebd8"
@@ -104,17 +104,11 @@ def materialize_figure(
 ) -> dict[str, Any]:
     """Build and save the PGD-vs-no-PGD nominal velocity profile figure."""
 
-    fig = profile_comparison_grid(
-        n_panels=len(PHYSICAL_LEVELS),
-        rows=len(PHYSICAL_LEVELS),
-        cols=1,
-        subplot_titles=[level for level in PHYSICAL_LEVELS],
-        vertical_spacing=0.075,
-    )
     ext_profile = forward_velocity_profile(extlqg_context["base_evaluation"].velocity)
     robust_profile = forward_velocity_profile(robust_context["velocity"])
 
-    for row_index, level in enumerate(PHYSICAL_LEVELS, start=1):
+    def add_run_profiles(fig: Any, row_spec: Mapping[str, Any], row_index: int) -> None:
+        level = str(row_spec["level"])
         add_mean_band(
             fig,
             run_profiles[PGD_RUNS[level]],
@@ -133,37 +127,15 @@ def materialize_figure(
             color=SOURCE_COLORS["no_pgd"],
             showlegend=row_index == 1,
         )
-        add_line(
-            fig,
-            ext_profile,
-            row=row_index,
-            col=1,
-            name="6D extLQG",
-            color=SOURCE_COLORS["extlqg6d"],
-            dash="dash",
-            showlegend=row_index == 1,
-            width=2.8,
-        )
-        add_line(
-            fig,
-            robust_profile,
-            row=row_index,
-            col=1,
-            name="6D output-feedback H-infinity",
-            color=SOURCE_COLORS["robust_output_feedback6d"],
-            dash="dot",
-            showlegend=row_index == 1,
-            width=2.8,
-        )
-        fig.update_yaxes(title_text="m/s", row=row_index, col=1)
-    fig.update_xaxes(title_text="time from movement onset (s)", row=len(PHYSICAL_LEVELS), col=1)
-    fig.update_layout(
+
+    fig = build_nominal_profile_figure(
+        rows=[{"label": level, "level": level} for level in PHYSICAL_LEVELS],
+        add_run_profiles=add_run_profiles,
+        ext_profile=ext_profile,
+        robust_profile=robust_profile,
+        comparator_colors=SOURCE_COLORS,
         title="c92 PGD 1.05 nominal forward velocity profiles",
-        template="plotly_white",
-        width=1040,
         height=760,
-        legend_title_text="profile",
-        margin={"l": 78, "r": 24, "t": 90, "b": 70},
     )
 
     spec = {
