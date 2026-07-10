@@ -62,7 +62,7 @@ from rlrmp.analysis.math.output_feedback import (
     kalman_estimator_joint_matrices,
     rollout_with_kalman_estimator,
 )
-from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
+from rlrmp.eval.output_feedback_rollout_recovery import (
     STRONG_OPTIMIZER_WHITENED,
     eigenspectrum_coverage_conditions,
     result_summary as rollout_result_summary,

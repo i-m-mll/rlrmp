@@ -72,6 +72,7 @@ from rlrmp.analysis.pipelines.hinf_phenotype_sidecar import (
 )
 from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
     ISSUE_ID as OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ISSUE_ID,
+    RolloutRecoveryResult,
     materialize_output_feedback_rollout_recovery,
 )
 from rlrmp.analysis.pipelines.sisu_spectrum_diagnostics import (
@@ -86,6 +87,11 @@ from rlrmp.eval.recipes import (
     CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,
     FEEDBACK_ABLATION_EVALUATION_TYPE,
     PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
+)
+from rlrmp.eval.output_feedback_rollout_recovery import (
+    OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_EVALUATION_TYPE,
+    OutputFeedbackRolloutRecoveryEvaluationParams,
+    register_output_feedback_rollout_recovery_evaluation_recipe,
 )
 from rlrmp.eval.policy_diagnostics import (
     PolicyAbsentInputBlock,
@@ -762,6 +768,7 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
         output_feedback_rollout_recovery_recipe,
         replace=replace,
     )
+    register_output_feedback_rollout_recovery_evaluation_recipe(replace=replace)
     register_sisu_spectrum_recipes(replace=replace)
 
 
@@ -1116,9 +1123,20 @@ def feedback_quality_lens_spec(
     )
 
 
+def output_feedback_rollout_recovery_evaluation_spec() -> EvaluationRunSpec:
+    """Return the canonical analytical rollout-recovery evaluation spec."""
+
+    return EvaluationRunSpec(
+        evaluation_type=OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_EVALUATION_TYPE,
+        params=OutputFeedbackRolloutRecoveryEvaluationParams().model_dump(mode="json"),
+    )
+
+
 def output_feedback_rollout_recovery_spec(
     *,
     issue_id: str = OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ISSUE_ID,
+    evaluation_manifest_id: str | None = None,
+    evaluation_manifest_uri: Path | str | None = None,
     discretization: str | None = None,
     lane: str | None = None,
     note_output: Path | str | None = None,
@@ -1139,8 +1157,13 @@ def output_feedback_rollout_recovery_spec(
     _set_optional_path_param(params, "manifest_output", manifest_output)
     _set_optional_path_param(params, "artifact_output", artifact_output)
     _set_optional_path_param(params, "repo_root", repo_root)
+    inputs = _evaluation_parent_refs(
+        evaluation_manifest_id=evaluation_manifest_id,
+        evaluation_manifest_uri=evaluation_manifest_uri,
+    )
     return AnalysisRunSpec(
         analysis_type=OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE,
+        inputs=inputs,
         params=params,
     )
 
@@ -1454,27 +1477,38 @@ def feedback_quality_feedback_ablation_recipe(
 def output_feedback_rollout_recovery_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
-    _inputs: Sequence[Any],
+    inputs: Sequence[Any],
 ) -> AnalysisRecipeResult:
-    """Build the declarative output-feedback rollout-recovery recipe."""
+    """Build rollout-recovery analysis from governed evaluation states."""
 
     params = OutputFeedbackRolloutRecoveryParams.model_validate(spec.params).model_dump(
         exclude_none=True
     )
+    evaluation_input = _primary_evaluation_input(inputs)
+    if evaluation_input is None or _resolved_input_states(evaluation_input) is None:
+        raise ValueError(
+            "output-feedback rollout recovery requires an EvaluationRunManifest input"
+        )
     return _manifest_recipe(
         analysis_name="output_feedback_rollout_recovery",
         materializer=lambda context, data: _materialize_output_feedback_rollout_recovery(
             context,
             params,
+            result=_rollout_recovery_result_from_analysis_data(data),
         ),
         artifact_role="rlrmp-output-feedback-rollout-recovery",
         logical_name="output_feedback_rollout_recovery.json",
         schema_boundary=(
-            "rlrmp-owned output-feedback bridge diagnostic payload; analytical "
-            "rollouts stay analysis-internal per e1ad278 Q2"
+            "rlrmp-owned output-feedback bridge diagnostic payload derived from "
+            "governed analytical evaluation states"
         ),
-        data=_empty_analysis_data(),
+        data=_analysis_data_from_evaluation_input(evaluation_input),
     )
+
+
+output_feedback_rollout_recovery_recipe.EVAL_DEPENDENCIES = (
+    OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_EVALUATION_TYPE,
+)
 
 
 def feedback_quality_lens_recipe(
@@ -2667,9 +2701,12 @@ def _feedback_quality_component_outputs_from_inputs(
 def _materialize_output_feedback_rollout_recovery(
     context: AnalysisRunContext,
     params: Mapping[str, Any],
+    *,
+    result: RolloutRecoveryResult,
 ) -> MaterializationResult:
     issue_id = str(params.get("issue_id", OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ISSUE_ID))
     materialized = materialize_output_feedback_rollout_recovery(
+        result,
         issue_id=issue_id,
         discretization=str(params.get("discretization", DEFAULT_DISCRETIZATION)),
         lane=str(params.get("lane", DEFAULT_LANE)),
@@ -2719,11 +2756,8 @@ def _materialize_output_feedback_rollout_recovery(
         "legacy_output_hints": legacy_hints,
         "declarative_analysis": _declarative_metadata(context),
         "evaluation_dependency_policy": {
-            "status": "not_applicable",
-            "reason": (
-                "Analytical output-feedback rollouts take fitted gains, not "
-                "model artifacts, and remain analysis-internal per e1ad278 Q2."
-            ),
+            "status": "consumed",
+            "evaluation_type": OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_EVALUATION_TYPE,
         },
     }
     return MaterializationResult(
@@ -3209,6 +3243,18 @@ def _analysis_data_from_evaluation_input(evaluation_input: Any | None) -> Analys
         hps={},
         extras=TreeNamespace(),
     )
+
+
+def _rollout_recovery_result_from_analysis_data(
+    data: AnalysisInputData,
+) -> RolloutRecoveryResult:
+    states = data.states.get("evaluation")
+    if not isinstance(states, Mapping):
+        raise ValueError("rollout-recovery evaluation states are unavailable")
+    result = states.get("result")
+    if not isinstance(result, RolloutRecoveryResult):
+        raise ValueError("rollout-recovery evaluation states lack a typed result")
+    return result
 
 
 def _evaluation_input_from_analysis_data(data: AnalysisInputData) -> _AnalysisEvaluationInput | None:
@@ -3806,6 +3852,7 @@ __all__ = [
     "GRU_POSTRUN_ANALYSIS_TYPE",
     "GRU_STANDARD_ANALYSIS_TYPE",
     "OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE",
+    "OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_EVALUATION_TYPE",
     "PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE",
     "PerturbationBankAggregateAnalysisParams",
     "PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE",
@@ -3822,6 +3869,7 @@ __all__ = [
     "gru_standard_certificate_spec",
     "gru_standard_certificate_recipe",
     "output_feedback_rollout_recovery_recipe",
+    "output_feedback_rollout_recovery_evaluation_spec",
     "output_feedback_rollout_recovery_spec",
     "perturbation_bank_aggregate_recipe",
     "perturbation_bank_aggregate_spec",

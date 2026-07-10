@@ -17,7 +17,7 @@ from rlrmp.analysis.math.output_feedback import (
     output_feedback_clean_objective,
     rollout_with_kalman_estimator,
 )
-from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
+from rlrmp.eval.output_feedback_rollout_recovery import (
     EigenspectrumCoverageConfig,
     ObserverErrorCoverageConfig,
     RolloutRecoveryCondition,
