@@ -115,6 +115,7 @@ from rlrmp.train.executor.slots import (
     CS_SUPERVISED_METHOD_REF,
     POLICY_ADVERSARY_SUPERVISED_METHOD_REF,
 )
+from rlrmp.train.run_spec_authoring import COMPACT_RUN_SPEC_KEY, MAX_TRACKED_RUN_SPEC_BYTES
 from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_ADAM,
     BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM,
@@ -309,8 +310,14 @@ def _normalize_stochastic_float_precision(value, *, key: str | None = None):
 def _cs_stochastic_gru_run_spec_paths() -> list[Path]:
     paths: list[Path] = []
     for path in sorted(Path("results").rglob("*.json")):
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        if payload.get("schema_version") != SCHEMA_VERSION:
+        payload = hydrate_compact_run_spec_envelope(
+            json.loads(path.read_text(encoding="utf-8"))
+        )
+        schema_versions = {
+            payload.get("schema_version"),
+            payload.get("source_schema_version"),
+        }
+        if SCHEMA_VERSION not in schema_versions:
             continue
         if {"hps", "feedbax_graph", "training_script"}.issubset(payload):
             paths.append(path)
@@ -508,9 +515,11 @@ def test_cs_nominal_gru_config_validates_tracked_cs_stochastic_gru_corpus() -> N
     clean_paths = []
     fail_closed: set[Path] = set()
 
-    assert len(paths) == 149
+    assert len(paths) == 150
     for path in paths:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = hydrate_compact_run_spec_envelope(
+            json.loads(path.read_text(encoding="utf-8"))
+        )
         try:
             CsNominalGruConfig.model_validate(cs_nominal_gru._args_values_from_run_spec(payload))
         except ValidationError:
@@ -518,7 +527,7 @@ def test_cs_nominal_gru_config_validates_tracked_cs_stochastic_gru_corpus() -> N
         else:
             clean_paths.append(path)
 
-    assert len(clean_paths) == 149
+    assert len(clean_paths) == 150
     assert fail_closed == set()
 
 
@@ -3312,6 +3321,58 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     assert manifest["training_spec"]["nominal_only"] is True
     assert not output_dir.exists()
     assert REPO_ROOT not in output_dir.parents
+
+
+def test_large_composed_run_spec_uses_compact_authoritative_envelope(tmp_path: Path) -> None:
+    output_dir = tmp_path / "bulk"
+    spec_dir = tmp_path / "spec"
+    result = write_run_spec(
+        _args(
+            output_dir=str(output_dir),
+            spec_dir=str(spec_dir),
+            full_train=True,
+            n_train_batches=12000,
+            batch_size=64,
+            controller_lr=3e-3,
+            lr_warmup_batches=500,
+            lr_warmup_init_fraction=0.1,
+            lr_cosine_alpha=0.01,
+            gradient_clip_norm=5.0,
+            checkpoint_interval_batches=500,
+            hidden_size=180,
+            n_replicates=5,
+            no_integrator_state=True,
+            target_relative_multitarget=True,
+            target_support_profile="const_band16",
+            force_filter_feedback=True,
+            initial_hidden_encoder=True,
+            perturbation_training=True,
+            perturbation_calibrated_timing=True,
+            perturbation_physical_level="moderate",
+            loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+        )
+    )
+
+    run_path = Path(result["run_spec_path"])
+    payload = json.loads(run_path.read_text(encoding="utf-8"))
+    authoritative = payload[RLRMP_RUN_SPEC_PAYLOAD_KEY]
+
+    assert run_path.stat().st_size <= MAX_TRACKED_RUN_SPEC_BYTES
+    assert set(payload) == {
+        COMPACT_RUN_SPEC_KEY,
+        RLRMP_RUN_SPEC_PAYLOAD_KEY,
+        FEEDBAX_TRAINING_RUN_SPEC_KEY,
+        "game_card",
+        "training_distribution",
+        "feedbax_graph",
+    }
+    assert payload[COMPACT_RUN_SPEC_KEY] is True
+    assert payload["game_card"] == authoritative["game_card"]
+    assert payload["training_distribution"] == {
+        "perturbation_training": authoritative["training_distribution"]["perturbation_training"],
+    }
+    assert payload["feedbax_graph"] == authoritative["feedbax_graph"]
+    assert isinstance(payload[FEEDBAX_TRAINING_RUN_SPEC_KEY], dict)
 
 
 def test_feedbax_training_run_spec_rejects_cs_fields(tmp_path: Path) -> None:

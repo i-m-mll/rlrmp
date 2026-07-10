@@ -13,6 +13,7 @@ from rlrmp.runtime.training_run_specs import (
     MissingTrainingRunSpecFieldError,
     _cs_training_config,
     _distillation_training_config,
+    hydrate_compact_run_spec_envelope,
 )
 
 
@@ -78,7 +79,7 @@ def _complete_cs_spec() -> dict[str, Any]:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return hydrate_compact_run_spec_envelope(json.loads(path.read_text(encoding="utf-8")))
 
 
 def _adapter_method_for_payload(payload: dict[str, Any]) -> str | None:
@@ -329,7 +330,7 @@ def test_tracked_training_config_adapter_corpus_census() -> None:
         else:
             clean_paths.append(path)
 
-    assert len(clean_paths) == 75
+    assert len(clean_paths) == 76
     assert fail_closed == EXPECTED_TRACKED_FAIL_CLOSED
 
 
