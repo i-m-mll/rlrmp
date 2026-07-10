@@ -20,9 +20,9 @@ from rlrmp.analysis.pipelines.sisu_spectrum_diagnostics import (
     analytical_reference_curves,
     build_manifest,
     build_velocity_profile_figure,
-    evaluate_sisu_profiles,
     render_markdown,
 )
+from rlrmp.eval.sisu_spectrum import evaluate_sisu_profiles
 from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT
 

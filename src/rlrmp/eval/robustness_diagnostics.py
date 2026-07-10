@@ -140,7 +140,7 @@ def evaluate_stabilization_row(
         pad_feedback_offset_inputs,
         washin_diagnostics,
     )
-    from rlrmp.analysis.pipelines.sisu_spectrum_diagnostics import zero_disturbance_payload
+    from rlrmp.eval.sisu_spectrum import zero_disturbance_payload
     from rlrmp.train.task_model import setup_task_model_pair
 
     def hook(name: str) -> Any:
