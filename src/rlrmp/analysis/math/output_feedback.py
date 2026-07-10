@@ -27,6 +27,7 @@ import optax
 import scipy.optimize as scipy_opt
 from jaxtyping import Array, Float
 
+from rlrmp.analysis.data_products import load_analysis_parameter_preset
 from rlrmp.analysis.math.cs_game_card import (
     INIT_POS,
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
@@ -1582,26 +1583,8 @@ def analyze_phase1_output_feedback(
     )
 
 
-GAMMA_SWEEP_FACTORS = (
-    1.001,
-    1.005,
-    1.01,
-    1.02,
-    1.05,
-    1.1,
-    1.2,
-    1.25,
-    1.3,
-    1.32,
-    1.33,
-    1.34,
-    1.345,
-    1.35,
-    1.4,
-    1.45,
-    1.5,
-    2.0,
-    3.0,
+GAMMA_SWEEP_FACTORS = tuple(
+    load_analysis_parameter_preset("output_feedback_gamma_sweep").parameters["gamma_sweep_factors"]
 )
 
 

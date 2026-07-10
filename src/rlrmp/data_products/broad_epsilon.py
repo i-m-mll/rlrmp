@@ -61,7 +61,7 @@ BROAD_EPSILON_EXTRACTION_SPEC_RELPATH = (
     "results/ea6ccb4/data_products/broad_epsilon_budget_anchors.extraction.json"
 )
 BROAD_EPSILON_EXTRACTION_SPEC_PATH = REPO_ROOT / BROAD_EPSILON_EXTRACTION_SPEC_RELPATH
-BROAD_EPSILON_REFERENCE_REACH_M = 0.15
+BROAD_EPSILON_REFERENCE_REACH_M: float
 
 # Pinned identity of the adopted budget-anchor product.
 BROAD_EPSILON_PRODUCT_IDENTITY_HASH = (
@@ -85,6 +85,7 @@ class BroadEpsilonAnchors:
     """Loaded broad-epsilon budget anchors with product identity."""
 
     levels: dict[str, dict[str, Any]]
+    reference_reach_m: float
     product_identity_hash: str
 
     def __contains__(self, level: str) -> bool:
@@ -187,6 +188,14 @@ def load_broad_epsilon_anchors() -> BroadEpsilonAnchors:
         levels[level] = _contract(persisted_levels[level])
     return BroadEpsilonAnchors(
         levels=levels,
+        reference_reach_m=float(product.parameters["reference_reach_m"]),
         product_identity_hash=str(product.product_identity_hash),
     )
 
+
+def __getattr__(name: str) -> Any:
+    """Resolve the legacy reference-reach export from the governed product."""
+
+    if name == "BROAD_EPSILON_REFERENCE_REACH_M":
+        return load_broad_epsilon_anchors().reference_reach_m
+    raise AttributeError(name)

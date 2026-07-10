@@ -1,0 +1,1 @@
+{"schema_id":"rlrmp.analysis_parameter_preset","schema_version":"rlrmp.analysis_parameter_preset.v1","preset_id":"sisu_perturbation_comparison","source_issue":"6a298a1","parameters":{"sisu_levels":[0.0,1.0],"n_rollout_trials":64},"content_sha256":"2029072d4c932a6b4fb09ad6af55b3dc900ae650136d283f88ecc5778029ef15"}

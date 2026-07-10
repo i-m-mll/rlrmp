@@ -1,0 +1,813 @@
+{
+  "schema_id": "rlrmp.data_in_code_closing_manifest",
+  "schema_version": "rlrmp.data_in_code_closing_manifest.v1",
+  "source_commit": "470ffe0928712fcdbc7cbaf8f3042b5e919f8008",
+  "source_baseline_sha256": "233b8cd399f3e6a0a91595ac902ad85e739553366b71fd58d0a202239a726900",
+  "starting_entry_count": 136,
+  "resolutions": {
+    "results/7c1f7ed/scripts/materialize_delayed_sisu_velocity_profiles.py::main::argv_rows": {
+      "destination": "results/7c1f7ed/runs/delayed_sisu_velocity_profiles.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_analysis_parameter_destinations.py::test_delayed_sisu_driver_spec_loads"
+      },
+      "rationale": "Historical delayed-SISU condition arguments now load from a versioned tracked driver/evaluation spec before argv construction.",
+      "route": "tracked_evaluation_spec"
+    },
+    "results/c723082/scripts/build_cross_method_comparison.py::FIRST_RUN_BASELINES::empirical_table": {
+      "destination": "results/c723082/data_products/first_run_baselines.json + first_run_baselines.payload.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_analysis_parameter_destinations.py::test_first_run_baselines_data_product_loads"
+      },
+      "rationale": "Adopted empirical comparison rows now live in a schema/version/product-hash and artifact-hash governed AnalysisDataProduct loaded fail-closed.",
+      "route": "governed_analysis_data_product"
+    },
+    "scripts/materialize_output_feedback_failure_decomposition.py::INTERPOLATION_ALPHAS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/failure_decomposition.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "scripts/materialize_output_feedback_optimizer_basin_diagnostic.py::ADAMW_LRS::hp_constant": {
+      "route": "integrated_sibling_resolution",
+      "destination": "integration commit 470ffe0928712fcdbc7cbaf8f3042b5e919f8008",
+      "rationale": "The source finding disappeared through integrated b632/997/6add work before this lane began; the key is removed as stale only after confirming it is absent from the live strengthened scan."
+    },
+    "src/rlrmp/analysis/math/adversary_equivalence.py::INIT_POS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/adversary_equivalence.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/math/adversary_equivalence.py::OPEN_LOOP_LEARNING_RATE::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/adversary_equivalence.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/math/adversary_equivalence.py::OPEN_LOOP_RESTARTS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/adversary_equivalence.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/math/adversary_equivalence.py::OPEN_LOOP_STEP_SWEEP::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/adversary_equivalence.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_analysis_parameter_destinations.py::test_adversary_equivalence_defaults_load"
+      },
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/math/adversary_equivalence.py::OpenLoopOptimizationConfig::default_bundle": {
+      "route": "owning_schema_default",
+      "destination": "the typed config/params class named by the finding",
+      "rationale": "The finding already resides on the owning typed schema model as field defaults. It is retained through a curated exception because moving the values elsewhere would split the schema from its defaults."
+    },
+    "src/rlrmp/analysis/math/adversary_equivalence.py::TARGET_POS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/adversary_equivalence.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/math/cs_game_card.py::DIAGNOSTIC_GAMMA_FACTOR::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/cs_game_card.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/math/cs_game_card.py::INIT_POS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/cs_game_card.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/math/cs_game_card.py::OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/cs_game_card.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/math/cs_game_card.py::PRIMARY_GAMMA_FACTOR::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/cs_game_card.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/math/cs_game_card.py::TARGET_POS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/cs_game_card.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/math/cs_released_simulation.py::CSReleasedStochasticNoiseConfig::default_bundle": {
+      "route": "owning_schema_default",
+      "destination": "the typed config/params class named by the finding",
+      "rationale": "The finding already resides on the owning typed schema model as field defaults. It is retained through a curated exception because moving the values elsewhere would split the schema from its defaults."
+    },
+    "src/rlrmp/analysis/math/hinf_riccati.py::CostSpec::default_bundle": {
+      "route": "owning_schema_default",
+      "destination": "the typed config/params class named by the finding",
+      "rationale": "The finding already resides on the owning typed schema model as field defaults. It is retained through a curated exception because moving the values elsewhere would split the schema from its defaults."
+    },
+    "src/rlrmp/analysis/math/linear_equivalence_certificate.py::CertificateConfig::default_bundle": {
+      "route": "owning_schema_default",
+      "destination": "the typed config/params class named by the finding",
+      "rationale": "The finding already resides on the owning typed schema model as field defaults. It is retained through a curated exception because moving the values elsewhere would split the schema from its defaults."
+    },
+    "src/rlrmp/analysis/math/linear_round_trip.py::LinearTrainingConfig::default_bundle": {
+      "route": "owning_schema_default",
+      "destination": "the typed config/params class named by the finding",
+      "rationale": "The finding already resides on the owning typed schema model as field defaults. It is retained through a curated exception because moving the values elsewhere would split the schema from its defaults."
+    },
+    "src/rlrmp/analysis/math/linear_round_trip.py::TeacherFitConfig::default_bundle": {
+      "route": "owning_schema_default",
+      "destination": "the typed config/params class named by the finding",
+      "rationale": "The finding already resides on the owning typed schema model as field defaults. It is retained through a curated exception because moving the values elsewhere would split the schema from its defaults."
+    },
+    "src/rlrmp/analysis/math/output_feedback.py::GAMMA_SWEEP_FACTORS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/output_feedback_gamma_sweep.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_analysis_parameter_destinations.py::test_gamma_sweep_factors_load"
+      },
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/math/output_feedback.py::OutputFeedbackConfig::default_bundle": {
+      "route": "owning_schema_default",
+      "destination": "the typed config/params class named by the finding",
+      "rationale": "The finding already resides on the owning typed schema model as field defaults. It is retained through a curated exception because moving the values elsewhere would split the schema from its defaults."
+    },
+    "src/rlrmp/analysis/math/robust_bellman.py::EXACT_INNER_TIME_INDICES::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/robust_bellman.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/math/robust_bellman.py::NUMERICAL_MINMAX_TIME_INDICES::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/robust_bellman.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py::DEFAULT_RESPONSE_MAP_ROLLOUT_TRIALS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/cs_gru_standard_materialization.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/cs_stochastic_phase3.py::Phase3StochasticConfig::default_bundle": {
+      "route": "owning_schema_default",
+      "destination": "the typed config/params class named by the finding",
+      "rationale": "The finding already resides on the owning typed schema model as field defaults. It is retained through a curated exception because moving the values elsewhere would split the schema from its defaults."
+    },
+    "src/rlrmp/analysis/pipelines/delayed_diagnostic_bundle.py::DEFAULT_DECAY_THRESHOLDS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/delayed_diagnostic_bundle.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/delayed_diagnostic_bundle.py::DEFAULT_SUPPORT_WINDOWS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/delayed_diagnostic_bundle.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_analysis_parameter_destinations.py::test_delayed_diagnostic_bundle_defaults_load"
+      },
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/diagnostic_provenance.py::DEFAULT_MAX_TREE_HASH_FILES::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/diagnostic_provenance.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py::DEFAULT_DELAYED_REACH_DIRECTION_COUNT::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_checkpoint_selection.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py::DEFAULT_DELAYED_REACH_UNIFORM_REACH_LENGTH_M::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_checkpoint_selection.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py::DelayedReachEvalBankSpec::default_bundle": {
+      "route": "owning_schema_default",
+      "destination": "the typed config/params class named by the finding",
+      "rationale": "The finding already resides on the owning typed schema model as field defaults. It is retained through a curated exception because moving the values elsewhere would split the schema from its defaults."
+    },
+    "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py::DEFAULT_CONTROLLER_VISIBLE_FORCE_FILTER_SCALE_N::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_perturbation_calibration.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_perturbation_response_norm_plots.py::EXTLQG_WIDTH::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_perturbation_response_norm_plots.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_perturbation_response_norm_plots.py::TRAINING_WIDTHS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_perturbation_response_norm_plots.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_analysis_parameter_destinations.py::test_training_widths_load"
+      },
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_pilot_figures.py::DEFAULT_N_ROLLOUT_TRIALS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_pilot_figures.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py::DEFAULT_FINAL_WINDOW_STEPS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_steady_state_perturbation_bank.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py::DEFAULT_FORCE_FILTER_SCALE::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_steady_state_perturbation_bank.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py::DEFAULT_N_ROLLOUT_TRIALS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_steady_state_perturbation_bank.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py::DEFAULT_POSITION_SCALE_M::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_steady_state_perturbation_bank.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py::DEFAULT_POST_GO_WASHIN_STEPS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_steady_state_perturbation_bank.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py::DEFAULT_POST_ONSET_FIGURE_STEPS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_steady_state_perturbation_bank.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py::DEFAULT_PRE_GO_STEPS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_steady_state_perturbation_bank.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py::DEFAULT_PRE_ONSET_FIGURE_STEPS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_steady_state_perturbation_bank.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py::DEFAULT_PULSE_DURATION_STEPS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_steady_state_perturbation_bank.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py::DEFAULT_VELOCITY_SCALE_M_S::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/gru_steady_state_perturbation_bank.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py::SteadyStatePerturbationBankConfig::default_bundle": {
+      "route": "owning_schema_default",
+      "destination": "the typed config/params class named by the finding",
+      "rationale": "The finding already resides on the owning typed schema model as field defaults. It is retained through a curated exception because moving the values elsewhere would split the schema from its defaults."
+    },
+    "src/rlrmp/analysis/pipelines/objective_comparator.py::STATE_COMPONENT_SLICES::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/objective_comparator.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_analysis_parameter_destinations.py::test_state_component_slices_load"
+      },
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/output_feedback_interpolated_starts.py::INTERPOLATED_ALPHAS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/output_feedback_interpolated_starts.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/output_feedback_rollout_recovery.py::EigenspectrumCoverageConfig::default_bundle": {
+      "route": "owning_schema_default",
+      "destination": "the typed config/params class named by the finding",
+      "rationale": "The finding already resides on the owning typed schema model as field defaults. It is retained through a curated exception because moving the values elsewhere would split the schema from its defaults."
+    },
+    "src/rlrmp/analysis/pipelines/output_feedback_rollout_recovery.py::ObserverErrorCoverageConfig::default_bundle": {
+      "route": "owning_schema_default",
+      "destination": "the typed config/params class named by the finding",
+      "rationale": "The finding already resides on the owning typed schema model as field defaults. It is retained through a curated exception because moving the values elsewhere would split the schema from its defaults."
+    },
+    "src/rlrmp/analysis/pipelines/output_feedback_rollout_recovery.py::RolloutRecoveryCondition::default_bundle": {
+      "route": "owning_schema_default",
+      "destination": "the typed config/params class named by the finding",
+      "rationale": "The finding already resides on the owning typed schema model as field defaults. It is retained through a curated exception because moving the values elsewhere would split the schema from its defaults."
+    },
+    "src/rlrmp/analysis/pipelines/sisu_perturbation_comparison.py::DEFAULT_N_ROLLOUT_TRIALS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/sisu_perturbation_comparison.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/sisu_perturbation_comparison.py::DEFAULT_SISU_LEVELS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/sisu_perturbation_comparison.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py::DEFAULT_N_ROLLOUT_TRIALS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/sisu_spectrum_diagnostics.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py::DEFAULT_REFERENCE_SAMPLES::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/sisu_spectrum_diagnostics.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_analysis_parameter_destinations.py::test_all_registered_analysis_presets_load_with_pinned_hashes"
+      },
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py::DEFAULT_SISU_LEVELS::hp_constant": {
+      "destination": "src/rlrmp/config/analysis_presets/sisu_spectrum_diagnostics.json",
+      "rationale": "Reusable analysis defaults now load from an individually registered schema/version/content-hash validated preset; the Python literal was removed.",
+      "route": "registered_analysis_parameter_preset"
+    },
+    "src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py::LOW_SISU_ENDPOINT_REACH_THRESHOLD_M::hp_constant": {
+      "route": "legitimate_constant",
+      "destination": "src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py",
+      "rationale": "The audit classified this as a diagnostic interpretation threshold rather than a run/evaluation parameter, so it remains a purpose-named source constant with a curated rationale."
+    },
+    "src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py::LOW_SISU_PEAK_SPEED_THRESHOLD_M_S::hp_constant": {
+      "route": "legitimate_constant",
+      "destination": "src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py",
+      "rationale": "The audit classified this as a diagnostic interpretation threshold rather than a run/evaluation parameter, so it remains a purpose-named source constant with a curated rationale."
+    },
+    "src/rlrmp/analysis/robustness_margin.py::RobustnessMarginParams::default_bundle": {
+      "route": "owning_schema_default",
+      "destination": "the typed config/params class named by the finding",
+      "rationale": "The finding already resides on the owning typed schema model as field defaults. It is retained through a curated exception because moving the values elsewhere would split the schema from its defaults."
+    },
+    "src/rlrmp/cloud/modal_runner.py::DEFAULT_BATCH_SIZE::hp_constant": {
+      "destination": "src/rlrmp/config/runtime_presets/modal_runner.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_runtime_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "Reusable remote-execution defaults now load from an individually registered schema/version/content-hash validated runtime preset; the Python literal was removed.",
+      "route": "registered_runtime_parameter_preset"
+    },
+    "src/rlrmp/cloud/modal_runner.py::DEFAULT_CHECKPOINT_INTERVAL_BATCHES::hp_constant": {
+      "destination": "src/rlrmp/config/runtime_presets/modal_runner.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_runtime_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "Reusable remote-execution defaults now load from an individually registered schema/version/content-hash validated runtime preset; the Python literal was removed.",
+      "route": "registered_runtime_parameter_preset"
+    },
+    "src/rlrmp/cloud/modal_runner.py::DEFAULT_HIDDEN_SIZE::hp_constant": {
+      "destination": "src/rlrmp/config/runtime_presets/modal_runner.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_runtime_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "Reusable remote-execution defaults now load from an individually registered schema/version/content-hash validated runtime preset; the Python literal was removed.",
+      "route": "registered_runtime_parameter_preset"
+    },
+    "src/rlrmp/cloud/modal_runner.py::DEFAULT_N_REPLICATES::hp_constant": {
+      "destination": "src/rlrmp/config/runtime_presets/modal_runner.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_runtime_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "Reusable remote-execution defaults now load from an individually registered schema/version/content-hash validated runtime preset; the Python literal was removed.",
+      "route": "registered_runtime_parameter_preset"
+    },
+    "src/rlrmp/cloud/modal_runner.py::DEFAULT_N_TRAIN_BATCHES::hp_constant": {
+      "destination": "src/rlrmp/config/runtime_presets/modal_runner.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_runtime_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "Reusable remote-execution defaults now load from an individually registered schema/version/content-hash validated runtime preset; the Python literal was removed.",
+      "route": "registered_runtime_parameter_preset"
+    },
+    "src/rlrmp/cloud/modal_runner.py::DEFAULT_TIMEOUT_SECONDS::hp_constant": {
+      "destination": "src/rlrmp/config/runtime_presets/modal_runner.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_runtime_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "Reusable remote-execution defaults now load from an individually registered schema/version/content-hash validated runtime preset; the Python literal was removed.",
+      "route": "registered_runtime_parameter_preset"
+    },
+    "src/rlrmp/cloud/modal_runner.py::DEFAULT_TRAIN_TIMEOUT_SECONDS::hp_constant": {
+      "route": "legitimate_constant",
+      "destination": "src/rlrmp/cloud/modal_runner.py",
+      "rationale": "This is an operational cloud-job safety timeout, not a scientific training parameter, and remains intentionally separate from the governed run spec."
+    },
+    "src/rlrmp/cloud/modal_runner.py::NominalGruRunConfig::default_bundle": {
+      "route": "owning_schema_default",
+      "destination": "the typed config/params class named by the finding",
+      "rationale": "The finding already resides on the owning typed schema model as field defaults. It is retained through a curated exception because moving the values elsewhere would split the schema from its defaults."
+    },
+    "src/rlrmp/data_products/broad_epsilon.py::BROAD_EPSILON_REFERENCE_REACH_M::hp_constant": {
+      "destination": "results/ea6ccb4/data_products/broad_epsilon_budget_anchors.json + broad_epsilon_budget_anchors.extraction.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_governed_products_load_reference_reach_and_force_convention"
+      },
+      "rationale": "The canonical reference reach now loads from the existing schema/version/identity-hash governed broad-epsilon AnalysisDataProduct and remains available through the legacy module export.",
+      "route": "governed_analysis_data_product"
+    },
+    "src/rlrmp/data_products/calibration.py::CONTROLLER_VISIBLE_FORCE_FILTER_SCALE_CONVENTION::hp_constant": {
+      "destination": "results/ea6ccb4/data_products/perturbation_open_loop_calibration.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_governed_products_load_reference_reach_and_force_convention"
+      },
+      "rationale": "The native force/filter convention now loads from the schema/version/identity-hash governed open-loop calibration AnalysisDataProduct; the Python literal was removed.",
+      "route": "governed_analysis_data_product"
+    },
+    "src/rlrmp/eval/ensemble.py::N_REPLICATES::hp_constant": {
+      "destination": "src/rlrmp/config/runtime_presets/evaluation_ensemble.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_runtime_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "The reusable evaluation replicate count now loads from an individually registered schema/version/content-hash validated runtime preset; the Python literal was removed.",
+      "route": "registered_runtime_parameter_preset"
+    },
+    "src/rlrmp/fb_response.py::InstantFBResponse::default_bundle": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_E04BD36_USER_HOLD_ALLOWLIST",
+      "rationale": "The source object is in the verification-confirmed-dead portfolio owned by issue e04bd36, on which the user placed an explicit deletion hold. The value remains untouched and visible as a curated exception."
+    },
+    "src/rlrmp/figures.py::EffectorTrajectoryFigureParams::default_bundle": {
+      "route": "integrated_sibling_resolution",
+      "destination": "integration commit 470ffe0928712fcdbc7cbaf8f3042b5e919f8008",
+      "rationale": "The source finding disappeared through integrated b632/997/6add work before this lane began; the key is removed as stale only after confirming it is absent from the live strengthened scan."
+    },
+    "src/rlrmp/figures.py::StandardMatrixFigureParams::default_bundle": {
+      "route": "integrated_sibling_resolution",
+      "destination": "integration commit 470ffe0928712fcdbc7cbaf8f3042b5e919f8008",
+      "rationale": "The source finding disappeared through integrated b632/997/6add work before this lane began; the key is removed as stale only after confirming it is absent from the live strengthened scan."
+    },
+    "src/rlrmp/loss.py::DEFAULT_EFFECTOR_POS_LATE_PARAMS::hp_constant": {
+      "destination": "src/rlrmp/config/loss_presets/default.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_loss_defaults_load_from_registered_typed_preset"
+      },
+      "rationale": "The reusable loss parameter table now loads from the typed registered schema/version/content-hash validated default-loss preset; the Python literal was removed.",
+      "route": "registered_typed_loss_preset"
+    },
+    "src/rlrmp/loss.py::DEFAULT_EFFECTOR_POS_MID_PARAMS::hp_constant": {
+      "destination": "src/rlrmp/config/loss_presets/default.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_loss_defaults_load_from_registered_typed_preset"
+      },
+      "rationale": "The reusable loss parameter table now loads from the typed registered schema/version/content-hash validated default-loss preset; the Python literal was removed.",
+      "route": "registered_typed_loss_preset"
+    },
+    "src/rlrmp/loss.py::DEFAULT_EFFECTOR_VEL_LATE_PARAMS::hp_constant": {
+      "destination": "src/rlrmp/config/loss_presets/default.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_loss_defaults_load_from_registered_typed_preset"
+      },
+      "rationale": "The reusable loss parameter table now loads from the typed registered schema/version/content-hash validated default-loss preset; the Python literal was removed.",
+      "route": "registered_typed_loss_preset"
+    },
+    "src/rlrmp/loss.py::DEFAULT_EFFECTOR_VEL_MID_PARAMS::hp_constant": {
+      "destination": "src/rlrmp/config/loss_presets/default.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_loss_defaults_load_from_registered_typed_preset"
+      },
+      "rationale": "The reusable loss parameter table now loads from the typed registered schema/version/content-hash validated default-loss preset; the Python literal was removed.",
+      "route": "registered_typed_loss_preset"
+    },
+    "src/rlrmp/loss.py::DEFAULT_GOAL_HIT_PARAMS::hp_constant": {
+      "destination": "src/rlrmp/config/loss_presets/default.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_loss_defaults_load_from_registered_typed_preset"
+      },
+      "rationale": "The reusable loss parameter table now loads from the typed registered schema/version/content-hash validated default-loss preset; the Python literal was removed.",
+      "route": "registered_typed_loss_preset"
+    },
+    "src/rlrmp/loss.py::DEFAULT_GOAL_HIT_SUBWEIGHTS::hp_constant": {
+      "destination": "src/rlrmp/config/loss_presets/default.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_loss_defaults_load_from_registered_typed_preset"
+      },
+      "rationale": "The reusable loss parameter table now loads from the typed registered schema/version/content-hash validated default-loss preset; the Python literal was removed.",
+      "route": "registered_typed_loss_preset"
+    },
+    "src/rlrmp/loss.py::DEFAULT_TOP_WEIGHTS::hp_constant": {
+      "destination": "src/rlrmp/config/loss_presets/default.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_loss_defaults_load_from_registered_typed_preset"
+      },
+      "rationale": "The reusable loss parameter table now loads from the typed registered schema/version/content-hash validated default-loss preset; the Python literal was removed.",
+      "route": "registered_typed_loss_preset"
+    },
+    "src/rlrmp/model/cs_lss_gru.py::CS_DELAYED_POS_VEL_FORCE_INDICES::hp_constant": {
+      "destination": "src/rlrmp/config/model_presets/cs_lss_gru.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_model_and_graph_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "Reusable C&S LSS GRU construction defaults now load from an individually registered schema/version/content-hash validated model preset; the Python literal was removed.",
+      "route": "registered_model_parameter_preset"
+    },
+    "src/rlrmp/model/cs_lss_gru.py::CS_DELAYED_POS_VEL_INDICES::hp_constant": {
+      "destination": "src/rlrmp/config/model_presets/cs_lss_gru.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_model_and_graph_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "Reusable C&S LSS GRU construction defaults now load from an individually registered schema/version/content-hash validated model preset; the Python literal was removed.",
+      "route": "registered_model_parameter_preset"
+    },
+    "src/rlrmp/model/cs_lss_gru.py::CS_DELAY_BLOCKS::hp_constant": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_E04BD36_USER_HOLD_ALLOWLIST",
+      "rationale": "The source object is in the verification-confirmed-dead portfolio owned by issue e04bd36, on which the user placed an explicit deletion hold. The value remains untouched and visible as a curated exception."
+    },
+    "src/rlrmp/model/cs_lss_gru.py::_population_structure_params::default_bundle": {
+      "destination": "src/rlrmp/config/model_presets/cs_lss_gru.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_model_and_graph_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "Reusable C&S LSS GRU construction defaults now load from an individually registered schema/version/content-hash validated model preset; the Python literal was removed.",
+      "route": "registered_model_parameter_preset"
+    },
+    "src/rlrmp/model/feedbax_graph.py::DEFAULT_GRAPH_COMPONENT_SEED::hp_constant": {
+      "destination": "src/rlrmp/config/model_presets/feedbax_graph.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_model_and_graph_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "Reusable graph construction defaults now load from an individually registered schema/version/content-hash validated model/graph preset; the Python literal was removed.",
+      "route": "registered_model_parameter_preset"
+    },
+    "src/rlrmp/model/feedbax_graph.py::_linear_controller_params::default_bundle": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_E04BD36_USER_HOLD_ALLOWLIST",
+      "rationale": "The source object is in the verification-confirmed-dead portfolio owned by issue e04bd36, on which the user placed an explicit deletion hold. The value remains untouched and visible as a curated exception."
+    },
+    "src/rlrmp/model/feedbax_graph.py::_migrate_legacy_plant_process_force_noise_params::default_bundle": {
+      "destination": "src/rlrmp/config/model_presets/feedbax_graph.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_model_and_graph_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "Legacy force-noise migration defaults now load from the versioned, content-hash validated graph preset before compatibility migration; the inline fallback bundle was removed.",
+      "route": "versioned_graph_migration_preset"
+    },
+    "src/rlrmp/model/feedbax_graph.py::_population_structure_params::default_bundle": {
+      "destination": "src/rlrmp/config/model_presets/feedbax_graph.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_model_and_graph_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "Reusable graph construction defaults now load from an individually registered schema/version/content-hash validated model/graph preset; the Python literal was removed.",
+      "route": "registered_model_parameter_preset"
+    },
+    "src/rlrmp/model/feedbax_graph.py::_runtime_population_structure_params::default_bundle": {
+      "destination": "src/rlrmp/config/model_presets/feedbax_graph.json",
+      "load_proof": {
+        "status": "passed",
+        "test": "tests/test_runtime_parameter_destinations.py::test_model_and_graph_defaults_load_from_registered_typed_presets"
+      },
+      "rationale": "Reusable graph construction defaults now load from an individually registered schema/version/content-hash validated model/graph preset; the Python literal was removed.",
+      "route": "registered_model_parameter_preset"
+    },
+    "src/rlrmp/model/stochastic_runtime.py::StochasticRuntimeConfig::default_bundle": {
+      "route": "owning_schema_default",
+      "destination": "the typed config/params class named by the finding",
+      "rationale": "The finding already resides on the owning typed schema model as field defaults. It is retained through a curated exception because moving the values elsewhere would split the schema from its defaults."
+    },
+    "src/rlrmp/train/closed_loop_distillation.py::ClosedLoopLossWeights::default_bundle": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/closed_loop_distillation.py::DEFAULT_CHECKPOINT_INTERVAL_BATCHES::hp_constant": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_nominal_gru.py::AdaptiveEpsilonState::default_bundle": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_nominal_gru.py::CS_CONTROL_SCALE::hp_constant": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_nominal_gru.py::CS_POSITION_SCALE::hp_constant": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_nominal_gru.py::CS_REGULARIZED_NN_HIDDEN::hp_constant": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_nominal_gru.py::CS_STAGE_COUNT::hp_constant": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_nominal_gru.py::CS_VELOCITY_SCALE::hp_constant": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_nominal_gru.py::CsNominalGruConfig::default_bundle": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_nominal_gru.py::build_hps::default_bundle": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_perturbation_training.py::AMPLITUDE_LEVELS::hp_constant": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_perturbation_training.py::BROAD_EPSILON_REFERENCE_REACH_M::hp_constant": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_perturbation_training.py::BroadFullStateEpsilonTrainingConfig::default_bundle": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_perturbation_training.py::DEFAULT_HELD_OUT_TARGET_AMPLITUDES_M::hp_constant": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_perturbation_training.py::DEFAULT_HELD_OUT_TARGET_DIRECTIONS_DEG::hp_constant": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_perturbation_training.py::DEFAULT_PGD_SISU_EXACT_ZERO_MASS::hp_constant": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_perturbation_training.py::DEFAULT_PGD_SISU_LEVELS::hp_constant": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_perturbation_training.py::DEFAULT_SEEN_TARGET_AMPLITUDES_M::hp_constant": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_perturbation_training.py::DEFAULT_SEEN_TARGET_DIRECTIONS_DEG::hp_constant": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_perturbation_training.py::FixedTargetPerturbationTrainingConfig::default_bundle": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_perturbation_training.py::HISTORICAL_020A65B_PGD_RADIUS_15CM::hp_constant": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_perturbation_training.py::ORIGINAL_TARGET_ANCHOR_M::hp_constant": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_perturbation_training.py::PGD_SISU_MAX_RADIUS_SOURCES::hp_constant": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_perturbation_training.py::PgdFullStateEpsilonTrainingConfig::default_bundle": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_perturbation_training.py::PolicyFullStateEpsilonTrainingConfig::default_bundle": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_perturbation_training.py::RAW_STRONG_GAMMA_1P05_RADIUS_15CM::hp_constant": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_BAND16_HELD_OUT_DIRECTIONS::hp_constant": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_BAND36_HELD_OUT_DIRECTIONS::hp_constant": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_BAND8_HELD_OUT_DIRECTIONS::hp_constant": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_BAND_CENTERS_DEG::hp_constant": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_CONST_REACH_M::hp_constant": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_DENSE_N_DIRECTIONS::hp_constant": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_SPARSE_N_DIRECTIONS::hp_constant": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/cs_perturbation_training.py::TargetRelativeMultiTargetTrainingConfig::default_bundle": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/distillation.py::CSH0DistillationConfig::default_bundle": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/distillation.py::DistillationLossWeights::default_bundle": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/guided_distillation.py::DEFAULT_CHECKPOINT_INTERVAL_BATCHES::hp_constant": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/minimax.py::MinimaxConfig::default_bundle": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/minimax.py::build_hps::default_bundle": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/minimax.py::build_minimax_training_run_spec::spec_flow": {
+      "route": "integrated_sibling_resolution",
+      "destination": "integration commit 470ffe0928712fcdbc7cbaf8f3042b5e919f8008",
+      "rationale": "The source finding disappeared through integrated b632/997/6add work before this lane began; the key is removed as stale only after confirming it is absent from the live strengthened scan."
+    },
+    "src/rlrmp/train/standard.py::_base_hps::default_bundle": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/standard.py::_loss_cfg_combined::default_bundle": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/standard.py::_loss_cfg_default::default_bundle": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/standard.py::_loss_cfg_running_cost::default_bundle": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    },
+    "src/rlrmp/train/standard.py::_loss_cfg_softmin::default_bundle": {
+      "route": "curated_allowlist",
+      "destination": "src/rlrmp/data_products/data_in_code.py::_CD137D8_CONFIG_TIER_ALLOWLIST",
+      "rationale": "Explicit config-tier exclusion owned by issue cd137d8, including the unified training schema, generated CLI, and pre-native trainer retirement surfaces. Values remain live and named; this lane does not claim that unfinished work."
+    }
+  }
+}

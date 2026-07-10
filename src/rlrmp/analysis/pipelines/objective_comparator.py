@@ -14,6 +14,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
 
+from rlrmp.analysis.data_products import load_analysis_parameter_preset
 from rlrmp.analysis.math.summary_stats import summary_stats as _summary_stats
 from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT, run_spec_path
@@ -63,10 +64,10 @@ DEFAULT_SHARED_ROLLOUT_STATUS = {
     "selection_role": "audit_only_not_used_for_checkpoint_selection",
 }
 STATE_COMPONENT_SLICES = {
-    "position": (0, 2),
-    "velocity": (2, 4),
-    "force_filter": (4, 6),
-    "disturbance_integrator": (6, 8),
+    key: tuple(value)
+    for key, value in load_analysis_parameter_preset("objective_comparator")
+    .parameters["state_component_slices"]
+    .items()
 }
 _STANDARD_SPLIT_BANK_LENS_SPECS = {
     "deterministic_nominal": {"x0": (), "epsilon": ()},
@@ -419,8 +420,7 @@ def shared_full_qrf_cost_summary(
 
     if state_basis not in {"absolute_workspace", "target_centered"}:
         raise ValueError(
-            "state_basis must be 'absolute_workspace' or 'target_centered', "
-            f"got {state_basis!r}."
+            f"state_basis must be 'absolute_workspace' or 'target_centered', got {state_basis!r}."
         )
     _plant, schedule = build_canonical_game()
     state_array = jnp.asarray(states, dtype=jnp.float64)
@@ -441,7 +441,9 @@ def shared_full_qrf_cost_summary(
         raise ValueError(f"Full-Q/R/Q_f scorer expected {horizon} states.")
     if command_array.shape[-2] != horizon:
         raise ValueError(f"Full-Q/R/Q_f scorer expected {horizon} commands.")
-    initial_array = jnp.broadcast_to(initial_array, (*state_array.shape[:-2], state_array.shape[-1]))
+    initial_array = jnp.broadcast_to(
+        initial_array, (*state_array.shape[:-2], state_array.shape[-1])
+    )
     x_pre = jnp.concatenate([initial_array[..., None, :], state_array[..., :-1, :]], axis=-2)
     if state_basis == "absolute_workspace":
         x_pre = _goal_centered_vectors(x_pre, target_pos=TARGET_POS)
@@ -474,13 +476,7 @@ def shared_full_qrf_cost_summary(
     )
     force_filter = force_filter + terminal_force
     disturbance_integrator = disturbance_integrator + terminal_integrator
-    total = (
-        running_state
-        + terminal_state
-        + command_control
-        + force_filter
-        + disturbance_integrator
-    )
+    total = running_state + terminal_state + command_control + force_filter + disturbance_integrator
     return {
         "status": "available",
         "lens": "shared_rollout_realized_full_qrf",
@@ -531,8 +527,13 @@ def materialize_shared_rollout_comparator(
         default_cs_noise_covariances,
         zero_forward_noise_draws,
     )
-    from rlrmp.analysis.pipelines.gru_checkpoint_selection import load_validation_selected_checkpoint_model
-    from rlrmp.analysis.pipelines.gru_pilot_figures import repeat_single_validation_trial, resolve_run_inputs
+    from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
+        load_validation_selected_checkpoint_model,
+    )
+    from rlrmp.analysis.pipelines.gru_pilot_figures import (
+        repeat_single_validation_trial,
+        resolve_run_inputs,
+    )
     from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig
     from rlrmp.train.task_model import setup_task_model_pair
 
@@ -573,7 +574,9 @@ def materialize_shared_rollout_comparator(
         "expected_cost_wording_allowed": False,
     }
 
-    runs = resolve_run_inputs(experiment=experiment, run_ids=run_ids, labels=None, repo_root=repo_root)
+    runs = resolve_run_inputs(
+        experiment=experiment, run_ids=run_ids, labels=None, repo_root=repo_root
+    )
     run_results = {}
     for run in runs:
         hps = dict_to_namespace(normalize_gru_hps(run.run_spec["hps"]), to_type=TreeNamespace)
@@ -594,7 +597,9 @@ def materialize_shared_rollout_comparator(
             ),
             repo_root=repo_root,
         )
-        base_trial_specs = repeat_single_validation_trial(pair.task.validation_trials, bank.n_trials)
+        base_trial_specs = repeat_single_validation_trial(
+            pair.task.validation_trials, bank.n_trials
+        )
         gru_cost_by_lens = _gru_split_bank_costs(
             model=model,
             task=pair.task,
@@ -643,8 +648,7 @@ def materialize_shared_rollout_comparator(
             "expected_cost": extlqg_path.expected_cost,
             "cost": _public_cost_summary(extlqg_cost),
             "standard_split_bank": {
-                lens: _public_cost_summary(cost)
-                for lens, cost in extlqg_cost_by_lens.items()
+                lens: _public_cost_summary(cost) for lens, cost in extlqg_cost_by_lens.items()
             },
             "x0_only_sanity_check": x0_sanity,
         },
@@ -836,8 +840,7 @@ def render_objective_comparator_markdown(sidecar: Mapping[str, Any]) -> str:
             "sensory/command/motor noise is not exposed for both arms. Partial "
             f"shared-rollout replacement: `{same_noise['status']}` - {same_noise['reason']}",
             "",
-            "Per-term realized scoring: "
-            f"`{per_term['status']}` - {per_term['reason']}",
+            f"Per-term realized scoring: `{per_term['status']}` - {per_term['reason']}",
             "",
         ]
     )
@@ -881,9 +884,7 @@ def _slim_objective_comparator_sidecar(sidecar: Mapping[str, Any]) -> dict[str, 
             run_id,
         ):
             row.pop("shared_rollout_comparator", None)
-            row["shared_rollout_comparator_ref"] = (
-                f"/shared_rollout_comparator/runs/{run_id}"
-            )
+            row["shared_rollout_comparator_ref"] = f"/shared_rollout_comparator/runs/{run_id}"
         if isinstance(run_id, str) and _top_level_comparator_has_run(
             sidecar,
             "standard_split_bank_comparator",
@@ -1136,9 +1137,7 @@ def _full_qrf_lens_from_loss_summary(loss_summary: Mapping[str, Any]) -> dict[st
         "matrix_shapes": loss_summary.get("matrix_shapes"),
         "active_terms": sorted(str(term) for term in active_terms),
         "force_filter_state_cost": loss_summary.get("force_filter_state_cost"),
-        "disturbance_integrator_state_cost": loss_summary.get(
-            "disturbance_integrator_state_cost"
-        ),
+        "disturbance_integrator_state_cost": loss_summary.get("disturbance_integrator_state_cost"),
     }
 
 
@@ -1374,8 +1373,7 @@ def _split_bank_inputs(
     initial_delta = initial_states - default_initial
     return {
         lens: {
-            "initial_states": default_initial
-            + _mask_state_components(initial_delta, spec["x0"]),
+            "initial_states": default_initial + _mask_state_components(initial_delta, spec["x0"]),
             "process_epsilon": _mask_physical_components(process_epsilon, spec["epsilon"]),
         }
         for lens, spec in _STANDARD_SPLIT_BANK_LENS_SPECS.items()
@@ -1416,9 +1414,7 @@ def _split_bank_lens_metadata(lens: str) -> dict[str, Any]:
         "shared_initial_state_components": x0_components,
         "shared_process_load_epsilon_components": epsilon_components,
         "interpretation": (
-            "stress_test_only"
-            if x0_components
-            else "apples_to_apples_split_bank_sidecar"
+            "stress_test_only" if x0_components else "apples_to_apples_split_bank_sidecar"
         ),
     }
 
@@ -1468,18 +1464,14 @@ def _standard_split_bank_public(
         "lens": "standard_split_rollout_bank_full_qrf",
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
         "bank": bank.to_json(),
-        "lenses": {
-            lens: _split_bank_lens_metadata(lens)
-            for lens in _STANDARD_SPLIT_BANK_LENSES
-        },
+        "lenses": {lens: _split_bank_lens_metadata(lens) for lens in _STANDARD_SPLIT_BANK_LENSES},
         "fairness_residuals": _split_bank_fairness_residuals(),
         "extlqg": {
             "status": "available",
             "parity_status": extlqg_path.parity_status,
             "n_iterations": int(extlqg_path.n_iterations),
             "cost_by_lens": {
-                lens: _public_cost_summary(cost)
-                for lens, cost in extlqg_cost_by_lens.items()
+                lens: _public_cost_summary(cost) for lens, cost in extlqg_cost_by_lens.items()
             },
         },
         "extlqg_x0_only_sanity_check": dict(x0_sanity),
@@ -1693,9 +1685,7 @@ def _cost_comparison(gru_cost: Mapping[str, Any], extlqg_cost: Mapping[str, Any]
             "gru_mean": gru_mean,
             "extlqg_mean": extlqg_mean,
             "delta_mean": gru_mean - extlqg_mean,
-            "ratio_to_extlqg": (
-                None if abs(extlqg_mean) <= 1e-300 else gru_mean / extlqg_mean
-            ),
+            "ratio_to_extlqg": (None if abs(extlqg_mean) <= 1e-300 else gru_mean / extlqg_mean),
         }
     return comparison
 
@@ -1831,7 +1821,9 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--output-md", required=True, type=Path)
     parser.add_argument("--issue", required=True)
     parser.add_argument("--scope", required=True)
-    parser.add_argument("--generated-by", default="python -m rlrmp.analysis.pipelines.objective_comparator")
+    parser.add_argument(
+        "--generated-by", default="python -m rlrmp.analysis.pipelines.objective_comparator"
+    )
     parser.add_argument("--extlqg-deterministic", required=True, type=float)
     parser.add_argument("--extlqg-initial-covariance", required=True, type=float)
     parser.add_argument("--extlqg-accumulated-noise", required=True, type=float)

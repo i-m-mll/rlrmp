@@ -1,0 +1,1 @@
+{"schema_id":"rlrmp.analysis_parameter_preset","schema_version":"rlrmp.analysis_parameter_preset.v1","preset_id":"gru_perturbation_calibration","source_issue":"ea6ccb4","parameters":{"controller_visible_force_filter_scale_n":1.0},"content_sha256":"2d169d669c376881fad43b5cc12ac8fe6febff723204a16284c450214067c02b"}

@@ -50,6 +50,7 @@ from rlrmp.model.feedbax_graph import (
     recurrent_graph_state_to_network_state,
     resolve_registered_graph_component_migrations,
 )
+from rlrmp.model.presets import CsLssGruPreset, load_model_preset
 from rlrmp.model.trainable import staged_network_trainable_parts
 from rlrmp.runtime.run_spec_access import require_run_seed
 from rlrmp.train.closed_loop_finite_adversary import (
@@ -64,8 +65,9 @@ from rlrmp.train.closed_loop_finite_adversary import (
 CS_PHYSICAL_STATE_DIM = 8
 CS_REDUCED_PHYSICAL_STATE_DIM = 6
 CS_DELAY_BLOCKS = 6
-CS_DELAYED_POS_VEL_INDICES = (40, 41, 42, 43)
-CS_DELAYED_POS_VEL_FORCE_INDICES = (40, 41, 42, 43, 44, 45)
+_MODEL_PRESET = load_model_preset("rlrmp.cs_lss_gru.default", CsLssGruPreset)
+CS_DELAYED_POS_VEL_INDICES = tuple(_MODEL_PRESET.delayed_pos_vel_indices)
+CS_DELAYED_POS_VEL_FORCE_INDICES = tuple(_MODEL_PRESET.delayed_pos_vel_force_indices)
 CS_EPSILON_DIM = 8
 CS_REDUCED_EPSILON_DIM = 6
 CS_FORCE_DIM = 2
@@ -1257,12 +1259,25 @@ def _population_structure_params(
         spec = dict(population_structure.to_spec())
         spec["hidden_size"] = int(hidden_size)
         return spec
+    defaults = _MODEL_PRESET.population_defaults
     return {
         "hidden_size": int(hidden_size),
-        "n_input_only": int(getattr(population_structure, "n_input_only", 0) or 0),
-        "n_readout_only": int(getattr(population_structure, "n_readout_only", 0) or 0),
-        "n_recurrent_only": int(getattr(population_structure, "n_recurrent_only", 0) or 0),
-        "n_input_readout": int(getattr(population_structure, "n_input_readout", 0) or 0),
+        "n_input_only": int(
+            getattr(population_structure, "n_input_only", defaults.n_input_only)
+            or defaults.n_input_only
+        ),
+        "n_readout_only": int(
+            getattr(population_structure, "n_readout_only", defaults.n_readout_only)
+            or defaults.n_readout_only
+        ),
+        "n_recurrent_only": int(
+            getattr(population_structure, "n_recurrent_only", defaults.n_recurrent_only)
+            or defaults.n_recurrent_only
+        ),
+        "n_input_readout": int(
+            getattr(population_structure, "n_input_readout", defaults.n_input_readout)
+            or defaults.n_input_readout
+        ),
     }
 
 

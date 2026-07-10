@@ -1,0 +1,1 @@
+{"schema_id":"rlrmp.analysis_parameter_preset","schema_version":"rlrmp.analysis_parameter_preset.v1","preset_id":"gru_checkpoint_selection","source_issue":"6a298a1","parameters":{"delayed_reach_direction_count":20,"delayed_reach_uniform_reach_length_m":0.15},"content_sha256":"6b63ef11805cd294243c4d6a3b1a4860acebdb17fd2597e1c4b8d0f03e3b6749"}

@@ -13,6 +13,7 @@ from rlrmp.data_products.data_in_code import (
     HP_NAME_LEXICON,
     DataInCodePolicyError,
     default_spec_constructor_names,
+    load_baseline,
     policy_for_finding,
     scan_source,
     scan_tree,
@@ -281,9 +282,25 @@ def test_allowlist_entries_exist_and_have_rationales() -> None:
         assert isinstance(rationale, str) and len(rationale.strip()) >= 40
 
 
+def test_curated_allowlist_groups_are_sorted_and_disjoint() -> None:
+    groups = (
+        data_in_code._CD137D8_CONFIG_TIER_ALLOWLIST,
+        data_in_code._E04BD36_USER_HOLD_ALLOWLIST,
+        data_in_code._OWNING_SCHEMA_DEFAULT_ALLOWLIST,
+        data_in_code._PURPOSE_CONSTANT_ALLOWLIST,
+    )
+
+    assert all(tuple(sorted(group)) == group for group in groups)
+    assert sum(map(len, groups)) == len(set().union(*map(set, groups)))
+
+
 def test_live_tree_matches_committed_baseline() -> None:
     validate_findings(REPO_ROOT)
     assert violations(REPO_ROOT) == []
+
+
+def test_ratchet_baseline_is_fully_drained() -> None:
+    assert load_baseline(REPO_ROOT) == []
 
 
 def test_live_planned_row_functions_have_been_drained() -> None:

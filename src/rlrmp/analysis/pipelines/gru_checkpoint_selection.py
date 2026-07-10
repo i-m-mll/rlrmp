@@ -34,6 +34,7 @@ from rlrmp.train.cs_nominal_gru import (
     DEFAULT_DELAYED_GO_CUE_MIN_STEP,
     DELAYED_REACH_TRAINING_MODE,
 )
+from rlrmp.analysis.data_products import load_analysis_parameter_preset
 from rlrmp.train.cs_perturbation_training import (
     TargetRelativeMultiTargetTrainingConfig,
     target_relative_input_contract,
@@ -68,8 +69,11 @@ DEFAULT_DELAYED_REACH_FIXED_BANK_MANIFEST_NAME = (
 DEFAULT_DELAYED_REACH_GO_CUE_STEPS = tuple(
     range(DEFAULT_DELAYED_GO_CUE_MIN_STEP, DEFAULT_DELAYED_GO_CUE_MAX_STEP + 1)
 )
-DEFAULT_DELAYED_REACH_DIRECTION_COUNT = 20
-DEFAULT_DELAYED_REACH_UNIFORM_REACH_LENGTH_M = 0.15
+_ANALYSIS_PRESET = load_analysis_parameter_preset("gru_checkpoint_selection").parameters
+DEFAULT_DELAYED_REACH_DIRECTION_COUNT = int(_ANALYSIS_PRESET["delayed_reach_direction_count"])
+DEFAULT_DELAYED_REACH_UNIFORM_REACH_LENGTH_M = float(
+    _ANALYSIS_PRESET["delayed_reach_uniform_reach_length_m"]
+)
 CheckpointSelectionMode = Literal["sparse_history", "fixed_bank_manifest"]
 DelayedReachCatchBank = Literal["no_catch", "catch"]
 DelayedReachDirectionSource = Literal["uniform_grid", "validation_targets"]
@@ -1131,11 +1135,7 @@ def _feedbax_checkpoint_selection_manifest_from_legacy_payload(
     bank = _checkpoint_selection_bank(payload, issue=issue, repo_root=repo_root)
     groups = _checkpoint_selection_groups(payload, issue=issue, repo_root=repo_root)
     candidate_checkpoints = _unique_candidates(
-        [
-            candidate
-            for group in groups
-            for candidate in group.candidate_checkpoints
-        ]
+        [candidate for group in groups for candidate in group.candidate_checkpoints]
         + _plan_candidate_checkpoints(payload, issue=issue, repo_root=repo_root)
     )
     inputs = _checkpoint_selection_inputs(payload, issue=issue, repo_root=repo_root)
@@ -1422,9 +1422,7 @@ def _score_summary_from_selection_row(
     payload: Mapping[str, Any],
 ) -> CheckpointScoreSummary:
     primary_metric = str(payload.get("selection_metric") or "validation_objective")
-    primary_value = float(
-        row.get("feedback_score", row.get("scoring_validation_objective", 0.0))
-    )
+    primary_value = float(row.get("feedback_score", row.get("scoring_validation_objective", 0.0)))
     metrics = {
         "scoring_validation_objective": float(
             row.get("scoring_validation_objective", primary_value)

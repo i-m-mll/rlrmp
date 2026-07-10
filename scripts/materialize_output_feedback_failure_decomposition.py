@@ -24,6 +24,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from rlrmp.analysis.data_products import load_analysis_parameter_preset
 from rlrmp.analysis.pipelines.bridge_certificates import (
     STATE_WEIGHTED_ACTION_MISMATCH,
     state_weighted_action_mismatch_component,
@@ -37,7 +38,10 @@ from rlrmp.analysis.pipelines.failure_decomposition import (
     objective_gradient_summary,
 )
 from rlrmp.analysis.math.linear_round_trip import LinearTrainingConfig
-from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig, output_feedback_clean_objective
+from rlrmp.analysis.math.output_feedback import (
+    OutputFeedbackConfig,
+    output_feedback_clean_objective,
+)
 from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
     STRONG_OPTIMIZER_WHITENED,
     _training_ensemble,
@@ -113,7 +117,8 @@ EVALUATION_LENSES = (
     ("nominal_clean", "clean"),
     ("riccati_epsilon_response", "under_eps"),
 )
-INTERPOLATION_ALPHAS = (0.0, 0.25, 0.5, 0.75, 1.0)
+_ANALYSIS_PRESET = load_analysis_parameter_preset("failure_decomposition").parameters
+INTERPOLATION_ALPHAS = tuple(_ANALYSIS_PRESET["interpolation_alphas"])
 
 
 def parse_args() -> argparse.Namespace:
@@ -700,11 +705,7 @@ def _fit_objective_summary(fit: dict[str, Any]) -> dict[str, Any]:
 
 
 def _coverage_parameters(condition: dict[str, Any]) -> dict[str, Any]:
-    return (
-        condition.get("eigenspectrum_coverage")
-        or condition.get("observer_error_coverage")
-        or {}
-    )
+    return condition.get("eigenspectrum_coverage") or condition.get("observer_error_coverage") or {}
 
 
 def _objective_for_gain(gains: np.ndarray, objective: dict[str, Any]) -> float:
@@ -814,7 +815,10 @@ def _table_rows(rows: list[dict[str, Any]]) -> str:
             if "training_objective_ratio_to_reference" in record
         ]
         best = (
-            min(objective_records, key=lambda record: record["training_objective_ratio_to_reference"])
+            min(
+                objective_records,
+                key=lambda record: record["training_objective_ratio_to_reference"],
+            )
             if objective_records
             else None
         )
