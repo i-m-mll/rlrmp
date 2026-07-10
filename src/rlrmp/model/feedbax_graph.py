@@ -57,6 +57,7 @@ from equinox.nn import StateIndex
 
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.io import compact_json_dumps
+from rlrmp.model.presets import FeedbaxGraphPreset, load_model_preset
 from rlrmp.model.stochastic_runtime import (
     PLANT_PROCESS_FORCE_NOISE_LABEL,
     graphspec_noise_contract,
@@ -69,7 +70,8 @@ from rlrmp.runtime.run_spec_access import require_run_seed
 SCHEMA_VERSION = "rlrmp.feedbax_graph.v1"
 SUPPORTED_GRAPH_SPEC_VERSIONS = ("1.0.0",)
 EXECUTION_BACKEND = "feedbax.contracts.graphs.serialization.spec_to_graph"
-DEFAULT_GRAPH_COMPONENT_SEED = 0
+_MODEL_PRESET = load_model_preset("rlrmp.feedbax_graph.default", FeedbaxGraphPreset)
+DEFAULT_GRAPH_COMPONENT_SEED = _MODEL_PRESET.graph_component_seed
 
 
 def tree_sum_n_features(tree) -> int:
@@ -324,15 +326,16 @@ def _migrate_legacy_feedback_channels_params(params: dict[str, Any]) -> dict[str
 
 def _migrate_legacy_plant_process_force_noise_params(params: dict[str, Any]) -> dict[str, Any]:
     migrated = dict(params)
-    noise_std = float(migrated.get("noise_std", 0.0) or 0.0)
+    defaults = _MODEL_PRESET.legacy_plant_process_force_noise
+    noise_std = float(migrated.get("noise_std", defaults.noise_std) or defaults.noise_std)
     return {
-        "delay": 0,
-        "noise_model": "additive_gaussian",
+        "delay": defaults.delay,
+        "noise_model": defaults.noise_model,
         "noise_std": noise_std,
-        "add_noise": noise_std != 0.0,
-        "noise_role": migrated.get("noise_role", "plant_process_load"),
-        "noise_timing": migrated.get("noise_timing", "post_force_filter_pre_mechanics"),
-        "input_shape": migrated.get("input_shape", [2]),
+        "add_noise": noise_std != defaults.noise_std,
+        "noise_role": migrated.get("noise_role", defaults.noise_role),
+        "noise_timing": migrated.get("noise_timing", defaults.noise_timing),
+        "input_shape": migrated.get("input_shape", defaults.input_shape),
     }
 
 
@@ -1396,12 +1399,25 @@ def _runtime_population_structure_params(
 ) -> dict[str, int]:
     if population_structure is None:
         return {}
+    defaults = _MODEL_PRESET.population_defaults
     return {
         "hidden_size": int(hidden_size),
-        "n_input_only": int(getattr(population_structure, "n_input_only", 0) or 0),
-        "n_readout_only": int(getattr(population_structure, "n_readout_only", 0) or 0),
-        "n_recurrent_only": int(getattr(population_structure, "n_recurrent_only", 0) or 0),
-        "n_input_readout": int(getattr(population_structure, "n_input_readout", 0) or 0),
+        "n_input_only": int(
+            getattr(population_structure, "n_input_only", defaults.n_input_only)
+            or defaults.n_input_only
+        ),
+        "n_readout_only": int(
+            getattr(population_structure, "n_readout_only", defaults.n_readout_only)
+            or defaults.n_readout_only
+        ),
+        "n_recurrent_only": int(
+            getattr(population_structure, "n_recurrent_only", defaults.n_recurrent_only)
+            or defaults.n_recurrent_only
+        ),
+        "n_input_readout": int(
+            getattr(population_structure, "n_input_readout", defaults.n_input_readout)
+            or defaults.n_input_readout
+        ),
         "key": _component_key_param(None),
     }
 
@@ -2255,12 +2271,21 @@ def _population_structure_params(
         spec = dict(pop.to_spec())
         spec["hidden_size"] = int(hps.model.hidden_size)
         return spec
+    defaults = _MODEL_PRESET.population_defaults
     return {
         "hidden_size": int(hps.model.hidden_size),
-        "n_input_only": int(getattr(pop, "n_input_only", 0) or 0),
-        "n_readout_only": int(getattr(pop, "n_readout_only", 0) or 0),
-        "n_recurrent_only": int(getattr(pop, "n_recurrent_only", 0) or 0),
-        "n_input_readout": int(getattr(pop, "n_input_readout", 0) or 0),
+        "n_input_only": int(
+            getattr(pop, "n_input_only", defaults.n_input_only) or defaults.n_input_only
+        ),
+        "n_readout_only": int(
+            getattr(pop, "n_readout_only", defaults.n_readout_only) or defaults.n_readout_only
+        ),
+        "n_recurrent_only": int(
+            getattr(pop, "n_recurrent_only", defaults.n_recurrent_only) or defaults.n_recurrent_only
+        ),
+        "n_input_readout": int(
+            getattr(pop, "n_input_readout", defaults.n_input_readout) or defaults.n_input_readout
+        ),
     }
 
 

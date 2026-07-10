@@ -1,0 +1,1 @@
+{"schema_id":"rlrmp.runtime.modal_runner_preset","schema_version":"rlrmp.runtime.modal_runner_preset.v1","preset_id":"rlrmp.modal_runner.default","timeout_seconds":60,"n_train_batches":12000,"batch_size":250,"n_replicates":5,"hidden_size":180,"checkpoint_interval_batches":500,"content_sha256":"2994afc4b5ff6c91136c44e3724edbc43316f7612cb3bd3714b0ac98b7d40bc8"}

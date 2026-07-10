@@ -34,6 +34,7 @@ from feedbax.execution.models import (
 from feedbax.execution.planning import prepare_execution_plan
 
 from rlrmp.paths import REPO_ROOT, run_artifact_dir, run_spec_dir
+from rlrmp.runtime.parameter_presets import ModalRunnerPreset, load_runtime_preset
 from rlrmp.runtime.training_run_specs import (
     RLRMP_RUN_SPEC_PAYLOAD_KEY,
     feedbax_training_run_spec_from_payload,
@@ -56,13 +57,14 @@ DEFAULT_GPU = "A10"
 DEFAULT_RUNPOD_GPU_TYPE_IDS = ("NVIDIA GeForce RTX 4090",)
 DEFAULT_RUNPOD_IMAGE_NAME = "runpod/pytorch:1.0.3-cu1281-torch290-ubuntu2204"
 DEFAULT_MANIFEST_ROOT = "_artifacts/feedbax_runs"
-DEFAULT_TIMEOUT_SECONDS = 60
+_RUNTIME_PRESET = load_runtime_preset("rlrmp.modal_runner.default", ModalRunnerPreset)
+DEFAULT_TIMEOUT_SECONDS = _RUNTIME_PRESET.timeout_seconds
 DEFAULT_TRAIN_TIMEOUT_SECONDS = 24 * 60 * 60
-DEFAULT_N_TRAIN_BATCHES = 12000
-DEFAULT_BATCH_SIZE = 250
-DEFAULT_N_REPLICATES = 5
-DEFAULT_HIDDEN_SIZE = 180
-DEFAULT_CHECKPOINT_INTERVAL_BATCHES = 500
+DEFAULT_N_TRAIN_BATCHES = _RUNTIME_PRESET.n_train_batches
+DEFAULT_BATCH_SIZE = _RUNTIME_PRESET.batch_size
+DEFAULT_N_REPLICATES = _RUNTIME_PRESET.n_replicates
+DEFAULT_HIDDEN_SIZE = _RUNTIME_PRESET.hidden_size
+DEFAULT_CHECKPOINT_INTERVAL_BATCHES = _RUNTIME_PRESET.checkpoint_interval_batches
 MODAL_VOLUME_NAME = "rlrmp-cs-stochastic-gru"
 MODAL_VOLUME_MOUNT = Path("/vol/rlrmp-cs-stochastic-gru")
 REMOTE_REPO_DIR = Path("/workspace/rlrmp")
