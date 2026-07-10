@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import csv
-import importlib.util
 import json
 import math
 import os
@@ -17,6 +16,8 @@ import numpy as np
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from rlrmp.io import load_named_python_module
+
 
 SOURCE_PATH = Path("results/08483d5/scripts/compute_output_feedback_damage_beta_curve_dense.py")
 OUT_DIR = Path("results/08483d5/notes")
@@ -29,12 +30,7 @@ PNG_COND_PATH = FIGURE_DIR / "spike_conditioning.png"
 
 
 def _load_reference_module():
-    spec = importlib.util.spec_from_file_location("damage_beta_curves_reference", SOURCE_PATH)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Could not load source module from {SOURCE_PATH}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return load_named_python_module("damage_beta_curves_reference", SOURCE_PATH)
 
 
 def _betas() -> list[float]:
