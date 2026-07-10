@@ -142,7 +142,7 @@ def test_data_lint_allowlist_entries_exist_and_carry_rationale() -> None:
             f"allowlist entry {key} lacks a substantive rationale"
         )
     # The one adopted PGD radius-source table is the expected allowlisted case.
-    assert "src/rlrmp/train/cs_perturbation_training.py::PGD_SISU_MAX_RADIUS_SOURCES" in ALLOWLIST
+    assert "src/rlrmp/train/training_configs.py::PGD_SISU_MAX_RADIUS_SOURCES" in ALLOWLIST
 
 
 @pytest.mark.feedbax_contract

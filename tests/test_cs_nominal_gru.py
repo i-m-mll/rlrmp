@@ -57,6 +57,7 @@ from rlrmp.loss import (
 from rlrmp.paths import REPO_ROOT, run_artifact_dir, run_spec_dir
 import rlrmp.train.cs_nominal_gru as cs_nominal_gru
 import rlrmp.train.cs_perturbation_training as cs_perturbation_training
+import rlrmp.train.executor.cs_supervised as cs_supervised_executor
 from rlrmp.train.cs_nominal_gru import (
     ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER,
     ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
@@ -5382,7 +5383,7 @@ def test_legacy_full_train_flags_emit_spec_before_execution(
         captured["volume_commit"] = volume_commit
         return {"run_spec_path": str(context.run_spec_path), "completed_batches": 0}
 
-    monkeypatch.setattr(cs_nominal_gru, "_run_full_training_from_context", fake_executor)
+    monkeypatch.setattr(cs_supervised_executor, "_run_full_training_from_context", fake_executor)
 
     result = run_full_training(
         _args(

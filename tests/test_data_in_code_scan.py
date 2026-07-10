@@ -272,7 +272,7 @@ def test_default_spec_constructor_names_include_current_builders() -> None:
     assert "TrainingRunSpec" in names
     assert "build_feedbax_training_run_spec" in names
     assert "build_minimax_training_run_spec" in names
-    assert "build_distillation_spec" in names
+    assert "build_distillation_training_run_spec" in names
 
 
 def test_allowlist_entries_exist_and_have_rationales() -> None:

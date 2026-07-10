@@ -40,7 +40,7 @@ import jax.random as jr
 import pytest
 from feedbax.contracts.training import TrainingRunSpec
 
-import rlrmp.train.cs_nominal_gru as cs_nominal_gru
+import rlrmp.train.executor.cs_supervised as cs_supervised_executor
 from rlrmp.cloud.modal_runner import (
     NominalGruRunConfig,
     build_launcher_spec_bundle,
@@ -133,7 +133,7 @@ def test_cs_spec_first_smoke_emits_resolvable_training_run_manifest(
     repo.mkdir()
     # Redirect the module's repo root so the native TrainingRunManifest is emitted under
     # the temporary repo, never into the tracked ``_artifacts`` tree.
-    monkeypatch.setattr(cs_nominal_gru, "REPO_ROOT", repo)
+    monkeypatch.setattr(cs_supervised_executor, "REPO_ROOT", repo)
 
     output_dir = tmp_path / "bulk"
     spec_dir = tmp_path / "cs_smoke"
