@@ -24,7 +24,7 @@ from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     evaluate_run_perturbation_bank,
 )
 from rlrmp.analysis.pipelines.gru_pilot_figures import resolve_run_inputs
-from rlrmp.analysis.pipelines.sisu_spectrum_diagnostics import set_sisu_condition
+from rlrmp.eval.sisu_spectrum import set_sisu_condition
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 

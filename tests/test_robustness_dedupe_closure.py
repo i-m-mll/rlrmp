@@ -186,7 +186,7 @@ def test_stabilization_evaluator_preserves_missing_family_behavior(
     from rlrmp.analysis.pipelines import gru_perturbation_bank
     from rlrmp.analysis.pipelines import gru_pilot_figures
     from rlrmp.analysis.pipelines import gru_steady_state_perturbation_bank
-    from rlrmp.analysis.pipelines import sisu_spectrum_diagnostics
+    from rlrmp.eval import sisu_spectrum
     from rlrmp.train import task_model
 
     base = SimpleNamespace(command=np.zeros((2, 3, 1)), dt=0.01)
@@ -301,7 +301,7 @@ def test_stabilization_evaluator_preserves_missing_family_behavior(
         lambda *_args, **_kwargs: {"status": "stable"},
     )
     monkeypatch.setattr(
-        sisu_spectrum_diagnostics,
+        sisu_spectrum,
         "zero_disturbance_payload",
         lambda trials: trials,
     )

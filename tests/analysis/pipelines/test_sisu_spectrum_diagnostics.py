@@ -2,21 +2,29 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
+from feedbax.contracts.manifest import EvaluationRunSpec
+import pytest
 
+from rlrmp.analysis.pipelines import sisu_spectrum_diagnostics as sisu_pipeline
 from rlrmp.analysis.pipelines.sisu_spectrum_diagnostics import (
     DEFAULT_TOPIC,
     ReferenceCurve,
-    RunSisuProfile,
     SISU_SPECTRUM_ANALYSIS_TYPE,
     SISU_SPECTRUM_EVALUATION_TYPE,
     SisuSpectrumEvaluationParams,
-    SisuCurve,
     build_velocity_profile_figure,
     robustification_comparison,
+    sisu_spectrum_evaluation_recipe,
     sisu_spectrum_evaluation_spec_params,
+)
+from rlrmp.eval.sisu_spectrum import (
+    RunSisuProfile,
+    SisuCurve,
     set_sisu_condition,
     zero_disturbance_payload,
 )
@@ -185,6 +193,64 @@ def test_sisu_spectrum_recipes_register_with_declarative_materialization() -> No
         "sisu_spectrum_evaluation_recipe"
     )
     assert get_analysis_recipe(SISU_SPECTRUM_ANALYSIS_TYPE).__name__ == "sisu_spectrum_recipe"
+
+
+def test_sisu_rollout_execution_and_experiment_identity_have_single_owners() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    pipeline_source = (
+        repo_root / "src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py"
+    ).read_text(encoding="utf-8")
+    eval_source = (repo_root / "src/rlrmp/eval/sisu_spectrum.py").read_text(encoding="utf-8")
+    driver_source = (
+        repo_root / "results/e4800d6/scripts/materialize_sisu_spectrum_special.py"
+    ).read_text(encoding="utf-8")
+
+    assert "eval_trials(" not in pipeline_source
+    assert "eval_trials(" in eval_source
+    assert 'EXPERIMENT = "e4800d6"' not in pipeline_source
+    assert "DEFAULT_RUN_IDS" not in pipeline_source
+    assert 'EXPERIMENT = "e4800d6"' in driver_source
+    assert "DEFAULT_RUN_IDS" in driver_source
+
+
+def test_sisu_registered_evaluation_recipe_dispatches_eval_layer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_evaluate(**kwargs):
+        calls.append(kwargs)
+        return ()
+
+    monkeypatch.setattr(sisu_pipeline.sisu_eval, "evaluate_sisu_profiles", fake_evaluate)
+    monkeypatch.setattr(sisu_pipeline, "analytical_reference_curves", lambda **_kwargs: ())
+    monkeypatch.setattr(
+        sisu_pipeline,
+        "build_manifest",
+        lambda **kwargs: {"issue": kwargs["experiment"], "runs": {}},
+    )
+    params = sisu_spectrum_evaluation_spec_params(
+        experiment="example",
+        run_ids=("run_a",),
+        labels=("A",),
+        n_rollout_trials=2,
+    )
+
+    result = sisu_spectrum_evaluation_recipe(
+        EvaluationRunSpec(
+            evaluation_type=SISU_SPECTRUM_EVALUATION_TYPE,
+            training_run_ids=["run_a"],
+            params=params,
+        ),
+        tmp_path,
+        tmp_path / "states.eqx",
+    )
+
+    assert len(calls) == 1
+    assert calls[0]["experiment"] == "example"
+    assert calls[0]["run_ids"] == ("run_a",)
+    assert result.states["manifest"] == {"issue": "example", "runs": {}}
 
 
 def test_sisu_perturbation_metric_mean_reads_flat_and_nested_metrics() -> None:
