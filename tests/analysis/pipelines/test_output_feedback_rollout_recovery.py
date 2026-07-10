@@ -9,7 +9,7 @@ from rlrmp.analysis.math.cs_game_card import (
     PRIMARY_GAMMA_FACTOR,
     materialize_reference,
 )
-from rlrmp.analysis.math.linear_round_trip import LinearTrainingConfig
+from rlrmp.analysis.math.linear_round_trip import LinearOptimizationConfig
 from rlrmp.analysis.math.output_feedback import (
     OutputFeedbackConfig,
     OutputFeedbackRollout,
@@ -39,7 +39,7 @@ from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
 
 def test_whitened_parameterization_preserves_clean_objective_at_same_gain() -> None:
     reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
-    training_config = LinearTrainingConfig(n_random_states=4)
+    training_config = LinearOptimizationConfig(n_random_states=4)
     output_config = OutputFeedbackConfig()
     states, weights = _training_ensemble(reference.plant, training_config, output_config)
     scales = _state_scales(states, weights)
@@ -73,7 +73,7 @@ def test_whitened_parameterization_preserves_clean_objective_at_same_gain() -> N
 
 def test_time_block_parameterization_preserves_clean_objective_at_same_gain() -> None:
     reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
-    training_config = LinearTrainingConfig(n_random_states=4)
+    training_config = LinearOptimizationConfig(n_random_states=4)
     output_config = OutputFeedbackConfig()
     states, weights = _training_ensemble(reference.plant, training_config, output_config)
     scales = _state_scales(states, weights)
@@ -120,7 +120,7 @@ def test_time_block_parameterization_preserves_clean_objective_at_same_gain() ->
 def test_rollout_recovery_smoke_emits_scratch_and_bellman_rows() -> None:
     result = run_output_feedback_rollout_recovery(
         conditions=(RolloutRecoveryCondition(label="smoke", maxiter=1),),
-        training_config=LinearTrainingConfig(n_random_states=4),
+        training_config=LinearOptimizationConfig(n_random_states=4),
     )
     summary = result_summary(result)
     labels = {row["label"] for row in summary["fits"]}
@@ -142,7 +142,7 @@ def test_bellman_auxiliary_condition_emits_scratch_only_with_schedule() -> None:
     )
     result = run_output_feedback_rollout_recovery(
         conditions=(condition,),
-        training_config=LinearTrainingConfig(n_random_states=4),
+        training_config=LinearOptimizationConfig(n_random_states=4),
     )
     summary = result_summary(result)
 
@@ -161,7 +161,7 @@ def test_adamw_condition_uses_whitened_full_batch_objective_and_reports_best() -
     )
     result = run_output_feedback_rollout_recovery(
         conditions=(condition,),
-        training_config=LinearTrainingConfig(n_random_states=4),
+        training_config=LinearOptimizationConfig(n_random_states=4),
     )
     summary = result_summary(result)
     fit = summary["fits"][0]
@@ -191,7 +191,7 @@ def test_adamw_polish_condition_reports_both_optimizer_stages() -> None:
     )
     result = run_output_feedback_rollout_recovery(
         conditions=(condition,),
-        training_config=LinearTrainingConfig(n_random_states=4),
+        training_config=LinearOptimizationConfig(n_random_states=4),
     )
     fit = result_summary(result)["fits"][0]
 
@@ -305,7 +305,7 @@ def test_coverage_state_objective_uses_clean_objective_for_zero_time_overlap() -
 
 
 def test_initial_state_scale_sweep_preserves_reach_weight() -> None:
-    base = LinearTrainingConfig(basis_scale=0.01, random_state_scale=0.02, reach_weight=10.0)
+    base = LinearOptimizationConfig(basis_scale=0.01, random_state_scale=0.02, reach_weight=10.0)
     scaled = _scale_initial_state_config(base, 0.3)
 
     assert scaled.basis_scale == 0.003

@@ -54,7 +54,7 @@ from rlrmp.model.feedback_descriptors import DESCRIPTOR_PAYLOAD_KEY
 from rlrmp.model.feedbax_graph import graph_spec_payload
 from rlrmp.paths import portable_repo_path
 from rlrmp.train.cs_perturbation_training import (
-    config_from_policy_adversary_hps,
+    PolicyFullStateEpsilonTrainingConfig,
     make_policy_adversary,
 )
 from rlrmp.train.executor.adapters import ChunkKernelAdapter, RLRMP_RUNTIME_CONTEXT_KEY
@@ -523,7 +523,7 @@ def _advance_policy_adversary_compiled(
 
     from rlrmp.train.cs_nominal_gru import _policy_adversary_batch_objective
 
-    cfg = config_from_policy_adversary_hps(hps.policy_adversary_training)
+    cfg = PolicyFullStateEpsilonTrainingConfig.from_payload(hps.policy_adversary_training)
 
     def loss_for_policy(candidate_policy):
         objective, diagnostics = _policy_adversary_batch_objective(
@@ -586,16 +586,14 @@ def build_policy_adversary_native_initial_slots(
         where_train=where_train,
         key=key_train,
     )
-    adversary_cfg = config_from_policy_adversary_hps(hps.policy_adversary_training)
+    adversary_cfg = PolicyFullStateEpsilonTrainingConfig.from_payload(hps.policy_adversary_training)
     adversary_policy = make_policy_adversary(
         adversary_cfg,
         key=key_adversary,
         horizon=max(1, int(hps.task.n_steps) - 1),
     )
     adversary_optimizer = optax.adam(float(adversary_cfg.learning_rate))
-    adversary_optimizer_state = adversary_optimizer.init(
-        eqx.filter(adversary_policy, eqx.is_array)
-    )
+    adversary_optimizer_state = adversary_optimizer.init(eqx.filter(adversary_policy, eqx.is_array))
     runtime = PolicyAdversaryNativeRuntime(
         hps=hps,
         args=args,
@@ -779,9 +777,7 @@ def _policy_adversary_train_chunk(
         OPTIMIZER: SerializedPyTreeSlot(serialize_pytree_slot(optimizer_state)),
         COMPLETED_BATCHES: jnp.asarray(next_completed, dtype=jnp.int32),
         ADVERSARY_POLICY: SerializedPyTreeSlot(serialize_pytree_slot(adversary_policy)),
-        ADVERSARY_OPTIMIZER: SerializedPyTreeSlot(
-            serialize_pytree_slot(adversary_optimizer_state)
-        ),
+        ADVERSARY_OPTIMIZER: SerializedPyTreeSlot(serialize_pytree_slot(adversary_optimizer_state)),
         TRAIN_LOSS: float(loss_scalars.get("total", 0.0)),
         ADVERSARY_LOSS: adversary_loss,
         HISTORY_CHUNK_BYTES: _summary_bytes({"completed_batches": next_completed}),

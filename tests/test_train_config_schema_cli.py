@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import ast
+from pathlib import Path
 
 import pytest
 
@@ -22,6 +24,9 @@ from rlrmp.train.cs_perturbation_training import (
     PolicyFullStateEpsilonTrainingConfig,
     TargetRelativeMultiTargetTrainingConfig,
 )
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_training_config_models_are_registered() -> None:
@@ -47,9 +52,7 @@ def test_generated_parser_tracks_config_defaults_and_choices() -> None:
         assert getattr(args, name) == expected
 
     action_by_dest = {
-        action.dest: action
-        for action in parser._actions
-        if isinstance(action, argparse.Action)
+        action.dest: action for action in parser._actions if isinstance(action, argparse.Action)
     }
     assert set(defaults).issubset(action_by_dest)
     assert action_by_dest["plant_backend"].choices == ["cs_lss", "legacy_causal_simplefeedback"]
@@ -90,3 +93,76 @@ def test_perturbation_configs_are_strict_pydantic_models() -> None:
 
     with pytest.raises(ValueError):
         PolicyFullStateEpsilonTrainingConfig(enabled=True)
+
+
+def test_training_config_family_has_one_definition_module() -> None:
+    config_classes = (
+        CsNominalGruConfig,
+        FixedTargetPerturbationTrainingConfig,
+        PgdFullStateEpsilonTrainingConfig,
+        PolicyFullStateEpsilonTrainingConfig,
+        TargetRelativeMultiTargetTrainingConfig,
+    )
+    assert {config_type.__module__ for config_type in config_classes} == {
+        "rlrmp.train.training_configs"
+    }
+
+    definitions: list[tuple[str, str]] = []
+    for path in (REPO_ROOT / "src").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        definitions.extend(
+            (path.relative_to(REPO_ROOT).as_posix(), node.name)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ClassDef) and node.name.endswith("TrainingConfig")
+        )
+    assert definitions
+    assert {path for path, _name in definitions} == {"src/rlrmp/train/training_configs.py"}
+
+
+def test_legacy_training_config_translator_definitions_are_retired() -> None:
+    offenders: list[str] = []
+    for path in (REPO_ROOT / "src").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        offenders.extend(
+            f"{path.relative_to(REPO_ROOT)}:{node.name}"
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name.startswith("config_from_")
+            and node.name.endswith("_hps")
+        )
+    assert offenders == []
+
+
+def test_minimax_hps_entrypoint_is_a_thin_validated_constructor() -> None:
+    path = REPO_ROOT / "src/rlrmp/train/minimax.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    build_hps = next(
+        node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "build_hps"
+    )
+    assert build_hps.end_lineno - build_hps.lineno + 1 <= 10
+    loaded_names = {
+        node.id
+        for node in ast.walk(build_hps)
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
+    }
+    assert {"MinimaxConfig", "_build_hps_from_config"}.issubset(loaded_names)
+
+
+def test_nominal_checkpoint_plumbing_is_slot_and_barrier_driven() -> None:
+    checkpoint_source = (REPO_ROOT / "src/rlrmp/train/executor/checkpoints.py").read_text(
+        encoding="utf-8"
+    )
+    nominal_source = (REPO_ROOT / "src/rlrmp/train/cs_nominal_gru.py").read_text(encoding="utf-8")
+    assert "CheckpointSlotSpec" in checkpoint_source
+    assert "CheckpointBarrierSpec" in checkpoint_source
+    assert "_checkpoint_barrier_from_run_spec" in checkpoint_source
+    assert "from rlrmp.train.executor.checkpoints import" in nominal_source
+
+
+def test_cs_training_entry_modules_remain_below_split_ceiling() -> None:
+    for relative_path in (
+        "src/rlrmp/train/cs_nominal_gru.py",
+        "src/rlrmp/train/cs_perturbation_training.py",
+    ):
+        line_count = len((REPO_ROOT / relative_path).read_text(encoding="utf-8").splitlines())
+        assert line_count < 2_000, f"{relative_path} grew to {line_count} lines"

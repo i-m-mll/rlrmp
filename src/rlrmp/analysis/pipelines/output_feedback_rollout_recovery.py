@@ -17,7 +17,7 @@ from rlrmp.analysis.math.cs_game_card import (
     materialize_reference,
 )
 from rlrmp.analysis.math.hinf_riccati import CostSchedule, PlantLinearization
-from rlrmp.analysis.math.linear_round_trip import LinearTrainingConfig, rollout_task_cost
+from rlrmp.analysis.math.linear_round_trip import LinearOptimizationConfig, rollout_task_cost
 from rlrmp.analysis.math.output_feedback import (
     OutputFeedbackConfig,
     OutputFeedbackRollout,
@@ -364,7 +364,7 @@ def _time_block_scales(
 
 def _training_ensemble(
     plant: PlantLinearization,
-    training_config: LinearTrainingConfig,
+    training_config: LinearOptimizationConfig,
     output_config: OutputFeedbackConfig,
 ) -> tuple[Float[Array, "batch n"], Float[Array, " batch"]]:
     x0 = make_cs_output_feedback_initial_state(plant, output_config)
@@ -999,6 +999,7 @@ def _fit_one_condition(
     projected_gradient_norm = None
     best_objective = initial_objective
     best_iteration: int | None = 0
+
     def run_lbfgsb_from(
         theta_start: np.ndarray,
         *,
@@ -1053,9 +1054,7 @@ def _fit_one_condition(
                 best_objective = clean_value
                 best_iteration = total_iterations
             if condition.auxiliary_bellman_weights:
-                stage_messages.append(
-                    f"bellman_weight={bellman_weight:g}: {scipy_result.message}"
-                )
+                stage_messages.append(f"bellman_weight={bellman_weight:g}: {scipy_result.message}")
             else:
                 stage_messages.append(str(scipy_result.message))
     else:
@@ -1263,7 +1262,7 @@ def _fit_one_condition(
 def run_output_feedback_rollout_recovery(
     *,
     conditions: tuple[RolloutRecoveryCondition, ...] = DEFAULT_CONDITIONS,
-    training_config: LinearTrainingConfig = LinearTrainingConfig(n_steps=500),
+    training_config: LinearOptimizationConfig = LinearOptimizationConfig(n_steps=500),
     output_config: OutputFeedbackConfig = OutputFeedbackConfig(),
 ) -> RolloutRecoveryResult:
     """Run the requested clean output-feedback rollout-recovery matrix."""
@@ -1297,7 +1296,7 @@ def run_output_feedback_rollout_recovery(
     )
     bellman = train_output_feedback_lqr_bellman_controller(
         reference,
-        LinearTrainingConfig(n_steps=200, seed=training_config.seed),
+        LinearOptimizationConfig(n_steps=200, seed=training_config.seed),
     )
     lqr_clean = rollout_with_kalman_estimator(plant, K_ref, x0, config=output_config)
     covs = robust_estimator_covariances(plant, schedule, gamma_ref.gamma, output_config)
@@ -1642,9 +1641,9 @@ def result_summary(
 
 
 def _scale_initial_state_config(
-    config: LinearTrainingConfig,
+    config: LinearOptimizationConfig,
     factor: float,
-) -> LinearTrainingConfig:
+) -> LinearOptimizationConfig:
     """Scale synthetic basis/random initial-state coverage while preserving reach state."""
 
     return replace(
@@ -1657,7 +1656,7 @@ def _scale_initial_state_config(
 def run_initial_state_variability_sweep(
     *,
     scale_factors: tuple[float, ...] = (0.0, 0.3, 1.0, 3.0),
-    base_training_config: LinearTrainingConfig = LinearTrainingConfig(),
+    base_training_config: LinearOptimizationConfig = LinearOptimizationConfig(),
     conditions: tuple[RolloutRecoveryCondition, ...] = (STRONG_OPTIMIZER_WHITENED,),
     output_config: OutputFeedbackConfig = OutputFeedbackConfig(),
 ) -> dict[str, Any]:

@@ -172,6 +172,7 @@ def run_parent(args: argparse.Namespace) -> int:
     env = os.environ.copy()
     runtime_env = _configure_worker_env(env, args)
     parent_config["runtime_env"] = runtime_env
+
     def worker_config(worker_index: int, worker_dir: Path, start_file: Path) -> WorkerConfig:
         return WorkerConfig(
             worker_index=worker_index,
@@ -337,11 +338,7 @@ def _with_xla_cpu_thread_flags(existing: str, *, cpu_threads: int) -> str:
 
 
 def _runtime_env_metadata(env: Mapping[str, str]) -> dict[str, Any]:
-    thread_env = {
-        name: env[name]
-        for name in CPU_THREAD_ENV_VARS
-        if name in env
-    }
+    thread_env = {name: env[name] for name in CPU_THREAD_ENV_VARS if name in env}
     cache_dir = env.get(JAX_COMPILATION_CACHE_DIR_ENV)
     return {
         "preallocation_env": env.get(PREALLOC_ENV),
@@ -494,9 +491,7 @@ def _cs_nominal_gru_overrides(config: Mapping[str, Any], seed: int) -> dict[str,
     if "broad_epsilon_pgd_level" in overrides:
         overrides["broad_epsilon_level"] = overrides.pop("broad_epsilon_pgd_level")
     if "broad_epsilon_pgd_budget_scale" in overrides:
-        overrides["broad_epsilon_budget_scale"] = overrides.pop(
-            "broad_epsilon_pgd_budget_scale"
-        )
+        overrides["broad_epsilon_budget_scale"] = overrides.pop("broad_epsilon_pgd_budget_scale")
     # The current C&S trainer derives PGD randomness from the training key.
     overrides.pop("broad_epsilon_pgd_seed", None)
     return overrides
@@ -555,12 +550,11 @@ def _cs_nominal_gru_metadata(hps: Any) -> dict[str, Any]:
 def _cs_nominal_gru_pgd_training_config(config: Any) -> Any:
     from rlrmp.train.cs_perturbation_training import (
         PgdFullStateEpsilonTrainingConfig,
-        config_from_broad_epsilon_pgd_hps,
     )
 
     if config is None:
         return PgdFullStateEpsilonTrainingConfig()
-    return config_from_broad_epsilon_pgd_hps(config)
+    return PgdFullStateEpsilonTrainingConfig.from_payload(config)
 
 
 SCENARIO_FACTORIES: dict[str, ScenarioFactory] = {
@@ -676,10 +670,7 @@ def _resource_sample(procs: Sequence[subprocess.Popen[str]]) -> dict[str, Any]:
 
 
 def _nvidia_smi_sample() -> dict[str, Any]:
-    query = (
-        "timestamp,name,utilization.gpu,memory.used,memory.total,power.draw,"
-        "temperature.gpu"
-    )
+    query = "timestamp,name,utilization.gpu,memory.used,memory.total,power.draw,temperature.gpu"
     command = ["nvidia-smi", f"--query-gpu={query}", "--format=csv,noheader,nounits"]
     try:
         result = subprocess.run(command, capture_output=True, text=True, timeout=10, check=False)

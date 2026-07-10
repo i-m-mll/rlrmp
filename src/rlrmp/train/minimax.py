@@ -269,12 +269,8 @@ class MinimaxMethodPayload(BaseModel):
         checks = {
             "adversary_type": self.adversary_type == config.adversary_type,
             "warmup.n_batches": self.warmup.n_batches == config.n_warmup_batches,
-            "adversarial.n_batches": (
-                self.adversarial.n_batches == config.n_adversary_batches
-            ),
-            "adversarial.inner_steps": (
-                self.adversarial.inner_steps == config.n_adversary_steps
-            ),
+            "adversarial.n_batches": (self.adversarial.n_batches == config.n_adversary_batches),
+            "adversarial.inner_steps": (self.adversarial.inner_steps == config.n_adversary_steps),
             "adversarial.kernel_variant": (
                 self.adversarial.kernel_variant == ("fused" if config.fused else "decomposed")
             ),
@@ -414,9 +410,7 @@ def build_minimax_training_run_spec(
             schema_version=getattr(graph_spec, "schema_version", None),
             metadata={
                 "source": "requested_serialized_graph_spec",
-                "declarative_adversary_injection": (
-                    normalized.adversary_type == "linear_dynamics"
-                ),
+                "declarative_adversary_injection": (normalized.adversary_type == "linear_dynamics"),
                 "component_parameter_binding": (
                     "linear_dynamics_adversary_params"
                     if normalized.adversary_type == "linear_dynamics"
@@ -1038,9 +1032,7 @@ def minimax_effective_phase_fingerprint(
         "effective_phase": effective_phase.model_dump(mode="json", exclude_none=True),
         "method_payload": method_payload,
     }
-    encoded = json.dumps(parity, sort_keys=True, separators=(",", ":"), default=str).encode(
-        "utf-8"
-    )
+    encoded = json.dumps(parity, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -1241,6 +1233,7 @@ def _resolve_hidden_type(hidden_type_str: str, dt: float):
         return eqx.nn.GRUCell
     elif hidden_type_str == "vanilla_rnn":
         from rlrmp.model import VanillaRNNCell
+
         # tau=0.1 s (100 ms) => alpha=dt/tau=0.1 at dt=0.01 — matches cortical-neuron
         # time constant in motor-control RNN literature (Yang 2019, Sussillo 2015).
         return partial(VanillaRNNCell, dt=dt, tau=0.1)
@@ -1253,8 +1246,8 @@ def _resolve_hidden_type(hidden_type_str: str, dt: float):
         raise ValueError(f"Unknown hidden_type: {hidden_type_str!r}")
 
 
-def build_hps(args: Any) -> TreeNamespace:
-    """Construct minimax-trainer hyperparameters from CLI args.
+def _build_hps_from_config(args: Any) -> TreeNamespace:
+    """Materialize legacy task/model hyperparameters from the validated config.
 
     Uses the same task config as :func:`rlrmp.train.standard.build_hps`
     (running_cost loss mode), so the two trainers produce comparable models.
@@ -1367,17 +1360,11 @@ def build_hps(args: Any) -> TreeNamespace:
                 # Companion to the motor-pre-go term — included so the
                 # "suppress preparation too" comparator is one flag away.
                 # Off-by-default. Bug: efc4d68 (feedbax 50507a9)
-                "nn_hidden_derivative_pre_go": getattr(
-                    args, "nn_hidden_derivative_pre_go", 0.0
-                ),
+                "nn_hidden_derivative_pre_go": getattr(args, "nn_hidden_derivative_pre_go", 0.0),
             },
             "effector_pos_late": {
-                "start_step_after_go": getattr(
-                    args, "effector_pos_late_start_step", 80
-                ),
-                "final_scale_factor": getattr(
-                    args, "effector_pos_late_final_scale", 2.0
-                ),
+                "start_step_after_go": getattr(args, "effector_pos_late_start_step", 80),
+                "final_scale_factor": getattr(args, "effector_pos_late_final_scale", 2.0),
             },
             "effector_vel_late": {
                 "start_step_after_go": 80,
@@ -1385,17 +1372,11 @@ def build_hps(args: Any) -> TreeNamespace:
             },
             # Power-law schedule: "flat" (default) or "powerlaw" ((t/T-1)^power).
             # Bug: 2e1a6ad
-            "effector_pos_running_schedule": getattr(
-                args, "effector_pos_running_schedule", "flat"
-            ),
-            "effector_hold_pos_schedule": getattr(
-                args, "effector_hold_pos_schedule", "flat"
-            ),
+            "effector_pos_running_schedule": getattr(args, "effector_pos_running_schedule", "flat"),
+            "effector_hold_pos_schedule": getattr(args, "effector_hold_pos_schedule", "flat"),
             "position_powerlaw_power": getattr(args, "position_powerlaw_power", 6.0),
             "movement_ramp_shape": getattr(args, "movement_ramp_shape", "linear"),
-            "movement_ramp_duration_steps": getattr(
-                args, "movement_ramp_duration_steps", 60
-            ),
+            "movement_ramp_duration_steps": getattr(args, "movement_ramp_duration_steps", 60),
             "movement_ramp_power": getattr(args, "movement_ramp_power", 2.0),
         },
         "loss_update": {
@@ -1415,3 +1396,12 @@ def build_hps(args: Any) -> TreeNamespace:
         "sisu_gating": args.sisu_gating,
     }
     return dict_to_namespace(hps_dict, to_type=TreeNamespace)
+
+
+def build_hps(args: Any) -> TreeNamespace:
+    """Validate the unified minimax config and materialize trainer hyperparameters."""
+
+    raw = vars(args) if hasattr(args, "__dict__") else dict(args)
+    config_payload = {name: raw[name] for name in MinimaxConfig.model_fields if name in raw}
+    config = MinimaxConfig.model_validate(config_payload)
+    return _build_hps_from_config(SimpleNamespace(**(config.model_dump() | raw)))

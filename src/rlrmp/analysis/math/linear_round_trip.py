@@ -67,7 +67,7 @@ ADVERSARY_EQUIVALENCE_ISSUE_ID = "a7dad8a"
 
 
 @dataclass(frozen=True)
-class LinearTrainingConfig:
+class LinearOptimizationConfig:
     """Gradient-training configuration for one linear-controller fit."""
 
     n_steps: int = 2500
@@ -84,7 +84,7 @@ class LinearTrainingResult:
     """Result of one gradient-based linear-controller fit."""
 
     label: str
-    config: LinearTrainingConfig
+    config: LinearOptimizationConfig
     K: Float[Array, "T m_u n"]
     best_objective: float
     final_objective: float
@@ -152,7 +152,7 @@ def canonical_initial_state(plant: PlantLinearization) -> Float[Array, " n"]:
 
 def ensemble_initial_states(
     plant: PlantLinearization,
-    config: LinearTrainingConfig,
+    config: LinearOptimizationConfig,
 ) -> tuple[Float[Array, "batch n"], Float[Array, " batch"]]:
     """Build a full-rank deterministic state ensemble for gain-level training.
 
@@ -218,7 +218,7 @@ def ensemble_clean_objective(
 
 def train_lqr_gradient_controller(
     reference: GameCardReference,
-    config: LinearTrainingConfig = LinearTrainingConfig(),
+    config: LinearOptimizationConfig = LinearOptimizationConfig(),
 ) -> LinearTrainingResult:
     """Fit a clean LQR linear controller with gradient descent.
 
@@ -293,7 +293,7 @@ def train_lqr_gradient_controller(
 
 def train_lqr_quasi_newton_controller(
     reference: GameCardReference,
-    config: LinearTrainingConfig = LinearTrainingConfig(n_steps=200),
+    config: LinearOptimizationConfig = LinearOptimizationConfig(n_steps=200),
     *,
     initial_K: Float[Array, "T m_u n"] | None = None,
     label: str = "lbfgsb_lqr_fit",
@@ -490,8 +490,8 @@ def audit_controller(
 
 def run_phase3_linear_round_trip(
     *,
-    training_config: LinearTrainingConfig = LinearTrainingConfig(),
-    quasi_newton_config: LinearTrainingConfig = LinearTrainingConfig(n_steps=500),
+    training_config: LinearOptimizationConfig = LinearOptimizationConfig(),
+    quasi_newton_config: LinearOptimizationConfig = LinearOptimizationConfig(n_steps=500),
     heldout_step_sweep: tuple[int, ...] = (50, 200),
     heldout_restarts: int = 4,
 ) -> Phase3LinearRoundTripResult:
@@ -987,7 +987,7 @@ __all__ = [
     "ISSUE_ID",
     "UMBRELLA_ID",
     "ControllerAudit",
-    "LinearTrainingConfig",
+    "LinearOptimizationConfig",
     "LinearTrainingResult",
     "Phase3LinearRoundTripResult",
     "TeacherFitConfig",
