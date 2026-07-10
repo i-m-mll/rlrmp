@@ -1,6 +1,7 @@
 """Materialize nominal velocity profiles for the e901a20 policy-adversary run."""
 
 from __future__ import annotations
+from rlrmp.viz.colors import hex_to_rgba as hex_to_rgba
 
 import json
 import os
@@ -1112,14 +1113,6 @@ def add_band_trace(fig: go.Figure, profile: VelocityProfile) -> None:
     )
 
 
-def hex_to_rgba(color: str, alpha: float) -> str:
-    """Convert ``#rrggbb`` to a Plotly rgba color."""
-
-    color = color.lstrip("#")
-    red = int(color[0:2], 16)
-    green = int(color[2:4], 16)
-    blue = int(color[4:6], 16)
-    return f"rgba({red},{green},{blue},{alpha})"
 
 
 def write_outputs(profiles: list[VelocityProfile]) -> dict[str, Any]:

@@ -40,6 +40,8 @@ Usage (from a worktree of rlrmp):
 """
 
 from __future__ import annotations
+from rlrmp.analysis.multi_cell_driver import compute_kinematics_per_replicate
+from rlrmp.viz.colors import hex_to_rgba as _color_rgba
 
 import argparse
 import json
@@ -169,10 +171,6 @@ CELL_EXTRA_ARGS: dict[str, dict] = {
 # ---------------------------------------------------------------------------
 
 
-def _color_rgba(hex_color: str, alpha: float) -> str:
-    h = hex_color.lstrip("#")
-    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
-    return f"rgba({r},{g},{b},{alpha})"
 
 
 def _make_args_namespace(label: str) -> argparse.Namespace:
@@ -340,66 +338,6 @@ def build_clean_trials(task, *, sisu: float = 0.5, eval_key: jax.Array | None = 
 # ---------------------------------------------------------------------------
 
 
-def compute_kinematics_per_replicate(states, trial_specs) -> dict[str, np.ndarray]:
-    """Compute per-replicate kinematic metrics for the matrix analyses.
-
-    Returns:
-        Dict with the following keys:
-          - ``forward_vel_profile``      : (n_rep, n_trials, n_steps)
-          - ``pos_forward_profile``      : (n_rep, n_trials, n_steps)
-          - ``peak_forward_velocity``    : (n_rep, n_trials) — max post-go
-            velocity along the reach axis.
-          - ``time_to_peak_after_go``    : (n_rep, n_trials) — steps after go
-            cue at which the peak forward velocity is reached.
-          - ``hold_drift_mm``            : (n_rep, n_trials) — max forward
-            displacement (mm) over the full pre-go period.
-          - ``go_idx``                   : (n_trials,) — per-trial go-cue index.
-    """
-    pos = states.mechanics.effector.pos  # (n_rep, n_trials, n_steps, 2)
-    vel = states.mechanics.effector.vel
-
-    target_key = list(trial_specs.targets.keys())[0]
-    goal_seq = trial_specs.targets[target_key].value  # (n_trials, n_steps, 2)
-    goal = goal_seq[:, -1, :]
-
-    go_idx = trial_specs.timeline.epoch_bounds[:, 2]  # (n_trials,)
-
-    n_rep, n_trials, n_steps, _ = pos.shape
-    t_arr = jnp.arange(n_steps)
-    after_go = t_arr[None, None, :] >= go_idx[None, :, None]
-    before_go = t_arr[None, None, :] < go_idx[None, :, None]
-
-    def _pos_at_go(pos_rep, go_arr):
-        return jax.vmap(lambda p, idx: p[idx])(pos_rep, go_arr)
-
-    pos_at_go = jax.vmap(_pos_at_go, in_axes=(0, None))(pos, go_idx)
-    direction = goal[None, :, :] - pos_at_go
-    d_norm = jnp.linalg.norm(direction, axis=-1, keepdims=True)
-    d_unit = direction / jnp.maximum(d_norm, 1e-12)
-
-    v_fwd = jnp.sum(vel * d_unit[:, :, None, :], axis=-1)  # signed projection
-    v_fwd_post_go = jnp.where(after_go, v_fwd, 0.0)
-    peak_fwd = jnp.max(v_fwd_post_go, axis=-1)
-    abs_argmax = jnp.argmax(v_fwd_post_go, axis=-1)
-    time_to_peak_after_go = jnp.maximum(abs_argmax - go_idx[None, :], 0)
-
-    pos_at_start = pos[:, :, 0, :]
-    pos_rel = pos - pos_at_start[:, :, None, :]
-    pos_fwd = jnp.sum(pos_rel * d_unit[:, :, None, :], axis=-1)
-
-    pos_fwd_pre_go = jnp.where(before_go, pos_fwd, -jnp.inf)
-    hold_drift_m = jnp.max(pos_fwd_pre_go, axis=-1)
-    hold_drift_m = jnp.where(jnp.isinf(hold_drift_m), 0.0, hold_drift_m)
-    hold_drift_mm = hold_drift_m * 1000.0
-
-    return {
-        "forward_vel_profile": np.array(v_fwd),
-        "pos_forward_profile": np.array(pos_fwd),
-        "peak_forward_velocity": np.array(peak_fwd),
-        "time_to_peak_after_go": np.array(time_to_peak_after_go),
-        "hold_drift_mm": np.array(hold_drift_mm),
-        "go_idx": np.array(go_idx),
-    }
 
 
 def _within_cell_mean_pairwise_rmse(profiles: np.ndarray) -> float:

@@ -38,6 +38,8 @@ Usage (from repo root):
 """
 
 from __future__ import annotations
+from rlrmp.analysis.multi_cell_driver import compute_kinematics_per_replicate
+from rlrmp.viz.colors import hex_to_rgba as _color_rgba
 
 import argparse
 import json
@@ -221,10 +223,6 @@ EXPERIMENT = "3702f54"
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _color_rgba(hex_color: str, alpha: float) -> str:
-    h = hex_color.lstrip("#")
-    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
-    return f"rgba({r},{g},{b},{alpha})"
 
 
 def _make_args_namespace(label: str) -> argparse.Namespace:
@@ -375,84 +373,6 @@ def eval_ensemble(task, model, trial_specs, *, key: jax.Array, n_replicates: int
 PRE_GO_WINDOW_STEPS = 20
 
 
-def compute_kinematics_per_replicate(states, trial_specs) -> dict[str, np.ndarray]:
-    """Compute per-replicate kinematic metrics.
-
-    Returns dict with arrays for:
-      peak_forward_velocity, time_to_peak (after go, in steps after go cue),
-      forward_vel_profile, pos_forward_profile, hold_drift_mm (max over full hold),
-      pre_go_drift_mm (RMS over last PRE_GO_WINDOW_STEPS pre-go steps),
-      pre_go_drift_mean_mm (mean forward pos over pre-go window),
-      go_idx.
-    """
-    pos = states.mechanics.effector.pos  # (n_rep, n_trials, n_steps, 2)
-    vel = states.mechanics.effector.vel
-
-    target_key = list(trial_specs.targets.keys())[0]
-    goal_seq = trial_specs.targets[target_key].value
-    goal = goal_seq[:, -1, :]
-
-    go_idx = trial_specs.timeline.epoch_bounds[:, 2]
-
-    n_rep, n_trials, n_steps, _ = pos.shape
-    t_arr = jnp.arange(n_steps)
-    after_go = t_arr[None, None, :] >= go_idx[None, :, None]
-    before_go = t_arr[None, None, :] < go_idx[None, :, None]
-    pre_go_window = (
-        (t_arr[None, None, :] < go_idx[None, :, None])
-        & (t_arr[None, None, :] >= (go_idx[None, :, None] - PRE_GO_WINDOW_STEPS))
-    )
-
-    def _pos_at_go(pos_rep, go_arr):
-        return jax.vmap(lambda p, idx: p[idx])(pos_rep, go_arr)
-
-    pos_at_go = jax.vmap(_pos_at_go, in_axes=(0, None))(pos, go_idx)
-    direction = goal[None, :, :] - pos_at_go
-    d_norm = jnp.linalg.norm(direction, axis=-1, keepdims=True)
-    d_unit = direction / jnp.maximum(d_norm, 1e-12)
-
-    v_fwd = jnp.sum(vel * d_unit[:, :, None, :], axis=-1)
-    v_fwd_post_go = jnp.where(after_go, v_fwd, 0.0)
-
-    peak_fwd = jnp.max(v_fwd_post_go, axis=-1)
-
-    # Time-to-peak measured from go cue (steps after go).
-    abs_argmax = jnp.argmax(v_fwd_post_go, axis=-1)  # (n_rep, n_trials)
-    time_to_peak_after_go = abs_argmax - go_idx[None, :]  # (n_rep, n_trials)
-    time_to_peak_after_go = jnp.maximum(time_to_peak_after_go, 0)
-
-    pos_at_start = pos[:, :, 0, :]
-    pos_rel = pos - pos_at_start[:, :, None, :]
-    pos_fwd = jnp.sum(pos_rel * d_unit[:, :, None, :], axis=-1)
-
-    # Whole-hold (any time before go) max forward displacement (anticipation peak).
-    pos_fwd_pre_go = jnp.where(before_go, pos_fwd, -jnp.inf)
-    hold_drift_m = jnp.max(pos_fwd_pre_go, axis=-1)
-    hold_drift_m = jnp.where(jnp.isinf(hold_drift_m), 0.0, hold_drift_m)
-    hold_drift_mm = hold_drift_m * 1000.0
-
-    # Pre-go window (-200 ms to 0): RMS forward position (positive = anticipation).
-    pos_fwd_window_masked = jnp.where(pre_go_window, pos_fwd, 0.0)
-    window_counts = jnp.sum(pre_go_window, axis=-1)  # (1, n_trials, ) ->; rely on broadcasting
-    window_counts = jnp.maximum(window_counts, 1)
-    pre_go_rms_m = jnp.sqrt(
-        jnp.sum(pos_fwd_window_masked ** 2, axis=-1) / window_counts
-    )
-    pre_go_mean_m = jnp.sum(pos_fwd_window_masked, axis=-1) / window_counts
-
-    pre_go_rms_mm = pre_go_rms_m * 1000.0
-    pre_go_mean_mm = pre_go_mean_m * 1000.0
-
-    return {
-        "peak_forward_velocity": np.array(peak_fwd),
-        "time_to_peak_after_go": np.array(time_to_peak_after_go),
-        "forward_vel_profile": np.array(v_fwd),
-        "pos_forward_profile": np.array(pos_fwd),
-        "hold_drift_mm": np.array(hold_drift_mm),
-        "pre_go_rms_mm": np.array(pre_go_rms_mm),
-        "pre_go_mean_mm": np.array(pre_go_mean_mm),
-        "go_idx": np.array(go_idx),
-    }
 
 
 # ---------------------------------------------------------------------------
