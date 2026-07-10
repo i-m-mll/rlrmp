@@ -4,39 +4,26 @@
 from __future__ import annotations
 
 from rlrmp.train.config_materialization import (
-    ADAPTIVE_EPSILON_TRAINING_MODES,
-    ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER,
-    CS_DELAYED_REACH_TASK_PRESET,
-    CS_DELAYED_REACH_TASK_TYPE,
     CS_FEEDBAX_N_STEPS,
     CS_REGULARIZED_NN_HIDDEN,
     CS_STAGE_COUNT,
-    DEFAULT_STOCHASTIC_PRESET,
     DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON,
-    DELAYED_MOVEMENT_COST_TAIL_MODES,
     DELAYED_REACH_TRAINING_MODE,
-    LEGACY_CS_DELAYED_REACH_TASK_TYPE,
-    StochasticPreset,
-    _adaptive_epsilon_curriculum_config_from_args,
     _apply_smoke_overrides,
     _config_namespace,
-    _config_payload_from_args,
-    _delayed_reach_contract_from_args,
     _initial_hidden_encoder_config,
-    _resolve_auto_bool,
     _training_diagnostics_enabled,
     build_hps,
-    cs_nominal_gru_config_from_args,
     stochastic_preset,
 )
 import argparse
 import subprocess
 from pathlib import Path
-from typing import Any, Callable, Literal, NamedTuple, Union, get_args, get_origin
+from typing import Any
 import jax
 import jax.numpy as jnp
 import jax.random as jr
-from feedbax.config.namespace import TreeNamespace, dict_to_namespace
+from feedbax.config.namespace import TreeNamespace
 from rlrmp.analysis.math.cs_game_card import (
     INIT_POS,
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
@@ -66,13 +53,8 @@ from rlrmp.io import compact_json_dumps
 from rlrmp.paths import REPO_ROOT, mkdir_p, run_spec_path
 from rlrmp.runtime.run_specs import validate_nominal_gru_run_spec
 from rlrmp.runtime.training_run_specs import (
-    CS_SUPERVISED_METHOD_REF,
-    FEEDBAX_TRAINING_RUN_SPEC_KEY,
-    RLRMP_RUN_SPEC_PAYLOAD_KEY,
     attach_composed_training_specs,
     attach_post_run_provenance,
-    assert_runtime_graph_matches_training_spec,
-    feedbax_training_run_spec_from_payload,
 )
 from rlrmp.model.stochastic_runtime import (
     graphspec_noise_contract,
@@ -81,33 +63,18 @@ from rlrmp.model.stochastic_runtime import (
 from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
     BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM,
-    BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE,
-    BROAD_EPSILON_PGD_PROJECTED_GRADIENT_ASCENT,
-    BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
     BROAD_EPSILON_PGD_TRAINING_MODE,
     BROAD_EPSILON_TRAINING_MODE,
-    DEFAULT_TARGET_SUPPORT_PROFILE,
     LEGACY_PERTURBATION_TRAINING_MODE,
     PERTURBATION_TRAINING_MODE,
     POLICY_ADVERSARY_MEMORYLESS_MLP,
-    POLICY_ADVERSARY_PLAIN_MODE,
     POLICY_ADVERSARY_TRAINING_MODE,
     FINITE_POLICY_BIAS_INPUT,
     FINITE_POLICY_GAINS_INPUT,
     TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
     TARGET_RELATIVE_MULTITARGET_TRAINING_MODE,
-    BroadFullStateEpsilonTrainingConfig,
-    FixedTargetPerturbationTrainingConfig,
-    PgdFullStateEpsilonTrainingConfig,
     PolicyFullStateEpsilonTrainingConfig,
-    add_zero_graph_channel_inputs,
     consumed_calibration_budget_identities,
-    make_broad_epsilon_pgd_pre_step,
-    make_policy_adversary_pre_step,
-    _batch_shape,
-    policy_adversary_objective,
-    run_broad_epsilon_pgd_inner_maximizer,
-    target_relative_target_support_config,
     target_relative_validation_manifest,
     validation_bin_manifest,
 )
@@ -116,31 +83,14 @@ from rlrmp.train.task_model import (
     LEGACY_CAUSAL_PLANT_BACKEND,
     setup_task_model_pair,
 )
-from rlrmp.model.trainable import staged_network_trainable_parts, staged_network_trainable_paths
+from rlrmp.model.trainable import staged_network_trainable_paths
 from rlrmp.train.training_configs import (
-    ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
-    CS_CONTROL_SCALE,
-    CS_POSITION_SCALE,
-    CS_VELOCITY_SCALE,
-    CsNominalGruConfig,
     DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW,
-    ISSUE_ID,
 )
 from rlrmp.train.executor.checkpoints import (
-    ADAPTIVE_EPSILON_ZERO_ADVERSARY_GAIN_TOLERANCE,
-    ADAPTIVE_EPSILON_ZERO_ADVERSARY_STOP_REASON,
-    AdaptiveEpsilonState,
     SCHEMA_VERSION,
-    TrainingState,
-    _atomic_write_json,
-    _initial_adaptive_epsilon_zero_guard,
-    _load_latest_checkpoint_materialization,
-    _normalize_adaptive_epsilon_zero_guard,
     _plain,
-    _save_pytree,
-    latest_checkpoint_path,
     load_latest_checkpoint as load_latest_checkpoint,
-    save_training_checkpoint,
 )
 
 TRAINING_DIAGNOSTICS_NPZ = "training_diagnostics.npz"

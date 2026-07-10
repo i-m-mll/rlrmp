@@ -6,22 +6,18 @@ from __future__ import annotations
 from rlrmp.train.training_configs import *  # noqa: F403
 
 from dataclasses import dataclass
-from typing import Any, Callable, Literal, Mapping
+from typing import Any, Callable
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jax.flatten_util import ravel_pytree
 import optax
-from feedbax import AbstractTask, TaskTrialSpec, WhereDict
+from feedbax import TaskTrialSpec
 from rlrmp.train.closed_loop_finite_adversary import (
     AFFINE_POLICY,
     FINITE_POLICY_BIAS_INPUT,
     FINITE_POLICY_GAINS_INPUT,
-    LINEAR_NO_BIAS_POLICY,
     finite_policy_step_epsilon,
-    target_centered_full_state_features,
-    zero_finite_affine_policy,
-    zero_finite_linear_no_bias_policy,
 )
 
 

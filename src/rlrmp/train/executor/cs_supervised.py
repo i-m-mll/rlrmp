@@ -4,80 +4,14 @@
 from __future__ import annotations
 
 from rlrmp.train.run_spec_authoring import (
-    TRAINING_DIAGNOSTICS_MANIFEST,
-    TRAINING_DIAGNOSTICS_NPZ,
-    _adversarial_phase,
-    _broad_epsilon_pgd_finite_policy_inputs,
-    _broad_epsilon_pgd_mechanism,
-    _broad_epsilon_pgd_training_enabled,
-    _broad_epsilon_training_enabled,
-    _checkpoint_metadata,
-    _controller_feedback_basis,
-    _controller_feedback_descriptors,
-    _controller_feedback_dim,
-    _delayed_pre_go_auxiliary_terms_metadata,
-    _delayed_reach_enabled,
-    _fidelity_status,
-    _get_dependency_metadata,
-    _get_git_metadata,
-    _get_gpu_metadata,
-    _get_runtime_metadata,
-    _initial_hidden_encoder_enabled,
-    _initial_hidden_encoder_metadata,
-    _json_dumps,
-    _loss_spec,
-    _nominal_only,
-    _optimizer_metadata,
-    _perturbation_training_enabled,
-    _policy_adversary_policy_class,
     _policy_adversary_training_enabled,
-    _run_mode,
-    _run_spec_path_for_write,
-    _should_write_graph_spec,
-    _sisu_conditioned_pgd_input_key,
-    _stochastic_runtime_contract,
-    _target_relative_multitarget_enabled,
-    _task_spec,
     _training_diagnostics_metadata,
-    _training_distribution_metadata,
-    _training_mode,
-    _validation_bins_metadata,
-    _write_graph_bundle_for_backend,
-    build_game_card_provenance,
-    build_graph_bundle,
-    build_loss_game_card_provenance,
-    build_model_structure_summary,
-    build_run_spec,
-    build_training_run_graph_spec,
-    derive_spec_dir,
-    derive_spec_path,
     write_run_spec,
 )
 from rlrmp.train.config_materialization import (
-    ADAPTIVE_EPSILON_TRAINING_MODES,
-    ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER,
-    CS_DELAYED_REACH_TASK_PRESET,
-    CS_DELAYED_REACH_TASK_TYPE,
-    CS_FEEDBAX_N_STEPS,
-    CS_REGULARIZED_NN_HIDDEN,
-    CS_STAGE_COUNT,
     DEFAULT_STOCHASTIC_PRESET,
-    DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON,
-    DELAYED_MOVEMENT_COST_TAIL_MODES,
-    DELAYED_REACH_TRAINING_MODE,
-    LEGACY_CS_DELAYED_REACH_TASK_TYPE,
-    StochasticPreset,
-    _adaptive_epsilon_curriculum_config_from_args,
     _apply_smoke_overrides,
-    _config_namespace,
-    _config_payload_from_args,
-    _delayed_reach_contract_from_args,
-    _initial_hidden_encoder_config,
-    _resolve_auto_bool,
     _training_diagnostics_enabled,
-    build_hps,
-    cs_nominal_gru_config_from_args,
-    stochastic_preset,
 )
 import argparse
 import hashlib
@@ -103,26 +37,16 @@ from feedbax.objectives.service import LossService, LoweredObjective
 from feedbax.objectives.spec import ObjectiveExecutionRequirements
 from jax_cookbook.tree import filter_spec_leaves
 from rlrmp.model.feedbax_graph import (
-    EXECUTION_BACKEND,
-    GRAPH_PLANT_INTERVENOR_NODE,
-    RLRMPFeedbaxGraphBundle,
     build_runtime_rlrmp_feedbax_graph_bundle,
-    build_point_mass_sensorimotor_graph_spec,
-    write_graph_spec_bundle,
 )
 from rlrmp.loss import (
-    CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
     CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
-    CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.runtime.run_specs import validate_nominal_gru_run_spec
 from rlrmp.runtime.training_run_specs import (
-    CS_SUPERVISED_METHOD_REF,
     FEEDBAX_TRAINING_RUN_SPEC_KEY,
     RLRMP_RUN_SPEC_PAYLOAD_KEY,
-    attach_composed_training_specs,
-    attach_post_run_provenance,
     assert_runtime_graph_matches_training_spec,
     feedbax_training_run_spec_from_payload,
 )
@@ -132,7 +56,7 @@ from rlrmp.runtime.spec_migrations import (
     RUN_SPEC_SCHEMA_VERSION,
     accept_rlrmp_spec_payload,
 )
-from rlrmp.train.executor.adapters import ChunkKernelAdapter, RLRMP_RUNTIME_CONTEXT_KEY
+from rlrmp.train.executor.adapters import RLRMP_RUNTIME_CONTEXT_KEY
 from rlrmp.train.executor.initial_slots import RlrmpRuntime, split_initial_keys
 from rlrmp.train.executor.slots import (
     COMPLETED_BATCHES,
@@ -143,46 +67,21 @@ from rlrmp.train.executor.slots import (
     TRAIN_LOSS,
 )
 from rlrmp.train.cs_perturbation_training import (
-    BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
     BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM,
     BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE,
     BROAD_EPSILON_PGD_PROJECTED_GRADIENT_ASCENT,
-    BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
-    BROAD_EPSILON_PGD_TRAINING_MODE,
-    BROAD_EPSILON_TRAINING_MODE,
     DEFAULT_TARGET_SUPPORT_PROFILE,
-    LEGACY_PERTURBATION_TRAINING_MODE,
-    PERTURBATION_TRAINING_MODE,
     POLICY_ADVERSARY_MEMORYLESS_MLP,
     POLICY_ADVERSARY_PLAIN_MODE,
-    POLICY_ADVERSARY_TRAINING_MODE,
-    FINITE_POLICY_BIAS_INPUT,
-    FINITE_POLICY_GAINS_INPUT,
-    TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
-    TARGET_RELATIVE_MULTITARGET_TRAINING_MODE,
-    BroadFullStateEpsilonTrainingConfig,
-    FixedTargetPerturbationTrainingConfig,
-    PgdFullStateEpsilonTrainingConfig,
-    PolicyFullStateEpsilonTrainingConfig,
-    add_zero_graph_channel_inputs,
-    consumed_calibration_budget_identities,
     make_broad_epsilon_pgd_pre_step,
-    make_policy_adversary_pre_step,
-    _batch_shape,
-    policy_adversary_objective,
-    run_broad_epsilon_pgd_inner_maximizer,
-    target_relative_target_support_config,
-    target_relative_validation_manifest,
-    validation_bin_manifest,
 )
-from rlrmp.train.progress import batch_log_every, format_batch_line, should_log_batch
+from rlrmp.train.progress import format_batch_line
 from rlrmp.train.resume_control import emit_launch_continuation, resolve_launch_continuation
 from rlrmp.train.task_model import (
     CS_LSS_PLANT_BACKEND,
-    LEGACY_CAUSAL_PLANT_BACKEND,
     setup_task_model_pair,
 )
-from rlrmp.model.trainable import staged_network_trainable_parts, staged_network_trainable_paths
+from rlrmp.model.trainable import staged_network_trainable_parts
 from rlrmp.train.training_configs import (
     ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
     CS_CONTROL_SCALE,
@@ -193,16 +92,11 @@ from rlrmp.train.training_configs import (
     ISSUE_ID,
 )
 from rlrmp.train.executor.checkpoints import (
-    ADAPTIVE_EPSILON_ZERO_ADVERSARY_GAIN_TOLERANCE,
     ADAPTIVE_EPSILON_ZERO_ADVERSARY_STOP_REASON,
-    AdaptiveEpsilonState,
     SCHEMA_VERSION,
     TrainingState,
     _atomic_write_json,
-    _initial_adaptive_epsilon_zero_guard,
     _load_latest_checkpoint_materialization,
-    _normalize_adaptive_epsilon_zero_guard,
-    _plain,
     _save_pytree,
     latest_checkpoint_path,
     load_latest_checkpoint as load_latest_checkpoint,
