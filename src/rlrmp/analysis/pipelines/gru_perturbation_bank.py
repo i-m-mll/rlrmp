@@ -56,6 +56,7 @@ from rlrmp.analysis.math.output_feedback import (
     robust_output_feedback_gains,
 )
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
+from rlrmp.eval.ensemble import eval_ensemble_on_trials
 from rlrmp.model.feedbax_channel_adapters import (
     additive_channel_payload_dim,
     additive_channel_provenance,
@@ -71,7 +72,7 @@ from rlrmp.model.feedback_descriptors import (
     resolve_controller_feedback_view,
 )
 from rlrmp.train.task_model import setup_task_model_pair
-from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.paths import REPO_ROOT
 from rlrmp.runtime.run_spec_access import require_run_seed
 
 
@@ -168,19 +169,19 @@ def expand_perturbation_bank(
     """Expand one perturbation-bank params object into a validated bank payload."""
 
     resolved = PerturbationBankParams.model_validate(params or {})
-    if resolved.mode == "calibrated":
-        bank = default_cs_calibrated_perturbation_bank(
-            calibration_level=resolved.calibration_level,
-            calibration_reach=resolved.calibration_reach,
-            feedback_scale_manifest=resolved.feedback_scale_manifest,
-            feedback_scale_manifest_path=(
-                None
-                if resolved.feedback_scale_manifest_path is None
-                else Path(resolved.feedback_scale_manifest_path)
-            ),
+    expected_policy: PerturbationAmplitudePolicy = (
+        "reach_relative_calibrated" if resolved.mode == "calibrated" else "raw_default"
+    )
+    if resolved.amplitude_policy not in {None, expected_policy}:
+        raise ValueError(
+            f"perturbation bank mode {resolved.mode!r} requires amplitude_policy "
+            f"{expected_policy!r}, got {resolved.amplitude_policy!r}"
         )
+    bank = _expand_default_cs_raw_perturbation_bank()
+    if resolved.mode == "calibrated":
+        bank = _expand_calibrated_perturbation_bank(bank, resolved)
     elif resolved.mode == "raw":
-        bank = _expand_default_cs_raw_perturbation_bank()
+        pass
     else:
         raise ValueError(f"unsupported perturbation bank mode {resolved.mode!r}")
     return _apply_perturbation_bank_params(bank, resolved)
@@ -560,509 +561,83 @@ def _expand_default_cs_raw_perturbation_bank() -> dict[str, Any]:
     }
 
 
-def default_cs_calibrated_perturbation_bank(
-    *,
-    calibration_level: str | Sequence[str] | None = None,
-    calibration_reach: str | float | None = None,
-    feedback_scale_manifest: Mapping[str, Any] | None = None,
-    feedback_scale_manifest_path: Path | None = None,
+def _expand_calibrated_perturbation_bank(
+    raw_bank: Mapping[str, Any],
+    params: PerturbationBankParams,
 ) -> dict[str, Any]:
-    """Return a reach-relative calibrated C&S perturbation-response bank."""
+    """Apply the calibrated amplitude policy to the canonical row catalog."""
 
-    from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
-        calibrated_amplitude_from_unit_sensitivity,
-    )
     from rlrmp.data_products.calibration import (
         load_open_loop_calibration,
         load_perturbation_calibration_defaults,
     )
 
     calibration = load_open_loop_calibration()
-    calibration_defaults = load_perturbation_calibration_defaults()
-    controller_visible_velocity_scale_m_s = calibration.controller_visible_velocity_scale_m_s
-
+    defaults = load_perturbation_calibration_defaults()
     reach = _select_reach_calibration_point(
-        calibration_reach,
-        reach_points=calibration_defaults.reach_calibration_points,
+        params.calibration_reach,
+        reach_points=defaults.reach_calibration_points,
     )
     levels = _select_reach_relative_levels(
-        calibration_level,
-        levels=calibration_defaults.reach_relative_levels,
+        params.calibration_level,
+        levels=defaults.reach_relative_levels,
     )
-    feedback_scale_manifest = _load_feedback_scale_manifest(
-        feedback_scale_manifest,
-        feedback_scale_manifest_path,
+    feedback_manifest_path = (
+        None
+        if params.feedback_scale_manifest_path is None
+        else Path(params.feedback_scale_manifest_path)
     )
-    position_scale = _controller_feedback_component_scale(
-        feedback_scale_manifest,
-        "position",
-        required=False,
+    feedback_manifest = _load_feedback_scale_manifest(
+        params.feedback_scale_manifest,
+        feedback_manifest_path,
     )
-    velocity_scale = _controller_feedback_component_scale(
-        feedback_scale_manifest,
-        "velocity",
-        required=False,
-    )
-    force_filter_scale = _controller_feedback_component_scale(
-        feedback_scale_manifest,
-        "force_filter",
-        required=True,
-    )
-    perturbations: list[PerturbationSpec] = []
-
-    def provenance(
-        *,
-        level: Any,
-        calibration_role: str,
-        open_loop_peak_dx_per_unit_m: float | None = None,
-        open_loop_auc_dx_per_unit_m_s: float | None = None,
-        target_open_loop_peak_dx_m: float | None = None,
-        target_open_loop_auc_dx_m_s: float | None = None,
-        native_unit_rule: str | None = None,
-    ) -> dict[str, Any]:
-        row: dict[str, Any] = {
-            "calibration_mode": "reach_relative_peak_delta_x",
-            "calibration_role": calibration_role,
-            "level_name": level.name,
-            "level_fraction_of_reach": float(level.fraction_of_reach),
-            "reach_label": reach.label,
-            "reach_length_m": float(reach.reach_length_m),
-        }
-        if open_loop_peak_dx_per_unit_m is not None:
-            row["open_loop_peak_dx_per_unit_m"] = float(open_loop_peak_dx_per_unit_m)
-        if open_loop_auc_dx_per_unit_m_s is not None:
-            row["open_loop_auc_dx_per_unit_m_s"] = float(open_loop_auc_dx_per_unit_m_s)
-        if target_open_loop_peak_dx_m is not None:
-            row["target_open_loop_peak_dx_m"] = float(target_open_loop_peak_dx_m)
-        if target_open_loop_auc_dx_m_s is not None:
-            row["target_open_loop_auc_dx_m_s"] = float(target_open_loop_auc_dx_m_s)
-        if native_unit_rule is not None:
-            row["native_unit_rule"] = native_unit_rule
-        return row
-
-    for level in levels:
-        target_peak = float(reach.reach_length_m) * float(level.fraction_of_reach)
-        for family, units in (
-            ("initial_position_offset", "m"),
-            ("initial_velocity_offset", "m/s"),
-        ):
-            sensitivity = calibration[family]["initial_condition"]
-            amplitude = calibrated_amplitude_from_unit_sensitivity(
-                target_peak_delta_x_m=target_peak,
-                peak_delta_x_per_unit_m=float(sensitivity),
-            )
-            for axis in ("x", "y"):
-                for sign in (-1, 1):
-                    perturbations.append(
-                        PerturbationSpec(
-                            perturbation_id=(f"{family}__{level.name}__{axis}_{_sign_label(sign)}"),
-                            channel="initial_state",
-                            family=family,
-                            amplitude=amplitude,
-                            units=units,
-                            axis=axis,
-                            basis="plant_cartesian_xy",
-                            sign=sign,
-                            timing={"epoch": "initial_condition", "time_index": 0},
-                            adapter="task_trial_spec.inits",
-                            description=(
-                                "Reach-relative calibrated initial effector "
-                                f"{'position' if 'position' in family else 'velocity'} offset."
-                            ),
-                            initial_position_case=(
-                                "D_current_state_immediately_visible"
-                                if family == "initial_position_offset"
-                                else None
-                            ),
-                            timing_bin="initial_condition",
-                            calibration_provenance=provenance(
-                                level=level,
-                                calibration_role="reach_relative_calibrated_open_loop",
-                                open_loop_peak_dx_per_unit_m=float(sensitivity),
-                                target_open_loop_peak_dx_m=target_peak,
-                            ),
-                        )
-                    )
-
-    for timing_bin in calibration_defaults.plant_timing_bins:
-            start = int(timing_bin.start_time_index)
-            duration = int(timing_bin.duration_steps)
-            for family, channel, units, basis, adapter, extra in (
-                (
-                    "command_input_pulse",
-                    "command_input",
-                    "N",
-                    "command_cartesian_force_xy",
-                    "feedbax.additive_channel_adapter.command_input",
-                    {},
-                ),
-                (
-                    "target_aligned_lateral_command_load_pulse",
-                    "command_input",
-                    "N",
-                    "target_aligned_radial_tangential_force",
-                    "feedbax.additive_channel_adapter.command_input",
-                    {"target_relative_axis_role": "tangential", "axis_filter": ("y",)},
-                ),
-                (
-                    "process_epsilon_position_xy",
-                    "process_epsilon",
-                    "epsilon",
-                    "cs_lss_process_epsilon_current_physical_block",
-                    "task_trial_spec.inputs['epsilon']",
-                    {"epsilon_index_offset": 0, "epsilon_component_prefix": "position"},
-                ),
-                (
-                    "process_epsilon_velocity_xy",
-                    "process_epsilon",
-                    "epsilon",
-                    "cs_lss_process_epsilon_current_physical_block",
-                    "task_trial_spec.inputs['epsilon']",
-                    {"epsilon_index_offset": 2, "epsilon_component_prefix": "velocity"},
-                ),
-                (
-                    "process_epsilon_force_state_xy",
-                    "process_epsilon",
-                    "epsilon",
-                    "cs_lss_process_epsilon_current_physical_block",
-                    "task_trial_spec.inputs['epsilon']",
-                    {"epsilon_index_offset": 4, "epsilon_component_prefix": "force_state"},
-                ),
-                (
-                    "process_epsilon_integrator_xy",
-                    "process_epsilon",
-                    "epsilon",
-                    "cs_lss_process_epsilon_current_physical_block",
-                    "task_trial_spec.inputs['epsilon']",
-                    {"epsilon_index_offset": 6, "epsilon_component_prefix": "integrator"},
-                ),
-            ):
-                sensitivity_family = (
-                    "command_input_pulse"
-                    if family == "target_aligned_lateral_command_load_pulse"
-                    else family
-                )
-                sensitivity = float(calibration[sensitivity_family][timing_bin.label])
-                amplitude = calibrated_amplitude_from_unit_sensitivity(
-                    target_peak_delta_x_m=target_peak,
-                    peak_delta_x_per_unit_m=sensitivity,
-                )
-                for axis in ("x", "y"):
-                    if axis not in extra.get("axis_filter", ("x", "y")):
-                        continue
-                    axis_index = _axis_index(axis)
-                    for sign in (-1, 1):
-                        epsilon_index = None
-                        epsilon_component = None
-                        if channel == "process_epsilon":
-                            epsilon_index = int(extra["epsilon_index_offset"]) + axis_index
-                            epsilon_component = f"{extra['epsilon_component_prefix']}_{axis}"
-                        perturbations.append(
-                            PerturbationSpec(
-                                perturbation_id=(
-                                    f"{family}__{level.name}__{timing_bin.label}_t{start}_"
-                                    f"{axis}_{_sign_label(sign)}"
-                                ),
-                                channel=channel,  # type: ignore[arg-type]
-                                family=family,
-                                amplitude=amplitude,
-                                units=units,
-                                axis=axis,
-                                basis=basis,
-                                sign=sign,
-                                timing={
-                                    "epoch": "movement_indexed",
-                                    "start_time_index": start,
-                                    "duration_steps": duration,
-                                    "timing_bin": timing_bin.label,
-                                    "timing_bin_role": timing_bin.role,
-                                },
-                                adapter=adapter,
-                                description=(
-                                    "Reach-relative calibrated plant-side perturbation "
-                                    "using open-loop peak delta-x sensitivity."
-                                ),
-                                epsilon_component=epsilon_component,
-                                epsilon_index=epsilon_index,
-                                timing_bin=timing_bin.label,
-                                semantic_family=(
-                                    "human_protocol_like_lateral_mechanical_load"
-                                    if family == "target_aligned_lateral_command_load_pulse"
-                                    else (
-                                        "human_protocol_like_lateral_process_load"
-                                        if epsilon_component == "force_state_y"
-                                        else None
-                                    )
-                                ),
-                                channel_provenance=(
-                                    {
-                                        "information_structure": (
-                                            "external_load_after_controller_command"
-                                            if channel == "command_input"
-                                            else "process_epsilon_current_physical_block"
-                                        ),
-                                        "target_relative_axis_role": "tangential",
-                                        "target_relative_basis": "canonical_plus_x_reach",
-                                        "closest_graph_compatible_equivalent": (
-                                            "post-controller command-input offset on "
-                                            "efferent.output -> mechanics.force"
-                                            if channel == "command_input"
-                                            else "process epsilon pulse on force-state y"
-                                        ),
-                                    }
-                                    if (
-                                        family == "target_aligned_lateral_command_load_pulse"
-                                        or epsilon_component == "force_state_y"
-                                    )
-                                    else None
-                                ),
-                                calibration_provenance=provenance(
-                                    level=level,
-                                    calibration_role="reach_relative_calibrated_open_loop",
-                                    open_loop_peak_dx_per_unit_m=sensitivity,
-                                    target_open_loop_peak_dx_m=target_peak,
-                                ),
-                            )
-                        )
-
-    for timing_bin in calibration_defaults.controller_visible_timing_bins:
-            start = int(timing_bin.start_time_index)
-            duration = int(timing_bin.duration_steps)
-            for channel, family, basis, semantic_family, channel_provenance in (
-                (
-                    "sensory_feedback",
-                    "sensory_feedback_offset",
-                    "sensory_feedback_named_channel",
-                    None,
-                    {
-                        "information_structure": "post_noise_controller_visible_feedback",
-                        "insertion_point": "sensory.output -> net.feedback",
-                    },
-                ),
-            ):
-                for axis in ("x", "y"):
-                    for sign in (-1, 1):
-                        axis_role = _target_relative_axis_role(axis)
-                        perturbations.append(
-                            PerturbationSpec(
-                                perturbation_id=(
-                                    f"{family}__position_{level.name}__"
-                                    f"{timing_bin.label}_t{start}_{axis}_{_sign_label(sign)}"
-                                ),
-                                channel=channel,  # type: ignore[arg-type]
-                                family=family,
-                                amplitude=(
-                                    float(
-                                        position_scale["reference_scale"]
-                                        if position_scale is not None
-                                        else reach.reach_length_m
-                                    )
-                                    * float(level.fraction_of_reach)
-                                ),
-                                units="m",
-                                axis=axis,
-                                basis=basis,
-                                sign=sign,
-                                timing={
-                                    "epoch": "controller_visible",
-                                    "start_time_index": start,
-                                    "duration_steps": duration,
-                                    "timing_bin": timing_bin.label,
-                                    "timing_bin_role": timing_bin.role,
-                                },
-                                adapter=f"feedbax.additive_channel_adapter.{channel}",
-                                description=(
-                                    "Native controller-visible position offset scaled "
-                                    "as a fraction of reach length."
-                                ),
-                                timing_bin=timing_bin.label,
-                                channel_provenance=channel_provenance,
-                                semantic_family=semantic_family or "false_feedback_offset",
-                                calibration_provenance=provenance(
-                                    level=level,
-                                    calibration_role="reach_relative_calibrated_native_units",
-                                    target_open_loop_peak_dx_m=target_peak,
-                                    native_unit_rule=(
-                                        "position_offset_m = reference_position_scale_m "
-                                        "* level_fraction_of_reach"
-                                    ),
-                                )
-                                | {
-                                    "reference_position_scale_m": float(
-                                        position_scale["reference_scale"]
-                                        if position_scale is not None
-                                        else reach.reach_length_m
-                                    ),
-                                    "controller_feedback_scale": (
-                                        None
-                                        if position_scale is None
-                                        else _feedback_scale_provenance(position_scale)
-                                    ),
-                                    "feedback_quantity": "position",
-                                    "feedback_payload_index": (
-                                        _controller_visible_feedback_index("position", axis)
-                                    ),
-                                    "target_relative_axis_role": axis_role,
-                                    "target_relative_basis": "canonical_plus_x_reach",
-                                    "false_feedback_probe": True,
-                                },
-                            )
-                        )
-                velocity_amplitude = float(
-                    velocity_scale["reference_scale"]
-                    if velocity_scale is not None
-                    else controller_visible_velocity_scale_m_s
-                ) * float(level.fraction_of_reach)
-                for axis in ("vx", "vy"):
-                    for sign in (-1, 1):
-                        axis_role = _target_relative_axis_role(axis)
-                        perturbations.append(
-                            PerturbationSpec(
-                                perturbation_id=(
-                                    f"{family}__velocity_{level.name}__"
-                                    f"{timing_bin.label}_t{start}_{axis}_{_sign_label(sign)}"
-                                ),
-                                channel=channel,  # type: ignore[arg-type]
-                                family=family,
-                                amplitude=velocity_amplitude,
-                                units="m/s",
-                                axis=axis,
-                                basis=basis,
-                                sign=sign,
-                                timing={
-                                    "epoch": "controller_visible",
-                                    "start_time_index": start,
-                                    "duration_steps": duration,
-                                    "timing_bin": timing_bin.label,
-                                    "timing_bin_role": timing_bin.role,
-                                },
-                                adapter=f"feedbax.additive_channel_adapter.{channel}",
-                                description=(
-                                    "Native controller-visible velocity offset scaled "
-                                    "as a fraction of nominal peak speed."
-                                ),
-                                timing_bin=timing_bin.label,
-                                semantic_family=semantic_family or "false_feedback_offset",
-                                channel_provenance=channel_provenance,
-                                calibration_provenance=provenance(
-                                    level=level,
-                                    calibration_role="reach_relative_calibrated_native_units",
-                                    native_unit_rule=(
-                                        "velocity_offset_m_s = nominal_peak_speed_m_s "
-                                        "* level_fraction_of_reach"
-                                    ),
-                                )
-                                | {
-                                    "nominal_peak_speed_m_s": float(
-                                        velocity_scale["reference_scale"]
-                                        if velocity_scale is not None
-                                        else controller_visible_velocity_scale_m_s
-                                    ),
-                                    "controller_feedback_scale": (
-                                        None
-                                        if velocity_scale is None
-                                        else _feedback_scale_provenance(velocity_scale)
-                                    ),
-                                    "feedback_quantity": "velocity",
-                                    "feedback_payload_index": (
-                                        _controller_visible_feedback_index("velocity", axis)
-                                    ),
-                                    "target_relative_axis_role": axis_role,
-                                    "target_relative_basis": "canonical_plus_x_reach",
-                                    "false_feedback_probe": True,
-                                },
-                            )
-                        )
-                force_filter_amplitude = float(force_filter_scale["reference_scale"]) * float(
-                    level.fraction_of_reach
-                )
-                for axis in ("x", "y"):
-                    for sign in (-1, 1):
-                        axis_role = _target_relative_axis_role(axis)
-                        perturbations.append(
-                            PerturbationSpec(
-                                perturbation_id=(
-                                    f"{family}__force_filter_{level.name}__"
-                                    f"{timing_bin.label}_t{start}_{axis}_{_sign_label(sign)}"
-                                ),
-                                channel=channel,  # type: ignore[arg-type]
-                                family=family,
-                                amplitude=force_filter_amplitude,
-                                units="N",
-                                axis=axis,
-                                basis=basis,
-                                sign=sign,
-                                timing={
-                                    "epoch": "controller_visible",
-                                    "start_time_index": start,
-                                    "duration_steps": duration,
-                                    "timing_bin": timing_bin.label,
-                                    "timing_bin_role": timing_bin.role,
-                                },
-                                adapter=f"feedbax.additive_channel_adapter.{channel}",
-                                description=(
-                                    "Native controller-visible force/filter feedback "
-                                    "offset in model force units. This row applies only "
-                                    "when force_filter_feedback widens the feedback "
-                                    "payload to 6D."
-                                ),
-                                timing_bin=timing_bin.label,
-                                semantic_family=semantic_family or "false_feedback_offset",
-                                channel_provenance=channel_provenance,
-                                calibration_provenance=provenance(
-                                    level=level,
-                                    calibration_role="reach_relative_calibrated_native_units",
-                                    native_unit_rule=(
-                                        "force_filter_offset_N = reference_force_filter_scale_N "
-                                        "* level_fraction_of_reach"
-                                    ),
-                                )
-                                | {
-                                    "reference_force_filter_scale_N": float(
-                                        force_filter_scale["reference_scale"]
-                                    ),
-                                    "controller_feedback_scale": _feedback_scale_provenance(
-                                        force_filter_scale,
-                                    ),
-                                    "feedback_quantity": "force_filter",
-                                    "feedback_payload_index": (
-                                        _controller_visible_feedback_index(
-                                            "force_filter",
-                                            axis,
-                                        )
-                                    ),
-                                    "force_filter_feedback_only": True,
-                                    "target_relative_axis_role": axis_role,
-                                    "target_relative_basis": "canonical_plus_x_reach",
-                                    "false_feedback_probe": True,
-                                },
-                            )
-                        )
-
-    perturbations.append(
-        PerturbationSpec(
-            perturbation_id="target_stream_jump__calibrated_not_applicable",
-            channel="target_stream",
-            family="target_stream_jump",
-            amplitude=0.0,
-            units="m",
-            axis="x",
-            basis="target_cartesian_xy",
-            sign=1,
-            timing={"epoch": "adapter_defined"},
-            adapter="not_applicable_current_fixed_target_checkpoint",
-            description="blocked because current C&S GRU input is scalar SISU, not a target stream",
-            timing_bin="not_applicable",
-            calibration_provenance={
-                "calibration_mode": "reach_relative_peak_delta_x",
-                "calibration_role": "reach_relative_calibrated_not_applicable",
-                "reach_label": reach.label,
-                "reach_length_m": float(reach.reach_length_m),
-            },
+    feedback_scales = {
+        component: _controller_feedback_component_scale(
+            feedback_manifest,
+            component,
+            required=component == "force_filter",
         )
+        for component in ("position", "velocity", "force_filter")
+    }
+    rows = [
+        dict(row)
+        for row in raw_bank.get("perturbations", ())
+        if isinstance(row, Mapping)
+    ]
+    initial_rows = [row for row in rows if row.get("channel") == "initial_state"]
+    remaining_rows = [
+        row
+        for row in rows
+        if row.get("channel") != "initial_state"
+        and row.get("family") != "target_stream_jump"
+    ]
+    target_rows = [row for row in rows if row.get("family") == "target_stream_jump"]
+    calibrated_rows = [
+        _calibrated_perturbation_row(
+            row,
+            level=level,
+            reach=reach,
+            calibration=calibration,
+            feedback_scales=feedback_scales,
+        )
+        for level in levels
+        for row in initial_rows
+    ]
+    calibrated_rows.extend(
+        _calibrated_perturbation_row(
+            row,
+            level=levels[-1],
+            reach=reach,
+            calibration=calibration,
+            feedback_scales=feedback_scales,
+        )
+        for row in remaining_rows
+    )
+    calibrated_rows.extend(
+        _calibrated_target_stream_row(row, reach=reach) for row in target_rows
     )
 
-    bank = default_cs_perturbation_bank()
+    bank = dict(raw_bank)
     bank.update(
         {
             "bank_id": CALIBRATED_BANK_ID,
@@ -1075,21 +650,14 @@ def default_cs_calibrated_perturbation_bank(
                 "level_definitions": [level.to_json() for level in levels],
                 "controller_feedback_scale_manifest": (
                     None
-                    if feedback_scale_manifest_path is None
-                    else _repo_relative(feedback_scale_manifest_path, repo_root=REPO_ROOT)
+                    if feedback_manifest_path is None
+                    else _repo_relative(feedback_manifest_path, repo_root=REPO_ROOT)
                 ),
                 "controller_feedback_scales": {
-                    "position": (
-                        None
-                        if position_scale is None
-                        else _feedback_scale_provenance(position_scale)
-                    ),
-                    "velocity": (
-                        None
-                        if velocity_scale is None
-                        else _feedback_scale_provenance(velocity_scale)
-                    ),
-                    "force_filter": _feedback_scale_provenance(force_filter_scale),
+                    component: (
+                        None if scale is None else _feedback_scale_provenance(scale)
+                    )
+                    for component, scale in feedback_scales.items()
                 },
                 "source": (
                     "governed open-loop calibration data product "
@@ -1098,10 +666,205 @@ def default_cs_calibrated_perturbation_bank(
                     "native conventions, and nominal-rollout controller feedback scale manifest"
                 ),
             },
-            "perturbations": [spec.to_json() for spec in perturbations],
+            "perturbations": calibrated_rows,
         }
     )
     return bank
+
+
+def _calibrated_perturbation_row(
+    raw: Mapping[str, Any],
+    *,
+    level: Any,
+    reach: Any,
+    calibration: Any,
+    feedback_scales: Mapping[str, Mapping[str, Any] | None],
+) -> dict[str, Any]:
+    """Return one validated calibrated row from a canonical raw row."""
+
+    from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
+        calibrated_amplitude_from_unit_sensitivity,
+    )
+
+    row = dict(raw)
+    family = str(row["family"])
+    channel = str(row["channel"])
+    axis = str(row["axis"])
+    timing_bin = str(row.get("timing_bin", "initial_condition"))
+    sign = int(row["sign"])
+    target_peak = float(reach.reach_length_m) * float(level.fraction_of_reach)
+    provenance = _calibration_provenance(level=level, reach=reach)
+
+    if channel == "initial_state":
+        sensitivity = float(calibration[family]["initial_condition"])
+        row.update(
+            perturbation_id=f"{family}__{level.name}__{axis}_{_sign_label(sign)}",
+            amplitude=calibrated_amplitude_from_unit_sensitivity(
+                target_peak_delta_x_m=target_peak,
+                peak_delta_x_per_unit_m=sensitivity,
+            ),
+            description=(
+                "Reach-relative calibrated initial effector "
+                f"{'position' if family == 'initial_position_offset' else 'velocity'} offset."
+            ),
+            **provenance,
+            open_loop_peak_dx_per_unit_m=sensitivity,
+            target_open_loop_peak_dx_m=target_peak,
+        )
+    elif channel in {"command_input", "process_epsilon"}:
+        sensitivity_family = (
+            "command_input_pulse"
+            if family == "target_aligned_lateral_command_load_pulse"
+            else family
+        )
+        sensitivity = float(calibration[sensitivity_family][timing_bin])
+        start = int(row["timing"]["start_time_index"])
+        row.update(
+            perturbation_id=(
+                f"{family}__{level.name}__{timing_bin}_t{start}_"
+                f"{axis}_{_sign_label(sign)}"
+            ),
+            amplitude=calibrated_amplitude_from_unit_sensitivity(
+                target_peak_delta_x_m=target_peak,
+                peak_delta_x_per_unit_m=sensitivity,
+            ),
+            description=(
+                "Reach-relative calibrated plant-side perturbation using "
+                "open-loop peak delta-x sensitivity."
+            ),
+            **provenance,
+            open_loop_peak_dx_per_unit_m=sensitivity,
+            target_open_loop_peak_dx_m=target_peak,
+        )
+        if family == "target_aligned_lateral_command_load_pulse":
+            row["channel_provenance"] = {
+                "information_structure": "external_load_after_controller_command",
+                "target_relative_axis_role": "tangential",
+                "target_relative_basis": "canonical_plus_x_reach",
+                "closest_graph_compatible_equivalent": (
+                    "post-controller command-input offset on "
+                    "efferent.output -> mechanics.force"
+                ),
+            }
+        elif row.get("epsilon_component") == "force_state_y":
+            row["channel_provenance"] = {
+                "information_structure": "process_epsilon_current_physical_block",
+                "target_relative_axis_role": "tangential",
+                "target_relative_basis": "canonical_plus_x_reach",
+                "closest_graph_compatible_equivalent": (
+                    "process epsilon pulse on force-state y"
+                ),
+            }
+        else:
+            row["channel_provenance"] = None
+    elif channel == "sensory_feedback":
+        component = str(row.get("channel_provenance", {}).get("feedback_quantity"))
+        scale = feedback_scales[component]
+        if component == "position":
+            reference = float(
+                reach.reach_length_m if scale is None else scale["reference_scale"]
+            )
+            native_rule = (
+                "position_offset_m = reference_position_scale_m "
+                "* level_fraction_of_reach"
+            )
+            scale_key = "reference_position_scale_m"
+            description = (
+                "Native controller-visible position offset scaled as a fraction "
+                "of reach length."
+            )
+        elif component == "velocity":
+            reference = float(
+                calibration.controller_visible_velocity_scale_m_s
+                if scale is None
+                else scale["reference_scale"]
+            )
+            native_rule = (
+                "velocity_offset_m_s = nominal_peak_speed_m_s "
+                "* level_fraction_of_reach"
+            )
+            scale_key = "nominal_peak_speed_m_s"
+            description = (
+                "Native controller-visible velocity offset scaled as a fraction "
+                "of nominal peak speed."
+            )
+        elif component == "force_filter":
+            if scale is None:
+                raise ValueError("calibrated force/filter feedback rows require a scale")
+            reference = float(scale["reference_scale"])
+            native_rule = (
+                "force_filter_offset_N = reference_force_filter_scale_N "
+                "* level_fraction_of_reach"
+            )
+            scale_key = "reference_force_filter_scale_N"
+            description = (
+                "Native controller-visible force/filter feedback offset in model "
+                "force units. This row applies only when force_filter_feedback "
+                "widens the feedback payload to 6D."
+            )
+        else:
+            raise ValueError(f"unsupported calibrated feedback component {component!r}")
+        start = int(row["timing"]["start_time_index"])
+        native_provenance = {
+            **provenance,
+            "calibration_role": "reach_relative_calibrated_native_units",
+        }
+        row.update(
+            perturbation_id=(
+                f"{family}__{component}_{level.name}__{timing_bin}_t{start}_"
+                f"{axis}_{_sign_label(sign)}"
+            ),
+            amplitude=reference * float(level.fraction_of_reach),
+            description=description,
+            **native_provenance,
+            native_unit_rule=native_rule,
+            **{scale_key: reference},
+            controller_feedback_scale=(
+                None if scale is None else _feedback_scale_provenance(scale)
+            ),
+            feedback_quantity=component,
+            feedback_payload_index=int(
+                row.get("channel_provenance", {}).get("feedback_payload_index")
+            ),
+            force_filter_feedback_only=(True if component == "force_filter" else None),
+            target_relative_axis_role=_target_relative_axis_role(axis),
+            target_relative_basis="canonical_plus_x_reach",
+            false_feedback_probe=True,
+            channel_provenance={
+                "information_structure": "post_noise_controller_visible_feedback",
+                "insertion_point": "sensory.output -> net.feedback",
+            },
+        )
+        if component == "position":
+            row["target_open_loop_peak_dx_m"] = target_peak
+    else:
+        raise ValueError(f"unsupported calibrated perturbation channel {channel!r}")
+    row.pop("calibration_provenance", None)
+    return _validated_perturbation_row(row)
+
+
+def _calibration_provenance(*, level: Any, reach: Any) -> dict[str, Any]:
+    return {
+        "calibration_mode": "reach_relative_peak_delta_x",
+        "calibration_role": "reach_relative_calibrated_open_loop",
+        "level_name": level.name,
+        "level_fraction_of_reach": float(level.fraction_of_reach),
+        "reach_label": reach.label,
+        "reach_length_m": float(reach.reach_length_m),
+    }
+
+
+def _calibrated_target_stream_row(raw: Mapping[str, Any], *, reach: Any) -> dict[str, Any]:
+    row = {
+        **dict(raw),
+        "perturbation_id": "target_stream_jump__calibrated_not_applicable",
+        "amplitude": 0.0,
+        "calibration_mode": "reach_relative_peak_delta_x",
+        "calibration_role": "reach_relative_calibrated_not_applicable",
+        "reach_label": reach.label,
+        "reach_length_m": float(reach.reach_length_m),
+    }
+    return _validated_perturbation_row(row)
 
 
 def _apply_perturbation_bank_params(
@@ -1492,7 +1255,6 @@ def materialize_gru_perturbation_response(
         eval_manifest_path=eval_manifest_path,
         issue=result_experiment,
         source_experiment=source_experiment,
-        bank_mode=bank_mode,
     )
     manifest["bank_summary"] = _adapter_bank_summary(manifest.get("bank", {}))
     manifest["compatibility_adapter"] = {
@@ -1547,17 +1309,18 @@ def _execute_perturbation_bank_eval_adapter(
     )
 
     ensure_rlrmp_recipes_registered()
+    bank_params = PerturbationBankParams(
+        mode=bank_mode,
+        calibration_level=calibration_level,
+        calibration_reach=calibration_reach,
+        feedback_scale_manifest_path=feedback_scale_manifest_path,
+    ).model_dump(mode="json", exclude_none=True)
     params: dict[str, Any] = {
         "source_experiment": source_experiment,
         "run_ids": list(run_ids),
         "labels": None if labels is None else list(labels),
         "n_rollout_trials": int(n_rollout_trials),
-        "bank_mode": bank_mode,
-        "calibration_level": calibration_level,
-        "calibration_reach": calibration_reach,
-        "feedback_scale_manifest_path": (
-            None if feedback_scale_manifest_path is None else str(feedback_scale_manifest_path)
-        ),
+        "bank_params": bank_params,
         "extlqg_physical_dim": int(extlqg_physical_dim),
         "preferred_checkpoint_manifest_path": (
             None
@@ -1566,7 +1329,6 @@ def _execute_perturbation_bank_eval_adapter(
         ),
         "checkpoint_selection_mode": checkpoint_selection_mode,
         "repo_root": str(repo_root),
-        "write_bulk_arrays": False,
     }
     params = {key: value for key, value in params.items() if value is not None}
     if not evaluate:
@@ -1576,12 +1338,6 @@ def _execute_perturbation_bank_eval_adapter(
                     "kind": "CheckpointSelectionManifest",
                     "id": f"{source_experiment}_legacy_adapter_no_evaluate",
                 },
-                "perturbation_battery": default_cs_perturbation_bank(
-                    mode=bank_mode,
-                    calibration_level=calibration_level,
-                    calibration_reach=calibration_reach,
-                    feedback_scale_manifest_path=feedback_scale_manifest_path,
-                ),
                 "response_tensors": {"runs": {}},
                 "legacy_payload_mode": True,
             }
@@ -1619,7 +1375,6 @@ def _aggregate_perturbation_eval_adapter(
     eval_manifest_path: Path,
     issue: str,
     source_experiment: str,
-    bank_mode: Literal["raw", "calibrated"],
 ) -> dict[str, Any]:
     from feedbax.contracts.manifest import ParentRef
 
@@ -1642,7 +1397,7 @@ def _aggregate_perturbation_eval_adapter(
     leaf_products = [
         dm._perturbation_class_response_payload(
             states,
-            {"family": str(family)},
+            {"family": str(family), "bank_params": states.get("bank_params")},
             evaluation_input=resolved_eval,
         )
         for family in class_index_map
@@ -1652,7 +1407,7 @@ def _aggregate_perturbation_eval_adapter(
         {
             "issue": issue,
             "source_experiment": source_experiment,
-            "bank_mode": bank_mode,
+            "bank_params": states.get("bank_params"),
         },
     )
 
@@ -1832,8 +1587,6 @@ def evaluate_run_perturbation_bank(
     source_experiment: str,
     bank: Mapping[str, Any],
     n_rollout_trials: int,
-    write_bulk_arrays: bool,
-    bulk_dir: Path,
     evaluation_backend: PerturbationEvaluationBackend = "serial",
     trial_spec_transform: Callable[[Any], Any] | None = None,
     extlqg_physical_dim: Literal[6, 8] = 8,
@@ -1869,7 +1622,6 @@ def evaluate_run_perturbation_bank(
     extlqg_context = _build_extlqg_comparator_context(physical_dim=extlqg_physical_dim)
     robust_context = _build_robust_output_feedback_comparator_context()
     rows = []
-    bulk_files: dict[str, str] = {}
     if evaluation_backend != "serial":
         raise ValueError(
             f"unsupported perturbation evaluation backend {evaluation_backend!r}; expected 'serial'"
@@ -1946,10 +1698,6 @@ def evaluate_run_perturbation_bank(
                 perturbed_cost=perturbed_cost,
                 extlqg_context=extlqg_context,
                 robust_context=robust_context,
-                write_bulk_arrays=write_bulk_arrays,
-                bulk_dir=bulk_dir / run.run_id,
-                repo_root=repo_root,
-                bulk_files=bulk_files,
             )
         )
 
@@ -1967,7 +1715,7 @@ def evaluate_run_perturbation_bank(
         "status_counts": _status_counts(rows),
         "robust_response_summary": summarize_perturbation_bank(rows),
         "perturbations": rows,
-        "bulk_files": bulk_files,
+        "bulk_files": {},
     }
 
 
@@ -2008,10 +1756,6 @@ def _evaluated_perturbation_row(
     perturbed_cost: Mapping[str, Any],
     extlqg_context: Mapping[str, Any],
     robust_context: Mapping[str, Any],
-    write_bulk_arrays: bool,
-    bulk_dir: Path,
-    repo_root: Path,
-    bulk_files: dict[str, str],
 ) -> dict[str, Any]:
     """Build the manifest row for one evaluated perturbation."""
 
@@ -2065,18 +1809,6 @@ def _evaluated_perturbation_row(
         context=robust_context,
         gru_metrics=metrics,
     )
-    bulk_file = None
-    if write_bulk_arrays:
-        bulk_file = _write_perturbation_bulk_arrays(
-            base_evaluation,
-            perturbed_evaluation,
-            bulk_dir=bulk_dir,
-            perturbation_id=str(perturbation["perturbation_id"]),
-        )
-        bulk_files[str(perturbation["perturbation_id"])] = _repo_relative(
-            bulk_file,
-            repo_root=repo_root,
-        )
     return {
         "perturbation_id": perturbation["perturbation_id"],
         "channel": perturbation["channel"],
@@ -2095,26 +1827,7 @@ def _evaluated_perturbation_row(
         or {"status": "passed", "guard": "command_input_nonzero_payload_nonzero_effect"},
         "extlqg_comparator": extlqg_comparator,
         "robust_output_feedback_comparator": robust_comparator,
-        "bulk_arrays": None
-        if bulk_file is None
-        else {
-            "path": _repo_relative(bulk_file, repo_root=repo_root),
-            "format": "np.savez_compressed",
-            "arrays": [
-                "delta_action",
-                "delta_gru_input",
-                "delta_position",
-                "delta_velocity",
-                "base_position",
-                "perturbed_position",
-                "base_velocity",
-                "perturbed_velocity",
-                "base_action",
-                "perturbed_action",
-                "base_gru_input",
-                "perturbed_gru_input",
-            ],
-        },
+        "bulk_arrays": None,
     }
 
 
@@ -3765,22 +3478,12 @@ def _evaluate_model_rollout_product(
     n_replicates: int,
     seed: int,
 ) -> SelectedEvalRolloutProduct:
-    model_arrays, model_other = eqx.partition(
+    states = eval_ensemble_on_trials(
+        task,
         model,
-        lambda leaf: _is_replicate_array(leaf, n_replicates),
-    )
-
-    def eval_one_replicate(model_array_leaves: Any, key: Any) -> Any:
-        replicate_model = eqx.combine(model_array_leaves, model_other)
-        return task.eval_trials(
-            replicate_model,
-            trial_specs,
-            jr.split(key, _infer_batch_size(trial_specs)),
-        )
-
-    states = eqx.filter_vmap(eval_one_replicate, in_axes=(0, 0))(
-        model_arrays,
-        jr.split(jr.PRNGKey(seed), n_replicates),
+        trial_specs,
+        key=jr.PRNGKey(seed),
+        n_replicates=n_replicates,
     )
     return SelectedEvalRolloutProduct.from_states(
         states,
@@ -4210,36 +3913,6 @@ def _extlqg_cost_summary(evaluation: RolloutEvaluation, initial_state: Any) -> d
     summary = _cost_arrays_to_summary(scored)
     summary["basis"]["state_transform"] = "analytical extLQG states are already target-centered"
     return summary
-
-
-def _write_perturbation_bulk_arrays(
-    base: RolloutEvaluation,
-    perturbed: RolloutEvaluation,
-    *,
-    bulk_dir: Path,
-    perturbation_id: str,
-) -> Path:
-    # Kept for direct evaluate_run_perturbation_bank and benchmark callers that
-    # still request legacy per-row NPZ arrays; the public materializer adapter no
-    # longer routes through this writer.
-    mkdir_p(bulk_dir)
-    path = bulk_dir / f"{perturbation_id}.npz"
-    np.savez_compressed(
-        path,
-        delta_action=np.asarray(perturbed.command - base.command, dtype=np.float64),
-        delta_gru_input=np.asarray(perturbed.gru_input - base.gru_input, dtype=np.float64),
-        delta_position=np.asarray(perturbed.position - base.position, dtype=np.float64),
-        delta_velocity=np.asarray(perturbed.velocity - base.velocity, dtype=np.float64),
-        base_position=np.asarray(base.position, dtype=np.float64),
-        perturbed_position=np.asarray(perturbed.position, dtype=np.float64),
-        base_velocity=np.asarray(base.velocity, dtype=np.float64),
-        perturbed_velocity=np.asarray(perturbed.velocity, dtype=np.float64),
-        base_action=np.asarray(base.command, dtype=np.float64),
-        perturbed_action=np.asarray(perturbed.command, dtype=np.float64),
-        base_gru_input=np.asarray(base.gru_input, dtype=np.float64),
-        perturbed_gru_input=np.asarray(perturbed.gru_input, dtype=np.float64),
-    )
-    return path
 
 
 def _full_qrf_game_for_state_dim(state_dim: int) -> tuple[Any, Any, int, str]:
@@ -5298,15 +4971,6 @@ def _repo_relative(path: Path, *, repo_root: Path = REPO_ROOT) -> str:
         return str(path)
 
 
-def write_default_bank(path: Path) -> None:
-    """Retired raw writer retained only as an import-compatible stub."""
-
-    raise RuntimeError(
-        "write_default_bank is retired; use default_cs_perturbation_bank() and "
-        "record the payload through Feedbax custody instead."
-    )
-
-
 __all__ = [
     "CALIBRATED_BANK_ID",
     "DEFAULT_BANK_ID",
@@ -5323,7 +4987,6 @@ __all__ = [
     "PerturbationSpec",
     "apply_perturbation_to_trial_specs",
     "compare_response_metric_summaries",
-    "default_cs_calibrated_perturbation_bank",
     "default_cs_perturbation_bank",
     "delta_full_qrf_cost_summary",
     "expand_perturbation_bank",
@@ -5338,5 +5001,4 @@ __all__ = [
     "score_full_qrf_rollout_cost",
     "summarize_perturbation_bank",
     "summarize_perturbation_response",
-    "write_default_bank",
 ]

@@ -189,8 +189,6 @@ def _bank() -> dict[str, Any]:
                 "feedback_scale_manifest": None,
                 "feedback_scale_manifest_path": None,
                 "repo_root": None,
-                "bulk_dir": None,
-                "write_bulk_arrays": False,
                 "n_rollout_trials": 8,
                 "extlqg_physical_dim": 8,
                 "preferred_checkpoint_manifest_path": None,

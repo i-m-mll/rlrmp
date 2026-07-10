@@ -276,6 +276,7 @@ def test_declarative_recipes_use_feedbax_context_materializers() -> None:
     perturbation_leaf = dm.perturbation_class_response_recipe(
         dm.perturbation_class_response_spec(
             family="command_input_pulse",
+            bank_params={"mode": "raw"},
             evaluation_manifest_id="eval-manifest",
         ),
         Path("."),
@@ -292,6 +293,7 @@ def test_declarative_recipes_use_feedbax_context_materializers() -> None:
                     "states": {
                         "evaluation_type": PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
                         "evaluation_manifest_id": "eval-manifest",
+                        "bank_params": {"mode": "raw", "metadata": {}},
                         "perturbation_battery": {"perturbations": []},
                         "response_tensors": {"runs": {}},
                         "class_index_map": {
@@ -346,6 +348,11 @@ def test_diagnostic_bank_recipes_register_params_models_and_eval_dependencies() 
         dm.PerturbationClassResponseAnalysisParams.model_validate({"unknown": True})
     with pytest.raises(ValidationError):
         dm.PerturbationBankAggregateAnalysisParams.model_validate({"unknown": True})
+    with pytest.raises(ValueError, match="do not match the evaluation contract"):
+        dm._validated_perturbation_bank_params(
+            {"bank_params": {"mode": "raw"}},
+            {"bank_params": {"mode": "calibrated"}},
+        )
     assert dm.EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE[
         dm.FEEDBACK_ABLATION_ANALYSIS_TYPE
     ] == (FEEDBACK_ABLATION_EVALUATION_TYPE,)
@@ -726,18 +733,22 @@ def test_gru_postrun_bundle_declares_perturbation_leaf_aggregate_stages() -> Non
     assert stages["perturbation_bank_eval"].evaluation_type == (
         PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE
     )
+    bank_params = stages["perturbation_bank_eval"].params["bank_params"]
+    assert "perturbation_battery" not in stages["perturbation_bank_eval"].params
     assert stages["perturbation_class_command_input_pulse"].analysis_type == (
         dm.PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE
     )
     assert stages["perturbation_class_command_input_pulse"].depends_on == [
         "perturbation_bank_eval"
     ]
+    assert stages["perturbation_class_command_input_pulse"].params["bank_params"] == bank_params
     assert stages["perturbation_bank_aggregate"].analysis_type == (
         dm.PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE
     )
     assert "perturbation_class_command_input_pulse" in (
         stages["perturbation_bank_aggregate"].depends_on
     )
+    assert stages["perturbation_bank_aggregate"].params["bank_params"] == bank_params
 
 
 def test_perturbation_class_leaves_aggregate_to_legacy_bank_payload(
@@ -778,6 +789,7 @@ def test_perturbation_class_leaves_aggregate_to_legacy_bank_payload(
         manifest, path = execute_analysis_run_spec(
             dm.perturbation_class_response_spec(
                 family=family,
+                bank_params={"mode": "raw"},
                 evaluation_manifest_id=eval_manifest.id,
                 evaluation_manifest_uri=eval_path,
                 expected_calibration_identity={"hash": "sha256:unit-calibration"},
@@ -798,10 +810,10 @@ def test_perturbation_class_leaves_aggregate_to_legacy_bank_payload(
 
     aggregate_manifest, _aggregate_path = execute_analysis_run_spec(
         dm.perturbation_bank_aggregate_spec(
+            bank_params={"mode": "raw"},
             leaf_manifest_refs=leaf_manifests,
             issue="unit",
             source_experiment="unit-exp",
-            bank_mode="raw",
         ),
         root=tmp_path,
     )
@@ -854,6 +866,7 @@ def test_perturbation_class_leaf_absent_family_fails_closed(tmp_path: Path) -> N
         execute_analysis_run_spec(
             dm.perturbation_class_response_spec(
                 family="missing_family",
+                bank_params={"mode": "raw"},
                 evaluation_manifest_id=eval_manifest.id,
                 evaluation_manifest_uri=eval_path,
             ),

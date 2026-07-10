@@ -539,8 +539,6 @@ def run_benchmark(
             source_experiment=source_experiment,
             bank=bank,
             n_rollout_trials=n_rollout_trials,
-            write_bulk_arrays=write_bulk_arrays,
-            bulk_dir=step_scratch / "perturbation_response",
             evaluation_backend=perturbation_evaluation_backend,
             repo_root=repo_root,
         )
@@ -553,19 +551,14 @@ def run_benchmark(
                 "status_counts": result.get("status_counts", {}),
                 "rows": len(result.get("perturbations", ())),
             },
-            output_write_mode="included_in_cold_call_elapsed_s",
-            output_write_note=(
-                "evaluate_run_perturbation_bank owns its bulk output writes inside "
-                "the timed call."
-            ),
+            output_write_mode="none",
+            output_write_note="Perturbation evaluation emits no direct durable outputs.",
             warm_replay=warm_replay,
             warm_fn=lambda: evaluate_run_perturbation_bank(
                 run,
                 source_experiment=source_experiment,
                 bank=bank,
                 n_rollout_trials=n_rollout_trials,
-                write_bulk_arrays=write_bulk_arrays,
-                bulk_dir=warm_step_scratch / "perturbation_response",
                 evaluation_backend=perturbation_evaluation_backend,
                 repo_root=repo_root,
             ),

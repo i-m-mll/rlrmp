@@ -64,6 +64,7 @@ from rlrmp.analysis.pipelines.gru_postrun_materialization import (
     materialize_optional_perturbation_response,
     plan_gru_postrun_materialization,
 )
+from rlrmp.analysis.pipelines.gru_perturbation_bank import PerturbationBankParams
 from rlrmp.analysis.pipelines.hinf_phenotype_sidecar import (
     DEFAULT_SCOPE as DEFAULT_HINF_PHENOTYPE_SCOPE,
     build_hinf_phenotype_sidecar,
@@ -279,6 +280,7 @@ class PerturbationClassResponseAnalysisParams(BaseModel):
     schema_id: str | None = None
     schema_version: str | None = None
     family: str
+    bank_params: PerturbationBankParams
     row_ids: list[str] | None = None
     expected_calibration_identity: dict[str, Any] | None = None
     calibration_identity: dict[str, Any] | None = None
@@ -293,7 +295,7 @@ class PerturbationBankAggregateAnalysisParams(BaseModel):
     schema_version: str | None = None
     issue: str | None = None
     source_experiment: str | None = None
-    bank_mode: str | None = None
+    bank_params: PerturbationBankParams
 
 
 class OutputFeedbackRolloutRecoveryParams(BaseModel):
@@ -909,6 +911,7 @@ def gru_postrun_spec(
 def perturbation_class_response_spec(
     *,
     family: str,
+    bank_params: PerturbationBankParams | Mapping[str, Any],
     row_ids: Sequence[str] | None = None,
     evaluation_manifest_id: str | None = None,
     evaluation_manifest_uri: Path | str | None = None,
@@ -916,7 +919,10 @@ def perturbation_class_response_spec(
 ) -> AnalysisRunSpec:
     """Return declarative spec data for one perturbation-class response leaf."""
 
-    params: dict[str, Any] = {"family": family}
+    params: dict[str, Any] = {
+        "family": family,
+        "bank_params": _canonical_perturbation_bank_params(bank_params),
+    }
     if row_ids is not None:
         params["row_ids"] = list(row_ids)
     if expected_calibration_identity is not None:
@@ -934,20 +940,20 @@ def perturbation_class_response_spec(
 
 def perturbation_bank_aggregate_spec(
     *,
+    bank_params: PerturbationBankParams | Mapping[str, Any],
     leaf_manifest_refs: Sequence[ParentRef] = (),
     issue: str | None = None,
     source_experiment: str | None = None,
-    bank_mode: str | None = None,
 ) -> AnalysisRunSpec:
     """Return declarative spec data for aggregating perturbation-class leaves."""
 
-    params: dict[str, Any] = {}
+    params: dict[str, Any] = {
+        "bank_params": _canonical_perturbation_bank_params(bank_params),
+    }
     if issue is not None:
         params["issue"] = issue
     if source_experiment is not None:
         params["source_experiment"] = source_experiment
-    if bank_mode is not None:
-        params["bank_mode"] = bank_mode
     return AnalysisRunSpec(
         analysis_type=PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE,
         inputs=list(leaf_manifest_refs),
@@ -2842,6 +2848,7 @@ def _perturbation_class_response_payload(
             "perturbation class response requires "
             f"{PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE!r} eval states"
         )
+    bank_params = _validated_perturbation_bank_params(states, params)
     class_index_map = states.get("class_index_map")
     if not isinstance(class_index_map, Mapping):
         raise ValueError("perturbation response eval states lack class_index_map")
@@ -2878,6 +2885,7 @@ def _perturbation_class_response_payload(
         "schema_id": PERTURBATION_CLASS_RESPONSE_SCHEMA_ID,
         "schema_version": PERTURBATION_CLASS_RESPONSE_SCHEMA_VERSION,
         "family": family,
+        "bank_params": bank_params,
         "row_ids": list(perturbation_ids),
         "row_indices": [row_index_by_id[row_id] for row_id in perturbation_ids],
         "row_index_by_perturbation_id": row_index_by_id,
@@ -2891,6 +2899,30 @@ def _perturbation_class_response_payload(
         "runs": runs,
         "aggregate_base": _aggregate_base_from_eval_states(states),
     }
+
+
+def _canonical_perturbation_bank_params(
+    value: PerturbationBankParams | Mapping[str, Any] | Any,
+) -> dict[str, Any]:
+    """Return one JSON-stable perturbation-bank parameter contract."""
+
+    return PerturbationBankParams.model_validate(value).model_dump(
+        mode="json",
+        exclude_none=True,
+    )
+
+
+def _validated_perturbation_bank_params(
+    states: Mapping[str, Any],
+    params: Mapping[str, Any],
+) -> dict[str, Any]:
+    requested = _canonical_perturbation_bank_params(params.get("bank_params"))
+    evaluated = _canonical_perturbation_bank_params(states.get("bank_params"))
+    if requested != evaluated:
+        raise ValueError(
+            "perturbation class response bank_params do not match the evaluation contract"
+        )
+    return requested
 
 
 def _selected_perturbation_ids(
@@ -3103,11 +3135,23 @@ def _aggregate_perturbation_class_products(
             "perturbation bank aggregate requires all leaves to share one evaluation "
             f"manifest; got {sorted(eval_ids)}"
         )
+    requested_bank_params = _canonical_perturbation_bank_params(params.get("bank_params"))
+    leaf_bank_params = [
+        _canonical_perturbation_bank_params(product.get("bank_params"))
+        for product in leaf_products
+    ]
+    if any(bank_params != requested_bank_params for bank_params in leaf_bank_params):
+        raise ValueError(
+            "perturbation bank aggregate requires every leaf to use its exact "
+            "bank_params contract"
+        )
     base = dict(leaf_products[0].get("aggregate_base", {}))
     base["schema_version"] = GRU_PERTURBATION_BANK_SCHEMA_VERSION
-    for key in ("issue", "source_experiment", "bank_mode"):
+    for key in ("issue", "source_experiment"):
         if params.get(key) is not None:
             base[key] = params[key]
+    base["bank_mode"] = requested_bank_params["mode"]
+    base["bank_params"] = requested_bank_params
     rows = _aggregate_bank_rows(leaf_products)
     bank = dict(leaf_products[0].get("bank", {}))
     bank["perturbations"] = rows
