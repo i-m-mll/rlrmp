@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 
-SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-import materialize_output_feedback_failure_decomposition as failure  # noqa: E402
-import materialize_output_feedback_sweep_certificates as certificates  # noqa: E402
-from rlrmp.analysis.pipelines.bridge_contracts import BridgeCertificateComponent  # noqa: E402
+from rlrmp.analysis.pipelines import failure_decomposition as failure
+from rlrmp.analysis.pipelines import standard_certificate_materialization as certificates
+from rlrmp.analysis.pipelines.bridge_certificates import (
+    BELLMAN_HESSIAN_RESIDUAL,
+    CLOSED_LOOP_TRANSITION_MISMATCH,
+    STATE_WEIGHTED_ACTION_MISMATCH,
+    VALUE_POLICY_GAP,
+)
+from rlrmp.analysis.pipelines.bridge_contracts import BridgeCertificateComponent
 
 
 def _fit(label: str) -> dict[str, object]:
@@ -49,12 +49,12 @@ def test_standard_adapter_uses_arbitrary_array_prefix_and_preserves_schema(monke
         calls.append(kwargs)
         return (
             BridgeCertificateComponent.available(
-                certificates.STATE_WEIGHTED_ACTION_MISMATCH,
+                STATE_WEIGHTED_ACTION_MISMATCH,
                 mismatch_ratio_mean=0.1,
             ),
         )
 
-    monkeypatch.setattr(certificates, "_full_standard_components", fake_components)
+    monkeypatch.setattr(certificates, "_output_feedback_standard_components", fake_components)
     arrays = {"smooth_cell_K": np.ones((2, 1, 2))}
 
     rows = certificates.deterministic_standard_rows_from_manifest_entries(
@@ -106,19 +106,19 @@ def test_failure_adapter_joins_standard_rows_by_generated_run_id(monkeypatch):
                 "status": "full_standard_certificate",
                 "certificate_components": [
                     {
-                        "name": certificates.STATE_WEIGHTED_ACTION_MISMATCH,
+                        "name": STATE_WEIGHTED_ACTION_MISMATCH,
                         "summary": {"mismatch_ratio_mean": 0.1},
                     },
                     {
-                        "name": certificates.BELLMAN_HESSIAN_RESIDUAL,
+                        "name": BELLMAN_HESSIAN_RESIDUAL,
                         "summary": {"residual_ratio_mean": 0.2},
                     },
                     {
-                        "name": certificates.CLOSED_LOOP_TRANSITION_MISMATCH,
+                        "name": CLOSED_LOOP_TRANSITION_MISMATCH,
                         "summary": {"mismatch_ratio_mean": 0.3},
                     },
                     {
-                        "name": certificates.VALUE_POLICY_GAP,
+                        "name": VALUE_POLICY_GAP,
                         "summary": {"gap_ratio_mean": 0.4},
                     },
                 ],

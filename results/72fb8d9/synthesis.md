@@ -264,7 +264,7 @@ trajectory tail linearisation matches the fixed-point linearisation.
 
 ### 3.3 The recent probe diagnosis (settled)
 
-A diagnostic probe (`scripts/probe_round_trip_ratio.py`, issue `74bfd86`
+A diagnostic probe (`results/72fb8d9/scripts/probe_round_trip_ratio.py`, issue `74bfd86`
 comment `7849b8f`) found three apparent anomalies in the round-trip
 identity, all of which resolved to expected behaviour:
 

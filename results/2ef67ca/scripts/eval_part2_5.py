@@ -4,9 +4,12 @@ Loads a trained model, evaluates at specified SISU levels and perturbation
 amplitudes, computes kinematic metrics, and generates plotly figures.
 
 Usage:
-    python results/2ef67ca/scripts/eval_part2_5.py --model-dir results/part2_5
-    python results/2ef67ca/scripts/eval_part2_5.py --model-dir results/part2_5 --pert-stds 0.0 0.5 1.0 2.0
-    python results/2ef67ca/scripts/eval_part2_5.py --model-dir results/part2_5 --feedback-perturbation
+    PYTHONPATH=src uv run --no-sync python results/2ef67ca/scripts/eval_part2_5.py \
+        --model-dir results/part2_5
+    PYTHONPATH=src uv run --no-sync python results/2ef67ca/scripts/eval_part2_5.py \
+        --model-dir results/part2_5 --pert-stds 0.0 0.5 1.0 2.0
+    PYTHONPATH=src uv run --no-sync python results/2ef67ca/scripts/eval_part2_5.py \
+        --model-dir results/part2_5 --feedback-perturbation
 """
 
 import argparse

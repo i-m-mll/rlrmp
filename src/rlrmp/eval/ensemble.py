@@ -1,6 +1,6 @@
 """Ensemble (replicate-vmapped) trial evaluation.
 
-Bug: 8404108 — extracted from ``scripts/eval_part2_5_figures.py`` and made
+Bug: 8404108 — extracted from ``results/2ef67ca/scripts/eval_part2_5_figures.py`` and made
 training-method-agnostic.
 """
 

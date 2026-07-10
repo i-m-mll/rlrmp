@@ -1004,7 +1004,7 @@ def induced_gain_power_iteration(
         this band is regime-dependent: for the rlrmp point-mass regime
         (mass=1, damping=10, tau=0.05, dt=0.01), with ``gamma_design = 1.5 *
         gamma_star``, the long-horizon plateau is around ``1.21 * gamma_star``.
-        See ``scripts/probe_round_trip_ratio.py`` for the diagnostic sweep.
+        See ``results/72fb8d9/scripts/probe_round_trip_ratio.py`` for the diagnostic sweep.
 
     Operator-vs-Riccati cost mismatch:
         The LTV operator that this routine takes the induced gain of measures
@@ -1031,7 +1031,7 @@ def induced_gain_power_iteration(
           comparable across Q_f scales, either (a) keep Q_f scaled with Q to
           stay in the canonical regime, or (b) extend the operator with a
           ``sqrt(Q_f) @ x_T`` terminal output (not currently exposed; the
-          probe in ``scripts/diag_probe_anomalies.py`` is the reference
+          probe in ``results/72fb8d9/scripts/diag_probe_anomalies.py`` is the reference
           implementation).
 
         Bug ``74bfd86``.
@@ -1425,7 +1425,7 @@ def induced_gain(
         (with margin); see ``induced_gain_power_iteration``'s
         ``Operator-vs-Riccati cost mismatch`` note for the mechanism, bug
         ``74bfd86``. Regime-dependent in practice; see
-        ``scripts/probe_round_trip_ratio.py`` and bug ``3c74e3b``.
+        ``results/72fb8d9/scripts/probe_round_trip_ratio.py`` and bug ``3c74e3b``.
 
     For the ``peak_velocity`` z channel: the power-iteration result on the
     velocity-norm channel is returned in ``InducedGainResult.gamma``, and the

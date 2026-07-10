@@ -4,7 +4,8 @@ Loads trained models from the running_cost_standard and softmin_standard
 conditions, evaluates at different SISU levels, and produces plotly figures.
 
 Usage:
-    python results/2ef67ca/scripts/eval_part2_5_figures.py
+    PYTHONPATH=src uv run --no-sync python \
+        results/2ef67ca/scripts/eval_part2_5_figures.py
 """
 
 import argparse
