@@ -438,6 +438,17 @@ def test_cs_nominal_gru_config_rejects_extra_fields() -> None:
         CsNominalGruConfig.model_validate({"seed": 42, "unknown_field": True})
 
 
+def test_build_hps_accepts_legacy_namespace_extras_and_validates_canonical_fields() -> None:
+    args = _args(batch_size=3)
+    args.legacy_payload_marker = {"source": "historical-run-spec"}
+
+    hps = build_hps(args)
+
+    assert hps.batch_size == 3
+    with pytest.raises(ValidationError):
+        build_hps(_args(batch_size=0))
+
+
 def test_cs_nominal_gru_argparse_defaults_and_choices_derive_from_config() -> None:
     parser = build_parser()
     help_text = parser.format_help()

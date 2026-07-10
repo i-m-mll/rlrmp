@@ -14,6 +14,7 @@ from rlrmp.train.cs_nominal_gru import (
     CsNominalGruConfig,
     build_parser,
 )
+from rlrmp.train.run_spec_authoring import build_parser as authoring_build_parser
 from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_PARAMS_REF,
     FIXED_TARGET_PERTURBATION_PARAMS_REF,
@@ -61,6 +62,21 @@ def test_generated_parser_tracks_config_defaults_and_choices() -> None:
         "partial_net_output_force_filter",
         "full_analytical_qrf",
     ]
+
+
+def test_generated_parser_is_owned_by_run_spec_authoring() -> None:
+    assert build_parser is authoring_build_parser
+    assert build_parser.__module__ == "rlrmp.train.run_spec_authoring"
+
+    nominal_source = REPO_ROOT / "src/rlrmp/train/cs_nominal_gru.py"
+    tree = ast.parse(nominal_source.read_text(encoding="utf-8"))
+    imports_by_module = {
+        node.module: {alias.name for alias in node.names}
+        for node in tree.body
+        if isinstance(node, ast.ImportFrom)
+    }
+    assert "build_parser" in imports_by_module["rlrmp.train.run_spec_authoring"]
+    assert "build_parser" not in imports_by_module["rlrmp.train.executor.cs_supervised"]
 
 
 def test_generated_parser_validates_with_config_model() -> None:
