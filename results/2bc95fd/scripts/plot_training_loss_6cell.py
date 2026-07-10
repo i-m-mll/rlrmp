@@ -16,14 +16,12 @@ Usage (from repo root):
 
 import argparse
 from rlrmp.viz.colors import hex_to_rgba as _color_with_alpha
-import json
 from pathlib import Path
 
 from rlrmp.paths import REPO_ROOT as WORKTREE  # Bug: 8404108
 
 import equinox as eqx
 import jax.random as jr
-import jax.tree as jt
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots

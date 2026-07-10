@@ -57,11 +57,9 @@ import numpy as np
 import plotly.graph_objects as go
 from jax_cookbook import load_with_hyperparameters
 from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476 — project-config routing
-from plotly.subplots import make_subplots
 
 from rlrmp.analysis.math.trial_alignment import (
     align_trials,
-    pooled_trial_mean_with_band,
     replicate_mean_curves,
 )
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
