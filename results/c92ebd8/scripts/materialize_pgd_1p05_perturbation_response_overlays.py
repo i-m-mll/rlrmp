@@ -2,6 +2,11 @@
 """Materialize c92 PGD 1.05 perturbation-response overlay figures."""
 
 from __future__ import annotations
+from rlrmp.viz.traces import add_reduced_sample_trace
+from rlrmp.eval.robustness_diagnostics import (
+    build_robust_output_feedback_6d_context as _build_robust_output_feedback_6d_context,
+)
+from rlrmp.paths import portable_repo_path
 
 import argparse
 import json
@@ -16,19 +21,6 @@ import plotly.graph_objects as go
 
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
-    build_no_integrator_game,
-)
-from rlrmp.analysis.math.cs_released_simulation import (
-    simulate_robust_released_forward,
-    zero_forward_noise_draws,
-    zero_noise_covariances,
-)
-from rlrmp.analysis.math.hinf_riccati import find_gamma_star, solve_hinf_riccati
-from rlrmp.analysis.math.output_feedback import (
-    OutputFeedbackConfig,
-    make_cs_output_feedback_initial_state,
-    robust_estimator_covariances,
-    robust_output_feedback_gains,
 )
 from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     _build_extlqg_comparator_context,
@@ -39,7 +31,7 @@ from rlrmp.analysis.pipelines.gru_perturbation_bank import (
 )
 from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT, mkdir_p
-from rlrmp.viz import profile_comparison_grid
+from rlrmp.viz.figures import build_profile_family_figure
 
 
 ISSUE = "c92ebd8"
@@ -64,7 +56,11 @@ PGD_MANIFEST = BULK_ROOT / "pgd_perturbation_response_manifest.json"
 PGD_NOTE = BULK_ROOT / "pgd_perturbation_response.md"
 PGD_REGENERATION_SPEC = BULK_ROOT / "pgd_perturbation_response_manifest_regeneration_spec.json"
 PGD_EVALUATION_MANIFEST = (
-    REPO_ROOT / "results" / ISSUE / "notes" / "gru_evaluation_diagnostics_pgd_1p05_reach_context_diagnostics.json"
+    REPO_ROOT
+    / "results"
+    / ISSUE
+    / "notes"
+    / "gru_evaluation_diagnostics_pgd_1p05_reach_context_diagnostics.json"
 )
 
 NO_PGD_RUNS = ("open_loop_small", "open_loop_moderate", "open_loop_stress")
@@ -305,43 +301,13 @@ def build_overlay_figure(
     robust_context: Mapping[str, Any],
     title: str,
 ) -> tuple[go.Figure, dict[str, int]]:
-    """Build one residual overlay figure."""
+    """Build one residual overlay through the canonical profile grid."""
 
-    timing_bins = timing_bins_for_rows(rows)
-    n_cols = len(timing_bins)
-    subplot_titles = [
-        f"{quantity_label}: {timing_label}"
-        for quantity_label, _quantity_name, _unit in QUANTITY_SPECS
-        for timing_label in timing_bins
-    ]
-    fig = profile_comparison_grid(
-        n_panels=len(QUANTITY_SPECS) * n_cols,
-        rows=len(QUANTITY_SPECS),
-        cols=n_cols,
-        subplot_titles=subplot_titles,
-        shared_yaxes="rows",
-        vertical_spacing=0.08,
-        horizontal_spacing=0.045,
-    )
-    legend_seen: set[tuple[str, str]] = set()
     robust_unavailable: dict[str, int] = defaultdict(int)
-    for col_index, timing_label in enumerate(timing_bins, start=1):
-        timing_rows = [row for row in rows if row_timing_label(row) == timing_label]
-        timing_pgd_rows = [row for row in pgd_rows if row_timing_label(row) == timing_label]
-        timing = representative_timing(timing_rows)
-        if timing is not None:
-            x0, x1 = perturbation_interval_bounds(timing)
-            for row_index in range(1, len(QUANTITY_SPECS) + 1):
-                fig.add_vrect(
-                    x0=x0,
-                    x1=x1,
-                    fillcolor="rgba(234,179,8,0.18)",
-                    line={"color": "rgba(120,80,0,0.55)", "width": 1, "dash": "dot"},
-                    layer="below",
-                    row=row_index,
-                    col=col_index,
-                    exclude_empty_subplots=False,
-                )
+
+    def collect(timing_rows: Sequence[Mapping[str, Any]]) -> Mapping[tuple[Any, ...], Any]:
+        timing_labels = {row_timing_label(row) for row in timing_rows}
+        timing_pgd_rows = [row for row in pgd_rows if row_timing_label(row) in timing_labels]
         traces, unavailable = collect_overlay_traces(
             timing_rows,
             pgd_rows=timing_pgd_rows,
@@ -352,42 +318,32 @@ def build_overlay_figure(
         )
         for key, count in unavailable.items():
             robust_unavailable[key] += count
-        for row_index, (quantity, _quantity_name, unit) in enumerate(QUANTITY_SPECS, start=1):
-            for source in ("no_pgd_gru", "extlqg6d", "pgd_gru", "robust_output_feedback6d"):
-                for coord in ("orthogonal", "along"):
-                    samples = traces.get((source, quantity, coord))
-                    if samples is None or samples.size == 0:
-                        continue
-                    add_residual_trace(
-                        fig,
-                        samples,
-                        source=source,
-                        quantity=quantity,
-                        coord=coord,
-                        row=row_index,
-                        col=col_index,
-                        showlegend=(source, coord) not in legend_seen,
-                    )
-                    legend_seen.add((source, coord))
-            fig.update_yaxes(
-                title_text=residual_axis_unit(quantity, native_unit=unit),
-                row=row_index,
-                col=1,
-            )
-    fig.update_layout(
+        return traces
+
+    def add_trace(fig: Any, samples: Any, *, variant: str, **kwargs: Any) -> None:
+        del variant
+        add_residual_trace(fig, samples, **kwargs)
+
+    fig = build_profile_family_figure(
+        rows,
+        quantity_specs=QUANTITY_SPECS,
+        timing_bins_for_rows=timing_bins_for_rows,
+        row_timing_label=row_timing_label,
+        representative_timing=representative_timing,
+        perturbation_interval_bounds=perturbation_interval_bounds,
+        collect_traces=collect,
+        trace_key=lambda source, _variant, quantity, coord: (source, quantity, coord),
+        add_trace=add_trace,
+        sources=("no_pgd_gru", "extlqg6d", "pgd_gru", "robust_output_feedback6d"),
+        variants=("residual",),
+        axis_unit=lambda quantity, unit: residual_axis_unit(quantity, native_unit=unit),
+        figure_kind="residual",
         title=title,
-        template="plotly_white",
-        width=max(980, 280 * n_cols),
+        width_min=980,
+        width_per_column=280,
         height=840,
-        legend_title_text="Source / component",
-        margin={"l": 70, "r": 24, "t": 96, "b": 70},
+        legend_title="Source / component",
     )
-    for col_index in range(1, n_cols + 1):
-        fig.update_xaxes(
-            title_text="time from movement onset (s)",
-            row=len(QUANTITY_SPECS),
-            col=col_index,
-        )
     return fig, dict(robust_unavailable)
 
 
@@ -450,11 +406,7 @@ def collect_overlay_traces(
                 sign=sign,
             )
     return (
-        {
-            key: np.concatenate(samples, axis=0)
-            for key, samples in trace_samples.items()
-            if samples
-        },
+        {key: np.concatenate(samples, axis=0) for key, samples in trace_samples.items() if samples},
         dict(unavailable),
     )
 
@@ -522,7 +474,11 @@ def simulate_robust_output_feedback_arrays(
 ) -> tuple[dict[str, np.ndarray] | None, str]:
     """Return deterministic 6D H-inf arrays when the perturbation is supported."""
 
-    if str(perturbation.get("channel")) not in {"initial_state", "command_input", "process_epsilon"}:
+    if str(perturbation.get("channel")) not in {
+        "initial_state",
+        "command_input",
+        "process_epsilon",
+    }:
         return None, f"unsupported_channel:{perturbation.get('channel')}"
     try:
         base = context["base_evaluation"]
@@ -549,69 +505,12 @@ def evaluation_pair_arrays(base: Any, perturbed: Any) -> dict[str, np.ndarray]:
 
 
 def build_robust_output_feedback_6d_context() -> dict[str, Any]:
-    """Build deterministic 6D no-integrator output-feedback H-infinity context."""
+    """Build this script's canonical robust output-feedback context."""
 
-    plant, schedule = build_no_integrator_game()
-    config = OutputFeedbackConfig(n_phys=6)
-    gamma_star = find_gamma_star(plant, schedule)
-    solution = solve_hinf_riccati(
-        plant,
-        schedule,
-        OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR * gamma_star,
+    return _build_robust_output_feedback_6d_context(
+        evaluation_from_rollout=_evaluation_from_extlqg_rollout,
+        gamma_factor=OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     )
-    covariances = robust_estimator_covariances(
-        plant,
-        schedule,
-        solution.gamma,
-        config,
-    )
-    gains = robust_output_feedback_gains(
-        plant,
-        schedule,
-        solution,
-        covariances,
-        config,
-    )
-    x0 = make_cs_output_feedback_initial_state(plant, config)
-    base_rollout = simulate_robust_released_forward(
-        plant,
-        schedule,
-        solution,
-        x0,
-        draws=zero_forward_noise_draws(T=schedule.T, plant=plant, config=config),
-        covariances=zero_noise_covariances(plant, config),
-        gains=gains,
-        config=config,
-    )
-    if int(plant.n) != 36 or int(config.n_phys) != 6:
-        raise ValueError(f"unexpected H-inf context dimensions: plant.n={plant.n}, n_phys={config.n_phys}")
-    return {
-        "plant": plant,
-        "schedule": schedule,
-        "config": config,
-        "solution": solution,
-        "gains": gains,
-        "gamma_factor": OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
-        "gamma": float(solution.gamma),
-        "gamma_star": float(gamma_star),
-        "base_initial_state": np.asarray(x0, dtype=np.float64),
-        "base_evaluation": _evaluation_from_extlqg_rollout(base_rollout, initial_state=x0),
-        "contract": {
-            "label": "6D output-feedback H-infinity",
-            "state_dim": int(plant.n),
-            "physical_dim": int(config.n_phys),
-            "disturbance_dim": int(plant.m_w),
-            "control_dim": int(plant.m_u),
-            "delay_steps": int(config.delay_steps),
-            "disturbance_integrators_exposed": False,
-            "game_source": "rlrmp.analysis.math.cs_game_card.build_no_integrator_game",
-            "config": "rlrmp.analysis.math.output_feedback.OutputFeedbackConfig(n_phys=6)",
-            "gamma_factor": float(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR),
-            "gamma_star": float(gamma_star),
-            "gamma": float(solution.gamma),
-            "admissible": bool(solution.admissible),
-        },
-    }
 
 
 def clean_reach_basis(base_position: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -655,54 +554,22 @@ def add_residual_trace(
     showlegend: bool,
 ) -> None:
     """Add one residual component trace with mean and central 80 percent band."""
-
     scaled = scale_residual_samples(samples, quantity=quantity)
-    mean, low, high = mean_band(scaled)
-    time = np.arange(mean.shape[0], dtype=np.float64) * DT
-    color = SOURCE_COLORS[source]
-    legendgroup = f"{source}-residual-{coord}"
-    if scaled.shape[0] > 1:
-        fig.add_trace(
-            go.Scatter(
-                x=time,
-                y=high,
-                mode="lines",
-                line={"color": "rgba(0,0,0,0)", "width": 0},
-                hoverinfo="skip",
-                showlegend=False,
-                legendgroup=legendgroup,
-            ),
-            row=row,
-            col=col,
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=time,
-                y=low,
-                mode="lines",
-                fill="tonexty",
-                fillcolor=band_color(source),
-                line={"color": "rgba(0,0,0,0)", "width": 0},
-                hoverinfo="skip",
-                showlegend=False,
-                legendgroup=legendgroup,
-            ),
-            row=row,
-            col=col,
-        )
-    fig.add_trace(
-        go.Scatter(
-            x=time,
-            y=mean,
-            mode="lines",
-            name=f"{source_label(source)} {coord}",
-            legendgroup=legendgroup,
-            showlegend=showlegend,
-            line={"color": color, "dash": COORD_DASH[coord], "width": 2.2},
-            opacity=0.95,
-        ),
+    add_reduced_sample_trace(
+        fig,
+        scaled,
+        reducer=mean_band,
         row=row,
         col=col,
+        name=f"{source_label(source)} {coord}",
+        legendgroup=f"{source}-residual-{coord}",
+        color=SOURCE_COLORS[source],
+        band_fill_color=band_color(source),
+        dash=COORD_DASH[coord],
+        width=2.2,
+        opacity=0.95,
+        showlegend=showlegend,
+        dt=DT,
     )
 
 
@@ -918,10 +785,7 @@ def read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def repo_rel(path: Path) -> str:
-    """Return a repository-relative path."""
-
-    return str(path.relative_to(REPO_ROOT))
+repo_rel = portable_repo_path
 
 
 def safe_slug(text: str) -> str:

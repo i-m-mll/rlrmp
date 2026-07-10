@@ -23,21 +23,25 @@ Usage (from repo root):
     uv run python scripts/plot_training_loss_lit_replication.py
 """
 
+from __future__ import annotations
+
 import argparse
-import json
+from rlrmp.viz.colors import hex_to_rgba as _color_with_alpha
 from pathlib import Path
 
+from rlrmp.analysis.multi_cell_driver import (
+    args_namespace,
+    legacy_task_trainer_history_skeleton,
+)
 from rlrmp.paths import REPO_ROOT as WORKTREE  # Bug: 8404108
 
 import equinox as eqx
 import jax.random as jr
-import jax.tree as jt
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from rlrmp.train.minimax import build_hps
-from feedbax.train import init_task_trainer_history, TaskTrainerHistory
 from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476 -- project-config routing
 from rlrmp.train.task_model import setup_task_model_pair
 
@@ -117,56 +121,19 @@ EXPERIMENT = "f47abb1"
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _color_with_alpha(hex_color: str, alpha: float) -> str:
-    """Convert #rrggbb + alpha to rgba(r,g,b,a)."""
-    h = hex_color.lstrip("#")
-    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
-    return f"rgba({r},{g},{b},{alpha})"
 
 
 def _make_args_namespace(label: str) -> argparse.Namespace:
     """Build argparse.Namespace with the correct per-cell CLI flags."""
-    defaults = dict(
+    return args_namespace(
+        profile="lit_replication",
         n_warmup_batches=N_WARMUP_BATCHES,
-        n_adversary_batches=0,
-        batch_size=250,
         n_replicates=N_REPLICATES,
-        nn_output_jerk=0.0,
-        seed=42,
-        hidden_type="gru",
-        sisu_gating="additive",
-        loss_update_enabled=False,
-        loss_update_ratio=0.5,
-        # f47abb1 shared loss weights
-        effector_pos_running=1.0,
-        effector_hold_pos=1.0,
-        effector_hold_vel=0.0,
-        effector_pos_late_weight=0.0,
-        effector_vel_late=0.0,
-        effector_final_vel=0.0,
-        effector_pos_late_final_scale=2.0,
-        effector_pos_late_start_step=80,
-        p_catch_trial=0.5,
-        nn_output=1e-5,
-        nn_hidden=1e-5,
-        # Bug: f47abb1 — actual training-time weight (inspected from saved
-        # warmup_history.eqx); run.json under-reports this. Without it the
-        # skeleton is 5-term, but saved tree is 6-term, causing
-        # eqx.tree_deserialise_leaves to fail at the loss/weight slot.
-        nn_hidden_derivative=0.001,
-        nn_output_pre_go=0.0,
-        nn_hidden_derivative_pre_go=0.0,
-        # Power-law schedule (per-cell overrides)
-        effector_pos_running_schedule="flat",
-        effector_hold_pos_schedule="flat",
-        position_powerlaw_power=6.0,
-        controller_lr=1e-4,
+        overrides=CELL_EXTRA_ARGS[label],
     )
-    defaults.update(CELL_EXTRA_ARGS[label])
-    return argparse.Namespace(**defaults)
 
 
-def load_warmup_history(artifact_dir: Path, label: str) -> TaskTrainerHistory:
+def load_warmup_history(artifact_dir: Path, label: str):
     """Load warmup_history.eqx for a given cell by building the proper skeleton.
 
     The file is in feedbax._io.save format: JSON hyperparameters on line 1,
@@ -183,7 +150,7 @@ def load_warmup_history(artifact_dir: Path, label: str) -> TaskTrainerHistory:
     key = jr.PRNGKey(42)
     pair = setup_task_model_pair(hps, key=key)
 
-    skeleton = init_task_trainer_history(
+    skeleton = legacy_task_trainer_history_skeleton(
         loss_func=pair.task.loss_func,
         n_batches=N_WARMUP_BATCHES,
         n_replicates=N_REPLICATES,
@@ -197,7 +164,7 @@ def load_warmup_history(artifact_dir: Path, label: str) -> TaskTrainerHistory:
     return history
 
 
-def compute_total_loss(history: TaskTrainerHistory) -> np.ndarray:
+def compute_total_loss(history) -> np.ndarray:
     """Compute the TRUE weighted total training loss.
 
     Uses TermTree.aggregate() which respects all per-term weights.
@@ -208,7 +175,7 @@ def compute_total_loss(history: TaskTrainerHistory) -> np.ndarray:
     return total  # (n_batches, n_replicates)
 
 
-def compute_term_losses(history: TaskTrainerHistory) -> dict[str, np.ndarray]:
+def compute_term_losses(history) -> dict[str, np.ndarray]:
     """Compute the weighted per-term losses.
 
     Returns dict mapping term_path -> array of shape (n_batches, n_replicates).

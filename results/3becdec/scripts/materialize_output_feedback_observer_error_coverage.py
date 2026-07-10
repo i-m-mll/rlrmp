@@ -18,7 +18,6 @@ from typing import Any
 
 import numpy as np
 
-import materialize_output_feedback_sweep_certificates as certificates
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     materialize_reference,
@@ -30,7 +29,10 @@ from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
     result_summary as rollout_result_summary,
     run_output_feedback_rollout_recovery,
 )
-from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.analysis.pipelines.standard_certificate_materialization import (
+    deterministic_output_feedback_rows,
+)
+from rlrmp.paths import REPO_ROOT, mkdir_p, portable_repo_path
 
 
 ISSUE_ID = "3becdec"
@@ -121,7 +123,7 @@ def materialize() -> tuple[dict[str, Any], dict[str, np.ndarray]]:
     for fit in summary["fits"]:
         coverage = fit["condition"]["observer_error_coverage"]
         standard_rows.extend(
-            certificates._deterministic_fit_rows(
+            deterministic_output_feedback_rows(
                 fit=fit,
                 arrays=result.arrays,
                 reference=reference,
@@ -140,6 +142,7 @@ def materialize() -> tuple[dict[str, Any], dict[str, np.ndarray]]:
                     "Full standard bundle computed from the deterministic "
                     f"observer-error {coverage['objective']} coverage row."
                 ),
+                issue_id=PARENT_ISSUE_ID,
             )
         )
 
@@ -393,7 +396,7 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 def _repo_relative(path: Path) -> str:
-    return str(path.relative_to(REPO_ROOT))
+    return portable_repo_path(path, repo_root=REPO_ROOT)
 
 
 def _fmt(value: Any) -> str:

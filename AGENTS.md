@@ -594,7 +594,7 @@ The top-level `scripts/` directory is for cross-cutting tooling — scripts that
 | `src/rlrmp/part2_5_eval.py` | Module name encodes a phase. Use `src/rlrmp/eval/`. |
 | `src/rlrmp/methodology_fix_helpers.py` | Module name encodes a phase. Use the underlying capability name. |
 | `scripts/analyse_pregomatrix.py` | Experiment-specific analysis. Belongs under `results/3702f54/scripts/`. |
-| `scripts/eval_part2_5_figures.py` exporting `eval_ensemble_on_trials` | Sibling-script import of a generic primitive. Extract to `src/rlrmp/eval/`. |
+| A top-level experiment script exporting `eval_ensemble_on_trials` | Sibling-script import of a generic primitive. Extract to `src/rlrmp/eval/`. |
 
 **Promotion.** When a helper starts being reused across experiments, promote it to the relevant capability module in `src/rlrmp/` in a dedicated feature issue and update both call sites in the same auth request. When opening a new analysis script that imports from `src/rlrmp/eval/` or `src/rlrmp/train/`, scan for private helpers that should already be in the library — those are the next promotion candidates.
 

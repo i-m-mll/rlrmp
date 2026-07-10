@@ -1,11 +1,10 @@
 """Materialize corrected frozen Adam soft-lambda matching for d469108."""
 
 from __future__ import annotations
+from rlrmp.io import load_named_python_module as load_module
 
 import argparse
-import csv
 import hashlib
-import importlib.util
 import json
 import sys
 from collections import defaultdict
@@ -17,7 +16,11 @@ from typing import Any
 import jax.numpy as jnp
 import numpy as np
 
-from rlrmp.io import compact_json_dumps, update_marked_section, write_compact_json
+from rlrmp.analysis.soft_lambda import run_soft_lambda_materializer
+from rlrmp.io import (
+    compact_json_dumps,
+    write_compact_json,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -30,6 +33,7 @@ CLOSED_LOOP_MECHANISMS = ("linear_no_bias", "affine")
 HVP_SOURCE_JSON = "results/06a4dc8/canonical_soft_lambda_hvp.json"
 DIRECT_REFERENCE_JSON = "results/7180984/direct_epsilon_soft_lambda_redo.json"
 CLOSED_LOOP_REFERENCE_JSON = "results/6cfa892/closed_loop_soft_lambda_redo.json"
+CSV_FIELDS = ('run_id', 'mechanism', 'beta', 'beta_role', 'lambda', 'adam_steps', 'adam_learning_rate', 'finite_status', 'gradient_status', 'optimizer_success', 'optimizer_status', 'optimizer_iterations', 'optimizer_evaluations', 'selected_nonzero', 'classification', 'adam_objective_level_success', 'penalized_gain_over_zero', 'task_loss_gain', 'energy_mean', 'energy_max', 'energy_penalty', 'penalty_minus_task_gain', 'penalty_over_task_gain_abs', 'selected_policy_norm_mean', 'selected_policy_norm_max', 'old_cap_ratio_mean_sidecar', 'old_cap_ratio_max_sidecar', 'old_cap_boundary_fraction_sidecar', 'old_cap_used_as_criterion', 'reference_optimizer', 'reference_classification', 'reference_objective_level_success', 'reference_selected_nonzero', 'reference_penalized_gain_over_zero', 'reference_task_loss_gain', 'matches_reference_success', 'matches_reference_classification', 'matches_reference_selected_nonzero', 'agreement', 'gradient_norm')
 DIRECT_REFERENCE_SCRIPT = (
     REPO_ROOT / "results" / "7180984" / "scripts" / "materialize_direct_epsilon_soft_lambda_redo.py"
 )
@@ -45,6 +49,8 @@ REFERENCE_POLICY_AUDIT = (
 REFERENCE_CRITICAL_SEARCH = (
     REPO_ROOT / "results" / "1697bdc" / "scripts" / "materialize_critical_lambda_search.py"
 )
+
+
 PRIMARY_LAMBDA_SUMMARY = "lambda_star_p90"
 OBJECTIVE_GAIN_TOL = 1e-5
 TASK_GAIN_TOL = 1e-9
@@ -106,35 +112,37 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    payload = materialize(args)
-    output_json = REPO_ROOT / args.output_json
-    output_detail_json = REPO_ROOT / args.output_detail_json
-    output_csv = REPO_ROOT / args.output_csv
-    output_md = REPO_ROOT / args.output_md
-    # The full per-setting Adam table is bulk (~1.8 MB serialized twice as nested
-    # rows[].adam_rows and flat_rows). Keep the tracked JSON as a slim manifest and
-    # push the canonical nested detail to the gitignored _artifacts mirror; the flat
-    # table is the CSV twin and is not serialized a third time.
-    slim_payload, detail_sha, detail_counts = split_payload(payload, args.output_detail_json)
-    write_detail_json(output_detail_json, payload, args.output_detail_json)
-    write_compact_json(output_json, slim_payload)
-    write_csv(output_csv, payload["flat_rows"])
-    update_marked_section(output_md, "adam_soft_lambda_redo", render_markdown(payload))
-    print(
-        json.dumps(
-            {
-                "json": str(output_json),
-                "detail_json": str(output_detail_json),
-                "detail_sha256": detail_sha,
-                "detail_counts": detail_counts,
-                "csv": str(output_csv),
-                "markdown": str(output_md),
-                "hvp_source_json": str((REPO_ROOT / args.hvp_source_json).resolve()),
-            },
-            indent=2,
-        )
+    return run_soft_lambda_materializer(
+        args=args,
+        repo_root=REPO_ROOT,
+        materialize=materialize,
+        csv_rows=lambda payload: payload["flat_rows"],
+        csv_fields=CSV_FIELDS,
+        render_markdown=render_markdown,
+        marker="adam_soft_lambda_redo",
+        json_writer=lambda output_json, payload: _write_json_outputs(
+            output_json, payload, args.output_detail_json
+        ),
+        extra_summary=lambda _payload: {
+            "hvp_source_json": str((REPO_ROOT / args.hvp_source_json).resolve()),
+        },
     )
-    return 0
+
+
+def _write_json_outputs(
+    output_json: Path, payload: dict[str, Any], detail_path: str
+) -> dict[str, Any]:
+    # The nested Adam rows live in the bulk detail artifact; the tracked JSON is
+    # a slim manifest and the CSV is its flat relational twin.
+    output_detail_json = REPO_ROOT / detail_path
+    slim_payload, detail_sha, detail_counts = split_payload(payload, detail_path)
+    write_detail_json(output_detail_json, payload, detail_path)
+    write_compact_json(output_json, slim_payload)
+    return {
+        "detail_json": str(output_detail_json),
+        "detail_sha256": detail_sha,
+        "detail_counts": detail_counts,
+    }
 
 
 def build_detail_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -180,8 +188,7 @@ def split_payload(
     }
     slim = {key: value for key, value in payload.items() if key not in {"rows", "flat_rows"}}
     slim["rows"] = [
-        {key: value for key, value in row.items() if key != "adam_rows"}
-        for row in payload["rows"]
+        {key: value for key, value in row.items() if key != "adam_rows"} for row in payload["rows"]
     ]
     slim["bulk_detail_manifest"] = {
         "path": detail_rel_path,
@@ -688,57 +695,6 @@ def interpret_overall(rows: list[dict[str, Any]]) -> str:
     )
 
 
-def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = [
-        "run_id",
-        "mechanism",
-        "beta",
-        "beta_role",
-        "lambda",
-        "adam_steps",
-        "adam_learning_rate",
-        "finite_status",
-        "gradient_status",
-        "optimizer_success",
-        "optimizer_status",
-        "optimizer_iterations",
-        "optimizer_evaluations",
-        "selected_nonzero",
-        "classification",
-        "adam_objective_level_success",
-        "penalized_gain_over_zero",
-        "task_loss_gain",
-        "energy_mean",
-        "energy_max",
-        "energy_penalty",
-        "penalty_minus_task_gain",
-        "penalty_over_task_gain_abs",
-        "selected_policy_norm_mean",
-        "selected_policy_norm_max",
-        "old_cap_ratio_mean_sidecar",
-        "old_cap_ratio_max_sidecar",
-        "old_cap_boundary_fraction_sidecar",
-        "old_cap_used_as_criterion",
-        "reference_optimizer",
-        "reference_classification",
-        "reference_objective_level_success",
-        "reference_selected_nonzero",
-        "reference_penalized_gain_over_zero",
-        "reference_task_loss_gain",
-        "matches_reference_success",
-        "matches_reference_classification",
-        "matches_reference_selected_nonzero",
-        "agreement",
-        "gradient_norm",
-    ]
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({key: row[key] for key in fieldnames})
-
-
 def render_markdown(payload: dict[str, Any]) -> str:
     lines = [
         "# Adam soft-lambda redo",
@@ -912,16 +868,6 @@ def representative_rows_by_group(rows: list[dict[str, Any]]) -> list[dict[str, A
         best_gain = max(group_rows, key=lambda row: float(row["penalized_gain_over_zero"]))
         selected.append(class_match or success_match or best_gain)
     return selected
-
-
-def load_module(name: str, path: Path) -> Any:
-    spec = importlib.util.spec_from_file_location(name, path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Could not load module at {path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
 
 
 def force_module_roots(*modules: Any) -> None:

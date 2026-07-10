@@ -13,6 +13,7 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+from rlrmp.analysis.data_products import load_analysis_parameter_preset
 from rlrmp.analysis.pipelines.diagnostic_provenance import repo_relative, write_regeneration_spec
 from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     _build_extlqg_comparator_context,
@@ -76,15 +77,9 @@ TIMING_COLORS = {
     "mid": "#7c3aed",
     "late": "#16a34a",
 }
-TRAINING_WIDTHS = {
-    "none": 1.4,
-    "small": 2.2,
-    "moderate": 3.0,
-    "stress": 3.8,
-    "sisu_raw_strong_gamma_1p05": 2.2,
-    "sisu_effective_020a65b_pgd": 3.2,
-}
-EXTLQG_WIDTH = 2.0
+_ANALYSIS_PRESET = load_analysis_parameter_preset("gru_perturbation_response_norm_plots").parameters
+TRAINING_WIDTHS = dict(_ANALYSIS_PRESET["training_widths"])
+EXTLQG_WIDTH = float(_ANALYSIS_PRESET["extlqg_width"])
 
 
 @dataclass(frozen=True)
@@ -505,7 +500,9 @@ class ExtlqgCurveCache:
                 context=self._context,
             )
             base_values = base.position if metric == "delta_position" else base.command
-            perturbed_values = perturbed.position if metric == "delta_position" else perturbed.command
+            perturbed_values = (
+                perturbed.position if metric == "delta_position" else perturbed.command
+            )
             aligned = align_and_equalize_response(
                 np.asarray(perturbed_values - base_values, dtype=np.float64),
                 row,
@@ -808,8 +805,7 @@ def _make_base_figure(*, title: str, learning_rates: Sequence[str]) -> go.Figure
         legend={"groupclick": "togglegroup"},
     )
     column_headers = tuple(
-        (_learning_rate_header(lr), (col + 0.5) / n_cols)
-        for col, lr in enumerate(learning_rates)
+        (_learning_rate_header(lr), (col + 0.5) / n_cols) for col, lr in enumerate(learning_rates)
     )
     row_headers = (
         ("mean", 0.755),
@@ -1201,11 +1197,7 @@ def _parse_learning_rate(label: str, *, run_id: str | None = None) -> str:
 def _parse_training_level(label: str, *, run_id: str | None = None) -> str:
     for source in (label, run_id or ""):
         normalized = (
-            source.lower()
-            .replace("-", "_")
-            .replace("=", "_")
-            .replace(" ", "_")
-            .replace(".", "p")
+            source.lower().replace("-", "_").replace("=", "_").replace(" ", "_").replace(".", "p")
         )
         if "sisu" in normalized and "raw_strong_gamma_1p05" in normalized:
             return "sisu_raw_strong_gamma_1p05"
@@ -1223,7 +1215,11 @@ def _parse_training_level(label: str, *, run_id: str | None = None) -> str:
             or "_cal_moderate_" in source
         ):
             return "moderate"
-        if source.startswith("cal_stress_") or "__cal_stress_" in source or "_cal_stress_" in source:
+        if (
+            source.startswith("cal_stress_")
+            or "__cal_stress_" in source
+            or "_cal_stress_" in source
+        ):
             return "stress"
     raise ValueError(f"could not parse perturbation training level from {label!r}")
 

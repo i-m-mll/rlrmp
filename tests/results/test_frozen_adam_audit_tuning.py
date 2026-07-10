@@ -1,9 +1,8 @@
 """Focused tests for the f3c5db9 frozen Adam tuning materializer."""
 
 from __future__ import annotations
+from rlrmp.io import load_named_python_module
 
-import importlib.util
-import sys
 from pathlib import Path
 
 import pytest
@@ -20,13 +19,7 @@ SCRIPT = (
 
 @pytest.fixture(scope="module")
 def tuning_module():
-    spec = importlib.util.spec_from_file_location("frozen_adam_audit_tuning_f3c5db9", SCRIPT)
-    assert spec is not None
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    return load_named_python_module('frozen_adam_audit_tuning_f3c5db9', SCRIPT)
 
 
 def test_match_requires_finite_useful_and_interior(tuning_module) -> None:

@@ -1,11 +1,10 @@
 """Materialize closed-loop soft-lambda redo rows for 6cfa892."""
 
 from __future__ import annotations
+from rlrmp.io import load_named_python_module as load_module
 
 import argparse
-import csv
 import hashlib
-import importlib.util
 import json
 import sys
 from dataclasses import dataclass
@@ -15,7 +14,14 @@ from typing import Any
 import jax.numpy as jnp
 import numpy as np
 
-from rlrmp.io import compact_json_dumps, update_marked_section, write_compact_json
+from rlrmp.analysis.soft_lambda import (
+    render_soft_lambda_redo_markdown,
+    run_soft_lambda_materializer,
+)
+from rlrmp.io import (
+    compact_json_dumps,
+    write_compact_json,
+)
 from rlrmp.paths import REPO_ROOT
 
 
@@ -35,6 +41,7 @@ REFERENCE_CRITICAL_SEARCH = (
 REFERENCE_DIRECT_REDO = (
     REPO_ROOT / "results" / "7180984" / "scripts" / "materialize_direct_epsilon_soft_lambda_redo.py"
 )
+CSV_FIELDS = ('run_id', 'mechanism', 'optimizer', 'beta', 'beta_role', 'lambda', 'lambda_star_summary', 'lambda_star_summary_value', 'finite_status', 'gradient_status', 'optimizer_success', 'optimizer_status', 'optimizer_iterations', 'optimizer_evaluations', 'selected_nonzero', 'classification', 'objective_level_success', 'penalized_gain_over_zero', 'task_loss_gain', 'energy_mean', 'energy_max', 'energy_penalty', 'penalty_minus_task_gain', 'penalty_over_task_gain_abs', 'selected_policy_norm_mean', 'selected_policy_norm_max', 'old_cap_ratio_mean_sidecar', 'old_cap_ratio_max_sidecar', 'old_cap_boundary_fraction_sidecar', 'old_cap_used_as_criterion', 'gradient_norm')
 PRIMARY_LAMBDA_SUMMARY = "lambda_star_p90"
 CAP_RADIUS_15CM = 0.004545500088363065
 CAP_SOURCE = "ofb_6d_no_integrator_gamma_1p4_rollout_radius"
@@ -176,31 +183,35 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    payload = materialize(args)
-    output_json = REPO_ROOT / args.output_json
-    output_detail_json = REPO_ROOT / args.output_detail_json
-    output_csv = REPO_ROOT / args.output_csv
-    output_md = REPO_ROOT / args.output_md
-    slim_payload, detail_sha, detail_counts = split_payload(payload, args.output_detail_json)
+    return run_soft_lambda_materializer(
+        args=args,
+        repo_root=REPO_ROOT,
+        materialize=materialize,
+        csv_rows=lambda payload: payload["flat_rows"],
+        csv_fields=CSV_FIELDS,
+        render_markdown=render_markdown,
+        marker="closed_loop_soft_lambda_redo",
+        json_writer=lambda output_json, payload: _write_json_outputs(
+            output_json, payload, args.output_detail_json
+        ),
+        extra_summary=lambda _payload: {
+            "hvp_source_json": str((REPO_ROOT / args.hvp_source_json).resolve()),
+        },
+    )
+
+
+def _write_json_outputs(
+    output_json: Path, payload: dict[str, Any], detail_path: str
+) -> dict[str, Any]:
+    output_detail_json = REPO_ROOT / detail_path
+    slim_payload, detail_sha, detail_counts = split_payload(payload, detail_path)
     write_detail_json(output_detail_json, payload)
     write_compact_json(output_json, slim_payload)
-    write_csv(output_csv, payload)
-    update_marked_section(output_md, "closed_loop_soft_lambda_redo", render_markdown(payload))
-    print(
-        json.dumps(
-            {
-                "json": str(output_json),
-                "detail_json": str(output_detail_json),
-                "detail_sha256": detail_sha,
-                "detail_counts": detail_counts,
-                "csv": str(output_csv),
-                "markdown": str(output_md),
-                "hvp_source_json": str((REPO_ROOT / args.hvp_source_json).resolve()),
-            },
-            indent=2,
-        )
-    )
-    return 0
+    return {
+        "detail_json": str(output_detail_json),
+        "detail_sha256": detail_sha,
+        "detail_counts": detail_counts,
+    }
 
 
 def build_detail_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -379,16 +390,6 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
         "flat_rows": flat_rows,
         "overall_interpretation": interpret_overall(run_rows),
     }
-
-
-def load_module(name: str, path: Path) -> Any:
-    spec = importlib.util.spec_from_file_location(name, path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Could not load reference module at {path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
 
 
 def read_optional_json(path: Path) -> dict[str, Any] | None:
@@ -814,142 +815,50 @@ def plain_json(value: Any) -> Any:
     return array.tolist()
 
 
-def write_csv(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = [
-        "run_id",
-        "mechanism",
-        "optimizer",
-        "beta",
-        "beta_role",
-        "lambda",
-        "lambda_star_summary",
-        "lambda_star_summary_value",
-        "finite_status",
-        "gradient_status",
-        "optimizer_success",
-        "optimizer_status",
-        "optimizer_iterations",
-        "optimizer_evaluations",
-        "selected_nonzero",
-        "classification",
-        "objective_level_success",
-        "penalized_gain_over_zero",
-        "task_loss_gain",
-        "energy_mean",
-        "energy_max",
-        "energy_penalty",
-        "penalty_minus_task_gain",
-        "penalty_over_task_gain_abs",
-        "selected_policy_norm_mean",
-        "selected_policy_norm_max",
-        "old_cap_ratio_mean_sidecar",
-        "old_cap_ratio_max_sidecar",
-        "old_cap_boundary_fraction_sidecar",
-        "old_cap_used_as_criterion",
-        "gradient_norm",
-    ]
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
-        writer.writeheader()
-        for row in payload["flat_rows"]:
-            writer.writerow({key: row[key] for key in fieldnames})
-
-
 def render_markdown(payload: dict[str, Any]) -> str:
-    lines = [
-        "# Closed-loop soft-lambda redo",
+    best_section = [
         "",
-        f"Issue: `{payload['issue']}`. Source no-PGD substrates: `c92ebd8`.",
+        "## Best objective rows",
         "",
-        (
+        "| substrate | mechanism | optimizer | beta | class | penalized gain | task gain | "
+        "energy penalty | norm | old-cap ratio |",
+        "|---|---|---|---:|---|---:|---:|---:|---:|---:|",
+    ]
+    best_section.extend(
+        f"| `{run['run_id']}` | `{best['mechanism']}` | `{best['optimizer']}` | "
+        f"{best['beta']:.3g} | `{best['classification']}` | "
+        f"{best['penalized_gain_over_zero']:.6g} | {best['task_loss_gain']:.6g} | "
+        f"{best['energy_penalty']:.6g} | {best['selected_policy_norm_max']:.6g} | "
+        f"{best['old_cap_ratio_max_sidecar']:.6g} |"
+        for run in payload["rows"]
+        for best in run["best_by_mechanism_optimizer"].values()
+    )
+    return render_soft_lambda_redo_markdown(
+        payload,
+        title="Closed-loop soft-lambda redo",
+        introduction=(
             "No training was launched and no controller weights were updated. This deterministic "
             "local materializer loads the frozen c92 substrates and evaluates closed-loop "
             "linear no-bias and affine mechanisms at beta-scaled lambda values from the "
             "corrected HVP/Lanczos p90 source."
         ),
-        "",
-        "## Source contract",
-        "",
-        (
-            f"HVP source: `{payload['hvp_source']['path']}` "
-            f"(`{payload['hvp_source']['schema_version']}`). Primary scale: "
-            f"`{payload['hvp_source']['primary_continuity_summary']}`."
+        objective_title="Objective-level rows",
+        objective_header=(
+            "| substrate | mechanism | optimizer | beta | finite | grad | class | objective "
+            "success | penalized gain | task gain | energy | penalty | norm | old-cap ratio |"
         ),
-        "",
-        (
-            "Beta mapping: `lambda(beta) = beta^2 * substrate_p90(lambda_star_i)`. "
-            "Beta `0.95` is diagnostic only. Cap/interiority is not used as a criterion; "
-            "old-cap ratios below are sidecars only."
-        ),
-        "",
-        "## HVP/p90 beta mapping",
-        "",
-        "| substrate | beta | role | lambda_star p90 | lambda | source |",
-        "|---|---:|---|---:|---:|---|",
-    ]
-    for run in payload["rows"]:
-        for mapping in run["beta_mapping"]:
-            lines.append(
-                f"| `{run['run_id']}` | {mapping['beta']:.3g} | {mapping['role']} | "
-                f"{mapping['lambda_star_summary_value']:.6g} | {mapping['lambda']:.6g} | "
-                f"{mapping['lambda_source']} |"
-            )
-    lines.extend(
-        [
-            "",
-            "## Objective-level rows",
-            "",
-            "| substrate | mechanism | optimizer | beta | finite | grad | class | objective success | "
-            "penalized gain | task gain | energy | penalty | norm | old-cap ratio |",
-            "|---|---|---|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|",
-        ]
-    )
-    for row in payload["flat_rows"]:
-        lines.append(
+        objective_alignment="|---|---|---|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|",
+        objective_rows=(
             f"| `{row['run_id']}` | `{row['mechanism']}` | `{row['optimizer']}` | "
             f"{row['beta']:.3g} | {row['finite_status']} | {row['gradient_status']} | "
             f"`{row['classification']}` | {str(row['objective_level_success']).lower()} | "
             f"{row['penalized_gain_over_zero']:.6g} | {row['task_loss_gain']:.6g} | "
             f"{row['energy_mean']:.6g} | {row['energy_penalty']:.6g} | "
             f"{row['selected_policy_norm_max']:.6g} | {row['old_cap_ratio_max_sidecar']:.6g} |"
-        )
-    lines.extend(
-        [
-            "",
-            "## Best objective rows",
-            "",
-            "| substrate | mechanism | optimizer | beta | class | penalized gain | task gain | "
-            "energy penalty | norm | old-cap ratio |",
-            "|---|---|---|---:|---|---:|---:|---:|---:|---:|",
-        ]
-    )
-    for run in payload["rows"]:
-        for best in run["best_by_mechanism_optimizer"].values():
-            lines.append(
-                f"| `{run['run_id']}` | `{best['mechanism']}` | `{best['optimizer']}` | "
-                f"{best['beta']:.3g} | `{best['classification']}` | "
-                f"{best['penalized_gain_over_zero']:.6g} | {best['task_loss_gain']:.6g} | "
-                f"{best['energy_penalty']:.6g} | {best['selected_policy_norm_max']:.6g} | "
-                f"{best['old_cap_ratio_max_sidecar']:.6g} |"
-            )
-    lines.extend(
-        [
-            "",
-            "## Classification counts",
-            "",
-            "| substrate | counts |",
-            "|---|---|",
-        ]
-    )
-    for run in payload["rows"]:
-        counts = ", ".join(
-            f"`{label}`: {count}" for label, count in run["objective_classification_counts"].items()
-        )
-        lines.append(f"| `{run['run_id']}` | {counts} |")
-    lines.extend(
-        [
-            "",
+            for row in payload["flat_rows"]
+        ),
+        extra_sections=best_section,
+        footer=(
             "## Interpretation",
             "",
             payload["overall_interpretation"],
@@ -973,9 +882,8 @@ def render_markdown(payload: dict[str, Any]) -> str:
             "  --output-md results/6cfa892/smoke/closed_loop_soft_lambda_redo.md",
             "```",
             "",
-        ]
+        ),
     )
-    return "\n".join(lines)
 
 
 if __name__ == "__main__":

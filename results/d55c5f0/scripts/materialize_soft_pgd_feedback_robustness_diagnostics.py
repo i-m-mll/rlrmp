@@ -1,8 +1,8 @@
 """Materialize d55 soft-PGD feedback-bank robustness diagnostics."""
 
 from __future__ import annotations
+from rlrmp.io import write_csv_rows
 
-import csv
 import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -16,8 +16,12 @@ from _soft_pgd_materializer_common import (
     load_c92_module,
     repo_rel,
 )
+from rlrmp.eval.robustness_diagnostics import (
+    build_summary as canonical_build_summary,
+    run_feedback_robustness_diagnostics,
+)
 from rlrmp.io import update_marked_section, write_compact_json
-from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.paths import REPO_ROOT
 
 
 TAG = "soft_pgd_feedback_robustness_diagnostics"
@@ -39,106 +43,54 @@ def main() -> None:
     assert_soft_inputs_ready()
     base, ofb = load_reference_materializers()
     patch_reference_materializers(base, ofb)
-    mkdir_p(NOTES_DIR)
-    mkdir_p(EVALUATION_BULK_DIR)
-    mkdir_p(PERTURBATION_BULK_DIR)
-    mkdir_p(STABILIZATION_BULK_DIR)
-
     paths = ofb.output_paths()
-    labels = tuple(row.label for row in SOFT_ROWS)
-    checkpoint_manifest = (
-        ofb.load_json(paths["checkpoint_manifest"])
-        if paths["checkpoint_manifest"].exists()
-        else ofb.materialize_validation_selected_checkpoint_manifest(
-            experiment=ISSUE,
-            run_ids=SOFT_RUN_IDS,
-            output_path=paths["checkpoint_manifest"],
-            repo_root=REPO_ROOT,
-        )
-    )
-    evaluation = (
-        ofb.load_json(paths["evaluation"])
-        if paths["evaluation"].exists()
-        else ofb.materialize_gru_evaluation_diagnostics(
-            experiment=ISSUE,
-            run_ids=SOFT_RUN_IDS,
-            labels=labels,
-            output_path=paths["evaluation"],
-            bulk_dir=EVALUATION_BULK_DIR,
-            n_rollout_trials=64,
-            write_bulk_arrays=True,
-            regeneration_spec_path=paths["evaluation_regeneration_spec"],
-            repo_root=REPO_ROOT,
-        )
-    )
-    perturbation = (
-        ofb.load_json(paths["perturbation"])
-        if ofb.perturbation_output_is_current(paths["perturbation"], expected_trials=64)
-        else ofb.materialize_gru_perturbation_response(
-            source_experiment=ISSUE,
-            result_experiment=ISSUE,
-            run_ids=SOFT_RUN_IDS,
-            labels=labels,
-            n_rollout_trials=64,
-            output_path=paths["perturbation"],
-            note_path=paths["perturbation_note"],
-            bulk_dir=PERTURBATION_BULK_DIR,
-            regeneration_spec_path=paths["perturbation_regeneration_spec"],
-            bank_mode="calibrated",
-            calibration_level="moderate",
-            calibration_reach=0.15,
-            feedback_scale_manifest_path=paths["evaluation"],
-            extlqg_physical_dim=6,
-            write_bulk_arrays=False,
-            repo_root=REPO_ROOT,
-        )
-    )
-    feedback = (
-        ofb.load_json(paths["feedback"])
-        if ofb.run_output_is_current(paths["feedback"], expected_trials=64)
-        else ofb.materialize_gru_feedback_ablation(
-            source_experiment=ISSUE,
-            result_experiment=ISSUE,
-            scope="soft_pgd_feedback_robustness_ablation",
-            run_ids=SOFT_RUN_IDS,
-            labels=labels,
-            n_rollout_trials=64,
-            bank_mode="calibrated",
-            calibration_level="moderate",
-            calibration_reach=0.15,
-            feedback_selection_level="moderate",
-            feedback_scale_manifest_path=paths["evaluation"],
-            output_path=paths["feedback"],
-            note_path=paths["feedback_note"],
-            regeneration_spec_path=paths["feedback_regeneration_spec"],
-            repo_root=REPO_ROOT,
-        )
-    )
-    perturbation_detail = ofb.load_json(Path(perturbation["bulk_detail_manifest"]["path"]))
-    stabilization = ofb.materialize_stabilization(paths["stabilization_detail"])
-    rows = [
-        ofb.table_row(
-            row_spec,
-            evaluation=evaluation,
-            feedback=feedback,
-            perturbation_detail=perturbation_detail,
-            stabilization=stabilization,
-        )
-        for row_spec in ofb.ROWS
-    ]
-    summary = build_summary(
-        rows,
-        checkpoint_manifest=checkpoint_manifest,
-        evaluation=evaluation,
-        perturbation=perturbation,
-        feedback=feedback,
-        stabilization=stabilization,
+    result = run_feedback_robustness_diagnostics(
+        hooks=ofb,
         paths=paths,
+        output_dirs=(NOTES_DIR, EVALUATION_BULK_DIR, PERTURBATION_BULK_DIR, STABILIZATION_BULK_DIR),
+        issue=ISSUE,
+        repo_root=REPO_ROOT,
+        run_ids=SOFT_RUN_IDS,
+        labels=tuple(row.label for row in SOFT_ROWS),
+        evaluation_bulk_dir=EVALUATION_BULK_DIR,
+        perturbation_bulk_dir=PERTURBATION_BULK_DIR,
+        feedback_scope="soft_pgd_feedback_robustness_ablation",
+        materialize_extensions=lambda current_paths, _components: {
+            "stabilization": ofb.materialize_stabilization(
+                current_paths["stabilization_detail"]
+            )
+        },
+        build_rows=lambda components: [
+            ofb.table_row(
+                row_spec,
+                evaluation=components["evaluation"],
+                feedback=components["feedback"],
+                perturbation_detail=components["perturbation_detail"],
+                stabilization=components["stabilization"],
+            )
+            for row_spec in ofb.ROWS
+        ],
+        build_summary_payload=lambda rows, components: build_summary(
+            rows,
+            checkpoint_manifest=components["checkpoint_manifest"],
+            evaluation=components["evaluation"],
+            perturbation=components["perturbation"],
+            feedback=components["feedback"],
+            stabilization=components["stabilization"],
+            paths=paths,
+        ),
+        write_outputs=lambda summary, rows: _write_outputs(summary, rows),
     )
+    print(json.dumps({"summary": repo_rel(SUMMARY_JSON), "rows": result["rows"]}, indent=2))
+
+
+def _write_outputs(
+    summary: Mapping[str, Any],
+    rows: Sequence[Mapping[str, Any]],
+) -> None:
     write_compact_json(SUMMARY_JSON, summary)
     write_csv(rows)
     update_marked_section(SUMMARY_MD, MARKER, render_markdown(summary))
-    print(json.dumps({"summary": repo_rel(SUMMARY_JSON), "rows": rows}, indent=2))
 
 
 def load_reference_materializers() -> tuple[Any, Any]:
@@ -196,15 +148,39 @@ def build_summary(
 ) -> dict[str, Any]:
     """Return the combined JSON summary payload."""
 
-    return {
-        "schema_version": SCHEMA_VERSION,
-        "issue": ISSUE,
-        "scope": (
+    components = {
+        "checkpoint_manifest": checkpoint_manifest,
+        "evaluation": evaluation,
+        "perturbation": perturbation,
+        "feedback": feedback,
+        "stabilization": stabilization,
+    }
+    return canonical_build_summary(
+        rows,
+        schema_version=SCHEMA_VERSION,
+        issue=ISSUE,
+        scope=(
             "Soft-constraint PGD reach-context feedback/robustness and "
             "stabilization diagnostics for the d55 first-batch rows"
         ),
-        "row_order": list(SOFT_RUN_IDS),
-        "rows": list(rows),
+        row_order=SOFT_RUN_IDS,
+        paths=paths,
+        repo_relative=repo_rel,
+        components=components,
+        component_schema_names=tuple(components),
+        extensions=_summary_extensions(rows),
+        source_output_extensions={
+            "summary_json": repo_rel(SUMMARY_JSON),
+            "summary_markdown": repo_rel(SUMMARY_MD),
+            "summary_csv": repo_rel(SUMMARY_CSV),
+            "perturbation_detail_manifest": perturbation["bulk_detail_manifest"],
+            "stabilization_detail": repo_rel(DETAIL_JSON),
+        },
+    )
+
+
+def _summary_extensions(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    return {
         "soft_gamma_comparisons": adjacent_soft_gamma_comparisons(rows),
         "interpretation_contract": {
             "status": "diagnostic_materializer_only",
@@ -218,23 +194,6 @@ def build_summary(
             "No formal H-infinity claim is made here. These are empirical GRU "
             "feedback/robustness diagnostics plus soft-gamma provenance."
         ),
-        "source_outputs": {
-            key: repo_rel(path) for key, path in paths.items()
-        }
-        | {
-            "summary_json": repo_rel(SUMMARY_JSON),
-            "summary_markdown": repo_rel(SUMMARY_MD),
-            "summary_csv": repo_rel(SUMMARY_CSV),
-            "perturbation_detail_manifest": perturbation["bulk_detail_manifest"],
-            "stabilization_detail": repo_rel(DETAIL_JSON),
-        },
-        "component_schemas": {
-            "checkpoint_manifest": checkpoint_manifest.get("schema_version"),
-            "evaluation": evaluation.get("schema_version"),
-            "perturbation": perturbation.get("schema_version"),
-            "feedback": feedback.get("schema_version"),
-            "stabilization": stabilization.get("schema_version"),
-        },
     }
 
 
@@ -302,31 +261,8 @@ def aggregation_contract() -> dict[str, str]:
 
 
 def write_csv(rows: Sequence[Mapping[str, Any]]) -> None:
-    """Write the compact comparison table as CSV."""
-
-    fields = [
-        "row",
-        "training_condition",
-        "physical_level",
-        "active_l2_radius_15cm",
-        "pgd_budget_source",
-        "peak_velocity_m_s",
-        "fb_delta_u",
-        "ablation_idx",
-        "sensory_auc_dx_mm_s",
-        "non_sensory_auc_dx_mm_s",
-        "peak_dx_over_open_loop",
-        "stabilization_feedback_auc_mm_s",
-        "stabilization_mechanical_auc_mm_s",
-        "stabilization_command_auc_mm_s",
-        "stabilization_process_force_auc_mm_s",
-        "formal_hinf_claim",
-    ]
-    with SUMMARY_CSV.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({field: row[field] for field in fields})
+    fields = ['row', 'training_condition', 'physical_level', 'active_l2_radius_15cm', 'pgd_budget_source', 'peak_velocity_m_s', 'fb_delta_u', 'ablation_idx', 'sensory_auc_dx_mm_s', 'non_sensory_auc_dx_mm_s', 'peak_dx_over_open_loop', 'stabilization_feedback_auc_mm_s', 'stabilization_mechanical_auc_mm_s', 'stabilization_command_auc_mm_s', 'stabilization_process_force_auc_mm_s', 'formal_hinf_claim']
+    write_csv_rows(SUMMARY_CSV, list(rows), fieldnames=fields)
 
 
 def render_markdown(summary: Mapping[str, Any]) -> str:

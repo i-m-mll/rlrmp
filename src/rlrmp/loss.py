@@ -33,6 +33,7 @@ from rlrmp.analysis.math.cs_game_card import (
     build_canonical_game,
     build_no_integrator_game,
 )
+from rlrmp.loss_presets import load_loss_preset
 
 logger = logging.getLogger(__name__)
 
@@ -723,93 +724,24 @@ class PrepForceFilterHoldLoss(AbstractLoss):
         return _sum_masked_time_density(density, trial_specs, self.epoch_indices)
 
 
-DEFAULT_TOP_WEIGHTS: dict[str, float] = {
-    # leaf terms
-    "effector_pos": 1.0,
-    "effector_hold_pos": 1.0,
-    "effector_hold_vel": 1.0,
-    "effector_pos_mid": 1.0,
-    "effector_vel_mid": 1.0,
-    "effector_pos_late": 1.0,
-    "effector_vel_late": 1.0,
-    "effector_pos_running": 0.0,
-    "effector_vel_running": 0.0,
-    "effector_terminal_pos": 0.0,
-    "effector_terminal_vel": 0.0,
-    # Terminal-step velocity penalty (historical simple_reach_loss shape).
-    # Fires only at the final timestep t=T; strong identifying constraint that
-    # funnels replicates to a single "come-to-rest at the goal" strategy.
-    # Default 0.0; enable via --effector-final-vel (suggested 1.0 to match the
-    # historical weight). Bug: 2bc95fd
-    "effector_final_vel": 0.0,
-    "nn_output": 1e-5,
-    "nn_hidden": 1e-5,
-    # Hidden-state smoothness penalty (Shahbazi et al. 2025 Eq. 1; weight 1e-3
-    # in their setup). Default 0.0 so existing configs are unchanged unless
-    # explicitly enabled. Bug: efc4d68
-    "nn_hidden_derivative": 0.0,
-    # Output-jerk penalty mean(||v_{t+1} - 2 v_t + v_{t-1}||²) on effector
-    # velocity (= discrete jerk). Shahbazi et al. 2025 Eq. 1 use weight 1e5.
-    # Default 0.0 so existing configs are unchanged unless explicitly enabled.
-    # Bug: efc4d68 (feedbax 7e1d257)
-    "nn_output_jerk": 0.0,
-    # Anti-anticipation: penalise controller force during the pre-go window
-    # (epochs 0+1 = hold + target_on, before the go cue). Wraps the existing
-    # `nn_output` term in an `EpochMaskedLoss`. Default 0.0 keeps baseline
-    # behaviour unchanged. Suggested initial weight 1e-2 (1000x the
-    # post-aggregated nn_output weight). Bug: efc4d68 (feedbax 50507a9)
-    "nn_output_pre_go": 0.0,
-    "delayed_pre_go_force_filter_hold": 0.0,
-    "delayed_pre_go_start_pos_hold": 0.0,
-    "delayed_pre_go_zero_vel_hold": 0.0,
-    # Anti-preparation companion: same epoch mask wrapped around the
-    # hidden-state derivative term. Exposed for completeness — the user's
-    # primary intervention is the motor-pre-go term above; this exists so
-    # the comparator "suppress preparation too" run is one CLI flag away.
-    # Bug: efc4d68 (feedbax 50507a9)
-    "nn_hidden_derivative_pre_go": 0.0,
-    # composite bundle (if enabled)
-    "goal_hit_in_window": 1.0,
-}
-
-DEFAULT_GOAL_HIT_SUBWEIGHTS: dict[str, float] = {
-    "pos": 1e-5,
-    "vel": 2.0,
-    "post_pos": 1.0,
-    "late_pos": 0.0,
-}
-
-DEFAULT_GOAL_HIT_PARAMS: dict[str, Any] = {
-    "start_step_after_go": 60,
-    "end_step_after_go": 80,
-    "softmin_tau": 0.2,
-    "post_pos_sigma_t": 5.0,
-    "alpha_eps": 1e-12,
-}
-
-DEFAULT_EFFECTOR_POS_LATE_PARAMS: dict[str, Any] = {
-    "start_step_after_go": 80,
-    "final_scale_factor": 1.0,
-}
-
-DEFAULT_EFFECTOR_VEL_LATE_PARAMS: dict[str, Any] = {
-    "start_step_after_go": 80,
-    "final_scale_factor": 1.0,
-}
-
-DEFAULT_EFFECTOR_POS_MID_PARAMS: dict[str, Any] = {
-    "start_step_after_go": 0,
-    "end_step_after_go": 80,
-    "ramp_init_weight": 0.0,
-    "ramp_final_weight": 0.1,
-}
-
-DEFAULT_EFFECTOR_VEL_MID_PARAMS: dict[str, Any] = {
-    "start_step_after_go": 0,
-    "end_step_after_go": 80,
-    "ramp_init_weight": 0.0,
-    "ramp_final_weight": 0.1,
-}
+_DEFAULT_LOSS_PRESET = load_loss_preset()
+DEFAULT_TOP_WEIGHTS: dict[str, float] = _DEFAULT_LOSS_PRESET.top_weights.model_dump()
+DEFAULT_GOAL_HIT_SUBWEIGHTS: dict[str, float] = (
+    _DEFAULT_LOSS_PRESET.goal_hit_subweights.model_dump()
+)
+DEFAULT_GOAL_HIT_PARAMS: dict[str, Any] = _DEFAULT_LOSS_PRESET.goal_hit_params.model_dump()
+DEFAULT_EFFECTOR_POS_LATE_PARAMS: dict[str, Any] = (
+    _DEFAULT_LOSS_PRESET.effector_pos_late_params.model_dump()
+)
+DEFAULT_EFFECTOR_VEL_LATE_PARAMS: dict[str, Any] = (
+    _DEFAULT_LOSS_PRESET.effector_vel_late_params.model_dump()
+)
+DEFAULT_EFFECTOR_POS_MID_PARAMS: dict[str, Any] = (
+    _DEFAULT_LOSS_PRESET.effector_pos_mid_params.model_dump()
+)
+DEFAULT_EFFECTOR_VEL_MID_PARAMS: dict[str, Any] = (
+    _DEFAULT_LOSS_PRESET.effector_vel_mid_params.model_dump()
+)
 
 
 def get_epoch_weights(

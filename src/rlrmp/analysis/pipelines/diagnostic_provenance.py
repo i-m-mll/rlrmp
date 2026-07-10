@@ -21,11 +21,14 @@ from feedbax.contracts.manifest import (
     TreeHashRef,
 )
 
+from rlrmp.analysis.data_products import load_analysis_parameter_preset
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
 SCHEMA_VERSION = REGENERATION_SPEC_SCHEMA_VERSION
-DEFAULT_MAX_TREE_HASH_FILES = 256
+DEFAULT_MAX_TREE_HASH_FILES = int(
+    load_analysis_parameter_preset("diagnostic_provenance").parameters["max_tree_hash_files"]
+)
 
 
 def write_regeneration_spec(
@@ -66,9 +69,7 @@ def write_regeneration_spec(
     spec = RegenerationSpec(
         command=_regeneration_command(command, materializer=materializer, repo_root=repo_root),
         parameters=_jsonify(parameters or {}),
-        inputs=[
-            _coerce_artifact_ref(item, role="input", repo_root=repo_root) for item in inputs
-        ],
+        inputs=[_coerce_artifact_ref(item, role="input", repo_root=repo_root) for item in inputs],
         outputs=[
             _coerce_artifact_ref(item, role="output", repo_root=repo_root) for item in outputs
         ],
@@ -213,7 +214,9 @@ def _coerce_ref(
     if isinstance(item, Mapping):
         payload = dict(item)
         if "path" in payload and "exists" not in payload:
-            ref = path_ref(payload["path"], role=str(payload.get("role", role)), repo_root=repo_root)
+            ref = path_ref(
+                payload["path"], role=str(payload.get("role", role)), repo_root=repo_root
+            )
             ref.update({key: _jsonify(value) for key, value in payload.items() if key != "path"})
             return ref
         return _jsonify(payload)

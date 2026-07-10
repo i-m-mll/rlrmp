@@ -13,11 +13,12 @@ import os
 import subprocess
 import sys
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
+from rlrmp.benchmarks._common import run_parent_processes
 from rlrmp.model.trainable import staged_network_trainable_parts
 
 
@@ -85,29 +86,18 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def run_parent(args: argparse.Namespace) -> int:
     output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    start_file = output_dir / "start.json"
-    if start_file.exists():
-        start_file.unlink()
-
     parent_config = vars(args).copy()
     parent_config["captured_at"] = _utc_now()
     parent_config["preallocation"] = "disabled"
     parent_config["jax_platform"] = "cpu"
     parent_config["python"] = sys.version
-    (output_dir / "parent_config.json").write_text(_json(parent_config), encoding="utf-8")
-
     env = os.environ.copy()
     env[PREALLOC_ENV] = "false"
     env[JAX_PLATFORM_ENV] = "cpu"
     env.setdefault("PYTHONUNBUFFERED", "1")
 
-    procs: list[subprocess.Popen[str]] = []
-    handles = []
-    for worker_index in range(args.n_workers):
-        worker_dir = output_dir / f"worker_{worker_index:02d}"
-        worker_dir.mkdir(parents=True, exist_ok=True)
-        worker_config = WorkerConfig(
+    def worker_config(worker_index: int, worker_dir: Path, start_file: Path) -> WorkerConfig:
+        return WorkerConfig(
             worker_index=worker_index,
             output_dir=str(worker_dir),
             start_file=str(start_file),
@@ -124,78 +114,36 @@ def run_parent(args: argparse.Namespace) -> int:
             regularized_fidelity=bool(args.regularized_fidelity),
             plant_backend=str(args.plant_backend),
         )
-        command = [
-            sys.executable,
-            "-m",
-            "rlrmp.benchmarks.local_parallel",
-            "worker",
-            "--config-json",
-            json.dumps(asdict(worker_config), sort_keys=True),
-        ]
-        stdout = (worker_dir / "stdout.log").open("w", encoding="utf-8")
-        stderr = (worker_dir / "stderr.log").open("w", encoding="utf-8")
-        handles.extend([stdout, stderr])
-        procs.append(
-            subprocess.Popen(
-                command,
-                cwd=Path.cwd(),
-                env=env,
-                stdout=stdout,
-                stderr=stderr,
-                text=True,
-            )
-        )
-        time.sleep(max(0.0, float(args.stagger_seconds)))
 
-    try:
-        ready = _wait_for_ready(output_dir, args.n_workers, args.ready_timeout_seconds, procs)
-        (output_dir / "ready_summary.json").write_text(_json(ready), encoding="utf-8")
-        start_file.write_text(
-            _json(
-                {
-                    "released_at": _utc_now(),
-                    "n_workers": args.n_workers,
-                    "burn_in_seconds": args.burn_in_seconds,
-                    "measure_seconds": args.measure_seconds,
-                }
-            ),
-            encoding="utf-8",
-        )
-        memory_samples = _sample_until_done(
-            output_dir=output_dir,
-            procs=procs,
-            sample_seconds=float(args.sample_seconds),
-        )
-        worker_summaries = _collect_worker_summaries(output_dir, args.n_workers)
-        summary = {
+    return run_parent_processes(
+        output_dir=output_dir,
+        n_workers=int(args.n_workers),
+        worker_module="rlrmp.benchmarks.local_parallel",
+        worker_config=worker_config,
+        env=env,
+        parent_config=parent_config,
+        start_payload={
+            "released_at": _utc_now(),
+            "n_workers": args.n_workers,
+            "burn_in_seconds": args.burn_in_seconds,
+            "measure_seconds": args.measure_seconds,
+        },
+        stagger_seconds=float(args.stagger_seconds),
+        ready_timeout_seconds=float(args.ready_timeout_seconds),
+        sample_seconds=float(args.sample_seconds),
+        wait_for_ready=_wait_for_ready,
+        sample_until_done=_sample_until_done,
+        collect_worker_summaries=_collect_worker_summaries,
+        aggregate=_aggregate,
+        summary_fields={
             "captured_at": _utc_now(),
             "n_workers": args.n_workers,
             "preallocation_env": env.get(PREALLOC_ENV),
             "jax_platform": env.get(JAX_PLATFORM_ENV),
-            "ready": ready,
-            "workers": worker_summaries,
-            "memory_samples": memory_samples,
-            "aggregate": _aggregate(worker_summaries, memory_samples),
-        }
-        (output_dir / "summary.json").write_text(_json(summary), encoding="utf-8")
-        print("RLRMP_LOCAL_PACKING_SUMMARY_START", flush=True)
-        print(_json(summary), flush=True)
-        print("RLRMP_LOCAL_PACKING_SUMMARY_END", flush=True)
-    finally:
-        for proc in procs:
-            if proc.poll() is None:
-                proc.terminate()
-        deadline = time.monotonic() + 30.0
-        for proc in procs:
-            while proc.poll() is None and time.monotonic() < deadline:
-                time.sleep(0.2)
-            if proc.poll() is None:
-                proc.kill()
-        for handle in handles:
-            handle.close()
-
-    failed = [proc.returncode for proc in procs if proc.returncode not in (0, None)]
-    return 1 if failed else 0
+        },
+        sample_field="memory_samples",
+        summary_marker="RLRMP_LOCAL_PACKING_SUMMARY",
+    )
 
 
 def run_worker(config: WorkerConfig) -> int:

@@ -1,6 +1,7 @@
 """Inventory legacy checkpoint trees for issue 183cba9."""
 
 from __future__ import annotations
+from rlrmp.paths import portable_repo_path as _rel
 
 import json
 from dataclasses import dataclass
@@ -141,11 +142,6 @@ def _read_json(path: Path) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
-def _rel(path: Path) -> str:
-    try:
-        return str(path.relative_to(REPO))
-    except ValueError:
-        return str(path)
 
 
 if __name__ == "__main__":

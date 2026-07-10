@@ -1,28 +1,25 @@
 """Materialize PGD 1.05 reach-context feedback and robustness diagnostics."""
 
 from __future__ import annotations
+from rlrmp.io import write_csv_rows
+from rlrmp.paths import portable_repo_path
 
-import csv
 import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
-    materialize_validation_selected_checkpoint_manifest,
-)
-from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import (
-    materialize_gru_evaluation_diagnostics,
-)
-from rlrmp.analysis.pipelines.gru_feedback_ablation import materialize_gru_feedback_ablation
-from rlrmp.analysis.pipelines.gru_perturbation_bank import materialize_gru_perturbation_response
 from rlrmp.analysis.pipelines.hinf_phenotype_sidecar import (
     build_hinf_phenotype_sidecar,
     load_hinf_phenotype_sources,
     write_hinf_phenotype_sidecar,
 )
+from rlrmp.eval.robustness_diagnostics import (
+    build_summary as canonical_build_summary,
+    run_feedback_robustness_diagnostics,
+)
 from rlrmp.io import write_compact_json
-from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.paths import REPO_ROOT
 
 
 ISSUE = "c92ebd8"
@@ -61,104 +58,53 @@ SUMMARY_CSV = NOTES_DIR / f"{TAG}.csv"
 def main() -> None:
     """Materialize component sidecars and write the compact comparison table."""
 
-    mkdir_p(NOTES_DIR)
-    mkdir_p(BULK_DIR)
     paths = output_paths()
-    labels = tuple(run_label(run_id) for run_id in ROWS)
-
-    checkpoint_manifest = (
-        load_json(paths["checkpoint_manifest"])
-        if paths["checkpoint_manifest"].exists()
-        else materialize_validation_selected_checkpoint_manifest(
-            experiment=ISSUE,
-            run_ids=ROWS,
-            output_path=paths["checkpoint_manifest"],
-            repo_root=REPO_ROOT,
-        )
-    )
-    evaluation = (
-        load_json(paths["evaluation"])
-        if paths["evaluation"].exists()
-        else materialize_gru_evaluation_diagnostics(
-            experiment=ISSUE,
-            run_ids=ROWS,
-            labels=labels,
-            output_path=paths["evaluation"],
-            bulk_dir=BULK_DIR / "evaluation_diagnostics",
-            n_rollout_trials=64,
-            write_bulk_arrays=False,
-            regeneration_spec_path=paths["evaluation_regeneration_spec"],
-            repo_root=REPO_ROOT,
-        )
-    )
-    perturbation = (
-        load_json(paths["perturbation"])
-        if perturbation_output_is_current(paths["perturbation"], expected_trials=64)
-        else materialize_gru_perturbation_response(
-            source_experiment=ISSUE,
-            result_experiment=ISSUE,
-            run_ids=ROWS,
-            labels=labels,
-            n_rollout_trials=64,
-            output_path=paths["perturbation"],
-            note_path=paths["perturbation_note"],
-            bulk_dir=BULK_DIR / "perturbation_response",
-            regeneration_spec_path=paths["perturbation_regeneration_spec"],
-            bank_mode="calibrated",
-            calibration_level="moderate",
-            calibration_reach=0.15,
-            feedback_scale_manifest_path=paths["evaluation"],
-            extlqg_physical_dim=6,
-            write_bulk_arrays=False,
-            repo_root=REPO_ROOT,
-        )
-    )
-    feedback = (
-        load_json(paths["feedback"])
-        if run_output_is_current(paths["feedback"], expected_trials=64)
-        else materialize_gru_feedback_ablation(
-            source_experiment=ISSUE,
-            result_experiment=ISSUE,
-            scope="pgd_1p05_reach_context_feedback_ablation",
-            run_ids=ROWS,
-            labels=labels,
-            n_rollout_trials=64,
-            bank_mode="calibrated",
-            calibration_level="moderate",
-            calibration_reach=0.15,
-            feedback_selection_level="moderate",
-            feedback_scale_manifest_path=paths["evaluation"],
-            output_path=paths["feedback"],
-            note_path=paths["feedback_note"],
-            regeneration_spec_path=paths["feedback_regeneration_spec"],
-            repo_root=REPO_ROOT,
-        )
-    )
-    sidecar = materialize_hinf_sidecar(paths)
-    detail = load_json(Path(perturbation["bulk_detail_manifest"]["path"]))
-    rows = [
-        table_row(
-            run_id,
-            evaluation=evaluation,
-            feedback=feedback,
-            perturbation_detail=detail,
-            phenotype_sidecar=sidecar,
-        )
-        for run_id in ROWS
-    ]
-    summary = build_summary(
-        rows,
-        checkpoint_manifest=checkpoint_manifest,
+    result = run_feedback_robustness_diagnostics(
+        hooks=globals(),
         paths=paths,
-        evaluation=evaluation,
-        perturbation=perturbation,
-        feedback=feedback,
-        sidecar=sidecar,
+        output_dirs=(NOTES_DIR, BULK_DIR),
+        issue=ISSUE,
+        repo_root=REPO_ROOT,
+        run_ids=ROWS,
+        labels=tuple(run_label(run_id) for run_id in ROWS),
+        evaluation_bulk_dir=BULK_DIR / "evaluation_diagnostics",
+        perturbation_bulk_dir=BULK_DIR / "perturbation_response",
+        feedback_scope="pgd_1p05_reach_context_feedback_ablation",
+        write_evaluation_bulk_arrays=False,
+        materialize_extensions=lambda current_paths, _components: {
+            "sidecar": materialize_hinf_sidecar(current_paths)
+        },
+        build_rows=lambda components: [
+            table_row(
+                run_id,
+                evaluation=components["evaluation"],
+                feedback=components["feedback"],
+                perturbation_detail=components["perturbation_detail"],
+                phenotype_sidecar=components["sidecar"],
+            )
+            for run_id in ROWS
+        ],
+        build_summary_payload=lambda rows, components: build_summary(
+            rows,
+            checkpoint_manifest=components["checkpoint_manifest"],
+            paths=paths,
+            evaluation=components["evaluation"],
+            perturbation=components["perturbation"],
+            feedback=components["feedback"],
+            sidecar=components["sidecar"],
+        ),
+        write_outputs=_write_outputs,
     )
+    print(json.dumps({"summary": str(SUMMARY_JSON), "rows": result["rows"]}, indent=2))
+
+
+def _write_outputs(
+    summary: Mapping[str, Any],
+    rows: Sequence[Mapping[str, Any]],
+) -> None:
     write_compact_json(SUMMARY_JSON, summary)
     write_csv(rows)
     SUMMARY_MD.write_text(render_markdown(summary), encoding="utf-8")
-    print(json.dumps({"summary": str(SUMMARY_JSON), "rows": rows}, indent=2))
 
 
 def output_paths() -> dict[str, Path]:
@@ -347,12 +293,45 @@ def build_summary(
 ) -> dict[str, Any]:
     """Return the JSON summary payload."""
 
+    components = {
+        "checkpoint_manifest": checkpoint_manifest,
+        "evaluation": evaluation,
+        "perturbation": perturbation,
+        "feedback": feedback,
+        "phenotype_sidecar": sidecar,
+    }
+    return canonical_build_summary(
+        rows,
+        schema_version="rlrmp.c92ebd8.pgd_1p05_reach_context_diagnostics.v1",
+        issue=ISSUE,
+        scope="PGD 1.05 reach-context perturbation, feedback, robustness diagnostics",
+        row_order=ROWS,
+        paths=paths,
+        repo_relative=repo_rel,
+        components=components,
+        component_schema_names=(
+            "checkpoint_manifest",
+            "evaluation",
+            "perturbation",
+            "feedback",
+            "phenotype_sidecar",
+        ),
+        extensions=_summary_extensions(rows, sidecar=sidecar),
+        source_output_extensions={
+            "summary_json": repo_rel(SUMMARY_JSON),
+            "summary_markdown": repo_rel(SUMMARY_MD),
+            "summary_csv": repo_rel(SUMMARY_CSV),
+            "perturbation_detail_manifest": perturbation["bulk_detail_manifest"],
+        },
+    )
+
+
+def _summary_extensions(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    sidecar: Mapping[str, Any],
+) -> dict[str, Any]:
     return {
-        "schema_version": "rlrmp.c92ebd8.pgd_1p05_reach_context_diagnostics.v1",
-        "issue": ISSUE,
-        "scope": "PGD 1.05 reach-context perturbation, feedback, robustness diagnostics",
-        "rows": list(rows),
-        "row_order": list(ROWS),
         "aggregation_contract": {
             "peak_velocity_m_s": (
                 "mean_profile_peak_forward_velocity_m_s from evaluation diagnostics"
@@ -380,22 +359,6 @@ def build_summary(
         },
         "interpretation": interpret_rows(rows),
         "formal_hinf_claim_policy": sidecar["interpretation_contract"],
-        "source_outputs": {
-            key: repo_rel(path) for key, path in paths.items()
-        }
-        | {
-            "summary_json": repo_rel(SUMMARY_JSON),
-            "summary_markdown": repo_rel(SUMMARY_MD),
-            "summary_csv": repo_rel(SUMMARY_CSV),
-            "perturbation_detail_manifest": perturbation["bulk_detail_manifest"],
-        },
-        "component_schemas": {
-            "checkpoint_manifest": checkpoint_manifest.get("schema_version"),
-            "evaluation": evaluation.get("schema_version"),
-            "perturbation": perturbation.get("schema_version"),
-            "feedback": feedback.get("schema_version"),
-            "phenotype_sidecar": sidecar.get("schema_version"),
-        },
     }
 
 
@@ -458,25 +421,8 @@ def interpret_rows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
 
 
 def write_csv(rows: Sequence[Mapping[str, Any]]) -> None:
-    """Write the compact comparison table as CSV."""
-
-    fields = [
-        "row",
-        "training_condition",
-        "physical_level",
-        "peak_velocity_m_s",
-        "fb_delta_u",
-        "ablation_idx",
-        "sensory_auc_dx_mm_s",
-        "non_sensory_auc_dx_mm_s",
-        "peak_dx_over_open_loop",
-        "formal_hinf_claim",
-    ]
-    with SUMMARY_CSV.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({field: row[field] for field in fields})
+    fields = ['row', 'training_condition', 'physical_level', 'peak_velocity_m_s', 'fb_delta_u', 'ablation_idx', 'sensory_auc_dx_mm_s', 'non_sensory_auc_dx_mm_s', 'peak_dx_over_open_loop', 'formal_hinf_claim']
+    write_csv_rows(SUMMARY_CSV, list(rows), fieldnames=fields)
 
 
 def render_markdown(summary: Mapping[str, Any]) -> str:
@@ -538,10 +484,7 @@ def run_label(run_id: str) -> str:
     return f"{TRAINING_CONDITIONS[run_id]} / {PHYSICAL_LEVELS[run_id]}"
 
 
-def repo_rel(path: Path) -> str:
-    """Return a repo-relative path."""
-
-    return str(path.relative_to(REPO_ROOT))
+repo_rel = portable_repo_path
 
 
 def load_json(path: Path) -> Any:

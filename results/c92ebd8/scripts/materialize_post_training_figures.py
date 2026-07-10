@@ -2,6 +2,12 @@
 """Materialize c92 post-training figures and notes."""
 
 from __future__ import annotations
+from rlrmp.viz.traces import add_reduced_sample_trace
+from rlrmp.viz.traces import add_sample_band
+from rlrmp.eval.robustness_diagnostics import (
+    build_robust_output_feedback_6d_context as _build_robust_output_feedback_6d_context,
+)
+from rlrmp.viz.traces import add_profile_line
 
 import argparse
 import json
@@ -14,31 +20,21 @@ from typing import Any, Literal
 
 import numpy as np
 import plotly.graph_objects as go
-from feedbax.plot import save_figure
 
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
-    build_no_integrator_game,
-)
-from rlrmp.analysis.math.cs_released_simulation import (
-    simulate_robust_released_forward,
-    zero_forward_noise_draws,
-    zero_noise_covariances,
-)
-from rlrmp.analysis.math.hinf_riccati import find_gamma_star, solve_hinf_riccati
-from rlrmp.analysis.math.output_feedback import (
-    OutputFeedbackConfig,
-    make_cs_output_feedback_initial_state,
-    robust_estimator_covariances,
-    robust_output_feedback_gains,
 )
 from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     _build_extlqg_comparator_context,
+    _evaluation_from_extlqg_rollout,
     _simulate_extlqg_perturbed,
 )
 from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT
-from rlrmp.viz import profile_comparison_grid
+from rlrmp.viz.figures import (
+    build_profile_family_figure,
+    materialize_nominal_velocity_figure as canonical_materialize_nominal_velocity_figure,
+)
 
 
 ISSUE = "c92ebd8"
@@ -77,6 +73,50 @@ SOURCE_COLORS = {
     "gru": "#2563eb",
     "extlqg6d": "#c2410c",
     "robust_output_feedback6d": "#15803d",
+}
+EXTLQG_CONTRACT = {
+    "label": "6D extLQG",
+    "state_dim": 36,
+    "physical_dim": 6,
+    "disturbance_integrators_exposed": False,
+    "source": (
+        "rlrmp.analysis.pipelines.gru_perturbation_bank."
+        "_build_extlqg_comparator_context(physical_dim=6)"
+    ),
+}
+NOMINAL_TRANSFORM = [
+    {
+        "name": "forward_velocity_profile_mean_band",
+        "kwargs": {
+            "trained_rows": list(RUN_ORDER),
+            "analytical_comparators": [
+                "6d_output_feedback_extlqg",
+                "6d_output_feedback_hinf",
+            ],
+        },
+    }
+]
+NOMINAL_PLOT_KWARGS = {
+    "shared_yaxes": "all",
+    "rows": len(RUN_ORDER),
+    "physical_state_dim": 6,
+    "state_dim": 36,
+    "disturbance_integrators_exposed": False,
+}
+NOMINAL_FIGURE_CONFIG = {
+    "title": "c92 nominal forward velocity profiles",
+    "height": 1500,
+    "vertical_spacing": 0.018,
+    "issue": ISSUE,
+    "topic": NOMINAL_TOPIC,
+    "schema_version": "rlrmp.c92_nominal_velocity_profiles.v1",
+    "figure_kind": "nominal_forward_velocity_profile_comparison",
+    "ext_contract": EXTLQG_CONTRACT,
+    "inputs": ([{"path": EVAL_MANIFEST.relative_to(REPO_ROOT).as_posix()}] + [
+        {"path": f"results/{ISSUE}/runs/{run_id}.json"} for run_id in RUN_ORDER
+    ]),
+    "transform": NOMINAL_TRANSFORM,
+    "plot_kwargs": NOMINAL_PLOT_KWARGS,
 }
 COORD_DASH = {"orthogonal": "solid", "along": "dot"}
 QUANTITY_SPECS = (
@@ -213,82 +253,46 @@ def build_family_figure(
     figure_kind: Literal["trajectory", "residual"],
     title: str,
 ) -> go.Figure:
-    timing_bins = timing_bins_for_rows(rows)
-    n_cols = len(timing_bins)
-    subplot_titles = [
-        f"{quantity_label}: {timing_label}"
-        for quantity_label, _quantity_name, _unit in QUANTITY_SPECS
-        for timing_label in timing_bins
-    ]
-    fig = profile_comparison_grid(
-        n_panels=len(QUANTITY_SPECS) * n_cols,
-        rows=len(QUANTITY_SPECS),
-        cols=n_cols,
-        subplot_titles=subplot_titles,
-        shared_yaxes="rows",
-        vertical_spacing=0.08,
-        horizontal_spacing=0.045,
-    )
-    legend_seen: set[tuple[str, str, str]] = set()
-    for col_index, timing_label in enumerate(timing_bins, start=1):
-        timing_rows = [row for row in rows if row_timing_label(row) == timing_label]
-        timing = representative_timing(timing_rows)
-        if timing is not None:
-            x0, x1 = perturbation_interval_bounds(timing)
-            for row_index in range(1, len(QUANTITY_SPECS) + 1):
-                fig.add_vrect(
-                    x0=x0,
-                    x1=x1,
-                    fillcolor="rgba(234,179,8,0.18)",
-                    line={"color": "rgba(120,80,0,0.55)", "width": 1, "dash": "dot"},
-                    layer="below",
-                    row=row_index,
-                    col=col_index,
-                    exclude_empty_subplots=False,
-                )
-        traces = collect_traces_for_rows(
+    """Build a post-training family figure through the canonical profile grid."""
+
+    return build_profile_family_figure(
+        rows,
+        quantity_specs=QUANTITY_SPECS,
+        timing_bins_for_rows=timing_bins_for_rows,
+        row_timing_label=row_timing_label,
+        representative_timing=representative_timing,
+        perturbation_interval_bounds=perturbation_interval_bounds,
+        collect_traces=lambda timing_rows: collect_traces_for_rows(
             timing_rows,
             run=run,
             extlqg_context=extlqg_context,
             figure_kind=figure_kind,
-        )
-        for row_index, (quantity, _quantity_name, unit) in enumerate(QUANTITY_SPECS, start=1):
-            for source in ("gru", "extlqg6d"):
-                variants = ("clean", "perturbed") if figure_kind == "trajectory" else ("residual",)
-                for variant in variants:
-                    for coord in ("orthogonal", "along"):
-                        samples = traces.get((source, variant, quantity, coord))
-                        if samples is None or samples.size == 0:
-                            continue
-                        add_profile_trace(
-                            fig,
-                            samples,
-                            source=source,
-                            variant=variant,
-                            quantity=quantity,
-                            coord=coord,
-                            figure_kind=figure_kind,
-                            row=row_index,
-                            col=col_index,
-                            showlegend=(source, variant, coord) not in legend_seen,
-                        )
-                        legend_seen.add((source, variant, coord))
-            fig.update_yaxes(
-                title_text=axis_unit(quantity, figure_kind=figure_kind, native_unit=unit),
-                row=row_index,
-                col=1,
-            )
-    fig.update_layout(
+        ),
+        trace_key=lambda source, variant, quantity, coord: (
+            source,
+            variant,
+            quantity,
+            coord,
+        ),
+        add_trace=lambda fig, samples, **kwargs: add_profile_trace(
+            fig,
+            samples,
+            figure_kind=figure_kind,
+            **kwargs,
+        ),
+        sources=("gru", "extlqg6d"),
+        variants=("clean", "perturbed") if figure_kind == "trajectory" else ("residual",),
+        axis_unit=lambda quantity, unit: axis_unit(
+            quantity,
+            figure_kind=figure_kind,
+            native_unit=unit,
+        ),
+        figure_kind=figure_kind,
         title=title,
-        template="plotly_white",
-        width=max(980, 280 * n_cols),
+        width_min=980,
+        width_per_column=280,
         height=840,
-        legend_title_text="Source / trace",
-        margin={"l": 70, "r": 24, "t": 96, "b": 70},
     )
-    for col_index in range(1, n_cols + 1):
-        fig.update_xaxes(title_text="time from movement onset (s)", row=len(QUANTITY_SPECS), col=col_index)
-    return fig
 
 
 def collect_traces_for_rows(
@@ -325,9 +329,7 @@ def collect_traces_for_rows(
                     figure_kind=figure_kind,
                 )
     return {
-        key: np.concatenate(samples, axis=0)
-        for key, samples in trace_samples.items()
-        if samples
+        key: np.concatenate(samples, axis=0) for key, samples in trace_samples.items() if samples
     }
 
 
@@ -391,16 +393,11 @@ def materialize_nominal_velocity_profiles(
 ) -> dict[str, Any]:
     manifest = read_json(EVAL_MANIFEST)
     robust_contract = robust_context["contract"]
-    fig = profile_comparison_grid(
-        n_panels=len(RUN_ORDER),
-        rows=len(RUN_ORDER),
-        cols=1,
-        subplot_titles=[RUN_LABELS[run_id] for run_id in RUN_ORDER],
-        vertical_spacing=0.018,
-    )
     ext_profile = forward_velocity_profile(extlqg_context["base_evaluation"].velocity)
     robust_profile = forward_velocity_profile(robust_context["velocity"])
-    for row_index, run_id in enumerate(RUN_ORDER, start=1):
+
+    def add_run_profiles(fig: Any, row_spec: Mapping[str, Any], row_index: int) -> None:
+        run_id = str(row_spec["run_id"])
         run = manifest["runs"][run_id]
         with np.load(REPO_ROOT / run["bulk_arrays"]["path"]) as arrays:
             gru_samples = forward_velocity_profile(arrays["velocity"])
@@ -413,156 +410,26 @@ def materialize_nominal_velocity_profiles(
             color=SOURCE_COLORS["gru"],
             showlegend=row_index == 1,
         )
-        add_line(
-            fig,
-            ext_profile,
-            row=row_index,
-            col=1,
-            name="6D extLQG",
-            color=SOURCE_COLORS["extlqg6d"],
-            dash="dash",
-            showlegend=row_index == 1,
-            width=2.8,
-        )
-        add_line(
-            fig,
-            robust_profile,
-            row=row_index,
-            col=1,
-            name="6D output-feedback H-infinity",
-            color=SOURCE_COLORS["robust_output_feedback6d"],
-            dash="dot",
-            showlegend=row_index == 1,
-            width=2.8,
-        )
-        fig.update_yaxes(title_text="m/s", row=row_index, col=1)
-    fig.update_xaxes(title_text="time from movement onset (s)", row=len(RUN_ORDER), col=1)
-    fig.update_layout(
-        title="c92 nominal forward velocity profiles",
-        template="plotly_white",
-        width=1040,
-        height=1500,
-        legend_title_text="profile",
-        margin={"l": 78, "r": 24, "t": 90, "b": 70},
+
+    return canonical_materialize_nominal_velocity_figure(
+        rows=[{"label": RUN_LABELS[run_id], "run_id": run_id} for run_id in RUN_ORDER],
+        add_run_profiles=add_run_profiles,
+        ext_profile=ext_profile,
+        robust_profile=robust_profile,
+        comparator_colors=SOURCE_COLORS,
+        config=NOMINAL_FIGURE_CONFIG,
+        robust_contract=robust_contract,
+        result_contract={"output_feedback_hinf": robust_contract},
     )
-    spec = {
-        "schema_version": "rlrmp.c92_nominal_velocity_profiles.v1",
-        "issue": ISSUE,
-        "figure_kind": "nominal_forward_velocity_profile_comparison",
-        "analytical_comparator_contract": {
-            "extlqg": {
-                "label": "6D extLQG",
-                "state_dim": 36,
-                "physical_dim": 6,
-                "disturbance_integrators_exposed": False,
-                "source": "rlrmp.analysis.pipelines.gru_perturbation_bank._build_extlqg_comparator_context(physical_dim=6)",
-            },
-            "output_feedback_hinf": robust_contract,
-        },
-        "inputs": (
-            [{"path": repo_rel(EVAL_MANIFEST)}]
-            + [{"path": f"results/{ISSUE}/runs/{run_id}.json"} for run_id in RUN_ORDER]
-        ),
-        "transform": [
-            {
-                "name": "forward_velocity_profile_mean_band",
-                "kwargs": {
-                    "trained_rows": list(RUN_ORDER),
-                    "analytical_comparators": [
-                        "6d_output_feedback_extlqg",
-                        "6d_output_feedback_hinf",
-                    ],
-                },
-            }
-        ],
-        "plot_kwargs": {
-            "shared_yaxes": "all",
-            "rows": len(RUN_ORDER),
-            "physical_state_dim": 6,
-            "state_dim": 36,
-            "disturbance_integrators_exposed": False,
-        },
-    }
-    saved = save_figure(
-        fig=fig,
-        spec=spec,
-        package="rlrmp",
-        experiment=ISSUE,
-        topic=NOMINAL_TOPIC,
-        extra_packages=["rlrmp"],
-    )
-    return {
-        "status": "materialized",
-        "topic": NOMINAL_TOPIC,
-        "save_result": json_safe(saved),
-        "spec": f"results/{ISSUE}/figures/{NOMINAL_TOPIC}/spec.json",
-        "html": f"results/{ISSUE}/figures/{NOMINAL_TOPIC}/figure.html",
-        "analytical_comparator_contract": {
-            "output_feedback_hinf": robust_contract,
-        },
-    }
 
 
 def build_robust_output_feedback_6d_context() -> dict[str, Any]:
-    """Build the requested 6D no-integrator output-feedback H-infinity nominal path."""
+    """Build this script's canonical robust output-feedback context."""
 
-    plant, schedule = build_no_integrator_game()
-    config = OutputFeedbackConfig(n_phys=6)
-    gamma_star = find_gamma_star(plant, schedule)
-    solution = solve_hinf_riccati(
-        plant,
-        schedule,
-        OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR * gamma_star,
+    return _build_robust_output_feedback_6d_context(
+        evaluation_from_rollout=_evaluation_from_extlqg_rollout,
+        gamma_factor=OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     )
-    covariances = robust_estimator_covariances(
-        plant,
-        schedule,
-        solution.gamma,
-        config,
-    )
-    gains = robust_output_feedback_gains(
-        plant,
-        schedule,
-        solution,
-        covariances,
-        config,
-    )
-    x0 = make_cs_output_feedback_initial_state(plant, config)
-    rollout = simulate_robust_released_forward(
-        plant,
-        schedule,
-        solution,
-        x0,
-        draws=zero_forward_noise_draws(T=schedule.T, plant=plant, config=config),
-        covariances=zero_noise_covariances(plant, config),
-        gains=gains,
-        config=config,
-    )
-    velocity = np.asarray(rollout.x[1:, 2:4], dtype=np.float64)
-    command = np.asarray(rollout.u_command, dtype=np.float64)
-    contract = {
-        "label": "6D output-feedback H-infinity",
-        "state_dim": int(plant.n),
-        "physical_dim": int(config.n_phys),
-        "disturbance_dim": int(plant.m_w),
-        "control_dim": int(plant.m_u),
-        "delay_steps": int(config.delay_steps),
-        "disturbance_integrators_exposed": False,
-        "game_source": "rlrmp.analysis.math.cs_game_card.build_no_integrator_game",
-        "config": "rlrmp.analysis.math.output_feedback.OutputFeedbackConfig(n_phys=6)",
-        "gamma_factor": float(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR),
-        "gamma_star": float(gamma_star),
-        "gamma": float(solution.gamma),
-        "admissible": bool(solution.admissible),
-        "nominal_profile_convention": "zero-noise released-forward rollout, x[1:] velocity to match 60-step GRU diagnostics",
-    }
-    if contract["state_dim"] != 36 or contract["physical_dim"] != 6:
-        raise ValueError(f"unexpected 6D H-infinity contract: {contract}")
-    return {
-        "velocity": velocity[None, None, :, :],
-        "command": command[None, None, :, :],
-        "contract": contract,
-    }
 
 
 def forward_velocity_profile(velocity: Any) -> np.ndarray:
@@ -580,79 +447,22 @@ def add_mean_band(
     color: str,
     showlegend: bool,
 ) -> None:
-    mean, low, high = mean_band(samples)
-    time = np.arange(mean.shape[0], dtype=np.float64) * DT
-    fig.add_trace(
-        go.Scatter(
-            x=time,
-            y=high,
-            mode="lines",
-            line={"color": "rgba(0,0,0,0)", "width": 0},
-            hoverinfo="skip",
-            showlegend=False,
-            legendgroup=name,
-        ),
-        row=row,
-        col=col,
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=time,
-            y=low,
-            mode="lines",
-            fill="tonexty",
-            fillcolor="rgba(37,99,235,0.12)",
-            line={"color": "rgba(0,0,0,0)", "width": 0},
-            hoverinfo="skip",
-            showlegend=False,
-            legendgroup=name,
-        ),
-        row=row,
-        col=col,
-    )
-    add_line(
+    """Add this script's central sample band."""
+
+    add_sample_band(
         fig,
-        mean,
+        samples,
+        reducer=mean_band,
         row=row,
         col=col,
         name=name,
         color=color,
-        dash="solid",
         showlegend=showlegend,
+        dt=DT,
     )
 
 
-def add_line(
-    fig: go.Figure,
-    profile: np.ndarray,
-    *,
-    row: int,
-    col: int,
-    name: str,
-    color: str,
-    dash: str,
-    showlegend: bool,
-    width: float = 2.1,
-) -> None:
-    line_profile = np.asarray(profile, dtype=np.float64)
-    if line_profile.ndim == 2:
-        line_profile = np.nanmean(line_profile, axis=0)
-    if line_profile.ndim != 1:
-        raise ValueError(f"expected a 1D profile line, got shape {line_profile.shape}")
-    time = np.arange(line_profile.shape[0], dtype=np.float64) * DT
-    fig.add_trace(
-        go.Scatter(
-            x=time,
-            y=line_profile,
-            mode="lines",
-            name=name,
-            legendgroup=name,
-            showlegend=showlegend,
-            line={"color": color, "dash": dash, "width": width},
-        ),
-        row=row,
-        col=col,
-    )
+add_line = add_profile_line
 
 
 def add_profile_trace(
@@ -669,53 +479,21 @@ def add_profile_trace(
     showlegend: bool,
 ) -> None:
     samples = scale_profile_samples(samples, quantity=quantity, figure_kind=figure_kind)
-    mean, low, high = mean_band(samples)
-    time = np.arange(mean.shape[0], dtype=np.float64) * DT
-    color = SOURCE_COLORS[source]
-    dash = COORD_DASH[coord]
-    label = f"{source_label(source)} {variant} {coord}"
-    if samples.shape[0] > 1:
-        fig.add_trace(
-            go.Scatter(
-                x=time,
-                y=high,
-                mode="lines",
-                line={"color": "rgba(0,0,0,0)", "width": 0},
-                hoverinfo="skip",
-                showlegend=False,
-                legendgroup=f"{source}-{variant}-{coord}",
-            ),
-            row=row,
-            col=col,
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=time,
-                y=low,
-                mode="lines",
-                fill="tonexty",
-                fillcolor=band_color(source),
-                line={"color": "rgba(0,0,0,0)", "width": 0},
-                hoverinfo="skip",
-                showlegend=False,
-                legendgroup=f"{source}-{variant}-{coord}",
-            ),
-            row=row,
-            col=col,
-        )
-    fig.add_trace(
-        go.Scatter(
-            x=time,
-            y=mean,
-            mode="lines",
-            name=label,
-            legendgroup=f"{source}-{variant}-{coord}",
-            showlegend=showlegend,
-            line={"color": color, "dash": dash, "width": 1.25 if variant == "clean" else 2.25},
-            opacity=0.42 if variant == "clean" else 0.95,
-        ),
+    add_reduced_sample_trace(
+        fig,
+        samples,
+        reducer=mean_band,
         row=row,
         col=col,
+        name=f"{source_label(source)} {variant} {coord}",
+        legendgroup=f"{source}-{variant}-{coord}",
+        color=SOURCE_COLORS[source],
+        band_fill_color=band_color(source),
+        dash=COORD_DASH[coord],
+        width=1.25 if variant == "clean" else 2.25,
+        opacity=0.42 if variant == "clean" else 0.95,
+        showlegend=showlegend,
+        dt=DT,
     )
 
 
@@ -964,19 +742,6 @@ def moderate_profile_plot_contract() -> dict[str, Any]:
             }
         },
     }
-
-
-def json_safe(value: Any) -> Any:
-    if isinstance(value, Path):
-        try:
-            return repo_rel(value)
-        except ValueError:
-            return str(value)
-    if isinstance(value, Mapping):
-        return {str(key): json_safe(item) for key, item in value.items()}
-    if isinstance(value, Sequence) and not isinstance(value, str | bytes):
-        return [json_safe(item) for item in value]
-    return value
 
 
 if __name__ == "__main__":

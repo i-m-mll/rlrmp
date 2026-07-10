@@ -1,6 +1,8 @@
 """Materialize lambda estimates and frozen soft-adversary audits for 0a46652."""
 
 from __future__ import annotations
+from rlrmp.analysis.soft_lambda import load_frozen_batch as _load_frozen_batch
+from rlrmp.analysis.soft_lambda import soft_pgd_config as _canonical_soft_pgd_config
 
 import argparse
 import json
@@ -14,25 +16,17 @@ import jax.random as jr
 import jax.tree as jt
 import numpy as np
 from feedbax.config.namespace import TreeNamespace
-from feedbax.runtime.batch import BatchInfo
 from jax.flatten_util import ravel_pytree
-from jax_cookbook import load_with_hyperparameters
 
 from rlrmp.io import write_compact_json
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.train import cs_nominal_gru as nominal
 from rlrmp.train.cs_perturbation_training import (
-    BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
-    _broad_epsilon_pgd_trust_radius,
-    _epsilon_time_mask,
-    _ensure_broad_epsilon_input,
     _flattened_per_trial_norm,
     _project_flattened_per_trial_l2_ball,
     _set_input,
-    config_from_broad_epsilon_pgd_hps,
     run_broad_epsilon_pgd_inner_maximizer,
 )
-from rlrmp.train.task_model import setup_task_model_pair
 
 
 RUN_IDS = ("open_loop_small", "open_loop_moderate", "open_loop_stress")
@@ -154,79 +148,12 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def load_frozen_batch(args: argparse.Namespace, run_id: str) -> FrozenBatch:
-    run_spec_path = REPO_ROOT / "results" / args.experiment / "runs" / f"{run_id}.json"
-    artifact_dir = REPO_ROOT / "_artifacts" / args.experiment / "runs" / run_id
-    run_spec = json.loads(run_spec_path.read_text(encoding="utf-8"))
-    parser = nominal.build_parser()
-    replay_args = nominal.resolve_run_spec_args(
-        parser.parse_args(["--run-spec", str(run_spec_path)]),
-        parser=parser,
-    )
-    hps = nominal.build_hps(replay_args)
-    seed = int(run_spec.get("seed", 42))
-    pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
-    model, _ = load_with_hyperparameters(
-        artifact_dir / "trained_model.eqx",
-        setup_func=lambda key, **_kwargs: setup_task_model_pair(hps, key=key).model,
-    )
-    model = select_replicate_model(model, hps, int(args.replicate_index))
-    batch_size = int(args.batch_size)
-    key = jr.fold_in(jr.PRNGKey(seed), stable_run_fold(run_id))
-    key_trials, key_model = jr.split(key)
-    batch_info = BatchInfo(size=batch_size, start=0, current=0, total=int(hps.n_batches_condition))
-    trial_specs = eqx.filter_vmap(
-        lambda k: pair.task.get_train_trial_with_intervenor_params(k, batch_info=batch_info)
-    )(jr.split(key_trials, batch_size))
-    trial_specs = _ensure_broad_epsilon_input(trial_specs, epsilon_dim=6)
-    audit_hps = hps | {
-        "broad_epsilon_pgd_training": soft_pgd_config(
-            hps,
-            lambda_value=1.0,
-            n_steps=1,
-            step_size_fraction=0.25,
-        )
-    }
-    cfg = config_from_broad_epsilon_pgd_hps(audit_hps.broad_epsilon_pgd_training)
-    epsilon = jnp.asarray(trial_specs.inputs["epsilon"])
-    radius = _broad_epsilon_pgd_trust_radius(trial_specs, cfg).astype(epsilon.dtype)
-    time_mask = _epsilon_time_mask(trial_specs, epsilon, cfg.movement_epoch_only)
-    return FrozenBatch(
-        task=pair.task,
-        model=model,
-        trial_specs=trial_specs,
-        keys_model=jr.split(key_model, batch_size),
-        hps=hps,
-        run_spec=run_spec,
-        radius=radius,
-        time_mask=time_mask,
-    )
+    return _load_frozen_batch(args, run_id, repo_root=REPO_ROOT)
 
 
-def soft_pgd_config(
-    hps: TreeNamespace,
-    *,
-    lambda_value: float,
-    n_steps: int,
-    step_size_fraction: float,
-) -> TreeNamespace:
-    config = {
-        "enabled": True,
-        "level": "moderate",
-        "budget_scale": 1.0,
-        "reach_length_scaling": False,
-        "objective": {
-            "kind": BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
-            "lambda": float(lambda_value),
-        },
-        "safety_cap": {
-            "l2_radius_15cm": CAP_RADIUS_15CM,
-            "source": {"key": CAP_SOURCE},
-        },
-        "n_steps": int(n_steps),
-        "step_size_fraction": float(step_size_fraction),
-        "epsilon_dim": 6,
-    }
-    return TreeNamespace(**config)
+def soft_pgd_config(hps: TreeNamespace, *, lambda_value: float, n_steps: int, step_size_fraction: float) -> TreeNamespace:
+    del hps
+    return _canonical_soft_pgd_config(lambda_value=lambda_value, n_steps=n_steps, step_size_fraction=step_size_fraction)
 
 
 def select_replicate_model(model: Any, hps: TreeNamespace, replicate_index: int) -> Any:

@@ -1,0 +1,1 @@
+{"schema_id":"rlrmp.analysis_parameter_preset","schema_version":"rlrmp.analysis_parameter_preset.v1","preset_id":"gru_pilot_figures","source_issue":"6a298a1","parameters":{"n_rollout_trials":64},"content_sha256":"2d4d3c279511a91027be0b1e5238a44542135c8e40d29cbaf6a7cef5043dae7e"}

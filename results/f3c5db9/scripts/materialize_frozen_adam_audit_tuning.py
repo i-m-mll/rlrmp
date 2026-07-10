@@ -1,12 +1,11 @@
 """Materialize frozen-batch Adam reliability tuning for f3c5db9."""
 
 from __future__ import annotations
+from rlrmp.analysis.soft_lambda import base_parser, run_soft_lambda_materializer
+from rlrmp.io import load_named_python_module
 
 import argparse
-import csv
-import importlib.util
 import json
-import sys
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
@@ -15,12 +14,12 @@ import jax
 import jax.numpy as jnp
 import optax
 
-from rlrmp.io import update_marked_section
-from rlrmp.paths import mkdir_p
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SOURCE_SEARCH = REPO_ROOT / "results" / "1697bdc" / "scripts" / "materialize_critical_lambda_search.py"
+SOURCE_SEARCH = (
+    REPO_ROOT / "results" / "1697bdc" / "scripts" / "materialize_critical_lambda_search.py"
+)
 SOURCE_REFERENCE_JSON = REPO_ROOT / "results" / "1697bdc" / "critical_lambda_search.json"
 SOURCE_LAMBDA_SWEEP = REPO_ROOT / "results" / "093d949" / "soft_lambda_sweep.json"
 REFERENCE_POLICY_AUDIT = (
@@ -33,61 +32,41 @@ REFERENCE_OPTIMIZER_BY_MECHANISM = {
     "linear_no_bias": "lbfgsb",
     "affine": "lbfgsb",
 }
+CSV_FIELDS = ('run_id', 'mechanism', 'stage', 'lambda_multiplier', 'reference_lambda_multiplier', 'reference_bracket_low_multiplier', 'reference_bracket_high_multiplier', 'adam_steps', 'adam_learning_rate', 'initialization', 'objective_gain_over_zero', 'task_loss_gain_over_zero', 'energy_penalty', 'energy_mean', 'max_norm_over_cap', 'mean_norm_over_cap', 'cap_bound_fraction', 'finite_status', 'gradient_status', 'gradient_norm', 'useful', 'interior', 'valid', 'failure_mode', 'optimizer_success', 'optimizer_status', 'match_reference_region')
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--experiment", default="c92ebd8")
-    parser.add_argument("--issue", default="f3c5db9")
-    parser.add_argument("--batch-size", type=int, default=8)
-    parser.add_argument("--replicate-index", type=int, default=0)
+    parser = base_parser(
+        description=None, experiment="c92ebd8", issue="f3c5db9", batch_size=8, replicate_index=0
+    )
     parser.add_argument("--pgd-steps", type=int, default=8)
     parser.add_argument("--pgd-step-size-fraction", type=float, default=0.25)
     parser.add_argument("--fixed-point-steps", type=int, default=2)
     parser.add_argument("--stage1-steps", type=int, nargs="+", default=[12, 32, 64, 128])
     parser.add_argument(
-        "--stage1-learning-rates",
-        type=float,
-        nargs="+",
-        default=[1e-5, 3e-5, 1e-4, 3e-4],
+        "--stage1-learning-rates", type=float, nargs="+", default=[1e-05, 3e-05, 0.0001, 0.0003]
     )
     parser.add_argument("--stage2-steps", type=int, default=128)
-    parser.add_argument("--stage2-learning-rate", type=float, default=1e-4)
+    parser.add_argument("--stage2-learning-rate", type=float, default=0.0001)
     parser.add_argument("--skip-stage2", action="store_true")
-    parser.add_argument(
-        "--output-json",
-        default="results/f3c5db9/frozen_adam_audit_tuning.json",
-    )
-    parser.add_argument(
-        "--output-csv",
-        default="results/f3c5db9/frozen_adam_audit_tuning.csv",
-    )
-    parser.add_argument(
-        "--output-md",
-        default="results/f3c5db9/notes/frozen_adam_audit_tuning.md",
-    )
+    parser.add_argument("--output-json", default="results/f3c5db9/frozen_adam_audit_tuning.json")
+    parser.add_argument("--output-csv", default="results/f3c5db9/frozen_adam_audit_tuning.csv")
+    parser.add_argument("--output-md", default="results/f3c5db9/notes/frozen_adam_audit_tuning.md")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    payload = materialize(args)
-    output_json = REPO_ROOT / args.output_json
-    output_csv = REPO_ROOT / args.output_csv
-    output_md = REPO_ROOT / args.output_md
-    mkdir_p(output_json.parent)
-    mkdir_p(output_csv.parent)
-    mkdir_p(output_md.parent)
-    output_json.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    write_csv(output_csv, payload["rows"])
-    update_marked_section(output_md, "frozen_adam_audit_tuning", render_markdown(payload))
-    print(
-        json.dumps(
-            {"json": str(output_json), "csv": str(output_csv), "markdown": str(output_md)},
-            indent=2,
-        )
+    return run_soft_lambda_materializer(
+        args=args,
+        repo_root=REPO_ROOT,
+        materialize=materialize,
+        csv_rows=lambda payload: payload["rows"],
+        csv_fields=CSV_FIELDS,
+        render_markdown=render_markdown,
+        marker="frozen_adam_audit_tuning",
+        json_indent=2,
     )
-    return 0
 
 
 def materialize(args: argparse.Namespace) -> dict[str, Any]:
@@ -100,7 +79,9 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
     for run_id in RUN_IDS:
         frozen = reference.load_frozen_batch(args, run_id)
         center_lambda = float(lambda_source[run_id]["center_lambda"])
-        direction_cache = search.build_line_search_direction_cache(reference, frozen, center_lambda, args)
+        direction_cache = search.build_line_search_direction_cache(
+            reference, frozen, center_lambda, args
+        )
         for mechanism in MECHANISMS:
             reference_row = reference_by_key[(run_id, mechanism)]
             stage1_rows = evaluate_stage1(
@@ -156,16 +137,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def load_search_module() -> Any:
-    spec = importlib.util.spec_from_file_location("critical_lambda_search_1697bdc", SOURCE_SEARCH)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Could not load {SOURCE_SEARCH}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    module.REPO_ROOT = REPO_ROOT
-    module.SOURCE_LAMBDA_SWEEP = SOURCE_LAMBDA_SWEEP
-    module.REFERENCE_POLICY_AUDIT = REFERENCE_POLICY_AUDIT
-    return module
+    return load_named_python_module("critical_lambda_search_1697bdc", SOURCE_SEARCH)
 
 
 def load_reference_summary(path: Path) -> dict[tuple[str, str], dict[str, Any]]:
@@ -290,7 +262,9 @@ def evaluate_adam_point(
         )
         result = optimize_with_adam(value_and_grad, theta0, lambda_value, steps, learning_rate)
         delta = jnp.asarray(result["theta"]) * frozen.time_mask
-        metrics = search.score_closed_loop_delta(reference, frozen, delta, jnp.asarray(lambda_value))
+        metrics = search.score_closed_loop_delta(
+            reference, frozen, delta, jnp.asarray(lambda_value)
+        )
         return search.point_from_delta(
             reference=reference,
             frozen=frozen,
@@ -305,7 +279,9 @@ def evaluate_adam_point(
             metrics=metrics,
             zero_metrics=zero_metrics,
             gradient_norm=float(jnp.linalg.norm(jnp.asarray(result["grad"]))),
-            gradient_status="finite" if bool(jnp.all(jnp.isfinite(result["grad"]))) else "nonfinite",
+            gradient_status="finite"
+            if bool(jnp.all(jnp.isfinite(result["grad"])))
+            else "nonfinite",
             optimizer_success=bool(result["success"]),
             optimizer_status=str(result["status"]),
             optimizer_iterations=int(result["iterations"]),
@@ -321,7 +297,9 @@ def evaluate_adam_point(
     del direction_cache
     codec = search.make_theta_codec(reference, frozen, mechanism)
     value_and_grad = search.make_closed_loop_value_and_grad(reference, frozen, codec, args)
-    theta0 = codec.zeros() if initial_theta is None else jnp.asarray(initial_theta, dtype=jnp.float32)
+    theta0 = (
+        codec.zeros() if initial_theta is None else jnp.asarray(initial_theta, dtype=jnp.float32)
+    )
     result = optimize_with_adam(value_and_grad, theta0, lambda_value, steps, learning_rate)
     point = search.summarize_theta_point(
         reference,
@@ -403,7 +381,9 @@ def optimize_with_adam(
         if finite and float(value) > float(best_value):
             best_value = value
             best_theta = theta
-        updates, opt_state = optimizer.update(jax.tree.map(lambda item: -item, grad), opt_state, theta)
+        updates, opt_state = optimizer.update(
+            jax.tree.map(lambda item: -item, grad), opt_state, theta
+        )
         theta = optax.apply_updates(theta, updates)
         final_grad = grad
         if not finite:
@@ -500,7 +480,9 @@ def summarize_tuning(
     rows: list[dict[str, Any]],
 ) -> dict[str, Any]:
     best = select_best_row(rows)
-    stage1_matches = [row for row in rows if row["stage"] == "stage1_grid" and row["match_reference_region"]]
+    stage1_matches = [
+        row for row in rows if row["stage"] == "stage1_grid" and row["match_reference_region"]
+    ]
     any_match = best is not None
     return {
         "run_id": run_id,
@@ -583,9 +565,7 @@ def recommend(summaries: list[dict[str, Any]], common_settings: list[dict[str, A
     direct_ok = all(row["match"] for row in summaries if row["mechanism"] == "direct_epsilon")
     linear_ok = all(row["match"] for row in summaries if row["mechanism"] == "linear_no_bias")
     affine_ok = all(row["match"] for row in summaries if row["mechanism"] == "affine")
-    affine_stage1_ok = all(
-        row["stage1_match"] for row in summaries if row["mechanism"] == "affine"
-    )
+    affine_stage1_ok = all(row["stage1_match"] for row in summaries if row["mechanism"] == "affine")
     if direct_ok and linear_ok and affine_stage1_ok:
         if common_settings:
             setting = common_settings[0]
@@ -614,43 +594,6 @@ def recommend(summaries: list[dict[str, Any]], common_settings: list[dict[str, A
         "Adam did not reliably match all simpler direct/linear reference regions; keep the "
         "L-BFGS-style frozen-audit solver as the reliability baseline."
     )
-
-
-def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
-    fields = [
-        "run_id",
-        "mechanism",
-        "stage",
-        "lambda_multiplier",
-        "reference_lambda_multiplier",
-        "reference_bracket_low_multiplier",
-        "reference_bracket_high_multiplier",
-        "adam_steps",
-        "adam_learning_rate",
-        "initialization",
-        "objective_gain_over_zero",
-        "task_loss_gain_over_zero",
-        "energy_penalty",
-        "energy_mean",
-        "max_norm_over_cap",
-        "mean_norm_over_cap",
-        "cap_bound_fraction",
-        "finite_status",
-        "gradient_status",
-        "gradient_norm",
-        "useful",
-        "interior",
-        "valid",
-        "failure_mode",
-        "optimizer_success",
-        "optimizer_status",
-        "match_reference_region",
-    ]
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({field: row[field] for field in fields})
 
 
 def render_markdown(payload: dict[str, Any]) -> str:
@@ -763,8 +706,7 @@ def format_common_settings(settings: list[dict[str, Any]]) -> str:
     if not settings:
         return "none"
     return ", ".join(
-        f"steps={row['adam_steps']}, lr={float(row['adam_learning_rate']):.1e}"
-        for row in settings
+        f"steps={row['adam_steps']}, lr={float(row['adam_learning_rate']):.1e}" for row in settings
     )
 
 

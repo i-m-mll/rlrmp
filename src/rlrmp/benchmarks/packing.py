@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
+from rlrmp.benchmarks._common import run_parent_processes
 from rlrmp.model.trainable import staged_network_trainable_parts
 
 
@@ -160,11 +161,6 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def run_parent(args: argparse.Namespace) -> int:
     output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    start_file = output_dir / "start.json"
-    if start_file.exists():
-        start_file.unlink()
-
     scenario_config = _load_scenario_config(args.scenario_config_json)
     parent_config = vars(args).copy()
     parent_config["scenario_config"] = scenario_config
@@ -176,14 +172,8 @@ def run_parent(args: argparse.Namespace) -> int:
     env = os.environ.copy()
     runtime_env = _configure_worker_env(env, args)
     parent_config["runtime_env"] = runtime_env
-    (output_dir / "parent_config.json").write_text(_json(parent_config), encoding="utf-8")
-
-    procs: list[subprocess.Popen[str]] = []
-    handles = []
-    for worker_index in range(args.n_workers):
-        worker_dir = output_dir / f"worker_{worker_index:02d}"
-        worker_dir.mkdir(parents=True, exist_ok=True)
-        worker_config = WorkerConfig(
+    def worker_config(worker_index: int, worker_dir: Path, start_file: Path) -> WorkerConfig:
+        return WorkerConfig(
             worker_index=worker_index,
             output_dir=str(worker_dir),
             start_file=str(start_file),
@@ -195,76 +185,38 @@ def run_parent(args: argparse.Namespace) -> int:
             scenario=str(args.scenario),
             scenario_config=scenario_config,
         )
-        command = [
-            sys.executable,
-            "-m",
-            "rlrmp.benchmarks.packing",
-            "worker",
-            "--config-json",
-            json.dumps(asdict(worker_config), sort_keys=True),
-        ]
-        stdout = (worker_dir / "stdout.log").open("w", encoding="utf-8")
-        stderr = (worker_dir / "stderr.log").open("w", encoding="utf-8")
-        handles.extend([stdout, stderr])
-        procs.append(
-            subprocess.Popen(
-                command,
-                cwd=Path.cwd(),
-                env=env,
-                stdout=stdout,
-                stderr=stderr,
-                text=True,
-            )
-        )
-        time.sleep(max(0.0, float(args.stagger_seconds)))
 
-    try:
-        ready = _wait_for_ready(output_dir, args.n_workers, args.ready_timeout_seconds, procs)
-        (output_dir / "ready_summary.json").write_text(_json(ready), encoding="utf-8")
-        start_payload = {
+    return run_parent_processes(
+        output_dir=output_dir,
+        n_workers=int(args.n_workers),
+        worker_module="rlrmp.benchmarks.packing",
+        worker_config=worker_config,
+        env=env,
+        parent_config=parent_config,
+        start_payload={
             "released_at": _utc_now(),
             "n_workers": args.n_workers,
             "burn_in_seconds": args.burn_in_seconds,
             "measure_seconds": args.measure_seconds,
-        }
-        start_file.write_text(_json(start_payload), encoding="utf-8")
-        gpu_samples = _sample_until_done(
-            output_dir=output_dir,
-            procs=procs,
-            sample_seconds=float(args.sample_seconds),
-        )
-        worker_summaries = _collect_worker_summaries(output_dir, args.n_workers)
-        summary = {
+        },
+        stagger_seconds=float(args.stagger_seconds),
+        ready_timeout_seconds=float(args.ready_timeout_seconds),
+        sample_seconds=float(args.sample_seconds),
+        wait_for_ready=_wait_for_ready,
+        sample_until_done=_sample_until_done,
+        collect_worker_summaries=_collect_worker_summaries,
+        aggregate=_aggregate,
+        summary_fields={
             "captured_at": _utc_now(),
             "n_workers": args.n_workers,
             "scenario": str(args.scenario),
             "scenario_config": scenario_config,
             "preallocation_env": env.get(PREALLOC_ENV),
             "runtime_env": runtime_env,
-            "ready": ready,
-            "workers": worker_summaries,
-            "gpu_samples": gpu_samples,
-            "aggregate": _aggregate(worker_summaries, gpu_samples),
-        }
-        (output_dir / "summary.json").write_text(_json(summary), encoding="utf-8")
-        print("RLRMP_PACKING_SUMMARY_START", flush=True)
-        print(_json(summary), flush=True)
-        print("RLRMP_PACKING_SUMMARY_END", flush=True)
-    finally:
-        for proc in procs:
-            if proc.poll() is None:
-                proc.terminate()
-        deadline = time.monotonic() + 30.0
-        for proc in procs:
-            while proc.poll() is None and time.monotonic() < deadline:
-                time.sleep(0.2)
-            if proc.poll() is None:
-                proc.kill()
-        for handle in handles:
-            handle.close()
-
-    failed = [proc.returncode for proc in procs if proc.returncode not in (0, None)]
-    return 1 if failed else 0
+        },
+        sample_field="gpu_samples",
+        summary_marker="RLRMP_PACKING_SUMMARY",
+    )
 
 
 def run_worker(config: WorkerConfig) -> int:

@@ -25,6 +25,7 @@ from typing import Any
 
 import jax.numpy as jnp
 import numpy as np
+from rlrmp.paths import portable_repo_path as _repo_relative
 
 from rlrmp.analysis.pipelines.bridge_certificates import (
     BELLMAN_HESSIAN_RESIDUAL,
@@ -1302,13 +1303,6 @@ def _fmt(value: Any) -> str:
 
 def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _repo_relative(path: Path) -> str:
-    try:
-        return str(path.absolute().relative_to(REPO_ROOT))
-    except ValueError:
-        return str(path)
 
 
 if __name__ == "__main__":

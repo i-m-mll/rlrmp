@@ -17,6 +17,7 @@ from typing import Any, Literal
 
 import numpy as np
 
+from rlrmp.analysis.data_products import load_analysis_parameter_preset
 from rlrmp.analysis.pipelines.diagnostic_provenance import write_regeneration_spec
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.runtime.spec_migrations import (
@@ -27,8 +28,9 @@ from rlrmp.runtime.spec_migrations import (
 
 
 SCHEMA_VERSION = DELAYED_DIAGNOSTIC_BUNDLE_SCHEMA_VERSION
-DEFAULT_DECAY_THRESHOLDS = (0.95, 0.90, 0.85)
-DEFAULT_SUPPORT_WINDOWS = ((0, 5), (5, 10), (10, 15), (15, 21), (21, 31))
+_ANALYSIS_PRESET = load_analysis_parameter_preset("delayed_diagnostic_bundle").parameters
+DEFAULT_DECAY_THRESHOLDS = tuple(_ANALYSIS_PRESET["decay_thresholds"])
+DEFAULT_SUPPORT_WINDOWS = tuple(tuple(window) for window in _ANALYSIS_PRESET["support_windows"])
 SignalRole = Literal["command", "force_filter", "efferent", "acceleration", "velocity", "other"]
 
 
@@ -208,8 +210,7 @@ def summarize_direction_split(
     velocity_array = np.asarray(velocity, dtype=np.float64)
     if velocity_array.ndim < 3 or velocity_array.shape[-1] != 2:
         raise ValueError(
-            "velocity must have shape (..., trial, time, 2); "
-            f"got {velocity_array.shape}"
+            f"velocity must have shape (..., trial, time, 2); got {velocity_array.shape}"
         )
     n_trials = int(velocity_array.shape[-3])
     n_steps = int(velocity_array.shape[-2])
@@ -323,7 +324,9 @@ def summarize_peak_decay(
             dt=dt,
             thresholds=threshold_tuple,
             support_windows=support_window_tuple,
-            reference_profile=None if reference_signals is None else reference_signals.get(spec.name),
+            reference_profile=None
+            if reference_signals is None
+            else reference_signals.get(spec.name),
         )
         for spec in specs
     }
@@ -395,7 +398,9 @@ def summarize_decay_profile(
     mean = np.mean(samples, axis=0)
     peak_step = int(np.argmax(mean))
     peak_value = float(mean[peak_step])
-    threshold_start = int(spec.threshold_start_step if spec.threshold_start_step is not None else peak_step)
+    threshold_start = int(
+        spec.threshold_start_step if spec.threshold_start_step is not None else peak_step
+    )
     threshold_start = max(threshold_start, peak_step)
     decay_crossings = {}
     for threshold in thresholds:
@@ -524,7 +529,9 @@ def _coerce_signal_spec(spec: DecaySignalSpec | Mapping[str, Any]) -> DecaySigna
     )
 
 
-def _broadcast_trial_vector(values: Any, *, leading_shape: tuple[int, ...], n_trials: int, name: str) -> np.ndarray:
+def _broadcast_trial_vector(
+    values: Any, *, leading_shape: tuple[int, ...], n_trials: int, name: str
+) -> np.ndarray:
     array = np.asarray(values)
     if array.ndim == 1:
         if array.shape[0] != n_trials:

@@ -1,8 +1,9 @@
 """Materialize c92 PGD 1.05 stabilization-task perturbation diagnostics."""
 
 from __future__ import annotations
+from rlrmp.viz.traces import add_band_trace as canonical_add_band_trace
+from rlrmp.io import write_csv_rows
 
-import csv
 import subprocess
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
@@ -10,21 +11,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import jax.random as jr
 import numpy as np
-from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
-from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
-    load_validation_selected_checkpoint_model,
-)
-from rlrmp.analysis.pipelines.gru_perturbation_bank import apply_perturbation_to_trial_specs
-from rlrmp.analysis.pipelines.gru_pilot_figures import (
-    repeat_single_validation_trial,
-    resolve_run_inputs,
-)
 from rlrmp.analysis.pipelines.gru_steady_state_perturbation_bank import (
     DEFAULT_FORCE_FILTER_SCALE,
     DEFAULT_N_ROLLOUT_TRIALS,
@@ -34,18 +24,12 @@ from rlrmp.analysis.pipelines.gru_steady_state_perturbation_bank import (
     DEFAULT_PULSE_DURATION_STEPS,
     DEFAULT_VELOCITY_SCALE_M_S,
     default_feedback_perturbations,
-    make_steady_state_trial_specs,
-    pad_feedback_offset_inputs,
-    washin_diagnostics,
-    _evaluate_model_on_trial_specs,
-    _expected_feedback_dim_from_hps,
-    _feedback_dim,
-    _target_position,
 )
 from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT, mkdir_p
-from rlrmp.train.task_model import setup_task_model_pair
-from rlrmp.analysis.pipelines.sisu_spectrum_diagnostics import zero_disturbance_payload
+from rlrmp.eval.robustness_diagnostics import (
+    evaluate_stabilization_row as canonical_evaluate_stabilization_row,
+)
 
 
 ISSUE = "c92ebd8"
@@ -215,112 +199,17 @@ def materialize(*, repo_root: Path) -> dict[str, Any]:
 def evaluate_row(row_spec: RowSpec, *, repo_root: Path) -> dict[str, Any]:
     """Evaluate one trained row."""
 
-    run = resolve_run_inputs(
-        experiment=ISSUE,
-        run_ids=[row_spec.run_id],
-        labels=[row_spec.run_id],
+    return canonical_evaluate_stabilization_row(
+        row_spec,
         repo_root=repo_root,
-    )[0]
-    hps = dict_to_namespace(normalize_gru_hps(run.run_spec["hps"]), to_type=TreeNamespace)
-    seed = int(run.run_spec.get("seed", 42))
-    pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
-    n_replicates = int(hps.model.n_replicates)
-    model, checkpoint_selection = load_validation_selected_checkpoint_model(
-        experiment=ISSUE,
-        run_id=run.run_id,
-        run_spec=run.run_spec,
-        checkpoint_selection_mode="sparse_history",
-        repo_root=repo_root,
+        hooks=globals(),
+        source_experiment=ISSUE,
+        row_metadata=lambda row: {
+            "run_id": row.run_id,
+            "training": row.training,
+            "physical_level": row.physical_level,
+        },
     )
-    base_trials = repeat_single_validation_trial(
-        pair.task.validation_trials,
-        DEFAULT_N_ROLLOUT_TRIALS,
-    )
-    steady_trials, timing = make_steady_state_trial_specs(
-        base_trials,
-        delayed=False,
-        target_position=np.asarray(_target_position(run, base_trials), dtype=np.float64),
-        pulse_duration_steps=DEFAULT_PULSE_DURATION_STEPS,
-        min_post_onset_steps=DEFAULT_POST_ONSET_FIGURE_STEPS,
-    )
-    steady_trials = pad_feedback_offset_inputs(
-        steady_trials,
-        expected_feedback_dim=_expected_feedback_dim_from_hps(hps),
-    )
-    steady_trials = zero_disturbance_payload(steady_trials)
-    feedback_dim = _feedback_dim(steady_trials)
-    probes = build_probes(
-        feedback_dim=feedback_dim,
-        pulse_start=int(timing["pulse_start_step"]),
-        pulse_duration=int(timing["pulse_duration_steps"]),
-    )
-    base = _evaluate_model_on_trial_specs(
-        model=model,
-        task=pair.task,
-        trial_specs=steady_trials,
-        n_replicates=n_replicates,
-        seed=0,
-    )
-    details = []
-    for probe in probes:
-        adapter = apply_perturbation_to_trial_specs(steady_trials, probe.row, model=model)
-        if adapter.status != "evaluated":
-            details.append(
-                {
-                    "perturbation_id": probe.perturbation_id,
-                    "group": probe.group,
-                    "family": probe.family,
-                    "status": adapter.status,
-                    "reason": adapter.reason,
-                    "adapter": adapter.to_json(),
-                }
-            )
-            continue
-        perturbed = _evaluate_model_on_trial_specs(
-            model=adapter.model if adapter.model is not None else model,
-            task=pair.task,
-            trial_specs=adapter.trial_specs,
-            n_replicates=n_replicates,
-            seed=0,
-        )
-        details.append(
-            summarize_probe(
-                probe=probe,
-                base=base,
-                perturbed=perturbed,
-                pulse_start=int(timing["pulse_start_step"]),
-            )
-            | {"status": "evaluated", "adapter": adapter.to_json()}
-        )
-    family_summary = summarize_by_family(details)
-    group_summary = summarize_by_group(details)
-    return {
-        "run_id": row_spec.run_id,
-        "training": row_spec.training,
-        "physical_level": row_spec.physical_level,
-        "run_spec_path": repo_relative(run.run_spec_path, repo_root),
-        "artifact_dir": repo_relative(run.artifact_dir, repo_root),
-        "checkpoint_selection_summary": checkpoint_selection_summary(checkpoint_selection),
-        "response_label": response_label(washin_diagnostics(base, pulse_start=timing["pulse_start_step"])),
-        "dt_s": float(base.dt),
-        "timing": timing,
-        "n_replicates": int(base.command.shape[0]),
-        "n_rollout_trials_per_replicate": int(base.command.shape[1]),
-        "feedback_dim": int(feedback_dim),
-        "washin": washin_diagnostics(base, pulse_start=timing["pulse_start_step"]),
-        "feedback_auc_mm_s": group_summary["feedback"]["auc_displacement_mm_s_mean"],
-        "mechanical_auc_mm_s": group_summary["mechanical"]["auc_displacement_mm_s_mean"],
-        "command_input_auc_mm_s": family_summary["command_input_pulse"][
-            "auc_displacement_mm_s_mean"
-        ],
-        "process_force_auc_mm_s": family_summary["process_epsilon_force_state_xy"][
-            "auc_displacement_mm_s_mean"
-        ],
-        "feedback_peak_mm": group_summary["feedback"]["peak_displacement_mm_mean"],
-        "mechanical_peak_mm": group_summary["mechanical"]["peak_displacement_mm_mean"],
-        "family_summary": family_summary,
-        "per_probe_detail": details,
-    }
 
 
 def build_probes(*, feedback_dim: int, pulse_start: int, pulse_duration: int) -> tuple[ProbeSpec, ...]:
@@ -719,25 +608,8 @@ def probe_contract() -> dict[str, Any]:
 
 
 def write_csv(path: Path, rows: Sequence[Mapping[str, Any]]) -> None:
-    """Write the concise table as CSV."""
-
-    columns = (
-        "run_id",
-        "training",
-        "physical_level",
-        "feedback_auc_mm_s",
-        "mechanical_auc_mm_s",
-        "command_input_auc_mm_s",
-        "process_force_auc_mm_s",
-        "feedback_peak_mm",
-        "mechanical_peak_mm",
-        "response_label",
-    )
-    with path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=columns)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({column: row[column] for column in columns})
+    columns = ('run_id', 'training', 'physical_level', 'feedback_auc_mm_s', 'mechanical_auc_mm_s', 'command_input_auc_mm_s', 'process_force_auc_mm_s', 'feedback_peak_mm', 'mechanical_peak_mm', 'response_label')
+    write_csv_rows(path, list(rows), fieldnames=columns)
 
 
 def render_markdown(summary: Mapping[str, Any]) -> str:
@@ -1220,48 +1092,14 @@ def add_perturbation_event_marker(
 
 
 def add_mean_sem_trace(
-    fig: go.Figure,
-    *,
-    x: np.ndarray,
-    mean: np.ndarray,
-    sem: np.ndarray,
-    name: str,
-    legendgroup: str,
-    color: str,
-    band_color: str,
-    row: int,
-    col: int,
-    showlegend: bool,
+    fig: go.Figure, *, x: np.ndarray, mean: np.ndarray, sem: np.ndarray, name: str,
+    legendgroup: str, color: str, band_color: str, row: int, col: int, showlegend: bool,
 ) -> None:
     """Add a mean trace plus SEM band."""
-
-    fig.add_trace(
-        go.Scatter(
-            x=np.concatenate([x, x[::-1]]),
-            y=np.concatenate([mean - sem, (mean + sem)[::-1]]),
-            mode="lines",
-            line={"width": 0, "color": color},
-            fill="toself",
-            fillcolor=band_color,
-            hoverinfo="skip",
-            showlegend=False,
-            legendgroup=legendgroup,
-        ),
-        row=row,
-        col=col,
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=x,
-            y=mean,
-            mode="lines",
-            name=name,
-            legendgroup=legendgroup,
-            showlegend=showlegend,
-            line={"color": color, "width": 2.2},
-        ),
-        row=row,
-        col=col,
+    canonical_add_band_trace(
+        fig, x=x, mean=mean, spread=sem, name=name, legendgroup=legendgroup,
+        color=color, band_fill_color=band_color, band_line_color=color, band_mode="lines",
+        row=row, col=col, showlegend=showlegend, line_width=2.2,
     )
 
 

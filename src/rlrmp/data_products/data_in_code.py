@@ -48,7 +48,7 @@ DATA_IN_CODE_DETECTORS = (
 )
 
 DATA_IN_CODE_POLICY: dict[tuple[str, str], str] = {
-    ("argv_rows", "src"): "ratchet",
+    ("argv_rows", "src"): "enforced",
     ("argv_rows", "scripts"): "ratchet",
     ("argv_rows", "results_scripts"): "ratchet",
     ("spec_flow", "src"): "ratchet",
@@ -66,33 +66,126 @@ DATA_IN_CODE_POLICY: dict[tuple[str, str], str] = {
 }
 
 HP_NAME_LEXICON = (
+    "ADAM_LR",
     "ALPHA",
+    "ALPHAS",
     "AMPLITUDE",
+    "AMPLITUDES",
+    "ANCHOR",
+    "ARGS",
     "BATCH",
+    "BATCHES",
+    "BETA",
+    "BRACKETS",
     "BUDGET",
+    "CENTER",
+    "CHECKPOINT",
     "CLIP",
+    "CONDITION",
+    "CONDITIONS",
+    "COUNT",
+    "COVARIANCE",
+    "DAMPING",
+    "DECAY",
+    "DEFAULTS",
+    "DELAY",
+    "DIGITS",
+    "DIRECTION",
+    "DIRECTIONS",
     "DT",
+    "DURATION",
+    "D_REF",
     "EPSILON",
+    "ETA",
+    "FILES",
+    "FRACTION",
     "GAMMA",
+    "HIDDEN",
     "HIDDEN_SIZE",
+    "HORIZON",
+    "INDICES",
+    "INIT_POS",
+    "INTERPOLATION",
+    "INTERVAL",
+    "ITERATIONS",
+    "KWARGS",
+    "LAMBDA",
     "LEARNING_RATE",
+    "LEVEL",
+    "LEVELS",
     "LR",
+    "LRS",
+    "MASS",
+    "MAX_ITER",
     "NOISE",
     "N_BATCHES",
     "N_REPLICATES",
     "N_ROLLOUT",
     "N_STEPS",
     "N_TRIALS",
+    "PARAMS",
+    "PERCENTILE",
+    "PERT",
+    "POS",
+    "POSITION",
+    "PROBABILITY",
+    "PROBES",
+    "PROP",
     "RADIUS",
+    "REACH",
+    "REPLICATE_INDEX",
+    "RESTART",
+    "RESTARTS",
+    "ROWS",
+    "RUNS",
+    "SAMPLE",
+    "SAMPLES",
     "SCALE",
     "SEED",
+    "SISU",
+    "SLICES",
+    "SPECS",
     "STD",
+    "STEP",
+    "STEPS",
+    "SUBWEIGHT",
+    "SWEEP",
+    "TARGET_POS",
+    "TAU",
+    "TIME",
+    "TIMEOUT",
+    "TIMING",
+    "TRIALS",
+    "VALUES",
+    "VEL",
+    "VELOCITY",
     "WARMUP",
     "WEIGHT",
+    "WEIGHTS",
+    "WIDTH",
+    "WINDOW",
 )
 
 _NUMERIC_STRING_RE = re.compile(r"[-+]?\d+(\.\d+)?([eE][-+]?\d+)?")
 _DIMENSION_NAME_TOKENS = frozenset({"DIM", "DIMS", "DIMENSION", "DIMENSIONS", "SHAPE"})
+_NON_PARAMETER_NAME_TOKENS = frozenset(
+    {
+        "ARTIFACT",
+        "CARDINALITY",
+        "FILENAME",
+        "ISSUE",
+        "KIND",
+        "LABEL",
+        "LOGICAL",
+        "PATH",
+        "PRODUCER",
+        "RELPATH",
+        "ROLE",
+        "SCHEMA",
+        "TOKEN",
+    }
+)
+_TOLERANCE_NAME_TOKENS = frozenset({"ATOL", "RTOL", "TOL", "TOLERANCE"})
 _SCHEMA_REFERENCE_SUFFIXES = ("_PARAMS_REF",)
 _SPEC_CONSTRUCTOR_SEEDS = frozenset(
     {
@@ -136,8 +229,120 @@ def _empirical_allowlist() -> dict[str, str]:
     }
 
 
+_CD137D8_CONFIG_TIER_ALLOWLIST = (
+    "src/rlrmp/train/closed_loop_distillation.py::ClosedLoopLossWeights::default_bundle",
+    "src/rlrmp/train/closed_loop_distillation.py::DEFAULT_CHECKPOINT_INTERVAL_BATCHES::hp_constant",
+    "src/rlrmp/train/cs_nominal_gru.py::AdaptiveEpsilonState::default_bundle",
+    "src/rlrmp/train/cs_nominal_gru.py::CS_CONTROL_SCALE::hp_constant",
+    "src/rlrmp/train/cs_nominal_gru.py::CS_POSITION_SCALE::hp_constant",
+    "src/rlrmp/train/cs_nominal_gru.py::CS_REGULARIZED_NN_HIDDEN::hp_constant",
+    "src/rlrmp/train/cs_nominal_gru.py::CS_STAGE_COUNT::hp_constant",
+    "src/rlrmp/train/cs_nominal_gru.py::CS_VELOCITY_SCALE::hp_constant",
+    "src/rlrmp/train/cs_nominal_gru.py::CsNominalGruConfig::default_bundle",
+    "src/rlrmp/train/cs_nominal_gru.py::build_hps::default_bundle",
+    "src/rlrmp/train/cs_perturbation_training.py::AMPLITUDE_LEVELS::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::BROAD_EPSILON_REFERENCE_REACH_M::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::BroadFullStateEpsilonTrainingConfig::default_bundle",
+    "src/rlrmp/train/cs_perturbation_training.py::DEFAULT_HELD_OUT_TARGET_AMPLITUDES_M::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::DEFAULT_HELD_OUT_TARGET_DIRECTIONS_DEG::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::DEFAULT_PGD_SISU_EXACT_ZERO_MASS::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::DEFAULT_PGD_SISU_LEVELS::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::DEFAULT_SEEN_TARGET_AMPLITUDES_M::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::DEFAULT_SEEN_TARGET_DIRECTIONS_DEG::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::FixedTargetPerturbationTrainingConfig::default_bundle",
+    "src/rlrmp/train/cs_perturbation_training.py::HISTORICAL_020A65B_PGD_RADIUS_15CM::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::ORIGINAL_TARGET_ANCHOR_M::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::PGD_SISU_MAX_RADIUS_SOURCES::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::PgdFullStateEpsilonTrainingConfig::default_bundle",
+    "src/rlrmp/train/cs_perturbation_training.py::PolicyFullStateEpsilonTrainingConfig::default_bundle",
+    "src/rlrmp/train/cs_perturbation_training.py::RAW_STRONG_GAMMA_1P05_RADIUS_15CM::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_BAND16_HELD_OUT_DIRECTIONS::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_BAND36_HELD_OUT_DIRECTIONS::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_BAND8_HELD_OUT_DIRECTIONS::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_BAND_CENTERS_DEG::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_CONST_REACH_M::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_DENSE_N_DIRECTIONS::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_SPARSE_N_DIRECTIONS::hp_constant",
+    "src/rlrmp/train/cs_perturbation_training.py::TargetRelativeMultiTargetTrainingConfig::default_bundle",
+    "src/rlrmp/train/distillation.py::CSH0DistillationConfig::default_bundle",
+    "src/rlrmp/train/distillation.py::DistillationLossWeights::default_bundle",
+    "src/rlrmp/train/guided_distillation.py::DEFAULT_CHECKPOINT_INTERVAL_BATCHES::hp_constant",
+    "src/rlrmp/train/minimax.py::MinimaxConfig::default_bundle",
+    "src/rlrmp/train/minimax.py::build_hps::default_bundle",
+    "src/rlrmp/train/standard.py::_LOSS_WEIGHT_OVERRIDES::hp_constant",
+    "src/rlrmp/train/standard.py::_base_hps::default_bundle",
+    "src/rlrmp/train/standard.py::_loss_cfg::default_bundle",
+)
+
+_E04BD36_USER_HOLD_ALLOWLIST = (
+    "src/rlrmp/fb_response.py::InstantFBResponse::default_bundle",
+    "src/rlrmp/model/cs_lss_gru.py::CS_DELAY_BLOCKS::hp_constant",
+    "src/rlrmp/model/feedbax_graph.py::_linear_controller_params::default_bundle",
+)
+
+_OWNING_SCHEMA_DEFAULT_ALLOWLIST = (
+    "src/rlrmp/analysis/math/adversary_equivalence.py::OpenLoopOptimizationConfig::default_bundle",
+    "src/rlrmp/analysis/math/cs_released_simulation.py::CSReleasedStochasticNoiseConfig::default_bundle",
+    "src/rlrmp/analysis/math/hinf_riccati.py::CostSpec::default_bundle",
+    "src/rlrmp/analysis/math/linear_equivalence_certificate.py::CertificateConfig::default_bundle",
+    "src/rlrmp/analysis/math/linear_round_trip.py::LinearTrainingConfig::default_bundle",
+    "src/rlrmp/analysis/math/linear_round_trip.py::TeacherFitConfig::default_bundle",
+    "src/rlrmp/analysis/math/output_feedback.py::OutputFeedbackConfig::default_bundle",
+    "src/rlrmp/analysis/pipelines/cs_stochastic_phase3.py::Phase3StochasticConfig::default_bundle",
+    "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py::DelayedReachEvalBankSpec::default_bundle",
+    "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py::SteadyStatePerturbationBankConfig::default_bundle",
+    "src/rlrmp/analysis/pipelines/output_feedback_rollout_recovery.py::EigenspectrumCoverageConfig::default_bundle",
+    "src/rlrmp/analysis/pipelines/output_feedback_rollout_recovery.py::ObserverErrorCoverageConfig::default_bundle",
+    "src/rlrmp/analysis/pipelines/output_feedback_rollout_recovery.py::RolloutRecoveryCondition::default_bundle",
+    "src/rlrmp/analysis/robustness_margin.py::RobustnessMarginParams::default_bundle",
+    "src/rlrmp/cloud/modal_runner.py::NominalGruRunConfig::default_bundle",
+    "src/rlrmp/model/stochastic_runtime.py::StochasticRuntimeConfig::default_bundle",
+)
+
+_PURPOSE_CONSTANT_ALLOWLIST = (
+    "src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py::LOW_SISU_ENDPOINT_REACH_THRESHOLD_M::hp_constant",
+    "src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py::LOW_SISU_PEAK_SPEED_THRESHOLD_M_S::hp_constant",
+)
+
+
 DATA_IN_CODE_ALLOWLIST: dict[str, str] = {
     **_empirical_allowlist(),
+    ("src/rlrmp/train/closed_loop_distillation.py::smoke_train_command::argv_rows"): (
+        "The numeric literals are fixed one-batch smoke safety bounds, not experiment "
+        "parameters; the governed run spec remains caller-supplied through --run-spec."
+    ),
+    **{
+        key: (
+            "Explicitly excluded config-tier surface owned by issue cd137d8; it remains "
+            "visible here until that unified training-schema and pre-native retirement work lands."
+        )
+        for key in _CD137D8_CONFIG_TIER_ALLOWLIST
+    },
+    **{
+        key: (
+            "Deletion or migration is explicitly held by the user on issue e04bd36; preserving "
+            "the live value with a named exception prevents this lane from claiming held work."
+        )
+        for key in _E04BD36_USER_HOLD_ALLOWLIST
+    },
+    **{
+        key: (
+            "The typed config or params class is already the owning schema-default surface; "
+            "the detector reports its field defaults because the schema is colocated with its consumer."
+        )
+        for key in _OWNING_SCHEMA_DEFAULT_ALLOWLIST
+    },
+    **{
+        key: (
+            "This value is a diagnostic classification threshold, not a run or evaluation "
+            "parameter; the audited inventory independently classified it as a legitimate constant."
+        )
+        for key in _PURPOSE_CONSTANT_ALLOWLIST
+    },
+    ("src/rlrmp/cloud/modal_runner.py::DEFAULT_TRAIN_TIMEOUT_SECONDS::hp_constant"): (
+        "Operational cloud job timeout rather than a scientific run parameter; it remains a "
+        "runner safety bound and is intentionally separate from the governed training spec."
+    ),
 }
 
 
@@ -207,11 +412,11 @@ def scan_tree(repo_root: Path) -> list[DataInCodeFinding]:
         except OSError:
             continue
         try:
-            findings.extend(
-                scan_source(text, relpath, constructor_names=constructor_names)
-            )
-        except SyntaxError:
-            continue
+            findings.extend(scan_source(text, relpath, constructor_names=constructor_names))
+        except SyntaxError as error:
+            raise DataInCodePolicyError(
+                f"cannot scan syntactically invalid Python source {relpath}: {error}"
+            ) from error
     return sorted(findings, key=lambda finding: (finding.key, finding.lineno))
 
 
@@ -222,9 +427,11 @@ def violations(repo_root: Path) -> list[DataInCodeFinding]:
     return [
         finding
         for finding in scan_tree(repo_root)
-        if _is_enforced_or_ratchet(finding)
-        and finding.key not in DATA_IN_CODE_ALLOWLIST
-        and finding.key not in baseline
+        if finding.key not in DATA_IN_CODE_ALLOWLIST
+        and (
+            policy_for_finding(finding) == "enforced"
+            or (policy_for_finding(finding) == "ratchet" and finding.key not in baseline)
+        )
     ]
 
 
@@ -252,13 +459,23 @@ def validate_findings(repo_root: Path) -> None:
             "data-in-code allowlist entries lack rationale: " + ", ".join(weak_rationales)
         )
 
-    current_unallowlisted = {
+    enforced_unallowlisted = {
         key
         for key, finding in findings_by_key.items()
-        if _is_enforced_or_ratchet(finding) and key not in allowlist_keys
+        if policy_for_finding(finding) == "enforced" and key not in allowlist_keys
     }
-    added = sorted(current_unallowlisted - baseline_keys)
-    stale = sorted(baseline_keys - current_unallowlisted)
+    if enforced_unallowlisted:
+        raise DataInCodePolicyError(
+            "enforced data-in-code findings: " + ", ".join(sorted(enforced_unallowlisted))
+        )
+
+    current_ratchet = {
+        key
+        for key, finding in findings_by_key.items()
+        if policy_for_finding(finding) == "ratchet" and key not in allowlist_keys
+    }
+    added = sorted(current_ratchet - baseline_keys)
+    stale = sorted(baseline_keys - current_ratchet)
     if added:
         raise DataInCodePolicyError("new data-in-code findings: " + ", ".join(added))
     if stale:
@@ -284,12 +501,12 @@ def load_baseline(repo_root: Path) -> list[str]:
 
 
 def write_baseline(repo_root: Path, *, allow_growth: bool = False) -> list[str]:
-    """Write the current non-allowlisted findings as a shrink-only baseline."""
+    """Write current non-allowlisted ratchet findings as a shrink-only baseline."""
 
     current = sorted(
         finding.key
         for finding in scan_tree(repo_root)
-        if _is_enforced_or_ratchet(finding) and finding.key not in DATA_IN_CODE_ALLOWLIST
+        if policy_for_finding(finding) == "ratchet" and finding.key not in DATA_IN_CODE_ALLOWLIST
     )
     path = baseline_path(repo_root)
     existing = load_baseline(repo_root)
@@ -326,10 +543,6 @@ def policy_for_finding(finding: DataInCodeFinding) -> str:
         raise DataInCodePolicyError(
             f"no data-in-code policy for {finding.detector!r} in tier {finding.tier!r}"
         ) from error
-
-
-def _is_enforced_or_ratchet(finding: DataInCodeFinding) -> bool:
-    return policy_for_finding(finding) in {"enforced", "ratchet"}
 
 
 class _DataInCodeVisitor(ast.NodeVisitor):
@@ -433,8 +646,10 @@ class _DataInCodeVisitor(ast.NodeVisitor):
         name = _call_name(node.func)
         if name not in self.constructor_names:
             return
-        if any(keyword.arg is not None and _literal_contains_numeric(keyword.value)
-               for keyword in node.keywords):
+        if any(
+            keyword.arg is not None and _literal_contains_numeric(keyword.value)
+            for keyword in node.keywords
+        ):
             self._emit(
                 detector="spec_flow",
                 lineno=node.lineno,
@@ -442,28 +657,27 @@ class _DataInCodeVisitor(ast.NodeVisitor):
             )
 
     def _scan_default_bundle_function(self, node: ast.FunctionDef) -> None:
-        local_dicts: dict[str, ast.Dict] = {}
-        for child in ast.walk(node):
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                if child is not node:
-                    continue
-            if isinstance(child, ast.Assign) and isinstance(child.value, ast.Dict):
+        if not _is_default_bundle_function_name(node.name):
+            return
+        local_values: dict[str, ast.AST] = {}
+        for child in _function_body_nodes(node):
+            if isinstance(child, ast.Assign):
                 for target in child.targets:
                     if isinstance(target, ast.Name):
-                        local_dicts[target.id] = child.value
+                        local_values[target.id] = child.value
             elif (
                 isinstance(child, ast.AnnAssign)
                 and isinstance(child.target, ast.Name)
-                and isinstance(child.value, ast.Dict)
+                and child.value is not None
             ):
-                local_dicts[child.target.id] = child.value
+                local_values[child.target.id] = child.value
+            elif isinstance(child, ast.Expr) and isinstance(child.value, ast.Call):
+                _record_local_dict_update(child.value, local_values)
             elif isinstance(child, ast.Return):
-                dict_node: ast.Dict | None = None
-                if isinstance(child.value, ast.Dict):
-                    dict_node = child.value
-                elif isinstance(child.value, ast.Name):
-                    dict_node = local_dicts.get(child.value.id)
-                if dict_node is not None and _is_default_bundle_dict(dict_node):
+                if child.value is not None and _returns_default_bundle(
+                    child.value,
+                    local_values,
+                ):
                     self._emit_at_qualname(
                         qualname=self._nested_name(node.name),
                         detector="default_bundle",
@@ -475,6 +689,7 @@ class _DataInCodeVisitor(ast.NodeVisitor):
         if self.relpath.startswith("src/rlrmp/runtime/") or "schema" in self.relpath:
             return
         numeric_hp_defaults = 0
+        bundle_class = node.name.endswith(("Config", "Params", "Condition", "Weights"))
         for stmt in node.body:
             name: str | None = None
             value: ast.AST | None = None
@@ -488,9 +703,13 @@ class _DataInCodeVisitor(ast.NodeVisitor):
                     value = stmt.value
             if name is None or value is None:
                 continue
-            if _hp_name_matches(name) and _literal_contains_numeric(value):
+            if (
+                (_hp_name_matches(name) or bundle_class)
+                and not _name_is_exempt(name)
+                and _is_static_parameter_default(value)
+            ):
                 numeric_hp_defaults += 1
-        if numeric_hp_defaults >= 3:
+        if numeric_hp_defaults >= 2:
             self._emit_at_qualname(
                 qualname=self._nested_name(node.name),
                 detector="default_bundle",
@@ -503,9 +722,11 @@ class _DataInCodeVisitor(ast.NodeVisitor):
             return
         names = _assignment_names(node)
         value = _assignment_value(node)
-        if value is None or not _is_literal_tree(value):
+        if value is None or not _is_literal_tree(value) or not _literal_contains_numeric(value):
             return
         for name in names:
+            if self._scope_kinds and self._scope_kinds[-1] == "class" and not name.isupper():
+                continue
             if _hp_name_matches(name):
                 self._emit_at_qualname(
                     qualname=self._nested_name(name),
@@ -607,13 +828,8 @@ def _empirical_findings(text: str, relpath: str, tier: str) -> list[DataInCodeFi
 
 
 def _is_spec_builder_name(name: str) -> bool:
-    return (
-        name.startswith("build_")
-        and (
-            name.endswith("_run_spec")
-            or name.endswith("_training_run_spec")
-            or name.endswith("_spec")
-        )
+    return name.startswith("build_") and (
+        name.endswith("_run_spec") or name.endswith("_training_run_spec") or name.endswith("_spec")
     )
 
 
@@ -666,6 +882,25 @@ def _literal_contains_numeric(node: ast.AST) -> bool:
         return any(_literal_contains_numeric(element) for element in node.elts)
     if isinstance(node, ast.Dict):
         return any(_literal_contains_numeric(value) for value in node.values)
+    if isinstance(node, ast.BinOp):
+        return _literal_contains_numeric(node.left) or _literal_contains_numeric(node.right)
+    if isinstance(node, ast.Call):
+        name = _call_name(node.func)
+        if name in {"array", "asarray", "dict", "list", "set", "tuple"}:
+            return any(_literal_contains_numeric(argument) for argument in node.args) or any(
+                _literal_contains_numeric(keyword.value) for keyword in node.keywords
+            )
+        if name in {"field", "Field"}:
+            return any(
+                keyword.arg in {"default", "default_factory"}
+                and _literal_contains_numeric(keyword.value)
+                for keyword in node.keywords
+            )
+        return any(_literal_contains_numeric(argument) for argument in node.args) or any(
+            _literal_contains_numeric(keyword.value) for keyword in node.keywords
+        )
+    if isinstance(node, ast.Lambda):
+        return _literal_contains_numeric(node.body)
     return False
 
 
@@ -681,28 +916,157 @@ def _is_literal_tree(node: ast.AST) -> bool:
             key is not None and _is_literal_tree(key) and _is_literal_tree(value)
             for key, value in zip(node.keys, node.values, strict=True)
         )
+    if isinstance(node, ast.BinOp):
+        return _is_literal_tree(node.left) and _is_literal_tree(node.right)
+    if isinstance(node, ast.Call):
+        name = _call_name(node.func)
+        if name in {"array", "asarray", "dict", "list", "set", "tuple"}:
+            return all(_is_literal_tree(argument) for argument in node.args) and all(
+                keyword.arg is not None and _is_literal_tree(keyword.value)
+                for keyword in node.keywords
+                if keyword.arg != "dtype"
+            )
     return False
 
 
 def _is_default_bundle_dict(node: ast.Dict) -> bool:
-    if len(node.keys) < 3:
+    string_keys = list(_dict_string_keys(node))
+    if len(string_keys) < 3:
         return False
-    numeric_values = sum(1 for value in node.values if _is_numeric_constant(value))
+    numeric_values = sum(1 for child in ast.walk(node) if _is_numeric_constant(child))
     if numeric_values < 2:
         return False
+    return any(_hp_name_matches(key) for key in string_keys)
+
+
+def _dict_string_keys(node: ast.Dict) -> Iterable[str]:
+    for key, value in zip(node.keys, node.values, strict=True):
+        if isinstance(key, ast.Constant) and isinstance(key.value, str):
+            yield key.value
+        if isinstance(value, ast.Dict):
+            yield from _dict_string_keys(value)
+
+
+def _is_default_bundle_function_name(name: str) -> bool:
+    lowered = name.lower()
     return any(
-        isinstance(key, ast.Constant)
-        and isinstance(key.value, str)
-        and _hp_name_matches(key.value)
-        for key in node.keys
+        token in lowered
+        for token in (
+            "args_namespace",
+            "base_hps",
+            "build_hps",
+            "config",
+            "defaults",
+            "loss_cfg",
+            "params",
+        )
     )
+
+
+def _function_body_nodes(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterable[ast.AST]:
+    stack = list(reversed(node.body))
+    while stack:
+        child = stack.pop()
+        yield child
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            continue
+        stack.extend(reversed(list(ast.iter_child_nodes(child))))
+
+
+def _record_local_dict_update(call: ast.Call, local_values: dict[str, ast.AST]) -> None:
+    if not isinstance(call.func, ast.Attribute) or call.func.attr != "update":
+        return
+    if not isinstance(call.func.value, ast.Name):
+        return
+    target = call.func.value.id
+    current = local_values.get(target)
+    if not isinstance(current, ast.Dict):
+        return
+
+    keys = list(current.keys)
+    values = list(current.values)
+    for argument in call.args:
+        if not isinstance(argument, ast.Dict):
+            return
+        keys.extend(argument.keys)
+        values.extend(argument.values)
+    for keyword in call.keywords:
+        if keyword.arg is None:
+            return
+        keys.append(ast.Constant(keyword.arg))
+        values.append(keyword.value)
+    local_values[target] = ast.Dict(keys=keys, values=values)
+
+
+def _returns_default_bundle(
+    node: ast.AST,
+    local_values: dict[str, ast.AST],
+    *,
+    seen: frozenset[str] = frozenset(),
+) -> bool:
+    if isinstance(node, ast.Name):
+        if node.id in seen or node.id not in local_values:
+            return False
+        return _returns_default_bundle(
+            local_values[node.id],
+            local_values,
+            seen=seen | {node.id},
+        )
+    if isinstance(node, ast.Dict):
+        return _is_default_bundle_dict(node)
+    if not isinstance(node, ast.Call):
+        return False
+
+    for keyword in node.keywords:
+        if keyword.arg is None and _returns_default_bundle(
+            keyword.value,
+            local_values,
+            seen=seen,
+        ):
+            return True
+    for argument in node.args:
+        if _returns_default_bundle(argument, local_values, seen=seen):
+            return True
+
+    name = _call_name(node.func)
+    if name not in {"Namespace", "SimpleNamespace", "TreeNamespace", "dict"}:
+        return False
+    named_keywords = [keyword for keyword in node.keywords if keyword.arg is not None]
+    if len(named_keywords) < 3:
+        return False
+    numeric_values = sum(
+        1 for keyword in named_keywords if _literal_contains_numeric(keyword.value)
+    )
+    return numeric_values >= 2 and any(
+        _hp_name_matches(keyword.arg or "") for keyword in named_keywords
+    )
+
+
+def _is_static_parameter_default(node: ast.AST) -> bool:
+    if isinstance(node, ast.Name):
+        return True
+    if _literal_contains_numeric(node):
+        return True
+    if isinstance(node, ast.Call) and _call_name(node.func) in {"field", "Field"}:
+        return any(
+            keyword.arg in {"default", "default_factory"}
+            and (
+                (
+                    isinstance(keyword.value, ast.Name)
+                    and keyword.value.id not in {"dict", "list", "set", "tuple"}
+                )
+                or _literal_contains_numeric(keyword.value)
+            )
+            for keyword in node.keywords
+        )
+    return False
 
 
 def _hp_name_matches(name: str) -> bool:
     if name.upper().endswith(_SCHEMA_REFERENCE_SUFFIXES):
         return False
     tokens = tuple(token for token in re.split(r"[^A-Za-z0-9]+", name.upper()) if token)
-    if not tokens or any(token in _DIMENSION_NAME_TOKENS for token in tokens):
+    if not tokens or _name_tokens_are_exempt(tokens):
         return False
     for lexicon_entry in HP_NAME_LEXICON:
         lexicon_tokens = tuple(lexicon_entry.split("_"))
@@ -711,10 +1075,43 @@ def _hp_name_matches(name: str) -> bool:
     return False
 
 
+def _name_is_exempt(name: str) -> bool:
+    tokens = tuple(token for token in re.split(r"[^A-Za-z0-9]+", name.upper()) if token)
+    return not tokens or _name_tokens_are_exempt(tokens)
+
+
+def _name_tokens_are_exempt(tokens: Sequence[str]) -> bool:
+    return bool(
+        any(token in _DIMENSION_NAME_TOKENS for token in tokens)
+        or any(token in _NON_PARAMETER_NAME_TOKENS for token in tokens)
+        or any(token in _TOLERANCE_NAME_TOKENS for token in tokens)
+    )
+
+
 def _has_token_sequence(tokens: Sequence[str], needle: Sequence[str]) -> bool:
     if len(needle) > len(tokens):
         return False
-    return any(tokens[index : index + len(needle)] == tuple(needle) for index in range(len(tokens)))
+    return any(
+        all(
+            _token_matches(actual, expected)
+            for actual, expected in zip(
+                tokens[index : index + len(needle)],
+                needle,
+                strict=True,
+            )
+        )
+        for index in range(len(tokens) - len(needle) + 1)
+    )
+
+
+def _token_matches(actual: str, expected: str) -> bool:
+    if actual == expected or actual.rstrip("0123456789") == expected:
+        return True
+    if expected == "RADIUS" and actual == "RADII":
+        return True
+    if actual == f"{expected}S":
+        return True
+    return expected.endswith("Y") and actual == f"{expected[:-1]}IES"
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:

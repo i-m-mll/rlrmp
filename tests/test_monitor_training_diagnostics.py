@@ -2,20 +2,16 @@
 
 from __future__ import annotations
 
-import importlib.util
 from pathlib import Path
 
 import numpy as np
 
+from rlrmp.io import load_named_python_module
+
 
 def _load_monitor_module():
     path = Path(__file__).resolve().parents[1] / "scripts" / "monitor_training_diagnostics.py"
-    spec = importlib.util.spec_from_file_location("monitor_training_diagnostics", path)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return load_named_python_module("monitor_training_diagnostics", path)
 
 
 def test_monitor_ignores_unsampled_pgd_placeholder_nans(tmp_path: Path) -> None:

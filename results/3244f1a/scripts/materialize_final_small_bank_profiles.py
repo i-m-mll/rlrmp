@@ -2,6 +2,7 @@
 """Materialize calibrated perturbation-bank profile figures for issue 3244f1a."""
 
 from __future__ import annotations
+from rlrmp.viz.traces import add_reduced_sample_trace
 
 import argparse
 import json
@@ -25,7 +26,7 @@ from rlrmp.analysis.pipelines.gru_perturbation_bank import (
 )
 from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT
-from rlrmp.viz import profile_comparison_grid
+from rlrmp.viz.figures import build_profile_family_figure
 
 
 ISSUE = "3244f1a"
@@ -152,9 +153,7 @@ def main() -> None:
         )
         write_compact_json(paths["figure_spec"], profile_spec)
         profile_specs.append(profile_spec)
-        print(
-            f"Wrote {len(profile_spec['figures'])} {level_key} profile figure pair(s)."
-        )
+        print(f"Wrote {len(profile_spec['figures'])} {level_key} profile figure pair(s).")
         print(f"Figure spec: {_repo_rel(paths['figure_spec'])}")
 
     write_figure_readme(profile_specs)
@@ -173,10 +172,7 @@ def materialize_profile_figures(
     detail_manifest = _load_perturbation_detail_manifest(manifest)
     run = detail_manifest["runs"][RUN_ID]
     rows = [row for row in run["perturbations"] if row.get("status") == "evaluated"]
-    extlqg_statuses = [
-        row.get("extlqg_comparator", {}).get("status")
-        for row in rows
-    ]
+    extlqg_statuses = [row.get("extlqg_comparator", {}).get("status") for row in rows]
     groups: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
     for row in rows:
         key = _figure_group_key(row)
@@ -285,83 +281,51 @@ def _build_family_figure(
     figure_kind: Literal["trajectory", "residual"],
     title: str,
 ) -> go.Figure:
-    timing_bins = _timing_bins(rows)
-    n_cols = len(timing_bins)
-    subplot_titles = [
-        f"{quantity_label}: {timing_label}"
-        for quantity_label, _quantity_name, _unit in QUANTITY_SPECS
-        for timing_label in timing_bins
-    ]
-    fig = profile_comparison_grid(
-        n_panels=len(QUANTITY_SPECS) * n_cols,
-        rows=len(QUANTITY_SPECS),
-        cols=n_cols,
-        subplot_titles=subplot_titles,
-        shared_yaxes="rows",
-        vertical_spacing=0.08,
-        horizontal_spacing=0.045,
-    )
-    legend_seen: set[tuple[str, str, str]] = set()
-    for col_index, timing_label in enumerate(timing_bins, start=1):
-        timing_rows = [row for row in rows if _row_timing_label(row) == timing_label]
-        timing = _representative_timing(timing_rows)
-        if timing is not None:
-            x0 = float(timing.get("start_time_index", 0)) * DT
-            x1 = x0 + float(timing.get("duration_steps", 1)) * DT
-            for row_index in range(1, len(QUANTITY_SPECS) + 1):
-                fig.add_vrect(
-                    x0=x0,
-                    x1=x1,
-                    fillcolor="rgba(234,179,8,0.18)",
-                    line={"color": "rgba(120,80,0,0.55)", "width": 1, "dash": "dot"},
-                    layer="below",
-                    row=row_index,
-                    col=col_index,
-                    exclude_empty_subplots=False,
-                )
-        traces = _collect_traces_for_rows(
+    """Build a calibrated family figure through the canonical profile grid."""
+
+    return build_profile_family_figure(
+        rows,
+        quantity_specs=QUANTITY_SPECS,
+        timing_bins_for_rows=_timing_bins,
+        row_timing_label=_row_timing_label,
+        representative_timing=_representative_timing,
+        perturbation_interval_bounds=lambda timing: (
+            float(timing.get("start_time_index", 0)) * DT,
+            (float(timing.get("start_time_index", 0)) + float(timing.get("duration_steps", 1)))
+            * DT,
+        ),
+        collect_traces=lambda timing_rows: _collect_traces_for_rows(
             timing_rows,
             run=run,
             extlqg_context=extlqg_context,
             figure_kind=figure_kind,
-        )
-        for row_index, (quantity, _quantity_name, unit) in enumerate(QUANTITY_SPECS, start=1):
-            for source in ("gru", "extlqg6d"):
-                for variant in (("clean", "perturbed") if figure_kind == "trajectory" else ("residual",)):
-                    for coord in ("orthogonal", "along"):
-                        samples = traces.get((source, variant, quantity, coord))
-                        if samples is None or samples.size == 0:
-                            continue
-                        _add_profile_trace(
-                            fig,
-                            samples,
-                            source=source,
-                            variant=variant,
-                            quantity=quantity,
-                            coord=coord,
-                            figure_kind=figure_kind,
-                            extlqg_peak_velocity=extlqg_peak_velocity,
-                            row=row_index,
-                            col=col_index,
-                            showlegend=(source, variant, coord) not in legend_seen,
-                        )
-                        legend_seen.add((source, variant, coord))
-            fig.update_yaxes(
-                title_text=_axis_unit(quantity, figure_kind=figure_kind, native_unit=unit),
-                row=row_index,
-                col=1,
-            )
-    fig.update_layout(
+        ),
+        trace_key=lambda source, variant, quantity, coord: (
+            source,
+            variant,
+            quantity,
+            coord,
+        ),
+        add_trace=lambda fig, samples, **kwargs: _add_profile_trace(
+            fig,
+            samples,
+            figure_kind=figure_kind,
+            extlqg_peak_velocity=extlqg_peak_velocity,
+            **kwargs,
+        ),
+        sources=("gru", "extlqg6d"),
+        variants=("clean", "perturbed") if figure_kind == "trajectory" else ("residual",),
+        axis_unit=lambda quantity, unit: _axis_unit(
+            quantity,
+            figure_kind=figure_kind,
+            native_unit=unit,
+        ),
+        figure_kind=figure_kind,
         title=title,
-        template="plotly_white",
-        width=max(950, 270 * n_cols),
+        width_min=950,
+        width_per_column=270,
         height=840,
-        legend_title_text="Source / trace",
-        margin={"l": 70, "r": 24, "t": 96, "b": 70},
     )
-    for col_index in range(1, n_cols + 1):
-        fig.update_xaxes(title_text="time from movement onset (s)", row=len(QUANTITY_SPECS), col=col_index)
-    return fig
 
 
 def _collect_traces_for_rows(
@@ -400,9 +364,7 @@ def _collect_traces_for_rows(
                     target_position=None,
                 )
     return {
-        key: np.concatenate(samples, axis=0)
-        for key, samples in trace_samples.items()
-        if samples
+        key: np.concatenate(samples, axis=0) for key, samples in trace_samples.items() if samples
     }
 
 
@@ -489,62 +451,23 @@ def _add_profile_trace(
         figure_kind=figure_kind,
         extlqg_peak_velocity=extlqg_peak_velocity,
     )
-    mean, low, high = _mean_band(samples)
-    time = np.arange(mean.shape[0], dtype=np.float64) * DT
-    color = SOURCE_COLORS[source]
-    dash = COORD_DASH[coord]
     label = f"{_source_label(source)} {variant} {coord}"
-    if samples.shape[0] > 1:
-        fig.add_trace(
-            go.Scatter(
-                x=time,
-                y=high,
-                mode="lines",
-                line={"color": "rgba(0,0,0,0)", "width": 0},
-                hoverinfo="skip",
-                showlegend=False,
-                legendgroup=f"{source}-{variant}-{coord}",
-            ),
-            row=row,
-            col=col,
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=time,
-                y=low,
-                mode="lines",
-                fill="tonexty",
-                fillcolor=_band_color(source),
-                line={"color": "rgba(0,0,0,0)", "width": 0},
-                hoverinfo="skip",
-                showlegend=False,
-                legendgroup=f"{source}-{variant}-{coord}",
-            ),
-            row=row,
-            col=col,
-        )
-    fig.add_trace(
-        go.Scatter(
-            x=time,
-            y=mean,
-            mode="lines",
-            name=label,
-            legendgroup=f"{source}-{variant}-{coord}",
-            showlegend=showlegend,
-            line={
-                "color": color,
-                "dash": dash,
-                "width": 1.25 if variant == "clean" else 2.25,
-            },
-            opacity=0.42 if variant == "clean" else 0.95,
-            customdata=np.full(mean.shape, samples.shape[0]),
-            hovertemplate=(
-                f"{label}<br>{quantity}: %{{y:.4g}}<br>"
-                "time: %{x:.3f}s<br>n: %{customdata}<extra></extra>"
-            ),
-        ),
+    add_reduced_sample_trace(
+        fig,
+        samples,
+        reducer=_mean_band,
         row=row,
         col=col,
+        name=label,
+        legendgroup=f"{source}-{variant}-{coord}",
+        color=SOURCE_COLORS[source],
+        band_fill_color=_band_color(source),
+        dash=COORD_DASH[coord],
+        width=1.25 if variant == "clean" else 2.25,
+        opacity=0.42 if variant == "clean" else 0.95,
+        showlegend=showlegend,
+        dt=DT,
+        hovertemplate=f"{label}<br>{quantity}: %{{y:.4g}}<br>time: %{{x:.3f}}s<br>n: %{{customdata}}<extra></extra>",
     )
 
 
@@ -645,10 +568,7 @@ def _figure_group_key(row: Mapping[str, Any]) -> str:
     if not isinstance(provenance, Mapping):
         provenance = {}
     parts = [channel, family]
-    feedback_quantity = (
-        perturbation.get("feedback_quantity")
-        or provenance.get("feedback_quantity")
-    )
+    feedback_quantity = perturbation.get("feedback_quantity") or provenance.get("feedback_quantity")
     epsilon_component = perturbation.get("epsilon_component")
     axis_role = provenance.get("target_relative_axis_role")
     if feedback_quantity is not None:
@@ -716,16 +636,14 @@ def _level_paths(level_key: str) -> dict[str, Path]:
         "figure_bulk_dir": FIGURE_BULK_ROOT / level_key,
         "figure_spec": FIGURE_SPEC_ROOT / level_key / "spec.json",
         "pert_bulk_dir": (
-            PERT_BULK_ROOT
-            / f"gru_targetsupport_const_band16_calibrated_{bank_level}"
+            PERT_BULK_ROOT / f"gru_targetsupport_const_band16_calibrated_{bank_level}"
         ),
         "pert_manifest": (
             NOTES_DIR
             / f"gru_perturbation_response_const_band16_calibrated_{bank_level}_manifest.json"
         ),
         "pert_note": (
-            NOTES_DIR
-            / f"gru_perturbation_response_const_band16_calibrated_{bank_level}.md"
+            NOTES_DIR / f"gru_perturbation_response_const_band16_calibrated_{bank_level}.md"
         ),
     }
 
