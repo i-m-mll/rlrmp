@@ -1,0 +1,12 @@
+name: rlrmp-flagship-lqg-profile
+template: rlrmp.profile_comparison
+slot_bindings:
+  profiles: {name: profiles, constructor: rlrmp.profile_series, data: {cell: {item: facet_values, path: condition}, profile_key: forward_velocity}}
+  baseline:
+    name: lqg-baseline
+    constructor: feedbax.profile_band
+    piece: rlrmp.lqg_baseline_rollout
+    required: false
+    data: {x: {item: params, path: baseline.profile.time}, y: {item: params, path: baseline.profile.y}, label: {item: params, path: baseline.label}, color: {item: params, path: baseline.color}}
+facet_bindings: {condition: {item: params, path: facets.forward_velocity_profiles}}
+panels: [{name: profile, title: {item: condition}}]

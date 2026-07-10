@@ -85,8 +85,13 @@ class StandardMatrixAnalysis(AbstractAnalysis):
         **kwargs,
     ):
         if self.output == "figure_payload":
+            payload = standard_matrix_payload(result["cells"], result["params"])
+            context.metadata = {
+                **dict(context.metadata or {}),
+                "figure_payload": payload,
+            }
             artifact = context.record_json_artifact(
-                standard_matrix_payload(result["cells"], result["params"]),
+                payload,
                 role=STANDARD_MATRIX_PAYLOAD_ROLE,
                 logical_name="standard_matrix/payload.json",
                 metadata={"standard_matrix": True},

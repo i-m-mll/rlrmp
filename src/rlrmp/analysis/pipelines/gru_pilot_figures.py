@@ -20,7 +20,6 @@ import jax.tree as jt
 import numpy as np
 from jax_cookbook import load_with_hyperparameters
 from feedbax.analysis.figures import execute_figure_spec
-from feedbax.contracts.figures import FigureSpec
 from feedbax.objectives.loss import TermTree
 from feedbax.plot import loss_history_compare
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
@@ -48,7 +47,13 @@ from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     materialize_validation_selected_checkpoint_manifest,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path, run_spec_path
-from rlrmp.figures import figure_render_path, register_rlrmp_figure_surfaces
+from rlrmp.figures import (
+    figure_render_path,
+    loss_history_spec,
+    register_rlrmp_figure_surfaces,
+    standard_matrix_payload,
+    standard_matrix_profile_spec,
+)
 from rlrmp.runtime.run_spec_access import require_run_dt, require_run_seed
 from rlrmp.runtime.run_specs import resolve_run_record
 from rlrmp.train.task_model import setup_task_model_pair
@@ -283,8 +288,9 @@ def write_loss_figures(
     *,
     output_dir: Path,
 ) -> list[Path]:
-    """Write Feedbax-native training and validation loss comparison figures."""
+    """Write declarative training and validation loss comparison figures."""
 
+    register_rlrmp_figure_surfaces()
     files: list[Path] = []
     for context, filename in (
         ("training", "loss_training.html"),
@@ -297,9 +303,17 @@ def write_loss_figures(
             n_cols=2,
             layout_kws={"title": f"GRU pilot {context} loss"},
         )
-        path = output_dir / filename
-        fig.write_html(path)
-        files.append(path)
+        spec = loss_history_spec(
+            name=f"gru-pilot-loss-{context}",
+            context=context,
+            traces=[trace.to_plotly_json() for trace in fig.data],
+            figure_routing={"render_format": "html"},
+        )
+        manifest, _path = execute_figure_spec(spec, root=output_dir, issues=["9977ff0"])
+        render_path = figure_render_path(manifest.artifacts, preferred_suffix=".html")
+        legacy_alias = output_dir / filename
+        _replace_legacy_figure_alias(legacy_alias, render_path)
+        files.append(legacy_alias)
     return files
 
 
@@ -694,35 +708,48 @@ def _execute_velocity_figure_spec(
     width: int = 780,
 ) -> Path:
     register_rlrmp_figure_surfaces()
-    spec = FigureSpec(
+    payload = standard_matrix_payload(
+        cells,
+        {"references": [_reference_profile_series(reference) for reference in references]},
+    )
+    spec = standard_matrix_profile_spec(
         name=name,
-        template="rlrmp.profile_comparison",
-        assembler_params={
-            "output": "forward_velocity_profiles",
-            "profile_key": "forward_velocity",
-            "title": title,
-            "row_height": row_height,
-            "width": width,
-        },
+        output="forward_velocity_profiles",
+        profile_key="forward_velocity",
+        title=title,
         figure_routing={"render_format": "html"},
-        metadata={
-            "schema_id": "rlrmp.figure_data.standard_matrix",
-            "schema_version": "rlrmp.figure_data.standard_matrix.v1",
-            "output": "forward_velocity_profiles",
-            "profile_key": "forward_velocity",
-            "title": title,
-            "cells": list(cells),
-            "references": [_reference_profile_series(reference) for reference in references],
+        payload_item="params",
+        payload_path="",
+    )
+    spec = spec.model_copy(
+        update={
+            "assembler_params": {
+                "panel_constructor": "rlrmp.profile_grid",
+                "width": width,
+                "height": row_height * max(1, len(cells)),
+                "title": title,
+            },
+            "metadata": {
+                **payload,
+                "title": title,
+                "row_height": row_height,
+                "width": width,
+            }
         },
+        deep=True,
     )
     manifest, _path = execute_figure_spec(spec, root=output_dir, issues=["9977ff0"])
     render_path = figure_render_path(manifest.artifacts, preferred_suffix=".html")
     legacy_alias = output_dir / render_name
-    legacy_alias.parent.mkdir(parents=True, exist_ok=True)
-    if legacy_alias.exists() or legacy_alias.is_symlink():
-        legacy_alias.unlink()
-    legacy_alias.symlink_to(render_path)
+    _replace_legacy_figure_alias(legacy_alias, render_path)
     return render_path
+
+
+def _replace_legacy_figure_alias(alias: Path, render_path: Path) -> None:
+    alias.parent.mkdir(parents=True, exist_ok=True)
+    if alias.exists() or alias.is_symlink():
+        alias.unlink()
+    alias.symlink_to(render_path)
 
 
 def _velocity_profile_cell(profile: VelocityProfile, *, color: str) -> dict[str, Any]:
@@ -774,14 +801,21 @@ def _replicate_velocity_profile_cell(
 def _reference_profile_series(reference: ReferenceProfile) -> dict[str, Any]:
     return {
         "label": reference.label,
-        "color": reference.line_color,
+        "color": _plotly_rgb(reference.line_color),
         "profile": {
             "time": reference.time_s.tolist(),
+            "y": [reference.forward_velocity.tolist()],
             "mean": reference.forward_velocity.tolist(),
             "lower": (reference.forward_velocity - reference.forward_velocity_std).tolist(),
             "upper": (reference.forward_velocity + reference.forward_velocity_std).tolist(),
         },
     }
+
+
+def _plotly_rgb(color: str) -> str:
+    if not color.startswith("#") or len(color) != 7:
+        return color
+    return f"rgb({int(color[1:3], 16)},{int(color[3:5], 16)},{int(color[5:7], 16)})"
 
 
 def build_figure_summary(
