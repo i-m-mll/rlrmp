@@ -26,7 +26,9 @@ from rlrmp.analysis.pipelines.gru_perturbation_bank import (
 )
 from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT, mkdir_p
-from rlrmp.viz.figures import build_stabilization_family_figure
+from rlrmp.viz.figures import (
+    build_stabilization_response_family_figure as canonical_build_family_figure,
+)
 
 
 TOPIC = "soft_pgd_stabilization_perturbation_responses"
@@ -249,125 +251,41 @@ def build_family_figure(
     extlqg_context: Mapping[str, Any],
     robust_context: Mapping[str, Any],
 ) -> tuple[go.Figure, list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    """Build one response-state-by-soft-row grid through the canonical iterator."""
+    """Build one response-state-by-soft-row grid."""
 
-    def render_cell(
-        fig: Any,
-        response_variable: str,
-        soft_row: Any,
-        row_index: int,
-        col_index: int,
-        legend_seen: set[tuple[str, str]],
-        outputs: dict[str, Any],
-    ) -> None:
+    def cell_context(response_variable: str, soft_row: Any) -> dict[str, Any]:
         timing = summary_by_run[soft_row.run_id]["timing"]
         dt = float(summary_by_run[soft_row.run_id]["dt_s"])
-        baseline_rows = family_rows(
-            detail=detail,
-            run_id=soft_row.run_id,
-            family=family,
-        )
+        baseline_rows = family_rows(detail=detail, run_id=soft_row.run_id, family=family)
         profile = base.aggregate_family_response_profile(
-            baseline_rows,
-            response_variable=response_variable,
+            baseline_rows, response_variable=response_variable
         )
-        add_profile_traces(
-            base,
-            fig,
-            profile=profile,
-            source=soft_row.run_id,
-            dt=dt,
-            row=row_index,
-            col=col_index,
-            legend_seen=legend_seen,
-        )
-        outputs["coverage"].append(
-            coverage_row(
-                source=soft_row.run_id,
-                family=family,
-                response_variable=response_variable,
-                column=soft_row.run_id,
-                run_id=soft_row.run_id,
-                profile=profile,
-                analytical_status="not_applicable",
-            )
-        )
-        for source in ANALYTICAL_SOURCES:
-            cache_key = (source, soft_row.run_id, family, response_variable)
-            if cache_key not in outputs["cache"]:
-                outputs["cache"][cache_key] = analytical_profile(
-                    base=base,
-                    source=source,
-                    family=family,
-                    response_variable=response_variable,
-                    baseline_rows=baseline_rows,
-                    extlqg_context=extlqg_context,
-                    robust_context=robust_context,
-                    timing=timing,
-                )
-            result = outputs["cache"][cache_key]
-            if result["status"] == "available":
-                add_profile_traces(
-                    base,
-                    fig,
-                    profile=result["profile"],
-                    source=source,
-                    dt=dt,
-                    row=row_index,
-                    col=col_index,
-                    legend_seen=legend_seen,
-                )
-                outputs["coverage"].append(
-                    coverage_row(
-                        source=source,
-                        family=family,
-                        response_variable=response_variable,
-                        column=soft_row.run_id,
-                        run_id=None,
-                        profile=result["profile"],
-                        analytical_status="available",
-                    )
-                )
-            else:
-                outputs["unavailable"].append(
-                    {
-                        "source": source,
-                        "family": family,
-                        "response_variable": response_variable,
-                        "soft_row": soft_row.run_id,
-                        "status": result["status"],
-                        "reason": result["reason"],
-                    }
-                )
-                if source == "robust_output_feedback6d":
-                    add_unsupported_annotation(
-                        fig,
-                        text="H-inf replay unsupported",
-                        row=row_index,
-                        col=col_index,
-                    )
-        marker = base.infer_perturbation_event_marker(
-            family_rows=baseline_rows,
-            summary_timing=timing,
-            dt=dt,
-        )
-        base.add_perturbation_event_marker(fig, marker=marker, row=row_index, col=col_index)
-        outputs["event_markers"].append(
-            {
-                "family": family,
-                "response_variable": response_variable,
-                "soft_row": soft_row.run_id,
-                **marker,
-            }
-        )
+        return {
+            "timing": timing, "dt": dt,
+            "baseline_rows": baseline_rows,
+            "learned": [{"source": soft_row.run_id, "run_id": soft_row.run_id, "profile": profile}],
+            "cache_prefix": (soft_row.run_id,),
+            "coverage_metadata": {"column": soft_row.run_id},
+            "identity_metadata": {"soft_row": soft_row.run_id},
+        }
 
-    return build_stabilization_family_figure(
+    return canonical_build_family_figure(
+        family=family,
         response_variables=base.RESPONSE_VARIABLE_ORDER,
         columns=SOFT_ROWS,
+        cell_context=cell_context,
+        analytical_sources=ANALYTICAL_SOURCES,
+        analytical_profile=lambda **kwargs: analytical_profile(
+            base=base, extlqg_context=extlqg_context, robust_context=robust_context, **kwargs
+        ),
+        add_profile_traces=lambda **kwargs: add_profile_traces(base, **kwargs),
+        coverage_row=coverage_row,
+        add_unsupported_annotation=add_unsupported_annotation,
+        infer_event_marker=base.infer_perturbation_event_marker,
+        add_event_marker=base.add_perturbation_event_marker,
         response_label=lambda response: base.RESPONSE_VARIABLE_SPECS[response]["label"],
         column_label=lambda row: row.label,
         response_axis_title=lambda response: base.RESPONSE_VARIABLE_SPECS[response]["axis_title"],
-        render_cell=render_cell,
         title=f"d55 soft-PGD stabilization task response: {base.FAMILY_LABELS[family]}",
         width=1420,
         horizontal_spacing=0.055,

@@ -7,7 +7,6 @@ from rlrmp.viz.traces import add_sample_band
 from rlrmp.eval.robustness_diagnostics import (
     build_robust_output_feedback_6d_context as _build_robust_output_feedback_6d_context,
 )
-from rlrmp.io import json_ready
 from rlrmp.viz.traces import add_profile_line
 
 import argparse
@@ -21,7 +20,6 @@ from typing import Any, Literal
 
 import numpy as np
 import plotly.graph_objects as go
-from feedbax.plot import save_figure
 
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
@@ -33,7 +31,10 @@ from rlrmp.analysis.pipelines.gru_perturbation_bank import (
 )
 from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT
-from rlrmp.viz.figures import build_nominal_profile_figure, build_profile_family_figure
+from rlrmp.viz.figures import (
+    build_profile_family_figure,
+    materialize_nominal_velocity_figure as canonical_materialize_nominal_velocity_figure,
+)
 
 
 ISSUE = "c92ebd8"
@@ -72,6 +73,50 @@ SOURCE_COLORS = {
     "gru": "#2563eb",
     "extlqg6d": "#c2410c",
     "robust_output_feedback6d": "#15803d",
+}
+EXTLQG_CONTRACT = {
+    "label": "6D extLQG",
+    "state_dim": 36,
+    "physical_dim": 6,
+    "disturbance_integrators_exposed": False,
+    "source": (
+        "rlrmp.analysis.pipelines.gru_perturbation_bank."
+        "_build_extlqg_comparator_context(physical_dim=6)"
+    ),
+}
+NOMINAL_TRANSFORM = [
+    {
+        "name": "forward_velocity_profile_mean_band",
+        "kwargs": {
+            "trained_rows": list(RUN_ORDER),
+            "analytical_comparators": [
+                "6d_output_feedback_extlqg",
+                "6d_output_feedback_hinf",
+            ],
+        },
+    }
+]
+NOMINAL_PLOT_KWARGS = {
+    "shared_yaxes": "all",
+    "rows": len(RUN_ORDER),
+    "physical_state_dim": 6,
+    "state_dim": 36,
+    "disturbance_integrators_exposed": False,
+}
+NOMINAL_FIGURE_CONFIG = {
+    "title": "c92 nominal forward velocity profiles",
+    "height": 1500,
+    "vertical_spacing": 0.018,
+    "issue": ISSUE,
+    "topic": NOMINAL_TOPIC,
+    "schema_version": "rlrmp.c92_nominal_velocity_profiles.v1",
+    "figure_kind": "nominal_forward_velocity_profile_comparison",
+    "ext_contract": EXTLQG_CONTRACT,
+    "inputs": ([{"path": EVAL_MANIFEST.relative_to(REPO_ROOT).as_posix()}] + [
+        {"path": f"results/{ISSUE}/runs/{run_id}.json"} for run_id in RUN_ORDER
+    ]),
+    "transform": NOMINAL_TRANSFORM,
+    "plot_kwargs": NOMINAL_PLOT_KWARGS,
 }
 COORD_DASH = {"orthogonal": "solid", "along": "dot"}
 QUANTITY_SPECS = (
@@ -366,72 +411,16 @@ def materialize_nominal_velocity_profiles(
             showlegend=row_index == 1,
         )
 
-    fig = build_nominal_profile_figure(
+    return canonical_materialize_nominal_velocity_figure(
         rows=[{"label": RUN_LABELS[run_id], "run_id": run_id} for run_id in RUN_ORDER],
         add_run_profiles=add_run_profiles,
         ext_profile=ext_profile,
         robust_profile=robust_profile,
         comparator_colors=SOURCE_COLORS,
-        title="c92 nominal forward velocity profiles",
-        height=1500,
-        vertical_spacing=0.018,
+        config=NOMINAL_FIGURE_CONFIG,
+        robust_contract=robust_contract,
+        result_contract={"output_feedback_hinf": robust_contract},
     )
-    spec = {
-        "schema_version": "rlrmp.c92_nominal_velocity_profiles.v1",
-        "issue": ISSUE,
-        "figure_kind": "nominal_forward_velocity_profile_comparison",
-        "analytical_comparator_contract": {
-            "extlqg": {
-                "label": "6D extLQG",
-                "state_dim": 36,
-                "physical_dim": 6,
-                "disturbance_integrators_exposed": False,
-                "source": "rlrmp.analysis.pipelines.gru_perturbation_bank._build_extlqg_comparator_context(physical_dim=6)",
-            },
-            "output_feedback_hinf": robust_contract,
-        },
-        "inputs": (
-            [{"path": repo_rel(EVAL_MANIFEST)}]
-            + [{"path": f"results/{ISSUE}/runs/{run_id}.json"} for run_id in RUN_ORDER]
-        ),
-        "transform": [
-            {
-                "name": "forward_velocity_profile_mean_band",
-                "kwargs": {
-                    "trained_rows": list(RUN_ORDER),
-                    "analytical_comparators": [
-                        "6d_output_feedback_extlqg",
-                        "6d_output_feedback_hinf",
-                    ],
-                },
-            }
-        ],
-        "plot_kwargs": {
-            "shared_yaxes": "all",
-            "rows": len(RUN_ORDER),
-            "physical_state_dim": 6,
-            "state_dim": 36,
-            "disturbance_integrators_exposed": False,
-        },
-    }
-    saved = save_figure(
-        fig=fig,
-        spec=spec,
-        package="rlrmp",
-        experiment=ISSUE,
-        topic=NOMINAL_TOPIC,
-        extra_packages=["rlrmp"],
-    )
-    return {
-        "status": "materialized",
-        "topic": NOMINAL_TOPIC,
-        "save_result": json_safe(saved),
-        "spec": f"results/{ISSUE}/figures/{NOMINAL_TOPIC}/spec.json",
-        "html": f"results/{ISSUE}/figures/{NOMINAL_TOPIC}/figure.html",
-        "analytical_comparator_contract": {
-            "output_feedback_hinf": robust_contract,
-        },
-    }
 
 
 def build_robust_output_feedback_6d_context() -> dict[str, Any]:
@@ -753,9 +742,6 @@ def moderate_profile_plot_contract() -> dict[str, Any]:
             }
         },
     }
-
-
-json_safe = json_ready
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ from typing import Any, Protocol
 import jax.random as jr
 import numpy as np
 import plotly.graph_objects as go
+from feedbax.plot import save_figure
 
 from rlrmp.analysis.math.trial_alignment import (
     align_trials,
@@ -34,6 +35,7 @@ from rlrmp.analysis.math.output_feedback import (
     robust_estimator_covariances,
     robust_output_feedback_gains,
 )
+from rlrmp.io import json_ready
 from rlrmp.viz.profile_grids import profile_comparison_grid
 from rlrmp.viz.colors import hex_to_rgba
 from rlrmp.viz.traces import add_band_trace, add_profile_line, add_reference_trace
@@ -551,6 +553,65 @@ def build_nominal_profile_figure(
     return fig
 
 
+def materialize_nominal_velocity_figure(
+    *,
+    rows: Sequence[Mapping[str, Any]],
+    add_run_profiles: Callable[[Any, Mapping[str, Any], int], None],
+    ext_profile: np.ndarray,
+    robust_profile: np.ndarray,
+    comparator_colors: Mapping[str, str],
+    config: Mapping[str, Any],
+    robust_contract: Mapping[str, Any],
+    result_extra: Mapping[str, Any] | None = None,
+    result_contract: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build, save, and describe one canonical nominal-velocity figure."""
+
+    fig = build_nominal_profile_figure(
+        rows=rows,
+        add_run_profiles=add_run_profiles,
+        ext_profile=ext_profile,
+        robust_profile=robust_profile,
+        comparator_colors=comparator_colors,
+        title=config["title"],
+        height=config["height"],
+        vertical_spacing=config.get("vertical_spacing", 0.075),
+    )
+    spec = {
+        "schema_version": config["schema_version"],
+        "issue": config["issue"],
+        "figure_kind": config["figure_kind"],
+        "analytical_comparator_contract": {
+            "extlqg": dict(config["ext_contract"]),
+            "output_feedback_hinf": robust_contract,
+        },
+        "inputs": list(config["inputs"]),
+        "transform": list(config["transform"]),
+        "plot_kwargs": dict(config["plot_kwargs"]),
+    }
+    issue, topic = config["issue"], config["topic"]
+    saved = save_figure(
+        fig=fig,
+        spec=spec,
+        package="rlrmp",
+        experiment=issue,
+        topic=topic,
+        extra_packages=["rlrmp"],
+    )
+    result = {
+        "status": "materialized",
+        "topic": topic,
+        "save_result": json_ready(saved),
+        "spec": f"results/{issue}/figures/{topic}/spec.json",
+        "html": f"results/{issue}/figures/{topic}/figure.html",
+    }
+    if result_contract is not None:
+        result["analytical_comparator_contract"] = dict(result_contract)
+    if result_extra is not None:
+        result.update(result_extra)
+    return result
+
+
 def materialize_analytical_profiles(
     *, n_samples: int, seed: int = 376023
 ) -> tuple[AnalyticalVelocityProfile, AnalyticalVelocityProfile]:
@@ -850,3 +911,103 @@ def build_stabilization_family_figure(
         },
     )
     return fig, coverage, event_markers, unavailable
+
+
+def build_stabilization_response_family_figure(
+    *,
+    family: str,
+    response_variables: Sequence[str],
+    columns: Sequence[Any],
+    cell_context: Callable[[str, Any], Mapping[str, Any]],
+    analytical_sources: Sequence[str],
+    analytical_profile: Callable[..., Mapping[str, Any]],
+    add_profile_traces: Callable[..., None],
+    coverage_row: Callable[..., dict[str, Any]],
+    add_unsupported_annotation: Callable[..., None],
+    infer_event_marker: Callable[..., Mapping[str, Any]],
+    add_event_marker: Callable[..., None],
+    response_label: Callable[[str], str],
+    column_label: Callable[[Any], str],
+    response_axis_title: Callable[[str], str],
+    title: str,
+    width: int,
+    horizontal_spacing: float,
+) -> tuple[Any, list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Build a complete learned-versus-analytical stabilization family grid."""
+
+    def render_cell(fig, response, column, row, col, legend_seen, outputs):
+        context = cell_context(response, column)
+
+        def emit_profile(source, run_id, profile, status):
+            add_profile_traces(
+                fig=fig,
+                profile=profile,
+                source=source,
+                dt=context["dt"],
+                row=row,
+                col=col,
+                legend_seen=legend_seen,
+            )
+            outputs["coverage"].append(
+                coverage_row(
+                    source=source,
+                    family=family,
+                    response_variable=response,
+                    run_id=run_id,
+                    profile=profile,
+                    analytical_status=status,
+                    **context["coverage_metadata"],
+                )
+            )
+
+        for learned in context["learned"]:
+            emit_profile(
+                learned["source"], learned["run_id"], learned["profile"], "not_applicable"
+            )
+        for source in analytical_sources:
+            cache_key = (*context["cache_prefix"], source, family, response)
+            if cache_key not in outputs["cache"]:
+                outputs["cache"][cache_key] = analytical_profile(
+                    source=source,
+                    family=family,
+                    response_variable=response,
+                    baseline_rows=context["baseline_rows"],
+                    timing=context["timing"],
+                )
+            result = outputs["cache"][cache_key]
+            if result["status"] == "available":
+                emit_profile(source, None, result["profile"], "available")
+            else:
+                outputs["unavailable"].append(
+                    {
+                        "source": source, "family": family, "response_variable": response,
+                        **context["identity_metadata"],
+                        "status": result["status"], "reason": result["reason"],
+                    }
+                )
+                if source == "robust_output_feedback6d":
+                    add_unsupported_annotation(
+                        fig=fig, text="H-inf replay unsupported", row=row, col=col
+                    )
+        marker = infer_event_marker(
+            family_rows=context["baseline_rows"],
+            summary_timing=context["timing"],
+            dt=context["dt"],
+        )
+        add_event_marker(fig=fig, marker=marker, row=row, col=col)
+        outputs["event_markers"].append(
+            {"family": family, "response_variable": response,
+             **context["identity_metadata"], **marker}
+        )
+
+    return build_stabilization_family_figure(
+        response_variables=response_variables,
+        columns=columns,
+        response_label=response_label,
+        column_label=column_label,
+        response_axis_title=response_axis_title,
+        render_cell=render_cell,
+        title=title,
+        width=width,
+        horizontal_spacing=horizontal_spacing,
+    )

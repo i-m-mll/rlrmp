@@ -8,11 +8,14 @@ from types import SimpleNamespace
 import numpy as np
 import plotly.graph_objects as go
 
+import rlrmp.viz.figures as figure_helpers
 from rlrmp.viz.figures import (
     build_nominal_profile_figure,
     build_nominal_velocity_spec,
     build_profile_family_figure,
     build_stabilization_family_figure,
+    build_stabilization_response_family_figure,
+    materialize_nominal_velocity_figure,
     write_velocity_by_replicate_figure,
     write_velocity_figure,
 )
@@ -184,6 +187,141 @@ def test_stabilization_builder_collects_cell_metadata() -> None:
     assert len(markers) == 4
     assert unavailable == []
     assert fig.layout.yaxis.title.text == "position units"
+
+
+def test_full_stabilization_family_builder_preserves_grid_and_sidecar_contracts() -> None:
+    analytical_calls = []
+
+    def cell_context(response, column):
+        profile = {"response": response, "column": column}
+        return {
+            "timing": {"start": 1},
+            "dt": 0.01,
+            "baseline_rows": [profile],
+            "learned": [{"source": "gru", "run_id": "run", "profile": profile}],
+            "cache_prefix": (),
+            "coverage_metadata": {"budget": column},
+            "identity_metadata": {"budget_column": column},
+        }
+
+    def analytical_profile(**kwargs):
+        analytical_calls.append(kwargs)
+        if kwargs["source"] == "robust_output_feedback6d":
+            return {"status": "unsupported", "reason": "unsupported"}
+        return {"status": "available", "profile": {"source": kwargs["source"]}}
+
+    def add_profile_traces(*, fig, source, row, col, **_kwargs):
+        fig.add_trace(go.Scatter(y=[row, col], name=source), row=row, col=col)
+
+    fig, coverage, markers, unavailable = build_stabilization_response_family_figure(
+        family="command_input",
+        response_variables=("position", "velocity", "command"),
+        columns=("small", "large"),
+        cell_context=cell_context,
+        analytical_sources=("extlqg6d", "robust_output_feedback6d"),
+        analytical_profile=analytical_profile,
+        add_profile_traces=add_profile_traces,
+        coverage_row=lambda **kwargs: kwargs,
+        add_unsupported_annotation=lambda **kwargs: kwargs["fig"].add_annotation(
+            text=kwargs["text"], row=kwargs["row"], col=kwargs["col"]
+        ),
+        infer_event_marker=lambda **_kwargs: {"time_s": 0.1},
+        add_event_marker=lambda **kwargs: kwargs["fig"].add_vline(
+            x=kwargs["marker"]["time_s"], row=kwargs["row"], col=kwargs["col"]
+        ),
+        response_label=str.title,
+        column_label=str.title,
+        response_axis_title=lambda response: f"{response} units",
+        title="family response",
+        width=1180,
+        horizontal_spacing=0.07,
+    )
+
+    assert len(fig.data) == 12
+    assert (fig.layout.width, fig.layout.height) == (1180, 900)
+    assert [annotation.text for annotation in fig.layout.annotations[:6]] == [
+        "Position - Small",
+        "Position - Large",
+        "Velocity - Small",
+        "Velocity - Large",
+        "Command - Small",
+        "Command - Large",
+    ]
+    assert len(coverage) == 12
+    assert coverage[0]["budget"] == "small"
+    assert len(markers) == 6
+    assert markers[0]["budget_column"] == "small"
+    assert len(unavailable) == 6
+    assert unavailable[0]["reason"] == "unsupported"
+    assert len(analytical_calls) == 6
+
+
+def test_nominal_materializer_preserves_spec_save_and_file_contracts(monkeypatch) -> None:
+    saved = []
+
+    def fake_save_figure(**kwargs):
+        saved.append(kwargs)
+        return {"artifact": "figure"}
+
+    monkeypatch.setattr(figure_helpers, "save_figure", fake_save_figure)
+
+    def add_run(fig, _row, row_index):
+        add_profile_line(
+            fig,
+            np.array([0.0, 0.2]),
+            row=row_index,
+            col=1,
+            name="GRU nominal",
+            color="#2563eb",
+            dash="solid",
+            showlegend=row_index == 1,
+        )
+
+    config = {
+        "title": "nominal profiles",
+        "height": 760,
+        "issue": "c92ebd8",
+        "topic": "nominal",
+        "schema_version": "nominal.v1",
+        "figure_kind": "nominal_velocity",
+        "ext_contract": {"label": "6D extLQG"},
+        "inputs": [{"path": "results/c92ebd8/runs/a.json"}],
+        "transform": [{"name": "forward_velocity"}],
+        "plot_kwargs": {"shared_yaxes": "all", "rows": 2},
+    }
+    result = materialize_nominal_velocity_figure(
+        rows=({"label": "a"}, {"label": "b"}),
+        add_run_profiles=add_run,
+        ext_profile=np.array([0.0, 0.1]),
+        robust_profile=np.array([0.0, 0.08]),
+        comparator_colors={"extlqg6d": "#111827", "robust_output_feedback6d": "#15803d"},
+        config=config,
+        robust_contract={"label": "robust"},
+        result_extra={"bulk_html": "_artifacts/c92ebd8/figures/nominal/figure.html"},
+        result_contract={"output_feedback_hinf": {"label": "robust"}},
+    )
+
+    assert len(saved) == 1
+    assert len(saved[0]["fig"].data) == 6
+    assert saved[0]["fig"].layout.title.text == "nominal profiles"
+    assert saved[0]["spec"] == {
+        "schema_version": "nominal.v1",
+        "issue": "c92ebd8",
+        "figure_kind": "nominal_velocity",
+        "analytical_comparator_contract": {
+            "extlqg": {"label": "6D extLQG"},
+            "output_feedback_hinf": {"label": "robust"},
+        },
+        "inputs": [{"path": "results/c92ebd8/runs/a.json"}],
+        "transform": [{"name": "forward_velocity"}],
+        "plot_kwargs": {"shared_yaxes": "all", "rows": 2},
+    }
+    assert result["spec"] == "results/c92ebd8/figures/nominal/spec.json"
+    assert result["html"] == "results/c92ebd8/figures/nominal/figure.html"
+    assert result["bulk_html"] == "_artifacts/c92ebd8/figures/nominal/figure.html"
+    assert result["analytical_comparator_contract"] == {
+        "output_feedback_hinf": {"label": "robust"}
+    }
 
 
 def test_velocity_writer_preserves_single_and_sequence_output_contracts(
@@ -414,16 +552,16 @@ def test_visual_figure_cluster_members_route_through_canonical_builders() -> Non
         },
         "results/c92ebd8/scripts/materialize_post_training_figures.py": {
             "build_profile_family_figure",
-            "build_nominal_profile_figure",
+            "canonical_materialize_nominal_velocity_figure",
         },
         "results/c92ebd8/scripts/materialize_pgd_1p05_nominal_velocity_profiles.py": {
-            "build_nominal_profile_figure"
+            "canonical_materialize_nominal_velocity_figure"
         },
         "results/c92ebd8/scripts/materialize_pgd_ofb_budget_stabilization_responses.py": {
-            "build_stabilization_family_figure"
+            "canonical_build_family_figure"
         },
         "results/d55c5f0/scripts/materialize_soft_pgd_stabilization_responses.py": {
-            "build_stabilization_family_figure"
+            "canonical_build_family_figure"
         },
     }
     for relative_path, expected in expected_calls.items():
@@ -436,6 +574,50 @@ def test_visual_figure_cluster_members_route_through_canonical_builders() -> Non
         assert expected <= calls, (relative_path, expected - calls)
         assert "make_subplots" not in calls, relative_path
         assert "profile_comparison_grid" not in calls, relative_path
+
+
+def test_residual_figure_members_are_thin_canonical_adapters() -> None:
+    members = {
+        "results/c92ebd8/scripts/materialize_pgd_ofb_budget_stabilization_responses.py": (
+            "build_family_figure",
+            "canonical_build_family_figure",
+            60,
+        ),
+        "results/d55c5f0/scripts/materialize_soft_pgd_stabilization_responses.py": (
+            "build_family_figure",
+            "canonical_build_family_figure",
+            55,
+        ),
+        "results/c92ebd8/scripts/materialize_pgd_1p05_nominal_velocity_profiles.py": (
+            "materialize_figure",
+            "canonical_materialize_nominal_velocity_figure",
+            55,
+        ),
+        "results/c92ebd8/scripts/materialize_post_training_figures.py": (
+            "materialize_nominal_velocity_profiles",
+            "canonical_materialize_nominal_velocity_figure",
+            45,
+        ),
+    }
+    forbidden = {
+        "build_nominal_profile_figure",
+        "build_stabilization_family_figure",
+        "profile_comparison_grid",
+        "save_figure",
+    }
+    for relative_path, (name, canonical_name, max_lines) in members.items():
+        tree = ast.parse((REPO_ROOT / relative_path).read_text(encoding="utf-8"))
+        function = next(
+            node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == name
+        )
+        calls = {
+            node.func.id
+            for node in ast.walk(function)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        }
+        assert canonical_name in calls, (relative_path, canonical_name)
+        assert calls.isdisjoint(forbidden), (relative_path, calls & forbidden)
+        assert function.end_lineno - function.lineno + 1 <= max_lines, relative_path
 
 
 def test_delayed_eval_cluster_members_are_thin_canonical_adapters() -> None:
