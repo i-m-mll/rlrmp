@@ -8,6 +8,8 @@ without disturbing hand-edited preambles or appended commentary.
 
 from __future__ import annotations
 
+import csv
+import importlib.util
 import json
 import os
 import re
@@ -24,6 +26,48 @@ _MARKER_CLOSE_PATTERN = r"<!-- /AUTO-GENERATED -->"
 
 _MARKER_OPEN_RE = re.compile(r"<!-- AUTO-GENERATED: (\S+) -->")
 _MARKER_CLOSE_LITERAL = "<!-- /AUTO-GENERATED -->"
+
+
+def write_csv_rows(
+    path: Path,
+    rows: list[dict[str, Any]],
+    *,
+    fieldnames: list[str] | tuple[str, ...] | None = None,
+) -> None:
+    """Write mappings to CSV using an explicit or first-row column contract."""
+
+    columns = list(fieldnames if fieldnames is not None else (rows[0].keys() if rows else ()))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=columns, lineterminator="\n")
+        writer.writeheader()
+        writer.writerows({key: row[key] for key in columns} for row in rows)
+
+
+def json_ready(value: Any) -> Any:
+    """Recursively convert array/scalar containers to JSON-serializable values."""
+
+    if isinstance(value, dict):
+        return {str(key): json_ready(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_ready(item) for item in value]
+    if hasattr(value, "tolist"):
+        return json_ready(value.tolist())
+    if hasattr(value, "item"):
+        return value.item()
+    return value
+
+
+def load_python_module(path: Path, *, module_name: str | None = None) -> Any:
+    """Load a Python source file as a module with deterministic error handling."""
+
+    name = module_name or f"rlrmp_dynamic_{path.stem}"
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load Python module from {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def compact_json_dumps(

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+# ruff: noqa: E402
+
 import json
-from pathlib import Path
 from typing import Any, Mapping
 
 import equinox as eqx
@@ -14,7 +15,9 @@ import jax.random as jr
 import numpy as np
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 
-from rlrmp.analysis.math.cs_game_card import TARGET_POS, build_no_integrator_game
+from _common import projected_gradient_ascent
+
+from rlrmp.analysis.math.cs_game_card import build_no_integrator_game
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
 from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     load_validation_selected_checkpoint_model,
@@ -82,42 +85,16 @@ def main() -> None:
         )
         return jnp.mean(costs["total"])
 
-    value_and_grad = jax.value_and_grad(objective)
-    delta = jnp.zeros_like(base_epsilon)
-    best_delta = delta
-    best_objective = objective(delta)
-    history: list[dict[str, float | int]] = [
-        {
-            "step": 0,
-            "objective": float(best_objective),
-            "best_objective": float(best_objective),
-            "epsilon_l2_mean": 0.0,
-            "epsilon_l2_max": 0.0,
-        }
-    ]
-    for step in range(1, N_STEPS + 1):
-        value, grad = value_and_grad(delta)
-        proposal = project_per_trial_l2(
-            delta + normalize_per_trial(grad) * step_radius,
-            radius,
-        )
-        proposal_objective = objective(proposal)
-        improved = proposal_objective > best_objective
-        best_delta = jnp.where(improved, proposal, best_delta)
-        best_objective = jnp.where(improved, proposal_objective, best_objective)
-        delta = proposal
-        norms = flattened_per_trial_norm(proposal)
-        history.append(
-            {
-                "step": step,
-                "objective": float(proposal_objective),
-                "best_objective": float(best_objective),
-                "pre_step_objective": float(value),
-                "epsilon_l2_mean": float(jnp.mean(norms)),
-                "epsilon_l2_max": float(jnp.max(norms)),
-                "gradient_l2_mean": float(jnp.mean(flattened_per_trial_norm(grad))),
-            }
-        )
+    best_delta, best_objective, history = projected_gradient_ascent(
+        objective,
+        jnp.zeros_like(base_epsilon),
+        radius=radius,
+        step_radius=step_radius,
+        n_steps=N_STEPS,
+        normalize=normalize_per_trial,
+        project=project_per_trial_l2,
+        flattened_norm=flattened_per_trial_norm,
+    )
 
     clean_specs = trial_specs
     adversarial_specs = with_epsilon_delta(trial_specs, best_delta)

@@ -3,6 +3,7 @@ from __future__ import annotations
 # ruff: noqa: E402
 
 import json
+from functools import partial
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,9 @@ jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
+
+from _common import projected_gradient_ascent
+from rlrmp.paths import portable_repo_path
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 
 from compute_gru_pgd_damage_sanity import (
@@ -44,6 +48,7 @@ from rlrmp.train.task_model import setup_task_model_pair
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+repo_rel = partial(portable_repo_path, repo_root=REPO_ROOT)
 OUTPUT_JSON = REPO_ROOT / "results" / "08483d5" / "notes" / "pgd_ofb_side_check.json"
 OUTPUT_MD = REPO_ROOT / "results" / "08483d5" / "notes" / "pgd_ofb_side_check.md"
 TARGET_DAMAGE = 6131.6906765
@@ -220,42 +225,16 @@ def compute_damage_row(row: Mapping[str, Any]) -> dict[str, Any]:
         )
         return jnp.mean(costs["total"])
 
-    value_and_grad = jax.value_and_grad(objective)
-    delta = jnp.zeros_like(base_epsilon)
-    best_delta = delta
-    best_objective = objective(delta)
-    history = [
-        {
-            "step": 0,
-            "objective": float(best_objective),
-            "best_objective": float(best_objective),
-            "epsilon_l2_mean": 0.0,
-            "epsilon_l2_max": 0.0,
-        }
-    ]
-    for step in range(1, N_STEPS + 1):
-        value, grad = value_and_grad(delta)
-        proposal = project_per_trial_l2(
-            delta + normalize_per_trial(grad) * step_radius,
-            radius,
-        )
-        proposal_objective = objective(proposal)
-        improved = proposal_objective > best_objective
-        best_delta = jnp.where(improved, proposal, best_delta)
-        best_objective = jnp.where(improved, proposal_objective, best_objective)
-        delta = proposal
-        norms = flattened_per_trial_norm(proposal)
-        history.append(
-            {
-                "step": step,
-                "objective": float(proposal_objective),
-                "best_objective": float(best_objective),
-                "pre_step_objective": float(value),
-                "epsilon_l2_mean": float(jnp.mean(norms)),
-                "epsilon_l2_max": float(jnp.max(norms)),
-                "gradient_l2_mean": float(jnp.mean(flattened_per_trial_norm(grad))),
-            }
-        )
+    best_delta, _best_objective, history = projected_gradient_ascent(
+        objective,
+        jnp.zeros_like(base_epsilon),
+        radius=radius,
+        step_radius=step_radius,
+        n_steps=N_STEPS,
+        normalize=normalize_per_trial,
+        project=project_per_trial_l2,
+        flattened_norm=flattened_per_trial_norm,
+    )
 
     clean_costs = summarize_costs(
         rollout_costs(
@@ -484,10 +463,6 @@ def summary_for_stdout(result: Mapping[str, Any]) -> dict[str, Any]:
             "markdown": repo_rel(OUTPUT_MD),
         },
     }
-
-
-def repo_rel(path: Path) -> str:
-    return str(path.relative_to(REPO_ROOT))
 
 
 if __name__ == "__main__":

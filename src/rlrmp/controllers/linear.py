@@ -195,8 +195,7 @@ class LinearController(Component):
         e_vel = feedback_flat[2:]
         e = jnp.concatenate([e_pos, e_vel], axis=-1)  # (4,)
 
-        K_t = self.K[t]  # (n_controls, n_states)
-        u = -jnp.dot(K_t, e)  # (n_controls,)
+        u = self._control(t, e)
 
         new_hidden = jnp.array([t + 1], dtype=jnp.float32)
         new_state = NetworkState(
@@ -208,13 +207,18 @@ class LinearController(Component):
         state = state.set(self.state_index, new_state)
         return {"output": u, "hidden": new_hidden}, state
 
+    def _control(self, t: Array, error: Array) -> Array:
+        """Return the control command for one step and target-relative error."""
+
+        return -jnp.dot(self.K[t], error)
+
 
 # ---------------------------------------------------------------------------
 # LinearTrackerController — LTV regulator + independent LTV feedforward
 # ---------------------------------------------------------------------------
 
 
-class LinearTrackerController(Component):
+class LinearTrackerController(LinearController):
     """LTV tracker ``u_t = u_ff(t) - K_t · e_t`` with ``e_t = (pos - target, vel)``.
 
     Adds a freely-parameterised per-step feedforward vector ``u_ff(t)`` of shape
@@ -230,17 +234,7 @@ class LinearTrackerController(Component):
         state_index: StateIndex for the per-step counter + output cache.
     """
 
-    K: Float[Array, "T n_controls n_states"]
     u_ff: Float[Array, "T n_controls"]
-    n_steps: int = field(static=True)
-    n_controls: int = field(static=True)
-    n_states: int = field(static=True)
-    out_size: int = field(static=True)  # required by SimpleFeedback (force_filter sizing)
-    state_index: StateIndex
-    _initial_state: NetworkState = field(static=True)
-
-    input_ports = ("input", "feedback")
-    output_ports = ("output", "hidden")
 
     def __init__(
         self,
@@ -262,56 +256,20 @@ class LinearTrackerController(Component):
             u_ff_init_scale: Std for Gaussian u_ff initialisation (default 0.0).
             key: PRNG key for initialisation.
         """
-        key_K, key_uff = jr.split(key, 2)
-        if K_init_scale > 0.0:
-            self.K = K_init_scale * jr.normal(key_K, (n_steps, n_controls, n_states))
-        else:
-            self.K = jnp.zeros((n_steps, n_controls, n_states))
+        key_k, key_uff = jr.split(key, 2)
+        super().__init__(
+            n_steps=n_steps,
+            n_controls=n_controls,
+            n_states=n_states,
+            K_init_scale=K_init_scale,
+            key=key_k,
+        )
         if u_ff_init_scale > 0.0:
             self.u_ff = u_ff_init_scale * jr.normal(key_uff, (n_steps, n_controls))
         else:
             self.u_ff = jnp.zeros((n_steps, n_controls))
-        self.n_steps = int(n_steps)
-        self.n_controls = int(n_controls)
-        self.n_states = int(n_states)
-        self.out_size = int(n_controls)
 
-        init_state = NetworkState(
-            input=jnp.zeros(0),
-            hidden=jnp.zeros((1,)),
-            output=jnp.zeros(n_controls),
-            encoding=None,
-        )
-        self._initial_state = init_state
-        self.state_index = StateIndex(init_state)
+    def _control(self, t: Array, error: Array) -> Array:
+        """Return the regulator command plus the independent feedforward term."""
 
-    def __call__(
-        self,
-        inputs: dict[str, PyTree],
-        state: State,
-        *,
-        key: PRNGKeyArray,
-    ) -> tuple[dict[str, PyTree], State]:
-        net_state: NetworkState = state.get(self.state_index)
-        t = jnp.asarray(net_state.hidden[0], dtype=jnp.int32)
-        t = jnp.clip(t, 0, self.n_steps - 1)
-
-        target_pos = _extract_target_pos(inputs.get("input", None))
-        feedback_flat = _flatten_feedback(inputs.get("feedback", None))
-        e_pos = feedback_flat[:2] - target_pos
-        e_vel = feedback_flat[2:]
-        e = jnp.concatenate([e_pos, e_vel], axis=-1)
-
-        K_t = self.K[t]
-        u_ff_t = self.u_ff[t]
-        u = u_ff_t - jnp.dot(K_t, e)
-
-        new_hidden = jnp.array([t + 1], dtype=jnp.float32)
-        new_state = NetworkState(
-            input=jnp.zeros(0),
-            hidden=new_hidden,
-            output=u,
-            encoding=None,
-        )
-        state = state.set(self.state_index, new_state)
-        return {"output": u, "hidden": new_hidden}, state
+        return self.u_ff[t] + super()._control(t, error)

@@ -33,6 +33,7 @@ from rlrmp.analysis.pipelines.gru_feedback_ablation import (
 from rlrmp.analysis.pipelines.gru_map_error_decomposition import (
     materialize_gru_map_error_decomposition,
 )
+from rlrmp.paths import portable_repo_path as _repo_relative
 from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     default_cs_perturbation_bank,
     evaluate_run_perturbation_bank,
@@ -902,13 +903,6 @@ def _environment() -> dict[str, Any]:
         "jax_default_backend": jax.default_backend(),
         "jax_devices": [str(device) for device in jax.devices()],
     }
-
-
-def _repo_relative(path: Path, *, repo_root: Path) -> str:
-    try:
-        return str(path.relative_to(repo_root))
-    except ValueError:
-        return str(path)
 
 
 if __name__ == "__main__":
