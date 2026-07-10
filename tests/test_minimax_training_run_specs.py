@@ -125,13 +125,7 @@ def _native_smoke_spec(
             "--n-replicates",
             "1",
             "--output-dir",
-            str(
-                tmp_path
-                / "_artifacts"
-                / "62a658d"
-                / "runs"
-                / f"native_smoke_{adversary_type}"
-            ),
+            str(tmp_path / "_artifacts" / "62a658d" / "runs" / f"native_smoke_{adversary_type}"),
         ]
     )
     payload = _payload_from_config(tmp_path, config)
@@ -186,18 +180,22 @@ def _comparable_native_slots(slots: dict[str, object]) -> dict[str, object]:
         "adversary_loss": slots["adversary_loss"],
     }
     return jt.map(
-        lambda leaf: leaf.astype(jnp.int8)
-        if getattr(getattr(leaf, "dtype", None), "kind", None) == "b"
-        else leaf,
+        lambda leaf: (
+            leaf.astype(jnp.int8)
+            if getattr(getattr(leaf, "dtype", None), "kind", None) == "b"
+            else leaf
+        ),
         comparable,
     )
 
 
 def _bool_leaves_as_ints(tree: Any) -> Any:
     return jt.map(
-        lambda leaf: leaf.astype(jnp.int8)
-        if getattr(getattr(leaf, "dtype", None), "kind", None) == "b"
-        else leaf,
+        lambda leaf: (
+            leaf.astype(jnp.int8)
+            if getattr(getattr(leaf, "dtype", None), "kind", None) == "b"
+            else leaf
+        ),
         tree,
     )
 
@@ -510,7 +508,7 @@ def test_minimax_native_executor_emits_post_run_protocol_inputs(
     spec = _native_smoke_spec(tmp_path, n_adversary_batches=2)
     output_dir = Path(minimax_training_run_spec_to_config(spec)["output_dir"])
 
-    with caplog.at_level(logging.INFO, logger="rlrmp.train.minimax"):
+    with caplog.at_level(logging.INFO, logger="rlrmp.train.minimax_native"):
         result = execute_minimax_training_run_spec_native(
             spec,
             run_id="native-minimax-post-run-protocol",
@@ -534,7 +532,7 @@ def test_minimax_native_executor_emits_post_run_protocol_inputs(
     progress_lines = [
         record.message
         for record in caplog.records
-        if record.name == "rlrmp.train.minimax" and record.message.startswith("BATCH ")
+        if record.name == "rlrmp.train.minimax_native" and record.message.startswith("BATCH ")
     ]
     assert any("phase=adversarial batch=0/2" in line for line in progress_lines)
     assert any("phase=adversarial batch=1/2" in line for line in progress_lines)
@@ -556,9 +554,11 @@ def test_minimax_native_initial_slots_honor_explicit_warmup_model(
     fresh_runtime = fresh_runtime_context.component("minimax")
     fresh_model = fresh_runtime.pair.model
     shifted_net = jt.map(
-        lambda leaf: leaf + 0.125
-        if eqx.is_array(leaf) and jnp.issubdtype(leaf.dtype, jnp.floating)
-        else leaf,
+        lambda leaf: (
+            leaf + 0.125
+            if eqx.is_array(leaf) and jnp.issubdtype(leaf.dtype, jnp.floating)
+            else leaf
+        ),
         fresh_model.get_node("net"),
         is_leaf=eqx.is_array,
     )

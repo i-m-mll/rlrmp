@@ -16,7 +16,7 @@ import plotly.graph_objects as go
 
 import rlrmp.analysis  # noqa: F401 - registers analysis/task surfaces used by setup.
 from rlrmp.io import update_marked_section
-from rlrmp.train.closed_loop_distillation import (
+from rlrmp.train.distillation_native.closed_loop import (
     ExtLQGClosedLoopReference,
     _initial_vector,
     _target_position,
@@ -108,14 +108,27 @@ def _mean_sem(samples: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 
 def _add_profile(
-    fig: go.Figure, *, time_s: np.ndarray, mean: np.ndarray, sem: np.ndarray,
-    label: str, color: str,
+    fig: go.Figure,
+    *,
+    time_s: np.ndarray,
+    mean: np.ndarray,
+    sem: np.ndarray,
+    label: str,
+    color: str,
 ) -> None:
     """Add one mean profile and SEM band."""
     canonical_add_band_trace(
-        fig, x=time_s, mean=mean, spread=sem, color=color, name=label,
-        band_fill_color=color.replace("1)", "0.16)"), band_label=f"{label} SEM",
-        line_width=2.4, row=None, col=None,
+        fig,
+        x=time_s,
+        mean=mean,
+        spread=sem,
+        color=color,
+        name=label,
+        band_fill_color=color.replace("1)", "0.16)"),
+        band_label=f"{label} SEM",
+        line_width=2.4,
+        row=None,
+        col=None,
     )
 
 

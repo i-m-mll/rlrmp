@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from rlrmp.train.distillation import (
+from rlrmp.train.distillation_native.losses import (
     DistillationLossWeights,
     batched_directional_jvps,
     cs_h0_distillation_config,

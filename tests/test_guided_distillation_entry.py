@@ -18,7 +18,7 @@ import pytest
 
 from feedbax.models.networks import SimpleStagedNetwork
 from rlrmp.runtime.jax_config import require_jax_x64
-from rlrmp.train import guided_distillation
+from rlrmp.train.distillation_native import guided as guided_distillation
 
 
 def _setup_task_model_pair(hps, *, key):

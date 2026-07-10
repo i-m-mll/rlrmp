@@ -21,7 +21,8 @@ from feedbax.objectives.spec import ObjectiveExecutionRequirements
 from feedbax.training.executor import execute_training_run_spec
 
 from rlrmp.runtime.training_run_specs import FEEDBAX_TRAINING_RUN_SPEC_KEY
-from rlrmp.train import closed_loop_distillation, guided_distillation
+from rlrmp.train.distillation_native import closed_loop as closed_loop_distillation
+from rlrmp.train.distillation_native import guided as guided_distillation
 from rlrmp.train.cs_nominal_gru import (
     _initial_training_state,
     _run_cs_supervised_training_chunk,
@@ -47,8 +48,8 @@ TEACHER_BANK = "teacher_bank"
 FORCING_SCHEDULE = "forcing_schedule"
 JVP_PROBES = "jvp_probes"
 
-CLOSED_LOOP_KERNEL_REF = "rlrmp.train.closed_loop_distillation.closed_loop_gradient_update"
-GUIDED_KERNEL_REF = "rlrmp.train.guided_distillation.guided_gradient_update"
+CLOSED_LOOP_KERNEL_REF = "rlrmp.train.distillation_native.closed_loop_gradient_update"
+GUIDED_KERNEL_REF = "rlrmp.train.distillation_native.guided_gradient_update"
 
 
 @dataclass(frozen=True)
@@ -159,7 +160,9 @@ def execute_distillation_training_run_spec_native(
         source_payload: Mapping[str, Any] = training_spec.method_payload.payload
     else:
         source_payload = source_run_spec
-        training_spec = TrainingRunSpec.model_validate(source_payload[FEEDBAX_TRAINING_RUN_SPEC_KEY])
+        training_spec = TrainingRunSpec.model_validate(
+            source_payload[FEEDBAX_TRAINING_RUN_SPEC_KEY]
+        )
         if method is None:
             method = _method_from_source_spec(source_payload)
     seed = int(source_payload.get("seed", 0)) if key is None else None
@@ -276,7 +279,9 @@ def _build_closed_loop_initial_slots(
     key_init, key_train = jr.split(key, 2)
     hps = closed_loop_distillation._training_hps_from_spec(source_run_spec)
     pair = setup_task_model_pair(hps, key=key_init)
-    model_layout = _controller_layout(pair.model, int(source_run_spec["student_contract"]["n_replicates"]))
+    model_layout = _controller_layout(
+        pair.model, int(source_run_spec["student_contract"]["n_replicates"])
+    )
     optimizer = _closed_loop_optimizer(source_run_spec)
     initial = _initial_training_state(
         model=pair.model,
@@ -339,14 +344,18 @@ def _build_guided_initial_slots(
         if "batch_size" in source_run_spec
         else source_run_spec["training_config"]["batch_size"]
     )
-    n_replicates = int(model_hps.get("n_replicates", source_run_spec["model_contract"]["n_replicates"]))
-    hidden_size = int(model_hps.get("hidden_size", source_run_spec["model_contract"]["hidden_size"]))
-    horizon = int(source_run_spec["teacher_bank"]["horizon"])
-    n_jvp_directions = int(
-        source_run_spec["distillation_surface"]["config"]["n_jvp_directions"]
+    n_replicates = int(
+        model_hps.get("n_replicates", source_run_spec["model_contract"]["n_replicates"])
     )
+    hidden_size = int(
+        model_hps.get("hidden_size", source_run_spec["model_contract"]["hidden_size"])
+    )
+    horizon = int(source_run_spec["teacher_bank"]["horizon"])
+    n_jvp_directions = int(source_run_spec["distillation_surface"]["config"]["n_jvp_directions"])
     trainable_dtype = guided_distillation._dtype_from_name(
-        guided_distillation._trainable_dtype_name(source_run_spec, _namespace_from_guided_spec(source_run_spec))
+        guided_distillation._trainable_dtype_name(
+            source_run_spec, _namespace_from_guided_spec(source_run_spec)
+        )
     )
     population_mask_mode = str(
         model_hps.get(
@@ -365,7 +374,9 @@ def _build_guided_initial_slots(
         hidden_size=hidden_size,
         batch_size=batch_size,
         n_batches=n_batches,
-        controller_lr=float(source_run_spec.get("controller_lr", source_run_spec["optimizer"]["controller_lr"])),
+        controller_lr=float(
+            source_run_spec.get("controller_lr", source_run_spec["optimizer"]["controller_lr"])
+        ),
         lr_warmup_batches=int(source_run_spec["optimizer"]["lr_warmup_batches"]),
         lr_warmup_init_fraction=float(source_run_spec["optimizer"]["lr_warmup_init_fraction"]),
         lr_cosine_alpha=float(source_run_spec["optimizer"]["lr_cosine_alpha"]),

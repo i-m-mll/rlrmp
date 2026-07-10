@@ -29,8 +29,12 @@ from rlrmp.runtime.training_run_specs import (
     closed_loop_distillation_method_payload,
     guided_distillation_method_payload,
 )
-from rlrmp.train import closed_loop_distillation, guided_distillation
+from rlrmp.train.distillation_native import closed_loop as closed_loop_distillation
+from rlrmp.train.distillation_native import guided as guided_distillation
 from rlrmp.train.distillation_native import (
+    _closed_loop_training_chunk,
+    _guided_training_chunk,
+    build_distillation_native_initial_slots,
     execute_distillation_training_run_spec_native,
     native_distillation_model_from_slot,
 )
@@ -91,6 +95,20 @@ def _array_tree(value: object) -> object:
     return eqx.filter(value, eqx.is_array)
 
 
+def _array_leaves(value: object) -> tuple[object, ...]:
+    return tuple(jt.leaves(_array_tree(value)))
+
+
+def _comparable_distillation_slots(slots: dict[str, object]) -> dict[str, object]:
+    return {
+        "model": _array_leaves(slots["model"]),
+        "optimizer": _array_leaves(slots["optimizer"]),
+        "prng": slots["prng"],
+        "completed_batches": slots["completed_batches"],
+        "train_loss": slots["train_loss"],
+    }
+
+
 def _assert_array_trees_close(left: object, right: object) -> None:
     left_tree = _array_tree(left)
     right_tree = _array_tree(right)
@@ -98,13 +116,16 @@ def _assert_array_trees_close(left: object, right: object) -> None:
         left_leaves = jt.leaves(left_tree)
         right_leaves = jt.leaves(right_tree)
         assert [leaf.shape for leaf in left_leaves] == [leaf.shape for leaf in right_leaves]
-        assert max(
-            (
-                float(jnp.max(jnp.abs(left_leaf - right_leaf)))
-                for left_leaf, right_leaf in zip(left_leaves, right_leaves, strict=True)
-            ),
-            default=0.0,
-        ) <= FAMILY_TOLERANCE.atol
+        assert (
+            max(
+                (
+                    float(jnp.max(jnp.abs(left_leaf - right_leaf)))
+                    for left_leaf, right_leaf in zip(left_leaves, right_leaves, strict=True)
+                ),
+                default=0.0,
+            )
+            <= FAMILY_TOLERANCE.atol
+        )
         return
     report = run_paired_equivalence(
         "distillation.array_tree",
@@ -224,9 +245,7 @@ def test_tracked_distillation_method_payload_corpus_validates(path: Path, method
 
 def test_distillation_method_payload_matches_pre_refactor_golden_fixture() -> None:
     fixtures = json.loads(
-        Path("tests/fixtures/distillation_method_payload_golden.json").read_text(
-            encoding="utf-8"
-        )
+        Path("tests/fixtures/distillation_method_payload_golden.json").read_text(encoding="utf-8")
     )
     closed_loop_spec = _tracked_closed_loop_spec_with_horizon()
     guided_spec = guided_distillation.build_distillation_spec(
@@ -241,8 +260,9 @@ def test_distillation_method_payload_matches_pre_refactor_golden_fixture() -> No
     }
 
     for name, envelope in cases.items():
-        assert _canonical_json(envelope.model_dump(mode="json", exclude_none=True)) == (
-            fixtures["cases"][name]["method_payload_envelope_json"]
+        assert (
+            _canonical_json(envelope.model_dump(mode="json", exclude_none=True))
+            == (fixtures["cases"][name]["method_payload_envelope_json"])
         )
 
 
@@ -314,7 +334,9 @@ def test_guided_distillation_training_run_spec_round_trips() -> None:
         training_spec.method_payload.payload["distillation_surface"]["config"]["n_jvp_directions"]
         == 4
     )
-    assert [phase.name for phase in training_spec.worker_execution.method_contract.phase_program.phases] == [
+    assert [
+        phase.name for phase in training_spec.worker_execution.method_contract.phase_program.phases
+    ] == [
         "teacher_forced_warm_start",
         "mixed_teacher_student_forcing",
         "mostly_student_forced",
@@ -350,16 +372,6 @@ def test_closed_loop_distillation_native_executor_runs_fixed_seed(
         ]
     )
     source_spec = closed_loop_distillation.build_closed_loop_distillation_spec(args)
-    with pytest.raises(RuntimeError, match="Legacy injected closed-loop distillation"):
-        closed_loop_distillation.run_closed_loop_distillation_training(
-            spec=source_spec,
-            key=jr.PRNGKey(0),
-            n_batches=1,
-            batch_size=1,
-            n_replicates=1,
-            hidden_size=6,
-            confirm_full_train=True,
-        )
     native = execute_distillation_training_run_spec_native(
         source_spec,
         method="closed_loop_distillation",
@@ -422,13 +434,90 @@ def test_guided_distillation_native_executor_matches_fixed_seed_driver(
 
     assert cli_result["completed_batches"] == 1
     assert Path(cli_result["training_manifest_path"]).is_file()
-    assert guided_distillation.standard_controller_parts(native_model).hidden_cell.weight_ih.shape == (
+    assert guided_distillation.standard_controller_parts(
+        native_model
+    ).hidden_cell.weight_ih.shape == (
         1,
         18,
         6,
     )
     assert int(native.final_slots["completed_batches"]) == 1
     assert native.final_slots["train_loss"] != 0.0
+
+
+@pytest.mark.parametrize("method", ["closed_loop_distillation", "guided_distillation"])
+def test_distillation_native_executor_matches_fixed_seed_direct_kernel(
+    tmp_path: Path,
+    method: str,
+) -> None:
+    if method == "closed_loop_distillation":
+        args = closed_loop_distillation._build_parser().parse_args(
+            [
+                "--n-batches",
+                "1",
+                "--batch-size",
+                "1",
+                "--n-replicates",
+                "1",
+                "--hidden-size",
+                "6",
+                "--output-dir",
+                str(tmp_path / "closed-loop-equivalence"),
+            ]
+        )
+        source_spec = closed_loop_distillation.build_closed_loop_distillation_spec(args)
+        chunk_fn = _closed_loop_training_chunk
+    else:
+        args = guided_distillation.build_parser().parse_args(
+            [
+                "--n-batches",
+                "1",
+                "--batch-size",
+                "1",
+                "--n-replicates",
+                "1",
+                "--hidden-size",
+                "6",
+                "--n-jvp-directions",
+                "1",
+                "--output-dir",
+                str(tmp_path / "guided-equivalence"),
+                "--no-checkpoint",
+            ]
+        )
+        source_spec = guided_distillation.build_distillation_spec(args)
+        chunk_fn = _guided_training_chunk
+
+    key = jr.PRNGKey(17)
+    initial_slots, runtime = build_distillation_native_initial_slots(
+        source_run_spec=source_spec,
+        method=method,
+        key=key,
+    )
+    direct_slots = {
+        **initial_slots,
+        **chunk_fn(runtime, None, initial_slots, None),
+    }
+    executor = execute_distillation_training_run_spec_native(
+        source_spec,
+        method=method,
+        run_id=f"native-{method}-paired-equivalence",
+        key=key,
+        manifest_root=tmp_path / "manifests" / method,
+        checkpoint_root=tmp_path / "checkpoints" / method,
+        manifest_conflict_policy="reuse-identical",
+    )
+
+    report = run_paired_equivalence(
+        f"distillation.{method}.direct_kernel",
+        lambda: direct_slots,
+        lambda: executor.final_slots,
+        comparable=_comparable_distillation_slots,
+        left_label="fixed_seed_direct_kernel",
+        right_label="native_executor",
+    )
+    assert_paired_equivalent(report)
+    assert float(direct_slots["train_loss"]) != 0.0
 
 
 @pytest.mark.parametrize(
@@ -542,7 +631,7 @@ def test_distillation_training_run_spec_fails_before_launch(
         payload["method_ref"] = {"package": "rlrmp", "name": "not_registered", "version": "v1"}
     elif mutation == "unsupported_payload_version":
         payload["method_payload"]["schema_version"] = (
-            "rlrmp.spec.training_method.guided_distillation_payload.v0"
+            "rlrmp.spec.training_method.guided_distillation_payload.v1"
         )
     elif mutation == "missing_worker_axes":
         payload["worker_execution"]["method_contract"]["axes"] = []
@@ -550,4 +639,16 @@ def test_distillation_training_run_spec_fails_before_launch(
         raise AssertionError(mutation)
 
     with pytest.raises(ValidationError, match=match):
+        TrainingRunSpec.model_validate(payload)
+
+
+def test_closed_loop_distillation_rejects_pre_native_payload_version() -> None:
+    args = closed_loop_distillation._build_parser().parse_args([])
+    run_spec = closed_loop_distillation.build_closed_loop_distillation_spec(args)
+    payload = copy.deepcopy(run_spec[FEEDBAX_TRAINING_RUN_SPEC_KEY])
+    payload["method_payload"]["schema_version"] = (
+        "rlrmp.spec.training_method.closed_loop_distillation_payload.v1"
+    )
+
+    with pytest.raises(ValidationError, match="unsupported method payload schema version"):
         TrainingRunSpec.model_validate(payload)

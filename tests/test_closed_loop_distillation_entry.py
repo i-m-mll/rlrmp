@@ -10,7 +10,7 @@ import jax.numpy as jnp
 import pytest
 
 from rlrmp.runtime.training_run_specs import MissingTrainingRunSpecFieldError
-from rlrmp.train import closed_loop_distillation
+from rlrmp.train.distillation_native import closed_loop as closed_loop_distillation
 
 
 def _default_spec_args(**overrides) -> argparse.Namespace:
@@ -142,18 +142,7 @@ def test_closed_loop_distillation_cli_dry_run_smoke(
 
 
 def test_closed_loop_distillation_legacy_injected_runtime_is_retired() -> None:
-    spec = closed_loop_distillation.build_closed_loop_distillation_spec(_default_spec_args())
-
-    with pytest.raises(RuntimeError, match="Legacy injected closed-loop distillation"):
-        closed_loop_distillation.run_closed_loop_distillation_training(
-            spec=spec,
-            n_batches=1,
-            batch_size=2,
-            n_replicates=1,
-            hidden_size=6,
-            smoke=True,
-            train_pair_fn=lambda *args, **kwargs: (object(), object()),
-        )
+    assert not hasattr(closed_loop_distillation, "run_closed_loop_distillation_training")
 
 
 def test_extlqg_reference_rollout_matches_shared_shapes() -> None:
@@ -175,13 +164,16 @@ def test_extlqg_reference_rollout_matches_shared_shapes() -> None:
 
 def test_closed_loop_distillation_full_train_requires_approval() -> None:
     spec = closed_loop_distillation.build_closed_loop_distillation_spec(_default_spec_args())
+    args = closed_loop_distillation._build_parser().parse_args([])
 
-    with pytest.raises(RuntimeError) as exc:
-        closed_loop_distillation.run_closed_loop_distillation_training(spec=spec)
+    with pytest.raises(closed_loop_distillation.FullTrainingApprovalRequiredError) as exc:
+        closed_loop_distillation.run_closed_loop_distillation_training_native(
+            spec=spec,
+            args=args,
+        )
 
     message = str(exc.value)
-    assert "Legacy injected closed-loop distillation training has been removed" in message
-    assert "run_closed_loop_distillation_training_native" in message
+    assert "requires explicit user launch approval" in message
 
 
 def test_closed_loop_distillation_cli_full_train_returns_approval_guard(
