@@ -275,7 +275,10 @@ def classify_manifest(name: str, manifest: Mapping[str, Any]) -> dict[str, Any] 
     ):
         return {
             "diagnostic_name": "gru_feedback_ablation",
-            "materializer": "rlrmp.analysis.pipelines.gru_feedback_ablation.materialize_gru_feedback_ablation",
+            "materializer": (
+                "rlrmp.analysis.pipelines.gru_feedback_ablation."
+                "execute_feedback_ablation_pipeline"
+            ),
             "source_files": [
                 "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
                 "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",

@@ -104,9 +104,9 @@ def test_feedback_orchestration_preserves_materialization_contract(
             "bulk_detail_manifest": {"path": str(detail_path)},
         }
 
-    def feedback_materializer(**kwargs: Any) -> dict[str, Any]:
+    def feedback_materializer(**kwargs: Any) -> SimpleNamespace:
         calls.append(("feedback", kwargs))
-        return {"schema_version": "feedback.v1"}
+        return SimpleNamespace(payload={"schema_version": "feedback.v1"})
 
     writes: list[tuple[dict[str, Any], list[dict[str, Any]]]] = []
     hooks = {
@@ -131,7 +131,7 @@ def test_feedback_orchestration_preserves_materialization_contract(
     )
     monkeypatch.setattr(
         gru_feedback_ablation,
-        "materialize_gru_feedback_ablation",
+        "execute_feedback_ablation_pipeline",
         feedback_materializer,
     )
     result = run_feedback_robustness_diagnostics(

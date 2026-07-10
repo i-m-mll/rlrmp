@@ -136,7 +136,7 @@ PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION = (
 
 FEEDBACK_ABLATION_EVAL_PARAMS_KIND = "RLRMPFeedbackAblationEvaluationParams"
 FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_ID = "rlrmp.eval.feedback_ablation.params"
-FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION = "rlrmp.eval.feedback_ablation.params.v1"
+FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION = "rlrmp.eval.feedback_ablation.params.v2"
 
 WORST_CASE_EPSILON_EVAL_PARAMS_KIND = "RLRMPWorstCaseEpsilonEvaluationParams"
 WORST_CASE_EPSILON_EVAL_PARAMS_SCHEMA_ID = "rlrmp.eval.worst_case_epsilon.params"
@@ -642,8 +642,19 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION,
             emitted_by=("rlrmp.eval.recipes.feedback_ablation_recipe",),
             consumed_by=("Feedbax EvaluationRunSpec.params",),
-            description="Params for rlrmp feedback-ablation evaluation.",
-            rejected_old_versions=("rlrmp.eval.feedback_ablation.params.v0",),
+            description=(
+                "Params for model-driven rlrmp feedback-ablation evaluation; v2 "
+                "replaces caller-supplied rollout pairs with checkpoint/run selectors."
+            ),
+            rejected_old_versions=(
+                "rlrmp.eval.feedback_ablation.params.v0",
+                "rlrmp.eval.feedback_ablation.params.v1",
+            ),
+            notes=(
+                "Precomputed rollout_pairs are intentionally not migrated. Re-emit the "
+                "evaluation spec from source_experiment and run_ids so the registered "
+                "recipe owns rollout execution."
+            ),
         ),
         _family(
             WORST_CASE_EPSILON_EVAL_PARAMS_KIND,

@@ -2349,7 +2349,7 @@ def _feedback_quality_component_registrations() -> dict[str, FeedbackQualityComp
             logical_name="feedback_quality/feedback_ablation_status.json",
             live_materializer=(
                 "rlrmp.analysis.pipelines.gru_feedback_ablation."
-                "materialize_gru_feedback_ablation"
+                "execute_feedback_ablation_pipeline"
             ),
             gating_label="include flag and applicable component",
             gating_expr=_feedback_quality_component_gate_expr("feedback_ablation"),
@@ -2463,6 +2463,8 @@ def _feedback_quality_live_output(
             "reason": raw_output.get("reason", f"{name}_materializer_skipped"),
             "detail": dict(raw_output),
         }
+    if raw_output.get("status") == "materialized":
+        return dict(raw_output)
     return dict(refreshed)
 
 

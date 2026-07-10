@@ -12,18 +12,22 @@ import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
+from feedbax.analysis.evaluation import execute_evaluation_run_spec
 from feedbax.analysis.analysis import AbstractAnalysis
 from feedbax.analysis.context import AnalysisRunContext
-from feedbax.analysis.specs import AnalysisRecipeResult, ResolvedAnalysisInput
+from feedbax.analysis.specs import (
+    AnalysisRecipeResult,
+    ResolvedAnalysisInput,
+    execute_analysis_run_spec,
+)
 from feedbax.analysis.types import AnalysisInputData
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
-from feedbax.contracts.manifest import AnalysisRunSpec, ParentRef
+from feedbax.contracts.manifest import AnalysisRunSpec, EvaluationRunSpec, ParentRef
 from feedbax.runtime.graph import Component, Wire
 from jaxtyping import PRNGKeyArray, PyTree
 from pydantic import BaseModel, ConfigDict, Field
 
 from rlrmp.analysis.math.summary_stats import summary_stats as _summary_stats
-from rlrmp.analysis.pipelines.diagnostic_provenance import write_regeneration_spec
 from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     FIXED_BANK_CHECKPOINT_POLICY,
     LEGACY_FIXED_BANK_SCHEMA_VERSION,
@@ -44,7 +48,6 @@ from rlrmp.analysis.pipelines.gru_perturbation_bank import (
 from rlrmp.analysis.pipelines.gru_pilot_figures import (
     RunFigureInputs,
     repeat_single_validation_trial,
-    resolve_run_inputs,
 )
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
 from rlrmp.model.feedback_descriptors import (
@@ -55,16 +58,19 @@ from rlrmp.model.feedback_descriptors import (
 from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import (
     REPO_ROOT,
-    mkdir_p,
     resolve_run_artifact_path,
 )
 from rlrmp.eval.feedback_ablation import (
     DetailedRolloutEvaluation,
     evaluate_model_on_trial_specs,
 )
-from rlrmp.io import update_marked_section, write_json
+from rlrmp.eval.recipes import FEEDBACK_ABLATION_EVALUATION_TYPE
 from rlrmp.runtime.run_spec_access import require_run_seed
 from rlrmp.runtime.run_specs import resolve_run_record
+from rlrmp.runtime.spec_migrations import (
+    FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
+    stamp_current_schema,
+)
 
 
 FEEDBACK_ABLATION_ANALYSIS_TYPE = "rlrmp.feedback_ablation"
@@ -78,11 +84,9 @@ DEFAULT_RUN_IDS = (
     "fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64",
     "fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64",
 )
-DEFAULT_NOTE_FILENAME = "gru_feedback_ablation_fixed_target_random_perturb_validation_selected.md"
 DEFAULT_OUTPUT_FILENAME = (
     "gru_feedback_ablation_fixed_target_random_perturb_validation_selected_manifest.json"
 )
-DEFAULT_BULK_SUBDIR = "feedback_ablation"
 
 AblationMode = Literal[
     "normal",
@@ -250,6 +254,23 @@ def feedback_ablation_recipe(
     ]
     if not evaluation_inputs:
         raise ValueError("feedback-ablation analysis requires EvaluationRunManifest input")
+    params_payload = params.model_dump(mode="json", exclude_none=True)
+    first_evaluation_states = evaluation_inputs[0].states
+    if isinstance(first_evaluation_states, Mapping):
+        for key in (
+            "source_experiment",
+            "scope",
+            "run_ids",
+            "labels",
+            "ablation_modes",
+            "evaluation_bins",
+            "bank_mode",
+            "bank",
+        ):
+            value = first_evaluation_states.get(key)
+            if value is not None:
+                params_payload[key] = value
+    params = FeedbackAblationAnalysisParams.model_validate(params_payload)
     states = {
         "evaluations": [
             {
@@ -306,6 +327,194 @@ def feedback_ablation_spec(
         inputs=[ref],
         params=dict(params or {}),
     )
+
+
+@dataclass(frozen=True)
+class FeedbackAblationExecution:
+    """Evaluation/analysis manifests and the custody-owned analysis payload."""
+
+    evaluation_manifest: Any
+    evaluation_manifest_path: Path
+    analysis_manifest: Any
+    analysis_manifest_path: Path
+    payload: dict[str, Any]
+
+
+def feedback_ablation_evaluation_spec(
+    *,
+    source_experiment: str = DEFAULT_SOURCE_EXPERIMENT,
+    run_ids: Sequence[str] = DEFAULT_RUN_IDS,
+    labels: Sequence[str] | None = None,
+    scope: str = DEFAULT_SCOPE,
+    n_rollout_trials: int = 4,
+    include_checkpoint_rescore: bool = True,
+    bank_mode: str = "raw",
+    calibration_level: str | Sequence[str] | None = None,
+    calibration_reach: str | float | None = None,
+    feedback_selection_level: str = "small",
+    feedback_scale_manifest_path: Path | str | None = None,
+    preferred_checkpoint_manifest_path: Path | str | None = None,
+    repo_root: Path = REPO_ROOT,
+    bank: Mapping[str, Any] | None = None,
+    evaluation_bins: Mapping[str, str | None] | None = None,
+) -> EvaluationRunSpec:
+    """Return the canonical model-driven feedback-ablation evaluation spec."""
+
+    params = {
+        "source_experiment": source_experiment,
+        "run_ids": [str(run_id) for run_id in run_ids],
+        "labels": None if labels is None else [str(label) for label in labels],
+        "scope": scope,
+        "n_rollout_trials": n_rollout_trials,
+        "include_checkpoint_rescore": include_checkpoint_rescore,
+        "bank_mode": bank_mode,
+        "calibration_level": calibration_level,
+        "calibration_reach": calibration_reach,
+        "feedback_selection_level": feedback_selection_level,
+        "feedback_scale_manifest_path": _optional_spec_path(
+            feedback_scale_manifest_path,
+            repo_root=repo_root,
+        ),
+        "preferred_checkpoint_manifest_path": _optional_spec_path(
+            preferred_checkpoint_manifest_path,
+            repo_root=repo_root,
+        ),
+        "repo_root": str(repo_root),
+        "bank": None if bank is None else dict(bank),
+        "evaluation_bins": (
+            None
+            if evaluation_bins is None
+            else {str(key): value for key, value in evaluation_bins.items()}
+        ),
+    }
+    return EvaluationRunSpec(
+        evaluation_type=FEEDBACK_ABLATION_EVALUATION_TYPE,
+        training_run_ids=[str(run_id) for run_id in run_ids],
+        inputs=[
+            ParentRef(
+                kind="TrainingRunManifest",
+                id=str(run_id),
+                role="training_run",
+                metadata={"rlrmp_experiment": source_experiment},
+            )
+            for run_id in run_ids
+        ],
+        params=stamp_current_schema(FEEDBACK_ABLATION_EVAL_PARAMS_KIND, params),
+    )
+
+
+def execute_feedback_ablation_pipeline(
+    *,
+    source_experiment: str = DEFAULT_SOURCE_EXPERIMENT,
+    result_experiment: str = DEFAULT_RESULT_EXPERIMENT,
+    scope: str = DEFAULT_SCOPE,
+    run_ids: Sequence[str] = DEFAULT_RUN_IDS,
+    labels: Sequence[str] | None = None,
+    n_rollout_trials: int = 4,
+    include_checkpoint_rescore: bool = True,
+    bank_mode: str = "raw",
+    calibration_level: str | Sequence[str] | None = None,
+    calibration_reach: str | float | None = None,
+    feedback_selection_level: str = "small",
+    feedback_scale_manifest_path: Path | str | None = None,
+    preferred_checkpoint_manifest_path: Path | str | None = None,
+    repo_root: Path = REPO_ROOT,
+    feedbax_runs_root: Path | str | None = None,
+    bank: Mapping[str, Any] | None = None,
+    evaluation_bins: Mapping[str, str | None] | None = None,
+    issues: Sequence[str] = (),
+    force: bool = False,
+) -> FeedbackAblationExecution:
+    """Execute feedback ablation through evaluation and analysis manifests."""
+
+    evaluation_spec = feedback_ablation_evaluation_spec(
+        source_experiment=source_experiment,
+        run_ids=run_ids,
+        labels=labels,
+        scope=scope,
+        n_rollout_trials=n_rollout_trials,
+        include_checkpoint_rescore=include_checkpoint_rescore,
+        bank_mode=bank_mode,
+        calibration_level=calibration_level,
+        calibration_reach=calibration_reach,
+        feedback_selection_level=feedback_selection_level,
+        feedback_scale_manifest_path=feedback_scale_manifest_path,
+        preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
+        repo_root=repo_root,
+        bank=bank,
+        evaluation_bins=evaluation_bins,
+    )
+    issue_refs = list(dict.fromkeys([*issues, result_experiment]))
+    evaluation_manifest, evaluation_manifest_path = execute_evaluation_run_spec(
+        evaluation_spec,
+        root=feedbax_runs_root,
+        issues=issue_refs,
+        force=force,
+    )
+    analysis_spec = feedback_ablation_spec(
+        evaluation_manifest_id=evaluation_manifest.id,
+        evaluation_manifest_uri=evaluation_manifest_path,
+        params={
+            "experiment": result_experiment,
+            "source_experiment": source_experiment,
+            "result_experiment": result_experiment,
+            "scope": scope,
+            "run_ids": [str(run_id) for run_id in run_ids],
+            "labels": None if labels is None else [str(label) for label in labels],
+            "bank_mode": bank_mode,
+            "feedback_selection_level": feedback_selection_level,
+            "checkpoint_policy": _effective_checkpoint_policy_from_manifest(
+                source_experiment,
+                preferred_checkpoint_manifest_path=(
+                    None
+                    if preferred_checkpoint_manifest_path is None
+                    else _absolute_repo_path(
+                        preferred_checkpoint_manifest_path,
+                        repo_root=repo_root,
+                    )
+                ),
+                repo_root=repo_root,
+            ),
+        },
+    )
+    analysis_manifest, analysis_manifest_path = execute_analysis_run_spec(
+        analysis_spec,
+        root=feedbax_runs_root,
+        issues=issue_refs,
+        force=force,
+    )
+    payload = _analysis_artifact_payload(
+        analysis_manifest,
+        role="rlrmp-gru-feedback-ablation-manifest",
+    )
+    return FeedbackAblationExecution(
+        evaluation_manifest=evaluation_manifest,
+        evaluation_manifest_path=Path(evaluation_manifest_path),
+        analysis_manifest=analysis_manifest,
+        analysis_manifest_path=Path(analysis_manifest_path),
+        payload=payload,
+    )
+
+
+def _analysis_artifact_payload(manifest: Any, *, role: str) -> dict[str, Any]:
+    artifact = next(
+        (artifact for artifact in manifest.artifacts if artifact.role == role),
+        None,
+    )
+    if artifact is None or artifact.uri is None:
+        raise ValueError(f"analysis manifest {manifest.id!r} has no {role!r} artifact")
+    return json.loads(Path(artifact.uri).read_text(encoding="utf-8"))
+
+
+def _optional_spec_path(value: Path | str | None, *, repo_root: Path) -> str | None:
+    if value is None:
+        return None
+    return _repo_relative(_absolute_repo_path(value, repo_root=repo_root), repo_root=repo_root)
+
+
+def _absolute_repo_path(value: Path | str, *, repo_root: Path) -> Path:
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else repo_root / path
 
 
 feedback_ablation_recipe.EVAL_DEPENDENCIES = ("rlrmp.eval.feedback_ablation",)
@@ -451,6 +660,18 @@ def _feedback_ablation_runs_from_states(
         if not isinstance(eval_states, Mapping):
             eval_states = {}
         ref = item.get("ref") if isinstance(item.get("ref"), Mapping) else {}
+        evaluated_runs = eval_states.get("runs")
+        if isinstance(evaluated_runs, Mapping):
+            for run_id, run_states in evaluated_runs.items():
+                if not isinstance(run_states, Mapping):
+                    continue
+                runs[str(run_id)] = _feedback_ablation_run_payload(
+                    run_states,
+                    ref=ref,
+                    manifest_id=item.get("manifest_id"),
+                    params=params,
+                )
+            continue
         run_id = _feedback_ablation_run_id(
             eval_states,
             ref=ref,
@@ -1070,266 +1291,6 @@ def interpret_run_feedback_ablation(rows: Sequence[Mapping[str, Any]]) -> dict[s
     return {"label": "inconclusive", "reason": "insufficient evaluated ablation rows"}
 
 
-def materialize_gru_feedback_ablation(
-    *,
-    source_experiment: str = DEFAULT_SOURCE_EXPERIMENT,
-    result_experiment: str = DEFAULT_RESULT_EXPERIMENT,
-    scope: str = DEFAULT_SCOPE,
-    run_ids: Sequence[str] = DEFAULT_RUN_IDS,
-    labels: Sequence[str] | None = None,
-    n_rollout_trials: int = 4,
-    include_checkpoint_rescore: bool = True,
-    bank_mode: str = "raw",
-    calibration_level: str | Sequence[str] | None = None,
-    calibration_reach: str | float | None = None,
-    feedback_selection_level: str = "small",
-    feedback_scale_manifest_path: Path | None = None,
-    preferred_checkpoint_manifest_path: Path | None = None,
-    output_path: Path | None = None,
-    note_path: Path | None = None,
-    bulk_dir: Path | None = None,
-    regeneration_spec_path: Path | None = None,
-    repo_root: Path = REPO_ROOT,
-) -> dict[str, Any]:
-    """Materialize feedback-ablation JSON and Markdown sidecars."""
-
-    result_notes_dir = repo_root / "results" / result_experiment / "notes"
-    mkdir_p(result_notes_dir)
-    output_path = output_path or result_notes_dir / DEFAULT_OUTPUT_FILENAME
-    note_path = note_path or result_notes_dir / DEFAULT_NOTE_FILENAME
-    regeneration_spec_path = regeneration_spec_path or _regeneration_spec_path(output_path)
-    topic = _manifest_topic(output_path)
-    bulk_dir = (
-        bulk_dir or repo_root / "_artifacts" / result_experiment / DEFAULT_BULK_SUBDIR / topic
-    )
-    bank = default_cs_perturbation_bank(
-        mode=bank_mode,  # type: ignore[arg-type]
-        calibration_level=calibration_level,
-        calibration_reach=calibration_reach,
-        feedback_scale_manifest_path=feedback_scale_manifest_path,
-    )
-    evaluation_bins = selected_feedback_ablation_bins_for_bank(
-        bank,
-        preferred_level=feedback_selection_level,
-    )
-    run_inputs = resolve_run_inputs(
-        experiment=source_experiment,
-        run_ids=run_ids,
-        labels=labels,
-        repo_root=repo_root,
-    )
-    runs = {
-        run.run_id: evaluate_run_feedback_ablation(
-            run,
-            source_experiment=source_experiment,
-            n_rollout_trials=n_rollout_trials,
-            include_checkpoint_rescore=include_checkpoint_rescore,
-            bank=bank,
-            evaluation_bins=evaluation_bins,
-            preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
-            repo_root=repo_root,
-        )
-        for run in run_inputs
-    }
-    manifest = {
-        "schema_version": SCHEMA_VERSION,
-        "issue": result_experiment,
-        "source_experiment": source_experiment,
-        "scope": scope,
-        "labels": None if labels is None else list(labels),
-        "regeneration_spec": _repo_relative(regeneration_spec_path, repo_root=repo_root),
-        "checkpoint_policy": _effective_checkpoint_policy_from_manifest(
-            source_experiment,
-            preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
-            repo_root=repo_root,
-        ),
-        "preferred_checkpoint_manifest_path": (
-            None
-            if preferred_checkpoint_manifest_path is None
-            else str(preferred_checkpoint_manifest_path)
-        ),
-        "selection_role": "validation_selected_checkpoints_only",
-        "feedback_checkpoint_rescore_policy": (
-            "audit_only_per_replicate_argmin_on_feedback_score"
-            if include_checkpoint_rescore
-            else "disabled"
-        ),
-        "analytical_action_io_metrics_role": "audit_only_not_used_for_checkpoint_selection",
-        "ablation_modes": list(default_ablation_modes()),
-        "evaluation_bins": evaluation_bins,
-        "bank_mode": bank_mode,
-        "bank": {
-            "bank_id": bank.get("bank_id"),
-            "calibration_metadata_hooks": bank.get("calibration_metadata_hooks"),
-            "n_perturbations": len(bank.get("perturbations", ())),
-        },
-        "runs": runs,
-    }
-    manifest["feedback_checkpoint_selection_audit"] = feedback_checkpoint_selection_audit(manifest)
-    detail_manifest_path = bulk_dir / f"{topic}_detail.json"
-    tracked_manifest = _slim_feedback_ablation_manifest(
-        manifest,
-        detail_manifest_path=detail_manifest_path,
-        repo_root=repo_root,
-    )
-    mkdir_p(detail_manifest_path.parent)
-    write_json(detail_manifest_path, manifest, indent=2)
-    write_json(output_path, tracked_manifest, indent=2)
-    update_marked_section(
-        note_path,
-        "gru_feedback_ablation",
-        render_feedback_ablation_markdown(manifest),
-    )
-    write_regeneration_spec(
-        spec_path=regeneration_spec_path,
-        diagnostic_name="gru_feedback_ablation",
-        materializer="rlrmp.analysis.pipelines.gru_feedback_ablation.materialize_gru_feedback_ablation",
-        command=None,
-        parameters={
-            "source_experiment": source_experiment,
-            "result_experiment": result_experiment,
-            "scope": scope,
-            "run_ids": list(run_ids),
-            "labels": None if labels is None else list(labels),
-            "n_rollout_trials": n_rollout_trials,
-            "include_checkpoint_rescore": include_checkpoint_rescore,
-            "bank_mode": bank_mode,
-            "calibration_level": calibration_level,
-            "calibration_reach": calibration_reach,
-            "feedback_selection_level": feedback_selection_level,
-            "bulk_dir": _repo_relative(bulk_dir, repo_root=repo_root),
-            "feedback_scale_manifest_path": (
-                None
-                if feedback_scale_manifest_path is None
-                else _repo_relative(feedback_scale_manifest_path, repo_root=repo_root)
-            ),
-            "preferred_checkpoint_manifest_path": (
-                None
-                if preferred_checkpoint_manifest_path is None
-                else _repo_relative(preferred_checkpoint_manifest_path, repo_root=repo_root)
-            ),
-        },
-        inputs=[{"role": "run_spec", "path": run.run_spec_path} for run in run_inputs]
-        + [{"role": "run_artifact_dir", "path": run.artifact_dir} for run in run_inputs]
-        + (
-            []
-            if preferred_checkpoint_manifest_path is None
-            else [{"role": "checkpoint_manifest", "path": preferred_checkpoint_manifest_path}]
-        )
-        + (
-            []
-            if feedback_scale_manifest_path is None
-            else [
-                {"role": "controller_feedback_scale_manifest", "path": feedback_scale_manifest_path}
-            ]
-        ),
-        outputs=[
-            {"role": "feedback_ablation_manifest", "path": output_path},
-            {"role": "feedback_ablation_note", "path": note_path},
-            {"role": "feedback_ablation_detail_manifest", "path": detail_manifest_path},
-        ],
-        source_files=[
-            "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
-            "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
-            "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py",
-        ],
-        notes=[
-            "Feedback ablation and feedback-selected checkpoints are audit-only.",
-            "The tracked manifest is intentionally slim and points to _artifacts detail bytes.",
-        ],
-        repo_root=repo_root,
-    )
-    return tracked_manifest
-
-
-def _regeneration_spec_path(path: Path) -> Path:
-    return path.with_name(f"{path.stem}_regeneration_spec.json")
-
-
-def _manifest_topic(path: Path) -> str:
-    stem = path.stem
-    return stem[: -len("_manifest")] if stem.endswith("_manifest") else stem
-
-
-def _slim_feedback_ablation_manifest(
-    manifest: Mapping[str, Any],
-    *,
-    detail_manifest_path: Path,
-    repo_root: Path,
-) -> dict[str, Any]:
-    """Remove full ablation rows and checkpoint-score rows from tracked JSON."""
-
-    detail_ref = _repo_relative(detail_manifest_path, repo_root=repo_root)
-    slim = dict(manifest)
-    slim["manifest_role"] = "tracked_summary"
-    slim["bulk_detail_manifest"] = {
-        "path": detail_ref,
-        "format": "json",
-        "contains": (
-            "full per-run feedback-ablation rows plus full feedback checkpoint "
-            "rescore checkpoint-score details"
-        ),
-    }
-    slim_runs: dict[str, Any] = {}
-    for run_id, run_payload in dict(manifest.get("runs", {})).items():
-        run = dict(run_payload)
-        ablations = run.pop("ablations", [])
-        run["n_ablation_rows"] = len(ablations) if isinstance(ablations, Sequence) else 0
-        run["ablation_rows_detail_manifest"] = detail_ref
-        rescore = run.get("feedback_checkpoint_rescore")
-        if isinstance(rescore, Mapping):
-            run["feedback_checkpoint_rescore"] = _slim_feedback_checkpoint_rescore(
-                rescore,
-                detail_ref=detail_ref,
-            )
-        slim_runs[str(run_id)] = run
-    slim["runs"] = slim_runs
-    audit = slim.get("feedback_checkpoint_selection_audit")
-    if isinstance(audit, Mapping):
-        slim["feedback_checkpoint_selection_audit"] = _slim_feedback_checkpoint_selection_audit(
-            audit,
-            detail_ref=detail_ref,
-        )
-    return slim
-
-
-def _slim_feedback_checkpoint_rescore(
-    rescore: Mapping[str, Any],
-    *,
-    detail_ref: str,
-) -> dict[str, Any]:
-    slim = dict(rescore)
-    checkpoint_scores = slim.pop("checkpoint_scores", [])
-    slim["checkpoint_scores_detail_manifest"] = detail_ref
-    slim["n_checkpoint_candidates"] = int(
-        slim.get("n_checkpoint_candidates")
-        or (len(checkpoint_scores) if isinstance(checkpoint_scores, Sequence) else 0)
-    )
-    return slim
-
-
-def _slim_feedback_checkpoint_selection_audit(
-    audit: Mapping[str, Any],
-    *,
-    detail_ref: str,
-) -> dict[str, Any]:
-    slim = dict(audit)
-    runs = audit.get("runs")
-    if not isinstance(runs, Mapping):
-        return slim
-    slim_runs: dict[str, Any] = {}
-    for run_id, run_audit in runs.items():
-        if not isinstance(run_audit, Mapping):
-            continue
-        slim_runs[str(run_id)] = _slim_feedback_checkpoint_rescore(
-            run_audit,
-            detail_ref=detail_ref,
-        )
-    slim["runs"] = slim_runs
-    slim["checkpoint_scores_detail_manifest"] = detail_ref
-    return slim
-
-
 def _effective_checkpoint_policy_from_manifest(
     experiment: str,
     *,
@@ -1503,7 +1464,7 @@ def _best_logged_validation_objective(
     }
 
 
-def evaluate_run_feedback_ablation(
+def _execute_feedback_ablation_run(
     run: RunFigureInputs,
     *,
     source_experiment: str,
@@ -1514,7 +1475,7 @@ def evaluate_run_feedback_ablation(
     preferred_checkpoint_manifest_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
-    """Evaluate feedback ablations for one validation-selected GRU run."""
+    """Evaluate one run for the registered feedback-ablation recipe."""
 
     if n_rollout_trials < 1:
         raise ValueError("n_rollout_trials must be at least 1")
@@ -2903,18 +2864,19 @@ __all__ = [
     "FEEDBACK_AUDIT_SELECTION_ROLE",
     "FeedbackAblationAnalysis",
     "FeedbackAblationAnalysisParams",
+    "FeedbackAblationExecution",
     "ObservationAblationSpec",
     "SCHEMA_VERSION",
     "build_observation_ablation_spec",
     "build_observation_tape",
     "default_ablation_modes",
-    "evaluate_run_feedback_ablation",
+    "execute_feedback_ablation_pipeline",
+    "feedback_ablation_evaluation_spec",
     "feedback_ablation_recipe",
     "feedback_ablation_spec",
     "feedback_checkpoint_selection_audit",
     "insert_observation_ablation",
     "interpret_run_feedback_ablation",
-    "materialize_gru_feedback_ablation",
     "render_feedback_ablation_markdown",
     "selected_feedback_ablation_bins",
     "summarize_ablation_delta",

@@ -17,6 +17,7 @@ from feedbax.contracts.manifest import (
 from pydantic import BaseModel, ConfigDict, Field
 
 from rlrmp.runtime.params_models import params_model_for, register_params_model
+from rlrmp.eval.feedback_ablation import evaluate_feedback_ablation_runs
 from rlrmp.runtime.spec_migrations import (
     CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND,
     DELAYED_REACH_BANK_EVAL_PARAMS_KIND,
@@ -122,10 +123,21 @@ class PerturbationResponseBankEvalParams(_StrictParamsModel):
 class FeedbackAblationEvalParams(_StrictParamsModel):
     """Params for feedback-ablation evaluation."""
 
-    ablation_masks: Any | None = None
-    ablation_mask_set: Any | None = None
-    base_task: dict[str, Any] = Field(default_factory=dict)
-    rollout_pairs: list[Any] = Field(default_factory=list)
+    source_experiment: str = ""
+    run_ids: list[str] = Field(default_factory=list)
+    labels: list[str] | None = None
+    scope: str = "feedback_ablation"
+    n_rollout_trials: int = Field(4, ge=1)
+    include_checkpoint_rescore: bool = True
+    bank_mode: Literal["raw", "calibrated"] = "raw"
+    calibration_level: str | list[str] | None = None
+    calibration_reach: str | float | None = None
+    feedback_selection_level: str = "small"
+    feedback_scale_manifest_path: str | None = None
+    preferred_checkpoint_manifest_path: str | None = None
+    repo_root: str | None = None
+    bank: dict[str, Any] | None = None
+    evaluation_bins: dict[str, str | None] | None = None
 
 
 class WorstCaseEpsilonEvalParams(_StrictParamsModel):
@@ -265,22 +277,31 @@ def feedback_ablation_recipe(
     """Evaluate intact-vs-ablated feedback rollout pairs."""
 
     p, params = _validated_params(run_spec)
-    _require_one_of(
-        params,
-        ("ablation_masks", "ablation_mask_set"),
-        recipe=run_spec.evaluation_type,
+    if not p.source_experiment or not p.run_ids:
+        raise ValueError(
+            "feedback-ablation evaluation requires source_experiment and non-empty run_ids"
+        )
+    execution_params = p.model_dump(mode="python")
+    repo_root_value = execution_params.get("repo_root")
+    repo_root = Path(str(repo_root_value)).expanduser() if repo_root_value else Path.cwd()
+    payload = evaluate_feedback_ablation_runs(
+        execution_params,
+        repo_root=repo_root,
     )
     return _result(
         run_spec,
         params,
         product_role="feedback_ablation_rollouts",
-        state_payload={
-            "ablation_masks": p.ablation_masks
-            if p.ablation_masks is not None
-            else p.ablation_mask_set,
-            "base_task": p.base_task,
-            "rollout_pairs": p.rollout_pairs,
+        state_payload=payload,
+        summary_metrics={
+            "feedback_ablation_run_count": len(payload["runs"]),
+            "feedback_ablation_row_count": sum(
+                len(run.get("ablations", ()))
+                for run in payload["runs"].values()
+                if isinstance(run, Mapping)
+            ),
         },
+        metadata={"execution_owner": "registered_evaluation_recipe"},
     )
 
 
