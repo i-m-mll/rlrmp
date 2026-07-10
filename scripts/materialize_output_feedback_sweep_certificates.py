@@ -56,7 +56,7 @@ from rlrmp.analysis.pipelines.cs_stochastic_phase3 import (
     process_noise_sweep_summary,
     run_phase3_process_noise_sweep,
 )
-from rlrmp.analysis.math.linear_round_trip import LinearTrainingConfig
+from rlrmp.analysis.math.linear_round_trip import LinearOptimizationConfig
 from rlrmp.analysis.math.output_feedback import (
     OutputFeedbackConfig,
     kalman_estimator_joint_matrices,
@@ -65,8 +65,7 @@ from rlrmp.analysis.math.output_feedback import (
 from rlrmp.eval.output_feedback_rollout_recovery import (
     STRONG_OPTIMIZER_WHITENED,
     eigenspectrum_coverage_conditions,
-    result_summary as rollout_result_summary,
-    run_output_feedback_rollout_recovery,
+    execute_governed_output_feedback_rollout_recovery,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
@@ -111,6 +110,9 @@ MANIFEST_PATH = (
     / ISSUE_ID
     / "notes"
     / "output_feedback_sweep_standard_certificates_manifest.json"
+)
+ROLLOUT_RECOVERY_RUNS_ROOT = (
+    REPO_ROOT / "_artifacts" / ISSUE_ID / "output_feedback_sweep_certificates" / "feedbax_runs"
 )
 
 BEHAVIORAL_ACTION_SIDECAR = "behavioral_action_sidecar"
@@ -314,24 +316,26 @@ def _initial_state_rows(
     output_config: OutputFeedbackConfig,
 ) -> list[BridgeRunManifest]:
     rows = []
-    base_config = LinearTrainingConfig(**manifest["base_training_config"])
+    base_config = LinearOptimizationConfig(**manifest["base_training_config"])
     for cell in manifest["cells"]:
         training_config = replace(
             base_config,
             basis_scale=cell["basis_scale"],
             random_state_scale=cell["random_state_scale"],
         )
-        result = run_output_feedback_rollout_recovery(
+        product = execute_governed_output_feedback_rollout_recovery(
             conditions=(STRONG_OPTIMIZER_WHITENED,),
             training_config=training_config,
             output_config=output_config,
+            root=ROLLOUT_RECOVERY_RUNS_ROOT,
+            issue_id=ISSUE_ID,
         )
-        summary = rollout_result_summary(result)
+        summary = product.summary
         fit = summary["fits"][0]
         rows.extend(
             _deterministic_fit_rows(
                 fit=fit,
-                arrays=result.arrays,
+                arrays=product.arrays,
                 reference=reference,
                 output_config=output_config,
                 family="initial-state coverage",
@@ -475,19 +479,21 @@ def _eigenspectrum_rows(
     output_config: OutputFeedbackConfig,
 ) -> list[BridgeRunManifest]:
     rows = []
-    result = run_output_feedback_rollout_recovery(
+    product = execute_governed_output_feedback_rollout_recovery(
         conditions=eigenspectrum_coverage_conditions(),
-        training_config=LinearTrainingConfig(),
+        training_config=LinearOptimizationConfig(),
         output_config=output_config,
+        root=ROLLOUT_RECOVERY_RUNS_ROOT,
+        issue_id=ISSUE_ID,
     )
-    summary = rollout_result_summary(result)
+    summary = product.summary
     for fit in summary["fits"]:
         coverage = fit["condition"]["eigenspectrum_coverage"]
         family = f"eigenspectrum {coverage['objective']} coverage"
         rows.extend(
             _deterministic_fit_rows(
                 fit=fit,
-                arrays=result.arrays,
+                arrays=product.arrays,
                 reference=reference,
                 output_config=output_config,
                 family=family,

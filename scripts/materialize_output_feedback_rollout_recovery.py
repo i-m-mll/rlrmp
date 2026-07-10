@@ -7,7 +7,7 @@ from pathlib import Path
 
 from feedbax.analysis.evaluation import execute_evaluation_run_spec
 from feedbax.analysis.specs import execute_analysis_run_spec
-from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import ISSUE_ID
+from rlrmp.eval.output_feedback_rollout_recovery import ISSUE_ID
 from rlrmp.analysis.declarative_materialization import (
     output_feedback_rollout_recovery_evaluation_spec,
     output_feedback_rollout_recovery_spec,

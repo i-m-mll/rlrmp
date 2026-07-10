@@ -70,9 +70,13 @@ from rlrmp.analysis.pipelines.hinf_phenotype_sidecar import (
     load_hinf_phenotype_sources,
     write_hinf_phenotype_sidecar,
 )
-from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
+from rlrmp.eval.output_feedback_rollout_recovery import (
     ISSUE_ID as OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ISSUE_ID,
+    LinearOptimizationSpec,
+    OutputFeedbackConfigSpec,
     RolloutRecoveryResult,
+    RolloutRecoveryCondition,
+    RolloutRecoveryConditionSpec,
     materialize_output_feedback_rollout_recovery,
 )
 from rlrmp.analysis.pipelines.sisu_spectrum_diagnostics import (
@@ -93,6 +97,8 @@ from rlrmp.eval.output_feedback_rollout_recovery import (
     OutputFeedbackRolloutRecoveryEvaluationParams,
     register_output_feedback_rollout_recovery_evaluation_recipe,
 )
+from rlrmp.analysis.math.linear_round_trip import LinearOptimizationConfig
+from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig
 from rlrmp.eval.policy_diagnostics import (
     PolicyAbsentInputBlock,
     PolicyInputSchema,
@@ -1123,12 +1129,26 @@ def feedback_quality_lens_spec(
     )
 
 
-def output_feedback_rollout_recovery_evaluation_spec() -> EvaluationRunSpec:
+def output_feedback_rollout_recovery_evaluation_spec(
+    *,
+    conditions: tuple[RolloutRecoveryCondition, ...] | None = None,
+    training_config: LinearOptimizationConfig = LinearOptimizationConfig(n_steps=500),
+    output_config: OutputFeedbackConfig = OutputFeedbackConfig(),
+) -> EvaluationRunSpec:
     """Return the canonical analytical rollout-recovery evaluation spec."""
 
+    params = OutputFeedbackRolloutRecoveryEvaluationParams(
+        conditions=(
+            None
+            if conditions is None
+            else tuple(RolloutRecoveryConditionSpec.from_runtime(item) for item in conditions)
+        ),
+        training_config=LinearOptimizationSpec.from_runtime(training_config),
+        output_config=OutputFeedbackConfigSpec.from_runtime(output_config),
+    )
     return EvaluationRunSpec(
         evaluation_type=OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_EVALUATION_TYPE,
-        params=OutputFeedbackRolloutRecoveryEvaluationParams().model_dump(mode="json"),
+        params=params.model_dump(mode="json"),
     )
 
 
