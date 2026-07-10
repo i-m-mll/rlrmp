@@ -35,7 +35,7 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
     repeat_single_validation_trial,
     resolve_run_inputs,
 )
-from rlrmp.analysis.pipelines.sisu_spectrum_diagnostics import (
+from rlrmp.eval.sisu_spectrum import (
     set_sisu_condition,
     zero_disturbance_payload,
 )

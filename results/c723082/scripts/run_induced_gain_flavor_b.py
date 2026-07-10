@@ -178,7 +178,7 @@ def _cast_to_float32(tree):
 
 def _build_hps_from_run_json(run_json: dict):
     """Construct train_minimax build_hps namespace from flavor-B run.json."""
-    from rlrmp.train.minimax import build_hps as build_hps_fn
+    from rlrmp.train.minimax_native import build_hps as build_hps_fn
 
     cli = run_json.get("cli_args", {})
     schedule = run_json.get("training_schedule", {})

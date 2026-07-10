@@ -140,7 +140,7 @@ def evaluate_stabilization_row(
         pad_feedback_offset_inputs,
         washin_diagnostics,
     )
-    from rlrmp.analysis.pipelines.sisu_spectrum_diagnostics import zero_disturbance_payload
+    from rlrmp.eval.sisu_spectrum import zero_disturbance_payload
     from rlrmp.train.task_model import setup_task_model_pair
 
     def hook(name: str) -> Any:
@@ -288,7 +288,6 @@ def run_feedback_robustness_diagnostics(
     run_ids: Sequence[str],
     labels: Sequence[str],
     evaluation_bulk_dir: Path,
-    perturbation_bulk_dir: Path,
     feedback_scope: str,
     build_rows: Callable[[Mapping[str, Any]], list[dict[str, Any]]],
     build_summary_payload: Callable[
@@ -310,7 +309,7 @@ def run_feedback_robustness_diagnostics(
         materialize_gru_evaluation_diagnostics,
     )
     from rlrmp.analysis.pipelines.gru_feedback_ablation import (
-        materialize_gru_feedback_ablation,
+        execute_feedback_ablation_pipeline,
     )
     from rlrmp.analysis.pipelines.gru_perturbation_bank import (
         materialize_gru_perturbation_response,
@@ -358,42 +357,31 @@ def run_feedback_robustness_diagnostics(
             run_ids=run_ids,
             labels=labels,
             n_rollout_trials=n_rollout_trials,
-            output_path=paths["perturbation"],
-            note_path=paths["perturbation_note"],
-            bulk_dir=perturbation_bulk_dir,
-            regeneration_spec_path=paths["perturbation_regeneration_spec"],
             bank_mode="calibrated",
             calibration_level="moderate",
             calibration_reach=0.15,
             feedback_scale_manifest_path=paths["evaluation"],
             extlqg_physical_dim=6,
-            write_bulk_arrays=False,
             repo_root=repo_root,
         )
     )
-    feedback = (
-        hook("load_json")(paths["feedback"])
-        if hook("run_output_is_current")(
-            paths["feedback"], expected_trials=n_rollout_trials
-        )
-        else materialize_gru_feedback_ablation(
-            source_experiment=issue,
-            result_experiment=issue,
-            scope=feedback_scope,
-            run_ids=run_ids,
-            labels=labels,
-            n_rollout_trials=n_rollout_trials,
-            bank_mode="calibrated",
-            calibration_level="moderate",
-            calibration_reach=0.15,
-            feedback_selection_level="moderate",
-            feedback_scale_manifest_path=paths["evaluation"],
-            output_path=paths["feedback"],
-            note_path=paths["feedback_note"],
-            regeneration_spec_path=paths["feedback_regeneration_spec"],
-            repo_root=repo_root,
-        )
+    feedback_execution = execute_feedback_ablation_pipeline(
+        source_experiment=issue,
+        result_experiment=issue,
+        scope=feedback_scope,
+        run_ids=run_ids,
+        labels=labels,
+        n_rollout_trials=n_rollout_trials,
+        bank_mode="calibrated",
+        calibration_level="moderate",
+        calibration_reach=0.15,
+        feedback_selection_level="moderate",
+        feedback_scale_manifest_path=paths["evaluation"],
+        repo_root=repo_root,
+        feedbax_runs_root=repo_root / "_artifacts" / issue / "feedbax_runs",
+        issues=(issue,),
     )
+    feedback = feedback_execution.payload
     components: dict[str, Any] = {
         "checkpoint_manifest": checkpoint_manifest,
         "evaluation": evaluation,

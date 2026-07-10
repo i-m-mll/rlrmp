@@ -107,19 +107,15 @@ CLOSED_LOOP_DISTILLATION_PAYLOAD_SCHEMA_ID = (
     "rlrmp.spec.training_method.closed_loop_distillation_payload"
 )
 CLOSED_LOOP_DISTILLATION_PAYLOAD_SCHEMA_VERSION = (
-    "rlrmp.spec.training_method.closed_loop_distillation_payload.v1"
+    "rlrmp.spec.training_method.closed_loop_distillation_payload.v2"
 )
 GUIDED_DISTILLATION_METHOD_REF = "rlrmp/guided_distillation/v1"
-GUIDED_DISTILLATION_PAYLOAD_SCHEMA_ID = (
-    "rlrmp.spec.training_method.guided_distillation_payload"
-)
+GUIDED_DISTILLATION_PAYLOAD_SCHEMA_ID = "rlrmp.spec.training_method.guided_distillation_payload"
 GUIDED_DISTILLATION_PAYLOAD_SCHEMA_VERSION = (
-    "rlrmp.spec.training_method.guided_distillation_payload.v1"
+    "rlrmp.spec.training_method.guided_distillation_payload.v2"
 )
 CS_SUPERVISED_METHOD_PAYLOAD_SCHEMA_ID = "rlrmp.spec.training_method.cs_supervised_payload"
-CS_SUPERVISED_METHOD_PAYLOAD_SCHEMA_VERSION = (
-    "rlrmp.spec.training_method.cs_supervised_payload.v1"
-)
+CS_SUPERVISED_METHOD_PAYLOAD_SCHEMA_VERSION = "rlrmp.spec.training_method.cs_supervised_payload.v1"
 CS_SUPERVISED_CHUNK_KERNEL_REF = "rlrmp.cs_supervised.train_chunk"
 CS_SUPERVISED_STOP_PREDICATE_REF = "rlrmp.cs_supervised.training_complete"
 CS_SUPERVISED_BARRIER = "after_train_chunk"
@@ -607,6 +603,7 @@ def register_rlrmp_distillation_methods() -> None:
             update_kernels_factory=_closed_loop_distillation_update_kernels,
             rejected_payload_versions=(
                 "rlrmp.spec.training_method.closed_loop_distillation_payload.v0",
+                "rlrmp.spec.training_method.closed_loop_distillation_payload.v1",
             ),
             owner="rlrmp.runtime.training_run_specs",
             package="rlrmp",
@@ -622,6 +619,7 @@ def register_rlrmp_distillation_methods() -> None:
             update_kernels_factory=_guided_distillation_update_kernels,
             rejected_payload_versions=(
                 "rlrmp.spec.training_method.guided_distillation_payload.v0",
+                "rlrmp.spec.training_method.guided_distillation_payload.v1",
             ),
             owner="rlrmp.runtime.training_run_specs",
             package="rlrmp",
@@ -736,9 +734,7 @@ def cs_supervised_method_payload(
             config=pgd_config,
         )
     payload = CsSupervisedMethodPayload(
-        training_mode=str(
-            _required_recording_field(run_spec, "training_summary.training_mode")
-        ),
+        training_mode=str(_required_recording_field(run_spec, "training_summary.training_mode")),
         n_train_batches=int(
             _required_recording_field(run_spec, "training_summary.n_train_batches")
         ),
@@ -905,7 +901,7 @@ def closed_loop_distillation_method_contract() -> MethodContractSpec:
         payload_version=CLOSED_LOOP_DISTILLATION_PAYLOAD_SCHEMA_VERSION,
         phase_names=("closed_loop_rollout_distillation",),
         update_step_name="closed_loop_distillation_gradient_update",
-        kernel_ref="rlrmp.train.closed_loop_distillation.closed_loop_gradient_update",
+        kernel_ref="rlrmp.train.distillation_native.closed_loop_gradient_update",
         extra_axes=(AxisSpec(name="rollout", role="rollout"),),
         extra_slots=(
             StateSlotSpec(name="teacher_reference", role="auxiliary"),
@@ -931,7 +927,7 @@ def guided_distillation_method_contract() -> MethodContractSpec:
             "mostly_student_forced",
         ),
         update_step_name="guided_distillation_gradient_update",
-        kernel_ref="rlrmp.train.guided_distillation.guided_gradient_update",
+        kernel_ref="rlrmp.train.distillation_native.guided_gradient_update",
         extra_axes=(AxisSpec(name="jvp_direction", role="member"),),
         extra_slots=(
             StateSlotSpec(name="teacher_bank", role="auxiliary"),
@@ -1087,7 +1083,9 @@ def validate_distillation_training_run_spec(run_spec: dict[str, Any], *, method:
     TrainingRunSpec.model_validate(payload[FEEDBAX_TRAINING_RUN_SPEC_KEY])
 
 
-def write_distillation_run_spec(path: Path, run_spec: dict[str, Any], *, method: str) -> dict[str, Any]:
+def write_distillation_run_spec(
+    path: Path, run_spec: dict[str, Any], *, method: str
+) -> dict[str, Any]:
     """Write a distillation recipe only after composing and validating its specs."""
 
     payload = attach_distillation_training_specs(
@@ -1142,7 +1140,9 @@ def _method_extension_provenance_metadata(spec_payload: Mapping[str, Any]) -> di
     return provenance
 
 
-def _spec_payload_artifact_root(spec_payload: Mapping[str, Any], run_spec: Mapping[str, Any]) -> Path:
+def _spec_payload_artifact_root(
+    spec_payload: Mapping[str, Any], run_spec: Mapping[str, Any]
+) -> Path:
     artifacts = spec_payload.get("artifacts")
     if isinstance(artifacts, Mapping) and artifacts.get("artifact_root") is not None:
         return Path(str(artifacts["artifact_root"]))
@@ -1188,9 +1188,7 @@ def _migrate_legacy_standard_supervised_training_run_spec(
         exclude_none=True,
     )
     payload["method_payload"] = method_payload.model_dump(mode="json", exclude_none=True)
-    payload["method_extensions"] = {
-        "metadata": _method_extension_provenance_metadata(spec_payload)
-    }
+    payload["method_extensions"] = {"metadata": _method_extension_provenance_metadata(spec_payload)}
     payload["worker_execution"] = WorkerExecutionSpec(
         method_contract=method_contract,
         effective_phase=effective_phase,
@@ -1205,9 +1203,7 @@ def _migrate_legacy_standard_supervised_training_run_spec(
     metadata["feedbax_training_run_spec_migration"] = {
         "source_method_ref": LEGACY_FEEDBAX_STANDARD_SUPERVISED_METHOD_REF,
         "target_method_ref": CS_SUPERVISED_METHOD_REF,
-        "semantic_metadata_keys_removed": sorted(
-            _semantic_method_metadata_keys(spec_payload)
-        ),
+        "semantic_metadata_keys_removed": sorted(_semantic_method_metadata_keys(spec_payload)),
     }
     payload["metadata"] = metadata
     return payload
@@ -1715,9 +1711,12 @@ def _distillation_setup_function(run_spec: dict[str, Any], *, method: str) -> st
 
 def _distillation_runner(run_spec: dict[str, Any], *, method: str) -> str:
     entry = _mapping(run_spec, "training_entry")
-    if method == "closed_loop_distillation":
-        return str(entry.get("module", "rlrmp.train.closed_loop_distillation"))
-    return str(entry.get("trainer", "rlrmp.train.guided_distillation.run_guided_distillation_training"))
+    field = "module" if method == "closed_loop_distillation" else "trainer"
+    try:
+        runner = entry[field]
+    except KeyError as exc:
+        raise ValueError(f"{method} training_entry requires {field!r}") from exc
+    return str(runner)
 
 
 def _optimizer_payload_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
@@ -1850,7 +1849,9 @@ def add_consumed_data_identity(
     if not isinstance(existing, list):
         raise TypeError(f"{CONSUMED_DATA_IDENTITIES_KEY} must be a list")
     entry = {"role": role, "schema": schema, "hash": hash}
-    payload[CONSUMED_DATA_IDENTITIES_KEY] = [*existing, entry] if entry not in existing else existing
+    payload[CONSUMED_DATA_IDENTITIES_KEY] = (
+        [*existing, entry] if entry not in existing else existing
+    )
     return payload
 
 
@@ -2208,9 +2209,7 @@ def _effective_phase_fingerprint(
         "effective_phase": effective_phase.model_dump(mode="json", exclude_none=True),
         "method_payload": method_payload,
     }
-    encoded = json.dumps(parity, sort_keys=True, separators=(",", ":"), default=str).encode(
-        "utf-8"
-    )
+    encoded = json.dumps(parity, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -2298,13 +2297,7 @@ def _feedbax_repo() -> Path | None:
         data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     except OSError:
         return None
-    source = (
-        data.get("tool", {})
-        .get("uv", {})
-        .get("sources", {})
-        .get("feedbax", {})
-        .get("path")
-    )
+    source = data.get("tool", {}).get("uv", {}).get("sources", {}).get("feedbax", {}).get("path")
     if not source:
         return None
     path = Path(str(source)).expanduser()
@@ -2327,9 +2320,7 @@ def _graph_metadata(
         try:
             payload = json.loads(graph_spec_path.read_text(encoding="utf-8"))
             graph_version = (
-                payload.get("schema_version")
-                or payload.get("version")
-                or payload.get("$schema")
+                payload.get("schema_version") or payload.get("version") or payload.get("$schema")
             )
         except (OSError, json.JSONDecodeError):
             graph_version = None

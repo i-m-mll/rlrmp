@@ -65,7 +65,7 @@ from rlrmp.analysis.math.induced_gain import (
     lti_controller,
 )
 from rlrmp.analysis.feedbax_controllers import simple_feedback_induced_gain_controller
-from rlrmp.train.minimax import build_hps
+from rlrmp.train.minimax_native import build_hps
 from rlrmp.train.task_model import setup_task_model_pair
 
 

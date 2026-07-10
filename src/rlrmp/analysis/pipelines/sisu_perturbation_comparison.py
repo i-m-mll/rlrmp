@@ -24,7 +24,7 @@ from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     evaluate_run_perturbation_bank,
 )
 from rlrmp.analysis.pipelines.gru_pilot_figures import resolve_run_inputs
-from rlrmp.analysis.pipelines.sisu_spectrum_diagnostics import set_sisu_condition
+from rlrmp.eval.sisu_spectrum import set_sisu_condition
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
@@ -99,8 +99,8 @@ def materialize_sisu_perturbation_comparison(
 ) -> dict[str, Any]:
     """Evaluate and summarize SISU 1-vs-0 perturbation-class responses.
 
-    The evaluator reruns only local perturbation-bank rollouts and passes
-    ``write_bulk_arrays=False`` so raw rollout arrays are not materialized.
+    The evaluator consumes the perturbation-bank evaluation path without
+    materializing raw rollout arrays.
     """
 
     if tuple(float(level) for level in sisu_levels) != DEFAULT_SISU_LEVELS:
@@ -119,10 +119,6 @@ def materialize_sisu_perturbation_comparison(
         labels=labels,
         repo_root=repo_root,
     )
-    scratch_bulk_dir = (
-        repo_root / "_artifacts" / result_experiment / output_stem / "no_raw_rollout_arrays"
-    )
-    mkdir_p(scratch_bulk_dir)
     evaluated: dict[str, dict[str, Any]] = {}
     for run in runs:
         by_sisu: dict[str, Any] = {}
@@ -132,8 +128,6 @@ def materialize_sisu_perturbation_comparison(
                 source_experiment=source_experiment,
                 bank=bank,
                 n_rollout_trials=n_rollout_trials,
-                write_bulk_arrays=False,
-                bulk_dir=scratch_bulk_dir / _sisu_key(float(sisu)),
                 trial_spec_transform=lambda trials, value=float(sisu): set_sisu_condition(
                     trials,
                     value,

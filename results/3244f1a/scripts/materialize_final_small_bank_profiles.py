@@ -22,7 +22,6 @@ from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import (
 from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     _build_extlqg_comparator_context,
     _simulate_extlqg_perturbed,
-    materialize_gru_perturbation_response,
 )
 from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT
@@ -126,23 +125,10 @@ def main() -> None:
         if args.skip_materialization and paths["pert_manifest"].exists():
             manifest = _read_json(paths["pert_manifest"])
         else:
-            level = LEVEL_CONFIGS[level_key]
-            manifest = materialize_gru_perturbation_response(
-                source_experiment=SOURCE_EXPERIMENT,
-                result_experiment=ISSUE,
-                run_ids=(RUN_ID,),
-                labels=(RUN_LABEL,),
-                n_rollout_trials=args.n_rollout_trials,
-                bank_mode="calibrated",
-                calibration_level=(str(level["bank_level"]),),
-                calibration_reach=0.15,
-                output_path=paths["pert_manifest"],
-                note_path=paths["pert_note"],
-                bulk_dir=paths["pert_bulk_dir"],
-                regeneration_spec_path=_regeneration_spec_path(paths["pert_manifest"]),
-                feedback_scale_manifest_path=EVAL_MANIFEST,
-                extlqg_physical_dim=6,
-                repo_root=REPO_ROOT,
+            raise RuntimeError(
+                "direct perturbation manifest and raw-array regeneration is retired; "
+                "materialize the registered perturbation evaluation/analysis bundle "
+                "through Feedbax custody, then rerun with --skip-materialization"
             )
 
         profile_spec = materialize_profile_figures(

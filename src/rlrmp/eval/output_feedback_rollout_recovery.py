@@ -1,23 +1,28 @@
-"""Output-feedback rollout recovery diagnostics for the Phase 3 linear bridge."""
+"""Governed output-feedback rollout recovery evaluation for the linear bridge."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from typing import Any
+from dataclasses import asdict, dataclass, replace
+import json
+from pathlib import Path
+from typing import Any, Literal
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
 import scipy.optimize as scipy_opt
+from feedbax.analysis.evaluation import EvaluationRecipeResult, register_evaluation_recipe
+from feedbax.contracts.manifest import EvaluationRunSpec
 from jaxtyping import Array, Float
+from pydantic import BaseModel, ConfigDict
 
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     materialize_reference,
 )
 from rlrmp.analysis.math.hinf_riccati import CostSchedule, PlantLinearization
-from rlrmp.analysis.math.linear_round_trip import LinearTrainingConfig, rollout_task_cost
+from rlrmp.analysis.math.linear_round_trip import LinearOptimizationConfig, rollout_task_cost
 from rlrmp.analysis.math.output_feedback import (
     OutputFeedbackConfig,
     OutputFeedbackRollout,
@@ -43,12 +48,19 @@ from rlrmp.analysis.math.rerun_metadata import (
     build_rerun_metadata,
 )
 from rlrmp.analysis.math import require_jax_x64
+from rlrmp.runtime.params_models import register_params_model
 
 ISSUE_ID = "7a459bb"
 UMBRELLA_ID = "43e8728"
 OUTPUT_FEEDBACK_LANE_ISSUE_ID = "83fc5b5"
 BELLMAN_DIAGNOSTIC_ISSUE_ID = "583d764"
 GAMMA_SWEEP_ISSUE_ID = "97604a8"
+OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_EVALUATION_TYPE = (
+    "rlrmp.eval.output_feedback_rollout_recovery"
+)
+OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_STATES_SCHEMA = (
+    "rlrmp.eval.output_feedback_rollout_recovery.states.v1"
+)
 
 
 @dataclass(frozen=True)
@@ -99,6 +111,144 @@ class RolloutRecoveryCondition:
     auxiliary_bellman_weights: tuple[float, ...] = ()
     eigenspectrum_coverage: EigenspectrumCoverageConfig | None = None
     observer_error_coverage: ObserverErrorCoverageConfig | None = None
+
+
+class EigenspectrumCoverageSpec(BaseModel):
+    """Serialized eigenspectrum-coverage parameters for a governed run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    n_modes: int
+    scale: float
+    weight: float
+    objective: str
+    reference: str
+
+
+class ObserverErrorCoverageSpec(BaseModel):
+    """Serialized observer-error-coverage parameters for a governed run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    n_modes: int
+    scale: float
+    weight: float
+    objective: str
+    reference: str
+
+
+class RolloutRecoveryConditionSpec(BaseModel):
+    """Serialized optimizer condition for a governed rollout-recovery run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    label: str
+    optimizer: str
+    use_whitening: bool
+    use_time_block_preconditioning: bool
+    maxiter: int
+    ftol: float
+    gtol: float
+    maxls: int
+    learning_rate: float
+    weight_decay: float
+    adam_b1: float
+    adam_b2: float
+    adam_eps: float
+    adam_schedule: str
+    adam_warmup_fraction: float
+    adam_end_lr_fraction: float
+    adam_clip_norm: float | None
+    polish_maxiter: int | None
+    initializations: tuple[str, ...]
+    auxiliary_bellman_weights: tuple[float, ...]
+    eigenspectrum_coverage: EigenspectrumCoverageSpec | None
+    observer_error_coverage: ObserverErrorCoverageSpec | None
+
+    @classmethod
+    def from_runtime(cls, condition: RolloutRecoveryCondition) -> RolloutRecoveryConditionSpec:
+        """Serialize one immutable runtime condition."""
+
+        return cls.model_validate(asdict(condition))
+
+    def to_runtime(self) -> RolloutRecoveryCondition:
+        """Reconstruct one immutable runtime condition."""
+
+        values = self.model_dump()
+        if self.eigenspectrum_coverage is not None:
+            values["eigenspectrum_coverage"] = EigenspectrumCoverageConfig(
+                **self.eigenspectrum_coverage.model_dump()
+            )
+        if self.observer_error_coverage is not None:
+            values["observer_error_coverage"] = ObserverErrorCoverageConfig(
+                **self.observer_error_coverage.model_dump()
+            )
+        return RolloutRecoveryCondition(**values)
+
+
+class LinearOptimizationSpec(BaseModel):
+    """Serialized linear-optimization parameters for a governed run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    n_steps: int
+    learning_rate: float
+    seed: int
+    basis_scale: float
+    random_state_scale: float
+    n_random_states: int
+    reach_weight: float
+
+    @classmethod
+    def from_runtime(cls, config: LinearOptimizationConfig) -> LinearOptimizationSpec:
+        """Serialize an immutable linear-optimization configuration."""
+
+        return cls.model_validate(asdict(config))
+
+    def to_runtime(self) -> LinearOptimizationConfig:
+        """Reconstruct an immutable linear-optimization configuration."""
+
+        return LinearOptimizationConfig(**self.model_dump())
+
+
+class OutputFeedbackConfigSpec(BaseModel):
+    """Serialized estimator-in-loop numerical contract for a governed run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    n_phys: int
+    delay_steps: int
+    observed_physical_indices: tuple[int, ...] | None
+    estimator_initial_covariance: float
+    process_covariance_scale: float
+    sensory_noise_scale: float
+    use_matlab_persistent_m_index: bool
+    denominator_floor: float
+
+    @classmethod
+    def from_runtime(cls, config: OutputFeedbackConfig) -> OutputFeedbackConfigSpec:
+        """Serialize an immutable output-feedback configuration."""
+
+        return cls.model_validate(asdict(config))
+
+    def to_runtime(self) -> OutputFeedbackConfig:
+        """Reconstruct an immutable output-feedback configuration."""
+
+        return OutputFeedbackConfig(**self.model_dump())
+
+
+class OutputFeedbackRolloutRecoveryEvaluationParams(BaseModel):
+    """Stable parameters for the canonical rollout-recovery evaluation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_id: Literal["rlrmp.eval.output_feedback_rollout_recovery.params"] = (
+        "rlrmp.eval.output_feedback_rollout_recovery.params"
+    )
+    schema_version: Literal["v2"] = "v2"
+    conditions: tuple[RolloutRecoveryConditionSpec, ...] | None
+    training_config: LinearOptimizationSpec
+    output_config: OutputFeedbackConfigSpec
 
 
 @dataclass(frozen=True)
@@ -157,6 +307,21 @@ class RolloutRecoveryMaterialization:
     summary: dict[str, Any]
     markdown: str
     arrays: dict[str, np.ndarray]
+
+
+@dataclass(frozen=True)
+class GovernedRolloutRecoveryProduct:
+    """Manifest-custodied rollout-recovery outputs loaded for a live caller."""
+
+    summary: dict[str, Any]
+    arrays: dict[str, np.ndarray]
+    evaluation_manifest_id: str
+    evaluation_manifest_path: Path
+    analysis_manifest_id: str
+    analysis_manifest_path: Path
+    payload_path: Path
+    markdown_path: Path
+    arrays_path: Path
 
 
 DEFAULT_CONDITIONS: tuple[RolloutRecoveryCondition, ...] = (
@@ -364,7 +529,7 @@ def _time_block_scales(
 
 def _training_ensemble(
     plant: PlantLinearization,
-    training_config: LinearTrainingConfig,
+    training_config: LinearOptimizationConfig,
     output_config: OutputFeedbackConfig,
 ) -> tuple[Float[Array, "batch n"], Float[Array, " batch"]]:
     x0 = make_cs_output_feedback_initial_state(plant, output_config)
@@ -1263,7 +1428,7 @@ def _fit_one_condition(
 def run_output_feedback_rollout_recovery(
     *,
     conditions: tuple[RolloutRecoveryCondition, ...] = DEFAULT_CONDITIONS,
-    training_config: LinearTrainingConfig = LinearTrainingConfig(n_steps=500),
+    training_config: LinearOptimizationConfig = LinearOptimizationConfig(n_steps=500),
     output_config: OutputFeedbackConfig = OutputFeedbackConfig(),
 ) -> RolloutRecoveryResult:
     """Run the requested clean output-feedback rollout-recovery matrix."""
@@ -1297,7 +1462,7 @@ def run_output_feedback_rollout_recovery(
     )
     bellman = train_output_feedback_lqr_bellman_controller(
         reference,
-        LinearTrainingConfig(n_steps=200, seed=training_config.seed),
+        LinearOptimizationConfig(n_steps=200, seed=training_config.seed),
     )
     lqr_clean = rollout_with_kalman_estimator(plant, K_ref, x0, config=output_config)
     covs = robust_estimator_covariances(plant, schedule, gamma_ref.gamma, output_config)
@@ -1557,6 +1722,136 @@ def run_output_feedback_rollout_recovery(
     )
 
 
+def register_output_feedback_rollout_recovery_evaluation_recipe(
+    *, replace: bool = True
+) -> None:
+    """Register the governed analytical rollout-recovery evaluation."""
+
+    register_params_model(
+        OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_EVALUATION_TYPE,
+        OutputFeedbackRolloutRecoveryEvaluationParams,
+        replace=replace,
+    )
+    register_evaluation_recipe(
+        OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_EVALUATION_TYPE,
+        output_feedback_rollout_recovery_evaluation_recipe,
+        replace=replace,
+    )
+
+
+def output_feedback_rollout_recovery_evaluation_recipe(
+    run_spec: EvaluationRunSpec,
+    _root: Path,
+    _states_path: Path,
+) -> EvaluationRecipeResult:
+    """Fit analytical rollout-recovery rows for an evaluation manifest."""
+
+    params = OutputFeedbackRolloutRecoveryEvaluationParams.model_validate(run_spec.params)
+    conditions = (
+        DEFAULT_CONDITIONS
+        if params.conditions is None
+        else tuple(condition.to_runtime() for condition in params.conditions)
+    )
+    result = run_output_feedback_rollout_recovery(
+        conditions=conditions,
+        training_config=params.training_config.to_runtime(),
+        output_config=params.output_config.to_runtime(),
+    )
+    return EvaluationRecipeResult(
+        states={
+            "states_schema": OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_STATES_SCHEMA,
+            "params": params.model_dump(mode="json"),
+            "result": result,
+        },
+        summary_metrics={
+            "rollout_recovery_conditions": len(result.conditions),
+            "rollout_recovery_fits": len(result.fits),
+        },
+        metadata={
+            "states_schema": OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_STATES_SCHEMA,
+            "analytical_evaluation": True,
+        },
+    )
+
+
+def execute_governed_output_feedback_rollout_recovery(
+    *,
+    conditions: tuple[RolloutRecoveryCondition, ...] = DEFAULT_CONDITIONS,
+    training_config: LinearOptimizationConfig = LinearOptimizationConfig(n_steps=500),
+    output_config: OutputFeedbackConfig = OutputFeedbackConfig(),
+    root: Path | str | None = None,
+    issue_id: str = ISSUE_ID,
+    issues: tuple[str, ...] | None = None,
+    force: bool = False,
+) -> GovernedRolloutRecoveryProduct:
+    """Execute a full fit through registered evaluation and analysis custody."""
+
+    from feedbax.analysis.evaluation import execute_evaluation_run_spec
+    from feedbax.analysis.specs import execute_analysis_run_spec
+
+    from rlrmp.analysis.declarative_materialization import (
+        output_feedback_rollout_recovery_evaluation_spec,
+        output_feedback_rollout_recovery_spec,
+        register_certificate_analysis_recipes,
+    )
+
+    register_certificate_analysis_recipes(replace=True)
+    evaluation_manifest, evaluation_manifest_path = execute_evaluation_run_spec(
+        output_feedback_rollout_recovery_evaluation_spec(
+            conditions=conditions,
+            training_config=training_config,
+            output_config=output_config,
+        ),
+        root=root,
+        issues=list(issues or (issue_id,)),
+        force=force,
+    )
+    analysis_manifest, analysis_manifest_path = execute_analysis_run_spec(
+        output_feedback_rollout_recovery_spec(
+            issue_id=issue_id,
+            evaluation_manifest_id=evaluation_manifest.id,
+            evaluation_manifest_uri=evaluation_manifest_path,
+        ),
+        root=root,
+        issues=list(issues or (issue_id,)),
+        force=force,
+    )
+
+    artifacts_by_role = {artifact.role: artifact for artifact in analysis_manifest.artifacts}
+    required_roles = {
+        "payload": "rlrmp-output-feedback-rollout-recovery",
+        "markdown": "rlrmp-output-feedback-rollout-recovery-note",
+        "arrays": "rlrmp-output-feedback-rollout-recovery-bulk",
+    }
+    missing = sorted(set(required_roles.values()).difference(artifacts_by_role))
+    if missing:
+        raise ValueError(f"Rollout-recovery analysis omitted custody artifacts: {missing}")
+
+    artifact_paths = {
+        name: Path(artifacts_by_role[role].uri)
+        for name, role in required_roles.items()
+        if artifacts_by_role[role].uri is not None
+    }
+    missing_uris = sorted(set(required_roles).difference(artifact_paths))
+    if missing_uris:
+        raise ValueError(f"Rollout-recovery custody artifacts lack URIs: {missing_uris}")
+
+    summary = json.loads(artifact_paths["payload"].read_text(encoding="utf-8"))
+    with np.load(artifact_paths["arrays"]) as archive:
+        arrays = {name: np.asarray(archive[name]) for name in archive.files}
+    return GovernedRolloutRecoveryProduct(
+        summary=summary,
+        arrays=arrays,
+        evaluation_manifest_id=evaluation_manifest.id,
+        evaluation_manifest_path=evaluation_manifest_path,
+        analysis_manifest_id=analysis_manifest.id,
+        analysis_manifest_path=analysis_manifest_path,
+        payload_path=artifact_paths["payload"],
+        markdown_path=artifact_paths["markdown"],
+        arrays_path=artifact_paths["arrays"],
+    )
+
+
 def _fit_summary(fit: RolloutRecoveryFit) -> dict[str, Any]:
     condition = fit.condition.__dict__.copy()
     if fit.condition.eigenspectrum_coverage is not None:
@@ -1642,9 +1937,9 @@ def result_summary(
 
 
 def _scale_initial_state_config(
-    config: LinearTrainingConfig,
+    config: LinearOptimizationConfig,
     factor: float,
-) -> LinearTrainingConfig:
+) -> LinearOptimizationConfig:
     """Scale synthetic basis/random initial-state coverage while preserving reach state."""
 
     return replace(
@@ -1657,7 +1952,7 @@ def _scale_initial_state_config(
 def run_initial_state_variability_sweep(
     *,
     scale_factors: tuple[float, ...] = (0.0, 0.3, 1.0, 3.0),
-    base_training_config: LinearTrainingConfig = LinearTrainingConfig(),
+    base_training_config: LinearOptimizationConfig = LinearOptimizationConfig(),
     conditions: tuple[RolloutRecoveryCondition, ...] = (STRONG_OPTIMIZER_WHITENED,),
     output_config: OutputFeedbackConfig = OutputFeedbackConfig(),
 ) -> dict[str, Any]:
@@ -1892,15 +2187,15 @@ def _rollout_recovery_verdict(summary: dict[str, Any]) -> str:
 
 
 def materialize_output_feedback_rollout_recovery(
+    result: RolloutRecoveryResult,
     issue_id: str = ISSUE_ID,
     *,
     discretization: str = DEFAULT_DISCRETIZATION,
     lane: str = DEFAULT_LANE,
 ) -> RolloutRecoveryMaterialization:
-    """Run rollout recovery and return custody-ready payload, markdown, and arrays."""
+    """Format governed evaluation states for analysis-manifest custody."""
 
     require_jax_x64("output-feedback rollout-recovery materialization")
-    result = run_output_feedback_rollout_recovery()
     summary = result_summary(result, discretization=discretization, lane=lane)
     summary["issue"] = issue_id
     summary["artifact_npz_keys"] = sorted(result.arrays.keys())
@@ -1920,17 +2215,29 @@ def materialize_output_feedback_rollout_recovery(
 __all__ = [
     "DEFAULT_CONDITIONS",
     "EigenspectrumCoverageConfig",
+    "EigenspectrumCoverageSpec",
+    "GovernedRolloutRecoveryProduct",
+    "LinearOptimizationSpec",
     "ObserverErrorCoverageConfig",
+    "ObserverErrorCoverageSpec",
+    "OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_EVALUATION_TYPE",
+    "OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_STATES_SCHEMA",
+    "OutputFeedbackConfigSpec",
+    "OutputFeedbackRolloutRecoveryEvaluationParams",
     "RolloutRecoveryCondition",
+    "RolloutRecoveryConditionSpec",
     "RolloutRecoveryFit",
     "RolloutRecoveryMaterialization",
     "RolloutRecoveryResult",
     "STRONG_OPTIMIZER_WHITENED",
     "adamw_optimizer_whitened",
     "eigenspectrum_coverage_conditions",
+    "execute_governed_output_feedback_rollout_recovery",
     "observer_error_coverage_conditions",
     "render_markdown",
     "materialize_output_feedback_rollout_recovery",
+    "output_feedback_rollout_recovery_evaluation_recipe",
+    "register_output_feedback_rollout_recovery_evaluation_recipe",
     "run_initial_state_variability_sweep",
     "result_summary",
     "run_output_feedback_rollout_recovery",

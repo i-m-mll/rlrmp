@@ -32,7 +32,7 @@ __all__ = [
 ]
 
 _LAZY_EXPORTS = {
-    "build_hps_minimax": ("rlrmp.train.minimax", "build_hps"),
+    "build_hps_minimax": ("rlrmp.train.minimax_native", "build_hps"),
     "build_hps_standard": ("rlrmp.train.standard", "build_hps"),
     "build_task_base": ("rlrmp.train.task_model", "build_task_base"),
     "setup_task_model_pair": ("rlrmp.train.task_model", "setup_task_model_pair"),

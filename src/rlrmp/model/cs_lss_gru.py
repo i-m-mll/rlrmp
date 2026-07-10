@@ -51,6 +51,10 @@ from rlrmp.model.feedbax_graph import (
     resolve_registered_graph_component_migrations,
 )
 from rlrmp.model.presets import CsLssGruPreset, load_model_preset
+from rlrmp.model.cs_lss_contracts import (
+    FINITE_EPSILON_POLICY_GRAPH_COMPONENT,
+    FINITE_EPSILON_POLICY_NODE_LABEL,
+)
 from rlrmp.model.trainable import staged_network_trainable_parts
 from rlrmp.runtime.run_spec_access import require_run_seed
 from rlrmp.train.closed_loop_finite_adversary import (
@@ -97,8 +101,6 @@ FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT = "StateFeedbackSelector"
 # parameters carry the component-parameter labels ``finite_epsilon_policy.gain``
 # / ``finite_epsilon_policy.bias``. Descriptors and equivalence tests reference
 # these constants so the native identity has a single source of truth.
-FINITE_EPSILON_POLICY_GRAPH_COMPONENT = "AffineValueComposer"
-FINITE_EPSILON_POLICY_NODE_LABEL = "finite_epsilon_policy"
 CS_LSS_UNSUPPORTED_STOCHASTIC_COMPONENTS = frozenset(
     {
         "RLRMPCsLssStateDiffusion",
@@ -524,9 +526,7 @@ def build_cs_lss_gru_graph_spec(
     feedback_dim = (
         CS_PROPRIOCEPTIVE_FEEDBACK_DIM if bool(force_filter_feedback) else CS_FEEDBACK_DIM
     )
-    finite_epsilon_policy = (
-        None if finite_epsilon_policy is None else str(finite_epsilon_policy)
-    )
+    finite_epsilon_policy = None if finite_epsilon_policy is None else str(finite_epsilon_policy)
     if finite_epsilon_policy is not None:
         if finite_epsilon_policy not in (LINEAR_NO_BIAS_POLICY, AFFINE_POLICY):
             raise ValueError(
@@ -756,7 +756,10 @@ def build_cs_lss_gru_graph_spec(
             input_bindings[FINITE_POLICY_GAINS_INPUT] = (FINITE_EPSILON_POLICY_NODE_LABEL, "gain")
             if finite_epsilon_policy == AFFINE_POLICY:
                 input_ports.append(FINITE_POLICY_BIAS_INPUT)
-                input_bindings[FINITE_POLICY_BIAS_INPUT] = (FINITE_EPSILON_POLICY_NODE_LABEL, "bias")
+                input_bindings[FINITE_POLICY_BIAS_INPUT] = (
+                    FINITE_EPSILON_POLICY_NODE_LABEL,
+                    "bias",
+                )
     return GraphSpec(
         nodes=nodes,
         wires=wires,
@@ -924,8 +927,7 @@ def _finite_epsilon_feature_rules(
         )
     if state_dim % physical_block_size != 0:
         raise ValueError(
-            f"state_dim={state_dim} is not divisible by "
-            f"physical_block_size={physical_block_size}."
+            f"state_dim={state_dim} is not divisible by physical_block_size={physical_block_size}."
         )
     rules: list[dict[str, object]] = []
     for offset in range(0, state_dim, physical_block_size):

@@ -78,7 +78,7 @@ SCIENCE_DATA_LITERAL_NAME_HINTS = (
 # tables but are intentionally kept as source constants with explicit provenance.
 # Keys are ``"<repo-relative-path>::<name>"``; values are the required rationale.
 ALLOWLIST: dict[str, str] = {
-    "src/rlrmp/train/cs_perturbation_training.py::PGD_SISU_MAX_RADIUS_SOURCES": (
+    "src/rlrmp/train/training_configs.py::PGD_SISU_MAX_RADIUS_SOURCES": (
         "Adopted-run-derived analytical / historical PGD radius sources. Each entry "
         "carries inline source_issue/source_note/source_kind provenance (a7dad8a "
         "strong analytical anchor, c92ebd8 output-feedback rollout budgets, 020a65b "
@@ -157,8 +157,7 @@ def scan_source(text: str, relpath: str) -> list[GeneratedConstantFinding]:
         ]
         high_precision_hit = len(high_precision) > MIN_HIGH_PRECISION_CARDINALITY
         cardinality_hit = any(
-            _is_science_data_literal(relpath=relpath, name=name, floats=floats)
-            for name in names
+            _is_science_data_literal(relpath=relpath, name=name, floats=floats) for name in names
         )
         if not high_precision_hit and not cardinality_hit:
             continue

@@ -17,6 +17,7 @@ from feedbax.contracts.manifest import (
 from pydantic import BaseModel, ConfigDict, Field
 
 from rlrmp.runtime.params_models import params_model_for, register_params_model
+from rlrmp.eval.feedback_ablation import evaluate_feedback_ablation_runs
 from rlrmp.runtime.spec_migrations import (
     CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND,
     DELAYED_REACH_BANK_EVAL_PARAMS_KIND,
@@ -109,8 +110,6 @@ class PerturbationResponseBankEvalParams(_StrictParamsModel):
     feedback_scale_manifest: Any | None = None
     feedback_scale_manifest_path: str | None = None
     repo_root: str | None = None
-    bulk_dir: str | None = None
-    write_bulk_arrays: bool = False
     n_rollout_trials: int = Field(8, ge=1)
     extlqg_physical_dim: Literal[6, 8] = 8
     preferred_checkpoint_manifest_path: str | None = None
@@ -122,10 +121,21 @@ class PerturbationResponseBankEvalParams(_StrictParamsModel):
 class FeedbackAblationEvalParams(_StrictParamsModel):
     """Params for feedback-ablation evaluation."""
 
-    ablation_masks: Any | None = None
-    ablation_mask_set: Any | None = None
-    base_task: dict[str, Any] = Field(default_factory=dict)
-    rollout_pairs: list[Any] = Field(default_factory=list)
+    source_experiment: str = ""
+    run_ids: list[str] = Field(default_factory=list)
+    labels: list[str] | None = None
+    scope: str = "feedback_ablation"
+    n_rollout_trials: int = Field(4, ge=1)
+    include_checkpoint_rescore: bool = True
+    bank_mode: Literal["raw", "calibrated"] = "raw"
+    calibration_level: str | list[str] | None = None
+    calibration_reach: str | float | None = None
+    feedback_selection_level: str = "small"
+    feedback_scale_manifest_path: str | None = None
+    preferred_checkpoint_manifest_path: str | None = None
+    repo_root: str | None = None
+    bank: dict[str, Any] | None = None
+    evaluation_bins: dict[str, str | None] | None = None
 
 
 class WorstCaseEpsilonEvalParams(_StrictParamsModel):
@@ -265,22 +275,31 @@ def feedback_ablation_recipe(
     """Evaluate intact-vs-ablated feedback rollout pairs."""
 
     p, params = _validated_params(run_spec)
-    _require_one_of(
-        params,
-        ("ablation_masks", "ablation_mask_set"),
-        recipe=run_spec.evaluation_type,
+    if not p.source_experiment or not p.run_ids:
+        raise ValueError(
+            "feedback-ablation evaluation requires source_experiment and non-empty run_ids"
+        )
+    execution_params = p.model_dump(mode="python")
+    repo_root_value = execution_params.get("repo_root")
+    repo_root = Path(str(repo_root_value)).expanduser() if repo_root_value else Path.cwd()
+    payload = evaluate_feedback_ablation_runs(
+        execution_params,
+        repo_root=repo_root,
     )
     return _result(
         run_spec,
         params,
         product_role="feedback_ablation_rollouts",
-        state_payload={
-            "ablation_masks": p.ablation_masks
-            if p.ablation_masks is not None
-            else p.ablation_mask_set,
-            "base_task": p.base_task,
-            "rollout_pairs": p.rollout_pairs,
+        state_payload=payload,
+        summary_metrics={
+            "feedback_ablation_run_count": len(payload["runs"]),
+            "feedback_ablation_row_count": sum(
+                len(run.get("ablations", ()))
+                for run in payload["runs"].values()
+                if isinstance(run, Mapping)
+            ),
         },
+        metadata={"execution_owner": "registered_evaluation_recipe"},
     )
 
 
@@ -440,7 +459,11 @@ def _legacy_perturbation_response_bank_payload(
         ("checkpoint_bank_ref", "checkpoint_bank"),
         recipe=PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
     )
-    bank = _normalized_perturbation_bank(params.get("perturbation_battery", {}))
+    raw_bank = params.get("perturbation_battery")
+    if raw_bank is None:
+        raw_bank = _default_perturbation_bank(params)
+    bank = _normalized_perturbation_bank(raw_bank)
+    bank_params = _canonical_perturbation_bank_params(params)
     class_index_map = params.get("class_index_map")
     if class_index_map is None:
         class_index_map = _perturbation_class_index_map(bank)
@@ -453,6 +476,7 @@ def _legacy_perturbation_response_bank_payload(
         params=params,
         state_payload={
             "production_mode": "legacy_payload",
+            "bank_params": bank_params,
             "checkpoint_bank": params.get("checkpoint_bank_ref", params.get("checkpoint_bank")),
             "perturbation_battery": bank,
             "alignment_mode": params.get("alignment_mode", "reach_locked"),
@@ -473,6 +497,7 @@ def _model_driven_perturbation_response_bank_payload(
 ) -> _PerturbationResponseBankPayload:
     params_with_identity = _with_eval_consumed_calibration_identity(params)
     bank = _perturbation_bank_from_params(params_with_identity)
+    bank_params = _canonical_perturbation_bank_params(params_with_identity)
     class_index_map = _perturbation_class_index_map(bank)
     run_summaries = _evaluate_perturbation_bank_runs(
         run_spec,
@@ -494,6 +519,7 @@ def _model_driven_perturbation_response_bank_payload(
         params=params_with_identity,
         state_payload={
             "production_mode": "model_driven",
+            "bank_params": bank_params,
             "checkpoint_bank": params_with_identity.get(
                 "checkpoint_bank_ref",
                 params_with_identity.get("checkpoint_bank"),
@@ -585,19 +611,27 @@ def _default_perturbation_bank(params: Mapping[str, Any]) -> dict[str, Any]:
         expand_perturbation_bank,
     )
 
-    feedback_scale_manifest_path = params.get("feedback_scale_manifest_path")
+    return expand_perturbation_bank(
+        PerturbationBankParams.model_validate(_canonical_perturbation_bank_params(params)),
+    )
+
+
+def _canonical_perturbation_bank_params(params: Mapping[str, Any]) -> dict[str, Any]:
+    from rlrmp.analysis.pipelines.gru_perturbation_bank import PerturbationBankParams
+
     bank_params = dict(params.get("bank_params") or {})
     bank_params.setdefault("mode", params.get("bank_mode", params.get("mode", "raw")))
-    if params.get("calibration_level") is not None:
-        bank_params.setdefault("calibration_level", params.get("calibration_level"))
-    if params.get("calibration_reach") is not None:
-        bank_params.setdefault("calibration_reach", params.get("calibration_reach"))
-    if params.get("feedback_scale_manifest") is not None:
-        bank_params.setdefault("feedback_scale_manifest", params.get("feedback_scale_manifest"))
-    if feedback_scale_manifest_path is not None:
-        bank_params.setdefault("feedback_scale_manifest_path", str(feedback_scale_manifest_path))
-    return expand_perturbation_bank(
-        PerturbationBankParams.model_validate(bank_params),
+    for key in (
+        "calibration_level",
+        "calibration_reach",
+        "feedback_scale_manifest",
+        "feedback_scale_manifest_path",
+    ):
+        if params.get(key) is not None:
+            bank_params.setdefault(key, params[key])
+    return PerturbationBankParams.model_validate(bank_params).model_dump(
+        mode="json",
+        exclude_none=True,
     )
 
 
@@ -743,18 +777,12 @@ def _evaluate_perturbation_bank_runs(
         labels=labels,
         repo_root=_repo_root_for_eval(params, root=root),
     )
-    bulk_dir = _perturbation_eval_bulk_dir(params, root=root)
-    write_bulk_arrays = bool(params.get("write_bulk_arrays", False))
-    if write_bulk_arrays:
-        bulk_dir.mkdir(parents=True, exist_ok=True)
     return {
         run.run_id: _evaluate_single_perturbation_bank_run(
             run,
             source_experiment=source_experiment,
             bank=bank,
             n_rollout_trials=int(params.get("n_rollout_trials", 8)),
-            write_bulk_arrays=write_bulk_arrays,
-            bulk_dir=bulk_dir,
             extlqg_physical_dim=int(params.get("extlqg_physical_dim", 8)),
             preferred_checkpoint_manifest_path=_optional_path(
                 params.get("preferred_checkpoint_manifest_path")
@@ -784,13 +812,6 @@ def _repo_root_for_eval(params: Mapping[str, Any], *, root: Path) -> Path:
     return REPO_ROOT if REPO_ROOT is not None else root
 
 
-def _perturbation_eval_bulk_dir(params: Mapping[str, Any], *, root: Path) -> Path:
-    bulk_dir = params.get("bulk_dir")
-    if bulk_dir is not None:
-        return Path(str(bulk_dir))
-    return root / "cache" / "perturbation_response_bank"
-
-
 def _optional_path(value: Any) -> Path | None:
     return None if value is None else Path(str(value))
 
@@ -818,8 +839,6 @@ def _evaluate_single_perturbation_bank_run(
     source_experiment: str,
     bank: Mapping[str, Any],
     n_rollout_trials: int,
-    write_bulk_arrays: bool,
-    bulk_dir: Path,
     extlqg_physical_dim: int,
     preferred_checkpoint_manifest_path: Path | None,
     checkpoint_selection_mode: str,
@@ -832,8 +851,6 @@ def _evaluate_single_perturbation_bank_run(
         source_experiment=source_experiment,
         bank=bank,
         n_rollout_trials=n_rollout_trials,
-        write_bulk_arrays=write_bulk_arrays,
-        bulk_dir=bulk_dir,
         extlqg_physical_dim=extlqg_physical_dim,  # type: ignore[arg-type]
         preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
         checkpoint_selection_mode=checkpoint_selection_mode,  # type: ignore[arg-type]

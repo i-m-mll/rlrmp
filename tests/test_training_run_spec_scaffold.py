@@ -71,7 +71,9 @@ def test_scaffold_constructor_is_the_only_owned_top_level_policy_path() -> None:
     runtime_source = (repo_root / "src/rlrmp/runtime/training_run_specs.py").read_text(
         encoding="utf-8"
     )
-    minimax_source = (repo_root / "src/rlrmp/train/minimax.py").read_text(encoding="utf-8")
+    minimax_source = (repo_root / "src/rlrmp/train/minimax_native/method.py").read_text(
+        encoding="utf-8"
+    )
 
     assert runtime_source.count("TrainingRunSpec(") == 1
     assert minimax_source.count("TrainingRunSpec(") == 0

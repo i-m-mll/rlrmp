@@ -1,7 +1,6 @@
-"""Regression tests for the minimax trainer's public Feedbax trial API use."""
+"""Regression tests for the native minimax kernels' public Feedbax trial API use."""
 
 from __future__ import annotations
-from rlrmp.io import load_named_python_module
 
 import argparse
 
@@ -14,12 +13,9 @@ from feedbax.runtime.graph import Component, Graph, init_state_from_component
 from feedbax.objectives.loss import CompositeLoss, ModelLoss
 
 from rlrmp.model.feedbax_graph import POINT_MASS_TARGET_POSITION_INPUT
-from rlrmp.paths import REPO_ROOT
+from rlrmp.train.minimax_native import build_hps
+from rlrmp.train.minimax_native import kernels as minimax_kernels
 from rlrmp.train.task_model import setup_task_model_pair
-
-
-def _load_train_minimax_module():
-    return load_named_python_module('train_minimax_under_test', REPO_ROOT / 'scripts' / 'train_minimax.py')
 
 
 class _NodeState(eqx.Module):
@@ -52,7 +48,6 @@ def _graph() -> Graph:
 
 def test_streaming_minimax_eval_uses_public_prepared_trial() -> None:
     """The streaming loop should run through Feedbax's public ``prepare_trial``."""
-    train_minimax = _load_train_minimax_module()
     trial_specs = TaskTrialSpec(
         inits=WhereDict(
             {
@@ -77,7 +72,7 @@ def test_streaming_minimax_eval_uses_public_prepared_trial() -> None:
         },
     )
 
-    value = train_minimax._eval_trials_streaming(
+    value = minimax_kernels._eval_trials_streaming(
         object(),
         _graph(),
         trial_specs,
@@ -89,7 +84,6 @@ def test_streaming_minimax_eval_uses_public_prepared_trial() -> None:
 
 
 def test_multiplicative_minimax_adversarial_selector_includes_sisu_alpha() -> None:
-    train_minimax = _load_train_minimax_module()
     args = argparse.Namespace(
         n_warmup_batches=10,
         n_adversary_batches=20,
@@ -100,13 +94,13 @@ def test_multiplicative_minimax_adversarial_selector_includes_sisu_alpha() -> No
         sisu_gating="multiplicative",
         n_replicates=1,
     )
-    hps = train_minimax.build_hps(args)
+    hps = build_hps(args)
     if hps.pert.type == "gusts":
         hps = hps | {"pert": hps.pert | {"type": "constant"}}
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
 
-    trainable = train_minimax._get_trainable(pair.model)
-    where_trainable = train_minimax._trainable_where(pair.model)(pair.model)
+    trainable = minimax_kernels._get_trainable(pair.model)
+    where_trainable = minimax_kernels._trainable_where(pair.model)(pair.model)
 
     assert trainable[-1].shape[-1] == hps.model.hidden_size
     assert where_trainable[-1].shape == trainable[-1].shape
@@ -114,7 +108,6 @@ def test_multiplicative_minimax_adversarial_selector_includes_sisu_alpha() -> No
 
 
 def test_linear_tracker_minimax_selector_uses_affine_gain_and_feedforward() -> None:
-    train_minimax = _load_train_minimax_module()
     args = argparse.Namespace(
         n_warmup_batches=10,
         n_adversary_batches=20,
@@ -125,13 +118,13 @@ def test_linear_tracker_minimax_selector_uses_affine_gain_and_feedforward() -> N
         sisu_gating="additive",
         n_replicates=1,
     )
-    hps = train_minimax.build_hps(args)
+    hps = build_hps(args)
     if hps.pert.type == "gusts":
         hps = hps | {"pert": hps.pert | {"type": "constant"}}
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
 
-    trainable = train_minimax._get_trainable(pair.model)
-    where_trainable = train_minimax._trainable_where(pair.model)(pair.model)
+    trainable = minimax_kernels._get_trainable(pair.model)
+    where_trainable = minimax_kernels._trainable_where(pair.model)(pair.model)
 
     assert pair.model.nodes["net"].__class__.__name__ == "AffineFeedbackController"
     assert POINT_MASS_TARGET_POSITION_INPUT in pair.model.input_ports

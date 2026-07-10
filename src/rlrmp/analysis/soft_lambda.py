@@ -26,7 +26,7 @@ from rlrmp.train.cs_perturbation_training import (
     _broad_epsilon_pgd_trust_radius,
     _ensure_broad_epsilon_input,
     _epsilon_time_mask,
-    config_from_broad_epsilon_pgd_hps,
+    PgdFullStateEpsilonTrainingConfig,
 )
 from rlrmp.train.task_model import setup_task_model_pair
 
@@ -120,7 +120,7 @@ def load_frozen_batch(
             step_size_fraction=0.25,
         )
     }
-    cfg = config_from_broad_epsilon_pgd_hps(audit_hps.broad_epsilon_pgd_training)
+    cfg = PgdFullStateEpsilonTrainingConfig.from_payload(audit_hps.broad_epsilon_pgd_training)
     epsilon = jnp.asarray(trial_specs.inputs["epsilon"])
     radius = _broad_epsilon_pgd_trust_radius(trial_specs, cfg).astype(epsilon.dtype)
     time_mask = _epsilon_time_mask(trial_specs, epsilon, cfg.movement_epoch_only)
@@ -257,13 +257,13 @@ def render_soft_lambda_redo_markdown(
     source = payload["hvp_source"]
     lines = f"""# {title}
 
-Issue: `{payload['issue']}`. Source no-PGD substrates: `c92ebd8`.
+Issue: `{payload["issue"]}`. Source no-PGD substrates: `c92ebd8`.
 
 {introduction}
 
 ## Source contract
 
-HVP source: `{source['path']}` (`{source['schema_version']}`). Primary scale: `{source['primary_continuity_summary']}`.
+HVP source: `{source["path"]}` (`{source["schema_version"]}`). Primary scale: `{source["primary_continuity_summary"]}`.
 
 Beta mapping: `lambda(beta) = beta^2 * substrate_p90(lambda_star_i)`. Beta `0.95` is diagnostic only. Cap/interiority is not used as a criterion; old-cap ratios below are sidecars only.
 

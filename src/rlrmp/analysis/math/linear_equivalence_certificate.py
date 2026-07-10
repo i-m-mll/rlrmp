@@ -24,7 +24,7 @@ from jaxtyping import Array, Float
 from rlrmp.analysis.math.adversary_equivalence import rollout_arrays_with_open_loop_epsilon
 from rlrmp.analysis.math.cs_game_card import GameCardReference
 from rlrmp.analysis.math.linear_round_trip import (
-    LinearTrainingConfig,
+    LinearOptimizationConfig,
     Phase3LinearRoundTripResult,
     canonical_initial_state,
     ensemble_clean_objective,
@@ -174,7 +174,7 @@ def _state_distributions(
 ) -> tuple[StateDistribution, ...]:
     plant = result.reference.plant
     K_ref = result.reference.lqr_solution.K
-    training_states, _weights = ensemble_initial_states(plant, LinearTrainingConfig())
+    training_states, _weights = ensemble_initial_states(plant, LinearOptimizationConfig())
     validation_states = _validation_initial_states(plant, config)
     audit = next(audit for audit in result.audits if audit.label == controller_label)
     analytical_lqr_audit = next(
@@ -325,7 +325,7 @@ def _objective_gradient_norm(
     reference: GameCardReference,
     K: Float[Array, "T m_u n"],
 ) -> float:
-    states, weights = ensemble_initial_states(reference.plant, LinearTrainingConfig())
+    states, weights = ensemble_initial_states(reference.plant, LinearOptimizationConfig())
 
     def objective(gains: Float[Array, "T m_u n"]) -> Float[Array, ""]:
         return ensemble_clean_objective(reference.plant, reference.schedule, gains, states, weights)
@@ -339,7 +339,7 @@ def _interpolation_objective_ratios(
     K: Float[Array, "T m_u n"],
     K_ref: Float[Array, "T m_u n"],
 ) -> tuple[float, ...]:
-    states, weights = ensemble_initial_states(reference.plant, LinearTrainingConfig())
+    states, weights = ensemble_initial_states(reference.plant, LinearOptimizationConfig())
     ref_objective = ensemble_clean_objective(
         reference.plant, reference.schedule, K_ref, states, weights
     )
@@ -429,7 +429,7 @@ def _controller_certificate(
         for metric in distribution_metrics
         if metric.label == "candidate_heldout_adversary_states"
     )
-    training_states, _weights = ensemble_initial_states(plant, LinearTrainingConfig())
+    training_states, _weights = ensemble_initial_states(plant, LinearOptimizationConfig())
     training_sigma0 = training_states.T @ training_states / training_states.shape[0]
     clean_x0 = reference.lqr_rollout.x[0]
     clean_sigma0 = jnp.outer(clean_x0, clean_x0)
@@ -467,8 +467,8 @@ def _controller_certificate(
 def run_linear_equivalence_certificate(
     *,
     config: CertificateConfig = CertificateConfig(),
-    training_config: LinearTrainingConfig = LinearTrainingConfig(),
-    quasi_newton_config: LinearTrainingConfig = LinearTrainingConfig(n_steps=500),
+    training_config: LinearOptimizationConfig = LinearOptimizationConfig(),
+    quasi_newton_config: LinearOptimizationConfig = LinearOptimizationConfig(n_steps=500),
     heldout_step_sweep: tuple[int, ...] = (50, 200),
     heldout_restarts: int = 4,
 ) -> LinearEquivalenceCertificateResult:

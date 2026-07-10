@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
@@ -21,7 +20,12 @@ from feedbax.objectives.spec import ObjectiveExecutionRequirements
 from feedbax.training.executor import execute_training_run_spec
 
 from rlrmp.runtime.training_run_specs import FEEDBAX_TRAINING_RUN_SPEC_KEY
-from rlrmp.train import closed_loop_distillation, guided_distillation
+from rlrmp.train.distillation_native import closed_loop_kernel
+from rlrmp.train.distillation_native import guided_kernel
+from rlrmp.train.distillation_native.losses import (
+    DistillationLossWeights,
+    cs_h0_distillation_config,
+)
 from rlrmp.train.cs_nominal_gru import (
     _initial_training_state,
     _run_cs_supervised_training_chunk,
@@ -47,8 +51,8 @@ TEACHER_BANK = "teacher_bank"
 FORCING_SCHEDULE = "forcing_schedule"
 JVP_PROBES = "jvp_probes"
 
-CLOSED_LOOP_KERNEL_REF = "rlrmp.train.closed_loop_distillation.closed_loop_gradient_update"
-GUIDED_KERNEL_REF = "rlrmp.train.guided_distillation.guided_gradient_update"
+CLOSED_LOOP_KERNEL_REF = "rlrmp.train.distillation_native.closed_loop_gradient_update"
+GUIDED_KERNEL_REF = "rlrmp.train.distillation_native.guided_gradient_update"
 
 
 @dataclass(frozen=True)
@@ -159,7 +163,9 @@ def execute_distillation_training_run_spec_native(
         source_payload: Mapping[str, Any] = training_spec.method_payload.payload
     else:
         source_payload = source_run_spec
-        training_spec = TrainingRunSpec.model_validate(source_payload[FEEDBAX_TRAINING_RUN_SPEC_KEY])
+        training_spec = TrainingRunSpec.model_validate(
+            source_payload[FEEDBAX_TRAINING_RUN_SPEC_KEY]
+        )
         if method is None:
             method = _method_from_source_spec(source_payload)
     seed = int(source_payload.get("seed", 0)) if key is None else None
@@ -233,38 +239,6 @@ def distillation_update_kernels(method: str, payload: Any = None) -> Mapping[str
     raise ValueError(f"unknown distillation method {method!r}")
 
 
-@eqx.filter_jit
-def guided_distillation_train_step(
-    trainable_model: Any,
-    frozen_model: Any,
-    optimizer_state: optax.OptState,
-    optimizer: optax.GradientTransformation,
-    batch: dict[str, jax.Array],
-    config: Any,
-    student_forcing_fraction: float,
-) -> tuple[Any, optax.OptState, jax.Array, dict[str, jax.Array]]:
-    """Run one guided-distillation optimizer step in the native kernel module."""
-
-    def loss_for_trainable(trainable_model: Any) -> tuple[jax.Array, dict[str, jax.Array]]:
-        return guided_distillation._loss_for_batch(
-            eqx.combine(trainable_model, frozen_model),
-            batch,
-            config,
-            student_forcing_fraction=student_forcing_fraction,
-        )
-
-    (loss, components), grads = eqx.filter_value_and_grad(loss_for_trainable, has_aux=True)(
-        trainable_model,
-    )
-    updates, optimizer_state = optimizer.update(
-        grads,
-        optimizer_state,
-        trainable_model,
-    )
-    trainable_model = eqx.apply_updates(trainable_model, updates)
-    return trainable_model, optimizer_state, loss, components
-
-
 def _build_closed_loop_initial_slots(
     *,
     source_run_spec: Mapping[str, Any],
@@ -274,14 +248,16 @@ def _build_closed_loop_initial_slots(
     from rlrmp.train.task_model import setup_task_model_pair
 
     key_init, key_train = jr.split(key, 2)
-    hps = closed_loop_distillation._training_hps_from_spec(source_run_spec)
+    hps = closed_loop_kernel._training_hps_from_spec(source_run_spec)
     pair = setup_task_model_pair(hps, key=key_init)
-    model_layout = _controller_layout(pair.model, int(source_run_spec["student_contract"]["n_replicates"]))
+    model_layout = _controller_layout(
+        pair.model, int(source_run_spec["student_contract"]["n_replicates"])
+    )
     optimizer = _closed_loop_optimizer(source_run_spec)
     initial = _initial_training_state(
         model=pair.model,
         trainer=optimizer,
-        where_train=closed_loop_distillation._where_train_fn,
+        where_train=closed_loop_kernel._where_train_fn,
         key=key_train,
     )
     runtime = ClosedLoopNativeRuntime(
@@ -290,7 +266,7 @@ def _build_closed_loop_initial_slots(
         model_layout=model_layout,
         hps=hps,
         optimizer=optimizer,
-        loss_func=closed_loop_distillation.build_closed_loop_loss(source_run_spec),
+        loss_func=closed_loop_kernel.build_closed_loop_loss(source_run_spec),
         batch_size=int(source_run_spec["student_contract"]["batch_size"]),
         n_batches=int(source_run_spec["student_contract"]["n_train_batches"]),
     )
@@ -339,14 +315,18 @@ def _build_guided_initial_slots(
         if "batch_size" in source_run_spec
         else source_run_spec["training_config"]["batch_size"]
     )
-    n_replicates = int(model_hps.get("n_replicates", source_run_spec["model_contract"]["n_replicates"]))
-    hidden_size = int(model_hps.get("hidden_size", source_run_spec["model_contract"]["hidden_size"]))
-    horizon = int(source_run_spec["teacher_bank"]["horizon"])
-    n_jvp_directions = int(
-        source_run_spec["distillation_surface"]["config"]["n_jvp_directions"]
+    n_replicates = int(
+        model_hps.get("n_replicates", source_run_spec["model_contract"]["n_replicates"])
     )
-    trainable_dtype = guided_distillation._dtype_from_name(
-        guided_distillation._trainable_dtype_name(source_run_spec, _namespace_from_guided_spec(source_run_spec))
+    hidden_size = int(
+        model_hps.get("hidden_size", source_run_spec["model_contract"]["hidden_size"])
+    )
+    horizon = int(source_run_spec["teacher_bank"]["horizon"])
+    n_jvp_directions = int(source_run_spec["distillation_surface"]["config"]["n_jvp_directions"])
+    trainable_dtype = guided_kernel._dtype_from_name(
+        guided_kernel._trainable_dtype_name(
+            source_run_spec, _namespace_from_guided_spec(source_run_spec)
+        )
     )
     population_mask_mode = str(
         model_hps.get(
@@ -355,17 +335,19 @@ def _build_guided_initial_slots(
         )
     )
     key_init, _unused = jr.split(key, 2)
-    package = guided_distillation.load_teacher_package(
+    package = guided_kernel.load_teacher_package(
         source_run_spec["teacher_contract"]["teacher_package"],
         teacher_gains_key=str(source_run_spec["teacher_bank"]["teacher_gains_key"]),
     )
-    hps = guided_distillation._standard_hps_from_spec(
+    hps = guided_kernel._standard_hps_from_spec(
         source_run_spec,
         n_replicates=n_replicates,
         hidden_size=hidden_size,
         batch_size=batch_size,
         n_batches=n_batches,
-        controller_lr=float(source_run_spec.get("controller_lr", source_run_spec["optimizer"]["controller_lr"])),
+        controller_lr=float(
+            source_run_spec.get("controller_lr", source_run_spec["optimizer"]["controller_lr"])
+        ),
         lr_warmup_batches=int(source_run_spec["optimizer"]["lr_warmup_batches"]),
         lr_warmup_init_fraction=float(source_run_spec["optimizer"]["lr_warmup_init_fraction"]),
         lr_cosine_alpha=float(source_run_spec["optimizer"]["lr_cosine_alpha"]),
@@ -373,15 +355,15 @@ def _build_guided_initial_slots(
         trainable_dtype=trainable_dtype.name,
         population_mask_mode=population_mask_mode,
     )
-    model = guided_distillation._init_standard_model_ensemble(hps=hps, key=key_init)
-    where_train_spec = guided_distillation._where_train_spec(model)
-    model = guided_distillation._enforce_trainable_float_dtype(
+    model = guided_kernel._init_standard_model_ensemble(hps=hps, key=key_init)
+    where_train_spec = guided_kernel._where_train_spec(model)
+    model = guided_kernel._enforce_trainable_float_dtype(
         model,
         where_train_spec,
         trainable_dtype,
         context="native guided-distillation model",
     )
-    optimizer = guided_distillation._make_optimizer(
+    optimizer = guided_kernel._make_optimizer(
         learning_rate=float(source_run_spec["optimizer"]["controller_lr"]),
         n_batches=n_batches,
         warmup_batches=int(source_run_spec["optimizer"]["lr_warmup_batches"]),
@@ -389,7 +371,7 @@ def _build_guided_initial_slots(
         cosine_alpha=float(source_run_spec["optimizer"]["lr_cosine_alpha"]),
         gradient_clip_norm=float(source_run_spec["optimizer"]["gradient_clip_norm"]),
     )
-    optimizer_state = guided_distillation._init_optimizer_state(
+    optimizer_state = guided_kernel._init_optimizer_state(
         model=model,
         optimizer=optimizer,
         where_train_spec=where_train_spec,
@@ -411,7 +393,7 @@ def _build_guided_initial_slots(
         {
             MODEL: _controller_state_from_model(model, model_layout),
             OPTIMIZER: optimizer_state,
-            PRNG: guided_distillation._replicate_keys(
+            PRNG: guided_kernel._replicate_keys(
                 key,
                 offset=10_000,
                 n_replicates=n_replicates,
@@ -457,7 +439,7 @@ def _closed_loop_training_chunk(
         model=model,
         optimizer_state=chunk_slots[OPTIMIZER],
         hps=native.hps,
-        where_train=closed_loop_distillation._where_train_fn,
+        where_train=closed_loop_kernel._where_train_fn,
         key=chunk_slots[PRNG],
         start_batch=completed,
         chunk_batches=remaining,
@@ -492,21 +474,21 @@ def _guided_training_chunk(
     completed = int(chunk_slots[COMPLETED_BATCHES])
     last_loss = float(chunk_slots.get(TRAIN_LOSS, 0.0))
     for batch_index in range(completed, native.n_batches):
-        batch_keys, batches = guided_distillation._materialize_replicate_batches(
+        batch_keys, batches = guided_kernel._materialize_replicate_batches(
             native.package,
             keys=batch_keys,
             batch_size=native.batch_size,
             horizon=native.horizon,
             n_jvp_directions=native.n_jvp_directions,
         )
-        model, optimizer_state, losses, _components = guided_distillation._batched_train_step(
+        model, optimizer_state, losses, _components = guided_kernel._batched_train_step(
             model,
             optimizer_state,
             native.optimizer,
             native.where_train_spec,
             batches,
             native.config,
-            guided_distillation.forcing_fraction_for_batch(native.source_run_spec, batch_index),
+            guided_kernel.forcing_fraction_for_batch(native.source_run_spec, batch_index),
         )
         last_loss = float(np.mean(np.asarray(jax.device_get(losses))))
     return {
@@ -520,8 +502,8 @@ def _guided_training_chunk(
 
 def _guided_loss_config(source_run_spec: Mapping[str, Any]) -> Any:
     weights = source_run_spec["distillation_surface"]["config"]["weights"]
-    return guided_distillation.cs_h0_distillation_config(
-        weights=guided_distillation.DistillationLossWeights(
+    return cs_h0_distillation_config(
+        weights=DistillationLossWeights(
             clean_action=float(weights["clean_action"]),
             perturbation_response=float(weights["perturbation_response"]),
             input_output_jvp=float(weights["input_output_jvp"]),

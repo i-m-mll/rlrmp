@@ -35,7 +35,7 @@ import numpy as np
 from rlrmp.eval import eval_at_pert0
 from rlrmp.eval.minimax_io import load_config, load_model
 from rlrmp.train.task_model import setup_task_model_pair
-from rlrmp.train.minimax import build_hps
+from rlrmp.train.minimax_native import build_hps
 
 
 # ---------------------------------------------------------------------------

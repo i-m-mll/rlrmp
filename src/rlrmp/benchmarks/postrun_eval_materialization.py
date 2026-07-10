@@ -27,7 +27,7 @@ from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import (
     materialize_gru_evaluation_diagnostics,
 )
 from rlrmp.analysis.pipelines.gru_feedback_ablation import (
-    evaluate_run_feedback_ablation,
+    execute_feedback_ablation_pipeline,
     selected_feedback_ablation_bins_for_bank,
 )
 from rlrmp.analysis.pipelines.gru_map_error_decomposition import (
@@ -539,8 +539,6 @@ def run_benchmark(
             source_experiment=source_experiment,
             bank=bank,
             n_rollout_trials=n_rollout_trials,
-            write_bulk_arrays=write_bulk_arrays,
-            bulk_dir=step_scratch / "perturbation_response",
             evaluation_backend=perturbation_evaluation_backend,
             repo_root=repo_root,
         )
@@ -553,34 +551,52 @@ def run_benchmark(
                 "status_counts": result.get("status_counts", {}),
                 "rows": len(result.get("perturbations", ())),
             },
-            output_write_mode="included_in_cold_call_elapsed_s",
-            output_write_note=(
-                "evaluate_run_perturbation_bank owns its bulk output writes inside "
-                "the timed call."
-            ),
+            output_write_mode="none",
+            output_write_note="Perturbation evaluation emits no direct durable outputs.",
             warm_replay=warm_replay,
             warm_fn=lambda: evaluate_run_perturbation_bank(
                 run,
                 source_experiment=source_experiment,
                 bank=bank,
                 n_rollout_trials=n_rollout_trials,
-                write_bulk_arrays=write_bulk_arrays,
-                bulk_dir=warm_step_scratch / "perturbation_response",
                 evaluation_backend=perturbation_evaluation_backend,
                 repo_root=repo_root,
             ),
         )
     )
 
-    def run_feedback_ablation() -> Mapping[str, Any]:
-        return evaluate_run_feedback_ablation(
-            run,
+    def run_feedback_ablation() -> Any:
+        return execute_feedback_ablation_pipeline(
             source_experiment=source_experiment,
+            result_experiment=issue,
+            scope="postrun_eval_materialization_benchmark",
+            run_ids=(run.run_id,),
+            labels=(run.label,),
             n_rollout_trials=n_rollout_trials,
             include_checkpoint_rescore=False,
             bank=bank,
             evaluation_bins=feedback_evaluation_bins,
             repo_root=repo_root,
+            feedbax_runs_root=step_scratch / "feedback_ablation_feedbax",
+            issues=(issue,),
+            force=True,
+        )
+
+    def run_warm_feedback_ablation() -> Any:
+        return execute_feedback_ablation_pipeline(
+            source_experiment=source_experiment,
+            result_experiment=issue,
+            scope="postrun_eval_materialization_benchmark_warm",
+            run_ids=(run.run_id,),
+            labels=(run.label,),
+            n_rollout_trials=n_rollout_trials,
+            include_checkpoint_rescore=False,
+            bank=bank,
+            evaluation_bins=feedback_evaluation_bins,
+            repo_root=repo_root,
+            feedbax_runs_root=warm_step_scratch / "feedback_ablation_feedbax",
+            issues=(issue,),
+            force=True,
         )
 
     bundle_results.append(
@@ -588,13 +604,16 @@ def run_benchmark(
             "feedback_ablation",
             run_feedback_ablation,
             summarize=lambda result: {
-                "status_counts": result.get("status_counts", {}),
-                "rows": len(result.get("rows", ())),
+                "status_counts": result.payload.get("status_counts", {}),
+                "runs": len(result.payload.get("runs", ())),
             },
-            output_write_mode="not_applicable",
-            output_write_note="evaluate_run_feedback_ablation returns summaries only.",
+            output_write_mode="feedbax_manifest_and_artifact_custody",
+            output_write_note=(
+                "EvaluationRunManifest and AnalysisRunManifest custody are included "
+                "in the timed call."
+            ),
             warm_replay=warm_replay,
-            warm_fn=run_feedback_ablation,
+            warm_fn=run_warm_feedback_ablation,
         )
     )
 

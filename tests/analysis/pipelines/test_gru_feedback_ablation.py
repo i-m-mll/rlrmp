@@ -17,7 +17,6 @@ from rlrmp.analysis.pipelines.gru_feedback_ablation import (
     SCHEMA_VERSION,
     _per_replicate_command_penalty_metrics,
     _per_replicate_cost_delta_values,
-    _slim_feedback_ablation_manifest,
     build_observation_ablation_spec,
     build_observation_tape,
     default_ablation_modes,
@@ -294,73 +293,6 @@ def test_feedback_checkpoint_selection_audit_has_legacy_run_fallback() -> None:
     assert audit["primary_checkpoint_policy"] == "validation_selected_per_replicate"
     assert audit["selected_candidate"]["run_id"] == "run_b"
     assert audit["candidate_granularity"] == "run_legacy_fallback"
-
-
-def test_slim_feedback_manifest_points_full_rows_to_bulk_detail(tmp_path) -> None:
-    detail_path = (
-        tmp_path
-        / "_artifacts"
-        / "abc1234"
-        / "feedback_ablation"
-        / "gru_feedback_ablation_test"
-        / "gru_feedback_ablation_test_detail.json"
-    )
-    manifest = {
-        "schema_version": SCHEMA_VERSION,
-        "issue": "abc1234",
-        "runs": {
-            "run_a": {
-                "label": "A",
-                "status_counts": {"evaluated": 1},
-                "interpretation": {"label": "feedback_sensitive"},
-                "normalized_feedback_use": {"status": "available", "score": 1.0},
-                "feedback_pass_audit": {"status": "pass"},
-                "ablations": [{"bin": "nominal", "mode": "normal"}],
-                "feedback_checkpoint_rescore": {
-                    "status": "materialized",
-                    "n_checkpoint_candidates": 2,
-                    "checkpoint_scores": [{"checkpoint_batches": 500}],
-                    "feedback_selected_checkpoints": [
-                        {"replicate": 0, "feedback_selected_checkpoint_batches": 500}
-                    ],
-                },
-            }
-        },
-        "feedback_checkpoint_selection_audit": {
-            "status": "materialized",
-            "runs": {
-                "run_a": {
-                    "status": "materialized",
-                    "checkpoint_scores": [{"checkpoint_batches": 500}],
-                    "feedback_selected_checkpoints": [
-                        {"replicate": 0, "feedback_selected_checkpoint_batches": 500}
-                    ],
-                }
-            },
-        },
-    }
-
-    slim = _slim_feedback_ablation_manifest(
-        manifest,
-        detail_manifest_path=detail_path,
-        repo_root=tmp_path,
-    )
-
-    detail_ref = (
-        "_artifacts/abc1234/feedback_ablation/gru_feedback_ablation_test/"
-        "gru_feedback_ablation_test_detail.json"
-    )
-    run = slim["runs"]["run_a"]
-    assert slim["manifest_role"] == "tracked_summary"
-    assert slim["bulk_detail_manifest"]["path"] == detail_ref
-    assert run["n_ablation_rows"] == 1
-    assert run["ablation_rows_detail_manifest"] == detail_ref
-    assert "ablations" not in run
-    assert "checkpoint_scores" not in run["feedback_checkpoint_rescore"]
-    assert run["feedback_checkpoint_rescore"]["checkpoint_scores_detail_manifest"] == detail_ref
-    audit_run = slim["feedback_checkpoint_selection_audit"]["runs"]["run_a"]
-    assert "checkpoint_scores" not in audit_run
-    assert audit_run["feedback_selected_checkpoints"][0]["replicate"] == 0
 
 
 def test_per_replicate_cost_delta_values_reduces_trials_only() -> None:

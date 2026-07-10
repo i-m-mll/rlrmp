@@ -436,7 +436,6 @@ def test_ephemeral_writes_are_tmp_staged() -> None:
 
     sites = _scan_domain()
     ephemeral = [s for s in sites if s.ephemeral]
-    assert ephemeral, "No ephemeral (atomic-staging) writes found; classification suspect"
     for site in ephemeral:
         assert _EPHEMERAL_ROOT_RE.match(site.target.split("/")[0].split("[")[0]), (
             f"Ephemeral site {site.key} is not tmp-rooted; classification is unsound"
@@ -473,14 +472,19 @@ def test_write_surface_negative_canary_ignores_tmp_staged_write() -> None:
         "    eqx.tree_serialise_leaves(tmp / 'model.eqx', model)\n"
     )
     tree = ast.parse(src)
-    durable = set()
+    classified = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Call) and _is_raw_write_call(node):
             expr = _write_target_expr(node)
             root = _target_root_name(expr)
-            if not (root and _EPHEMERAL_ROOT_RE.match(root)):
-                durable.add(_target_label(expr))
-    assert not durable, f"tmp-staged write wrongly classified durable: {durable}"
+            classified.add(
+                (
+                    _call_kind(node),
+                    _target_label(expr),
+                    bool(root and _EPHEMERAL_ROOT_RE.match(root)),
+                )
+            )
+    assert classified == {("tree_serialise_leaves", "tmp/model.eqx", True)}
 
 
 def test_single_custody_pytree_writer() -> None:

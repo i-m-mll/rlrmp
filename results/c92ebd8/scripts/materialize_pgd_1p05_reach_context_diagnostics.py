@@ -68,7 +68,6 @@ def main() -> None:
         run_ids=ROWS,
         labels=tuple(run_label(run_id) for run_id in ROWS),
         evaluation_bulk_dir=BULK_DIR / "evaluation_diagnostics",
-        perturbation_bulk_dir=BULK_DIR / "perturbation_response",
         feedback_scope="pgd_1p05_reach_context_feedback_ablation",
         write_evaluation_bulk_arrays=False,
         materialize_extensions=lambda current_paths, _components: {

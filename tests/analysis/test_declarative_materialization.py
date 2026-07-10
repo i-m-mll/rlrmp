@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -255,10 +256,38 @@ def test_declarative_recipes_use_feedbax_context_materializers() -> None:
         Path("."),
         (),
     )
+    from rlrmp.eval.output_feedback_rollout_recovery import RolloutRecoveryResult
+
     rollout_recovery = dm.output_feedback_rollout_recovery_recipe(
-        dm.output_feedback_rollout_recovery_spec(),
+        dm.output_feedback_rollout_recovery_spec(
+            evaluation_manifest_id="rollout-eval",
+        ),
         Path("."),
-        (),
+        [
+            type(
+                "Resolved",
+                (),
+                {
+                    "ref": ParentRef(
+                        kind="EvaluationRunManifest",
+                        id="rollout-eval",
+                        role="evaluation_run",
+                    ),
+                    "states": {
+                        "result": RolloutRecoveryResult(
+                            issue_id="7a459bb",
+                            conditions=(),
+                            fits=(),
+                            bellman_initialization_gain_relative_error=0.0,
+                            diagnostics={},
+                            arrays={},
+                        )
+                    },
+                    "manifest": None,
+                    "path": None,
+                },
+            )()
+        ],
     )
 
     assert isinstance(standard.analyses["gru_standard_certificate"], AbstractAnalysis)
@@ -276,6 +305,7 @@ def test_declarative_recipes_use_feedbax_context_materializers() -> None:
     perturbation_leaf = dm.perturbation_class_response_recipe(
         dm.perturbation_class_response_spec(
             family="command_input_pulse",
+            bank_params={"mode": "raw"},
             evaluation_manifest_id="eval-manifest",
         ),
         Path("."),
@@ -292,6 +322,7 @@ def test_declarative_recipes_use_feedbax_context_materializers() -> None:
                     "states": {
                         "evaluation_type": PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
                         "evaluation_manifest_id": "eval-manifest",
+                        "bank_params": {"mode": "raw", "metadata": {}},
                         "perturbation_battery": {"perturbations": []},
                         "response_tensors": {"runs": {}},
                         "class_index_map": {
@@ -346,6 +377,11 @@ def test_diagnostic_bank_recipes_register_params_models_and_eval_dependencies() 
         dm.PerturbationClassResponseAnalysisParams.model_validate({"unknown": True})
     with pytest.raises(ValidationError):
         dm.PerturbationBankAggregateAnalysisParams.model_validate({"unknown": True})
+    with pytest.raises(ValueError, match="do not match the evaluation contract"):
+        dm._validated_perturbation_bank_params(
+            {"bank_params": {"mode": "raw"}},
+            {"bank_params": {"mode": "calibrated"}},
+        )
     assert dm.EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE[
         dm.FEEDBACK_ABLATION_ANALYSIS_TYPE
     ] == (FEEDBACK_ABLATION_EVALUATION_TYPE,)
@@ -362,9 +398,53 @@ def test_diagnostic_bank_recipes_register_params_models_and_eval_dependencies() 
 
 def test_feedback_ablation_recipe_consumes_cached_eval_states_and_records_custody(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     registry = ExperimentRegistry()
     rlrmp.register_experiment_package(registry)
+    rollout_rows = [
+        {
+            "bin": "nominal",
+            "mode": "normal",
+            "status": "evaluated",
+            "metrics": {
+                "baseline_action_norm": {"mean": 1.0},
+                "baseline_endpoint_error_m": {"mean": 0.01},
+                "baseline_terminal_speed_m_s": {"mean": 0.01},
+                "baseline_full_qrf_cost": {"total": {"mean": 1.0}},
+            },
+        },
+        {
+            "bin": "initial_state",
+            "mode": "lagged_observation_history",
+            "status": "evaluated",
+            "metrics": {
+                "baseline_action_norm": {"mean": 1.0},
+                "delta_action_norm": {"mean": 0.5},
+            },
+        },
+    ]
+    monkeypatch.setattr(
+        "rlrmp.eval.recipes.evaluate_feedback_ablation_runs",
+        lambda _params, **_kwargs: {
+            "source_experiment": "unit",
+            "run_ids": ["training-run-a"],
+            "labels": ["Training A"],
+            "scope": "cached_eval_fixture",
+            "bank_mode": "raw",
+            "bank": {"bank_id": "fixture", "n_perturbations": 0},
+            "evaluation_bins": {"nominal": None, "initial_state": None},
+            "ablation_modes": ["normal", "lagged_observation_history"],
+            "runs": {
+                "training-run-a": {
+                    "label": "Training A",
+                    "n_replicates": 1,
+                    "n_rollout_trials_per_replicate": 2,
+                    "ablations": rollout_rows,
+                }
+            },
+        },
+    )
     eval_manifest, eval_path = execute_evaluation_run_spec(
         EvaluationRunSpec(
             evaluation_type=FEEDBACK_ABLATION_EVALUATION_TYPE,
@@ -372,29 +452,10 @@ def test_feedback_ablation_recipe_consumes_cached_eval_states_and_records_custod
             params=stamp_current_schema(
                 FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
                 {
-                    "ablation_masks": {"normal": None},
-                    "rollout_pairs": [
-                        {
-                            "bin": "nominal",
-                            "mode": "normal",
-                            "status": "evaluated",
-                            "metrics": {
-                                "baseline_action_norm": {"mean": 1.0},
-                                "baseline_endpoint_error_m": {"mean": 0.01},
-                                "baseline_terminal_speed_m_s": {"mean": 0.01},
-                                "baseline_full_qrf_cost": {"total": {"mean": 1.0}},
-                            },
-                        },
-                        {
-                            "bin": "initial_state",
-                            "mode": "lagged_observation_history",
-                            "status": "evaluated",
-                            "metrics": {
-                                "baseline_action_norm": {"mean": 1.0},
-                                "delta_action_norm": {"mean": 0.5},
-                            },
-                        },
-                    ],
+                    "source_experiment": "unit",
+                    "run_ids": ["training-run-a"],
+                    "n_rollout_trials": 2,
+                    "repo_root": str(tmp_path),
                 },
             ),
         ),
@@ -457,6 +518,71 @@ def test_feedback_ablation_recipe_consumes_cached_eval_states_and_records_custod
     assert "rlrmp-feedback-quality-feedback-ablation-note" in _artifact_roles(
         component_manifest
     )
+
+
+def test_feedback_quality_feedback_ablation_training_alias_routes_manifest_pipeline(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = ExperimentRegistry()
+    rlrmp.register_experiment_package(registry)
+    run_id = "training-run-a"
+    training_manifest = TrainingRunManifest(
+        id=run_id,
+        job_id="feedback-alias-fixture",
+        status="completed",
+        metadata={"rlrmp_experiment": "unit"},
+    )
+    training_path = write_manifest(training_manifest, root=tmp_path, index=False)
+    calls: list[dict] = []
+
+    def fake_pipeline(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            payload={"schema_version": "rlrmp.gru_feedback_ablation.v1", "runs": {}},
+            evaluation_manifest=SimpleNamespace(id="eval-feedback"),
+            analysis_manifest=SimpleNamespace(id="analysis-feedback"),
+            analysis_manifest_path=tmp_path / "analysis-feedback.json",
+        )
+
+    monkeypatch.setattr(
+        "rlrmp.analysis.pipelines.gru_feedback_ablation.execute_feedback_ablation_pipeline",
+        fake_pipeline,
+    )
+    manifest, _path = execute_analysis_run_spec(
+        AnalysisRunSpec(
+            analysis_type=dm.FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["feedback_ablation"],
+            inputs=[
+                ParentRef(
+                    kind="TrainingRunManifest",
+                    id=run_id,
+                    role="training_run",
+                    uri=str(training_path),
+                )
+            ],
+            params={
+                "experiment": "unit",
+                "run_ids": [run_id],
+                "repo_root": str(tmp_path),
+                "include_feedback_ablation": True,
+            },
+        ),
+        root=tmp_path,
+        issues=["d0189db"],
+        force=True,
+    )
+
+    payload = _artifact_payload(
+        manifest,
+        "rlrmp-feedback-quality-feedback-ablation-status",
+    )
+    assert payload["status"] == "materialized"
+    assert payload["evaluation_manifest_id"] == "eval-feedback"
+    assert payload["analysis_manifest_id"] == "analysis-feedback"
+    assert payload["custody_route"] == "EvaluationRunManifest->AnalysisRunManifest"
+    assert len(calls) == 1
+    assert calls[0]["source_experiment"] == "unit"
+    assert calls[0]["run_ids"] == (run_id,)
 
 
 def test_policy_diagnostics_recipe_consumes_cached_eval_states_and_records_custody(
@@ -726,18 +852,22 @@ def test_gru_postrun_bundle_declares_perturbation_leaf_aggregate_stages() -> Non
     assert stages["perturbation_bank_eval"].evaluation_type == (
         PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE
     )
+    bank_params = stages["perturbation_bank_eval"].params["bank_params"]
+    assert "perturbation_battery" not in stages["perturbation_bank_eval"].params
     assert stages["perturbation_class_command_input_pulse"].analysis_type == (
         dm.PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE
     )
     assert stages["perturbation_class_command_input_pulse"].depends_on == [
         "perturbation_bank_eval"
     ]
+    assert stages["perturbation_class_command_input_pulse"].params["bank_params"] == bank_params
     assert stages["perturbation_bank_aggregate"].analysis_type == (
         dm.PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE
     )
     assert "perturbation_class_command_input_pulse" in (
         stages["perturbation_bank_aggregate"].depends_on
     )
+    assert stages["perturbation_bank_aggregate"].params["bank_params"] == bank_params
 
 
 def test_perturbation_class_leaves_aggregate_to_legacy_bank_payload(
@@ -778,6 +908,7 @@ def test_perturbation_class_leaves_aggregate_to_legacy_bank_payload(
         manifest, path = execute_analysis_run_spec(
             dm.perturbation_class_response_spec(
                 family=family,
+                bank_params={"mode": "raw"},
                 evaluation_manifest_id=eval_manifest.id,
                 evaluation_manifest_uri=eval_path,
                 expected_calibration_identity={"hash": "sha256:unit-calibration"},
@@ -798,10 +929,10 @@ def test_perturbation_class_leaves_aggregate_to_legacy_bank_payload(
 
     aggregate_manifest, _aggregate_path = execute_analysis_run_spec(
         dm.perturbation_bank_aggregate_spec(
+            bank_params={"mode": "raw"},
             leaf_manifest_refs=leaf_manifests,
             issue="unit",
             source_experiment="unit-exp",
-            bank_mode="raw",
         ),
         root=tmp_path,
     )
@@ -854,6 +985,7 @@ def test_perturbation_class_leaf_absent_family_fails_closed(tmp_path: Path) -> N
         execute_analysis_run_spec(
             dm.perturbation_class_response_spec(
                 family="missing_family",
+                bank_params={"mode": "raw"},
                 evaluation_manifest_id=eval_manifest.id,
                 evaluation_manifest_uri=eval_path,
             ),
@@ -863,24 +995,16 @@ def test_perturbation_class_leaf_absent_family_fails_closed(tmp_path: Path) -> N
     assert "contains families" in str(excinfo.value.__cause__)
 
 
-def test_legacy_perturbation_materializer_routes_to_leaf_aggregate_without_raw_outputs(
+def test_perturbation_adapter_rejects_obsolete_output_requests(
     tmp_path: Path,
 ) -> None:
     from rlrmp.analysis.pipelines import gru_perturbation_bank
-
-    output_path = tmp_path / "legacy_manifest.json"
-    note_path = tmp_path / "legacy_note.md"
-    bulk_dir = tmp_path / "legacy_bulk"
 
     manifest = gru_perturbation_bank.materialize_gru_perturbation_response(
         source_experiment="unit-exp",
         result_experiment="e32c8bb",
         run_ids=("training-run-a",),
         evaluate=False,
-        write_bulk_arrays=True,
-        output_path=output_path,
-        note_path=note_path,
-        bulk_dir=bulk_dir,
         repo_root=tmp_path,
     )
 
@@ -893,11 +1017,23 @@ def test_legacy_perturbation_materializer_routes_to_leaf_aggregate_without_raw_o
     assert manifest["compatibility_adapter"]["route"] == (
         "feedbax_evaluation_manifest_to_perturbation_class_leaf_aggregate"
     )
-    assert manifest["compatibility_adapter"]["write_bulk_arrays_requested"] is True
-    assert manifest["compatibility_adapter"]["write_bulk_arrays_effective"] is False
-    assert not output_path.exists()
-    assert not note_path.exists()
-    assert not bulk_dir.exists()
+    assert manifest["compatibility_adapter"]["custody"] == (
+        "feedbax_evaluation_and_analysis_manifests"
+    )
+    assert "legacy_output_paths_ignored" not in manifest["compatibility_adapter"]
+    obsolete_requests = {
+        "write_bulk_arrays": True,
+        "output_path": tmp_path / "legacy_manifest.json",
+        "note_path": tmp_path / "legacy_note.md",
+        "bulk_dir": tmp_path / "legacy_bulk",
+        "regeneration_spec_path": tmp_path / "legacy_regeneration.json",
+    }
+    for name, value in obsolete_requests.items():
+        with pytest.raises(TypeError, match=name):
+            gru_perturbation_bank.materialize_gru_perturbation_response(
+                evaluate=False,
+                **{name: value},
+            )
 
 
 def test_feedback_quality_lens_bundle_executes_fixture_and_groups_artifacts(
@@ -1420,14 +1556,19 @@ def test_output_feedback_rollout_recovery_recipe_records_manifest_and_bulk_group
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    repo_root = tmp_path / "repo"
-    note_output = repo_root / "results" / "7a459bb" / "notes" / "rollout.md"
-    manifest_output = repo_root / "results" / "7a459bb" / "notes" / "rollout_manifest.json"
-    artifact_output = (
-        repo_root / "_artifacts" / "7a459bb" / "output_feedback_rollout_recovery" / "rollout.npz"
+    from rlrmp.eval import output_feedback_rollout_recovery as rollout_eval
+
+    fake_result = rollout_eval.RolloutRecoveryResult(
+        issue_id="7a459bb",
+        conditions=(),
+        fits=(),
+        bellman_initialization_gain_relative_error=0.0,
+        diagnostics={},
+        arrays={},
     )
 
-    def fake_materialize(**kwargs):
+    def fake_materialize(result, **kwargs):
+        assert isinstance(result, rollout_eval.RolloutRecoveryResult)
         payload = {
             "issue": kwargs["issue_id"],
             "scope": "output-feedback bridge rollout recovery",
@@ -1438,7 +1579,7 @@ def test_output_feedback_rollout_recovery_recipe_records_manifest_and_bulk_group
                 "lane": kwargs["lane"],
             },
         }
-        from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
+        from rlrmp.eval.output_feedback_rollout_recovery import (
             RolloutRecoveryMaterialization,
         )
 
@@ -1453,26 +1594,54 @@ def test_output_feedback_rollout_recovery_recipe_records_manifest_and_bulk_group
         "materialize_output_feedback_rollout_recovery",
         fake_materialize,
     )
+    observed_run_kwargs = {}
+
+    def fake_run(**kwargs):
+        observed_run_kwargs.update(kwargs)
+        return fake_result
+
+    monkeypatch.setattr(rollout_eval, "run_output_feedback_rollout_recovery", fake_run)
     dm.register_certificate_analysis_recipes(replace=True)
     try:
-        spec = dm.output_feedback_rollout_recovery_spec(
-            issue_id="7a459bb",
-            discretization="jaxley",
-            lane="analysis",
-            note_output=note_output,
-            manifest_output=manifest_output,
-            artifact_output=artifact_output,
-            repo_root=repo_root,
+        condition = rollout_eval.RolloutRecoveryCondition(
+            label="unit_condition",
+            maxiter=7,
+            initializations=("scratch",),
+            eigenspectrum_coverage=rollout_eval.EigenspectrumCoverageConfig(
+                n_modes=1,
+                scale=0.3,
+            ),
         )
+        training_config = rollout_eval.LinearOptimizationConfig(
+            n_steps=11,
+            seed=3,
+            n_random_states=2,
+        )
+        output_config = rollout_eval.OutputFeedbackConfig(sensory_noise_scale=0.25)
+        product = rollout_eval.execute_governed_output_feedback_rollout_recovery(
+            conditions=(condition,),
+            training_config=training_config,
+            output_config=output_config,
+            root=tmp_path,
+            issue_id="7a459bb",
+            issues=("c4416c5", "7a459bb"),
+            force=True,
+        )
+        eval_manifest = load_manifest(product.evaluation_manifest_path)
+        manifest = load_manifest(product.analysis_manifest_path)
 
-        manifest, path = execute_analysis_run_spec(spec, root=tmp_path, issues=["c4416c5"])
-
-        assert path.exists()
+        assert product.analysis_manifest_path.exists()
         assert manifest.status == "completed"
+        assert manifest.inputs[0].kind == "EvaluationRunManifest"
+        assert manifest.inputs[0].id == product.evaluation_manifest_id
         assert manifest.analysis_spec.inline["analysis_type"] == (
             dm.OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE
         )
-        assert manifest.provenance.issues == ["c4416c5"]
+        assert manifest.provenance.issues == ["c4416c5", "7a459bb"]
+        assert eval_manifest.evaluation_spec.inline["params"]["schema_version"] == "v2"
+        assert observed_run_kwargs["conditions"] == (condition,)
+        assert observed_run_kwargs["training_config"] == training_config
+        assert observed_run_kwargs["output_config"] == output_config
         assert "rlrmp-output-feedback-rollout-recovery" in _artifact_roles(manifest)
         assert "rlrmp-output-feedback-rollout-recovery-note" in _artifact_roles(manifest)
         assert "rlrmp-output-feedback-rollout-recovery-bulk" in _artifact_roles(manifest)
@@ -1501,6 +1670,29 @@ def test_output_feedback_rollout_recovery_recipe_records_manifest_and_bulk_group
             "rlrmp-output-feedback-rollout-recovery-note"
         )
         assert payload["bulk_artifact"]["role"] == "rlrmp-output-feedback-rollout-recovery-bulk"
-        assert load_manifest(path).id == manifest.id
+        assert payload["evaluation_dependency_policy"]["status"] == "consumed"
+        assert product.summary == payload
+        assert set(product.arrays) == {"gain", "rollout"}
+        assert product.payload_path == Path(payload_artifact.uri)
+        assert product.markdown_path.read_text(encoding="utf-8") == "# rollout recovery\n"
+        with np.load(product.arrays_path) as archive:
+            assert sorted(archive.files) == ["gain", "rollout"]
+        assert load_manifest(product.analysis_manifest_path).id == manifest.id
     finally:
         _unregister_declarative_recipes()
+
+
+def test_output_feedback_rollout_recovery_params_reject_v1() -> None:
+    from pydantic import ValidationError
+
+    from rlrmp.eval.output_feedback_rollout_recovery import (
+        OutputFeedbackRolloutRecoveryEvaluationParams,
+    )
+
+    with pytest.raises(ValidationError, match="v2"):
+        OutputFeedbackRolloutRecoveryEvaluationParams.model_validate(
+            {
+                "schema_id": "rlrmp.eval.output_feedback_rollout_recovery.params",
+                "schema_version": "v1",
+            }
+        )

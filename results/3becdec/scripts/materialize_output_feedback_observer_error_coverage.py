@@ -22,9 +22,9 @@ from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     materialize_reference,
 )
-from rlrmp.analysis.math.linear_round_trip import LinearTrainingConfig
+from rlrmp.analysis.math.linear_round_trip import LinearOptimizationConfig
 from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig
-from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
+from rlrmp.eval.output_feedback_rollout_recovery import (
     observer_error_coverage_conditions,
     result_summary as rollout_result_summary,
     run_output_feedback_rollout_recovery,
@@ -115,7 +115,7 @@ def materialize() -> tuple[dict[str, Any], dict[str, np.ndarray]]:
     )
     result = run_output_feedback_rollout_recovery(
         conditions=conditions,
-        training_config=LinearTrainingConfig(),
+        training_config=LinearOptimizationConfig(),
         output_config=output_config,
     )
     summary = rollout_result_summary(result)

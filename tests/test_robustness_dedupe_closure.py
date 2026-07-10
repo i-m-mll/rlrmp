@@ -104,9 +104,9 @@ def test_feedback_orchestration_preserves_materialization_contract(
             "bulk_detail_manifest": {"path": str(detail_path)},
         }
 
-    def feedback_materializer(**kwargs: Any) -> dict[str, Any]:
+    def feedback_materializer(**kwargs: Any) -> SimpleNamespace:
         calls.append(("feedback", kwargs))
-        return {"schema_version": "feedback.v1"}
+        return SimpleNamespace(payload={"schema_version": "feedback.v1"})
 
     writes: list[tuple[dict[str, Any], list[dict[str, Any]]]] = []
     hooks = {
@@ -131,7 +131,7 @@ def test_feedback_orchestration_preserves_materialization_contract(
     )
     monkeypatch.setattr(
         gru_feedback_ablation,
-        "materialize_gru_feedback_ablation",
+        "execute_feedback_ablation_pipeline",
         feedback_materializer,
     )
     result = run_feedback_robustness_diagnostics(
@@ -143,7 +143,6 @@ def test_feedback_orchestration_preserves_materialization_contract(
         run_ids=("row-a",),
         labels=("Row A",),
         evaluation_bulk_dir=tmp_path / "evaluation-bulk",
-        perturbation_bulk_dir=tmp_path / "perturbation-bulk",
         feedback_scope="feedback-scope",
         materialize_extensions=lambda _paths, _components: {
             "stabilization": {"schema_version": "stabilization.v1"}
@@ -186,7 +185,7 @@ def test_stabilization_evaluator_preserves_missing_family_behavior(
     from rlrmp.analysis.pipelines import gru_perturbation_bank
     from rlrmp.analysis.pipelines import gru_pilot_figures
     from rlrmp.analysis.pipelines import gru_steady_state_perturbation_bank
-    from rlrmp.analysis.pipelines import sisu_spectrum_diagnostics
+    from rlrmp.eval import sisu_spectrum
     from rlrmp.train import task_model
 
     base = SimpleNamespace(command=np.zeros((2, 3, 1)), dt=0.01)
@@ -301,7 +300,7 @@ def test_stabilization_evaluator_preserves_missing_family_behavior(
         lambda *_args, **_kwargs: {"status": "stable"},
     )
     monkeypatch.setattr(
-        sisu_spectrum_diagnostics,
+        sisu_spectrum,
         "zero_disturbance_payload",
         lambda trials: trials,
     )

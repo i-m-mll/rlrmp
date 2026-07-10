@@ -9,12 +9,13 @@ from pathlib import Path
 import pytest
 
 from rlrmp.train.cs_nominal_gru import build_parser
-from rlrmp.train.minimax import legacy_cli_args_to_minimax_config
+from rlrmp.train.config_cli import parse_config
 from rlrmp.train.resume_control import (
     LAUNCH_CONTINUATION_PREFIX,
     emit_launch_continuation,
     resolve_launch_continuation,
 )
+from rlrmp.train.training_configs import MinimaxConfig
 
 
 def _write_latest(path: Path, *, global_step: int) -> Path:
@@ -114,5 +115,9 @@ def test_cli_flags_document_resume_override_and_global_stop_target() -> None:
     assert "Global completed-batch index" in normalized_help
     assert "not a relative count" in normalized_help
 
-    minimax_config = legacy_cli_args_to_minimax_config(["--allow-fresh-start"])
-    assert minimax_config["allow_fresh_start"] is True
+    minimax_config = parse_config(
+        MinimaxConfig,
+        ["--allow-fresh-start"],
+        description="test minimax config",
+    )
+    assert minimax_config.allow_fresh_start is True

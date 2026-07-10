@@ -36,7 +36,7 @@ from rlrmp.train.cs_nominal_gru import (
     make_delayed_cosine_schedule,
 )
 from rlrmp.train.executor.slots import OPTIMIZER
-from rlrmp.train.minimax import (
+from rlrmp.train.minimax_native import (
     MINIMAX_METHOD_REF,
     minimax_training_run_spec_to_config,
 )

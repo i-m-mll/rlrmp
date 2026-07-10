@@ -4,30 +4,31 @@ from __future__ import annotations
 
 import argparse
 import json
-from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
 
-import numpy as np
 import rlrmp
+from feedbax.analysis.evaluation import execute_evaluation_run_spec
+from feedbax.analysis.specs import execute_analysis_run_spec
 from feedbax.plugins import EXPERIMENT_REGISTRY
-from feedbax.plot import save_figure
 
+from rlrmp.analysis.declarative_materialization import (
+    register_certificate_analysis_recipes,
+    sisu_spectrum_evaluation_spec,
+    sisu_spectrum_spec,
+)
 from rlrmp.analysis.pipelines.sisu_spectrum_diagnostics import (
     DEFAULT_N_ROLLOUT_TRIALS,
     DEFAULT_SISU_LEVELS,
     DEFAULT_TOPIC,
-    analytical_reference_curves,
-    build_manifest,
-    build_velocity_profile_figure,
-    evaluate_sisu_profiles,
-    render_markdown,
+    SISU_SPECTRUM_COMPACT_ARRAYS_ROLE,
+    SISU_SPECTRUM_MANIFEST_ROLE,
+    SISU_SPECTRUM_NOTE_ROLE,
 )
-from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT
 
 
 EXPERIMENT = "e4800d6"
+ISSUE_ID = "dc96336"
 TOPIC = DEFAULT_TOPIC
 DEFAULT_RUN_IDS = (
     "cs_gru_h0_sisu_spectrum__raw_strong_gamma_1p05_radius_lr3e-3_clip5_b64",
@@ -46,91 +47,50 @@ def main() -> None:
     if "rlrmp" not in EXPERIMENT_REGISTRY.get_package_names():
         rlrmp.register_experiment_package(EXPERIMENT_REGISTRY)
     repo_root = args.repo_root.resolve()
-    profiles = evaluate_sisu_profiles(
-        experiment=args.experiment,
-        run_ids=tuple(args.run_ids),
-        labels=tuple(args.labels),
-        sisu_levels=tuple(args.sisu_levels),
-        n_rollout_trials=args.n_rollout_trials,
-        repo_root=repo_root,
+    manifest_root = args.feedbax_runs_root or (
+        repo_root / "_artifacts" / args.experiment / args.output_stem / "feedbax_runs"
     )
-    references = analytical_reference_curves(
-        n_samples=max(
-            len(profiles) * args.n_rollout_trials,
-            args.reference_samples,
-        )
+    note_output = repo_root / "results" / args.experiment / "notes" / f"{args.output_stem}.md"
+    register_certificate_analysis_recipes(replace=True)
+    evaluation_manifest, evaluation_manifest_path = execute_evaluation_run_spec(
+        sisu_spectrum_evaluation_spec(
+            experiment=args.experiment,
+            run_ids=args.run_ids,
+            labels=args.labels,
+            topic=args.topic,
+            sisu_levels=tuple(args.sisu_levels),
+            n_rollout_trials=args.n_rollout_trials,
+            reference_samples=args.reference_samples,
+            output_stem=args.output_stem,
+            note_output=note_output,
+        ),
+        root=manifest_root,
     )
-    fig = build_velocity_profile_figure(profiles, references)
-
-    spec = {
-        "schema_id": "rlrmp.figure_spec.sisu_spectrum_velocity_profiles.v1",
-        "experiment": args.experiment,
-        "topic": args.topic,
-        "run_ids": list(args.run_ids),
-        "labels": list(args.labels),
-        "sisu_levels": list(args.sisu_levels),
-        "n_rollout_trials_per_replicate": args.n_rollout_trials,
-        "reference_samples": max(
-            len(profiles) * args.n_rollout_trials,
-            args.reference_samples,
+    analysis_manifest, analysis_manifest_path = execute_analysis_run_spec(
+        sisu_spectrum_spec(
+            evaluation_manifest_id=evaluation_manifest.id,
+            evaluation_manifest_uri=evaluation_manifest_path,
         ),
-        "checkpoint_policy": "validation_selected_per_replicate",
-        "input_contract": (
-            "SISU is carried by trial_specs.inputs['input'] for these runs; "
-            "epsilon is zeroed for the nominal velocity-profile comparison."
-        ),
-        "interpretation": (
-            "Discovery-trained robustness, not teacher/distillation and not "
-            "formal H-infinity equivalence."
-        ),
-    }
-    save_figure(
-        fig=fig,
-        spec=spec,
-        package="rlrmp",
-        experiment=args.experiment,
-        topic=args.topic,
-        extra_packages=["rlrmp"],
+        root=manifest_root,
+        issues=[ISSUE_ID, args.experiment],
+        fig_dump_path=repo_root / "_artifacts" / args.experiment / "figures" / args.topic,
+        fig_dump_formats=("html",),
     )
 
-    compact_npz = (
-        repo_root
-        / "_artifacts"
-        / args.experiment
-        / args.output_stem
-        / "sisu_velocity_profile_curves.npz"
-    )
-    write_compact_arrays(profiles=profiles, references=references, path=compact_npz)
-
-    figure_spec = repo_root / "results" / args.experiment / "figures" / args.topic / "spec.json"
-    figure_html = repo_root / "_artifacts" / args.experiment / "figures" / args.topic / "figure.html"
-    manifest = build_manifest(
-        experiment=args.experiment,
-        topic=args.topic,
-        profiles=profiles,
-        references=references,
-        compact_npz_path=compact_npz,
-        figure_spec_path=figure_spec,
-        figure_html_path=figure_html,
-        repo_root=repo_root,
-        sisu_levels=tuple(args.sisu_levels),
-        n_rollout_trials=args.n_rollout_trials,
-    )
-    notes_dir = repo_root / "results" / args.experiment / "notes"
-    notes_dir.mkdir(parents=True, exist_ok=True)
-    manifest_path = notes_dir / f"{args.output_stem}_manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
-    note_path = notes_dir / f"{args.output_stem}.md"
-    write_note(note_path, manifest)
+    manifest_ref = _artifact_for_role(analysis_manifest, SISU_SPECTRUM_MANIFEST_ROLE)
+    note_ref = _artifact_for_role(analysis_manifest, SISU_SPECTRUM_NOTE_ROLE)
+    compact_ref = _artifact_for_role(analysis_manifest, SISU_SPECTRUM_COMPACT_ARRAYS_ROLE)
+    figure_refs = _artifacts_for_role(analysis_manifest, "figure")
 
     print(
         json.dumps(
             {
-                "manifest": str(manifest_path.relative_to(repo_root)),
-                "note": str(note_path.relative_to(repo_root)),
-                "figure_spec": str(figure_spec.relative_to(repo_root)),
-                "figure_html": str(figure_html.relative_to(repo_root)),
-                "compact_arrays": str(compact_npz.relative_to(repo_root)),
+                "evaluation_manifest": str(evaluation_manifest_path),
+                "analysis_manifest": str(analysis_manifest_path),
+                "manifest": manifest_ref.uri,
+                "note": note_ref.uri,
+                "figures": [artifact.uri for artifact in figure_refs],
+                "compact_arrays": compact_ref.uri,
             },
             indent=2,
             sort_keys=True,
@@ -143,6 +103,7 @@ def parse_args() -> argparse.Namespace:
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo-root", type=Path, default=REPO_ROOT)
+    parser.add_argument("--feedbax-runs-root", type=Path, default=None)
     parser.add_argument("--experiment", default=EXPERIMENT)
     parser.add_argument("--topic", default=TOPIC)
     parser.add_argument("--output-stem", default="sisu_spectrum_special")
@@ -166,44 +127,18 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def write_compact_arrays(
-    *,
-    profiles: Sequence[Any],
-    references: Sequence[Any],
-    path: Path,
-) -> None:
-    """Write compact regenerable velocity profile arrays for this experiment."""
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    arrays: dict[str, np.ndarray] = {}
-    for profile_idx, profile in enumerate(profiles):
-        prefix = f"run_{profile_idx}"
-        arrays[f"{prefix}_run_id"] = np.asarray(profile.run_id)
-        for curve in profile.curves:
-            sisu_tag = str(curve.sisu).replace(".", "p")
-            arrays[f"{prefix}_sisu_{sisu_tag}_time_s"] = curve.time_s
-            arrays[f"{prefix}_sisu_{sisu_tag}_mean_forward_velocity_m_s"] = (
-                curve.mean_forward_velocity_m_s
-            )
-            arrays[f"{prefix}_sisu_{sisu_tag}_std_forward_velocity_m_s"] = (
-                curve.std_forward_velocity_m_s
-            )
-            arrays[f"{prefix}_sisu_{sisu_tag}_replicate_mean_forward_velocity_m_s"] = (
-                curve.replicate_mean_forward_velocity_m_s
-            )
-    for reference_idx, reference in enumerate(references):
-        prefix = f"reference_{reference_idx}"
-        arrays[f"{prefix}_label"] = np.asarray(reference.label)
-        arrays[f"{prefix}_time_s"] = reference.time_s
-        arrays[f"{prefix}_forward_velocity_m_s"] = reference.forward_velocity_m_s
-        arrays[f"{prefix}_std_forward_velocity_m_s"] = reference.std_forward_velocity_m_s
-    np.savez_compressed(path, **arrays)
+def _artifact_for_role(manifest, role: str):
+    matches = _artifacts_for_role(manifest, role)
+    if len(matches) != 1:
+        raise ValueError(f"Expected one {role!r} artifact, found {len(matches)}")
+    return matches[0]
 
 
-def write_note(path: Path, manifest: Mapping[str, Any]) -> None:
-    """Write or update the SISU special Markdown note for this experiment."""
-
-    update_marked_section(path, "sisu_spectrum_special", render_markdown(manifest))
+def _artifacts_for_role(manifest, role: str):
+    matches = [artifact for artifact in manifest.artifacts if artifact.role == role]
+    if not matches:
+        raise ValueError(f"Expected at least one {role!r} artifact")
+    return matches
 
 
 if __name__ == "__main__":

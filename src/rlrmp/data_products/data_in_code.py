@@ -230,48 +230,35 @@ def _empirical_allowlist() -> dict[str, str]:
 
 
 _CD137D8_CONFIG_TIER_ALLOWLIST = (
-    "src/rlrmp/train/closed_loop_distillation.py::ClosedLoopLossWeights::default_bundle",
-    "src/rlrmp/train/closed_loop_distillation.py::DEFAULT_CHECKPOINT_INTERVAL_BATCHES::hp_constant",
-    "src/rlrmp/train/cs_nominal_gru.py::AdaptiveEpsilonState::default_bundle",
-    "src/rlrmp/train/cs_nominal_gru.py::CS_CONTROL_SCALE::hp_constant",
-    "src/rlrmp/train/cs_nominal_gru.py::CS_POSITION_SCALE::hp_constant",
-    "src/rlrmp/train/cs_nominal_gru.py::CS_REGULARIZED_NN_HIDDEN::hp_constant",
-    "src/rlrmp/train/cs_nominal_gru.py::CS_STAGE_COUNT::hp_constant",
-    "src/rlrmp/train/cs_nominal_gru.py::CS_VELOCITY_SCALE::hp_constant",
-    "src/rlrmp/train/cs_nominal_gru.py::CsNominalGruConfig::default_bundle",
-    "src/rlrmp/train/cs_nominal_gru.py::build_hps::default_bundle",
-    "src/rlrmp/train/cs_perturbation_training.py::AMPLITUDE_LEVELS::hp_constant",
-    "src/rlrmp/train/cs_perturbation_training.py::BROAD_EPSILON_REFERENCE_REACH_M::hp_constant",
-    "src/rlrmp/train/cs_perturbation_training.py::BroadFullStateEpsilonTrainingConfig::default_bundle",
-    "src/rlrmp/train/cs_perturbation_training.py::DEFAULT_HELD_OUT_TARGET_AMPLITUDES_M::hp_constant",
-    "src/rlrmp/train/cs_perturbation_training.py::DEFAULT_HELD_OUT_TARGET_DIRECTIONS_DEG::hp_constant",
-    "src/rlrmp/train/cs_perturbation_training.py::DEFAULT_PGD_SISU_EXACT_ZERO_MASS::hp_constant",
-    "src/rlrmp/train/cs_perturbation_training.py::DEFAULT_PGD_SISU_LEVELS::hp_constant",
-    "src/rlrmp/train/cs_perturbation_training.py::DEFAULT_SEEN_TARGET_AMPLITUDES_M::hp_constant",
-    "src/rlrmp/train/cs_perturbation_training.py::DEFAULT_SEEN_TARGET_DIRECTIONS_DEG::hp_constant",
-    "src/rlrmp/train/cs_perturbation_training.py::FixedTargetPerturbationTrainingConfig::default_bundle",
-    "src/rlrmp/train/cs_perturbation_training.py::HISTORICAL_020A65B_PGD_RADIUS_15CM::hp_constant",
-    "src/rlrmp/train/cs_perturbation_training.py::ORIGINAL_TARGET_ANCHOR_M::hp_constant",
-    "src/rlrmp/train/cs_perturbation_training.py::PGD_SISU_MAX_RADIUS_SOURCES::hp_constant",
-    "src/rlrmp/train/cs_perturbation_training.py::PgdFullStateEpsilonTrainingConfig::default_bundle",
-    "src/rlrmp/train/cs_perturbation_training.py::PolicyFullStateEpsilonTrainingConfig::default_bundle",
-    "src/rlrmp/train/cs_perturbation_training.py::RAW_STRONG_GAMMA_1P05_RADIUS_15CM::hp_constant",
-    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_BAND16_HELD_OUT_DIRECTIONS::hp_constant",
-    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_BAND36_HELD_OUT_DIRECTIONS::hp_constant",
-    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_BAND8_HELD_OUT_DIRECTIONS::hp_constant",
-    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_BAND_CENTERS_DEG::hp_constant",
-    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_CONST_REACH_M::hp_constant",
-    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_DENSE_N_DIRECTIONS::hp_constant",
-    "src/rlrmp/train/cs_perturbation_training.py::TARGET_SUPPORT_SPARSE_N_DIRECTIONS::hp_constant",
-    "src/rlrmp/train/cs_perturbation_training.py::TargetRelativeMultiTargetTrainingConfig::default_bundle",
-    "src/rlrmp/train/distillation.py::CSH0DistillationConfig::default_bundle",
-    "src/rlrmp/train/distillation.py::DistillationLossWeights::default_bundle",
-    "src/rlrmp/train/guided_distillation.py::DEFAULT_CHECKPOINT_INTERVAL_BATCHES::hp_constant",
-    "src/rlrmp/train/minimax.py::MinimaxConfig::default_bundle",
-    "src/rlrmp/train/minimax.py::build_hps::default_bundle",
+    "src/rlrmp/train/config_materialization.py::CS_REGULARIZED_NN_HIDDEN::hp_constant",
+    "src/rlrmp/train/config_materialization.py::CS_STAGE_COUNT::hp_constant",
+    "src/rlrmp/train/config_materialization.py::build_hps::default_bundle",
+    "src/rlrmp/train/minimax_native/method.py::_build_hps_from_config::default_bundle",
     "src/rlrmp/train/standard.py::_LOSS_WEIGHT_OVERRIDES::hp_constant",
     "src/rlrmp/train/standard.py::_base_hps::default_bundle",
     "src/rlrmp/train/standard.py::_loss_cfg::default_bundle",
+    "src/rlrmp/train/training_configs.py::AMPLITUDE_LEVELS::hp_constant",
+    "src/rlrmp/train/training_configs.py::BROAD_EPSILON_REFERENCE_REACH_M::hp_constant",
+    "src/rlrmp/train/training_configs.py::CS_CONTROL_SCALE::hp_constant",
+    "src/rlrmp/train/training_configs.py::CS_POSITION_SCALE::hp_constant",
+    "src/rlrmp/train/training_configs.py::CS_VELOCITY_SCALE::hp_constant",
+    "src/rlrmp/train/training_configs.py::DEFAULT_HELD_OUT_TARGET_AMPLITUDES_M::hp_constant",
+    "src/rlrmp/train/training_configs.py::DEFAULT_HELD_OUT_TARGET_DIRECTIONS_DEG::hp_constant",
+    "src/rlrmp/train/training_configs.py::DEFAULT_PGD_SISU_EXACT_ZERO_MASS::hp_constant",
+    "src/rlrmp/train/training_configs.py::DEFAULT_PGD_SISU_LEVELS::hp_constant",
+    "src/rlrmp/train/training_configs.py::DEFAULT_SEEN_TARGET_AMPLITUDES_M::hp_constant",
+    "src/rlrmp/train/training_configs.py::DEFAULT_SEEN_TARGET_DIRECTIONS_DEG::hp_constant",
+    "src/rlrmp/train/training_configs.py::HISTORICAL_020A65B_PGD_RADIUS_15CM::hp_constant",
+    "src/rlrmp/train/training_configs.py::ORIGINAL_TARGET_ANCHOR_M::hp_constant",
+    "src/rlrmp/train/training_configs.py::PGD_SISU_MAX_RADIUS_SOURCES::hp_constant",
+    "src/rlrmp/train/training_configs.py::RAW_STRONG_GAMMA_1P05_RADIUS_15CM::hp_constant",
+    "src/rlrmp/train/training_configs.py::TARGET_SUPPORT_BAND16_HELD_OUT_DIRECTIONS::hp_constant",
+    "src/rlrmp/train/training_configs.py::TARGET_SUPPORT_BAND36_HELD_OUT_DIRECTIONS::hp_constant",
+    "src/rlrmp/train/training_configs.py::TARGET_SUPPORT_BAND8_HELD_OUT_DIRECTIONS::hp_constant",
+    "src/rlrmp/train/training_configs.py::TARGET_SUPPORT_BAND_CENTERS_DEG::hp_constant",
+    "src/rlrmp/train/training_configs.py::TARGET_SUPPORT_CONST_REACH_M::hp_constant",
+    "src/rlrmp/train/training_configs.py::TARGET_SUPPORT_DENSE_N_DIRECTIONS::hp_constant",
+    "src/rlrmp/train/training_configs.py::TARGET_SUPPORT_SPARSE_N_DIRECTIONS::hp_constant",
 )
 
 _E04BD36_USER_HOLD_ALLOWLIST = (
@@ -285,18 +272,31 @@ _OWNING_SCHEMA_DEFAULT_ALLOWLIST = (
     "src/rlrmp/analysis/math/cs_released_simulation.py::CSReleasedStochasticNoiseConfig::default_bundle",
     "src/rlrmp/analysis/math/hinf_riccati.py::CostSpec::default_bundle",
     "src/rlrmp/analysis/math/linear_equivalence_certificate.py::CertificateConfig::default_bundle",
-    "src/rlrmp/analysis/math/linear_round_trip.py::LinearTrainingConfig::default_bundle",
+    "src/rlrmp/analysis/math/linear_round_trip.py::LinearOptimizationConfig::default_bundle",
     "src/rlrmp/analysis/math/linear_round_trip.py::TeacherFitConfig::default_bundle",
     "src/rlrmp/analysis/math/output_feedback.py::OutputFeedbackConfig::default_bundle",
     "src/rlrmp/analysis/pipelines/cs_stochastic_phase3.py::Phase3StochasticConfig::default_bundle",
     "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py::DelayedReachEvalBankSpec::default_bundle",
     "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py::SteadyStatePerturbationBankConfig::default_bundle",
-    "src/rlrmp/analysis/pipelines/output_feedback_rollout_recovery.py::EigenspectrumCoverageConfig::default_bundle",
-    "src/rlrmp/analysis/pipelines/output_feedback_rollout_recovery.py::ObserverErrorCoverageConfig::default_bundle",
-    "src/rlrmp/analysis/pipelines/output_feedback_rollout_recovery.py::RolloutRecoveryCondition::default_bundle",
     "src/rlrmp/analysis/robustness_margin.py::RobustnessMarginParams::default_bundle",
     "src/rlrmp/cloud/modal_runner.py::NominalGruRunConfig::default_bundle",
+    "src/rlrmp/eval/output_feedback_rollout_recovery.py::EigenspectrumCoverageConfig::default_bundle",
+    "src/rlrmp/eval/output_feedback_rollout_recovery.py::ObserverErrorCoverageConfig::default_bundle",
+    "src/rlrmp/eval/output_feedback_rollout_recovery.py::RolloutRecoveryCondition::default_bundle",
     "src/rlrmp/model/stochastic_runtime.py::StochasticRuntimeConfig::default_bundle",
+    "src/rlrmp/train/distillation_native/closed_loop_kernel.py::ClosedLoopLossWeights::default_bundle",
+    "src/rlrmp/train/distillation_native/losses.py::CSH0DistillationConfig::default_bundle",
+    "src/rlrmp/train/distillation_native/losses.py::DistillationLossWeights::default_bundle",
+    "src/rlrmp/train/executor/checkpoints.py::AdaptiveEpsilonState::default_bundle",
+    "src/rlrmp/train/training_configs.py::BroadFullStateEpsilonTrainingConfig::default_bundle",
+    "src/rlrmp/train/training_configs.py::ClosedLoopDistillationConfig::default_bundle",
+    "src/rlrmp/train/training_configs.py::CsNominalGruConfig::default_bundle",
+    "src/rlrmp/train/training_configs.py::FixedTargetPerturbationTrainingConfig::default_bundle",
+    "src/rlrmp/train/training_configs.py::GuidedDistillationConfig::default_bundle",
+    "src/rlrmp/train/training_configs.py::MinimaxConfig::default_bundle",
+    "src/rlrmp/train/training_configs.py::PgdFullStateEpsilonTrainingConfig::default_bundle",
+    "src/rlrmp/train/training_configs.py::PolicyFullStateEpsilonTrainingConfig::default_bundle",
+    "src/rlrmp/train/training_configs.py::TargetRelativeMultiTargetTrainingConfig::default_bundle",
 )
 
 _PURPOSE_CONSTANT_ALLOWLIST = (
@@ -307,14 +307,10 @@ _PURPOSE_CONSTANT_ALLOWLIST = (
 
 DATA_IN_CODE_ALLOWLIST: dict[str, str] = {
     **_empirical_allowlist(),
-    ("src/rlrmp/train/closed_loop_distillation.py::smoke_train_command::argv_rows"): (
-        "The numeric literals are fixed one-batch smoke safety bounds, not experiment "
-        "parameters; the governed run spec remains caller-supplied through --run-spec."
-    ),
     **{
         key: (
-            "Explicitly excluded config-tier surface owned by issue cd137d8; it remains "
-            "visible here until that unified training-schema and pre-native retirement work lands."
+            "Canonical config or config-materialization surface established by issue cd137d8; "
+            "the values are named training conventions owned by the unified typed schema."
         )
         for key in _CD137D8_CONFIG_TIER_ALLOWLIST
     },
@@ -354,8 +350,7 @@ def default_spec_constructor_names(repo_root: Path | None = None) -> frozenset[s
         repo_root = Path(__file__).resolve().parents[3]
     for relpath in (
         "src/rlrmp/runtime/training_run_specs.py",
-        "src/rlrmp/train/minimax.py",
-        "src/rlrmp/train/guided_distillation.py",
+        "src/rlrmp/train/minimax_native/method.py",
     ):
         path = repo_root / relpath
         if not path.exists():

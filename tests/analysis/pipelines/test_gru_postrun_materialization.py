@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
 import rlrmp
 from feedbax.analysis.bundles import execute_staged_analysis_bundle, load_analysis_bundle
 from feedbax.contracts.manifest import (
@@ -118,6 +119,16 @@ def test_plan_gru_postrun_materialization_routes_tracked_and_bulk_outputs(
         / "notes"
         / "gru_postrun_materialization_fullqrf_validation_selected_regeneration_spec.json"
     )
+
+
+def test_postrun_rejects_retired_perturbation_bulk_writes(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="direct perturbation bulk-array writes are retired"):
+        postrun.materialize_gru_postrun_analysis(
+            experiment="unit",
+            run_ids=("run-a",),
+            write_perturbation_bulk_arrays=True,
+            repo_root=tmp_path,
+        )
 
 
 def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materializers(
@@ -297,20 +308,10 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         / "gru_standard_certificates_fullqrf_validation_selected_manifest.json"
     )
     assert calls["perturbation"]["n_rollout_trials"] == postrun.DEFAULT_N_ROLLOUT_TRIALS
-    assert calls["perturbation"]["output_path"] == (
-        tmp_path
-        / "results"
-        / "5f70333"
-        / "notes"
-        / "gru_perturbation_response_fullqrf_validation_selected_manifest.json"
-    )
-    assert calls["perturbation"]["bulk_dir"] == (
-        tmp_path
-        / "_artifacts"
-        / "5f70333"
-        / "perturbation_response"
-        / "gru_fullqrf_validation_selected"
-    )
+    assert "output_path" not in calls["perturbation"]
+    assert "note_path" not in calls["perturbation"]
+    assert "bulk_dir" not in calls["perturbation"]
+    assert "write_bulk_arrays" not in calls["perturbation"]
     assert calls["perturbation"]["feedback_scale_manifest_path"] == (
         tmp_path
         / "results"
@@ -357,13 +358,7 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         / "notes"
         / "gru_evaluation_diagnostics_fullqrf_validation_selected_regeneration_spec.json"
     )
-    assert calls["perturbation"]["regeneration_spec_path"] == (
-        tmp_path
-        / "results"
-        / "5f70333"
-        / "notes"
-        / "gru_perturbation_response_fullqrf_validation_selected_manifest_regeneration_spec.json"
-    )
+    assert "regeneration_spec_path" not in calls["perturbation"]
     assert calls["feedback"]["regeneration_spec_path"] == (
         tmp_path
         / "results"

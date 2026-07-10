@@ -64,19 +64,28 @@ from rlrmp.analysis.pipelines.gru_postrun_materialization import (
     materialize_optional_perturbation_response,
     plan_gru_postrun_materialization,
 )
+from rlrmp.analysis.pipelines.gru_perturbation_bank import PerturbationBankParams
 from rlrmp.analysis.pipelines.hinf_phenotype_sidecar import (
     DEFAULT_SCOPE as DEFAULT_HINF_PHENOTYPE_SCOPE,
     build_hinf_phenotype_sidecar,
     load_hinf_phenotype_sources,
     write_hinf_phenotype_sidecar,
 )
-from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
+from rlrmp.eval.output_feedback_rollout_recovery import (
     ISSUE_ID as OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ISSUE_ID,
+    LinearOptimizationSpec,
+    OutputFeedbackConfigSpec,
+    RolloutRecoveryResult,
+    RolloutRecoveryCondition,
+    RolloutRecoveryConditionSpec,
     materialize_output_feedback_rollout_recovery,
 )
 from rlrmp.analysis.pipelines.sisu_spectrum_diagnostics import (
     SISU_SPECTRUM_ANALYSIS_TYPE,
+    SISU_SPECTRUM_ANALYSIS_PARAMS_SCHEMA,
     SISU_SPECTRUM_EVALUATION_TYPE,
+    SISU_SPECTRUM_MANIFEST_SCHEMA,
+    SisuSpectrumAnalysisParams,
     SisuSpectrumEvaluationParams,
     register_sisu_spectrum_recipes,
     sisu_spectrum_evaluation_spec_params,
@@ -87,6 +96,13 @@ from rlrmp.eval.recipes import (
     FEEDBACK_ABLATION_EVALUATION_TYPE,
     PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
 )
+from rlrmp.eval.output_feedback_rollout_recovery import (
+    OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_EVALUATION_TYPE,
+    OutputFeedbackRolloutRecoveryEvaluationParams,
+    register_output_feedback_rollout_recovery_evaluation_recipe,
+)
+from rlrmp.analysis.math.linear_round_trip import LinearOptimizationConfig
+from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig
 from rlrmp.eval.policy_diagnostics import (
     PolicyAbsentInputBlock,
     PolicyInputSchema,
@@ -279,6 +295,7 @@ class PerturbationClassResponseAnalysisParams(BaseModel):
     schema_id: str | None = None
     schema_version: str | None = None
     family: str
+    bank_params: PerturbationBankParams
     row_ids: list[str] | None = None
     expected_calibration_identity: dict[str, Any] | None = None
     calibration_identity: dict[str, Any] | None = None
@@ -293,7 +310,7 @@ class PerturbationBankAggregateAnalysisParams(BaseModel):
     schema_version: str | None = None
     issue: str | None = None
     source_experiment: str | None = None
-    bank_mode: str | None = None
+    bank_params: PerturbationBankParams
 
 
 class OutputFeedbackRolloutRecoveryParams(BaseModel):
@@ -672,6 +689,11 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
         replace=True,
     )
     register_params_model(
+        SISU_SPECTRUM_ANALYSIS_TYPE,
+        SisuSpectrumAnalysisParams,
+        replace=True,
+    )
+    register_params_model(
         FEEDBACK_ABLATION_ANALYSIS_TYPE,
         FeedbackAblationAnalysisParams,
         replace=True,
@@ -762,6 +784,7 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
         output_feedback_rollout_recovery_recipe,
         replace=replace,
     )
+    register_output_feedback_rollout_recovery_evaluation_recipe(replace=replace)
     register_sisu_spectrum_recipes(replace=replace)
 
 
@@ -909,6 +932,7 @@ def gru_postrun_spec(
 def perturbation_class_response_spec(
     *,
     family: str,
+    bank_params: PerturbationBankParams | Mapping[str, Any],
     row_ids: Sequence[str] | None = None,
     evaluation_manifest_id: str | None = None,
     evaluation_manifest_uri: Path | str | None = None,
@@ -916,7 +940,10 @@ def perturbation_class_response_spec(
 ) -> AnalysisRunSpec:
     """Return declarative spec data for one perturbation-class response leaf."""
 
-    params: dict[str, Any] = {"family": family}
+    params: dict[str, Any] = {
+        "family": family,
+        "bank_params": _canonical_perturbation_bank_params(bank_params),
+    }
     if row_ids is not None:
         params["row_ids"] = list(row_ids)
     if expected_calibration_identity is not None:
@@ -934,20 +961,20 @@ def perturbation_class_response_spec(
 
 def perturbation_bank_aggregate_spec(
     *,
+    bank_params: PerturbationBankParams | Mapping[str, Any],
     leaf_manifest_refs: Sequence[ParentRef] = (),
     issue: str | None = None,
     source_experiment: str | None = None,
-    bank_mode: str | None = None,
 ) -> AnalysisRunSpec:
     """Return declarative spec data for aggregating perturbation-class leaves."""
 
-    params: dict[str, Any] = {}
+    params: dict[str, Any] = {
+        "bank_params": _canonical_perturbation_bank_params(bank_params),
+    }
     if issue is not None:
         params["issue"] = issue
     if source_experiment is not None:
         params["source_experiment"] = source_experiment
-    if bank_mode is not None:
-        params["bank_mode"] = bank_mode
     return AnalysisRunSpec(
         analysis_type=PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE,
         inputs=list(leaf_manifest_refs),
@@ -1063,7 +1090,11 @@ def sisu_spectrum_spec(
     return AnalysisRunSpec(
         analysis_type=SISU_SPECTRUM_ANALYSIS_TYPE,
         inputs=inputs,
-        params={},
+        params=SisuSpectrumAnalysisParams(
+            schema_id=SISU_SPECTRUM_ANALYSIS_PARAMS_SCHEMA,
+            schema_version="v1",
+            manifest_schema=SISU_SPECTRUM_MANIFEST_SCHEMA,
+        ).model_dump(mode="json"),
     )
 
 
@@ -1116,9 +1147,34 @@ def feedback_quality_lens_spec(
     )
 
 
+def output_feedback_rollout_recovery_evaluation_spec(
+    *,
+    conditions: tuple[RolloutRecoveryCondition, ...] | None = None,
+    training_config: LinearOptimizationConfig = LinearOptimizationConfig(n_steps=500),
+    output_config: OutputFeedbackConfig = OutputFeedbackConfig(),
+) -> EvaluationRunSpec:
+    """Return the canonical analytical rollout-recovery evaluation spec."""
+
+    params = OutputFeedbackRolloutRecoveryEvaluationParams(
+        conditions=(
+            None
+            if conditions is None
+            else tuple(RolloutRecoveryConditionSpec.from_runtime(item) for item in conditions)
+        ),
+        training_config=LinearOptimizationSpec.from_runtime(training_config),
+        output_config=OutputFeedbackConfigSpec.from_runtime(output_config),
+    )
+    return EvaluationRunSpec(
+        evaluation_type=OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_EVALUATION_TYPE,
+        params=params.model_dump(mode="json"),
+    )
+
+
 def output_feedback_rollout_recovery_spec(
     *,
     issue_id: str = OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ISSUE_ID,
+    evaluation_manifest_id: str | None = None,
+    evaluation_manifest_uri: Path | str | None = None,
     discretization: str | None = None,
     lane: str | None = None,
     note_output: Path | str | None = None,
@@ -1139,8 +1195,13 @@ def output_feedback_rollout_recovery_spec(
     _set_optional_path_param(params, "manifest_output", manifest_output)
     _set_optional_path_param(params, "artifact_output", artifact_output)
     _set_optional_path_param(params, "repo_root", repo_root)
+    inputs = _evaluation_parent_refs(
+        evaluation_manifest_id=evaluation_manifest_id,
+        evaluation_manifest_uri=evaluation_manifest_uri,
+    )
     return AnalysisRunSpec(
         analysis_type=OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE,
+        inputs=inputs,
         params=params,
     )
 
@@ -1454,27 +1515,38 @@ def feedback_quality_feedback_ablation_recipe(
 def output_feedback_rollout_recovery_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
-    _inputs: Sequence[Any],
+    inputs: Sequence[Any],
 ) -> AnalysisRecipeResult:
-    """Build the declarative output-feedback rollout-recovery recipe."""
+    """Build rollout-recovery analysis from governed evaluation states."""
 
     params = OutputFeedbackRolloutRecoveryParams.model_validate(spec.params).model_dump(
         exclude_none=True
     )
+    evaluation_input = _primary_evaluation_input(inputs)
+    if evaluation_input is None or _resolved_input_states(evaluation_input) is None:
+        raise ValueError(
+            "output-feedback rollout recovery requires an EvaluationRunManifest input"
+        )
     return _manifest_recipe(
         analysis_name="output_feedback_rollout_recovery",
         materializer=lambda context, data: _materialize_output_feedback_rollout_recovery(
             context,
             params,
+            result=_rollout_recovery_result_from_analysis_data(data),
         ),
         artifact_role="rlrmp-output-feedback-rollout-recovery",
         logical_name="output_feedback_rollout_recovery.json",
         schema_boundary=(
-            "rlrmp-owned output-feedback bridge diagnostic payload; analytical "
-            "rollouts stay analysis-internal per e1ad278 Q2"
+            "rlrmp-owned output-feedback bridge diagnostic payload derived from "
+            "governed analytical evaluation states"
         ),
-        data=_empty_analysis_data(),
+        data=_analysis_data_from_evaluation_input(evaluation_input),
     )
+
+
+output_feedback_rollout_recovery_recipe.EVAL_DEPENDENCIES = (
+    OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_EVALUATION_TYPE,
+)
 
 
 def feedback_quality_lens_recipe(
@@ -2315,7 +2387,7 @@ def _feedback_quality_component_registrations() -> dict[str, FeedbackQualityComp
             logical_name="feedback_quality/feedback_ablation_status.json",
             live_materializer=(
                 "rlrmp.analysis.pipelines.gru_feedback_ablation."
-                "materialize_gru_feedback_ablation"
+                "execute_feedback_ablation_pipeline"
             ),
             gating_label="include flag and applicable component",
             gating_expr=_feedback_quality_component_gate_expr("feedback_ablation"),
@@ -2429,6 +2501,8 @@ def _feedback_quality_live_output(
             "reason": raw_output.get("reason", f"{name}_materializer_skipped"),
             "detail": dict(raw_output),
         }
+    if raw_output.get("status") == "materialized":
+        return dict(raw_output)
     return dict(refreshed)
 
 
@@ -2667,9 +2741,12 @@ def _feedback_quality_component_outputs_from_inputs(
 def _materialize_output_feedback_rollout_recovery(
     context: AnalysisRunContext,
     params: Mapping[str, Any],
+    *,
+    result: RolloutRecoveryResult,
 ) -> MaterializationResult:
     issue_id = str(params.get("issue_id", OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ISSUE_ID))
     materialized = materialize_output_feedback_rollout_recovery(
+        result,
         issue_id=issue_id,
         discretization=str(params.get("discretization", DEFAULT_DISCRETIZATION)),
         lane=str(params.get("lane", DEFAULT_LANE)),
@@ -2719,11 +2796,8 @@ def _materialize_output_feedback_rollout_recovery(
         "legacy_output_hints": legacy_hints,
         "declarative_analysis": _declarative_metadata(context),
         "evaluation_dependency_policy": {
-            "status": "not_applicable",
-            "reason": (
-                "Analytical output-feedback rollouts take fitted gains, not "
-                "model artifacts, and remain analysis-internal per e1ad278 Q2."
-            ),
+            "status": "consumed",
+            "evaluation_type": OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_EVALUATION_TYPE,
         },
     }
     return MaterializationResult(
@@ -2842,6 +2916,7 @@ def _perturbation_class_response_payload(
             "perturbation class response requires "
             f"{PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE!r} eval states"
         )
+    bank_params = _validated_perturbation_bank_params(states, params)
     class_index_map = states.get("class_index_map")
     if not isinstance(class_index_map, Mapping):
         raise ValueError("perturbation response eval states lack class_index_map")
@@ -2878,6 +2953,7 @@ def _perturbation_class_response_payload(
         "schema_id": PERTURBATION_CLASS_RESPONSE_SCHEMA_ID,
         "schema_version": PERTURBATION_CLASS_RESPONSE_SCHEMA_VERSION,
         "family": family,
+        "bank_params": bank_params,
         "row_ids": list(perturbation_ids),
         "row_indices": [row_index_by_id[row_id] for row_id in perturbation_ids],
         "row_index_by_perturbation_id": row_index_by_id,
@@ -2891,6 +2967,30 @@ def _perturbation_class_response_payload(
         "runs": runs,
         "aggregate_base": _aggregate_base_from_eval_states(states),
     }
+
+
+def _canonical_perturbation_bank_params(
+    value: PerturbationBankParams | Mapping[str, Any] | Any,
+) -> dict[str, Any]:
+    """Return one JSON-stable perturbation-bank parameter contract."""
+
+    return PerturbationBankParams.model_validate(value).model_dump(
+        mode="json",
+        exclude_none=True,
+    )
+
+
+def _validated_perturbation_bank_params(
+    states: Mapping[str, Any],
+    params: Mapping[str, Any],
+) -> dict[str, Any]:
+    requested = _canonical_perturbation_bank_params(params.get("bank_params"))
+    evaluated = _canonical_perturbation_bank_params(states.get("bank_params"))
+    if requested != evaluated:
+        raise ValueError(
+            "perturbation class response bank_params do not match the evaluation contract"
+        )
+    return requested
 
 
 def _selected_perturbation_ids(
@@ -3103,11 +3203,23 @@ def _aggregate_perturbation_class_products(
             "perturbation bank aggregate requires all leaves to share one evaluation "
             f"manifest; got {sorted(eval_ids)}"
         )
+    requested_bank_params = _canonical_perturbation_bank_params(params.get("bank_params"))
+    leaf_bank_params = [
+        _canonical_perturbation_bank_params(product.get("bank_params"))
+        for product in leaf_products
+    ]
+    if any(bank_params != requested_bank_params for bank_params in leaf_bank_params):
+        raise ValueError(
+            "perturbation bank aggregate requires every leaf to use its exact "
+            "bank_params contract"
+        )
     base = dict(leaf_products[0].get("aggregate_base", {}))
     base["schema_version"] = GRU_PERTURBATION_BANK_SCHEMA_VERSION
-    for key in ("issue", "source_experiment", "bank_mode"):
+    for key in ("issue", "source_experiment"):
         if params.get(key) is not None:
             base[key] = params[key]
+    base["bank_mode"] = requested_bank_params["mode"]
+    base["bank_params"] = requested_bank_params
     rows = _aggregate_bank_rows(leaf_products)
     bank = dict(leaf_products[0].get("bank", {}))
     bank["perturbations"] = rows
@@ -3154,10 +3266,14 @@ def _aggregate_leaf_runs(leaf_products: Sequence[Mapping[str, Any]]) -> dict[str
             run["perturbations"] = [
                 dict(row) for row in rows if isinstance(row, Mapping)
             ]
-            run["bulk_files"] = {
+            bulk_files = {
                 **dict(run.get("bulk_files", {}) or {}),
                 **dict(run_payload.get("bulk_files", {}) or {}),
             }
+            if bulk_files:
+                run["bulk_files"] = bulk_files
+            else:
+                run.pop("bulk_files", None)
     for run in runs.values():
         rows = list(run.get("perturbations", ()))
         rows.sort(key=lambda row: int(row.get("class_response_row_index", 0)))
@@ -3209,6 +3325,18 @@ def _analysis_data_from_evaluation_input(evaluation_input: Any | None) -> Analys
         hps={},
         extras=TreeNamespace(),
     )
+
+
+def _rollout_recovery_result_from_analysis_data(
+    data: AnalysisInputData,
+) -> RolloutRecoveryResult:
+    states = data.states.get("evaluation")
+    if not isinstance(states, Mapping):
+        raise ValueError("rollout-recovery evaluation states are unavailable")
+    result = states.get("result")
+    if not isinstance(result, RolloutRecoveryResult):
+        raise ValueError("rollout-recovery evaluation states lack a typed result")
+    return result
 
 
 def _evaluation_input_from_analysis_data(data: AnalysisInputData) -> _AnalysisEvaluationInput | None:
@@ -3806,6 +3934,7 @@ __all__ = [
     "GRU_POSTRUN_ANALYSIS_TYPE",
     "GRU_STANDARD_ANALYSIS_TYPE",
     "OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE",
+    "OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_EVALUATION_TYPE",
     "PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE",
     "PerturbationBankAggregateAnalysisParams",
     "PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE",
@@ -3822,6 +3951,7 @@ __all__ = [
     "gru_standard_certificate_spec",
     "gru_standard_certificate_recipe",
     "output_feedback_rollout_recovery_recipe",
+    "output_feedback_rollout_recovery_evaluation_spec",
     "output_feedback_rollout_recovery_spec",
     "perturbation_bank_aggregate_recipe",
     "perturbation_bank_aggregate_spec",

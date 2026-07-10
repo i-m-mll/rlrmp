@@ -56,6 +56,12 @@ SANCTIONED_RUN_SPEC_EMITTER_NAMES = frozenset(
     }
 )
 RUN_SPEC_NAME_PATTERN = re.compile(r"(run_spec|spec_path|run_path)", re.IGNORECASE)
+SCHEMA_GENERATED_PARSER_MODULES = frozenset(
+    {
+        "src/rlrmp/train/config_cli.py",
+        "src/rlrmp/train/run_spec_authoring.py",
+    }
+)
 
 
 def test_branded_graph_spec_component_ids_match_allowlist() -> None:
@@ -87,7 +93,9 @@ def test_argparse_training_entry_points_match_allowlist() -> None:
         f"entry: {new_instances}. Add an entry to "
         f"{ALLOWLIST_PATH.relative_to(REPO_ROOT)} naming the owning ledger issue."
     )
-    assert found, "Argparse entry-point scan found zero modules; scan scope may be broken"
+    # This retired-pattern inventory may reach zero now that canonical training
+    # CLIs are generated from registered config schemas. The negative canary
+    # below still proves a new argparse-first launcher is rejected.
 
 
 def test_hand_rolled_run_spec_writer_sites_match_allowlist() -> None:
@@ -208,8 +216,9 @@ def _scan_argparse_entry_points() -> set[str]:
     found: set[str] = set()
     for path in _training_entry_point_domain_files():
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        if _constructs_argument_parser(tree):
-            found.add(path.relative_to(REPO_ROOT).as_posix())
+        relpath = path.relative_to(REPO_ROOT).as_posix()
+        if _constructs_argument_parser(tree) and relpath not in SCHEMA_GENERATED_PARSER_MODULES:
+            found.add(relpath)
     return found
 
 

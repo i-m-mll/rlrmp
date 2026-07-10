@@ -29,7 +29,7 @@ from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     materialize_reference,
 )
-from rlrmp.analysis.math.linear_round_trip import LinearTrainingConfig
+from rlrmp.analysis.math.linear_round_trip import LinearOptimizationConfig
 from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig
 from rlrmp.analysis.pipelines.output_feedback_interpolated_starts import (
     DEFAULT_CONDITION as DEFAULT_ALPHA_LBFGS_CONDITION,
@@ -37,7 +37,7 @@ from rlrmp.analysis.pipelines.output_feedback_interpolated_starts import (
     run_interpolated_start_probe,
     result_summary as alpha_result_summary,
 )
-from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
+from rlrmp.eval.output_feedback_rollout_recovery import (
     adamw_optimizer_whitened,
     result_summary as rollout_result_summary,
     run_output_feedback_rollout_recovery,
@@ -133,7 +133,7 @@ def materialize(
     start = time.perf_counter()
     reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
     output_config = OutputFeedbackConfig()
-    training_config = LinearTrainingConfig()
+    training_config = LinearOptimizationConfig()
 
     scratch_conditions = tuple(
         adamw_optimizer_whitened(

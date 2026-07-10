@@ -23,7 +23,6 @@ def main() -> None:
     parser.add_argument("--label", action="append", dest="labels")
     parser.add_argument("--n-rollout-trials", type=int, default=8)
     parser.add_argument("--no-evaluate", action="store_true")
-    parser.add_argument("--no-bulk-arrays", action="store_true")
     parser.add_argument("--bank-mode", choices=("raw", "calibrated"), default="raw")
     parser.add_argument(
         "--calibration-level",
@@ -35,9 +34,6 @@ def main() -> None:
         "--calibration-reach",
         help="Calibrated-bank reach label or fixed reach length in meters.",
     )
-    parser.add_argument("--output-path", type=Path)
-    parser.add_argument("--note-path", type=Path)
-    parser.add_argument("--bulk-dir", type=Path)
     parser.add_argument(
         "--feedback-scale-manifest",
         type=Path,
@@ -65,10 +61,6 @@ def main() -> None:
         calibration_level=args.calibration_levels,
         calibration_reach=args.calibration_reach,
         evaluate=not args.no_evaluate,
-        write_bulk_arrays=not args.no_bulk_arrays,
-        output_path=args.output_path,
-        note_path=args.note_path,
-        bulk_dir=args.bulk_dir,
         feedback_scale_manifest_path=args.feedback_scale_manifest,
         extlqg_physical_dim=args.extlqg_physical_dim,
         repo_root=REPO_ROOT,
@@ -76,7 +68,7 @@ def main() -> None:
     bank_summary = manifest.get("bank_summary", {})
     n_bank_rows = bank_summary.get("n_perturbations", "unknown")
     print(
-        f"Wrote perturbation-response manifest for {len(manifest['runs'])} run(s) "
+        f"Materialized perturbation-response payload for {len(manifest['runs'])} run(s) "
         f"with {n_bank_rows} bank row(s)."
     )
 
