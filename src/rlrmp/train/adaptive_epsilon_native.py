@@ -120,8 +120,8 @@ class AdaptiveEpsilonMethodPayload(BaseModel):
     application_ramp_origin: BatchScheduleOriginSpec = Field(
         default_factory=lambda: BatchScheduleOriginSpec(kind="segment_start")
     )
-    application_ramp_start_batch: int = Field(default=0, ge=0)
-    application_ramp_end_batch: int = Field(default=0, ge=0)
+    application_ramp_start_batch: int = Field(ge=0)
+    application_ramp_end_batch: int = Field(ge=0)
     pgd_inner_maximizer: dict[str, Any]
     checkpointing: dict[str, Any]
     lr_continuation_mode: LRContinuationMode | None = None
@@ -295,6 +295,10 @@ def adaptive_epsilon_method_payload(run_spec: Mapping[str, Any]) -> MethodPayloa
         damage_schedule=_mapping(adaptive, "damage_schedule"),
         lambda_update=_mapping(adaptive, "lambda_update"),
         outer_adversarial_weight=_mapping(adaptive, "outer_adversarial_weight"),
+        application_ramp_start_batch=0,
+        application_ramp_end_batch=int(
+            _mapping(adaptive, "outer_adversarial_weight").get("ramp_batches", 0)
+        ),
         pgd_inner_maximizer=_mapping(
             _mapping(hps, "broad_epsilon_pgd_training"),
             "inner_maximizer",
