@@ -165,9 +165,7 @@ def attach_cs_supervised_checkpoint_continuation(
     template's new tail for the explicitly declared diagnostic leaves.
     """
 
-    if not continuation.resume or (
-        continuation.source_target_batches == continuation.stop_target_batches
-    ):
+    if not continuation.resume:
         return training_spec
     return declare_cs_supervised_checkpoint_continuation(
         training_spec,

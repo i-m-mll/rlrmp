@@ -297,6 +297,27 @@ def test_cs_supervised_continuation_does_not_change_exact_parity_spec() -> None:
     assert attach_cs_supervised_checkpoint_continuation(training_spec, fresh) is training_spec
 
 
+def test_target_bound_launch_fork_still_attaches_runnable_continuation() -> None:
+    training_spec = feedbax_training_run_spec_from_payload(
+        json.loads(_baseline_recipe_path().read_text(encoding="utf-8"))
+    )
+    launch_fork = LaunchContinuation(
+        resume=True,
+        resume_source="/tmp/launch-fork/latest.json",
+        completed_batches=12_000,
+        stop_target_batches=12_200,
+        continuation_batches=200,
+        source_target_batches=12_200,
+    )
+
+    attached = attach_cs_supervised_checkpoint_continuation(training_spec, launch_fork)
+
+    request = attached.checkpoint_progress.continuation
+    assert request is not None
+    assert request.source_completed_batches == 12_000
+    assert request.target_total_batches == 12_200
+
+
 def test_cs_supervised_resume_registry_uses_attached_custody_contract() -> None:
     recipe_path = Path(__file__).resolve().parents[1] / "results/cb3685a/runs/seam_probe.json"
     parser = build_parser()
