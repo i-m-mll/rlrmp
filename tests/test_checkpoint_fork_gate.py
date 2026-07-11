@@ -377,6 +377,41 @@ def test_lr_continuation_reporter_rejects_phase_coordinate_as_batch_total(
         )
 
 
+def test_adaptive_restart_lr_report_uses_target_optimizer_count(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    row_spec = _adaptive_continuation_spec(tmp_path)
+    source_root = tmp_path / "source"
+    transaction = source_root / "transactions" / "tx-source"
+    transaction.mkdir(parents=True)
+    manifest = {
+        "completed_training_batches": 2,
+        "slots": [],
+    }
+    manifest_path = transaction / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    source_root.joinpath("latest.json").write_text(
+        json.dumps({"manifest_relative_path": "transactions/tx-source/manifest.json"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "rlrmp.runtime.lr_continuation._load_manifest_slot",
+        lambda *_args, **_kwargs: pytest.fail("restart must not inspect nominal optimizer state"),
+    )
+
+    points = RlrmpLrContinuationReporter(source_checkpoint_root=source_root).points(
+        source_manifest=manifest,
+        row_payload=row_spec.model_dump(mode="json"),
+        row_spec=row_spec,
+        declared_mode="restart",
+    )
+
+    assert points
+    assert {point["mode"] for point in points} == {"restart"}
+    assert {point["optimizer_count_at_current_step"] for point in points} == {0}
+
+
 def test_checkpoint_fork_gate_has_no_lr_reporter_implementation_residue() -> None:
     from rlrmp.runtime import checkpoint_fork_gate
 

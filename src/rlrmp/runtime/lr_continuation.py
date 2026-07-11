@@ -121,21 +121,24 @@ def _adaptive_epsilon_lr_continuation_points(
         lr_continuation_mode=declared_mode,
     )
     native = runtime.component("adaptive_epsilon")
-    raw_optimizer_slot = _load_manifest_slot(
-        source_manifest_path,
-        source_manifest,
-        OPTIMIZER,
-    )
-    optimizer_state = (
-        deserialize_pytree_slot(
-            raw_optimizer_slot.payload,
-            native.optimizer_template,
-            slot=OPTIMIZER,
+    if declared_mode == "restart":
+        restored_count = optimizer_count_at_current_step(native.optimizer_template)
+    else:
+        raw_optimizer_slot = _load_manifest_slot(
+            source_manifest_path,
+            source_manifest,
+            OPTIMIZER,
         )
-        if hasattr(raw_optimizer_slot, "payload")
-        else raw_optimizer_slot
-    )
-    restored_count = optimizer_count_at_current_step(optimizer_state)
+        optimizer_state = (
+            deserialize_pytree_slot(
+                raw_optimizer_slot.payload,
+                native.optimizer_template,
+                slot=OPTIMIZER,
+            )
+            if hasattr(raw_optimizer_slot, "payload")
+            else raw_optimizer_slot
+        )
+        restored_count = optimizer_count_at_current_step(optimizer_state)
     context = lr_resume_context_for_mode(
         mode=declared_mode,
         completed_batches=completed_batches,
