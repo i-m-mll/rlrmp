@@ -1,4 +1,6 @@
 from types import SimpleNamespace
+import json
+from pathlib import Path
 
 import jax.numpy as jnp
 import pytest
@@ -47,3 +49,14 @@ def test_validate_launch_fork_requires_row_bound_provenance() -> None:
     )
     with pytest.raises(ValueError, match="wrong matrix row"):
         validate_launch_fork(loaded, row_id="flat_3e-5")
+
+
+def test_stage2_launch_manifest_executes_full_training() -> None:
+    manifest = json.loads(
+        Path("results/c6c5997/deploy/stage2_rows_manifest.json").read_text()
+    )
+    for row in manifest["rows"]:
+        command = row["command"]
+        assert "_run_full_training_from_context" in command
+        assert '"--resume"' in command
+        assert "scripts/train_cs_nominal_gru.py --run-spec" not in command

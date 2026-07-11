@@ -89,12 +89,14 @@ def main() -> None:
             optimizer_template=native.optimizer_template,
             adaptive_initial_slots=target_initial_slots,
         )
+        extended_optimizer = extend_optimizer_histories(
+            source_slots[OPTIMIZER], adapter.continuation_slot_templates()[OPTIMIZER]
+        )
         target_spec = declare_cs_supervised_checkpoint_continuation(
             cs_custody_training_spec(target_context.run_spec),
             source_completed_batches=SOURCE_COMPLETED_BATCHES,
             target_total_batches=TARGET_TOTAL_BATCHES,
         )
-        continuation = target_spec.checkpoint_progress.continuation
         target_barrier = "after_adaptive_epsilon_train_chunk"
         barrier_mapping = CheckpointForkBarrierMapping(
             source_barrier="after_train_chunk",
@@ -116,8 +118,13 @@ def main() -> None:
             target_phase_program=target_spec.worker_execution.method_contract.phase_program,
             expected_slots=target_initial_slots,
             barrier_mapping=barrier_mapping,
-            continuation_slot_templates=adapter.continuation_slot_templates(),
-            continuation_request=continuation,
+            source_slot_transforms={OPTIMIZER: _optimizer_transform(extended_optimizer)},
+            source_transform_metadata={OPTIMIZER: {
+                "identity": "rlrmp.stage2_launch_fork.extend_histories.v1",
+                "parameters": {"source_completed_batches": SOURCE_COMPLETED_BATCHES,
+                               "target_total_batches": TARGET_TOTAL_BATCHES,
+                               "history_indices": list(HISTORY_INDICES)},
+            }},
             target_slot_transform=adapter.transform,
             target_transform_metadata=adapter.transform_metadata,
             target_transformed_slots=adapter.target_transformed_slots,
@@ -171,6 +178,13 @@ def extend_optimizer_histories(source_optimizer: object, target_optimizer: objec
             raise ValueError(f"optimizer history {index} target template ABI mismatch")
         extended[index] = jnp.concatenate((source, target[..., SOURCE_COMPLETED_BATCHES:]), axis=-1)
     return tuple(extended)
+
+
+def _optimizer_transform(target_optimizer: object):
+    def transform(slots: dict[str, object]) -> dict[str, object]:
+        return {**slots, OPTIMIZER: target_optimizer}
+
+    return transform
 
 
 def validate_launch_fork(loaded: object, *, row_id: str) -> None:
