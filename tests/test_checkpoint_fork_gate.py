@@ -32,6 +32,8 @@ from rlrmp.runtime.checkpoint_fork_gate import (
 )
 from rlrmp.runtime.checkpoint_fork_gate import (
     _assert_payload_lr_continuation_mode,
+    _assert_stage2_lambda_update_contract,
+    _canonical_task_identity_hash,
     _ratio_setpoint_prelaunch_report,
     format_ratio_setpoint_report,
     load_matrix,
@@ -40,10 +42,16 @@ from rlrmp.runtime.lr_continuation import RlrmpLrContinuationReporter
 from rlrmp.train.adaptive_epsilon_native import adaptive_epsilon_method_ref
 
 
-def _training_run_payload() -> dict[str, object]:
+def _training_run_payload(
+    *,
+    task_identity: dict[str, object] | None = None,
+) -> dict[str, object]:
+    task_params: dict[str, object] = {"n_steps": 4}
+    if task_identity is not None:
+        task_params.update(deepcopy(task_identity))
     spec = TrainingRunSpec(
         graph={"inline": {"nodes": {}, "wires": [], "input_ports": [], "output_ports": []}},
-        task=TaskSpec(type="ReachingTask", params={"n_steps": 4}),
+        task=TaskSpec(type="ReachingTask", params=task_params),
         training_config=TrainingConfig(n_batches=2, batch_size=3, learning_rate=0.01),
         objective=ObjectiveSlotSpec(
             loss=LossTermSpec(type="target_state", label="target", selector="output")
@@ -80,14 +88,29 @@ def _write_matrix(
 ) -> None:
     source_identity = _task_identity() if source_identity is None else source_identity
     target_identity = deepcopy(source_identity) if target_identity is None else target_identity
-    metadata: dict[str, object] = {"rlrmp_task_identity": source_identity}
+    source_path = path.parent / "source_run.json"
+    source_path.write_text(
+        json.dumps(
+            {
+                "game_card": source_identity["game_card"],
+                "training_distribution": {
+                    "perturbation_training": source_identity["perturbation_training"],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    metadata: dict[str, object] = {
+        "rlrmp_source_run_spec_ref": source_path.name,
+        "rlrmp_task_identity": _canonical_task_identity_hash(source_identity),
+    }
     if ratio_setpoint is not None:
         metadata["ratio_setpoint"] = ratio_setpoint
     payload = {
         "schema_id": TRAINING_RUN_MATRIX_SPEC_SCHEMA_ID,
         "schema_version": TRAINING_RUN_MATRIX_SPEC_SCHEMA_VERSION,
         "name": "fork gate adapter",
-        "base": {"inline": _training_run_payload()},
+        "base": {"inline": _training_run_payload(task_identity=source_identity)},
         "fork": {
             "source_run_id": "feedbax-training-run:source",
             "lr_continuation": "continue",
@@ -97,14 +120,43 @@ def _write_matrix(
         "rows": [
             {
                 "row_id": "lr_hi",
-                "metadata": {"rlrmp_task_identity": target_identity},
+                "metadata": {
+                    "rlrmp_task_identity": _canonical_task_identity_hash(target_identity),
+                },
                 "overrides": [
-                    {"path": "training_config.learning_rate", "op": "replace", "value": 0.02}
+                    {"path": "training_config.learning_rate", "op": "replace", "value": 0.02},
+                    *_task_identity_overrides(source_identity, target_identity),
                 ],
             }
         ],
     }
     path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _task_identity_overrides(
+    source: dict[str, object],
+    target: dict[str, object],
+) -> list[dict[str, object]]:
+    """Return row patches that mutate actual materialized task-spec leaves."""
+
+    overrides: list[dict[str, object]] = []
+
+    def walk(source_value: object, target_value: object, *, path: str) -> None:
+        if isinstance(source_value, dict) and isinstance(target_value, dict):
+            assert set(source_value) == set(target_value)
+            for key in sorted(source_value):
+                walk(source_value[key], target_value[key], path=f"{path}.{key}")
+            return
+        if source_value != target_value:
+            overrides.append({"path": path, "op": "replace", "value": target_value})
+
+    for subtree in ("game_card", "perturbation_training"):
+        walk(
+            source[subtree],
+            target[subtree],
+            path=f"task.params.{subtree}",
+        )
+    return overrides
 
 
 def _adaptive_epsilon_row_spec(*, payload_mode: str | None) -> TrainingRunSpec:
@@ -117,6 +169,52 @@ def _adaptive_epsilon_row_spec(*, payload_mode: str | None) -> TrainingRunSpec:
                 schema_id="rlrmp.test.adaptive_epsilon_payload",
                 schema_version="v1",
                 payload=payload,
+            ),
+        }
+    )
+
+
+def _stage2_lambda_update_payload(
+    *,
+    eta: float = 0.2,
+    lambda_min: float = 0.002,
+    omit_field: str | None = None,
+) -> dict[str, object]:
+    lambda_update: dict[str, object] = {
+        "interval_batches": 50,
+        "ema_alpha": 0.1,
+        "eta": eta,
+        "max_log_step": 0.15,
+        "deadband_frac": 0.03,
+        "freeze_during_application_ramp": False,
+        "lambda_min": lambda_min,
+    }
+    if omit_field is not None:
+        lambda_update.pop(omit_field)
+    return {
+        "config": {"broad_epsilon_pgd_energy_lambda": 2.0},
+        "lambda_update": lambda_update,
+    }
+
+
+def _stage2_adaptive_epsilon_row_spec(
+    *,
+    eta: float = 0.2,
+    lambda_min: float = 0.002,
+    omit_field: str | None = None,
+) -> TrainingRunSpec:
+    spec = TrainingRunSpec.model_validate(_training_run_payload(task_identity=_task_identity()))
+    return spec.model_copy(
+        update={
+            "method_ref": adaptive_epsilon_method_ref(),
+            "method_payload": MethodPayloadEnvelope(
+                schema_id="rlrmp.test.adaptive_epsilon_payload",
+                schema_version="v1",
+                payload=_stage2_lambda_update_payload(
+                    eta=eta,
+                    lambda_min=lambda_min,
+                    omit_field=omit_field,
+                ),
             ),
         }
     )
@@ -196,16 +294,59 @@ def test_checkpoint_fork_gate_has_no_lr_reporter_implementation_residue() -> Non
     assert "def _adaptive_epsilon_lr_continuation_points" not in source
 
 
-def test_task_identity_gate_rejects_game_card_field_drift(tmp_path: Path) -> None:
+def test_task_identity_gate_rejects_real_row_game_card_leaf_with_derived_hash_labels(
+    tmp_path: Path,
+) -> None:
     matrix_path = tmp_path / "matrix.json"
     target_identity = _task_identity()
     target_identity["game_card"]["plant"]["state_dim"] = 8  # type: ignore[index]
     _write_matrix(matrix_path, target_identity=target_identity)
+    matrix = json.loads(matrix_path.read_text(encoding="utf-8"))
+    assert matrix["metadata"]["rlrmp_task_identity"] == _canonical_task_identity_hash(
+        _task_identity()
+    )
+    assert matrix["rows"][0]["metadata"]["rlrmp_task_identity"] == _canonical_task_identity_hash(
+        target_identity
+    )
 
     with pytest.raises(
         ForkParityError,
         match=(
-            "task identity mismatch row='lr_hi' path='game_card.plant.state_dim': source=6 target=8"
+            "task identity hash mismatch row='lr_hi' path='game_card.plant.state_dim': "
+            ".*source=6 target=8"
+        ),
+    ):
+        fork_checkpoints_with_parity(
+            matrix_path=matrix_path,
+            source_checkpoint_root=tmp_path / "source",
+            targets=[parse_target(f"lr_hi={tmp_path / 'target'}")],
+            parity_output_path=tmp_path / "parity.json",
+            repo_root=tmp_path,
+            skip_fork=True,
+        )
+
+
+def test_task_identity_gate_rejects_real_row_leaf_with_copied_matching_labels(
+    tmp_path: Path,
+) -> None:
+    """Copied labels must not hide a mutation of the actual materialized row task."""
+
+    matrix_path = tmp_path / "matrix.json"
+    target_identity = _task_identity()
+    target_identity["game_card"]["plant"]["state_dim"] = 8  # type: ignore[index]
+    _write_matrix(matrix_path, target_identity=target_identity)
+    payload = json.loads(matrix_path.read_text(encoding="utf-8"))
+    payload["rows"][0]["metadata"]["rlrmp_task_identity"] = payload["metadata"][
+        "rlrmp_task_identity"
+    ]
+    matrix_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(
+        ForkParityError,
+        match=(
+            "task identity label mismatch "
+            "field=row='lr_hi'.metadata.rlrmp_task_identity: "
+            "label='sha256:.*' derived='sha256:"
         ),
     ):
         fork_checkpoints_with_parity(
@@ -227,9 +368,9 @@ def test_task_identity_gate_rejects_perturbation_training_field_drift(tmp_path: 
     with pytest.raises(
         ForkParityError,
         match=(
-            "task identity mismatch row='lr_hi' "
+            "task identity hash mismatch row='lr_hi' "
             "path='perturbation_training.bank.identity': "
-            "source='open-loop-moderate' target='different-bank'"
+            ".*source='open-loop-moderate' target='different-bank'"
         ),
     ):
         fork_checkpoints_with_parity(
@@ -244,20 +385,59 @@ def test_task_identity_gate_rejects_perturbation_training_field_drift(tmp_path: 
 
 def test_task_identity_gate_rejects_missing_target_identity(tmp_path: Path) -> None:
     matrix_path = tmp_path / "matrix.json"
-    payload = {
-        "schema_id": TRAINING_RUN_MATRIX_SPEC_SCHEMA_ID,
-        "schema_version": TRAINING_RUN_MATRIX_SPEC_SCHEMA_VERSION,
-        "name": "missing target identity",
-        "base": {"inline": _training_run_payload()},
-        "fork": {"lr_continuation": "continue"},
-        "metadata": {"rlrmp_task_identity": _task_identity()},
-        "rows": [{"row_id": "lr_hi"}],
-    }
+    _write_matrix(matrix_path)
+    payload = json.loads(matrix_path.read_text(encoding="utf-8"))
+    payload["rows"][0]["metadata"].pop("rlrmp_task_identity")
     matrix_path.write_text(json.dumps(payload), encoding="utf-8")
 
     with pytest.raises(
         ForkParityError,
         match="task identity gate missing row='lr_hi'.metadata.rlrmp_task_identity",
+    ):
+        fork_checkpoints_with_parity(
+            matrix_path=matrix_path,
+            source_checkpoint_root=tmp_path / "source",
+            targets=[parse_target(f"lr_hi={tmp_path / 'target'}")],
+            parity_output_path=tmp_path / "parity.json",
+            repo_root=tmp_path,
+            skip_fork=True,
+        )
+
+
+def test_task_identity_gate_rejects_stale_hash_label(tmp_path: Path) -> None:
+    matrix_path = tmp_path / "matrix.json"
+    _write_matrix(matrix_path)
+    payload = json.loads(matrix_path.read_text(encoding="utf-8"))
+    payload["rows"][0]["metadata"]["rlrmp_task_identity"] = "sha256:stale"
+    matrix_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(
+        ForkParityError,
+        match=(
+            "task identity label mismatch "
+            "field=row='lr_hi'.metadata.rlrmp_task_identity: label='sha256:stale' derived='sha256:"
+        ),
+    ):
+        fork_checkpoints_with_parity(
+            matrix_path=matrix_path,
+            source_checkpoint_root=tmp_path / "source",
+            targets=[parse_target(f"lr_hi={tmp_path / 'target'}")],
+            parity_output_path=tmp_path / "parity.json",
+            repo_root=tmp_path,
+            skip_fork=True,
+        )
+
+
+def test_task_identity_gate_rejects_missing_actual_row_task_subtree(tmp_path: Path) -> None:
+    matrix_path = tmp_path / "matrix.json"
+    _write_matrix(matrix_path)
+    payload = json.loads(matrix_path.read_text(encoding="utf-8"))
+    payload["base"]["inline"]["task"]["params"].pop("perturbation_training")
+    matrix_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(
+        ForkParityError,
+        match="task identity gate missing row='lr_hi'.spec.task.params.perturbation_training",
     ):
         fork_checkpoints_with_parity(
             matrix_path=matrix_path,
@@ -299,6 +479,61 @@ def test_lr_continuation_gate_accepts_declared_restart_payload() -> None:
         row_spec=_adaptive_epsilon_row_spec(payload_mode="restart"),
         declared_mode="restart",
     )
+
+
+def test_stage2_lambda_update_gate_accepts_tracked_retune() -> None:
+    _assert_stage2_lambda_update_contract(
+        row_id="flat_3e-5",
+        row_spec=_stage2_adaptive_epsilon_row_spec(),
+        repo_root=Path(__file__).resolve().parents[1],
+    )
+
+
+def test_stage2_lambda_update_gate_rejects_retune_eta_drift() -> None:
+    with pytest.raises(
+        ForkParityError,
+        match=(
+            "lambda-update gate mismatch row='flat_3e-5' "
+            "field=method_payload.payload.lambda_update.eta: expected=0.2 actual=0.1"
+        ),
+    ):
+        _assert_stage2_lambda_update_contract(
+            row_id="flat_3e-5",
+            row_spec=_stage2_adaptive_epsilon_row_spec(eta=0.1),
+            repo_root=Path(__file__).resolve().parents[1],
+        )
+
+
+def test_stage2_lambda_update_gate_rejects_missing_retuned_field() -> None:
+    with pytest.raises(
+        ForkParityError,
+        match=(
+            "lambda-update gate mismatch row='flat_3e-5' "
+            "field=method_payload.payload.lambda_update.max_log_step: "
+            "expected=0.15 actual=<missing>"
+        ),
+    ):
+        _assert_stage2_lambda_update_contract(
+            row_id="flat_3e-5",
+            row_spec=_stage2_adaptive_epsilon_row_spec(omit_field="max_log_step"),
+            repo_root=Path(__file__).resolve().parents[1],
+        )
+
+
+def test_stage2_lambda_update_gate_rejects_lambda_min_seed_ratio_drift() -> None:
+    with pytest.raises(
+        ForkParityError,
+        match=(
+            "lambda-update gate mismatch row='flat_3e-5' "
+            "field=method_payload.payload.lambda_update.lambda_min: "
+            "expected=0.001 \\* broad_epsilon_pgd_energy_lambda=0.002 actual=0.004"
+        ),
+    ):
+        _assert_stage2_lambda_update_contract(
+            row_id="flat_3e-5",
+            row_spec=_stage2_adaptive_epsilon_row_spec(lambda_min=0.004),
+            repo_root=Path(__file__).resolve().parents[1],
+        )
 
 
 def test_ratio_setpoint_report_includes_required_derivation_components(tmp_path: Path) -> None:

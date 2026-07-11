@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -32,7 +33,13 @@ from rlrmp.train.minimax_native import (
 
 _TASK_IDENTITY_METADATA_KEY = "rlrmp_task_identity"
 _TASK_IDENTITY_SUBTREES = ("game_card", "perturbation_training")
+_TASK_SOURCE_RUN_SPEC_REF_METADATA_KEY = "rlrmp_source_run_spec_ref"
+_TASK_ROW_SPEC_PARAMS_PATH = "task.params"
 _RATIO_SETPOINT_METADATA_KEY = "ratio_setpoint"
+_STAGE2_LAMBDA_UPDATE_CONTRACT_PATH = Path(
+    "results/5cd9feb/runs/stage2_lambda_update_contract.json"
+)
+_ADAPTIVE_EPSILON_METHOD_REF = "rlrmp/adaptive_epsilon_curriculum/v1"
 
 
 @dataclass(frozen=True)
@@ -85,12 +92,13 @@ def fork_checkpoints_with_parity(
         raise ValueError("at least one fork target is required")
     register_rlrmp_training_methods()
     matrix = load_matrix(matrix_path)
+    resolved_repo_root = Path.cwd() if repo_root is None else repo_root
     materialized = materialize_run_matrix(
         matrix,
-        repo_root=Path.cwd() if repo_root is None else repo_root,
+        repo_root=resolved_repo_root,
         method_registry=DEFAULT_TRAINING_METHOD_REGISTRY,
     )
-    _validate_fork_prelaunch_contracts(matrix, materialized)
+    _validate_fork_prelaunch_contracts(matrix, materialized, repo_root=resolved_repo_root)
     ratio_setpoint = _ratio_setpoint_prelaunch_report(matrix)
     target_roots = {target.row_id: target.checkpoint_root for target in targets}
     reporter = RlrmpLrContinuationReporter(source_checkpoint_root=source_checkpoint_root)
@@ -116,47 +124,179 @@ def fork_checkpoints_with_parity(
 def _validate_fork_prelaunch_contracts(
     matrix: TrainingRunMatrixSpec,
     materialized: Any,
+    *,
+    repo_root: Path,
 ) -> None:
     """Fail before any fork write when task or LR continuation contracts drift."""
 
-    source_identity = _task_identity_from_mapping(
-        matrix.metadata,
+    source_identity = _task_identity_from_source_run_spec(matrix, repo_root=repo_root)
+    source_hash = _canonical_task_identity_hash(source_identity)
+    _assert_task_identity_label(
+        label=_task_identity_label_from_mapping(
+            matrix.metadata,
+            path=f"matrix.metadata.{_TASK_IDENTITY_METADATA_KEY}",
+        ),
+        derived_hash=source_hash,
         path=f"matrix.metadata.{_TASK_IDENTITY_METADATA_KEY}",
     )
     row_metadata = {row.row_id: row.metadata for row in matrix.rows}
     for row in materialized.rows:
-        target_identity = _task_identity_from_mapping(
-            row_metadata.get(row.row_id),
-            path=(f"row={row.row_id!r}.metadata.{_TASK_IDENTITY_METADATA_KEY}"),
+        target_identity = _task_identity_from_row_spec(row_id=row.row_id, row_spec=row.spec)
+        target_hash = _canonical_task_identity_hash(target_identity)
+        _assert_task_identity_label(
+            label=_task_identity_label_from_mapping(
+                row_metadata.get(row.row_id),
+                path=(f"row={row.row_id!r}.metadata.{_TASK_IDENTITY_METADATA_KEY}"),
+            ),
+            derived_hash=target_hash,
+            path=f"row={row.row_id!r}.metadata.{_TASK_IDENTITY_METADATA_KEY}",
         )
         _assert_matching_task_identity(
             row_id=row.row_id,
             source_identity=source_identity,
             target_identity=target_identity,
+            source_hash=source_hash,
+            target_hash=target_hash,
         )
         _assert_payload_lr_continuation_mode(
             row_id=row.row_id,
             row_spec=row.spec,
             declared_mode=matrix.fork.lr_continuation if matrix.fork is not None else None,
         )
+        _assert_stage2_lambda_update_contract(
+            row_id=row.row_id,
+            row_spec=row.spec,
+            repo_root=repo_root,
+        )
 
 
-def _task_identity_from_mapping(mapping: Any, *, path: str) -> dict[str, Any]:
+def _task_identity_from_source_run_spec(
+    matrix: TrainingRunMatrixSpec,
+    *,
+    repo_root: Path,
+) -> dict[str, Any]:
+    """Read fork-task subtrees from the source run's tracked outer recipe."""
+
+    source_ref = matrix.metadata.get(_TASK_SOURCE_RUN_SPEC_REF_METADATA_KEY)
+    source_ref_path = f"matrix.metadata.{_TASK_SOURCE_RUN_SPEC_REF_METADATA_KEY}"
+    if not isinstance(source_ref, str) or not source_ref.strip():
+        raise ForkParityError(f"task identity gate missing {source_ref_path}")
+    relative_source_path = Path(source_ref)
+    if relative_source_path.is_absolute():
+        raise ForkParityError(f"task identity gate requires repo-relative {source_ref_path}")
+    source_path = (repo_root / relative_source_path).resolve()
+    try:
+        source_path.relative_to(repo_root.resolve())
+    except ValueError as exc:
+        raise ForkParityError(f"task identity gate rejects escaping {source_ref_path}") from exc
+    try:
+        source = json.loads(source_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ForkParityError(
+            f"task identity gate missing source run spec {source_ref_path}={source_ref!r}"
+        ) from exc
+    except json.JSONDecodeError as exc:
+        raise ForkParityError(
+            f"task identity gate source run spec is not JSON {source_ref_path}={source_ref!r}"
+        ) from exc
+    if not isinstance(source, Mapping):
+        raise ForkParityError(
+            f"task identity gate source run spec must be an object {source_ref_path}={source_ref!r}"
+        )
+    return _task_identity_from_outer_run_spec(
+        source,
+        path=f"source_run_spec={source_ref!r}",
+    )
+
+
+def _task_identity_from_outer_run_spec(
+    run_spec: Mapping[str, Any],
+    *,
+    path: str,
+) -> dict[str, Any]:
+    """Extract source task subtrees from a full or compact RLRMP run recipe."""
+
+    canonical: Mapping[str, Any] = run_spec
+    if not isinstance(canonical.get("game_card"), Mapping):
+        extension = canonical.get("rlrmp_run_spec")
+        if isinstance(extension, Mapping):
+            canonical = extension
+    training_distribution = canonical.get("training_distribution")
+    if not isinstance(training_distribution, Mapping):
+        raise ForkParityError(f"task identity gate missing {path}.training_distribution")
+    return _task_identity_from_subtrees(
+        game_card=canonical.get("game_card"),
+        perturbation_training=training_distribution.get("perturbation_training"),
+        path=path,
+    )
+
+
+def _task_identity_from_row_spec(*, row_id: str, row_spec: Any) -> dict[str, Any]:
+    """Extract the task subtrees carried by one materialized row ``TrainingRunSpec``."""
+
+    task = getattr(row_spec, "task", None)
+    params = getattr(task, "params", None)
+    path = f"row={row_id!r}.spec.{_TASK_ROW_SPEC_PARAMS_PATH}"
+    if not isinstance(params, Mapping):
+        raise ForkParityError(f"task identity gate missing {path}")
+    return _task_identity_from_subtrees(
+        game_card=params.get("game_card"),
+        perturbation_training=params.get("perturbation_training"),
+        path=path,
+    )
+
+
+def _task_identity_from_subtrees(
+    *,
+    game_card: Any,
+    perturbation_training: Any,
+    path: str,
+) -> dict[str, Any]:
+    """Validate and return the two governed task-identity subtrees."""
+
+    values = {
+        "game_card": game_card,
+        "perturbation_training": perturbation_training,
+    }
+    for subtree, value in values.items():
+        if not isinstance(value, Mapping):
+            raise ForkParityError(f"task identity gate missing {path}.{subtree}")
+    return dict(values)
+
+
+def _canonical_task_identity_hash(identity: Mapping[str, Any]) -> str:
+    """Return the canonical JSON SHA-256 for the two exact task subtrees."""
+
+    try:
+        payload = json.dumps(
+            {
+                subtree: identity[subtree]
+                for subtree in _TASK_IDENTITY_SUBTREES
+            },
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ForkParityError("task identity gate cannot canonicalize task subtrees") from exc
+    return f"sha256:{hashlib.sha256(payload).hexdigest()}"
+
+
+def _task_identity_label_from_mapping(mapping: Any, *, path: str) -> str:
     if not isinstance(mapping, dict) or _TASK_IDENTITY_METADATA_KEY not in mapping:
         raise ForkParityError(f"task identity gate missing {path}")
-    identity = mapping[_TASK_IDENTITY_METADATA_KEY]
-    if not isinstance(identity, dict):
-        raise ForkParityError(f"task identity gate requires object at {path}")
-    identity_keys = set(identity)
-    expected_keys = set(_TASK_IDENTITY_SUBTREES)
-    if identity_keys != expected_keys:
-        missing = sorted(expected_keys - identity_keys)
-        extra = sorted(identity_keys - expected_keys)
+    label = mapping[_TASK_IDENTITY_METADATA_KEY]
+    if not isinstance(label, str) or not label:
+        raise ForkParityError(f"task identity gate requires nonempty string label at {path}")
+    return label
+
+
+def _assert_task_identity_label(*, label: str, derived_hash: str, path: str) -> None:
+    if label != derived_hash:
         raise ForkParityError(
-            f"task identity gate requires exactly {_TASK_IDENTITY_SUBTREES!r} at {path}; "
-            f"missing={missing!r} extra={extra!r}"
+            f"task identity label mismatch field={path}: label={label!r} derived={derived_hash!r}"
         )
-    return identity
 
 
 def _assert_matching_task_identity(
@@ -164,7 +304,11 @@ def _assert_matching_task_identity(
     row_id: str,
     source_identity: dict[str, Any],
     target_identity: dict[str, Any],
+    source_hash: str,
+    target_hash: str,
 ) -> None:
+    if source_hash == target_hash:
+        return
     for subtree in _TASK_IDENTITY_SUBTREES:
         mismatch = _first_subtree_mismatch(
             source_identity[subtree],
@@ -175,9 +319,14 @@ def _assert_matching_task_identity(
             continue
         path, source_value, target_value = mismatch
         raise ForkParityError(
-            f"task identity mismatch row={row_id!r} path={path!r}: "
+            f"task identity hash mismatch row={row_id!r} path={path!r}: "
+            f"source_hash={source_hash!r} row_hash={target_hash!r} "
             f"source={source_value} target={target_value}"
         )
+    raise ForkParityError(
+        f"task identity hash mismatch row={row_id!r}: "
+        f"source_hash={source_hash!r} row_hash={target_hash!r}"
+    )
 
 
 def _first_subtree_mismatch(
@@ -241,6 +390,146 @@ def _assert_payload_lr_continuation_mode(
             "LR continuation mode mismatch "
             f"row={row_id!r}: declared={declared_mode!r} payload={rendered_payload}"
         )
+
+
+def _assert_stage2_lambda_update_contract(
+    *,
+    row_id: str,
+    row_spec: Any,
+    repo_root: Path,
+) -> None:
+    """Require every adaptive row to preserve the tracked Stage-2 clamp retune."""
+
+    method_ref = getattr(row_spec, "method_ref", None)
+    method_ref_string = (
+        f"{method_ref.package}/{method_ref.name}/{method_ref.version}"
+        if method_ref is not None
+        else "<missing>"
+    )
+    if method_ref_string != _ADAPTIVE_EPSILON_METHOD_REF:
+        return
+
+    contract = _load_stage2_lambda_update_contract(repo_root=repo_root)
+    payload = getattr(getattr(row_spec, "method_payload", None), "payload", None)
+    if not isinstance(payload, Mapping):
+        raise ForkParityError(
+            f"lambda-update gate missing row={row_id!r}.method_payload.payload"
+        )
+    actual_update = payload.get("lambda_update")
+    if not isinstance(actual_update, Mapping):
+        raise ForkParityError(
+            f"lambda-update gate missing row={row_id!r}.method_payload.payload.lambda_update"
+        )
+    expected_update = contract["lambda_update"]
+    for field, expected in expected_update.items():
+        actual = actual_update.get(field)
+        if actual != expected:
+            rendered_actual = "<missing>" if field not in actual_update else repr(actual)
+            raise ForkParityError(
+                "lambda-update gate mismatch "
+                f"row={row_id!r} field=method_payload.payload.lambda_update.{field}: "
+                f"expected={expected!r} actual={rendered_actual}"
+            )
+
+    relative_contract = contract["lambda_min_relative_to_analytical_seed"]
+    seed_field = relative_contract["config_field"]
+    factor = relative_contract["factor"]
+    config = payload.get("config")
+    if not isinstance(config, Mapping):
+        raise ForkParityError(f"lambda-update gate missing row={row_id!r}.method_payload.payload.config")
+    seed = _finite_positive_float(
+        config.get(seed_field),
+        path=f"row={row_id!r}.method_payload.payload.config.{seed_field}",
+    )
+    lambda_min = _finite_positive_float(
+        actual_update.get("lambda_min"),
+        path=f"row={row_id!r}.method_payload.payload.lambda_update.lambda_min",
+    )
+    expected_lambda_min = factor * seed
+    if not math.isclose(lambda_min, expected_lambda_min, rel_tol=1.0e-9, abs_tol=1.0e-12):
+        raise ForkParityError(
+            "lambda-update gate mismatch "
+            f"row={row_id!r} field=method_payload.payload.lambda_update.lambda_min: "
+            f"expected={factor:.12g} * {seed_field}={expected_lambda_min:.12g} "
+            f"actual={lambda_min:.12g}"
+        )
+
+
+def _load_stage2_lambda_update_contract(*, repo_root: Path) -> dict[str, Any]:
+    """Load the tracked clamp prescription used by the Stage-2 fork gate."""
+
+    path = repo_root / _STAGE2_LAMBDA_UPDATE_CONTRACT_PATH
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ForkParityError(
+            f"lambda-update gate missing tracked contract {_STAGE2_LAMBDA_UPDATE_CONTRACT_PATH}"
+        ) from exc
+    except json.JSONDecodeError as exc:
+        raise ForkParityError(
+            f"lambda-update gate invalid JSON contract {_STAGE2_LAMBDA_UPDATE_CONTRACT_PATH}"
+        ) from exc
+    if not isinstance(raw, Mapping):
+        raise ForkParityError(
+            f"lambda-update gate requires object contract {_STAGE2_LAMBDA_UPDATE_CONTRACT_PATH}"
+        )
+    expected_update = raw.get("lambda_update")
+    relative_contract = raw.get("lambda_min_relative_to_analytical_seed")
+    if not isinstance(expected_update, Mapping):
+        raise ForkParityError(
+            "lambda-update gate missing field "
+            f"{_STAGE2_LAMBDA_UPDATE_CONTRACT_PATH}.lambda_update"
+        )
+    if not isinstance(relative_contract, Mapping):
+        raise ForkParityError(
+            "lambda-update gate missing field "
+            f"{_STAGE2_LAMBDA_UPDATE_CONTRACT_PATH}.lambda_min_relative_to_analytical_seed"
+        )
+    required_update = {
+        "interval_batches",
+        "ema_alpha",
+        "eta",
+        "max_log_step",
+        "deadband_frac",
+        "freeze_during_application_ramp",
+    }
+    missing_update = sorted(required_update - set(expected_update))
+    if missing_update:
+        raise ForkParityError(
+            "lambda-update gate contract missing fields "
+            f"{_STAGE2_LAMBDA_UPDATE_CONTRACT_PATH}.lambda_update={missing_update!r}"
+        )
+    config_field = relative_contract.get("config_field")
+    factor = relative_contract.get("factor")
+    if not isinstance(config_field, str) or not config_field:
+        raise ForkParityError(
+            "lambda-update gate contract requires nonempty "
+            f"{_STAGE2_LAMBDA_UPDATE_CONTRACT_PATH}.lambda_min_relative_to_analytical_seed.config_field"
+        )
+    factor = _finite_positive_float(
+        factor,
+        path=(
+            f"{_STAGE2_LAMBDA_UPDATE_CONTRACT_PATH}."
+            "lambda_min_relative_to_analytical_seed.factor"
+        ),
+    )
+    return {
+        "lambda_update": dict(expected_update),
+        "lambda_min_relative_to_analytical_seed": {
+            "config_field": config_field,
+            "factor": factor,
+        },
+    }
+
+
+def _finite_positive_float(value: Any, *, path: str) -> float:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ForkParityError(f"lambda-update gate requires positive numeric field={path}") from exc
+    if not math.isfinite(numeric) or numeric <= 0.0:
+        raise ForkParityError(f"lambda-update gate requires positive numeric field={path}")
+    return numeric
 
 
 def _ratio_setpoint_prelaunch_report(matrix: TrainingRunMatrixSpec) -> dict[str, Any] | None:
