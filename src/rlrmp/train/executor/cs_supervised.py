@@ -31,6 +31,7 @@ import json
 import logging
 import math
 import os
+import sys
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -47,6 +48,8 @@ from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 from feedbax.objectives.loss import AbstractLoss
 from feedbax.objectives.service import LossService, LoweredObjective
 from feedbax.objectives.spec import ObjectiveExecutionRequirements
+from feedbax.orchestration.events import RunEventEmitter
+from feedbax.training.executor import execute_training_run_spec
 from jax_cookbook.tree import filter_spec_leaves
 from rlrmp.model.feedbax_graph import (
     build_runtime_rlrmp_feedbax_graph_bundle,
@@ -88,7 +91,7 @@ from rlrmp.train.cs_perturbation_training import (
     POLICY_ADVERSARY_PLAIN_MODE,
     make_broad_epsilon_pgd_pre_step,
 )
-from rlrmp.train.progress import format_batch_line
+from rlrmp.train.progress import format_batch_line, make_executor_batch_log_callback
 from rlrmp.train.resume_control import (
     LaunchContinuation,
     attach_cs_supervised_checkpoint_continuation,
@@ -946,13 +949,45 @@ def build_cs_supervised_native_initial_slots(
     )
 
 
+def _execute_native_training_run_spec(
+    training_spec: Any,
+    *,
+    progress_phase: str,
+    total_batches: int,
+    **kwargs: Any,
+) -> Any:
+    """Execute one native method with the shared readiness/progress observers."""
+    emitter = RunEventEmitter.from_env()
+    try:
+        return execute_training_run_spec(
+            training_spec,
+            progress_callback=make_executor_batch_log_callback(
+                {progress_phase: total_batches},
+                logger=_native_progress_logger(),
+            ),
+            run_event_emitter=emitter,
+            **kwargs,
+        )
+    finally:
+        if emitter is not None:
+            emitter.close()
+
+
+def _native_progress_logger() -> logging.Logger:
+    """Return a per-run INFO logger whose stdout handler flushes each BATCH line."""
+    progress_logger = logging.Logger(f"{__name__}.native_progress", level=logging.INFO)
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    progress_logger.addHandler(handler)
+    progress_logger.propagate = False
+    return progress_logger
+
+
 def _run_cs_supervised_native_from_context(
     context: RunSpecExecutionContext,
     *,
     volume_commit: VolumeCommit | None = None,
 ) -> dict[str, Any]:
-    from feedbax.training.executor import execute_training_run_spec
-
     args = context.args
     run_spec = context.run_spec
     run_spec_path = context.run_spec_path
@@ -993,8 +1028,10 @@ def _run_cs_supervised_native_from_context(
         key=jr.PRNGKey(int(args.seed)),
     )
     started = time.perf_counter()
-    execution = execute_training_run_spec(
+    execution = _execute_native_training_run_spec(
         training_spec,
+        progress_phase="train_chunk",
+        total_batches=int(args.n_train_batches),
         run_id=_cs_supervised_native_run_id(args, run_spec_path),
         initial_slots=initial_slots,
         kernel_context={RLRMP_RUNTIME_CONTEXT_KEY: runtime},
@@ -1254,7 +1291,6 @@ def _run_adaptive_epsilon_native_from_context(
     *,
     volume_commit: VolumeCommit | None = None,
 ) -> dict[str, Any]:
-    from feedbax.training.executor import execute_training_run_spec
     from rlrmp.train.adaptive_epsilon_native import (
         AdaptiveEpsilonNativeRuntime,
         AdaptiveEpsilonExternalObjectiveLossService,
@@ -1308,8 +1344,10 @@ def _run_adaptive_epsilon_native_from_context(
         key=jr.PRNGKey(int(args.seed)),
     )
     started = time.perf_counter()
-    execution = execute_training_run_spec(
+    execution = _execute_native_training_run_spec(
         training_spec,
+        progress_phase="adaptive_epsilon_train_chunk",
+        total_batches=int(args.n_train_batches),
         run_id=_cs_supervised_native_run_id(args, run_spec_path),
         initial_slots=initial_slots,
         kernel_context={RLRMP_RUNTIME_CONTEXT_KEY: runtime},
@@ -1349,7 +1387,6 @@ def _run_policy_adversary_native_from_context(
     *,
     volume_commit: VolumeCommit | None = None,
 ) -> dict[str, Any]:
-    from feedbax.training.executor import execute_training_run_spec
     from rlrmp.train.policy_adversary_native import (
         PolicyAdversaryExternalObjectiveLossService,
         PolicyAdversaryNativeRuntime,
@@ -1396,8 +1433,10 @@ def _run_policy_adversary_native_from_context(
         key=jr.PRNGKey(int(args.seed)),
     )
     started = time.perf_counter()
-    execution = execute_training_run_spec(
+    execution = _execute_native_training_run_spec(
         training_spec,
+        progress_phase="policy_adversary_train_chunk",
+        total_batches=int(args.n_train_batches),
         run_id=_cs_supervised_native_run_id(args, run_spec_path),
         initial_slots=initial_slots,
         kernel_context={RLRMP_RUNTIME_CONTEXT_KEY: runtime},
