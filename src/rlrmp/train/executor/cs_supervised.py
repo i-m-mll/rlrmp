@@ -89,7 +89,12 @@ from rlrmp.train.cs_perturbation_training import (
     make_broad_epsilon_pgd_pre_step,
 )
 from rlrmp.train.progress import format_batch_line
-from rlrmp.train.resume_control import emit_launch_continuation, resolve_launch_continuation
+from rlrmp.train.resume_control import (
+    LaunchContinuation,
+    attach_cs_supervised_checkpoint_continuation,
+    emit_launch_continuation,
+    resolve_launch_continuation,
+)
 from rlrmp.train.task_model import (
     CS_LSS_PLANT_BACKEND,
     setup_task_model_pair,
@@ -974,11 +979,12 @@ def _run_cs_supervised_native_from_context(
     )
     training_spec = feedbax_training_run_spec_from_payload(run_spec)
     checkpoint_root = output_dir / "checkpoints"
-    context, resume_native = _resolve_full_train_launch_context(
+    context, resume_native, continuation = _resolve_full_train_launch_context(
         context,
         checkpoint_root=checkpoint_root,
         stop_after_batches=stop_after_batches,
     )
+    training_spec = attach_cs_supervised_checkpoint_continuation(training_spec, continuation)
     args = context.args
     initial_slots, runtime = build_cs_supervised_native_initial_slots(
         run_spec=run_spec,
@@ -1001,9 +1007,7 @@ def _run_cs_supervised_native_from_context(
         training_spec_payload_schema_version=RUN_SPEC_SCHEMA_VERSION,
         training_spec_payload_ref=str(run_spec_path),
         resume=resume_native,
-        resume_slot_transform=_cs_supervised_resume_slot_transform(
-            n_batches=int(args.n_train_batches),
-        ),
+        resume_slot_transform=_cs_supervised_resume_slot_transform(),
         issues=[str(args.issue)],
     )
     training_duration_seconds = time.perf_counter() - started
@@ -1037,7 +1041,7 @@ def _resolve_full_train_launch_context(
     *,
     checkpoint_root: Path,
     stop_after_batches: int | None,
-) -> tuple[RunSpecExecutionContext, bool]:
+) -> tuple[RunSpecExecutionContext, bool, LaunchContinuation]:
     """Emit launch continuation summary and return executor resume semantics."""
 
     args = context.args
@@ -1052,9 +1056,9 @@ def _resolve_full_train_launch_context(
     )
     emit_launch_continuation(continuation, logger=logger)
     if continuation.resume == bool(args.resume):
-        return context, continuation.resume
+        return context, continuation.resume, continuation
     resolved_args = argparse.Namespace(**{**vars(args), "resume": continuation.resume})
-    return replace(context, args=resolved_args), continuation.resume
+    return replace(context, args=resolved_args), continuation.resume, continuation
 
 
 def _cs_model_slot(model: Any, array_template: Any) -> tuple[Any, ...]:
@@ -1284,11 +1288,12 @@ def _run_adaptive_epsilon_native_from_context(
     )
     training_spec = feedbax_training_run_spec_from_payload(run_spec)
     checkpoint_root = output_dir / "checkpoints"
-    context, resume_native = _resolve_full_train_launch_context(
+    context, resume_native, continuation = _resolve_full_train_launch_context(
         context,
         checkpoint_root=checkpoint_root,
         stop_after_batches=stop_after_batches,
     )
+    training_spec = attach_cs_supervised_checkpoint_continuation(training_spec, continuation)
     args = context.args
     initial_slots, runtime = build_adaptive_epsilon_native_initial_slots(
         run_spec=run_spec,
@@ -1372,7 +1377,7 @@ def _run_policy_adversary_native_from_context(
     )
     training_spec = feedbax_training_run_spec_from_payload(run_spec)
     checkpoint_root = output_dir / "checkpoints"
-    context, resume_native = _resolve_full_train_launch_context(
+    context, resume_native, _continuation = _resolve_full_train_launch_context(
         context,
         checkpoint_root=checkpoint_root,
         stop_after_batches=stop_after_batches,
@@ -1877,18 +1882,16 @@ def _resize_optimizer_diagnostics_for_batches(optimizer_state: Any, n_batches: i
 
 def _cs_supervised_resume_slot_transform(
     *,
-    n_batches: int,
     transform: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
 ) -> Callable[[Mapping[str, Any]], Mapping[str, Any]]:
-    """Return the cs_supervised native checkpoint resume slot normalizer."""
+    """Return the C&S checkpoint normalizer without changing horizon leaves.
+
+    Feedbax owns declared batch-axis extension.  Resizing here would hide the
+    source shape before Feedbax can verify the continuation declaration.
+    """
 
     def normalize(slots: Mapping[str, Any]) -> Mapping[str, Any]:
         payload = dict(transform(slots) if transform is not None else slots)
-        if OPTIMIZER in payload:
-            payload[OPTIMIZER] = _resize_optimizer_diagnostics_for_batches(
-                payload[OPTIMIZER],
-                n_batches,
-            )
         payload[TRAIN_LOSS] = 0.0
         return payload
 
