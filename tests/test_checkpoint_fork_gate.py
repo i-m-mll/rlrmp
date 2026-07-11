@@ -731,7 +731,7 @@ def test_fork_gate_forward_api_guard_matches_pinned_feedbax_delivery() -> None:
     keyword_names = {keyword.arg for keyword in calls[0].keywords if keyword.arg is not None}
     required_continuation_kwargs = {
         "target_slot_templates",
-        "row_continuation_slot_templates",
+            "row_segment_history_templates",
         "row_target_slot_transforms",
         "row_target_transform_metadata",
         "row_target_transformed_slots",
@@ -827,7 +827,7 @@ def test_adaptive_fork_contracts_call_real_pinned_feedbax_matrix_api(tmp_path: P
         target_checkpoint_roots={"adaptive": target_root},
         parity_output_path=tmp_path / "parity.json",
         target_slot_templates={"adaptive": adapter.adaptive_initial_slots},
-        row_continuation_slot_templates={"adaptive": adapter.continuation_slot_templates()},
+        row_segment_history_templates={"adaptive": adapter.continuation_slot_templates()},
         row_target_slot_transforms={"adaptive": adapter.transform},
         row_target_transform_metadata={"adaptive": adapter.transform_metadata},
         row_target_transformed_slots={"adaptive": adapter.target_transformed_slots},

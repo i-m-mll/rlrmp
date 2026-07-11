@@ -125,8 +125,6 @@ def _adaptive_epsilon_application_ramp_incomplete(config: Any, batch_index: int)
 
 def _initial_adaptive_epsilon_state(
     hps: TreeNamespace,
-    *,
-    schedule_start_batch: int = 0,
 ) -> AdaptiveEpsilonState | None:
     if not _adaptive_epsilon_curriculum_enabled(hps):
         return None
@@ -135,15 +133,15 @@ def _initial_adaptive_epsilon_state(
         raise ValueError("Adaptive epsilon curriculum requires a resolved positive energy lambda.")
     return AdaptiveEpsilonState(
         lambda_value=float(cfg.soft_energy_lambda),
-        schedule_start_batch=max(0, int(schedule_start_batch)),
     )
 
 
 def _adaptive_epsilon_schedule_batch(
-    adaptive_state: AdaptiveEpsilonState,
     global_batch: int,
+    *,
+    ramp_start_batch: int = 0,
 ) -> int:
-    return max(0, int(global_batch) - int(adaptive_state.schedule_start_batch))
+    return max(0, int(global_batch) - int(ramp_start_batch))
 
 
 def _finalize_training_chunk(
@@ -201,6 +199,7 @@ def _run_adaptive_epsilon_training_chunk(
     start_batch: int,
     chunk_batches: int,
     log_progress: bool,
+    ramp_start_batch: int = 0,
 ) -> tuple[Any, Any, Any, AdaptiveEpsilonState, dict[str, np.ndarray]]:
     """Run one paired clean/adversarial adaptive direct-epsilon training chunk."""
 
@@ -315,7 +314,10 @@ def _run_adaptive_epsilon_training_chunk(
 
     for local_batch in range(chunk_batches):
         global_batch = start_batch + local_batch
-        schedule_batch = _adaptive_epsilon_schedule_batch(adaptive_state, global_batch)
+        schedule_batch = _adaptive_epsilon_schedule_batch(
+            global_batch,
+            ramp_start_batch=ramp_start_batch,
+        )
         key_train, key_eval = jr.split(keys[local_batch], 2)
         target_damage = _adaptive_epsilon_damage_target(
             hps.adaptive_epsilon_curriculum,
@@ -377,6 +379,7 @@ def _run_adaptive_epsilon_training_chunk(
             target_damage=target_damage,
             measured_damage=adaptive_update_damage_raw,
             measured_clean_loss=adaptive_update_clean_loss_total,
+            ramp_start_batch=ramp_start_batch,
         )
         host_diagnostics = {
             name: np.asarray(jax.device_get(value))
@@ -791,6 +794,7 @@ def _update_adaptive_epsilon_state(
     target_damage: float,
     measured_damage: float,
     measured_clean_loss: float,
+    ramp_start_batch: int = 0,
 ) -> tuple[AdaptiveEpsilonState, dict[str, np.ndarray]]:
     update_cfg = getattr(config, "lambda_update")
     alpha = float(update_cfg.ema_alpha)
@@ -799,7 +803,10 @@ def _update_adaptive_epsilon_state(
     update_due = completed_batches % interval == 0
     target = float(target_damage)
     ratio_eps = 1e-12
-    schedule_batch = _adaptive_epsilon_schedule_batch(state, batch_index)
+    schedule_batch = _adaptive_epsilon_schedule_batch(
+        batch_index,
+        ramp_start_batch=ramp_start_batch,
+    )
     freeze_during_application_ramp = bool(
         getattr(update_cfg, "freeze_during_application_ramp", False)
     )
@@ -923,7 +930,6 @@ def _update_adaptive_epsilon_state(
             clean_loss_ema=clean_loss_ema,
             last_update_batch=int(batch_index) if updated else state.last_update_batch,
             update_count=state.update_count + (1 if updated else 0),
-            schedule_start_batch=state.schedule_start_batch,
             zero_adversary_guard=state.zero_adversary_guard,
             gain_estimate=gain_estimate,
             gain_samples=gain_samples,

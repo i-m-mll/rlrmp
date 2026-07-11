@@ -105,6 +105,7 @@ def fork_checkpoints_with_parity(
     ratio_setpoint = _ratio_setpoint_prelaunch_report(matrix)
     target_roots = {target.row_id: target.checkpoint_root for target in targets}
     adaptive_contracts = _adaptive_continuation_fork_contracts(materialized)
+    ramp_windows = _adaptive_ramp_window_prelaunch_report(materialized)
     reporter = RlrmpLrContinuationReporter(source_checkpoint_root=source_checkpoint_root)
     table = fork_matrix_checkpoints(
         matrix,
@@ -115,7 +116,7 @@ def fork_checkpoints_with_parity(
         target_slot_templates={
             row_id: value[0].adaptive_initial_slots for row_id, value in adaptive_contracts.items()
         },
-        row_continuation_slot_templates={
+        row_segment_history_templates={
             row_id: value[0].continuation_slot_templates()
             for row_id, value in adaptive_contracts.items()
         },
@@ -143,7 +144,47 @@ def fork_checkpoints_with_parity(
             json.dumps(table, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+    if ramp_windows:
+        table["adaptive_epsilon_ramp_windows"] = ramp_windows
+        parity_output_path.write_text(
+            json.dumps(table, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
     return table
+
+
+def _adaptive_ramp_window_prelaunch_report(materialized: Any) -> list[dict[str, Any]]:
+    """Render resolved adaptive ramp windows for prelaunch review."""
+
+    from rlrmp.train.adaptive_epsilon_native import AdaptiveEpsilonMethodPayload
+
+    report: list[dict[str, Any]] = []
+    for row in materialized.rows:
+        spec = row.spec
+        if spec is None or spec.checkpoint_progress.continuation is None:
+            continue
+        payload = DEFAULT_TRAINING_METHOD_REGISTRY.validate_payload(
+            spec.method_ref,
+            spec.method_payload,
+            path=f"/rows/{row.row_id}/method_payload",
+        )
+        if not isinstance(payload, AdaptiveEpsilonMethodPayload):
+            continue
+        report.append(
+            {
+                "row_id": row.row_id,
+                "origin": payload.application_ramp_origin.model_dump(mode="json"),
+                "start_batch": payload.application_ramp_start_batch,
+                "end_batch": payload.application_ramp_end_batch,
+                "rendered": (
+                    f"ADAPTIVE_EPSILON_RAMP row={row.row_id} "
+                    f"origin={payload.application_ramp_origin.kind} "
+                    f"window=[{payload.application_ramp_start_batch}, "
+                    f"{payload.application_ramp_end_batch}]"
+                ),
+            }
+        )
+    return report
 
 
 def _adaptive_continuation_fork_contracts(
