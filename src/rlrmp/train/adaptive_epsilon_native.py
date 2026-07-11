@@ -183,7 +183,7 @@ class AdaptiveEpsilonNativeRuntime:
     where_train: Any
     model_template: Any
     optimizer_template: Any
-    run_spec: Mapping[str, Any] | TrainingRunSpec
+    run_spec: TrainingRunSpec
     lr_continuation_mode: LRContinuationMode | None = None
     trainer_resume_context: "LRResumeContext | None" = None
     optimizer_hyperparams_aligned: bool = False
@@ -839,7 +839,7 @@ def _adaptive_epsilon_train_step(
 
 def build_adaptive_epsilon_native_initial_slots(
     *,
-    run_spec: Mapping[str, Any] | TrainingRunSpec,
+    run_spec: TrainingRunSpec,
     hps: Any,
     args: Any,
     key: Any,
@@ -857,6 +857,11 @@ def build_adaptive_epsilon_native_initial_slots(
         setup_task_model_pair,
     )
 
+    if not isinstance(run_spec, TrainingRunSpec):
+        raise TypeError(
+            "adaptive-epsilon executor initialization requires the extracted typed "
+            "TrainingRunSpec, not an outer tracked-recipe mapping"
+        )
     if not bool(getattr(getattr(hps, "adaptive_epsilon_curriculum", None), "enabled", False)):
         raise ValueError("adaptive-epsilon native initial slots require enabled curriculum")
     key_init, key_train, _key_adversary = split_initial_keys(key)

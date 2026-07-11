@@ -1419,7 +1419,10 @@ def _run_adaptive_epsilon_native_from_context(
         )
     args = context.args
     initial_slots, runtime = build_adaptive_epsilon_native_initial_slots(
-        run_spec=run_spec,
+        # The optimizer builder consumes the typed method payload. Passing the
+        # outer tracked recipe here hides lr_continuation_mode under
+        # feedbax_training_run_spec and silently falls back to "continue".
+        run_spec=training_spec,
         hps=hps,
         args=args,
         key=jr.PRNGKey(int(args.seed)),
@@ -1722,7 +1725,10 @@ def _materialize_adaptive_epsilon_native_result(
     checkpoint_root = output_dir / "checkpoints"
     key_init, _key_train, _key_adversary = split_initial_keys(jr.PRNGKey(int(args.seed)))
     pair = setup_task_model_pair(hps, key=key_init)
-    optimizer = build_adaptive_epsilon_controller_optimizer(run_spec, hps)
+    optimizer = build_adaptive_epsilon_controller_optimizer(
+        feedbax_training_run_spec_from_payload(run_spec),
+        hps,
+    )
     template_state = _initial_training_state(
         model=pair.model,
         trainer=optimizer,

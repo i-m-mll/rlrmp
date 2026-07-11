@@ -77,8 +77,9 @@ def main() -> None:
         target_context = build_run_spec_execution_context(
             run_parser.parse_args(["--run-spec", str(run_spec_path)]), parser=run_parser
         )
+        target_spec = feedbax_training_run_spec_from_payload(target_context.run_spec)
         target_initial_slots, runtime = build_adaptive_epsilon_native_initial_slots(
-            run_spec=target_context.run_spec,
+            run_spec=target_spec,
             hps=target_context.hps,
             args=target_context.args,
             key=jax.random.PRNGKey(int(target_context.args.seed)),
@@ -93,7 +94,7 @@ def main() -> None:
             adaptive_initial_slots=target_initial_slots,
         )
         target_spec = declare_cs_supervised_checkpoint_continuation(
-            feedbax_training_run_spec_from_payload(target_context.run_spec),
+            target_spec,
             source_completed_batches=SOURCE_COMPLETED_BATCHES,
             target_total_batches=TARGET_TOTAL_BATCHES,
         )

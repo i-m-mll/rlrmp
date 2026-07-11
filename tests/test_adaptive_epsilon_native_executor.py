@@ -42,10 +42,12 @@ from rlrmp.train.adaptive_epsilon_native import (
     _guard_from_slot,
     _json_slot,
     attach_adaptive_epsilon_checkpoint_continuation,
+    adaptive_epsilon_controller_lr_points,
     adaptive_epsilon_controller_optimizer_spec,
     build_adaptive_epsilon_native_initial_slots,
     ensure_adaptive_epsilon_training_method_registered,
     execute_adaptive_epsilon_training_run_spec_native,
+    lr_resume_context_for_mode,
     optimizer_count_at_current_step,
 )
 from rlrmp.train.cs_nominal_gru import (
@@ -460,6 +462,85 @@ def test_adaptive_epsilon_runtime_shifts_restored_count_for_restart_vs_continue(
 
     assert restart_lr == pytest.approx(1e-5, rel=1e-4)
     assert continue_lr == pytest.approx(1e-4, rel=1e-4)
+
+
+def test_adaptive_epsilon_executor_rejects_outer_recipe_mapping(tmp_path: Path) -> None:
+    """The executor must not lose typed LR continuation fields at the recipe boundary."""
+
+    spec = _adaptive_epsilon_training_spec(
+        tmp_path,
+        controller_mode=ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+    )
+    payload = DEFAULT_TRAINING_METHOD_REGISTRY.validate_payload(
+        spec.method_ref,
+        spec.method_payload,
+        path="/method_payload",
+    )
+    assert isinstance(payload, AdaptiveEpsilonMethodPayload)
+    args = _config_namespace(payload.config)
+
+    with pytest.raises(TypeError, match="extracted typed TrainingRunSpec"):
+        build_adaptive_epsilon_native_initial_slots(
+            run_spec={"feedbax_training_run_spec": spec.model_dump(mode="json")},  # type: ignore[arg-type]
+            hps=build_hps(args),
+            args=args,
+            key=jr.PRNGKey(3),
+        )
+
+
+@pytest.mark.parametrize("peak_lr", [3e-4, 3e-3])
+def test_adaptive_epsilon_restart_realized_optimizer_matches_rewarm_points(
+    tmp_path: Path,
+    peak_lr: float,
+) -> None:
+    """A carried 12k optimizer count realizes the continuation-local rewarm curve."""
+
+    spec = _adaptive_epsilon_training_spec(
+        tmp_path,
+        controller_mode=ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+        n_train_batches=16_500,
+    )
+    optimizer = OptimizerSpec(
+        type="adamw",
+        params={"weight_decay": 0.0},
+        lr_schedule=LrScheduleSpec(
+            kind="warmup_cosine",
+            learning_rate_0=peak_lr,
+            total_steps=3_500,
+            constant_lr_iterations=1_000,
+            warmup_init_fraction=3e-5 / peak_lr,
+            cosine_annealing_alpha=3e-5 / peak_lr,
+        ),
+    )
+    spec = _with_controller_optimizer(_with_lr_continuation_mode(spec, "restart"), optimizer)
+    context = lr_resume_context_for_mode(
+        mode="restart",
+        completed_batches=12_000,
+        optimizer_count_at_current_step=12_000,
+    )
+
+    points = adaptive_epsilon_controller_lr_points(
+        spec,
+        hps=None,
+        schedule_origin_step=context.schedule_origin_step,
+        current_step=context.current_step,
+        optimizer_count_at_current_step=context.optimizer_count_at_current_step,
+        schedule_steps=[0, 500, 1_000, 2_250, 3_500],
+    )
+    realized = [point["lr"] for point in points]
+
+    assert [point["optimizer_count"] for point in points] == [
+        12_000,
+        12_500,
+        13_000,
+        14_250,
+        15_500,
+    ]
+    assert realized[0] == pytest.approx(3e-5, rel=1e-5)
+    assert 3e-5 < realized[1] < peak_lr
+    assert realized[2] == pytest.approx(peak_lr, rel=1e-5)
+    assert 3e-5 < realized[3] < peak_lr
+    assert realized[4] == pytest.approx(3e-5, rel=1e-5)
 
 
 def test_adaptive_epsilon_native_executor_emits_batch_progress(
