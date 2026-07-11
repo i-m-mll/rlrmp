@@ -1259,6 +1259,7 @@ def _run_adaptive_epsilon_native_from_context(
         AdaptiveEpsilonNativeRuntime,
         AdaptiveEpsilonExternalObjectiveLossService,
         _resume_slot_transform,
+        attach_adaptive_epsilon_checkpoint_continuation,
         build_adaptive_epsilon_native_initial_slots,
     )
 
@@ -1293,7 +1294,12 @@ def _run_adaptive_epsilon_native_from_context(
         checkpoint_root=checkpoint_root,
         stop_after_batches=stop_after_batches,
     )
-    training_spec = attach_cs_supervised_checkpoint_continuation(training_spec, continuation)
+    if continuation.resume:
+        training_spec = attach_adaptive_epsilon_checkpoint_continuation(
+            training_spec,
+            source_completed_batches=continuation.completed_batches,
+            target_total_batches=continuation.stop_target_batches,
+        )
     args = context.args
     initial_slots, runtime = build_adaptive_epsilon_native_initial_slots(
         run_spec=run_spec,
