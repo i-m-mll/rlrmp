@@ -5,6 +5,7 @@ from pathlib import Path
 import jax.numpy as jnp
 import pytest
 
+import scripts.prepare_stage2_launch_forks as launch_forks
 from scripts.prepare_stage2_launch_forks import (
     HISTORY_INDICES,
     SOURCE_COMPLETED_BATCHES,
@@ -36,7 +37,12 @@ def test_extend_optimizer_histories_rejects_wrong_target_horizon() -> None:
         extend_optimizer_histories(_optimizer(SOURCE_COMPLETED_BATCHES), _optimizer(12_200))
 
 
-def test_validate_launch_fork_requires_row_bound_provenance() -> None:
+def test_validate_launch_fork_requires_row_bound_provenance(monkeypatch) -> None:
+    monkeypatch.setattr(
+        launch_forks,
+        "_adaptive_state_from_slot",
+        lambda _slot: SimpleNamespace(schedule_start_batch=SOURCE_COMPLETED_BATCHES),
+    )
     loaded = SimpleNamespace(
         manifest=SimpleNamespace(
             completed_training_batches=TARGET_TOTAL_BATCHES,
@@ -46,6 +52,7 @@ def test_validate_launch_fork_requires_row_bound_provenance() -> None:
             }},
         ),
         slots={"completed_batches": SOURCE_COMPLETED_BATCHES,
+               "adaptive_epsilon_state": object(),
                "optimizer": SimpleNamespace(payload=b"serialized")},
     )
     with pytest.raises(ValueError, match="wrong matrix row"):
