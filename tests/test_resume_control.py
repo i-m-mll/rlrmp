@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 from pathlib import Path
 
 import jax
@@ -11,6 +12,7 @@ import jax.numpy as jnp
 import pytest
 from feedbax.contracts.worker import ProgressCoordinate
 from feedbax.training.checkpoint_custody import (
+    CheckpointIntegrityError,
     fork_checkpoint_transaction,
     load_latest_checkpoint,
     write_checkpoint_transaction,
@@ -37,50 +39,61 @@ from rlrmp.runtime.training_run_specs import feedbax_training_run_spec_from_payl
 from rlrmp.train.training_configs import MinimaxConfig
 
 
-def _write_latest(path: Path, *, global_step: int) -> Path:
-    latest_path = path / "latest.json"
-    path.mkdir(parents=True, exist_ok=True)
-    latest_path.write_text(
-        json.dumps(
-            {
-                "completed_coordinate": {
-                    "phase": "train",
-                    "global_step": global_step,
-                    "completed_barrier": "after_train_chunk",
-                }
-            }
+def _baseline_recipe_path() -> Path:
+    return (
+        Path(__file__).resolve().parents[1]
+        / "results/cb3685a/runs/harmonized_nominal_h0_const_band16_lr3e-3_clip5_b64.json"
+    )
+
+
+@pytest.fixture(scope="module")
+def custody_checkpoint_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Materialize one valid custody source for typed-document canaries."""
+
+    recipe_path = _baseline_recipe_path()
+    parser = build_parser()
+    context = build_run_spec_execution_context(
+        parser.parse_args(["--run-spec", str(recipe_path)]),
+        parser=parser,
+    )
+    source_spec = feedbax_training_run_spec_from_payload(context.run_spec)
+    source_slots, _runtime = build_cs_supervised_native_initial_slots(
+        run_spec=context.run_spec,
+        hps=context.hps,
+        args=context.args,
+        key=jax.random.PRNGKey(int(context.args.seed)),
+    )
+    root = tmp_path_factory.mktemp("typed-custody") / "source"
+    write_checkpoint_transaction(
+        root,
+        run_spec=source_spec,
+        phase_program=source_spec.worker_execution.method_contract.phase_program,
+        barrier_name="after_train_chunk",
+        coordinate=ProgressCoordinate(
+            run_id="typed-custody-source",
+            phase="train_chunk",
+            program_step=24,
+            completed_barrier="after_train_chunk",
         ),
-        encoding="utf-8",
+        slots=source_slots,
+        completed_training_batches=12_000,
     )
-    return latest_path
+    return root
 
 
-def _write_custody_latest(
-    path: Path,
-    *,
-    completed_training_batches: int,
-    phase_step: int,
-) -> Path:
-    """Write a minimal transaction-backed pointer for resume-control tests."""
+def _copy_custody_documents(source_root: Path, target_root: Path) -> tuple[Path, Path]:
+    """Copy just the published pointer and manifest for reader-only mutation tests."""
 
-    manifest_path = path / "transactions" / "tx-test" / "manifest.json"
-    manifest_path.parent.mkdir(parents=True)
-    manifest_path.write_text(
-        json.dumps({"completed_training_batches": completed_training_batches}),
-        encoding="utf-8",
-    )
-    latest_path = path / "latest.json"
-    latest_path.write_text(
-        json.dumps(
-            {
-                "manifest_relative_path": "transactions/tx-test/manifest.json",
-                "completed_coordinate": {"phase_step": phase_step},
-                "completed_training_batches": completed_training_batches,
-            }
-        ),
-        encoding="utf-8",
-    )
-    return latest_path
+    pointer_path = source_root / "latest.json"
+    pointer_payload = json.loads(pointer_path.read_text(encoding="utf-8"))
+    manifest_relative_path = Path(pointer_payload["manifest_relative_path"])
+    target_pointer = target_root / "latest.json"
+    target_manifest = target_root / manifest_relative_path
+    target_manifest.parent.mkdir(parents=True)
+    shutil.copyfile(source_root / manifest_relative_path, target_manifest)
+    target_pointer.parent.mkdir(parents=True, exist_ok=True)
+    target_pointer.write_text(json.dumps(pointer_payload), encoding="utf-8")
+    return target_pointer, target_manifest
 
 
 def test_resume_without_latest_json_is_hard_error(tmp_path: Path) -> None:
@@ -120,40 +133,11 @@ def test_allow_fresh_start_override_emits_fresh_summary(
     assert caplog.records[-1].message == line
 
 
-def test_resume_rejects_legacy_coordinate_only_pointer(tmp_path: Path) -> None:
-    checkpoint_root = tmp_path / "checkpoints"
-    _write_latest(checkpoint_root, global_step=12_000)
-
-    with pytest.raises(ValueError, match="explicit completed_training_batches"):
-        resolve_launch_continuation(
-            checkpoint_root=checkpoint_root,
-            resume_requested=True,
-            allow_fresh_start=False,
-            stop_target_batches=12_500,
-        )
-
-
-def test_resume_uses_manifest_total_not_custody_order_coordinate(tmp_path: Path) -> None:
-    checkpoint_root = tmp_path / "checkpoints"
-    manifest_path = checkpoint_root / "transactions/tx-baseline/manifest.json"
-    manifest_path.parent.mkdir(parents=True)
-    manifest_path.write_text(
-        json.dumps({"completed_training_batches": 12_000}),
-        encoding="utf-8",
-    )
-    (checkpoint_root / "latest.json").write_text(
-        json.dumps(
-            {
-                "manifest_relative_path": "transactions/tx-baseline/manifest.json",
-                "completed_coordinate": {"global_step": 24},
-                "completed_training_batches": 12_000,
-            }
-        ),
-        encoding="utf-8",
-    )
-
+def test_resume_uses_manifest_total_not_custody_order_coordinate(
+    custody_checkpoint_root: Path,
+) -> None:
     continuation = resolve_launch_continuation(
-        checkpoint_root=checkpoint_root,
+        checkpoint_root=custody_checkpoint_root,
         resume_requested=True,
         allow_fresh_start=False,
         stop_target_batches=12_200,
@@ -164,32 +148,94 @@ def test_resume_uses_manifest_total_not_custody_order_coordinate(tmp_path: Path)
     assert continuation.continuation_batches == 200
 
 
-def test_resume_rejects_manifest_pointer_escaping_checkpoint_root(tmp_path: Path) -> None:
-    checkpoint_root = tmp_path / "checkpoints"
-    checkpoint_root.mkdir()
-    (checkpoint_root / "latest.json").write_text(
-        json.dumps({"manifest_relative_path": "../outside/manifest.json"}),
-        encoding="utf-8",
+def test_resume_rejects_manifest_pointer_escaping_checkpoint_root(
+    tmp_path: Path,
+    custody_checkpoint_root: Path,
+) -> None:
+    latest_path, _manifest_path = _copy_custody_documents(
+        custody_checkpoint_root,
+        tmp_path / "checkpoints",
     )
+    pointer = json.loads(latest_path.read_text(encoding="utf-8"))
+    pointer["manifest_relative_path"] = "../outside/manifest.json"
+    latest_path.write_text(json.dumps(pointer), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="escapes checkpoint root"):
-        completed_batches_from_latest(checkpoint_root / "latest.json")
+    with pytest.raises(CheckpointIntegrityError, match="escapes custody root"):
+        completed_batches_from_latest(latest_path)
 
 
-def test_non_positive_continuation_is_hard_error(tmp_path: Path) -> None:
-    checkpoint_root = tmp_path / "checkpoints"
-    _write_custody_latest(
-        checkpoint_root,
-        completed_training_batches=12_500,
-        phase_step=25,
+@pytest.mark.parametrize(
+    ("document", "field", "value"),
+    [
+        ("latest", "schema_id", "rlrmp.invalid.latest"),
+        ("latest", "schema_version", "rlrmp.invalid.latest.v1"),
+        ("manifest", "schema_id", "rlrmp.invalid.manifest"),
+        ("manifest", "schema_version", "rlrmp.invalid.manifest.v1"),
+    ],
+)
+def test_resume_rejects_invalid_typed_custody_schema_identity_or_version(
+    tmp_path: Path,
+    custody_checkpoint_root: Path,
+    document: str,
+    field: str,
+    value: str,
+) -> None:
+    latest_path, manifest_path = _copy_custody_documents(
+        custody_checkpoint_root,
+        tmp_path / "checkpoints",
     )
+    path = latest_path if document == "latest" else manifest_path
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload[field] = value
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(CheckpointIntegrityError, match="invalid|unsupported"):
+        completed_batches_from_latest(latest_path)
+
+
+def test_resume_rejects_pointer_manifest_batch_total_disagreement(
+    tmp_path: Path,
+    custody_checkpoint_root: Path,
+) -> None:
+    latest_path, _manifest_path = _copy_custody_documents(
+        custody_checkpoint_root,
+        tmp_path / "checkpoints",
+    )
+    pointer = json.loads(latest_path.read_text(encoding="utf-8"))
+    pointer["completed_training_batches"] = 24
+    latest_path.write_text(json.dumps(pointer), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="completed_training_batches disagrees"):
+        completed_batches_from_latest(latest_path)
+
+
+def test_resume_uses_feedbax_legacy_global_step_migration(
+    tmp_path: Path,
+    custody_checkpoint_root: Path,
+) -> None:
+    latest_path, _manifest_path = _copy_custody_documents(
+        custody_checkpoint_root,
+        tmp_path / "checkpoints",
+    )
+    pointer = json.loads(latest_path.read_text(encoding="utf-8"))
+    pointer["schema_version"] = "feedbax.manifest.training_checkpoint_latest_pointer.v2"
+    coordinate = pointer["completed_coordinate"]
+    coordinate["global_step"] = coordinate.pop("program_step")
+    latest_path.write_text(json.dumps(pointer), encoding="utf-8")
+
+    assert completed_batches_from_latest(latest_path) == 12_000
+
+
+def test_non_positive_continuation_is_hard_error(
+    custody_checkpoint_root: Path,
+) -> None:
 
     with pytest.raises(ValueError, match="non-positive launch continuation"):
         resolve_launch_continuation(
-            checkpoint_root=checkpoint_root,
+            checkpoint_root=custody_checkpoint_root,
             resume_requested=True,
             allow_fresh_start=False,
-            stop_target_batches=12_500,
+            stop_target_batches=12_000,
         )
 
 
