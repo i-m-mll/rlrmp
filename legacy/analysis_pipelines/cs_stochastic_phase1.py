@@ -1,4 +1,4 @@
-"""LEGACY (frozen 2026-07-03, issue 64d5f13).
+"""LEGACY (frozen 2026-07-03, issues 64d5f13 and ef8e1df; relocated from src/).
 
 This materializer is not contract-native: it predates the feedbax recipe,
 bundle, and manifest contracts. It may not run without deliberate realignment.

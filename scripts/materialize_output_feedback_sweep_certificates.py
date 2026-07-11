@@ -25,8 +25,8 @@ from typing import Any
 
 import jax.numpy as jnp
 import numpy as np
-from rlrmp.paths import portable_repo_path as _repo_relative
 
+from rlrmp.io import load_named_python_module
 from rlrmp.analysis.pipelines.bridge_certificates import (
     BELLMAN_HESSIAN_RESIDUAL,
     CLOSED_LOOP_TRANSITION_MISMATCH,
@@ -51,11 +51,6 @@ from rlrmp.analysis.math.cs_released_simulation import (
     DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG,
     CSReleasedStochasticNoiseConfig,
 )
-from rlrmp.analysis.pipelines.cs_stochastic_phase3 import (
-    Phase3StochasticConfig,
-    process_noise_sweep_summary,
-    run_phase3_process_noise_sweep,
-)
 from rlrmp.analysis.math.linear_round_trip import LinearOptimizationConfig
 from rlrmp.analysis.math.output_feedback import (
     OutputFeedbackConfig,
@@ -67,7 +62,16 @@ from rlrmp.eval.output_feedback_rollout_recovery import (
     eigenspectrum_coverage_conditions,
     execute_governed_output_feedback_rollout_recovery,
 )
-from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.paths import REPO_ROOT, mkdir_p, portable_repo_path as _repo_relative
+
+
+_LEGACY_PHASE3 = load_named_python_module(
+    "rlrmp_legacy_cs_stochastic_phase3_consumer",
+    REPO_ROOT / "legacy" / "analysis_pipelines" / "cs_stochastic_phase3.py",
+)
+Phase3StochasticConfig = _LEGACY_PHASE3.Phase3StochasticConfig
+process_noise_sweep_summary = _LEGACY_PHASE3.process_noise_sweep_summary
+run_phase3_process_noise_sweep = _LEGACY_PHASE3.run_phase3_process_noise_sweep
 
 
 ISSUE_ID = "7a459bb"

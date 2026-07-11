@@ -197,7 +197,7 @@ the math module. The top-level gamma-sweep script has the full module banner.
 
 ## C&S stochastic Phase 1
 
-Files: `src/rlrmp/analysis/pipelines/cs_stochastic_phase1.py` and
+Files: `legacy/analysis_pipelines/cs_stochastic_phase1.py` and
 `scripts/materialize_cs_stochastic_phase1.py`.
 
 Purpose: This materializer evaluated the C&S game card under sampled
@@ -217,12 +217,13 @@ Retired 2026-07-09 under [issue:e158a74]: the standalone entrypoint
 carrying the file is `acbdf8d7008a073b3fe9375b5b915288ac05183d`, tagged as
 `legacy/e158a74-standalone-materializers-retired`; recover with
 `git show legacy/e158a74-standalone-materializers-retired:scripts/materialize_cs_stochastic_phase1.py`.
-The `src/rlrmp/analysis/pipelines/cs_stochastic_phase1.py` provenance module
-remains frozen; no report-stage equivalent is introduced here.
+The `legacy/analysis_pipelines/cs_stochastic_phase1.py` provenance module was
+relocated out of `src/` under [issue:ef8e1df] and remains frozen; no report-stage
+equivalent is introduced here.
 
 ## C&S stochastic Phase 3
 
-Files: `src/rlrmp/analysis/pipelines/cs_stochastic_phase3.py` and
+Files: `legacy/analysis_pipelines/cs_stochastic_phase3.py` and
 `scripts/materialize_cs_stochastic_phase3.py`.
 
 Purpose: This materializer evaluated Phase 3 controllers under released-code
@@ -241,8 +242,9 @@ Retired 2026-07-09 under [issue:e158a74]: the standalone entrypoint
 carrying the file is `acbdf8d7008a073b3fe9375b5b915288ac05183d`, tagged as
 `legacy/e158a74-standalone-materializers-retired`; recover with
 `git show legacy/e158a74-standalone-materializers-retired:scripts/materialize_cs_stochastic_phase3.py`.
-The `src/rlrmp/analysis/pipelines/cs_stochastic_phase3.py` provenance module
-remains frozen; no report-stage equivalent is introduced here.
+The `legacy/analysis_pipelines/cs_stochastic_phase3.py` provenance module was
+relocated out of `src/` under [issue:ef8e1df] and remains frozen; no report-stage
+equivalent is introduced here.
 
 ## SISU perturbation comparison
 
