@@ -211,21 +211,26 @@ def _completed_batches(
     source_manifest: Mapping[str, Any],
     row_spec: TrainingRunSpec,
 ) -> int:
-    coordinate = source_manifest.get("completed_coordinate")
-    if isinstance(coordinate, Mapping):
-        global_step = int(coordinate.get("global_step", 0))
-    else:
-        global_step = int(source_manifest.get("completed_training_batches", 0))
+    completed_batches = source_manifest.get("completed_training_batches")
+    if isinstance(completed_batches, bool) or not isinstance(completed_batches, int):
+        raise ValueError(
+            "checkpoint manifest lacks integer completed_training_batches; "
+            "phase/global coordinates cannot supply continuation batch arithmetic"
+        )
+    if completed_batches < 0:
+        raise ValueError("checkpoint manifest has negative completed_training_batches")
     if _method_ref_string(row_spec) != MINIMAX_METHOD_REF:
-        return global_step
+        return completed_batches
+
+    coordinate = source_manifest.get("completed_coordinate")
     config = minimax_training_run_spec_to_config(row_spec)
     barrier = coordinate.get("completed_barrier") if isinstance(coordinate, Mapping) else None
     phase = coordinate.get("phase") if isinstance(coordinate, Mapping) else None
     if barrier == "after_warmup" or phase == "warmup":
         return int(config.get("n_warmup_batches", 0))
     if barrier == "after_adversarial" or phase == "adversarial":
-        return int(config.get("n_warmup_batches", 0)) + global_step
-    return global_step
+        return completed_batches
+    return completed_batches
 
 
 def _learning_rate_at_step(

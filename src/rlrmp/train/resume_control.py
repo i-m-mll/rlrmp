@@ -56,10 +56,11 @@ class LaunchContinuation:
 def completed_batches_from_latest(latest_path: Path) -> int:
     """Read the authoritative completed-training total for a latest pointer.
 
-    Feedbax's progress coordinate can count checkpoint/custody ordering rather
-    than individual training batches.  When a pointer names a transaction
-    manifest, that manifest's ``completed_training_batches`` is authoritative.
-    Pointers predating transaction manifests retain the old coordinate fallback.
+    Feedbax's phase-progress coordinate can count chunks or other executor
+    progress, rather than individual training batches.  A custody source used
+    for C&S continuation must therefore name a transaction manifest with an
+    explicit ``completed_training_batches`` total.  Coordinates are deliberately
+    never a fallback for batch arithmetic.
     """
 
     payload = json.loads(latest_path.read_text(encoding="utf-8"))
@@ -116,16 +117,10 @@ def completed_batches_from_latest(latest_path: Path) -> int:
             )
         return completed_batches
 
-    # Legacy pointers did not name transaction manifests. Preserve their
-    # coordinate semantics only for compatibility; new custody pointers must
-    # take their total from the referenced manifest above.
-    coordinate = payload.get("completed_coordinate")
-    if not isinstance(coordinate, dict) or "global_step" not in coordinate:
-        raise ValueError(
-            "checkpoint latest pointer lacks completed_coordinate.global_step: "
-            f"{latest_path}"
-        )
-    return int(coordinate["global_step"])
+    raise ValueError(
+        "checkpoint latest pointer lacks manifest_relative_path with an explicit "
+        f"completed_training_batches total: {latest_path}"
+    )
 
 
 def resolve_launch_continuation(
