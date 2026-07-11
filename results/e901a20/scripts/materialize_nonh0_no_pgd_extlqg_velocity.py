@@ -1,8 +1,12 @@
-"""Materialize non-H0 no-PGD velocity profiles against extLQG.
+"""LEGACY (frozen 2026-07-11, issue 7ae2916) non-H0 no-PGD extLQG velocity materializer.
 
-Integration note: the frozen non-H0 checkpoint reader now lives at the shared
-``rlrmp.eval.legacy_checkpoints`` archival boundary. This script's required
-non-H0 020a65b input checkpoints are not stored under ``_artifacts/e901a20/``.
+The analysis logic is retained for provenance; the checkpoint-loading path is
+intentionally severed because the 020a65b/e901a20 checkpoints predate the
+feedbax-native Graph decomposition and are readable only via historical code
+revisions (see results/3cf909c/notes/legacy_materializers.md).
+
+Integration note: this script's required non-H0 020a65b input checkpoints are
+not stored under ``_artifacts/e901a20/``.
 """
 
 from __future__ import annotations
@@ -24,7 +28,6 @@ import numpy as np
 import plotly.graph_objects as go
 
 from rlrmp.analysis.pipelines.gru_pilot_figures import cs_output_feedback_reference_profiles
-from rlrmp.eval.legacy_checkpoints import load_nonh0_checkpoint_model_compatible
 from rlrmp.io import update_marked_section
 from rlrmp.paths import (
     figure_artifact_dir,
@@ -36,6 +39,16 @@ from rlrmp.viz.traces import add_band_trace as canonical_add_band_trace
 
 
 __all__ = ["load_nonh0_checkpoint_model_compatible"]
+
+
+def load_nonh0_checkpoint_model_compatible(*_args: Any, **_kwargs: Any) -> Any:
+    """Severed legacy checkpoint loader; raises unconditionally."""
+
+    raise RuntimeError(
+        "Frozen (issue 7ae2916): the 020a65b/e901a20 checkpoints predate the "
+        "feedbax-native Graph decomposition and are readable only via historical "
+        "code revisions; see results/3cf909c/notes/legacy_materializers.md"
+    )
 
 
 EXPERIMENT = "e901a20"

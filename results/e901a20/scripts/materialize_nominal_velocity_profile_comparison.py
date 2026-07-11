@@ -1,4 +1,10 @@
-"""Materialize nominal velocity profiles for the e901a20 policy-adversary run."""
+"""LEGACY (frozen 2026-07-11, issue 7ae2916) nominal velocity profile materializer.
+
+The analysis logic is retained for provenance; the checkpoint-loading path is
+intentionally severed because the 020a65b/e901a20 checkpoints predate the
+feedbax-native Graph decomposition and are readable only via historical code
+revisions (see results/3cf909c/notes/legacy_materializers.md).
+"""
 
 from __future__ import annotations
 from rlrmp.viz.colors import hex_to_rgba as hex_to_rgba
@@ -25,10 +31,6 @@ from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     select_validation_checkpoints_for_run,
 )
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
-from rlrmp.eval.legacy_checkpoints import (
-    load_checkpoint_model_compatible,
-    load_trained_model_compatible,
-)
 from rlrmp.io import update_marked_section
 from rlrmp.paths import (
     REPO_ROOT,
@@ -48,6 +50,25 @@ from rlrmp.viz import profile_comparison_grid
 from rlrmp.viz.traces import add_band_trace as canonical_add_band_trace
 
 jax.config.update("jax_enable_x64", True)
+
+
+_FROZEN_CHECKPOINT_MESSAGE = (
+    "Frozen (issue 7ae2916): the 020a65b/e901a20 checkpoints predate the "
+    "feedbax-native Graph decomposition and are readable only via historical "
+    "code revisions; see results/3cf909c/notes/legacy_materializers.md"
+)
+
+
+def load_trained_model_compatible(*_args: Any, **_kwargs: Any) -> Any:
+    """Severed legacy checkpoint loader; raises unconditionally."""
+
+    raise RuntimeError(_FROZEN_CHECKPOINT_MESSAGE)
+
+
+def load_checkpoint_model_compatible(*_args: Any, **_kwargs: Any) -> Any:
+    """Severed legacy checkpoint loader; raises unconditionally."""
+
+    raise RuntimeError(_FROZEN_CHECKPOINT_MESSAGE)
 
 
 EXPERIMENT = "e901a20"
