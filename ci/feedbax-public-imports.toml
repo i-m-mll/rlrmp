@@ -314,6 +314,7 @@ symbols = ["ManifestPredicate"]
 module = "feedbax.contracts.training"
 symbols = [
   "ArtifactPolicySpec",
+  "BatchScheduleOriginSpec",
   "CheckpointProgressPolicySpec",
   "DEFAULT_TRAINING_METHOD_REGISTRY",
   "ExecutionPolicySpec",
@@ -370,7 +371,16 @@ symbols = [
   "BatchIndexedCheckpointLeafSpec",
   "CheckpointContinuationRequest",
   "CheckpointForkBarrierMapping",
+  "CheckpointSegmentLineage",
 ]
+
+[[canonical_homes]]
+module = "feedbax.training.schedule_clocks"
+symbols = ["resolve_schedule_window"]
+
+[[canonical_homes]]
+module = "feedbax.orchestration.events"
+symbols = ["RunEventEmitter"]
 
 [[canonical_homes]]
 module = "feedbax.training.run_matrix"
