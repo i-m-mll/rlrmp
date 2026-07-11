@@ -11,5 +11,9 @@
   "cloud": "SECURE",
   "gpu": "NVIDIA GeForce RTX 5090",
   "matrix_ref": "results/c6c5997/runs/matrix.json",
-  "rows": ["flat_3e-5", "rewarm_3e-4", "rewarm_3e-3"]
+  "rows": [
+    {"id": "flat_3e-5", "training_run_spec": "results/c6c5997/runs/flat_3e-5.json"},
+    {"id": "rewarm_3e-4", "training_run_spec": "results/c6c5997/runs/rewarm_3e-4.json"},
+    {"id": "rewarm_3e-3", "training_run_spec": "results/c6c5997/runs/rewarm_3e-3.json"}
+  ]
 }
