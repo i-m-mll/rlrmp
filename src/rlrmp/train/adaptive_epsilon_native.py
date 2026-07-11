@@ -16,10 +16,7 @@ import jax.random as jr
 import jax.tree as jt
 import jax.tree_util as jtu
 import optax
-from feedbax.contracts.checkpoints import (
-    BatchIndexedCheckpointLeafSpec,
-    CheckpointContinuationRequest,
-)
+from feedbax.contracts.checkpoints import CheckpointContinuationRequest
 from feedbax.contracts.training import (
     DEFAULT_TRAINING_METHOD_REGISTRY,
     ArtifactPolicySpec,
@@ -104,20 +101,6 @@ TRAIN_CHUNK_BARRIER = "after_adaptive_epsilon_train_chunk"
 LR_CONTINUATION_RESTART = "restart"
 LR_CONTINUATION_CONTINUE = "continue"
 LRContinuationMode = Literal["restart", "continue"]
-
-# These paths are the six diagnostics whose final axis is the full training
-# horizon in the adaptive controller optimizer.  They deliberately name the
-# raw optimizer topology used by the nominal-to-adaptive fork: Feedbax extends
-# those leaves before the target/post transform serializes the adaptive slot.
-ADAPTIVE_EPSILON_BATCH_INDEXED_CHECKPOINT_LEAVES = (
-    BatchIndexedCheckpointLeafSpec(slot=OPTIMIZER, tree_path="/1"),
-    BatchIndexedCheckpointLeafSpec(slot=OPTIMIZER, tree_path="/2"),
-    BatchIndexedCheckpointLeafSpec(slot=OPTIMIZER, tree_path="/3"),
-    BatchIndexedCheckpointLeafSpec(slot=OPTIMIZER, tree_path="/30"),
-    BatchIndexedCheckpointLeafSpec(slot=OPTIMIZER, tree_path="/31"),
-    BatchIndexedCheckpointLeafSpec(slot=OPTIMIZER, tree_path="/32"),
-)
-
 
 class AdaptiveEpsilonMethodPayload(BaseModel):
     """Governed payload for adaptive-epsilon curriculum native training."""
@@ -1374,9 +1357,9 @@ def _guard_from_slot(value: Any) -> dict[str, Any]:
 def _resume_slot_transform(transform: Any | None) -> Any:
     """Normalize resumed adaptive slots without changing batch-horizon leaves.
 
-    Feedbax applies ``CheckpointContinuationRequest`` before any target/post
-    adapter transform.  Resizing serialized optimizer payloads here would hide
-    the source structure and bypass its declared-leaf validation.
+    Feedbax allocates segment-local ``BatchHistory`` templates before any
+    target/post adapter transform. Resizing serialized optimizer payloads here
+    would hide the source structure and bypass that validation.
     """
 
     def normalize(slots: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -1395,17 +1378,11 @@ def attach_adaptive_epsilon_checkpoint_continuation(
     source_completed_batches: int,
     target_total_batches: int,
 ) -> TrainingRunSpec:
-    """Attach the explicit adaptive optimizer-horizon continuation contract.
-
-    The declared leaves refer to the raw optimizer checkpoint topology.  The
-    Stage-2 fork gate extends it under Feedbax custody, then serializes the
-    resulting target optimizer in its documented target/post adapter.
-    """
+    """Attach the explicit adaptive segment continuation contract."""
 
     request = CheckpointContinuationRequest(
         source_completed_batches=source_completed_batches,
-        target_total_batches=target_total_batches,
-        batch_indexed_leaves=list(ADAPTIVE_EPSILON_BATCH_INDEXED_CHECKPOINT_LEAVES),
+        additional_batches=target_total_batches - source_completed_batches,
     )
     checkpoint_progress = training_spec.checkpoint_progress.model_copy(
         update={"continuation": request}
