@@ -241,6 +241,22 @@ def test_adaptive_epsilon_continuation_declares_segment_length(
         tmp_path,
         controller_mode=ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER,
     )
+    payload = DEFAULT_TRAINING_METHOD_REGISTRY.validate_payload(
+        spec.method_ref,
+        spec.method_payload,
+        path="/method_payload",
+    )
+    assert isinstance(payload, AdaptiveEpsilonMethodPayload)
+    outer_weight = dict(payload.outer_adversarial_weight)
+    outer_weight["ramp_batches"] = 1_000
+    payload = payload.model_copy(update={"outer_adversarial_weight": outer_weight})
+    spec = spec.model_copy(
+        update={
+            "method_payload": spec.method_payload.model_copy(
+                update={"payload": payload.model_dump(mode="json", exclude_none=True)}
+            )
+        }
+    )
 
     attached = attach_adaptive_epsilon_checkpoint_continuation(
         spec,
@@ -253,6 +269,15 @@ def test_adaptive_epsilon_continuation_declares_segment_length(
     assert request.source_completed_batches == 12_000
     assert request.additional_batches == 4_500
     assert request.target_total == 16_500
+    payload = DEFAULT_TRAINING_METHOD_REGISTRY.validate_payload(
+        attached.method_ref,
+        attached.method_payload,
+        path="/method_payload",
+    )
+    assert isinstance(payload, AdaptiveEpsilonMethodPayload)
+    assert payload.application_ramp_origin.kind == "segment_start"
+    assert payload.application_ramp_start_batch == 12_000
+    assert payload.application_ramp_end_batch == 13_000
 
 
 def test_adaptive_epsilon_runtime_consumes_declared_constant_lr(
@@ -794,7 +819,6 @@ def _numeric_state_payload(state: Any) -> dict[str, Any]:
             -1 if payload["last_update_batch"] is None else payload["last_update_batch"]
         ),
         "update_count": payload["update_count"],
-        "schedule_start_batch": payload["schedule_start_batch"],
         "zero_adversary_guard": _numeric_guard_payload(
             payload.get("zero_adversary_guard", {})
         ),

@@ -45,7 +45,6 @@ class AdaptiveEpsilonState:
     clean_loss_ema: float | None = None
     last_update_batch: int | None = None
     update_count: int = 0
-    schedule_start_batch: int = 0
     zero_adversary_guard: dict[str, Any] | None = None
     gain_estimate: float | None = None
     gain_samples: int = 0
@@ -64,7 +63,6 @@ class AdaptiveEpsilonState:
             "clean_loss_ema": (None if self.clean_loss_ema is None else float(self.clean_loss_ema)),
             "last_update_batch": self.last_update_batch,
             "update_count": int(self.update_count),
-            "schedule_start_batch": int(self.schedule_start_batch),
             "gain_estimate": (None if self.gain_estimate is None else float(self.gain_estimate)),
             "gain_samples": int(self.gain_samples),
             "pending_lambda_log_step": (
@@ -409,7 +407,6 @@ def _load_latest_checkpoint_materialization(
             ),
             last_update_batch=adaptive_payload.get("last_update_batch"),
             update_count=int(adaptive_payload.get("update_count", 0)),
-            schedule_start_batch=int(adaptive_payload.get("schedule_start_batch", 0)),
             zero_adversary_guard=(
                 _normalize_adaptive_epsilon_zero_guard(
                     adaptive_payload.get("zero_adversary_guard"),
