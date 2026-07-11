@@ -44,12 +44,10 @@ from rlrmp.runtime.checkpoint_fork_gate import (
     _assert_payload_lr_continuation_mode,
     _assert_stage2_lambda_update_contract,
     _canonical_task_identity_hash,
-    _compose_adaptive_fork_parity,
     _ratio_setpoint_prelaunch_report,
     format_ratio_setpoint_report,
     load_matrix,
 )
-from rlrmp.runtime.adaptive_checkpoint_adapter import NominalToAdaptiveSlotAdapter
 from rlrmp.runtime.lr_continuation import RlrmpLrContinuationReporter
 from rlrmp.train.adaptive_epsilon_native import (
     adaptive_epsilon_method_ref,
@@ -786,78 +784,6 @@ def test_fork_checkpoints_with_parity_delegates_matrix_skip_fork(tmp_path: Path)
     assert any(row["kind"] == "lr_continuation" and row["lr"] == 0.02 for row in table["rows"])
 
 
-def test_adaptive_parity_composition_retains_transformed_slots_and_lr(tmp_path: Path) -> None:
-    matrix_path = tmp_path / "matrix.json"
-    _write_matrix(matrix_path)
-    matrix_payload = json.loads(matrix_path.read_text(encoding="utf-8"))
-    matrix_payload["fork"]["expected_slots"] = [
-        "model",
-        "optimizer",
-        "prng",
-        "completed_batches",
-    ]
-    matrix_path.write_text(json.dumps(matrix_payload), encoding="utf-8")
-    matrix = load_matrix(matrix_path)
-    target = tmp_path / "target"
-    transaction = target / "transactions" / "tx-target"
-    transaction.mkdir(parents=True)
-    manifest = {
-        "transaction_id": "tx-target",
-        "fork_provenance": {
-            "slots": [
-                {
-                    "slot": "model",
-                    "source_sha256": "source-model",
-                    "target_sha256": "target-model",
-                    "transform": {
-                        "identity": "rlrmp.nominal_raw_to_adaptive_serialized.v1"
-                    },
-                },
-                {
-                    "slot": "optimizer",
-                    "source_sha256": "source-optimizer",
-                    "target_sha256": "target-optimizer",
-                    "transform": {
-                        "identity": "rlrmp.nominal_raw_to_adaptive_serialized.v1"
-                    },
-                },
-                {"slot": "prng", "source_sha256": "same-prng", "target_sha256": "same-prng"},
-                {
-                    "slot": "completed_batches",
-                    "source_sha256": "same-batches",
-                    "target_sha256": "same-batches",
-                },
-            ]
-        },
-    }
-    transaction.joinpath("manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    target.joinpath("latest.json").write_text(
-        json.dumps({"manifest_relative_path": "transactions/tx-target/manifest.json"}),
-        encoding="utf-8",
-    )
-    adapter = NominalToAdaptiveSlotAdapter(None, None, {})
-    table = _compose_adaptive_fork_parity(
-        {
-            "schema_version": "feedbax.run_matrix_fork_parity.v1",
-            "ok": False,
-            "rows": [{"kind": "lr_continuation", "row_id": "lr_hi", "lr": 0.02}],
-        },
-        matrix=matrix,
-        materialized=SimpleNamespace(
-            rows=[SimpleNamespace(row_id="lr_hi", planned_run_id="planned")]
-        ),
-        target_roots={"lr_hi": target},
-        adaptive_contracts={"lr_hi": (adapter, SimpleNamespace())},
-    )
-
-    assert table["ok"] is True
-    assert [row["kind"] for row in table["rows"]].count("slot_parity") == 4
-    assert [row["kind"] for row in table["rows"]].count("lr_continuation") == 1
-    assert next(row for row in table["rows"] if row["slot"] == "model")["comparison"] == (
-        "declared_transform"
-    )
-
-
 def test_fork_gate_forward_api_guard_matches_pinned_feedbax_delivery() -> None:
     """The gate's real Feedbax call cannot advance beyond the tracked pin."""
 
@@ -940,7 +866,7 @@ def test_adaptive_fork_contracts_call_real_pinned_feedbax_matrix_api(tmp_path: P
         payload=target_spec.model_dump(mode="json"),
     )
     materialized = SimpleNamespace(matrix_spec_sha256="test-matrix", rows=[row])
-    contracts = _adaptive_continuation_fork_contracts(materialized, source_program_step=24)
+    contracts = _adaptive_continuation_fork_contracts(materialized)
     adapter, barrier_mapping = contracts["adaptive"]
     assert barrier_mapping.source_barrier == "after_train_chunk"
     assert barrier_mapping.target_barrier == "after_adaptive_epsilon_train_chunk"

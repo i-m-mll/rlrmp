@@ -444,6 +444,13 @@ def test_adaptive_epsilon_restart_realized_optimizer_matches_rewarm_points(
         ),
     )
     spec = _with_controller_optimizer(_with_lr_continuation_mode(spec, "restart"), optimizer)
+    payload = DEFAULT_TRAINING_METHOD_REGISTRY.validate_payload(
+        spec.method_ref,
+        spec.method_payload,
+        path="/method_payload",
+    )
+    assert isinstance(payload, AdaptiveEpsilonMethodPayload)
+    hps = build_hps(_config_namespace(payload.config))
     context = lr_resume_context_for_mode(
         mode="restart",
         completed_batches=12_000,
@@ -452,7 +459,7 @@ def test_adaptive_epsilon_restart_realized_optimizer_matches_rewarm_points(
 
     points = adaptive_epsilon_controller_lr_points(
         spec,
-        hps=None,
+        hps=hps,
         schedule_origin_step=context.schedule_origin_step,
         current_step=context.current_step,
         optimizer_count_at_current_step=context.optimizer_count_at_current_step,

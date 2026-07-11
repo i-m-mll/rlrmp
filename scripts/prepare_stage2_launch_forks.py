@@ -83,7 +83,6 @@ def main() -> None:
             hps=target_context.hps,
             args=target_context.args,
             key=jax.random.PRNGKey(int(target_context.args.seed)),
-            schedule_start_batch=SOURCE_COMPLETED_BATCHES,
         )
         native = runtime.component("adaptive_epsilon")
         if not isinstance(native, AdaptiveEpsilonNativeRuntime):

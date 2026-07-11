@@ -111,16 +111,8 @@ def fork_checkpoints_with_parity(
     adaptive_contracts = _adaptive_continuation_fork_contracts(materialized)
     ramp_windows = _adaptive_ramp_window_prelaunch_report(materialized)
     reporter = RlrmpLrContinuationReporter(source_checkpoint_root=source_checkpoint_root)
-    feedbax_matrix = matrix
-    if adaptive_contracts and matrix.fork is not None:
-        # Feedbax's byte-parity table treats declared target-only slots as a
-        # topology mismatch. RLRMP composes and enforces topology-aware parity
-        # from custody provenance immediately below.
-        feedbax_matrix = matrix.model_copy(
-            update={"fork": matrix.fork.model_copy(update={"parity": "skip"})}
-        )
     table = fork_matrix_checkpoints(
-        feedbax_matrix,
+        matrix,
         materialized,
         source_checkpoint_root=source_checkpoint_root,
         target_checkpoint_roots=target_roots,
@@ -150,14 +142,6 @@ def fork_checkpoints_with_parity(
         lr_reporter=reporter,
         tool_version="rlrmp.checkpoint_fork_gate.v2",
     )
-    if adaptive_contracts:
-        table = _compose_adaptive_fork_parity(
-            table,
-            matrix=matrix,
-            materialized=materialized,
-            target_roots=target_roots,
-            adaptive_contracts=adaptive_contracts,
-        )
     if ratio_setpoint is not None:
         table["ratio_setpoint"] = ratio_setpoint
         parity_output_path.write_text(
@@ -243,7 +227,6 @@ def _adaptive_continuation_fork_contracts(
             args=args,
             key=jr.PRNGKey(int(args.seed)),
             lr_continuation_mode=payload.lr_continuation_mode,
-            schedule_start_batch=spec.checkpoint_progress.continuation.source_completed_batches,
         )
         native = runtime.component("adaptive_epsilon")
         if not isinstance(native, AdaptiveEpsilonNativeRuntime):
