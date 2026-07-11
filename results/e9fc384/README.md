@@ -13,3 +13,5 @@ own `run.json` provenance. See `notes/graph_sidecar_audit.md` for the full
 narrative and `notes/graph_sidecar_audit_manifest.json` for the committed
 machine-readable manifest that `tests/test_graph_sidecar_audit_manifest.py`
 guards against drift.
+
+The historical nested recipes were retired under issue `ef8e1df`; recover them from git tag `legacy/ef8e1df-nested-run-json-retired` (the bytes are also in Mandible custody).

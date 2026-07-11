@@ -28,7 +28,7 @@ DEFAULT_TEACHER_GAINS_KEY = "extlqg_controller_gains"
 BASE_RUN_SPEC = (
     "results/020a65b/runs/"
     "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_"
-    "clip5_b64/run.json"
+    "clip5_b64.json"
 )
 
 

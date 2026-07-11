@@ -30,6 +30,8 @@ computes Δv as defined above.
 - `runs/linear_regulator__adversarial/run.json` — regulator, +500 adversarial batches
 - `runs/linear_tracker__baseline/run.json` — tracker, n_adversary_batches=0
 - `runs/linear_tracker__adversarial/run.json` — tracker, +500 adversarial batches
+
+These historical nested recipes were retired under issue `ef8e1df`; recover them from git tag `legacy/ef8e1df-nested-run-json-retired` (the bytes are also in Mandible custody).
 - `notes/decoupling_acid_test_mvp.md` — headline finding + discussion
 - `notes/delta_v_summary.json` — machine-readable Δv table written by the analysis
 - `figures/delta_v_signature/spec.json` — figure spec + auto-mirrored render

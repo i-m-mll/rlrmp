@@ -208,18 +208,6 @@ def test_cs_lss_run_spec_predicate_uses_declared_paths(
     assert _is_cs_lss_run_spec(patch) is expected
 
 
-def test_nominal_gru_run_spec_file_loads_json_and_checks_sidecars(tmp_path) -> None:
-    run_spec = _valid_nominal_gru_run_spec()
-    (tmp_path / "model.graph.json").write_text("{}", encoding="utf-8")
-    (tmp_path / "model.graph.manifest.json").write_text("{}", encoding="utf-8")
-    (tmp_path / "run.json").write_text(
-        json.dumps(run_spec),
-        encoding="utf-8",
-    )
-
-    validate_nominal_gru_run_spec_file(tmp_path / "run.json")
-
-
 def test_flat_nominal_gru_run_spec_file_loads_sibling_sidecars(tmp_path) -> None:
     runs_dir = tmp_path / "runs"
     run_spec_path = runs_dir / "baseline.json"

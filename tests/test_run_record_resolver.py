@@ -122,9 +122,9 @@ def test_resolve_run_record_returns_full_manifest_payload(tmp_path: Path) -> Non
 
 
 def test_resolve_run_record_missing_manifest_reports_archive_only(tmp_path: Path) -> None:
-    legacy = tmp_path / "repo" / "results" / "731fdf7" / "runs" / "fixture__ok" / "run.json"
-    legacy.parent.mkdir(parents=True)
-    legacy.write_text(json.dumps(_run_spec()), encoding="utf-8")
+    run_spec = tmp_path / "repo" / "results" / "731fdf7" / "runs" / "fixture__ok.json"
+    run_spec.parent.mkdir(parents=True)
+    run_spec.write_text(json.dumps(_run_spec()), encoding="utf-8")
 
     with pytest.raises(RunSpecValidationError, match="not_found.*archive-only"):
         resolve_run_record("731fdf7", "fixture__ok", repo_root=tmp_path / "repo")

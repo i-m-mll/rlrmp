@@ -806,7 +806,6 @@ fi
 HASH="${ISSUE:0:7}"
 RUNS_DIR="$REPO_ROOT/results/$HASH/runs"
 SPEC_PATH="$RUNS_DIR/$RUN_LABEL.json"
-LEGACY_SPEC_DIR="$RUNS_DIR/$RUN_LABEL"
 ARTIFACT_DIR="$REPO_ROOT/_artifacts/$HASH/runs/$RUN_LABEL"
 SUMMARY_PATH="$ARTIFACT_DIR/training_summary.json"
 SYNC_MARKER="$ARTIFACT_DIR/.post_run_synced.json"
@@ -939,12 +938,6 @@ else
             cp "$ARTIFACT_DIR/run.json" "$SPEC_PATH"
         elif [[ -f "$SPEC_PATH" ]]; then
             :
-        elif [[ -f "$LEGACY_SPEC_DIR/run.json" ]]; then
-            # A run that wrote its recipe to the legacy nested
-            # results/<hash>/runs/<run>/run.json path. The training scripts now
-            # emit the flat results/<hash>/runs/<run>.json recipe (W8/e926665), so
-            # this is a non-conforming run; refuse rather than silently promoting it.
-            die "legacy nested run spec at $LEGACY_SPEC_DIR/run.json; expected the flat recipe at $SPEC_PATH. Re-run training with the updated scripts (which write the flat path) or move the recipe to $SPEC_PATH before re-running post_run.sh."
         else
             die "could not find run spec; expected $ARTIFACT_DIR/run.json or $SPEC_PATH"
         fi
