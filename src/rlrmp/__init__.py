@@ -2,6 +2,7 @@
 
 import logging
 import sys
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,67 @@ def register_experiment_package(registry):
     # this to restore rlrmp's recipes. The underlying registrations are
     # idempotent (``replace=True``), so forcing is safe.
     ensure_rlrmp_recipes_registered(defer_if_feedbax_initializing=True, force=True)
+
+
+def register_feedbax_training_methods(registry: Any) -> None:
+    """Register every RLRMP-native training method through the plugin hook.
+
+    Feedbax's generic command-line preflights validate a ``TrainingRunSpec``
+    before any RLRMP run-spec loader has a chance to register its native method.
+    Keep that registration here, on the same plugin entry point as the package
+    registration, so every generic consumer sees the full native method set.
+    """
+    from feedbax.contracts.training import DEFAULT_TRAINING_METHOD_REGISTRY
+
+    from rlrmp.runtime.training_run_specs import (
+        CLOSED_LOOP_DISTILLATION_METHOD_REF,
+        CS_SUPERVISED_METHOD_REF,
+        GUIDED_DISTILLATION_METHOD_REF,
+        register_rlrmp_cs_supervised_method,
+        register_rlrmp_distillation_methods,
+    )
+    from rlrmp.train.adaptive_epsilon_native import (
+        ADAPTIVE_EPSILON_CURRICULUM_METHOD_REF,
+        ensure_adaptive_epsilon_training_method_registered,
+    )
+    from rlrmp.train.minimax_native import (
+        MINIMAX_METHOD_REF,
+        ensure_minimax_training_method_registered,
+    )
+    from rlrmp.train.policy_adversary_native import (
+        POLICY_ADVERSARY_SUPERVISED_METHOD_REF,
+        ensure_policy_adversary_training_method_registered,
+    )
+
+    # The established native registration functions own their registration
+    # records. They populate the default registry, from which we copy the
+    # exact records to the registry supplied by Feedbax's plugin loader. This
+    # also makes explicit-registry preflights behave the same as the CLI.
+    register_rlrmp_cs_supervised_method()
+    register_rlrmp_distillation_methods()
+    ensure_adaptive_epsilon_training_method_registered()
+    ensure_policy_adversary_training_method_registered()
+    ensure_minimax_training_method_registered()
+
+    for method_ref in (
+        CS_SUPERVISED_METHOD_REF,
+        CLOSED_LOOP_DISTILLATION_METHOD_REF,
+        GUIDED_DISTILLATION_METHOD_REF,
+        ADAPTIVE_EPSILON_CURRICULUM_METHOD_REF,
+        POLICY_ADVERSARY_SUPERVISED_METHOD_REF,
+        MINIMAX_METHOD_REF,
+    ):
+        if method_ref in registry.available_keys():
+            continue
+        registration = DEFAULT_TRAINING_METHOD_REGISTRY.resolve(method_ref, path="/method_ref")
+        registry.register(registration)
+
+
+# ``feedbax.plugins`` currently loads the callable declared by the existing
+# ``feedbax.plugins`` entry point. Expose the method registrar as an attribute
+# on that callable so the entry point continues to serve both package discovery
+# and training-method discovery without a second, divergent plugin surface.
+register_experiment_package.register_feedbax_training_methods = register_feedbax_training_methods
 
 
 def ensure_rlrmp_recipes_registered(
