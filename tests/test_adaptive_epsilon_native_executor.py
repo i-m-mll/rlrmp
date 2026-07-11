@@ -20,18 +20,10 @@ from feedbax.contracts.training import (
     OptimizerSpec,
     TrainingRunSpec,
 )
-from feedbax.contracts.worker import ProgressCoordinate
-from feedbax.training.checkpoint_custody import (
-    CheckpointCompatibilityError,
-    fork_checkpoint_transaction,
-    load_latest_checkpoint,
-    write_checkpoint_transaction,
-)
 
 from rlrmp.runtime.checkpoint_custody import deserialize_pytree_slot, serialize_pytree_slot
 from rlrmp.train.adaptive_epsilon_native import (
     ADAPTIVE_EPSILON_METHOD_PAYLOAD_SCHEMA_VERSION,
-    ADAPTIVE_EPSILON_BATCH_INDEXED_CHECKPOINT_LEAVES,
     AdaptiveEpsilonMethodPayload,
     AdaptiveEpsilonNativeRuntime,
     SerializedPyTreeSlot,
@@ -161,6 +153,8 @@ def test_adaptive_epsilon_payload_requires_ratio_setpoint_basis() -> None:
             },
             lambda_update={},
             outer_adversarial_weight={},
+            application_ramp_start_batch=0,
+            application_ramp_end_batch=0,
             pgd_inner_maximizer={},
             checkpointing={},
         )
@@ -242,12 +236,28 @@ def test_serialized_optimizer_slot_requires_custody_extension_before_deserialize
         _deserialize_optimizer_slot_value(slot, template)
 
 
-def test_adaptive_epsilon_continuation_declares_real_optimizer_history_leaves(
+def test_adaptive_epsilon_continuation_declares_segment_length(
     tmp_path: Path,
 ) -> None:
     spec = _adaptive_epsilon_training_spec(
         tmp_path,
         controller_mode=ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER,
+    )
+    payload = DEFAULT_TRAINING_METHOD_REGISTRY.validate_payload(
+        spec.method_ref,
+        spec.method_payload,
+        path="/method_payload",
+    )
+    assert isinstance(payload, AdaptiveEpsilonMethodPayload)
+    outer_weight = dict(payload.outer_adversarial_weight)
+    outer_weight["ramp_batches"] = 1_000
+    payload = payload.model_copy(update={"outer_adversarial_weight": outer_weight})
+    spec = spec.model_copy(
+        update={
+            "method_payload": spec.method_payload.model_copy(
+                update={"payload": payload.model_dump(mode="json", exclude_none=True)}
+            )
+        }
     )
 
     attached = attach_adaptive_epsilon_checkpoint_continuation(
@@ -259,109 +269,17 @@ def test_adaptive_epsilon_continuation_declares_real_optimizer_history_leaves(
     request = attached.checkpoint_progress.continuation
     assert request is not None
     assert request.source_completed_batches == 12_000
+    assert request.additional_batches == 4_500
     assert request.target_total == 16_500
-    assert {(leaf.slot, leaf.tree_path) for leaf in request.batch_indexed_leaves} == {
-        (OPTIMIZER, "/1"),
-        (OPTIMIZER, "/2"),
-        (OPTIMIZER, "/3"),
-        (OPTIMIZER, "/30"),
-        (OPTIMIZER, "/31"),
-        (OPTIMIZER, "/32"),
-    }
-    assert tuple(request.batch_indexed_leaves) == ADAPTIVE_EPSILON_BATCH_INDEXED_CHECKPOINT_LEAVES
-
-
-def test_adaptive_epsilon_continuation_extends_declared_raw_histories_fail_closed(
-    tmp_path: Path,
-) -> None:
-    """Feedbax extends 12,000->16,500 before any adaptive serializer transform."""
-
-    spec = _adaptive_epsilon_training_spec(
-        tmp_path,
-        controller_mode=ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER,
-    )
-    target_spec = attach_adaptive_epsilon_checkpoint_continuation(
-        spec,
-        source_completed_batches=12_000,
-        target_total_batches=16_500,
-    )
     payload = DEFAULT_TRAINING_METHOD_REGISTRY.validate_payload(
-        spec.method_ref,
-        spec.method_payload,
+        attached.method_ref,
+        attached.method_payload,
         path="/method_payload",
     )
     assert isinstance(payload, AdaptiveEpsilonMethodPayload)
-    args = _config_namespace(payload.config)
-    initial_slots, _runtime = build_adaptive_epsilon_native_initial_slots(
-        run_spec=spec,
-        hps=build_hps(args),
-        args=args,
-        key=jr.PRNGKey(7),
-    )
-    source_optimizer = _raw_optimizer_history_template(12_000)
-    target_optimizer = _raw_optimizer_history_template(16_500)
-    source_slots = dict(initial_slots)
-    source_slots[OPTIMIZER] = source_optimizer
-    expected_slots = dict(initial_slots)
-    expected_slots[OPTIMIZER] = target_optimizer
-    source_root = tmp_path / "raw-source"
-    target_root = tmp_path / "raw-target"
-    program = spec.worker_execution.method_contract.phase_program
-    write_checkpoint_transaction(
-        source_root,
-        run_spec=spec,
-        phase_program=program,
-        barrier_name="after_adaptive_epsilon_train_chunk",
-        coordinate=ProgressCoordinate(
-            run_id="adaptive-raw-source",
-            phase="adaptive_epsilon_train_chunk",
-            program_step=12_000,
-            completed_barrier="after_adaptive_epsilon_train_chunk",
-        ),
-        slots=source_slots,
-        completed_training_batches=12_000,
-    )
-    fork_checkpoint_transaction(
-        source_root,
-        target_root,
-        target_run_spec=target_spec,
-        target_phase_program=program,
-        expected_slots=expected_slots,
-        continuation_request=target_spec.checkpoint_progress.continuation,
-    )
-    resumed = load_latest_checkpoint(
-        target_root,
-        expected_run_spec=target_spec,
-        expected_phase_program=program,
-        expected_slots=expected_slots,
-        continuation_request=target_spec.checkpoint_progress.continuation,
-    )
-    for index in (1, 2, 3, 30, 31, 32):
-        restored = resumed.slots[OPTIMIZER][index]
-        assert restored.shape == (1, 16_500)
-        assert jnp.array_equal(restored[..., :12_000], source_optimizer[index])
-
-    missing_leaf = target_spec.checkpoint_progress.continuation.batch_indexed_leaves[:-1]
-    invalid_progress = target_spec.checkpoint_progress.model_copy(
-        update={
-            "continuation": target_spec.checkpoint_progress.continuation.model_copy(
-                update={"batch_indexed_leaves": missing_leaf}
-            )
-        }
-    )
-    invalid_spec = target_spec.model_copy(update={"checkpoint_progress": invalid_progress})
-    with pytest.raises(
-        CheckpointCompatibilityError,
-        match="unsupported batch-indexed continuation leaf.*slot='optimizer'.*path='/32'",
-    ):
-        fork_checkpoint_transaction(
-            source_root,
-            tmp_path / "raw-target-invalid",
-            target_run_spec=invalid_spec,
-            target_phase_program=program,
-            expected_slots=expected_slots,
-            continuation_request=invalid_spec.checkpoint_progress.continuation,
-        )
+    assert payload.application_ramp_origin.kind == "segment_start"
+    assert payload.application_ramp_start_batch == 12_000
+    assert payload.application_ramp_end_batch == 13_000
 
 
 def test_adaptive_epsilon_runtime_consumes_declared_constant_lr(
@@ -879,15 +797,6 @@ def _diagnostic_optimizer_state(n_batches: int) -> dict[str, object]:
     }
 
 
-def _raw_optimizer_history_template(n_batches: int) -> tuple[Any, ...]:
-    """Minimal raw optimizer tree with the six declared history leaves."""
-
-    leaves: list[Any] = [jnp.asarray(index, dtype=jnp.int32) for index in range(33)]
-    for index in (1, 2, 3, 30, 31, 32):
-        leaves[index] = jnp.full((1, n_batches), index, dtype=jnp.float32)
-    return tuple(leaves)
-
-
 def _array_leaves(value: Any) -> Any:
     return jt.map(_cast_bool_array, eqx.filter(value, eqx.is_array))
 
@@ -912,7 +821,6 @@ def _numeric_state_payload(state: Any) -> dict[str, Any]:
             -1 if payload["last_update_batch"] is None else payload["last_update_batch"]
         ),
         "update_count": payload["update_count"],
-        "schedule_start_batch": payload["schedule_start_batch"],
         "zero_adversary_guard": _numeric_guard_payload(
             payload.get("zero_adversary_guard", {})
         ),

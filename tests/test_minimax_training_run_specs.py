@@ -373,6 +373,18 @@ def test_minimax_native_executor_emits_governed_manifest(tmp_path: Path) -> None
     assert result.manifest_path.is_file()
     assert result.final_coordinate.phase == "done"
     assert result.final_slots["controller_loss"] != 0.0
+    assert [write.manifest.barrier for write in result.checkpoint_writes] == [
+        "after_adversarial",
+        "after_adversarial",
+        "after_adversarial",
+    ]
+    assert [
+        write.manifest.metadata["barrier_visit_ordinal"]
+        for write in result.checkpoint_writes
+    ] == [0, 1, 2]
+    assert [
+        write.manifest.completed_coordinate.program_step for write in result.checkpoint_writes
+    ] == [1, 2, 3]
 
 
 def test_minimax_native_initial_slots_honor_explicit_warmup_model(

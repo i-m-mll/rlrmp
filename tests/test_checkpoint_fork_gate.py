@@ -36,6 +36,7 @@ from feedbax.training.run_matrix import fork_matrix_checkpoints
 from rlrmp.runtime.checkpoint_fork_gate import (
     ForkParityError,
     _adaptive_continuation_fork_contracts,
+    _program_step_from_completed_batches,
     fork_checkpoints_with_parity,
     parse_target,
 )
@@ -317,6 +318,24 @@ def test_parse_target_accepts_matrix_row_checkpoint_root() -> None:
 
     assert target.row_id == "lr_hi"
     assert target.checkpoint_root == Path("/tmp/checkpoints")
+
+
+@pytest.mark.parametrize(
+    ("completed_batches", "chunk_interval_batches", "expected_program_step"),
+    [(0, 500, 0), (12_000, 500, 24), (12_001, 500, 25)],
+)
+def test_program_step_is_train_chunk_ordinal_not_batch_total(
+    completed_batches: int,
+    chunk_interval_batches: int,
+    expected_program_step: int,
+) -> None:
+    assert (
+        _program_step_from_completed_batches(
+            completed_batches=completed_batches,
+            chunk_interval_batches=chunk_interval_batches,
+        )
+        == expected_program_step
+    )
 
 
 def test_lr_continuation_reporter_public_api_handles_restart_and_continue(
@@ -712,7 +731,7 @@ def test_fork_gate_forward_api_guard_matches_pinned_feedbax_delivery() -> None:
     keyword_names = {keyword.arg for keyword in calls[0].keywords if keyword.arg is not None}
     required_continuation_kwargs = {
         "target_slot_templates",
-        "row_continuation_slot_templates",
+            "row_segment_history_templates",
         "row_target_slot_transforms",
         "row_target_transform_metadata",
         "row_target_transformed_slots",
@@ -782,6 +801,16 @@ def test_adaptive_fork_contracts_call_real_pinned_feedbax_matrix_api(tmp_path: P
     adapter, barrier_mapping = contracts["adaptive"]
     assert barrier_mapping.source_barrier == "after_train_chunk"
     assert barrier_mapping.target_barrier == "after_adaptive_epsilon_train_chunk"
+    assert barrier_mapping.target_coordinate is not None
+    assert barrier_mapping.target_coordinate.program_step == 2
+    assert barrier_mapping.coordinate_mapping == {
+        "identity": "rlrmp.cs_supervised_to_adaptive_epsilon.v1",
+        "parameters": {
+            "program_step": "source_train_chunk_barrier_visit_ordinal",
+            "source_completed_training_batches": 2,
+            "source_chunk_interval_batches": 1,
+        },
+    }
 
     matrix_path = tmp_path / "matrix.json"
     _write_matrix(matrix_path)
@@ -798,7 +827,7 @@ def test_adaptive_fork_contracts_call_real_pinned_feedbax_matrix_api(tmp_path: P
         target_checkpoint_roots={"adaptive": target_root},
         parity_output_path=tmp_path / "parity.json",
         target_slot_templates={"adaptive": adapter.adaptive_initial_slots},
-        row_continuation_slot_templates={"adaptive": adapter.continuation_slot_templates()},
+        row_segment_history_templates={"adaptive": adapter.continuation_slot_templates()},
         row_target_slot_transforms={"adaptive": adapter.transform},
         row_target_transform_metadata={"adaptive": adapter.transform_metadata},
         row_target_transformed_slots={"adaptive": adapter.target_transformed_slots},

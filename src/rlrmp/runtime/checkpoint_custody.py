@@ -130,7 +130,7 @@ def write_cs_checkpoint_transaction(
     *,
     run_spec: Mapping[str, Any],
     completed_batches: int,
-    program_step: int | None = None,
+    program_step: int,
     slots: Mapping[str, Any],
     status: str = "partial",
 ) -> Any:
@@ -141,7 +141,7 @@ def write_cs_checkpoint_transaction(
     coordinate = ProgressCoordinate(
         run_id=_run_id(run_spec, prefix="rlrmp-cs"),
         phase=_cs_checkpoint_barrier_phase(custody_spec, barrier_name),
-        program_step=int(completed_batches if program_step is None else program_step),
+        program_step=int(program_step),
         completed_barrier=barrier_name,
     )
     return write_checkpoint_transaction(

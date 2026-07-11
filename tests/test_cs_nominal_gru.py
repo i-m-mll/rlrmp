@@ -1018,36 +1018,18 @@ def test_adaptive_epsilon_schedules_and_lambda_update_are_conservative() -> None
 
 
 def test_adaptive_epsilon_continuation_schedule_is_relative_to_resume_start() -> None:
-    hps = build_hps(
-        _args(
-            broad_epsilon_pgd_training=True,
-            broad_epsilon_pgd_objective=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
-            broad_epsilon_pgd_energy_lambda=10.0,
-            adaptive_epsilon_curriculum=True,
-            target_relative_multitarget=True,
-        )
+    config = TreeNamespace(
+        outer_adversarial_weight=TreeNamespace(start=0.0, final=1.0, ramp_batches=1_000)
     )
-    cfg = hps.adaptive_epsilon_curriculum
-    resumed_state = _initial_adaptive_epsilon_state(hps, schedule_start_batch=12000)
-    scratch_state = _initial_adaptive_epsilon_state(hps)
-    assert resumed_state is not None
-    assert scratch_state is not None
+    scales = [
+        _adaptive_epsilon_outer_weight(
+            config,
+            _adaptive_epsilon_schedule_batch(batch, ramp_start_batch=12_000),
+        )
+        for batch in (12_000, 12_500, 13_000)
+    ]
 
-    assert _adaptive_epsilon_schedule_batch(resumed_state, 12000) == 0
-    assert _adaptive_epsilon_schedule_batch(resumed_state, 13250) == 1250
-    assert _adaptive_epsilon_schedule_batch(resumed_state, 14500) == 2500
-    assert _adaptive_epsilon_schedule_batch(resumed_state, 19499) == 7499
-    assert _adaptive_epsilon_damage_target(
-        cfg,
-        _adaptive_epsilon_schedule_batch(resumed_state, 13250),
-    ) == pytest.approx(1750.0)
-    assert _adaptive_epsilon_outer_weight(
-        cfg,
-        _adaptive_epsilon_schedule_batch(resumed_state, 13250),
-    ) == pytest.approx(0.5)
-
-    assert _adaptive_epsilon_schedule_batch(scratch_state, 0) == 0
-    assert _adaptive_epsilon_schedule_batch(scratch_state, 2500) == 2500
+    assert scales == pytest.approx([0.0, 0.5, 1.0])
 
 
 def test_scale_direct_epsilon_trial_specs_scales_only_epsilon_channel() -> None:
