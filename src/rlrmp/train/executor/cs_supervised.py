@@ -55,12 +55,13 @@ from rlrmp.loss import (
     CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p
-from rlrmp.runtime.run_specs import validate_nominal_gru_run_spec
+from rlrmp.runtime.run_specs import run_spec_sidecar_dir, validate_nominal_gru_run_spec
 from rlrmp.runtime.training_run_specs import (
     FEEDBAX_TRAINING_RUN_SPEC_KEY,
     RLRMP_RUN_SPEC_PAYLOAD_KEY,
     assert_runtime_graph_matches_training_spec,
     feedbax_training_run_spec_from_payload,
+    hydrate_compact_run_spec_envelope,
 )
 from rlrmp.runtime.spec_migrations import (
     RUN_SPEC_KIND,
@@ -88,7 +89,12 @@ from rlrmp.train.cs_perturbation_training import (
     make_broad_epsilon_pgd_pre_step,
 )
 from rlrmp.train.progress import format_batch_line
-from rlrmp.train.resume_control import emit_launch_continuation, resolve_launch_continuation
+from rlrmp.train.resume_control import (
+    LaunchContinuation,
+    attach_cs_supervised_checkpoint_continuation,
+    emit_launch_continuation,
+    resolve_launch_continuation,
+)
 from rlrmp.train.task_model import (
     CS_LSS_PLANT_BACKEND,
     setup_task_model_pair,
@@ -244,10 +250,13 @@ def load_validated_run_spec(
     """Load and validate a composed C&S GRU ``TrainingRunSpec`` recipe."""
 
     payload_path = Path(run_spec_path)
-    payload = json.loads(payload_path.read_text(encoding="utf-8"))
+    raw_payload = json.loads(payload_path.read_text(encoding="utf-8"))
+    if not isinstance(raw_payload, Mapping):
+        raise ValueError("C&S GRU run spec must be a JSON object")
+    payload = hydrate_compact_run_spec_envelope(raw_payload)
     validate_nominal_gru_run_spec(
         payload,
-        spec_dir=payload_path.parent,
+        spec_dir=run_spec_sidecar_dir(payload_path),
         require_graph_sidecars=require_graph_sidecars,
     )
     _validate_composed_training_spec_payload(payload)
@@ -690,10 +699,10 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
             "hysteresis_frac",
             _config_default("adaptive_epsilon_hysteresis_frac"),
         ),
-        "adaptive_epsilon_freeze_until_burn_in": bool(
+        "adaptive_epsilon_freeze_during_application_ramp": bool(
             adaptive_lambda.get(
-                "freeze_until_burn_in",
-                _config_default("adaptive_epsilon_freeze_until_burn_in"),
+                "freeze_during_application_ramp",
+                _config_default("adaptive_epsilon_freeze_during_application_ramp"),
             )
         ),
         "adaptive_epsilon_gain_normalization": bool(
@@ -970,11 +979,12 @@ def _run_cs_supervised_native_from_context(
     )
     training_spec = feedbax_training_run_spec_from_payload(run_spec)
     checkpoint_root = output_dir / "checkpoints"
-    context, resume_native = _resolve_full_train_launch_context(
+    context, resume_native, continuation = _resolve_full_train_launch_context(
         context,
         checkpoint_root=checkpoint_root,
         stop_after_batches=stop_after_batches,
     )
+    training_spec = attach_cs_supervised_checkpoint_continuation(training_spec, continuation)
     args = context.args
     initial_slots, runtime = build_cs_supervised_native_initial_slots(
         run_spec=run_spec,
@@ -997,9 +1007,7 @@ def _run_cs_supervised_native_from_context(
         training_spec_payload_schema_version=RUN_SPEC_SCHEMA_VERSION,
         training_spec_payload_ref=str(run_spec_path),
         resume=resume_native,
-        resume_slot_transform=_cs_supervised_resume_slot_transform(
-            n_batches=int(args.n_train_batches),
-        ),
+        resume_slot_transform=_cs_supervised_resume_slot_transform(),
         issues=[str(args.issue)],
     )
     training_duration_seconds = time.perf_counter() - started
@@ -1033,7 +1041,7 @@ def _resolve_full_train_launch_context(
     *,
     checkpoint_root: Path,
     stop_after_batches: int | None,
-) -> tuple[RunSpecExecutionContext, bool]:
+) -> tuple[RunSpecExecutionContext, bool, LaunchContinuation]:
     """Emit launch continuation summary and return executor resume semantics."""
 
     args = context.args
@@ -1048,9 +1056,9 @@ def _resolve_full_train_launch_context(
     )
     emit_launch_continuation(continuation, logger=logger)
     if continuation.resume == bool(args.resume):
-        return context, continuation.resume
+        return context, continuation.resume, continuation
     resolved_args = argparse.Namespace(**{**vars(args), "resume": continuation.resume})
-    return replace(context, args=resolved_args), continuation.resume
+    return replace(context, args=resolved_args), continuation.resume, continuation
 
 
 def _cs_model_slot(model: Any, array_template: Any) -> tuple[Any, ...]:
@@ -1251,6 +1259,7 @@ def _run_adaptive_epsilon_native_from_context(
         AdaptiveEpsilonNativeRuntime,
         AdaptiveEpsilonExternalObjectiveLossService,
         _resume_slot_transform,
+        attach_adaptive_epsilon_checkpoint_continuation,
         build_adaptive_epsilon_native_initial_slots,
     )
 
@@ -1280,11 +1289,17 @@ def _run_adaptive_epsilon_native_from_context(
     )
     training_spec = feedbax_training_run_spec_from_payload(run_spec)
     checkpoint_root = output_dir / "checkpoints"
-    context, resume_native = _resolve_full_train_launch_context(
+    context, resume_native, continuation = _resolve_full_train_launch_context(
         context,
         checkpoint_root=checkpoint_root,
         stop_after_batches=stop_after_batches,
     )
+    if continuation.resume:
+        training_spec = attach_adaptive_epsilon_checkpoint_continuation(
+            training_spec,
+            source_completed_batches=continuation.completed_batches,
+            target_total_batches=continuation.stop_target_batches,
+        )
     args = context.args
     initial_slots, runtime = build_adaptive_epsilon_native_initial_slots(
         run_spec=run_spec,
@@ -1368,7 +1383,7 @@ def _run_policy_adversary_native_from_context(
     )
     training_spec = feedbax_training_run_spec_from_payload(run_spec)
     checkpoint_root = output_dir / "checkpoints"
-    context, resume_native = _resolve_full_train_launch_context(
+    context, resume_native, _continuation = _resolve_full_train_launch_context(
         context,
         checkpoint_root=checkpoint_root,
         stop_after_batches=stop_after_batches,
@@ -1720,12 +1735,12 @@ def _spec_result_from_execution_context(context: RunSpecExecutionContext) -> dic
 def _checkpoint_writes_by_completed_batch(
     checkpoint_writes: Sequence[Any],
 ) -> dict[int, Any]:
-    """Index Feedbax executor checkpoint writes by completed global step."""
+    """Index Feedbax executor checkpoint writes by completed program step."""
 
     indexed: dict[int, Any] = {}
     for write in checkpoint_writes:
         coordinate = getattr(getattr(write, "manifest", None), "coordinate", None)
-        completed = getattr(coordinate, "global_step", None)
+        completed = getattr(coordinate, "program_step", None)
         if completed is None:
             continue
         indexed[int(completed)] = write
@@ -1873,18 +1888,16 @@ def _resize_optimizer_diagnostics_for_batches(optimizer_state: Any, n_batches: i
 
 def _cs_supervised_resume_slot_transform(
     *,
-    n_batches: int,
     transform: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
 ) -> Callable[[Mapping[str, Any]], Mapping[str, Any]]:
-    """Return the cs_supervised native checkpoint resume slot normalizer."""
+    """Return the C&S checkpoint normalizer without changing horizon leaves.
+
+    Feedbax owns declared batch-axis extension.  Resizing here would hide the
+    source shape before Feedbax can verify the continuation declaration.
+    """
 
     def normalize(slots: Mapping[str, Any]) -> Mapping[str, Any]:
         payload = dict(transform(slots) if transform is not None else slots)
-        if OPTIMIZER in payload:
-            payload[OPTIMIZER] = _resize_optimizer_diagnostics_for_batches(
-                payload[OPTIMIZER],
-                n_batches,
-            )
         payload[TRAIN_LOSS] = 0.0
         return payload
 

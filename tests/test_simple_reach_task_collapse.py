@@ -13,6 +13,7 @@ import numpy as np
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 from feedbax.objectives.loss import TargetSpec
 
+from rlrmp.runtime.training_run_specs import hydrate_compact_run_spec_envelope
 from rlrmp.train.task_model import build_task_base
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -130,7 +131,9 @@ def test_simple_reach_task_outputs_match_pre_refactor_golden() -> None:
 def _fixed_simple_reach_run_spec_paths() -> list[Path]:
     paths: list[Path] = []
     for path in sorted((REPO_ROOT / "results").glob("*/runs/*.json")):
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = hydrate_compact_run_spec_envelope(
+            json.loads(path.read_text(encoding="utf-8"))
+        )
         if payload.get("hps", {}).get("task", {}).get("type") == "fixed_simple_reach":
             paths.append(path)
     return paths
@@ -138,9 +141,11 @@ def _fixed_simple_reach_run_spec_paths() -> list[Path]:
 
 def test_tracked_fixed_simple_reach_run_specs_still_build() -> None:
     paths = _fixed_simple_reach_run_spec_paths()
-    assert len(paths) == 49
+    assert len(paths) == 50
     for path in paths:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = hydrate_compact_run_spec_envelope(
+            json.loads(path.read_text(encoding="utf-8"))
+        )
         hps = dict_to_namespace(payload["hps"], to_type=TreeNamespace)
         task = build_task_base(hps)
         validation = task.get_validation_trials(jr.PRNGKey(0))

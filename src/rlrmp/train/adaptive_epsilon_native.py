@@ -16,6 +16,10 @@ import jax.random as jr
 import jax.tree as jt
 import jax.tree_util as jtu
 import optax
+from feedbax.contracts.checkpoints import (
+    BatchIndexedCheckpointLeafSpec,
+    CheckpointContinuationRequest,
+)
 from feedbax.contracts.training import (
     DEFAULT_TRAINING_METHOD_REGISTRY,
     ArtifactPolicySpec,
@@ -100,6 +104,19 @@ TRAIN_CHUNK_BARRIER = "after_adaptive_epsilon_train_chunk"
 LR_CONTINUATION_RESTART = "restart"
 LR_CONTINUATION_CONTINUE = "continue"
 LRContinuationMode = Literal["restart", "continue"]
+
+# These paths are the six diagnostics whose final axis is the full training
+# horizon in the adaptive controller optimizer.  They deliberately name the
+# raw optimizer topology used by the nominal-to-adaptive fork: Feedbax extends
+# those leaves before the target/post transform serializes the adaptive slot.
+ADAPTIVE_EPSILON_BATCH_INDEXED_CHECKPOINT_LEAVES = (
+    BatchIndexedCheckpointLeafSpec(slot=OPTIMIZER, tree_path="/1"),
+    BatchIndexedCheckpointLeafSpec(slot=OPTIMIZER, tree_path="/2"),
+    BatchIndexedCheckpointLeafSpec(slot=OPTIMIZER, tree_path="/3"),
+    BatchIndexedCheckpointLeafSpec(slot=OPTIMIZER, tree_path="/30"),
+    BatchIndexedCheckpointLeafSpec(slot=OPTIMIZER, tree_path="/31"),
+    BatchIndexedCheckpointLeafSpec(slot=OPTIMIZER, tree_path="/32"),
+)
 
 
 class AdaptiveEpsilonMethodPayload(BaseModel):
@@ -934,7 +951,7 @@ def adaptive_epsilon_controller_lr_points(
         rows.append(
             {
                 "step": int(step),
-                "global_step": int(schedule_origin_step) + int(step),
+                "program_step": int(schedule_origin_step) + int(step),
                 "optimizer_count": int(count),
                 "lr": lr,
             }
@@ -1080,10 +1097,7 @@ def execute_adaptive_epsilon_training_run_spec_native(
         checkpoint_root=checkpoint_root,
         loss_service=kwargs.pop("loss_service", AdaptiveEpsilonExternalObjectiveLossService()),
         resume=resume,
-        resume_slot_transform=_resume_slot_transform(
-            resume_slot_transform,
-            n_batches=int(payload.n_train_batches),
-        ),
+        resume_slot_transform=_resume_slot_transform(resume_slot_transform),
         stop_after_barrier=stop_after_barrier,
         **kwargs,
     )
@@ -1138,7 +1152,6 @@ def _adaptive_epsilon_train_chunk(
     optimizer_state = _deserialize_optimizer_slot_value(
         chunk_slots[OPTIMIZER],
         native.optimizer_template,
-        target_n_batches=int(payload.n_train_batches),
     )
     trainer = _trainer_for_chunk(
         native,
@@ -1288,38 +1301,11 @@ def _deserialize_pytree_slot_value(value: Any, template: Any, *, slot: str) -> A
 def _deserialize_optimizer_slot_value(
     value: Any,
     template: Any,
-    *,
-    target_n_batches: int,
 ) -> Any:
     from rlrmp.runtime.checkpoint_custody import deserialize_pytree_slot
-    from rlrmp.train.cs_nominal_gru import _resize_optimizer_diagnostics_for_batches
 
     payload = value.payload if isinstance(value, SerializedPyTreeSlot) else value
-    try:
-        return deserialize_pytree_slot(payload, template, slot=OPTIMIZER)
-    except RuntimeError as exc:
-        source_n_batches = _serialized_optimizer_diagnostic_horizon(exc)
-        if source_n_batches is None:
-            raise
-        source_template = _resize_optimizer_diagnostics_for_batches(template, source_n_batches)
-        optimizer_state = deserialize_pytree_slot(payload, source_template, slot=OPTIMIZER)
-        return _resize_optimizer_diagnostics_for_batches(optimizer_state, target_n_batches)
-
-
-def _serialized_optimizer_diagnostic_horizon(exc: RuntimeError) -> int | None:
-    import re
-
-    match = re.search(r"to \(([^)]*)\) on disk", str(exc))
-    if match is None:
-        return None
-    shape = tuple(
-        int(part.strip())
-        for part in match.group(1).split(",")
-        if part.strip().isdigit()
-    )
-    if not shape:
-        return None
-    return int(shape[-1])
+    return deserialize_pytree_slot(payload, template, slot=OPTIMIZER)
 
 
 def _adaptive_state_slot(state: Any) -> bytes:
@@ -1385,22 +1371,46 @@ def _guard_from_slot(value: Any) -> dict[str, Any]:
     return _normalize_adaptive_epsilon_zero_guard(payload, enabled=True)
 
 
-def _resume_slot_transform(transform: Any | None, *, n_batches: int | None = None) -> Any:
-    def normalize(slots: Mapping[str, Any]) -> Mapping[str, Any]:
-        from rlrmp.train.cs_nominal_gru import _resize_optimizer_diagnostics_for_batches
+def _resume_slot_transform(transform: Any | None) -> Any:
+    """Normalize resumed adaptive slots without changing batch-horizon leaves.
 
+    Feedbax applies ``CheckpointContinuationRequest`` before any target/post
+    adapter transform.  Resizing serialized optimizer payloads here would hide
+    the source structure and bypass its declared-leaf validation.
+    """
+
+    def normalize(slots: Mapping[str, Any]) -> Mapping[str, Any]:
         payload = dict(transform(slots) if transform is not None else slots)
-        if n_batches is not None and OPTIMIZER in payload:
-            payload[OPTIMIZER] = _resize_optimizer_diagnostics_for_batches(
-                payload[OPTIMIZER],
-                n_batches,
-            )
         payload[TRAIN_LOSS] = 0.0
         payload[DAMAGE_METRIC] = 0.0
         payload[EPSILON_SCALE] = 0.0
         return payload
 
     return normalize
+
+
+def attach_adaptive_epsilon_checkpoint_continuation(
+    training_spec: TrainingRunSpec,
+    *,
+    source_completed_batches: int,
+    target_total_batches: int,
+) -> TrainingRunSpec:
+    """Attach the explicit adaptive optimizer-horizon continuation contract.
+
+    The declared leaves refer to the raw optimizer checkpoint topology.  The
+    Stage-2 fork gate extends it under Feedbax custody, then serializes the
+    resulting target optimizer in its documented target/post adapter.
+    """
+
+    request = CheckpointContinuationRequest(
+        source_completed_batches=source_completed_batches,
+        target_total_batches=target_total_batches,
+        batch_indexed_leaves=list(ADAPTIVE_EPSILON_BATCH_INDEXED_CHECKPOINT_LEAVES),
+    )
+    checkpoint_progress = training_spec.checkpoint_progress.model_copy(
+        update={"continuation": request}
+    )
+    return training_spec.model_copy(update={"checkpoint_progress": checkpoint_progress})
 
 
 def _mapping(value: Mapping[str, Any], key: str) -> dict[str, Any]:

@@ -54,6 +54,7 @@ from feedbax.contracts.worker import (
     PhaseTransitionSpec,
     ResumeCoordinateSpec,
     StateSlotSpec,
+    TrainingBatchProgressSpec,
     UpdateKernelSpec,
     UpdateStepSpec,
     derive_consistency_predicate,
@@ -74,11 +75,13 @@ from rlrmp.runtime.spec_migrations import (
     RUN_SPEC_SCHEMA_ID,
     RUN_SPEC_SCHEMA_VERSION,
     SEMANTIC_METHOD_EXTENSION_METADATA_KEYS,
+    accept_rlrmp_spec_payload,
     ensure_rlrmp_spec_families,
     stamp_current_schema,
 )
 from rlrmp.train.executor.guards import make_stop_predicate
 from rlrmp.train.executor.slots import (
+    ADAPTIVE_EPSILON_CURRICULUM_METHOD_REF,
     COMPLETED_BATCHES,
     CS_SUPERVISED_METHOD_REF,
     CS_SUPERVISED_SCHEMA,
@@ -86,6 +89,7 @@ from rlrmp.train.executor.slots import (
     MODEL,
     OBJECTIVE,
     OPTIMIZER,
+    POLICY_ADVERSARY_SUPERVISED_METHOD_REF,
     PRNG,
     TRAIN_LOSS,
     artifact_sink_specs,
@@ -96,6 +100,7 @@ from rlrmp.train.executor.slots import (
 
 FEEDBAX_TRAINING_RUN_SPEC_KEY = "feedbax_training_run_spec"
 RLRMP_RUN_SPEC_PAYLOAD_KEY = "rlrmp_run_spec"
+COMPACT_RUN_SPEC_MARKER_KEY = "compact_run_spec"
 CONSUMED_DATA_IDENTITIES_KEY = "consumed_data_identities"
 POST_RUN_SCHEMA_VERSION = "rlrmp.post_run_provenance.v1"
 PINNED_MANIFEST_ROOT = "_artifacts/feedbax_runs"
@@ -119,6 +124,13 @@ CS_SUPERVISED_METHOD_PAYLOAD_SCHEMA_VERSION = "rlrmp.spec.training_method.cs_sup
 CS_SUPERVISED_CHUNK_KERNEL_REF = "rlrmp.cs_supervised.train_chunk"
 CS_SUPERVISED_STOP_PREDICATE_REF = "rlrmp.cs_supervised.training_complete"
 CS_SUPERVISED_BARRIER = "after_train_chunk"
+
+_COMPACT_RUN_SPEC_DUPLICATE_PATHS = (
+    "game_card",
+    "training_distribution.perturbation_training",
+    "feedbax_graph",
+)
+_MISSING = object()
 
 
 class MissingTrainingRunSpecFieldError(ValueError):
@@ -851,6 +863,7 @@ def cs_supervised_method_contract() -> MethodContractSpec:
                 artifact_sinks=artifact_sink_specs(CS_SUPERVISED_SCHEMA),
             )
         ],
+        batch_progress=TrainingBatchProgressSpec(slot=COMPLETED_BATCHES),
         metadata={
             "phase_program_identity": "rlrmp.cs_supervised.chunked_supervised.v1",
             "checkpoint_barrier_policy": "after_each_training_chunk",
@@ -1112,6 +1125,92 @@ def _method_ref_key_from_payload(method_ref: Any) -> str | None:
     if isinstance(method_ref, str):
         return method_ref
     return None
+
+
+def _mapping_path_value(mapping: Mapping[str, Any], path: str) -> Any:
+    """Return a dotted mapping path, or a private sentinel when it is absent."""
+
+    value: Any = mapping
+    for part in path.split("."):
+        if not isinstance(value, Mapping) or part not in value:
+            return _MISSING
+        value = value[part]
+    return value
+
+
+def hydrate_compact_run_spec_envelope(run_spec: Mapping[str, Any]) -> dict[str, Any]:
+    """Hydrate a compact tracked recipe from its authoritative RLRMP extension.
+
+    Compact recipes retain a small identity and pointer surface at the root while
+    storing the complete executable RLRMP payload in ``rlrmp_run_spec``. The
+    composed Feedbax payload remains a separate immutable root record because it
+    is deliberately excluded from the RLRMP extension.
+    """
+
+    outer = dict(run_spec)
+    if COMPACT_RUN_SPEC_MARKER_KEY not in outer:
+        return outer
+    if outer[COMPACT_RUN_SPEC_MARKER_KEY] is not True:
+        raise ValueError("compact C&S GRU run spec compact_run_spec must be the boolean true")
+
+    extension = outer.get(RLRMP_RUN_SPEC_PAYLOAD_KEY)
+    if not isinstance(extension, Mapping):
+        raise ValueError(
+            "compact C&S GRU run spec rlrmp_run_spec must be an authoritative JSON object"
+        )
+    accepted = accept_rlrmp_spec_payload(
+        RUN_SPEC_KIND,
+        extension,
+        source_version=extension.get("schema_version"),
+        path=RLRMP_RUN_SPEC_PAYLOAD_KEY,
+    )
+    canonical = accepted.payload
+    if not isinstance(canonical, Mapping):
+        raise ValueError("compact C&S GRU run spec rlrmp_run_spec must hydrate to a JSON object")
+
+    for path in _COMPACT_RUN_SPEC_DUPLICATE_PATHS:
+        root_value = _mapping_path_value(outer, path)
+        extension_value = _mapping_path_value(canonical, path)
+        if root_value is _MISSING or extension_value is _MISSING:
+            raise ValueError(
+                "compact C&S GRU run spec must duplicate "
+                f"{path!r} at both the root and rlrmp_run_spec"
+            )
+        if root_value != extension_value:
+            raise ValueError(
+                f"compact C&S GRU run spec root value disagrees with rlrmp_run_spec at {path!r}"
+            )
+
+    feedbax_spec = outer.get(FEEDBAX_TRAINING_RUN_SPEC_KEY)
+    if not isinstance(feedbax_spec, Mapping):
+        raise ValueError(
+            "compact C&S GRU run spec feedbax_training_run_spec must be an immutable JSON object"
+        )
+
+    hydrated = dict(canonical)
+    hydrated[RLRMP_RUN_SPEC_PAYLOAD_KEY] = dict(extension)
+    hydrated[FEEDBAX_TRAINING_RUN_SPEC_KEY] = dict(feedbax_spec)
+    return hydrated
+
+
+def _ensure_known_rlrmp_method_registered_for_payload(spec_payload: Mapping[str, Any]) -> None:
+    """Register rlrmp-owned native methods before Feedbax validates method refs."""
+
+    method_ref = _method_ref_key_from_payload(spec_payload.get("method_ref"))
+    if method_ref == CS_SUPERVISED_METHOD_REF:
+        register_rlrmp_cs_supervised_method()
+    elif method_ref == ADAPTIVE_EPSILON_CURRICULUM_METHOD_REF:
+        from rlrmp.train.adaptive_epsilon_native import (
+            ensure_adaptive_epsilon_training_method_registered,
+        )
+
+        ensure_adaptive_epsilon_training_method_registered()
+    elif method_ref == POLICY_ADVERSARY_SUPERVISED_METHOD_REF:
+        from rlrmp.train.policy_adversary_native import (
+            ensure_policy_adversary_training_method_registered,
+        )
+
+        ensure_policy_adversary_training_method_registered()
 
 
 def _semantic_method_metadata_keys(spec_payload: Mapping[str, Any]) -> set[str]:
@@ -2028,10 +2127,12 @@ def attach_composed_training_specs(
 def feedbax_training_run_spec_from_payload(run_spec: dict[str, Any]) -> TrainingRunSpec:
     """Load the composed Feedbax ``TrainingRunSpec`` from a tracked recipe."""
 
-    raw_spec = run_spec[FEEDBAX_TRAINING_RUN_SPEC_KEY]
+    hydrated = hydrate_compact_run_spec_envelope(run_spec)
+    raw_spec = hydrated[FEEDBAX_TRAINING_RUN_SPEC_KEY]
     if not isinstance(raw_spec, Mapping):
         raise TypeError(f"{FEEDBAX_TRAINING_RUN_SPEC_KEY} must be a JSON object")
-    spec_payload = _migrate_feedbax_training_run_spec_payload(run_spec, raw_spec)
+    spec_payload = _migrate_feedbax_training_run_spec_payload(hydrated, raw_spec)
+    _ensure_known_rlrmp_method_registered_for_payload(spec_payload)
     return TrainingRunSpec.model_validate(spec_payload)
 
 

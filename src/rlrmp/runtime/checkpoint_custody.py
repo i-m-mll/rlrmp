@@ -17,6 +17,7 @@ from feedbax.contracts.worker import (
     EffectivePhaseSpec,
     ProgressCoordinate,
     StateSlotSpec,
+    TrainingBatchProgressSpec,
     derive_consistency_predicate,
 )
 from feedbax.training.checkpoint_custody import (
@@ -106,6 +107,7 @@ def cs_custody_training_spec(run_spec: Mapping[str, Any]) -> TrainingRunSpec:
             POLICY_ADVERSARY_BARRIER: _CS_BARRIER_SLOTS,
         },
         consistency_mode="barrier-coordinate",
+        batch_progress=TrainingBatchProgressSpec(slot="completed_batches"),
     )
 
 
@@ -128,6 +130,7 @@ def write_cs_checkpoint_transaction(
     *,
     run_spec: Mapping[str, Any],
     completed_batches: int,
+    program_step: int | None = None,
     slots: Mapping[str, Any],
     status: str = "partial",
 ) -> Any:
@@ -138,7 +141,7 @@ def write_cs_checkpoint_transaction(
     coordinate = ProgressCoordinate(
         run_id=_run_id(run_spec, prefix="rlrmp-cs"),
         phase=_cs_checkpoint_barrier_phase(custody_spec, barrier_name),
-        global_step=int(completed_batches),
+        program_step=int(completed_batches if program_step is None else program_step),
         completed_barrier=barrier_name,
     )
     return write_checkpoint_transaction(
@@ -151,6 +154,12 @@ def write_cs_checkpoint_transaction(
         status=status,
         history_availability={"history": slots.get("history") is not None},
     )
+
+
+def write_governed_checkpoint_transaction(**kwargs: Any) -> Any:
+    """Route an already-governed checkpoint transaction through the custody adapter."""
+
+    return write_checkpoint_transaction(**kwargs)
 
 
 def load_cs_checkpoint_transaction(
@@ -210,7 +219,7 @@ def write_minimax_checkpoint_transaction(
     coordinate = ProgressCoordinate(
         run_id=_run_id_from_spec(training_spec, prefix="rlrmp-minimax"),
         phase=phase,
-        global_step=max(0, int(batch_idx) + 1),
+        program_step=max(0, int(batch_idx) + 1),
         adversary_member=(
             None if int(active_member_index) < 0 else int(active_member_index)
         ),
@@ -298,6 +307,7 @@ def _augment_training_spec(
     extra_state_slots: Sequence[StateSlotSpec],
     barrier_slots: Mapping[str, Sequence[CheckpointSlotSpec]],
     consistency_mode: str,
+    batch_progress: TrainingBatchProgressSpec | None = None,
 ) -> TrainingRunSpec:
     base = spec.model_copy(deep=True)
     worker = base.worker_execution
@@ -311,7 +321,12 @@ def _augment_training_spec(
         metadata = dict(barrier.metadata)
         metadata["consistency_mode"] = consistency_mode
         barriers.append(barrier.model_copy(update={"slots": slots, "metadata": metadata}))
-    program = program.model_copy(update={"checkpoint_barriers": barriers})
+    program = program.model_copy(
+        update={
+            "checkpoint_barriers": barriers,
+            "batch_progress": batch_progress or program.batch_progress,
+        }
+    )
     contract = contract.model_copy(update={"state_slots": state_slots, "phase_program": program})
     effective = EffectivePhaseSpec(
         method_ref=contract.method_ref,

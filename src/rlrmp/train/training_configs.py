@@ -2591,6 +2591,7 @@ class CsNominalGruConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     run_spec: str | None = None
+    compact_run_spec: bool = Field(False, exclude=True)
     output_dir: str = Field(f"_artifacts/{ISSUE_ID}/runs/cs_stochastic_gru__no_hidden_penalty")
     spec_dir: str | None = None
     issue: str = ISSUE_ID
@@ -2728,7 +2729,7 @@ class CsNominalGruConfig(BaseModel):
     adaptive_epsilon_eta: float = 0.1
     adaptive_epsilon_deadband_frac: float = 0.10
     adaptive_epsilon_hysteresis_frac: float | None = None
-    adaptive_epsilon_freeze_until_burn_in: bool = True
+    adaptive_epsilon_freeze_during_application_ramp: bool = False
     adaptive_epsilon_gain_normalization: bool = False
     adaptive_epsilon_gain_ema_alpha: float = 0.2
     adaptive_epsilon_gain_min: float = 0.25

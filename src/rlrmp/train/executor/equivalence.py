@@ -230,7 +230,7 @@ def _run_toy_legacy(
         updates[PRNG] = key_next
         slots.update(updates)
         losses.append(float(slots[TRAIN_LOSS]))
-        coordinate = coordinate.model_copy(update={"global_step": coordinate.global_step + 1})
+        coordinate = coordinate.model_copy(update={"program_step": coordinate.program_step + 1})
     return slots, tuple(losses)
 
 
@@ -352,7 +352,7 @@ def _toy_program() -> PhaseProgramSpec:
                 resume_coordinate=ResumeCoordinateSpec(
                     phase="train_chunk",
                     completed_barrier=TOY_BARRIER,
-                    global_step=1,
+                    program_step=1,
                 ),
             )
         ],

@@ -334,7 +334,7 @@ def minimax_guard_predicates(payload: Any) -> Mapping[str, UpdateKernel]:
     ) -> bool:
         del slots
         runtime_stop = _minimax_runtime_stop_after_batches(stop_after, coordinate, context)
-        completed = max(0, int(coordinate.global_step) - 1)
+        completed = max(0, int(coordinate.program_step) - 1)
         return completed >= n_adversary_batches or runtime_stop
 
     return {
@@ -407,7 +407,7 @@ def _inner_adversary_ascent(
 ) -> Mapping[str, Any]:
     del payload
     minimax = _runtime(runtime)
-    batch_index = max(0, int(coordinate.global_step) - 1)
+    batch_index = max(0, int(coordinate.program_step) - 1)
     if batch_index >= int(minimax.args.n_adversary_batches):
         return {
             ADVERSARY_POPULATION: chunk_slots[ADVERSARY_POPULATION],
@@ -1138,5 +1138,5 @@ def _minimax_runtime_stop_after_batches(
     stop_after_batches = getattr(runtime, "stop_after_batches", None)
     if stop_after_batches is None:
         return False
-    completed = max(0, int(coordinate.global_step) - 1)
+    completed = max(0, int(coordinate.program_step) - 1)
     return completed >= int(stop_after_batches)

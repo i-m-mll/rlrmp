@@ -290,13 +290,31 @@ def validate_nominal_gru_run_spec(
 
 
 def validate_nominal_gru_run_spec_file(run_spec_path: Path | str) -> None:
-    """Load and validate a C&S-fidelity GRU ``run.json`` file."""
+    """Load and validate a C&S-fidelity GRU recipe and its graph sidecars.
+
+    Flat recipes use ``<recipe>.json`` for the tracked payload and the sibling
+    ``<recipe>/`` directory for graph sidecars. Historical ``run.json`` recipes
+    keep their sidecars in the containing directory.
+    """
 
     path = Path(run_spec_path)
+    raw_payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw_payload, dict):
+        raise RunSpecValidationError("nominal GRU run spec file must contain a JSON object")
+    from rlrmp.runtime.training_run_specs import hydrate_compact_run_spec_envelope
+
     validate_nominal_gru_run_spec(
-        json.loads(path.read_text(encoding="utf-8")),
-        spec_dir=path.parent,
+        hydrate_compact_run_spec_envelope(raw_payload),
+        spec_dir=run_spec_sidecar_dir(path),
     )
+
+
+def run_spec_sidecar_dir(run_spec_path: Path) -> Path:
+    """Return the contract-owned graph-sidecar directory for one recipe path."""
+
+    if run_spec_path.name == "run.json":
+        return run_spec_path.parent
+    return run_spec_path.parent / run_spec_path.stem
 
 
 def _mapping(mapping: dict[str, Any], key: str) -> dict[str, Any]:
@@ -499,6 +517,7 @@ __all__ = [
     "NOMINAL_GRU_REQUIRED_TOP_LEVEL_KEYS",
     "NOMINAL_GRU_TRAINING_MODES",
     "RunSpecValidationError",
+    "run_spec_sidecar_dir",
     "resolve_run_record",
     "validate_nominal_gru_run_spec",
     "validate_nominal_gru_run_spec_file",

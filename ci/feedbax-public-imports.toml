@@ -356,9 +356,18 @@ symbols = [
   "ProgressCoordinate",
   "ResumeCoordinateSpec",
   "StateSlotSpec",
+  "TrainingBatchProgressSpec",
   "UpdateKernelSpec",
   "UpdateStepSpec",
   "derive_consistency_predicate",
+]
+
+[[canonical_homes]]
+module = "feedbax.contracts.checkpoints"
+symbols = [
+  "BatchIndexedCheckpointLeafSpec",
+  "CheckpointContinuationRequest",
+  "CheckpointForkBarrierMapping",
 ]
 
 [[canonical_homes]]
@@ -581,6 +590,10 @@ symbols = [
 [[canonical_homes]]
 module = "feedbax.training.executor"
 symbols = ["execute_training_run_spec"]
+
+[[canonical_homes]]
+module = "feedbax.training"
+symbols = ["load_checkpoint_custody_documents"]
 
 [[canonical_homes]]
 module = "feedbax.training.loss"

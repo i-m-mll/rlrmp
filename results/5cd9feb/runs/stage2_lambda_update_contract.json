@@ -1,0 +1,17 @@
+{
+  "schema_id": "rlrmp.spec.adaptive_epsilon_lambda_update_contract",
+  "schema_version": "rlrmp.spec.adaptive_epsilon_lambda_update_contract.v1",
+  "purpose": "Stage-2 fork prelaunch clamp prescription",
+  "lambda_update": {
+    "interval_batches": 50,
+    "ema_alpha": 0.1,
+    "eta": 0.2,
+    "max_log_step": 0.15,
+    "deadband_frac": 0.03,
+    "freeze_during_application_ramp": false
+  },
+  "lambda_min_relative_to_analytical_seed": {
+    "config_field": "broad_epsilon_pgd_energy_lambda",
+    "factor": 0.001
+  }
+}
