@@ -53,6 +53,8 @@ from rlrmp.io import compact_json_dumps
 from rlrmp.paths import REPO_ROOT, mkdir_p, run_spec_path
 from rlrmp.runtime.run_specs import validate_nominal_gru_run_spec
 from rlrmp.runtime.training_run_specs import (
+    FEEDBAX_TRAINING_RUN_SPEC_KEY,
+    RLRMP_RUN_SPEC_PAYLOAD_KEY,
     attach_composed_training_specs,
     attach_post_run_provenance,
 )
@@ -114,6 +116,13 @@ from rlrmp.train.executor.checkpoints import (
 TRAINING_DIAGNOSTICS_NPZ = "training_diagnostics.npz"
 
 TRAINING_DIAGNOSTICS_MANIFEST = "training_diagnostics.json"
+
+# Keep active tracked recipes under the generic results-JSON guard in
+# tests/analysis/pipelines/test_tracked_diagnostic_payload_guards.py. Large
+# composed records retain their full RLRMP extension for manifest custody, but
+# avoid serializing that extension's fields a second time at the recipe root.
+MAX_TRACKED_RUN_SPEC_BYTES = 500 * 1024
+COMPACT_RUN_SPEC_KEY = "compact_run_spec"
 
 _CLI_HELP: dict[str, str] = {
     "run_spec": (
@@ -335,7 +344,16 @@ def _build_config_generated_parser() -> argparse.ArgumentParser:
 def build_parser() -> argparse.ArgumentParser:
     """Build the nominal-GRU CLI directly from the canonical config model."""
 
-    return _build_config_generated_parser()
+    parser = _build_config_generated_parser()
+    parser.add_argument(
+        "--compact-run-spec",
+        action="store_true",
+        help=(
+            "Write the tracked recipe as a compact envelope backed by its full "
+            "rlrmp_run_spec payload."
+        ),
+    )
+    return parser
 
 
 def derive_spec_dir(output_dir: Path) -> Path:
@@ -894,6 +912,7 @@ def build_run_spec(
 def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
     """Write, or dry-run, the stochastic C&S GRU spec artifacts."""
 
+    compact_run_spec = bool(getattr(args, "compact_run_spec", False))
     args = _config_namespace(args)
     args = _apply_smoke_overrides(args)
     args = _config_namespace(args)
@@ -919,12 +938,16 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
         would_write = [str(run_path), str(spec_dir / "model.graph.manifest.json")]
         if _should_write_graph_spec(hps):
             would_write.append(str(spec_dir / "model.graph.json"))
+        composed_payload = attach_composed_training_specs(
+            payload,
+            graph_spec=training_run_graph_spec,
+            output_dir=output_dir,
+            spec_dir=spec_dir,
+        )
         return {
-            "run_spec": attach_composed_training_specs(
-                payload,
-                graph_spec=training_run_graph_spec,
-                output_dir=output_dir,
-                spec_dir=spec_dir,
+            "run_spec": compact_run_spec_if_needed(
+                composed_payload,
+                requested=compact_run_spec,
             ),
             "would_write": would_write,
         }
@@ -956,6 +979,7 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
         spec_dir=spec_dir,
     )
     validate_nominal_gru_run_spec(payload, spec_dir=spec_dir)
+    payload = compact_run_spec_if_needed(payload, requested=compact_run_spec)
     run_path.write_text(_json_dumps(payload), encoding="utf-8")
     return {
         "run_spec_path": str(run_path),
@@ -2003,7 +2027,65 @@ def _json_dumps(payload: dict[str, Any]) -> str:
     return compact_json_dumps(payload)
 
 
+def compact_run_spec_if_needed(
+    payload: dict[str, Any],
+    *,
+    requested: bool,
+) -> dict[str, Any]:
+    """Return a compact envelope only when explicit authoring requests it.
+
+    ``rlrmp_run_spec`` is the full, stamped RLRMP payload used for durable
+    manifest custody. The compact envelope keeps it authoritative rather than
+    duplicating its graph-heavy and governed-bank fields at the recipe root.
+    The root mirrors only the task identity the Stage-2 fork gate needs before
+    hydration, plus the immutable Feedbax training spec and graph pointers.
+    """
+
+    if not requested:
+        return payload
+
+    extension = payload.get(RLRMP_RUN_SPEC_PAYLOAD_KEY)
+    if not isinstance(extension, dict):
+        raise TypeError(f"{RLRMP_RUN_SPEC_PAYLOAD_KEY} must be an object before compaction")
+    feedbax_training_spec = payload.get(FEEDBAX_TRAINING_RUN_SPEC_KEY)
+    if not isinstance(feedbax_training_spec, dict):
+        raise TypeError(
+            f"{FEEDBAX_TRAINING_RUN_SPEC_KEY} must be an object before compaction"
+        )
+    training_distribution = payload.get("training_distribution")
+    if not isinstance(training_distribution, dict):
+        raise TypeError("training_distribution must be an object before compaction")
+    if "perturbation_training" not in training_distribution:
+        raise ValueError("training_distribution.perturbation_training is required before compaction")
+    game_card = payload.get("game_card")
+    if not isinstance(game_card, dict):
+        raise TypeError("game_card must be an object before compaction")
+    feedbax_graph = payload.get("feedbax_graph")
+    if not isinstance(feedbax_graph, dict):
+        raise TypeError("feedbax_graph must be an object before compaction")
+
+    compact_payload = {
+        COMPACT_RUN_SPEC_KEY: True,
+        RLRMP_RUN_SPEC_PAYLOAD_KEY: extension,
+        FEEDBAX_TRAINING_RUN_SPEC_KEY: feedbax_training_spec,
+        "game_card": game_card,
+        "training_distribution": {
+            "perturbation_training": training_distribution["perturbation_training"],
+        },
+        "feedbax_graph": feedbax_graph,
+    }
+    compact_size = len(_json_dumps(compact_payload).encode("utf-8"))
+    if compact_size > MAX_TRACKED_RUN_SPEC_BYTES:
+        raise ValueError(
+            "compact composed run spec remains above the tracked JSON budget: "
+            f"{compact_size} > {MAX_TRACKED_RUN_SPEC_BYTES} bytes"
+        )
+    return compact_payload
+
+
 __all__ = [
+    "COMPACT_RUN_SPEC_KEY",
+    "MAX_TRACKED_RUN_SPEC_BYTES",
     "TRAINING_DIAGNOSTICS_MANIFEST",
     "TRAINING_DIAGNOSTICS_NPZ",
     "_BOOLEAN_OPTIONAL_FIELDS",
@@ -2061,6 +2143,7 @@ __all__ = [
     "build_parser",
     "build_run_spec",
     "build_training_run_graph_spec",
+    "compact_run_spec_if_needed",
     "derive_spec_dir",
     "derive_spec_path",
     "write_run_spec",

@@ -22,7 +22,7 @@ import numpy as np
 import optax
 import pytest
 from feedbax import TaskTrialSpec, TrialTimeline, WhereDict
-from feedbax.contracts.training import TrainingRunSpec
+from feedbax.contracts.training import DEFAULT_TRAINING_METHOD_REGISTRY, TrainingRunSpec
 from feedbax.objectives.loss import AbstractLoss, TargetSpec
 from feedbax.mechanics import LinearStateSpace
 from feedbax.runtime.batch import BatchInfo
@@ -103,10 +103,19 @@ from rlrmp.train.cs_nominal_gru import (
 )
 from rlrmp.runtime.training_run_specs import (
     FEEDBAX_TRAINING_RUN_SPEC_KEY,
+    RLRMP_RUN_SPEC_PAYLOAD_KEY,
     assert_runtime_graph_matches_training_spec,
     build_feedbax_training_run_spec,
     feedbax_training_run_spec_from_payload,
+    hydrate_compact_run_spec_envelope,
 )
+from rlrmp.runtime.run_specs import validate_nominal_gru_run_spec_file
+from rlrmp.train.executor.slots import (
+    ADAPTIVE_EPSILON_CURRICULUM_METHOD_REF,
+    CS_SUPERVISED_METHOD_REF,
+    POLICY_ADVERSARY_SUPERVISED_METHOD_REF,
+)
+from rlrmp.train.run_spec_authoring import COMPACT_RUN_SPEC_KEY, MAX_TRACKED_RUN_SPEC_BYTES
 from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_ADAM,
     BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM,
@@ -205,6 +214,16 @@ def _args(**overrides) -> argparse.Namespace:
     return args
 
 
+def _remove_training_method_registration(
+    monkeypatch: pytest.MonkeyPatch,
+    method_ref: str,
+) -> None:
+    registrations = dict(DEFAULT_TRAINING_METHOD_REGISTRY._registrations)
+    registrations.pop(method_ref, None)
+    monkeypatch.setattr(DEFAULT_TRAINING_METHOD_REGISTRY, "_registrations", registrations)
+    assert method_ref not in DEFAULT_TRAINING_METHOD_REGISTRY.available_keys()
+
+
 def _absolute_string_leaves(value: Any, *, path: str = "$") -> list[tuple[str, str]]:
     if isinstance(value, str):
         return [(path, value)] if Path(value).is_absolute() else []
@@ -291,8 +310,14 @@ def _normalize_stochastic_float_precision(value, *, key: str | None = None):
 def _cs_stochastic_gru_run_spec_paths() -> list[Path]:
     paths: list[Path] = []
     for path in sorted(Path("results").rglob("*.json")):
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        if payload.get("schema_version") != SCHEMA_VERSION:
+        payload = hydrate_compact_run_spec_envelope(
+            json.loads(path.read_text(encoding="utf-8"))
+        )
+        schema_versions = {
+            payload.get("schema_version"),
+            payload.get("source_schema_version"),
+        }
+        if SCHEMA_VERSION not in schema_versions:
             continue
         if {"hps", "feedbax_graph", "training_script"}.issubset(payload):
             paths.append(path)
@@ -400,7 +425,9 @@ def test_cs_nominal_gru_config_defaults_match_pre_refactor_fixture() -> None:
     expected["dry_run"] = False
 
     assert CsNominalGruConfig().model_dump(mode="python") == expected
-    assert vars(build_parser().parse_args([])) == expected
+    parsed_defaults = vars(build_parser().parse_args([]))
+    assert parsed_defaults.pop("compact_run_spec") is False
+    assert parsed_defaults == expected
 
 
 def test_stochastic_preset_metadata_is_independent_of_jax_x64() -> None:
@@ -461,7 +488,10 @@ def test_cs_nominal_gru_argparse_defaults_and_choices_derive_from_config() -> No
     assert parser.parse_args(
         ["--broad-epsilon-pgd-inner-optimizer-method", "adam"]
     ).broad_epsilon_pgd_inner_optimizer_method == (BROAD_EPSILON_PGD_ADAM)
+    assert parser.parse_args([]).compact_run_spec is False
+    assert parser.parse_args(["--compact-run-spec"]).compact_run_spec is True
     assert "--seed SEED" in help_text
+    assert "--compact-run-spec" in help_text
     assert "(default: 42)" in help_text
     assert "{old_020a65b,const_dense_all,const_sparse8,const_band8,const_band16,const_band36}" in (
         help_text
@@ -490,9 +520,11 @@ def test_cs_nominal_gru_config_validates_tracked_cs_stochastic_gru_corpus() -> N
     clean_paths = []
     fail_closed: set[Path] = set()
 
-    assert len(paths) == 149
+    assert len(paths) == 150
     for path in paths:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = hydrate_compact_run_spec_envelope(
+            json.loads(path.read_text(encoding="utf-8"))
+        )
         try:
             CsNominalGruConfig.model_validate(cs_nominal_gru._args_values_from_run_spec(payload))
         except ValidationError:
@@ -500,7 +532,7 @@ def test_cs_nominal_gru_config_validates_tracked_cs_stochastic_gru_corpus() -> N
         else:
             clean_paths.append(path)
 
-    assert len(clean_paths) == 149
+    assert len(clean_paths) == 150
     assert fail_closed == set()
 
 
@@ -3226,6 +3258,7 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     assert manifest_path == spec_dir / "model.graph.manifest.json"
     assert not (spec_dir / "model.graph.json").exists()
     assert payload["schema_version"] == "rlrmp.cs_stochastic_gru.v1"
+    assert COMPACT_RUN_SPEC_KEY not in payload
     assert payload["issue"] == "30f2313"
     assert payload["model_summary"]["hidden_size"] == 4
     assert payload["model_summary"]["controller_kind"] == "gru"
@@ -3294,6 +3327,78 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     assert manifest["training_spec"]["nominal_only"] is True
     assert not output_dir.exists()
     assert REPO_ROOT not in output_dir.parents
+
+
+@pytest.mark.parametrize(
+    "compact_run_spec",
+    (False, True),
+    ids=("default_full_payload", "explicit_compact_envelope"),
+)
+def test_large_composed_run_spec_compaction_is_opt_in(
+    tmp_path: Path,
+    compact_run_spec: bool,
+) -> None:
+    output_dir = tmp_path / "bulk"
+    spec_dir = tmp_path / "spec"
+    result = write_run_spec(
+        _args(
+            output_dir=str(output_dir),
+            spec_dir=str(spec_dir),
+            full_train=True,
+            n_train_batches=12000,
+            batch_size=64,
+            controller_lr=3e-3,
+            lr_warmup_batches=500,
+            lr_warmup_init_fraction=0.1,
+            lr_cosine_alpha=0.01,
+            gradient_clip_norm=5.0,
+            checkpoint_interval_batches=500,
+            hidden_size=180,
+            n_replicates=5,
+            no_integrator_state=True,
+            target_relative_multitarget=True,
+            target_support_profile="const_band16",
+            force_filter_feedback=True,
+            initial_hidden_encoder=True,
+            perturbation_training=True,
+            perturbation_calibrated_timing=True,
+            perturbation_physical_level="moderate",
+            loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+            compact_run_spec=compact_run_spec,
+        )
+    )
+
+    run_path = Path(result["run_spec_path"])
+    payload = json.loads(run_path.read_text(encoding="utf-8"))
+    authoritative = payload[RLRMP_RUN_SPEC_PAYLOAD_KEY]
+
+    if not compact_run_spec:
+        assert COMPACT_RUN_SPEC_KEY not in payload
+        assert run_path.stat().st_size > MAX_TRACKED_RUN_SPEC_BYTES
+        assert payload["hps"]["model"]["hidden_size"] == 180
+        return
+
+    assert run_path.stat().st_size <= MAX_TRACKED_RUN_SPEC_BYTES
+    assert set(payload) == {
+        COMPACT_RUN_SPEC_KEY,
+        RLRMP_RUN_SPEC_PAYLOAD_KEY,
+        FEEDBAX_TRAINING_RUN_SPEC_KEY,
+        "game_card",
+        "training_distribution",
+        "feedbax_graph",
+    }
+    assert payload[COMPACT_RUN_SPEC_KEY] is True
+    assert payload["game_card"] == authoritative["game_card"]
+    assert payload["training_distribution"] == {
+        "perturbation_training": authoritative["training_distribution"]["perturbation_training"],
+    }
+    assert payload["feedbax_graph"] == authoritative["feedbax_graph"]
+    assert isinstance(payload[FEEDBAX_TRAINING_RUN_SPEC_KEY], dict)
+
+    replay_args = resolve_run_spec_args(_args(run_spec=str(run_path)))
+    assert replay_args.hidden_size == 180
+    assert replay_args.target_support_profile == "const_band16"
+    assert replay_args.perturbation_calibrated_timing is True
 
 
 def test_feedbax_training_run_spec_rejects_cs_fields(tmp_path: Path) -> None:
@@ -5287,6 +5392,230 @@ def test_modern_run_spec_replays_to_current_training_args(tmp_path: Path) -> Non
     assert replay_args.force_filter_feedback is True
     assert replay_args.broad_epsilon_training is False
     assert replay_args.broad_epsilon_pgd_training is False
+
+
+def _native_method_run_spec_payload(tmp_path: Path, method_ref: str) -> dict[str, Any]:
+    common = {
+        "output_dir": str(tmp_path / method_ref.replace("/", "_") / "artifacts"),
+        "spec_dir": str(tmp_path / method_ref.replace("/", "_") / "spec"),
+        "dry_run": True,
+    }
+    if method_ref == CS_SUPERVISED_METHOD_REF:
+        return write_run_spec(
+            _args(
+                **common,
+                target_relative_multitarget=True,
+                perturbation_training=True,
+                perturbation_calibrated_timing=True,
+                perturbation_physical_level="small",
+            )
+        )["run_spec"]
+    if method_ref == ADAPTIVE_EPSILON_CURRICULUM_METHOD_REF:
+        return write_run_spec(
+            _args(
+                **common,
+                target_relative_multitarget=True,
+                broad_epsilon_pgd_training=True,
+                broad_epsilon_pgd_objective=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+                broad_epsilon_pgd_energy_lambda=2.5,
+                adaptive_epsilon_curriculum=True,
+                adaptive_epsilon_controller_training_mode=(
+                    ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER
+                ),
+                adaptive_epsilon_damage_peak=3500.0,
+                adaptive_epsilon_damage_final=1000.0,
+                adaptive_epsilon_damage_ramp_batches=1,
+                adaptive_epsilon_damage_anneal_batches=2,
+                adaptive_epsilon_update_interval_batches=3,
+                adaptive_epsilon_ema_alpha=0.2,
+                adaptive_epsilon_eta=0.3,
+                adaptive_epsilon_deadband_frac=0.4,
+                adaptive_epsilon_lambda_min=1e-9,
+                adaptive_epsilon_max_log_step=0.5,
+                adaptive_epsilon_outer_weight_ramp_batches=6,
+            )
+        )["run_spec"]
+    if method_ref == POLICY_ADVERSARY_SUPERVISED_METHOD_REF:
+        return write_run_spec(
+            _args(
+                **common,
+                target_relative_multitarget=True,
+                force_filter_feedback=True,
+                initial_hidden_encoder=True,
+                perturbation_training=True,
+                perturbation_calibrated_timing=True,
+                perturbation_physical_level="small",
+                policy_adversary_training=True,
+                policy_adversary_mode=POLICY_ADVERSARY_PLAIN_MODE,
+                policy_adversary_steps=5,
+                policy_adversary_radius_15cm=HISTORICAL_020A65B_PGD_RADIUS_15CM,
+                policy_adversary_radius_source="effective_020a65b_pgd_training_radius",
+                n_train_batches=12000,
+                stop_after_batches=1000,
+                loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+            )
+        )["run_spec"]
+    raise AssertionError(f"unsupported native method reference: {method_ref}")
+
+
+@pytest.mark.parametrize(
+    "method_ref",
+    (
+        CS_SUPERVISED_METHOD_REF,
+        ADAPTIVE_EPSILON_CURRICULUM_METHOD_REF,
+        POLICY_ADVERSARY_SUPERVISED_METHOD_REF,
+    ),
+)
+def test_generic_run_spec_loader_registers_native_method(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    method_ref: str,
+) -> None:
+    payload = _native_method_run_spec_payload(tmp_path, method_ref)
+    recipe_path = tmp_path / "runs" / f"{method_ref.split('/')[1]}.json"
+    recipe_path.parent.mkdir()
+    recipe_path.write_text(json.dumps(payload), encoding="utf-8")
+    _remove_training_method_registration(monkeypatch, method_ref)
+
+    _path, loaded = cs_supervised_executor.load_validated_run_spec(recipe_path)
+
+    assert loaded[FEEDBAX_TRAINING_RUN_SPEC_KEY]["method_ref"] == {
+        "package": "rlrmp",
+        "name": method_ref.split("/")[1],
+        "version": "v1",
+    }
+    assert method_ref in DEFAULT_TRAINING_METHOD_REGISTRY.available_keys()
+
+
+def _compact_run_spec(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "compact_run_spec": True,
+        "game_card": payload["game_card"],
+        "training_distribution": {
+            "perturbation_training": payload["training_distribution"]["perturbation_training"],
+        },
+        "feedbax_graph": payload["feedbax_graph"],
+        FEEDBAX_TRAINING_RUN_SPEC_KEY: payload[FEEDBAX_TRAINING_RUN_SPEC_KEY],
+        RLRMP_RUN_SPEC_PAYLOAD_KEY: payload[RLRMP_RUN_SPEC_PAYLOAD_KEY],
+    }
+
+
+def _write_flat_recipe_sidecars(recipe_path: Path, payload: dict[str, Any]) -> None:
+    sidecar_dir = recipe_path.with_suffix("")
+    sidecar_dir.mkdir(parents=True)
+    graph = payload["feedbax_graph"]
+    for key in ("graph_spec_path", "manifest_path"):
+        pointer = graph[key]
+        if pointer is None:
+            continue
+        sidecar_path = sidecar_dir / pointer
+        sidecar_path.parent.mkdir(parents=True, exist_ok=True)
+        sidecar_payload = (
+            {
+                "nodes": {
+                    "mechanics": {"type": "LinearStateSpace"},
+                    "feedback": {"type": "StateFeedbackSelector"},
+                }
+            }
+            if key == "graph_spec_path"
+            else {}
+        )
+        sidecar_path.write_text(json.dumps(sidecar_payload), encoding="utf-8")
+
+
+def test_generic_loader_resolves_flat_recipe_sibling_sidecars(tmp_path: Path) -> None:
+    payload = _native_method_run_spec_payload(tmp_path, CS_SUPERVISED_METHOD_REF)
+    recipe_path = tmp_path / "runs" / "baseline.json"
+    recipe_path.parent.mkdir()
+    recipe_path.write_text(json.dumps(payload), encoding="utf-8")
+    _write_flat_recipe_sidecars(recipe_path, payload)
+
+    _path, loaded = cs_supervised_executor.load_validated_run_spec(
+        recipe_path,
+        require_graph_sidecars=True,
+    )
+
+    assert loaded["feedbax_graph"] == payload["feedbax_graph"]
+
+
+def test_public_flat_recipe_validator_hydrates_compact_envelope(tmp_path: Path) -> None:
+    payload = _native_method_run_spec_payload(tmp_path, CS_SUPERVISED_METHOD_REF)
+    recipe_path = tmp_path / "runs" / "baseline.json"
+    recipe_path.parent.mkdir()
+    recipe_path.write_text(json.dumps(_compact_run_spec(payload)), encoding="utf-8")
+    _write_flat_recipe_sidecars(recipe_path, payload)
+
+    validate_nominal_gru_run_spec_file(recipe_path)
+
+
+def test_executor_first_import_replays_compact_flat_recipe(tmp_path: Path) -> None:
+    payload = _native_method_run_spec_payload(tmp_path, CS_SUPERVISED_METHOD_REF)
+    recipe_path = tmp_path / "runs" / "baseline.json"
+    recipe_path.parent.mkdir()
+    recipe_path.write_text(json.dumps(_compact_run_spec(payload)), encoding="utf-8")
+
+    repo_root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{repo_root / 'src'}{os.pathsep}{env.get('PYTHONPATH', '')}"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from rlrmp.train.executor.cs_supervised import load_validated_run_spec; "
+                f"load_validated_run_spec({str(recipe_path)!r})"
+            ),
+        ],
+        cwd=repo_root,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+def test_compact_run_spec_loader_hydrates_authoritative_extension(tmp_path: Path) -> None:
+    payload = _native_method_run_spec_payload(tmp_path, CS_SUPERVISED_METHOD_REF)
+    compact = _compact_run_spec(payload)
+    recipe_path = tmp_path / "runs" / "baseline.json"
+    recipe_path.parent.mkdir()
+    recipe_path.write_text(json.dumps(compact), encoding="utf-8")
+
+    _path, hydrated = cs_supervised_executor.load_validated_run_spec(recipe_path)
+
+    assert "compact_run_spec" not in hydrated
+    assert hydrated["hps"] == payload["hps"]
+    assert hydrated["game_card"] == payload["game_card"]
+    assert hydrated["training_distribution"] == payload["training_distribution"]
+    assert hydrated["feedbax_graph"] == payload["feedbax_graph"]
+    assert hydrated[FEEDBAX_TRAINING_RUN_SPEC_KEY] == payload[FEEDBAX_TRAINING_RUN_SPEC_KEY]
+
+
+@pytest.mark.parametrize(
+    ("mutation", "match"),
+    (
+        (lambda payload: payload.__setitem__("compact_run_spec", False), "boolean true"),
+        (lambda payload: payload.pop(RLRMP_RUN_SPEC_PAYLOAD_KEY), "rlrmp_run_spec"),
+        (lambda payload: payload.__setitem__(RLRMP_RUN_SPEC_PAYLOAD_KEY, []), "rlrmp_run_spec"),
+        (
+            lambda payload: payload.__setitem__("game_card", {"issue_id": "mismatched-identity"}),
+            "game_card",
+        ),
+    ),
+)
+def test_compact_run_spec_loader_rejects_missing_or_mismatched_extension(
+    tmp_path: Path,
+    mutation,
+    match: str,
+) -> None:
+    payload = _native_method_run_spec_payload(tmp_path, CS_SUPERVISED_METHOD_REF)
+    compact = _compact_run_spec(payload)
+    mutation(compact)
+
+    with pytest.raises(ValueError, match=match):
+        hydrate_compact_run_spec_envelope(compact)
 
 
 def test_run_spec_replay_rejects_artifact_route_override(tmp_path: Path) -> None:
