@@ -12,6 +12,7 @@ from scripts.prepare_stage2_launch_forks import (
     extend_optimizer_histories,
     validate_launch_fork,
 )
+from rlrmp.train.executor.cs_supervised import _run_spec_payload_schema_version
 
 
 def _optimizer(horizon: int) -> tuple:
@@ -60,3 +61,8 @@ def test_stage2_launch_manifest_executes_full_training() -> None:
         assert "_run_full_training_from_context" in command
         assert '"--resume"' in command
         assert "scripts/train_cs_nominal_gru.py --run-spec" not in command
+
+
+def test_manifest_payload_version_tracks_inline_legacy_spec() -> None:
+    run_spec = json.loads(Path("results/c6c5997/runs/flat_3e-5.json").read_text())
+    assert _run_spec_payload_schema_version(run_spec) == "rlrmp.cs_stochastic_gru.v1"

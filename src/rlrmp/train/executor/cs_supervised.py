@@ -351,6 +351,12 @@ def _validate_composed_training_spec_payload(run_spec: dict[str, Any]) -> None:
     )
 
 
+def _run_spec_payload_schema_version(run_spec: dict[str, Any]) -> str:
+    """Return the inline payload version that manifest preflight must bind."""
+
+    return str(run_spec[RLRMP_RUN_SPEC_PAYLOAD_KEY]["schema_version"])
+
+
 def _explicit_cli_overrides(
     args: argparse.Namespace,
     defaults: argparse.Namespace,
@@ -1011,7 +1017,7 @@ def _run_cs_supervised_native_from_context(
         training_spec_payload=run_spec.get(RLRMP_RUN_SPEC_PAYLOAD_KEY),
         training_spec_payload_kind=RUN_SPEC_KIND,
         training_spec_payload_schema_id=RUN_SPEC_SCHEMA_ID,
-        training_spec_payload_schema_version=RUN_SPEC_SCHEMA_VERSION,
+        training_spec_payload_schema_version=_run_spec_payload_schema_version(run_spec),
         training_spec_payload_ref=str(run_spec_path),
         resume=resume_native,
         resume_slot_transform=_cs_supervised_resume_slot_transform(),
@@ -1344,7 +1350,7 @@ def _run_adaptive_epsilon_native_from_context(
         training_spec_payload=run_spec.get(RLRMP_RUN_SPEC_PAYLOAD_KEY),
         training_spec_payload_kind=RUN_SPEC_KIND,
         training_spec_payload_schema_id=RUN_SPEC_SCHEMA_ID,
-        training_spec_payload_schema_version=RUN_SPEC_SCHEMA_VERSION,
+        training_spec_payload_schema_version=_run_spec_payload_schema_version(run_spec),
         training_spec_payload_ref=str(run_spec_path),
         resume=resume_native,
         resume_slot_transform=_resume_slot_transform(None),
@@ -1432,7 +1438,7 @@ def _run_policy_adversary_native_from_context(
         training_spec_payload=run_spec.get(RLRMP_RUN_SPEC_PAYLOAD_KEY),
         training_spec_payload_kind=RUN_SPEC_KIND,
         training_spec_payload_schema_id=RUN_SPEC_SCHEMA_ID,
-        training_spec_payload_schema_version=RUN_SPEC_SCHEMA_VERSION,
+        training_spec_payload_schema_version=_run_spec_payload_schema_version(run_spec),
         training_spec_payload_ref=str(run_spec_path),
         resume=resume_native,
         resume_slot_transform=_resume_slot_transform(None),
