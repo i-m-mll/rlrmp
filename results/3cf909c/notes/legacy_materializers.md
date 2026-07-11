@@ -5,6 +5,29 @@ They are retained for provenance and possible future porting, not as current
 patterns for new analysis work. The active Feedbax-backed output-feedback
 rollout-recovery spec runner is deliberately outside this list.
 
+## e901a20 legacy Equinox checkpoints
+
+Files: `src/rlrmp/eval/legacy_checkpoints.py` archival reader, consumed by
+`results/e901a20/scripts/materialize_nominal_velocity_profile_comparison.py`
+and its non-H0 companion
+`results/e901a20/scripts/materialize_nonh0_no_pgd_extlqg_velocity.py`.
+
+Purpose: This frozen reader reconstructs the historical 020a65b/e901a20
+Equinox checkpoint family: plain `eqx.nn.Linear` readouts in place of
+`MaskedLinear`, replicated scalar metadata, float64 leaves, and the distinct
+non-H0 `SimpleStagedNetwork` casting path.
+
+Used by: [issue:ef8e1df] Pass C, preserving the four runs referenced by the
+e901a20 velocity-profile materializers.
+
+Keep-signal: Keep only as an archival boundary until the affected checkpoint
+bytes receive a deliberate migrate-once conversion. Checkpoint migration is
+deferred and was not performed by this pass.
+
+Banner status: Full module banner added. The independently maintained inline
+shims were removed from both result scripts and centralized in the capability-
+named archival reader.
+
 ## C&S analytical game card
 
 Files: `src/rlrmp/analysis/math/cs_game_card.py` writer surface and

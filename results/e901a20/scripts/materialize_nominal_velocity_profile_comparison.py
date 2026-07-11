@@ -18,8 +18,6 @@ import jax.tree as jt
 import numpy as np
 import plotly.graph_objects as go
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
-from feedbax.models.networks import MaskedLinear
-from jax_cookbook import load_with_hyperparameters
 
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
 from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
@@ -27,6 +25,10 @@ from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     select_validation_checkpoints_for_run,
 )
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
+from rlrmp.eval.legacy_checkpoints import (
+    load_checkpoint_model_compatible,
+    load_trained_model_compatible,
+)
 from rlrmp.io import update_marked_section
 from rlrmp.paths import (
     REPO_ROOT,
@@ -62,7 +64,6 @@ OLD_COMPAT_ALL_TARGET_MARKER = "old_compatible_all_target_aligned_velocity"
 OLD_COMPAT_SEEN_TARGET_TOPIC = "old_compatible_seen_target_aligned_velocity"
 OLD_COMPAT_SEEN_TARGET_MARKER = "old_compatible_seen_target_aligned_velocity"
 OLD_COMPAT_N_ROLLOUT_REPEATS = 64
-NUMERIC_SCALAR_TYPES = (bool, int, float, np.bool_, np.integer, np.floating)
 
 
 @dataclass(frozen=True)
@@ -255,139 +256,6 @@ def final_goal_position(trial_specs: Any) -> jnp.ndarray:
     return target[:, -1, :]
 
 
-def force_legacy_masked_readout(model: Any) -> Any:
-    """Return a model template with the legacy dynamic readout-mask leaf present."""
-
-    net = model.nodes["net"].net
-    if getattr(net, "dtype", None) is not jnp.float64:
-        # This static dtype is not a PyTree leaf, so ``eqx.tree_at`` cannot target it.
-        # The model is a fresh deserialization template, so the local mutation is contained.
-        object.__setattr__(net, "dtype", jnp.float64)
-        net = model.nodes["net"].net
-    if not isinstance(net.readout, eqx.nn.Linear):
-        return model
-    mask = jnp.ones_like(net.readout.weight, dtype=bool)
-    masked_readout = MaskedLinear(
-        net.readout.weight.shape[-1],
-        net.readout.weight.shape[-2],
-        mask,
-        use_bias=net.readout.bias is not None,
-        dtype=net.readout.weight.dtype,
-        key=jr.PRNGKey(0),
-    )
-    masked_readout = eqx.tree_at(
-        lambda layer: (layer.linear.weight, layer.linear.bias),
-        masked_readout,
-        (net.readout.weight, net.readout.bias),
-    )
-    return eqx.tree_at(lambda m: m.nodes["net"].net.readout, model, masked_readout)
-
-
-def legacy_static_numeric_template(tree: Any, n_replicates: int) -> Any:
-    """Return a template that consumes legacy serialized numeric scalar leaves."""
-
-    def replace_numeric_scalar(leaf: Any) -> Any:
-        if isinstance(leaf, NUMERIC_SCALAR_TYPES):
-            return jnp.full((n_replicates,), leaf)
-        if eqx.is_array(leaf) and np.issubdtype(leaf.dtype, np.floating):
-            return leaf.astype(jnp.float64)
-        return leaf
-
-    return jt.map(replace_numeric_scalar, tree)
-
-
-def legacy_static_numeric_filter(file_obj: Any, leaf: Any) -> Any:
-    """Deserialize legacy numeric scalar placeholders while preserving template shape."""
-
-    if eqx.is_array(leaf):
-        out = jnp.load(file_obj)
-        if leaf.ndim == 1 and out.shape == ():
-            out = jnp.full(leaf.shape, out, dtype=leaf.dtype)
-        if out.dtype != leaf.dtype:
-            out = out.astype(leaf.dtype)
-        return out
-    return eqx.default_deserialise_filter_spec(file_obj, leaf)
-
-
-def scalar_from_legacy_array(value: Any, scalar_type: type) -> Any:
-    """Return the first scalar from a legacy replicated scalar array."""
-
-    raw = np.asarray(value).reshape(-1)[0]
-    if scalar_type is bool:
-        return bool(raw)
-    return scalar_type(raw)
-
-
-def restore_legacy_static_numeric_metadata(model: Any) -> Any:
-    """Restore known legacy scalar metadata fields after compatibility loading."""
-
-    return eqx.tree_at(
-        lambda m: (
-            m.nodes["efferent"].delay,
-            m.nodes["efferent"].noise_func.terms[0].noise_func.std,
-            m.nodes["efferent"].noise_func.terms[0].noise_func.mean,
-            m.nodes["efferent"].noise_func.terms[1].std,
-            m.nodes["efferent"].noise_func.terms[1].mean,
-            m.nodes["efferent"].add_noise,
-            m.nodes["efferent"].init_value,
-            m.nodes["mechanics"].dt,
-            m.nodes["net"].net.input_size,
-            m.nodes["net"].net.hidden_size,
-            m.nodes["net"].net.out_size,
-            m.nodes["net"].net.population_structure.n_input_only,
-            m.nodes["net"].net.population_structure.n_readout_only,
-            m.nodes["net"].net.population_structure.n_recurrent_only,
-            m.nodes["net"].net.population_structure.n_input_readout,
-            m.nodes["sensory"].delay,
-            m.nodes["sensory"].noise_func.std,
-            m.nodes["sensory"].noise_func.mean,
-            m.nodes["sensory"].add_noise,
-            m.nodes["sensory"].init_value,
-        ),
-        model,
-        (
-            scalar_from_legacy_array(model.nodes["efferent"].delay, int),
-            scalar_from_legacy_array(
-                model.nodes["efferent"].noise_func.terms[0].noise_func.std,
-                float,
-            ),
-            scalar_from_legacy_array(
-                model.nodes["efferent"].noise_func.terms[0].noise_func.mean,
-                float,
-            ),
-            scalar_from_legacy_array(model.nodes["efferent"].noise_func.terms[1].std, float),
-            scalar_from_legacy_array(model.nodes["efferent"].noise_func.terms[1].mean, float),
-            scalar_from_legacy_array(model.nodes["efferent"].add_noise, bool),
-            scalar_from_legacy_array(model.nodes["efferent"].init_value, float),
-            scalar_from_legacy_array(model.nodes["mechanics"].dt, float),
-            scalar_from_legacy_array(model.nodes["net"].net.input_size, int),
-            scalar_from_legacy_array(model.nodes["net"].net.hidden_size, int),
-            scalar_from_legacy_array(model.nodes["net"].net.out_size, int),
-            scalar_from_legacy_array(
-                model.nodes["net"].net.population_structure.n_input_only,
-                int,
-            ),
-            scalar_from_legacy_array(
-                model.nodes["net"].net.population_structure.n_readout_only,
-                int,
-            ),
-            scalar_from_legacy_array(
-                model.nodes["net"].net.population_structure.n_recurrent_only,
-                int,
-            ),
-            scalar_from_legacy_array(
-                model.nodes["net"].net.population_structure.n_input_readout,
-                int,
-            ),
-            scalar_from_legacy_array(model.nodes["sensory"].delay, int),
-            scalar_from_legacy_array(model.nodes["sensory"].noise_func.std, float),
-            scalar_from_legacy_array(model.nodes["sensory"].noise_func.mean, float),
-            scalar_from_legacy_array(model.nodes["sensory"].add_noise, bool),
-            scalar_from_legacy_array(model.nodes["sensory"].init_value, float),
-        ),
-    )
-
-
 def load_trained_model(ref: RunRef, hps: TreeNamespace, seed: int) -> Any:
     """Load a trained model with the matching template."""
 
@@ -395,67 +263,7 @@ def load_trained_model(ref: RunRef, hps: TreeNamespace, seed: int) -> Any:
     if not path.exists():
         raise FileNotFoundError(f"Missing trained model for {ref.run_id}: {path}")
 
-    def base_template(key: Any) -> Any:
-        return setup_task_model_pair(hps, key=key).model
-
-    try:
-        model, _hyperparameters = load_with_hyperparameters(
-            path,
-            setup_func=lambda key, **_kwargs: base_template(key),
-        )
-        return model
-    except Exception:
-        n_replicates = int(hps.model.n_replicates)
-
-        def legacy_template(key: Any) -> Any:
-            return legacy_static_numeric_template(
-                force_legacy_masked_readout(base_template(key)),
-                n_replicates,
-            )
-
-        try:
-            model, _hyperparameters = load_with_hyperparameters(
-                path,
-                setup_func=lambda key, **_kwargs: legacy_template(key),
-                filter_spec=legacy_static_numeric_filter,
-            )
-        except Exception as legacy_error:
-            raise RuntimeError(
-                f"Could not load trained model for {ref.run_id!r} with either normal "
-                "or legacy static-numeric compatibility templates."
-            ) from legacy_error
-        try:
-            return restore_legacy_static_numeric_metadata(model)
-        except Exception as restore_error:
-            raise RuntimeError(
-                f"Loaded legacy model for {ref.run_id!r} but could not restore scalar metadata."
-            ) from restore_error
-
-
-def checkpoint_model_template(hps: TreeNamespace, seed: int) -> Any:
-    """Return a checkpoint model template for normal or legacy checkpoint leaves."""
-
-    return setup_task_model_pair(hps, key=jr.PRNGKey(seed)).model
-
-
-def load_checkpoint_model_compatible(path: Path, hps: TreeNamespace, seed: int) -> Any:
-    """Load one checkpoint model with the same legacy compatibility as final models."""
-
-    template = checkpoint_model_template(hps, seed)
-    try:
-        return eqx.tree_deserialise_leaves(path, template)
-    except Exception:
-        n_replicates = int(hps.model.n_replicates)
-        legacy_template = legacy_static_numeric_template(
-            force_legacy_masked_readout(template),
-            n_replicates,
-        )
-        model = eqx.tree_deserialise_leaves(
-            path,
-            legacy_template,
-            filter_spec=legacy_static_numeric_filter,
-        )
-        return restore_legacy_static_numeric_metadata(model)
+    return load_trained_model_compatible(path, hps, seed, run_id=ref.run_id)
 
 
 def load_validation_selected_model(ref: RunRef, run_spec: dict[str, Any], hps: TreeNamespace) -> tuple[

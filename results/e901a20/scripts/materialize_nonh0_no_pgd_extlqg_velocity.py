@@ -1,9 +1,8 @@
 """Materialize non-H0 no-PGD velocity profiles against extLQG.
 
-Integration note: on 2026-07-05 this legacy checkpoint patch was mechanically
-ported from direct Equinox-module mutation to ``eqx.tree_at`` against Feedbax
-pin 17710f1c without re-execution, because this script's required non-H0
-020a65b input checkpoints are not stored under ``_artifacts/e901a20/``.
+Integration note: the frozen non-H0 checkpoint reader now lives at the shared
+``rlrmp.eval.legacy_checkpoints`` archival boundary. This script's required
+non-H0 020a65b input checkpoints are not stored under ``_artifacts/e901a20/``.
 """
 
 from __future__ import annotations
@@ -25,6 +24,7 @@ import numpy as np
 import plotly.graph_objects as go
 
 from rlrmp.analysis.pipelines.gru_pilot_figures import cs_output_feedback_reference_profiles
+from rlrmp.eval.legacy_checkpoints import load_nonh0_checkpoint_model_compatible
 from rlrmp.io import update_marked_section
 from rlrmp.paths import (
     figure_artifact_dir,
@@ -33,6 +33,9 @@ from rlrmp.paths import (
     run_spec_path,
 )
 from rlrmp.viz.traces import add_band_trace as canonical_add_band_trace
+
+
+__all__ = ["load_nonh0_checkpoint_model_compatible"]
 
 
 EXPERIMENT = "e901a20"
@@ -61,34 +64,6 @@ def repo_relative(path: Path) -> str:
 
 def load_helper() -> Any:
     return load_named_python_module('e901a20_velocity_helper', SOURCE_HELPER)
-
-
-def load_nonh0_checkpoint_model_compatible(helper: Any) -> Any:
-    """Return a checkpoint loader compatible with non-H0 SimpleStagedNetwork rows."""
-
-    def load(path: Path, hps: Any, seed: int) -> Any:
-        template = helper.checkpoint_model_template(hps, seed)
-
-        def cast_floating_leaf(leaf: Any) -> Any:
-            if eqx.is_array(leaf) and np.issubdtype(leaf.dtype, np.floating):
-                return leaf.astype(jnp.float64)
-            return leaf
-
-        model = eqx.tree_deserialise_leaves(path, jt.map(cast_floating_leaf, template))
-        net = model.nodes["net"]
-        if getattr(net, "dtype", None) is not jnp.float64:
-            model = eqx.tree_at(lambda tree: tree.nodes["net"].dtype, model, jnp.float64)
-            net = model.nodes["net"]
-        if hasattr(net, "_initial_state"):
-            initial_state = jt.map(cast_floating_leaf, net._initial_state)
-            model = eqx.tree_at(
-                lambda tree: tree.nodes["net"]._initial_state,
-                model,
-                initial_state,
-            )
-        return model
-
-    return load
 
 
 def nominalize_trial_specs_float64(nominalize: Any) -> Any:
