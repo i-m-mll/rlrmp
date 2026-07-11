@@ -1,5 +1,6 @@
 {
   "base": {
+    "kind": "inline",
     "inline": {
       "artifacts": {
         "artifact_root": "_artifacts/6add6b2/matrix_build/hold_start_pos_l2_ffpert__w1e6_lr3e-3/artifacts",
@@ -15035,7 +15036,7 @@
     }
   ],
   "schema_id": "feedbax.spec.training_run_matrix",
-  "schema_version": "feedbax.spec.training_run_matrix.v1",
+  "schema_version": "feedbax.spec.training_run_matrix.v2",
   "tags": [
     "rlrmp",
     "cs_nominal_gru",

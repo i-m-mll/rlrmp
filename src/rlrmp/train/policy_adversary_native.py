@@ -202,6 +202,7 @@ def ensure_policy_adversary_training_method_registered() -> None:
             ),
             owner="rlrmp.train.policy_adversary_native",
             package="rlrmp",
+            requires_execution_preparation=True,
         )
     )
 
