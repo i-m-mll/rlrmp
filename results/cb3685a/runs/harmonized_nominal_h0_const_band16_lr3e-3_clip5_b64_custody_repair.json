@@ -33,10 +33,20 @@
     "reason": "Its transaction manifest falsely records completed_training_batches=24 from a phase coordinate. It remains immutable provenance, not a continuation source."
   },
   "target": {
-    "checkpoint_root": "_artifacts/cb3685a/runs/harmonized_nominal_h0_const_band16_lr3e-3_clip5_b64/retry_sources/custody_repaired_12000",
+    "checkpoint_root": "_artifacts/cb3685a/runs/harmonized_nominal_h0_const_band16_lr3e-3_clip5_b64/retry_sources/custody_repaired_12000_r3",
     "must_be_new": true,
     "requires_feedbax_custody_validation": true
   },
+  "superseded_failed_targets": [
+    {
+      "checkpoint_root": "_artifacts/cb3685a/runs/harmonized_nominal_h0_const_band16_lr3e-3_clip5_b64/retry_sources/custody_repaired_12000",
+      "reason": "The first repair write was retained as immutable diagnostic evidence after its post-write ABI validation exposed that serialized PyTree bytes cannot serve as an ABI template. It is not a continuation source."
+    },
+    {
+      "checkpoint_root": "_artifacts/cb3685a/runs/harmonized_nominal_h0_const_band16_lr3e-3_clip5_b64/retry_sources/custody_repaired_12000_r2",
+      "reason": "The second repair write validated ordinary custody loading but retained serialized model and optimizer byte blobs. Generic continuation transforms cannot address the declared optimizer leaves through that representation, so it is not a continuation source."
+    }
+  ],
   "required_proof": {
     "source_completed_training_batches": 12000,
     "target_total_batches": 12200,

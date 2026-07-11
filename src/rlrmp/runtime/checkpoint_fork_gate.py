@@ -181,12 +181,12 @@ def _adaptive_continuation_fork_contracts(
             target_coordinate=ProgressCoordinate(
                 run_id=row.planned_run_id,
                 phase=target_barrier.phase,
-                global_step=request.source_completed_batches,
+                program_step=request.source_completed_batches,
                 completed_barrier=target_barrier.name,
             ),
             coordinate_mapping={
                 "identity": "rlrmp.cs_supervised_to_adaptive_epsilon.v1",
-                "parameters": {"global_step": "preserve_completed_training_batches"},
+                "parameters": {"program_step": "preserve_completed_training_batches"},
             },
         )
         contracts[row.row_id] = (
