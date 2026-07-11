@@ -7169,7 +7169,7 @@ def test_pgd_broad_epsilon_full_training_emits_inner_diagnostics(
 
 
 def test_stage2_adaptive_epsilon_specs_reject_cross_mirror_drift() -> None:
-    recipe_path = REPO_ROOT / "results/c6c5997/runs/flat_3e-5.json"
+    recipe_path = REPO_ROOT / "results/c6c5997/runs/flat_3e-5-epsilon-ramp.json"
     recipe = json.loads(recipe_path.read_text(encoding="utf-8"))
 
     cs_supervised_executor._validate_adaptive_epsilon_cross_mirrors(recipe)

@@ -28,14 +28,25 @@ any target checkpoint.
 
 | Row | Continuation-local LR schedule | LR mode | Target total |
 |---|---|---|---:|
-| `flat_3e-5` | `3e-5` throughout using warmup-cosine with unit warmup fraction and cosine alpha | `restart` | 16,500 |
-| `rewarm_3e-4` | `3e-5` to `3e-4`, cosine back to `3e-5`, then hold | `restart` | 16,500 |
-| `rewarm_3e-3` | `3e-5` to `3e-3`, cosine back to `3e-5`, then hold | `restart` | 16,500 |
+| `flat_3e-5-epsilon-ramp` | `3e-5` throughout using warmup-cosine with unit warmup fraction and cosine alpha | `restart` | 16,500 |
+| `rewarm_3e-4-epsilon-ramp` | `3e-5` to `3e-4`, cosine back to `3e-5`, then hold | `restart` | 16,500 |
+| `rewarm_3e-3-epsilon-ramp` | `3e-5` to `3e-3`, cosine back to `3e-5`, then hold | `restart` | 16,500 |
 
 All schedules use 1,000 warmup batches and 3,500 scheduled continuation steps;
 the final 1,000 continuation batches hold the terminal `3e-5` rate. The
 matrix declaration and every adaptive method payload both declare `restart`;
 a missing or unequal payload declaration fails the prelaunch gate.
+
+### Execution identity correction
+
+The corrected 1,000-batch application-ramp executions were originally emitted
+with the same three row IDs as the earlier full-exposure executions. Their
+canonical identities are now the `*-epsilon-ramp` IDs in the table above. The
+immutable checkpoint transactions and July 11 terminal ledger checkpoints
+retain their execution-time IDs; those historical IDs are aliases only for the
+corrected executions timestamped 19:22 UTC. The earlier full-exposure artifacts
+retain the unsuffixed IDs under
+`_artifacts/c6c5997/wrong_ramp_origin_20260711/`.
 
 ## Shared adaptive contract
 

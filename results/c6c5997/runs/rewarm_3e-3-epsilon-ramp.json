@@ -1,9 +1,9 @@
 {
   "adversarial_phase": "broad_epsilon_pgd_direct_epsilon",
-  "artifact_output_dir": "_artifacts/c6c5997/runs/rewarm_3e-3",
+  "artifact_output_dir": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp",
   "batch_size": 64,
   "checkpointing": {
-    "checkpoint_dir": "_artifacts/c6c5997/runs/rewarm_3e-3/checkpoints",
+    "checkpoint_dir": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp/checkpoints",
     "contents": [
       "model.eqx",
       "optimizer_state.eqx",
@@ -15,7 +15,7 @@
     ],
     "enabled": false,
     "interval_batches": 500,
-    "latest_checkpoint": "_artifacts/c6c5997/runs/rewarm_3e-3/checkpoints/checkpoint_latest",
+    "latest_checkpoint": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp/checkpoints/checkpoint_latest",
     "lr_continuation_schedule": "restart",
     "numbered_pattern": "checkpoint_{completed_batches:07d}",
     "resume": true,
@@ -455,11 +455,11 @@
   },
   "feedbax_training_run_spec": {
     "artifacts": {
-      "artifact_root": "_artifacts/c6c5997/runs/rewarm_3e-3",
+      "artifact_root": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp",
       "custody": "local",
       "manifest_root": "_artifacts/feedbax_runs",
       "metadata": {
-        "tracked_spec_dir": "results/c6c5997/runs/rewarm_3e-3"
+        "tracked_spec_dir": "results/c6c5997/runs/rewarm_3e-3-epsilon-ramp"
       }
     },
     "checkpoint_progress": {
@@ -497,7 +497,7 @@
         "target_total_batches": 16500
       },
       "metadata": {
-        "checkpoint_dir": "_artifacts/c6c5997/runs/rewarm_3e-3/checkpoints"
+        "checkpoint_dir": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp/checkpoints"
       },
       "progress_interval": 500
     },
@@ -8312,7 +8312,7 @@
       "experiment_issue": "c6c5997",
       "lr_continuation_schedule": "restart",
       "native_method": "rlrmp/adaptive_epsilon_curriculum/v1",
-      "row_id": "rewarm_3e-3",
+      "row_id": "rewarm_3e-3-epsilon-ramp",
       "serialize_do_not_rederive": true,
       "source_checkpoint_root": "_artifacts/c6c5997/source_batch12000_nominal/checkpoints",
       "source_checkpoint_transaction_id": "tx-80f84748ea934dca8d18be93a5cb7308"
@@ -8327,7 +8327,7 @@
       "metadata": {},
       "payload": {
         "checkpointing": {
-          "checkpoint_dir": "_artifacts/c6c5997/runs/rewarm_3e-3/checkpoints",
+          "checkpoint_dir": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp/checkpoints",
           "contents": [
             "model.eqx",
             "optimizer_state.eqx",
@@ -8339,7 +8339,7 @@
           ],
           "enabled": false,
           "interval_batches": 500,
-          "latest_checkpoint": "_artifacts/c6c5997/runs/rewarm_3e-3/checkpoints/checkpoint_latest",
+          "latest_checkpoint": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp/checkpoints/checkpoint_latest",
           "lr_continuation_schedule": "restart",
           "numbered_pattern": "checkpoint_{completed_batches:07d}",
           "resume": true,
@@ -8442,7 +8442,7 @@
           "nn_output_jerk": 0.0,
           "nn_output_pre_go": 0.0,
           "no_integrator_state": true,
-          "output_dir": "_artifacts/c6c5997/runs/rewarm_3e-3",
+          "output_dir": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp",
           "perturbation_calibrated_timing": true,
           "perturbation_calibration_regime": "open_loop_all",
           "perturbation_closed_loop_calibration_table": null,
@@ -8488,7 +8488,7 @@
           "run_spec": null,
           "seed": 42,
           "smoke": false,
-          "spec_dir": "results/c6c5997/runs/rewarm_3e-3",
+          "spec_dir": "results/c6c5997/runs/rewarm_3e-3-epsilon-ramp",
           "stochastic_preset": "cs2019-rollout",
           "stop_after_batches": null,
           "target_m": 0.15,
@@ -22457,7 +22457,7 @@
       "default_enabled": true,
       "enabled": true,
       "format": "npz+json_manifest",
-      "manifest_path": "_artifacts/c6c5997/runs/rewarm_3e-3/training_diagnostics.json",
+      "manifest_path": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp/training_diagnostics.json",
       "opt_out_flag": "--no-training-diagnostics",
       "scalar_groups": [
         "optimizer_gradient_norm_pre_clip",
@@ -22472,7 +22472,7 @@
         "adaptive_epsilon_curriculum"
       ],
       "schema_version": "rlrmp.cs_stochastic_gru.v1.training_diagnostics.v1",
-      "sidecar_path": "_artifacts/c6c5997/runs/rewarm_3e-3/training_diagnostics.npz",
+      "sidecar_path": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp/training_diagnostics.npz",
       "source": "optimizer_state plus RLRMP executor history; no raw gradients, batches, or activations are persisted"
     },
     "type": "adamw",
@@ -22487,13 +22487,13 @@
     "experiment_issue": "c6c5997",
     "global_stop_batch": 16500,
     "lr_continuation_schedule": "restart",
-    "row_id": "rewarm_3e-3",
+    "row_id": "rewarm_3e-3-epsilon-ramp",
     "source_adoption_issue": "3cd018b",
     "source_baseline_issue": "08483d5",
     "source_checkpoint_root": "_artifacts/c6c5997/source_batch12000_nominal/checkpoints",
     "source_checkpoint_transaction_id": "tx-80f84748ea934dca8d18be93a5cb7308",
     "status": "locked_prelaunch",
-    "target_checkpoint_root": "_artifacts/c6c5997/runs/rewarm_3e-3/checkpoints"
+    "target_checkpoint_root": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp/checkpoints"
   },
   "post_run_provenance": {
     "feedbax": {
@@ -22503,13 +22503,13 @@
       "remote": "https://github.com/i-m-mll/feedbax.git"
     },
     "feedbax_graph": {
-      "artifact_dir": "_artifacts/c6c5997/runs/rewarm_3e-3",
+      "artifact_dir": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp",
       "graph_manifest_path": "model.graph.manifest.json",
       "graph_manifest_sha256": "5b5d9acdf3e0cdf453a6cfcfcc049e86e23935ae9db11512ecbbe1b586010fb9",
       "graph_spec_path": null,
       "graph_spec_sha256": null,
       "graph_spec_version": null,
-      "tracked_run_spec": "results/c6c5997/runs/rewarm_3e-3.json"
+      "tracked_run_spec": "results/c6c5997/runs/rewarm_3e-3-epsilon-ramp.json"
     },
     "feedbax_manifest_root": {
       "absolute_path_sha256": "b77671c7b627828cba9a1085ed40ff599cd5cf43ea2a5191488007b3742986ab",
@@ -22569,10 +22569,10 @@
   },
   "rlrmp_run_spec": {
     "adversarial_phase": "broad_epsilon_pgd_direct_epsilon",
-    "artifact_output_dir": "_artifacts/c6c5997/runs/rewarm_3e-3",
+    "artifact_output_dir": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp",
     "batch_size": 64,
     "checkpointing": {
-      "checkpoint_dir": "_artifacts/c6c5997/runs/rewarm_3e-3/checkpoints",
+      "checkpoint_dir": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp/checkpoints",
       "contents": [
         "model.eqx",
         "optimizer_state.eqx",
@@ -22584,7 +22584,7 @@
       ],
       "enabled": false,
       "interval_batches": 500,
-      "latest_checkpoint": "_artifacts/c6c5997/runs/rewarm_3e-3/checkpoints/checkpoint_latest",
+      "latest_checkpoint": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp/checkpoints/checkpoint_latest",
       "lr_continuation_schedule": "restart",
       "numbered_pattern": "checkpoint_{completed_batches:07d}",
       "resume": true,
@@ -31722,7 +31722,7 @@
         "default_enabled": true,
         "enabled": true,
         "format": "npz+json_manifest",
-        "manifest_path": "_artifacts/c6c5997/runs/rewarm_3e-3/training_diagnostics.json",
+        "manifest_path": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp/training_diagnostics.json",
         "opt_out_flag": "--no-training-diagnostics",
         "scalar_groups": [
           "optimizer_gradient_norm_pre_clip",
@@ -31737,7 +31737,7 @@
           "adaptive_epsilon_curriculum"
         ],
         "schema_version": "rlrmp.cs_stochastic_gru.v1.training_diagnostics.v1",
-        "sidecar_path": "_artifacts/c6c5997/runs/rewarm_3e-3/training_diagnostics.npz",
+        "sidecar_path": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp/training_diagnostics.npz",
         "source": "optimizer_state plus RLRMP executor history; no raw gradients, batches, or activations are persisted"
       },
       "type": "adamw",
@@ -31752,13 +31752,13 @@
       "experiment_issue": "c6c5997",
       "global_stop_batch": 16500,
       "lr_continuation_schedule": "restart",
-      "row_id": "rewarm_3e-3",
+      "row_id": "rewarm_3e-3-epsilon-ramp",
       "source_adoption_issue": "3cd018b",
       "source_baseline_issue": "08483d5",
       "source_checkpoint_root": "_artifacts/c6c5997/source_batch12000_nominal/checkpoints",
       "source_checkpoint_transaction_id": "tx-80f84748ea934dca8d18be93a5cb7308",
       "status": "locked_prelaunch",
-      "target_checkpoint_root": "_artifacts/c6c5997/runs/rewarm_3e-3/checkpoints"
+      "target_checkpoint_root": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp/checkpoints"
     },
     "post_run_provenance": {
       "feedbax": {
@@ -31768,13 +31768,13 @@
         "remote": "https://github.com/i-m-mll/feedbax.git"
       },
       "feedbax_graph": {
-        "artifact_dir": "_artifacts/c6c5997/runs/rewarm_3e-3",
+        "artifact_dir": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp",
         "graph_manifest_path": "model.graph.manifest.json",
         "graph_manifest_sha256": "5b5d9acdf3e0cdf453a6cfcfcc049e86e23935ae9db11512ecbbe1b586010fb9",
         "graph_spec_path": null,
         "graph_spec_sha256": null,
         "graph_spec_version": null,
-        "tracked_run_spec": "results/c6c5997/runs/rewarm_3e-3.json"
+        "tracked_run_spec": "results/c6c5997/runs/rewarm_3e-3-epsilon-ramp.json"
       },
       "feedbax_manifest_root": {
         "absolute_path_sha256": "b77671c7b627828cba9a1085ed40ff599cd5cf43ea2a5191488007b3742986ab",
@@ -31834,7 +31834,7 @@
     },
     "schema_version": "rlrmp.cs_stochastic_gru.v1",
     "seed": 42,
-    "spec_dir": "results/c6c5997/runs/rewarm_3e-3",
+    "spec_dir": "results/c6c5997/runs/rewarm_3e-3-epsilon-ramp",
     "stochastic_preset": {
       "additive_motor_noise_std": 1e-05,
       "name": "cs2019-rollout",
@@ -34916,7 +34916,7 @@
       "default_enabled": true,
       "enabled": true,
       "format": "npz+json_manifest",
-      "manifest_path": "_artifacts/c6c5997/runs/rewarm_3e-3/training_diagnostics.json",
+      "manifest_path": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp/training_diagnostics.json",
       "opt_out_flag": "--no-training-diagnostics",
       "scalar_groups": [
         "optimizer_gradient_norm_pre_clip",
@@ -34931,7 +34931,7 @@
         "adaptive_epsilon_curriculum"
       ],
       "schema_version": "rlrmp.cs_stochastic_gru.v1.training_diagnostics.v1",
-      "sidecar_path": "_artifacts/c6c5997/runs/rewarm_3e-3/training_diagnostics.npz",
+      "sidecar_path": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp/training_diagnostics.npz",
       "source": "optimizer_state plus RLRMP executor history; no raw gradients, batches, or activations are persisted"
     },
     "training_distribution": {
@@ -39385,7 +39385,7 @@
         "default_enabled": true,
         "enabled": true,
         "format": "npz+json_manifest",
-        "manifest_path": "_artifacts/c6c5997/runs/rewarm_3e-3/training_diagnostics.json",
+        "manifest_path": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp/training_diagnostics.json",
         "opt_out_flag": "--no-training-diagnostics",
         "scalar_groups": [
           "optimizer_gradient_norm_pre_clip",
@@ -39400,7 +39400,7 @@
           "adaptive_epsilon_curriculum"
         ],
         "schema_version": "rlrmp.cs_stochastic_gru.v1.training_diagnostics.v1",
-        "sidecar_path": "_artifacts/c6c5997/runs/rewarm_3e-3/training_diagnostics.npz",
+        "sidecar_path": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp/training_diagnostics.npz",
         "source": "optimizer_state plus RLRMP executor history; no raw gradients, batches, or activations are persisted"
       },
       "training_distribution": {
@@ -48327,7 +48327,7 @@
   },
   "schema_version": "rlrmp.cs_stochastic_gru.v1",
   "seed": 42,
-  "spec_dir": "results/c6c5997/runs/rewarm_3e-3",
+  "spec_dir": "results/c6c5997/runs/rewarm_3e-3-epsilon-ramp",
   "stochastic_preset": {
     "additive_motor_noise_std": 1e-05,
     "name": "cs2019-rollout",
@@ -51409,7 +51409,7 @@
     "default_enabled": true,
     "enabled": true,
     "format": "npz+json_manifest",
-    "manifest_path": "_artifacts/c6c5997/runs/rewarm_3e-3/training_diagnostics.json",
+    "manifest_path": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp/training_diagnostics.json",
     "opt_out_flag": "--no-training-diagnostics",
     "scalar_groups": [
       "optimizer_gradient_norm_pre_clip",
@@ -51424,7 +51424,7 @@
       "adaptive_epsilon_curriculum"
     ],
     "schema_version": "rlrmp.cs_stochastic_gru.v1.training_diagnostics.v1",
-    "sidecar_path": "_artifacts/c6c5997/runs/rewarm_3e-3/training_diagnostics.npz",
+    "sidecar_path": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp/training_diagnostics.npz",
     "source": "optimizer_state plus RLRMP executor history; no raw gradients, batches, or activations are persisted"
   },
   "training_distribution": {
@@ -55878,7 +55878,7 @@
       "default_enabled": true,
       "enabled": true,
       "format": "npz+json_manifest",
-      "manifest_path": "_artifacts/c6c5997/runs/rewarm_3e-3/training_diagnostics.json",
+      "manifest_path": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp/training_diagnostics.json",
       "opt_out_flag": "--no-training-diagnostics",
       "scalar_groups": [
         "optimizer_gradient_norm_pre_clip",
@@ -55893,7 +55893,7 @@
         "adaptive_epsilon_curriculum"
       ],
       "schema_version": "rlrmp.cs_stochastic_gru.v1.training_diagnostics.v1",
-      "sidecar_path": "_artifacts/c6c5997/runs/rewarm_3e-3/training_diagnostics.npz",
+      "sidecar_path": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp/training_diagnostics.npz",
       "source": "optimizer_state plus RLRMP executor history; no raw gradients, batches, or activations are persisted"
     },
     "training_distribution": {

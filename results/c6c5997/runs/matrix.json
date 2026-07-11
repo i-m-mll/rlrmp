@@ -2,11 +2,11 @@
   "base": {
     "inline": {
       "artifacts": {
-        "artifact_root": "_artifacts/c6c5997/runs/flat_3e-5",
+        "artifact_root": "_artifacts/c6c5997/runs/flat_3e-5-epsilon-ramp",
         "custody": "local",
         "manifest_root": "_artifacts/feedbax_runs",
         "metadata": {
-          "tracked_spec_dir": "results/c6c5997/runs/flat_3e-5"
+          "tracked_spec_dir": "results/c6c5997/runs/flat_3e-5-epsilon-ramp"
         }
       },
       "checkpoint_progress": {
@@ -44,7 +44,7 @@
           "target_total_batches": 16500
         },
         "metadata": {
-          "checkpoint_dir": "_artifacts/c6c5997/runs/flat_3e-5/checkpoints"
+          "checkpoint_dir": "_artifacts/c6c5997/runs/flat_3e-5-epsilon-ramp/checkpoints"
         },
         "progress_interval": 500
       },
@@ -7859,7 +7859,7 @@
         "experiment_issue": "c6c5997",
         "lr_continuation_schedule": "restart",
         "native_method": "rlrmp/adaptive_epsilon_curriculum/v1",
-        "row_id": "flat_3e-5",
+        "row_id": "flat_3e-5-epsilon-ramp",
         "serialize_do_not_rederive": true,
         "source_checkpoint_root": "_artifacts/c6c5997/source_batch12000_nominal/checkpoints",
         "source_checkpoint_transaction_id": "tx-80f84748ea934dca8d18be93a5cb7308"
@@ -7874,7 +7874,7 @@
         "metadata": {},
         "payload": {
           "checkpointing": {
-            "checkpoint_dir": "_artifacts/c6c5997/runs/flat_3e-5/checkpoints",
+            "checkpoint_dir": "_artifacts/c6c5997/runs/flat_3e-5-epsilon-ramp/checkpoints",
             "contents": [
               "model.eqx",
               "optimizer_state.eqx",
@@ -7886,7 +7886,7 @@
             ],
             "enabled": false,
             "interval_batches": 500,
-            "latest_checkpoint": "_artifacts/c6c5997/runs/flat_3e-5/checkpoints/checkpoint_latest",
+            "latest_checkpoint": "_artifacts/c6c5997/runs/flat_3e-5-epsilon-ramp/checkpoints/checkpoint_latest",
             "lr_continuation_schedule": "restart",
             "numbered_pattern": "checkpoint_{completed_batches:07d}",
             "resume": true,
@@ -7989,7 +7989,7 @@
             "nn_output_jerk": 0.0,
             "nn_output_pre_go": 0.0,
             "no_integrator_state": true,
-            "output_dir": "_artifacts/c6c5997/runs/flat_3e-5",
+            "output_dir": "_artifacts/c6c5997/runs/flat_3e-5-epsilon-ramp",
             "perturbation_calibrated_timing": true,
             "perturbation_calibration_regime": "open_loop_all",
             "perturbation_closed_loop_calibration_table": null,
@@ -8035,7 +8035,7 @@
             "run_spec": null,
             "seed": 42,
             "smoke": false,
-            "spec_dir": "results/c6c5997/runs/flat_3e-5",
+            "spec_dir": "results/c6c5997/runs/flat_3e-5-epsilon-ramp",
             "stochastic_preset": "cs2019-rollout",
             "stop_after_batches": null,
             "target_m": 0.15,
@@ -13335,57 +13335,57 @@
   "name": "c6c5997 Stage-2 adaptive-epsilon LR continuity",
   "rows": [
     {
-      "label": "flat_3e-5",
+      "label": "flat_3e-5-epsilon-ramp",
       "metadata": {
-        "artifact_root": "_artifacts/c6c5997/runs/flat_3e-5",
+        "artifact_root": "_artifacts/c6c5997/runs/flat_3e-5-epsilon-ramp",
         "replicate_topology": "vmap_internal",
         "replicates": 5,
         "rlrmp_task_identity": "sha256:66d64094620cb89393c1e249c52bcaeb17f744497fa0ea6d3eaeb5717c079456",
-        "tracked_run_spec": "results/c6c5997/runs/flat_3e-5.json"
+        "tracked_run_spec": "results/c6c5997/runs/flat_3e-5-epsilon-ramp.json"
       },
       "overrides": [],
-      "row_id": "flat_3e-5",
+      "row_id": "flat_3e-5-epsilon-ramp",
       "seed": 42
     },
     {
-      "label": "rewarm_3e-4",
+      "label": "rewarm_3e-4-epsilon-ramp",
       "metadata": {
-        "artifact_root": "_artifacts/c6c5997/runs/rewarm_3e-4",
+        "artifact_root": "_artifacts/c6c5997/runs/rewarm_3e-4-epsilon-ramp",
         "replicate_topology": "vmap_internal",
         "replicates": 5,
         "rlrmp_task_identity": "sha256:66d64094620cb89393c1e249c52bcaeb17f744497fa0ea6d3eaeb5717c079456",
-        "tracked_run_spec": "results/c6c5997/runs/rewarm_3e-4.json"
+        "tracked_run_spec": "results/c6c5997/runs/rewarm_3e-4-epsilon-ramp.json"
       },
       "overrides": [
         {
           "op": "replace",
           "path": "artifacts.artifact_root",
-          "value": "_artifacts/c6c5997/runs/rewarm_3e-4"
+          "value": "_artifacts/c6c5997/runs/rewarm_3e-4-epsilon-ramp"
         },
         {
           "op": "replace",
           "path": "artifacts.metadata.tracked_spec_dir",
-          "value": "results/c6c5997/runs/rewarm_3e-4"
+          "value": "results/c6c5997/runs/rewarm_3e-4-epsilon-ramp"
         },
         {
           "op": "replace",
           "path": "checkpoint_progress.metadata.checkpoint_dir",
-          "value": "_artifacts/c6c5997/runs/rewarm_3e-4/checkpoints"
+          "value": "_artifacts/c6c5997/runs/rewarm_3e-4-epsilon-ramp/checkpoints"
         },
         {
           "op": "replace",
           "path": "metadata.row_id",
-          "value": "rewarm_3e-4"
+          "value": "rewarm_3e-4-epsilon-ramp"
         },
         {
           "op": "replace",
           "path": "method_payload.payload.checkpointing.checkpoint_dir",
-          "value": "_artifacts/c6c5997/runs/rewarm_3e-4/checkpoints"
+          "value": "_artifacts/c6c5997/runs/rewarm_3e-4-epsilon-ramp/checkpoints"
         },
         {
           "op": "replace",
           "path": "method_payload.payload.checkpointing.latest_checkpoint",
-          "value": "_artifacts/c6c5997/runs/rewarm_3e-4/checkpoints/checkpoint_latest"
+          "value": "_artifacts/c6c5997/runs/rewarm_3e-4-epsilon-ramp/checkpoints/checkpoint_latest"
         },
         {
           "op": "replace",
@@ -13415,12 +13415,12 @@
         {
           "op": "replace",
           "path": "method_payload.payload.config.output_dir",
-          "value": "_artifacts/c6c5997/runs/rewarm_3e-4"
+          "value": "_artifacts/c6c5997/runs/rewarm_3e-4-epsilon-ramp"
         },
         {
           "op": "replace",
           "path": "method_payload.payload.config.spec_dir",
-          "value": "results/c6c5997/runs/rewarm_3e-4"
+          "value": "results/c6c5997/runs/rewarm_3e-4-epsilon-ramp"
         },
         {
           "op": "replace",
@@ -13448,48 +13448,48 @@
           "value": 0.0003
         }
       ],
-      "row_id": "rewarm_3e-4",
+      "row_id": "rewarm_3e-4-epsilon-ramp",
       "seed": 42
     },
     {
-      "label": "rewarm_3e-3",
+      "label": "rewarm_3e-3-epsilon-ramp",
       "metadata": {
-        "artifact_root": "_artifacts/c6c5997/runs/rewarm_3e-3",
+        "artifact_root": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp",
         "replicate_topology": "vmap_internal",
         "replicates": 5,
         "rlrmp_task_identity": "sha256:66d64094620cb89393c1e249c52bcaeb17f744497fa0ea6d3eaeb5717c079456",
-        "tracked_run_spec": "results/c6c5997/runs/rewarm_3e-3.json"
+        "tracked_run_spec": "results/c6c5997/runs/rewarm_3e-3-epsilon-ramp.json"
       },
       "overrides": [
         {
           "op": "replace",
           "path": "artifacts.artifact_root",
-          "value": "_artifacts/c6c5997/runs/rewarm_3e-3"
+          "value": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp"
         },
         {
           "op": "replace",
           "path": "artifacts.metadata.tracked_spec_dir",
-          "value": "results/c6c5997/runs/rewarm_3e-3"
+          "value": "results/c6c5997/runs/rewarm_3e-3-epsilon-ramp"
         },
         {
           "op": "replace",
           "path": "checkpoint_progress.metadata.checkpoint_dir",
-          "value": "_artifacts/c6c5997/runs/rewarm_3e-3/checkpoints"
+          "value": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp/checkpoints"
         },
         {
           "op": "replace",
           "path": "metadata.row_id",
-          "value": "rewarm_3e-3"
+          "value": "rewarm_3e-3-epsilon-ramp"
         },
         {
           "op": "replace",
           "path": "method_payload.payload.checkpointing.checkpoint_dir",
-          "value": "_artifacts/c6c5997/runs/rewarm_3e-3/checkpoints"
+          "value": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp/checkpoints"
         },
         {
           "op": "replace",
           "path": "method_payload.payload.checkpointing.latest_checkpoint",
-          "value": "_artifacts/c6c5997/runs/rewarm_3e-3/checkpoints/checkpoint_latest"
+          "value": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp/checkpoints/checkpoint_latest"
         },
         {
           "op": "replace",
@@ -13519,12 +13519,12 @@
         {
           "op": "replace",
           "path": "method_payload.payload.config.output_dir",
-          "value": "_artifacts/c6c5997/runs/rewarm_3e-3"
+          "value": "_artifacts/c6c5997/runs/rewarm_3e-3-epsilon-ramp"
         },
         {
           "op": "replace",
           "path": "method_payload.payload.config.spec_dir",
-          "value": "results/c6c5997/runs/rewarm_3e-3"
+          "value": "results/c6c5997/runs/rewarm_3e-3-epsilon-ramp"
         },
         {
           "op": "replace",
@@ -13552,7 +13552,7 @@
           "value": 0.003
         }
       ],
-      "row_id": "rewarm_3e-3",
+      "row_id": "rewarm_3e-3-epsilon-ramp",
       "seed": 42
     }
   ],

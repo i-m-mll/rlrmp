@@ -49,7 +49,7 @@ def test_validate_launch_fork_requires_row_bound_provenance() -> None:
                "optimizer": SimpleNamespace(payload=b"serialized")},
     )
     with pytest.raises(ValueError, match="wrong matrix row"):
-        validate_launch_fork(loaded, row_id="flat_3e-5")
+        validate_launch_fork(loaded, row_id="flat_3e-5-epsilon-ramp")
 
 
 def test_stage2_launch_manifest_executes_full_training() -> None:
@@ -64,5 +64,7 @@ def test_stage2_launch_manifest_executes_full_training() -> None:
 
 
 def test_manifest_payload_version_tracks_inline_legacy_spec() -> None:
-    run_spec = json.loads(Path("results/c6c5997/runs/flat_3e-5.json").read_text())
+    run_spec = json.loads(
+        Path("results/c6c5997/runs/flat_3e-5-epsilon-ramp.json").read_text()
+    )
     assert _run_spec_payload_schema_version(run_spec) == "rlrmp.cs_stochastic_gru.v1"
