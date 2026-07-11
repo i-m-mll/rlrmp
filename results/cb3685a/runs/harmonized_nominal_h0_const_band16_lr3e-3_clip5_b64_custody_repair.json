@@ -1,0 +1,47 @@
+{
+  "schema_id": "rlrmp.custody_repair",
+  "schema_version": "rlrmp.custody_repair.v1",
+  "repair_id": "harmonized_nominal_h0_const_band16_lr3e-3_clip5_b64_retry_source",
+  "source": {
+    "legacy_checkpoint_dir": "_artifacts/cb3685a/runs/harmonized_nominal_h0_const_band16_lr3e-3_clip5_b64/checkpoints/checkpoint_0012000",
+    "legacy_checkpoint_index": "_artifacts/cb3685a/runs/harmonized_nominal_h0_const_band16_lr3e-3_clip5_b64/checkpoints/checkpoint_index.json",
+    "training_summary": "_artifacts/cb3685a/runs/harmonized_nominal_h0_const_band16_lr3e-3_clip5_b64/training_summary.json",
+    "legacy_files_sha256": {
+      "history.eqx": "5e1f18a702e5864652487e2e5ff157d56b692a42652d4d0d5c2c7e90b839a2e8",
+      "metadata.json": "386aacad4b2a2f7192c1c7b0808e4b5998ddf09eb49e57237ead84a879b2d2ca",
+      "model.eqx": "efb965c55a3c15ea564a3aac7c929059c9571a0c3bd90c413d4ab6b468b58a9c",
+      "optimizer_state.eqx": "b5d151a6ff0adbd538983a94451c99b15405723d57937b16c62c5250f6dacfbe"
+    },
+    "evidence_files_sha256": {
+      "checkpoint_index.json": "ea0f2fdab6eb32add42c98ec0eec21abf9b964f419f1f05d3883898080ec0d06",
+      "training_summary.json": "ca2616a1808d1653fd568bdf49c6402bb166372af8bd4c9a7a3393695d8ba59a"
+    }
+  },
+  "verified_progress": {
+    "completed_training_batches": 12000,
+    "checkpoint_interval_batches": 500,
+    "phase_step": 24,
+    "barrier_visit_ordinal": 24,
+    "evidence_fields": [
+      "legacy_checkpoint.metadata.completed_batches",
+      "legacy_checkpoint_index.completed_batches",
+      "training_summary.completed_batches"
+    ]
+  },
+  "rejected_custody_source": {
+    "checkpoint_root": "_artifacts/cb3685a/runs/harmonized_nominal_h0_const_band16_lr3e-3_clip5_b64/checkpoints",
+    "reason": "Its transaction manifest falsely records completed_training_batches=24 from a phase coordinate. It remains immutable provenance, not a continuation source."
+  },
+  "target": {
+    "checkpoint_root": "_artifacts/cb3685a/runs/harmonized_nominal_h0_const_band16_lr3e-3_clip5_b64/retry_sources/custody_repaired_12000",
+    "must_be_new": true,
+    "requires_feedbax_custody_validation": true
+  },
+  "required_proof": {
+    "source_completed_training_batches": 12000,
+    "target_total_batches": 12200,
+    "expected_phase_step": 24,
+    "expected_barrier_visit_ordinal": 24,
+    "batch_indexed_optimizer_horizon": 12200
+  }
+}
