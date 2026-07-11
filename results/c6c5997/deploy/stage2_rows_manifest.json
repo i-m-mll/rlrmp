@@ -4,17 +4,17 @@
     {
       "id": "flat_3e-5",
       "workdir": "/workspace/rlrmp",
-      "command": "uv run --no-sync python scripts/train_cs_nominal_gru.py --run-spec results/c6c5997/runs/flat_3e-5.json --resume"
+      "command": "uv run --no-sync python scripts/train_cs_nominal_gru.py --run-spec results/c6c5997/runs/flat_3e-5.json --full-train --resume"
     },
     {
       "id": "rewarm_3e-4",
       "workdir": "/workspace/rlrmp",
-      "command": "uv run --no-sync python scripts/train_cs_nominal_gru.py --run-spec results/c6c5997/runs/rewarm_3e-4.json --resume"
+      "command": "uv run --no-sync python scripts/train_cs_nominal_gru.py --run-spec results/c6c5997/runs/rewarm_3e-4.json --full-train --resume"
     },
     {
       "id": "rewarm_3e-3",
       "workdir": "/workspace/rlrmp",
-      "command": "uv run --no-sync python scripts/train_cs_nominal_gru.py --run-spec results/c6c5997/runs/rewarm_3e-3.json --resume"
+      "command": "uv run --no-sync python scripts/train_cs_nominal_gru.py --run-spec results/c6c5997/runs/rewarm_3e-3.json --full-train --resume"
     }
   ]
 }
