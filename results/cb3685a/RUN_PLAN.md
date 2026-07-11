@@ -101,10 +101,10 @@ damage EMA both operate from batch 0; the ramp is diagnostic-only.
 
 ## Operational boundary
 
-Use a secure RTX 4090 as the default operational environment. This document
+The selected operational environment is a secure RTX 5090. Before pod
+creation, verify an available CUDA-12.8.1-or-newer image tag; this document
 and `runs/harmonized_nominal_h0_const_band16_lr3e-3_clip5_b64.json` authorize
-specification only. The billable launch remains blocked on the Stage-2
-prelaunch-contract work and a separate explicit user confirmation. The
-nominal-GRU `--run-spec` path has passed its non-billable dry run against this
-compact recipe, including RLRMP-method registration and sibling graph-sidecar
-resolution.
+specification only. The billable launch remains blocked on a separate explicit
+user confirmation. The nominal-GRU `--run-spec` path has passed its
+non-billable dry run against this compact recipe, including RLRMP-method
+registration and sibling graph-sidecar resolution.
