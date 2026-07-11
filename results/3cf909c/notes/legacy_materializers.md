@@ -7,12 +7,13 @@ rollout-recovery spec runner is deliberately outside this list.
 
 ## e901a20 legacy Equinox checkpoints
 
-Files: `src/rlrmp/eval/legacy_checkpoints.py` archival reader, consumed by
+Files: `src/rlrmp/eval/legacy_checkpoints.py` archival reader (deleted, see
+below), consumed by
 `results/e901a20/scripts/materialize_nominal_velocity_profile_comparison.py`
 and its non-H0 companion
 `results/e901a20/scripts/materialize_nonh0_no_pgd_extlqg_velocity.py`.
 
-Purpose: This frozen reader reconstructs the historical 020a65b/e901a20
+Purpose: This frozen reader reconstructed the historical 020a65b/e901a20
 Equinox checkpoint family: plain `eqx.nn.Linear` readouts in place of
 `MaskedLinear`, replicated scalar metadata, float64 leaves, and the distinct
 non-H0 `SimpleStagedNetwork` casting path.
@@ -20,13 +21,29 @@ non-H0 `SimpleStagedNetwork` casting path.
 Used by: [issue:ef8e1df] Pass C, preserving the four runs referenced by the
 e901a20 velocity-profile materializers.
 
-Keep-signal: Keep only as an archival boundary until the affected checkpoint
-bytes receive a deliberate migrate-once conversion. Checkpoint migration is
-deferred and was not performed by this pass.
+Keep-signal: None remaining for the reader itself; the checkpoint bytes stay
+as-is permanently. Revisit only if a concrete re-materialization need for
+these runs arises, in which case a monolithic-`SimpleStagedNetwork` to
+decomposed-`Graph` weight port is the prerequisite (see
+`results/7ae2916/README.md`).
 
-Banner status: Full module banner added. The independently maintained inline
-shims were removed from both result scripts and centralized in the capability-
-named archival reader.
+Banner status: Full module banner was added by [issue:ef8e1df]; both consumer
+scripts now carry their own `LEGACY (frozen 2026-07-11, issue 7ae2916)`
+banners with severed loader stubs.
+
+Retired 2026-07-11 under [issue:7ae2916]: the reader module
+`src/rlrmp/eval/legacy_checkpoints.py` and its test
+`tests/eval/test_legacy_checkpoints.py` were deleted because the reader never
+actually loaded the real artifacts against the current codebase — current
+`setup_task_model_pair` builds a decomposed feedbax-native `Graph`
+(`cell`/`input_mux`/`readout`, plus `h0_encoder`/`hidden_source` for H0),
+while the June-2026 checkpoints store a monolithic `SimpleStagedNetwork`, so
+all three readers failed for all 11 target run directories. The checkpoints
+under `_artifacts/020a65b/` and `_artifacts/e901a20/` are readable only via
+historical code revisions. Migration was attempted and deliberately abandoned
+(user decision 2026-07-11); the investigation record is
+`results/7ae2916/README.md`. Recover the reader with
+`git show <pre-7ae2916-tree>:src/rlrmp/eval/legacy_checkpoints.py`.
 
 ## C&S analytical game card
 
