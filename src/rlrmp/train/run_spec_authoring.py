@@ -344,7 +344,16 @@ def _build_config_generated_parser() -> argparse.ArgumentParser:
 def build_parser() -> argparse.ArgumentParser:
     """Build the nominal-GRU CLI directly from the canonical config model."""
 
-    return _build_config_generated_parser()
+    parser = _build_config_generated_parser()
+    parser.add_argument(
+        "--compact-run-spec",
+        action="store_true",
+        help=(
+            "Write the tracked recipe as a compact envelope backed by its full "
+            "rlrmp_run_spec payload."
+        ),
+    )
+    return parser
 
 
 def derive_spec_dir(output_dir: Path) -> Path:
