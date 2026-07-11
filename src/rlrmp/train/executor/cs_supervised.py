@@ -44,6 +44,11 @@ import jax.tree as jt
 import numpy as np
 import optax
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
+from feedbax.contracts.training import (
+    DEFAULT_TRAINING_METHOD_REGISTRY,
+    TrainingMethodRegistry,
+    TrainingRunSpec,
+)
 from feedbax.objectives.loss import AbstractLoss
 from feedbax.objectives.service import LossService, LoweredObjective
 from feedbax.objectives.spec import ObjectiveExecutionRequirements
@@ -56,6 +61,7 @@ from rlrmp.loss import (
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.runtime.run_specs import run_spec_sidecar_dir, validate_nominal_gru_run_spec
+from rlrmp.runtime.checkpoint_custody import cs_custody_training_spec
 from rlrmp.runtime.training_run_specs import (
     FEEDBAX_TRAINING_RUN_SPEC_KEY,
     RLRMP_RUN_SPEC_PAYLOAD_KEY,
@@ -977,17 +983,18 @@ def _run_cs_supervised_native_from_context(
         run_spec,
         graph_spec=runtime_graph_bundle.graph_spec,
     )
-    training_spec = feedbax_training_run_spec_from_payload(run_spec)
     checkpoint_root = output_dir / "checkpoints"
     context, resume_native, continuation = _resolve_full_train_launch_context(
         context,
         checkpoint_root=checkpoint_root,
         stop_after_batches=stop_after_batches,
     )
+    training_spec = cs_custody_training_spec(run_spec)
     training_spec = attach_cs_supervised_checkpoint_continuation(training_spec, continuation)
+    execution_registry = _cs_supervised_execution_registry(training_spec)
     args = context.args
     initial_slots, runtime = build_cs_supervised_native_initial_slots(
-        run_spec=run_spec,
+        run_spec=training_spec,
         hps=hps,
         args=args,
         key=jr.PRNGKey(int(args.seed)),
@@ -1008,6 +1015,7 @@ def _run_cs_supervised_native_from_context(
         training_spec_payload_ref=str(run_spec_path),
         resume=resume_native,
         resume_slot_transform=_cs_supervised_resume_slot_transform(),
+        registry=execution_registry,
         issues=[str(args.issue)],
     )
     training_duration_seconds = time.perf_counter() - started
@@ -1026,6 +1034,23 @@ def _run_cs_supervised_native_from_context(
         checkpoint_writes=execution.checkpoint_writes,
         volume_commit=volume_commit,
     )
+
+
+def _cs_supervised_execution_registry(training_spec: TrainingRunSpec) -> TrainingMethodRegistry:
+    """Bind native execution to the exact governed worker contract being resumed."""
+
+    registration = DEFAULT_TRAINING_METHOD_REGISTRY.resolve(
+        training_spec.method_ref,
+        path="/method_ref",
+    )
+    registry = TrainingMethodRegistry()
+    registry.register(
+        replace(
+            registration,
+            contract_factory=lambda: training_spec.worker_execution.method_contract,
+        )
+    )
+    return registry
 
 
 def _cs_supervised_native_run_id(args: argparse.Namespace, run_spec_path: Path) -> str:
