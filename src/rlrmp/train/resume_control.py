@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -13,6 +12,7 @@ from feedbax.contracts.checkpoints import (
     CheckpointContinuationRequest,
 )
 from feedbax.contracts.training import TrainingRunSpec
+from feedbax.training import load_checkpoint_custody_documents
 
 
 LAUNCH_CONTINUATION_PREFIX = "LAUNCH_CONTINUATION"
@@ -63,64 +63,30 @@ def completed_batches_from_latest(latest_path: Path) -> int:
     never a fallback for batch arithmetic.
     """
 
-    payload = json.loads(latest_path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError(f"checkpoint latest pointer must be an object: {latest_path}")
-    manifest_relative_path = payload.get("manifest_relative_path")
-    if manifest_relative_path is not None:
-        if not isinstance(manifest_relative_path, str) or not manifest_relative_path:
-            raise ValueError(
-                "checkpoint latest pointer has invalid manifest_relative_path: "
-                f"{latest_path}"
-            )
-        relative_path = Path(manifest_relative_path)
-        if relative_path.is_absolute():
-            raise ValueError(
-                "checkpoint latest pointer manifest_relative_path must be relative: "
-                f"{latest_path}"
-            )
-        checkpoint_root = latest_path.parent.resolve()
-        manifest_path = (checkpoint_root / relative_path).resolve()
-        try:
-            manifest_path.relative_to(checkpoint_root)
-        except ValueError as exc:
-            raise ValueError(
-                "checkpoint latest pointer manifest_relative_path escapes checkpoint root: "
-                f"{latest_path}"
-            ) from exc
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except FileNotFoundError as exc:
-            raise ValueError(
-                "checkpoint latest pointer references missing transaction manifest: "
-                f"{manifest_path}"
-            ) from exc
-        if not isinstance(manifest, dict):
-            raise ValueError(f"checkpoint transaction manifest must be an object: {manifest_path}")
-        completed_batches = manifest.get("completed_training_batches")
-        if isinstance(completed_batches, bool) or not isinstance(completed_batches, int):
-            raise ValueError(
-                "checkpoint transaction manifest lacks integer completed_training_batches: "
-                f"{manifest_path}"
-            )
-        if completed_batches < 0:
-            raise ValueError(
-                "checkpoint transaction manifest has negative completed_training_batches: "
-                f"{manifest_path}"
-            )
-        pointer_completed_batches = payload.get("completed_training_batches")
-        if pointer_completed_batches is not None and pointer_completed_batches != completed_batches:
-            raise ValueError(
-                "checkpoint latest pointer completed_training_batches disagrees with "
-                f"transaction manifest: pointer={pointer_completed_batches!r} "
-                f"manifest={completed_batches!r}"
-            )
-        return completed_batches
-
-    raise ValueError(
-        "checkpoint latest pointer lacks manifest_relative_path with an explicit "
-        f"completed_training_batches total: {latest_path}"
-    )
+    documents = load_checkpoint_custody_documents(latest_path.parent)
+    latest = documents.latest_pointer.document
+    manifest = documents.manifest.document
+    completed_batches = manifest.completed_training_batches
+    if completed_batches is None:
+        raise ValueError(
+            "checkpoint transaction manifest lacks explicit completed_training_batches: "
+            f"{documents.manifest_path}"
+        )
+    if completed_batches < 0:
+        raise ValueError(
+            "checkpoint transaction manifest has negative completed_training_batches: "
+            f"{documents.manifest_path}"
+        )
+    if (
+        latest.completed_training_batches is not None
+        and latest.completed_training_batches != completed_batches
+    ):
+        raise ValueError(
+            "checkpoint latest pointer completed_training_batches disagrees with "
+            f"transaction manifest: pointer={latest.completed_training_batches!r} "
+            f"manifest={completed_batches!r}"
+        )
+    return completed_batches
 
 
 def resolve_launch_continuation(
