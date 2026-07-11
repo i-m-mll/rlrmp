@@ -20,45 +20,20 @@ from rlrmp.train.cs_nominal_gru import (
 
 
 FIXTURE_PATH = Path("tests/fixtures/cs_nominal_gru_config_identity.json")
-CASE_ARGV = {
-    "default": ["--dry-run"],
-    "delayed_full_qrf": [
-        "--dry-run",
-        "--target-relative-multitarget",
-        "--delayed-reach",
-        "--loss-objective",
-        "full_analytical_qrf",
-        "--controller-lr",
-        "0.003",
-        "--batch-size",
-        "64",
-        "--gradient-clip-norm",
-        "5",
-    ],
-    "target_h0_pgd_sisu": [
-        "--dry-run",
-        "--target-relative-multitarget",
-        "--initial-hidden-encoder",
-        "--broad-epsilon-pgd-training",
-        "--no-broad-epsilon-reach-scaling",
-        "--broad-epsilon-pgd-budget-schedule",
-        "sisu_energy_fraction",
-        "--broad-epsilon-pgd-sisu-max-radius",
-        "0.004545500088363065",
-        "--broad-epsilon-pgd-sisu-max-radius-source",
-        "effective_020a65b_pgd_training_radius",
-        "--n-train-batches",
-        "120",
-        "--seed",
-        "43",
-    ],
-}
 
 
 def main() -> None:
+    """Recompute parsed_args, semantic checks, and identity hashes for all cases.
+
+    The per-case ``argv`` lists are read from the existing fixture; they are the
+    stable case identities. To add or change a case, edit the ``argv`` field in
+    the fixture, then rerun this script to fill in the derived fields.
+    """
     parser = build_parser()
+    existing = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
     cases = {}
-    for name, argv in CASE_ARGV.items():
+    for name, case in existing["cases"].items():
+        argv = list(case["argv"])
         args = parser.parse_args(argv)
         with jax.enable_x64(False):
             config = cs_nominal_gru_config_from_args(args)
