@@ -153,6 +153,8 @@ def test_adaptive_epsilon_payload_requires_ratio_setpoint_basis() -> None:
             },
             lambda_update={},
             outer_adversarial_weight={},
+            application_ramp_start_batch=0,
+            application_ramp_end_batch=0,
             pgd_inner_maximizer={},
             checkpointing={},
         )
