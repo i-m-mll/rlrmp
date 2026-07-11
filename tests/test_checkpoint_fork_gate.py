@@ -130,7 +130,10 @@ def _write_matrix(
         "schema_id": TRAINING_RUN_MATRIX_SPEC_SCHEMA_ID,
         "schema_version": TRAINING_RUN_MATRIX_SPEC_SCHEMA_VERSION,
         "name": "fork gate adapter",
-        "base": {"inline": _training_run_payload(task_identity=source_identity)},
+        "base": {
+            "kind": "inline",
+            "inline": _training_run_payload(task_identity=source_identity),
+        },
         "fork": {
             "source_run_id": "feedbax-training-run:source",
             "lr_continuation": "continue",

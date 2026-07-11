@@ -9,9 +9,13 @@ import sys
 from pathlib import Path
 
 import feedbax
+import pytest
+from feedbax.contracts.training import TrainingRunSpec
+from feedbax.training import ExecutionPreparationRequest
 
 from rlrmp.paths import REPO_ROOT
 from rlrmp.train.cs_nominal_gru import build_parser, write_run_spec
+from rlrmp.train.execution_preparation import prepare_cs_supervised
 from rlrmp.train.feedbax_cli_rows import build_feedbax_cli_rows_manifest
 
 
@@ -112,3 +116,21 @@ def test_real_feedbax_cli_reaches_rlrmp_preparation_before_resume_lookup(tmp_pat
     assert completed.returncode != 0
     assert "execution preparation failed" not in completed.stderr.lower()
     assert "checkpoint" in completed.stderr.lower()
+
+
+def test_legacy_cs_spec_validates_then_preparation_fails_clearly(tmp_path: Path) -> None:
+    args = build_parser().parse_args([])
+    args.n_train_batches = 1
+    args.batch_size = 1
+    args.n_replicates = 1
+    args.hidden_size = 4
+    args.dry_run = True
+    args.output_dir = str(tmp_path / "artifacts")
+    args.spec_dir = str(tmp_path / "spec")
+    payload = write_run_spec(args)["run_spec"]["feedbax_training_run_spec"]
+    payload["method_payload"]["payload"].pop("config")
+
+    legacy_spec = TrainingRunSpec.model_validate(payload)
+
+    with pytest.raises(ValueError, match="predates governed runtime config"):
+        prepare_cs_supervised(ExecutionPreparationRequest(run_spec=legacy_spec))

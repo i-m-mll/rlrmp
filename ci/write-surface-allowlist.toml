@@ -113,3 +113,23 @@ target = "run_path"
 owner = "0efc92d"
 role = "run_spec"
 conditional = false
+
+# --- src/rlrmp/train/feedbax_cli_rows.py -----------------------------------
+
+[[durable_write_sites]]
+path = "src/rlrmp/train/feedbax_cli_rows.py"
+function = "build_feedbax_cli_rows_manifest"
+kind = "write_text"
+target = "nested_spec"
+owner = "89980df"
+role = "run_spec"
+conditional = false
+
+[[durable_write_sites]]
+path = "src/rlrmp/train/feedbax_cli_rows.py"
+function = "build_feedbax_cli_rows_manifest"
+kind = "write_text"
+target = "output_path"
+owner = "89980df"
+role = "run_spec"
+conditional = false
