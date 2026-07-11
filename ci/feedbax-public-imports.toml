@@ -605,7 +605,13 @@ symbols = ["execute_training_run_spec"]
 
 [[canonical_homes]]
 module = "feedbax.training"
-symbols = ["load_checkpoint_custody_documents"]
+symbols = [
+  "ExecutionPreparationProviderRegistry",
+  "ExecutionPreparationRegistration",
+  "ExecutionPreparationRequest",
+  "ExecutionPreparationResult",
+  "load_checkpoint_custody_documents",
+]
 
 [[canonical_homes]]
 module = "feedbax.training.loss"

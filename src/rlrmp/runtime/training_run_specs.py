@@ -535,7 +535,7 @@ class CsSupervisedPreStepPayload(_StrictPayloadModel):
 
     kind: str
     enabled: bool
-    config: dict[str, Any]
+    config: dict[str, Any] | None = None
 
 
 class CsSupervisedCheckpointPolicyPayload(_StrictPayloadModel):
@@ -549,6 +549,7 @@ class CsSupervisedCheckpointPolicyPayload(_StrictPayloadModel):
 class CsSupervisedMethodPayload(_StrictPayloadModel):
     """Governed payload for plain and PGD-pre-step C&S supervised training."""
 
+    config: dict[str, Any]
     training_mode: str
     n_train_batches: int
     batch_size: int
@@ -598,6 +599,7 @@ def register_rlrmp_cs_supervised_method() -> None:
             rejected_payload_versions=("rlrmp.spec.training_method.cs_supervised_payload.v0",),
             owner="rlrmp.runtime.training_run_specs",
             package="rlrmp",
+            requires_execution_preparation=True,
         )
     )
 
@@ -745,7 +747,13 @@ def cs_supervised_method_payload(
             enabled=True,
             config=pgd_config,
         )
+    # The generic Feedbax CLI sees only this nested TrainingRunSpec, not the
+    # outer RLRMP authoring document. Keep the validated runtime configuration
+    # in the governed payload so plugin preparation can build non-JSON slots.
+    from rlrmp.train.executor.cs_supervised import _args_values_from_run_spec
+
     payload = CsSupervisedMethodPayload(
+        config=_args_values_from_run_spec(run_spec),
         training_mode=str(_required_recording_field(run_spec, "training_summary.training_mode")),
         n_train_batches=int(
             _required_recording_field(run_spec, "training_summary.n_train_batches")

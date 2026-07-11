@@ -264,6 +264,7 @@ def ensure_adaptive_epsilon_training_method_registered() -> None:
             ),
             owner="rlrmp.train.adaptive_epsilon_native",
             package="rlrmp",
+            requires_execution_preparation=True,
         )
     )
 

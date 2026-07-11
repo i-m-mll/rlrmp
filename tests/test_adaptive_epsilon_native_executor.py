@@ -20,6 +20,7 @@ from feedbax.contracts.training import (
     OptimizerSpec,
     TrainingRunSpec,
 )
+from feedbax.training import ExecutionPreparationRequest
 
 from rlrmp.runtime.checkpoint_custody import deserialize_pytree_slot, serialize_pytree_slot
 from rlrmp.train.adaptive_epsilon_native import (
@@ -59,6 +60,8 @@ from rlrmp.train.cs_nominal_gru import (
     write_run_spec,
 )
 from rlrmp.train.executor.equivalence import assert_paired_equivalent, run_paired_equivalence
+from rlrmp.train.executor.adapters import RLRMP_RUNTIME_CONTEXT_KEY
+from rlrmp.train.execution_preparation import prepare_adaptive_epsilon
 from rlrmp.train.executor.slots import (
     ADAPTIVE_EPSILON_CURRICULUM_METHOD_REF,
     ADAPTIVE_EPSILON_STATE,
@@ -111,6 +114,20 @@ def test_adaptive_epsilon_run_spec_uses_native_method(
     assert payload.chunk_batches == 1
     slot_names = {slot.name for slot in spec.worker_execution.method_contract.state_slots}
     assert {ADAPTIVE_EPSILON_STATE, ZERO_ADVERSARY_GUARD} <= slot_names
+
+
+def test_adaptive_epsilon_execution_preparation_builds_runtime_inputs(tmp_path: Path) -> None:
+    spec = _adaptive_epsilon_training_spec(
+        tmp_path,
+        controller_mode=ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+    )
+
+    prepared = prepare_adaptive_epsilon(ExecutionPreparationRequest(run_spec=spec, resume=True))
+
+    assert isinstance(prepared.initial_slots[MODEL], SerializedPyTreeSlot)
+    assert RLRMP_RUNTIME_CONTEXT_KEY in prepared.kernel_context
+    assert prepared.loss_service is not None
+    assert callable(prepared.resume_slot_transform)
 
 
 def test_adaptive_epsilon_rejects_old_absolute_setpoint_payload(
