@@ -39,7 +39,7 @@ def test_extend_optimizer_histories_rejects_wrong_target_horizon() -> None:
 def test_validate_launch_fork_requires_row_bound_provenance() -> None:
     loaded = SimpleNamespace(
         manifest=SimpleNamespace(
-            completed_training_batches=SOURCE_COMPLETED_BATCHES,
+            completed_training_batches=TARGET_TOTAL_BATCHES,
             metadata={"rlrmp_stage2_launch_fork": {
                 "matrix_row_id": "other", "source_completed_batches": SOURCE_COMPLETED_BATCHES,
                 "target_total_batches": TARGET_TOTAL_BATCHES,
