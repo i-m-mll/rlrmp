@@ -266,6 +266,7 @@ def load_validated_run_spec(
         require_graph_sidecars=require_graph_sidecars,
     )
     _validate_composed_training_spec_payload(payload)
+    _validate_adaptive_epsilon_cross_mirrors(payload)
     return payload_path, payload
 
 
@@ -349,6 +350,91 @@ def _validate_composed_training_spec_payload(run_spec: dict[str, Any]) -> None:
         source_version=extension.get("schema_version"),
         path=RLRMP_RUN_SPEC_PAYLOAD_KEY,
     )
+
+
+def _validate_adaptive_epsilon_cross_mirrors(run_spec: dict[str, Any]) -> None:
+    """Reject drift between runtime HPS and the governed adaptive method payload."""
+
+    hps = _dict_value(run_spec, "hps")
+    hps_adaptive = _dict_value(hps, "adaptive_epsilon_curriculum")
+    if hps_adaptive.get("enabled") is not True:
+        return
+    training_spec = feedbax_training_run_spec_from_payload(run_spec)
+    method_ref = training_spec.method_ref
+    if f"{method_ref.package}/{method_ref.name}/{method_ref.version}" != (
+        "rlrmp/adaptive_epsilon_curriculum/v1"
+    ):
+        raise ValueError(
+            "Adaptive-epsilon runtime HPS requires the governed adaptive-epsilon method payload"
+        )
+    payload = training_spec.method_payload.payload
+    if not isinstance(payload, Mapping):
+        raise ValueError("Adaptive-epsilon method payload must be an object")
+    payload_config = _dict_value(payload, "config")
+    payload_damage = _dict_value(payload, "damage_schedule")
+    payload_lambda = _dict_value(payload, "lambda_update")
+    hps_damage = _dict_value(hps_adaptive, "damage_schedule")
+    hps_lambda = _dict_value(hps_adaptive, "lambda_update")
+
+    mirrors = {
+        "damage_schedule.start": (
+            hps_damage.get("start"),
+            payload_damage.get("start"),
+            payload_config.get("adaptive_epsilon_damage_start"),
+        ),
+        "damage_schedule.peak": (
+            hps_damage.get("peak"),
+            payload_damage.get("peak"),
+            payload_config.get("adaptive_epsilon_damage_peak"),
+        ),
+        "damage_schedule.final": (
+            hps_damage.get("final"),
+            payload_damage.get("final"),
+            payload_config.get("adaptive_epsilon_damage_final"),
+        ),
+        "lambda_update.interval_batches": (
+            hps_lambda.get("interval_batches"),
+            payload_lambda.get("interval_batches"),
+            payload_config.get("adaptive_epsilon_update_interval_batches"),
+        ),
+        "lambda_update.ema_alpha": (
+            hps_lambda.get("ema_alpha"),
+            payload_lambda.get("ema_alpha"),
+            payload_config.get("adaptive_epsilon_ema_alpha"),
+        ),
+        "lambda_update.eta": (
+            hps_lambda.get("eta"),
+            payload_lambda.get("eta"),
+            payload_config.get("adaptive_epsilon_eta"),
+        ),
+        "lambda_update.deadband_frac": (
+            hps_lambda.get("deadband_frac"),
+            payload_lambda.get("deadband_frac"),
+            payload_config.get("adaptive_epsilon_deadband_frac"),
+        ),
+        "lambda_update.max_log_step": (
+            hps_lambda.get("max_log_step"),
+            payload_lambda.get("max_log_step"),
+            payload_config.get("adaptive_epsilon_max_log_step"),
+        ),
+        "lambda_update.lambda_min": (
+            hps_lambda.get("lambda_min"),
+            payload_lambda.get("lambda_min"),
+            payload_config.get("adaptive_epsilon_lambda_min"),
+        ),
+        "lambda_update.freeze_during_application_ramp": (
+            hps_lambda.get("freeze_during_application_ramp"),
+            payload_lambda.get("freeze_during_application_ramp"),
+            payload_config.get("adaptive_epsilon_freeze_during_application_ramp"),
+        ),
+    }
+    for field, values in mirrors.items():
+        if values[0] != values[1] or values[1] != values[2]:
+            raise ValueError(
+                "Adaptive-epsilon cross-mirror mismatch "
+                f"field={field}: hps={values[0]!r} payload={values[1]!r} "
+                f"config={values[2]!r}"
+            )
 
 
 def _run_spec_payload_schema_version(run_spec: dict[str, Any]) -> str:

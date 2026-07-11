@@ -7168,6 +7168,23 @@ def test_pgd_broad_epsilon_full_training_emits_inner_diagnostics(
         assert np.any(diagnostics["pgd_broad_epsilon_epsilon_norm_mean"] > 0.0)
 
 
+def test_stage2_adaptive_epsilon_specs_reject_cross_mirror_drift() -> None:
+    recipe_path = REPO_ROOT / "results/c6c5997/runs/flat_3e-5.json"
+    recipe = json.loads(recipe_path.read_text(encoding="utf-8"))
+
+    cs_supervised_executor._validate_adaptive_epsilon_cross_mirrors(recipe)
+
+    recipe["hps"]["adaptive_epsilon_curriculum"]["lambda_update"]["eta"] = 0.1
+    with pytest.raises(
+        ValueError,
+        match=(
+            "Adaptive-epsilon cross-mirror mismatch "
+            "field=lambda_update.eta: hps=0.1 payload=0.2 config=0.2"
+        ),
+    ):
+        cs_supervised_executor._validate_adaptive_epsilon_cross_mirrors(recipe)
+
+
 def test_adaptive_epsilon_scaled_outer_full_training_emits_explicit_diagnostics(
     tmp_path: Path,
 ) -> None:
