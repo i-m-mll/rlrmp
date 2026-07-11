@@ -108,7 +108,17 @@ def fork_checkpoints_with_parity(
     _validate_fork_prelaunch_contracts(matrix, materialized, repo_root=resolved_repo_root)
     ratio_setpoint = _ratio_setpoint_prelaunch_report(matrix)
     target_roots = {target.row_id: target.checkpoint_root for target in targets}
-    adaptive_contracts = _adaptive_continuation_fork_contracts(materialized)
+    source_manifest = _read_latest_manifest(source_checkpoint_root)
+    completed_coordinate = source_manifest.get("completed_coordinate", {})
+    source_program_step = completed_coordinate.get("program_step")
+    if not isinstance(source_program_step, int):
+        raise ForkParityError(
+            "source checkpoint manifest lacks integer completed_coordinate.program_step"
+        )
+    adaptive_contracts = _adaptive_continuation_fork_contracts(
+        materialized,
+        source_program_step=source_program_step,
+    )
     reporter = RlrmpLrContinuationReporter(source_checkpoint_root=source_checkpoint_root)
     feedbax_matrix = matrix
     if adaptive_contracts and matrix.fork is not None:
@@ -247,6 +257,8 @@ def _read_latest_manifest(root: Path) -> dict[str, Any]:
 
 def _adaptive_continuation_fork_contracts(
     materialized: Any,
+    *,
+    source_program_step: int,
 ) -> dict[str, tuple[NominalToAdaptiveSlotAdapter, CheckpointForkBarrierMapping]]:
     """Build the declared target topology and C&S-to-adaptive barrier map."""
 
@@ -278,6 +290,7 @@ def _adaptive_continuation_fork_contracts(
             args=args,
             key=jr.PRNGKey(int(args.seed)),
             lr_continuation_mode=payload.lr_continuation_mode,
+            schedule_start_batch=spec.checkpoint_progress.continuation.source_completed_batches,
         )
         native = runtime.component("adaptive_epsilon")
         if not isinstance(native, AdaptiveEpsilonNativeRuntime):
@@ -294,7 +307,7 @@ def _adaptive_continuation_fork_contracts(
             target_coordinate=ProgressCoordinate(
                 run_id=row.planned_run_id,
                 phase=target_barrier.phase,
-                program_step=request.source_completed_batches,
+                program_step=source_program_step,
                 completed_barrier=target_barrier.name,
             ),
             coordinate_mapping={

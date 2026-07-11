@@ -19,6 +19,7 @@ from rlrmp.runtime.adaptive_checkpoint_adapter import NominalToAdaptiveSlotAdapt
 from rlrmp.runtime.training_run_specs import feedbax_training_run_spec_from_payload
 from rlrmp.train.adaptive_epsilon_native import (
     AdaptiveEpsilonNativeRuntime,
+    _adaptive_state_from_slot,
     build_adaptive_epsilon_native_initial_slots,
 )
 from rlrmp.train.cs_nominal_gru import build_parser
@@ -81,6 +82,7 @@ def main() -> None:
             hps=target_context.hps,
             args=target_context.args,
             key=jax.random.PRNGKey(int(target_context.args.seed)),
+            schedule_start_batch=SOURCE_COMPLETED_BATCHES,
         )
         native = runtime.component("adaptive_epsilon")
         if not isinstance(native, AdaptiveEpsilonNativeRuntime):
@@ -102,7 +104,7 @@ def main() -> None:
             target_coordinate=ProgressCoordinate(
                 run_id=_cs_supervised_native_run_id(target_context.args, run_spec_path),
                 phase="adaptive_epsilon_train_chunk",
-                program_step=SOURCE_COMPLETED_BATCHES,
+                program_step=source_loaded.manifest.completed_coordinate.program_step,
                 completed_barrier=target_barrier,
             ),
             coordinate_mapping={"identity": "rlrmp.cs_supervised_to_adaptive_epsilon.v1",
@@ -178,6 +180,11 @@ def validate_launch_fork(loaded: object, *, row_id: str) -> None:
         raise ValueError("launch-fork manifest is not bound to the target total")
     if int(loaded.slots["completed_batches"]) != SOURCE_COMPLETED_BATCHES:
         raise ValueError("launch-fork runtime progress slot is not at the source total")
+    adaptive_state = _adaptive_state_from_slot(loaded.slots["adaptive_epsilon_state"])
+    if adaptive_state is None:
+        raise ValueError("launch-fork adaptive state is missing")
+    if adaptive_state.schedule_start_batch != SOURCE_COMPLETED_BATCHES:
+        raise ValueError("launch-fork adaptive schedule does not start at the source total")
     optimizer = loaded.slots[OPTIMIZER]
     if not hasattr(optimizer, "payload"):
         raise TypeError("launch-fork optimizer is not an adaptive serialized slot")

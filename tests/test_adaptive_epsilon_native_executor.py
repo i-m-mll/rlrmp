@@ -297,7 +297,11 @@ def test_adaptive_epsilon_continuation_extends_declared_raw_histories_fail_close
         hps=build_hps(args),
         args=args,
         key=jr.PRNGKey(7),
+        schedule_start_batch=12_000,
     )
+    adaptive_state = _adaptive_state_from_slot(initial_slots[ADAPTIVE_EPSILON_STATE])
+    assert adaptive_state is not None
+    assert adaptive_state.schedule_start_batch == 12_000
     source_optimizer = _raw_optimizer_history_template(12_000)
     target_optimizer = _raw_optimizer_history_template(16_500)
     source_slots = dict(initial_slots)

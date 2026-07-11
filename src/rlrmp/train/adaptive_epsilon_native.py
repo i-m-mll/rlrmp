@@ -844,6 +844,7 @@ def build_adaptive_epsilon_native_initial_slots(
     args: Any,
     key: Any,
     lr_continuation_mode: str | None = None,
+    schedule_start_batch: int = 0,
 ) -> tuple[dict[str, Any], RlrmpRuntime]:
     """Return adaptive-epsilon native initial slots plus runtime context."""
 
@@ -868,7 +869,10 @@ def build_adaptive_epsilon_native_initial_slots(
         where_train=where_train,
         key=key_train,
     )
-    adaptive_state = _initial_adaptive_epsilon_state(hps)
+    adaptive_state = _initial_adaptive_epsilon_state(
+        hps,
+        schedule_start_batch=schedule_start_batch,
+    )
     zero_guard = _initial_adaptive_epsilon_zero_guard(enabled=True)
     runtime = AdaptiveEpsilonNativeRuntime(
         hps=hps,

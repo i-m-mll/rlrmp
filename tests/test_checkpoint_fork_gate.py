@@ -253,6 +253,7 @@ def _write_latest(
     manifest = {
         "transaction_id": transaction_id,
         "completed_training_batches": completed_batches,
+        "completed_coordinate": {"program_step": completed_batches},
         "content_integrity_digest": {
             "slots": [{"slot": "model", "slot_root_sha256": digest}],
         },
@@ -917,10 +918,11 @@ def test_adaptive_fork_contracts_call_real_pinned_feedbax_matrix_api(tmp_path: P
         payload=target_spec.model_dump(mode="json"),
     )
     materialized = SimpleNamespace(matrix_spec_sha256="test-matrix", rows=[row])
-    contracts = _adaptive_continuation_fork_contracts(materialized)
+    contracts = _adaptive_continuation_fork_contracts(materialized, source_program_step=24)
     adapter, barrier_mapping = contracts["adaptive"]
     assert barrier_mapping.source_barrier == "after_train_chunk"
     assert barrier_mapping.target_barrier == "after_adaptive_epsilon_train_chunk"
+    assert barrier_mapping.target_coordinate.program_step == 24
 
     matrix_path = tmp_path / "matrix.json"
     _write_matrix(matrix_path)
