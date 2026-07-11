@@ -36,20 +36,6 @@ EXPECTED_TRACKED_FAIL_CLOSED = {
         "teacher_contract.horizon"
     ),
 }
-EXPECTED_DIRECTORY_RUN_FAIL_CLOSED = {
-    Path("results/30f2313/runs/cs_stochastic_gru__hidden_penalty/run.json"): (
-        "optimizer.gradient_clip_norm"
-    ),
-    Path("results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/run.json"): (
-        "optimizer.gradient_clip_norm"
-    ),
-    Path("results/3b2af27/runs/lss_12k__hidden_penalty/run.json"): (
-        "optimizer.gradient_clip_norm"
-    ),
-    Path("results/3b2af27/runs/lss_12k__no_hidden_penalty/run.json"): (
-        "optimizer.gradient_clip_norm"
-    ),
-}
 
 
 def _complete_closed_loop_spec() -> dict[str, Any]:
@@ -95,10 +81,6 @@ def _adapter_method_for_payload(payload: dict[str, Any]) -> str | None:
 
 def _flat_tracked_run_specs() -> list[Path]:
     return sorted(Path("results").glob("*/runs/*.json"))
-
-
-def _directory_tracked_run_specs() -> list[Path]:
-    return sorted(Path("results").glob("*/runs/*/run.json"))
 
 
 def _delete_path(payload: dict[str, Any], field_path: str) -> None:
@@ -330,28 +312,5 @@ def test_tracked_training_config_adapter_corpus_census() -> None:
         else:
             clean_paths.append(path)
 
-    assert len(clean_paths) == 76
+    assert len(clean_paths) == 77
     assert fail_closed == EXPECTED_TRACKED_FAIL_CLOSED
-
-
-def test_directory_training_config_adapter_corpus_census() -> None:
-    clean_paths = []
-    fail_closed: dict[Path, str] = {}
-
-    for path in _directory_tracked_run_specs():
-        payload = _read_json(path)
-        method = _adapter_method_for_payload(payload)
-        if method is None:
-            continue
-        try:
-            if method == "cs_gru":
-                _cs_training_config(payload, spec_dir=path.parent)
-            else:
-                _distillation_training_config(payload, method=method, spec_path=path)
-        except MissingTrainingRunSpecFieldError as exc:
-            fail_closed[path] = exc.field_path
-        else:
-            clean_paths.append(path)
-
-    assert len(clean_paths) == 73
-    assert fail_closed == EXPECTED_DIRECTORY_RUN_FAIL_CLOSED

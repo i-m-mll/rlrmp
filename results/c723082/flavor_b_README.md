@@ -16,6 +16,8 @@ PGD-projected ΔA inside the plant `LTISystem.vector_field`.
 
 - `runs/flavor_b_eta{X}__seed_{Y}/run.json` — per-run spec (hyperparameters,
   artifact pointers, loss summary, timing).
+
+These historical nested recipes were retired under issue `ef8e1df`; recover them from git tag `legacy/ef8e1df-nested-run-json-retired` (the bytes are also in Mandible custody).
 - Bulk artifacts (model `.eqx`, checkpoints, `.npz` loss arrays, training logs,
   and a derived `flavor_b_summary.json` with per-run loss trajectories at
   every 500 batches and per-eta aggregates) are mirrored under

@@ -22,7 +22,12 @@ def test_build_plan_uses_role_based_repo_layout(tmp_path: Path) -> None:
     )
 
     assert plan.volume_name == MODAL_VOLUME_NAME
+    assert plan.remote_spec_path == "results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty.json"
     assert plan.remote_spec_dir == "results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty"
+    assert (
+        plan.local_spec_path
+        == tmp_path / "results" / "30f2313" / "runs" / "cs_stochastic_gru__no_hidden_penalty.json"
+    )
     assert (
         plan.remote_artifact_dir == "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty"
     )
@@ -40,7 +45,7 @@ def test_build_plan_uses_role_based_repo_layout(tmp_path: Path) -> None:
         "get",
         "--force",
         MODAL_VOLUME_NAME,
-        "results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty",
+        "results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty.json",
         str(plan.local_spec_dir.parent),
     ]
 
@@ -52,7 +57,9 @@ def test_sync_pulls_specs_artifacts_and_validates_run_spec(tmp_path: Path) -> No
     def runner(command: Sequence[str]) -> int:
         commands.append(list(command))
         destination = Path(command[6])
-        if command[5].startswith("results/"):
+        if command[5].endswith(".json"):
+            _write_flat_spec(destination / "cs_stochastic_gru__no_hidden_penalty.json")
+        elif command[5].startswith("results/"):
             _write_complete_specs(destination / "cs_stochastic_gru__no_hidden_penalty")
         else:
             _write_complete_artifacts(
@@ -71,16 +78,16 @@ def test_sync_pulls_specs_artifacts_and_validates_run_spec(tmp_path: Path) -> No
 
     assert len(results) == 1
     assert results[0].validated is True
-    assert len(commands) == 2
-    assert commands[0][5] == "results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty"
-    assert commands[1][5] == "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty"
+    assert len(commands) == 3
+    assert commands[0][5] == "results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty.json"
+    assert commands[1][5] == "results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty"
+    assert commands[2][5] == "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty"
     assert validated == [
         tmp_path
         / "results"
         / "30f2313"
         / "runs"
-        / "cs_stochastic_gru__no_hidden_penalty"
-        / "run.json"
+        / "cs_stochastic_gru__no_hidden_penalty.json"
     ]
     spec_dir = tmp_path / "results" / "30f2313" / "runs" / "cs_stochastic_gru__no_hidden_penalty"
     artifact_dir = (
@@ -98,8 +105,10 @@ def test_sync_accepts_multiple_runs_in_order(tmp_path: Path) -> None:
     def runner(command: Sequence[str]) -> int:
         remote_paths.append(command[5])
         destination = Path(command[6])
-        run = remote_paths[-1].split("/")[-1]
-        if command[5].startswith("results/"):
+        run = remote_paths[-1].split("/")[-1].removesuffix(".json")
+        if command[5].endswith(".json"):
+            _write_flat_spec(destination / f"{run}.json")
+        elif command[5].startswith("results/"):
             _write_complete_specs(destination / run)
         else:
             _write_complete_artifacts(destination / run)
@@ -114,8 +123,10 @@ def test_sync_accepts_multiple_runs_in_order(tmp_path: Path) -> None:
     )
 
     assert remote_paths == [
+        "results/30f2313/runs/first.json",
         "results/30f2313/runs/first",
         "_artifacts/30f2313/runs/first",
+        "results/30f2313/runs/second.json",
         "results/30f2313/runs/second",
         "_artifacts/30f2313/runs/second",
     ]
@@ -124,10 +135,11 @@ def test_sync_accepts_multiple_runs_in_order(tmp_path: Path) -> None:
 def test_sync_rejects_missing_graph_manifest(tmp_path: Path) -> None:
     def runner(command: Sequence[str]) -> int:
         destination = Path(command[6])
-        if command[5].startswith("results/"):
+        if command[5].endswith(".json"):
+            _write_flat_spec(destination / "missing_manifest.json")
+        elif command[5].startswith("results/"):
             nested = destination / "missing_manifest"
             nested.mkdir(parents=True)
-            (nested / "run.json").write_text("{}", encoding="utf-8")
         else:
             _write_complete_artifacts(destination / "missing_manifest")
         return 0
@@ -145,7 +157,9 @@ def test_sync_rejects_missing_graph_manifest(tmp_path: Path) -> None:
 def test_sync_accepts_declared_unavailable_graph_export(tmp_path: Path) -> None:
     def runner(command: Sequence[str]) -> int:
         destination = Path(command[6])
-        if command[5].startswith("results/"):
+        if command[5].endswith(".json"):
+            _write_flat_spec(destination / "no_graph.json", graph_available=False)
+        elif command[5].startswith("results/"):
             _write_complete_specs(destination / "no_graph", graph_available=False)
         else:
             _write_complete_artifacts(destination / "no_graph")
@@ -165,7 +179,9 @@ def test_sync_accepts_declared_unavailable_graph_export(tmp_path: Path) -> None:
 def test_sync_rejects_missing_bulk_artifact(tmp_path: Path) -> None:
     def runner(command: Sequence[str]) -> int:
         destination = Path(command[6])
-        if command[5].startswith("results/"):
+        if command[5].endswith(".json"):
+            _write_flat_spec(destination / "missing_artifact.json")
+        elif command[5].startswith("results/"):
             _write_complete_specs(destination / "missing_artifact")
         else:
             nested = destination / "missing_artifact"
@@ -202,8 +218,9 @@ def test_dry_run_builds_commands_without_running_or_validating(tmp_path: Path) -
     )
 
     assert results[0].validated is False
-    assert results[0].commands[0][5] == "results/30f2313/runs/dry_run"
-    assert results[0].commands[1][5] == "_artifacts/30f2313/runs/dry_run"
+    assert results[0].commands[0][5] == "results/30f2313/runs/dry_run.json"
+    assert results[0].commands[1][5] == "results/30f2313/runs/dry_run"
+    assert results[0].commands[2][5] == "_artifacts/30f2313/runs/dry_run"
 
 
 def test_nonzero_modal_command_aborts_sync(tmp_path: Path) -> None:
@@ -220,16 +237,20 @@ def test_nonzero_modal_command_aborts_sync(tmp_path: Path) -> None:
         )
 
 
-def _write_complete_specs(destination: Path, *, graph_available: bool = True) -> None:
-    destination.mkdir(parents=True)
+def _write_flat_spec(destination: Path, *, graph_available: bool = True) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
     feedbax_graph = {
         "graph_spec_path": "model.graph.json" if graph_available else None,
         "graph_export_status": "available" if graph_available else "unavailable",
     }
-    (destination / "run.json").write_text(
+    destination.write_text(
         json.dumps({"feedbax_graph": feedbax_graph}),
         encoding="utf-8",
     )
+
+
+def _write_complete_specs(destination: Path, *, graph_available: bool = True) -> None:
+    destination.mkdir(parents=True)
     if graph_available:
         (destination / "model.graph.json").write_text("{}", encoding="utf-8")
     (destination / "model.graph.manifest.json").write_text("{}", encoding="utf-8")

@@ -60,6 +60,8 @@ The training script writes the actual `run.json` (under the same path as this
 README) at launch time, capturing `vars(args)` plus git/GPU metadata. The
 intent for this run is:
 
+Historical nested run recipes were retired under issue `ef8e1df`; recover them from git tag `legacy/ef8e1df-nested-run-json-retired` (the bytes are also in Mandible custody).
+
 ```json
 {
   "n_warmup_batches": 12000,

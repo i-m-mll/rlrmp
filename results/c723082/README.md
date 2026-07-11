@@ -16,6 +16,8 @@ flavor-(a) additive force adversary. This dir bundles:
 - `flavor_b_README.md` — narrative summary of the sweep.
 - `notes/induced_gain_first_run.md`, `notes/induced_gain_flavor_b.md` —
   per-run analysis notes.
+
+Historical nested `run.json` recipes were retired under issue `ef8e1df`; recover them from git tag `legacy/ef8e1df-nested-run-json-retired` (the bytes are also in Mandible custody).
 - `notes/induced_gain_cross_method_comparison.md`,
   `notes/peak_velocity_cross_method_comparison.md` — cross-method comparisons.
 

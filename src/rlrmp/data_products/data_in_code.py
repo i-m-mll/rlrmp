@@ -269,7 +269,6 @@ _OWNING_SCHEMA_DEFAULT_ALLOWLIST = (
     "src/rlrmp/analysis/math/linear_round_trip.py::LinearOptimizationConfig::default_bundle",
     "src/rlrmp/analysis/math/linear_round_trip.py::TeacherFitConfig::default_bundle",
     "src/rlrmp/analysis/math/output_feedback.py::OutputFeedbackConfig::default_bundle",
-    "src/rlrmp/analysis/pipelines/cs_stochastic_phase3.py::Phase3StochasticConfig::default_bundle",
     "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py::DelayedReachEvalBankSpec::default_bundle",
     "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py::SteadyStatePerturbationBankConfig::default_bundle",
     "src/rlrmp/analysis/robustness_margin.py::RobustnessMarginParams::default_bundle",

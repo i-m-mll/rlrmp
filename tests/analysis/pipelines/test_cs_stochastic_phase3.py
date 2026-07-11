@@ -4,20 +4,26 @@ from __future__ import annotations
 
 import jax.numpy as jnp
 
+from rlrmp.io import load_named_python_module
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     PRIMARY_GAMMA_FACTOR,
     materialize_reference,
 )
 from rlrmp.analysis.math.cs_released_simulation import CSReleasedStochasticNoiseConfig
-from rlrmp.analysis.pipelines.cs_stochastic_phase3 import (
-    Phase3ControllerSpec,
-    Phase3StochasticConfig,
-    process_noise_sweep_summary,
-    result_summary,
-    run_phase3_process_noise_sweep,
-    run_phase3_stochastic_evaluation,
+from rlrmp.paths import REPO_ROOT
+
+
+_PHASE3 = load_named_python_module(
+    "rlrmp_legacy_cs_stochastic_phase3_tests",
+    REPO_ROOT / "legacy" / "analysis_pipelines" / "cs_stochastic_phase3.py",
 )
+Phase3ControllerSpec = _PHASE3.Phase3ControllerSpec
+Phase3StochasticConfig = _PHASE3.Phase3StochasticConfig
+process_noise_sweep_summary = _PHASE3.process_noise_sweep_summary
+result_summary = _PHASE3.result_summary
+run_phase3_process_noise_sweep = _PHASE3.run_phase3_process_noise_sweep
+run_phase3_stochastic_evaluation = _PHASE3.run_phase3_stochastic_evaluation
 
 
 def _small_controller_specs() -> tuple[Phase3ControllerSpec, ...]:

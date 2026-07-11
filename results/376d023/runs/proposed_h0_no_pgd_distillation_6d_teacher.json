@@ -1,7 +1,7 @@
 {
   "base_issue": "020a65b",
   "base_run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
-  "base_run_spec": "results/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/run.json",
+  "base_run_spec": "results/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64.json",
   "certificate_and_eval_gates": [
     "clean action match on original, seen, and held-out target bins",
     "perturbation-response match under calibrated initial-state, sensory, process/load, and command-input perturbations",

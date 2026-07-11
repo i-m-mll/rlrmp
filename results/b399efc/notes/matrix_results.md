@@ -18,6 +18,8 @@ This note summarises the 7-cell movement-locked ramp matrix run under tracking i
 
 Run-spec paths: `results/b399efc/runs/<variant>/run.json` (committed at `69c91eb`).
 
+These historical nested recipes were retired under issue `ef8e1df`; recover them from git tag `legacy/ef8e1df-nested-run-json-retired` (the bytes are also in Mandible custody).
+
 ## Interpretation
 
 ### Shape monotonicity

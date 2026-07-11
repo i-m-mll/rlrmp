@@ -585,18 +585,15 @@ def test_full_run_after_sync_only_skips_resync_and_duplicate_checkpoint(
     assert "record post-run spec fixture__ok" in log
 
 
-def test_legacy_nested_run_spec_raises_explicit_error(tmp_path: Path) -> None:
-    """W8/e926665: a legacy nested results/<hash>/runs/<run>/run.json recipe is
-    refused with an explicit error rather than silently promoted to the flat
-    canonical path."""
+def test_missing_flat_run_spec_fails_closed(tmp_path: Path) -> None:
+    """A run without an artifact or canonical flat recipe is refused."""
     repo = tmp_path / "repo"
     bin_dir = tmp_path / "bin"
     auth_record = tmp_path / "auth_args.txt"
     init_git_repo(repo)
     fake_agent_commit, fake_mandible = write_fake_commands(bin_dir, auth_record)
 
-    # Seed the artifact dir (with training_summary) and the LEGACY nested spec,
-    # but no flat recipe and no run.json in the artifact dir.
+    # Seed the artifact dir with a summary, but no flat recipe or source recipe.
     hash_ = "731fdf7"
     artifact_dir = repo / "_artifacts" / hash_ / "runs" / "fixture__ok"
     artifact_dir.mkdir(parents=True)
@@ -604,9 +601,6 @@ def test_legacy_nested_run_spec_raises_explicit_error(tmp_path: Path) -> None:
         artifact_dir / "training_summary.json",
         {"completed_batches": 3, "final_validation_loss": 0.125},
     )
-    legacy_spec = repo / "results" / hash_ / "runs" / "fixture__ok" / "run.json"
-    write_json(legacy_spec, {"run": "fixture__ok"})
-
     env = os.environ.copy()
     env["POST_RUN_AGENT_COMMIT"] = str(fake_agent_commit)
     env["POST_RUN_MANDIBLE_AUTH"] = str(fake_mandible)
@@ -627,8 +621,8 @@ def test_legacy_nested_run_spec_raises_explicit_error(tmp_path: Path) -> None:
     )
 
     assert result.returncode != 0
-    assert "legacy nested run spec" in result.stdout
-    assert "fixture__ok/run.json" in result.stdout
+    assert "could not find run spec" in result.stdout
+    assert "results/731fdf7/runs/fixture__ok.json" in result.stdout
     assert not auth_record.exists()
     assert not Path(str(auth_record) + ".checkpoint").exists()
 
