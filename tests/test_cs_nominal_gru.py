@@ -7226,6 +7226,7 @@ def test_adaptive_epsilon_scaled_outer_full_training_emits_explicit_diagnostics(
     assert "adaptive_epsilon_sign_alternation_fraction" in diagnostics_manifest["arrays"]
     assert "adaptive_epsilon_ema_noise_floor" in diagnostics_manifest["arrays"]
     assert "adaptive_epsilon_outer_weight" in diagnostics_manifest["arrays"]
+    assert "adaptive_epsilon_epsilon_scale_used" in diagnostics_manifest["arrays"]
     assert (
         "adaptive_epsilon_training_batch_full_strength_damage_raw" in diagnostics_manifest["arrays"]
     )
@@ -7242,6 +7243,7 @@ def test_adaptive_epsilon_scaled_outer_full_training_emits_explicit_diagnostics(
         in diagnostics_manifest["arrays"]
     )
     with np.load(output_dir / "training_diagnostics.npz") as diagnostics:
+        assert diagnostics["adaptive_epsilon_outer_weight"].shape == (2,)
         assert diagnostics["adaptive_epsilon_outer_weight"].tolist() == [
             pytest.approx(0.25),
             pytest.approx(0.25),
