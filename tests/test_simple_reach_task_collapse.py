@@ -141,7 +141,7 @@ def _fixed_simple_reach_run_spec_paths() -> list[Path]:
 
 def test_tracked_fixed_simple_reach_run_specs_still_build() -> None:
     paths = _fixed_simple_reach_run_spec_paths()
-    assert len(paths) == 50
+    assert len(paths) == 51
     for path in paths:
         payload = hydrate_compact_run_spec_envelope(
             json.loads(path.read_text(encoding="utf-8"))
