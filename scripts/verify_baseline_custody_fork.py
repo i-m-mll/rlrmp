@@ -97,6 +97,14 @@ def main() -> None:
     optimizer = loaded.slots[OPTIMIZER]
     if not isinstance(optimizer, tuple):
         raise TypeError("C&S custody optimizer slot must be a native tuple PyTree")
+    if loaded.manifest.completed_training_batches != 12_200:
+        raise ValueError("forked manifest did not record 12,200 completed training batches")
+    if int(loaded.slots["completed_batches"]) != 12_200:
+        raise ValueError("forked completed_batches slot did not reach 12,200")
+    if loaded.manifest.completed_coordinate.program_step != 24:
+        raise ValueError("forked manifest did not preserve program_step=24")
+    if loaded.manifest.metadata.get("barrier_visit_ordinal") != 24:
+        raise ValueError("forked manifest did not preserve barrier_visit_ordinal=24")
     print(
         json.dumps(
             {
