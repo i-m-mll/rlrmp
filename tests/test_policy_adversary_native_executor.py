@@ -12,6 +12,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 from feedbax.contracts.training import DEFAULT_TRAINING_METHOD_REGISTRY, TrainingRunSpec
+from feedbax.training import ExecutionPreparationRequest
 
 from rlrmp.train.cs_nominal_gru import (
     CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
@@ -24,6 +25,8 @@ from rlrmp.train.cs_nominal_gru import (
 )
 from rlrmp.train.cs_perturbation_training import HISTORICAL_020A65B_PGD_RADIUS_15CM
 from rlrmp.train.executor.equivalence import assert_paired_equivalent, run_paired_equivalence
+from rlrmp.train.executor.adapters import RLRMP_RUNTIME_CONTEXT_KEY
+from rlrmp.train.execution_preparation import prepare_policy_adversary
 from rlrmp.train.executor.slots import (
     ADVERSARY_LOSS,
     ADVERSARY_OPTIMIZER,
@@ -66,6 +69,17 @@ def test_policy_adversary_run_spec_uses_native_method(tmp_path: Path) -> None:
     assert payload.policy["kind"] == "memoryless_mlp"
     slot_names = {slot.name for slot in spec.worker_execution.method_contract.state_slots}
     assert {ADVERSARY_POLICY, ADVERSARY_OPTIMIZER} <= slot_names
+
+
+def test_policy_adversary_execution_preparation_builds_runtime_inputs(tmp_path: Path) -> None:
+    spec = _policy_adversary_training_spec(tmp_path)
+
+    prepared = prepare_policy_adversary(ExecutionPreparationRequest(run_spec=spec, resume=True))
+
+    assert isinstance(prepared.initial_slots[MODEL], SerializedPyTreeSlot)
+    assert RLRMP_RUNTIME_CONTEXT_KEY in prepared.kernel_context
+    assert prepared.loss_service is not None
+    assert callable(prepared.resume_slot_transform)
 
 
 def test_policy_adversary_native_executor_matches_driver_chunk_loop(
