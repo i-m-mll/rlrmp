@@ -388,6 +388,36 @@ def test_checkpoint_fork_gate_has_no_lr_reporter_implementation_residue() -> Non
     assert "def _adaptive_epsilon_lr_continuation_points" not in source
 
 
+def test_checkpoint_fork_gate_registers_adaptive_epsilon_method(monkeypatch) -> None:
+    from rlrmp.runtime import checkpoint_fork_gate
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        checkpoint_fork_gate,
+        "ensure_adaptive_epsilon_training_method_registered",
+        lambda: calls.append("adaptive_epsilon"),
+    )
+    monkeypatch.setattr(
+        checkpoint_fork_gate,
+        "ensure_minimax_training_method_registered",
+        lambda: calls.append("minimax"),
+    )
+    monkeypatch.setattr(
+        checkpoint_fork_gate,
+        "register_rlrmp_cs_supervised_method",
+        lambda: calls.append("cs_supervised"),
+    )
+    monkeypatch.setattr(
+        checkpoint_fork_gate,
+        "register_rlrmp_distillation_methods",
+        lambda: calls.append("distillation"),
+    )
+
+    checkpoint_fork_gate.register_rlrmp_training_methods()
+
+    assert calls == ["adaptive_epsilon", "minimax", "cs_supervised", "distillation"]
+
+
 def test_task_identity_gate_rejects_real_row_game_card_leaf_with_derived_hash_labels(
     tmp_path: Path,
 ) -> None:
