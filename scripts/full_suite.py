@@ -7,20 +7,33 @@ component cannot be resolved, it runs the suite instead of trusting the memo.
 from __future__ import annotations
 
 import argparse
+from contextlib import AbstractContextManager
 import dataclasses
 from datetime import datetime, timezone
+import fcntl
+import getpass
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import platform
+import re
+import socket
 import subprocess
 import sys
+import tempfile
 import tomllib
-from typing import Any, Callable, Sequence
+from types import TracebackType
+from typing import Any, Callable, Self, Sequence
 
 
 SCHEMA_VERSION = 1
+LOCK_PROTOCOL_VERSION = 1
+LOCK_BUSY_EXIT = 75
+LOCK_ENV_VAR = "FULL_SUITE_LOCK_DIR"
+LOCK_FILENAME = "full-suite.lock"
+LOCK_REPOSITORY = "rlrmp"
 DEFAULT_MEMO_DIR = Path("_artifacts") / "test_cache" / "full_suite_memo"
 DEFAULT_PYTEST_ARGS = ("tests/", "-q")
 EXECUTION_RELEVANT_UNTRACKED_PATHS = (
@@ -50,6 +63,112 @@ class Fingerprint:
 CommandRunner = Callable[[Sequence[str], Path], CommandResult]
 
 
+class FullSuiteLockBusy(RuntimeError):
+    """Raised when another participating repository owns the suite lock."""
+
+
+class FullSuiteLock(AbstractContextManager["FullSuiteLock"]):
+    """Hold the machine-wide advisory lock used by participating test suites."""
+
+    def __init__(
+        self,
+        path: Path,
+        *,
+        repo_root: Path,
+        repository: str = LOCK_REPOSITORY,
+        command: Sequence[str] | None = None,
+    ) -> None:
+        self.path = path
+        self.repo_root = repo_root
+        self.repository = repository
+        self.command = list(sys.argv if command is None else command)
+        self._handle: Any | None = None
+
+    def _read_holder(self) -> str:
+        assert self._handle is not None
+        self._handle.seek(0)
+        raw = self._handle.read().strip()
+        if not raw:
+            return "holder metadata unavailable"
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            return f"unreadable holder metadata: {raw!r}"
+        return ", ".join(
+            f"{key}={data[key]}"
+            for key in ("repository", "pid", "host", "started_at", "worktree", "command")
+            if data.get(key) is not None
+        )
+
+    def _write_holder(self) -> None:
+        assert self._handle is not None
+        holder = {
+            "schema_version": LOCK_PROTOCOL_VERSION,
+            "protocol_version": LOCK_PROTOCOL_VERSION,
+            "repository": self.repository,
+            "pid": os.getpid(),
+            "host": socket.gethostname(),
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "worktree": str(self.repo_root),
+            "command": self.command,
+        }
+        self._handle.seek(0)
+        self._handle.truncate()
+        json.dump(holder, self._handle, sort_keys=True)
+        self._handle.write("\n")
+        self._handle.flush()
+        os.fsync(self._handle.fileno())
+
+    def __enter__(self) -> Self:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._handle = self.path.open("a+", encoding="utf-8")
+        try:
+            try:
+                fcntl.flock(self._handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                raise FullSuiteLockBusy(
+                    f"Full suite already running; active holder: {self._read_holder()}"
+                ) from exc
+            self._write_holder()
+            print(f"Acquired full-suite lock: {self.path}", file=sys.stderr, flush=True)
+            return self
+        except BaseException:
+            self._handle.close()
+            self._handle = None
+            raise
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        if self._handle is None:
+            return
+        try:
+            fcntl.flock(self._handle, fcntl.LOCK_UN)
+        finally:
+            self._handle.close()
+            self._handle = None
+
+
+def full_suite_lock_dir(environ: dict[str, str] | None = None) -> Path:
+    """Return the shared, user-scoped full-suite lock directory."""
+    env = os_environ() if environ is None else environ
+    if override := env.get(LOCK_ENV_VAR):
+        return Path(override).expanduser()
+    try:
+        user_token = str(os.getuid())
+    except AttributeError:  # pragma: no cover - exercised only on platforms without getuid.
+        user_token = re.sub(r"[^A-Za-z0-9_.-]", "_", getpass.getuser()) or "unknown"
+    return Path(tempfile.gettempdir()) / f"full-suite-lock-{user_token}"
+
+
+def full_suite_lock_path(environ: dict[str, str] | None = None) -> Path:
+    """Return the shared lock-file path used across participating repositories."""
+    return full_suite_lock_dir(environ) / LOCK_FILENAME
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -73,15 +192,28 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     repo_root = Path(__file__).resolve().parents[1]
-    fingerprint = build_fingerprint(repo_root)
     if args.print_fingerprint:
+        fingerprint = build_fingerprint(repo_root)
         print(json.dumps(dataclasses.asdict(fingerprint), indent=2, sort_keys=True))
         return 0 if fingerprint.ok else 2
 
+    try:
+        with FullSuiteLock(full_suite_lock_path(), repo_root=repo_root):
+            return _run_full_suite(args, repo_root)
+    except FullSuiteLockBusy as exc:
+        print(f"ERROR: scripts/full_suite.sh refused to run: {exc}", file=sys.stderr)
+        return LOCK_BUSY_EXIT
+
+
+def _run_full_suite(args: argparse.Namespace, repo_root: Path) -> int:
+    fingerprint = build_fingerprint(repo_root)
+
     if not fingerprint.ok:
         print(f"full-suite memo disabled: {fingerprint.reason}", file=sys.stderr)
-    elif not args.no_memo and not args.force and memo_has_green(
-        _memo_dir(repo_root, args.memo_dir), fingerprint
+    elif (
+        not args.no_memo
+        and not args.force
+        and memo_has_green(_memo_dir(repo_root, args.memo_dir), fingerprint)
     ):
         print(f"full-suite memo hit: {fingerprint.digest}")
         return 0
