@@ -283,6 +283,25 @@ def test_lr_continuation_reporter_public_api_handles_restart_and_continue(
     }
 
 
+def test_lr_continuation_reporter_rejects_phase_coordinate_as_batch_total(
+    tmp_path: Path,
+) -> None:
+    row_payload = _training_run_payload()
+    row_spec = TrainingRunSpec.model_validate(row_payload)
+    reporter = RlrmpLrContinuationReporter(source_checkpoint_root=tmp_path)
+
+    with pytest.raises(
+        ValueError,
+        match="phase/global coordinates cannot supply continuation batch arithmetic",
+    ):
+        reporter.points(
+            source_manifest={"completed_coordinate": {"phase_step": 24}},
+            row_payload=row_payload,
+            row_spec=row_spec,
+            declared_mode="continue",
+        )
+
+
 def test_checkpoint_fork_gate_has_no_lr_reporter_implementation_residue() -> None:
     from rlrmp.runtime import checkpoint_fork_gate
 

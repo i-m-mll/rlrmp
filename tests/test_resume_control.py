@@ -55,6 +55,34 @@ def _write_latest(path: Path, *, global_step: int) -> Path:
     return latest_path
 
 
+def _write_custody_latest(
+    path: Path,
+    *,
+    completed_training_batches: int,
+    phase_step: int,
+) -> Path:
+    """Write a minimal transaction-backed pointer for resume-control tests."""
+
+    manifest_path = path / "transactions" / "tx-test" / "manifest.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text(
+        json.dumps({"completed_training_batches": completed_training_batches}),
+        encoding="utf-8",
+    )
+    latest_path = path / "latest.json"
+    latest_path.write_text(
+        json.dumps(
+            {
+                "manifest_relative_path": "transactions/tx-test/manifest.json",
+                "completed_coordinate": {"phase_step": phase_step},
+                "completed_training_batches": completed_training_batches,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return latest_path
+
+
 def test_resume_without_latest_json_is_hard_error(tmp_path: Path) -> None:
     checkpoint_root = tmp_path / "row" / "checkpoints"
 
@@ -92,23 +120,17 @@ def test_allow_fresh_start_override_emits_fresh_summary(
     assert caplog.records[-1].message == line
 
 
-def test_resume_summary_uses_latest_json_completed_batches(tmp_path: Path) -> None:
+def test_resume_rejects_legacy_coordinate_only_pointer(tmp_path: Path) -> None:
     checkpoint_root = tmp_path / "checkpoints"
-    latest_path = _write_latest(checkpoint_root, global_step=12_000)
+    _write_latest(checkpoint_root, global_step=12_000)
 
-    continuation = resolve_launch_continuation(
-        checkpoint_root=checkpoint_root,
-        resume_requested=True,
-        allow_fresh_start=False,
-        stop_target_batches=12_500,
-    )
-
-    assert continuation.resume is True
-    assert continuation.resume_source == str(latest_path)
-    assert continuation.completed_batches == 12_000
-    assert continuation.stop_target_batches == 12_500
-    assert continuation.continuation_batches == 500
-    assert "continuation_batches=500" in continuation.format_line()
+    with pytest.raises(ValueError, match="explicit completed_training_batches"):
+        resolve_launch_continuation(
+            checkpoint_root=checkpoint_root,
+            resume_requested=True,
+            allow_fresh_start=False,
+            stop_target_batches=12_500,
+        )
 
 
 def test_resume_uses_manifest_total_not_custody_order_coordinate(tmp_path: Path) -> None:
@@ -156,7 +178,11 @@ def test_resume_rejects_manifest_pointer_escaping_checkpoint_root(tmp_path: Path
 
 def test_non_positive_continuation_is_hard_error(tmp_path: Path) -> None:
     checkpoint_root = tmp_path / "checkpoints"
-    _write_latest(checkpoint_root, global_step=12_500)
+    _write_custody_latest(
+        checkpoint_root,
+        completed_training_batches=12_500,
+        phase_step=25,
+    )
 
     with pytest.raises(ValueError, match="non-positive launch continuation"):
         resolve_launch_continuation(
