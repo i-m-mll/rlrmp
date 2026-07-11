@@ -35,7 +35,7 @@ class NominalToAdaptiveSlotAdapter:
 
     @property
     def target_transformed_slots(self) -> tuple[str, ...]:
-        return (MODEL, OPTIMIZER, TRAIN_LOSS)
+        return (MODEL, OPTIMIZER)
 
     @property
     def target_only_slots(self) -> dict[str, dict[str, str]]:
@@ -44,6 +44,7 @@ class NominalToAdaptiveSlotAdapter:
             ZERO_ADVERSARY_GUARD: {"identity": "rlrmp.adaptive_initial_guard.v1"},
             DAMAGE_METRIC: {"identity": "rlrmp.adaptive_initial_metric.v1"},
             EPSILON_SCALE: {"identity": "rlrmp.adaptive_initial_metric.v1"},
+            TRAIN_LOSS: {"identity": "rlrmp.adaptive_initial_metric.v1"},
         }
 
     @property
@@ -65,7 +66,7 @@ class NominalToAdaptiveSlotAdapter:
     def transform(self, slots: Mapping[str, Any]) -> Mapping[str, Any]:
         """Map every documented source/target slot without inference."""
 
-        for slot in (MODEL, OPTIMIZER, PRNG, COMPLETED_BATCHES, TRAIN_LOSS):
+        for slot in (MODEL, OPTIMIZER, PRNG, COMPLETED_BATCHES):
             if slot not in slots:
                 raise CheckpointCompatibilityError(
                     "nominal-to-adaptive mapping missing source slot; "
@@ -91,7 +92,6 @@ class NominalToAdaptiveSlotAdapter:
             {
                 MODEL: SerializedPyTreeSlot(serialize_pytree_slot(model)),
                 OPTIMIZER: SerializedPyTreeSlot(serialize_pytree_slot(optimizer)),
-                TRAIN_LOSS: 0.0,
             }
         )
         for slot in self.target_only_slots:
