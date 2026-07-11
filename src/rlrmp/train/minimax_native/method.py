@@ -33,7 +33,6 @@ from feedbax.contracts.worker import (
     PhaseProgramSpec,
     PhaseSpec,
     PhaseTransitionSpec,
-    ResumeCoordinateSpec,
     StateSlotSpec,
     UpdateKernelSpec,
     UpdateStepSpec,
@@ -372,7 +371,7 @@ def minimax_method_contract() -> MethodContractSpec:
                 writes=["controller", "controller_optimizer", "rng", "controller_loss"],
                 update_steps=["warmup_controller_descent"],
                 legal_next=["done", "adversarial"],
-                checkpoint_barrier="after_warmup",
+                checkpoint_barrier="after_adversarial",
                 loop_axis="batch",
                 metadata={
                     "activation_binding": "linear_dynamics_adversary_params.active=false",
@@ -441,7 +440,7 @@ def minimax_method_contract() -> MethodContractSpec:
             PhaseTransitionSpec(
                 source="warmup",
                 target="done",
-                barrier="after_warmup",
+                barrier="after_adversarial",
                 guard=MetricGuardSpec(
                     predicate_ref="rlrmp.minimax.no_adversarial_batches",
                     metric_slots=["controller_loss"],
@@ -450,7 +449,7 @@ def minimax_method_contract() -> MethodContractSpec:
             PhaseTransitionSpec(
                 source="warmup",
                 target="adversarial",
-                barrier="after_warmup",
+                barrier="after_adversarial",
             ),
             PhaseTransitionSpec(
                 source="adversarial",
@@ -557,24 +556,14 @@ def minimax_method_contract() -> MethodContractSpec:
         ],
         checkpoint_barriers=[
             CheckpointBarrierSpec(
-                name="after_warmup",
-                phase="warmup",
-                slots=minimax_checkpoint_slot_specs(),
-                resume_coordinate=ResumeCoordinateSpec(
-                    phase="adversarial",
-                    completed_barrier="after_warmup",
-                    program_step=0,
-                ),
-            ),
-            CheckpointBarrierSpec(
                 name="after_adversarial",
                 phase="adversarial",
                 slots=minimax_checkpoint_slot_specs(),
             ),
         ],
         metadata={
-            "phase_program_identity": "rlrmp.minimax.warmup_then_adversarial.v1",
-            "checkpoint_barrier_policy": "after_warmup_and_after_adversarial",
+            "phase_program_identity": "rlrmp.minimax.warmup_then_adversarial.v2",
+            "checkpoint_barrier_policy": "shared_after_each_minimax_program_step",
         },
     )
     return MethodContractSpec(
