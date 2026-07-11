@@ -1,15 +1,22 @@
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 import inspect
+import subprocess
+import tomllib
 from copy import deepcopy
+from types import SimpleNamespace
 
 import pytest
 
+import feedbax
+from feedbax.contracts.checkpoints import CheckpointForkBarrierMapping
 from feedbax.contracts.run_matrix import (
     TRAINING_RUN_MATRIX_SPEC_SCHEMA_ID,
     TRAINING_RUN_MATRIX_SPEC_SCHEMA_VERSION,
+    TrainingRunMatrixSpec,
 )
 from feedbax.contracts.training import (
     LossTermSpec,
@@ -24,9 +31,11 @@ from feedbax.contracts.training import (
     standard_supervised_method_payload,
     standard_supervised_method_ref,
 )
+from feedbax.training.run_matrix import fork_matrix_checkpoints
 
 from rlrmp.runtime.checkpoint_fork_gate import (
     ForkParityError,
+    _adaptive_continuation_fork_contracts,
     fork_checkpoints_with_parity,
     parse_target,
 )
@@ -39,7 +48,17 @@ from rlrmp.runtime.checkpoint_fork_gate import (
     load_matrix,
 )
 from rlrmp.runtime.lr_continuation import RlrmpLrContinuationReporter
-from rlrmp.train.adaptive_epsilon_native import adaptive_epsilon_method_ref
+from rlrmp.train.adaptive_epsilon_native import (
+    adaptive_epsilon_method_ref,
+    attach_adaptive_epsilon_checkpoint_continuation,
+)
+from rlrmp.train.cs_nominal_gru import (
+    ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER,
+    BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+    CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+    build_parser,
+    write_run_spec,
+)
 
 
 def _training_run_payload(
@@ -220,12 +239,18 @@ def _stage2_adaptive_epsilon_row_spec(
     )
 
 
-def _write_latest(root: Path, *, transaction_id: str, digest: str) -> None:
+def _write_latest(
+    root: Path,
+    *,
+    transaction_id: str,
+    digest: str,
+    completed_batches: int = 5,
+) -> None:
     tx_dir = root / "transactions" / transaction_id
     tx_dir.mkdir(parents=True)
     manifest = {
         "transaction_id": transaction_id,
-        "completed_training_batches": 5,
+        "completed_training_batches": completed_batches,
         "content_integrity_digest": {
             "slots": [{"slot": "model", "slot_root_sha256": digest}],
         },
@@ -234,6 +259,56 @@ def _write_latest(root: Path, *, transaction_id: str, digest: str) -> None:
     (root / "latest.json").write_text(
         json.dumps({"manifest_relative_path": f"transactions/{transaction_id}/manifest.json"}),
         encoding="utf-8",
+    )
+
+
+def _adaptive_continuation_spec(tmp_path: Path) -> TrainingRunSpec:
+    """Build a minimal real adaptive row through RLRMP's normal authoring path."""
+
+    args = build_parser().parse_args([])
+    values = {
+        "n_train_batches": 2,
+        "batch_size": 1,
+        "n_replicates": 1,
+        "hidden_size": 4,
+        "dry_run": True,
+        "full_train": True,
+        "resume": True,
+        "checkpoint_interval_batches": 1,
+        "controller_lr": 1e-3,
+        "gradient_clip_norm": 5.0,
+        "lr_warmup_batches": 1,
+        "lr_warmup_init_fraction": 0.1,
+        "lr_cosine_alpha": 0.01,
+        "log_step": 1,
+        "disable_progress": True,
+        "quiet_progress": True,
+        "target_relative_multitarget": True,
+        "force_filter_feedback": True,
+        "broad_epsilon_pgd_training": True,
+        "broad_epsilon_pgd_steps": 1,
+        "broad_epsilon_pgd_step_size_fraction": 0.5,
+        "broad_epsilon_pgd_objective": BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+        "broad_epsilon_pgd_energy_lambda": 1.0,
+        "adaptive_epsilon_curriculum": True,
+        "adaptive_epsilon_update_interval_batches": 1,
+        "adaptive_epsilon_outer_weight_start": 0.25,
+        "adaptive_epsilon_outer_weight_final": 0.25,
+        "adaptive_epsilon_outer_weight_ramp_batches": 0,
+        "adaptive_epsilon_controller_training_mode": (
+            ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER
+        ),
+        "loss_objective": CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+        "output_dir": str(tmp_path / "bulk"),
+        "spec_dir": str(tmp_path / "spec"),
+    }
+    for key, value in values.items():
+        setattr(args, key, value)
+    payload = write_run_spec(args)["run_spec"]
+    return attach_adaptive_epsilon_checkpoint_continuation(
+        TrainingRunSpec.model_validate(payload["feedbax_training_run_spec"]),
+        source_completed_batches=2,
+        target_total_batches=4,
     )
 
 
@@ -619,3 +694,118 @@ def test_fork_checkpoints_with_parity_delegates_matrix_skip_fork(tmp_path: Path)
     assert table["ok"] is True
     assert any(row["kind"] == "slot_parity" and row["ok"] for row in table["rows"])
     assert any(row["kind"] == "lr_continuation" and row["lr"] == 0.02 for row in table["rows"])
+
+
+def test_fork_gate_forward_api_guard_matches_pinned_feedbax_delivery() -> None:
+    """The gate's real Feedbax call cannot advance beyond the tracked pin."""
+
+    source_path = Path(__file__).resolve().parents[1] / "src/rlrmp/runtime/checkpoint_fork_gate.py"
+    module = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
+    calls = [
+        node
+        for node in ast.walk(module)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "fork_matrix_checkpoints"
+    ]
+    assert len(calls) == 1
+    keyword_names = {keyword.arg for keyword in calls[0].keywords if keyword.arg is not None}
+    required_continuation_kwargs = {
+        "target_slot_templates",
+        "row_continuation_slot_templates",
+        "row_target_slot_transforms",
+        "row_target_transform_metadata",
+        "row_target_transformed_slots",
+        "row_target_only_slots",
+        "row_barrier_mappings",
+    }
+    assert required_continuation_kwargs <= keyword_names
+
+    available_parameters = set(inspect.signature(fork_matrix_checkpoints).parameters)
+    assert keyword_names <= available_parameters, (
+        "RLRMP checkpoint_fork_gate calls Feedbax fork_matrix_checkpoints with "
+        f"parameters absent at the installed/pinned Feedbax revision: "
+        f"{sorted(keyword_names - available_parameters)!r}"
+    )
+    assert CheckpointForkBarrierMapping.__module__ == "feedbax.contracts.checkpoints"
+
+    package_dir = Path(feedbax.__file__).resolve().parent
+    checkout_root = next(
+        (
+            candidate
+            for candidate in (package_dir, *package_dir.parents)
+            if (candidate / ".git").exists()
+        ),
+        None,
+    )
+    if checkout_root is not None:
+        pin = tomllib.loads(
+            (Path(__file__).resolve().parents[1] / "ci/feedbax-ref.toml").read_text(
+                encoding="utf-8"
+            )
+        )["rev"]
+        head = subprocess.run(
+            [
+                "git",
+                "-c",
+                "core.optionalLocks=false",
+                "-C",
+                str(checkout_root),
+                "rev-parse",
+                "HEAD",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        assert head == pin, "forward API guard must inspect the revision pinned for RLRMP"
+
+
+def test_adaptive_fork_contracts_call_real_pinned_feedbax_matrix_api(tmp_path: Path) -> None:
+    """Exercise adaptive contracts through Feedbax's real matrix-fork function.
+
+    This uses ``skip_fork`` only to avoid writing a full model checkpoint in a
+    unit test.  It deliberately does not mock Feedbax's function or signature:
+    the adaptive contracts are constructed by RLRMP and passed to the installed
+    Feedbax matrix API exactly as the launch gate does.
+    """
+
+    target_spec = _adaptive_continuation_spec(tmp_path)
+    row = SimpleNamespace(
+        row_id="adaptive",
+        planned_run_id="feedbax-training-run:adaptive",
+        spec=target_spec,
+        payload=target_spec.model_dump(mode="json"),
+    )
+    materialized = SimpleNamespace(matrix_spec_sha256="test-matrix", rows=[row])
+    contracts = _adaptive_continuation_fork_contracts(materialized)
+    adapter, barrier_mapping = contracts["adaptive"]
+    assert barrier_mapping.source_barrier == "after_train_chunk"
+    assert barrier_mapping.target_barrier == "after_adaptive_epsilon_train_chunk"
+
+    matrix_path = tmp_path / "matrix.json"
+    _write_matrix(matrix_path)
+    matrix = TrainingRunMatrixSpec.model_validate_json(matrix_path.read_text(encoding="utf-8"))
+    source_root = tmp_path / "source"
+    target_root = tmp_path / "target"
+    _write_latest(source_root, transaction_id="source", digest="same", completed_batches=2)
+    _write_latest(target_root, transaction_id="target", digest="same", completed_batches=2)
+
+    table = fork_matrix_checkpoints(
+        matrix,
+        materialized,
+        source_checkpoint_root=source_root,
+        target_checkpoint_roots={"adaptive": target_root},
+        parity_output_path=tmp_path / "parity.json",
+        target_slot_templates={"adaptive": adapter.adaptive_initial_slots},
+        row_continuation_slot_templates={"adaptive": adapter.continuation_slot_templates()},
+        row_target_slot_transforms={"adaptive": adapter.transform},
+        row_target_transform_metadata={"adaptive": adapter.transform_metadata},
+        row_target_transformed_slots={"adaptive": adapter.target_transformed_slots},
+        row_target_only_slots={"adaptive": adapter.target_only_slots},
+        row_barrier_mappings={"adaptive": barrier_mapping},
+        skip_fork=True,
+    )
+
+    assert table["ok"] is True
+    assert (tmp_path / "parity.json").is_file()
