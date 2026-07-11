@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -138,6 +139,10 @@ def save_training_checkpoint(
             checkpoint_root,
             run_spec=run_spec,
             completed_batches=state.completed_batches,
+            program_step=_completed_train_chunk_ordinal(
+                completed_batches=state.completed_batches,
+                checkpoint_interval_batches=args.checkpoint_interval_batches,
+            ),
             slots=slots,
             status=_checkpoint_transaction_status(args, state),
         )
@@ -147,6 +152,18 @@ def save_training_checkpoint(
         metadata=metadata,
         custody_result=custody_result,
     )
+
+
+def _completed_train_chunk_ordinal(
+    *, completed_batches: int, checkpoint_interval_batches: int
+) -> int:
+    """Return the number of checkpoint-sized training chunks completed."""
+
+    if completed_batches < 0:
+        raise ValueError("completed_batches must be nonnegative")
+    if checkpoint_interval_batches < 1:
+        raise ValueError("checkpoint_interval_batches must be positive")
+    return math.ceil(completed_batches / checkpoint_interval_batches)
 
 
 def _save_training_checkpoint_materialization(
