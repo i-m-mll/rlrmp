@@ -549,7 +549,7 @@ class CsSupervisedCheckpointPolicyPayload(_StrictPayloadModel):
 class CsSupervisedMethodPayload(_StrictPayloadModel):
     """Governed payload for plain and PGD-pre-step C&S supervised training."""
 
-    config: dict[str, Any]
+    config: dict[str, Any] | None = None
     training_mode: str
     n_train_batches: int
     batch_size: int
