@@ -55,6 +55,10 @@ from rlrmp.loss import (
     get_reach_loss,
 )
 from rlrmp.paths import REPO_ROOT, run_artifact_dir, run_spec_dir
+from rlrmp.run_spec_identity import (
+    run_spec_payload_identity_sha256,
+    run_spec_semantic_checks,
+)
 import rlrmp.train.cs_nominal_gru as cs_nominal_gru
 import rlrmp.train.cs_perturbation_training as cs_perturbation_training
 import rlrmp.train.executor.cs_supervised as cs_supervised_executor
@@ -246,65 +250,9 @@ def _assert_no_absolute_string_leaves(value: Any) -> None:
 
 
 def _cs_nominal_gru_golden_fixture() -> dict:
-    return _normalize_golden_fixture_paths(
-        json.loads(
-            Path("tests/fixtures/cs_nominal_gru_config_golden.json").read_text(encoding="utf-8")
-        )
+    return json.loads(
+        Path("tests/fixtures/cs_nominal_gru_config_identity.json").read_text(encoding="utf-8")
     )
-
-
-def _normalize_golden_fixture_paths(value, *, key: str | None = None):
-    if key == "rlrmp_branch":
-        return "<current-branch>"
-    if isinstance(value, dict):
-        return {
-            child_key: _normalize_golden_fixture_paths(item, key=child_key)
-            for child_key, item in value.items()
-        }
-    if isinstance(value, list):
-        return [_normalize_golden_fixture_paths(item) for item in value]
-    if isinstance(value, str):
-        marker = "/worktrees/"
-        if marker in value:
-            prefix, suffix = value.split(marker, 1)
-            worktree_parts = suffix.split("/", 1)
-            if len(worktree_parts) == 2 and prefix.endswith("/rlrmp"):
-                return str(REPO_ROOT / worktree_parts[1])
-    return value
-
-
-def _stable_golden_run_spec_payload(payload: dict) -> dict:
-    fixture = _cs_nominal_gru_golden_fixture()
-    stable = {key: payload[key] for key in fixture["stable_run_spec_keys"]}
-    canonical = json.loads(
-        json.dumps(
-            stable,
-            sort_keys=True,
-        )
-    )
-    canonical["rlrmp_run_spec"]["provenance"]["git"]["rlrmp_commit"] = "<current-commit>"
-    canonical["rlrmp_run_spec"]["provenance"]["git"]["rlrmp_branch"] = "<current-branch>"
-    return _normalize_stochastic_float_precision(canonical)
-
-
-def _normalize_stochastic_float_precision(value, *, key: str | None = None):
-    precision_by_key = {
-        "diag_first_block": 6,
-        "initial_diag_first_block": 6,
-        "noise_std": 7,
-        "sensory_noise_std": 7,
-        "sensory_covariance_diag": 7,
-    }
-    if isinstance(value, dict):
-        return {
-            child_key: _normalize_stochastic_float_precision(item, key=child_key)
-            for child_key, item in value.items()
-        }
-    if isinstance(value, list):
-        return [_normalize_stochastic_float_precision(item, key=key) for item in value]
-    if isinstance(value, float) and key in precision_by_key:
-        return float(f"{value:.{precision_by_key[key]}g}")
-    return value
 
 
 def _cs_stochastic_gru_run_spec_paths() -> list[Path]:
@@ -510,8 +458,10 @@ def test_cs_nominal_gru_pre_refactor_golden_payloads_stay_stable() -> None:
             payload = write_run_spec(args)["run_spec"]
 
         assert config.model_dump(mode="python") == case["parsed_args"]
-        assert _stable_golden_run_spec_payload(payload) == _normalize_stochastic_float_precision(
-            case["stable_run_spec_payload"]
+        assert run_spec_semantic_checks(payload) == case["semantic_checks"]
+        assert (
+            run_spec_payload_identity_sha256(payload)
+            == case["stable_run_spec_identity_sha256"]
         )
 
 
