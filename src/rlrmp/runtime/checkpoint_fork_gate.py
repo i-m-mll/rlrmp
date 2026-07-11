@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any
 
 from feedbax.contracts.run_matrix import TrainingRunMatrixSpec
+from feedbax.contracts.checkpoints import CheckpointForkBarrierMapping
+from feedbax.contracts.worker import ProgressCoordinate
 from feedbax.contracts.training import (
     DEFAULT_TRAINING_METHOD_REGISTRY,
 )
@@ -22,6 +24,7 @@ from feedbax.training.run_matrix import (
 )
 
 from rlrmp.runtime.lr_continuation import RlrmpLrContinuationReporter
+from rlrmp.runtime.adaptive_checkpoint_adapter import NominalToAdaptiveSlotAdapter
 from rlrmp.runtime.training_run_specs import (
     register_rlrmp_cs_supervised_method,
     register_rlrmp_distillation_methods,
@@ -101,6 +104,7 @@ def fork_checkpoints_with_parity(
     _validate_fork_prelaunch_contracts(matrix, materialized, repo_root=resolved_repo_root)
     ratio_setpoint = _ratio_setpoint_prelaunch_report(matrix)
     target_roots = {target.row_id: target.checkpoint_root for target in targets}
+    adaptive_contracts = _adaptive_continuation_fork_contracts(materialized)
     reporter = RlrmpLrContinuationReporter(source_checkpoint_root=source_checkpoint_root)
     table = fork_matrix_checkpoints(
         matrix,
@@ -108,6 +112,13 @@ def fork_checkpoints_with_parity(
         source_checkpoint_root=source_checkpoint_root,
         target_checkpoint_roots=target_roots,
         parity_output_path=parity_output_path,
+        target_slot_templates={row_id: value[0].adaptive_initial_slots for row_id, value in adaptive_contracts.items()},
+        row_continuation_slot_templates={row_id: value[0].continuation_slot_templates() for row_id, value in adaptive_contracts.items()},
+        row_target_slot_transforms={row_id: value[0].transform for row_id, value in adaptive_contracts.items()},
+        row_target_transform_metadata={row_id: value[0].transform_metadata for row_id, value in adaptive_contracts.items()},
+        row_target_transformed_slots={row_id: value[0].target_transformed_slots for row_id, value in adaptive_contracts.items()},
+        row_target_only_slots={row_id: value[0].target_only_slots for row_id, value in adaptive_contracts.items()},
+        row_barrier_mappings={row_id: value[1] for row_id, value in adaptive_contracts.items()},
         skip_fork=skip_fork,
         lr_reporter=reporter,
         tool_version="rlrmp.checkpoint_fork_gate.v2",
@@ -119,6 +130,74 @@ def fork_checkpoints_with_parity(
             encoding="utf-8",
         )
     return table
+
+
+def _adaptive_continuation_fork_contracts(
+    materialized: Any,
+) -> dict[str, tuple[NominalToAdaptiveSlotAdapter, CheckpointForkBarrierMapping]]:
+    """Build the declared target topology and C&S-to-adaptive barrier map."""
+
+    import jax.random as jr
+    from rlrmp.train.adaptive_epsilon_native import (
+        AdaptiveEpsilonMethodPayload,
+        AdaptiveEpsilonNativeRuntime,
+        build_adaptive_epsilon_native_initial_slots,
+    )
+    from rlrmp.train.cs_nominal_gru import _config_namespace, build_hps
+
+    contracts = {}
+    for row in materialized.rows:
+        spec = row.spec
+        if spec is None or spec.checkpoint_progress.continuation is None:
+            continue
+        method_ref = spec.method_ref
+        if f"{method_ref.package}/{method_ref.name}/{method_ref.version}" != _ADAPTIVE_EPSILON_METHOD_REF:
+            continue
+        payload = DEFAULT_TRAINING_METHOD_REGISTRY.validate_payload(
+            method_ref, spec.method_payload, path=f"/rows/{row.row_id}/method_payload"
+        )
+        if not isinstance(payload, AdaptiveEpsilonMethodPayload):
+            raise ForkParityError(f"adaptive adapter invalid payload row={row.row_id!r}")
+        args = _config_namespace(payload.config)
+        initial_slots, runtime = build_adaptive_epsilon_native_initial_slots(
+            run_spec=spec,
+            hps=build_hps(args),
+            args=args,
+            key=jr.PRNGKey(int(args.seed)),
+            lr_continuation_mode=payload.lr_continuation_mode,
+        )
+        native = runtime.component("adaptive_epsilon")
+        if not isinstance(native, AdaptiveEpsilonNativeRuntime):
+            raise ForkParityError(f"adaptive adapter missing runtime row={row.row_id!r}")
+        target_barrier = next(
+            barrier
+            for barrier in spec.worker_execution.method_contract.phase_program.checkpoint_barriers
+            if barrier.name == "after_adaptive_epsilon_train_chunk"
+        )
+        request = spec.checkpoint_progress.continuation
+        mapping = CheckpointForkBarrierMapping(
+            source_barrier="after_train_chunk",
+            target_barrier=target_barrier.name,
+            target_coordinate=ProgressCoordinate(
+                run_id=row.planned_run_id,
+                phase=target_barrier.phase,
+                global_step=request.source_completed_batches,
+                completed_barrier=target_barrier.name,
+            ),
+            coordinate_mapping={
+                "identity": "rlrmp.cs_supervised_to_adaptive_epsilon.v1",
+                "parameters": {"global_step": "preserve_completed_training_batches"},
+            },
+        )
+        contracts[row.row_id] = (
+            NominalToAdaptiveSlotAdapter(
+                model_template=native.model_template,
+                optimizer_template=native.optimizer_template,
+                adaptive_initial_slots=initial_slots,
+            ),
+            mapping,
+        )
+    return contracts
 
 
 def _validate_fork_prelaunch_contracts(
