@@ -229,6 +229,14 @@ negative_canary = [
     "tests/test_pipeline_contract_native.py::test_pipeline_contract_negative_canary_flags_unlisted_eval_rerun",
 ]
 
+[[families]]
+name = "training_config_flat_key_scan"
+owner = "ef8e1df"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_training_config_flat_legacy_keys.py::"
+minimum_non_skipped = 2
+
 [pipeline_contract_native]
 allowlist = [
     { path = "src/rlrmp/analysis/pipelines/bridge_aggregation.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "compatibility summarizer remains until report-stage aggregation replaces tracked writes" },

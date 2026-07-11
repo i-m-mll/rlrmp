@@ -2787,27 +2787,33 @@ def _normalize_fixed_target_payload(config: Any) -> FixedTargetPerturbationTrain
     """Normalize historical fixed-target training metadata."""
 
     return FixedTargetPerturbationTrainingConfig(
-        enabled=bool(getattr(config, "enabled", False)),
-        nominal_fraction=float(getattr(config, "nominal_fraction", 0.45)),
-        single_fraction=float(getattr(config, "single_fraction", 0.45)),
-        combined_fraction=float(getattr(config, "combined_fraction", 0.10)),
-        combined_amplitude_scale=float(getattr(config, "combined_amplitude_scale", 0.5)),
-        initial_position_offset_m=float(getattr(config, "initial_position_offset_m", 0.01)),
-        initial_velocity_offset_m_s=float(getattr(config, "initial_velocity_offset_m_s", 0.05)),
-        process_epsilon_scale=float(getattr(config, "process_epsilon_scale", 0.01)),
-        command_input_pulse_n=float(getattr(config, "command_input_pulse_n", 1.0)),
-        sensory_feedback_offset_m=float(getattr(config, "sensory_feedback_offset_m", 0.01)),
-        delayed_observation_offset_m=float(getattr(config, "delayed_observation_offset_m", 0.01)),
-        pulse_start_step=int(getattr(config, "pulse_start_step", 20)),
-        pulse_duration_steps=int(getattr(config, "pulse_duration_steps", 5)),
-        calibrated_timing=bool(getattr(config, "calibrated_timing", False)),
-        movement_age_timing=bool(getattr(config, "movement_age_timing", False)),
-        physical_level=str(getattr(config, "physical_level", "moderate")),
-        force_filter_feedback=bool(getattr(config, "force_filter_feedback", False)),
-        calibration_regime=str(
-            getattr(config, "calibration_regime", OPEN_LOOP_ALL_CALIBRATION_REGIME)
+        enabled=bool(_payload_get(config, "enabled", False)),
+        nominal_fraction=float(_payload_get(config, "nominal_fraction", 0.45)),
+        single_fraction=float(_payload_get(config, "single_fraction", 0.45)),
+        combined_fraction=float(_payload_get(config, "combined_fraction", 0.10)),
+        combined_amplitude_scale=float(_payload_get(config, "combined_amplitude_scale", 0.5)),
+        initial_position_offset_m=float(_payload_get(config, "initial_position_offset_m", 0.01)),
+        initial_velocity_offset_m_s=float(
+            _payload_get(config, "initial_velocity_offset_m_s", 0.05)
         ),
-        closed_loop_calibration_table_path=getattr(
+        process_epsilon_scale=float(_payload_get(config, "process_epsilon_scale", 0.01)),
+        command_input_pulse_n=float(_payload_get(config, "command_input_pulse_n", 1.0)),
+        sensory_feedback_offset_m=float(
+            _payload_get(config, "sensory_feedback_offset_m", 0.01)
+        ),
+        delayed_observation_offset_m=float(
+            _payload_get(config, "delayed_observation_offset_m", 0.01)
+        ),
+        pulse_start_step=int(_payload_get(config, "pulse_start_step", 20)),
+        pulse_duration_steps=int(_payload_get(config, "pulse_duration_steps", 5)),
+        calibrated_timing=bool(_payload_get(config, "calibrated_timing", False)),
+        movement_age_timing=bool(_payload_get(config, "movement_age_timing", False)),
+        physical_level=str(_payload_get(config, "physical_level", "moderate")),
+        force_filter_feedback=bool(_payload_get(config, "force_filter_feedback", False)),
+        calibration_regime=str(
+            _payload_get(config, "calibration_regime", OPEN_LOOP_ALL_CALIBRATION_REGIME)
+        ),
+        closed_loop_calibration_table_path=_payload_get(
             config,
             "closed_loop_calibration_table_path",
             None,
@@ -2921,10 +2927,10 @@ def _normalize_target_payload(config: Any) -> TargetRelativeMultiTargetTrainingC
     target_distribution = _payload_get(config, "target_distribution", None)
 
     profile = str(
-        _first_payload_value(
-            (config, "target_support_profile"),
-            (target_distribution, "target_support_profile"),
-            default=DEFAULT_TARGET_SUPPORT_PROFILE,
+        _payload_get(
+            target_distribution,
+            "target_support_profile",
+            DEFAULT_TARGET_SUPPORT_PROFILE,
         )
     )
     default_config = target_relative_target_support_config(
@@ -2938,48 +2944,48 @@ def _normalize_target_payload(config: Any) -> TargetRelativeMultiTargetTrainingC
         target_support_profile=profile,
         seen_directions_deg=tuple(
             float(x)
-            for x in _first_payload_value(
-                (config, "seen_directions_deg"),
-                (target_distribution, "seen_directions_deg"),
-                default=default_config.seen_directions_deg,
+            for x in _payload_get(
+                target_distribution,
+                "seen_directions_deg",
+                default_config.seen_directions_deg,
             )
         ),
         held_out_directions_deg=tuple(
             float(x)
-            for x in _first_payload_value(
-                (config, "held_out_directions_deg"),
-                (target_distribution, "held_out_directions_deg"),
-                default=default_config.held_out_directions_deg,
+            for x in _payload_get(
+                target_distribution,
+                "held_out_directions_deg",
+                default_config.held_out_directions_deg,
             )
         ),
         seen_amplitudes_m=tuple(
             float(x)
-            for x in _first_payload_value(
-                (config, "seen_amplitudes_m"),
-                (target_distribution, "seen_amplitudes_m"),
-                default=default_config.seen_amplitudes_m,
+            for x in _payload_get(
+                target_distribution,
+                "seen_amplitudes_m",
+                default_config.seen_amplitudes_m,
             )
         ),
         held_out_amplitudes_m=tuple(
             float(x)
-            for x in _first_payload_value(
-                (config, "held_out_amplitudes_m"),
-                (target_distribution, "held_out_amplitudes_m"),
-                default=default_config.held_out_amplitudes_m,
+            for x in _payload_get(
+                target_distribution,
+                "held_out_amplitudes_m",
+                default_config.held_out_amplitudes_m,
             )
         ),
         original_target_anchor_m=tuple(
             float(x)
-            for x in _first_payload_value(
-                (config, "original_target_anchor_m"),
-                (target_distribution, "original_target_anchor_m"),
-                default=default_config.original_target_anchor_m,
+            for x in _payload_get(
+                target_distribution,
+                "original_target_anchor_m",
+                default_config.original_target_anchor_m,
             )
         ),
-        support_metadata=_first_payload_value(
-            (config, "support_metadata"),
-            (target_distribution, "support_metadata"),
-            default=default_config.support_metadata,
+        support_metadata=_payload_get(
+            target_distribution,
+            "support_metadata",
+            default_config.support_metadata,
         ),
     )
 
@@ -3009,12 +3015,7 @@ def _normalize_broad_epsilon_pgd_payload(config: Any) -> PgdFullStateEpsilonTrai
     objective = _payload_get(config, "objective", None)
     safety_cap = _payload_get(config, "safety_cap", None)
     budget_schedule = str(
-        _first_payload_value(
-            (schedule, "mode"),
-            (config, "budget_schedule_mode"),
-            (config, "budget_schedule"),
-            default=BROAD_EPSILON_PGD_FIXED_BUDGET_SCHEDULE,
-        )
+        _payload_get(schedule, "mode", BROAD_EPSILON_PGD_FIXED_BUDGET_SCHEDULE)
     )
     budget_contract = _payload_get(config, "budget_contract", None)
     budget_source = _payload_get(budget_contract, "budget_source", None)
@@ -3022,22 +3023,14 @@ def _normalize_broad_epsilon_pgd_payload(config: Any) -> PgdFullStateEpsilonTrai
         None
         if budget_schedule != BROAD_EPSILON_PGD_FIXED_BUDGET_SCHEDULE
         else _optional_float(
-            _first_payload_value(
-                (budget_contract, "effective_l2_radius_15cm"),
-                (config, "fixed_l2_radius_15cm"),
-                default=None,
-            )
+            _payload_get(budget_contract, "effective_l2_radius_15cm", None)
         )
     )
     fixed_radius_source = (
         None
         if budget_schedule != BROAD_EPSILON_PGD_FIXED_BUDGET_SCHEDULE
         else _optional_str(
-            _first_payload_value(
-                (budget_source, "key"),
-                (config, "fixed_radius_source"),
-                default=None,
-            )
+            _payload_get(budget_source, "key", None)
         )
     )
     adam = _payload_get(inner, "adam", None)
@@ -3045,7 +3038,6 @@ def _normalize_broad_epsilon_pgd_payload(config: Any) -> PgdFullStateEpsilonTrai
         enabled=bool(_payload_get(config, "enabled", False)),
         adversary_mechanism=str(
             _first_payload_value(
-                (config, "adversary_mechanism"),
                 (mechanism, "name"),
                 (mechanism, "policy_class"),
                 default=BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM,
@@ -3057,58 +3049,31 @@ def _normalize_broad_epsilon_pgd_payload(config: Any) -> PgdFullStateEpsilonTrai
         nominal_reach_length_m=float(
             _payload_get(config, "nominal_reach_length_m", BROAD_EPSILON_REFERENCE_REACH_M)
         ),
-        n_steps=int(_first_payload_value((inner, "n_steps"), (config, "n_steps"), default=3)),
+        n_steps=int(_payload_get(inner, "n_steps", 3)),
         step_size_fraction=float(
             _first_payload_value(
                 (inner, "step_size_fraction_of_l2_radius"),
                 (inner, "step_size_fraction"),
-                (config, "step_size_fraction_of_l2_radius"),
-                (config, "step_size_fraction"),
                 default=0.25,
             )
         ),
         inner_optimizer_method=str(
-            _first_payload_value(
-                (inner, "method"),
-                (config, "inner_optimizer_method"),
-                default=BROAD_EPSILON_PGD_PROJECTED_GRADIENT_ASCENT,
-            )
+            _payload_get(inner, "method", BROAD_EPSILON_PGD_PROJECTED_GRADIENT_ASCENT)
         ),
         adam_learning_rate=float(
             _first_payload_value(
                 (adam, "learning_rate"),
                 (inner, "learning_rate"),
-                (config, "adam_learning_rate"),
                 default=3e-4,
             )
         ),
-        adam_b1=float(
-            _first_payload_value(
-                (adam, "b1"),
-                (config, "adam_b1"),
-                default=0.9,
-            )
-        ),
-        adam_b2=float(
-            _first_payload_value(
-                (adam, "b2"),
-                (config, "adam_b2"),
-                default=0.999,
-            )
-        ),
-        adam_eps=float(
-            _first_payload_value(
-                (adam, "eps"),
-                (config, "adam_eps"),
-                default=1e-8,
-            )
-        ),
+        adam_b1=float(_payload_get(adam, "b1", 0.9)),
+        adam_b2=float(_payload_get(adam, "b2", 0.999)),
+        adam_eps=float(_payload_get(adam, "eps", 1e-8)),
         init=str(
             _first_payload_value(
                 (inner, "initialization"),
                 (inner, "init"),
-                (config, "initialization"),
-                (config, "init"),
                 default="zero",
             )
         ),
@@ -3117,99 +3082,55 @@ def _normalize_broad_epsilon_pgd_payload(config: Any) -> PgdFullStateEpsilonTrai
         budget_schedule=budget_schedule,
         sisu_levels=tuple(
             float(x)
-            for x in _first_payload_value(
-                (schedule, "levels"),
-                (config, "sisu_levels"),
-                default=DEFAULT_PGD_SISU_LEVELS,
+            for x in _payload_get(
+                schedule,
+                "levels",
+                DEFAULT_PGD_SISU_LEVELS,
             )
         ),
         sisu_exact_zero_mass=float(
-            _first_payload_value(
-                (schedule, "exact_zero_mass"),
-                (config, "sisu_exact_zero_mass"),
-                default=DEFAULT_PGD_SISU_EXACT_ZERO_MASS,
-            )
+            _payload_get(schedule, "exact_zero_mass", DEFAULT_PGD_SISU_EXACT_ZERO_MASS)
         ),
         sisu_condition_input=str(
             _first_payload_value(
                 (schedule, "conditioning_input"),
                 (_payload_get(schedule, "conditioning_scalar", None), "input_key"),
-                (config, "sisu_condition_input"),
                 default="auto",
             )
         ),
         sisu_max_l2_radius_15cm=_optional_float(
-            _first_payload_value(
-                (schedule, "max_l2_radius_15cm"),
-                (config, "sisu_max_l2_radius_15cm"),
-                default=None,
-            )
+            _payload_get(schedule, "max_l2_radius_15cm", None)
         ),
         sisu_max_radius_source=_optional_str(
             _first_payload_value(
                 (schedule, "max_radius_source_key"),
                 (_payload_get(schedule, "max_radius_source", None), "key"),
-                (config, "sisu_max_radius_source"),
                 default=None,
             )
         ),
         fixed_l2_radius_15cm=fixed_l2_radius_15cm,
         fixed_radius_source=fixed_radius_source,
         objective_kind=str(
-            _first_payload_value(
-                (objective, "kind"),
-                (config, "objective_kind"),
-                default=BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE,
-            )
+            _payload_get(objective, "kind", BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE)
         ),
         energy_gamma_star=_optional_float(
-            _first_payload_value(
-                (objective, "gamma_star"),
-                (config, "energy_gamma_star"),
-                default=None,
-            )
+            _payload_get(objective, "gamma_star", None)
         ),
         energy_gamma_factor=_optional_float(
-            _first_payload_value(
-                (objective, "gamma_factor"),
-                (config, "energy_gamma_factor"),
-                default=None,
-            )
+            _payload_get(objective, "gamma_factor", None)
         ),
         energy_gamma=_optional_float(
-            _first_payload_value(
-                (objective, "gamma"),
-                (config, "energy_gamma"),
-                default=None,
-            )
+            _payload_get(objective, "gamma", None)
         ),
-        energy_penalty_scale=float(
-            _first_payload_value(
-                (objective, "penalty_scale_c"),
-                (config, "energy_penalty_scale"),
-                default=1.0,
-            )
-        ),
+        energy_penalty_scale=float(_payload_get(objective, "penalty_scale_c", 1.0)),
         energy_lambda=_optional_float(
-            _first_payload_value(
-                (objective, "lambda"),
-                (config, "energy_lambda"),
-                default=None,
-            )
+            _payload_get(objective, "lambda", None)
         ),
         safety_cap_l2_radius_15cm=_optional_float(
-            _first_payload_value(
-                (safety_cap, "l2_radius_15cm"),
-                (config, "safety_cap_l2_radius_15cm"),
-                default=None,
-            )
+            _payload_get(safety_cap, "l2_radius_15cm", None)
         ),
         safety_cap_source=_optional_str(
-            _first_payload_value(
-                (_payload_get(safety_cap, "source", None), "key"),
-                (config, "safety_cap_source"),
-                default=None,
-            )
+            _payload_get(_payload_get(safety_cap, "source", None), "key", None)
         ),
     )
 
@@ -3222,13 +3143,7 @@ def _normalize_policy_adversary_payload(config: Any) -> PolicyFullStateEpsilonTr
     objective = _payload_get(config, "objective", None)
     budget = _payload_get(config, "budget_contract", None)
     budget_source = _payload_get(budget, "budget_source", None)
-    policy_kind = str(
-        _first_payload_value(
-            (config, "policy_class"),
-            (policy, "kind"),
-            default=POLICY_ADVERSARY_MEMORYLESS_MLP,
-        )
-    )
+    policy_kind = str(_payload_get(policy, "kind", POLICY_ADVERSARY_MEMORYLESS_MLP))
     if policy_kind == "closed_loop_finite_time_varying_epsilon_policy":
         metadata = _payload_get(policy, "metadata", None)
         policy_kind = str(_payload_get(metadata, "policy_class", LINEAR_NO_BIAS_POLICY))
@@ -3236,41 +3151,23 @@ def _normalize_policy_adversary_payload(config: Any) -> PolicyFullStateEpsilonTr
         enabled=bool(_payload_get(config, "enabled", False)),
         policy_class=policy_kind,
         mode=str(
-            _first_payload_value(
-                (config, "row_mode"),
-                (objective, "active"),
-                (config, "mode"),
-                default=POLICY_ADVERSARY_PLAIN_MODE,
-            )
+            _payload_get(objective, "active", POLICY_ADVERSARY_PLAIN_MODE)
         ),
-        width=int(_first_payload_value((policy, "width"), (config, "width"), default=64)),
-        depth=int(_first_payload_value((policy, "depth"), (config, "depth"), default=2)),
+        width=int(_payload_get(policy, "width", 64)),
+        depth=int(_payload_get(policy, "depth", 2)),
         n_steps=int(
-            _first_payload_value(
-                (optimizer, "n_ascent_steps_per_controller_step"),
-                (config, "n_steps"),
-                default=5,
-            )
+            _payload_get(optimizer, "n_ascent_steps_per_controller_step", 5)
         ),
         learning_rate=float(
-            _first_payload_value(
-                (optimizer, "learning_rate"),
-                (config, "learning_rate"),
-                default=3e-4,
-            )
+            _payload_get(optimizer, "learning_rate", 3e-4)
         ),
         energy_penalty_gamma=float(
-            _first_payload_value(
-                (objective, "energy_penalty_gamma"),
-                (config, "energy_penalty_gamma"),
-                default=1.0,
-            )
+            _payload_get(objective, "energy_penalty_gamma", 1.0)
         ),
         reference_l2_radius_15cm=_optional_float(
             _first_payload_value(
                 (budget, "effective_l2_radius_15cm"),
                 (budget, "active_max_l2_radius_15cm"),
-                (config, "reference_l2_radius_15cm"),
                 default=None,
             )
         ),
@@ -3279,27 +3176,9 @@ def _normalize_policy_adversary_payload(config: Any) -> PolicyFullStateEpsilonTr
             _payload_get(config, "nominal_reach_length_m", BROAD_EPSILON_REFERENCE_REACH_M)
         ),
         movement_epoch_only=bool(_payload_get(config, "movement_epoch_only", False)),
-        epsilon_dim=int(
-            _first_payload_value(
-                (policy, "output_dim"),
-                (config, "epsilon_dim"),
-                default=BROAD_EPSILON_DIM,
-            )
-        ),
-        state_feature_dim=int(
-            _first_payload_value(
-                (policy, "state_feature_dim"),
-                (config, "state_feature_dim"),
-                default=BROAD_EPSILON_DIM * 6,
-            )
-        ),
-        budget_source=_optional_str(
-            _first_payload_value(
-                (budget_source, "key"),
-                (config, "budget_source"),
-                default=None,
-            )
-        ),
+        epsilon_dim=int(_payload_get(policy, "output_dim", BROAD_EPSILON_DIM)),
+        state_feature_dim=int(_payload_get(policy, "state_feature_dim", BROAD_EPSILON_DIM * 6)),
+        budget_source=_optional_str(_payload_get(budget_source, "key", None)),
     )
 
 
