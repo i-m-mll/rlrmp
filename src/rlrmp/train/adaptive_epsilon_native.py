@@ -951,7 +951,7 @@ def adaptive_epsilon_controller_lr_points(
         rows.append(
             {
                 "step": int(step),
-                "global_step": int(schedule_origin_step) + int(step),
+                "program_step": int(schedule_origin_step) + int(step),
                 "optimizer_count": int(count),
                 "lr": lr,
             }

@@ -411,7 +411,7 @@ def minimax_method_contract() -> MethodContractSpec:
                 checkpoint_barrier="after_adversarial",
                 loop_axis="batch",
                 metadata={
-                    "active_member": "global_step % n_adversaries",
+                    "active_member": "program_step % n_adversaries",
                     "frozen_controller_boundary": (
                         "stop_gradient(controller) during inner_adversary_ascent"
                     ),
@@ -543,7 +543,7 @@ def minimax_method_contract() -> MethodContractSpec:
                 projection="after_step",
                 phase_scope=["adversarial"],
                 objective_reads=["objective"],
-                metadata={"active_member": "global_step % n_adversaries"},
+                metadata={"active_member": "program_step % n_adversaries"},
             ),
             OptimizerTargetBinding(
                 name="controller_optimizer_to_controller_adversarial",
@@ -563,7 +563,7 @@ def minimax_method_contract() -> MethodContractSpec:
                 resume_coordinate=ResumeCoordinateSpec(
                     phase="adversarial",
                     completed_barrier="after_warmup",
-                    global_step=0,
+                    program_step=0,
                 ),
             ),
             CheckpointBarrierSpec(

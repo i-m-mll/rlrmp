@@ -40,6 +40,7 @@ class LaunchContinuation:
     completed_batches: int
     stop_target_batches: int
     continuation_batches: int
+    source_target_batches: int | None = None
 
     def format_line(self) -> str:
         """Return the stable one-line launch summary."""
@@ -111,12 +112,17 @@ def resolve_launch_continuation(
         resume = False
     elif resume_requested:
         completed_batches = int(completed_batches_from_latest(latest_path))
+        source_target_batches = _source_target_batches_from_latest(latest_path)
         resume_source = str(latest_path)
         resume = True
     else:
         completed_batches = 0
         resume_source = "fresh-start"
         resume = False
+        source_target_batches = None
+
+    if not resume_requested or not latest_path.is_file():
+        source_target_batches = None
 
     continuation_batches = int(stop_target_batches) - int(completed_batches)
     if continuation_batches <= 0:
@@ -132,6 +138,7 @@ def resolve_launch_continuation(
         completed_batches=completed_batches,
         stop_target_batches=int(stop_target_batches),
         continuation_batches=continuation_batches,
+        source_target_batches=source_target_batches,
     )
 
 
@@ -158,13 +165,35 @@ def attach_cs_supervised_checkpoint_continuation(
     template's new tail for the explicitly declared diagnostic leaves.
     """
 
-    if not continuation.resume:
+    if not continuation.resume or (
+        continuation.source_target_batches == continuation.stop_target_batches
+    ):
         return training_spec
     return declare_cs_supervised_checkpoint_continuation(
         training_spec,
         source_completed_batches=continuation.completed_batches,
         target_total_batches=continuation.stop_target_batches,
     )
+
+
+def _source_target_batches_from_latest(latest_path: Path) -> int:
+    """Read the source run's declared total horizon from typed custody documents."""
+
+    documents = load_checkpoint_custody_documents(latest_path.parent)
+    projection = documents.manifest.document.run_contract_binding.canonical_projection
+    try:
+        value = projection["training_run_spec"]["training_config"]["n_batches"]
+    except (KeyError, TypeError) as exc:
+        raise ValueError(
+            "checkpoint run-contract binding lacks source training_config.n_batches: "
+            f"{documents.manifest_path}"
+        ) from exc
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(
+            "checkpoint source training_config.n_batches must be a non-negative integer: "
+            f"{documents.manifest_path}"
+        )
+    return value
 
 
 def declare_cs_supervised_checkpoint_continuation(

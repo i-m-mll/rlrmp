@@ -234,7 +234,7 @@ def test_resume_structural_abi_rejects_resized_diagnostics_buffer(tmp_path: Path
     coordinate = ProgressCoordinate(
         run_id="resize-caveat",
         phase="train_chunk",
-        global_step=1,
+        program_step=1,
         completed_barrier=TOY_BARRIER,
     )
     slots = _toy_initial_slots(seed=0)
@@ -269,7 +269,7 @@ def test_cs_supervised_resume_transform_preserves_horizon_for_feedbax_declaratio
     coordinate = ProgressCoordinate(
         run_id="cs-resize-transform",
         phase="train_chunk",
-        global_step=1,
+        program_step=1,
         completed_barrier=TOY_BARRIER,
     )
     slots = _toy_initial_slots(seed=0)
@@ -305,7 +305,7 @@ def test_declared_checkpoint_continuation_extends_diagnostic_prefix(
     coordinate = ProgressCoordinate(
         run_id="cs-declared-continuation",
         phase="train_chunk",
-        global_step=2,
+        program_step=2,
         completed_barrier=TOY_BARRIER,
     )
     slots = _toy_initial_slots(seed=0)
@@ -363,7 +363,7 @@ def test_declared_checkpoint_continuation_rejects_undeclared_diagnostic_leaf(
     coordinate = ProgressCoordinate(
         run_id="cs-undeclared-continuation",
         phase="train_chunk",
-        global_step=2,
+        program_step=2,
         completed_barrier=TOY_BARRIER,
     )
     slots = _toy_initial_slots(seed=0)
@@ -420,7 +420,7 @@ def test_adaptive_epsilon_resume_transform_accepts_larger_n_train_batches(
     coordinate = ProgressCoordinate(
         run_id="adaptive-epsilon-resize-transform",
         phase="train_chunk",
-        global_step=1,
+        program_step=1,
         completed_barrier=TOY_BARRIER,
     )
     slots = _toy_initial_slots(seed=0)
@@ -434,6 +434,7 @@ def test_adaptive_epsilon_resume_transform_accepts_larger_n_train_batches(
         barrier_name=TOY_BARRIER,
         coordinate=coordinate,
         slots=slots,
+        completed_training_batches=2,
     )
     expected_slots = dict(slots)
     expected_slots[OPTIMIZER] = _diagnostic_optimizer_state(resumed_n_train_batches)
@@ -443,9 +444,21 @@ def test_adaptive_epsilon_resume_transform_accepts_larger_n_train_batches(
         expected_run_spec=run_spec,
         expected_phase_program=program,
         expected_slots=expected_slots,
-        resume_slot_transform=_adaptive_epsilon_resume_slot_transform(
-            None,
-            n_batches=resumed_n_train_batches,
+        resume_slot_transform=_adaptive_epsilon_resume_slot_transform(None),
+        continuation_request=CheckpointContinuationRequest(
+            source_completed_batches=2,
+            target_total_batches=resumed_n_train_batches,
+            batch_indexed_leaves=[
+                BatchIndexedCheckpointLeafSpec(slot=OPTIMIZER, tree_path=path)
+                for path in (
+                    "/gradient/gradient_norm_pre_clip",
+                    "/gradient/gradient_clipped",
+                    "/gradient/learning_rate",
+                    "/update/update_norm",
+                    "/update/parameter_norm",
+                    "/update/update_parameter_norm_ratio",
+                )
+            ],
         ),
     )
 
@@ -453,8 +466,8 @@ def test_adaptive_epsilon_resume_transform_accepts_larger_n_train_batches(
     assert optimizer["gradient"].gradient_norm_pre_clip.shape == (resumed_n_train_batches,)
     assert optimizer["update"].update_norm.shape == (resumed_n_train_batches,)
     assert optimizer["gradient"].gradient_clipped.tolist() == [True, False, False, False]
-    assert jnp.isnan(optimizer["gradient"].gradient_norm_pre_clip[2:]).all()
-    assert jnp.isnan(optimizer["update"].update_norm[2:]).all()
+    assert optimizer["gradient"].gradient_norm_pre_clip.tolist() == [0.0, 1.0, 2.0, 3.0]
+    assert optimizer["update"].update_norm.tolist() == [1.0, 2.0, 3.0, 4.0]
     assert loaded.slots[TRAIN_LOSS] == 0.0
     assert loaded.slots[DAMAGE_METRIC] == 0.0
     assert loaded.slots[EPSILON_SCALE] == 0.0
@@ -545,6 +558,7 @@ def _standard_initial_slots() -> dict[str, object]:
         MODEL: jnp.array([0.0]),
         OPTIMIZER: {"count": jnp.array([1.0])},
         "prng": jnp.array([0, 1], dtype=jnp.uint32),
+        "batch_counter": jnp.asarray(0, dtype=jnp.int32),
     }
 
 
@@ -603,13 +617,13 @@ def _chunked_registry_with_history_sink() -> tuple[TrainingMethodRegistry, objec
     def gradient_update(slots, coordinate, context):
         assert RLRMP_RUNTIME_CONTEXT_KEY in context
         updates = dict(base_kernel(slots, coordinate, context))
-        updates[HISTORY_CHUNK_BYTES] = f"history-{coordinate.global_step}".encode()
+        updates[HISTORY_CHUNK_BYTES] = f"history-{coordinate.program_step}".encode()
         return updates
 
     def keep_training(slots, coordinate, context):
         del slots
         assert RLRMP_RUNTIME_CONTEXT_KEY in context
-        return coordinate.global_step < 2
+        return coordinate.program_step < 2
 
     registry = TrainingMethodRegistry()
     registry.register(

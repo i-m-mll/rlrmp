@@ -2591,6 +2591,7 @@ class CsNominalGruConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     run_spec: str | None = None
+    compact_run_spec: bool = False
     output_dir: str = Field(f"_artifacts/{ISSUE_ID}/runs/cs_stochastic_gru__no_hidden_penalty")
     spec_dir: str | None = None
     issue: str = ISSUE_ID

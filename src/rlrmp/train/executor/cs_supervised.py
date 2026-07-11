@@ -1735,12 +1735,12 @@ def _spec_result_from_execution_context(context: RunSpecExecutionContext) -> dic
 def _checkpoint_writes_by_completed_batch(
     checkpoint_writes: Sequence[Any],
 ) -> dict[int, Any]:
-    """Index Feedbax executor checkpoint writes by completed global step."""
+    """Index Feedbax executor checkpoint writes by completed program step."""
 
     indexed: dict[int, Any] = {}
     for write in checkpoint_writes:
         coordinate = getattr(getattr(write, "manifest", None), "coordinate", None)
-        completed = getattr(coordinate, "global_step", None)
+        completed = getattr(coordinate, "program_step", None)
         if completed is None:
             continue
         indexed[int(completed)] = write

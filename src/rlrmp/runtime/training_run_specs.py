@@ -54,6 +54,7 @@ from feedbax.contracts.worker import (
     PhaseTransitionSpec,
     ResumeCoordinateSpec,
     StateSlotSpec,
+    TrainingBatchProgressSpec,
     UpdateKernelSpec,
     UpdateStepSpec,
     derive_consistency_predicate,
@@ -862,6 +863,7 @@ def cs_supervised_method_contract() -> MethodContractSpec:
                 artifact_sinks=artifact_sink_specs(CS_SUPERVISED_SCHEMA),
             )
         ],
+        batch_progress=TrainingBatchProgressSpec(slot=COMPLETED_BATCHES),
         metadata={
             "phase_program_identity": "rlrmp.cs_supervised.chunked_supervised.v1",
             "checkpoint_barrier_policy": "after_each_training_chunk",

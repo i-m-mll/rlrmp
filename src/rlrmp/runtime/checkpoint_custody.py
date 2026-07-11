@@ -156,6 +156,12 @@ def write_cs_checkpoint_transaction(
     )
 
 
+def write_governed_checkpoint_transaction(**kwargs: Any) -> Any:
+    """Route an already-governed checkpoint transaction through the custody adapter."""
+
+    return write_checkpoint_transaction(**kwargs)
+
+
 def load_cs_checkpoint_transaction(
     root: Path,
     *,
@@ -213,7 +219,7 @@ def write_minimax_checkpoint_transaction(
     coordinate = ProgressCoordinate(
         run_id=_run_id_from_spec(training_spec, prefix="rlrmp-minimax"),
         phase=phase,
-        global_step=max(0, int(batch_idx) + 1),
+        program_step=max(0, int(batch_idx) + 1),
         adversary_member=(
             None if int(active_member_index) < 0 else int(active_member_index)
         ),

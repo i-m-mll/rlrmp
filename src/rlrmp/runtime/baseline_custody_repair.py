@@ -13,11 +13,10 @@ import jax.numpy as jnp
 import jax.tree as jt
 import equinox as eqx
 from feedbax.contracts.worker import ProgressCoordinate
-from feedbax.training.checkpoint_custody import write_checkpoint_transaction
-
 from rlrmp.runtime.checkpoint_custody import (
     cs_custody_training_spec,
     load_cs_checkpoint_transaction,
+    write_governed_checkpoint_transaction,
 )
 from rlrmp.train.executor.checkpoints import load_latest_checkpoint
 from rlrmp.train.executor.slots import MODEL, OPTIMIZER, PRNG
@@ -129,7 +128,7 @@ def repair_baseline_custody_source(
         program_step=program_step,
         completed_barrier=barrier.name,
     )
-    result = write_checkpoint_transaction(
+    result = write_governed_checkpoint_transaction(
         destination,
         run_spec=custody_spec,
         phase_program=program,
