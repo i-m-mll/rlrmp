@@ -7898,10 +7898,10 @@
             "adaptive_epsilon_controller_training_mode": "epsilon_scaled_outer_training",
             "adaptive_epsilon_curriculum": true,
             "adaptive_epsilon_damage_anneal_batches": 2500,
-            "adaptive_epsilon_damage_final": "__R_STAR_PENDING_SEAM_BASELINE_FINAL_QUARTER__",
-            "adaptive_epsilon_damage_peak": "__R_STAR_PENDING_SEAM_BASELINE_FINAL_QUARTER__",
+            "adaptive_epsilon_damage_final": 0.23,
+            "adaptive_epsilon_damage_peak": 0.23,
             "adaptive_epsilon_damage_ramp_batches": 1000,
-            "adaptive_epsilon_damage_start": "__R_STAR_PENDING_SEAM_BASELINE_FINAL_QUARTER__",
+            "adaptive_epsilon_damage_start": 0.23,
             "adaptive_epsilon_deadband_frac": 0.03,
             "adaptive_epsilon_ema_alpha": 0.1,
             "adaptive_epsilon_eta": 0.2,
@@ -8066,13 +8066,13 @@
           "damage_schedule": {
             "anneal_batches": 2500,
             "denominator_window": "baseline_final_quarter",
-            "final": "__R_STAR_PENDING_SEAM_BASELINE_FINAL_QUARTER__",
+            "final": 0.23,
             "kind": "linear_ramp_then_cosine_anneal",
             "numerator_convention": "excess",
-            "peak": "__R_STAR_PENDING_SEAM_BASELINE_FINAL_QUARTER__",
+            "peak": 0.23,
             "ramp_batches": 1000,
             "setpoint_basis": "damage_to_clean_loss_ratio",
-            "start": "__R_STAR_PENDING_SEAM_BASELINE_FINAL_QUARTER__"
+            "start": 0.23
           },
           "lambda_update": {
             "deadband_frac": 0.03,
@@ -13318,11 +13318,11 @@
   "issue": "c6c5997",
   "metadata": {
     "ratio_setpoint": {
-      "baseline_final_quarter_mean_clean_loss": "__R_STAR_PENDING_SEAM_BASELINE_FINAL_QUARTER__",
+      "baseline_final_quarter_mean_clean_loss": 4497.20947265625,
       "denominator_window": "baseline_final_quarter",
       "numerator": 1024.0,
       "numerator_convention": "excess",
-      "rounded_ratio_setpoint_2sf": "__R_STAR_PENDING_SEAM_BASELINE_FINAL_QUARTER__"
+      "rounded_ratio_setpoint_2sf": 0.23
     },
     "replicate_topology": "one_vmap_ensemble_with_5_internal_replicas_per_row",
     "rlrmp_source_run_spec_ref": "results/cb3685a/runs/harmonized_nominal_h0_const_band16_lr3e-3_clip5_b64.json",

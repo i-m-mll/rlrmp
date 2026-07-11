@@ -51,23 +51,24 @@ a missing or unequal payload declaration fails the prelaunch gate.
   `281032.9992186145`, exactly `0.001` times that seed.
 - Radius, energy, and safety caps remain disabled.
 
-## Pending seam-derived substitution
+## Seam-derived setpoint
 
-The tracked recipes deliberately contain the fail-closed sentinel
-`__R_STAR_PENDING_SEAM_BASELINE_FINAL_QUARTER__`. After the isolated seam probe
-passes, replace every sentinel with values derived from:
+The isolated seam probe passed. The locked derivation is:
 
 ```text
 raw_ratio = 1024 / mean(clean loss over baseline batches 9001-12000)
 R* = raw_ratio rounded to two significant figures
 ```
 
-The matrix `ratio_setpoint` metadata must retain the raw numerator `1024`,
-numerator convention `excess`, denominator-window label
-`baseline_final_quarter`, the numeric denominator mean, and rounded `R*`.
-The three row damage schedules and their config mirrors must all receive the
-same numeric rounded `R*`. The fork gate is expected to reject the sentinel
-before any checkpoint write.
+- Raw numerator: `1024.0`.
+- Numerator convention: `excess`.
+- Denominator window: `baseline_final_quarter`.
+- Baseline final-quarter mean clean loss: `4497.20947265625`.
+- Raw quotient: `0.2276967542263893`.
+- Rounded two-significant-figure setpoint: `R*=0.23`.
+
+The matrix metadata retains those components, and all three row damage
+schedules and config mirrors use the same numeric `0.23` setpoint.
 
 ## Prelaunch gates
 
