@@ -276,8 +276,10 @@ symbols = [
   "TreeHashEntry",
   "TreeHashRef",
   "analysis_data_product_identity_hash",
+  "canonical_json_bytes",
   "load_manifest",
   "safe_manifest_key",
+  "sha256_bytes",
   "sha256_file",
   "spec_payload",
   "store_bytes_artifact",
@@ -312,6 +314,7 @@ symbols = ["ManifestPredicate"]
 module = "feedbax.contracts.training"
 symbols = [
   "ArtifactPolicySpec",
+  "BatchScheduleOriginSpec",
   "CheckpointProgressPolicySpec",
   "DEFAULT_TRAINING_METHOD_REGISTRY",
   "ExecutionPolicySpec",
@@ -368,7 +371,16 @@ symbols = [
   "BatchIndexedCheckpointLeafSpec",
   "CheckpointContinuationRequest",
   "CheckpointForkBarrierMapping",
+  "CheckpointSegmentLineage",
 ]
+
+[[canonical_homes]]
+module = "feedbax.training.schedule_clocks"
+symbols = ["resolve_schedule_window"]
+
+[[canonical_homes]]
+module = "feedbax.orchestration.events"
+symbols = ["RunEventEmitter"]
 
 [[canonical_homes]]
 module = "feedbax.training.run_matrix"
@@ -593,7 +605,13 @@ symbols = ["execute_training_run_spec"]
 
 [[canonical_homes]]
 module = "feedbax.training"
-symbols = ["load_checkpoint_custody_documents"]
+symbols = [
+  "ExecutionPreparationProviderRegistry",
+  "ExecutionPreparationRegistration",
+  "ExecutionPreparationRequest",
+  "ExecutionPreparationResult",
+  "load_checkpoint_custody_documents",
+]
 
 [[canonical_homes]]
 module = "feedbax.training.loss"

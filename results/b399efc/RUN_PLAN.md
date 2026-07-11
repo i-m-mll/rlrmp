@@ -93,4 +93,6 @@ Each cell writes to `_artifacts/b399efc/runs/<variant>/` on the pod. Final
 `run.json` specs are committed to `results/b399efc/runs/<variant>.json` after
 all cells complete (per CLAUDE.md §9 post-training-run protocol).
 
+Historical nested run recipes were retired under issue `ef8e1df`; recover them from git tag `legacy/ef8e1df-nested-run-json-retired` (the bytes are also in Mandible custody).
+
 Co-authored-by: Claude Opus 4.7 <noreply@anthropic.com>, Codex (GPT-5) <codex@openai.com>

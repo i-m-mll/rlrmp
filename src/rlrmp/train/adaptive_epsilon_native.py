@@ -16,13 +16,11 @@ import jax.random as jr
 import jax.tree as jt
 import jax.tree_util as jtu
 import optax
-from feedbax.contracts.checkpoints import (
-    BatchIndexedCheckpointLeafSpec,
-    CheckpointContinuationRequest,
-)
+from feedbax.contracts.checkpoints import CheckpointContinuationRequest, CheckpointSegmentLineage
 from feedbax.contracts.training import (
     DEFAULT_TRAINING_METHOD_REGISTRY,
     ArtifactPolicySpec,
+    BatchScheduleOriginSpec,
     CheckpointProgressPolicySpec,
     ExecutionPolicySpec,
     LrScheduleSpec,
@@ -64,6 +62,7 @@ from feedbax.training.optimizers import (
     build_optimizer as build_feedbax_optimizer,
     learning_rate_schedule as feedbax_learning_rate_schedule,
 )
+from feedbax.training.schedule_clocks import resolve_schedule_window
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from rlrmp.model.feedback_descriptors import DESCRIPTOR_PAYLOAD_KEY
@@ -105,20 +104,6 @@ LR_CONTINUATION_RESTART = "restart"
 LR_CONTINUATION_CONTINUE = "continue"
 LRContinuationMode = Literal["restart", "continue"]
 
-# These paths are the six diagnostics whose final axis is the full training
-# horizon in the adaptive controller optimizer.  They deliberately name the
-# raw optimizer topology used by the nominal-to-adaptive fork: Feedbax extends
-# those leaves before the target/post transform serializes the adaptive slot.
-ADAPTIVE_EPSILON_BATCH_INDEXED_CHECKPOINT_LEAVES = (
-    BatchIndexedCheckpointLeafSpec(slot=OPTIMIZER, tree_path="/1"),
-    BatchIndexedCheckpointLeafSpec(slot=OPTIMIZER, tree_path="/2"),
-    BatchIndexedCheckpointLeafSpec(slot=OPTIMIZER, tree_path="/3"),
-    BatchIndexedCheckpointLeafSpec(slot=OPTIMIZER, tree_path="/30"),
-    BatchIndexedCheckpointLeafSpec(slot=OPTIMIZER, tree_path="/31"),
-    BatchIndexedCheckpointLeafSpec(slot=OPTIMIZER, tree_path="/32"),
-)
-
-
 class AdaptiveEpsilonMethodPayload(BaseModel):
     """Governed payload for adaptive-epsilon curriculum native training."""
 
@@ -132,6 +117,11 @@ class AdaptiveEpsilonMethodPayload(BaseModel):
     damage_schedule: dict[str, Any]
     lambda_update: dict[str, Any]
     outer_adversarial_weight: dict[str, Any]
+    application_ramp_origin: BatchScheduleOriginSpec = Field(
+        default_factory=lambda: BatchScheduleOriginSpec(kind="segment_start")
+    )
+    application_ramp_start_batch: int = Field(ge=0)
+    application_ramp_end_batch: int = Field(ge=0)
     pgd_inner_maximizer: dict[str, Any]
     checkpointing: dict[str, Any]
     lr_continuation_mode: LRContinuationMode | None = None
@@ -187,6 +177,7 @@ class AdaptiveEpsilonNativeRuntime:
     lr_continuation_mode: LRContinuationMode | None = None
     trainer_resume_context: "LRResumeContext | None" = None
     optimizer_hyperparams_aligned: bool = False
+    application_ramp_start_batch: int = 0
     history: Any | None = None
     records: list[dict[str, Any]] = field(default_factory=list)
 
@@ -273,6 +264,7 @@ def ensure_adaptive_epsilon_training_method_registered() -> None:
             ),
             owner="rlrmp.train.adaptive_epsilon_native",
             package="rlrmp",
+            requires_execution_preparation=True,
         )
     )
 
@@ -304,6 +296,10 @@ def adaptive_epsilon_method_payload(run_spec: Mapping[str, Any]) -> MethodPayloa
         damage_schedule=_mapping(adaptive, "damage_schedule"),
         lambda_update=_mapping(adaptive, "lambda_update"),
         outer_adversarial_weight=_mapping(adaptive, "outer_adversarial_weight"),
+        application_ramp_start_batch=0,
+        application_ramp_end_batch=int(
+            _mapping(adaptive, "outer_adversarial_weight").get("ramp_batches", 0)
+        ),
         pgd_inner_maximizer=_mapping(
             _mapping(hps, "broad_epsilon_pgd_training"),
             "inner_maximizer",
@@ -892,6 +888,7 @@ def build_adaptive_epsilon_native_initial_slots(
             lr_continuation_mode,
             _lr_continuation_mode_from_run_spec(run_spec),
         ),
+        application_ramp_start_batch=_adaptive_ramp_start_from_run_spec(run_spec),
     )
     return (
         {
@@ -1189,6 +1186,7 @@ def _adaptive_epsilon_train_chunk(
         chunk_batches=chunk_batches,
         log_progress=not bool(getattr(native.args, "disable_progress", False))
         and not bool(getattr(native.args, "quiet_progress", False)),
+        ramp_start_batch=native.application_ramp_start_batch,
     )
     diagnostic_arrays = dict(diagnostics)
     next_completed = completed + chunk_batches
@@ -1210,7 +1208,10 @@ def _adaptive_epsilon_train_chunk(
     damage_metric = _diagnostic_scalar(diagnostic_arrays, "adaptive_epsilon_measured_damage")
     epsilon_scale = _diagnostic_scalar(diagnostic_arrays, "adaptive_epsilon_epsilon_scale_used")
     if epsilon_scale == 0.0 and adaptive_state is not None:
-        schedule_batch = _adaptive_epsilon_schedule_batch(adaptive_state, next_completed - 1)
+        schedule_batch = _adaptive_epsilon_schedule_batch(
+            next_completed - 1,
+            ramp_start_batch=native.application_ramp_start_batch,
+        )
         epsilon_scale = float(
             _adaptive_epsilon_outer_weight(
                 native.hps.adaptive_epsilon_curriculum,
@@ -1339,7 +1340,6 @@ def _adaptive_state_from_slot(value: Any) -> Any:
         ),
         last_update_batch=payload.get("last_update_batch"),
         update_count=int(payload.get("update_count", 0)),
-        schedule_start_batch=int(payload.get("schedule_start_batch", 0)),
         zero_adversary_guard=(
             dict(payload["zero_adversary_guard"])
             if isinstance(payload.get("zero_adversary_guard"), Mapping)
@@ -1383,9 +1383,9 @@ def _guard_from_slot(value: Any) -> dict[str, Any]:
 def _resume_slot_transform(transform: Any | None) -> Any:
     """Normalize resumed adaptive slots without changing batch-horizon leaves.
 
-    Feedbax applies ``CheckpointContinuationRequest`` before any target/post
-    adapter transform.  Resizing serialized optimizer payloads here would hide
-    the source structure and bypass its declared-leaf validation.
+    Feedbax allocates segment-local ``BatchHistory`` templates before any
+    target/post adapter transform. Resizing serialized optimizer payloads here
+    would hide the source structure and bypass that validation.
     """
 
     def normalize(slots: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -1404,22 +1404,65 @@ def attach_adaptive_epsilon_checkpoint_continuation(
     source_completed_batches: int,
     target_total_batches: int,
 ) -> TrainingRunSpec:
-    """Attach the explicit adaptive optimizer-horizon continuation contract.
-
-    The declared leaves refer to the raw optimizer checkpoint topology.  The
-    Stage-2 fork gate extends it under Feedbax custody, then serializes the
-    resulting target optimizer in its documented target/post adapter.
-    """
+    """Attach the explicit adaptive segment continuation contract."""
 
     request = CheckpointContinuationRequest(
         source_completed_batches=source_completed_batches,
-        target_total_batches=target_total_batches,
-        batch_indexed_leaves=list(ADAPTIVE_EPSILON_BATCH_INDEXED_CHECKPOINT_LEAVES),
+        additional_batches=target_total_batches - source_completed_batches,
+    )
+    payload = DEFAULT_TRAINING_METHOD_REGISTRY.validate_payload(
+        training_spec.method_ref,
+        training_spec.method_payload,
+        path="/method_payload",
+    )
+    if not isinstance(payload, AdaptiveEpsilonMethodPayload):
+        raise TypeError("adaptive-epsilon continuation requires its registered method payload")
+    ramp_batches = int(payload.outer_adversarial_weight.get("ramp_batches", 0))
+    window = resolve_schedule_window(
+        payload.application_ramp_origin,
+        lineage=CheckpointSegmentLineage(
+            parent_transaction_id="continuation-source",
+            start_batch=source_completed_batches,
+            segment_batch_count=request.additional_batches or 0,
+        ),
+        duration=ramp_batches,
+    )
+    payload = payload.model_copy(
+        update={
+            "application_ramp_start_batch": window.start_batch,
+            "application_ramp_end_batch": window.end_batch or window.start_batch,
+        }
+    )
+    method_payload = training_spec.method_payload.model_copy(
+        update={"payload": payload.model_dump(mode="json", exclude_none=True)}
     )
     checkpoint_progress = training_spec.checkpoint_progress.model_copy(
         update={"continuation": request}
     )
-    return training_spec.model_copy(update={"checkpoint_progress": checkpoint_progress})
+    return training_spec.model_copy(
+        update={
+            "checkpoint_progress": checkpoint_progress,
+            "method_payload": method_payload,
+        }
+    )
+
+
+def _adaptive_ramp_start_from_run_spec(
+    run_spec: Mapping[str, Any] | TrainingRunSpec,
+) -> int:
+    """Return the absolute ramp origin resolved during method attachment."""
+
+    if isinstance(run_spec, TrainingRunSpec):
+        payload = DEFAULT_TRAINING_METHOD_REGISTRY.validate_payload(
+            run_spec.method_ref,
+            run_spec.method_payload,
+            path="/method_payload",
+        )
+        if isinstance(payload, AdaptiveEpsilonMethodPayload):
+            return payload.application_ramp_start_batch
+        return 0
+    payload = _mapping(_mapping(run_spec, "method_payload"), "payload")
+    return int(payload.get("application_ramp_start_batch", 0))
 
 
 def _mapping(value: Mapping[str, Any], key: str) -> dict[str, Any]:

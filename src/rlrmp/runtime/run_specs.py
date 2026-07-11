@@ -293,8 +293,7 @@ def validate_nominal_gru_run_spec_file(run_spec_path: Path | str) -> None:
     """Load and validate a C&S-fidelity GRU recipe and its graph sidecars.
 
     Flat recipes use ``<recipe>.json`` for the tracked payload and the sibling
-    ``<recipe>/`` directory for graph sidecars. Historical ``run.json`` recipes
-    keep their sidecars in the containing directory.
+    ``<recipe>/`` directory for graph sidecars.
     """
 
     path = Path(run_spec_path)
@@ -312,8 +311,6 @@ def validate_nominal_gru_run_spec_file(run_spec_path: Path | str) -> None:
 def run_spec_sidecar_dir(run_spec_path: Path) -> Path:
     """Return the contract-owned graph-sidecar directory for one recipe path."""
 
-    if run_spec_path.name == "run.json":
-        return run_spec_path.parent
     return run_spec_path.parent / run_spec_path.stem
 
 

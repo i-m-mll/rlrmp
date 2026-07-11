@@ -193,6 +193,10 @@ def test_cs_checkpoint_custody_roundtrips_and_materializes_legacy_latest(
     )
     assert provenance["authoritative"] is False
     assert loaded.completed_batches == 2
+    manifest = json.loads(
+        (checkpoint_root / latest_pointer["manifest_relative_path"]).read_text(encoding="utf-8")
+    )
+    assert manifest["completed_coordinate"]["program_step"] == 1
     assert loaded.model.tolist() == [1.0, 2.0]
     assert loaded.optimizer_state["count"].tolist() == 2
     assert loaded.key.tolist() == [3, 4]
@@ -257,6 +261,7 @@ def test_cs_terminal_checkpoint_is_final_custody_transaction(tmp_path: Path) -> 
     )
 
     assert manifest["status"] == "final"
+    assert manifest["completed_coordinate"]["program_step"] == 2
     assert manifest["transaction_id"] == latest_pointer["transaction_id"]
     assert provenance["source_transaction_id"] == manifest["transaction_id"]
 

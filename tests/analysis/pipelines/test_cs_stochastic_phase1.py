@@ -6,6 +6,7 @@ import json
 
 import jax.numpy as jnp
 
+from rlrmp.io import load_named_python_module
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     PRIMARY_GAMMA_FACTOR,
@@ -15,12 +16,17 @@ from rlrmp.analysis.math.cs_released_simulation import (
     default_cs_noise_covariances,
     sample_forward_noise_draws,
 )
-from rlrmp.analysis.pipelines.cs_stochastic_phase1 import (
-    analyze_phase1_stochastic,
-    result_summary,
-    simulate_full_state_released_forward,
-)
 from rlrmp.analysis.math.output_feedback import make_cs_output_feedback_initial_state
+from rlrmp.paths import REPO_ROOT
+
+
+_PHASE1 = load_named_python_module(
+    "rlrmp_legacy_cs_stochastic_phase1_tests",
+    REPO_ROOT / "legacy" / "analysis_pipelines" / "cs_stochastic_phase1.py",
+)
+analyze_phase1_stochastic = _PHASE1.analyze_phase1_stochastic
+result_summary = _PHASE1.result_summary
+simulate_full_state_released_forward = _PHASE1.simulate_full_state_released_forward
 
 
 def test_phase1_stochastic_shapes_and_shared_noise() -> None:

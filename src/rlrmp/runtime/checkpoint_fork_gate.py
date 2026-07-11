@@ -108,17 +108,8 @@ def fork_checkpoints_with_parity(
     _validate_fork_prelaunch_contracts(matrix, materialized, repo_root=resolved_repo_root)
     ratio_setpoint = _ratio_setpoint_prelaunch_report(matrix)
     target_roots = {target.row_id: target.checkpoint_root for target in targets}
-    source_manifest = _read_latest_manifest(source_checkpoint_root)
-    completed_coordinate = source_manifest.get("completed_coordinate", {})
-    source_program_step = completed_coordinate.get("program_step")
-    if not isinstance(source_program_step, int):
-        raise ForkParityError(
-            "source checkpoint manifest lacks integer completed_coordinate.program_step"
-        )
-    adaptive_contracts = _adaptive_continuation_fork_contracts(
-        materialized,
-        source_program_step=source_program_step,
-    )
+    adaptive_contracts = _adaptive_continuation_fork_contracts(materialized)
+    ramp_windows = _adaptive_ramp_window_prelaunch_report(materialized)
     reporter = RlrmpLrContinuationReporter(source_checkpoint_root=source_checkpoint_root)
     feedbax_matrix = matrix
     if adaptive_contracts and matrix.fork is not None:
@@ -134,12 +125,26 @@ def fork_checkpoints_with_parity(
         source_checkpoint_root=source_checkpoint_root,
         target_checkpoint_roots=target_roots,
         parity_output_path=parity_output_path,
-        target_slot_templates={row_id: value[0].adaptive_initial_slots for row_id, value in adaptive_contracts.items()},
-        row_continuation_slot_templates={row_id: value[0].continuation_slot_templates() for row_id, value in adaptive_contracts.items()},
-        row_target_slot_transforms={row_id: value[0].transform for row_id, value in adaptive_contracts.items()},
-        row_target_transform_metadata={row_id: value[0].transform_metadata for row_id, value in adaptive_contracts.items()},
-        row_target_transformed_slots={row_id: value[0].target_transformed_slots for row_id, value in adaptive_contracts.items()},
-        row_target_only_slots={row_id: value[0].target_only_slots for row_id, value in adaptive_contracts.items()},
+        target_slot_templates={
+            row_id: value[0].adaptive_initial_slots for row_id, value in adaptive_contracts.items()
+        },
+        row_segment_history_templates={
+            row_id: value[0].continuation_slot_templates()
+            for row_id, value in adaptive_contracts.items()
+        },
+        row_target_slot_transforms={
+            row_id: value[0].transform for row_id, value in adaptive_contracts.items()
+        },
+        row_target_transform_metadata={
+            row_id: value[0].transform_metadata for row_id, value in adaptive_contracts.items()
+        },
+        row_target_transformed_slots={
+            row_id: value[0].target_transformed_slots
+            for row_id, value in adaptive_contracts.items()
+        },
+        row_target_only_slots={
+            row_id: value[0].target_only_slots for row_id, value in adaptive_contracts.items()
+        },
         row_barrier_mappings={row_id: value[1] for row_id, value in adaptive_contracts.items()},
         skip_fork=skip_fork,
         lr_reporter=reporter,
@@ -155,110 +160,55 @@ def fork_checkpoints_with_parity(
         )
     if ratio_setpoint is not None:
         table["ratio_setpoint"] = ratio_setpoint
-    parity_output_path.write_text(
-        json.dumps(table, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    if table.get("ok") is not True:
-        raise ForkParityError("composed checkpoint fork parity is not green")
-    return table
-
-
-def _compose_adaptive_fork_parity(
-    feedbax_table: Mapping[str, Any],
-    *,
-    matrix: TrainingRunMatrixSpec,
-    materialized: Any,
-    target_roots: Mapping[str, Path],
-    adaptive_contracts: Mapping[
-        str, tuple[NominalToAdaptiveSlotAdapter, CheckpointForkBarrierMapping]
-    ],
-) -> dict[str, Any]:
-    """Compose topology-aware parity from custody provenance and LR evidence."""
-
-    lr_rows = [
-        dict(row)
-        for row in feedbax_table.get("rows", [])
-        if isinstance(row, Mapping) and row.get("kind") == "lr_continuation"
-    ]
-    lr_row_ids = {str(row.get("row_id")) for row in lr_rows}
-    expected_row_ids = set(adaptive_contracts)
-    if lr_row_ids != expected_row_ids:
-        raise ForkParityError(
-            "adaptive fork parity LR row coverage mismatch; "
-            f"expected={sorted(expected_row_ids)!r} actual={sorted(lr_row_ids)!r}"
+        parity_output_path.write_text(
+            json.dumps(table, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
         )
-    planned_ids = {row.row_id: row.planned_run_id for row in materialized.rows}
-    expected_slots = tuple(matrix.fork.expected_slots if matrix.fork is not None else ())
-    parity_rows: list[dict[str, Any]] = []
-    mismatches: list[str] = []
-    for row_id, (adapter, _mapping) in adaptive_contracts.items():
-        manifest = _read_latest_manifest(target_roots[row_id])
-        provenance = manifest.get("fork_provenance")
-        records = provenance.get("slots") if isinstance(provenance, Mapping) else None
-        by_slot = {
-            str(record.get("slot")): record
-            for record in records or []
-            if isinstance(record, Mapping) and isinstance(record.get("slot"), str)
-        }
-        for slot in expected_slots:
-            record = by_slot.get(slot, {})
-            source_sha = record.get("source_sha256")
-            target_sha = record.get("target_sha256")
-            transformed = slot in adapter.target_transformed_slots
-            transform = record.get("transform")
-            transform_identity = (
-                transform.get("identity") if isinstance(transform, Mapping) else None
-            )
-            ok = (
-                isinstance(source_sha, str)
-                and isinstance(target_sha, str)
-                and (
-                    transform_identity == adapter.transform_metadata["identity"]
-                    if transformed
-                    else source_sha == target_sha
-                )
-            )
-            if not ok:
-                mismatches.append(f"row={row_id} slot={slot}")
-            parity_rows.append(
-                {
-                    "kind": "slot_parity",
-                    "row_id": row_id,
-                    "planned_run_id": planned_ids[row_id],
-                    "transaction_id": manifest.get("transaction_id"),
-                    "slot": slot,
-                    "source_digest": source_sha,
-                    "target_digest": target_sha,
-                    "comparison": "declared_transform" if transformed else "byte_identical",
-                    "transform_identity": transform_identity,
-                    "ok": ok,
-                }
-            )
-    table = dict(feedbax_table)
-    table["rows"] = [*parity_rows, *lr_rows]
-    table["ok"] = not mismatches
-    if mismatches:
-        raise ForkParityError("; ".join(mismatches))
+    if ramp_windows:
+        table["adaptive_epsilon_ramp_windows"] = ramp_windows
+        parity_output_path.write_text(
+            json.dumps(table, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
     return table
 
 
-def _read_latest_manifest(root: Path) -> dict[str, Any]:
-    latest_path = root / "latest.json"
-    latest = json.loads(latest_path.read_text(encoding="utf-8"))
-    relative_path = latest.get("manifest_relative_path")
-    if not isinstance(relative_path, str) or not relative_path:
-        raise ForkParityError(f"checkpoint latest pointer lacks manifest path: {latest_path}")
-    manifest = json.loads((root / relative_path).read_text(encoding="utf-8"))
-    if not isinstance(manifest, dict):
-        raise ForkParityError(f"checkpoint manifest is not an object: {root / relative_path}")
-    return manifest
+def _adaptive_ramp_window_prelaunch_report(materialized: Any) -> list[dict[str, Any]]:
+    """Render resolved adaptive ramp windows for prelaunch review."""
+
+    from rlrmp.train.adaptive_epsilon_native import AdaptiveEpsilonMethodPayload
+
+    report: list[dict[str, Any]] = []
+    for row in materialized.rows:
+        spec = row.spec
+        if spec is None or spec.checkpoint_progress.continuation is None:
+            continue
+        payload = DEFAULT_TRAINING_METHOD_REGISTRY.validate_payload(
+            spec.method_ref,
+            spec.method_payload,
+            path=f"/rows/{row.row_id}/method_payload",
+        )
+        if not isinstance(payload, AdaptiveEpsilonMethodPayload):
+            continue
+        report.append(
+            {
+                "row_id": row.row_id,
+                "origin": payload.application_ramp_origin.model_dump(mode="json"),
+                "start_batch": payload.application_ramp_start_batch,
+                "end_batch": payload.application_ramp_end_batch,
+                "rendered": (
+                    f"ADAPTIVE_EPSILON_RAMP row={row.row_id} "
+                    f"origin={payload.application_ramp_origin.kind} "
+                    f"window=[{payload.application_ramp_start_batch}, "
+                    f"{payload.application_ramp_end_batch}]"
+                ),
+            }
+        )
+    return report
 
 
 def _adaptive_continuation_fork_contracts(
     materialized: Any,
-    *,
-    source_program_step: int,
 ) -> dict[str, tuple[NominalToAdaptiveSlotAdapter, CheckpointForkBarrierMapping]]:
     """Build the declared target topology and C&S-to-adaptive barrier map."""
 
@@ -276,7 +226,10 @@ def _adaptive_continuation_fork_contracts(
         if spec is None or spec.checkpoint_progress.continuation is None:
             continue
         method_ref = spec.method_ref
-        if f"{method_ref.package}/{method_ref.name}/{method_ref.version}" != _ADAPTIVE_EPSILON_METHOD_REF:
+        if (
+            f"{method_ref.package}/{method_ref.name}/{method_ref.version}"
+            != _ADAPTIVE_EPSILON_METHOD_REF
+        ):
             continue
         payload = DEFAULT_TRAINING_METHOD_REGISTRY.validate_payload(
             method_ref, spec.method_payload, path=f"/rows/{row.row_id}/method_payload"
@@ -301,6 +254,11 @@ def _adaptive_continuation_fork_contracts(
             if barrier.name == "after_adaptive_epsilon_train_chunk"
         )
         request = spec.checkpoint_progress.continuation
+        chunk_interval_batches = int(args.checkpoint_interval_batches)
+        source_program_step = _program_step_from_completed_batches(
+            completed_batches=request.source_completed_batches,
+            chunk_interval_batches=chunk_interval_batches,
+        )
         mapping = CheckpointForkBarrierMapping(
             source_barrier="after_train_chunk",
             target_barrier=target_barrier.name,
@@ -312,7 +270,11 @@ def _adaptive_continuation_fork_contracts(
             ),
             coordinate_mapping={
                 "identity": "rlrmp.cs_supervised_to_adaptive_epsilon.v1",
-                "parameters": {"program_step": "preserve_completed_training_batches"},
+                "parameters": {
+                    "program_step": "source_train_chunk_barrier_visit_ordinal",
+                    "source_completed_training_batches": request.source_completed_batches,
+                    "source_chunk_interval_batches": chunk_interval_batches,
+                },
             },
         )
         contracts[row.row_id] = (
@@ -324,6 +286,20 @@ def _adaptive_continuation_fork_contracts(
             mapping,
         )
     return contracts
+
+
+def _program_step_from_completed_batches(
+    *,
+    completed_batches: int,
+    chunk_interval_batches: int,
+) -> int:
+    """Derive the completed train-chunk ordinal without mixing batch units."""
+
+    if completed_batches < 0:
+        raise ForkParityError("source completed training batches must be nonnegative")
+    if chunk_interval_batches < 1:
+        raise ForkParityError("source train chunk interval must be positive")
+    return math.ceil(completed_batches / chunk_interval_batches)
 
 
 def _validate_fork_prelaunch_contracts(
@@ -474,10 +450,7 @@ def _canonical_task_identity_hash(identity: Mapping[str, Any]) -> str:
 
     try:
         payload = json.dumps(
-            {
-                subtree: identity[subtree]
-                for subtree in _TASK_IDENTITY_SUBTREES
-            },
+            {subtree: identity[subtree] for subtree in _TASK_IDENTITY_SUBTREES},
             allow_nan=False,
             ensure_ascii=True,
             separators=(",", ":"),
@@ -617,9 +590,7 @@ def _assert_stage2_lambda_update_contract(
     contract = _load_stage2_lambda_update_contract(repo_root=repo_root)
     payload = getattr(getattr(row_spec, "method_payload", None), "payload", None)
     if not isinstance(payload, Mapping):
-        raise ForkParityError(
-            f"lambda-update gate missing row={row_id!r}.method_payload.payload"
-        )
+        raise ForkParityError(f"lambda-update gate missing row={row_id!r}.method_payload.payload")
     actual_update = payload.get("lambda_update")
     if not isinstance(actual_update, Mapping):
         raise ForkParityError(
@@ -641,7 +612,9 @@ def _assert_stage2_lambda_update_contract(
     factor = relative_contract["factor"]
     config = payload.get("config")
     if not isinstance(config, Mapping):
-        raise ForkParityError(f"lambda-update gate missing row={row_id!r}.method_payload.payload.config")
+        raise ForkParityError(
+            f"lambda-update gate missing row={row_id!r}.method_payload.payload.config"
+        )
     seed = _finite_positive_float(
         config.get(seed_field),
         path=f"row={row_id!r}.method_payload.payload.config.{seed_field}",
@@ -682,8 +655,7 @@ def _load_stage2_lambda_update_contract(*, repo_root: Path) -> dict[str, Any]:
     relative_contract = raw.get("lambda_min_relative_to_analytical_seed")
     if not isinstance(expected_update, Mapping):
         raise ForkParityError(
-            "lambda-update gate missing field "
-            f"{_STAGE2_LAMBDA_UPDATE_CONTRACT_PATH}.lambda_update"
+            f"lambda-update gate missing field {_STAGE2_LAMBDA_UPDATE_CONTRACT_PATH}.lambda_update"
         )
     if not isinstance(relative_contract, Mapping):
         raise ForkParityError(
@@ -714,8 +686,7 @@ def _load_stage2_lambda_update_contract(*, repo_root: Path) -> dict[str, Any]:
     factor = _finite_positive_float(
         factor,
         path=(
-            f"{_STAGE2_LAMBDA_UPDATE_CONTRACT_PATH}."
-            "lambda_min_relative_to_analytical_seed.factor"
+            f"{_STAGE2_LAMBDA_UPDATE_CONTRACT_PATH}.lambda_min_relative_to_analytical_seed.factor"
         ),
     )
     return {

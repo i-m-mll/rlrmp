@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import json
-import subprocess
 import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence
@@ -16,7 +15,7 @@ from rlrmp.runtime.run_specs import validate_nominal_gru_run_spec_file
 Runner = Callable[[Sequence[str]], int]
 RunSpecValidator = Callable[[Path], None]
 
-REQUIRED_SPEC_FILES = ("run.json", "model.graph.manifest.json")
+REQUIRED_SIDECAR_FILES = ("model.graph.manifest.json",)
 REQUIRED_ARTIFACT_FILES = (
     "trained_model.eqx",
     "training_history.eqx",
@@ -36,13 +35,23 @@ class ModalRunSyncPlan:
     issue: str
     run: str
     volume_name: str
+    remote_spec_path: str
     remote_spec_dir: str
     remote_artifact_dir: str
+    local_spec_path: Path
     local_spec_dir: Path
     local_artifact_dir: Path
 
     @property
     def spec_command(self) -> list[str]:
+        return build_modal_volume_get_command(
+            volume_name=self.volume_name,
+            remote_path=self.remote_spec_path,
+            local_path=self.local_spec_path.parent,
+        )
+
+    @property
+    def sidecar_command(self) -> list[str]:
         return build_modal_volume_get_command(
             volume_name=self.volume_name,
             remote_path=self.remote_spec_dir,
@@ -58,8 +67,8 @@ class ModalRunSyncPlan:
         )
 
     @property
-    def commands(self) -> tuple[list[str], list[str]]:
-        return (self.spec_command, self.artifact_command)
+    def commands(self) -> tuple[list[str], list[str], list[str]]:
+        return (self.spec_command, self.sidecar_command, self.artifact_command)
 
 
 @dataclass(frozen=True)
@@ -70,7 +79,7 @@ class ModalRunSyncResult:
     run: str
     local_spec_dir: Path
     local_artifact_dir: Path
-    commands: tuple[list[str], list[str]]
+    commands: tuple[list[str], list[str], list[str]]
     validated: bool
     dry_run: bool
 
@@ -104,8 +113,10 @@ def build_modal_run_sync_plan(
         issue=issue,
         run=run,
         volume_name=volume_name,
+        remote_spec_path=f"results/{issue}/runs/{run}.json",
         remote_spec_dir=f"results/{issue}/runs/{run}",
         remote_artifact_dir=f"_artifacts/{issue}/runs/{run}",
+        local_spec_path=repo_root / "results" / issue / "runs" / f"{run}.json",
         local_spec_dir=repo_root / "results" / issue / "runs" / run,
         local_artifact_dir=repo_root / "_artifacts" / issue / "runs" / run,
     )
@@ -138,6 +149,7 @@ def sync_modal_run_artifacts(
             plan.local_spec_dir.parent.mkdir(parents=True, exist_ok=True)
             plan.local_artifact_dir.parent.mkdir(parents=True, exist_ok=True)
             _run_checked(plan.spec_command, runner=command_runner)
+            _run_checked(plan.sidecar_command, runner=command_runner)
             _run_checked(plan.artifact_command, runner=command_runner)
             normalize_synced_modal_run(plan)
             validate_synced_modal_run(
@@ -172,18 +184,22 @@ def validate_synced_modal_run(
 ) -> None:
     """Validate that a synced run has complete specs, sidecars, and artifacts."""
 
-    missing_specs = [
+    if not plan.local_spec_path.is_file():
+        raise ModalArtifactSyncError(
+            f"synced run {plan.issue}/{plan.run} is missing flat tracked run spec: "
+            f"{plan.local_spec_path}"
+        )
+    missing_sidecars = [
         file_name
-        for file_name in REQUIRED_SPEC_FILES
+        for file_name in REQUIRED_SIDECAR_FILES
         if not (plan.local_spec_dir / file_name).is_file()
     ]
-    if missing_specs:
+    if missing_sidecars:
         raise ModalArtifactSyncError(
-            f"synced run {plan.issue}/{plan.run} is missing tracked spec files: "
-            + ", ".join(missing_specs)
+            f"synced run {plan.issue}/{plan.run} is missing tracked sidecar files: "
+            + ", ".join(missing_sidecars)
         )
-    _validate_optional_graph_spec(plan.local_spec_dir)
-    run_spec_validator(plan.local_spec_dir / "run.json")
+    run_spec_validator(plan.local_spec_path)
 
     if not plan.local_artifact_dir.is_dir():
         raise ModalArtifactSyncError(
@@ -199,25 +215,6 @@ def validate_synced_modal_run(
         raise ModalArtifactSyncError(
             f"synced run {plan.issue}/{plan.run} is missing bulk artifact files: "
             + ", ".join(missing_artifacts)
-        )
-
-
-def _validate_optional_graph_spec(spec_dir: Path) -> None:
-    run_spec_path = spec_dir / "run.json"
-    if not run_spec_path.is_file():
-        return
-    run_spec = json.loads(run_spec_path.read_text(encoding="utf-8"))
-    feedbax_graph = run_spec.get("feedbax_graph", {})
-    graph_spec_path = feedbax_graph.get("graph_spec_path")
-    if graph_spec_path is None:
-        if feedbax_graph.get("graph_export_status") != "unavailable":
-            raise ModalArtifactSyncError(
-                "synced run omits model.graph.json without declaring unavailable graph export"
-            )
-        return
-    if not (spec_dir / str(graph_spec_path)).is_file():
-        raise ModalArtifactSyncError(
-            f"synced run points to missing Feedbax graph sidecar: {spec_dir / str(graph_spec_path)}"
         )
 
 
@@ -268,7 +265,7 @@ __all__ = [
     "ModalRunSyncPlan",
     "ModalRunSyncResult",
     "REQUIRED_ARTIFACT_FILES",
-    "REQUIRED_SPEC_FILES",
+    "REQUIRED_SIDECAR_FILES",
     "build_modal_run_sync_plan",
     "build_modal_volume_get_command",
     "normalize_synced_modal_run",

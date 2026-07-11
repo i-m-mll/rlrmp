@@ -5,6 +5,29 @@ They are retained for provenance and possible future porting, not as current
 patterns for new analysis work. The active Feedbax-backed output-feedback
 rollout-recovery spec runner is deliberately outside this list.
 
+## e901a20 legacy Equinox checkpoints
+
+Files: `src/rlrmp/eval/legacy_checkpoints.py` archival reader, consumed by
+`results/e901a20/scripts/materialize_nominal_velocity_profile_comparison.py`
+and its non-H0 companion
+`results/e901a20/scripts/materialize_nonh0_no_pgd_extlqg_velocity.py`.
+
+Purpose: This frozen reader reconstructs the historical 020a65b/e901a20
+Equinox checkpoint family: plain `eqx.nn.Linear` readouts in place of
+`MaskedLinear`, replicated scalar metadata, float64 leaves, and the distinct
+non-H0 `SimpleStagedNetwork` casting path.
+
+Used by: [issue:ef8e1df] Pass C, preserving the four runs referenced by the
+e901a20 velocity-profile materializers.
+
+Keep-signal: Keep only as an archival boundary until the affected checkpoint
+bytes receive a deliberate migrate-once conversion. Checkpoint migration is
+deferred and was not performed by this pass.
+
+Banner status: Full module banner added. The independently maintained inline
+shims were removed from both result scripts and centralized in the capability-
+named archival reader.
+
 ## C&S analytical game card
 
 Files: `src/rlrmp/analysis/math/cs_game_card.py` writer surface and
@@ -174,7 +197,7 @@ the math module. The top-level gamma-sweep script has the full module banner.
 
 ## C&S stochastic Phase 1
 
-Files: `src/rlrmp/analysis/pipelines/cs_stochastic_phase1.py` and
+Files: `legacy/analysis_pipelines/cs_stochastic_phase1.py` and
 `scripts/materialize_cs_stochastic_phase1.py`.
 
 Purpose: This materializer evaluated the C&S game card under sampled
@@ -194,12 +217,13 @@ Retired 2026-07-09 under [issue:e158a74]: the standalone entrypoint
 carrying the file is `acbdf8d7008a073b3fe9375b5b915288ac05183d`, tagged as
 `legacy/e158a74-standalone-materializers-retired`; recover with
 `git show legacy/e158a74-standalone-materializers-retired:scripts/materialize_cs_stochastic_phase1.py`.
-The `src/rlrmp/analysis/pipelines/cs_stochastic_phase1.py` provenance module
-remains frozen; no report-stage equivalent is introduced here.
+The `legacy/analysis_pipelines/cs_stochastic_phase1.py` provenance module was
+relocated out of `src/` under [issue:ef8e1df] and remains frozen; no report-stage
+equivalent is introduced here.
 
 ## C&S stochastic Phase 3
 
-Files: `src/rlrmp/analysis/pipelines/cs_stochastic_phase3.py` and
+Files: `legacy/analysis_pipelines/cs_stochastic_phase3.py` and
 `scripts/materialize_cs_stochastic_phase3.py`.
 
 Purpose: This materializer evaluated Phase 3 controllers under released-code
@@ -218,8 +242,9 @@ Retired 2026-07-09 under [issue:e158a74]: the standalone entrypoint
 carrying the file is `acbdf8d7008a073b3fe9375b5b915288ac05183d`, tagged as
 `legacy/e158a74-standalone-materializers-retired`; recover with
 `git show legacy/e158a74-standalone-materializers-retired:scripts/materialize_cs_stochastic_phase3.py`.
-The `src/rlrmp/analysis/pipelines/cs_stochastic_phase3.py` provenance module
-remains frozen; no report-stage equivalent is introduced here.
+The `legacy/analysis_pipelines/cs_stochastic_phase3.py` provenance module was
+relocated out of `src/` under [issue:ef8e1df] and remains frozen; no report-stage
+equivalent is introduced here.
 
 ## SISU perturbation comparison
 

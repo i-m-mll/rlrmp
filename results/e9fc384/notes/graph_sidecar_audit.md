@@ -97,6 +97,8 @@ rows are zero"`) — i.e. an analytical `LinearStateSpace`-with-delay
 formulation, not a point mass. The same `run.json` is explicit that the
 *executed* model did not use this analytical plant:
 
+These historical nested recipes were retired under issue `ef8e1df`; recover them from git tag `legacy/ef8e1df-nested-run-json-retired` (the bytes are also in Mandible custody).
+
 - `feedbax_graph.execution_backend: "rlrmp.legacy_simple_feedback_compat"`
 - `fidelity_status.analytical_delay_augmented_state_input: false`
 - `fidelity_status.exact_fidelity: false`

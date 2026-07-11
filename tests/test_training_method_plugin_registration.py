@@ -6,6 +6,7 @@ from importlib.metadata import EntryPoint
 
 from feedbax.contracts.training import default_training_method_registry
 from feedbax.plugins.discovery import load_training_method_plugins
+from feedbax.training import ExecutionPreparationProviderRegistry
 
 from rlrmp.runtime.training_run_specs import (
     CLOSED_LOOP_DISTILLATION_METHOD_REF,
@@ -28,18 +29,37 @@ RLRMP_NATIVE_METHOD_REFS = frozenset(
     }
 )
 
+RLRMP_PREPARATION_METHOD_REFS = frozenset(
+    {
+        CS_SUPERVISED_METHOD_REF,
+        ADAPTIVE_EPSILON_CURRICULUM_METHOD_REF,
+        POLICY_ADVERSARY_SUPERVISED_METHOD_REF,
+    }
+)
+
 
 def test_rlrmp_plugin_entry_point_registers_all_native_training_methods() -> None:
     """Every RLRMP-owned native method must load before generic validation."""
     registry = default_training_method_registry()
+    preparation_registry = ExecutionPreparationProviderRegistry()
     entry_point = EntryPoint(
         name="rlrmp",
         value="rlrmp:register_experiment_package",
         group="feedbax.plugins",
     )
 
-    load_training_method_plugins(registry=registry, entry_points=[entry_point])
+    load_training_method_plugins(
+        registry=registry,
+        preparation_registry=preparation_registry,
+        entry_points=[entry_point],
+    )
 
     assert RLRMP_NATIVE_METHOD_REFS <= set(registry.available_keys())
     for method_ref in RLRMP_NATIVE_METHOD_REFS:
         assert registry.resolve(method_ref, path="/method_ref").method_ref == method_ref
+    assert set(preparation_registry.available_keys()) == RLRMP_PREPARATION_METHOD_REFS
+    assert {
+        method_ref
+        for method_ref in RLRMP_NATIVE_METHOD_REFS
+        if registry.resolve(method_ref, path="/method_ref").requires_execution_preparation
+    } == RLRMP_PREPARATION_METHOD_REFS

@@ -151,6 +151,18 @@ def register_feedbax_training_methods(registry: Any) -> None:
 register_experiment_package.register_feedbax_training_methods = register_feedbax_training_methods
 
 
+def register_feedbax_execution_preparations(registry: Any) -> None:
+    """Register runtime preparation for RLRMP's three native C&S methods."""
+    from rlrmp.train.execution_preparation import register_execution_preparations
+
+    register_execution_preparations(registry)
+
+
+register_experiment_package.register_feedbax_execution_preparations = (
+    register_feedbax_execution_preparations
+)
+
+
 def ensure_rlrmp_recipes_registered(
     *, defer_if_feedbax_initializing: bool = False, force: bool = False
 ) -> None:

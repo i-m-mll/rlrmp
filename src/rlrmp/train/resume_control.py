@@ -7,29 +7,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from feedbax.contracts.checkpoints import (
-    BatchIndexedCheckpointLeafSpec,
-    CheckpointContinuationRequest,
-)
+from feedbax.contracts.checkpoints import CheckpointContinuationRequest
 from feedbax.contracts.training import TrainingRunSpec
 from feedbax.training import load_checkpoint_custody_documents
 
 
 LAUNCH_CONTINUATION_PREFIX = "LAUNCH_CONTINUATION"
-
-# These paths are derived from the real C&S supervised optimizer checkpoint
-# topology, not inferred from a PyTree at resume time.  They are the three
-# gradient diagnostics and three update diagnostics whose final axis is the
-# global training-batch horizon for the vmapped C&S GRU executor.
-CS_SUPERVISED_BATCH_INDEXED_CHECKPOINT_LEAVES = (
-    BatchIndexedCheckpointLeafSpec(slot="optimizer", tree_path="/1"),
-    BatchIndexedCheckpointLeafSpec(slot="optimizer", tree_path="/2"),
-    BatchIndexedCheckpointLeafSpec(slot="optimizer", tree_path="/3"),
-    BatchIndexedCheckpointLeafSpec(slot="optimizer", tree_path="/30"),
-    BatchIndexedCheckpointLeafSpec(slot="optimizer", tree_path="/31"),
-    BatchIndexedCheckpointLeafSpec(slot="optimizer", tree_path="/32"),
-)
-
 
 @dataclass(frozen=True)
 class LaunchContinuation:
@@ -169,9 +152,10 @@ def attach_cs_supervised_checkpoint_continuation(
 ) -> TrainingRunSpec:
     """Declare a C&S total-length resume on the governed Feedbax spec.
 
-    The target slot template is built at the row's requested total horizon.
-    Feedbax then preserves the source prefix and supplies only the target
-    template's new tail for the explicitly declared diagnostic leaves.
+    Feedbax records the resumed work as a new segment. Batch histories are
+    marked by ``BatchHistory`` in the checkpoint slot tree and remain local to
+    that segment; lineage readers concatenate them when a whole-run view is
+    needed.
     """
 
     if not continuation.resume:
@@ -213,8 +197,7 @@ def declare_cs_supervised_checkpoint_continuation(
 
     request = CheckpointContinuationRequest(
         source_completed_batches=source_completed_batches,
-        target_total_batches=target_total_batches,
-        batch_indexed_leaves=list(CS_SUPERVISED_BATCH_INDEXED_CHECKPOINT_LEAVES),
+        additional_batches=target_total_batches - source_completed_batches,
     )
     checkpoint_progress = training_spec.checkpoint_progress.model_copy(
         update={"continuation": request}

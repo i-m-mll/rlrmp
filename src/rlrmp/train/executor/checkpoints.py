@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -44,7 +45,6 @@ class AdaptiveEpsilonState:
     clean_loss_ema: float | None = None
     last_update_batch: int | None = None
     update_count: int = 0
-    schedule_start_batch: int = 0
     zero_adversary_guard: dict[str, Any] | None = None
     gain_estimate: float | None = None
     gain_samples: int = 0
@@ -63,7 +63,6 @@ class AdaptiveEpsilonState:
             "clean_loss_ema": (None if self.clean_loss_ema is None else float(self.clean_loss_ema)),
             "last_update_batch": self.last_update_batch,
             "update_count": int(self.update_count),
-            "schedule_start_batch": int(self.schedule_start_batch),
             "gain_estimate": (None if self.gain_estimate is None else float(self.gain_estimate)),
             "gain_samples": int(self.gain_samples),
             "pending_lambda_log_step": (
@@ -138,6 +137,10 @@ def save_training_checkpoint(
             checkpoint_root,
             run_spec=run_spec,
             completed_batches=state.completed_batches,
+            program_step=_completed_train_chunk_ordinal(
+                completed_batches=state.completed_batches,
+                checkpoint_interval_batches=args.checkpoint_interval_batches,
+            ),
             slots=slots,
             status=_checkpoint_transaction_status(args, state),
         )
@@ -147,6 +150,18 @@ def save_training_checkpoint(
         metadata=metadata,
         custody_result=custody_result,
     )
+
+
+def _completed_train_chunk_ordinal(
+    *, completed_batches: int, checkpoint_interval_batches: int
+) -> int:
+    """Return the number of checkpoint-sized training chunks completed."""
+
+    if completed_batches < 0:
+        raise ValueError("completed_batches must be nonnegative")
+    if checkpoint_interval_batches < 1:
+        raise ValueError("checkpoint_interval_batches must be positive")
+    return math.ceil(completed_batches / checkpoint_interval_batches)
 
 
 def _save_training_checkpoint_materialization(
@@ -392,7 +407,6 @@ def _load_latest_checkpoint_materialization(
             ),
             last_update_batch=adaptive_payload.get("last_update_batch"),
             update_count=int(adaptive_payload.get("update_count", 0)),
-            schedule_start_batch=int(adaptive_payload.get("schedule_start_batch", 0)),
             zero_adversary_guard=(
                 _normalize_adaptive_epsilon_zero_guard(
                     adaptive_payload.get("zero_adversary_guard"),

@@ -229,13 +229,19 @@ negative_canary = [
     "tests/test_pipeline_contract_native.py::test_pipeline_contract_negative_canary_flags_unlisted_eval_rerun",
 ]
 
+[[families]]
+name = "training_config_flat_key_scan"
+owner = "ef8e1df"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_training_config_flat_legacy_keys.py::"
+minimum_non_skipped = 2
+
 [pipeline_contract_native]
 allowlist = [
     { path = "src/rlrmp/analysis/pipelines/bridge_aggregation.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "compatibility summarizer remains until report-stage aggregation replaces tracked writes" },
     { path = "src/rlrmp/analysis/pipelines/bridge_contracts.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "bridge manifest writer remains a shared compatibility surface pending custody routing" },
     { path = "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py", reasons = ["direct_durable_writer", "direct_eval_rerun"], owner = "ed225ef", reason = "standard certificate materializer still mixes writer and clean-rollout recovery paths" },
-    { path = "src/rlrmp/analysis/pipelines/cs_stochastic_phase1.py", reasons = ["direct_durable_writer", "direct_eval_rerun"], owner = "ed225ef", reason = "keep-frozen stochastic comparison retained until report-stage equivalent exists" },
-    { path = "src/rlrmp/analysis/pipelines/cs_stochastic_phase3.py", reasons = ["direct_durable_writer", "direct_eval_rerun"], owner = "ed225ef", reason = "keep-frozen stochastic comparison retained until report-stage equivalent exists" },
     { path = "src/rlrmp/analysis/pipelines/delayed_diagnostic_bundle.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "dormant delayed diagnostic bundle remains pending its revival issue" },
     { path = "src/rlrmp/analysis/pipelines/diagnostic_provenance.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "regeneration-spec writer is shared compatibility plumbing until custody routing lands" },
     { path = "src/rlrmp/analysis/pipelines/gru_broad_epsilon_attribution.py", reasons = ["direct_durable_writer", "direct_eval_rerun"], owner = "ed225ef", reason = "broad-epsilon attribution still materializes tracked sidecars outside bundle custody" },

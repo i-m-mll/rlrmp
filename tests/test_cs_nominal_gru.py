@@ -55,6 +55,10 @@ from rlrmp.loss import (
     get_reach_loss,
 )
 from rlrmp.paths import REPO_ROOT, run_artifact_dir, run_spec_dir
+from rlrmp.run_spec_identity import (
+    run_spec_payload_identity_sha256,
+    run_spec_semantic_checks,
+)
 import rlrmp.train.cs_nominal_gru as cs_nominal_gru
 import rlrmp.train.cs_perturbation_training as cs_perturbation_training
 import rlrmp.train.executor.cs_supervised as cs_supervised_executor
@@ -246,65 +250,9 @@ def _assert_no_absolute_string_leaves(value: Any) -> None:
 
 
 def _cs_nominal_gru_golden_fixture() -> dict:
-    return _normalize_golden_fixture_paths(
-        json.loads(
-            Path("tests/fixtures/cs_nominal_gru_config_golden.json").read_text(encoding="utf-8")
-        )
+    return json.loads(
+        Path("tests/fixtures/cs_nominal_gru_config_identity.json").read_text(encoding="utf-8")
     )
-
-
-def _normalize_golden_fixture_paths(value, *, key: str | None = None):
-    if key == "rlrmp_branch":
-        return "<current-branch>"
-    if isinstance(value, dict):
-        return {
-            child_key: _normalize_golden_fixture_paths(item, key=child_key)
-            for child_key, item in value.items()
-        }
-    if isinstance(value, list):
-        return [_normalize_golden_fixture_paths(item) for item in value]
-    if isinstance(value, str):
-        marker = "/worktrees/"
-        if marker in value:
-            prefix, suffix = value.split(marker, 1)
-            worktree_parts = suffix.split("/", 1)
-            if len(worktree_parts) == 2 and prefix.endswith("/rlrmp"):
-                return str(REPO_ROOT / worktree_parts[1])
-    return value
-
-
-def _stable_golden_run_spec_payload(payload: dict) -> dict:
-    fixture = _cs_nominal_gru_golden_fixture()
-    stable = {key: payload[key] for key in fixture["stable_run_spec_keys"]}
-    canonical = json.loads(
-        json.dumps(
-            stable,
-            sort_keys=True,
-        )
-    )
-    canonical["rlrmp_run_spec"]["provenance"]["git"]["rlrmp_commit"] = "<current-commit>"
-    canonical["rlrmp_run_spec"]["provenance"]["git"]["rlrmp_branch"] = "<current-branch>"
-    return _normalize_stochastic_float_precision(canonical)
-
-
-def _normalize_stochastic_float_precision(value, *, key: str | None = None):
-    precision_by_key = {
-        "diag_first_block": 6,
-        "initial_diag_first_block": 6,
-        "noise_std": 7,
-        "sensory_noise_std": 7,
-        "sensory_covariance_diag": 7,
-    }
-    if isinstance(value, dict):
-        return {
-            child_key: _normalize_stochastic_float_precision(item, key=child_key)
-            for child_key, item in value.items()
-        }
-    if isinstance(value, list):
-        return [_normalize_stochastic_float_precision(item, key=key) for item in value]
-    if isinstance(value, float) and key in precision_by_key:
-        return float(f"{value:.{precision_by_key[key]}g}")
-    return value
 
 
 def _cs_stochastic_gru_run_spec_paths() -> list[Path]:
@@ -510,8 +458,10 @@ def test_cs_nominal_gru_pre_refactor_golden_payloads_stay_stable() -> None:
             payload = write_run_spec(args)["run_spec"]
 
         assert config.model_dump(mode="python") == case["parsed_args"]
-        assert _stable_golden_run_spec_payload(payload) == _normalize_stochastic_float_precision(
-            case["stable_run_spec_payload"]
+        assert run_spec_semantic_checks(payload) == case["semantic_checks"]
+        assert (
+            run_spec_payload_identity_sha256(payload)
+            == case["stable_run_spec_identity_sha256"]
         )
 
 
@@ -520,7 +470,7 @@ def test_cs_nominal_gru_config_validates_tracked_cs_stochastic_gru_corpus() -> N
     clean_paths = []
     fail_closed: set[Path] = set()
 
-    assert len(paths) == 150
+    assert len(paths) == 74
     for path in paths:
         payload = hydrate_compact_run_spec_envelope(
             json.loads(path.read_text(encoding="utf-8"))
@@ -532,7 +482,7 @@ def test_cs_nominal_gru_config_validates_tracked_cs_stochastic_gru_corpus() -> N
         else:
             clean_paths.append(path)
 
-    assert len(clean_paths) == 150
+    assert len(clean_paths) == 74
     assert fail_closed == set()
 
 
@@ -661,7 +611,8 @@ def test_pgd_broad_epsilon_hps_declares_inner_maximizer() -> None:
     assert hps.broad_epsilon_training.enabled is False
 
 
-def test_pgd_broad_epsilon_hps_parser_consumes_nested_and_legacy_fields() -> None:
+def test_pgd_broad_epsilon_hps_parser_consumes_nested_fields_and_ignores_retired_flat_keys(
+) -> None:
     nested = TreeNamespace(
         enabled=True,
         level="strong",
@@ -673,12 +624,12 @@ def test_pgd_broad_epsilon_hps_parser_consumes_nested_and_legacy_fields() -> Non
             initialization="zero",
         ),
     )
-    legacy = TreeNamespace(
+    retired_flat = TreeNamespace(
         enabled=True,
         level="moderate",
         n_steps=7,
         step_size_fraction=0.375,
-        init="zero",
+        init="random",
     )
     nested_dict = {
         "enabled": True,
@@ -691,16 +642,18 @@ def test_pgd_broad_epsilon_hps_parser_consumes_nested_and_legacy_fields() -> Non
     }
 
     parsed_nested = PgdFullStateEpsilonTrainingConfig.from_payload(nested)
-    parsed_legacy = PgdFullStateEpsilonTrainingConfig.from_payload(legacy)
+    parsed_retired_flat = PgdFullStateEpsilonTrainingConfig.from_payload(retired_flat)
     parsed_dict = PgdFullStateEpsilonTrainingConfig.from_payload(nested_dict)
+    defaults = PgdFullStateEpsilonTrainingConfig()
 
     assert parsed_nested.level == "strong"
     assert parsed_nested.n_steps == 9
     assert parsed_nested.step_size_fraction == pytest.approx(0.125)
     assert parsed_nested.budget_scale == pytest.approx(1.5)
     assert parsed_nested.reach_length_scaling is False
-    assert parsed_legacy.n_steps == 7
-    assert parsed_legacy.step_size_fraction == pytest.approx(0.375)
+    assert parsed_retired_flat.n_steps == defaults.n_steps
+    assert parsed_retired_flat.step_size_fraction == defaults.step_size_fraction
+    assert parsed_retired_flat.init == defaults.init
     assert parsed_dict.n_steps == 11
     assert parsed_dict.step_size_fraction == pytest.approx(0.2)
 
@@ -1065,36 +1018,18 @@ def test_adaptive_epsilon_schedules_and_lambda_update_are_conservative() -> None
 
 
 def test_adaptive_epsilon_continuation_schedule_is_relative_to_resume_start() -> None:
-    hps = build_hps(
-        _args(
-            broad_epsilon_pgd_training=True,
-            broad_epsilon_pgd_objective=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
-            broad_epsilon_pgd_energy_lambda=10.0,
-            adaptive_epsilon_curriculum=True,
-            target_relative_multitarget=True,
-        )
+    config = TreeNamespace(
+        outer_adversarial_weight=TreeNamespace(start=0.0, final=1.0, ramp_batches=1_000)
     )
-    cfg = hps.adaptive_epsilon_curriculum
-    resumed_state = _initial_adaptive_epsilon_state(hps, schedule_start_batch=12000)
-    scratch_state = _initial_adaptive_epsilon_state(hps)
-    assert resumed_state is not None
-    assert scratch_state is not None
+    scales = [
+        _adaptive_epsilon_outer_weight(
+            config,
+            _adaptive_epsilon_schedule_batch(batch, ramp_start_batch=12_000),
+        )
+        for batch in (12_000, 12_500, 13_000)
+    ]
 
-    assert _adaptive_epsilon_schedule_batch(resumed_state, 12000) == 0
-    assert _adaptive_epsilon_schedule_batch(resumed_state, 13250) == 1250
-    assert _adaptive_epsilon_schedule_batch(resumed_state, 14500) == 2500
-    assert _adaptive_epsilon_schedule_batch(resumed_state, 19499) == 7499
-    assert _adaptive_epsilon_damage_target(
-        cfg,
-        _adaptive_epsilon_schedule_batch(resumed_state, 13250),
-    ) == pytest.approx(1750.0)
-    assert _adaptive_epsilon_outer_weight(
-        cfg,
-        _adaptive_epsilon_schedule_batch(resumed_state, 13250),
-    ) == pytest.approx(0.5)
-
-    assert _adaptive_epsilon_schedule_batch(scratch_state, 0) == 0
-    assert _adaptive_epsilon_schedule_batch(scratch_state, 2500) == 2500
+    assert scales == pytest.approx([0.0, 0.5, 1.0])
 
 
 def test_scale_direct_epsilon_trial_specs_scales_only_epsilon_channel() -> None:
@@ -5950,7 +5885,7 @@ def test_target_hps_without_profile_normalizes_to_band16_default() -> None:
     assert config.held_out_amplitudes_m == (TARGET_SUPPORT_CONST_REACH_M,)
 
 
-def test_target_hps_normalization_matches_frozen_override_outputs() -> None:
+def test_target_hps_normalization_consumes_nested_fields_and_ignores_retired_flat_keys() -> None:
     cases = {
         "nested_old": TreeNamespace(
             enabled=True,
@@ -5965,7 +5900,7 @@ def test_target_hps_normalization_matches_frozen_override_outputs() -> None:
                 support_metadata={"source": "nested"},
             ),
         ),
-        "top_level_overrides_nested": TreeNamespace(
+        "retired_top_level_ignored": TreeNamespace(
             enabled=True,
             force_filter_feedback=False,
             target_support_profile=TARGET_SUPPORT_PROFILE_CONST_SPARSE8,
@@ -5977,8 +5912,12 @@ def test_target_hps_normalization_matches_frozen_override_outputs() -> None:
             support_metadata={"source": "top"},
             target_distribution=TreeNamespace(
                 target_support_profile=TARGET_SUPPORT_PROFILE_020A65B,
-                seen_directions_deg=(45.0,),
-                support_metadata={"source": "nested"},
+                seen_directions_deg=(0.0, 45.0),
+                held_out_directions_deg=(135.0,),
+                seen_amplitudes_m=(0.15,),
+                held_out_amplitudes_m=(0.18,),
+                original_target_anchor_m=(0.15, 0.0),
+                support_metadata={"source": "nested_wins"},
             ),
         ),
     }
@@ -5995,16 +5934,16 @@ def test_target_hps_normalization_matches_frozen_override_outputs() -> None:
             "original_target_anchor_m": (0.15, 0.0),
             "support_metadata": (("source", "nested"),),
         },
-        "top_level_overrides_nested": {
+        "retired_top_level_ignored": {
             "enabled": True,
             "force_filter_feedback": False,
-            "target_support_profile": TARGET_SUPPORT_PROFILE_CONST_SPARSE8,
-            "seen_directions_deg": (0.0, 180.0),
-            "held_out_directions_deg": (90.0, 270.0),
+            "target_support_profile": TARGET_SUPPORT_PROFILE_020A65B,
+            "seen_directions_deg": (0.0, 45.0),
+            "held_out_directions_deg": (135.0,),
             "seen_amplitudes_m": (0.15,),
-            "held_out_amplitudes_m": (0.12,),
+            "held_out_amplitudes_m": (0.18,),
             "original_target_anchor_m": (0.15, 0.0),
-            "support_metadata": (("source", "top"),),
+            "support_metadata": (("source", "nested_wins"),),
         },
     }
 
@@ -6773,10 +6712,15 @@ def test_pgd_soft_energy_objective_penalizes_epsilon_energy() -> None:
         config={
             "enabled": True,
             "reach_length_scaling": False,
-            "fixed_l2_radius_15cm": 1.0,
-            "fixed_radius_source": "unit_test_fixed_radius",
-            "n_steps": 1,
-            "step_size_fraction": 1.0,
+            "budget_contract": {
+                "effective_l2_radius_15cm": 1.0,
+                "budget_source": {"key": "unit_test_fixed_radius"},
+            },
+            "budget_schedule": {"mode": "fixed"},
+            "inner_maximizer": {
+                "n_steps": 1,
+                "step_size_fraction_of_l2_radius": 1.0,
+            },
             "epsilon_dim": 1,
         },
         return_diagnostics=True,
@@ -6798,8 +6742,10 @@ def test_pgd_soft_energy_objective_penalizes_epsilon_energy() -> None:
                 "l2_radius_15cm": 1.0,
                 "source": {"key": "unit_test_cap"},
             },
-            "n_steps": 1,
-            "step_size_fraction": 1.0,
+            "inner_maximizer": {
+                "n_steps": 1,
+                "step_size_fraction_of_l2_radius": 1.0,
+            },
             "epsilon_dim": 1,
         },
         return_diagnostics=True,
@@ -6873,8 +6819,10 @@ def test_pgd_cap_free_soft_energy_direct_epsilon_does_not_project(
                 "kind": BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
                 "lambda": 0.1,
             },
-            "n_steps": 1,
-            "step_size_fraction": 1.0,
+            "inner_maximizer": {
+                "n_steps": 1,
+                "step_size_fraction_of_l2_radius": 1.0,
+            },
             "epsilon_dim": 1,
         },
         return_diagnostics=True,
@@ -6923,8 +6871,10 @@ def test_pgd_cap_free_soft_energy_lambda_override_is_jittable() -> None:
             "kind": BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
             "lambda": 10.0,
         },
-        "n_steps": 1,
-        "step_size_fraction": 1.0,
+        "inner_maximizer": {
+            "n_steps": 1,
+            "step_size_fraction_of_l2_radius": 1.0,
+        },
         "epsilon_dim": 1,
     }
 
@@ -6989,8 +6939,11 @@ def test_pgd_soft_energy_lambda_override_rejects_non_direct_soft_modes() -> None
             config={
                 "enabled": True,
                 "reach_length_scaling": False,
-                "fixed_l2_radius_15cm": 1.0,
-                "fixed_radius_source": "unit_test_fixed_radius",
+                "budget_contract": {
+                    "effective_l2_radius_15cm": 1.0,
+                    "budget_source": {"key": "unit_test_fixed_radius"},
+                },
+                "budget_schedule": {"mode": "fixed"},
                 "epsilon_dim": 1,
             },
             soft_energy_lambda_override=jnp.asarray(1.0, dtype=jnp.float32),
@@ -7005,7 +6958,10 @@ def test_pgd_soft_energy_lambda_override_rejects_non_direct_soft_modes() -> None
             keys_model=None,
             config={
                 "enabled": True,
-                "adversary_mechanism": LINEAR_NO_BIAS_POLICY,
+                "mechanism": {
+                    "name": LINEAR_NO_BIAS_POLICY,
+                    "policy_class": LINEAR_NO_BIAS_POLICY,
+                },
                 "reach_length_scaling": False,
                 "objective": {
                     "kind": BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
@@ -7063,8 +7019,10 @@ def test_pgd_soft_energy_objective_is_batch_size_invariant() -> None:
                     "l2_radius_15cm": 1.0,
                     "source": {"key": "unit_test_cap"},
                 },
-                "n_steps": 1,
-                "step_size_fraction": 1.0,
+                "inner_maximizer": {
+                    "n_steps": 1,
+                    "step_size_fraction_of_l2_radius": 1.0,
+                },
                 "epsilon_dim": 1,
             },
             return_diagnostics=True,

@@ -338,19 +338,15 @@ def test_representative_historical_artifacts_load_or_reject_by_policy() -> None:
     assert run_spec.schema_id == RUN_SPEC_SCHEMA_ID
     assert run_spec.target_version == RUN_SPEC_SCHEMA_VERSION
 
-    migrated_cs_gru = load_rlrmp_spec_payload(
-        RUN_SPEC_KIND,
+    retired_nested_cs_gru = (
         REPO_ROOT
         / "results"
         / "30f2313"
         / "runs"
         / "cs_stochastic_gru__hidden_penalty"
-        / "run.json",
+        / "run.json"
     )
-    assert migrated_cs_gru.source_version == RUN_SPEC_SCHEMA_VERSION_LEGACY_CS_GRU
-    assert migrated_cs_gru.target_version == RUN_SPEC_SCHEMA_VERSION
-    assert migrated_cs_gru.migrated
-    assert migrated_cs_gru.payload["migration_policy"] == "migrated_active_v1_to_v2"
+    assert not retired_nested_cs_gru.exists()
 
     evaluation_manifest = load_rlrmp_spec_payload(
         GRU_EVALUATION_DIAGNOSTICS_KIND,

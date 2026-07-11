@@ -35,7 +35,7 @@ def test_write_regeneration_spec_records_inputs_outputs_and_source_files(
     tmp_path: Path,
 ) -> None:
     repo_root = tmp_path
-    input_path = repo_root / "results" / "abc1234" / "runs" / "run_a" / "run.json"
+    input_path = repo_root / "results" / "abc1234" / "runs" / "run_a.json"
     output_path = repo_root / "results" / "abc1234" / "notes" / "diag.json"
     source_path = repo_root / "src" / "rlrmp" / "analysis" / "diag.py"
     input_path.parent.mkdir(parents=True)
@@ -66,7 +66,7 @@ def test_write_regeneration_spec_records_inputs_outputs_and_source_files(
     assert spec["schema_id"] == REGENERATION_SPEC_SCHEMA_ID
     assert spec["schema_version"] == REGENERATION_SPEC_SCHEMA_VERSION
     assert spec["parameters"]["run_ids"] == ["run_a"]
-    assert spec["inputs"][0]["logical_name"] == "results/abc1234/runs/run_a/run.json"
+    assert spec["inputs"][0]["logical_name"] == "results/abc1234/runs/run_a.json"
     assert spec["outputs"][0]["logical_name"] == "results/abc1234/notes/diag.json"
     assert spec["source_files"][0]["path"] == "src/rlrmp/analysis/diag.py"
     assert spec["metadata"]["diagnostic_name"] == "unit_test_diagnostic"
