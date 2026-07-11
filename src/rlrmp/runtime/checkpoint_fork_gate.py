@@ -110,8 +110,16 @@ def fork_checkpoints_with_parity(
     target_roots = {target.row_id: target.checkpoint_root for target in targets}
     adaptive_contracts = _adaptive_continuation_fork_contracts(materialized)
     reporter = RlrmpLrContinuationReporter(source_checkpoint_root=source_checkpoint_root)
+    feedbax_matrix = matrix
+    if adaptive_contracts and matrix.fork is not None:
+        # Feedbax's byte-parity table treats declared target-only slots as a
+        # topology mismatch. RLRMP composes and enforces topology-aware parity
+        # from custody provenance immediately below.
+        feedbax_matrix = matrix.model_copy(
+            update={"fork": matrix.fork.model_copy(update={"parity": "skip"})}
+        )
     table = fork_matrix_checkpoints(
-        matrix,
+        feedbax_matrix,
         materialized,
         source_checkpoint_root=source_checkpoint_root,
         target_checkpoint_roots=target_roots,
@@ -127,13 +135,114 @@ def fork_checkpoints_with_parity(
         lr_reporter=reporter,
         tool_version="rlrmp.checkpoint_fork_gate.v2",
     )
+    if adaptive_contracts:
+        table = _compose_adaptive_fork_parity(
+            table,
+            matrix=matrix,
+            materialized=materialized,
+            target_roots=target_roots,
+            adaptive_contracts=adaptive_contracts,
+        )
     if ratio_setpoint is not None:
         table["ratio_setpoint"] = ratio_setpoint
-        parity_output_path.write_text(
-            json.dumps(table, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
+    parity_output_path.write_text(
+        json.dumps(table, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    if table.get("ok") is not True:
+        raise ForkParityError("composed checkpoint fork parity is not green")
     return table
+
+
+def _compose_adaptive_fork_parity(
+    feedbax_table: Mapping[str, Any],
+    *,
+    matrix: TrainingRunMatrixSpec,
+    materialized: Any,
+    target_roots: Mapping[str, Path],
+    adaptive_contracts: Mapping[
+        str, tuple[NominalToAdaptiveSlotAdapter, CheckpointForkBarrierMapping]
+    ],
+) -> dict[str, Any]:
+    """Compose topology-aware parity from custody provenance and LR evidence."""
+
+    lr_rows = [
+        dict(row)
+        for row in feedbax_table.get("rows", [])
+        if isinstance(row, Mapping) and row.get("kind") == "lr_continuation"
+    ]
+    lr_row_ids = {str(row.get("row_id")) for row in lr_rows}
+    expected_row_ids = set(adaptive_contracts)
+    if lr_row_ids != expected_row_ids:
+        raise ForkParityError(
+            "adaptive fork parity LR row coverage mismatch; "
+            f"expected={sorted(expected_row_ids)!r} actual={sorted(lr_row_ids)!r}"
+        )
+    planned_ids = {row.row_id: row.planned_run_id for row in materialized.rows}
+    expected_slots = tuple(matrix.fork.expected_slots if matrix.fork is not None else ())
+    parity_rows: list[dict[str, Any]] = []
+    mismatches: list[str] = []
+    for row_id, (adapter, _mapping) in adaptive_contracts.items():
+        manifest = _read_latest_manifest(target_roots[row_id])
+        provenance = manifest.get("fork_provenance")
+        records = provenance.get("slots") if isinstance(provenance, Mapping) else None
+        by_slot = {
+            str(record.get("slot")): record
+            for record in records or []
+            if isinstance(record, Mapping) and isinstance(record.get("slot"), str)
+        }
+        for slot in expected_slots:
+            record = by_slot.get(slot, {})
+            source_sha = record.get("source_sha256")
+            target_sha = record.get("target_sha256")
+            transformed = slot in adapter.target_transformed_slots
+            transform = record.get("transform")
+            transform_identity = (
+                transform.get("identity") if isinstance(transform, Mapping) else None
+            )
+            ok = (
+                isinstance(source_sha, str)
+                and isinstance(target_sha, str)
+                and (
+                    transform_identity == adapter.transform_metadata["identity"]
+                    if transformed
+                    else source_sha == target_sha
+                )
+            )
+            if not ok:
+                mismatches.append(f"row={row_id} slot={slot}")
+            parity_rows.append(
+                {
+                    "kind": "slot_parity",
+                    "row_id": row_id,
+                    "planned_run_id": planned_ids[row_id],
+                    "transaction_id": manifest.get("transaction_id"),
+                    "slot": slot,
+                    "source_digest": source_sha,
+                    "target_digest": target_sha,
+                    "comparison": "declared_transform" if transformed else "byte_identical",
+                    "transform_identity": transform_identity,
+                    "ok": ok,
+                }
+            )
+    table = dict(feedbax_table)
+    table["rows"] = [*parity_rows, *lr_rows]
+    table["ok"] = not mismatches
+    if mismatches:
+        raise ForkParityError("; ".join(mismatches))
+    return table
+
+
+def _read_latest_manifest(root: Path) -> dict[str, Any]:
+    latest_path = root / "latest.json"
+    latest = json.loads(latest_path.read_text(encoding="utf-8"))
+    relative_path = latest.get("manifest_relative_path")
+    if not isinstance(relative_path, str) or not relative_path:
+        raise ForkParityError(f"checkpoint latest pointer lacks manifest path: {latest_path}")
+    manifest = json.loads((root / relative_path).read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict):
+        raise ForkParityError(f"checkpoint manifest is not an object: {root / relative_path}")
+    return manifest
 
 
 def _adaptive_continuation_fork_contracts(
