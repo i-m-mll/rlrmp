@@ -15,12 +15,12 @@ from rlrmp.analysis.math.output_feedback import (
     OutputFeedbackConfig,
     kalman_estimator_joint_matrices,
 )
-from rlrmp.analysis.pipelines.bridge_certificates import build_standard_certificate_components
-from rlrmp.analysis.pipelines.bridge_contracts import (
+from rlrmp.analysis.bridge_certificates import build_standard_certificate_components
+from rlrmp.analysis.bridge_results import (
     BridgeArchitecture,
     BridgeCertificateComponent,
     BridgeCertificateMode,
-    BridgeRunManifest,
+    BridgeAnalysisResult,
     BridgeRunSpec,
     make_bridge_run_id,
 )
@@ -54,7 +54,7 @@ class StandardCertificateRowRequest:
 
 def build_standard_certificate_manifest(
     request: StandardCertificateRowRequest,
-) -> BridgeRunManifest:
+) -> BridgeAnalysisResult:
     """Build one serialized manifest row from a standard-certificate request."""
 
     components = build_standard_certificate_components(
@@ -62,7 +62,7 @@ def build_standard_certificate_manifest(
         certificate_mode=request.certificate_mode,
         **request.component_kwargs,
     )
-    return BridgeRunManifest(
+    return BridgeAnalysisResult(
         spec=request.spec,
         status=request.status,
         metrics=request.metrics,
@@ -72,12 +72,12 @@ def build_standard_certificate_manifest(
 
 
 def component_by_name(
-    row: BridgeRunManifest | dict[str, Any],
+    row: BridgeAnalysisResult | dict[str, Any],
 ) -> dict[str, BridgeCertificateComponent | dict[str, Any]]:
     """Return certificate components keyed by component name."""
 
     components: Any
-    if isinstance(row, BridgeRunManifest):
+    if isinstance(row, BridgeAnalysisResult):
         components = row.certificate_components
     else:
         components = row.get("certificate_components", ())
@@ -89,14 +89,14 @@ def component_by_name(
     }
 
 
-def component_status_counts(rows: list[BridgeRunManifest] | list[dict[str, Any]]) -> dict[str, int]:
+def component_status_counts(rows: list[BridgeAnalysisResult] | list[dict[str, Any]]) -> dict[str, int]:
     """Return stable ``component:status`` counts for materialized rows."""
 
     counts: Counter[str] = Counter()
     for row in rows:
         components = (
             row.certificate_components
-            if isinstance(row, BridgeRunManifest)
+            if isinstance(row, BridgeAnalysisResult)
             else row.get("certificate_components", ())
         )
         for component in components:
@@ -110,7 +110,7 @@ def component_status_counts(rows: list[BridgeRunManifest] | list[dict[str, Any]]
     return dict(sorted(counts.items()))
 
 
-def materialization_summary(rows: list[BridgeRunManifest]) -> dict[str, Any]:
+def materialization_summary(rows: list[BridgeAnalysisResult]) -> dict[str, Any]:
     """Return a compact JSON summary for a standard-certificate result."""
 
     status_counts = Counter(row.status for row in rows)
@@ -150,7 +150,7 @@ def deterministic_output_feedback_rows(
     reference_controller: str = "analytical_lqr_kalman",
     row_metrics: dict[str, Any] | None = None,
     repo_root: Path = REPO_ROOT,
-) -> list[BridgeRunManifest]:
+) -> list[BridgeAnalysisResult]:
     """Build deterministic output-feedback certificate rows from saved arrays."""
 
     rows = []
@@ -199,7 +199,7 @@ def deterministic_output_feedback_rows(
             notes=notes,
         )
         rows.append(
-            BridgeRunManifest(
+            BridgeAnalysisResult(
                 spec=spec,
                 status="full_standard_certificate",
                 metrics=_fit_metrics(fit)
@@ -262,7 +262,7 @@ def deterministic_standard_rows_from_manifest_entries(
             ),
             row_metrics=entry.get("metrics"),
         )
-        rows.extend(row.to_json_dict() for row in row_manifests)
+        rows.extend(row.to_payload() for row in row_manifests)
     return rows
 
 

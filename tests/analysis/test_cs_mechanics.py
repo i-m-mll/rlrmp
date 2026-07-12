@@ -14,7 +14,7 @@ from feedbax.mechanics import LinearStateSpace
 from feedbax.contracts.graphs.serialization import spec_to_graph
 
 from rlrmp.analysis.math.cs_game_card import build_canonical_game
-from rlrmp.analysis.pipelines.feedbax_parity import (
+from rlrmp.model.cs_mechanics import (
     DEFAULT_NODE_ID,
     PHYSICAL_STATE_LABELS,
     build_cs2019_feedbax_graph_spec,

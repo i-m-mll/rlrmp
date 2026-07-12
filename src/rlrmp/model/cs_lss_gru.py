@@ -41,7 +41,7 @@ from feedbax.contracts.graphs.serialization import spec_to_graph
 from feedbax.runtime.state import CartesianState
 
 from rlrmp.analysis.math.cs_game_card import build_canonical_game
-from rlrmp.analysis.pipelines.feedbax_parity import build_cs2019_feedbax_mechanics
+from rlrmp.model.cs_mechanics import build_cs2019_feedbax_mechanics
 from rlrmp.model.feedbax_graph import (
     NATIVE_SUBGRAPH_COMPONENT,
     native_recurrent_controller_subgraph,

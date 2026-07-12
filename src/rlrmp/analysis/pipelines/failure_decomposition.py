@@ -23,7 +23,7 @@ from typing import Any, Literal
 import numpy as np
 
 from rlrmp.analysis.math.cs_game_card import materialize_reference
-from rlrmp.analysis.pipelines.bridge_certificates import (
+from rlrmp.analysis.bridge_certificates import (
     DISTURBANCE_HISTORY_TO_ACTION_MAP_MISMATCH,
     DISTURBANCE_HISTORY_TO_OUTPUT_MAP_MISMATCH,
     DISTURBANCE_HISTORY_TO_STATE_MAP_MISMATCH,

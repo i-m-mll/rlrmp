@@ -8,7 +8,7 @@ from feedbax import TaskTrialSpec, WhereDict
 from feedbax.objectives.loss import TargetSpec
 
 import rlrmp.analysis.pipelines.cs_gru_standard_materialization as cs_standard
-from rlrmp.analysis.pipelines.bridge_certificates import (
+from rlrmp.analysis.bridge_certificates import (
     BELLMAN_HESSIAN_RESIDUAL,
     CLOSED_LOOP_TRANSITION_MISMATCH,
     MEASUREMENT_HISTORY_TO_ACTION_MAP_MISMATCH,
@@ -118,7 +118,7 @@ def test_gru_manifest_keeps_same_coordinate_rows_not_applicable() -> None:
         action_weight=np.broadcast_to(np.eye(2), (3, 2, 2)),
         source_issue_id="3b2af27",
     )
-    row = manifest.to_json_dict()
+    row = manifest.to_payload()
     by_name = _components(row)
 
     assert row["spec"]["architecture"] == "gru"
@@ -156,7 +156,7 @@ def test_gru_manifest_accepts_4d_observation_response_maps() -> None:
         candidate_observation_to_action_map=candidate_map,
         reference_observation_to_action_map=reference_map,
     )
-    row = manifest.to_json_dict()
+    row = manifest.to_payload()
     by_name = _components(row)
 
     assert row["metrics"]["io_response_map_status"] == "available_4d_observation_contract"
@@ -212,7 +212,7 @@ def test_gru_manifest_adds_covariance_weighted_observation_response_map() -> Non
         observation_history_covariance=covariance,
         observation_history_covariance_metadata=covariance_metadata,
     )
-    row = manifest.to_json_dict()
+    row = manifest.to_payload()
     summary = _components(row)[OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH]["summary"]
 
     assert row["metrics"]["observation_history_covariance"]["status"] == "available"
@@ -272,7 +272,7 @@ def test_gru_manifest_marks_covariance_weighted_observation_response_map_missing
         candidate_observation_to_action_map=candidate_map,
         reference_observation_to_action_map=reference_map,
     )
-    row = manifest.to_json_dict()
+    row = manifest.to_payload()
     summary = _components(row)[OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH]["summary"]
 
     assert row["metrics"]["observation_history_covariance"]["status"] == "missing"

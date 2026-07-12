@@ -1,25 +1,22 @@
-"""Tests for bridge manifest aggregation helpers."""
+"""Tests for structured bridge-result aggregation helpers."""
 
 from __future__ import annotations
 
 import pytest
 
-from rlrmp.analysis.pipelines.bridge_aggregation import (
+from rlrmp.analysis.bridge_aggregation import (
     BRIDGE_SUMMARY_FORMAT,
-    BridgeManifestValidationError,
-    bridge_manifest_row,
-    read_bridge_summary,
+    BridgeResultValidationError,
+    bridge_result_row,
     render_bridge_summary_markdown,
-    summarize_bridge_manifests,
-    validate_bridge_manifest,
-    write_bridge_summary,
+    summarize_bridge_results,
+    validate_bridge_result,
 )
-from rlrmp.analysis.pipelines.bridge_contracts import (
+from rlrmp.analysis.bridge_results import (
+    BridgeAnalysisResult,
     BridgeCertificateComponent,
-    BridgeRunManifest,
     BridgeRunSpec,
     make_bridge_run_id,
-    write_bridge_manifest,
 )
 
 
@@ -45,8 +42,8 @@ def _manifest(
     *,
     artifacts: dict[str, str] | None = None,
     components: tuple[BridgeCertificateComponent, ...] | None = None,
-) -> BridgeRunManifest:
-    return BridgeRunManifest(
+) -> BridgeAnalysisResult:
+    return BridgeAnalysisResult(
         spec=_spec(label),
         status="smoke",
         metrics={"cost": {"mean": 1.25}, "terminal_error_m": 0.03},
@@ -65,21 +62,15 @@ def _manifest(
     )
 
 
-def test_summarize_bridge_manifests_validates_and_flattens_rows(tmp_path) -> None:
-    first_path = tmp_path / "first.json"
-    second_path = tmp_path / "second.json"
-    write_bridge_manifest(_manifest("first"), first_path)
-    write_bridge_manifest(_manifest("second"), second_path)
-
-    summary = summarize_bridge_manifests(
-        [first_path, second_path],
+def test_summarize_bridge_results_validates_and_flattens_rows() -> None:
+    summary = summarize_bridge_results(
+        [_manifest("first"), _manifest("second")],
         required_artifact_labels=["arrays"],
         required_certificate_labels=["recurrence_rollout", "closed_loop_transition"],
     )
 
     assert summary["format"] == BRIDGE_SUMMARY_FORMAT
     assert [row["run_id"] for row in summary["rows"]] == ["bridge__first", "bridge__second"]
-    assert summary["rows"][0]["source_path"] == str(first_path)
     assert summary["rows"][0]["parameter.nested.alpha"] == 0.25
     assert summary["rows"][0]["metric.cost.mean"] == 1.25
     assert summary["rows"][0]["artifact.arrays"] == "_artifacts/8703ca0/arrays.npz"
@@ -89,14 +80,14 @@ def test_summarize_bridge_manifests_validates_and_flattens_rows(tmp_path) -> Non
     assert "reference controller" in summary["rows"][0]["certificate.closed_loop_transition.reason"]
 
 
-def test_validate_bridge_manifest_rejects_missing_required_artifact() -> None:
+def test_validate_bridge_result_rejects_missing_required_artifact() -> None:
     manifest = _manifest(artifacts={})
 
-    with pytest.raises(BridgeManifestValidationError, match="missing required artifact label"):
-        validate_bridge_manifest(manifest, required_artifact_labels=["arrays"])
+    with pytest.raises(BridgeResultValidationError, match="missing required artifact label"):
+        validate_bridge_result(manifest, required_artifact_labels=["arrays"])
 
 
-def test_validate_bridge_manifest_rejects_missing_required_certificate_status() -> None:
+def test_validate_bridge_result_rejects_missing_required_certificate_status() -> None:
     manifest = _manifest(
         components=(
             BridgeCertificateComponent(
@@ -107,42 +98,35 @@ def test_validate_bridge_manifest_rejects_missing_required_certificate_status() 
         )
     )
 
-    with pytest.raises(BridgeManifestValidationError, match="status 'missing'"):
-        validate_bridge_manifest(manifest, required_certificate_labels=["recurrence_rollout"])
+    with pytest.raises(BridgeResultValidationError, match="status 'missing'"):
+        validate_bridge_result(manifest, required_certificate_labels=["recurrence_rollout"])
 
-    validate_bridge_manifest(
+    validate_bridge_result(
         manifest,
         required_certificate_labels=["recurrence_rollout"],
         allow_missing_certificate_components=True,
     )
 
 
-def test_bridge_manifest_row_rejects_duplicate_flattened_labels() -> None:
-    manifest = BridgeRunManifest(
+def test_bridge_result_row_rejects_duplicate_flattened_labels() -> None:
+    manifest = BridgeAnalysisResult(
         spec=BridgeRunSpec(
             **{
-                **_spec().to_json_dict(),
+                **_spec().to_payload(),
                 "parameters": {"nested.alpha": 1.0, "nested": {"alpha": 2.0}},
             }
         ),
         status="smoke",
     )
 
-    with pytest.raises(BridgeManifestValidationError, match="duplicate bridge row label"):
-        bridge_manifest_row(manifest)
+    with pytest.raises(BridgeResultValidationError, match="duplicate bridge row label"):
+        bridge_result_row(manifest)
 
 
-def test_summary_json_and_markdown_outputs_are_stable(tmp_path) -> None:
-    path = tmp_path / "manifest.json"
-    summary_path = tmp_path / "summary.json"
-    write_bridge_manifest(_manifest("pipe"), path)
-    summary = summarize_bridge_manifests([path])
+def test_summary_payload_and_markdown_render_are_stable() -> None:
+    summary = summarize_bridge_results([_manifest("pipe")])
+    markdown = render_bridge_summary_markdown(summary["rows"])
 
-    write_bridge_summary(summary, summary_path)
-    observed = read_bridge_summary(summary_path)
-    markdown = render_bridge_summary_markdown(observed["rows"])
-
-    assert observed == summary
     assert markdown.splitlines()[0].startswith("| run_id | status | objective | architecture |")
     assert "| bridge__pipe | smoke | diagnostic | linear_recurrence |" in markdown
     assert "metric.cost.mean" in markdown

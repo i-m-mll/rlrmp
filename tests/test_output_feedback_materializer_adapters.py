@@ -8,13 +8,13 @@ import numpy as np
 
 from rlrmp.analysis.pipelines import failure_decomposition as failure
 from rlrmp.analysis.pipelines import standard_certificate_materialization as certificates
-from rlrmp.analysis.pipelines.bridge_certificates import (
+from rlrmp.analysis.bridge_certificates import (
     BELLMAN_HESSIAN_RESIDUAL,
     CLOSED_LOOP_TRANSITION_MISMATCH,
     STATE_WEIGHTED_ACTION_MISMATCH,
     VALUE_POLICY_GAP,
 )
-from rlrmp.analysis.pipelines.bridge_contracts import BridgeCertificateComponent
+from rlrmp.analysis.bridge_results import BridgeCertificateComponent
 
 
 def _fit(label: str) -> dict[str, object]:

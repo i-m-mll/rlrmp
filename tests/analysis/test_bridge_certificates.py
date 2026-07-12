@@ -6,7 +6,7 @@ import warnings
 
 import numpy as np
 
-from rlrmp.analysis.pipelines.bridge_certificates import (
+from rlrmp.analysis.bridge_certificates import (
     BELLMAN_HESSIAN_RESIDUAL,
     CLOSED_LOOP_TRANSITION_MISMATCH,
     DISTURBANCE_HISTORY_TO_COST_QUADRATIC,
@@ -24,12 +24,10 @@ from rlrmp.analysis.pipelines.bridge_certificates import (
     action_energy_mismatch_summary,
     build_standard_certificate_components,
 )
-from rlrmp.analysis.pipelines.bridge_contracts import (
-    BridgeRunManifest,
+from rlrmp.analysis.bridge_results import (
+    BridgeAnalysisResult,
     BridgeRunSpec,
     make_bridge_run_id,
-    read_bridge_manifest,
-    write_bridge_manifest,
 )
 
 
@@ -85,7 +83,7 @@ def _linear_fixture() -> dict[str, np.ndarray]:
     }
 
 
-def test_linear_components_are_available_and_manifest_compatible(tmp_path) -> None:
+def test_linear_components_are_available_and_result_compatible() -> None:
     fixture = _linear_fixture()
 
     components = build_standard_certificate_components(
@@ -112,15 +110,12 @@ def test_linear_components_are_available_and_manifest_compatible(tmp_path) -> No
     assert by_name[STATE_WEIGHTED_ACTION_MISMATCH].summary["mismatch_ratio_mean"] > 0.0
     assert by_name[STATE_WEIGHTED_ACTION_MISMATCH].summary["aggregate_mismatch_ratio"] > 0.0
 
-    manifest = BridgeRunManifest(
+    result = BridgeAnalysisResult(
         spec=_spec(),
         status="smoke",
         certificate_components=components,
     )
-    path = tmp_path / "manifest.json"
-    write_bridge_manifest(manifest, path)
-
-    assert read_bridge_manifest(path) == manifest
+    assert len(result.to_payload()["certificate_components"]) == len(components)
 
 
 def test_missing_rows_are_explicit_when_inputs_are_absent() -> None:
