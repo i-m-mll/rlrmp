@@ -161,7 +161,7 @@ def _training_diagnostics(packet: RowLaunchPacket, result: Any) -> dict[str, Any
     payload = packet.payload
     metadata = dict(payload.get("metadata") or {})
     continuation = payload.get("checkpoint_progress", {}).get("continuation") or {}
-    declared = int(
+    segment_completed = int(
         continuation.get(
             "additional_batches",
             payload.get(
@@ -172,6 +172,7 @@ def _training_diagnostics(packet: RowLaunchPacket, result: Any) -> dict[str, Any
             ),
         )
     )
+    absolute_completed = int(payload.get("training_config", {}).get("n_batches", segment_completed))
     checkpoint_interval = int(
         payload.get(
             "checkpoint_interval",
@@ -180,26 +181,49 @@ def _training_diagnostics(packet: RowLaunchPacket, result: Any) -> dict[str, Any
                 payload.get("training", {}).get("checkpoint_interval", 0),
             ),
         )
-        or declared
+        or segment_completed
         or 1
     )
     source = int(metadata.get("resume_context", {}).get("current_step", 0))
-    checkpoints = list(range(checkpoint_interval, declared + 1, checkpoint_interval))
-    return {
-        "completed_batches": declared,
+    checkpoints = list(range(checkpoint_interval, segment_completed + 1, checkpoint_interval))
+    segment_program_steps = list(range(1, len(result.checkpoint_writes) + 1))
+    custody_program_steps = _custody_checkpoint_program_steps(result.checkpoint_writes)
+    diagnostics = {
+        "completed_batches": absolute_completed,
+        "segment_completed_batches": segment_completed,
         "checkpoint_coordinates": checkpoints,
-        "raw_checkpoint_program_steps": [
-            getattr(item, "completed_coordinate", {}).get("program_step")
-            if isinstance(getattr(item, "completed_coordinate", None), dict)
-            else index + 1
-            for index, item in enumerate(result.checkpoint_writes)
-        ],
+        "segment_checkpoint_program_steps": segment_program_steps,
         "absolute_completed_batches": [source + item for item in checkpoints],
         "resume_context": metadata.get("resume_context", {}),
         "optimizer_build_context": metadata.get("optimizer_build_context", {}),
         "lr_trace": _lr_trace(payload, metadata),
-        "seeds": payload.get("seeds", [metadata.get("seed", 0)]),
+        "seeds": _diagnostic_seeds(payload, metadata),
     }
+    if custody_program_steps is not None:
+        diagnostics["custody_checkpoint_program_steps"] = custody_program_steps
+    return diagnostics
+
+
+def _custody_checkpoint_program_steps(writes: Any) -> list[int] | None:
+    """Read authoritative ordinals from checkpoint transaction manifests."""
+    steps = []
+    for write in writes:
+        manifest = getattr(write, "manifest", None)
+        coordinate = getattr(manifest, "completed_coordinate", None)
+        step = getattr(coordinate, "program_step", None)
+        if isinstance(step, bool) or not isinstance(step, int):
+            return None
+        steps.append(step)
+    return steps
+
+
+def _diagnostic_seeds(payload: dict[str, Any], metadata: dict[str, Any]) -> Any:
+    """Preserve the authored seed shape consumed by Feedbax conformance."""
+    if "seeds" in payload:
+        return payload["seeds"]
+    if "seeds" in metadata:
+        return metadata["seeds"]
+    return metadata.get("seed", payload.get("seed", 0))
 
 
 def _lr_trace(payload: dict[str, Any], metadata: dict[str, Any]) -> dict[str, float]:

@@ -19,6 +19,7 @@ from feedbax.orchestration.conformance import (
     ConformanceRowArtifacts,
     check_checkpoint_cadence,
     check_completed_batches,
+    check_seeds,
 )
 
 from rlrmp.train.orchestration_compiler import (
@@ -37,6 +38,7 @@ from rlrmp.train.orchestration_capabilities import (
     scheduled_certify_capable,
     scheduled_preflight_capable,
 )
+from rlrmp.train.orchestrated_row import _training_diagnostics
 
 
 def test_compiler_registration_and_runnable_execution_binding(
@@ -120,7 +122,8 @@ def test_locked_segment_projection_passes_completed_and_cadence_checks() -> None
     diagnostics = {
         "completed_batches": 200,
         "checkpoint_coordinates": [100, 200],
-        "raw_checkpoint_program_steps": [25, 26],
+        "segment_checkpoint_program_steps": [1, 2],
+        "custody_checkpoint_program_steps": [25, 26],
         "absolute_completed_batches": [12100, 12200],
         "resume_context": {
             "schedule_origin_step": 12000,
@@ -137,6 +140,60 @@ def test_locked_segment_projection_passes_completed_and_cadence_checks() -> None
     assert check_completed_batches(row).status == "pass"
     assert check_checkpoint_cadence(row).status == "pass"
     assert min(map(int, diagnostics["lr_trace"])) >= 12000
+
+
+def test_real_entrypoint_diagnostics_pass_absolute_batches_and_scalar_seed_checks() -> None:
+    payload = {
+        "training_config": {"n_batches": 12_200},
+        "checkpoint_progress": {
+            "checkpoint_interval": 100,
+            "continuation": {
+                "source_completed_batches": 12_000,
+                "additional_batches": 200,
+            },
+        },
+        "metadata": {
+            "seed": 42,
+            "resume_context": {
+                "schedule_origin_step": 12_000,
+                "current_step": 12_000,
+                "optimizer_count_at_current_step": 0,
+            },
+            "optimizer_build_context": {
+                "schedule_origin_step": 12_000,
+                "current_step": 12_000,
+                "optimizer_count_at_current_step": 0,
+            },
+        },
+    }
+    writes = [
+        SimpleNamespace(
+            manifest=SimpleNamespace(
+                completed_coordinate=SimpleNamespace(program_step=program_step)
+            )
+        )
+        for program_step in (25, 26)
+    ]
+    diagnostics = _training_diagnostics(
+        SimpleNamespace(payload=payload),
+        SimpleNamespace(checkpoint_writes=writes),
+    )
+    row = ConformanceRowArtifacts(
+        row_id="continuation",
+        bundle_row_spec=payload,
+        training_diagnostics=diagnostics,
+    )
+
+    assert diagnostics["completed_batches"] == 12_200
+    assert diagnostics["segment_completed_batches"] == 200
+    assert diagnostics["checkpoint_coordinates"] == [100, 200]
+    assert diagnostics["absolute_completed_batches"] == [12_100, 12_200]
+    assert diagnostics["segment_checkpoint_program_steps"] == [1, 2]
+    assert diagnostics["custody_checkpoint_program_steps"] == [25, 26]
+    assert diagnostics["seeds"] == 42
+    assert "raw_checkpoint_program_steps" not in diagnostics
+    assert check_completed_batches(row).status == "pass"
+    assert check_seeds(row).status == "pass"
 
 
 @pytest.mark.skipif(not scheduled_preflight_capable(), reason=SCHEDULED_PREFLIGHT_SKIP_REASON)
