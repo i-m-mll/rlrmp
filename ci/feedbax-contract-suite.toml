@@ -332,6 +332,18 @@ negative_canary = [
     "tests/analysis/test_f47_literature_figure_specs.py::test_one_standard_matrix_payload_owns_all_six_figure_facets",
 ]
 
+[[families]]
+name = "scalar_diagnostic_figure_contract"
+owner = "ae26a79"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_scalar_diagnostic_figure_specs.py::"
+# Pin registered custody, 2-vs-3 data-bound cardinality, real execution, and deletion.
+minimum_non_skipped = 7
+negative_canary = [
+    "tests/analysis/test_scalar_diagnostic_figure_specs.py::test_registered_analysis_keeps_row_cardinality_data_bound[2]",
+]
+
 [pipeline_contract_native]
 allowlist = [
 ]

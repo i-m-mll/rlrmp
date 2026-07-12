@@ -7,7 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from feedbax.analysis.figures import execute_figure_spec
-from feedbax.analysis.specs import AnalysisRunSpec, ResolvedAnalysisInput
+from feedbax.analysis.specs import AnalysisRunSpec
 from feedbax.contracts.figures import FigureSpec
 from feedbax.contracts.manifest import (
     AnalysisRunManifest,
@@ -61,10 +61,8 @@ def _payload(count: int) -> dict[str, object]:
 
 @pytest.mark.parametrize("count", [2, 3])
 def test_registered_analysis_keeps_row_cardinality_data_bound(count: int) -> None:
-    resolved = ResolvedAnalysisInput(
+    resolved = SimpleNamespace(
         ref=ParentRef(kind="EvaluationRunManifest", id=f"eval-{count}", role="evaluation"),
-        manifest=SimpleNamespace(),
-        manifest_path=Path("manifest.json"),
         states={
             "scalar_diagnostic": {
                 "collections": {
