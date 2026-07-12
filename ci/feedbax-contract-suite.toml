@@ -368,6 +368,18 @@ negative_canary = [
     "tests/analysis/test_b399efc_movement_ramp_figure_specs.py::test_all_six_specs_execute_to_hash_verified_completed_manifests",
 ]
 
+[[families]]
+name = "sisu_spectrum_figure_contract"
+owner = "518aea3"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_sisu_spectrum_figure.py::"
+# Pin manifest custody, 2-vs-3 payload cardinality, archived parity, and deletion.
+minimum_non_skipped = 7
+negative_canary = [
+    "tests/analysis/test_sisu_spectrum_figure.py::test_sisu_profile_cardinality_is_payload_bound[2]",
+]
+
 [pipeline_contract_native]
 allowlist = [
 ]
