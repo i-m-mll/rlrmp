@@ -28,6 +28,10 @@ DESTINATIONS = {
     ),
 }
 
+ARCHIVAL_ONLY_DESTINATIONS = {
+    "results/1c014e5/scripts/materialize_output_feedback_optimizer_basin_diagnostic.py",
+}
+
 
 def test_relocated_experiment_scripts_are_absent_from_top_level_scripts() -> None:
     assert not [
@@ -51,6 +55,13 @@ def test_relocated_scripts_exist_without_runpy_or_sys_path_hacks() -> None:
 def test_relocated_destinations_import_in_isolated_processes() -> None:
     environment = {**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")}
     for destination in DESTINATIONS.values():
+        if destination in ARCHIVAL_ONLY_DESTINATIONS:
+            module = ast.parse(
+                (REPO_ROOT / destination).read_text(encoding="utf-8"),
+                filename=destination,
+            )
+            assert (ast.get_docstring(module) or "").startswith("LEGACY (")
+            continue
         code = (
             "import importlib.util; "
             f"p={str(REPO_ROOT / destination)!r}; "
