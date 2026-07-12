@@ -47,6 +47,12 @@ from rlrmp.analysis.pipelines.gru_feedback_ablation import (
     FeedbackAblationAnalysisParams,
     feedback_ablation_recipe,
 )
+from rlrmp.analysis.response_norm import (
+    RESPONSE_NORM_ANALYSIS_TYPE,
+    ResponseNormAnalysisParams,
+    response_norm_payload,
+    response_norm_recipe,
+)
 from rlrmp.analysis.pipelines.gru_postrun_materialization import (
     DEFAULT_OUTPUT_TAG,
     materialize_gru_postrun_analysis,
@@ -693,6 +699,11 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
         replace=True,
     )
     register_params_model(
+        RESPONSE_NORM_ANALYSIS_TYPE,
+        ResponseNormAnalysisParams,
+        replace=True,
+    )
+    register_params_model(
         FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["feedback_ablation"],
         FeedbackAblationAnalysisParams,
         replace=True,
@@ -730,6 +741,11 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
     register_analysis_recipe(
         FEEDBACK_ABLATION_ANALYSIS_TYPE,
         feedback_ablation_recipe,
+        replace=replace,
+    )
+    register_analysis_recipe(
+        RESPONSE_NORM_ANALYSIS_TYPE,
+        response_norm_recipe,
         replace=replace,
     )
     register_analysis_recipe(
@@ -2270,10 +2286,7 @@ def _feedback_quality_component_registrations() -> dict[str, FeedbackQualityComp
             materializer=_materialize_feedback_quality_response_norm_plots,
             artifact_role=FEEDBACK_QUALITY_COMPONENT_STATUS_ROLES["response_norm_plots"],
             logical_name="feedback_quality/response_norm_plots_status.json",
-            live_materializer=(
-                "rlrmp.analysis.pipelines.gru_perturbation_response_norm_plots."
-                "materialize_response_norm_plots"
-            ),
+            live_materializer="rlrmp.response_norm_comparison",
             gating_label="include flag and applicable component",
             gating_expr=_feedback_quality_component_gate_expr("response_norm_plots"),
         ),
@@ -2507,29 +2520,15 @@ def _materialize_feedback_quality_response_norm_plots(
     evaluation_input: Any | None,
     repo_root: Path,
 ) -> Mapping[str, Any]:
-    del context, evaluation_input
-    plan = _feedback_quality_plan(
-        params,
-        experiment=experiment,
-        run_ids=run_ids,
-        repo_root=repo_root,
-    )
-    component = _feedback_quality_components(plan, params=params, repo_root=repo_root)[
-        "response_norm_plots"
-    ]
-    from rlrmp.analysis.pipelines.gru_perturbation_response_norm_plots import (
-        materialize_response_norm_plots,
-    )
-
-    figure_dir = component["groups"][0][0]
-    return materialize_response_norm_plots(
-        source_manifest_path=plan.perturbation_response_json_path,
-        results_dir=figure_dir,
-        asset_dir=figure_dir / "_assets",
-        note_path=component["notes"][0],
-        manifest_path=component["tracked"][0],
-        repo_root=repo_root,
-    )
+    del context, experiment, run_ids, repo_root
+    rows = params.get("response_norm_rows", ())
+    if not rows and evaluation_input is not None:
+        states = getattr(evaluation_input, "states", evaluation_input)
+        if isinstance(states, Mapping):
+            payload = states.get("response_norm", states)
+            if isinstance(payload, Mapping):
+                rows = payload.get("rows", ())
+    return response_norm_payload(rows)
 
 
 def _materialize_feedback_quality_perturbation_calibration(
@@ -3507,12 +3506,12 @@ def _feedback_quality_components(
             "tracked": (
                 _optional_path(params.get("response_norm_plots_manifest_path"), repo_root=repo_root)
                 or notes_dir
-                / f"gru_perturbation_response_norm_plots_{plan.output_tag}_manifest.json",
+                / f"response_norm_comparison_{plan.output_tag}_manifest.json",
                 "rlrmp-feedback-quality-response-norm-plots-manifest",
             ),
             "notes": (
                 _optional_path(params.get("response_norm_plots_note_path"), repo_root=repo_root)
-                or notes_dir / f"gru_perturbation_response_norm_plots_{plan.output_tag}.md",
+                or notes_dir / f"response_norm_comparison_{plan.output_tag}.md",
                 "rlrmp-feedback-quality-response-norm-plots-note",
             ),
             "groups": (

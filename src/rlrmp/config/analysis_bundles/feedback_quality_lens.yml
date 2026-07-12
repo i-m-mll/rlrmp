@@ -20,7 +20,7 @@ metadata:
     - rlrmp.objective_comparator_sidecar
     - rlrmp.gru_perturbation_bank
     - rlrmp.gru_feedback_ablation
-    - rlrmp.gru_perturbation_response_norm_plots
+    - rlrmp.response_norm_comparison
     - rlrmp.perturbation_open_loop_calibration
   sibling_owned_lenses:
     - robustness_phenotype_aggregation

@@ -46,7 +46,7 @@ DELAYED_SISU_DRIVER_GOLDEN = {
 def test_all_registered_analysis_presets_load_with_pinned_hashes() -> None:
     registrations = registered_analysis_parameter_presets()
 
-    assert len(registrations) == 16
+    assert len(registrations) == 15
     for preset_id in registrations:
         preset = load_analysis_parameter_preset(preset_id)
         assert preset.preset_id == preset_id
@@ -90,20 +90,6 @@ def test_gamma_sweep_factors_load() -> None:
         2.0,
         3.0,
     ]
-
-
-def test_training_widths_load() -> None:
-    values = load_analysis_parameter_preset("gru_perturbation_response_norm_plots").parameters
-
-    assert values["training_widths"] == {
-        "none": 1.4,
-        "small": 2.2,
-        "moderate": 3.0,
-        "stress": 3.8,
-        "sisu_raw_strong_gamma_1p05": 2.2,
-        "sisu_effective_020a65b_pgd": 3.2,
-    }
-    assert values["extlqg_width"] == 2.0
 
 
 def test_state_component_slices_load() -> None:

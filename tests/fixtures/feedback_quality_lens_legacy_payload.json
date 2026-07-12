@@ -119,12 +119,12 @@
         "rlrmp-feedback-quality-response-norm-figure"
       ],
       "component_node": "response_norm_plots",
-      "live_materializer": "rlrmp.analysis.pipelines.gru_perturbation_response_norm_plots.materialize_response_norm_plots",
+      "live_materializer": "rlrmp.response_norm_comparison",
       "materialization_mode": "live_analysis_node",
       "paths": {
         "group_0": "_artifacts/5f70333/figures/perturbation_response_norms_validation_selected",
-        "notes": "results/5f70333/notes/gru_perturbation_response_norm_plots_validation_selected.md",
-        "tracked": "results/5f70333/notes/gru_perturbation_response_norm_plots_validation_selected_manifest.json"
+        "notes": "results/5f70333/notes/response_norm_comparison_validation_selected.md",
+        "tracked": "results/5f70333/notes/response_norm_comparison_validation_selected_manifest.json"
       },
       "schema_kind": "RLRMPGRUPerturbationResponseNormPlots",
       "selection_role": "audit_only_not_used_for_checkpoint_selection",
