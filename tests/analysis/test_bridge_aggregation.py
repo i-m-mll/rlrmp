@@ -8,7 +8,6 @@ from rlrmp.analysis.bridge_aggregation import (
     BRIDGE_SUMMARY_FORMAT,
     BridgeResultValidationError,
     bridge_result_row,
-    render_bridge_summary_markdown,
     summarize_bridge_results,
     validate_bridge_result,
 )
@@ -121,13 +120,3 @@ def test_bridge_result_row_rejects_duplicate_flattened_labels() -> None:
 
     with pytest.raises(BridgeResultValidationError, match="duplicate bridge row label"):
         bridge_result_row(manifest)
-
-
-def test_summary_payload_and_markdown_render_are_stable() -> None:
-    summary = summarize_bridge_results([_manifest("pipe")])
-    markdown = render_bridge_summary_markdown(summary["rows"])
-
-    assert markdown.splitlines()[0].startswith("| run_id | status | objective | architecture |")
-    assert "| bridge__pipe | smoke | diagnostic | linear_recurrence |" in markdown
-    assert "metric.cost.mean" in markdown
-    assert "certificate.recurrence_rollout.status" in markdown

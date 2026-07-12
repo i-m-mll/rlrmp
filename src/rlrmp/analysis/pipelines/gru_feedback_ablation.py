@@ -45,7 +45,7 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
     RunFigureInputs,
     repeat_single_validation_trial,
 )
-from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
+from rlrmp.analysis.gru_standard_certificate import normalize_gru_hps
 from rlrmp.model.feedback_descriptors import (
     COMPONENT_POSITION,
     COMPONENT_VELOCITY,

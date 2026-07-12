@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import json
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from rlrmp.analysis.bridge_results import (
@@ -25,16 +24,6 @@ BRIDGE_ROW_BASE_COLUMNS = (
     "reference_controller",
     "seed",
     "gamma_factor",
-)
-BRIDGE_MARKDOWN_BASE_COLUMNS = (
-    "run_id",
-    "status",
-    "objective",
-    "architecture",
-    "controller_label",
-    "optimizer_label",
-    "training_distribution",
-    "evaluation_lane",
 )
 BRIDGE_COMPONENT_STATUSES = {"available", "not_applicable", "missing"}
 
@@ -149,46 +138,6 @@ def summarize_bridge_results(
     }
 
 
-def render_bridge_summary_markdown(
-    rows: Sequence[Mapping[str, Any]],
-    *,
-    columns: Sequence[str] | None = None,
-) -> str:
-    """Render flattened bridge rows as a compact Markdown table."""
-
-    if not rows:
-        return "No bridge results.\n"
-
-    table_columns = tuple(columns) if columns is not None else bridge_markdown_columns(rows)
-    header = "| " + " | ".join(_escape_markdown_cell(column) for column in table_columns) + " |"
-    separator = "| " + " | ".join("---" for _ in table_columns) + " |"
-    body = [
-        "| "
-        + " | ".join(
-            _escape_markdown_cell(_format_markdown_value(row.get(column)))
-            for column in table_columns
-        )
-        + " |"
-        for row in rows
-    ]
-    return "\n".join((header, separator, *body)) + "\n"
-
-
-def bridge_markdown_columns(rows: Sequence[Mapping[str, Any]]) -> tuple[str, ...]:
-    """Return stable default Markdown columns for flattened bridge rows."""
-
-    row_keys = set().union(*(row.keys() for row in rows))
-    metric_keys = sorted(key for key in row_keys if key.startswith("metric."))
-    certificate_status_keys = sorted(
-        key for key in row_keys if key.startswith("certificate.") and key.endswith(".status")
-    )
-    return (
-        tuple(column for column in BRIDGE_MARKDOWN_BASE_COLUMNS if column in row_keys)
-        + tuple(metric_keys)
-        + tuple(certificate_status_keys)
-    )
-
-
 def _certificate_components_by_name(
     components: Iterable[BridgeCertificateComponent],
     errors: list[str],
@@ -223,30 +172,11 @@ def _set_row_value(row: dict[str, Any], key: str, value: Any) -> None:
     row[key] = value
 
 
-def _format_markdown_value(value: Any) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, float):
-        return f"{value:.8g}"
-    if isinstance(value, (dict, list, tuple)):
-        return json.dumps(value, sort_keys=True)
-    return str(value)
-
-
-def _escape_markdown_cell(value: str) -> str:
-    return value.replace("|", "\\|").replace("\n", " ")
-
-
 __all__ = [
-    "BRIDGE_MARKDOWN_BASE_COLUMNS",
     "BRIDGE_ROW_BASE_COLUMNS",
     "BRIDGE_SUMMARY_FORMAT",
     "BridgeResultValidationError",
     "bridge_result_row",
-    "bridge_markdown_columns",
-    "render_bridge_summary_markdown",
     "summarize_bridge_results",
     "validate_bridge_result",
 ]

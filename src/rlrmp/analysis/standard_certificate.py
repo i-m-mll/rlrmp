@@ -1,4 +1,4 @@
-"""Reusable bridge standard-certificate materialization helpers."""
+"""Reusable standard-certificate analysis science."""
 
 from __future__ import annotations
 
@@ -89,7 +89,9 @@ def component_by_name(
     }
 
 
-def component_status_counts(rows: list[BridgeAnalysisResult] | list[dict[str, Any]]) -> dict[str, int]:
+def component_status_counts(
+    rows: list[BridgeAnalysisResult] | list[dict[str, Any]],
+) -> dict[str, int]:
     """Return stable ``component:status`` counts for materialized rows."""
 
     counts: Counter[str] = Counter()
@@ -330,9 +332,7 @@ def _policy_value_matrices(
             @ np.asarray(k_t, dtype=float)
         )
         stage.append(np.block([[state_block, zeros], [zeros, control_block]]))
-    terminal = np.block(
-        [[np.asarray(schedule.Q_f, dtype=float), zeros], [zeros, zeros]]
-    )
+    terminal = np.block([[np.asarray(schedule.Q_f, dtype=float), zeros], [zeros, zeros]])
     values = [terminal]
     next_value = terminal
     for a_t, q_t in zip(transition[::-1], np.asarray(stage)[::-1], strict=True):
@@ -353,9 +353,7 @@ def _fit_diagnostic_sidecars(fit: dict[str, Any]) -> list[BridgeCertificateCompo
         BridgeCertificateComponent.available(
             BEHAVIORAL_ACTION_SIDECAR,
             clean_action_mismatch_ratio=fit.get("clean_action_mismatch_ratio"),
-            under_epsilon_action_mismatch_ratio=fit.get(
-                "under_epsilon_action_mismatch_ratio"
-            ),
+            under_epsilon_action_mismatch_ratio=fit.get("under_epsilon_action_mismatch_ratio"),
             clean_cost=fit.get("clean_cost"),
             under_epsilon_cost_ratio_to_lqr=fit.get("under_epsilon_cost_ratio_to_lqr"),
             evaluation_distribution="deterministic clean plus Riccati-epsilon sidecar",
@@ -364,9 +362,7 @@ def _fit_diagnostic_sidecars(fit: dict[str, Any]) -> list[BridgeCertificateCompo
             DETERMINISTIC_AUDIT_SIDECAR,
             exact_l2_cost_ratio_to_lqr=fit.get("exact_l2_cost_ratio_to_lqr"),
             exact_l2_cost_ratio_to_hinf=fit.get("exact_l2_cost_ratio_to_hinf"),
-            lambda_over_gamma_squared=fit.get(
-                "gamma_penalized_lambda_over_gamma_squared"
-            ),
+            lambda_over_gamma_squared=fit.get("gamma_penalized_lambda_over_gamma_squared"),
             gamma_penalized_feasible=fit.get("gamma_penalized_feasible"),
         ),
         BridgeCertificateComponent.available(
@@ -377,12 +373,8 @@ def _fit_diagnostic_sidecars(fit: dict[str, Any]) -> list[BridgeCertificateCompo
         ),
         BridgeCertificateComponent.available(
             ROLLOUT_BEHAVIOR_SIDECAR,
-            peak_forward_velocity=fit.get("clean_rollout", {}).get(
-                "peak_forward_velocity"
-            ),
-            terminal_position_error_m=fit.get("clean_rollout", {}).get(
-                "terminal_position_error_m"
-            ),
+            peak_forward_velocity=fit.get("clean_rollout", {}).get("peak_forward_velocity"),
+            terminal_position_error_m=fit.get("clean_rollout", {}).get("terminal_position_error_m"),
             control_effort=fit.get("clean_rollout", {}).get("control_effort"),
         ),
     ]

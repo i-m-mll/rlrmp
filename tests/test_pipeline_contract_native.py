@@ -96,7 +96,7 @@ class PipelineModuleFacts:
 def test_pipeline_contract_scan_is_non_vacuous() -> None:
     facts = _scan_pipeline_tree()
 
-    assert len(facts) >= 20, "pipeline module scan found too few modules"
+    assert len(facts) >= 10, "pipeline module scan found too few modules"
     assert any(f.path.endswith("gru_feedback_ablation.py") for f in facts)
     assert any(f.has_contract_native_signal for f in facts), (
         "native contract markers are not being detected"

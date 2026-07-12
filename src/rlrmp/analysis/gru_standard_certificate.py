@@ -1,9 +1,8 @@
-"""Standard-certificate materialization for C&S nominal GRU pilot artifacts."""
+"""GRU/reference action-map standard-certificate analysis science."""
 
 from __future__ import annotations
 
 import copy
-import json
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Mapping
@@ -19,7 +18,6 @@ from feedbax.runtime.channel import Channel
 from feedbax.runtime.graph import init_state_from_component
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 
-from rlrmp.analysis.manifest_queries import certificate_component_summary_value
 from rlrmp.analysis.data_products import load_analysis_parameter_preset
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
@@ -37,8 +35,6 @@ from rlrmp.analysis.math.output_feedback import (
     rollout_with_kalman_estimator,
 )
 from rlrmp.analysis.bridge_certificates import (
-    BELLMAN_HESSIAN_RESIDUAL,
-    CLOSED_LOOP_TRANSITION_MISMATCH,
     DISTURBANCE_HISTORY_TO_ACTION_MAP_MISMATCH,
     DISTURBANCE_HISTORY_TO_COST_QUADRATIC,
     DISTURBANCE_HISTORY_TO_OUTPUT_MAP_MISMATCH,
@@ -47,7 +43,6 @@ from rlrmp.analysis.bridge_certificates import (
     MEASUREMENT_HISTORY_TO_OUTPUT_MAP_MISMATCH,
     OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH,
     STATE_WEIGHTED_ACTION_MISMATCH,
-    VALUE_POLICY_GAP,
 )
 from rlrmp.analysis.bridge_results import (
     BridgeCertificateComponent,
@@ -55,16 +50,15 @@ from rlrmp.analysis.bridge_results import (
     BridgeRunSpec,
     make_bridge_run_id,
 )
-from rlrmp.analysis.pipelines.diagnostic_provenance import write_regeneration_spec
-from rlrmp.analysis.pipelines.failure_decomposition import failure_diagnostic_from_standard_row
-from rlrmp.analysis.pipelines.standard_certificate_materialization import (
+from rlrmp.analysis.failure_decomposition import failure_diagnostic_from_standard_row
+from rlrmp.analysis.standard_certificate import (
     StandardCertificateRowRequest,
     build_standard_certificate_manifest,
     materialization_summary,
     repo_relative,
 )
-from rlrmp.io import read_json, update_marked_section
-from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path, run_spec_path
+from rlrmp.io import read_json
+from rlrmp.paths import REPO_ROOT, resolve_run_artifact_path, run_spec_path
 from rlrmp.runtime.spec_migrations import (
     CS_GRU_STANDARD_CERTIFICATES_KIND,
     CS_GRU_STANDARD_CERTIFICATES_SCHEMA_VERSION,
@@ -79,7 +73,6 @@ from rlrmp.model.stochastic_runtime import (
 from rlrmp.train.task_model import setup_task_model_pair
 
 MATERIALIZER_ISSUE_ID = "e6a32b8"
-SOURCE_ISSUE_ID = "30f2313"
 SCHEMA_VERSION = CS_GRU_STANDARD_CERTIFICATES_SCHEMA_VERSION
 RUN_IDS = (
     "cs_stochastic_gru__no_hidden_penalty",
@@ -90,11 +83,6 @@ DEFAULT_RESPONSE_MAP_ROLLOUT_TRIALS = int(
         "response_map_rollout_trials"
     ]
 )
-NOTE_PATH = REPO_ROOT / "results" / SOURCE_ISSUE_ID / "notes" / "gru_standard_certificates.md"
-MANIFEST_PATH = (
-    REPO_ROOT / "results" / SOURCE_ISSUE_ID / "notes" / "gru_standard_certificates_manifest.json"
-)
-
 _BLOCKED_RESPONSE_COMPONENTS = {
     OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH,
     MEASUREMENT_HISTORY_TO_ACTION_MAP_MISMATCH,
@@ -111,110 +99,21 @@ _NO_ACTION_EVIDENCE_REASON = (
 
 
 def materialize_gru_standard_result(
+    evaluation_states: Mapping[str, Any],
     *,
     run_ids: tuple[str, ...] = RUN_IDS,
-    load_models: bool = True,
-    experiment: str = SOURCE_ISSUE_ID,
+    experiment: str,
     materializer_issue_id: str = MATERIALIZER_ISSUE_ID,
-    use_validation_selected_checkpoints: bool = False,
-    preferred_checkpoint_manifest_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
-    """Return standard rows and companion failure diagnostics for GRU pilots."""
+    """Build standard rows exclusively from cached evaluation-manifest states."""
 
-    selection_manifest = None
-    if use_validation_selected_checkpoints:
-        from rlrmp.eval.checkpoint_selection import (
-            build_validation_checkpoint_selection_manifest,
-        )
-
-        selection_manifest = build_validation_checkpoint_selection_manifest(
-            experiment=experiment,
-            run_ids=run_ids,
-            preferred_manifest_path=preferred_checkpoint_manifest_path,
-            checkpoint_selection_mode=(
-                "fixed_bank_manifest"
-                if preferred_checkpoint_manifest_path is not None
-                else "sparse_history"
-            ),
-            repo_root=repo_root,
-        ).model_dump(mode="json", exclude_none=True)
-    rows = [
-        materialize_gru_standard_row(
-            run_id,
-            load_model=load_models,
-            experiment=experiment,
-            materializer_issue_id=materializer_issue_id,
-            use_validation_selected_checkpoints=use_validation_selected_checkpoints,
-            preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
-            repo_root=repo_root,
-        )
-        for run_id in run_ids
-    ]
-    row_dicts = [row.to_payload() for row in rows]
-    failure_rows = [
-        failure_diagnostic_from_standard_row(
-            row,
-            source_group="cs_stochastic_gru",
-            row_parameters=row["spec"]["parameters"],
-        )
-        for row in row_dicts
-    ]
-    blockers = sorted(
-        {
-            row["metrics"]["io_response_map_blocker"]
-            for row in row_dicts
-            if row["metrics"].get("io_response_map_blocker")
-        }
-    )
-    effective_checkpoint_policy = (
-        str(selection_manifest.get("metadata", {}).get("checkpoint_policy"))
-        if isinstance(selection_manifest, Mapping)
-        and selection_manifest.get("metadata", {}).get("checkpoint_policy") is not None
-        else (
-            "validation_selected_per_replicate"
-            if use_validation_selected_checkpoints
-            else "final_checkpoint"
-        )
-    )
-    return stamp_current_schema(
-        CS_GRU_STANDARD_CERTIFICATES_KIND,
-        {
-            "format": SCHEMA_VERSION,
-            "issue": materializer_issue_id,
-            "source_issue": experiment,
-            "checkpoint_policy": effective_checkpoint_policy,
-            "source_manifests": {
-                run_id: repo_relative(
-                    run_spec_path(experiment, run_id, repo_root=repo_root),
-                    repo_root=repo_root,
-                )
-                for run_id in run_ids
-            },
-            "source_artifacts": {
-                run_id: repo_relative(
-                    _default_model_path(run_id, experiment=experiment, repo_root=repo_root),
-                    repo_root=repo_root,
-                )
-                for run_id in run_ids
-            },
-            "checkpoint_selection": selection_manifest,
-            "summary": materialization_summary(rows)
-            | {
-                "failure_classification_counts": _classification_counts(failure_rows),
-                "blockers": blockers,
-            },
-            "scope": (
-                f"C&S stochastic GRU pilot rows from `{experiment}`. The "
-                "standard certificate is materialized in empirical_nonlinear mode: "
-                "clean rollout action behavior is available, same-coordinate "
-                "transition/value/Bellman components are not applicable, and response "
-                "map rows remain missing until the observation projection contract is "
-                "defined."
-            ),
-            "rows": row_dicts,
-            "failure_decomposition": {"rows": failure_rows},
-        },
+    return materialize_gru_standard_result_from_evaluation_states(
+        evaluation_states,
+        run_ids=run_ids,
+        experiment=experiment,
+        materializer_issue_id=materializer_issue_id,
+        repo_root=repo_root,
     )
 
 
@@ -222,7 +121,7 @@ def materialize_gru_standard_result_from_evaluation_states(
     evaluation_states: Mapping[str, Any],
     *,
     run_ids: tuple[str, ...] = RUN_IDS,
-    experiment: str = SOURCE_ISSUE_ID,
+    experiment: str,
     materializer_issue_id: str = MATERIALIZER_ISSUE_ID,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
@@ -261,9 +160,7 @@ def materialize_gru_standard_result_from_evaluation_states(
             "format": SCHEMA_VERSION,
             "issue": materializer_issue_id,
             "source_issue": experiment,
-            "checkpoint_policy": str(
-                evaluation_states.get("checkpoint_policy", "evaluation_manifest")
-            ),
+            "checkpoint_policy": str(evaluation_states["checkpoint_policy"]),
             "source_manifests": {
                 run_id: repo_relative(
                     run_spec_path(experiment, run_id, repo_root=repo_root),
@@ -303,111 +200,11 @@ def materialize_gru_standard_result_from_evaluation_states(
     )
 
 
-def materialize_gru_standard_row(
-    run_id: str,
-    *,
-    load_model: bool = True,
-    experiment: str = SOURCE_ISSUE_ID,
-    materializer_issue_id: str = MATERIALIZER_ISSUE_ID,
-    use_validation_selected_checkpoints: bool = False,
-    preferred_checkpoint_manifest_path: Path | None = None,
-    repo_root: Path = REPO_ROOT,
-) -> BridgeAnalysisResult:
-    """Materialize one GRU pilot standard row."""
-
-    resolved_run_spec_path = run_spec_path(experiment, run_id, repo_root=repo_root)
-    run_spec = resolve_run_record(experiment, run_id, repo_root=repo_root)
-    training_summary_path = _default_training_summary_path(
-        run_id,
-        experiment=experiment,
-        repo_root=repo_root,
-    )
-    training_summary = read_json(training_summary_path) if training_summary_path.exists() else {}
-    reference_actions, reference_metadata = cs_output_feedback_reference_actions()
-    reference_map, response_reference_metadata = cs_output_feedback_observation_action_map()
-    action_weight = reference_metadata["action_weight"]
-    serializable_reference_metadata = {
-        key: value for key, value in reference_metadata.items() if key != "action_weight"
-    }
-    serializable_reference_metadata["io_response_map"] = response_reference_metadata
-    if load_model:
-        candidate_actions, candidate_map, evaluation_metadata = evaluate_gru_clean_actions(
-            run_id,
-            run_spec=run_spec,
-            experiment=experiment,
-            use_validation_selected_checkpoints=use_validation_selected_checkpoints,
-            preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
-            repo_root=repo_root,
-        )
-        observation_history_covariance = evaluation_metadata.pop(
-            "_observation_history_covariance_array",
-            None,
-        )
-    else:
-        candidate_actions = np.zeros((0, reference_actions.shape[0], reference_actions.shape[1]))
-        candidate_map = None
-        observation_history_covariance = None
-        evaluation_metadata = {
-            "status": "not_evaluated",
-            "reason": "model loading was disabled",
-            "observation_history_covariance": (
-                _missing_observation_history_covariance_metadata("model loading was disabled")
-            ),
-        }
-    candidate_actions = _align_candidate_actions_to_reference_window(
-        candidate_actions,
-        reference_actions=reference_actions,
-        run_spec=run_spec,
-        evaluation_metadata=evaluation_metadata,
-    )
-    if candidate_actions.size:
-        reference_batch = np.broadcast_to(reference_actions[None, :, :], candidate_actions.shape)
-    else:
-        reference_batch = candidate_actions
-    reference_response_map = None
-    if candidate_map is not None:
-        expected_shape = candidate_map.shape[1:]
-        if reference_map.shape == expected_shape:
-            reference_response_map = np.broadcast_to(
-                reference_map[None, :, :, :], candidate_map.shape
-            )
-        else:
-            evaluation_metadata["io_response_map"]["reference_status"] = "shape_mismatch_blocked"
-            evaluation_metadata["io_response_map"]["candidate_map_shape"] = [
-                int(dim) for dim in candidate_map.shape
-            ]
-            evaluation_metadata["io_response_map"]["reference_map_shape"] = [
-                int(dim) for dim in reference_map.shape
-            ]
-    return build_gru_standard_manifest_from_actions(
-        run_id=run_id,
-        run_spec=run_spec,
-        training_summary=training_summary,
-        candidate_actions=candidate_actions,
-        reference_actions=reference_batch,
-        action_weight=action_weight,
-        candidate_observation_to_action_map=candidate_map,
-        reference_observation_to_action_map=reference_response_map,
-        observation_history_covariance=observation_history_covariance,
-        observation_history_covariance_metadata=evaluation_metadata.get(
-            "observation_history_covariance"
-        ),
-        evaluation_metadata=evaluation_metadata,
-        run_spec_path=resolved_run_spec_path,
-        model_path=_default_model_path(run_id, experiment=experiment, repo_root=repo_root),
-        training_summary_path=training_summary_path,
-        reference_metadata=serializable_reference_metadata,
-        source_issue_id=experiment,
-        materializer_issue_id=materializer_issue_id,
-        repo_root=repo_root,
-    )
-
-
 def materialize_gru_standard_row_from_evaluation_state(
     run_id: str,
     evaluation_row: Mapping[str, Any],
     *,
-    experiment: str = SOURCE_ISSUE_ID,
+    experiment: str,
     materializer_issue_id: str = MATERIALIZER_ISSUE_ID,
     repo_root: Path = REPO_ROOT,
 ) -> BridgeAnalysisResult:
@@ -576,7 +373,7 @@ def build_gru_standard_manifest_from_actions(
     model_path: Path | None = None,
     training_summary_path: Path | None = None,
     reference_metadata: dict[str, Any] | None = None,
-    source_issue_id: str = SOURCE_ISSUE_ID,
+    source_issue_id: str,
     materializer_issue_id: str = MATERIALIZER_ISSUE_ID,
     repo_root: Path = REPO_ROOT,
 ) -> BridgeAnalysisResult:
@@ -701,7 +498,7 @@ def evaluate_gru_clean_actions(
     run_id: str,
     *,
     run_spec: dict[str, Any] | None = None,
-    experiment: str = SOURCE_ISSUE_ID,
+    experiment: str,
     use_validation_selected_checkpoints: bool = False,
     preferred_checkpoint_manifest_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
@@ -1141,14 +938,14 @@ def _controller_feedback_channel_label(run_spec: Mapping[str, Any]) -> str:
 def gru_io_response_map_blocker(
     run_spec: dict[str, Any],
     *,
-    source_issue_id: str = SOURCE_ISSUE_ID,
+    source_issue_id: str,
 ) -> str:
     """Return the current reason GRU response maps cannot be compared honestly."""
 
     feedback_dim = _controller_feedback_dim(run_spec)
     reference_observation_dim = 8
     graph_meta = run_spec.get("feedbax_graph", {})
-    graph_path = graph_meta.get("graph_spec_path", "model.graph.json")
+    graph_path = graph_meta.get("graph_spec_path") or "<missing graph spec metadata>"
     return (
         f"Response-map components are blocked: the {source_issue_id} Feedbax GraphSpec "
         f"({graph_path}) feeds the GRU {_controller_feedback_channel_label(run_spec)} "
@@ -1157,136 +954,6 @@ def gru_io_response_map_blocker(
         f"({reference_observation_dim}D). No approved {feedback_dim}D-to-8D projection or "
         f"{feedback_dim}D analytical reference response-map contract is present."
     )
-
-
-def write_gru_standard_result(
-    result: dict[str, Any],
-    *,
-    note_path: Path = NOTE_PATH,
-    manifest_path: Path = MANIFEST_PATH,
-    regeneration_spec_path: Path | None = None,
-    repo_root: Path = REPO_ROOT,
-) -> None:
-    """Write the GRU standard-certificate note and manifest."""
-
-    mkdir_p(note_path.parent)
-    regeneration_spec_path = regeneration_spec_path or _regeneration_spec_path(manifest_path)
-    result = copy.deepcopy(result)
-    result["regeneration_spec"] = repo_relative(regeneration_spec_path, repo_root=repo_root)
-    update_marked_section(
-        note_path,
-        "gru_standard_certificates",
-        render_gru_standard_markdown(result),
-    )
-    manifest_path.write_text(
-        json.dumps(result, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    write_regeneration_spec(
-        spec_path=regeneration_spec_path,
-        diagnostic_name="gru_standard_certificate",
-        materializer="rlrmp.analysis.pipelines.cs_gru_standard_materialization.write_gru_standard_result",
-        command=None,
-        parameters={
-            "experiment": result.get("source_issue"),
-            "run_ids": list(result.get("source_manifests", {}).keys()),
-            "checkpoint_policy": result.get("checkpoint_policy"),
-            "materializer_issue_id": result.get("issue"),
-        },
-        inputs=[
-            {"role": "run_spec", "path": path}
-            for path in result.get("source_manifests", {}).values()
-        ]
-        + [
-            {"role": "model_or_checkpoint_artifact", "path": path}
-            for path in result.get("source_artifacts", {}).values()
-        ],
-        outputs=[
-            {"role": "standard_certificate_manifest", "path": manifest_path},
-            {"role": "standard_certificate_note", "path": note_path},
-        ],
-        source_files=[
-            "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py",
-            "src/rlrmp/analysis/bridge_certificates.py",
-            "src/rlrmp/analysis/pipelines/standard_certificate_materialization.py",
-        ],
-        notes=[
-            "Standard certificate is in scope for regeneration specs.",
-            "This spec records materialization provenance only; certificate values remain in the manifest.",
-        ],
-        repo_root=repo_root,
-    )
-
-
-def _regeneration_spec_path(path: Path) -> Path:
-    return path.with_name(f"{path.stem}_regeneration_spec.json")
-
-
-def render_gru_standard_markdown(result: dict[str, Any]) -> str:
-    """Render a compact tracked note for the GRU materialization."""
-
-    rows = result["rows"]
-    failure_rows = result["failure_decomposition"]["rows"]
-    blocker = "\n".join(f"- {item}" for item in result["summary"].get("blockers", ()))
-    blocker_section = blocker if blocker else "_None for observation-to-action maps._"
-    return f"""# GRU Standard Certificates
-
-Issue: `{result["issue"]}`. Source run issue: `{result["source_issue"]}`.
-
-This materialization applies the standard certificate umbrella contract to the
-locally synced C&S stochastic GRU pilot rows. The rows use
-`empirical_nonlinear` mode. Clean rollout action behavior is available;
-same-coordinate transition, value, and Bellman components are explicitly
-`not_applicable`. Observation-to-action response-map components are evaluated
-under the shared 4D delayed position/velocity feedback contract; disturbance and
-measurement-output response maps remain unavailable for these GRU rows.
-
-## Observation-contract blocker
-
-{blocker_section}
-
-## Rows
-
-| run | status | action mismatch | obs-action map | cov-weighted obs-action | transition | value | Bellman | class |
-|---|---|---:|---:|---:|---|---|---|---|
-{_markdown_row_table(rows, failure_rows)}
-"""
-
-
-def _markdown_row_table(rows: list[dict[str, Any]], failure_rows: list[dict[str, Any]]) -> str:
-    failure_by_id = {row["run_id"]: row for row in failure_rows}
-    lines = []
-    for row in rows:
-        by_name = {component["name"]: component for component in row["certificate_components"]}
-        run_id = row["spec"]["run_id"]
-        action_mismatch = certificate_component_summary_value(
-            row,
-            "state_weighted_action_mismatch",
-            "aggregate_mismatch_ratio",
-        )
-        obs_action_mismatch = certificate_component_summary_value(
-            row,
-            "observation_history_to_action_map_mismatch",
-            "aggregate_mismatch_ratio",
-        )
-        cov_weighted_obs_action_mismatch = certificate_component_summary_value(
-            row,
-            "observation_history_to_action_map_mismatch",
-            "covariance_weighted_aggregate_mismatch_ratio",
-        )
-        lines.append(
-            "| "
-            f"{run_id} | "
-            f"{row['status']} | "
-            f"{_fmt(action_mismatch)} | "
-            f"{_fmt(obs_action_mismatch)} | "
-            f"{_fmt(cov_weighted_obs_action_mismatch)} | "
-            f"{by_name[CLOSED_LOOP_TRANSITION_MISMATCH]['status']} | "
-            f"{by_name[VALUE_POLICY_GAP]['status']} | "
-            f"{by_name[BELLMAN_HESSIAN_RESIDUAL]['status']} | "
-            f"{failure_by_id[run_id]['classification']['classification']} |"
-        )
-    return "\n".join(lines)
 
 
 def _with_materializer_reasons(
@@ -1398,7 +1065,7 @@ def _fmt(value: Any) -> str:
 def _default_model_path(
     run_id: str,
     *,
-    experiment: str = SOURCE_ISSUE_ID,
+    experiment: str,
     repo_root: Path = REPO_ROOT,
 ) -> Path:
     return _run_artifact_path(
@@ -1412,7 +1079,7 @@ def _default_model_path(
 def _default_training_summary_path(
     run_id: str,
     *,
-    experiment: str = SOURCE_ISSUE_ID,
+    experiment: str,
     repo_root: Path = REPO_ROOT,
 ) -> Path:
     return _run_artifact_path(
@@ -1427,7 +1094,7 @@ def _run_artifact_path(
     run_id: str,
     file_name: str,
     *,
-    experiment: str = SOURCE_ISSUE_ID,
+    experiment: str,
     repo_root: Path = REPO_ROOT,
 ) -> Path:
     artifact_run_root = repo_root / "_artifacts" / experiment / "runs"
@@ -1435,19 +1102,13 @@ def _run_artifact_path(
 
 
 __all__ = [
-    "MANIFEST_PATH",
     "MATERIALIZER_ISSUE_ID",
-    "NOTE_PATH",
     "RUN_IDS",
-    "SOURCE_ISSUE_ID",
     "build_gru_standard_manifest_from_actions",
     "cs_output_feedback_reference_actions",
     "evaluate_gru_clean_actions",
     "gru_io_response_map_blocker",
     "materialize_gru_standard_result",
-    "materialize_gru_standard_row",
     "normalize_gru_hps",
     "observation_history_covariance_from_net_inputs",
-    "render_gru_standard_markdown",
-    "write_gru_standard_result",
 ]

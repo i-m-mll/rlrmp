@@ -1,4 +1,4 @@
-"""Tests for the 30f2313 C&S GRU standard materializer."""
+"""Tests for GRU standard-certificate analysis science."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import numpy as np
 from feedbax import TaskTrialSpec, WhereDict
 from feedbax.objectives.loss import TargetSpec
 
-import rlrmp.analysis.pipelines.cs_gru_standard_materialization as cs_standard
+import rlrmp.analysis.gru_standard_certificate as cs_standard
 from rlrmp.analysis.bridge_certificates import (
     BELLMAN_HESSIAN_RESIDUAL,
     CLOSED_LOOP_TRANSITION_MISMATCH,
@@ -16,19 +16,17 @@ from rlrmp.analysis.bridge_certificates import (
     STATE_WEIGHTED_ACTION_MISMATCH,
     VALUE_POLICY_GAP,
 )
-from rlrmp.analysis.pipelines.cs_gru_standard_materialization import (
-    RUN_IDS,
+from rlrmp.analysis.gru_standard_certificate import (
     _align_candidate_actions_to_reference_window,
     _controller_feedback_dim,
     _repeat_single_validation_trial,
     build_gru_standard_manifest_from_actions,
     gru_io_response_map_blocker,
-    materialize_gru_standard_result,
+    materialize_gru_standard_result_from_evaluation_states,
     normalize_gru_hps,
     observation_history_covariance_from_net_inputs,
-    render_gru_standard_markdown,
 )
-from rlrmp.analysis.pipelines.failure_decomposition import failure_diagnostic_from_standard_row
+from rlrmp.analysis.failure_decomposition import failure_diagnostic_from_standard_row
 
 
 def _minimal_run_spec() -> dict[str, object]:
@@ -83,7 +81,7 @@ def test_controller_feedback_dim_uses_h0_force_filter_context_shape() -> None:
     }
 
     assert _controller_feedback_dim(run_spec) == 6
-    blocker = gru_io_response_map_blocker(run_spec)
+    blocker = gru_io_response_map_blocker(run_spec, source_issue_id="fixture")
     assert "6D delayed position/velocity plus force-filter feedback" in blocker
     assert "6D-to-8D" in blocker
 
@@ -140,6 +138,59 @@ def test_gru_manifest_keeps_same_coordinate_rows_not_applicable() -> None:
     assert diagnostic["gain_error_decomposition"]["status"] == "not_applicable"
 
 
+def test_gru_analysis_consumes_cached_evaluation_states_without_rerun(
+    monkeypatch,
+) -> None:
+    reference_actions = np.ones((3, 2))
+    monkeypatch.setattr(
+        cs_standard,
+        "cs_output_feedback_reference_actions",
+        lambda: (
+            reference_actions,
+            {
+                "action_weight": np.broadcast_to(np.eye(2), (3, 2, 2)),
+                "controller": "fixture",
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        cs_standard,
+        "cs_output_feedback_observation_action_map",
+        lambda: (np.zeros((3, 2, 12)), {"controller": "fixture"}),
+    )
+    monkeypatch.setattr(
+        cs_standard,
+        "evaluate_gru_clean_actions",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected rerun")),
+    )
+
+    payload = materialize_gru_standard_result_from_evaluation_states(
+        {
+            "evaluation_manifest_id": "eval:fixture",
+            "evaluation_type": "rlrmp.eval.gru_diagnostics",
+            "product_role": "evaluation_states",
+            "checkpoint_policy": "evaluation_manifest",
+            "runs": {
+                "row-a": {
+                    "run_spec": _minimal_run_spec(),
+                    "candidate_actions": np.zeros((2, 3, 2)),
+                    "evaluation_metadata": {"status": "cached"},
+                }
+            },
+        },
+        run_ids=("row-a",),
+        experiment="authored-source",
+    )
+
+    assert payload["source_issue"] == "authored-source"
+    assert payload["checkpoint_policy"] == "evaluation_manifest"
+    assert payload["evaluation_manifest_dependency"] == {
+        "manifest_id": "eval:fixture",
+        "evaluation_type": "rlrmp.eval.gru_diagnostics",
+        "product_role": "evaluation_states",
+    }
+
+
 def test_gru_manifest_accepts_4d_observation_response_maps() -> None:
     actions = np.zeros((2, 3, 2))
     reference = np.ones_like(actions)
@@ -155,6 +206,7 @@ def test_gru_manifest_accepts_4d_observation_response_maps() -> None:
         action_weight=np.broadcast_to(np.eye(2), (3, 2, 2)),
         candidate_observation_to_action_map=candidate_map,
         reference_observation_to_action_map=reference_map,
+        source_issue_id="fixture",
     )
     row = manifest.to_payload()
     by_name = _components(row)
@@ -211,6 +263,7 @@ def test_gru_manifest_adds_covariance_weighted_observation_response_map() -> Non
         reference_observation_to_action_map=reference_map,
         observation_history_covariance=covariance,
         observation_history_covariance_metadata=covariance_metadata,
+        source_issue_id="fixture",
     )
     row = manifest.to_payload()
     summary = _components(row)[OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH]["summary"]
@@ -235,26 +288,6 @@ def test_gru_manifest_adds_covariance_weighted_observation_response_map() -> Non
         "blocked_pending_issue_3992394"
     )
 
-    rendered = render_gru_standard_markdown(
-        {
-            "issue": "unit",
-            "source_issue": "unit",
-            "rows": [row],
-            "summary": {},
-            "failure_decomposition": {
-                "rows": [
-                    {
-                        "run_id": row["spec"]["run_id"],
-                        "classification": {"classification": "mixed"},
-                    }
-                ]
-            },
-        }
-    )
-    assert "cov-weighted obs-action" in rendered
-    assert "| cs_stochastic_gru__unit__nominal_clean |" in rendered
-    assert "| 1 | 1 |" in rendered
-
 
 def test_gru_manifest_marks_covariance_weighted_observation_response_map_missing() -> None:
     actions = np.zeros((2, 3, 2))
@@ -271,6 +304,7 @@ def test_gru_manifest_marks_covariance_weighted_observation_response_map_missing
         action_weight=np.broadcast_to(np.eye(2), (3, 2, 2)),
         candidate_observation_to_action_map=candidate_map,
         reference_observation_to_action_map=reference_map,
+        source_issue_id="fixture",
     )
     row = manifest.to_payload()
     summary = _components(row)[OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH]["summary"]
@@ -303,26 +337,4 @@ def test_response_map_sampling_repeats_first_trial_from_multitarget_bank() -> No
     assert jnp.all(
         repeated.targets["mechanics.effector.pos"].value
         == trial_specs.targets["mechanics.effector.pos"].value[0]
-    )
-
-
-def test_gru_materializer_does_not_claim_action_evidence_when_models_are_not_loaded(
-    monkeypatch,
-) -> None:
-    monkeypatch.setattr(
-        cs_standard,
-        "resolve_run_record",
-        lambda _experiment, _run_id, *, repo_root: _minimal_run_spec(),
-    )
-
-    result = materialize_gru_standard_result(run_ids=(RUN_IDS[0],), load_models=False)
-    row = result["rows"][0]
-    by_name = _components(row)
-
-    assert row["status"] == "standard_certificate_missing_action_evidence"
-    assert by_name[STATE_WEIGHTED_ACTION_MISMATCH]["status"] == "missing"
-    assert "not evaluated" in by_name[STATE_WEIGHTED_ACTION_MISMATCH]["reason"]
-    assert "aggregate_mismatch_ratio" not in by_name[STATE_WEIGHTED_ACTION_MISMATCH]["summary"]
-    assert result["failure_decomposition"]["rows"][0]["classification"]["classification"] == (
-        "uncertain"
     )

@@ -40,7 +40,7 @@ from rlrmp.analysis.math.output_feedback import (
     make_cs_output_feedback_initial_state,
     position_velocity_observation_config,
 )
-from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
+from rlrmp.analysis.gru_standard_certificate import normalize_gru_hps
 from rlrmp.eval.checkpoint_selection import (
     ReplicateCheckpointSelection,
     load_validation_selected_checkpoint_model,

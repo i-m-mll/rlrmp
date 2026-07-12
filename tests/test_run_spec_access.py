@@ -17,7 +17,7 @@ from rlrmp.runtime.run_spec_access import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONVERTED_SEED_FILES = (
-    "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py",
+    "src/rlrmp/analysis/gru_standard_certificate.py",
     "src/rlrmp/analysis/pipelines/gru_broad_epsilon_attribution.py",
     "src/rlrmp/eval/checkpoint_selection.py",
     "src/rlrmp/eval/evaluation_diagnostics.py",

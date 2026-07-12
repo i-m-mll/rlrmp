@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from rlrmp.analysis.pipelines.failure_decomposition import (
+from rlrmp.analysis.failure_decomposition import (
     FailureDecompositionNumerics,
     IO_MAP_MISMATCH,
     REPRESENTATION_FAILURE,

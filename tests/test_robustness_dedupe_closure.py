@@ -174,7 +174,7 @@ def test_stabilization_evaluator_preserves_missing_family_behavior(
 ) -> None:
     from feedbax.config import namespace
 
-    from rlrmp.analysis.pipelines import cs_gru_standard_materialization
+    from rlrmp.analysis import gru_standard_certificate
     from rlrmp.eval import checkpoint_selection as gru_checkpoint_selection
     from rlrmp.analysis.pipelines import gru_perturbation_bank
     from rlrmp.eval import trial_inputs
@@ -239,7 +239,7 @@ def test_stabilization_evaluator_preserves_missing_family_behavior(
     }
     monkeypatch.setattr(namespace, "dict_to_namespace", lambda _payload, **_kwargs: hps)
     monkeypatch.setattr(
-        cs_gru_standard_materialization,
+        gru_standard_certificate,
         "normalize_gru_hps",
         lambda payload: payload,
     )

@@ -1115,22 +1115,6 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py"
-key = "checkpoint_policy"
-literal_repr = "'evaluation_manifest'"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py"
-key = "graph_spec_path"
-literal_repr = "'model.graph.json'"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
 path = "src/rlrmp/analysis/pipelines/gru_broad_epsilon_attribution.py"
 key = "enabled"
 literal_repr = "True"

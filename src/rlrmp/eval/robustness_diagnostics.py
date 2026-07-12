@@ -117,7 +117,7 @@ def evaluate_stabilization_row(
 
     from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 
-    from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
+    from rlrmp.analysis.gru_standard_certificate import normalize_gru_hps
     from rlrmp.eval.checkpoint_selection import (
         load_validation_selected_checkpoint_model,
     )

@@ -112,8 +112,7 @@ def test_rlrmp_report_recipes_register_with_lazy_package_registration() -> None:
             rr.BRIDGE_CERTIFICATE_REPORT_TYPE,
             "Bridge Certificate Notes",
             [
-                "rlrmp-gru-standard-certificate-note",
-                "rlrmp-bridge-standard-certificate-note",
+                "rlrmp-bridge-standard-certificate",
             ],
         ),
         (
@@ -209,13 +208,88 @@ def test_report_stage_defaults_have_single_model_owner() -> None:
     assert consumed_model.include_json_artifact == constructed_model.include_json_artifact
 
 
-def test_bridge_report_render_matches_fixture_note_section(tmp_path: Path) -> None:
+def test_bridge_report_constructs_certificate_and_failure_tables(tmp_path: Path) -> None:
     rr.register_rlrmp_report_recipes(replace=True)
     analysis_manifest, analysis_path = _write_analysis_manifest(
         tmp_path,
         manifest_id="rlrmp-test-analysis:bridge-note",
-        artifact_role="rlrmp-gru-standard-certificate-note",
-        artifact_text="standard certificate note\n",
+        artifact_role="rlrmp-bridge-standard-certificate",
+        artifact_json={
+            "rows": [
+                {
+                    "spec": {
+                        "run_id": "row-a",
+                        "training_distribution": "robust",
+                        "evaluation_lane": "deterministic",
+                        "parameters": {
+                            "evaluation_lens": "nominal_clean",
+                            "certificate_mode": "augmented_linear",
+                        },
+                    },
+                    "status": "failed_standard_certificate",
+                    "metrics": {"objective_ratio_to_reference": 1.2},
+                    "certificate_components": [
+                        {
+                            "name": "state_weighted_action_mismatch",
+                            "status": "available",
+                            "summary": {"aggregate_mismatch_ratio": 0.3},
+                        },
+                        {
+                            "name": "closed_loop_transition_mismatch",
+                            "status": "available",
+                            "summary": {"mismatch_ratio_mean": 0.4},
+                        },
+                        {
+                            "name": "value_policy_gap",
+                            "status": "available",
+                            "summary": {"gap_ratio_mean": 0.5},
+                        },
+                        {
+                            "name": "bellman_hessian_residual",
+                            "status": "available",
+                            "summary": {"residual_ratio_mean": 0.3},
+                        },
+                        {
+                            "name": "deterministic_exact_l2_and_gamma_sidecar",
+                            "status": "available",
+                            "summary": {
+                                "exact_l2_cost_ratio_to_lqr": 0.8,
+                                "lambda_over_gamma_squared": 0.7,
+                            },
+                        },
+                        {
+                            "name": "gain_diagnostic_sidecar",
+                            "status": "available",
+                            "summary": {"gain_relative_error": 0.9},
+                        },
+                    ],
+                }
+            ],
+            "failure_decomposition": {
+                "rows": [
+                    {
+                        "run_id": "row-a",
+                        "classification": {"classification": "sidecar_improving_non_equivalent"},
+                        "objective": {
+                            "learned_objective": 12.0,
+                            "reference_objective": 10.0,
+                            "learned_gradient_norm": 2.0,
+                            "reference_gradient_norm": 0.0,
+                            "learned_projected_gradient_norm": 1.0,
+                            "reference_projected_gradient_norm": 0.0,
+                        },
+                        "interpolation": [
+                            {"alpha": 0.0, "training_objective_ratio_to_reference": 1.2},
+                            {"alpha": 1.0, "training_objective_ratio_to_reference": 1.0},
+                        ],
+                        "gain_error_decomposition": {
+                            "strong_fraction_mean": 0.2,
+                            "weak_or_unvisited_fraction_mean": 0.8,
+                        },
+                    }
+                ]
+            },
+        },
     )
 
     report_manifest, _path = execute_report_spec(
@@ -236,9 +310,16 @@ def test_bridge_report_render_matches_fixture_note_section(tmp_path: Path) -> No
     )
 
     assert report_manifest.status == "completed"
-    render = next(artifact for artifact in report_manifest.artifacts if artifact.role == "report_render")
+    render = next(
+        artifact for artifact in report_manifest.artifacts if artifact.role == "report_render"
+    )
     render_text = Path(render.uri).read_text(encoding="utf-8")
-    assert "standard certificate note\n" in render_text
+    assert "| row-a | failed_standard_certificate | robust | nominal_clean |" in render_text
+    assert "R_u" in render_text
+    assert rr.ACTION_BELLMAN_ANNOTATION in render_text
+    assert rr.GAIN_DIAGNOSTIC_ANNOTATION in render_text
+    assert "sidecar_improving_non_equivalent" in render_text
+    assert rr.FAILURE_DECOMPOSITION_ANNOTATION in render_text
     assert render.media_type == "text/markdown"
     assert render.sha256
     summary = next(
@@ -247,7 +328,7 @@ def test_bridge_report_render_matches_fixture_note_section(tmp_path: Path) -> No
         if artifact.role == rr.BRIDGE_CERTIFICATE_REPORT_RENDER_ROLE
     )
     payload = json.loads(Path(summary.uri).read_text(encoding="utf-8"))
-    assert payload["sections"][0]["text"] == "standard certificate note\n"
+    assert payload["sections"][0]["json"]["rows"][0]["spec"]["run_id"] == "row-a"
 
 
 def test_feedback_quality_report_renders_json_payload(tmp_path: Path) -> None:
@@ -279,7 +360,9 @@ def test_feedback_quality_report_renders_json_payload(tmp_path: Path) -> None:
         root=tmp_path,
     )
 
-    render = next(artifact for artifact in report_manifest.artifacts if artifact.role == "report_render")
+    render = next(
+        artifact for artifact in report_manifest.artifacts if artifact.role == "report_render"
+    )
     render_text = Path(render.uri).read_text(encoding="utf-8")
     assert '"schema_id": "rlrmp.feedback_quality_lens"' in render_text
     assert '"status": "materialized"' in render_text
