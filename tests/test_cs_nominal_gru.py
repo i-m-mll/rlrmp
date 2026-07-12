@@ -205,11 +205,8 @@ from rlrmp.train.closed_loop_finite_adversary import (
 
 def _args(**overrides) -> argparse.Namespace:
     values = CsNominalGruConfig().model_dump(mode="python")
-    values.update(
-        compact_run_spec=False,
-        verify_resume_only=False,
-        **overrides,
-    )
+    values.update(compact_run_spec=False, verify_resume_only=False)
+    values.update(overrides)
     return argparse.Namespace(**values)
 
 

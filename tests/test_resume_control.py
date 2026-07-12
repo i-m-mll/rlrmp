@@ -5,11 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import shutil
-import subprocess
-import sys
-from types import SimpleNamespace
 from argparse import Namespace
 from pathlib import Path
+from types import SimpleNamespace
 
 import jax
 import pytest
@@ -19,6 +17,7 @@ from feedbax.training.checkpoint_custody import (
     write_checkpoint_transaction,
 )
 
+from rlrmp.io import load_named_python_module
 from rlrmp.train.executor.cs_supervised import (
     _cs_supervised_execution_registry,
     _adaptive_runtime_template_inputs,
@@ -443,19 +442,30 @@ def test_verify_resume_only_loads_strict_checkpoint_without_executor_steps(
     assert "expected_slots" in calls[0]
 
 
-def test_minimax_cli_exposes_checkpoint_only_resume_gate() -> None:
-    script = (Path(__file__).resolve().parents[1] / "scripts/train_minimax.py").read_text(
-        encoding="utf-8"
+def test_launch_interface_exposes_checkpoint_only_resume_gate() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    launch_script = load_named_python_module(
+        "launch_training_under_test",
+        repo_root / "scripts/launch_training.py",
     )
-    assert '"--verify-resume-only"' in script
-    assert "verify_minimax_checkpoint_resume(spec) if verify_only else run_training(spec)" in script
+    verify_args = launch_script.build_parser().parse_args(
+        ["verify-resume", "matrix.json", "--row", "minimax"]
+    )
+    assert verify_args.command == "verify-resume"
+    assert verify_args.row == "minimax"
+    assert not hasattr(verify_args, "allow_fresh_start")
+
+    execute_args = launch_script.build_parser().parse_args(
+        ["execute", "matrix.json", "--resume", "--allow-fresh-start"]
+    )
+    assert execute_args.command == "execute"
+    assert execute_args.resume is True
+    assert execute_args.allow_fresh_start is True
+
     method = (
-        Path(__file__).resolve().parents[1]
-        / "src/rlrmp/train/minimax_native/method.py"
+        repo_root / "src/rlrmp/train/minimax_native/method.py"
     ).read_text(encoding="utf-8")
-    resume = (
-        Path(__file__).resolve().parents[1] / "src/rlrmp/train/minimax_resume.py"
-    ).read_text(encoding="utf-8")
+    resume = (repo_root / "src/rlrmp/train/minimax_resume.py").read_text(encoding="utf-8")
     assert "load_latest_checkpoint(" not in method
     assert "load_latest_checkpoint(" in resume
 
@@ -548,16 +558,3 @@ def test_minimax_resume_verification_stays_strict_after_relocation(
             },
         )
     ]
-
-
-def test_minimax_cli_help_is_importable_and_lists_resume_gate() -> None:
-    repo_root = Path(__file__).resolve().parents[1]
-    result = subprocess.run(
-        [sys.executable, str(repo_root / "scripts/train_minimax.py"), "--help"],
-        cwd=repo_root,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
-    assert "--verify-resume-only" in result.stdout

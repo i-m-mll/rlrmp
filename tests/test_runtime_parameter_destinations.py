@@ -19,6 +19,7 @@ from rlrmp.data_products import broad_epsilon, calibration
 from rlrmp.eval import ensemble
 from rlrmp.model import cs_lss_gru, feedbax_graph, presets as model_presets
 from rlrmp.runtime import parameter_presets
+from rlrmp.train.training_configs import CsNominalGruConfig
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_COMMIT = "470ffe0928712fcdbc7cbaf8f3042b5e919f8008"
@@ -55,11 +56,7 @@ def test_runtime_defaults_load_from_registered_typed_presets() -> None:
     assert modal_runner.DEFAULT_BATCH_SIZE == modal.batch_size == 250
     assert modal_runner.DEFAULT_N_REPLICATES == modal.n_replicates == 5
     assert modal_runner.DEFAULT_HIDDEN_SIZE == modal.hidden_size == 180
-    assert (
-        modal_runner.DEFAULT_CHECKPOINT_INTERVAL_BATCHES
-        == (modal.checkpoint_interval_batches)
-        == 500
-    )
+    assert CsNominalGruConfig.model_fields["checkpoint_interval_batches"].default == 500
     assert ensemble.N_REPLICATES == evaluation.n_replicates == 5
 
 
