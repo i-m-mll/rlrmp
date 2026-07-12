@@ -213,14 +213,7 @@ def classify_manifest(name: str, manifest: Mapping[str, Any]) -> dict[str, Any] 
     if schema.startswith("rlrmp.cs_gru_standard_certificates") or name.startswith(
         "gru_standard_certificates"
     ):
-        return {
-            "diagnostic_name": "gru_standard_certificate",
-            "materializer": "rlrmp.analysis.pipelines.cs_gru_standard_materialization.write_gru_standard_result",
-            "source_files": [
-                "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py",
-                "src/rlrmp/analysis/pipelines/standard_certificate_materialization.py",
-            ],
-        }
+        return None
     # Historical GRU evaluation-diagnostics manifests came from a retired direct
     # writer. They are parity oracles, not regeneration targets: current reruns
     # must be authored as ``rlrmp.eval.gru_diagnostics`` EvaluationRunSpecs.
@@ -236,7 +229,7 @@ def classify_manifest(name: str, manifest: Mapping[str, Any]) -> dict[str, Any] 
             "materializer": "rlrmp.analysis.pipelines.gru_postrun_materialization.materialize_gru_postrun_analysis",
             "source_files": [
                 "src/rlrmp/analysis/pipelines/gru_postrun_materialization.py",
-                "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py",
+                "src/rlrmp/analysis/gru_standard_certificate.py",
                 "src/rlrmp/eval/evaluation_diagnostics.py",
                 "src/rlrmp/eval/gru_diagnostics.py",
                 "src/rlrmp/eval/perturbation_bank.py",

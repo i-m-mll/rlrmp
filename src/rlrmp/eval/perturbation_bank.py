@@ -28,7 +28,7 @@ from rlrmp.analysis.math.cs_game_card import (
     materialize_reference,
 )
 from rlrmp.analysis.math.summary_stats import summary_stats as _summary_stats
-from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
+from rlrmp.analysis.gru_standard_certificate import normalize_gru_hps
 from rlrmp.analysis.math.cs_released_simulation import (
     build_extlqg_comparator_path,
     default_cs_noise_covariances,

@@ -18,11 +18,6 @@ from typing import Any
 import jax
 import jax.tree as jt
 
-from rlrmp.analysis.pipelines.cs_gru_standard_materialization import (
-    MATERIALIZER_ISSUE_ID,
-    materialize_gru_standard_result,
-    write_gru_standard_result,
-)
 from rlrmp.analysis.pipelines.gru_feedback_ablation import (
     execute_feedback_ablation_pipeline,
     selected_feedback_ablation_bins_for_bank,
@@ -316,58 +311,10 @@ def run_benchmark(
     bundle_results: list[TimedBundle] = []
 
     standard_manifest_path = notes_scratch / "gru_standard_manifest.json"
-    standard_note_path = notes_scratch / "gru_standard.md"
-    warm_standard_manifest_path = warm_notes_scratch / "gru_standard_manifest.json"
-    warm_standard_note_path = warm_notes_scratch / "gru_standard.md"
     checkpoint_manifest = build_validation_checkpoint_selection_manifest(
         experiment=source_experiment,
         run_ids=(run_id,),
         repo_root=repo_root,
-    )
-
-    def run_standard() -> Mapping[str, Any]:
-        return materialize_gru_standard_result(
-            run_ids=(run_id,),
-            experiment=source_experiment,
-            materializer_issue_id=MATERIALIZER_ISSUE_ID,
-            use_validation_selected_checkpoints=False,
-            repo_root=repo_root,
-        )
-
-    def write_standard_outputs(result: Mapping[str, Any]) -> None:
-        write_gru_standard_result(
-            result,
-            note_path=standard_note_path,
-            manifest_path=standard_manifest_path,
-            repo_root=repo_root,
-        )
-
-    def write_warm_standard_outputs(result: Mapping[str, Any]) -> None:
-        write_gru_standard_result(
-            result,
-            note_path=warm_standard_note_path,
-            manifest_path=warm_standard_manifest_path,
-            repo_root=repo_root,
-        )
-
-    bundle_results.append(
-        _time_bundle(
-            "standard_certificate",
-            run_standard,
-            summarize=lambda result: {
-                "rows": len(result.get("rows", ())),
-                "checkpoint_policy": result.get("checkpoint_policy"),
-                "output": _repo_relative(standard_manifest_path, repo_root=repo_root),
-            },
-            output_writer=write_standard_outputs,
-            output_write_note=(
-                "The benchmark separates standard certificate manifest/note writes "
-                "after the cold materializer call."
-            ),
-            warm_replay=warm_replay,
-            warm_fn=run_standard,
-            warm_output_writer=write_warm_standard_outputs,
-        )
     )
 
     def run_pilot_figures() -> Mapping[str, Any]:

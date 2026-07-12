@@ -48,7 +48,7 @@ def materialize_gru_map_error_decomposition(
 ) -> dict[str, Any]:
     """Recompute response maps and return compact decomposition rows."""
 
-    from rlrmp.analysis.pipelines.cs_gru_standard_materialization import (
+    from rlrmp.analysis.gru_standard_certificate import (
         cs_output_feedback_observation_action_map,
         evaluate_gru_clean_actions,
     )

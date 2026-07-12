@@ -539,7 +539,7 @@ def materialize_shared_rollout_comparator(
 
     from feedbax.config.namespace import TreeNamespace, dict_to_namespace
     from rlrmp.analysis.math.cs_game_card import build_canonical_game
-    from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
+    from rlrmp.analysis.gru_standard_certificate import normalize_gru_hps
     from rlrmp.analysis.math.cs_released_simulation import (
         build_extlqg_comparator_path,
         default_cs_noise_covariances,

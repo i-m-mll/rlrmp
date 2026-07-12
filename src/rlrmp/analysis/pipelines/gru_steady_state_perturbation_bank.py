@@ -20,7 +20,7 @@ import plotly.graph_objects as go
 
 from rlrmp.analysis.data_products import load_analysis_parameter_preset
 from rlrmp.analysis.perturbation_rows import PerturbationSpec
-from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
+from rlrmp.analysis.gru_standard_certificate import normalize_gru_hps
 from rlrmp.analysis.pipelines.diagnostic_provenance import repo_relative, write_regeneration_spec
 from rlrmp.eval.checkpoint_selection import (
     CheckpointSelectionMode,

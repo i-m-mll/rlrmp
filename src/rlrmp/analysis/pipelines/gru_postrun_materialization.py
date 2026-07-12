@@ -9,10 +9,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from rlrmp.analysis.pipelines.cs_gru_standard_materialization import (
+from rlrmp.analysis.gru_standard_certificate import (
     MATERIALIZER_ISSUE_ID,
     materialize_gru_standard_result,
-    write_gru_standard_result,
 )
 from rlrmp.analysis.pipelines.diagnostic_provenance import write_regeneration_spec
 from rlrmp.eval.checkpoint_selection import (
@@ -218,18 +217,10 @@ def materialize_gru_postrun_analysis(
         ).model_dump(mode="json", exclude_none=True)
 
     standard_result = materialize_gru_standard_result(
+        evaluation_states,
         run_ids=run_ids,
         experiment=experiment,
         materializer_issue_id=materializer_issue_id,
-        use_validation_selected_checkpoints=use_validation_selected_checkpoints,
-        preferred_checkpoint_manifest_path=effective_checkpoint_manifest_path,
-        repo_root=repo_root,
-    )
-    write_gru_standard_result(
-        standard_result,
-        note_path=plan.standard_note_path,
-        manifest_path=plan.standard_manifest_path,
-        regeneration_spec_path=_regeneration_spec_path(plan.standard_manifest_path),
         repo_root=repo_root,
     )
 
@@ -718,7 +709,7 @@ def _write_postrun_auxiliary_regeneration_specs(
         ],
         source_files=[
             "src/rlrmp/analysis/pipelines/gru_postrun_materialization.py",
-            "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py",
+            "src/rlrmp/analysis/gru_standard_certificate.py",
             "src/rlrmp/eval/evaluation_diagnostics.py",
             "src/rlrmp/eval/gru_diagnostics.py",
             "src/rlrmp/analysis/pipelines/gru_pilot_figures.py",

@@ -24,7 +24,7 @@ from feedbax.contracts.manifest import (
     spec_payload,
 )
 
-from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
+from rlrmp.analysis.gru_standard_certificate import normalize_gru_hps
 from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.train.cs_nominal_gru import (
     CS_DELAYED_REACH_TASK_PRESET,

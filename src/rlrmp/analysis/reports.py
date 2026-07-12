@@ -56,6 +56,23 @@ _RENDER_ROLE_BY_TYPE = {
     ROBUSTNESS_PHENOTYPE_REPORT_TYPE: ROBUSTNESS_PHENOTYPE_REPORT_RENDER_ROLE,
 }
 
+ACTION_BELLMAN_ANNOTATION = (
+    "<sup>1</sup> State-weighted action mismatch and Bellman-Hessian residual can "
+    "match exactly when the Bellman action Hessian is a scalar multiple of the action "
+    "cost geometry on that row. In that case they are the same evidence expressed "
+    "through two certificate views; they diverge when downstream value geometry "
+    "weights action directions differently."
+)
+GAIN_DIAGNOSTIC_ANNOTATION = (
+    "<sup>2</sup> Gain mismatch is a diagnostic sidecar, not the bridge gate. The gate "
+    "is disturbance-relevant same-game behavior under the standard certificate "
+    "components."
+)
+FAILURE_DECOMPOSITION_ANNOTATION = (
+    "Failure decomposition explains why a standard-certificate row failed; it does "
+    "not replace or change the bridge gate."
+)
+
 
 class ReportStageParams(BaseModel):
     """Params for rlrmp markdown report-stage recipes."""
@@ -70,14 +87,9 @@ class ReportStageParams(BaseModel):
             "rlrmp-gru-perturbation-response-note",
             "rlrmp-gru-feedback-ablation-note",
         ),
-        BRIDGE_CERTIFICATE_REPORT_TYPE: (
-            "rlrmp-gru-standard-certificate-note",
-            "rlrmp-bridge-standard-certificate-note",
-        ),
+        BRIDGE_CERTIFICATE_REPORT_TYPE: ("rlrmp-bridge-standard-certificate",),
         FEEDBACK_QUALITY_LENS_REPORT_TYPE: ("rlrmp-feedback-quality-lens",),
-        ROBUSTNESS_PHENOTYPE_REPORT_TYPE: (
-            "rlrmp-robustness-phenotype-sidecar-note",
-        ),
+        ROBUSTNESS_PHENOTYPE_REPORT_TYPE: ("rlrmp-robustness-phenotype-sidecar-note",),
     }
     title_by_report_type: ClassVar[dict[str, str]] = {
         GRU_POSTRUN_REPORT_TYPE: "GRU Postrun Report",
@@ -187,7 +199,12 @@ def artifact_markdown_report_recipe(
             sections.append(_section_for_artifact(artifact))
 
     title = params.title
-    markdown = _render_sections_markdown(
+    render = (
+        _render_bridge_certificate_markdown
+        if report_spec.report_type == (BRIDGE_CERTIFICATE_REPORT_TYPE)
+        else _render_sections_markdown
+    )
+    markdown = render(
         title=title,
         narrative=report_spec.narrative or params.narrative,
         report_type=report_spec.report_type,
@@ -325,6 +342,221 @@ def _render_sections_markdown(
     return "\n".join(lines)
 
 
+def _render_bridge_certificate_markdown(
+    *,
+    title: str,
+    narrative: str | None,
+    report_type: str,
+    source_roles: Sequence[str],
+    sections: Sequence[Mapping[str, Any]],
+) -> str:
+    """Construct the standard certificate and failure companion tables."""
+
+    rows: list[Mapping[str, Any]] = []
+    failure_rows: list[Mapping[str, Any]] = []
+    for section in sections:
+        payload = section.get("json")
+        if not isinstance(payload, Mapping):
+            continue
+        candidate_rows = payload.get("rows")
+        if isinstance(candidate_rows, Sequence) and not isinstance(candidate_rows, (str, bytes)):
+            rows.extend(row for row in candidate_rows if isinstance(row, Mapping))
+        failure = payload.get("failure_decomposition")
+        if isinstance(failure, Mapping):
+            candidates = failure.get("rows")
+            if isinstance(candidates, Sequence) and not isinstance(candidates, (str, bytes)):
+                failure_rows.extend(row for row in candidates if isinstance(row, Mapping))
+
+    lines = [f"# {title}", ""]
+    if narrative:
+        lines.extend([narrative, ""])
+    lines.extend([f"Report type: `{report_type}`", "", "## Standard certificate", ""])
+    if not rows:
+        lines.extend(["No structured standard-certificate rows were materialized.", ""])
+        return "\n".join(lines)
+
+    columns = (
+        "row",
+        "status",
+        "training distribution",
+        "evaluation lens",
+        "mode",
+        "objective/cost ratio",
+        "action mismatch<sup>1</sup>",
+        "R_u",
+        "transition mismatch",
+        "value gap",
+        "Bellman residual<sup>1</sup>",
+        "exact-L2 / gamma sidecars",
+        "gain mismatch<sup>2</sup>",
+    )
+    lines.extend(_markdown_table(columns, (_standard_certificate_cells(row) for row in rows)))
+    lines.extend(["", ACTION_BELLMAN_ANNOTATION, "", GAIN_DIAGNOSTIC_ANNOTATION, ""])
+
+    failures = [row for row in failure_rows if _failure_class(row) != "not_failure"]
+    if failures:
+        lines.extend(["## Failure decomposition", ""])
+        failure_columns = (
+            "row",
+            "classification",
+            "learned / reference objective",
+            "learned / reference gradient",
+            "projected gradient",
+            "learned-to-reference interpolation",
+            "visited / weakly visited gain error",
+        )
+        lines.extend(_markdown_table(failure_columns, (_failure_cells(row) for row in failures)))
+        lines.extend(["", FAILURE_DECOMPOSITION_ANNOTATION, ""])
+    return "\n".join(lines)
+
+
+def _standard_certificate_cells(row: Mapping[str, Any]) -> tuple[str, ...]:
+    spec = _mapping(row.get("spec"))
+    parameters = _mapping(spec.get("parameters"))
+    metrics = _mapping(row.get("metrics"))
+    components = {
+        str(component.get("name")): component
+        for component in row.get("certificate_components", ())
+        if isinstance(component, Mapping)
+    }
+    action_mismatch = _component_value(
+        components,
+        "state_weighted_action_mismatch",
+        "mismatch_ratio_mean",
+    )
+    action_energy_mismatch = _component_value(
+        components,
+        "state_weighted_action_mismatch",
+        "aggregate_mismatch_ratio",
+    )
+    transition = _component_value(
+        components, "closed_loop_transition_mismatch", "mismatch_ratio_mean"
+    )
+    value_gap = _component_value(
+        components, "value_policy_gap", "gap_ratio_mean", "gap_ratio_max_abs"
+    )
+    bellman = _component_value(components, "bellman_hessian_residual", "residual_ratio_mean")
+    sidecar = _mapping(
+        _mapping(components.get("deterministic_exact_l2_and_gamma_sidecar")).get("summary")
+    )
+    exact_l2 = sidecar.get("exact_l2_cost_ratio_to_lqr")
+    gamma = sidecar.get("lambda_over_gamma_squared")
+    gain = _component_value(components, "gain_diagnostic_sidecar", "gain_relative_error")
+    objective_ratio = metrics.get("objective_ratio_to_reference")
+    if objective_ratio is None:
+        objective_ratio = metrics.get("under_epsilon_cost_ratio_to_lqr")
+    mode = parameters.get("certificate_mode") or _component_value(
+        components, "recurrence_gru_diagnostics", "certificate_mode"
+    )
+    if mode in (None, "missing"):
+        architecture = spec.get("architecture")
+        if architecture == "gru":
+            mode = "empirical_nonlinear"
+        elif architecture == "linear_recurrence":
+            mode = "augmented_linear"
+        else:
+            mode = "static_gain"
+    return (
+        str(spec.get("run_id", "missing")),
+        str(row.get("status", "missing")),
+        str(spec.get("training_distribution", "missing")),
+        str(
+            parameters.get("evaluation_lens")
+            or metrics.get("certificate_evaluation_lens")
+            or spec.get("evaluation_lane", "missing")
+        ),
+        str(mode),
+        _fmt(objective_ratio),
+        _fmt(action_mismatch),
+        _fmt(action_energy_mismatch),
+        _fmt(transition),
+        _fmt(value_gap),
+        _fmt(bellman),
+        f"L2={_fmt(exact_l2)}; gamma={_fmt(gamma)}",
+        _fmt(gain),
+    )
+
+
+def _failure_cells(row: Mapping[str, Any]) -> tuple[str, ...]:
+    objective = _mapping(row.get("objective"))
+    gains = _mapping(row.get("gain_error_decomposition"))
+    interpolation = row.get("interpolation")
+    gradient = f"{_fmt(objective.get('learned_gradient_norm'))} / {_fmt(objective.get('reference_gradient_norm'))}"
+    projected = f"{_fmt(objective.get('learned_projected_gradient_norm'))} / {_fmt(objective.get('reference_projected_gradient_norm'))}"
+    objective_pair = (
+        f"{_fmt(objective.get('learned_objective'))} / {_fmt(objective.get('reference_objective'))}"
+    )
+    gain_pair = (
+        f"visited={_fmt(gains.get('strong_fraction_mean'))}; "
+        f"weak/unvisited={_fmt(gains.get('weak_or_unvisited_fraction_mean'))}"
+    )
+    return (
+        str(row.get("run_id", "missing")),
+        _failure_class(row),
+        objective_pair,
+        gradient,
+        projected,
+        _interpolation_summary(interpolation),
+        gain_pair,
+    )
+
+
+def _failure_class(row: Mapping[str, Any]) -> str:
+    return str(_mapping(row.get("classification")).get("classification", "uncertain"))
+
+
+def _interpolation_summary(value: Any) -> str:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return "not_applicable"
+    records = [record for record in value if isinstance(record, Mapping)]
+    if not records:
+        return "not_applicable"
+    return "; ".join(
+        f"a={_fmt(record.get('alpha'))}: obj={_fmt(record.get('training_objective_ratio_to_reference'))}"
+        for record in records
+    )
+
+
+def _component_value(
+    components: Mapping[str, Mapping[str, Any]],
+    name: str,
+    *keys: str,
+) -> Any:
+    component = _mapping(components.get(name))
+    if component.get("status") != "available":
+        return component.get("status", "missing")
+    summary = _mapping(component.get("summary"))
+    for key in keys:
+        if summary.get(key) is not None:
+            return summary[key]
+    return "missing"
+
+
+def _markdown_table(columns: Sequence[str], rows: Sequence[Sequence[str]] | Any) -> list[str]:
+    lines = [
+        "| " + " | ".join(columns) + " |",
+        "| " + " | ".join("---" for _ in columns) + " |",
+    ]
+    lines.extend("| " + " | ".join(_escape_cell(value) for value in row) + " |" for row in rows)
+    return lines
+
+
+def _mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _fmt(value: Any) -> str:
+    if value is None:
+        return "missing"
+    if isinstance(value, float):
+        return f"{value:.6g}"
+    return str(value)
+
+
+def _escape_cell(value: Any) -> str:
+    return str(value).replace("|", "\\|").replace("\n", " ")
+
+
 __all__ = [
     "BRIDGE_CERTIFICATE_REPORT_RENDER_ROLE",
     "BRIDGE_CERTIFICATE_REPORT_TYPE",
@@ -333,6 +565,9 @@ __all__ = [
     "GRU_POSTRUN_REPORT_RENDER_ROLE",
     "GRU_POSTRUN_REPORT_TYPE",
     "ReportStageParams",
+    "ACTION_BELLMAN_ANNOTATION",
+    "FAILURE_DECOMPOSITION_ANNOTATION",
+    "GAIN_DIAGNOSTIC_ANNOTATION",
     "ROBUSTNESS_PHENOTYPE_REPORT_RENDER_ROLE",
     "ROBUSTNESS_PHENOTYPE_REPORT_TYPE",
     "artifact_markdown_report_recipe",

@@ -940,7 +940,7 @@ def _gru_standard_certificate_payload(
             f"'evaluate_clean_actions', got {mode!r}"
         )
 
-    from rlrmp.analysis.pipelines.cs_gru_standard_materialization import (
+    from rlrmp.analysis.gru_standard_certificate import (
         evaluate_gru_clean_actions,
     )
     from rlrmp.paths import REPO_ROOT

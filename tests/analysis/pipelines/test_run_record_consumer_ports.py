@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 import re
 
-import rlrmp.analysis.pipelines.cs_gru_standard_materialization as cs_standard
+import rlrmp.analysis.gru_standard_certificate as cs_standard
 import rlrmp.analysis.pipelines.gru_broad_epsilon_attribution as broad_epsilon
 from rlrmp.eval import checkpoint_selection
 import rlrmp.analysis.pipelines.gru_map_error_decomposition as map_error

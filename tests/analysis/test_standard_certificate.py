@@ -9,7 +9,7 @@ from rlrmp.analysis.bridge_certificates import (
     STATE_WEIGHTED_ACTION_MISMATCH,
 )
 from rlrmp.analysis.bridge_results import BridgeRunSpec
-from rlrmp.analysis.pipelines.standard_certificate_materialization import (
+from rlrmp.analysis.standard_certificate import (
     StandardCertificateRowRequest,
     component_by_name,
     component_status_counts,

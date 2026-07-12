@@ -317,7 +317,7 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             CS_GRU_STANDARD_CERTIFICATES_KIND,
             CS_GRU_STANDARD_CERTIFICATES_SCHEMA_ID,
             CS_GRU_STANDARD_CERTIFICATES_SCHEMA_VERSION,
-            emitted_by=("rlrmp.analysis.pipelines.cs_gru_standard_materialization",),
+            emitted_by=("rlrmp.analysis.gru_standard_certificate",),
             consumed_by=("Feedbax AnalysisRunManifest artifacts", "standard certificate reports"),
             description="RLRMP C&S GRU standard-certificate manifest payload.",
             rejected_old_versions=("rlrmp.cs_gru_standard_certificates.v0",),
