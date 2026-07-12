@@ -1259,7 +1259,7 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+path = "src/rlrmp/eval/perturbation_bank.py"
 key = "allow_zero_graph_effect"
 literal_repr = "False"
 count = 1
@@ -1267,7 +1267,7 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+path = "src/rlrmp/eval/perturbation_bank.py"
 key = "amplitude"
 literal_repr = "1.0"
 count = 1
@@ -1275,7 +1275,7 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+path = "src/rlrmp/eval/perturbation_bank.py"
 key = "axis_filter"
 literal_repr = "('x', 'y')"
 count = 1
@@ -1283,7 +1283,7 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+path = "src/rlrmp/eval/perturbation_bank.py"
 key = "blocked"
 literal_repr = "0"
 count = 1
@@ -1291,7 +1291,7 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+path = "src/rlrmp/eval/perturbation_bank.py"
 key = "duration_steps"
 literal_repr = "1"
 count = 6
@@ -1299,7 +1299,7 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+path = "src/rlrmp/eval/perturbation_bank.py"
 key = "evaluated"
 literal_repr = "0"
 count = 1
@@ -1307,7 +1307,7 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+path = "src/rlrmp/eval/perturbation_bank.py"
 key = "n_rows"
 literal_repr = "0"
 count = 2
@@ -1315,7 +1315,7 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+path = "src/rlrmp/eval/perturbation_bank.py"
 key = "not_applicable"
 literal_repr = "0"
 count = 1
@@ -1323,7 +1323,7 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+path = "src/rlrmp/eval/perturbation_bank.py"
 key = "not_implemented"
 literal_repr = "0"
 count = 1
@@ -1331,7 +1331,7 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+path = "src/rlrmp/eval/perturbation_bank.py"
 key = "reason"
 literal_repr = "'unspecified'"
 count = 1
@@ -1339,7 +1339,7 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+path = "src/rlrmp/eval/perturbation_bank.py"
 key = "start_time_index"
 literal_repr = "0"
 count = 6
@@ -1347,7 +1347,7 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+path = "src/rlrmp/eval/perturbation_bank.py"
 key = "statistic"
 literal_repr = "'p95_norm'"
 count = 1
@@ -1355,7 +1355,7 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+path = "src/rlrmp/eval/perturbation_bank.py"
 key = "status"
 literal_repr = "'available'"
 count = 2
@@ -1363,7 +1363,7 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+path = "src/rlrmp/eval/perturbation_bank.py"
 key = "status"
 literal_repr = "'not_available'"
 count = 1
@@ -1915,7 +1915,7 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py"
+path = "src/rlrmp/eval/perturbation_bank.py"
 key = "sign"
 literal_repr = "0"
 count = 1

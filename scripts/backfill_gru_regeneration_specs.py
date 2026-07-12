@@ -189,7 +189,7 @@ def backfill_perturbation_calibration(
             ],
             source_files=[
                 "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py",
-                "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+                "src/rlrmp/eval/perturbation_bank.py",
             ],
             notes=[
                 "Backfilled for the standard perturbation calibration used by current GRU diagnostics.",
@@ -239,7 +239,7 @@ def classify_manifest(name: str, manifest: Mapping[str, Any]) -> dict[str, Any] 
                 "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py",
                 "src/rlrmp/eval/evaluation_diagnostics.py",
                 "src/rlrmp/eval/gru_diagnostics.py",
-                "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+                "src/rlrmp/eval/perturbation_bank.py",
                 "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
             ],
         }
@@ -270,7 +270,7 @@ def classify_manifest(name: str, manifest: Mapping[str, Any]) -> dict[str, Any] 
             ),
             "source_files": [
                 "src/rlrmp/analysis/declarative_materialization.py",
-                "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+                "src/rlrmp/eval/perturbation_bank.py",
                 "src/rlrmp/eval/recipes.py",
             ],
         }
@@ -285,7 +285,7 @@ def classify_manifest(name: str, manifest: Mapping[str, Any]) -> dict[str, Any] 
             ),
             "source_files": [
                 "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
-                "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+                "src/rlrmp/eval/perturbation_bank.py",
             ],
         }
     if schema.startswith("rlrmp.cs_stochastic_gru.training_diagnostics_summary"):

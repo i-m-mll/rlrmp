@@ -13,7 +13,7 @@ from rlrmp.analysis.perturbation_rows import (
     PerturbationChannel,
     PerturbationSpec,
 )
-from rlrmp.analysis.pipelines.gru_perturbation_bank import default_cs_perturbation_bank
+from rlrmp.eval.perturbation_bank import default_cs_perturbation_bank
 from rlrmp.analysis.pipelines.gru_steady_state_perturbation_bank import (
     default_feedback_perturbations,
 )

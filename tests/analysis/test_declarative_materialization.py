@@ -38,7 +38,7 @@ from rlrmp.eval.recipes import (
     FEEDBACK_ABLATION_EVALUATION_TYPE,
     PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
 )
-from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+from rlrmp.eval.perturbation_bank import (
     PERTURBATION_BANK_PARAMS_TYPE,
     PerturbationBankParams,
 )
@@ -996,47 +996,6 @@ def test_perturbation_class_leaf_absent_family_fails_closed(tmp_path: Path) -> N
         )
     assert "missing_family" in str(excinfo.value.__cause__)
     assert "contains families" in str(excinfo.value.__cause__)
-
-
-def test_perturbation_adapter_rejects_obsolete_output_requests(
-    tmp_path: Path,
-) -> None:
-    from rlrmp.analysis.pipelines import gru_perturbation_bank
-
-    manifest = gru_perturbation_bank.materialize_gru_perturbation_response(
-        source_experiment="unit-exp",
-        result_experiment="e32c8bb",
-        run_ids=("training-run-a",),
-        evaluate=False,
-        repo_root=tmp_path,
-    )
-
-    assert manifest["schema_version"] == "rlrmp.gru_perturbation_bank.v3"
-    assert manifest["issue"] == "e32c8bb"
-    assert manifest["source_experiment"] == "unit-exp"
-    assert manifest["bank_summary"]["n_perturbations"] == len(
-        manifest["bank"]["perturbations"]
-    )
-    assert manifest["compatibility_adapter"]["route"] == (
-        "feedbax_evaluation_manifest_to_perturbation_class_leaf_aggregate"
-    )
-    assert manifest["compatibility_adapter"]["custody"] == (
-        "feedbax_evaluation_and_analysis_manifests"
-    )
-    assert "legacy_output_paths_ignored" not in manifest["compatibility_adapter"]
-    obsolete_requests = {
-        "write_bulk_arrays": True,
-        "output_path": tmp_path / "legacy_manifest.json",
-        "note_path": tmp_path / "legacy_note.md",
-        "bulk_dir": tmp_path / "legacy_bulk",
-        "regeneration_spec_path": tmp_path / "legacy_regeneration.json",
-    }
-    for name, value in obsolete_requests.items():
-        with pytest.raises(TypeError, match=name):
-            gru_perturbation_bank.materialize_gru_perturbation_response(
-                evaluate=False,
-                **{name: value},
-            )
 
 
 def test_feedback_quality_lens_bundle_executes_fixture_and_groups_artifacts(

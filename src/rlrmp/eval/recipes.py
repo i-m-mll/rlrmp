@@ -192,7 +192,7 @@ def register_rlrmp_evaluation_recipes(*, replace: bool = True) -> None:
 
     for recipe_name, model_class in _PARAMS_MODEL_BY_RECIPE.items():
         register_params_model(recipe_name, model_class, replace=replace)
-    from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+    from rlrmp.eval.perturbation_bank import (
         PERTURBATION_BANK_PARAMS_TYPE,
         PerturbationBankParams,
     )
@@ -661,7 +661,7 @@ def _perturbation_bank_from_params(params: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _default_perturbation_bank(params: Mapping[str, Any]) -> dict[str, Any]:
-    from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+    from rlrmp.eval.perturbation_bank import (
         PerturbationBankParams,
         expand_perturbation_bank,
     )
@@ -672,7 +672,7 @@ def _default_perturbation_bank(params: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _canonical_perturbation_bank_params(params: Mapping[str, Any]) -> dict[str, Any]:
-    from rlrmp.analysis.pipelines.gru_perturbation_bank import PerturbationBankParams
+    from rlrmp.eval.perturbation_bank import PerturbationBankParams
 
     bank_params = dict(params.get("bank_params") or {})
     bank_params.setdefault("mode", params.get("bank_mode", params.get("mode", "raw")))
@@ -899,7 +899,7 @@ def _evaluate_single_perturbation_bank_run(
     checkpoint_selection_mode: str,
     repo_root: Path,
 ) -> dict[str, Any]:
-    from rlrmp.analysis.pipelines.gru_perturbation_bank import evaluate_run_perturbation_bank
+    from rlrmp.eval.perturbation_bank import evaluate_run_perturbation_bank
 
     return evaluate_run_perturbation_bank(
         run,

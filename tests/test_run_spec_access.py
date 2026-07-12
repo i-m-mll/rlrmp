@@ -22,7 +22,7 @@ CONVERTED_SEED_FILES = (
     "src/rlrmp/eval/checkpoint_selection.py",
     "src/rlrmp/eval/evaluation_diagnostics.py",
     "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
-    "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+    "src/rlrmp/eval/perturbation_bank.py",
     "src/rlrmp/analysis/pipelines/gru_pilot_figures.py",
     "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py",
     "src/rlrmp/analysis/pipelines/gru_worst_case_epsilon_audit.py",

@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import pytest
 
 from rlrmp.analysis.pipelines.gru_feedback_ablation import selected_feedback_ablation_bins_for_bank
-from rlrmp.analysis.pipelines.gru_perturbation_bank import default_cs_perturbation_bank
+from rlrmp.eval.perturbation_bank import default_cs_perturbation_bank
 import rlrmp.benchmarks.postrun_eval_materialization as benchmark
 from rlrmp.benchmarks.postrun_eval_materialization import (
     build_parser,

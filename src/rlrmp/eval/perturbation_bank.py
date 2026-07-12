@@ -6,7 +6,6 @@ import json
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Literal
 
 import equinox as eqx
@@ -40,7 +39,6 @@ from rlrmp.analysis.math.cs_released_simulation import (
 )
 from rlrmp.eval.checkpoint_selection import (
     CheckpointSelectionMode,
-    load_materialized_fixed_bank_manifest,
     load_validation_selected_checkpoint_model,
 )
 from rlrmp.eval.rollout_states import CachedEvaluationStates
@@ -79,15 +77,6 @@ SCHEMA_VERSION = "rlrmp.gru_perturbation_bank.v3"
 DEFAULT_BANK_ID = "cs_standard_perturbation_response_v3"
 CALIBRATED_BANK_ID = "cs_calibrated_perturbation_response_v3"
 PERTURBATION_BANK_PARAMS_TYPE = "rlrmp.perturbation_bank"
-DEFAULT_OUTPUT_FILENAME = "gru_perturbation_response_fullqrf_validation_selected_manifest.json"
-DEFAULT_BULK_SUBDIR = "perturbation_response/gru_fullqrf_validation_selected"
-DEFAULT_SOURCE_EXPERIMENT = "5f70333"
-DEFAULT_RESULT_EXPERIMENT = "3992394"
-DEFAULT_RUN_IDS = (
-    "lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64",
-    "lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64",
-)
-
 PerturbationStatus = Literal["evaluated", "blocked", "not_implemented", "not_applicable"]
 
 GRAPH_ADAPTER_INPUT_PREFIX = "perturbation.channel"
@@ -905,7 +894,7 @@ def _apply_perturbation_bank_params(
     payload["bank_params"] = params_payload
     payload["condition_source"] = {
         "type": "registered_params_model",
-        "model": "rlrmp.analysis.pipelines.gru_perturbation_bank.PerturbationBankParams",
+        "model": "rlrmp.eval.perturbation_bank.PerturbationBankParams",
         "policy": (
             "Perturbation condition rows are selected by params on the evaluation "
             "or bundle spec; Python defaults only expand the named standard bank."
@@ -1198,267 +1187,6 @@ def _initial_position_contract_manifest() -> dict[str, Any]:
             },
         },
     }
-
-
-def materialize_gru_perturbation_response(
-    *,
-    source_experiment: str = DEFAULT_SOURCE_EXPERIMENT,
-    result_experiment: str = DEFAULT_RESULT_EXPERIMENT,
-    run_ids: Sequence[str] = DEFAULT_RUN_IDS,
-    labels: Sequence[str] | None = None,
-    n_rollout_trials: int = 8,
-    evaluate: bool = True,
-    repo_root: Path = REPO_ROOT,
-    bank_mode: Literal["raw", "calibrated"] = "raw",
-    calibration_level: str | Sequence[str] | None = None,
-    calibration_reach: str | float | None = None,
-    feedback_scale_manifest_path: Path | None = None,
-    extlqg_physical_dim: Literal[6, 8] = 8,
-    preferred_checkpoint_manifest_path: Path | None = None,
-    checkpoint_selection_mode: CheckpointSelectionMode = "sparse_history",
-) -> dict[str, Any]:
-    """Return a perturbation bank through the registered evaluation and analysis path.
-
-    This adapter returns the aggregate payload in memory. Durable artifacts must
-    be requested through Feedbax evaluation/analysis custody; obsolete output-path
-    and raw-array arguments are intentionally absent so they fail at the call site.
-    """
-
-    eval_manifest, eval_manifest_path, eval_states = _execute_perturbation_bank_eval_adapter(
-        source_experiment=source_experiment,
-        result_experiment=result_experiment,
-        run_ids=run_ids,
-        labels=labels,
-        n_rollout_trials=n_rollout_trials,
-        evaluate=evaluate,
-        bank_mode=bank_mode,
-        calibration_level=calibration_level,
-        calibration_reach=calibration_reach,
-        feedback_scale_manifest_path=feedback_scale_manifest_path,
-        extlqg_physical_dim=extlqg_physical_dim,
-        preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
-        checkpoint_selection_mode=checkpoint_selection_mode,
-        repo_root=repo_root,
-    )
-    manifest = _aggregate_perturbation_eval_adapter(
-        eval_states,
-        eval_manifest=eval_manifest,
-        eval_manifest_path=eval_manifest_path,
-        issue=result_experiment,
-        source_experiment=source_experiment,
-    )
-    manifest["bank_summary"] = _adapter_bank_summary(manifest.get("bank", {}))
-    manifest["compatibility_adapter"] = {
-        "materializer": (
-            "rlrmp.analysis.pipelines.gru_perturbation_bank."
-            "materialize_gru_perturbation_response"
-        ),
-        "route": "feedbax_evaluation_manifest_to_perturbation_class_leaf_aggregate",
-        "evaluation_manifest_id": eval_manifest.id,
-        "evaluation_manifest_path": str(eval_manifest_path),
-        "custody": "feedbax_evaluation_and_analysis_manifests",
-    }
-    return manifest
-
-
-def _execute_perturbation_bank_eval_adapter(
-    *,
-    source_experiment: str,
-    result_experiment: str,
-    run_ids: Sequence[str],
-    labels: Sequence[str] | None,
-    n_rollout_trials: int,
-    evaluate: bool,
-    bank_mode: Literal["raw", "calibrated"],
-    calibration_level: str | Sequence[str] | None,
-    calibration_reach: str | float | None,
-    feedback_scale_manifest_path: Path | None,
-    extlqg_physical_dim: Literal[6, 8],
-    preferred_checkpoint_manifest_path: Path | None,
-    checkpoint_selection_mode: CheckpointSelectionMode,
-    repo_root: Path,
-) -> tuple[Any, Path, Mapping[str, Any]]:
-    from feedbax.contracts.manifest import EvaluationRunSpec, ParentRef
-
-    from rlrmp import ensure_rlrmp_recipes_registered
-    from rlrmp.eval.recipes import (
-        PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
-        perturbation_response_bank_recipe,
-    )
-    from rlrmp.runtime.spec_migrations import (
-        PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND,
-        stamp_current_schema,
-    )
-
-    ensure_rlrmp_recipes_registered()
-    bank_params = PerturbationBankParams(
-        mode=bank_mode,
-        calibration_level=calibration_level,
-        calibration_reach=calibration_reach,
-        feedback_scale_manifest_path=feedback_scale_manifest_path,
-    ).model_dump(mode="json", exclude_none=True)
-    params: dict[str, Any] = {
-        "source_experiment": source_experiment,
-        "run_ids": list(run_ids),
-        "labels": None if labels is None else list(labels),
-        "n_rollout_trials": int(n_rollout_trials),
-        "bank_params": bank_params,
-        "extlqg_physical_dim": int(extlqg_physical_dim),
-        "preferred_checkpoint_manifest_path": (
-            None
-            if preferred_checkpoint_manifest_path is None
-            else str(preferred_checkpoint_manifest_path)
-        ),
-        "checkpoint_selection_mode": checkpoint_selection_mode,
-        "repo_root": str(repo_root),
-    }
-    params = {key: value for key, value in params.items() if value is not None}
-    if not evaluate:
-        params.update(
-            {
-                "checkpoint_bank_ref": {
-                    "kind": "CheckpointSelectionManifest",
-                    "id": f"{source_experiment}_legacy_adapter_no_evaluate",
-                },
-                "response_tensors": {"runs": {}},
-                "legacy_payload_mode": True,
-            }
-        )
-    spec = EvaluationRunSpec(
-        evaluation_type=PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
-        training_run_ids=list(run_ids),
-        inputs=[
-            ParentRef(kind="TrainingRunManifest", id=str(run_id), role="training_run")
-            for run_id in run_ids
-        ],
-        params=stamp_current_schema(PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND, params),
-    )
-    result = perturbation_response_bank_recipe(
-        spec,
-        repo_root,
-        repo_root / "cache" / "states" / "legacy_perturbation_adapter.pkl",
-    )
-    states = result.states
-    if not isinstance(states, Mapping):
-        raise TypeError("perturbation-response evaluation states must be a mapping")
-    manifest = SimpleNamespace(
-        id=str(result.metadata.get("caching_identity", {}).get("manifest_id")),
-        metadata=result.metadata,
-        summary_metrics=result.summary_metrics,
-    )
-    manifest_path = repo_root / "manifests" / "evaluation_runs" / f"{manifest.id}.json"
-    return manifest, manifest_path, states
-
-
-def _aggregate_perturbation_eval_adapter(
-    states: Mapping[str, Any],
-    *,
-    eval_manifest: Any,
-    eval_manifest_path: Path,
-    issue: str,
-    source_experiment: str,
-) -> dict[str, Any]:
-    from feedbax.contracts.manifest import ParentRef
-
-    from rlrmp.analysis import declarative_materialization as dm
-
-    class_index_map = states.get("class_index_map")
-    if not isinstance(class_index_map, Mapping):
-        raise ValueError("perturbation-response evaluation states lack class_index_map")
-    resolved_eval = SimpleNamespace(
-        ref=ParentRef(
-            kind="EvaluationRunManifest",
-            id=eval_manifest.id,
-            role="evaluation_run",
-            uri=str(eval_manifest_path),
-        ),
-        manifest=eval_manifest,
-        path=eval_manifest_path,
-        states=states,
-    )
-    leaf_products = [
-        dm._perturbation_class_response_payload(
-            states,
-            {"family": str(family), "bank_params": states.get("bank_params")},
-            evaluation_input=resolved_eval,
-        )
-        for family in class_index_map
-    ]
-    return dm._aggregate_perturbation_class_products(
-        leaf_products,
-        {
-            "issue": issue,
-            "source_experiment": source_experiment,
-            "bank_params": states.get("bank_params"),
-        },
-    )
-
-
-def _adapter_bank_summary(bank: Any) -> dict[str, Any]:
-    if not isinstance(bank, Mapping):
-        return {"n_perturbations": 0, "families": [], "channels": [], "timing_bins": []}
-    rows = bank.get("perturbations", [])
-    if not isinstance(rows, Sequence) or isinstance(rows, (str, bytes)):
-        rows = []
-    return {
-        "bank_id": bank.get("bank_id"),
-        "schema_version": bank.get("schema_version"),
-        "n_perturbations": len(rows),
-        "families": sorted(
-            {
-                str(row.get("family"))
-                for row in rows
-                if isinstance(row, Mapping) and row.get("family") is not None
-            }
-        ),
-        "channels": sorted(
-            {
-                str(row.get("channel"))
-                for row in rows
-                if isinstance(row, Mapping) and row.get("channel") is not None
-            }
-        ),
-        "timing_bins": sorted(
-            {
-                str(row.get("timing_bin"))
-                for row in rows
-                if isinstance(row, Mapping) and row.get("timing_bin") is not None
-            }
-        ),
-    }
-
-
-def _effective_checkpoint_policy_from_manifest(
-    experiment: str,
-    *,
-    preferred_checkpoint_manifest_path: Path | None = None,
-    checkpoint_selection_mode: CheckpointSelectionMode = "sparse_history",
-    repo_root: Path = REPO_ROOT,
-) -> str:
-    """Return the checkpoint policy represented by an optional preferred manifest."""
-
-    effective_selection_mode = checkpoint_selection_mode
-    if (
-        effective_selection_mode == "sparse_history"
-        and preferred_checkpoint_manifest_path is not None
-    ):
-        effective_selection_mode = "fixed_bank_manifest"
-    if effective_selection_mode == "sparse_history":
-        return "validation_selected_per_replicate"
-    if effective_selection_mode != "fixed_bank_manifest":
-        raise ValueError(f"unsupported checkpoint selection mode {checkpoint_selection_mode!r}")
-    manifest = load_materialized_fixed_bank_manifest(
-        manifest_path=preferred_checkpoint_manifest_path,
-    )
-    if manifest is not None:
-        return str(
-            manifest.metadata.get("checkpoint_policy")
-            or "fixed_bank_rescored_per_replicate"
-        )
-    raise ValueError(
-        "checkpoint_selection_mode='fixed_bank_manifest' requires a materialized "
-        "fixed-bank checkpoint manifest"
-    )
 
 
 def evaluate_run_perturbation_bank(
@@ -2561,142 +2289,6 @@ def summarize_perturbation_bank(rows: Sequence[Mapping[str, Any]]) -> dict[str, 
             ),
         },
     }
-
-
-def render_perturbation_response_markdown(manifest: Mapping[str, Any]) -> str:
-    """Render a compact Markdown summary for tracked notes."""
-
-    lines = [
-        "# GRU perturbation-response bank",
-        "",
-        f"Issue: `{manifest['issue']}`. Source experiment: `{manifest['source_experiment']}`.",
-        "",
-        "The bank is controller-independent: it perturbs external task, command-port, "
-        "process, sensory, observation, or target interfaces and does not mutate GRU "
-        "internals.",
-        "",
-        manifest.get("semantics_correction", ""),
-        "",
-        "## Bank",
-        "",
-        "| Channel | Count |",
-        "|---|---:|",
-    ]
-    channel_counts: dict[str, int] = {}
-    for perturbation in manifest["bank"]["perturbations"]:
-        channel_counts[perturbation["channel"]] = channel_counts.get(perturbation["channel"], 0) + 1
-    lines.extend(f"| `{channel}` | {count} |" for channel, count in sorted(channel_counts.items()))
-    lines.extend(["", "| Family | Count |", "|---|---:|"])
-    family_counts: dict[str, int] = {}
-    for perturbation in manifest["bank"]["perturbations"]:
-        family_counts[perturbation["family"]] = family_counts.get(perturbation["family"], 0) + 1
-    lines.extend(f"| `{family}` | {count} |" for family, count in sorted(family_counts.items()))
-    lines.extend(["", "## Evaluation", ""])
-    if not manifest["runs"]:
-        lines.append("No checkpoint rollouts were evaluated in this materialization.")
-    for run_id, run in manifest["runs"].items():
-        counts = run["status_counts"]
-        robust_summary = run.get("robust_response_summary", {})
-        lines.extend(
-            [
-                f"### `{run_id}`",
-                "",
-                f"- Evaluated: {counts.get('evaluated', 0)}",
-                f"- Blocked: {counts.get('blocked', 0)}",
-                f"- Not implemented: {counts.get('not_implemented', 0)}",
-                f"- Not applicable: {counts.get('not_applicable', 0)}",
-                f"- Rollout trials per replicate: {run['n_rollout_trials_per_replicate']}",
-                f"- Robust summaries: {robust_summary.get('status', 'not_available')}",
-                "",
-            ]
-        )
-        class_summary = robust_summary.get("class_summary", {})
-        if class_summary.get("status") == "available":
-            lines.extend(
-                [
-                    "#### Class-Binned Summary",
-                    "",
-                    "| Class | Rows | Status | Amplitudes | Mean delta action | "
-                    "Max delta x | AUC delta x | Max delta state | AUC delta state | "
-                    "Max delta u | AUC delta u | Peak time | Recovery time | "
-                    "Mean endpoint delta | Mean terminal-speed delta | "
-                    "Mean full-Q/R/Q_f delta cost | "
-                    "GRU/extLQG delta-cost ratio | GRU/robust delta-cost ratio | "
-                    "Warnings / not applicable |",
-                    "|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
-                ]
-            )
-            for class_key, class_row in class_summary.get("groups", {}).items():
-                metrics = class_row.get("metrics", {})
-                ratio = class_row.get("gru_extlqg_delta_cost_ratio", {})
-                robust_ratio = class_row.get("gru_robust_analytical_delta_cost_ratio", {})
-                lines.append(
-                    "| "
-                    f"`{class_key}` | "
-                    f"{class_row.get('n_rows', 0)} | "
-                    f"{_format_status_counts(class_row.get('status_counts', {}))} | "
-                    f"{_format_amplitudes(class_row.get('amplitudes', []))} | "
-                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_action_norm'))} | "
-                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_position_response_m.max'))} | "
-                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_position_response_m.auc'))} | "
-                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_state_response.max'))} | "
-                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_state_response.auc'))} | "
-                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_action_response.max'))} | "
-                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_action_response.auc'))} | "
-                    f"{_format_optional_float(_class_metric_mean(metrics, 'response_shape.peak_time_s'))} | "
-                    f"{_format_optional_float(_class_metric_mean(metrics, 'response_shape.recovery_time_s'))} | "
-                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_endpoint_error_m'))} | "
-                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_terminal_speed_m_s'))} | "
-                    f"{_format_optional_float(_class_metric_mean(metrics, 'extra_full_qrf_delta_cost_total'))} | "
-                    f"{_format_optional_float(ratio.get('ratio_of_means'))} | "
-                    f"{_format_optional_float(robust_ratio.get('ratio_of_means'))} | "
-                    f"{_format_class_notes(class_row)} |"
-                )
-            lines.append("")
-        timing_cell_summary = robust_summary.get("timing_cell_summary", {})
-        if timing_cell_summary.get("status") == "available":
-            lines.extend(
-                [
-                    "#### Timing-Cell Summary",
-                    "",
-                    "| Cell | Rows | Status | Amplitudes | Mean delta action | "
-                    "Max delta x | AUC delta x | Mean full-Q/R/Q_f delta cost | "
-                    "GRU/extLQG delta-cost ratio | GRU/robust delta-cost ratio | "
-                    "Warnings / not applicable |",
-                    "|---|---:|---|---|---:|---:|---:|---:|---:|---|",
-                ]
-            )
-            for cell_key, cell_row in timing_cell_summary.get("groups", {}).items():
-                metrics = cell_row.get("metrics", {})
-                ratio = cell_row.get("gru_extlqg_delta_cost_ratio", {})
-                robust_ratio = cell_row.get("gru_robust_analytical_delta_cost_ratio", {})
-                lines.append(
-                    "| "
-                    f"`{cell_key}` | "
-                    f"{cell_row.get('n_rows', 0)} | "
-                    f"{_format_status_counts(cell_row.get('status_counts', {}))} | "
-                    f"{_format_amplitudes(cell_row.get('amplitudes', []))} | "
-                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_action_norm'))} | "
-                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_position_response_m.max'))} | "
-                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_position_response_m.auc'))} | "
-                    f"{_format_optional_float(_class_metric_mean(metrics, 'extra_full_qrf_delta_cost_total'))} | "
-                    f"{_format_optional_float(ratio.get('ratio_of_means'))} | "
-                    f"{_format_optional_float(robust_ratio.get('ratio_of_means'))} | "
-                    f"{_format_class_notes(cell_row)} |"
-                )
-            lines.append("")
-    lines.extend(
-        [
-            "## Residuals",
-            "",
-            f"- ExtLQG comparator: {manifest['extlqg_comparator']['status']} - "
-            f"{manifest['extlqg_comparator']['reason']}",
-            f"- Full-Q/R/Q_f perturbation cost: {manifest['full_qrf_cost']['status']} - "
-            f"{manifest['full_qrf_cost']['reason']}",
-            "",
-        ]
-    )
-    return "\n".join(lines)
 
 
 def _apply_initial_state_perturbation(
@@ -4845,10 +4437,6 @@ def _repo_relative(path: Path, *, repo_root: Path = REPO_ROOT) -> str:
 __all__ = [
     "CALIBRATED_BANK_ID",
     "DEFAULT_BANK_ID",
-    "DEFAULT_BULK_SUBDIR",
-    "DEFAULT_OUTPUT_FILENAME",
-    "DEFAULT_RUN_IDS",
-    "DEFAULT_SOURCE_EXPERIMENT",
     "GRAPH_ADAPTER_INPUT_PREFIX",
     "SCHEMA_VERSION",
     "AdapterResult",
@@ -4866,8 +4454,6 @@ __all__ = [
     "evaluate_run_perturbation_bank",
     "extlqg_comparator_status",
     "full_qrf_cost_summary",
-    "materialize_gru_perturbation_response",
-    "render_perturbation_response_markdown",
     "robust_output_feedback_comparator_status",
     "score_full_qrf_rollout_cost",
     "summarize_perturbation_bank",

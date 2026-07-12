@@ -66,20 +66,21 @@ def test_feedback_orchestration_preserves_materialization_contract(
 ) -> None:
     from rlrmp.eval import checkpoint_selection as gru_checkpoint_selection
     from rlrmp.analysis.pipelines import gru_feedback_ablation
-    from rlrmp.analysis.pipelines import gru_perturbation_bank
 
     calls: list[tuple[str, dict[str, Any]]] = []
     checkpoint_path = tmp_path / "checkpoint.json"
     evaluation_path = tmp_path / "evaluation.json"
     detail_path = tmp_path / "detail.json"
+    perturbation_path = tmp_path / "perturbation.json"
     checkpoint_path.touch()
     evaluation_path.touch()
     detail_path.touch()
+    perturbation_path.touch()
     paths = {
         "checkpoint_manifest": checkpoint_path,
         "evaluation": evaluation_path,
         "evaluation_regeneration_spec": tmp_path / "evaluation-regeneration.json",
-        "perturbation": tmp_path / "perturbation.json",
+        "perturbation": perturbation_path,
         "perturbation_note": tmp_path / "perturbation.md",
         "perturbation_regeneration_spec": tmp_path / "perturbation-regeneration.json",
         "feedback": tmp_path / "feedback.json",
@@ -92,16 +93,14 @@ def test_feedback_orchestration_preserves_materialization_contract(
             return {"schema_version": "checkpoint.v1"}
         if path == evaluation_path:
             return {"schema_version": "evaluation.v1"}
+        if path == perturbation_path:
+            return {
+                "schema_version": "perturbation.v1",
+                "bulk_detail_manifest": {"path": str(detail_path)},
+            }
         if path == detail_path:
             return {"detail": "loaded"}
         raise AssertionError(path)
-
-    def perturbation_materializer(**kwargs: Any) -> dict[str, Any]:
-        calls.append(("perturbation", kwargs))
-        return {
-            "schema_version": "perturbation.v1",
-            "bulk_detail_manifest": {"path": str(detail_path)},
-        }
 
     def feedback_materializer(**kwargs: Any) -> SimpleNamespace:
         calls.append(("feedback", kwargs))
@@ -110,18 +109,13 @@ def test_feedback_orchestration_preserves_materialization_contract(
     writes: list[tuple[dict[str, Any], list[dict[str, Any]]]] = []
     hooks = {
         "load_json": load_json,
-        "perturbation_output_is_current": lambda *_args, **_kwargs: False,
+        "perturbation_output_is_current": lambda *_args, **_kwargs: True,
         "run_output_is_current": lambda *_args, **_kwargs: False,
     }
     monkeypatch.setattr(
         gru_checkpoint_selection,
         "build_validation_checkpoint_selection_manifest",
         lambda **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        gru_perturbation_bank,
-        "materialize_gru_perturbation_response",
-        perturbation_materializer,
     )
     monkeypatch.setattr(
         gru_feedback_ablation,
@@ -157,13 +151,8 @@ def test_feedback_orchestration_preserves_materialization_contract(
     assert result["rows"] == [{"run_id": "row-a", "detail": "loaded"}]
     assert result["summary"] == {"rows": result["rows"], "component_count": 6}
     assert writes == [(result["summary"], result["rows"])]
-    assert [name for name, _kwargs in calls] == ["perturbation", "feedback"]
-    perturbation_kwargs = calls[0][1]
-    feedback_kwargs = calls[1][1]
-    assert perturbation_kwargs["bank_mode"] == "calibrated"
-    assert perturbation_kwargs["calibration_level"] == "moderate"
-    assert perturbation_kwargs["calibration_reach"] == 0.15
-    assert perturbation_kwargs["n_rollout_trials"] == 64
+    assert [name for name, _kwargs in calls] == ["feedback"]
+    feedback_kwargs = calls[0][1]
     assert feedback_kwargs["scope"] == "feedback-scope"
     assert feedback_kwargs["feedback_selection_level"] == "moderate"
 
@@ -176,7 +165,7 @@ def test_stabilization_evaluator_preserves_missing_family_behavior(
 
     from rlrmp.analysis.pipelines import cs_gru_standard_materialization
     from rlrmp.eval import checkpoint_selection as gru_checkpoint_selection
-    from rlrmp.analysis.pipelines import gru_perturbation_bank
+    from rlrmp.eval import perturbation_bank as gru_perturbation_bank
     from rlrmp.eval import trial_inputs
     from rlrmp.analysis.pipelines import gru_steady_state_perturbation_bank
     from rlrmp.eval import sisu_spectrum

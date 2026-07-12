@@ -53,7 +53,7 @@ def test_dup_0173_pipeline_modules_import_shared_helper() -> None:
         "src/rlrmp/analysis/pipelines/gru_worst_case_epsilon_audit.py",
         "src/rlrmp/eval/gru_diagnostics.py",
         "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
-        "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+        "src/rlrmp/eval/perturbation_bank.py",
         "src/rlrmp/analysis/pipelines/objective_comparator.py",
     ]
 

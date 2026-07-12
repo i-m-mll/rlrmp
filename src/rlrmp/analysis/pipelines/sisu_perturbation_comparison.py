@@ -18,7 +18,7 @@ import numpy as np
 
 from rlrmp.analysis.data_products import load_analysis_parameter_preset
 from rlrmp.analysis.pipelines.diagnostic_provenance import repo_relative, write_regeneration_spec
-from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+from rlrmp.eval.perturbation_bank import (
     CheckpointSelectionMode,
     default_cs_perturbation_bank,
     evaluate_run_perturbation_bank,
@@ -218,7 +218,7 @@ def materialize_sisu_perturbation_comparison(
         ],
         source_files=[
             "src/rlrmp/analysis/pipelines/sisu_perturbation_comparison.py",
-            "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+            "src/rlrmp/eval/perturbation_bank.py",
             "src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py",
         ],
         notes=[

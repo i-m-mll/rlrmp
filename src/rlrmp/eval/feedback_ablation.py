@@ -88,7 +88,7 @@ def evaluate_feedback_ablation_runs(
     # rollout ownership remains here, at the registered evaluation boundary.
     # They are local to avoid the module-registration cycle during package import.
     from rlrmp.analysis.pipelines import gru_feedback_ablation as analysis
-    from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+    from rlrmp.eval.perturbation_bank import (
         default_cs_perturbation_bank,
     )
     from rlrmp.eval.trial_inputs import resolve_evaluation_run_inputs
