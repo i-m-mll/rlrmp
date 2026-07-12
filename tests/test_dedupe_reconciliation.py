@@ -17,8 +17,8 @@ EXPECTED_STATE_COUNTS = {
     "cross_repo_resolved": 3,
     "excluded_cross_repo": 2,
     "excluded_pipeline_lane": 26,
-    "removed": 120,
-    "thin_adapter": 121,
+    "removed": 125,
+    "thin_adapter": 116,
 }
 
 

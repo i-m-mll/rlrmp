@@ -43,8 +43,8 @@ from rlrmp.eval.checkpoint_selection import (
 )
 from rlrmp.eval.rollout_states import CachedEvaluationStates
 from rlrmp.eval.gru_diagnostics import RolloutEvaluation
-from rlrmp.analysis.pipelines.gru_pilot_figures import (
-    RunFigureInputs,
+from rlrmp.eval.trial_inputs import (
+    EvaluationRunInputs as RunFigureInputs,
     repeat_single_validation_trial,
 )
 from rlrmp.analysis.math.output_feedback import (
