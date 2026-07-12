@@ -13,6 +13,7 @@ import pytest
 
 import feedbax
 import jax.tree as jt
+import rlrmp.runtime.checkpoint_fork_gate as checkpoint_fork_gate
 from feedbax.contracts.checkpoints import BatchHistory, CheckpointForkBarrierMapping
 from feedbax.contracts.run_matrix import (
     TRAINING_RUN_MATRIX_SPEC_SCHEMA_ID,
@@ -33,12 +34,13 @@ from feedbax.contracts.training import (
     standard_supervised_method_ref,
 )
 from feedbax.training.run_matrix import fork_matrix_checkpoints
+from feedbax.training.checkpoint_custody import _validate_program_step_units
 
 from rlrmp.runtime.adaptive_checkpoint_adapter import NominalToAdaptiveSlotAdapter
 from rlrmp.runtime.checkpoint_fork_gate import (
     ForkParityError,
     _adaptive_continuation_fork_contracts,
-    _program_step_from_completed_batches,
+    _source_program_step_from_manifest,
     fork_checkpoints_with_parity,
     parse_target,
 )
@@ -270,6 +272,25 @@ def _write_latest(
     )
 
 
+def _mock_source_ordinal(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    ordinal: int,
+    coordinate: int | None = None,
+) -> None:
+    manifest = SimpleNamespace(
+        metadata={"barrier_visit_ordinal": ordinal},
+        completed_coordinate=SimpleNamespace(
+            program_step=ordinal if coordinate is None else coordinate
+        ),
+    )
+    monkeypatch.setattr(
+        checkpoint_fork_gate,
+        "load_checkpoint_custody_documents",
+        lambda _root: SimpleNamespace(manifest=SimpleNamespace(document=manifest)),
+    )
+
+
 def _write_adaptive_skip_fork_manifests(
     source_root: Path,
     target_root: Path,
@@ -286,9 +307,7 @@ def _write_adaptive_skip_fork_manifests(
         "transaction_id": "source",
         "completed_training_batches": 2,
         "completed_coordinate": {"program_step": 2},
-        "slots": [
-            {"slot": slot, "sha256": source_blobs[slot]} for slot in comparable_slots
-        ],
+        "slots": [{"slot": slot, "sha256": source_blobs[slot]} for slot in comparable_slots],
         "content_integrity_digest": {
             "slots": [
                 {"slot": slot, "slot_root_sha256": f"source-{slot}-content"}
@@ -344,7 +363,9 @@ def _write_adaptive_skip_fork_manifests(
         (tx_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         (root / "latest.json").write_text(
             json.dumps(
-                {"manifest_relative_path": f"transactions/{manifest['transaction_id']}/manifest.json"}
+                {
+                    "manifest_relative_path": f"transactions/{manifest['transaction_id']}/manifest.json"
+                }
             ),
             encoding="utf-8",
         )
@@ -356,6 +377,7 @@ def _adaptive_continuation_spec(
     source_completed_batches: int = 2,
     target_total_batches: int = 4,
     n_replicates: int = 1,
+    checkpoint_interval_batches: int = 1,
 ) -> TrainingRunSpec:
     """Build a minimal real adaptive row through RLRMP's normal authoring path."""
 
@@ -368,7 +390,7 @@ def _adaptive_continuation_spec(
         "dry_run": True,
         "full_train": True,
         "resume": True,
-        "checkpoint_interval_batches": 1,
+        "checkpoint_interval_batches": checkpoint_interval_batches,
         "controller_lr": 1e-3,
         "gradient_clip_norm": 5.0,
         "lr_warmup_batches": 1,
@@ -413,22 +435,84 @@ def test_parse_target_accepts_matrix_row_checkpoint_root() -> None:
     assert target.checkpoint_root == Path("/tmp/checkpoints")
 
 
+def test_source_program_step_uses_manifest_ordinal_not_continuation_interval() -> None:
+    manifest = {
+        "metadata": {"barrier_visit_ordinal": 24},
+        "completed_coordinate": {"program_step": 24},
+    }
+
+    assert _source_program_step_from_manifest(manifest) == 24
+    assert _source_program_step_from_manifest(manifest) != 12_000 // 100
+
+
 @pytest.mark.parametrize(
-    ("completed_batches", "chunk_interval_batches", "expected_program_step"),
-    [(0, 500, 0), (12_000, 500, 24), (12_001, 500, 25)],
+    "manifest",
+    [
+        {"metadata": {}, "completed_coordinate": {"program_step": 24}},
+        {
+            "metadata": {"barrier_visit_ordinal": 24},
+            "completed_coordinate": {},
+        },
+    ],
 )
-def test_program_step_is_train_chunk_ordinal_not_batch_total(
-    completed_batches: int,
-    chunk_interval_batches: int,
-    expected_program_step: int,
+def test_source_program_step_requires_both_manifest_ordinal_fields(
+    manifest: dict[str, object],
 ) -> None:
-    assert (
-        _program_step_from_completed_batches(
-            completed_batches=completed_batches,
-            chunk_interval_batches=chunk_interval_batches,
+    with pytest.raises(ForkParityError, match="requires non-negative integer"):
+        _source_program_step_from_manifest(manifest)
+
+
+def test_source_program_step_rejects_disagreeing_manifest_fields() -> None:
+    with pytest.raises(ForkParityError, match="ordinal fields disagree"):
+        _source_program_step_from_manifest(
+            {
+                "metadata": {"barrier_visit_ordinal": 24},
+                "completed_coordinate": {"program_step": 25},
+            }
         )
-        == expected_program_step
+
+
+@pytest.mark.parametrize(
+    ("checkpoint_interval_batches", "target_total_batches"),
+    [(100, 12_200), (500, 16_500)],
+)
+def test_adaptive_fork_target_stays_in_source_manifest_ordinal_domain(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    checkpoint_interval_batches: int,
+    target_total_batches: int,
+) -> None:
+    """Changing continuation cadence never reinterprets the source seam."""
+    target_spec = _adaptive_continuation_spec(
+        tmp_path,
+        source_completed_batches=12_000,
+        target_total_batches=target_total_batches,
+        checkpoint_interval_batches=checkpoint_interval_batches,
     )
+    materialized = SimpleNamespace(
+        rows=[
+            SimpleNamespace(
+                row_id="adaptive",
+                planned_run_id="feedbax-training-run:adaptive",
+                spec=target_spec,
+            )
+        ]
+    )
+    _mock_source_ordinal(monkeypatch, ordinal=24)
+
+    _, mapping = _adaptive_continuation_fork_contracts(
+        materialized, source_checkpoint_root=tmp_path / "source"
+    )["adaptive"]
+
+    assert mapping.target_coordinate is not None
+    assert mapping.target_coordinate.program_step == 24
+    _validate_program_step_units(
+        mapping.target_coordinate,
+        {"barrier_visit_ordinal": 24},
+        context="test fork target",
+    )
+    if checkpoint_interval_batches == 100:
+        assert mapping.target_coordinate.program_step != 12_000 // checkpoint_interval_batches
 
 
 def test_lr_continuation_reporter_public_api_handles_restart_and_continue(
@@ -940,7 +1024,9 @@ def test_fork_gate_forward_api_guard_matches_pinned_feedbax_delivery() -> None:
         assert head == pin, "forward API guard must inspect the revision pinned for RLRMP"
 
 
-def test_adaptive_fork_contracts_call_real_pinned_feedbax_matrix_api(tmp_path: Path) -> None:
+def test_adaptive_fork_contracts_call_real_pinned_feedbax_matrix_api(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Exercise adaptive contracts through Feedbax's real matrix-fork function.
 
     This uses ``skip_fork`` only to avoid writing a full model checkpoint in a
@@ -957,7 +1043,10 @@ def test_adaptive_fork_contracts_call_real_pinned_feedbax_matrix_api(tmp_path: P
         payload=target_spec.model_dump(mode="json"),
     )
     materialized = SimpleNamespace(matrix_spec_sha256="test-matrix", rows=[row])
-    contracts = _adaptive_continuation_fork_contracts(materialized)
+    _mock_source_ordinal(monkeypatch, ordinal=2)
+    contracts = _adaptive_continuation_fork_contracts(
+        materialized, source_checkpoint_root=tmp_path / "source"
+    )
     adapter, barrier_mapping = contracts["adaptive"]
     assert barrier_mapping.source_barrier == "after_train_chunk"
     assert barrier_mapping.target_barrier == "after_adaptive_epsilon_train_chunk"
@@ -966,9 +1055,9 @@ def test_adaptive_fork_contracts_call_real_pinned_feedbax_matrix_api(tmp_path: P
     assert barrier_mapping.coordinate_mapping == {
         "identity": "rlrmp.cs_supervised_to_adaptive_epsilon.v1",
         "parameters": {
-            "program_step": "source_train_chunk_barrier_visit_ordinal",
+            "program_step": "source_manifest_completed_barrier_ordinal",
             "source_completed_training_batches": 2,
-            "source_chunk_interval_batches": 1,
+            "source_manifest_program_step": 2,
         },
     }
 
@@ -1003,6 +1092,7 @@ def test_adaptive_fork_contracts_call_real_pinned_feedbax_matrix_api(tmp_path: P
 
 def test_adaptive_fork_contract_uses_real_shaped_segment_local_optimizer_template(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A 12k source fork targets 4.5k histories, never the 16.5k cumulative total."""
 
@@ -1018,8 +1108,9 @@ def test_adaptive_fork_contract_uses_real_shaped_segment_local_optimizer_templat
         spec=target_spec,
     )
 
+    _mock_source_ordinal(monkeypatch, ordinal=24)
     adapter, _ = _adaptive_continuation_fork_contracts(
-        SimpleNamespace(rows=[row])
+        SimpleNamespace(rows=[row]), source_checkpoint_root=tmp_path / "source"
     )["adaptive"]
     optimizer_leaves = tuple(jt.leaves(adapter.optimizer_template))
     segment_template_leaves = adapter.continuation_slot_templates()["optimizer"]

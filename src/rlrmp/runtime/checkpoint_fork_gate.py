@@ -23,6 +23,7 @@ from feedbax.training.run_matrix import (
     fork_matrix_checkpoints,
     materialize_run_matrix,
 )
+from feedbax.training.checkpoint_custody import load_checkpoint_custody_documents
 
 from rlrmp.runtime.lr_continuation import RlrmpLrContinuationReporter
 from rlrmp.runtime.adaptive_checkpoint_adapter import NominalToAdaptiveSlotAdapter
@@ -111,7 +112,10 @@ def fork_checkpoints_with_parity(
     _validate_fork_prelaunch_contracts(matrix, materialized, repo_root=resolved_repo_root)
     ratio_setpoint = _ratio_setpoint_prelaunch_report(matrix)
     target_roots = {target.row_id: target.checkpoint_root for target in targets}
-    adaptive_contracts = _adaptive_continuation_fork_contracts(materialized)
+    adaptive_contracts = _adaptive_continuation_fork_contracts(
+        materialized,
+        source_checkpoint_root=source_checkpoint_root,
+    )
     ramp_windows = _adaptive_ramp_window_prelaunch_report(materialized)
     reporter = RlrmpLrContinuationReporter(source_checkpoint_root=source_checkpoint_root)
     table = fork_matrix_checkpoints(
@@ -124,8 +128,7 @@ def fork_checkpoints_with_parity(
             row_id: value[0].adaptive_initial_slots for row_id, value in adaptive_contracts.items()
         },
         row_slot_transforms={
-            row_id: value[0].source_slot_transforms
-            for row_id, value in adaptive_contracts.items()
+            row_id: value[0].source_slot_transforms for row_id, value in adaptive_contracts.items()
         },
         row_transform_metadata={
             row_id: value[0].source_transform_metadata
@@ -204,6 +207,8 @@ def _adaptive_ramp_window_prelaunch_report(materialized: Any) -> list[dict[str, 
 
 def _adaptive_continuation_fork_contracts(
     materialized: Any,
+    *,
+    source_checkpoint_root: Path,
 ) -> dict[str, tuple[NominalToAdaptiveSlotAdapter, CheckpointForkBarrierMapping]]:
     """Build the declared target topology and C&S-to-adaptive barrier map."""
 
@@ -251,11 +256,7 @@ def _adaptive_continuation_fork_contracts(
             for barrier in spec.worker_execution.method_contract.phase_program.checkpoint_barriers
             if barrier.name == "after_adaptive_epsilon_train_chunk"
         )
-        chunk_interval_batches = int(args.checkpoint_interval_batches)
-        source_program_step = _program_step_from_completed_batches(
-            completed_batches=request.source_completed_batches,
-            chunk_interval_batches=chunk_interval_batches,
-        )
+        source_program_step = _source_program_step_from_checkpoint(source_checkpoint_root)
         mapping = CheckpointForkBarrierMapping(
             source_barrier="after_train_chunk",
             target_barrier=target_barrier.name,
@@ -268,9 +269,14 @@ def _adaptive_continuation_fork_contracts(
             coordinate_mapping={
                 "identity": "rlrmp.cs_supervised_to_adaptive_epsilon.v1",
                 "parameters": {
-                    "program_step": "source_train_chunk_barrier_visit_ordinal",
+                    # A fork performs no target training step: it rebinds the
+                    # already-completed source seam into the target barrier.
+                    # Therefore the fork target stays at source ordinal 24;
+                    # the first and second 100-batch continuation chunks then
+                    # advance the target phase coordinate to 25 and 26.
+                    "program_step": "source_manifest_completed_barrier_ordinal",
                     "source_completed_training_batches": request.source_completed_batches,
-                    "source_chunk_interval_batches": chunk_interval_batches,
+                    "source_manifest_program_step": source_program_step,
                 },
             },
         )
@@ -287,18 +293,41 @@ def _adaptive_continuation_fork_contracts(
     return contracts
 
 
-def _program_step_from_completed_batches(
-    *,
-    completed_batches: int,
-    chunk_interval_batches: int,
-) -> int:
-    """Derive the completed train-chunk ordinal without mixing batch units."""
+def _source_program_step_from_checkpoint(source_checkpoint_root: Path) -> int:
+    """Read the governed source barrier ordinal from checkpoint custody."""
+    documents = load_checkpoint_custody_documents(source_checkpoint_root)
+    return _source_program_step_from_manifest(documents.manifest.document)
 
-    if completed_batches < 0:
-        raise ForkParityError("source completed training batches must be nonnegative")
-    if chunk_interval_batches < 1:
-        raise ForkParityError("source train chunk interval must be positive")
-    return math.ceil(completed_batches / chunk_interval_batches)
+
+def _source_program_step_from_manifest(manifest: Any) -> int:
+    """Validate the source manifest's two representations of its ordinal."""
+    if isinstance(manifest, Mapping):
+        metadata = manifest.get("metadata")
+        coordinate = manifest.get("completed_coordinate")
+    else:
+        metadata = manifest.metadata
+        coordinate = manifest.completed_coordinate
+    raw_ordinal = metadata.get("barrier_visit_ordinal") if isinstance(metadata, Mapping) else None
+    program_step = (
+        coordinate.get("program_step")
+        if isinstance(coordinate, Mapping)
+        else getattr(coordinate, "program_step", None)
+    )
+    for field, value in (
+        ("metadata.barrier_visit_ordinal", raw_ordinal),
+        ("completed_coordinate.program_step", program_step),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ForkParityError(
+                f"source checkpoint manifest requires non-negative integer {field}"
+            )
+    if raw_ordinal != program_step:
+        raise ForkParityError(
+            "source checkpoint manifest ordinal fields disagree: "
+            f"metadata.barrier_visit_ordinal={raw_ordinal} "
+            f"completed_coordinate.program_step={program_step}"
+        )
+    return program_step
 
 
 def _validate_fork_prelaunch_contracts(
