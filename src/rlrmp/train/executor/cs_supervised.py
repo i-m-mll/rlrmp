@@ -26,6 +26,7 @@ from rlrmp.train.config_materialization import (
     _training_diagnostics_enabled,
 )
 import argparse
+import copy
 import hashlib
 import json
 import logging
@@ -1286,6 +1287,21 @@ def _run_full_training_from_context(
     )
 
 
+def _adaptive_runtime_template_inputs(
+    args: argparse.Namespace,
+    hps: TreeNamespace,
+    continuation: LaunchContinuation,
+) -> tuple[argparse.Namespace, TreeNamespace]:
+    """Copy governed arguments and size runtime histories to the resumed segment."""
+
+    runtime_template_args = copy.copy(args)
+    runtime_template_hps = copy.copy(hps)
+    if continuation.resume:
+        runtime_template_args.n_train_batches = continuation.continuation_batches
+        runtime_template_hps.n_batches_condition = continuation.continuation_batches
+    return runtime_template_args, runtime_template_hps
+
+
 def _run_adaptive_epsilon_native_from_context(
     context: RunSpecExecutionContext,
     *,
@@ -1337,10 +1353,15 @@ def _run_adaptive_epsilon_native_from_context(
             target_total_batches=continuation.stop_target_batches,
         )
     args = context.args
+    runtime_template_args, runtime_template_hps = _adaptive_runtime_template_inputs(
+        args,
+        hps,
+        continuation,
+    )
     initial_slots, runtime = build_adaptive_epsilon_native_initial_slots(
         run_spec=run_spec,
-        hps=hps,
-        args=args,
+        hps=runtime_template_hps,
+        args=runtime_template_args,
         key=jr.PRNGKey(int(args.seed)),
     )
     started = time.perf_counter()
@@ -1633,33 +1654,26 @@ def _materialize_adaptive_epsilon_native_result(
         _adaptive_state_from_slot,
         _deserialize_pytree_slot_value,
         _guard_from_slot,
-        build_adaptive_epsilon_controller_optimizer,
     )
 
     args = context.args
     run_spec = context.run_spec
     run_spec_path = context.run_spec_path
-    hps = context.hps
     output_dir = mkdir_p(Path(args.output_dir))
     checkpoint_root = output_dir / "checkpoints"
-    key_init, _key_train, _key_adversary = split_initial_keys(jr.PRNGKey(int(args.seed)))
-    pair = setup_task_model_pair(hps, key=key_init)
-    optimizer = build_adaptive_epsilon_controller_optimizer(run_spec, hps)
-    template_state = _initial_training_state(
-        model=pair.model,
-        trainer=optimizer,
-        where_train=_where_train()[0],
-        key=jr.PRNGKey(int(args.seed)),
-    )
     adaptive_state = _adaptive_state_from_slot(final_slots[ADAPTIVE_EPSILON_STATE])
     zero_guard = _guard_from_slot(final_slots[ZERO_ADVERSARY_GUARD])
     if adaptive_state is not None:
         adaptive_state = replace(adaptive_state, zero_adversary_guard=zero_guard)
     state = TrainingState(
-        model=_deserialize_pytree_slot_value(final_slots[MODEL], pair.model, slot=MODEL),
+        model=_deserialize_pytree_slot_value(
+            final_slots[MODEL],
+            runtime.model_template,
+            slot=MODEL,
+        ),
         optimizer_state=_deserialize_pytree_slot_value(
             final_slots[OPTIMIZER],
-            template_state.optimizer_state,
+            runtime.optimizer_template,
             slot=OPTIMIZER,
         ),
         completed_batches=int(final_slots[COMPLETED_BATCHES]),

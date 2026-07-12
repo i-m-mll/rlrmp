@@ -12,7 +12,8 @@ from types import SimpleNamespace
 import pytest
 
 import feedbax
-from feedbax.contracts.checkpoints import CheckpointForkBarrierMapping
+import jax.tree as jt
+from feedbax.contracts.checkpoints import BatchHistory, CheckpointForkBarrierMapping
 from feedbax.contracts.run_matrix import (
     TRAINING_RUN_MATRIX_SPEC_SCHEMA_ID,
     TRAINING_RUN_MATRIX_SPEC_SCHEMA_VERSION,
@@ -266,14 +267,20 @@ def _write_latest(
     )
 
 
-def _adaptive_continuation_spec(tmp_path: Path) -> TrainingRunSpec:
+def _adaptive_continuation_spec(
+    tmp_path: Path,
+    *,
+    source_completed_batches: int = 2,
+    target_total_batches: int = 4,
+    n_replicates: int = 1,
+) -> TrainingRunSpec:
     """Build a minimal real adaptive row through RLRMP's normal authoring path."""
 
     args = build_parser().parse_args([])
     values = {
-        "n_train_batches": 2,
+        "n_train_batches": target_total_batches,
         "batch_size": 1,
-        "n_replicates": 1,
+        "n_replicates": n_replicates,
         "hidden_size": 4,
         "dry_run": True,
         "full_train": True,
@@ -311,8 +318,8 @@ def _adaptive_continuation_spec(tmp_path: Path) -> TrainingRunSpec:
     payload = write_run_spec(args)["run_spec"]
     return attach_adaptive_epsilon_checkpoint_continuation(
         TrainingRunSpec.model_validate(payload["feedbax_training_run_spec"]),
-        source_completed_batches=2,
-        target_total_batches=4,
+        source_completed_batches=source_completed_batches,
+        target_total_batches=target_total_batches,
     )
 
 
@@ -408,6 +415,38 @@ def test_checkpoint_fork_gate_has_no_lr_reporter_implementation_residue() -> Non
     assert "class RlrmpLrContinuationReporter" not in source
     assert "def _learning_rate_at_step" not in source
     assert "def _adaptive_epsilon_lr_continuation_points" not in source
+
+
+def test_fork_gate_registers_adaptive_method_without_import_order_side_effects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from rlrmp.runtime import checkpoint_fork_gate
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        checkpoint_fork_gate,
+        "ensure_adaptive_epsilon_training_method_registered",
+        lambda: calls.append("adaptive"),
+    )
+    monkeypatch.setattr(
+        checkpoint_fork_gate,
+        "ensure_minimax_training_method_registered",
+        lambda: calls.append("minimax"),
+    )
+    monkeypatch.setattr(
+        checkpoint_fork_gate,
+        "register_rlrmp_cs_supervised_method",
+        lambda: calls.append("cs_supervised"),
+    )
+    monkeypatch.setattr(
+        checkpoint_fork_gate,
+        "register_rlrmp_distillation_methods",
+        lambda: calls.append("distillation"),
+    )
+
+    checkpoint_fork_gate.register_rlrmp_training_methods()
+
+    assert calls == ["adaptive", "minimax", "cs_supervised", "distillation"]
 
 
 def test_task_identity_gate_rejects_real_row_game_card_leaf_with_derived_hash_labels(
@@ -734,7 +773,9 @@ def test_fork_gate_forward_api_guard_matches_pinned_feedbax_delivery() -> None:
     keyword_names = {keyword.arg for keyword in calls[0].keywords if keyword.arg is not None}
     required_continuation_kwargs = {
         "target_slot_templates",
-            "row_segment_history_templates",
+        "row_slot_transforms",
+        "row_transform_metadata",
+        "row_segment_history_templates",
         "row_target_slot_transforms",
         "row_target_transform_metadata",
         "row_target_transformed_slots",
@@ -841,3 +882,34 @@ def test_adaptive_fork_contracts_call_real_pinned_feedbax_matrix_api(tmp_path: P
 
     assert table["ok"] is True
     assert (tmp_path / "parity.json").is_file()
+
+
+def test_adaptive_fork_contract_uses_real_shaped_segment_local_optimizer_template(
+    tmp_path: Path,
+) -> None:
+    """A 12k source fork targets 4.5k histories, never the 16.5k cumulative total."""
+
+    target_spec = _adaptive_continuation_spec(
+        tmp_path,
+        source_completed_batches=12_000,
+        target_total_batches=16_500,
+        n_replicates=5,
+    )
+    row = SimpleNamespace(
+        row_id="adaptive",
+        planned_run_id="feedbax-training-run:adaptive",
+        spec=target_spec,
+    )
+
+    adapter, _ = _adaptive_continuation_fork_contracts(
+        SimpleNamespace(rows=[row])
+    )["adaptive"]
+    optimizer_leaves = tuple(jt.leaves(adapter.optimizer_template))
+    segment_template_leaves = adapter.continuation_slot_templates()["optimizer"]
+
+    assert target_spec.checkpoint_progress.continuation is not None
+    assert target_spec.checkpoint_progress.continuation.additional_batches == 4_500
+    assert optimizer_leaves[1].shape == (5, 4_500)
+    assert isinstance(segment_template_leaves[1], BatchHistory)
+    assert segment_template_leaves[1].value.shape == (5, 4_500)
+    assert all(getattr(leaf, "shape", None) != (5, 16_500) for leaf in optimizer_leaves)

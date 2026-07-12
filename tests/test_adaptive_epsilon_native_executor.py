@@ -130,6 +130,44 @@ def test_adaptive_epsilon_execution_preparation_builds_runtime_inputs(tmp_path: 
     assert callable(prepared.resume_slot_transform)
 
 
+@pytest.mark.parametrize("additional_batches", [4_500, 1])
+def test_adaptive_epsilon_execution_preparation_uses_segment_local_history_template(
+    tmp_path: Path,
+    additional_batches: int,
+) -> None:
+    spec = _adaptive_epsilon_training_spec(
+        tmp_path,
+        controller_mode=ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+        n_train_batches=16_500,
+        n_replicates=5,
+    )
+    spec = attach_adaptive_epsilon_checkpoint_continuation(
+        spec,
+        source_completed_batches=12_000,
+        target_total_batches=12_000 + additional_batches,
+    )
+
+    prepared = prepare_adaptive_epsilon(
+        ExecutionPreparationRequest(run_spec=spec, resume=True)
+    )
+    runtime = prepared.kernel_context[RLRMP_RUNTIME_CONTEXT_KEY]
+    native = runtime.component("adaptive_epsilon")
+    optimizer_leaves = tuple(jt.leaves(native.optimizer_template))
+    payload = DEFAULT_TRAINING_METHOD_REGISTRY.validate_payload(
+        spec.method_ref,
+        spec.method_payload,
+        path="/method_payload",
+    )
+
+    assert isinstance(payload, AdaptiveEpsilonMethodPayload)
+    assert payload.n_train_batches == 16_500
+    assert native.args.n_train_batches == additional_batches
+    assert optimizer_leaves[1].shape == (5, additional_batches)
+    assert all(
+        getattr(leaf, "shape", None) != (5, 16_500) for leaf in optimizer_leaves
+    )
+
+
 def test_adaptive_epsilon_rejects_old_absolute_setpoint_payload(
     tmp_path: Path,
 ) -> None:

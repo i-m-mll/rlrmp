@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+from argparse import Namespace
 from pathlib import Path
 
 import jax
@@ -18,6 +19,7 @@ from feedbax.training.checkpoint_custody import (
 from rlrmp.train.cs_nominal_gru import build_parser
 from rlrmp.train.config_cli import parse_config
 from rlrmp.train.executor.cs_supervised import (
+    _adaptive_runtime_template_inputs,
     build_cs_supervised_native_initial_slots,
     build_run_spec_execution_context,
 )
@@ -276,6 +278,32 @@ def test_cs_supervised_continuation_does_not_change_exact_parity_spec() -> None:
     )
 
     assert attach_cs_supervised_checkpoint_continuation(training_spec, fresh) is training_spec
+
+
+@pytest.mark.parametrize("continuation_batches", [4_500, 1])
+def test_adaptive_runtime_template_args_are_segment_local(
+    continuation_batches: int,
+) -> None:
+    governed_args = Namespace(n_train_batches=16_500)
+    governed_hps = Namespace(n_batches_condition=16_500)
+    continuation = LaunchContinuation(
+        resume=True,
+        resume_source="/tmp/checkpoints/latest.json",
+        completed_batches=12_000,
+        stop_target_batches=12_000 + continuation_batches,
+        continuation_batches=continuation_batches,
+    )
+
+    runtime_template_args, runtime_template_hps = _adaptive_runtime_template_inputs(
+        governed_args,
+        governed_hps,
+        continuation,
+    )
+
+    assert governed_args.n_train_batches == 16_500
+    assert governed_hps.n_batches_condition == 16_500
+    assert runtime_template_args.n_train_batches == continuation_batches
+    assert runtime_template_hps.n_batches_condition == continuation_batches
 
 
 def test_stage2_authoring_declares_12000_to_16500_total_horizon() -> None:
