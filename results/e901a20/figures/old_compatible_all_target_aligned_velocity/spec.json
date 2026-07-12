@@ -333,6 +333,13 @@
     "runtime_note": "Old-compatible velocity figures should be generated with pre-1e1c94f5 Feedbax network semantics for legacy MaskedLinear readout checkpoints."
   },
   "schema_version": "rlrmp.figure_spec.v1",
+  "archive": {
+    "status": "archived_structured_output",
+    "last_runnable_revision": "e23a81e3d0cd37d7791b14a422e857de4fd88532",
+    "rationale_issue": "7ae2916",
+    "parity_oracle": "archived_structured_outputs",
+    "reason": "The frozen producer depends on an unrunnable historical checkpoint API; retained outputs are the parity oracle."
+  },
   "source_script": "results/e901a20/scripts/materialize_nominal_velocity_profile_comparison.py",
   "stochastic_runtime_policy": "64 stochastic repeats per target condition per replicate, using jr.split(PRNGKey(0), n_replicates)",
   "topic": "old_compatible_all_target_aligned_velocity",

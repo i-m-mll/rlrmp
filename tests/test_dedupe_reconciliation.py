@@ -13,12 +13,12 @@ BINDING_PATH = (
     REPO_ROOT / "_artifacts" / "31aaa31" / "verification" / "dedupe_closure_manifest.jsonl"
 )
 EXPECTED_STATE_COUNTS = {
-    "canonical_survivor": 5,
+    "canonical_survivor": 4,
     "cross_repo_resolved": 3,
     "excluded_cross_repo": 2,
     "excluded_pipeline_lane": 29,
-    "removed": 95,
-    "thin_adapter": 142,
+    "removed": 106,
+    "thin_adapter": 132,
 }
 
 

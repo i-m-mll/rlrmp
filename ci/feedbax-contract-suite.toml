@@ -248,6 +248,19 @@ marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_training_config_flat_legacy_keys.py::"
 minimum_non_skipped = 2
 
+[[families]]
+name = "declarative_figure_stock"
+owner = "f6f38b6"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_declarative_figure_stock.py::"
+# Pin the complete family so deleting an inventory or canary assertion is deliberate.
+minimum_non_skipped = 7
+negative_canary = [
+    "tests/test_declarative_figure_stock.py::test_authored_intent_rejects_provenance_heavy_legacy_payload",
+    "tests/test_declarative_figure_stock.py::test_direct_assembly_negative_canary_rejects_plotly_materializer",
+]
+
 [pipeline_contract_native]
 allowlist = [
     { path = "src/rlrmp/analysis/pipelines/bridge_aggregation.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "compatibility summarizer remains until report-stage aggregation replaces tracked writes" },
