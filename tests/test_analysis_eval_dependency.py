@@ -53,7 +53,7 @@ def test_analysis_eval_dependency_scan_is_non_vacuous() -> None:
 
     assert recipes, "rlrmp registered zero Feedbax analysis recipes"
     analysis_types = {recipe.analysis_type for recipe in recipes}
-    assert "rlrmp.gru_postrun" in analysis_types
+    assert "rlrmp.certificate.gru_standard" in analysis_types
     assert "rlrmp.standard_matrix" in analysis_types
     assert any(recipe.recipe_module == "rlrmp.analysis.declarative_materialization" for recipe in recipes)
 
