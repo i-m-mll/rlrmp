@@ -1,21 +1,24 @@
-"""GRU observation-history-to-action map error decomposition sidecar."""
+"""Registered observation-history-to-action map-error decomposition science."""
 
 from __future__ import annotations
 
-import json
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+import equinox as eqx
 import numpy as np
-
-from rlrmp.analysis.manifest_queries import (
-    certificate_component_summary,
-    standard_row_by_source_run_id,
+from feedbax.analysis.analysis import AbstractAnalysis
+from feedbax.analysis.context import AnalysisRunContext
+from feedbax.analysis.specs import (
+    AnalysisRecipeResult,
+    ResolvedAnalysisInput,
+    register_analysis_recipe,
 )
-from rlrmp.eval.checkpoint_selection import load_materialized_fixed_bank_manifest
-from rlrmp.io import read_json, update_marked_section
-from rlrmp.paths import REPO_ROOT
-from rlrmp.runtime.run_specs import resolve_run_record
+from feedbax.analysis.types import AnalysisInputData
+from feedbax.config.namespace import TreeNamespace
+from feedbax.contracts.manifest import AnalysisRunSpec, ParentRef
+from pydantic import BaseModel, ConfigDict, Field
 
 OBSERVATION_CHANNELS = ("px", "py", "vx", "vy")
 ACTION_CHANNELS = ("ux", "uy")
@@ -23,162 +26,210 @@ ALIGNED_OBSERVATION_CHANNELS = ("p_parallel", "p_lateral", "v_parallel", "v_late
 ALIGNED_ACTION_CHANNELS = ("u_parallel", "u_lateral")
 FORMAT_VERSION = "rlrmp.gru_map_error_decomposition.v1"
 ISSUE_ID = "ddf7f43"
-SOURCE_ISSUE_ID = "aacb9ed"
-DEFAULT_LABEL = "fixed_target_random_perturb_validation_selected"
-DEFAULT_STANDARD_MANIFEST = (
-    REPO_ROOT
-    / "results"
-    / SOURCE_ISSUE_ID
-    / "notes"
-    / f"gru_standard_certificates_{DEFAULT_LABEL}_manifest.json"
-)
+MAP_ERROR_DECOMPOSITION_ANALYSIS_TYPE = "rlrmp.map_error_decomposition"
 
 
-def materialize_gru_map_error_decomposition(
-    *,
-    standard_manifest_path: Path = DEFAULT_STANDARD_MANIFEST,
-    experiment: str = SOURCE_ISSUE_ID,
-    run_ids: tuple[str, ...] | None = None,
-    use_validation_selected_checkpoints: bool = True,
-    preferred_checkpoint_manifest_path: Path | None = None,
-    alignment_basis: str = "raw_cartesian",
-    reference_feedback_basis: str = "auto",
-    top_k: int = 5,
-    repo_root: Path = REPO_ROOT,
-) -> dict[str, Any]:
-    """Recompute response maps and return compact decomposition rows."""
+class MapErrorDecompositionParams(BaseModel):
+    """Schema-bearing parameters for cached map-error decomposition."""
 
-    from rlrmp.analysis.gru_standard_certificate import (
-        cs_output_feedback_observation_action_map,
-        evaluate_gru_clean_actions,
-    )
+    model_config = ConfigDict(extra="forbid")
 
-    manifest = read_json(standard_manifest_path)
-    selected_run_ids = run_ids or _source_run_ids_from_standard_manifest(manifest)
-    reference_map, reference_metadata = cs_output_feedback_observation_action_map()
-    rows = []
-    for run_id in selected_run_ids:
-        run_spec = resolve_run_record(experiment, run_id, repo_root=repo_root)
-        _actions, candidate_map, evaluation_metadata = evaluate_gru_clean_actions(
-            run_id,
-            run_spec=run_spec,
-            experiment=experiment,
-            use_validation_selected_checkpoints=use_validation_selected_checkpoints,
-            preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
-            repo_root=repo_root,
+    schema_id: str | None = None
+    schema_version: str = FORMAT_VERSION
+    source_experiment: str
+    top_k: int = Field(default=5, ge=1)
+    denominator_floor: float = Field(default=1e-12, gt=0.0)
+
+
+class MapErrorDecompositionAnalysis(AbstractAnalysis):
+    """Decompose cached candidate/reference response-map pairs."""
+
+    params: dict[str, Any] = eqx.field(default_factory=dict, static=True)
+    input_refs: tuple[dict[str, Any], ...] = eqx.field(default_factory=tuple, static=True)
+
+    def compute(self, data: AnalysisInputData, **kwargs: Any) -> dict[str, Any]:
+        del kwargs
+        params = MapErrorDecompositionParams.model_validate(self.params)
+        rows = []
+        for row in data.states["rows"]:
+            decomposition = decompose_gru_map_error(
+                candidate_map=np.asarray(row["candidate_map"]),
+                reference_map=np.asarray(row["reference_map"]),
+                observation_dim=int(row.get("observation_dim", 4)),
+                observation_channel_names=tuple(
+                    row.get("observation_channel_names", OBSERVATION_CHANNELS)
+                ),
+                action_channel_names=tuple(row.get("action_channel_names", ACTION_CHANNELS)),
+                reference_observation_from_candidate_transform=(
+                    None
+                    if row.get("reference_observation_from_candidate_transform") is None
+                    else np.asarray(row["reference_observation_from_candidate_transform"])
+                ),
+                candidate_feedback_basis=str(
+                    row.get("candidate_feedback_basis", "raw_delayed_position_velocity")
+                ),
+                reference_feedback_basis=str(
+                    row.get("reference_feedback_basis", "raw_delayed_position_velocity")
+                ),
+                alignment_directions=(
+                    None
+                    if row.get("alignment_directions") is None
+                    else np.asarray(row["alignment_directions"])
+                ),
+                alignment_frame_source=str(
+                    row.get("alignment_frame_source", "raw_cartesian_observation_action_basis")
+                ),
+                target_time_convention=str(
+                    row.get("target_time_convention", "not_applicable_static_or_raw")
+                ),
+                moving_target_status=str(row.get("moving_target_status", "not_applicable")),
+                moving_target_deferred_note=row.get("moving_target_deferred_note"),
+                input_covariance=(
+                    None
+                    if row.get("input_covariance") is None
+                    else np.asarray(row["input_covariance"])
+                ),
+                input_covariance_metadata=row.get("input_covariance_metadata"),
+                top_k=params.top_k,
+                denominator_floor=params.denominator_floor,
+            )
+            rows.append(
+                {
+                    "run_id": str(row["run_id"]),
+                    "source_run_id": row.get("source_run_id"),
+                    "evaluation_manifest_id": row.get("evaluation_manifest_id"),
+                    "decomposition": decomposition,
+                }
+            )
+        return {
+            "format": params.schema_version,
+            "analysis_type": MAP_ERROR_DECOMPOSITION_ANALYSIS_TYPE,
+            "source_experiment": params.source_experiment,
+            "evaluation_manifest_dependencies": list(self.input_refs),
+            "rows": rows,
+        }
+
+    def emit_artifacts(
+        self,
+        context: AnalysisRunContext,
+        data: AnalysisInputData,
+        *,
+        result: Mapping[str, Any],
+        **kwargs: Any,
+    ) -> Mapping[str, Any]:
+        del data, kwargs
+        context.record_json_artifact(
+            dict(result),
+            role="rlrmp-gru-map-error-decomposition",
+            logical_name="map_error_decomposition/map_error_decomposition.json",
+            metadata={
+                "schema_boundary": "rlrmp-owned cached map-error decomposition payload",
+                "evaluation_manifest_dependencies": list(self.input_refs),
+            },
         )
-        covariance = evaluation_metadata.pop("_observation_history_covariance_array", None)
-        covariance_metadata = evaluation_metadata.get("observation_history_covariance")
-        candidate_feedback_basis = _candidate_feedback_basis(run_spec)
-        (
-            candidate_map,
-            covariance,
-            covariance_metadata,
-            candidate_feedback_basis,
-            projection_metadata,
-        ) = _project_candidate_map_to_decomposition_basis(
-            candidate_map=candidate_map,
-            covariance=covariance,
-            covariance_metadata=covariance_metadata,
-            candidate_feedback_basis=candidate_feedback_basis,
-            run_spec=run_spec,
-            reference_observation_dim=int(reference_metadata["observation_dim"]),
-        )
-        if projection_metadata is not None:
-            evaluation_metadata["candidate_map_projection"] = projection_metadata
-            evaluation_metadata["observation_history_covariance"] = covariance_metadata
-        (
-            candidate_map,
-            reference_map_for_run,
-            covariance,
-            covariance_metadata,
-            history_alignment_metadata,
-        ) = _align_maps_to_common_observation_history(
-            candidate_map=candidate_map,
-            reference_map=reference_map,
-            covariance=covariance,
-            covariance_metadata=covariance_metadata,
-            observation_dim=int(reference_metadata["observation_dim"]),
-        )
-        if history_alignment_metadata is not None:
-            evaluation_metadata["map_history_alignment"] = history_alignment_metadata
-            evaluation_metadata["observation_history_covariance"] = covariance_metadata
-        reference_batch = np.broadcast_to(
-            reference_map_for_run[None, :, :, :],
-            candidate_map.shape,
-        )
-        reference_input_transform = _reference_observation_from_candidate_feedback_transform(
-            candidate_feedback_basis=candidate_feedback_basis,
-            reference_feedback_basis=reference_feedback_basis,
-        )
-        alignment_directions = _alignment_directions_from_run_spec(
-            run_spec,
-            alignment_basis=alignment_basis,
-        )
-        decomposition = decompose_gru_map_error(
-            candidate_map=candidate_map,
-            reference_map=reference_batch,
-            observation_dim=int(reference_metadata["observation_dim"]),
-            reference_observation_from_candidate_transform=reference_input_transform,
-            candidate_feedback_basis=candidate_feedback_basis,
-            reference_feedback_basis=(
-                "raw_delayed_position_velocity"
-                if reference_feedback_basis == "auto"
-                else reference_feedback_basis
-            ),
-            alignment_directions=alignment_directions,
-            alignment_frame_source=_alignment_frame_source(alignment_basis, run_spec),
-            target_time_convention=_target_time_convention(alignment_basis, run_spec),
-            input_covariance=covariance,
-            input_covariance_metadata=covariance_metadata,
-            top_k=top_k,
-        )
-        rows.append(
+        return result
+
+
+def map_error_decomposition_recipe(
+    spec: AnalysisRunSpec,
+    _root: Path,
+    inputs: Sequence[ResolvedAnalysisInput],
+) -> AnalysisRecipeResult:
+    """Build map-error decomposition from explicit evaluation-manifest parents."""
+
+    params = MapErrorDecompositionParams.model_validate(spec.params)
+    evaluation_inputs = [
+        resolved
+        for resolved in inputs
+        if resolved.ref.kind == "EvaluationRunManifest" or resolved.states is not None
+    ]
+    if not evaluation_inputs:
+        raise ValueError("map-error decomposition requires EvaluationRunManifest input")
+    rows: list[Mapping[str, Any]] = []
+    input_refs = []
+    for resolved in evaluation_inputs:
+        state = resolved.states
+        if isinstance(state, Mapping):
+            candidates = state.get("map_error_rows", state.get("rows", ()))
+            if isinstance(candidates, Sequence) and not isinstance(candidates, (str, bytes)):
+                for row in candidates:
+                    if isinstance(row, Mapping) and {
+                        "candidate_map",
+                        "reference_map",
+                    }.issubset(row):
+                        rows.append(
+                            {
+                                **row,
+                                "evaluation_manifest_id": (
+                                    None if resolved.manifest is None else resolved.manifest.id
+                                ),
+                            }
+                        )
+        input_refs.append(
             {
-                "run_id": f"{run_id}__nominal_clean",
-                "source_run_id": run_id,
-                "standard_certificate_row": _find_standard_row(manifest, run_id),
-                "reference_metadata": reference_metadata,
-                "evaluation_metadata": evaluation_metadata,
-                "decomposition": decomposition,
+                "kind": resolved.ref.kind,
+                "id": resolved.ref.id,
+                "role": resolved.ref.role,
+                "manifest_id": None if resolved.manifest is None else resolved.manifest.id,
             }
         )
-    return {
-        "format": FORMAT_VERSION,
-        "issue": ISSUE_ID,
-        "source_issue": experiment,
-        "source_standard_manifest": _repo_relative(standard_manifest_path, repo_root=repo_root),
-        "checkpoint_policy": (
-            _effective_checkpoint_policy_from_manifest(
-                experiment,
-                preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
-                repo_root=repo_root,
-            )
-            if use_validation_selected_checkpoints
-            else "final_checkpoint"
-        ),
-        "selection_role": "audit_only_not_used_for_checkpoint_selection",
-        "rows": rows,
-    }
-
-
-def _effective_checkpoint_policy_from_manifest(
-    experiment: str,
-    *,
-    preferred_checkpoint_manifest_path: Path | None = None,
-    repo_root: Path = REPO_ROOT,
-) -> str:
-    """Return the checkpoint policy represented by an optional preferred manifest."""
-
-    manifest = load_materialized_fixed_bank_manifest(
-        manifest_path=preferred_checkpoint_manifest_path,
+    if not rows:
+        raise ValueError("evaluation manifests contain no cached map_error_rows")
+    analysis = MapErrorDecompositionAnalysis(
+        variant="map_error_decomposition",
+        params=params.model_dump(mode="json"),
+        input_refs=tuple(input_refs),
     )
-    if manifest is not None:
-        return str(
-            manifest.metadata.get("checkpoint_policy")
-            or "fixed_bank_rescored_per_replicate"
-        )
-    return "validation_selected_per_replicate"
+    return AnalysisRecipeResult(
+        analyses={"map_error_decomposition": analysis},
+        data=AnalysisInputData(
+            models={},
+            tasks={},
+            states={"rows": rows},
+            hps={"map_error": TreeNamespace(n_rows=len(rows))},
+            extras={"params": params.model_dump(mode="json")},
+        ),
+    )
+
+
+map_error_decomposition_recipe.EVAL_DEPENDENCIES = ("rlrmp.eval.feedback_ablation",)
+
+
+def register_map_error_decomposition_recipe(*, replace: bool = True) -> None:
+    """Register the cached-state map-error decomposition recipe."""
+
+    register_analysis_recipe(
+        MAP_ERROR_DECOMPOSITION_ANALYSIS_TYPE,
+        map_error_decomposition_recipe,
+        replace=replace,
+    )
+
+
+def map_error_decomposition_spec(
+    *,
+    source_experiment: str,
+    evaluation_manifest_id: str,
+    evaluation_manifest_uri: Path | str | None = None,
+    top_k: int = 5,
+) -> AnalysisRunSpec:
+    """Return an explicit-parent spec for map-error decomposition."""
+
+    return AnalysisRunSpec(
+        analysis_type=MAP_ERROR_DECOMPOSITION_ANALYSIS_TYPE,
+        inputs=[
+            ParentRef(
+                kind="EvaluationRunManifest",
+                id=evaluation_manifest_id,
+                role="evaluation_run",
+                uri=None if evaluation_manifest_uri is None else str(evaluation_manifest_uri),
+            )
+        ],
+        params={
+            "schema_version": FORMAT_VERSION,
+            "source_experiment": source_experiment,
+            "top_k": top_k,
+        },
+    )
 
 
 def decompose_gru_map_error(
@@ -468,57 +519,6 @@ def render_map_error_decomposition_markdown(result: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def write_map_error_decomposition_result(
-    result: dict[str, Any],
-    *,
-    markdown_path: Path,
-    json_path: Path,
-) -> None:
-    """Write compact markdown and JSON sidecars."""
-
-    markdown_path.parent.mkdir(parents=True, exist_ok=True)
-    json_path.parent.mkdir(parents=True, exist_ok=True)
-    update_marked_section(
-        markdown_path,
-        "gru_map_error_decomposition",
-        render_map_error_decomposition_markdown(result),
-    )
-    json_path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-
-def _source_run_ids_from_standard_manifest(manifest: dict[str, Any]) -> tuple[str, ...]:
-    run_ids = []
-    for row in manifest.get("rows", ()):
-        source_run_id = row.get("spec", {}).get("parameters", {}).get("source_run_id")
-        if source_run_id:
-            run_ids.append(source_run_id)
-    if not run_ids:
-        raise ValueError("standard manifest does not contain spec.parameters.source_run_id rows")
-    return tuple(run_ids)
-
-
-def _find_standard_row(manifest: dict[str, Any], run_id: str) -> dict[str, Any] | None:
-    row = standard_row_by_source_run_id(manifest, run_id)
-    if row is None:
-        return None
-    spec = row.get("spec", {})
-    return {
-        "run_id": spec.get("run_id"),
-        "status": row.get("status"),
-        "observation_history_to_action_map_mismatch": certificate_component_summary(
-            row,
-            "observation_history_to_action_map_mismatch",
-        ),
-    }
-
-
-def _repo_relative(path: Path, *, repo_root: Path) -> str:
-    try:
-        return str(path.resolve().relative_to(repo_root.resolve()))
-    except ValueError:
-        return str(path)
-
-
 def _raw_alignment_metadata(
     *,
     frame_source: str,
@@ -660,11 +660,7 @@ def _align_maps_to_reach_basis(
 
 
 def _candidate_feedback_basis(run_spec: dict[str, Any]) -> str:
-    model_basis = (
-        run_spec.get("model_summary", {})
-        .get("feedback", {})
-        .get("basis")
-    )
+    model_basis = run_spec.get("model_summary", {}).get("feedback", {}).get("basis")
     input_basis = (
         run_spec.get("task_timing", {})
         .get("target_relative_multitarget", {})
@@ -700,16 +696,20 @@ def _project_candidate_map_to_decomposition_basis(
         return candidate_map, covariance, covariance_metadata, candidate_feedback_basis, None
     feedback_dim = _candidate_feedback_dim(run_spec)
     if feedback_dim <= reference_observation_dim:
-        return candidate_map, covariance, covariance_metadata, "target_relative_delayed_feedback", None
+        return (
+            candidate_map,
+            covariance,
+            covariance_metadata,
+            "target_relative_delayed_feedback",
+            None,
+        )
     if candidate_map.shape[-1] % feedback_dim:
         raise ValueError(
             "proprioceptive candidate map history dimension is not divisible by "
             f"feedback_dim={feedback_dim}"
         )
     observation_time_count = candidate_map.shape[-1] // feedback_dim
-    maps = candidate_map.reshape(
-        candidate_map.shape[:-1] + (observation_time_count, feedback_dim)
-    )
+    maps = candidate_map.reshape(candidate_map.shape[:-1] + (observation_time_count, feedback_dim))
     projected = maps[..., :reference_observation_dim].reshape(
         candidate_map.shape[:-1] + (observation_time_count * reference_observation_dim,)
     )
@@ -730,9 +730,7 @@ def _project_candidate_map_to_decomposition_basis(
             **(covariance_metadata or {}),
             "projection": "first_four_pos_vel_channels_from_6d_proprioceptive_feedback",
             "original_covariance_shape": [int(dim) for dim in covariance.shape],
-            "projected_covariance_shape": [
-                int(dim) for dim in projected_covariance.shape
-            ],
+            "projected_covariance_shape": [int(dim) for dim in projected_covariance.shape],
         }
     projection_metadata = {
         "status": "projected",
@@ -887,11 +885,7 @@ def _static_reach_vector_from_run_spec(run_spec: dict[str, Any]) -> list[float]:
 def _alignment_frame_source(alignment_basis: str, run_spec: dict[str, Any]) -> str:
     if alignment_basis == "raw_cartesian":
         return "raw_cartesian_observation_action_basis"
-    if (
-        run_spec.get("task_timing", {})
-        .get("target_relative_multitarget", {})
-        .get("enabled")
-    ):
+    if run_spec.get("task_timing", {}).get("target_relative_multitarget", {}).get("enabled"):
         return "declared_target_relative_original_target_anchor"
     return "declared_fixed_target_endpoint_minus_start"
 
@@ -899,11 +893,7 @@ def _alignment_frame_source(alignment_basis: str, run_spec: dict[str, Any]) -> s
 def _target_time_convention(alignment_basis: str, run_spec: dict[str, Any]) -> str:
     if alignment_basis == "raw_cartesian":
         return "not_applicable_static_or_raw"
-    if (
-        run_spec.get("task_timing", {})
-        .get("target_relative_multitarget", {})
-        .get("enabled")
-    ):
+    if run_spec.get("task_timing", {}).get("target_relative_multitarget", {}).get("enabled"):
         return (
             "static_target_known_immediately; current local response-map bank repeats the "
             "first validation target for stochastic histories"
@@ -911,7 +901,9 @@ def _target_time_convention(alignment_basis: str, run_spec: dict[str, Any]) -> s
     return "static_fixed_target_endpoint_minus_start"
 
 
-def _broadcast_direction_vectors(directions: np.ndarray, *, sample_shape: tuple[int, ...]) -> np.ndarray:
+def _broadcast_direction_vectors(
+    directions: np.ndarray, *, sample_shape: tuple[int, ...]
+) -> np.ndarray:
     direction_vectors = _as_float_array(directions, name="alignment_directions")
     if direction_vectors.shape[-1:] != (2,):
         raise ValueError("alignment_directions must end with an xy dimension of length 2")
@@ -1007,10 +999,7 @@ def _direction_metadata(direction_vectors: np.ndarray) -> dict[str, Any]:
     return {
         "mode": "condition_wise",
         "sample_shape": [int(dim) for dim in direction_vectors.shape[:-1]],
-        "unit_directions": [
-            [_json_float(value) for value in direction]
-            for direction in flat
-        ],
+        "unit_directions": [[_json_float(value) for value in direction] for direction in flat],
     }
 
 
@@ -1220,14 +1209,14 @@ __all__ = [
     "ACTION_CHANNELS",
     "ALIGNED_ACTION_CHANNELS",
     "ALIGNED_OBSERVATION_CHANNELS",
-    "DEFAULT_LABEL",
-    "DEFAULT_STANDARD_MANIFEST",
     "FORMAT_VERSION",
-    "ISSUE_ID",
+    "MAP_ERROR_DECOMPOSITION_ANALYSIS_TYPE",
+    "MapErrorDecompositionAnalysis",
+    "MapErrorDecompositionParams",
     "OBSERVATION_CHANNELS",
-    "SOURCE_ISSUE_ID",
     "decompose_gru_map_error",
-    "materialize_gru_map_error_decomposition",
+    "map_error_decomposition_recipe",
+    "map_error_decomposition_spec",
+    "register_map_error_decomposition_recipe",
     "render_map_error_decomposition_markdown",
-    "write_map_error_decomposition_result",
 ]

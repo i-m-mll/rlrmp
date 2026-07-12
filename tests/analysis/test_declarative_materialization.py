@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from types import SimpleNamespace
-
 import numpy as np
 import pytest
 import rlrmp
@@ -522,9 +520,8 @@ def test_feedback_ablation_recipe_consumes_cached_eval_states_and_records_custod
     )
 
 
-def test_feedback_quality_feedback_ablation_training_alias_routes_manifest_pipeline(
+def test_feedback_quality_feedback_ablation_training_alias_requires_registered_evaluation(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     registry = ExperimentRegistry()
     rlrmp.register_experiment_package(registry)
@@ -536,21 +533,6 @@ def test_feedback_quality_feedback_ablation_training_alias_routes_manifest_pipel
         metadata={"rlrmp_experiment": "unit"},
     )
     training_path = write_manifest(training_manifest, root=tmp_path, index=False)
-    calls: list[dict] = []
-
-    def fake_pipeline(**kwargs):
-        calls.append(kwargs)
-        return SimpleNamespace(
-            payload={"schema_version": "rlrmp.gru_feedback_ablation.v1", "runs": {}},
-            evaluation_manifest=SimpleNamespace(id="eval-feedback"),
-            analysis_manifest=SimpleNamespace(id="analysis-feedback"),
-            analysis_manifest_path=tmp_path / "analysis-feedback.json",
-        )
-
-    monkeypatch.setattr(
-        "rlrmp.analysis.pipelines.gru_feedback_ablation.execute_feedback_ablation_pipeline",
-        fake_pipeline,
-    )
     manifest, _path = execute_analysis_run_spec(
         AnalysisRunSpec(
             analysis_type=dm.FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["feedback_ablation"],
@@ -578,13 +560,10 @@ def test_feedback_quality_feedback_ablation_training_alias_routes_manifest_pipel
         manifest,
         "rlrmp-feedback-quality-feedback-ablation-status",
     )
-    assert payload["status"] == "materialized"
-    assert payload["evaluation_manifest_id"] == "eval-feedback"
-    assert payload["analysis_manifest_id"] == "analysis-feedback"
+    assert payload["status"] == "registered_evaluation_required"
     assert payload["custody_route"] == "EvaluationRunManifest->AnalysisRunManifest"
-    assert len(calls) == 1
-    assert calls[0]["source_experiment"] == "unit"
-    assert calls[0]["run_ids"] == (run_id,)
+    assert payload["evaluation_spec"]["evaluation_type"] == FEEDBACK_ABLATION_EVALUATION_TYPE
+    assert payload["evaluation_spec"]["training_run_ids"] == [run_id]
 
 
 def test_policy_diagnostics_recipe_consumes_cached_eval_states_and_records_custody(
@@ -1085,26 +1064,6 @@ def test_feedback_quality_lens_bundle_executes_fixture_and_groups_artifacts(
     norm_fig_dir.mkdir(parents=True, exist_ok=True)
     (norm_fig_dir / "figure.html").write_text("<html></html>\n", encoding="utf-8")
 
-    calibration_dir = (
-        repo_root
-        / "_artifacts"
-        / "5f70333"
-        / "perturbation_open_loop_calibration"
-    )
-    calibration_dir.mkdir(parents=True, exist_ok=True)
-    (calibration_dir / "perturbation_open_loop_calibration.json").write_text(
-        json.dumps({"schema_version": "rlrmp.perturbation_open_loop_calibration.v1"}) + "\n",
-        encoding="utf-8",
-    )
-    (repo_root / "results" / "5f70333" / "notes").mkdir(parents=True, exist_ok=True)
-    (
-        repo_root / "results" / "5f70333" / "notes" / "perturbation_open_loop_calibration.md"
-    ).write_text("# calibration\n", encoding="utf-8")
-    (calibration_dir / "calibration_table.csv").write_text(
-        "level,value\nsmall,1.0\n",
-        encoding="utf-8",
-    )
-
     execution = execute_staged_analysis_bundle(
         bundle,
         root=feedbax_root,
@@ -1132,7 +1091,7 @@ def test_feedback_quality_lens_bundle_executes_fixture_and_groups_artifacts(
     assert "rlrmp-feedback-quality-lens" in _artifact_roles(manifest)
     assert "rlrmp-feedback-quality-perturbation-response-bulk" in roles
     assert "rlrmp-feedback-quality-response-norm-figure" in roles
-    assert "rlrmp-feedback-quality-perturbation-calibration-manifest" in roles
+    assert "rlrmp-feedback-quality-perturbation-calibration-status" in roles
 
     payload_ref = next(
         artifact

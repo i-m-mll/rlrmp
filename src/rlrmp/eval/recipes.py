@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from rlrmp.runtime.params_models import params_model_for, register_params_model
 from rlrmp.eval.feedback_ablation import evaluate_feedback_ablation_runs
+from rlrmp.eval.broad_epsilon import evaluate_broad_epsilon_runs
 from rlrmp.eval.evaluation_diagnostics import (
     DEFAULT_N_ROLLOUT_TRIALS,
     evaluate_gru_diagnostics_runs,
@@ -37,6 +38,7 @@ GRU_DIAGNOSTICS_EVALUATION_TYPE = "rlrmp.eval.gru_diagnostics"
 PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE = "rlrmp.eval.perturbation_response_bank"
 FEEDBACK_ABLATION_EVALUATION_TYPE = "rlrmp.eval.feedback_ablation"
 WORST_CASE_EPSILON_EVALUATION_TYPE = "rlrmp.eval.worst_case_epsilon"
+BROAD_EPSILON_EVALUATION_TYPE = "rlrmp.eval.broad_epsilon"
 DELAYED_REACH_BANK_EVALUATION_TYPE = "rlrmp.eval.delayed_reach_bank"
 DELAYED_VELOCITY_PROFILE_PAYLOAD_SCHEMA_ID = (
     "rlrmp.figure_data.delayed_velocity_profiles"
@@ -62,9 +64,7 @@ class _StrictParamsModel(BaseModel):
 
     schema_id: str | None = None
     schema_version: str | None = None
-    consumed_data_identities: list[dict[str, Any]] | dict[str, Any] = Field(
-        default_factory=list
-    )
+    consumed_data_identities: list[dict[str, Any]] | dict[str, Any] = Field(default_factory=list)
 
 
 class CenterOutEnsembleEvalParams(_StrictParamsModel):
@@ -99,9 +99,9 @@ class GRUDiagnosticsEvalParams(_StrictParamsModel):
     labels: list[str] | None = None
     n_rollout_trials: int = Field(DEFAULT_N_ROLLOUT_TRIALS, ge=1)
     preferred_checkpoint_manifest_path: str | None = None
-    jacobian_timepoints: list[
-        Literal["first", "peak_forward_velocity", "terminal"]
-    ] = Field(default_factory=lambda: ["first", "peak_forward_velocity", "terminal"])
+    jacobian_timepoints: list[Literal["first", "peak_forward_velocity", "terminal"]] = Field(
+        default_factory=lambda: ["first", "peak_forward_velocity", "terminal"]
+    )
     repo_root: str | None = None
 
 
@@ -140,9 +140,7 @@ class PerturbationResponseBankEvalParams(_StrictParamsModel):
     n_rollout_trials: int = Field(8, ge=1)
     extlqg_physical_dim: Literal[6, 8] = 8
     preferred_checkpoint_manifest_path: str | None = None
-    checkpoint_selection_mode: Literal["sparse_history", "fixed_bank_manifest"] = (
-        "sparse_history"
-    )
+    checkpoint_selection_mode: Literal["sparse_history", "fixed_bank_manifest"] = "sparse_history"
 
 
 class FeedbackAblationEvalParams(_StrictParamsModel):
@@ -168,11 +166,32 @@ class FeedbackAblationEvalParams(_StrictParamsModel):
 class WorstCaseEpsilonEvalParams(_StrictParamsModel):
     """Params for worst-case epsilon evaluation."""
 
+    run_ids: list[str] = Field(default_factory=list)
+    budget_level: str | None = None
+    budget_scale: float | None = Field(default=None, gt=0)
+    n_steps: int = Field(default=12, ge=0)
+    n_restarts: int = Field(default=3, ge=0)
+    step_size: float | None = Field(default=None, gt=0)
+    backend: Literal["serial", "staged"] = "serial"
     epsilon_budget_data_product_identity: Any | None = None
     epsilon_budget_identity: Any | None = None
     optimizer: dict[str, Any] = Field(default_factory=dict)
     audit_inputs: dict[str, Any] = Field(default_factory=dict)
     worst_case_rollouts: list[Any] = Field(default_factory=list)
+
+
+class BroadEpsilonEvalParams(_StrictParamsModel):
+    """Params for paired active/zero broad-epsilon evaluation."""
+
+    source_experiment: str = ""
+    run_ids: list[str] = Field(default_factory=list)
+    labels: list[str] | None = None
+    n_rollout_trials: int = Field(default=8, ge=1)
+    max_gradient_replicates: int = Field(default=1, ge=0)
+    checkpoint_policy: Literal["validation_selected_per_replicate"] = (
+        "validation_selected_per_replicate"
+    )
+    paired_rollouts: list[Any] = Field(default_factory=list)
 
 
 class DelayedReachBankEvalParams(_StrictParamsModel):
@@ -190,6 +209,7 @@ _PARAMS_MODEL_BY_RECIPE = {
     PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE: PerturbationResponseBankEvalParams,
     FEEDBACK_ABLATION_EVALUATION_TYPE: FeedbackAblationEvalParams,
     WORST_CASE_EPSILON_EVALUATION_TYPE: WorstCaseEpsilonEvalParams,
+    BROAD_EPSILON_EVALUATION_TYPE: BroadEpsilonEvalParams,
     DELAYED_REACH_BANK_EVALUATION_TYPE: DelayedReachBankEvalParams,
 }
 
@@ -228,6 +248,11 @@ def register_rlrmp_evaluation_recipes(*, replace: bool = True) -> None:
     register_evaluation_recipe(
         WORST_CASE_EPSILON_EVALUATION_TYPE,
         worst_case_epsilon_recipe,
+        replace=replace,
+    )
+    register_evaluation_recipe(
+        BROAD_EPSILON_EVALUATION_TYPE,
+        broad_epsilon_recipe,
         replace=replace,
     )
     register_evaluation_recipe(
@@ -373,11 +398,6 @@ def worst_case_epsilon_recipe(
     """Evaluate worst-case epsilon perturbation audits."""
 
     p, params = _validated_params(run_spec)
-    _require_one_of(
-        params,
-        ("epsilon_budget_data_product_identity", "epsilon_budget_identity"),
-        recipe=run_spec.evaluation_type,
-    )
     return _result(
         run_spec,
         params,
@@ -389,9 +409,47 @@ def worst_case_epsilon_recipe(
                 else p.epsilon_budget_identity
             ),
             "optimizer": p.optimizer,
+            "run_ids": p.run_ids,
+            "budget_level": p.budget_level,
+            "budget_scale": p.budget_scale,
+            "n_steps": p.n_steps,
+            "n_restarts": p.n_restarts,
+            "step_size": p.step_size,
+            "backend": p.backend,
             "audit_inputs": p.audit_inputs,
             "worst_case_rollouts": p.worst_case_rollouts,
         },
+    )
+
+
+def broad_epsilon_recipe(
+    run_spec: EvaluationRunSpec,
+    _root: Path,
+    _states_path: Path,
+) -> EvaluationRecipeResult:
+    """Cache paired active/zero rollout and differentiable-gradient records."""
+
+    p, params = _validated_params(run_spec)
+    payload = (
+        {
+            "source_experiment": p.source_experiment,
+            "checkpoint_policy": p.checkpoint_policy,
+            "rows": p.paired_rollouts,
+        }
+        if p.paired_rollouts
+        else evaluate_broad_epsilon_runs(params)
+    )
+    return _result(
+        run_spec,
+        params,
+        product_role="broad_epsilon_paired_rollouts",
+        state_payload={
+            **payload,
+            "run_ids": p.run_ids,
+            "n_rollout_trials": p.n_rollout_trials,
+            "max_gradient_replicates": p.max_gradient_replicates,
+        },
+        metadata={"execution_owner": "registered_evaluation_recipe"},
     )
 
 
@@ -620,8 +678,7 @@ def _perturbation_response_bank_payload(
     response_tensors = params.get("response_tensors")
     if response_tensors is not None and not legacy_payload_mode:
         raise ValueError(
-            "perturbation-response bank response_tensors params require "
-            "legacy_payload_mode=true"
+            "perturbation-response bank response_tensors params require legacy_payload_mode=true"
         )
     if legacy_payload_mode:
         return _legacy_perturbation_response_bank_payload(params)
@@ -966,7 +1023,9 @@ def _evaluate_perturbation_bank_runs(
             preferred_checkpoint_manifest_path=_optional_path(
                 params.get("preferred_checkpoint_manifest_path")
             ),
-            checkpoint_selection_mode=str(params.get("checkpoint_selection_mode", "sparse_history")),
+            checkpoint_selection_mode=str(
+                params.get("checkpoint_selection_mode", "sparse_history")
+            ),
             repo_root=_repo_root_for_eval(params, root=root),
         )
         for run in runs
@@ -1141,6 +1200,8 @@ def _sha256(data: bytes) -> str:
 
 
 __all__ = [
+    "BROAD_EPSILON_EVALUATION_TYPE",
+    "BroadEpsilonEvalParams",
     "CENTER_OUT_ENSEMBLE_EVALUATION_TYPE",
     "CenterOutEnsembleEvalParams",
     "DELAYED_REACH_BANK_EVALUATION_TYPE",
@@ -1156,6 +1217,7 @@ __all__ = [
     "WorstCaseEpsilonEvalParams",
     "WORST_CASE_EPSILON_EVALUATION_TYPE",
     "center_out_ensemble_recipe",
+    "broad_epsilon_recipe",
     "delayed_reach_bank_recipe",
     "delayed_velocity_profile_payload",
     "feedback_ablation_recipe",

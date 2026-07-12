@@ -2,7 +2,7 @@
 
 The open-loop unit-sensitivity table (``peak delta x`` per family and timing
 bin) and the controller-visible velocity scale are *generated* by
-``rlrmp.analysis.pipelines.gru_perturbation_calibration`` (extLQG nominal-command
+``rlrmp.data_products.calibration_computation`` (extLQG nominal-command
 open-loop replay). They used to live as source-code constants
 (``DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT`` /
 ``DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S``). They now live in a tracked
@@ -60,6 +60,7 @@ __all__ = [
     "TimingCalibrationBin",
     "calibration_data_product_requirement",
     "calibration_defaults_data_product_requirement",
+    "calibrated_amplitude_from_unit_sensitivity",
     "load_perturbation_calibration_defaults",
     "load_open_loop_calibration",
 ]
@@ -68,10 +69,7 @@ CALIBRATION_PRODUCT_SCHEMA_ID = "rlrmp.perturbation_open_loop_calibration"
 CALIBRATION_PRODUCT_SCHEMA_VERSION = "rlrmp.perturbation_open_loop_calibration.v2"
 CALIBRATION_PRODUCT_ROLE = "perturbation_open_loop_calibration"
 CALIBRATION_PRODUCT_LOGICAL_NAME = "cs_perturbation_open_loop_calibration"
-CALIBRATION_PRODUCT_PRODUCER = (
-    "rlrmp.analysis.pipelines.gru_perturbation_calibration."
-    "materialize_perturbation_open_loop_calibration"
-)
+CALIBRATION_PRODUCT_PRODUCER = "rlrmp.data_products.calibration_computation"
 CALIBRATION_PRODUCT_RELPATH = (
     "results/ea6ccb4/data_products/perturbation_open_loop_calibration.json"
 )
@@ -93,9 +91,7 @@ CALIBRATION_DEFAULTS_PRODUCT_RELPATH = (
 )
 CALIBRATION_DEFAULTS_PRODUCT_PATH = REPO_ROOT / CALIBRATION_DEFAULTS_PRODUCT_RELPATH
 CALIBRATION_DEFAULTS_PAYLOAD_SCHEMA_ID = "rlrmp.perturbation_calibration_defaults.payload"
-CALIBRATION_DEFAULTS_PAYLOAD_SCHEMA_VERSION = (
-    "rlrmp.perturbation_calibration_defaults.payload.v1"
-)
+CALIBRATION_DEFAULTS_PAYLOAD_SCHEMA_VERSION = "rlrmp.perturbation_calibration_defaults.payload.v1"
 CALIBRATION_DEFAULTS_PAYLOAD_RELPATH = (
     "results/ea6ccb4/data_products/perturbation_calibration_defaults.payload.json"
 )
@@ -230,6 +226,18 @@ class PerturbationCalibrationDefaults:
     native_conventions: tuple[NativeConvention, ...]
     product_identity_hash: str
     payload_sha256: str
+
+
+def calibrated_amplitude_from_unit_sensitivity(
+    *,
+    target_peak_delta_x_m: float,
+    peak_delta_x_per_unit_m: float,
+) -> float:
+    """Derive a reach-relative perturbation amplitude from governed sensitivity."""
+
+    if peak_delta_x_per_unit_m <= 0.0:
+        raise ValueError("peak_delta_x_per_unit_m must be positive")
+    return float(target_peak_delta_x_m) / float(peak_delta_x_per_unit_m)
 
 
 def calibration_data_product_requirement() -> AnalysisDataProductRequirement:
