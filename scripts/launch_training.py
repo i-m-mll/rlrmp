@@ -10,7 +10,7 @@ from typing import Sequence
 
 from rlrmp.train.launch import (
     LaunchRuntimeControls,
-    TransitionalFeedbaxBackend,
+    execute_authored_training_intent,
     launch_evidence,
     load_authored_training_intent,
     verify_resume_authored_training_intent,
@@ -38,6 +38,8 @@ def build_parser() -> argparse.ArgumentParser:
     execute.add_argument("--log-step", type=int, default=1)
     execute.add_argument("--manifest-root", type=Path)
     execute.add_argument("--checkpoint-root", type=Path)
+    execute.add_argument("--driver", choices=("local", "runpod"), default="local")
+    execute.add_argument("--runpod-profile", type=Path)
 
     dry_run = commands.add_parser("dry-run")
     dry_run.add_argument("document", type=Path)
@@ -48,6 +50,11 @@ def build_parser() -> argparse.ArgumentParser:
     verify.add_argument("--repo-root", type=Path, default=Path.cwd())
     verify.add_argument("--row")
     verify.add_argument("--checkpoint-root", type=Path)
+    post_run = commands.add_parser("map-post-run")
+    post_run.add_argument("run_set_dir", type=Path)
+    post_run.add_argument("--repo-root", type=Path, default=Path.cwd())
+    post_run.add_argument("--issue", required=True)
+    post_run.add_argument("--run-prefix", required=True)
     return parser
 
 
@@ -55,6 +62,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Run the authored launch command."""
 
     args = build_parser().parse_args(argv)
+    if args.command == "map-post-run":
+        from rlrmp.train.orchestrated_post_run import map_registered_run_set
+
+        outputs = map_registered_run_set(
+            args.run_set_dir,
+            repo_root=args.repo_root,
+            issue=args.issue,
+            run_prefix=args.run_prefix,
+        )
+        print(json.dumps([str(path) for path in outputs]))
+        return 0
     launch = load_authored_training_intent(args.document, repo_root=args.repo_root)
     if args.command == "validate":
         print(f"valid TrainingRunMatrixSpec: {args.document}")
@@ -84,10 +102,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     from rlrmp.train.launch import compile_authored_training_intent, select_launch_rows
 
     rows = select_launch_rows(compile_authored_training_intent(launch), args.row)
-    print(json.dumps(launch_evidence(rows, controls), sort_keys=True))
-    backend = TransitionalFeedbaxBackend()
-    for row in rows:
-        backend.execute(row, controls)
+    evidence = launch_evidence(rows, controls)
+    evidence["driver"] = args.driver
+    print(json.dumps(evidence, sort_keys=True))
+    execute_authored_training_intent(
+        launch,
+        row=args.row,
+        controls=controls,
+        driver=args.driver,
+        runpod_profile=args.runpod_profile,
+    )
     return 0
 
 

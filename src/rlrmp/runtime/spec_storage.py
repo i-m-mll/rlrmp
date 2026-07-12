@@ -6,6 +6,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+import json
+
 from feedbax.contracts.run_matrix import TrainingRunMatrixSpec
 from feedbax.contracts.migrations import default_spec_registry
 from feedbax.contracts.spec_storage import (
@@ -16,8 +18,24 @@ from feedbax.training.spec_storage import (
     TrainingSpecStorageResult,
     emit_training_run_spec_storage,
 )
+from feedbax.orchestration import SchemaArtifactRef
+from feedbax.contracts.manifest import StrictModel, sha256_file
 
 from rlrmp.runtime.checkpoint_fork_gate import register_rlrmp_training_methods
+
+
+class RlrmpTrainingSpecStorageResult(StrictModel):
+    """Feedbax storage result plus the emitter-owned authored-document pin."""
+
+    storage: TrainingSpecStorageResult
+    authored_artifact: SchemaArtifactRef
+
+    def __getattr__(self, name: str) -> Any:
+        """Preserve the existing result's attribute-oriented caller API."""
+        try:
+            return getattr(self.storage, name)
+        except AttributeError:
+            raise AttributeError(name) from None
 
 
 def emit_rlrmp_training_run_spec_storage(
@@ -30,7 +48,7 @@ def emit_rlrmp_training_run_spec_storage(
     dependency_lock_path: Path,
     input_data_identities: list[dict[str, Any]] | None = None,
     environment_digest: str | None = None,
-) -> TrainingSpecStorageResult:
+) -> RlrmpTrainingSpecStorageResult:
     """Emit an RLRMP matrix as authored intent plus immutable custody records.
 
     RLRMP training methods are registered before Feedbax resolves the matrix, so
@@ -39,7 +57,7 @@ def emit_rlrmp_training_run_spec_storage(
     """
 
     register_rlrmp_training_methods()
-    return emit_training_run_spec_storage(
+    storage = emit_training_run_spec_storage(
         authored,
         repo_root=repo_root,
         authored_path=authored_path,
@@ -48,6 +66,26 @@ def emit_rlrmp_training_run_spec_storage(
         dependency_lock_path=dependency_lock_path,
         input_data_identities=input_data_identities,
         environment_digest=environment_digest,
+    )
+    authored_digest = sha256_file(authored_path)
+    authored_artifact = SchemaArtifactRef(
+        schema_id=storage.capsule.relevant_schema_versions["training_run_matrix"].rsplit(".v", 1)[
+            0
+        ],
+        schema_version=storage.capsule.relevant_schema_versions["training_run_matrix"],
+        artifact_id=f"authored-matrix:sha256:{authored_digest}",
+        sha256=authored_digest,
+        uri=str(authored_path.resolve()),
+    )
+    sidecar = authored_path.with_suffix(authored_path.suffix + ".artifact.json")
+    sidecar.write_text(
+        json.dumps(authored_artifact.model_dump(mode="json", exclude_none=True), sort_keys=True)
+        + "\n",
+        encoding="utf-8",
+    )
+    return RlrmpTrainingSpecStorageResult(
+        storage=storage,
+        authored_artifact=authored_artifact,
     )
 
 
@@ -59,7 +97,7 @@ def migrate_inline_training_run_matrix(
     custody_root: Path,
     materializer_commit: str,
     dependency_lock_path: Path,
-) -> TrainingSpecStorageResult:
+) -> RlrmpTrainingSpecStorageResult:
     """Preserve an inline base exactly, then replace it with its custody ref.
 
     The snapshot is stored before the authored file is rewritten. This ordering

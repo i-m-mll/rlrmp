@@ -8,11 +8,6 @@ from pathlib import Path
 import pytest
 
 from rlrmp.paths import REPO_ROOT
-from rlrmp.runtime.training_run_specs import (
-    CLOSED_LOOP_DISTILLATION_METHOD_REF,
-    GUIDED_DISTILLATION_METHOD_REF,
-)
-
 
 pytestmark = pytest.mark.feedbax_contract
 
@@ -36,17 +31,11 @@ FORBIDDEN_SPEC_MARKERS = (
     "native_executor_deferred",
     "_deferred_to",
 )
-REGISTERED_METHOD_CLI_WIRING = {
-    CLOSED_LOOP_DISTILLATION_METHOD_REF: {
-        "script": Path("scripts/train_closed_loop_distillation.py"),
-        "module": Path("src/rlrmp/train/distillation_entry.py"),
-        "entrypoint": "run_distillation_config",
-    },
-    GUIDED_DISTILLATION_METHOD_REF: {
-        "script": Path("scripts/train_guided_distillation.py"),
-        "module": Path("src/rlrmp/train/distillation_entry.py"),
-        "entrypoint": "run_distillation_config",
-    },
+RETIRED_TRAINING_SCRIPT_PATHS = {
+    Path("scripts/train_closed_loop_distillation.py"),
+    Path("scripts/train_cs_nominal_gru.py"),
+    Path("scripts/train_guided_distillation.py"),
+    Path("scripts/train_minimax.py"),
 }
 NATIVE_EXECUTOR_CALL = "execute_distillation_training_run_spec_native"
 MINIMAX_JITTED_STEP_FUNCTIONS = {
@@ -120,24 +109,20 @@ def test_training_spec_construction_has_no_legacy_executor_markers() -> None:
     assert not findings, "Forbidden native-executor legacy marker(s): " + ", ".join(findings)
 
 
-def test_registered_distillation_cli_paths_are_error_only_shims() -> None:
-    for wiring in REGISTERED_METHOD_CLI_WIRING.values():
-        source = (REPO_ROOT / wiring["script"]).read_text(encoding="utf-8")
-        assert "launch_training.py" in source
-        assert "argparse" not in source
-        assert "distillation_main" not in source
+def test_retired_training_script_paths_stay_deleted() -> None:
+    revived = sorted(str(path) for path in RETIRED_TRAINING_SCRIPT_PATHS if (REPO_ROOT / path).exists())
+
+    assert not revived, "Retired training script path(s) reappeared: " + ", ".join(revived)
 
 
-def test_train_minimax_cli_is_an_error_only_spec_launch_shim() -> None:
-    script_path = REPO_ROOT / "scripts" / "train_minimax.py"
-    script_tree = ast.parse(script_path.read_text(encoding="utf-8"))
-    source = script_path.read_text(encoding="utf-8")
+def test_executable_train_script_surfaces_do_not_reaccrete() -> None:
+    revived = sorted(
+        str(path.relative_to(REPO_ROOT))
+        for path in (REPO_ROOT / "scripts").glob("train_*.py")
+        if path.is_file()
+    )
 
-    assert "scripts/launch_training.py" in source
-    assert "execute <authored-matrix.json>" in source
-    assert "argparse" not in source
-    assert "execute_minimax_training_run_spec_native" not in source
-    assert not [node for node in script_tree.body if isinstance(node, ast.FunctionDef)]
+    assert not revived, "Executable scripts/train_*.py surface(s) reappeared: " + ", ".join(revived)
 
 
 def test_minimax_native_step_functions_stay_jitted() -> None:
@@ -243,14 +228,7 @@ def test_distillation_kernel_dependency_is_acyclic() -> None:
     assert not findings, "Distillation kernel/executor cycle reappeared: " + ", ".join(findings)
 
 
-def test_train_minimax_contains_no_script_local_checkpoint_or_optimizer_runtime() -> None:
-    path = REPO_ROOT / "scripts" / "train_minimax.py"
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    definitions = {
-        node.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
-    }
+def test_scripts_contain_no_script_local_checkpoint_or_optimizer_runtime() -> None:
     forbidden = {
         "_save_adversarial_checkpoint",
         "_load_adversarial_checkpoint",
@@ -258,8 +236,21 @@ def test_train_minimax_contains_no_script_local_checkpoint_or_optimizer_runtime(
         "_write_final_minimax_custody_transaction",
         "_eval_trials_streaming",
     }
-    assert not definitions & forbidden
-    assert len(path.read_text(encoding="utf-8").splitlines()) < 160
+    findings: list[str] = []
+    for path in sorted((REPO_ROOT / "scripts").glob("*.py")):
+        rel_path = path.relative_to(REPO_ROOT)
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        definitions = {
+            node.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
+        }
+        findings.extend(f"{rel_path}:{name}" for name in sorted(definitions & forbidden))
+        findings.extend(_optimizer_loop_findings_for_tree(tree, rel_path=rel_path))
+
+    assert not findings, "Script-local checkpoint/optimizer runtime reappeared: " + ", ".join(
+        findings
+    )
 
 
 def test_native_executor_deletion_gate_negative_canary_flags_optimizer_loop() -> None:

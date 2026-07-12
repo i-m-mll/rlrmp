@@ -1,7 +1,7 @@
 """Parameterized adversaries for minimax training.
 
-Two flavours, both ``eqx.Module`` so they slot into ``train_minimax.py``'s
-vmap/JIT machinery interchangeably:
+Two flavours, both ``eqx.Module`` so they slot into the registered minimax
+method's vmap/JIT machinery interchangeably:
 
 - ``GaussianBumpAdversary`` (flavour-(a) input-instance): produces a
   per-trial **force profile** via a sum of learnable Gaussian bumps. The
@@ -24,8 +24,6 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
-import jax.tree as jt
-import optax
 from jaxtyping import Array, Float
 
 

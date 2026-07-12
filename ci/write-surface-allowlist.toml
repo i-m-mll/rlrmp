@@ -83,6 +83,53 @@
 # durable writers reappear, the guard must grow a new explicit non-vacuous
 # assertion instead of passing through an empty matrix.
 
+# --- deterministic orchestration cutover (issue 158b580) -------------------
+
+[[durable_write_sites]]
+path = "src/rlrmp/train/fixture_orchestration.py"
+function = "_write_json"
+kind = "write_text"
+target = "path"
+owner = "158b580"
+role = "write_helper"
+conditional = false
+
+[[durable_write_sites]]
+path = "src/rlrmp/train/launch.py"
+function = "_run_fork_gate"
+kind = "write_bytes"
+target = "output"
+owner = "158b580"
+role = "materialized_checkpoint"
+conditional = false
+
+[[durable_write_sites]]
+path = "src/rlrmp/train/orchestrated_post_run.py"
+function = "map_registered_run_set"
+kind = "write_text"
+target = "recipe_path"
+owner = "158b580"
+role = "run_spec"
+conditional = false
+
+[[durable_write_sites]]
+path = "src/rlrmp/train/orchestrated_row.py"
+function = "_write_json"
+kind = "write_text"
+target = "path"
+owner = "158b580"
+role = "write_helper"
+conditional = false
+
+[[durable_write_sites]]
+path = "src/rlrmp/train/orchestration_drivers.py"
+function = "_write_packet"
+kind = "write_text"
+target = "path"
+owner = "158b580"
+role = "write_helper"
+conditional = false
+
 # --- src/rlrmp/train/run_spec_authoring.py ----------------------------------
 
 [[durable_write_sites]]
@@ -100,25 +147,5 @@ function = "write_run_spec"
 kind = "write_text"
 target = "run_path"
 owner = "0efc92d"
-role = "run_spec"
-conditional = false
-
-# --- src/rlrmp/train/feedbax_cli_rows.py -----------------------------------
-
-[[durable_write_sites]]
-path = "src/rlrmp/train/feedbax_cli_rows.py"
-function = "build_feedbax_cli_rows_manifest"
-kind = "write_text"
-target = "nested_spec"
-owner = "89980df"
-role = "run_spec"
-conditional = false
-
-[[durable_write_sites]]
-path = "src/rlrmp/train/feedbax_cli_rows.py"
-function = "build_feedbax_cli_rows_manifest"
-kind = "write_text"
-target = "output_path"
-owner = "89980df"
 role = "run_spec"
 conditional = false

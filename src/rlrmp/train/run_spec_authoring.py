@@ -631,7 +631,7 @@ def build_run_spec(
     return {
         "schema_version": SCHEMA_VERSION,
         "issue": str(args.issue),
-        "training_script": "scripts/train_cs_nominal_gru.py",
+        "training_script": "scripts/launch_training.py",
         "mode": _run_mode(args),
         "artifact_output_dir": str(output_dir),
         "spec_dir": str(spec_dir),

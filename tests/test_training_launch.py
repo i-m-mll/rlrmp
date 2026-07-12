@@ -79,37 +79,13 @@ def test_row_selection_is_exact() -> None:
         launch.select_launch_rows(rows, "missing")
 
 
-def test_backend_swap_does_not_change_accepted_documents(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_orchestrated_path_accepts_every_frontend_document(tmp_path: Path) -> None:
     matrix_path = tmp_path / "matrix.json"
     matrix_path.write_text(json.dumps(_minimal_matrix()), encoding="utf-8")
+    assert launch.accepted_authored_document(matrix_path, repo_root=tmp_path)
     loaded = launch.load_authored_training_intent(matrix_path, repo_root=tmp_path)
-    compiled = (launch.LaunchRow("only", "run-only", object()),)
-    monkeypatch.setattr(launch, "compile_authored_training_intent", lambda _launch: compiled)
-
-    class Interim:
-        def execute(
-            self, row: launch.LaunchRow, controls: launch.LaunchRuntimeControls
-        ) -> str:
-            del controls
-            return f"executed:{row.row_id}"
-
-    class Assemble:
-        def execute(
-            self, row: launch.LaunchRow, controls: launch.LaunchRuntimeControls
-        ) -> str:
-            del controls
-            return f"submitted:{row.row_id}"
-
-    accepted_before = launch.accepted_authored_document(matrix_path, repo_root=tmp_path)
-    interim = launch.execute_authored_training_intent(loaded, backend=Interim())
-    assemble = launch.execute_authored_training_intent(loaded, backend=Assemble())
-    accepted_after = launch.accepted_authored_document(matrix_path, repo_root=tmp_path)
-
-    assert accepted_before is accepted_after is True
-    assert interim == ("executed:only",)
-    assert assemble == ("submitted:only",)
+    assert loaded.document.schema_id == "feedbax.spec.training_run_matrix"
+    assert launch.RowSelection(row_ids=["only"]).model_dump() == {"row_ids": ["only"]}
 
 
 @pytest.mark.parametrize(
@@ -131,9 +107,7 @@ def test_launch_evidence_records_lifecycle_controls() -> None:
     controls = launch.LaunchRuntimeControls(
         resume=True, allow_fresh_start=True, stop_after_batches=12, quiet_progress=True
     )
-    evidence = launch.launch_evidence(
-        (launch.LaunchRow("only", "run-only", object()),), controls
-    )
+    evidence = launch.launch_evidence((launch.LaunchRow("only", "run-only", object()),), controls)
     assert evidence["runtime_controls"] == {
         "resume": True,
         "allow_fresh_start": True,
@@ -166,23 +140,20 @@ def test_verify_resume_prepares_executor_context_and_strictly_loads_checkpoint(
         ),
     )
     row = launch.LaunchRow("only", "run-only", fake_spec)
-    monkeypatch.setattr(
-        launch, "compile_authored_training_intent", lambda _launch: (row,)
-    )
+    monkeypatch.setattr(launch, "compile_authored_training_intent", lambda _launch: (row,))
     prepared = launch._PreparedExecution(  # type: ignore[attr-defined]
         initial_slots={"model": object()},
         kernel_context={"runtime": object()},
         loss_service=object(),
         resume_slot_transform=object(),
     )
-    backend = launch.TransitionalFeedbaxBackend()
     prepare_calls: list[tuple[launch.LaunchRow, bool]] = []
 
     def prepare(item: launch.LaunchRow, *, resume: bool) -> object:
         prepare_calls.append((item, resume))
         return prepared
 
-    monkeypatch.setattr(backend, "_prepare", prepare)
+    monkeypatch.setattr(launch, "_prepare_execution", prepare)
     import feedbax.training.checkpoint_custody as custody
 
     load_calls: list[tuple[Path, dict[str, object]]] = []
@@ -192,9 +163,7 @@ def test_verify_resume_prepares_executor_context_and_strictly_loads_checkpoint(
         return SimpleNamespace(manifest=SimpleNamespace(transaction_id="txn-ok"))
 
     monkeypatch.setattr(custody, "load_latest_checkpoint", load_checkpoint)
-    result = launch.verify_resume_authored_training_intent(  # type: ignore[arg-type]
-        object(), backend=backend
-    )
+    result = launch.verify_resume_authored_training_intent(object())  # type: ignore[arg-type]
     assert prepare_calls == [(row, True)]
     assert load_calls == [
         (
