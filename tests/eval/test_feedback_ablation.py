@@ -1,4 +1,4 @@
-"""Tests for C&S GRU feedback-ablation diagnostics."""
+"""Tests for registered C&S GRU feedback-ablation science."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from feedbax import TaskTrialSpec
 from feedbax.runtime.graph import Wire
 from feedbax.runtime.state import CartesianState
 
-from rlrmp.analysis.pipelines.gru_feedback_ablation import (
+from rlrmp.eval.feedback_ablation import (
     FEEDBACK_AUDIT_SELECTION_ROLE,
     SCHEMA_VERSION,
     _per_replicate_command_penalty_metrics,
@@ -27,6 +27,8 @@ from rlrmp.analysis.pipelines.gru_feedback_ablation import (
     selected_feedback_ablation_bins,
     selected_feedback_ablation_bins_for_bank,
     summarize_normalized_feedback_use,
+    feedback_ablation_evaluation_spec,
+    feedback_ablation_spec,
 )
 from rlrmp.eval.perturbation_bank import default_cs_perturbation_bank
 from rlrmp.model.cs_lss_gru import build_cs_lss_gru_graph
@@ -58,6 +60,23 @@ def test_standard_modes_and_bins_are_json_serializable() -> None:
         "sensory_feedback",
         "delayed_observation",
     }
+
+
+def test_registered_specs_require_explicit_source_and_manifest_parent() -> None:
+    evaluation = feedback_ablation_evaluation_spec(
+        source_experiment="source-exp",
+        run_ids=("run-a",),
+    )
+    assert evaluation.params["source_experiment"] == "source-exp"
+    assert evaluation.inputs[0].kind == "TrainingRunManifest"
+    assert evaluation.inputs[0].id == "run-a"
+
+    analysis = feedback_ablation_spec(
+        evaluation_manifest_id="eval-a",
+        params={"source_experiment": "source-exp"},
+    )
+    assert analysis.inputs[0].kind == "EvaluationRunManifest"
+    assert analysis.inputs[0].id == "eval-a"
 
 
 def test_selected_feedback_ablation_bins_exist_in_current_bank() -> None:

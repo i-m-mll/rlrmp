@@ -449,66 +449,30 @@ def materialize_optional_feedback_ablation(
     regeneration_spec_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
-    """Execute the optional feedback-ablation analysis through Feedbax manifests."""
+    """Describe the registered evaluation request without executing rollouts."""
 
-    from rlrmp.analysis.pipelines.gru_feedback_ablation import (
-        execute_feedback_ablation_pipeline,
-    )
+    del output_path, note_path, regeneration_spec_path
+    from rlrmp.eval.feedback_ablation import feedback_ablation_evaluation_spec
 
-    try:
-        execution = execute_feedback_ablation_pipeline(
-            source_experiment=experiment,
-            result_experiment=experiment,
-            scope="postrun_feedback_ablation",
-            run_ids=tuple(run_ids),
-            labels=None if labels is None else tuple(labels),
-            n_rollout_trials=n_rollout_trials,
-            bank_mode=bank_mode,
-            calibration_level=calibration_level,
-            calibration_reach=calibration_reach,
-            feedback_selection_level=feedback_selection_level,
-            feedback_scale_manifest_path=feedback_scale_manifest_path,
-            preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
-            repo_root=repo_root,
-            feedbax_runs_root=repo_root / "_artifacts" / experiment / "feedbax_runs",
-            issues=(experiment,),
-        )
-    except (FileNotFoundError, ValueError, KeyError, AttributeError) as exc:
-        return {
-            "status": "skipped",
-            "reason": "feedback_ablation_inputs_unavailable",
-            "detail": str(exc),
-            "json_path": _repo_relative(output_path, repo_root=repo_root),
-            "note_path": _repo_relative(note_path, repo_root=repo_root),
-            "selection_role": "audit_only_not_used_for_checkpoint_selection",
-        }
-
-    result = execution.payload
-    runs = result.get("runs", {}) if isinstance(result, dict) else {}
-    audit = (
-        result.get("feedback_checkpoint_selection_audit", {}) if isinstance(result, dict) else {}
+    spec = feedback_ablation_evaluation_spec(
+        source_experiment=experiment,
+        run_ids=tuple(run_ids),
+        labels=None if labels is None else tuple(labels),
+        scope="postrun_feedback_ablation",
+        n_rollout_trials=n_rollout_trials,
+        bank_mode=bank_mode,
+        calibration_level=calibration_level,
+        calibration_reach=calibration_reach,
+        feedback_selection_level=feedback_selection_level,
+        feedback_scale_manifest_path=feedback_scale_manifest_path,
+        preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
+        repo_root=repo_root,
     )
     return {
-        "status": "materialized",
-        "json_path": str(execution.analysis_manifest_path),
-        "note_path": None,
-        "bulk_detail_manifest": None,
-        "regeneration_spec": None,
-        "evaluation_manifest_id": execution.evaluation_manifest.id,
-        "analysis_manifest_id": execution.analysis_manifest.id,
+        "status": "registered_evaluation_required",
         "custody_route": "EvaluationRunManifest->AnalysisRunManifest",
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
-        "result": {
-            "schema_version": result.get("schema_version") if isinstance(result, dict) else None,
-            "n_runs": len(runs),
-            "checkpoint_policy": (
-                result.get("checkpoint_policy") if isinstance(result, dict) else None
-            ),
-            "feedback_checkpoint_selection_audit_status": (
-                audit.get("status") if isinstance(audit, dict) else None
-            ),
-        },
-        "feedback_checkpoint_selection_audit": audit,
+        "evaluation_spec": spec.model_dump(mode="json", exclude_none=True),
     }
 
 
@@ -647,7 +611,7 @@ def _write_postrun_auxiliary_regeneration_specs(
         write_regeneration_spec(
             spec_path=_regeneration_spec_path(plan.map_decomposition_json_path),
             diagnostic_name="gru_map_error_decomposition",
-            materializer="rlrmp.analysis.pipelines.gru_map_error_decomposition.materialize_gru_map_error_decomposition",
+            materializer="rlrmp.analysis.map_error_decomposition.map_error_decomposition_recipe",
             command=None,
             parameters={
                 "experiment": plan.experiment,
@@ -662,7 +626,7 @@ def _write_postrun_auxiliary_regeneration_specs(
                 {"role": "map_decomposition_manifest", "path": plan.map_decomposition_json_path},
                 {"role": "map_decomposition_note", "path": plan.map_decomposition_note_path},
             ],
-            source_files=["src/rlrmp/analysis/pipelines/gru_map_error_decomposition.py"],
+            source_files=["src/rlrmp/analysis/map_error_decomposition.py"],
             notes=["Postrun-owned regeneration spec for target-relative map-error decomposition."],
             repo_root=repo_root,
         )
@@ -714,7 +678,7 @@ def _write_postrun_auxiliary_regeneration_specs(
             "src/rlrmp/eval/gru_diagnostics.py",
             "src/rlrmp/analysis/pipelines/gru_pilot_figures.py",
             "src/rlrmp/eval/perturbation_bank.py",
-            "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
+            "src/rlrmp/eval/feedback_ablation.py",
         ],
         notes=[
             "Compatibility index for active GRU postrun diagnostics.",
@@ -841,53 +805,23 @@ def materialize_optional_map_error_decomposition(
     note_path: Path,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
-    """Call the optional map-error decomposition sidecar where inputs are available."""
+    """Require an upstream evaluation manifest for registered decomposition."""
 
-    try:
-        module = importlib.import_module("rlrmp.analysis.pipelines.gru_map_error_decomposition")
-        materializer = getattr(module, "materialize_gru_map_error_decomposition")
-        writer = getattr(module, "write_map_error_decomposition_result")
-    except (ImportError, AttributeError) as exc:
-        return {
-            "status": "skipped",
-            "reason": "optional_map_decomposition_unavailable",
-            "detail": str(exc),
-            "expected_hook": (
-                "rlrmp.analysis.pipelines.gru_map_error_decomposition."
-                "materialize_gru_map_error_decomposition"
-            ),
-        }
-
-    try:
-        result = materializer(
-            standard_manifest_path=standard_manifest_path,
-            experiment=experiment,
-            run_ids=tuple(run_ids),
-            use_validation_selected_checkpoints=use_validation_selected_checkpoints,
-            preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
-            repo_root=repo_root,
-        )
-    except (FileNotFoundError, ValueError, KeyError, AttributeError) as exc:
-        return {
-            "status": "skipped",
-            "reason": "map_decomposition_inputs_unavailable",
-            "detail": str(exc),
-            "json_path": _repo_relative(output_path, repo_root=repo_root),
-            "note_path": _repo_relative(note_path, repo_root=repo_root),
-            "selection_role": "audit_only_not_used_for_checkpoint_selection",
-        }
-
-    writer(result, json_path=output_path, markdown_path=note_path)
+    del (
+        run_ids,
+        use_validation_selected_checkpoints,
+        standard_manifest_path,
+        preferred_checkpoint_manifest_path,
+        output_path,
+        note_path,
+        repo_root,
+    )
     return {
-        "status": "materialized",
-        "json_path": _repo_relative(output_path, repo_root=repo_root),
-        "note_path": _repo_relative(note_path, repo_root=repo_root),
+        "status": "evaluation_manifest_required",
+        "analysis_type": "rlrmp.map_error_decomposition",
+        "source_experiment": experiment,
+        "required_parent_kind": "EvaluationRunManifest",
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
-        "result": {
-            "schema_version": result.get("format"),
-            "n_rows": len(result.get("rows", ())),
-            "checkpoint_policy": result.get("checkpoint_policy"),
-        },
     }
 
 

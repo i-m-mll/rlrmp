@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import jax.numpy as jnp
 import pytest
 
-from rlrmp.analysis.pipelines.gru_feedback_ablation import selected_feedback_ablation_bins_for_bank
+from rlrmp.eval.feedback_ablation import selected_feedback_ablation_bins_for_bank
 from rlrmp.eval.perturbation_bank import default_cs_perturbation_bank
 import rlrmp.benchmarks.postrun_eval_materialization as benchmark
 from rlrmp.benchmarks.postrun_eval_materialization import (
@@ -48,9 +48,7 @@ def test_run_benchmark_records_and_passes_backend_context(monkeypatch, tmp_path)
     run = SimpleNamespace(run_id="run_a", label="run A", run_spec={"hps": {}})
     bank = {
         "bank_id": "bank",
-        "perturbations": [
-            {"perturbation_id": "row_a", "family": "process_epsilon_force_state_xy"}
-        ],
+        "perturbations": [{"perturbation_id": "row_a", "family": "process_epsilon_force_state_xy"}],
     }
 
     monkeypatch.setattr(benchmark, "resolve_run_inputs", lambda **_: [run])
@@ -67,31 +65,12 @@ def test_run_benchmark_records_and_passes_backend_context(monkeypatch, tmp_path)
         "materialize_gru_objective_comparator_sidecar",
         lambda **_: {"status": "materialized"},
     )
-    monkeypatch.setattr(
-        benchmark,
-        "materialize_gru_map_error_decomposition",
-        lambda **_: {"rows": []},
-    )
 
     def fake_perturbation_bank(*_, **kwargs):
         calls["perturbation_evaluation_backend"] = kwargs["evaluation_backend"]
         return {"status_counts": {"evaluated": 1}, "perturbations": [{}]}
 
-    def fake_worst_case(*_, **kwargs):
-        calls["worst_case_optimizer_backend"] = kwargs["optimizer_backend"]
-        return {"status": "evaluated"}
-
-    def fake_feedback_pipeline(**kwargs):
-        calls["feedback_scope"] = kwargs["scope"]
-        return SimpleNamespace(payload={"status_counts": {}, "runs": {}})
-
     monkeypatch.setattr(benchmark, "evaluate_run_perturbation_bank", fake_perturbation_bank)
-    monkeypatch.setattr(
-        benchmark,
-        "execute_feedback_ablation_pipeline",
-        fake_feedback_pipeline,
-    )
-    monkeypatch.setattr(benchmark, "audit_run_worst_case_epsilon", fake_worst_case)
     monkeypatch.setattr(benchmark, "_environment", lambda: {"jax_default_backend": "cpu"})
 
     payload = run_benchmark(
@@ -112,8 +91,6 @@ def test_run_benchmark_records_and_passes_backend_context(monkeypatch, tmp_path)
     assert payload["report_serialization_timing"]["elapsed_s"] >= 0.0
     assert calls == {
         "perturbation_evaluation_backend": "serial",
-        "feedback_scope": "postrun_eval_materialization_benchmark",
-        "worst_case_optimizer_backend": "serial",
     }
     assert payload["bundles"]
     for bundle in payload["bundles"]:
@@ -222,7 +199,9 @@ def test_time_bundle_warm_replay_uses_separate_writer(tmp_path) -> None:
     assert result.warm_ready_blocked_leaves == 1
 
 
-@pytest.mark.parametrize("option", ["--perturbation-evaluation-backend", "--worst-case-optimizer-backend"])
+@pytest.mark.parametrize(
+    "option", ["--perturbation-evaluation-backend", "--worst-case-optimizer-backend"]
+)
 def test_parser_rejects_unknown_backend(option: str) -> None:
     with pytest.raises(SystemExit):
         build_parser().parse_args([option, "unknown"])

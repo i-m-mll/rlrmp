@@ -60,7 +60,7 @@ MIN_HIGH_PRECISION_CARDINALITY = 3
 # tuples for dimensions, plotting, or solver parameters.
 DESIGNATED_SCIENCE_DATA_LITERAL_RELPATHS = frozenset(
     {
-        "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py",
+        "src/rlrmp/data_products/calibration_computation.py",
     }
 )
 

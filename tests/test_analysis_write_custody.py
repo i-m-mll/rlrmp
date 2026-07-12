@@ -59,9 +59,9 @@ def test_analysis_write_scan_is_non_vacuous() -> None:
     assert sites, "analysis durable-write scan found zero sites; scan scope is broken"
     assert any(site.path.startswith("src/rlrmp/analysis/math/") for site in sites)
     assert any(site.path.startswith("src/rlrmp/analysis/pipelines/") for site in sites)
-    assert any(site.kind == "write_html" for site in sites), (
-        "analysis figure HTML writers are not covered by the scan"
-    )
+    # Figure renders now route through Feedbax custody. The final direct
+    # ``write_html`` analysis site was the retired response-norm producer, so
+    # requiring one here would force legacy durable writers to remain alive.
 
 
 def test_analysis_durable_write_sites_match_allowlist() -> None:

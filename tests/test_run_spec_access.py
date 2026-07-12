@@ -18,16 +18,12 @@ from rlrmp.runtime.run_spec_access import (
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONVERTED_SEED_FILES = (
     "src/rlrmp/analysis/gru_standard_certificate.py",
-    "src/rlrmp/analysis/pipelines/gru_broad_epsilon_attribution.py",
     "src/rlrmp/eval/checkpoint_selection.py",
     "src/rlrmp/eval/evaluation_diagnostics.py",
-    "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
+    "src/rlrmp/eval/feedback_ablation.py",
     "src/rlrmp/eval/perturbation_bank.py",
     "src/rlrmp/analysis/pipelines/gru_pilot_figures.py",
-    "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py",
-    "src/rlrmp/analysis/pipelines/gru_worst_case_epsilon_audit.py",
     "src/rlrmp/analysis/pipelines/objective_comparator.py",
-    "src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py",
     "src/rlrmp/eval/ensemble.py",
     "src/rlrmp/eval/robustness_diagnostics.py",
     "src/rlrmp/model/cs_lss_gru.py",
