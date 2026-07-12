@@ -232,7 +232,10 @@ def test_bridge_report_constructs_certificate_and_failure_tables(tmp_path: Path)
                         {
                             "name": "state_weighted_action_mismatch",
                             "status": "available",
-                            "summary": {"aggregate_mismatch_ratio": 0.3},
+                            "summary": {
+                                "mismatch_ratio_mean": 0.31,
+                                "aggregate_mismatch_ratio": 0.73,
+                            },
                         },
                         {
                             "name": "closed_loop_transition_mismatch",
@@ -314,8 +317,11 @@ def test_bridge_report_constructs_certificate_and_failure_tables(tmp_path: Path)
         artifact for artifact in report_manifest.artifacts if artifact.role == "report_render"
     )
     render_text = Path(render.uri).read_text(encoding="utf-8")
-    assert "| row-a | failed_standard_certificate | robust | nominal_clean |" in render_text
-    assert "R_u" in render_text
+    assert (
+        "| row-a | failed_standard_certificate | robust | nominal_clean | "
+        "augmented_linear | 1.2 | 0.31 | 0.73 | 0.4 | 0.5 | 0.3 | "
+        "L2=0.8; gamma=0.7 | 0.9 |"
+    ) in render_text
     assert rr.ACTION_BELLMAN_ANNOTATION in render_text
     assert rr.GAIN_DIAGNOSTIC_ANNOTATION in render_text
     assert "sidecar_improving_non_equivalent" in render_text

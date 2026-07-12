@@ -419,11 +419,15 @@ def _standard_certificate_cells(row: Mapping[str, Any]) -> tuple[str, ...]:
         for component in row.get("certificate_components", ())
         if isinstance(component, Mapping)
     }
-    action = _component_value(
+    action_mismatch = _component_value(
+        components,
+        "state_weighted_action_mismatch",
+        "mismatch_ratio_mean",
+    )
+    action_energy_mismatch = _component_value(
         components,
         "state_weighted_action_mismatch",
         "aggregate_mismatch_ratio",
-        "mismatch_ratio_mean",
     )
     transition = _component_value(
         components, "closed_loop_transition_mismatch", "mismatch_ratio_mean"
@@ -463,8 +467,8 @@ def _standard_certificate_cells(row: Mapping[str, Any]) -> tuple[str, ...]:
         ),
         str(mode),
         _fmt(objective_ratio),
-        _fmt(action),
-        _fmt(action),
+        _fmt(action_mismatch),
+        _fmt(action_energy_mismatch),
         _fmt(transition),
         _fmt(value_gap),
         _fmt(bellman),
