@@ -313,6 +313,35 @@ def register_rlrmp_figure_surfaces(*, replace: bool = True) -> None:
         ),
         replace=replace,
     )
+    for name, label, piece_kind, style in (
+        (
+            "rlrmp.extlqg6d_nominal",
+            "6D extLQG",
+            "extlqg6d_nominal",
+            {"color": "rgb(17,24,39)", "line_dash": "dash"},
+        ),
+        (
+            "rlrmp.output_feedback_hinf6d_nominal",
+            "6D output-feedback H-infinity",
+            "output_feedback_hinf6d_nominal",
+            {"color": "rgb(220,38,38)", "line_dash": "dot"},
+        ),
+    ):
+        register_figure_piece(
+            FigurePiece(
+                name=name,
+                description=f"Named analytical nominal-profile piece: {label}.",
+                manifest_predicate=ManifestPredicate(
+                    manifest_kind="AnalysisRunManifest",
+                    metadata_equals={"rlrmp_piece": piece_kind},
+                ),
+                data_path="metadata.figure_payload",
+                label=label,
+                constructor="feedbax.profile_band",
+                style=style,
+            ),
+            replace=replace,
+        )
 
     # Imported here to keep the core template module independent of tracked
     # stock payload definitions during module initialization.

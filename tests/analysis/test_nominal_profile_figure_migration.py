@@ -10,6 +10,7 @@ from feedbax.analysis.figures import execute_figure_spec
 from feedbax.analysis.specs import AnalysisRunSpec
 from feedbax.contracts.figures import FigureSpec
 from feedbax.contracts.manifest import AnalysisRunManifest, ParentRef, spec_payload, write_manifest
+from feedbax.plot.constructors import get_figure_piece
 import pytest
 
 from rlrmp.figures import register_rlrmp_figure_surfaces
@@ -59,6 +60,11 @@ def _figure_payload(row_count: int, replicate_count: int) -> dict[str, object]:
 
 
 def test_surviving_specs_are_pretty_native_manifest_bound_intents() -> None:
+    register_rlrmp_figure_surfaces()
+    assert get_figure_piece("rlrmp.extlqg6d_nominal").label == "6D extLQG"
+    assert get_figure_piece("rlrmp.output_feedback_hinf6d_nominal").label == (
+        "6D output-feedback H-infinity"
+    )
     for issue, topic in SPECS:
         path = REPO_ROOT / "results" / issue / "figures" / topic / "spec.json"
         text = path.read_text(encoding="utf-8")

@@ -392,6 +392,18 @@ negative_canary = [
     "tests/analysis/test_gru_postrun_bundle_contract.py::test_gru_postrun_figure_executes_to_hash_verified_manifest",
 ]
 
+[[families]]
+name = "nominal_profile_figure_contract"
+owner = "70fe304"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_nominal_profile_figure_migration.py::"
+# Pin five native intents, 2-vs-3 replicate facets, hash-verified custody, and deletion.
+minimum_non_skipped = 5
+negative_canary = [
+    "tests/analysis/test_nominal_profile_figure_migration.py::test_all_specs_execute_with_payload_bound_replicates[2]",
+]
+
 [pipeline_contract_native]
 allowlist = [
 ]

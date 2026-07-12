@@ -16,8 +16,8 @@ EXPECTED_STATE_COUNTS = {
     "canonical_survivor": 4,
     "cross_repo_resolved": 3,
     "excluded_cross_repo": 2,
-    "removed": 163,
-    "thin_adapter": 104,
+    "removed": 173,
+    "thin_adapter": 94,
 }
 
 

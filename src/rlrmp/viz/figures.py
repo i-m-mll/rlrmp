@@ -10,7 +10,6 @@ from typing import Any, Protocol
 import jax.random as jr
 import numpy as np
 import plotly.graph_objects as go
-from feedbax.plot import save_figure
 
 from rlrmp.analysis.math.trial_alignment import (
     align_trials,
@@ -35,10 +34,9 @@ from rlrmp.analysis.math.output_feedback import (
     robust_estimator_covariances,
     robust_output_feedback_gains,
 )
-from rlrmp.io import json_ready
 from rlrmp.viz.profile_grids import profile_comparison_grid
 from rlrmp.viz.colors import hex_to_rgba
-from rlrmp.viz.traces import add_band_trace, add_profile_line, add_reference_trace
+from rlrmp.viz.traces import add_band_trace, add_reference_trace
 
 
 _VELOCITY_COLORS = ("#2563eb", "#dc2626", "#059669", "#7c3aed", "#ea580c", "#0891b2")
@@ -442,174 +440,6 @@ class AnalyticalVelocityProfile:
         """Return the time of peak mean forward velocity."""
 
         return float(self.time_s[int(np.nanargmax(self.mean))])
-
-
-def build_nominal_velocity_spec(
-    *,
-    schema_version: str,
-    issue: str,
-    figure_kind: str,
-    robust_contract: Mapping[str, Any],
-    inputs: Sequence[Mapping[str, Any]],
-    transform_name: str,
-    transform_kwargs: Mapping[str, Any],
-    rows: int,
-    outputs: Mapping[str, str],
-    cols: int | None = None,
-    extra: Mapping[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Build the shared nominal-velocity figure-spec contract."""
-
-    plot_kwargs = {
-        "grid_helper": "rlrmp.viz.profile_comparison_grid",
-        "shared_yaxes": "all",
-        "rows": rows,
-        "physical_state_dim": 6,
-        "state_dim": 36,
-        "disturbance_integrators_exposed": False,
-    }
-    if cols is not None:
-        plot_kwargs["cols"] = cols
-    return {
-        "schema_version": schema_version,
-        "issue": issue,
-        "figure_kind": figure_kind,
-        "analytical_comparator_contract": {
-            "extlqg": {
-                "label": "6D extLQG",
-                "state_dim": 36,
-                "physical_dim": 6,
-                "disturbance_integrators_exposed": False,
-                "source": (
-                    "rlrmp.eval.perturbation_bank."
-                    "_build_extlqg_comparator_context(physical_dim=6)"
-                ),
-                "game_contract": "6D no-integrator C&S comparator",
-            },
-            "output_feedback_hinf": dict(robust_contract),
-        },
-        "inputs": [dict(item) for item in inputs],
-        "transform": [{"name": transform_name, "kwargs": dict(transform_kwargs)}],
-        **dict(extra or {}),
-        "plot_kwargs": plot_kwargs,
-        "outputs": dict(outputs),
-    }
-
-
-def build_nominal_profile_figure(
-    *,
-    rows: Sequence[Mapping[str, Any]],
-    add_run_profiles: Callable[[Any, Mapping[str, Any], int], None],
-    ext_profile: np.ndarray,
-    robust_profile: np.ndarray,
-    comparator_colors: Mapping[str, str],
-    title: str,
-    height: int,
-    vertical_spacing: float = 0.075,
-) -> Any:
-    """Build a shared-y-axis nominal profile comparison grid."""
-
-    fig = profile_comparison_grid(
-        n_panels=len(rows),
-        rows=len(rows),
-        cols=1,
-        subplot_titles=[str(row["label"]) for row in rows],
-        vertical_spacing=vertical_spacing,
-    )
-    for row_index, row_spec in enumerate(rows, start=1):
-        add_run_profiles(fig, row_spec, row_index)
-        add_profile_line(
-            fig,
-            ext_profile,
-            row=row_index,
-            col=1,
-            name="6D extLQG",
-            color=comparator_colors["extlqg6d"],
-            dash="dash",
-            showlegend=row_index == 1,
-            width=2.8,
-        )
-        add_profile_line(
-            fig,
-            robust_profile,
-            row=row_index,
-            col=1,
-            name="6D output-feedback H-infinity",
-            color=comparator_colors["robust_output_feedback6d"],
-            dash="dot",
-            showlegend=row_index == 1,
-            width=2.8,
-        )
-        fig.update_yaxes(title_text="m/s", row=row_index, col=1)
-    fig.update_xaxes(title_text="time from movement onset (s)", row=len(rows), col=1)
-    fig.update_layout(
-        title=title,
-        template="plotly_white",
-        width=1040,
-        height=height,
-        legend_title_text="profile",
-        margin={"l": 78, "r": 24, "t": 90, "b": 70},
-    )
-    return fig
-
-
-def materialize_nominal_velocity_figure(
-    *,
-    rows: Sequence[Mapping[str, Any]],
-    add_run_profiles: Callable[[Any, Mapping[str, Any], int], None],
-    ext_profile: np.ndarray,
-    robust_profile: np.ndarray,
-    comparator_colors: Mapping[str, str],
-    config: Mapping[str, Any],
-    robust_contract: Mapping[str, Any],
-    result_extra: Mapping[str, Any] | None = None,
-    result_contract: Mapping[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Build, save, and describe one canonical nominal-velocity figure."""
-
-    fig = build_nominal_profile_figure(
-        rows=rows,
-        add_run_profiles=add_run_profiles,
-        ext_profile=ext_profile,
-        robust_profile=robust_profile,
-        comparator_colors=comparator_colors,
-        title=config["title"],
-        height=config["height"],
-        vertical_spacing=config.get("vertical_spacing", 0.075),
-    )
-    spec = {
-        "schema_version": config["schema_version"],
-        "issue": config["issue"],
-        "figure_kind": config["figure_kind"],
-        "analytical_comparator_contract": {
-            "extlqg": dict(config["ext_contract"]),
-            "output_feedback_hinf": robust_contract,
-        },
-        "inputs": list(config["inputs"]),
-        "transform": list(config["transform"]),
-        "plot_kwargs": dict(config["plot_kwargs"]),
-    }
-    issue, topic = config["issue"], config["topic"]
-    saved = save_figure(
-        fig=fig,
-        spec=spec,
-        package="rlrmp",
-        experiment=issue,
-        topic=topic,
-        extra_packages=["rlrmp"],
-    )
-    result = {
-        "status": "materialized",
-        "topic": topic,
-        "save_result": json_ready(saved),
-        "spec": f"results/{issue}/figures/{topic}/spec.json",
-        "html": f"results/{issue}/figures/{topic}/figure.html",
-    }
-    if result_contract is not None:
-        result["analytical_comparator_contract"] = dict(result_contract)
-    if result_extra is not None:
-        result.update(result_extra)
-    return result
 
 
 def materialize_analytical_profiles(

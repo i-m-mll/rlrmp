@@ -8,14 +8,10 @@ from types import SimpleNamespace
 import numpy as np
 import plotly.graph_objects as go
 
-import rlrmp.viz.figures as figure_helpers
 from rlrmp.viz.figures import (
-    build_nominal_profile_figure,
-    build_nominal_velocity_spec,
     build_profile_family_figure,
     build_stabilization_family_figure,
     build_stabilization_response_family_figure,
-    materialize_nominal_velocity_figure,
     write_velocity_by_replicate_figure,
     write_velocity_figure,
 )
@@ -77,47 +73,6 @@ def test_trace_helpers_preserve_band_and_profile_contracts() -> None:
     assert len(fig.data) == 3
     np.testing.assert_allclose(np.asarray(fig.data[-1].y), [2.0, 4.0])
     np.testing.assert_allclose(np.asarray(fig.data[-1].x), [0.0, 0.01])
-
-
-def test_nominal_figure_and_spec_helpers_keep_shared_axis_contract() -> None:
-    rows = [{"label": "row a", "run_id": "a"}, {"label": "row b", "run_id": "b"}]
-
-    def add_run(fig: go.Figure, _row: dict[str, str], row_index: int) -> None:
-        add_profile_line(
-            fig,
-            np.array([0.0, 1.0]),
-            row=row_index,
-            col=1,
-            name=f"run {row_index}",
-            color="#2563eb",
-            dash="solid",
-            showlegend=True,
-        )
-
-    fig = build_nominal_profile_figure(
-        rows=rows,
-        add_run_profiles=add_run,
-        ext_profile=np.array([0.0, 0.5]),
-        robust_profile=np.array([0.0, 0.4]),
-        comparator_colors={"extlqg6d": "#111827", "robust_output_feedback6d": "#dc2626"},
-        title="comparison",
-        height=600,
-    )
-    spec = build_nominal_velocity_spec(
-        schema_version="test.v1",
-        issue="test",
-        figure_kind="test",
-        robust_contract={"label": "robust"},
-        inputs=[],
-        transform_name="profiles",
-        transform_kwargs={},
-        rows=2,
-        outputs={"html": "figure.html"},
-    )
-
-    assert len(fig.data) == 6
-    assert fig.layout.yaxis.matches is not None
-    assert spec["plot_kwargs"]["shared_yaxes"] == "all"
 
 
 def test_profile_family_builder_preserves_timing_grid_and_event_marker() -> None:
@@ -254,74 +209,6 @@ def test_full_stabilization_family_builder_preserves_grid_and_sidecar_contracts(
     assert len(unavailable) == 6
     assert unavailable[0]["reason"] == "unsupported"
     assert len(analytical_calls) == 6
-
-
-def test_nominal_materializer_preserves_spec_save_and_file_contracts(monkeypatch) -> None:
-    saved = []
-
-    def fake_save_figure(**kwargs):
-        saved.append(kwargs)
-        return {"artifact": "figure"}
-
-    monkeypatch.setattr(figure_helpers, "save_figure", fake_save_figure)
-
-    def add_run(fig, _row, row_index):
-        add_profile_line(
-            fig,
-            np.array([0.0, 0.2]),
-            row=row_index,
-            col=1,
-            name="GRU nominal",
-            color="#2563eb",
-            dash="solid",
-            showlegend=row_index == 1,
-        )
-
-    config = {
-        "title": "nominal profiles",
-        "height": 760,
-        "issue": "c92ebd8",
-        "topic": "nominal",
-        "schema_version": "nominal.v1",
-        "figure_kind": "nominal_velocity",
-        "ext_contract": {"label": "6D extLQG"},
-        "inputs": [{"path": "results/c92ebd8/runs/a.json"}],
-        "transform": [{"name": "forward_velocity"}],
-        "plot_kwargs": {"shared_yaxes": "all", "rows": 2},
-    }
-    result = materialize_nominal_velocity_figure(
-        rows=({"label": "a"}, {"label": "b"}),
-        add_run_profiles=add_run,
-        ext_profile=np.array([0.0, 0.1]),
-        robust_profile=np.array([0.0, 0.08]),
-        comparator_colors={"extlqg6d": "#111827", "robust_output_feedback6d": "#15803d"},
-        config=config,
-        robust_contract={"label": "robust"},
-        result_extra={"bulk_html": "_artifacts/c92ebd8/figures/nominal/figure.html"},
-        result_contract={"output_feedback_hinf": {"label": "robust"}},
-    )
-
-    assert len(saved) == 1
-    assert len(saved[0]["fig"].data) == 6
-    assert saved[0]["fig"].layout.title.text == "nominal profiles"
-    assert saved[0]["spec"] == {
-        "schema_version": "nominal.v1",
-        "issue": "c92ebd8",
-        "figure_kind": "nominal_velocity",
-        "analytical_comparator_contract": {
-            "extlqg": {"label": "6D extLQG"},
-            "output_feedback_hinf": {"label": "robust"},
-        },
-        "inputs": [{"path": "results/c92ebd8/runs/a.json"}],
-        "transform": [{"name": "forward_velocity"}],
-        "plot_kwargs": {"shared_yaxes": "all", "rows": 2},
-    }
-    assert result["spec"] == "results/c92ebd8/figures/nominal/spec.json"
-    assert result["html"] == "results/c92ebd8/figures/nominal/figure.html"
-    assert result["bulk_html"] == "_artifacts/c92ebd8/figures/nominal/figure.html"
-    assert result["analytical_comparator_contract"] == {
-        "output_feedback_hinf": {"label": "robust"}
-    }
 
 
 def test_velocity_writer_preserves_single_and_sequence_output_contracts(
@@ -495,12 +382,6 @@ def test_owned_scalar_helpers_are_import_routed_not_redefined() -> None:
             "initial_effector_position",
             "initial_effector_velocity",
         },
-        "results/91a090c/scripts/materialize_nominal_velocity_profiles.py": {
-            "initial_effector_velocity",
-            "json_ready",
-            "materialize_analytical_profiles",
-            "repo_ref",
-        },
     }
     for relative_path, names in expected_absent.items():
         tree = ast.parse((REPO_ROOT / relative_path).read_text(encoding="utf-8"))
@@ -525,10 +406,6 @@ def test_visual_figure_cluster_members_route_through_canonical_builders() -> Non
         },
         "results/c92ebd8/scripts/materialize_post_training_figures.py": {
             "build_profile_family_figure",
-            "canonical_materialize_nominal_velocity_figure",
-        },
-        "results/c92ebd8/scripts/materialize_pgd_1p05_nominal_velocity_profiles.py": {
-            "canonical_materialize_nominal_velocity_figure"
         },
         "results/c92ebd8/scripts/materialize_pgd_ofb_budget_stabilization_responses.py": {
             "canonical_build_family_figure"
@@ -560,16 +437,6 @@ def test_residual_figure_members_are_thin_canonical_adapters() -> None:
             "build_family_figure",
             "canonical_build_family_figure",
             55,
-        ),
-        "results/c92ebd8/scripts/materialize_pgd_1p05_nominal_velocity_profiles.py": (
-            "materialize_figure",
-            "canonical_materialize_nominal_velocity_figure",
-            55,
-        ),
-        "results/c92ebd8/scripts/materialize_post_training_figures.py": (
-            "materialize_nominal_velocity_profiles",
-            "canonical_materialize_nominal_velocity_figure",
-            45,
         ),
     }
     forbidden = {
