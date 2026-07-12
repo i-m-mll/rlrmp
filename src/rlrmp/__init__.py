@@ -232,6 +232,8 @@ def ensure_rlrmp_recipes_registered(
         from rlrmp.analysis.map_error_decomposition import (
             register_map_error_decomposition_recipe,
         )
+        from rlrmp.analysis.objective_comparator import register_objective_comparator_recipe
+        from rlrmp.analysis.robustness_phenotype import register_robustness_phenotype_recipe
         from rlrmp.analysis.worst_case_epsilon import register_worst_case_epsilon_recipe
         from rlrmp.analysis.training_diagnostics import (
             register_training_diagnostics_recipes,
@@ -251,6 +253,8 @@ def ensure_rlrmp_recipes_registered(
         register_robustness_margin_recipes()
         register_broad_epsilon_attribution_recipe()
         register_map_error_decomposition_recipe()
+        register_objective_comparator_recipe()
+        register_robustness_phenotype_recipe()
         register_worst_case_epsilon_recipe()
         register_training_diagnostics_recipes()
     except Exception:

@@ -36,21 +36,12 @@ stages:
     analysis_type: rlrmp.robustness_phenotype
     requested_outputs: [robustness_phenotype]
     local_params:
-      issue_id: 769aea6
+      issue: 769aea6
       scope: validation_selected_gru_robustness_phenotype
-      output_json: results/769aea6/notes/hinf_phenotype_sidecar.json
-      output_markdown: results/769aea6/notes/hinf_phenotype_sidecar.md
-      regeneration_spec_path: results/769aea6/notes/hinf_phenotype_sidecar_regeneration_spec.json
     outputs:
       - role: manifest
         required: true
       - role: rlrmp-robustness-phenotype-sidecar
-        required: true
-      - role: rlrmp-robustness-phenotype-sidecar-json
-        required: true
-      - role: rlrmp-robustness-phenotype-sidecar-note
-        required: true
-      - role: rlrmp-robustness-phenotype-regeneration-spec
         required: true
       - role: rlrmp-formal-hinf-certificate
         required: false
@@ -64,7 +55,7 @@ stages:
       schema_version: rlrmp.report.robustness_phenotype_markdown.params.v1
       title: Robustness Phenotype Report
       source_artifact_roles:
-        - rlrmp-robustness-phenotype-sidecar-note
+        - rlrmp-robustness-phenotype-sidecar
       include_json_artifact: true
       narrative: Feedbax-custody report render for the tracked phenotype Markdown export.
     outputs:

@@ -53,22 +53,27 @@ from rlrmp.analysis.response_norm import (
     response_norm_payload,
     response_norm_recipe,
 )
+from rlrmp.analysis.objective_comparator import (
+    OBJECTIVE_COMPARATOR_ANALYSIS_TYPE,
+    ObjectiveComparatorParams,
+    objective_comparator_recipe,
+)
+from rlrmp.analysis.robustness_phenotype import (
+    DEFAULT_SCOPE as DEFAULT_HINF_PHENOTYPE_SCOPE,
+    ISSUE_ID as ROBUSTNESS_PHENOTYPE_ISSUE_ID,
+    ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE,
+    RobustnessPhenotypeParams,
+    robustness_phenotype_recipe,
+)
 from rlrmp.analysis.pipelines.gru_postrun_materialization import (
     DEFAULT_OUTPUT_TAG,
     materialize_gru_postrun_analysis,
     materialize_optional_feedback_ablation,
-    materialize_optional_objective_comparator,
     materialize_optional_perturbation_response,
     plan_gru_postrun_materialization,
 )
 from rlrmp.eval.evaluation_diagnostics import DEFAULT_N_ROLLOUT_TRIALS
 from rlrmp.eval.perturbation_bank import PerturbationBankParams
-from rlrmp.analysis.pipelines.hinf_phenotype_sidecar import (
-    DEFAULT_SCOPE as DEFAULT_HINF_PHENOTYPE_SCOPE,
-    build_hinf_phenotype_sidecar,
-    load_hinf_phenotype_sources,
-    write_hinf_phenotype_sidecar,
-)
 from rlrmp.eval.output_feedback_rollout_recovery import (
     ISSUE_ID as OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ISSUE_ID,
     LinearOptimizationSpec,
@@ -133,28 +138,10 @@ PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE = "rlrmp.perturbation_bank_aggregate"
 POLICY_DIAGNOSTICS_ANALYSIS_TYPE = "rlrmp.diagnostic.policy_local"
 RECURRENT_JACOBIAN_ANALYSIS_TYPE = "rlrmp.diagnostic.recurrent_jacobian"
 FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE = "rlrmp.feedback_quality_lens"
-ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE = "rlrmp.robustness_phenotype"
 OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE = (
     "rlrmp.output_feedback_bridge.rollout_recovery"
 )
 BRIDGE_STANDARD_ANALYSIS_TYPE = GRU_STANDARD_ANALYSIS_TYPE
-
-ROBUSTNESS_PHENOTYPE_ISSUE_ID = "769aea6"
-
-ROBUSTNESS_PHENOTYPE_SOURCE_ROLES = {
-    "rlrmp-bridge-standard-certificate": "standard_certificate",
-    "rlrmp-bridge-standard-certificate-manifest": "standard_certificate",
-    "rlrmp-gru-standard-certificate-manifest": "standard_certificate",
-    "rlrmp-gru-objective-comparator-manifest": "objective_comparator",
-    "rlrmp-gru-perturbation-response-manifest": "perturbation_response",
-    "rlrmp-gru-feedback-ablation-manifest": "feedback_ablation",
-    "rlrmp-gru-map-decomposition-manifest": "map_error_decomposition",
-    "rlrmp-gru-evaluation-diagnostics": "evaluation_diagnostics",
-    "rlrmp-gru-worst-case-epsilon-audit-manifest": "worst_case_epsilon_audit",
-    "rlrmp-gru-broad-epsilon-attribution-manifest": "broad_epsilon_attribution",
-    "rlrmp-induced-gain-manifest": "induced_gain",
-    "rlrmp-exact-audit-manifest": "exact_audit",
-}
 
 EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE = {
     GRU_STANDARD_ANALYSIS_TYPE: (CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,),
@@ -168,7 +155,10 @@ EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE = {
     POLICY_DIAGNOSTICS_ANALYSIS_TYPE: ("evaluation_run",),
     RECURRENT_JACOBIAN_ANALYSIS_TYPE: ("evaluation_run",),
     FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE: ("analysis_run",),
-    ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE: ("evaluation_run",),
+    ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE: tuple(
+        robustness_phenotype_recipe.ANALYSIS_DEPENDENCIES
+    ),
+    OBJECTIVE_COMPARATOR_ANALYSIS_TYPE: tuple(objective_comparator_recipe.EVAL_DEPENDENCIES),
     SISU_SPECTRUM_ANALYSIS_TYPE: (SISU_SPECTRUM_EVALUATION_TYPE,),
     SISU_ROBUSTIFICATION_ANALYSIS_TYPE: (
         PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
@@ -198,7 +188,7 @@ EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE.update(
             "params.materialize_evaluation_diagnostics",
         ),
         FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["objective_comparator"]: (
-            "evaluation_run",
+            OBJECTIVE_COMPARATOR_ANALYSIS_TYPE,
             "params.materialize_objective_comparator",
         ),
         FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["perturbation_response"]: (
@@ -573,108 +563,6 @@ class FeedbackQualitySummaryAnalysis(AbstractAnalysis[FeedbackQualityLensPorts])
         return payload
 
 
-class RobustnessPhenotypeAnalysis(AbstractAnalysis):
-    """Build and record the robustness phenotype sidecar through Feedbax custody."""
-
-    params: dict[str, Any] = eqx.field(kw_only=True, static=True)
-    resolved_inputs: tuple[Any, ...] = eqx.field(default=(), kw_only=True, static=True)
-
-    def compute(self, data: AnalysisInputData, **kwargs: Any) -> dict[str, Any]:
-        del data, kwargs
-        repo_root = _repo_root_from_params(self.params)
-        source_paths = _robustness_phenotype_source_paths(
-            self.params,
-            self.resolved_inputs,
-            repo_root=repo_root,
-        )
-        sources = load_hinf_phenotype_sources(source_paths, repo_root=repo_root)
-        return build_hinf_phenotype_sidecar(
-            sources=sources,
-            issue=str(self.params.get("issue_id", ROBUSTNESS_PHENOTYPE_ISSUE_ID)),
-            scope=str(self.params.get("scope", DEFAULT_HINF_PHENOTYPE_SCOPE)),
-            generated_by="rlrmp.analysis.declarative_materialization.robustness_phenotype",
-        )
-
-    def emit_artifacts(
-        self,
-        context: AnalysisRunContext,
-        data: AnalysisInputData,
-        *,
-        result: Mapping[str, Any],
-        **kwargs: Any,
-    ) -> dict[str, Any]:
-        del data, kwargs
-        payload = {
-            **dict(result),
-            "declarative_analysis": _declarative_metadata(context),
-            "bundle_contract": {
-                "primary": "feedbax_analysis_bundle",
-                "bundle": "rlrmp/robustness_phenotype",
-                "analysis_manifest_id": context.manifest_id,
-                "schema_owner": "rlrmp",
-                "formal_claim_policy": "conservative_no_upgrade_without_formal_inputs",
-                "artifact_custody": "feedbax.AnalysisRunManifest",
-            },
-        }
-        repo_root = _repo_root_from_params(self.params)
-        json_path = _optional_path(self.params.get("output_json"), repo_root=repo_root) or (
-            context.results_cache_dir / "hinf_phenotype_sidecar.json"
-        )
-        markdown_path = _optional_path(self.params.get("output_markdown"), repo_root=repo_root) or (
-            context.results_cache_dir / "hinf_phenotype_sidecar.md"
-        )
-        regeneration_spec_path = _optional_path(
-            self.params.get("regeneration_spec_path"),
-            repo_root=repo_root,
-        )
-        write_hinf_phenotype_sidecar(
-            payload,
-            json_path=json_path,
-            markdown_path=markdown_path,
-            regeneration_spec_path=regeneration_spec_path,
-            repo_root=repo_root,
-        )
-        payload = _read_json_payload(json_path)
-        context.record_json_artifact(
-            payload,
-            role="rlrmp-robustness-phenotype-sidecar",
-            logical_name="hinf_phenotype_sidecar.json",
-            metadata={"schema_boundary": "rlrmp-owned H-infinity phenotype sidecar payload"},
-        )
-        for artifact in (
-            _existing_file(
-                json_path,
-                role="rlrmp-robustness-phenotype-sidecar-json",
-                logical_name=_legacy_logical_name(json_path, repo_root),
-            ),
-            _existing_file(
-                markdown_path,
-                role="rlrmp-robustness-phenotype-sidecar-note",
-                logical_name=_legacy_logical_name(markdown_path, repo_root),
-            ),
-            _existing_file(
-                regeneration_spec_path,
-                role="rlrmp-robustness-phenotype-regeneration-spec",
-                logical_name=_legacy_logical_name(regeneration_spec_path, repo_root),
-            )
-            if regeneration_spec_path is not None
-            else None,
-        ):
-            if artifact is None:
-                continue
-            context.record_artifact(
-                artifact.path,
-                role=artifact.role,
-                logical_name=artifact.logical_name,
-                media_type=artifact.media_type,
-                metadata=artifact.metadata,
-                group_id=artifact.group_id,
-                group_role=artifact.group_role,
-                group_metadata=artifact.group_metadata,
-            )
-        return payload
-
-
 def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
     """Register rlrmp certificate/diagnostic analysis recipes with Feedbax."""
 
@@ -711,6 +599,16 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
     register_params_model(
         RESPONSE_NORM_ANALYSIS_TYPE,
         ResponseNormAnalysisParams,
+        replace=True,
+    )
+    register_params_model(
+        OBJECTIVE_COMPARATOR_ANALYSIS_TYPE,
+        ObjectiveComparatorParams,
+        replace=True,
+    )
+    register_params_model(
+        ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE,
+        RobustnessPhenotypeParams,
         replace=True,
     )
     register_params_model(
@@ -756,6 +654,11 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
     register_analysis_recipe(
         RESPONSE_NORM_ANALYSIS_TYPE,
         response_norm_recipe,
+        replace=replace,
+    )
+    register_analysis_recipe(
+        OBJECTIVE_COMPARATOR_ANALYSIS_TYPE,
+        objective_comparator_recipe,
         replace=replace,
     )
     register_analysis_recipe(
@@ -1179,38 +1082,23 @@ def output_feedback_rollout_recovery_spec(
 
 def robustness_phenotype_spec(
     *,
-    source_paths: Mapping[str, Path | str | None] | None = None,
+    parent_refs: Sequence[ParentRef],
     issue_id: str = ROBUSTNESS_PHENOTYPE_ISSUE_ID,
     scope: str = DEFAULT_HINF_PHENOTYPE_SCOPE,
-    output_json: Path | str | None = None,
-    output_markdown: Path | str | None = None,
-    regeneration_spec_path: Path | str | None = None,
-    evaluation_manifest_id: str | None = None,
-    evaluation_manifest_uri: Path | str | None = None,
-    repo_root: Path | str | None = None,
+    paired_run_ids: Mapping[str, str] | None = None,
 ) -> AnalysisRunSpec:
-    """Return declarative spec data for the robustness phenotype sidecar."""
+    """Return a grouped phenotype spec over canonical parent analysis manifests."""
 
-    params: dict[str, Any] = {
-        "issue_id": issue_id,
-        "scope": scope,
-    }
-    if source_paths is not None:
-        params["source_paths"] = {
-            str(name): None if path is None else str(path)
-            for name, path in source_paths.items()
-        }
-    _set_optional_path_param(params, "output_json", output_json)
-    _set_optional_path_param(params, "output_markdown", output_markdown)
-    _set_optional_path_param(params, "regeneration_spec_path", regeneration_spec_path)
-    _set_optional_path_param(params, "repo_root", repo_root)
-    inputs = _evaluation_parent_refs(
-        evaluation_manifest_id=evaluation_manifest_id,
-        evaluation_manifest_uri=evaluation_manifest_uri,
-    )
+    if not parent_refs:
+        raise ValueError("robustness phenotype requires parent analysis manifests")
+    params = RobustnessPhenotypeParams(
+        issue=issue_id,
+        scope=scope,
+        paired_run_ids={} if paired_run_ids is None else dict(paired_run_ids),
+    ).model_dump(mode="json")
     return AnalysisRunSpec(
         analysis_type=ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE,
-        inputs=inputs,
+        inputs=list(parent_refs),
         params=params,
     )
 
@@ -1432,7 +1320,7 @@ def _feedback_quality_component_recipe(
         resolved_run_ids = _feedback_quality_run_ids_from_params_or_inputs(params, inputs)
         experiment = _experiment_from_params_or_inputs(params, inputs)
         repo_root = _repo_root_from_params(params)
-        evaluation_input = _primary_evaluation_input(inputs)
+        evaluation_input = _primary_feedback_quality_component_input(component_name, inputs)
         registration = _feedback_quality_component_registrations()[component_name]
         analysis = RLRMPManifestAnalysis(
             materializer=lambda context, data: _materialize_feedback_quality_component(
@@ -1558,25 +1446,6 @@ def feedback_quality_lens_recipe(
     return AnalysisRecipeResult(
         analyses={"feedback_quality_lens": summary},
         data=_empty_analysis_data(),
-    )
-
-
-def robustness_phenotype_recipe(
-    spec: AnalysisRunSpec,
-    _root: Path,
-    inputs: Sequence[Any],
-) -> AnalysisRecipeResult:
-    """Build the declarative robustness phenotype sidecar recipe."""
-
-    params = dict(spec.params)
-    analysis = RobustnessPhenotypeAnalysis(
-        params=params,
-        resolved_inputs=tuple(inputs),
-    )
-    return _recipe_result(
-        "robustness_phenotype",
-        analysis,
-        _analysis_data_from_evaluation_input(_primary_evaluation_input(inputs)),
     )
 
 
@@ -2257,10 +2126,7 @@ def _feedback_quality_component_registrations() -> dict[str, FeedbackQualityComp
             materializer=_materialize_feedback_quality_objective_comparator,
             artifact_role=FEEDBACK_QUALITY_COMPONENT_STATUS_ROLES["objective_comparator"],
             logical_name="feedback_quality/objective_comparator_status.json",
-            live_materializer=(
-                "rlrmp.analysis.pipelines.objective_comparator."
-                "materialize_gru_objective_comparator_sidecar"
-            ),
+            live_materializer=None,
             gating_label="include flag and applicable component",
             gating_expr=_feedback_quality_component_gate_expr("objective_comparator"),
         ),
@@ -2427,28 +2293,18 @@ def _materialize_feedback_quality_objective_comparator(
     evaluation_input: Any | None,
     repo_root: Path,
 ) -> Mapping[str, Any]:
-    del context, evaluation_input
-    plan = _feedback_quality_plan(
-        params,
-        experiment=experiment,
-        run_ids=run_ids,
-        repo_root=repo_root,
-    )
-    return materialize_optional_objective_comparator(
-        experiment=experiment,
-        run_ids=run_ids,
-        labels=_optional_str_sequence(params.get("labels")),
-        checkpoint_policy=plan.checkpoint_policy,
-        use_validation_selected_checkpoints=bool(
-            params.get("use_validation_selected_checkpoints", True)
-        ),
-        checkpoint_manifest=None,
-        checkpoint_manifest_path=plan.checkpoint_manifest_path,
-        standard_manifest_path=plan.standard_manifest_path,
-        output_path=plan.objective_comparator_json_path,
-        note_path=plan.objective_comparator_note_path,
-        repo_root=repo_root,
-    )
+    del context, params, experiment, run_ids, repo_root
+    states = _resolved_input_states(evaluation_input)
+    if states is None:
+        return {
+            "status": "skipped",
+            "reason": "canonical objective-comparator analysis parent is unavailable",
+        }
+    return {
+        "status": "materialized",
+        "custody_route": "AnalysisRunManifest",
+        "objective_comparator": dict(states),
+    }
 
 
 def _materialize_feedback_quality_perturbation_response(
@@ -2681,101 +2537,6 @@ def _materialize_output_feedback_rollout_recovery(
         artifact_refs=(note_ref, bulk_ref),
         payload_metadata={"custody": "feedbax_analysis_artifacts"},
     )
-
-
-def _materialize_robustness_phenotype(
-    context: AnalysisRunContext,
-    params: Mapping[str, Any],
-    inputs: Sequence[Any],
-) -> MaterializationResult:
-    repo_root = _repo_root_from_params(params)
-    source_paths = _robustness_phenotype_source_paths(params, inputs, repo_root=repo_root)
-    sources = load_hinf_phenotype_sources(source_paths, repo_root=repo_root)
-    sidecar = build_hinf_phenotype_sidecar(
-        sources=sources,
-        issue=str(params.get("issue_id", ROBUSTNESS_PHENOTYPE_ISSUE_ID)),
-        scope=str(params.get("scope", DEFAULT_HINF_PHENOTYPE_SCOPE)),
-        generated_by="rlrmp.analysis.declarative_materialization.robustness_phenotype",
-    )
-
-    json_path = _optional_path(params.get("output_json"), repo_root=repo_root) or (
-        context.results_cache_dir / "hinf_phenotype_sidecar.json"
-    )
-    markdown_path = _optional_path(params.get("output_markdown"), repo_root=repo_root) or (
-        context.results_cache_dir / "hinf_phenotype_sidecar.md"
-    )
-    regeneration_spec_path = _optional_path(
-        params.get("regeneration_spec_path"),
-        repo_root=repo_root,
-    )
-    write_hinf_phenotype_sidecar(
-        sidecar,
-        json_path=json_path,
-        markdown_path=markdown_path,
-        regeneration_spec_path=regeneration_spec_path,
-        repo_root=repo_root,
-    )
-    payload = {
-        **_read_json_payload(json_path),
-        "declarative_analysis": _declarative_metadata(context),
-        "bundle_contract": {
-            "primary": "feedbax_analysis_bundle",
-            "bundle": "rlrmp/robustness_phenotype",
-            "analysis_manifest_id": context.manifest_id,
-            "schema_owner": "rlrmp",
-            "formal_claim_policy": "conservative_no_upgrade_without_formal_inputs",
-        },
-    }
-    existing_artifacts = tuple(
-        artifact
-        for artifact in (
-            _existing_file(
-                json_path,
-                role="rlrmp-robustness-phenotype-sidecar-json",
-                logical_name=_legacy_logical_name(json_path, repo_root),
-            ),
-            _existing_file(
-                markdown_path,
-                role="rlrmp-robustness-phenotype-sidecar-note",
-                logical_name=_legacy_logical_name(markdown_path, repo_root),
-            ),
-            _existing_file(
-                regeneration_spec_path,
-                role="rlrmp-robustness-phenotype-regeneration-spec",
-                logical_name=_legacy_logical_name(regeneration_spec_path, repo_root),
-            )
-            if regeneration_spec_path is not None
-            else None,
-        )
-        if artifact is not None
-    )
-    return MaterializationResult(
-        payload=payload,
-        existing_artifacts=existing_artifacts,
-    )
-
-
-def _robustness_phenotype_source_paths(
-    params: Mapping[str, Any],
-    inputs: Sequence[Any],
-    *,
-    repo_root: Path,
-) -> dict[str, Path | str | None]:
-    source_paths = {
-        str(name): None if value is None else _optional_path(value, repo_root=repo_root)
-        for name, value in (params.get("source_paths") or {}).items()
-    }
-    for resolved in inputs:
-        manifest = getattr(resolved, "manifest", None)
-        if manifest is None:
-            continue
-        for artifact in getattr(manifest, "artifacts", ()):
-            source_name = ROBUSTNESS_PHENOTYPE_SOURCE_ROLES.get(artifact.role)
-            if source_name is None or source_name in source_paths:
-                continue
-            if artifact.uri is not None:
-                source_paths[source_name] = _optional_path(artifact.uri, repo_root=repo_root)
-    return source_paths
 
 
 def _perturbation_class_response_payload(
@@ -3238,6 +2999,18 @@ def _primary_evaluation_input(inputs: Sequence[Any]) -> Any | None:
     return None
 
 
+def _primary_feedback_quality_component_input(
+    component_name: str,
+    inputs: Sequence[Any],
+) -> Any | None:
+    if component_name == "objective_comparator":
+        for resolved in inputs:
+            ref = getattr(resolved, "ref", None)
+            if getattr(ref, "kind", None) == "AnalysisRunManifest":
+                return resolved
+    return _primary_evaluation_input(inputs)
+
+
 def _resolved_input_path(resolved: Any | None) -> Path | None:
     path = getattr(resolved, "path", None)
     return Path(path) if path is not None else None
@@ -3451,19 +3224,6 @@ def _feedback_quality_components(
         },
         "objective_comparator": {
             "schema_kind": "RLRMPObjectiveComparatorSidecar",
-            "tracked": (
-                _optional_path(
-                    params.get("objective_comparator_manifest_path"),
-                    repo_root=repo_root,
-                )
-                or plan.objective_comparator_json_path,
-                "rlrmp-feedback-quality-objective-comparator-manifest",
-            ),
-            "notes": (
-                _optional_path(params.get("objective_comparator_note_path"), repo_root=repo_root)
-                or plan.objective_comparator_note_path,
-                "rlrmp-feedback-quality-objective-comparator-note",
-            ),
         },
         "perturbation_response": {
             "schema_kind": "RLRMPGRUPerturbationBank",
