@@ -6,12 +6,21 @@ import hashlib
 import json
 from pathlib import Path
 
+from feedbax.analysis.figures import execute_figure_spec
+from feedbax.analysis.specs import AnalysisRunSpec
 from feedbax.contracts.figures import FigureSpec
+from feedbax.contracts.manifest import (
+    AnalysisRunManifest,
+    ParentRef,
+    spec_payload,
+    write_manifest,
+)
 import pytest
 
 from rlrmp.data_products.envelope import read_data_product
 from rlrmp.figures import (
     STANDARD_MATRIX_PAYLOAD_SCHEMA_VERSION,
+    register_rlrmp_figure_surfaces,
     standard_matrix_payload,
 )
 
@@ -57,7 +66,74 @@ def test_all_six_topics_are_native_manifest_data_bound_specs() -> None:
 
 
 def test_one_standard_matrix_payload_owns_all_six_figure_facets() -> None:
-    cell = {
+    payload = standard_matrix_payload(
+        [_representative_cell()],
+        {"metric_order": ["vel_rmse_ratio", "pos_rmse_ratio", "cv_peak_vel"]},
+    )
+    assert payload["schema_version"] == STANDARD_MATRIX_PAYLOAD_SCHEMA_VERSION
+    assert set(payload["facets"]) >= {
+        "forward_velocity_profiles",
+        "hold_drift_profiles",
+        "peak_velocity_distributions",
+        "summary_metrics",
+        "training_loss",
+        "training_loss_per_term",
+    }
+    assert payload["facets"]["forward_velocity_profiles"]["lit__flat_jerk"] == (
+        _representative_cell()
+    )
+
+
+def test_all_six_tracked_specs_execute_to_completed_figure_manifests(
+    tmp_path: Path,
+) -> None:
+    register_rlrmp_figure_surfaces()
+    payload = standard_matrix_payload(
+        [_representative_cell()],
+        {"metric_order": ["vel_rmse_ratio", "pos_rmse_ratio", "cv_peak_vel"]},
+    )
+    analysis = AnalysisRunManifest(
+        id="f47abb1-standard-matrix-representative",
+        status="completed",
+        analysis_spec=spec_payload(
+            "AnalysisRunSpec",
+            AnalysisRunSpec(analysis_type="rlrmp.standard_matrix").model_dump(mode="json"),
+        ),
+        metadata={"figure_payload": payload},
+    )
+    write_manifest(analysis, root=tmp_path)
+    parent = ParentRef(
+        kind="AnalysisRunManifest",
+        id=analysis.id,
+        role="standard_matrix_analysis",
+    )
+
+    manifests = []
+    for topic in TOPICS:
+        tracked = FigureSpec.model_validate(_json(FIGURE_ROOT / topic / "spec.json"))
+        manifest, manifest_path = execute_figure_spec(
+            tracked.model_copy(update={"inputs": [parent]}),
+            root=tmp_path,
+            issues=["28876c1"],
+        )
+        assert manifest.status == "completed"
+        assert manifest_path.is_file()
+        assert manifest.resolved_inputs == [parent]
+        renders = [artifact for artifact in manifest.artifacts if artifact.role == "figure_render"]
+        assert renders
+        for artifact in renders:
+            assert artifact.uri is not None
+            render_path = Path(artifact.uri)
+            assert render_path.is_file()
+            assert hashlib.sha256(render_path.read_bytes()).hexdigest() == artifact.sha256
+        manifests.append(manifest)
+
+    assert len(manifests) == 6
+    assert len({manifest.id for manifest in manifests}) == 6
+
+
+def _representative_cell() -> dict:
+    return {
         "run_id": "lit__flat_jerk",
         "display_name": "Flat + jerk",
         "color": "#1f77b4",
@@ -72,20 +148,6 @@ def test_one_standard_matrix_payload_owns_all_six_figure_facets() -> None:
         "training_loss": {"x": [1, 2], "series": {"total": [6.2, 6.0]}},
         "training_loss_per_term": {"x": [1, 2], "series": {"position": [4.0, 3.8]}},
     }
-    payload = standard_matrix_payload(
-        [cell],
-        {"metric_order": ["vel_rmse_ratio", "pos_rmse_ratio", "cv_peak_vel"]},
-    )
-    assert payload["schema_version"] == STANDARD_MATRIX_PAYLOAD_SCHEMA_VERSION
-    assert set(payload["facets"]) >= {
-        "forward_velocity_profiles",
-        "hold_drift_profiles",
-        "peak_velocity_distributions",
-        "summary_metrics",
-        "training_loss",
-        "training_loss_per_term",
-    }
-    assert payload["facets"]["forward_velocity_profiles"]["lit__flat_jerk"] == cell
 
 
 def test_profiles_preserve_shared_y_and_intrinsic_axes() -> None:
