@@ -169,11 +169,6 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         note_path.write_text("# standard\n", encoding="utf-8")
         manifest_path.write_text("{}", encoding="utf-8")
 
-    def fake_evaluation(**kwargs: Any) -> dict[str, Any]:
-        calls["evaluation"] = kwargs
-        kwargs["output_path"].write_text("{}", encoding="utf-8")
-        return {"schema_version": "rlrmp.gru_evaluation_diagnostics.v1"}
-
     def fake_figures(**kwargs: Any) -> dict[str, Any]:
         calls["figures"] = kwargs
         kwargs["output_dir"].mkdir(parents=True)
@@ -266,7 +261,6 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
     )
     monkeypatch.setattr(postrun, "materialize_gru_standard_result", fake_standard_result)
     monkeypatch.setattr(postrun, "write_gru_standard_result", fake_write_standard)
-    monkeypatch.setattr(postrun, "materialize_gru_evaluation_diagnostics", fake_evaluation)
     monkeypatch.setattr(postrun, "materialize_gru_pilot_figures", fake_figures)
     monkeypatch.setattr(postrun, "materialize_optional_objective_comparator", fake_objective)
     monkeypatch.setattr(
@@ -296,11 +290,6 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
     )
 
     assert calls["standard"]["use_validation_selected_checkpoints"] is True
-    assert calls["evaluation"]["use_validation_selected_checkpoints"] is True
-    assert calls["evaluation"]["evaluation_manifest_path"] == (
-        tmp_path / "manifests" / "evaluation_runs" / "eval.json"
-    )
-    assert calls["evaluation"]["evaluation_states"]["evaluation_manifest_id"] == "eval-id"
     assert calls["figures"]["use_validation_selected_checkpoints"] is True
     assert calls["objective"]["use_validation_selected_checkpoints"] is True
     assert calls["objective"]["checkpoint_policy"] == "validation_selected_per_replicate"
@@ -318,11 +307,7 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
     assert "bulk_dir" not in calls["perturbation"]
     assert "write_bulk_arrays" not in calls["perturbation"]
     assert calls["perturbation"]["feedback_scale_manifest_path"] == (
-        tmp_path
-        / "results"
-        / "5f70333"
-        / "notes"
-        / "gru_evaluation_diagnostics_fullqrf_validation_selected.json"
+        tmp_path / "manifests" / "evaluation_runs" / "eval.json"
     )
     assert calls["feedback"]["n_rollout_trials"] == postrun.DEFAULT_N_ROLLOUT_TRIALS
     assert calls["feedback"]["labels"] == ("A", "B")
@@ -348,20 +333,6 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         / "5f70333"
         / "notes"
         / "gru_standard_certificates_fullqrf_validation_selected_manifest.json"
-    )
-    assert calls["evaluation"]["bulk_dir"] == (
-        tmp_path
-        / "_artifacts"
-        / "5f70333"
-        / "evaluation_diagnostics"
-        / "gru_fullqrf_validation_selected"
-    )
-    assert calls["evaluation"]["regeneration_spec_path"] == (
-        tmp_path
-        / "results"
-        / "5f70333"
-        / "notes"
-        / "gru_evaluation_diagnostics_fullqrf_validation_selected_regeneration_spec.json"
     )
     assert "regeneration_spec_path" not in calls["perturbation"]
     assert calls["feedback"]["regeneration_spec_path"] == (
@@ -427,7 +398,11 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         / "gru_postrun_materialization_fullqrf_validation_selected.json"
     )
     written = json.loads(postrun_manifest.read_text(encoding="utf-8"))
-    assert written["outputs"]["evaluation_bulk_dir"].startswith("_artifacts/")
+    assert written["outputs"]["evaluation_run_manifest"] == (
+        "manifests/evaluation_runs/eval.json"
+    )
+    assert written["summaries"]["evaluation_manifest_id"] == "eval-id"
+    assert written["summaries"]["evaluation_product_role"] == "fixture"
     assert written["outputs"]["standard_certificate_manifest"].startswith("results/")
     assert written["outputs"]["map_decomposition"]["json_path"].startswith("results/")
     assert written["outputs"]["perturbation_response"]["json_path"].startswith("results/")
@@ -490,10 +465,6 @@ def test_materialize_gru_postrun_analysis_prefers_provided_fixed_bank_manifest(
         note_path.write_text("", encoding="utf-8")
         manifest_path.write_text("{}", encoding="utf-8")
 
-    def fake_evaluation(**kwargs: Any) -> dict[str, Any]:
-        kwargs["output_path"].write_text("{}", encoding="utf-8")
-        return {"schema_version": "rlrmp.gru_evaluation_diagnostics.v1"}
-
     def fake_figures(**kwargs: Any) -> dict[str, Any]:
         kwargs["output_dir"].mkdir(parents=True)
         (kwargs["output_dir"] / "figure_summary.json").write_text("{}", encoding="utf-8")
@@ -529,7 +500,6 @@ def test_materialize_gru_postrun_analysis_prefers_provided_fixed_bank_manifest(
     )
     monkeypatch.setattr(postrun, "materialize_gru_standard_result", fake_standard_result)
     monkeypatch.setattr(postrun, "write_gru_standard_result", fake_write_standard)
-    monkeypatch.setattr(postrun, "materialize_gru_evaluation_diagnostics", fake_evaluation)
     monkeypatch.setattr(postrun, "materialize_gru_pilot_figures", fake_figures)
     monkeypatch.setattr(
         postrun,
@@ -556,6 +526,7 @@ def test_materialize_gru_postrun_analysis_prefers_provided_fixed_bank_manifest(
         experiment="5f70333",
         run_ids=("run_a",),
         fixed_bank_rescore_manifest_path=fixed_manifest_path,
+        evaluation_states={"evaluation_manifest_id": "eval-id", "product_role": "fixture"},
         repo_root=tmp_path,
     )
 
@@ -586,10 +557,6 @@ def test_materialize_gru_postrun_analysis_preserves_audit_only_skip_semantics(
         note_path.write_text("", encoding="utf-8")
         manifest_path.write_text("{}", encoding="utf-8")
 
-    def fake_evaluation(**kwargs: Any) -> dict[str, Any]:
-        kwargs["output_path"].write_text("{}", encoding="utf-8")
-        return {"schema_version": "rlrmp.gru_evaluation_diagnostics.v1"}
-
     def fake_figures(**kwargs: Any) -> dict[str, Any]:
         kwargs["output_dir"].mkdir(parents=True)
         (kwargs["output_dir"] / "figure_summary.json").write_text("{}", encoding="utf-8")
@@ -597,7 +564,6 @@ def test_materialize_gru_postrun_analysis_preserves_audit_only_skip_semantics(
 
     monkeypatch.setattr(postrun, "materialize_gru_standard_result", fake_standard_result)
     monkeypatch.setattr(postrun, "write_gru_standard_result", fake_write_standard)
-    monkeypatch.setattr(postrun, "materialize_gru_evaluation_diagnostics", fake_evaluation)
     monkeypatch.setattr(postrun, "materialize_gru_pilot_figures", fake_figures)
     monkeypatch.setattr(
         postrun,
@@ -614,6 +580,7 @@ def test_materialize_gru_postrun_analysis_preserves_audit_only_skip_semantics(
         include_map_decomposition=False,
         include_perturbation_response=False,
         include_feedback_ablation=False,
+        evaluation_states={"evaluation_manifest_id": "eval-id", "product_role": "fixture"},
         repo_root=tmp_path,
     )
 

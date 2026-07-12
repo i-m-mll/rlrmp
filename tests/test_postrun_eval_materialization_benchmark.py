@@ -67,11 +67,6 @@ def test_run_benchmark_records_and_passes_backend_context(monkeypatch, tmp_path)
         lambda **_: {"rows": [], "checkpoint_policy": "test"},
     )
     monkeypatch.setattr(benchmark, "write_gru_standard_result", lambda *_, **__: None)
-    monkeypatch.setattr(
-        benchmark,
-        "materialize_gru_evaluation_diagnostics",
-        lambda **_: {"runs": {"run_a": {"status_counts": {"ok": 1}}}},
-    )
     monkeypatch.setattr(benchmark, "materialize_gru_pilot_figures", lambda **_: {"fig": {}})
     monkeypatch.setattr(
         benchmark,

@@ -104,6 +104,10 @@ CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND = "RLRMPCenterOutEnsembleEvaluationParams"
 CENTER_OUT_ENSEMBLE_EVAL_PARAMS_SCHEMA_ID = "rlrmp.eval.center_out_ensemble.params"
 CENTER_OUT_ENSEMBLE_EVAL_PARAMS_SCHEMA_VERSION = "rlrmp.eval.center_out_ensemble.params.v1"
 
+GRU_DIAGNOSTICS_EVAL_PARAMS_KIND = "RLRMPGRUDiagnosticsEvaluationParams"
+GRU_DIAGNOSTICS_EVAL_PARAMS_SCHEMA_ID = "rlrmp.eval.gru_diagnostics.params"
+GRU_DIAGNOSTICS_EVAL_PARAMS_SCHEMA_VERSION = "rlrmp.eval.gru_diagnostics.params.v1"
+
 PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND = "RLRMPPerturbationResponseBankEvaluationParams"
 PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_ID = "rlrmp.eval.perturbation_response_bank.params"
 PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION = (
@@ -304,7 +308,7 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             GRU_EVALUATION_DIAGNOSTICS_KIND,
             GRU_EVALUATION_DIAGNOSTICS_SCHEMA_ID,
             GRU_EVALUATION_DIAGNOSTICS_SCHEMA_VERSION,
-            emitted_by=("rlrmp.analysis.pipelines.gru_evaluation_diagnostics",),
+            emitted_by=("rlrmp.eval.gru_diagnostics",),
             consumed_by=("Feedbax AnalysisRunManifest artifacts", "rlrmp post-hoc reports"),
             description="RLRMP GRU rollout-diagnostics manifest payload.",
             rejected_old_versions=("rlrmp.gru_evaluation_diagnostics.v0",),
@@ -517,6 +521,15 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             rejected_old_versions=("rlrmp.eval.center_out_ensemble.params.v0",),
         ),
         _family(
+            GRU_DIAGNOSTICS_EVAL_PARAMS_KIND,
+            GRU_DIAGNOSTICS_EVAL_PARAMS_SCHEMA_ID,
+            GRU_DIAGNOSTICS_EVAL_PARAMS_SCHEMA_VERSION,
+            emitted_by=("rlrmp.eval.recipes.gru_diagnostics_recipe",),
+            consumed_by=("Feedbax EvaluationRunSpec.params",),
+            description="Params for cached selected-checkpoint GRU diagnostics.",
+            rejected_old_versions=("rlrmp.eval.gru_diagnostics.params.v0",),
+        ),
+        _family(
             PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND,
             PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_ID,
             PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION,
@@ -704,6 +717,9 @@ __all__ = [
     "GRU_EVALUATION_DIAGNOSTICS_KIND",
     "GRU_EVALUATION_DIAGNOSTICS_SCHEMA_ID",
     "GRU_EVALUATION_DIAGNOSTICS_SCHEMA_VERSION",
+    "GRU_DIAGNOSTICS_EVAL_PARAMS_KIND",
+    "GRU_DIAGNOSTICS_EVAL_PARAMS_SCHEMA_ID",
+    "GRU_DIAGNOSTICS_EVAL_PARAMS_SCHEMA_VERSION",
     "GRU_BROAD_EPSILON_ATTRIBUTION_KIND",
     "GRU_BROAD_EPSILON_ATTRIBUTION_SCHEMA_ID",
     "GRU_BROAD_EPSILON_ATTRIBUTION_SCHEMA_VERSION",

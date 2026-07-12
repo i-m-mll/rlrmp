@@ -20,7 +20,7 @@ CONVERTED_SEED_FILES = (
     "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py",
     "src/rlrmp/analysis/pipelines/gru_broad_epsilon_attribution.py",
     "src/rlrmp/eval/checkpoint_selection.py",
-    "src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py",
+    "src/rlrmp/eval/evaluation_diagnostics.py",
     "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
     "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
     "src/rlrmp/analysis/pipelines/gru_pilot_figures.py",

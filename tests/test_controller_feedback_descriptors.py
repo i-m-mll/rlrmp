@@ -10,7 +10,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import (
+from rlrmp.eval.gru_diagnostics import (
     RolloutEvaluation,
     summarize_controller_feedback_scales,
 )
@@ -31,7 +31,7 @@ pytestmark = pytest.mark.feedbax_contract
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCANNED_RELATIVE_PATHS = (
-    "src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py",
+    "src/rlrmp/eval/gru_diagnostics.py",
     "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
     "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
     "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py",

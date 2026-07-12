@@ -221,14 +221,13 @@ def classify_manifest(name: str, manifest: Mapping[str, Any]) -> dict[str, Any] 
                 "src/rlrmp/analysis/pipelines/standard_certificate_materialization.py",
             ],
         }
+    # Historical GRU evaluation-diagnostics manifests came from a retired direct
+    # writer. They are parity oracles, not regeneration targets: current reruns
+    # must be authored as ``rlrmp.eval.gru_diagnostics`` EvaluationRunSpecs.
     if schema.startswith("rlrmp.gru_evaluation_diagnostics") or name.startswith(
         "gru_evaluation_diagnostics"
     ):
-        return {
-            "diagnostic_name": "gru_evaluation_diagnostics",
-            "materializer": "rlrmp.analysis.pipelines.gru_evaluation_diagnostics.materialize_gru_evaluation_diagnostics",
-            "source_files": ["src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py"],
-        }
+        return None
     if schema.startswith("rlrmp.gru_postrun_materialization") or name.startswith(
         "gru_postrun_materialization"
     ):
@@ -238,7 +237,8 @@ def classify_manifest(name: str, manifest: Mapping[str, Any]) -> dict[str, Any] 
             "source_files": [
                 "src/rlrmp/analysis/pipelines/gru_postrun_materialization.py",
                 "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py",
-                "src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py",
+                "src/rlrmp/eval/evaluation_diagnostics.py",
+                "src/rlrmp/eval/gru_diagnostics.py",
                 "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
                 "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
             ],
@@ -381,10 +381,7 @@ def guessed_bulk_output(
     stem = manifest_path.stem.removesuffix("_manifest")
     artifact_root = repo_root / "_artifacts" / experiment
     candidates: list[Path] = []
-    if diagnostic_name == "gru_evaluation_diagnostics":
-        tag = stem.removeprefix("gru_evaluation_diagnostics_")
-        candidates.append(artifact_root / "evaluation_diagnostics" / f"gru_{tag}")
-    elif diagnostic_name == "gru_perturbation_response_bank":
+    if diagnostic_name == "gru_perturbation_response_bank":
         tag = stem.removeprefix("gru_perturbation_response_")
         candidates.extend(
             [

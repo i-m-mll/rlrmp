@@ -1,4 +1,4 @@
-"""Tests for GRU post-hoc evaluation diagnostics."""
+"""Parity tests for cached GRU evaluation diagnostics."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ import jax.numpy as jnp
 from jax import Array as JaxArray
 import numpy as np
 
-from rlrmp.analysis.pipelines._selected_eval_rollouts import SelectedEvalRolloutProduct
-from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import (
+from rlrmp.eval.rollout_states import CachedEvaluationStates
+from rlrmp.eval.gru_diagnostics import (
     RolloutEvaluation,
     compute_gru_gate_arrays,
     summarize_controller_feedback_scales,
@@ -17,7 +17,7 @@ from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import (
 )
 
 
-def test_jax_rollout_product_materializes_legacy_rollout_with_parity() -> None:
+def test_cached_states_materialize_host_rollout_with_parity() -> None:
     states = SimpleNamespace(
         mechanics=SimpleNamespace(
             effector=SimpleNamespace(
@@ -40,7 +40,7 @@ def test_jax_rollout_product_materializes_legacy_rollout_with_parity() -> None:
         },
     )
 
-    product = SelectedEvalRolloutProduct.from_states(
+    product = CachedEvaluationStates.from_states(
         states,
         trial_specs,
         dt=0.01,
@@ -77,7 +77,7 @@ def test_summarize_rollout_behavior_reports_control_and_kinematic_metrics() -> N
     assert summary["first_five_step_command_norm"]["count"] == 3
     assert summary["command_jerk_norm"]["mean"] == 0.5
     assert np.isclose(summary["endpoint_error_m"]["mean"], 0.01)
-    assert summary["terminal_speed_m_s"]["mean"] == 0.1
+    assert np.isclose(summary["terminal_speed_m_s"]["mean"], 0.1)
     assert np.isclose(summary["overshoot_m"]["mean"], 0.01)
     assert summary["post_peak_forward_velocity_sign_changes"]["mean"] == 1.0
     assert summary["hidden_state_norm"]["max"] == 5.0

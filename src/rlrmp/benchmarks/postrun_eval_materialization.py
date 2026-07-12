@@ -23,9 +23,6 @@ from rlrmp.analysis.pipelines.cs_gru_standard_materialization import (
     materialize_gru_standard_result,
     write_gru_standard_result,
 )
-from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import (
-    materialize_gru_evaluation_diagnostics,
-)
 from rlrmp.analysis.pipelines.gru_feedback_ablation import (
     execute_feedback_ablation_pipeline,
     selected_feedback_ablation_bins_for_bank,
@@ -370,44 +367,6 @@ def run_benchmark(
             warm_replay=warm_replay,
             warm_fn=run_standard,
             warm_output_writer=write_warm_standard_outputs,
-        )
-    )
-
-    def run_evaluation_diagnostics() -> Mapping[str, Any]:
-        return materialize_gru_evaluation_diagnostics(
-            experiment=source_experiment,
-            run_ids=(run_id,),
-            labels=None,
-            output_path=notes_scratch / "gru_evaluation_diagnostics.json",
-            bulk_dir=step_scratch / "evaluation_diagnostics",
-            n_rollout_trials=n_rollout_trials,
-            use_validation_selected_checkpoints=True,
-            write_bulk_arrays=write_bulk_arrays,
-            repo_root=repo_root,
-        )
-
-    bundle_results.append(
-        _time_bundle(
-            "evaluation_diagnostics",
-            run_evaluation_diagnostics,
-            summarize=_bundle_status_counts,
-            output_write_mode="included_in_cold_call_elapsed_s",
-            output_write_note=(
-                "materialize_gru_evaluation_diagnostics writes its JSON/bulk outputs "
-                "inside the materializer call."
-            ),
-            warm_replay=warm_replay,
-            warm_fn=lambda: materialize_gru_evaluation_diagnostics(
-                experiment=source_experiment,
-                run_ids=(run_id,),
-                labels=None,
-                output_path=warm_notes_scratch / "gru_evaluation_diagnostics.json",
-                bulk_dir=warm_step_scratch / "evaluation_diagnostics",
-                n_rollout_trials=n_rollout_trials,
-                use_validation_selected_checkpoints=True,
-                write_bulk_arrays=write_bulk_arrays,
-                repo_root=repo_root,
-            ),
         )
     )
 
