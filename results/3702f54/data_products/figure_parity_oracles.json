@@ -1,0 +1,80 @@
+{
+  "schema_id": "feedbax.manifest.analysis_data_product",
+  "schema_version": "feedbax.manifest.analysis_data_product.v1",
+  "product_schema_id": "rlrmp.figure_parity_oracles",
+  "product_schema_version": "rlrmp.figure_parity_oracles.v1",
+  "role": "figure_parity_oracles",
+  "logical_name": "3702f54_prego_figure_parity",
+  "producer_manifest_id": "rlrmp.analysis.matrix.standard_matrix.standard_matrix_payload",
+  "parent_manifests": [],
+  "checkpoint_policy": {},
+  "rollout_policy": {},
+  "parameters": {
+    "experiment": "3702f54",
+    "topics": [
+      "forward_velocity_profiles",
+      "hold_drift_profiles",
+      "peak_velocity_distributions",
+      "summary_metrics",
+      "training_loss_per_term"
+    ],
+    "parity_render_root": "_artifacts/3702f54/figures"
+  },
+  "artifacts": [
+    {
+      "role": "figure_parity_oracle",
+      "logical_name": "forward_velocity_profiles",
+      "sha256": "dc45a2682692d981fb75dacc472bea596be7b9387783ded733fa0aa242169286",
+      "media_type": "application/json",
+      "storage_backend": "git",
+      "uri": "results/3702f54/data_products/figure_parity_forward_velocity_profiles.json",
+      "metadata": {"topic": "forward_velocity_profiles", "source": "retired_legacy_figure_spec"}
+    },
+    {
+      "role": "figure_parity_oracle",
+      "logical_name": "hold_drift_profiles",
+      "sha256": "24708fc857e70a022fff8a3090ee41e858cbd20d0203aab1f647600dee1c9017",
+      "media_type": "application/json",
+      "storage_backend": "git",
+      "uri": "results/3702f54/data_products/figure_parity_hold_drift_profiles.json",
+      "metadata": {"topic": "hold_drift_profiles", "source": "retired_legacy_figure_spec"}
+    },
+    {
+      "role": "figure_parity_oracle",
+      "logical_name": "peak_velocity_distributions",
+      "sha256": "36866bd77b5830376489ecb7ed8184ab600d485f815df8173f7049ffd4c96076",
+      "media_type": "application/json",
+      "storage_backend": "git",
+      "uri": "results/3702f54/data_products/figure_parity_peak_velocity_distributions.json",
+      "metadata": {"topic": "peak_velocity_distributions", "source": "retired_legacy_figure_spec"}
+    },
+    {
+      "role": "figure_parity_oracle",
+      "logical_name": "summary_metrics",
+      "sha256": "ce3963edb2479c372b80b723087f954d8a87f528d1031d63f628e656fd8c5838",
+      "media_type": "application/json",
+      "storage_backend": "git",
+      "uri": "results/3702f54/data_products/figure_parity_summary_metrics.json",
+      "metadata": {"topic": "summary_metrics", "source": "retired_legacy_figure_spec"}
+    },
+    {
+      "role": "figure_parity_oracle",
+      "logical_name": "training_loss_per_term",
+      "sha256": "b6449dfeb88f65933d9b4261de9aca0676a12a4dff79765800dd68c83e26e811",
+      "media_type": "application/json",
+      "storage_backend": "git",
+      "uri": "results/3702f54/data_products/figure_parity_training_loss_per_term.json",
+      "metadata": {"topic": "training_loss_per_term", "source": "retired_legacy_figure_spec"}
+    }
+  ],
+  "materialization": {
+    "mode": "adopted_archived_structured_outputs",
+    "retirement_issue": "1e9304d"
+  },
+  "regeneration": [],
+  "product_identity_hash": "237ca835816cd3af757f8638b544d8e1f0ad0b19d1ba15abef23ac6ce0c6a915",
+  "metadata": {
+    "issue": "1e9304d",
+    "note": "Exact structured records from the retired 3702f54 figure sites; archived HTML renders are the trace-level parity oracle."
+  }
+}

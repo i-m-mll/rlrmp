@@ -153,7 +153,6 @@ def test_multi_cell_members_are_thin_canonical_adapters() -> None:
         (path, name, canonical)
         for path in (
             "results/f47abb1/scripts/analyse_lit_replication_6cell.py",
-            "results/3702f54/scripts/analyse_pregomatrix.py",
             "results/b399efc/scripts/analyse_movement_ramp_matrix.py",
         )
         for name, canonical in (
