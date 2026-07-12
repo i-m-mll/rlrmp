@@ -144,3 +144,9 @@ def test_imperative_f47_producers_and_exclusive_driver_hooks_are_deleted() -> No
     )
     assert "run_replicate_kinematics_analysis" not in driver
     assert "_write_multi_cell_report" not in driver
+
+
+def test_eval_layer_does_not_import_the_legacy_pilot_figure_pipeline() -> None:
+    source = (REPO_ROOT / "src/rlrmp/eval/perturbation_bank.py").read_text(encoding="utf-8")
+    assert "rlrmp.analysis.pipelines.gru_pilot_figures" not in source
+    assert "rlrmp.eval.trial_inputs" in source
