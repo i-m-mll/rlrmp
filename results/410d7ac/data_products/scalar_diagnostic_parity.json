@@ -1,0 +1,9 @@
+{
+  "schema_version": "rlrmp.figure_parity.scalar_diagnostic.v1",
+  "source": "results/410d7ac/notes/delta_v_summary.json",
+  "collection_cardinality": 2,
+  "headlines": {
+    "linear_regulator_clean_delta_v": 1.2969253063201904,
+    "linear_tracker_clean_delta_v": 0.7755661010742188
+  }
+}
