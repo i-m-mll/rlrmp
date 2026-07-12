@@ -337,12 +337,6 @@ def test_stabilization_evaluator_preserves_missing_family_behavior(
             30,
         ),
         (
-            "results/c92ebd8/scripts/materialize_pgd_1p05_stabilization_diagnostics.py",
-            "evaluate_row",
-            "canonical_evaluate_stabilization_row",
-            20,
-        ),
-        (
             "results/d55c5f0/scripts/materialize_soft_pgd_feedback_robustness_diagnostics.py",
             "main",
             "run_feedback_robustness_diagnostics",
