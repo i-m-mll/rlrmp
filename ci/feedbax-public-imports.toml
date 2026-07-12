@@ -5,11 +5,6 @@ public_import_modules = [
   "jax_cookbook.tree",
 ]
 
-[[allowed_private_strings]]
-path = "results/f47abb1/scripts/plot_training_loss_lit_replication.py"
-line = "feedbax._io.save"
-reason = "Historical docstring names the old Feedbax save format; not a live import."
-
 [[known_in_flight]]
 path = "results/2ef67ca/scripts/eval_loss_balance.py"
 module = "feedbax.train"

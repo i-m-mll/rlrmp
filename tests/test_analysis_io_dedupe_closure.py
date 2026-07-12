@@ -135,7 +135,6 @@ def test_historical_training_history_reader_fails_closed_on_current_feedbax() ->
         legacy_task_trainer_history_skeleton(None)
 
     for path in (
-        "results/f47abb1/scripts/plot_training_loss_lit_replication.py",
         "results/3702f54/scripts/analyse_pregomatrix.py",
         "results/b399efc/scripts/analyse_movement_ramp_matrix.py",
     ):
@@ -143,16 +142,9 @@ def test_historical_training_history_reader_fails_closed_on_current_feedbax() ->
 
 
 def test_multi_cell_members_are_thin_canonical_adapters() -> None:
-    main_members = ("results/f47abb1/scripts/analyse_lit_replication_6cell.py",)
-    for path in main_members:
-        node = _function(path, "main")
-        assert _loc(node) <= 30
-        assert "run_replicate_kinematics_analysis" in _calls(node)
-
     figure_members = tuple(
         (path, name, canonical)
         for path in (
-            "results/f47abb1/scripts/analyse_lit_replication_6cell.py",
             "results/3702f54/scripts/analyse_pregomatrix.py",
             "results/b399efc/scripts/analyse_movement_ramp_matrix.py",
         )
@@ -169,8 +161,6 @@ def test_multi_cell_members_are_thin_canonical_adapters() -> None:
 
 def test_args_namespace_members_cannot_reaccrete() -> None:
     members = (
-        ("results/f47abb1/scripts/analyse_lit_replication_6cell.py", "_make_args_namespace"),
-        ("results/f47abb1/scripts/plot_training_loss_lit_replication.py", "_make_args_namespace"),
         ("results/b399efc/scripts/analyse_movement_ramp_matrix.py", "_make_args_namespace"),
         ("results/3702f54/scripts/analyse_pregomatrix.py", "_make_args_namespace"),
     )
