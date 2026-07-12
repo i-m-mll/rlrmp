@@ -6,11 +6,13 @@ import json
 from pathlib import Path
 import subprocess
 
+import pytest
 from feedbax.contracts.run_matrix import TrainingRunMatrixSpec
 from feedbax.contracts.spec_storage import (
     build_resolved_semantics_snapshot,
     training_run_intent_hash,
 )
+from feedbax.contracts.training import DEFAULT_TRAINING_METHOD_REGISTRY
 from feedbax.contracts.resolved_snapshot_decoder import decode_resolved_snapshot
 from feedbax.training.run_matrix import materialize_run_matrix
 
@@ -23,6 +25,12 @@ from rlrmp.runtime.spec_storage import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PRE_MIGRATION_MATRIX_COMMIT = "edfb3d358565393e58b79a6a26eccbaf406acde0"
+
+
+@pytest.fixture(autouse=True)
+def _isolate_training_method_registry(monkeypatch: pytest.MonkeyPatch) -> None:
+    registrations = dict(DEFAULT_TRAINING_METHOD_REGISTRY._registrations)
+    monkeypatch.setattr(DEFAULT_TRAINING_METHOD_REGISTRY, "_registrations", registrations)
 
 
 def test_c6c5997_matrix_is_compact_and_resolves_from_exact_snapshot(

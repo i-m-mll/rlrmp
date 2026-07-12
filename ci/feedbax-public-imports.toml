@@ -311,6 +311,10 @@ module = "feedbax.contracts.selection"
 symbols = ["ManifestPredicate"]
 
 [[canonical_homes]]
+module = "feedbax.contracts.spec_storage"
+symbols = ["build_resolved_semantics_snapshot", "store_canonical_json_artifact"]
+
+[[canonical_homes]]
 module = "feedbax.contracts.training"
 symbols = [
   "ArtifactPolicySpec",
@@ -614,6 +618,10 @@ symbols = [
   "ExecutionPreparationResult",
   "load_checkpoint_custody_documents",
 ]
+
+[[canonical_homes]]
+module = "feedbax.training.spec_storage"
+symbols = ["TrainingSpecStorageResult", "emit_training_run_spec_storage"]
 
 [[canonical_homes]]
 module = "feedbax.training.loss"
