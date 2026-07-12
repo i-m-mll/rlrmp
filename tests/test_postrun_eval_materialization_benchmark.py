@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import pytest
 
 from rlrmp.analysis.pipelines.gru_feedback_ablation import selected_feedback_ablation_bins_for_bank
-from rlrmp.analysis.pipelines.gru_perturbation_bank import default_cs_perturbation_bank
+from rlrmp.eval.perturbation_bank import default_cs_perturbation_bank
 import rlrmp.benchmarks.postrun_eval_materialization as benchmark
 from rlrmp.benchmarks.postrun_eval_materialization import (
     build_parser,
@@ -54,19 +54,13 @@ def test_run_benchmark_records_and_passes_backend_context(monkeypatch, tmp_path)
     }
 
     monkeypatch.setattr(benchmark, "resolve_run_inputs", lambda **_: [run])
+    monkeypatch.setattr(
+        benchmark,
+        "build_validation_checkpoint_selection_manifest",
+        lambda **_: SimpleNamespace(id="checkpoint-selection-fixture"),
+    )
     monkeypatch.setattr(benchmark, "default_cs_perturbation_bank", lambda: bank)
     monkeypatch.setattr(benchmark, "selected_feedback_ablation_bins_for_bank", lambda _: {})
-    monkeypatch.setattr(
-        benchmark,
-        "materialize_gru_standard_result",
-        lambda **_: {"rows": [], "checkpoint_policy": "test"},
-    )
-    monkeypatch.setattr(benchmark, "write_gru_standard_result", lambda *_, **__: None)
-    monkeypatch.setattr(
-        benchmark,
-        "materialize_gru_evaluation_diagnostics",
-        lambda **_: {"runs": {"run_a": {"status_counts": {"ok": 1}}}},
-    )
     monkeypatch.setattr(benchmark, "materialize_gru_pilot_figures", lambda **_: {"fig": {}})
     monkeypatch.setattr(
         benchmark,

@@ -1,24 +1,32 @@
 {
-  "bulk_outputs": {
-    "csv": "_artifacts/a378b34/figures/nominal_velocity_profile_comparison/nominal_forward_velocity_profiles.csv",
-    "html": "_artifacts/a378b34/figures/nominal_velocity_profile_comparison/nominal_forward_velocity_profiles.html",
-    "png": null,
-    "summary": "_artifacts/a378b34/figures/nominal_velocity_profile_comparison/nominal_forward_velocity_profiles_summary.json"
+  "assembler_params": {
+    "height": 560,
+    "panel_constructor": "rlrmp.profile_grid",
+    "title": "Nominal target-radial velocity: distilled h0 GRU vs 6D extLQG",
+    "width": 980
   },
-  "comparison": {
-    "band": "SEM across replicate-trial profiles for student; SEM across trial profiles for teacher",
-    "reference": "6D extLQG analytical closed-loop rollout",
-    "student": "distilled standard h0 GRU closed-loop rollout",
-    "trial_set": "nominal validation trials"
+  "facet_bindings": {
+    "condition": {"item": "params", "path": "conditions"}
   },
-  "figure_family": "nominal_target_radial_velocity_profiles",
-  "issue": "a378b34",
-  "run_id": "h0_extlqg_6d_closed_loop_distillation",
-  "schema_version": "rlrmp.figure_spec.v1",
-  "source_script": "results/a378b34/scripts/materialize_nominal_velocity_profile_comparison.py",
-  "topic": "nominal_velocity_profile_comparison",
-  "tracked_outputs": {
-    "note": "results/a378b34/notes/h0_extlqg_6d_closed_loop_distillation.md",
-    "spec": "results/a378b34/figures/nominal_velocity_profile_comparison/spec.json"
-  }
+  "figure_routing": {"render_format": "html"},
+  "metadata": {"conditions": {"Nominal validation trials": {}}},
+  "name": "a378b34-nominal-velocity-profile-comparison",
+  "panels": [
+    {
+      "axes_labels": {"x": "Time from trial start (s)", "y": "Target-radial velocity (m/s)"},
+      "name": "profile",
+      "title": {"item": "condition"}
+    }
+  ],
+  "schema_id": "feedbax.spec.figure",
+  "schema_version": "feedbax.spec.figure.v1",
+  "slot_bindings": {
+    "profiles": {
+      "constructor": "rlrmp.profile_series",
+      "name": "distillation-profile-stock",
+      "piece": "rlrmp.profile_a378b34_nominal_velocity",
+      "required": true
+    }
+  },
+  "template": "rlrmp.profile_comparison"
 }

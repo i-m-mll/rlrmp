@@ -481,7 +481,7 @@ def build_nominal_velocity_spec(
                 "physical_dim": 6,
                 "disturbance_integrators_exposed": False,
                 "source": (
-                    "rlrmp.analysis.pipelines.gru_perturbation_bank."
+                    "rlrmp.eval.perturbation_bank."
                     "_build_extlqg_comparator_context(physical_dim=6)"
                 ),
                 "game_contract": "6D no-integrator C&S comparator",

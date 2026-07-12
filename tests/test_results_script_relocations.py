@@ -20,18 +20,35 @@ DESTINATIONS = {
     "diag_cs_bw_full_state_sweeps.py": (
         "results/72fb8d9/scripts/diag_cs_bw_full_state_sweeps.py"
     ),
-    "materialize_output_feedback_optimizer_basin_diagnostic.py": (
-        "results/1c014e5/scripts/materialize_output_feedback_optimizer_basin_diagnostic.py"
-    ),
     "materialize_output_feedback_observer_error_coverage.py": (
         "results/3becdec/scripts/materialize_output_feedback_observer_error_coverage.py"
+    ),
+}
+
+ARCHIVAL_ONLY_DESTINATIONS = {
+    "results/3becdec/scripts/materialize_output_feedback_observer_error_coverage.py",
+}
+
+RETIRED_DESTINATIONS = {
+    "materialize_output_feedback_optimizer_basin_diagnostic.py": (
+        "results/1c014e5/scripts/materialize_output_feedback_optimizer_basin_diagnostic.py"
     ),
 }
 
 
 def test_relocated_experiment_scripts_are_absent_from_top_level_scripts() -> None:
     assert not [
-        name for name in DESTINATIONS if (REPO_ROOT / "scripts" / name).exists()
+        name
+        for name in DESTINATIONS | RETIRED_DESTINATIONS
+        if (REPO_ROOT / "scripts" / name).exists()
+    ]
+
+
+def test_retired_relocated_scripts_are_absent() -> None:
+    assert not [
+        destination
+        for destination in RETIRED_DESTINATIONS.values()
+        if (REPO_ROOT / destination).exists()
     ]
 
 
@@ -51,6 +68,13 @@ def test_relocated_scripts_exist_without_runpy_or_sys_path_hacks() -> None:
 def test_relocated_destinations_import_in_isolated_processes() -> None:
     environment = {**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")}
     for destination in DESTINATIONS.values():
+        if destination in ARCHIVAL_ONLY_DESTINATIONS:
+            module = ast.parse(
+                (REPO_ROOT / destination).read_text(encoding="utf-8"),
+                filename=destination,
+            )
+            assert (ast.get_docstring(module) or "").startswith("LEGACY (")
+            continue
         code = (
             "import importlib.util; "
             f"p={str(REPO_ROOT / destination)!r}; "

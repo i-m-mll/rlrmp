@@ -18,13 +18,15 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
     _scalar_weight,
     active_loss_term_labels,
     build_figure_summary,
-    initial_effector_velocity,
     load_gru_training_history,
-    repeat_single_validation_trial,
-    trial_effector_target_position,
     write_loss_figures,
     write_velocity_by_replicate_figure,
     write_velocity_figure,
+)
+from rlrmp.eval.trial_inputs import (
+    initial_effector_velocity,
+    repeat_single_validation_trial,
+    trial_effector_target_position,
 )
 
 

@@ -22,20 +22,25 @@ from rlrmp.eval.recipes import (
     DelayedReachBankEvalParams,
     FEEDBACK_ABLATION_EVALUATION_TYPE,
     FeedbackAblationEvalParams,
+    GRU_DIAGNOSTICS_EVALUATION_TYPE,
+    GRUDiagnosticsEvalParams,
     PerturbationResponseBankEvalParams,
     PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
     WorstCaseEpsilonEvalParams,
     WORST_CASE_EPSILON_EVALUATION_TYPE,
+    register_rlrmp_evaluation_recipes,
 )
 from rlrmp.runtime.params_models import params_model_for, registered_params_models
 from rlrmp.runtime.spec_migrations import (
     CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND,
     DELAYED_REACH_BANK_EVAL_PARAMS_KIND,
     FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
+    GRU_DIAGNOSTICS_EVAL_PARAMS_KIND,
     PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND,
     STANDARD_MATRIX_EVAL_PARAMS_KIND,
     WORST_CASE_EPSILON_EVAL_PARAMS_KIND,
     stamp_current_schema,
+    ensure_rlrmp_spec_families,
 )
 
 
@@ -77,6 +82,8 @@ def _identity_changed_params(evaluation_type: str, params: dict[str, Any]) -> di
     elif evaluation_type == PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE:
         changed["bank_status"] = {"training-run-a": {"changed": 1}}
     elif evaluation_type == FEEDBACK_ABLATION_EVALUATION_TYPE:
+        changed["n_rollout_trials"] = int(changed["n_rollout_trials"]) + 1
+    elif evaluation_type == GRU_DIAGNOSTICS_EVALUATION_TYPE:
         changed["n_rollout_trials"] = int(changed["n_rollout_trials"]) + 1
     elif evaluation_type == WORST_CASE_EPSILON_EVALUATION_TYPE:
         changed["audit_inputs"] = {"changed": True}
@@ -258,6 +265,21 @@ def _bank() -> dict[str, Any]:
             },
         ),
         (
+            GRUDiagnosticsEvalParams,
+            {
+                "schema_id": None,
+                "schema_version": None,
+                "consumed_data_identities": [],
+                "source_experiment": "",
+                "run_ids": [],
+                "labels": None,
+                "n_rollout_trials": 64,
+                "preferred_checkpoint_manifest_path": None,
+                "jacobian_timepoints": ["first", "peak_forward_velocity", "terminal"],
+                "repo_root": None,
+            },
+        ),
+        (
             WorstCaseEpsilonEvalParams,
             {
                 "schema_id": None,
@@ -299,6 +321,7 @@ def test_eval_params_model_defaults_match_recipe_literals(
         CenterOutEnsembleEvalParams,
         PerturbationResponseBankEvalParams,
         FeedbackAblationEvalParams,
+        GRUDiagnosticsEvalParams,
         WorstCaseEpsilonEvalParams,
         DelayedReachBankEvalParams,
     ],
@@ -308,6 +331,53 @@ def test_eval_params_models_reject_extra_fields(model_class: type[BaseModel]) ->
         model_class.model_validate({"unknown": True})
 
 
+def test_gru_diagnostics_recipe_caches_states_and_structured_summary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ensure_rlrmp_spec_families()
+    register_rlrmp_evaluation_recipes()
+    monkeypatch.setattr(
+        "rlrmp.eval.recipes.evaluate_gru_diagnostics_runs",
+        lambda _params, **_kwargs: {
+            "source_experiment": "unit",
+            "checkpoint_policy": "validation_selected_per_replicate",
+            "scope": "post_hoc_evaluation_non_certificate_diagnostics",
+            "standard_certificate_metrics": {"status": "excluded"},
+            "runs": {
+                "training-run-a": {
+                    "n_replicates": 2,
+                    "n_rollout_trials_per_replicate": 3,
+                    "behavior": {"endpoint_error_m": {"mean": 0.01}},
+                    "cached_states": {"position": [[[0.0, 0.0]]]},
+                }
+            },
+        },
+    )
+    params = stamp_current_schema(
+        GRU_DIAGNOSTICS_EVAL_PARAMS_KIND,
+        {
+            "source_experiment": "unit",
+            "run_ids": ["training-run-a"],
+            "n_rollout_trials": 3,
+            "repo_root": ".",
+        },
+    )
+    spec = _spec(GRU_DIAGNOSTICS_EVALUATION_TYPE, params)
+
+    manifest, _path = execute_evaluation_run_spec(spec, root=tmp_path, force=True)
+    cached_manifest, _cached_path = execute_evaluation_run_spec(spec, root=tmp_path)
+    states = _load_cached_states(manifest)
+
+    assert manifest.status == "completed"
+    assert cached_manifest.metadata["cache"]["states_cache_hit"] is True
+    assert manifest.metadata["product_role"] == "gru_diagnostic_states"
+    assert manifest.summary_metrics["gru_diagnostic_run_count"] == 1
+    assert manifest.summary_metrics["gru_diagnostic_rollout_count"] == 6
+    assert states["runs"]["training-run-a"]["behavior"]["endpoint_error_m"]["mean"] == 0.01
+    assert states["runs"]["training-run-a"]["cached_states"]
+
+
 def test_eval_params_model_table_resolves_registered_recipes() -> None:
     _register()
 
@@ -315,6 +385,7 @@ def test_eval_params_model_table_resolves_registered_recipes() -> None:
         CENTER_OUT_ENSEMBLE_EVALUATION_TYPE: CenterOutEnsembleEvalParams,
         PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE: PerturbationResponseBankEvalParams,
         FEEDBACK_ABLATION_EVALUATION_TYPE: FeedbackAblationEvalParams,
+        GRU_DIAGNOSTICS_EVALUATION_TYPE: GRUDiagnosticsEvalParams,
         WORST_CASE_EPSILON_EVALUATION_TYPE: WorstCaseEpsilonEvalParams,
         DELAYED_REACH_BANK_EVALUATION_TYPE: DelayedReachBankEvalParams,
     }
@@ -366,6 +437,17 @@ def test_eval_params_model_table_resolves_registered_recipes() -> None:
             "feedback_ablation_rollouts",
         ),
         (
+            GRU_DIAGNOSTICS_EVALUATION_TYPE,
+            GRU_DIAGNOSTICS_EVAL_PARAMS_KIND,
+            {
+                "source_experiment": "unit",
+                "run_ids": ["training-run-a"],
+                "n_rollout_trials": 2,
+                "repo_root": ".",
+            },
+            "gru_diagnostic_states",
+        ),
+        (
             WORST_CASE_EPSILON_EVALUATION_TYPE,
             WORST_CASE_EPSILON_EVAL_PARAMS_KIND,
             {
@@ -411,6 +493,23 @@ def test_registered_eval_recipes_execute_and_reuse_states_cache(
                 "evaluation_bins": {"nominal": None},
                 "ablation_modes": ["normal"],
                 "runs": {"training-run-a": {"ablations": []}},
+            },
+        )
+    if evaluation_type == GRU_DIAGNOSTICS_EVALUATION_TYPE:
+        monkeypatch.setattr(
+            "rlrmp.eval.recipes.evaluate_gru_diagnostics_runs",
+            lambda _params, **_kwargs: {
+                "source_experiment": "unit",
+                "checkpoint_policy": "validation_selected_per_replicate",
+                "scope": "post_hoc_evaluation_non_certificate_diagnostics",
+                "standard_certificate_metrics": {"status": "excluded"},
+                "runs": {
+                    "training-run-a": {
+                        "n_replicates": 2,
+                        "n_rollout_trials_per_replicate": 2,
+                        "cached_states": {"fixture": True},
+                    }
+                },
             },
         )
     stamped = stamp_current_schema(params_kind, params)

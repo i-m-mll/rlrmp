@@ -74,26 +74,6 @@ _TRAINING_ARG_PROFILES: dict[str, dict[str, Any]] = {
         "position_powerlaw_power": 6.0,
         "controller_lr": 1e-4,
     },
-    "anti_anticipation": {
-        "n_adversary_batches": 0,
-        "batch_size": 250,
-        "nn_output_jerk": 1e5,
-        "seed": 42,
-        "hidden_type": "gru",
-        "sisu_gating": "additive",
-        "loss_update_enabled": False,
-        "loss_update_ratio": 0.5,
-        "effector_pos_running": 1.0,
-        "effector_pos_late_weight": 0.5,
-        "effector_vel_late": 0.1,
-        "effector_final_vel": 0.0,
-        "effector_pos_late_final_scale": 2.0,
-        "effector_pos_late_start_step": 80,
-        "nn_hidden_derivative": 0.0,
-        "nn_output_pre_go": 0.0,
-        "nn_hidden_derivative_pre_go": 0.0,
-        "controller_lr": 1e-4,
-    },
 }
 
 
@@ -193,9 +173,8 @@ def run_replicate_kinematics_analysis(
 ) -> None:
     """Run the shared six-cell evaluation, figure, table, and note workflow."""
 
-    if profile not in {"lit_replication", "anti_anticipation"}:
+    if profile != "lit_replication":
         raise ValueError(f"unknown multi-cell analysis profile: {profile}")
-    lit = profile == "lit_replication"
     repo_root = Path(hooks["REPO_ROOT"])
     experiment = str(hooks["EXPERIMENT"])
     labels = tuple(hooks["CELL_LABELS"])
@@ -217,23 +196,10 @@ def run_replicate_kinematics_analysis(
     )
     parser.add_argument("--eval-seed", type=int, default=42)
     args = parser.parse_args()
-    artifact_base = args.artifact_base or (
-        repo_root / "_artifacts" / experiment / "runs"
-        if lit
-        else repo_root / "_artifacts" / "2bc95fd"
-    )
-    results_base = repo_root / "results" / (experiment if lit else "2bc95fd")
+    artifact_base = args.artifact_base or repo_root / "_artifacts" / experiment / "runs"
+    results_base = repo_root / "results" / experiment
     notes_dir = results_base / "notes"
     notes_dir.mkdir(parents=True, exist_ok=True)
-    if not lit:
-        for figure_name in (
-            "peak_velocity_distributions",
-            "forward_velocity_profiles",
-            "hold_drift_profiles",
-            "rmse_ratio_comparison",
-        ):
-            (artifact_base / "figures" / figure_name).mkdir(parents=True, exist_ok=True)
-            (results_base / "figures" / figure_name).mkdir(parents=True, exist_ok=True)
 
     print(f"Artifact base: {artifact_base}")
     print(f"Results base:  {results_base}")
@@ -278,15 +244,14 @@ def run_replicate_kinematics_analysis(
             print(f"  FAILED eval/kinematics: {type(error).__name__}: {error}")
             traceback.print_exc()
             continue
-        plus_minus = "+/-" if lit else "±"
         print(
-            f"  peak_vel: {stats['mean_peak_velocity']:.4f} {plus_minus} "
+            f"  peak_vel: {stats['mean_peak_velocity']:.4f} +/- "
             f"{stats['sd_peak_velocity']:.4f} m/s  CV={stats['cv_peak_vel']:.3f}  "
-            f"hold_drift={stats['mean_hold_drift_mm']:.2f} {plus_minus} "
+            f"hold_drift={stats['mean_hold_drift_mm']:.2f} +/- "
             f"{stats['sd_hold_drift_mm']:.2f} mm"
         )
     if not cell_stats:
-        print("\nNo cells loaded -- aborting." if lit else "\nNo cells loaded — aborting.")
+        print("\nNo cells loaded -- aborting.")
         return
 
     print("\n--- Computing pairwise RMSE ratios (primary metric) ---")
@@ -306,8 +271,8 @@ def run_replicate_kinematics_analysis(
     else:
         print("  Less than 2 cells loaded -- cannot compute cross-cell RMSE ratios.")
 
-    figure_experiment = experiment if lit else "anti_anticipation_loss_shape_6cell"
-    route_experiment = experiment if lit else "2bc95fd"
+    figure_experiment = experiment
+    route_experiment = experiment
     shared_plot = {
         "cells": labels,
         "n_replicates": n_replicates,
@@ -328,10 +293,8 @@ def run_replicate_kinematics_analysis(
         "plot_kwargs": shared_plot,
         "metric_note": (
             "Annotation shows CV (SD/mean of peak vel scalar) -- auxiliary metric. "
-            if lit
-            else "Annotation shows CV (SD/mean of peak vel scalar) — auxiliary metric. "
-        )
-        + "Primary metric is vel_rmse_ratio in rmse_ratio_comparison figure.",
+            "Primary metric is vel_rmse_ratio in rmse_ratio_comparison figure."
+        ),
         "cell_stats": {
             label: {
                 key: stats[key]
@@ -397,8 +360,8 @@ def run_replicate_kinematics_analysis(
                 ],
                 "plot_kwargs": profile_plot,
                 "fix_note": (
-                    "Bug: 06f7faf — go-cue alignment fix + shared y-axes across cells"
-                    + (" (per-replicate variant retains full aligned window)." if lit else ".")
+                    "Bug: 06f7faf — go-cue alignment fix + shared y-axes across cells "
+                    "(per-replicate variant retains full aligned window)."
                 ),
             },
             experiment=route_experiment,
@@ -410,11 +373,7 @@ def run_replicate_kinematics_analysis(
             "nearest-across-cell mean pairwise RMSE on forward-velocity profiles. "
             "Secondary: same on forward-position profiles. Auxiliary: CV = "
             "SD(peak_vel) / mean(peak_vel) across replicates. Target threshold 0.5; "
-            + (
-                "prior best (baseline GRU/jerk, 2bc95fd): 0.758."
-                if lit
-                else "prior best (baseline GRU/jerk matrix): 0.758."
-            )
+            + "prior best (baseline GRU/jerk, 2bc95fd): 0.758."
         )
         _save_multi_cell_figure(
             hooks["make_rmse_ratio_figure"](rmse_ratios, cell_stats),
@@ -494,7 +453,8 @@ def _write_multi_cell_report(
 ) -> None:
     """Write the profile-specific table, decision note, and JSON sidecar."""
 
-    lit = profile == "lit_replication"
+    if profile != "lit_replication":
+        raise ValueError(f"unknown multi-cell report profile: {profile}")
     prior_best = 0.758
     threshold = 0.5
     winners = [
@@ -504,12 +464,8 @@ def _write_multi_cell_report(
         and not np.isnan(rmse_ratios[label]["vel_rmse_ratio"])
         and rmse_ratios[label]["vel_rmse_ratio"] < threshold
     ]
-    heading = (
-        "=== VARIANCE ANALYSIS SUMMARY (f47abb1 lit-replication) ==="
-        if lit
-        else "=== VARIANCE ANALYSIS SUMMARY ==="
-    )
-    display_width = 28 if lit else 42
+    heading = "=== VARIANCE ANALYSIS SUMMARY (f47abb1 lit-replication) ==="
+    display_width = 28
     print(f"\n{heading}\n")
     header = (
         f"{'Cell':{display_width}s} {'Vel-RMSE-ratio':>15} {'Pos-RMSE-ratio':>15} "
@@ -526,8 +482,6 @@ def _write_multi_cell_report(
         vel_ratio = row.get("vel_rmse_ratio", float("nan"))
         pos_ratio = row.get("pos_rmse_ratio", float("nan"))
         flag = " <-- WINNER" if label in winners else ""
-        if not lit and label == "gru__jerk" and not flag:
-            flag = " (prior best)"
         print(
             f"  {display_names[label]:{display_width}s} {vel_ratio:>15.3f} "
             f"{pos_ratio:>15.3f} {stats['cv_peak_vel']:>14.3f} "
@@ -635,7 +589,7 @@ def _write_multi_cell_report(
     update_marked_section(notes_path, "variance_analysis", "\n".join(lines) + "\n")
     print(f"\nSaved analysis notes: {notes_path}")
     payload = {
-        **({"experiment": experiment} if lit else {}),
+        "experiment": experiment,
         "sisu": args.sisu,
         "primary_metric": "vel_rmse_ratio",
         "prior_best_vel_rmse_ratio": prior_best,
@@ -663,31 +617,17 @@ def _write_multi_cell_report(
 
 
 def _report_preamble(profile: str, experiment: str, sisu: float) -> list[str]:
-    if profile == "lit_replication":
-        return [
-            f"# Variance Analysis — Lit-Replication 6-Cell Matrix ({experiment})",
-            "",
-            "## Setup",
-            "",
-            "This matrix tests whether faithful replication of the Chaisanguanthum & Shenoy "
-            "2019 loss schedule improves velocity-RMSE ratios and inter-replicate variance.",
-            "",
-            f"- Experiment hash: `{experiment}`",
-            f"- SISU: {sisu}",
-            "- Perturbation: 0 (clean reach)",
-            "- Validation trials: 8 center-out reach directions",
-            "",
-            "## Metrics",
-            "",
-            "**Primary: velocity-RMSE ratio** — within-cell mean pairwise RMSE on the "
-            "forward-velocity profile / nearest-neighbor across-cell mean pairwise RMSE.",
-            "Prior best (GRU/jerk, 2bc95fd): 0.758. Decision threshold: < 0.50.",
-            "",
-        ]
+    if profile != "lit_replication":
+        raise ValueError(f"unknown multi-cell report profile: {profile}")
     return [
-        "# Variance Analysis — 6-Cell Anti-Anticipation Matrix",
+        f"# Variance Analysis — Lit-Replication 6-Cell Matrix ({experiment})",
         "",
         "## Setup",
+        "",
+        "This matrix tests whether faithful replication of the Chaisanguanthum & Shenoy "
+        "2019 loss schedule improves velocity-RMSE ratios and inter-replicate variance.",
+        "",
+        f"- Experiment hash: `{experiment}`",
         f"- SISU: {sisu}",
         "- Perturbation: 0 (clean reach)",
         "- Validation trials: 8 center-out reach directions",
@@ -696,6 +636,6 @@ def _report_preamble(profile: str, experiment: str, sisu: float) -> list[str]:
         "",
         "**Primary: velocity-RMSE ratio** — within-cell mean pairwise RMSE on the "
         "forward-velocity profile / nearest-neighbor across-cell mean pairwise RMSE.",
-        "Prior best (GRU/jerk): 0.758. Decision threshold: < 0.50.",
+        "Prior best (GRU/jerk, 2bc95fd): 0.758. Decision threshold: < 0.50.",
         "",
     ]

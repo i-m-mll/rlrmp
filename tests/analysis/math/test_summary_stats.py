@@ -51,9 +51,9 @@ def test_dup_0173_pipeline_modules_import_shared_helper() -> None:
     repo_root = Path(__file__).resolve().parents[3]
     module_paths = [
         "src/rlrmp/analysis/pipelines/gru_worst_case_epsilon_audit.py",
-        "src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py",
+        "src/rlrmp/eval/gru_diagnostics.py",
         "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
-        "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+        "src/rlrmp/eval/perturbation_bank.py",
         "src/rlrmp/analysis/pipelines/objective_comparator.py",
     ]
 

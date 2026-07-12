@@ -19,12 +19,12 @@ from jaxtyping import Array, Float
 
 from rlrmp.analysis.math.cs_game_card import TARGET_POS, build_canonical_game
 from rlrmp.analysis.math.summary_stats import summary_stats
-from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
-from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
+from rlrmp.analysis.gru_standard_certificate import normalize_gru_hps
+from rlrmp.eval.checkpoint_selection import (
     CheckpointSelectionMode,
     load_validation_selected_checkpoint_model,
 )
-from rlrmp.analysis.pipelines.gru_perturbation_bank import summarize_perturbation_response
+from rlrmp.eval.perturbation_bank import summarize_perturbation_response
 from rlrmp.analysis.pipelines.gru_pilot_figures import (
     RunFigureInputs,
     repeat_single_validation_trial,
@@ -998,8 +998,8 @@ def _goal_centered_vectors_jax(values: Any, *, target_pos: Any) -> Any:
 
 
 def _numpy_rollout_evaluation(jax_eval: JaxRolloutEvaluation, trial_specs: Any) -> Any:
-    from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import RolloutEvaluation
-    from rlrmp.analysis.pipelines.gru_pilot_figures import initial_effector_velocity
+    from rlrmp.eval.gru_diagnostics import RolloutEvaluation
+    from rlrmp.eval.trial_inputs import initial_effector_velocity
 
     evaluation = RolloutEvaluation(
         position=np.asarray(jax_eval.position, dtype=np.float64),

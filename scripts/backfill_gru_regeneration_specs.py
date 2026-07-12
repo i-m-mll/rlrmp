@@ -189,7 +189,7 @@ def backfill_perturbation_calibration(
             ],
             source_files=[
                 "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py",
-                "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+                "src/rlrmp/eval/perturbation_bank.py",
             ],
             notes=[
                 "Backfilled for the standard perturbation calibration used by current GRU diagnostics.",
@@ -213,22 +213,14 @@ def classify_manifest(name: str, manifest: Mapping[str, Any]) -> dict[str, Any] 
     if schema.startswith("rlrmp.cs_gru_standard_certificates") or name.startswith(
         "gru_standard_certificates"
     ):
-        return {
-            "diagnostic_name": "gru_standard_certificate",
-            "materializer": "rlrmp.analysis.pipelines.cs_gru_standard_materialization.write_gru_standard_result",
-            "source_files": [
-                "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py",
-                "src/rlrmp/analysis/pipelines/standard_certificate_materialization.py",
-            ],
-        }
+        return None
+    # Historical GRU evaluation-diagnostics manifests came from a retired direct
+    # writer. They are parity oracles, not regeneration targets: current reruns
+    # must be authored as ``rlrmp.eval.gru_diagnostics`` EvaluationRunSpecs.
     if schema.startswith("rlrmp.gru_evaluation_diagnostics") or name.startswith(
         "gru_evaluation_diagnostics"
     ):
-        return {
-            "diagnostic_name": "gru_evaluation_diagnostics",
-            "materializer": "rlrmp.analysis.pipelines.gru_evaluation_diagnostics.materialize_gru_evaluation_diagnostics",
-            "source_files": ["src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py"],
-        }
+        return None
     if schema.startswith("rlrmp.gru_postrun_materialization") or name.startswith(
         "gru_postrun_materialization"
     ):
@@ -237,9 +229,10 @@ def classify_manifest(name: str, manifest: Mapping[str, Any]) -> dict[str, Any] 
             "materializer": "rlrmp.analysis.pipelines.gru_postrun_materialization.materialize_gru_postrun_analysis",
             "source_files": [
                 "src/rlrmp/analysis/pipelines/gru_postrun_materialization.py",
-                "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py",
-                "src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py",
-                "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+                "src/rlrmp/analysis/gru_standard_certificate.py",
+                "src/rlrmp/eval/evaluation_diagnostics.py",
+                "src/rlrmp/eval/gru_diagnostics.py",
+                "src/rlrmp/eval/perturbation_bank.py",
                 "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
             ],
         }
@@ -270,7 +263,7 @@ def classify_manifest(name: str, manifest: Mapping[str, Any]) -> dict[str, Any] 
             ),
             "source_files": [
                 "src/rlrmp/analysis/declarative_materialization.py",
-                "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+                "src/rlrmp/eval/perturbation_bank.py",
                 "src/rlrmp/eval/recipes.py",
             ],
         }
@@ -285,16 +278,8 @@ def classify_manifest(name: str, manifest: Mapping[str, Any]) -> dict[str, Any] 
             ),
             "source_files": [
                 "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
-                "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+                "src/rlrmp/eval/perturbation_bank.py",
             ],
-        }
-    if schema.startswith("rlrmp.validation_selected_gru_checkpoints") or name.startswith(
-        "validation_selected_checkpoints"
-    ):
-        return {
-            "diagnostic_name": "validation_selected_checkpoint_manifest",
-            "materializer": "rlrmp.analysis.pipelines.gru_checkpoint_selection.materialize_validation_selected_checkpoint_manifest",
-            "source_files": ["src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py"],
         }
     if schema.startswith("rlrmp.cs_stochastic_gru.training_diagnostics_summary"):
         return {
@@ -336,9 +321,6 @@ def inputs_for_manifest(
         checkpoint = outputs.get("checkpoint_manifest")
         if isinstance(checkpoint, str):
             refs.append({"role": "checkpoint_manifest", "path": checkpoint})
-    validation_path = matching_validation_manifest(manifest_path)
-    if validation_path.exists():
-        refs.append({"role": "checkpoint_manifest", "path": validation_path})
     return refs
 
 
@@ -392,10 +374,7 @@ def guessed_bulk_output(
     stem = manifest_path.stem.removesuffix("_manifest")
     artifact_root = repo_root / "_artifacts" / experiment
     candidates: list[Path] = []
-    if diagnostic_name == "gru_evaluation_diagnostics":
-        tag = stem.removeprefix("gru_evaluation_diagnostics_")
-        candidates.append(artifact_root / "evaluation_diagnostics" / f"gru_{tag}")
-    elif diagnostic_name == "gru_perturbation_response_bank":
+    if diagnostic_name == "gru_perturbation_response_bank":
         tag = stem.removeprefix("gru_perturbation_response_")
         candidates.extend(
             [
@@ -437,14 +416,6 @@ def matching_note_path(manifest_path: Path) -> Path:
     if stem.endswith("_manifest"):
         stem = stem.removesuffix("_manifest")
     return manifest_path.with_name(f"{stem}.md")
-
-
-def matching_validation_manifest(manifest_path: Path) -> Path:
-    notes = manifest_path.parent
-    stem = manifest_path.stem
-    if "fixed_target_random_perturb_validation_selected" in stem:
-        return notes / "validation_selected_checkpoints_fixed_target_random_perturb_validation_selected.json"
-    return notes / "validation_selected_checkpoints.json"
 
 
 def _should_backfill_manifest(path: Path) -> bool:

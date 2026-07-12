@@ -27,7 +27,7 @@ from typing import Any, Literal
 import numpy as np
 from feedbax import TaskTrialSpec
 
-from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
+from rlrmp.eval.checkpoint_selection import (
     DEFAULT_DELAYED_REACH_DIRECTION_COUNT,
     DEFAULT_DELAYED_REACH_GO_CUE_STEPS,
     DEFAULT_DELAYED_REACH_UNIFORM_REACH_LENGTH_M,

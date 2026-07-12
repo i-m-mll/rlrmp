@@ -27,41 +27,6 @@ owner = "246182c"
 reason = "Pre-declarative figure record retained until its assigned migration wave lands."
 
 [[legacy_specs]]
-path = "results/2bc95fd/figures/combo_hold_motor_diagnostic/spec.json"
-owner = "2bc95fd"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/2bc95fd/figures/forward_velocity_profiles/spec.json"
-owner = "2bc95fd"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/2bc95fd/figures/hold_drift_profiles/spec.json"
-owner = "2bc95fd"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/2bc95fd/figures/peak_velocity_distributions/spec.json"
-owner = "2bc95fd"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/2bc95fd/figures/rmse_ratio_comparison/spec.json"
-owner = "2bc95fd"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/2bc95fd/figures/training_loss/spec.json"
-owner = "2bc95fd"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/2bc95fd/figures/training_loss_per_term/spec.json"
-owner = "2bc95fd"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
 path = "results/3244f1a/figures/final_calibrated_bank_profiles/medium/spec.json"
 owner = "3244f1a"
 reason = "Pre-declarative figure record retained until its assigned migration wave lands."
@@ -94,11 +59,6 @@ reason = "Pre-declarative figure record retained until its assigned migration wa
 [[legacy_specs]]
 path = "results/3702f54/figures/training_loss_per_term/spec.json"
 owner = "3702f54"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/376d023/figures/6d_analytical_velocity_profiles/spec.json"
-owner = "376d023"
 reason = "Pre-declarative figure record retained until its assigned migration wave lands."
 
 [[legacy_specs]]
@@ -149,11 +109,6 @@ reason = "Pre-declarative figure record retained until its assigned migration wa
 [[legacy_specs]]
 path = "results/91a090c/figures/nominal_velocity_profiles/spec.json"
 owner = "91a090c"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/a378b34/figures/nominal_velocity_profile_comparison/spec.json"
-owner = "a378b34"
 reason = "Pre-declarative figure record retained until its assigned migration wave lands."
 
 [[legacy_specs]]
@@ -267,11 +222,6 @@ owner = "d55c5f0"
 reason = "Pre-declarative figure record retained until its assigned migration wave lands."
 
 [[legacy_specs]]
-path = "results/e148f33/figures/nominal_velocity_profile_comparison/spec.json"
-owner = "e148f33"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
 path = "results/e4800d6/figures/perturbation_response_norms_h0_sisu_spectrum_targetfix_two_rows_validation_selected_calibrated/spec.json"
 owner = "e4800d6"
 reason = "Pre-declarative figure record retained until its assigned migration wave lands."
@@ -332,21 +282,6 @@ owner = "1ab1fef"
 reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
 
 [[living_materializers]]
-path = "results/2bc95fd/scripts/analyse_anti_anticipation_6cell_variance.py"
-owner = "2bc95fd"
-reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
-
-[[living_materializers]]
-path = "results/2bc95fd/scripts/diagnose_combo_hold_motor.py"
-owner = "2bc95fd"
-reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
-
-[[living_materializers]]
-path = "results/2bc95fd/scripts/plot_training_loss_6cell.py"
-owner = "2bc95fd"
-reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
-
-[[living_materializers]]
 path = "results/3244f1a/scripts/materialize_final_small_bank_profiles.py"
 owner = "3244f1a"
 reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
@@ -354,11 +289,6 @@ reason = "Living legacy producer retained until its tracked figure family migrat
 [[living_materializers]]
 path = "results/3702f54/scripts/analyse_pregomatrix.py"
 owner = "3702f54"
-reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
-
-[[living_materializers]]
-path = "results/376d023/scripts/materialize_6d_analytical_velocity_profiles.py"
-owner = "376d023"
 reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
 
 [[living_materializers]]
@@ -389,11 +319,6 @@ reason = "Living legacy producer retained until its tracked figure family migrat
 [[living_materializers]]
 path = "results/91a090c/scripts/materialize_nominal_velocity_profiles.py"
 owner = "91a090c"
-reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
-
-[[living_materializers]]
-path = "results/a378b34/scripts/materialize_nominal_velocity_profile_comparison.py"
-owner = "a378b34"
 reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
 
 [[living_materializers]]
@@ -489,11 +414,6 @@ reason = "Living legacy producer retained until its tracked figure family migrat
 [[living_materializers]]
 path = "results/d55c5f0/scripts/materialize_soft_pgd_stabilization_responses.py"
 owner = "d55c5f0"
-reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
-
-[[living_materializers]]
-path = "results/e148f33/scripts/materialize_nominal_velocity_profile_comparison.py"
-owner = "e148f33"
 reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
 
 [[living_materializers]]

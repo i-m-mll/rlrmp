@@ -1,0 +1,100 @@
+{
+  "schema_id": "feedbax.manifest.analysis_data_product",
+  "schema_version": "feedbax.manifest.analysis_data_product.v1",
+  "product_schema_id": "rlrmp.figure_parity_oracles",
+  "product_schema_version": "rlrmp.figure_parity_oracles.v1",
+  "role": "figure_parity_oracles",
+  "logical_name": "2bc95fd_six_cell_figure_parity",
+  "producer_manifest_id": "rlrmp.analysis.matrix.standard_matrix.standard_matrix_payload",
+  "parent_manifests": [],
+  "checkpoint_policy": {},
+  "rollout_policy": {},
+  "parameters": {
+    "experiment": "2bc95fd",
+    "topics": [
+      "combo_hold_motor_diagnostic",
+      "forward_velocity_profiles",
+      "hold_drift_profiles",
+      "peak_velocity_distributions",
+      "rmse_ratio_comparison",
+      "training_loss",
+      "training_loss_per_term"
+    ],
+    "parity_render_root": "_artifacts/2bc95fd/figures"
+  },
+  "artifacts": [
+    {
+      "role": "figure_parity_oracle",
+      "logical_name": "combo_hold_motor_diagnostic",
+      "sha256": "b7456c877e26cab47b8316a2ae3d403e50d51a65761b10bcac1f7fe8ffae2db5",
+      "media_type": "application/json",
+      "storage_backend": "git",
+      "uri": "results/2bc95fd/data_products/figure_parity_combo_hold_motor_diagnostic.json",
+      "metadata": {"topic": "combo_hold_motor_diagnostic", "source": "retired_legacy_figure_spec"}
+    },
+    {
+      "role": "figure_parity_oracle",
+      "logical_name": "forward_velocity_profiles",
+      "sha256": "c447f085f1b9de9ffb35ca37e028e9cb3a0a4c7822d6293224cd777737fb25a6",
+      "media_type": "application/json",
+      "storage_backend": "git",
+      "uri": "results/2bc95fd/data_products/figure_parity_forward_velocity_profiles.json",
+      "metadata": {"topic": "forward_velocity_profiles", "source": "retired_legacy_figure_spec"}
+    },
+    {
+      "role": "figure_parity_oracle",
+      "logical_name": "hold_drift_profiles",
+      "sha256": "7a3482d9173543c3aa3e89e34c7c8e8d054c98c887554496c585c61b6270a575",
+      "media_type": "application/json",
+      "storage_backend": "git",
+      "uri": "results/2bc95fd/data_products/figure_parity_hold_drift_profiles.json",
+      "metadata": {"topic": "hold_drift_profiles", "source": "retired_legacy_figure_spec"}
+    },
+    {
+      "role": "figure_parity_oracle",
+      "logical_name": "peak_velocity_distributions",
+      "sha256": "2713bccf64e3db516886cca52f788060bac86f926e17db6a07f5eb0742b66987",
+      "media_type": "application/json",
+      "storage_backend": "git",
+      "uri": "results/2bc95fd/data_products/figure_parity_peak_velocity_distributions.json",
+      "metadata": {"topic": "peak_velocity_distributions", "source": "retired_legacy_figure_spec"}
+    },
+    {
+      "role": "figure_parity_oracle",
+      "logical_name": "rmse_ratio_comparison",
+      "sha256": "54cd70149160ab67b7fdeb3213f37ce54b9de1a87a1e08b9daa0dd5b70768455",
+      "media_type": "application/json",
+      "storage_backend": "git",
+      "uri": "results/2bc95fd/data_products/figure_parity_rmse_ratio_comparison.json",
+      "metadata": {"topic": "rmse_ratio_comparison", "source": "retired_legacy_figure_spec"}
+    },
+    {
+      "role": "figure_parity_oracle",
+      "logical_name": "training_loss",
+      "sha256": "40f1aac017128a29cbdd8f34fd3ce9765e7d76cd15208bca7272fbd1e60671ad",
+      "media_type": "application/json",
+      "storage_backend": "git",
+      "uri": "results/2bc95fd/data_products/figure_parity_training_loss.json",
+      "metadata": {"topic": "training_loss", "source": "retired_legacy_figure_spec"}
+    },
+    {
+      "role": "figure_parity_oracle",
+      "logical_name": "training_loss_per_term",
+      "sha256": "f52b330cd774d2230a53857339db65664a30d486fbb9d9257884d4e474d519fd",
+      "media_type": "application/json",
+      "storage_backend": "git",
+      "uri": "results/2bc95fd/data_products/figure_parity_training_loss_per_term.json",
+      "metadata": {"topic": "training_loss_per_term", "source": "retired_legacy_figure_spec"}
+    }
+  ],
+  "materialization": {
+    "mode": "adopted_archived_structured_outputs",
+    "retirement_issue": "d87fc74"
+  },
+  "regeneration": [],
+  "product_identity_hash": "66d2f4ce5b0de23b0892541b6d5867fe41b4645d7cd3e13da936456af5013257",
+  "metadata": {
+    "issue": "d87fc74",
+    "note": "Exact structured records from the retired 2bc95fd figure producers; archived HTML renders are the trace-level parity oracle."
+  }
+}

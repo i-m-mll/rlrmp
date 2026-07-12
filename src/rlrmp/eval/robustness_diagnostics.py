@@ -117,16 +117,16 @@ def evaluate_stabilization_row(
 
     from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 
-    from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
-    from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
+    from rlrmp.analysis.gru_standard_certificate import normalize_gru_hps
+    from rlrmp.eval.checkpoint_selection import (
         load_validation_selected_checkpoint_model,
     )
-    from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+    from rlrmp.eval.perturbation_bank import (
         apply_perturbation_to_trial_specs,
     )
-    from rlrmp.analysis.pipelines.gru_pilot_figures import (
+    from rlrmp.eval.trial_inputs import (
         repeat_single_validation_trial,
-        resolve_run_inputs,
+        resolve_evaluation_run_inputs as resolve_run_inputs,
     )
     from rlrmp.analysis.pipelines.gru_steady_state_perturbation_bank import (
         DEFAULT_N_ROLLOUT_TRIALS,
@@ -302,17 +302,11 @@ def run_feedback_robustness_diagnostics(
 ) -> dict[str, Any]:
     """Run the common feedback/perturbation diagnostic orchestration."""
 
-    from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
-        materialize_validation_selected_checkpoint_manifest,
-    )
-    from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import (
-        materialize_gru_evaluation_diagnostics,
+    from rlrmp.eval.checkpoint_selection import (
+        build_validation_checkpoint_selection_manifest,
     )
     from rlrmp.analysis.pipelines.gru_feedback_ablation import (
         execute_feedback_ablation_pipeline,
-    )
-    from rlrmp.analysis.pipelines.gru_perturbation_bank import (
-        materialize_gru_perturbation_response,
     )
     from rlrmp.paths import mkdir_p
 
@@ -324,47 +318,26 @@ def run_feedback_robustness_diagnostics(
     checkpoint_manifest = (
         hook("load_json")(paths["checkpoint_manifest"])
         if paths["checkpoint_manifest"].exists()
-        else materialize_validation_selected_checkpoint_manifest(
+        else build_validation_checkpoint_selection_manifest(
             experiment=issue,
             run_ids=run_ids,
-            output_path=paths["checkpoint_manifest"],
             repo_root=repo_root,
-        )
+        ).model_dump(mode="json", exclude_none=True)
     )
-    evaluation = (
-        hook("load_json")(paths["evaluation"])
-        if paths["evaluation"].exists()
-        else materialize_gru_evaluation_diagnostics(
-            experiment=issue,
-            run_ids=run_ids,
-            labels=labels,
-            output_path=paths["evaluation"],
-            bulk_dir=evaluation_bulk_dir,
-            n_rollout_trials=n_rollout_trials,
-            write_bulk_arrays=write_evaluation_bulk_arrays,
-            regeneration_spec_path=paths["evaluation_regeneration_spec"],
-            repo_root=repo_root,
+    if not paths["evaluation"].exists():
+        raise FileNotFoundError(
+            "feedback robustness analysis requires a cached evaluation artifact; "
+            "analysis stages may not rerun diagnostic rollouts"
         )
-    )
-    perturbation = (
-        hook("load_json")(paths["perturbation"])
-        if hook("perturbation_output_is_current")(
-            paths["perturbation"], expected_trials=n_rollout_trials
+    evaluation = hook("load_json")(paths["evaluation"])
+    if not hook("perturbation_output_is_current")(
+        paths["perturbation"], expected_trials=n_rollout_trials
+    ):
+        raise FileNotFoundError(
+            "feedback robustness analysis requires a current perturbation evaluation "
+            "artifact; execute the registered perturbation-bank evaluation matrix first"
         )
-        else materialize_gru_perturbation_response(
-            source_experiment=issue,
-            result_experiment=issue,
-            run_ids=run_ids,
-            labels=labels,
-            n_rollout_trials=n_rollout_trials,
-            bank_mode="calibrated",
-            calibration_level="moderate",
-            calibration_reach=0.15,
-            feedback_scale_manifest_path=paths["evaluation"],
-            extlqg_physical_dim=6,
-            repo_root=repo_root,
-        )
-    )
+    perturbation = hook("load_json")(paths["perturbation"])
     feedback_execution = execute_feedback_ablation_pipeline(
         source_experiment=issue,
         result_experiment=issue,

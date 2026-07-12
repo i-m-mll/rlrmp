@@ -6,11 +6,6 @@ public_import_modules = [
 ]
 
 [[allowed_private_strings]]
-path = "results/2bc95fd/scripts/plot_training_loss_6cell.py"
-line = "feedbax._io.save"
-reason = "Historical docstring names the old Feedbax save format; not a live import."
-
-[[allowed_private_strings]]
 path = "results/f47abb1/scripts/plot_training_loss_lit_replication.py"
 line = "feedbax._io.save"
 reason = "Historical docstring names the old Feedbax save format; not a live import."
@@ -49,7 +44,16 @@ symbols = [
 
 [[canonical_homes]]
 module = "feedbax.analysis"
-symbols = ["GraphControllerAdapter", "graph_controller"]
+symbols = [
+  "EvaluationRunMatrixSpec",
+  "GraphControllerAdapter",
+  "graph_controller",
+  "materialize_evaluation_run_matrix",
+]
+
+[[canonical_homes]]
+module = "feedbax.contracts"
+symbols = ["MaterializedMatrixRow"]
 
 [[canonical_homes]]
 module = "feedbax.analysis.analysis"
@@ -241,6 +245,7 @@ symbols = [
   "AnalysisDataProduct",
   "AnalysisRunSpec",
   "ArtifactRef",
+  "CheckpointSelectionManifest",
   "EntrypointRef",
   "EvaluationRunSpec",
   "FileHashRef",

@@ -1,0 +1,36 @@
+{
+  "issue": "376d023",
+  "piece_name": "rlrmp.profile_376d023_analytical_velocity",
+  "condition": "Nominal +x reach",
+  "output": {
+    "artifact_id": "artifact:sha256:ae3281fb055fc53840da7c511e79ac94cd1454913070d0ba537b243752072f6d",
+    "logical_name": "376d023/6d_analytical_velocity_profiles/profile_payload.json",
+    "media_type": "application/json",
+    "role": "profile_figure_payload",
+    "sha256": "ae3281fb055fc53840da7c511e79ac94cd1454913070d0ba537b243752072f6d",
+    "uri": "_artifacts/376d023/figures/6d_analytical_velocity_profiles/profile_payload.json"
+  },
+  "schema_id": "rlrmp.spec.figure_profile_payload",
+  "schema_version": "rlrmp.spec.figure_profile_payload.v1",
+  "series": [
+    {"label": "6D extLQG analytical", "mean_column": "six_d_extlqg_analytical_mean_m_s", "spread_column": "six_d_extlqg_analytical_std_m_s", "spread_kind": "sd", "color": "#111827", "line_dash": "dash"},
+    {"label": "6D output-feedback H-infinity analytical", "mean_column": "six_d_output_feedback_h_infinity_analytical_mean_m_s", "spread_column": "six_d_output_feedback_h_infinity_analytical_std_m_s", "spread_kind": "sd", "color": "#7c3aed", "line_dash": "dot"},
+    {"label": "020a65b h0 no-PGD", "mean_column": "h0_no_pgd_mean_m_s", "spread_column": "h0_no_pgd_std_m_s", "spread_kind": "sd", "color": "#2563eb"},
+    {"label": "020a65b h0 PGD", "mean_column": "h0_pgd_mean_m_s", "spread_column": "h0_pgd_std_m_s", "spread_kind": "sd", "color": "#dc2626"}
+  ],
+  "source_csv": {
+    "logical_name": "376d023/6d_analytical_velocity_profiles/velocity_profile_overlay.csv",
+    "media_type": "text/csv",
+    "role": "profile_csv",
+    "sha256": "9d6b6e658805099fe376f0f72e3ad8472b3d6af4eff79c22de665def082ba42d",
+    "uri": "_artifacts/376d023/figures/6d_analytical_velocity_profiles/velocity_profile_overlay.csv"
+  },
+  "source_summary": {
+    "logical_name": "376d023/6d_analytical_velocity_profiles/figure_summary.json",
+    "media_type": "application/json",
+    "role": "profile_summary",
+    "sha256": "e25858b356b803b9b3c65a3256ceccdb34322001eb967250038f8f64f0ba33bf",
+    "uri": "_artifacts/376d023/figures/6d_analytical_velocity_profiles/figure_summary.json"
+  },
+  "topic": "6d_analytical_velocity_profiles"
+}

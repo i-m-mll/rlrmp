@@ -28,7 +28,7 @@ from rlrmp.analysis.pipelines.gru_feedback_ablation import (
     selected_feedback_ablation_bins_for_bank,
     summarize_normalized_feedback_use,
 )
-from rlrmp.analysis.pipelines.gru_perturbation_bank import default_cs_perturbation_bank
+from rlrmp.eval.perturbation_bank import default_cs_perturbation_bank
 from rlrmp.model.cs_lss_gru import build_cs_lss_gru_graph
 
 
