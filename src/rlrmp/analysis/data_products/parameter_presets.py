@@ -103,7 +103,6 @@ def _register_defaults() -> None:
         "adversary_equivalence",
         "cs_game_card",
         "cs_gru_standard_materialization",
-        "diagnostic_provenance",
         "failure_decomposition",
         "gru_checkpoint_selection",
         "gru_perturbation_calibration",
