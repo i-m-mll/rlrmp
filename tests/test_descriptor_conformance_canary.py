@@ -58,7 +58,7 @@ DESCRIPTOR_CONSUMER_RELPATHS = (
     "src/rlrmp/eval/gru_diagnostics.py",
     "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
     "src/rlrmp/eval/perturbation_bank.py",
-    "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py",
+    "src/rlrmp/analysis/steady_state_perturbation.py",
     "src/rlrmp/model/feedbax_graph.py",
     "src/rlrmp/train/cs_perturbation_training.py",
 )

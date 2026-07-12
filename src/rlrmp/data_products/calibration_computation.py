@@ -1,16 +1,13 @@
-"""Open-loop physical calibration for the C&S perturbation bank."""
+"""Scientific computation for the governed perturbation calibration product."""
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping, Sequence
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import jax.numpy as jnp
 import numpy as np
 
-from rlrmp.analysis.pipelines.diagnostic_provenance import repo_relative, write_regeneration_spec
 from rlrmp.analysis.data_products import load_analysis_parameter_preset
 from rlrmp.data_products.calibration import (
     CALIBRATION_DEFAULTS_PRODUCT_ROLE,
@@ -19,31 +16,16 @@ from rlrmp.data_products.calibration import (
     ReachCalibrationPoint,
     ReachRelativeLevel,
     TimingCalibrationBin,
+    calibrated_amplitude_from_unit_sensitivity,
     load_perturbation_calibration_defaults,
 )
 from rlrmp.data_products.envelope import consumed_identity_from_loader
-from rlrmp.io import update_marked_section
-from rlrmp.paths import REPO_ROOT, mkdir_p
 
 if TYPE_CHECKING:
     from rlrmp.eval.gru_diagnostics import RolloutEvaluation
 
 
 SCHEMA_VERSION = "rlrmp.perturbation_open_loop_calibration.v2"
-DEFAULT_RESULT_EXPERIMENT = "1ad3c16"
-DEFAULT_OUTPUT_FILENAME = "perturbation_open_loop_calibration.json"
-DEFAULT_REGENERATION_SPEC_FILENAME = "perturbation_open_loop_calibration_regeneration_spec.json"
-DEFAULT_NOTE_FILENAME = "perturbation_open_loop_calibration.md"
-DEFAULT_BULK_SUBDIR = "perturbation_open_loop_calibration"
-DEFAULT_NOMINAL_GRU_BASELINE = {
-    "experiment": "5f70333",
-    "run_id": "lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64",
-    "training_distribution": "single_target_nominal_only_full_Q/R/Q_f",
-    "role": (
-        "declared nominal-only GRU baseline for later closed-loop GRU calibration; "
-        "this materializer defines bins from extLQG nominal-command open-loop replay"
-    ),
-}
 OPEN_LOOP_SUPPORTED_CHANNELS = {"initial_state", "command_input", "process_epsilon"}
 TIMED_PLANT_SIDE_FAMILIES = {
     "command_input_pulse",
@@ -68,199 +50,19 @@ DEFAULT_CONTROLLER_VISIBLE_FORCE_FILTER_SCALE_N = float(
 )
 
 
-def materialize_perturbation_open_loop_calibration(
-    *,
-    amplitude_factors: Sequence[float] | None = None,
-    reach_points: Sequence[ReachCalibrationPoint] | None = None,
-    levels: Sequence[ReachRelativeLevel] | None = None,
-    plant_timing_bins: Sequence[TimingCalibrationBin] | None = None,
-    controller_visible_timing_bins: Sequence[TimingCalibrationBin] | None = None,
-    native_conventions: Sequence[NativeConvention] | None = None,
-    result_experiment: str = DEFAULT_RESULT_EXPERIMENT,
-    output_path: Path | None = None,
-    note_path: Path | None = None,
-    regeneration_spec_path: Path | None = None,
-    repo_root: Path = REPO_ROOT,
-) -> dict[str, Any]:
-    """Materialize physical effect-size calibration for perturbation amplitudes."""
-
-    from rlrmp.eval.perturbation_bank import (
-        _build_extlqg_comparator_context,
-        _extlqg_cost_summary,
-        default_cs_perturbation_bank,
-    )
-
-    defaults_used = (
-        amplitude_factors is None
-        or reach_points is None
-        or levels is None
-        or plant_timing_bins is None
-        or controller_visible_timing_bins is None
-        or native_conventions is None
-    )
-    if defaults_used:
-        defaults = load_perturbation_calibration_defaults()
-        amplitude_factors = (
-            defaults.amplitude_factors if amplitude_factors is None else amplitude_factors
-        )
-        reach_points = defaults.reach_calibration_points if reach_points is None else reach_points
-        levels = defaults.reach_relative_levels if levels is None else levels
-        plant_timing_bins = (
-            defaults.plant_timing_bins if plant_timing_bins is None else plant_timing_bins
-        )
-        controller_visible_timing_bins = (
-            defaults.controller_visible_timing_bins
-            if controller_visible_timing_bins is None
-            else controller_visible_timing_bins
-        )
-        native_conventions = (
-            defaults.native_conventions if native_conventions is None else native_conventions
-        )
-
-    output_path = output_path or (
-        repo_root / "_artifacts" / result_experiment / DEFAULT_BULK_SUBDIR / DEFAULT_OUTPUT_FILENAME
-    )
-    note_path = note_path or (
-        repo_root / "results" / result_experiment / "notes" / DEFAULT_NOTE_FILENAME
-    )
-    regeneration_spec_path = regeneration_spec_path or (
-        output_path.parent / DEFAULT_REGENERATION_SPEC_FILENAME
-    )
-    mkdir_p(output_path.parent)
-    bank = default_cs_perturbation_bank()
-    context = _build_extlqg_comparator_context()
-    base = context["base_evaluation"]
-    base_cost = _extlqg_cost_summary(base, context["base_initial_state"])
-    sensitivities = _family_sensitivities(
-        bank["perturbations"],
-        plant_timing_bins=plant_timing_bins,
-        context=context,
-        base=base,
-        base_cost=base_cost,
-    )
-    rows = []
-    for reach in reach_points:
-        for level in levels:
-            target_peak_delta_x_m = float(reach.reach_length_m) * float(level.fraction_of_reach)
-            for sensitivity_key, sensitivity in sensitivities.items():
-                if sensitivity.get("status") != "available":
-                    continue
-                amplitude = calibrated_amplitude_from_unit_sensitivity(
-                    target_peak_delta_x_m=target_peak_delta_x_m,
-                    peak_delta_x_per_unit_m=float(sensitivity["peak_delta_x_per_unit"]),
-                )
-                scaled = _set_perturbation_amplitude(
-                    sensitivity["perturbation"],
-                    amplitude=float(amplitude),
-                    suffix=(
-                        f"{sensitivity_key}__{reach.label}__{level.name}"
-                        f"__target_{target_peak_delta_x_m * 1000.0:.3f}mm"
-                    ),
-                )
-                rows.append(
-                    _evaluate_calibration_row(
-                        scaled,
-                        amplitude_factor=float(amplitude)
-                        / float(sensitivity["perturbation"]["amplitude"]),
-                        reach=reach,
-                        level=level,
-                        target_peak_delta_x_m=target_peak_delta_x_m,
-                        context=context,
-                        base=base,
-                        base_cost=base_cost,
-                        sensitivity=sensitivity,
-                    )
-                )
-    for sensitivity in sensitivities.values():
-        if sensitivity.get("status") != "available":
-            continue
-        rows.append(
-            {
-                "row_kind": "unit_sensitivity",
-                "sensitivity_id": sensitivity["sensitivity_id"],
-                "perturbation_id": sensitivity["perturbation_id"],
-                "channel": sensitivity["channel"],
-                "family": sensitivity["family"],
-                "axis": sensitivity.get("axis"),
-                "sign": sensitivity.get("sign"),
-                "timing_bin": sensitivity.get("timing_bin"),
-                "timing": sensitivity.get("timing"),
-                "amplitude": 1.0,
-                "open_loop_peak_delta_x_per_unit_m": sensitivity["peak_delta_x_per_unit"],
-                "open_loop_auc_delta_x_per_unit_m_s": sensitivity["auc_delta_x_per_unit"],
-                "selection_rule": sensitivity["selection_rule"],
-                "open_loop": sensitivity["open_loop"],
-            }
-        )
-    manifest = {
-        "schema_version": SCHEMA_VERSION,
-        "issue": result_experiment,
-        "bank_schema_version": bank["schema_version"],
-        "scope": "extlqg_nominal_command_open_loop_physical_effect_calibration",
-        "calibration_mode": "reach_relative_peak_delta_x",
-        "reach_points": [reach.to_json() for reach in reach_points],
-        "level_definitions": [level.to_json() for level in levels],
-        "plant_timing_bins": [timing_bin.to_json() for timing_bin in plant_timing_bins],
-        "controller_visible_timing_bins": [
-            timing_bin.to_json() for timing_bin in controller_visible_timing_bins
-        ],
-        "native_conventions": [convention.to_json() for convention in native_conventions],
-        "legacy_fixed_mm_amplitude_factors": list(amplitude_factors),
-        "target_rule": "target_peak_delta_x_m = reach_length_m * fraction_of_reach",
-        "selection_rule": (
-            "For timed plant-side rows, calibrate one unit sensitivity for each "
-            "family x plant timing bin, using x axis, positive sign, and stable "
-            "perturbation_id tie-breaks. Initial-condition rows keep t=0 and one "
-            "unit sensitivity per family. Reach and severity rows are derived by "
-            "scaling those unit sensitivities; they are not independently calibrated."
-        ),
-        "open_loop_replay_geometry": {
-            "nominal_reach_length_m": 0.15,
-            "note": (
-                "The extLQG comparator helper currently replays nominal commands on "
-                "the canonical 0.15 m +x target. The reach-relative calibration "
-                "varies the requested physical-effect target by declared reach "
-                "length; it does not retrain or rebuild multi-target extLQG rows."
-            ),
-        },
-        "open_loop_reference": {
-            "controller": "extLQG nominal command replay",
-            "feedback_correction": False,
-            "role": (
-                "define physical perturbation bins by peak delta x before feedback "
-                "correction; closed-loop extLQG metrics are reported at the same "
-                "amplitudes only for interpretation"
-            ),
-        },
-        "nominal_gru_baseline_for_later_closed_loop_calibration": DEFAULT_NOMINAL_GRU_BASELINE,
-        "consumed_data_identities": _consumed_default_identities() if defaults_used else [],
-        "bulk_manifest_path": _repo_relative(output_path, repo_root=repo_root),
-        "regeneration_spec_path": repo_relative(regeneration_spec_path, repo_root=repo_root),
-        "rows": rows,
-        "family_summary": _summarize_reach_relative_rows(rows),
-    }
-    output_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    update_marked_section(
-        note_path,
-        "perturbation_open_loop_calibration",
-        render_calibration_markdown(manifest),
-    )
-    _write_calibration_regeneration_spec(
-        spec_path=regeneration_spec_path,
-        output_path=output_path,
-        note_path=note_path,
-        manifest=manifest,
-        amplitude_factors=amplitude_factors,
-        result_experiment=result_experiment,
-        repo_root=repo_root,
-    )
-    return manifest
-
-
 def default_amplitude_factors() -> tuple[float, ...]:
     """Return adopted amplitude factors from the governed defaults product."""
 
     return load_perturbation_calibration_defaults().amplitude_factors
+
+
+def calibration_origin_metadata() -> Mapping[str, str]:
+    """Return governed provenance for the nominal closed-loop calibration origin."""
+
+    origin = load_analysis_parameter_preset("gru_perturbation_calibration").parameters[
+        "origin_baseline"
+    ]
+    return {str(key): str(value) for key, value in origin.items()}
 
 
 def default_reach_calibration_points() -> tuple[ReachCalibrationPoint, ...]:
@@ -291,138 +93,6 @@ def default_native_conventions() -> tuple[NativeConvention, ...]:
     """Return adopted native conventions from the governed defaults product."""
 
     return load_perturbation_calibration_defaults().native_conventions
-
-
-def calibrated_amplitude_from_unit_sensitivity(
-    *,
-    target_peak_delta_x_m: float,
-    peak_delta_x_per_unit_m: float,
-) -> float:
-    """Return amplitude derived from a unit open-loop sensitivity."""
-
-    if peak_delta_x_per_unit_m <= 0.0:
-        raise ValueError("peak_delta_x_per_unit_m must be positive")
-    return float(target_peak_delta_x_m) / float(peak_delta_x_per_unit_m)
-
-
-def render_calibration_markdown(manifest: Mapping[str, Any]) -> str:
-    """Render a compact calibration summary."""
-
-    lines = [
-        "# Perturbation Open-Loop Calibration",
-        "",
-        f"- Issue: `{manifest['issue']}`",
-        f"- Scope: `{manifest['scope']}`",
-        "- Open-loop reference: extLQG nominal command replay.",
-        "- Closed-loop extLQG is reported at the same amplitudes where supported.",
-        "- Calibration mode: reach-relative peak `delta x`, with target peak "
-        "`delta x = fraction * reach_length`.",
-        "- Unit sensitivities are calibrated by perturbation family and timing bin; "
-        "reach/level rows are deterministic scalings from those sensitivities, not "
-        "independent calibrations.",
-        "- Replay geometry: canonical 0.15 m +x extLQG nominal command replay; "
-        "the reach-relative targets vary the requested physical effect size, not "
-        "the nominal replay task.",
-        "- GRU baseline for later closed-loop calibration: "
-        f"`{manifest['nominal_gru_baseline_for_later_closed_loop_calibration']['experiment']}` / "
-        f"`{manifest['nominal_gru_baseline_for_later_closed_loop_calibration']['run_id']}` "
-        "(single-target nominal-only; documented for later closed-loop comparison, "
-        "not retrained here).",
-        f"- Bulk row manifest: `{manifest.get('bulk_manifest_path', 'not_materialized')}`",
-        f"- Regeneration spec: `{manifest.get('regeneration_spec_path', 'not_materialized')}`",
-        "",
-        "## Deterministic Config",
-        "",
-        "Reach lengths:",
-        "",
-        "| Label | Split | Reach length | Role |",
-        "|---|---|---:|---|",
-    ]
-    for reach in manifest["reach_points"]:
-        lines.append(
-            f"| `{reach['label']}` | {reach['split']} | "
-            f"{_fmt_mm(reach['reach_length_m'])} | {reach['role']} |"
-        )
-    lines.extend(
-        [
-            "",
-            "Levels:",
-            "",
-            "| Level | Fraction of reach | Role |",
-            "|---|---:|---|",
-        ]
-    )
-    for level in manifest["level_definitions"]:
-        lines.append(
-            f"| `{level['name']}` | {100.0 * float(level['fraction_of_reach']):.1f}% | "
-            f"{level['role']} |"
-        )
-    lines.extend(
-        [
-            "",
-            "Plant-side timing bins:",
-            "",
-            "| Bin | Start step | Duration | Role |",
-            "|---|---:|---:|---|",
-        ]
-    )
-    for timing_bin in manifest.get("plant_timing_bins", []):
-        lines.append(
-            f"| `{timing_bin['label']}` | {timing_bin['start_time_index']} | "
-            f"{timing_bin['duration_steps']} | {timing_bin['role']} |"
-        )
-    lines.extend(
-        [
-            "",
-            "Controller-visible/native conventions:",
-            "",
-            "| Family | Channel | Native rule | Timing rule | Report metric |",
-            "|---|---|---|---|---|",
-        ]
-    )
-    for convention in manifest.get("native_conventions", []):
-        lines.append(
-            f"| `{convention['family']}` | `{convention['channel']}` | "
-            f"{convention['native_unit_rule']} | {convention['timing_rule']} | "
-            f"{convention['report_metric']} |"
-        )
-    lines.extend(
-        [
-            "",
-            "## Selected Reach-Relative Amplitudes",
-            "",
-            "| Reach | Level | Family | Timing bin | Amplitude | Target peak dx | Achieved peak dx | "
-            "Achieved % reach | AUC dx | Notes |",
-            "|---|---|---|---|---:|---:|---:|---:|---:|---|",
-        ]
-    )
-    for row in _selected_calibration_rows(manifest["rows"]):
-        notes = row.get("warning") or "none"
-        lines.append(
-            f"| `{row['reach_label']}` | `{row['level_name']}` | `{row['family']}` | "
-            f"`{row.get('timing_bin', 'initial_condition')}` | "
-            f"{_fmt(row['amplitude'])} | "
-            f"{_fmt_mm(row['target_peak_delta_x_m'])} | "
-            f"{_fmt_mm(row['achieved_peak_delta_x_m'])} | "
-            f"{_fmt_pct(row['achieved_peak_delta_x_fraction_of_reach'])} | "
-            f"{_fmt(row.get('achieved_auc_delta_x_m_s'))} | "
-            f"{notes} |"
-        )
-    lines.extend(
-        [
-            "",
-            "## Rerun Command",
-            "",
-            "```bash",
-            "uv run python scripts/materialize_perturbation_open_loop_calibration.py",
-            "```",
-            "",
-            "Bulk per-row data is written under `_artifacts/1ad3c16/...`; keep it out of "
-            "`results/`.",
-        ]
-    )
-    lines.append("")
-    return "\n".join(lines)
 
 
 def _evaluate_calibration_row(
@@ -811,95 +481,6 @@ def _summarize_reach_relative_family(rows: Sequence[Mapping[str, Any]]) -> dict[
     }
 
 
-def _write_calibration_regeneration_spec(
-    *,
-    spec_path: Path,
-    output_path: Path,
-    note_path: Path,
-    manifest: Mapping[str, Any],
-    amplitude_factors: Sequence[float],
-    result_experiment: str,
-    repo_root: Path,
-) -> dict[str, Any]:
-    command = [
-        "uv",
-        "run",
-        "python",
-        "scripts/materialize_perturbation_open_loop_calibration.py",
-        "--result-experiment",
-        result_experiment,
-        "--output-path",
-        repo_relative(output_path, repo_root=repo_root),
-        "--note-path",
-        repo_relative(note_path, repo_root=repo_root),
-        "--regeneration-spec-path",
-        repo_relative(spec_path, repo_root=repo_root),
-    ]
-    for factor in amplitude_factors:
-        command.extend(["--amplitude-factor", str(float(factor))])
-    source_model = dict(DEFAULT_NOMINAL_GRU_BASELINE)
-    source_run_ids = [
-        str(source_model["run_id"]),
-        "extLQG nominal command replay",
-    ]
-    return write_regeneration_spec(
-        spec_path=spec_path,
-        diagnostic_name="perturbation_open_loop_calibration",
-        materializer=(
-            "rlrmp.analysis.pipelines.gru_perturbation_calibration."
-            "materialize_perturbation_open_loop_calibration"
-        ),
-        command=command,
-        parameters={
-            "result_experiment": result_experiment,
-            "amplitude_factors": [float(factor) for factor in amplitude_factors],
-            "consumed_data_identities": manifest.get("consumed_data_identities", []),
-            "source_model": source_model,
-            "source_run_ids": source_run_ids,
-            "reach_points": manifest.get("reach_points", []),
-            "level_definitions": manifest.get("level_definitions", []),
-            "plant_timing_bins": manifest.get("plant_timing_bins", []),
-            "controller_visible_timing_bins": manifest.get(
-                "controller_visible_timing_bins",
-                [],
-            ),
-        },
-        inputs=[
-            {
-                "role": "perturbation_bank",
-                "description": "default_cs_perturbation_bank generated in-process",
-                "bank_schema_version": manifest.get("bank_schema_version"),
-            },
-            {
-                "role": "source_model",
-                "description": "declared nominal GRU baseline for later closed-loop calibration",
-                **source_model,
-            },
-            {
-                "role": "source_run_ids",
-                "run_ids": source_run_ids,
-            },
-        ],
-        outputs=[
-            {"role": "calibration_bulk_manifest", "path": output_path},
-            {"role": "calibration_markdown_note", "path": note_path},
-        ],
-        source_files=[
-            "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py",
-            "scripts/materialize_perturbation_open_loop_calibration.py",
-            "src/rlrmp/analysis/pipelines/diagnostic_provenance.py",
-        ],
-        notes=[
-            (
-                "Open-loop calibration replays extLQG nominal commands; "
-                "it does not regenerate GRU model outputs."
-            ),
-            "Nominal GRU baseline metadata is recorded for later closed-loop calibration context.",
-        ],
-        repo_root=repo_root,
-    )
-
-
 def _consumed_default_identities() -> list[dict[str, str]]:
     from rlrmp.runtime.training_run_specs import add_consumed_data_identity
 
@@ -946,49 +527,19 @@ def _selected_calibration_rows(rows: Sequence[Mapping[str, Any]]) -> list[Mappin
     )
 
 
-def _fmt(value: float | None) -> str:
-    if value is None:
-        return "n/a"
-    if abs(value) >= 1e3 or (abs(value) > 0.0 and abs(value) < 1e-3):
-        return f"{value:.4e}"
-    return f"{value:.6g}"
-
-
-def _fmt_mm(value_m: float | None) -> str:
-    if value_m is None:
-        return "n/a"
-    return f"{float(value_m) * 1000.0:.3f} mm"
-
-
-def _fmt_pct(value: float | None) -> str:
-    if value is None:
-        return "n/a"
-    return f"{100.0 * float(value):.3f}%"
-
-
-def _repo_relative(path: Path, *, repo_root: Path) -> str:
-    try:
-        return str(path.relative_to(repo_root))
-    except ValueError:
-        return str(path)
-
-
 __all__ = [
     "DEFAULT_CONTROLLER_VISIBLE_FORCE_FILTER_SCALE_N",
-    "DEFAULT_NOMINAL_GRU_BASELINE",
-    "DEFAULT_REGENERATION_SPEC_FILENAME",
     "NativeConvention",
     "ReachCalibrationPoint",
     "ReachRelativeLevel",
     "SCHEMA_VERSION",
     "TimingCalibrationBin",
     "calibrated_amplitude_from_unit_sensitivity",
+    "calibration_origin_metadata",
     "default_amplitude_factors",
     "default_controller_visible_timing_bins",
     "default_native_conventions",
     "default_plant_timing_bins",
     "default_reach_calibration_points",
     "default_reach_relative_levels",
-    "materialize_perturbation_open_loop_calibration",
-    "render_calibration_markdown",
 ]

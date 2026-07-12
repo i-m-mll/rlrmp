@@ -1,4 +1,4 @@
-"""Tests for the steady-state GRU perturbation bank."""
+"""Tests for steady-state perturbation transforms and reductions."""
 
 from __future__ import annotations
 
@@ -7,21 +7,21 @@ import jax.numpy as jnp
 import numpy as np
 from pathlib import Path
 
-from rlrmp.analysis.pipelines.gru_steady_state_perturbation_bank import (
+from rlrmp.analysis.steady_state_perturbation import (
     FeedbackPerturbation,
-    SteadyStatePerturbationBankConfig,
     aggregate_family_profiles,
-    build_response_figure,
     default_feedback_perturbations,
-    identity_condition,
-    make_steady_state_trial_specs,
-    pad_feedback_offset_inputs,
     right_handed_orthogonal_direction,
     signed_pair_antisymmetry,
     slim_steady_state_manifest,
     summarize_feedback_row,
 )
 from rlrmp.eval.gru_diagnostics import RolloutEvaluation
+from rlrmp.eval.steady_state import (
+    SteadyStatePerturbationBankConfig,
+    make_steady_state_trial_specs,
+    pad_feedback_offset_inputs,
+)
 
 
 class CartesianState(eqx.Module):
@@ -297,40 +297,6 @@ def test_summarize_feedback_row_stores_orthogonal_plant_projections() -> None:
     assert row["projection_basis"]["orthogonal_convention"] == "right_handed_plus_90_degrees_xy"
 
 
-def test_response_figure_adds_solid_lower_emphasis_orthogonal_traces_to_all_rows() -> None:
-    conditions = {
-        "a": {
-            "label": "A",
-            "family_summary": {"position": _family_summary()},
-        },
-        "b": {
-            "label": "B",
-            "family_summary": {"position": _family_summary()},
-        },
-    }
-
-    figure = build_response_figure(
-        comparison_title="test",
-        conditions=conditions,
-        dt=0.01,
-        pulse_duration_steps=5,
-    )
-
-    legend_traces = [trace for trace in figure.data if trace.showlegend]
-    assert [trace.name for trace in legend_traces] == [
-        "A aligned",
-        "A orthogonal",
-        "B aligned",
-        "B orthogonal",
-    ]
-    orthogonal_traces = [trace for trace in figure.data if trace.name == "A orthogonal"]
-    assert len(orthogonal_traces) == 3
-    for trace in orthogonal_traces:
-        assert trace.line.dash == "solid"
-        assert trace.line.width < 2.1
-        assert "0.6" in trace.line.color
-
-
 def test_feedback_offset_padding_preserves_existing_components() -> None:
     trials = _trial_spec(horizon=12, feedback_dim=4)
 
@@ -340,13 +306,6 @@ def test_feedback_offset_padding_preserves_existing_components() -> None:
     assert payload.shape == (1, 12, 6)
     np.testing.assert_allclose(payload[..., :4], 0.0)
     np.testing.assert_allclose(payload[..., 4:], 0.0)
-
-
-def test_identity_condition_accepts_run_override() -> None:
-    condition = identity_condition("pgd", "PGD", run_id="run-b")
-
-    assert condition.condition_id == "pgd"
-    assert condition.run_id == "run-b"
 
 
 def test_slim_manifest_moves_profiles_and_adapter_detail_to_bulk(tmp_path: Path) -> None:
@@ -370,7 +329,7 @@ def test_slim_manifest_moves_profiles_and_adapter_detail_to_bulk(tmp_path: Path)
     }
     detail = {
         "schema_version": "test",
-        "issue": "87424a4",
+        "issue": "fixture-wave",
         "n_rollout_trials": 4,
         "pulse_duration_steps": 5,
         "comparisons": {
@@ -403,7 +362,7 @@ def test_slim_manifest_moves_profiles_and_adapter_detail_to_bulk(tmp_path: Path)
                         "family_summary": aggregate_family_profiles([row]),
                     }
                 },
-                "figure": {"spec_path": "results/87424a4/figures/cmp/spec.json"},
+                "figure": {"spec_path": "results/fixture-wave/figures/cmp/spec.json"},
             }
         },
     }
@@ -411,13 +370,13 @@ def test_slim_manifest_moves_profiles_and_adapter_detail_to_bulk(tmp_path: Path)
     slim = slim_steady_state_manifest(
         detail,
         detail_manifest_path=(
-            tmp_path / "_artifacts" / "87424a4" / "notes" / "steady_state_detail.json"
+            tmp_path / "_artifacts" / "fixture-wave" / "notes" / "steady_state_detail.json"
         ),
         repo_root=tmp_path,
     )
 
     assert slim["bulk_detail_manifest"]["path"] == (
-        "_artifacts/87424a4/notes/steady_state_detail.json"
+        "_artifacts/fixture-wave/notes/steady_state_detail.json"
     )
     condition = slim["comparisons"]["cmp"]["conditions"]["a"]
     slim_row = condition["rows"][0]

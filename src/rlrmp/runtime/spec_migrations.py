@@ -345,7 +345,7 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
                 "rlrmp.analysis.declarative_materialization",
             ),
             consumed_by=(
-                "rlrmp.analysis.pipelines.gru_perturbation_calibration",
+                "rlrmp.data_products.calibration_computation",
                 "rlrmp.analysis.pipelines.gru_feedback_ablation",
                 "rlrmp perturbation-response diagnostics",
             ),
@@ -390,7 +390,7 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             PERTURBATION_OPEN_LOOP_CALIBRATION_KIND,
             PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_ID,
             PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_VERSION,
-            emitted_by=("rlrmp.analysis.pipelines.gru_perturbation_calibration",),
+            emitted_by=("rlrmp.data_products.calibration_computation",),
             consumed_by=(
                 "rlrmp.eval.perturbation_bank",
                 "rlrmp perturbation calibration notes",

@@ -14,7 +14,7 @@ from rlrmp.analysis.perturbation_rows import (
     PerturbationSpec,
 )
 from rlrmp.eval.perturbation_bank import default_cs_perturbation_bank
-from rlrmp.analysis.pipelines.gru_steady_state_perturbation_bank import (
+from rlrmp.analysis.steady_state_perturbation import (
     default_feedback_perturbations,
 )
 
@@ -68,8 +68,7 @@ def _row_for_channel(channel: PerturbationChannel) -> dict[str, Any]:
     return common
 
 
-def test_default_perturbation_banks_round_trip_through_schema(
-) -> None:
+def test_default_perturbation_banks_round_trip_through_schema() -> None:
     banks = [
         default_cs_perturbation_bank(),
         default_cs_perturbation_bank(
