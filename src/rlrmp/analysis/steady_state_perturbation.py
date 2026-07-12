@@ -10,7 +10,7 @@ from typing import Any, Literal
 import numpy as np
 
 from rlrmp.analysis.perturbation_rows import PerturbationSpec
-from rlrmp.analysis.pipelines.diagnostic_provenance import repo_relative
+from rlrmp.paths import portable_repo_path
 from rlrmp.eval.gru_diagnostics import RolloutEvaluation
 from rlrmp.eval.steady_state import SteadyStatePerturbationBankConfig
 from rlrmp.model.feedback_descriptors import (
@@ -142,7 +142,7 @@ def slim_steady_state_manifest(
 
     slim = {key: value for key, value in manifest.items() if key not in {"comparisons", "outputs"}}
     slim["bulk_detail_manifest"] = {
-        "path": repo_relative(detail_manifest_path, repo_root=repo_root),
+        "path": portable_repo_path(detail_manifest_path, repo_root=repo_root),
         "format": "json",
         "contains": (
             "full steady-state comparison payloads, dense response profiles, "

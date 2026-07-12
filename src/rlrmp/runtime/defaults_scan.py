@@ -12,7 +12,6 @@ from typing import Any
 
 SCAN_TARGETS = (
     "src/rlrmp/eval/",
-    "src/rlrmp/analysis/pipelines/",
     "src/rlrmp/analysis/reports.py",
     "src/rlrmp/runtime/training_run_specs.py",
     "src/rlrmp/train/cs_nominal_gru.py",

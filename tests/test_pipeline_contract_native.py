@@ -96,11 +96,8 @@ class PipelineModuleFacts:
 def test_pipeline_contract_scan_is_non_vacuous() -> None:
     facts = _scan_pipeline_tree()
 
-    # The response-norm and objective/phenotype stranglers retired pipeline-owned modules.
-    assert len(facts) >= 3, "pipeline module scan found too few modules"
-    assert not any(f.path.endswith("gru_feedback_ablation.py") for f in facts)
-    assert len({f.path for f in facts}) == len(facts), "pipeline scan emitted duplicate modules"
-    assert any(f.path.endswith("gru_pilot_figures.py") and f.requires_allowlist for f in facts)
+    assert not list(PIPELINE_ROOT.glob("*.py"))
+    assert facts == []
 
 
 def test_pipeline_contract_native_bypass_modules_match_allowlist() -> None:
@@ -120,7 +117,6 @@ def test_pipeline_contract_allowlist_has_no_dead_entries() -> None:
 def test_pipeline_contract_allowlist_entries_carry_owner_and_reason() -> None:
     issue_re = re.compile(r"^[0-9a-f]{7}$")
     entries = _load_allowlist_entries()
-    assert entries, "pipeline contract-native allowlist declares zero bypass modules"
     for entry in entries:
         assert issue_re.match(entry.owner), (
             f"Allowlist entry {entry} is missing a 7-character owning issue"

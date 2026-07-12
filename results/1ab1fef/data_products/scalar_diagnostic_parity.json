@@ -1,0 +1,7 @@
+{
+  "schema_version": "rlrmp.figure_parity.scalar_diagnostic.v1",
+  "source_summary": "_artifacts/1ab1fef/figures/adaptive_damage_lambda/summary.json",
+  "source_series": "_artifacts/1ab1fef/figures/adaptive_damage_lambda/series.csv",
+  "collection_cardinality": 1,
+  "series": ["target_damage", "full_strength_damage", "applied_scaled_damage", "lambda", "epsilon_scale"]
+}

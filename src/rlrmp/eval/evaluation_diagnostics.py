@@ -36,7 +36,9 @@ from rlrmp.runtime.run_spec_access import require_run_dt, require_run_seed
 from rlrmp.train.task_model import setup_task_model_pair
 
 DEFAULT_N_ROLLOUT_TRIALS = int(
-    load_analysis_parameter_preset("gru_pilot_figures").parameters["n_rollout_trials"]
+    load_analysis_parameter_preset("gru_evaluation_diagnostics").parameters[
+        "n_rollout_trials"
+    ]
 )
 
 
