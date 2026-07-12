@@ -153,6 +153,15 @@ expected_collection_pattern = "tests/test_reaccretion_ratchet.py::"
 minimum_non_skipped = 5
 
 [[families]]
+name = "experiment_kpi_gates"
+owner = "49dc66d"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_experiment_kpi_gates.py::"
+minimum_non_skipped = 5
+negative_canary = "tests/test_experiment_kpi_gates.py::test_materialization_gate_negative_canary_rejects_semantic_patterns"
+
+[[families]]
 name = "native_executor_deletion_gate"
 owner = "b13e0e4"
 status = "live"

@@ -1,0 +1,19 @@
+# Historical tracked expanded/resolved spec payloads. The gate is shrink-only:
+# stale entries are harmless and may be deleted after migration; every new
+# detected path fails until deliberately enumerated with an owner and rationale.
+schema_version = 1
+
+[[violations]]
+path = "results/c6c5997/runs/matrix.json"
+owner = "1b227dd"
+reason = "Historical matrix with a fully expanded base.inline; storage-adoption sibling migrates it."
+
+[[violations]]
+path = "results/ef9c882/runs/matrix.json"
+owner = "49dc66d"
+reason = "Pre-gate historical matrix with a fully expanded base.inline; retained as stock, not a pattern for new experiments."
+
+[[violations]]
+path = "results/3cd018b/runs/ramp3500_to1000/feedbax_training_run_spec.json"
+owner = "49dc66d"
+reason = "Pre-gate historical resolved TrainingRunSpec with an expanded graph.inline; retained as stock."
