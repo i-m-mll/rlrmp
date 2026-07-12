@@ -1,0 +1,36 @@
+{
+  "issue": "e148f33",
+  "piece_name": "rlrmp.profile_e148f33_nominal_velocity",
+  "condition": "Nominal fixed +x validation reach",
+  "output": {
+    "artifact_id": "artifact:sha256:70a6e6bc0a0ba9ffeb9470bc5bf2fdd9b0cfb1e7f28b68f6337d6bf8c3d8526d",
+    "logical_name": "e148f33/nominal_velocity_profile_comparison/profile_payload.json",
+    "media_type": "application/json",
+    "role": "profile_figure_payload",
+    "sha256": "70a6e6bc0a0ba9ffeb9470bc5bf2fdd9b0cfb1e7f28b68f6337d6bf8c3d8526d",
+    "uri": "_artifacts/e148f33/figures/nominal_velocity_profile_comparison/profile_payload.json"
+  },
+  "schema_id": "rlrmp.spec.figure_profile_payload",
+  "schema_version": "rlrmp.spec.figure_profile_payload.v1",
+  "series": [
+    {"label": "adaptive_curriculum_3500to1000 final", "mean_column": "adaptive_curriculum_3500to1000_final_mean_m_s", "spread_column": "adaptive_curriculum_3500to1000_final_std_m_s", "spread_kind": "sd", "color": "#2563eb"},
+    {"label": "08483d5 no-PGD 12k baseline", "mean_column": "no_pgd_12k_baseline_mean_m_s", "spread_column": "no_pgd_12k_baseline_std_m_s", "spread_kind": "sd", "color": "#059669"},
+    {"label": "6D analytical extLQG nominal", "mean_column": "six_d_analytical_extlqg_nominal_mean_m_s", "spread_column": "six_d_analytical_extlqg_nominal_std_m_s", "spread_kind": "sd", "color": "#111827", "line_dash": "dash"},
+    {"label": "6D output-feedback H-infinity nominal", "mean_column": "output_feedback_hinf_nominal_mean_m_s", "spread_column": "output_feedback_hinf_nominal_std_m_s", "spread_kind": "sd", "color": "#dc2626", "line_dash": "dot"}
+  ],
+  "source_csv": {
+    "logical_name": "e148f33/nominal_velocity_profile_comparison/velocity_profile_comparison.csv",
+    "media_type": "text/csv",
+    "role": "profile_csv",
+    "sha256": "b0bb6b42e2923b5e4f22cbf9af55080d405ec4ebfea98d799ebe25e8ef726a93",
+    "uri": "_artifacts/e148f33/figures/nominal_velocity_profile_comparison/velocity_profile_comparison.csv"
+  },
+  "source_summary": {
+    "logical_name": "e148f33/nominal_velocity_profile_comparison/figure_summary.json",
+    "media_type": "application/json",
+    "role": "profile_summary",
+    "sha256": "66943f864d8b118c30ff0992507e9723ecf3a8285c0c4fade659032bdf6c32fc",
+    "uri": "_artifacts/e148f33/figures/nominal_velocity_profile_comparison/figure_summary.json"
+  },
+  "topic": "nominal_velocity_profile_comparison"
+}

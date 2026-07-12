@@ -1,24 +1,32 @@
 {
-  "inputs": {
-    "h0_no_pgd_npz": "_artifacts/020a65b/evaluation_diagnostics/gru_h0_pgd_bank_two_rows_validation_selected/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64.npz",
-    "h0_no_pgd_run_spec": "results/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/run.json",
-    "h0_pgd_npz": "_artifacts/020a65b/evaluation_diagnostics/gru_h0_pgd_bank_two_rows_validation_selected/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64.npz"
+  "assembler_params": {
+    "height": 560,
+    "panel_constructor": "rlrmp.profile_grid",
+    "title": "6D analytical output-feedback vs 020a65b h0 nominal velocity",
+    "width": 920
   },
-  "issue": "376d023",
-  "materializer": "results/376d023/scripts/materialize_6d_analytical_velocity_profiles.py",
-  "no_training_or_remote_gpu": true,
-  "outputs": {
-    "csv": "_artifacts/376d023/figures/6d_analytical_velocity_profiles/velocity_profile_overlay.csv",
-    "html": "_artifacts/376d023/figures/6d_analytical_velocity_profiles/velocity_profile_overlay.html",
-    "summary": "_artifacts/376d023/figures/6d_analytical_velocity_profiles/figure_summary.json",
-    "teacher_manifest": "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers_manifest.json",
-    "teacher_package": "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers.npz"
+  "facet_bindings": {
+    "condition": {"item": "params", "path": "conditions"}
   },
-  "plot_contract": {
-    "analytical_samples": 320,
-    "bands": "mean +/- 1 SD over pooled stochastic samples",
-    "gru_samples_per_row": 320,
-    "time_axis": "0.00s through 0.60s; GRU diagnostics prepend zero initial velocity"
+  "figure_routing": {"render_format": "html"},
+  "metadata": {"conditions": {"Nominal +x reach": {}}},
+  "name": "376d023-6d-analytical-velocity-profiles",
+  "panels": [
+    {
+      "axes_labels": {"x": "Time (s)", "y": "Forward velocity (m/s)"},
+      "name": "profile",
+      "title": {"item": "condition"}
+    }
+  ],
+  "schema_id": "feedbax.spec.figure",
+  "schema_version": "feedbax.spec.figure.v1",
+  "slot_bindings": {
+    "profiles": {
+      "constructor": "rlrmp.profile_series",
+      "name": "analytical-profile-stock",
+      "piece": "rlrmp.profile_376d023_analytical_velocity",
+      "required": true
+    }
   },
-  "schema_version": "rlrmp.376d023.figure_spec.v1"
+  "template": "rlrmp.profile_comparison"
 }

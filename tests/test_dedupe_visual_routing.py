@@ -521,13 +521,6 @@ def test_owned_scalar_helpers_are_import_routed_not_redefined() -> None:
             "materialize_analytical_profiles",
             "repo_ref",
         },
-        "results/e148f33/scripts/materialize_nominal_velocity_profile_comparison.py": {
-            "initial_effector_velocity",
-            "json_ready",
-            "materialize_analytical_profiles",
-            "repo_ref",
-            "rgba",
-        },
     }
     for relative_path, names in expected_absent.items():
         tree = ast.parse((REPO_ROOT / relative_path).read_text(encoding="utf-8"))
