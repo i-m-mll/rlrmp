@@ -8,10 +8,13 @@ imports.  In particular, importing it and calling
 from __future__ import annotations
 
 import json
+import hashlib
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any
+
+from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
     from feedbax.contracts.run_matrix import TrainingRunMatrixSpec
@@ -67,11 +70,11 @@ class _PreparedExecution:
     resume_slot_transform: Any
 
 
-class LaunchBackend(Protocol):
-    """Backend boundary replaced by ASSEMBLE in issue 158b580."""
+class RowSelection(BaseModel):
+    """Operational row subset persisted in assembly-request metadata."""
 
-    def execute(self, row: LaunchRow, controls: LaunchRuntimeControls) -> Any:
-        """Execute or submit one already-compiled row."""
+    model_config = ConfigDict(extra="forbid")
+    row_ids: list[str] = Field(default_factory=list)
 
 
 def load_authored_training_intent(
@@ -124,7 +127,9 @@ def compile_authored_training_intent(launch: AuthoredLaunch) -> tuple[LaunchRow,
     materialized = materialize_run_matrix(launch.document, repo_root=launch.repo_root)
     unresolved = [row.row_id for row in materialized.rows if row.spec is None]
     if unresolved:
-        raise ValueError(f"matrix compiler did not resolve registered methods for rows: {unresolved}")
+        raise ValueError(
+            f"matrix compiler did not resolve registered methods for rows: {unresolved}"
+        )
     return tuple(
         LaunchRow(
             row_id=row.row_id,
@@ -152,24 +157,83 @@ def execute_authored_training_intent(
     *,
     row: str | None = None,
     controls: LaunchRuntimeControls | None = None,
-    backend: LaunchBackend | None = None,
-) -> tuple[Any, ...]:
-    """Compile and execute selected rows through the transitional boundary."""
+    driver: str = "local",
+    runpod_profile: Path | None = None,
+) -> Any:
+    """Execute through Feedbax's persisted ASSEMBLE-to-REGISTER lifecycle."""
+    from feedbax.orchestration import StageEngine
+    from feedbax.orchestration.conformance import build_core_check_registry
 
-    compiled = compile_authored_training_intent(launch)
-    selected = select_launch_rows(compiled, row)
-    active_backend = backend or TransitionalFeedbaxBackend()
     active_controls = controls or LaunchRuntimeControls()
-    return tuple(active_backend.execute(item, active_controls) for item in selected)
+    _validate_execute_controls(launch, active_controls)
+    request, context, registry = build_orchestration_request(launch, row=row, driver=driver)
+    fork_record = _run_fork_gate(launch, row=row)
+
+    def driver_factory(bundle: Any) -> Any:
+        return orchestration_driver_for_bundle(
+            bundle,
+            driver=driver,
+            repo_root=launch.repo_root,
+            controls=active_controls,
+            fork_record=fork_record,
+            runpod_profile=runpod_profile,
+        )
+
+    engine = StageEngine.from_request(
+        request,
+        context=context,
+        registry=registry,
+        driver_factory=driver_factory,
+        conformance_registry=build_core_check_registry(),
+    )
+    return engine.run()
 
 
-def launch_evidence(
-    rows: Sequence[LaunchRow], controls: LaunchRuntimeControls
-) -> dict[str, Any]:
+def orchestration_driver_for_bundle(
+    bundle: Any,
+    *,
+    driver: str,
+    repo_root: Path,
+    controls: LaunchRuntimeControls,
+    fork_record: tuple[Path, str] | None,
+    runpod_profile: Path | None,
+) -> Any:
+    """Construct the selected operational driver from explicit local inputs."""
+    from rlrmp.train.orchestration_drivers import (
+        RlrmpRunPodDriver,
+        local_driver_for_bundle,
+    )
+
+    if driver == "local":
+        if runpod_profile is not None:
+            raise ValueError("local driver does not accept a RunPod operational profile")
+        return local_driver_for_bundle(
+            bundle,
+            resume=controls.resume,
+            fork_record_path=(fork_record[0] if fork_record else None),
+            fork_record_sha256=(fork_record[1] if fork_record else None),
+            stop_after_batches=controls.stop_after_batches,
+        )
+    if driver == "runpod":
+        from rlrmp.train.runpod_profiles import load_runpod_profile
+
+        if runpod_profile is None:
+            raise ValueError("runpod driver requires --runpod-profile")
+        return RlrmpRunPodDriver(
+            config=load_runpod_profile(runpod_profile, repo_root=repo_root),
+            resume=controls.resume,
+            fork_record_path=(fork_record[0] if fork_record else None),
+            fork_record_sha256=(fork_record[1] if fork_record else None),
+            stop_after_batches=controls.stop_after_batches,
+        )
+    raise ValueError(f"unknown orchestration driver {driver!r}")
+
+
+def launch_evidence(rows: Sequence[LaunchRow], controls: LaunchRuntimeControls) -> dict[str, Any]:
     """Return the operational evidence attached to a planned transitional launch."""
 
     return {
-        "backend": "transitional_feedbax_direct",
+        "backend": "feedbax_orchestration",
         "rows": [{"row_id": item.row_id, "run_id": item.planned_run_id} for item in rows],
         "runtime_controls": {
             "resume": controls.resume,
@@ -198,119 +262,252 @@ def verify_resume_authored_training_intent(
     *,
     row: str | None = None,
     checkpoint_root: Path | None = None,
-    backend: TransitionalFeedbaxBackend | None = None,
 ) -> tuple[dict[str, Any], ...]:
     """Strictly verify selected rows can resume without running training steps."""
 
     selected = select_launch_rows(compile_authored_training_intent(launch), row)
-    active_backend = backend or TransitionalFeedbaxBackend()
     controls = LaunchRuntimeControls(
         resume=True,
         disable_progress=True,
         checkpoint_root=checkpoint_root,
     )
-    return tuple(active_backend.verify_resume(item, controls) for item in selected)
-
-
-class TransitionalFeedbaxBackend:
-    """Temporary direct Feedbax executor backend, deleted at ASSEMBLE cutover."""
-
-    def execute(self, row: LaunchRow, controls: LaunchRuntimeControls) -> Any:
-        """Execute one compiled row without minting a second run-set identity."""
-
-        from feedbax.training.executor import execute_training_run_spec
-
-        resume = controls.resume
-        if resume and controls.allow_fresh_start:
-            root = controls.checkpoint_root or _checkpoint_root(row.run_spec)
-            resume = (root / "latest.json").is_file()
-        prepared = self._prepare(row, resume=resume)
-
-        progress_callback = _progress_callback(controls)
-        cancellation_probe = _batch_limit_probe(controls.stop_after_batches)
-        return execute_training_run_spec(
-            row.run_spec,
-            run_id=row.planned_run_id,
-            initial_slots=prepared.initial_slots,
-            kernel_context=prepared.kernel_context,
-            loss_service=prepared.loss_service,
-            manifest_root=controls.manifest_root,
-            checkpoint_root=controls.checkpoint_root,
-            resume=resume,
-            resume_slot_transform=prepared.resume_slot_transform,
-            progress_callback=progress_callback,
-            cancellation_probe=cancellation_probe,
-        )
-
-    def verify_resume(
-        self,
-        row: LaunchRow,
-        controls: LaunchRuntimeControls,
-    ) -> dict[str, Any]:
-        """Prepare executor inputs and strictly load the configured checkpoint."""
-
+    evidence = []
+    for item in selected:
         from feedbax.training.checkpoint_custody import load_latest_checkpoint
 
-        prepared = self._prepare(row, resume=True)
+        prepared = _prepare_execution(item, resume=True)
         if prepared.initial_slots is None:
             raise ValueError(
                 "strict resume verification requires an execution-preparation "
-                f"provider for method_ref {row.run_spec.method_ref.key!r}"
+                f"provider for method_ref {item.run_spec.method_ref.key!r}"
             )
-        root = controls.checkpoint_root or _checkpoint_root(row.run_spec)
-        continuation = row.run_spec.checkpoint_progress.continuation
+        root = controls.checkpoint_root or _checkpoint_root(item.run_spec)
+        continuation = item.run_spec.checkpoint_progress.continuation
         loaded = load_latest_checkpoint(
             root,
-            expected_run_spec=row.run_spec,
-            expected_phase_program=(
-                row.run_spec.worker_execution.method_contract.phase_program
-            ),
+            expected_run_spec=item.run_spec,
+            expected_phase_program=(item.run_spec.worker_execution.method_contract.phase_program),
             expected_slots=prepared.initial_slots,
             resume_slot_transform=prepared.resume_slot_transform,
             continuation_request=continuation,
             allow_new_lineage_override=continuation is not None,
         )
-        return {
-            "row_id": row.row_id,
-            "checkpoint_root": str(root),
-            "status": "valid",
-            "transaction_id": loaded.manifest.transaction_id,
-        }
-
-    def _prepare(self, row: LaunchRow, *, resume: bool) -> _PreparedExecution:
-        """Build the method-owned runtime context used by execute and verify."""
-
-        _enforce_x64_precondition(row.run_spec)
-        from feedbax.training import (
-            DEFAULT_EXECUTION_PREPARATION_PROVIDER_REGISTRY,
-            ExecutionPreparationRequest,
+        evidence.append(
+            {
+                "row_id": item.row_id,
+                "checkpoint_root": str(root),
+                "status": "valid",
+                "transaction_id": loaded.manifest.transaction_id,
+            }
         )
+    return tuple(evidence)
 
-        if (
-            DEFAULT_EXECUTION_PREPARATION_PROVIDER_REGISTRY.get(
-                row.run_spec.method_ref.key
-            )
-            is None
-        ):
-            return _PreparedExecution(
-                initial_slots=None,
-                kernel_context=None,
-                loss_service=None,
-                resume_slot_transform=None,
-            )
-        result = DEFAULT_EXECUTION_PREPARATION_PROVIDER_REGISTRY.prepare(
-            ExecutionPreparationRequest(
-                run_spec=row.run_spec,
-                run_id=row.planned_run_id,
-                resume=resume,
-            )
+
+def prepare_authored_training_rows(
+    launch: AuthoredLaunch, *, row: str | None = None, resume: bool = True
+) -> tuple[dict[str, Any], ...]:
+    """Construct real execution preparations without taking a training step."""
+    selected = select_launch_rows(compile_authored_training_intent(launch), row)
+    evidence = []
+    for item in selected:
+        prepared = _prepare_execution(item, resume=resume)
+        if prepared.initial_slots is None:
+            raise ValueError(f"row {item.row_id!r} has no execution preparation provider")
+        evidence.append(
+            {
+                "row_id": item.row_id,
+                "slot_names": sorted(prepared.initial_slots),
+                "has_kernel_context": prepared.kernel_context is not None,
+                "has_loss_service": prepared.loss_service is not None,
+            }
         )
-        return _PreparedExecution(
-            initial_slots=result.initial_slots,
-            kernel_context=result.kernel_context,
-            loss_service=result.loss_service,
-            resume_slot_transform=result.resume_slot_transform,
+    return tuple(evidence)
+
+
+def build_orchestration_request(
+    launch: AuthoredLaunch,
+    *,
+    row: str | None,
+    driver: str,
+) -> tuple[Any, Any, Any]:
+    """Build the durable request and RLRMP assembly dependencies."""
+    from feedbax.orchestration.assembly import (
+        AssemblyCompilerRegistry,
+        AssemblyContext,
+        AssemblyInputDeclaration,
+        CompilerIdentity,
+        RunAssemblyRequest,
+    )
+    from feedbax.orchestration.bundle import (
+        BudgetPolicy,
+        EnvironmentDeclaration,
+        LaunchPolicy,
+        SchemaArtifactRef,
+    )
+
+    from rlrmp.train.orchestration_compiler import (
+        COMPILER_ID,
+        COMPILER_VERSION,
+        register_orchestrated_training_compiler,
+    )
+    from rlrmp.train.orchestration_inputs import (
+        CheckpointTransactionInputResolver,
+        checkpoint_transaction_locator,
+    )
+
+    if getattr(launch.document.base, "kind", None) == "inline":
+        raise ValueError(
+            "orchestrated execute requires an emitted authored document; run "
+            "scripts/emit_training_run_matrix.py first"
         )
+    sidecar = launch.path.with_suffix(launch.path.suffix + ".artifact.json")
+    if not sidecar.is_file():
+        raise ValueError(
+            "authored matrix has no SchemaArtifactRef; run "
+            "scripts/emit_training_run_matrix.py first (execute never emits specs)"
+        )
+    authored_ref = SchemaArtifactRef.model_validate_json(sidecar.read_text(encoding="utf-8"))
+    metadata = launch.document.metadata
+    source_root = metadata.get("source_checkpoint_root")
+    transaction_id = metadata.get("source_checkpoint_transaction_id")
+    if not isinstance(source_root, str) or not isinstance(transaction_id, str):
+        raise ValueError("execute requires one common source checkpoint transaction")
+    root = (launch.repo_root / source_root).resolve()
+    manifest = root / "transactions" / transaction_id / "manifest.json"
+    if not manifest.is_file():
+        raise ValueError(f"source checkpoint transaction is missing: {transaction_id}")
+    manifest_digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
+    selection = RowSelection(row_ids=[] if row is None else [row])
+    available = {item.row_id for item in launch.document.rows}
+    unknown = set(selection.row_ids) - available
+    if unknown:
+        raise ValueError(f"unknown row ids in selection: {sorted(unknown)}")
+    request = RunAssemblyRequest(
+        authored=authored_ref,
+        compiler=CompilerIdentity(compiler_id=COMPILER_ID, compiler_version=COMPILER_VERSION),
+        inputs=[
+            AssemblyInputDeclaration(
+                role="source_checkpoint",
+                kind="checkpoint_transaction",
+                locator=checkpoint_transaction_locator(
+                    root,
+                    transaction_id=transaction_id,
+                    manifest_sha256=manifest_digest,
+                ),
+            )
+        ],
+        driver=driver,
+        environment=EnvironmentDeclaration(metadata={}),
+        launch_policy=LaunchPolicy(
+            max_parallel_rows=max(1, len(selection.row_ids) or len(available)),
+            warm_first=True,
+        ),
+        budget=BudgetPolicy(max_wall_clock_seconds=7 * 24 * 3600),
+        orchestration_root=str(launch.repo_root / "_artifacts" / "orchestration"),
+        metadata={"row_selection": selection.model_dump(mode="json")},
+    )
+    registry = AssemblyCompilerRegistry()
+    register_orchestrated_training_compiler(registry)
+    context = AssemblyContext(
+        custody_root=launch.repo_root / "_artifacts" / "orchestration-custody",
+        repo_root=launch.repo_root,
+        input_resolver=CheckpointTransactionInputResolver(),
+        authored_ref=authored_ref,
+    )
+    return request, context, registry
+
+
+def _validate_execute_controls(launch: AuthoredLaunch, controls: LaunchRuntimeControls) -> None:
+    continuation = launch.document.fork is not None
+    if controls.resume != continuation:
+        raise ValueError("--resume must match the authored continuation envelope")
+    source = launch.document.metadata.get("source_checkpoint_root")
+    if controls.checkpoint_root is not None and isinstance(source, str):
+        expected = (launch.repo_root / source).resolve()
+        if controls.checkpoint_root.resolve() != expected:
+            raise ValueError("--checkpoint-root must match the authored immutable input")
+    if controls.allow_fresh_start:
+        raise ValueError("--allow-fresh-start cannot override an immutable continuation")
+
+
+def _run_fork_gate(launch: AuthoredLaunch, *, row: str | None) -> tuple[Path, str] | None:
+    """Fork and verify derived row targets before ASSEMBLE."""
+    if launch.document.fork is None:
+        return None
+    from rlrmp.runtime.checkpoint_fork_gate import ForkTarget, fork_checkpoints_with_parity
+
+    selected = select_launch_rows(compile_authored_training_intent(launch), row)
+    source = launch.document.metadata.get("source_checkpoint_root")
+    if not isinstance(source, str):
+        raise ValueError("forked execute requires metadata.source_checkpoint_root")
+    targets = [ForkTarget(item.row_id, _checkpoint_root(item.run_spec)) for item in selected]
+    output = launch.repo_root / "_artifacts" / "orchestration" / "fork-parity.json"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    table = fork_checkpoints_with_parity(
+        matrix_path=launch.path,
+        source_checkpoint_root=(launch.repo_root / source).resolve(),
+        targets=targets,
+        parity_output_path=output,
+        repo_root=launch.repo_root,
+    )
+    source_transaction = launch.document.metadata.get("source_checkpoint_transaction_id")
+    source_manifest = (
+        (launch.repo_root / source).resolve()
+        / "transactions"
+        / str(source_transaction)
+        / "manifest.json"
+    )
+    targets_payload = []
+    transaction_by_row = {
+        str(item["row_id"]): str(item["transaction_id"])
+        for item in table.get("rows", [])
+        if item.get("transaction_id")
+    }
+    for target in targets:
+        transaction_id = transaction_by_row.get(target.row_id)
+        if transaction_id is None:
+            raise ValueError(f"fork gate emitted no target transaction for row {target.row_id!r}")
+        target_manifest = target.checkpoint_root / "transactions" / transaction_id / "manifest.json"
+        targets_payload.append(
+            {
+                "row_id": target.row_id,
+                "checkpoint_root": str(target.checkpoint_root.resolve()),
+                "transaction_id": transaction_id,
+                "manifest_sha256": hashlib.sha256(target_manifest.read_bytes()).hexdigest(),
+            }
+        )
+    binding_record = {
+        "schema_version": "rlrmp.fork_gate_binding.v1",
+        "parity": table,
+        "source_input": {
+            "transaction_id": source_transaction,
+            "manifest_sha256": hashlib.sha256(source_manifest.read_bytes()).hexdigest(),
+        },
+        "targets": targets_payload,
+    }
+    encoded = json.dumps(binding_record, sort_keys=True, separators=(",", ":")).encode() + b"\n"
+    output.write_bytes(encoded)
+    return output, hashlib.sha256(encoded).hexdigest()
+
+
+def _prepare_execution(row: LaunchRow, *, resume: bool) -> _PreparedExecution:
+    _enforce_x64_precondition(row.run_spec)
+    from feedbax.training import (
+        DEFAULT_EXECUTION_PREPARATION_PROVIDER_REGISTRY,
+        ExecutionPreparationRequest,
+    )
+
+    if DEFAULT_EXECUTION_PREPARATION_PROVIDER_REGISTRY.get(row.run_spec.method_ref.key) is None:
+        return _PreparedExecution(None, None, None, None)
+    result = DEFAULT_EXECUTION_PREPARATION_PROVIDER_REGISTRY.prepare(
+        ExecutionPreparationRequest(run_spec=row.run_spec, run_id=row.planned_run_id, resume=resume)
+    )
+    return _PreparedExecution(
+        result.initial_slots,
+        result.kernel_context,
+        result.loss_service,
+        result.resume_slot_transform,
+    )
 
 
 def _register_runtime() -> None:
@@ -376,15 +573,17 @@ def _checkpoint_root(run_spec: Any) -> Path:
 
 __all__ = [
     "AuthoredLaunch",
-    "LaunchBackend",
     "LaunchRow",
     "LaunchRuntimeControls",
-    "TransitionalFeedbaxBackend",
+    "RowSelection",
     "accepted_authored_document",
+    "build_orchestration_request",
     "compile_authored_training_intent",
     "execute_authored_training_intent",
     "launch_evidence",
     "load_authored_training_intent",
+    "orchestration_driver_for_bundle",
+    "prepare_authored_training_rows",
     "select_launch_rows",
     "verify_resume_authored_training_intent",
 ]

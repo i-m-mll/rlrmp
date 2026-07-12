@@ -1,0 +1,19 @@
+{
+  "schema_version": "rlrmp.runpod_operational_profile.v1",
+  "image": "runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04",
+  "gpu_id": "NVIDIA GeForce RTX 4090",
+  "datacenters": ["CA-MTL-1", "US-KS-2", "US-TX-3"],
+  "local_repos": {
+    "rlrmp": "{repo_root}",
+    "feedbax": "{feedbax_lane0}"
+  },
+  "remote_repos": {
+    "rlrmp": "/workspace/rlrmp",
+    "feedbax": "/workspace/feedbax"
+  },
+  "path_patches": [
+    ["/workspace/rlrmp/pyproject.toml", "../20 Feedbax/feedbax", "/workspace/feedbax"]
+  ],
+  "overlay_steps": ["uv pip install -U 'jax[cuda12]'"],
+  "auto_teardown": true
+}
