@@ -262,6 +262,7 @@ _CD137D8_CONFIG_TIER_ALLOWLIST = (
 )
 
 _OWNING_SCHEMA_DEFAULT_ALLOWLIST = (
+    "src/rlrmp/analysis/map_error_decomposition.py::MapErrorDecompositionParams::default_bundle",
     "src/rlrmp/analysis/math/adversary_equivalence.py::OpenLoopOptimizationConfig::default_bundle",
     "src/rlrmp/analysis/math/cs_released_simulation.py::CSReleasedStochasticNoiseConfig::default_bundle",
     "src/rlrmp/analysis/math/hinf_riccati.py::CostSpec::default_bundle",
@@ -269,13 +270,17 @@ _OWNING_SCHEMA_DEFAULT_ALLOWLIST = (
     "src/rlrmp/analysis/math/linear_round_trip.py::LinearOptimizationConfig::default_bundle",
     "src/rlrmp/analysis/math/linear_round_trip.py::TeacherFitConfig::default_bundle",
     "src/rlrmp/analysis/math/output_feedback.py::OutputFeedbackConfig::default_bundle",
-    "src/rlrmp/eval/steady_state.py::SteadyStatePerturbationBankConfig::default_bundle",
     "src/rlrmp/analysis/robustness_margin.py::RobustnessMarginParams::default_bundle",
+    "src/rlrmp/analysis/sisu_spectrum.py::SisuRobustificationAnalysisParams::default_bundle",
+    "src/rlrmp/analysis/worst_case_epsilon.py::WorstCaseEpsilonAnalysisParams::default_bundle",
     "src/rlrmp/cloud/modal_runner.py::NominalGruRunConfig::default_bundle",
     "src/rlrmp/eval/checkpoint_selection.py::DelayedReachEvalBankSpec::default_bundle",
     "src/rlrmp/eval/output_feedback_rollout_recovery.py::EigenspectrumCoverageConfig::default_bundle",
     "src/rlrmp/eval/output_feedback_rollout_recovery.py::ObserverErrorCoverageConfig::default_bundle",
     "src/rlrmp/eval/output_feedback_rollout_recovery.py::RolloutRecoveryCondition::default_bundle",
+    "src/rlrmp/eval/recipes.py::BroadEpsilonEvalParams::default_bundle",
+    "src/rlrmp/eval/recipes.py::WorstCaseEpsilonEvalParams::default_bundle",
+    "src/rlrmp/eval/steady_state.py::SteadyStatePerturbationBankConfig::default_bundle",
     "src/rlrmp/model/stochastic_runtime.py::StochasticRuntimeConfig::default_bundle",
     "src/rlrmp/train/distillation_native/closed_loop_kernel.py::ClosedLoopLossWeights::default_bundle",
     "src/rlrmp/train/distillation_native/losses.py::CSH0DistillationConfig::default_bundle",
