@@ -7,8 +7,9 @@ imports.  In particular, importing it and calling
 
 from __future__ import annotations
 
-import json
 import hashlib
+import json
+import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -336,11 +337,9 @@ def build_orchestration_request(
         AssemblyContext,
         AssemblyInputDeclaration,
         CompilerIdentity,
-        RunAssemblyRequest,
     )
     from feedbax.orchestration.bundle import (
         BudgetPolicy,
-        EnvironmentDeclaration,
         LaunchPolicy,
         SchemaArtifactRef,
     )
@@ -382,7 +381,7 @@ def build_orchestration_request(
     unknown = set(selection.row_ids) - available
     if unknown:
         raise ValueError(f"unknown row ids in selection: {sorted(unknown)}")
-    request = RunAssemblyRequest(
+    request = _build_assembly_request(
         authored=authored_ref,
         compiler=CompilerIdentity(compiler_id=COMPILER_ID, compiler_version=COMPILER_VERSION),
         inputs=[
@@ -397,7 +396,7 @@ def build_orchestration_request(
             )
         ],
         driver=driver,
-        environment=EnvironmentDeclaration(metadata={}),
+        repo_root=launch.repo_root,
         launch_policy=LaunchPolicy(
             max_parallel_rows=max(1, len(selection.row_ids) or len(available)),
             warm_first=True,
@@ -415,6 +414,42 @@ def build_orchestration_request(
         authored_ref=authored_ref,
     )
     return request, context, registry
+
+
+def _build_assembly_request(
+    *,
+    authored: Any,
+    compiler: Any,
+    inputs: list[Any],
+    driver: str,
+    repo_root: Path,
+    launch_policy: Any,
+    budget: Any,
+    orchestration_root: str,
+    metadata: dict[str, Any] | None = None,
+) -> Any:
+    """Build a production request with an honest environment declaration."""
+    from feedbax.orchestration.assembly import RunAssemblyRequest
+    from feedbax.orchestration.bundle import EnvironmentDeclaration
+
+    lockfile = repo_root / "uv.lock"
+    lockfile_hashes = (
+        {"uv.lock": hashlib.sha256(lockfile.read_bytes()).hexdigest()} if lockfile.is_file() else {}
+    )
+    return RunAssemblyRequest(
+        authored=authored,
+        compiler=compiler,
+        inputs=inputs,
+        driver=driver,
+        environment=EnvironmentDeclaration(
+            python_version=sys.version.split()[0],
+            lockfile_hashes=lockfile_hashes,
+        ),
+        launch_policy=launch_policy,
+        budget=budget,
+        orchestration_root=orchestration_root,
+        metadata=dict(metadata or {}),
+    )
 
 
 def _validate_execute_controls(launch: AuthoredLaunch, controls: LaunchRuntimeControls) -> None:

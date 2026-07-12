@@ -26,7 +26,6 @@ from feedbax.orchestration.assembly import (
 )
 from feedbax.orchestration.bundle import (
     BudgetPolicy,
-    EnvironmentDeclaration,
     LaunchPolicy,
     RowLaunchSpec,
     SchemaArtifactRef,
@@ -42,6 +41,10 @@ from rlrmp.train.fixture_orchestration import (
     register_fixture_method,
 )
 from rlrmp.train.orchestration_capabilities import missing_scheduled_capability_reasons
+from rlrmp.train.launch import _build_assembly_request
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 COMPILER_ID = "rlrmp.tests.orchestration-lifecycle"
@@ -140,7 +143,7 @@ def _assembly_parts(
     authored_bytes = training_spec_canonical_bytes(authored)
     authored_path = tmp_path / "authored.json"
     authored_path.write_bytes(authored_bytes)
-    request = RunAssemblyRequest(
+    request = _build_assembly_request(
         authored=SchemaArtifactRef(
             schema_id=STUDIO_TRAINING_ASSEMBLY_SCHEMA_ID,
             schema_version=STUDIO_TRAINING_ASSEMBLY_SCHEMA_VERSION,
@@ -152,11 +155,17 @@ def _assembly_parts(
             compiler_id=COMPILER_ID,
             compiler_version=COMPILER_VERSION,
         ),
+        inputs=[],
         driver="local",
-        environment=EnvironmentDeclaration(python_version=sys.version.split()[0]),
+        repo_root=REPO_ROOT,
         launch_policy=LaunchPolicy(max_parallel_rows=2, warm_first=True),
         budget=BudgetPolicy(max_wall_clock_seconds=30),
         orchestration_root=str(tmp_path),
+    )
+    assert request.environment.python_version == sys.version.split()[0]
+    assert (
+        request.environment.lockfile_hashes["uv.lock"]
+        == hashlib.sha256((REPO_ROOT / "uv.lock").read_bytes()).hexdigest()
     )
     registry = AssemblyCompilerRegistry()
     registry.register(
