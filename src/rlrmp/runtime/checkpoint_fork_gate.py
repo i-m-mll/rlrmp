@@ -29,6 +29,9 @@ from rlrmp.runtime.training_run_specs import (
     register_rlrmp_cs_supervised_method,
     register_rlrmp_distillation_methods,
 )
+from rlrmp.train.adaptive_epsilon_native import (
+    ensure_adaptive_epsilon_training_method_registered,
+)
 from rlrmp.train.minimax_native import (
     ensure_minimax_training_method_registered,
 )
@@ -56,6 +59,7 @@ class ForkTarget:
 def register_rlrmp_training_methods() -> None:
     """Register RLRMP Feedbax training methods in this process."""
 
+    ensure_adaptive_epsilon_training_method_registered()
     ensure_minimax_training_method_registered()
     register_rlrmp_cs_supervised_method()
     register_rlrmp_distillation_methods()

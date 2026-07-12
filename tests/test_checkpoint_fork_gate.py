@@ -255,6 +255,7 @@ def _write_latest(
     manifest = {
         "transaction_id": transaction_id,
         "completed_training_batches": completed_batches,
+        "completed_coordinate": {"program_step": completed_batches},
         "content_integrity_digest": {
             "slots": [{"slot": "model", "slot_root_sha256": digest}],
         },
@@ -399,6 +400,41 @@ def test_lr_continuation_reporter_rejects_phase_coordinate_as_batch_total(
         )
 
 
+def test_adaptive_restart_lr_report_uses_target_optimizer_count(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    row_spec = _adaptive_continuation_spec(tmp_path)
+    source_root = tmp_path / "source"
+    transaction = source_root / "transactions" / "tx-source"
+    transaction.mkdir(parents=True)
+    manifest = {
+        "completed_training_batches": 2,
+        "slots": [],
+    }
+    manifest_path = transaction / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    source_root.joinpath("latest.json").write_text(
+        json.dumps({"manifest_relative_path": "transactions/tx-source/manifest.json"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "rlrmp.runtime.lr_continuation._load_manifest_slot",
+        lambda *_args, **_kwargs: pytest.fail("restart must not inspect nominal optimizer state"),
+    )
+
+    points = RlrmpLrContinuationReporter(source_checkpoint_root=source_root).points(
+        source_manifest=manifest,
+        row_payload=row_spec.model_dump(mode="json"),
+        row_spec=row_spec,
+        declared_mode="restart",
+    )
+
+    assert points
+    assert {point["mode"] for point in points} == {"restart"}
+    assert {point["optimizer_count_at_current_step"] for point in points} == {0}
+
+
 def test_checkpoint_fork_gate_has_no_lr_reporter_implementation_residue() -> None:
     from rlrmp.runtime import checkpoint_fork_gate
 
@@ -408,6 +444,36 @@ def test_checkpoint_fork_gate_has_no_lr_reporter_implementation_residue() -> Non
     assert "class RlrmpLrContinuationReporter" not in source
     assert "def _learning_rate_at_step" not in source
     assert "def _adaptive_epsilon_lr_continuation_points" not in source
+
+
+def test_checkpoint_fork_gate_registers_adaptive_epsilon_method(monkeypatch) -> None:
+    from rlrmp.runtime import checkpoint_fork_gate
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        checkpoint_fork_gate,
+        "ensure_adaptive_epsilon_training_method_registered",
+        lambda: calls.append("adaptive_epsilon"),
+    )
+    monkeypatch.setattr(
+        checkpoint_fork_gate,
+        "ensure_minimax_training_method_registered",
+        lambda: calls.append("minimax"),
+    )
+    monkeypatch.setattr(
+        checkpoint_fork_gate,
+        "register_rlrmp_cs_supervised_method",
+        lambda: calls.append("cs_supervised"),
+    )
+    monkeypatch.setattr(
+        checkpoint_fork_gate,
+        "register_rlrmp_distillation_methods",
+        lambda: calls.append("distillation"),
+    )
+
+    checkpoint_fork_gate.register_rlrmp_training_methods()
+
+    assert calls == ["adaptive_epsilon", "minimax", "cs_supervised", "distillation"]
 
 
 def test_task_identity_gate_rejects_real_row_game_card_leaf_with_derived_hash_labels(

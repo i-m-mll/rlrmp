@@ -26,7 +26,8 @@ from rlrmp.train.resume_control import declare_cs_supervised_checkpoint_continua
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--run-spec", type=Path, required=True)
+    parser.add_argument("--source-run-spec", type=Path, required=True)
+    parser.add_argument("--target-run-spec", type=Path, required=True)
     parser.add_argument("--source-checkpoint-root", type=Path, required=True)
     parser.add_argument("--target-checkpoint-root", type=Path, required=True)
     return parser
@@ -37,16 +38,20 @@ def main() -> None:
     if args.target_checkpoint_root.exists():
         raise ValueError(f"fork target must be new: {args.target_checkpoint_root}")
     run_parser = build_parser()
-    context = build_run_spec_execution_context(
-        run_parser.parse_args(["--run-spec", str(args.run_spec)]),
+    source_context = build_run_spec_execution_context(
+        run_parser.parse_args(["--run-spec", str(args.source_run_spec)]),
         parser=run_parser,
     )
-    source_spec = cs_custody_training_spec(context.run_spec)
+    target_context = build_run_spec_execution_context(
+        run_parser.parse_args(["--run-spec", str(args.target_run_spec)]),
+        parser=run_parser,
+    )
+    source_spec = cs_custody_training_spec(source_context.run_spec)
     source_slots, _runtime = build_cs_supervised_native_initial_slots(
-        run_spec=context.run_spec,
-        hps=context.hps,
-        args=context.args,
-        key=jax.random.PRNGKey(int(context.args.seed)),
+        run_spec=source_context.run_spec,
+        hps=source_context.hps,
+        args=source_context.args,
+        key=jax.random.PRNGKey(int(source_context.args.seed)),
     )
     source_custody_slots = _read_custody_slots(args.source_checkpoint_root)
     source_program = source_spec.worker_execution.method_contract.phase_program
@@ -67,7 +72,7 @@ def main() -> None:
     expected_slots[OPTIMIZER] = tuple(target_optimizer)
     expected_slots["completed_batches"] = jnp.asarray(12_200, dtype=jnp.int32)
     target_spec = declare_cs_supervised_checkpoint_continuation(
-        source_spec,
+        cs_custody_training_spec(target_context.run_spec),
         source_completed_batches=12_000,
         target_total_batches=12_200,
     )

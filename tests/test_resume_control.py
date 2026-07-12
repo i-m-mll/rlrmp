@@ -18,6 +18,7 @@ from feedbax.training.checkpoint_custody import (
 from rlrmp.train.cs_nominal_gru import build_parser
 from rlrmp.train.config_cli import parse_config
 from rlrmp.train.executor.cs_supervised import (
+    _cs_supervised_execution_registry,
     build_cs_supervised_native_initial_slots,
     build_run_spec_execution_context,
 )
@@ -31,6 +32,7 @@ from rlrmp.train.resume_control import (
     resolve_launch_continuation,
 )
 from rlrmp.runtime.training_run_specs import feedbax_training_run_spec_from_payload
+from rlrmp.runtime.checkpoint_custody import cs_custody_training_spec
 from rlrmp.train.training_configs import MinimaxConfig
 
 
@@ -276,6 +278,68 @@ def test_cs_supervised_continuation_does_not_change_exact_parity_spec() -> None:
     )
 
     assert attach_cs_supervised_checkpoint_continuation(training_spec, fresh) is training_spec
+
+
+def test_target_bound_launch_fork_still_attaches_runnable_continuation() -> None:
+    training_spec = feedbax_training_run_spec_from_payload(
+        json.loads(_baseline_recipe_path().read_text(encoding="utf-8"))
+    )
+    launch_fork = LaunchContinuation(
+        resume=True,
+        resume_source="/tmp/launch-fork/latest.json",
+        completed_batches=12_000,
+        stop_target_batches=12_200,
+        continuation_batches=200,
+        source_target_batches=12_200,
+    )
+
+    attached = attach_cs_supervised_checkpoint_continuation(training_spec, launch_fork)
+
+    request = attached.checkpoint_progress.continuation
+    assert request is not None
+    assert request.source_completed_batches == 12_000
+    assert request.target_total_batches == 12_200
+
+
+def test_cs_supervised_resume_registry_uses_attached_custody_contract() -> None:
+    recipe_path = Path(__file__).resolve().parents[1] / "results/cb3685a/runs/seam_probe.json"
+    parser = build_parser()
+    context = build_run_spec_execution_context(
+        parser.parse_args(["--run-spec", str(recipe_path)]),
+        parser=parser,
+    )
+    continuation = LaunchContinuation(
+        resume=True,
+        resume_source="/tmp/checkpoints/latest.json",
+        completed_batches=12_000,
+        stop_target_batches=12_200,
+        continuation_batches=200,
+    )
+    training_spec = attach_cs_supervised_checkpoint_continuation(
+        cs_custody_training_spec(context.run_spec),
+        continuation,
+    )
+
+    registry = _cs_supervised_execution_registry(training_spec)
+    execution_contract = registry.resolve(training_spec.method_ref, path="/method_ref").contract_factory()
+
+    assert execution_contract == training_spec.worker_execution.method_contract
+    request = training_spec.checkpoint_progress.continuation
+    assert request is not None
+    assert request.source_completed_batches == 12_000
+    assert request.target_total_batches == 12_200
+    barrier = execution_contract.phase_program.checkpoint_barriers[0]
+    assert {slot.slot for slot in barrier.slots} == {
+        "model",
+        "optimizer",
+        "prng",
+        "completed_batches",
+        "history",
+        "adversary_policy",
+        "adversary_optimizer",
+        "adaptive_epsilon_state",
+        "checkpoint_metadata",
+    }
 
 
 def test_stage2_authoring_declares_12000_to_16500_total_horizon() -> None:

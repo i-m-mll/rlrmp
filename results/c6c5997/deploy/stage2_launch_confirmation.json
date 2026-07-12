@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "user_confirmed": true,
+  "approval": {
+    "source": "Codex user message",
+    "parent_session_id": "019f4de9-b52e-7700-a153-deca824603dd",
+    "condition": "Launch immediately after the isolated seam passes and the real matrix gate is green"
+  },
+  "issue": "c6c5997",
+  "branch": "feature/8a79381-stage1-stage2-deploy",
+  "cloud": "SECURE",
+  "gpu": "NVIDIA GeForce RTX 5090",
+  "matrix_ref": "results/c6c5997/runs/matrix.json"
+}

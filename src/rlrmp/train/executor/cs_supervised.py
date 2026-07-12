@@ -45,6 +45,11 @@ import jax.tree as jt
 import numpy as np
 import optax
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
+from feedbax.contracts.training import (
+    DEFAULT_TRAINING_METHOD_REGISTRY,
+    TrainingMethodRegistry,
+    TrainingRunSpec,
+)
 from feedbax.objectives.loss import AbstractLoss
 from feedbax.objectives.service import LossService, LoweredObjective
 from feedbax.objectives.spec import ObjectiveExecutionRequirements
@@ -59,6 +64,7 @@ from rlrmp.loss import (
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.runtime.run_specs import run_spec_sidecar_dir, validate_nominal_gru_run_spec
+from rlrmp.runtime.checkpoint_custody import cs_custody_training_spec
 from rlrmp.runtime.training_run_specs import (
     FEEDBAX_TRAINING_RUN_SPEC_KEY,
     RLRMP_RUN_SPEC_PAYLOAD_KEY,
@@ -263,6 +269,7 @@ def load_validated_run_spec(
         require_graph_sidecars=require_graph_sidecars,
     )
     _validate_composed_training_spec_payload(payload)
+    _validate_adaptive_epsilon_cross_mirrors(payload)
     return payload_path, payload
 
 
@@ -346,6 +353,97 @@ def _validate_composed_training_spec_payload(run_spec: dict[str, Any]) -> None:
         source_version=extension.get("schema_version"),
         path=RLRMP_RUN_SPEC_PAYLOAD_KEY,
     )
+
+
+def _validate_adaptive_epsilon_cross_mirrors(run_spec: dict[str, Any]) -> None:
+    """Reject drift between runtime HPS and the governed adaptive method payload."""
+
+    hps = _dict_value(run_spec, "hps")
+    hps_adaptive = _dict_value(hps, "adaptive_epsilon_curriculum")
+    if hps_adaptive.get("enabled") is not True:
+        return
+    training_spec = feedbax_training_run_spec_from_payload(run_spec)
+    method_ref = training_spec.method_ref
+    if f"{method_ref.package}/{method_ref.name}/{method_ref.version}" != (
+        "rlrmp/adaptive_epsilon_curriculum/v1"
+    ):
+        raise ValueError(
+            "Adaptive-epsilon runtime HPS requires the governed adaptive-epsilon method payload"
+        )
+    payload = training_spec.method_payload.payload
+    if not isinstance(payload, Mapping):
+        raise ValueError("Adaptive-epsilon method payload must be an object")
+    payload_config = _dict_value(payload, "config")
+    payload_damage = _dict_value(payload, "damage_schedule")
+    payload_lambda = _dict_value(payload, "lambda_update")
+    hps_damage = _dict_value(hps_adaptive, "damage_schedule")
+    hps_lambda = _dict_value(hps_adaptive, "lambda_update")
+
+    mirrors = {
+        "damage_schedule.start": (
+            hps_damage.get("start"),
+            payload_damage.get("start"),
+            payload_config.get("adaptive_epsilon_damage_start"),
+        ),
+        "damage_schedule.peak": (
+            hps_damage.get("peak"),
+            payload_damage.get("peak"),
+            payload_config.get("adaptive_epsilon_damage_peak"),
+        ),
+        "damage_schedule.final": (
+            hps_damage.get("final"),
+            payload_damage.get("final"),
+            payload_config.get("adaptive_epsilon_damage_final"),
+        ),
+        "lambda_update.interval_batches": (
+            hps_lambda.get("interval_batches"),
+            payload_lambda.get("interval_batches"),
+            payload_config.get("adaptive_epsilon_update_interval_batches"),
+        ),
+        "lambda_update.ema_alpha": (
+            hps_lambda.get("ema_alpha"),
+            payload_lambda.get("ema_alpha"),
+            payload_config.get("adaptive_epsilon_ema_alpha"),
+        ),
+        "lambda_update.eta": (
+            hps_lambda.get("eta"),
+            payload_lambda.get("eta"),
+            payload_config.get("adaptive_epsilon_eta"),
+        ),
+        "lambda_update.deadband_frac": (
+            hps_lambda.get("deadband_frac"),
+            payload_lambda.get("deadband_frac"),
+            payload_config.get("adaptive_epsilon_deadband_frac"),
+        ),
+        "lambda_update.max_log_step": (
+            hps_lambda.get("max_log_step"),
+            payload_lambda.get("max_log_step"),
+            payload_config.get("adaptive_epsilon_max_log_step"),
+        ),
+        "lambda_update.lambda_min": (
+            hps_lambda.get("lambda_min"),
+            payload_lambda.get("lambda_min"),
+            payload_config.get("adaptive_epsilon_lambda_min"),
+        ),
+        "lambda_update.freeze_during_application_ramp": (
+            hps_lambda.get("freeze_during_application_ramp"),
+            payload_lambda.get("freeze_during_application_ramp"),
+            payload_config.get("adaptive_epsilon_freeze_during_application_ramp"),
+        ),
+    }
+    for field, values in mirrors.items():
+        if values[0] != values[1] or values[1] != values[2]:
+            raise ValueError(
+                "Adaptive-epsilon cross-mirror mismatch "
+                f"field={field}: hps={values[0]!r} payload={values[1]!r} "
+                f"config={values[2]!r}"
+            )
+
+
+def _run_spec_payload_schema_version(run_spec: dict[str, Any]) -> str:
+    """Return the inline payload version that manifest preflight must bind."""
+
+    return str(run_spec[RLRMP_RUN_SPEC_PAYLOAD_KEY]["schema_version"])
 
 
 def _explicit_cli_overrides(
@@ -1012,17 +1110,18 @@ def _run_cs_supervised_native_from_context(
         run_spec,
         graph_spec=runtime_graph_bundle.graph_spec,
     )
-    training_spec = feedbax_training_run_spec_from_payload(run_spec)
     checkpoint_root = output_dir / "checkpoints"
     context, resume_native, continuation = _resolve_full_train_launch_context(
         context,
         checkpoint_root=checkpoint_root,
         stop_after_batches=stop_after_batches,
     )
+    training_spec = cs_custody_training_spec(run_spec)
     training_spec = attach_cs_supervised_checkpoint_continuation(training_spec, continuation)
+    execution_registry = _cs_supervised_execution_registry(training_spec)
     args = context.args
     initial_slots, runtime = build_cs_supervised_native_initial_slots(
-        run_spec=run_spec,
+        run_spec=training_spec,
         hps=hps,
         args=args,
         key=jr.PRNGKey(int(args.seed)),
@@ -1041,10 +1140,11 @@ def _run_cs_supervised_native_from_context(
         training_spec_payload=run_spec.get(RLRMP_RUN_SPEC_PAYLOAD_KEY),
         training_spec_payload_kind=RUN_SPEC_KIND,
         training_spec_payload_schema_id=RUN_SPEC_SCHEMA_ID,
-        training_spec_payload_schema_version=RUN_SPEC_SCHEMA_VERSION,
+        training_spec_payload_schema_version=_run_spec_payload_schema_version(run_spec),
         training_spec_payload_ref=str(run_spec_path),
         resume=resume_native,
         resume_slot_transform=_cs_supervised_resume_slot_transform(),
+        registry=execution_registry,
         issues=[str(args.issue)],
     )
     training_duration_seconds = time.perf_counter() - started
@@ -1063,6 +1163,23 @@ def _run_cs_supervised_native_from_context(
         checkpoint_writes=execution.checkpoint_writes,
         volume_commit=volume_commit,
     )
+
+
+def _cs_supervised_execution_registry(training_spec: TrainingRunSpec) -> TrainingMethodRegistry:
+    """Bind native execution to the exact governed worker contract being resumed."""
+
+    registration = DEFAULT_TRAINING_METHOD_REGISTRY.resolve(
+        training_spec.method_ref,
+        path="/method_ref",
+    )
+    registry = TrainingMethodRegistry()
+    registry.register(
+        replace(
+            registration,
+            contract_factory=lambda: training_spec.worker_execution.method_contract,
+        )
+    )
+    return registry
 
 
 def _cs_supervised_native_run_id(args: argparse.Namespace, run_spec_path: Path) -> str:
@@ -1338,7 +1455,10 @@ def _run_adaptive_epsilon_native_from_context(
         )
     args = context.args
     initial_slots, runtime = build_adaptive_epsilon_native_initial_slots(
-        run_spec=run_spec,
+        # The optimizer builder consumes the typed method payload. Passing the
+        # outer tracked recipe here hides lr_continuation_mode under
+        # feedbax_training_run_spec and silently falls back to "continue".
+        run_spec=training_spec,
         hps=hps,
         args=args,
         key=jr.PRNGKey(int(args.seed)),
@@ -1357,7 +1477,7 @@ def _run_adaptive_epsilon_native_from_context(
         training_spec_payload=run_spec.get(RLRMP_RUN_SPEC_PAYLOAD_KEY),
         training_spec_payload_kind=RUN_SPEC_KIND,
         training_spec_payload_schema_id=RUN_SPEC_SCHEMA_ID,
-        training_spec_payload_schema_version=RUN_SPEC_SCHEMA_VERSION,
+        training_spec_payload_schema_version=_run_spec_payload_schema_version(run_spec),
         training_spec_payload_ref=str(run_spec_path),
         resume=resume_native,
         resume_slot_transform=_resume_slot_transform(None),
@@ -1446,7 +1566,7 @@ def _run_policy_adversary_native_from_context(
         training_spec_payload=run_spec.get(RLRMP_RUN_SPEC_PAYLOAD_KEY),
         training_spec_payload_kind=RUN_SPEC_KIND,
         training_spec_payload_schema_id=RUN_SPEC_SCHEMA_ID,
-        training_spec_payload_schema_version=RUN_SPEC_SCHEMA_VERSION,
+        training_spec_payload_schema_version=_run_spec_payload_schema_version(run_spec),
         training_spec_payload_ref=str(run_spec_path),
         resume=resume_native,
         resume_slot_transform=_resume_slot_transform(None),
@@ -1644,7 +1764,10 @@ def _materialize_adaptive_epsilon_native_result(
     checkpoint_root = output_dir / "checkpoints"
     key_init, _key_train, _key_adversary = split_initial_keys(jr.PRNGKey(int(args.seed)))
     pair = setup_task_model_pair(hps, key=key_init)
-    optimizer = build_adaptive_epsilon_controller_optimizer(run_spec, hps)
+    optimizer = build_adaptive_epsilon_controller_optimizer(
+        feedbax_training_run_spec_from_payload(run_spec),
+        hps,
+    )
     template_state = _initial_training_state(
         model=pair.model,
         trainer=optimizer,

@@ -34,6 +34,7 @@ def _adapter() -> NominalToAdaptiveSlotAdapter:
         ZERO_ADVERSARY_GUARD: b"guard",
         DAMAGE_METRIC: 0.0,
         EPSILON_SCALE: 0.0,
+        TRAIN_LOSS: 0.0,
     }
     return NominalToAdaptiveSlotAdapter(model, optimizer, initial)
 
@@ -51,7 +52,6 @@ def test_adapter_maps_raw_nominal_slots_to_adaptive_serialized_slots() -> None:
             OPTIMIZER: source_optimizer,
             PRNG: jnp.asarray([1, 2], dtype=jnp.uint32),
             COMPLETED_BATCHES: jnp.asarray(12_000, dtype=jnp.int32),
-            TRAIN_LOSS: 3.0,
         }
     )
 
@@ -75,6 +75,13 @@ def test_adapter_maps_raw_nominal_slots_to_adaptive_serialized_slots() -> None:
     assert transformed[ADAPTIVE_EPSILON_STATE] == b"adaptive-state"
 
 
+def test_adapter_declares_train_loss_as_target_only() -> None:
+    adapter = _adapter()
+
+    assert TRAIN_LOSS not in adapter.target_transformed_slots
+    assert TRAIN_LOSS in adapter.target_only_slots
+
+
 def test_adapter_fails_closed_with_source_target_slot_and_path() -> None:
     adapter = _adapter()
     with pytest.raises(
@@ -87,6 +94,5 @@ def test_adapter_fails_closed_with_source_target_slot_and_path() -> None:
                 OPTIMIZER: (jnp.asarray(12_000, dtype=jnp.int32), jnp.zeros((12_000,))),
                 PRNG: jnp.asarray([1, 2], dtype=jnp.uint32),
                 COMPLETED_BATCHES: jnp.asarray(12_000, dtype=jnp.int32),
-                TRAIN_LOSS: 0.0,
             }
         )
