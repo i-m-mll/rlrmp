@@ -33,7 +33,6 @@ from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT
 from rlrmp.viz.figures import (
     build_profile_family_figure,
-    materialize_nominal_velocity_figure as canonical_materialize_nominal_velocity_figure,
 )
 
 
@@ -145,7 +144,6 @@ def main() -> None:
     NOTES_DIR.mkdir(parents=True, exist_ok=True)
     outputs: dict[str, Any] = {}
     extlqg_context = _build_extlqg_comparator_context(physical_dim=6)
-    robust_context = build_robust_output_feedback_6d_context()
 
     if not args.skip_perturbation_profiles:
         outputs["moderate_perturbation_profiles"] = materialize_moderate_profiles(
@@ -159,16 +157,10 @@ def main() -> None:
             "figure_count": int(spec.get("figure_count", 0)),
             "bulk_dir": repo_rel(PERT_FIGURE_BULK),
         }
-    if not args.skip_nominal_velocity:
-        outputs["nominal_velocity_profiles"] = materialize_nominal_velocity_profiles(
-            extlqg_context=extlqg_context,
-            robust_context=robust_context,
-        )
-    elif (FIGURE_ROOT / NOMINAL_TOPIC / "spec.json").exists():
+    if (FIGURE_ROOT / NOMINAL_TOPIC / "spec.json").exists():
         outputs["nominal_velocity_profiles"] = {
-            "status": "materialized",
+            "status": "declarative_figure_stage",
             "spec": f"results/{ISSUE}/figures/{NOMINAL_TOPIC}/spec.json",
-            "html": f"results/{ISSUE}/figures/{NOMINAL_TOPIC}/figure.html",
         }
     write_note(outputs)
     print(json.dumps(outputs, indent=2, sort_keys=True))
@@ -383,43 +375,6 @@ def simulate_extlqg_arrays(
         "base_action": np.asarray(base.command, dtype=np.float64),
         "delta_action": np.asarray(perturbed.command - base.command, dtype=np.float64),
     }
-
-
-def materialize_nominal_velocity_profiles(
-    *,
-    extlqg_context: Mapping[str, Any],
-    robust_context: Mapping[str, Any],
-) -> dict[str, Any]:
-    manifest = read_json(EVAL_MANIFEST)
-    robust_contract = robust_context["contract"]
-    ext_profile = forward_velocity_profile(extlqg_context["base_evaluation"].velocity)
-    robust_profile = forward_velocity_profile(robust_context["velocity"])
-
-    def add_run_profiles(fig: Any, row_spec: Mapping[str, Any], row_index: int) -> None:
-        run_id = str(row_spec["run_id"])
-        run = manifest["runs"][run_id]
-        with np.load(REPO_ROOT / run["bulk_arrays"]["path"]) as arrays:
-            gru_samples = forward_velocity_profile(arrays["velocity"])
-        add_mean_band(
-            fig,
-            gru_samples,
-            row=row_index,
-            col=1,
-            name="GRU nominal",
-            color=SOURCE_COLORS["gru"],
-            showlegend=row_index == 1,
-        )
-
-    return canonical_materialize_nominal_velocity_figure(
-        rows=[{"label": RUN_LABELS[run_id], "run_id": run_id} for run_id in RUN_ORDER],
-        add_run_profiles=add_run_profiles,
-        ext_profile=ext_profile,
-        robust_profile=robust_profile,
-        comparator_colors=SOURCE_COLORS,
-        config=NOMINAL_FIGURE_CONFIG,
-        robust_contract=robust_contract,
-        result_contract={"output_feedback_hinf": robust_contract},
-    )
 
 
 def build_robust_output_feedback_6d_context() -> dict[str, Any]:

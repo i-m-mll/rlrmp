@@ -1,243 +1,49 @@
 {
-  "analytical_provenance": {
-    "analytical_builders": [
-      "rlrmp.analysis.math.cs_game_card.build_no_integrator_game",
-      "rlrmp.analysis.math.cs_released_simulation",
-      "rlrmp.analysis.math.output_feedback"
-    ],
-    "excluded": [
-      "baseline",
-      "8D analytical traces",
-      "other analytical models"
-    ],
-    "included": [
-      "6D analytical extLQG nominal",
-      "6D output-feedback H-infinity nominal"
-    ]
+  "name": "91a090c-nominal-velocity-profiles",
+  "template": "rlrmp.profile_comparison",
+  "inputs": [],
+  "slot_bindings": {
+    "profiles": {
+      "name": "profiles",
+      "constructor": "rlrmp.profile_series",
+      "data": {
+        "cell": {
+          "item": "facet_values",
+          "path": "condition"
+        },
+        "profile_key": "nominal_velocity"
+      }
+    }
   },
-  "inputs": [
+  "panels": [
     {
-      "path": "results/91a090c/runs/short_3500to1000.json",
-      "role": "run_spec",
-      "row": "short_3500to1000",
-      "sha256": "27ef3216a913d697609bf78757195825ca2bc5b76b6a6863674c2c9b75f0ed3f"
-    },
-    {
-      "path": "results/91a090c/runs/medium_3500to1000.json",
-      "role": "run_spec",
-      "row": "medium_3500to1000",
-      "sha256": "73800b7c4619449009d10be4049c54bc7eb2c5375bfaed9a31d83da640c75a37"
-    },
-    {
-      "checkpoint": "checkpoint_0013000",
-      "path": "_artifacts/91a090c/runs/short_3500to1000/checkpoints/checkpoint_0013000/model.eqx",
-      "role": "checkpoint_model",
-      "row": "short_3500to1000",
-      "sha256": "e8ef8a8884c285761a07efccdca0b124c2c6b000d7b21a1a0c32307278732043"
-    },
-    {
-      "checkpoint": "checkpoint_0015500",
-      "path": "_artifacts/91a090c/runs/short_3500to1000/checkpoints/checkpoint_0015500/model.eqx",
-      "role": "checkpoint_model",
-      "row": "short_3500to1000",
-      "sha256": "52392d3ddfbb0e1183a0c48df9c78941ad8acf0a8549f8d4bf24763ad8f6d2ac"
-    },
-    {
-      "checkpoint": "checkpoint_0017500",
-      "path": "_artifacts/91a090c/runs/short_3500to1000/checkpoints/checkpoint_0017500/model.eqx",
-      "role": "checkpoint_model",
-      "row": "short_3500to1000",
-      "sha256": "2ce877a3d79d7cbb5a3e569732f0aec3b857e2293d52372de203756a274103f4"
-    },
-    {
-      "checkpoint": "checkpoint_0013500",
-      "path": "_artifacts/91a090c/runs/medium_3500to1000/checkpoints/checkpoint_0013500/model.eqx",
-      "role": "checkpoint_model",
-      "row": "medium_3500to1000",
-      "sha256": "b5db8d8f815de022c17471d6631670701b22ee62b9b668dd7f4435b4ea8d6c59"
-    },
-    {
-      "checkpoint": "checkpoint_0017000",
-      "path": "_artifacts/91a090c/runs/medium_3500to1000/checkpoints/checkpoint_0017000/model.eqx",
-      "role": "checkpoint_model",
-      "row": "medium_3500to1000",
-      "sha256": "5527875dc41924306e993d15402c6e97ca34ae2103ffedb336f1a2f416b6fe10"
-    },
-    {
-      "checkpoint": "checkpoint_0019000",
-      "path": "_artifacts/91a090c/runs/medium_3500to1000/checkpoints/checkpoint_0019000/model.eqx",
-      "role": "checkpoint_model",
-      "row": "medium_3500to1000",
-      "sha256": "868cd077de2bd38cc98b6bf0560baa51fd4a2ba3d9c469e56b9b71bf7fa6f2ef"
-    },
-    {
-      "checkpoint": "checkpoint_0013000",
-      "path": "_artifacts/91a090c/runs/short_3500to1000/checkpoints/checkpoint_0013000/metadata.json",
-      "role": "checkpoint_metadata",
-      "row": "short_3500to1000",
-      "sha256": "0a52470b762ab459ef5961bf04064e3120bc7942ac64fae51d6830729a7d4c5a"
-    },
-    {
-      "checkpoint": "checkpoint_0015500",
-      "path": "_artifacts/91a090c/runs/short_3500to1000/checkpoints/checkpoint_0015500/metadata.json",
-      "role": "checkpoint_metadata",
-      "row": "short_3500to1000",
-      "sha256": "5dd5d1c92bc3f21cf1fa4ace7f6f1b88046a8464cb8e71702981f3a7135a0dca"
-    },
-    {
-      "checkpoint": "checkpoint_0017500",
-      "path": "_artifacts/91a090c/runs/short_3500to1000/checkpoints/checkpoint_0017500/metadata.json",
-      "role": "checkpoint_metadata",
-      "row": "short_3500to1000",
-      "sha256": "bae9e3b320beecd3aef82794585dcccfb34c4ef221f4465a4ecea954c48a19d4"
-    },
-    {
-      "checkpoint": "checkpoint_0013500",
-      "path": "_artifacts/91a090c/runs/medium_3500to1000/checkpoints/checkpoint_0013500/metadata.json",
-      "role": "checkpoint_metadata",
-      "row": "medium_3500to1000",
-      "sha256": "3cfefdcded689b8f2e86236e86a1de13e3c82fe090b1393d612ebe95133eb587"
-    },
-    {
-      "checkpoint": "checkpoint_0017000",
-      "path": "_artifacts/91a090c/runs/medium_3500to1000/checkpoints/checkpoint_0017000/metadata.json",
-      "role": "checkpoint_metadata",
-      "row": "medium_3500to1000",
-      "sha256": "7dbdc9932c32cf392fd38f324acc84b7ca12a3c2c4690d8b028e0911ef8b72e7"
-    },
-    {
-      "checkpoint": "checkpoint_0019000",
-      "path": "_artifacts/91a090c/runs/medium_3500to1000/checkpoints/checkpoint_0019000/metadata.json",
-      "role": "checkpoint_metadata",
-      "row": "medium_3500to1000",
-      "sha256": "28a7a9765dd7653aa2a44b5a633b7c57b08a7f31ba16cf2db6b2fe7169f7af35"
+      "name": "profile",
+      "title": {
+        "item": "condition"
+      },
+      "axes_labels": {
+        "x": "Time from movement onset (s)",
+        "y": "Forward velocity (m/s)"
+      }
     }
   ],
-  "issue": "91a090c",
-  "materializer": "results/91a090c/scripts/materialize_nominal_velocity_profiles.py",
-  "no_training_or_remote_gpu": true,
-  "peak_velocity_table": [
-    {
-      "checkpoint": null,
-      "endpoint_error_spread_m": 0.0009514974103997594,
-      "mean_terminal_position_error_m": 0.0032472050706235933,
-      "n_samples": 320,
-      "peak_mean_forward_velocity_m_s": 0.7314752118871354,
-      "row": "short_3500to1000",
-      "time_of_peak_mean_forward_velocity_s": 0.16,
-      "trace": "6D analytical extLQG nominal"
-    },
-    {
-      "checkpoint": null,
-      "endpoint_error_spread_m": 0.0006485832257146288,
-      "mean_terminal_position_error_m": 0.0012944997802664606,
-      "n_samples": 320,
-      "peak_mean_forward_velocity_m_s": 0.7606623391882253,
-      "row": "short_3500to1000",
-      "time_of_peak_mean_forward_velocity_s": 0.16,
-      "trace": "6D output-feedback H-infinity nominal"
-    },
-    {
-      "checkpoint": "_artifacts/91a090c/runs/short_3500to1000/checkpoints/checkpoint_0013000",
-      "endpoint_error_spread_m": 0.0007564269950713242,
-      "mean_terminal_position_error_m": 0.0014821010913026323,
-      "n_samples": 320,
-      "peak_mean_forward_velocity_m_s": 0.7613703520968557,
-      "row": "short_3500to1000",
-      "time_of_peak_mean_forward_velocity_s": 0.16,
-      "trace": "checkpoint 13000"
-    },
-    {
-      "checkpoint": "_artifacts/91a090c/runs/short_3500to1000/checkpoints/checkpoint_0015500",
-      "endpoint_error_spread_m": 0.0005668725796707276,
-      "mean_terminal_position_error_m": 0.001116887710490831,
-      "n_samples": 320,
-      "peak_mean_forward_velocity_m_s": 0.7639013906940818,
-      "row": "short_3500to1000",
-      "time_of_peak_mean_forward_velocity_s": 0.16,
-      "trace": "checkpoint 15500"
-    },
-    {
-      "checkpoint": "_artifacts/91a090c/runs/short_3500to1000/checkpoints/checkpoint_0017500",
-      "endpoint_error_spread_m": 0.0005634761177491862,
-      "mean_terminal_position_error_m": 0.0010797487256373186,
-      "n_samples": 320,
-      "peak_mean_forward_velocity_m_s": 0.7671680489555002,
-      "row": "short_3500to1000",
-      "time_of_peak_mean_forward_velocity_s": 0.16,
-      "trace": "checkpoint 17500"
-    },
-    {
-      "checkpoint": null,
-      "endpoint_error_spread_m": 0.0009514974103997594,
-      "mean_terminal_position_error_m": 0.0032472050706235933,
-      "n_samples": 320,
-      "peak_mean_forward_velocity_m_s": 0.7314752118871354,
-      "row": "medium_3500to1000",
-      "time_of_peak_mean_forward_velocity_s": 0.16,
-      "trace": "6D analytical extLQG nominal"
-    },
-    {
-      "checkpoint": null,
-      "endpoint_error_spread_m": 0.0006485832257146288,
-      "mean_terminal_position_error_m": 0.0012944997802664606,
-      "n_samples": 320,
-      "peak_mean_forward_velocity_m_s": 0.7606623391882253,
-      "row": "medium_3500to1000",
-      "time_of_peak_mean_forward_velocity_s": 0.16,
-      "trace": "6D output-feedback H-infinity nominal"
-    },
-    {
-      "checkpoint": "_artifacts/91a090c/runs/medium_3500to1000/checkpoints/checkpoint_0013500",
-      "endpoint_error_spread_m": 0.0006279985847513595,
-      "mean_terminal_position_error_m": 0.0011916228268133732,
-      "n_samples": 320,
-      "peak_mean_forward_velocity_m_s": 0.7616235448047519,
-      "row": "medium_3500to1000",
-      "time_of_peak_mean_forward_velocity_s": 0.16,
-      "trace": "checkpoint 13500"
-    },
-    {
-      "checkpoint": "_artifacts/91a090c/runs/medium_3500to1000/checkpoints/checkpoint_0017000",
-      "endpoint_error_spread_m": 0.0005794152795315101,
-      "mean_terminal_position_error_m": 0.0011024589674541259,
-      "n_samples": 320,
-      "peak_mean_forward_velocity_m_s": 0.7665319273248314,
-      "row": "medium_3500to1000",
-      "time_of_peak_mean_forward_velocity_s": 0.16,
-      "trace": "checkpoint 17000"
-    },
-    {
-      "checkpoint": "_artifacts/91a090c/runs/medium_3500to1000/checkpoints/checkpoint_0019000",
-      "endpoint_error_spread_m": 0.0005756079874824306,
-      "mean_terminal_position_error_m": 0.0010832469044843298,
-      "n_samples": 320,
-      "peak_mean_forward_velocity_m_s": 0.7664460595697165,
-      "row": "medium_3500to1000",
-      "time_of_peak_mean_forward_velocity_s": 0.16,
-      "trace": "checkpoint 19000"
+  "facet_bindings": {
+    "condition": {
+      "item": "manifest",
+      "path": "metadata.figure_payload.facets.nominal_velocity_profiles"
     }
-  ],
-  "plot_contract": {
-    "analytical_seed": 376023,
-    "condition": "nominal fixed +x validation reach",
-    "grid_helper": "rlrmp.viz.profile_comparison_grid",
-    "gru_rollout_seed": 0,
-    "gru_rollout_trials_per_replicate": 64,
-    "quantity": "target-axis forward velocity",
+  },
+  "figure_routing": {
+    "experiment": "91a090c",
+    "topic": "nominal_velocity_profiles"
+  },
+  "metadata": {
     "shared_yaxes": "all",
-    "visual_trace_policy": "line-only; no bands, baseline, 8D, or other analytical traces",
-    "visual_traces_per_subplot": 5
-  },
-  "schema_version": "rlrmp.91a090c.figure_spec.v1",
-  "timestamp": "2026-07-02T05:03:21.998415+00:00",
-  "topic": "nominal_velocity_profiles",
-  "versions": {
-    "equinox": "0.13.4",
-    "feedbax": "0.1.2",
-    "jax": "0.9.0",
-    "numpy": "2.4.1",
-    "plotly": "6.5.2",
-    "rlrmp": "0.1.0"
+    "replicate_facets": "payload_bound",
+    "analytical_pieces": [
+      "rlrmp.extlqg6d_nominal",
+      "rlrmp.output_feedback_hinf6d_nominal"
+    ],
+    "parity_oracle": "results/70fe304/data_products/nominal_profile_parity.json"
   }
 }

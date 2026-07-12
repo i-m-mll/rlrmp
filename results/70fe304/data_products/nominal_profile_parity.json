@@ -1,0 +1,12 @@
+{
+  "schema_id": "rlrmp.figure_parity.nominal_profiles",
+  "schema_version": "rlrmp.figure_parity.nominal_profiles.v1",
+  "topics": {
+    "91a090c/nominal_velocity_profiles": {"row_count": 2, "analytical_pieces": ["extlqg6d", "output_feedback_hinf6d"]},
+    "c92ebd8/nominal_velocity_profiles": {"row_count": 9, "analytical_pieces": ["extlqg6d", "output_feedback_hinf6d"]},
+    "c92ebd8/pgd_1p05_nominal_velocity_profiles": {"row_count": 3, "analytical_pieces": ["extlqg6d", "output_feedback_hinf6d"]},
+    "c92ebd8/pgd_ofb_budget_moderate_nominal_velocity_profiles": {"row_count": 3, "analytical_pieces": ["extlqg6d", "output_feedback_hinf6d"]},
+    "d55c5f0/soft_pgd_nominal_velocity_profiles": {"row_count": 1, "analytical_pieces": ["extlqg6d", "output_feedback_hinf6d"]}
+  },
+  "presentation": {"shared_yaxes": "all", "replicate_facets": "payload_bound"}
+}
