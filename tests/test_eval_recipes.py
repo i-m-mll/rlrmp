@@ -87,6 +87,45 @@ def _identity_changed_params(evaluation_type: str, params: dict[str, Any]) -> di
     return changed
 
 
+def test_delayed_reach_recipe_places_profile_facets_on_manifest(tmp_path: Path) -> None:
+    _register()
+    profile_payloads = {
+        "banks": {
+            "no_catch": [
+                {
+                    "experiment": "example",
+                    "run_id": "row-a",
+                    "label": "Row A",
+                    "time_s": [-0.1, 0.0],
+                    "mean": [0.0, 0.2],
+                    "std": [0.01, 0.02],
+                }
+            ]
+        }
+    }
+    params = stamp_current_schema(
+        DELAYED_REACH_BANK_EVAL_PARAMS_KIND,
+        {
+            "bank_spec": {"kind": "no_catch"},
+            "profile_payloads": profile_payloads,
+        },
+    )
+
+    manifest, _path = execute_evaluation_run_spec(
+        _spec(DELAYED_REACH_BANK_EVALUATION_TYPE, params),
+        root=tmp_path,
+        force=True,
+    )
+
+    facet = manifest.metadata["figure_payload"]["facets"]["condition"]["example/row-a"]
+    assert facet["display_name"] == "Row A"
+    assert facet["forward_velocity"]["series"][0]["profile"]["upper"] == pytest.approx(
+        [0.01, 0.22]
+    )
+    states = _load_cached_states(manifest)
+    assert states["profile_payloads"] == profile_payloads
+
+
 def _perturbation_row(
     perturbation_id: str,
     *,
@@ -240,6 +279,7 @@ def _bank() -> dict[str, Any]:
                 "bank_spec": {},
                 "bank_tensors": {},
                 "selection_inputs": {},
+                "profile_payloads": {},
             },
         ),
     ],

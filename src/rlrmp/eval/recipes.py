@@ -32,6 +32,12 @@ PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE = "rlrmp.eval.perturbation_response_b
 FEEDBACK_ABLATION_EVALUATION_TYPE = "rlrmp.eval.feedback_ablation"
 WORST_CASE_EPSILON_EVALUATION_TYPE = "rlrmp.eval.worst_case_epsilon"
 DELAYED_REACH_BANK_EVALUATION_TYPE = "rlrmp.eval.delayed_reach_bank"
+DELAYED_VELOCITY_PROFILE_PAYLOAD_SCHEMA_ID = (
+    "rlrmp.figure_data.delayed_velocity_profiles"
+)
+DELAYED_VELOCITY_PROFILE_PAYLOAD_SCHEMA_VERSION = (
+    "rlrmp.figure_data.delayed_velocity_profiles.v1"
+)
 
 _RECIPE_PARAM_KINDS = {
     CENTER_OUT_ENSEMBLE_EVALUATION_TYPE: CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND,
@@ -154,6 +160,7 @@ class DelayedReachBankEvalParams(_StrictParamsModel):
     bank_spec: dict[str, Any] = Field(default_factory=dict)
     bank_tensors: dict[str, Any] = Field(default_factory=dict)
     selection_inputs: dict[str, Any] = Field(default_factory=dict)
+    profile_payloads: dict[str, Any] = Field(default_factory=dict)
 
 
 _PARAMS_MODEL_BY_RECIPE = {
@@ -342,6 +349,7 @@ def delayed_reach_bank_recipe(
 
     p, params = _validated_params(run_spec)
     _require_one_of(params, ("bank_spec",), recipe=run_spec.evaluation_type)
+    figure_payload = delayed_velocity_profile_payload(p.profile_payloads)
     return _result(
         run_spec,
         params,
@@ -350,8 +358,124 @@ def delayed_reach_bank_recipe(
             "bank_spec": p.bank_spec,
             "bank_tensors": p.bank_tensors,
             "selection_inputs": p.selection_inputs,
+            "profile_payloads": p.profile_payloads,
         },
+        metadata={"figure_payload": figure_payload} if figure_payload is not None else None,
     )
+
+
+def delayed_velocity_profile_payload(
+    profile_payloads: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Normalize delayed-bank profiles for the native profile template.
+
+    The registered evaluation recipe owns the numerical profile payload. Figure
+    intent owns only intrinsic panel/axis semantics and binds its facets to this
+    manifest metadata. Each run is one facet; no-catch and catch banks remain
+    separate labeled series within that facet.
+    """
+
+    if not profile_payloads:
+        return None
+    banks = profile_payloads.get("banks", profile_payloads)
+    if not isinstance(banks, Mapping):
+        raise ValueError("delayed profile payloads must map bank kind to profiles")
+
+    facets: dict[str, dict[str, Any]] = {}
+    for bank_kind in ("no_catch", "catch"):
+        profiles = banks.get(bank_kind, ())
+        if not isinstance(profiles, Sequence) or isinstance(profiles, (str, bytes)):
+            raise ValueError(f"delayed {bank_kind} profiles must be a sequence")
+        for raw_profile in profiles:
+            if not isinstance(raw_profile, Mapping):
+                raise ValueError(f"delayed {bank_kind} profile entries must be mappings")
+            experiment = str(raw_profile.get("experiment", ""))
+            run_id = str(raw_profile.get("run_id", ""))
+            label = str(raw_profile.get("label", raw_profile.get("run_label", run_id)))
+            if not run_id or not label:
+                raise ValueError(f"delayed {bank_kind} profile requires run_id and label")
+            facet_id = f"{experiment}/{run_id}" if experiment else run_id
+            facet = facets.setdefault(
+                facet_id,
+                {
+                    "run_id": run_id,
+                    "experiment": experiment or None,
+                    "display_name": label,
+                    "forward_velocity": {"series": []},
+                    "forward_velocity_by_replicate": {"series": []},
+                },
+            )
+            profile = _delayed_profile_band(raw_profile)
+            facet["forward_velocity"]["series"].append(
+                {
+                    "label": f"{label} ({bank_kind.replace('_', ' ')})",
+                    "color": raw_profile.get("color"),
+                    "profile": profile,
+                    "bank_kind": bank_kind,
+                    "alignment": raw_profile.get("alignment", {}),
+                    "evaluation_bank": raw_profile.get("evaluation_bank", {}),
+                }
+            )
+            for replicate, replicate_profile in enumerate(
+                _delayed_replicate_bands(raw_profile)
+            ):
+                facet["forward_velocity_by_replicate"]["series"].append(
+                    {
+                        "label": (
+                            f"{label} ({bank_kind.replace('_', ' ')}, "
+                            f"replicate {replicate + 1})"
+                        ),
+                        "color": raw_profile.get("color"),
+                        "profile": replicate_profile,
+                        "bank_kind": bank_kind,
+                        "replicate": replicate,
+                    }
+                )
+
+    if not facets:
+        raise ValueError("delayed profile payloads contain no profiles")
+    return {
+        "schema_id": DELAYED_VELOCITY_PROFILE_PAYLOAD_SCHEMA_ID,
+        "schema_version": DELAYED_VELOCITY_PROFILE_PAYLOAD_SCHEMA_VERSION,
+        "facets": {"condition": facets},
+    }
+
+
+def _delayed_profile_band(profile: Mapping[str, Any]) -> dict[str, Any]:
+    time = list(profile.get("time", profile.get("time_s", ())))
+    mean = list(profile.get("mean", ()))
+    if not time or len(time) != len(mean):
+        raise ValueError("delayed profile time and mean must be non-empty and aligned")
+    upper = profile.get("upper")
+    lower = profile.get("lower")
+    if upper is None or lower is None:
+        std = list(profile.get("std", ()))
+        if len(std) != len(mean):
+            raise ValueError("delayed profile requires aligned upper/lower or std")
+        upper = [float(value) + float(delta) for value, delta in zip(mean, std, strict=True)]
+        lower = [float(value) - float(delta) for value, delta in zip(mean, std, strict=True)]
+    return {
+        "time": time,
+        "mean": mean,
+        "upper": list(upper),
+        "lower": list(lower),
+    }
+
+
+def _delayed_replicate_bands(profile: Mapping[str, Any]) -> list[dict[str, Any]]:
+    means = profile.get("replicate_mean", ())
+    stds = profile.get("replicate_std", ())
+    if not means and not stds:
+        return []
+    if not isinstance(means, Sequence) or not isinstance(stds, Sequence):
+        raise ValueError("delayed replicate profile means/stds must be sequences")
+    if len(means) != len(stds):
+        raise ValueError("delayed replicate profile means/stds must have equal length")
+    time = list(profile.get("time", profile.get("time_s", ())))
+    bands = []
+    for mean, std in zip(means, stds, strict=True):
+        bands.append(_delayed_profile_band({"time": time, "mean": mean, "std": std}))
+    return bands
 
 
 def _validated_params(run_spec: EvaluationRunSpec) -> tuple[BaseModel, dict[str, Any]]:
@@ -965,6 +1089,8 @@ __all__ = [
     "CENTER_OUT_ENSEMBLE_EVALUATION_TYPE",
     "CenterOutEnsembleEvalParams",
     "DELAYED_REACH_BANK_EVALUATION_TYPE",
+    "DELAYED_VELOCITY_PROFILE_PAYLOAD_SCHEMA_ID",
+    "DELAYED_VELOCITY_PROFILE_PAYLOAD_SCHEMA_VERSION",
     "DelayedReachBankEvalParams",
     "FEEDBACK_ABLATION_EVALUATION_TYPE",
     "FeedbackAblationEvalParams",
@@ -974,6 +1100,7 @@ __all__ = [
     "WORST_CASE_EPSILON_EVALUATION_TYPE",
     "center_out_ensemble_recipe",
     "delayed_reach_bank_recipe",
+    "delayed_velocity_profile_payload",
     "feedback_ablation_recipe",
     "perturbation_response_bank_recipe",
     "register_rlrmp_evaluation_recipes",
