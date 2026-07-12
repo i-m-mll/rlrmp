@@ -167,7 +167,9 @@ owner = "b13e0e4"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_native_executor_deletion_gate.py::"
-minimum_non_skipped = 3
+# 158b580 replaced two shim-shape checks with deletion/reaccretion guards while
+# retaining the 15-test native-runtime protection family; pin the full count.
+minimum_non_skipped = 15
 negative_canary = "tests/test_native_executor_deletion_gate.py::test_native_executor_deletion_gate_negative_canary_flags_optimizer_loop"
 
 [[families]]

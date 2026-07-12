@@ -1,18 +1,20 @@
 {
   "schema_version": "rlrmp.runpod_operational_profile.v1",
-  "image": "runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04",
+  "_note": "The orchestrated scheduled path requires feedbax >= the e8f90fa/19497d4 merge.",
+  "image": "runpod/pytorch:1.0.3-cu1281-torch290-ubuntu2204",
   "gpu_id": "NVIDIA GeForce RTX 4090",
-  "datacenters": ["CA-MTL-1", "US-KS-2", "US-TX-3"],
+  "datacenters": ["EU-RO-1", "EU-CZ-1", "US-IL-1", "EUR-IS-1"],
   "local_repos": {
     "rlrmp": "{repo_root}",
-    "feedbax": "{feedbax_lane0}"
+    "feedbax": "/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax"
   },
   "remote_repos": {
     "rlrmp": "/workspace/rlrmp",
     "feedbax": "/workspace/feedbax"
   },
   "path_patches": [
-    ["/workspace/rlrmp/pyproject.toml", "../20 Feedbax/feedbax", "/workspace/feedbax"]
+    ["/workspace/rlrmp/pyproject.toml", "../20 Feedbax/feedbax", "/workspace/feedbax"],
+    ["/workspace/rlrmp/uv.lock", "../20 Feedbax/feedbax", "/workspace/feedbax"]
   ],
   "overlay_steps": ["uv pip install -U 'jax[cuda12]'"],
   "auto_teardown": true

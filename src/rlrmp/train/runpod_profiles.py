@@ -14,6 +14,7 @@ class RunPodOperationalProfile(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     schema_version: str = "rlrmp.runpod_operational_profile.v1"
+    note: str | None = Field(default=None, alias="_note")
     image: str
     gpu_id: str
     datacenters: list[str] = Field(min_length=1)
@@ -28,16 +29,7 @@ def load_runpod_profile(path: Path, *, repo_root: Path) -> RunPodDriverConfig:
     """Load a tracked profile and resolve its explicit repository tokens."""
     profile = RunPodOperationalProfile.model_validate_json(path.read_text(encoding="utf-8"))
     resolved_repo = repo_root.resolve()
-    scientific_root = (
-        resolved_repo.parents[2]
-        if resolved_repo.parent.name == "worktrees"
-        else resolved_repo.parent
-    )
-    tokens = {
-        "{repo_root}": resolved_repo,
-        "{feedbax_lane0}": scientific_root
-        / "20 Feedbax/feedbax/worktrees/feature__e8f90fa-schedule-preflight-discovery",
-    }
+    tokens = {"{repo_root}": resolved_repo}
 
     def resolve(value: str) -> Path:
         if value in tokens:

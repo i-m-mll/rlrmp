@@ -341,29 +341,42 @@ only when the user explicitly accepts the lower isolation tier for that run.
   Docker tag you have verified exists, then install `jax[cuda12]` after
   `uv sync`; skip the deprecated `runpod/pytorch:2.8.0-...` template.
 
-### Deploy and monitor via the feedbax scripts
+### Launch and monitor through the orchestrator
 
-Use the feedbax deploy automation as the deploy/bootstrap/monitor surface; do
-not reproduce a manual recipe here.
+The paved RunPod path is the governed matrix launcher with the tracked
+operational profile:
+
+```bash
+PYTHONPATH=src uv run --no-sync python scripts/launch_training.py execute \
+  results/<issue>/runs/matrix.json \
+  --driver runpod \
+  --runpod-profile src/rlrmp/config/runpod_profiles/secure_rtx4090.json
+```
+
+The matrix remains the source of scientific parameters. The profile supplies
+only transport and environment policy. Use `feedbax-orchestrate status` for a
+read-only snapshot and `feedbax-orchestrate watch` for read-only monitoring;
+use the run-set directory printed by the launch as their target. Do not mutate
+or bypass orchestrator state from a monitoring session.
+
+The older Feedbax deploy scripts are parity references and debugging tools, not
+an alternate launch path:
 
 - `~/Main/10 Projects/10 PhD/20 Feedbax/feedbax/scripts/deploy/runpod_deploy.sh`
 - `~/Main/10 Projects/10 PhD/20 Feedbax/feedbax/scripts/deploy/poll_run.sh`
 
-They own pod-create, SSH endpoint discovery, dead-state fail-fast, path-dependency
-sync and local-path patching, the nohup+sentinel install pattern, the
-poisoned-venv probe-and-rebuild on pod reuse, and cadence-based polling with
-per-row/per-batch progress. Read their `--help` / dry-run surfaces first. **When
-they fail or fall short, harden the scripts and file the gap** (feedbax issue,
-surfaced-from note per the meta coordination protocol) rather than reverting to
-a manual recipe in this file.
+Use them to investigate a regression in acquisition, bootstrap, or status
+rendering. If the orchestrated path fails or falls short, harden the owning
+Feedbax surface and file the gap (with a surfaced-from link per the meta
+coordination protocol); do not launch production work through a parallel manual
+recipe.
 
-Residual invariants the scripts do not fully own (agent judgment still required):
+Residual invariants still requiring agent judgment:
 
 - Expose `22/tcp` at pod creation; the default RunPod port set can leave direct
   TCP SSH unreachable.
-- Scan the nohup log for `ptxas` warnings, `OOM`, and `Traceback` alongside the
-  loss-progress signal — `poll_run.sh` reports structured status, not error
-  patterns.
+- Inspect the orchestrator's row logs for `ptxas` warnings, `OOM`, and
+  `Traceback` alongside the loss-progress signal.
 - Verify the Docker image tag exists on Docker Hub before `pod create`; stale
   tags cause silent deploy failures. (The `uptimeSeconds`-is-not-liveness rule,
   Bug `b399efc`, is implemented in the scripts — do not reintroduce manual
@@ -420,28 +433,38 @@ semantics restart or continue.
 
 Author the smoke parameters as a one-row `TrainingRunMatrixSpec`, emit its
 governed document with the storage command above, and launch that row through
-the spec-file runner:
+the same orchestrated path:
 
 ```bash
 cd /workspace/rlrmp
 PYTHONPATH=src uv run --no-sync python scripts/launch_training.py validate \
   results/<issue>/runs/smoke.json
 PYTHONPATH=src uv run --no-sync python scripts/launch_training.py execute \
-  results/<issue>/runs/smoke.json --row smoke
+  results/<issue>/runs/smoke.json --row smoke \
+  --driver runpod \
+  --runpod-profile src/rlrmp/config/runpod_profiles/secure_rtx4090.json
 ```
 
 The smoke matrix is the source of scientific parameters; the execute command
-accepts only presentation and lifecycle controls. Pause after the smoke test and do not launch
-the main matrix until the user confirms. rlrmp training scripts emit
+accepts only presentation and lifecycle controls. Pause after the smoke test
+and do not launch the main matrix until the user confirms. Training emits
 grep-friendly `BATCH phase=<phase> batch=<i>/<n> [loss=<x>] [elapsed=<s>s]`
-progress lines (helper `rlrmp.train.progress`) that `poll_run.sh` consumes;
+progress lines (helper `rlrmp.train.progress`) that the orchestrator records;
 these are log-only, never Mandible checkpoints (see the run-status convention
 below).
 
 ### Post-training-run protocol
 
-After every remote training run completes, use `scripts/post_run.sh` wherever
-possible as the deterministic handoff step. It owns the mechanical protocol:
+After the orchestrated run completes, first map its run set into the tracked
+rlrmp layout:
+
+```bash
+PYTHONPATH=src uv run --no-sync python scripts/launch_training.py map-post-run \
+  <run-set-dir> --issue <tracking-issue> --run-prefix <group>
+```
+
+Then use `scripts/post_run.sh` as the deterministic evidence and commit handoff.
+It owns the mechanical protocol:
 artifact sync from local, Modal, or pod sources; tracked run-spec creation under
 `results/<issue>/runs/<run>.json`; bulk artifact placement under
 `_artifacts/<issue>/runs/<run>/`; metrics-table rendering from
@@ -599,7 +622,7 @@ recipe. If a run needs additional tracked sidecars, use
 
 ### Script placement: experiment-specific vs reusable (Bug: 8404108)
 
-The top-level `scripts/` directory is for cross-cutting tooling — scripts that operate generically across experiments (e.g. `train_minimax.py`, `eval_minimax.py`, `eval_diagnostics.py`, infrastructure shell scripts). It is NOT a dumping ground for experiment-specific analysis code.
+The top-level `scripts/` directory is for cross-cutting tooling — scripts that operate generically across experiments (e.g. `launch_training.py`, `eval_minimax.py`, `eval_diagnostics.py`, infrastructure shell scripts). It is NOT a dumping ground for experiment-specific analysis code.
 
 **Hard rules:**
 
@@ -617,7 +640,7 @@ The top-level `scripts/` directory is for cross-cutting tooling — scripts that
 | `src/rlrmp/eval/{ensemble,kinematics,sisu,pert,minimax_io}.py` | Generic eval primitives used across 14+ scripts. Capability-named under `rlrmp.eval`. |
 | `src/rlrmp/train/{minimax,standard}.py` | Hyperparameter constructors for two training methods. Names are methods, not phases. |
 | `results/2bc95fd/scripts/analyse_anti_anticipation_6cell_variance.py` | Experiment-specific analysis tied to `2bc95fd`. Lives with its experiment. |
-| `scripts/launch_training.py` | Generic governed-matrix training runner. Family-specific `train_*.py` files are error-only migration shims. |
+| `scripts/launch_training.py` | Generic governed-matrix training runner; retired family-specific `train_*.py` launchers must not reaccrete. |
 
 | Wrong placement | Why it's wrong |
 |---|---|

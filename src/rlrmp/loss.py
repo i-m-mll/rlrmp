@@ -1244,8 +1244,8 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
         # `DelayedReaches` timeline ("hold" + "target_on"). The mask is 1
         # before the go cue and 0 after, so any non-zero contribution is
         # purely a pre-go anticipatory force. Default 0.0; activate via
-        # `loss.weights.nn_output_pre_go` or `--nn-output-pre-go <w>` on
-        # `train_minimax.py`. Bug: efc4d68 (feedbax 50507a9)
+        # `loss.weights.nn_output_pre_go` in the governed training spec.
+        # Bug: efc4d68 (feedbax 50507a9)
         nn_output_pre_go=EpochMaskedLoss(
             label="nn_output_pre_go",
             base_loss=TargetStateLoss(

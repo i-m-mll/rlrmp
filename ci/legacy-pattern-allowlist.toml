@@ -34,11 +34,9 @@
 #
 #   [[argparse_training_entry_points]] — modules that construct
 #   `argparse.ArgumentParser(...)` directly, restricted to the domain named
-#   in the issue: src/rlrmp/train/*.py plus scripts/train_*.py. Thin CLI
-#   wrapper scripts that only import and call a `main()` defined elsewhere
-#   (e.g. scripts/train_cs_nominal_gru.py) do not themselves construct a
-#   parser and are not separate entries; the argparse-first module they
-#   delegate to is the entry point.
+#   in the issue: src/rlrmp/train/*.py plus scripts/train_*.py. Executable
+#   scripts/train_*.py launchers are forbidden by the native-executor deletion
+#   gate; any parser-bearing training entry point must be inventoried here.
 #
 #   [[run_spec_writer_sites]] — hand-rolled run-spec/run.json writer sites:
 #   functions in the same src/rlrmp/train/*.py + scripts/train_*.py domain

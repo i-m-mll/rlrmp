@@ -194,9 +194,9 @@ class TestMakeExecutorBatchLogCallback:
 class TestTrainScriptWiring:
     """The live training entry-point delegates progress to the native executor."""
 
-    def test_minimax_no_longer_imports_legacy_batch_callbacks(self) -> None:
+    def test_launch_training_does_not_import_legacy_batch_callbacks(self) -> None:
         module = _load_script_module(
-            "train_minimax_progress_wiring",
-            REPO_ROOT / "scripts" / "train_minimax.py",
+            "launch_training_progress_wiring",
+            REPO_ROOT / "scripts" / "launch_training.py",
         )
         assert not hasattr(module, "make_batch_log_callbacks")

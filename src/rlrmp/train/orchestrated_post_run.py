@@ -50,8 +50,7 @@ def map_registered_run_set(
         }
         recipe_path = target / "run.json"
         encoded = json.dumps(recipe, indent=2, sort_keys=True) + "\n"
-        if not recipe_path.exists() or recipe_path.read_text(encoding="utf-8") != encoded:
-            recipe_path.write_text(encoded, encoding="utf-8")
+        recipe_path.write_text(encoded, encoding="utf-8")
         outputs.append(recipe_path)
     return tuple(outputs)
 

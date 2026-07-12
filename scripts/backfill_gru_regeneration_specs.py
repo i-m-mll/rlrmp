@@ -299,8 +299,8 @@ def classify_manifest(name: str, manifest: Mapping[str, Any]) -> dict[str, Any] 
     if schema.startswith("rlrmp.cs_stochastic_gru.training_diagnostics_summary"):
         return {
             "diagnostic_name": "gru_training_diagnostics_summary",
-            "materializer": "scripts/extract_training_diagnostics_summary",
-            "source_files": ["scripts/train_minimax.py"],
+            "materializer": "rlrmp.analysis.training_diagnostics.training_diagnostics_recipe",
+            "source_files": ["src/rlrmp/analysis/training_diagnostics.py"],
         }
     return None
 

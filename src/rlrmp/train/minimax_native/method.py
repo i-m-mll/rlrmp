@@ -120,7 +120,7 @@ def build_minimax_training_run_spec(
         execution_mode="local",
         require_review=False,
         allow_cloud=False,
-        execution_metadata={"entrypoint": "scripts/train_minimax.py"},
+        execution_metadata={"entrypoint": "scripts/launch_training.py"},
         artifact_root=str(output_dir),
         artifact_metadata={
             "tracked_spec_dir": str(spec_dir),
