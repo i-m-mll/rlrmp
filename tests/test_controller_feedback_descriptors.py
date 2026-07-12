@@ -33,11 +33,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SCANNED_RELATIVE_PATHS = (
     "src/rlrmp/eval/gru_diagnostics.py",
     "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
-    "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+    "src/rlrmp/eval/perturbation_bank.py",
     "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py",
     "src/rlrmp/model/feedbax_graph.py",
     "src/rlrmp/train/cs_perturbation_training.py",
-    "scripts/materialize_gru_perturbation_response.py",
 )
 
 

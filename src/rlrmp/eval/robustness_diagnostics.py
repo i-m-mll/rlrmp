@@ -121,7 +121,7 @@ def evaluate_stabilization_row(
     from rlrmp.eval.checkpoint_selection import (
         load_validation_selected_checkpoint_model,
     )
-    from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+    from rlrmp.eval.perturbation_bank import (
         apply_perturbation_to_trial_specs,
     )
     from rlrmp.eval.trial_inputs import (
@@ -308,9 +308,6 @@ def run_feedback_robustness_diagnostics(
     from rlrmp.analysis.pipelines.gru_feedback_ablation import (
         execute_feedback_ablation_pipeline,
     )
-    from rlrmp.analysis.pipelines.gru_perturbation_bank import (
-        materialize_gru_perturbation_response,
-    )
     from rlrmp.paths import mkdir_p
 
     def hook(name: str) -> Any:
@@ -333,25 +330,14 @@ def run_feedback_robustness_diagnostics(
             "analysis stages may not rerun diagnostic rollouts"
         )
     evaluation = hook("load_json")(paths["evaluation"])
-    perturbation = (
-        hook("load_json")(paths["perturbation"])
-        if hook("perturbation_output_is_current")(
-            paths["perturbation"], expected_trials=n_rollout_trials
+    if not hook("perturbation_output_is_current")(
+        paths["perturbation"], expected_trials=n_rollout_trials
+    ):
+        raise FileNotFoundError(
+            "feedback robustness analysis requires a current perturbation evaluation "
+            "artifact; execute the registered perturbation-bank evaluation matrix first"
         )
-        else materialize_gru_perturbation_response(
-            source_experiment=issue,
-            result_experiment=issue,
-            run_ids=run_ids,
-            labels=labels,
-            n_rollout_trials=n_rollout_trials,
-            bank_mode="calibrated",
-            calibration_level="moderate",
-            calibration_reach=0.15,
-            feedback_scale_manifest_path=paths["evaluation"],
-            extlqg_physical_dim=6,
-            repo_root=repo_root,
-        )
-    )
+    perturbation = hook("load_json")(paths["perturbation"])
     feedback_execution = execute_feedback_ablation_pipeline(
         source_experiment=issue,
         result_experiment=issue,

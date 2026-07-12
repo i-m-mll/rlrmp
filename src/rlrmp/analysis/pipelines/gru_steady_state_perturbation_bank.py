@@ -27,7 +27,7 @@ from rlrmp.eval.checkpoint_selection import (
     load_validation_selected_checkpoint_model,
 )
 from rlrmp.eval.gru_diagnostics import RolloutEvaluation
-from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+from rlrmp.eval.perturbation_bank import (
     apply_perturbation_to_trial_specs,
 )
 from rlrmp.analysis.pipelines.gru_pilot_figures import (
@@ -1531,7 +1531,7 @@ def _evaluate_model_on_trial_specs(
     n_replicates: int,
     seed: int,
 ) -> RolloutEvaluation:
-    from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+    from rlrmp.eval.perturbation_bank import (
         _evaluate_model_on_trial_specs as evaluate,
     )
 

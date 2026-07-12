@@ -31,7 +31,7 @@ from rlrmp.analysis.pipelines.gru_map_error_decomposition import (
     materialize_gru_map_error_decomposition,
 )
 from rlrmp.paths import portable_repo_path as _repo_relative
-from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+from rlrmp.eval.perturbation_bank import (
     default_cs_perturbation_bank,
     evaluate_run_perturbation_bank,
 )

@@ -722,7 +722,7 @@ def _write_postrun_auxiliary_regeneration_specs(
             "src/rlrmp/eval/evaluation_diagnostics.py",
             "src/rlrmp/eval/gru_diagnostics.py",
             "src/rlrmp/analysis/pipelines/gru_pilot_figures.py",
-            "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+            "src/rlrmp/eval/perturbation_bank.py",
             "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
         ],
         notes=[
@@ -806,41 +806,21 @@ def materialize_optional_perturbation_response(
     preferred_checkpoint_manifest_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
-    """Call the optional perturbation-response bank materializer."""
+    """Return the registered evaluation-matrix request for perturbation responses."""
+
+    from rlrmp.analysis.perturbation_bank import perturbation_bank_matrix_payload
 
     try:
-        module = importlib.import_module("rlrmp.analysis.pipelines.gru_perturbation_bank")
-        materializer = getattr(module, "materialize_gru_perturbation_response")
-    except (ImportError, AttributeError) as exc:
-        return {
-            "status": "skipped",
-            "reason": "optional_perturbation_response_unavailable",
-            "detail": str(exc),
-            "expected_hook": (
-                "rlrmp.analysis.pipelines.gru_perturbation_bank."
-                "materialize_gru_perturbation_response"
-            ),
-        }
-
-    try:
-        result = materializer(
+        matrix = perturbation_bank_matrix_payload(
             source_experiment=experiment,
-            result_experiment=experiment,
-            run_ids=tuple(run_ids),
-            labels=None if labels is None else tuple(labels),
+            run_ids=run_ids,
+            labels=labels,
             n_rollout_trials=n_rollout_trials,
-            evaluate=True,
             bank_mode=bank_mode,
             calibration_level=calibration_level,
             calibration_reach=calibration_reach,
             feedback_scale_manifest_path=feedback_scale_manifest_path,
             preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
-            checkpoint_selection_mode=(
-                "fixed_bank_manifest"
-                if preferred_checkpoint_manifest_path is not None
-                else "sparse_history"
-            ),
-            repo_root=repo_root,
         )
     except (FileNotFoundError, ValueError, KeyError, AttributeError) as exc:
         return {
@@ -850,21 +830,12 @@ def materialize_optional_perturbation_response(
             "selection_role": "audit_only_not_used_for_checkpoint_selection",
         }
 
-    runs = result.get("runs", {}) if isinstance(result, dict) else {}
-    bank = result.get("bank", {}) if isinstance(result, dict) else {}
-    perturbations = bank.get("perturbations", ()) if isinstance(bank, dict) else ()
     return {
-        "status": "materialized",
-        "custody": "feedbax_evaluation_and_analysis_manifests",
+        "status": "registered_evaluation_matrix",
+        "custody": "feedbax_evaluation_manifests",
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
-        "result": {
-            "schema_version": result.get("schema_version") if isinstance(result, dict) else None,
-            "n_runs": len(runs),
-            "n_perturbations": len(perturbations),
-            "checkpoint_policy": (
-                result.get("checkpoint_policy") if isinstance(result, dict) else None
-            ),
-        },
+        "evaluation_matrix": matrix,
+        "next_action": "execute_evaluation_run_matrix",
     }
 
 

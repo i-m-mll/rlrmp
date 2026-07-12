@@ -35,7 +35,7 @@ from rlrmp.eval.checkpoint_selection import (
     load_validation_selected_checkpoint_model,
 )
 from rlrmp.eval.gru_diagnostics import RolloutEvaluation
-from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+from rlrmp.eval.perturbation_bank import (
     apply_perturbation_to_trial_specs,
     default_cs_perturbation_bank,
     delta_full_qrf_cost_summary,

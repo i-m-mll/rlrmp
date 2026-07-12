@@ -341,7 +341,7 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             GRU_PERTURBATION_BANK_SCHEMA_ID,
             GRU_PERTURBATION_BANK_SCHEMA_VERSION,
             emitted_by=(
-                "rlrmp.analysis.pipelines.gru_perturbation_bank",
+                "rlrmp.eval.perturbation_bank",
                 "rlrmp.analysis.declarative_materialization",
             ),
             consumed_by=(
@@ -392,7 +392,7 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_VERSION,
             emitted_by=("rlrmp.analysis.pipelines.gru_perturbation_calibration",),
             consumed_by=(
-                "rlrmp.analysis.pipelines.gru_perturbation_bank",
+                "rlrmp.eval.perturbation_bank",
                 "rlrmp perturbation calibration notes",
             ),
             description="Open-loop perturbation calibration manifest for C&S GRU banks.",
