@@ -4,11 +4,6 @@
 schema_version = 1
 
 [[violations]]
-path = "results/c6c5997/runs/matrix.json"
-owner = "1b227dd"
-reason = "Historical matrix with a fully expanded base.inline; storage-adoption sibling migrates it."
-
-[[violations]]
 path = "results/ef9c882/runs/matrix.json"
 owner = "49dc66d"
 reason = "Pre-gate historical matrix with a fully expanded base.inline; retained as stock, not a pattern for new experiments."

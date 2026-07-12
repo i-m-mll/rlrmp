@@ -46,8 +46,9 @@ def test_tracked_materializations_are_explicitly_grandfathered() -> None:
         for entry in tomllib.loads(ALLOWLIST.read_text(encoding="utf-8"))["violations"]
     }
     found = scan_tracked()
-    assert "results/c6c5997/runs/matrix.json" in found
-    assert "large_run_matrix_base_inline" in found["results/c6c5997/runs/matrix.json"]
+    assert "results/c6c5997/runs/matrix.json" not in found
+    assert "results/ef9c882/runs/matrix.json" in found
+    assert "large_run_matrix_base_inline" in found["results/ef9c882/runs/matrix.json"]
     assert not set(found) - allowed, (
         "New tracked expanded/resolved spec materializations: "
         f"{sorted(set(found) - allowed)}. Store a compact authored ref/spec instead; "
