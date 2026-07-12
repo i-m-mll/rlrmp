@@ -156,8 +156,9 @@ def test_stabilization_evaluator_preserves_missing_family_behavior(
     from rlrmp.eval import checkpoint_selection as gru_checkpoint_selection
     from rlrmp.eval import perturbation_bank as gru_perturbation_bank
     from rlrmp.eval import trial_inputs
-    from rlrmp.analysis.pipelines import gru_steady_state_perturbation_bank
+    from rlrmp.analysis import steady_state_perturbation as steady_analysis
     from rlrmp.eval import sisu_spectrum
+    from rlrmp.eval import steady_state as steady_eval
     from rlrmp.train import task_model
 
     base = SimpleNamespace(command=np.zeros((2, 3, 1)), dt=0.01)
@@ -238,7 +239,7 @@ def test_stabilization_evaluator_preserves_missing_family_behavior(
     )
     monkeypatch.setattr(task_model, "setup_task_model_pair", lambda *_args, **_kwargs: pair)
     monkeypatch.setattr(
-        gru_steady_state_perturbation_bank,
+        steady_eval,
         "make_steady_state_trial_specs",
         lambda *_args, **_kwargs: (
             "steady",
@@ -246,32 +247,32 @@ def test_stabilization_evaluator_preserves_missing_family_behavior(
         ),
     )
     monkeypatch.setattr(
-        gru_steady_state_perturbation_bank,
-        "_target_position",
+        steady_eval,
+        "target_position",
         lambda *_args: [0.1, 0.0],
     )
     monkeypatch.setattr(
-        gru_steady_state_perturbation_bank,
+        steady_eval,
         "pad_feedback_offset_inputs",
         lambda trials, **_kwargs: trials,
     )
     monkeypatch.setattr(
-        gru_steady_state_perturbation_bank,
-        "_expected_feedback_dim_from_hps",
+        steady_eval,
+        "expected_feedback_dim_from_hps",
         lambda _hps: 6,
     )
     monkeypatch.setattr(
-        gru_steady_state_perturbation_bank,
-        "_feedback_dim",
+        steady_eval,
+        "feedback_dim",
         lambda _trials: 6,
     )
     monkeypatch.setattr(
-        gru_steady_state_perturbation_bank,
-        "_evaluate_model_on_trial_specs",
+        steady_eval,
+        "evaluate_model_on_trial_specs",
         lambda **_kwargs: base,
     )
     monkeypatch.setattr(
-        gru_steady_state_perturbation_bank,
+        steady_analysis,
         "washin_diagnostics",
         lambda *_args, **_kwargs: {"status": "stable"},
     )

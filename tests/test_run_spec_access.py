@@ -23,7 +23,6 @@ CONVERTED_SEED_FILES = (
     "src/rlrmp/eval/feedback_ablation.py",
     "src/rlrmp/eval/perturbation_bank.py",
     "src/rlrmp/analysis/pipelines/gru_pilot_figures.py",
-    "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py",
     "src/rlrmp/analysis/pipelines/objective_comparator.py",
     "src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py",
     "src/rlrmp/eval/ensemble.py",
