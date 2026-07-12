@@ -50,21 +50,18 @@
       "status": "materialized"
     },
     "objective_comparator": {
-      "artifact_group_ids": [],
-      "artifact_roles": [
-        "rlrmp-feedback-quality-objective-comparator-manifest",
-        "rlrmp-feedback-quality-objective-comparator-note"
-      ],
       "component_node": "objective_comparator",
+      "detail": {
+        "reason": "canonical objective-comparator analysis parent is unavailable",
+        "status": "skipped"
+      },
       "live_materializer": null,
       "materialization_mode": "live_analysis_node",
-      "paths": {
-        "notes": "results/5f70333/notes/objective_comparator_validation_selected.md",
-        "tracked": "results/5f70333/notes/objective_comparator_validation_selected.json"
-      },
+      "paths": {},
+      "reason": "canonical objective-comparator analysis parent is unavailable",
       "schema_kind": "RLRMPObjectiveComparatorSidecar",
       "selection_role": "audit_only_not_used_for_checkpoint_selection",
-      "status": "materialized"
+      "status": "skipped"
     },
     "perturbation_calibration": {
       "component_node": "perturbation_calibration",

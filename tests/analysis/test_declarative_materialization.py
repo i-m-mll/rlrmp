@@ -368,6 +368,12 @@ def test_diagnostic_bank_recipes_register_params_models_and_eval_dependencies() 
     assert params_model_for(dm.PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE) is (
         dm.PerturbationBankAggregateAnalysisParams
     )
+    assert params_model_for(dm.OBJECTIVE_COMPARATOR_ANALYSIS_TYPE) is (
+        dm.ObjectiveComparatorParams
+    )
+    assert params_model_for(dm.ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE) is (
+        dm.RobustnessPhenotypeParams
+    )
     assert params_model_for(PERTURBATION_BANK_PARAMS_TYPE) is PerturbationBankParams
     with pytest.raises(ValidationError):
         dm.PolicyDiagnosticsAnalysisParams.model_validate({"unknown": True})
@@ -394,6 +400,12 @@ def test_diagnostic_bank_recipes_register_params_models_and_eval_dependencies() 
     assert dm.EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE[
         dm.RECURRENT_JACOBIAN_ANALYSIS_TYPE
     ] == ("evaluation_run",)
+    assert dm.EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE[
+        dm.OBJECTIVE_COMPARATOR_ANALYSIS_TYPE
+    ] == tuple(dm.objective_comparator_recipe.EVAL_DEPENDENCIES)
+    assert dm.EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE[
+        dm.ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE
+    ] == tuple(dm.robustness_phenotype_recipe.ANALYSIS_DEPENDENCIES)
 
 
 def test_feedback_ablation_recipe_consumes_cached_eval_states_and_records_custody(
@@ -1019,17 +1031,12 @@ def test_feedback_quality_lens_bundle_executes_fixture_and_groups_artifacts(
             plan.feedback_ablation_json_path,
             {"schema_version": "rlrmp.gru_feedback_ablation.v1", "rows": []},
         ),
-        (
-            plan.objective_comparator_json_path,
-            {"schema_version": "rlrmp.objective_comparator_sidecar.v6", "rows": []},
-        ),
     ):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
     for path in (
         plan.perturbation_response_note_path,
         plan.feedback_ablation_note_path,
-        plan.objective_comparator_note_path,
     ):
         path.write_text("# fixture\n", encoding="utf-8")
 

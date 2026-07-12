@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+import json
+from pathlib import Path
 from typing import Any
 
 from feedbax.analysis.analysis import AbstractAnalysis
@@ -28,6 +30,20 @@ DEFAULT_SOURCE_NAMES = (
     "worst_case_epsilon_audit",
     "broad_epsilon_attribution",
 )
+ARTIFACT_ROLE_TO_SOURCE = {
+    "rlrmp-bridge-standard-certificate": "standard_certificate",
+    "rlrmp-bridge-standard-certificate-manifest": "standard_certificate",
+    "rlrmp-gru-standard-certificate-manifest": "standard_certificate",
+    "rlrmp-gru-objective-comparator-manifest": "objective_comparator",
+    "rlrmp-gru-perturbation-response-manifest": "perturbation_response",
+    "rlrmp-gru-feedback-ablation-manifest": "feedback_ablation",
+    "rlrmp-gru-map-decomposition-manifest": "map_error_decomposition",
+    "rlrmp-gru-evaluation-diagnostics": "evaluation_diagnostics",
+    "rlrmp-gru-worst-case-epsilon-audit-manifest": "worst_case_epsilon_audit",
+    "rlrmp-gru-broad-epsilon-attribution-manifest": "broad_epsilon_attribution",
+    "rlrmp-induced-gain-manifest": "induced_gain",
+    "rlrmp-exact-audit-manifest": "exact_audit",
+}
 
 FORMAL_HINF_REQUIREMENTS = (
     "game_card",
@@ -920,6 +936,7 @@ class RobustnessPhenotypeParams(BaseModel):
     issue: str = ISSUE_ID
     scope: str = DEFAULT_SCOPE
     paired_run_ids: dict[str, str] = Field(default_factory=dict)
+    requested_outputs: list[str] = Field(default_factory=list)
 
 
 class RobustnessPhenotypeAnalysis(AbstractAnalysis):
@@ -966,14 +983,27 @@ def robustness_phenotype_recipe(
     sources: dict[str, Mapping[str, Any] | None] = {}
     for index, resolved in enumerate(inputs):
         states = resolved.states
-        if not isinstance(states, Mapping):
+        if isinstance(states, Mapping):
+            name = str(states.get("component", states.get("analysis_type", f"parent_{index}")))
+            sources[name] = {
+                "status": "available",
+                "source_path": str(states.get("manifest_id", "parent_manifest")),
+                "payload": dict(states),
+            }
             continue
-        name = str(states.get("component", states.get("analysis_type", f"parent_{index}")))
-        sources[name] = {
-            "status": "available",
-            "source_path": str(states.get("manifest_id", "parent_manifest")),
-            "payload": dict(states),
-        }
+        manifest = resolved.manifest
+        if manifest is None:
+            continue
+        for artifact in manifest.artifacts:
+            source_name = ARTIFACT_ROLE_TO_SOURCE.get(artifact.role)
+            if source_name is None or source_name in sources or artifact.uri is None:
+                continue
+            artifact_path = Path(artifact.uri)
+            sources[source_name] = {
+                "status": "available",
+                "source_path": str(artifact_path),
+                "payload": json.loads(artifact_path.read_text(encoding="utf-8")),
+            }
     return AnalysisRecipeResult(
         analyses={"robustness_phenotype": RobustnessPhenotypeAnalysis(variant="robustness_phenotype")},
         data=AnalysisInputData(

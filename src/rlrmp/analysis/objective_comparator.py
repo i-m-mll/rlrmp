@@ -111,6 +111,7 @@ class ObjectiveComparatorParams(BaseModel):
     schema_version: str = "v1"
     scope: str = "validation_selected_objective_comparison"
     issue: str = "3a5be47"
+    requested_outputs: list[str] = Field(default_factory=list)
 
 
 class ObjectiveComparatorAnalysis(AbstractAnalysis):
