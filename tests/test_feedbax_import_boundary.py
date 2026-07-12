@@ -8,6 +8,14 @@ from pathlib import Path
 import tomllib
 
 import pytest
+from feedbax.testing import (
+    AllowlistDiff,
+    AllowlistEntry,
+    Scope,
+    SiteVisitor,
+    diff_allowlist,
+    scan_domain,
+)
 
 
 pytestmark = pytest.mark.feedbax_contract
@@ -30,31 +38,29 @@ class ImportUse:
         return self.module.split(".", maxsplit=1)[0]
 
 
+@dataclass(frozen=True)
+class PrivateStringUse:
+    path: str
+    token: str
+
+
 def test_feedbax_and_jax_cookbook_imports_use_canonical_public_homes() -> None:
     manifest = _load_manifest()
-    violations = _find_import_violations(_iter_import_uses(), manifest)
+    uses = _iter_import_uses()
+    diff = _known_in_flight_diff(uses, manifest)
+    violations = _format_import_violations(diff.unlisted, manifest)
 
     assert violations == []
+    assert diff.dead_entries == ()
 
 
 def test_only_allowlisted_private_feedbax_strings_remain() -> None:
     manifest = _load_manifest()
-    allowed = tuple(
-        (entry["path"], entry["line"])
-        for entry in manifest.get("allowed_private_strings", [])
-    )
-    violations: list[str] = []
-    for path in _scan_paths():
-        relpath = _relpath(path)
-        for line in path.read_text(encoding="utf-8").splitlines():
-            for token in PRIVATE_STRING_TOKENS:
-                if token in line and not any(
-                    relpath == allowed_path and token in allowed_line
-                    for allowed_path, allowed_line in allowed
-                ):
-                    violations.append(f"{relpath}: private Feedbax string {token!r}")
+    diff = _private_string_diff(_iter_private_string_uses(), manifest)
+    violations = [f"{use.path}: private Feedbax string {use.token!r}" for use in diff.unlisted]
 
     assert violations == []
+    assert diff.dead_entries == ()
 
 
 def test_import_boundary_negative_canaries_reject_private_and_uncanonical_imports() -> None:
@@ -96,37 +102,36 @@ def _relpath(path: Path) -> str:
 
 
 def _iter_import_uses() -> list[ImportUse]:
-    uses: list[ImportUse] = []
-    for path in _scan_paths():
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        relpath = _relpath(path)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    package = alias.name.split(".", maxsplit=1)[0]
-                    if package in {"feedbax", "jax_cookbook"}:
-                        uses.append(ImportUse(relpath, node.lineno, alias.name, None))
-            elif isinstance(node, ast.ImportFrom) and node.level == 0:
-                module = node.module or ""
-                package = module.split(".", maxsplit=1)[0]
-                if package not in {"feedbax", "jax_cookbook"}:
-                    continue
-                for alias in node.names:
-                    uses.append(ImportUse(relpath, node.lineno, module, alias.name))
+    uses = scan_domain(_scan_paths(), root=REPO_ROOT, visitor_factory=_ImportVisitor)
     assert uses, "Feedbax import-boundary scan found zero imports"
     return uses
 
 
+class _ImportVisitor(SiteVisitor[ImportUse]):
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            package = alias.name.split(".", maxsplit=1)[0]
+            if package in {"feedbax", "jax_cookbook"}:
+                self.sites.append(ImportUse(self.relpath, node.lineno, alias.name, None))
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        module = node.module or ""
+        package = module.split(".", maxsplit=1)[0]
+        if node.level or package not in {"feedbax", "jax_cookbook"}:
+            return
+        for alias in node.names:
+            self.sites.append(ImportUse(self.relpath, node.lineno, module, alias.name))
+
+
 def _find_import_violations(uses: list[ImportUse], manifest: dict) -> list[str]:
+    return _format_import_violations(_known_in_flight_diff(uses, manifest).unlisted, manifest)
+
+
+def _format_import_violations(uses: tuple[ImportUse, ...], manifest: dict) -> list[str]:
     public_import_modules = set(manifest["public_import_modules"])
     canonical = {
         (entry["module"], symbol)
         for entry in manifest["canonical_homes"]
-        for symbol in entry["symbols"]
-    }
-    known_in_flight = {
-        (entry["path"], entry["module"], symbol)
-        for entry in manifest.get("known_in_flight", [])
         for symbol in entry["symbols"]
     }
     violations: list[str] = []
@@ -141,9 +146,6 @@ def _find_import_violations(uses: list[ImportUse], manifest: dict) -> list[str]:
                 )
             continue
 
-        key = (use.path, use.module, use.symbol)
-        if key in known_in_flight:
-            continue
         if use.symbol == "*":
             violations.append(f"{use.path}:{use.lineno}: wildcard import from {use.module}")
         elif _has_private_segment(use.module) or use.symbol.startswith("_"):
@@ -154,6 +156,82 @@ def _find_import_violations(uses: list[ImportUse], manifest: dict) -> list[str]:
                 "in canonical-home manifest"
             )
     return violations
+
+
+def _known_in_flight_diff(
+    uses: list[ImportUse], manifest: dict
+) -> AllowlistDiff[tuple[str, str | None], ImportUse]:
+    public_import_modules = set(manifest["public_import_modules"])
+    canonical = {
+        (entry["module"], symbol)
+        for entry in manifest["canonical_homes"]
+        for symbol in entry["symbols"]
+    }
+    findings = [
+        use
+        for use in uses
+        if (
+            use.symbol is None
+            and (_has_private_segment(use.module) or use.module not in public_import_modules)
+        )
+        or (
+            use.symbol is not None
+            and (
+                use.symbol == "*"
+                or _has_private_segment(use.module)
+                or use.symbol.startswith("_")
+                or (use.module, use.symbol) not in canonical
+            )
+        )
+    ]
+    entries = [
+        AllowlistEntry(
+            scope=Scope("file", entry["path"]),
+            owner="import_boundary",
+            reason=str(entry.get("reason", "")),
+            key=(entry["module"], symbol),
+        )
+        for entry in manifest.get("known_in_flight", [])
+        for symbol in entry["symbols"]
+    ]
+    return diff_allowlist(
+        findings,
+        entries,
+        site_key=lambda use: (use.module, use.symbol),
+        site_location=lambda use: (use.path, None),
+    )
+
+
+def _iter_private_string_uses() -> list[PrivateStringUse]:
+    return [
+        PrivateStringUse(_relpath(path), token)
+        for path in _scan_paths()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        for token in PRIVATE_STRING_TOKENS
+        if token in line
+    ]
+
+
+def _private_string_diff(
+    uses: list[PrivateStringUse], manifest: dict
+) -> AllowlistDiff[str, PrivateStringUse]:
+    entries = [
+        AllowlistEntry(
+            scope=Scope("file", entry["path"]),
+            owner="import_boundary",
+            reason=str(entry.get("reason", "")),
+            key=token,
+        )
+        for entry in manifest.get("allowed_private_strings", [])
+        for token in PRIVATE_STRING_TOKENS
+        if token in entry["line"]
+    ]
+    return diff_allowlist(
+        uses,
+        entries,
+        site_key=lambda use: use.token,
+        site_location=lambda use: (use.path, None),
+    )
 
 
 def _has_private_segment(module: str) -> bool:

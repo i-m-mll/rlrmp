@@ -10,11 +10,20 @@ from __future__ import annotations
 
 import ast
 from collections import Counter
+from collections.abc import Iterable
 from pathlib import Path
 import re
 import tomllib
 
 import pytest
+from feedbax.testing import (
+    AllowlistEntry,
+    Scope,
+    SiteVisitor,
+    diff_allowlist,
+    scan_domain,
+    target_label as kit_target_label,
+)
 
 
 pytestmark = pytest.mark.feedbax_contract
@@ -56,10 +65,8 @@ def test_analysis_write_scan_is_non_vacuous() -> None:
 
 
 def test_analysis_durable_write_sites_match_allowlist() -> None:
-    found = _site_counts(_scan_analysis_tree())
-    allowed = _allowlist_counts(_load_allowlist())
-
-    new_sites = sorted(set(found) - set(allowed))
+    diff = _allowlist_diff(_scan_analysis_tree())
+    new_sites = sorted(site.key for site, _occurrence in diff.unlisted)
     assert not new_sites, (
         "New analysis durable-write site(s) found without an allowlist entry: "
         f"{new_sites}. Route the write through governed custody, or add a "
@@ -67,22 +74,10 @@ def test_analysis_durable_write_sites_match_allowlist() -> None:
         "and reason."
     )
 
-    count_mismatches = sorted(
-        (key, f"found={found[key]} allowed={allowed[key]}")
-        for key in set(found) & set(allowed)
-        if found[key] != allowed[key]
-    )
-    assert not count_mismatches, (
-        "Analysis durable-write allowlist count mismatch: "
-        f"{count_mismatches}. Counts catch duplicate writes under one structural key; "
-        "update the inventory deliberately."
-    )
-
 
 def test_analysis_write_allowlist_has_no_dead_entries() -> None:
-    found = _site_counts(_scan_analysis_tree())
-    allowed = _allowlist_counts(_load_allowlist())
-    dead = sorted(set(allowed) - set(found))
+    diff = _allowlist_diff(_scan_analysis_tree())
+    dead = sorted(entry.key for entry in diff.dead_entries)
     assert not dead, (
         "Analysis durable-write allowlist names site(s) that no longer exist: "
         f"{dead}. Remove stale entries; shrinking the inventory is required."
@@ -91,7 +86,7 @@ def test_analysis_write_allowlist_has_no_dead_entries() -> None:
 
 def test_analysis_write_allowlist_entries_carry_owner_and_reason() -> None:
     issue_re = re.compile(r"^[0-9a-f]{7}$")
-    entries = _load_allowlist().get("durable_write_sites", [])
+    entries = _raw_allowlist_entries()
     assert entries, "analysis write allowlist declares zero durable sites"
     for entry in entries:
         assert issue_re.match(entry.get("owner", "")), (
@@ -129,65 +124,36 @@ def test_analysis_json_sidecars_use_governed_writer(
 
 
 def test_analysis_write_negative_canary_flags_unlisted_durable_write() -> None:
-    found = _site_counts(
-        _scan_source(
-            """
+    sites = _scan_source(
+        """
 from pathlib import Path
 
 def materialize_new_report(output_path: Path) -> None:
     output_path.write_text("new durable report", encoding="utf-8")
 """,
-            relpath="src/rlrmp/analysis/pipelines/new_report.py",
-        )
+        relpath="src/rlrmp/analysis/pipelines/new_report.py",
     )
-    allowed: dict[tuple[str, str, str, str], int] = {}
 
     with pytest.raises(AssertionError, match="New analysis durable-write"):
-        _assert_no_new_sites(found, allowed)
+        _assert_no_new_sites(sites, [])
 
 
 def _scan_analysis_tree() -> list[WriteSite]:
-    sites: list[WriteSite] = []
-    for path in sorted(ANALYSIS_ROOT.rglob("*.py")):
-        sites.extend(_scan_file(path))
-    return sites
-
-
-def _scan_file(path: Path) -> list[WriteSite]:
-    return _scan_source(
-        path.read_text(encoding="utf-8"),
-        relpath=path.relative_to(REPO_ROOT).as_posix(),
+    return scan_domain(
+        ANALYSIS_ROOT.rglob("*.py"),
+        root=REPO_ROOT,
+        visitor_factory=_AnalysisWriteScanner,
     )
 
 
 def _scan_source(source: str, *, relpath: str) -> list[WriteSite]:
     tree = ast.parse(source, filename=relpath)
-    scanner = _AnalysisWriteScanner(relpath)
+    scanner = _AnalysisWriteScanner(relpath=relpath)
     scanner.visit(tree)
     return scanner.sites
 
 
-class _AnalysisWriteScanner(ast.NodeVisitor):
-    def __init__(self, relpath: str) -> None:
-        self.relpath = relpath
-        self.stack: list[ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef] = []
-        self.sites: list[WriteSite] = []
-
-    def visit_ClassDef(self, node: ast.ClassDef) -> None:
-        self.stack.append(node)
-        self.generic_visit(node)
-        self.stack.pop()
-
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-        self.stack.append(node)
-        self.generic_visit(node)
-        self.stack.pop()
-
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-        self.stack.append(node)
-        self.generic_visit(node)
-        self.stack.pop()
-
+class _AnalysisWriteScanner(SiteVisitor[WriteSite]):
     def visit_Call(self, node: ast.Call) -> None:
         detected = _detect_write_call(node)
         if detected is not None:
@@ -195,7 +161,7 @@ class _AnalysisWriteScanner(ast.NodeVisitor):
             self.sites.append(
                 WriteSite(
                     path=self.relpath,
-                    symbol=_symbol(self.stack),
+                    symbol=self.qualname,
                     kind=kind,
                     target=_target_label(target),
                 )
@@ -249,21 +215,11 @@ def _is_write_mode(mode: str | None) -> bool:
     return bool(mode) and any(flag in mode for flag in "wax+")
 
 
-def _symbol(stack: list[ast.AST]) -> str:
-    names = []
-    for node in stack:
-        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-            names.append(node.name)
-    return ".".join(names) or "<module>"
-
-
 def _target_label(expr: ast.expr | None) -> str:
     if expr is None:
         return "<unknown>"
-    if isinstance(expr, ast.Name):
-        return expr.id
-    if isinstance(expr, ast.Constant):
-        return repr(expr.value)
+    if isinstance(expr, (ast.Name, ast.Constant)):
+        return kit_target_label(expr)
     if isinstance(expr, ast.Attribute):
         return f"{_target_label(expr.value)}.{expr.attr}"
     if isinstance(expr, ast.Subscript):
@@ -277,25 +233,62 @@ def _target_label(expr: ast.expr | None) -> str:
     return "<expr>"
 
 
-def _load_allowlist() -> dict:
-    return tomllib.loads(ALLOWLIST_PATH.read_text(encoding="utf-8"))
+def _raw_allowlist_entries() -> list[dict]:
+    data = tomllib.loads(ALLOWLIST_PATH.read_text(encoding="utf-8"))
+    entries = data.get("durable_write_sites", [])
+    assert isinstance(entries, list), "durable_write_sites must be a TOML list"
+    return entries
 
 
-def _site_counts(sites: list[WriteSite]) -> dict[tuple[str, str, str, str], int]:
-    return Counter(site.key for site in sites)
+def _numbered_sites(sites: Iterable[WriteSite]) -> list[tuple[WriteSite, int]]:
+    counts: Counter[tuple[str, str, str, str]] = Counter()
+    numbered = []
+    for site in sites:
+        counts[site.key] += 1
+        numbered.append((site, counts[site.key]))
+    return numbered
 
 
-def _allowlist_counts(allowlist: dict) -> dict[tuple[str, str, str, str], int]:
-    counts: dict[tuple[str, str, str, str], int] = {}
-    for entry in allowlist.get("durable_write_sites", []):
-        key = (entry["path"], entry["symbol"], entry["kind"], entry["target"])
-        counts[key] = int(entry["count"])
-    return counts
+def _site_key_from_entry(entry: dict) -> tuple[str, str, str, str]:
+    return (entry["path"], entry["symbol"], entry["kind"], entry["target"])
+
+
+def _kit_allowlist_entries(
+    raw_entries: Iterable[dict],
+) -> list[AllowlistEntry[tuple[str, str, str, str, int]]]:
+    entries = []
+    for raw in raw_entries:
+        key = _site_key_from_entry(raw)
+        for occurrence in range(1, int(raw["count"]) + 1):
+            entries.append(
+                AllowlistEntry(
+                    scope=Scope("python_scope", raw["path"], raw["symbol"]),
+                    owner=raw["owner"],
+                    reason=raw["reason"],
+                    key=(*key, occurrence),
+                )
+            )
+    return entries
+
+
+def _allowlist_diff(sites: Iterable[WriteSite]):
+    return diff_allowlist(
+        _numbered_sites(sites),
+        _kit_allowlist_entries(_raw_allowlist_entries()),
+        site_key=lambda item: (*item[0].key, item[1]),
+        site_location=lambda item: (item[0].path, item[0].symbol),
+    )
 
 
 def _assert_no_new_sites(
-    found: dict[tuple[str, str, str, str], int],
-    allowed: dict[tuple[str, str, str, str], int],
+    sites: Iterable[WriteSite],
+    entries: list[AllowlistEntry[tuple[str, str, str, str, int]]],
 ) -> None:
-    new_sites = sorted(set(found) - set(allowed))
+    diff = diff_allowlist(
+        _numbered_sites(sites),
+        entries,
+        site_key=lambda item: (*item[0].key, item[1]),
+        site_location=lambda item: (item[0].path, item[0].symbol),
+    )
+    new_sites = sorted(site.key for site, _occurrence in diff.unlisted)
     assert not new_sites, f"New analysis durable-write site(s): {new_sites}"

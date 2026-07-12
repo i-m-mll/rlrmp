@@ -114,7 +114,7 @@ expected_collection_pattern = "tests/test_product_identity_hash.py::"
 minimum_non_skipped = 8
 negative_canary = [
     "tests/test_product_identity_hash.py::test_calibration_product_identity_hash_tamper_fails_closed",
-    "tests/test_product_identity_hash.py::test_data_product_registry_duplicate_role_fails_closed",
+    "tests/test_product_identity_hash.py::test_data_product_registry_duplicate_role_fails_closed[role]",
 ]
 
 [[families]]
