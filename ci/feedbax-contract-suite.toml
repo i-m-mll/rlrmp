@@ -416,6 +416,17 @@ negative_canary = [
     "tests/analysis/test_moderate_calibrated_figure_migration.py::test_all_specs_real_execute_with_data_bound_cardinality[2]",
 ]
 
+[[families]]
+name = "stabilization_response_figure_contract"
+owner = "8c06ef4"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_stabilization_response_figure_migration.py::"
+minimum_non_skipped = 5
+negative_canary = [
+    "tests/analysis/test_stabilization_response_figure_migration.py::test_all_specs_execute_with_payload_bound_conditions[2]",
+]
+
 [pipeline_contract_native]
 allowlist = [
 ]

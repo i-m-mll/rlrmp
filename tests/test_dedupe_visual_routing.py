@@ -10,8 +10,6 @@ import plotly.graph_objects as go
 
 from rlrmp.viz.figures import (
     build_profile_family_figure,
-    build_stabilization_family_figure,
-    build_stabilization_response_family_figure,
     write_velocity_by_replicate_figure,
     write_velocity_figure,
 )
@@ -116,99 +114,6 @@ def test_profile_family_builder_preserves_timing_grid_and_event_marker() -> None
     assert len(fig.layout.shapes) == 2
     assert fig.layout.yaxis2.matches == "y"
     assert fig.layout.xaxis2.title.text == "time from movement onset (s)"
-
-
-def test_stabilization_builder_collects_cell_metadata() -> None:
-    def render_cell(fig, response, column, row, col, legend_seen, outputs):
-        del legend_seen
-        fig.add_trace(go.Scatter(y=[row, col]), row=row, col=col)
-        outputs["coverage"].append({"response": response, "column": column})
-        outputs["event_markers"].append({"row": row, "col": col})
-
-    fig, coverage, markers, unavailable = build_stabilization_family_figure(
-        response_variables=("position", "velocity"),
-        columns=("small", "large"),
-        response_label=str.title,
-        column_label=str.title,
-        response_axis_title=lambda response: f"{response} units",
-        render_cell=render_cell,
-        title="stabilization",
-        width=900,
-        horizontal_spacing=0.05,
-    )
-
-    assert len(fig.data) == 4
-    assert len(coverage) == 4
-    assert len(markers) == 4
-    assert unavailable == []
-    assert fig.layout.yaxis.title.text == "position units"
-
-
-def test_full_stabilization_family_builder_preserves_grid_and_sidecar_contracts() -> None:
-    analytical_calls = []
-
-    def cell_context(response, column):
-        profile = {"response": response, "column": column}
-        return {
-            "timing": {"start": 1},
-            "dt": 0.01,
-            "baseline_rows": [profile],
-            "learned": [{"source": "gru", "run_id": "run", "profile": profile}],
-            "cache_prefix": (),
-            "coverage_metadata": {"budget": column},
-            "identity_metadata": {"budget_column": column},
-        }
-
-    def analytical_profile(**kwargs):
-        analytical_calls.append(kwargs)
-        if kwargs["source"] == "robust_output_feedback6d":
-            return {"status": "unsupported", "reason": "unsupported"}
-        return {"status": "available", "profile": {"source": kwargs["source"]}}
-
-    def add_profile_traces(*, fig, source, row, col, **_kwargs):
-        fig.add_trace(go.Scatter(y=[row, col], name=source), row=row, col=col)
-
-    fig, coverage, markers, unavailable = build_stabilization_response_family_figure(
-        family="command_input",
-        response_variables=("position", "velocity", "command"),
-        columns=("small", "large"),
-        cell_context=cell_context,
-        analytical_sources=("extlqg6d", "robust_output_feedback6d"),
-        analytical_profile=analytical_profile,
-        add_profile_traces=add_profile_traces,
-        coverage_row=lambda **kwargs: kwargs,
-        add_unsupported_annotation=lambda **kwargs: kwargs["fig"].add_annotation(
-            text=kwargs["text"], row=kwargs["row"], col=kwargs["col"]
-        ),
-        infer_event_marker=lambda **_kwargs: {"time_s": 0.1},
-        add_event_marker=lambda **kwargs: kwargs["fig"].add_vline(
-            x=kwargs["marker"]["time_s"], row=kwargs["row"], col=kwargs["col"]
-        ),
-        response_label=str.title,
-        column_label=str.title,
-        response_axis_title=lambda response: f"{response} units",
-        title="family response",
-        width=1180,
-        horizontal_spacing=0.07,
-    )
-
-    assert len(fig.data) == 12
-    assert (fig.layout.width, fig.layout.height) == (1180, 900)
-    assert [annotation.text for annotation in fig.layout.annotations[:6]] == [
-        "Position - Small",
-        "Position - Large",
-        "Velocity - Small",
-        "Velocity - Large",
-        "Command - Small",
-        "Command - Large",
-    ]
-    assert len(coverage) == 12
-    assert coverage[0]["budget"] == "small"
-    assert len(markers) == 6
-    assert markers[0]["budget_column"] == "small"
-    assert len(unavailable) == 6
-    assert unavailable[0]["reason"] == "unsupported"
-    assert len(analytical_calls) == 6
 
 
 def test_velocity_writer_preserves_single_and_sequence_output_contracts(
@@ -393,27 +298,6 @@ def test_owned_scalar_helpers_are_import_routed_not_redefined() -> None:
         assert definitions.isdisjoint(names), (relative_path, definitions & names)
 
 
-def test_visual_figure_cluster_members_route_through_canonical_builders() -> None:
-    expected_calls = {
-        "results/c92ebd8/scripts/materialize_pgd_ofb_budget_stabilization_responses.py": {
-            "canonical_build_family_figure"
-        },
-        "results/d55c5f0/scripts/materialize_soft_pgd_stabilization_responses.py": {
-            "canonical_build_family_figure"
-        },
-    }
-    for relative_path, expected in expected_calls.items():
-        tree = ast.parse((REPO_ROOT / relative_path).read_text(encoding="utf-8"))
-        calls = {
-            node.func.id
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-        }
-        assert expected <= calls, (relative_path, expected - calls)
-        assert "make_subplots" not in calls, relative_path
-        assert "profile_comparison_grid" not in calls, relative_path
-
-
 def test_retired_moderate_and_calibrated_producers_are_absent() -> None:
     for relative_path in (
         "results/3244f1a/scripts/materialize_final_small_bank_profiles.py",
@@ -422,40 +306,6 @@ def test_retired_moderate_and_calibrated_producers_are_absent() -> None:
         "results/c92ebd8/scripts/materialize_post_training_figures.py",
     ):
         assert not (REPO_ROOT / relative_path).exists()
-
-
-def test_residual_figure_members_are_thin_canonical_adapters() -> None:
-    members = {
-        "results/c92ebd8/scripts/materialize_pgd_ofb_budget_stabilization_responses.py": (
-            "build_family_figure",
-            "canonical_build_family_figure",
-            60,
-        ),
-        "results/d55c5f0/scripts/materialize_soft_pgd_stabilization_responses.py": (
-            "build_family_figure",
-            "canonical_build_family_figure",
-            55,
-        ),
-    }
-    forbidden = {
-        "build_nominal_profile_figure",
-        "build_stabilization_family_figure",
-        "profile_comparison_grid",
-        "save_figure",
-    }
-    for relative_path, (name, canonical_name, max_lines) in members.items():
-        tree = ast.parse((REPO_ROOT / relative_path).read_text(encoding="utf-8"))
-        function = next(
-            node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == name
-        )
-        calls = {
-            node.func.id
-            for node in ast.walk(function)
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-        }
-        assert canonical_name in calls, (relative_path, canonical_name)
-        assert calls.isdisjoint(forbidden), (relative_path, calls & forbidden)
-        assert function.end_lineno - function.lineno + 1 <= max_lines, relative_path
 
 
 def test_delayed_eval_cluster_members_are_thin_canonical_adapters() -> None:

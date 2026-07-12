@@ -57,23 +57,8 @@ owner = "b8aa38e"
 reason = "Pre-declarative figure record retained until its assigned migration wave lands."
 
 [[legacy_specs]]
-path = "results/c92ebd8/figures/pgd_1p05_stabilization_perturbation_responses/spec.json"
-owner = "c92ebd8"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/c92ebd8/figures/pgd_ofb_budget_stabilization_perturbation_responses/spec.json"
-owner = "c92ebd8"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
 path = "results/c92ebd8/figures/pgd_robustness_isolation_stabilization_responses/spec.json"
 owner = "c92ebd8"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/d55c5f0/figures/soft_pgd_stabilization_perturbation_responses/spec.json"
-owner = "d55c5f0"
 reason = "Pre-declarative figure record retained until its assigned migration wave lands."
 
 [[legacy_specs]]
@@ -137,21 +122,6 @@ owner = "c92ebd8"
 reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
 
 [[living_materializers]]
-path = "results/c92ebd8/scripts/materialize_pgd_1p05_stabilization_diagnostics.py"
-owner = "c92ebd8"
-reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
-
-[[living_materializers]]
-path = "results/c92ebd8/scripts/materialize_pgd_ofb_budget_stabilization_responses.py"
-owner = "c92ebd8"
-reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
-
-[[living_materializers]]
 path = "results/c92ebd8/scripts/materialize_pgd_robustness_isolation.py"
 owner = "c92ebd8"
-reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
-
-[[living_materializers]]
-path = "results/d55c5f0/scripts/materialize_soft_pgd_stabilization_responses.py"
-owner = "d55c5f0"
 reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
