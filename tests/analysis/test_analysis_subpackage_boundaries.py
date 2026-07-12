@@ -9,12 +9,20 @@ from pathlib import Path
 MATH_DIR = Path(__file__).parents[2] / "src" / "rlrmp" / "analysis" / "math"
 
 
+def _find_spec_or_none(module: str):
+    """Treat an absent parent package as stronger evidence that a shim is absent."""
+    try:
+        return importlib.util.find_spec(module)
+    except ModuleNotFoundError:
+        return None
+
+
 def test_analysis_compatibility_shims_are_absent() -> None:
     """Representative old root paths are no longer provided as shim modules."""
 
-    assert importlib.util.find_spec("rlrmp.analysis.rerun_metadata") is None
-    assert importlib.util.find_spec("rlrmp.analysis.bridge_contracts") is None
-    assert importlib.util.find_spec("rlrmp.analysis.pipelines.bridge_contracts") is None
+    assert _find_spec_or_none("rlrmp.analysis.rerun_metadata") is None
+    assert _find_spec_or_none("rlrmp.analysis.bridge_contracts") is None
+    assert _find_spec_or_none("rlrmp.analysis.pipelines.bridge_contracts") is None
 
 
 def test_canonical_analysis_modules_are_importable() -> None:
