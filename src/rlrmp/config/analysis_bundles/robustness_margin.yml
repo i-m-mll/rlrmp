@@ -1,5 +1,5 @@
 schema_id: feedbax.spec.analysis_bundle
-schema_version: feedbax.spec.analysis_bundle.v2
+schema_version: feedbax.spec.analysis_bundle.v3
 name: robustness_margin
 description: Robustness-margin sidecar for soft-constraint rows.
 predicate:
@@ -21,7 +21,7 @@ stages:
     mode: grouped
     analysis_type: rlrmp.robustness_margin_sidecar
     requested_outputs: [robustness_margin_sidecar]
-    params:
+    local_params:
       issue_id: 1ec6ae5
       scope: soft_constraint_robustness_margin
       headline_quantile: 0.9

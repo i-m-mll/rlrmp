@@ -50,7 +50,16 @@ def completed_batches_from_latest(latest_path: Path) -> int:
     documents = load_checkpoint_custody_documents(latest_path.parent)
     latest = documents.latest_pointer.document
     manifest = documents.manifest.document
-    completed_batches = manifest.completed_training_batches
+    manifest_completed_batches = manifest.completed_training_batches
+    completed_batches = manifest_completed_batches
+    continuation = manifest.metadata.get("checkpoint_continuation")
+    if (
+        manifest.metadata.get("checkpoint_continuation_applied") is True
+        and isinstance(continuation, dict)
+    ):
+        source_completed = continuation.get("source_completed_batches")
+        if isinstance(source_completed, int) and not isinstance(source_completed, bool):
+            completed_batches = source_completed
     if completed_batches is None:
         raise ValueError(
             "checkpoint transaction manifest lacks explicit completed_training_batches: "
@@ -63,7 +72,7 @@ def completed_batches_from_latest(latest_path: Path) -> int:
         )
     if (
         latest.completed_training_batches is not None
-        and latest.completed_training_batches != completed_batches
+        and latest.completed_training_batches != manifest_completed_batches
     ):
         raise ValueError(
             "checkpoint latest pointer completed_training_batches disagrees with "
@@ -149,9 +158,7 @@ def attach_cs_supervised_checkpoint_continuation(
     needed.
     """
 
-    if not continuation.resume or (
-        continuation.source_target_batches == continuation.stop_target_batches
-    ):
+    if not continuation.resume:
         return training_spec
     return declare_cs_supervised_checkpoint_continuation(
         training_spec,

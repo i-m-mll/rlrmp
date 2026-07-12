@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import logging
 from collections.abc import Mapping
 from functools import partial
 from pathlib import Path
@@ -43,11 +42,10 @@ from pydantic import BaseModel, ConfigDict
 
 from rlrmp.model.feedbax_graph import graph_spec_payload
 from rlrmp.model.trainable import staged_network_trainable_paths
+from rlrmp.runtime.jax_config import assert_jax_x64_disabled
 from rlrmp.runtime.training_run_specs import build_training_run_spec_scaffold
 from rlrmp.train.executor.slots import minimax_checkpoint_slot_specs
 from rlrmp.train.training_configs import MinimaxConfig
-
-logger = logging.getLogger("rlrmp.train.minimax_native")
 
 __all__ = [
     "MINIMAX_METHOD_REF",
@@ -262,6 +260,7 @@ def execute_minimax_training_run_spec_native(
         spec if isinstance(spec, TrainingRunSpec) else TrainingRunSpec.model_validate(spec)
     )
     config = MinimaxConfig.model_validate(minimax_training_run_spec_to_config(training_spec))
+    assert_jax_x64_disabled("minimax resume verification", allow_x64=config.allow_x64)
     hps = build_hps(config)
     initial_slots, runtime = build_minimax_native_initial_slots(
         run_spec=training_spec,

@@ -375,6 +375,7 @@ def test_cs_nominal_gru_config_defaults_match_pre_refactor_fixture() -> None:
     assert CsNominalGruConfig().model_dump(mode="python") == expected
     parsed_defaults = vars(build_parser().parse_args([]))
     assert parsed_defaults.pop("compact_run_spec") is False
+    assert parsed_defaults.pop("verify_resume_only") is False
     assert parsed_defaults == expected
 
 
@@ -469,8 +470,15 @@ def test_cs_nominal_gru_config_validates_tracked_cs_stochastic_gru_corpus() -> N
     paths = _cs_stochastic_gru_run_spec_paths()
     clean_paths = []
     fail_closed: set[Path] = set()
+    wave_1_paths = {
+        Path("results/c6c5997/runs/flat_3e-5-epsilon-ramp.json"),
+        Path("results/c6c5997/runs/rewarm_3e-3-epsilon-ramp.json"),
+        Path("results/c6c5997/runs/rewarm_3e-4-epsilon-ramp.json"),
+        Path("results/cb3685a/runs/seam_probe.json"),
+    }
 
-    assert len(paths) == 74
+    assert wave_1_paths.issubset(paths)
+    assert len(paths) == 74 + len(wave_1_paths)
     for path in paths:
         payload = hydrate_compact_run_spec_envelope(
             json.loads(path.read_text(encoding="utf-8"))
@@ -482,7 +490,7 @@ def test_cs_nominal_gru_config_validates_tracked_cs_stochastic_gru_corpus() -> N
         else:
             clean_paths.append(path)
 
-    assert len(clean_paths) == 74
+    assert len(clean_paths) == 74 + len(wave_1_paths)
     assert fail_closed == set()
 
 
@@ -7124,6 +7132,23 @@ def test_pgd_broad_epsilon_full_training_emits_inner_diagnostics(
         ).all()
         assert np.all(diagnostics["pgd_broad_epsilon_inner_objective_final_endpoint_gap"] >= -1e-6)
         assert np.any(diagnostics["pgd_broad_epsilon_epsilon_norm_mean"] > 0.0)
+
+
+def test_stage2_adaptive_epsilon_specs_reject_cross_mirror_drift() -> None:
+    recipe_path = REPO_ROOT / "results/c6c5997/runs/flat_3e-5-epsilon-ramp.json"
+    recipe = json.loads(recipe_path.read_text(encoding="utf-8"))
+
+    cs_supervised_executor._validate_adaptive_epsilon_cross_mirrors(recipe)
+
+    recipe["hps"]["adaptive_epsilon_curriculum"]["lambda_update"]["eta"] = 0.1
+    with pytest.raises(
+        ValueError,
+        match=(
+            "Adaptive-epsilon cross-mirror mismatch "
+            "field=lambda_update.eta: hps=0.1 payload=0.2 config=0.2"
+        ),
+    ):
+        cs_supervised_executor._validate_adaptive_epsilon_cross_mirrors(recipe)
 
 
 def test_adaptive_epsilon_scaled_outer_full_training_emits_explicit_diagnostics(

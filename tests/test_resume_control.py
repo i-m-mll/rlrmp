@@ -5,6 +5,10 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import subprocess
+import sys
+from types import SimpleNamespace
+from argparse import Namespace
 from pathlib import Path
 
 import jax
@@ -18,9 +22,13 @@ from feedbax.training.checkpoint_custody import (
 from rlrmp.train.cs_nominal_gru import build_parser
 from rlrmp.train.config_cli import parse_config
 from rlrmp.train.executor.cs_supervised import (
+    _cs_supervised_execution_registry,
+    _adaptive_runtime_template_inputs,
     build_cs_supervised_native_initial_slots,
     build_run_spec_execution_context,
 )
+from rlrmp.train.executor import cs_supervised as cs_supervised_module
+from rlrmp.train import minimax_resume as minimax_resume_module
 from rlrmp.train.resume_control import (
     LAUNCH_CONTINUATION_PREFIX,
     LaunchContinuation,
@@ -31,6 +39,7 @@ from rlrmp.train.resume_control import (
     resolve_launch_continuation,
 )
 from rlrmp.runtime.training_run_specs import feedbax_training_run_spec_from_payload
+from rlrmp.runtime.checkpoint_custody import cs_custody_training_spec
 from rlrmp.train.training_configs import MinimaxConfig
 
 
@@ -278,6 +287,96 @@ def test_cs_supervised_continuation_does_not_change_exact_parity_spec() -> None:
     assert attach_cs_supervised_checkpoint_continuation(training_spec, fresh) is training_spec
 
 
+def test_target_bound_launch_fork_still_attaches_runnable_continuation() -> None:
+    training_spec = feedbax_training_run_spec_from_payload(
+        json.loads(_baseline_recipe_path().read_text(encoding="utf-8"))
+    )
+    launch_fork = LaunchContinuation(
+        resume=True,
+        resume_source="/tmp/launch-fork/latest.json",
+        completed_batches=12_000,
+        stop_target_batches=12_200,
+        continuation_batches=200,
+        source_target_batches=12_200,
+    )
+
+    attached = attach_cs_supervised_checkpoint_continuation(training_spec, launch_fork)
+
+    request = attached.checkpoint_progress.continuation
+    assert request is not None
+    assert request.source_completed_batches == 12_000
+    assert request.additional_batches == 200
+    assert request.target_total == 12_200
+
+
+def test_cs_supervised_resume_registry_uses_attached_custody_contract() -> None:
+    recipe_path = Path(__file__).resolve().parents[1] / "results/cb3685a/runs/seam_probe.json"
+    parser = build_parser()
+    context = build_run_spec_execution_context(
+        parser.parse_args(["--run-spec", str(recipe_path)]),
+        parser=parser,
+    )
+    continuation = LaunchContinuation(
+        resume=True,
+        resume_source="/tmp/checkpoints/latest.json",
+        completed_batches=12_000,
+        stop_target_batches=12_200,
+        continuation_batches=200,
+    )
+    training_spec = attach_cs_supervised_checkpoint_continuation(
+        cs_custody_training_spec(context.run_spec),
+        continuation,
+    )
+
+    registry = _cs_supervised_execution_registry(training_spec)
+    execution_contract = registry.resolve(training_spec.method_ref, path="/method_ref").contract_factory()
+
+    assert execution_contract == training_spec.worker_execution.method_contract
+    request = training_spec.checkpoint_progress.continuation
+    assert request is not None
+    assert request.source_completed_batches == 12_000
+    assert request.additional_batches == 200
+    assert request.target_total == 12_200
+    barrier = execution_contract.phase_program.checkpoint_barriers[0]
+    assert {slot.slot for slot in barrier.slots} == {
+        "model",
+        "optimizer",
+        "prng",
+        "completed_batches",
+        "history",
+        "adversary_policy",
+        "adversary_optimizer",
+        "adaptive_epsilon_state",
+        "checkpoint_metadata",
+    }
+
+
+@pytest.mark.parametrize("continuation_batches", [4_500, 1])
+def test_adaptive_runtime_template_args_are_segment_local(
+    continuation_batches: int,
+) -> None:
+    governed_args = Namespace(n_train_batches=16_500)
+    governed_hps = Namespace(n_batches_condition=16_500)
+    continuation = LaunchContinuation(
+        resume=True,
+        resume_source="/tmp/checkpoints/latest.json",
+        completed_batches=12_000,
+        stop_target_batches=12_000 + continuation_batches,
+        continuation_batches=continuation_batches,
+    )
+
+    runtime_template_args, runtime_template_hps = _adaptive_runtime_template_inputs(
+        governed_args,
+        governed_hps,
+        continuation,
+    )
+
+    assert governed_args.n_train_batches == 16_500
+    assert governed_hps.n_batches_condition == 16_500
+    assert runtime_template_args.n_train_batches == continuation_batches
+    assert runtime_template_hps.n_batches_condition == continuation_batches
+
+
 def test_stage2_authoring_declares_12000_to_16500_total_horizon() -> None:
     recipe_path = (
         Path(__file__).resolve().parents[1]
@@ -306,7 +405,9 @@ def test_cli_flags_document_resume_override_and_global_stop_target() -> None:
     normalized_help = " ".join(help_text.split())
 
     assert parser.parse_args(["--allow-fresh-start"]).allow_fresh_start is True
+    assert parser.parse_args(["--verify-resume-only"]).verify_resume_only is True
     assert "--allow-fresh-start" in help_text
+    assert "--verify-resume-only" in help_text
     assert "Global completed-batch index" in normalized_help
     assert "not a relative count" in normalized_help
 
@@ -316,3 +417,181 @@ def test_cli_flags_document_resume_override_and_global_stop_target() -> None:
         description="test minimax config",
     )
     assert minimax_config.allow_fresh_start is True
+
+
+@pytest.mark.parametrize("loader_error", [None, ValueError("checkpoint binding mismatch")])
+def test_verify_resume_only_loads_strict_checkpoint_without_executor_steps(
+    monkeypatch: pytest.MonkeyPatch,
+    loader_error: Exception | None,
+) -> None:
+    recipe_path = _baseline_recipe_path()
+    parser = build_parser()
+    context = build_run_spec_execution_context(
+        parser.parse_args(["--run-spec", str(recipe_path), "--verify-resume-only"]),
+        parser=parser,
+    )
+    continuation = LaunchContinuation(
+        resume=True,
+        resume_source="/tmp/checkpoints/latest.json",
+        completed_batches=11_000,
+        stop_target_batches=12_000,
+        continuation_batches=1_000,
+        source_target_batches=12_000,
+    )
+    monkeypatch.setattr(
+        cs_supervised_module,
+        "_resolve_full_train_launch_context",
+        lambda resolved_context, **_kwargs: (resolved_context, True, continuation),
+    )
+    monkeypatch.setattr(
+        cs_supervised_module,
+        "build_cs_supervised_native_initial_slots",
+        lambda **_kwargs: ({"model": object(), "completed_batches": 0}, object()),
+    )
+    monkeypatch.setattr(
+        cs_supervised_module,
+        "_cs_supervised_resume_slot_transform",
+        lambda: None,
+    )
+    calls: list[dict[str, object]] = []
+
+    def load_checkpoint(_root: Path, **kwargs: object) -> object:
+        calls.append(kwargs)
+        if loader_error is not None:
+            raise loader_error
+        return SimpleNamespace(manifest=SimpleNamespace(transaction_id="txn-ok"))
+
+    monkeypatch.setattr(cs_supervised_module, "load_feedbax_checkpoint", load_checkpoint)
+
+    if loader_error is not None:
+        with pytest.raises(ValueError, match="checkpoint binding mismatch"):
+            cs_supervised_module.verify_resume_from_context(context)
+        return
+
+    result = cs_supervised_module.verify_resume_from_context(context)
+    assert result["verified_resume"] is True
+    assert result["transaction_id"] == "txn-ok"
+    assert len(calls) == 1
+    assert "expected_run_spec" in calls[0]
+    assert "expected_phase_program" in calls[0]
+    assert "expected_slots" in calls[0]
+
+
+def test_minimax_cli_exposes_checkpoint_only_resume_gate() -> None:
+    script = (Path(__file__).resolve().parents[1] / "scripts/train_minimax.py").read_text(
+        encoding="utf-8"
+    )
+    assert '"--verify-resume-only"' in script
+    assert "verify_minimax_checkpoint_resume(spec) if verify_only else run_training(spec)" in script
+    method = (
+        Path(__file__).resolve().parents[1]
+        / "src/rlrmp/train/minimax_native/method.py"
+    ).read_text(encoding="utf-8")
+    resume = (
+        Path(__file__).resolve().parents[1] / "src/rlrmp/train/minimax_resume.py"
+    ).read_text(encoding="utf-8")
+    assert "load_latest_checkpoint(" not in method
+    assert "load_latest_checkpoint(" in resume
+
+
+def test_minimax_resume_verification_stays_strict_after_relocation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    phase_program = object()
+    training_spec = SimpleNamespace(
+        worker_execution=SimpleNamespace(
+            method_contract=SimpleNamespace(phase_program=phase_program)
+        )
+    )
+
+    class TrainingRunSpecStub:
+        @classmethod
+        def model_validate(cls, value: object) -> object:
+            assert value == {}
+            return training_spec
+
+    config = MinimaxConfig(
+        output_dir=str(tmp_path / "minimax"),
+        n_warmup_batches=4,
+        n_adversary_batches=6,
+    )
+    continuation = LaunchContinuation(
+        resume=True,
+        resume_source=str(tmp_path / "latest.json"),
+        completed_batches=4,
+        stop_target_batches=10,
+        continuation_batches=6,
+        source_target_batches=10,
+    )
+    pointer = tmp_path / "latest.json"
+    pointer.write_text(
+        json.dumps(
+            {
+                "completed_coordinate": {
+                    "completed_barrier": "after_warmup",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(minimax_resume_module, "TrainingRunSpec", TrainingRunSpecStub)
+    monkeypatch.setattr(
+        minimax_resume_module,
+        "minimax_training_run_spec_to_config",
+        lambda _spec: config.model_dump(mode="python"),
+    )
+
+    def resolve(**kwargs: object) -> LaunchContinuation:
+        completed = kwargs["completed_batches_from_latest"]
+        assert callable(completed)
+        assert completed(pointer) == 4
+        return continuation
+
+    monkeypatch.setattr(minimax_resume_module, "resolve_launch_continuation", resolve)
+    monkeypatch.setattr(minimax_resume_module, "emit_launch_continuation", lambda *_a, **_k: None)
+    monkeypatch.setattr(minimax_resume_module, "build_hps", lambda _config: object())
+    expected_slots = {"controller": object()}
+    monkeypatch.setattr(
+        minimax_resume_module,
+        "build_minimax_native_initial_slots",
+        lambda **_kwargs: (expected_slots, object()),
+    )
+    calls: list[tuple[Path, dict[str, object]]] = []
+
+    def load_checkpoint(root: Path, **kwargs: object) -> object:
+        calls.append((root, kwargs))
+        return SimpleNamespace(manifest=SimpleNamespace(transaction_id="txn-minimax"))
+
+    monkeypatch.setattr(minimax_resume_module, "load_latest_checkpoint", load_checkpoint)
+
+    result = minimax_resume_module.verify_minimax_checkpoint_resume({})
+
+    assert result["verified_resume"] is True
+    assert result["transaction_id"] == "txn-minimax"
+    assert result["completed_batches"] == 4
+    assert result["continuation_batches"] == 6
+    assert calls == [
+        (
+            Path(config.output_dir) / "checkpoints_adversarial",
+            {
+                "expected_run_spec": training_spec,
+                "expected_phase_program": phase_program,
+                "expected_slots": expected_slots,
+            },
+        )
+    ]
+
+
+def test_minimax_cli_help_is_importable_and_lists_resume_gate() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    result = subprocess.run(
+        [sys.executable, str(repo_root / "scripts/train_minimax.py"), "--help"],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "--verify-resume-only" in result.stdout

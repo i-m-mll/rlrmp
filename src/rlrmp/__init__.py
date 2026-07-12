@@ -201,6 +201,8 @@ def ensure_rlrmp_recipes_registered(
         logger.debug("Deferring rlrmp recipe registration; feedbax not fully initialized.")
         return
     initializing_train_modules = (
+        "rlrmp.train.config_materialization",
+        "rlrmp.train.run_spec_authoring",
         "rlrmp.train.task_model",
         "rlrmp.train.cs_perturbation_training",
         "rlrmp.train.cs_nominal_gru",

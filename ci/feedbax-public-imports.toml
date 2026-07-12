@@ -327,6 +327,7 @@ symbols = [
   "RiskAggregationSpec",
   "TaskSpec",
   "TrainingConfig",
+  "TrainingMethodRegistry",
   "TrainingMethodRegistration",
   "TrainingRunSpec",
   "TRAINING_RUN_SPEC_SCHEMA_ID",
@@ -368,6 +369,7 @@ symbols = [
 [[canonical_homes]]
 module = "feedbax.contracts.checkpoints"
 symbols = [
+  "BatchHistory",
   "BatchIndexedCheckpointLeafSpec",
   "CheckpointContinuationRequest",
   "CheckpointForkBarrierMapping",

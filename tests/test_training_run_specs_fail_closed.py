@@ -36,6 +36,12 @@ EXPECTED_TRACKED_FAIL_CLOSED = {
         "teacher_contract.horizon"
     ),
 }
+NEWLY_TRACKED_CLEAN_SPECS = {
+    Path("results/c6c5997/runs/flat_3e-5-epsilon-ramp.json"),
+    Path("results/c6c5997/runs/rewarm_3e-3-epsilon-ramp.json"),
+    Path("results/c6c5997/runs/rewarm_3e-4-epsilon-ramp.json"),
+    Path("results/cb3685a/runs/seam_probe.json"),
+}
 
 
 def _complete_closed_loop_spec() -> dict[str, Any]:
@@ -312,5 +318,6 @@ def test_tracked_training_config_adapter_corpus_census() -> None:
         else:
             clean_paths.append(path)
 
-    assert len(clean_paths) == 77
+    assert NEWLY_TRACKED_CLEAN_SPECS <= set(clean_paths)
+    assert len(clean_paths) == 81
     assert fail_closed == EXPECTED_TRACKED_FAIL_CLOSED

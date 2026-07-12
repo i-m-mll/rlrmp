@@ -158,7 +158,8 @@ def test_registered_standard_matrix_recipe_executes_profile_with_routing(
 
     bundle = _load_standard_matrix_bundle(registry)
     notes_stage = next(stage for stage in bundle.stages if stage.name == "notes")
-    notes_stage.params["notes_path"] = str(tmp_path / "matrix_results.md")
+    assert notes_stage.local_params is not None
+    notes_stage.local_params["notes_path"] = str(tmp_path / "matrix_results.md")
     execution = execute_staged_analysis_bundle(
         bundle,
         root=tmp_path,

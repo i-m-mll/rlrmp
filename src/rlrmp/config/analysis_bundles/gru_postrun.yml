@@ -1,3 +1,5 @@
+schema_id: feedbax.spec.analysis_bundle
+schema_version: feedbax.spec.analysis_bundle.v3
 name: gru_postrun
 description: Standard GRU post-run diagnostic bundle for rlrmp experiments.
 predicate:
@@ -22,7 +24,7 @@ stages:
     mode: grouped
     analysis_type: rlrmp.gru_postrun
     requested_outputs: [gru_postrun_materialization]
-    params:
+    local_params:
       experiment_metadata_key: rlrmp_experiment
       output_tag: validation_selected
       use_validation_selected_checkpoints: true
@@ -72,7 +74,7 @@ stages:
     mode: grouped
     evaluation_type: rlrmp.eval.perturbation_response_bank
     states_custody: cache
-    params:
+    local_params:
       schema_id: rlrmp.eval.perturbation_response_bank.params
       schema_version: rlrmp.eval.perturbation_response_bank.params.v2
       legacy_payload_mode: true
@@ -100,7 +102,7 @@ stages:
     mode: grouped
     depends_on: [perturbation_bank_eval]
     analysis_type: rlrmp.perturbation_class_response
-    params:
+    local_params:
       family: command_input_pulse
       bank_params: *perturbation_bank_params
     outputs:
@@ -113,7 +115,7 @@ stages:
     mode: grouped
     depends_on: [perturbation_bank_eval]
     analysis_type: rlrmp.perturbation_class_response
-    params:
+    local_params:
       family: target_aligned_lateral_command_load_pulse
       bank_params: *perturbation_bank_params
     outputs:
@@ -126,7 +128,7 @@ stages:
     mode: grouped
     depends_on: [perturbation_bank_eval]
     analysis_type: rlrmp.perturbation_class_response
-    params:
+    local_params:
       family: process_epsilon_force_state_xy
       bank_params: *perturbation_bank_params
     outputs:
@@ -139,7 +141,7 @@ stages:
     mode: grouped
     depends_on: [perturbation_bank_eval]
     analysis_type: rlrmp.perturbation_class_response
-    params:
+    local_params:
       family: target_stream_jump
       bank_params: *perturbation_bank_params
     outputs:
@@ -156,7 +158,7 @@ stages:
       - perturbation_class_process_force_state
       - perturbation_class_target_stream_jump
     analysis_type: rlrmp.perturbation_bank_aggregate
-    params:
+    local_params:
       bank_params: *perturbation_bank_params
     outputs:
       - role: manifest
@@ -168,7 +170,7 @@ stages:
     mode: grouped
     depends_on: [postrun_diagnostics]
     report_type: rlrmp.report.gru_postrun_summary
-    params:
+    local_params:
       schema_id: rlrmp.report.gru_postrun_summary.params
       schema_version: rlrmp.report.gru_postrun_summary.params.v1
       title: GRU Postrun Report
@@ -190,7 +192,7 @@ stages:
     mode: grouped
     depends_on: [postrun_diagnostics]
     report_type: rlrmp.report.bridge_certificate_notes
-    params:
+    local_params:
       schema_id: rlrmp.report.bridge_certificate_notes.params
       schema_version: rlrmp.report.bridge_certificate_notes.params.v1
       title: Bridge Certificate Notes
@@ -208,7 +210,7 @@ stages:
     kind: materialization
     mode: grouped
     analysis_type: rlrmp.feedback_quality.evaluation_diagnostics
-    params:
+    local_params:
       experiment_metadata_key: rlrmp_experiment
       output_tag: validation_selected
       use_validation_selected_checkpoints: true
@@ -231,7 +233,7 @@ stages:
     kind: materialization
     mode: grouped
     analysis_type: rlrmp.feedback_quality.objective_comparator
-    params:
+    local_params:
       experiment_metadata_key: rlrmp_experiment
       output_tag: validation_selected
       use_validation_selected_checkpoints: true
@@ -254,7 +256,7 @@ stages:
     kind: materialization
     mode: grouped
     analysis_type: rlrmp.feedback_quality.perturbation_response
-    params:
+    local_params:
       experiment_metadata_key: rlrmp_experiment
       output_tag: validation_selected
       use_validation_selected_checkpoints: true
@@ -279,7 +281,7 @@ stages:
     kind: materialization
     mode: grouped
     analysis_type: rlrmp.feedback_quality.feedback_ablation
-    params:
+    local_params:
       experiment_metadata_key: rlrmp_experiment
       output_tag: validation_selected
       use_validation_selected_checkpoints: true
@@ -302,7 +304,7 @@ stages:
     kind: materialization
     mode: grouped
     analysis_type: rlrmp.feedback_quality.perturbation_calibration
-    params:
+    local_params:
       experiment_metadata_key: rlrmp_experiment
       output_tag: validation_selected
       use_validation_selected_checkpoints: true
@@ -325,7 +327,7 @@ stages:
         role: rlrmp-feedback-quality-perturbation-response-manifest
         required: false
     analysis_type: rlrmp.feedback_quality.response_norm_plots
-    params:
+    local_params:
       experiment_metadata_key: rlrmp_experiment
       output_tag: validation_selected
       use_validation_selected_checkpoints: true
@@ -375,7 +377,7 @@ stages:
         role: rlrmp-feedback-quality-response-norm-plots-status
         required: false
     analysis_type: rlrmp.feedback_quality_lens
-    params:
+    local_params:
       experiment_metadata_key: rlrmp_experiment
       output_tag: validation_selected
       use_validation_selected_checkpoints: true

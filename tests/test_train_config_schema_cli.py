@@ -102,7 +102,9 @@ def test_generated_parser_validates_with_config_model() -> None:
         ]
     )
 
-    config = CsNominalGruConfig.model_validate(vars(args))
+    parsed = vars(args).copy()
+    assert parsed.pop("verify_resume_only") is False
+    config = CsNominalGruConfig.model_validate(parsed)
 
     assert config.n_train_batches == 7
     assert config.batch_size == 3

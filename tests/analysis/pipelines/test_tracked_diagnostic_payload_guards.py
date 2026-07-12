@@ -37,10 +37,10 @@ RUN_DETAIL_PAYLOAD_KEYS = frozenset(
 )
 MAX_SCALAR_VALUES = 16
 MAX_TRACKED_RESULTS_JSON_BYTES = 500 * 1024
-HISTORICAL_3CD018B_FULL_RUN_SPEC_BYTES = 735 * 1024
-HISTORICAL_3CD018B_FULL_RUN_SPEC_REASON = (
-    "Reconciled 3cd018b launched recipe retains the full Feedbax TrainingRunSpec "
-    "needed for spec-first resume/fork provenance."
+FULL_RUN_SPEC_BYTES = 735 * 1024
+FULL_RUN_SPEC_REASON = (
+    "Full Feedbax TrainingRunSpec retained for spec-first launch, resume, and fork "
+    "provenance; tracked instances use the repository's compact machine-JSON encoding."
 )
 HISTORICAL_SIZE_EXCEPTIONS: dict[Path, tuple[int, str]] = {
     Path("results/40e1911/notes/perturbation_response_npz_deletion_manifest.json"): (
@@ -55,36 +55,48 @@ HISTORICAL_SIZE_EXCEPTIONS: dict[Path, tuple[int, str]] = {
         "duplicated provenance or bulk arrays.",
     ),
     Path("results/3cd018b/runs/const1000.json"): (
-        HISTORICAL_3CD018B_FULL_RUN_SPEC_BYTES,
-        HISTORICAL_3CD018B_FULL_RUN_SPEC_REASON,
+        FULL_RUN_SPEC_BYTES,
+        FULL_RUN_SPEC_REASON,
     ),
     Path("results/3cd018b/runs/const1750.json"): (
-        HISTORICAL_3CD018B_FULL_RUN_SPEC_BYTES,
-        HISTORICAL_3CD018B_FULL_RUN_SPEC_REASON,
+        FULL_RUN_SPEC_BYTES,
+        FULL_RUN_SPEC_REASON,
     ),
     Path("results/3cd018b/runs/const250.json"): (
-        HISTORICAL_3CD018B_FULL_RUN_SPEC_BYTES,
-        HISTORICAL_3CD018B_FULL_RUN_SPEC_REASON,
+        FULL_RUN_SPEC_BYTES,
+        FULL_RUN_SPEC_REASON,
     ),
     Path("results/3cd018b/runs/hold1750_to1000.json"): (
-        HISTORICAL_3CD018B_FULL_RUN_SPEC_BYTES,
-        HISTORICAL_3CD018B_FULL_RUN_SPEC_REASON,
+        FULL_RUN_SPEC_BYTES,
+        FULL_RUN_SPEC_REASON,
     ),
     Path("results/3cd018b/runs/hold1750_to250.json"): (
-        HISTORICAL_3CD018B_FULL_RUN_SPEC_BYTES,
-        HISTORICAL_3CD018B_FULL_RUN_SPEC_REASON,
+        FULL_RUN_SPEC_BYTES,
+        FULL_RUN_SPEC_REASON,
     ),
     Path("results/3cd018b/runs/hold3500_to1000.json"): (
-        HISTORICAL_3CD018B_FULL_RUN_SPEC_BYTES,
-        HISTORICAL_3CD018B_FULL_RUN_SPEC_REASON,
+        FULL_RUN_SPEC_BYTES,
+        FULL_RUN_SPEC_REASON,
     ),
     Path("results/3cd018b/runs/hold3500_to250.json"): (
-        HISTORICAL_3CD018B_FULL_RUN_SPEC_BYTES,
-        HISTORICAL_3CD018B_FULL_RUN_SPEC_REASON,
+        FULL_RUN_SPEC_BYTES,
+        FULL_RUN_SPEC_REASON,
     ),
     Path("results/3cd018b/runs/ramp3500_to1000.json"): (
-        HISTORICAL_3CD018B_FULL_RUN_SPEC_BYTES,
-        HISTORICAL_3CD018B_FULL_RUN_SPEC_REASON,
+        FULL_RUN_SPEC_BYTES,
+        FULL_RUN_SPEC_REASON,
+    ),
+    Path("results/c6c5997/runs/flat_3e-5-epsilon-ramp.json"): (
+        FULL_RUN_SPEC_BYTES,
+        FULL_RUN_SPEC_REASON,
+    ),
+    Path("results/c6c5997/runs/rewarm_3e-3-epsilon-ramp.json"): (
+        FULL_RUN_SPEC_BYTES,
+        FULL_RUN_SPEC_REASON,
+    ),
+    Path("results/c6c5997/runs/rewarm_3e-4-epsilon-ramp.json"): (
+        FULL_RUN_SPEC_BYTES,
+        FULL_RUN_SPEC_REASON,
     ),
 }
 

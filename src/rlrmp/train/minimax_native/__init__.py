@@ -51,14 +51,19 @@ _KERNEL_EXPORTS = frozenset(
         "minimax_update_kernels",
     }
 )
+_RESUME_EXPORTS = frozenset({"verify_minimax_checkpoint_resume"})
 
 
 def __getattr__(name: str) -> Any:
-    """Load heavy JAX kernel ownership only when execution needs it."""
+    """Load optional execution and resume surfaces only when needed."""
 
-    if name not in _KERNEL_EXPORTS:
+    if name in _KERNEL_EXPORTS:
+        module_name = "rlrmp.train.minimax_native.kernels"
+    elif name in _RESUME_EXPORTS:
+        module_name = "rlrmp.train.minimax_resume"
+    else:
         raise AttributeError(name)
-    value = getattr(import_module("rlrmp.train.minimax_native.kernels"), name)
+    value = getattr(import_module(module_name), name)
     globals()[name] = value
     return value
 
@@ -86,6 +91,7 @@ __all__ = [
     "build_minimax_training_run_spec",
     "ensure_minimax_training_method_registered",
     "execute_minimax_training_run_spec_native",
+    "verify_minimax_checkpoint_resume",
     "minimax_effective_phase_fingerprint",
     "minimax_effective_phase_spec",
     "minimax_guard_predicates",

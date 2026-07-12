@@ -1,5 +1,5 @@
 schema_id: feedbax.spec.analysis_bundle
-schema_version: feedbax.spec.analysis_bundle.v2
+schema_version: feedbax.spec.analysis_bundle.v3
 name: feedback_quality_lens
 description: Feedback-control quality diagnostics with Feedbax manifest custody.
 predicate:
@@ -31,7 +31,7 @@ stages:
     kind: materialization
     mode: grouped
     analysis_type: rlrmp.feedback_quality.evaluation_diagnostics
-    params:
+    local_params:
       experiment_metadata_key: rlrmp_experiment
       output_tag: validation_selected
       use_validation_selected_checkpoints: true
@@ -59,7 +59,7 @@ stages:
     kind: materialization
     mode: grouped
     analysis_type: rlrmp.feedback_quality.objective_comparator
-    params:
+    local_params:
       experiment_metadata_key: rlrmp_experiment
       output_tag: validation_selected
       use_validation_selected_checkpoints: true
@@ -87,7 +87,7 @@ stages:
     kind: materialization
     mode: grouped
     analysis_type: rlrmp.feedback_quality.perturbation_response
-    params:
+    local_params:
       experiment_metadata_key: rlrmp_experiment
       output_tag: validation_selected
       use_validation_selected_checkpoints: true
@@ -117,7 +117,7 @@ stages:
     kind: materialization
     mode: grouped
     analysis_type: rlrmp.feedback_quality.feedback_ablation
-    params:
+    local_params:
       experiment_metadata_key: rlrmp_experiment
       output_tag: validation_selected
       use_validation_selected_checkpoints: true
@@ -145,7 +145,7 @@ stages:
     kind: materialization
     mode: grouped
     analysis_type: rlrmp.feedback_quality.perturbation_calibration
-    params:
+    local_params:
       experiment_metadata_key: rlrmp_experiment
       output_tag: validation_selected
       use_validation_selected_checkpoints: true
@@ -175,7 +175,7 @@ stages:
         role: rlrmp-feedback-quality-perturbation-response-manifest
         required: false
     analysis_type: rlrmp.feedback_quality.response_norm_plots
-    params:
+    local_params:
       experiment_metadata_key: rlrmp_experiment
       output_tag: validation_selected
       use_validation_selected_checkpoints: true
@@ -232,7 +232,7 @@ stages:
         role: rlrmp-feedback-quality-response-norm-plots-status
         required: false
     analysis_type: rlrmp.feedback_quality_lens
-    params:
+    local_params:
       experiment_metadata_key: rlrmp_experiment
       output_tag: validation_selected
       use_validation_selected_checkpoints: true
