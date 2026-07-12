@@ -6,6 +6,8 @@ import subprocess
 from hashlib import sha256
 from pathlib import Path
 
+import numpy as np
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "post_run.sh"
@@ -165,6 +167,82 @@ def write_run_source(
     )
     (path / "trained_model.eqx").write_text("fixture model\n", encoding="utf-8")
 
+
+def write_adaptive_lr_source(path: Path, *, mismatch: bool = False) -> None:
+    from feedbax.contracts.training import TrainingRunSpec
+    from feedbax.training.optimizers import learning_rate_at_step
+    from rlrmp.train.cs_nominal_gru import build_parser, write_run_spec
+
+    path.mkdir()
+    args = build_parser().parse_args([])
+    values = {
+        "output_dir": str(path),
+        "spec_dir": str(path / "spec"),
+        "n_train_batches": 12,
+        "batch_size": 1,
+        "n_replicates": 2,
+        "hidden_size": 4,
+        "dry_run": True,
+        "full_train": True,
+        "resume": True,
+        "checkpoint_interval_batches": 1,
+        "controller_lr": 1e-3,
+        "gradient_clip_norm": 5.0,
+        "lr_warmup_batches": 2,
+        "lr_warmup_init_fraction": 0.1,
+        "lr_cosine_alpha": 0.1,
+        "log_step": 1,
+        "disable_progress": True,
+        "quiet_progress": True,
+        "target_relative_multitarget": True,
+        "force_filter_feedback": True,
+        "broad_epsilon_pgd_training": True,
+        "broad_epsilon_pgd_steps": 1,
+        "broad_epsilon_pgd_step_size_fraction": 0.5,
+        "broad_epsilon_pgd_objective": "soft_energy",
+        "broad_epsilon_pgd_energy_lambda": 1.0,
+        "adaptive_epsilon_curriculum": True,
+        "adaptive_epsilon_update_interval_batches": 1,
+        "adaptive_epsilon_outer_weight_start": 0.25,
+        "adaptive_epsilon_outer_weight_final": 0.25,
+        "adaptive_epsilon_outer_weight_ramp_batches": 0,
+        "loss_objective": "full_analytical_qrf",
+    }
+    for key, value in values.items():
+        setattr(args, key, value)
+    recipe = write_run_spec(args)["run_spec"]
+    typed_payload = recipe["feedbax_training_run_spec"]
+    schedule = typed_payload["method_payload"]["payload"]["controller_optimizer"][
+        "lr_schedule"
+    ]
+    schedule["total_steps"] = 10
+    write_json(path / "run.json", recipe)
+    write_json(
+        path / "training_summary.json",
+        {"completed_batches": 12, "n_train_batches": 12},
+    )
+
+    spec = TrainingRunSpec.model_validate(typed_payload)
+    schedule_spec = spec.method_payload.payload["controller_optimizer"]["lr_schedule"]
+    realized = np.asarray(
+        [
+            float(
+                learning_rate_at_step(
+                    schedule_spec,
+                    current_step=step,
+                    schedule_origin_step=0,
+                )
+            )
+            for step in range(12)
+        ],
+        dtype=np.float32,
+    )
+    trace = np.repeat(realized[:, None], 2, axis=1)
+    if mismatch:
+        trace[9] = 3e-5
+    np.savez(path / "training_diagnostics.npz", optimizer_learning_rate=trace)
+
+
 def write_fake_commands(bin_dir: Path, auth_record: Path) -> tuple[Path, Path]:
     bin_dir.mkdir()
     fake_agent_commit = bin_dir / "agent-commit"
@@ -248,6 +326,9 @@ def test_dry_run_prints_actions_without_writing(tmp_path: Path) -> None:
     assert "agent-commit --issue 731fdf7" in output
     assert "mandible auth request" in output
     assert "Checklist: decide whether this run requires coordination comments" in output
+    assert "INTERIM SELF-DEPRECATING LR GUARD" in output
+    assert "feedbax 0ab7d01" in output
+    assert "1c6293a" in output
     assert not (repo / "results").exists()
     assert not (repo / "_artifacts").exists()
 
@@ -516,6 +597,85 @@ def test_sync_only_syncs_artifacts_marker_and_checkpoint_without_git_or_auth(
     assert payload["phase"] == "completed"
     assert payload["run_spec_path"] == "results/731fdf7/runs/fixture__ok.json"
     assert run_command(["git", "status", "--short"], cwd=repo) == ""
+
+
+def test_adaptive_realized_lr_guard_passes_before_terminal_checkpoint(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    source = tmp_path / "source"
+    bin_dir = tmp_path / "bin"
+    auth_record = tmp_path / "auth_args.txt"
+    init_git_repo(repo)
+    write_adaptive_lr_source(source)
+    _fake_agent_commit, fake_mandible = write_fake_commands(bin_dir, auth_record)
+    env = os.environ.copy()
+    env["POST_RUN_MANDIBLE_AUTH"] = str(fake_mandible)
+
+    output = run_command(
+        [
+            "bash",
+            str(SCRIPT),
+            "--repo-root",
+            str(repo),
+            "--issue",
+            "731fdf7",
+            "--run",
+            "fixture__adaptive",
+            "--artifacts-src",
+            f"local:{source}",
+            "--sync-only",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    assert "Realized-LR guard: PASS" in output
+    assert "mid_warmup: step=1" in output
+    assert "peak: step=2" in output
+    assert "decay: step=9" in output
+    assert "terminal: step=10" in output
+    assert Path(str(auth_record) + ".checkpoint").is_file()
+
+
+def test_adaptive_realized_lr_mismatch_blocks_terminal_checkpoint(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    source = tmp_path / "source"
+    bin_dir = tmp_path / "bin"
+    auth_record = tmp_path / "auth_args.txt"
+    init_git_repo(repo)
+    write_adaptive_lr_source(source, mismatch=True)
+    _fake_agent_commit, fake_mandible = write_fake_commands(bin_dir, auth_record)
+    env = os.environ.copy()
+    env["POST_RUN_MANDIBLE_AUTH"] = str(fake_mandible)
+
+    result = run_command_result(
+        [
+            "bash",
+            str(SCRIPT),
+            "--repo-root",
+            str(repo),
+            "--issue",
+            "731fdf7",
+            "--run",
+            "fixture__adaptive",
+            "--artifacts-src",
+            f"local:{source}",
+            "--sync-only",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    assert result.returncode != 0
+    assert "realized LR mismatch at decay step=9" in result.stdout
+    assert not Path(str(auth_record) + ".checkpoint").exists()
+    assert not (
+        repo
+        / "_artifacts"
+        / "731fdf7"
+        / "runs"
+        / "fixture__adaptive"
+        / ".post_run_synced.json"
+    ).exists()
 
 
 def test_full_run_after_sync_only_skips_resync_and_duplicate_checkpoint(

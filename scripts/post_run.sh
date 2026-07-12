@@ -25,6 +25,11 @@
 
 set -euo pipefail
 
+echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" >&2
+echo "INTERIM SELF-DEPRECATING LR GUARD: retire with feedbax 0ab7d01" >&2
+echo "and deterministic-orchestration umbrella 1c6293a migration acceptance." >&2
+echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" >&2
+
 usage() {
     sed -n '2,13p' "$0" >&2
 }
@@ -181,6 +186,23 @@ verify_synced_artifacts() {
             uv run --no-sync python -m json.tool "$ARTIFACT_DIR/run.json" >/dev/null
         )
     fi
+}
+
+verify_realized_lr_guard() {
+    local spec_path="$1"
+    local diagnostics_path="$ARTIFACT_DIR/training_diagnostics.npz"
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        echo "DRY-RUN: would verify realized LR at five typed-builder points from $spec_path"
+        return 0
+    fi
+    echo "Verifying realized per-batch LR before terminal run-status checkpoint"
+    (
+        cd "$SCRIPT_REPO_ROOT"
+        PYTHONPATH="$SCRIPT_REPO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}" \
+            uv run --no-sync python -m rlrmp.runtime.realized_lr_guard \
+            --spec "$spec_path" \
+            --diagnostics "$diagnostics_path"
+    )
 }
 
 # Build the run-status checkpoint payload JSON (kind=run-status,
@@ -945,6 +967,17 @@ else
         run_post_run_contract "write" "$INPUT_SPEC_PATH"
     fi
 fi
+
+if [[ "$SYNC_ONLY" -eq 1 ]]; then
+    if [[ -f "$ARTIFACT_DIR/run.json" || "$DRY_RUN" -eq 1 ]]; then
+        LR_GUARD_SPEC_PATH="$ARTIFACT_DIR/run.json"
+    else
+        LR_GUARD_SPEC_PATH="$SPEC_PATH"
+    fi
+else
+    LR_GUARD_SPEC_PATH="$SPEC_PATH"
+fi
+verify_realized_lr_guard "$LR_GUARD_SPEC_PATH"
 
 echo
 echo "Issue comment template"
