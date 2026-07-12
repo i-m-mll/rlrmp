@@ -201,11 +201,7 @@ def test_imperative_f47_producers_and_exclusive_driver_hooks_are_deleted() -> No
     scripts = REPO_ROOT / "results" / "f47abb1" / "scripts"
     for producer in RETIRED_PRODUCERS:
         assert not (scripts / producer).exists()
-    driver = (REPO_ROOT / "src/rlrmp/analysis/multi_cell_driver.py").read_text(
-        encoding="utf-8"
-    )
-    assert "run_replicate_kinematics_analysis" not in driver
-    assert "_write_multi_cell_report" not in driver
+    assert not (REPO_ROOT / "src/rlrmp/analysis/multi_cell_driver.py").exists()
 
 
 def test_eval_layer_does_not_import_the_legacy_pilot_figure_pipeline() -> None:

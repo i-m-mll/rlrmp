@@ -222,14 +222,4 @@ def test_archived_oracles_preserve_labels_hashes_and_summary_values() -> None:
 
 
 def test_legacy_figure_builders_and_save_sites_are_deleted() -> None:
-    source = PRODUCER.read_text(encoding="utf-8")
-    for name in (
-        "make_forward_velocity_profile_figure",
-        "make_hold_drift_figure",
-        "make_peak_velocity_figure",
-        "make_summary_metrics_figure",
-        "make_training_loss_per_term_figure",
-    ):
-        assert f"def {name}" not in source
-    assert "save_figure(" not in source
-    assert "from feedbax.plot import save_figure" not in source
+    assert not PRODUCER.exists()

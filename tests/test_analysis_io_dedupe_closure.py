@@ -3,20 +3,13 @@
 from __future__ import annotations
 
 import ast
-import importlib.util
 from pathlib import Path
 
 import numpy as np
-import pytest
-
 from rlrmp.analysis.math.trial_alignment import (
     align_trials,
     pooled_trial_mean_with_band,
     replicate_mean_curves,
-)
-from rlrmp.analysis.multi_cell_driver import (
-    args_namespace,
-    legacy_task_trainer_history_skeleton,
 )
 from rlrmp.viz.figures import build_forward_velocity_figure, build_hold_drift_figure
 
@@ -115,58 +108,13 @@ def test_multi_cell_figure_builders_preserve_reductions() -> None:
     np.testing.assert_allclose(hold.data[0].y, curves[0, keep] * 1000.0)
 
 
-def test_profiled_args_namespace_preserves_training_defaults() -> None:
-    lit = args_namespace(
-        profile="lit_replication",
-        n_warmup_batches=12,
-        n_replicates=5,
-        overrides={"nn_output_jerk": 9.0},
-    )
-    assert lit.n_warmup_batches == 12
-    assert lit.n_replicates == 5
-    assert lit.nn_output_jerk == 9.0
-    assert lit.effector_hold_pos == 1.0
-    assert lit.nn_hidden_derivative == 0.001
-
-def test_historical_training_history_reader_fails_closed_on_current_feedbax() -> None:
-    if importlib.util.find_spec("feedbax.train") is not None:
-        pytest.skip("producing-era Feedbax API is available")
-    with pytest.raises(RuntimeError, match="producing Feedbax checkout"):
-        legacy_task_trainer_history_skeleton(None)
-
+def test_retired_multi_cell_pipeline_cannot_reaccrete() -> None:
     for path in (
+        "src/rlrmp/analysis/multi_cell_driver.py",
         "results/3702f54/scripts/analyse_pregomatrix.py",
         "results/b399efc/scripts/analyse_movement_ramp_matrix.py",
     ):
-        assert "from feedbax.train import" not in (REPO_ROOT / path).read_text(encoding="utf-8")
-
-
-def test_multi_cell_members_are_thin_canonical_adapters() -> None:
-    figure_members = tuple(
-        (path, name, canonical)
-        for path in (
-            "results/b399efc/scripts/analyse_movement_ramp_matrix.py",
-        )
-        for name, canonical in (
-            ("make_forward_velocity_profile_figure", "canonical_forward_velocity_figure"),
-            ("make_hold_drift_figure", "canonical_hold_drift_figure"),
-        )
-    )
-    for path, name, canonical in figure_members:
-        node = _function(path, name)
-        assert _loc(node) <= 30
-        assert canonical in _calls(node)
-
-
-def test_args_namespace_members_cannot_reaccrete() -> None:
-    members = (
-        ("results/b399efc/scripts/analyse_movement_ramp_matrix.py", "_make_args_namespace"),
-        ("results/3702f54/scripts/analyse_pregomatrix.py", "_make_args_namespace"),
-    )
-    for path, name in members:
-        node = _function(path, name)
-        assert _loc(node) <= 12
-        assert "args_namespace" in _calls(node)
+        assert not (REPO_ROOT / path).exists()
 
 
 def test_path_and_ensemble_residuals_stay_canonical() -> None:
