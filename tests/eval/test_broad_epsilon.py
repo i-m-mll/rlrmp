@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-import csv
-from io import StringIO
-from pathlib import Path
-
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
@@ -11,16 +7,12 @@ from feedbax import TaskTrialSpec, WhereDict
 from feedbax.objectives.loss import AbstractLoss, TermTree
 from feedbax.config.namespace import TreeNamespace
 
-import rlrmp.analysis.pipelines.gru_broad_epsilon_attribution as broad_epsilon_attribution
-from rlrmp.analysis.pipelines.gru_broad_epsilon_attribution import (
+from rlrmp.eval.broad_epsilon import (
     active_vs_zero_semantics,
-    discover_broad_epsilon_run_ids,
     epsilon_summary,
     gradient_pair_metrics,
     loss_delta_summary,
     paired_broad_epsilon_training_specs,
-    render_summary_csv,
-    resolve_run_inputs,
     summarize_loss_tree,
     truncate_trial_specs,
     zero_epsilon_trial_specs,
@@ -64,9 +56,7 @@ class _ToyBaseTask:
         del key, batch_info
         specs = _trial_specs()
         return TaskTrialSpec(
-            inits=WhereDict(
-                {"mechanics.vector": specs.inits["mechanics.vector"][0]}
-            ),
+            inits=WhereDict({"mechanics.vector": specs.inits["mechanics.vector"][0]}),
             inputs={
                 "epsilon": jnp.zeros((4, 8), dtype=jnp.float32),
                 "graph_channel": specs.inputs["graph_channel"][0],
@@ -182,69 +172,10 @@ def test_gradient_pair_metrics_report_norms_and_cosine() -> None:
     assert 0.0 < metrics["active_zero_gradient_cosine"] < 1.0
 
 
-def test_epsilon_summary_and_csv_schema_are_unambiguous() -> None:
+def test_epsilon_summary_schema_is_unambiguous() -> None:
     epsilon = np.ones((2, 3, 4), dtype=np.float64)
     summary = epsilon_summary(epsilon)
 
     assert summary["shape"] == [2, 3, 4]
     assert summary["per_trial_l2"]["mean"] == np.sqrt(12.0)
     assert summary["all_zero"] is False
-
-    csv_text = render_summary_csv(
-        [
-            {
-                "run_id": "run",
-                "n_rollout_trials": 2,
-                "broad_epsilon_training": {"level": "strong"},
-                "epsilon": {
-                    "active_total": summary,
-                    "paired_without_broad": summary,
-                    "broad_delta": summary,
-                },
-                "loss": {
-                    "active": {"total": 3.0},
-                    "zero": {"total": 2.0},
-                    "delta_active_minus_zero": {"total": 1.0},
-                },
-                "gradient": {
-                    "status": "evaluated",
-                    "aggregate": {"relative_delta_norm_vs_active": {"mean": 0.25}},
-                },
-            }
-        ]
-    )
-    rows = list(csv.DictReader(StringIO(csv_text)))
-
-    assert rows[0]["run_id"] == "run"
-    assert rows[0]["gradient_status"] == "evaluated"
-
-
-def test_broad_epsilon_run_inputs_use_resolver_and_flat_recipe(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    experiment = "abc1234"
-    run_id = "run_a"
-    (tmp_path / "results" / experiment / "runs").mkdir(parents=True)
-    (tmp_path / "results" / experiment / "runs" / f"{run_id}.json").write_text(
-        "{}",
-        encoding="utf-8",
-    )
-    (tmp_path / "_artifacts" / experiment / "runs" / run_id).mkdir(parents=True)
-    calls: list[tuple[str, str]] = []
-
-    def fake_resolve(exp: str, run: str, *, repo_root: Path):
-        assert repo_root == tmp_path
-        calls.append((exp, run))
-        return {"hps": {"broad_epsilon_training": {"enabled": True}}}
-
-    monkeypatch.setattr(broad_epsilon_attribution, "resolve_run_record", fake_resolve)
-
-    assert discover_broad_epsilon_run_ids(experiment, repo_root=tmp_path) == (run_id,)
-    resolved = resolve_run_inputs(experiment, (run_id,), repo_root=tmp_path)
-
-    assert calls == [(experiment, run_id), (experiment, run_id)]
-    assert resolved[0].run_spec_path == (
-        tmp_path / "results" / experiment / "runs" / f"{run_id}.json"
-    )
-    assert resolved[0].run_spec["hps"]["broad_epsilon_training"]["enabled"] is True

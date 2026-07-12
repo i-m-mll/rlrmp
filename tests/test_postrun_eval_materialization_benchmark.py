@@ -77,10 +77,6 @@ def test_run_benchmark_records_and_passes_backend_context(monkeypatch, tmp_path)
         calls["perturbation_evaluation_backend"] = kwargs["evaluation_backend"]
         return {"status_counts": {"evaluated": 1}, "perturbations": [{}]}
 
-    def fake_worst_case(*_, **kwargs):
-        calls["worst_case_optimizer_backend"] = kwargs["optimizer_backend"]
-        return {"status": "evaluated"}
-
     def fake_feedback_pipeline(**kwargs):
         calls["feedback_scope"] = kwargs["scope"]
         return SimpleNamespace(payload={"status_counts": {}, "runs": {}})
@@ -91,7 +87,6 @@ def test_run_benchmark_records_and_passes_backend_context(monkeypatch, tmp_path)
         "execute_feedback_ablation_pipeline",
         fake_feedback_pipeline,
     )
-    monkeypatch.setattr(benchmark, "audit_run_worst_case_epsilon", fake_worst_case)
     monkeypatch.setattr(benchmark, "_environment", lambda: {"jax_default_backend": "cpu"})
 
     payload = run_benchmark(
@@ -113,7 +108,6 @@ def test_run_benchmark_records_and_passes_backend_context(monkeypatch, tmp_path)
     assert calls == {
         "perturbation_evaluation_backend": "serial",
         "feedback_scope": "postrun_eval_materialization_benchmark",
-        "worst_case_optimizer_backend": "serial",
     }
     assert payload["bundles"]
     for bundle in payload["bundles"]:
