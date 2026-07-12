@@ -3,17 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
-import tempfile
 from typing import Any, Literal
 
 import jax.random as jr
 import numpy as np
-from numpy import savez_compressed as _savez_compressed
-import plotly.graph_objects as go
-from plotly.colors import sample_colorscale
 from feedbax.analysis.analysis import AbstractAnalysis
 from feedbax.analysis.context import AnalysisRunContext
 from feedbax.analysis.evaluation import EvaluationRecipeResult, register_evaluation_recipe
@@ -30,31 +25,29 @@ from rlrmp.analysis.math.cs_game_card import (
     materialize_reference,
 )
 from rlrmp.analysis.math.cs_released_simulation import (
+    build_extlqg_comparator_path,
     default_cs_noise_covariances,
     sample_forward_noise_draws,
+    simulate_lqg_released_forward,
     simulate_robust_released_forward,
 )
 from rlrmp.analysis.math.output_feedback import (
     OutputFeedbackConfig,
     make_cs_output_feedback_initial_state,
 )
-from rlrmp.analysis.pipelines.gru_pilot_figures import (
-    cs_output_feedback_reference_profile,
-)
 from rlrmp.eval import sisu_spectrum as sisu_eval
 from rlrmp.paths import REPO_ROOT
-from rlrmp.viz import profile_comparison_grid
 
 
 SISU_SPECTRUM_ANALYSIS_TYPE = "rlrmp.sisu_spectrum"
 SISU_SPECTRUM_EVALUATION_TYPE = "rlrmp.sisu_spectrum_evaluation"
+SISU_ROBUSTIFICATION_ANALYSIS_TYPE = "rlrmp.sisu_robustification_comparison"
 SISU_SPECTRUM_STATES_SCHEMA = "rlrmp.sisu_spectrum.states.v1"
 SISU_SPECTRUM_MANIFEST_SCHEMA = "rlrmp.sisu_spectrum_special.v3"
 SISU_SPECTRUM_EVALUATION_PARAMS_SCHEMA = "rlrmp.sisu_spectrum.evaluation_params"
 SISU_SPECTRUM_ANALYSIS_PARAMS_SCHEMA = "rlrmp.sisu_spectrum.analysis_params"
-SISU_SPECTRUM_COMPACT_ARRAYS_ROLE = "rlrmp-sisu-spectrum-compact-arrays"
 SISU_SPECTRUM_MANIFEST_ROLE = "rlrmp-sisu-spectrum-manifest"
-SISU_SPECTRUM_NOTE_ROLE = "rlrmp-sisu-spectrum-note"
+SISU_PERTURBATION_COMPARISON_SCHEMA = "rlrmp.sisu_perturbation_class_comparison.v1"
 DEFAULT_TOPIC = "sisu_spectrum_velocity_profiles"
 _ANALYSIS_PRESET = load_analysis_parameter_preset("sisu_spectrum_diagnostics").parameters
 DEFAULT_SISU_LEVELS = tuple(_ANALYSIS_PRESET["sisu_levels"])
@@ -65,6 +58,19 @@ CHECKPOINT_POLICY = "validation_selected_per_replicate"
 LOW_SISU_ENDPOINT_REACH_THRESHOLD_M = 0.05
 LOW_SISU_PEAK_SPEED_THRESHOLD_M_S = 0.2
 
+METRIC_SPECS: tuple[tuple[str, str, str], ...] = (
+    ("delta_action_norm", "mean_delta_action", "response_magnitude"),
+    ("delta_position_response_m.max", "max_delta_x_m", "response_magnitude"),
+    ("delta_position_response_m.auc", "auc_delta_x_m_s", "response_magnitude"),
+    ("delta_endpoint_error_m", "mean_endpoint_delta_m", "signed_endpoint_delta"),
+    (
+        "delta_terminal_speed_m_s",
+        "mean_terminal_speed_delta_m_s",
+        "signed_endpoint_delta",
+    ),
+    ("extra_full_qrf_delta_cost_total", "mean_full_qrf_delta_cost", "cost_delta"),
+)
+
 
 @dataclass(frozen=True)
 class ReferenceCurve:
@@ -74,8 +80,6 @@ class ReferenceCurve:
     time_s: np.ndarray
     forward_velocity_m_s: np.ndarray
     std_forward_velocity_m_s: np.ndarray
-    line_color: str
-    line_dash: str
     controller: str
     gamma_factor: float | None = None
     gamma: float | None = None
@@ -97,9 +101,6 @@ class SisuSpectrumEvaluationParams(BaseModel):
     n_rollout_trials: int = Field(DEFAULT_N_ROLLOUT_TRIALS, ge=1)
     reference_samples: int = Field(DEFAULT_REFERENCE_SAMPLES, ge=1)
     use_validation_selected_checkpoints: bool = True
-    output_stem: str = "sisu_spectrum_special"
-    note_marker: str = "sisu_spectrum_special"
-    note_output: str | None = None
 
     def model_post_init(self, __context: Any) -> None:
         if len(self.run_ids) != len(self.labels):
@@ -116,19 +117,28 @@ class SisuSpectrumAnalysisParams(BaseModel):
     manifest_schema: Literal["rlrmp.sisu_spectrum_special.v3"]
 
 
+class SisuRobustificationAnalysisParams(BaseModel):
+    """Params for grouped SISU=1 versus SISU=0 perturbation comparisons."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_id: Literal["rlrmp.sisu_robustification.analysis_params"]
+    schema_version: Literal["v1"]
+    low_sisu: float = 0.0
+    high_sisu: float = 1.0
+
+
 class SisuSpectrumAnalysis(AbstractAnalysis):
-    """Materialize SISU-spectrum figures, compact arrays, JSON, and Markdown."""
+    """Project cached SISU states into figure-ready structured science."""
 
-    output: str = "velocity_profiles"
-
-    def __post_init__(self):
-        super().__post_init__()
-        if self.output != "velocity_profiles":
-            raise ValueError(f"Unknown SISU spectrum output {self.output!r}")
-
-    def compute(self, data: AnalysisInputData, **kwargs):
+    def compute(self, data: AnalysisInputData, **_kwargs):
         states = _sisu_states(data.states)
-        return states
+        return {
+            "schema_id": SISU_SPECTRUM_MANIFEST_SCHEMA,
+            "summary": states["manifest"],
+            "profiles": profile_payload(states["profiles"]),
+            "references": reference_payload(states["references"]),
+        }
 
     def emit_artifacts(
         self,
@@ -136,97 +146,38 @@ class SisuSpectrumAnalysis(AbstractAnalysis):
         data: AnalysisInputData,
         *,
         result,
-        **kwargs,
+        **_kwargs,
     ):
-        states = _sisu_states(data.states)
-        manifest = deepcopy(states["manifest"])
-        params = _params_from_states(states)
-        refs: dict[str, Any] = {}
-        if self.output == "velocity_profiles":
-            figure_refs = context.record_figure(
-                fig=build_velocity_profile_figure(
-                    states["profiles"],
-                    states["references"],
-                ),
-                analysis_name="sisu_spectrum_analysis",
-                analysis_label="velocity_profiles",
-                ordinal=0,
-                params={
-                    "schema_id": "rlrmp.figure_spec.sisu_spectrum_velocity_profiles.v1",
-                    "experiment": params.experiment,
-                    "topic": params.topic,
-                    "run_ids": list(params.run_ids),
-                    "labels": list(params.labels),
-                    "sisu_levels": list(params.sisu_levels),
-                    "n_rollout_trials_per_replicate": params.n_rollout_trials,
-                    "reference_samples": max(
-                        len(states["profiles"]) * params.n_rollout_trials,
-                        params.reference_samples,
-                    ),
-                    "checkpoint_policy": CHECKPOINT_POLICY,
-                    "input_contract": (
-                        "SISU is carried by trial_specs.inputs['input'] for these runs; "
-                        "epsilon is zeroed for the nominal velocity-profile comparison."
-                    ),
-                    "interpretation": (
-                        "Discovery-trained robustness, not teacher/distillation and not "
-                        "formal H-infinity equivalence."
-                    ),
-                },
-            )
-            refs["figure"] = figure_refs
-            manifest.setdefault("outputs", {})["figure"] = [
-                ref.model_dump(mode="json", exclude_none=True) for ref in figure_refs
-            ]
-            arrays = compact_velocity_profile_arrays(
-                profiles=states["profiles"],
-                references=states["references"],
-            )
-            with tempfile.NamedTemporaryFile(suffix=".npz") as arrays_file:
-                _savez_compressed(arrays_file.name, **arrays)
-                arrays_file.flush()
-                compact_ref = context.record_artifact(
-                    arrays_file.name,
-                    role=SISU_SPECTRUM_COMPACT_ARRAYS_ROLE,
-                    logical_name="sisu_spectrum/sisu_velocity_profile_curves.npz",
-                    media_type="application/x-npz",
-                    metadata={"array_keys": sorted(arrays)},
-                    group_id="sisu_spectrum_compact_arrays",
-                    group_role="velocity_profile_curves",
-                    group_metadata={"schema": "rlrmp.sisu_spectrum.compact_arrays.v1"},
-                )
-            refs["compact_arrays"] = compact_ref
-            manifest["outputs"]["compact_arrays"] = compact_ref.model_dump(
-                mode="json", exclude_none=True
-            )
-
-            note_name = (
-                Path(params.note_output).name
-                if params.note_output is not None
-                else f"{params.output_stem}.md"
-            )
-            with tempfile.NamedTemporaryFile(mode="w+", suffix=".md") as note_file:
-                note_file.write(render_markdown(manifest))
-                note_file.flush()
-                note_ref = context.record_artifact(
-                    note_file.name,
-                    role=SISU_SPECTRUM_NOTE_ROLE,
-                    logical_name=f"sisu_spectrum/{note_name}",
-                    media_type="text/markdown",
-                    metadata={"marker": params.note_marker},
-                )
-            refs["notes"] = note_ref
-            manifest["outputs"]["markdown"] = note_ref.model_dump(mode="json", exclude_none=True)
-        refs["manifest"] = context.record_json_artifact(
-            manifest,
+        artifact = context.record_json_artifact(
+            result,
             role=SISU_SPECTRUM_MANIFEST_ROLE,
-            logical_name="sisu_spectrum/manifest.json",
+            logical_name="sisu_spectrum/structured_analysis.json",
             metadata={"states_schema": SISU_SPECTRUM_STATES_SCHEMA},
         )
-        return {
-            "manifest": manifest,
-            "artifact_refs": refs,
-        }
+        return {**result, "artifact_refs": {"structured_analysis": artifact}}
+
+
+class SisuRobustificationAnalysis(AbstractAnalysis):
+    """Emit grouped robustification science from paired cached summaries."""
+
+    def compute(self, data: AnalysisInputData, **_kwargs):
+        run_summaries = data.states["run_summaries"]
+        return build_perturbation_comparison(run_summaries)
+
+    def emit_artifacts(
+        self,
+        context: AnalysisRunContext,
+        data: AnalysisInputData,
+        *,
+        result,
+        **_kwargs,
+    ):
+        artifact = context.record_json_artifact(
+            result,
+            role="rlrmp-sisu-robustification-comparison",
+            logical_name="sisu_spectrum/robustification_comparison.json",
+        )
+        return {**result, "artifact_refs": {"structured_analysis": artifact}}
 
 
 def register_sisu_spectrum_recipes(*, replace: bool = True) -> None:
@@ -242,6 +193,11 @@ def register_sisu_spectrum_recipes(*, replace: bool = True) -> None:
         sisu_spectrum_recipe,
         replace=replace,
     )
+    register_analysis_recipe(
+        SISU_ROBUSTIFICATION_ANALYSIS_TYPE,
+        sisu_robustification_recipe,
+        replace=replace,
+    )
 
 
 def sisu_spectrum_evaluation_spec_params(
@@ -254,9 +210,6 @@ def sisu_spectrum_evaluation_spec_params(
     n_rollout_trials: int = DEFAULT_N_ROLLOUT_TRIALS,
     reference_samples: int = DEFAULT_REFERENCE_SAMPLES,
     use_validation_selected_checkpoints: bool = True,
-    output_stem: str = "sisu_spectrum_special",
-    note_marker: str = "sisu_spectrum_special",
-    note_output: Path | str | None = None,
 ) -> dict[str, Any]:
     """Return validated JSON params for a SISU-spectrum evaluation run."""
 
@@ -271,9 +224,6 @@ def sisu_spectrum_evaluation_spec_params(
         n_rollout_trials=n_rollout_trials,
         reference_samples=reference_samples,
         use_validation_selected_checkpoints=use_validation_selected_checkpoints,
-        output_stem=output_stem,
-        note_marker=note_marker,
-        note_output=None if note_output is None else str(note_output),
     ).model_dump(mode="json", exclude_none=True)
 
 
@@ -343,7 +293,6 @@ def sisu_spectrum_recipe(
     return AnalysisRecipeResult(
         analyses={
             "velocity_profiles": SisuSpectrumAnalysis(
-                output="velocity_profiles",
                 variant="sisu_spectrum",
             ),
         },
@@ -352,6 +301,38 @@ def sisu_spectrum_recipe(
 
 
 sisu_spectrum_recipe.EVAL_DEPENDENCIES = (SISU_SPECTRUM_EVALUATION_TYPE,)
+
+
+def sisu_robustification_recipe(
+    spec,
+    _root: Path,
+    inputs: Sequence[ResolvedAnalysisInput],
+) -> AnalysisRecipeResult:
+    """Build the grouped comparison from paired cached evaluation summaries."""
+
+    params = SisuRobustificationAnalysisParams.model_validate(spec.params)
+    run_summaries = paired_run_summaries(
+        inputs,
+        low_sisu=params.low_sisu,
+        high_sisu=params.high_sisu,
+    )
+    return AnalysisRecipeResult(
+        analyses={
+            "robustification_comparison": SisuRobustificationAnalysis(
+                variant="sisu_robustification_comparison",
+            )
+        },
+        data=AnalysisInputData(
+            models={},
+            tasks={},
+            states={"run_summaries": run_summaries},
+            hps={"sisu_robustification": TreeNamespace(task=TreeNamespace(eval_n=len(inputs)))},
+            extras={"params": params.model_dump(mode="json")},
+        ),
+    )
+
+
+sisu_robustification_recipe.EVAL_DEPENDENCIES = ("rlrmp.eval.perturbation_response_bank",)
 
 
 def robustification_comparison(curves: Sequence[sisu_eval.SisuCurve]) -> dict[str, float]:
@@ -389,18 +370,35 @@ def analytical_reference_curves(
 
     reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
     config = OutputFeedbackConfig()
-    ext = cs_output_feedback_reference_profile(
-        reference=reference,
-        config=config,
-        label="extLQG analytical reference",
-        n_samples=n_samples,
-        key=key,
-        line_color="#111827",
-        line_dash="dash",
-    )
-    gamma_ref = reference.gamma_references[0]
     x0 = make_cs_output_feedback_initial_state(reference.plant, config)
     covariances = default_cs_noise_covariances(reference.plant, config)
+    ext_comparator = build_extlqg_comparator_path(
+        reference.plant,
+        reference.lqr_solution.K,
+        covariances,
+        schedule=reference.schedule,
+        config=config,
+    )
+    ext_rollouts = [
+        simulate_lqg_released_forward(
+            reference.plant,
+            ext_comparator.controller_gains,
+            x0,
+            draws=sample_forward_noise_draws(
+                sample_key,
+                T=reference.schedule.T,
+                covariances=covariances,
+            ),
+            covariances=covariances,
+            estimator_gains=ext_comparator.estimator_gains,
+            config=config,
+        )
+        for sample_key in jr.split(key, n_samples)
+    ]
+    ext_x = np.stack([np.asarray(rollout.x, dtype=np.float64) for rollout in ext_rollouts], axis=0)
+    vel_lo, _vel_hi = reference.plant.vel_slice
+    ext_forward = ext_x[:, :, vel_lo]
+    gamma_ref = reference.gamma_references[0]
     rollouts = [
         simulate_robust_released_forward(
             reference.plant,
@@ -425,8 +423,6 @@ def analytical_reference_curves(
         time_s=np.arange(forward.shape[1], dtype=np.float64) * float(reference.plant.dt),
         forward_velocity_m_s=np.mean(forward, axis=0),
         std_forward_velocity_m_s=np.std(forward, axis=0),
-        line_color="#dc2626",
-        line_dash="dot",
         controller="analytical_hinf_output_feedback",
         gamma_factor=float(gamma_ref.factor),
         gamma=float(gamma_ref.gamma),
@@ -434,108 +430,16 @@ def analytical_reference_curves(
     )
     return (
         ReferenceCurve(
-            label=ext.label,
-            time_s=ext.time_s,
-            forward_velocity_m_s=ext.forward_velocity,
-            std_forward_velocity_m_s=ext.forward_velocity_std,
-            line_color=ext.line_color,
-            line_dash=ext.line_dash,
+            label="extLQG analytical reference",
+            time_s=np.arange(ext_forward.shape[1], dtype=np.float64) * float(reference.plant.dt),
+            forward_velocity_m_s=np.mean(ext_forward, axis=0),
+            std_forward_velocity_m_s=np.std(ext_forward, axis=0),
             controller="analytical_extlqg_output_feedback",
-            gamma_factor=float(ext.gamma_factor),
-            n_samples=int(ext.n_samples),
+            gamma_factor=float(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR),
+            n_samples=int(n_samples),
         ),
         hinf,
     )
-
-
-def build_velocity_profile_figure(
-    profiles: Sequence[sisu_eval.RunSisuProfile],
-    references: Sequence[ReferenceCurve],
-) -> go.Figure:
-    """Build the two-panel SISU velocity profile figure."""
-
-    fig = profile_comparison_grid(
-        n_panels=len(profiles),
-        subplot_titles=[profile.label for profile in profiles],
-        vertical_spacing=0.08,
-    )
-    for row_idx, profile in enumerate(profiles, start=1):
-        for reference in references:
-            fig.add_trace(
-                go.Scatter(
-                    x=reference.time_s,
-                    y=reference.forward_velocity_m_s,
-                    mode="lines",
-                    line={
-                        "color": reference.line_color,
-                        "width": 2.0,
-                        "dash": reference.line_dash,
-                    },
-                    name=reference.label,
-                    legendgroup=f"ref-{reference.label}",
-                    showlegend=row_idx == 1,
-                ),
-                row=row_idx,
-                col=1,
-            )
-        for curve in profile.curves:
-            fig.add_trace(
-                go.Scatter(
-                    x=curve.time_s,
-                    y=curve.mean_forward_velocity_m_s,
-                    mode="lines",
-                    line={"color": _sisu_color(curve.sisu), "width": 2.6},
-                    name=f"SISU={curve.sisu:g}",
-                    legendgroup=f"sisu-{curve.sisu:g}",
-                    showlegend=row_idx == 1,
-                    customdata=np.column_stack(
-                        [
-                            np.full_like(curve.time_s, curve.sisu, dtype=np.float64),
-                            curve.std_forward_velocity_m_s,
-                        ]
-                    ),
-                    hovertemplate=(
-                        "time=%{x:.3f}s<br>"
-                        "velocity=%{y:.4f}m/s<br>"
-                        "SISU=%{customdata[0]:.2f}<br>"
-                        "SD=%{customdata[1]:.4f}m/s<extra></extra>"
-                    ),
-                ),
-                row=row_idx,
-                col=1,
-            )
-    fig.add_trace(
-        go.Scatter(
-            x=[None],
-            y=[None],
-            mode="markers",
-            marker={
-                "colorscale": "Viridis",
-                "cmin": 0.0,
-                "cmax": 1.0,
-                "color": [0.0],
-                "colorbar": {"title": "SISU", "len": 0.55},
-                "showscale": True,
-            },
-            showlegend=False,
-            hoverinfo="skip",
-        )
-    )
-    fig.update_layout(
-        title=(
-            "SISU-conditioned nominal forward velocity profiles "
-            "(validation-selected GRU checkpoints)"
-        ),
-        width=920,
-        height=max(700, 390 * len(profiles)),
-        margin={"l": 74, "r": 110, "t": 82, "b": 64},
-        hovermode="x unified",
-        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "left", "x": 0.0},
-    )
-    fig.update_xaxes(title_text="Time (s)", row=len(profiles), col=1)
-    fig.update_yaxes(title_text="Forward velocity (m/s)", zeroline=True)
-    fig.update_yaxes(matches="y")
-    return fig
 
 
 def build_manifest(
@@ -567,19 +471,10 @@ def build_manifest(
             "low_sisu_endpoint_reach_threshold_m": LOW_SISU_ENDPOINT_REACH_THRESHOLD_M,
             "low_sisu_peak_speed_threshold_m_s": LOW_SISU_PEAK_SPEED_THRESHOLD_M_S,
         },
-        "outputs": {
-            "compact_arrays": {
-                "role": SISU_SPECTRUM_COMPACT_ARRAYS_ROLE,
-                "status": "recorded_by_analysis",
-            },
-            "figure": {
-                "role": "figure",
-                "status": "recorded_by_analysis",
-            },
-            "markdown": {
-                "role": SISU_SPECTRUM_NOTE_ROLE,
-                "status": "recorded_by_analysis",
-            },
+        "output_contract": {
+            "role": SISU_SPECTRUM_MANIFEST_ROLE,
+            "shape": "structured_profile_and_reference_payload",
+            "rendering_owner": "rlrmp.report.sisu_spectrum_figure_stage",
         },
         "references": {
             reference.label: {
@@ -614,36 +509,49 @@ def build_manifest(
     }
 
 
-def compact_velocity_profile_arrays(
-    *,
-    profiles: Sequence[sisu_eval.RunSisuProfile],
-    references: Sequence[ReferenceCurve],
-) -> dict[str, np.ndarray]:
-    """Return the compact regenerable SISU velocity-profile array bundle."""
+def profile_payload(profiles: Sequence[sisu_eval.RunSisuProfile]) -> list[dict[str, Any]]:
+    """Return JSON-safe profile curves for downstream report/figure recipes."""
 
-    arrays: dict[str, np.ndarray] = {}
-    for profile_idx, profile in enumerate(profiles):
-        prefix = f"run_{profile_idx}"
-        arrays[f"{prefix}_run_id"] = np.asarray(profile.run_id)
-        for curve in profile.curves:
-            sisu_tag = str(curve.sisu).replace(".", "p")
-            arrays[f"{prefix}_sisu_{sisu_tag}_time_s"] = curve.time_s
-            arrays[f"{prefix}_sisu_{sisu_tag}_mean_forward_velocity_m_s"] = (
-                curve.mean_forward_velocity_m_s
-            )
-            arrays[f"{prefix}_sisu_{sisu_tag}_std_forward_velocity_m_s"] = (
-                curve.std_forward_velocity_m_s
-            )
-            arrays[f"{prefix}_sisu_{sisu_tag}_replicate_mean_forward_velocity_m_s"] = (
-                curve.replicate_mean_forward_velocity_m_s
-            )
-    for reference_idx, reference in enumerate(references):
-        prefix = f"reference_{reference_idx}"
-        arrays[f"{prefix}_label"] = np.asarray(reference.label)
-        arrays[f"{prefix}_time_s"] = reference.time_s
-        arrays[f"{prefix}_forward_velocity_m_s"] = reference.forward_velocity_m_s
-        arrays[f"{prefix}_std_forward_velocity_m_s"] = reference.std_forward_velocity_m_s
-    return arrays
+    return [
+        {
+            "run_id": profile.run_id,
+            "label": profile.label,
+            "curves": [
+                {
+                    "sisu": float(curve.sisu),
+                    "time_s": np.asarray(curve.time_s).tolist(),
+                    "mean_forward_velocity_m_s": np.asarray(
+                        curve.mean_forward_velocity_m_s
+                    ).tolist(),
+                    "std_forward_velocity_m_s": np.asarray(curve.std_forward_velocity_m_s).tolist(),
+                    "replicate_mean_forward_velocity_m_s": np.asarray(
+                        curve.replicate_mean_forward_velocity_m_s
+                    ).tolist(),
+                    **curve_summary(curve),
+                }
+                for curve in profile.curves
+            ],
+        }
+        for profile in profiles
+    ]
+
+
+def reference_payload(references: Sequence[ReferenceCurve]) -> list[dict[str, Any]]:
+    """Return JSON-safe analytical reference curves for downstream rendering."""
+
+    return [
+        {
+            "label": reference.label,
+            "controller": reference.controller,
+            "gamma_factor": reference.gamma_factor,
+            "gamma": reference.gamma,
+            "n_samples": reference.n_samples,
+            "time_s": np.asarray(reference.time_s).tolist(),
+            "forward_velocity_m_s": np.asarray(reference.forward_velocity_m_s).tolist(),
+            "std_forward_velocity_m_s": np.asarray(reference.std_forward_velocity_m_s).tolist(),
+        }
+        for reference in references
+    ]
 
 
 def summarize_low_sisu_behavior(profiles: Sequence[sisu_eval.RunSisuProfile]) -> str:
@@ -700,6 +608,183 @@ def curve_summary(curve: sisu_eval.SisuCurve) -> dict[str, Any]:
     }
 
 
+def paired_run_summaries(
+    inputs: Sequence[ResolvedAnalysisInput],
+    *,
+    low_sisu: float = 0.0,
+    high_sisu: float = 1.0,
+) -> dict[str, dict[str, Mapping[str, Any]]]:
+    """Pair cached perturbation summaries by run and declared SISU condition."""
+
+    paired: dict[str, dict[str, Mapping[str, Any]]] = {}
+    expected = {float(low_sisu): "sisu_0", float(high_sisu): "sisu_1"}
+    for resolved in inputs:
+        states = resolved.states
+        if not isinstance(states, Mapping):
+            raise ValueError("SISU comparison inputs require cached mapping states")
+        level = float(states["sisu_level"])
+        if level not in expected:
+            raise ValueError(f"unexpected SISU comparison level {level:g}")
+        runs = states.get("runs")
+        if not isinstance(runs, Mapping):
+            raise ValueError("SISU comparison states require a runs mapping")
+        for run_id, summary in runs.items():
+            if not isinstance(summary, Mapping):
+                raise ValueError(f"SISU summary for {run_id!r} must be a mapping")
+            paired.setdefault(str(run_id), {})[expected[level]] = summary
+    for run_id, levels in paired.items():
+        missing = sorted({"sisu_0", "sisu_1"}.difference(levels))
+        if missing:
+            raise ValueError(f"SISU comparison run {run_id!r} missing {missing}")
+    return paired
+
+
+def build_perturbation_comparison(
+    run_summaries: Mapping[str, Mapping[str, Mapping[str, Any]]],
+) -> dict[str, Any]:
+    """Build the canonical grouped robustification comparison payload."""
+
+    runs: dict[str, Any] = {}
+    for run_id, levels in run_summaries.items():
+        low = levels["sisu_0"]
+        high = levels["sisu_1"]
+        low_response = _response_summary(low)
+        high_response = _response_summary(high)
+        classes = compare_summary_groups(
+            low_response["class_summary"]["groups"],
+            high_response["class_summary"]["groups"],
+        )
+        timings = compare_summary_groups(
+            low_response["timing_cell_summary"]["groups"],
+            high_response["timing_cell_summary"]["groups"],
+        )
+        runs[run_id] = {
+            "label": high.get("label", low.get("label", run_id)),
+            "class_comparison": classes,
+            "timing_cell_comparison": timings,
+            "headline": summarize_headline(classes),
+        }
+    return {
+        "schema_id": SISU_PERTURBATION_COMPARISON_SCHEMA,
+        "sisu_levels": [0.0, 1.0],
+        "comparison": "sisu_1_over_sisu_0",
+        "runs": runs,
+    }
+
+
+def compare_summary_groups(
+    low_groups: Mapping[str, Mapping[str, Any]],
+    high_groups: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Compare SISU=1 and SISU=0 grouped perturbation summaries."""
+
+    return {
+        key: compare_group(key, low_groups.get(key, {}), high_groups.get(key, {}))
+        for key in sorted(set(low_groups) | set(high_groups))
+    }
+
+
+def compare_group(
+    group_key: str,
+    low: Mapping[str, Any],
+    high: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Compare one perturbation class or timing-cell group."""
+
+    low_metrics = _mapping(low.get("metrics"))
+    high_metrics = _mapping(high.get("metrics"))
+    metrics = {}
+    for metric_key, slug, role in METRIC_SPECS:
+        low_value = metric_mean(low_metrics, metric_key)
+        high_value = metric_mean(high_metrics, metric_key)
+        metrics[slug] = {
+            "metric_key": metric_key,
+            "role": role,
+            "sisu_0": low_value,
+            "sisu_1": high_value,
+            "delta_1_minus_0": _delta(high_value, low_value),
+            "ratio_1_over_0": _ratio(high_value, low_value),
+        }
+    return {
+        "group": group_key,
+        "rows_sisu_0": low.get("n_rows"),
+        "rows_sisu_1": high.get("n_rows"),
+        "status_counts_sisu_0": low.get("status_counts", {}),
+        "status_counts_sisu_1": high.get("status_counts", {}),
+        "metrics": metrics,
+    }
+
+
+def metric_mean(metrics: Mapping[str, Any], dotted_key: str) -> float | None:
+    """Read a mean from flat or nested grouped-summary metrics."""
+
+    direct = metrics.get(dotted_key)
+    if isinstance(direct, Mapping) and direct.get("mean") is not None:
+        return float(direct["mean"])
+    current: Any = metrics
+    for key in dotted_key.split("."):
+        if not isinstance(current, Mapping) or key not in current:
+            return None
+        current = current[key]
+    if not isinstance(current, Mapping) or current.get("mean") is None:
+        return None
+    return float(current["mean"])
+
+
+def summarize_headline(comparisons: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
+    """Summarize lower/equal/higher ratio counts for headline metrics."""
+
+    return {
+        key: _ratio_counts(comparisons, key)
+        for key in (
+            "mean_full_qrf_delta_cost",
+            "max_delta_x_m",
+            "mean_delta_action",
+        )
+    }
+
+
+def _ratio_counts(
+    comparisons: Mapping[str, Mapping[str, Any]],
+    metric_slug: str,
+) -> dict[str, int]:
+    counts = {"improved": 0, "equal": 0, "worse": 0, "not_available": 0}
+    for row in comparisons.values():
+        ratio = _mapping(_mapping(row.get("metrics")).get(metric_slug)).get("ratio_1_over_0")
+        if ratio is None or not np.isfinite(float(ratio)):
+            counts["not_available"] += 1
+        elif np.isclose(float(ratio), 1.0):
+            counts["equal"] += 1
+        elif float(ratio) < 1.0:
+            counts["improved"] += 1
+        else:
+            counts["worse"] += 1
+    return counts
+
+
+def _response_summary(value: Mapping[str, Any]) -> Mapping[str, Any]:
+    response = value.get("robust_response_summary", value)
+    if not isinstance(response, Mapping):
+        raise ValueError("cached SISU state has no robust response summary")
+    return response
+
+
+def _mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _delta(high: float | None, low: float | None) -> float | None:
+    if high is None or low is None:
+        return None
+    return float(high - low)
+
+
+def _ratio(high: float | None, low: float | None) -> float | None:
+    if high is None or low is None or abs(low) <= 1e-12:
+        return None
+    return float(high / low)
+
+
 def _states_from_inputs(inputs: Sequence[ResolvedAnalysisInput]) -> dict[str, Any]:
     if not inputs:
         raise ValueError("SISU spectrum analysis requires an evaluation manifest input")
@@ -721,155 +806,42 @@ def _sisu_states(value: Any) -> dict[str, Any]:
     return dict(value)
 
 
-def _params_from_states(states: Mapping[str, Any]) -> SisuSpectrumEvaluationParams:
-    params = states.get("params")
-    if isinstance(params, SisuSpectrumEvaluationParams):
-        return params
-    if not isinstance(params, Mapping):
-        manifest = states.get("manifest", {})
-        if isinstance(manifest, Mapping):
-            params = {
-                "experiment": manifest.get("issue", "unknown"),
-                "run_ids": list((manifest.get("runs") or {}).keys()),
-                "labels": [
-                    str(row.get("label", run_id))
-                    for run_id, row in (manifest.get("runs") or {}).items()
-                    if isinstance(row, Mapping)
-                ],
-                "topic": manifest.get("topic", DEFAULT_TOPIC),
-            }
-        else:
-            params = {}
-    return SisuSpectrumEvaluationParams.model_validate(params)
-
-
-def render_markdown(manifest: Mapping[str, Any]) -> str:
-    """Render the special SISU note from the manifest."""
-
-    if manifest.get("schema_id") != SISU_SPECTRUM_MANIFEST_SCHEMA:
-        raise ValueError(
-            "SISU spectrum Markdown requires custody manifest schema "
-            f"{SISU_SPECTRUM_MANIFEST_SCHEMA!r}"
-        )
-    outputs = manifest["outputs"]
-    lines = [
-        "# SISU Spectrum Special Analysis",
-        "",
-        (
-            "This is a SISU-conditioned post-run analysis for the requested "
-            "spectrum rows. It is discovery-trained robustness evidence, not "
-            "teacher/distillation behavior and not formal H-infinity equivalence."
-        ),
-        "",
-        f"**Low-SISU check:** {manifest['verified_low_sisu_behavior']}",
-        "",
-        "## Velocity Profiles",
-        "",
-        f"- Figure artifact: `{_artifact_output_label(outputs['figure'])}`",
-        f"- Compact arrays: `{_artifact_output_label(outputs['compact_arrays'])}`",
-        "",
-        "## Within-Network SISU=1 vs SISU=0 Comparison",
-        "",
-        "| row | SISU=0 endpoint (m) | SISU=1 endpoint (m) | endpoint ratio 1/0 | SISU=0 peak (m/s) | SISU=1 peak (m/s) | peak ratio 1/0 |",
-        "|---|---:|---:|---:|---:|---:|---:|",
-    ]
-    for run_id, row in manifest["runs"].items():
-        comparison = row["within_network_robustification_sisu_1_vs_0"]
-        lines.append(
-            "| "
-            f"{row['label']} | "
-            f"{comparison['sisu_0_endpoint_error_mean_m']:.6f} | "
-            f"{comparison['sisu_1_endpoint_error_mean_m']:.6f} | "
-            f"{comparison['endpoint_error_ratio_1_over_0']:.5f} | "
-            f"{comparison['sisu_0_peak_velocity_mean_m_s']:.6f} | "
-            f"{comparison['sisu_1_peak_velocity_mean_m_s']:.6f} | "
-            f"{comparison['peak_velocity_ratio_1_over_0']:.2f} |"
-        )
-    lines.extend(
-        [
-            "",
-            "## Input Contract",
-            "",
-            (
-                "Both rows use the SISU scalar on `trial_specs.inputs['input']`; "
-                "the materialized validation bank has `input = 1.0` by default "
-                "and no separate `sisu` key. The special profile materializer "
-                "therefore changes `input` to 0.0, 0.5, and 1.0 and zeroes "
-                "`epsilon` for the nominal profile comparison."
-            ),
-            "",
-            "## Per-SISU Metrics",
-            "",
-            "| row | SISU | endpoint error mean (m) | peak velocity mean (m/s) | final position mean (m) |",
-            "|---|---:|---:|---:|---|",
-        ]
-    )
-    for _run_id, row in manifest["runs"].items():
-        for curve_key in ("sisu_0", "sisu_0.5", "sisu_1"):
-            curve = row["curves"].get(curve_key)
-            if curve is None:
-                continue
-            sisu = curve_key.removeprefix("sisu_")
-            lines.append(
-                "| "
-                f"{row['label']} | {sisu} | "
-                f"{curve['endpoint_error_mean_m']:.6f} | "
-                f"{curve['peak_velocity_mean_m_s']:.6f} | "
-                f"{_fmt_pair(curve['final_position_mean_m'])} |"
-            )
-    return "\n".join(lines) + "\n"
-
-
-def _artifact_output_label(value: Any) -> str:
-    if isinstance(value, Sequence) and not isinstance(value, str | bytes):
-        return ", ".join(_artifact_output_label(item) for item in value)
-    if isinstance(value, Mapping):
-        for key in ("uri", "logical_name", "role"):
-            if value.get(key):
-                return str(value[key])
-    return str(value)
-
-
-def _fmt_pair(values: Sequence[float]) -> str:
-    return "[" + ", ".join(f"{float(value):.6f}" for value in values) + "]"
-
-
-def _sisu_color(sisu: float) -> str:
-    """Sample the continuous Viridis scale for a SISU value in [0, 1]."""
-
-    value = min(max(float(sisu), 0.0), 1.0)
-    return str(sample_colorscale("Viridis", [value])[0])
-
-
 __all__ = [
     "CHECKPOINT_POLICY",
     "DEFAULT_N_ROLLOUT_TRIALS",
     "DEFAULT_REFERENCE_SAMPLES",
     "DEFAULT_SISU_LEVELS",
     "DEFAULT_TOPIC",
+    "SISU_ROBUSTIFICATION_ANALYSIS_TYPE",
     "SISU_SPECTRUM_ANALYSIS_TYPE",
     "SISU_SPECTRUM_ANALYSIS_PARAMS_SCHEMA",
-    "SISU_SPECTRUM_COMPACT_ARRAYS_ROLE",
     "SISU_SPECTRUM_EVALUATION_TYPE",
     "SISU_SPECTRUM_EVALUATION_PARAMS_SCHEMA",
     "SISU_SPECTRUM_MANIFEST_ROLE",
     "SISU_SPECTRUM_MANIFEST_SCHEMA",
-    "SISU_SPECTRUM_NOTE_ROLE",
     "SISU_SPECTRUM_STATES_SCHEMA",
+    "SisuRobustificationAnalysis",
+    "SisuRobustificationAnalysisParams",
     "SisuSpectrumAnalysis",
     "SisuSpectrumAnalysisParams",
     "SisuSpectrumEvaluationParams",
     "ReferenceCurve",
     "analytical_reference_curves",
+    "build_perturbation_comparison",
     "build_manifest",
-    "build_velocity_profile_figure",
-    "compact_velocity_profile_arrays",
+    "compare_group",
+    "compare_summary_groups",
     "curve_summary",
+    "metric_mean",
+    "paired_run_summaries",
+    "profile_payload",
+    "reference_payload",
     "register_sisu_spectrum_recipes",
-    "render_markdown",
     "robustification_comparison",
+    "sisu_robustification_recipe",
     "sisu_spectrum_evaluation_recipe",
     "sisu_spectrum_evaluation_spec_params",
     "sisu_spectrum_recipe",
     "summarize_low_sisu_behavior",
+    "summarize_headline",
 ]

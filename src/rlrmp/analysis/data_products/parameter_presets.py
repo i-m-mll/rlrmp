@@ -113,7 +113,6 @@ def _register_defaults() -> None:
         "objective_comparator",
         "output_feedback_gamma_sweep",
         "robust_bellman",
-        "sisu_perturbation_comparison",
         "sisu_spectrum_diagnostics",
         "soft_lambda_pgd_contract",
     ):

@@ -293,8 +293,8 @@ _OWNING_SCHEMA_DEFAULT_ALLOWLIST = (
 )
 
 _PURPOSE_CONSTANT_ALLOWLIST = (
-    "src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py::LOW_SISU_ENDPOINT_REACH_THRESHOLD_M::hp_constant",
-    "src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py::LOW_SISU_PEAK_SPEED_THRESHOLD_M_S::hp_constant",
+    "src/rlrmp/analysis/sisu_spectrum.py::LOW_SISU_ENDPOINT_REACH_THRESHOLD_M::hp_constant",
+    "src/rlrmp/analysis/sisu_spectrum.py::LOW_SISU_PEAK_SPEED_THRESHOLD_M_S::hp_constant",
 )
 
 
