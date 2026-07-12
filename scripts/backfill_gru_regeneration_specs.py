@@ -169,7 +169,7 @@ def classify_manifest(name: str, manifest: Mapping[str, Any]) -> dict[str, Any] 
                 "src/rlrmp/eval/evaluation_diagnostics.py",
                 "src/rlrmp/eval/gru_diagnostics.py",
                 "src/rlrmp/eval/perturbation_bank.py",
-                "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
+                "src/rlrmp/eval/feedback_ablation.py",
             ],
         }
     if schema.startswith("rlrmp.objective_comparator_sidecar") or name.startswith(
@@ -185,8 +185,8 @@ def classify_manifest(name: str, manifest: Mapping[str, Any]) -> dict[str, Any] 
     ):
         return {
             "diagnostic_name": "gru_map_error_decomposition",
-            "materializer": "rlrmp.analysis.pipelines.gru_map_error_decomposition.materialize_gru_map_error_decomposition",
-            "source_files": ["src/rlrmp/analysis/pipelines/gru_map_error_decomposition.py"],
+            "materializer": "rlrmp.analysis.map_error_decomposition.map_error_decomposition_recipe",
+            "source_files": ["src/rlrmp/analysis/map_error_decomposition.py"],
         }
     if schema.startswith("rlrmp.gru_perturbation_bank") or name.startswith(
         "gru_perturbation_response"
@@ -207,7 +207,7 @@ def classify_manifest(name: str, manifest: Mapping[str, Any]) -> dict[str, Any] 
             "diagnostic_name": "gru_feedback_ablation",
             "materializer": "rlrmp.eval.recipes.feedback_ablation_recipe",
             "source_files": [
-                "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
+                "src/rlrmp/eval/feedback_ablation.py",
                 "src/rlrmp/eval/perturbation_bank.py",
             ],
         }
