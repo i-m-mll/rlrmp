@@ -14,6 +14,7 @@ from feedbax.plot.constructors import get_figure_piece
 import pytest
 
 from rlrmp.figures import register_rlrmp_figure_surfaces
+from rlrmp.data_products.envelope import read_data_product
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -77,6 +78,36 @@ def test_surviving_specs_are_pretty_native_manifest_bound_intents() -> None:
             "rlrmp.extlqg6d_nominal",
             "rlrmp.output_feedback_hinf6d_nominal",
         ]
+        assert (REPO_ROOT / payload["metadata"]["parity_product"]).is_file()
+
+
+def test_governed_archived_specs_preserve_hashes_and_headline_values() -> None:
+    root = REPO_ROOT / "results/70fe304/data_products"
+    product = read_data_product(root / "nominal_profile_parity_product.json")
+    assert product.product_schema_id == "rlrmp.figure_parity.nominal_profiles"
+    assert len(product.artifacts) == 5
+    for artifact in product.artifacts:
+        assert artifact.uri is not None
+        assert hashlib.sha256((REPO_ROOT / artifact.uri).read_bytes()).hexdigest() == (
+            artifact.sha256
+        )
+
+    c92 = json.loads(
+        (root / "archived_specs/c92ebd8__nominal_velocity_profiles.json").read_text()
+    )
+    d55 = json.loads(
+        (root / "archived_specs/d55c5f0__soft_pgd_nominal_velocity_profiles.json").read_text()
+    )
+    n91 = json.loads(
+        (root / "archived_specs/91a090c__nominal_velocity_profiles.json").read_text()
+    )
+    assert c92["plot_kwargs"]["rows"] == 9
+    assert c92["analytical_comparator_contract"]["extlqg"]["label"] == "6D extLQG"
+    assert d55["plot_kwargs"]["rows"] == 1
+    assert d55["plot_kwargs"]["shared_yaxes"] == "all"
+    assert n91["peak_velocity_table"][0]["peak_mean_forward_velocity_m_s"] == (
+        0.7314752118871354
+    )
 
 
 @pytest.mark.parametrize("replicate_count", [2, 3])

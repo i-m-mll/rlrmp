@@ -44,6 +44,7 @@
       "rlrmp.extlqg6d_nominal",
       "rlrmp.output_feedback_hinf6d_nominal"
     ],
-    "parity_oracle": "results/70fe304/data_products/nominal_profile_parity.json"
+    "parity_oracle": "results/70fe304/data_products/nominal_profile_parity.json",
+    "parity_product": "results/70fe304/data_products/nominal_profile_parity_product.json"
   }
 }

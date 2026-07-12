@@ -1,6 +1,14 @@
 {
   "schema_id": "rlrmp.figure_parity.nominal_profiles",
   "schema_version": "rlrmp.figure_parity.nominal_profiles.v1",
+  "adopted_from_commit": "d3ffd11e",
+  "source_artifacts": {
+    "91a090c/nominal_velocity_profiles": "e5243407fc2f44a315f382621e38e6f6c45e0b93a4e39edba33072cab45b3072",
+    "c92ebd8/nominal_velocity_profiles": "bcad9793a5ceddbc4ea81a6cd3eba80fa336c99954fda67ed337568667d7268d",
+    "c92ebd8/pgd_1p05_nominal_velocity_profiles": "1fddcb9bb635cf646137b24265beb4b8dcdb8a14aa6d549794991e325dc7b9a5",
+    "c92ebd8/pgd_ofb_budget_moderate_nominal_velocity_profiles": "ae62874f7153946b1781123ad7cdf5f01aa881739cbeed905eae098cc174ffa9",
+    "d55c5f0/soft_pgd_nominal_velocity_profiles": "8cd90b2098a0f0c26ae9d6707fe81fc431630d529f420f630f2e27a1282f7b02"
+  },
   "topics": {
     "91a090c/nominal_velocity_profiles": {"row_count": 2, "analytical_pieces": ["extlqg6d", "output_feedback_hinf6d"]},
     "c92ebd8/nominal_velocity_profiles": {"row_count": 9, "analytical_pieces": ["extlqg6d", "output_feedback_hinf6d"]},
