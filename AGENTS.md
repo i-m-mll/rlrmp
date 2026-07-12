@@ -385,6 +385,19 @@ pre-launch gate instead of pod-local wrapper scripts. Author the launch rows as
 a tracked `TrainingRunMatrixSpec`; render the spec-lock table from that matrix
 with Feedbax's run-matrix tooling and carry the rendered table in `RUN_PLAN.md`
 inside the normal marked section.
+
+Emit new matrices through the RLRMP storage entry point; do not write a
+materialized base into the tracked matrix. The source document must use a
+content-pinned `authored_intent` or `resolved_output` base. The command writes
+the canonical tracked intent and places the resolved snapshot and execution
+capsule in content-addressed Feedbax custody:
+
+```bash
+PYTHONPATH=src uv run --no-sync python scripts/emit_training_run_matrix.py \
+  results/<issue>/runs/matrix.intent.json \
+  --output results/<issue>/runs/matrix.json
+```
+
 Run the gate from the owning feature worktree and point all checkpoint roots at
 tmp or launch-owned locations, not shared `_artifacts` test scratch:
 
