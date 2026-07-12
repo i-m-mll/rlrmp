@@ -14,9 +14,16 @@ see :mod:`rlrmp.eval.minimax_io`.
 """
 
 from rlrmp.eval.ensemble import N_REPLICATES, eval_ensemble_on_trials
+from rlrmp.eval.checkpoint_selection import (
+    ReplicateCheckpointSelection,
+    build_fixed_bank_checkpoint_selection_manifest,
+    build_validation_checkpoint_selection_manifest,
+    load_validation_selected_checkpoint_model,
+)
 from rlrmp.eval.kinematics import compute_kinematics
 from rlrmp.eval.pert import eval_at_pert0, eval_at_pert_scale
 from rlrmp.eval.recipes import (
+    BROAD_EPSILON_EVALUATION_TYPE,
     CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,
     DELAYED_REACH_BANK_EVALUATION_TYPE,
     FEEDBACK_ABLATION_EVALUATION_TYPE,
@@ -27,16 +34,21 @@ from rlrmp.eval.recipes import (
 from rlrmp.eval.sisu import set_sisu
 
 __all__ = [
+    "BROAD_EPSILON_EVALUATION_TYPE",
     "CENTER_OUT_ENSEMBLE_EVALUATION_TYPE",
     "DELAYED_REACH_BANK_EVALUATION_TYPE",
     "FEEDBACK_ABLATION_EVALUATION_TYPE",
     "N_REPLICATES",
     "PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE",
+    "ReplicateCheckpointSelection",
     "WORST_CASE_EPSILON_EVALUATION_TYPE",
     "compute_kinematics",
+    "build_fixed_bank_checkpoint_selection_manifest",
+    "build_validation_checkpoint_selection_manifest",
     "eval_at_pert0",
     "eval_at_pert_scale",
     "eval_ensemble_on_trials",
+    "load_validation_selected_checkpoint_model",
     "register_rlrmp_evaluation_recipes",
     "set_sisu",
 ]

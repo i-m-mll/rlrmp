@@ -1,0 +1,18 @@
+{
+  "schema_id": "feedbax.manifest.analysis_data_product",
+  "schema_version": "feedbax.manifest.analysis_data_product.v1",
+  "product_schema_id": "rlrmp.figure_parity.stabilization_responses",
+  "product_schema_version": "rlrmp.figure_parity.stabilization_responses.v1",
+  "role": "figure_parity_oracles",
+  "logical_name": "8c06ef4_stabilization_response_parity",
+  "producer_manifest_id": "rlrmp.perturbation_response.archive_adoption",
+  "parent_manifests": [],
+  "checkpoint_policy": {},
+  "rollout_policy": {},
+  "parameters": {"adopted_from_commit": "1b711e95", "response_window": "archived structured specs"},
+  "artifacts": [
+    {"role":"figure_parity_oracle","logical_name":"c92_pgd_1p05","sha256":"38522b30b88da0eea1b0bb88a6ad7e3895221cce4750f48ec66604a3b9de585f","media_type":"application/json","storage_backend":"git","uri":"results/8c06ef4/data_products/archived_specs/c92ebd8__pgd_1p05_stabilization_perturbation_responses.json","metadata":{"source":"archived_structured_spec"}},
+    {"role":"figure_parity_oracle","logical_name":"c92_pgd_ofb_budget","sha256":"0130e16de6c42b6cd91291dd4bd6ab8b0bd4d58443c5ac42e35db2de882b0f27","media_type":"application/json","storage_backend":"git","uri":"results/8c06ef4/data_products/archived_specs/c92ebd8__pgd_ofb_budget_stabilization_perturbation_responses.json","metadata":{"source":"archived_structured_spec"}},
+    {"role":"figure_parity_oracle","logical_name":"d55_soft_pgd","sha256":"06436ff9a932b7004cb8787f6754a182f8e4b2ac688aa2aa493dcff2a294c620","media_type":"application/json","storage_backend":"git","uri":"results/8c06ef4/data_products/archived_specs/d55c5f0__soft_pgd_stabilization_perturbation_responses.json","metadata":{"source":"archived_structured_spec"}}
+  ]
+}

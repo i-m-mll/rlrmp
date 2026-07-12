@@ -1,0 +1,35 @@
+{
+  "schema_id": "feedbax.spec.evaluation_run_matrix",
+  "schema_version": "feedbax.spec.evaluation_run_matrix.v1",
+  "base": {
+    "evaluation_type": "rlrmp.eval.perturbation_response_bank",
+    "training_run_ids": [
+      "lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64",
+      "lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64"
+    ],
+    "inputs": [
+      {"kind": "TrainingRunManifest", "id": "lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64", "role": "training_run"},
+      {"kind": "TrainingRunManifest", "id": "lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64", "role": "training_run"}
+    ],
+    "params": {
+      "source_experiment": "5f70333",
+      "run_ids": [
+        "lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64",
+        "lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64"
+      ],
+      "n_rollout_trials": 8,
+      "bank_mode": "raw",
+      "bank_params": {"mode": "raw", "families": ["initial_position_offset"]},
+      "checkpoint_selection_mode": "sparse_history",
+      "metadata": {"default_source_experiment": "5f70333", "custody": "EvaluationRunManifest"}
+    }
+  },
+  "rows": [
+    {"row_id": "initial_position", "deltas": [{"path": "params.bank_params.families", "value": ["initial_position_offset"]}], "metadata": {"artifact_role": "perturbation_response.initial_position"}},
+    {"row_id": "initial_velocity", "deltas": [{"path": "params.bank_params.families", "value": ["initial_velocity_offset"]}], "metadata": {"artifact_role": "perturbation_response.initial_velocity"}},
+    {"row_id": "command_input", "deltas": [{"path": "params.bank_params.families", "value": ["command_input_pulse", "target_aligned_lateral_command_load_pulse"]}], "metadata": {"artifact_role": "perturbation_response.command_input"}},
+    {"row_id": "process_epsilon", "deltas": [{"path": "params.bank_params.families", "value": ["process_epsilon_position_xy", "process_epsilon_velocity_xy", "process_epsilon_force_state_xy", "process_epsilon_integrator_xy"]}], "metadata": {"artifact_role": "perturbation_response.process_epsilon"}},
+    {"row_id": "sensory_feedback", "deltas": [{"path": "params.bank_params.families", "value": ["sensory_feedback_offset"]}], "metadata": {"artifact_role": "perturbation_response.sensory_feedback"}},
+    {"row_id": "target_stream", "deltas": [{"path": "params.bank_params.families", "value": ["target_stream_jump"]}], "metadata": {"artifact_role": "perturbation_response.target_stream"}}
+  ]
+}

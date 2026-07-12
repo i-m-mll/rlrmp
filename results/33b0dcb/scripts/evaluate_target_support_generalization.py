@@ -28,7 +28,7 @@ import jax.random as jr
 import numpy as np
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
-from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
+from rlrmp.eval.checkpoint_selection import (
     ReplicateCheckpointSelection,
     load_validation_selected_checkpoint_model,
 )

@@ -1,117 +1,41 @@
 {
-  "experiment": "3702f54",
-  "figure_kind": "forward_velocity_profile_time_series_go_aligned",
-  "fix_note": "Bug: 06f7faf \u2014 go-cue alignment fix + trim-to-full-support + shared y-axes across cells.",
-  "inputs": [
-    {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/f47abb1/runs/lit__post_nojerk/warmup_model.eqx",
-      "role": "warmup_model:lit__post_nojerk",
-      "sha256": "f059caf28ad8ab4745a78a3b5966277b44c21fe6e7e4234afc18e0a045c6725c"
-    },
-    {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/f47abb1/runs/lit__full_nojerk/warmup_model.eqx",
-      "role": "warmup_model:lit__full_nojerk",
-      "sha256": "5074ac928cbd4e3b035442bd89f5f91ebf8f6bff1f457f506881dd31de3642be"
-    },
-    {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/3702f54/runs/post_go_pl__pos10/warmup_model.eqx",
-      "role": "warmup_model:post_go_pl__pos10",
-      "sha256": "df92512ff8687795d993bdccdb384bb65a9495c0842e560e6b6ea283ea275fb2"
-    },
-    {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/3702f54/runs/full_trial_pl__pos10/warmup_model.eqx",
-      "role": "warmup_model:full_trial_pl__pos10",
-      "sha256": "136a88d9a83a27491b5f00a23b80990d934c6ce83c70032190d565542389f6ed"
-    },
-    {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/3702f54/runs/full_trial_pl__prego_1e-3/warmup_model.eqx",
-      "role": "warmup_model:full_trial_pl__prego_1e-3",
-      "sha256": "45755ef6698207988d4287571926e92981f8d2fb99e088eb5cabfa6e3a87e8cf"
-    },
-    {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/3702f54/runs/full_trial_pl__prego_5e-2/warmup_model.eqx",
-      "role": "warmup_model:full_trial_pl__prego_5e-2",
-      "sha256": "eecbee03350707df86061d5767e91a8762d2c63a4fa619e134f6ecfe62266f6c"
-    },
-    {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/3702f54/runs/full_trial_pl__prego_1/warmup_model.eqx",
-      "role": "warmup_model:full_trial_pl__prego_1",
-      "sha256": "9ab29e9dc3a5e6c3dec660bc36b5a228c3cd3179197fb8595f7a24873a51a651"
-    },
-    {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/3702f54/runs/full_trial_pl__pos10_prego_1e-3/warmup_model.eqx",
-      "role": "warmup_model:full_trial_pl__pos10_prego_1e-3",
-      "sha256": "302bb9351db0024bb68f0515c38886d8b1578c4732eef46411bdc774b6d15386"
-    },
-    {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/3702f54/runs/full_trial_pl__pos10_prego_5e-2/warmup_model.eqx",
-      "role": "warmup_model:full_trial_pl__pos10_prego_5e-2",
-      "sha256": "f1a9b64efa5c5c3499e5256549f2affb36fe1f9722fd9a79217090bc0bce1cc3"
-    },
-    {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/3702f54/runs/full_trial_pl__pos10_prego_1/warmup_model.eqx",
-      "role": "warmup_model:full_trial_pl__pos10_prego_1",
-      "sha256": "660f5183beda13a83cad143291cf5bcfdd98ba183ed46dbb0910eea8416f1a97"
+  "schema_id": "feedbax.spec.figure",
+  "schema_version": "feedbax.spec.figure.v1",
+  "name": "3702f54-forward-velocity-profiles",
+  "template": "rlrmp.profile_comparison",
+  "slot_bindings": {
+    "profiles": {
+      "name": "profiles",
+      "constructor": "rlrmp.profile_series",
+      "data": {
+        "cell": {"item": "facet_values", "path": "condition"},
+        "profile_key": "forward_velocity"
+      }
     }
-  ],
-  "plot_kwargs": {
-    "alignment": "go_cue_per_trial",
-    "band_semantic": "pooled_replicate_trial_sd",
-    "cells": [
-      "lit__post_nojerk",
-      "lit__full_nojerk",
-      "post_go_pl__pos10",
-      "full_trial_pl__pos10",
-      "full_trial_pl__prego_1e-3",
-      "full_trial_pl__prego_5e-2",
-      "full_trial_pl__prego_1",
-      "full_trial_pl__pos10_prego_1e-3",
-      "full_trial_pl__pos10_prego_5e-2",
-      "full_trial_pl__pos10_prego_1"
-    ],
-    "dt": 0.01,
-    "n_replicates": 5,
-    "ordering_note": "Baselines (lit__post_nojerk, lit__full_nojerk) at top",
-    "pert_scale": 0.0,
-    "shared_yaxes": "all",
-    "sisu": 0.5
   },
-  "timestamp": "2026-05-13T18:51:01.973222+00:00",
-  "transform": [
-    {
-      "kwargs": {
-        "pert_scale": 0.0,
-        "sisu": 0.5
-      },
-      "name": "eval_ensemble"
-    },
-    {
-      "kwargs": {},
-      "name": "forward_velocity_projection_onto_reach_axis"
-    },
-    {
-      "kwargs": {
-        "pad": "nan"
-      },
-      "name": "align_trials_to_go_cue"
-    },
-    {
-      "kwargs": {
-        "min_coverage": 1.0
-      },
-      "name": "trim_to_full_support"
-    },
-    {
-      "kwargs": {},
-      "name": "pooled_trial_nanmean_with_sd_band"
+  "panels": [{
+    "name": "profile",
+    "title": {"item": "condition"},
+    "axes_labels": {"x": "Time from go cue (s)", "y": "Forward velocity (m/s)"}
+  }],
+  "facet_bindings": {
+    "condition": {
+      "item": "manifest",
+      "path": "metadata.figure_payload.facets.forward_velocity_profiles"
     }
-  ],
-  "versions": {
-    "equinox": "0.13.4",
-    "feedbax": "0.1.2",
-    "jax": "0.9.0",
-    "numpy": "2.4.1",
-    "plotly": "6.5.2",
-    "rlrmp": "0.1.0"
+  },
+  "figure_routing": {
+    "package": "rlrmp",
+    "experiment": "3702f54",
+    "topic": "forward_velocity_profiles",
+    "extra_packages": ["rlrmp"],
+    "render_format": "html"
+  },
+  "metadata": {
+    "output": "forward_velocity_profiles",
+    "profile_key": "forward_velocity",
+    "payload_schema": "rlrmp.figure_data.standard_matrix.v1",
+    "parity_oracle": "results/3702f54/data_products/figure_parity_forward_velocity_profiles.json",
+    "shared_yaxes": "all"
   }
 }

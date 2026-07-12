@@ -1,0 +1,19 @@
+{
+  "oracle": "_artifacts/3244f1a/perturbation_response/gru_targetsupport_const_band16_calibrated_moderate/gru_perturbation_response_const_band16_calibrated_moderate_manifest_detail.json",
+  "run_id": "h0_no_pgd_targetsupport__const_band16_lr3e-3_clip5_b64",
+  "rows": [
+    {"perturbation_id": "command_input_pulse__moderate__early_t5_x_neg", "family": "command_input_pulse", "channel": "command_input", "status": "evaluated", "delta_action_norm": 0.10153692599164361, "delta_position_max": 0.0028331047918820776, "delta_cost_total": 62.70180189588534},
+    {"perturbation_id": "initial_position_offset__moderate__x_neg", "family": "initial_position_offset", "channel": "initial_state", "status": "evaluated", "delta_action_norm": 0.16647310836975077, "delta_position_max": 0.014999999860447134, "delta_cost_total": 1204.5622911518126},
+    {"perturbation_id": "process_epsilon_position_xy__moderate__early_t5_x_neg", "family": "process_epsilon_position_xy", "channel": "process_epsilon", "status": "evaluated", "delta_action_norm": 0.14215113415248576, "delta_position_max": 0.015000001585576683, "delta_cost_total": 1492.5840965931432},
+    {"perturbation_id": "sensory_feedback_offset__position_moderate__early_visible_t10_x_neg", "family": "sensory_feedback_offset", "channel": "sensory_feedback", "status": "evaluated", "delta_action_norm": 0.11500710916895812, "delta_position_max": 0.001926770522733466, "delta_cost_total": 23.776907369381888},
+    {"perturbation_id": "target_aligned_lateral_command_load_pulse__moderate__early_t5_y_neg", "family": "target_aligned_lateral_command_load_pulse", "channel": "command_input", "status": "evaluated", "delta_action_norm": 0.09999102358704214, "delta_position_max": 0.002713657660966922, "delta_cost_total": 33.80582358739728}
+  ],
+  "aggregate": {
+    "row_count": 5,
+    "evaluated_count": 5,
+    "families": ["command_input_pulse", "initial_position_offset", "process_epsilon_position_xy", "sensory_feedback_offset", "target_aligned_lateral_command_load_pulse"],
+    "mean_delta_action_norm": 0.12503186025397608,
+    "mean_delta_position_max": 0.007494706884321256,
+    "mean_delta_cost_total": 563.4861841195241
+  }
+}

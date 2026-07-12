@@ -19,13 +19,13 @@ from rlrmp.analysis.math.output_feedback import (
     delayed_observation_matrix,
     robust_estimator_covariances,
 )
-from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
-from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
+from rlrmp.analysis.gru_standard_certificate import normalize_gru_hps
+from rlrmp.eval.checkpoint_selection import (
     load_validation_selected_checkpoint_model,
 )
-from rlrmp.analysis.pipelines.gru_pilot_figures import (
+from rlrmp.eval.trial_inputs import (
     repeat_single_validation_trial,
-    resolve_run_inputs,
+    resolve_evaluation_run_inputs as resolve_run_inputs,
 )
 from rlrmp.train.task_model import setup_task_model_pair
 

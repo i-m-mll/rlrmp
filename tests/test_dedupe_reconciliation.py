@@ -13,12 +13,11 @@ BINDING_PATH = (
     REPO_ROOT / "_artifacts" / "31aaa31" / "verification" / "dedupe_closure_manifest.jsonl"
 )
 EXPECTED_STATE_COUNTS = {
-    "canonical_survivor": 5,
+    "canonical_survivor": 4,
     "cross_repo_resolved": 3,
     "excluded_cross_repo": 2,
-    "excluded_pipeline_lane": 29,
-    "removed": 95,
-    "thin_adapter": 142,
+    "removed": 216,
+    "thin_adapter": 51,
 }
 
 
@@ -110,7 +109,10 @@ def test_all_confirm_clusters_have_enforced_final_reconciliation() -> None:
         original = binding_by_id[cluster_id]
         disposition_counts[row["final_disposition"]] += 1
         assert row["survivor"]
-        assert row["evidence"]["target_module"] == original["target_module"]
+        if row["final_disposition"] == "resolved_terminal_retirement":
+            assert row["evidence"]["retirement"]
+        else:
+            assert row["evidence"]["target_module"] == original["target_module"]
         assert row["evidence"]["expected_loc_reduction"] == original["expected_loc_reduction"]
         original_ids = [member["id"] for member in original["members"]]
         member_ids = [member["id"] for member in row["members"]]
@@ -129,7 +131,8 @@ def test_all_confirm_clusters_have_enforced_final_reconciliation() -> None:
 
     assert dict(state_counts) == EXPECTED_STATE_COUNTS
     assert disposition_counts == {
-        "resolved": 40,
+        "resolved": 38,
+        "resolved_terminal_retirement": 2,
         "resolved_destination_deviation": 1,
         "resolved_cross_repo": 1,
     }
@@ -140,3 +143,9 @@ def test_all_confirm_clusters_have_enforced_final_reconciliation() -> None:
     assert feedbax["final_disposition"] == "resolved_cross_repo"
     assert feedbax["evidence"]["feedbax_commit"] == "8dc210ad"
     assert feedbax["evidence"]["focused_tests"] == "28 passed"
+
+
+def test_retired_multi_cell_driver_is_not_named_as_a_dedupe_survivor() -> None:
+    for row in _jsonl(FIXTURE_PATH):
+        assert "multi_cell_driver" not in row["survivor"]
+        assert "multi_cell_driver" not in row["evidence"]["target_module"]

@@ -1,0 +1,20 @@
+{
+  "schema_id": "feedbax.manifest.analysis_data_product",
+  "schema_version": "feedbax.manifest.analysis_data_product.v1",
+  "product_schema_id": "rlrmp.figure_parity_oracles",
+  "product_schema_version": "rlrmp.figure_parity_oracles.v1",
+  "role": "figure_parity_oracles",
+  "logical_name": "moderate_and_calibrated_figure_parity",
+  "producer_manifest_id": "rlrmp.response_norm_comparison",
+  "parent_manifests": [],
+  "checkpoint_policy": {},
+  "rollout_policy": {},
+  "parameters": {"adoption_issue": "a778c65", "independent_figure_leaves": true, "figure_to_figure_dependencies": false},
+  "artifacts": [
+    {"role": "figure_parity_oracle", "logical_name": "c92_moderate_profiles", "sha256": "c85f473e1aaee4a46d28798df18f140fd1fbdcbb2a805202dc173c1ebba36da6", "media_type": "application/json", "storage_backend": "git", "uri": "results/a778c65/data_products/oracles/c92_moderate_profiles.json", "metadata": {"source": "adopted_legacy_figure_spec"}},
+    {"role": "figure_parity_oracle", "logical_name": "c92_moderate_profiles_overlay", "sha256": "78f2d3375548249d0cad918bf85a837aedce31c06a68f023dc51965b254a54e5", "media_type": "application/json", "storage_backend": "git", "uri": "results/a778c65/data_products/oracles/c92_moderate_profiles_overlay.json", "metadata": {"source": "adopted_legacy_figure_spec"}},
+    {"role": "figure_parity_oracle", "logical_name": "c92_moderate_response_overlays", "sha256": "7554d5448b02e701261d61672f34b2deb3946e6a93c892bda55834fbd34dca30", "media_type": "application/json", "storage_backend": "git", "uri": "results/a778c65/data_products/oracles/c92_moderate_response_overlays.json", "metadata": {"source": "adopted_legacy_figure_spec"}},
+    {"role": "figure_parity_oracle", "logical_name": "calibrated_bank_small", "sha256": "03c16bae25db1618f4a408de3eecfb5e5f503a9d670a13f3decfd87c66bb4b73", "media_type": "application/json", "storage_backend": "git", "uri": "results/a778c65/data_products/oracles/calibrated_bank_small.json", "metadata": {"source": "adopted_legacy_figure_spec"}},
+    {"role": "figure_parity_oracle", "logical_name": "calibrated_bank_medium", "sha256": "4bf1f2939056023ee29b5755f8e0fa3c46b35f6cb09815c420b4c1450cce7d42", "media_type": "application/json", "storage_backend": "git", "uri": "results/a778c65/data_products/oracles/calibrated_bank_medium.json", "metadata": {"source": "adopted_legacy_figure_spec"}}
+  ]
+}

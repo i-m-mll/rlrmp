@@ -1,0 +1,143 @@
+{
+  "command": {
+    "argv": [
+      "unknown"
+    ],
+    "cwd": ".",
+    "metadata": {
+      "materializer": "rlrmp.analysis.pipelines.gru_pilot_figures.materialize_gru_pilot_figures",
+      "status": "not_recorded"
+    }
+  },
+  "inputs": [
+    {
+      "logical_name": "results/4d79e07/runs/delayed_movement_bank_pgd_clip5.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "a834d4c95f056fa7df5d31dd4c4f8c379b19bbbe286fa0560532b02d66f9ba8e",
+        "size_bytes": 335268
+      },
+      "role": "run_spec",
+      "sha256": "a834d4c95f056fa7df5d31dd4c4f8c379b19bbbe286fa0560532b02d66f9ba8e",
+      "size_bytes": 335268,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/4d79e07/runs/delayed_movement_bank_pgd_clip5.json"
+    },
+    {
+      "logical_name": "_artifacts/4d79e07/runs/delayed_movement_bank_pgd_clip5",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 138,
+        "hash_file_count": 138,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "56898fb88098f8fe8d7b017fa10e1257789e11bc9ca15ea05260c3b1f5a50f59",
+        "total_bytes": 380133207
+      },
+      "role": "run_artifact_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/4d79e07/runs/delayed_movement_bank_pgd_clip5"
+    }
+  ],
+  "metadata": {
+    "diagnostic_name": "gru_pilot_figures",
+    "materializer": "rlrmp.analysis.pipelines.gru_pilot_figures.materialize_gru_pilot_figures",
+    "notes": [
+      "Postrun-owned regeneration spec for pilot loss/velocity figures."
+    ],
+    "schema_boundary": "rlrmp diagnostic payload; Feedbax regeneration custody"
+  },
+  "outputs": [
+    {
+      "logical_name": "_artifacts/4d79e07/figures/gru_postrun_delayed_movement_bank_pgd_clip5_final_checkpoints_calibrated",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 6,
+        "hash_file_count": 6,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "f76d139f3d82123a07db9068b9ff30619c6755daa56308014832ddd04b46027d",
+        "total_bytes": 27416673
+      },
+      "role": "pilot_figure_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/4d79e07/figures/gru_postrun_delayed_movement_bank_pgd_clip5_final_checkpoints_calibrated"
+    },
+    {
+      "logical_name": "_artifacts/4d79e07/figures/gru_postrun_delayed_movement_bank_pgd_clip5_final_checkpoints_calibrated/figure_summary.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "d476839258b2745b0b86511a486780e64bb6f2a835d560f73e7ae800e9998e80",
+        "size_bytes": 4252
+      },
+      "role": "pilot_figure_summary",
+      "sha256": "d476839258b2745b0b86511a486780e64bb6f2a835d560f73e7ae800e9998e80",
+      "size_bytes": 4252,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/4d79e07/figures/gru_postrun_delayed_movement_bank_pgd_clip5_final_checkpoints_calibrated/figure_summary.json"
+    }
+  ],
+  "parameters": {
+    "experiment": "4d79e07",
+    "include_reference": true,
+    "labels": [
+      "delayed_movement_bank_pgd_clip5"
+    ],
+    "n_rollout_trials": 64,
+    "preferred_checkpoint_manifest_path": null,
+    "run_ids": [
+      "delayed_movement_bank_pgd_clip5"
+    ],
+    "use_validation_selected_checkpoints": false
+  },
+  "provenance": {
+    "dirty": true,
+    "entrypoint": {
+      "kind": "rlrmp-diagnostic-materializer",
+      "metadata": {},
+      "name": "rlrmp.analysis.pipelines.gru_pilot_figures.materialize_gru_pilot_figures"
+    },
+    "issues": [],
+    "metadata": {
+      "status_porcelain": [
+        "M src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py",
+        " M src/rlrmp/analysis/pipelines/gru_broad_epsilon_attribution.py",
+        " M src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py",
+        " M src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py",
+        " M src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
+        " M src/rlrmp/analysis/pipelines/gru_pilot_figures.py",
+        " M src/rlrmp/paths.py",
+        "?? .issue",
+        "?? results/4d79e07/notes/gru_evaluation_diagnostics_delayed_movement_bank_pgd_clip5_final_checkpoints_calibrated_regeneration_spec.json",
+        "?? results/4d79e07/notes/gru_perturbation_response_delayed_movement_bank_pgd_clip5_final_checkpoints_calibrated.md",
+        "?? results/4d79e07/notes/gru_perturbation_response_delayed_movement_bank_pgd_clip5_final_checkpoints_calibrated_manifest.json",
+        "?? results/4d79e07/notes/gru_perturbation_response_delayed_movement_bank_pgd_clip5_final_checkpoints_calibrated_manifest_regeneration_spec.json",
+        "?? results/4d79e07/notes/gru_standard_certificates_delayed_movement_bank_pgd_clip5_final_checkpoints_calibrated.md",
+        "?? results/4d79e07/notes/gru_standard_certificates_delayed_movement_bank_pgd_clip5_final_checkpoints_calibrated_manifest.json",
+        "?? results/4d79e07/notes/gru_standard_certificates_delayed_movement_bank_pgd_clip5_final_checkpoints_calibrated_manifest_regeneration_spec.json"
+      ]
+    },
+    "parents": [],
+    "source_branch": "feature/4d79e07-delayed-pgd-materialization",
+    "source_commit": "2aafb91d1f87b8682034fa2afe64e354e5591aed",
+    "source_repo": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__4d79e07-delayed-pgd-materialization"
+  },
+  "schema_id": "feedbax.spec.regeneration",
+  "schema_version": "feedbax.spec.regeneration.v1",
+  "source_files": [
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/gru_pilot_figures.py",
+      "role": "source_file",
+      "sha256": "90cf3ec30fa39bffe493ebbfc07d2f619143e5fcf326cb6fd04114969f18b2db",
+      "size_bytes": 39137
+    }
+  ],
+  "source_trees": []
+}

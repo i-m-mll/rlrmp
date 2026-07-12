@@ -1,1 +1,50 @@
-{"analytical_comparator_contract":{"extlqg":{"disturbance_integrators_exposed":false,"label":"6D extLQG","physical_dim":6,"source":"rlrmp.analysis.pipelines.gru_perturbation_bank._build_extlqg_comparator_context(physical_dim=6)","state_dim":36},"output_feedback_hinf":{"admissible":true,"config":"rlrmp.analysis.math.output_feedback.OutputFeedbackConfig(n_phys=6)","control_dim":2,"delay_steps":5,"disturbance_dim":6,"disturbance_integrators_exposed":false,"game_source":"rlrmp.analysis.math.cs_game_card.build_no_integrator_game","gamma":12833.563799663352,"gamma_factor":1.4,"gamma_star":9166.831285473823,"label":"6D output-feedback H-infinity","nominal_profile_convention":"zero-noise released-forward rollout, x[1:] velocity to match 60-step GRU diagnostics","physical_dim":6,"state_dim":36}},"figure_kind":"pgd_1p05_nominal_forward_velocity_profile_comparison","inputs":[{"path":"results/c92ebd8/runs/small.json","role":"run_spec","sha256":"906ac1792154b42513d93ca28d6155c63aa66d93132d37d98e252520f4c953f4"},{"path":"results/c92ebd8/runs/moderate.json","role":"run_spec","sha256":"77bb0b5583b64b7155ef038ef49dbe5b9fd335d97d226ab8c10a39ac3d3f83c4"},{"path":"results/c92ebd8/runs/stress.json","role":"run_spec","sha256":"2e131ecc964a1ab3f4170b1a0f97883b136d0bc49f8cc6b030a009659b337450"},{"path":"results/c92ebd8/runs/open_loop_small.json","role":"run_spec","sha256":"4d9cd7355963db02bd206ce951cb33af2c221517817856679a28a3dacc1edd1d"},{"path":"results/c92ebd8/runs/open_loop_moderate.json","role":"run_spec","sha256":"0906857b15c2a616e57ddf109652941a49c0dbb6decba75fdafee2100e550780"},{"path":"results/c92ebd8/runs/open_loop_stress.json","role":"run_spec","sha256":"2e6fe404686aa393e059958ada816d46a562eaa0b1a636a2a2c6def363760da5"}],"issue":"c92ebd8","plot_kwargs":{"disturbance_integrators_exposed":false,"grid_helper":"rlrmp.viz.profile_comparison_grid","physical_state_dim":6,"rows":3,"shared_yaxes":"all","state_dim":36},"schema_version":"rlrmp.c92_pgd_1p05_nominal_velocity_profiles.v1","timestamp":"2026-06-28T04:01:23.869381+00:00","transform":[{"kwargs":{"analytical_comparators":["6d_output_feedback_extlqg","6d_output_feedback_hinf"],"n_rollout_trials":64,"no_pgd_runs":{"moderate":"open_loop_moderate","small":"open_loop_small","stress":"open_loop_stress"},"pgd_runs":{"moderate":"moderate","small":"small","stress":"stress"},"physical_levels":["small","moderate","stress"]},"name":"final_checkpoint_forward_velocity_profile_mean_band"}],"versions":{"equinox":"0.13.4","feedbax":"0.1.2","jax":"0.9.0","numpy":"2.4.1","plotly":"6.5.2","rlrmp":"0.1.0"}}
+{
+  "name": "c92ebd8-pgd-1p05-nominal-velocity-profiles",
+  "template": "rlrmp.profile_comparison",
+  "inputs": [],
+  "slot_bindings": {
+    "profiles": {
+      "name": "profiles",
+      "constructor": "rlrmp.profile_series",
+      "data": {
+        "cell": {
+          "item": "facet_values",
+          "path": "condition"
+        },
+        "profile_key": "nominal_velocity"
+      }
+    }
+  },
+  "panels": [
+    {
+      "name": "profile",
+      "title": {
+        "item": "condition"
+      },
+      "axes_labels": {
+        "x": "Time from movement onset (s)",
+        "y": "Forward velocity (m/s)"
+      }
+    }
+  ],
+  "facet_bindings": {
+    "condition": {
+      "item": "manifest",
+      "path": "metadata.figure_payload.facets.nominal_velocity_profiles"
+    }
+  },
+  "figure_routing": {
+    "experiment": "c92ebd8",
+    "topic": "pgd_1p05_nominal_velocity_profiles"
+  },
+  "metadata": {
+    "shared_yaxes": "all",
+    "replicate_facets": "payload_bound",
+    "analytical_pieces": [
+      "rlrmp.extlqg6d_nominal",
+      "rlrmp.output_feedback_hinf6d_nominal"
+    ],
+    "parity_oracle": "results/70fe304/data_products/nominal_profile_parity.json",
+    "parity_product": "results/70fe304/data_products/nominal_profile_parity_product.json"
+  }
+}

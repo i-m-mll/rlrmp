@@ -1,52 +1,54 @@
 {
-  "figure_family": "delayed_fixed_bank_target_radial_velocity_profiles",
-  "materializer": "results/40e1911/scripts/materialize_delayed_timing_hold_lane_velocity_profiles.py",
-  "outputs": {
-    "catch": "_artifacts/40e1911/figures/delayed_timing_hold_lane_velocity_profiles/catch",
-    "no_catch": "_artifacts/40e1911/figures/delayed_timing_hold_lane_velocity_profiles/no_catch"
+  "schema_id": "feedbax.spec.figure",
+  "schema_version": "feedbax.spec.figure.v1",
+  "name": "40e1911-delayed-timing-hold-lane-velocity-profiles",
+  "template": "rlrmp.profile_comparison",
+  "slot_bindings": {
+    "profiles": {
+      "name": "profiles",
+      "constructor": "rlrmp.profile_series",
+      "data": {
+        "cell": {
+          "item": "facet_values",
+          "path": "condition"
+        },
+        "profile_key": "forward_velocity"
+      }
+    }
   },
-  "parameters": {
-    "checkpoint_policy": "final_checkpoint",
-    "direction_count": 20,
-    "go_cue_steps": "per_run_declared_range",
-    "include_reference": true,
-    "pre_go_context_steps": 10,
-    "reach_length_m": 0.15,
-    "shared_yaxes": "all"
-  },
-  "result_experiment": "40e1911",
-  "run_refs": [
+  "panels": [
     {
-      "experiment": "6c36536",
-      "label": "baseline delayed repeat",
-      "run_id": "baseline__delayed_repeat"
-    },
-    {
-      "experiment": "bf71d86",
-      "label": "fixed go 10",
-      "run_id": "timing__fixed_go10"
-    },
-    {
-      "experiment": "bf71d86",
-      "label": "fixed go 20",
-      "run_id": "timing__fixed_go20"
-    },
-    {
-      "experiment": "bf71d86",
-      "label": "go 10-15",
-      "run_id": "timing__go10_15"
-    },
-    {
-      "experiment": "ef9c882",
-      "label": "force-filter hold",
-      "run_id": "hold__force_filter"
-    },
-    {
-      "experiment": "ef9c882",
-      "label": "start-pos zero-vel hold",
-      "run_id": "hold__start_pos_zero_vel"
+      "name": "profile",
+      "title": {
+        "item": "condition"
+      },
+      "axes_labels": {
+        "x": "Time relative to go cue (s)",
+        "y": "Target-radial velocity (m/s)"
+      }
     }
   ],
-  "schema_version": "rlrmp.figure_spec.delayed_timing_hold_velocity.v1",
-  "topic": "delayed_timing_hold_lane_velocity_profiles"
+  "facet_bindings": {
+    "condition": {
+      "item": "manifest",
+      "path": "metadata.figure_payload.facets.condition"
+    }
+  },
+  "figure_routing": {
+    "package": "rlrmp",
+    "experiment": "40e1911",
+    "topic": "delayed_timing_hold_lane_velocity_profiles",
+    "extra_packages": [
+      "rlrmp"
+    ],
+    "render_format": "html"
+  },
+  "metadata": {
+    "evaluation_type": "rlrmp.eval.delayed_reach_bank",
+    "payload_schema": "rlrmp.figure_data.delayed_velocity_profiles.v1",
+    "profile_key": "forward_velocity",
+    "replicate_profile_key": "forward_velocity_by_replicate",
+    "parity_oracle": "results/40e1911/data_products/figure_parity_delayed_timing_hold_lane_velocity_profiles.json",
+    "shared_yaxes": "all"
+  }
 }

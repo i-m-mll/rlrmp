@@ -1,0 +1,11 @@
+{
+  "schema_version": "rlrmp.figure_parity.scalar_diagnostic.v1",
+  "source": "results/91a090c/figures/adaptive_damage_lambda/summary.json",
+  "collection_cardinality": 2,
+  "headlines": {
+    "short_final_damage": 1050.215337361874,
+    "short_final_lambda": 5543810.5,
+    "medium_final_damage": 1056.7246675342317,
+    "medium_final_lambda": 717146.9375
+  }
+}

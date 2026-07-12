@@ -392,7 +392,10 @@ def main() -> None:
         "source": {
             "teacher_package": str(TEACHER_PACKAGE),
             "teacher_manifest": str(TEACHER_MANIFEST),
-            "materializer": "results/376d023/scripts/materialize_6d_analytical_velocity_profiles.py",
+            "figure_payload_regeneration_spec": (
+                "results/376d023/notes/profile_payload_regeneration_spec.json"
+            ),
+            "figure_piece": "rlrmp.profile_376d023_analytical_velocity",
             "controller_reference": "6D output-feedback H-infinity analytical teacher at beta 1.05",
             "script": "results/08483d5/scripts/compute_output_feedback_rollout_damage_beta1p05.py",
         },

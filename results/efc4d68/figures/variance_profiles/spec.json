@@ -1,4 +1,5 @@
 {
+  "archive": {"status": "archived_structured_output", "last_runnable_revision": "8d58bb52cfed0fb3a794bcdc9eb9fe9406e7f768", "rationale_issue": "7ae2916", "parity_oracle": "archived_structured_outputs", "reason": "No producer exists at the migrated boundary; retained structured outputs are the only parity oracle."},
   "figure_kind": "forward_lateral_velocity_profiles_by_condition",
   "description": "Forward and lateral mean velocity profiles (post-go, t in [0, 1.0 s]) for 8 conditions in the 2x2x2 baseline matrix. Each condition: 5 replicates, direction-averaged over 8 validation targets. Plotted to show within-condition replicate variance.",
   "input_artifacts": [

@@ -8,7 +8,9 @@ predicate:
     gru_postrun_candidate: true
 metadata:
   primary_contract: feedbax_analysis_bundle
-  legacy_regeneration_contract: compatibility_only
+  archived_parity_oracle:
+    source_experiment: 30f2313
+    role: authored_standard_certificate_source_identity
   output_conventions:
     tracked_notes: results/{experiment}/notes
     bulk_artifacts: _artifacts/{experiment}
@@ -19,56 +21,20 @@ metadata:
     - output_feedback_bridge_diagnostics
     - training_diagnostics
 stages:
-  - name: postrun_diagnostics
+  - name: standard_certificate
     kind: analysis
     mode: grouped
-    analysis_type: rlrmp.gru_postrun
-    requested_outputs: [gru_postrun_materialization]
+    analysis_type: rlrmp.certificate.gru_standard
     local_params:
       experiment_metadata_key: rlrmp_experiment
       output_tag: validation_selected
       use_validation_selected_checkpoints: true
       include_reference: true
-      include_objective_comparator: true
-      include_map_decomposition: true
-      include_perturbation_response: false
-      include_feedback_ablation: true
-      bundle_contract:
-        primary: feedbax_analysis_bundle
-        legacy_regeneration_spec: compatibility_only
     outputs:
       - role: manifest
         required: true
-      - role: rlrmp-gru-postrun-manifest
+      - role: rlrmp-bridge-standard-certificate
         required: true
-      - role: rlrmp-gru-checkpoint-selection-manifest
-        required: false
-      - role: rlrmp-gru-standard-certificate-manifest
-        required: false
-      - role: rlrmp-gru-standard-certificate-note
-        required: false
-      - role: rlrmp-gru-evaluation-diagnostics-manifest
-        required: false
-      - role: rlrmp-gru-pilot-figure-summary
-        required: false
-      - role: rlrmp-gru-objective-comparator-manifest
-        required: false
-      - role: rlrmp-gru-objective-comparator-note
-        required: false
-      - role: rlrmp-gru-map-decomposition-manifest
-        required: false
-      - role: rlrmp-gru-map-decomposition-note
-        required: false
-      - role: rlrmp-gru-perturbation-response-manifest
-        required: false
-      - role: rlrmp-gru-perturbation-response-note
-        required: false
-      - role: rlrmp-gru-feedback-ablation-manifest
-        required: false
-      - role: rlrmp-gru-feedback-ablation-note
-        required: false
-      - role: rlrmp-gru-postrun-legacy-regeneration-spec
-        required: false
   - name: perturbation_bank_eval
     kind: evaluation
     mode: grouped
@@ -165,47 +131,62 @@ stages:
         required: true
       - role: rlrmp-gru-perturbation-response-manifest
         required: true
-  - name: postrun_report
-    kind: report
+  - name: response_norm_payload
+    kind: analysis
     mode: grouped
-    depends_on: [postrun_diagnostics]
-    report_type: rlrmp.report.gru_postrun_summary
+    depends_on: [perturbation_bank_aggregate]
+    analysis_type: rlrmp.response_norm_comparison
     local_params:
-      schema_id: rlrmp.report.gru_postrun_summary.params
-      schema_version: rlrmp.report.gru_postrun_summary.params.v1
-      title: GRU Postrun Report
-      source_artifact_roles:
-        - rlrmp-gru-standard-certificate-note
-        - rlrmp-gru-objective-comparator-note
-        - rlrmp-gru-map-decomposition-note
-        - rlrmp-gru-perturbation-response-note
-        - rlrmp-gru-feedback-ablation-note
-      include_json_artifact: true
-      narrative: Feedbax-custody report render for the tracked GRU postrun notes.
+      metrics: [delta_position, delta_action]
+      condition_classes: [class_a, class_b]
     outputs:
-      - role: report_render
+      - role: manifest
         required: true
-      - role: rlrmp-gru-postrun-report-render
-        required: false
-  - name: bridge_certificate_report
-    kind: report
+      - role: rlrmp-response-norm-comparison-payload
+        required: true
+  - name: response_norm_figure
+    kind: figure
     mode: grouped
-    depends_on: [postrun_diagnostics]
-    report_type: rlrmp.report.bridge_certificate_notes
-    local_params:
-      schema_id: rlrmp.report.bridge_certificate_notes.params
-      schema_version: rlrmp.report.bridge_certificate_notes.params.v1
-      title: Bridge Certificate Notes
-      source_artifact_roles:
-        - rlrmp-gru-standard-certificate-note
-        - rlrmp-bridge-standard-certificate-note
-      include_json_artifact: true
-      narrative: Feedbax-custody report render for standard-certificate Markdown.
+    depends_on: [response_norm_payload]
+    figure:
+      name: gru-postrun-response-norm-comparison
+      template: rlrmp.response_norm_comparison
+      slot_bindings:
+        norm_bands:
+          name: response-norm-bands
+          constructor: rlrmp.response_norm_bands
+          data:
+            payload: {item: manifest, path: metadata.figure_payload}
+            metric: {item: metric}
+            condition_class: {item: condition_class}
+        norm_bars:
+          name: response-norm-bars
+          constructor: rlrmp.response_norm_bars
+          required: false
+          data:
+            payload: {item: manifest, path: metadata.figure_payload}
+            metric: {item: metric}
+            condition_class: {item: condition_class}
+      panels:
+        - name: response_norm
+          title: {item: metric}
+          axes_labels: {x: Time (s), y: Response norm}
+      facet_bindings:
+        metric: {item: manifest, path: metadata.figure_payload.intrinsic_axes.metric}
+        condition_class: {item: manifest, path: metadata.figure_payload.intrinsic_axes.condition_class}
+      figure_routing:
+        package: rlrmp
+        experiment: gru_postrun
+        topic: response_norm_comparison
+        extra_packages: [rlrmp]
+        render_format: html
+      metadata:
+        schema_id: rlrmp.figure_data.response_norm_comparison
+        schema_version: rlrmp.figure_data.response_norm_comparison.v1
+        parity_oracle: results/74fac80/data_products/gru_postrun_figure_parity.json
     outputs:
-      - role: report_render
+      - role: figure_render
         required: true
-      - role: rlrmp-bridge-certificate-report-render
-        required: false
   - name: evaluation_diagnostics
     kind: materialization
     mode: grouped
@@ -407,29 +388,66 @@ stages:
         required: false
   - name: robustness_phenotype_aggregation
     kind: materialization
-    depends_on: [postrun_diagnostics]
+    depends_on: [standard_certificate, perturbation_bank_aggregate]
     outputs:
       - role: rlrmp-robustness-phenotype-aggregation
         required: false
     not_applicable_reason: "Sibling-owned by 769aea6; not part of this bundle migration."
   - name: output_feedback_bridge_diagnostics
     kind: materialization
-    depends_on: [postrun_diagnostics]
+    depends_on: [standard_certificate]
     outputs:
       - role: rlrmp-output-feedback-bridge-diagnostics
         required: false
     not_applicable_reason: "Sibling-owned by c4416c5; not part of this bundle migration."
   - name: training_diagnostics
     kind: materialization
-    depends_on: [postrun_diagnostics]
+    depends_on: [feedback_quality_lens]
     outputs:
       - role: rlrmp-training-diagnostics
         required: false
     not_applicable_reason: "Sibling-owned by 0e3223d; not part of this bundle migration."
-  - name: archive_only_entrypoints
-    kind: materialization
-    depends_on: [postrun_diagnostics]
+  - name: postrun_report
+    kind: report
+    mode: grouped
+    depends_on:
+      - standard_certificate
+      - perturbation_bank_aggregate
+      - response_norm_figure
+      - objective_comparator
+      - feedback_quality_lens
+    report_type: rlrmp.report.gru_postrun_summary
+    local_params:
+      schema_id: rlrmp.report.gru_postrun_summary.params
+      schema_version: rlrmp.report.gru_postrun_summary.params.v1
+      title: GRU Postrun Report
+      source_artifact_roles:
+        - rlrmp-bridge-standard-certificate
+        - rlrmp-gru-perturbation-response-manifest
+        - rlrmp-feedback-quality-objective-comparator-status
+        - rlrmp-feedback-quality-lens
+      include_json_artifact: true
+      narrative: Feedbax-custody report render for the tracked GRU postrun notes.
     outputs:
-      - role: rlrmp-gru-postrun-historical-script
+      - role: report_render
+        required: true
+      - role: rlrmp-gru-postrun-report-render
         required: false
-    skip_reason: "Historical scripts remain archive-only once the Feedbax bundle is the run contract."
+  - name: bridge_certificate_report
+    kind: report
+    mode: grouped
+    depends_on: [standard_certificate]
+    report_type: rlrmp.report.bridge_certificate_notes
+    local_params:
+      schema_id: rlrmp.report.bridge_certificate_notes.params
+      schema_version: rlrmp.report.bridge_certificate_notes.params.v1
+      title: Bridge Certificate Notes
+      source_artifact_roles:
+        - rlrmp-bridge-standard-certificate
+      include_json_artifact: true
+      narrative: Feedbax-custody report constructed from structured standard-certificate rows.
+    outputs:
+      - role: report_render
+        required: true
+      - role: rlrmp-bridge-certificate-report-render
+        required: false

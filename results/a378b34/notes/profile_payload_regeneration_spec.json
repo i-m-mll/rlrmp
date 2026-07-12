@@ -1,0 +1,34 @@
+{
+  "issue": "a378b34",
+  "piece_name": "rlrmp.profile_a378b34_nominal_velocity",
+  "condition": "Nominal validation trials",
+  "output": {
+    "artifact_id": "artifact:sha256:25081c1739aec344bb61276123666e57a0d0a9d93206f8882048f6fac65fcbf3",
+    "logical_name": "a378b34/nominal_velocity_profile_comparison/profile_payload.json",
+    "media_type": "application/json",
+    "role": "profile_figure_payload",
+    "sha256": "25081c1739aec344bb61276123666e57a0d0a9d93206f8882048f6fac65fcbf3",
+    "uri": "_artifacts/a378b34/figures/nominal_velocity_profile_comparison/profile_payload.json"
+  },
+  "schema_id": "rlrmp.spec.figure_profile_payload",
+  "schema_version": "rlrmp.spec.figure_profile_payload.v1",
+  "series": [
+    {"label": "6D extLQG", "mean_column": "extlqg_mean_m_s", "spread_column": "extlqg_sem_m_s", "spread_kind": "sem", "color": "#205c8e"},
+    {"label": "Distilled h0 GRU", "mean_column": "distilled_mean_m_s", "spread_column": "distilled_sem_m_s", "spread_kind": "sem", "color": "#bc522c"}
+  ],
+  "source_csv": {
+    "logical_name": "a378b34/nominal_velocity_profile_comparison/nominal_forward_velocity_profiles.csv",
+    "media_type": "text/csv",
+    "role": "profile_csv",
+    "sha256": "f677d4c4c1eba51e8078c117db439575e51b6f09df731dbdbbbf4880b0e5aee8",
+    "uri": "_artifacts/a378b34/figures/nominal_velocity_profile_comparison/nominal_forward_velocity_profiles.csv"
+  },
+  "source_summary": {
+    "logical_name": "a378b34/nominal_velocity_profile_comparison/nominal_forward_velocity_profiles_summary.json",
+    "media_type": "application/json",
+    "role": "profile_summary",
+    "sha256": "cb0d677fe100f7628a8bcd259efc354a66846021997b65e7ae1682af88ceb6a0",
+    "uri": "_artifacts/a378b34/figures/nominal_velocity_profile_comparison/nominal_forward_velocity_profiles_summary.json"
+  },
+  "topic": "nominal_velocity_profile_comparison"
+}

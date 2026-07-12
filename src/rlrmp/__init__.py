@@ -226,9 +226,19 @@ def ensure_rlrmp_recipes_registered(
         )
         from rlrmp.analysis.reports import register_rlrmp_report_recipes
         from rlrmp.analysis.robustness_margin import register_robustness_margin_recipes
+        from rlrmp.analysis.broad_epsilon_attribution import (
+            register_broad_epsilon_attribution_recipe,
+        )
+        from rlrmp.analysis.map_error_decomposition import (
+            register_map_error_decomposition_recipe,
+        )
+        from rlrmp.analysis.objective_comparator import register_objective_comparator_recipe
+        from rlrmp.analysis.robustness_phenotype import register_robustness_phenotype_recipe
+        from rlrmp.analysis.worst_case_epsilon import register_worst_case_epsilon_recipe
         from rlrmp.analysis.training_diagnostics import (
             register_training_diagnostics_recipes,
         )
+        from rlrmp.analysis.scalar_diagnostic import register_scalar_diagnostic_recipe
         from rlrmp.figures import register_rlrmp_figure_surfaces
         from rlrmp.viz.color_config import register_rlrmp_color_config
 
@@ -242,7 +252,13 @@ def ensure_rlrmp_recipes_registered(
         register_declarative_materialization_recipes(replace=True)
         register_rlrmp_report_recipes(replace=True)
         register_robustness_margin_recipes()
+        register_broad_epsilon_attribution_recipe()
+        register_map_error_decomposition_recipe()
+        register_objective_comparator_recipe()
+        register_robustness_phenotype_recipe()
+        register_worst_case_epsilon_recipe()
         register_training_diagnostics_recipes()
+        register_scalar_diagnostic_recipe()
     except Exception:
         # Reset so a later call re-attempts registration.
         _RECIPES_REGISTERED = None

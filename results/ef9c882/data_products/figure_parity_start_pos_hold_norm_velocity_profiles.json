@@ -1,0 +1,34 @@
+{
+  "schema_id": "rlrmp.figure_parity.delayed_velocity_profiles",
+  "schema_version": "rlrmp.figure_parity.delayed_velocity_profiles.v1",
+  "source": "archived_structured_outputs",
+  "banks": ["no_catch", "catch"],
+  "run_labels": [
+    "L2 hold 1e4",
+    "L2 hold 1e6",
+    "L2 hold 1e8",
+    "L1 hold 1e8",
+    "L1 hold 1e6",
+    "L1 hold 1e5",
+    "L1 hold 1e4"
+  ],
+  "profile_contract": {
+    "alignment": "go_cue_aligned_canonical_movement_window",
+    "time_start_s": -0.1,
+    "time_stop_s": 0.59,
+    "movement_horizon_steps": 60,
+    "error_band": "mean +/- 1 SD over pooled replicate x fixed-bank go-cue/direction trials",
+    "projection": "target-radial velocity",
+    "shared_yaxes": "all",
+    "replicate_companion": true
+  },
+  "no_catch_peak_mean_velocity_m_s": {
+    "hold_start_pos_l2__w1e4": 0.5367150350846969,
+    "hold_start_pos_l2__w1e6": 0.6484273472798153,
+    "hold_start_pos_l2__w1e8": 0.666288112554993,
+    "hold_start_pos_l1__w1e8": 0.6795625634315733,
+    "hold_start_pos_l1__w1e6": 0.6740284940269982,
+    "hold_start_pos_l1__w1e5": 0.6637519735175786,
+    "hold_start_pos_l1__w1e4": 0.6645465179000914
+  }
+}

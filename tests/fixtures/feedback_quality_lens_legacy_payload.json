@@ -39,7 +39,7 @@
         "rlrmp-feedback-quality-feedback-ablation-note"
       ],
       "component_node": "feedback_ablation",
-      "live_materializer": "rlrmp.analysis.pipelines.gru_feedback_ablation.execute_feedback_ablation_pipeline",
+      "live_materializer": null,
       "materialization_mode": "live_analysis_node",
       "paths": {
         "notes": "results/5f70333/notes/gru_feedback_ablation_validation_selected.md",
@@ -50,42 +50,66 @@
       "status": "materialized"
     },
     "objective_comparator": {
-      "artifact_group_ids": [],
-      "artifact_roles": [
-        "rlrmp-feedback-quality-objective-comparator-manifest",
-        "rlrmp-feedback-quality-objective-comparator-note"
-      ],
       "component_node": "objective_comparator",
-      "live_materializer": "rlrmp.analysis.pipelines.objective_comparator.materialize_gru_objective_comparator_sidecar",
-      "materialization_mode": "live_analysis_node",
-      "paths": {
-        "notes": "results/5f70333/notes/objective_comparator_validation_selected.md",
-        "tracked": "results/5f70333/notes/objective_comparator_validation_selected.json"
+      "detail": {
+        "reason": "canonical objective-comparator analysis parent is unavailable",
+        "status": "skipped"
       },
+      "live_materializer": null,
+      "materialization_mode": "live_analysis_node",
+      "paths": {},
+      "reason": "canonical objective-comparator analysis parent is unavailable",
       "schema_kind": "RLRMPObjectiveComparatorSidecar",
       "selection_role": "audit_only_not_used_for_checkpoint_selection",
-      "status": "materialized"
+      "status": "skipped"
     },
     "perturbation_calibration": {
-      "artifact_group_ids": [
-        "feedback_quality_perturbation_calibration_bulk"
-      ],
-      "artifact_roles": [
-        "rlrmp-feedback-quality-perturbation-calibration-manifest",
-        "rlrmp-feedback-quality-perturbation-calibration-note",
-        "rlrmp-feedback-quality-perturbation-calibration-bulk",
-        "rlrmp-feedback-quality-perturbation-calibration-bulk"
-      ],
       "component_node": "perturbation_calibration",
-      "live_materializer": "rlrmp.analysis.pipelines.gru_perturbation_calibration.materialize_perturbation_open_loop_calibration",
-      "materialization_mode": "live_analysis_node",
-      "paths": {
-        "group_0": "_artifacts/5f70333/perturbation_open_loop_calibration",
-        "notes": "results/5f70333/notes/perturbation_open_loop_calibration.md",
-        "tracked": "_artifacts/5f70333/perturbation_open_loop_calibration/perturbation_open_loop_calibration.json"
+      "controller_visible_force_filter_scale_convention": {
+        "description": "native 1 N reference offset for force/filter controller-visible components; unit convention, not generated data",
+        "value_n": 1.0
       },
-      "schema_kind": "RLRMPPerturbationOpenLoopCalibration",
-      "selection_role": "audit_only_not_used_for_checkpoint_selection",
+      "controller_visible_force_filter_scale_n": 1.0,
+      "controller_visible_velocity_scale_m_s": 0.7310094144305818,
+      "custody_route": "governed_analysis_data_product",
+      "live_materializer": "rlrmp.data_products.calibration.load_open_loop_calibration",
+      "materialization_mode": "live_analysis_node",
+      "open_loop_peak_delta_x_per_unit": {
+        "command_input_pulse": {
+          "early": 0.022194585242892,
+          "late": 0.007727047798606057,
+          "mid": 0.01739291144150351
+        },
+        "initial_position_offset": {
+          "initial_condition": 1.0
+        },
+        "initial_velocity_offset": {
+          "initial_condition": 0.5826373777683177
+        },
+        "process_epsilon_force_state_xy": {
+          "early": 0.146484262603,
+          "late": 0.0509985154708,
+          "mid": 0.114793215514
+        },
+        "process_epsilon_integrator_xy": {
+          "early": 0.652559200439,
+          "late": 0.115223248806,
+          "mid": 0.425295447092
+        },
+        "process_epsilon_position_xy": {
+          "early": 5.0,
+          "late": 5.0,
+          "mid": 5.0
+        },
+        "process_epsilon_velocity_xy": {
+          "early": 2.53474407996,
+          "late": 1.08847767512,
+          "mid": 2.05747045529
+        }
+      },
+      "product_identity_hash": "03edd3141b62d1b1cf045097114caac7bc96f1236a433875976aec974d9bb97a",
+      "reference_reach_m": 0.15,
+      "schema_version": "rlrmp.perturbation_open_loop_calibration.v2",
       "status": "materialized"
     },
     "perturbation_response": {
@@ -119,12 +143,12 @@
         "rlrmp-feedback-quality-response-norm-figure"
       ],
       "component_node": "response_norm_plots",
-      "live_materializer": "rlrmp.analysis.pipelines.gru_perturbation_response_norm_plots.materialize_response_norm_plots",
+      "live_materializer": "rlrmp.response_norm_comparison",
       "materialization_mode": "live_analysis_node",
       "paths": {
         "group_0": "_artifacts/5f70333/figures/perturbation_response_norms_validation_selected",
-        "notes": "results/5f70333/notes/gru_perturbation_response_norm_plots_validation_selected.md",
-        "tracked": "results/5f70333/notes/gru_perturbation_response_norm_plots_validation_selected_manifest.json"
+        "notes": "results/5f70333/notes/response_norm_comparison_validation_selected.md",
+        "tracked": "results/5f70333/notes/response_norm_comparison_validation_selected_manifest.json"
       },
       "schema_kind": "RLRMPGRUPerturbationResponseNormPlots",
       "selection_role": "audit_only_not_used_for_checkpoint_selection",

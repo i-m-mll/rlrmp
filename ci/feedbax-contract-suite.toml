@@ -241,6 +241,14 @@ negative_canary = [
 ]
 
 [[families]]
+name = "perturbation_bank_strangler"
+owner = "50f7b28"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_perturbation_bank_parity.py::"
+minimum_non_skipped = 6
+
+[[families]]
 name = "training_config_flat_key_scan"
 owner = "ef8e1df"
 status = "live"
@@ -248,24 +256,177 @@ marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_training_config_flat_legacy_keys.py::"
 minimum_non_skipped = 2
 
+[[families]]
+name = "declarative_figure_stock"
+owner = "f6f38b6"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_declarative_figure_stock.py::"
+# Pin the terminal eight-test family, including exact stock counts and zero old authoring surfaces.
+minimum_non_skipped = 8
+negative_canary = [
+    "tests/test_declarative_figure_stock.py::test_authored_intent_rejects_provenance_heavy_legacy_payload",
+    "tests/test_declarative_figure_stock.py::test_direct_assembly_negative_canary_rejects_plotly_materializer",
+]
+
+[[families]]
+name = "six_cell_figure_migration"
+owner = "d87fc74"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_2bc_six_cell_figure_specs.py::"
+# Pin the complete parity, intrinsic-axis, payload, and deletion contract.
+minimum_non_skipped = 6
+
+[[families]]
+name = "declarative_profile_stock"
+owner = "39bee20"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_profile_stock_migration.py::"
+# Pin native execution, archived parity adoption, and terminal producer deletion.
+minimum_non_skipped = 3
+
+[[families]]
+name = "delayed_profile_figure_contract"
+owner = "485c06e"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_delayed_profile_figure_contract.py::"
+# Pin payload semantics, all three native intents, and terminal producer deletion.
+minimum_non_skipped = 5
+negative_canary = [
+    "tests/test_delayed_profile_figure_contract.py::test_registered_delayed_payload_owns_profile_facets_and_bands",
+]
+
+[[families]]
+name = "prego_figure_migration"
+owner = "1e9304d"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_3702f54_prego_figure_specs.py::"
+# Pin five native intents, real execution, archived parity, shared-y semantics, and deletion.
+minimum_non_skipped = 6
+
+[[families]]
+name = "response_norm_figure_contract"
+owner = "5f85bf5"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_response_norm_capability.py::"
+# Pin intrinsic/data-bound facets, custody payloads, and terminal legacy deletion.
+minimum_non_skipped = 7
+negative_canary = [
+    "tests/analysis/test_response_norm_capability.py::test_payload_distinguishes_intrinsic_and_data_bound_facets",
+]
+
+[[families]]
+name = "steady_state_figure_contract"
+owner = "412b5d2"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_steady_state_figure_migration.py::"
+# Pin all four real FigureSpec executions, variable cardinality, and helper retirement.
+minimum_non_skipped = 4
+negative_canary = [
+    "tests/analysis/test_steady_state_figure_migration.py::test_all_four_specs_execute_with_variable_condition_cardinality[2]",
+]
+
+[[families]]
+name = "literature_replication_figure_contract"
+owner = "28876c1"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_f47_literature_figure_specs.py::"
+# Pin all six native intents, one-payload facets, archived parity, and terminal deletion.
+minimum_non_skipped = 6
+negative_canary = [
+    "tests/analysis/test_f47_literature_figure_specs.py::test_one_standard_matrix_payload_owns_all_six_figure_facets",
+]
+
+[[families]]
+name = "scalar_diagnostic_figure_contract"
+owner = "ae26a79"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_scalar_diagnostic_figure_specs.py::"
+# Pin registered custody, 2-vs-3 data-bound cardinality, real execution, and deletion.
+minimum_non_skipped = 7
+negative_canary = [
+    "tests/analysis/test_scalar_diagnostic_figure_specs.py::test_registered_analysis_keeps_row_cardinality_data_bound[2]",
+]
+
+[[families]]
+name = "movement_ramp_figure_contract"
+owner = "c9b1db0"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_b399efc_movement_ramp_figure_specs.py::"
+# Pin all six real executions, archived parity, intrinsic axes, and terminal driver deletion.
+minimum_non_skipped = 6
+negative_canary = [
+    "tests/analysis/test_b399efc_movement_ramp_figure_specs.py::test_all_six_specs_execute_to_hash_verified_completed_manifests",
+]
+
+[[families]]
+name = "sisu_spectrum_figure_contract"
+owner = "518aea3"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_sisu_spectrum_figure.py::"
+# Pin manifest custody, 2-vs-3 payload cardinality, archived parity, and deletion.
+minimum_non_skipped = 7
+negative_canary = [
+    "tests/analysis/test_sisu_spectrum_figure.py::test_sisu_profile_cardinality_is_payload_bound[2]",
+]
+
+[[families]]
+name = "gru_postrun_figure_contract"
+owner = "74fac80"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_gru_postrun_bundle_contract.py::"
+# Pin canonical bundle leaves, real FigureManifest execution, parity, and terminal retirement.
+minimum_non_skipped = 7
+negative_canary = [
+    "tests/analysis/test_gru_postrun_bundle_contract.py::test_gru_postrun_figure_executes_to_hash_verified_manifest",
+]
+
+[[families]]
+name = "nominal_profile_figure_contract"
+owner = "70fe304"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_nominal_profile_figure_migration.py::"
+# Pin five native intents, 2-vs-3 replicate facets, hash-verified custody, and deletion.
+minimum_non_skipped = 5
+negative_canary = [
+    "tests/analysis/test_nominal_profile_figure_migration.py::test_all_specs_execute_with_payload_bound_replicates[2]",
+]
+
+[[families]]
+name = "moderate_calibrated_figure_contract"
+owner = "a778c65"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_moderate_calibrated_figure_migration.py::"
+# Pin five independent leaf specs, 2-vs-3 cardinality, parity custody, and deletion.
+minimum_non_skipped = 5
+negative_canary = [
+    "tests/analysis/test_moderate_calibrated_figure_migration.py::test_all_specs_real_execute_with_data_bound_cardinality[2]",
+]
+
+[[families]]
+name = "stabilization_response_figure_contract"
+owner = "8c06ef4"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_stabilization_response_figure_migration.py::"
+minimum_non_skipped = 5
+negative_canary = [
+    "tests/analysis/test_stabilization_response_figure_migration.py::test_all_specs_execute_with_payload_bound_conditions[2]",
+]
+
 [pipeline_contract_native]
 allowlist = [
-    { path = "src/rlrmp/analysis/pipelines/bridge_aggregation.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "compatibility summarizer remains until report-stage aggregation replaces tracked writes" },
-    { path = "src/rlrmp/analysis/pipelines/bridge_contracts.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "bridge manifest writer remains a shared compatibility surface pending custody routing" },
-    { path = "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py", reasons = ["direct_durable_writer", "direct_eval_rerun"], owner = "ed225ef", reason = "standard certificate materializer still mixes writer and clean-rollout recovery paths" },
-    { path = "src/rlrmp/analysis/pipelines/delayed_diagnostic_bundle.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "dormant delayed diagnostic bundle remains pending its revival issue" },
-    { path = "src/rlrmp/analysis/pipelines/diagnostic_provenance.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "regeneration-spec writer is shared compatibility plumbing until custody routing lands" },
-    { path = "src/rlrmp/analysis/pipelines/gru_broad_epsilon_attribution.py", reasons = ["direct_durable_writer", "direct_eval_rerun"], owner = "ed225ef", reason = "broad-epsilon attribution still materializes tracked sidecars outside bundle custody" },
-    { path = "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "checkpoint-selection manifest emission remains as compatibility bridge" },
-    { path = "src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py", reasons = ["direct_durable_writer", "direct_eval_rerun"], owner = "ed225ef", reason = "evaluation diagnostics still emits legacy materialization outputs while recipes consume manifests" },
-    { path = "src/rlrmp/analysis/pipelines/gru_map_error_decomposition.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "failure-decomposition companion remains pending report-stage respec" },
-    { path = "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "open-loop calibration data-product writer remains until fully governed custody replaces it" },
-    { path = "src/rlrmp/analysis/pipelines/gru_perturbation_response_norm_plots.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "response-norm plotting writer remains pending figure/report custody redesign" },
-    { path = "src/rlrmp/analysis/pipelines/gru_pilot_figures.py", reasons = ["direct_durable_writer", "direct_eval_rerun"], owner = "ed225ef", reason = "pilot figure materializer remains pending the figure redesign lane" },
-    { path = "src/rlrmp/analysis/pipelines/gru_postrun_materialization.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "post-run compatibility orchestrator still writes manifest pointers while dispatching recipes" },
-    { path = "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py", reasons = ["direct_durable_writer", "direct_eval_rerun"], owner = "ed225ef", reason = "steady-state perturbation comparison still carries legacy writer and local rerun helpers" },
-    { path = "src/rlrmp/analysis/pipelines/gru_worst_case_epsilon_audit.py", reasons = ["direct_durable_writer", "direct_eval_rerun"], owner = "ed225ef", reason = "worst-case epsilon audit still writes sidecars and local rerun diagnostics" },
-    { path = "src/rlrmp/analysis/pipelines/objective_comparator.py", reasons = ["direct_eval_rerun"], owner = "ed225ef", reason = "objective comparator retains local rollout comparison helpers pending report-stage routing" },
-    { path = "src/rlrmp/analysis/pipelines/output_feedback_interpolated_starts.py", reasons = ["direct_durable_writer", "direct_eval_rerun"], owner = "ed225ef", reason = "secondary output-feedback diagnostic still present after materializer retirement wave" },
-    { path = "src/rlrmp/analysis/pipelines/sisu_perturbation_comparison.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "SISU comparison kept frozen until spectrum diagnostics subsumes or re-adjudicates it" },
 ]

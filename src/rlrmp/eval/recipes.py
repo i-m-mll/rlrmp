@@ -18,23 +18,38 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from rlrmp.runtime.params_models import params_model_for, register_params_model
 from rlrmp.eval.feedback_ablation import evaluate_feedback_ablation_runs
+from rlrmp.eval.broad_epsilon import evaluate_broad_epsilon_runs
+from rlrmp.eval.evaluation_diagnostics import (
+    DEFAULT_N_ROLLOUT_TRIALS,
+    evaluate_gru_diagnostics_runs,
+)
 from rlrmp.runtime.spec_migrations import (
     CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND,
     DELAYED_REACH_BANK_EVAL_PARAMS_KIND,
     FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
+    GRU_DIAGNOSTICS_EVAL_PARAMS_KIND,
     PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND,
     WORST_CASE_EPSILON_EVAL_PARAMS_KIND,
     accept_rlrmp_spec_payload,
 )
 
 CENTER_OUT_ENSEMBLE_EVALUATION_TYPE = "rlrmp.eval.center_out_ensemble"
+GRU_DIAGNOSTICS_EVALUATION_TYPE = "rlrmp.eval.gru_diagnostics"
 PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE = "rlrmp.eval.perturbation_response_bank"
 FEEDBACK_ABLATION_EVALUATION_TYPE = "rlrmp.eval.feedback_ablation"
 WORST_CASE_EPSILON_EVALUATION_TYPE = "rlrmp.eval.worst_case_epsilon"
+BROAD_EPSILON_EVALUATION_TYPE = "rlrmp.eval.broad_epsilon"
 DELAYED_REACH_BANK_EVALUATION_TYPE = "rlrmp.eval.delayed_reach_bank"
+DELAYED_VELOCITY_PROFILE_PAYLOAD_SCHEMA_ID = (
+    "rlrmp.figure_data.delayed_velocity_profiles"
+)
+DELAYED_VELOCITY_PROFILE_PAYLOAD_SCHEMA_VERSION = (
+    "rlrmp.figure_data.delayed_velocity_profiles.v1"
+)
 
 _RECIPE_PARAM_KINDS = {
     CENTER_OUT_ENSEMBLE_EVALUATION_TYPE: CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND,
+    GRU_DIAGNOSTICS_EVALUATION_TYPE: GRU_DIAGNOSTICS_EVAL_PARAMS_KIND,
     PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE: PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND,
     FEEDBACK_ABLATION_EVALUATION_TYPE: FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
     WORST_CASE_EPSILON_EVALUATION_TYPE: WORST_CASE_EPSILON_EVAL_PARAMS_KIND,
@@ -49,9 +64,7 @@ class _StrictParamsModel(BaseModel):
 
     schema_id: str | None = None
     schema_version: str | None = None
-    consumed_data_identities: list[dict[str, Any]] | dict[str, Any] = Field(
-        default_factory=list
-    )
+    consumed_data_identities: list[dict[str, Any]] | dict[str, Any] = Field(default_factory=list)
 
 
 class CenterOutEnsembleEvalParams(_StrictParamsModel):
@@ -76,6 +89,20 @@ class CenterOutEnsembleEvalParams(_StrictParamsModel):
     gru_standard_certificate: dict[str, Any] | None = None
     policy_diagnostics: dict[str, Any] | None = None
     recurrent_jacobians: dict[str, Any] | None = None
+
+
+class GRUDiagnosticsEvalParams(_StrictParamsModel):
+    """Params for selected-checkpoint GRU diagnostics from cached states."""
+
+    source_experiment: str = ""
+    run_ids: list[str] = Field(default_factory=list)
+    labels: list[str] | None = None
+    n_rollout_trials: int = Field(DEFAULT_N_ROLLOUT_TRIALS, ge=1)
+    preferred_checkpoint_manifest_path: str | None = None
+    jacobian_timepoints: list[Literal["first", "peak_forward_velocity", "terminal"]] = Field(
+        default_factory=lambda: ["first", "peak_forward_velocity", "terminal"]
+    )
+    repo_root: str | None = None
 
 
 class PerturbationResponseBankEvalParams(_StrictParamsModel):
@@ -113,9 +140,7 @@ class PerturbationResponseBankEvalParams(_StrictParamsModel):
     n_rollout_trials: int = Field(8, ge=1)
     extlqg_physical_dim: Literal[6, 8] = 8
     preferred_checkpoint_manifest_path: str | None = None
-    checkpoint_selection_mode: Literal["sparse_history", "fixed_bank_manifest"] = (
-        "sparse_history"
-    )
+    checkpoint_selection_mode: Literal["sparse_history", "fixed_bank_manifest"] = "sparse_history"
 
 
 class FeedbackAblationEvalParams(_StrictParamsModel):
@@ -141,11 +166,32 @@ class FeedbackAblationEvalParams(_StrictParamsModel):
 class WorstCaseEpsilonEvalParams(_StrictParamsModel):
     """Params for worst-case epsilon evaluation."""
 
+    run_ids: list[str] = Field(default_factory=list)
+    budget_level: str | None = None
+    budget_scale: float | None = Field(default=None, gt=0)
+    n_steps: int = Field(default=12, ge=0)
+    n_restarts: int = Field(default=3, ge=0)
+    step_size: float | None = Field(default=None, gt=0)
+    backend: Literal["serial", "staged"] = "serial"
     epsilon_budget_data_product_identity: Any | None = None
     epsilon_budget_identity: Any | None = None
     optimizer: dict[str, Any] = Field(default_factory=dict)
     audit_inputs: dict[str, Any] = Field(default_factory=dict)
     worst_case_rollouts: list[Any] = Field(default_factory=list)
+
+
+class BroadEpsilonEvalParams(_StrictParamsModel):
+    """Params for paired active/zero broad-epsilon evaluation."""
+
+    source_experiment: str = ""
+    run_ids: list[str] = Field(default_factory=list)
+    labels: list[str] | None = None
+    n_rollout_trials: int = Field(default=8, ge=1)
+    max_gradient_replicates: int = Field(default=1, ge=0)
+    checkpoint_policy: Literal["validation_selected_per_replicate"] = (
+        "validation_selected_per_replicate"
+    )
+    paired_rollouts: list[Any] = Field(default_factory=list)
 
 
 class DelayedReachBankEvalParams(_StrictParamsModel):
@@ -154,13 +200,16 @@ class DelayedReachBankEvalParams(_StrictParamsModel):
     bank_spec: dict[str, Any] = Field(default_factory=dict)
     bank_tensors: dict[str, Any] = Field(default_factory=dict)
     selection_inputs: dict[str, Any] = Field(default_factory=dict)
+    profile_payloads: dict[str, Any] = Field(default_factory=dict)
 
 
 _PARAMS_MODEL_BY_RECIPE = {
     CENTER_OUT_ENSEMBLE_EVALUATION_TYPE: CenterOutEnsembleEvalParams,
+    GRU_DIAGNOSTICS_EVALUATION_TYPE: GRUDiagnosticsEvalParams,
     PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE: PerturbationResponseBankEvalParams,
     FEEDBACK_ABLATION_EVALUATION_TYPE: FeedbackAblationEvalParams,
     WORST_CASE_EPSILON_EVALUATION_TYPE: WorstCaseEpsilonEvalParams,
+    BROAD_EPSILON_EVALUATION_TYPE: BroadEpsilonEvalParams,
     DELAYED_REACH_BANK_EVALUATION_TYPE: DelayedReachBankEvalParams,
 }
 
@@ -170,7 +219,7 @@ def register_rlrmp_evaluation_recipes(*, replace: bool = True) -> None:
 
     for recipe_name, model_class in _PARAMS_MODEL_BY_RECIPE.items():
         register_params_model(recipe_name, model_class, replace=replace)
-    from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+    from rlrmp.eval.perturbation_bank import (
         PERTURBATION_BANK_PARAMS_TYPE,
         PerturbationBankParams,
     )
@@ -179,6 +228,11 @@ def register_rlrmp_evaluation_recipes(*, replace: bool = True) -> None:
     register_evaluation_recipe(
         CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,
         center_out_ensemble_recipe,
+        replace=replace,
+    )
+    register_evaluation_recipe(
+        GRU_DIAGNOSTICS_EVALUATION_TYPE,
+        gru_diagnostics_recipe,
         replace=replace,
     )
     register_evaluation_recipe(
@@ -194,6 +248,11 @@ def register_rlrmp_evaluation_recipes(*, replace: bool = True) -> None:
     register_evaluation_recipe(
         WORST_CASE_EPSILON_EVALUATION_TYPE,
         worst_case_epsilon_recipe,
+        replace=replace,
+    )
+    register_evaluation_recipe(
+        BROAD_EPSILON_EVALUATION_TYPE,
+        broad_epsilon_recipe,
         replace=replace,
     )
     register_evaluation_recipe(
@@ -245,6 +304,34 @@ def center_out_ensemble_recipe(
             "policy_diagnostics": p.policy_diagnostics,
             "recurrent_jacobians": p.recurrent_jacobians,
         },
+    )
+
+
+def gru_diagnostics_recipe(
+    run_spec: EvaluationRunSpec,
+    _root: Path,
+    _states_path: Path,
+) -> EvaluationRecipeResult:
+    """Evaluate and cache behavior, feedback, gate, and Jacobian diagnostics."""
+
+    p, params = _validated_params(run_spec)
+    if not p.source_experiment or not p.run_ids:
+        raise ValueError("GRU diagnostics require source_experiment and non-empty run_ids")
+    repo_root = Path(p.repo_root).expanduser() if p.repo_root else Path.cwd()
+    payload = evaluate_gru_diagnostics_runs(params, repo_root=repo_root)
+    return _result(
+        run_spec,
+        params,
+        product_role="gru_diagnostic_states",
+        state_payload=payload,
+        summary_metrics={
+            "gru_diagnostic_run_count": len(payload["runs"]),
+            "gru_diagnostic_rollout_count": sum(
+                int(run["n_replicates"]) * int(run["n_rollout_trials_per_replicate"])
+                for run in payload["runs"].values()
+            ),
+        },
+        metadata={"execution_owner": "registered_evaluation_recipe"},
     )
 
 
@@ -311,11 +398,6 @@ def worst_case_epsilon_recipe(
     """Evaluate worst-case epsilon perturbation audits."""
 
     p, params = _validated_params(run_spec)
-    _require_one_of(
-        params,
-        ("epsilon_budget_data_product_identity", "epsilon_budget_identity"),
-        recipe=run_spec.evaluation_type,
-    )
     return _result(
         run_spec,
         params,
@@ -327,9 +409,47 @@ def worst_case_epsilon_recipe(
                 else p.epsilon_budget_identity
             ),
             "optimizer": p.optimizer,
+            "run_ids": p.run_ids,
+            "budget_level": p.budget_level,
+            "budget_scale": p.budget_scale,
+            "n_steps": p.n_steps,
+            "n_restarts": p.n_restarts,
+            "step_size": p.step_size,
+            "backend": p.backend,
             "audit_inputs": p.audit_inputs,
             "worst_case_rollouts": p.worst_case_rollouts,
         },
+    )
+
+
+def broad_epsilon_recipe(
+    run_spec: EvaluationRunSpec,
+    _root: Path,
+    _states_path: Path,
+) -> EvaluationRecipeResult:
+    """Cache paired active/zero rollout and differentiable-gradient records."""
+
+    p, params = _validated_params(run_spec)
+    payload = (
+        {
+            "source_experiment": p.source_experiment,
+            "checkpoint_policy": p.checkpoint_policy,
+            "rows": p.paired_rollouts,
+        }
+        if p.paired_rollouts
+        else evaluate_broad_epsilon_runs(params)
+    )
+    return _result(
+        run_spec,
+        params,
+        product_role="broad_epsilon_paired_rollouts",
+        state_payload={
+            **payload,
+            "run_ids": p.run_ids,
+            "n_rollout_trials": p.n_rollout_trials,
+            "max_gradient_replicates": p.max_gradient_replicates,
+        },
+        metadata={"execution_owner": "registered_evaluation_recipe"},
     )
 
 
@@ -342,6 +462,7 @@ def delayed_reach_bank_recipe(
 
     p, params = _validated_params(run_spec)
     _require_one_of(params, ("bank_spec",), recipe=run_spec.evaluation_type)
+    figure_payload = delayed_velocity_profile_payload(p.profile_payloads)
     return _result(
         run_spec,
         params,
@@ -350,8 +471,124 @@ def delayed_reach_bank_recipe(
             "bank_spec": p.bank_spec,
             "bank_tensors": p.bank_tensors,
             "selection_inputs": p.selection_inputs,
+            "profile_payloads": p.profile_payloads,
         },
+        metadata={"figure_payload": figure_payload} if figure_payload is not None else None,
     )
+
+
+def delayed_velocity_profile_payload(
+    profile_payloads: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Normalize delayed-bank profiles for the native profile template.
+
+    The registered evaluation recipe owns the numerical profile payload. Figure
+    intent owns only intrinsic panel/axis semantics and binds its facets to this
+    manifest metadata. Each run is one facet; no-catch and catch banks remain
+    separate labeled series within that facet.
+    """
+
+    if not profile_payloads:
+        return None
+    banks = profile_payloads.get("banks", profile_payloads)
+    if not isinstance(banks, Mapping):
+        raise ValueError("delayed profile payloads must map bank kind to profiles")
+
+    facets: dict[str, dict[str, Any]] = {}
+    for bank_kind in ("no_catch", "catch"):
+        profiles = banks.get(bank_kind, ())
+        if not isinstance(profiles, Sequence) or isinstance(profiles, (str, bytes)):
+            raise ValueError(f"delayed {bank_kind} profiles must be a sequence")
+        for raw_profile in profiles:
+            if not isinstance(raw_profile, Mapping):
+                raise ValueError(f"delayed {bank_kind} profile entries must be mappings")
+            experiment = str(raw_profile.get("experiment", ""))
+            run_id = str(raw_profile.get("run_id", ""))
+            label = str(raw_profile.get("label", raw_profile.get("run_label", run_id)))
+            if not run_id or not label:
+                raise ValueError(f"delayed {bank_kind} profile requires run_id and label")
+            facet_id = f"{experiment}/{run_id}" if experiment else run_id
+            facet = facets.setdefault(
+                facet_id,
+                {
+                    "run_id": run_id,
+                    "experiment": experiment or None,
+                    "display_name": label,
+                    "forward_velocity": {"series": []},
+                    "forward_velocity_by_replicate": {"series": []},
+                },
+            )
+            profile = _delayed_profile_band(raw_profile)
+            facet["forward_velocity"]["series"].append(
+                {
+                    "label": f"{label} ({bank_kind.replace('_', ' ')})",
+                    "color": raw_profile.get("color"),
+                    "profile": profile,
+                    "bank_kind": bank_kind,
+                    "alignment": raw_profile.get("alignment", {}),
+                    "evaluation_bank": raw_profile.get("evaluation_bank", {}),
+                }
+            )
+            for replicate, replicate_profile in enumerate(
+                _delayed_replicate_bands(raw_profile)
+            ):
+                facet["forward_velocity_by_replicate"]["series"].append(
+                    {
+                        "label": (
+                            f"{label} ({bank_kind.replace('_', ' ')}, "
+                            f"replicate {replicate + 1})"
+                        ),
+                        "color": raw_profile.get("color"),
+                        "profile": replicate_profile,
+                        "bank_kind": bank_kind,
+                        "replicate": replicate,
+                    }
+                )
+
+    if not facets:
+        raise ValueError("delayed profile payloads contain no profiles")
+    return {
+        "schema_id": DELAYED_VELOCITY_PROFILE_PAYLOAD_SCHEMA_ID,
+        "schema_version": DELAYED_VELOCITY_PROFILE_PAYLOAD_SCHEMA_VERSION,
+        "facets": {"condition": facets},
+    }
+
+
+def _delayed_profile_band(profile: Mapping[str, Any]) -> dict[str, Any]:
+    time = list(profile.get("time", profile.get("time_s", ())))
+    mean = list(profile.get("mean", ()))
+    if not time or len(time) != len(mean):
+        raise ValueError("delayed profile time and mean must be non-empty and aligned")
+    upper = profile.get("upper")
+    lower = profile.get("lower")
+    if upper is None or lower is None:
+        std = list(profile.get("std", ()))
+        if len(std) != len(mean):
+            raise ValueError("delayed profile requires aligned upper/lower or std")
+        upper = [float(value) + float(delta) for value, delta in zip(mean, std, strict=True)]
+        lower = [float(value) - float(delta) for value, delta in zip(mean, std, strict=True)]
+    return {
+        "time": time,
+        "mean": mean,
+        "upper": list(upper),
+        "lower": list(lower),
+    }
+
+
+def _delayed_replicate_bands(profile: Mapping[str, Any]) -> list[dict[str, Any]]:
+    means = profile.get("replicate_mean", ())
+    stds = profile.get("replicate_std", ())
+    if not means and not stds:
+        return []
+    if not isinstance(means, Sequence) or not isinstance(stds, Sequence):
+        raise ValueError("delayed replicate profile means/stds must be sequences")
+    if len(means) != len(stds):
+        raise ValueError("delayed replicate profile means/stds must have equal length")
+    time = list(profile.get("time", profile.get("time_s", ())))
+    bands = []
+    for mean, std in zip(means, stds, strict=True):
+        bands.append(_delayed_profile_band({"time": time, "mean": mean, "std": std}))
+    return bands
 
 
 def _validated_params(run_spec: EvaluationRunSpec) -> tuple[BaseModel, dict[str, Any]]:
@@ -441,8 +678,7 @@ def _perturbation_response_bank_payload(
     response_tensors = params.get("response_tensors")
     if response_tensors is not None and not legacy_payload_mode:
         raise ValueError(
-            "perturbation-response bank response_tensors params require "
-            "legacy_payload_mode=true"
+            "perturbation-response bank response_tensors params require legacy_payload_mode=true"
         )
     if legacy_payload_mode:
         return _legacy_perturbation_response_bank_payload(params)
@@ -606,7 +842,7 @@ def _perturbation_bank_from_params(params: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _default_perturbation_bank(params: Mapping[str, Any]) -> dict[str, Any]:
-    from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+    from rlrmp.eval.perturbation_bank import (
         PerturbationBankParams,
         expand_perturbation_bank,
     )
@@ -617,7 +853,7 @@ def _default_perturbation_bank(params: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _canonical_perturbation_bank_params(params: Mapping[str, Any]) -> dict[str, Any]:
-    from rlrmp.analysis.pipelines.gru_perturbation_bank import PerturbationBankParams
+    from rlrmp.eval.perturbation_bank import PerturbationBankParams
 
     bank_params = dict(params.get("bank_params") or {})
     bank_params.setdefault("mode", params.get("bank_mode", params.get("mode", "raw")))
@@ -787,7 +1023,9 @@ def _evaluate_perturbation_bank_runs(
             preferred_checkpoint_manifest_path=_optional_path(
                 params.get("preferred_checkpoint_manifest_path")
             ),
-            checkpoint_selection_mode=str(params.get("checkpoint_selection_mode", "sparse_history")),
+            checkpoint_selection_mode=str(
+                params.get("checkpoint_selection_mode", "sparse_history")
+            ),
             repo_root=_repo_root_for_eval(params, root=root),
         )
         for run in runs
@@ -823,9 +1061,9 @@ def _resolve_perturbation_run_inputs(
     labels: Sequence[str] | None,
     repo_root: Path,
 ) -> Sequence[Any]:
-    from rlrmp.analysis.pipelines.gru_pilot_figures import resolve_run_inputs
+    from rlrmp.eval.trial_inputs import resolve_evaluation_run_inputs
 
-    return resolve_run_inputs(
+    return resolve_evaluation_run_inputs(
         experiment=experiment,
         run_ids=run_ids,
         labels=labels,
@@ -844,7 +1082,7 @@ def _evaluate_single_perturbation_bank_run(
     checkpoint_selection_mode: str,
     repo_root: Path,
 ) -> dict[str, Any]:
-    from rlrmp.analysis.pipelines.gru_perturbation_bank import evaluate_run_perturbation_bank
+    from rlrmp.eval.perturbation_bank import evaluate_run_perturbation_bank
 
     return evaluate_run_perturbation_bank(
         run,
@@ -885,7 +1123,7 @@ def _gru_standard_certificate_payload(
             f"'evaluate_clean_actions', got {mode!r}"
         )
 
-    from rlrmp.analysis.pipelines.cs_gru_standard_materialization import (
+    from rlrmp.analysis.gru_standard_certificate import (
         evaluate_gru_clean_actions,
     )
     from rlrmp.paths import REPO_ROOT
@@ -962,19 +1200,28 @@ def _sha256(data: bytes) -> str:
 
 
 __all__ = [
+    "BROAD_EPSILON_EVALUATION_TYPE",
+    "BroadEpsilonEvalParams",
     "CENTER_OUT_ENSEMBLE_EVALUATION_TYPE",
     "CenterOutEnsembleEvalParams",
     "DELAYED_REACH_BANK_EVALUATION_TYPE",
+    "DELAYED_VELOCITY_PROFILE_PAYLOAD_SCHEMA_ID",
+    "DELAYED_VELOCITY_PROFILE_PAYLOAD_SCHEMA_VERSION",
     "DelayedReachBankEvalParams",
     "FEEDBACK_ABLATION_EVALUATION_TYPE",
     "FeedbackAblationEvalParams",
+    "GRU_DIAGNOSTICS_EVALUATION_TYPE",
+    "GRUDiagnosticsEvalParams",
     "PerturbationResponseBankEvalParams",
     "PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE",
     "WorstCaseEpsilonEvalParams",
     "WORST_CASE_EPSILON_EVALUATION_TYPE",
     "center_out_ensemble_recipe",
+    "broad_epsilon_recipe",
     "delayed_reach_bank_recipe",
+    "delayed_velocity_profile_payload",
     "feedback_ablation_recipe",
+    "gru_diagnostics_recipe",
     "perturbation_response_bank_recipe",
     "register_rlrmp_evaluation_recipes",
     "worst_case_epsilon_recipe",

@@ -37,40 +37,35 @@ from feedbax.analysis.types import AnalysisInputData
 from feedbax.config.namespace import TreeNamespace
 from pydantic import BaseModel, ConfigDict, Field
 
-from rlrmp.analysis.pipelines.cs_gru_standard_materialization import (
+from rlrmp.analysis.gru_standard_certificate import (
     MATERIALIZER_ISSUE_ID,
     RUN_IDS,
-    SOURCE_ISSUE_ID,
     materialize_gru_standard_result_from_evaluation_states,
-    materialize_gru_standard_result,
-    write_gru_standard_result,
 )
-from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import (
-    DEFAULT_JACOBIAN_TIMEPOINTS,
-    DEFAULT_N_ROLLOUT_TRIALS,
-    DEFAULT_OUTPUT_FILENAME,
-    materialize_gru_evaluation_diagnostics,
-)
-from rlrmp.analysis.pipelines.gru_feedback_ablation import (
+from rlrmp.eval.feedback_ablation import (
     FEEDBACK_ABLATION_ANALYSIS_TYPE,
     FeedbackAblationAnalysisParams,
     feedback_ablation_recipe,
 )
-from rlrmp.analysis.pipelines.gru_postrun_materialization import (
-    DEFAULT_OUTPUT_TAG,
-    materialize_gru_postrun_analysis,
-    materialize_optional_feedback_ablation,
-    materialize_optional_objective_comparator,
-    materialize_optional_perturbation_response,
-    plan_gru_postrun_materialization,
+from rlrmp.analysis.response_norm import (
+    RESPONSE_NORM_ANALYSIS_TYPE,
+    ResponseNormAnalysisParams,
+    response_norm_payload,
+    response_norm_recipe,
 )
-from rlrmp.analysis.pipelines.gru_perturbation_bank import PerturbationBankParams
-from rlrmp.analysis.pipelines.hinf_phenotype_sidecar import (
+from rlrmp.analysis.objective_comparator import (
+    OBJECTIVE_COMPARATOR_ANALYSIS_TYPE,
+    ObjectiveComparatorParams,
+    objective_comparator_recipe,
+)
+from rlrmp.analysis.robustness_phenotype import (
     DEFAULT_SCOPE as DEFAULT_HINF_PHENOTYPE_SCOPE,
-    build_hinf_phenotype_sidecar,
-    load_hinf_phenotype_sources,
-    write_hinf_phenotype_sidecar,
+    ISSUE_ID as ROBUSTNESS_PHENOTYPE_ISSUE_ID,
+    ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE,
+    RobustnessPhenotypeParams,
+    robustness_phenotype_recipe,
 )
+from rlrmp.eval.perturbation_bank import PerturbationBankParams
 from rlrmp.eval.output_feedback_rollout_recovery import (
     ISSUE_ID as OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ISSUE_ID,
     LinearOptimizationSpec,
@@ -80,13 +75,15 @@ from rlrmp.eval.output_feedback_rollout_recovery import (
     RolloutRecoveryConditionSpec,
     materialize_output_feedback_rollout_recovery,
 )
-from rlrmp.analysis.pipelines.sisu_spectrum_diagnostics import (
+from rlrmp.analysis.sisu_spectrum import (
+    SISU_ROBUSTIFICATION_ANALYSIS_TYPE,
     SISU_SPECTRUM_ANALYSIS_TYPE,
     SISU_SPECTRUM_ANALYSIS_PARAMS_SCHEMA,
     SISU_SPECTRUM_EVALUATION_TYPE,
     SISU_SPECTRUM_MANIFEST_SCHEMA,
     SisuSpectrumAnalysisParams,
     SisuSpectrumEvaluationParams,
+    SisuRobustificationAnalysisParams,
     register_sisu_spectrum_recipes,
     sisu_spectrum_evaluation_spec_params,
 )
@@ -94,6 +91,7 @@ from rlrmp.analysis.math.rerun_metadata import DEFAULT_DISCRETIZATION, DEFAULT_L
 from rlrmp.eval.recipes import (
     CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,
     FEEDBACK_ABLATION_EVALUATION_TYPE,
+    GRU_DIAGNOSTICS_EVALUATION_TYPE,
     PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
 )
 from rlrmp.eval.output_feedback_rollout_recovery import (
@@ -117,6 +115,7 @@ from rlrmp.eval.recurrent_jacobians import compute_recurrent_jacobian_bank
 from rlrmp.paths import REPO_ROOT, portable_repo_path
 from rlrmp.runtime.params_models import register_params_model
 from rlrmp.runtime.spec_migrations import (
+    GRU_EVALUATION_DIAGNOSTICS_SCHEMA_VERSION,
     GRU_PERTURBATION_BANK_SCHEMA_VERSION,
     PERTURBATION_CLASS_RESPONSE_SCHEMA_ID,
     PERTURBATION_CLASS_RESPONSE_SCHEMA_VERSION,
@@ -125,40 +124,21 @@ from rlrmp.runtime.spec_migrations import (
 
 GRU_STANDARD_ANALYSIS_TYPE = "rlrmp.certificate.gru_standard"
 GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE = "rlrmp.diagnostic.gru_evaluation"
-GRU_POSTRUN_ANALYSIS_TYPE = "rlrmp.gru_postrun"
+DEFAULT_OUTPUT_TAG = "validation_selected"
 PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE = "rlrmp.perturbation_class_response"
 PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE = "rlrmp.perturbation_bank_aggregate"
 POLICY_DIAGNOSTICS_ANALYSIS_TYPE = "rlrmp.diagnostic.policy_local"
 RECURRENT_JACOBIAN_ANALYSIS_TYPE = "rlrmp.diagnostic.recurrent_jacobian"
 FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE = "rlrmp.feedback_quality_lens"
-ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE = "rlrmp.robustness_phenotype"
 OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE = (
     "rlrmp.output_feedback_bridge.rollout_recovery"
 )
 BRIDGE_STANDARD_ANALYSIS_TYPE = GRU_STANDARD_ANALYSIS_TYPE
 
-ROBUSTNESS_PHENOTYPE_ISSUE_ID = "769aea6"
-
-ROBUSTNESS_PHENOTYPE_SOURCE_ROLES = {
-    "rlrmp-bridge-standard-certificate": "standard_certificate",
-    "rlrmp-bridge-standard-certificate-manifest": "standard_certificate",
-    "rlrmp-gru-standard-certificate-manifest": "standard_certificate",
-    "rlrmp-gru-objective-comparator-manifest": "objective_comparator",
-    "rlrmp-gru-perturbation-response-manifest": "perturbation_response",
-    "rlrmp-gru-feedback-ablation-manifest": "feedback_ablation",
-    "rlrmp-gru-map-decomposition-manifest": "map_error_decomposition",
-    "rlrmp-gru-evaluation-diagnostics-manifest": "evaluation_diagnostics",
-    "rlrmp-gru-worst-case-epsilon-audit-manifest": "worst_case_epsilon_audit",
-    "rlrmp-gru-broad-epsilon-attribution-manifest": "broad_epsilon_attribution",
-    "rlrmp-induced-gain-manifest": "induced_gain",
-    "rlrmp-exact-audit-manifest": "exact_audit",
-}
-
 EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE = {
     GRU_STANDARD_ANALYSIS_TYPE: (CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,),
     FEEDBACK_ABLATION_ANALYSIS_TYPE: (FEEDBACK_ABLATION_EVALUATION_TYPE,),
-    GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE: ("evaluation_run",),
-    GRU_POSTRUN_ANALYSIS_TYPE: ("evaluation_run",),
+    GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE: (GRU_DIAGNOSTICS_EVALUATION_TYPE,),
     PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE: (
         PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
     ),
@@ -166,8 +146,14 @@ EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE = {
     POLICY_DIAGNOSTICS_ANALYSIS_TYPE: ("evaluation_run",),
     RECURRENT_JACOBIAN_ANALYSIS_TYPE: ("evaluation_run",),
     FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE: ("analysis_run",),
-    ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE: ("evaluation_run",),
+    ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE: tuple(
+        robustness_phenotype_recipe.ANALYSIS_DEPENDENCIES
+    ),
+    OBJECTIVE_COMPARATOR_ANALYSIS_TYPE: tuple(objective_comparator_recipe.EVAL_DEPENDENCIES),
     SISU_SPECTRUM_ANALYSIS_TYPE: (SISU_SPECTRUM_EVALUATION_TYPE,),
+    SISU_ROBUSTIFICATION_ANALYSIS_TYPE: (
+        PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
+    ),
 }
 
 FEEDBACK_QUALITY_COMPONENT_NAMES = (
@@ -189,11 +175,11 @@ FEEDBACK_QUALITY_COMPONENT_STATUS_ROLES = {
 EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE.update(
     {
         FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["evaluation_diagnostics"]: (
-            "evaluation_run",
+            GRU_DIAGNOSTICS_EVALUATION_TYPE,
             "params.materialize_evaluation_diagnostics",
         ),
         FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["objective_comparator"]: (
-            "evaluation_run",
+            OBJECTIVE_COMPARATOR_ANALYSIS_TYPE,
             "params.materialize_objective_comparator",
         ),
         FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["perturbation_response"]: (
@@ -228,7 +214,7 @@ class FeedbackQualityComponentRegistration:
     materializer: FeedbackQualityMaterializer
     artifact_role: str
     logical_name: str
-    live_materializer: str
+    live_materializer: str | None
     gating_label: str
     gating_expr: Expr
 
@@ -568,108 +554,6 @@ class FeedbackQualitySummaryAnalysis(AbstractAnalysis[FeedbackQualityLensPorts])
         return payload
 
 
-class RobustnessPhenotypeAnalysis(AbstractAnalysis):
-    """Build and record the robustness phenotype sidecar through Feedbax custody."""
-
-    params: dict[str, Any] = eqx.field(kw_only=True, static=True)
-    resolved_inputs: tuple[Any, ...] = eqx.field(default=(), kw_only=True, static=True)
-
-    def compute(self, data: AnalysisInputData, **kwargs: Any) -> dict[str, Any]:
-        del data, kwargs
-        repo_root = _repo_root_from_params(self.params)
-        source_paths = _robustness_phenotype_source_paths(
-            self.params,
-            self.resolved_inputs,
-            repo_root=repo_root,
-        )
-        sources = load_hinf_phenotype_sources(source_paths, repo_root=repo_root)
-        return build_hinf_phenotype_sidecar(
-            sources=sources,
-            issue=str(self.params.get("issue_id", ROBUSTNESS_PHENOTYPE_ISSUE_ID)),
-            scope=str(self.params.get("scope", DEFAULT_HINF_PHENOTYPE_SCOPE)),
-            generated_by="rlrmp.analysis.declarative_materialization.robustness_phenotype",
-        )
-
-    def emit_artifacts(
-        self,
-        context: AnalysisRunContext,
-        data: AnalysisInputData,
-        *,
-        result: Mapping[str, Any],
-        **kwargs: Any,
-    ) -> dict[str, Any]:
-        del data, kwargs
-        payload = {
-            **dict(result),
-            "declarative_analysis": _declarative_metadata(context),
-            "bundle_contract": {
-                "primary": "feedbax_analysis_bundle",
-                "bundle": "rlrmp/robustness_phenotype",
-                "analysis_manifest_id": context.manifest_id,
-                "schema_owner": "rlrmp",
-                "formal_claim_policy": "conservative_no_upgrade_without_formal_inputs",
-                "artifact_custody": "feedbax.AnalysisRunManifest",
-            },
-        }
-        repo_root = _repo_root_from_params(self.params)
-        json_path = _optional_path(self.params.get("output_json"), repo_root=repo_root) or (
-            context.results_cache_dir / "hinf_phenotype_sidecar.json"
-        )
-        markdown_path = _optional_path(self.params.get("output_markdown"), repo_root=repo_root) or (
-            context.results_cache_dir / "hinf_phenotype_sidecar.md"
-        )
-        regeneration_spec_path = _optional_path(
-            self.params.get("regeneration_spec_path"),
-            repo_root=repo_root,
-        )
-        write_hinf_phenotype_sidecar(
-            payload,
-            json_path=json_path,
-            markdown_path=markdown_path,
-            regeneration_spec_path=regeneration_spec_path,
-            repo_root=repo_root,
-        )
-        payload = _read_json_payload(json_path)
-        context.record_json_artifact(
-            payload,
-            role="rlrmp-robustness-phenotype-sidecar",
-            logical_name="hinf_phenotype_sidecar.json",
-            metadata={"schema_boundary": "rlrmp-owned H-infinity phenotype sidecar payload"},
-        )
-        for artifact in (
-            _existing_file(
-                json_path,
-                role="rlrmp-robustness-phenotype-sidecar-json",
-                logical_name=_legacy_logical_name(json_path, repo_root),
-            ),
-            _existing_file(
-                markdown_path,
-                role="rlrmp-robustness-phenotype-sidecar-note",
-                logical_name=_legacy_logical_name(markdown_path, repo_root),
-            ),
-            _existing_file(
-                regeneration_spec_path,
-                role="rlrmp-robustness-phenotype-regeneration-spec",
-                logical_name=_legacy_logical_name(regeneration_spec_path, repo_root),
-            )
-            if regeneration_spec_path is not None
-            else None,
-        ):
-            if artifact is None:
-                continue
-            context.record_artifact(
-                artifact.path,
-                role=artifact.role,
-                logical_name=artifact.logical_name,
-                media_type=artifact.media_type,
-                metadata=artifact.metadata,
-                group_id=artifact.group_id,
-                group_role=artifact.group_role,
-                group_metadata=artifact.group_metadata,
-            )
-        return payload
-
-
 def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
     """Register rlrmp certificate/diagnostic analysis recipes with Feedbax."""
 
@@ -694,8 +578,28 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
         replace=True,
     )
     register_params_model(
+        SISU_ROBUSTIFICATION_ANALYSIS_TYPE,
+        SisuRobustificationAnalysisParams,
+        replace=True,
+    )
+    register_params_model(
         FEEDBACK_ABLATION_ANALYSIS_TYPE,
         FeedbackAblationAnalysisParams,
+        replace=True,
+    )
+    register_params_model(
+        RESPONSE_NORM_ANALYSIS_TYPE,
+        ResponseNormAnalysisParams,
+        replace=True,
+    )
+    register_params_model(
+        OBJECTIVE_COMPARATOR_ANALYSIS_TYPE,
+        ObjectiveComparatorParams,
+        replace=True,
+    )
+    register_params_model(
+        ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE,
+        RobustnessPhenotypeParams,
         replace=True,
     )
     register_params_model(
@@ -729,13 +633,18 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
         replace=replace,
     )
     register_analysis_recipe(
-        GRU_POSTRUN_ANALYSIS_TYPE,
-        gru_postrun_recipe,
+        FEEDBACK_ABLATION_ANALYSIS_TYPE,
+        feedback_ablation_recipe,
         replace=replace,
     )
     register_analysis_recipe(
-        FEEDBACK_ABLATION_ANALYSIS_TYPE,
-        feedback_ablation_recipe,
+        RESPONSE_NORM_ANALYSIS_TYPE,
+        response_norm_recipe,
+        replace=replace,
+    )
+    register_analysis_recipe(
+        OBJECTIVE_COMPARATOR_ANALYSIS_TYPE,
+        objective_comparator_recipe,
         replace=replace,
     )
     register_analysis_recipe(
@@ -797,14 +706,8 @@ def register_declarative_materialization_recipes(*, replace: bool = False) -> No
 def gru_standard_certificate_spec(
     *,
     run_ids: Sequence[str] = RUN_IDS,
-    experiment: str = SOURCE_ISSUE_ID,
+    experiment: str,
     materializer_issue_id: str = MATERIALIZER_ISSUE_ID,
-    load_models: bool = True,
-    use_validation_selected_checkpoints: bool = False,
-    preferred_checkpoint_manifest_path: Path | str | None = None,
-    note_output: Path | str | None = None,
-    manifest_output: Path | str | None = None,
-    regeneration_spec_path: Path | str | None = None,
     evaluation_manifest_id: str | None = None,
     evaluation_manifest_uri: Path | str | None = None,
     repo_root: Path | str | None = None,
@@ -815,15 +718,7 @@ def gru_standard_certificate_spec(
         "run_ids": list(run_ids),
         "experiment": experiment,
         "materializer_issue_id": materializer_issue_id,
-        "load_models": load_models,
-        "use_validation_selected_checkpoints": use_validation_selected_checkpoints,
     }
-    _set_optional_path_param(
-        params, "preferred_checkpoint_manifest_path", preferred_checkpoint_manifest_path
-    )
-    _set_optional_path_param(params, "note_output", note_output)
-    _set_optional_path_param(params, "manifest_output", manifest_output)
-    _set_optional_path_param(params, "regeneration_spec_path", regeneration_spec_path)
     _set_optional_path_param(params, "repo_root", repo_root)
     inputs = _evaluation_parent_refs(
         evaluation_manifest_id=evaluation_manifest_id,
@@ -838,40 +733,11 @@ def gru_standard_certificate_spec(
 
 def gru_evaluation_diagnostics_spec(
     *,
-    experiment: str,
-    run_ids: Sequence[str],
-    labels: Sequence[str] | None = None,
-    output_path: Path | str | None = None,
-    bulk_dir: Path | str | None = None,
-    n_rollout_trials: int = DEFAULT_N_ROLLOUT_TRIALS,
-    use_validation_selected_checkpoints: bool = True,
-    preferred_checkpoint_manifest_path: Path | str | None = None,
-    jacobian_timepoints: Sequence[str] = DEFAULT_JACOBIAN_TIMEPOINTS,
-    write_bulk_arrays: bool = True,
-    regeneration_spec_path: Path | str | None = None,
     evaluation_manifest_id: str | None = None,
     evaluation_manifest_uri: Path | str | None = None,
-    repo_root: Path | str | None = None,
 ) -> AnalysisRunSpec:
-    """Return declarative spec data for GRU rollout diagnostics."""
+    """Return a cached-state analysis spec for GRU rollout diagnostics."""
 
-    params = {
-        "experiment": experiment,
-        "run_ids": list(run_ids),
-        "n_rollout_trials": n_rollout_trials,
-        "use_validation_selected_checkpoints": use_validation_selected_checkpoints,
-        "jacobian_timepoints": list(jacobian_timepoints),
-        "write_bulk_arrays": write_bulk_arrays,
-    }
-    if labels is not None:
-        params["labels"] = list(labels)
-    _set_optional_path_param(params, "output_path", output_path)
-    _set_optional_path_param(params, "bulk_dir", bulk_dir)
-    _set_optional_path_param(
-        params, "preferred_checkpoint_manifest_path", preferred_checkpoint_manifest_path
-    )
-    _set_optional_path_param(params, "regeneration_spec_path", regeneration_spec_path)
-    _set_optional_path_param(params, "repo_root", repo_root)
     inputs = _evaluation_parent_refs(
         evaluation_manifest_id=evaluation_manifest_id,
         evaluation_manifest_uri=evaluation_manifest_uri,
@@ -879,53 +745,7 @@ def gru_evaluation_diagnostics_spec(
     return AnalysisRunSpec(
         analysis_type=GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE,
         inputs=inputs,
-        params=params,
-    )
-
-
-def gru_postrun_spec(
-    *,
-    experiment: str,
-    run_ids: Sequence[str] | None = None,
-    labels: Sequence[str] | None = None,
-    output_tag: str = DEFAULT_OUTPUT_TAG,
-    use_validation_selected_checkpoints: bool = True,
-    include_reference: bool = True,
-    n_rollout_trials: int = DEFAULT_N_ROLLOUT_TRIALS,
-    include_objective_comparator: bool = True,
-    include_map_decomposition: bool = True,
-    include_perturbation_response: bool = True,
-    include_feedback_ablation: bool = True,
-    evaluation_manifest_id: str | None = None,
-    evaluation_manifest_uri: Path | str | None = None,
-    repo_root: Path | str | None = None,
-) -> AnalysisRunSpec:
-    """Return declarative spec data for the complete GRU post-run bundle."""
-
-    params: dict[str, Any] = {
-        "experiment": experiment,
-        "output_tag": output_tag,
-        "use_validation_selected_checkpoints": use_validation_selected_checkpoints,
-        "include_reference": include_reference,
-        "n_rollout_trials": n_rollout_trials,
-        "include_objective_comparator": include_objective_comparator,
-        "include_map_decomposition": include_map_decomposition,
-        "include_perturbation_response": include_perturbation_response,
-        "include_feedback_ablation": include_feedback_ablation,
-    }
-    if run_ids is not None:
-        params["run_ids"] = list(run_ids)
-    if labels is not None:
-        params["labels"] = list(labels)
-    _set_optional_path_param(params, "repo_root", repo_root)
-    inputs = _evaluation_parent_refs(
-        evaluation_manifest_id=evaluation_manifest_id,
-        evaluation_manifest_uri=evaluation_manifest_uri,
-    )
-    return AnalysisRunSpec(
-        analysis_type=GRU_POSTRUN_ANALYSIS_TYPE,
-        inputs=inputs,
-        params=params,
+        params={},
     )
 
 
@@ -1046,9 +866,6 @@ def sisu_spectrum_evaluation_spec(
     n_rollout_trials: int = 64,
     reference_samples: int = 128,
     use_validation_selected_checkpoints: bool = True,
-    output_stem: str = "sisu_spectrum_special",
-    note_marker: str = "sisu_spectrum_special",
-    note_output: Path | str | None = None,
 ) -> EvaluationRunSpec:
     """Return declarative evaluation spec data for SISU-spectrum diagnostics."""
 
@@ -1061,9 +878,6 @@ def sisu_spectrum_evaluation_spec(
         n_rollout_trials=n_rollout_trials,
         reference_samples=reference_samples,
         use_validation_selected_checkpoints=use_validation_selected_checkpoints,
-        output_stem=output_stem,
-        note_marker=note_marker,
-        note_output=note_output,
     )
     return EvaluationRunSpec(
         evaluation_type=SISU_SPECTRUM_EVALUATION_TYPE,
@@ -1208,38 +1022,23 @@ def output_feedback_rollout_recovery_spec(
 
 def robustness_phenotype_spec(
     *,
-    source_paths: Mapping[str, Path | str | None] | None = None,
+    parent_refs: Sequence[ParentRef],
     issue_id: str = ROBUSTNESS_PHENOTYPE_ISSUE_ID,
     scope: str = DEFAULT_HINF_PHENOTYPE_SCOPE,
-    output_json: Path | str | None = None,
-    output_markdown: Path | str | None = None,
-    regeneration_spec_path: Path | str | None = None,
-    evaluation_manifest_id: str | None = None,
-    evaluation_manifest_uri: Path | str | None = None,
-    repo_root: Path | str | None = None,
+    paired_run_ids: Mapping[str, str] | None = None,
 ) -> AnalysisRunSpec:
-    """Return declarative spec data for the robustness phenotype sidecar."""
+    """Return a grouped phenotype spec over canonical parent analysis manifests."""
 
-    params: dict[str, Any] = {
-        "issue_id": issue_id,
-        "scope": scope,
-    }
-    if source_paths is not None:
-        params["source_paths"] = {
-            str(name): None if path is None else str(path)
-            for name, path in source_paths.items()
-        }
-    _set_optional_path_param(params, "output_json", output_json)
-    _set_optional_path_param(params, "output_markdown", output_markdown)
-    _set_optional_path_param(params, "regeneration_spec_path", regeneration_spec_path)
-    _set_optional_path_param(params, "repo_root", repo_root)
-    inputs = _evaluation_parent_refs(
-        evaluation_manifest_id=evaluation_manifest_id,
-        evaluation_manifest_uri=evaluation_manifest_uri,
-    )
+    if not parent_refs:
+        raise ValueError("robustness phenotype requires parent analysis manifests")
+    params = RobustnessPhenotypeParams(
+        issue=issue_id,
+        scope=scope,
+        paired_run_ids={} if paired_run_ids is None else dict(paired_run_ids),
+    ).model_dump(mode="json")
     return AnalysisRunSpec(
         analysis_type=ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE,
-        inputs=inputs,
+        inputs=list(parent_refs),
         params=params,
     )
 
@@ -1295,7 +1094,7 @@ def gru_standard_certificate_recipe(
         ),
         artifact_role="rlrmp-bridge-standard-certificate",
         logical_name="gru_standard_certificates.json",
-        schema_boundary="rlrmp-owned BridgeRunManifest/certificate payload",
+        schema_boundary="rlrmp-owned BridgeAnalysisResult/certificate payload",
         data=_analysis_data_from_evaluation_input(evaluation_input),
     )
 
@@ -1319,33 +1118,6 @@ def gru_evaluation_diagnostics_recipe(
         artifact_role="rlrmp-gru-evaluation-diagnostics",
         logical_name="gru_evaluation_diagnostics.json",
         schema_boundary="rlrmp-owned GRU diagnostic payload",
-        data=_analysis_data_from_evaluation_input(evaluation_input),
-    )
-
-
-def gru_postrun_recipe(
-    spec: AnalysisRunSpec,
-    _root: Path,
-    inputs: Sequence[Any],
-) -> AnalysisRecipeResult:
-    """Build the declarative complete GRU post-run materialization recipe."""
-
-    params = dict(spec.params)
-    resolved_run_ids = _run_ids_from_params_or_inputs(params, inputs)
-    experiment = _experiment_from_params_or_inputs(params, inputs)
-    evaluation_input = _primary_evaluation_input(inputs)
-    return _manifest_recipe(
-        analysis_name="gru_postrun_materialization",
-        materializer=lambda context, data: _materialize_gru_postrun(
-            context,
-            params,
-            experiment=experiment,
-            run_ids=resolved_run_ids,
-            evaluation_input=_evaluation_input_from_analysis_data(data),
-        ),
-        artifact_role="rlrmp-gru-postrun-manifest",
-        logical_name="gru_postrun_materialization.json",
-        schema_boundary="rlrmp-owned GRU post-run diagnostic bundle payload",
         data=_analysis_data_from_evaluation_input(evaluation_input),
     )
 
@@ -1461,7 +1233,7 @@ def _feedback_quality_component_recipe(
         resolved_run_ids = _feedback_quality_run_ids_from_params_or_inputs(params, inputs)
         experiment = _experiment_from_params_or_inputs(params, inputs)
         repo_root = _repo_root_from_params(params)
-        evaluation_input = _primary_evaluation_input(inputs)
+        evaluation_input = _primary_feedback_quality_component_input(component_name, inputs)
         registration = _feedback_quality_component_registrations()[component_name]
         analysis = RLRMPManifestAnalysis(
             materializer=lambda context, data: _materialize_feedback_quality_component(
@@ -1559,20 +1331,11 @@ def feedback_quality_lens_recipe(
     params = dict(spec.params)
     resolved_run_ids = _feedback_quality_run_ids_from_params_or_inputs(params, inputs)
     experiment = _experiment_from_params_or_inputs(params, inputs)
-    repo_root = _repo_root_from_params(params)
     output_tag = str(params.get("output_tag", DEFAULT_OUTPUT_TAG))
-    plan = plan_gru_postrun_materialization(
-        experiment=experiment,
-        run_ids=tuple(resolved_run_ids),
-        output_tag=output_tag,
-        use_validation_selected_checkpoints=bool(
-            params.get("use_validation_selected_checkpoints", True)
-        ),
-        fixed_bank_rescore_manifest_path=_optional_path(
-            params.get("fixed_bank_rescore_manifest_path"),
-            repo_root=repo_root,
-        ),
-        repo_root=repo_root,
+    checkpoint_policy = (
+        "validation_selected_per_replicate"
+        if bool(params.get("use_validation_selected_checkpoints", True))
+        else "final_checkpoint"
     )
     component_outputs = _feedback_quality_component_outputs_from_inputs(inputs)
     summary = FeedbackQualitySummaryAnalysis(
@@ -1581,31 +1344,12 @@ def feedback_quality_lens_recipe(
         experiment=experiment,
         run_ids=tuple(resolved_run_ids),
         output_tag=output_tag,
-        plan_checkpoint_policy=plan.checkpoint_policy,
-        plan_checkpoint_selection_source=plan.checkpoint_selection_source,
+        plan_checkpoint_policy=checkpoint_policy,
+        plan_checkpoint_selection_source=checkpoint_policy,
     )
     return AnalysisRecipeResult(
         analyses={"feedback_quality_lens": summary},
         data=_empty_analysis_data(),
-    )
-
-
-def robustness_phenotype_recipe(
-    spec: AnalysisRunSpec,
-    _root: Path,
-    inputs: Sequence[Any],
-) -> AnalysisRecipeResult:
-    """Build the declarative robustness phenotype sidecar recipe."""
-
-    params = dict(spec.params)
-    analysis = RobustnessPhenotypeAnalysis(
-        params=params,
-        resolved_inputs=tuple(inputs),
-    )
-    return _recipe_result(
-        "robustness_phenotype",
-        analysis,
-        _analysis_data_from_evaluation_input(_primary_evaluation_input(inputs)),
     )
 
 
@@ -1615,88 +1359,31 @@ def _materialize_gru_standard(
     *,
     evaluation_input: Any | None = None,
 ) -> MaterializationResult:
+    if "experiment" not in params:
+        raise ValueError("GRU standard certificate recipe requires params.experiment")
     run_ids = tuple(str(run_id) for run_id in params.get("run_ids", RUN_IDS))
-    experiment = str(params.get("experiment", SOURCE_ISSUE_ID))
+    experiment = str(params["experiment"])
     repo_root = _repo_root_from_params(params)
     evaluation_states = _resolved_input_states(evaluation_input)
-    if evaluation_states is not None:
-        result = materialize_gru_standard_result_from_evaluation_states(
-            evaluation_states,
-            run_ids=run_ids,
-            experiment=experiment,
-            materializer_issue_id=str(
-                params.get("materializer_issue_id", MATERIALIZER_ISSUE_ID)
-            ),
-            repo_root=repo_root,
+    if evaluation_states is None:
+        raise ValueError(
+            "GRU standard certificate analysis requires EvaluationRunManifest states"
         )
-    else:
-        result = materialize_gru_standard_result(
-            run_ids=run_ids,
-            load_models=bool(params.get("load_models", True)),
-            experiment=experiment,
-            materializer_issue_id=str(
-                params.get("materializer_issue_id", MATERIALIZER_ISSUE_ID)
-            ),
-            use_validation_selected_checkpoints=bool(
-                params.get("use_validation_selected_checkpoints", False)
-            ),
-            preferred_checkpoint_manifest_path=_optional_path(
-                params.get("preferred_checkpoint_manifest_path"),
-                repo_root=repo_root,
-            ),
-            repo_root=repo_root,
-        )
-    note_path = _optional_path(params.get("note_output"), repo_root=repo_root)
-    manifest_path = _optional_path(params.get("manifest_output"), repo_root=repo_root)
-    existing_artifacts: list[ExistingAnalysisArtifact] = []
-    if note_path is not None or manifest_path is not None:
-        manifest_output = manifest_path or _default_output_path(
-            context,
-            "gru_standard_certificates_manifest.json",
-        )
-        actual_note_path = note_path or manifest_output.with_suffix(".md")
-        write_gru_standard_result(
-            result,
-            note_path=actual_note_path,
-            manifest_path=manifest_output,
-            regeneration_spec_path=_optional_path(
-                params.get("regeneration_spec_path"),
-                repo_root=repo_root,
-            ),
-            repo_root=repo_root,
-        )
-        result = {
-            **_read_json_payload(manifest_output),
-            "declarative_analysis": _declarative_metadata(context),
-        }
-        existing_artifacts.extend(
-            artifact
-            for artifact in (
-                _existing_file(
-                    manifest_output,
-                    role="rlrmp-bridge-standard-certificate-manifest",
-                    logical_name="legacy/gru_standard_certificates_manifest.json",
-                ),
-                _existing_file(
-                    actual_note_path,
-                    role="rlrmp-bridge-standard-certificate-note",
-                    logical_name="legacy/gru_standard_certificates.md",
-                ),
-            )
-            if artifact is not None
-        )
-    else:
-        result = {
+    result = materialize_gru_standard_result_from_evaluation_states(
+        evaluation_states,
+        run_ids=run_ids,
+        experiment=experiment,
+        materializer_issue_id=str(params.get("materializer_issue_id", MATERIALIZER_ISSUE_ID)),
+        repo_root=repo_root,
+    )
+    return MaterializationResult(
+        payload={
             **result,
             "declarative_analysis": _declarative_metadata(context),
+            "evaluation_manifest_dependency": _evaluation_dependency_metadata(
+                evaluation_input
+            ),
         }
-    if evaluation_input is not None:
-        result["evaluation_manifest_dependency"] = _evaluation_dependency_metadata(
-            evaluation_input
-        )
-    return MaterializationResult(
-        payload=result,
-        existing_artifacts=tuple(existing_artifacts),
     )
 
 
@@ -1706,130 +1393,46 @@ def _materialize_gru_evaluation_diagnostics(
     *,
     evaluation_input: Any | None = None,
 ) -> MaterializationResult:
-    if "experiment" not in params:
-        raise ValueError("GRU evaluation diagnostics recipe requires params.experiment")
-    if "run_ids" not in params:
-        raise ValueError("GRU evaluation diagnostics recipe requires params.run_ids")
-    repo_root = _repo_root_from_params(params)
-    output_path = _optional_path(params.get("output_path"), repo_root=repo_root) or (
-        context.results_cache_dir / DEFAULT_OUTPUT_FILENAME
-    )
-    bulk_dir = _optional_path(params.get("bulk_dir"), repo_root=repo_root) or (
-        context.results_cache_dir / "bulk"
-    )
-    manifest = materialize_gru_evaluation_diagnostics(
-        experiment=str(params["experiment"]),
-        run_ids=[str(run_id) for run_id in params["run_ids"]],
-        labels=_optional_str_sequence(params.get("labels")),
-        output_path=output_path,
-        bulk_dir=bulk_dir,
-        n_rollout_trials=int(params.get("n_rollout_trials", DEFAULT_N_ROLLOUT_TRIALS)),
-        use_validation_selected_checkpoints=bool(
-            params.get("use_validation_selected_checkpoints", True)
-        ),
-        preferred_checkpoint_manifest_path=_optional_path(
-            params.get("preferred_checkpoint_manifest_path"),
-            repo_root=repo_root,
-        ),
-        jacobian_timepoints=tuple(
-            str(item) for item in params.get("jacobian_timepoints", DEFAULT_JACOBIAN_TIMEPOINTS)
-        ),
-        write_bulk_arrays=bool(params.get("write_bulk_arrays", True)),
-        regeneration_spec_path=_optional_path(
-            params.get("regeneration_spec_path"),
-            repo_root=repo_root,
-        ),
-        evaluation_manifest_path=_resolved_input_path(evaluation_input),
-        evaluation_states=_resolved_input_states(evaluation_input),
-        repo_root=repo_root,
-    )
-    existing = _existing_file(
-        output_path,
-        role="rlrmp-gru-evaluation-diagnostics-manifest",
-        logical_name="legacy/gru_evaluation_diagnostics.json",
-    )
-    artifact_groups = _bulk_artifact_groups(
-        manifest,
-        group_id="gru_evaluation_diagnostics_bulk",
-        repo_root=repo_root,
-    )
-    return MaterializationResult(
-        payload={
-            **manifest,
-            "declarative_analysis": _declarative_metadata(context),
-        },
-        existing_artifacts=() if existing is None else (existing,),
-        artifact_groups=artifact_groups,
-    )
-
-
-def _materialize_gru_postrun(
-    context: AnalysisRunContext,
-    params: Mapping[str, Any],
-    *,
-    experiment: str,
-    run_ids: Sequence[str],
-    evaluation_input: Any | None = None,
-) -> MaterializationResult:
-    if not run_ids:
-        raise ValueError("GRU post-run recipe requires at least one run ID")
-
-    repo_root = _repo_root_from_params(params)
-    output_tag = str(params.get("output_tag", DEFAULT_OUTPUT_TAG))
-    manifest = materialize_gru_postrun_analysis(
-        experiment=experiment,
-        run_ids=tuple(run_ids),
-        labels=_optional_str_sequence(params.get("labels")),
-        output_tag=output_tag,
-        use_validation_selected_checkpoints=bool(
-            params.get("use_validation_selected_checkpoints", True)
-        ),
-        fixed_bank_rescore_manifest_path=_optional_path(
-            params.get("fixed_bank_rescore_manifest_path"),
-            repo_root=repo_root,
-        ),
-        include_reference=bool(params.get("include_reference", True)),
-        n_rollout_trials=int(params.get("n_rollout_trials", DEFAULT_N_ROLLOUT_TRIALS)),
-        materializer_issue_id=str(params.get("materializer_issue_id", "103db99")),
-        include_objective_comparator=bool(params.get("include_objective_comparator", True)),
-        include_map_decomposition=bool(params.get("include_map_decomposition", True)),
-        include_perturbation_response=bool(params.get("include_perturbation_response", True)),
-        include_feedback_ablation=bool(params.get("include_feedback_ablation", True)),
-        perturbation_bank_mode=str(params.get("perturbation_bank_mode", "raw")),
-        perturbation_calibration_level=params.get("perturbation_calibration_level"),
-        perturbation_calibration_reach=params.get("perturbation_calibration_reach"),
-        feedback_selection_level=str(params.get("feedback_selection_level", "small")),
-        evaluation_manifest_path=_resolved_input_path(evaluation_input),
-        evaluation_states=_resolved_input_states(evaluation_input),
-        repo_root=repo_root,
-    )
-    plan = plan_gru_postrun_materialization(
-        experiment=experiment,
-        run_ids=tuple(run_ids),
-        output_tag=output_tag,
-        use_validation_selected_checkpoints=bool(
-            params.get("use_validation_selected_checkpoints", True)
-        ),
-        fixed_bank_rescore_manifest_path=_optional_path(
-            params.get("fixed_bank_rescore_manifest_path"),
-            repo_root=repo_root,
-        ),
-        repo_root=repo_root,
-    )
-    payload = {
-        **manifest,
-        "declarative_analysis": _declarative_metadata(context),
-        "bundle_contract": {
-            "primary": "feedbax_analysis_bundle",
-            "bundle": "rlrmp/gru_postrun",
-            "analysis_manifest_id": context.manifest_id,
-            "legacy_regeneration_spec_role": "compatibility",
-        },
+    del params
+    states = _resolved_input_states(evaluation_input)
+    if states is None:
+        raise ValueError(
+            "GRU evaluation diagnostics analysis requires EvaluationRunManifest states"
+        )
+    if states.get("evaluation_type") != GRU_DIAGNOSTICS_EVALUATION_TYPE:
+        raise ValueError(
+            "GRU evaluation diagnostics analysis requires evaluation type "
+            f"{GRU_DIAGNOSTICS_EVALUATION_TYPE!r}"
+        )
+    if states.get("product_role") != "gru_diagnostic_states":
+        raise ValueError(
+            "GRU evaluation diagnostics analysis requires product_role "
+            "'gru_diagnostic_states'"
+        )
+    runs = states.get("runs")
+    if not isinstance(runs, Mapping):
+        raise ValueError("GRU diagnostic evaluation states require a runs mapping")
+    summarized_runs = {
+        str(run_id): _json_ready(
+            {key: value for key, value in run.items() if key != "cached_states"}
+        )
+        for run_id, run in runs.items()
+        if isinstance(run, Mapping)
     }
-    return MaterializationResult(
-        payload=payload,
-        existing_artifacts=tuple(_postrun_existing_artifacts(manifest, plan, repo_root=repo_root)),
-    )
+    payload = {
+        "schema_version": GRU_EVALUATION_DIAGNOSTICS_SCHEMA_VERSION,
+        "issue": states.get("source_experiment"),
+        "source_experiment": states.get("source_experiment"),
+        "checkpoint_policy": states.get("checkpoint_policy"),
+        "scope": states.get("scope"),
+        "standard_certificate_metrics": _json_ready(
+            states.get("standard_certificate_metrics", {})
+        ),
+        "runs": summarized_runs,
+        "evaluation_manifest_dependency": _evaluation_dependency_metadata(evaluation_input),
+        "declarative_analysis": _declarative_metadata(context),
+    }
+    return MaterializationResult(payload=payload)
 
 
 def _materialize_policy_diagnostics(
@@ -2349,10 +1952,7 @@ def _feedback_quality_component_registrations() -> dict[str, FeedbackQualityComp
             materializer=_materialize_feedback_quality_evaluation_diagnostics,
             artifact_role=FEEDBACK_QUALITY_COMPONENT_STATUS_ROLES["evaluation_diagnostics"],
             logical_name="feedback_quality/evaluation_diagnostics_status.json",
-            live_materializer=(
-                "rlrmp.analysis.pipelines.gru_evaluation_diagnostics."
-                "materialize_gru_evaluation_diagnostics"
-            ),
+            live_materializer="rlrmp.eval.recipes.gru_diagnostics_recipe",
             gating_label="include flag and applicable component",
             gating_expr=_feedback_quality_component_gate_expr("evaluation_diagnostics"),
         ),
@@ -2361,10 +1961,7 @@ def _feedback_quality_component_registrations() -> dict[str, FeedbackQualityComp
             materializer=_materialize_feedback_quality_objective_comparator,
             artifact_role=FEEDBACK_QUALITY_COMPONENT_STATUS_ROLES["objective_comparator"],
             logical_name="feedback_quality/objective_comparator_status.json",
-            live_materializer=(
-                "rlrmp.analysis.pipelines.objective_comparator."
-                "materialize_gru_objective_comparator_sidecar"
-            ),
+            live_materializer=None,
             gating_label="include flag and applicable component",
             gating_expr=_feedback_quality_component_gate_expr("objective_comparator"),
         ),
@@ -2373,10 +1970,7 @@ def _feedback_quality_component_registrations() -> dict[str, FeedbackQualityComp
             materializer=_materialize_feedback_quality_perturbation_response,
             artifact_role=FEEDBACK_QUALITY_COMPONENT_STATUS_ROLES["perturbation_response"],
             logical_name="feedback_quality/perturbation_response_status.json",
-            live_materializer=(
-                "rlrmp.analysis.pipelines.gru_perturbation_bank."
-                "materialize_gru_perturbation_response"
-            ),
+            live_materializer=None,
             gating_label="include flag and applicable component",
             gating_expr=_feedback_quality_component_gate_expr("perturbation_response"),
         ),
@@ -2385,10 +1979,7 @@ def _feedback_quality_component_registrations() -> dict[str, FeedbackQualityComp
             materializer=_materialize_feedback_quality_feedback_ablation,
             artifact_role=FEEDBACK_QUALITY_COMPONENT_STATUS_ROLES["feedback_ablation"],
             logical_name="feedback_quality/feedback_ablation_status.json",
-            live_materializer=(
-                "rlrmp.analysis.pipelines.gru_feedback_ablation."
-                "execute_feedback_ablation_pipeline"
-            ),
+            live_materializer=None,
             gating_label="include flag and applicable component",
             gating_expr=_feedback_quality_component_gate_expr("feedback_ablation"),
         ),
@@ -2397,10 +1988,7 @@ def _feedback_quality_component_registrations() -> dict[str, FeedbackQualityComp
             materializer=_materialize_feedback_quality_response_norm_plots,
             artifact_role=FEEDBACK_QUALITY_COMPONENT_STATUS_ROLES["response_norm_plots"],
             logical_name="feedback_quality/response_norm_plots_status.json",
-            live_materializer=(
-                "rlrmp.analysis.pipelines.gru_perturbation_response_norm_plots."
-                "materialize_response_norm_plots"
-            ),
+            live_materializer="rlrmp.response_norm_comparison",
             gating_label="include flag and applicable component",
             gating_expr=_feedback_quality_component_gate_expr("response_norm_plots"),
         ),
@@ -2409,10 +1997,7 @@ def _feedback_quality_component_registrations() -> dict[str, FeedbackQualityComp
             materializer=_materialize_feedback_quality_perturbation_calibration,
             artifact_role=FEEDBACK_QUALITY_COMPONENT_STATUS_ROLES["perturbation_calibration"],
             logical_name="feedback_quality/perturbation_calibration_status.json",
-            live_materializer=(
-                "rlrmp.analysis.pipelines.gru_perturbation_calibration."
-                "materialize_perturbation_open_loop_calibration"
-            ),
+            live_materializer="rlrmp.data_products.calibration.load_open_loop_calibration",
             gating_label="include flag and applicable component",
             gating_expr=_feedback_quality_component_gate_expr("perturbation_calibration"),
         ),
@@ -2503,6 +2088,8 @@ def _feedback_quality_live_output(
         }
     if raw_output.get("status") == "materialized":
         return dict(raw_output)
+    if raw_output.get("status") == "registered_evaluation_required":
+        return dict(raw_output)
     return dict(refreshed)
 
 
@@ -2514,23 +2101,23 @@ def _materialize_feedback_quality_evaluation_diagnostics(
     evaluation_input: Any | None,
     repo_root: Path,
 ) -> Mapping[str, Any]:
-    plan = _feedback_quality_plan(
-        params,
-        experiment=experiment,
-        run_ids=run_ids,
-        repo_root=repo_root,
-    )
-    return _materialize_gru_evaluation_diagnostics(
+    del experiment, run_ids, repo_root
+    states = _resolved_input_states(evaluation_input)
+    if (
+        states is None
+        or states.get("evaluation_type") != GRU_DIAGNOSTICS_EVALUATION_TYPE
+        or states.get("product_role") != "gru_diagnostic_states"
+    ):
+        return {
+            "status": "skipped",
+            "reason": "matching cached GRU diagnostics evaluation input is unavailable",
+        }
+    payload = _materialize_gru_evaluation_diagnostics(
         context,
-        {
-            **dict(params),
-            "experiment": experiment,
-            "run_ids": list(run_ids),
-            "output_path": str(plan.evaluation_manifest_path),
-            "bulk_dir": str(plan.evaluation_bulk_dir),
-        },
+        params,
         evaluation_input=evaluation_input,
     ).payload
+    return {"status": "materialized", "evaluation": payload}
 
 
 def _materialize_feedback_quality_objective_comparator(
@@ -2541,28 +2128,18 @@ def _materialize_feedback_quality_objective_comparator(
     evaluation_input: Any | None,
     repo_root: Path,
 ) -> Mapping[str, Any]:
-    del context, evaluation_input
-    plan = _feedback_quality_plan(
-        params,
-        experiment=experiment,
-        run_ids=run_ids,
-        repo_root=repo_root,
-    )
-    return materialize_optional_objective_comparator(
-        experiment=experiment,
-        run_ids=run_ids,
-        labels=_optional_str_sequence(params.get("labels")),
-        checkpoint_policy=plan.checkpoint_policy,
-        use_validation_selected_checkpoints=bool(
-            params.get("use_validation_selected_checkpoints", True)
-        ),
-        checkpoint_manifest=None,
-        checkpoint_manifest_path=plan.checkpoint_manifest_path,
-        standard_manifest_path=plan.standard_manifest_path,
-        output_path=plan.objective_comparator_json_path,
-        note_path=plan.objective_comparator_note_path,
-        repo_root=repo_root,
-    )
+    del context, params, experiment, repo_root
+    states = _resolved_input_states(evaluation_input)
+    if states is None:
+        return {
+            "status": "skipped",
+            "reason": "canonical objective-comparator analysis parent is unavailable",
+        }
+    return {
+        "status": "materialized",
+        "custody_route": "AnalysisRunManifest",
+        "objective_comparator": dict(states),
+    }
 
 
 def _materialize_feedback_quality_perturbation_response(
@@ -2573,27 +2150,18 @@ def _materialize_feedback_quality_perturbation_response(
     evaluation_input: Any | None,
     repo_root: Path,
 ) -> Mapping[str, Any]:
-    del context, evaluation_input
-    plan = _feedback_quality_plan(
-        params,
-        experiment=experiment,
-        run_ids=run_ids,
-        repo_root=repo_root,
-    )
-    return materialize_optional_perturbation_response(
-        experiment=experiment,
-        run_ids=run_ids,
-        labels=_optional_str_sequence(params.get("labels")),
-        n_rollout_trials=int(params.get("n_rollout_trials", DEFAULT_N_ROLLOUT_TRIALS)),
-        output_path=plan.perturbation_response_json_path,
-        note_path=plan.perturbation_response_note_path,
-        bulk_dir=plan.perturbation_response_bulk_dir,
-        calibration_level=params.get("perturbation_calibration_level"),
-        calibration_reach=params.get("perturbation_calibration_reach"),
-        preferred_checkpoint_manifest_path=plan.checkpoint_manifest_path,
-        write_bulk_arrays=bool(params.get("write_perturbation_bulk_arrays", False)),
-        repo_root=repo_root,
-    )
+    del context, params, experiment, run_ids, repo_root
+    states = _resolved_input_states(evaluation_input)
+    if states is None:
+        return {
+            "status": "skipped",
+            "reason": "canonical perturbation-response parent is unavailable",
+        }
+    return {
+        "status": "materialized",
+        "custody_route": "AnalysisRunManifest",
+        "perturbation_response": dict(states),
+    }
 
 
 def _materialize_feedback_quality_feedback_ablation(
@@ -2604,26 +2172,23 @@ def _materialize_feedback_quality_feedback_ablation(
     evaluation_input: Any | None,
     repo_root: Path,
 ) -> Mapping[str, Any]:
-    del context, evaluation_input
-    plan = _feedback_quality_plan(
-        params,
-        experiment=experiment,
-        run_ids=run_ids,
-        repo_root=repo_root,
-    )
-    return materialize_optional_feedback_ablation(
-        experiment=experiment,
-        run_ids=run_ids,
-        labels=_optional_str_sequence(params.get("labels")),
-        n_rollout_trials=int(params.get("n_rollout_trials", DEFAULT_N_ROLLOUT_TRIALS)),
-        output_path=plan.feedback_ablation_json_path,
-        note_path=plan.feedback_ablation_note_path,
-        calibration_level=params.get("perturbation_calibration_level"),
-        calibration_reach=params.get("perturbation_calibration_reach"),
-        feedback_selection_level=str(params.get("feedback_selection_level", "small")),
-        preferred_checkpoint_manifest_path=plan.checkpoint_manifest_path,
-        repo_root=repo_root,
-    )
+    del context, params, experiment, repo_root
+    states = _resolved_input_states(evaluation_input)
+    if states is None:
+        return {
+            "status": "registered_evaluation_required",
+            "custody_route": "EvaluationRunManifest->AnalysisRunManifest",
+            "reason": "canonical feedback-ablation parent is unavailable",
+            "evaluation_spec": {
+                "evaluation_type": FEEDBACK_ABLATION_EVALUATION_TYPE,
+                "training_run_ids": list(run_ids),
+            },
+        }
+    return {
+        "status": "materialized",
+        "custody_route": "AnalysisRunManifest",
+        "feedback_ablation": dict(states),
+    }
 
 
 def _materialize_feedback_quality_response_norm_plots(
@@ -2634,29 +2199,15 @@ def _materialize_feedback_quality_response_norm_plots(
     evaluation_input: Any | None,
     repo_root: Path,
 ) -> Mapping[str, Any]:
-    del context, evaluation_input
-    plan = _feedback_quality_plan(
-        params,
-        experiment=experiment,
-        run_ids=run_ids,
-        repo_root=repo_root,
-    )
-    component = _feedback_quality_components(plan, params=params, repo_root=repo_root)[
-        "response_norm_plots"
-    ]
-    from rlrmp.analysis.pipelines.gru_perturbation_response_norm_plots import (
-        materialize_response_norm_plots,
-    )
-
-    figure_dir = component["groups"][0][0]
-    return materialize_response_norm_plots(
-        source_manifest_path=plan.perturbation_response_json_path,
-        results_dir=figure_dir,
-        asset_dir=figure_dir / "_assets",
-        note_path=component["notes"][0],
-        manifest_path=component["tracked"][0],
-        repo_root=repo_root,
-    )
+    del context, experiment, run_ids, repo_root
+    rows = params.get("response_norm_rows", ())
+    if not rows and evaluation_input is not None:
+        states = getattr(evaluation_input, "states", evaluation_input)
+        if isinstance(states, Mapping):
+            payload = states.get("response_norm", states)
+            if isinstance(payload, Mapping):
+                rows = payload.get("rows", ())
+    return response_norm_payload(rows)
 
 
 def _materialize_feedback_quality_perturbation_calibration(
@@ -2667,26 +2218,45 @@ def _materialize_feedback_quality_perturbation_calibration(
     evaluation_input: Any | None,
     repo_root: Path,
 ) -> Mapping[str, Any]:
-    del context, evaluation_input
-    plan = _feedback_quality_plan(
-        params,
-        experiment=experiment,
-        run_ids=run_ids,
-        repo_root=repo_root,
-    )
-    component = _feedback_quality_components(plan, params=params, repo_root=repo_root)[
-        "perturbation_calibration"
-    ]
-    from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
-        materialize_perturbation_open_loop_calibration,
+    del context, params, experiment, run_ids, evaluation_input, repo_root
+    from rlrmp.data_products.calibration import (
+        CALIBRATION_PRODUCT_SCHEMA_VERSION,
+        load_open_loop_calibration,
     )
 
-    return materialize_perturbation_open_loop_calibration(
-        result_experiment=experiment,
-        output_path=component["tracked"][0],
-        note_path=component["notes"][0],
-        repo_root=repo_root,
-    )
+    calibration = load_open_loop_calibration()
+    return {
+        "status": "materialized",
+        "custody_route": "governed_analysis_data_product",
+        "schema_version": CALIBRATION_PRODUCT_SCHEMA_VERSION,
+        "product_identity_hash": calibration.product_identity_hash,
+        "open_loop_peak_delta_x_per_unit": calibration.peak_delta_x_per_unit,
+        "controller_visible_velocity_scale_m_s": (
+            calibration.controller_visible_velocity_scale_m_s
+        ),
+        "controller_visible_force_filter_scale_n": (
+            calibration.controller_visible_force_filter_scale_n
+        ),
+        "controller_visible_force_filter_scale_convention": (
+            calibration.controller_visible_force_filter_scale_convention
+        ),
+        "reference_reach_m": calibration.reference_reach_m,
+    }
+
+
+@dataclass(frozen=True)
+class _FeedbackQualityPaths:
+    """Canonical component paths used only to adopt existing governed artifacts."""
+
+    experiment: str
+    output_tag: str
+    checkpoint_policy: str
+    checkpoint_selection_source: str
+    perturbation_response_json_path: Path
+    perturbation_response_note_path: Path
+    perturbation_response_bulk_dir: Path
+    feedback_ablation_json_path: Path
+    feedback_ablation_note_path: Path
 
 
 def _feedback_quality_plan(
@@ -2695,19 +2265,37 @@ def _feedback_quality_plan(
     experiment: str,
     run_ids: Sequence[str],
     repo_root: Path,
-) -> Any:
-    return plan_gru_postrun_materialization(
+) -> _FeedbackQualityPaths:
+    if not run_ids:
+        raise ValueError("Feedback-quality metadata requires at least one run ID")
+    output_tag = str(params.get("output_tag", DEFAULT_OUTPUT_TAG))
+    checkpoint_policy = (
+        "validation_selected_per_replicate"
+        if bool(params.get("use_validation_selected_checkpoints", True))
+        else "final_checkpoint"
+    )
+    notes_dir = repo_root / "results" / experiment / "notes"
+    artifact_dir = repo_root / "_artifacts" / experiment
+    return _FeedbackQualityPaths(
         experiment=experiment,
-        run_ids=tuple(run_ids),
-        output_tag=str(params.get("output_tag", DEFAULT_OUTPUT_TAG)),
-        use_validation_selected_checkpoints=bool(
-            params.get("use_validation_selected_checkpoints", True)
+        output_tag=output_tag,
+        checkpoint_policy=checkpoint_policy,
+        checkpoint_selection_source=checkpoint_policy,
+        perturbation_response_json_path=(
+            notes_dir / f"gru_perturbation_response_{output_tag}_manifest.json"
         ),
-        fixed_bank_rescore_manifest_path=_optional_path(
-            params.get("fixed_bank_rescore_manifest_path"),
-            repo_root=repo_root,
+        perturbation_response_note_path=(
+            notes_dir / f"gru_perturbation_response_{output_tag}.md"
         ),
-        repo_root=repo_root,
+        perturbation_response_bulk_dir=(
+            artifact_dir / "perturbation_response" / f"gru_{output_tag}"
+        ),
+        feedback_ablation_json_path=(
+            notes_dir / f"gru_feedback_ablation_{output_tag}.json"
+        ),
+        feedback_ablation_note_path=(
+            notes_dir / f"gru_feedback_ablation_{output_tag}.md"
+        ),
     )
 
 
@@ -2805,101 +2393,6 @@ def _materialize_output_feedback_rollout_recovery(
         artifact_refs=(note_ref, bulk_ref),
         payload_metadata={"custody": "feedbax_analysis_artifacts"},
     )
-
-
-def _materialize_robustness_phenotype(
-    context: AnalysisRunContext,
-    params: Mapping[str, Any],
-    inputs: Sequence[Any],
-) -> MaterializationResult:
-    repo_root = _repo_root_from_params(params)
-    source_paths = _robustness_phenotype_source_paths(params, inputs, repo_root=repo_root)
-    sources = load_hinf_phenotype_sources(source_paths, repo_root=repo_root)
-    sidecar = build_hinf_phenotype_sidecar(
-        sources=sources,
-        issue=str(params.get("issue_id", ROBUSTNESS_PHENOTYPE_ISSUE_ID)),
-        scope=str(params.get("scope", DEFAULT_HINF_PHENOTYPE_SCOPE)),
-        generated_by="rlrmp.analysis.declarative_materialization.robustness_phenotype",
-    )
-
-    json_path = _optional_path(params.get("output_json"), repo_root=repo_root) or (
-        context.results_cache_dir / "hinf_phenotype_sidecar.json"
-    )
-    markdown_path = _optional_path(params.get("output_markdown"), repo_root=repo_root) or (
-        context.results_cache_dir / "hinf_phenotype_sidecar.md"
-    )
-    regeneration_spec_path = _optional_path(
-        params.get("regeneration_spec_path"),
-        repo_root=repo_root,
-    )
-    write_hinf_phenotype_sidecar(
-        sidecar,
-        json_path=json_path,
-        markdown_path=markdown_path,
-        regeneration_spec_path=regeneration_spec_path,
-        repo_root=repo_root,
-    )
-    payload = {
-        **_read_json_payload(json_path),
-        "declarative_analysis": _declarative_metadata(context),
-        "bundle_contract": {
-            "primary": "feedbax_analysis_bundle",
-            "bundle": "rlrmp/robustness_phenotype",
-            "analysis_manifest_id": context.manifest_id,
-            "schema_owner": "rlrmp",
-            "formal_claim_policy": "conservative_no_upgrade_without_formal_inputs",
-        },
-    }
-    existing_artifacts = tuple(
-        artifact
-        for artifact in (
-            _existing_file(
-                json_path,
-                role="rlrmp-robustness-phenotype-sidecar-json",
-                logical_name=_legacy_logical_name(json_path, repo_root),
-            ),
-            _existing_file(
-                markdown_path,
-                role="rlrmp-robustness-phenotype-sidecar-note",
-                logical_name=_legacy_logical_name(markdown_path, repo_root),
-            ),
-            _existing_file(
-                regeneration_spec_path,
-                role="rlrmp-robustness-phenotype-regeneration-spec",
-                logical_name=_legacy_logical_name(regeneration_spec_path, repo_root),
-            )
-            if regeneration_spec_path is not None
-            else None,
-        )
-        if artifact is not None
-    )
-    return MaterializationResult(
-        payload=payload,
-        existing_artifacts=existing_artifacts,
-    )
-
-
-def _robustness_phenotype_source_paths(
-    params: Mapping[str, Any],
-    inputs: Sequence[Any],
-    *,
-    repo_root: Path,
-) -> dict[str, Path | str | None]:
-    source_paths = {
-        str(name): None if value is None else _optional_path(value, repo_root=repo_root)
-        for name, value in (params.get("source_paths") or {}).items()
-    }
-    for resolved in inputs:
-        manifest = getattr(resolved, "manifest", None)
-        if manifest is None:
-            continue
-        for artifact in getattr(manifest, "artifacts", ()):
-            source_name = ROBUSTNESS_PHENOTYPE_SOURCE_ROLES.get(artifact.role)
-            if source_name is None or source_name in source_paths:
-                continue
-            if artifact.uri is not None:
-                source_paths[source_name] = _optional_path(artifact.uri, repo_root=repo_root)
-    return source_paths
 
 
 def _perturbation_class_response_payload(
@@ -3294,7 +2787,7 @@ def _perturbation_status_counts(rows: Sequence[Mapping[str, Any]]) -> dict[str, 
 
 
 def _summarize_perturbation_rows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-    from rlrmp.analysis.pipelines.gru_perturbation_bank import summarize_perturbation_bank
+    from rlrmp.eval.perturbation_bank import summarize_perturbation_bank
 
     return summarize_perturbation_bank(rows)
 
@@ -3360,6 +2853,18 @@ def _primary_evaluation_input(inputs: Sequence[Any]) -> Any | None:
         if getattr(ref, "kind", None) == "EvaluationRunManifest":
             return resolved
     return None
+
+
+def _primary_feedback_quality_component_input(
+    component_name: str,
+    inputs: Sequence[Any],
+) -> Any | None:
+    if component_name == "objective_comparator":
+        for resolved in inputs:
+            ref = getattr(resolved, "ref", None)
+            if getattr(ref, "kind", None) == "AnalysisRunManifest":
+                return resolved
+    return _primary_evaluation_input(inputs)
 
 
 def _resolved_input_path(resolved: Any | None) -> Path | None:
@@ -3493,71 +2998,6 @@ def _existing_file(
     return ExistingAnalysisArtifact(path=path, role=role, logical_name=logical_name)
 
 
-def _postrun_existing_artifacts(
-    manifest: Mapping[str, Any],
-    plan: Any,
-    *,
-    repo_root: Path,
-) -> tuple[ExistingAnalysisArtifact, ...]:
-    artifacts: list[ExistingAnalysisArtifact] = []
-    direct_paths = (
-        ("rlrmp-gru-checkpoint-selection-manifest", plan.checkpoint_manifest_path),
-        ("rlrmp-gru-standard-certificate-note", plan.standard_note_path),
-        ("rlrmp-gru-standard-certificate-manifest", plan.standard_manifest_path),
-        ("rlrmp-gru-evaluation-diagnostics-manifest", plan.evaluation_manifest_path),
-        ("rlrmp-gru-pilot-figure-summary", plan.figure_output_dir / "figure_summary.json"),
-        ("rlrmp-gru-postrun-legacy-regeneration-spec", plan.postrun_regeneration_spec_path),
-    )
-    for role, path in direct_paths:
-        if path is None:
-            continue
-        artifact = _existing_file(
-            path, role=role, logical_name=_legacy_logical_name(path, repo_root)
-        )
-        if artifact is not None:
-            artifacts.append(artifact)
-
-    output_roles = {
-        "objective_comparator": (
-            "rlrmp-gru-objective-comparator-manifest",
-            "rlrmp-gru-objective-comparator-note",
-        ),
-        "map_decomposition": (
-            "rlrmp-gru-map-decomposition-manifest",
-            "rlrmp-gru-map-decomposition-note",
-        ),
-        "perturbation_response": (
-            "rlrmp-gru-perturbation-response-manifest",
-            "rlrmp-gru-perturbation-response-note",
-        ),
-        "feedback_ablation": (
-            "rlrmp-gru-feedback-ablation-manifest",
-            "rlrmp-gru-feedback-ablation-note",
-        ),
-    }
-    outputs = manifest.get("outputs", {})
-    for output_name, (json_role, note_role) in output_roles.items():
-        output = outputs.get(output_name) if isinstance(outputs, Mapping) else None
-        if not isinstance(output, Mapping):
-            continue
-        for key, role in (("json_path", json_role), ("note_path", note_role)):
-            path = _optional_path(output.get(key), repo_root=repo_root)
-            if path is None:
-                continue
-            artifact = _existing_file(
-                path,
-                role=role,
-                logical_name=_legacy_logical_name(path, repo_root),
-            )
-            if artifact is not None:
-                artifacts.append(artifact)
-    return tuple(artifacts)
-
-
-def _legacy_logical_name(path: Path, repo_root: Path) -> str:
-    return f"legacy/{portable_repo_path(path, repo_root=repo_root)}"
-
-
 def _feedback_quality_components(
     plan: Any,
     *,
@@ -3572,42 +3012,9 @@ def _feedback_quality_components(
     return {
         "evaluation_diagnostics": {
             "schema_kind": "RLRMPGRUEvaluationDiagnosticsManifest",
-            "tracked": (
-                _optional_path(
-                    params.get("evaluation_diagnostics_manifest_path"),
-                    repo_root=repo_root,
-                )
-                or plan.evaluation_manifest_path,
-                "rlrmp-feedback-quality-evaluation-diagnostics-manifest",
-            ),
-            "groups": (
-                (
-                    _optional_path(
-                        params.get("evaluation_diagnostics_bulk_dir"),
-                        repo_root=repo_root,
-                    )
-                    or plan.evaluation_bulk_dir,
-                    "rlrmp-feedback-quality-evaluation-diagnostics-bulk",
-                    "feedback_quality_evaluation_diagnostics_bulk",
-                    "rollout_arrays",
-                ),
-            ),
         },
         "objective_comparator": {
             "schema_kind": "RLRMPObjectiveComparatorSidecar",
-            "tracked": (
-                _optional_path(
-                    params.get("objective_comparator_manifest_path"),
-                    repo_root=repo_root,
-                )
-                or plan.objective_comparator_json_path,
-                "rlrmp-feedback-quality-objective-comparator-manifest",
-            ),
-            "notes": (
-                _optional_path(params.get("objective_comparator_note_path"), repo_root=repo_root)
-                or plan.objective_comparator_note_path,
-                "rlrmp-feedback-quality-objective-comparator-note",
-            ),
         },
         "perturbation_response": {
             "schema_kind": "RLRMPGRUPerturbationBank",
@@ -3654,12 +3061,12 @@ def _feedback_quality_components(
             "tracked": (
                 _optional_path(params.get("response_norm_plots_manifest_path"), repo_root=repo_root)
                 or notes_dir
-                / f"gru_perturbation_response_norm_plots_{plan.output_tag}_manifest.json",
+                / f"response_norm_comparison_{plan.output_tag}_manifest.json",
                 "rlrmp-feedback-quality-response-norm-plots-manifest",
             ),
             "notes": (
                 _optional_path(params.get("response_norm_plots_note_path"), repo_root=repo_root)
-                or notes_dir / f"gru_perturbation_response_norm_plots_{plan.output_tag}.md",
+                or notes_dir / f"response_norm_comparison_{plan.output_tag}.md",
                 "rlrmp-feedback-quality-response-norm-plots-note",
             ),
             "groups": (
@@ -3747,7 +3154,7 @@ def _feedback_quality_component_output(
         artifact = _existing_file(
             path,
             role=role,
-            logical_name=_legacy_logical_name(path, repo_root),
+            logical_name=portable_repo_path(path, repo_root=repo_root),
         )
         if artifact is not None:
             existing.append(artifact)
@@ -3931,7 +3338,6 @@ __all__ = [
     "FEEDBACK_ABLATION_ANALYSIS_TYPE",
     "FeedbackAblationAnalysisParams",
     "GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE",
-    "GRU_POSTRUN_ANALYSIS_TYPE",
     "GRU_STANDARD_ANALYSIS_TYPE",
     "OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE",
     "OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_EVALUATION_TYPE",
@@ -3946,8 +3352,6 @@ __all__ = [
     "feedback_quality_lens_spec",
     "gru_evaluation_diagnostics_spec",
     "gru_evaluation_diagnostics_recipe",
-    "gru_postrun_recipe",
-    "gru_postrun_spec",
     "gru_standard_certificate_spec",
     "gru_standard_certificate_recipe",
     "output_feedback_rollout_recovery_recipe",

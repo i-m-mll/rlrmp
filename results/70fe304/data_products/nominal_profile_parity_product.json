@@ -1,0 +1,20 @@
+{
+  "schema_id": "feedbax.manifest.analysis_data_product",
+  "schema_version": "feedbax.manifest.analysis_data_product.v1",
+  "product_schema_id": "rlrmp.figure_parity.nominal_profiles",
+  "product_schema_version": "rlrmp.figure_parity.nominal_profiles.v1",
+  "role": "figure_parity_oracles",
+  "logical_name": "70fe304_nominal_profile_parity",
+  "producer_manifest_id": "rlrmp.profile_comparison.archive_adoption",
+  "parent_manifests": [],
+  "checkpoint_policy": {},
+  "rollout_policy": {},
+  "parameters": {"adopted_from_commit": "d3ffd11e", "wave": "70fe304"},
+  "artifacts": [
+    {"role":"figure_parity_oracle","logical_name":"91a090c__nominal_velocity_profiles","sha256":"e5243407fc2f44a315f382621e38e6f6c45e0b93a4e39edba33072cab45b3072","media_type":"application/json","storage_backend":"git","uri":"results/70fe304/data_products/archived_specs/91a090c__nominal_velocity_profiles.json","metadata":{"topic":"91a090c/nominal_velocity_profiles","source":"archived_structured_spec"}},
+    {"role":"figure_parity_oracle","logical_name":"c92ebd8__nominal_velocity_profiles","sha256":"bcad9793a5ceddbc4ea81a6cd3eba80fa336c99954fda67ed337568667d7268d","media_type":"application/json","storage_backend":"git","uri":"results/70fe304/data_products/archived_specs/c92ebd8__nominal_velocity_profiles.json","metadata":{"topic":"c92ebd8/nominal_velocity_profiles","source":"archived_structured_spec"}},
+    {"role":"figure_parity_oracle","logical_name":"c92ebd8__pgd_1p05_nominal_velocity_profiles","sha256":"1fddcb9bb635cf646137b24265beb4b8dcdb8a14aa6d549794991e325dc7b9a5","media_type":"application/json","storage_backend":"git","uri":"results/70fe304/data_products/archived_specs/c92ebd8__pgd_1p05_nominal_velocity_profiles.json","metadata":{"topic":"c92ebd8/pgd_1p05_nominal_velocity_profiles","source":"archived_structured_spec"}},
+    {"role":"figure_parity_oracle","logical_name":"c92ebd8__pgd_ofb_budget_moderate_nominal_velocity_profiles","sha256":"ae62874f7153946b1781123ad7cdf5f01aa881739cbeed905eae098cc174ffa9","media_type":"application/json","storage_backend":"git","uri":"results/70fe304/data_products/archived_specs/c92ebd8__pgd_ofb_budget_moderate_nominal_velocity_profiles.json","metadata":{"topic":"c92ebd8/pgd_ofb_budget_moderate_nominal_velocity_profiles","source":"archived_structured_spec"}},
+    {"role":"figure_parity_oracle","logical_name":"d55c5f0__soft_pgd_nominal_velocity_profiles","sha256":"8cd90b2098a0f0c26ae9d6707fe81fc431630d529f420f630f2e27a1282f7b02","media_type":"application/json","storage_backend":"git","uri":"results/70fe304/data_products/archived_specs/d55c5f0__soft_pgd_nominal_velocity_profiles.json","metadata":{"topic":"d55c5f0/soft_pgd_nominal_velocity_profiles","source":"archived_structured_spec"}}
+  ]
+}

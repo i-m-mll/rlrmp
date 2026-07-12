@@ -1,7 +1,7 @@
 """Smoke tests for `rlrmp.eval` and `rlrmp.train` library modules.
 
-Bug: 8404108 — these guard the extracted primitives that used to live in
-``results/2ef67ca/scripts/eval_part2_5_figures.py`` and the two trainer scripts. They are
+Bug: 8404108 — these guard the extracted primitives from the retired legacy
+evaluation scripts and the two trainer scripts. They are
 deliberately import-and-shape level tests; full numerical tests of the
 underlying eval pipeline are covered by the experiment-side analyses.
 """

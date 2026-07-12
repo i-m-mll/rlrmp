@@ -58,10 +58,10 @@ def test_analysis_write_scan_is_non_vacuous() -> None:
     sites = _scan_analysis_tree()
     assert sites, "analysis durable-write scan found zero sites; scan scope is broken"
     assert any(site.path.startswith("src/rlrmp/analysis/math/") for site in sites)
-    assert any(site.path.startswith("src/rlrmp/analysis/pipelines/") for site in sites)
-    assert any(site.kind == "write_html" for site in sites), (
-        "analysis figure HTML writers are not covered by the scan"
-    )
+    assert not list((REPO_ROOT / "src/rlrmp/analysis/pipelines").glob("*.py"))
+    # Figure renders now route through Feedbax custody. The final direct
+    # ``write_html`` analysis site was the retired response-norm producer, so
+    # requiring one here would force legacy durable writers to remain alive.
 
 
 def test_analysis_durable_write_sites_match_allowlist() -> None:
@@ -103,7 +103,6 @@ def test_analysis_write_allowlist_entries_carry_owner_and_reason() -> None:
 @pytest.mark.parametrize(
     ("relative_path", "function_name"),
     (
-        ("src/rlrmp/analysis/multi_cell_driver.py", "_write_multi_cell_report"),
         ("src/rlrmp/analysis/soft_lambda.py", "run_soft_lambda_materializer"),
     ),
 )

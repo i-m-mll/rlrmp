@@ -38,10 +38,13 @@ def test_train_consumed_calibration_budget_identities_shape(monkeypatch) -> None
             "hash": "sha256:unit-broad-epsilon",
         },
     ]
-    assert training.consumed_calibration_budget_identities(
-        calibration_consumed=False,
-        broad_epsilon_consumed=False,
-    ) == []
+    assert (
+        training.consumed_calibration_budget_identities(
+            calibration_consumed=False,
+            broad_epsilon_consumed=False,
+        )
+        == []
+    )
 
 
 def test_eval_consumed_calibration_identity_shape(monkeypatch) -> None:
@@ -68,8 +71,8 @@ def test_eval_consumed_calibration_identity_shape(monkeypatch) -> None:
     }
 
 
-def test_calibration_materializer_consumed_defaults_identity_shape(monkeypatch) -> None:
-    from rlrmp.analysis.pipelines import gru_perturbation_calibration as calibration
+def test_calibration_computation_consumed_defaults_identity_shape(monkeypatch) -> None:
+    from rlrmp.data_products import calibration_computation as calibration
 
     monkeypatch.setattr(
         calibration,

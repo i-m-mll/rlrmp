@@ -81,6 +81,30 @@ class FakeRunPodTransport:
 
     def ssh(self, command: str) -> CommandResult:
         self.ssh_commands.append(command)
+        sentinel_launch = re.search(
+            r"rm -f (?P<done>'[^']+'|\S+) (?P<failed>'[^']+'|\S+) && "
+            r"nohup bash -lc ",
+            command,
+        )
+        if sentinel_launch is not None:
+            done = self.remote_path(sentinel_launch.group("done").strip("'"))
+            failed = self.remote_path(sentinel_launch.group("failed").strip("'"))
+            done.parent.mkdir(parents=True, exist_ok=True)
+            done.unlink(missing_ok=True)
+            failed.unlink(missing_ok=True)
+            done.touch()
+            return CommandResult(0, "")
+        sentinel_probe = re.fullmatch(
+            r"if \[ -f (?P<failed>'[^']+'|\S+) \]; then printf failed; "
+            r"elif \[ -f (?P<done>'[^']+'|\S+) \]; then printf done; "
+            r"else printf pending; fi",
+            command,
+        )
+        if sentinel_probe is not None:
+            failed = self.remote_path(sentinel_probe.group("failed").strip("'"))
+            done = self.remote_path(sentinel_probe.group("done").strip("'"))
+            status = "failed" if failed.is_file() else "done" if done.is_file() else "pending"
+            return CommandResult(0, status)
         if "rlrmp.train.fixture_orchestration" in command:
             self._execute_launched_row(command)
         if command.startswith("cat ") and command.endswith(".pid'"):
@@ -261,6 +285,8 @@ def test_stage_engine_runpod_wrapper_registers_with_all_core_checks(tmp_path: Pa
                 remote_run_root="/workspace/runs",
                 overlay_steps=(),
                 auto_teardown=False,
+                env_step_timeout_seconds=1.0,
+                poll_seconds=0.01,
             ),
             transport=transport,
         )
@@ -301,6 +327,9 @@ def test_stage_engine_runpod_wrapper_registers_with_all_core_checks(tmp_path: Pa
     assert (run_set_dir / "events" / "warm.events.jsonl").is_file()
     assert transport._executed_rows == {"warm"}
     assert transport.runpodctl_calls == []
+    assert transport.remote_path(
+        "/workspace/runs/runpod-full-lifecycle/sentinels/uv-sync.done"
+    ).is_file()
 
 
 def test_fake_runpod_transport_covers_packet_launch_and_collection(tmp_path: Path) -> None:
@@ -318,6 +347,8 @@ def test_fake_runpod_transport_covers_packet_launch_and_collection(tmp_path: Pat
             remote_run_root="/workspace/runs",
             overlay_steps=(),
             auto_teardown=False,
+            env_step_timeout_seconds=1.0,
+            poll_seconds=0.01,
         ),
         transport=transport,
         resume=True,
@@ -329,6 +360,7 @@ def test_fake_runpod_transport_covers_packet_launch_and_collection(tmp_path: Pat
     assert all(check.status == "pass" for check in driver.preflight_checks(bundle))
     assert driver.provision(bundle, state)["provided_endpoint"] is True
     state = state.model_copy(update={"environment_fingerprint": driver.realize_env(bundle, state)})
+    assert transport.remote_path("/workspace/runs/run-set/sentinels/uv-sync.done").is_file()
     staged = driver.stage_inputs(bundle, state)
     launched = driver.launch_row(bundle, bundle.rows[0], state)
 

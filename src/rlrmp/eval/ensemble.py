@@ -23,8 +23,8 @@ from feedbax.runtime.state import CartesianState
 from jax_cookbook import load_with_hyperparameters
 
 from rlrmp.analysis.math.trial_alignment import align_trials, trim_to_full_support
-from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
-from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
+from rlrmp.analysis.gru_standard_certificate import normalize_gru_hps
+from rlrmp.eval.checkpoint_selection import (
     DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION,
 )
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL

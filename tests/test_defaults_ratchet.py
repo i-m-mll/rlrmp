@@ -70,15 +70,6 @@ VALUE_DRIFT_EXCEPTIONS: tuple[DefaultValueDriftException, ...] = (
         ),
     ),
     DefaultValueDriftException(
-        key="enabled",
-        path="src/rlrmp/analysis/pipelines/gru_broad_epsilon_attribution.py",
-        literal_repr="True",
-        reason=(
-            "Broad-epsilon attribution is an opt-out analysis stage; training and benchmark "
-            "feature toggles remain opt-in defaults."
-        ),
-    ),
-    DefaultValueDriftException(
         key="hidden_size",
         path="src/rlrmp/model/feedbax_graph.py",
         literal_repr="1",
@@ -115,17 +106,8 @@ VALUE_DRIFT_EXCEPTIONS: tuple[DefaultValueDriftException, ...] = (
         ),
     ),
     DefaultValueDriftException(
-        key="reach_length_scaling",
-        path="src/rlrmp/analysis/pipelines/gru_worst_case_epsilon_audit.py",
-        literal_repr="False",
-        reason=(
-            "Worst-case epsilon audit reads a legacy absent flag as disabled; training "
-            "perturbation configs default reach-relative scaling on."
-        ),
-    ),
-    DefaultValueDriftException(
         key="sign",
-        path="src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
+        path="src/rlrmp/eval/feedback_ablation.py",
         literal_repr="0",
         reason=(
             "Feedback-ablation summaries use neutral sign metadata; perturbation calibration "
@@ -134,7 +116,7 @@ VALUE_DRIFT_EXCEPTIONS: tuple[DefaultValueDriftException, ...] = (
     ),
     DefaultValueDriftException(
         key="sign",
-        path="src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+        path="src/rlrmp/eval/perturbation_bank.py",
         literal_repr="0",
         reason=(
             "Perturbation-bank filtering treats absent sign metadata as neutral; perturbation "
@@ -206,13 +188,16 @@ def test_defaults_scanner_negative_canary_detects_out_of_schema_default() -> Non
         scan_default_fallback_sites_in_paths([CANARY_PATH], repo_root=REPO_ROOT)
     )
 
-    assert found[
-        DefaultFallbackSite(
-            path="tests/fixtures/defaults_scan_canary.py",
-            key="default_scan_canary",
-            literal_repr="12345",
-        )
-    ] == 1
+    assert (
+        found[
+            DefaultFallbackSite(
+                path="tests/fixtures/defaults_scan_canary.py",
+                key="default_scan_canary",
+                literal_repr="12345",
+            )
+        ]
+        == 1
+    )
 
 
 def test_registered_eval_and_report_recipes_have_params_models() -> None:
@@ -224,9 +209,7 @@ def test_registered_eval_and_report_recipes_have_params_models() -> None:
         if evaluation_type.startswith("rlrmp.")
     )
     registered_reports = sorted(
-        report_type
-        for report_type in registered_report_types()
-        if report_type.startswith("rlrmp.")
+        report_type for report_type in registered_report_types() if report_type.startswith("rlrmp.")
     )
     registered_recipe_names = registered_eval_types + registered_reports
 
