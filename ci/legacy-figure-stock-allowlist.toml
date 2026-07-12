@@ -22,16 +22,6 @@ owner = "246182c"
 reason = "Pre-declarative figure record retained until its assigned migration wave lands."
 
 [[legacy_specs]]
-path = "results/3244f1a/figures/final_calibrated_bank_profiles/medium/spec.json"
-owner = "3244f1a"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/3244f1a/figures/final_calibrated_bank_profiles/small/spec.json"
-owner = "3244f1a"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
 path = "results/4d79e07/figures/delayed_movement_bank_pgd_clip5_vs_no_pgd_velocity_profiles/spec.json"
 owner = "4d79e07"
 reason = "Pre-declarative figure record retained until its assigned migration wave lands."
@@ -64,21 +54,6 @@ reason = "Pre-declarative figure record retained until its assigned migration wa
 [[legacy_specs]]
 path = "results/b8aa38e/figures/perturbation_response_norms_proprio_calibrated/spec.json"
 owner = "b8aa38e"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/c92ebd8/figures/moderate_perturbation_profiles/spec.json"
-owner = "c92ebd8"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/c92ebd8/figures/pgd_1p05_moderate_perturbation_profiles_overlay/spec.json"
-owner = "c92ebd8"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/c92ebd8/figures/pgd_1p05_moderate_perturbation_response_overlays/spec.json"
-owner = "c92ebd8"
 reason = "Pre-declarative figure record retained until its assigned migration wave lands."
 
 [[legacy_specs]]
@@ -115,11 +90,6 @@ reason = "Pre-declarative figure record retained until its assigned migration wa
 path = "results/efc4d68/figures/variance_profiles/spec.json"
 owner = "efc4d68"
 reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[living_materializers]]
-path = "results/3244f1a/scripts/materialize_final_small_bank_profiles.py"
-owner = "3244f1a"
-reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
 
 [[living_materializers]]
 path = "results/4d79e07/scripts/materialize_delayed_pgd_comparison.py"
@@ -167,16 +137,6 @@ owner = "c92ebd8"
 reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
 
 [[living_materializers]]
-path = "results/c92ebd8/scripts/materialize_pgd_1p05_moderate_perturbation_profiles_overlay.py"
-owner = "c92ebd8"
-reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
-
-[[living_materializers]]
-path = "results/c92ebd8/scripts/materialize_pgd_1p05_perturbation_response_overlays.py"
-owner = "c92ebd8"
-reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
-
-[[living_materializers]]
 path = "results/c92ebd8/scripts/materialize_pgd_1p05_stabilization_diagnostics.py"
 owner = "c92ebd8"
 reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
@@ -188,11 +148,6 @@ reason = "Living legacy producer retained until its tracked figure family migrat
 
 [[living_materializers]]
 path = "results/c92ebd8/scripts/materialize_pgd_robustness_isolation.py"
-owner = "c92ebd8"
-reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
-
-[[living_materializers]]
-path = "results/c92ebd8/scripts/materialize_post_training_figures.py"
 owner = "c92ebd8"
 reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
 

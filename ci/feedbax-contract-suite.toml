@@ -404,6 +404,18 @@ negative_canary = [
     "tests/analysis/test_nominal_profile_figure_migration.py::test_all_specs_execute_with_payload_bound_replicates[2]",
 ]
 
+[[families]]
+name = "moderate_calibrated_figure_contract"
+owner = "a778c65"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_moderate_calibrated_figure_migration.py::"
+# Pin five independent leaf specs, 2-vs-3 cardinality, parity custody, and deletion.
+minimum_non_skipped = 5
+negative_canary = [
+    "tests/analysis/test_moderate_calibrated_figure_migration.py::test_all_specs_real_execute_with_data_bound_cardinality[2]",
+]
+
 [pipeline_contract_native]
 allowlist = [
 ]
