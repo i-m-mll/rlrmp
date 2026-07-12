@@ -20,7 +20,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--matrix",
         required=True,
         type=Path,
-        help="TrainingRunMatrixSpec JSON document.",
+        help=("Canonical TrainingRunMatrixSpec emitted by scripts/emit_training_run_matrix.py."),
     )
     parser.add_argument(
         "--source-checkpoint-root",
