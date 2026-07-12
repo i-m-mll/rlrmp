@@ -37,31 +37,6 @@ owner = "3244f1a"
 reason = "Pre-declarative figure record retained until its assigned migration wave lands."
 
 [[legacy_specs]]
-path = "results/3702f54/figures/forward_velocity_profiles/spec.json"
-owner = "3702f54"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/3702f54/figures/hold_drift_profiles/spec.json"
-owner = "3702f54"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/3702f54/figures/peak_velocity_distributions/spec.json"
-owner = "3702f54"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/3702f54/figures/summary_metrics/spec.json"
-owner = "3702f54"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/3702f54/figures/training_loss_per_term/spec.json"
-owner = "3702f54"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
 path = "results/410d7ac/figures/delta_v_signature/spec.json"
 owner = "410d7ac"
 reason = "Pre-declarative figure record retained until its assigned migration wave lands."
@@ -239,11 +214,6 @@ reason = "Living legacy producer retained until its tracked figure family migrat
 [[living_materializers]]
 path = "results/3244f1a/scripts/materialize_final_small_bank_profiles.py"
 owner = "3244f1a"
-reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
-
-[[living_materializers]]
-path = "results/3702f54/scripts/analyse_pregomatrix.py"
-owner = "3702f54"
 reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
 
 [[living_materializers]]
