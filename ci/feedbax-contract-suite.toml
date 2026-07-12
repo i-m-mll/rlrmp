@@ -380,6 +380,18 @@ negative_canary = [
     "tests/analysis/test_sisu_spectrum_figure.py::test_sisu_profile_cardinality_is_payload_bound[2]",
 ]
 
+[[families]]
+name = "gru_postrun_figure_contract"
+owner = "74fac80"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_gru_postrun_bundle_contract.py::"
+# Pin canonical bundle leaves, real FigureManifest execution, parity, and terminal retirement.
+minimum_non_skipped = 7
+negative_canary = [
+    "tests/analysis/test_gru_postrun_bundle_contract.py::test_gru_postrun_figure_executes_to_hash_verified_manifest",
+]
+
 [pipeline_contract_native]
 allowlist = [
 ]

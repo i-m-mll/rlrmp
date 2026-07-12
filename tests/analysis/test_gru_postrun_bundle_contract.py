@@ -13,6 +13,7 @@ from feedbax.contracts.manifest import (
     spec_payload,
     write_manifest,
 )
+import pytest
 from ruamel.yaml import YAML
 
 from rlrmp.analysis.response_norm import response_norm_payload
@@ -22,6 +23,9 @@ from rlrmp.figures import register_rlrmp_figure_surfaces
 
 BUNDLE_PATH = Path("src/rlrmp/config/analysis_bundles/gru_postrun.yml")
 PARITY_PATH = Path("results/6c36536/data_products/gru_postrun_figure_parity.json")
+
+
+pytestmark = pytest.mark.feedbax_contract
 
 
 def _bundle() -> tuple[str, dict[str, object]]:
