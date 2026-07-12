@@ -5,7 +5,6 @@ import re
 
 import rlrmp.analysis.gru_standard_certificate as cs_standard
 from rlrmp.eval import checkpoint_selection
-import rlrmp.analysis.pipelines.gru_map_error_decomposition as map_error
 import rlrmp.eval.trial_inputs as evaluation_run_inputs
 import rlrmp.analysis.pipelines.objective_comparator as objective_comparator
 
@@ -15,7 +14,6 @@ CONSUMERS = (
     evaluation_run_inputs,
     checkpoint_selection,
     objective_comparator,
-    map_error,
 )
 
 

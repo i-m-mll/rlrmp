@@ -65,8 +65,7 @@ def build_robust_output_feedback_6d_context(
     )
     if int(plant.n) != 36 or int(config.n_phys) != 6:
         raise ValueError(
-            f"unexpected H-inf context dimensions: plant.n={plant.n}, "
-            f"n_phys={config.n_phys}"
+            f"unexpected H-inf context dimensions: plant.n={plant.n}, n_phys={config.n_phys}"
         )
     return {
         "plant": plant,
@@ -248,9 +247,7 @@ def evaluate_stabilization_row(
         **dict(row_metadata(row_spec)),
         "run_spec_path": hook("repo_relative")(run.run_spec_path, repo_root),
         "artifact_dir": hook("repo_relative")(run.artifact_dir, repo_root),
-        "checkpoint_selection_summary": hook("checkpoint_selection_summary")(
-            checkpoint_selection
-        ),
+        "checkpoint_selection_summary": hook("checkpoint_selection_summary")(checkpoint_selection),
         "response_label": hook("response_label")(washin),
         "dt_s": float(base.dt),
         "timing": timing,
@@ -305,9 +302,6 @@ def run_feedback_robustness_diagnostics(
     from rlrmp.eval.checkpoint_selection import (
         build_validation_checkpoint_selection_manifest,
     )
-    from rlrmp.analysis.pipelines.gru_feedback_ablation import (
-        execute_feedback_ablation_pipeline,
-    )
     from rlrmp.paths import mkdir_p
 
     def hook(name: str) -> Any:
@@ -338,23 +332,12 @@ def run_feedback_robustness_diagnostics(
             "artifact; execute the registered perturbation-bank evaluation matrix first"
         )
     perturbation = hook("load_json")(paths["perturbation"])
-    feedback_execution = execute_feedback_ablation_pipeline(
-        source_experiment=issue,
-        result_experiment=issue,
-        scope=feedback_scope,
-        run_ids=run_ids,
-        labels=labels,
-        n_rollout_trials=n_rollout_trials,
-        bank_mode="calibrated",
-        calibration_level="moderate",
-        calibration_reach=0.15,
-        feedback_selection_level="moderate",
-        feedback_scale_manifest_path=paths["evaluation"],
-        repo_root=repo_root,
-        feedbax_runs_root=repo_root / "_artifacts" / issue / "feedbax_runs",
-        issues=(issue,),
-    )
-    feedback = feedback_execution.payload
+    if not paths["feedback"].exists():
+        raise FileNotFoundError(
+            "feedback robustness analysis requires cached feedback-ablation states; "
+            "execute the registered feedback-ablation evaluation first"
+        )
+    feedback = hook("load_json")(paths["feedback"])
     components: dict[str, Any] = {
         "checkpoint_manifest": checkpoint_manifest,
         "evaluation": evaluation,
