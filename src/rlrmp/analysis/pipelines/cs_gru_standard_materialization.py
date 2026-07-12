@@ -36,7 +36,7 @@ from rlrmp.analysis.math.output_feedback import (
     position_velocity_observation_config,
     rollout_with_kalman_estimator,
 )
-from rlrmp.analysis.pipelines.bridge_certificates import (
+from rlrmp.analysis.bridge_certificates import (
     BELLMAN_HESSIAN_RESIDUAL,
     CLOSED_LOOP_TRANSITION_MISMATCH,
     DISTURBANCE_HISTORY_TO_ACTION_MAP_MISMATCH,
@@ -49,9 +49,9 @@ from rlrmp.analysis.pipelines.bridge_certificates import (
     STATE_WEIGHTED_ACTION_MISMATCH,
     VALUE_POLICY_GAP,
 )
-from rlrmp.analysis.pipelines.bridge_contracts import (
+from rlrmp.analysis.bridge_results import (
     BridgeCertificateComponent,
-    BridgeRunManifest,
+    BridgeAnalysisResult,
     BridgeRunSpec,
     make_bridge_run_id,
 )
@@ -151,7 +151,7 @@ def materialize_gru_standard_result(
         )
         for run_id in run_ids
     ]
-    row_dicts = [row.to_json_dict() for row in rows]
+    row_dicts = [row.to_payload() for row in rows]
     failure_rows = [
         failure_diagnostic_from_standard_row(
             row,
@@ -239,7 +239,7 @@ def materialize_gru_standard_result_from_evaluation_states(
         )
         for run_id in run_ids
     ]
-    row_dicts = [row.to_json_dict() for row in rows]
+    row_dicts = [row.to_payload() for row in rows]
     failure_rows = [
         failure_diagnostic_from_standard_row(
             row,
@@ -312,7 +312,7 @@ def materialize_gru_standard_row(
     use_validation_selected_checkpoints: bool = False,
     preferred_checkpoint_manifest_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
-) -> BridgeRunManifest:
+) -> BridgeAnalysisResult:
     """Materialize one GRU pilot standard row."""
 
     resolved_run_spec_path = run_spec_path(experiment, run_id, repo_root=repo_root)
@@ -410,7 +410,7 @@ def materialize_gru_standard_row_from_evaluation_state(
     experiment: str = SOURCE_ISSUE_ID,
     materializer_issue_id: str = MATERIALIZER_ISSUE_ID,
     repo_root: Path = REPO_ROOT,
-) -> BridgeRunManifest:
+) -> BridgeAnalysisResult:
     """Materialize one GRU standard row from eval-manifest states."""
 
     resolved_run_spec_path = run_spec_path(experiment, run_id, repo_root=repo_root)
@@ -579,7 +579,7 @@ def build_gru_standard_manifest_from_actions(
     source_issue_id: str = SOURCE_ISSUE_ID,
     materializer_issue_id: str = MATERIALIZER_ISSUE_ID,
     repo_root: Path = REPO_ROOT,
-) -> BridgeRunManifest:
+) -> BridgeAnalysisResult:
     """Build a GRU empirical/nonlinear standard row from clean action traces."""
 
     candidate = np.asarray(candidate_actions, dtype=np.float64)
@@ -1207,7 +1207,7 @@ def write_gru_standard_result(
         ],
         source_files=[
             "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py",
-            "src/rlrmp/analysis/pipelines/bridge_certificates.py",
+            "src/rlrmp/analysis/bridge_certificates.py",
             "src/rlrmp/analysis/pipelines/standard_certificate_materialization.py",
         ],
         notes=[

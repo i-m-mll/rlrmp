@@ -25,7 +25,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from rlrmp.analysis.data_products import load_analysis_parameter_preset
-from rlrmp.analysis.pipelines.bridge_certificates import (
+from rlrmp.analysis.bridge_certificates import (
     STATE_WEIGHTED_ACTION_MISMATCH,
     state_weighted_action_mismatch_component,
 )

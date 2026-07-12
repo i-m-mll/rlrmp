@@ -27,7 +27,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from rlrmp.io import load_named_python_module
-from rlrmp.analysis.pipelines.bridge_certificates import (
+from rlrmp.analysis.bridge_certificates import (
     BELLMAN_HESSIAN_RESIDUAL,
     CLOSED_LOOP_TRANSITION_MISMATCH,
     OPTIMIZER_METADATA,
@@ -37,9 +37,9 @@ from rlrmp.analysis.pipelines.bridge_certificates import (
     build_standard_certificate_components,
     missing_component,
 )
-from rlrmp.analysis.pipelines.bridge_contracts import (
+from rlrmp.analysis.bridge_results import (
     BridgeCertificateComponent,
-    BridgeRunManifest,
+    BridgeAnalysisResult,
     BridgeRunSpec,
     make_bridge_run_id,
 )
@@ -159,7 +159,7 @@ def materialize() -> dict[str, Any]:
         arrays = {name: np.asarray(archive[name]) for name in archive.files}
     _ensure_reference_under_epsilon_arrays(arrays, reference, output_config)
 
-    rows: list[BridgeRunManifest] = []
+    rows: list[BridgeAnalysisResult] = []
     rows.extend(
         _saved_no_coverage_rows(source_manifests["no_coverage"], arrays, reference, output_config)
     )
@@ -174,7 +174,7 @@ def materialize() -> dict[str, Any]:
     )
     rows.extend(_eigenspectrum_rows(source_manifests["eigenspectrum"], reference, output_config))
 
-    row_dicts = [row.to_json_dict() for row in rows]
+    row_dicts = [row.to_payload() for row in rows]
     status_counts = Counter(row.status for row in rows)
     component_counts: Counter[str] = Counter()
     for row in rows:
@@ -216,7 +216,7 @@ def _saved_no_coverage_rows(
     arrays: dict[str, np.ndarray],
     reference: Any,
     output_config: OutputFeedbackConfig,
-) -> list[BridgeRunManifest]:
+) -> list[BridgeAnalysisResult]:
     fit_by_label = {fit["label"]: fit for fit in manifest["fits"]}
     selected = (
         ("analytical_lqr_reference", None),
@@ -284,7 +284,7 @@ def _saved_no_coverage_rows(
                 ),
             )
             rows.append(
-                BridgeRunManifest(
+                BridgeAnalysisResult(
                     spec=spec,
                     status="full_standard_certificate",
                     metrics=_no_coverage_metrics(label, fit, manifest)
@@ -318,7 +318,7 @@ def _initial_state_rows(
     manifest: dict[str, Any],
     reference: Any,
     output_config: OutputFeedbackConfig,
-) -> list[BridgeRunManifest]:
+) -> list[BridgeAnalysisResult]:
     rows = []
     base_config = LinearOptimizationConfig(**manifest["base_training_config"])
     for cell in manifest["cells"]:
@@ -367,7 +367,7 @@ def _process_noise_rows(
     no_coverage_manifest: dict[str, Any],
     reference: Any,
     output_config: OutputFeedbackConfig,
-) -> list[BridgeRunManifest]:
+) -> list[BridgeAnalysisResult]:
     rows = []
     base_monte_carlo = manifest["base_monte_carlo"]
     base_noise_contract = manifest.get("base_noise_contract", base_monte_carlo)
@@ -464,7 +464,7 @@ def _process_noise_rows(
                 ),
             )
             rows.append(
-                BridgeRunManifest(
+                BridgeAnalysisResult(
                     spec=spec,
                     status="full_standard_certificate",
                     metrics=_process_metrics(row_summary),
@@ -481,7 +481,7 @@ def _eigenspectrum_rows(
     manifest: dict[str, Any],
     reference: Any,
     output_config: OutputFeedbackConfig,
-) -> list[BridgeRunManifest]:
+) -> list[BridgeAnalysisResult]:
     rows = []
     product = execute_governed_output_feedback_rollout_recovery(
         conditions=eigenspectrum_coverage_conditions(),
@@ -538,7 +538,7 @@ def _deterministic_fit_rows(
     gamma_factor: float = OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     reference_controller: str = "analytical_lqr_kalman",
     row_metrics: dict[str, Any] | None = None,
-) -> list[BridgeRunManifest]:
+) -> list[BridgeAnalysisResult]:
     rows = []
     prefix = array_prefix or fit["label"]
     evaluation_lenses = (
@@ -580,7 +580,7 @@ def _deterministic_fit_rows(
             notes=notes,
         )
         rows.append(
-            BridgeRunManifest(
+            BridgeAnalysisResult(
                 spec=spec,
                 status="full_standard_certificate",
                 metrics=_fit_metrics(fit)
@@ -650,7 +650,7 @@ def deterministic_standard_rows_from_manifest_entries(
             ),
             row_metrics=entry.get("metrics"),
         )
-        rows.extend(row.to_json_dict() for row in row_manifests)
+        rows.extend(row.to_payload() for row in row_manifests)
     return rows
 
 

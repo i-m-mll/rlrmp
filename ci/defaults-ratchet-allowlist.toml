@@ -1107,7 +1107,7 @@ note = "Calibration pipeline/data-product fallback remediation lane."
 
 # 5b3aabe: Phase-1 defaults ratchet catch-all until a narrower owner is split.
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/bridge_certificates.py"
+path = "src/rlrmp/analysis/bridge_certificates.py"
 key = "status"
 literal_repr = "'missing'"
 count = 1
