@@ -5,15 +5,6 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-import numpy as np
-from rlrmp.analysis.math.trial_alignment import (
-    align_trials,
-    pooled_trial_mean_with_band,
-    replicate_mean_curves,
-)
-from rlrmp.viz.figures import build_forward_velocity_figure, build_hold_drift_figure
-
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -39,73 +30,6 @@ def _calls(node: ast.FunctionDef) -> set[str]:
 def _loc(node: ast.FunctionDef) -> int:
     assert node.end_lineno is not None
     return node.end_lineno - node.lineno + 1
-
-
-def _kinematics() -> dict[str, np.ndarray]:
-    velocity = np.asarray(
-        [
-            [[0.0, 1.0, 2.0, 3.0], [0.0, 0.5, 1.5, 2.5]],
-            [[0.0, 2.0, 4.0, 6.0], [0.0, 1.0, 3.0, 5.0]],
-        ]
-    )
-    return {
-        "forward_vel_profile": velocity,
-        "pos_forward_profile": velocity * 0.001,
-        "go_idx": np.asarray([1, 2]),
-    }
-
-
-def test_multi_cell_figure_builders_preserve_reductions() -> None:
-    cell_kms = {"cell": _kinematics()}
-    common = {
-        "labels": ("cell",),
-        "display_names": {"cell": "Cell"},
-        "colors": {"cell": "#2563eb"},
-        "title": "title",
-        "width": 900,
-        "height_per_cell": 200,
-        "vertical_spacing": 0.06,
-    }
-
-    replicate = build_forward_velocity_figure(
-        cell_kms,
-        trace_mode="replicate",
-        **common,
-    )
-    aligned, center = align_trials(
-        cell_kms["cell"]["forward_vel_profile"],
-        cell_kms["cell"]["go_idx"],
-    )
-    expected_curves, window = replicate_mean_curves(aligned)
-    expected_time = ((np.arange(aligned.shape[-1]) - center) * 0.01)[window]
-    assert len(replicate.data) == 2
-    np.testing.assert_allclose(replicate.data[0].x, expected_time)
-    np.testing.assert_allclose(replicate.data[0].y, expected_curves[0])
-
-    pooled = build_forward_velocity_figure(cell_kms, trace_mode="pooled", **common)
-    mean, lower, upper, window = pooled_trial_mean_with_band(aligned, band="sd")
-    expected_time = ((np.arange(aligned.shape[-1]) - center) * 0.01)[window]
-    assert len(pooled.data) == 3
-    np.testing.assert_allclose(pooled.data[0].y, upper)
-    np.testing.assert_allclose(pooled.data[1].y, lower)
-    np.testing.assert_allclose(pooled.data[2].x, expected_time)
-    np.testing.assert_allclose(pooled.data[2].y, mean)
-
-    hold = build_hold_drift_figure(
-        cell_kms,
-        trace_mode="replicate",
-        pre_go_window_steps=1,
-        **common,
-    )
-    aligned_position, center = align_trials(
-        cell_kms["cell"]["pos_forward_profile"],
-        cell_kms["cell"]["go_idx"],
-    )
-    curves, window = replicate_mean_curves(aligned_position)
-    time = ((np.arange(aligned_position.shape[-1]) - center) * 0.01)[window]
-    keep = (time >= -0.01) & (time <= 0.0)
-    np.testing.assert_allclose(hold.data[0].x, time[keep])
-    np.testing.assert_allclose(hold.data[0].y, curves[0, keep] * 1000.0)
 
 
 def test_retired_multi_cell_pipeline_cannot_reaccrete() -> None:

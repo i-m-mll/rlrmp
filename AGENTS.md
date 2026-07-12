@@ -265,17 +265,9 @@ Multi-panel profile-comparison figures — one subplot per condition (cell, regi
 
 Affected figure families include `forward_velocity_profiles`, `hold_drift_profiles`, and any per-replicate variants of these.
 
-**This is enforced at the plot-helper level, not per-script.** Analysis scripts must build profile-comparison grids via `rlrmp.viz.profile_comparison_grid` (the default is `shared_yaxes='all'`). Do not call `plotly.subplots.make_subplots` directly for profile-comparison figures, and do not pass `shared_yaxes` as a per-call override unless there is a documented reason to deviate (in which case file a follow-up issue capturing why).
-
-```python
-from rlrmp.viz import profile_comparison_grid
-
-fig = profile_comparison_grid(
-    n_panels=n_cells,
-    subplot_titles=[CELL_DISPLAY_NAMES[l] for l in labels_present],
-    vertical_spacing=0.025,
-)
-```
+**This is enforced by the declarative figure templates, not per-script.** Profile
+comparisons must use a registered `FigureSpec` template whose renderer declares
+shared y axes. Result-local Plotly grids and helper copies are retired surfaces.
 
 ### Aligned-profile aggregators trim by default
 
@@ -622,7 +614,7 @@ recipe. If a run needs additional tracked sidecars, use
 
 ### Script placement: experiment-specific vs reusable (Bug: 8404108)
 
-The top-level `scripts/` directory is for cross-cutting tooling — scripts that operate generically across experiments (e.g. `launch_training.py`, `eval_minimax.py`, `eval_diagnostics.py`, infrastructure shell scripts). It is NOT a dumping ground for experiment-specific analysis code.
+The top-level `scripts/` directory is for cross-cutting tooling — scripts that operate generically across experiments (e.g. `launch_training.py`, `eval_minimax.py`, infrastructure shell scripts). It is NOT a dumping ground for experiment-specific analysis code.
 
 **Hard rules:**
 
@@ -693,7 +685,9 @@ This reads rlrmp's registered `figure_routing` config (`src/rlrmp/__init__.py`) 
 
 Bug: `f485c26`, feedbax `67bf476`. The dual-tree write + symlink is automatic per the routing config; do not hand-write per-figure dual paths.
 
-**When to use `save_figure_with_spec` instead.** Use the lower-level `feedbax.plot.io.save_figure_with_spec(fig, spec, dst_dir)` only when the destination is a dynamic per-run dir (e.g. `eval_diagnostics.py` writing to `<results_dir>/adversary_force_profiles/`), not a stable experiment topic.
+The lower-level `feedbax.plot.io.save_figure_with_spec` is a retired authoring
+surface in rlrmp. New figures execute registered declarative `FigureSpec`
+templates and materialize `FigureManifest` records.
 
 ### Adding a new experiment
 

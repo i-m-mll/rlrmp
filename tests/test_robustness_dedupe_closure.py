@@ -325,37 +325,13 @@ def test_stabilization_evaluator_preserves_missing_family_behavior(
     ("relpath", "function_name", "canonical_call", "max_lines"),
     (
         (
-            "results/b413bb0/scripts/materialize_beta1p4_stabilization_diagnostics.py",
-            "evaluate_row_allowing_missing_families",
-            "canonical_evaluate_stabilization_row",
-            25,
-        ),
-        (
-            "results/c92ebd8/scripts/materialize_pgd_robustness_isolation.py",
-            "evaluate_stabilization_row",
-            "canonical_evaluate_stabilization_row",
-            30,
-        ),
-        (
             "results/d55c5f0/scripts/materialize_soft_pgd_feedback_robustness_diagnostics.py",
             "main",
             "run_feedback_robustness_diagnostics",
             50,
         ),
         (
-            "results/c92ebd8/scripts/materialize_ofb_budget_feedback_robustness_diagnostics.py",
-            "main",
-            "run_feedback_robustness_diagnostics",
-            50,
-        ),
-        (
             "results/d55c5f0/scripts/materialize_soft_pgd_feedback_robustness_diagnostics.py",
-            "build_summary",
-            "canonical_build_summary",
-            50,
-        ),
-        (
-            "results/c92ebd8/scripts/materialize_ofb_budget_feedback_robustness_diagnostics.py",
             "build_summary",
             "canonical_build_summary",
             50,

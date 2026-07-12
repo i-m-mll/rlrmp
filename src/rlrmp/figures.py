@@ -137,7 +137,7 @@ def register_rlrmp_figure_surfaces(*, replace: bool = True) -> None:
             ],
             facet_by=["condition"],
             facet_target="panels",
-            metadata={"ported_from": "rlrmp.viz.profile_comparison_grid"},
+            metadata={"rendering_contract": "declarative_profile_comparison"},
         ),
         FigureTemplate(
             name="rlrmp.distribution_comparison",

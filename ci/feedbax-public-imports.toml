@@ -6,18 +6,6 @@ public_import_modules = [
 ]
 
 [[known_in_flight]]
-path = "results/2ef67ca/scripts/eval_loss_balance.py"
-module = "feedbax.train"
-symbols = ["init_task_trainer_history"]
-reason = "Frozen historical result script; live training code has moved off TaskTrainer."
-
-[[known_in_flight]]
-path = "results/2ef67ca/scripts/eval_robustness.py"
-module = "feedbax.train"
-symbols = ["init_task_trainer_history"]
-reason = "Frozen historical result script; live training code has moved off TaskTrainer."
-
-[[known_in_flight]]
 path = "src/rlrmp/train/orchestration_capabilities.py"
 module = "feedbax.orchestration"
 symbols = ["conformance", "schedule_eval", "stages"]

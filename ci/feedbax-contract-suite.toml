@@ -262,8 +262,8 @@ owner = "f6f38b6"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_declarative_figure_stock.py::"
-# Pin the complete family so deleting an inventory or canary assertion is deliberate.
-minimum_non_skipped = 7
+# Pin the terminal eight-test family, including exact stock counts and zero old authoring surfaces.
+minimum_non_skipped = 8
 negative_canary = [
     "tests/test_declarative_figure_stock.py::test_authored_intent_rejects_provenance_heavy_legacy_payload",
     "tests/test_declarative_figure_stock.py::test_direct_assembly_negative_canary_rejects_plotly_materializer",

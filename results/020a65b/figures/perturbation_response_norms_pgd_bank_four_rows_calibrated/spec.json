@@ -1,4 +1,5 @@
 {
+  "archive": {"status": "archived_structured_output", "last_runnable_revision": "ff3a9e63bca28d907214bcce452c816d854879b0", "rationale_issue": "7ae2916", "parity_oracle": "archived_structured_outputs", "reason": "Superseded legacy response-norm output retained as a frozen parity oracle after declarative migration."},
   "aggregation_method": {
     "alignment": "Responses are sign-equalized and represented in the current target-relative xy basis before norms are taken. For the current +x reach screen this basis is numerically identical to world xy; sign equalization is still applied before norm reduction so future non-+x rows cannot pool raw opposite directions.",
     "max_norm": "Plot the unbanded max over pooled aligned perturbation rows, replicates, and eval rollouts at each time point. This is an extreme-response sidecar, not an uncertainty estimate.",

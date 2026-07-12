@@ -11,8 +11,6 @@ import sys
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DESTINATIONS = {
-    "eval_part2_5.py": "results/2ef67ca/scripts/eval_part2_5.py",
-    "eval_part2_5_figures.py": "results/2ef67ca/scripts/eval_part2_5_figures.py",
     "probe_round_trip_ratio.py": "results/72fb8d9/scripts/probe_round_trip_ratio.py",
     "diag_probe_anomalies.py": "results/72fb8d9/scripts/diag_probe_anomalies.py",
     "diag_cs_baseline.py": "results/72fb8d9/scripts/diag_cs_baseline.py",

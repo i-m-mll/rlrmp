@@ -51,9 +51,10 @@ class FigureStockFact:
 def test_figure_stock_inventory_is_non_vacuous_and_classified() -> None:
     facts = _scan_figure_stock()
 
-    assert len(facts) >= 70, "figure-stock scan found too few tracked specs"
-    assert any(fact.role == "archival" for fact in facts)
-    assert any(fact.role == "legacy_living" for fact in facts)
+    assert len(facts) == 73, "terminal figure-stock count changed without reconciliation"
+    assert sum(fact.role == "native" for fact in facts) == 50
+    assert sum(fact.role == "archival" for fact in facts) == 23
+    assert not any(fact.role == "legacy_living" for fact in facts)
     assert any("perturbation_response_norms" in fact.path for fact in facts), (
         "response-norm figure capability fell out of the governed stock"
     )
@@ -95,13 +96,27 @@ def test_archival_figure_specs_are_reasoned_parity_oracles() -> None:
 def test_allowlist_entries_are_reasoned_and_point_to_living_files() -> None:
     for family in ("legacy_specs", "living_materializers"):
         entries = _allowlist_entries(family)
-        assert entries, f"{family} inventory must remain explicit while legacy stock exists"
+        assert entries == [], f"terminal {family} inventory must remain empty"
         paths = [entry["path"] for entry in entries]
         assert len(paths) == len(set(paths)), f"duplicate {family} allowlist entries"
         for entry in entries:
             assert ISSUE_RE.fullmatch(str(entry.get("owner", ""))), entry
             assert len(str(entry.get("reason", "")).strip()) >= 20, entry
             assert (REPO_ROOT / entry["path"]).is_file(), entry
+
+
+def test_terminal_figure_authoring_surfaces_are_absent() -> None:
+    for relative_path in (
+        "src/rlrmp/viz/figures.py",
+        "src/rlrmp/viz/profile_grids.py",
+        "scripts/eval_diagnostics.py",
+    ):
+        assert not (REPO_ROOT / relative_path).exists(), relative_path
+
+    forbidden = ("write_html(", "make_subplots(", "save_figure_with_spec(")
+    for path in sorted((REPO_ROOT / "results").glob("*/scripts/*.py")):
+        source = path.read_text(encoding="utf-8")
+        assert not any(token in source for token in forbidden), path
 
 
 def test_authored_intent_rejects_provenance_heavy_legacy_payload() -> None:

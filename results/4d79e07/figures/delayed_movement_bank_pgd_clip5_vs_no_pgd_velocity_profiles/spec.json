@@ -1,4 +1,5 @@
 {
+  "archive": {"status": "archived_structured_output", "last_runnable_revision": "1cf187c3e964b940ff1701641cc074a1b2211ae3", "rationale_issue": "7ae2916", "parity_oracle": "archived_structured_outputs", "reason": "Superseded delayed-profile output retained as a frozen parity oracle after declarative migration."},
   "banks": [
     "no_catch",
     "catch"
