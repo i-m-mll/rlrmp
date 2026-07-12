@@ -1044,14 +1044,14 @@ def test_feedback_quality_lens_bundle_executes_fixture_and_groups_artifacts(
         / "results"
         / "5f70333"
         / "notes"
-        / "gru_perturbation_response_norm_plots_validation_selected_manifest.json"
+        / "response_norm_comparison_validation_selected_manifest.json"
     )
     norm_manifest.write_text(
-        json.dumps({"schema_version": "rlrmp.gru_perturbation_response_norm_plots.v1"}) + "\n",
+        json.dumps({"schema_version": "rlrmp.figure_data.response_norm_comparison.v1"}) + "\n",
         encoding="utf-8",
     )
     norm_note = norm_manifest.with_name(
-        "gru_perturbation_response_norm_plots_validation_selected.md"
+        "response_norm_comparison_validation_selected.md"
     )
     norm_note.write_text("# norm plots\n", encoding="utf-8")
     norm_fig_dir = (

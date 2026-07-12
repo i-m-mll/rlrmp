@@ -85,6 +85,16 @@ def register_rlrmp_figure_surfaces(*, replace: bool = True) -> None:
             _loss_history_curves,
             "Feedbax loss-history traces carried through declarative custody.",
         ),
+        (
+            "rlrmp.response_norm_bands",
+            _response_norm_bands,
+            "Mean and SEM response-norm bands with optional max and LQG curves.",
+        ),
+        (
+            "rlrmp.response_norm_bars",
+            _response_norm_bars,
+            "Response-norm comparison bars derived from payload-owned model rows.",
+        ),
     ):
         register_figure_constructor(
             key,
@@ -185,6 +195,34 @@ def register_rlrmp_figure_surfaces(*, replace: bool = True) -> None:
             facet_by=["variable"],
             facet_target="panels",
             metadata={"ported_from": "feedbax.analysis.effector"},
+        ),
+        FigureTemplate(
+            name="rlrmp.response_norm_comparison",
+            description=(
+                "Response-norm comparison with intrinsic metric/condition facets and "
+                "payload-bound model/row collections."
+            ),
+            assembler="feedbax.grid_figure",
+            assembler_params={"panel_constructor": "rlrmp.profile_grid"},
+            slots=[
+                SlotSpec(
+                    name="norm_bands",
+                    constructor="rlrmp.response_norm_bands",
+                    multiplicity="per_facet",
+                ),
+                SlotSpec(
+                    name="norm_bars",
+                    constructor="rlrmp.response_norm_bars",
+                    required=False,
+                    multiplicity="per_facet",
+                ),
+            ],
+            facet_by=["metric", "condition_class"],
+            facet_target="panels",
+            metadata={
+                "intrinsic_facets": ["metric", "condition_class"],
+                "data_bound_collections": ["model", "comparison_row"],
+            },
         ),
         FigureTemplate(
             name="rlrmp.loss_history",
@@ -424,6 +462,67 @@ def loss_history_spec(
     )
 
 
+def response_norm_comparison_spec(
+    *,
+    name: str,
+    figure_routing: Mapping[str, Any] | None = None,
+) -> FigureSpec:
+    """Build a response-norm figure whose panel count follows intrinsic facets."""
+    return FigureSpec(
+        name=name,
+        template="rlrmp.response_norm_comparison",
+        slot_bindings={
+            "norm_bands": TraceBinding(
+                name="response-norm-bands",
+                constructor="rlrmp.response_norm_bands",
+                data={
+                    "payload": {
+                        "item": "manifest",
+                        "path": "metadata.figure_payload",
+                    },
+                    "metric": {"item": "metric"},
+                    "condition_class": {"item": "condition_class"},
+                },
+            ),
+            "norm_bars": TraceBinding(
+                name="response-norm-bars",
+                constructor="rlrmp.response_norm_bars",
+                required=False,
+                data={
+                    "payload": {
+                        "item": "manifest",
+                        "path": "metadata.figure_payload",
+                    },
+                    "metric": {"item": "metric"},
+                    "condition_class": {"item": "condition_class"},
+                },
+            ),
+        },
+        panels=[
+            {
+                "name": "response_norm",
+                "title": {"item": "metric"},
+                "axes_labels": {"x": "Time (s)", "y": "Response norm"},
+            }
+        ],
+        facet_bindings={
+            "metric": {
+                "item": "manifest",
+                "path": "metadata.figure_payload.intrinsic_axes.metric",
+            },
+            "condition_class": {
+                "item": "manifest",
+                "path": "metadata.figure_payload.intrinsic_axes.condition_class",
+            },
+        },
+        figure_routing=dict(figure_routing or {}),
+        metadata={
+            "schema_id": "rlrmp.figure_data.response_norm_comparison",
+            "schema_version": "rlrmp.figure_data.response_norm_comparison.v1",
+        },
+    )
+
+
 def standard_matrix_payload(
     cells: Sequence[Mapping[str, Any]],
     params: Mapping[str, Any],
@@ -574,6 +673,86 @@ def _loss_history_curves(data: Mapping[str, Any], params: StrictModel) -> Sequen
     for trace in figure.data:
         trace.opacity = p.opacity
     return list(figure.data)
+
+
+def _response_norm_bands(data: Mapping[str, Any], params: StrictModel) -> Sequence[Any]:
+    p = FigureTraceParams.model_validate(params.model_dump())
+    payload = _response_norm_facet(data)
+    traces: list[Any] = []
+    for curve in payload.get("curves", ()):
+        curve = _mapping(curve)
+        mean = _series(curve.get("mean"))
+        if not mean:
+            continue
+        time = _series(curve.get("time"), default_len=len(mean))
+        sem = _series(curve.get("sem"))
+        color = curve.get("color") or "rgb(31,119,180)"
+        label = str(curve.get("label", curve.get("model_id", "Model")))
+        if sem and len(sem) == len(mean):
+            upper = [value + error for value, error in zip(mean, sem, strict=True)]
+            lower = [value - error for value, error in zip(mean, sem, strict=True)]
+            traces.extend(
+                get_figure_constructor("feedbax.profile_band", tier="trace").callable(
+                    {
+                        "x": time,
+                        "y": [mean],
+                        "mean": mean,
+                        "upper": upper,
+                        "lower": lower,
+                        "label": label,
+                        "color": color,
+                    },
+                    get_figure_constructor("feedbax.profile_band", tier="trace").params(),
+                )
+            )
+        else:
+            traces.append(
+                go.Scatter(
+                    x=time,
+                    y=mean,
+                    mode="lines",
+                    name=label,
+                    opacity=p.opacity,
+                    line={
+                        "color": color,
+                        "dash": "dash" if curve.get("is_lqg") else "solid",
+                    },
+                )
+            )
+        maximum = _series(curve.get("max"))
+        if maximum:
+            traces.append(
+                go.Scatter(
+                    x=time,
+                    y=maximum,
+                    mode="lines",
+                    name=f"{label} max",
+                    opacity=p.opacity,
+                    line={"color": color, "dash": "dot"},
+                )
+            )
+    return traces
+
+
+def _response_norm_bars(data: Mapping[str, Any], params: StrictModel) -> Sequence[Any]:
+    p = FigureTraceParams.model_validate(params.model_dump())
+    payload = _response_norm_facet(data)
+    labels: list[str] = []
+    values: list[float] = []
+    for curve in payload.get("curves", ()):
+        curve = _mapping(curve)
+        mean = _series(curve.get("mean"))
+        if mean:
+            labels.append(str(curve.get("label", curve.get("model_id", "Model"))))
+            values.append(max(mean))
+    return [go.Bar(x=labels, y=values, name="Peak mean norm", opacity=p.opacity)] if labels else []
+
+
+def _response_norm_facet(data: Mapping[str, Any]) -> Mapping[str, Any]:
+    payload = _mapping(data.get("payload"))
+    metric = str(data.get("metric", ""))
+    condition_class = str(data.get("condition_class", ""))
+    return _mapping(_mapping(_mapping(payload.get("facets")).get(metric)).get(condition_class))
 
 
 def _profile_series(cell: Mapping[str, Any], profile_key: str) -> list[dict[str, Any]]:

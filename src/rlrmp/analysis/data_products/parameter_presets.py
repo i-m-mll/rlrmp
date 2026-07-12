@@ -107,7 +107,6 @@ def _register_defaults() -> None:
         "failure_decomposition",
         "gru_checkpoint_selection",
         "gru_perturbation_calibration",
-        "gru_perturbation_response_norm_plots",
         "gru_pilot_figures",
         "gru_steady_state_perturbation_bank",
         "objective_comparator",

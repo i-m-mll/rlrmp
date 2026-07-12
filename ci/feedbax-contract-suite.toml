@@ -299,10 +299,21 @@ negative_canary = [
     "tests/test_delayed_profile_figure_contract.py::test_registered_delayed_payload_owns_profile_facets_and_bands",
 ]
 
+[[families]]
+name = "response_norm_figure_contract"
+owner = "5f85bf5"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_response_norm_capability.py::"
+# Pin intrinsic/data-bound facets, custody payloads, and terminal legacy deletion.
+minimum_non_skipped = 7
+negative_canary = [
+    "tests/analysis/test_response_norm_capability.py::test_payload_distinguishes_intrinsic_and_data_bound_facets",
+]
+
 [pipeline_contract_native]
 allowlist = [
     { path = "src/rlrmp/analysis/pipelines/diagnostic_provenance.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "regeneration-spec writer is shared compatibility plumbing until custody routing lands" },
-    { path = "src/rlrmp/analysis/pipelines/gru_perturbation_response_norm_plots.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "response-norm plotting writer remains pending figure/report custody redesign" },
     { path = "src/rlrmp/analysis/pipelines/gru_pilot_figures.py", reasons = ["direct_durable_writer", "direct_eval_rerun"], owner = "ed225ef", reason = "pilot figure materializer remains pending the figure redesign lane" },
     { path = "src/rlrmp/analysis/pipelines/gru_postrun_materialization.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "post-run compatibility orchestrator still writes manifest pointers while dispatching recipes" },
     { path = "src/rlrmp/analysis/pipelines/objective_comparator.py", reasons = ["direct_eval_rerun"], owner = "ed225ef", reason = "objective comparator retains local rollout comparison helpers pending report-stage routing" },
