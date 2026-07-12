@@ -1,0 +1,390 @@
+{
+  "axes": [],
+  "base": {
+    "kind": "resolved_output",
+    "ref": "_artifacts/spec-storage/sha256/c0/c0affc9e5b1df8555331a10761f99e390a4debd26e96baea36e90375a81538dc.json",
+    "resolved_root_hash": "2414a75c2e7971e8c19cc0e8d0ac0b01bea3b9a9bb2b806cd28054ed738d850b",
+    "symbolic_name": "matrix.historical-base"
+  },
+  "combination": {
+    "groups": [],
+    "manual_coordinates": [],
+    "metadata": {},
+    "mode": "cross"
+  },
+  "deltas": [],
+  "derivations": [],
+  "execution_dependencies": [],
+  "fork": {
+    "expected_slots": [
+      "model",
+      "optimizer",
+      "prng",
+      "completed_batches"
+    ],
+    "lr_continuation": "restart",
+    "parity": "require",
+    "source_run_id": "harmonized_nominal_h0_const_band16_lr3e-3_clip5_b64_retry_source-custody"
+  },
+  "issue": "158b580",
+  "metadata": {
+    "ratio_setpoint": {
+      "baseline_final_quarter_mean_clean_loss": 4497.20947265625,
+      "denominator_window": "baseline_final_quarter",
+      "numerator": 1024.0,
+      "numerator_convention": "excess",
+      "rounded_ratio_setpoint_2sf": 0.23
+    },
+    "replicate_topology": "one_vmap_ensemble_with_5_internal_replicas_per_row",
+    "rlrmp_source_run_spec_ref": "results/cb3685a/runs/harmonized_nominal_h0_const_band16_lr3e-3_clip5_b64.json",
+    "rlrmp_task_identity": "sha256:66d64094620cb89393c1e249c52bcaeb17f744497fa0ea6d3eaeb5717c079456",
+    "source_checkpoint_root": "_artifacts/cb3685a/runs/harmonized_nominal_h0_const_band16_lr3e-3_clip5_b64/retry_sources/custody_repaired_12000_r3",
+    "source_checkpoint_transaction_id": "tx-b15820671bf943768cc082183d5b295b",
+    "source_completed_training_batches": 12000,
+    "target_total_batches": 12200
+  },
+  "name": "158b580 orchestrator-cutover parity (2-row adaptive-epsilon 200-batch continuation)",
+  "rows": [
+    {
+      "metadata": {
+        "artifact_root": "_artifacts/158b580/runs/flat_3e-5-epsilon-ramp",
+        "replicate_topology": "vmap_internal",
+        "replicates": 5,
+        "rlrmp_task_identity": "sha256:66d64094620cb89393c1e249c52bcaeb17f744497fa0ea6d3eaeb5717c079456",
+        "tracked_run_spec": "results/158b580/runs/flat_3e-5-epsilon-ramp.json"
+      },
+      "overrides": [
+        {
+          "op": "replace",
+          "path": "method_payload.payload.n_train_batches",
+          "value": 12200
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.chunk_batches",
+          "value": 100
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.application_ramp_end_batch",
+          "value": 12200
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.config.n_train_batches",
+          "value": 12200
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.config.n_batches_condition",
+          "value": 12200
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.config.checkpoint_interval_batches",
+          "value": 100
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.config.total_steps",
+          "value": 150
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.config.constant_lr_iterations",
+          "value": 50
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.config.lr_warmup_batches",
+          "value": 50
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.config.issue",
+          "value": "158b580"
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.controller_optimizer.lr_schedule.total_steps",
+          "value": 150
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.controller_optimizer.lr_schedule.constant_lr_iterations",
+          "value": 50
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.checkpointing.interval_batches",
+          "value": 100
+        },
+        {
+          "op": "replace",
+          "path": "checkpoint_progress.checkpoint_interval",
+          "value": 100
+        },
+        {
+          "op": "replace",
+          "path": "checkpoint_progress.progress_interval",
+          "value": 100
+        },
+        {
+          "op": "replace",
+          "path": "checkpoint_progress.continuation.additional_batches",
+          "value": 200
+        },
+        {
+          "op": "replace",
+          "path": "training_config.n_batches",
+          "value": 12200
+        },
+        {
+          "op": "replace",
+          "path": "training_config.snapshot_interval",
+          "value": 100
+        },
+        {
+          "op": "replace",
+          "path": "artifacts.artifact_root",
+          "value": "_artifacts/158b580/runs/flat_3e-5-epsilon-ramp"
+        },
+        {
+          "op": "replace",
+          "path": "artifacts.metadata.tracked_spec_dir",
+          "value": "results/158b580/runs/flat_3e-5-epsilon-ramp"
+        },
+        {
+          "op": "replace",
+          "path": "checkpoint_progress.metadata.checkpoint_dir",
+          "value": "_artifacts/158b580/runs/flat_3e-5-epsilon-ramp/checkpoints"
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.checkpointing.checkpoint_dir",
+          "value": "_artifacts/158b580/runs/flat_3e-5-epsilon-ramp/checkpoints"
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.checkpointing.latest_checkpoint",
+          "value": "_artifacts/158b580/runs/flat_3e-5-epsilon-ramp/checkpoints/checkpoint_latest"
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.config.output_dir",
+          "value": "_artifacts/158b580/runs/flat_3e-5-epsilon-ramp"
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.config.spec_dir",
+          "value": "results/158b580/runs/flat_3e-5-epsilon-ramp"
+        }
+      ],
+      "row_id": "flat_3e-5-epsilon-ramp",
+      "seed": 42
+    },
+    {
+      "metadata": {
+        "artifact_root": "_artifacts/158b580/runs/rewarm_3e-4-epsilon-ramp",
+        "replicate_topology": "vmap_internal",
+        "replicates": 5,
+        "rlrmp_task_identity": "sha256:66d64094620cb89393c1e249c52bcaeb17f744497fa0ea6d3eaeb5717c079456",
+        "tracked_run_spec": "results/158b580/runs/rewarm_3e-4-epsilon-ramp.json"
+      },
+      "overrides": [
+        {
+          "op": "replace",
+          "path": "method_payload.payload.n_train_batches",
+          "value": 12200
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.chunk_batches",
+          "value": 100
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.application_ramp_end_batch",
+          "value": 12200
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.config.n_train_batches",
+          "value": 12200
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.config.n_batches_condition",
+          "value": 12200
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.config.checkpoint_interval_batches",
+          "value": 100
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.config.total_steps",
+          "value": 150
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.config.constant_lr_iterations",
+          "value": 50
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.config.lr_warmup_batches",
+          "value": 50
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.config.issue",
+          "value": "158b580"
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.controller_optimizer.lr_schedule.total_steps",
+          "value": 150
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.controller_optimizer.lr_schedule.constant_lr_iterations",
+          "value": 50
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.checkpointing.interval_batches",
+          "value": 100
+        },
+        {
+          "op": "replace",
+          "path": "checkpoint_progress.checkpoint_interval",
+          "value": 100
+        },
+        {
+          "op": "replace",
+          "path": "checkpoint_progress.progress_interval",
+          "value": 100
+        },
+        {
+          "op": "replace",
+          "path": "checkpoint_progress.continuation.additional_batches",
+          "value": 200
+        },
+        {
+          "op": "replace",
+          "path": "training_config.n_batches",
+          "value": 12200
+        },
+        {
+          "op": "replace",
+          "path": "training_config.snapshot_interval",
+          "value": 100
+        },
+        {
+          "op": "replace",
+          "path": "artifacts.artifact_root",
+          "value": "_artifacts/158b580/runs/rewarm_3e-4-epsilon-ramp"
+        },
+        {
+          "op": "replace",
+          "path": "artifacts.metadata.tracked_spec_dir",
+          "value": "results/158b580/runs/rewarm_3e-4-epsilon-ramp"
+        },
+        {
+          "op": "replace",
+          "path": "checkpoint_progress.metadata.checkpoint_dir",
+          "value": "_artifacts/158b580/runs/rewarm_3e-4-epsilon-ramp/checkpoints"
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.checkpointing.checkpoint_dir",
+          "value": "_artifacts/158b580/runs/rewarm_3e-4-epsilon-ramp/checkpoints"
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.checkpointing.latest_checkpoint",
+          "value": "_artifacts/158b580/runs/rewarm_3e-4-epsilon-ramp/checkpoints/checkpoint_latest"
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.config.output_dir",
+          "value": "_artifacts/158b580/runs/rewarm_3e-4-epsilon-ramp"
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.config.spec_dir",
+          "value": "results/158b580/runs/rewarm_3e-4-epsilon-ramp"
+        },
+        {
+          "op": "replace",
+          "path": "metadata.row_id",
+          "value": "rewarm_3e-4-epsilon-ramp"
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.config.controller_lr",
+          "value": 0.0003
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.config.learning_rate_0",
+          "value": 0.0003
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.config.cosine_annealing_alpha",
+          "value": 0.1
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.config.lr_cosine_alpha",
+          "value": 0.1
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.config.warmup_init_fraction",
+          "value": 0.1
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.config.lr_warmup_init_fraction",
+          "value": 0.1
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.controller_optimizer.lr_schedule.learning_rate_0",
+          "value": 0.0003
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.controller_optimizer.lr_schedule.cosine_annealing_alpha",
+          "value": 0.1
+        },
+        {
+          "op": "replace",
+          "path": "method_payload.payload.controller_optimizer.lr_schedule.warmup_init_fraction",
+          "value": 0.1
+        },
+        {
+          "op": "replace",
+          "path": "training_config.learning_rate",
+          "value": 0.0003
+        }
+      ],
+      "row_id": "rewarm_3e-4-epsilon-ramp",
+      "seed": 42
+    }
+  ],
+  "schema_id": "feedbax.spec.training_run_matrix",
+  "schema_version": "feedbax.spec.training_run_matrix.v3",
+  "sources": [],
+  "tags": [
+    "stage2",
+    "adaptive_epsilon",
+    "lr_continuity",
+    "orchestrator_cutover",
+    "parity_158b580"
+  ]
+}
