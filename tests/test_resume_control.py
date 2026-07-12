@@ -28,6 +28,7 @@ from rlrmp.train.executor.cs_supervised import (
     build_run_spec_execution_context,
 )
 from rlrmp.train.executor import cs_supervised as cs_supervised_module
+from rlrmp.train import minimax_resume as minimax_resume_module
 from rlrmp.train.resume_control import (
     LAUNCH_CONTINUATION_PREFIX,
     LaunchContinuation,
@@ -486,7 +487,101 @@ def test_minimax_cli_exposes_checkpoint_only_resume_gate() -> None:
         Path(__file__).resolve().parents[1]
         / "src/rlrmp/train/minimax_native/method.py"
     ).read_text(encoding="utf-8")
-    assert "load_latest_checkpoint(" in method
+    resume = (
+        Path(__file__).resolve().parents[1] / "src/rlrmp/train/minimax_resume.py"
+    ).read_text(encoding="utf-8")
+    assert "load_latest_checkpoint(" not in method
+    assert "load_latest_checkpoint(" in resume
+
+
+def test_minimax_resume_verification_stays_strict_after_relocation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    phase_program = object()
+    training_spec = SimpleNamespace(
+        worker_execution=SimpleNamespace(
+            method_contract=SimpleNamespace(phase_program=phase_program)
+        )
+    )
+
+    class TrainingRunSpecStub:
+        @classmethod
+        def model_validate(cls, value: object) -> object:
+            assert value == {}
+            return training_spec
+
+    config = MinimaxConfig(
+        output_dir=str(tmp_path / "minimax"),
+        n_warmup_batches=4,
+        n_adversary_batches=6,
+    )
+    continuation = LaunchContinuation(
+        resume=True,
+        resume_source=str(tmp_path / "latest.json"),
+        completed_batches=4,
+        stop_target_batches=10,
+        continuation_batches=6,
+        source_target_batches=10,
+    )
+    pointer = tmp_path / "latest.json"
+    pointer.write_text(
+        json.dumps(
+            {
+                "completed_coordinate": {
+                    "completed_barrier": "after_warmup",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(minimax_resume_module, "TrainingRunSpec", TrainingRunSpecStub)
+    monkeypatch.setattr(
+        minimax_resume_module,
+        "minimax_training_run_spec_to_config",
+        lambda _spec: config.model_dump(mode="python"),
+    )
+
+    def resolve(**kwargs: object) -> LaunchContinuation:
+        completed = kwargs["completed_batches_from_latest"]
+        assert callable(completed)
+        assert completed(pointer) == 4
+        return continuation
+
+    monkeypatch.setattr(minimax_resume_module, "resolve_launch_continuation", resolve)
+    monkeypatch.setattr(minimax_resume_module, "emit_launch_continuation", lambda *_a, **_k: None)
+    monkeypatch.setattr(minimax_resume_module, "build_hps", lambda _config: object())
+    expected_slots = {"controller": object()}
+    monkeypatch.setattr(
+        minimax_resume_module,
+        "build_minimax_native_initial_slots",
+        lambda **_kwargs: (expected_slots, object()),
+    )
+    calls: list[tuple[Path, dict[str, object]]] = []
+
+    def load_checkpoint(root: Path, **kwargs: object) -> object:
+        calls.append((root, kwargs))
+        return SimpleNamespace(manifest=SimpleNamespace(transaction_id="txn-minimax"))
+
+    monkeypatch.setattr(minimax_resume_module, "load_latest_checkpoint", load_checkpoint)
+
+    result = minimax_resume_module.verify_minimax_checkpoint_resume({})
+
+    assert result["verified_resume"] is True
+    assert result["transaction_id"] == "txn-minimax"
+    assert result["completed_batches"] == 4
+    assert result["continuation_batches"] == 6
+    assert calls == [
+        (
+            Path(config.output_dir) / "checkpoints_adversarial",
+            {
+                "expected_run_spec": training_spec,
+                "expected_phase_program": phase_program,
+                "expected_slots": expected_slots,
+            },
+        )
+    ]
 
 
 def test_minimax_cli_help_is_importable_and_lists_resume_gate() -> None:

@@ -153,7 +153,7 @@ def test_report_stage_params_validate_all_bundle_report_stage_payloads() -> None
         for stage in bundle.stages:
             if getattr(stage, "kind", None) != "report":
                 continue
-            params = dict(getattr(stage, "params", {}) or {})
+            params = dict(stage.local_params or {})
             report_payloads[(bundle_name, stage.name)] = set(params)
             model = rr.ReportStageParams.model_validate(
                 {"report_type": stage.report_type, **params}

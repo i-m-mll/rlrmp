@@ -30,11 +30,6 @@ from rlrmp.train.executor.cs_supervised import (
 from rlrmp.train.executor.slots import OPTIMIZER
 from rlrmp.train.resume_control import declare_cs_supervised_checkpoint_continuation
 
-SOURCE_COMPLETED_BATCHES = 12_000
-TARGET_TOTAL_BATCHES = 16_500
-HISTORY_INDICES = (1, 2, 3, 30, 31, 32)
-
-
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--matrix", type=Path, required=True)
@@ -63,7 +58,7 @@ def main() -> None:
         expected_phase_program=source_spec.worker_execution.method_contract.phase_program,
         expected_slots=source_slots,
     )
-    _validate_source(source_loaded)
+    source_completed_batches = _validate_source(source_loaded)
 
     reports = []
     for row in rows:
@@ -77,6 +72,7 @@ def main() -> None:
         target_context = build_run_spec_execution_context(
             run_parser.parse_args(["--run-spec", str(run_spec_path)]), parser=run_parser
         )
+        target_total_batches = int(target_context.args.n_train_batches)
         target_spec = feedbax_training_run_spec_from_payload(target_context.run_spec)
         target_initial_slots, runtime = build_adaptive_epsilon_native_initial_slots(
             run_spec=target_spec,
@@ -94,8 +90,8 @@ def main() -> None:
         )
         target_spec = declare_cs_supervised_checkpoint_continuation(
             target_spec,
-            source_completed_batches=SOURCE_COMPLETED_BATCHES,
-            target_total_batches=TARGET_TOTAL_BATCHES,
+            source_completed_batches=source_completed_batches,
+            target_total_batches=target_total_batches,
         )
         target_barrier = "after_adaptive_epsilon_train_chunk"
         barrier_mapping = CheckpointForkBarrierMapping(
@@ -126,8 +122,8 @@ def main() -> None:
             target_only_slots=adapter.target_only_slots,
             metadata={"rlrmp_stage2_launch_fork": {
                 "schema_version": 1, "matrix_row_id": row_id,
-                "source_completed_batches": SOURCE_COMPLETED_BATCHES,
-                "target_total_batches": TARGET_TOTAL_BATCHES,
+                "source_completed_batches": source_completed_batches,
+                "target_total_batches": target_total_batches,
             }},
         )
         loaded = load_latest_checkpoint(
@@ -136,10 +132,15 @@ def main() -> None:
             expected_phase_program=target_spec.worker_execution.method_contract.phase_program,
             expected_slots=target_initial_slots,
         )
-        validate_launch_fork(loaded, row_id=row_id)
+        validate_launch_fork(
+            loaded,
+            row_id=row_id,
+            source_completed_batches=source_completed_batches,
+            target_total_batches=target_total_batches,
+        )
         reports.append({"row_id": row_id, "transaction_id": result.manifest.transaction_id,
                         "completed_training_batches": loaded.manifest.completed_training_batches,
-                        "optimizer_history_horizon": TARGET_TOTAL_BATCHES})
+                        "optimizer_history_horizon": target_total_batches})
     print(json.dumps({"rows": reports}, sort_keys=True))
 
 
@@ -151,39 +152,78 @@ def _read_custody_slots(checkpoint_root: Path) -> dict[str, object]:
             for slot in manifest["slots"]}
 
 
-def _validate_source(loaded: object) -> None:
-    if loaded.manifest.completed_training_batches != SOURCE_COMPLETED_BATCHES:
-        raise ValueError("Stage-2 launch source manifest is not at batch 12,000")
-    if int(loaded.slots["completed_batches"]) != SOURCE_COMPLETED_BATCHES:
-        raise ValueError("Stage-2 launch source completed_batches slot is not 12,000")
+def _validate_source(loaded: object) -> int:
+    source_completed_batches = int(loaded.manifest.completed_training_batches)
+    if int(loaded.slots["completed_batches"]) != source_completed_batches:
+        raise ValueError("Stage-2 launch source progress slot disagrees with its manifest")
+    return source_completed_batches
 
 
-def extend_optimizer_histories(source_optimizer: object, target_optimizer: object) -> tuple:
+def extend_optimizer_histories(
+    source_optimizer: object,
+    target_optimizer: object,
+    *,
+    source_completed_batches: int,
+    target_total_batches: int,
+) -> tuple:
     if not isinstance(source_optimizer, tuple) or not isinstance(target_optimizer, tuple):
         raise TypeError("C&S optimizer slots must be native tuple PyTrees")
+    if len(source_optimizer) != len(target_optimizer):
+        raise ValueError("C&S optimizer source and target tuple lengths differ")
+    history_indices = _history_indices(
+        source_optimizer,
+        target_optimizer,
+        source_completed_batches=source_completed_batches,
+        target_total_batches=target_total_batches,
+    )
+    if not history_indices:
+        raise ValueError("C&S optimizer has no compatible batch-history leaves")
     extended = list(source_optimizer)
-    for index in HISTORY_INDICES:
+    for index in history_indices:
         source = jnp.asarray(source_optimizer[index])
         target = jnp.asarray(target_optimizer[index])
-        if source.shape[-1] != SOURCE_COMPLETED_BATCHES:
-            raise ValueError(f"optimizer history {index} source horizon is not 12,000")
-        if target.shape[-1] != TARGET_TOTAL_BATCHES:
-            raise ValueError(f"optimizer history {index} target template horizon is not 16,500")
-        if source.shape[:-1] != target.shape[:-1] or source.dtype != target.dtype:
-            raise ValueError(f"optimizer history {index} target template ABI mismatch")
-        extended[index] = jnp.concatenate((source, target[..., SOURCE_COMPLETED_BATCHES:]), axis=-1)
+        extended[index] = jnp.concatenate((source, target[..., source.shape[-1] :]), axis=-1)
     return tuple(extended)
 
 
-def validate_launch_fork(loaded: object, *, row_id: str) -> None:
-    if loaded.manifest.completed_training_batches != TARGET_TOTAL_BATCHES:
+def _history_indices(
+    source_optimizer: tuple,
+    target_optimizer: tuple,
+    *,
+    source_completed_batches: int,
+    target_total_batches: int,
+) -> tuple[int, ...]:
+    indices = []
+    for index, (source_leaf, target_leaf) in enumerate(zip(source_optimizer, target_optimizer)):
+        source = jnp.asarray(source_leaf)
+        target = jnp.asarray(target_leaf)
+        if (
+            source.ndim > 0
+            and target.ndim == source.ndim
+            and target.shape[:-1] == source.shape[:-1]
+            and source.shape[-1] == source_completed_batches
+            and target.shape[-1] == target_total_batches
+            and target.dtype == source.dtype
+        ):
+            indices.append(index)
+    return tuple(indices)
+
+
+def validate_launch_fork(
+    loaded: object,
+    *,
+    row_id: str,
+    source_completed_batches: int,
+    target_total_batches: int,
+) -> None:
+    if loaded.manifest.completed_training_batches != target_total_batches:
         raise ValueError("launch-fork manifest is not bound to the target total")
-    if int(loaded.slots["completed_batches"]) != SOURCE_COMPLETED_BATCHES:
+    if int(loaded.slots["completed_batches"]) != source_completed_batches:
         raise ValueError("launch-fork runtime progress slot is not at the source total")
     adaptive_state = _adaptive_state_from_slot(loaded.slots["adaptive_epsilon_state"])
     if adaptive_state is None:
         raise ValueError("launch-fork adaptive state is missing")
-    if adaptive_state.schedule_start_batch != SOURCE_COMPLETED_BATCHES:
+    if adaptive_state.schedule_start_batch != source_completed_batches:
         raise ValueError("launch-fork adaptive schedule does not start at the source total")
     optimizer = loaded.slots[OPTIMIZER]
     if not hasattr(optimizer, "payload"):
@@ -191,9 +231,9 @@ def validate_launch_fork(loaded: object, *, row_id: str) -> None:
     marker = loaded.manifest.metadata.get("rlrmp_stage2_launch_fork", {})
     if marker.get("matrix_row_id") != row_id:
         raise ValueError("launch-fork provenance has the wrong matrix row")
-    if marker.get("source_completed_batches") != SOURCE_COMPLETED_BATCHES:
+    if marker.get("source_completed_batches") != source_completed_batches:
         raise ValueError("launch-fork provenance lacks the source completed count")
-    if marker.get("target_total_batches") != TARGET_TOTAL_BATCHES:
+    if marker.get("target_total_batches") != target_total_batches:
         raise ValueError("launch-fork provenance lacks the target total")
 
 

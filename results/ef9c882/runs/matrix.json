@@ -14355,6 +14355,8 @@
       }
     }
   },
+  "deltas": [],
+  "execution_dependencies": [],
   "issue": "ef9c882",
   "metadata": {
     "replaces": "planned_ef9c882_start_pos_hold_rows",
@@ -15036,7 +15038,7 @@
     }
   ],
   "schema_id": "feedbax.spec.training_run_matrix",
-  "schema_version": "feedbax.spec.training_run_matrix.v2",
+  "schema_version": "feedbax.spec.training_run_matrix.v3",
   "tags": [
     "rlrmp",
     "cs_nominal_gru",

@@ -1,3 +1,5 @@
+schema_id: feedbax.spec.analysis_bundle
+schema_version: feedbax.spec.analysis_bundle.v3
 name: standard_matrix
 description: Standard matrix analysis outputs for rlrmp experiments.
 predicate:
@@ -28,7 +30,7 @@ stages:
     mode: grouped
     analysis_type: rlrmp.standard_matrix
     requested_outputs: [figure_payload]
-    params:
+    local_params:
       metric_order:
         - velocity_rmse
         - peak_velocity
@@ -218,7 +220,7 @@ stages:
     mode: grouped
     analysis_type: rlrmp.standard_matrix
     requested_outputs: [notes]
-    params:
+    local_params:
       optional: true
       note_marker: standard_matrix
       figure_routing:

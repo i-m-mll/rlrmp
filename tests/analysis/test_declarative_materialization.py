@@ -852,22 +852,25 @@ def test_gru_postrun_bundle_declares_perturbation_leaf_aggregate_stages() -> Non
     assert stages["perturbation_bank_eval"].evaluation_type == (
         PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE
     )
-    bank_params = stages["perturbation_bank_eval"].params["bank_params"]
-    assert "perturbation_battery" not in stages["perturbation_bank_eval"].params
+    bank_params = stages["perturbation_bank_eval"].local_params["bank_params"]
+    assert "perturbation_battery" not in stages["perturbation_bank_eval"].local_params
     assert stages["perturbation_class_command_input_pulse"].analysis_type == (
         dm.PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE
     )
     assert stages["perturbation_class_command_input_pulse"].depends_on == [
         "perturbation_bank_eval"
     ]
-    assert stages["perturbation_class_command_input_pulse"].params["bank_params"] == bank_params
+    assert (
+        stages["perturbation_class_command_input_pulse"].local_params["bank_params"]
+        == bank_params
+    )
     assert stages["perturbation_bank_aggregate"].analysis_type == (
         dm.PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE
     )
     assert "perturbation_class_command_input_pulse" in (
         stages["perturbation_bank_aggregate"].depends_on
     )
-    assert stages["perturbation_bank_aggregate"].params["bank_params"] == bank_params
+    assert stages["perturbation_bank_aggregate"].local_params["bank_params"] == bank_params
 
 
 def test_perturbation_class_leaves_aggregate_to_legacy_bank_payload(
@@ -1215,10 +1218,10 @@ def test_feedback_quality_lens_records_run_condition_skips(
     bundle = load_analysis_bundle("rlrmp/feedback_quality_lens", registry=registry)
     stages = []
     for stage in bundle.stages:
-        params = dict(stage.params)
+        params = dict(stage.local_params or {})
         for name in dm.FEEDBACK_QUALITY_COMPONENT_NAMES:
             params[f"materialize_{name}"] = False
-        stages.append(stage.model_copy(update={"params": params}))
+        stages.append(stage.model_copy(update={"local_params": params}))
     bundle = bundle.model_copy(update={"stages": stages})
     run_id = "rlrmp-test-training-run:feedback-quality-skip"
     write_manifest(

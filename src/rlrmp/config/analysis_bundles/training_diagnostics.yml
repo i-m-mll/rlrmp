@@ -1,3 +1,5 @@
+schema_id: feedbax.spec.analysis_bundle
+schema_version: feedbax.spec.analysis_bundle.v3
 name: training_diagnostics
 description: Training diagnostics summary outputs for active rlrmp training runs.
 predicate:

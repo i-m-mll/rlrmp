@@ -1,5 +1,5 @@
 schema_id: feedbax.spec.analysis_bundle
-schema_version: feedbax.spec.analysis_bundle.v2
+schema_version: feedbax.spec.analysis_bundle.v3
 name: output_feedback_bridge
 description: Output-feedback bridge diagnostics with Feedbax manifest custody.
 predicate:

@@ -16,10 +16,6 @@ from rlrmp.model.feedbax_graph import (
     write_graph_spec_bundle,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p
-from rlrmp.runtime.checkpoint_custody import (
-    MINIMAX_ADVERSARIAL_BARRIER,
-    MINIMAX_WARMUP_BARRIER,
-)
 from rlrmp.runtime.jax_config import assert_jax_x64_disabled
 from rlrmp.train.config_cli import build_config_parser
 from rlrmp.train.minimax_native import (
@@ -31,6 +27,7 @@ from rlrmp.train.minimax_native import (
     validate_minimax_run_spec,
     verify_minimax_checkpoint_resume,
 )
+from rlrmp.train.minimax_resume import _completed_minimax_batches
 from rlrmp.train.run_spec_authoring import derive_spec_dir, derive_spec_path
 from rlrmp.train.resume_control import emit_launch_continuation, resolve_launch_continuation
 from rlrmp.train.task_model import setup_task_model_pair
@@ -115,18 +112,6 @@ def run_training(training_run_spec: TrainingRunSpec | dict[str, Any]) -> Any:
         resume=continuation.resume,
         manifest_conflict_policy="reuse-identical",
     )
-
-
-def _completed_minimax_batches(path: Path, config: MinimaxConfig) -> int:
-    coordinate = json.loads(path.read_text(encoding="utf-8")).get("completed_coordinate", {})
-    total = config.n_warmup_batches + config.n_adversary_batches
-    if coordinate.get("phase") == "done":
-        return total
-    if coordinate.get("completed_barrier") == MINIMAX_WARMUP_BARRIER:
-        return config.n_warmup_batches
-    if coordinate.get("completed_barrier") == MINIMAX_ADVERSARIAL_BARRIER:
-        return min(total, config.n_warmup_batches + int(coordinate.get("global_step", 0)))
-    raise ValueError(f"unsupported minimax checkpoint coordinate in {path}: {coordinate!r}")
 
 
 def main(argv: list[str] | None = None) -> int:

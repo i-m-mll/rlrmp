@@ -1,5 +1,5 @@
 schema_id: feedbax.spec.analysis_bundle
-schema_version: feedbax.spec.analysis_bundle.v2
+schema_version: feedbax.spec.analysis_bundle.v3
 name: robustness_phenotype
 description: Interpretive robustness phenotype sidecars with Feedbax manifest custody.
 predicate:
@@ -35,7 +35,7 @@ stages:
     mode: grouped
     analysis_type: rlrmp.robustness_phenotype
     requested_outputs: [robustness_phenotype]
-    params:
+    local_params:
       issue_id: 769aea6
       scope: validation_selected_gru_robustness_phenotype
       output_json: results/769aea6/notes/hinf_phenotype_sidecar.json
@@ -59,7 +59,7 @@ stages:
     mode: grouped
     depends_on: [phenotype_sidecar]
     report_type: rlrmp.report.robustness_phenotype_markdown
-    params:
+    local_params:
       schema_id: rlrmp.report.robustness_phenotype_markdown.params
       schema_version: rlrmp.report.robustness_phenotype_markdown.params.v1
       title: Robustness Phenotype Report

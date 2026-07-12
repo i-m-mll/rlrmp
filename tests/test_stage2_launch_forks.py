@@ -7,9 +7,6 @@ import pytest
 
 import scripts.prepare_stage2_launch_forks as launch_forks
 from scripts.prepare_stage2_launch_forks import (
-    HISTORY_INDICES,
-    SOURCE_COMPLETED_BATCHES,
-    TARGET_TOTAL_BATCHES,
     extend_optimizer_histories,
     validate_launch_fork,
 )
@@ -26,15 +23,25 @@ def _optimizer(horizon: int) -> tuple:
 def test_extend_optimizer_histories_preserves_prefix_and_target_horizon() -> None:
     source = _optimizer(SOURCE_COMPLETED_BATCHES)
     target = _optimizer(TARGET_TOTAL_BATCHES)
-    extended = extend_optimizer_histories(source, target)
+    extended = extend_optimizer_histories(
+        source,
+        target,
+        source_completed_batches=SOURCE_COMPLETED_BATCHES,
+        target_total_batches=TARGET_TOTAL_BATCHES,
+    )
     for index in HISTORY_INDICES:
         assert extended[index].shape[-1] == TARGET_TOTAL_BATCHES
         assert jnp.array_equal(extended[index][..., :SOURCE_COMPLETED_BATCHES], source[index])
 
 
-def test_extend_optimizer_histories_rejects_wrong_target_horizon() -> None:
-    with pytest.raises(ValueError, match="target template horizon"):
-        extend_optimizer_histories(_optimizer(SOURCE_COMPLETED_BATCHES), _optimizer(12_200))
+def test_extend_optimizer_histories_rejects_non_growing_target_horizon() -> None:
+    with pytest.raises(ValueError, match="no compatible batch-history leaves"):
+        extend_optimizer_histories(
+            _optimizer(SOURCE_COMPLETED_BATCHES),
+            _optimizer(SOURCE_COMPLETED_BATCHES),
+            source_completed_batches=SOURCE_COMPLETED_BATCHES,
+            target_total_batches=TARGET_TOTAL_BATCHES,
+        )
 
 
 def test_validate_launch_fork_requires_row_bound_provenance(monkeypatch) -> None:
@@ -56,7 +63,12 @@ def test_validate_launch_fork_requires_row_bound_provenance(monkeypatch) -> None
                "optimizer": SimpleNamespace(payload=b"serialized")},
     )
     with pytest.raises(ValueError, match="wrong matrix row"):
-        validate_launch_fork(loaded, row_id="flat_3e-5-epsilon-ramp")
+        validate_launch_fork(
+            loaded,
+            row_id="flat_3e-5-epsilon-ramp",
+            source_completed_batches=SOURCE_COMPLETED_BATCHES,
+            target_total_batches=TARGET_TOTAL_BATCHES,
+        )
 
 
 def test_stage2_launch_manifest_executes_full_training() -> None:
@@ -75,3 +87,6 @@ def test_manifest_payload_version_tracks_inline_legacy_spec() -> None:
         Path("results/c6c5997/runs/flat_3e-5-epsilon-ramp.json").read_text()
     )
     assert _run_spec_payload_schema_version(run_spec) == "rlrmp.cs_stochastic_gru.v1"
+SOURCE_COMPLETED_BATCHES = 12_000
+TARGET_TOTAL_BATCHES = 16_500
+HISTORY_INDICES = (1, 2, 3, 30, 31, 32)
