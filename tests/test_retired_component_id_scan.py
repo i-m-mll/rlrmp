@@ -38,6 +38,7 @@ import warnings
 from pathlib import Path
 
 import pytest
+from feedbax.testing import AllowlistEntry, Scope, SiteVisitor, diff_allowlist
 
 
 pytestmark = pytest.mark.feedbax_contract
@@ -117,42 +118,28 @@ def _load_confinement_allowlist() -> dict:
     return tomllib.loads(CONFINEMENT_ALLOWLIST_PATH.read_text(encoding="utf-8"))
 
 
-class _AllowlistIndex:
-    """Indexed, order-independent view of the confinement allowlist."""
+def _confinement_entries() -> list[AllowlistEntry[str]]:
+    """Load confinement scopes into the kit while preserving pathlib glob semantics."""
 
-    def __init__(self, allowlist: dict) -> None:
-        self.python_scopes: set[tuple[str, str]] = {
-            (entry["path"], entry["qualname"]) for entry in allowlist.get("python_scope", [])
-        }
-        self.files: set[str] = {entry["path"] for entry in allowlist.get("file", [])}
-        self.globs: dict[str, frozenset[str]] = {
-            entry["pattern"]: frozenset(
-                p.relative_to(REPO_ROOT).as_posix() for p in REPO_ROOT.glob(entry["pattern"])
+    allowlist = _load_confinement_allowlist()
+    entries: list[AllowlistEntry[str]] = []
+    for kind in ("python_scope", "file", "glob"):
+        for raw in allowlist.get(kind, []):
+            if kind == "glob":
+                # pathlib ``glob('prefix/**/*.ext')`` includes files directly
+                # below prefix. ``fnmatch`` needs the slash-star-star removed;
+                # its ``*`` still spans deeper POSIX path segments.
+                path = raw["pattern"].replace("/**/", "/")
+            else:
+                path = raw["path"]
+            entries.append(
+                AllowlistEntry(
+                    scope=Scope(kind, path, raw.get("qualname")),
+                    owner=str(raw.get("owner", "")),
+                    reason=str(raw.get("note", "")),
+                )
             )
-            for entry in allowlist.get("glob", [])
-        }
-
-    def covering_entries(self, occ: "_Occurrence") -> list[tuple[str, object]]:
-        """Return every allowlist entry that covers ``occ`` (empty == uncovered)."""
-
-        covering: list[tuple[str, object]] = []
-        for scope in self.python_scopes:
-            path, qualname = scope
-            if path == occ.path and qualname == occ.qualname:
-                covering.append(("python_scope", scope))
-        if occ.path in self.files:
-            covering.append(("file", occ.path))
-        for pattern, members in self.globs.items():
-            if occ.path in members:
-                covering.append(("glob", pattern))
-        return covering
-
-    def all_entry_keys(self) -> set[tuple[str, object]]:
-        keys: set[tuple[str, object]] = set()
-        keys.update(("python_scope", s) for s in self.python_scopes)
-        keys.update(("file", f) for f in self.files)
-        keys.update(("glob", g) for g in self.globs)
-        return keys
+    return entries
 
 
 class _Occurrence:
@@ -211,8 +198,9 @@ def _retired_materializer_identifier_hits(
     return hits
 
 
-class _ConstantScopeVisitor(ast.NodeVisitor):
-    def __init__(self, inventory: frozenset[str]) -> None:
+class _ConstantScopeVisitor(SiteVisitor[_Occurrence]):
+    def __init__(self, *, relpath: str, inventory: frozenset[str]) -> None:
+        super().__init__(relpath=relpath)
         self._inventory = inventory
         self._stack: list[str] = []
         self.hits: list[tuple[str, str, int]] = []  # (component_id, qualname, lineno)
@@ -241,13 +229,14 @@ def _scan_python(relpath: str, inventory: frozenset[str], errors: list[str]) -> 
     except (SyntaxError, UnicodeDecodeError, OSError) as exc:  # skips count as failures
         errors.append(f"{relpath}: unparseable/unreadable in-scope python file: {exc}")
         return []
-    visitor = _ConstantScopeVisitor(inventory)
+    visitor = _ConstantScopeVisitor(relpath=relpath, inventory=inventory)
     visitor.visit(tree)
     return [_Occurrence(relpath, cid, qual, lineno) for cid, qual, lineno in visitor.hits]
 
 
-class _RetiredEntrypointImportVisitor(ast.NodeVisitor):
-    def __init__(self, inventory: frozenset[str]) -> None:
+class _RetiredEntrypointImportVisitor(SiteVisitor[_Occurrence]):
+    def __init__(self, *, relpath: str, inventory: frozenset[str]) -> None:
+        super().__init__(relpath=relpath)
         self._inventory = inventory
         self.hits: list[tuple[str, int]] = []
 
@@ -308,7 +297,7 @@ def _retired_entrypoint_import_hits(
     inventory: frozenset[str] = RETIRED_STANDALONE_MATERIALIZER_MODULES,
 ) -> list[str]:
     tree = ast.parse(source, filename=relpath)
-    visitor = _RetiredEntrypointImportVisitor(inventory)
+    visitor = _RetiredEntrypointImportVisitor(relpath=relpath, inventory=inventory)
     visitor.visit(tree)
     return [f"{relpath}:{lineno}: {module}" for module, lineno in visitor.hits]
 
@@ -340,25 +329,13 @@ def _scan_retired_entrypoint_imports() -> tuple[list[str], list[str]]:
 # --------------------------------------------------------------------------- #
 
 
-def _uncovered_occurrences(
-    occurrences: list[_Occurrence], index: _AllowlistIndex
-) -> list[_Occurrence]:
-    return [occ for occ in occurrences if not index.covering_entries(occ)]
-
-
-def _matched_entry_keys(
-    occurrences: list[_Occurrence], index: _AllowlistIndex
-) -> set[tuple[str, object]]:
-    matched: set[tuple[str, object]] = set()
-    for occ in occurrences:
-        matched.update(index.covering_entries(occ))
-    return matched
-
-
-def _dead_entry_keys(
-    occurrences: list[_Occurrence], index: _AllowlistIndex
-) -> set[tuple[str, object]]:
-    return index.all_entry_keys() - _matched_entry_keys(occurrences, index)
+def _confinement_diff(occurrences: list[_Occurrence]):
+    return diff_allowlist(
+        occurrences,
+        _confinement_entries(),
+        site_key=lambda occurrence: occurrence.component_id,
+        site_location=lambda occurrence: (occurrence.path, occurrence.qualname),
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -382,7 +359,6 @@ def test_retired_id_inventory_is_nonempty_and_sourced_from_ratchet() -> None:
 
 def test_no_retired_component_id_outside_confinement_allowlist() -> None:
     inventory = _retired_id_inventory()
-    index = _AllowlistIndex(_load_confinement_allowlist())
     occurrences, errors = _collect_occurrences(inventory)
 
     assert not errors, (
@@ -391,7 +367,7 @@ def test_no_retired_component_id_outside_confinement_allowlist() -> None:
     # Scope-not-broken guard: the scan must actually see the retired IDs.
     assert occurrences, "retired-ID scan found zero occurrences; scan scope may be broken"
 
-    uncovered = _uncovered_occurrences(occurrences, index)
+    uncovered = _confinement_diff(occurrences).unlisted
     assert not uncovered, (
         "Retired GraphSpec component-ID(s) found on a path with no confinement "
         f"allowlist entry in {CONFINEMENT_ALLOWLIST_PATH.relative_to(REPO_ROOT)}:\n"
@@ -404,16 +380,15 @@ def test_no_retired_component_id_outside_confinement_allowlist() -> None:
 
 def test_confinement_allowlist_has_no_dead_entries() -> None:
     inventory = _retired_id_inventory()
-    index = _AllowlistIndex(_load_confinement_allowlist())
     occurrences, errors = _collect_occurrences(inventory)
     assert not errors, "in-scope files could not be scanned:\n" + "\n".join(errors)
 
-    dead = _dead_entry_keys(occurrences, index)
+    dead = _confinement_diff(occurrences).dead_entries
     assert not dead, (
         "Stale confinement allowlist entry/entries match no retired-ID occurrence "
         "(dead entries count as skips, and skips count as failures). Remove them "
         f"from {CONFINEMENT_ALLOWLIST_PATH.relative_to(REPO_ROOT)}:\n"
-        + "\n".join(f"  {kind}: {key}" for kind, key in sorted(dead, key=str))
+        + "\n".join(f"  {entry.scope}" for entry in sorted(dead, key=str))
     )
 
 
@@ -453,14 +428,15 @@ def test_retired_standalone_materializers_are_not_imported_by_active_code() -> N
     )
     assert not hits, (
         "Active src/tests/scripts code imports retired standalone materializer "
-        "entrypoint(s):\n"
-        + "\n".join(hits)
+        "entrypoint(s):\n" + "\n".join(hits)
     )
 
 
 def test_retired_output_feedback_materializer_paths_do_not_exist() -> None:
     existing = [
-        relpath for relpath in RETIRED_OUTPUT_FEEDBACK_MATERIALIZER_PATHS if (REPO_ROOT / relpath).exists()
+        relpath
+        for relpath in RETIRED_OUTPUT_FEEDBACK_MATERIALIZER_PATHS
+        if (REPO_ROOT / relpath).exists()
     ]
     assert not existing, (
         "Retired output-feedback materializer path(s) reappeared:\n"
@@ -489,7 +465,6 @@ def test_no_retired_output_feedback_materializer_identifier_in_active_python() -
 
 
 def test_scan_negative_canary_flags_unconfined_active_emission() -> None:
-    index = _AllowlistIndex(_load_confinement_allowlist())
     # A retired ID stamped in a brand-new active builder function that is not in
     # any allowlist scope must be flagged.
     unconfined = _Occurrence(
@@ -504,15 +479,11 @@ def test_scan_negative_canary_flags_unconfined_active_emission() -> None:
         "register_rlrmp_graph_components",
         148,
     )
-    uncovered = _uncovered_occurrences([unconfined, confined], index)
-    assert uncovered == [unconfined]
+    assert _confinement_diff([unconfined, confined]).unlisted == (unconfined,)
 
 
 def test_scan_negative_canary_flags_retired_output_feedback_materializer_import() -> None:
-    text = (
-        "from rlrmp.analysis.pipelines.output_feedback_linear_recurrent "
-        "import materialize\n"
-    )
+    text = "from rlrmp.analysis.pipelines.output_feedback_linear_recurrent import materialize\n"
     assert _retired_materializer_identifier_hits("src/rlrmp/analysis/pipelines/new.py", text) == [
         "src/rlrmp/analysis/pipelines/new.py:1: "
         "rlrmp.analysis.pipelines.output_feedback_linear_recurrent"
@@ -520,7 +491,6 @@ def test_scan_negative_canary_flags_retired_output_feedback_materializer_import(
 
 
 def test_scan_negative_canary_flags_retired_id_in_new_function_of_allowlisted_file() -> None:
-    index = _AllowlistIndex(_load_confinement_allowlist())
     # Same allowlisted file, but a function that is NOT an allowlisted scope:
     # region-level confinement must still flag it.
     occ = _Occurrence(
@@ -529,7 +499,7 @@ def test_scan_negative_canary_flags_retired_id_in_new_function_of_allowlisted_fi
         "_build_native_point_mass_active",
         999,
     )
-    assert _uncovered_occurrences([occ], index) == [occ]
+    assert _confinement_diff([occ]).unlisted == (occ,)
 
 
 def test_scan_negative_canary_treats_unreadable_file_as_error_not_skip() -> None:

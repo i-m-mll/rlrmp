@@ -16,12 +16,6 @@ line = "feedbax._io.save"
 reason = "Historical docstring names the old Feedbax save format; not a live import."
 
 [[known_in_flight]]
-path = "results/2bc95fd/scripts/plot_training_loss_6cell.py"
-module = "feedbax.train"
-symbols = ["TaskTrainerHistory", "init_task_trainer_history"]
-reason = "Frozen historical result script; live training code has moved off TaskTrainer."
-
-[[known_in_flight]]
 path = "results/2ef67ca/scripts/eval_loss_balance.py"
 module = "feedbax.train"
 symbols = ["init_task_trainer_history"]
@@ -31,24 +25,6 @@ reason = "Frozen historical result script; live training code has moved off Task
 path = "results/2ef67ca/scripts/eval_robustness.py"
 module = "feedbax.train"
 symbols = ["init_task_trainer_history"]
-reason = "Frozen historical result script; live training code has moved off TaskTrainer."
-
-[[known_in_flight]]
-path = "results/3702f54/scripts/analyse_pregomatrix.py"
-module = "feedbax.train"
-symbols = ["TaskTrainerHistory", "init_task_trainer_history"]
-reason = "Frozen historical result script; live training code has moved off TaskTrainer."
-
-[[known_in_flight]]
-path = "results/b399efc/scripts/analyse_movement_ramp_matrix.py"
-module = "feedbax.train"
-symbols = ["TaskTrainerHistory", "init_task_trainer_history"]
-reason = "Frozen historical result script; live training code has moved off TaskTrainer."
-
-[[known_in_flight]]
-path = "results/f47abb1/scripts/plot_training_loss_lit_replication.py"
-module = "feedbax.train"
-symbols = ["TaskTrainerHistory", "init_task_trainer_history"]
 reason = "Frozen historical result script; live training code has moved off TaskTrainer."
 
 [[canonical_homes]]
@@ -612,6 +588,7 @@ symbols = ["execute_training_run_spec"]
 [[canonical_homes]]
 module = "feedbax.training"
 symbols = [
+  "DEFAULT_EXECUTION_PREPARATION_PROVIDER_REGISTRY",
   "ExecutionPreparationProviderRegistry",
   "ExecutionPreparationRegistration",
   "ExecutionPreparationRequest",

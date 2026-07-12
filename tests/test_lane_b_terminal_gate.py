@@ -41,20 +41,18 @@ import pytest
 from feedbax.contracts.training import TrainingRunSpec
 
 import rlrmp.train.executor.cs_supervised as cs_supervised_executor
-from rlrmp.cloud.modal_runner import (
-    NominalGruRunConfig,
-    build_launcher_spec_bundle,
-    dry_run_payload,
-    spec_lock_payload,
-)
 from rlrmp.model.feedbax_graph import build_rlrmp_feedbax_graph_bundle
 from rlrmp.runtime.run_specs import resolve_run_record
 from rlrmp.runtime.training_run_specs import (
     FEEDBAX_TRAINING_RUN_SPEC_KEY,
     feedbax_training_run_spec_from_payload,
 )
-from rlrmp.train.cs_nominal_gru import build_parser, run_full_training, write_run_spec
-from rlrmp.train.config_cli import parse_config
+from rlrmp.train.cs_nominal_gru import (
+    CsNominalGruConfig,
+    _config_namespace,
+    run_full_training,
+    write_run_spec,
+)
 from rlrmp.train.minimax_native import (
     MINIMAX_METHOD_REF,
     build_hps as build_minimax_hps,
@@ -67,17 +65,13 @@ from rlrmp.train.training_configs import MinimaxConfig
 
 pytestmark = pytest.mark.feedbax_contract
 
-GENERIC_EXECUTOR_COMMAND = "python -m feedbax execute-training-run-spec"
 LANE_B_ISSUE = "08bb6d4"
 
 
 def _cs_args(**overrides: object) -> argparse.Namespace:
     """Build a smoke-size C&S GRU CLI namespace."""
 
-    args = build_parser().parse_args([])
-    for key, value in overrides.items():
-        setattr(args, key, value)
-    return args
+    return _config_namespace(CsNominalGruConfig.model_validate(overrides))
 
 
 def _smoke_cs_args(*, output_dir: Path, spec_dir: Path, **overrides: object) -> argparse.Namespace:
@@ -165,27 +159,18 @@ def test_cs_spec_first_smoke_emits_resolvable_training_run_manifest(
     assert record["schema_version"] == "rlrmp.run_spec.v2"
 
 
-def _minimax_payload(tmp_path: Path, argv: list[str]) -> dict:
-    parsed = parse_config(
-        MinimaxConfig,
-        [
-            "--n-warmup-batches",
-            "1",
-            "--n-adversary-batches",
-            "0",
-            "--batch-size",
-            "1",
-            "--n-replicates",
-            "1",
-            "--output-dir",
-            str(tmp_path / "_artifacts" / "54b0c2e" / "runs" / "spec"),
-            *argv,
-        ],
-        description="test minimax config",
+def _minimax_payload(tmp_path: Path, **overrides: object) -> dict:
+    args = MinimaxConfig.model_validate(
+        {
+            "n_warmup_batches": 1,
+            "n_adversary_batches": 0,
+            "batch_size": 1,
+            "n_replicates": 1,
+            "output_dir": str(tmp_path / "_artifacts" / "54b0c2e" / "runs" / "spec"),
+            **overrides,
+        }
     )
-    assert isinstance(parsed, MinimaxConfig)
-    args = parsed
-    config = parsed.model_dump(mode="python")
+    config = args.model_dump(mode="python")
     hps = build_minimax_hps(args)
     graph_bundle = build_rlrmp_feedbax_graph_bundle(
         hps,
@@ -207,7 +192,7 @@ def _minimax_payload(tmp_path: Path, argv: list[str]) -> dict:
 def test_minimax_dry_run_spec_validates_phase_program_fingerprint(tmp_path: Path) -> None:
     """Part (b) — validated minimax spec + fingerprint guard, no full training."""
 
-    payload = _minimax_payload(tmp_path, [])
+    payload = _minimax_payload(tmp_path)
 
     # Phase-program / effective-phase fingerprint validation on the constructed spec.
     validate_minimax_run_spec(payload, spec_dir=tmp_path)
@@ -225,44 +210,3 @@ def test_minimax_dry_run_spec_validates_phase_program_fingerprint(tmp_path: Path
     tampered_payload["feedbax_training_run_spec"] = tampered_spec
     with pytest.raises(ValueError, match="effective-phase fingerprint mismatch"):
         validate_minimax_run_spec(tampered_payload, spec_dir=tmp_path)
-
-
-def test_cloud_plans_render_for_all_backends_without_provider_contact() -> None:
-    """Part (c) — local/modal/runpod plans render purely from the spec, no provider I/O."""
-
-    config = NominalGruRunConfig(
-        experiment=LANE_B_ISSUE,
-        run="lane_b_cloud",
-        n_train_batches=1,
-        batch_size=2,
-        n_replicates=1,
-        hidden_size=4,
-        gradient_clip_norm=5.0,
-        runpod_cloud_type="SECURE",
-        runpod_gpu_type_ids=("NVIDIA GeForce RTX 4090",),
-    )
-
-    per_backend = {
-        backend: spec_lock_payload(build_launcher_spec_bundle(config, backend=backend))
-        for backend in ("local", "modal", "runpod")
-    }
-    for backend, payload in per_backend.items():
-        assert payload["backend"] == backend
-        assert GENERIC_EXECUTOR_COMMAND in payload["derived_runner_command"]
-
-    # Local rendering carries the normalized provider-neutral payload; runpod carries a
-    # rendered (not executed) provider command. Neither contacts a provider.
-    local_cloud_payload = per_backend["local"]["cloud_payload"]
-    assert local_cloud_payload["provider"] == "none"
-    assert "runpodctl_create" not in local_cloud_payload
-    assert "pod_request" not in local_cloud_payload
-    assert "generated_app" not in local_cloud_payload
-    assert local_cloud_payload["readiness"] == []
-    assert local_cloud_payload["cells"] == []
-    assert per_backend["runpod"]["cloud_payload"]["provider"] == "runpod"
-    assert "runpodctl pod create" in per_backend["runpod"]["cloud_payload"]["runpodctl_create"]
-
-    # The aggregate dry-run payload renders all three execution plans from one spec source.
-    payload = dry_run_payload(config)
-    assert set(payload["execution_plans"]) == {"local", "modal", "runpod"}
-    assert payload["execution_plans"]["runpod"]["backend"] == "runpod"

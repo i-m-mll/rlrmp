@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 from pathlib import Path
-import subprocess
-import sys
-import tomllib
 
 import pytest
 from feedbax.analysis.validation import RecipeValidationError, validate_analysis_recipe
 
 from feedbax.contracts.manifest import load_manifest
+from feedbax.testing import (
+    ContractFamily,
+    ContractSuiteManifest,
+    assert_live_family_counts,
+    assert_negative_canaries_collected,
+    collect_contract_nodeids,
+    load_suite_manifest,
+)
 from rlrmp.runtime.feedbax_contract_versions import (
     PENDING_VERSION_PINS,
     SUPPORTED_FEEDBAX_MANIFEST_SCHEMA_VERSIONS,
@@ -38,54 +43,24 @@ FIXTURE_MANIFEST = (
 
 
 def test_feedbax_contract_suite_manifest_collects_live_families() -> None:
-    manifest = _load_suite_manifest()
-    nodeids = _collect_feedbax_contract_nodeids()
-    _assert_live_family_counts(manifest, nodeids)
+    manifest = load_suite_manifest(SUITE_MANIFEST_PATH, marker="feedbax_contract")
+    collection = collect_contract_nodeids(rootdir=REPO_ROOT, marker=manifest.marker)
+    assert_live_family_counts(manifest, collection.nodeids)
+    assert_negative_canaries_collected(manifest, collection.nodeids)
 
 
 def test_feedbax_contract_suite_has_no_skip_or_non_strict_xfail_marks() -> None:
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pytest",
-            "-m",
-            "feedbax_contract",
-            "--strict-markers",
-            "--collect-only",
-            "-q",
-            "-ra",
-            "-o",
-            "xfail_strict=true",
-            "-o",
-            "empty_parameter_set_mark=fail_at_collect",
-        ],
-        cwd=REPO_ROOT,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    combined = result.stdout + result.stderr
-    assert "SKIPPED" not in combined
-    assert "XFAIL" not in combined
+    collect_contract_nodeids(rootdir=REPO_ROOT, marker="feedbax_contract", extra_args=("-ra",))
 
 
 def test_suite_manifest_negative_canary_rejects_zero_live_family() -> None:
-    manifest = {
-        "families": [
-            {
-                "name": "empty",
-                "status": "live",
-                "expected_collection_pattern": "tests/does_not_exist.py::",
-                "minimum_non_skipped": 1,
-            }
-        ]
-    }
+    manifest = ContractSuiteManifest(
+        marker="feedbax_contract",
+        families=(ContractFamily("empty", "live", "tests/does_not_exist.py::", 1),),
+    )
 
     with pytest.raises(AssertionError, match="empty"):
-        _assert_live_family_counts(manifest, ["tests/other.py::test_example"])
+        assert_live_family_counts(manifest, ["tests/other.py::test_example"])
 
 
 def test_analysis_recipe_negative_canary_rejects_bad_signature() -> None:
@@ -121,46 +96,3 @@ def test_feedbax_contract_version_pins_cover_live_contracts() -> None:
     assert_supported_graph_spec_version("1.0.0")
     with pytest.raises(ValueError, match="Unsupported Feedbax GraphSpec version"):
         assert_supported_graph_spec_version("0.0.0")
-
-
-def _load_suite_manifest() -> dict:
-    return tomllib.loads(SUITE_MANIFEST_PATH.read_text(encoding="utf-8"))
-
-
-def _collect_feedbax_contract_nodeids() -> list[str]:
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pytest",
-            "-m",
-            "feedbax_contract",
-            "--strict-markers",
-            "--collect-only",
-            "-q",
-            "-o",
-            "empty_parameter_set_mark=fail_at_collect",
-        ],
-        cwd=REPO_ROOT,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
-    return [
-        line.strip()
-        for line in result.stdout.splitlines()
-        if "::" in line and not line.startswith("<")
-    ]
-
-
-def _assert_live_family_counts(manifest: dict, nodeids: list[str]) -> None:
-    live_families = [family for family in manifest["families"] if family["status"] == "live"]
-    assert live_families, "Feedbax contract manifest declares zero live families"
-    for family in live_families:
-        pattern = family["expected_collection_pattern"]
-        count = sum(1 for nodeid in nodeids if pattern in nodeid)
-        assert count >= int(family["minimum_non_skipped"]), (
-            f"Feedbax contract family {family['name']!r} collected {count} tests; "
-            f"minimum is {family['minimum_non_skipped']} for pattern {pattern!r}"
-        )

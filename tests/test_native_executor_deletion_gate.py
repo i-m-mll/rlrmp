@@ -120,47 +120,24 @@ def test_training_spec_construction_has_no_legacy_executor_markers() -> None:
     assert not findings, "Forbidden native-executor legacy marker(s): " + ", ".join(findings)
 
 
-def test_registered_distillation_cli_paths_reach_native_executor() -> None:
-    findings: list[str] = []
-    for method_ref, wiring in REGISTERED_METHOD_CLI_WIRING.items():
-        script_path = REPO_ROOT / wiring["script"]
-        module_path = REPO_ROOT / wiring["module"]
-        script_calls = _module_call_names(ast.parse(script_path.read_text(encoding="utf-8")))
-        if "distillation_main" not in script_calls:
-            findings.append(f"{method_ref}:{wiring['script']}:does_not_call_generated_entry")
-            continue
-        module_tree = ast.parse(module_path.read_text(encoding="utf-8"))
-        if not _function_reaches_call(
-            module_tree,
-            entrypoint=str(wiring["entrypoint"]),
-            target_leaf=NATIVE_EXECUTOR_CALL,
-        ):
-            findings.append(f"{method_ref}:{wiring['module']}:native_executor_unreachable")
-
-    assert not findings, "Registered method CLI does not reach native executor: " + ", ".join(
-        findings
-    )
+def test_registered_distillation_cli_paths_are_error_only_shims() -> None:
+    for wiring in REGISTERED_METHOD_CLI_WIRING.values():
+        source = (REPO_ROOT / wiring["script"]).read_text(encoding="utf-8")
+        assert "launch_training.py" in source
+        assert "argparse" not in source
+        assert "distillation_main" not in source
 
 
-def test_train_minimax_cli_adapter_reaches_native_executor() -> None:
+def test_train_minimax_cli_is_an_error_only_spec_launch_shim() -> None:
     script_path = REPO_ROOT / "scripts" / "train_minimax.py"
     script_tree = ast.parse(script_path.read_text(encoding="utf-8"))
-    script_calls = _module_call_names(script_tree)
+    source = script_path.read_text(encoding="utf-8")
 
-    findings: list[str] = []
-    for call in ("training_run_spec_from_argv", "run_training"):
-        if call not in script_calls:
-            findings.append(f"scripts/train_minimax.py:does_not_call_{call}")
-    if not _function_reaches_call(
-        script_tree,
-        entrypoint="run_training",
-        target_leaf="execute_minimax_training_run_spec_native",
-    ):
-        findings.append("scripts/train_minimax.py:run_training_native_executor_unreachable")
-
-    assert not findings, "train_minimax CLI adapter lost native-executor dispatch: " + ", ".join(
-        findings
-    )
+    assert "scripts/launch_training.py" in source
+    assert "execute <authored-matrix.json>" in source
+    assert "argparse" not in source
+    assert "execute_minimax_training_run_spec_native" not in source
+    assert not [node for node in script_tree.body if isinstance(node, ast.FunctionDef)]
 
 
 def test_minimax_native_step_functions_stay_jitted() -> None:

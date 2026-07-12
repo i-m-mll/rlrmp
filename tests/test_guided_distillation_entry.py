@@ -6,31 +6,9 @@ import importlib.util
 
 import pytest
 
-from rlrmp.train.config_cli import build_config_parser, parse_config
 from rlrmp.train.distillation_entry import load_distillation_run_spec
 from rlrmp.train.distillation_native import guided_kernel
 from rlrmp.train.training_configs import GuidedDistillationConfig
-
-
-def test_guided_cli_is_generated_from_config_model() -> None:
-    parser = build_config_parser(
-        GuidedDistillationConfig,
-        description="test guided distillation",
-    )
-    options = {option for action in parser._actions for option in action.option_strings}
-    for name in GuidedDistillationConfig.model_fields:
-        assert f"--{name.replace('_', '-')}" in options
-
-    config = parse_config(
-        GuidedDistillationConfig,
-        ["--n-batches", "3", "--batch-size", "2", "--no-checkpoint", "--dry-run"],
-        description="test guided distillation",
-    )
-    assert isinstance(config, GuidedDistillationConfig)
-    assert config.n_batches == 3
-    assert config.batch_size == 2
-    assert config.checkpoint is False
-    assert config.dry_run is True
 
 
 def test_guided_typed_config_loads_and_refreshes_tracked_native_spec() -> None:

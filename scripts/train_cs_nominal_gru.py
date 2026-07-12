@@ -1,7 +1,14 @@
-"""CLI wrapper for stochastic C&S-fidelity GRU run-spec and training commands."""
+"""Error-only shim for the retired flag-per-field training interface."""
 
-from rlrmp.train.cs_nominal_gru import main
+import sys
+
+
+REPLACEMENT = (
+    "PYTHONPATH=src uv run --no-sync python scripts/launch_training.py "
+    "execute <authored-matrix.json>"
+)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    print(REPLACEMENT, file=sys.stderr)
+    raise SystemExit(2)

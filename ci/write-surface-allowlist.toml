@@ -72,17 +72,6 @@
 # manifest parity) and are called out here so they are not mistaken for
 # in-scope guarantees of this static surface guard.
 
-# --- scripts/train_minimax.py ------------------------------------------------
-
-[[durable_write_sites]]
-path = "scripts/train_minimax.py"
-function = "author_minimax_training_run_spec"
-kind = "write_text"
-target = "spec_path"
-owner = "0efc92d"
-role = "run_spec"
-conditional = false
-
 # The minimax final-output emitters (warmup/adversarial model, trained
 # adversary/adversaries, adversarial_losses, and the `_log_*` adversary
 # diagnostics) were routed onto the terminal feedbax custody transaction and

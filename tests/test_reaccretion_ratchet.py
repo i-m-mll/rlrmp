@@ -21,10 +21,13 @@ from __future__ import annotations
 
 import ast
 import re
-from pathlib import Path
 import tomllib
+from collections.abc import Hashable, Iterable
+from pathlib import Path
+from typing import TypeVar
 
 import pytest
+from feedbax.testing import SiteVisitor, TomlListBaseline, compare_ratchet, scan_domain
 
 
 pytestmark = pytest.mark.feedbax_contract
@@ -56,42 +59,52 @@ SANCTIONED_RUN_SPEC_EMITTER_NAMES = frozenset(
     }
 )
 RUN_SPEC_NAME_PATTERN = re.compile(r"(run_spec|spec_path|run_path)", re.IGNORECASE)
-SCHEMA_GENERATED_PARSER_MODULES = frozenset(
-    {
-        "src/rlrmp/train/config_cli.py",
-        "src/rlrmp/train/run_spec_authoring.py",
-    }
+SCHEMA_GENERATED_PARSER_MODULES: frozenset[str] = frozenset()
+
+KeyT = TypeVar("KeyT", bound=Hashable)
+
+
+BRANDED_ID_BASELINE = TomlListBaseline(
+    ALLOWLIST_PATH,
+    "branded_component_ids",
+    key_from_entry=lambda entry: entry["value"],
+)
+ARGPARSE_BASELINE = TomlListBaseline(
+    ALLOWLIST_PATH,
+    "argparse_training_entry_points",
+    key_from_entry=lambda entry: entry["path"],
+)
+RUN_SPEC_WRITER_BASELINE = TomlListBaseline(
+    ALLOWLIST_PATH,
+    "run_spec_writer_sites",
+    key_from_entry=lambda entry: (entry["path"], entry["function"]),
 )
 
 
 def test_branded_graph_spec_component_ids_match_allowlist() -> None:
-    allowlist = _load_allowlist()
-    allowed_values = {entry["value"] for entry in allowlist["branded_component_ids"]}
-
     found = _scan_branded_component_ids()
 
-    new_instances = sorted(found - allowed_values)
-    assert not new_instances, (
+    _assert_no_growth(
+        found,
+        BRANDED_ID_BASELINE.load(),
         "New RLRMP-branded GraphSpec component-ID string(s) found without an "
-        f"allowlist entry: {new_instances}. Add an entry to "
+        "allowlist entry: {added}. Add an entry to "
         f"{ALLOWLIST_PATH.relative_to(REPO_ROOT)} naming the owning ledger issue, "
-        "or confirm this is not meant to be a new active-spec default."
+        "or confirm this is not meant to be a new active-spec default.",
     )
     # Shrink-only: retired IDs may remain listed without failing this test.
     assert found, "Branded-component-ID scan found zero strings; scan scope may be broken"
 
 
 def test_argparse_training_entry_points_match_allowlist() -> None:
-    allowlist = _load_allowlist()
-    allowed_paths = {entry["path"] for entry in allowlist["argparse_training_entry_points"]}
-
     found = _scan_argparse_entry_points()
 
-    new_instances = sorted(found - allowed_paths)
-    assert not new_instances, (
+    _assert_no_growth(
+        found,
+        ARGPARSE_BASELINE.load(),
         "New argparse-first training entry point(s) found without an allowlist "
-        f"entry: {new_instances}. Add an entry to "
-        f"{ALLOWLIST_PATH.relative_to(REPO_ROOT)} naming the owning ledger issue."
+        "entry: {added}. Add an entry to "
+        f"{ALLOWLIST_PATH.relative_to(REPO_ROOT)} naming the owning ledger issue.",
     )
     # This retired-pattern inventory may reach zero now that canonical training
     # CLIs are generated from registered config schemas. The negative canary
@@ -99,21 +112,17 @@ def test_argparse_training_entry_points_match_allowlist() -> None:
 
 
 def test_hand_rolled_run_spec_writer_sites_match_allowlist() -> None:
-    allowlist = _load_allowlist()
-    allowed_sites = {
-        (entry["path"], entry["function"]) for entry in allowlist["run_spec_writer_sites"]
-    }
-
     found = _scan_run_spec_writer_sites()
 
-    new_instances = sorted(found - allowed_sites)
-    assert not new_instances, (
+    _assert_no_growth(
+        found,
+        RUN_SPEC_WRITER_BASELINE.load(),
         "New hand-rolled run-spec/run.json writer site(s) found without an "
-        f"allowlist entry: {new_instances}. Add an entry to "
+        "allowlist entry: {added}. Add an entry to "
         f"{ALLOWLIST_PATH.relative_to(REPO_ROOT)} naming the owning ledger issue, "
         "or route the write through a sanctioned emitter "
         "(validate_nominal_gru_run_spec / stamp_current_schema / "
-        "accept_rlrmp_spec_payload)."
+        "accept_rlrmp_spec_payload).",
     )
     # This retired-pattern inventory is allowed to reach zero when the last
     # hand-rolled run-spec writer has been removed. The negative canary below
@@ -121,27 +130,26 @@ def test_hand_rolled_run_spec_writer_sites_match_allowlist() -> None:
 
 
 def test_reaccretion_ratchet_negative_canary_rejects_unlisted_instance() -> None:
-    allowlist = {
-        "branded_component_ids": [{"value": "RLRMPSomeExistingComponent"}],
-        "argparse_training_entry_points": [{"path": "scripts/train_existing.py"}],
-        "run_spec_writer_sites": [{"path": "scripts/train_existing.py", "function": "existing"}],
-    }
-
     with pytest.raises(AssertionError, match="New RLRMP-branded"):
-        _assert_no_new_branded_ids(
-            allowlist, found={"RLRMPSomeExistingComponent", "RLRMPBrandNewComponent"}
+        _assert_no_growth(
+            {"RLRMPSomeExistingComponent", "RLRMPBrandNewComponent"},
+            {"RLRMPSomeExistingComponent"},
+            "New RLRMP-branded component ID(s): {added}",
         )
     with pytest.raises(AssertionError, match="New argparse-first"):
-        _assert_no_new_argparse_entry_points(
-            allowlist, found={"scripts/train_existing.py", "scripts/train_new_launcher.py"}
+        _assert_no_growth(
+            {"scripts/train_existing.py", "scripts/train_new_launcher.py"},
+            {"scripts/train_existing.py"},
+            "New argparse-first entry point(s): {added}",
         )
     with pytest.raises(AssertionError, match="New hand-rolled"):
-        _assert_no_new_run_spec_writer_sites(
-            allowlist,
-            found={
+        _assert_no_growth(
+            {
                 ("scripts/train_existing.py", "existing"),
                 ("scripts/train_new.py", "run_training"),
             },
+            {("scripts/train_existing.py", "existing")},
+            "New hand-rolled run-spec writer site(s): {added}",
         )
 
 
@@ -165,39 +173,28 @@ def _load_allowlist() -> dict:
     return tomllib.loads(ALLOWLIST_PATH.read_text(encoding="utf-8"))
 
 
-def _assert_no_new_branded_ids(allowlist: dict, found: set[str]) -> None:
-    allowed_values = {entry["value"] for entry in allowlist["branded_component_ids"]}
-    new_instances = sorted(found - allowed_values)
-    assert not new_instances, f"New RLRMP-branded component ID(s): {new_instances}"
-
-
-def _assert_no_new_argparse_entry_points(allowlist: dict, found: set[str]) -> None:
-    allowed_paths = {entry["path"] for entry in allowlist["argparse_training_entry_points"]}
-    new_instances = sorted(found - allowed_paths)
-    assert not new_instances, f"New argparse-first entry point(s): {new_instances}"
-
-
-def _assert_no_new_run_spec_writer_sites(allowlist: dict, found: set[tuple[str, str]]) -> None:
-    allowed_sites = {
-        (entry["path"], entry["function"]) for entry in allowlist["run_spec_writer_sites"]
-    }
-    new_instances = sorted(found - allowed_sites)
-    assert not new_instances, f"New hand-rolled run-spec writer site(s): {new_instances}"
+def _assert_no_growth(current: Iterable[KeyT], baseline: Iterable[KeyT], message: str) -> None:
+    diff = compare_ratchet(current, baseline)
+    assert not diff.added, message.format(added=sorted(diff.added))
 
 
 # --- Inventory 1 scan --------------------------------------------------------
 
 
 def _scan_branded_component_ids() -> set[str]:
-    found: set[str] = set()
-    for relpath in BRANDED_COMPONENT_ID_SCAN_FILES:
-        path = REPO_ROOT / relpath
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                if BRANDED_COMPONENT_ID_PATTERN.fullmatch(node.value):
-                    found.add(node.value)
-    return found
+    return set(
+        scan_domain(
+            (REPO_ROOT / relpath for relpath in BRANDED_COMPONENT_ID_SCAN_FILES),
+            root=REPO_ROOT,
+            visitor_factory=_BrandedIdVisitor,
+        )
+    )
+
+
+class _BrandedIdVisitor(SiteVisitor[str]):
+    def visit_Constant(self, node: ast.Constant) -> None:
+        if isinstance(node.value, str) and BRANDED_COMPONENT_ID_PATTERN.fullmatch(node.value):
+            self.sites.append(node.value)
 
 
 # --- Inventories 2/3 shared domain -------------------------------------------
@@ -213,13 +210,22 @@ def _training_entry_point_domain_files() -> list[Path]:
 
 
 def _scan_argparse_entry_points() -> set[str]:
-    found: set[str] = set()
-    for path in _training_entry_point_domain_files():
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        relpath = path.relative_to(REPO_ROOT).as_posix()
-        if _constructs_argument_parser(tree) and relpath not in SCHEMA_GENERATED_PARSER_MODULES:
-            found.add(relpath)
-    return found
+    return set(
+        scan_domain(
+            _training_entry_point_domain_files(),
+            root=REPO_ROOT,
+            visitor_factory=_ArgparseEntrypointVisitor,
+        )
+    )
+
+
+class _ArgparseEntrypointVisitor(SiteVisitor[str]):
+    def visit_Module(self, node: ast.Module) -> None:
+        if (
+            _constructs_argument_parser(node)
+            and self.relpath not in SCHEMA_GENERATED_PARSER_MODULES
+        ):
+            self.sites.append(self.relpath)
 
 
 def _constructs_argument_parser(tree: ast.AST) -> bool:
@@ -239,16 +245,20 @@ def _constructs_argument_parser(tree: ast.AST) -> bool:
 
 
 def _scan_run_spec_writer_sites() -> set[tuple[str, str]]:
-    found: set[tuple[str, str]] = set()
-    for path in _training_entry_point_domain_files():
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        relpath = path.relative_to(REPO_ROOT).as_posix()
-        for node in tree.body:
-            if not isinstance(node, ast.FunctionDef):
-                continue
-            if _is_hand_rolled_run_spec_writer(node):
-                found.add((relpath, node.name))
-    return found
+    return set(
+        scan_domain(
+            _training_entry_point_domain_files(),
+            root=REPO_ROOT,
+            visitor_factory=_RunSpecWriterVisitor,
+        )
+    )
+
+
+class _RunSpecWriterVisitor(SiteVisitor[tuple[str, str]]):
+    def visit_Module(self, node: ast.Module) -> None:
+        for child in node.body:
+            if isinstance(child, ast.FunctionDef) and _is_hand_rolled_run_spec_writer(child):
+                self.sites.append((self.relpath, child.name))
 
 
 def _is_hand_rolled_run_spec_writer(func: ast.FunctionDef) -> bool:

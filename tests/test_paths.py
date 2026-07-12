@@ -22,12 +22,12 @@ authoritative oracle for whether a path would be tracked.
 """
 
 from __future__ import annotations
-from rlrmp.io import load_named_python_module as _load_module
-
 import subprocess
 from pathlib import Path
 
 import pytest
+
+from rlrmp.train.run_spec_authoring import derive_spec_dir, derive_spec_path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -393,19 +393,8 @@ class TestFigureDirMirrorInvariant:
 
 
 # ---------------------------------------------------------------------------
-# Train-script ``derive_spec_dir`` helpers (Bug: 0077b42)
+# Run-spec authoring path helpers (Bug: 0077b42)
 # ---------------------------------------------------------------------------
-
-
-
-
-@pytest.fixture(scope="module")
-def train_minimax_module():
-    return _load_module(
-        "train_minimax_under_test",
-        REPO_ROOT / "scripts" / "train_minimax.py",
-    )
-
 
 class TestDerivedSpecDirMirrorInvariant:
     """``derive_spec_dir`` honours the mirror invariant for ``_artifacts/`` paths.
@@ -415,9 +404,9 @@ class TestDerivedSpecDirMirrorInvariant:
     ``rlrmp.paths.run_spec_dir(exp, run)`` for the same ``(exp, run)``.
     """
 
-    def test_minimax_run_artifact_to_run_spec(self, train_minimax_module) -> None:
+    def test_minimax_run_artifact_to_run_spec(self) -> None:
         artifact = run_artifact_dir("minimax", "seed_0")
-        spec = train_minimax_module.derive_spec_dir(artifact)
+        spec = derive_spec_dir(artifact)
         assert spec == run_spec_dir("minimax", "seed_0")
 
 
@@ -428,19 +417,19 @@ class TestDerivedSpecPathFlat:
     sidecars live in the sibling ``results/<exp>/runs/<run>/`` directory.
     """
 
-    def test_minimax_artifact_to_flat_recipe(self, train_minimax_module) -> None:
+    def test_minimax_artifact_to_flat_recipe(self) -> None:
         artifact = run_artifact_dir("minimax", "seed_0")
-        spec = train_minimax_module.derive_spec_path(artifact)
+        spec = derive_spec_path(artifact)
         assert spec == run_spec_path("minimax", "seed_0")
         assert spec.name == "seed_0.json"
 
-    def test_relative_artifact_path_resolves_to_flat(self, train_minimax_module) -> None:
-        spec = train_minimax_module.derive_spec_path(Path("_artifacts/minimax/runs/foo"))
+    def test_relative_artifact_path_resolves_to_flat(self) -> None:
+        spec = derive_spec_path(Path("_artifacts/minimax/runs/foo"))
         assert spec == run_spec_path("minimax", "foo")
 
-    def test_flat_recipe_is_not_nested_run_json(self, train_minimax_module) -> None:
+    def test_flat_recipe_is_not_nested_run_json(self) -> None:
         artifact = run_artifact_dir("minimax", "seed_0")
-        spec = train_minimax_module.derive_spec_path(artifact)
+        spec = derive_spec_path(artifact)
         nested = run_spec_dir("minimax", "seed_0") / "run.json"
         assert spec != nested
 
@@ -452,12 +441,10 @@ class TestDerivedSpecPathFallback:
     same name. The recipe is still a flat ``.json`` file, never nested.
     """
 
-    def test_minimax_out_of_tree_path_uses_flat_sibling(
-        self, tmp_path, train_minimax_module
-    ) -> None:
+    def test_minimax_out_of_tree_path_uses_flat_sibling(self, tmp_path: Path) -> None:
         out = tmp_path / "minirun"
         out.mkdir()
-        spec = train_minimax_module.derive_spec_path(out)
+        spec = derive_spec_path(out)
         assert spec.name == "minirun_spec.json"
         assert spec.parent == out.parent
         assert spec.suffix == ".json"
@@ -466,11 +453,9 @@ class TestDerivedSpecPathFallback:
 class TestDerivedSpecDirFallback:
     """When ``output_dir`` is outside ``_artifacts/``, fall back to a sibling."""
 
-    def test_minimax_out_of_tree_path_uses_sibling_spec(
-        self, tmp_path, train_minimax_module
-    ) -> None:
+    def test_minimax_out_of_tree_path_uses_sibling_spec(self, tmp_path: Path) -> None:
         out = tmp_path / "minirun"
         out.mkdir()
-        spec = train_minimax_module.derive_spec_dir(out)
+        spec = derive_spec_dir(out)
         assert spec.name == "minirun_spec"
         assert spec.parent == out.parent

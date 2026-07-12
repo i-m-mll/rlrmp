@@ -5,11 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import shutil
-import subprocess
-import sys
-from types import SimpleNamespace
 from argparse import Namespace
 from pathlib import Path
+from types import SimpleNamespace
 
 import jax
 import pytest
@@ -19,13 +17,12 @@ from feedbax.training.checkpoint_custody import (
     write_checkpoint_transaction,
 )
 
-from rlrmp.train.cs_nominal_gru import build_parser
-from rlrmp.train.config_cli import parse_config
+from rlrmp.io import load_named_python_module
 from rlrmp.train.executor.cs_supervised import (
     _cs_supervised_execution_registry,
     _adaptive_runtime_template_inputs,
     build_cs_supervised_native_initial_slots,
-    build_run_spec_execution_context,
+    build_execution_context_from_spec,
 )
 from rlrmp.train.executor import cs_supervised as cs_supervised_module
 from rlrmp.train import minimax_resume as minimax_resume_module
@@ -38,9 +35,9 @@ from rlrmp.train.resume_control import (
     emit_launch_continuation,
     resolve_launch_continuation,
 )
+from rlrmp.train.training_configs import MinimaxConfig
 from rlrmp.runtime.training_run_specs import feedbax_training_run_spec_from_payload
 from rlrmp.runtime.checkpoint_custody import cs_custody_training_spec
-from rlrmp.train.training_configs import MinimaxConfig
 
 
 def _baseline_recipe_path() -> Path:
@@ -55,11 +52,7 @@ def custody_checkpoint_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Materialize one valid custody source for typed-document canaries."""
 
     recipe_path = _baseline_recipe_path()
-    parser = build_parser()
-    context = build_run_spec_execution_context(
-        parser.parse_args(["--run-spec", str(recipe_path)]),
-        parser=parser,
-    )
+    context = build_execution_context_from_spec(recipe_path)
     source_spec = feedbax_training_run_spec_from_payload(context.run_spec)
     source_slots, _runtime = build_cs_supervised_native_initial_slots(
         run_spec=context.run_spec,
@@ -311,11 +304,7 @@ def test_target_bound_launch_fork_still_attaches_runnable_continuation() -> None
 
 def test_cs_supervised_resume_registry_uses_attached_custody_contract() -> None:
     recipe_path = Path(__file__).resolve().parents[1] / "results/cb3685a/runs/seam_probe.json"
-    parser = build_parser()
-    context = build_run_spec_execution_context(
-        parser.parse_args(["--run-spec", str(recipe_path)]),
-        parser=parser,
-    )
+    context = build_execution_context_from_spec(recipe_path)
     continuation = LaunchContinuation(
         resume=True,
         resume_source="/tmp/checkpoints/latest.json",
@@ -399,37 +388,13 @@ def test_stage2_authoring_declares_12000_to_16500_total_horizon() -> None:
     assert request.additional_batches == 4_500
 
 
-def test_cli_flags_document_resume_override_and_global_stop_target() -> None:
-    parser = build_parser()
-    help_text = parser.format_help()
-    normalized_help = " ".join(help_text.split())
-
-    assert parser.parse_args(["--allow-fresh-start"]).allow_fresh_start is True
-    assert parser.parse_args(["--verify-resume-only"]).verify_resume_only is True
-    assert "--allow-fresh-start" in help_text
-    assert "--verify-resume-only" in help_text
-    assert "Global completed-batch index" in normalized_help
-    assert "not a relative count" in normalized_help
-
-    minimax_config = parse_config(
-        MinimaxConfig,
-        ["--allow-fresh-start"],
-        description="test minimax config",
-    )
-    assert minimax_config.allow_fresh_start is True
-
-
 @pytest.mark.parametrize("loader_error", [None, ValueError("checkpoint binding mismatch")])
 def test_verify_resume_only_loads_strict_checkpoint_without_executor_steps(
     monkeypatch: pytest.MonkeyPatch,
     loader_error: Exception | None,
 ) -> None:
     recipe_path = _baseline_recipe_path()
-    parser = build_parser()
-    context = build_run_spec_execution_context(
-        parser.parse_args(["--run-spec", str(recipe_path), "--verify-resume-only"]),
-        parser=parser,
-    )
+    context = build_execution_context_from_spec(recipe_path, resume=True)
     continuation = LaunchContinuation(
         resume=True,
         resume_source="/tmp/checkpoints/latest.json",
@@ -477,19 +442,30 @@ def test_verify_resume_only_loads_strict_checkpoint_without_executor_steps(
     assert "expected_slots" in calls[0]
 
 
-def test_minimax_cli_exposes_checkpoint_only_resume_gate() -> None:
-    script = (Path(__file__).resolve().parents[1] / "scripts/train_minimax.py").read_text(
-        encoding="utf-8"
+def test_launch_interface_exposes_checkpoint_only_resume_gate() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    launch_script = load_named_python_module(
+        "launch_training_under_test",
+        repo_root / "scripts/launch_training.py",
     )
-    assert '"--verify-resume-only"' in script
-    assert "verify_minimax_checkpoint_resume(spec) if verify_only else run_training(spec)" in script
+    verify_args = launch_script.build_parser().parse_args(
+        ["verify-resume", "matrix.json", "--row", "minimax"]
+    )
+    assert verify_args.command == "verify-resume"
+    assert verify_args.row == "minimax"
+    assert not hasattr(verify_args, "allow_fresh_start")
+
+    execute_args = launch_script.build_parser().parse_args(
+        ["execute", "matrix.json", "--resume", "--allow-fresh-start"]
+    )
+    assert execute_args.command == "execute"
+    assert execute_args.resume is True
+    assert execute_args.allow_fresh_start is True
+
     method = (
-        Path(__file__).resolve().parents[1]
-        / "src/rlrmp/train/minimax_native/method.py"
+        repo_root / "src/rlrmp/train/minimax_native/method.py"
     ).read_text(encoding="utf-8")
-    resume = (
-        Path(__file__).resolve().parents[1] / "src/rlrmp/train/minimax_resume.py"
-    ).read_text(encoding="utf-8")
+    resume = (repo_root / "src/rlrmp/train/minimax_resume.py").read_text(encoding="utf-8")
     assert "load_latest_checkpoint(" not in method
     assert "load_latest_checkpoint(" in resume
 
@@ -582,16 +558,3 @@ def test_minimax_resume_verification_stays_strict_after_relocation(
             },
         )
     ]
-
-
-def test_minimax_cli_help_is_importable_and_lists_resume_gate() -> None:
-    repo_root = Path(__file__).resolve().parents[1]
-    result = subprocess.run(
-        [sys.executable, str(repo_root / "scripts/train_minimax.py"), "--help"],
-        cwd=repo_root,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
-    assert "--verify-resume-only" in result.stdout
