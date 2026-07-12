@@ -241,6 +241,7 @@ symbols = [
   "AnalysisDataProduct",
   "AnalysisRunSpec",
   "ArtifactRef",
+  "CheckpointSelectionManifest",
   "EntrypointRef",
   "EvaluationRunSpec",
   "FileHashRef",
