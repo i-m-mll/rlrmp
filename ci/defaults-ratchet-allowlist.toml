@@ -1163,7 +1163,7 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py"
+path = "src/rlrmp/eval/checkpoint_selection.py"
 key = "final_vs_selected_validation_degradation"
 literal_repr = "0.0"
 count = 1
@@ -1171,7 +1171,7 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py"
+path = "src/rlrmp/eval/checkpoint_selection.py"
 key = "replicate"
 literal_repr = "0"
 count = 2
@@ -1179,7 +1179,7 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py"
+path = "src/rlrmp/eval/checkpoint_selection.py"
 key = "scoring_validation_objective"
 literal_repr = "0.0"
 count = 1
