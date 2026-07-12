@@ -21,10 +21,10 @@ from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 from jax_cookbook import load_with_hyperparameters
 
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
-from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
+from rlrmp.eval.checkpoint_selection import (
     ReplicateCheckpointSelection,
     load_validation_selected_checkpoint_model,
-    materialize_validation_selected_checkpoint_manifest,
+    build_validation_checkpoint_selection_manifest,
 )
 from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path
@@ -93,11 +93,11 @@ def materialize_broad_epsilon_attribution(
         selected_run_ids = selected_run_ids[: int(max_runs)]
     runs = resolve_run_inputs(experiment, selected_run_ids, repo_root=repo_root)
     selection_manifest = (
-        materialize_validation_selected_checkpoint_manifest(
+        build_validation_checkpoint_selection_manifest(
             experiment=experiment,
             run_ids=tuple(run.run_id for run in runs),
             repo_root=repo_root,
-        )
+        ).model_dump(mode="json", exclude_none=True)
         if use_validation_selected_checkpoints and runs
         else None
     )

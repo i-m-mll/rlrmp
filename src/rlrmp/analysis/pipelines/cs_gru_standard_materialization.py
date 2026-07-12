@@ -124,11 +124,11 @@ def materialize_gru_standard_result(
 
     selection_manifest = None
     if use_validation_selected_checkpoints:
-        from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
-            materialize_validation_selected_checkpoint_manifest,
+        from rlrmp.eval.checkpoint_selection import (
+            build_validation_checkpoint_selection_manifest,
         )
 
-        selection_manifest = materialize_validation_selected_checkpoint_manifest(
+        selection_manifest = build_validation_checkpoint_selection_manifest(
             experiment=experiment,
             run_ids=run_ids,
             preferred_manifest_path=preferred_checkpoint_manifest_path,
@@ -138,7 +138,7 @@ def materialize_gru_standard_result(
                 else "sparse_history"
             ),
             repo_root=repo_root,
-        )
+        ).model_dump(mode="json", exclude_none=True)
     rows = [
         materialize_gru_standard_row(
             run_id,
@@ -168,9 +168,9 @@ def materialize_gru_standard_result(
         }
     )
     effective_checkpoint_policy = (
-        str(selection_manifest.get("checkpoint_policy"))
+        str(selection_manifest.get("metadata", {}).get("checkpoint_policy"))
         if isinstance(selection_manifest, Mapping)
-        and selection_manifest.get("checkpoint_policy") is not None
+        and selection_manifest.get("metadata", {}).get("checkpoint_policy") is not None
         else (
             "validation_selected_per_replicate"
             if use_validation_selected_checkpoints
@@ -728,7 +728,7 @@ def evaluate_gru_clean_actions(
         ),
     )
     if use_validation_selected_checkpoints:
-        from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
+        from rlrmp.eval.checkpoint_selection import (
             load_validation_selected_checkpoint_model,
         )
 

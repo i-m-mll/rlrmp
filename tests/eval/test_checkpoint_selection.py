@@ -1,4 +1,4 @@
-"""Tests for validation-selected GRU checkpoint recovery."""
+"""Tests for the registered evaluation checkpoint-selection capability."""
 
 from __future__ import annotations
 
@@ -6,16 +6,18 @@ import json
 from pathlib import Path
 
 import numpy as np
-from feedbax.contracts.manifest import CheckpointSelectionManifest, load_manifest
+from feedbax.contracts.manifest import CheckpointSelectionManifest, write_manifest
 
-import rlrmp.analysis.pipelines.gru_checkpoint_selection as checkpoint_selection
-from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
+from rlrmp.eval import checkpoint_selection
+from rlrmp.eval.checkpoint_selection import (
     FixedValidationBankSpec,
     ReplicateCheckpointSelection,
     _selected_model_cache_key,
     active_loss_term_labels,
-    materialize_fixed_bank_checkpoint_rescore_manifest,
-    materialize_validation_selected_checkpoint_manifest,
+    build_fixed_bank_checkpoint_selection_manifest,
+    build_validation_checkpoint_selection_manifest,
+    checkpoint_selection_rows,
+    load_materialized_fixed_bank_manifest,
     select_validation_checkpoints_for_run,
     validation_objective_history,
 )
@@ -238,20 +240,19 @@ def test_fixed_bank_rescore_manifest_scores_all_durable_checkpoints(
         assert validation_bank.bank_identity == "fixed-validation-bank:test"
         return scores[(replicate, checkpoint_batches)]
 
-    manifest = materialize_fixed_bank_checkpoint_rescore_manifest(
+    manifest = build_fixed_bank_checkpoint_selection_manifest(
         experiment=experiment,
         run_ids=(run_id,),
         validation_bank=bank,
         scorer=scorer,
         repo_root=tmp_path,
     )
-    written = load_manifest(tmp_path / "results" / experiment / "notes" / "fixed_bank_rescored_checkpoints.json")
-
-    assert manifest["materialization_status"] == "materialized"
-    assert isinstance(written, CheckpointSelectionManifest)
-    assert written.selection_spec.schema_id == "feedbax.spec.checkpoint_selection"
-    assert written.selection_status == "selected"
-    assert manifest["validation_bank"] == {
+    assert isinstance(manifest, CheckpointSelectionManifest)
+    assert manifest.selection_spec.schema_id == "feedbax.spec.checkpoint_selection"
+    assert manifest.selection_status == "selected"
+    assert {ref.kind for ref in manifest.inputs} == {"RLRMPExperiment", "TrainingRunManifest"}
+    assert len(manifest.selection_spec.inline["candidate_checkpoints"]) == 4
+    assert manifest.bank.metadata["validation_bank"] == {
         "bank_identity": "fixed-validation-bank:test",
         "scorer_identity": "rollout_validation_objective:test",
         "seed": 123,
@@ -260,21 +261,23 @@ def test_fixed_bank_rescore_manifest_scores_all_durable_checkpoints(
         "selection_metric": "aggregate_rollout_validation_objective",
         "nominal_quality_role": "reported_quality_sidecar_gate",
     }
-    assert manifest["validation_role"] == "generalized_held_out_perturbation_validation"
-    assert manifest["selection_metric"] == "aggregate_rollout_validation_objective"
-    assert manifest["nominal_quality_role"] == "reported_quality_sidecar_gate"
-    selections = manifest["runs"][run_id]
+    selections = checkpoint_selection_rows(manifest)[run_id]
     assert [selection["checkpoint_batches"] for selection in selections] == [6, 3]
     assert [selection["scoring_validation_objective"] for selection in selections] == [4.0, 2.0]
     assert [selection["final_vs_selected_validation_degradation"] for selection in selections] == [
         0.0,
         3.0,
     ]
+    manifest_path = write_manifest(manifest, root=tmp_path / "manifests", index=False)
+    loaded = load_materialized_fixed_bank_manifest(manifest_path=manifest_path)
+    assert loaded is not None
+    assert loaded.id == manifest.id
 
     selected = select_validation_checkpoints_for_run(
         experiment=experiment,
         run_id=run_id,
         repo_root=tmp_path,
+        preferred_manifest=loaded,
         checkpoint_selection_mode="fixed_bank_manifest",
     )
     assert [selection.checkpoint_batches for selection in selected] == [6, 3]
@@ -312,7 +315,7 @@ def test_sparse_history_mode_ignores_materialized_fixed_bank_manifest(
         run_id=run_id,
         validation_values=np.array([[5.0], [0.0], [2.0], [0.0], [3.0], [4.0]]),
     )
-    materialize_fixed_bank_checkpoint_rescore_manifest(
+    build_fixed_bank_checkpoint_selection_manifest(
         experiment=experiment,
         run_ids=(run_id,),
         validation_bank=FixedValidationBankSpec(
@@ -366,27 +369,23 @@ def test_not_materialized_fixed_bank_manifest_falls_back_to_sparse_history(
         scorer_identity="rollout_validation_objective:test",
         seed=123,
     )
-    rescore_manifest = materialize_fixed_bank_checkpoint_rescore_manifest(
+    rescore_manifest = build_fixed_bank_checkpoint_selection_manifest(
         experiment=experiment,
         run_ids=(run_id,),
         validation_bank=bank,
         repo_root=tmp_path,
     )
-    assert rescore_manifest["materialization_status"] == "not_materialized"
+    assert rescore_manifest.selection_status == "failed"
+    assert rescore_manifest.failure_reason == "no_fixed_bank_checkpoint_scorer_supplied"
 
-    manifest = materialize_validation_selected_checkpoint_manifest(
+    manifest = build_validation_checkpoint_selection_manifest(
         experiment=experiment,
         run_ids=(run_id,),
         repo_root=tmp_path,
     )
-    written = load_manifest(
-        tmp_path / "results" / experiment / "notes" / "validation_selected_checkpoints.json"
-    )
-
-    assert manifest["selection_source"] == "sparse_history_fallback"
-    assert isinstance(written, CheckpointSelectionManifest)
-    assert written.selection_spec.schema_id == "feedbax.spec.checkpoint_selection"
-    assert manifest["runs"][run_id][0]["checkpoint_batches"] == 3
+    assert manifest.metadata["selection_source"] == "sparse_history_fallback"
+    assert manifest.selection_spec.schema_id == "feedbax.spec.checkpoint_selection"
+    assert checkpoint_selection_rows(manifest)[run_id][0]["checkpoint_batches"] == 3
 
 
 def test_active_loss_term_labels_use_full_qrf_objective() -> None:

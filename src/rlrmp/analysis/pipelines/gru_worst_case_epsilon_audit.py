@@ -20,7 +20,7 @@ from jaxtyping import Array, Float
 from rlrmp.analysis.math.cs_game_card import TARGET_POS, build_canonical_game
 from rlrmp.analysis.math.summary_stats import summary_stats
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
-from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
+from rlrmp.eval.checkpoint_selection import (
     CheckpointSelectionMode,
     load_validation_selected_checkpoint_model,
 )

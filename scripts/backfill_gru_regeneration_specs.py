@@ -288,14 +288,6 @@ def classify_manifest(name: str, manifest: Mapping[str, Any]) -> dict[str, Any] 
                 "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
             ],
         }
-    if schema.startswith("rlrmp.validation_selected_gru_checkpoints") or name.startswith(
-        "validation_selected_checkpoints"
-    ):
-        return {
-            "diagnostic_name": "validation_selected_checkpoint_manifest",
-            "materializer": "rlrmp.analysis.pipelines.gru_checkpoint_selection.materialize_validation_selected_checkpoint_manifest",
-            "source_files": ["src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py"],
-        }
     if schema.startswith("rlrmp.cs_stochastic_gru.training_diagnostics_summary"):
         return {
             "diagnostic_name": "gru_training_diagnostics_summary",
@@ -336,9 +328,6 @@ def inputs_for_manifest(
         checkpoint = outputs.get("checkpoint_manifest")
         if isinstance(checkpoint, str):
             refs.append({"role": "checkpoint_manifest", "path": checkpoint})
-    validation_path = matching_validation_manifest(manifest_path)
-    if validation_path.exists():
-        refs.append({"role": "checkpoint_manifest", "path": validation_path})
     return refs
 
 
@@ -437,14 +426,6 @@ def matching_note_path(manifest_path: Path) -> Path:
     if stem.endswith("_manifest"):
         stem = stem.removesuffix("_manifest")
     return manifest_path.with_name(f"{stem}.md")
-
-
-def matching_validation_manifest(manifest_path: Path) -> Path:
-    notes = manifest_path.parent
-    stem = manifest_path.stem
-    if "fixed_target_random_perturb_validation_selected" in stem:
-        return notes / "validation_selected_checkpoints_fixed_target_random_perturb_validation_selected.json"
-    return notes / "validation_selected_checkpoints.json"
 
 
 def _should_backfill_manifest(path: Path) -> bool:

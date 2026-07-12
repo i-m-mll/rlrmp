@@ -118,7 +118,7 @@ def evaluate_stabilization_row(
     from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 
     from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
-    from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
+    from rlrmp.eval.checkpoint_selection import (
         load_validation_selected_checkpoint_model,
     )
     from rlrmp.analysis.pipelines.gru_perturbation_bank import (
@@ -302,8 +302,8 @@ def run_feedback_robustness_diagnostics(
 ) -> dict[str, Any]:
     """Run the common feedback/perturbation diagnostic orchestration."""
 
-    from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
-        materialize_validation_selected_checkpoint_manifest,
+    from rlrmp.eval.checkpoint_selection import (
+        build_validation_checkpoint_selection_manifest,
     )
     from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import (
         materialize_gru_evaluation_diagnostics,
@@ -324,12 +324,11 @@ def run_feedback_robustness_diagnostics(
     checkpoint_manifest = (
         hook("load_json")(paths["checkpoint_manifest"])
         if paths["checkpoint_manifest"].exists()
-        else materialize_validation_selected_checkpoint_manifest(
+        else build_validation_checkpoint_selection_manifest(
             experiment=issue,
             run_ids=run_ids,
-            output_path=paths["checkpoint_manifest"],
             repo_root=repo_root,
-        )
+        ).model_dump(mode="json", exclude_none=True)
     )
     evaluation = (
         hook("load_json")(paths["evaluation"])

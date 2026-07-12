@@ -21,7 +21,7 @@ from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 from rlrmp.analysis.math.summary_stats import summary_stats
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
 from rlrmp.analysis.pipelines.diagnostic_provenance import write_regeneration_spec
-from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
+from rlrmp.eval.checkpoint_selection import (
     ReplicateCheckpointSelection,
     load_materialized_fixed_bank_manifest,
     load_validation_selected_checkpoint_model,
@@ -271,7 +271,7 @@ def materialize_gru_evaluation_diagnostics(
         ],
         source_files=[
             "src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py",
-            "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py",
+            "src/rlrmp/eval/checkpoint_selection.py",
         ],
         notes=[
             "Evaluation diagnostics are non-certificate sidecars.",
@@ -386,12 +386,13 @@ def _effective_checkpoint_policy_from_manifest(
     """Return the checkpoint policy represented by an optional preferred manifest."""
 
     manifest = load_materialized_fixed_bank_manifest(
-        experiment=experiment,
         manifest_path=preferred_checkpoint_manifest_path,
-        repo_root=repo_root,
     )
     if manifest is not None:
-        return str(manifest.get("checkpoint_policy") or "fixed_bank_rescored_per_replicate")
+        return str(
+            manifest.metadata.get("checkpoint_policy")
+            or "fixed_bank_rescored_per_replicate"
+        )
     return "validation_selected_per_replicate"
 
 

@@ -21,6 +21,14 @@ from rlrmp.analysis import declarative_materialization as dm
 from rlrmp.analysis.pipelines import gru_postrun_materialization as postrun
 
 
+class _ManifestResult:
+    def __init__(self, payload: dict[str, Any]) -> None:
+        self.payload = payload
+
+    def model_dump(self, **_kwargs: Any) -> dict[str, Any]:
+        return self.payload
+
+
 def test_plan_gru_postrun_materialization_routes_tracked_and_bulk_outputs(
     tmp_path: Path,
 ) -> None:
@@ -33,12 +41,8 @@ def test_plan_gru_postrun_materialization_routes_tracked_and_bulk_outputs(
 
     assert plan.checkpoint_policy == "validation_selected_per_replicate"
     assert plan.checkpoint_selection_source == "validation_selected_per_replicate"
-    assert plan.checkpoint_manifest_path == (
-        tmp_path / "results" / "5f70333" / "notes" / "validation_selected_checkpoints.json"
-    )
-    assert plan.fixed_bank_rescore_manifest_path == (
-        tmp_path / "results" / "5f70333" / "notes" / "fixed_bank_rescored_checkpoints.json"
-    )
+    assert plan.checkpoint_manifest_path is None
+    assert plan.fixed_bank_rescore_manifest_path is None
     assert plan.standard_manifest_path == (
         tmp_path
         / "results"
@@ -137,10 +141,11 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
 ) -> None:
     calls: dict[str, Any] = {}
 
-    def fake_checkpoint_manifest(**kwargs: Any) -> dict[str, Any]:
+    def fake_checkpoint_manifest(**kwargs: Any) -> _ManifestResult:
         calls["checkpoint"] = kwargs
-        kwargs["output_path"].write_text("{}", encoding="utf-8")
-        return {"checkpoint_policy": "validation_selected_per_replicate"}
+        return _ManifestResult(
+            {"metadata": {"checkpoint_policy": "validation_selected_per_replicate"}}
+        )
 
     def fake_standard_result(**kwargs: Any) -> dict[str, Any]:
         calls["standard"] = kwargs
@@ -256,7 +261,7 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
 
     monkeypatch.setattr(
         postrun,
-        "materialize_validation_selected_checkpoint_manifest",
+        "build_validation_checkpoint_selection_manifest",
         fake_checkpoint_manifest,
     )
     monkeypatch.setattr(postrun, "materialize_gru_standard_result", fake_standard_result)
@@ -375,11 +380,7 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
     assert manifest["regeneration_specs"]["postrun"].endswith("_regeneration_spec.json")
     assert manifest["checkpoint_selection_source"] == "validation_selected_per_replicate"
     assert manifest["selection_leakage_guard"]["status"] == "audit_only"
-    assert manifest["outputs"]["fixed_bank_rescore_manifest"]["status"] == "missing"
-    assert (
-        manifest["outputs"]["fixed_bank_rescore_manifest"]["selection_use"]
-        == "sparse_history_fallback"
-    )
+    assert manifest["outputs"]["fixed_bank_rescore_manifest"] is None
     assert manifest["outputs"]["map_decomposition"]["status"] == "materialized"
     assert manifest["outputs"]["map_decomposition"]["selection_role"] == (
         "audit_only_not_used_for_checkpoint_selection"
@@ -463,38 +464,16 @@ def test_materialize_gru_postrun_analysis_prefers_provided_fixed_bank_manifest(
 ) -> None:
     calls: dict[str, Any] = {}
     fixed_manifest_path = tmp_path / "fixed_bank.json"
-    fixed_manifest_path.write_text(
-        json.dumps(
-            {
-                "schema_version": "rlrmp.fixed_bank_gru_checkpoint_rescore.v1",
-                "issue": "5f70333",
-                "checkpoint_policy": "fixed_bank_rescored_per_replicate",
-                "selection_source": "fixed_bank_rescore",
-                "materialization_status": "materialized",
-                "validation_bank": {
-                    "bank_identity": "fixed-bank:test",
-                    "scorer_identity": "rollout_validation_objective:test",
-                    "seed": 123,
-                },
-                "runs": {"run_a": []},
-            }
-        ),
-        encoding="utf-8",
-    )
+    fixed_manifest_path.touch()
 
-    def fake_checkpoint_manifest(**kwargs: Any) -> dict[str, Any]:
+    def fake_checkpoint_manifest(**kwargs: Any) -> _ManifestResult:
         calls["checkpoint"] = kwargs
-        kwargs["output_path"].write_text(
-            json.dumps(
-                {
-                    "schema_version": "rlrmp.fixed_bank_gru_checkpoint_rescore.v1",
-                    "materialization_status": "materialized",
-                    "runs": {"run_a": []},
-                }
-            ),
-            encoding="utf-8",
+        return _ManifestResult(
+            {
+                "metadata": {"checkpoint_policy": "fixed_bank_rescored_per_replicate"},
+                "selections": [],
+            }
         )
-        return {"checkpoint_policy": "fixed_bank_rescored_per_replicate"}
 
     def fake_standard_result(**kwargs: Any) -> dict[str, Any]:
         calls["standard"] = kwargs
@@ -522,8 +501,31 @@ def test_materialize_gru_postrun_analysis_prefers_provided_fixed_bank_manifest(
 
     monkeypatch.setattr(
         postrun,
-        "materialize_validation_selected_checkpoint_manifest",
+        "build_validation_checkpoint_selection_manifest",
         fake_checkpoint_manifest,
+    )
+    fixed_manifest = type(
+        "FixedManifest",
+        (),
+        {"metadata": {"checkpoint_policy": "fixed_bank_rescored_per_replicate"}},
+    )()
+    monkeypatch.setattr(
+        postrun,
+        "load_materialized_fixed_bank_manifest",
+        lambda **_kwargs: fixed_manifest,
+    )
+    monkeypatch.setattr(
+        postrun,
+        "checkpoint_selection_rows",
+        lambda _manifest: {"run_a": []},
+    )
+    monkeypatch.setattr(
+        postrun,
+        "fixed_bank_rescore_manifest_status",
+        lambda *_args, **_kwargs: {
+            "status": "materialized",
+            "selection_use": "fixed_bank_rescore",
+        },
     )
     monkeypatch.setattr(postrun, "materialize_gru_standard_result", fake_standard_result)
     monkeypatch.setattr(postrun, "write_gru_standard_result", fake_write_standard)
