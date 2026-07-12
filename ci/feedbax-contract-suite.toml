@@ -356,6 +356,18 @@ negative_canary = [
     "tests/analysis/test_scalar_diagnostic_figure_specs.py::test_registered_analysis_keeps_row_cardinality_data_bound[2]",
 ]
 
+[[families]]
+name = "movement_ramp_figure_contract"
+owner = "c9b1db0"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_b399efc_movement_ramp_figure_specs.py::"
+# Pin all six real executions, archived parity, intrinsic axes, and terminal driver deletion.
+minimum_non_skipped = 6
+negative_canary = [
+    "tests/analysis/test_b399efc_movement_ramp_figure_specs.py::test_all_six_specs_execute_to_hash_verified_completed_manifests",
+]
+
 [pipeline_contract_native]
 allowlist = [
 ]

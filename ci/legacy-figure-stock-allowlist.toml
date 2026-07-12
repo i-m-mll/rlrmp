@@ -57,36 +57,6 @@ owner = "b35595c"
 reason = "Pre-declarative figure record retained until its assigned migration wave lands."
 
 [[legacy_specs]]
-path = "results/b399efc/figures/forward_velocity_profiles/spec.json"
-owner = "b399efc"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/b399efc/figures/hold_drift_profiles/spec.json"
-owner = "b399efc"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/b399efc/figures/peak_velocity_distributions/spec.json"
-owner = "b399efc"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/b399efc/figures/summary_metrics/spec.json"
-owner = "b399efc"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/b399efc/figures/training_loss/spec.json"
-owner = "b399efc"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/b399efc/figures/training_loss_per_term/spec.json"
-owner = "b399efc"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
 path = "results/b413bb0/figures/beta1p4_nominal_velocity_profiles/spec.json"
 owner = "b413bb0"
 reason = "Pre-declarative figure record retained until its assigned migration wave lands."
@@ -194,11 +164,6 @@ reason = "Living legacy producer retained until its tracked figure family migrat
 [[living_materializers]]
 path = "results/ae9f30f/scripts/materialize_nominal_velocity_overlay.py"
 owner = "ae9f30f"
-reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
-
-[[living_materializers]]
-path = "results/b399efc/scripts/analyse_movement_ramp_matrix.py"
-owner = "b399efc"
 reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
 
 [[living_materializers]]
