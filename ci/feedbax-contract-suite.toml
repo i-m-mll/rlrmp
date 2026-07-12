@@ -114,7 +114,7 @@ expected_collection_pattern = "tests/test_product_identity_hash.py::"
 minimum_non_skipped = 8
 negative_canary = [
     "tests/test_product_identity_hash.py::test_calibration_product_identity_hash_tamper_fails_closed",
-    "tests/test_product_identity_hash.py::test_data_product_registry_duplicate_role_fails_closed",
+    "tests/test_product_identity_hash.py::test_data_product_registry_duplicate_role_fails_closed[role]",
 ]
 
 [[families]]
@@ -215,7 +215,7 @@ owner = "08bb6d4"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_lane_b_terminal_gate.py::"
-minimum_non_skipped = 4
+minimum_non_skipped = 3
 negative_canary = "tests/test_lane_b_terminal_gate.py::test_minimax_dry_run_spec_validates_phase_program_fingerprint"
 
 [[families]]

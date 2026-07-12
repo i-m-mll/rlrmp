@@ -12,9 +12,8 @@ from rlrmp.cloud import modal_runner as runner
 
 
 def _rendered_image() -> modal.Image:
-    bundle = runner.build_launcher_spec_bundle(runner.NominalGruRunConfig(), backend="modal")
     namespace: dict[str, Any] = {"__name__": "_feedbax_rendered_modal_app"}
-    exec(render_modal_app(bundle.execution_spec), namespace)
+    exec(render_modal_app(runner.build_modal_image_execution_spec()), namespace)
     return namespace["image"]
 
 
@@ -45,7 +44,7 @@ def main(*args: str) -> None:
         raise SystemExit(runner.main([*args]))
     payload = {
         "command_kind": parsed.command,
-        "config": {**config.__dict__, "extra_args": list(config.extra_args)},
+        "config": config.__dict__,
         "source_provenance": collect_source_provenance(runner.REPO_ROOT),
     }
     remote_fn = _run_payload.with_options(

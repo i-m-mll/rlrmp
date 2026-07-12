@@ -19,13 +19,11 @@ from feedbax.training.checkpoint_custody import (
     write_checkpoint_transaction,
 )
 
-from rlrmp.train.cs_nominal_gru import build_parser
-from rlrmp.train.config_cli import parse_config
 from rlrmp.train.executor.cs_supervised import (
     _cs_supervised_execution_registry,
     _adaptive_runtime_template_inputs,
     build_cs_supervised_native_initial_slots,
-    build_run_spec_execution_context,
+    build_execution_context_from_spec,
 )
 from rlrmp.train.executor import cs_supervised as cs_supervised_module
 from rlrmp.train import minimax_resume as minimax_resume_module
@@ -38,9 +36,9 @@ from rlrmp.train.resume_control import (
     emit_launch_continuation,
     resolve_launch_continuation,
 )
+from rlrmp.train.training_configs import MinimaxConfig
 from rlrmp.runtime.training_run_specs import feedbax_training_run_spec_from_payload
 from rlrmp.runtime.checkpoint_custody import cs_custody_training_spec
-from rlrmp.train.training_configs import MinimaxConfig
 
 
 def _baseline_recipe_path() -> Path:
@@ -55,11 +53,7 @@ def custody_checkpoint_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Materialize one valid custody source for typed-document canaries."""
 
     recipe_path = _baseline_recipe_path()
-    parser = build_parser()
-    context = build_run_spec_execution_context(
-        parser.parse_args(["--run-spec", str(recipe_path)]),
-        parser=parser,
-    )
+    context = build_execution_context_from_spec(recipe_path)
     source_spec = feedbax_training_run_spec_from_payload(context.run_spec)
     source_slots, _runtime = build_cs_supervised_native_initial_slots(
         run_spec=context.run_spec,
@@ -311,11 +305,7 @@ def test_target_bound_launch_fork_still_attaches_runnable_continuation() -> None
 
 def test_cs_supervised_resume_registry_uses_attached_custody_contract() -> None:
     recipe_path = Path(__file__).resolve().parents[1] / "results/cb3685a/runs/seam_probe.json"
-    parser = build_parser()
-    context = build_run_spec_execution_context(
-        parser.parse_args(["--run-spec", str(recipe_path)]),
-        parser=parser,
-    )
+    context = build_execution_context_from_spec(recipe_path)
     continuation = LaunchContinuation(
         resume=True,
         resume_source="/tmp/checkpoints/latest.json",
@@ -399,37 +389,13 @@ def test_stage2_authoring_declares_12000_to_16500_total_horizon() -> None:
     assert request.additional_batches == 4_500
 
 
-def test_cli_flags_document_resume_override_and_global_stop_target() -> None:
-    parser = build_parser()
-    help_text = parser.format_help()
-    normalized_help = " ".join(help_text.split())
-
-    assert parser.parse_args(["--allow-fresh-start"]).allow_fresh_start is True
-    assert parser.parse_args(["--verify-resume-only"]).verify_resume_only is True
-    assert "--allow-fresh-start" in help_text
-    assert "--verify-resume-only" in help_text
-    assert "Global completed-batch index" in normalized_help
-    assert "not a relative count" in normalized_help
-
-    minimax_config = parse_config(
-        MinimaxConfig,
-        ["--allow-fresh-start"],
-        description="test minimax config",
-    )
-    assert minimax_config.allow_fresh_start is True
-
-
 @pytest.mark.parametrize("loader_error", [None, ValueError("checkpoint binding mismatch")])
 def test_verify_resume_only_loads_strict_checkpoint_without_executor_steps(
     monkeypatch: pytest.MonkeyPatch,
     loader_error: Exception | None,
 ) -> None:
     recipe_path = _baseline_recipe_path()
-    parser = build_parser()
-    context = build_run_spec_execution_context(
-        parser.parse_args(["--run-spec", str(recipe_path), "--verify-resume-only"]),
-        parser=parser,
-    )
+    context = build_execution_context_from_spec(recipe_path, resume=True)
     continuation = LaunchContinuation(
         resume=True,
         resume_source="/tmp/checkpoints/latest.json",

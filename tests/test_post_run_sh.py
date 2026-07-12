@@ -171,10 +171,10 @@ def write_run_source(
 def write_adaptive_lr_source(path: Path, *, mismatch: bool = False) -> None:
     from feedbax.contracts.training import TrainingRunSpec
     from feedbax.training.optimizers import learning_rate_at_step
-    from rlrmp.train.cs_nominal_gru import build_parser, write_run_spec
+    from rlrmp.train.cs_nominal_gru import CsNominalGruConfig, _config_namespace, write_run_spec
 
     path.mkdir()
-    args = build_parser().parse_args([])
+    args = _config_namespace(CsNominalGruConfig())
     values = {
         "output_dir": str(path),
         "spec_dir": str(path / "spec"),

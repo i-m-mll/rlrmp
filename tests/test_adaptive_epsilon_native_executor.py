@@ -58,7 +58,7 @@ from rlrmp.train.cs_nominal_gru import (
     _update_adaptive_epsilon_state,
     _update_adaptive_epsilon_zero_guard,
     build_hps,
-    build_parser,
+    CsNominalGruConfig,
     write_run_spec,
 )
 from rlrmp.train.executor.equivalence import assert_paired_equivalent, run_paired_equivalence
@@ -651,7 +651,7 @@ def _adaptive_epsilon_training_spec(
 
 
 def _adaptive_epsilon_args(**overrides: Any) -> argparse.Namespace:
-    args = build_parser().parse_args([])
+    args = _config_namespace(CsNominalGruConfig())
     defaults = {
         "n_train_batches": 2,
         "batch_size": 1,

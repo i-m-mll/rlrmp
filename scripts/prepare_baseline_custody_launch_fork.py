@@ -15,10 +15,9 @@ from feedbax.training.checkpoint_custody import (
 )
 
 from rlrmp.runtime.checkpoint_custody import cs_custody_training_spec
-from rlrmp.train.cs_nominal_gru import build_parser
 from rlrmp.train.executor.cs_supervised import (
+    build_execution_context_from_spec,
     build_cs_supervised_native_initial_slots,
-    build_run_spec_execution_context,
 )
 from rlrmp.train.executor.slots import OPTIMIZER
 from rlrmp.train.resume_control import declare_cs_supervised_checkpoint_continuation
@@ -37,15 +36,8 @@ def main() -> None:
     if args.target_checkpoint_root.exists():
         raise ValueError(f"launch-fork target must be new: {args.target_checkpoint_root}")
 
-    run_parser = build_parser()
-    source_context = build_run_spec_execution_context(
-        run_parser.parse_args(["--run-spec", str(args.source_run_spec)]),
-        parser=run_parser,
-    )
-    target_context = build_run_spec_execution_context(
-        run_parser.parse_args(["--run-spec", str(args.target_run_spec)]),
-        parser=run_parser,
-    )
+    source_context = build_execution_context_from_spec(args.source_run_spec)
+    target_context = build_execution_context_from_spec(args.target_run_spec)
     source_spec = cs_custody_training_spec(source_context.run_spec)
     source_custody_slots = _read_custody_slots(args.source_checkpoint_root)
     source_program = source_spec.worker_execution.method_contract.phase_program

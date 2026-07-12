@@ -418,16 +418,20 @@ from the source. It also emits `LR_CONTINUATION step=<n> lr=<x>` from the first
 target row's declared continuation mode, so the launch log records whether LR
 semantics restart or continue.
 
+Author the smoke parameters as a one-row `TrainingRunMatrixSpec`, emit its
+governed document with the storage command above, and launch that row through
+the spec-file runner:
+
 ```bash
 cd /workspace/rlrmp
-uv run --no-sync python scripts/train_minimax.py \
-  --adversary-type linear_dynamics \
-  --n-warmup-batches 3 --n-adversary-batches 20 --adv-batch-size 250 \
-  --n-replicates 5 --hidden-type gru \
-  --output-dir /workspace/smoke_test --checkpoint --fused
+PYTHONPATH=src uv run --no-sync python scripts/launch_training.py validate \
+  results/<issue>/runs/smoke.json
+PYTHONPATH=src uv run --no-sync python scripts/launch_training.py execute \
+  results/<issue>/runs/smoke.json --row smoke
 ```
 
-Adjust flags to the current CLI. Pause after the smoke test and do not launch
+The smoke matrix is the source of scientific parameters; the execute command
+accepts only presentation and lifecycle controls. Pause after the smoke test and do not launch
 the main matrix until the user confirms. rlrmp training scripts emit
 grep-friendly `BATCH phase=<phase> batch=<i>/<n> [loss=<x>] [elapsed=<s>s]`
 progress lines (helper `rlrmp.train.progress`) that `poll_run.sh` consumes;
@@ -603,7 +607,7 @@ The top-level `scripts/` directory is for cross-cutting tooling — scripts that
 2. **Experiment-specific scripts** (analysis pipelines, plotting, one-off diagnostics tied to a single tracking issue) live with the experiment: `results/<hash>/scripts/<name>.py`. Commit them alongside the experiment's `runs/`, `notes/`, `figures/` with `mandible commit linked --issue <hash>` so the commit carries the matching `Mandible-Issue: <hash>` trailer.
 3. **Reusable components** (utilities, plotting primitives, analysis routines several experiments call) MUST be refactored into the capability-named library module BEFORE the experiment script lands. Extract now, not "for now" — the helper will outlast the script. Submit the library change via an auth request to `src/rlrmp/` (or `feedbax/` if plant- or task-general).
 4. **Mixed scripts** split: the driver under `results/<hash>/scripts/`, the helpers in `src/rlrmp/`. Both can land in the same auth request - the driver commit carries the experiment's `Mandible-Issue: <hash>` trailer; a substantial library change carries its own feature issue.
-5. **Cross-cutting CLI entry-points** (training/eval launchers operating generically across experiments) stay in `scripts/` (`scripts/train_minimax.py`, `scripts/eval_minimax.py`, etc.). They MUST import reusable helpers from `src/rlrmp/`, not from each other.
+5. **Cross-cutting CLI entry-points** (training/eval launchers operating generically across experiments) stay in `scripts/` (`scripts/launch_training.py`, `scripts/eval_minimax.py`, etc.). They MUST import reusable helpers from `src/rlrmp/`, not from each other.
 6. **No `sys.path.insert(...)` anywhere.** Use absolute imports (`from rlrmp.eval import ...`, `from rlrmp.train.minimax import build_hps`). Sibling-script imports between two files under `scripts/` are forbidden — extract the shared piece to `src/rlrmp/`. Within a single `results/<hash>/scripts/` directory, sibling imports DO work natively and are fine for tightly-coupled experiment code that doesn't generalise.
 
 **Concrete examples (from the 8404108 refactor):**
@@ -613,7 +617,7 @@ The top-level `scripts/` directory is for cross-cutting tooling — scripts that
 | `src/rlrmp/eval/{ensemble,kinematics,sisu,pert,minimax_io}.py` | Generic eval primitives used across 14+ scripts. Capability-named under `rlrmp.eval`. |
 | `src/rlrmp/train/{minimax,standard}.py` | Hyperparameter constructors for two training methods. Names are methods, not phases. |
 | `results/2bc95fd/scripts/analyse_anti_anticipation_6cell_variance.py` | Experiment-specific analysis tied to `2bc95fd`. Lives with its experiment. |
-| `scripts/train_minimax.py` | Generic minimax-training CLI. Stays in `scripts/`; imports `build_hps` from `rlrmp.train.minimax`. |
+| `scripts/launch_training.py` | Generic governed-matrix training runner. Family-specific `train_*.py` files are error-only migration shims. |
 
 | Wrong placement | Why it's wrong |
 |---|---|

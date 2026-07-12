@@ -1,14 +1,14 @@
 """Loaders for minimax-trained-checkpoint directories.
 
-The minimax adversarial trainer (``scripts/train_minimax.py``) writes a
-specific on-disk layout into each ``_artifacts/<exp>/runs/<run>/`` directory:
+Historical minimax adversarial runs used this on-disk layout:
 
 - ``config.json`` — run hyperparameters (the argparse namespace)
 - ``warmup_model.eqx`` — model after the warm-start phase (pre-adversarial)
 - ``adversarial_model.eqx`` — model after the adversarial phase
 - ``trained_adversary.eqx`` — saved :class:`rlrmp.train.adversary.GaussianBumpAdversary`
 
-These helpers load any of those artifacts. They are training-method-specific
+Current governed-spec launches do not produce this four-file layout. These
+helpers remain explicitly historical-artifact readers. They are training-method-specific
 (a minimax run dir has different on-disk semantics than a standard run dir),
 hence the dedicated module.
 

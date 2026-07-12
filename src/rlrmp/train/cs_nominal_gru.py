@@ -1,9 +1,4 @@
-"""Stochastic C&S-fidelity GRU run-spec construction and training.
-
-This module prepares nominal, hold-free C&S-aligned GRU runs for issue
-``30f2313``. The default CLI mode writes only the lightweight run spec and
-GraphSpec; ``--full-train`` performs the explicitly launched training path.
-"""
+"""Stochastic C&S-fidelity GRU run-spec construction and training libraries."""
 # ruff: noqa: F401
 
 from __future__ import annotations
@@ -51,17 +46,13 @@ from rlrmp.train.executor.cs_supervised import (
     DEFAULT_DELAYED_P_CATCH_TRIAL,
     DEFAULT_OUTPUT_DIR,
     GradientDiagnosticsState,
-    RUN_SPEC_OVERRIDE_CATEGORIES,
-    RUN_SPEC_RUNTIME_OVERRIDE_KEYS,
     RunSpecExecutionContext,
     UpdateDiagnosticsState,
-    VolumeCommit,
     _adaptive_epsilon_curriculum_enabled,
     _args_values_from_run_spec,
     _axis_removed_shape,
     _build_optimizer,
     _checkpoint_writes_by_completed_batch,
-    _cli_values_match,
     _combine_history_diagnostic_chunks,
     _commit_volume,
     _cs_model_slot,
@@ -73,7 +64,6 @@ from rlrmp.train.executor.cs_supervised import (
     _dict_value,
     _emit_checkpoint_progress,
     _empty_diagnostic_series,
-    _explicit_cli_overrides,
     _family_amplitude,
     _find_diagnostics_state,
     _gradient_diagnostics_arrays,
@@ -104,7 +94,6 @@ from rlrmp.train.executor.cs_supervised import (
     _run_cs_supervised_native_from_context,
     _run_full_training_from_context,
     _run_policy_adversary_native_from_context,
-    _run_spec_override_category,
     _sanitize_array_name,
     _slice_axis,
     _spec_result_from_execution_context,
@@ -116,12 +105,11 @@ from rlrmp.train.executor.cs_supervised import (
     _validate_composed_training_spec_payload,
     _where_train,
     build_cs_supervised_native_initial_slots,
-    build_run_spec_execution_context,
+    build_execution_context_from_spec,
     get_model_parameters,
     load_validated_run_spec,
     logger,
     make_delayed_cosine_schedule,
-    resolve_run_spec_execution_args,
     run_full_training,
     verify_resume_from_context,
     write_training_diagnostics_sidecar,
@@ -130,19 +118,12 @@ from rlrmp.train.executor.cs_supervised import (
 from rlrmp.train.run_spec_authoring import (
     TRAINING_DIAGNOSTICS_MANIFEST,
     TRAINING_DIAGNOSTICS_NPZ,
-    _BOOLEAN_OPTIONAL_FIELDS,
-    _CLI_ALIASES,
-    _CLI_HELP,
     _adversarial_phase,
-    _add_model_field_argument,
-    _apply_config_parser_defaults,
     _broad_epsilon_pgd_finite_policy_inputs,
     _broad_epsilon_pgd_mechanism,
     _broad_epsilon_pgd_training_enabled,
     _broad_epsilon_training_enabled,
     _checkpoint_metadata,
-    _build_config_generated_parser,
-    _config_choices,
     _config_default,
     _controller_feedback_basis,
     _controller_feedback_descriptors,
@@ -156,13 +137,9 @@ from rlrmp.train.run_spec_authoring import (
     _get_runtime_metadata,
     _initial_hidden_encoder_enabled,
     _initial_hidden_encoder_metadata,
-    _is_bool_annotation,
-    _json_dumps,
-    _literal_values,
     _loss_spec,
     _nominal_only,
     _optimizer_metadata,
-    _optional_arg_type,
     _perturbation_training_enabled,
     _policy_adversary_policy_class,
     _policy_adversary_training_enabled,
@@ -182,7 +159,6 @@ from rlrmp.train.run_spec_authoring import (
     build_graph_bundle,
     build_loss_game_card_provenance,
     build_model_structure_summary,
-    build_parser,
     build_run_spec,
     build_training_run_graph_spec,
     derive_spec_dir,
@@ -260,7 +236,6 @@ from feedbax.tasks import (
 from jax_cookbook.tree import array_set as tree_set
 from jax_cookbook.tree import filter_spec_leaves
 
-from rlrmp.runtime.jax_config import assert_jax_x64_disabled
 from rlrmp.runtime.params_models import register_params_model
 from rlrmp.analysis.math.cs_game_card import (
     INIT_POS,
@@ -296,7 +271,6 @@ from rlrmp.loss import (
     CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
     CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
 )
-from rlrmp.io import compact_json_dumps
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.runtime.run_specs import validate_nominal_gru_run_spec
 from rlrmp.runtime.training_run_specs import (
@@ -412,32 +386,6 @@ def register_training_config_params_models(*, replace: bool = True) -> None:
 
 
 register_training_config_params_models()
-
-
-def resolve_run_spec_args(
-    args: argparse.Namespace,
-    *,
-    parser: argparse.ArgumentParser | None = None,
-) -> argparse.Namespace:
-    """Return executable CLI arguments replayed from a modern nominal-GRU run spec.
-
-    The checked-in spec owns run identity, graph identity, checkpoint policy,
-    artifact routes, and scientific payload. CLI values may only supply
-    runtime-only execution controls such as ``--resume`` and
-    ``--stop-after-batches``.
-    """
-
-    run_spec_path = getattr(args, "run_spec", None)
-    if run_spec_path is None:
-        return args
-    parser = parser or build_parser()
-    payload_path, payload = load_validated_run_spec(run_spec_path)
-    return resolve_run_spec_execution_args(
-        args,
-        run_spec_path=payload_path,
-        run_spec=payload,
-        parser=parser,
-    )
 
 
 def cs_supervised_update_kernels(payload: Any) -> Mapping[str, Any]:
@@ -601,42 +549,6 @@ def _history_chunk_bytes(history_chunk: Any) -> bytes:
         path = Path(tmp_dir) / "history_chunk.eqx"
         _save_pytree(path, history_chunk)
         return path.read_bytes()
-
-
-def main(
-    argv: list[str] | None = None,
-    *,
-    volume_commit: VolumeCommit | None = None,
-) -> int:
-    """CLI entry point."""
-
-    parser = build_parser()
-    args = parser.parse_args(argv)
-    assert_jax_x64_disabled("C&S nominal GRU training/spec entry", allow_x64=args.allow_x64)
-    if args.run_spec is not None:
-        context = build_run_spec_execution_context(args, parser=parser)
-        if context.args.verify_resume_only:
-            result = verify_resume_from_context(context)
-        elif context.args.dry_run:
-            result = render_run_spec_execution_dry_run(context)
-        elif context.args.full_train:
-            result = _run_full_training_from_context(context, volume_commit=volume_commit)
-        else:
-            result = {
-                "run_spec_path": str(context.run_spec_path),
-                "run_spec": context.run_spec,
-                "validated": True,
-            }
-    else:
-        if args.verify_resume_only:
-            parser.error("--verify-resume-only requires --run-spec")
-        result = (
-            run_full_training(args, volume_commit=volume_commit)
-            if args.full_train and not args.dry_run
-            else write_run_spec(args)
-        )
-    print(_json_dumps(result), end="")
-    return 0
 
 
 def render_run_spec_execution_dry_run(context: RunSpecExecutionContext) -> dict[str, Any]:
@@ -1425,7 +1337,3 @@ def _with_single_replicate_state_initializers(
                 init,
             )
     return model
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

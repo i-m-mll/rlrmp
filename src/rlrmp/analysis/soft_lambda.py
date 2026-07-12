@@ -28,6 +28,7 @@ from rlrmp.train.cs_perturbation_training import (
     _epsilon_time_mask,
     PgdFullStateEpsilonTrainingConfig,
 )
+from rlrmp.train.executor.cs_supervised import build_execution_context_from_spec
 from rlrmp.train.task_model import setup_task_model_pair
 
 
@@ -84,11 +85,7 @@ def load_frozen_batch(
     run_spec_path = repo_root / "results" / args.experiment / "runs" / f"{run_id}.json"
     artifact_dir = repo_root / "_artifacts" / args.experiment / "runs" / run_id
     run_spec = json.loads(run_spec_path.read_text(encoding="utf-8"))
-    parser = nominal.build_parser()
-    replay_args = nominal.resolve_run_spec_args(
-        parser.parse_args(["--run-spec", str(run_spec_path)]),
-        parser=parser,
-    )
+    replay_args = build_execution_context_from_spec(run_spec_path).args
     hps = nominal.build_hps(replay_args)
     seed = int(run_spec.get("seed", 42))
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))

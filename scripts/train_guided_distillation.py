@@ -1,7 +1,14 @@
-"""CLI wrapper for guided C&S GRU distillation run-spec commands."""
+"""Error-only shim for the retired flag-per-field training interface."""
 
-from rlrmp.train.distillation_entry import distillation_main
+import sys
+
+
+REPLACEMENT = (
+    "PYTHONPATH=src uv run --no-sync python scripts/launch_training.py "
+    "execute <authored-matrix.json>"
+)
 
 
 if __name__ == "__main__":
-    raise SystemExit(distillation_main("guided_distillation"))
+    print(REPLACEMENT, file=sys.stderr)
+    raise SystemExit(2)

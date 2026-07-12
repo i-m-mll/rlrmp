@@ -17,6 +17,15 @@ import re
 import tomllib
 
 import pytest
+from feedbax.testing import (
+    AllowlistDiff,
+    AllowlistEntry,
+    Scope,
+    SiteVisitor,
+    diff_allowlist,
+    expr_string,
+    scan_domain,
+)
 
 
 pytestmark = pytest.mark.feedbax_contract
@@ -96,17 +105,12 @@ def test_pipeline_contract_scan_is_non_vacuous() -> None:
 
 
 def test_pipeline_contract_native_bypass_modules_match_allowlist() -> None:
-    found = _bypass_modules_by_path(_scan_pipeline_tree())
-    allowed = _allowlist_by_path(_load_allowlist())
-
-    _assert_no_unlisted_bypass_modules(found, allowed)
+    diff = _allowlist_diff(_scan_pipeline_tree())
+    _assert_no_unlisted_bypass_modules(diff.unlisted)
 
 
 def test_pipeline_contract_allowlist_has_no_dead_entries() -> None:
-    found = _bypass_modules_by_path(_scan_pipeline_tree())
-    allowed = _allowlist_by_path(_load_allowlist())
-
-    dead = sorted(set(allowed) - set(found))
+    dead = sorted(entry.scope.path for entry in _allowlist_diff(_scan_pipeline_tree()).dead_entries)
     assert not dead, (
         "Pipeline contract-native allowlist names module(s) that no longer "
         f"bypass the contract: {dead}. Remove stale entries; shrinking this "
@@ -116,29 +120,26 @@ def test_pipeline_contract_allowlist_has_no_dead_entries() -> None:
 
 def test_pipeline_contract_allowlist_entries_carry_owner_and_reason() -> None:
     issue_re = re.compile(r"^[0-9a-f]{7}$")
-    entries = _load_allowlist()
+    entries = _load_allowlist_entries()
     assert entries, "pipeline contract-native allowlist declares zero bypass modules"
     for entry in entries:
-        assert issue_re.match(entry.get("owner", "")), (
+        assert issue_re.match(entry.owner), (
             f"Allowlist entry {entry} is missing a 7-character owning issue"
         )
-        assert isinstance(entry.get("reason"), str) and len(entry["reason"].strip()) >= 20, (
-            f"Allowlist entry {entry} needs a brief reason"
-        )
-        reasons = entry.get("reasons")
-        assert isinstance(reasons, list) and reasons, (
+        assert len(entry.reason.strip()) >= 20, f"Allowlist entry {entry} needs a brief reason"
+        reasons = entry.key
+        assert isinstance(reasons, tuple) and reasons, (
             f"Allowlist entry {entry} needs one or more bypass reasons"
         )
         assert all(reason in {"direct_durable_writer", "direct_eval_rerun"} for reason in reasons)
 
 
 def test_pipeline_contract_allowlist_excludes_deleted_output_feedback_materializers() -> None:
-    allowed_paths = set(_allowlist_by_path(_load_allowlist()))
+    allowed_paths = {entry.scope.path for entry in _load_allowlist_entries()}
 
     forbidden = sorted(allowed_paths & DELETED_OUTPUT_FEEDBACK_MATERIALIZERS)
     assert not forbidden, (
-        "Deleted output-feedback materializers must stay retired, not allowlisted: "
-        f"{forbidden}"
+        f"Deleted output-feedback materializers must stay retired, not allowlisted: {forbidden}"
     )
 
 
@@ -154,7 +155,7 @@ def materialize_new_report(output_path: Path) -> None:
     )
 
     with pytest.raises(AssertionError, match="bypass the native pipeline contract"):
-        _assert_no_unlisted_bypass_modules({facts.path: facts}, {})
+        _assert_no_unlisted_bypass_modules(_allowlist_diff([facts], entries=[]).unlisted)
 
 
 def test_pipeline_contract_negative_canary_flags_unlisted_eval_rerun() -> None:
@@ -167,7 +168,7 @@ def materialize_new_rollouts(task, model, key):
     )
 
     with pytest.raises(AssertionError, match="bypass the native pipeline contract"):
-        _assert_no_unlisted_bypass_modules({facts.path: facts}, {})
+        _assert_no_unlisted_bypass_modules(_allowlist_diff([facts], entries=[]).unlisted)
 
 
 def _pipeline_files() -> list[Path]:
@@ -179,7 +180,11 @@ def _pipeline_files() -> list[Path]:
 
 
 def _scan_pipeline_tree() -> list[PipelineModuleFacts]:
-    return [_scan_file(path) for path in _pipeline_files()]
+    return scan_domain(
+        _pipeline_files(),
+        root=REPO_ROOT,
+        visitor_factory=_PipelineContractScanner,
+    )
 
 
 def _scan_file(path: Path) -> PipelineModuleFacts:
@@ -190,7 +195,7 @@ def _scan_file(path: Path) -> PipelineModuleFacts:
 def _scan_source(source: str, *, relpath: str) -> PipelineModuleFacts:
     tree = ast.parse(source, filename=relpath)
     write_sites = _analysis_write_scanner()._scan_source(source, relpath=relpath)
-    scanner = _PipelineContractScanner(relpath)
+    scanner = _PipelineContractScanner(relpath=relpath)
     scanner.visit(tree)
     return PipelineModuleFacts(
         path=relpath,
@@ -200,15 +205,34 @@ def _scan_source(source: str, *, relpath: str) -> PipelineModuleFacts:
     )
 
 
-class _PipelineContractScanner(ast.NodeVisitor):
-    def __init__(self, relpath: str) -> None:
-        self.relpath = relpath
+class _PipelineContractScanner(SiteVisitor[PipelineModuleFacts]):
+    def __init__(self, *, relpath: str) -> None:
+        super().__init__(relpath=relpath)
         self.has_contract_native_signal = False
         self.eval_rerun_sites: list[str] = []
         self._stack: list[str] = []
 
+    def visit_Module(self, node: ast.Module) -> None:
+        self.generic_visit(node)
+        path = REPO_ROOT / self.relpath
+        write_sites = (
+            _analysis_write_scanner()._scan_source(
+                path.read_text(encoding="utf-8"), relpath=self.relpath
+            )
+            if path.exists()
+            else []
+        )
+        self.sites.append(
+            PipelineModuleFacts(
+                path=self.relpath,
+                has_contract_native_signal=self.has_contract_native_signal,
+                durable_write_count=len(write_sites),
+                eval_rerun_sites=tuple(self.eval_rerun_sites),
+            )
+        )
+
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
-        if any(_expr_name(base).split(".")[-1] == "AbstractAnalysis" for base in node.bases):
+        if any(_callable_name(base).split(".")[-1] == "AbstractAnalysis" for base in node.bases):
             self.has_contract_native_signal = True
         self._stack.append(node.name)
         self.generic_visit(node)
@@ -234,7 +258,7 @@ class _PipelineContractScanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> None:
-        func_name = _expr_name(node.func)
+        func_name = _callable_name(node.func)
         short_name = func_name.split(".")[-1]
         if short_name in CONTRACT_NATIVE_NAMES:
             self.has_contract_native_signal = True
@@ -250,61 +274,52 @@ class _PipelineContractScanner(ast.NodeVisitor):
         return short_name in DIRECT_EVAL_RERUN_FUNCTIONS
 
 
-def _expr_name(expr: ast.expr) -> str:
-    if isinstance(expr, ast.Name):
-        return expr.id
-    if isinstance(expr, ast.Attribute):
-        parent = _expr_name(expr.value)
-        return f"{parent}.{expr.attr}" if parent else expr.attr
-    if isinstance(expr, ast.Call):
-        return _expr_name(expr.func)
-    return ""
-
-
 def _symbol(stack: list[str]) -> str:
     return ".".join(stack) or "<module>"
 
 
-def _bypass_modules_by_path(
-    facts: list[PipelineModuleFacts],
-) -> dict[str, PipelineModuleFacts]:
-    return {fact.path: fact for fact in facts if fact.requires_allowlist}
+def _callable_name(expr: ast.expr) -> str:
+    """Render a callable while preserving the gate's historical call unwrapping."""
+    while isinstance(expr, ast.Call):
+        expr = expr.func
+    return expr_string(expr)
 
 
-def _load_allowlist() -> list[dict]:
+def _load_allowlist_entries() -> list[AllowlistEntry[tuple[str, ...]]]:
     manifest = tomllib.loads(SUITE_MANIFEST_PATH.read_text(encoding="utf-8"))
-    return manifest.get("pipeline_contract_native", {}).get("allowlist", [])
+    return [
+        AllowlistEntry(
+            scope=Scope("file", entry["path"]),
+            owner=str(entry.get("owner", "")),
+            reason=str(entry.get("reason", "")),
+            key=tuple(entry.get("reasons", [])),
+        )
+        for entry in manifest.get("pipeline_contract_native", {}).get("allowlist", [])
+    ]
 
 
-def _allowlist_by_path(allowlist: list[dict]) -> dict[str, dict]:
-    return {entry["path"]: entry for entry in allowlist}
+def _allowlist_diff(
+    facts: list[PipelineModuleFacts],
+    *,
+    entries: list[AllowlistEntry[tuple[str, ...]]] | None = None,
+) -> AllowlistDiff[tuple[str, ...], PipelineModuleFacts]:
+    return diff_allowlist(
+        (fact for fact in facts if fact.requires_allowlist),
+        _load_allowlist_entries() if entries is None else entries,
+        site_key=lambda fact: fact.reasons,
+        site_location=lambda fact: (fact.path, None),
+    )
 
 
 def _assert_no_unlisted_bypass_modules(
-    found: dict[str, PipelineModuleFacts],
-    allowed: dict[str, dict],
+    unlisted: tuple[PipelineModuleFacts, ...],
 ) -> None:
-    new_modules = sorted(set(found) - set(allowed))
-    assert not new_modules, (
+    assert not unlisted, (
         "Pipeline module(s) bypass the native pipeline contract without an "
         f"allowlist entry in {SUITE_MANIFEST_PATH.relative_to(REPO_ROOT)}: "
-        f"{[(path, found[path].reasons) for path in new_modules]}. Port the module "
+        f"{[(fact.path, fact.reasons) for fact in unlisted]}. Port the module "
         "onto registered analysis/bundle custody, or add a deliberate shrink-only "
         "entry with owner and rationale."
-    )
-
-    reason_mismatches = sorted(
-        (
-            path,
-            f"found={found[path].reasons}",
-            f"allowed={tuple(allowed[path].get('reasons', []))}",
-        )
-        for path in set(found) & set(allowed)
-        if tuple(allowed[path].get("reasons", [])) != found[path].reasons
-    )
-    assert not reason_mismatches, (
-        "Pipeline contract-native allowlist reason mismatch: "
-        f"{reason_mismatches}. Update the inventory deliberately."
     )
 
 

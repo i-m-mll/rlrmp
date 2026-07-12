@@ -374,21 +374,19 @@ def build_cs_nominal_gru_scenario(
     config: Mapping[str, Any],
     seed: int,
 ) -> ScenarioRuntime:
-    import argparse as _argparse
-
     import jax.random as jr
 
     from rlrmp.train.task_model import setup_task_model_pair
     from rlrmp.train.cs_nominal_gru import (
+        CsNominalGruConfig,
+        _config_namespace,
         _build_trainer,
         build_hps,
-        build_parser as build_nominal_parser,
     )
     from rlrmp.train.cs_perturbation_training import make_broad_epsilon_pgd_pre_step
 
-    nominal_args = build_nominal_parser().parse_args([])
     overrides = _cs_nominal_gru_overrides(config, seed)
-    nominal_args = _argparse.Namespace(**{**vars(nominal_args), **overrides})
+    nominal_args = _config_namespace(CsNominalGruConfig.model_validate(overrides))
     hps = build_hps(nominal_args)
 
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
@@ -466,22 +464,13 @@ def _cs_nominal_gru_overrides(config: Mapping[str, Any], seed: int) -> dict[str,
         "n_recurrent_only": 0,
     }
     config_dict = dict(config)
-    argv = config_dict.pop("argv", None)
+    if "argv" in config_dict:
+        raise ValueError(
+            "C&S benchmark scenarios no longer accept training argv; "
+            "provide typed config fields in scenario_config_json"
+        )
     for key, value in config_dict.items():
         overrides[_normalize_cs_nominal_gru_key(str(key))] = value
-    if argv is not None:
-        from rlrmp.train.cs_nominal_gru import build_parser as build_nominal_parser
-
-        parser = build_nominal_parser()
-        defaults = parser.parse_args([])
-        parsed = parser.parse_args([str(part) for part in argv])
-        overrides.update(
-            {
-                name: value
-                for name, value in vars(parsed).items()
-                if value != getattr(defaults, name)
-            }
-        )
 
     if "schedule_total_batches" in overrides:
         overrides["n_train_batches"] = max(1, int(overrides.pop("schedule_total_batches")))

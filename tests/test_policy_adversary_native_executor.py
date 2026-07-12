@@ -16,11 +16,11 @@ from feedbax.training import ExecutionPreparationRequest
 
 from rlrmp.train.cs_nominal_gru import (
     CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+    CsNominalGruConfig,
     _config_namespace,
     _latest_loss_scalars,
     _run_policy_adversary_training_chunk,
     build_hps,
-    build_parser,
     write_run_spec,
 )
 from rlrmp.train.cs_perturbation_training import HISTORICAL_020A65B_PGD_RADIUS_15CM
@@ -169,7 +169,7 @@ def _policy_adversary_training_spec(tmp_path: Path) -> TrainingRunSpec:
 
 
 def _policy_adversary_args(**overrides: Any) -> argparse.Namespace:
-    args = build_parser().parse_args([])
+    args = _config_namespace(CsNominalGruConfig())
     defaults = {
         "n_train_batches": 2,
         "batch_size": 1,

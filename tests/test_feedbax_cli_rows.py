@@ -14,7 +14,7 @@ from feedbax.contracts.training import TrainingRunSpec
 from feedbax.training import ExecutionPreparationRequest
 
 from rlrmp.paths import REPO_ROOT
-from rlrmp.train.cs_nominal_gru import build_parser, write_run_spec
+from rlrmp.train.cs_nominal_gru import CsNominalGruConfig, _config_namespace, write_run_spec
 from rlrmp.train.execution_preparation import prepare_cs_supervised
 from rlrmp.train.feedbax_cli_rows import build_feedbax_cli_rows_manifest
 
@@ -28,7 +28,7 @@ def test_stage2_builder_emits_three_supported_cli_commands(tmp_path: Path) -> No
 
     rows = ("flat_3e-5", "rewarm_3e-4", "rewarm_3e-3")
     for row_id in rows:
-        args = build_parser().parse_args([])
+        args = _config_namespace(CsNominalGruConfig())
         args.n_train_batches = 2
         args.batch_size = 1
         args.n_replicates = 1
@@ -70,7 +70,7 @@ def test_stage2_builder_emits_three_supported_cli_commands(tmp_path: Path) -> No
 
 def test_real_feedbax_cli_reaches_rlrmp_preparation_before_resume_lookup(tmp_path: Path) -> None:
     """The supported subprocess path builds non-JSON slots before executor resume."""
-    args = build_parser().parse_args([])
+    args = _config_namespace(CsNominalGruConfig())
     args.n_train_batches = 2
     args.batch_size = 1
     args.n_replicates = 1
@@ -119,7 +119,7 @@ def test_real_feedbax_cli_reaches_rlrmp_preparation_before_resume_lookup(tmp_pat
 
 
 def test_legacy_cs_spec_validates_then_preparation_fails_clearly(tmp_path: Path) -> None:
-    args = build_parser().parse_args([])
+    args = _config_namespace(CsNominalGruConfig())
     args.n_train_batches = 1
     args.batch_size = 1
     args.n_replicates = 1

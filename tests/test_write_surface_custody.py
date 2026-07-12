@@ -51,6 +51,14 @@ from pathlib import Path
 import tomllib
 
 import pytest
+from feedbax.testing import (
+    AllowlistEntry,
+    Scope,
+    SiteVisitor,
+    diff_allowlist,
+    scan_domain,
+    target_label as kit_target_label,
+)
 
 
 pytestmark = pytest.mark.feedbax_contract
@@ -195,7 +203,7 @@ def _target_label(expr: ast.expr | None) -> str:
     if expr is None:
         return "<unknown>"
     if isinstance(expr, ast.Name):
-        return expr.id
+        return kit_target_label(expr)
     if isinstance(expr, ast.BinOp) and isinstance(expr.op, ast.Div):
         return f"{_target_label(expr.left)}/{_terminal_label(expr.right)}"
     if isinstance(expr, ast.Subscript):
@@ -251,62 +259,74 @@ def _module_conditional_dispatch(tree: ast.Module) -> dict[str, set[str]]:
     return pairs
 
 
-def _scan_file(path: Path) -> list[WriteSite]:
-    """Return write sites for one domain file."""
+class _WriteSiteVisitor(SiteVisitor[WriteSite]):
+    def visit_Module(self, node: ast.Module) -> None:
+        dispatch = _module_conditional_dispatch(node)
 
-    source = path.read_text(encoding="utf-8")
-    tree = ast.parse(source, filename=str(path))
-    relpath = path.relative_to(REPO_ROOT).as_posix()
-    dispatch = _module_conditional_dispatch(tree)
-
-    # Attach parent + guard context by a manual DFS with a stack.
-    sites: list[WriteSite] = []
-    def visit(node: ast.AST, stack: list[ast.AST]) -> None:
-        function = _enclosing_function(stack)
-        if isinstance(node, ast.Call) and _is_raw_write_call(node):
-            target_expr = _write_target_expr(node)
-            root = _target_root_name(target_expr)
-            ephemeral = bool(root and _EPHEMERAL_ROOT_RE.match(root))
-            has_if_guard = any(isinstance(anc, ast.If) for anc in stack)
-            in_dispatch = function in dispatch
-            sites.append(
-                WriteSite(
-                    relpath=relpath,
-                    function=function,
-                    kind=_call_kind(node),
-                    target=_target_label(target_expr),
-                    ephemeral=ephemeral,
-                    conditional=has_if_guard or in_dispatch,
+        def visit(current: ast.AST, stack: list[ast.AST]) -> None:
+            function = _enclosing_function(stack)
+            if isinstance(current, ast.Call) and _is_raw_write_call(current):
+                target_expr = _write_target_expr(current)
+                root = _target_root_name(target_expr)
+                self.sites.append(
+                    WriteSite(
+                        relpath=self.relpath,
+                        function=function,
+                        kind=_call_kind(current),
+                        target=_target_label(target_expr),
+                        ephemeral=bool(root and _EPHEMERAL_ROOT_RE.match(root)),
+                        conditional=(
+                            any(isinstance(ancestor, ast.If) for ancestor in stack)
+                            or function in dispatch
+                        ),
+                    )
                 )
-            )
-        for child in ast.iter_child_nodes(node):
-            visit(child, stack + [node])
+            for child in ast.iter_child_nodes(current):
+                visit(child, [*stack, current])
 
-    visit(tree, [])
-    return sites
+        visit(node, [])
 
 
 def _scan_domain() -> list[WriteSite]:
-    all_sites: list[WriteSite] = []
-    for path in _domain_files():
-        all_sites.extend(_scan_file(path))
-    return all_sites
+    return scan_domain(_domain_files(), root=REPO_ROOT, visitor_factory=_WriteSiteVisitor)
 
 
 def _durable_sites(sites: list[WriteSite]) -> list[WriteSite]:
     return [s for s in sites if not s.ephemeral]
 
 
-def _load_allowlist() -> dict:
-    return tomllib.loads(ALLOWLIST_PATH.read_text(encoding="utf-8"))
+def _raw_allowlist_entries() -> list[dict]:
+    data = tomllib.loads(ALLOWLIST_PATH.read_text(encoding="utf-8"))
+    entries = data.get("durable_write_sites", [])
+    assert isinstance(entries, list), "durable_write_sites must be a TOML list"
+    return entries
 
 
-def _allowlist_index(allowlist: dict) -> dict[tuple[str, str, str, str], dict]:
-    index: dict[tuple[str, str, str, str], dict] = {}
-    for entry in allowlist.get("durable_write_sites", []):
-        key = (entry["path"], entry["function"], entry["kind"], entry["target"])
-        index[key] = entry
-    return index
+def _site_key_from_entry(entry: dict) -> tuple[str, str, str, str]:
+    return (entry["path"], entry["function"], entry["kind"], entry["target"])
+
+
+def _kit_allowlist_entries(
+    raw_entries: list[dict],
+) -> list[AllowlistEntry[tuple[str, str, str, str]]]:
+    return [
+        AllowlistEntry(
+            scope=Scope("python_scope", entry["path"], entry["function"]),
+            owner=entry["owner"],
+            reason=entry.get("reason", entry["role"]),
+            key=_site_key_from_entry(entry),
+        )
+        for entry in raw_entries
+    ]
+
+
+def _allowlist_diff(sites: list[WriteSite], raw_entries: list[dict]):
+    return diff_allowlist(
+        sites,
+        _kit_allowlist_entries(raw_entries),
+        site_key=lambda site: site.key,
+        site_location=lambda site: (site.relpath, site.function),
+    )
 
 
 # ===========================================================================
@@ -321,21 +341,18 @@ def test_domain_scan_is_non_vacuous() -> None:
     durable = _durable_sites(sites)
     assert durable, "Durable write-site scan found zero sites; scan scope is broken"
     scanned_files = {s.relpath for s in durable}
-    assert "scripts/train_minimax.py" in scanned_files, (
-        "Minimax training path (the issue's named emitter path) not covered by "
-        f"the durable-write scan; covered files: {sorted(scanned_files)}"
-    )
+    assert "src/rlrmp/train/run_spec_authoring.py" in scanned_files
+    assert "scripts/train_minimax.py" not in scanned_files
 
 
 def test_durable_write_sites_match_allowlist() -> None:
     """Deny-by-default: every durable raw-write must be allowlisted."""
 
     sites = _scan_domain()
-    allowlist = _load_allowlist()
-    allowed = _allowlist_index(allowlist)
-
-    found_keys = {s.key for s in _durable_sites(sites)}
-    unlisted = sorted(found_keys - set(allowed))
+    raw_entries = _raw_allowlist_entries()
+    unlisted = sorted(
+        site.key for site in _allowlist_diff(_durable_sites(sites), raw_entries).unlisted
+    )
     assert not unlisted, (
         "New durable raw-write site(s) to a declared durable root without an "
         f"allowlist entry: {unlisted}. Route the write through the sanctioned "
@@ -350,9 +367,10 @@ def test_allowlist_has_no_dead_entries() -> None:
     """Every allowlisted durable site must still exist in the tree."""
 
     sites = _scan_domain()
-    allowlist = _load_allowlist()
-    found_keys = {s.key for s in _durable_sites(sites)}
-    dead = sorted(set(_allowlist_index(allowlist)) - found_keys)
+    raw_entries = _raw_allowlist_entries()
+    dead = sorted(
+        entry.key for entry in _allowlist_diff(_durable_sites(sites), raw_entries).dead_entries
+    )
     assert not dead, (
         "Allowlist names durable write site(s) that no longer exist in the "
         f"scanned domain: {dead}. Remove the stale entries (shrinking the "
@@ -361,7 +379,6 @@ def test_allowlist_has_no_dead_entries() -> None:
 
 
 def test_allowlist_entries_carry_owner_and_role() -> None:
-    allowlist = _load_allowlist()
     issue_re = re.compile(r"^[0-9a-f]{7}$")
     allowed_roles = {
         "run_spec",
@@ -372,7 +389,7 @@ def test_allowlist_entries_carry_owner_and_role() -> None:
         "write_helper",
         "materialized_checkpoint",
     }
-    entries = allowlist.get("durable_write_sites", [])
+    entries = _raw_allowlist_entries()
     assert entries, "write-surface allowlist declares zero durable sites"
     for entry in entries:
         assert issue_re.match(entry.get("owner", "")), (
@@ -395,18 +412,19 @@ def test_conditional_flag_matches_generated_control_flow() -> None:
     """
 
     sites = _scan_domain()
-    allowlist = _load_allowlist()
-    allowed = _allowlist_index(allowlist)
+    raw_entries = _raw_allowlist_entries()
+    conditional_by_key = {
+        entry.key: raw["conditional"]
+        for entry, raw in zip(_kit_allowlist_entries(raw_entries), raw_entries, strict=True)
+    }
 
     mismatches = []
     for site in _durable_sites(sites):
-        entry = allowed.get(site.key)
-        if entry is None:
+        conditional = conditional_by_key.get(site.key)
+        if conditional is None:
             continue  # covered by test_durable_write_sites_match_allowlist
-        if bool(entry["conditional"]) != site.conditional:
-            mismatches.append(
-                (site.key, f"declared={entry['conditional']} generated={site.conditional}")
-            )
+        if conditional != site.conditional:
+            mismatches.append((site.key, f"declared={conditional} generated={site.conditional}"))
     assert not mismatches, (
         f"Allowlisted conditional flag disagrees with generated control flow: {mismatches}"
     )
@@ -422,9 +440,7 @@ def test_conditional_durable_write_surface_is_absent() -> None:
         "non-vacuous guard for that surface instead of relying on the deleted "
         f"branch-matrix machinery: {conditional_durable}"
     )
-    conditional_entries = [
-        entry for entry in _load_allowlist().get("durable_write_sites", []) if entry["conditional"]
-    ]
+    conditional_entries = [entry for entry in _raw_allowlist_entries() if entry["conditional"]]
     assert not conditional_entries, (
         "Allowlist declares conditional durable entries even though the live "
         f"durable conditional surface is absent: {conditional_entries}"
