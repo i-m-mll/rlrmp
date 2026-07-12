@@ -65,7 +65,6 @@ def test_feedback_orchestration_preserves_materialization_contract(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from rlrmp.eval import checkpoint_selection as gru_checkpoint_selection
-    from rlrmp.analysis.pipelines import gru_evaluation_diagnostics
     from rlrmp.analysis.pipelines import gru_feedback_ablation
     from rlrmp.analysis.pipelines import gru_perturbation_bank
 
@@ -117,11 +116,6 @@ def test_feedback_orchestration_preserves_materialization_contract(
     monkeypatch.setattr(
         gru_checkpoint_selection,
         "build_validation_checkpoint_selection_manifest",
-        lambda **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        gru_evaluation_diagnostics,
-        "materialize_gru_evaluation_diagnostics",
         lambda **_kwargs: None,
     )
     monkeypatch.setattr(
@@ -183,7 +177,7 @@ def test_stabilization_evaluator_preserves_missing_family_behavior(
     from rlrmp.analysis.pipelines import cs_gru_standard_materialization
     from rlrmp.eval import checkpoint_selection as gru_checkpoint_selection
     from rlrmp.analysis.pipelines import gru_perturbation_bank
-    from rlrmp.analysis.pipelines import gru_pilot_figures
+    from rlrmp.eval import trial_inputs
     from rlrmp.analysis.pipelines import gru_steady_state_perturbation_bank
     from rlrmp.eval import sisu_spectrum
     from rlrmp.train import task_model
@@ -249,9 +243,13 @@ def test_stabilization_evaluator_preserves_missing_family_behavior(
         "normalize_gru_hps",
         lambda payload: payload,
     )
-    monkeypatch.setattr(gru_pilot_figures, "resolve_run_inputs", lambda **_kwargs: [run])
     monkeypatch.setattr(
-        gru_pilot_figures,
+        trial_inputs,
+        "resolve_evaluation_run_inputs",
+        lambda **_kwargs: [run],
+    )
+    monkeypatch.setattr(
+        trial_inputs,
         "repeat_single_validation_trial",
         lambda *_args: "repeated",
     )
@@ -434,7 +432,7 @@ def test_manifest_member_is_a_thin_canonical_adapter(
         assert calls.isdisjoint(
             {
                 "build_validation_checkpoint_selection_manifest",
-                "materialize_gru_evaluation_diagnostics",
+                "evaluate_gru_diagnostics_runs",
                 "materialize_gru_perturbation_response",
                 "materialize_gru_feedback_ablation",
             }

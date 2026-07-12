@@ -290,7 +290,7 @@ def materialize_gru_postrun_analysis(
             bank_mode=perturbation_bank_mode,
             calibration_level=perturbation_calibration_level,
             calibration_reach=perturbation_calibration_reach,
-            feedback_scale_manifest_path=plan.evaluation_manifest_path,
+            feedback_scale_manifest_path=evaluation_manifest_path,
             preferred_checkpoint_manifest_path=effective_checkpoint_manifest_path,
             repo_root=repo_root,
         )
@@ -309,7 +309,7 @@ def materialize_gru_postrun_analysis(
             calibration_level=perturbation_calibration_level,
             calibration_reach=perturbation_calibration_reach,
             feedback_selection_level=feedback_selection_level,
-            feedback_scale_manifest_path=plan.evaluation_manifest_path,
+            feedback_scale_manifest_path=evaluation_manifest_path,
             preferred_checkpoint_manifest_path=effective_checkpoint_manifest_path,
             regeneration_spec_path=_regeneration_spec_path(plan.feedback_ablation_json_path),
             repo_root=repo_root,
@@ -390,16 +390,11 @@ def materialize_gru_postrun_analysis(
                 plan.standard_manifest_path,
                 repo_root=repo_root,
             ),
-            "evaluation_diagnostics_manifest": _repo_relative(
-                plan.evaluation_manifest_path,
-                repo_root=repo_root,
-            ),
             "evaluation_run_manifest": (
                 None
                 if evaluation_manifest_path is None
                 else _repo_relative(evaluation_manifest_path, repo_root=repo_root)
             ),
-            "evaluation_bulk_dir": _repo_relative(plan.evaluation_bulk_dir, repo_root=repo_root),
             "figure_output_dir": _repo_relative(plan.figure_output_dir, repo_root=repo_root),
             "figure_summary": _repo_relative(
                 plan.figure_output_dir / "figure_summary.json",
@@ -414,10 +409,8 @@ def materialize_gru_postrun_analysis(
         },
         "summaries": {
             "standard_certificate": standard_result.get("summary", {}),
-            "evaluation_diagnostics_schema": evaluation_manifest.get("schema_version"),
-            "evaluation_manifest_dependency": evaluation_manifest.get(
-                "evaluation_manifest_dependency"
-            ),
+            "evaluation_manifest_id": evaluation_manifest.get("evaluation_manifest_id"),
+            "evaluation_product_role": evaluation_manifest.get("product_role"),
             "figure_summary_keys": sorted(figure_summary.keys()),
         },
     }
@@ -539,10 +532,6 @@ def _postrun_regeneration_specs(
         "postrun": _repo_relative(plan.postrun_regeneration_spec_path, repo_root=repo_root),
         "standard_certificate": _repo_relative(
             _regeneration_spec_path(plan.standard_manifest_path),
-            repo_root=repo_root,
-        ),
-        "evaluation_diagnostics": _repo_relative(
-            _regeneration_spec_path(plan.evaluation_manifest_path),
             repo_root=repo_root,
         ),
         "pilot_figures": _repo_relative(
@@ -718,7 +707,6 @@ def _write_postrun_auxiliary_regeneration_specs(
         outputs=[
             {"role": "postrun_manifest", "path": plan.postrun_manifest_path},
             {"role": "standard_certificate_manifest", "path": plan.standard_manifest_path},
-            {"role": "evaluation_diagnostics_manifest", "path": plan.evaluation_manifest_path},
             {"role": "pilot_figure_dir", "path": plan.figure_output_dir},
             {"role": "objective_comparator_manifest", "path": plan.objective_comparator_json_path},
             {"role": "map_decomposition_manifest", "path": plan.map_decomposition_json_path},
@@ -731,7 +719,8 @@ def _write_postrun_auxiliary_regeneration_specs(
         source_files=[
             "src/rlrmp/analysis/pipelines/gru_postrun_materialization.py",
             "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py",
-            "src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py",
+            "src/rlrmp/eval/evaluation_diagnostics.py",
+            "src/rlrmp/eval/gru_diagnostics.py",
             "src/rlrmp/analysis/pipelines/gru_pilot_figures.py",
             "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
             "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
