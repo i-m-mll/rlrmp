@@ -183,10 +183,6 @@ def test_args_namespace_members_cannot_reaccrete() -> None:
 def test_path_and_ensemble_residuals_stay_canonical() -> None:
     for path, name in (
         (
-            "results/1c014e5/scripts/materialize_output_feedback_optimizer_basin_diagnostic.py",
-            "_repo_relative",
-        ),
-        (
             "results/3becdec/scripts/materialize_output_feedback_observer_error_coverage.py",
             "_repo_relative",
         ),

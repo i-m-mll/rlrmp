@@ -61,12 +61,6 @@ def test_run_benchmark_records_and_passes_backend_context(monkeypatch, tmp_path)
     )
     monkeypatch.setattr(benchmark, "default_cs_perturbation_bank", lambda: bank)
     monkeypatch.setattr(benchmark, "selected_feedback_ablation_bins_for_bank", lambda _: {})
-    monkeypatch.setattr(
-        benchmark,
-        "materialize_gru_standard_result",
-        lambda **_: {"rows": [], "checkpoint_policy": "test"},
-    )
-    monkeypatch.setattr(benchmark, "write_gru_standard_result", lambda *_, **__: None)
     monkeypatch.setattr(benchmark, "materialize_gru_pilot_figures", lambda **_: {"fig": {}})
     monkeypatch.setattr(
         benchmark,

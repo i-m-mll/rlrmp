@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -147,27 +148,13 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
             {"metadata": {"checkpoint_policy": "validation_selected_per_replicate"}}
         )
 
-    def fake_standard_result(**kwargs: Any) -> dict[str, Any]:
+    def fake_standard_result(
+        evaluation_states: Mapping[str, Any],
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        calls["standard_states"] = evaluation_states
         calls["standard"] = kwargs
         return {"summary": {"n_rows": 2}}
-
-    def fake_write_standard(
-        result: dict[str, Any],
-        *,
-        note_path: Path,
-        manifest_path: Path,
-        regeneration_spec_path: Path,
-        repo_root: Path,
-    ) -> None:
-        calls["standard_write"] = {
-            "result": result,
-            "note_path": note_path,
-            "manifest_path": manifest_path,
-            "regeneration_spec_path": regeneration_spec_path,
-            "repo_root": repo_root,
-        }
-        note_path.write_text("# standard\n", encoding="utf-8")
-        manifest_path.write_text("{}", encoding="utf-8")
 
     def fake_figures(**kwargs: Any) -> dict[str, Any]:
         calls["figures"] = kwargs
@@ -260,7 +247,6 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         fake_checkpoint_manifest,
     )
     monkeypatch.setattr(postrun, "materialize_gru_standard_result", fake_standard_result)
-    monkeypatch.setattr(postrun, "write_gru_standard_result", fake_write_standard)
     monkeypatch.setattr(postrun, "materialize_gru_pilot_figures", fake_figures)
     monkeypatch.setattr(postrun, "materialize_optional_objective_comparator", fake_objective)
     monkeypatch.setattr(
@@ -289,7 +275,11 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         repo_root=tmp_path,
     )
 
-    assert calls["standard"]["use_validation_selected_checkpoints"] is True
+    assert calls["standard_states"] == {
+        "evaluation_manifest_id": "eval-id",
+        "product_role": "fixture",
+    }
+    assert calls["standard"]["run_ids"] == ("run_a", "run_b")
     assert calls["figures"]["use_validation_selected_checkpoints"] is True
     assert calls["objective"]["use_validation_selected_checkpoints"] is True
     assert calls["objective"]["checkpoint_policy"] == "validation_selected_per_replicate"
@@ -327,13 +317,7 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
     )
     assert calls["checkpoint"]["preferred_manifest_path"] is None
     assert calls["checkpoint"]["checkpoint_selection_mode"] == "sparse_history"
-    assert calls["standard_write"]["manifest_path"] == (
-        tmp_path
-        / "results"
-        / "5f70333"
-        / "notes"
-        / "gru_standard_certificates_fullqrf_validation_selected_manifest.json"
-    )
+    assert not hasattr(postrun, "write_gru_standard_result")
     assert "regeneration_spec_path" not in calls["perturbation"]
     assert calls["feedback"]["regeneration_spec_path"] == (
         tmp_path
@@ -450,20 +434,13 @@ def test_materialize_gru_postrun_analysis_prefers_provided_fixed_bank_manifest(
             }
         )
 
-    def fake_standard_result(**kwargs: Any) -> dict[str, Any]:
+    def fake_standard_result(
+        evaluation_states: Mapping[str, Any],
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        calls["standard_states"] = evaluation_states
         calls["standard"] = kwargs
         return {"summary": {}}
-
-    def fake_write_standard(
-        _result: dict[str, Any],
-        *,
-        note_path: Path,
-        manifest_path: Path,
-        regeneration_spec_path: Path,
-        repo_root: Path,
-    ) -> None:
-        note_path.write_text("", encoding="utf-8")
-        manifest_path.write_text("{}", encoding="utf-8")
 
     def fake_figures(**kwargs: Any) -> dict[str, Any]:
         kwargs["output_dir"].mkdir(parents=True)
@@ -499,7 +476,6 @@ def test_materialize_gru_postrun_analysis_prefers_provided_fixed_bank_manifest(
         },
     )
     monkeypatch.setattr(postrun, "materialize_gru_standard_result", fake_standard_result)
-    monkeypatch.setattr(postrun, "write_gru_standard_result", fake_write_standard)
     monkeypatch.setattr(postrun, "materialize_gru_pilot_figures", fake_figures)
     monkeypatch.setattr(
         postrun,
@@ -532,6 +508,10 @@ def test_materialize_gru_postrun_analysis_prefers_provided_fixed_bank_manifest(
 
     assert calls["checkpoint"]["preferred_manifest_path"] == fixed_manifest_path
     assert calls["checkpoint"]["checkpoint_selection_mode"] == "fixed_bank_manifest"
+    assert calls["standard_states"] == {
+        "evaluation_manifest_id": "eval-id",
+        "product_role": "fixture",
+    }
     assert manifest["checkpoint_selection_source"] == "fixed_bank_rescore"
     assert manifest["outputs"]["fixed_bank_rescore_manifest"]["status"] == "materialized"
     assert (
@@ -543,19 +523,11 @@ def test_materialize_gru_postrun_analysis_preserves_audit_only_skip_semantics(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    def fake_standard_result(**_kwargs: Any) -> dict[str, Any]:
+    def fake_standard_result(
+        _evaluation_states: Mapping[str, Any],
+        **_kwargs: Any,
+    ) -> dict[str, Any]:
         return {"summary": {}}
-
-    def fake_write_standard(
-        _result: dict[str, Any],
-        *,
-        note_path: Path,
-        manifest_path: Path,
-        regeneration_spec_path: Path,
-        repo_root: Path,
-    ) -> None:
-        note_path.write_text("", encoding="utf-8")
-        manifest_path.write_text("{}", encoding="utf-8")
 
     def fake_figures(**kwargs: Any) -> dict[str, Any]:
         kwargs["output_dir"].mkdir(parents=True)
@@ -563,7 +535,6 @@ def test_materialize_gru_postrun_analysis_preserves_audit_only_skip_semantics(
         return {}
 
     monkeypatch.setattr(postrun, "materialize_gru_standard_result", fake_standard_result)
-    monkeypatch.setattr(postrun, "write_gru_standard_result", fake_write_standard)
     monkeypatch.setattr(postrun, "materialize_gru_pilot_figures", fake_figures)
     monkeypatch.setattr(
         postrun,

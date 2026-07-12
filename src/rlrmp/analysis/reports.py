@@ -457,13 +457,13 @@ def _standard_certificate_cells(row: Mapping[str, Any]) -> tuple[str, ...]:
         else:
             mode = "static_gain"
     return (
-        str(spec.get("run_id", "missing")),
-        str(row.get("status", "missing")),
-        str(spec.get("training_distribution", "missing")),
+        str(spec["run_id"]),
+        str(row["status"]),
+        str(spec["training_distribution"]),
         str(
             parameters.get("evaluation_lens")
             or metrics.get("certificate_evaluation_lens")
-            or spec.get("evaluation_lane", "missing")
+            or spec["evaluation_lane"]
         ),
         str(mode),
         _fmt(objective_ratio),
@@ -491,7 +491,7 @@ def _failure_cells(row: Mapping[str, Any]) -> tuple[str, ...]:
         f"weak/unvisited={_fmt(gains.get('weak_or_unvisited_fraction_mean'))}"
     )
     return (
-        str(row.get("run_id", "missing")),
+        str(row["run_id"]),
         _failure_class(row),
         objective_pair,
         gradient,
@@ -502,7 +502,7 @@ def _failure_cells(row: Mapping[str, Any]) -> tuple[str, ...]:
 
 
 def _failure_class(row: Mapping[str, Any]) -> str:
-    return str(_mapping(row.get("classification")).get("classification", "uncertain"))
+    return str(_mapping(row.get("classification"))["classification"])
 
 
 def _interpolation_summary(value: Any) -> str:
@@ -524,7 +524,7 @@ def _component_value(
 ) -> Any:
     component = _mapping(components.get(name))
     if component.get("status") != "available":
-        return component.get("status", "missing")
+        return component["status"]
     summary = _mapping(component.get("summary"))
     for key in keys:
         if summary.get(key) is not None:
