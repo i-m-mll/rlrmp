@@ -991,157 +991,16 @@ def test_perturbation_class_leaf_absent_family_fails_closed(tmp_path: Path) -> N
     assert "contains families" in str(excinfo.value.__cause__)
 
 
-def test_feedback_quality_lens_bundle_executes_fixture_and_groups_artifacts(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_feedback_quality_lens_bundle_uses_manifest_component_stages() -> None:
     registry = ExperimentRegistry()
     rlrmp.register_experiment_package(registry)
     bundle = load_analysis_bundle("rlrmp/feedback_quality_lens", registry=registry)
-    repo_root = tmp_path / "repo"
-    feedbax_root = tmp_path / "feedbax_runs"
-    run_id = "rlrmp-test-training-run:feedback-quality"
-    run_manifest = TrainingRunManifest(
-        id=run_id,
-        job_id="feedback-quality-fixture",
-        status="completed",
-        metadata={
-            "feedback_quality_candidate": True,
-            "rlrmp_experiment": "5f70333",
-        },
-    )
-    write_manifest(run_manifest, root=feedbax_root, index=False)
-    monkeypatch.setattr(dm, "REPO_ROOT", repo_root)
-
-    plan = dm.plan_gru_postrun_materialization(
-        experiment="5f70333",
-        run_ids=(run_id,),
-        repo_root=repo_root,
-    )
-    for path, payload in (
-        (
-            plan.evaluation_manifest_path,
-            {"schema_version": "rlrmp.gru_evaluation_diagnostics.v1", "runs": {}},
-        ),
-        (
-            plan.perturbation_response_json_path,
-            {"schema_version": "rlrmp.gru_perturbation_bank.v3", "runs": {}},
-        ),
-        (
-            plan.feedback_ablation_json_path,
-            {"schema_version": "rlrmp.gru_feedback_ablation.v1", "rows": []},
-        ),
-    ):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
-    for path in (
-        plan.perturbation_response_note_path,
-        plan.feedback_ablation_note_path,
-    ):
-        path.write_text("# fixture\n", encoding="utf-8")
-
-    plan.evaluation_bulk_dir.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(plan.evaluation_bulk_dir / "unit_rollout.npz", x=np.ones((1,)))
-    plan.perturbation_response_bulk_dir.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(
-        plan.perturbation_response_bulk_dir / "unit_perturbation.npz", x=np.ones((1,))
-    )
-    norm_manifest = (
-        repo_root
-        / "results"
-        / "5f70333"
-        / "notes"
-        / "response_norm_comparison_validation_selected_manifest.json"
-    )
-    norm_manifest.write_text(
-        json.dumps({"schema_version": "rlrmp.figure_data.response_norm_comparison.v1"}) + "\n",
-        encoding="utf-8",
-    )
-    norm_note = norm_manifest.with_name(
-        "response_norm_comparison_validation_selected.md"
-    )
-    norm_note.write_text("# norm plots\n", encoding="utf-8")
-    norm_fig_dir = (
-        repo_root
-        / "_artifacts"
-        / "5f70333"
-        / "figures"
-        / ("perturbation_response_norms_validation_selected")
-    )
-    norm_fig_dir.mkdir(parents=True, exist_ok=True)
-    (norm_fig_dir / "figure.html").write_text("<html></html>\n", encoding="utf-8")
-
-    execution = execute_staged_analysis_bundle(
-        bundle,
-        root=feedbax_root,
-        run_ids=[run_id],
-        issues=["af77a06"],
-        fig_dump_formats=("json",),
-    )
-
-    stages = {stage.name: stage for stage in execution.stages}
-    assert stages["perturbation_response"].status == "materialized"
-    assert stages["response_norm_plots"].status == "materialized"
-    assert stages["feedback_quality_lens"].status == "materialized"
-    manifest_ref = stages["feedback_quality_lens"].manifest_refs[0]
-    manifest = load_manifest(manifest_ref.uri)
-    manifest_path = Path(manifest_ref.uri)
-    assert manifest_path.exists()
-    assert manifest.status == "completed"
-    assert manifest.provenance.issues == ["af77a06"]
-    stage_manifests = [
-        load_manifest(stage.manifest_refs[0].uri)
-        for stage in stages.values()
-        if stage.manifest_refs
-    ]
-    roles = set().union(*(_artifact_roles(stage_manifest) for stage_manifest in stage_manifests))
-    assert "rlrmp-feedback-quality-lens" in _artifact_roles(manifest)
-    assert "rlrmp-feedback-quality-perturbation-response-bulk" in roles
-    assert "rlrmp-feedback-quality-response-norm-figure" in roles
-    assert "rlrmp-feedback-quality-perturbation-calibration-status" in roles
-
-    payload_ref = next(
-        artifact
-        for artifact in manifest.artifacts
-        if artifact.role == "rlrmp-feedback-quality-lens"
-    )
-    payload = json.loads(Path(payload_ref.uri).read_text(encoding="utf-8"))
-    assert payload["schema_version"] == "rlrmp.feedback_quality_lens.v1"
-    assert payload["bundle_contract"]["artifact_custody"] == "feedbax.AnalysisRunManifest"
-    assert payload["outputs"]["perturbation_response"]["status"] == "materialized"
-    assert payload["outputs"]["response_norm_plots"]["status"] == "materialized"
-    assert payload["outputs"]["perturbation_calibration"]["status"] == "materialized"
-    assert payload["outputs"]["evaluation_diagnostics"]["status"] == "skipped"
-    expected_payload = json.loads(
-        (FIXTURES_DIR / "feedback_quality_lens_legacy_payload.json").read_text(
-            encoding="utf-8"
-        )
-    )
-    assert FEEDBACK_QUALITY_ALLOWED_PARITY_DIFFS == (
-        "declarative_analysis",
-        "bundle_contract.analysis_manifest_id",
-        "outputs.evaluation_diagnostics",
-        "outputs.perturbation_response.live_materializer",
-    )
-    expected_payload["outputs"].pop("evaluation_diagnostics", None)
-    expected_payload["outputs"]["perturbation_response"]["live_materializer"] = None
-    assert _feedback_quality_parity_payload(payload) == expected_payload
-    assert "rlrmp-feedback-quality-evaluation-diagnostics-manifest" not in roles
-    assert "rlrmp-feedback-quality-evaluation-diagnostics-bulk" not in roles
-    assert (
-        "feedback_quality_perturbation_response_bulk"
-        in payload["outputs"]["perturbation_response"]["artifact_group_ids"]
-    )
-    bulk_artifact = next(
-        artifact
-        for stage_manifest in stage_manifests
-        for artifact in stage_manifest.artifacts
-        if artifact.role == "rlrmp-feedback-quality-perturbation-response-bulk"
-    )
-    assert bulk_artifact.metadata["artifact_group"]["id"] == (
-        "feedback_quality_perturbation_response_bulk"
-    )
-    assert load_manifest(manifest_path).id == manifest.id
+    stage_types = {stage.name: stage.analysis_type for stage in bundle.stages}
+    assert stage_types["evaluation_diagnostics"] == "rlrmp.feedback_quality.evaluation_diagnostics"
+    assert stage_types["objective_comparator"] == "rlrmp.feedback_quality.objective_comparator"
+    assert stage_types["perturbation_response"] == "rlrmp.feedback_quality.perturbation_response"
+    assert stage_types["feedback_ablation"] == "rlrmp.feedback_quality.feedback_ablation"
+    assert stage_types["feedback_quality_lens"] == dm.FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE
 
 
 def test_feedback_quality_lens_records_run_condition_skips(

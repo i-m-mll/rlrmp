@@ -22,7 +22,7 @@ from _common import (
 )
 from rlrmp.paths import portable_repo_path
 
-from rlrmp.analysis.pipelines.gru_pilot_figures import (
+from rlrmp.eval.velocity_profiles import (
     DEFAULT_N_ROLLOUT_TRIALS,
     evaluate_stochastic_forward_velocity_profile,
     resolve_run_inputs,

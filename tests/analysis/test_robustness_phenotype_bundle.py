@@ -110,7 +110,7 @@ def _write_gru_postrun_analysis_manifest(
         analysis_spec=spec_payload(
             "AnalysisRunSpec",
             AnalysisRunSpec(
-                analysis_type=dm.GRU_POSTRUN_ANALYSIS_TYPE,
+                analysis_type="rlrmp.bundle.gru_postrun_components",
                 params={"experiment": "unitexp"},
             ).model_dump(mode="json"),
         ),
