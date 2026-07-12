@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import subprocess
+import sys
+from types import SimpleNamespace
 from pathlib import Path
 
 import jax
@@ -22,6 +25,7 @@ from rlrmp.train.executor.cs_supervised import (
     build_cs_supervised_native_initial_slots,
     build_run_spec_execution_context,
 )
+from rlrmp.train.executor import cs_supervised as cs_supervised_module
 from rlrmp.train.resume_control import (
     LAUNCH_CONTINUATION_PREFIX,
     LaunchContinuation,
@@ -370,7 +374,9 @@ def test_cli_flags_document_resume_override_and_global_stop_target() -> None:
     normalized_help = " ".join(help_text.split())
 
     assert parser.parse_args(["--allow-fresh-start"]).allow_fresh_start is True
+    assert parser.parse_args(["--verify-resume-only"]).verify_resume_only is True
     assert "--allow-fresh-start" in help_text
+    assert "--verify-resume-only" in help_text
     assert "Global completed-batch index" in normalized_help
     assert "not a relative count" in normalized_help
 
@@ -380,3 +386,87 @@ def test_cli_flags_document_resume_override_and_global_stop_target() -> None:
         description="test minimax config",
     )
     assert minimax_config.allow_fresh_start is True
+
+
+@pytest.mark.parametrize("loader_error", [None, ValueError("checkpoint binding mismatch")])
+def test_verify_resume_only_loads_strict_checkpoint_without_executor_steps(
+    monkeypatch: pytest.MonkeyPatch,
+    loader_error: Exception | None,
+) -> None:
+    recipe_path = _baseline_recipe_path()
+    parser = build_parser()
+    context = build_run_spec_execution_context(
+        parser.parse_args(["--run-spec", str(recipe_path), "--verify-resume-only"]),
+        parser=parser,
+    )
+    continuation = LaunchContinuation(
+        resume=True,
+        resume_source="/tmp/checkpoints/latest.json",
+        completed_batches=11_000,
+        stop_target_batches=12_000,
+        continuation_batches=1_000,
+        source_target_batches=12_000,
+    )
+    monkeypatch.setattr(
+        cs_supervised_module,
+        "_resolve_full_train_launch_context",
+        lambda resolved_context, **_kwargs: (resolved_context, True, continuation),
+    )
+    monkeypatch.setattr(
+        cs_supervised_module,
+        "build_cs_supervised_native_initial_slots",
+        lambda **_kwargs: ({"model": object(), "completed_batches": 0}, object()),
+    )
+    monkeypatch.setattr(
+        cs_supervised_module,
+        "_cs_supervised_resume_slot_transform",
+        lambda: None,
+    )
+    calls: list[dict[str, object]] = []
+
+    def load_checkpoint(_root: Path, **kwargs: object) -> object:
+        calls.append(kwargs)
+        if loader_error is not None:
+            raise loader_error
+        return SimpleNamespace(manifest=SimpleNamespace(transaction_id="txn-ok"))
+
+    monkeypatch.setattr(cs_supervised_module, "load_feedbax_checkpoint", load_checkpoint)
+
+    if loader_error is not None:
+        with pytest.raises(ValueError, match="checkpoint binding mismatch"):
+            cs_supervised_module.verify_resume_from_context(context)
+        return
+
+    result = cs_supervised_module.verify_resume_from_context(context)
+    assert result["verified_resume"] is True
+    assert result["transaction_id"] == "txn-ok"
+    assert len(calls) == 1
+    assert "expected_run_spec" in calls[0]
+    assert "expected_phase_program" in calls[0]
+    assert "expected_slots" in calls[0]
+
+
+def test_minimax_cli_exposes_checkpoint_only_resume_gate() -> None:
+    script = (Path(__file__).resolve().parents[1] / "scripts/train_minimax.py").read_text(
+        encoding="utf-8"
+    )
+    assert '"--verify-resume-only"' in script
+    assert "verify_minimax_checkpoint_resume(spec) if verify_only else run_training(spec)" in script
+    method = (
+        Path(__file__).resolve().parents[1]
+        / "src/rlrmp/train/minimax_native/method.py"
+    ).read_text(encoding="utf-8")
+    assert "load_latest_checkpoint(" in method
+
+
+def test_minimax_cli_help_is_importable_and_lists_resume_gate() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    result = subprocess.run(
+        [sys.executable, str(repo_root / "scripts/train_minimax.py"), "--help"],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "--verify-resume-only" in result.stdout

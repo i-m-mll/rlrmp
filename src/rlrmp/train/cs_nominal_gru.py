@@ -123,6 +123,7 @@ from rlrmp.train.executor.cs_supervised import (
     make_delayed_cosine_schedule,
     resolve_run_spec_execution_args,
     run_full_training,
+    verify_resume_from_context,
     write_training_diagnostics_sidecar,
 )
 
@@ -614,7 +615,9 @@ def main(
     assert_jax_x64_disabled("C&S nominal GRU training/spec entry", allow_x64=args.allow_x64)
     if args.run_spec is not None:
         context = build_run_spec_execution_context(args, parser=parser)
-        if context.args.dry_run:
+        if context.args.verify_resume_only:
+            result = verify_resume_from_context(context)
+        elif context.args.dry_run:
             result = render_run_spec_execution_dry_run(context)
         elif context.args.full_train:
             result = _run_full_training_from_context(context, volume_commit=volume_commit)
@@ -625,6 +628,8 @@ def main(
                 "validated": True,
             }
     else:
+        if args.verify_resume_only:
+            parser.error("--verify-resume-only requires --run-spec")
         result = (
             run_full_training(args, volume_commit=volume_commit)
             if args.full_train and not args.dry_run

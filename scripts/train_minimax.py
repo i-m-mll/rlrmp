@@ -16,12 +16,12 @@ from rlrmp.model.feedbax_graph import (
     write_graph_spec_bundle,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p
-from rlrmp.runtime.jax_config import assert_jax_x64_disabled
 from rlrmp.runtime.checkpoint_custody import (
     MINIMAX_ADVERSARIAL_BARRIER,
     MINIMAX_WARMUP_BARRIER,
 )
-from rlrmp.train.config_cli import parse_config
+from rlrmp.runtime.jax_config import assert_jax_x64_disabled
+from rlrmp.train.config_cli import build_config_parser
 from rlrmp.train.minimax_native import (
     build_hps,
     build_minimax_training_run_spec,
@@ -29,6 +29,7 @@ from rlrmp.train.minimax_native import (
     minimax_training_run_spec_from_file,
     minimax_training_run_spec_to_config,
     validate_minimax_run_spec,
+    verify_minimax_checkpoint_resume,
 )
 from rlrmp.train.run_spec_authoring import derive_spec_dir, derive_spec_path
 from rlrmp.train.resume_control import emit_launch_continuation, resolve_launch_continuation
@@ -67,10 +68,22 @@ def training_run_spec_from_argv(argv: list[str]) -> TrainingRunSpec:
     """Resolve either a materialized spec or a generated typed config."""
 
     if argv[:1] == ["--training-run-spec"]:
-        if len(argv) != 2:
+        filtered = [arg for arg in argv if arg != "--verify-resume-only"]
+        if len(filtered) != 2:
             raise ValueError("--training-run-spec expects exactly one path")
-        return minimax_training_run_spec_from_file(argv[1])
-    config = parse_config(MinimaxConfig, argv, description="Run native minimax training.")
+        return minimax_training_run_spec_from_file(filtered[1])
+    parser = build_config_parser(MinimaxConfig, description="Run native minimax training.")
+    parser.add_argument(
+        "--verify-resume-only",
+        action="store_true",
+        help=(
+            "Load the configured checkpoint, run strict binding/integrity/ABI "
+            "resume gates, print the continuation summary, and exit without training."
+        ),
+    )
+    values = vars(parser.parse_args(argv))
+    values.pop("verify_resume_only")
+    config = MinimaxConfig.model_validate(values)
     assert isinstance(config, MinimaxConfig)
     return author_minimax_training_run_spec(config)
 
@@ -91,7 +104,7 @@ def run_training(training_run_spec: TrainingRunSpec | dict[str, Any]) -> Any:
         resume_requested=config.resume,
         allow_fresh_start=config.allow_fresh_start,
         stop_target_batches=config.n_warmup_batches + config.n_adversary_batches,
-        completed_batches_from_latest=lambda path: _completed_batches(path, config),
+        completed_batches_from_latest=lambda path: _completed_minimax_batches(path, config),
     )
     emit_launch_continuation(continuation, logger=logger)
     return execute_minimax_training_run_spec_native(
@@ -104,7 +117,7 @@ def run_training(training_run_spec: TrainingRunSpec | dict[str, Any]) -> Any:
     )
 
 
-def _completed_batches(path: Path, config: MinimaxConfig) -> int:
+def _completed_minimax_batches(path: Path, config: MinimaxConfig) -> int:
     coordinate = json.loads(path.read_text(encoding="utf-8")).get("completed_coordinate", {})
     total = config.n_warmup_batches + config.n_adversary_batches
     if coordinate.get("phase") == "done":
@@ -116,6 +129,18 @@ def _completed_batches(path: Path, config: MinimaxConfig) -> int:
     raise ValueError(f"unsupported minimax checkpoint coordinate in {path}: {coordinate!r}")
 
 
+def main(argv: list[str] | None = None) -> int:
+    """Run training or the checkpoint-only resume preflight."""
+
+    args = list(sys.argv[1:] if argv is None else argv)
+    verify_only = "--verify-resume-only" in args
+    spec = training_run_spec_from_argv(args)
+    result = verify_minimax_checkpoint_resume(spec) if verify_only else run_training(spec)
+    if verify_only:
+        print(json.dumps(result, sort_keys=True))
+    return 0
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    run_training(training_run_spec_from_argv(sys.argv[1:]))
+    raise SystemExit(main())

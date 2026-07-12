@@ -375,6 +375,7 @@ def test_cs_nominal_gru_config_defaults_match_pre_refactor_fixture() -> None:
     assert CsNominalGruConfig().model_dump(mode="python") == expected
     parsed_defaults = vars(build_parser().parse_args([]))
     assert parsed_defaults.pop("compact_run_spec") is False
+    assert parsed_defaults.pop("verify_resume_only") is False
     assert parsed_defaults == expected
 
 

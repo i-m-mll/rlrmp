@@ -55,6 +55,9 @@ from feedbax.objectives.service import LossService, LoweredObjective
 from feedbax.objectives.spec import ObjectiveExecutionRequirements
 from feedbax.orchestration.events import RunEventEmitter
 from feedbax.training.executor import execute_training_run_spec
+from feedbax.training.checkpoint_custody import (
+    load_latest_checkpoint as load_feedbax_checkpoint,
+)
 from jax_cookbook.tree import filter_spec_leaves
 from rlrmp.model.feedbax_graph import (
     build_runtime_rlrmp_feedbax_graph_bundle,
@@ -169,6 +172,7 @@ RUN_SPEC_RUNTIME_OVERRIDE_KEYS = frozenset(
         "dry_run",
         "resume",
         "allow_fresh_start",
+        "verify_resume_only",
         "stop_after_batches",
         "disable_progress",
         "quiet_progress",
@@ -1401,6 +1405,95 @@ def _run_full_training_from_context(
         "This C&S run is not covered by a registered native executor method. "
         "Legacy full-training loop fallback has been deleted."
     )
+
+
+def verify_resume_from_context(context: RunSpecExecutionContext) -> dict[str, Any]:
+    """Load and strictly validate the configured checkpoint without training."""
+
+    args = argparse.Namespace(
+        **{
+            **vars(context.args),
+            "resume": True,
+            "allow_fresh_start": False,
+        }
+    )
+    context = replace(context, args=args)
+    checkpoint_root = Path(args.output_dir) / "checkpoints"
+    context, resume_native, continuation = _resolve_full_train_launch_context(
+        context,
+        checkpoint_root=checkpoint_root,
+        stop_after_batches=None,
+    )
+    if not resume_native:
+        raise RuntimeError("--verify-resume-only requires an existing checkpoint")
+
+    training_spec = feedbax_training_run_spec_from_payload(context.run_spec)
+    resume_slot_transform: Any
+    if _adaptive_epsilon_curriculum_enabled(context.hps):
+        from rlrmp.train.adaptive_epsilon_native import (
+            _resume_slot_transform,
+            attach_adaptive_epsilon_checkpoint_continuation,
+            build_adaptive_epsilon_native_initial_slots,
+        )
+
+        training_spec = attach_adaptive_epsilon_checkpoint_continuation(
+            training_spec,
+            source_completed_batches=continuation.completed_batches,
+            target_total_batches=continuation.stop_target_batches,
+        )
+        initial_slots, _runtime = build_adaptive_epsilon_native_initial_slots(
+            run_spec=context.run_spec,
+            hps=context.hps,
+            args=context.args,
+            key=jr.PRNGKey(int(context.args.seed)),
+        )
+        resume_slot_transform = _resume_slot_transform(None)
+    elif _policy_adversary_training_enabled(context.hps):
+        from rlrmp.train.policy_adversary_native import (
+            _resume_slot_transform,
+            build_policy_adversary_native_initial_slots,
+        )
+
+        initial_slots, _runtime = build_policy_adversary_native_initial_slots(
+            run_spec=context.run_spec,
+            hps=context.hps,
+            args=context.args,
+            key=jr.PRNGKey(int(context.args.seed)),
+        )
+        resume_slot_transform = _resume_slot_transform(None)
+    elif _cs_supervised_native_supported(context.hps):
+        training_spec = attach_cs_supervised_checkpoint_continuation(
+            training_spec,
+            continuation,
+        )
+        initial_slots, _runtime = build_cs_supervised_native_initial_slots(
+            run_spec=context.run_spec,
+            hps=context.hps,
+            args=context.args,
+            key=jr.PRNGKey(int(context.args.seed)),
+        )
+        resume_slot_transform = _cs_supervised_resume_slot_transform()
+    else:
+        raise ValueError("run spec is not covered by a registered native executor method")
+
+    loaded = load_feedbax_checkpoint(
+        checkpoint_root,
+        expected_run_spec=training_spec,
+        expected_phase_program=training_spec.worker_execution.method_contract.phase_program,
+        expected_slots=initial_slots,
+        resume_slot_transform=resume_slot_transform,
+        continuation_request=training_spec.checkpoint_progress.continuation,
+        allow_new_lineage_override=(
+            training_spec.checkpoint_progress.continuation is not None
+        ),
+    )
+    return {
+        "verified_resume": True,
+        "checkpoint_root": str(checkpoint_root),
+        "transaction_id": loaded.manifest.transaction_id,
+        "completed_batches": continuation.completed_batches,
+        "continuation_batches": continuation.continuation_batches,
+    }
 
 
 def _run_adaptive_epsilon_native_from_context(
@@ -2786,5 +2879,6 @@ __all__ = [
     "make_delayed_cosine_schedule",
     "resolve_run_spec_execution_args",
     "run_full_training",
+    "verify_resume_from_context",
     "write_training_diagnostics_sidecar",
 ]
