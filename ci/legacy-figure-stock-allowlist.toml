@@ -52,26 +52,6 @@ owner = "7c1f7ed"
 reason = "Pre-declarative figure record retained until its assigned migration wave lands."
 
 [[legacy_specs]]
-path = "results/87424a4/figures/delayed_sisu_effective_020a65b/spec.json"
-owner = "87424a4"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/87424a4/figures/matched_020a65b_h0_no_pgd_vs_pgd/spec.json"
-owner = "87424a4"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/87424a4/figures/matched_020a65b_no_pgd_vs_pgd/spec.json"
-owner = "87424a4"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/87424a4/figures/undelayed_targetfix_sisu_effective_020a65b/spec.json"
-owner = "87424a4"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
 path = "results/91a090c/figures/adaptive_damage_lambda/spec.json"
 owner = "91a090c"
 reason = "Pre-declarative figure record retained until its assigned migration wave lands."

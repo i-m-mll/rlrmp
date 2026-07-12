@@ -1,100 +1,11 @@
 {
-  "comparison_id": "matched_020a65b_no_pgd_vs_pgd",
-  "feedback_offset_scales": {
-    "force_filter": 10.0,
-    "position_m": 0.1,
-    "velocity_m_s": 0.5
-  },
-  "inputs": [],
-  "issue": "87424a4",
-  "n_rollout_trials": 4,
-  "pulse_duration_steps": 5,
-  "response_window": {
-    "post_onset_steps": 50,
-    "pre_onset_steps": 10,
-    "projection_basis": {
-      "aligned": "signed projection onto the normalized perturbation direction",
-      "orthogonal": "signed projection onto the normalized perturbation direction rotated +90 degrees in the right-handed x-y plane: (-dy, dx)"
-    },
-    "rows": [
-      "network output aligned with perturbation direction plus lower-emphasis orthogonal companion traces",
-      "point-mass position along aligned perturbation direction plus lower-emphasis orthogonal companion traces",
-      "point-mass velocity along aligned perturbation direction plus lower-emphasis orthogonal companion traces"
-    ],
-    "x_axis": "seconds relative to perturbation onset"
-  },
-  "run_id": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
-  "schema_version": "rlrmp.gru_steady_state_perturbation_bank.v1",
-  "source_experiment": "020a65b",
-  "timestamp": "2026-06-21T04:33:28.820659+00:00",
-  "timing_by_condition": {
-    "no_pgd": {
-      "fanout_policy": "prefix_equivalent_batched_trials; Feedbax task API does not expose a stable hidden-state resume hook, so every perturbation row shares the same deterministic wash-in prefix and zero-noise inputs inside the same materialization pass.",
-      "horizon_extension": {
-        "extended": true,
-        "horizon_steps": 80,
-        "min_horizon_steps": 80,
-        "original_horizon_steps": 60,
-        "policy": "pad_time_axis_with_final_value_for_hold_at_target_endpoint_eval"
-      },
-      "horizon_steps": 80,
-      "original_horizon_steps": 60,
-      "post_go_washin_steps_actual": 30,
-      "post_go_washin_steps_requested": 30,
-      "post_onset_steps_available": 50,
-      "post_onset_steps_requested": 50,
-      "pre_go_steps": 0,
-      "pre_go_steps_requested": 0,
-      "pulse_duration_steps": 5,
-      "pulse_start_step": 30,
-      "pulse_start_step_horizon_clamped": 30,
-      "pulse_start_step_nominal": 30,
-      "pulse_start_step_requested": 30,
-      "pulse_start_step_requested_meaning": "legacy compatibility key; nominal onset before horizon/window clamping",
-      "response_steps": 50,
-      "washin_policy": "immediate_hold_prefix"
-    },
-    "pgd": {
-      "fanout_policy": "prefix_equivalent_batched_trials; Feedbax task API does not expose a stable hidden-state resume hook, so every perturbation row shares the same deterministic wash-in prefix and zero-noise inputs inside the same materialization pass.",
-      "horizon_extension": {
-        "extended": true,
-        "horizon_steps": 80,
-        "min_horizon_steps": 80,
-        "original_horizon_steps": 60,
-        "policy": "pad_time_axis_with_final_value_for_hold_at_target_endpoint_eval"
-      },
-      "horizon_steps": 80,
-      "original_horizon_steps": 60,
-      "post_go_washin_steps_actual": 30,
-      "post_go_washin_steps_requested": 30,
-      "post_onset_steps_available": 50,
-      "post_onset_steps_requested": 50,
-      "pre_go_steps": 0,
-      "pre_go_steps_requested": 0,
-      "pulse_duration_steps": 5,
-      "pulse_start_step": 30,
-      "pulse_start_step_horizon_clamped": 30,
-      "pulse_start_step_nominal": 30,
-      "pulse_start_step_requested": 30,
-      "pulse_start_step_requested_meaning": "legacy compatibility key; nominal onset before horizon/window clamping",
-      "response_steps": 50,
-      "washin_policy": "immediate_hold_prefix"
-    }
-  },
-  "title": "Matched 020a65b no-PGD vs PGD feedback rows",
-  "versions": {
-    "equinox": "0.13.4",
-    "feedbax": "0.1.2",
-    "jax": "0.9.0",
-    "numpy": "2.4.1",
-    "plotly": "6.5.2",
-    "rlrmp": "0.1.0"
-  },
-  "washin_contract": {
-    "delayed_go_cue": "go cue off for 10 steps, then on; target visible throughout.",
-    "fanout_policy": "prefix_equivalent_batched_trials because the current Feedbax eval API does not expose a supported hidden-state resume hook.",
-    "initial_mechanics": "mechanics.vector is zeroed, then every 8D current/delayed mechanics block receives target x/y position with zero velocity, force/filter, and integrator state.",
-    "noise": "epsilon inputs are zeroed before evaluation.",
-    "schema_version": "rlrmp.gru_steady_state_perturbation_bank.v1"
-  }
+  "schema_id": "feedbax.spec.figure",
+  "schema_version": "feedbax.spec.figure.v1",
+  "name": "87424a4-matched-020a65b-no-pgd-vs-pgd",
+  "template": "rlrmp.perturbation_response_comparison",
+  "slot_bindings": {"responses": {"name": "steady-state-responses", "constructor": "rlrmp.perturbation_response_traces", "piece": "rlrmp.steady_state_87424a4.matched_020a65b_no_pgd_vs_pgd", "data": {"output": {"item": "output"}, "plant_row": {"item": "plant_row"}}}},
+  "panels": [{"name": "response", "title": {"item": "facet"}, "axes_labels": {"x": "Time from onset (s)", "y": "Response"}}],
+  "facet_bindings": {"output": {"item": "params", "path": "outputs"}, "plant_row": {"item": "params", "path": "plant_rows"}},
+  "figure_routing": {"formats": ["json", "html"]},
+  "metadata": {"outputs": {"output": "output", "position": "position", "velocity": "velocity"}, "plant_rows": {"position": "position", "velocity": "velocity", "force_filter": "force_filter"}, "comparison_id": "matched_020a65b_no_pgd_vs_pgd", "source_artifact_role": "rlrmp-steady-state-perturbation-detail"}
 }
