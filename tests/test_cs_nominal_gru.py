@@ -470,8 +470,15 @@ def test_cs_nominal_gru_config_validates_tracked_cs_stochastic_gru_corpus() -> N
     paths = _cs_stochastic_gru_run_spec_paths()
     clean_paths = []
     fail_closed: set[Path] = set()
+    wave_1_paths = {
+        Path("results/c6c5997/runs/flat_3e-5-epsilon-ramp.json"),
+        Path("results/c6c5997/runs/rewarm_3e-3-epsilon-ramp.json"),
+        Path("results/c6c5997/runs/rewarm_3e-4-epsilon-ramp.json"),
+        Path("results/cb3685a/runs/seam_probe.json"),
+    }
 
-    assert len(paths) == 74
+    assert wave_1_paths.issubset(paths)
+    assert len(paths) == 74 + len(wave_1_paths)
     for path in paths:
         payload = hydrate_compact_run_spec_envelope(
             json.loads(path.read_text(encoding="utf-8"))
@@ -483,7 +490,7 @@ def test_cs_nominal_gru_config_validates_tracked_cs_stochastic_gru_corpus() -> N
         else:
             clean_paths.append(path)
 
-    assert len(clean_paths) == 74
+    assert len(clean_paths) == 74 + len(wave_1_paths)
     assert fail_closed == set()
 
 

@@ -8,6 +8,7 @@ from typing import Any
 
 import equinox as eqx
 import jax.tree as jt
+from feedbax.contracts.checkpoints import BatchHistory
 from feedbax.training.checkpoint_custody import CheckpointCompatibilityError
 
 from rlrmp.runtime.checkpoint_custody import serialize_pytree_slot
@@ -32,6 +33,8 @@ class NominalToAdaptiveSlotAdapter:
     model_template: Any
     optimizer_template: Any
     adaptive_initial_slots: Mapping[str, Any]
+    source_completed_batches: int
+    segment_batch_count: int
 
     @property
     def target_transformed_slots(self) -> tuple[str, ...]:
@@ -58,10 +61,103 @@ class NominalToAdaptiveSlotAdapter:
             },
         }
 
+    @property
+    def source_slot_transforms(self) -> dict[str, Any]:
+        """Mark raw source histories before Feedbax allocates the new segment."""
+
+        return {OPTIMIZER: self.prepare_source_slots}
+
+    @property
+    def source_transform_metadata(self) -> dict[str, dict[str, Any]]:
+        """Describe the explicit raw-history marking transform."""
+
+        return {
+            OPTIMIZER: {
+                "identity": "rlrmp.nominal_optimizer_segment_histories.v1",
+                "parameters": {
+                    "source_completed_batches": self.source_completed_batches,
+                    "segment_batch_count": self.segment_batch_count,
+                    "batch_axis": -1,
+                },
+            }
+        }
+
     def continuation_slot_templates(self) -> dict[str, Any]:
         """Raw target topology used before the target/post serialization step."""
 
-        return {OPTIMIZER: tuple(jt.leaves(self.optimizer_template))}
+        leaves = tuple(jt.leaves(self.optimizer_template))
+        indices = self._history_indices(leaves)
+        return {
+            OPTIMIZER: tuple(
+                BatchHistory(leaf, batch_axis=-1) if index in indices else leaf
+                for index, leaf in enumerate(leaves)
+            )
+        }
+
+    def prepare_source_optimizer(self, value: Any) -> tuple[Any, ...]:
+        """Mark source histories and fail closed on any source/segment ABI drift."""
+
+        if not isinstance(value, tuple):
+            raise CheckpointCompatibilityError(
+                "nominal-to-adaptive source history marking requires raw tuple source; "
+                f"source_slot={OPTIMIZER!r} target_slot={OPTIMIZER!r} path='/' "
+                f"actual_type={type(value).__name__!r}"
+            )
+        target_leaves = tuple(jt.leaves(self.optimizer_template))
+        if len(value) != len(target_leaves):
+            raise CheckpointCompatibilityError(
+                "nominal-to-adaptive source history marking leaf-count mismatch; "
+                f"source_slot={OPTIMIZER!r} target_slot={OPTIMIZER!r} path='/' "
+                f"source_leaves={len(value)} target_leaves={len(target_leaves)}"
+            )
+        indices = self._history_indices(target_leaves)
+        marked: list[Any] = []
+        for index, (source, target) in enumerate(zip(value, target_leaves, strict=True)):
+            if index not in indices:
+                marked.append(source)
+                continue
+            source_shape = getattr(source, "shape", None)
+            target_shape = getattr(target, "shape", None)
+            expected_source_shape = (*target_shape[:-1], self.source_completed_batches)
+            if source_shape != expected_source_shape or getattr(source, "dtype", None) != getattr(
+                target, "dtype", None
+            ):
+                raise CheckpointCompatibilityError(
+                    "nominal-to-adaptive source history ABI mismatch; "
+                    f"source_slot={OPTIMIZER!r} target_slot={OPTIMIZER!r} path='/{index}' "
+                    f"source_shape={source_shape!r} expected_source_shape={expected_source_shape!r} "
+                    f"target_segment_shape={target_shape!r}"
+                )
+            marked.append(BatchHistory(source, batch_axis=-1))
+        return tuple(marked)
+
+    def prepare_source_slots(self, slots: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Return the full source mapping with optimizer histories explicitly marked."""
+
+        if OPTIMIZER not in slots:
+            raise CheckpointCompatibilityError(
+                "nominal-to-adaptive source history marking missing source slot; "
+                f"source_slot={OPTIMIZER!r} target_slot={OPTIMIZER!r} path='/'"
+            )
+        transformed = dict(slots)
+        transformed[OPTIMIZER] = self.prepare_source_optimizer(slots[OPTIMIZER])
+        return transformed
+
+    def _history_indices(self, leaves: tuple[Any, ...]) -> frozenset[int]:
+        indices = frozenset(
+            index
+            for index, leaf in enumerate(leaves)
+            if eqx.is_array(leaf)
+            and leaf.ndim > 0
+            and leaf.shape[-1] == self.segment_batch_count
+        )
+        if not indices:
+            raise CheckpointCompatibilityError(
+                "nominal-to-adaptive target template has no segment-local histories; "
+                f"source_slot={OPTIMIZER!r} target_slot={OPTIMIZER!r} path='/' "
+                f"segment_batch_count={self.segment_batch_count}"
+            )
+        return indices
 
     def transform(self, slots: Mapping[str, Any]) -> Mapping[str, Any]:
         """Map every documented source/target slot without inference."""
@@ -118,7 +214,9 @@ def _restore_tuple(
             f"source_slot={source_slot!r} target_slot={target_slot!r} path='/' "
             f"actual_type={type(value).__name__!r}"
         )
-    source_leaves = tuple(value)
+    source_leaves = tuple(
+        leaf.value if isinstance(leaf, BatchHistory) else leaf for leaf in value
+    )
     target_leaves = jt.leaves(template)
     if len(source_leaves) != len(target_leaves):
         raise CheckpointCompatibilityError(

@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 from types import SimpleNamespace
+from argparse import Namespace
 from pathlib import Path
 
 import jax
@@ -22,6 +23,7 @@ from rlrmp.train.cs_nominal_gru import build_parser
 from rlrmp.train.config_cli import parse_config
 from rlrmp.train.executor.cs_supervised import (
     _cs_supervised_execution_registry,
+    _adaptive_runtime_template_inputs,
     build_cs_supervised_native_initial_slots,
     build_run_spec_execution_context,
 )
@@ -302,7 +304,8 @@ def test_target_bound_launch_fork_still_attaches_runnable_continuation() -> None
     request = attached.checkpoint_progress.continuation
     assert request is not None
     assert request.source_completed_batches == 12_000
-    assert request.target_total_batches == 12_200
+    assert request.additional_batches == 200
+    assert request.target_total == 12_200
 
 
 def test_cs_supervised_resume_registry_uses_attached_custody_contract() -> None:
@@ -331,7 +334,8 @@ def test_cs_supervised_resume_registry_uses_attached_custody_contract() -> None:
     request = training_spec.checkpoint_progress.continuation
     assert request is not None
     assert request.source_completed_batches == 12_000
-    assert request.target_total_batches == 12_200
+    assert request.additional_batches == 200
+    assert request.target_total == 12_200
     barrier = execution_contract.phase_program.checkpoint_barriers[0]
     assert {slot.slot for slot in barrier.slots} == {
         "model",
@@ -344,6 +348,32 @@ def test_cs_supervised_resume_registry_uses_attached_custody_contract() -> None:
         "adaptive_epsilon_state",
         "checkpoint_metadata",
     }
+
+
+@pytest.mark.parametrize("continuation_batches", [4_500, 1])
+def test_adaptive_runtime_template_args_are_segment_local(
+    continuation_batches: int,
+) -> None:
+    governed_args = Namespace(n_train_batches=16_500)
+    governed_hps = Namespace(n_batches_condition=16_500)
+    continuation = LaunchContinuation(
+        resume=True,
+        resume_source="/tmp/checkpoints/latest.json",
+        completed_batches=12_000,
+        stop_target_batches=12_000 + continuation_batches,
+        continuation_batches=continuation_batches,
+    )
+
+    runtime_template_args, runtime_template_hps = _adaptive_runtime_template_inputs(
+        governed_args,
+        governed_hps,
+        continuation,
+    )
+
+    assert governed_args.n_train_batches == 16_500
+    assert governed_hps.n_batches_condition == 16_500
+    assert runtime_template_args.n_train_batches == continuation_batches
+    assert runtime_template_hps.n_batches_condition == continuation_batches
 
 
 def test_stage2_authoring_declares_12000_to_16500_total_horizon() -> None:

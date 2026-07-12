@@ -13,6 +13,7 @@ from typing import Any
 
 from feedbax.contracts.run_matrix import TrainingRunMatrixSpec
 from feedbax.contracts.checkpoints import CheckpointForkBarrierMapping
+from feedbax.contracts.migrations import migrate_structured_spec_payload
 from feedbax.contracts.worker import ProgressCoordinate
 from feedbax.contracts.training import (
     DEFAULT_TRAINING_METHOD_REGISTRY,
@@ -81,7 +82,9 @@ def parse_target(value: str) -> ForkTarget:
 def load_matrix(path: Path) -> TrainingRunMatrixSpec:
     """Load and validate one ``TrainingRunMatrixSpec`` document."""
 
-    return TrainingRunMatrixSpec.model_validate(json.loads(path.read_text(encoding="utf-8")))
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    migrated = migrate_structured_spec_payload("TrainingRunMatrixSpec", payload)
+    return TrainingRunMatrixSpec.model_validate(migrated.payload)
 
 
 def fork_checkpoints_with_parity(
@@ -119,6 +122,14 @@ def fork_checkpoints_with_parity(
         parity_output_path=parity_output_path,
         target_slot_templates={
             row_id: value[0].adaptive_initial_slots for row_id, value in adaptive_contracts.items()
+        },
+        row_slot_transforms={
+            row_id: value[0].source_slot_transforms
+            for row_id, value in adaptive_contracts.items()
+        },
+        row_transform_metadata={
+            row_id: value[0].source_transform_metadata
+            for row_id, value in adaptive_contracts.items()
         },
         row_segment_history_templates={
             row_id: value[0].continuation_slot_templates()
@@ -220,7 +231,11 @@ def _adaptive_continuation_fork_contracts(
         )
         if not isinstance(payload, AdaptiveEpsilonMethodPayload):
             raise ForkParityError(f"adaptive adapter invalid payload row={row.row_id!r}")
-        args = _config_namespace(payload.config)
+        request = spec.checkpoint_progress.continuation
+        assert request.additional_batches is not None
+        segment_config = dict(payload.config)
+        segment_config["n_train_batches"] = request.additional_batches
+        args = _config_namespace(segment_config)
         initial_slots, runtime = build_adaptive_epsilon_native_initial_slots(
             run_spec=spec,
             hps=build_hps(args),
@@ -236,7 +251,6 @@ def _adaptive_continuation_fork_contracts(
             for barrier in spec.worker_execution.method_contract.phase_program.checkpoint_barriers
             if barrier.name == "after_adaptive_epsilon_train_chunk"
         )
-        request = spec.checkpoint_progress.continuation
         chunk_interval_batches = int(args.checkpoint_interval_batches)
         source_program_step = _program_step_from_completed_batches(
             completed_batches=request.source_completed_batches,
@@ -265,6 +279,8 @@ def _adaptive_continuation_fork_contracts(
                 model_template=native.model_template,
                 optimizer_template=native.optimizer_template,
                 adaptive_initial_slots=initial_slots,
+                source_completed_batches=request.source_completed_batches,
+                segment_batch_count=request.additional_batches,
             ),
             mapping,
         )

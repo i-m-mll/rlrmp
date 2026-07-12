@@ -12,7 +12,8 @@ from types import SimpleNamespace
 import pytest
 
 import feedbax
-from feedbax.contracts.checkpoints import CheckpointForkBarrierMapping
+import jax.tree as jt
+from feedbax.contracts.checkpoints import BatchHistory, CheckpointForkBarrierMapping
 from feedbax.contracts.run_matrix import (
     TRAINING_RUN_MATRIX_SPEC_SCHEMA_ID,
     TRAINING_RUN_MATRIX_SPEC_SCHEMA_VERSION,
@@ -33,6 +34,7 @@ from feedbax.contracts.training import (
 )
 from feedbax.training.run_matrix import fork_matrix_checkpoints
 
+from rlrmp.runtime.adaptive_checkpoint_adapter import NominalToAdaptiveSlotAdapter
 from rlrmp.runtime.checkpoint_fork_gate import (
     ForkParityError,
     _adaptive_continuation_fork_contracts,
@@ -267,14 +269,100 @@ def _write_latest(
     )
 
 
-def _adaptive_continuation_spec(tmp_path: Path) -> TrainingRunSpec:
+def _write_adaptive_skip_fork_manifests(
+    source_root: Path,
+    target_root: Path,
+    *,
+    adapter: NominalToAdaptiveSlotAdapter,
+) -> None:
+    """Write honest topology/provenance evidence for the real skip-fork API test."""
+
+    comparable_slots = ("model", "optimizer")
+    source_blobs = {slot: f"source-{slot}-blob" for slot in comparable_slots}
+    target_slots = (*comparable_slots, *adapter.target_only_slots)
+    target_blobs = {slot: f"target-{slot}-blob" for slot in target_slots}
+    source_manifest = {
+        "transaction_id": "source",
+        "completed_training_batches": 2,
+        "completed_coordinate": {"program_step": 2},
+        "slots": [
+            {"slot": slot, "sha256": source_blobs[slot]} for slot in comparable_slots
+        ],
+        "content_integrity_digest": {
+            "slots": [
+                {"slot": slot, "slot_root_sha256": f"source-{slot}-content"}
+                for slot in comparable_slots
+            ]
+        },
+    }
+    provenance = []
+    for slot in target_slots:
+        metadata = {
+            "stage": "target_post",
+            "stages": [
+                {
+                    "stage": "target_post",
+                    "identity": adapter.transform_metadata["identity"],
+                    "parameters": adapter.transform_metadata["parameters"],
+                    "metadata": {},
+                }
+            ],
+        }
+        if slot in adapter.target_only_slots:
+            metadata["target_only_declaration"] = adapter.target_only_slots[slot]
+        provenance.append(
+            {
+                "slot": slot,
+                "source_sha256": source_blobs.get(slot),
+                "target_sha256": target_blobs[slot],
+                "transfer_mode": "serialized",
+                "transform": {
+                    "slot": slot,
+                    "identity": adapter.transform_metadata["identity"],
+                    "parameters": adapter.transform_metadata["parameters"],
+                    "metadata": metadata,
+                },
+            }
+        )
+    target_manifest = {
+        "transaction_id": "target",
+        "completed_training_batches": 2,
+        "completed_coordinate": {"program_step": 2},
+        "slots": [{"slot": slot, "sha256": target_blobs[slot]} for slot in target_slots],
+        "content_integrity_digest": {
+            "slots": [
+                {"slot": slot, "slot_root_sha256": f"target-{slot}-content"}
+                for slot in target_slots
+            ]
+        },
+        "fork_provenance": {"slots": provenance},
+    }
+    for root, manifest in ((source_root, source_manifest), (target_root, target_manifest)):
+        tx_dir = root / "transactions" / manifest["transaction_id"]
+        tx_dir.mkdir(parents=True)
+        (tx_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        (root / "latest.json").write_text(
+            json.dumps(
+                {"manifest_relative_path": f"transactions/{manifest['transaction_id']}/manifest.json"}
+            ),
+            encoding="utf-8",
+        )
+
+
+def _adaptive_continuation_spec(
+    tmp_path: Path,
+    *,
+    source_completed_batches: int = 2,
+    target_total_batches: int = 4,
+    n_replicates: int = 1,
+) -> TrainingRunSpec:
     """Build a minimal real adaptive row through RLRMP's normal authoring path."""
 
     args = build_parser().parse_args([])
     values = {
-        "n_train_batches": 2,
+        "n_train_batches": target_total_batches,
         "batch_size": 1,
-        "n_replicates": 1,
+        "n_replicates": n_replicates,
         "hidden_size": 4,
         "dry_run": True,
         "full_train": True,
@@ -312,8 +400,8 @@ def _adaptive_continuation_spec(tmp_path: Path) -> TrainingRunSpec:
     payload = write_run_spec(args)["run_spec"]
     return attach_adaptive_epsilon_checkpoint_continuation(
         TrainingRunSpec.model_validate(payload["feedbax_training_run_spec"]),
-        source_completed_batches=2,
-        target_total_batches=4,
+        source_completed_batches=source_completed_batches,
+        target_total_batches=target_total_batches,
     )
 
 
@@ -800,7 +888,9 @@ def test_fork_gate_forward_api_guard_matches_pinned_feedbax_delivery() -> None:
     keyword_names = {keyword.arg for keyword in calls[0].keywords if keyword.arg is not None}
     required_continuation_kwargs = {
         "target_slot_templates",
-            "row_segment_history_templates",
+        "row_slot_transforms",
+        "row_transform_metadata",
+        "row_segment_history_templates",
         "row_target_slot_transforms",
         "row_target_transform_metadata",
         "row_target_transformed_slots",
@@ -883,11 +973,12 @@ def test_adaptive_fork_contracts_call_real_pinned_feedbax_matrix_api(tmp_path: P
 
     matrix_path = tmp_path / "matrix.json"
     _write_matrix(matrix_path)
-    matrix = TrainingRunMatrixSpec.model_validate_json(matrix_path.read_text(encoding="utf-8"))
+    matrix_payload = json.loads(matrix_path.read_text(encoding="utf-8"))
+    matrix_payload["fork"]["expected_slots"] = ["model", "optimizer"]
+    matrix = TrainingRunMatrixSpec.model_validate(matrix_payload)
     source_root = tmp_path / "source"
     target_root = tmp_path / "target"
-    _write_latest(source_root, transaction_id="source", digest="same", completed_batches=2)
-    _write_latest(target_root, transaction_id="target", digest="same", completed_batches=2)
+    _write_adaptive_skip_fork_manifests(source_root, target_root, adapter=adapter)
 
     table = fork_matrix_checkpoints(
         matrix,
@@ -907,3 +998,34 @@ def test_adaptive_fork_contracts_call_real_pinned_feedbax_matrix_api(tmp_path: P
 
     assert table["ok"] is True
     assert (tmp_path / "parity.json").is_file()
+
+
+def test_adaptive_fork_contract_uses_real_shaped_segment_local_optimizer_template(
+    tmp_path: Path,
+) -> None:
+    """A 12k source fork targets 4.5k histories, never the 16.5k cumulative total."""
+
+    target_spec = _adaptive_continuation_spec(
+        tmp_path,
+        source_completed_batches=12_000,
+        target_total_batches=16_500,
+        n_replicates=5,
+    )
+    row = SimpleNamespace(
+        row_id="adaptive",
+        planned_run_id="feedbax-training-run:adaptive",
+        spec=target_spec,
+    )
+
+    adapter, _ = _adaptive_continuation_fork_contracts(
+        SimpleNamespace(rows=[row])
+    )["adaptive"]
+    optimizer_leaves = tuple(jt.leaves(adapter.optimizer_template))
+    segment_template_leaves = adapter.continuation_slot_templates()["optimizer"]
+
+    assert target_spec.checkpoint_progress.continuation is not None
+    assert target_spec.checkpoint_progress.continuation.additional_batches == 4_500
+    assert optimizer_leaves[1].shape == (5, 4_500)
+    assert isinstance(segment_template_leaves[1], BatchHistory)
+    assert segment_template_leaves[1].value.shape == (5, 4_500)
+    assert all(getattr(leaf, "shape", None) != (5, 16_500) for leaf in optimizer_leaves)

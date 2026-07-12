@@ -85,7 +85,15 @@ def prepare_cs_supervised(request: ExecutionPreparationRequest) -> ExecutionPrep
 def prepare_adaptive_epsilon(request: ExecutionPreparationRequest) -> ExecutionPreparationResult:
     """Construct runtime-only inputs for adaptive-epsilon execution."""
     payload = _validated_payload(request, AdaptiveEpsilonMethodPayload)
-    args, hps = _runtime_config(payload.config)
+    runtime_config = dict(payload.config)
+    continuation = request.run_spec.checkpoint_progress.continuation
+    if continuation is not None:
+        if continuation.additional_batches is None:
+            raise ValueError(
+                "adaptive-epsilon continuation lacks required additional_batches"
+            )
+        runtime_config["n_train_batches"] = continuation.additional_batches
+    args, hps = _runtime_config(runtime_config)
     initial_slots, runtime = build_adaptive_epsilon_native_initial_slots(
         run_spec=request.run_spec,
         hps=hps,

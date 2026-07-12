@@ -465,36 +465,10 @@
     "checkpoint_progress": {
       "checkpoint_interval": 500,
       "continuation": {
-        "batch_indexed_leaves": [
-          {
-            "slot": "optimizer",
-            "tree_path": "/1"
-          },
-          {
-            "slot": "optimizer",
-            "tree_path": "/2"
-          },
-          {
-            "slot": "optimizer",
-            "tree_path": "/3"
-          },
-          {
-            "slot": "optimizer",
-            "tree_path": "/30"
-          },
-          {
-            "slot": "optimizer",
-            "tree_path": "/31"
-          },
-          {
-            "slot": "optimizer",
-            "tree_path": "/32"
-          }
-        ],
+        "additional_batches": 4500,
         "schema_id": "feedbax.spec.training_checkpoint_continuation",
-        "schema_version": "feedbax.spec.training_checkpoint_continuation.v1",
-        "source_completed_batches": 12000,
-        "target_total_batches": 16500
+        "schema_version": "feedbax.spec.training_checkpoint_continuation.v2",
+        "source_completed_batches": 12000
       },
       "metadata": {
         "checkpoint_dir": "_artifacts/c6c5997/runs/flat_3e-5-epsilon-ramp/checkpoints"
@@ -8326,6 +8300,8 @@
     "method_payload": {
       "metadata": {},
       "payload": {
+        "application_ramp_end_batch": 13000,
+        "application_ramp_start_batch": 12000,
         "checkpointing": {
           "checkpoint_dir": "_artifacts/c6c5997/runs/flat_3e-5-epsilon-ramp/checkpoints",
           "contents": [
