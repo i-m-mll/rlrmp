@@ -1,0 +1,26 @@
+{
+  "schema_id": "rlrmp.figure_parity.sisu_spectrum",
+  "schema_version": "rlrmp.figure_parity.sisu_spectrum.v1",
+  "source_schema_version": "rlrmp.sisu_perturbation_class_comparison.v1",
+  "source_artifact_sha256": "3ac206ac32a196d89d1d456e31a095ad02512a201af9175fd5a16325fd8d2eca",
+  "profile_cardinality": 2,
+  "sisu_levels": [0.0, 1.0],
+  "runs": {
+    "effective_020a65b_pgd_targetfix": {
+      "label": "effective 020a65b PGD targetfix",
+      "headline": {
+        "full_qrf_delta_cost": {"equal": 0, "improved": 8, "not_available": 1, "worse": 2},
+        "max_delta_x_m": {"equal": 2, "improved": 6, "not_available": 1, "worse": 2},
+        "mean_delta_action": {"equal": 0, "improved": 0, "not_available": 1, "worse": 10}
+      }
+    },
+    "raw_strong_gamma_1p05_targetfix": {
+      "label": "raw strong gamma-1.05 targetfix",
+      "headline": {
+        "full_qrf_delta_cost": {"equal": 0, "improved": 6, "not_available": 1, "worse": 4},
+        "max_delta_x_m": {"equal": 2, "improved": 6, "not_available": 1, "worse": 2},
+        "mean_delta_action": {"equal": 0, "improved": 0, "not_available": 1, "worse": 10}
+      }
+    }
+  }
+}

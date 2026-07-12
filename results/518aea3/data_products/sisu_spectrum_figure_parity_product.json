@@ -1,0 +1,28 @@
+{
+  "schema_id": "feedbax.manifest.analysis_data_product",
+  "schema_version": "feedbax.manifest.analysis_data_product.v1",
+  "product_schema_id": "rlrmp.figure_parity.sisu_spectrum",
+  "product_schema_version": "rlrmp.figure_parity.sisu_spectrum.v1",
+  "role": "figure_parity_oracle",
+  "logical_name": "518aea3_sisu_spectrum_figure_parity",
+  "producer_manifest_id": "rlrmp.sisu_spectrum_special.v3",
+  "parent_manifests": [],
+  "checkpoint_policy": {},
+  "rollout_policy": {},
+  "parameters": {
+    "source_artifact_sha256": "3ac206ac32a196d89d1d456e31a095ad02512a201af9175fd5a16325fd8d2eca",
+    "adoption_issue": "518aea3",
+    "purpose": "archived SISU figure parity without a live delete-candidate dependency"
+  },
+  "artifacts": [
+    {
+      "role": "figure_parity_oracle",
+      "logical_name": "sisu_spectrum_figure_parity",
+      "sha256": "f202c09eee90593aa533378c4048b88c28d9ab8d004c479d4e2cbc4458bedc2a",
+      "media_type": "application/json",
+      "storage_backend": "git",
+      "uri": "results/518aea3/data_products/sisu_spectrum_figure_parity.json",
+      "metadata": {"source": "archived_structured_output", "topic": "sisu_spectrum_velocity_profiles"}
+    }
+  ]
+}
