@@ -135,7 +135,6 @@ def test_historical_training_history_reader_fails_closed_on_current_feedbax() ->
         legacy_task_trainer_history_skeleton(None)
 
     for path in (
-        "results/f47abb1/scripts/plot_training_loss_lit_replication.py",
         "results/3702f54/scripts/analyse_pregomatrix.py",
         "results/b399efc/scripts/analyse_movement_ramp_matrix.py",
     ):
@@ -143,16 +142,9 @@ def test_historical_training_history_reader_fails_closed_on_current_feedbax() ->
 
 
 def test_multi_cell_members_are_thin_canonical_adapters() -> None:
-    main_members = ("results/f47abb1/scripts/analyse_lit_replication_6cell.py",)
-    for path in main_members:
-        node = _function(path, "main")
-        assert _loc(node) <= 30
-        assert "run_replicate_kinematics_analysis" in _calls(node)
-
     figure_members = tuple(
         (path, name, canonical)
         for path in (
-            "results/f47abb1/scripts/analyse_lit_replication_6cell.py",
             "results/b399efc/scripts/analyse_movement_ramp_matrix.py",
         )
         for name, canonical in (
@@ -168,8 +160,6 @@ def test_multi_cell_members_are_thin_canonical_adapters() -> None:
 
 def test_args_namespace_members_cannot_reaccrete() -> None:
     members = (
-        ("results/f47abb1/scripts/analyse_lit_replication_6cell.py", "_make_args_namespace"),
-        ("results/f47abb1/scripts/plot_training_loss_lit_replication.py", "_make_args_namespace"),
         ("results/b399efc/scripts/analyse_movement_ramp_matrix.py", "_make_args_namespace"),
         ("results/3702f54/scripts/analyse_pregomatrix.py", "_make_args_namespace"),
     )
@@ -203,9 +193,10 @@ def test_path_and_ensemble_residuals_stay_canonical() -> None:
         isinstance(node, ast.FunctionDef) and node.name == "_repo_relative"
         for node in ast.walk(declarative)
     )
-    objective_adapter = _function(
-        "tests/analysis/pipelines/test_objective_comparator.py",
-        "_legacy_evaluate_replicate_model_states",
-    )
-    assert _loc(objective_adapter) <= 25
-    assert "eval_ensemble_on_trials" in _calls(objective_adapter)
+    assert not (
+        REPO_ROOT / "tests/analysis/pipelines/test_objective_comparator.py"
+    ).exists()
+    canonical_objective_tests = (
+        REPO_ROOT / "tests/analysis/test_objective_comparator.py"
+    ).read_text(encoding="utf-8")
+    assert "build_objective_comparator_sidecar_from_cached" in canonical_objective_tests

@@ -1,0 +1,95 @@
+{
+  "experiment": "f47abb1",
+  "figure_kind": "hold_drift_profile_pre_go_position_go_aligned",
+  "fix_note": "Bug: 06f7faf \u2014 go-cue alignment fix + shared y-axes across cells (per-replicate variant retains full aligned window).",
+  "inputs": [
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/f47abb1/runs/lit__flat_jerk/adversarial_model.eqx",
+      "role": "adversarial_model:lit__flat_jerk",
+      "sha256": "d04f91db8957a5df760daefa1171fb807c534062d5627ca14b70aa9a7a3eb7c5"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/f47abb1/runs/lit__post_jerk/adversarial_model.eqx",
+      "role": "adversarial_model:lit__post_jerk",
+      "sha256": "fe54e19cf8b09375aeeafeae2333edd4965f7a4c07e4b6db04e709c2e9a85bad"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/f47abb1/runs/lit__full_jerk/adversarial_model.eqx",
+      "role": "adversarial_model:lit__full_jerk",
+      "sha256": "c1d107af0e832aee1705aedee2f824a8af78ac4819dc83de8497ba1559b5b665"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/f47abb1/runs/lit__flat_nojerk/adversarial_model.eqx",
+      "role": "adversarial_model:lit__flat_nojerk",
+      "sha256": "13b74acca5423d57c7e073302e624bb08f332397fe7af31f34e250c82a26eae0"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/f47abb1/runs/lit__post_nojerk/adversarial_model.eqx",
+      "role": "adversarial_model:lit__post_nojerk",
+      "sha256": "51af53a62ee1ade1e20adba30593914163df8e460d0682d4387713a3775c48cd"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/f47abb1/runs/lit__full_nojerk/adversarial_model.eqx",
+      "role": "adversarial_model:lit__full_nojerk",
+      "sha256": "24045cbd3aed86abd3819ce2fe00b90983068b58706dc2046c22e45e586da21d"
+    }
+  ],
+  "plot_kwargs": {
+    "alignment": "go_cue_per_trial",
+    "cells": [
+      "lit__flat_jerk",
+      "lit__post_jerk",
+      "lit__full_jerk",
+      "lit__flat_nojerk",
+      "lit__post_nojerk",
+      "lit__full_nojerk"
+    ],
+    "dt": 0.01,
+    "n_replicates": 5,
+    "pert_scale": 0.0,
+    "shared_yaxes": "all",
+    "sisu": 0.5
+  },
+  "timestamp": "2026-05-13T18:50:57.932617+00:00",
+  "transform": [
+    {
+      "kwargs": {
+        "pert_scale": 0.0,
+        "sisu": 0.5
+      },
+      "name": "eval_ensemble"
+    },
+    {
+      "kwargs": {},
+      "name": "forward_position_projection_onto_reach_axis"
+    },
+    {
+      "kwargs": {
+        "pad": "nan"
+      },
+      "name": "align_trials_to_go_cue"
+    },
+    {
+      "kwargs": {
+        "min_coverage": 1.0
+      },
+      "name": "trim_to_full_support"
+    },
+    {
+      "kwargs": {},
+      "name": "replicate_nanmean_over_trials"
+    },
+    {
+      "kwargs": {},
+      "name": "clip_to_pre_go_window"
+    }
+  ],
+  "versions": {
+    "equinox": "0.13.4",
+    "feedbax": "0.1.2",
+    "jax": "0.9.0",
+    "numpy": "2.4.1",
+    "plotly": "6.5.2",
+    "rlrmp": "0.1.0"
+  }
+}

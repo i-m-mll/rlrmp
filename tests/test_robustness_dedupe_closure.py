@@ -65,9 +65,7 @@ def test_feedback_orchestration_preserves_materialization_contract(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from rlrmp.eval import checkpoint_selection as gru_checkpoint_selection
-    from rlrmp.analysis.pipelines import gru_feedback_ablation
 
-    calls: list[tuple[str, dict[str, Any]]] = []
     checkpoint_path = tmp_path / "checkpoint.json"
     evaluation_path = tmp_path / "evaluation.json"
     detail_path = tmp_path / "detail.json"
@@ -76,6 +74,8 @@ def test_feedback_orchestration_preserves_materialization_contract(
     evaluation_path.touch()
     detail_path.touch()
     perturbation_path.touch()
+    feedback_path = tmp_path / "feedback.json"
+    feedback_path.touch()
     paths = {
         "checkpoint_manifest": checkpoint_path,
         "evaluation": evaluation_path,
@@ -83,7 +83,7 @@ def test_feedback_orchestration_preserves_materialization_contract(
         "perturbation": perturbation_path,
         "perturbation_note": tmp_path / "perturbation.md",
         "perturbation_regeneration_spec": tmp_path / "perturbation-regeneration.json",
-        "feedback": tmp_path / "feedback.json",
+        "feedback": feedback_path,
         "feedback_note": tmp_path / "feedback.md",
         "feedback_regeneration_spec": tmp_path / "feedback-regeneration.json",
     }
@@ -100,11 +100,9 @@ def test_feedback_orchestration_preserves_materialization_contract(
             }
         if path == detail_path:
             return {"detail": "loaded"}
+        if path == feedback_path:
+            return {"schema_version": "feedback.v1"}
         raise AssertionError(path)
-
-    def feedback_materializer(**kwargs: Any) -> SimpleNamespace:
-        calls.append(("feedback", kwargs))
-        return SimpleNamespace(payload={"schema_version": "feedback.v1"})
 
     writes: list[tuple[dict[str, Any], list[dict[str, Any]]]] = []
     hooks = {
@@ -116,11 +114,6 @@ def test_feedback_orchestration_preserves_materialization_contract(
         gru_checkpoint_selection,
         "build_validation_checkpoint_selection_manifest",
         lambda **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        gru_feedback_ablation,
-        "execute_feedback_ablation_pipeline",
-        feedback_materializer,
     )
     result = run_feedback_robustness_diagnostics(
         hooks=hooks,
@@ -151,10 +144,6 @@ def test_feedback_orchestration_preserves_materialization_contract(
     assert result["rows"] == [{"run_id": "row-a", "detail": "loaded"}]
     assert result["summary"] == {"rows": result["rows"], "component_count": 6}
     assert writes == [(result["summary"], result["rows"])]
-    assert [name for name, _kwargs in calls] == ["feedback"]
-    feedback_kwargs = calls[0][1]
-    assert feedback_kwargs["scope"] == "feedback-scope"
-    assert feedback_kwargs["feedback_selection_level"] == "moderate"
 
 
 def test_stabilization_evaluator_preserves_missing_family_behavior(
@@ -167,8 +156,9 @@ def test_stabilization_evaluator_preserves_missing_family_behavior(
     from rlrmp.eval import checkpoint_selection as gru_checkpoint_selection
     from rlrmp.eval import perturbation_bank as gru_perturbation_bank
     from rlrmp.eval import trial_inputs
-    from rlrmp.analysis.pipelines import gru_steady_state_perturbation_bank
+    from rlrmp.analysis import steady_state_perturbation as steady_analysis
     from rlrmp.eval import sisu_spectrum
+    from rlrmp.eval import steady_state as steady_eval
     from rlrmp.train import task_model
 
     base = SimpleNamespace(command=np.zeros((2, 3, 1)), dt=0.01)
@@ -249,7 +239,7 @@ def test_stabilization_evaluator_preserves_missing_family_behavior(
     )
     monkeypatch.setattr(task_model, "setup_task_model_pair", lambda *_args, **_kwargs: pair)
     monkeypatch.setattr(
-        gru_steady_state_perturbation_bank,
+        steady_eval,
         "make_steady_state_trial_specs",
         lambda *_args, **_kwargs: (
             "steady",
@@ -257,32 +247,32 @@ def test_stabilization_evaluator_preserves_missing_family_behavior(
         ),
     )
     monkeypatch.setattr(
-        gru_steady_state_perturbation_bank,
-        "_target_position",
+        steady_eval,
+        "target_position",
         lambda *_args: [0.1, 0.0],
     )
     monkeypatch.setattr(
-        gru_steady_state_perturbation_bank,
+        steady_eval,
         "pad_feedback_offset_inputs",
         lambda trials, **_kwargs: trials,
     )
     monkeypatch.setattr(
-        gru_steady_state_perturbation_bank,
-        "_expected_feedback_dim_from_hps",
+        steady_eval,
+        "expected_feedback_dim_from_hps",
         lambda _hps: 6,
     )
     monkeypatch.setattr(
-        gru_steady_state_perturbation_bank,
-        "_feedback_dim",
+        steady_eval,
+        "feedback_dim",
         lambda _trials: 6,
     )
     monkeypatch.setattr(
-        gru_steady_state_perturbation_bank,
-        "_evaluate_model_on_trial_specs",
+        steady_eval,
+        "evaluate_model_on_trial_specs",
         lambda **_kwargs: base,
     )
     monkeypatch.setattr(
-        gru_steady_state_perturbation_bank,
+        steady_analysis,
         "washin_diagnostics",
         lambda *_args, **_kwargs: {"status": "stable"},
     )
@@ -365,12 +355,6 @@ def test_stabilization_evaluator_preserves_missing_family_behavior(
             50,
         ),
         (
-            "results/c92ebd8/scripts/materialize_pgd_1p05_reach_context_diagnostics.py",
-            "main",
-            "run_feedback_robustness_diagnostics",
-            50,
-        ),
-        (
             "results/d55c5f0/scripts/materialize_soft_pgd_feedback_robustness_diagnostics.py",
             "build_summary",
             "canonical_build_summary",
@@ -378,12 +362,6 @@ def test_stabilization_evaluator_preserves_missing_family_behavior(
         ),
         (
             "results/c92ebd8/scripts/materialize_ofb_budget_feedback_robustness_diagnostics.py",
-            "build_summary",
-            "canonical_build_summary",
-            50,
-        ),
-        (
-            "results/c92ebd8/scripts/materialize_pgd_1p05_reach_context_diagnostics.py",
             "build_summary",
             "canonical_build_summary",
             50,
@@ -416,7 +394,9 @@ def test_manifest_member_is_a_thin_canonical_adapter(
         "evaluate_stabilization_row",
         "evaluate_row",
     }:
-        assert not any(isinstance(node, (ast.For, ast.While, ast.Try)) for node in ast.walk(function))
+        assert not any(
+            isinstance(node, (ast.For, ast.While, ast.Try)) for node in ast.walk(function)
+        )
     if function_name == "main":
         assert calls.isdisjoint(
             {

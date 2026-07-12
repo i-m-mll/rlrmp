@@ -43,8 +43,8 @@ from rlrmp.eval.checkpoint_selection import (
 )
 from rlrmp.eval.rollout_states import CachedEvaluationStates
 from rlrmp.eval.gru_diagnostics import RolloutEvaluation
-from rlrmp.analysis.pipelines.gru_pilot_figures import (
-    RunFigureInputs,
+from rlrmp.eval.trial_inputs import (
+    EvaluationRunInputs as RunFigureInputs,
     repeat_single_validation_trial,
 )
 from rlrmp.analysis.math.output_feedback import (
@@ -669,9 +669,7 @@ def _calibrated_perturbation_row(
 ) -> dict[str, Any]:
     """Return one validated calibrated row from a canonical raw row."""
 
-    from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
-        calibrated_amplitude_from_unit_sensitivity,
-    )
+    from rlrmp.data_products.calibration import calibrated_amplitude_from_unit_sensitivity
 
     row = dict(raw)
     family = str(row["family"])
@@ -4402,7 +4400,7 @@ def _select_reach_calibration_point(
             raise ValueError(f"unknown calibration reach {calibration_reach!r}") from exc
     else:
         reach_length = float(calibration_reach)
-    from rlrmp.analysis.pipelines.gru_perturbation_calibration import ReachCalibrationPoint
+    from rlrmp.data_products.calibration import ReachCalibrationPoint
 
     return ReachCalibrationPoint(
         label=f"fixed_{reach_length:g}m",

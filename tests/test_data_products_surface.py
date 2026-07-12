@@ -32,6 +32,7 @@ EXPECTED_MODULE_FUNCTIONS = {
         "write_data_product",
     },
     "rlrmp.data_products.calibration": {
+        "calibrated_amplitude_from_unit_sensitivity",
         "calibration_data_product_requirement",
         "calibration_defaults_data_product_requirement",
         "load_open_loop_calibration",
@@ -57,8 +58,7 @@ def test_data_products_package_public_surface_is_pinned() -> None:
 def test_data_products_module_public_functions_are_pinned() -> None:
     modules = (envelope, calibration, broad_epsilon, registry)
     assert {
-        module.__name__: _public_module_callables(module)
-        for module in modules
+        module.__name__: _public_module_callables(module) for module in modules
     } == EXPECTED_MODULE_FUNCTIONS
 
 

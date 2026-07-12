@@ -107,13 +107,11 @@ def _register_defaults() -> None:
         "failure_decomposition",
         "gru_checkpoint_selection",
         "gru_perturbation_calibration",
-        "gru_perturbation_response_norm_plots",
         "gru_pilot_figures",
         "gru_steady_state_perturbation_bank",
         "objective_comparator",
         "output_feedback_gamma_sweep",
         "robust_bellman",
-        "sisu_perturbation_comparison",
         "sisu_spectrum_diagnostics",
         "soft_lambda_pgd_contract",
     ):

@@ -143,7 +143,7 @@ note = "Training-run spec fallback remediation lane."
 
 # cc3a61f: Recipe/report/training fallback remediation lane.
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py"
+path = "src/rlrmp/analysis/steady_state_perturbation.py"
 key = "direction"
 literal_repr = "(0.0, 0.0)"
 count = 1
@@ -1049,7 +1049,7 @@ note = "Recipe/report/training fallback remediation lane."
 
 # 7cfe941: Calibration pipeline/data-product fallback remediation lane.
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py"
+path = "src/rlrmp/data_products/calibration_computation.py"
 key = "axis"
 literal_repr = "'axis'"
 count = 1
@@ -1057,15 +1057,7 @@ owner = "7cfe941"
 note = "Calibration pipeline/data-product fallback remediation lane."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py"
-key = "bulk_manifest_path"
-literal_repr = "'not_materialized'"
-count = 1
-owner = "7cfe941"
-note = "Calibration pipeline/data-product fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py"
+path = "src/rlrmp/data_products/calibration_computation.py"
 key = "duration_steps"
 literal_repr = "1"
 count = 1
@@ -1073,15 +1065,7 @@ owner = "7cfe941"
 note = "Calibration pipeline/data-product fallback remediation lane."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py"
-key = "regeneration_spec_path"
-literal_repr = "'not_materialized'"
-count = 1
-owner = "7cfe941"
-note = "Calibration pipeline/data-product fallback remediation lane."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py"
+path = "src/rlrmp/data_products/calibration_computation.py"
 key = "sign"
 literal_repr = "1"
 count = 3
@@ -1089,7 +1073,7 @@ owner = "7cfe941"
 note = "Calibration pipeline/data-product fallback remediation lane."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py"
+path = "src/rlrmp/data_products/calibration_computation.py"
 key = "start_time_index"
 literal_repr = "0"
 count = 2
@@ -1097,7 +1081,7 @@ owner = "7cfe941"
 note = "Calibration pipeline/data-product fallback remediation lane."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py"
+path = "src/rlrmp/data_products/calibration_computation.py"
 key = "timing_bin"
 literal_repr = "'initial_condition'"
 count = 1
@@ -1110,38 +1094,6 @@ note = "Calibration pipeline/data-product fallback remediation lane."
 path = "src/rlrmp/analysis/bridge_certificates.py"
 key = "status"
 literal_repr = "'missing'"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_broad_epsilon_attribution.py"
-key = "enabled"
-literal_repr = "True"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_broad_epsilon_attribution.py"
-key = "status"
-literal_repr = "'evaluated'"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_broad_epsilon_attribution.py"
-key = "status"
-literal_repr = "'not_evaluated'"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_broad_epsilon_attribution.py"
-key = "status"
-literal_repr = "'unknown'"
 count = 1
 owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
@@ -1171,7 +1123,7 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py"
+path = "src/rlrmp/eval/feedback_ablation.py"
 key = "family"
 literal_repr = "'unknown_family'"
 count = 1
@@ -1179,7 +1131,7 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py"
+path = "src/rlrmp/eval/feedback_ablation.py"
 key = "feedback_minus_validation_batches"
 literal_repr = "0"
 count = 1
@@ -1187,7 +1139,7 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py"
+path = "src/rlrmp/eval/feedback_ablation.py"
 key = "label"
 literal_repr = "'inconclusive'"
 count = 1
@@ -1195,7 +1147,7 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py"
+path = "src/rlrmp/eval/feedback_ablation.py"
 key = "n_available_feedback_bins"
 literal_repr = "0"
 count = 2
@@ -1203,7 +1155,7 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py"
+path = "src/rlrmp/eval/feedback_ablation.py"
 key = "sign"
 literal_repr = "0"
 count = 1
@@ -1211,7 +1163,7 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py"
+path = "src/rlrmp/eval/feedback_ablation.py"
 key = "status"
 literal_repr = "'inconclusive'"
 count = 1
@@ -1219,7 +1171,7 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py"
+path = "src/rlrmp/eval/feedback_ablation.py"
 key = "status"
 literal_repr = "'not_available'"
 count = 4
@@ -1227,7 +1179,7 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py"
+path = "src/rlrmp/eval/feedback_ablation.py"
 key = "status"
 literal_repr = "'unknown'"
 count = 1
@@ -1235,7 +1187,7 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_map_error_decomposition.py"
+path = "src/rlrmp/analysis/map_error_decomposition.py"
 key = "status"
 literal_repr = "'not_available'"
 count = 1
@@ -1383,134 +1335,6 @@ path = "src/rlrmp/analysis/pipelines/gru_postrun_materialization.py"
 key = "status"
 literal_repr = "'unknown'"
 count = 2
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_worst_case_epsilon_audit.py"
-key = "budget_scale"
-literal_repr = "1.0"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_worst_case_epsilon_audit.py"
-key = "enabled"
-literal_repr = "False"
-count = 3
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_worst_case_epsilon_audit.py"
-key = "ndim"
-literal_repr = "0"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_worst_case_epsilon_audit.py"
-key = "reach_length_scaling"
-literal_repr = "False"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_worst_case_epsilon_audit.py"
-key = "reference_reach_m"
-literal_repr = "0.15"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_worst_case_epsilon_audit.py"
-key = "shape"
-literal_repr = "(0,)"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/hinf_phenotype_sidecar.py"
-key = "blocker"
-literal_repr = "'see sidecar JSON'"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/hinf_phenotype_sidecar.py"
-key = "formal_hinf_equivalence"
-literal_repr = "'not_claimed'"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/hinf_phenotype_sidecar.py"
-key = "reason"
-literal_repr = "'source missing'"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/hinf_phenotype_sidecar.py"
-key = "reason"
-literal_repr = "'source path not provided'"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/hinf_phenotype_sidecar.py"
-key = "regeneration_spec_path"
-literal_repr = "'not_materialized'"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/hinf_phenotype_sidecar.py"
-key = "status"
-literal_repr = "'available'"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/hinf_phenotype_sidecar.py"
-key = "status"
-literal_repr = "'unknown'"
-count = 4
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/objective_comparator.py"
-key = "reason"
-literal_repr = "'not available'"
-count = 2
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/objective_comparator.py"
-key = "status"
-literal_repr = "'declared'"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/objective_comparator.py"
-key = "status"
-literal_repr = "'not_available'"
-count = 6
 owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
@@ -1905,11 +1729,3 @@ literal_repr = "0"
 count = 1
 owner = "31aaa31"
 note = "Umbrella integration: perturbation-bank filtering treats missing sign metadata as neutral."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py"
-key = "issue"
-literal_repr = "'unknown'"
-count = 1
-owner = "31aaa31"
-note = "Umbrella integration: SISU spectrum manifest provenance keeps an explicit unknown marker."

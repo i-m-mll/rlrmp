@@ -80,22 +80,16 @@ GRU_POSTRUN_REPORT_PARAMS_SCHEMA_VERSION = "rlrmp.report.gru_postrun_summary.par
 
 BRIDGE_CERTIFICATE_REPORT_PARAMS_KIND = "RLRMPBridgeCertificateReportParams"
 BRIDGE_CERTIFICATE_REPORT_PARAMS_SCHEMA_ID = "rlrmp.report.bridge_certificate_notes.params"
-BRIDGE_CERTIFICATE_REPORT_PARAMS_SCHEMA_VERSION = (
-    "rlrmp.report.bridge_certificate_notes.params.v1"
-)
+BRIDGE_CERTIFICATE_REPORT_PARAMS_SCHEMA_VERSION = "rlrmp.report.bridge_certificate_notes.params.v1"
 
 FEEDBACK_QUALITY_LENS_REPORT_PARAMS_KIND = "RLRMPFeedbackQualityLensReportParams"
-FEEDBACK_QUALITY_LENS_REPORT_PARAMS_SCHEMA_ID = (
-    "rlrmp.report.feedback_quality_lens_summary.params"
-)
+FEEDBACK_QUALITY_LENS_REPORT_PARAMS_SCHEMA_ID = "rlrmp.report.feedback_quality_lens_summary.params"
 FEEDBACK_QUALITY_LENS_REPORT_PARAMS_SCHEMA_VERSION = (
     "rlrmp.report.feedback_quality_lens_summary.params.v1"
 )
 
 ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_KIND = "RLRMPRobustnessPhenotypeReportParams"
-ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_SCHEMA_ID = (
-    "rlrmp.report.robustness_phenotype_markdown.params"
-)
+ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_SCHEMA_ID = "rlrmp.report.robustness_phenotype_markdown.params"
 ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_SCHEMA_VERSION = (
     "rlrmp.report.robustness_phenotype_markdown.params.v1"
 )
@@ -326,9 +320,9 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             OBJECTIVE_COMPARATOR_SIDECAR_KIND,
             OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_ID,
             OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_VERSION,
-            emitted_by=("rlrmp.analysis.pipelines.objective_comparator",),
+            emitted_by=("rlrmp.analysis.objective_comparator",),
             consumed_by=(
-                "rlrmp.analysis.pipelines.hinf_phenotype_sidecar",
+                "rlrmp.analysis.robustness_phenotype",
                 "rlrmp post-run diagnostic summaries",
             ),
             description="RLRMP full-QRF objective-comparator sidecar.",
@@ -345,8 +339,8 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
                 "rlrmp.analysis.declarative_materialization",
             ),
             consumed_by=(
-                "rlrmp.analysis.pipelines.gru_perturbation_calibration",
-                "rlrmp.analysis.pipelines.gru_feedback_ablation",
+                "rlrmp.data_products.calibration_computation",
+                "rlrmp.eval.feedback_ablation",
                 "rlrmp perturbation-response diagnostics",
             ),
             description="Controller-independent C&S GRU perturbation bank and response manifest.",
@@ -381,8 +375,8 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             GRU_PERTURBATION_RESPONSE_NORM_PLOTS_KIND,
             GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_ID,
             GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_VERSION,
-            emitted_by=("rlrmp.analysis.pipelines.gru_perturbation_response_norm_plots",),
-            consumed_by=("rlrmp perturbation-response figure notes",),
+            emitted_by=("rlrmp.analysis.response_norm",),
+            consumed_by=("rlrmp.figures.response_norm_comparison",),
             description="RLRMP perturbation-response norm-plot manifest.",
             rejected_old_versions=("rlrmp.gru_perturbation_response_norm_plots.v0",),
         ),
@@ -390,7 +384,7 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             PERTURBATION_OPEN_LOOP_CALIBRATION_KIND,
             PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_ID,
             PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_VERSION,
-            emitted_by=("rlrmp.analysis.pipelines.gru_perturbation_calibration",),
+            emitted_by=("rlrmp.data_products.calibration_computation",),
             consumed_by=(
                 "rlrmp.eval.perturbation_bank",
                 "rlrmp perturbation calibration notes",
@@ -405,7 +399,7 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             HINF_PHENOTYPE_SIDECAR_KIND,
             HINF_PHENOTYPE_SIDECAR_SCHEMA_ID,
             HINF_PHENOTYPE_SIDECAR_SCHEMA_VERSION,
-            emitted_by=("rlrmp.analysis.pipelines.hinf_phenotype_sidecar",),
+            emitted_by=("rlrmp.analysis.robustness_phenotype",),
             consumed_by=("RLRMP robustness phenotype reports",),
             description="Interpretive H-infinity phenotype sidecar aggregation.",
             rejected_old_versions=("rlrmp.hinf_phenotype_sidecar.v0",),
@@ -414,7 +408,7 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             GRU_WORST_CASE_EPSILON_AUDIT_KIND,
             GRU_WORST_CASE_EPSILON_AUDIT_SCHEMA_ID,
             GRU_WORST_CASE_EPSILON_AUDIT_SCHEMA_VERSION,
-            emitted_by=("rlrmp.analysis.pipelines.gru_worst_case_epsilon_audit",),
+            emitted_by=("rlrmp.analysis.worst_case_epsilon",),
             consumed_by=("RLRMP broad-epsilon robustness diagnostics",),
             description="Worst-case full-state epsilon audit manifest for frozen GRU rollouts.",
             rejected_old_versions=("rlrmp.gru_worst_case_epsilon_audit.v0",),
@@ -423,7 +417,7 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             GRU_BROAD_EPSILON_ATTRIBUTION_KIND,
             GRU_BROAD_EPSILON_ATTRIBUTION_SCHEMA_ID,
             GRU_BROAD_EPSILON_ATTRIBUTION_SCHEMA_VERSION,
-            emitted_by=("rlrmp.analysis.pipelines.gru_broad_epsilon_attribution",),
+            emitted_by=("rlrmp.analysis.broad_epsilon_attribution",),
             consumed_by=("RLRMP broad-epsilon attribution reports",),
             description="Paired active-vs-zero broad-epsilon attribution manifest.",
             rejected_old_versions=("rlrmp.gru_broad_epsilon_attribution.v0",),
@@ -432,9 +426,9 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             GRU_MAP_ERROR_DECOMPOSITION_KIND,
             GRU_MAP_ERROR_DECOMPOSITION_SCHEMA_ID,
             GRU_MAP_ERROR_DECOMPOSITION_SCHEMA_VERSION,
-            emitted_by=("rlrmp.analysis.pipelines.gru_map_error_decomposition",),
+            emitted_by=("rlrmp.analysis.map_error_decomposition",),
             consumed_by=(
-                "rlrmp.analysis.pipelines.hinf_phenotype_sidecar",
+                "rlrmp.analysis.robustness_phenotype",
                 "rlrmp post-run diagnostic summaries",
             ),
             description="GRU observation-history-to-action map-error decomposition sidecar.",
@@ -444,9 +438,9 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             GRU_FEEDBACK_ABLATION_KIND,
             GRU_FEEDBACK_ABLATION_SCHEMA_ID,
             GRU_FEEDBACK_ABLATION_SCHEMA_VERSION,
-            emitted_by=("rlrmp.analysis.pipelines.gru_feedback_ablation",),
+            emitted_by=("rlrmp.eval.feedback_ablation",),
             consumed_by=(
-                "rlrmp.analysis.pipelines.hinf_phenotype_sidecar",
+                "rlrmp.analysis.robustness_phenotype",
                 "rlrmp post-run diagnostic summaries",
             ),
             description="Validation-selected C&S GRU feedback-ablation diagnostics.",

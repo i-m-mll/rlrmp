@@ -231,36 +231,6 @@ path = "results/efc4d68/figures/variance_profiles/spec.json"
 owner = "efc4d68"
 reason = "Pre-declarative figure record retained until its assigned migration wave lands."
 
-[[legacy_specs]]
-path = "results/f47abb1/figures/forward_velocity_profiles/spec.json"
-owner = "f47abb1"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/f47abb1/figures/hold_drift_profiles/spec.json"
-owner = "f47abb1"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/f47abb1/figures/peak_velocity_distributions/spec.json"
-owner = "f47abb1"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/f47abb1/figures/rmse_ratio_comparison/spec.json"
-owner = "f47abb1"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/f47abb1/figures/training_loss/spec.json"
-owner = "f47abb1"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/f47abb1/figures/training_loss_per_term/spec.json"
-owner = "f47abb1"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
 [[living_materializers]]
 path = "results/1ab1fef/scripts/materialize_post_run_analysis.py"
 owner = "1ab1fef"
@@ -357,11 +327,6 @@ owner = "c92ebd8"
 reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
 
 [[living_materializers]]
-path = "results/c92ebd8/scripts/materialize_pgd_1p05_reach_context_diagnostics.py"
-owner = "c92ebd8"
-reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
-
-[[living_materializers]]
 path = "results/c92ebd8/scripts/materialize_pgd_1p05_stabilization_diagnostics.py"
 owner = "c92ebd8"
 reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
@@ -394,14 +359,4 @@ reason = "Living legacy producer retained until its tracked figure family migrat
 [[living_materializers]]
 path = "results/d55c5f0/scripts/materialize_soft_pgd_stabilization_responses.py"
 owner = "d55c5f0"
-reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
-
-[[living_materializers]]
-path = "results/f47abb1/scripts/analyse_lit_replication_6cell.py"
-owner = "f47abb1"
-reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
-
-[[living_materializers]]
-path = "results/f47abb1/scripts/plot_training_loss_lit_replication.py"
-owner = "f47abb1"
 reason = "Living legacy producer retained until its tracked figure family migrates to native custody."

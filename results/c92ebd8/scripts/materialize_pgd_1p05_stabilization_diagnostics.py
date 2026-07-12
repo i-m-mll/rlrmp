@@ -15,7 +15,7 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from rlrmp.analysis.pipelines.gru_steady_state_perturbation_bank import (
+from rlrmp.eval.steady_state import (
     DEFAULT_FORCE_FILTER_SCALE,
     DEFAULT_N_ROLLOUT_TRIALS,
     DEFAULT_POSITION_SCALE_M,
@@ -23,6 +23,8 @@ from rlrmp.analysis.pipelines.gru_steady_state_perturbation_bank import (
     DEFAULT_POST_ONSET_FIGURE_STEPS,
     DEFAULT_PULSE_DURATION_STEPS,
     DEFAULT_VELOCITY_SCALE_M_S,
+)
+from rlrmp.analysis.steady_state_perturbation import (
     default_feedback_perturbations,
 )
 from rlrmp.io import update_marked_section, write_compact_json
