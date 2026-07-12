@@ -3,7 +3,7 @@
 The bridge program needs two intermediate controller families before GRU
 interpretation: constrained time-varying gains and explicitly linear
 recurrences.  This module keeps both substrates independent of training code and
-emits the shared :class:`BridgeRolloutBatch` arrays from ``bridge_contracts``.
+emits the shared :class:`BridgeRolloutBatch` arrays from ``bridge_results``.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from typing import Protocol
 import numpy as np
 from jaxtyping import Float
 
-from rlrmp.analysis.pipelines.bridge_contracts import BridgeRolloutBatch
+from rlrmp.analysis.bridge_results import BridgeRolloutBatch
 
 
 class LinearPlantLike(Protocol):

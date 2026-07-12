@@ -1,17 +1,15 @@
-"""Shared contracts for analytical bridge rollout artifacts.
+"""Structured analytical bridge inputs and results.
 
 The bridge plan compares several controller families on the same output-feedback
-game.  This module intentionally stays small: it records what was run, validates
-the common rollout array shapes, and serializes manifests for later certificate
-and aggregation code.
+game. This module records in-memory analysis inputs and results and validates the
+common rollout array shapes. Durable serialization belongs to Feedbax analysis
+manifest custody, not to this science module.
 """
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
@@ -85,16 +83,10 @@ class BridgeRunSpec:
     parameters: dict[str, Any] = field(default_factory=dict)
     notes: str = ""
 
-    def to_json_dict(self) -> dict[str, Any]:
-        """Return a JSON-serializable representation."""
+    def to_payload(self) -> dict[str, Any]:
+        """Return a structured analysis payload."""
 
         return asdict(self)
-
-    @classmethod
-    def from_json_dict(cls, data: dict[str, Any]) -> "BridgeRunSpec":
-        """Build a run spec from a decoded manifest object."""
-
-        return cls(**data)
 
 
 @dataclass(frozen=True)
@@ -238,8 +230,13 @@ class BridgeCertificateComponent:
 
 
 @dataclass(frozen=True)
-class BridgeRunManifest:
-    """Serializable manifest tying one run spec to artifacts and summaries."""
+class BridgeAnalysisResult:
+    """In-memory result produced by bridge certificate analyses.
+
+    Feedbax's ``AnalysisRunManifest`` owns durable identity and custody for any
+    emitted payload or artifact. This value contains only the structured science
+    result consumed by downstream analysis and report stages.
+    """
 
     spec: BridgeRunSpec
     status: str
@@ -248,11 +245,11 @@ class BridgeRunManifest:
     artifacts: dict[str, str] = field(default_factory=dict)
     certificate_components: tuple[BridgeCertificateComponent, ...] = ()
 
-    def to_json_dict(self) -> dict[str, Any]:
-        """Return a JSON-serializable manifest."""
+    def to_payload(self) -> dict[str, Any]:
+        """Return a structured payload for Feedbax-managed artifact emission."""
 
         return {
-            "spec": self.spec.to_json_dict(),
+            "spec": self.spec.to_payload(),
             "status": self.status,
             "arrays": [asdict(array) for array in self.arrays],
             "metrics": self.metrics,
@@ -261,43 +258,6 @@ class BridgeRunManifest:
                 asdict(component) for component in self.certificate_components
             ],
         }
-
-    @classmethod
-    def from_json_dict(cls, data: dict[str, Any]) -> "BridgeRunManifest":
-        """Build a manifest from decoded JSON."""
-
-        return cls(
-            spec=BridgeRunSpec.from_json_dict(data["spec"]),
-            status=data["status"],
-            arrays=tuple(
-                BridgeArraySpec(
-                    name=row["name"],
-                    shape=tuple(row["shape"]),
-                    dtype=row["dtype"],
-                    role=row["role"],
-                )
-                for row in data.get("arrays", ())
-            ),
-            metrics=dict(data.get("metrics", {})),
-            artifacts=dict(data.get("artifacts", {})),
-            certificate_components=tuple(
-                BridgeCertificateComponent(**row) for row in data.get("certificate_components", ())
-            ),
-        )
-
-
-def write_bridge_manifest(manifest: BridgeRunManifest, path: Path) -> None:
-    """Write a bridge manifest as stable, indented JSON."""
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(manifest.to_json_dict(), indent=2, sort_keys=True) + "\n")
-
-
-def read_bridge_manifest(path: Path) -> BridgeRunManifest:
-    """Read a bridge manifest written by :func:`write_bridge_manifest`."""
-
-    return BridgeRunManifest.from_json_dict(json.loads(path.read_text()))
-
 
 __all__ = [
     "BridgeArchitecture",
@@ -308,10 +268,8 @@ __all__ = [
     "BridgeEvaluationLane",
     "BridgeObjective",
     "BridgeRolloutBatch",
-    "BridgeRunManifest",
+    "BridgeAnalysisResult",
     "BridgeRunSpec",
     "BridgeTrainingDistribution",
     "make_bridge_run_id",
-    "read_bridge_manifest",
-    "write_bridge_manifest",
 ]

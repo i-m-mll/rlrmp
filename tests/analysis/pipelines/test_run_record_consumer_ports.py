@@ -3,17 +3,17 @@ from __future__ import annotations
 import inspect
 import re
 
-import rlrmp.analysis.pipelines.cs_gru_standard_materialization as cs_standard
+import rlrmp.analysis.gru_standard_certificate as cs_standard
 import rlrmp.analysis.pipelines.gru_broad_epsilon_attribution as broad_epsilon
-import rlrmp.analysis.pipelines.gru_checkpoint_selection as checkpoint_selection
+from rlrmp.eval import checkpoint_selection
 import rlrmp.analysis.pipelines.gru_map_error_decomposition as map_error
-import rlrmp.analysis.pipelines.gru_pilot_figures as pilot_figures
+import rlrmp.eval.trial_inputs as evaluation_run_inputs
 import rlrmp.analysis.pipelines.objective_comparator as objective_comparator
 
 
 CONSUMERS = (
     cs_standard,
-    pilot_figures,
+    evaluation_run_inputs,
     checkpoint_selection,
     objective_comparator,
     map_error,

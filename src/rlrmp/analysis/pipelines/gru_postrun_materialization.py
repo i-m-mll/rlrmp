@@ -9,19 +9,15 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from rlrmp.analysis.pipelines.cs_gru_standard_materialization import (
+from rlrmp.analysis.gru_standard_certificate import (
     MATERIALIZER_ISSUE_ID,
     materialize_gru_standard_result,
-    write_gru_standard_result,
 )
 from rlrmp.analysis.pipelines.diagnostic_provenance import write_regeneration_spec
-from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
-    fixed_bank_manifest_path,
+from rlrmp.eval.checkpoint_selection import (
+    build_validation_checkpoint_selection_manifest,
+    checkpoint_selection_rows,
     load_materialized_fixed_bank_manifest,
-    materialize_validation_selected_checkpoint_manifest,
-)
-from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import (
-    materialize_gru_evaluation_diagnostics,
 )
 from rlrmp.analysis.pipelines.gru_pilot_figures import (
     DEFAULT_N_ROLLOUT_TRIALS,
@@ -94,24 +90,20 @@ def plan_gru_postrun_materialization(
     checkpoint_policy = checkpoint_policy_name(use_validation_selected_checkpoints)
     notes_dir = repo_root / "results" / experiment / "notes"
     artifact_dir = repo_root / "_artifacts" / experiment
-    fixed_bank_rescore_manifest_path = (
-        fixed_bank_rescore_manifest_path
-        if fixed_bank_rescore_manifest_path is not None
-        else fixed_bank_manifest_path(experiment, repo_root=repo_root)
-    )
     fixed_bank_manifest = None
     fixed_bank_available = False
     if use_validation_selected_checkpoints:
         fixed_bank_manifest = load_materialized_fixed_bank_manifest(
-            experiment=experiment,
-            repo_root=repo_root,
             manifest_path=fixed_bank_rescore_manifest_path,
         )
         fixed_bank_available = fixed_bank_manifest is not None and all(
-            run_id in fixed_bank_manifest.get("runs", {}) for run_id in run_ids
+            run_id in checkpoint_selection_rows(fixed_bank_manifest) for run_id in run_ids
         )
     effective_checkpoint_policy = (
-        str(fixed_bank_manifest.get("checkpoint_policy") or "fixed_bank_rescored_per_replicate")
+        str(
+            fixed_bank_manifest.metadata.get("checkpoint_policy")
+            or "fixed_bank_rescored_per_replicate"
+        )
         if fixed_bank_available and fixed_bank_manifest is not None
         else checkpoint_policy
     )
@@ -124,11 +116,7 @@ def plan_gru_postrun_materialization(
             "fixed_bank_rescore" if fixed_bank_available else checkpoint_policy
         ),
         notes_dir=notes_dir,
-        checkpoint_manifest_path=(
-            notes_dir / "validation_selected_checkpoints.json"
-            if use_validation_selected_checkpoints
-            else None
-        ),
+        checkpoint_manifest_path=None,
         fixed_bank_rescore_manifest_path=(
             fixed_bank_rescore_manifest_path if use_validation_selected_checkpoints else None
         ),
@@ -193,6 +181,11 @@ def materialize_gru_postrun_analysis(
             "direct perturbation bulk-array writes are retired; run the registered "
             "evaluation and analysis bundle to obtain Feedbax-custody artifacts"
         )
+    if evaluation_states is None:
+        raise ValueError(
+            "GRU post-run analysis requires cached states from an EvaluationRunManifest; "
+            "it may not rerun diagnostic rollouts"
+        )
     run_ids = tuple(run_ids)
     plan = plan_gru_postrun_materialization(
         experiment=experiment,
@@ -210,11 +203,10 @@ def materialize_gru_postrun_analysis(
     )
 
     checkpoint_manifest: dict[str, Any] | None = None
-    if plan.checkpoint_manifest_path is not None:
-        checkpoint_manifest = materialize_validation_selected_checkpoint_manifest(
+    if use_validation_selected_checkpoints:
+        checkpoint_manifest = build_validation_checkpoint_selection_manifest(
             experiment=experiment,
             run_ids=run_ids,
-            output_path=plan.checkpoint_manifest_path,
             preferred_manifest_path=effective_checkpoint_manifest_path,
             checkpoint_selection_mode=(
                 "fixed_bank_manifest"
@@ -222,41 +214,17 @@ def materialize_gru_postrun_analysis(
                 else "sparse_history"
             ),
             repo_root=repo_root,
-        )
+        ).model_dump(mode="json", exclude_none=True)
 
     standard_result = materialize_gru_standard_result(
+        evaluation_states,
         run_ids=run_ids,
         experiment=experiment,
         materializer_issue_id=materializer_issue_id,
-        use_validation_selected_checkpoints=use_validation_selected_checkpoints,
-        preferred_checkpoint_manifest_path=effective_checkpoint_manifest_path,
-        repo_root=repo_root,
-    )
-    write_gru_standard_result(
-        standard_result,
-        note_path=plan.standard_note_path,
-        manifest_path=plan.standard_manifest_path,
-        regeneration_spec_path=_regeneration_spec_path(plan.standard_manifest_path),
         repo_root=repo_root,
     )
 
-    evaluation_manifest = materialize_gru_evaluation_diagnostics(
-        experiment=experiment,
-        run_ids=run_ids,
-        labels=labels,
-        output_path=plan.evaluation_manifest_path,
-        bulk_dir=plan.evaluation_bulk_dir,
-        n_rollout_trials=n_rollout_trials,
-        use_validation_selected_checkpoints=use_validation_selected_checkpoints,
-        preferred_checkpoint_manifest_path=effective_checkpoint_manifest_path,
-        regeneration_spec_path=_regeneration_spec_path(plan.evaluation_manifest_path),
-        evaluation_manifest_path=evaluation_manifest_path,
-        evaluation_states=evaluation_states,
-        repo_root=repo_root,
-    )
-    evaluation_manifest_path = evaluation_manifest_path or (
-        plan.evaluation_manifest_path if evaluation_states is not None else None
-    )
+    evaluation_manifest = dict(evaluation_states)
 
     figure_summary = materialize_gru_pilot_figures(
         experiment=experiment,
@@ -313,7 +281,7 @@ def materialize_gru_postrun_analysis(
             bank_mode=perturbation_bank_mode,
             calibration_level=perturbation_calibration_level,
             calibration_reach=perturbation_calibration_reach,
-            feedback_scale_manifest_path=plan.evaluation_manifest_path,
+            feedback_scale_manifest_path=evaluation_manifest_path,
             preferred_checkpoint_manifest_path=effective_checkpoint_manifest_path,
             repo_root=repo_root,
         )
@@ -332,7 +300,7 @@ def materialize_gru_postrun_analysis(
             calibration_level=perturbation_calibration_level,
             calibration_reach=perturbation_calibration_reach,
             feedback_selection_level=feedback_selection_level,
-            feedback_scale_manifest_path=plan.evaluation_manifest_path,
+            feedback_scale_manifest_path=evaluation_manifest_path,
             preferred_checkpoint_manifest_path=effective_checkpoint_manifest_path,
             regeneration_spec_path=_regeneration_spec_path(plan.feedback_ablation_json_path),
             repo_root=repo_root,
@@ -413,16 +381,11 @@ def materialize_gru_postrun_analysis(
                 plan.standard_manifest_path,
                 repo_root=repo_root,
             ),
-            "evaluation_diagnostics_manifest": _repo_relative(
-                plan.evaluation_manifest_path,
-                repo_root=repo_root,
-            ),
             "evaluation_run_manifest": (
                 None
                 if evaluation_manifest_path is None
                 else _repo_relative(evaluation_manifest_path, repo_root=repo_root)
             ),
-            "evaluation_bulk_dir": _repo_relative(plan.evaluation_bulk_dir, repo_root=repo_root),
             "figure_output_dir": _repo_relative(plan.figure_output_dir, repo_root=repo_root),
             "figure_summary": _repo_relative(
                 plan.figure_output_dir / "figure_summary.json",
@@ -437,10 +400,8 @@ def materialize_gru_postrun_analysis(
         },
         "summaries": {
             "standard_certificate": standard_result.get("summary", {}),
-            "evaluation_diagnostics_schema": evaluation_manifest.get("schema_version"),
-            "evaluation_manifest_dependency": evaluation_manifest.get(
-                "evaluation_manifest_dependency"
-            ),
+            "evaluation_manifest_id": evaluation_manifest.get("evaluation_manifest_id"),
+            "evaluation_product_role": evaluation_manifest.get("product_role"),
             "figure_summary_keys": sorted(figure_summary.keys()),
         },
     }
@@ -562,10 +523,6 @@ def _postrun_regeneration_specs(
         "postrun": _repo_relative(plan.postrun_regeneration_spec_path, repo_root=repo_root),
         "standard_certificate": _repo_relative(
             _regeneration_spec_path(plan.standard_manifest_path),
-            repo_root=repo_root,
-        ),
-        "evaluation_diagnostics": _repo_relative(
-            _regeneration_spec_path(plan.evaluation_manifest_path),
             repo_root=repo_root,
         ),
         "pilot_figures": _repo_relative(
@@ -741,7 +698,6 @@ def _write_postrun_auxiliary_regeneration_specs(
         outputs=[
             {"role": "postrun_manifest", "path": plan.postrun_manifest_path},
             {"role": "standard_certificate_manifest", "path": plan.standard_manifest_path},
-            {"role": "evaluation_diagnostics_manifest", "path": plan.evaluation_manifest_path},
             {"role": "pilot_figure_dir", "path": plan.figure_output_dir},
             {"role": "objective_comparator_manifest", "path": plan.objective_comparator_json_path},
             {"role": "map_decomposition_manifest", "path": plan.map_decomposition_json_path},
@@ -753,10 +709,11 @@ def _write_postrun_auxiliary_regeneration_specs(
         ],
         source_files=[
             "src/rlrmp/analysis/pipelines/gru_postrun_materialization.py",
-            "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py",
-            "src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py",
+            "src/rlrmp/analysis/gru_standard_certificate.py",
+            "src/rlrmp/eval/evaluation_diagnostics.py",
+            "src/rlrmp/eval/gru_diagnostics.py",
             "src/rlrmp/analysis/pipelines/gru_pilot_figures.py",
-            "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+            "src/rlrmp/eval/perturbation_bank.py",
             "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
         ],
         notes=[
@@ -840,41 +797,21 @@ def materialize_optional_perturbation_response(
     preferred_checkpoint_manifest_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
-    """Call the optional perturbation-response bank materializer."""
+    """Return the registered evaluation-matrix request for perturbation responses."""
+
+    from rlrmp.analysis.perturbation_bank import perturbation_bank_matrix_payload
 
     try:
-        module = importlib.import_module("rlrmp.analysis.pipelines.gru_perturbation_bank")
-        materializer = getattr(module, "materialize_gru_perturbation_response")
-    except (ImportError, AttributeError) as exc:
-        return {
-            "status": "skipped",
-            "reason": "optional_perturbation_response_unavailable",
-            "detail": str(exc),
-            "expected_hook": (
-                "rlrmp.analysis.pipelines.gru_perturbation_bank."
-                "materialize_gru_perturbation_response"
-            ),
-        }
-
-    try:
-        result = materializer(
+        matrix = perturbation_bank_matrix_payload(
             source_experiment=experiment,
-            result_experiment=experiment,
-            run_ids=tuple(run_ids),
-            labels=None if labels is None else tuple(labels),
+            run_ids=run_ids,
+            labels=labels,
             n_rollout_trials=n_rollout_trials,
-            evaluate=True,
             bank_mode=bank_mode,
             calibration_level=calibration_level,
             calibration_reach=calibration_reach,
             feedback_scale_manifest_path=feedback_scale_manifest_path,
             preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
-            checkpoint_selection_mode=(
-                "fixed_bank_manifest"
-                if preferred_checkpoint_manifest_path is not None
-                else "sparse_history"
-            ),
-            repo_root=repo_root,
         )
     except (FileNotFoundError, ValueError, KeyError, AttributeError) as exc:
         return {
@@ -884,21 +821,12 @@ def materialize_optional_perturbation_response(
             "selection_role": "audit_only_not_used_for_checkpoint_selection",
         }
 
-    runs = result.get("runs", {}) if isinstance(result, dict) else {}
-    bank = result.get("bank", {}) if isinstance(result, dict) else {}
-    perturbations = bank.get("perturbations", ()) if isinstance(bank, dict) else ()
     return {
-        "status": "materialized",
-        "custody": "feedbax_evaluation_and_analysis_manifests",
+        "status": "registered_evaluation_matrix",
+        "custody": "feedbax_evaluation_manifests",
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
-        "result": {
-            "schema_version": result.get("schema_version") if isinstance(result, dict) else None,
-            "n_runs": len(runs),
-            "n_perturbations": len(perturbations),
-            "checkpoint_policy": (
-                result.get("checkpoint_policy") if isinstance(result, dict) else None
-            ),
-        },
+        "evaluation_matrix": matrix,
+        "next_action": "execute_evaluation_run_matrix",
     }
 
 
@@ -1094,18 +1022,14 @@ def fixed_bank_rescore_manifest_status(
     status: dict[str, Any] = {"path": _repo_relative(path, repo_root=repo_root)}
     if not path.exists():
         return status | {"status": "missing", "selection_use": "sparse_history_fallback"}
-    manifest = json.loads(path.read_text(encoding="utf-8"))
-    materialization_status = str(manifest.get("materialization_status", "unknown"))
+    manifest = load_materialized_fixed_bank_manifest(manifest_path=path)
+    if manifest is None:
+        return status | {"status": "failed", "selection_use": "sparse_history_fallback"}
     return status | {
-        "status": materialization_status,
-        "schema_version": manifest.get("schema_version"),
-        "selection_use": (
-            "fixed_bank_rescore"
-            if materialization_status == "materialized"
-            else "sparse_history_fallback"
-        ),
-        "validation_bank": manifest.get("validation_bank"),
-        "not_materialized_reason": manifest.get("not_materialized_reason"),
+        "status": "materialized",
+        "schema_version": manifest.schema_version,
+        "selection_use": "fixed_bank_rescore",
+        "validation_bank": manifest.bank.metadata.get("validation_bank"),
     }
 
 

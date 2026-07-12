@@ -1,8 +1,7 @@
-"""Private JAX-backed rollout products for selected-eval materializers.
+"""Cached JAX-backed rollout states for registered evaluations.
 
-This module is an internal optimization layer for the current RLRMP post-run
-diagnostic bundle implementations. It is deliberately not a durable Feedbax or
-RLRMP data-product contract.
+The registered evaluation recipe owns rollout execution and Feedbax owns cache
+custody. Analysis reducers consume this in-memory view without rerunning a task.
 """
 
 from __future__ import annotations
@@ -13,14 +12,14 @@ from typing import Any
 import jax.numpy as jnp
 import numpy as np
 
-from rlrmp.analysis.pipelines.gru_pilot_figures import (
+from rlrmp.eval.trial_inputs import (
     initial_effector_velocity,
     trial_effector_target_position,
 )
 
 
 @dataclass(frozen=True)
-class SelectedEvalRolloutProduct:
+class CachedEvaluationStates:
     """Device-backed rollout leaves plus explicit host materialization methods.
 
     Core rollout arrays have shape ``(replicate, trial, time, feature)``. Initial
@@ -50,8 +49,8 @@ class SelectedEvalRolloutProduct:
         checkpoint_selection: tuple[Any, ...] = (),
         include_mechanics_vector: bool = False,
         include_feedback: bool = False,
-    ) -> "SelectedEvalRolloutProduct":
-        """Build a private rollout product without copying rollout leaves to host."""
+    ) -> "CachedEvaluationStates":
+        """Build cached evaluation states without copying rollout leaves to host."""
 
         mechanics_vector = (
             jnp.asarray(states.mechanics.vector, dtype=jnp.float64)
@@ -79,7 +78,7 @@ class SelectedEvalRolloutProduct:
         )
 
     def host_rollout_kwargs(self) -> dict[str, Any]:
-        """Return kwargs for the existing public ``RolloutEvaluation`` dataclass."""
+        """Return host-backed kwargs for science reducers that require NumPy."""
 
         return {
             "position": self.host_array(self.position),
@@ -95,7 +94,7 @@ class SelectedEvalRolloutProduct:
         }
 
     def to_rollout_evaluation(self, rollout_type: type[Any]) -> Any:
-        """Materialize the existing host-backed public rollout object."""
+        """Materialize a host-backed rollout view at an explicit boundary."""
 
         rollout = rollout_type(**self.host_rollout_kwargs())
         if self.mechanics_vector is not None:
@@ -124,3 +123,6 @@ def initial_effector_position(trial_specs: Any) -> Any:
         if shape is not None and len(shape) >= 1 and shape[-1] >= 2:
             return jnp.asarray(init_state)[..., 0:2]
     raise ValueError("Trial spec does not include an effector position initial state")
+
+
+__all__ = ["CachedEvaluationStates", "initial_effector_position"]

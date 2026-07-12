@@ -20,22 +20,35 @@ DESTINATIONS = {
     "diag_cs_bw_full_state_sweeps.py": (
         "results/72fb8d9/scripts/diag_cs_bw_full_state_sweeps.py"
     ),
-    "materialize_output_feedback_optimizer_basin_diagnostic.py": (
-        "results/1c014e5/scripts/materialize_output_feedback_optimizer_basin_diagnostic.py"
-    ),
     "materialize_output_feedback_observer_error_coverage.py": (
         "results/3becdec/scripts/materialize_output_feedback_observer_error_coverage.py"
     ),
 }
 
 ARCHIVAL_ONLY_DESTINATIONS = {
-    "results/1c014e5/scripts/materialize_output_feedback_optimizer_basin_diagnostic.py",
+    "results/3becdec/scripts/materialize_output_feedback_observer_error_coverage.py",
+}
+
+RETIRED_DESTINATIONS = {
+    "materialize_output_feedback_optimizer_basin_diagnostic.py": (
+        "results/1c014e5/scripts/materialize_output_feedback_optimizer_basin_diagnostic.py"
+    ),
 }
 
 
 def test_relocated_experiment_scripts_are_absent_from_top_level_scripts() -> None:
     assert not [
-        name for name in DESTINATIONS if (REPO_ROOT / "scripts" / name).exists()
+        name
+        for name in DESTINATIONS | RETIRED_DESTINATIONS
+        if (REPO_ROOT / "scripts" / name).exists()
+    ]
+
+
+def test_retired_relocated_scripts_are_absent() -> None:
+    assert not [
+        destination
+        for destination in RETIRED_DESTINATIONS.values()
+        if (REPO_ROOT / destination).exists()
     ]
 
 

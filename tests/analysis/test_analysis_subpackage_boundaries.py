@@ -14,13 +14,15 @@ def test_analysis_compatibility_shims_are_absent() -> None:
 
     assert importlib.util.find_spec("rlrmp.analysis.rerun_metadata") is None
     assert importlib.util.find_spec("rlrmp.analysis.bridge_contracts") is None
+    assert importlib.util.find_spec("rlrmp.analysis.pipelines.bridge_contracts") is None
 
 
 def test_canonical_analysis_modules_are_importable() -> None:
     """Representative canonical paths remain importable after shim removal."""
 
     assert importlib.util.find_spec("rlrmp.analysis.math.rerun_metadata") is not None
-    assert importlib.util.find_spec("rlrmp.analysis.pipelines.bridge_contracts") is not None
+    assert importlib.util.find_spec("rlrmp.analysis.bridge_results") is not None
+    assert importlib.util.find_spec("rlrmp.analysis.bridge_certificates") is not None
 
 
 def test_analysis_math_layer_does_not_import_pipelines_layer() -> None:

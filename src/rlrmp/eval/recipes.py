@@ -18,16 +18,22 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from rlrmp.runtime.params_models import params_model_for, register_params_model
 from rlrmp.eval.feedback_ablation import evaluate_feedback_ablation_runs
+from rlrmp.eval.evaluation_diagnostics import (
+    DEFAULT_N_ROLLOUT_TRIALS,
+    evaluate_gru_diagnostics_runs,
+)
 from rlrmp.runtime.spec_migrations import (
     CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND,
     DELAYED_REACH_BANK_EVAL_PARAMS_KIND,
     FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
+    GRU_DIAGNOSTICS_EVAL_PARAMS_KIND,
     PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND,
     WORST_CASE_EPSILON_EVAL_PARAMS_KIND,
     accept_rlrmp_spec_payload,
 )
 
 CENTER_OUT_ENSEMBLE_EVALUATION_TYPE = "rlrmp.eval.center_out_ensemble"
+GRU_DIAGNOSTICS_EVALUATION_TYPE = "rlrmp.eval.gru_diagnostics"
 PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE = "rlrmp.eval.perturbation_response_bank"
 FEEDBACK_ABLATION_EVALUATION_TYPE = "rlrmp.eval.feedback_ablation"
 WORST_CASE_EPSILON_EVALUATION_TYPE = "rlrmp.eval.worst_case_epsilon"
@@ -35,6 +41,7 @@ DELAYED_REACH_BANK_EVALUATION_TYPE = "rlrmp.eval.delayed_reach_bank"
 
 _RECIPE_PARAM_KINDS = {
     CENTER_OUT_ENSEMBLE_EVALUATION_TYPE: CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND,
+    GRU_DIAGNOSTICS_EVALUATION_TYPE: GRU_DIAGNOSTICS_EVAL_PARAMS_KIND,
     PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE: PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND,
     FEEDBACK_ABLATION_EVALUATION_TYPE: FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
     WORST_CASE_EPSILON_EVALUATION_TYPE: WORST_CASE_EPSILON_EVAL_PARAMS_KIND,
@@ -76,6 +83,20 @@ class CenterOutEnsembleEvalParams(_StrictParamsModel):
     gru_standard_certificate: dict[str, Any] | None = None
     policy_diagnostics: dict[str, Any] | None = None
     recurrent_jacobians: dict[str, Any] | None = None
+
+
+class GRUDiagnosticsEvalParams(_StrictParamsModel):
+    """Params for selected-checkpoint GRU diagnostics from cached states."""
+
+    source_experiment: str = ""
+    run_ids: list[str] = Field(default_factory=list)
+    labels: list[str] | None = None
+    n_rollout_trials: int = Field(DEFAULT_N_ROLLOUT_TRIALS, ge=1)
+    preferred_checkpoint_manifest_path: str | None = None
+    jacobian_timepoints: list[
+        Literal["first", "peak_forward_velocity", "terminal"]
+    ] = Field(default_factory=lambda: ["first", "peak_forward_velocity", "terminal"])
+    repo_root: str | None = None
 
 
 class PerturbationResponseBankEvalParams(_StrictParamsModel):
@@ -158,6 +179,7 @@ class DelayedReachBankEvalParams(_StrictParamsModel):
 
 _PARAMS_MODEL_BY_RECIPE = {
     CENTER_OUT_ENSEMBLE_EVALUATION_TYPE: CenterOutEnsembleEvalParams,
+    GRU_DIAGNOSTICS_EVALUATION_TYPE: GRUDiagnosticsEvalParams,
     PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE: PerturbationResponseBankEvalParams,
     FEEDBACK_ABLATION_EVALUATION_TYPE: FeedbackAblationEvalParams,
     WORST_CASE_EPSILON_EVALUATION_TYPE: WorstCaseEpsilonEvalParams,
@@ -170,7 +192,7 @@ def register_rlrmp_evaluation_recipes(*, replace: bool = True) -> None:
 
     for recipe_name, model_class in _PARAMS_MODEL_BY_RECIPE.items():
         register_params_model(recipe_name, model_class, replace=replace)
-    from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+    from rlrmp.eval.perturbation_bank import (
         PERTURBATION_BANK_PARAMS_TYPE,
         PerturbationBankParams,
     )
@@ -179,6 +201,11 @@ def register_rlrmp_evaluation_recipes(*, replace: bool = True) -> None:
     register_evaluation_recipe(
         CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,
         center_out_ensemble_recipe,
+        replace=replace,
+    )
+    register_evaluation_recipe(
+        GRU_DIAGNOSTICS_EVALUATION_TYPE,
+        gru_diagnostics_recipe,
         replace=replace,
     )
     register_evaluation_recipe(
@@ -245,6 +272,34 @@ def center_out_ensemble_recipe(
             "policy_diagnostics": p.policy_diagnostics,
             "recurrent_jacobians": p.recurrent_jacobians,
         },
+    )
+
+
+def gru_diagnostics_recipe(
+    run_spec: EvaluationRunSpec,
+    _root: Path,
+    _states_path: Path,
+) -> EvaluationRecipeResult:
+    """Evaluate and cache behavior, feedback, gate, and Jacobian diagnostics."""
+
+    p, params = _validated_params(run_spec)
+    if not p.source_experiment or not p.run_ids:
+        raise ValueError("GRU diagnostics require source_experiment and non-empty run_ids")
+    repo_root = Path(p.repo_root).expanduser() if p.repo_root else Path.cwd()
+    payload = evaluate_gru_diagnostics_runs(params, repo_root=repo_root)
+    return _result(
+        run_spec,
+        params,
+        product_role="gru_diagnostic_states",
+        state_payload=payload,
+        summary_metrics={
+            "gru_diagnostic_run_count": len(payload["runs"]),
+            "gru_diagnostic_rollout_count": sum(
+                int(run["n_replicates"]) * int(run["n_rollout_trials_per_replicate"])
+                for run in payload["runs"].values()
+            ),
+        },
+        metadata={"execution_owner": "registered_evaluation_recipe"},
     )
 
 
@@ -606,7 +661,7 @@ def _perturbation_bank_from_params(params: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _default_perturbation_bank(params: Mapping[str, Any]) -> dict[str, Any]:
-    from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+    from rlrmp.eval.perturbation_bank import (
         PerturbationBankParams,
         expand_perturbation_bank,
     )
@@ -617,7 +672,7 @@ def _default_perturbation_bank(params: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _canonical_perturbation_bank_params(params: Mapping[str, Any]) -> dict[str, Any]:
-    from rlrmp.analysis.pipelines.gru_perturbation_bank import PerturbationBankParams
+    from rlrmp.eval.perturbation_bank import PerturbationBankParams
 
     bank_params = dict(params.get("bank_params") or {})
     bank_params.setdefault("mode", params.get("bank_mode", params.get("mode", "raw")))
@@ -823,9 +878,9 @@ def _resolve_perturbation_run_inputs(
     labels: Sequence[str] | None,
     repo_root: Path,
 ) -> Sequence[Any]:
-    from rlrmp.analysis.pipelines.gru_pilot_figures import resolve_run_inputs
+    from rlrmp.eval.trial_inputs import resolve_evaluation_run_inputs
 
-    return resolve_run_inputs(
+    return resolve_evaluation_run_inputs(
         experiment=experiment,
         run_ids=run_ids,
         labels=labels,
@@ -844,7 +899,7 @@ def _evaluate_single_perturbation_bank_run(
     checkpoint_selection_mode: str,
     repo_root: Path,
 ) -> dict[str, Any]:
-    from rlrmp.analysis.pipelines.gru_perturbation_bank import evaluate_run_perturbation_bank
+    from rlrmp.eval.perturbation_bank import evaluate_run_perturbation_bank
 
     return evaluate_run_perturbation_bank(
         run,
@@ -885,7 +940,7 @@ def _gru_standard_certificate_payload(
             f"'evaluate_clean_actions', got {mode!r}"
         )
 
-    from rlrmp.analysis.pipelines.cs_gru_standard_materialization import (
+    from rlrmp.analysis.gru_standard_certificate import (
         evaluate_gru_clean_actions,
     )
     from rlrmp.paths import REPO_ROOT
@@ -968,6 +1023,8 @@ __all__ = [
     "DelayedReachBankEvalParams",
     "FEEDBACK_ABLATION_EVALUATION_TYPE",
     "FeedbackAblationEvalParams",
+    "GRU_DIAGNOSTICS_EVALUATION_TYPE",
+    "GRUDiagnosticsEvalParams",
     "PerturbationResponseBankEvalParams",
     "PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE",
     "WorstCaseEpsilonEvalParams",
@@ -975,6 +1032,7 @@ __all__ = [
     "center_out_ensemble_recipe",
     "delayed_reach_bank_recipe",
     "feedback_ablation_recipe",
+    "gru_diagnostics_recipe",
     "perturbation_response_bank_recipe",
     "register_rlrmp_evaluation_recipes",
     "worst_case_epsilon_recipe",

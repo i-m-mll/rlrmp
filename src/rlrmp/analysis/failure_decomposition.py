@@ -1,11 +1,4 @@
-"""LEGACY (frozen 2026-07-03, issue 64d5f13).
-
-This materializer is not contract-native: it predates the feedbax recipe,
-bundle, and manifest contracts. It may not run without deliberate realignment.
-Do not copy it as a pattern for new analyses. The port-or-delete decision is
-deferred to the report-stage era (feedbax 132f98c) / publication.
-
-Failure-decomposition helpers for bridge certificate rows.
+"""Failure-decomposition science for bridge certificate rows.
 
 The standard certificate answers whether a learned controller behaves like a
 reference controller on the chosen bridge row.  This module provides the
@@ -23,7 +16,7 @@ from typing import Any, Literal
 import numpy as np
 
 from rlrmp.analysis.math.cs_game_card import materialize_reference
-from rlrmp.analysis.pipelines.bridge_certificates import (
+from rlrmp.analysis.bridge_certificates import (
     DISTURBANCE_HISTORY_TO_ACTION_MAP_MISMATCH,
     DISTURBANCE_HISTORY_TO_OUTPUT_MAP_MISMATCH,
     DISTURBANCE_HISTORY_TO_STATE_MAP_MISMATCH,
@@ -683,15 +676,9 @@ def output_feedback_failure_rows(
                 "mismatch_ratio_mean",
             )
             classification = classify_failure(
-                objective_ratio=objective_summary[
-                    "learned_to_reference_objective_ratio"
-                ],
-                learned_gradient_norm=objective_summary[
-                    "learned_projected_gradient_norm"
-                ],
-                reference_gradient_norm=objective_summary[
-                    "reference_projected_gradient_norm"
-                ],
+                objective_ratio=objective_summary["learned_to_reference_objective_ratio"],
+                learned_gradient_norm=objective_summary["learned_projected_gradient_norm"],
+                reference_gradient_norm=objective_summary["reference_projected_gradient_norm"],
                 certificate_mismatch_ratio=certificate_mismatch,
                 subspace_decomposition=decomposition,
             )
@@ -803,9 +790,7 @@ def _fit_objective_summary(fit: dict[str, Any]) -> dict[str, Any]:
     return {
         "learned_objective": fit.get("objective_final"),
         "reference_objective": fit.get("objective_reference"),
-        "learned_to_reference_objective_ratio": fit.get(
-            "objective_ratio_to_reference"
-        ),
+        "learned_to_reference_objective_ratio": fit.get("objective_ratio_to_reference"),
         "learned_gradient_norm": fit.get("gradient_norm_final"),
         "reference_gradient_norm": None,
         "learned_projected_gradient_norm": (
@@ -819,11 +804,7 @@ def _fit_objective_summary(fit: dict[str, Any]) -> dict[str, Any]:
 
 
 def _output_feedback_coverage_parameters(condition: dict[str, Any]) -> dict[str, Any]:
-    return (
-        condition.get("eigenspectrum_coverage")
-        or condition.get("observer_error_coverage")
-        or {}
-    )
+    return condition.get("eigenspectrum_coverage") or condition.get("observer_error_coverage") or {}
 
 
 def _output_feedback_action_mismatch(

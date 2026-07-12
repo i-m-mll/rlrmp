@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 import numpy as np
 
-from rlrmp.analysis.pipelines.bridge_contracts import (
+from rlrmp.analysis.bridge_results import (
     BridgeArchitecture,
     BridgeCertificateMode,
     BridgeCertificateComponent,

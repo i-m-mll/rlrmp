@@ -1,9 +1,8 @@
 """Feedbax materialization of the canonical C&S game-card plant.
 
-This module is the Phase 2 bridge for issue ``020a65b`` under umbrella
-``43e8728``. It keeps the C&S plant definition in ``cs_game_card`` as the
-source of truth, then exposes that exact discrete linear system as a Feedbax
-mechanics component and GraphSpec node.
+The C&S plant definition in ``cs_game_card`` is the source of truth. This module
+exposes that exact discrete linear system as a Feedbax mechanics component and
+``GraphSpec`` node.
 """
 
 from __future__ import annotations

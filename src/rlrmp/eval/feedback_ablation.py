@@ -12,14 +12,14 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 
-from rlrmp.analysis.pipelines._selected_eval_rollouts import SelectedEvalRolloutProduct
+from rlrmp.eval.rollout_states import CachedEvaluationStates
 
 
 @dataclass(frozen=True)
 class DetailedRolloutEvaluation:
     """Rollout product plus arrays used by feedback-ablation reducers."""
 
-    rollout: SelectedEvalRolloutProduct
+    rollout: CachedEvaluationStates
     feedback: Any
     mechanics_vector: Any
 
@@ -63,7 +63,7 @@ def evaluate_model_on_trial_specs(
         states = eqx.filter_vmap(eval_one_replicate, in_axes=(0, 0))(
             model_arrays, jr.split(jr.PRNGKey(seed), n_replicates)
         )
-    rollout = SelectedEvalRolloutProduct.from_states(
+    rollout = CachedEvaluationStates.from_states(
         states,
         trial_specs,
         dt=0.01,
@@ -88,10 +88,10 @@ def evaluate_feedback_ablation_runs(
     # rollout ownership remains here, at the registered evaluation boundary.
     # They are local to avoid the module-registration cycle during package import.
     from rlrmp.analysis.pipelines import gru_feedback_ablation as analysis
-    from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+    from rlrmp.eval.perturbation_bank import (
         default_cs_perturbation_bank,
     )
-    from rlrmp.analysis.pipelines.gru_pilot_figures import resolve_run_inputs
+    from rlrmp.eval.trial_inputs import resolve_evaluation_run_inputs
 
     source_experiment = str(params["source_experiment"])
     run_ids = tuple(str(run_id) for run_id in params["run_ids"])
@@ -124,7 +124,7 @@ def evaluate_feedback_ablation_runs(
             preferred_level=str(params["feedback_selection_level"]),
         )
     )
-    run_inputs = resolve_run_inputs(
+    run_inputs = resolve_evaluation_run_inputs(
         experiment=source_experiment,
         run_ids=run_ids,
         labels=labels,

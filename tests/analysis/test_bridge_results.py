@@ -1,18 +1,16 @@
-"""Contract tests for bridge rollout manifests and shared array shapes."""
+"""Contract tests for structured bridge results and shared array shapes."""
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
 
-from rlrmp.analysis.pipelines.bridge_contracts import (
+from rlrmp.analysis.bridge_results import (
+    BridgeAnalysisResult,
     BridgeCertificateComponent,
     BridgeRolloutBatch,
-    BridgeRunManifest,
     BridgeRunSpec,
     make_bridge_run_id,
-    read_bridge_manifest,
-    write_bridge_manifest,
 )
 
 
@@ -33,7 +31,7 @@ def _spec() -> BridgeRunSpec:
     )
 
 
-def test_bridge_run_manifest_round_trips_json(tmp_path) -> None:
+def test_bridge_analysis_result_exposes_structured_payload() -> None:
     batch = BridgeRolloutBatch(
         plant_states=np.zeros((2, 4, 6)),
         observations=np.zeros((2, 3, 4)),
@@ -42,7 +40,7 @@ def test_bridge_run_manifest_round_trips_json(tmp_path) -> None:
         step_costs=np.zeros((2, 3)),
         total_costs=np.zeros((2,)),
     )
-    manifest = BridgeRunManifest(
+    result = BridgeAnalysisResult(
         spec=_spec(),
         status="smoke",
         arrays=batch.array_specs(),
@@ -57,14 +55,11 @@ def test_bridge_run_manifest_round_trips_json(tmp_path) -> None:
         ),
     )
 
-    path = tmp_path / "manifest.json"
-    write_bridge_manifest(manifest, path)
-    observed = read_bridge_manifest(path)
+    payload = result.to_payload()
 
-    assert observed == manifest
-    assert observed.spec.run_id == "optimal__free_time-varying__smoke"
-    assert observed.arrays[0].name == "plant_states"
-    assert observed.certificate_components[1].status == "not_applicable"
+    assert payload["spec"]["run_id"] == "optimal__free_time-varying__smoke"
+    assert payload["arrays"][0]["name"] == "plant_states"
+    assert payload["certificate_components"][1]["status"] == "not_applicable"
 
 
 def test_bridge_rollout_batch_rejects_time_mismatch() -> None:

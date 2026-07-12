@@ -9,6 +9,9 @@ predicate:
 metadata:
   primary_contract: feedbax_analysis_bundle
   legacy_regeneration_contract: compatibility_only
+  archived_parity_oracle:
+    source_experiment: 30f2313
+    role: authored_standard_certificate_source_identity
   output_conventions:
     tracked_notes: results/{experiment}/notes
     bulk_artifacts: _artifacts/{experiment}
@@ -197,10 +200,9 @@ stages:
       schema_version: rlrmp.report.bridge_certificate_notes.params.v1
       title: Bridge Certificate Notes
       source_artifact_roles:
-        - rlrmp-gru-standard-certificate-note
-        - rlrmp-bridge-standard-certificate-note
+        - rlrmp-bridge-standard-certificate
       include_json_artifact: true
-      narrative: Feedbax-custody report render for standard-certificate Markdown.
+      narrative: Feedbax-custody report constructed from structured standard-certificate rows.
     outputs:
       - role: report_render
         required: true

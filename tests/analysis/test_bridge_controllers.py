@@ -6,8 +6,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from rlrmp.analysis.pipelines.bridge_contracts import BridgeRolloutBatch
-from rlrmp.analysis.pipelines.bridge_controllers import (
+from rlrmp.analysis.bridge_results import BridgeRolloutBatch
+from rlrmp.model.bridge_controllers import (
     LinearRecurrentController,
     PhaseModulatedLinearRecurrentController,
     TimeConstrainedGainParameterization,

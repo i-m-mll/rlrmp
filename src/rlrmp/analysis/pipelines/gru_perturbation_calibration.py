@@ -26,7 +26,7 @@ from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 if TYPE_CHECKING:
-    from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import RolloutEvaluation
+    from rlrmp.eval.gru_diagnostics import RolloutEvaluation
 
 
 SCHEMA_VERSION = "rlrmp.perturbation_open_loop_calibration.v2"
@@ -84,7 +84,7 @@ def materialize_perturbation_open_loop_calibration(
 ) -> dict[str, Any]:
     """Materialize physical effect-size calibration for perturbation amplitudes."""
 
-    from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+    from rlrmp.eval.perturbation_bank import (
         _build_extlqg_comparator_context,
         _extlqg_cost_summary,
         default_cs_perturbation_bank,
@@ -437,7 +437,7 @@ def _evaluate_calibration_row(
     base_cost: Mapping[str, Any],
     sensitivity: Mapping[str, Any],
 ) -> dict[str, Any]:
-    from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+    from rlrmp.eval.perturbation_bank import (
         _extlqg_cost_summary,
         _simulate_extlqg_perturbed,
         extlqg_comparator_status,
@@ -531,7 +531,7 @@ def _simulate_open_loop_command_replay(
 ) -> tuple[RolloutEvaluation, np.ndarray, dict[str, Any]]:
     """Replay nominal extLQG commands through perturbed plant dynamics."""
 
-    from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+    from rlrmp.eval.perturbation_bank import (
         _evaluation_from_extlqg_rollout,
         _extlqg_process_epsilon,
         _perturbed_extlqg_initial_state,
@@ -740,7 +740,7 @@ def _evaluate_unit_sensitivity_row(
     base: RolloutEvaluation,
     base_cost: Mapping[str, Any],
 ) -> dict[str, Any]:
-    from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+    from rlrmp.eval.perturbation_bank import (
         _extlqg_cost_summary,
         summarize_perturbation_response,
     )
