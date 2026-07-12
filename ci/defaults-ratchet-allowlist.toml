@@ -1131,38 +1131,6 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/delayed_diagnostic_bundle.py"
-key = "baseline_window"
-literal_repr = "(0, 5)"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/delayed_diagnostic_bundle.py"
-key = "role"
-literal_repr = "'other'"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/delayed_diagnostic_bundle.py"
-key = "source"
-literal_repr = "'caller_supplied'"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/delayed_diagnostic_bundle.py"
-key = "units"
-literal_repr = "'arbitrary'"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
 path = "src/rlrmp/analysis/pipelines/gru_broad_epsilon_attribution.py"
 key = "enabled"
 literal_repr = "True"
@@ -1561,15 +1529,6 @@ literal_repr = "'not_available'"
 count = 6
 owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/output_feedback_interpolated_starts.py"
-key = "optimizer"
-literal_repr = "'lbfgsb'"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
 
 [[default_fallback_sites]]
 path = "src/rlrmp/model/cs_lss_gru.py"
