@@ -44,7 +44,16 @@ symbols = [
 
 [[canonical_homes]]
 module = "feedbax.analysis"
-symbols = ["GraphControllerAdapter", "graph_controller"]
+symbols = [
+  "EvaluationRunMatrixSpec",
+  "GraphControllerAdapter",
+  "graph_controller",
+  "materialize_evaluation_run_matrix",
+]
+
+[[canonical_homes]]
+module = "feedbax.contracts"
+symbols = ["MaterializedMatrixRow"]
 
 [[canonical_homes]]
 module = "feedbax.analysis.analysis"
