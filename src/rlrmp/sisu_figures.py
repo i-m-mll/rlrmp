@@ -67,7 +67,11 @@ def sisu_spectrum_figure_spec(*, name: str = "sisu-spectrum-velocity") -> Figure
                 "schema_version": SISU_FIGURE_PAYLOAD_SCHEMA_VERSION,
                 "shared_yaxes": "all",
                 "parity_oracle": (
-                    "results/e4800d6/notes/sisu_perturbation_class_comparison_targetfix.json"
+                    "results/518aea3/data_products/sisu_spectrum_figure_parity.json"
+                ),
+                "parity_product": (
+                    "results/518aea3/data_products/"
+                    "sisu_spectrum_figure_parity_product.json"
                 ),
             },
         }

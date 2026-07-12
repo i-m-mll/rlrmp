@@ -29,6 +29,7 @@
     "schema_id": "rlrmp.figure_data.sisu_spectrum",
     "schema_version": "rlrmp.figure_data.sisu_spectrum.v1",
     "shared_yaxes": "all",
-    "parity_oracle": "results/e4800d6/notes/sisu_perturbation_class_comparison_targetfix.json"
+    "parity_oracle": "results/518aea3/data_products/sisu_spectrum_figure_parity.json",
+    "parity_product": "results/518aea3/data_products/sisu_spectrum_figure_parity_product.json"
   }
 }

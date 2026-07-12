@@ -23,6 +23,7 @@ from rlrmp.sisu_figures import (
     sisu_figure_payload,
     sisu_spectrum_figure_spec,
 )
+from rlrmp.data_products.envelope import read_data_product
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -82,6 +83,11 @@ def test_tracked_intent_is_native_manifest_bound_and_preserves_parity_oracle() -
     assert spec.facet_bindings["condition"].item == "manifest"
     assert payload["metadata"]["shared_yaxes"] == "all"
     assert (REPO_ROOT / payload["metadata"]["parity_oracle"]).is_file()
+    product = read_data_product(REPO_ROOT / payload["metadata"]["parity_product"])
+    assert product.product_schema_id == "rlrmp.figure_parity.sisu_spectrum"
+    assert product.artifacts[0].sha256 == (
+        "f202c09eee90593aa533378c4048b88c28d9ab8d004c479d4e2cbc4458bedc2a"
+    )
 
 
 @pytest.mark.parametrize("row_count", [2, 3])
@@ -131,3 +137,13 @@ def test_retired_direct_builder_package_remains_absent() -> None:
     assert not (
         REPO_ROOT / "tests/analysis/pipelines/test_sisu_spectrum_diagnostics.py"
     ).exists()
+
+
+def test_living_sisu_figure_surfaces_do_not_reference_retirement_candidate() -> None:
+    retired_issue = "e4800" + "d6"
+    for path in (
+        REPO_ROOT / "src/rlrmp/sisu_figures.py",
+        TRACKED_SPEC,
+        REPO_ROOT / "tests/analysis/test_sisu_spectrum_figure.py",
+    ):
+        assert retired_issue not in path.read_text(encoding="utf-8")
