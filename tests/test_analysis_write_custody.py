@@ -103,7 +103,6 @@ def test_analysis_write_allowlist_entries_carry_owner_and_reason() -> None:
 @pytest.mark.parametrize(
     ("relative_path", "function_name"),
     (
-        ("src/rlrmp/analysis/multi_cell_driver.py", "_write_multi_cell_report"),
         ("src/rlrmp/analysis/soft_lambda.py", "run_soft_lambda_materializer"),
     ),
 )

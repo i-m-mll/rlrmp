@@ -1,0 +1,25 @@
+{
+  "schema_id": "feedbax.manifest.analysis_data_product",
+  "schema_version": "feedbax.manifest.analysis_data_product.v1",
+  "product_schema_id": "rlrmp.figure_parity_oracles",
+  "product_schema_version": "rlrmp.figure_parity_oracles.v1",
+  "role": "figure_parity_oracles",
+  "logical_name": "f47abb1_literature_figure_parity",
+  "producer_manifest_id": "rlrmp.analysis.matrix.standard_matrix.standard_matrix_payload",
+  "parent_manifests": [],
+  "checkpoint_policy": {},
+  "rollout_policy": {},
+  "parameters": {
+    "experiment": "f47abb1",
+    "topics": ["forward_velocity_profiles", "hold_drift_profiles", "peak_velocity_distributions", "rmse_ratio_comparison", "training_loss", "training_loss_per_term"],
+    "parity_render_root": "_artifacts/f47abb1/figures"
+  },
+  "artifacts": [
+    {"role": "figure_parity_oracle", "logical_name": "forward_velocity_profiles", "sha256": "9e0adb892ced550c51542481f8c1ac030db92c4328b10c159c9ccf43313a5572", "media_type": "application/json", "storage_backend": "git", "uri": "results/f47abb1/data_products/figure_parity_forward_velocity_profiles.json", "metadata": {"topic": "forward_velocity_profiles", "source": "retired_legacy_figure_spec"}},
+    {"role": "figure_parity_oracle", "logical_name": "hold_drift_profiles", "sha256": "7e77f7949c2f6809d1eacfce6fc58854f838a716d1fbea8a98538080a232807d", "media_type": "application/json", "storage_backend": "git", "uri": "results/f47abb1/data_products/figure_parity_hold_drift_profiles.json", "metadata": {"topic": "hold_drift_profiles", "source": "retired_legacy_figure_spec"}},
+    {"role": "figure_parity_oracle", "logical_name": "peak_velocity_distributions", "sha256": "270308d48d25c5344d5278d97a830ef71325e8dceb9193f2637f148a97f4c3ca", "media_type": "application/json", "storage_backend": "git", "uri": "results/f47abb1/data_products/figure_parity_peak_velocity_distributions.json", "metadata": {"topic": "peak_velocity_distributions", "source": "retired_legacy_figure_spec"}},
+    {"role": "figure_parity_oracle", "logical_name": "rmse_ratio_comparison", "sha256": "3e335173ea364607404d5d28303bd933e051203b20203e8d6968e8b2c6199a4d", "media_type": "application/json", "storage_backend": "git", "uri": "results/f47abb1/data_products/figure_parity_rmse_ratio_comparison.json", "metadata": {"topic": "rmse_ratio_comparison", "source": "retired_legacy_figure_spec"}},
+    {"role": "figure_parity_oracle", "logical_name": "training_loss", "sha256": "408617bb0e87c14f9cb8d34a677cac10268e64634c798835f7e91189995cf5b5", "media_type": "application/json", "storage_backend": "git", "uri": "results/f47abb1/data_products/figure_parity_training_loss.json", "metadata": {"topic": "training_loss", "source": "retired_legacy_figure_spec"}},
+    {"role": "figure_parity_oracle", "logical_name": "training_loss_per_term", "sha256": "4dc09ffb6146f21ec4e779cd32c7d0875c5acd4ea71d322ee09b20dabc8c9f94", "media_type": "application/json", "storage_backend": "git", "uri": "results/f47abb1/data_products/figure_parity_training_loss_per_term.json", "metadata": {"topic": "training_loss_per_term", "source": "retired_legacy_figure_spec"}}
+  ]
+}

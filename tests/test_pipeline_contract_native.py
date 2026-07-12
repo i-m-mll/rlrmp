@@ -96,6 +96,7 @@ class PipelineModuleFacts:
 def test_pipeline_contract_scan_is_non_vacuous() -> None:
     facts = _scan_pipeline_tree()
 
+    # The response-norm and objective/phenotype stranglers retired pipeline-owned modules.
     assert len(facts) >= 3, "pipeline module scan found too few modules"
     assert not any(f.path.endswith("gru_feedback_ablation.py") for f in facts)
     assert len({f.path for f in facts}) == len(facts), "pipeline scan emitted duplicate modules"

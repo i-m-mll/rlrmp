@@ -311,6 +311,18 @@ negative_canary = [
     "tests/analysis/test_response_norm_capability.py::test_payload_distinguishes_intrinsic_and_data_bound_facets",
 ]
 
+[[families]]
+name = "literature_replication_figure_contract"
+owner = "28876c1"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_f47_literature_figure_specs.py::"
+# Pin all six native intents, one-payload facets, archived parity, and terminal deletion.
+minimum_non_skipped = 6
+negative_canary = [
+    "tests/analysis/test_f47_literature_figure_specs.py::test_one_standard_matrix_payload_owns_all_six_figure_facets",
+]
+
 [pipeline_contract_native]
 allowlist = [
     { path = "src/rlrmp/analysis/pipelines/diagnostic_provenance.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "regeneration-spec writer is shared compatibility plumbing until custody routing lands" },

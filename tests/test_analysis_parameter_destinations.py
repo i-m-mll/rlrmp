@@ -46,6 +46,7 @@ DELAYED_SISU_DRIVER_GOLDEN = {
 def test_all_registered_analysis_presets_load_with_pinned_hashes() -> None:
     registrations = registered_analysis_parameter_presets()
 
+    # Native adoption retired the response-norm and diagnostic-provenance presets.
     assert len(registrations) == 13
     for preset_id in registrations:
         preset = load_analysis_parameter_preset(preset_id)
