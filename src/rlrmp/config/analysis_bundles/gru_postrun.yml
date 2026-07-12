@@ -131,6 +131,62 @@ stages:
         required: true
       - role: rlrmp-gru-perturbation-response-manifest
         required: true
+  - name: response_norm_payload
+    kind: analysis
+    mode: grouped
+    depends_on: [perturbation_bank_aggregate]
+    analysis_type: rlrmp.response_norm_comparison
+    local_params:
+      metrics: [delta_position, delta_action]
+      condition_classes: [class_a, class_b]
+    outputs:
+      - role: manifest
+        required: true
+      - role: rlrmp-response-norm-comparison-payload
+        required: true
+  - name: response_norm_figure
+    kind: figure
+    mode: grouped
+    depends_on: [response_norm_payload]
+    figure:
+      name: gru-postrun-response-norm-comparison
+      template: rlrmp.response_norm_comparison
+      slot_bindings:
+        norm_bands:
+          name: response-norm-bands
+          constructor: rlrmp.response_norm_bands
+          data:
+            payload: {item: manifest, path: metadata.figure_payload}
+            metric: {item: metric}
+            condition_class: {item: condition_class}
+        norm_bars:
+          name: response-norm-bars
+          constructor: rlrmp.response_norm_bars
+          required: false
+          data:
+            payload: {item: manifest, path: metadata.figure_payload}
+            metric: {item: metric}
+            condition_class: {item: condition_class}
+      panels:
+        - name: response_norm
+          title: {item: metric}
+          axes_labels: {x: Time (s), y: Response norm}
+      facet_bindings:
+        metric: {item: manifest, path: metadata.figure_payload.intrinsic_axes.metric}
+        condition_class: {item: manifest, path: metadata.figure_payload.intrinsic_axes.condition_class}
+      figure_routing:
+        package: rlrmp
+        experiment: gru_postrun
+        topic: response_norm_comparison
+        extra_packages: [rlrmp]
+        render_format: html
+      metadata:
+        schema_id: rlrmp.figure_data.response_norm_comparison
+        schema_version: rlrmp.figure_data.response_norm_comparison.v1
+        parity_oracle: results/6c36536/data_products/gru_postrun_figure_parity.json
+    outputs:
+      - role: figure_render
+        required: true
   - name: evaluation_diagnostics
     kind: materialization
     mode: grouped
@@ -357,6 +413,7 @@ stages:
     depends_on:
       - standard_certificate
       - perturbation_bank_aggregate
+      - response_norm_figure
       - objective_comparator
       - feedback_quality_lens
     report_type: rlrmp.report.gru_postrun_summary
