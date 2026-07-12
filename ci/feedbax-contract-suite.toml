@@ -300,6 +300,15 @@ negative_canary = [
 ]
 
 [[families]]
+name = "prego_figure_migration"
+owner = "1e9304d"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_3702f54_prego_figure_specs.py::"
+# Pin five native intents, real execution, archived parity, shared-y semantics, and deletion.
+minimum_non_skipped = 6
+
+[[families]]
 name = "response_norm_figure_contract"
 owner = "5f85bf5"
 status = "live"

@@ -1,0 +1,212 @@
+{
+  "cell_stats": {
+    "full_trial_pl__pos10": {
+      "mean_peak_velocity": 0.6301353573799133,
+      "peak_vel_per_rep": [
+        0.7246084213256836,
+        0.5996658802032471,
+        0.5825091004371643,
+        0.6011577844619751,
+        0.642735481262207
+      ],
+      "sd_peak_velocity": 0.05727187916636467
+    },
+    "full_trial_pl__pos10_prego_1": {
+      "mean_peak_velocity": 0.7108616828918457,
+      "peak_vel_per_rep": [
+        0.602423906326294,
+        0.6921601295471191,
+        0.9257709980010986,
+        0.7343363761901855,
+        0.5996171236038208
+      ],
+      "sd_peak_velocity": 0.13343624770641327
+    },
+    "full_trial_pl__pos10_prego_1e-3": {
+      "mean_peak_velocity": 0.6383134722709656,
+      "peak_vel_per_rep": [
+        0.6691321134567261,
+        0.6414391994476318,
+        0.660498321056366,
+        0.5792104601860046,
+        0.6412874460220337
+      ],
+      "sd_peak_velocity": 0.03519139438867569
+    },
+    "full_trial_pl__pos10_prego_5e-2": {
+      "mean_peak_velocity": 0.6033415198326111,
+      "peak_vel_per_rep": [
+        0.5864850878715515,
+        0.5840604305267334,
+        0.6220820546150208,
+        0.5836467742919922,
+        0.6404333114624023
+      ],
+      "sd_peak_velocity": 0.026319153606891632
+    },
+    "full_trial_pl__prego_1": {
+      "mean_peak_velocity": 1.0867077112197876,
+      "peak_vel_per_rep": [
+        1.0921272039413452,
+        1.0690650939941406,
+        1.090368628501892,
+        1.0942751169204712,
+        1.0877022743225098
+      ],
+      "sd_peak_velocity": 0.010152461938560009
+    },
+    "full_trial_pl__prego_1e-3": {
+      "mean_peak_velocity": 1.0098621845245361,
+      "peak_vel_per_rep": [
+        0.9998783469200134,
+        1.0050116777420044,
+        1.0419037342071533,
+        0.982803463935852,
+        1.0197136402130127
+      ],
+      "sd_peak_velocity": 0.02224348857998848
+    },
+    "full_trial_pl__prego_5e-2": {
+      "mean_peak_velocity": 1.0862185955047607,
+      "peak_vel_per_rep": [
+        1.072150707244873,
+        1.0931565761566162,
+        1.1129522323608398,
+        1.0745933055877686,
+        1.0782403945922852
+      ],
+      "sd_peak_velocity": 0.017025917768478394
+    },
+    "lit__full_nojerk": {
+      "mean_peak_velocity": 0.9638093709945679,
+      "peak_vel_per_rep": [
+        0.953307032585144,
+        0.967888355255127,
+        0.9960670471191406,
+        0.9725954532623291,
+        0.9291889667510986
+      ],
+      "sd_peak_velocity": 0.02471468411386013
+    },
+    "lit__post_nojerk": {
+      "mean_peak_velocity": 0.9685674905776978,
+      "peak_vel_per_rep": [
+        0.9586642980575562,
+        0.9783675670623779,
+        0.9986948370933533,
+        0.9757442474365234,
+        0.9313666820526123
+      ],
+      "sd_peak_velocity": 0.025185203179717064
+    },
+    "post_go_pl__pos10": {
+      "mean_peak_velocity": 0.6524562835693359,
+      "peak_vel_per_rep": [
+        0.6650112867355347,
+        0.6148838996887207,
+        0.5387837886810303,
+        0.8320745229721069,
+        0.6115279197692871
+      ],
+      "sd_peak_velocity": 0.11003248393535614
+    }
+  },
+  "experiment": "3702f54",
+  "figure_kind": "peak_velocity_distributions_violin",
+  "inputs": [
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/f47abb1/runs/lit__post_nojerk/warmup_model.eqx",
+      "role": "warmup_model:lit__post_nojerk",
+      "sha256": "f059caf28ad8ab4745a78a3b5966277b44c21fe6e7e4234afc18e0a045c6725c"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/f47abb1/runs/lit__full_nojerk/warmup_model.eqx",
+      "role": "warmup_model:lit__full_nojerk",
+      "sha256": "5074ac928cbd4e3b035442bd89f5f91ebf8f6bff1f457f506881dd31de3642be"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/3702f54/runs/post_go_pl__pos10/warmup_model.eqx",
+      "role": "warmup_model:post_go_pl__pos10",
+      "sha256": "df92512ff8687795d993bdccdb384bb65a9495c0842e560e6b6ea283ea275fb2"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/3702f54/runs/full_trial_pl__pos10/warmup_model.eqx",
+      "role": "warmup_model:full_trial_pl__pos10",
+      "sha256": "136a88d9a83a27491b5f00a23b80990d934c6ce83c70032190d565542389f6ed"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/3702f54/runs/full_trial_pl__prego_1e-3/warmup_model.eqx",
+      "role": "warmup_model:full_trial_pl__prego_1e-3",
+      "sha256": "45755ef6698207988d4287571926e92981f8d2fb99e088eb5cabfa6e3a87e8cf"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/3702f54/runs/full_trial_pl__prego_5e-2/warmup_model.eqx",
+      "role": "warmup_model:full_trial_pl__prego_5e-2",
+      "sha256": "eecbee03350707df86061d5767e91a8762d2c63a4fa619e134f6ecfe62266f6c"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/3702f54/runs/full_trial_pl__prego_1/warmup_model.eqx",
+      "role": "warmup_model:full_trial_pl__prego_1",
+      "sha256": "9ab29e9dc3a5e6c3dec660bc36b5a228c3cd3179197fb8595f7a24873a51a651"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/3702f54/runs/full_trial_pl__pos10_prego_1e-3/warmup_model.eqx",
+      "role": "warmup_model:full_trial_pl__pos10_prego_1e-3",
+      "sha256": "302bb9351db0024bb68f0515c38886d8b1578c4732eef46411bdc774b6d15386"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/3702f54/runs/full_trial_pl__pos10_prego_5e-2/warmup_model.eqx",
+      "role": "warmup_model:full_trial_pl__pos10_prego_5e-2",
+      "sha256": "f1a9b64efa5c5c3499e5256549f2affb36fe1f9722fd9a79217090bc0bce1cc3"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/3702f54/runs/full_trial_pl__pos10_prego_1/warmup_model.eqx",
+      "role": "warmup_model:full_trial_pl__pos10_prego_1",
+      "sha256": "660f5183beda13a83cad143291cf5bcfdd98ba183ed46dbb0910eea8416f1a97"
+    }
+  ],
+  "plot_kwargs": {
+    "cells": [
+      "lit__post_nojerk",
+      "lit__full_nojerk",
+      "post_go_pl__pos10",
+      "full_trial_pl__pos10",
+      "full_trial_pl__prego_1e-3",
+      "full_trial_pl__prego_5e-2",
+      "full_trial_pl__prego_1",
+      "full_trial_pl__pos10_prego_1e-3",
+      "full_trial_pl__pos10_prego_5e-2",
+      "full_trial_pl__pos10_prego_1"
+    ],
+    "n_replicates": 5,
+    "ordering_note": "Baselines (f47abb1) at left",
+    "pert_scale": 0.0,
+    "sisu": 0.5
+  },
+  "timestamp": "2026-05-13T18:51:02.112886+00:00",
+  "transform": [
+    {
+      "kwargs": {
+        "pert_scale": 0.0,
+        "sisu": 0.5
+      },
+      "name": "eval_ensemble"
+    },
+    {
+      "kwargs": {},
+      "name": "compute_peak_forward_velocity"
+    },
+    {
+      "kwargs": {},
+      "name": "mean_over_trials_per_replicate"
+    }
+  ],
+  "versions": {
+    "equinox": "0.13.4",
+    "feedbax": "0.1.2",
+    "jax": "0.9.0",
+    "numpy": "2.4.1",
+    "plotly": "6.5.2",
+    "rlrmp": "0.1.0"
+  }
+}

@@ -20,13 +20,7 @@ Computes per-(cell x replicate):
   - Peak forward velocity (m/s)
   - Time-to-peak velocity (steps after go)
 
-Produces 5 HTML figures via `feedbax.plot.save_figure`:
-  1. forward_velocity_profiles
-  2. hold_drift_profiles
-  3. peak_velocity_distributions
-  4. summary_metrics
-  5. training_loss_per_term
-
+The five historical figures are now rendered from native manifest-bound FigureSpecs.
 Baselines from f47abb1 (`lit__post_nojerk`, `lit__full_nojerk`) are placed at the TOP
 of cell ordering / first columns for direct visual comparison.
 
@@ -41,15 +35,12 @@ from __future__ import annotations
 from rlrmp.analysis.multi_cell_driver import (
     args_namespace,
     compute_kinematics_per_replicate,
-    legacy_task_trainer_history_skeleton,
 )
-from rlrmp.viz.colors import hex_to_rgba as _color_rgba
 
 import argparse
 import json
 import warnings
 from pathlib import Path
-from typing import Any
 
 import equinox as eqx
 import jax
@@ -57,10 +48,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 import numpy as np
-import plotly.graph_objects as go
 from jax_cookbook import load_with_hyperparameters
-from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476 -- project-config routing
-from plotly.subplots import make_subplots
 
 from rlrmp.analysis.math.trial_alignment import (
     align_trials,
@@ -70,10 +58,6 @@ from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.paths import REPO_ROOT  # Bug: 8404108 — was __file__-relative
 from rlrmp.train.minimax_native import build_hps
 from rlrmp.train.task_model import setup_task_model_pair
-from rlrmp.viz.figures import (
-    build_forward_velocity_figure as canonical_forward_velocity_figure,
-    build_hold_drift_figure as canonical_hold_drift_figure,
-)
 
 warnings.filterwarnings("ignore")
 
@@ -279,32 +263,6 @@ def _count_replicates(model) -> int:
     return 1
 
 
-def load_warmup_history(label: str, artifact_base: Path) -> Any:
-    """Load `warmup_history.eqx` for per-cell loss-decomposition figure."""
-    experiment = CELL_ARTIFACT_EXPERIMENT[label]
-    cell_dir = artifact_base / experiment / "runs" / label
-    history_path = cell_dir / "warmup_history.eqx"
-    if not history_path.exists():
-        raise FileNotFoundError(f"warmup_history.eqx not found: {history_path}")
-
-    args = _make_args_namespace(label)
-    hps = build_hps(args)
-    pair = setup_task_model_pair(hps, key=jr.PRNGKey(42))
-
-    skeleton = legacy_task_trainer_history_skeleton(
-        loss_func=pair.task.loss_func,
-        n_batches=N_WARMUP_BATCHES,
-        n_replicates=N_REPLICATES,
-        ensembled=True,
-    )
-
-    with open(history_path, "rb") as f:
-        f.readline()  # skip the JSON hyperparameters header
-        history = eqx.tree_deserialise_leaves(f, skeleton)
-
-    return history
-
-
 # ---------------------------------------------------------------------------
 # Evaluation
 # ---------------------------------------------------------------------------
@@ -408,247 +366,6 @@ def compute_cell_stats(km: dict[str, np.ndarray]) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Figures
-# ---------------------------------------------------------------------------
-
-def make_forward_velocity_profile_figure(
-    cell_kms: dict[str, dict],
-    dt: float = 0.01,
-) -> go.Figure:
-    """Forward velocity time series faceted by cell, mean +/- SD across replicates."""
-    return canonical_forward_velocity_figure(
-        cell_kms,
-        labels=CELL_LABELS,
-        display_names=CELL_DISPLAY_NAMES,
-        colors=CELL_COLORS,
-        trace_mode="pooled",
-        title=(
-            "Forward velocity profiles (go-cue-aligned, pooled trial mean ± SD) — "
-            "pre-go matrix (3702f54)<br><sup>Each trial re-locked to its go cue (t=0). "
-            "Band is across pooled (replicate × trial) samples. Baselines at top. "
-            "Bug: 06f7faf.</sup>"
-        ),
-        width=1000,
-        height_per_cell=180,
-        vertical_spacing=0.025,
-        dt=dt,
-    )
-
-def make_hold_drift_figure(
-    cell_kms: dict[str, dict],
-    dt: float = 0.01,
-) -> go.Figure:
-    """Pre-go forward position (anticipation) per cell."""
-    return canonical_hold_drift_figure(
-        cell_kms,
-        labels=CELL_LABELS,
-        display_names=CELL_DISPLAY_NAMES,
-        colors=CELL_COLORS,
-        trace_mode="pooled",
-        title=(
-            "Pre-go forward position drift (anticipation, go-cue-aligned) — "
-            "pre-go matrix (3702f54)<br><sup>Pooled (replicate × trial) mean ± SD. "
-            "Red dotted = pre-go window onset (-200 ms). t=0 is the go cue per trial. "
-            "Baselines at top. Bug: 06f7faf.</sup>"
-        ),
-        width=1000,
-        height_per_cell=180,
-        vertical_spacing=0.025,
-        pre_go_window_steps=PRE_GO_WINDOW_STEPS,
-        dt=dt,
-    )
-
-def make_peak_velocity_figure(cell_stats: dict[str, dict]) -> go.Figure:
-    """Strip/violin plot of per-replicate peak forward velocity."""
-    fig = go.Figure()
-    for label in CELL_LABELS:
-        if label not in cell_stats:
-            continue
-        stats = cell_stats[label]
-        pvs = stats["peak_vel_per_rep"]
-        color = CELL_COLORS[label]
-        fig.add_trace(go.Violin(
-            y=pvs,
-            name=CELL_DISPLAY_NAMES[label],
-            box_visible=True,
-            meanline_visible=True,
-            points="all",
-            jitter=0.3,
-            pointpos=-1.2,
-            line_color=color,
-            fillcolor=_color_rgba(color, 0.35),
-            marker=dict(color=color, size=8),
-            showlegend=False,
-        ))
-
-    fig.update_layout(
-        title=(
-            "Peak forward velocity per replicate — pre-go matrix (3702f54)<br>"
-            "<sup>Baselines at left. f47abb1 sanity range: 0.7-1.0 m/s</sup>"
-        ),
-        yaxis_title="Peak forward velocity (m/s)",
-        xaxis_title="Cell",
-        width=1300,
-        height=550,
-        margin=dict(l=70, r=40, t=80, b=200),
-    )
-    # Reference lines (sanity range)
-    fig.add_hline(y=0.7, line=dict(color="grey", dash="dot", width=1), annotation_text="0.7 m/s", annotation_position="left")
-    fig.add_hline(y=1.0, line=dict(color="grey", dash="dot", width=1), annotation_text="1.0 m/s", annotation_position="left")
-
-    return fig
-
-
-def make_summary_metrics_figure(cell_stats: dict[str, dict]) -> go.Figure:
-    """Bar plot of key per-cell summary metrics: vel-RMSE, hold drift, pre-go RMS, peak vel, TTP."""
-    labels_present = [l for l in CELL_LABELS if l in cell_stats]
-    display_names = [CELL_DISPLAY_NAMES[l] for l in labels_present]
-    colors = [CELL_COLORS[l] for l in labels_present]
-
-    fig = make_subplots(
-        rows=2,
-        cols=2,
-        subplot_titles=(
-            "Within-cell pairwise velocity-RMSE (m/s)",
-            "Hold-period peak drift (mm) - whole hold",
-            "Pre-go forward drift RMS over [-200ms, 0] (mm)",
-            "Peak forward velocity (m/s, mean +/- SD)",
-        ),
-        vertical_spacing=0.18,
-        horizontal_spacing=0.10,
-    )
-
-    vel_rmse = [cell_stats[l]["within_cell_vel_rmse"] for l in labels_present]
-    hold_drift = [cell_stats[l]["mean_hold_drift_mm"] for l in labels_present]
-    hold_drift_sd = [cell_stats[l]["sd_hold_drift_mm"] for l in labels_present]
-    pre_go_rms = [cell_stats[l]["mean_pre_go_rms_mm"] for l in labels_present]
-    pre_go_rms_sd = [cell_stats[l]["sd_pre_go_rms_mm"] for l in labels_present]
-    peak_vel = [cell_stats[l]["mean_peak_velocity"] for l in labels_present]
-    peak_vel_sd = [cell_stats[l]["sd_peak_velocity"] for l in labels_present]
-
-    fig.add_trace(go.Bar(
-        x=display_names, y=vel_rmse, marker_color=colors,
-        text=[f"{v:.4f}" for v in vel_rmse], textposition="outside",
-    ), row=1, col=1)
-
-    fig.add_trace(go.Bar(
-        x=display_names, y=hold_drift,
-        error_y=dict(type="data", array=hold_drift_sd),
-        marker_color=colors,
-        text=[f"{v:.2f}" for v in hold_drift], textposition="outside",
-    ), row=1, col=2)
-
-    fig.add_trace(go.Bar(
-        x=display_names, y=pre_go_rms,
-        error_y=dict(type="data", array=pre_go_rms_sd),
-        marker_color=colors,
-        text=[f"{v:.2f}" for v in pre_go_rms], textposition="outside",
-    ), row=2, col=1)
-
-    fig.add_trace(go.Bar(
-        x=display_names, y=peak_vel,
-        error_y=dict(type="data", array=peak_vel_sd),
-        marker_color=colors,
-        text=[f"{v:.3f}" for v in peak_vel], textposition="outside",
-    ), row=2, col=2)
-
-    # Threshold line at 0.5 mm on the pre-go RMS panel
-    fig.add_hline(y=0.5, line=dict(color="red", dash="dash", width=1.5), row=2, col=1,
-                  annotation_text="0.5 mm target", annotation_position="top right")
-
-    fig.update_layout(
-        title=(
-            "Summary metrics per cell — pre-go matrix (3702f54)<br>"
-            "<sup>Baselines (f47abb1) anchored at left. All quantities absolute (not ratios).</sup>"
-        ),
-        width=1600,
-        height=900,
-        showlegend=False,
-        margin=dict(l=70, r=40, t=100, b=220),
-    )
-    fig.update_yaxes(title_text="Vel-RMSE (m/s)", row=1, col=1)
-    fig.update_yaxes(title_text="Hold drift (mm)", row=1, col=2)
-    fig.update_yaxes(title_text="Pre-go RMS (mm)", row=2, col=1)
-    fig.update_yaxes(title_text="Peak vel (m/s)", row=2, col=2)
-    for r in (1, 2):
-        for c in (1, 2):
-            fig.update_xaxes(tickangle=-45, row=r, col=c)
-
-    return fig
-
-
-def make_training_loss_per_term_figure(histories: dict[str, Any]) -> go.Figure:
-    """Per-term training loss decomposition for all loaded cells."""
-    all_term_keys: set[str] = set()
-    term_data: dict[str, dict[str, np.ndarray]] = {}
-    for label, history in histories.items():
-        flat = history.loss.flatten(apply_weights=True)
-        term_data[label] = {k: np.array(v) for k, v in flat.items()}
-        all_term_keys.update(term_data[label].keys())
-
-    term_keys = sorted(all_term_keys)
-    n_terms = len(term_keys)
-    if n_terms == 0:
-        return go.Figure()
-
-    n_cols = min(4, n_terms)
-    n_rows = (n_terms + n_cols - 1) // n_cols
-
-    fig = make_subplots(
-        rows=n_rows,
-        cols=n_cols,
-        subplot_titles=term_keys,
-        shared_xaxes=False,
-        vertical_spacing=0.12,
-        horizontal_spacing=0.07,
-    )
-
-    for term_idx, term_key in enumerate(term_keys):
-        row = term_idx // n_cols + 1
-        col = term_idx % n_cols + 1
-        for label in CELL_LABELS:
-            if label not in term_data or term_key not in term_data[label]:
-                continue
-            term_vals = term_data[label][term_key]  # (n_batches, n_replicates)
-            n_batches = term_vals.shape[0]
-            x = np.arange(n_batches)
-            mean = term_vals.mean(axis=1)
-
-            # Replace zeros with tiny floor so log-log is meaningful.
-            mean = np.where(mean > 0, mean, 1e-30)
-
-            color = CELL_COLORS[label]
-            display_name = CELL_DISPLAY_NAMES[label]
-            show_legend = (term_idx == 0)
-
-            fig.add_trace(go.Scatter(
-                x=x, y=mean, mode="lines",
-                name=display_name,
-                line=dict(color=color, width=1.5),
-                legendgroup=label,
-                showlegend=show_legend,
-            ), row=row, col=col)
-
-    fig.update_layout(
-        title=(
-            "Per-term weighted training loss vs batch — pre-go matrix (3702f54)<br>"
-            "<sup>Baselines (f47abb1) included. nn_output_pre_go term present only for cells with prego > 0. "
-            "Cross-schedule absolutes not comparable.</sup>"
-        ),
-        width=320 * n_cols + 240,
-        height=290 * n_rows + 120,
-        margin=dict(l=60, r=240, t=100, b=60),
-    )
-    for i in range(1, n_terms + 1):
-        r = (i - 1) // n_cols + 1
-        c = (i - 1) % n_cols + 1
-        fig.update_yaxes(type="log", row=r, col=c)
-        fig.update_xaxes(type="log", row=r, col=c)
-
-    return fig
-
-
-# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -671,11 +388,6 @@ def main():
         type=int,
         default=42,
     )
-    parser.add_argument(
-        "--skip-training-loss",
-        action="store_true",
-        help="Skip the per-term training-loss figure (slow to load histories).",
-    )
     args = parser.parse_args()
 
     artifact_base = args.artifact_base or (REPO_ROOT / "_artifacts")
@@ -688,13 +400,11 @@ def main():
     notes_dir.mkdir(parents=True, exist_ok=True)
 
     cell_stats: dict[str, dict] = {}
-    cell_kms: dict[str, dict] = {}
-    input_artifacts: list[dict] = []
 
     for label in CELL_LABELS:
         print(f"\n[{label}] Loading model ...", flush=True)
         try:
-            model, task, n_reps, eqx_path = load_cell_model(label, artifact_base)
+            model, task, n_reps, _eqx_path = load_cell_model(label, artifact_base)
         except FileNotFoundError as e:
             print(f"  SKIP: {e}")
             continue
@@ -705,8 +415,6 @@ def main():
             continue
 
         print(f"  Loaded. n_replicates={n_reps}")
-        input_artifacts.append({"path": str(eqx_path), "role": f"warmup_model:{label}"})
-
         try:
             trial_specs = build_zero_pert_trials(task, sisu=args.sisu)
             n_trials = trial_specs.intervene[PLANT_INTERVENOR_LABEL].scale.shape[0]
@@ -715,10 +423,9 @@ def main():
                 task, model, trial_specs,
                 key=jr.PRNGKey(args.eval_seed), n_replicates=n_reps,
             )
-            print(f"  Eval OK. Computing kinematics ...", flush=True)
+            print("  Eval OK. Computing kinematics ...", flush=True)
             km = compute_kinematics_per_replicate(states, trial_specs)
             stats = compute_cell_stats(km)
-            cell_kms[label] = km
             cell_stats[label] = stats
         except Exception as e:
             import traceback
@@ -738,216 +445,7 @@ def main():
         print("\nNo cells loaded -- aborting.")
         return
 
-    # -----------------------------------------------------------------------
-    # Figures
-    # -----------------------------------------------------------------------
-    print("\n--- Building figures ---")
-
-    # Figure 1: Forward velocity profiles
-    fig_fv = make_forward_velocity_profile_figure(cell_kms)
-    spec_fv = {
-        "figure_kind": "forward_velocity_profile_time_series_go_aligned",
-        "experiment": EXPERIMENT,
-        "inputs": input_artifacts,
-        "transform": [
-            {"name": "eval_ensemble", "kwargs": {"sisu": args.sisu, "pert_scale": 0.0}},
-            {"name": "forward_velocity_projection_onto_reach_axis", "kwargs": {}},
-            {"name": "align_trials_to_go_cue", "kwargs": {"pad": "nan"}},
-            {"name": "trim_to_full_support", "kwargs": {"min_coverage": 1.0}},
-            {"name": "pooled_trial_nanmean_with_sd_band", "kwargs": {}},
-        ],
-        "plot_kwargs": {
-            "cells": CELL_LABELS,
-            "n_replicates": N_REPLICATES,
-            "sisu": args.sisu,
-            "pert_scale": 0.0,
-            "dt": 0.01,
-            "ordering_note": "Baselines (lit__post_nojerk, lit__full_nojerk) at top",
-            "alignment": "go_cue_per_trial",
-            "band_semantic": "pooled_replicate_trial_sd",
-            "shared_yaxes": "all",
-        },
-        "fix_note": "Bug: 06f7faf — go-cue alignment fix + trim-to-full-support + shared y-axes across cells.",
-    }
-    fv_out = save_figure(
-        fig=fig_fv, spec=spec_fv,
-        package="rlrmp", experiment=EXPERIMENT, topic="forward_velocity_profiles",
-        extra_packages=["rlrmp"],
-    )
-    print(f"  forward_velocity_profiles spec: {fv_out['spec_path']}")
-    print(f"  forward_velocity_profiles HTML: {fv_out['render_path']}")
-
-    # Figure 2: Hold drift profiles
-    fig_hd = make_hold_drift_figure(cell_kms)
-    spec_hd = {
-        "figure_kind": "hold_drift_profile_pre_go_position_go_aligned",
-        "experiment": EXPERIMENT,
-        "inputs": input_artifacts,
-        "transform": [
-            {"name": "eval_ensemble", "kwargs": {"sisu": args.sisu, "pert_scale": 0.0}},
-            {"name": "forward_position_projection_onto_reach_axis", "kwargs": {}},
-            {"name": "align_trials_to_go_cue", "kwargs": {"pad": "nan"}},
-            {"name": "trim_to_full_support", "kwargs": {"min_coverage": 1.0}},
-            {"name": "pooled_trial_nanmean_with_sd_band", "kwargs": {}},
-            {"name": "clip_to_pre_go_window", "kwargs": {"window_steps": PRE_GO_WINDOW_STEPS}},
-        ],
-        "plot_kwargs": {
-            "cells": CELL_LABELS,
-            "n_replicates": N_REPLICATES,
-            "sisu": args.sisu,
-            "pert_scale": 0.0,
-            "dt": 0.01,
-            "pre_go_window_steps": PRE_GO_WINDOW_STEPS,
-            "ordering_note": "Baselines (lit__post_nojerk, lit__full_nojerk) at top",
-            "alignment": "go_cue_per_trial",
-            "band_semantic": "pooled_replicate_trial_sd",
-            "shared_yaxes": "all",
-        },
-        "fix_note": "Bug: 06f7faf — go-cue alignment fix + trim-to-full-support + shared y-axes across cells.",
-    }
-    hd_out = save_figure(
-        fig=fig_hd, spec=spec_hd,
-        package="rlrmp", experiment=EXPERIMENT, topic="hold_drift_profiles",
-        extra_packages=["rlrmp"],
-    )
-    print(f"  hold_drift_profiles spec: {hd_out['spec_path']}")
-    print(f"  hold_drift_profiles HTML: {hd_out['render_path']}")
-
-    # Figure 3: Peak velocity distributions
-    fig_pv = make_peak_velocity_figure(cell_stats)
-    spec_pv = {
-        "figure_kind": "peak_velocity_distributions_violin",
-        "experiment": EXPERIMENT,
-        "inputs": input_artifacts,
-        "transform": [
-            {"name": "eval_ensemble", "kwargs": {"sisu": args.sisu, "pert_scale": 0.0}},
-            {"name": "compute_peak_forward_velocity", "kwargs": {}},
-            {"name": "mean_over_trials_per_replicate", "kwargs": {}},
-        ],
-        "plot_kwargs": {
-            "cells": CELL_LABELS,
-            "n_replicates": N_REPLICATES,
-            "sisu": args.sisu,
-            "pert_scale": 0.0,
-            "ordering_note": "Baselines (f47abb1) at left",
-        },
-        "cell_stats": {
-            label: {
-                "mean_peak_velocity": stats["mean_peak_velocity"],
-                "sd_peak_velocity": stats["sd_peak_velocity"],
-                "peak_vel_per_rep": stats["peak_vel_per_rep"],
-            }
-            for label, stats in cell_stats.items()
-        },
-    }
-    pv_out = save_figure(
-        fig=fig_pv, spec=spec_pv,
-        package="rlrmp", experiment=EXPERIMENT, topic="peak_velocity_distributions",
-        extra_packages=["rlrmp"],
-    )
-    print(f"  peak_velocity_distributions spec: {pv_out['spec_path']}")
-    print(f"  peak_velocity_distributions HTML: {pv_out['render_path']}")
-
-    # Figure 4: Summary metrics
-    fig_sm = make_summary_metrics_figure(cell_stats)
-    spec_sm = {
-        "figure_kind": "summary_metrics_bar_panel",
-        "experiment": EXPERIMENT,
-        "inputs": input_artifacts,
-        "transform": [
-            {"name": "eval_ensemble", "kwargs": {"sisu": args.sisu, "pert_scale": 0.0}},
-            {"name": "compute_kinematics_per_replicate", "kwargs": {}},
-            {"name": "aggregate_per_cell_stats", "kwargs": {}},
-        ],
-        "plot_kwargs": {
-            "cells": CELL_LABELS,
-            "n_replicates": N_REPLICATES,
-            "sisu": args.sisu,
-            "pert_scale": 0.0,
-            "pre_go_window_steps": PRE_GO_WINDOW_STEPS,
-            "metrics_shown": [
-                "within_cell_vel_rmse",
-                "mean_hold_drift_mm",
-                "mean_pre_go_rms_mm",
-                "mean_peak_velocity",
-            ],
-            "ordering_note": "Baselines (f47abb1) at left",
-        },
-        "cell_stats": {
-            label: {
-                k: stats[k] for k in (
-                    "within_cell_vel_rmse",
-                    "mean_hold_drift_mm",
-                    "sd_hold_drift_mm",
-                    "mean_pre_go_rms_mm",
-                    "sd_pre_go_rms_mm",
-                    "mean_pre_go_drift_mm",
-                    "sd_pre_go_drift_mm",
-                    "mean_peak_velocity",
-                    "sd_peak_velocity",
-                    "mean_time_to_peak_steps",
-                    "sd_time_to_peak_steps",
-                )
-            }
-            for label, stats in cell_stats.items()
-        },
-    }
-    sm_out = save_figure(
-        fig=fig_sm, spec=spec_sm,
-        package="rlrmp", experiment=EXPERIMENT, topic="summary_metrics",
-        extra_packages=["rlrmp"],
-    )
-    print(f"  summary_metrics spec: {sm_out['spec_path']}")
-    print(f"  summary_metrics HTML: {sm_out['render_path']}")
-
-    # Figure 5: Training loss per term
-    if not args.skip_training_loss:
-        print("\n--- Loading warmup histories for per-term loss figure ---")
-        histories: dict[str, Any] = {}
-        history_inputs: list[dict] = []
-        for label in CELL_LABELS:
-            if label not in cell_stats:
-                continue
-            try:
-                history = load_warmup_history(label, artifact_base)
-                histories[label] = history
-                history_path = (
-                    artifact_base / CELL_ARTIFACT_EXPERIMENT[label] / "runs" / label / "warmup_history.eqx"
-                )
-                history_inputs.append({"path": str(history_path), "role": f"warmup_history:{label}"})
-                print(f"  loaded history: {label}")
-            except Exception as e:
-                print(f"  FAILED loading history for {label}: {type(e).__name__}: {e}")
-                continue
-
-        if histories:
-            fig_tl = make_training_loss_per_term_figure(histories)
-            spec_tl = {
-                "figure_kind": "training_loss_per_term_multiline",
-                "experiment": EXPERIMENT,
-                "inputs": history_inputs,
-                "transform": [
-                    {"name": "load_warmup_history_fbx", "kwargs": {"header_lines": 1}},
-                    {"name": "TermTree.flatten", "kwargs": {"apply_weights": True}},
-                    {"name": "mean_across_replicates", "kwargs": {"axis": 1}},
-                ],
-                "plot_kwargs": {
-                    "cells": CELL_LABELS,
-                    "n_replicates": N_REPLICATES,
-                    "n_warmup_batches": N_WARMUP_BATCHES,
-                    "note": (
-                        "nn_output_pre_go term present only for cells with prego > 0 "
-                        "(cells 3-8 of 3702f54). Baselines and prego=0 cells lack that term."
-                    ),
-                },
-            }
-            tl_out = save_figure(
-                fig=fig_tl, spec=spec_tl,
-                package="rlrmp", experiment=EXPERIMENT, topic="training_loss_per_term",
-                extra_packages=["rlrmp"],
-            )
-            print(f"  training_loss_per_term spec: {tl_out['spec_path']}")
-            print(f"  training_loss_per_term HTML: {tl_out['render_path']}")
+    # Figure rendering is declarative; this legacy analysis only computes the summary data.
 
     # -----------------------------------------------------------------------
     # Summary table + JSON

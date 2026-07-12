@@ -145,7 +145,6 @@ def test_multi_cell_members_are_thin_canonical_adapters() -> None:
     figure_members = tuple(
         (path, name, canonical)
         for path in (
-            "results/3702f54/scripts/analyse_pregomatrix.py",
             "results/b399efc/scripts/analyse_movement_ramp_matrix.py",
         )
         for name, canonical in (
