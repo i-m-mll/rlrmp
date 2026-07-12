@@ -18,7 +18,7 @@ from feedbax.training.spec_storage import (
     TrainingSpecStorageResult,
     emit_training_run_spec_storage,
 )
-from feedbax.orchestration.bundle import SchemaArtifactRef
+from feedbax.orchestration import SchemaArtifactRef
 from feedbax.contracts.manifest import StrictModel, sha256_file
 
 from rlrmp.runtime.checkpoint_fork_gate import register_rlrmp_training_methods

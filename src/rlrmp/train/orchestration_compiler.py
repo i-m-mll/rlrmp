@@ -6,8 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from feedbax.contracts.run_matrix import TRAINING_RUN_MATRIX_SPEC_SCHEMA_ID
-from feedbax.orchestration.assembly import CompiledRunSet
-from feedbax.orchestration.bundle import RowLaunchSpec
+from feedbax.orchestration import CompiledRunSet, RowLaunchSpec
 from feedbax.training.spec_storage import (
     TrainingRunIdentityAdapter,
     compile_training_run_matrix,

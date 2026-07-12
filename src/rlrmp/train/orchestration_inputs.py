@@ -6,8 +6,11 @@ import hashlib
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from feedbax.orchestration.assembly import AssemblyInputDeclaration
-from feedbax.orchestration.bundle import ImmutableInputDigest, ImmutableInputIdentity
+from feedbax.orchestration import (
+    AssemblyInputDeclaration,
+    ImmutableInputDigest,
+    ImmutableInputIdentity,
+)
 
 
 LOCATOR_SCHEME = "checkpoint-transaction"

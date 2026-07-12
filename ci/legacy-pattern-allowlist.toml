@@ -168,3 +168,13 @@ note = "Migration source_type only (ComponentMigration to Channel)."
 path = "src/rlrmp/train/cs_nominal_gru.py"
 owner = "1e6201e"
 note = "C&S GRU run-spec/training CLI; 1e6201e shrinks this to a spec adapter."
+
+[[argparse_training_entry_points]]
+path = "src/rlrmp/train/fixture_orchestration.py"
+owner = "158b580"
+note = "Test-only row process launched by the orchestrator lifecycle fixture."
+
+[[argparse_training_entry_points]]
+path = "src/rlrmp/train/orchestrated_row.py"
+owner = "158b580"
+note = "Production row process launched by the orchestrator from a bound launch packet."

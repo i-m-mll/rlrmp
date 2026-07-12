@@ -162,8 +162,7 @@ def execute_authored_training_intent(
     runpod_profile: Path | None = None,
 ) -> Any:
     """Execute through Feedbax's persisted ASSEMBLE-to-REGISTER lifecycle."""
-    from feedbax.orchestration import StageEngine
-    from feedbax.orchestration.conformance import build_core_check_registry
+    from feedbax.orchestration import StageEngine, build_core_check_registry
 
     active_controls = controls or LaunchRuntimeControls()
     _validate_execute_controls(launch, active_controls)
@@ -332,14 +331,12 @@ def build_orchestration_request(
     driver: str,
 ) -> tuple[Any, Any, Any]:
     """Build the durable request and RLRMP assembly dependencies."""
-    from feedbax.orchestration.assembly import (
+    from feedbax.orchestration import (
         AssemblyCompilerRegistry,
         AssemblyContext,
         AssemblyInputDeclaration,
-        CompilerIdentity,
-    )
-    from feedbax.orchestration.bundle import (
         BudgetPolicy,
+        CompilerIdentity,
         LaunchPolicy,
         SchemaArtifactRef,
     )
@@ -429,8 +426,7 @@ def _build_assembly_request(
     metadata: dict[str, Any] | None = None,
 ) -> Any:
     """Build a production request with an honest environment declaration."""
-    from feedbax.orchestration.assembly import RunAssemblyRequest
-    from feedbax.orchestration.bundle import EnvironmentDeclaration
+    from feedbax.orchestration import EnvironmentDeclaration, RunAssemblyRequest
 
     lockfile = repo_root / "uv.lock"
     lockfile_hashes = (

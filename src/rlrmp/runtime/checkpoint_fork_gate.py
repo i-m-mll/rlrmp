@@ -23,7 +23,7 @@ from feedbax.training.run_matrix import (
     fork_matrix_checkpoints,
     materialize_run_matrix,
 )
-from feedbax.training.checkpoint_custody import load_checkpoint_custody_documents
+from feedbax.training import load_checkpoint_custody_documents
 
 from rlrmp.runtime.lr_continuation import RlrmpLrContinuationReporter
 from rlrmp.runtime.adaptive_checkpoint_adapter import NominalToAdaptiveSlotAdapter

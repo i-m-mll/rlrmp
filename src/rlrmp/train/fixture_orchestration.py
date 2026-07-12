@@ -52,22 +52,28 @@ def fixture_method_ref() -> MethodRefSpec:
     return MethodRefSpec(package="rlrmp", name="orchestration_fixture", version="v1")
 
 
-def fixture_method_payload(*, scheduled: bool = False) -> MethodPayloadEnvelope:
+def fixture_method_payload(
+    *,
+    scheduled: bool = False,
+    learning_rate: float = 0.01,
+    weight_decay: float = 0.0,
+) -> MethodPayloadEnvelope:
     """Return a payload whose optimizer is on Feedbax's stock discovery path."""
+    optimizer_params = {"weight_decay": weight_decay}
     optimizer = (
         OptimizerSpec(
             type="adamw",
-            params={"weight_decay": 0.0},
+            params=optimizer_params,
             lr_schedule={
                 "origin": {"kind": "run_start"},
                 "kind": "constant",
-                "learning_rate_0": 0.01,
+                "learning_rate_0": learning_rate,
             },
         )
         if scheduled
         else OptimizerSpec(
             type="adamw",
-            params={"learning_rate": 0.01, "weight_decay": 0.0},
+            params={"learning_rate": learning_rate, **optimizer_params},
         )
     )
     payload = StandardSupervisedMethodPayload(optimizer=optimizer)
@@ -148,7 +154,16 @@ def register_fixture_method() -> None:
     )
 
 
-def fixture_training_run_spec(*, seed: int = 17, scheduled: bool = False) -> TrainingRunSpec:
+def fixture_training_run_spec(
+    *,
+    seed: int = 17,
+    scheduled: bool = False,
+    n_batches: int = 2,
+    batch_size: int = 1,
+    task_n_steps: int = 1,
+    target_value: tuple[float, ...] = (0.0,),
+    checkpoint_interval: int = 1,
+) -> TrainingRunSpec:
     """Return the tiny training spec used by lifecycle tests."""
     graph = {
         "nodes": {
@@ -167,14 +182,14 @@ def fixture_training_run_spec(*, seed: int = 17, scheduled: bool = False) -> Tra
     }
     return TrainingRunSpec(
         graph={"inline": graph},
-        task=TaskSpec(type="ToyTask", params={"n_steps": 1}),
-        training_config=TrainingConfig(n_batches=2, batch_size=1),
+        task=TaskSpec(type="ToyTask", params={"n_steps": task_n_steps}),
+        training_config=TrainingConfig(n_batches=n_batches, batch_size=batch_size),
         objective=ObjectiveSlotSpec(
             loss=LossTermSpec(
                 type="target_state",
                 label="target",
                 selector="port:gain.output",
-                target_value=[0.0],
+                target_value=list(target_value),
             )
         ),
         method_ref=fixture_method_ref(),
@@ -183,7 +198,7 @@ def fixture_training_run_spec(*, seed: int = 17, scheduled: bool = False) -> Tra
             method_contract=fixture_method_contract(),
             effective_phase=fixture_effective_phase_spec(),
         ),
-        checkpoint_progress={"checkpoint_interval": 1},
+        checkpoint_progress={"checkpoint_interval": checkpoint_interval},
         metadata={
             "seeds": {"fixture": seed},
             **(

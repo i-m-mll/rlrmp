@@ -12,7 +12,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from feedbax.contracts.training import TrainingRunSpec
-from feedbax.orchestration.bundle import ExecutionIdentityEnvelope
+from feedbax.orchestration import ExecutionIdentityEnvelope
 from feedbax.orchestration.events import RunEventEmitter
 
 

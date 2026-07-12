@@ -27,6 +27,12 @@ module = "feedbax.train"
 symbols = ["init_task_trainer_history"]
 reason = "Frozen historical result script; live training code has moved off TaskTrainer."
 
+[[known_in_flight]]
+path = "src/rlrmp/train/orchestration_capabilities.py"
+module = "feedbax.orchestration"
+symbols = ["conformance", "schedule_eval", "stages"]
+reason = "Issue 158b580 capability guards probe Lane-0 internals until the pinned Feedbax gains those discoveries."
+
 [[canonical_homes]]
 module = "feedbax"
 symbols = [
@@ -283,12 +289,22 @@ module = "feedbax.contracts.run_matrix"
 symbols = ["TrainingRunMatrixSpec"]
 
 [[canonical_homes]]
+module = "feedbax.contracts.run_matrix"
+symbols = ["TRAINING_RUN_MATRIX_SPEC_SCHEMA_ID"]
+reason = "Issue 158b580 registers the orchestration compiler against the governed matrix schema."
+
+[[canonical_homes]]
 module = "feedbax.contracts.selection"
 symbols = ["ManifestPredicate"]
 
 [[canonical_homes]]
 module = "feedbax.contracts.spec_storage"
 symbols = ["build_resolved_semantics_snapshot", "store_canonical_json_artifact"]
+
+[[canonical_homes]]
+module = "feedbax.contracts.spec_storage"
+symbols = ["training_spec_canonical_bytes"]
+reason = "Issue 158b580 digest-verifies the canonical row payload before execution."
 
 [[canonical_homes]]
 module = "feedbax.contracts.training"
@@ -318,6 +334,15 @@ symbols = [
   "standard_supervised_method_payload",
   "standard_supervised_method_ref",
 ]
+
+[[canonical_homes]]
+module = "feedbax.contracts.training"
+symbols = [
+  "LossTermSpec",
+  "StandardSupervisedMethodPayload",
+  "standard_supervised_update_kernels",
+]
+reason = "Issue 158b580's tiny lifecycle fixture uses stock supervised method contracts."
 
 [[canonical_homes]]
 module = "feedbax.contracts.value_schema"
@@ -361,8 +386,52 @@ module = "feedbax.training.schedule_clocks"
 symbols = ["resolve_schedule_window"]
 
 [[canonical_homes]]
+module = "feedbax.orchestration"
+symbols = [
+  "AssemblyCompilerRegistry",
+  "AssemblyContext",
+  "AssemblyInputDeclaration",
+  "BudgetPolicy",
+  "CompiledRunSet",
+  "CompilerIdentity",
+  "EnvironmentDeclaration",
+  "ExecutionIdentityEnvelope",
+  "ImmutableInputDigest",
+  "ImmutableInputIdentity",
+  "LaunchPolicy",
+  "LocalOrchestrationDriver",
+  "RowLaunchSpec",
+  "RunAssemblyRequest",
+  "RunBundle",
+  "RunRowSpec",
+  "RunSetState",
+  "SchemaArtifactRef",
+  "StageEngine",
+  "build_core_check_registry",
+]
+reason = "Issue 158b580 uses Feedbax's public facade for ASSEMBLE-through-REGISTER execution."
+
+[[canonical_homes]]
 module = "feedbax.orchestration.events"
 symbols = ["RunEventEmitter"]
+
+[[canonical_homes]]
+module = "feedbax.orchestration.schedule_eval"
+symbols = [
+  "evaluate_schedule_samples",
+  "require_schedule_context",
+  "schedule_sample_steps",
+]
+reason = "Issue 158b580 projects governed schedule diagnostics through Feedbax's schedule API."
+
+[[canonical_homes]]
+module = "feedbax.orchestration.drivers.runpod"
+symbols = [
+  "RunPodDriverConfig",
+  "RunPodOrchestrationDriver",
+  "RunPodTransport",
+]
+reason = "Issue 158b580 composes the RunPod driver and transport for canonical row-packet staging."
 
 [[canonical_homes]]
 module = "feedbax.training.run_matrix"
@@ -599,6 +668,16 @@ symbols = [
 [[canonical_homes]]
 module = "feedbax.training.spec_storage"
 symbols = ["TrainingSpecStorageResult", "emit_training_run_spec_storage"]
+
+[[canonical_homes]]
+module = "feedbax.training.spec_storage"
+symbols = ["TrainingRunIdentityAdapter", "compile_training_run_matrix"]
+reason = "Issue 158b580 delegates matrix semantics and identity binding to Feedbax storage APIs."
+
+[[canonical_homes]]
+module = "feedbax.training.interruption"
+symbols = ["CancellationDecision"]
+reason = "Issue 158b580's tiny lifecycle fixture exercises stock non-certifying cancellation."
 
 [[canonical_homes]]
 module = "feedbax.training.loss"
