@@ -1,4 +1,4 @@
-"""Validation-selected checkpoint recovery for C&S GRU pilot artifacts."""
+"""Checkpoint-selection capabilities for registered rlrmp evaluations."""
 
 from __future__ import annotations
 
@@ -41,14 +41,11 @@ from rlrmp.train.cs_perturbation_training import (
     target_relative_target_support_config,
     target_relative_validation_bins,
 )
-from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path, run_spec_path
+from rlrmp.paths import REPO_ROOT, resolve_run_artifact_path, run_spec_path
 from rlrmp.runtime.run_spec_access import require_run_seed
 from rlrmp.runtime.run_specs import resolve_run_record
 
 
-LEGACY_SPARSE_HISTORY_SCHEMA_VERSION = "rlrmp.validation_selected_gru_checkpoints.v1"
-LEGACY_FIXED_BANK_SCHEMA_VERSION = "rlrmp.fixed_bank_gru_checkpoint_rescore.v1"
-LEGACY_DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION = "rlrmp.delayed_reach_eval_bank.v2"
 CHECKPOINT_SELECTION_BANK_SCHEMA_ID = "feedbax.manifest.checkpoint_selection.bank"
 DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION = FEEDBAX_MANIFEST_SCHEMA_VERSION
 feedbax_manifest = importlib.import_module("feedbax.contracts.manifest")
@@ -62,10 +59,6 @@ CheckpointSelectionSpec = feedbax_manifest.CheckpointSelectionSpec
 checkpoint_selection_manifest_id = feedbax_manifest.checkpoint_selection_manifest_id
 SPARSE_HISTORY_CHECKPOINT_POLICY = "validation_selected_per_replicate"
 FIXED_BANK_CHECKPOINT_POLICY = "fixed_bank_rescored_per_replicate"
-DEFAULT_FIXED_BANK_MANIFEST_NAME = "fixed_bank_rescored_checkpoints.json"
-DEFAULT_DELAYED_REACH_FIXED_BANK_MANIFEST_NAME = (
-    "delayed_reach_fixed_bank_rescored_checkpoints.json"
-)
 DEFAULT_DELAYED_REACH_GO_CUE_STEPS = tuple(
     range(DEFAULT_DELAYED_GO_CUE_MIN_STEP, DEFAULT_DELAYED_GO_CUE_MAX_STEP + 1)
 )
@@ -205,7 +198,6 @@ class DelayedReachEvalBankSpec:
         return {
             "schema_id": CHECKPOINT_SELECTION_BANK_SCHEMA_ID,
             "schema_version": FEEDBAX_MANIFEST_SCHEMA_VERSION,
-            "legacy_schema_version": LEGACY_DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION,
             "bank_identity": self.bank_identity,
             "bank_family": "delayed_reach_fixed_eval_bank",
             "kind": self.bank_role,
@@ -484,28 +476,32 @@ def delayed_reach_fixed_rescore_bank_spec(
     )
 
 
-def materialize_validation_selected_checkpoint_manifest(
+def build_validation_checkpoint_selection_manifest(
     *,
     experiment: str,
     run_ids: Sequence[str],
     repo_root: Path = REPO_ROOT,
-    output_path: Path | None = None,
+    preferred_manifest: CheckpointSelectionManifest | None = None,
     preferred_manifest_path: Path | None = None,
     checkpoint_selection_mode: CheckpointSelectionMode = "sparse_history",
-) -> dict[str, Any]:
-    """Write a JSON manifest of recoverable validation-selected checkpoints.
+) -> CheckpointSelectionManifest:
+    """Build a Feedbax manifest of recoverable validation-selected checkpoints.
 
     The default mode selects from sparse training-history validation records.
     Callers that deliberately want a supplied fixed-bank rescore manifest must
     pass ``checkpoint_selection_mode="fixed_bank_manifest"``.
     """
 
-    preferred_manifest = _resolve_checkpoint_selection_manifest(
+    if preferred_manifest is None and preferred_manifest_path is not None:
+        preferred_manifest = load_materialized_fixed_bank_manifest(
+            manifest_path=preferred_manifest_path
+        )
+    resolved_manifest = _resolve_checkpoint_selection_manifest(
         checkpoint_selection_mode=checkpoint_selection_mode,
         experiment=experiment,
         run_ids=run_ids,
         repo_root=repo_root,
-        preferred_manifest_path=preferred_manifest_path,
+        preferred_manifest=preferred_manifest,
     )
     selections = {
         run_id: [
@@ -514,156 +510,135 @@ def materialize_validation_selected_checkpoint_manifest(
                 experiment=experiment,
                 run_id=run_id,
                 repo_root=repo_root,
-                preferred_manifest=preferred_manifest,
+                preferred_manifest=resolved_manifest,
                 checkpoint_selection_mode=checkpoint_selection_mode,
             )
         ]
         for run_id in run_ids
     }
-    manifest = (
-        fixed_bank_manifest_for_runs(preferred_manifest, run_ids=run_ids, repo_root=repo_root)
-        if preferred_manifest is not None
-        else None
+    source = (
+        _fixed_bank_selection_source_from_manifest(resolved_manifest)
+        if resolved_manifest is not None
+        else "sparse_history_fallback"
     )
-    if manifest is None:
-        manifest = {
-            "schema_version": LEGACY_SPARSE_HISTORY_SCHEMA_VERSION,
-            "issue": experiment,
-            "checkpoint_policy": SPARSE_HISTORY_CHECKPOINT_POLICY,
-            "selection_source": "sparse_history_fallback",
-            "selection_policy": (
-                "per-replicate checkpoint selected by minimum positive rollout validation "
-                "objective among available durable checkpoints; analytical action and I/O "
-                "metrics are audit-only"
-            ),
-            "history_validation_log_note": (
-                "Validation history contains sparse positive records and zero padding. "
-                "Durable models are only available at numbered checkpoints, so each "
-                "checkpoint is scored by the most recent positive validation record at "
-                "or before that checkpoint."
-            ),
-            "runs": selections,
-        }
-    else:
-        manifest = manifest | {"runs": selections}
-    output_path = output_path or (
-        repo_root / "results" / experiment / "notes" / "validation_selected_checkpoints.json"
-    )
-    write_checkpoint_selection_manifest_from_legacy_payload(
-        manifest,
-        output_path=output_path,
+    return _checkpoint_selection_manifest_from_rows(
+        experiment=experiment,
+        checkpoint_policy=(
+            FIXED_BANK_CHECKPOINT_POLICY
+            if resolved_manifest is not None
+            else SPARSE_HISTORY_CHECKPOINT_POLICY
+        ),
+        selection_source=source,
+        selections=selections,
         repo_root=repo_root,
+        bank=(resolved_manifest.bank if resolved_manifest is not None else None),
     )
-    return manifest
 
 
-def plan_fixed_bank_checkpoint_rescore(
+def plan_fixed_bank_checkpoint_selection(
     *,
     experiment: str,
     run_ids: Sequence[str],
     validation_bank: FixedValidationBankSpec,
     repo_root: Path = REPO_ROOT,
-    output_path: Path | None = None,
-) -> dict[str, Any]:
-    """Return a fixed-bank rescore manifest plan without loading model checkpoints."""
+) -> CheckpointSelectionSpec:
+    """Return a Feedbax fixed-bank selection spec without loading checkpoints."""
 
-    checkpoint_lists = {
-        run_id: [
+    checkpoint_lists = {}
+    for run_id in run_ids:
+        artifact_dir = repo_root / "_artifacts" / experiment / "runs" / run_id
+        available_batches = available_checkpoint_batches(artifact_dir)
+        if not available_batches:
+            checkpoint_lists[run_id] = []
+            continue
+        run_spec = resolve_run_record(experiment, run_id, repo_root=repo_root)
+        checkpoint_lists[run_id] = [
             {
+                "replicate": replicate,
                 "checkpoint_batches": batches,
                 "checkpoint_path": _repo_relative(
-                    checkpoint_path_for_batches(
-                        repo_root / "_artifacts" / experiment / "runs" / run_id,
-                        batches,
-                    ),
+                    checkpoint_path_for_batches(artifact_dir, batches),
                     repo_root=repo_root,
                 ),
             }
-            for batches in available_checkpoint_batches(
-                repo_root / "_artifacts" / experiment / "runs" / run_id
-            )
+            for replicate in range(_n_replicates_from_run_spec(run_spec))
+            for batches in available_batches
         ]
-        for run_id in run_ids
-    }
-    output_path = output_path or fixed_bank_manifest_path(experiment, repo_root=repo_root)
-    return {
-        "schema_version": LEGACY_FIXED_BANK_SCHEMA_VERSION,
+    payload = {
         "issue": experiment,
         "checkpoint_policy": FIXED_BANK_CHECKPOINT_POLICY,
         "selection_source": _fixed_bank_selection_source(validation_bank),
-        "materialization_status": "planned",
         "validation_bank": validation_bank.to_json(),
-        "validation_role": (validation_bank.validation_role or "fixed_bank_rollout_validation"),
-        "selection_metric": (
-            validation_bank.selection_metric or "aggregate_rollout_validation_objective"
-        ),
-        "nominal_quality_role": (validation_bank.nominal_quality_role or "reported_sidecar"),
+        "validation_role": validation_bank.validation_role or "fixed_bank_rollout_validation",
+        "selection_metric": validation_bank.selection_metric
+        or "aggregate_rollout_validation_objective",
+        "nominal_quality_role": validation_bank.nominal_quality_role or "reported_sidecar",
         "checkpoint_lists": checkpoint_lists,
-        "output_path": _repo_relative(output_path, repo_root=repo_root),
-        "selection_policy": (
-            "per-replicate checkpoint selected by minimum rollout validation objective "
-            "on the declared fixed validation bank; analytical action, I/O, perturbation, "
-            "and objective-comparator metrics are audit-only"
-        ),
     }
+    return _checkpoint_selection_spec(payload, issue=experiment, repo_root=repo_root)
 
 
-def materialize_fixed_bank_checkpoint_rescore_manifest(
+def build_fixed_bank_checkpoint_selection_manifest(
     *,
     experiment: str,
     run_ids: Sequence[str],
     validation_bank: FixedValidationBankSpec,
     scorer: CheckpointScorer | None = None,
     repo_root: Path = REPO_ROOT,
-    output_path: Path | None = None,
-) -> dict[str, Any]:
-    """Materialize or plan a fixed-bank checkpoint rescore manifest.
+) -> CheckpointSelectionManifest:
+    """Build a fixed-bank Feedbax checkpoint-selection manifest.
 
     The scorer receives ``(run_id, replicate, checkpoint_batches, checkpoint_path,
     run_spec, validation_bank)`` and must return the rollout validation objective
     for that checkpoint on the fixed bank. When no scorer is supplied, this
-    writes an explicit ``not_materialized`` manifest that downstream postrun
-    materialization can identify and fall back from.
+    returns an explicit failed manifest; no implicit filesystem path or direct
+    writer is used.
     """
 
-    plan = plan_fixed_bank_checkpoint_rescore(
+    spec = plan_fixed_bank_checkpoint_selection(
         experiment=experiment,
         run_ids=run_ids,
         validation_bank=validation_bank,
         repo_root=repo_root,
-        output_path=output_path,
     )
-    output_path = output_path or fixed_bank_manifest_path(experiment, repo_root=repo_root)
     if scorer is None:
-        manifest = plan | {
-            "materialization_status": "not_materialized",
-            "not_materialized_reason": "no_fixed_bank_checkpoint_scorer_supplied",
-            "fallback_checkpoint_policy": SPARSE_HISTORY_CHECKPOINT_POLICY,
-            "runs": {},
-        }
-    else:
-        manifest = plan | {
-            "materialization_status": "materialized",
-            "runs": {
-                run_id: [
-                    selection.to_json(repo_root=repo_root)
-                    for selection in score_fixed_bank_checkpoints_for_run(
-                        experiment=experiment,
-                        run_id=run_id,
-                        validation_bank=validation_bank,
-                        scorer=scorer,
-                        repo_root=repo_root,
-                    )
-                ]
-                for run_id in run_ids
-            },
-        }
-    write_checkpoint_selection_manifest_from_legacy_payload(
-        manifest,
-        output_path=output_path,
+        return CheckpointSelectionManifest(
+            id=checkpoint_selection_manifest_id(spec),
+            status="failed",
+            selection_status="failed",
+            failure_reason="no_fixed_bank_checkpoint_scorer_supplied",
+            selection_spec=spec_payload(
+                "CheckpointSelectionSpec", spec.model_dump(mode="json", exclude_none=True)
+            ),
+            scorer=spec.scorer,
+            bank=spec.bank,
+            fallback_allowed=False,
+            inputs=spec.inputs,
+            selections=[],
+            metadata={"rlrmp_issue": experiment, "checkpoint_policy": FIXED_BANK_CHECKPOINT_POLICY},
+        )
+    selections = {
+        run_id: [
+            selection.to_json(repo_root=repo_root)
+            for selection in score_fixed_bank_checkpoints_for_run(
+                experiment=experiment,
+                run_id=run_id,
+                validation_bank=validation_bank,
+                scorer=scorer,
+                repo_root=repo_root,
+            )
+        ]
+        for run_id in run_ids
+    }
+    return _checkpoint_selection_manifest_from_rows(
+        experiment=experiment,
+        checkpoint_policy=FIXED_BANK_CHECKPOINT_POLICY,
+        selection_source=_fixed_bank_selection_source(validation_bank),
+        selections=selections,
         repo_root=repo_root,
+        bank=spec.bank,
+        spec=spec,
     )
-    return manifest
 
 
 def score_fixed_bank_checkpoints_for_run(
@@ -727,7 +702,7 @@ def select_validation_checkpoints_for_run(
     experiment: str,
     run_id: str,
     repo_root: Path = REPO_ROOT,
-    preferred_manifest: Mapping[str, Any] | None = None,
+    preferred_manifest: CheckpointSelectionManifest | None = None,
     preferred_manifest_path: Path | None = None,
     checkpoint_selection_mode: CheckpointSelectionMode = "sparse_history",
 ) -> list[ReplicateCheckpointSelection]:
@@ -740,10 +715,8 @@ def select_validation_checkpoints_for_run(
 
     effective_selection_mode = checkpoint_selection_mode
     effective_manifest = preferred_manifest
-    if effective_manifest is None:
+    if effective_manifest is None and preferred_manifest_path is not None:
         effective_manifest = load_materialized_fixed_bank_manifest(
-            experiment=experiment,
-            repo_root=repo_root,
             manifest_path=preferred_manifest_path,
         )
     if effective_selection_mode == "sparse_history" and effective_manifest is not None:
@@ -768,11 +741,10 @@ def select_validation_checkpoints_for_run(
         run_ids=(run_id,),
         repo_root=repo_root,
         preferred_manifest=effective_manifest,
-        preferred_manifest_path=preferred_manifest_path,
     )
-    if manifest is not None and run_id in manifest.get("runs", {}):
+    if manifest is not None and run_id in checkpoint_selection_rows(manifest):
         return selections_from_manifest_run(
-            manifest["runs"][run_id],
+            manifest,
             experiment=experiment,
             run_id=run_id,
             repo_root=repo_root,
@@ -852,7 +824,7 @@ def load_validation_selected_checkpoint_model(
     experiment: str,
     run_id: str,
     run_spec: Mapping[str, Any],
-    preferred_manifest: Mapping[str, Any] | None = None,
+    preferred_manifest: CheckpointSelectionManifest | None = None,
     preferred_manifest_path: Path | None = None,
     checkpoint_selection_mode: CheckpointSelectionMode = "sparse_history",
     repo_root: Path = REPO_ROOT,
@@ -1085,45 +1057,14 @@ def checkpoint_path_for_batches(artifact_dir: Path, completed_batches: int) -> P
     )
 
 
-def fixed_bank_manifest_path(experiment: str, *, repo_root: Path = REPO_ROOT) -> Path:
-    """Return the default fixed-bank checkpoint rescore manifest path."""
-
-    return repo_root / "results" / experiment / "notes" / DEFAULT_FIXED_BANK_MANIFEST_NAME
-
-
-def write_checkpoint_selection_manifest_from_legacy_payload(
+def _checkpoint_selection_spec(
     payload: Mapping[str, Any],
     *,
-    output_path: Path,
-    repo_root: Path = REPO_ROOT,
-) -> CheckpointSelectionManifest:
-    """Validate and write a Feedbax checkpoint-selection manifest.
-
-    ``payload`` is the pre-Feedbax rlrmp view retained for in-process callers and
-    legacy consumers. The durable file written by this helper is the Feedbax
-    custody model.
-    """
-
-    manifest = _feedbax_checkpoint_selection_manifest_from_legacy_payload(
-        payload,
-        output_path=output_path,
-        repo_root=repo_root,
-    )
-    mkdir_p(output_path.parent)
-    output_path.write_text(
-        manifest.model_dump_json(indent=2, exclude_none=True) + "\n",
-        encoding="utf-8",
-    )
-    return manifest
-
-
-def _feedbax_checkpoint_selection_manifest_from_legacy_payload(
-    payload: Mapping[str, Any],
-    *,
-    output_path: Path,
+    issue: str,
     repo_root: Path,
-) -> CheckpointSelectionManifest:
-    issue = str(payload.get("issue") or "unknown")
+) -> CheckpointSelectionSpec:
+    """Build the canonical Feedbax spec from capability inputs."""
+
     checkpoint_policy = str(payload.get("checkpoint_policy") or SPARSE_HISTORY_CHECKPOINT_POLICY)
     selection_source = str(payload.get("selection_source") or checkpoint_policy)
     selection_metric = str(
@@ -1139,14 +1080,14 @@ def _feedbax_checkpoint_selection_manifest_from_legacy_payload(
         + _plan_candidate_checkpoints(payload, issue=issue, repo_root=repo_root)
     )
     inputs = _checkpoint_selection_inputs(payload, issue=issue, repo_root=repo_root)
-    spec = CheckpointSelectionSpec(
+    return CheckpointSelectionSpec(
         selection_type=selection_source,
         scorer=scorer,
         bank=bank,
         group_by="replicate",
         candidate_checkpoints=candidate_checkpoints,
         inputs=inputs,
-        fallback_allowed=bool(payload.get("fallback_checkpoint_policy")),
+        fallback_allowed=False,
         params={
             "checkpoint_policy": checkpoint_policy,
             "selection_policy": payload.get("selection_policy"),
@@ -1154,60 +1095,70 @@ def _feedbax_checkpoint_selection_manifest_from_legacy_payload(
             "validation_role": payload.get("validation_role"),
             "nominal_quality_role": payload.get("nominal_quality_role"),
         },
-        metadata={
-            "rlrmp_issue": issue,
-            "output_path": _repo_relative(output_path, repo_root=repo_root),
-            "legacy_schema_version": payload.get("schema_version"),
-            "materialization_status": payload.get("materialization_status"),
-        },
+        metadata={"rlrmp_issue": issue},
     )
+
+
+def _checkpoint_selection_manifest_from_rows(
+    *,
+    experiment: str,
+    checkpoint_policy: str,
+    selection_source: str,
+    selections: Mapping[str, Sequence[Mapping[str, Any]]],
+    repo_root: Path,
+    bank: CheckpointSelectionBank | None = None,
+    spec: CheckpointSelectionSpec | None = None,
+) -> CheckpointSelectionManifest:
+    """Build a canonical Feedbax manifest from scored replicate rows."""
+
+    payload = {
+        "issue": experiment,
+        "checkpoint_policy": checkpoint_policy,
+        "selection_source": selection_source,
+        "selection_metric": "validation_objective",
+        "runs": selections,
+    }
+    effective_spec = spec or _checkpoint_selection_spec(
+        payload, issue=experiment, repo_root=repo_root
+    )
+    if bank is not None and spec is None:
+        effective_spec = effective_spec.model_copy(update={"bank": bank})
+    groups = _checkpoint_selection_groups(payload, issue=experiment, repo_root=repo_root)
     selected = any(group.selected_checkpoint is not None for group in groups)
     failure_reason = _checkpoint_selection_failure_reason(payload, selected=selected)
-    selection_status: Literal["selected", "fallback_selected", "failed"] = (
-        "selected" if selected else "failed"
-    )
     return CheckpointSelectionManifest(
-        id=checkpoint_selection_manifest_id(spec),
+        id=checkpoint_selection_manifest_id(effective_spec),
         status="completed" if selected else "failed",
-        selection_status=selection_status,
+        selection_status="selected" if selected else "failed",
         failure_reason=failure_reason,
         selection_spec=spec_payload(
             "CheckpointSelectionSpec",
-            spec.model_dump(mode="json", exclude_none=True),
+            effective_spec.model_dump(mode="json", exclude_none=True),
         ),
-        scorer=scorer,
-        bank=bank,
-        fallback_allowed=spec.fallback_allowed,
-        inputs=inputs,
+        scorer=effective_spec.scorer,
+        bank=effective_spec.bank,
+        fallback_allowed=effective_spec.fallback_allowed,
+        inputs=effective_spec.inputs,
         selections=groups,
         summary_metrics={
-            "n_runs": len(payload.get("runs", {}) or {}),
+            "n_runs": len(selections),
             "n_selected_checkpoints": sum(
                 1 for group in groups if group.selected_checkpoint is not None
             ),
         },
         metadata={
-            "rlrmp_legacy_view": _json_ready(dict(payload)),
-            "rlrmp_issue": issue,
+            "rlrmp_issue": experiment,
             "checkpoint_policy": checkpoint_policy,
             "selection_source": selection_source,
-            "materialization_status": payload.get("materialization_status"),
         },
     )
 
 
-def _legacy_payload_from_feedbax_checkpoint_selection_manifest(
+def checkpoint_selection_rows(
     manifest: CheckpointSelectionManifest,
-) -> dict[str, Any]:
-    legacy = dict(manifest.metadata.get("rlrmp_legacy_view") or {})
-    legacy.setdefault("schema_version", manifest.schema_version)
-    legacy.setdefault("issue", manifest.metadata.get("rlrmp_issue"))
-    legacy.setdefault("checkpoint_policy", manifest.metadata.get("checkpoint_policy"))
-    legacy.setdefault("selection_source", manifest.metadata.get("selection_source"))
-    legacy.setdefault("materialization_status", manifest.metadata.get("materialization_status"))
-    if manifest.selection_status == "failed":
-        legacy.setdefault("not_materialized_reason", manifest.failure_reason)
-        legacy.setdefault("materialization_status", "not_materialized")
+) -> dict[str, list[dict[str, Any]]]:
+    """Return selected rows grouped by run for presentation and model loading."""
+
     runs: dict[str, list[dict[str, Any]]] = {}
     for group in manifest.selections:
         if group.selected_checkpoint is None:
@@ -1216,27 +1167,19 @@ def _legacy_payload_from_feedbax_checkpoint_selection_manifest(
         if not row:
             row = _selection_row_from_feedbax_group(group, manifest)
         runs.setdefault(str(group.run_id), []).append(row)
-    if runs:
-        legacy["runs"] = {
-            run_id: sorted(rows, key=lambda row: int(row.get("replicate", 0)))
-            for run_id, rows in runs.items()
-        }
-    return legacy
+    return {
+        run_id: sorted(rows, key=lambda row: int(row.get("replicate", 0)))
+        for run_id, rows in runs.items()
+    }
 
 
-def load_checkpoint_selection_legacy_payload(path: Path | str) -> dict[str, Any]:
-    """Load old or Feedbax checkpoint-selection bytes as the rlrmp legacy view."""
+def load_checkpoint_selection_manifest(path: Path | str) -> CheckpointSelectionManifest:
+    """Load an explicit Feedbax checkpoint-selection manifest path."""
 
-    payload_path = Path(path)
-    payload = json.loads(payload_path.read_text(encoding="utf-8"))
-    if not isinstance(payload, Mapping):
-        raise TypeError(f"Checkpoint-selection manifest must be a JSON object: {payload_path}")
-    if payload.get("kind") == "CheckpointSelectionManifest":
-        manifest = load_manifest(payload_path)
-        if not isinstance(manifest, CheckpointSelectionManifest):
-            raise TypeError(f"Expected CheckpointSelectionManifest in {payload_path}")
-        return _legacy_payload_from_feedbax_checkpoint_selection_manifest(manifest)
-    return dict(payload)
+    manifest = load_manifest(path)
+    if not isinstance(manifest, CheckpointSelectionManifest):
+        raise TypeError(f"Expected CheckpointSelectionManifest in {path}")
+    return manifest
 
 
 def _checkpoint_scorer_identity(
@@ -1492,7 +1435,9 @@ def _checkpoint_selection_inputs(
     issue: str,
     repo_root: Path,
 ) -> list[ParentRef]:
-    runs = payload.get("runs", {})
+    runs = payload.get("runs")
+    if not isinstance(runs, Mapping):
+        runs = payload.get("checkpoint_lists", {})
     run_ids = tuple(str(run_id) for run_id in runs) if isinstance(runs, Mapping) else ()
     refs = [
         ParentRef(
@@ -1577,63 +1522,18 @@ def _repo_uri(path: str | Path | None) -> str | None:
 
 def load_materialized_fixed_bank_manifest(
     *,
-    experiment: str,
-    repo_root: Path = REPO_ROOT,
-    manifest_path: Path | None = None,
-) -> dict[str, Any] | None:
-    """Load a fixed-bank rescore manifest only when it has materialized scores."""
+    manifest_path: Path | None,
+) -> CheckpointSelectionManifest | None:
+    """Load an explicitly referenced materialized fixed-bank manifest."""
 
-    candidate_paths = (
-        [manifest_path]
-        if manifest_path is not None
-        else [
-            fixed_bank_manifest_path(experiment, repo_root=repo_root),
-            repo_root / "results" / experiment / "notes" / "validation_selected_checkpoints.json",
-        ]
-    )
-    existing_path = next(
-        (path for path in candidate_paths if path is not None and path.exists()),
-        None,
-    )
-    if existing_path is None:
+    if manifest_path is None or not manifest_path.exists():
         return None
-    manifest = load_checkpoint_selection_legacy_payload(existing_path)
-    if manifest.get("checkpoint_policy") != FIXED_BANK_CHECKPOINT_POLICY:
-        if manifest_path is None:
-            return None
-        raise ValueError(f"Expected {FIXED_BANK_CHECKPOINT_POLICY} in {existing_path}")
-    if manifest.get("materialization_status") != "materialized":
+    manifest = load_checkpoint_selection_manifest(manifest_path)
+    if manifest.metadata.get("checkpoint_policy") != FIXED_BANK_CHECKPOINT_POLICY:
+        raise ValueError(f"Expected {FIXED_BANK_CHECKPOINT_POLICY} in {manifest_path}")
+    if manifest.selection_status not in {"selected", "fallback_selected"}:
         return None
     return manifest
-
-
-def fixed_bank_manifest_for_runs(
-    manifest: Mapping[str, Any] | None,
-    *,
-    run_ids: Sequence[str],
-    repo_root: Path = REPO_ROOT,
-) -> dict[str, Any] | None:
-    """Return a fixed-bank manifest subset for the requested runs."""
-
-    if manifest is None:
-        return None
-    runs = manifest.get("runs", {})
-    if not isinstance(runs, Mapping) or any(run_id not in runs for run_id in run_ids):
-        return None
-    return {key: value for key, value in manifest.items() if key not in {"runs", "output_path"}} | {
-        "runs": {
-            run_id: [
-                selection.to_json(repo_root=repo_root)
-                for selection in selections_from_manifest_run(
-                    runs[run_id],
-                    experiment=str(manifest["issue"]),
-                    run_id=run_id,
-                    repo_root=repo_root,
-                )
-            ]
-            for run_id in run_ids
-        }
-    }
 
 
 def _resolve_checkpoint_selection_manifest(
@@ -1642,28 +1542,22 @@ def _resolve_checkpoint_selection_manifest(
     experiment: str,
     run_ids: Sequence[str],
     repo_root: Path = REPO_ROOT,
-    preferred_manifest: Mapping[str, Any] | None = None,
-    preferred_manifest_path: Path | None = None,
-) -> Mapping[str, Any] | None:
+    preferred_manifest: CheckpointSelectionManifest | None = None,
+) -> CheckpointSelectionManifest | None:
     """Return the explicit fixed-bank manifest for ``run_ids`` when requested."""
 
     if checkpoint_selection_mode == "sparse_history":
         return None
     if checkpoint_selection_mode != "fixed_bank_manifest":
         raise ValueError(f"unsupported checkpoint selection mode {checkpoint_selection_mode!r}")
-    manifest = preferred_manifest or load_materialized_fixed_bank_manifest(
-        experiment=experiment,
-        repo_root=repo_root,
-        manifest_path=preferred_manifest_path,
-    )
+    del repo_root
+    manifest = preferred_manifest
     if manifest is None:
         raise ValueError(
             "checkpoint_selection_mode='fixed_bank_manifest' requires a materialized "
             "fixed-bank checkpoint manifest"
         )
-    runs = manifest.get("runs", {})
-    if not isinstance(runs, Mapping):
-        raise ValueError("fixed-bank checkpoint manifest has no run mapping")
+    runs = checkpoint_selection_rows(manifest)
     missing = [run_id for run_id in run_ids if run_id not in runs]
     if missing:
         raise ValueError(
@@ -1673,7 +1567,7 @@ def _resolve_checkpoint_selection_manifest(
 
 
 def selections_from_manifest_run(
-    rows: Sequence[Mapping[str, Any]],
+    manifest: CheckpointSelectionManifest,
     *,
     experiment: str,
     run_id: str,
@@ -1683,7 +1577,7 @@ def selections_from_manifest_run(
 
     artifact_dir = repo_root / "_artifacts" / experiment / "runs" / run_id
     selections: list[ReplicateCheckpointSelection] = []
-    for row in rows:
+    for row in checkpoint_selection_rows(manifest).get(run_id, ()):
         checkpoint_batches = int(row["checkpoint_batches"])
         raw_path = Path(str(row.get("checkpoint_path") or ""))
         checkpoint_path = raw_path if raw_path.is_absolute() else repo_root / raw_path
@@ -1737,6 +1631,12 @@ def _fixed_bank_selection_source(validation_bank: FixedValidationBankSpec) -> st
     bank_spec = validation_bank.bank_spec or {}
     source = bank_spec.get("selection_source") if isinstance(bank_spec, Mapping) else None
     return str(source or "fixed_bank_rescore")
+
+
+def _fixed_bank_selection_source_from_manifest(
+    manifest: CheckpointSelectionManifest,
+) -> str:
+    return str(manifest.metadata.get("selection_source") or "fixed_bank_rescore")
 
 
 def _uniform_targets(
@@ -1970,23 +1870,20 @@ __all__ = [
     "DEFAULT_DELAYED_REACH_UNIFORM_REACH_LENGTH_M",
     "DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION",
     "FEEDBAX_MANIFEST_SCHEMA_VERSION",
-    "LEGACY_DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION",
-    "LEGACY_FIXED_BANK_SCHEMA_VERSION",
-    "LEGACY_SPARSE_HISTORY_SCHEMA_VERSION",
     "active_loss_term_labels",
     "available_checkpoint_batches",
     "delayed_reach_eval_bank_spec",
     "delayed_reach_fixed_eval_bank_specs",
     "delayed_reach_fixed_rescore_bank_spec",
-    "fixed_bank_manifest_path",
-    "load_checkpoint_selection_legacy_payload",
+    "checkpoint_selection_rows",
+    "load_checkpoint_selection_manifest",
+    "load_materialized_fixed_bank_manifest",
     "load_validation_selected_checkpoint_model",
-    "materialize_fixed_bank_checkpoint_rescore_manifest",
-    "materialize_validation_selected_checkpoint_manifest",
-    "plan_fixed_bank_checkpoint_rescore",
+    "build_fixed_bank_checkpoint_selection_manifest",
+    "build_validation_checkpoint_selection_manifest",
+    "plan_fixed_bank_checkpoint_selection",
     "score_fixed_bank_checkpoints_for_run",
     "select_validation_checkpoints_for_run",
     "select_sparse_history_validation_checkpoints_for_run",
     "validation_objective_history",
-    "write_checkpoint_selection_manifest_from_legacy_payload",
 ]

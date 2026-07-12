@@ -48,6 +48,7 @@ from rlrmp.analysis.pipelines.gru_worst_case_epsilon_audit import (
 from rlrmp.analysis.pipelines.objective_comparator import (
     materialize_gru_objective_comparator_sidecar,
 )
+from rlrmp.eval.checkpoint_selection import build_validation_checkpoint_selection_manifest
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
@@ -321,6 +322,11 @@ def run_benchmark(
     standard_note_path = notes_scratch / "gru_standard.md"
     warm_standard_manifest_path = warm_notes_scratch / "gru_standard_manifest.json"
     warm_standard_note_path = warm_notes_scratch / "gru_standard.md"
+    checkpoint_manifest = build_validation_checkpoint_selection_manifest(
+        experiment=source_experiment,
+        run_ids=(run_id,),
+        repo_root=repo_root,
+    )
 
     def run_standard() -> Mapping[str, Any]:
         return materialize_gru_standard_result(
@@ -448,11 +454,8 @@ def run_benchmark(
             labels=None,
             checkpoint_policy="validation_selected_per_replicate",
             use_validation_selected_checkpoints=True,
-            checkpoint_manifest=None,
-            checkpoint_manifest_path=(
-                repo_root / "results" / source_experiment / "notes"
-                / "validation_selected_checkpoints.json"
-            ),
+            checkpoint_manifest=checkpoint_manifest,
+            checkpoint_manifest_path=None,
             standard_manifest_path=standard_manifest_path,
             output_path=notes_scratch / "objective_comparator.json",
             note_path=notes_scratch / "objective_comparator.md",
@@ -479,11 +482,8 @@ def run_benchmark(
                 labels=None,
                 checkpoint_policy="validation_selected_per_replicate",
                 use_validation_selected_checkpoints=True,
-                checkpoint_manifest=None,
-                checkpoint_manifest_path=(
-                    repo_root / "results" / source_experiment / "notes"
-                    / "validation_selected_checkpoints.json"
-                ),
+                checkpoint_manifest=checkpoint_manifest,
+                checkpoint_manifest_path=None,
                 standard_manifest_path=standard_manifest_path,
                 output_path=warm_notes_scratch / "objective_comparator.json",
                 note_path=warm_notes_scratch / "objective_comparator.md",

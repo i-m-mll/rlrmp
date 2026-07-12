@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
+from rlrmp.eval.checkpoint_selection import (
     CHECKPOINT_SELECTION_BANK_SCHEMA_ID,
     DEFAULT_DELAYED_REACH_DIRECTION_COUNT,
     DEFAULT_DELAYED_REACH_GO_CUE_STEPS,
@@ -19,7 +19,7 @@ from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     delayed_reach_eval_bank_spec,
     delayed_reach_fixed_eval_bank_specs,
     delayed_reach_fixed_rescore_bank_spec,
-    plan_fixed_bank_checkpoint_rescore,
+    plan_fixed_bank_checkpoint_selection,
 )
 from rlrmp.train.cs_perturbation_training import (
     TARGET_SUPPORT_PROFILE_020A65B,
@@ -324,12 +324,15 @@ def test_delayed_materializer_adapters_preserve_bank_and_sisu_arguments(monkeypa
 def test_delayed_fixed_rescore_plan_uses_delayed_selection_source(tmp_path) -> None:
     bank = delayed_reach_fixed_rescore_bank_spec(direction_count=4)
 
-    manifest = plan_fixed_bank_checkpoint_rescore(
+    manifest = plan_fixed_bank_checkpoint_selection(
         experiment="issue123",
         run_ids=("run_a",),
         validation_bank=bank,
         repo_root=tmp_path,
     )
 
-    assert manifest["selection_source"] == "delayed_reach_fixed_bank_rescore"
-    assert manifest["validation_bank"]["bank_spec"]["bank_kinds"] == ["no_catch", "catch"]
+    assert manifest.selection_type == "delayed_reach_fixed_bank_rescore"
+    assert manifest.bank.metadata["validation_bank"]["bank_spec"]["bank_kinds"] == [
+        "no_catch",
+        "catch",
+    ]

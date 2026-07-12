@@ -143,7 +143,7 @@ def _legacy_extlqg_cost_decomposition_for_test() -> ExtLQGCostDecomposition:
 
 def _checkpoint_selection() -> dict[str, object]:
     return {
-        "schema_version": "rlrmp.validation_selected_gru_checkpoints.v1",
+        "schema_version": "feedbax.manifest.v1",
         "selection_policy": "validation-selected test policy",
         "runs": {
             "run_b": [

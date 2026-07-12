@@ -28,7 +28,7 @@ from jaxtyping import PRNGKeyArray, PyTree
 from pydantic import BaseModel, ConfigDict, Field
 
 from rlrmp.analysis.math.summary_stats import summary_stats as _summary_stats
-from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
+from rlrmp.eval.checkpoint_selection import (
     available_checkpoint_batches,
     checkpoint_path_for_batches,
     load_materialized_fixed_bank_manifest,
@@ -1292,12 +1292,13 @@ def _effective_checkpoint_policy_from_manifest(
     """Return the checkpoint policy represented by an optional preferred manifest."""
 
     manifest = load_materialized_fixed_bank_manifest(
-        experiment=experiment,
         manifest_path=preferred_checkpoint_manifest_path,
-        repo_root=repo_root,
     )
     if manifest is not None:
-        return str(manifest.get("checkpoint_policy") or "fixed_bank_rescored_per_replicate")
+        return str(
+            manifest.metadata.get("checkpoint_policy")
+            or "fixed_bank_rescored_per_replicate"
+        )
     return "validation_selected_per_replicate"
 
 

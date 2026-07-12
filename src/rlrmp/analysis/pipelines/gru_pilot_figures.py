@@ -42,10 +42,10 @@ from rlrmp.analysis.math.output_feedback import (
     position_velocity_observation_config,
 )
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
-from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
+from rlrmp.eval.checkpoint_selection import (
     ReplicateCheckpointSelection,
     load_validation_selected_checkpoint_model,
-    materialize_validation_selected_checkpoint_manifest,
+    build_validation_checkpoint_selection_manifest,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path, run_spec_path
 from rlrmp.figures import (
@@ -165,7 +165,7 @@ def materialize_gru_pilot_figures(
     output_dir = output_dir or default_output_dir(experiment, repo_root=repo_root)
     mkdir_p(output_dir)
     selection_manifest = (
-        materialize_validation_selected_checkpoint_manifest(
+        build_validation_checkpoint_selection_manifest(
             experiment=experiment,
             run_ids=run_ids,
             preferred_manifest_path=preferred_checkpoint_manifest_path,
@@ -175,7 +175,7 @@ def materialize_gru_pilot_figures(
                 else "sparse_history"
             ),
             repo_root=repo_root,
-        )
+        ).model_dump(mode="json", exclude_none=True)
         if use_validation_selected_checkpoints
         else None
     )

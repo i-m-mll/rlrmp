@@ -15,10 +15,10 @@ from rlrmp.analysis.pipelines.cs_gru_standard_materialization import (
     write_gru_standard_result,
 )
 from rlrmp.analysis.pipelines.diagnostic_provenance import write_regeneration_spec
-from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
-    fixed_bank_manifest_path,
+from rlrmp.eval.checkpoint_selection import (
+    build_validation_checkpoint_selection_manifest,
+    checkpoint_selection_rows,
     load_materialized_fixed_bank_manifest,
-    materialize_validation_selected_checkpoint_manifest,
 )
 from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import (
     materialize_gru_evaluation_diagnostics,
@@ -94,24 +94,20 @@ def plan_gru_postrun_materialization(
     checkpoint_policy = checkpoint_policy_name(use_validation_selected_checkpoints)
     notes_dir = repo_root / "results" / experiment / "notes"
     artifact_dir = repo_root / "_artifacts" / experiment
-    fixed_bank_rescore_manifest_path = (
-        fixed_bank_rescore_manifest_path
-        if fixed_bank_rescore_manifest_path is not None
-        else fixed_bank_manifest_path(experiment, repo_root=repo_root)
-    )
     fixed_bank_manifest = None
     fixed_bank_available = False
     if use_validation_selected_checkpoints:
         fixed_bank_manifest = load_materialized_fixed_bank_manifest(
-            experiment=experiment,
-            repo_root=repo_root,
             manifest_path=fixed_bank_rescore_manifest_path,
         )
         fixed_bank_available = fixed_bank_manifest is not None and all(
-            run_id in fixed_bank_manifest.get("runs", {}) for run_id in run_ids
+            run_id in checkpoint_selection_rows(fixed_bank_manifest) for run_id in run_ids
         )
     effective_checkpoint_policy = (
-        str(fixed_bank_manifest.get("checkpoint_policy") or "fixed_bank_rescored_per_replicate")
+        str(
+            fixed_bank_manifest.metadata.get("checkpoint_policy")
+            or "fixed_bank_rescored_per_replicate"
+        )
         if fixed_bank_available and fixed_bank_manifest is not None
         else checkpoint_policy
     )
@@ -124,11 +120,7 @@ def plan_gru_postrun_materialization(
             "fixed_bank_rescore" if fixed_bank_available else checkpoint_policy
         ),
         notes_dir=notes_dir,
-        checkpoint_manifest_path=(
-            notes_dir / "validation_selected_checkpoints.json"
-            if use_validation_selected_checkpoints
-            else None
-        ),
+        checkpoint_manifest_path=None,
         fixed_bank_rescore_manifest_path=(
             fixed_bank_rescore_manifest_path if use_validation_selected_checkpoints else None
         ),
@@ -210,11 +202,10 @@ def materialize_gru_postrun_analysis(
     )
 
     checkpoint_manifest: dict[str, Any] | None = None
-    if plan.checkpoint_manifest_path is not None:
-        checkpoint_manifest = materialize_validation_selected_checkpoint_manifest(
+    if use_validation_selected_checkpoints:
+        checkpoint_manifest = build_validation_checkpoint_selection_manifest(
             experiment=experiment,
             run_ids=run_ids,
-            output_path=plan.checkpoint_manifest_path,
             preferred_manifest_path=effective_checkpoint_manifest_path,
             checkpoint_selection_mode=(
                 "fixed_bank_manifest"
@@ -222,7 +213,7 @@ def materialize_gru_postrun_analysis(
                 else "sparse_history"
             ),
             repo_root=repo_root,
-        )
+        ).model_dump(mode="json", exclude_none=True)
 
     standard_result = materialize_gru_standard_result(
         run_ids=run_ids,
@@ -1094,18 +1085,14 @@ def fixed_bank_rescore_manifest_status(
     status: dict[str, Any] = {"path": _repo_relative(path, repo_root=repo_root)}
     if not path.exists():
         return status | {"status": "missing", "selection_use": "sparse_history_fallback"}
-    manifest = json.loads(path.read_text(encoding="utf-8"))
-    materialization_status = str(manifest.get("materialization_status", "unknown"))
+    manifest = load_materialized_fixed_bank_manifest(manifest_path=path)
+    if manifest is None:
+        return status | {"status": "failed", "selection_use": "sparse_history_fallback"}
     return status | {
-        "status": materialization_status,
-        "schema_version": manifest.get("schema_version"),
-        "selection_use": (
-            "fixed_bank_rescore"
-            if materialization_status == "materialized"
-            else "sparse_history_fallback"
-        ),
-        "validation_bank": manifest.get("validation_bank"),
-        "not_materialized_reason": manifest.get("not_materialized_reason"),
+        "status": "materialized",
+        "schema_version": manifest.schema_version,
+        "selection_use": "fixed_bank_rescore",
+        "validation_bank": manifest.bank.metadata.get("validation_bank"),
     }
 
 

@@ -64,7 +64,7 @@ def test_feedback_orchestration_preserves_materialization_contract(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from rlrmp.analysis.pipelines import gru_checkpoint_selection
+    from rlrmp.eval import checkpoint_selection as gru_checkpoint_selection
     from rlrmp.analysis.pipelines import gru_evaluation_diagnostics
     from rlrmp.analysis.pipelines import gru_feedback_ablation
     from rlrmp.analysis.pipelines import gru_perturbation_bank
@@ -116,7 +116,7 @@ def test_feedback_orchestration_preserves_materialization_contract(
     }
     monkeypatch.setattr(
         gru_checkpoint_selection,
-        "materialize_validation_selected_checkpoint_manifest",
+        "build_validation_checkpoint_selection_manifest",
         lambda **_kwargs: None,
     )
     monkeypatch.setattr(
@@ -181,7 +181,7 @@ def test_stabilization_evaluator_preserves_missing_family_behavior(
     from feedbax.config import namespace
 
     from rlrmp.analysis.pipelines import cs_gru_standard_materialization
-    from rlrmp.analysis.pipelines import gru_checkpoint_selection
+    from rlrmp.eval import checkpoint_selection as gru_checkpoint_selection
     from rlrmp.analysis.pipelines import gru_perturbation_bank
     from rlrmp.analysis.pipelines import gru_pilot_figures
     from rlrmp.analysis.pipelines import gru_steady_state_perturbation_bank
@@ -433,7 +433,7 @@ def test_manifest_member_is_a_thin_canonical_adapter(
     if function_name == "main":
         assert calls.isdisjoint(
             {
-                "materialize_validation_selected_checkpoint_manifest",
+                "build_validation_checkpoint_selection_manifest",
                 "materialize_gru_evaluation_diagnostics",
                 "materialize_gru_perturbation_response",
                 "materialize_gru_feedback_ablation",
