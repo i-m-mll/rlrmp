@@ -306,7 +306,7 @@ status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/analysis/test_response_norm_capability.py::"
 # Pin intrinsic/data-bound facets, custody payloads, and terminal legacy deletion.
-minimum_non_skipped = 5
+minimum_non_skipped = 7
 negative_canary = [
     "tests/analysis/test_response_norm_capability.py::test_payload_distinguishes_intrinsic_and_data_bound_facets",
 ]

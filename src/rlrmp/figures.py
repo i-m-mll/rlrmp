@@ -475,13 +475,27 @@ def response_norm_comparison_spec(
             "norm_bands": TraceBinding(
                 name="response-norm-bands",
                 constructor="rlrmp.response_norm_bands",
-                data={"payload": {"item": "facet_values", "path": "condition_class"}},
+                data={
+                    "payload": {
+                        "item": "manifest",
+                        "path": "metadata.figure_payload",
+                    },
+                    "metric": {"item": "metric"},
+                    "condition_class": {"item": "condition_class"},
+                },
             ),
             "norm_bars": TraceBinding(
                 name="response-norm-bars",
                 constructor="rlrmp.response_norm_bars",
                 required=False,
-                data={"payload": {"item": "facet_values", "path": "condition_class"}},
+                data={
+                    "payload": {
+                        "item": "manifest",
+                        "path": "metadata.figure_payload",
+                    },
+                    "metric": {"item": "metric"},
+                    "condition_class": {"item": "condition_class"},
+                },
             ),
         },
         panels=[
@@ -492,8 +506,14 @@ def response_norm_comparison_spec(
             }
         ],
         facet_bindings={
-            "metric": {"item": "manifest", "path": "metadata.figure_payload.facets"},
-            "condition_class": {"item": "facet_values", "path": "metric"},
+            "metric": {
+                "item": "manifest",
+                "path": "metadata.figure_payload.intrinsic_axes.metric",
+            },
+            "condition_class": {
+                "item": "manifest",
+                "path": "metadata.figure_payload.intrinsic_axes.condition_class",
+            },
         },
         figure_routing=dict(figure_routing or {}),
         metadata={
@@ -657,7 +677,7 @@ def _loss_history_curves(data: Mapping[str, Any], params: StrictModel) -> Sequen
 
 def _response_norm_bands(data: Mapping[str, Any], params: StrictModel) -> Sequence[Any]:
     p = FigureTraceParams.model_validate(params.model_dump())
-    payload = _mapping(data.get("payload"))
+    payload = _response_norm_facet(data)
     traces: list[Any] = []
     for curve in payload.get("curves", ()):
         curve = _mapping(curve)
@@ -666,7 +686,7 @@ def _response_norm_bands(data: Mapping[str, Any], params: StrictModel) -> Sequen
             continue
         time = _series(curve.get("time"), default_len=len(mean))
         sem = _series(curve.get("sem"))
-        color = curve.get("color")
+        color = curve.get("color") or "rgb(31,119,180)"
         label = str(curve.get("label", curve.get("model_id", "Model")))
         if sem and len(sem) == len(mean):
             upper = [value + error for value, error in zip(mean, sem, strict=True)]
@@ -716,7 +736,7 @@ def _response_norm_bands(data: Mapping[str, Any], params: StrictModel) -> Sequen
 
 def _response_norm_bars(data: Mapping[str, Any], params: StrictModel) -> Sequence[Any]:
     p = FigureTraceParams.model_validate(params.model_dump())
-    payload = _mapping(data.get("payload"))
+    payload = _response_norm_facet(data)
     labels: list[str] = []
     values: list[float] = []
     for curve in payload.get("curves", ()):
@@ -726,6 +746,13 @@ def _response_norm_bars(data: Mapping[str, Any], params: StrictModel) -> Sequenc
             labels.append(str(curve.get("label", curve.get("model_id", "Model"))))
             values.append(max(mean))
     return [go.Bar(x=labels, y=values, name="Peak mean norm", opacity=p.opacity)] if labels else []
+
+
+def _response_norm_facet(data: Mapping[str, Any]) -> Mapping[str, Any]:
+    payload = _mapping(data.get("payload"))
+    metric = str(data.get("metric", ""))
+    condition_class = str(data.get("condition_class", ""))
+    return _mapping(_mapping(_mapping(payload.get("facets")).get(metric)).get(condition_class))
 
 
 def _profile_series(cell: Mapping[str, Any], profile_key: str) -> list[dict[str, Any]]:

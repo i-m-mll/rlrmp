@@ -93,9 +93,9 @@ def response_norm_payload(
     comparison_rows = list(dict.fromkeys(str(row["row_id"]) for row in normalized))
     facets: dict[str, Any] = {}
     for metric in metrics:
+        facets[str(metric)] = {}
         for condition_class in condition_classes:
-            key = f"{metric}/{condition_class}"
-            facets[key] = {
+            facets[str(metric)][str(condition_class)] = {
                 "metric": str(metric),
                 "condition_class": str(condition_class),
                 "models": models,
@@ -110,8 +110,10 @@ def response_norm_payload(
         "schema_id": RESPONSE_NORM_PAYLOAD_SCHEMA_ID,
         "schema_version": RESPONSE_NORM_PAYLOAD_SCHEMA_VERSION,
         "intrinsic_axes": {
-            "metric": [str(value) for value in metrics],
-            "condition_class": [str(value) for value in condition_classes],
+            "metric": {str(value): str(value) for value in metrics},
+            "condition_class": {
+                str(value): str(value) for value in condition_classes
+            },
         },
         "data_bound_axes": {
             "model": models,
