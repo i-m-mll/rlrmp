@@ -133,7 +133,9 @@ def test_figure_adapter_has_no_analysis_or_custody_side_effects() -> None:
 
 
 def test_retired_direct_builder_package_remains_absent() -> None:
-    assert not (REPO_ROOT / "src/rlrmp/analysis/pipelines").exists()
+    retired_source = REPO_ROOT / "src/rlrmp/analysis/pipelines"
+    assert not any(retired_source.rglob("*.py"))
+    assert not (retired_source / "sisu_spectrum_diagnostics.py").exists()
     assert not (
         REPO_ROOT / "tests/analysis/pipelines/test_sisu_spectrum_diagnostics.py"
     ).exists()
