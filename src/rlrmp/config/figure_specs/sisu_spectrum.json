@@ -1,0 +1,34 @@
+{
+  "name": "sisu-spectrum-velocity",
+  "template": "rlrmp.profile_comparison",
+  "inputs": [],
+  "slot_bindings": {
+    "profiles": {
+      "name": "profiles",
+      "constructor": "rlrmp.profile_series",
+      "required": true,
+      "data": {
+        "cell": {"item": "facet_values", "path": "condition"},
+        "profile_key": "sisu_spectrum_velocity"
+      }
+    }
+  },
+  "panels": [{
+    "name": "profile",
+    "title": {"item": "condition"},
+    "axes_labels": {"x": "Time from go cue (s)", "y": "Forward velocity (m/s)"}
+  }],
+  "facet_bindings": {
+    "condition": {
+      "item": "manifest",
+      "path": "metadata.figure_payload.facets.sisu_spectrum_velocity_profiles"
+    }
+  },
+  "figure_routing": {"topic": "sisu_spectrum_velocity_profiles"},
+  "metadata": {
+    "schema_id": "rlrmp.figure_data.sisu_spectrum",
+    "schema_version": "rlrmp.figure_data.sisu_spectrum.v1",
+    "shared_yaxes": "all",
+    "parity_oracle": "results/e4800d6/notes/sisu_perturbation_class_comparison_targetfix.json"
+  }
+}
