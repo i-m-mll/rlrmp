@@ -395,18 +395,6 @@ def test_owned_scalar_helpers_are_import_routed_not_redefined() -> None:
 
 def test_visual_figure_cluster_members_route_through_canonical_builders() -> None:
     expected_calls = {
-        "results/3244f1a/scripts/materialize_final_small_bank_profiles.py": {
-            "build_profile_family_figure"
-        },
-        "results/c92ebd8/scripts/materialize_pgd_1p05_perturbation_response_overlays.py": {
-            "build_profile_family_figure"
-        },
-        "results/c92ebd8/scripts/materialize_pgd_1p05_moderate_perturbation_profiles_overlay.py": {
-            "build_profile_family_figure"
-        },
-        "results/c92ebd8/scripts/materialize_post_training_figures.py": {
-            "build_profile_family_figure",
-        },
         "results/c92ebd8/scripts/materialize_pgd_ofb_budget_stabilization_responses.py": {
             "canonical_build_family_figure"
         },
@@ -424,6 +412,16 @@ def test_visual_figure_cluster_members_route_through_canonical_builders() -> Non
         assert expected <= calls, (relative_path, expected - calls)
         assert "make_subplots" not in calls, relative_path
         assert "profile_comparison_grid" not in calls, relative_path
+
+
+def test_retired_moderate_and_calibrated_producers_are_absent() -> None:
+    for relative_path in (
+        "results/3244f1a/scripts/materialize_final_small_bank_profiles.py",
+        "results/c92ebd8/scripts/materialize_pgd_1p05_perturbation_response_overlays.py",
+        "results/c92ebd8/scripts/materialize_pgd_1p05_moderate_perturbation_profiles_overlay.py",
+        "results/c92ebd8/scripts/materialize_post_training_figures.py",
+    ):
+        assert not (REPO_ROOT / relative_path).exists()
 
 
 def test_residual_figure_members_are_thin_canonical_adapters() -> None:
