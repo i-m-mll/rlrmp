@@ -1,8 +1,7 @@
-"""Training config schema and generated CLI regression tests."""
+"""Training-config schema and launch-interface structural gates."""
 
 from __future__ import annotations
 
-import argparse
 import ast
 from pathlib import Path
 
@@ -12,10 +11,7 @@ from rlrmp.runtime.params_models import params_model_for
 from rlrmp.train.cs_nominal_gru import (
     CS_NOMINAL_GRU_PARAMS_REF,
     CsNominalGruConfig,
-    build_parser,
 )
-from rlrmp.train.run_spec_authoring import build_parser as authoring_build_parser
-from rlrmp.train.config_cli import build_config_parser
 from rlrmp.train.minimax_native import MinimaxConfig
 from rlrmp.train.training_configs import (
     CLOSED_LOOP_DISTILLATION_PARAMS_REF,
@@ -53,62 +49,35 @@ def test_training_config_models_are_registered() -> None:
     )
 
 
-def test_generated_parser_tracks_config_defaults_and_choices() -> None:
-    parser = build_parser()
-    args = parser.parse_args([])
-    defaults = CsNominalGruConfig().model_dump(mode="python")
+def test_reflection_generated_training_config_flag_surfaces_are_forbidden() -> None:
+    """Scientific config models must not be reflected into argparse flags."""
 
-    for name, expected in defaults.items():
-        assert getattr(args, name) == expected
-
-    action_by_dest = {
-        action.dest: action for action in parser._actions if isinstance(action, argparse.Action)
-    }
-    assert set(defaults).issubset(action_by_dest)
-    assert action_by_dest["plant_backend"].choices == ["cs_lss", "legacy_causal_simplefeedback"]
-    assert action_by_dest["loss_objective"].choices == [
-        "partial_feedbax_terms",
-        "partial_net_output_force_filter",
-        "full_analytical_qrf",
-    ]
-
-
-def test_generated_parser_is_owned_by_run_spec_authoring() -> None:
-    assert build_parser is authoring_build_parser
-    assert build_parser.__module__ == "rlrmp.train.run_spec_authoring"
-
-    nominal_source = REPO_ROOT / "src/rlrmp/train/cs_nominal_gru.py"
-    tree = ast.parse(nominal_source.read_text(encoding="utf-8"))
-    imports_by_module = {
-        node.module: {alias.name for alias in node.names}
-        for node in tree.body
-        if isinstance(node, ast.ImportFrom)
-    }
-    assert "build_parser" in imports_by_module["rlrmp.train.run_spec_authoring"]
-    assert "build_parser" not in imports_by_module["rlrmp.train.executor.cs_supervised"]
-
-
-def test_generated_parser_validates_with_config_model() -> None:
-    parser = build_parser()
-    args = parser.parse_args(
-        [
-            "--n-train-batches",
-            "7",
-            "--batch-size",
-            "3",
-            "--no-quiet-progress",
-            "--plant-backend",
-            "cs_lss",
-        ]
-    )
-
-    parsed = vars(args).copy()
-    assert parsed.pop("verify_resume_only") is False
-    config = CsNominalGruConfig.model_validate(parsed)
-
-    assert config.n_train_batches == 7
-    assert config.batch_size == 3
-    assert config.quiet_progress is False
+    offenders: list[str] = []
+    for root in (REPO_ROOT / "src", REPO_ROOT / "scripts"):
+        for path in root.rglob("*.py"):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for function_node in (
+                node
+                for node in ast.walk(tree)
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            ):
+                loaded_attrs = {
+                    node.attr
+                    for node in ast.walk(function_node)
+                    if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load)
+                }
+                calls_add_argument = any(
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "add_argument"
+                    for node in ast.walk(function_node)
+                )
+                if "model_fields" in loaded_attrs and calls_add_argument:
+                    offenders.append(
+                        f"{path.relative_to(REPO_ROOT)}:{function_node.lineno}:"
+                        f"{function_node.name}"
+                    )
+    assert offenders == []
 
 
 def test_perturbation_configs_are_strict_pydantic_models() -> None:
@@ -159,13 +128,8 @@ def test_native_trainer_configs_share_unified_definition_module() -> None:
     assert params_model_for(GUIDED_DISTILLATION_PARAMS_REF) is GuidedDistillationConfig
     assert params_model_for(CLOSED_LOOP_DISTILLATION_PARAMS_REF) is ClosedLoopDistillationConfig
 
-    guided_args = build_config_parser(GuidedDistillationConfig, description="guided").parse_args([])
-    closed_args = build_config_parser(
-        ClosedLoopDistillationConfig,
-        description="closed-loop",
-    ).parse_args([])
-    assert vars(guided_args) == GuidedDistillationConfig().model_dump(mode="python")
-    assert vars(closed_args) == ClosedLoopDistillationConfig().model_dump(mode="python")
+    assert GuidedDistillationConfig.model_validate({}) == GuidedDistillationConfig()
+    assert ClosedLoopDistillationConfig.model_validate({}) == ClosedLoopDistillationConfig()
 
 
 def test_legacy_training_config_translator_definitions_are_retired() -> None:

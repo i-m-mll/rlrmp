@@ -321,10 +321,8 @@ def test_domain_scan_is_non_vacuous() -> None:
     durable = _durable_sites(sites)
     assert durable, "Durable write-site scan found zero sites; scan scope is broken"
     scanned_files = {s.relpath for s in durable}
-    assert "scripts/train_minimax.py" in scanned_files, (
-        "Minimax training path (the issue's named emitter path) not covered by "
-        f"the durable-write scan; covered files: {sorted(scanned_files)}"
-    )
+    assert "src/rlrmp/train/run_spec_authoring.py" in scanned_files
+    assert "scripts/train_minimax.py" not in scanned_files
 
 
 def test_durable_write_sites_match_allowlist() -> None:

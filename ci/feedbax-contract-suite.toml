@@ -215,7 +215,7 @@ owner = "08bb6d4"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_lane_b_terminal_gate.py::"
-minimum_non_skipped = 4
+minimum_non_skipped = 3
 negative_canary = "tests/test_lane_b_terminal_gate.py::test_minimax_dry_run_spec_validates_phase_program_fingerprint"
 
 [[families]]

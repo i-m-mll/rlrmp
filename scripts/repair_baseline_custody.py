@@ -9,10 +9,9 @@ from pathlib import Path
 import jax.random as jr
 
 from rlrmp.runtime.baseline_custody_repair import repair_baseline_custody_source
-from rlrmp.train.cs_nominal_gru import build_parser
 from rlrmp.train.executor.cs_supervised import (
+    build_execution_context_from_spec,
     build_cs_supervised_native_initial_slots,
-    build_run_spec_execution_context,
 )
 
 
@@ -29,11 +28,7 @@ def _parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = _parser().parse_args()
-    run_parser = build_parser()
-    context = build_run_spec_execution_context(
-        run_parser.parse_args(["--run-spec", str(args.run_spec)]),
-        parser=run_parser,
-    )
+    context = build_execution_context_from_spec(args.run_spec)
     initial_slots, runtime = build_cs_supervised_native_initial_slots(
         run_spec=context.run_spec,
         hps=context.hps,

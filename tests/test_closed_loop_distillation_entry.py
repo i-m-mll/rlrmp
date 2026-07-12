@@ -7,33 +7,12 @@ import importlib.util
 import jax.numpy as jnp
 import pytest
 
-from rlrmp.train.config_cli import build_config_parser, parse_config
 from rlrmp.train.distillation_entry import (
     load_distillation_run_spec,
     run_distillation_config,
 )
 from rlrmp.train.distillation_native import closed_loop_kernel
 from rlrmp.train.training_configs import ClosedLoopDistillationConfig
-
-
-def test_closed_loop_cli_is_generated_from_config_model() -> None:
-    parser = build_config_parser(
-        ClosedLoopDistillationConfig,
-        description="test closed-loop distillation",
-    )
-    options = {option for action in parser._actions for option in action.option_strings}
-    for name in ClosedLoopDistillationConfig.model_fields:
-        assert f"--{name.replace('_', '-')}" in options
-
-    config = parse_config(
-        ClosedLoopDistillationConfig,
-        ["--n-batches", "3", "--batch-size", "2", "--dry-run"],
-        description="test closed-loop distillation",
-    )
-    assert isinstance(config, ClosedLoopDistillationConfig)
-    assert config.n_batches == 3
-    assert config.batch_size == 2
-    assert config.dry_run is True
 
 
 def test_closed_loop_typed_config_loads_and_refreshes_tracked_native_spec() -> None:

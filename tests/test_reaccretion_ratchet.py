@@ -56,12 +56,7 @@ SANCTIONED_RUN_SPEC_EMITTER_NAMES = frozenset(
     }
 )
 RUN_SPEC_NAME_PATTERN = re.compile(r"(run_spec|spec_path|run_path)", re.IGNORECASE)
-SCHEMA_GENERATED_PARSER_MODULES = frozenset(
-    {
-        "src/rlrmp/train/config_cli.py",
-        "src/rlrmp/train/run_spec_authoring.py",
-    }
-)
+SCHEMA_GENERATED_PARSER_MODULES: frozenset[str] = frozenset()
 
 
 def test_branded_graph_spec_component_ids_match_allowlist() -> None:

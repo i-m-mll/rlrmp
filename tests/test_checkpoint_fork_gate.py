@@ -59,7 +59,8 @@ from rlrmp.train.cs_nominal_gru import (
     ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER,
     BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
     CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
-    build_parser,
+    CsNominalGruConfig,
+    _config_namespace,
     write_run_spec,
 )
 
@@ -358,7 +359,7 @@ def _adaptive_continuation_spec(
 ) -> TrainingRunSpec:
     """Build a minimal real adaptive row through RLRMP's normal authoring path."""
 
-    args = build_parser().parse_args([])
+    args = _config_namespace(CsNominalGruConfig())
     values = {
         "n_train_batches": target_total_batches,
         "batch_size": 1,

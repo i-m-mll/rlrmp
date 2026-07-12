@@ -4,20 +4,9 @@
 from __future__ import annotations
 
 from rlrmp.train.run_spec_authoring import (
-    _BOOLEAN_OPTIONAL_FIELDS,
-    _CLI_ALIASES,
-    _CLI_HELP,
-    _add_model_field_argument,
-    _apply_config_parser_defaults,
-    _build_config_generated_parser,
-    _config_choices,
     _config_default,
-    _is_bool_annotation,
-    _literal_values,
-    _optional_arg_type,
     _policy_adversary_training_enabled,
     _training_diagnostics_metadata,
-    build_parser,
     write_run_spec,
 )
 from rlrmp.train.config_materialization import (
@@ -167,47 +156,6 @@ class RunSpecExecutionContext:
     hps: TreeNamespace
 
 
-RUN_SPEC_RUNTIME_OVERRIDE_KEYS = frozenset(
-    {
-        "run_spec",
-        "dry_run",
-        "resume",
-        "allow_fresh_start",
-        "verify_resume_only",
-        "stop_after_batches",
-        "disable_progress",
-        "quiet_progress",
-        "log_step",
-    }
-)
-
-RUN_SPEC_OVERRIDE_CATEGORIES = {
-    "output_dir": "artifact route",
-    "spec_dir": "artifact route",
-    "issue": "run identity",
-    "seed": "run identity",
-    "full_train": "checkpoint policy",
-    "checkpoint_interval_batches": "checkpoint policy",
-    "training_diagnostics": "checkpoint policy",
-    "n_train_batches": "scientific payload",
-    "batch_size": "scientific payload",
-    "controller_lr": "scientific payload",
-    "lr_warmup_batches": "scientific payload",
-    "lr_warmup_init_fraction": "scientific payload",
-    "lr_cosine_alpha": "scientific payload",
-    "gradient_clip_norm": "scientific payload",
-    "plant_backend": "graph identity",
-    "no_integrator_state": "graph identity",
-    "hidden_size": "graph identity",
-    "n_replicates": "graph identity",
-    "n_input_only": "graph identity",
-    "n_readout_only": "graph identity",
-    "n_recurrent_only": "graph identity",
-    "stochastic_preset": "scientific payload",
-    "loss_objective": "scientific payload",
-}
-
-
 @dataclass(frozen=True)
 class CsSupervisedNativeChunkRecord:
     """Host-side record for one native cs-supervised executor chunk."""
@@ -278,62 +226,43 @@ def load_validated_run_spec(
     return payload_path, payload
 
 
-def resolve_run_spec_execution_args(
-    args: argparse.Namespace,
+def build_execution_context_from_spec(
+    run_spec_path: Path | str,
     *,
-    run_spec_path: Path,
-    run_spec: dict[str, Any],
-    parser: argparse.ArgumentParser | None = None,
-) -> argparse.Namespace:
-    """Return runtime args after validating CLI overrides against a spec."""
-
-    parser = parser or build_parser()
-    defaults = parser.parse_args([])
-    values = vars(defaults).copy()
-    values.update(_args_values_from_run_spec(run_spec))
-    values["run_spec"] = str(run_spec_path)
-
-    mismatches = []
-    spec_values = _args_values_from_run_spec(run_spec)
-    for key, value in _explicit_cli_overrides(args, defaults).items():
-        if key in RUN_SPEC_RUNTIME_OVERRIDE_KEYS:
-            values[key] = value
-            continue
-        spec_value = spec_values.get(key, getattr(defaults, key, None))
-        if _cli_values_match(value, spec_value):
-            continue
-        category = _run_spec_override_category(key)
-        mismatches.append(f"{key} ({category}): CLI={value!r}, spec={spec_value!r}")
-    if mismatches:
-        raise ValueError(
-            "CLI overrides conflict with the validated run spec. "
-            "Run identity, graph identity, checkpoint policy, artifact routes, "
-            "and scientific payload must come from the spec: " + "; ".join(mismatches)
-        )
-    return argparse.Namespace(**values)
-
-
-def build_run_spec_execution_context(
-    args: argparse.Namespace,
-    *,
-    parser: argparse.ArgumentParser | None = None,
+    dry_run: bool = False,
+    resume: bool = False,
+    allow_fresh_start: bool = False,
+    stop_after_batches: int | None = None,
+    disable_progress: bool = False,
+    quiet_progress: bool = False,
+    log_step: int | None = None,
 ) -> RunSpecExecutionContext:
-    """Build the validated execution context for a ``--run-spec`` path."""
+    """Build an execution context directly from a resolved run-spec recipe.
 
-    if getattr(args, "run_spec", None) is None:
-        raise ValueError("build_run_spec_execution_context requires --run-spec")
-    parser = parser or build_parser()
-    run_spec_path, run_spec = load_validated_run_spec(args.run_spec)
-    execution_args = resolve_run_spec_execution_args(
-        args,
-        run_spec_path=run_spec_path,
-        run_spec=run_spec,
-        parser=parser,
+    This library entry point keeps internal tooling independent of the retired
+    flag-per-training-field authoring parser. Only operational lifecycle and
+    presentation controls may be supplied alongside the spec-owned values.
+    """
+
+    payload_path, run_spec = load_validated_run_spec(run_spec_path)
+    values = _args_values_from_run_spec(run_spec)
+    values.update(
+        {
+            "run_spec": str(payload_path),
+            "dry_run": dry_run,
+            "resume": resume,
+            "allow_fresh_start": allow_fresh_start,
+            "stop_after_batches": stop_after_batches,
+            "disable_progress": disable_progress,
+            "quiet_progress": quiet_progress,
+            "log_step": values["log_step"] if log_step is None else log_step,
+            "verify_resume_only": False,
+        }
     )
     return RunSpecExecutionContext(
-        run_spec_path=run_spec_path,
+        run_spec_path=payload_path,
         run_spec=run_spec,
-        args=execution_args,
+        args=argparse.Namespace(**values),
         hps=_hps_from_run_spec(run_spec),
     )
 
@@ -449,44 +378,6 @@ def _run_spec_payload_schema_version(run_spec: dict[str, Any]) -> str:
     """Return the inline payload version that manifest preflight must bind."""
 
     return str(run_spec[RLRMP_RUN_SPEC_PAYLOAD_KEY]["schema_version"])
-
-
-def _explicit_cli_overrides(
-    args: argparse.Namespace,
-    defaults: argparse.Namespace,
-) -> dict[str, Any]:
-    overrides = {}
-    for key, value in vars(args).items():
-        if key == "run_spec":
-            overrides[key] = value
-            continue
-        if not hasattr(defaults, key):
-            continue
-        if not _cli_values_match(value, getattr(defaults, key)):
-            overrides[key] = value
-    return overrides
-
-
-def _cli_values_match(left: Any, right: Any) -> bool:
-    if left is None or right is None:
-        return left is right
-    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
-        return math.isclose(float(left), float(right), rel_tol=1e-12, abs_tol=1e-12)
-    return left == right
-
-
-def _run_spec_override_category(key: str) -> str:
-    if key in RUN_SPEC_OVERRIDE_CATEGORIES:
-        return RUN_SPEC_OVERRIDE_CATEGORIES[key]
-    if key.startswith("perturbation_") or key.startswith("broad_epsilon_"):
-        return "scientific payload"
-    if key.startswith("policy_adversary_") or key.startswith("adaptive_epsilon_"):
-        return "scientific payload"
-    if key.startswith("delayed_") or key.startswith("effector_") or key.startswith("nn_"):
-        return "scientific payload"
-    if key.startswith("target_") or key in {"force_filter_feedback", "initial_hidden_encoder"}:
-        return "graph identity"
-    return "spec-owned contract"
 
 
 def _hps_from_run_spec(run_spec: dict[str, Any]) -> TreeNamespace:
@@ -941,14 +832,22 @@ def run_full_training(
 ) -> dict[str, Any]:
     """Compatibility adapter that enters full training through a validated spec."""
 
-    parser = build_parser()
     if getattr(args, "run_spec", None) is None:
         args = _apply_smoke_overrides(args)
         spec_result = write_run_spec(args)
-        args = argparse.Namespace(
-            **{**vars(args), "run_spec": spec_result["run_spec_path"], "smoke": False}
-        )
-    context = build_run_spec_execution_context(args, parser=parser)
+        run_spec_path = spec_result["run_spec_path"]
+    else:
+        run_spec_path = args.run_spec
+    context = build_execution_context_from_spec(
+        run_spec_path,
+        dry_run=bool(getattr(args, "dry_run", False)),
+        resume=bool(getattr(args, "resume", False)),
+        allow_fresh_start=bool(getattr(args, "allow_fresh_start", False)),
+        stop_after_batches=getattr(args, "stop_after_batches", None),
+        disable_progress=bool(getattr(args, "disable_progress", False)),
+        quiet_progress=bool(getattr(args, "quiet_progress", False)),
+        log_step=getattr(args, "log_step", None),
+    )
     return _run_full_training_from_context(context, volume_commit=volume_commit)
 
 
@@ -2806,26 +2705,16 @@ __all__ = [
     "DEFAULT_DELAYED_P_CATCH_TRIAL",
     "DEFAULT_OUTPUT_DIR",
     "GradientDiagnosticsState",
-    "RUN_SPEC_OVERRIDE_CATEGORIES",
-    "RUN_SPEC_RUNTIME_OVERRIDE_KEYS",
     "RunSpecExecutionContext",
     "UpdateDiagnosticsState",
     "VolumeCommit",
-    "_BOOLEAN_OPTIONAL_FIELDS",
-    "_CLI_ALIASES",
-    "_CLI_HELP",
     "_adaptive_epsilon_curriculum_enabled",
-    "_add_model_field_argument",
-    "_apply_config_parser_defaults",
     "_args_values_from_run_spec",
     "_axis_removed_shape",
-    "_build_config_generated_parser",
     "_build_optimizer",
     "_checkpoint_writes_by_completed_batch",
-    "_cli_values_match",
     "_combine_history_diagnostic_chunks",
     "_commit_volume",
-    "_config_choices",
     "_config_default",
     "_cs_model_slot",
     "_cs_optimizer_slot",
@@ -2836,7 +2725,6 @@ __all__ = [
     "_dict_value",
     "_emit_checkpoint_progress",
     "_empty_diagnostic_series",
-    "_explicit_cli_overrides",
     "_family_amplitude",
     "_find_diagnostics_state",
     "_gradient_diagnostics_arrays",
@@ -2845,13 +2733,11 @@ __all__ = [
     "_history_diagnostics_arrays",
     "_hps_from_run_spec",
     "_initial_training_state",
-    "_is_bool_annotation",
     "_latest_checkpoint_write",
     "_latest_loss_scalars",
     "_latest_pgd_progress_scalars",
     "_latest_scalar",
     "_learning_rate_schedule",
-    "_literal_values",
     "_loss_tree_arrays",
     "_loss_tree_total_array",
     "_materialize_adaptive_epsilon_native_result",
@@ -2860,7 +2746,6 @@ __all__ = [
     "_native_resume_history_base",
     "_optimizer_diagnostic_series",
     "_optimizer_diagnostic_series_range",
-    "_optional_arg_type",
     "_prepend_existing_training_diagnostics",
     "_pulse_value",
     "_resize_diagnostic_series",
@@ -2870,7 +2755,6 @@ __all__ = [
     "_run_cs_supervised_native_from_context",
     "_run_full_training_from_context",
     "_run_policy_adversary_native_from_context",
-    "_run_spec_override_category",
     "_sanitize_array_name",
     "_slice_axis",
     "_spec_result_from_execution_context",
@@ -2882,13 +2766,11 @@ __all__ = [
     "_validate_composed_training_spec_payload",
     "_where_train",
     "build_cs_supervised_native_initial_slots",
-    "build_parser",
-    "build_run_spec_execution_context",
+    "build_execution_context_from_spec",
     "get_model_parameters",
     "load_validated_run_spec",
     "logger",
     "make_delayed_cosine_schedule",
-    "resolve_run_spec_execution_args",
     "run_full_training",
     "verify_resume_from_context",
     "write_training_diagnostics_sidecar",

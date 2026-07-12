@@ -10,7 +10,6 @@ from rlrmp.runtime.training_run_specs import (
     attach_distillation_training_specs,
     validate_distillation_training_run_spec,
 )
-from rlrmp.train.config_cli import parse_config
 from rlrmp.train.distillation_native.executor import (
     execute_distillation_training_run_spec_native,
 )
@@ -158,21 +157,7 @@ def run_distillation_config(
     )
 
 
-def distillation_main(method: DistillationMethod, argv: list[str] | None = None) -> int:
-    """Run the generated typed CLI for a native distillation method."""
-
-    model = (
-        GuidedDistillationConfig
-        if method == "guided_distillation"
-        else ClosedLoopDistillationConfig
-    )
-    config = parse_config(model, argv, description=f"Run native {method.replace('_', ' ')}.")
-    run_distillation_config(config, method=method)
-    return 0
-
-
 __all__ = [
-    "distillation_main",
     "load_distillation_run_spec",
     "run_distillation_config",
 ]

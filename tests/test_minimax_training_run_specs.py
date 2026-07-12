@@ -14,7 +14,6 @@ from feedbax.contracts.training import TrainingRunSpec
 from jax_cookbook import save as fbx_save
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.model.feedbax_graph import build_rlrmp_feedbax_graph_bundle
-from rlrmp.train.config_cli import parse_config
 from rlrmp.train.executor.equivalence import compare_pytrees
 from rlrmp.train.minimax_native import (
     MINIMAX_METHOD_REF,
@@ -42,10 +41,8 @@ def _canonical_json(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
 
-def _config_from_argv(argv: list[str]) -> dict[str, Any]:
-    config = parse_config(MinimaxConfig, argv, description="test minimax config")
-    assert isinstance(config, MinimaxConfig)
-    return config.model_dump(mode="python")
+def _config(**overrides: Any) -> dict[str, Any]:
+    return MinimaxConfig.model_validate(overrides).model_dump(mode="python")
 
 
 def _payload_from_config(tmp_path: Path, config: dict) -> dict:
@@ -68,21 +65,16 @@ def _payload_from_config(tmp_path: Path, config: dict) -> dict:
     )
 
 
-def _payload(tmp_path: Path, argv: list[str]) -> dict:
-    config = _config_from_argv(
-        [
-            "--n-warmup-batches",
-            "1",
-            "--n-adversary-batches",
-            "0",
-            "--batch-size",
-            "1",
-            "--n-replicates",
-            "1",
-            "--output-dir",
-            str(tmp_path / "_artifacts" / "54b0c2e" / "runs" / "spec"),
-            *argv,
-        ]
+def _payload(tmp_path: Path, **overrides: Any) -> dict:
+    config = _config(
+        **{
+            "n_warmup_batches": 1,
+            "n_adversary_batches": 0,
+            "batch_size": 1,
+            "n_replicates": 1,
+            "output_dir": str(tmp_path / "_artifacts" / "54b0c2e" / "runs" / "spec"),
+            **overrides,
+        }
     )
     return _payload_from_config(tmp_path, config)
 
@@ -93,25 +85,17 @@ def _native_smoke_spec(
     adversary_type: str = "gaussian_bump",
     n_adversary_batches: int = 1,
 ) -> TrainingRunSpec:
-    config = _config_from_argv(
-        [
-            "--adversary-type",
-            adversary_type,
-            "--n-warmup-batches",
-            "0",
-            "--n-adversary-batches",
-            str(n_adversary_batches),
-            "--n-adversary-steps",
-            "1",
-            "--batch-size",
-            "1",
-            "--adv-batch-size",
-            "1",
-            "--n-replicates",
-            "1",
-            "--output-dir",
-            str(tmp_path / "_artifacts" / "62a658d" / "runs" / f"native_smoke_{adversary_type}"),
-        ]
+    config = _config(
+        adversary_type=adversary_type,
+        n_warmup_batches=0,
+        n_adversary_batches=n_adversary_batches,
+        n_adversary_steps=1,
+        batch_size=1,
+        adv_batch_size=1,
+        n_replicates=1,
+        output_dir=str(
+            tmp_path / "_artifacts" / "62a658d" / "runs" / f"native_smoke_{adversary_type}"
+        ),
     )
     payload = _payload_from_config(tmp_path, config)
     return TrainingRunSpec.model_validate(payload["feedbax_training_run_spec"])
@@ -128,8 +112,8 @@ def _bool_leaves_as_ints(tree: Any) -> Any:
     )
 
 
-def test_warmup_only_minimax_cli_round_trips_to_training_run_spec(tmp_path: Path) -> None:
-    payload = _payload(tmp_path, [])
+def test_warmup_only_minimax_config_round_trips_to_training_run_spec(tmp_path: Path) -> None:
+    payload = _payload(tmp_path)
 
     validate_minimax_run_spec(payload, spec_dir=tmp_path)
     spec = TrainingRunSpec.model_validate(payload["feedbax_training_run_spec"])
@@ -140,11 +124,8 @@ def test_warmup_only_minimax_cli_round_trips_to_training_run_spec(tmp_path: Path
     assert payload["schema_version"] == "rlrmp.minimax.native_run_spec.v1"
 
 
-def test_gaussian_bump_minimax_cli_round_trips_to_training_run_spec(tmp_path: Path) -> None:
-    payload = _payload(
-        tmp_path,
-        ["--n-adversary-batches", "2", "--n-bumps", "2", "--force-max", "0.5"],
-    )
+def test_gaussian_bump_minimax_config_round_trips_to_training_run_spec(tmp_path: Path) -> None:
+    payload = _payload(tmp_path, n_adversary_batches=2, n_bumps=2, force_max=0.5)
     spec = TrainingRunSpec.model_validate(payload["feedbax_training_run_spec"])
     config = minimax_training_run_spec_to_config(spec)
 
@@ -153,19 +134,14 @@ def test_gaussian_bump_minimax_cli_round_trips_to_training_run_spec(tmp_path: Pa
     assert spec.method_payload.payload["config"]["force_max"] == 0.5
 
 
-def test_linear_dynamics_minimax_cli_authors_declarative_dynamics_node(
+def test_linear_dynamics_minimax_config_authors_declarative_dynamics_node(
     tmp_path: Path,
 ) -> None:
     payload = _payload(
         tmp_path,
-        [
-            "--adversary-type",
-            "linear_dynamics",
-            "--n-adversary-batches",
-            "2",
-            "--linear-dynamics-eta-max",
-            "0.2",
-        ],
+        adversary_type="linear_dynamics",
+        n_adversary_batches=2,
+        linear_dynamics_eta_max=0.2,
     )
     spec = TrainingRunSpec.model_validate(payload["feedbax_training_run_spec"])
     graph = spec.graph.inline
@@ -185,7 +161,7 @@ def test_linear_dynamics_minimax_cli_authors_declarative_dynamics_node(
 
 
 def test_effective_phase_fingerprint_rejects_tampered_spec(tmp_path: Path) -> None:
-    payload = _payload(tmp_path, [])
+    payload = _payload(tmp_path)
     spec = dict(payload["feedbax_training_run_spec"])
     spec["worker_execution"]["effective_phase"]["phase_program"]["metadata"] = {
         "phase_program_identity": "tampered"
@@ -203,10 +179,7 @@ def test_effective_phase_fingerprint_rejects_tampered_spec(tmp_path: Path) -> No
 def test_minimax_training_run_spec_file_round_trip_rebuilds_idempotently(
     tmp_path: Path,
 ) -> None:
-    payload = _payload(
-        tmp_path,
-        ["--adversary-type", "linear_dynamics", "--linear-dynamics-eta-max", "0.2"],
-    )
+    payload = _payload(tmp_path, adversary_type="linear_dynamics", linear_dynamics_eta_max=0.2)
     spec_path = tmp_path / "run.json"
     spec_path.write_text(json.dumps(payload), encoding="utf-8")
 
@@ -226,49 +199,18 @@ def test_minimax_payload_schema_version_stays_v1() -> None:
     )
 
 
-def test_minimax_cli_is_generated_from_config_schema(capsys: pytest.CaptureFixture[str]) -> None:
-    config = _config_from_argv(
-        [
-            "--checkpoint",
-            "--no-resume",
-            "--n-bumps=2",
-            "--force-max",
-            "0.5",
-            "--no-jax-explain-cache-misses",
-        ]
-    )
-
-    assert config["checkpoint"] is True
-    assert config["resume"] is False
-    assert config["n_bumps"] == 2
-    assert config["force_max"] == 0.5
-    assert config["jax_explain_cache_misses"] is False
-
-    with pytest.raises(SystemExit):
-        _config_from_argv(["--does-not-exist"])
-    with pytest.raises(SystemExit):
-        _config_from_argv(["--no-batch-size"])
-
-    with pytest.raises(SystemExit) as exc_info:
-        _config_from_argv(["--help"])
-    assert exc_info.value.code == 0
-    help_text = capsys.readouterr().out
-    for name, field in MinimaxConfig.model_fields.items():
-        assert f"--{name.replace('_', '-')}" in help_text
-
-
 @pytest.mark.parametrize(
-    "argv",
+    "overrides",
     [
-        ["--adversary-type", "invalid"],
-        ["--n-warmup-batches", "-1"],
-        ["--n-replicates", "0"],
-        ["--adversary-type", "linear_dynamics", "--no-fused"],
+        {"adversary_type": "invalid"},
+        {"n_warmup_batches": -1},
+        {"n_replicates": 0},
+        {"adversary_type": "linear_dynamics", "fused": False},
     ],
 )
-def test_minimax_config_validation_replaces_legacy_validator(argv: list[str]) -> None:
-    with pytest.raises((ValueError, SystemExit)):
-        _config_from_argv(argv)
+def test_minimax_config_validation_replaces_legacy_validator(overrides: dict[str, Any]) -> None:
+    with pytest.raises(ValueError):
+        _config(**overrides)
 
 
 @pytest.mark.parametrize(

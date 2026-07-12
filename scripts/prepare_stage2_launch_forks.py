@@ -22,10 +22,9 @@ from rlrmp.train.adaptive_epsilon_native import (
     _adaptive_state_from_slot,
     build_adaptive_epsilon_native_initial_slots,
 )
-from rlrmp.train.cs_nominal_gru import build_parser
 from rlrmp.train.executor.cs_supervised import (
     _cs_supervised_native_run_id,
-    build_run_spec_execution_context,
+    build_execution_context_from_spec,
 )
 from rlrmp.train.executor.slots import OPTIMIZER
 from rlrmp.train.resume_control import declare_cs_supervised_checkpoint_continuation
@@ -46,10 +45,7 @@ def main() -> None:
     rows = matrix.get("rows")
     if not isinstance(rows, list) or not rows:
         raise ValueError("matrix rows must be a non-empty list")
-    run_parser = build_parser()
-    source_context = build_run_spec_execution_context(
-        run_parser.parse_args(["--run-spec", str(args.source_run_spec)]), parser=run_parser
-    )
+    source_context = build_execution_context_from_spec(args.source_run_spec)
     source_spec = cs_custody_training_spec(source_context.run_spec)
     source_slots = _read_custody_slots(args.source_checkpoint_root)
     source_loaded = load_latest_checkpoint(
@@ -69,9 +65,7 @@ def main() -> None:
             if not args.replace:
                 raise ValueError(f"launch-fork target must be new: {target_root}")
             shutil.rmtree(target_root)
-        target_context = build_run_spec_execution_context(
-            run_parser.parse_args(["--run-spec", str(run_spec_path)]), parser=run_parser
-        )
+        target_context = build_execution_context_from_spec(run_spec_path)
         target_total_batches = int(target_context.args.n_train_batches)
         target_spec = feedbax_training_run_spec_from_payload(target_context.run_spec)
         target_initial_slots, runtime = build_adaptive_epsilon_native_initial_slots(
