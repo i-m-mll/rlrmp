@@ -82,6 +82,13 @@
     "runtime_note": "This non-H0 row was generated with current Feedbax plus scoped compatibility patches for legacy checkpoint/trial dtypes and nominal zero-input shapes. It is not labeled as the pre-1e1c94f5 old-compatible runtime used for the H0 MaskedLinear figures."
   },
   "schema_version": "rlrmp.figure_spec.v1",
+  "archive": {
+    "status": "archived_structured_output",
+    "last_runnable_revision": "a4e9caca7864c00a8c217fc0f2907495e10d5183",
+    "rationale_issue": "7ae2916",
+    "parity_oracle": "archived_structured_outputs",
+    "reason": "The frozen producer depends on an unrunnable historical checkpoint API; retained outputs are the parity oracle."
+  },
   "source_run": {
     "experiment": "020a65b",
     "label": "020a65b no-PGD non-H0 GRU",
