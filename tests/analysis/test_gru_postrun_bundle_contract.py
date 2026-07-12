@@ -22,7 +22,7 @@ from rlrmp.figures import register_rlrmp_figure_surfaces
 
 
 BUNDLE_PATH = Path("src/rlrmp/config/analysis_bundles/gru_postrun.yml")
-PARITY_PATH = Path("results/6c36536/data_products/gru_postrun_figure_parity.json")
+PARITY_PATH = Path("results/74fac80/data_products/gru_postrun_figure_parity.json")
 
 
 pytestmark = pytest.mark.feedbax_contract
@@ -190,3 +190,9 @@ def test_pilot_pipeline_helpers_wrappers_and_benchmark_are_terminally_retired() 
     velocity_profiles = Path("src/rlrmp/eval/velocity_profiles.py").read_text(encoding="utf-8")
     assert "def resolve_evaluation_run_inputs" in trial_inputs
     assert "initial_effector_velocity" in velocity_profiles
+
+
+def test_living_gru_postrun_contract_does_not_reference_delete_candidate_stock() -> None:
+    living = BUNDLE_PATH.read_text(encoding="utf-8") + PARITY_PATH.read_text(encoding="utf-8")
+    for candidate in ("4d79e07", "6c36536"):
+        assert candidate not in living

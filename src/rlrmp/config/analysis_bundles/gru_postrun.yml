@@ -183,7 +183,7 @@ stages:
       metadata:
         schema_id: rlrmp.figure_data.response_norm_comparison
         schema_version: rlrmp.figure_data.response_norm_comparison.v1
-        parity_oracle: results/6c36536/data_products/gru_postrun_figure_parity.json
+        parity_oracle: results/74fac80/data_products/gru_postrun_figure_parity.json
     outputs:
       - role: figure_render
         required: true

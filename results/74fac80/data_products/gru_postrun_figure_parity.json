@@ -13,26 +13,27 @@
     "terminal_owner": "rlrmp/gru_postrun",
     "legacy_alias_outputs": false,
     "legacy_figure_summary_writer": false,
-    "parity_source": "archived structured regeneration specifications"
+    "parity_source": "adopted archived structured regeneration specifications",
+    "adoption_issue": "74fac80"
   },
   "artifacts": [
     {
       "role": "figure_parity_oracle",
-      "logical_name": "delayed_movement_bank_final_checkpoints_calibrated",
+      "logical_name": "gru_pilot_nominal_regeneration_spec",
       "sha256": "d320de51e4c6a339705bedb886f1aef1f1df02638fa525cddd7516baa8cf71c0",
       "media_type": "application/json",
       "storage_backend": "git",
-      "uri": "results/6c36536/notes/gru_pilot_figures_delayed_movement_bank_final_checkpoints_calibrated_regeneration_spec.json",
-      "metadata": {"source": "retired_gru_pilot_figure_regeneration_spec"}
+      "uri": "results/74fac80/data_products/oracles/gru_pilot_nominal_regeneration_spec.json",
+      "metadata": {"source": "adopted_retired_gru_pilot_regeneration_spec", "source_sha256": "d320de51e4c6a339705bedb886f1aef1f1df02638fa525cddd7516baa8cf71c0"}
     },
     {
       "role": "figure_parity_oracle",
-      "logical_name": "delayed_movement_bank_pgd_clip5_final_checkpoints_calibrated",
+      "logical_name": "gru_pilot_pgd_regeneration_spec",
       "sha256": "3a38ef8b7e9179c9e2dcdf1918d25f8a5624834904febe370b455407465c7858",
       "media_type": "application/json",
       "storage_backend": "git",
-      "uri": "results/4d79e07/notes/gru_pilot_figures_delayed_movement_bank_pgd_clip5_final_checkpoints_calibrated_regeneration_spec.json",
-      "metadata": {"source": "retired_gru_pilot_figure_regeneration_spec"}
+      "uri": "results/74fac80/data_products/oracles/gru_pilot_pgd_regeneration_spec.json",
+      "metadata": {"source": "adopted_retired_gru_pilot_regeneration_spec", "source_sha256": "3a38ef8b7e9179c9e2dcdf1918d25f8a5624834904febe370b455407465c7858"}
     }
   ]
 }
