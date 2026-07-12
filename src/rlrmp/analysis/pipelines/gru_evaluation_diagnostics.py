@@ -271,7 +271,7 @@ def materialize_gru_evaluation_diagnostics(
         ],
         source_files=[
             "src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py",
-            "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py",
+            "src/rlrmp/eval/checkpoint_selection.py",
         ],
         notes=[
             "Evaluation diagnostics are non-certificate sidecars.",
