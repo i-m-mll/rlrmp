@@ -25,6 +25,9 @@ pytestmark = pytest.mark.feedbax_contract
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ALLOWLIST_PATH = REPO_ROOT / "ci" / "legacy-figure-stock-allowlist.toml"
+ADJUDICATION_PATH = (
+    REPO_ROOT / "results" / "f9818e7" / "data_products" / "figure_stock_adjudication.json"
+)
 ISSUE_RE = re.compile(r"^[0-9a-f]{7}$")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 ARCHIVE_STATUS = "archived_structured_output"
@@ -55,6 +58,12 @@ def test_figure_stock_inventory_is_non_vacuous_and_classified() -> None:
     assert sum(fact.role == "native" for fact in facts) == 50
     assert sum(fact.role == "archival" for fact in facts) == 23
     assert not any(fact.role == "legacy_living" for fact in facts)
+    adjudication = _load_json(ADJUDICATION_PATH)
+    archived_paths = sorted(fact.path for fact in facts if fact.role == "archival")
+    assert adjudication["terminal_counts"]["archival_figure_specs"] == len(
+        adjudication["archived_specs"]
+    )
+    assert adjudication["archived_specs"] == archived_paths
     assert any("perturbation_response_norms" in fact.path for fact in facts), (
         "response-norm figure capability fell out of the governed stock"
     )

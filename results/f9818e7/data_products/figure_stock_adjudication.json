@@ -26,6 +26,14 @@
     "results/c92ebd8/figures/pgd_robustness_isolation_stabilization_responses/spec.json",
     "results/e4800d6/figures/perturbation_response_norms_h0_sisu_spectrum_targetfix_two_rows_validation_selected_calibrated/spec.json",
     "results/e4800d6/figures/sisu_spectrum_velocity_profiles_targetfix/spec.json",
+    "results/e901a20/figures/no_pgd_crossed_target_grid/spec.json",
+    "results/e901a20/figures/no_pgd_heldout_split/spec.json",
+    "results/e901a20/figures/nominal_velocity_profile_comparison/spec.json",
+    "results/e901a20/figures/nonh0_no_pgd_extlqg_heldout_velocity/spec.json",
+    "results/e901a20/figures/nonh0_pgd_vs_no_pgd_heldout_velocity/spec.json",
+    "results/e901a20/figures/old_compatible_all_target_aligned_velocity/spec.json",
+    "results/e901a20/figures/old_compatible_first_target_velocity/spec.json",
+    "results/e901a20/figures/old_compatible_seen_target_aligned_velocity/spec.json",
     "results/efc4d68/figures/variance_profiles/spec.json"
   ],
   "retirement": {
