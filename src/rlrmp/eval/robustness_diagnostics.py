@@ -124,9 +124,9 @@ def evaluate_stabilization_row(
     from rlrmp.analysis.pipelines.gru_perturbation_bank import (
         apply_perturbation_to_trial_specs,
     )
-    from rlrmp.analysis.pipelines.gru_pilot_figures import (
+    from rlrmp.eval.trial_inputs import (
         repeat_single_validation_trial,
-        resolve_run_inputs,
+        resolve_evaluation_run_inputs as resolve_run_inputs,
     )
     from rlrmp.analysis.pipelines.gru_steady_state_perturbation_bank import (
         DEFAULT_N_ROLLOUT_TRIALS,
@@ -305,9 +305,6 @@ def run_feedback_robustness_diagnostics(
     from rlrmp.eval.checkpoint_selection import (
         build_validation_checkpoint_selection_manifest,
     )
-    from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import (
-        materialize_gru_evaluation_diagnostics,
-    )
     from rlrmp.analysis.pipelines.gru_feedback_ablation import (
         execute_feedback_ablation_pipeline,
     )
@@ -330,21 +327,12 @@ def run_feedback_robustness_diagnostics(
             repo_root=repo_root,
         ).model_dump(mode="json", exclude_none=True)
     )
-    evaluation = (
-        hook("load_json")(paths["evaluation"])
-        if paths["evaluation"].exists()
-        else materialize_gru_evaluation_diagnostics(
-            experiment=issue,
-            run_ids=run_ids,
-            labels=labels,
-            output_path=paths["evaluation"],
-            bulk_dir=evaluation_bulk_dir,
-            n_rollout_trials=n_rollout_trials,
-            write_bulk_arrays=write_evaluation_bulk_arrays,
-            regeneration_spec_path=paths["evaluation_regeneration_spec"],
-            repo_root=repo_root,
+    if not paths["evaluation"].exists():
+        raise FileNotFoundError(
+            "feedback robustness analysis requires a cached evaluation artifact; "
+            "analysis stages may not rerun diagnostic rollouts"
         )
-    )
+    evaluation = hook("load_json")(paths["evaluation"])
     perturbation = (
         hook("load_json")(paths["perturbation"])
         if hook("perturbation_output_is_current")(

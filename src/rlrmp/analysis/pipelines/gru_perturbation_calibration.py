@@ -26,7 +26,7 @@ from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 if TYPE_CHECKING:
-    from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import RolloutEvaluation
+    from rlrmp.eval.gru_diagnostics import RolloutEvaluation
 
 
 SCHEMA_VERSION = "rlrmp.perturbation_open_loop_calibration.v2"

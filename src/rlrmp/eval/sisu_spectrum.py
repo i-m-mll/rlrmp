@@ -19,9 +19,9 @@ from rlrmp.eval.checkpoint_selection import (
     ReplicateCheckpointSelection,
     load_validation_selected_checkpoint_model,
 )
-from rlrmp.analysis.pipelines.gru_pilot_figures import (
+from rlrmp.eval.trial_inputs import (
     repeat_single_validation_trial,
-    resolve_run_inputs,
+    resolve_evaluation_run_inputs as resolve_run_inputs,
 )
 from rlrmp.eval.kinematics import initial_effector_velocity
 from rlrmp.paths import REPO_ROOT

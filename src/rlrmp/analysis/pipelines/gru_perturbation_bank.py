@@ -43,8 +43,8 @@ from rlrmp.eval.checkpoint_selection import (
     load_materialized_fixed_bank_manifest,
     load_validation_selected_checkpoint_model,
 )
-from rlrmp.analysis.pipelines._selected_eval_rollouts import SelectedEvalRolloutProduct
-from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import RolloutEvaluation
+from rlrmp.eval.rollout_states import CachedEvaluationStates
+from rlrmp.eval.gru_diagnostics import RolloutEvaluation
 from rlrmp.analysis.pipelines.gru_pilot_figures import (
     RunFigureInputs,
     repeat_single_validation_trial,
@@ -3355,7 +3355,7 @@ def _evaluate_model_rollout_product(
     trial_specs: Any,
     n_replicates: int,
     seed: int,
-) -> SelectedEvalRolloutProduct:
+) -> CachedEvaluationStates:
     from rlrmp.eval.ensemble import eval_ensemble_on_trials
 
     states = eval_ensemble_on_trials(
@@ -3365,7 +3365,7 @@ def _evaluate_model_rollout_product(
         key=jr.PRNGKey(seed),
         n_replicates=n_replicates,
     )
-    return SelectedEvalRolloutProduct.from_states(
+    return CachedEvaluationStates.from_states(
         states,
         trial_specs,
         dt=0.01,

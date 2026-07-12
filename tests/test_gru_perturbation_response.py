@@ -20,7 +20,7 @@ from feedbax.runtime.state import CartesianState
 import rlrmp.analysis.pipelines.gru_perturbation_bank as perturbation_bank
 from rlrmp.analysis.math.cs_game_card import build_canonical_game, build_no_integrator_game
 from rlrmp.analysis.perturbation_rows import PerturbationChannel, PerturbationSpec
-from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import RolloutEvaluation
+from rlrmp.eval.gru_diagnostics import RolloutEvaluation
 from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     GRAPH_ADAPTER_INPUT_PREFIX,
     PerturbationBankParams,

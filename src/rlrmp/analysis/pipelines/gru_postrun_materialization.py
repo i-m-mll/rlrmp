@@ -20,9 +20,6 @@ from rlrmp.eval.checkpoint_selection import (
     checkpoint_selection_rows,
     load_materialized_fixed_bank_manifest,
 )
-from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import (
-    materialize_gru_evaluation_diagnostics,
-)
 from rlrmp.analysis.pipelines.gru_pilot_figures import (
     DEFAULT_N_ROLLOUT_TRIALS,
     materialize_gru_pilot_figures,
@@ -185,6 +182,11 @@ def materialize_gru_postrun_analysis(
             "direct perturbation bulk-array writes are retired; run the registered "
             "evaluation and analysis bundle to obtain Feedbax-custody artifacts"
         )
+    if evaluation_states is None:
+        raise ValueError(
+            "GRU post-run analysis requires cached states from an EvaluationRunManifest; "
+            "it may not rerun diagnostic rollouts"
+        )
     run_ids = tuple(run_ids)
     plan = plan_gru_postrun_materialization(
         experiment=experiment,
@@ -231,23 +233,7 @@ def materialize_gru_postrun_analysis(
         repo_root=repo_root,
     )
 
-    evaluation_manifest = materialize_gru_evaluation_diagnostics(
-        experiment=experiment,
-        run_ids=run_ids,
-        labels=labels,
-        output_path=plan.evaluation_manifest_path,
-        bulk_dir=plan.evaluation_bulk_dir,
-        n_rollout_trials=n_rollout_trials,
-        use_validation_selected_checkpoints=use_validation_selected_checkpoints,
-        preferred_checkpoint_manifest_path=effective_checkpoint_manifest_path,
-        regeneration_spec_path=_regeneration_spec_path(plan.evaluation_manifest_path),
-        evaluation_manifest_path=evaluation_manifest_path,
-        evaluation_states=evaluation_states,
-        repo_root=repo_root,
-    )
-    evaluation_manifest_path = evaluation_manifest_path or (
-        plan.evaluation_manifest_path if evaluation_states is not None else None
-    )
+    evaluation_manifest = dict(evaluation_states)
 
     figure_summary = materialize_gru_pilot_figures(
         experiment=experiment,

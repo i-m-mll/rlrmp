@@ -998,8 +998,8 @@ def _goal_centered_vectors_jax(values: Any, *, target_pos: Any) -> Any:
 
 
 def _numpy_rollout_evaluation(jax_eval: JaxRolloutEvaluation, trial_specs: Any) -> Any:
-    from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import RolloutEvaluation
-    from rlrmp.analysis.pipelines.gru_pilot_figures import initial_effector_velocity
+    from rlrmp.eval.gru_diagnostics import RolloutEvaluation
+    from rlrmp.eval.trial_inputs import initial_effector_velocity
 
     evaluation = RolloutEvaluation(
         position=np.asarray(jax_eval.position, dtype=np.float64),

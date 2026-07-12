@@ -28,7 +28,7 @@ import copy
 import numpy as np
 import pytest
 
-from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import (
+from rlrmp.eval.gru_diagnostics import (
     RolloutEvaluation,
     summarize_controller_feedback_scales,
 )
@@ -55,7 +55,7 @@ pytestmark = pytest.mark.feedbax_contract
 # same set the 259bd10 AST scan pins). Each routes feedback identity through the
 # shared resolved-descriptor-view API this canary exercises.
 DESCRIPTOR_CONSUMER_RELPATHS = (
-    "src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py",
+    "src/rlrmp/eval/gru_diagnostics.py",
     "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
     "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
     "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py",
