@@ -56,7 +56,7 @@
         "rlrmp-feedback-quality-objective-comparator-note"
       ],
       "component_node": "objective_comparator",
-      "live_materializer": "rlrmp.analysis.pipelines.objective_comparator.materialize_gru_objective_comparator_sidecar",
+      "live_materializer": null,
       "materialization_mode": "live_analysis_node",
       "paths": {
         "notes": "results/5f70333/notes/objective_comparator_validation_selected.md",

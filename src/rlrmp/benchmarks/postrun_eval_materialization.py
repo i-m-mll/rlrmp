@@ -28,10 +28,6 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
     materialize_gru_pilot_figures,
     resolve_run_inputs,
 )
-from rlrmp.analysis.pipelines.objective_comparator import (
-    materialize_gru_objective_comparator_sidecar,
-)
-from rlrmp.eval.checkpoint_selection import build_validation_checkpoint_selection_manifest
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
@@ -300,13 +296,6 @@ def run_benchmark(
     }
     bundle_results: list[TimedBundle] = []
 
-    standard_manifest_path = notes_scratch / "gru_standard_manifest.json"
-    checkpoint_manifest = build_validation_checkpoint_selection_manifest(
-        experiment=source_experiment,
-        run_ids=(run_id,),
-        repo_root=repo_root,
-    )
-
     def run_pilot_figures() -> Mapping[str, Any]:
         return materialize_gru_pilot_figures(
             experiment=source_experiment,
@@ -337,51 +326,6 @@ def run_benchmark(
                 n_rollout_trials=n_rollout_trials,
                 include_reference=True,
                 use_validation_selected_checkpoints=True,
-                repo_root=repo_root,
-            ),
-        )
-    )
-
-    def run_objective_comparator() -> Mapping[str, Any]:
-        return materialize_gru_objective_comparator_sidecar(
-            experiment=source_experiment,
-            run_ids=(run_id,),
-            labels=None,
-            checkpoint_policy="validation_selected_per_replicate",
-            use_validation_selected_checkpoints=True,
-            checkpoint_manifest=checkpoint_manifest,
-            checkpoint_manifest_path=None,
-            standard_manifest_path=standard_manifest_path,
-            output_path=notes_scratch / "objective_comparator.json",
-            note_path=notes_scratch / "objective_comparator.md",
-            repo_root=repo_root,
-        )
-
-    bundle_results.append(
-        _time_bundle(
-            "objective_comparator",
-            run_objective_comparator,
-            summarize=lambda result: {
-                "status": result.get("status", "materialized"),
-                "keys": sorted(result.keys()),
-            },
-            output_write_mode="included_in_cold_call_elapsed_s",
-            output_write_note=(
-                "materialize_gru_objective_comparator_sidecar writes its JSON/note "
-                "outputs inside the materializer call."
-            ),
-            warm_replay=warm_replay,
-            warm_fn=lambda: materialize_gru_objective_comparator_sidecar(
-                experiment=source_experiment,
-                run_ids=(run_id,),
-                labels=None,
-                checkpoint_policy="validation_selected_per_replicate",
-                use_validation_selected_checkpoints=True,
-                checkpoint_manifest=checkpoint_manifest,
-                checkpoint_manifest_path=None,
-                standard_manifest_path=standard_manifest_path,
-                output_path=warm_notes_scratch / "objective_comparator.json",
-                note_path=warm_notes_scratch / "objective_comparator.md",
                 repo_root=repo_root,
             ),
         )
