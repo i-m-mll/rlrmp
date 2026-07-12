@@ -52,20 +52,9 @@ def test_run_benchmark_records_and_passes_backend_context(monkeypatch, tmp_path)
     }
 
     monkeypatch.setattr(benchmark, "resolve_run_inputs", lambda **_: [run])
-    monkeypatch.setattr(
-        benchmark,
-        "build_validation_checkpoint_selection_manifest",
-        lambda **_: SimpleNamespace(id="checkpoint-selection-fixture"),
-    )
     monkeypatch.setattr(benchmark, "default_cs_perturbation_bank", lambda: bank)
     monkeypatch.setattr(benchmark, "selected_feedback_ablation_bins_for_bank", lambda _: {})
     monkeypatch.setattr(benchmark, "materialize_gru_pilot_figures", lambda **_: {"fig": {}})
-    monkeypatch.setattr(
-        benchmark,
-        "materialize_gru_objective_comparator_sidecar",
-        lambda **_: {"status": "materialized"},
-    )
-
     def fake_perturbation_bank(*_, **kwargs):
         calls["perturbation_evaluation_backend"] = kwargs["evaluation_backend"]
         return {"status_counts": {"evaluated": 1}, "perturbations": [{}]}

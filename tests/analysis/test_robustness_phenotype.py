@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-import json
+from pathlib import Path
 
-from rlrmp.analysis.pipelines.hinf_phenotype_sidecar import (
+from ruamel.yaml import YAML
+
+from rlrmp.analysis.robustness_phenotype import (
+    PHENOTYPE_PARENT_ANALYSIS_TYPES,
     SCHEMA_VERSION,
     build_hinf_phenotype_sidecar,
-    load_hinf_phenotype_sources,
-    render_hinf_phenotype_markdown,
-    write_hinf_phenotype_sidecar,
+    robustness_phenotype_recipe,
 )
 
 
@@ -276,60 +277,21 @@ def test_sidecar_uses_explicit_paired_run_ids_for_opaque_run_names() -> None:
     assert rows["row_b"]["paired_baseline_vs_robust"]["current_row_role"] == "robust"
 
 
-def test_loader_records_missing_path_and_markdown_renders(tmp_path) -> None:
-    present = tmp_path / "objective.json"
-    present.write_text(
-        json.dumps({"schema_version": "objective.v1", "rows": [{"run_id": "run_a"}]}),
-        encoding="utf-8",
+def test_recipe_declares_parents_and_bundle_routes_analysis_to_report_render() -> None:
+    assert robustness_phenotype_recipe.ANALYSIS_DEPENDENCIES == PHENOTYPE_PARENT_ANALYSIS_TYPES
+    bundle_path = (
+        Path(__file__).parents[2]
+        / "src/rlrmp/config/analysis_bundles/robustness_phenotype.yml"
     )
-    missing = tmp_path / "missing.json"
-
-    sources = load_hinf_phenotype_sources(
-        {
-            "objective_comparator": present,
-            "standard_certificate": missing,
-        },
-        repo_root=tmp_path,
+    bundle = YAML(typ="safe").load(bundle_path.read_text(encoding="utf-8"))
+    stages = {stage["name"]: stage for stage in bundle["stages"]}
+    assert stages["phenotype_report"]["depends_on"] == ["phenotype_sidecar"]
+    assert stages["phenotype_report"]["report_type"] == (
+        "rlrmp.report.robustness_phenotype_markdown"
     )
-    sidecar = build_hinf_phenotype_sidecar(sources=sources)
-    markdown = render_hinf_phenotype_markdown(sidecar)
-
-    assert sources["standard_certificate"]["status"] == "missing"
-    assert sources["standard_certificate"]["source_path"] == "missing.json"
-    assert "not a standard certificate" in markdown
-    assert "| run_a |" in markdown
-
-
-def test_writer_records_regeneration_spec_and_outputs(tmp_path) -> None:
-    source_path = tmp_path / "objective.json"
-    source_path.write_text(
-        json.dumps({"schema_version": "objective.v1", "rows": [{"run_id": "run_a"}]}),
-        encoding="utf-8",
-    )
-    sources = load_hinf_phenotype_sources(
-        {"objective_comparator": source_path},
-        repo_root=tmp_path,
-    )
-    sidecar = build_hinf_phenotype_sidecar(sources=sources, scope="unit_scope")
-    json_path = tmp_path / "sidecar.json"
-    markdown_path = tmp_path / "sidecar.md"
-    regeneration_path = tmp_path / "sidecar_regeneration_spec.json"
-
-    write_hinf_phenotype_sidecar(
-        sidecar,
-        json_path=json_path,
-        markdown_path=markdown_path,
-        regeneration_spec_path=regeneration_path,
-        repo_root=tmp_path,
-    )
-
-    payload = json.loads(json_path.read_text())
-    assert payload["regeneration_spec_path"] == "sidecar_regeneration_spec.json"
-    assert "Regeneration spec: `sidecar_regeneration_spec.json`" in markdown_path.read_text()
-    regeneration = json.loads(regeneration_path.read_text())
-    assert regeneration["metadata"]["diagnostic_name"] == "hinf_phenotype_sidecar"
-    assert any(item["role"] == "objective_comparator_manifest" for item in regeneration["inputs"])
-    assert {item["role"] for item in regeneration["outputs"]} == {
-        "sidecar_json",
-        "sidecar_markdown",
+    assert stages["phenotype_report"]["local_params"]["source_artifact_roles"] == [
+        "rlrmp-robustness-phenotype-sidecar"
+    ]
+    assert "report_render" in {
+        output["role"] for output in stages["phenotype_report"]["outputs"]
     }
