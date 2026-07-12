@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import argparse
 import ast
 import importlib.util
-import json
 from pathlib import Path
 
 import numpy as np
@@ -17,7 +15,6 @@ from rlrmp.analysis.math.trial_alignment import (
     replicate_mean_curves,
 )
 from rlrmp.analysis.multi_cell_driver import (
-    _write_multi_cell_report,
     args_namespace,
     legacy_task_trainer_history_skeleton,
 )
@@ -131,60 +128,6 @@ def test_profiled_args_namespace_preserves_training_defaults() -> None:
     assert lit.effector_hold_pos == 1.0
     assert lit.nn_hidden_derivative == 0.001
 
-    anti = args_namespace(
-        profile="anti_anticipation",
-        n_warmup_batches=20,
-        n_replicates=6,
-    )
-    assert anti.nn_output_jerk == 1e5
-    assert anti.effector_pos_late_weight == 0.5
-    assert anti.controller_lr == 1e-4
-
-
-def test_multi_cell_report_preserves_json_sidecar_path_and_bytes(tmp_path: Path) -> None:
-    stats = {
-        "cv_peak_vel": 0.1,
-        "mean_peak_velocity": 0.2,
-        "sd_peak_velocity": 0.03,
-        "mean_hold_drift_mm": 0.4,
-        "sd_hold_drift_mm": 0.05,
-        "mean_time_to_peak_steps": 6.0,
-    }
-    ratios = {
-        "vel_rmse_ratio": 0.4,
-        "pos_rmse_ratio": 0.6,
-        "vel_within_rmse": 0.1,
-        "vel_nearest_across_rmse": 0.25,
-        "pos_within_rmse": 0.12,
-        "pos_nearest_across_rmse": 0.2,
-    }
-
-    _write_multi_cell_report(
-        profile="anti_anticipation",
-        experiment="example",
-        args=argparse.Namespace(sisu=0.7),
-        labels=("cell",),
-        display_names={"cell": "Cell"},
-        cell_stats={"cell": stats},
-        rmse_ratios={"cell": ratios},
-        notes_dir=tmp_path,
-    )
-
-    expected = {
-        "sisu": 0.7,
-        "primary_metric": "vel_rmse_ratio",
-        "prior_best_vel_rmse_ratio": 0.758,
-        "winner_threshold": 0.5,
-        "winners": ["cell"],
-        "cells": {"cell": stats},
-        "rmse_ratios": {"cell": ratios},
-    }
-    assert (tmp_path / "variance_analysis_data.json").read_text(encoding="utf-8") == json.dumps(
-        expected,
-        indent=2,
-    )
-
-
 def test_historical_training_history_reader_fails_closed_on_current_feedbax() -> None:
     if importlib.util.find_spec("feedbax.train") is not None:
         pytest.skip("producing-era Feedbax API is available")
@@ -193,7 +136,6 @@ def test_historical_training_history_reader_fails_closed_on_current_feedbax() ->
 
     for path in (
         "results/f47abb1/scripts/plot_training_loss_lit_replication.py",
-        "results/2bc95fd/scripts/plot_training_loss_6cell.py",
         "results/3702f54/scripts/analyse_pregomatrix.py",
         "results/b399efc/scripts/analyse_movement_ramp_matrix.py",
     ):
@@ -201,10 +143,7 @@ def test_historical_training_history_reader_fails_closed_on_current_feedbax() ->
 
 
 def test_multi_cell_members_are_thin_canonical_adapters() -> None:
-    main_members = (
-        "results/f47abb1/scripts/analyse_lit_replication_6cell.py",
-        "results/2bc95fd/scripts/analyse_anti_anticipation_6cell_variance.py",
-    )
+    main_members = ("results/f47abb1/scripts/analyse_lit_replication_6cell.py",)
     for path in main_members:
         node = _function(path, "main")
         assert _loc(node) <= 30
@@ -214,7 +153,6 @@ def test_multi_cell_members_are_thin_canonical_adapters() -> None:
         (path, name, canonical)
         for path in (
             "results/f47abb1/scripts/analyse_lit_replication_6cell.py",
-            "results/2bc95fd/scripts/analyse_anti_anticipation_6cell_variance.py",
             "results/3702f54/scripts/analyse_pregomatrix.py",
             "results/b399efc/scripts/analyse_movement_ramp_matrix.py",
         )
@@ -235,12 +173,6 @@ def test_args_namespace_members_cannot_reaccrete() -> None:
         ("results/f47abb1/scripts/plot_training_loss_lit_replication.py", "_make_args_namespace"),
         ("results/b399efc/scripts/analyse_movement_ramp_matrix.py", "_make_args_namespace"),
         ("results/3702f54/scripts/analyse_pregomatrix.py", "_make_args_namespace"),
-        ("results/2bc95fd/scripts/plot_training_loss_6cell.py", "_make_args_namespace"),
-        (
-            "results/2bc95fd/scripts/analyse_anti_anticipation_6cell_variance.py",
-            "_make_args_namespace",
-        ),
-        ("results/2bc95fd/scripts/diagnose_combo_hold_motor.py", "_make_args_namespace"),
     )
     for path, name in members:
         node = _function(path, name)

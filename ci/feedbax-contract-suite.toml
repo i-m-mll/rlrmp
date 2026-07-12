@@ -261,6 +261,15 @@ negative_canary = [
     "tests/test_declarative_figure_stock.py::test_direct_assembly_negative_canary_rejects_plotly_materializer",
 ]
 
+[[families]]
+name = "six_cell_figure_migration"
+owner = "d87fc74"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_2bc_six_cell_figure_specs.py::"
+# Pin the complete parity, intrinsic-axis, payload, and deletion contract.
+minimum_non_skipped = 6
+
 [pipeline_contract_native]
 allowlist = [
     { path = "src/rlrmp/analysis/pipelines/bridge_aggregation.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "compatibility summarizer remains until report-stage aggregation replaces tracked writes" },
