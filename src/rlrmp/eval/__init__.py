@@ -23,6 +23,7 @@ from rlrmp.eval.checkpoint_selection import (
 from rlrmp.eval.kinematics import compute_kinematics
 from rlrmp.eval.pert import eval_at_pert0, eval_at_pert_scale
 from rlrmp.eval.recipes import (
+    BROAD_EPSILON_EVALUATION_TYPE,
     CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,
     DELAYED_REACH_BANK_EVALUATION_TYPE,
     FEEDBACK_ABLATION_EVALUATION_TYPE,
@@ -33,6 +34,7 @@ from rlrmp.eval.recipes import (
 from rlrmp.eval.sisu import set_sisu
 
 __all__ = [
+    "BROAD_EPSILON_EVALUATION_TYPE",
     "CENTER_OUT_ENSEMBLE_EVALUATION_TYPE",
     "DELAYED_REACH_BANK_EVALUATION_TYPE",
     "FEEDBACK_ABLATION_EVALUATION_TYPE",

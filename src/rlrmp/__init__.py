@@ -226,6 +226,10 @@ def ensure_rlrmp_recipes_registered(
         )
         from rlrmp.analysis.reports import register_rlrmp_report_recipes
         from rlrmp.analysis.robustness_margin import register_robustness_margin_recipes
+        from rlrmp.analysis.broad_epsilon_attribution import (
+            register_broad_epsilon_attribution_recipe,
+        )
+        from rlrmp.analysis.worst_case_epsilon import register_worst_case_epsilon_recipe
         from rlrmp.analysis.training_diagnostics import (
             register_training_diagnostics_recipes,
         )
@@ -242,6 +246,8 @@ def ensure_rlrmp_recipes_registered(
         register_declarative_materialization_recipes(replace=True)
         register_rlrmp_report_recipes(replace=True)
         register_robustness_margin_recipes()
+        register_broad_epsilon_attribution_recipe()
+        register_worst_case_epsilon_recipe()
         register_training_diagnostics_recipes()
     except Exception:
         # Reset so a later call re-attempts registration.

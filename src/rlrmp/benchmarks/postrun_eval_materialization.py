@@ -34,9 +34,6 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
     materialize_gru_pilot_figures,
     resolve_run_inputs,
 )
-from rlrmp.analysis.pipelines.gru_worst_case_epsilon_audit import (
-    audit_run_worst_case_epsilon,
-)
 from rlrmp.analysis.pipelines.objective_comparator import (
     materialize_gru_objective_comparator_sidecar,
 )
@@ -520,55 +517,6 @@ def run_benchmark(
             ),
             warm_replay=warm_replay,
             warm_fn=run_warm_feedback_ablation,
-        )
-    )
-
-    def run_worst_case_epsilon() -> Mapping[str, Any]:
-        return audit_run_worst_case_epsilon(
-            run,
-            source_experiment=source_experiment,
-            n_rollout_trials=n_rollout_trials,
-            n_steps=worst_case_steps,
-            n_restarts=worst_case_restarts,
-            step_size=None,
-            n_random_baselines=1,
-            seed=0,
-            budget_level_override="moderate",
-            budget_scale_override=None,
-            bulk_dir=step_scratch / "worst_case_epsilon",
-            optimizer_backend=worst_case_optimizer_backend,
-            repo_root=repo_root,
-        )
-
-    bundle_results.append(
-        _time_bundle(
-            "worst_case_epsilon",
-            run_worst_case_epsilon,
-            summarize=lambda result: {
-                "status": result.get("status", "evaluated"),
-                "keys": sorted(result.keys()),
-            },
-            output_write_mode="included_in_cold_call_elapsed_s",
-            output_write_note=(
-                "audit_run_worst_case_epsilon owns its bulk output writes inside "
-                "the timed call."
-            ),
-            warm_replay=warm_replay,
-            warm_fn=lambda: audit_run_worst_case_epsilon(
-                run,
-                source_experiment=source_experiment,
-                n_rollout_trials=n_rollout_trials,
-                n_steps=worst_case_steps,
-                n_restarts=worst_case_restarts,
-                step_size=None,
-                n_random_baselines=1,
-                seed=0,
-                budget_level_override="moderate",
-                budget_scale_override=None,
-                bulk_dir=warm_step_scratch / "worst_case_epsilon",
-                optimizer_backend=worst_case_optimizer_backend,
-                repo_root=repo_root,
-            ),
         )
     )
 

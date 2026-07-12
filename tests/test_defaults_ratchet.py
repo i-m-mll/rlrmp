@@ -70,15 +70,6 @@ VALUE_DRIFT_EXCEPTIONS: tuple[DefaultValueDriftException, ...] = (
         ),
     ),
     DefaultValueDriftException(
-        key="enabled",
-        path="src/rlrmp/analysis/pipelines/gru_broad_epsilon_attribution.py",
-        literal_repr="True",
-        reason=(
-            "Broad-epsilon attribution is an opt-out analysis stage; training and benchmark "
-            "feature toggles remain opt-in defaults."
-        ),
-    ),
-    DefaultValueDriftException(
         key="hidden_size",
         path="src/rlrmp/model/feedbax_graph.py",
         literal_repr="1",
@@ -112,15 +103,6 @@ VALUE_DRIFT_EXCEPTIONS: tuple[DefaultValueDriftException, ...] = (
         reason=(
             "Benchmark packing uses zero as an unavailable step-count marker; perturbation "
             "training uses n_steps as a real perturbation horizon."
-        ),
-    ),
-    DefaultValueDriftException(
-        key="reach_length_scaling",
-        path="src/rlrmp/analysis/pipelines/gru_worst_case_epsilon_audit.py",
-        literal_repr="False",
-        reason=(
-            "Worst-case epsilon audit reads a legacy absent flag as disabled; training "
-            "perturbation configs default reach-relative scaling on."
         ),
     ),
     DefaultValueDriftException(
