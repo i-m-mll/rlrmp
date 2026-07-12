@@ -1,15 +1,29 @@
-"""Tests for GRU observation-action map-error decomposition."""
+"""Tests for registered GRU observation-action map-error decomposition science."""
 
 from __future__ import annotations
 
 import numpy as np
 
-from rlrmp.analysis.pipelines.gru_map_error_decomposition import (
+from rlrmp.analysis.map_error_decomposition import (
     ALIGNED_ACTION_CHANNELS,
     ALIGNED_OBSERVATION_CHANNELS,
     decompose_gru_map_error,
     render_map_error_decomposition_markdown,
+    map_error_decomposition_spec,
 )
+
+
+def test_registered_spec_uses_explicit_evaluation_parent_and_source() -> None:
+    spec = map_error_decomposition_spec(
+        source_experiment="source-exp",
+        evaluation_manifest_id="eval-a",
+        top_k=3,
+    )
+
+    assert spec.params["source_experiment"] == "source-exp"
+    assert spec.params["top_k"] == 3
+    assert spec.inputs[0].kind == "EvaluationRunManifest"
+    assert spec.inputs[0].id == "eval-a"
 
 
 def test_decomposition_reports_scalar_alignment_and_axis_energies() -> None:

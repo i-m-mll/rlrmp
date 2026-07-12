@@ -226,6 +226,9 @@ def ensure_rlrmp_recipes_registered(
         )
         from rlrmp.analysis.reports import register_rlrmp_report_recipes
         from rlrmp.analysis.robustness_margin import register_robustness_margin_recipes
+        from rlrmp.analysis.map_error_decomposition import (
+            register_map_error_decomposition_recipe,
+        )
         from rlrmp.analysis.training_diagnostics import (
             register_training_diagnostics_recipes,
         )
@@ -242,6 +245,7 @@ def ensure_rlrmp_recipes_registered(
         register_declarative_materialization_recipes(replace=True)
         register_rlrmp_report_recipes(replace=True)
         register_robustness_margin_recipes()
+        register_map_error_decomposition_recipe()
         register_training_diagnostics_recipes()
     except Exception:
         # Reset so a later call re-attempts registration.

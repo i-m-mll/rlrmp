@@ -18,13 +18,7 @@ from typing import Any
 import jax
 import jax.tree as jt
 
-from rlrmp.analysis.pipelines.gru_feedback_ablation import (
-    execute_feedback_ablation_pipeline,
-    selected_feedback_ablation_bins_for_bank,
-)
-from rlrmp.analysis.pipelines.gru_map_error_decomposition import (
-    materialize_gru_map_error_decomposition,
-)
+from rlrmp.eval.feedback_ablation import selected_feedback_ablation_bins_for_bank
 from rlrmp.paths import portable_repo_path as _repo_relative
 from rlrmp.eval.perturbation_bank import (
     default_cs_perturbation_bank,
@@ -47,8 +41,7 @@ from rlrmp.paths import REPO_ROOT, mkdir_p
 DEFAULT_ISSUE = "79d2d8b"
 DEFAULT_SOURCE_EXPERIMENT = "020a65b"
 DEFAULT_RUN_ID = (
-    "target_relative_multitarget_h0_fullqrf_warmcos__"
-    "proprio_cal_small_no_pgd_lr3e-3_clip5_b64"
+    "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64"
 )
 DEFAULT_ROW_FAMILIES = (
     "initial_position_offset",
@@ -336,8 +329,7 @@ def run_benchmark(
             summarize=lambda result: {"figure_keys": sorted(result.keys())},
             output_write_mode="included_in_cold_call_elapsed_s",
             output_write_note=(
-                "materialize_gru_pilot_figures writes figure outputs inside the "
-                "materializer call."
+                "materialize_gru_pilot_figures writes figure outputs inside the materializer call."
             ),
             warm_replay=warm_replay,
             warm_fn=lambda: materialize_gru_pilot_figures(
@@ -398,47 +390,6 @@ def run_benchmark(
         )
     )
 
-    def run_map_decomposition() -> Mapping[str, Any]:
-        return materialize_gru_map_error_decomposition(
-            standard_manifest_path=standard_manifest_path,
-            experiment=source_experiment,
-            run_ids=(run_id,),
-            use_validation_selected_checkpoints=True,
-            top_k=3,
-            repo_root=repo_root,
-        )
-
-    def write_map_decomposition(result: Mapping[str, Any]) -> None:
-        (notes_scratch / "gru_map_error_decomposition.json").write_text(
-            json.dumps(result, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-
-    def write_warm_map_decomposition(result: Mapping[str, Any]) -> None:
-        (warm_notes_scratch / "gru_map_error_decomposition.json").write_text(
-            json.dumps(result, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-
-    def summarize_map_decomposition(result: Mapping[str, Any]) -> Mapping[str, Any]:
-        return {"rows": len(result.get("rows", ())), "keys": sorted(result.keys())}
-
-    bundle_results.append(
-        _time_bundle(
-            "map_decomposition",
-            run_map_decomposition,
-            summarize=summarize_map_decomposition,
-            output_writer=write_map_decomposition,
-            output_write_note=(
-                "The benchmark separates map-decomposition JSON serialization "
-                "after the cold materializer call."
-            ),
-            warm_replay=warm_replay,
-            warm_fn=run_map_decomposition,
-            warm_output_writer=write_warm_map_decomposition,
-        )
-    )
-
     def run_perturbation_response() -> Mapping[str, Any]:
         return evaluate_run_perturbation_bank(
             run,
@@ -471,58 +422,6 @@ def run_benchmark(
         )
     )
 
-    def run_feedback_ablation() -> Any:
-        return execute_feedback_ablation_pipeline(
-            source_experiment=source_experiment,
-            result_experiment=issue,
-            scope="postrun_eval_materialization_benchmark",
-            run_ids=(run.run_id,),
-            labels=(run.label,),
-            n_rollout_trials=n_rollout_trials,
-            include_checkpoint_rescore=False,
-            bank=bank,
-            evaluation_bins=feedback_evaluation_bins,
-            repo_root=repo_root,
-            feedbax_runs_root=step_scratch / "feedback_ablation_feedbax",
-            issues=(issue,),
-            force=True,
-        )
-
-    def run_warm_feedback_ablation() -> Any:
-        return execute_feedback_ablation_pipeline(
-            source_experiment=source_experiment,
-            result_experiment=issue,
-            scope="postrun_eval_materialization_benchmark_warm",
-            run_ids=(run.run_id,),
-            labels=(run.label,),
-            n_rollout_trials=n_rollout_trials,
-            include_checkpoint_rescore=False,
-            bank=bank,
-            evaluation_bins=feedback_evaluation_bins,
-            repo_root=repo_root,
-            feedbax_runs_root=warm_step_scratch / "feedback_ablation_feedbax",
-            issues=(issue,),
-            force=True,
-        )
-
-    bundle_results.append(
-        _time_bundle(
-            "feedback_ablation",
-            run_feedback_ablation,
-            summarize=lambda result: {
-                "status_counts": result.payload.get("status_counts", {}),
-                "runs": len(result.payload.get("runs", ())),
-            },
-            output_write_mode="feedbax_manifest_and_artifact_custody",
-            output_write_note=(
-                "EvaluationRunManifest and AnalysisRunManifest custody are included "
-                "in the timed call."
-            ),
-            warm_replay=warm_replay,
-            warm_fn=run_warm_feedback_ablation,
-        )
-    )
-
     def run_worst_case_epsilon() -> Mapping[str, Any]:
         return audit_run_worst_case_epsilon(
             run,
@@ -550,8 +449,7 @@ def run_benchmark(
             },
             output_write_mode="included_in_cold_call_elapsed_s",
             output_write_note=(
-                "audit_run_worst_case_epsilon owns its bulk output writes inside "
-                "the timed call."
+                "audit_run_worst_case_epsilon owns its bulk output writes inside the timed call."
             ),
             warm_replay=warm_replay,
             warm_fn=lambda: audit_run_worst_case_epsilon(
@@ -746,9 +644,7 @@ def _block_until_ready(value: Any) -> ReadyBlockTiming:
     """Block on JAX leaves in ``value`` and report what was blocked."""
 
     leaves = [
-        leaf
-        for leaf in jt.leaves(value)
-        if callable(getattr(leaf, "block_until_ready", None))
+        leaf for leaf in jt.leaves(value) if callable(getattr(leaf, "block_until_ready", None))
     ]
     if not leaves:
         return ReadyBlockTiming(
