@@ -65,14 +65,6 @@ from rlrmp.analysis.robustness_phenotype import (
     RobustnessPhenotypeParams,
     robustness_phenotype_recipe,
 )
-from rlrmp.analysis.pipelines.gru_postrun_materialization import (
-    DEFAULT_OUTPUT_TAG,
-    materialize_gru_postrun_analysis,
-    materialize_optional_feedback_ablation,
-    materialize_optional_perturbation_response,
-    plan_gru_postrun_materialization,
-)
-from rlrmp.eval.evaluation_diagnostics import DEFAULT_N_ROLLOUT_TRIALS
 from rlrmp.eval.perturbation_bank import PerturbationBankParams
 from rlrmp.eval.output_feedback_rollout_recovery import (
     ISSUE_ID as OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ISSUE_ID,
@@ -132,7 +124,7 @@ from rlrmp.runtime.spec_migrations import (
 
 GRU_STANDARD_ANALYSIS_TYPE = "rlrmp.certificate.gru_standard"
 GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE = "rlrmp.diagnostic.gru_evaluation"
-GRU_POSTRUN_ANALYSIS_TYPE = "rlrmp.gru_postrun"
+DEFAULT_OUTPUT_TAG = "validation_selected"
 PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE = "rlrmp.perturbation_class_response"
 PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE = "rlrmp.perturbation_bank_aggregate"
 POLICY_DIAGNOSTICS_ANALYSIS_TYPE = "rlrmp.diagnostic.policy_local"
@@ -147,7 +139,6 @@ EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE = {
     GRU_STANDARD_ANALYSIS_TYPE: (CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,),
     FEEDBACK_ABLATION_ANALYSIS_TYPE: (FEEDBACK_ABLATION_EVALUATION_TYPE,),
     GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE: (GRU_DIAGNOSTICS_EVALUATION_TYPE,),
-    GRU_POSTRUN_ANALYSIS_TYPE: ("evaluation_run",),
     PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE: (
         PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
     ),
@@ -642,11 +633,6 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
         replace=replace,
     )
     register_analysis_recipe(
-        GRU_POSTRUN_ANALYSIS_TYPE,
-        gru_postrun_recipe,
-        replace=replace,
-    )
-    register_analysis_recipe(
         FEEDBACK_ABLATION_ANALYSIS_TYPE,
         feedback_ablation_recipe,
         replace=replace,
@@ -760,52 +746,6 @@ def gru_evaluation_diagnostics_spec(
         analysis_type=GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE,
         inputs=inputs,
         params={},
-    )
-
-
-def gru_postrun_spec(
-    *,
-    experiment: str,
-    run_ids: Sequence[str] | None = None,
-    labels: Sequence[str] | None = None,
-    output_tag: str = DEFAULT_OUTPUT_TAG,
-    use_validation_selected_checkpoints: bool = True,
-    include_reference: bool = True,
-    n_rollout_trials: int = DEFAULT_N_ROLLOUT_TRIALS,
-    include_objective_comparator: bool = True,
-    include_map_decomposition: bool = True,
-    include_perturbation_response: bool = True,
-    include_feedback_ablation: bool = True,
-    evaluation_manifest_id: str | None = None,
-    evaluation_manifest_uri: Path | str | None = None,
-    repo_root: Path | str | None = None,
-) -> AnalysisRunSpec:
-    """Return declarative spec data for the complete GRU post-run bundle."""
-
-    params: dict[str, Any] = {
-        "experiment": experiment,
-        "output_tag": output_tag,
-        "use_validation_selected_checkpoints": use_validation_selected_checkpoints,
-        "include_reference": include_reference,
-        "n_rollout_trials": n_rollout_trials,
-        "include_objective_comparator": include_objective_comparator,
-        "include_map_decomposition": include_map_decomposition,
-        "include_perturbation_response": include_perturbation_response,
-        "include_feedback_ablation": include_feedback_ablation,
-    }
-    if run_ids is not None:
-        params["run_ids"] = list(run_ids)
-    if labels is not None:
-        params["labels"] = list(labels)
-    _set_optional_path_param(params, "repo_root", repo_root)
-    inputs = _evaluation_parent_refs(
-        evaluation_manifest_id=evaluation_manifest_id,
-        evaluation_manifest_uri=evaluation_manifest_uri,
-    )
-    return AnalysisRunSpec(
-        analysis_type=GRU_POSTRUN_ANALYSIS_TYPE,
-        inputs=inputs,
-        params=params,
     )
 
 
@@ -1182,33 +1122,6 @@ def gru_evaluation_diagnostics_recipe(
     )
 
 
-def gru_postrun_recipe(
-    spec: AnalysisRunSpec,
-    _root: Path,
-    inputs: Sequence[Any],
-) -> AnalysisRecipeResult:
-    """Build the declarative complete GRU post-run materialization recipe."""
-
-    params = dict(spec.params)
-    resolved_run_ids = _run_ids_from_params_or_inputs(params, inputs)
-    experiment = _experiment_from_params_or_inputs(params, inputs)
-    evaluation_input = _primary_evaluation_input(inputs)
-    return _manifest_recipe(
-        analysis_name="gru_postrun_materialization",
-        materializer=lambda context, data: _materialize_gru_postrun(
-            context,
-            params,
-            experiment=experiment,
-            run_ids=resolved_run_ids,
-            evaluation_input=_evaluation_input_from_analysis_data(data),
-        ),
-        artifact_role="rlrmp-gru-postrun-manifest",
-        logical_name="gru_postrun_materialization.json",
-        schema_boundary="rlrmp-owned GRU post-run diagnostic bundle payload",
-        data=_analysis_data_from_evaluation_input(evaluation_input),
-    )
-
-
 def perturbation_class_response_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
@@ -1418,20 +1331,11 @@ def feedback_quality_lens_recipe(
     params = dict(spec.params)
     resolved_run_ids = _feedback_quality_run_ids_from_params_or_inputs(params, inputs)
     experiment = _experiment_from_params_or_inputs(params, inputs)
-    repo_root = _repo_root_from_params(params)
     output_tag = str(params.get("output_tag", DEFAULT_OUTPUT_TAG))
-    plan = plan_gru_postrun_materialization(
-        experiment=experiment,
-        run_ids=tuple(resolved_run_ids),
-        output_tag=output_tag,
-        use_validation_selected_checkpoints=bool(
-            params.get("use_validation_selected_checkpoints", True)
-        ),
-        fixed_bank_rescore_manifest_path=_optional_path(
-            params.get("fixed_bank_rescore_manifest_path"),
-            repo_root=repo_root,
-        ),
-        repo_root=repo_root,
+    checkpoint_policy = (
+        "validation_selected_per_replicate"
+        if bool(params.get("use_validation_selected_checkpoints", True))
+        else "final_checkpoint"
     )
     component_outputs = _feedback_quality_component_outputs_from_inputs(inputs)
     summary = FeedbackQualitySummaryAnalysis(
@@ -1440,8 +1344,8 @@ def feedback_quality_lens_recipe(
         experiment=experiment,
         run_ids=tuple(resolved_run_ids),
         output_tag=output_tag,
-        plan_checkpoint_policy=plan.checkpoint_policy,
-        plan_checkpoint_selection_source=plan.checkpoint_selection_source,
+        plan_checkpoint_policy=checkpoint_policy,
+        plan_checkpoint_selection_source=checkpoint_policy,
     )
     return AnalysisRecipeResult(
         analyses={"feedback_quality_lens": summary},
@@ -1529,75 +1433,6 @@ def _materialize_gru_evaluation_diagnostics(
         "declarative_analysis": _declarative_metadata(context),
     }
     return MaterializationResult(payload=payload)
-
-
-def _materialize_gru_postrun(
-    context: AnalysisRunContext,
-    params: Mapping[str, Any],
-    *,
-    experiment: str,
-    run_ids: Sequence[str],
-    evaluation_input: Any | None = None,
-) -> MaterializationResult:
-    if not run_ids:
-        raise ValueError("GRU post-run recipe requires at least one run ID")
-
-    repo_root = _repo_root_from_params(params)
-    output_tag = str(params.get("output_tag", DEFAULT_OUTPUT_TAG))
-    manifest = materialize_gru_postrun_analysis(
-        experiment=experiment,
-        run_ids=tuple(run_ids),
-        labels=_optional_str_sequence(params.get("labels")),
-        output_tag=output_tag,
-        use_validation_selected_checkpoints=bool(
-            params.get("use_validation_selected_checkpoints", True)
-        ),
-        fixed_bank_rescore_manifest_path=_optional_path(
-            params.get("fixed_bank_rescore_manifest_path"),
-            repo_root=repo_root,
-        ),
-        include_reference=bool(params.get("include_reference", True)),
-        n_rollout_trials=int(params.get("n_rollout_trials", DEFAULT_N_ROLLOUT_TRIALS)),
-        materializer_issue_id=str(params.get("materializer_issue_id", "103db99")),
-        include_objective_comparator=bool(params.get("include_objective_comparator", True)),
-        include_map_decomposition=bool(params.get("include_map_decomposition", True)),
-        include_perturbation_response=bool(params.get("include_perturbation_response", True)),
-        include_feedback_ablation=bool(params.get("include_feedback_ablation", True)),
-        perturbation_bank_mode=str(params.get("perturbation_bank_mode", "raw")),
-        perturbation_calibration_level=params.get("perturbation_calibration_level"),
-        perturbation_calibration_reach=params.get("perturbation_calibration_reach"),
-        feedback_selection_level=str(params.get("feedback_selection_level", "small")),
-        evaluation_manifest_path=_resolved_input_path(evaluation_input),
-        evaluation_states=_resolved_input_states(evaluation_input),
-        repo_root=repo_root,
-    )
-    plan = plan_gru_postrun_materialization(
-        experiment=experiment,
-        run_ids=tuple(run_ids),
-        output_tag=output_tag,
-        use_validation_selected_checkpoints=bool(
-            params.get("use_validation_selected_checkpoints", True)
-        ),
-        fixed_bank_rescore_manifest_path=_optional_path(
-            params.get("fixed_bank_rescore_manifest_path"),
-            repo_root=repo_root,
-        ),
-        repo_root=repo_root,
-    )
-    payload = {
-        **manifest,
-        "declarative_analysis": _declarative_metadata(context),
-        "bundle_contract": {
-            "primary": "feedbax_analysis_bundle",
-            "bundle": "rlrmp/gru_postrun",
-            "analysis_manifest_id": context.manifest_id,
-            "legacy_regeneration_spec_role": "compatibility",
-        },
-    }
-    return MaterializationResult(
-        payload=payload,
-        existing_artifacts=tuple(_postrun_existing_artifacts(manifest, plan, repo_root=repo_root)),
-    )
 
 
 def _materialize_policy_diagnostics(
@@ -2293,7 +2128,7 @@ def _materialize_feedback_quality_objective_comparator(
     evaluation_input: Any | None,
     repo_root: Path,
 ) -> Mapping[str, Any]:
-    del context, params, experiment, run_ids, repo_root
+    del context, params, experiment, repo_root
     states = _resolved_input_states(evaluation_input)
     if states is None:
         return {
@@ -2315,27 +2150,18 @@ def _materialize_feedback_quality_perturbation_response(
     evaluation_input: Any | None,
     repo_root: Path,
 ) -> Mapping[str, Any]:
-    del context, evaluation_input
-    plan = _feedback_quality_plan(
-        params,
-        experiment=experiment,
-        run_ids=run_ids,
-        repo_root=repo_root,
-    )
-    return materialize_optional_perturbation_response(
-        experiment=experiment,
-        run_ids=run_ids,
-        labels=_optional_str_sequence(params.get("labels")),
-        n_rollout_trials=int(params.get("n_rollout_trials", DEFAULT_N_ROLLOUT_TRIALS)),
-        output_path=plan.perturbation_response_json_path,
-        note_path=plan.perturbation_response_note_path,
-        bulk_dir=plan.perturbation_response_bulk_dir,
-        calibration_level=params.get("perturbation_calibration_level"),
-        calibration_reach=params.get("perturbation_calibration_reach"),
-        preferred_checkpoint_manifest_path=plan.checkpoint_manifest_path,
-        write_bulk_arrays=bool(params.get("write_perturbation_bulk_arrays", False)),
-        repo_root=repo_root,
-    )
+    del context, params, experiment, run_ids, repo_root
+    states = _resolved_input_states(evaluation_input)
+    if states is None:
+        return {
+            "status": "skipped",
+            "reason": "canonical perturbation-response parent is unavailable",
+        }
+    return {
+        "status": "materialized",
+        "custody_route": "AnalysisRunManifest",
+        "perturbation_response": dict(states),
+    }
 
 
 def _materialize_feedback_quality_feedback_ablation(
@@ -2346,26 +2172,23 @@ def _materialize_feedback_quality_feedback_ablation(
     evaluation_input: Any | None,
     repo_root: Path,
 ) -> Mapping[str, Any]:
-    del context, evaluation_input
-    plan = _feedback_quality_plan(
-        params,
-        experiment=experiment,
-        run_ids=run_ids,
-        repo_root=repo_root,
-    )
-    return materialize_optional_feedback_ablation(
-        experiment=experiment,
-        run_ids=run_ids,
-        labels=_optional_str_sequence(params.get("labels")),
-        n_rollout_trials=int(params.get("n_rollout_trials", DEFAULT_N_ROLLOUT_TRIALS)),
-        output_path=plan.feedback_ablation_json_path,
-        note_path=plan.feedback_ablation_note_path,
-        calibration_level=params.get("perturbation_calibration_level"),
-        calibration_reach=params.get("perturbation_calibration_reach"),
-        feedback_selection_level=str(params.get("feedback_selection_level", "small")),
-        preferred_checkpoint_manifest_path=plan.checkpoint_manifest_path,
-        repo_root=repo_root,
-    )
+    del context, params, experiment, repo_root
+    states = _resolved_input_states(evaluation_input)
+    if states is None:
+        return {
+            "status": "registered_evaluation_required",
+            "custody_route": "EvaluationRunManifest->AnalysisRunManifest",
+            "reason": "canonical feedback-ablation parent is unavailable",
+            "evaluation_spec": {
+                "evaluation_type": FEEDBACK_ABLATION_EVALUATION_TYPE,
+                "training_run_ids": list(run_ids),
+            },
+        }
+    return {
+        "status": "materialized",
+        "custody_route": "AnalysisRunManifest",
+        "feedback_ablation": dict(states),
+    }
 
 
 def _materialize_feedback_quality_response_norm_plots(
@@ -2421,25 +2244,58 @@ def _materialize_feedback_quality_perturbation_calibration(
     }
 
 
+@dataclass(frozen=True)
+class _FeedbackQualityPaths:
+    """Canonical component paths used only to adopt existing governed artifacts."""
+
+    experiment: str
+    output_tag: str
+    checkpoint_policy: str
+    checkpoint_selection_source: str
+    perturbation_response_json_path: Path
+    perturbation_response_note_path: Path
+    perturbation_response_bulk_dir: Path
+    feedback_ablation_json_path: Path
+    feedback_ablation_note_path: Path
+
+
 def _feedback_quality_plan(
     params: Mapping[str, Any],
     *,
     experiment: str,
     run_ids: Sequence[str],
     repo_root: Path,
-) -> Any:
-    return plan_gru_postrun_materialization(
+) -> _FeedbackQualityPaths:
+    if not run_ids:
+        raise ValueError("Feedback-quality metadata requires at least one run ID")
+    output_tag = str(params.get("output_tag", DEFAULT_OUTPUT_TAG))
+    checkpoint_policy = (
+        "validation_selected_per_replicate"
+        if bool(params.get("use_validation_selected_checkpoints", True))
+        else "final_checkpoint"
+    )
+    notes_dir = repo_root / "results" / experiment / "notes"
+    artifact_dir = repo_root / "_artifacts" / experiment
+    return _FeedbackQualityPaths(
         experiment=experiment,
-        run_ids=tuple(run_ids),
-        output_tag=str(params.get("output_tag", DEFAULT_OUTPUT_TAG)),
-        use_validation_selected_checkpoints=bool(
-            params.get("use_validation_selected_checkpoints", True)
+        output_tag=output_tag,
+        checkpoint_policy=checkpoint_policy,
+        checkpoint_selection_source=checkpoint_policy,
+        perturbation_response_json_path=(
+            notes_dir / f"gru_perturbation_response_{output_tag}_manifest.json"
         ),
-        fixed_bank_rescore_manifest_path=_optional_path(
-            params.get("fixed_bank_rescore_manifest_path"),
-            repo_root=repo_root,
+        perturbation_response_note_path=(
+            notes_dir / f"gru_perturbation_response_{output_tag}.md"
         ),
-        repo_root=repo_root,
+        perturbation_response_bulk_dir=(
+            artifact_dir / "perturbation_response" / f"gru_{output_tag}"
+        ),
+        feedback_ablation_json_path=(
+            notes_dir / f"gru_feedback_ablation_{output_tag}.json"
+        ),
+        feedback_ablation_note_path=(
+            notes_dir / f"gru_feedback_ablation_{output_tag}.md"
+        ),
     )
 
 
@@ -3142,71 +2998,6 @@ def _existing_file(
     return ExistingAnalysisArtifact(path=path, role=role, logical_name=logical_name)
 
 
-def _postrun_existing_artifacts(
-    manifest: Mapping[str, Any],
-    plan: Any,
-    *,
-    repo_root: Path,
-) -> tuple[ExistingAnalysisArtifact, ...]:
-    artifacts: list[ExistingAnalysisArtifact] = []
-    direct_paths = (
-        ("rlrmp-gru-checkpoint-selection-manifest", plan.checkpoint_manifest_path),
-        ("rlrmp-gru-standard-certificate-note", plan.standard_note_path),
-        ("rlrmp-gru-standard-certificate-manifest", plan.standard_manifest_path),
-        ("rlrmp-gru-evaluation-diagnostics-manifest", plan.evaluation_manifest_path),
-        ("rlrmp-gru-pilot-figure-summary", plan.figure_output_dir / "figure_summary.json"),
-        ("rlrmp-gru-postrun-legacy-regeneration-spec", plan.postrun_regeneration_spec_path),
-    )
-    for role, path in direct_paths:
-        if path is None:
-            continue
-        artifact = _existing_file(
-            path, role=role, logical_name=_legacy_logical_name(path, repo_root)
-        )
-        if artifact is not None:
-            artifacts.append(artifact)
-
-    output_roles = {
-        "objective_comparator": (
-            "rlrmp-gru-objective-comparator-manifest",
-            "rlrmp-gru-objective-comparator-note",
-        ),
-        "map_decomposition": (
-            "rlrmp-gru-map-decomposition-manifest",
-            "rlrmp-gru-map-decomposition-note",
-        ),
-        "perturbation_response": (
-            "rlrmp-gru-perturbation-response-manifest",
-            "rlrmp-gru-perturbation-response-note",
-        ),
-        "feedback_ablation": (
-            "rlrmp-gru-feedback-ablation-manifest",
-            "rlrmp-gru-feedback-ablation-note",
-        ),
-    }
-    outputs = manifest.get("outputs", {})
-    for output_name, (json_role, note_role) in output_roles.items():
-        output = outputs.get(output_name) if isinstance(outputs, Mapping) else None
-        if not isinstance(output, Mapping):
-            continue
-        for key, role in (("json_path", json_role), ("note_path", note_role)):
-            path = _optional_path(output.get(key), repo_root=repo_root)
-            if path is None:
-                continue
-            artifact = _existing_file(
-                path,
-                role=role,
-                logical_name=_legacy_logical_name(path, repo_root),
-            )
-            if artifact is not None:
-                artifacts.append(artifact)
-    return tuple(artifacts)
-
-
-def _legacy_logical_name(path: Path, repo_root: Path) -> str:
-    return f"legacy/{portable_repo_path(path, repo_root=repo_root)}"
-
-
 def _feedback_quality_components(
     plan: Any,
     *,
@@ -3363,7 +3154,7 @@ def _feedback_quality_component_output(
         artifact = _existing_file(
             path,
             role=role,
-            logical_name=_legacy_logical_name(path, repo_root),
+            logical_name=portable_repo_path(path, repo_root=repo_root),
         )
         if artifact is not None:
             existing.append(artifact)
@@ -3547,7 +3338,6 @@ __all__ = [
     "FEEDBACK_ABLATION_ANALYSIS_TYPE",
     "FeedbackAblationAnalysisParams",
     "GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE",
-    "GRU_POSTRUN_ANALYSIS_TYPE",
     "GRU_STANDARD_ANALYSIS_TYPE",
     "OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE",
     "OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_EVALUATION_TYPE",
@@ -3562,8 +3352,6 @@ __all__ = [
     "feedback_quality_lens_spec",
     "gru_evaluation_diagnostics_spec",
     "gru_evaluation_diagnostics_recipe",
-    "gru_postrun_recipe",
-    "gru_postrun_spec",
     "gru_standard_certificate_spec",
     "gru_standard_certificate_recipe",
     "output_feedback_rollout_recovery_recipe",
