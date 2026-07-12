@@ -355,12 +355,6 @@ def test_stabilization_evaluator_preserves_missing_family_behavior(
             50,
         ),
         (
-            "results/c92ebd8/scripts/materialize_pgd_1p05_reach_context_diagnostics.py",
-            "main",
-            "run_feedback_robustness_diagnostics",
-            50,
-        ),
-        (
             "results/d55c5f0/scripts/materialize_soft_pgd_feedback_robustness_diagnostics.py",
             "build_summary",
             "canonical_build_summary",
@@ -368,12 +362,6 @@ def test_stabilization_evaluator_preserves_missing_family_behavior(
         ),
         (
             "results/c92ebd8/scripts/materialize_ofb_budget_feedback_robustness_diagnostics.py",
-            "build_summary",
-            "canonical_build_summary",
-            50,
-        ),
-        (
-            "results/c92ebd8/scripts/materialize_pgd_1p05_reach_context_diagnostics.py",
             "build_summary",
             "canonical_build_summary",
             50,

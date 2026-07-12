@@ -53,7 +53,6 @@ def test_dup_0173_pipeline_modules_import_shared_helper() -> None:
         "src/rlrmp/eval/gru_diagnostics.py",
         "src/rlrmp/eval/feedback_ablation.py",
         "src/rlrmp/eval/perturbation_bank.py",
-        "src/rlrmp/analysis/pipelines/objective_comparator.py",
     ]
 
     for relpath in module_paths:

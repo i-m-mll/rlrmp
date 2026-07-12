@@ -3,23 +3,21 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+import json
 from pathlib import Path
 from typing import Any
 
-from rlrmp.analysis.pipelines.diagnostic_provenance import repo_relative, write_regeneration_spec
-from rlrmp.io import read_json, update_marked_section, write_compact_json
-from rlrmp.paths import REPO_ROOT
-
+from feedbax.analysis.analysis import AbstractAnalysis
+from feedbax.analysis.context import AnalysisRunContext
+from feedbax.analysis.specs import AnalysisRecipeResult, ResolvedAnalysisInput, register_analysis_recipe
+from feedbax.analysis.types import AnalysisInputData
+from feedbax.config.namespace import TreeNamespace
+from pydantic import BaseModel, ConfigDict, Field
 
 SCHEMA_VERSION = "rlrmp.hinf_phenotype_sidecar.v1"
+ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE = "rlrmp.robustness_phenotype"
 ISSUE_ID = "abe33da"
 DEFAULT_SCOPE = "validation_selected_gru_robustness_phenotype"
-DEFAULT_OUTPUT_JSON = REPO_ROOT / "results" / ISSUE_ID / "notes" / "hinf_phenotype_sidecar.json"
-DEFAULT_OUTPUT_MARKDOWN = REPO_ROOT / "results" / ISSUE_ID / "notes" / "hinf_phenotype_sidecar.md"
-DEFAULT_REGENERATION_SPEC = (
-    REPO_ROOT / "results" / ISSUE_ID / "notes" / "hinf_phenotype_sidecar_regeneration_spec.json"
-)
-
 DEFAULT_SOURCE_NAMES = (
     "standard_certificate",
     "objective_comparator",
@@ -32,6 +30,20 @@ DEFAULT_SOURCE_NAMES = (
     "worst_case_epsilon_audit",
     "broad_epsilon_attribution",
 )
+ARTIFACT_ROLE_TO_SOURCE = {
+    "rlrmp-bridge-standard-certificate": "standard_certificate",
+    "rlrmp-bridge-standard-certificate-manifest": "standard_certificate",
+    "rlrmp-gru-standard-certificate-manifest": "standard_certificate",
+    "rlrmp-gru-objective-comparator-manifest": "objective_comparator",
+    "rlrmp-gru-perturbation-response-manifest": "perturbation_response",
+    "rlrmp-gru-feedback-ablation-manifest": "feedback_ablation",
+    "rlrmp-gru-map-decomposition-manifest": "map_error_decomposition",
+    "rlrmp-gru-evaluation-diagnostics": "evaluation_diagnostics",
+    "rlrmp-gru-worst-case-epsilon-audit-manifest": "worst_case_epsilon_audit",
+    "rlrmp-gru-broad-epsilon-attribution-manifest": "broad_epsilon_attribution",
+    "rlrmp-induced-gain-manifest": "induced_gain",
+    "rlrmp-exact-audit-manifest": "exact_audit",
+}
 
 FORMAL_HINF_REQUIREMENTS = (
     "game_card",
@@ -47,7 +59,7 @@ def build_hinf_phenotype_sidecar(
     issue: str = ISSUE_ID,
     scope: str = DEFAULT_SCOPE,
     paired_run_ids: Mapping[str, str] | None = None,
-    generated_by: str = "rlrmp.analysis.pipelines.hinf_phenotype_sidecar",
+    generated_by: str = "rlrmp.analysis.robustness_phenotype",
 ) -> dict[str, Any]:
     """Aggregate existing diagnostic manifests into a robustness phenotype sidecar.
 
@@ -90,146 +102,6 @@ def build_hinf_phenotype_sidecar(
         "summary": _sidecar_summary(rows=rows, components=components),
         "rows": rows,
     }
-
-
-def load_hinf_phenotype_sources(
-    source_paths: Mapping[str, Path | str | None],
-    *,
-    repo_root: Path = REPO_ROOT,
-) -> dict[str, dict[str, Any] | None]:
-    """Load JSON manifests into source records with path provenance."""
-
-    loaded: dict[str, dict[str, Any] | None] = {}
-    for name, source_path in source_paths.items():
-        if source_path is None:
-            loaded[name] = None
-            continue
-        path = Path(source_path)
-        if not path.exists():
-            loaded[name] = {
-                "status": "missing",
-                "source_path": _repo_relative(path, repo_root=repo_root),
-                "reason": "source path does not exist",
-            }
-            continue
-        payload = read_json(path)
-        if not isinstance(payload, dict):
-            raise ValueError(f"{path} did not contain a JSON object")
-        loaded[name] = {
-            "status": "available",
-            "source_path": _repo_relative(path, repo_root=repo_root),
-            "payload": payload,
-        }
-    return loaded
-
-
-def write_hinf_phenotype_sidecar(
-    sidecar: Mapping[str, Any],
-    *,
-    json_path: Path = DEFAULT_OUTPUT_JSON,
-    markdown_path: Path = DEFAULT_OUTPUT_MARKDOWN,
-    regeneration_spec_path: Path | None = DEFAULT_REGENERATION_SPEC,
-    repo_root: Path = REPO_ROOT,
-) -> None:
-    """Write compact JSON and Markdown H-infinity phenotype sidecars."""
-
-    json_path.parent.mkdir(parents=True, exist_ok=True)
-    markdown_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = dict(sidecar)
-    if regeneration_spec_path is not None:
-        payload["regeneration_spec_path"] = repo_relative(
-            regeneration_spec_path,
-            repo_root=repo_root,
-        )
-    write_compact_json(json_path, payload)
-    update_marked_section(
-        markdown_path,
-        "hinf_phenotype_sidecar",
-        render_hinf_phenotype_markdown(payload),
-    )
-    if regeneration_spec_path is not None:
-        _write_hinf_regeneration_spec(
-            sidecar=payload,
-            spec_path=regeneration_spec_path,
-            json_path=json_path,
-            markdown_path=markdown_path,
-            repo_root=repo_root,
-        )
-
-
-def render_hinf_phenotype_markdown(sidecar: Mapping[str, Any]) -> str:
-    """Render a compact Markdown summary for the phenotype sidecar."""
-
-    lines = [
-        "# H-infinity Phenotype Sidecar",
-        "",
-        (
-            "Interpretive robustness phenotype report. This is not a standard "
-            "certificate and is not a checkpoint-selection input."
-        ),
-        "",
-        f"Regeneration spec: `{sidecar.get('regeneration_spec_path', 'not_materialized')}`",
-        "",
-        "## Component Status",
-        "",
-        "| Component | Status | Source |",
-        "|---|---:|---|",
-    ]
-    for name, component in sidecar.get("components", {}).items():
-        lines.append(
-            "| "
-            f"{name} | {component.get('status', 'unknown')} | "
-            f"{component.get('source_path', '') or component.get('reason', '')} |"
-        )
-    lines.extend(
-        [
-            "",
-            "## Rows",
-            "",
-            (
-                "| Run | Formal H-inf claim | Nominal efficiency | Feedback competence | "
-                "Local feedback law | H-inf markers | Warnings |"
-            ),
-            "|---|---|---|---|---|---|---:|",
-        ]
-    )
-    for row in sidecar.get("rows", ()):
-        lines.append(
-            "| "
-            f"{row.get('run_id')} | "
-            f"{row.get('formal_hinf_claim', {}).get('status')} | "
-            f"{row.get('nominal_efficiency', {}).get('status')} | "
-            f"{row.get('feedback_competence', {}).get('status')} | "
-            f"{row.get('local_feedback_law', {}).get('status')} | "
-            f"{row.get('hinf_phenotype_markers', {}).get('status')} | "
-            f"{len(row.get('warnings', ())) or 0} |"
-        )
-    lines.extend(
-        [
-            "",
-            "## Caveats",
-            "",
-            "- Formal H-infinity claims remain separate from phenotype evidence.",
-            "- Missing components are explicit; omitted evidence should not be inferred as pass.",
-            (
-                "- Paired baseline-vs-robust comparisons are reported only when "
-                "matching pairs are present."
-            ),
-        ]
-    )
-    delayed_caveat = sidecar.get("delayed_contract_caveat")
-    if isinstance(delayed_caveat, Mapping):
-        lines.extend(
-            [
-                (
-                    "- Delayed contract caveat: "
-                    f"{delayed_caveat.get('blocker', 'see sidecar JSON')} "
-                    f"Formal H-infinity equivalence is "
-                    f"{delayed_caveat.get('formal_hinf_equivalence', 'not_claimed')}."
-                )
-            ]
-        )
-    return "\n".join(lines).rstrip() + "\n"
 
 
 def _build_row(
@@ -1044,102 +916,112 @@ def _count_by(values: Sequence[str] | Any) -> dict[str, int]:
     return counts
 
 
-def _repo_relative(path: Path, *, repo_root: Path) -> str:
-    try:
-        return path.resolve().relative_to(repo_root.resolve()).as_posix()
-    except ValueError:
-        return path.as_posix()
+PHENOTYPE_PARENT_ANALYSIS_TYPES = (
+    "rlrmp.analysis.gru_standard_certificate",
+    "rlrmp.analysis.objective_comparator",
+    "rlrmp.analysis.perturbation_bank_aggregate",
+    "rlrmp.analysis.feedback_ablation",
+    "rlrmp.analysis.map_error_decomposition",
+    "rlrmp.analysis.broad_epsilon_attribution",
+    "rlrmp.analysis.worst_case_epsilon",
+)
 
 
-def _write_hinf_regeneration_spec(
-    *,
-    sidecar: Mapping[str, Any],
-    spec_path: Path,
-    json_path: Path,
-    markdown_path: Path,
-    repo_root: Path,
-) -> dict[str, Any]:
-    source_inputs = []
-    source_args: list[str] = []
-    for component_name, component in sidecar.get("components", {}).items():
-        if not isinstance(component, Mapping):
+class RobustnessPhenotypeParams(BaseModel):
+    """Governed phenotype aggregation policy."""
+
+    model_config = ConfigDict(extra="forbid")
+    schema_id: str = "rlrmp.analysis.robustness_phenotype.params"
+    schema_version: str = "v1"
+    issue: str = ISSUE_ID
+    scope: str = DEFAULT_SCOPE
+    paired_run_ids: dict[str, str] = Field(default_factory=dict)
+    requested_outputs: list[str] = Field(default_factory=list)
+
+
+class RobustnessPhenotypeAnalysis(AbstractAnalysis):
+    """Aggregate parent-manifest payloads with archived scientific semantics."""
+
+    def compute(self, data: AnalysisInputData, **_kwargs: Any) -> dict[str, Any]:
+        return build_hinf_phenotype_sidecar(
+            sources=data.states["sources"],
+            issue=data.extras["params"]["issue"],
+            scope=data.extras["params"]["scope"],
+            paired_run_ids=data.extras["params"]["paired_run_ids"],
+            generated_by="rlrmp.analysis.robustness_phenotype",
+        )
+
+    def emit_artifacts(
+        self,
+        context: AnalysisRunContext,
+        data: AnalysisInputData,
+        *,
+        result: Mapping[str, Any],
+        **_kwargs: Any,
+    ) -> dict[str, Any]:
+        """Record the scientific payload through Feedbax analysis custody."""
+
+        del data
+        payload = dict(result)
+        context.record_json_artifact(
+            payload,
+            role="rlrmp-robustness-phenotype-sidecar",
+            logical_name="hinf_phenotype_sidecar.json",
+            metadata={"formal_claim_policy": "fail_closed"},
+        )
+        return payload
+
+
+def robustness_phenotype_recipe(
+    spec: Any,
+    _root: Any,
+    inputs: Sequence[ResolvedAnalysisInput],
+) -> AnalysisRecipeResult:
+    """Build phenotype evidence directly from resolved parent manifests."""
+
+    params = RobustnessPhenotypeParams.model_validate(spec.params)
+    sources: dict[str, Mapping[str, Any] | None] = {}
+    for index, resolved in enumerate(inputs):
+        states = resolved.states
+        if isinstance(states, Mapping):
+            name = str(states.get("component", states.get("analysis_type", f"parent_{index}")))
+            sources[name] = {
+                "status": "available",
+                "source_path": str(states.get("manifest_id", "parent_manifest")),
+                "payload": dict(states),
+            }
             continue
-        source_path = component.get("source_path")
-        if source_path:
-            source_inputs.append(
-                {
-                    "role": f"{component_name}_manifest",
-                    "path": source_path,
-                    "status": component.get("status"),
-                }
-            )
-            source_args.extend([f"--{component_name.replace('_', '-')}", str(source_path)])
-        else:
-            source_inputs.append(
-                {
-                    "role": f"{component_name}_manifest",
-                    "status": component.get("status"),
-                    "reason": component.get("reason", "source path not provided"),
-                }
-            )
-    paired_run_ids = sidecar.get("paired_run_ids", {})
-    paired_args: list[str] = []
-    if isinstance(paired_run_ids, Mapping):
-        for baseline, robust in paired_run_ids.items():
-            paired_args.extend(["--paired-run", f"{baseline}={robust}"])
-    return write_regeneration_spec(
-        spec_path=spec_path,
-        diagnostic_name="hinf_phenotype_sidecar",
-        materializer="rlrmp.analysis.pipelines.hinf_phenotype_sidecar.write_hinf_phenotype_sidecar",
-        command=[
-            "uv",
-            "run",
-            "python",
-            "scripts/materialize_hinf_phenotype_sidecar.py",
-            "--scope",
-            str(sidecar.get("scope", DEFAULT_SCOPE)),
-            *source_args,
-            *paired_args,
-            "--json-output",
-            repo_relative(json_path, repo_root=repo_root),
-            "--markdown-output",
-            repo_relative(markdown_path, repo_root=repo_root),
-            "--regeneration-spec-path",
-            repo_relative(spec_path, repo_root=repo_root),
-        ],
-        parameters={
-            "issue": sidecar.get("issue"),
-            "scope": sidecar.get("scope"),
-            "paired_run_ids": dict(paired_run_ids) if isinstance(paired_run_ids, Mapping) else {},
-            "component_names": sorted(str(name) for name in sidecar.get("components", {})),
-        },
-        inputs=source_inputs,
-        outputs=[
-            {"role": "sidecar_json", "path": json_path},
-            {"role": "sidecar_markdown", "path": markdown_path},
-        ],
-        source_files=[
-            "src/rlrmp/analysis/pipelines/hinf_phenotype_sidecar.py",
-            "scripts/materialize_hinf_phenotype_sidecar.py",
-            "src/rlrmp/analysis/pipelines/diagnostic_provenance.py",
-        ],
-        notes=[
-            "Interpretive phenotype sidecar only; not a formal H-infinity certificate.",
-            "Spec records source manifests loaded for aggregation and the JSON/Markdown outputs.",
-        ],
-        repo_root=repo_root,
+        manifest = resolved.manifest
+        if manifest is None:
+            continue
+        for artifact in manifest.artifacts:
+            source_name = ARTIFACT_ROLE_TO_SOURCE.get(artifact.role)
+            if source_name is None or source_name in sources or artifact.uri is None:
+                continue
+            artifact_path = Path(artifact.uri)
+            sources[source_name] = {
+                "status": "available",
+                "source_path": str(artifact_path),
+                "payload": json.loads(artifact_path.read_text(encoding="utf-8")),
+            }
+    return AnalysisRecipeResult(
+        analyses={"robustness_phenotype": RobustnessPhenotypeAnalysis(variant="robustness_phenotype")},
+        data=AnalysisInputData(
+            models={}, tasks={}, states={"sources": sources},
+            hps={"robustness_phenotype": TreeNamespace(task=TreeNamespace(eval_n=len(sources)))},
+            extras={"params": params.model_dump(mode="json")},
+        ),
     )
 
 
-__all__ = [
-    "DEFAULT_OUTPUT_JSON",
-    "DEFAULT_OUTPUT_MARKDOWN",
-    "DEFAULT_REGENERATION_SPEC",
-    "DEFAULT_SCOPE",
-    "ISSUE_ID",
-    "SCHEMA_VERSION",
-    "build_hinf_phenotype_sidecar",
-    "load_hinf_phenotype_sources",
-    "render_hinf_phenotype_markdown",
-    "write_hinf_phenotype_sidecar",
-]
+robustness_phenotype_recipe.ANALYSIS_DEPENDENCIES = PHENOTYPE_PARENT_ANALYSIS_TYPES
+
+
+def register_robustness_phenotype_recipe(*, replace: bool = True) -> None:
+    """Register manifest-parent phenotype aggregation."""
+
+    register_analysis_recipe(
+        ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE,
+        robustness_phenotype_recipe,
+        replace=replace,
+    )

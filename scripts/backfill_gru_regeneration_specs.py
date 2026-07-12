@@ -177,8 +177,11 @@ def classify_manifest(name: str, manifest: Mapping[str, Any]) -> dict[str, Any] 
     ):
         return {
             "diagnostic_name": "gru_objective_comparator",
-            "materializer": "rlrmp.analysis.pipelines.objective_comparator.materialize_gru_objective_comparator_sidecar",
-            "source_files": ["src/rlrmp/analysis/pipelines/objective_comparator.py"],
+            "materializer": "rlrmp.analysis.objective_comparator.objective_comparator_recipe",
+            "source_files": [
+                "src/rlrmp/eval/objective_terms.py",
+                "src/rlrmp/analysis/objective_comparator.py",
+            ],
         }
     if schema.startswith("rlrmp.gru_map_error_decomposition") or name.startswith(
         "gru_map_error_decomposition"

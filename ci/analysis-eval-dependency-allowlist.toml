@@ -22,4 +22,5 @@ owner = "10bdaa4"
 eval_dependency_exemptions = [
   { analysis_type = "rlrmp.standard_matrix", recipe_module = "rlrmp.analysis.matrix.standard_matrix", recipe_name = "standard_matrix_recipe", owner = "10bdaa4", reason = "current standard-matrix analysis is still paired with its cache-shim eval path" },
   { analysis_type = "rlrmp.training_diagnostics_summary", recipe_module = "rlrmp.analysis.training_diagnostics", recipe_name = "training_diagnostics_recipe", owner = "10bdaa4", reason = "current training-diagnostics summary consumes training sidecars rather than eval manifests" },
+  { analysis_type = "rlrmp.robustness_phenotype", recipe_module = "rlrmp.analysis.robustness_phenotype", recipe_name = "robustness_phenotype_recipe", owner = "3a5be47", reason = "grouped phenotype analysis consumes canonical analysis manifests rather than evaluation manifests" },
 ]

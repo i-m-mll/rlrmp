@@ -327,11 +327,6 @@ owner = "c92ebd8"
 reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
 
 [[living_materializers]]
-path = "results/c92ebd8/scripts/materialize_pgd_1p05_reach_context_diagnostics.py"
-owner = "c92ebd8"
-reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
-
-[[living_materializers]]
 path = "results/c92ebd8/scripts/materialize_pgd_1p05_stabilization_diagnostics.py"
 owner = "c92ebd8"
 reason = "Living legacy producer retained until its tracked figure family migrates to native custody."

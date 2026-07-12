@@ -135,8 +135,7 @@ def test_robustness_phenotype_bundle_executes_with_status_lineage(
         tmp_path / "feedbax_runs",
         tmp_path / "source_payloads",
     )
-    fake_repo_root = tmp_path / "repo"
-    monkeypatch.setattr(dm, "REPO_ROOT", fake_repo_root)
+    monkeypatch.setattr(dm, "REPO_ROOT", tmp_path / "repo")
 
     result = execute_staged_analysis_bundle(
         bundle,
@@ -153,9 +152,6 @@ def test_robustness_phenotype_bundle_executes_with_status_lineage(
     output_statuses = {output.role: output.status for output in phenotype_stage.outputs}
     assert output_statuses["manifest"] == "materialized"
     assert output_statuses["rlrmp-robustness-phenotype-sidecar"] == "materialized"
-    assert output_statuses["rlrmp-robustness-phenotype-sidecar-json"] == "materialized"
-    assert output_statuses["rlrmp-robustness-phenotype-sidecar-note"] == "materialized"
-    assert output_statuses["rlrmp-robustness-phenotype-regeneration-spec"] == "materialized"
     assert output_statuses["rlrmp-formal-hinf-certificate"] == "missing"
 
     report_stage = stages["phenotype_report"]
@@ -166,7 +162,8 @@ def test_robustness_phenotype_bundle_executes_with_status_lineage(
         artifact for artifact in report_manifest.artifacts if artifact.role == "report_render"
     )
     render_text = Path(render_artifact.uri).read_text(encoding="utf-8")
-    assert "Interpretive robustness phenotype report" in render_text
+    assert "# Robustness Phenotype Report" in render_text
+    assert "Feedbax-custody report render" in render_text
 
     formal_stage = stages["formal_hinf_certificate"]
     assert formal_stage.outputs[0].status == "not_applicable"
@@ -177,12 +174,7 @@ def test_robustness_phenotype_bundle_executes_with_status_lineage(
     manifest_ref = phenotype_stage.manifest_refs[0]
     manifest = load_manifest(manifest_ref.uri)
     roles = {artifact.role for artifact in manifest.artifacts}
-    assert {
-        "rlrmp-robustness-phenotype-sidecar",
-        "rlrmp-robustness-phenotype-sidecar-json",
-        "rlrmp-robustness-phenotype-sidecar-note",
-        "rlrmp-robustness-phenotype-regeneration-spec",
-    } <= roles
+    assert roles == {"rlrmp-robustness-phenotype-sidecar"}
     payload_artifact = next(
         artifact
         for artifact in manifest.artifacts
@@ -196,16 +188,12 @@ def test_robustness_phenotype_bundle_executes_with_status_lineage(
     assert payload["components"]["exact_audit"]["status"] == "missing"
     row = payload["rows"][0]
     assert row["formal_hinf_claim"]["status"] == "not_claimed"
-    assert payload["bundle_contract"]["formal_claim_policy"] == (
-        "conservative_no_upgrade_without_formal_inputs"
-    )
+    assert payload["interpretation_contract"]["not_standard_certificate"] is True
+    assert payload["interpretation_contract"]["formal_hinf_requirements"] == [
+        "game_card",
+        "gamma_or_budget",
+        "disturbance_channel",
+        "exact_audit_or_induced_gain",
+    ]
     accepted = accept_rlrmp_spec_payload(HINF_PHENOTYPE_SIDECAR_KIND, payload)
     assert accepted.target_version == HINF_PHENOTYPE_SIDECAR_SCHEMA_VERSION
-
-    tracked_json = (
-        fake_repo_root / "results" / "769aea6" / "notes" / "hinf_phenotype_sidecar.json"
-    )
-    tracked_markdown = tracked_json.with_suffix(".md")
-    assert tracked_json.exists()
-    assert tracked_markdown.exists()
-    assert "not a standard certificate" in tracked_markdown.read_text(encoding="utf-8")

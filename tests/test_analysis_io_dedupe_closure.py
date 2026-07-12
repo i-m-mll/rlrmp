@@ -194,9 +194,10 @@ def test_path_and_ensemble_residuals_stay_canonical() -> None:
         isinstance(node, ast.FunctionDef) and node.name == "_repo_relative"
         for node in ast.walk(declarative)
     )
-    objective_adapter = _function(
-        "tests/analysis/pipelines/test_objective_comparator.py",
-        "_legacy_evaluate_replicate_model_states",
-    )
-    assert _loc(objective_adapter) <= 25
-    assert "eval_ensemble_on_trials" in _calls(objective_adapter)
+    assert not (
+        REPO_ROOT / "tests/analysis/pipelines/test_objective_comparator.py"
+    ).exists()
+    canonical_objective_tests = (
+        REPO_ROOT / "tests/analysis/test_objective_comparator.py"
+    ).read_text(encoding="utf-8")
+    assert "build_objective_comparator_sidecar_from_cached" in canonical_objective_tests
