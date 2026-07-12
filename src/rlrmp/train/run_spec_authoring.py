@@ -346,6 +346,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser = _build_config_generated_parser()
     parser.add_argument(
+        "--verify-resume-only",
+        action="store_true",
+        help=(
+            "Load the configured checkpoint, run strict binding/integrity/ABI "
+            "resume gates, print the continuation summary, and exit without training."
+        ),
+    )
+    parser.add_argument(
         "--compact-run-spec",
         action="store_true",
         help=(
