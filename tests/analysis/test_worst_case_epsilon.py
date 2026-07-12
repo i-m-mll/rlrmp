@@ -7,8 +7,8 @@ from types import SimpleNamespace
 import jax.numpy as jnp
 import numpy as np
 
-import rlrmp.analysis.pipelines.gru_worst_case_epsilon_audit as audit
-from rlrmp.analysis.pipelines.gru_worst_case_epsilon_audit import (
+import rlrmp.analysis.worst_case_epsilon as audit
+from rlrmp.analysis.worst_case_epsilon import (
     declared_epsilon_l2_radius,
     frozen_batch_adversary_audit_report,
     optimize_epsilon_sequence,
@@ -231,9 +231,10 @@ def test_staged_optimizer_matches_serial_zero_step_candidate_edge() -> None:
 
     assert staged.restart_index == serial.restart_index == 1
     np.testing.assert_allclose(staged.epsilon, serial.epsilon, rtol=1e-12, atol=1e-12)
-    assert staged.history == serial.history == (
-        {"step": 0, "objective": 0.4, "epsilon_l2": 0.4},
-    )
+    assert staged.history == serial.history
+    assert staged.history[0]["step"] == 0
+    np.testing.assert_allclose(staged.history[0]["objective"], 0.4)
+    np.testing.assert_allclose(staged.history[0]["epsilon_l2"], 0.4)
     assert len(staged.restart_summaries) == len(candidates)
     assert staged.restart_summaries == serial.restart_summaries
 

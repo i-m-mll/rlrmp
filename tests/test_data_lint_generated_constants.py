@@ -108,7 +108,7 @@ def test_data_lint_ignores_dimensions_tolerances_and_labels() -> None:
 def test_data_lint_flags_low_precision_calibration_table_shape() -> None:
     findings = scan_source(
         _LOW_PRECISION_CALIBRATION_TABLE_SNIPPET,
-        "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py",
+        "src/rlrmp/data_products/calibration_computation.py",
     )
     assert [finding.name for finding in findings] == ["DEFAULT_AMPLITUDE_FACTORS"]
     assert findings[0].n_high_precision == 0
