@@ -35,6 +35,8 @@ def register_steady_state_figure_pieces(
 ) -> None:
     """Register all surviving 87424a4 comparisons from custody JSON."""
     path = Path(artifact_path or (REPO_ROOT / STEADY_STATE_DETAIL_PATH)).resolve()
+    if artifact_path is None and not path.exists():
+        return
     digest = sha256(path.read_bytes()).hexdigest()
     for comparison_id in STEADY_STATE_COMPARISON_IDS:
         register_figure_piece(

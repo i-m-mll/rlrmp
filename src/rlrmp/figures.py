@@ -96,6 +96,11 @@ def register_rlrmp_figure_surfaces(*, replace: bool = True) -> None:
             "Response-norm comparison bars derived from payload-owned model rows.",
         ),
         (
+            "rlrmp.perturbation_response_traces",
+            _perturbation_response_traces,
+            "Aligned and optional orthogonal steady-state perturbation responses.",
+        ),
+        (
             "rlrmp.scalar_diagnostic_traces",
             _scalar_diagnostic_traces,
             "Scalar and dual-axis traces from analysis-owned diagnostic collections.",
@@ -202,6 +207,30 @@ def register_rlrmp_figure_surfaces(*, replace: bool = True) -> None:
             metadata={"ported_from": "feedbax.analysis.effector"},
         ),
         FigureTemplate(
+            name="rlrmp.perturbation_response_comparison",
+            description=(
+                "Steady-state response grid with fixed output/plant facets and "
+                "payload-bound condition collections."
+            ),
+            assembler="feedbax.grid_figure",
+            assembler_params={"panel_constructor": "rlrmp.profile_grid"},
+            slots=[
+                SlotSpec(
+                    name="responses",
+                    constructor="rlrmp.perturbation_response_traces",
+                    multiplicity="per_facet",
+                )
+            ],
+            facet_by=["output", "plant_row"],
+            facet_target="panels",
+            metadata={
+                "intrinsic_facets": ["output", "plant_row"],
+                "data_bound_collections": ["condition"],
+                "optional_traces": ["orthogonal"],
+                "window_annotation": "wash-in perturbation window",
+            },
+        ),
+        FigureTemplate(
             name="rlrmp.response_norm_comparison",
             description=(
                 "Response-norm comparison with intrinsic metric/condition facets and "
@@ -288,8 +317,10 @@ def register_rlrmp_figure_surfaces(*, replace: bool = True) -> None:
     # Imported here to keep the core template module independent of tracked
     # stock payload definitions during module initialization.
     from rlrmp.profile_payloads import register_profile_stock_pieces
+    from rlrmp.steady_state_figures import register_steady_state_figure_pieces
 
     register_profile_stock_pieces(replace=replace)
+    register_steady_state_figure_pieces(replace=replace)
 
 
 def standard_matrix_profile_spec(
@@ -865,6 +896,85 @@ def _response_norm_facet(data: Mapping[str, Any]) -> Mapping[str, Any]:
     metric = str(data.get("metric", ""))
     condition_class = str(data.get("condition_class", ""))
     return _mapping(_mapping(_mapping(payload.get("facets")).get(metric)).get(condition_class))
+
+
+def _perturbation_response_traces(
+    data: Mapping[str, Any],
+    params: StrictModel,
+) -> Sequence[Any]:
+    p = FigureTraceParams.model_validate(params.model_dump())
+    output = str(data.get("output", "output"))
+    plant_row = str(data.get("plant_row", "position"))
+    conditions = _mapping(data.get("conditions"))
+    traces: list[Any] = []
+    y_values: list[float] = []
+    palette = ("#2563eb", "#dc2626", "#16a34a", "#7c3aed", "#d97706")
+    pulse_duration_steps = int(data.get("pulse_duration_steps", 1))
+    dt_values: list[float] = []
+    for index, condition in enumerate(conditions.values()):
+        condition = _mapping(condition)
+        summary = _mapping(_mapping(condition.get("family_summary")).get(plant_row))
+        mean = _series(summary.get(f"aligned_{output}_window_profile_mean"))
+        if not mean:
+            continue
+        sem = _series(summary.get(f"aligned_{output}_window_profile_sem"))
+        relative_steps = _series(summary.get("relative_time_steps"), default_len=len(mean))
+        dt = float(condition.get("dt_s", 1.0))
+        dt_values.append(dt)
+        x = [step * dt for step in relative_steps]
+        label = str(condition.get("label", f"Condition {index + 1}"))
+        color = palette[index % len(palette)]
+        upper = [value + error for value, error in zip(mean, sem, strict=True)] if sem else mean
+        lower = [value - error for value, error in zip(mean, sem, strict=True)] if sem else mean
+        profile = get_figure_constructor("feedbax.profile_band", tier="trace")
+        traces.extend(
+            profile.callable(
+                {
+                    "x": x,
+                    "y": [mean],
+                    "mean": mean,
+                    "upper": upper,
+                    "lower": lower,
+                    "label": f"{label} aligned",
+                    "color": _plotly_rgb(color),
+                },
+                profile.params(),
+            )
+        )
+        y_values.extend([*lower, *upper])
+        orthogonal = _series(summary.get(f"orthogonal_{output}_window_profile_mean"))
+        if orthogonal:
+            traces.append(
+                go.Scatter(
+                    x=x,
+                    y=orthogonal,
+                    mode="lines",
+                    name=f"{label} orthogonal",
+                    opacity=0.6 * p.opacity,
+                    line={"color": _plotly_rgb(color), "width": 1.6},
+                )
+            )
+            y_values.extend(orthogonal)
+    if y_values:
+        y_min, y_max = min(y_values), max(y_values)
+        if y_min == y_max:
+            y_min, y_max = y_min - 1.0, y_max + 1.0
+        pulse_end = pulse_duration_steps * (dt_values[0] if dt_values else 1.0)
+        for name, x_value in (
+            ("Wash-in window start", 0.0),
+            ("Wash-in window end", pulse_end),
+        ):
+            traces.append(
+                go.Scatter(
+                    x=[x_value, x_value],
+                    y=[y_min, y_max],
+                    mode="lines",
+                    name=name,
+                    opacity=0.45,
+                    line={"color": "rgb(90,90,90)", "width": 1.2, "dash": "dot"},
+                )
+            )
+    return traces
 
 
 def _profile_series(cell: Mapping[str, Any], profile_key: str) -> list[dict[str, Any]]:

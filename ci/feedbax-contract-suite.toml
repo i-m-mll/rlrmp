@@ -321,6 +321,18 @@ negative_canary = [
 ]
 
 [[families]]
+name = "steady_state_figure_contract"
+owner = "412b5d2"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_steady_state_figure_migration.py::"
+# Pin all four real FigureSpec executions, variable cardinality, and helper retirement.
+minimum_non_skipped = 3
+negative_canary = [
+    "tests/analysis/test_steady_state_figure_migration.py::test_all_four_specs_execute_with_variable_condition_cardinality[2]",
+]
+
+[[families]]
 name = "literature_replication_figure_contract"
 owner = "28876c1"
 status = "live"
