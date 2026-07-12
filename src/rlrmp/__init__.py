@@ -238,6 +238,7 @@ def ensure_rlrmp_recipes_registered(
         from rlrmp.analysis.training_diagnostics import (
             register_training_diagnostics_recipes,
         )
+        from rlrmp.analysis.scalar_diagnostic import register_scalar_diagnostic_recipe
         from rlrmp.figures import register_rlrmp_figure_surfaces
         from rlrmp.viz.color_config import register_rlrmp_color_config
 
@@ -257,6 +258,7 @@ def ensure_rlrmp_recipes_registered(
         register_robustness_phenotype_recipe()
         register_worst_case_epsilon_recipe()
         register_training_diagnostics_recipes()
+        register_scalar_diagnostic_recipe()
     except Exception:
         # Reset so a later call re-attempts registration.
         _RECIPES_REGISTERED = None

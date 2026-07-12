@@ -95,6 +95,11 @@ def register_rlrmp_figure_surfaces(*, replace: bool = True) -> None:
             _response_norm_bars,
             "Response-norm comparison bars derived from payload-owned model rows.",
         ),
+        (
+            "rlrmp.scalar_diagnostic_traces",
+            _scalar_diagnostic_traces,
+            "Scalar and dual-axis traces from analysis-owned diagnostic collections.",
+        ),
     ):
         register_figure_constructor(
             key,
@@ -238,6 +243,28 @@ def register_rlrmp_figure_surfaces(*, replace: bool = True) -> None:
             ],
             facet_by=["context"],
             facet_target="panels",
+        ),
+        FigureTemplate(
+            name="rlrmp.scalar_diagnostic",
+            description=(
+                "Scalar or dual-axis diagnostic with intrinsic metric/condition facets "
+                "and payload-bound comparison collections."
+            ),
+            assembler="feedbax.grid_figure",
+            assembler_params={"panel_constructor": "rlrmp.comparison_grid"},
+            slots=[
+                SlotSpec(
+                    name="traces",
+                    constructor="rlrmp.scalar_diagnostic_traces",
+                    multiplicity="per_facet",
+                )
+            ],
+            facet_by=["metric", "condition_class"],
+            facet_target="panels",
+            metadata={
+                "intrinsic_facets": ["metric", "condition_class"],
+                "data_bound_collections": ["run", "model", "architecture", "row"],
+            },
         ),
     ):
         register_figure_template(template, replace=replace)
@@ -523,6 +550,51 @@ def response_norm_comparison_spec(
     )
 
 
+def scalar_diagnostic_spec(
+    *,
+    name: str,
+    figure_routing: Mapping[str, Any] | None = None,
+) -> FigureSpec:
+    """Build a scalar-diagnostic figure with analysis-manifest-owned rows."""
+    return FigureSpec(
+        name=name,
+        template="rlrmp.scalar_diagnostic",
+        slot_bindings={
+            "traces": TraceBinding(
+                name="diagnostic-traces",
+                constructor="rlrmp.scalar_diagnostic_traces",
+                data={
+                    "payload": {"item": "manifest", "path": "metadata.figure_payload"},
+                    "metric": {"item": "metric"},
+                    "condition_class": {"item": "condition_class"},
+                },
+            )
+        },
+        panels=[
+            {
+                "name": "diagnostic",
+                "title": {"item": "metric"},
+                "axes_labels": {"x": "Progress", "y": "Diagnostic value"},
+            }
+        ],
+        facet_bindings={
+            "metric": {
+                "item": "manifest",
+                "path": "metadata.figure_payload.intrinsic_axes.metric",
+            },
+            "condition_class": {
+                "item": "manifest",
+                "path": "metadata.figure_payload.intrinsic_axes.condition_class",
+            },
+        },
+        figure_routing=dict(figure_routing or {}),
+        metadata={
+            "schema_id": "rlrmp.figure_data.scalar_diagnostic",
+            "schema_version": "rlrmp.figure_data.scalar_diagnostic.v1",
+        },
+    )
+
+
 def standard_matrix_payload(
     cells: Sequence[Mapping[str, Any]],
     params: Mapping[str, Any],
@@ -746,6 +818,46 @@ def _response_norm_bars(data: Mapping[str, Any], params: StrictModel) -> Sequenc
             labels.append(str(curve.get("label", curve.get("model_id", "Model"))))
             values.append(max(mean))
     return [go.Bar(x=labels, y=values, name="Peak mean norm", opacity=p.opacity)] if labels else []
+
+
+def _scalar_diagnostic_traces(
+    data: Mapping[str, Any],
+    params: StrictModel,
+) -> Sequence[Any]:
+    """Render every payload-owned row matching the intrinsic panel facets."""
+    p = FigureTraceParams.model_validate(params.model_dump())
+    payload = _mapping(data.get("payload"))
+    metric = str(data.get("metric", ""))
+    condition_class = str(data.get("condition_class", ""))
+    traces: list[go.Scatter] = []
+    for row_id, row_value in _mapping(payload.get("collections")).items():
+        row = _mapping(row_value)
+        label = str(row.get("label", row_id))
+        for trace_name, trace_value in _mapping(row.get("traces")).items():
+            trace = _mapping(trace_value)
+            if str(trace.get("metric", metric)) != metric:
+                continue
+            if str(trace.get("condition_class", condition_class)) != condition_class:
+                continue
+            y = _series(trace.get("y", trace.get("value")))
+            if not y:
+                continue
+            traces.append(
+                go.Scatter(
+                    x=_series(trace.get("x"), default_len=len(y)),
+                    y=y,
+                    mode=str(trace.get("mode", "lines")),
+                    name=str(trace.get("label", f"{label} {trace_name}")),
+                    legendgroup=str(row_id),
+                    opacity=p.opacity,
+                    line={
+                        "color": _plotly_rgb(trace.get("color", row.get("color"))),
+                        "dash": str(trace.get("line_dash", "solid")),
+                    },
+                    yaxis="y2" if trace.get("axis") == "secondary" else "y",
+                )
+            )
+    return traces
 
 
 def _response_norm_facet(data: Mapping[str, Any]) -> Mapping[str, Any]:

@@ -12,11 +12,6 @@ owner = "020a65b"
 reason = "Pre-declarative figure record retained until its assigned migration wave lands."
 
 [[legacy_specs]]
-path = "results/1ab1fef/figures/adaptive_damage_lambda/spec.json"
-owner = "1ab1fef"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
 path = "results/1ab1fef/figures/nominal_velocity_profiles/spec.json"
 owner = "1ab1fef"
 reason = "Pre-declarative figure record retained until its assigned migration wave lands."
@@ -37,11 +32,6 @@ owner = "3244f1a"
 reason = "Pre-declarative figure record retained until its assigned migration wave lands."
 
 [[legacy_specs]]
-path = "results/410d7ac/figures/delta_v_signature/spec.json"
-owner = "410d7ac"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
 path = "results/4d79e07/figures/delayed_movement_bank_pgd_clip5_vs_no_pgd_velocity_profiles/spec.json"
 owner = "4d79e07"
 reason = "Pre-declarative figure record retained until its assigned migration wave lands."
@@ -49,11 +39,6 @@ reason = "Pre-declarative figure record retained until its assigned migration wa
 [[legacy_specs]]
 path = "results/7c1f7ed/figures/delayed_sisu_velocity_profiles/spec.json"
 owner = "7c1f7ed"
-reason = "Pre-declarative figure record retained until its assigned migration wave lands."
-
-[[legacy_specs]]
-path = "results/91a090c/figures/adaptive_damage_lambda/spec.json"
-owner = "91a090c"
 reason = "Pre-declarative figure record retained until its assigned migration wave lands."
 
 [[legacy_specs]]
@@ -187,18 +172,8 @@ owner = "efc4d68"
 reason = "Pre-declarative figure record retained until its assigned migration wave lands."
 
 [[living_materializers]]
-path = "results/1ab1fef/scripts/materialize_post_run_analysis.py"
-owner = "1ab1fef"
-reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
-
-[[living_materializers]]
 path = "results/3244f1a/scripts/materialize_final_small_bank_profiles.py"
 owner = "3244f1a"
-reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
-
-[[living_materializers]]
-path = "results/410d7ac/scripts/analyse_linear_decoupling_mvp.py"
-owner = "410d7ac"
 reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
 
 [[living_materializers]]
@@ -209,11 +184,6 @@ reason = "Living legacy producer retained until its tracked figure family migrat
 [[living_materializers]]
 path = "results/4d79e07/scripts/materialize_delayed_pgd_velocity_profile_comparison.py"
 owner = "4d79e07"
-reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
-
-[[living_materializers]]
-path = "results/91a090c/scripts/materialize_adaptive_damage_lambda.py"
-owner = "91a090c"
 reason = "Living legacy producer retained until its tracked figure family migrates to native custody."
 
 [[living_materializers]]

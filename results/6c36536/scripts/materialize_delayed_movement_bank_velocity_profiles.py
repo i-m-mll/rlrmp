@@ -32,7 +32,7 @@ from rlrmp.eval.checkpoint_selection import (
     DEFAULT_DELAYED_REACH_GO_CUE_STEPS,
     DEFAULT_DELAYED_REACH_UNIFORM_REACH_LENGTH_M,
 )
-from rlrmp.analysis.pipelines.gru_pilot_figures import cs_output_feedback_reference_profiles
+from rlrmp.eval.velocity_profiles import cs_output_feedback_reference_profiles
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 

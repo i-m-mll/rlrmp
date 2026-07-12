@@ -1,0 +1,1 @@
+{"schema_id":"rlrmp.analysis_parameter_preset","schema_version":"rlrmp.analysis_parameter_preset.v1","preset_id":"gru_evaluation_diagnostics","source_issue":"97411ff","parameters":{"n_rollout_trials":64},"content_sha256":"d5e125b86acc1ab7aad8b80dafb3c3f386324ae45f068890f348897b0cf53b34"}

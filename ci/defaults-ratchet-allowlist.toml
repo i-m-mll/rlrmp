@@ -1307,38 +1307,6 @@ owner = "5b3aabe"
 note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
 
 [[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_postrun_materialization.py"
-key = "materialization_status"
-literal_repr = "'unknown'"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_postrun_materialization.py"
-key = "reason"
-literal_repr = "'feedback_ablation_not_materialized'"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_postrun_materialization.py"
-key = "status"
-literal_repr = "'not_available'"
-count = 1
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
-path = "src/rlrmp/analysis/pipelines/gru_postrun_materialization.py"
-key = "status"
-literal_repr = "'unknown'"
-count = 2
-owner = "5b3aabe"
-note = "Phase-1 defaults ratchet catch-all until a narrower owner is split."
-
-[[default_fallback_sites]]
 path = "src/rlrmp/model/cs_lss_gru.py"
 key = "h0_context_source"
 literal_repr = "'target_relative_delayed_feedback'"
