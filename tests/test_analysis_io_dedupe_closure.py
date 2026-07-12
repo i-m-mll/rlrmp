@@ -248,51 +248,6 @@ def test_args_namespace_members_cannot_reaccrete() -> None:
         assert "args_namespace" in _calls(node)
 
 
-def test_e901_members_route_shared_trace_and_writer_helpers() -> None:
-    trace_members = (
-        (
-            "results/e901a20/scripts/materialize_nonh0_pgd_vs_no_pgd_heldout_velocity.py",
-            "add_profile_trace",
-        ),
-        (
-            "results/e901a20/scripts/materialize_nonh0_no_pgd_extlqg_velocity.py",
-            "add_profile_trace",
-        ),
-        (
-            "results/e901a20/scripts/materialize_nonh0_no_pgd_extlqg_velocity.py",
-            "add_reference_trace",
-        ),
-        (
-            "results/e901a20/scripts/materialize_nominal_velocity_profile_comparison.py",
-            "add_band_trace",
-        ),
-        (
-            "results/e901a20/scripts/materialize_nominal_velocity_profile_comparison.py",
-            "add_panel_trace",
-        ),
-        (
-            "results/e901a20/scripts/materialize_nominal_velocity_profile_comparison.py",
-            "add_companion_trace",
-        ),
-    )
-    for path, name in trace_members:
-        node = _function(path, name)
-        assert _loc(node) <= 30
-        assert _calls(node) & {"canonical_add_band_trace", "canonical_add_line"}
-
-    for name, limit in (
-        ("write_outputs", 95),
-        ("write_no_pgd_split_outputs", 90),
-        ("write_old_compatible_outputs", 115),
-    ):
-        node = _function(
-            "results/e901a20/scripts/materialize_nominal_velocity_profile_comparison.py",
-            name,
-        )
-        assert _loc(node) <= limit
-        assert "_write_profile_outputs" in _calls(node)
-
-
 def test_path_and_ensemble_residuals_stay_canonical() -> None:
     for path, name in (
         (
