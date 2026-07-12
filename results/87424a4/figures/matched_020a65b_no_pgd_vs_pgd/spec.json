@@ -7,5 +7,5 @@
   "panels": [{"name": "response", "title": {"item": "facet"}, "axes_labels": {"x": "Time from onset (s)", "y": "Response"}}],
   "facet_bindings": {"output": {"item": "params", "path": "outputs"}, "plant_row": {"item": "params", "path": "plant_rows"}},
   "figure_routing": {"formats": ["json", "html"]},
-  "metadata": {"outputs": {"output": "output", "position": "position", "velocity": "velocity"}, "plant_rows": {"position": "position", "velocity": "velocity", "force_filter": "force_filter"}, "comparison_id": "matched_020a65b_no_pgd_vs_pgd", "source_artifact_role": "rlrmp-steady-state-perturbation-detail"}
+  "metadata": {"outputs": {"output": "output", "position": "position", "velocity": "velocity"}, "plant_rows": {"position": "position", "velocity": "velocity", "force_filter": "force_filter"}, "comparison_id": "matched_020a65b_no_pgd_vs_pgd", "source_artifact_role": "steady_state_perturbation_bank_detail_json", "source_regeneration_spec": "results/87424a4/notes/steady_state_perturbation_bank_regeneration_spec.json"}
 }

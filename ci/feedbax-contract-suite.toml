@@ -327,7 +327,7 @@ status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/analysis/test_steady_state_figure_migration.py::"
 # Pin all four real FigureSpec executions, variable cardinality, and helper retirement.
-minimum_non_skipped = 3
+minimum_non_skipped = 4
 negative_canary = [
     "tests/analysis/test_steady_state_figure_migration.py::test_all_four_specs_execute_with_variable_condition_cardinality[2]",
 ]

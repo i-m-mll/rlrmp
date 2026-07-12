@@ -8,11 +8,15 @@ from pathlib import Path
 import pytest
 from feedbax.analysis.figures import execute_figure_spec
 from feedbax.contracts.figures import FigureSpec
+from feedbax.plot.constructors import get_figure_piece
 
 from rlrmp.figures import register_rlrmp_figure_surfaces
 from rlrmp.steady_state_figures import (
     STEADY_STATE_COMPARISON_IDS,
+    STEADY_STATE_DETAIL_ROLE,
+    STEADY_STATE_REGENERATION_SPEC_PATH,
     register_steady_state_figure_pieces,
+    steady_state_piece_name,
 )
 
 
@@ -87,3 +91,30 @@ def test_surviving_specs_are_native_and_legacy_builder_is_absent() -> None:
 
     for path in (REPO_ROOT / "src/rlrmp").rglob("*.py"):
         assert "build_response_figure" not in path.read_text(encoding="utf-8")
+
+
+def test_piece_and_specs_use_governed_regeneration_role(tmp_path: Path) -> None:
+    regeneration = json.loads(
+        (REPO_ROOT / STEADY_STATE_REGENERATION_SPEC_PATH).read_text(encoding="utf-8")
+    )
+    governed = next(
+        output
+        for output in regeneration["outputs"]
+        if output["logical_name"].endswith("steady_state_perturbation_bank_detail.json")
+    )
+    assert governed["role"] == STEADY_STATE_DETAIL_ROLE
+    assert governed["storage_backend"] == "feedbax-local"
+    assert governed["sha256"]
+
+    artifact = tmp_path / "detail.json"
+    artifact.write_text(json.dumps({"comparisons": {}}), encoding="utf-8")
+    register_steady_state_figure_pieces(artifact_path=artifact)
+    for comparison_id in STEADY_STATE_COMPARISON_IDS:
+        piece = get_figure_piece(steady_state_piece_name(comparison_id))
+        assert piece.artifact_ref.role == governed["role"]
+        spec_path = REPO_ROOT / "results/87424a4/figures" / comparison_id / "spec.json"
+        spec = FigureSpec.model_validate_json(spec_path.read_text(encoding="utf-8"))
+        assert spec.metadata["source_artifact_role"] == governed["role"]
+        assert spec.metadata["source_regeneration_spec"] == str(
+            STEADY_STATE_REGENERATION_SPEC_PATH
+        )

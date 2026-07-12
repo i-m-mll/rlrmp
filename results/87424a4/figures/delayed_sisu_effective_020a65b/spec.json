@@ -18,6 +18,7 @@
     "outputs": {"output": "output", "position": "position", "velocity": "velocity"},
     "plant_rows": {"position": "position", "velocity": "velocity", "force_filter": "force_filter"},
     "comparison_id": "delayed_sisu_effective_020a65b",
-    "source_artifact_role": "rlrmp-steady-state-perturbation-detail"
+    "source_artifact_role": "steady_state_perturbation_bank_detail_json",
+    "source_regeneration_spec": "results/87424a4/notes/steady_state_perturbation_bank_regeneration_spec.json"
   }
 }
