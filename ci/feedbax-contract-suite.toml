@@ -287,6 +287,18 @@ expected_collection_pattern = "tests/analysis/test_profile_stock_migration.py::"
 # Pin native execution, archived parity adoption, and terminal producer deletion.
 minimum_non_skipped = 3
 
+[[families]]
+name = "delayed_profile_figure_contract"
+owner = "485c06e"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_delayed_profile_figure_contract.py::"
+# Pin payload semantics, all three native intents, and terminal producer deletion.
+minimum_non_skipped = 5
+negative_canary = [
+    "tests/test_delayed_profile_figure_contract.py::test_registered_delayed_payload_owns_profile_facets_and_bands",
+]
+
 [pipeline_contract_native]
 allowlist = [
     { path = "src/rlrmp/analysis/pipelines/diagnostic_provenance.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "regeneration-spec writer is shared compatibility plumbing until custody routing lands" },

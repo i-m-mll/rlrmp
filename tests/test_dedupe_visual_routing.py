@@ -446,11 +446,7 @@ def test_velocity_replicate_writer_preserves_single_and_sequence_contracts(
     assert [trace.showlegend for trace in reference_lines] == [True, False]
 
 
-def test_velocity_writer_adapters_preserve_input_and_title_contracts(tmp_path) -> None:
-    timing = runpy.run_path(
-        REPO_ROOT
-        / "results/40e1911/scripts/materialize_delayed_timing_hold_lane_velocity_profiles.py"
-    )
+def test_velocity_writer_adapter_preserves_input_and_title_contracts(tmp_path) -> None:
     movement = runpy.run_path(
         REPO_ROOT
         / "results/6c36536/scripts/materialize_delayed_movement_bank_velocity_profiles.py"
@@ -463,7 +459,7 @@ def test_velocity_writer_adapters_preserve_input_and_title_contracts(tmp_path) -
         suffix = "_by_replicate" if "by replicate" in title else ""
         return output_dir / f"forward_velocity_profiles{suffix}_stochastic.html"
 
-    for namespace in (timing, movement):
+    for namespace in (movement,):
         namespace["write_velocity_figure"].__globals__["canonical_write_velocity_figure"] = (
             capture
         )
@@ -471,29 +467,20 @@ def test_velocity_writer_adapters_preserve_input_and_title_contracts(tmp_path) -
             "canonical_write_velocity_by_replicate_figure"
         ] = capture
     profile = _velocity_profile("row")
-    sequence = (profile,)
 
     outputs = (
-        timing["write_velocity_figure"](sequence, output_dir=tmp_path, references=()),
-        timing["write_velocity_by_replicate_figure"](
-            sequence, output_dir=tmp_path, references=()
-        ),
         movement["write_velocity_figure"](profile, output_dir=tmp_path, references=()),
         movement["write_velocity_by_replicate_figure"](
             profile, output_dir=tmp_path, references=()
         ),
     )
 
-    assert [isinstance(call[0], tuple) for call in calls] == [True, True, False, False]
+    assert [isinstance(call[0], tuple) for call in calls] == [False, False]
     assert [call[1] for call in calls] == [
-        "Delayed timing / pre-go hold target-radial velocity ({bank_kind})",
-        "Delayed timing / pre-go hold target-radial velocity by replicate ({bank_kind})",
         "Delayed movement-bank target-radial velocity ({bank_kind})",
         "Delayed movement-bank target-radial velocity by replicate ({bank_kind})",
     ]
     assert [output.name for output in outputs] == [
-        "forward_velocity_profiles_stochastic.html",
-        "forward_velocity_profiles_by_replicate_stochastic.html",
         "forward_velocity_profiles_stochastic.html",
         "forward_velocity_profiles_by_replicate_stochastic.html",
     ]
@@ -501,13 +488,6 @@ def test_velocity_writer_adapters_preserve_input_and_title_contracts(tmp_path) -
 
 def test_owned_scalar_helpers_are_import_routed_not_redefined() -> None:
     expected_absent = {
-        "results/40e1911/scripts/materialize_delayed_timing_hold_lane_velocity_profiles.py": {
-            "add_band_trace",
-            "add_reference_trace",
-            "rgba",
-            "initial_effector_position",
-            "initial_effector_velocity",
-        },
         "results/6c36536/scripts/materialize_delayed_movement_bank_velocity_profiles.py": {
             "add_band_trace",
             "add_reference_trace",
@@ -615,7 +595,6 @@ def test_residual_figure_members_are_thin_canonical_adapters() -> None:
 
 def test_delayed_eval_cluster_members_are_thin_canonical_adapters() -> None:
     for relative_path in (
-        "results/40e1911/scripts/materialize_delayed_timing_hold_lane_velocity_profiles.py",
         "results/6c36536/scripts/materialize_delayed_movement_bank_velocity_profiles.py",
     ):
         tree = ast.parse((REPO_ROOT / relative_path).read_text(encoding="utf-8"))
@@ -640,7 +619,6 @@ def test_delayed_eval_cluster_members_are_thin_canonical_adapters() -> None:
 
 def test_velocity_writer_cluster_members_are_thin_canonical_adapters() -> None:
     scripts = (
-        "results/40e1911/scripts/materialize_delayed_timing_hold_lane_velocity_profiles.py",
         "results/6c36536/scripts/materialize_delayed_movement_bank_velocity_profiles.py",
     )
     expected = {
@@ -667,16 +645,3 @@ def test_velocity_writer_cluster_members_are_thin_canonical_adapters() -> None:
             assert canonical_name in calls, (relative_path, name)
             assert calls.isdisjoint(forbidden), (relative_path, name, calls & forbidden)
             assert function.end_lineno - function.lineno < 30, (relative_path, name)
-
-    timing_tree = ast.parse((REPO_ROOT / scripts[0]).read_text(encoding="utf-8"))
-    timing_writer = next(
-        node
-        for node in timing_tree.body
-        if isinstance(node, ast.FunctionDef) and node.name == "write_velocity_figure"
-    )
-    timing_calls = {
-        node.func.id
-        for node in ast.walk(timing_writer)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-    }
-    assert {"group_sisu_profiles", "write_sisu_velocity_figure"} <= timing_calls
