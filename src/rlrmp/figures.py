@@ -220,6 +220,12 @@ def register_rlrmp_figure_surfaces(*, replace: bool = True) -> None:
         replace=replace,
     )
 
+    # Imported here to keep the core template module independent of tracked
+    # stock payload definitions during module initialization.
+    from rlrmp.profile_payloads import register_profile_stock_pieces
+
+    register_profile_stock_pieces(replace=replace)
+
 
 def standard_matrix_profile_spec(
     *,
