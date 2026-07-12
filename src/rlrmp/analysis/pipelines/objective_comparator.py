@@ -13,6 +13,7 @@ import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
+from feedbax.contracts.manifest import CheckpointSelectionManifest
 
 from rlrmp.analysis.data_products import load_analysis_parameter_preset
 from rlrmp.analysis.math.summary_stats import summary_stats as _summary_stats
@@ -20,6 +21,7 @@ from rlrmp.io import update_marked_section, write_compact_json
 from rlrmp.paths import REPO_ROOT, run_spec_path
 from rlrmp.runtime.run_spec_access import require_run_seed
 from rlrmp.runtime.run_specs import RunSpecValidationError, resolve_run_record
+from rlrmp.eval.checkpoint_selection import checkpoint_selection_rows
 
 
 SCHEMA_VERSION = "rlrmp.objective_comparator_sidecar.v6"
@@ -247,7 +249,7 @@ def build_objective_comparator_sidecar(
     *,
     issue: str,
     source_manifest: str,
-    checkpoint_selection: Mapping[str, Any],
+    checkpoint_selection: Mapping[str, Any] | CheckpointSelectionManifest,
     extlqg: ExtLQGCostDecomposition,
     scope: str,
     generated_by: str,
@@ -259,16 +261,32 @@ def build_objective_comparator_sidecar(
 ) -> dict[str, Any]:
     """Build a JSON sidecar from validation-selected checkpoint records."""
 
-    runs = checkpoint_selection.get("runs")
+    if isinstance(checkpoint_selection, CheckpointSelectionManifest):
+        runs = checkpoint_selection_rows(checkpoint_selection)
+        checkpoint_policy = str(
+            checkpoint_selection.metadata.get("checkpoint_policy")
+            or "validation_selected_per_replicate"
+        )
+        source = checkpoint_selection.schema_version
+        selection_source = checkpoint_selection.metadata.get("selection_source")
+        selection_policy = checkpoint_selection.selection_spec.inline.get("params", {}).get(
+            "selection_policy"
+        )
+    else:
+        runs = checkpoint_selection.get("runs")
+        checkpoint_policy = str(
+            checkpoint_selection.get("checkpoint_policy")
+            or "validation_selected_per_replicate"
+        )
+        source = checkpoint_selection.get("schema_version")
+        selection_source = checkpoint_selection.get("selection_source")
+        selection_policy = checkpoint_selection.get("selection_policy")
     if not isinstance(runs, Mapping):
         raise ValueError("checkpoint_selection must contain a mapping at key 'runs'")
 
     metadata_by_id = run_metadata_by_id or {}
     shared_rollout = dict(shared_rollout_comparator or DEFAULT_SHARED_ROLLOUT_STATUS)
     split_bank = dict(split_bank_comparator or _split_bank_from_shared_rollout(shared_rollout))
-    checkpoint_policy = str(
-        checkpoint_selection.get("checkpoint_policy") or "validation_selected_per_replicate"
-    )
     sidecar_rows = [
         _build_run_row(
             run_id=str(run_id),
@@ -289,9 +307,9 @@ def build_objective_comparator_sidecar(
         "generated_by": generated_by,
         "checkpoint_policy": {
             "label": checkpoint_policy,
-            "source": checkpoint_selection.get("schema_version"),
-            "selection_source": checkpoint_selection.get("selection_source"),
-            "selection_policy": checkpoint_selection.get("selection_policy"),
+            "source": source,
+            "selection_source": selection_source,
+            "selection_policy": selection_policy,
             "caveat": (
                 "Checkpoint selection is inherited from the supplied checkpoint "
                 "manifest. Analytical action, I/O, and extLQG comparator metrics "
@@ -521,13 +539,13 @@ def materialize_shared_rollout_comparator(
 
     from feedbax.config.namespace import TreeNamespace, dict_to_namespace
     from rlrmp.analysis.math.cs_game_card import build_canonical_game
-    from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
+    from rlrmp.analysis.gru_standard_certificate import normalize_gru_hps
     from rlrmp.analysis.math.cs_released_simulation import (
         build_extlqg_comparator_path,
         default_cs_noise_covariances,
         zero_forward_noise_draws,
     )
-    from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
+    from rlrmp.eval.checkpoint_selection import (
         load_validation_selected_checkpoint_model,
     )
     from rlrmp.analysis.pipelines.gru_pilot_figures import (
@@ -989,11 +1007,11 @@ def materialize_gru_objective_comparator_sidecar(
     if checkpoint_manifest is None:
         if checkpoint_manifest_path is None:
             raise ValueError("checkpoint_manifest or checkpoint_manifest_path is required")
-        from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
-            load_checkpoint_selection_legacy_payload,
+        from rlrmp.eval.checkpoint_selection import (
+            load_checkpoint_selection_manifest,
         )
 
-        checkpoint_manifest = load_checkpoint_selection_legacy_payload(checkpoint_manifest_path)
+        checkpoint_manifest = load_checkpoint_selection_manifest(checkpoint_manifest_path)
 
     extlqg = compute_default_extlqg_cost_decomposition()
     run_metadata_by_id = {

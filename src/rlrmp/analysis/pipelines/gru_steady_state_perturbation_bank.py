@@ -20,14 +20,14 @@ import plotly.graph_objects as go
 
 from rlrmp.analysis.data_products import load_analysis_parameter_preset
 from rlrmp.analysis.perturbation_rows import PerturbationSpec
-from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
+from rlrmp.analysis.gru_standard_certificate import normalize_gru_hps
 from rlrmp.analysis.pipelines.diagnostic_provenance import repo_relative, write_regeneration_spec
-from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
+from rlrmp.eval.checkpoint_selection import (
     CheckpointSelectionMode,
     load_validation_selected_checkpoint_model,
 )
-from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import RolloutEvaluation
-from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+from rlrmp.eval.gru_diagnostics import RolloutEvaluation
+from rlrmp.eval.perturbation_bank import (
     apply_perturbation_to_trial_specs,
 )
 from rlrmp.analysis.pipelines.gru_pilot_figures import (
@@ -1531,7 +1531,7 @@ def _evaluate_model_on_trial_specs(
     n_replicates: int,
     seed: int,
 ) -> RolloutEvaluation:
-    from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+    from rlrmp.eval.perturbation_bank import (
         _evaluate_model_on_trial_specs as evaluate,
     )
 

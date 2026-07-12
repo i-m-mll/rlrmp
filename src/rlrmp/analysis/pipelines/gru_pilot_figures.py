@@ -16,7 +16,6 @@ from typing import Any
 import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
-import jax.tree as jt
 import numpy as np
 from jax_cookbook import load_with_hyperparameters
 from feedbax.analysis.figures import execute_figure_spec
@@ -41,13 +40,13 @@ from rlrmp.analysis.math.output_feedback import (
     make_cs_output_feedback_initial_state,
     position_velocity_observation_config,
 )
-from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
-from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
+from rlrmp.analysis.gru_standard_certificate import normalize_gru_hps
+from rlrmp.eval.checkpoint_selection import (
     ReplicateCheckpointSelection,
     load_validation_selected_checkpoint_model,
-    materialize_validation_selected_checkpoint_manifest,
+    build_validation_checkpoint_selection_manifest,
 )
-from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path, run_spec_path
+from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path
 from rlrmp.figures import (
     figure_render_path,
     loss_history_spec,
@@ -56,8 +55,14 @@ from rlrmp.figures import (
     standard_matrix_profile_spec,
 )
 from rlrmp.runtime.run_spec_access import require_run_dt, require_run_seed
-from rlrmp.runtime.run_specs import resolve_run_record
 from rlrmp.train.task_model import setup_task_model_pair
+from rlrmp.eval.trial_inputs import (
+    EvaluationRunInputs as RunFigureInputs,
+    default_run_label as default_label,
+    initial_effector_velocity,
+    repeat_single_validation_trial,
+    resolve_evaluation_run_inputs as resolve_run_inputs,
+)
 
 DEFAULT_FIGURE_SUBDIR = "tmp_figures/gru_pilot"
 DEFAULT_N_ROLLOUT_TRIALS = int(
@@ -66,17 +71,6 @@ DEFAULT_N_ROLLOUT_TRIALS = int(
 LOSS_TERMS_MODE = "union"
 REFERENCE_LABEL = "C&S extLQG/output-feedback 8D"
 REFERENCE_4D_LABEL = "C&S extLQG/output-feedback 4D pos+vel"
-
-
-@dataclass(frozen=True)
-class RunFigureInputs:
-    """Resolved local inputs for one GRU pilot run."""
-
-    run_id: str
-    label: str
-    run_spec_path: Path
-    artifact_dir: Path
-    run_spec: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -165,7 +159,7 @@ def materialize_gru_pilot_figures(
     output_dir = output_dir or default_output_dir(experiment, repo_root=repo_root)
     mkdir_p(output_dir)
     selection_manifest = (
-        materialize_validation_selected_checkpoint_manifest(
+        build_validation_checkpoint_selection_manifest(
             experiment=experiment,
             run_ids=run_ids,
             preferred_manifest_path=preferred_checkpoint_manifest_path,
@@ -175,7 +169,7 @@ def materialize_gru_pilot_figures(
                 else "sparse_history"
             ),
             repo_root=repo_root,
-        )
+        ).model_dump(mode="json", exclude_none=True)
         if use_validation_selected_checkpoints
         else None
     )
@@ -239,51 +233,10 @@ def materialize_gru_pilot_figures(
     return summary
 
 
-def resolve_run_inputs(
-    *,
-    experiment: str,
-    run_ids: Sequence[str],
-    labels: Sequence[str] | None,
-    repo_root: Path = REPO_ROOT,
-) -> list[RunFigureInputs]:
-    """Resolve run specs and artifact directories for CLI inputs."""
-
-    if not run_ids:
-        raise ValueError("At least one run ID is required")
-    labels = tuple(labels or tuple(default_label(run_id) for run_id in run_ids))
-    if len(labels) != len(run_ids):
-        raise ValueError("--label must be passed once per --run-id when provided")
-
-    runs: list[RunFigureInputs] = []
-    for run_id, label in zip(run_ids, labels, strict=True):
-        resolved_run_spec_path = run_spec_path(experiment, run_id, repo_root=repo_root)
-        artifact_dir = repo_root / "_artifacts" / experiment / "runs" / run_id
-        if not resolved_run_spec_path.exists():
-            raise FileNotFoundError(f"Missing run spec: {resolved_run_spec_path}")
-        if not artifact_dir.exists():
-            raise FileNotFoundError(f"Missing artifact directory: {artifact_dir}")
-        runs.append(
-            RunFigureInputs(
-                run_id=run_id,
-                label=label,
-                run_spec_path=resolved_run_spec_path,
-                artifact_dir=artifact_dir,
-                run_spec=resolve_run_record(experiment, run_id, repo_root=repo_root),
-            )
-        )
-    return runs
-
-
 def default_output_dir(experiment: str, *, repo_root: Path = REPO_ROOT) -> Path:
     """Return the ignored default figure directory for an experiment."""
 
     return repo_root / "_artifacts" / experiment / DEFAULT_FIGURE_SUBDIR
-
-
-def default_label(run_id: str) -> str:
-    """Return a compact display label from a run ID."""
-
-    return run_id.split("__")[-1]
 
 
 def write_loss_figures(
@@ -467,75 +420,6 @@ def evaluate_stochastic_forward_velocity_profile(
         replicate_std=np.std(forward, axis=1),
         checkpoint_selection=tuple(checkpoint_selection),
     )
-
-
-def initial_effector_velocity(trial_specs: Any) -> jnp.ndarray:
-    """Return the trial initial effector velocity array, shape ``(trials, 2)``."""
-
-    for init_state in trial_specs.inits.values():
-        velocity = getattr(init_state, "vel", None)
-        if velocity is not None:
-            return velocity
-        shape = getattr(init_state, "shape", None)
-        if shape is not None and len(shape) >= 1 and shape[-1] >= 4:
-            return jnp.asarray(init_state)[..., 2:4]
-    raise ValueError("Trial spec does not include an effector velocity initial state")
-
-
-def trial_effector_target_position(trial_specs: Any) -> np.ndarray:
-    """Return target positions from legacy or delayed trial input layouts."""
-
-    inputs = getattr(trial_specs, "inputs", {})
-    target = inputs.get("effector_target") if isinstance(inputs, Mapping) else None
-    if target is None and isinstance(inputs, Mapping):
-        delayed_inputs = inputs.get("task")
-        target = getattr(delayed_inputs, "effector_target", None)
-    position = getattr(target, "pos", None)
-    if position is None:
-        raise KeyError("could not locate effector_target.pos in trial inputs")
-    return np.asarray(position, dtype=np.float64)
-
-
-def repeat_single_validation_trial(trial_specs: Any, n_trials: int) -> Any:
-    """Repeat the first validation trial along its leading trial axis.
-
-    Fixed-target rows normally expose one validation trial, but target-relative
-    multi-target rows expose a structured validation bank. Plotting and rollout
-    diagnostics use ``n_trials`` stochastic samples, so every leading trial-axis
-    array must be sliced to a representative trial before repeating.
-    """
-
-    source_trials = _trial_count_from_spec(trial_specs)
-
-    def repeat_leaf(leaf: Any) -> Any:
-        shape = getattr(leaf, "shape", None)
-        if shape is not None and len(shape) >= 1 and shape[0] == source_trials:
-            return jnp.repeat(leaf[:1], n_trials, axis=0)
-        return leaf
-
-    return jt.map(repeat_leaf, trial_specs)
-
-
-def _trial_count_from_spec(trial_specs: Any) -> int:
-    for target_spec in getattr(trial_specs, "targets", {}).values():
-        value = getattr(target_spec, "value", None)
-        shape = getattr(value, "shape", None)
-        if shape is not None and len(shape) >= 1:
-            return int(shape[0])
-    for init in getattr(trial_specs, "inits", {}).values():
-        shape = getattr(init, "shape", None)
-        if shape is not None and len(shape) >= 1:
-            return int(shape[0])
-    inputs = getattr(trial_specs, "inputs", None)
-    if isinstance(inputs, dict):
-        values = inputs.values()
-    else:
-        values = (inputs,)
-    for value in values:
-        shape = getattr(value, "shape", None)
-        if shape is not None and len(shape) >= 1:
-            return int(shape[0])
-    return 1
 
 
 def cs_output_feedback_reference_profiles(

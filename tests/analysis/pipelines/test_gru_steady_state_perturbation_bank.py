@@ -21,7 +21,7 @@ from rlrmp.analysis.pipelines.gru_steady_state_perturbation_bank import (
     slim_steady_state_manifest,
     summarize_feedback_row,
 )
-from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import RolloutEvaluation
+from rlrmp.eval.gru_diagnostics import RolloutEvaluation
 
 
 class CartesianState(eqx.Module):

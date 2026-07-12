@@ -36,9 +36,10 @@ from rlrmp.analysis import declarative_materialization as dm
 from rlrmp.eval.recipes import (
     CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,
     FEEDBACK_ABLATION_EVALUATION_TYPE,
+    GRU_DIAGNOSTICS_EVALUATION_TYPE,
     PERTURBATION_RESPONSE_BANK_EVALUATION_TYPE,
 )
-from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+from rlrmp.eval.perturbation_bank import (
     PERTURBATION_BANK_PARAMS_TYPE,
     PerturbationBankParams,
 )
@@ -46,6 +47,7 @@ from rlrmp.runtime.params_models import params_model_for
 from rlrmp.runtime.spec_migrations import (
     CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND,
     FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
+    GRU_DIAGNOSTICS_EVAL_PARAMS_KIND,
     PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND,
     stamp_current_schema,
 )
@@ -55,6 +57,8 @@ FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures"
 FEEDBACK_QUALITY_ALLOWED_PARITY_DIFFS = (
     "declarative_analysis",
     "bundle_contract.analysis_manifest_id",
+    "outputs.evaluation_diagnostics",
+    "outputs.perturbation_response.live_materializer",
 )
 
 
@@ -72,6 +76,7 @@ def _feedback_quality_parity_payload(payload: dict) -> dict:
     normalized = json.loads(json.dumps(payload, sort_keys=True))
     normalized.pop("declarative_analysis", None)
     normalized.get("bundle_contract", {}).pop("analysis_manifest_id", None)
+    normalized.get("outputs", {}).pop("evaluation_diagnostics", None)
     return normalized
 
 
@@ -244,15 +249,12 @@ def _recurrent_jacobians_payload() -> dict[str, object]:
 
 def test_declarative_recipes_use_feedbax_context_materializers() -> None:
     standard = dm.gru_standard_certificate_recipe(
-        dm.gru_standard_certificate_spec(),
+        dm.gru_standard_certificate_spec(experiment="unitexp"),
         Path("."),
         (),
     )
     evaluation = dm.gru_evaluation_diagnostics_recipe(
-        dm.gru_evaluation_diagnostics_spec(
-            experiment="unitexp",
-            run_ids=["unit_run"],
-        ),
+        dm.gru_evaluation_diagnostics_spec(),
         Path("."),
         (),
     )
@@ -998,47 +1000,6 @@ def test_perturbation_class_leaf_absent_family_fails_closed(tmp_path: Path) -> N
     assert "contains families" in str(excinfo.value.__cause__)
 
 
-def test_perturbation_adapter_rejects_obsolete_output_requests(
-    tmp_path: Path,
-) -> None:
-    from rlrmp.analysis.pipelines import gru_perturbation_bank
-
-    manifest = gru_perturbation_bank.materialize_gru_perturbation_response(
-        source_experiment="unit-exp",
-        result_experiment="e32c8bb",
-        run_ids=("training-run-a",),
-        evaluate=False,
-        repo_root=tmp_path,
-    )
-
-    assert manifest["schema_version"] == "rlrmp.gru_perturbation_bank.v3"
-    assert manifest["issue"] == "e32c8bb"
-    assert manifest["source_experiment"] == "unit-exp"
-    assert manifest["bank_summary"]["n_perturbations"] == len(
-        manifest["bank"]["perturbations"]
-    )
-    assert manifest["compatibility_adapter"]["route"] == (
-        "feedbax_evaluation_manifest_to_perturbation_class_leaf_aggregate"
-    )
-    assert manifest["compatibility_adapter"]["custody"] == (
-        "feedbax_evaluation_and_analysis_manifests"
-    )
-    assert "legacy_output_paths_ignored" not in manifest["compatibility_adapter"]
-    obsolete_requests = {
-        "write_bulk_arrays": True,
-        "output_path": tmp_path / "legacy_manifest.json",
-        "note_path": tmp_path / "legacy_note.md",
-        "bulk_dir": tmp_path / "legacy_bulk",
-        "regeneration_spec_path": tmp_path / "legacy_regeneration.json",
-    }
-    for name, value in obsolete_requests.items():
-        with pytest.raises(TypeError, match=name):
-            gru_perturbation_bank.materialize_gru_perturbation_response(
-                evaluate=False,
-                **{name: value},
-            )
-
-
 def test_feedback_quality_lens_bundle_executes_fixture_and_groups_artifacts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1184,6 +1145,7 @@ def test_feedback_quality_lens_bundle_executes_fixture_and_groups_artifacts(
     assert payload["outputs"]["perturbation_response"]["status"] == "materialized"
     assert payload["outputs"]["response_norm_plots"]["status"] == "materialized"
     assert payload["outputs"]["perturbation_calibration"]["status"] == "materialized"
+    assert payload["outputs"]["evaluation_diagnostics"]["status"] == "skipped"
     expected_payload = json.loads(
         (FIXTURES_DIR / "feedback_quality_lens_legacy_payload.json").read_text(
             encoding="utf-8"
@@ -1192,8 +1154,14 @@ def test_feedback_quality_lens_bundle_executes_fixture_and_groups_artifacts(
     assert FEEDBACK_QUALITY_ALLOWED_PARITY_DIFFS == (
         "declarative_analysis",
         "bundle_contract.analysis_manifest_id",
+        "outputs.evaluation_diagnostics",
+        "outputs.perturbation_response.live_materializer",
     )
+    expected_payload["outputs"].pop("evaluation_diagnostics", None)
+    expected_payload["outputs"]["perturbation_response"]["live_materializer"] = None
     assert _feedback_quality_parity_payload(payload) == expected_payload
+    assert "rlrmp-feedback-quality-evaluation-diagnostics-manifest" not in roles
+    assert "rlrmp-feedback-quality-evaluation-diagnostics-bulk" not in roles
     assert (
         "feedback_quality_perturbation_response_bulk"
         in payload["outputs"]["perturbation_response"]["artifact_group_ids"]
@@ -1255,76 +1223,17 @@ def test_feedback_quality_lens_records_run_condition_skips(
     assert "materialize_evaluation_diagnostics" in records["evaluation_diagnostics"].reason
 
 
-def test_gru_standard_recipe_records_opaque_certificate_payload(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    legacy_note = tmp_path / "legacy" / "gru_standard_certificates.md"
-    legacy_manifest = tmp_path / "legacy" / "gru_standard_certificates_manifest.json"
-
-    def fake_materialize(**kwargs):
-        return {
-            "format": "rlrmp.cs_gru_standard_certificates.v1",
-            "issue": kwargs["materializer_issue_id"],
-            "source_issue": kwargs["experiment"],
-            "rows": [
-                {
-                    "spec": {
-                        "run_id": f"{kwargs['run_ids'][0]}__nominal_clean",
-                        "architecture": "gru",
-                    },
-                    "certificate_components": [],
-                }
-            ],
-            "summary": {"n_rows": 1},
-            "failure_decomposition": {"rows": []},
-        }
-
-    def fake_write(result, *, note_path, manifest_path, regeneration_spec_path=None, repo_root):
-        del regeneration_spec_path, repo_root
-        note_path.parent.mkdir(parents=True, exist_ok=True)
-        note_path.write_text("standard certificate note\n", encoding="utf-8")
-        payload = {**result, "regeneration_spec": "results/unit/regeneration.json"}
-        manifest_path.write_text(
-            json.dumps(payload, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-
-    monkeypatch.setattr(dm, "materialize_gru_standard_result", fake_materialize)
-    monkeypatch.setattr(dm, "write_gru_standard_result", fake_write)
+def test_gru_standard_recipe_fails_closed_without_evaluation_states(tmp_path: Path) -> None:
     dm.register_certificate_analysis_recipes(replace=True)
     try:
-        spec = AnalysisRunSpec(
-            analysis_type=dm.GRU_STANDARD_ANALYSIS_TYPE,
-            params={
-                "run_ids": ["unit_run"],
-                "experiment": "unitexp",
-                "materializer_issue_id": "103db99",
-                "load_models": False,
-                "note_output": str(legacy_note),
-                "manifest_output": str(legacy_manifest),
-            },
+        spec = dm.gru_standard_certificate_spec(
+            run_ids=["unit_run"],
+            experiment="unitexp",
+            materializer_issue_id="103db99",
         )
-
-        manifest, path = execute_analysis_run_spec(spec, root=tmp_path, issues=["103db99"])
-
-        assert path.exists()
-        assert manifest.status == "completed"
-        assert manifest.analysis_spec.inline["analysis_type"] == dm.GRU_STANDARD_ANALYSIS_TYPE
-        assert manifest.summary_metrics["analysis_count"] == 1
-        assert "rlrmp-bridge-standard-certificate" in _artifact_roles(manifest)
-        assert "rlrmp-bridge-standard-certificate-manifest" in _artifact_roles(manifest)
-        assert "rlrmp-bridge-standard-certificate-note" in _artifact_roles(manifest)
-        payload_artifact = next(
-            artifact
-            for artifact in manifest.artifacts
-            if artifact.role == "rlrmp-bridge-standard-certificate"
-        )
-        payload = json.loads(Path(payload_artifact.uri).read_text(encoding="utf-8"))
-        assert payload["format"] == "rlrmp.cs_gru_standard_certificates.v1"
-        assert payload["declarative_analysis"]["schema_owner"] == "rlrmp"
-        assert legacy_manifest.exists()
-        assert load_manifest(path).id == manifest.id
+        with pytest.raises(AnalysisRecipeExecutionError) as caught:
+            execute_analysis_run_spec(spec, root=tmp_path, issues=["103db99"])
+        assert "EvaluationRunManifest states" in str(caught.value.__cause__)
     finally:
         _unregister_declarative_recipes()
 
@@ -1413,97 +1322,36 @@ def test_gru_standard_recipe_consumes_evaluation_manifest_parent_ref(
         _unregister_declarative_recipes()
 
 
-def test_gru_evaluation_recipe_groups_bulk_npz_artifacts(
+def test_gru_evaluation_recipe_consumes_cached_states_without_legacy_artifacts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    repo_root = tmp_path / "repo"
-    output_path = tmp_path / "diagnostics.json"
-    bulk_dir = tmp_path / "bulk"
+    from rlrmp.eval import recipes as eval_recipes
 
-    def fake_materialize(**kwargs):
-        kwargs["output_path"].parent.mkdir(parents=True, exist_ok=True)
-        kwargs["bulk_dir"].mkdir(parents=True, exist_ok=True)
-        bulk_path = kwargs["bulk_dir"] / "unit_run.npz"
-        np.savez_compressed(bulk_path, command=np.array([1.0]), position=np.array([2.0]))
-        manifest = {
-            "schema_version": "rlrmp.gru_evaluation_diagnostics.v1",
-            "issue": kwargs["experiment"],
-            "scope": "post_hoc_evaluation_non_certificate_diagnostics",
-            "runs": {
-                "unit_run": {
-                    "bulk_arrays": {
-                        "path": str(bulk_path),
-                        "format": "np.savez_compressed",
-                        "arrays": ["command", "position"],
-                    }
-                }
-            },
-        }
-        kwargs["output_path"].write_text(
-            json.dumps(manifest, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        return manifest
-
-    monkeypatch.setattr(dm, "materialize_gru_evaluation_diagnostics", fake_materialize)
-    dm.register_certificate_analysis_recipes(replace=True)
-    try:
-        spec = AnalysisRunSpec(
-            analysis_type=dm.GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE,
-            params={
-                "experiment": "unitexp",
-                "run_ids": ["unit_run"],
-                "repo_root": str(repo_root),
-                "output_path": str(output_path),
-                "bulk_dir": str(bulk_dir),
-            },
-        )
-
-        manifest, path = execute_analysis_run_spec(spec, root=tmp_path, issues=["103db99"])
-
-        assert path.exists()
-        assert manifest.status == "completed"
-        assert "rlrmp-gru-evaluation-diagnostics" in _artifact_roles(manifest)
-        assert "rlrmp-gru-evaluation-diagnostics-manifest" in _artifact_roles(manifest)
-        assert "rlrmp-gru-evaluation-diagnostics-bulk" in _artifact_roles(manifest)
-        bulk_artifact = next(
-            artifact
-            for artifact in manifest.artifacts
-            if artifact.role == "rlrmp-gru-evaluation-diagnostics-bulk"
-        )
-        assert bulk_artifact.logical_name == "bulk/unit_run.npz"
-        assert bulk_artifact.metadata["artifact_group"]["id"] == ("gru_evaluation_diagnostics_bulk")
-        assert bulk_artifact.metadata["artifact_group"]["member_role"] == "rollout_arrays"
-        payload_artifact = next(
-            artifact
-            for artifact in manifest.artifacts
-            if artifact.role == "rlrmp-gru-evaluation-diagnostics"
-        )
-        payload = json.loads(Path(payload_artifact.uri).read_text(encoding="utf-8"))
-        assert payload["schema_version"] == "rlrmp.gru_evaluation_diagnostics.v1"
-        assert payload["declarative_analysis"]["artifact_owner"] == ("feedbax.AnalysisRunManifest")
-        assert load_manifest(path).id == manifest.id
-    finally:
-        _unregister_declarative_recipes()
-
-
-def test_gru_evaluation_recipe_consumes_evaluation_manifest_parent_ref(tmp_path: Path) -> None:
-    registry = ExperimentRegistry()
-    rlrmp.register_experiment_package(registry)
-    legacy_manifest = {
-        "schema_version": "rlrmp.gru_evaluation_diagnostics.v1",
-        "issue": "unitexp",
+    cached_payload = {
+        "source_experiment": "unitexp",
+        "checkpoint_policy": "validation_selected_per_replicate",
         "scope": "post_hoc_evaluation_non_certificate_diagnostics",
+        "standard_certificate_metrics": {"status": "excluded"},
         "runs": {
             "unit_run": {
                 "label": "Unit Run",
-                "checkpoint_policy": "validation_selected_per_replicate",
-            }
+                "n_replicates": 1,
+                "n_rollout_trials_per_replicate": 2,
+                "n_time_steps": 3,
+                "dt_s": 0.01,
+                "behavior": {"endpoint_error": {"mean": 0.2}},
+                "cached_states": {"command": np.ones((1, 2, 3, 2))},
+            },
         },
     }
+    monkeypatch.setattr(
+        eval_recipes,
+        "evaluate_gru_diagnostics_runs",
+        lambda params, *, repo_root: cached_payload,
+    )
     eval_spec = EvaluationRunSpec(
-        evaluation_type=CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,
+        evaluation_type=GRU_DIAGNOSTICS_EVALUATION_TYPE,
         inputs=[
             ParentRef(
                 kind="TrainingRunManifest",
@@ -1513,10 +1361,10 @@ def test_gru_evaluation_recipe_consumes_evaluation_manifest_parent_ref(tmp_path:
             )
         ],
         params=stamp_current_schema(
-            CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND,
+            GRU_DIAGNOSTICS_EVAL_PARAMS_KIND,
             {
-                "task": "center_out",
-                "legacy_diagnostics_manifest": legacy_manifest,
+                "source_experiment": "unitexp",
+                "run_ids": ["unit_run"],
             },
         ),
     )
@@ -1525,32 +1373,60 @@ def test_gru_evaluation_recipe_consumes_evaluation_manifest_parent_ref(tmp_path:
         root=tmp_path,
         force=True,
     )
-    output_path = tmp_path / "diagnostics.json"
     dm.register_certificate_analysis_recipes(replace=True)
     try:
         spec = dm.gru_evaluation_diagnostics_spec(
-            experiment="unitexp",
-            run_ids=["unit_run"],
-            output_path=output_path,
-            bulk_dir=tmp_path / "bulk",
             evaluation_manifest_id=eval_manifest.id,
             evaluation_manifest_uri=eval_manifest_path,
-            repo_root=tmp_path / "repo",
         )
 
-        analysis_manifest, _path = execute_analysis_run_spec(spec, root=tmp_path)
+        analysis_manifest, path = execute_analysis_run_spec(spec, root=tmp_path)
 
-        payload_ref = next(
-            artifact
-            for artifact in analysis_manifest.artifacts
-            if artifact.role == "rlrmp-gru-evaluation-diagnostics"
-        )
-        payload = json.loads(Path(payload_ref.uri).read_text(encoding="utf-8"))
-        written = json.loads(output_path.read_text(encoding="utf-8"))
-        assert payload["runs"] == legacy_manifest["runs"]
-        assert written["evaluation_manifest_dependency"]["manifest_id"] == eval_manifest.id
+        payload = _artifact_payload(analysis_manifest, "rlrmp-gru-evaluation-diagnostics")
+        assert payload["runs"]["unit_run"]["behavior"] == cached_payload["runs"][
+            "unit_run"
+        ]["behavior"]
+        assert "cached_states" not in payload["runs"]["unit_run"]
+        assert _artifact_roles(analysis_manifest) == {"rlrmp-gru-evaluation-diagnostics"}
+        assert payload["evaluation_manifest_dependency"]["manifest_id"] == eval_manifest.id
         assert analysis_manifest.inputs[0].kind == "EvaluationRunManifest"
         assert analysis_manifest.provenance.parents[0].id == eval_manifest.id
+        assert load_manifest(path).id == analysis_manifest.id
+    finally:
+        _unregister_declarative_recipes()
+
+
+def test_gru_evaluation_recipe_fails_closed_without_evaluation_input(tmp_path: Path) -> None:
+    dm.register_certificate_analysis_recipes(replace=True)
+    try:
+        with pytest.raises(AnalysisRecipeExecutionError) as caught:
+            execute_analysis_run_spec(dm.gru_evaluation_diagnostics_spec(), root=tmp_path)
+        assert "EvaluationRunManifest states" in str(caught.value.__cause__)
+    finally:
+        _unregister_declarative_recipes()
+
+
+def test_gru_evaluation_recipe_rejects_wrong_evaluation_product(tmp_path: Path) -> None:
+    registry = ExperimentRegistry()
+    rlrmp.register_experiment_package(registry)
+    eval_spec = EvaluationRunSpec(
+        evaluation_type=CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,
+        inputs=[_training_ref("unit_run")],
+        params=stamp_current_schema(
+            CENTER_OUT_ENSEMBLE_EVAL_PARAMS_KIND,
+            {"task": "center_out", "trajectories": []},
+        ),
+    )
+    eval_manifest, eval_path = execute_evaluation_run_spec(eval_spec, root=tmp_path, force=True)
+    dm.register_certificate_analysis_recipes(replace=True)
+    try:
+        spec = dm.gru_evaluation_diagnostics_spec(
+            evaluation_manifest_id=eval_manifest.id,
+            evaluation_manifest_uri=eval_path,
+        )
+        with pytest.raises(AnalysisRecipeExecutionError) as caught:
+            execute_analysis_run_spec(spec, root=tmp_path)
+        assert "requires evaluation type" in str(caught.value.__cause__)
     finally:
         _unregister_declarative_recipes()
 

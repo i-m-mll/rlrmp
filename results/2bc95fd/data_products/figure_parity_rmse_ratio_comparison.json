@@ -1,0 +1,137 @@
+{
+  "experiment": "anti_anticipation_loss_shape_6cell",
+  "figure_kind": "rmse_ratio_comparison_bar",
+  "fix_note": "Bug: 06f7faf \u2014 go-cue alignment fix.",
+  "inputs": [
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/2bc95fd/gru__jerk/adversarial_model.eqx",
+      "role": "adversarial_model:gru__jerk",
+      "sha256": "17d8cfbb723fdcb4f5812c6faf83d2435f6642e6afed109318165710a1cd2311"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/2bc95fd/gru__jerk_motor_pre/adversarial_model.eqx",
+      "role": "adversarial_model:gru__jerk_motor_pre",
+      "sha256": "94d33f270994376a03f067e11eb9545df2dc21dd41cc4c4418e580a4ae5eaafa"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/2bc95fd/gru__jerk_smooth_high/adversarial_model.eqx",
+      "role": "adversarial_model:gru__jerk_smooth_high",
+      "sha256": "d5f099c7849faaaf95d7cbe4f08121fdc2599a4aedc71744ae5f4a036be7d5a9"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/2bc95fd/gru__jerk_motor_smooth_combo/adversarial_model.eqx",
+      "role": "adversarial_model:gru__jerk_motor_smooth_combo",
+      "sha256": "ee2199dd9b90eb31412aeaebc36931fe66ea107f29cd834b7b19d807bdce07b6"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/2bc95fd/gru__jerk_loss_v_terminal/adversarial_model.eqx",
+      "role": "adversarial_model:gru__jerk_loss_v_terminal",
+      "sha256": "fcd9a246e18bc63c05187549bff24f44ab65b6e19a6d9d20b0056460ba90a940"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/2bc95fd/gru__jerk_loss_historical/adversarial_model.eqx",
+      "role": "adversarial_model:gru__jerk_loss_historical",
+      "sha256": "6dfe90be9ca6b2bc6d78bf002f65f4fda34c2d21262ddcb09ea5048fa1e3ecc5"
+    }
+  ],
+  "metric_description": "Primary: velocity-RMSE ratio = within-cell mean pairwise RMSE / nearest-across-cell mean pairwise RMSE on forward-velocity profiles. Secondary: same on forward-position profiles. Auxiliary: CV = SD(peak_vel) / mean(peak_vel) across replicates. Target threshold 0.5; prior best (baseline GRU/jerk matrix): 0.758.",
+  "plot_kwargs": {
+    "cells": [
+      "gru__jerk",
+      "gru__jerk_motor_pre",
+      "gru__jerk_smooth_high",
+      "gru__jerk_motor_smooth_combo",
+      "gru__jerk_loss_v_terminal",
+      "gru__jerk_loss_historical"
+    ],
+    "n_replicates": 5,
+    "pert_scale": 0.0,
+    "sisu": 0.5
+  },
+  "rmse_ratios": {
+    "gru__jerk": {
+      "pos_nearest_across_rmse": 0.05728831171989441,
+      "pos_rmse_ratio": 1.0466791472836616,
+      "pos_within_rmse": 0.05996248126029968,
+      "vel_nearest_across_rmse": 0.13425488278269768,
+      "vel_rmse_ratio": 1.053855952447266,
+      "vel_within_rmse": 0.1414853073656559
+    },
+    "gru__jerk_loss_historical": {
+      "pos_nearest_across_rmse": 0.05613261315971613,
+      "pos_rmse_ratio": 1.2822083697501447,
+      "pos_within_rmse": 0.07197370640933513,
+      "vel_nearest_across_rmse": 0.13830105140805243,
+      "vel_rmse_ratio": 1.1326731447221612,
+      "vel_within_rmse": 0.15664988681674002
+    },
+    "gru__jerk_loss_v_terminal": {
+      "pos_nearest_across_rmse": 0.04625109076499939,
+      "pos_rmse_ratio": 1.1038631876464355,
+      "pos_within_rmse": 0.051054876483976844,
+      "vel_nearest_across_rmse": 0.13425488278269768,
+      "vel_rmse_ratio": 0.9885390741080627,
+      "vel_within_rmse": 0.13271619752049446
+    },
+    "gru__jerk_motor_pre": {
+      "pos_nearest_across_rmse": 0.04625109076499939,
+      "pos_rmse_ratio": 0.5809685038088209,
+      "pos_within_rmse": 0.026870427001267672,
+      "vel_nearest_across_rmse": 0.1798200523853302,
+      "vel_rmse_ratio": 0.5518380047457375,
+      "vel_within_rmse": 0.09923153892159461
+    },
+    "gru__jerk_motor_smooth_combo": {
+      "pos_nearest_across_rmse": 0.043832911998033526,
+      "pos_rmse_ratio": 0.06277607577307183,
+      "pos_within_rmse": 0.0027516582049429417,
+      "vel_nearest_across_rmse": 0.17552969753742217,
+      "vel_rmse_ratio": 0.042346216916084055,
+      "vel_within_rmse": 0.007433018647134304
+    },
+    "gru__jerk_smooth_high": {
+      "pos_nearest_across_rmse": 0.043832911998033526,
+      "pos_rmse_ratio": 0.03839979157561077,
+      "pos_within_rmse": 0.001683174684876576,
+      "vel_nearest_across_rmse": 0.17552969753742217,
+      "vel_rmse_ratio": 0.03956210119714945,
+      "vel_within_rmse": 0.006944323657080531
+    }
+  },
+  "timestamp": "2026-05-13T18:50:58.046979+00:00",
+  "transform": [
+    {
+      "kwargs": {
+        "pert_scale": 0.0,
+        "sisu": 0.5
+      },
+      "name": "eval_ensemble"
+    },
+    {
+      "kwargs": {
+        "pad": "nan"
+      },
+      "name": "align_trials_to_go_cue"
+    },
+    {
+      "kwargs": {},
+      "name": "replicate_nanmean_over_trials"
+    },
+    {
+      "kwargs": {},
+      "name": "pairwise_profile_rmse_ratio_velocity"
+    },
+    {
+      "kwargs": {},
+      "name": "pairwise_profile_rmse_ratio_position"
+    }
+  ],
+  "versions": {
+    "equinox": "0.13.4",
+    "feedbax": "0.1.2",
+    "jax": "0.9.0",
+    "numpy": "2.4.1",
+    "plotly": "6.5.2",
+    "rlrmp": "0.1.0"
+  }
+}

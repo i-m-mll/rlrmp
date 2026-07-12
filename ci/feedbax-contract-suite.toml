@@ -241,6 +241,14 @@ negative_canary = [
 ]
 
 [[families]]
+name = "perturbation_bank_strangler"
+owner = "50f7b28"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_perturbation_bank_parity.py::"
+minimum_non_skipped = 6
+
+[[families]]
 name = "training_config_flat_key_scan"
 owner = "ef8e1df"
 status = "live"
@@ -261,16 +269,19 @@ negative_canary = [
     "tests/test_declarative_figure_stock.py::test_direct_assembly_negative_canary_rejects_plotly_materializer",
 ]
 
+[[families]]
+name = "six_cell_figure_migration"
+owner = "d87fc74"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/analysis/test_2bc_six_cell_figure_specs.py::"
+# Pin the complete parity, intrinsic-axis, payload, and deletion contract.
+minimum_non_skipped = 6
+
 [pipeline_contract_native]
 allowlist = [
-    { path = "src/rlrmp/analysis/pipelines/bridge_aggregation.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "compatibility summarizer remains until report-stage aggregation replaces tracked writes" },
-    { path = "src/rlrmp/analysis/pipelines/bridge_contracts.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "bridge manifest writer remains a shared compatibility surface pending custody routing" },
-    { path = "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py", reasons = ["direct_durable_writer", "direct_eval_rerun"], owner = "ed225ef", reason = "standard certificate materializer still mixes writer and clean-rollout recovery paths" },
-    { path = "src/rlrmp/analysis/pipelines/delayed_diagnostic_bundle.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "dormant delayed diagnostic bundle remains pending its revival issue" },
     { path = "src/rlrmp/analysis/pipelines/diagnostic_provenance.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "regeneration-spec writer is shared compatibility plumbing until custody routing lands" },
     { path = "src/rlrmp/analysis/pipelines/gru_broad_epsilon_attribution.py", reasons = ["direct_durable_writer", "direct_eval_rerun"], owner = "ed225ef", reason = "broad-epsilon attribution still materializes tracked sidecars outside bundle custody" },
-    { path = "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "checkpoint-selection manifest emission remains as compatibility bridge" },
-    { path = "src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py", reasons = ["direct_durable_writer", "direct_eval_rerun"], owner = "ed225ef", reason = "evaluation diagnostics still emits legacy materialization outputs while recipes consume manifests" },
     { path = "src/rlrmp/analysis/pipelines/gru_map_error_decomposition.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "failure-decomposition companion remains pending report-stage respec" },
     { path = "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "open-loop calibration data-product writer remains until fully governed custody replaces it" },
     { path = "src/rlrmp/analysis/pipelines/gru_perturbation_response_norm_plots.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "response-norm plotting writer remains pending figure/report custody redesign" },
@@ -279,6 +290,5 @@ allowlist = [
     { path = "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py", reasons = ["direct_durable_writer", "direct_eval_rerun"], owner = "ed225ef", reason = "steady-state perturbation comparison still carries legacy writer and local rerun helpers" },
     { path = "src/rlrmp/analysis/pipelines/gru_worst_case_epsilon_audit.py", reasons = ["direct_durable_writer", "direct_eval_rerun"], owner = "ed225ef", reason = "worst-case epsilon audit still writes sidecars and local rerun diagnostics" },
     { path = "src/rlrmp/analysis/pipelines/objective_comparator.py", reasons = ["direct_eval_rerun"], owner = "ed225ef", reason = "objective comparator retains local rollout comparison helpers pending report-stage routing" },
-    { path = "src/rlrmp/analysis/pipelines/output_feedback_interpolated_starts.py", reasons = ["direct_durable_writer", "direct_eval_rerun"], owner = "ed225ef", reason = "secondary output-feedback diagnostic still present after materializer retirement wave" },
     { path = "src/rlrmp/analysis/pipelines/sisu_perturbation_comparison.py", reasons = ["direct_durable_writer"], owner = "ed225ef", reason = "SISU comparison kept frozen until spectrum diagnostics subsumes or re-adjudicates it" },
 ]

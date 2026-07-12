@@ -18,14 +18,6 @@ from typing import Any
 import jax
 import jax.tree as jt
 
-from rlrmp.analysis.pipelines.cs_gru_standard_materialization import (
-    MATERIALIZER_ISSUE_ID,
-    materialize_gru_standard_result,
-    write_gru_standard_result,
-)
-from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import (
-    materialize_gru_evaluation_diagnostics,
-)
 from rlrmp.analysis.pipelines.gru_feedback_ablation import (
     execute_feedback_ablation_pipeline,
     selected_feedback_ablation_bins_for_bank,
@@ -34,7 +26,7 @@ from rlrmp.analysis.pipelines.gru_map_error_decomposition import (
     materialize_gru_map_error_decomposition,
 )
 from rlrmp.paths import portable_repo_path as _repo_relative
-from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+from rlrmp.eval.perturbation_bank import (
     default_cs_perturbation_bank,
     evaluate_run_perturbation_bank,
 )
@@ -48,6 +40,7 @@ from rlrmp.analysis.pipelines.gru_worst_case_epsilon_audit import (
 from rlrmp.analysis.pipelines.objective_comparator import (
     materialize_gru_objective_comparator_sidecar,
 )
+from rlrmp.eval.checkpoint_selection import build_validation_checkpoint_selection_manifest
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
@@ -318,91 +311,10 @@ def run_benchmark(
     bundle_results: list[TimedBundle] = []
 
     standard_manifest_path = notes_scratch / "gru_standard_manifest.json"
-    standard_note_path = notes_scratch / "gru_standard.md"
-    warm_standard_manifest_path = warm_notes_scratch / "gru_standard_manifest.json"
-    warm_standard_note_path = warm_notes_scratch / "gru_standard.md"
-
-    def run_standard() -> Mapping[str, Any]:
-        return materialize_gru_standard_result(
-            run_ids=(run_id,),
-            experiment=source_experiment,
-            materializer_issue_id=MATERIALIZER_ISSUE_ID,
-            use_validation_selected_checkpoints=False,
-            repo_root=repo_root,
-        )
-
-    def write_standard_outputs(result: Mapping[str, Any]) -> None:
-        write_gru_standard_result(
-            result,
-            note_path=standard_note_path,
-            manifest_path=standard_manifest_path,
-            repo_root=repo_root,
-        )
-
-    def write_warm_standard_outputs(result: Mapping[str, Any]) -> None:
-        write_gru_standard_result(
-            result,
-            note_path=warm_standard_note_path,
-            manifest_path=warm_standard_manifest_path,
-            repo_root=repo_root,
-        )
-
-    bundle_results.append(
-        _time_bundle(
-            "standard_certificate",
-            run_standard,
-            summarize=lambda result: {
-                "rows": len(result.get("rows", ())),
-                "checkpoint_policy": result.get("checkpoint_policy"),
-                "output": _repo_relative(standard_manifest_path, repo_root=repo_root),
-            },
-            output_writer=write_standard_outputs,
-            output_write_note=(
-                "The benchmark separates standard certificate manifest/note writes "
-                "after the cold materializer call."
-            ),
-            warm_replay=warm_replay,
-            warm_fn=run_standard,
-            warm_output_writer=write_warm_standard_outputs,
-        )
-    )
-
-    def run_evaluation_diagnostics() -> Mapping[str, Any]:
-        return materialize_gru_evaluation_diagnostics(
-            experiment=source_experiment,
-            run_ids=(run_id,),
-            labels=None,
-            output_path=notes_scratch / "gru_evaluation_diagnostics.json",
-            bulk_dir=step_scratch / "evaluation_diagnostics",
-            n_rollout_trials=n_rollout_trials,
-            use_validation_selected_checkpoints=True,
-            write_bulk_arrays=write_bulk_arrays,
-            repo_root=repo_root,
-        )
-
-    bundle_results.append(
-        _time_bundle(
-            "evaluation_diagnostics",
-            run_evaluation_diagnostics,
-            summarize=_bundle_status_counts,
-            output_write_mode="included_in_cold_call_elapsed_s",
-            output_write_note=(
-                "materialize_gru_evaluation_diagnostics writes its JSON/bulk outputs "
-                "inside the materializer call."
-            ),
-            warm_replay=warm_replay,
-            warm_fn=lambda: materialize_gru_evaluation_diagnostics(
-                experiment=source_experiment,
-                run_ids=(run_id,),
-                labels=None,
-                output_path=warm_notes_scratch / "gru_evaluation_diagnostics.json",
-                bulk_dir=warm_step_scratch / "evaluation_diagnostics",
-                n_rollout_trials=n_rollout_trials,
-                use_validation_selected_checkpoints=True,
-                write_bulk_arrays=write_bulk_arrays,
-                repo_root=repo_root,
-            ),
-        )
+    checkpoint_manifest = build_validation_checkpoint_selection_manifest(
+        experiment=source_experiment,
+        run_ids=(run_id,),
+        repo_root=repo_root,
     )
 
     def run_pilot_figures() -> Mapping[str, Any]:
@@ -448,11 +360,8 @@ def run_benchmark(
             labels=None,
             checkpoint_policy="validation_selected_per_replicate",
             use_validation_selected_checkpoints=True,
-            checkpoint_manifest=None,
-            checkpoint_manifest_path=(
-                repo_root / "results" / source_experiment / "notes"
-                / "validation_selected_checkpoints.json"
-            ),
+            checkpoint_manifest=checkpoint_manifest,
+            checkpoint_manifest_path=None,
             standard_manifest_path=standard_manifest_path,
             output_path=notes_scratch / "objective_comparator.json",
             note_path=notes_scratch / "objective_comparator.md",
@@ -479,11 +388,8 @@ def run_benchmark(
                 labels=None,
                 checkpoint_policy="validation_selected_per_replicate",
                 use_validation_selected_checkpoints=True,
-                checkpoint_manifest=None,
-                checkpoint_manifest_path=(
-                    repo_root / "results" / source_experiment / "notes"
-                    / "validation_selected_checkpoints.json"
-                ),
+                checkpoint_manifest=checkpoint_manifest,
+                checkpoint_manifest_path=None,
                 standard_manifest_path=standard_manifest_path,
                 output_path=warm_notes_scratch / "objective_comparator.json",
                 note_path=warm_notes_scratch / "objective_comparator.md",

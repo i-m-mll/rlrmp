@@ -16,7 +16,7 @@ from materialize_beta1p4_stabilization_diagnostics import (
 from materialize_beta1p4_stabilization_diagnostics import (
     materialize_stabilization_diagnostics,
 )
-from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
+from rlrmp.eval.checkpoint_selection import (
     materialize_validation_selected_checkpoint_manifest,
 )
 from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import (

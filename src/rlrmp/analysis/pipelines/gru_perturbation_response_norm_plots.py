@@ -15,7 +15,7 @@ from plotly.subplots import make_subplots
 
 from rlrmp.analysis.data_products import load_analysis_parameter_preset
 from rlrmp.analysis.pipelines.diagnostic_provenance import repo_relative, write_regeneration_spec
-from rlrmp.analysis.pipelines.gru_perturbation_bank import (
+from rlrmp.eval.perturbation_bank import (
     _build_extlqg_comparator_context,
     _simulate_extlqg_perturbed,
 )

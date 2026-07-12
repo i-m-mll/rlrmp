@@ -134,7 +134,7 @@ VALUE_DRIFT_EXCEPTIONS: tuple[DefaultValueDriftException, ...] = (
     ),
     DefaultValueDriftException(
         key="sign",
-        path="src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+        path="src/rlrmp/eval/perturbation_bank.py",
         literal_repr="0",
         reason=(
             "Perturbation-bank filtering treats absent sign metadata as neutral; perturbation "

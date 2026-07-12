@@ -12,7 +12,7 @@ from rlrmp.analysis.manifest_queries import (
     certificate_component_summary,
     standard_row_by_source_run_id,
 )
-from rlrmp.analysis.pipelines.gru_checkpoint_selection import load_materialized_fixed_bank_manifest
+from rlrmp.eval.checkpoint_selection import load_materialized_fixed_bank_manifest
 from rlrmp.io import read_json, update_marked_section
 from rlrmp.paths import REPO_ROOT
 from rlrmp.runtime.run_specs import resolve_run_record
@@ -48,7 +48,7 @@ def materialize_gru_map_error_decomposition(
 ) -> dict[str, Any]:
     """Recompute response maps and return compact decomposition rows."""
 
-    from rlrmp.analysis.pipelines.cs_gru_standard_materialization import (
+    from rlrmp.analysis.gru_standard_certificate import (
         cs_output_feedback_observation_action_map,
         evaluate_gru_clean_actions,
     )
@@ -171,12 +171,13 @@ def _effective_checkpoint_policy_from_manifest(
     """Return the checkpoint policy represented by an optional preferred manifest."""
 
     manifest = load_materialized_fixed_bank_manifest(
-        experiment=experiment,
         manifest_path=preferred_checkpoint_manifest_path,
-        repo_root=repo_root,
     )
     if manifest is not None:
-        return str(manifest.get("checkpoint_policy") or "fixed_bank_rescored_per_replicate")
+        return str(
+            manifest.metadata.get("checkpoint_policy")
+            or "fixed_bank_rescored_per_replicate"
+        )
     return "validation_selected_per_replicate"
 
 
