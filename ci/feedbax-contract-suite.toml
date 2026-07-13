@@ -72,7 +72,7 @@ owner = "2c06960"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_tracked_results_reference_integrity.py::"
-minimum_non_skipped = 3
+minimum_non_skipped = 4
 negative_canary = "tests/test_tracked_results_reference_integrity.py::test_missing_result_reference_negative_canary"
 
 [[families]]

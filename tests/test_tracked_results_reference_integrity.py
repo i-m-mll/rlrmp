@@ -39,13 +39,30 @@ def _missing_result_references(payload: object, *, repo_root: Path) -> list[str]
     return missing
 
 
+def _tracked_run_documents(repo_root: Path) -> tuple[Path, ...]:
+    """Return JSON documents recursively under issue-owned ``runs`` trees."""
+
+    return tuple(sorted((repo_root / "results").glob("*/runs/**/*.json")))
+
+
 def test_tracked_run_specs_have_no_dangling_executable_result_references() -> None:
     failures: list[str] = []
-    for path in sorted((REPO_ROOT / "results").glob("*/runs/*.json")):
+    for path in _tracked_run_documents(REPO_ROOT):
         payload = json.loads(path.read_text(encoding="utf-8"))
         for missing in _missing_result_references(payload, repo_root=REPO_ROOT):
             failures.append(f"{path.relative_to(REPO_ROOT)}: {missing}")
     assert failures == []
+
+
+def test_run_document_discovery_includes_nested_json_but_excludes_notes(tmp_path: Path) -> None:
+    direct = tmp_path / "results/issue/runs/direct.json"
+    nested = tmp_path / "results/issue/runs/variant/matrix.json"
+    note = tmp_path / "results/issue/notes/provenance.json"
+    for path in (direct, nested, note):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}", encoding="utf-8")
+
+    assert _tracked_run_documents(tmp_path) == (direct, nested)
 
 
 def test_missing_result_reference_negative_canary() -> None:
