@@ -13,6 +13,7 @@ from rlrmp.runtime.training_run_specs import (
     cs_supervised_effective_phase_spec,
     cs_supervised_method_contract,
     cs_supervised_method_ref,
+    require_cs_supervised_optimizer,
 )
 
 
@@ -139,6 +140,7 @@ def author_linear_recurrent_training_base(
         "training_mode": training_distribution,
         "n_train_batches": int(base.training_config.n_batches),
         "batch_size": int(base.training_config.batch_size),
+        "optimizer": require_cs_supervised_optimizer(source_payload).model_dump(mode="json"),
         "optimizer_policy": {
             "controller_lr": float(base.training_config.learning_rate),
             "lr_schedule": config.get("lr_schedule"),

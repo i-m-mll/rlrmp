@@ -14,6 +14,7 @@ from feedbax.training import load_checkpoint_custody_documents
 
 LAUNCH_CONTINUATION_PREFIX = "LAUNCH_CONTINUATION"
 
+
 @dataclass(frozen=True)
 class LaunchContinuation:
     """Resolved launch continuation contract for a training run."""
@@ -53,9 +54,8 @@ def completed_batches_from_latest(latest_path: Path) -> int:
     manifest_completed_batches = manifest.completed_training_batches
     completed_batches = manifest_completed_batches
     continuation = manifest.metadata.get("checkpoint_continuation")
-    if (
-        manifest.metadata.get("checkpoint_continuation_applied") is True
-        and isinstance(continuation, dict)
+    if manifest.metadata.get("checkpoint_continuation_applied") is True and isinstance(
+        continuation, dict
     ):
         source_completed = continuation.get("source_completed_batches")
         if isinstance(source_completed, int) and not isinstance(source_completed, bool):
@@ -202,4 +202,17 @@ def declare_cs_supervised_checkpoint_continuation(
     checkpoint_progress = training_spec.checkpoint_progress.model_copy(
         update={"continuation": request}
     )
-    return training_spec.model_copy(update={"checkpoint_progress": checkpoint_progress})
+    # This declaration knows the completed batch total but not the restored
+    # optimizer schedule count. Drop fresh-only contexts so preflight fails
+    # closed until the resume path supplies both truthful values.
+    metadata = {
+        key: value
+        for key, value in training_spec.metadata.items()
+        if key not in {"resume_context", "optimizer_build_context"}
+    }
+    return training_spec.model_copy(
+        update={
+            "checkpoint_progress": checkpoint_progress,
+            "metadata": metadata,
+        }
+    )
