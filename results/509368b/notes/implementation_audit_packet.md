@@ -30,13 +30,13 @@ The 509 worktree was clean before this documentation-only update.
 | Item | Identity |
 |---|---|
 | Experiment-authoring baseline | `bd5292565ea56148734384ef8ee3393dce73832b` |
-| Current RLRMP feature head | `9dc3c5dba81560635961dc3a309783e412b27e6e` |
+| Evidence-correction base head | `5579d28d55f5dacf8b7bb45fadc9d3512e68868e` |
 | A1 reproducibility commit / merge | `093fb567` / `45999cc8` |
 | Portable-sidecar commit / merge | `46dbf51d` / `07282d2c` |
-| Current custody-restoration head | `9dc3c5db` |
+| Custody-restoration head before downstream integrations | `9dc3c5db` |
 | Protected and pinned Feedbax `develop` | `060d65d285969ec11e4a284712913550c462ba18` |
 | Exact Feedbax dependency used by accepted M1 runs | `a86f6b8685d5ce6a2761d26a814b65528b9dee1a` |
-| Current clean signed Feedbax staging head | `257573ea7642b6570d12afac8a71ee913256e93a` |
+| Current clean signed Feedbax staging head | `2d657441ba7cdce3e18a7b135592f8bed9b8340c` |
 | Implemented staging merges after accepted runs | `6e0352ab` ([issue:7e4cf6b]); `c2932138` ([issue:ca2f937]); `257573ea` ([issue:d81a868]) |
 | `uv.lock` SHA-256 | `1c5e08022cd1eb54f32a84c01afb22638d63ee6dada161915a78fbd8b50b45e4` |
 | Runtime | Python 3.13.5; local macOS arm64 |
@@ -46,7 +46,7 @@ The protected pin remains the published dependency identity. Staging `a86f6b86`
 is the exact dependency used for the accepted M1 runs. The live clean signed
 staging head has since advanced through the staged-bundle CLI merge `6e0352ab`,
 resolved-evaluation-inputs merge `c2932138`, and checkpoint resolver merge
-`257573ea`. The current staging head is `257573ea7642b6570d12afac8a71ee913256e93a`.
+`257573ea`. The current staging head is `2d657441ba7cdce3e18a7b135592f8bed9b8340c`.
 Neither staging SHA is represented as the protected pin.
 
 ## Frozen authored identities and portable custody
@@ -64,8 +64,12 @@ without hand-normalization. The A1 analysis intent remains
 
 ## M1 training and custody evidence
 
-All four rows completed an accepted batch-50 stop followed by strict resume to
-batch 100. Each stop and resume conformance record reports `overall=pass`.
+All four local rows reached batch 100 with finite loss after an accepted batch-50
+stop and strict resume. Every stop and resume conformance record reports
+`overall=pass`. Training loss fell from batch 50 to batch 100 as follows:
+`76456.8 -> 23244.4`, `72068.5 -> 22282.5`, `71876.6 -> 28446.3`, and
+`73391.7 -> 32210.3`. Every batch-100 model blob hash differs from its exact
+batch-50 parent.
 
 | Row | Final run ID | Stop run set | Resume run set | Batch-100 loss | Latest checkpoint ref |
 |---|---|---|---|---:|---|
@@ -86,9 +90,26 @@ For the accepted visible-nominal stop, the batch-50 transaction is
 `tx-c29c9b098f364575a970f0f23ba889bf`; its checkpoint manifest SHA-256 is
 `fe9eb894513e0d5c680c539a8875924bfcdff53beb3b8ea16faaa6a0294e0443`.
 
-The finite final losses are weak engineering evidence only. The frozen endpoint,
+The completed visible-nominal `TrainingRunManifest` is the exact file
+`_artifacts/orchestration/2026-07-13-b5e80253/collected/force_visible__nominal_seed42_smoke100/manifest.json`;
+its SHA-256 is
+`36412dcf4db037094151f506afa9c2c86d24e9fae91b9bcb6e7fb34cefd6ea5a`.
+
+Stop-state wording is exact: the stop `TrainingRunManifest` has
+`status=cancelled` and `completed_batches=50`; the registration record has
+`status=stopped`, and conformance passes. The stop manifest does not carry a
+`stopped=true` fact.
+
+Historical M1 manifests are immutable exact-index inputs, not predicate-selectable
+canonical RLRMP run records. Deleting an orchestration run set removes only that run
+set; manifest/evidence providers and checkpoint authority remain independently
+governed.
+
+The finite final losses and changed model blobs establish engineering-road viability
+only. The frozen endpoint,
 action-energy, cached-evaluation, and report criteria remain unmeasured, so the M1
-plausibility verdict is partial and the scientific verdict remains none.
+plausibility verdict is partial and the scientific verdict remains none. They do not
+establish convergence or robustness.
 
 ## A1 preflight and exact block
 
@@ -269,8 +290,9 @@ lane.
 
 ## Independent reproduction and falsification checklist
 
-1. Verify branch head `9dc3c5db`, protected pin `060d65d`, accepted-run staging
-   `a86f6b86`, and current staging `257573ea`; do not conflate these identities.
+1. Verify the evidence-correction base head `5579d28d`, protected pin `060d65d`,
+   accepted-run staging `a86f6b86`, and current staging `2d657441`; do not conflate
+   these identities.
 2. Recompute M1/A1 matrix SHA-256 values and resolve each `repo://` sidecar from a
    different checkout; require byte hashes to match.
 3. Re-run cold public emission and require exact M1/A1 matrix bytes, not merely
@@ -295,3 +317,8 @@ lane.
     reason for structural `not_applicable`, or untracked durable result.
 12. Keep verdicts separate. Road conformance can pass while plausibility remains
     partial and scientific evidence remains none.
+13. Run the focused packet-integrity test. Require every recorded full SHA-256 to be
+    exactly 64 lowercase hexadecimal characters, match each byte-backed lifecycle
+    reference against its file, preserve the cancelled-manifest versus stopped-
+    registration distinction, and prove each batch-100 model blob differs from its
+    exact batch-50 parent.

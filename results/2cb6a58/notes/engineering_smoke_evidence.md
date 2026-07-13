@@ -33,7 +33,7 @@ was used.
 | RLRMP materializer commit | `b1b28c396fe4651c47157255ddb88e80d23c1ac3` |
 | Protected/pinned Feedbax develop | `060d65d285969ec11e4a284712913550c462ba18` |
 | exact Feedbax runtime dependency for all accepted M1 runs | `a86f6b8685d5ce6a2761d26a814b65528b9dee1a` |
-| current clean signed Feedbax staging head (not used by accepted M1 runs) | `257573ea7642b6570d12afac8a71ee913256e93a` |
+| current clean signed Feedbax staging head (not used by accepted M1 runs) | `2d657441ba7cdce3e18a7b135592f8bed9b8340c` |
 | `uv.lock` SHA-256 | `1c5e08022cd1eb54f32a84c01afb22638d63ee6dada161915a78fbd8b50b45e4` |
 | Python | `3.13.5` |
 | execution policy | local-only, non-billable; one seed; exactly 100 batches |
@@ -116,7 +116,7 @@ coordinate changed between stop and resume.
 | governed emission | `uv run --no-sync python scripts/emit_training_run_matrix.py results/2cb6a58/runs/matrix.intent.json --output results/2cb6a58/runs/matrix.json --custody-root _artifacts/2cb6a58/spec-storage` | pass |
 | staging import proof | `uv run --no-sync python -c 'import feedbax; print(feedbax.__file__)'` with staged `PYTHONPATH` | pass: staging checkout |
 | staged sidecar emission | same governed emitter, recorded in `_artifacts/2cb6a58/spec-emission-feedbax-cb3f606e.json` | pass; matrix SHA before/after `547efe4d…a1f5` |
-| four stop segments | exact command above with `--stop-after-batches 50` | all exit 0; row/registration `stopped`; all eight certificate checks pass |
+| four stop segments | exact command above with `--stop-after-batches 50` | all exit 0; `TrainingRunManifest` status `cancelled`, `completed_batches=50`; registration status `stopped`; all eight conformance checks pass |
 | four resume segments | exact command above with `--resume` | all exit 0; row/registration `completed`; all eight certificate checks pass |
 
 ## Direct lifecycle evidence
@@ -140,6 +140,23 @@ transaction as `resume_parent` and records `start_batch=50`,
 covers 50, 99, and 100, all at `0.003000000026077032`. Checkpoint cadence is exactly
 one coordinate at 50 per segment. Every run-set state records an empty
 `event_discrepancies` list.
+
+All four local rows reached batch 100 with finite loss. Training loss fell from
+batch 50 to batch 100 as follows: `76456.8 -> 23244.4`, `72068.5 -> 22282.5`,
+`71876.6 -> 28446.3`, and `73391.7 -> 32210.3`. For every row, the batch-100
+model blob hash differs from the model blob hash in its exact batch-50 parent
+transaction. These are engineering-road viability checks only; they do not show
+convergence, robustness, or scientific support.
+
+The stop-state distinction is deliberate: each stop `TrainingRunManifest` has
+`status=cancelled` and `completed_batches=50`, while its orchestration registration
+record has `status=stopped` and its conformance record passes. No stop manifest is
+represented as having a `stopped=true` field.
+
+These historical M1 manifests are immutable, exact-index inputs. They are not
+predicate-selectable canonical RLRMP run records. Deleting an orchestration run set
+removes only that run set; the manifest/evidence providers and checkpoint authority
+remain independently governed.
 
 ## Required products and raw plausibility measurements
 
