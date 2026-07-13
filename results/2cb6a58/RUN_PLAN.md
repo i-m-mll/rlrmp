@@ -2,10 +2,9 @@
 
 Tracking issue: `2cb6a58`
 
-Status: **blocked before governed matrix authoring**. This document freezes the
-protocol without creating an inconsistent matrix or bypassing registered lowerers.
-Every future outcome is non-scientific engineering-smoke evidence; no hypothesis is
-answered by this protocol.
+Status: **authored and emitted; blocked before batch 1 by fresh-start orchestration**.
+The protocol remains frozen and every outcome is non-scientific engineering-smoke
+evidence; no hypothesis is answered by this protocol.
 
 ## Intended rows
 
@@ -16,17 +15,14 @@ answered by this protocol.
 | `force_visible__broad_pgd_seed42_smoke100` | yes | broad-epsilon PGD | 42 | 100 |
 | `force_hidden__broad_pgd_seed42_smoke100` | no | broad-epsilon PGD | 42 | 100 |
 
-No matrix identity, planned run identity, or content hash exists yet. The correct
-value for each is `blocked_not_generated`, not a placeholder digest. A future matrix
-must preserve these row IDs exactly and record its authored-intent hash, resolved
-root, planned run IDs, and dependency SHAs before execution.
+The matrix now exists at `runs/matrix.json`, backed by compact authored intent and a
+Feedbax resolved-semantics snapshot plus execution capsule. Exact row and content
+identities are recorded in `notes/engineering_smoke_evidence.md`. No training-run
+manifest exists because governed execution fails before batch 1.
 
-The canonical-tool-shaped draft at
-`results/2cb6a58/notes/marginal_cost_input.json` is currently ignored by
-`.gitignore` line 240. [issue:fddd87a] structurally blocks this experiment until the
-required KPI filenames are normally trackable. The draft must not be force-added,
-and it cannot produce a revision-pinned report until both a real matrix exists and
-the tracking-policy gap is resolved.
+The KPI input is now normally trackable and classifies the compact authored base and
+matrix intent separately from the generated matrix materialization. Its report must
+be generated against the final child commit so the revision is immutable.
 
 ## Fixed authoring inputs
 
@@ -98,15 +94,14 @@ no callback or registry entry. Artifact references, manifest IDs, hashes, and cu
 materialization checks belong in the final audit packet. No direct durable write may
 substitute for a required manifest or `report_render` artifact.
 
-## Gates before any import or execution
+## Gate before execution can resume
 
-1. Feedbax auth `d63e7780` must be merged on protected `develop`.
-2. `ci/feedbax-ref.toml` must pin that protected resulting SHA.
-3. [issue:5816bf0], which structurally blocks this experiment, must deliver the
-   governed per-row re-lowering contract described in
-   `notes/static_authoring_gap.md`.
-4. Only then may the lane validate or emit specs, write custody artifacts, train,
-   verify resume, or run focused tests.
+Protected Feedbax `060d65d285969ec11e4a284712913550c462ba18` is pinned, the
+pin guard passes, and the governed row re-lowering route is integrated. Validation,
+lowering, dry-run identity generation, and custody emission pass. Execution can
+resume only after the registered orchestration request path distinguishes fresh
+matrices from continuations: fresh matrices must not require a nonexistent source
+checkpoint transaction, while continuations must keep their immutable-input gate.
+[issue:52bacb3] owns that correction and structurally blocks this experiment.
 
-The full RLRMP suite remains a serialized lane-closeout check and is not part of
-this blocked proposal pass.
+The full RLRMP suite remains parent-serialized and is forbidden in this child lane.

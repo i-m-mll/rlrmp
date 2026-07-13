@@ -1,5 +1,12 @@
 # Static authoring gap: matrix rows cannot re-lower science axes
 
+> Historical packet, superseded on 2026-07-13. The governed per-row re-lowering
+> route is integrated and the exact four-row matrix now validates and emits. Current
+> status is recorded in `engineering_smoke_evidence.md`: local execution is blocked
+> before batch 1 by an unconditional source-checkpoint requirement for fresh
+> matrices. This file remains as the pre-integration rationale for refusing a
+> compiled-field patch forest.
+
 Date: 2026-07-13
 
 ## Verdict

@@ -8,13 +8,13 @@ hidden, crossed with nominal or broad-epsilon PGD training. All planned runs are
 one-seed, 100-batch, local-only engineering smoke; they cannot answer the scientific
 question.
 
-Static authoring is currently blocked before a governed matrix can be written. The
-matrix compiler patches an already-lowered `TrainingRunSpec`, while both selected
-axes change multiple derived graph, descriptor, training-mode, loss/fidelity, and
-worker-contract fields. Manually patching those compiled fields would be the escape
-this KPI lane is meant to detect. See [RUN_PLAN.md](RUN_PLAN.md) for the frozen smoke
-protocol and [notes/static_authoring_gap.md](notes/static_authoring_gap.md) for the
-path-level evidence. [issue:5816bf0] now owns governed per-row re-lowering and
-structurally blocks this experiment. The canonical-tool-shaped KPI input draft is
-also ignored by `.gitignore` line 240; [issue:fddd87a] blocks tracking it normally,
-and this lane must not force-add it.
+The governed per-row re-lowering route is now integrated. The tracked compact base
+and four-row matrix intent lower and emit successfully with distinct planned-run,
+authored-payload, and execution-payload identities. Local execution nevertheless
+stops before batch 1 because the orchestration request builder unconditionally
+requires a source checkpoint transaction for a fresh, non-fork matrix. No synthetic
+checkpoint or alternate executor was used. See [RUN_PLAN.md](RUN_PLAN.md) for the
+frozen smoke protocol, [notes/engineering_smoke_evidence.md](notes/engineering_smoke_evidence.md)
+for current evidence, and [notes/static_authoring_gap.md](notes/static_authoring_gap.md)
+for the superseded pre-integration diagnosis. [issue:52bacb3] owns the fresh-matrix
+execution gap and structurally blocks this experiment.
