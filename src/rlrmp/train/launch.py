@@ -369,22 +369,22 @@ def build_orchestration_request(
     metadata = launch.document.metadata
     source_root = metadata.get("source_checkpoint_root")
     transaction_id = metadata.get("source_checkpoint_transaction_id")
-    if not isinstance(source_root, str) or not isinstance(transaction_id, str):
-        raise ValueError("execute requires one common source checkpoint transaction")
-    root = (launch.repo_root / source_root).resolve()
-    manifest = root / "transactions" / transaction_id / "manifest.json"
-    if not manifest.is_file():
-        raise ValueError(f"source checkpoint transaction is missing: {transaction_id}")
-    manifest_digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
-    selection = RowSelection(row_ids=[] if row is None else [row])
-    available = {item.row_id for item in launch.document.rows}
-    unknown = set(selection.row_ids) - available
-    if unknown:
-        raise ValueError(f"unknown row ids in selection: {sorted(unknown)}")
-    request = _build_assembly_request(
-        authored=authored_ref,
-        compiler=CompilerIdentity(compiler_id=COMPILER_ID, compiler_version=COMPILER_VERSION),
-        inputs=[
+    inputs: list[Any] = []
+    if launch.document.fork is None:
+        if (
+            "source_checkpoint_root" in metadata
+            or "source_checkpoint_transaction_id" in metadata
+        ):
+            raise ValueError("fresh execute cannot declare source checkpoint metadata")
+    else:
+        if not isinstance(source_root, str) or not isinstance(transaction_id, str):
+            raise ValueError("execute requires one common source checkpoint transaction")
+        root = (launch.repo_root / source_root).resolve()
+        manifest = root / "transactions" / transaction_id / "manifest.json"
+        if not manifest.is_file():
+            raise ValueError(f"source checkpoint transaction is missing: {transaction_id}")
+        manifest_digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
+        inputs.append(
             AssemblyInputDeclaration(
                 role="source_checkpoint",
                 kind="checkpoint_transaction",
@@ -394,7 +394,16 @@ def build_orchestration_request(
                     manifest_sha256=manifest_digest,
                 ),
             )
-        ],
+        )
+    selection = RowSelection(row_ids=[] if row is None else [row])
+    available = {item.row_id for item in launch.document.rows}
+    unknown = set(selection.row_ids) - available
+    if unknown:
+        raise ValueError(f"unknown row ids in selection: {sorted(unknown)}")
+    request = _build_assembly_request(
+        authored=authored_ref,
+        compiler=CompilerIdentity(compiler_id=COMPILER_ID, compiler_version=COMPILER_VERSION),
+        inputs=inputs,
         driver=driver,
         repo_root=launch.repo_root,
         launch_policy=LaunchPolicy(
