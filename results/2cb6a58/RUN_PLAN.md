@@ -2,9 +2,10 @@
 
 Tracking issue: `2cb6a58`
 
-Status: **first row executed on reviewed staging; blocked by stop/resume and certificate gaps**.
-The protocol remains frozen and every outcome is non-scientific engineering-smoke
-evidence; no hypothesis is answered by this protocol.
+Status: **all four frozen rows completed the batch-50 stop and strict resume to batch
+100 on reviewed local staging**. Every stop and resume received a passing orchestration
+certificate. The protocol remains frozen and every outcome is non-scientific
+engineering-smoke evidence; no hypothesis is answered by this protocol.
 
 ## Intended rows
 
@@ -17,12 +18,16 @@ evidence; no hypothesis is answered by this protocol.
 
 The matrix now exists at `runs/matrix.json`, backed by compact authored intent and a
 Feedbax resolved-semantics snapshot plus execution capsule. Exact row and content
-identities are recorded in `notes/engineering_smoke_evidence.md`. No training-run
-manifest exists because governed execution fails before batch 1.
+identities are recorded in `notes/engineering_smoke_evidence.md`. Each of the eight
+serialized lifecycle segments emitted a `TrainingRunManifest`; the four resumed
+segments preserve their batch-50 parent transaction and finish at batch 100.
 
-The KPI input is now normally trackable and classifies the compact authored base and
-matrix intent separately from the generated matrix materialization. Its report must
-be generated against the final child commit so the revision is immutable.
+The KPI input classifies the compact authored base and matrix intent separately from
+the generated matrix materialization. The existing revision-pinned authoring-cost
+report records revision `9866740fb1fd21f12a05e8c7e0219c595b1facfd`, `c1=60`, and
+`c2=c3=c4=c5=0`. That report is valid evidence for its named revision, but it is not a
+claim about this later documentation packet. Regenerate it after the final packet
+commit if a final-head KPI record is required.
 
 ## Fixed authoring inputs
 
@@ -48,12 +53,20 @@ manual materializer, inline base, fresh-start override, or parity skip is permit
 
 ## Checkpoint and resume protocol
 
-The eventual authored run contract must checkpoint at batch 50. Each row runs to
+The authored run contract checkpoints at batch 50. Each row runs to
 the first checkpoint, stops through the standard operational stop control, verifies
 that the checkpoint transaction is complete, and resumes through the standard
 resume path to batch 100. Evidence must include the checkpoint transaction ID,
 content digests, completed-batch coordinate before and after resume, and a loss
 history with no missing or duplicated boundary step.
+
+This lifecycle is complete for all four rows. Stop segments report cumulative batch
+50 with schedule/current/optimizer-count context `0/0/0`; resumed segments report
+segment batch count 50, cumulative batch 100, context `0/50/50`, and explicit parent
+transaction lineage. The realized LR samples remain constant at
+`0.003000000026077032` at authored coordinates 0, 50, 99, and 100 (the resume segment
+starts at coordinate 50). Exact run-set, transaction, manifest, and certificate hashes
+are in `notes/engineering_smoke_evidence.md`.
 
 ## Plausibility criteria frozen before results
 
@@ -94,15 +107,22 @@ no callback or registry entry. Artifact references, manifest IDs, hashes, and cu
 materialization checks belong in the final audit packet. No direct durable write may
 substitute for a required manifest or `report_render` artifact.
 
-## Gate before execution can resume
+## Current execution boundary
 
-Protected Feedbax `060d65d285969ec11e4a284712913550c462ba18` is pinned, the
-pin guard passes. Reviewed local Feedbax staging `cb3f606e` proves the fingerprint
-repair [issue:feedbax/0e257d0] through worker completion and certification. Execution
-can resume only after [issue:c37df92] makes batch-50 stop/resume authoritative,
-[issue:0a97038] supplies typed LR samples, and [issue:feedbax/b9ddd04] reads the
-canonical row-provenance seed. [issue:feedbax/0fa46bf] separately owns the retained
-terminal/sentinel race discrepancy. No later row or downstream analysis may run
-until the blocking paths are corrected and reviewed.
+The training lifecycle gate is satisfied on the exact reviewed Feedbax dependency
+`a86f6b8685d5ce6a2761d26a814b65528b9dee1a`, which was used for all eight accepted
+M1 lifecycle segments. The same local staging branch has since advanced to clean signed
+head `257573ea7642b6570d12afac8a71ee913256e93a`; that current head is live dependency
+work, not the runtime identity of the accepted M1 evidence. The bounded RLRMP and
+Feedbax repair stack is enumerated in `notes/engineering_smoke_evidence.md`; no
+workaround or bypass was introduced into this experiment.
+
+Feedbax issues [issue:7e4cf6b], [issue:ca2f937], and [issue:d81a868] are implemented on
+the current signed staging head. Runtime acceptance products remain blocked on the live
+RLRMP/dependency issues [issue:2412353], [issue:deadff5], [issue:37d13e1],
+[issue:639e30f], [issue:8776106], and [issue:986a0bf]. Until those separate paved-road
+gaps land, the eight direct orchestration run-set directories are the canonical local
+evidence references. This is a downstream product gap, not a failure of the completed
+stop/resume lifecycle.
 
 The full RLRMP suite remains parent-serialized and is forbidden in this child lane.
