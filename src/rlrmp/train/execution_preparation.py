@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Any
 
 import jax.random as jr
 from feedbax.contracts.training import DEFAULT_TRAINING_METHOD_REGISTRY
+from feedbax.models.networks import LeakyRNNCell
+from feedbax.models.support import identity_func
 from feedbax.training import (
     ExecutionPreparationRegistration,
     ExecutionPreparationRequest,
@@ -56,7 +59,22 @@ def _runtime_config(config: dict[str, Any]) -> tuple[Any, Any]:
     from rlrmp.train.config_materialization import _config_namespace, build_hps
 
     args = _config_namespace(config)
-    return args, build_hps(args)
+    hps = build_hps(args)
+    architecture = str(config.get("controller_architecture", "gru"))
+    if architecture == "static_linear":
+        hps = hps | {"hidden_type": "static_linear"}
+    elif architecture == "linear_recurrence":
+        hps = hps | {
+            "hidden_type": partial(
+                LeakyRNNCell,
+                use_bias=False,
+                nonlinearity=identity_func,
+            ),
+            "model": hps.model | {"initial_hidden_encoder": False},
+        }
+    elif architecture != "gru":
+        raise ValueError(f"unsupported C&S controller_architecture {architecture!r}")
+    return args, hps
 
 
 def prepare_cs_supervised(request: ExecutionPreparationRequest) -> ExecutionPreparationResult:
@@ -89,9 +107,7 @@ def prepare_adaptive_epsilon(request: ExecutionPreparationRequest) -> ExecutionP
     continuation = request.run_spec.checkpoint_progress.continuation
     if continuation is not None:
         if continuation.additional_batches is None:
-            raise ValueError(
-                "adaptive-epsilon continuation lacks required additional_batches"
-            )
+            raise ValueError("adaptive-epsilon continuation lacks required additional_batches")
         runtime_config["n_train_batches"] = continuation.additional_batches
     args, hps = _runtime_config(runtime_config)
     initial_slots, runtime = build_adaptive_epsilon_native_initial_slots(

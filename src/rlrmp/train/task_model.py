@@ -36,6 +36,10 @@ from rlrmp.model.cs_lss_gru import (
     CS_REDUCED_PHYSICAL_STATE_DIM,
     build_cs_lss_gru_graph,
 )
+from rlrmp.model.cs_lss_static_linear import (
+    STATIC_LINEAR_CONTROLLER_KIND,
+    build_cs_lss_static_linear_ensemble,
+)
 from rlrmp.train.closed_loop_finite_adversary import (
     AFFINE_POLICY,
     FINITE_POLICY_BIAS_INPUT,
@@ -349,6 +353,11 @@ def setup_task_model_pair(
         delayed_reach = _cs_delayed_reach_enabled(hps)
         sisu_conditioned_pgd = _sisu_conditioned_pgd_budget_enabled(hps)
         finite_epsilon_policy = _finite_epsilon_policy_mechanism(hps)
+        scalar_input_count = int(delayed_reach or not target_training.enabled)
+        if sisu_conditioned_pgd:
+            sisu_input_name = _sisu_conditioned_pgd_budget_input_name(hps)
+            if not (sisu_input_name == "input" and scalar_input_count > 0):
+                scalar_input_count += 1
         task = _add_cs_lss_task_inputs(
             _CsLssTaskAdapter(
                 task_base,
@@ -368,12 +377,28 @@ def setup_task_model_pair(
             physical_state_dim=physical_state_dim,
             dtype=runtime_dtype,
         )
-        models = _create_cs_lss_gru_ensemble(
-            hps,
-            hidden_type=hidden_type,
-            sisu_gating=sisu_gating,
-            key=key,
-        )
+        if hidden_type == STATIC_LINEAR_CONTROLLER_KIND:
+            models = build_cs_lss_static_linear_ensemble(
+                n_replicates=int(hps.model.n_replicates),
+                input_size=scalar_input_count,
+                sensory_noise_std=float(hps.model.sensory_noise_std),
+                additive_motor_noise_std=float(hps.model.additive_motor_noise_std),
+                signal_dependent_motor_noise_std=float(hps.model.signal_dependent_motor_noise_std),
+                bind_epsilon_input=True,
+                finite_epsilon_policy=finite_epsilon_policy,
+                target_relative_feedback=target_training.enabled,
+                force_filter_feedback=target_training.force_filter_feedback,
+                no_integrator_state=no_integrator_state,
+                trainable_dtype=getattr(hps.model, "trainable_dtype", None),
+                key=key,
+            )
+        else:
+            models = _create_cs_lss_gru_ensemble(
+                hps,
+                hidden_type=hidden_type,
+                sisu_gating=sisu_gating,
+                key=key,
+            )
         if target_training.enabled:
             task = TargetRelativeMultiTargetTrainingTaskAdapter(task, target_training)
         broad_epsilon_training = BroadFullStateEpsilonTrainingConfig.from_payload(
