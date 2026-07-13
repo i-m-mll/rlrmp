@@ -55,6 +55,13 @@ def build_parser() -> argparse.ArgumentParser:
     post_run.add_argument("--repo-root", type=Path, default=Path.cwd())
     post_run.add_argument("--issue", required=True)
     post_run.add_argument("--run-prefix", required=True)
+    post_run.add_argument("--training-manifest-refs", type=Path, required=True)
+    post_run.add_argument(
+        "--manifest-provider",
+        action="append",
+        required=True,
+        metavar="SCHEME=ROOT",
+    )
     return parser
 
 
@@ -63,13 +70,30 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     args = build_parser().parse_args(argv)
     if args.command == "map-post-run":
-        from rlrmp.train.orchestrated_post_run import map_registered_run_set
+        from rlrmp.train.orchestrated_post_run import (
+            map_registered_run_set,
+            rooted_manifest_ref_resolver,
+        )
+
+        refs = json.loads(args.training_manifest_refs.read_text(encoding="utf-8"))
+        if not isinstance(refs, dict):
+            raise ValueError("--training-manifest-refs must contain a row-id object")
+        resolvers = {}
+        for binding in args.manifest_provider:
+            scheme, separator, root = binding.partition("=")
+            if not separator or not scheme or scheme == "file" or not root:
+                raise ValueError("--manifest-provider must be an immutable SCHEME=ROOT binding")
+            if scheme in resolvers:
+                raise ValueError(f"duplicate --manifest-provider scheme {scheme!r}")
+            resolvers[scheme] = rooted_manifest_ref_resolver(Path(root))
 
         outputs = map_registered_run_set(
             args.run_set_dir,
             repo_root=args.repo_root,
             issue=args.issue,
             run_prefix=args.run_prefix,
+            training_manifest_refs=refs,
+            manifest_ref_resolvers=resolvers,
         )
         print(json.dumps([str(path) for path in outputs]))
         return 0
