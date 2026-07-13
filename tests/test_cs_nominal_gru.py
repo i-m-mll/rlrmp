@@ -399,11 +399,12 @@ def test_cs_nominal_gru_config_validates_tracked_cs_stochastic_gru_corpus() -> N
 
     assert wave_1_paths.issubset(paths)
     # Issue b6b5502 retired 26 pre-three-layer CS-GRU recipes. Issue ee7a6f4
-    # then moved eight 3cd018b envelopes into TrainingRunMatrixSpec documents;
-    # test_3cd018b_frozen_rows_use_compact_matrices_and_exact_envelope_snapshots
-    # exhaustively decodes and materializes those rows. Pin this collector's
-    # remaining 40 historical/current flat recipes plus four wave-1 compact rows.
-    assert len(paths) == 40 + len(wave_1_paths)
+    # moved eight 3cd018b envelopes into TrainingRunMatrixSpec documents, and
+    # dd7234e replaced 17 ef9c882 flat recipes with rows inside one compact
+    # matrix. Their dedicated storage-adoption tests exhaustively decode and
+    # materialize those rows. Pin this collector's remaining 23 historical or
+    # current flat recipes plus four wave-1 compact flat recipes.
+    assert len(paths) == 23 + len(wave_1_paths)
     for path in paths:
         payload = hydrate_compact_run_spec_envelope(
             json.loads(path.read_text(encoding="utf-8"))
@@ -415,7 +416,7 @@ def test_cs_nominal_gru_config_validates_tracked_cs_stochastic_gru_corpus() -> N
         else:
             clean_paths.append(path)
 
-    assert len(clean_paths) == 40 + len(wave_1_paths)
+    assert len(clean_paths) == 23 + len(wave_1_paths)
     assert fail_closed == set()
 
 

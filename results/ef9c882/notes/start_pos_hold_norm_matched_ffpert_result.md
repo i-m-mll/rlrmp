@@ -37,9 +37,8 @@ LR 3e-3 has the smallest endpoint error but substantially more pre-go leakage.
 
 ## Artifacts
 
-- Tracked run specs: `results/ef9c882/runs/hold_start_pos_*_ffpert__*.json`,
-  `results/ef9c882/runs/hold__start_pos_zero_vel_lr1e-2.json`, and
-  `results/ef9c882/runs/hold__start_pos_zero_vel_lr3e-2.json`
+- Tracked run specs: `results/ef9c882/runs/matrix.json` rows with the
+  `start_position_ffpert` and `start_position_zero_velocity` source families
 - Bulk run artifacts: `_artifacts/ef9c882/runs/<run>/`
 - Velocity figure spec:
   `results/ef9c882/figures/start_pos_hold_norm_matched_ffpert_velocity_profiles/spec.json`

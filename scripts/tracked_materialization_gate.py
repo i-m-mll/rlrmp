@@ -24,6 +24,12 @@ RUN_ENVELOPE_KEYS = frozenset(
 )
 SPEC_CONTAINER_KEYS = frozenset({"override", "overrides", "spec"})
 WINDOWS_ABSOLUTE_PATH = re.compile(r"^[A-Za-z]:[\\\\/]")
+JSON_POINTER = re.compile(r"(?:/(?:[^~/]|~[01])*)*")
+GOVERNED_JSON_POINTER_SUFFIXES = (
+    ("worker_execution", "effective_phase", "consistency_predicate", "rules", "path"),
+    ("worker_execution", "method_contract", "objective_reducers", "path"),
+    ("worker_execution", "method_contract", "worker_reducers", "path"),
+)
 
 
 def _json_bytes(value: Any) -> int:
@@ -44,11 +50,29 @@ def _is_absolute_filesystem_path(value: str) -> bool:
     return value.startswith(("/", "\\\\")) or WINDOWS_ABSOLUTE_PATH.match(value) is not None
 
 
-def _contains_absolute_spec_path(value: Any, *, in_spec: bool = False) -> bool:
+def _is_governed_json_pointer(value: str, key_path: tuple[str, ...]) -> bool:
+    return JSON_POINTER.fullmatch(value) is not None and any(
+        key_path[-len(suffix) :] == suffix for suffix in GOVERNED_JSON_POINTER_SUFFIXES
+    )
+
+
+def _contains_absolute_spec_path(
+    value: Any,
+    *,
+    in_spec: bool = False,
+    key_path: tuple[str, ...] = (),
+) -> bool:
     if isinstance(value, str):
-        return in_spec and _is_absolute_filesystem_path(value)
+        return (
+            in_spec
+            and _is_absolute_filesystem_path(value)
+            and not _is_governed_json_pointer(value, key_path)
+        )
     if isinstance(value, list):
-        return any(_contains_absolute_spec_path(item, in_spec=in_spec) for item in value)
+        return any(
+            _contains_absolute_spec_path(item, in_spec=in_spec, key_path=key_path)
+            for item in value
+        )
     if not isinstance(value, dict):
         return False
 
@@ -58,7 +82,11 @@ def _contains_absolute_spec_path(value: Any, *, in_spec: bool = False) -> bool:
     )
     for key, item in value.items():
         key_is_spec = key in SPEC_CONTAINER_KEYS or key.endswith("_spec")
-        if _contains_absolute_spec_path(item, in_spec=in_spec or schema_is_spec or key_is_spec):
+        if _contains_absolute_spec_path(
+            item,
+            in_spec=in_spec or schema_is_spec or key_is_spec,
+            key_path=(*key_path, key),
+        ):
             return True
     return False
 

@@ -48,10 +48,11 @@ def test_materialization_inventory_is_exactly_grandfathered() -> None:
     }
     found = scan_tracked()
     assert not any(path.startswith("results/3cd018b/") for path in found)
-    assert "results/ef9c882/runs/hold__force_filter.json" in found
-    assert found["results/ef9c882/runs/matrix.json"] == [
-        "absolute_filesystem_path_in_spec"
-    ]
+    assert not any(path.startswith("results/ef9c882/") for path in found)
+    assert not any(
+        entry["owner"] == "dd7234e"
+        for entry in tomllib.loads(ALLOWLIST.read_text(encoding="utf-8"))["violations"]
+    )
     assert allowed == set(found), (
         "Tracked materialization allowlist drifted. Remove stale entries when files are "
         "remediated, and add no new entry without an owning migration issue or keep rationale. "
@@ -90,12 +91,44 @@ def test_materialization_gate_uses_bytes_not_newlines() -> None:
     ]
 
 
-@pytest.mark.parametrize("path", ["/Users/example/run", r"C:\\runs\\example"])
+@pytest.mark.parametrize("path", ["/Users/example/run", "/tmp/run", r"C:\\runs\\example"])
 def test_materialization_gate_rejects_absolute_spec_override_values(path: str) -> None:
     payload = {
         "schema_id": "feedbax.spec.training_run_matrix",
         "rows": [{"overrides": [{"path": "checkpoint_root", "value": path}]}],
     }
+    assert materialization_reasons(payload) == ["absolute_filesystem_path_in_spec"]
+
+
+def test_materialization_gate_accepts_governed_worker_execution_json_pointers() -> None:
+    payload = {
+        "schema_id": "feedbax.spec.training_run",
+        "worker_execution": {
+            "effective_phase": {
+                "consistency_predicate": {
+                    "rules": [{"path": "/phase_program/phases/0"}],
+                },
+            },
+            "method_contract": {
+                "objective_reducers": [
+                    {"path": "/objective/payload/loss_summary"},
+                ],
+                "worker_reducers": [{"path": "/risk_aggregation/replicate"}],
+            },
+        },
+    }
+
+    assert materialization_reasons(payload) == []
+
+
+def test_materialization_gate_rejects_posix_path_outside_pointer_context() -> None:
+    payload = {
+        "schema_id": "feedbax.spec.training_run",
+        "worker_execution": {
+            "metadata": {"path": "/tmp/not-a-json-pointer-field"},
+        },
+    }
+
     assert materialization_reasons(payload) == ["absolute_filesystem_path_in_spec"]
 
 

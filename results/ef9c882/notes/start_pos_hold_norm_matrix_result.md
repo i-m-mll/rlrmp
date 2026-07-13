@@ -44,7 +44,8 @@ to strong L1 can recover a little peak velocity, but it worsens endpoint quality
 
 ## Durable Outputs
 
-- Run specs: `results/ef9c882/runs/hold_start_pos_*.json`
+- Run specs: `results/ef9c882/runs/matrix.json` rows
+  `hold_start_pos_l1__w1e4` through `hold_start_pos_l2__w1e8`
 - Bulk run artifacts: `_artifacts/ef9c882/runs/hold_start_pos_*`
 - Velocity figure spec: `results/ef9c882/figures/start_pos_hold_norm_velocity_profiles/spec.json`
 - No-catch velocity summary: `_artifacts/ef9c882/figures/start_pos_hold_norm_velocity_profiles/no_catch/velocity_profile_summary.json`
