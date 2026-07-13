@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 STEADY_STATE_SUMMARY = (
     REPO_ROOT / "results/87424a4/notes/steady_state_perturbation_bank_summary.json"
 )
