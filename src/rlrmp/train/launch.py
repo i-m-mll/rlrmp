@@ -165,10 +165,19 @@ def execute_authored_training_intent(
     runpod_profile: Path | None = None,
 ) -> Any:
     """Execute through Feedbax's persisted ASSEMBLE-to-REGISTER lifecycle."""
-    from feedbax.orchestration import StageEngine, build_core_check_registry
+    from feedbax.orchestration import (
+        AuthorizedBatchStop,
+        RowConformanceRuntimeInputs,
+        StageEngine,
+        build_core_check_registry,
+    )
 
     active_controls = controls or LaunchRuntimeControls()
-    _validate_execute_controls(launch, active_controls)
+    same_row_resume_bindings = _validate_execute_controls(
+        launch,
+        active_controls,
+        row=row,
+    )
     request, context, registry = build_orchestration_request(launch, row=row, driver=driver)
     fork_record = _run_fork_gate(launch, row=row)
 
@@ -179,6 +188,7 @@ def execute_authored_training_intent(
             repo_root=launch.repo_root,
             controls=active_controls,
             fork_record=fork_record,
+            same_row_resume_bindings=same_row_resume_bindings,
             runpod_profile=runpod_profile,
         )
 
@@ -188,8 +198,31 @@ def execute_authored_training_intent(
         registry=registry,
         driver_factory=driver_factory,
         conformance_registry=build_core_check_registry(),
+        row_conformance_inputs=(
+            {
+                row_id: RowConformanceRuntimeInputs(
+                    authorized_batch_stop=AuthorizedBatchStop(
+                        stop_after_batches=active_controls.stop_after_batches
+                    )
+                )
+                for row_id in _selected_authored_row_ids(launch, row=row)
+            }
+            if active_controls.stop_after_batches is not None
+            else {}
+        ),
     )
     return engine.run()
+
+
+def _selected_authored_row_ids(launch: AuthoredLaunch, *, row: str | None) -> tuple[str, ...]:
+    """Return row IDs selected by the authored request without recompiling it."""
+
+    available = tuple(item.row_id for item in launch.document.rows)
+    if row is None:
+        return available
+    if row not in available:
+        raise ValueError(f"unknown row selector {row!r}; available rows: {', '.join(available)}")
+    return (row,)
 
 
 def orchestration_driver_for_bundle(
@@ -200,6 +233,7 @@ def orchestration_driver_for_bundle(
     controls: LaunchRuntimeControls,
     fork_record: tuple[Path, str] | None,
     runpod_profile: Path | None,
+    same_row_resume_bindings: dict[str, dict[str, str]] | None = None,
 ) -> Any:
     """Construct the selected operational driver from explicit local inputs."""
     from rlrmp.train.orchestration_drivers import (
@@ -215,6 +249,7 @@ def orchestration_driver_for_bundle(
             resume=controls.resume,
             fork_record_path=(fork_record[0] if fork_record else None),
             fork_record_sha256=(fork_record[1] if fork_record else None),
+            same_row_resume_bindings=same_row_resume_bindings,
             stop_after_batches=controls.stop_after_batches,
         )
     if driver == "runpod":
@@ -227,6 +262,7 @@ def orchestration_driver_for_bundle(
             resume=controls.resume,
             fork_record_path=(fork_record[0] if fork_record else None),
             fork_record_sha256=(fork_record[1] if fork_record else None),
+            same_row_resume_bindings=same_row_resume_bindings,
             stop_after_batches=controls.stop_after_batches,
         )
     raise ValueError(f"unknown orchestration driver {driver!r}")
@@ -457,17 +493,103 @@ def _build_assembly_request(
     )
 
 
-def _validate_execute_controls(launch: AuthoredLaunch, controls: LaunchRuntimeControls) -> None:
+def _validate_execute_controls(
+    launch: AuthoredLaunch,
+    controls: LaunchRuntimeControls,
+    *,
+    row: str | None = None,
+) -> dict[str, dict[str, str]]:
     continuation = launch.document.fork is not None
-    if controls.resume != continuation:
+    if continuation and not controls.resume:
         raise ValueError("--resume must match the authored continuation envelope")
     source = launch.document.metadata.get("source_checkpoint_root")
-    if controls.checkpoint_root is not None and isinstance(source, str):
+    if continuation and controls.checkpoint_root is not None and isinstance(source, str):
         expected = (launch.repo_root / source).resolve()
         if controls.checkpoint_root.resolve() != expected:
             raise ValueError("--checkpoint-root must match the authored immutable input")
     if controls.allow_fresh_start:
         raise ValueError("--allow-fresh-start cannot override an immutable continuation")
+    if continuation or not controls.resume:
+        return {}
+    return _operational_same_row_resume_bindings(
+        launch,
+        row=row,
+        checkpoint_root=controls.checkpoint_root,
+    )
+
+
+def _operational_same_row_resume_bindings(
+    launch: AuthoredLaunch,
+    *,
+    row: str | None,
+    checkpoint_root: Path | None,
+) -> dict[str, dict[str, str]]:
+    """Resolve one exact same-row checkpoint through public typed custody."""
+
+    selected = select_launch_rows(compile_authored_training_intent(launch), row)
+    if len(selected) != 1:
+        raise ValueError("operational same-row --resume requires exactly one selected row")
+    item = selected[0]
+    prepared = _prepare_execution(item, resume=True)
+    if prepared.initial_slots is None:
+        raise ValueError(
+            "operational same-row resume requires an execution-preparation provider for "
+            f"method_ref {item.run_spec.method_ref.key!r}"
+        )
+    root = _same_row_checkpoint_root(launch, item, override=checkpoint_root)
+    from feedbax.training import load_checkpoint_custody_documents
+    from feedbax.training.checkpoint_custody import load_latest_checkpoint
+
+    loaded = load_latest_checkpoint(
+        root,
+        expected_run_spec=item.run_spec,
+        expected_phase_program=item.run_spec.worker_execution.method_contract.phase_program,
+        expected_slots=prepared.initial_slots,
+        resume_slot_transform=prepared.resume_slot_transform,
+        continuation_request=None,
+        allow_new_lineage_override=False,
+    )
+    documents = load_checkpoint_custody_documents(root)
+    manifest = loaded.manifest
+    latest = documents.latest_pointer.document
+    if documents.manifest.document.transaction_id != manifest.transaction_id:
+        raise ValueError("same-row resume custody changed during typed validation")
+    if manifest.run_id != item.planned_run_id or latest.run_id != item.planned_run_id:
+        raise ValueError(
+            "same-row resume checkpoint run identity does not match the selected canonical row"
+        )
+    from rlrmp.train.resume_control import target_training_batches
+
+    target_batches = target_training_batches(item.run_spec)
+    completed_batches = manifest.completed_training_batches
+    if completed_batches is None or completed_batches < 0:
+        raise ValueError("same-row resume checkpoint lacks valid completed-training progress")
+    if completed_batches >= target_batches:
+        raise ValueError(
+            "same-row resume checkpoint is already complete: "
+            f"completed_batches={completed_batches} target_batches={target_batches}"
+        )
+    return {
+        item.row_id: {
+            "checkpoint_root": str(root),
+            "transaction_id": manifest.transaction_id,
+            "manifest_sha256": latest.manifest_sha256,
+        }
+    }
+
+
+def _same_row_checkpoint_root(
+    launch: AuthoredLaunch,
+    row: LaunchRow,
+    *,
+    override: Path | None,
+) -> Path:
+    configured = Path(row.run_spec.artifacts.artifact_root)
+    expected = configured if configured.is_absolute() else launch.repo_root / configured
+    expected = expected.resolve()
+    if override is not None and override.resolve() != expected:
+        raise ValueError("--checkpoint-root must match the selected row's checkpoint custody")
+    return expected
 
 
 def _run_fork_gate(launch: AuthoredLaunch, *, row: str | None) -> tuple[Path, str] | None:

@@ -113,6 +113,8 @@ def test_adaptive_epsilon_run_spec_uses_native_method(
     assert payload.damage_schedule["setpoint_basis"] == "damage_to_clean_loss_ratio"
     assert payload.n_train_batches == 2
     assert payload.chunk_batches == 1
+    assert "resume_context" not in spec.metadata
+    assert "optimizer_build_context" not in spec.metadata
     slot_names = {slot.name for slot in spec.worker_execution.method_contract.state_slots}
     assert {ADAPTIVE_EPSILON_STATE, ZERO_ADVERSARY_GUARD} <= slot_names
 

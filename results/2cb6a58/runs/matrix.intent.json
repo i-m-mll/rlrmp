@@ -1,0 +1,66 @@
+{
+  "schema_id": "feedbax.spec.training_run_matrix",
+  "schema_version": "feedbax.spec.training_run_matrix.v3",
+  "name": "2cb6a58 force-state observability local engineering smoke",
+  "issue": "2cb6a58",
+  "base": {
+    "kind": "authored_intent",
+    "ref": "results/2cb6a58/runs/base.intent.json",
+    "content_hash": "912f1fd2b727c04e1e9e5939fca894f73af828fc8f4920bcafdde01b4b4933c6",
+    "pin_algorithm": "canonical_json_v1"
+  },
+  "axes": [],
+  "combination": {
+    "mode": "cross"
+  },
+  "rows": [
+    {
+      "row_id": "force_visible__nominal_seed42_smoke100",
+      "seed": 42,
+      "overrides": [
+        {"op": "replace", "path": "config.force_filter_feedback", "value": true},
+        {"op": "replace", "path": "config.broad_epsilon_pgd_training", "value": false},
+        {"op": "replace", "path": "config.output_dir", "value": "_artifacts/2cb6a58/runs/force_visible__nominal_seed42_smoke100"},
+        {"op": "replace", "path": "config.spec_dir", "value": "results/2cb6a58/runs/force_visible__nominal_seed42_smoke100"}
+      ]
+    },
+    {
+      "row_id": "force_hidden__nominal_seed42_smoke100",
+      "seed": 42,
+      "overrides": [
+        {"op": "replace", "path": "config.force_filter_feedback", "value": false},
+        {"op": "replace", "path": "config.broad_epsilon_pgd_training", "value": false},
+        {"op": "replace", "path": "config.output_dir", "value": "_artifacts/2cb6a58/runs/force_hidden__nominal_seed42_smoke100"},
+        {"op": "replace", "path": "config.spec_dir", "value": "results/2cb6a58/runs/force_hidden__nominal_seed42_smoke100"}
+      ]
+    },
+    {
+      "row_id": "force_visible__broad_pgd_seed42_smoke100",
+      "seed": 42,
+      "overrides": [
+        {"op": "replace", "path": "config.force_filter_feedback", "value": true},
+        {"op": "replace", "path": "config.broad_epsilon_pgd_training", "value": true},
+        {"op": "replace", "path": "config.output_dir", "value": "_artifacts/2cb6a58/runs/force_visible__broad_pgd_seed42_smoke100"},
+        {"op": "replace", "path": "config.spec_dir", "value": "results/2cb6a58/runs/force_visible__broad_pgd_seed42_smoke100"}
+      ]
+    },
+    {
+      "row_id": "force_hidden__broad_pgd_seed42_smoke100",
+      "seed": 42,
+      "overrides": [
+        {"op": "replace", "path": "config.force_filter_feedback", "value": false},
+        {"op": "replace", "path": "config.broad_epsilon_pgd_training", "value": true},
+        {"op": "replace", "path": "config.output_dir", "value": "_artifacts/2cb6a58/runs/force_hidden__broad_pgd_seed42_smoke100"},
+        {"op": "replace", "path": "config.spec_dir", "value": "results/2cb6a58/runs/force_hidden__broad_pgd_seed42_smoke100"}
+      ]
+    }
+  ],
+  "metadata": {
+    "evidence_class": "non_scientific_engineering_smoke",
+    "execution_policy": "local_only_non_billable",
+    "frozen_seed": 42,
+    "frozen_n_batches": 100,
+    "checkpoint_boundary_batch": 50
+  },
+  "tags": ["engineering_smoke", "local_only", "non_scientific"]
+}

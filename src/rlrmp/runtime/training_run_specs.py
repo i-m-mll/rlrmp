@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
 from feedbax.contracts.manifest import (
     ArtifactRef,
@@ -29,9 +29,11 @@ from feedbax.contracts.training import (
     DEFAULT_TRAINING_METHOD_REGISTRY,
     ExecutionPolicySpec,
     GraphTopologySourceSpec,
+    LrScheduleSpec,
     MethodPayloadEnvelope,
     MethodRefSpec,
     ObjectiveSlotSpec,
+    OptimizerSpec,
     RiskAggregationSpec,
     TaskSpec,
     TrainingConfig,
@@ -553,11 +555,76 @@ class CsSupervisedMethodPayload(_StrictPayloadModel):
     training_mode: str
     n_train_batches: int
     batch_size: int
+    # Optional only so historical v1 payloads remain readable. Every current
+    # builder emits this field and every architecture transform requires it.
+    optimizer: OptimizerSpec | None = None
     optimizer_policy: dict[str, Any]
     gradient_clip_norm: float | None = None
     training_diagnostics: dict[str, Any]
     pre_step: CsSupervisedPreStepPayload | None = None
     checkpoint_policy: CsSupervisedCheckpointPolicyPayload
+
+    @model_validator(mode="after")
+    def _validate_optimizer_matches_runtime_config(self) -> "CsSupervisedMethodPayload":
+        if self.optimizer is None:
+            return self
+        if self.config is None:
+            raise ValueError("/optimizer requires governed /config for schedule validation")
+        expected = cs_supervised_optimizer_spec(
+            config=self.config,
+            n_train_batches=self.n_train_batches,
+        )
+        if self.optimizer.model_dump(mode="json") != expected.model_dump(mode="json"):
+            raise ValueError(
+                "/optimizer disagrees with governed C&S runtime config; regenerate the "
+                "method payload instead of launching a divergent schedule"
+            )
+        return self
+
+
+def cs_supervised_optimizer_spec(
+    *,
+    config: Mapping[str, Any],
+    n_train_batches: int,
+) -> OptimizerSpec:
+    """Build the typed optimizer that exactly mirrors the live C&S runtime."""
+
+    def required(name: str) -> Any:
+        if name not in config:
+            raise ValueError(f"C&S runtime config missing optimizer field {name!r}")
+        return config[name]
+
+    runtime_batches = int(required("n_train_batches"))
+    if runtime_batches != int(n_train_batches):
+        raise ValueError(
+            "C&S method payload n_train_batches disagrees with governed runtime config"
+        )
+    warmup_batches = int(required("lr_warmup_batches"))
+    return OptimizerSpec(
+        type="adamw",
+        params={"weight_decay": 0.0},
+        lr_schedule=LrScheduleSpec(
+            origin={"kind": "run_start"},
+            kind="warmup_cosine" if warmup_batches > 0 else "delayed_cosine",
+            learning_rate_0=float(required("controller_lr")),
+            total_steps=runtime_batches,
+            constant_lr_iterations=warmup_batches,
+            warmup_init_fraction=float(required("lr_warmup_init_fraction")),
+            cosine_annealing_alpha=float(required("lr_cosine_alpha")),
+        ),
+    )
+
+
+def require_cs_supervised_optimizer(payload: Mapping[str, Any]) -> OptimizerSpec:
+    """Validate a current C&S payload and return its governed typed optimizer."""
+
+    validated = CsSupervisedMethodPayload.model_validate(payload)
+    if validated.optimizer is None:
+        raise ValueError(
+            "canonical C&S base lacks governed typed optimizer; regenerate it through "
+            "the current C&S run-spec builder"
+        )
+    return validated.optimizer
 
 
 def training_arg_parser(*args: Any, **kwargs: Any) -> argparse.ArgumentParser:
@@ -757,13 +824,17 @@ def cs_supervised_method_payload(
         "artifact_output_dir": str(output_dir),
         "spec_dir": str(spec_dir),
     }
+    config = _args_values_from_run_spec(boundary_run_spec)
+    n_train_batches = int(_required_recording_field(run_spec, "training_summary.n_train_batches"))
     payload = CsSupervisedMethodPayload(
-        config=_args_values_from_run_spec(boundary_run_spec),
+        config=config,
         training_mode=str(_required_recording_field(run_spec, "training_summary.training_mode")),
-        n_train_batches=int(
-            _required_recording_field(run_spec, "training_summary.n_train_batches")
-        ),
+        n_train_batches=n_train_batches,
         batch_size=int(_required_recording_field(run_spec, "training_summary.batch_size")),
+        optimizer=cs_supervised_optimizer_spec(
+            config=config,
+            n_train_batches=n_train_batches,
+        ),
         optimizer_policy={
             "optimizer": _mapping(run_spec, "optimizer"),
             "controller_lr": training_summary.get("controller_lr"),
@@ -2108,6 +2179,16 @@ def build_feedbax_training_run_spec(
         },
         metadata={
             "effective_phase_fingerprint": effective_phase_fingerprint,
+            "resume_context": {
+                "schedule_origin_step": 0,
+                "current_step": 0,
+                "optimizer_count_at_current_step": 0,
+            },
+            "optimizer_build_context": {
+                "schedule_origin_step": 0,
+                "current_step": 0,
+                "optimizer_count_at_current_step": 0,
+            },
         },
     )
 

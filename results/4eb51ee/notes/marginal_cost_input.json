@@ -1,0 +1,23 @@
+{
+  "experiment_issue": "4eb51ee",
+  "authored_production_paths": [
+    "results/4eb51ee/runs/cohort.intent.json",
+    "results/4eb51ee/runs/base.intent.json",
+    "results/4eb51ee/analysis/cross_lens/spec.json"
+  ],
+  "authored_spec_paths": [
+    "results/4eb51ee/runs/cohort.intent.json",
+    "results/4eb51ee/runs/base.intent.json",
+    "results/4eb51ee/analysis/cross_lens/spec.json"
+  ],
+  "generated_materialization_paths": [
+    "results/4eb51ee/runs/matrix.json"
+  ],
+  "c1_extra_concepts": [],
+  "concepts": {
+    "c2_new_registry_entries": 0,
+    "c3_authored_callbacks": 0,
+    "c4_escape_hatch_invocations": 0,
+    "c5_non_boilerplate_control_flow": 0
+  }
+}
