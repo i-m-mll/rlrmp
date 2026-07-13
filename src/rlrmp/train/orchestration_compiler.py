@@ -6,11 +6,19 @@ from collections.abc import Mapping
 from typing import Any
 
 from feedbax.contracts.run_matrix import TRAINING_RUN_MATRIX_SPEC_SCHEMA_ID
+from feedbax.contracts.training import OptimizerSpec
 from feedbax.orchestration import CompiledRunSet, RowLaunchSpec
+from feedbax.orchestration.schedule_eval import (
+    ScheduleEvalContext,
+    evaluate_schedule_samples,
+    schedule_sample_steps,
+)
 from feedbax.training.diagnostics import (
+    LearningRateDiagnostic,
     NativeTrainingDiagnosticsInput,
     ScheduleContextDiagnostic,
 )
+from feedbax.training.optimizers import build_optimizer
 from feedbax.training.spec_storage import (
     TrainingRunIdentityAdapter,
     compile_training_run_matrix,
@@ -117,21 +125,35 @@ def _native_training_diagnostics(
 ) -> NativeTrainingDiagnosticsInput:
     """Build typed diagnostic inputs without mutating scientific payloads."""
 
+    optimizer_spec = _optimizer_spec(payload)
     continuation_context = _continuation_context(authored, payload)
-    resume_context = (
-        ScheduleContextDiagnostic.model_validate(continuation_context)
+    schedule_context = (
+        continuation_context
         if continuation_context is not None
+        else (_fresh_schedule_context() if optimizer_spec is not None else None)
+    )
+    resume_context = (
+        ScheduleContextDiagnostic.model_validate(schedule_context)
+        if schedule_context is not None
         else None
     )
     optimizer_context = (
         ScheduleContextDiagnostic.model_validate(
-            _optimizer_build_context(payload, continuation_context)
+            _optimizer_build_context(optimizer_spec, schedule_context)
+            if optimizer_spec is not None
+            else schedule_context
         )
-        if continuation_context is not None
+        if schedule_context is not None
         else None
+    )
+    lr_trace = (
+        _optimizer_lr_trace(optimizer_spec, schedule_context)
+        if optimizer_spec is not None and schedule_context is not None
+        else []
     )
     return NativeTrainingDiagnosticsInput(
         seeds=[] if seed is None else [seed],
+        lr_trace=lr_trace,
         resume_context=resume_context,
         optimizer_build_context=optimizer_context,
         metadata={"run_set_id": run_set_id, "row_id": row_id},
@@ -163,19 +185,43 @@ def _continuation_context(
     }
 
 
-def _optimizer_build_context(
-    payload: Mapping[str, Any], resume_context: Mapping[str, int]
-) -> dict[str, int]:
-    """Derive context through the executor's public optimizer builder."""
+def _fresh_schedule_context() -> dict[str, int]:
+    """Return the explicit optimizer clock for a fresh training row."""
+
+    return {
+        "schedule_origin_step": 0,
+        "current_step": 0,
+        "optimizer_count_at_current_step": 0,
+    }
+
+
+def _optimizer_spec(payload: Mapping[str, Any]) -> OptimizerSpec | None:
+    """Return the governed controller optimizer when the row declares one."""
+
     optimizer = _path(payload, "method_payload", "payload", "controller_optimizer")
     if not isinstance(optimizer, Mapping):
         optimizer = _path(payload, "method_payload", "payload", "optimizer")
-    if isinstance(optimizer, Mapping):
-        from feedbax.contracts.training import OptimizerSpec
-        from feedbax.training.optimizers import build_optimizer
+    return OptimizerSpec.model_validate(optimizer) if isinstance(optimizer, Mapping) else None
 
-        build_optimizer(OptimizerSpec.model_validate(optimizer), **resume_context)
-    return dict(resume_context)
+
+def _optimizer_build_context(
+    optimizer_spec: OptimizerSpec, schedule_context: Mapping[str, int]
+) -> dict[str, int]:
+    """Derive context through the executor's public optimizer builder."""
+
+    build_optimizer(optimizer_spec, **schedule_context)
+    return dict(schedule_context)
+
+
+def _optimizer_lr_trace(
+    optimizer_spec: OptimizerSpec, schedule_context: Mapping[str, int]
+) -> list[LearningRateDiagnostic]:
+    """Sample the optimizer realized by Feedbax's public construction path."""
+
+    context = ScheduleEvalContext(**schedule_context)
+    steps = schedule_sample_steps(optimizer_spec, context)
+    samples = evaluate_schedule_samples(optimizer_spec, context, steps)
+    return [LearningRateDiagnostic(step=step, learning_rate=samples[step]) for step in steps]
 
 
 def _path(value: Mapping[str, Any], *parts: str) -> Any:

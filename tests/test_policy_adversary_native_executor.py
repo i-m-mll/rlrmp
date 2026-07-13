@@ -71,6 +71,8 @@ def test_policy_adversary_run_spec_uses_native_method(tmp_path: Path) -> None:
     assert payload.n_train_batches == 2
     assert payload.chunk_batches == 1
     assert payload.policy["kind"] == "memoryless_mlp"
+    assert "resume_context" not in spec.metadata
+    assert "optimizer_build_context" not in spec.metadata
     slot_names = {slot.name for slot in spec.worker_execution.method_contract.state_slots}
     assert {ADVERSARY_POLICY, ADVERSARY_OPTIMIZER} <= slot_names
 

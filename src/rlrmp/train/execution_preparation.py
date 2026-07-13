@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from functools import partial
 from typing import Any
 
@@ -94,7 +95,14 @@ def prepare_cs_supervised(request: ExecutionPreparationRequest) -> ExecutionPrep
     )
     return ExecutionPreparationResult(
         initial_slots=initial_slots,
-        kernel_context={RLRMP_RUNTIME_CONTEXT_KEY: runtime},
+        kernel_context={
+            RLRMP_RUNTIME_CONTEXT_KEY: replace(
+                runtime,
+                completed_batches_reader=lambda: int(
+                    runtime.component("cs_supervised").current_completed_batches
+                ),
+            )
+        },
         loss_service=CsSupervisedExternalObjectiveLossService(),
         resume_slot_transform=_cs_supervised_resume_slot_transform(),
     )
