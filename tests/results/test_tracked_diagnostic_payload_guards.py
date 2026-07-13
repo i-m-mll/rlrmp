@@ -50,38 +50,6 @@ HISTORICAL_SIZE_EXCEPTIONS: dict[Path, tuple[int, str]] = {
         "payload is dominated by row-level certificate components rather than "
         "duplicated provenance or bulk arrays.",
     ),
-    Path("results/3cd018b/runs/const1000.json"): (
-        FULL_RUN_SPEC_BYTES,
-        FULL_RUN_SPEC_REASON,
-    ),
-    Path("results/3cd018b/runs/const1750.json"): (
-        FULL_RUN_SPEC_BYTES,
-        FULL_RUN_SPEC_REASON,
-    ),
-    Path("results/3cd018b/runs/const250.json"): (
-        FULL_RUN_SPEC_BYTES,
-        FULL_RUN_SPEC_REASON,
-    ),
-    Path("results/3cd018b/runs/hold1750_to1000.json"): (
-        FULL_RUN_SPEC_BYTES,
-        FULL_RUN_SPEC_REASON,
-    ),
-    Path("results/3cd018b/runs/hold1750_to250.json"): (
-        FULL_RUN_SPEC_BYTES,
-        FULL_RUN_SPEC_REASON,
-    ),
-    Path("results/3cd018b/runs/hold3500_to1000.json"): (
-        FULL_RUN_SPEC_BYTES,
-        FULL_RUN_SPEC_REASON,
-    ),
-    Path("results/3cd018b/runs/hold3500_to250.json"): (
-        FULL_RUN_SPEC_BYTES,
-        FULL_RUN_SPEC_REASON,
-    ),
-    Path("results/3cd018b/runs/ramp3500_to1000.json"): (
-        FULL_RUN_SPEC_BYTES,
-        FULL_RUN_SPEC_REASON,
-    ),
     Path("results/c6c5997/runs/flat_3e-5-epsilon-ramp.json"): (
         FULL_RUN_SPEC_BYTES,
         FULL_RUN_SPEC_REASON,
@@ -181,6 +149,9 @@ def test_all_tracked_perturbation_response_manifests_avoid_inline_run_detail() -
 
 def test_tracked_results_json_files_stay_within_size_budget() -> None:
     paths = _tracked_results_json_paths()
+    assert not any(
+        path.parts[:2] == ("results", "3cd018b") for path in HISTORICAL_SIZE_EXCEPTIONS
+    )
 
     failures: list[str] = []
     for path in paths:

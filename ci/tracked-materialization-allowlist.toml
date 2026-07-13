@@ -39,46 +39,6 @@ owner = "3b850d6"
 reason = "Keep rationale: retained historical analysis/evidence document; no current sibling migration owns removal; detected: oversized_json_payload."
 
 [[violations]]
-path = "results/3cd018b/runs/const1000.json"
-owner = "ee7a6f4"
-reason = "Scheduled for compact-form migration or matrix-family spot audit; detected: expanded_run_envelope, expanded_inline_envelope, oversized_json_payload, absolute_filesystem_path_in_spec."
-
-[[violations]]
-path = "results/3cd018b/runs/const1750.json"
-owner = "ee7a6f4"
-reason = "Scheduled for compact-form migration or matrix-family spot audit; detected: expanded_run_envelope, expanded_inline_envelope, oversized_json_payload, absolute_filesystem_path_in_spec."
-
-[[violations]]
-path = "results/3cd018b/runs/const250.json"
-owner = "ee7a6f4"
-reason = "Scheduled for compact-form migration or matrix-family spot audit; detected: expanded_run_envelope, expanded_inline_envelope, oversized_json_payload, absolute_filesystem_path_in_spec."
-
-[[violations]]
-path = "results/3cd018b/runs/hold1750_to1000.json"
-owner = "ee7a6f4"
-reason = "Scheduled for compact-form migration or matrix-family spot audit; detected: expanded_run_envelope, expanded_inline_envelope, oversized_json_payload, absolute_filesystem_path_in_spec."
-
-[[violations]]
-path = "results/3cd018b/runs/hold1750_to250.json"
-owner = "ee7a6f4"
-reason = "Scheduled for compact-form migration or matrix-family spot audit; detected: expanded_run_envelope, expanded_inline_envelope, oversized_json_payload, absolute_filesystem_path_in_spec."
-
-[[violations]]
-path = "results/3cd018b/runs/hold3500_to1000.json"
-owner = "ee7a6f4"
-reason = "Scheduled for compact-form migration or matrix-family spot audit; detected: expanded_run_envelope, expanded_inline_envelope, oversized_json_payload, absolute_filesystem_path_in_spec."
-
-[[violations]]
-path = "results/3cd018b/runs/hold3500_to250.json"
-owner = "ee7a6f4"
-reason = "Scheduled for compact-form migration or matrix-family spot audit; detected: expanded_run_envelope, expanded_inline_envelope, oversized_json_payload, absolute_filesystem_path_in_spec."
-
-[[violations]]
-path = "results/3cd018b/runs/ramp3500_to1000.json"
-owner = "ee7a6f4"
-reason = "Scheduled for compact-form migration or matrix-family spot audit; detected: expanded_run_envelope, expanded_inline_envelope, oversized_json_payload, absolute_filesystem_path_in_spec."
-
-[[violations]]
 path = "results/40e1911/notes/perturbation_response_npz_deletion_manifest.json"
 owner = "40e1911"
 reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: oversized_json_payload."

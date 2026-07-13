@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import equinox as eqx
+import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
@@ -302,15 +303,19 @@ def test_minimax_jitted_controller_step_matches_eager_fixed_seed(tmp_path: Path)
 
 
 def test_minimax_native_executor_emits_governed_manifest(tmp_path: Path) -> None:
-    spec = _native_smoke_spec(tmp_path, n_adversary_batches=2)
-    result = execute_minimax_training_run_spec_native(
-        spec,
-        run_id="native-minimax-post-run-protocol",
-        key=jr.PRNGKey(0),
-        manifest_root=tmp_path / "manifests" / "post-run",
-        checkpoint_root=tmp_path / "checkpoints" / "post-run",
-        manifest_conflict_policy="reuse-identical",
-    )
+    # Analysis tests intentionally enable process-global x64 in full-suite
+    # workers. This training test owns the opposite precondition, so contain its
+    # construction and execution in an explicit local mode.
+    with jax.enable_x64(False):
+        spec = _native_smoke_spec(tmp_path, n_adversary_batches=2)
+        result = execute_minimax_training_run_spec_native(
+            spec,
+            run_id="native-minimax-post-run-protocol",
+            key=jr.PRNGKey(0),
+            manifest_root=tmp_path / "manifests" / "post-run",
+            checkpoint_root=tmp_path / "checkpoints" / "post-run",
+            manifest_conflict_policy="reuse-identical",
+        )
 
     assert result.manifest_path.is_file()
     assert result.final_coordinate.phase == "done"
