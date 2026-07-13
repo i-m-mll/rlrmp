@@ -238,6 +238,7 @@ def test_execute_controls_keep_same_row_and_fork_resume_semantics_distinct(
             "checkpoint_root": str(tmp_path / "row"),
             "transaction_id": "tx-1",
             "manifest_sha256": "a" * 64,
+            "completed_batches": 50,
         }
     }
     calls: list[tuple[object, str | None, Path | None]] = []
@@ -247,7 +248,7 @@ def test_execute_controls_keep_same_row_and_fork_resume_semantics_distinct(
         *,
         row: str | None,
         checkpoint_root: Path | None,
-    ) -> dict[str, dict[str, str]]:
+    ) -> dict[str, dict[str, str | int]]:
         calls.append((authored, row, checkpoint_root))
         return binding
 
@@ -364,6 +365,7 @@ def test_operational_same_row_resume_pins_public_typed_custody(
             "checkpoint_root": str(checkpoint_root),
             "transaction_id": transaction_id,
             "manifest_sha256": digest,
+            "completed_batches": 50,
         }
     }
     assert load_calls == [

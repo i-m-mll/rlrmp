@@ -233,7 +233,7 @@ def orchestration_driver_for_bundle(
     controls: LaunchRuntimeControls,
     fork_record: tuple[Path, str] | None,
     runpod_profile: Path | None,
-    same_row_resume_bindings: dict[str, dict[str, str]] | None = None,
+    same_row_resume_bindings: dict[str, dict[str, str | int]] | None = None,
 ) -> Any:
     """Construct the selected operational driver from explicit local inputs."""
     from rlrmp.train.orchestration_drivers import (
@@ -498,7 +498,7 @@ def _validate_execute_controls(
     controls: LaunchRuntimeControls,
     *,
     row: str | None = None,
-) -> dict[str, dict[str, str]]:
+) -> dict[str, dict[str, str | int]]:
     continuation = launch.document.fork is not None
     if continuation and not controls.resume:
         raise ValueError("--resume must match the authored continuation envelope")
@@ -523,7 +523,7 @@ def _operational_same_row_resume_bindings(
     *,
     row: str | None,
     checkpoint_root: Path | None,
-) -> dict[str, dict[str, str]]:
+) -> dict[str, dict[str, str | int]]:
     """Resolve one exact same-row checkpoint through public typed custody."""
 
     selected = select_launch_rows(compile_authored_training_intent(launch), row)
@@ -574,6 +574,7 @@ def _operational_same_row_resume_bindings(
             "checkpoint_root": str(root),
             "transaction_id": manifest.transaction_id,
             "manifest_sha256": latest.manifest_sha256,
+            "completed_batches": completed_batches,
         }
     }
 
