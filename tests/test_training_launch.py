@@ -53,9 +53,7 @@ def _emitted_launch(
         "sha256": hashlib.sha256(matrix_path.read_bytes()).hexdigest(),
         "uri": str(matrix_path),
     }
-    matrix_path.with_suffix(".json.artifact.json").write_text(
-        json.dumps(sidecar), encoding="utf-8"
-    )
+    matrix_path.with_suffix(".json.artifact.json").write_text(json.dumps(sidecar), encoding="utf-8")
     return launch.load_authored_training_intent(matrix_path, repo_root=tmp_path)
 
 

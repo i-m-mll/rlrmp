@@ -371,10 +371,7 @@ def build_orchestration_request(
     transaction_id = metadata.get("source_checkpoint_transaction_id")
     inputs: list[Any] = []
     if launch.document.fork is None:
-        if (
-            "source_checkpoint_root" in metadata
-            or "source_checkpoint_transaction_id" in metadata
-        ):
+        if "source_checkpoint_root" in metadata or "source_checkpoint_transaction_id" in metadata:
             raise ValueError("fresh execute cannot declare source checkpoint metadata")
     else:
         if not isinstance(source_root, str) or not isinstance(transaction_id, str):
