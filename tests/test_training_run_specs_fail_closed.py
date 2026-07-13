@@ -312,6 +312,10 @@ def test_tracked_training_config_adapter_corpus_census() -> None:
 
     assert NEWLY_TRACKED_CLEAN_SPECS <= set(clean_paths)
     # Issue b6b5502 removed 29 adapter-readable run specs with the tagged
-    # pre-three-layer experiment stock. Keep the surviving corpus pinned.
-    assert len(clean_paths) == 52
+    # pre-three-layer experiment stock. Issue ee7a6f4 then moved eight 3cd018b
+    # envelopes into TrainingRunMatrixSpec documents; their adapter materialization
+    # is covered exhaustively by
+    # test_3cd018b_frozen_rows_use_compact_matrices_and_exact_envelope_snapshots.
+    # Keep the remaining flat-envelope corpus pinned.
+    assert len(clean_paths) == 44
     assert fail_closed == EXPECTED_TRACKED_FAIL_CLOSED

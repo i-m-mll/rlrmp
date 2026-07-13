@@ -47,7 +47,7 @@ def test_materialization_inventory_is_exactly_grandfathered() -> None:
         for entry in tomllib.loads(ALLOWLIST.read_text(encoding="utf-8"))["violations"]
     }
     found = scan_tracked()
-    assert "results/3cd018b/runs/const1000.json" in found
+    assert not any(path.startswith("results/3cd018b/") for path in found)
     assert "results/ef9c882/runs/hold__force_filter.json" in found
     assert found["results/ef9c882/runs/matrix.json"] == [
         "absolute_filesystem_path_in_spec"
