@@ -51,7 +51,6 @@ from rlrmp.runtime.spec_migrations import (
 )
 
 
-FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures"
 FEEDBACK_QUALITY_ALLOWED_PARITY_DIFFS = (
     "declarative_analysis",
     "bundle_contract.analysis_manifest_id",

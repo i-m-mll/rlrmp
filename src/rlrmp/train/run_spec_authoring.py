@@ -118,7 +118,7 @@ TRAINING_DIAGNOSTICS_NPZ = "training_diagnostics.npz"
 TRAINING_DIAGNOSTICS_MANIFEST = "training_diagnostics.json"
 
 # Keep active tracked recipes under the generic results-JSON guard in
-# tests/analysis/pipelines/test_tracked_diagnostic_payload_guards.py. Large
+# tests/results/test_tracked_diagnostic_payload_guards.py. Large
 # composed records retain their full RLRMP extension for manifest custody, but
 # avoid serializing that extension's fields a second time at the recipe root.
 MAX_TRACKED_RUN_SPEC_BYTES = 500 * 1024
