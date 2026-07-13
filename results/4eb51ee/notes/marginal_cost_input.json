@@ -3,16 +3,16 @@
   "authored_production_paths": [
     "results/4eb51ee/runs/cohort.intent.json",
     "results/4eb51ee/runs/base.intent.json",
-    "results/4eb51ee/runs/matrix.json",
     "results/4eb51ee/analysis/cross_lens/spec.json"
   ],
   "authored_spec_paths": [
     "results/4eb51ee/runs/cohort.intent.json",
     "results/4eb51ee/runs/base.intent.json",
-    "results/4eb51ee/runs/matrix.json",
     "results/4eb51ee/analysis/cross_lens/spec.json"
   ],
-  "generated_materialization_paths": [],
+  "generated_materialization_paths": [
+    "results/4eb51ee/runs/matrix.json"
+  ],
   "c1_extra_concepts": [],
   "concepts": {
     "c2_new_registry_entries": 0,

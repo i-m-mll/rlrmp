@@ -24,8 +24,10 @@ establish that the downstream mixed-mode renderer remains intact; they do
 not substitute for this experiment's blocked 24 evaluations or final manifests.
 
 The exact structured identities, planned run IDs, per-stage states, and log digest are in
-`results/4eb51ee/runs/execution_status.json`. The raw log is custody-routed locally at
-`_artifacts/4eb51ee/logs/sg_nominal_s42-stop50.log`.
+`results/4eb51ee/runs/execution_status.json`. The raw shell-captured log is an issue-owned
+local diagnostic at `_artifacts/4eb51ee/logs/sg_nominal_s42-stop50.log`; it is not a
+Feedbax-custody artifact. Genuine Feedbax custody covers the resolved semantics snapshot
+and execution capsule listed in the structured status.
 
 ## Commands
 

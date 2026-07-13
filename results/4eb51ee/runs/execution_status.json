@@ -38,6 +38,7 @@
     "row_id": "sg_nominal_s42",
     "stop_after_batches": 50,
     "log_path": "_artifacts/4eb51ee/logs/sg_nominal_s42-stop50.log",
+    "log_role": "issue_owned_local_diagnostic_not_feedbax_custody",
     "log_sha256": "9eb2934d3b82245359a4fd7d340c46f9b2894496c25a82c7b80783118110ca28",
     "batch_lines": 0,
     "error_type": "ValueError",
