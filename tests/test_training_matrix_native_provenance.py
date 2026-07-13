@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 
 import pytest
+from feedbax.contracts.manifest import spec_payload
+from feedbax.contracts.run_matrix import AuthoredTrainingRow
 from feedbax.contracts.resolved_snapshot_decoder import decode_resolved_snapshot
 from feedbax.contracts.spec_storage import training_spec_canonical_bytes, training_spec_sha256
 from feedbax.orchestration import (
@@ -22,7 +24,16 @@ from feedbax.orchestration import (
 from feedbax.orchestration.conformance import ConformanceRowArtifacts, check_lr_trace
 from feedbax.orchestration.schedule_eval import ScheduleEvalContext, evaluate_schedule_samples
 
-from rlrmp.train.matrix_lowering import RlrmpTrainingAuthoringIntent
+from rlrmp.runtime.spec_migrations import RUN_SPEC_KIND
+from rlrmp.runtime.training_run_specs import (
+    FEEDBAX_TRAINING_RUN_SPEC_KEY,
+    feedbax_training_run_spec_from_rlrmp_record,
+)
+from rlrmp.train.matrix_lowering import (
+    RlrmpTrainingAuthoringIntent,
+    lower_rlrmp_training_row,
+)
+from rlrmp.train.native_manifest import RLRMP_NATIVE_MANIFEST_COMPANION_KEY
 from rlrmp.train.orchestration_compiler import (
     COMPILER_ID,
     COMPILER_VERSION,
@@ -30,6 +41,7 @@ from rlrmp.train.orchestration_compiler import (
     register_orchestrated_training_compiler,
 )
 from rlrmp.train.orchestration_drivers import _packet_for_row
+from rlrmp.train.orchestrated_row import RowLaunchPacket, load_packet
 from rlrmp.train.training_configs import CsNominalGruConfig
 
 
@@ -63,6 +75,47 @@ def _authored_matrix(tmp_path: Path) -> tuple[dict[str, object], Path]:
     matrix_bytes = training_spec_canonical_bytes(matrix) + b"\n"
     matrix_path.write_bytes(matrix_bytes)
     return matrix, matrix_path
+
+
+def test_lowering_default_spec_ref_is_repo_relative_and_checkout_portable() -> None:
+    intent = RlrmpTrainingAuthoringIntent(
+        config=CsNominalGruConfig(
+            issue="deadff5",
+            output_dir="_artifacts/deadff5/runs/portable-lowering",
+            dry_run=True,
+            smoke=False,
+            target_relative_multitarget=True,
+            n_train_batches=100,
+            lr_warmup_batches=50,
+        )
+    ).model_dump(mode="json", exclude_none=True)
+
+    lowered = lower_rlrmp_training_row(
+        AuthoredTrainingRow(
+            row_id="portable",
+            row_index=0,
+            payload=intent,
+            payload_hash=training_spec_sha256(intent),
+            axis_coordinates={},
+            seed=13,
+        )
+    ).execution_payload
+    companion = lowered["metadata"][RLRMP_NATIVE_MANIFEST_COMPANION_KEY]
+    run_record = companion["training_spec_payload"]
+    manifest_training_spec = spec_payload(
+        RUN_SPEC_KIND,
+        run_record,
+        ref=companion["training_spec_payload_ref"],
+    )
+    nested_spec = feedbax_training_run_spec_from_rlrmp_record(manifest_training_spec.inline)
+
+    assert companion["training_spec_payload_ref"] == ("results/deadff5/runs/portable-lowering.json")
+    assert not Path(companion["training_spec_payload_ref"]).is_absolute()
+    assert manifest_training_spec.kind == "RLRMPRunSpec"
+    assert manifest_training_spec.inline[FEEDBAX_TRAINING_RUN_SPEC_KEY] == (
+        nested_spec.model_dump(mode="json", exclude_none=True)
+    )
+    assert RLRMP_NATIVE_MANIFEST_COMPANION_KEY not in nested_spec.metadata
 
 
 def test_assembly_custodies_lowered_payload_and_exact_row_provenance(
@@ -111,6 +164,7 @@ def test_assembly_custodies_lowered_payload_and_exact_row_provenance(
     assert provenance.planned_run_id.startswith("feedbax-training-run:")
     assert provenance.axis_coordinates["run_id"] == provenance.planned_run_id
     assert provenance.lowerer_identities[0].lowerer_id == ("rlrmp.train.cs_nominal_gru.authoring")
+    assert provenance.lowerer_identities[0].lowerer_version == "v2"
     assert row.execution.payload.sha256 == provenance.lowered_execution_payload_hash
 
     lowered = json.loads(Path(row.execution.payload.uri).read_text(encoding="utf-8"))
@@ -157,6 +211,23 @@ def test_assembly_custodies_lowered_payload_and_exact_row_provenance(
     )
     assert packet.payload == lowered
     assert packet.envelope == row.execution
+    assert packet.native_manifest_companion is not None
+    companion = packet.native_manifest_companion
+    assert (
+        companion.training_spec_payload
+        == lowered["metadata"][RLRMP_NATIVE_MANIFEST_COMPANION_KEY]["training_spec_payload"]
+    )
+    assert companion.training_spec_payload["training_diagnostics"]["enabled"] is True
+    nested_spec = feedbax_training_run_spec_from_rlrmp_record(companion.training_spec_payload)
+    assert companion.training_spec_payload[FEEDBAX_TRAINING_RUN_SPEC_KEY] == (
+        nested_spec.model_dump(mode="json", exclude_none=True)
+    )
+    assert RLRMP_NATIVE_MANIFEST_COMPANION_KEY not in nested_spec.metadata
+    assert companion.training_spec_payload_kind == "RLRMPRunSpec"
+    assert companion.training_spec_payload_schema_id == "rlrmp.run_spec"
+    assert companion.training_spec_payload_schema_version == "rlrmp.run_spec.v2"
+    assert companion.manifest_metadata.training_diagnostics.enabled is True
+    assert companion.manifest_metadata.gru_postrun_candidate is True
     assert packet.native_training_diagnostics.seeds == [13]
     assert packet.native_training_diagnostics.metadata == {
         "row_id": "science-row",
@@ -168,6 +239,28 @@ def test_assembly_custodies_lowered_payload_and_exact_row_provenance(
         99,
         100,
     ]
+
+    packet_path = tmp_path / "launch-packet.json"
+    packet_path.write_text(packet.model_dump_json(), encoding="utf-8")
+    assert load_packet(packet_path) == packet
+
+    carried_tamper = packet.model_dump(mode="json")
+    carried_tamper["native_manifest_companion"]["training_spec_payload_ref"] = (
+        "results/tampered.json"
+    )
+    with pytest.raises(ValueError, match="does not match execution payload"):
+        RowLaunchPacket.model_validate(carried_tamper)
+
+    payload_tamper = packet.model_dump(mode="json")
+    payload_tamper["payload"]["metadata"][RLRMP_NATIVE_MANIFEST_COMPANION_KEY][
+        "training_spec_payload_ref"
+    ] = "results/tampered.json"
+    payload_tamper["native_manifest_companion"]["training_spec_payload_ref"] = (
+        "results/tampered.json"
+    )
+    packet_path.write_text(json.dumps(payload_tamper), encoding="utf-8")
+    with pytest.raises(ValueError, match="payload digest"):
+        load_packet(packet_path)
 
     authored_fork_packet = _packet_for_row(
         bundle,
@@ -259,4 +352,25 @@ def test_assembly_custodies_lowered_payload_and_exact_row_provenance(
                 "manifest_sha256": "a" * 64,
                 "completed_batches": 99,
             },
+        )
+
+    missing_companion = dict(lowered)
+    missing_companion["metadata"] = dict(missing_companion["metadata"])
+    missing_companion["metadata"].pop(RLRMP_NATIVE_MANIFEST_COMPANION_KEY)
+    missing_path = tmp_path / "missing-companion.json"
+    missing_path.write_text(json.dumps(missing_companion), encoding="utf-8")
+    missing_ref = row.execution.payload.model_copy(update={"uri": str(missing_path)})
+    missing_row = row.model_copy(
+        update={"execution": row.execution.model_copy(update={"payload": missing_ref})}
+    )
+    with pytest.raises(ValueError, match="lacks the required.*native-manifest companion"):
+        _packet_for_row(
+            bundle,
+            missing_row,
+            row_dir=tmp_path / "missing-companion-row",
+            resume=False,
+            checkpoint_root=None,
+            fork_record_path=None,
+            fork_record_sha256=None,
+            stop_after_batches=None,
         )

@@ -2230,6 +2230,32 @@ def feedbax_training_run_spec_from_payload(run_spec: dict[str, Any]) -> Training
     return TrainingRunSpec.model_validate(spec_payload)
 
 
+def feedbax_training_run_spec_from_rlrmp_record(
+    run_record: Mapping[str, Any],
+) -> TrainingRunSpec:
+    """Extract the governed Feedbax spec nested in a canonical RLRMP run record.
+
+    Native ``TrainingRunManifest`` records carry this RLRMP record at
+    ``training_spec.inline``. The generic execution contract is nested under
+    :data:`FEEDBAX_TRAINING_RUN_SPEC_KEY`; callers should use this helper instead
+    of duplicating the field extraction or Feedbax model validation.
+    """
+
+    accepted = accept_rlrmp_spec_payload(
+        RUN_SPEC_KIND,
+        run_record,
+        source_version=run_record.get("schema_version"),
+        path="TrainingRunManifest.training_spec.inline",
+    )
+    canonical = dict(accepted.payload)
+    if canonical != dict(run_record):
+        raise ValueError(
+            "TrainingRunManifest.training_spec.inline must already be the canonical "
+            "current RLRMPRunSpec"
+        )
+    return feedbax_training_run_spec_from_payload(canonical)
+
+
 def assert_runtime_graph_matches_training_spec(
     run_spec: dict[str, Any],
     *,

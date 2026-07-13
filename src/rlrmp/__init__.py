@@ -119,6 +119,9 @@ def register_feedbax_training_methods(registry: Any) -> None:
         POLICY_ADVERSARY_SUPERVISED_METHOD_REF,
         ensure_policy_adversary_training_method_registered,
     )
+    from rlrmp.train.native_manifest import (
+        register_rlrmp_training_manifest_metadata_projection,
+    )
 
     # The established native registration functions own their registration
     # records. They populate the default registry, from which we copy the
@@ -142,6 +145,7 @@ def register_feedbax_training_methods(registry: Any) -> None:
             continue
         registration = DEFAULT_TRAINING_METHOD_REGISTRY.resolve(method_ref, path="/method_ref")
         registry.register(registration)
+    register_rlrmp_training_manifest_metadata_projection(registry)
 
 
 # ``feedbax.plugins`` currently loads the callable declared by the existing
