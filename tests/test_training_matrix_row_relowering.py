@@ -3,20 +3,42 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import hashlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from pydantic import ValidationError
 
 from feedbax.contracts.run_matrix import TrainingRunMatrixSpec
-from feedbax.contracts.spec_storage import training_spec_sha256
+from feedbax.contracts.spec_storage import training_run_execution_hash, training_spec_sha256
 from feedbax.contracts.training import TrainingRunSpec
+from feedbax.orchestration.bundle import (
+    AuthoredIntentRef,
+    BudgetPolicy,
+    EnvironmentDeclaration,
+    ExecutionCapsuleRef,
+    ExecutionIdentityEnvelope,
+    ResolvedSnapshotRef,
+    RunBundle,
+    RunRowSpec,
+    RowLaunchSpec,
+    SchemaArtifactRef,
+)
+from feedbax.orchestration.stages import run_preflight_checks
+from feedbax.training.optimizers import learning_rate_schedule
 from feedbax.training.run_matrix import materialize_adapted_run_matrix
 
 from rlrmp.loss import CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE
 from rlrmp.model.feedback_descriptors import DESCRIPTOR_PAYLOAD_KEY
+from rlrmp.runtime.training_run_specs import (
+    CsSupervisedMethodPayload,
+    cs_supervised_optimizer_spec,
+    require_cs_supervised_optimizer,
+)
+from rlrmp.train.executor.cs_supervised import _learning_rate_schedule
 from rlrmp.train.executor.slots import CS_SUPERVISED_METHOD_REF
 from rlrmp.train.heterogeneous_training_matrix import (
     ARCHITECTURES,
@@ -124,6 +146,59 @@ def _heterogeneous_matrix(tmp_path: Path) -> TrainingRunMatrixSpec:
         issue="5816bf0",
         base_ref=base_path,
         repo_root=tmp_path,
+    )
+
+
+def _schedule_preflight_bundle(spec: TrainingRunSpec, tmp_path: Path) -> RunBundle:
+    payload = spec.model_dump(mode="json", exclude_none=True)
+    payload_bytes = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    payload_path = tmp_path / "preflight-row.json"
+    payload_path.write_bytes(payload_bytes)
+    payload_hash = hashlib.sha256(payload_bytes).hexdigest()
+    resolved_root = "1" * 64
+    return RunBundle(
+        run_set_id="2026-07-13-ebd5d02",
+        driver="local",
+        rows=[
+            RunRowSpec(
+                row_id="fresh-cs-row",
+                execution=ExecutionIdentityEnvelope(
+                    payload=SchemaArtifactRef(
+                        schema_id=spec.schema_id,
+                        schema_version=spec.schema_version,
+                        artifact_id="test:fresh-cs-row:payload",
+                        sha256=payload_hash,
+                        uri=str(payload_path),
+                    ),
+                    authored_intent=AuthoredIntentRef(
+                        schema_id="feedbax.spec.training_run_matrix",
+                        schema_version="feedbax.spec.training_run_matrix.v3",
+                        artifact_id="test:fresh-cs-row:authored",
+                        sha256="2" * 64,
+                        intent_hash="3" * 64,
+                    ),
+                    resolved_snapshot=ResolvedSnapshotRef(
+                        schema_id="feedbax.spec.training_run_resolved_semantics",
+                        schema_version="feedbax.spec.training_run_resolved_semantics.v1",
+                        artifact_id="test:fresh-cs-row:resolved",
+                        sha256="4" * 64,
+                        root_hash=resolved_root,
+                    ),
+                    execution_capsule=ExecutionCapsuleRef(
+                        schema_id="feedbax.manifest.training_run_execution_capsule",
+                        schema_version="feedbax.manifest.training_run_execution_capsule.v2",
+                        artifact_id="test:fresh-cs-row:capsule",
+                        sha256="5" * 64,
+                        execution_hash=training_run_execution_hash(resolved_root, []),
+                    ),
+                    immutable_inputs=[],
+                ),
+                launch=RowLaunchSpec(command=["true"]),
+            )
+        ],
+        environment=EnvironmentDeclaration(python_version="3.13"),
+        budget=BudgetPolicy(max_wall_clock_seconds=10.0),
+        orchestration_root=str(tmp_path / "orchestration"),
     )
 
 
@@ -281,26 +356,40 @@ def test_compact_2x2_matrix_relowers_complete_consistent_training_specs(
 def test_compact_six_row_matrix_dispatches_through_public_architecture_providers(
     tmp_path: Path,
 ) -> None:
+    matrix = _heterogeneous_matrix(tmp_path)
     materialized = materialize_rlrmp_training_matrix(
-        _heterogeneous_matrix(tmp_path),
+        matrix,
         repo_root=tmp_path,
     )
+    repeated = materialize_rlrmp_training_matrix(matrix, repo_root=tmp_path)
 
     assert [row.row_id for row in materialized.rows] == [
         f"{architecture}.{distribution}"
         for architecture in ARCHITECTURES
         for distribution in DISTRIBUTIONS
     ]
+    assert [row.planned_run_id for row in materialized.rows] == [
+        row.planned_run_id for row in repeated.rows
+    ]
+    assert [row.provenance.authored_payload_hash for row in materialized.rows] == [
+        row.provenance.authored_payload_hash for row in repeated.rows
+    ]
+    assert [row.provenance.lowered_execution_payload_hash for row in materialized.rows] == [
+        row.provenance.lowered_execution_payload_hash for row in repeated.rows
+    ]
     expected_contracts = {
         "gru": ("gru", "empirical_nonlinear"),
         "time_constrained_free_gain": ("static_linear", "static_gain"),
         "linear_recurrence": ("linear_recurrence", "augmented_linear"),
     }
+    expected_optimizer: dict[str, Any] | None = None
     for row in materialized.rows:
         architecture, distribution = row.row_id.split(".", maxsplit=1)
         robust = distribution == "broad_epsilon_pgd"
         spec = row.spec
         assert spec is not None
+        assert "optimizer" not in row.authored_payload
+        assert row.provenance.authored_payload_hash == training_spec_sha256(row.authored_payload)
 
         runtime_architecture, certificate_mode = expected_contracts[architecture]
         assert row.authored_payload["config"]["controller_architecture"] == architecture
@@ -313,6 +402,32 @@ def test_compact_six_row_matrix_dispatches_through_public_architecture_providers
         assert spec.metadata["training_distribution"] == ("broad_epsilon" if robust else "nominal")
         assert spec.metadata["training_method_distribution"] == distribution
         assert spec.method_payload.metadata["training_distribution"] == distribution
+
+        method_payload = spec.method_payload.payload
+        optimizer = method_payload["optimizer"]
+        config = method_payload["config"]
+        schedule = optimizer["lr_schedule"]
+        assert optimizer["type"] == "adamw"
+        assert optimizer["params"] == {"weight_decay": 0.0}
+        assert schedule["origin"] == {"kind": "run_start", "batch": None}
+        assert schedule["kind"] == (
+            "warmup_cosine" if config["lr_warmup_batches"] > 0 else "delayed_cosine"
+        )
+        assert schedule["learning_rate_0"] == pytest.approx(config["controller_lr"])
+        assert schedule["total_steps"] == method_payload["n_train_batches"]
+        assert schedule["constant_lr_iterations"] == config["lr_warmup_batches"]
+        assert schedule["warmup_init_fraction"] == pytest.approx(config["lr_warmup_init_fraction"])
+        assert schedule["cosine_annealing_alpha"] == pytest.approx(config["lr_cosine_alpha"])
+        assert spec.metadata["resume_context"] == {
+            "schedule_origin_step": 0,
+            "current_step": 0,
+            "optimizer_count_at_current_step": 0,
+        }
+        assert spec.metadata["optimizer_build_context"] == spec.metadata["resume_context"]
+        if expected_optimizer is None:
+            expected_optimizer = optimizer
+        else:
+            assert optimizer == expected_optimizer
 
         artifact_root = f"_artifacts/5816bf0/runs/{row.row_id}"
         tracked_spec_dir = f"results/5816bf0/runs/{row.row_id}"
@@ -340,3 +455,102 @@ def test_compact_six_row_matrix_dispatches_through_public_architecture_providers
         else:
             assert spec.training_config.network_type == "gru"
             assert graph["subgraphs"]["net"]["nodes"]["cell"]["type"] == "GRU"
+
+
+def test_fresh_cs_row_passes_public_schedule_realization_preflight(tmp_path: Path) -> None:
+    materialized = materialize_rlrmp_training_matrix(
+        _heterogeneous_matrix(tmp_path),
+        repo_root=tmp_path,
+    )
+    spec = materialized.rows[0].spec
+    assert spec is not None
+
+    checks = {
+        check.name: check
+        for check in run_preflight_checks(_schedule_preflight_bundle(spec, tmp_path))
+    }
+
+    schedule_check = checks["schedule-realization"]
+    assert schedule_check.status == "pass"
+    observed = schedule_check.observed["fresh-cs-row"]
+    assert len(observed) == 1
+    assert observed[0]["scheduled"] is True
+    assert len(observed[0]["samples"]) >= 4
+    assert observed[0]["expected_context"] == {
+        "schedule_origin_step": 0,
+        "current_step": 0,
+        "optimizer_count_at_current_step": 0,
+    }
+    assert observed[0]["observed_context"] == observed[0]["expected_context"]
+
+
+def test_cs_typed_optimizer_rejects_runtime_config_drift(tmp_path: Path) -> None:
+    materialized = materialize_rlrmp_training_matrix(
+        _heterogeneous_matrix(tmp_path),
+        repo_root=tmp_path,
+    )
+    spec = materialized.rows[0].spec
+    assert spec is not None
+    payload = deepcopy(spec.method_payload.payload)
+    payload["optimizer"]["lr_schedule"]["learning_rate_0"] *= 2.0
+
+    with pytest.raises(ValidationError, match="disagrees with governed C&S runtime config"):
+        CsSupervisedMethodPayload.model_validate(payload)
+
+    historical_payload = deepcopy(spec.method_payload.payload)
+    historical_payload.pop("optimizer")
+    assert CsSupervisedMethodPayload.model_validate(historical_payload).optimizer is None
+    with pytest.raises(ValueError, match="lacks governed typed optimizer"):
+        require_cs_supervised_optimizer(historical_payload)
+
+
+@pytest.mark.parametrize(
+    ("warmup_batches", "schedule_kind"),
+    [(3, "warmup_cosine"), (0, "delayed_cosine")],
+)
+def test_cs_typed_optimizer_numerically_matches_live_schedule(
+    warmup_batches: int,
+    schedule_kind: str,
+) -> None:
+    total_batches = 10
+    config = {
+        "n_train_batches": total_batches,
+        "controller_lr": 0.01,
+        "lr_warmup_batches": warmup_batches,
+        "lr_warmup_init_fraction": 0.2,
+        "lr_cosine_alpha": 0.05,
+    }
+    optimizer = cs_supervised_optimizer_spec(
+        config=config,
+        n_train_batches=total_batches,
+    )
+    assert optimizer.params == {"weight_decay": 0.0}
+    assert optimizer.lr_schedule is not None
+    assert optimizer.lr_schedule.kind == schedule_kind
+
+    typed_schedule = learning_rate_schedule(optimizer.lr_schedule)
+    live_schedule = _learning_rate_schedule(
+        SimpleNamespace(
+            lr_schedule=schedule_kind,
+            constant_lr_iterations=warmup_batches,
+            n_batches_condition=total_batches,
+            learning_rate_0=config["controller_lr"],
+            warmup_init_fraction=config["lr_warmup_init_fraction"],
+            cosine_annealing_alpha=config["lr_cosine_alpha"],
+        )
+    )
+    sample_steps = {
+        0,
+        max(warmup_batches - 1, 0),
+        warmup_batches,
+        warmup_batches + 1,
+        total_batches - 1,
+        total_batches,
+        total_batches + 1,
+    }
+    for step in sorted(sample_steps):
+        assert float(typed_schedule(step)) == pytest.approx(
+            float(live_schedule(step)),
+            rel=1e-7,
+            abs=1e-10,
+        )

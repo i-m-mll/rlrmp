@@ -1,0 +1,26 @@
+{
+  "authored_production_loc": 107,
+  "authored_spec_loc": 107,
+  "c1_distinct_authored_keys": 60,
+  "c2_new_registry_entries": 0,
+  "c3_authored_callbacks": 0,
+  "c4_escape_hatch_invocations": 0,
+  "c5_non_boilerplate_control_flow": 0,
+  "experiment_issue": "2cb6a58",
+  "generated_materialization_loc": 1,
+  "paths": {
+    "authored_production": [
+      "results/2cb6a58/runs/base.intent.json",
+      "results/2cb6a58/runs/matrix.intent.json"
+    ],
+    "authored_specs": [
+      "results/2cb6a58/runs/base.intent.json",
+      "results/2cb6a58/runs/matrix.intent.json"
+    ],
+    "generated_materializations": [
+      "results/2cb6a58/runs/matrix.json"
+    ]
+  },
+  "revision": "9866740fb1fd21f12a05e8c7e0219c595b1facfd",
+  "schema_version": 1
+}
