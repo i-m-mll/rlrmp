@@ -14,7 +14,7 @@ from feedbax.contracts.spec_storage import (
 )
 from feedbax.contracts.training import DEFAULT_TRAINING_METHOD_REGISTRY
 from feedbax.contracts.resolved_snapshot_decoder import decode_resolved_snapshot
-from feedbax.training.run_matrix import materialize_run_matrix
+from feedbax.training.run_matrix import materialize_adapted_run_matrix, materialize_run_matrix
 
 from rlrmp.runtime.checkpoint_fork_gate import load_matrix, register_rlrmp_training_methods
 from rlrmp.runtime.spec_storage import (
@@ -25,6 +25,7 @@ from rlrmp.runtime.spec_storage import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PRE_MIGRATION_MATRIX_COMMIT = "edfb3d358565393e58b79a6a26eccbaf406acde0"
+PRE_REMAINING_STOCK_MIGRATION_COMMIT = "5a9ada641e0d109bba15f59a6b7f72be88d2df39"
 
 
 @pytest.fixture(autouse=True)
@@ -65,6 +66,99 @@ def test_c6c5997_matrix_is_compact_and_resolves_from_exact_snapshot(
         for row in materialized.rows
     ]
     assert controller_lrs == [3e-5, 3e-4, 3e-3]
+
+
+def test_ef9c882_matrix_is_compact_and_preserves_historical_base(tmp_path: Path) -> None:
+    matrix_path = REPO_ROOT / "results/ef9c882/runs/matrix.json"
+    payload = json.loads(matrix_path.read_text(encoding="utf-8"))
+    original = json.loads(
+        subprocess.run(
+            [
+                "git",
+                "show",
+                f"{PRE_REMAINING_STOCK_MIGRATION_COMMIT}:results/ef9c882/runs/matrix.json",
+            ],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+    )
+    snapshot = build_resolved_semantics_snapshot(original["base"]["inline"])
+
+    assert payload["base"]["kind"] == "resolved_output"
+    assert payload["base"]["resolved_root_hash"] == snapshot["root_hash"]
+    assert [row["row_id"] for row in payload["rows"]] == [
+        row["row_id"] for row in original["rows"]
+    ]
+
+    temporary_matrix_path = tmp_path / "matrix.json"
+    temporary_matrix_path.write_text(json.dumps(payload), encoding="utf-8")
+    snapshot_path = tmp_path / payload["base"]["ref"]
+    snapshot_path.parent.mkdir(parents=True)
+    snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
+    matrix = load_matrix(temporary_matrix_path)
+    register_rlrmp_training_methods()
+    materialized = materialize_run_matrix(matrix, repo_root=tmp_path)
+    original_materialized = materialize_run_matrix(
+        TrainingRunMatrixSpec.model_validate(original),
+        repo_root=REPO_ROOT,
+    )
+    assert [row.row_id for row in materialized.rows] == [
+        row["row_id"] for row in original["rows"]
+    ]
+    # Resolved-snapshot canonicalization normalizes signed zero to zero. That
+    # advances exact planned-manifest IDs, but the scientific row payloads are
+    # value-equal to the pre-conversion inline materialization.
+    assert [row.payload for row in materialized.rows] == [
+        row.payload for row in original_materialized.rows
+    ]
+
+
+def test_3cd018b_frozen_row_uses_compact_matrix_and_exact_base_snapshot(
+    tmp_path: Path,
+) -> None:
+    matrix_path = REPO_ROOT / "results/3cd018b/runs/ramp3500_to1000/matrix.json"
+    payload = json.loads(matrix_path.read_text(encoding="utf-8"))
+    composed_recipe = json.loads(
+        (REPO_ROOT / "results/3cd018b/runs/ramp3500_to1000.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    frozen_run = composed_recipe["feedbax_training_run_spec"]
+    snapshot = build_resolved_semantics_snapshot(frozen_run)
+
+    assert payload["base"]["kind"] == "resolved_output"
+    assert payload["base"]["resolved_root_hash"] == snapshot["root_hash"]
+    assert [row["row_id"] for row in payload["rows"]] == ["ramp3500_to1000"]
+    assert not (
+        REPO_ROOT
+        / "results/3cd018b/runs/ramp3500_to1000/feedbax_training_run_spec.json"
+    ).exists()
+
+    temporary_matrix_path = tmp_path / "matrix.json"
+    temporary_matrix_path.write_text(json.dumps(payload), encoding="utf-8")
+    snapshot_path = tmp_path / payload["base"]["ref"]
+    snapshot_path.parent.mkdir(parents=True)
+    snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
+    matrix = load_matrix(temporary_matrix_path)
+    resolved_rows: list[dict[str, object]] = []
+
+    def validate_frozen_row(row: dict[str, object], row_id: str) -> None:
+        assert row_id == "ramp3500_to1000"
+        resolved_rows.append(row)
+        return None
+
+    materialized = materialize_adapted_run_matrix(
+        matrix,
+        repo_root=tmp_path,
+        row_validator=validate_frozen_row,
+    )
+    assert [row.row_id for row in materialized.rows] == ["ramp3500_to1000"]
+    assert resolved_rows[0]["method_payload"]["schema_version"] == (
+        "rlrmp.spec.training_method.adaptive_epsilon_curriculum_payload.v1"
+    )
+    assert resolved_rows[0]["graph"]["inline"]["schema_version"] == "feedbax.spec.graph.v4"
 
 
 def test_rlrmp_emitter_writes_intent_snapshot_and_capsule(tmp_path: Path) -> None:

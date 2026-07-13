@@ -398,7 +398,9 @@ def test_cs_nominal_gru_config_validates_tracked_cs_stochastic_gru_corpus() -> N
     }
 
     assert wave_1_paths.issubset(paths)
-    assert len(paths) == 74 + len(wave_1_paths)
+    # Issue b6b5502 retired 26 pre-three-layer CS-GRU recipes. Pin the 48
+    # surviving historical/current recipes plus the four wave-1 compact rows.
+    assert len(paths) == 48 + len(wave_1_paths)
     for path in paths:
         payload = hydrate_compact_run_spec_envelope(
             json.loads(path.read_text(encoding="utf-8"))
@@ -410,7 +412,7 @@ def test_cs_nominal_gru_config_validates_tracked_cs_stochastic_gru_corpus() -> N
         else:
             clean_paths.append(path)
 
-    assert len(clean_paths) == 74 + len(wave_1_paths)
+    assert len(clean_paths) == 48 + len(wave_1_paths)
     assert fail_closed == set()
 
 

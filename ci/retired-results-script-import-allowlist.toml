@@ -1,0 +1,9 @@
+# Temporary exceptions for issue 81c150f's tracked results-script import gate.
+#
+# Every entry belongs to issue 34699b2's explicit delete-candidate stock. The
+# gate requires exact path and namespace matches and rejects dead entries, so
+# that deletion wave ratchets this inventory to zero instead of preserving it.
+
+schema_version = 1
+owner = "81c150f"
+exceptions = []

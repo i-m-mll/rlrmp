@@ -1,0 +1,15 @@
+{
+  "schema_version": "rlrmp.gru_perturbation_bank.v3",
+  "scope": "controller_independent_perturbation_response",
+  "bulk_detail_manifest": {
+    "contains": "full per-run perturbation rows and row-level metric summaries",
+    "format": "json",
+    "path": "_artifacts/020a65b/perturbation_response/gru_h0_pgd_bank_two_rows_validation_selected/gru_perturbation_response_h0_pgd_bank_two_rows_validation_selected_manifest_detail.json"
+  },
+  "runs": {
+    "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64": {
+      "perturbation_rows_detail_manifest": "_artifacts/020a65b/perturbation_response/gru_h0_pgd_bank_two_rows_validation_selected/gru_perturbation_response_h0_pgd_bank_two_rows_validation_selected_manifest_detail.json",
+      "robust_response_summary_detail_manifest": "_artifacts/020a65b/perturbation_response/gru_h0_pgd_bank_two_rows_validation_selected/gru_perturbation_response_h0_pgd_bank_two_rows_validation_selected_manifest_detail.json"
+    }
+  }
+}

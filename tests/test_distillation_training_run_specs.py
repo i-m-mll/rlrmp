@@ -21,6 +21,11 @@ from rlrmp.train.training_configs import (
     GuidedDistillationConfig,
 )
 
+GUIDED_SPEC_FIXTURE = Path("tests/fixtures/legacy_payloads/guided_distillation_run_spec.json")
+CLOSED_LOOP_SPEC_FIXTURE = Path(
+    "tests/fixtures/legacy_payloads/closed_loop_distillation_run_spec.json"
+)
+
 
 def _canonical_json(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
@@ -29,20 +34,9 @@ def _canonical_json(value: object) -> str:
 @pytest.mark.parametrize(
     ("path", "method"),
     [
+        (GUIDED_SPEC_FIXTURE, "guided_distillation"),
         (
-            Path("results/9727d79/runs/h0_extlqg_6d_standard_graph_distillation.json"),
-            "guided_distillation",
-        ),
-        (
-            Path("results/9727d79/runs/h0_hinf_6d_guided_distillation.json"),
-            "guided_distillation",
-        ),
-        (
-            Path("results/9727d79/runs/h0_hinf_6d_standard_graph_distillation.json"),
-            "guided_distillation",
-        ),
-        (
-            Path("results/a378b34/runs/h0_extlqg_6d_closed_loop_distillation.json"),
+            CLOSED_LOOP_SPEC_FIXTURE,
             "closed_loop_distillation",
         ),
     ],
@@ -75,11 +69,11 @@ def test_distillation_payload_golden_fixture_matches_current_native_refs() -> No
         Path("tests/fixtures/distillation_method_payload_golden.json").read_text(encoding="utf-8")
     )["cases"]
     guided = load_distillation_run_spec(
-        GuidedDistillationConfig(),
+        GuidedDistillationConfig(run_spec=str(GUIDED_SPEC_FIXTURE)),
         method="guided_distillation",
     )
     closed = load_distillation_run_spec(
-        ClosedLoopDistillationConfig(),
+        ClosedLoopDistillationConfig(run_spec=CLOSED_LOOP_SPEC_FIXTURE),
         method="closed_loop_distillation",
     )
     guided_payload = TrainingRunSpec.model_validate(
@@ -109,12 +103,12 @@ def test_distillation_payload_versions_advance_with_native_callable_paths() -> N
     [
         (
             "guided_distillation",
-            GuidedDistillationConfig(),
+            GuidedDistillationConfig(run_spec=str(GUIDED_SPEC_FIXTURE)),
             "rlrmp.spec.training_method.guided_distillation_payload.v1",
         ),
         (
             "closed_loop_distillation",
-            ClosedLoopDistillationConfig(),
+            ClosedLoopDistillationConfig(run_spec=CLOSED_LOOP_SPEC_FIXTURE),
             "rlrmp.spec.training_method.closed_loop_distillation_payload.v1",
         ),
     ],
@@ -133,7 +127,7 @@ def test_pre_native_distillation_payload_versions_are_rejected(
 
 def test_unknown_distillation_method_fails_before_launch() -> None:
     run_spec = load_distillation_run_spec(
-        GuidedDistillationConfig(),
+        GuidedDistillationConfig(run_spec=str(GUIDED_SPEC_FIXTURE)),
         method="guided_distillation",
     )
     payload = copy.deepcopy(run_spec[FEEDBAX_TRAINING_RUN_SPEC_KEY])

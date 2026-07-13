@@ -1,0 +1,211 @@
+{
+  "schema_version": "rlrmp.sisu_perturbation_class_comparison.v1",
+  "runs": {
+    "cs_gru_h0_sisu_spectrum_targetfix__effective_020a65b_pgd_radius_lr3e-3_clip5_b64": {
+      "headline": {
+        "full_qrf_delta_cost": {
+          "equal": 0,
+          "improved": 8,
+          "not_available": 1,
+          "worse": 2
+        },
+        "max_delta_x_m": {
+          "equal": 2,
+          "improved": 6,
+          "not_available": 1,
+          "worse": 2
+        },
+        "mean_delta_action": {
+          "equal": 0,
+          "improved": 0,
+          "not_available": 1,
+          "worse": 10
+        }
+      },
+      "class_comparison": {
+        "command_input/command_input_pulse": {
+          "amplitudes_sisu_0": [
+            0.33792025928495045,
+            0.43121015278116487,
+            0.6758405185699009,
+            0.8624203055623297,
+            0.9706164884023344,
+            1.6896012964247522,
+            1.9412329768046688,
+            2.1560507639058244,
+            4.853082442011672
+          ],
+          "amplitudes_sisu_1": [
+            0.33792025928495045,
+            0.43121015278116487,
+            0.6758405185699009,
+            0.8624203055623297,
+            0.9706164884023344,
+            1.6896012964247522,
+            1.9412329768046688,
+            2.1560507639058244,
+            4.853082442011672
+          ],
+          "group": "command_input/command_input_pulse",
+          "metrics": {
+            "auc_delta_x_m_s": {
+              "better": "lower",
+              "delta_1_minus_0": -0.0002907501786935839,
+              "label": "AUC delta x (m*s)",
+              "metric_key": "delta_position_response_m.auc",
+              "ratio_1_over_0": 0.6839536836980014,
+              "role": "response_magnitude",
+              "sisu_0": 0.0009199606630306586,
+              "sisu_1": 0.0006292104843370747
+            },
+            "max_delta_x_m": {
+              "better": "lower",
+              "delta_1_minus_0": -0.0003790999137503791,
+              "label": "Max delta x (m)",
+              "metric_key": "delta_position_response_m.max",
+              "ratio_1_over_0": 0.9132067845967441,
+              "role": "response_magnitude",
+              "sisu_0": 0.0043678519339215285,
+              "sisu_1": 0.003988752020171149
+            },
+            "mean_delta_action": {
+              "better": "lower",
+              "delta_1_minus_0": 0.08099576990433566,
+              "label": "Mean delta action",
+              "metric_key": "delta_action_norm",
+              "ratio_1_over_0": 1.302322198279939,
+              "role": "response_magnitude",
+              "sisu_0": 0.2679120830860611,
+              "sisu_1": 0.3489078529903968
+            },
+            "mean_endpoint_delta_m": {
+              "better": "diagnostic_signed_closer_to_zero",
+              "delta_1_minus_0": 0.000022615008849217284,
+              "label": "Mean endpoint delta (m)",
+              "metric_key": "delta_endpoint_error_m",
+              "ratio_1_over_0": 1.0154787745428742,
+              "role": "signed_endpoint_delta",
+              "sisu_0": 0.0014610335454254989,
+              "sisu_1": 0.0014836485542747161
+            },
+            "mean_full_qrf_delta_cost": {
+              "better": "lower",
+              "delta_1_minus_0": -77.50698082146187,
+              "label": "Mean full-Q/R/Qf delta cost",
+              "metric_key": "extra_full_qrf_delta_cost_total",
+              "ratio_1_over_0": 0.8792044954829968,
+              "role": "cost_delta",
+              "sisu_0": 641.6379577317135,
+              "sisu_1": 564.1309769102517
+            },
+            "mean_terminal_speed_delta_m_s": {
+              "better": "diagnostic_signed_closer_to_zero",
+              "delta_1_minus_0": -0.0019584836004144165,
+              "label": "Mean terminal-speed delta (m/s)",
+              "metric_key": "delta_terminal_speed_m_s",
+              "ratio_1_over_0": 0.23299209734292153,
+              "role": "signed_terminal_speed_delta",
+              "sisu_0": 0.002553407329480978,
+              "sisu_1": 0.0005949237290665613
+            }
+          },
+          "notes": [],
+          "rows_sisu_0": 36,
+          "rows_sisu_1": 36,
+          "status_counts_sisu_0": {
+            "evaluated": 36
+          },
+          "status_counts_sisu_1": {
+            "evaluated": 36
+          }
+        }
+      },
+      "timing_cell_comparison": {
+        "command_input/command_input_pulse/early": {
+          "amplitudes_sisu_0": [
+            0.33792025928495045,
+            0.6758405185699009,
+            1.6896012964247522
+          ],
+          "amplitudes_sisu_1": [
+            0.33792025928495045,
+            0.6758405185699009,
+            1.6896012964247522
+          ],
+          "group": "command_input/command_input_pulse/early",
+          "metrics": {
+            "auc_delta_x_m_s": {
+              "better": "lower",
+              "delta_1_minus_0": -0.0003420362734006141,
+              "label": "AUC delta x (m*s)",
+              "metric_key": "delta_position_response_m.auc",
+              "ratio_1_over_0": 0.5661567458453838,
+              "role": "response_magnitude",
+              "sisu_0": 0.0007883867505721704,
+              "sisu_1": 0.00044635047717155626
+            },
+            "max_delta_x_m": {
+              "better": "lower",
+              "delta_1_minus_0": -0.0001425133950643696,
+              "label": "Max delta x (m)",
+              "metric_key": "delta_position_response_m.max",
+              "ratio_1_over_0": 0.9494205651763405,
+              "role": "response_magnitude",
+              "sisu_0": 0.0028176154115052763,
+              "sisu_1": 0.0026751020164409067
+            },
+            "mean_delta_action": {
+              "better": "lower",
+              "delta_1_minus_0": 0.08449002334422692,
+              "label": "Mean delta action",
+              "metric_key": "delta_action_norm",
+              "ratio_1_over_0": 1.4878310789046634,
+              "role": "response_magnitude",
+              "sisu_0": 0.17319524523516214,
+              "sisu_1": 0.25768526857938906
+            },
+            "mean_endpoint_delta_m": {
+              "better": "diagnostic_signed_closer_to_zero",
+              "delta_1_minus_0": -0.0001418439246360173,
+              "label": "Mean endpoint delta (m)",
+              "metric_key": "delta_endpoint_error_m",
+              "ratio_1_over_0": -0.0019353672658333205,
+              "role": "signed_endpoint_delta",
+              "sisu_0": 0.00014156993481834372,
+              "sisu_1": -2.739898176735793E-7
+            },
+            "mean_full_qrf_delta_cost": {
+              "better": "lower",
+              "delta_1_minus_0": -0.18524143450065367,
+              "label": "Mean full-Q/R/Qf delta cost",
+              "metric_key": "extra_full_qrf_delta_cost_total",
+              "ratio_1_over_0": 0.9950316122891114,
+              "role": "cost_delta",
+              "sisu_0": 37.28401350294869,
+              "sisu_1": 37.098772068448035
+            },
+            "mean_terminal_speed_delta_m_s": {
+              "better": "diagnostic_signed_closer_to_zero",
+              "delta_1_minus_0": -0.000051039151037414276,
+              "label": "Mean terminal-speed delta (m/s)",
+              "metric_key": "delta_terminal_speed_m_s",
+              "ratio_1_over_0": 0.08928231858064581,
+              "role": "signed_terminal_speed_delta",
+              "sisu_0": 0.000056042780412333406,
+              "sisu_1": 0.000005003629374919128
+            }
+          },
+          "notes": [],
+          "rows_sisu_0": 12,
+          "rows_sisu_1": 12,
+          "status_counts_sisu_0": {
+            "evaluated": 12
+          },
+          "status_counts_sisu_1": {
+            "evaluated": 12
+          }
+        }
+      }
+    }
+  }
+}

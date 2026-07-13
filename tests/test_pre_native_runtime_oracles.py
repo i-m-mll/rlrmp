@@ -188,6 +188,7 @@ def test_distillation_executor_matches_pre_native_oracle(
 ) -> None:
     if method == "guided_distillation":
         config = GuidedDistillationConfig(
+            run_spec="tests/fixtures/legacy_payloads/guided_distillation_run_spec.json",
             n_batches=1,
             batch_size=1,
             n_replicates=1,
@@ -198,6 +199,9 @@ def test_distillation_executor_matches_pre_native_oracle(
         )
     else:
         config = ClosedLoopDistillationConfig(
+            run_spec=Path(
+                "tests/fixtures/legacy_payloads/closed_loop_distillation_run_spec.json"
+            ),
             n_batches=1,
             batch_size=1,
             n_replicates=1,

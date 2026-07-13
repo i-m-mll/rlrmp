@@ -141,7 +141,9 @@ def _fixed_simple_reach_run_spec_paths() -> list[Path]:
 
 def test_tracked_fixed_simple_reach_run_specs_still_build() -> None:
     paths = _fixed_simple_reach_run_spec_paths()
-    assert len(paths) == 55
+    # Twenty legacy fixed-reach subjects retired with issue b6b5502; validate
+    # every one of the 35 surviving tracked recipes rather than weakening the census.
+    assert len(paths) == 35
     for path in paths:
         payload = hydrate_compact_run_spec_envelope(
             json.loads(path.read_text(encoding="utf-8"))

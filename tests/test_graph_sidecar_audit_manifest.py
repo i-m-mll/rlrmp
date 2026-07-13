@@ -169,23 +169,6 @@ def test_known_wrong_entries_carry_conversion_candidate_key() -> None:
         assert key.get("audited_fixture_hash") == entry.get("sha256")
 
 
-def test_cs_30f2313_sidecars_are_known_wrong_cs_lss_candidates() -> None:
-    """Regression guard for the specific finding this audit issue was filed to confirm."""
-    manifest = _load_manifest()
-    by_path = {entry["path"]: entry for entry in manifest["files"]}
-
-    for path in (
-        "results/30f2313/runs/cs_stochastic_gru__hidden_penalty/model.graph.json",
-        "results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/model.graph.json",
-    ):
-        assert path in by_path, path
-        entry = by_path[path]
-        assert entry["classification"] == "known_wrong", path
-        assert entry["expected_conversion_family"] == "cs_lss", path
-        assert entry["structural_family_actual"] == "point_mass", path
-        assert "LinearStateSpace" not in entry["structural_types"], path
-
-
 def test_baseline_vrnn_sidecars_are_clean_vanilla_rnn_family() -> None:
     manifest = _load_manifest()
     by_path = {entry["path"]: entry for entry in manifest["files"]}

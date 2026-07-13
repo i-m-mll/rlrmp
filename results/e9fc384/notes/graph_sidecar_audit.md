@@ -14,8 +14,11 @@ and **audited content hash**, not by production date or file path alone.
 ## Corpus
 
 `git ls-files 'results/**/model.graph.json' 'results/**/*.graph.json'`
-returns exactly **38** tracked files, matching the count expected by the issue
-spec. All 38 were audited; no additional patterns were needed.
+returned exactly **38** tracked files at audit time, matching the count expected
+by the issue spec. All 38 were audited; no additional patterns were needed.
+Issue `b6b5502` later retired the two known-wrong `30f2313` subjects with the
+tagged legacy stock, so the live guarded manifest now contains the 36 surviving
+clean sidecars while this narrative preserves the original audit disposition.
 
 Every one of the 38 sidecars:
 
@@ -54,7 +57,7 @@ point-mass/filter/channel set is present, `unrecognized` otherwise). The
 are audited as CS-LSS candidates (see below). A file is `clean` when expected
 matches actual; otherwise it is `known_wrong`.
 
-## Result: 36 clean, 2 known-wrong
+## Original result: 36 clean, 2 known-wrong
 
 | Classification | Structural subfamily | Count | Representative paths |
 |---|---|---:|---|

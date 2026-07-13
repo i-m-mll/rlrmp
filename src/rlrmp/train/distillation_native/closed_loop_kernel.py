@@ -25,13 +25,6 @@ from rlrmp.model.trainable import staged_network_trainable_parts
 
 TEACHER_ISSUE_ID = "376d023"
 DEFAULT_TEACHER_GAINS_KEY = "extlqg_controller_gains"
-BASE_RUN_SPEC = (
-    "results/020a65b/runs/"
-    "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_"
-    "clip5_b64.json"
-)
-
-
 @dataclass(frozen=True)
 class ClosedLoopLossWeights:
     """Weights for pure closed-loop extLQG distillation components."""
@@ -206,7 +199,7 @@ class ClosedLoopDistillationLoss(AbstractLoss):
         return TermTree.branch(self.label, leaves, originator=self)
 
 
-def _base_run_spec(path: str | Path = BASE_RUN_SPEC) -> dict[str, Any]:
+def _base_run_spec(path: str | Path) -> dict[str, Any]:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
@@ -248,8 +241,14 @@ def _standard_hps_from_spec(
 ) -> TreeNamespace:
     hps = spec.get("hps")
     if hps is None:
+        base_run_spec = spec.get("base_contract", {}).get("run_spec")
+        if not base_run_spec:
+            raise ValueError(
+                "closed-loop distillation specs without inline hps require "
+                "base_contract.run_spec"
+            )
         hps = _normalize_serialized_hps(
-            _base_run_spec(spec.get("base_contract", {}).get("run_spec", BASE_RUN_SPEC))["hps"]
+            _base_run_spec(base_run_spec)["hps"]
         )
     else:
         hps = _normalize_serialized_hps(hps)

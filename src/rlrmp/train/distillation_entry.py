@@ -22,11 +22,15 @@ DistillationMethod = Literal["guided_distillation", "closed_loop_distillation"]
 
 
 def _guided_spec_path(config: GuidedDistillationConfig) -> Path:
-    return Path(config.run_spec or f"results/9727d79/runs/{config.run_id}.json")
+    if config.run_spec is None:
+        raise ValueError("guided distillation requires an explicit tracked run_spec")
+    return Path(config.run_spec)
 
 
 def _closed_loop_spec_path(config: ClosedLoopDistillationConfig) -> Path:
-    return Path(config.run_spec or config.run_spec_output)
+    if config.run_spec is None:
+        raise ValueError("closed-loop distillation requires an explicit tracked run_spec")
+    return Path(config.run_spec)
 
 
 def load_distillation_run_spec(

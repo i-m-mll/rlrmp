@@ -16,7 +16,7 @@
     ],
     "issue": "020a65b",
     "run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
-    "run_spec": "results/a378b34/runtime/h0_no_pgd_base_hps.json"
+    "run_spec": "tests/fixtures/legacy_payloads/guided_distillation_run_spec.json"
   },
   "checkpointing": {
     "enabled": true,

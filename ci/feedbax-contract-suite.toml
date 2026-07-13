@@ -52,7 +52,9 @@ owner = "e9fc384"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_graph_sidecar_audit_manifest.py::"
-minimum_non_skipped = 10
+# The two known-wrong 30f2313 subjects retired with the tagged stock; the
+# subject-specific assertion died with them while nine live drift guards remain.
+minimum_non_skipped = 9
 
 [[families]]
 name = "converted_sidecar_loadability"
@@ -60,7 +62,18 @@ owner = "ae15851"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_archived_graph_recipe_conversion.py::"
-minimum_non_skipped = 5
+# The excluded known-wrong pair retired with 30f2313; four conversion and
+# loadability guards continue to cover all 36 surviving converted fixtures.
+minimum_non_skipped = 4
+
+[[families]]
+name = "tracked_results_reference_integrity"
+owner = "2c06960"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_tracked_results_reference_integrity.py::"
+minimum_non_skipped = 4
+negative_canary = "tests/test_tracked_results_reference_integrity.py::test_missing_result_reference_negative_canary"
 
 [[families]]
 name = "retired_id_scan"
@@ -70,6 +83,15 @@ marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_retired_component_id_scan.py::"
 minimum_non_skipped = 5
 negative_canary = "tests/test_retired_component_id_scan.py::test_scan_negative_canary_flags_unconfined_active_emission"
+
+[[families]]
+name = "retired_results_script_imports"
+owner = "81c150f"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_retired_results_script_imports.py::"
+minimum_non_skipped = 2
+negative_canary = "tests/test_retired_results_script_imports.py::test_retired_import_negative_canary_flags_direct_and_submodule_imports"
 
 [[families]]
 name = "descriptor_conformance_canary"

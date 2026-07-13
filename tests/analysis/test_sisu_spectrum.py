@@ -119,7 +119,7 @@ def test_archived_comparison_matches_canonical_shape() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     archived = json.loads(
         (
-            repo_root / "results/e4800d6/notes/sisu_perturbation_class_comparison_targetfix.json"
+            repo_root / "tests/fixtures/legacy_payloads/sisu_perturbation_class_comparison.json"
         ).read_text(encoding="utf-8")
     )
 

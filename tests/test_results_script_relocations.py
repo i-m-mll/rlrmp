@@ -18,13 +18,6 @@ DESTINATIONS = {
     "diag_cs_bw_full_state_sweeps.py": (
         "results/72fb8d9/scripts/diag_cs_bw_full_state_sweeps.py"
     ),
-    "materialize_output_feedback_observer_error_coverage.py": (
-        "results/3becdec/scripts/materialize_output_feedback_observer_error_coverage.py"
-    ),
-}
-
-ARCHIVAL_ONLY_DESTINATIONS = {
-    "results/3becdec/scripts/materialize_output_feedback_observer_error_coverage.py",
 }
 
 RETIRED_DESTINATIONS = {
@@ -66,13 +59,6 @@ def test_relocated_scripts_exist_without_runpy_or_sys_path_hacks() -> None:
 def test_relocated_destinations_import_in_isolated_processes() -> None:
     environment = {**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")}
     for destination in DESTINATIONS.values():
-        if destination in ARCHIVAL_ONLY_DESTINATIONS:
-            module = ast.parse(
-                (REPO_ROOT / destination).read_text(encoding="utf-8"),
-                filename=destination,
-            )
-            assert (ast.get_docstring(module) or "").startswith("LEGACY (")
-            continue
         code = (
             "import importlib.util; "
             f"p={str(REPO_ROOT / destination)!r}; "
