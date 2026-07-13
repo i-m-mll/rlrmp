@@ -256,7 +256,7 @@ def test_markdown_renderer_includes_decision_annotations() -> None:
     markdown = render_map_error_decomposition_markdown(
         {
             "issue": "ddf7f43",
-            "source_issue": "aacb9ed",
+            "source_issue": "abc1234",
             "rows": [
                 {
                     "run_id": "unit__nominal_clean",

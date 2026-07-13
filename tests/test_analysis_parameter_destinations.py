@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
-import runpy
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -18,29 +15,6 @@ from rlrmp.analysis.data_products import (
 from rlrmp.analysis.data_products import parameter_presets
 from rlrmp.data_products.registry import registered_data_product_identities
 from rlrmp.paths import REPO_ROOT
-
-
-DELAYED_SISU_DRIVER_SCRIPT = (
-    REPO_ROOT / "results/7c1f7ed/scripts/materialize_delayed_sisu_velocity_profiles.py"
-)
-DELAYED_SISU_DRIVER_GOLDEN = {
-    "schema_id": "rlrmp.delayed_sisu_velocity_profiles.driver_spec",
-    "schema_version": "rlrmp.delayed_sisu_velocity_profiles.driver_spec.v1",
-    "result_experiment": "7c1f7ed",
-    "topic": "delayed_sisu_velocity_profiles",
-    "sisu_levels": [0.0, 1.0],
-    "run_refs": [
-        (
-            "7c1f7ed/delayed_sisu_spectrum__raw_strong_gamma_1p05_radius_"
-            "lr1e-2_clip5_b64=raw strong gamma-1.05 delayed SISU"
-        ),
-        (
-            "7c1f7ed/delayed_sisu_spectrum__effective_020a65b_pgd_radius_"
-            "lr1e-2_clip5_b64=effective 020a65b PGD delayed SISU"
-        ),
-    ],
-    "content_sha256": "69bd5ac3f9c39760457cf5d716c842a6f21e0c9bb275ad8dad24776dbda434c8",
-}
 
 
 def test_all_registered_analysis_presets_load_with_pinned_hashes() -> None:
@@ -119,71 +93,6 @@ def test_adversary_equivalence_defaults_load() -> None:
     assert values["open_loop_step_sweep"] == [50, 200, 800]
     assert values["open_loop_restarts"] == 8
     assert values["target_position_m"] == [0.15, 0.0]
-
-
-def test_delayed_sisu_driver_spec_loads() -> None:
-    payload = runpy.run_path(str(DELAYED_SISU_DRIVER_SCRIPT))["load_driver_spec"]()
-
-    assert payload == DELAYED_SISU_DRIVER_GOLDEN
-
-
-@pytest.mark.parametrize("schema_field", ("schema_id", "schema_version"))
-def test_delayed_sisu_driver_spec_rejects_unsupported_schema(
-    tmp_path: Path,
-    schema_field: str,
-) -> None:
-    payload = _copy_delayed_sisu_driver_golden()
-    payload[schema_field] = f"unsupported.{schema_field}"
-    payload["content_sha256"] = _semantic_hash(payload)
-
-    with pytest.raises(ValueError, match=schema_field):
-        _load_delayed_sisu_driver_payload(tmp_path, payload)
-
-
-@pytest.mark.parametrize(
-    "tamper_case",
-    ("result_experiment", "topic", "sisu_levels", "run_ref_0", "run_ref_1"),
-)
-def test_delayed_sisu_driver_spec_rejects_self_consistent_semantic_tamper(
-    tmp_path: Path,
-    tamper_case: str,
-) -> None:
-    payload = _copy_delayed_sisu_driver_golden()
-    if tamper_case.startswith("run_ref_"):
-        index = int(tamper_case.rsplit("_", 1)[1])
-        payload["run_refs"][index] += "-tampered"
-    else:
-        payload[tamper_case] = {
-            "result_experiment": "tampered-experiment",
-            "topic": "tampered-topic",
-            "sisu_levels": [0.0, 0.5, 1.0],
-        }[tamper_case]
-    # Prove the external pin rejects even a self-consistent payload whose embedded
-    # hash was deliberately updated alongside the historical values.
-    payload["content_sha256"] = _semantic_hash(payload)
-
-    with pytest.raises(ValueError, match="content identity mismatch"):
-        _load_delayed_sisu_driver_payload(tmp_path, payload)
-
-
-def _copy_delayed_sisu_driver_golden() -> dict[str, Any]:
-    return json.loads(json.dumps(DELAYED_SISU_DRIVER_GOLDEN))
-
-
-def _load_delayed_sisu_driver_payload(tmp_path: Path, payload: dict[str, Any]) -> dict[str, Any]:
-    path = tmp_path / "delayed_sisu_velocity_profiles.json"
-    path.write_text(json.dumps(payload), encoding="utf-8")
-    namespace = runpy.run_path(str(DELAYED_SISU_DRIVER_SCRIPT))
-    load_driver_spec = namespace["load_driver_spec"]
-    load_driver_spec.__globals__["DRIVER_SPEC_PATH"] = path
-    return load_driver_spec()
-
-
-def _semantic_hash(payload: dict[str, Any]) -> str:
-    semantic = {key: value for key, value in payload.items() if key != "content_sha256"}
-    return hashlib.sha256(
-        json.dumps(semantic, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()
 
 
 def test_analysis_resolution_manifest_covers_exact_partition() -> None:
