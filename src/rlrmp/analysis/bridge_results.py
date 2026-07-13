@@ -27,6 +27,8 @@ BridgeCertificateMode = Literal["static_gain", "augmented_linear", "empirical_no
 BridgeTrainingDistribution = Literal[
     "none",
     "nominal",
+    "robust",
+    "broad_epsilon",
     "synthetic_initial_state",
     "eigenspectrum_trajectory",
     "eigenspectrum_state",

@@ -28,6 +28,10 @@ CS_GRU_STANDARD_CERTIFICATES_KIND = "RLRMPCSGrUStandardCertificateManifest"
 CS_GRU_STANDARD_CERTIFICATES_SCHEMA_ID = "rlrmp.cs_gru_standard_certificates"
 CS_GRU_STANDARD_CERTIFICATES_SCHEMA_VERSION = "rlrmp.cs_gru_standard_certificates.v1"
 
+STANDARD_CERTIFICATES_KIND = "RLRMPStandardCertificatesManifest"
+STANDARD_CERTIFICATES_SCHEMA_ID = "rlrmp.standard_certificates"
+STANDARD_CERTIFICATES_SCHEMA_VERSION = "rlrmp.standard_certificates.v1"
+
 OBJECTIVE_COMPARATOR_SIDECAR_KIND = "RLRMPObjectiveComparatorSidecar"
 OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_ID = "rlrmp.objective_comparator_sidecar"
 OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_VERSION = "rlrmp.objective_comparator_sidecar.v6"
@@ -315,6 +319,18 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             consumed_by=("Feedbax AnalysisRunManifest artifacts", "standard certificate reports"),
             description="RLRMP C&S GRU standard-certificate manifest payload.",
             rejected_old_versions=("rlrmp.cs_gru_standard_certificates.v0",),
+        ),
+        _family(
+            STANDARD_CERTIFICATES_KIND,
+            STANDARD_CERTIFICATES_SCHEMA_ID,
+            STANDARD_CERTIFICATES_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.standard_certificate",),
+            consumed_by=(
+                "Feedbax AnalysisRunManifest artifacts",
+                "rlrmp.report.bridge_certificate_notes",
+            ),
+            description="RLRMP heterogeneous standard-certificate manifest payload.",
+            rejected_old_versions=("rlrmp.standard_certificates.v0",),
         ),
         _family(
             OBJECTIVE_COMPARATOR_SIDECAR_KIND,
@@ -762,6 +778,9 @@ __all__ = [
     "STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_ID",
     "STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION",
     "STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION_V1",
+    "STANDARD_CERTIFICATES_KIND",
+    "STANDARD_CERTIFICATES_SCHEMA_ID",
+    "STANDARD_CERTIFICATES_SCHEMA_VERSION",
     "WORST_CASE_EPSILON_EVAL_PARAMS_KIND",
     "WORST_CASE_EPSILON_EVAL_PARAMS_SCHEMA_ID",
     "WORST_CASE_EPSILON_EVAL_PARAMS_SCHEMA_VERSION",
