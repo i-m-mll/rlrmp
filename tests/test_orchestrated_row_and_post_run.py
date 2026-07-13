@@ -28,16 +28,20 @@ from feedbax.training.diagnostics import (
     NativeTrainingDiagnosticsInput,
     ScheduleContextDiagnostic,
 )
+from feedbax.contracts.worker import ProgressCoordinate
 import feedbax.training.executor as executor_module
 
 from rlrmp.train.orchestrated_post_run import map_registered_run_set
 from rlrmp.train.orchestrated_row import (
     RowLaunchPacket,
+    _batch_limit_probe,
     _native_execution_context,
     _verify_staged_checkpoint,
     execute_packet,
     load_packet,
 )
+from rlrmp.train.executor.adapters import RLRMP_RUNTIME_CONTEXT_KEY
+from rlrmp.train.executor.initial_slots import RlrmpRuntime
 
 
 def _envelope(
@@ -221,6 +225,39 @@ def test_execute_packet_uses_native_manifest_and_diagnostics_once(
         "run_set_id": "set",
         "status": "completed",
     }
+
+
+def test_batch_limit_probe_uses_completed_batches_not_probe_calls() -> None:
+    progress = {"completed_batches": 0}
+    runtime = RlrmpRuntime(
+        completed_batches_reader=lambda: progress["completed_batches"],
+    )
+    probe = _batch_limit_probe(
+        50,
+        kernel_context={RLRMP_RUNTIME_CONTEXT_KEY: runtime},
+    )
+    assert probe is not None
+    coordinate = ProgressCoordinate(run_id="fast-two-chunk", phase="train_chunk")
+
+    # Fast kernels may be probed any number of times before completing a chunk;
+    # callback frequency is not training progress.
+    assert all(probe(coordinate) is None for _ in range(75))
+
+    # The first 50-batch chunk has completed. The stop decision now lets Feedbax
+    # finish this chunk's checkpoint barrier and prevents the second chunk.
+    progress["completed_batches"] = 50
+    decision = probe(coordinate)
+    assert decision is not None
+    assert decision.action == "stop"
+    assert progress["completed_batches"] == 50
+
+
+def test_batch_limit_probe_fails_closed_without_typed_batch_progress() -> None:
+    with pytest.raises(RuntimeError, match="authoritative completed-batch progress"):
+        _batch_limit_probe(
+            50,
+            kernel_context={RLRMP_RUNTIME_CONTEXT_KEY: RlrmpRuntime()},
+        )
 
 
 def test_resume_packet_verifies_fork_target_lineage_to_envelope_source(

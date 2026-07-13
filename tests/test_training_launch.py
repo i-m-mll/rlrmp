@@ -275,6 +275,70 @@ def test_launch_evidence_records_lifecycle_controls() -> None:
     }
 
 
+@pytest.mark.parametrize("stop_after_batches", [None, 50])
+@pytest.mark.parametrize(
+    ("row", "expected_row_ids"),
+    [("selected", {"selected"}), (None, {"selected", "other"})],
+)
+def test_execute_hands_selected_operational_stop_to_typed_conformance_inputs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stop_after_batches: int | None,
+    row: str | None,
+    expected_row_ids: set[str],
+) -> None:
+    from feedbax.orchestration import StageEngine
+
+    authored = SimpleNamespace(
+        document=SimpleNamespace(
+            rows=(SimpleNamespace(row_id="selected"), SimpleNamespace(row_id="other")),
+            fork=None,
+            metadata={},
+        ),
+        repo_root=tmp_path,
+    )
+    request = object()
+    context = object()
+    registry = object()
+    monkeypatch.setattr(launch, "_validate_execute_controls", lambda *_args: None)
+    monkeypatch.setattr(
+        launch,
+        "build_orchestration_request",
+        lambda *_args, **_kwargs: (request, context, registry),
+    )
+    monkeypatch.setattr(launch, "_run_fork_gate", lambda *_args, **_kwargs: None)
+
+    captured: dict[str, Any] = {}
+
+    class FakeEngine:
+        def run(self) -> str:
+            return "ran"
+
+    def from_request(received: object, **kwargs: object) -> FakeEngine:
+        captured["request"] = received
+        captured.update(kwargs)
+        return FakeEngine()
+
+    monkeypatch.setattr(StageEngine, "from_request", from_request)
+
+    result = launch.execute_authored_training_intent(
+        authored,  # type: ignore[arg-type]
+        row=row,
+        controls=launch.LaunchRuntimeControls(stop_after_batches=stop_after_batches),
+    )
+
+    assert result == "ran"
+    assert captured["request"] is request
+    runtime_inputs = captured["row_conformance_inputs"]
+    if stop_after_batches is None:
+        assert runtime_inputs == {}
+    else:
+        assert set(runtime_inputs) == expected_row_ids
+        for inputs in runtime_inputs.values():
+            assert inputs.authorized_batch_stop.stop_after_batches == 50
+            assert inputs.authorized_batch_stop.reason == "stop_after_batches"
+
+
 def test_verify_resume_prepares_executor_context_and_strictly_loads_checkpoint(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
