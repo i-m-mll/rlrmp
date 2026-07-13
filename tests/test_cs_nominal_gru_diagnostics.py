@@ -17,7 +17,6 @@ from feedbax.runtime.batch import BatchInfo
 from feedbax.config.namespace import TreeNamespace
 from rlrmp.loss import CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
 from rlrmp.train.cs_nominal_gru import (
-    ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER,
     AdaptiveEpsilonState,
     CsNominalGruConfig,
     GradientDiagnosticsState,
@@ -42,16 +41,17 @@ from rlrmp.train.cs_nominal_gru import (
 )
 from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
-    BROAD_EPSILON_PGD_TRAINING_MODE,
-    PERTURBATION_TRAINING_MODE,
     POLICY_ADVERSARY_PLAIN_MODE,
-    TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
     PolicyFullStateEpsilonTrainingConfig,
     _broad_epsilon_l2_radius,
     _flattened_per_trial_norm,
     _project_flattened_per_trial_l2_ball,
     graph_adapter_specs,
     policy_adversary_projection_diagnostics,
+)
+from rlrmp.train.science_vocabulary import (
+    AdaptiveEpsilonControllerMode,
+    ScienceMode,
 )
 
 
@@ -890,7 +890,7 @@ def test_target_relative_h0_full_training_smoke_emits_diagnostics(tmp_path: Path
     assert run_spec_path == spec_dir.with_suffix(".json")
     assert not (spec_dir / "run.json").exists()
     assert run_spec["training_summary"]["training_mode"] == (
-        f"{TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE}+{PERTURBATION_TRAINING_MODE}"
+        f"{ScienceMode.TARGET_RELATIVE_H0}+{ScienceMode.PERTURBATION}"
     )
     assert run_spec["model_summary"]["initial_hidden_encoder"]["enabled"] is True
     assert summary["training_diagnostics"]["enabled"] is True
@@ -951,7 +951,7 @@ def test_pgd_broad_epsilon_full_training_emits_inner_diagnostics(
     assert any("adv_objective=" in line for line in checkpoint_lines)
     assert run_spec_path == spec_dir.with_suffix(".json")
     assert not (spec_dir / "run.json").exists()
-    assert BROAD_EPSILON_PGD_TRAINING_MODE in run_spec["training_summary"]["training_mode"]
+    assert ScienceMode.BROAD_EPSILON_PGD in run_spec["training_summary"]["training_mode"]
     assert run_spec["hps"]["broad_epsilon_pgd_training"]["inner_maximizer"]["n_steps"] == 1
     assert "pgd_broad_epsilon_inner_objective_before" in diagnostics_manifest["arrays"]
     assert "pgd_broad_epsilon_inner_objective_after" in diagnostics_manifest["arrays"]
@@ -1001,7 +1001,7 @@ def test_adaptive_epsilon_scaled_outer_full_training_emits_explicit_diagnostics(
         broad_epsilon_pgd_energy_lambda=1.0,
         adaptive_epsilon_curriculum=True,
         adaptive_epsilon_controller_training_mode=(
-            ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER
+            AdaptiveEpsilonControllerMode.EPSILON_SCALED_OUTER
         ),
         adaptive_epsilon_update_interval_batches=1,
         adaptive_epsilon_outer_weight_start=0.25,
@@ -1025,7 +1025,10 @@ def test_adaptive_epsilon_scaled_outer_full_training_emits_explicit_diagnostics(
     diagnostics_manifest = json.loads((output_dir / "training_diagnostics.json").read_text())
 
     cfg = run_spec["hps"]["adaptive_epsilon_curriculum"]
-    assert cfg["controller_training_mode"] == ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER
+    assert (
+        cfg["controller_training_mode"]
+        == AdaptiveEpsilonControllerMode.EPSILON_SCALED_OUTER
+    )
     assert (
         cfg["outer_adversarial_weight"]["applies_to"]
         == "optimized_direct_epsilon_channel_scale_for_controller_rollout"

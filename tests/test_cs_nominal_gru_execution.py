@@ -61,7 +61,6 @@ from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
     BROAD_EPSILON_PGD_PROJECTED_GRADIENT_ASCENT,
     BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
-    CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE,
     GRAPH_ADAPTER_SPECS,
     AFFINE_POLICY,
     LINEAR_NO_BIAS_POLICY,
@@ -98,6 +97,7 @@ from rlrmp.train.cs_perturbation_training import (
     target_relative_validation_manifest,
     validation_bin_manifest,
 )
+from rlrmp.train.science_vocabulary import ScienceMode
 from rlrmp.train.executor.equivalence import assert_paired_equivalent, run_paired_equivalence
 from rlrmp.train.task_model import (
     LEGACY_CAUSAL_BACKEND_WARNING,
@@ -1508,7 +1508,7 @@ def test_calibrated_timing_sampler_uses_family_timing_bins() -> None:
     assert _nonzero_pulse_starts(sensory).issubset(controller_visible_starts)
     assert not _nonzero_pulse_starts(delayed)
     assert _max_nonzero_pulse_width(sensory) <= 5
-    assert hps.perturbation_training.mode == CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE
+    assert hps.perturbation_training.mode == ScienceMode.PERTURBATION_CALIBRATED
 
 
 def test_calibrated_movement_age_timing_preserves_undelayed_starts() -> None:

@@ -17,7 +17,6 @@ from rlrmp.paths import REPO_ROOT, run_artifact_dir, run_spec_dir
 import rlrmp.train.cs_nominal_gru as cs_nominal_gru
 import rlrmp.train.executor.cs_supervised as cs_supervised_executor
 from rlrmp.train.cs_nominal_gru import (
-    ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER,
     CsNominalGruConfig,
     DEFAULT_STOCHASTIC_PRESET,
     SCHEMA_VERSION,
@@ -28,6 +27,7 @@ from rlrmp.train.cs_nominal_gru import (
     derive_spec_path,
     write_run_spec,
 )
+from rlrmp.train.science_vocabulary import AdaptiveEpsilonControllerMode
 from rlrmp.runtime.training_run_specs import (
     FEEDBAX_TRAINING_RUN_SPEC_KEY,
     RLRMP_RUN_SPEC_PAYLOAD_KEY,
@@ -141,7 +141,7 @@ def _native_method_run_spec_payload(tmp_path: Path, method_ref: str) -> dict[str
                 broad_epsilon_pgd_energy_lambda=2.5,
                 adaptive_epsilon_curriculum=True,
                 adaptive_epsilon_controller_training_mode=(
-                    ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER
+                    AdaptiveEpsilonControllerMode.EPSILON_SCALED_OUTER
                 ),
                 adaptive_epsilon_damage_peak=3500.0,
                 adaptive_epsilon_damage_final=1000.0,

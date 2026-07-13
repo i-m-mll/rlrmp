@@ -129,6 +129,19 @@ from rlrmp.train.closed_loop_finite_adversary import (
 )
 
 from rlrmp.train.training_configs import *  # noqa: F403
+from rlrmp.train.science_vocabulary import ScienceMode
+
+
+def lower_target_relative_science_mode(hps: Any) -> ScienceMode | None:
+    """Lower target-relative/H0 capability into its run-spec mode."""
+
+    if not bool(hps.target_relative_multitarget.enabled):
+        return None
+    return (
+        ScienceMode.TARGET_RELATIVE_H0
+        if bool(hps.model.initial_hidden_encoder)
+        else ScienceMode.TARGET_RELATIVE
+    )
 
 
 # Historical replay/provenance value only. New living rows must pass any radius

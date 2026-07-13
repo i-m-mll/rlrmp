@@ -19,6 +19,19 @@ from rlrmp.train.closed_loop_finite_adversary import (
     FINITE_POLICY_GAINS_INPUT,
     finite_policy_step_epsilon,
 )
+from rlrmp.train.science_vocabulary import ScienceMode
+
+
+def lower_broad_epsilon_science_mode(hps: Any) -> ScienceMode | None:
+    """Lower randomized broad-epsilon capability into its run-spec mode."""
+
+    return ScienceMode.BROAD_EPSILON if bool(hps.broad_epsilon_training.enabled) else None
+
+
+def lower_pgd_science_mode(hps: Any) -> ScienceMode | None:
+    """Lower PGD broad-epsilon capability into its run-spec mode."""
+
+    return ScienceMode.BROAD_EPSILON_PGD if bool(hps.broad_epsilon_pgd_training.enabled) else None
 
 
 @dataclass(frozen=True)

@@ -51,6 +51,10 @@ from rlrmp.train.closed_loop_finite_adversary import (
     FINITE_POLICY_GAINS_INPUT,
     LINEAR_NO_BIAS_POLICY,
 )
+from rlrmp.train.science_vocabulary import (
+    AdaptiveEpsilonControllerMode,
+    ScienceMode,
+)
 from rlrmp.train.training_presets import load_training_presets, training_preset_value
 from rlrmp.train.training_payload_migrations import migrate_frozen_rendered_training_payload
 
@@ -75,20 +79,6 @@ class CsPerturbationTrainingConfig(BaseModel):
 
         return validate_training_config(cls, payload)
 
-
-PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_randomized"
-
-CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_calibrated_timing"
-
-TARGET_RELATIVE_MULTITARGET_TRAINING_MODE = "target_relative_multitarget_static"
-
-TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE = "target_relative_multitarget_static_h0"
-
-BROAD_EPSILON_TRAINING_MODE = "broad_full_state_epsilon_l2"
-
-BROAD_EPSILON_PGD_TRAINING_MODE = "broad_full_state_epsilon_pgd_l2"
-
-POLICY_ADVERSARY_TRAINING_MODE = "broad_full_state_epsilon_policy_l2"
 
 FIXED_TARGET_PERTURBATION_PARAMS_REF = "rlrmp.train.fixed_target_perturbation_training.v1"
 
@@ -383,7 +373,7 @@ class BroadFullStateEpsilonTrainingConfig(CsPerturbationTrainingConfig):
         return {
             "config": self.model_dump(mode="python"),
             "enabled": self.enabled,
-            "mode": BROAD_EPSILON_TRAINING_MODE if self.enabled else "disabled",
+            "mode": ScienceMode.BROAD_EPSILON if self.enabled else "disabled",
             "level": self.level,
             "budget_scale": float(self.budget_scale),
             "reach_length_scaling": bool(self.reach_length_scaling),
@@ -610,7 +600,7 @@ class PgdFullStateEpsilonTrainingConfig(BroadFullStateEpsilonTrainingConfig):
         return {
             "config": self.model_dump(mode="python"),
             "enabled": self.enabled,
-            "mode": BROAD_EPSILON_PGD_TRAINING_MODE if self.enabled else "disabled",
+            "mode": ScienceMode.BROAD_EPSILON_PGD if self.enabled else "disabled",
             "adversary_mechanism": self.adversary_mechanism,
             "level": self.level,
             "budget_scale": float(self.budget_scale),
@@ -765,7 +755,7 @@ class PolicyFullStateEpsilonTrainingConfig(CsPerturbationTrainingConfig):
         return {
             "config": self.model_dump(mode="python"),
             "enabled": self.enabled,
-            "mode": POLICY_ADVERSARY_TRAINING_MODE if self.enabled else "disabled",
+            "mode": ScienceMode.POLICY_ADVERSARY if self.enabled else "disabled",
             "row_mode": self.mode,
             "policy_class": self.policy_class,
             "policy": policy,
@@ -1356,8 +1346,8 @@ class FixedTargetPerturbationTrainingConfig(CsPerturbationTrainingConfig):
         if not self.enabled:
             return "nominal"
         if self.calibrated_timing:
-            return CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE
-        return PERTURBATION_TRAINING_MODE
+            return ScienceMode.PERTURBATION_CALIBRATED
+        return ScienceMode.PERTURBATION
 
     def to_hps_dict(self) -> dict[str, Any]:
         """Return the TreeNamespace-compatible config payload."""
@@ -1604,7 +1594,7 @@ class TargetRelativeMultiTargetTrainingConfig(CsPerturbationTrainingConfig):
         return {
             "config": self.model_dump(mode="python"),
             "enabled": self.enabled,
-            "mode": (TARGET_RELATIVE_MULTITARGET_TRAINING_MODE if self.enabled else "disabled"),
+            "mode": ScienceMode.TARGET_RELATIVE if self.enabled else "disabled",
             "force_filter_feedback": self.force_filter_feedback,
             "force_filter_feedback_contract": force_filter_feedback_manifest(
                 self.force_filter_feedback
@@ -2349,8 +2339,6 @@ CS_VELOCITY_SCALE = 1e5
 CS_CONTROL_SCALE = 1.0
 
 DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW = "canonical_window"
-
-ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND = "loss_blend"
 
 MINIMAX_PARAMS_REF = "rlrmp/minimax/v1"
 
