@@ -17,6 +17,8 @@ symbols = [
   "AbstractTask",
   "DelayedReachTaskInputs",
   "DelayedReaches",
+  "LowererRegistration",
+  "OrderedLowererRegistry",
   "SimpleReaches",
   "TaskTrialSpec",
   "TrialTimeline",
