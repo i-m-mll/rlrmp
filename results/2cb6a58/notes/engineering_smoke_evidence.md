@@ -11,12 +11,14 @@ scientific claim.
 - **Paved-road authoring and emission:** pass. The compact content-pinned base,
   exact four-row matrix, registered science/architecture lowerers, resolved
   semantics, and execution capsule all validate and materialize.
-- **Local execution:** blocked before batch 1. After the typed-optimizer repair,
-  assembly, preflight, and provisioning succeed, but the local driver fails
-  `REALIZE_ENV` because the uv-managed interpreter has no `pip` module for its
-  hard-coded `python -m pip freeze` fingerprint step.
-- **Initial-training plausibility:** not run. No loss, state, action, endpoint,
-  checkpoint, or resume measurement exists.
+- **Local execution:** partial, then blocked at registration. Against reviewed local
+  Feedbax staging `cb3f606e`, assembly through certification executes, but the
+  requested batch-50 stop overruns to batch 100 and the final certificate fails its
+  LR-trace and seed checks.
+- **Initial-training plausibility:** limited engineering signal only. Checkpoint losses
+  are finite and fall from `76456.77734375` at batch 50 to `23244.3765625` at batch
+  100, but the frozen window criteria, strict resume, and evaluation criteria remain
+  unmeasured.
 - **Scientific evidence:** none.
 
 No alternate executor, synthetic source checkpoint, fresh-start override, callback,
@@ -29,6 +31,7 @@ was used.
 |---|---|
 | RLRMP materializer commit | `b1b28c396fe4651c47157255ddb88e80d23c1ac3` |
 | Protected/pinned Feedbax develop | `060d65d285969ec11e4a284712913550c462ba18` |
+| local downstream-debug Feedbax staging | `cb3f606eac3fe050c9c3dd07d22836a2c2c609c7` |
 | `uv.lock` SHA-256 | `1c5e08022cd1eb54f32a84c01afb22638d63ee6dada161915a78fbd8b50b45e4` |
 | Python | `3.13.5` |
 | execution policy | local-only, non-billable; one seed; exactly 100 batches |
@@ -82,43 +85,47 @@ All commands ran from the issue-linked `wt` worktree with
 | schema validation | `uv run --no-sync python scripts/launch_training.py validate results/2cb6a58/runs/matrix.intent.json` | pass |
 | deterministic planning | `uv run --no-sync python scripts/launch_training.py dry-run results/2cb6a58/runs/matrix.intent.json` | pass: four exact row/run IDs |
 | governed emission | `uv run --no-sync python scripts/emit_training_run_matrix.py results/2cb6a58/runs/matrix.intent.json --output results/2cb6a58/runs/matrix.json --custody-root _artifacts/2cb6a58/spec-storage` | pass |
-| post-repair sidecar emission | same governed emitter, recorded in `_artifacts/2cb6a58/spec-emission-after-b1b28c39.json` | pass; matrix SHA before/after `547efe4d…a1f5` |
-| first half of first row | `uv run --no-sync python scripts/launch_training.py execute results/2cb6a58/runs/matrix.json --row force_visible__nominal_seed42_smoke100 --stop-after-batches 50 --driver local` | exit 1; blocked in `REALIZE_ENV` before batch 1 |
+| staging import proof | `uv run --no-sync python -c 'import feedbax; print(feedbax.__file__)'` with staged `PYTHONPATH` | pass: staging checkout |
+| staged sidecar emission | same governed emitter, recorded in `_artifacts/2cb6a58/spec-emission-feedbax-cb3f606e.json` | pass; matrix SHA before/after `547efe4d…a1f5` |
+| requested first half of first row | exact execute command with `--stop-after-batches 50` and staged `PYTHONPATH` | worker completed 100; command exit 1 at `REGISTER` |
 
-The execution command creates orchestration run set `2026-07-13-fc1d6231`,
-completes `ASSEMBLE`, `PREFLIGHT`, and `PROVISION`, and then raises:
+The staged execution creates run set `2026-07-13-0edbf565`. The worker exits 0 and
+emits two checkpoint transactions plus a `TrainingRunManifest`, but registration
+raises:
 
 ```text
-subprocess.CalledProcessError: Command ['<worktree>/.venv/bin/python3', '-m',
-'pip', 'freeze'] returned non-zero exit status 1.
+ValueError: REGISTER cannot emit phase=completed for a failing certificate
 ```
 
-The bounded direct diagnostic through the same uv runtime reports
-`<worktree>/.venv/bin/python3: No module named pip` and exits 1. Run-set stage
-attempts are `ASSEMBLE=1`, `PREFLIGHT=1`, `PROVISION=1`, `REALIZE_ENV=3`, and
-`TEARDOWN=1`; launch and all later stages remain unattempted. The row remains
-`pending` with no PID, start time, event, or output. No `BATCH` record, runtime
-checkpoint, or manifest was produced. The local sidecar SHA-256 is
-`375feeefe15720a0a54a8d1a7fcca82cb1991ec24a5627bbf558362fe8bf6c25`.
+`conformance.json` (SHA-256 `6a12b860…50a2`) fails two checks: `lr_trace` is empty
+and requires at least three realized samples; `seeds` ignores the canonical
+`execution.row_provenance.seed=42` and reports `bundle_row_spec.seeds` missing.
+The packet did carry `stop_after_batches=50`, but the worker completed 100 batches,
+created transactions `tx-31054f9e11b443ff856c74f5ae67f3b8` at 50 and
+`tx-60161600da1b42e7aa04394f0f850e91` at 100, and emitted terminal `completed`.
+State also retains `terminal_event_without_sentinel` even though the `.done` sentinel
+exists with exit 0.
 
 ## Required products and raw plausibility measurements
 
 | Product or measurement | Status |
 |---|---|
-| finite total/per-term loss | `blocked_not_run` |
+| finite checkpoint loss | pass: `76456.77734375` at 50; `23244.3765625` at 100 |
 | first/last/best ten-batch windows | `blocked_not_run` |
 | endpoint-distance improvement fraction | `blocked_not_run` |
 | action-energy min/median/max/nonzero fraction | `blocked_not_run` |
-| batch-50 checkpoint transaction and digests | `blocked_not_generated` |
-| strict resume coordinate and batch-100 completion | `blocked_not_run` |
-| `TrainingRunManifest` | `blocked_not_generated` |
+| batch-50 checkpoint transaction | generated, manifest SHA `fd3fe87d…978` |
+| strict resume coordinate and batch-100 completion | fail: stop overran; no resume |
+| `TrainingRunManifest` | generated, SHA `e769471e…dec`; registration blocked |
 | `EvaluationRunManifest` | `blocked_not_generated` |
 | `AnalysisRunManifest` | `blocked_not_generated` |
 | `FigureManifest` and render | `blocked_not_generated` |
 | custody-routed report renders | `blocked_not_generated` |
 
-Downstream evaluation, analysis, figure, and report stages were not invoked because
-there is no trained checkpoint or `TrainingRunManifest` to consume.
+Downstream evaluation, analysis, figure, and report stages were not invoked. The
+visible-nominal row did produce checkpoints and a `TrainingRunManifest`, but its
+requested stop/resume protocol failed and the orchestration certificate prevented
+registration, so the lane stopped before any downstream consumer ran.
 
 ## KPI and bypass inventory
 
@@ -139,17 +146,16 @@ and `c5=0`.
 | fresh-start/parity override | 0 |
 | direct durable write | 0 |
 | cloud/pod/Modal launch | 0 |
-| extra batch, seed, or tuning retry | 0 |
+| extra batch, seed, or tuning retry | 50 unintended overrun batches; 0 extra seeds/retries |
 
 ## Gap and reproduction checklist
 
-The fresh-matrix blocker [issue:52bacb3] and typed-optimizer blocker
-[issue:ebd5d02] are repaired and integrated. A cross-repo duplicate search found no
-issue covering the pip-less local-runtime fingerprint failure.
-[issue:feedbax/0e257d0], **Local environment fingerprint requires pip inside
-uv-managed runtimes**, owns the exact correction and structurally blocks this
-experiment and [issue:509368b]. Sibling [issue:4eb51ee] is related because it is
-held and unattempted on the same local-driver path.
+The local fingerprint repair [issue:feedbax/0e257d0] passes on reviewed staging.
+Four separately owned gaps now remain: [issue:c37df92] owns the stop-at-50 overrun;
+[issue:0a97038] owns missing fresh C&S LR samples; [issue:feedbax/b9ddd04] owns the
+canonical seed-path mismatch; and [issue:feedbax/0fa46bf] owns the false retained
+sentinel discrepancy. The first three block this experiment and [issue:509368b];
+the fourth is related evidence debt.
 
 An independent reviewer can reproduce or falsify this packet by:
 
@@ -161,9 +167,12 @@ An independent reviewer can reproduce or falsify this packet by:
 6. decoding the resolved snapshot and checking 4D/6D feedback, nominal/PGD mode,
    100 batches, interval 50, and the listed lowerers for every row;
 7. rerunning the governed emission and comparing the storage identities;
-8. rerunning the single local execute command and confirming `REALIZE_ENV` fails
-   after three attempts because `pip` is absent, before any batch/checkpoint/manifest write;
-9. confirming no child-owned training artifact directory contains batch output;
+8. rerunning the single staged execute command and confirming the requested stop at
+   50 overruns to 100, then the two named certificate checks fail;
+9. confirming that only `force_visible__nominal_seed42_smoke100` has child-owned
+   training outputs, that its checkpoints record 50 and the unintended 100 despite
+   the requested stop at 50, and that the other three rows, strict resume, and all
+   downstream stages have no outputs;
 10. diffing against baseline `bd529256` and verifying no `src/`, `scripts/`,
     `tests/`, compiler, registry, dependency, or shared-environment file changed;
 11. generating the KPI report only from the final committed revision; and

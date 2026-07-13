@@ -2,7 +2,7 @@
 
 Tracking issue: `2cb6a58`
 
-Status: **authored, emitted, preflighted, and provisioned; blocked before batch 1 by local environment fingerprinting**.
+Status: **first row executed on reviewed staging; blocked by stop/resume and certificate gaps**.
 The protocol remains frozen and every outcome is non-scientific engineering-smoke
 evidence; no hypothesis is answered by this protocol.
 
@@ -97,12 +97,12 @@ substitute for a required manifest or `report_render` artifact.
 ## Gate before execution can resume
 
 Protected Feedbax `060d65d285969ec11e4a284712913550c462ba18` is pinned, the
-pin guard passes, and the governed row re-lowering, fresh-matrix, and typed-optimizer
-routes are integrated. Validation, lowering, dry-run identity generation, custody
-emission, assembly, preflight, and provisioning pass. Execution can resume only
-after the Feedbax local driver fingerprints a uv-managed interpreter without
-assuming that `pip` is importable, while preserving deterministic provenance and
-fail-closed behavior. [issue:feedbax/0e257d0] owns that correction; [issue:ebd5d02]
-and [issue:52bacb3] are repaired predecessors.
+pin guard passes. Reviewed local Feedbax staging `cb3f606e` proves the fingerprint
+repair [issue:feedbax/0e257d0] through worker completion and certification. Execution
+can resume only after [issue:c37df92] makes batch-50 stop/resume authoritative,
+[issue:0a97038] supplies typed LR samples, and [issue:feedbax/b9ddd04] reads the
+canonical row-provenance seed. [issue:feedbax/0fa46bf] separately owns the retained
+terminal/sentinel race discrepancy. No later row or downstream analysis may run
+until the blocking paths are corrected and reviewed.
 
 The full RLRMP suite remains parent-serialized and is forbidden in this child lane.
