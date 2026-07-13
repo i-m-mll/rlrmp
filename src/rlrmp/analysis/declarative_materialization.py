@@ -13,12 +13,15 @@ import equinox as eqx
 import jax.numpy as jnp
 from numpy import savez_compressed as _savez_compressed
 from feedbax.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts
-from feedbax.analysis.context import AnalysisArtifactFile, AnalysisRunContext
+from feedbax.analysis.context import AnalysisRunContext
 from feedbax.analysis.materialization import (
     AnalysisArtifactGroup,
+    ContextMaterializer,
     ExistingAnalysisArtifact,
     MaterializationResult,
+    directory_artifact_group,
     materialization_metadata,
+    read_json_payload,
 )
 from feedbax.analysis.specs import AnalysisRecipeResult, register_analysis_recipe
 from feedbax.contracts.expressions import (
@@ -311,80 +314,6 @@ class OutputFeedbackRolloutRecoveryParams(BaseModel):
     manifest_output: str | None = None
     artifact_output: str | None = None
     repo_root: str | None = None
-
-
-class RLRMPManifestAnalysis(AbstractAnalysis):
-    """Context-aware rlrmp analysis node that records Feedbax-owned artifacts."""
-
-    materializer: Callable[[AnalysisRunContext, AnalysisInputData], Any | MaterializationResult] = (
-        eqx.field(kw_only=True, static=True)
-    )
-    artifact_role: str = eqx.field(kw_only=True, static=True)
-    logical_name: str = eqx.field(kw_only=True, static=True)
-    schema_boundary: str | None = eqx.field(default=None, static=True)
-    metadata: dict[str, Any] = eqx.field(default_factory=dict, static=True)
-
-    @property
-    def _field_params(self) -> dict[str, Any]:
-        return {
-            "artifact_role": self.artifact_role,
-            "logical_name": self.logical_name,
-            "schema_boundary": self.schema_boundary,
-            "metadata": self.metadata,
-        }
-
-    def compute(self, data: AnalysisInputData, **kwargs: Any) -> dict[str, Any]:
-        del data, kwargs
-        return {
-            "status": "pending_context_artifact_emission",
-            "artifact_role": self.artifact_role,
-            "logical_name": self.logical_name,
-        }
-
-    def emit_artifacts(
-        self,
-        context: AnalysisRunContext,
-        data: AnalysisInputData,
-        *,
-        result: Mapping[str, Any],
-        **kwargs: Any,
-    ) -> Any:
-        del result, kwargs
-        materialized = self.materializer(context, data)
-        if not isinstance(materialized, MaterializationResult):
-            materialized = MaterializationResult(payload=materialized)
-        payload = materialized.payload
-        metadata = {**self.metadata, **materialized.payload_metadata}
-        if self.schema_boundary is not None:
-            metadata.setdefault("schema_boundary", self.schema_boundary)
-
-        context.record_artifact_refs_from_value(payload)
-        payload_ref = context.record_json_artifact(
-            payload,
-            role=self.artifact_role,
-            logical_name=self.logical_name,
-            metadata=metadata,
-        )
-        context.record_artifact_refs([payload_ref, *materialized.artifact_refs])
-        for artifact in materialized.existing_artifacts:
-            context.record_artifact(
-                artifact.path,
-                role=artifact.role,
-                logical_name=artifact.logical_name,
-                media_type=artifact.media_type,
-                metadata=artifact.metadata,
-                group_id=artifact.group_id,
-                group_role=artifact.group_role,
-                group_metadata=artifact.group_metadata,
-            )
-        for group in materialized.artifact_groups:
-            context.record_artifact_group(
-                group_id=group.group_id,
-                members=group.members,
-                metadata=group.metadata,
-            )
-        context.record_regeneration_specs(materialized.regeneration_specs)
-        return payload
 
 
 class PerturbationClassResponseAnalysis(AbstractAnalysis):
@@ -1066,8 +995,9 @@ def _manifest_recipe(
 
     return _recipe_result(
         analysis_name,
-        RLRMPManifestAnalysis(
+        ContextMaterializer(
             materializer=materializer,
+            materializer_input="context_and_data",
             artifact_role=artifact_role,
             logical_name=logical_name,
             schema_boundary=schema_boundary,
@@ -1235,7 +1165,7 @@ def _feedback_quality_component_recipe(
         repo_root = _repo_root_from_params(params)
         evaluation_input = _primary_feedback_quality_component_input(component_name, inputs)
         registration = _feedback_quality_component_registrations()[component_name]
-        analysis = RLRMPManifestAnalysis(
+        analysis = ContextMaterializer(
             materializer=lambda context, data: _materialize_feedback_quality_component(
                 context,
                 data,
@@ -1246,6 +1176,7 @@ def _feedback_quality_component_recipe(
                 evaluation_input=_evaluation_input_from_analysis_data(data),
                 repo_root=repo_root,
             ),
+            materializer_input="context_and_data",
             artifact_role=registration.artifact_role,
             logical_name=registration.logical_name,
             schema_boundary="rlrmp-owned feedback-quality component status payload",
@@ -2319,7 +2250,7 @@ def _feedback_quality_component_outputs_from_inputs(
                 raise ValueError(
                     f"Feedback-quality component {registration.name!r} lacks artifact URI"
                 )
-            outputs[registration.name] = _read_json_payload(Path(artifact.uri))
+            outputs[registration.name] = read_json_payload(Path(artifact.uri))
     missing = sorted(set(FEEDBACK_QUALITY_COMPONENT_NAMES).difference(outputs))
     if missing:
         raise ValueError(f"Feedback-quality aggregate missing component payloads: {missing}")
@@ -2667,7 +2598,7 @@ def _load_perturbation_class_product(resolved: Any) -> dict[str, Any]:
             continue
         if artifact.uri is None:
             raise ValueError("perturbation class response artifact lacks uri")
-        payload = _read_json_payload(Path(artifact.uri))
+        payload = read_json_payload(Path(artifact.uri))
         if payload.get("schema_id") != PERTURBATION_CLASS_RESPONSE_SCHEMA_ID:
             raise ValueError(
                 "perturbation class response artifact has wrong schema_id "
@@ -3162,12 +3093,18 @@ def _feedback_quality_component_output(
     groups: list[AnalysisArtifactGroup] = []
     for directory, role, group_id, member_role in component.get("groups", ()):
         groups.extend(
-            _directory_artifact_group(
+            directory_artifact_group(
                 directory,
                 role=role,
                 group_id=group_id,
-                member_role=member_role,
-                repo_root=repo_root,
+                group_role=member_role,
+                logical_name_root=repo_root,
+                metadata_for=lambda item: {
+                    "repo_relative_path": portable_repo_path(item, repo_root=repo_root)
+                },
+                group_metadata={
+                    "schema_boundary": "rlrmp-owned feedback-quality diagnostic payload"
+                },
             )
         )
 
@@ -3191,113 +3128,6 @@ def _component_paths(component: Mapping[str, Any]) -> dict[str, Path]:
             for index, group in enumerate(value):
                 paths[f"group_{index}"] = group[0]
     return paths
-
-
-def _bulk_artifact_groups(
-    manifest: Mapping[str, Any],
-    *,
-    group_id: str,
-    repo_root: Path,
-) -> tuple[AnalysisArtifactGroup, ...]:
-    members: list[AnalysisArtifactFile] = []
-    for run_id, run_payload in manifest.get("runs", {}).items():
-        if not isinstance(run_payload, Mapping):
-            continue
-        bulk_arrays = run_payload.get("bulk_arrays")
-        if not isinstance(bulk_arrays, Mapping):
-            continue
-        raw_path = bulk_arrays.get("path")
-        if raw_path is None:
-            continue
-        path = _optional_path(raw_path, repo_root=repo_root)
-        if path is None or not path.exists():
-            continue
-        members.append(
-            AnalysisArtifactFile(
-                path=path,
-                role="rlrmp-gru-evaluation-diagnostics-bulk",
-                logical_name=f"bulk/{run_id}.npz",
-                metadata={"run_id": str(run_id)},
-                group_role="rollout_arrays",
-            )
-        )
-    if not members:
-        return ()
-    return (
-        AnalysisArtifactGroup(
-            group_id=group_id,
-            members=tuple(members),
-            metadata={"schema_boundary": "rlrmp-owned GRU diagnostic payload"},
-        ),
-    )
-
-
-def _single_file_artifact_group(
-    path: Path,
-    *,
-    role: str,
-    logical_name: str,
-    group_id: str,
-    member_role: str,
-    repo_root: Path,
-) -> tuple[AnalysisArtifactGroup, ...]:
-    if not path.exists():
-        return ()
-    return (
-        AnalysisArtifactGroup(
-            group_id=group_id,
-            members=(
-                AnalysisArtifactFile(
-                    path=path,
-                    role=role,
-                    logical_name=logical_name,
-                    metadata={
-                        "repo_relative_path": portable_repo_path(path, repo_root=repo_root)
-                    },
-                    group_role=member_role,
-                ),
-            ),
-            metadata={"schema_boundary": "rlrmp-owned output-feedback bridge diagnostic payload"},
-        ),
-    )
-
-
-def _directory_artifact_group(
-    path: Path,
-    *,
-    role: str,
-    group_id: str,
-    member_role: str,
-    repo_root: Path,
-) -> tuple[AnalysisArtifactGroup, ...]:
-    if not path.exists():
-        return ()
-    files = sorted(item for item in path.rglob("*") if item.is_file())
-    if not files:
-        return ()
-    members = tuple(
-        AnalysisArtifactFile(
-            path=item,
-            role=role,
-            logical_name=portable_repo_path(item, repo_root=repo_root),
-            metadata={"repo_relative_path": portable_repo_path(item, repo_root=repo_root)},
-            group_role=member_role,
-        )
-        for item in files
-    )
-    return (
-        AnalysisArtifactGroup(
-            group_id=group_id,
-            members=members,
-            metadata={"schema_boundary": "rlrmp-owned feedback-quality diagnostic payload"},
-        ),
-    )
-
-
-def _read_json_payload(path: Path) -> dict[str, Any]:
-    import json
-
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _declarative_metadata(context: AnalysisRunContext) -> dict[str, Any]:

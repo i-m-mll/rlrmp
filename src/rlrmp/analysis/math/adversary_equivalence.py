@@ -1,8 +1,4 @@
-"""Legacy scope note: `write_outputs` is a frozen writer/driver surface. The
-math core in this module remains LIVE library code consumed by registered
-recipes.
-
-Phase 1 adversary-equivalence analysis for the C&S game card.
+"""Phase 1 adversary-equivalence analysis for the C&S game card.
 
 This module compares two disturbance objects for the fixed analytical game:
 
@@ -15,7 +11,6 @@ changes should consume the decision this module produces, not define it.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -34,7 +29,6 @@ from rlrmp.analysis.math.cs_game_card import (
     GameCardReference,
     WorstCaseRollout,
     materialize_reference,
-    reference_summary,
     riccati_worst_case_policy,
     rollout_with_disturbance_policy,
 )
@@ -50,9 +44,6 @@ from rlrmp.analysis.math.rerun_metadata import (
     DEFAULT_LANE,
     build_rerun_metadata,
 )
-from rlrmp.paths import REPO_ROOT, mkdir_p
-
-
 ISSUE_ID = "a7dad8a"
 UMBRELLA_ID = "43e8728"
 _ANALYSIS_PRESET = load_analysis_parameter_preset("adversary_equivalence").parameters
@@ -482,167 +473,6 @@ def _rollout_terminal_position_error(rollout: WorstCaseRollout) -> float:
     return float(jnp.linalg.norm(rollout.x[-1, 0:2]))
 
 
-def render_markdown(summary: dict[str, Any]) -> str:
-    """Render a tracked Phase 1 note."""
-
-    ric = summary["riccati_feedback"]
-    rows = [
-        "| PGD steps | restarts | best cost | ratio to Riccati | energy | epsilon L2 distance |",
-        "|---:|---:|---:|---:|---:|---:|",
-    ]
-    for row in summary["open_loop"]:
-        rows.append(
-            "| "
-            f"{row['n_steps']} | "
-            f"{row['n_restarts']} | "
-            f"{row['best_cost']['total_without_disturbance_penalty']:.8g} | "
-            f"{row['total_cost_ratio_to_riccati']:.8g} | "
-            f"{row['best_cost']['disturbance_energy']:.8g} | "
-            f"{row['epsilon_l2_distance_to_riccati']:.8g} |"
-        )
-
-    return f"""# Phase 1 Adversary Equivalence
-
-Issue: `{ISSUE_ID}`. Umbrella: `{UMBRELLA_ID}`. Game card: `{GAME_CARD_ISSUE_ID}`.
-
-Rerun metadata:
-
-- Discretization: `{summary["rerun_metadata"]["discretization"]}`.
-- Lane: `{summary["rerun_metadata"]["lane"]}`.
-- Lane scope: {summary["rerun_metadata"]["lane_description"]}
-
-This note compares the C&S-style deterministic Riccati state-dependent
-disturbance against an open-loop epsilon surrogate under the Phase 0 game-card
-budget.
-
-## Fixed Contract
-
-- Gamma factor: `{summary["gamma_factor"]}`.
-- Gamma: `{summary["gamma"]:.8g}`.
-- Budget: `sum_t ||epsilon_t||^2 = {summary["budget"]:.8g}`.
-- Budget L2 radius: `{summary["budget_l2"]:.8g}`.
-- Disturbance channel: `B_w = [I_8; 0]`; epsilon is 8D and enters only the
-  current physical state.
-- Epsilon metric: unweighted discrete rollout sum, no extra `dt` scaling.
-
-## Riccati Feedback Arm
-
-- Total cost without disturbance penalty:
-  `{ric["cost"]["total_without_disturbance_penalty"]:.8g}`.
-- Disturbance energy: `{ric["cost"]["disturbance_energy"]:.8g}`.
-- H-infinity objective: `{ric["cost"]["h_infinity_objective"]:.8g}`.
-- Peak forward velocity: `{ric["peak_forward_velocity"]:.8g}`.
-- Time to peak: step `{ric["time_to_peak_step"]}`.
-- Terminal position error: `{ric["terminal_position_error_m"]:.8g}`.
-
-## Open-Loop Surrogate Arm
-
-{"\n".join(rows)}
-
-The open-loop arm maximizes the finite-horizon task cost under a projected
-rollout-level L2 budget. The H-infinity penalty is not part of the ascent
-objective because the energy is constrained directly; it is reported as a
-diagnostic objective after each optimized rollout. Each restart retains the best
-sequence seen over the whole projected-ascent path, so the Riccati-realized
-epsilon incumbent cannot be discarded by a nonmonotone optimizer step.
-
-## Predeclared Gates
-
-- PGD convergence: best-cost relative improvement between the two longest
-  sweeps should be below `{summary["predeclared_tolerances"]["pgd_convergence_relative_improvement"]}`.
-- Restart stability: the top-three restart objectives should span less than
-  `{summary["predeclared_tolerances"]["restart_stability_top3_relative_span"]}` relative.
-- Equivalence claim: open-loop and Riccati costs/trajectory metrics should be
-  within `{summary["predeclared_tolerances"]["equivalence_relative_tolerance"]}` relative, with deterministic replay protected by
-  `rtol={summary["predeclared_tolerances"]["deterministic_replay_rtol"]}` and
-  `atol={summary["predeclared_tolerances"]["deterministic_replay_atol"]}`.
-
-## Interpretation
-
-Open-loop optimization is initialized with the Riccati realized epsilon sequence
-as one restart, plus independent random restarts projected to the same L2
-budget. Matching or exceeding the Riccati realized sequence here establishes
-trajectory-level replay equivalence for this fixed game card and initial
-condition. It does not make the open-loop epsilon object equivalent to a
-state-dependent feedback adversary across off-trajectory states or training-time
-policy changes.
-"""
-
-
-def _npz_arrays(result: AdversaryEquivalenceResult) -> dict[str, np.ndarray]:
-    arrays: dict[str, np.ndarray] = {
-        "riccati_F_policy": np.asarray(result.riccati_policy),
-        "riccati_x": np.asarray(result.riccati_rollout.x),
-        "riccati_u": np.asarray(result.riccati_rollout.u),
-        "riccati_epsilon": np.asarray(result.riccati_rollout.epsilon),
-    }
-    for opt in result.open_loop_results:
-        key = f"open_loop_{opt.config.n_steps}"
-        arrays[f"{key}_x"] = np.asarray(opt.rollout.x)
-        arrays[f"{key}_u"] = np.asarray(opt.rollout.u)
-        arrays[f"{key}_epsilon"] = np.asarray(opt.epsilon)
-    return arrays
-
-
-def write_outputs(
-    issue_id: str = ISSUE_ID,
-    *,
-    discretization: str = DEFAULT_DISCRETIZATION,
-    lane: str = DEFAULT_LANE,
-) -> dict[str, Any]:
-    """LEGACY (frozen 2026-07-03, issue 64d5f13).
-
-    This writer/driver is not contract-native: it predates the feedbax recipe,
-    bundle, and manifest contracts. It may not run without deliberate
-    realignment. Do not copy it as a pattern for new analyses. The
-    port-or-delete decision is deferred to the report-stage era (feedbax
-    132f98c) / publication.
-
-    Scoped legacy surface: `write_outputs`. The math core in this module is
-    LIVE library code consumed by registered recipes; this banner does not
-    apply to the math core.
-    """
-
-    reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
-    result = analyze_reference_adversary_equivalence(reference, reference.gamma_references[0])
-    summary = {
-        **result_summary(result, discretization=discretization, lane=lane),
-        "game_card_summary": reference_summary(
-            reference,
-            discretization=discretization,
-            lane=lane,
-        ),
-    }
-
-    results_dir = mkdir_p(REPO_ROOT / "results" / issue_id)
-    notes_dir = mkdir_p(results_dir / "notes")
-    artifact_dir = mkdir_p(REPO_ROOT / "_artifacts" / issue_id / "adversary_equivalence")
-    readme = results_dir / "README.md"
-    if not readme.exists():
-        readme.write_text(
-            "Phase 1 adversary-equivalence artifacts for the cs2019-to-RNN "
-            "game-equivalence programme. See `notes/adversary_equivalence.md` "
-            "for the tracked comparison summary.\n",
-            encoding="utf-8",
-        )
-
-    npz_path = artifact_dir / "adversary_equivalence.npz"
-    np.savez_compressed(npz_path, **_npz_arrays(result))
-    summary["artifact_npz"] = f"_artifacts/{issue_id}/adversary_equivalence/{npz_path.name}"
-    summary["artifact_npz_keys"] = sorted(_npz_arrays(result).keys())
-    summary["tracked_note"] = f"results/{issue_id}/notes/adversary_equivalence.md"
-    summary["tracked_manifest"] = f"results/{issue_id}/notes/adversary_equivalence_manifest.json"
-
-    note_path = notes_dir / "adversary_equivalence.md"
-    manifest_path = notes_dir / "adversary_equivalence_manifest.json"
-    note_path.write_text(render_markdown(summary), encoding="utf-8")
-    manifest_path.write_text(
-        json.dumps(summary, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    return summary
-
-
 __all__ = [
     "AdversaryEquivalenceResult",
     "OpenLoopOptimizationConfig",
@@ -653,8 +483,6 @@ __all__ = [
     "optimize_open_loop_epsilon",
     "project_l2_ball",
     "quadratic_rollout_cost",
-    "render_markdown",
     "result_summary",
     "rollout_arrays_with_open_loop_epsilon",
-    "write_outputs",
 ]

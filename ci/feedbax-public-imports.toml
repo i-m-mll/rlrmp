@@ -65,7 +65,9 @@ symbols = [
   "ContextMaterializer",
   "ExistingAnalysisArtifact",
   "MaterializationResult",
+  "directory_artifact_group",
   "materialization_metadata",
+  "read_json_payload",
 ]
 
 [[canonical_homes]]
