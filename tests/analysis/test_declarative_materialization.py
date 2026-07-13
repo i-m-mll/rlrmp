@@ -290,16 +290,26 @@ def test_declarative_recipes_use_feedbax_context_materializers() -> None:
     )
 
     assert isinstance(standard.analyses["gru_standard_certificate"], AbstractAnalysis)
-    assert not isinstance(standard.analyses["gru_standard_certificate"], ContextMaterializer)
+    assert isinstance(standard.analyses["gru_standard_certificate"], ContextMaterializer)
+    assert standard.analyses["gru_standard_certificate"].materializer_input == (
+        "context_and_data"
+    )
     assert isinstance(evaluation.analyses["gru_evaluation_diagnostics"], AbstractAnalysis)
-    assert not isinstance(evaluation.analyses["gru_evaluation_diagnostics"], ContextMaterializer)
+    assert isinstance(evaluation.analyses["gru_evaluation_diagnostics"], ContextMaterializer)
+    assert evaluation.analyses["gru_evaluation_diagnostics"].materializer_input == (
+        "context_and_data"
+    )
     assert isinstance(
         rollout_recovery.analyses["output_feedback_rollout_recovery"],
         AbstractAnalysis,
     )
-    assert not isinstance(
+    assert isinstance(
         rollout_recovery.analyses["output_feedback_rollout_recovery"],
         ContextMaterializer,
+    )
+    assert (
+        rollout_recovery.analyses["output_feedback_rollout_recovery"].materializer_input
+        == "context_and_data"
     )
     perturbation_leaf = dm.perturbation_class_response_recipe(
         dm.perturbation_class_response_spec(
@@ -832,6 +842,51 @@ def test_feedback_quality_component_gating_expr_census_table() -> None:
             },
         ],
     }
+
+
+def test_feedback_quality_directory_group_preserves_rlrmp_artifact_metadata(
+    tmp_path: Path,
+) -> None:
+    figure_dir = tmp_path / "_artifacts" / "unit" / "figures" / "response_norms"
+    figure_dir.mkdir(parents=True)
+    figure_path = figure_dir / "figure.html"
+    figure_path.write_text("<html></html>", encoding="utf-8")
+    registration = dm._feedback_quality_component_registrations()["response_norm_plots"]
+
+    payload, existing, groups = dm._feedback_quality_component_output(
+        registration,
+        {
+            "schema_kind": "RLRMPGRUPerturbationResponseNormPlots",
+            "groups": (
+                (
+                    figure_dir,
+                    "rlrmp-feedback-quality-response-norm-figure",
+                    "feedback_quality_response_norm_figures",
+                    "plotly_html",
+                ),
+            ),
+        },
+        params={},
+        repo_root=tmp_path,
+    )
+
+    assert payload["status"] == "materialized"
+    assert existing == ()
+    assert len(groups) == 1
+    group = groups[0]
+    assert group.group_id == "feedback_quality_response_norm_figures"
+    assert group.metadata == {
+        "schema_boundary": "rlrmp-owned feedback-quality diagnostic payload"
+    }
+    assert len(group.members) == 1
+    member = group.members[0]
+    assert member.path == figure_path
+    assert member.role == "rlrmp-feedback-quality-response-norm-figure"
+    assert member.logical_name == "_artifacts/unit/figures/response_norms/figure.html"
+    assert member.metadata == {
+        "repo_relative_path": "_artifacts/unit/figures/response_norms/figure.html"
+    }
+    assert member.group_role == "plotly_html"
 
 
 def test_gru_postrun_bundle_declares_perturbation_leaf_aggregate_stages() -> None:

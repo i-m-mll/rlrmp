@@ -5,7 +5,6 @@ from __future__ import annotations
 import jax.numpy as jnp
 
 from rlrmp.analysis.math.cs_game_card import (
-    OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     PRIMARY_GAMMA_FACTOR,
     build_no_integrator_game,
     materialize_reference,
@@ -308,16 +307,6 @@ def test_output_feedback_gamma_sweep_smoke() -> None:
     assert row["gamma_factor"] == 1.5
     assert "robust_lambda_over_gamma_squared" in row
     assert row["exact_fixed_controller_audits"][0]["gamma_penalized"]["gamma"] == row["gamma"]
-
-
-def test_output_feedback_default_gamma_is_sweep_selected() -> None:
-    from rlrmp.analysis.math.output_feedback import (  # local import keeps smoke tests cheap.
-        analyze_phase0b_output_feedback,
-    )
-
-    result = analyze_phase0b_output_feedback()
-
-    assert result["gamma_ref"].factor == OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR
 
 
 def test_output_feedback_bellman_objective_prefers_reference_to_zero() -> None:

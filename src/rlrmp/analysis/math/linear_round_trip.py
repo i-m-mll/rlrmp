@@ -1,8 +1,4 @@
-"""Legacy scope note: `write_outputs` is a frozen writer/driver surface. The
-math core in this module remains LIVE library code consumed by registered
-recipes.
-
-Phase 3 linear same-game round-trip checks for the C&S gate.
+"""Phase 3 linear same-game round-trip checks for the C&S gate.
 
 This module keeps the first Phase 3 implementation deliberately local and
 analytical. It uses the Phase 0 game-card matrices directly, trains
@@ -13,7 +9,6 @@ intentionally out of scope for this child issue.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -58,7 +53,6 @@ from rlrmp.analysis.math.rerun_metadata import (
     build_rerun_metadata,
 )
 from rlrmp.analysis.math import require_jax_x64
-from rlrmp.paths import REPO_ROOT, mkdir_p
 
 ISSUE_ID = "6f5c79e"
 UMBRELLA_ID = "43e8728"
@@ -791,196 +785,6 @@ def result_summary(
     }
 
 
-def render_markdown(summary: dict[str, Any]) -> str:
-    """Render the tracked Phase 3 note."""
-
-    objective_rows = [
-        "| optimizer | objective ratio | gain rel err | clean cost | peak forward v | terminal err | iterations | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---|",
-    ]
-    for training in summary["objective_trainings"].values():
-        objective_rows.append(
-            "| "
-            f"`{training['label']}` | "
-            f"{training['objective_ratio_to_reference']:.8g} | "
-            f"{training['gain_relative_error']:.8g} | "
-            f"{training['canonical_clean_cost']:.8g} | "
-            f"{training['canonical_peak_forward_velocity']:.8g} | "
-            f"{training['canonical_terminal_position_error_m']:.8g} | "
-            f"{training['n_iterations']} | "
-            f"{training['optimizer_status']} |"
-        )
-    audit_rows = [
-        "| controller | clean cost | Delta-v vs LQR | gain rel err | held-out cost | held-out steps | terminal err |",
-        "|---|---:|---:|---:|---:|---:|---:|",
-    ]
-    for audit in summary["audits"]:
-        audit_rows.append(
-            "| "
-            f"`{audit['label']}` | "
-            f"{audit['clean_cost']:.8g} | "
-            f"{audit['delta_v_percent_vs_lqr_reference']:+.4f}% | "
-            f"{audit['gain_relative_error']:.6g} | "
-            f"{audit['heldout']['total_cost']:.8g} | "
-            f"{audit['heldout']['n_steps']} | "
-            f"{audit['terminal_position_error_m']:.6g} |"
-        )
-
-    return f"""# Phase 3 Linear Same-Game Round Trip
-
-Issue: `{summary["issue"]}`. Umbrella: `{summary["umbrella"]}`.
-
-Rerun metadata:
-
-- Discretization: `{summary["rerun_metadata"]["discretization"]}`.
-- Lane: `{summary["rerun_metadata"]["lane"]}`.
-- Lane scope: {summary["rerun_metadata"]["lane_description"]}
-
-This note records the first local analytical Phase 3 certificate attempt for
-the cs2019-to-RNN game-equivalence programme. It intentionally does not perform
-the Feedbax GraphSpec execution conversion or the full `63cec06` matrix-analysis
-generalization; those remain the next workup after the local certificate.
-
-## Fixed Game
-
-- Game-card issue: `{summary["game_card_issue"]}`.
-- Adversary-equivalence issue: `{summary["adversary_equivalence_issue"]}`.
-- State: 48D delay-augmented C&S state.
-- Disturbance: 8D epsilon through `B_w = [I_8; 0]`.
-- Cost: C&S 60-step `(t/T)^6` schedule from Phase 0.
-- Primary robust target: `gamma = 1.05 * gamma_star`.
-
-## Local Objective-Training Result
-
-Status: `{summary["phase3_status"]}`.
-
-{summary["interpretation"]}
-
-The clean LQR trainers optimize time-varying full-state gains `K[t]` over a
-deterministic full-rank initial-state ensemble. The full-rank ensemble is
-necessary because a single reach trajectory can match behavior while leaving
-many gain columns underdetermined.
-
-Best objective-trained controller: `{summary["best_objective_training"]}`.
-
-{"\n".join(objective_rows)}
-
-## Teacher-Fit Representational Check
-
-Status: `{summary["teacher_fit_status"]}`.
-
-The teacher-fit check trains the same gain tensor shape by gradient descent
-against the analytical gain tensor directly. This is not the minimax objective
-gate; it isolates representation and metric plumbing from objective-optimizer
-quality.
-
-| teacher fit | gain rel err | clean cost | peak forward v | terminal err |
-|---|---:|---:|---:|---:|
-| `teacher_lqr_fit` | {summary["teacher_fits"]["teacher_lqr_fit"]["gain_relative_error"]:.8g} | {summary["teacher_fits"]["teacher_lqr_fit"]["canonical_clean_cost"]:.8g} | {summary["teacher_fits"]["teacher_lqr_fit"]["canonical_peak_forward_velocity"]:.8g} | {summary["teacher_fits"]["teacher_lqr_fit"]["canonical_terminal_position_error_m"]:.8g} |
-| `teacher_hinf_fit` | {summary["teacher_fits"]["teacher_hinf_fit"]["gain_relative_error"]:.8g} | {summary["teacher_fits"]["teacher_hinf_fit"]["canonical_clean_cost"]:.8g} | {summary["teacher_fits"]["teacher_hinf_fit"]["canonical_peak_forward_velocity"]:.8g} | {summary["teacher_fits"]["teacher_hinf_fit"]["canonical_terminal_position_error_m"]:.8g} |
-
-## Frozen-Controller Audits
-
-{"\n".join(audit_rows)}
-
-Held-out adversary audits use independent projected open-loop epsilon searches
-with fresh seeds. Each inner search retains the best-seen objective, not only
-the final endpoint, following the Phase 1 `89891ab`/`a7dad8a` lesson.
-
-## Interpretation
-
-This pass should not be treated as a successful Phase 3 exit certificate unless
-`phase3_status` is `passed`. A failed clean LQR gain recovery means the local
-linear certificate still needs work before GRU same-game interpretation.
-
-The important positive result is narrower: the analytical replay, metric, and
-held-out adversary audit surfaces now exist locally and are tied to the exact
-Phase 0-2 game. Adam-warm-started L-BFGS-B can recover the clean objective and
-canonical behavior, but not the raw analytical gain tensor under the current
-full-rank ensemble certificate. The next decision is whether to replace the raw
-gain-error gate with a behaviorally equivalent certificate or introduce a more
-structured identifiable linear-policy optimization method before attempting the
-GRU phase.
-"""
-
-
-def _npz_arrays(result: Phase3LinearRoundTripResult) -> dict[str, np.ndarray]:
-    arrays: dict[str, np.ndarray] = {
-        "lqr_reference_K": np.asarray(result.reference.lqr_solution.K),
-        "hinf_reference_K": np.asarray(result.gamma_ref.solution.K),
-        "adam_lqr_K": np.asarray(result.lqr_training.K),
-        "lbfgsb_after_adam_lqr_K": np.asarray(result.lqr_quasi_newton_training.K),
-        "teacher_lqr_K": np.asarray(result.lqr_teacher_fit.K),
-        "teacher_hinf_K": np.asarray(result.hinf_teacher_fit.K),
-        "adam_lqr_x": np.asarray(result.lqr_training.canonical_rollout.x),
-        "adam_lqr_u": np.asarray(result.lqr_training.canonical_rollout.u),
-        "lbfgsb_after_adam_lqr_x": np.asarray(result.lqr_quasi_newton_training.canonical_rollout.x),
-        "lbfgsb_after_adam_lqr_u": np.asarray(result.lqr_quasi_newton_training.canonical_rollout.u),
-        "teacher_lqr_x": np.asarray(result.lqr_teacher_fit.canonical_rollout.x),
-        "teacher_lqr_u": np.asarray(result.lqr_teacher_fit.canonical_rollout.u),
-        "teacher_hinf_x": np.asarray(result.hinf_teacher_fit.canonical_rollout.x),
-        "teacher_hinf_u": np.asarray(result.hinf_teacher_fit.canonical_rollout.u),
-    }
-    for audit in result.audits:
-        arrays[f"{audit.label}_clean_x"] = np.asarray(audit.clean_rollout.x)
-        arrays[f"{audit.label}_clean_u"] = np.asarray(audit.clean_rollout.u)
-        arrays[f"{audit.label}_heldout_x"] = np.asarray(audit.heldout.rollout.x)
-        arrays[f"{audit.label}_heldout_u"] = np.asarray(audit.heldout.rollout.u)
-        arrays[f"{audit.label}_heldout_epsilon"] = np.asarray(audit.heldout.epsilon)
-    return arrays
-
-
-def write_outputs(
-    issue_id: str = ISSUE_ID,
-    *,
-    discretization: str = DEFAULT_DISCRETIZATION,
-    lane: str = DEFAULT_LANE,
-) -> dict[str, Any]:
-    """LEGACY (frozen 2026-07-03, issue 64d5f13).
-
-    This writer/driver is not contract-native: it predates the feedbax recipe,
-    bundle, and manifest contracts. It may not run without deliberate
-    realignment. Do not copy it as a pattern for new analyses. The
-    port-or-delete decision is deferred to the report-stage era (feedbax
-    132f98c) / publication.
-
-    Scoped legacy surface: `write_outputs`. The math core in this module is
-    LIVE library code consumed by registered recipes; this banner does not
-    apply to the math core.
-    """
-
-    require_jax_x64("linear round-trip materialization")
-    result = run_phase3_linear_round_trip()
-    summary = result_summary(result, discretization=discretization, lane=lane)
-    results_dir = mkdir_p(REPO_ROOT / "results" / issue_id)
-    notes_dir = mkdir_p(results_dir / "notes")
-    artifact_dir = mkdir_p(REPO_ROOT / "_artifacts" / issue_id / "linear_round_trip")
-    readme = results_dir / "README.md"
-    if not readme.exists():
-        readme.write_text(
-            "Phase 3 linear same-game round-trip artifacts for the cs2019-to-RNN "
-            "game-equivalence programme. See `notes/linear_round_trip.md` for "
-            "the tracked local certificate attempt.\n",
-            encoding="utf-8",
-        )
-
-    npz_path = artifact_dir / "linear_round_trip.npz"
-    np.savez_compressed(npz_path, **_npz_arrays(result))
-    summary["artifact_npz"] = f"_artifacts/{issue_id}/linear_round_trip/{npz_path.name}"
-    summary["artifact_npz_keys"] = sorted(_npz_arrays(result).keys())
-    summary["tracked_note"] = f"results/{issue_id}/notes/linear_round_trip.md"
-    summary["tracked_manifest"] = f"results/{issue_id}/notes/linear_round_trip_manifest.json"
-
-    note_path = notes_dir / "linear_round_trip.md"
-    manifest_path = notes_dir / "linear_round_trip_manifest.json"
-    note_path.write_text(render_markdown(summary), encoding="utf-8")
-    manifest_path.write_text(
-        json.dumps(summary, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    return summary
-
-
 __all__ = [
     "ADVERSARY_EQUIVALENCE_ISSUE_ID",
     "GAME_CARD_ISSUE_ID",
@@ -996,11 +800,9 @@ __all__ = [
     "canonical_initial_state",
     "ensemble_clean_objective",
     "ensemble_initial_states",
-    "render_markdown",
     "result_summary",
     "rollout_task_cost",
     "run_phase3_linear_round_trip",
     "train_lqr_gradient_controller",
     "train_lqr_quasi_newton_controller",
-    "write_outputs",
 ]
