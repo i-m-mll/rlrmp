@@ -114,12 +114,20 @@ def test_orchestrated_path_accepts_every_frontend_document(tmp_path: Path) -> No
 
 
 def test_fresh_orchestration_request_has_no_checkpoint_input(tmp_path: Path) -> None:
-    request, _context, _registry = launch.build_orchestration_request(
-        _emitted_launch(tmp_path), row=None, driver="local"
+    authored = _emitted_launch(tmp_path)
+    sidecar_path = authored.path.with_suffix(".json.artifact.json")
+    sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    sidecar["uri"] = "repo://matrix.json"
+    sidecar_path.write_text(json.dumps(sidecar), encoding="utf-8")
+    request, context, _registry = launch.build_orchestration_request(
+        authored, row=None, driver="local"
     )
 
     assert request.inputs == []
     assert request.metadata["row_selection"] == {"row_ids": []}
+    assert request.authored.uri == "repo://matrix.json"
+    assert context.artifact_resolver is not None
+    assert context.artifact_resolver(request.authored) == authored.path.read_bytes()
 
 
 @pytest.mark.parametrize(
