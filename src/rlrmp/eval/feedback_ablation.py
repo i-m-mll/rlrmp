@@ -41,6 +41,7 @@ from rlrmp.eval.perturbation_bank import (
     delta_full_qrf_cost_summary,
     full_qrf_cost_summary,
 )
+from rlrmp.eval.replicates import is_replicate_array
 from rlrmp.eval.trial_inputs import EvaluationRunInputs, repeat_single_validation_trial
 from rlrmp.analysis.gru_standard_certificate import normalize_gru_hps
 from rlrmp.model.feedback_descriptors import (
@@ -129,7 +130,7 @@ def evaluate_model_on_trial_specs(
     """Execute one feedback-ablation evaluation at the eval-layer boundary."""
 
     model_arrays, model_other = eqx.partition(
-        model, lambda leaf: _is_replicate_array(leaf, n_replicates)
+        model, lambda leaf: is_replicate_array(leaf, n_replicates)
     )
 
     def eval_one_replicate(model_array_leaves: Any, key: Any) -> Any:
@@ -2730,7 +2731,7 @@ def _select_replicate_trial_inputs(trial_specs: Any, replicate: int, n_replicate
 
 def _select_replicate_tree(tree: Any, replicate: int, n_replicates: int) -> Any:
     return jt.map(
-        lambda leaf: leaf[replicate] if _is_replicate_array(leaf, n_replicates) else leaf,
+        lambda leaf: leaf[replicate] if is_replicate_array(leaf, n_replicates) else leaf,
         tree,
     )
 
@@ -2745,10 +2746,6 @@ def _infer_batch_size(trial_specs: Any) -> int:
             if pos is not None:
                 return int(pos.shape[0])
     raise ValueError("could not infer trial batch size")
-
-
-def _is_replicate_array(leaf: Any, n_replicates: int) -> bool:
-    return eqx.is_array(leaf) and leaf.ndim >= 1 and leaf.shape[0] == n_replicates
 
 
 __all__ = [

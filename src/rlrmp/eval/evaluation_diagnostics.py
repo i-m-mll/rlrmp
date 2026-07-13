@@ -25,6 +25,7 @@ from rlrmp.eval.gru_diagnostics import (
     summarize_gru_jacobians,
     summarize_rollout_behavior,
 )
+from rlrmp.eval.replicates import is_replicate_array
 from rlrmp.eval.rollout_states import CachedEvaluationStates
 from rlrmp.eval.trial_inputs import (
     EvaluationRunInputs,
@@ -126,7 +127,7 @@ def _evaluate_run(
     trial_specs = repeat_single_validation_trial(pair.task.validation_trials, n_rollout_trials)
     model_arrays, model_other = eqx.partition(
         model,
-        lambda leaf: _is_replicate_array(leaf, n_replicates),
+        lambda leaf: is_replicate_array(leaf, n_replicates),
     )
 
     def eval_one_replicate(model_array_leaves: Any, key: Any) -> Any:
@@ -186,10 +187,6 @@ def _checkpoint_policy(manifest_path: Path | None) -> str:
 def _resolve_repo_path(value: Any, *, repo_root: Path) -> Path:
     path = Path(str(value)).expanduser()
     return path if path.is_absolute() else repo_root / path
-
-
-def _is_replicate_array(leaf: Any, n_replicates: int) -> bool:
-    return eqx.is_array(leaf) and leaf.ndim >= 1 and leaf.shape[0] == n_replicates
 
 
 __all__ = ["DEFAULT_N_ROLLOUT_TRIALS", "evaluate_gru_diagnostics_runs"]

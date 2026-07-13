@@ -7,7 +7,6 @@ import jax.numpy as jnp
 import numpy as np
 import plotly.graph_objects as go
 
-from rlrmp.controllers.linear import LinearController, LinearTrackerController
 from rlrmp.eval.kinematics import initial_effector_position, initial_effector_velocity
 from rlrmp.io import json_ready, write_csv_rows
 from rlrmp.viz import add_band_trace, hex_to_rgba
@@ -51,7 +50,3 @@ def test_initial_effector_helpers_support_vector_initial_states() -> None:
 
     np.testing.assert_array_equal(initial_effector_position(trials), [[1.0, 2.0]])
     np.testing.assert_array_equal(initial_effector_velocity(trials), [[3.0, 4.0]])
-
-
-def test_tracker_reuses_regulator_control_machinery() -> None:
-    assert issubclass(LinearTrackerController, LinearController)

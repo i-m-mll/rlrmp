@@ -7,6 +7,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping
 
+from rlrmp.analysis.json_values import json_float as _json_float
+
 CAP_INDEPENDENT_LAUNCH_BASES = frozenset(
     {
         "fixed_hvp_p90",
@@ -155,12 +157,3 @@ def _winning_basis(candidates: list[LambdaScaleCandidate], recommended: float) -
 
 def _normalize_basis(basis: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", basis.strip().lower()).strip("_")
-
-
-def _json_float(value: float) -> float | str:
-    value = float(value)
-    if math.isinf(value):
-        return "inf" if value > 0 else "-inf"
-    if math.isnan(value):
-        return "nan"
-    return value

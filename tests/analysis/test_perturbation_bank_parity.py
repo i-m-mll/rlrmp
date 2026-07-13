@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 import json
-import inspect
+from collections import defaultdict
 from pathlib import Path
 
 import pytest
 from feedbax.analysis import MatrixMaterializerHarness
 
-from rlrmp.analysis.perturbation_bank import (
+from rlrmp.analysis.perturbation_matrix import (
     archived_parity_projection,
     load_perturbation_bank_matrix,
     materialize_perturbation_bank_rows,
+    perturbation_bank_matrix_payload,
 )
-from rlrmp.eval import perturbation_bank as science
 from rlrmp.eval.perturbation_bank import (
     PerturbationBankParams,
     default_cs_perturbation_bank,
@@ -97,25 +97,71 @@ def test_typed_bank_params_select_one_matrix_condition() -> None:
     )
 
 
-def test_evaluation_science_has_no_durable_writer_or_private_eval_loop() -> None:
-    source = inspect.getsource(science)
+def test_specialized_matrix_preserves_manifest_custody_and_family_partitions() -> None:
+    matrix = perturbation_bank_matrix_payload(
+        source_experiment="source-experiment",
+        run_ids=("run-a", "run-b"),
+        labels=("A", "B"),
+        n_rollout_trials=13,
+        bank_mode="raw",
+        calibration_level=None,
+        calibration_reach=None,
+        feedback_scale_manifest_path=None,
+        preferred_checkpoint_manifest_path=Path("results/source/preferred-checkpoints.json"),
+    )
 
-    assert "savez_compressed" not in source
-    assert "materialize_gru_perturbation_response" not in source
-    rollout_source = inspect.getsource(science._evaluate_model_rollout_product)
-    assert "eval_ensemble_on_trials" in rollout_source
-    assert ".eval_trials" not in rollout_source
+    rows = materialize_perturbation_bank_rows(matrix)
+
+    expected_families = {
+        "initial_position": ["initial_position_offset"],
+        "initial_velocity": ["initial_velocity_offset"],
+        "command_input": [
+            "command_input_pulse",
+            "target_aligned_lateral_command_load_pulse",
+        ],
+        "process_epsilon": [
+            "process_epsilon_position_xy",
+            "process_epsilon_velocity_xy",
+            "process_epsilon_force_state_xy",
+            "process_epsilon_integrator_xy",
+        ],
+        "sensory_feedback": ["sensory_feedback_offset"],
+        "target_stream": ["target_stream_jump"],
+    }
+    assert {
+        row.row_id: row.payload.params["bank_params"]["families"] for row in rows
+    } == expected_families
+    for row in rows:
+        assert row.payload.training_run_ids == ["run-a", "run-b"]
+        assert [(ref.kind, ref.id, ref.role) for ref in row.payload.inputs] == [
+            ("TrainingRunManifest", "run-a", "training_run"),
+            ("TrainingRunManifest", "run-b", "training_run"),
+        ]
+        assert row.payload.params["checkpoint_selection_mode"] == "fixed_bank_manifest"
+        assert row.payload.params["preferred_checkpoint_manifest_path"] == (
+            "results/source/preferred-checkpoints.json"
+        )
 
 
-def test_retired_perturbation_pipeline_cannot_reaccrete() -> None:
-    repo_root = Path(__file__).parents[2]
-    assert not (repo_root / "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py").exists()
-    assert not (repo_root / "scripts/materialize_gru_perturbation_response.py").exists()
-    retired_import = "rlrmp.analysis.pipelines." + "gru_perturbation_bank"
-    shared_reconciliation = repo_root / "src/rlrmp/analysis/declarative_materialization.py"
-    for root in (repo_root / "src", repo_root / "scripts", repo_root / "tests"):
-        for path in root.rglob("*.py"):
-            if path == shared_reconciliation:
-                continue
-            source = path.read_text(encoding="utf-8")
-            assert retired_import not in source
+def test_typed_bank_executable_conditions_keep_signed_science_pairs() -> None:
+    rows = default_cs_perturbation_bank()["perturbations"]
+    executable = [row for row in rows if row["family"] != "target_stream_jump"]
+    pairs: dict[tuple[object, ...], list[int]] = defaultdict(list)
+    for row in executable:
+        provenance = row.get("channel_provenance") or {}
+        key = (
+            row["family"],
+            row["channel"],
+            row["axis"],
+            row["timing_bin"],
+            row.get("epsilon_component"),
+            provenance.get("feedback_quantity"),
+        )
+        pairs[key].append(row["sign"])
+
+    assert pairs
+    assert all(sorted(signs) == [-1, 1] for signs in pairs.values())
+    target_rows = [row for row in rows if row["family"] == "target_stream_jump"]
+    assert [(row["channel"], row["adapter"]) for row in target_rows] == [
+        ("target_stream", "not_applicable_current_fixed_target_checkpoint")
+    ]

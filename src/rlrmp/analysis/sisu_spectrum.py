@@ -36,6 +36,7 @@ from rlrmp.analysis.math.output_feedback import (
     make_cs_output_feedback_initial_state,
 )
 from rlrmp.eval import sisu_spectrum as sisu_eval
+from rlrmp.mappings import as_mapping as _mapping
 from rlrmp.paths import REPO_ROOT
 
 
@@ -767,10 +768,6 @@ def _response_summary(value: Mapping[str, Any]) -> Mapping[str, Any]:
     if not isinstance(response, Mapping):
         raise ValueError("cached SISU state has no robust response summary")
     return response
-
-
-def _mapping(value: Any) -> Mapping[str, Any]:
-    return value if isinstance(value, Mapping) else {}
 
 
 def _delta(high: float | None, low: float | None) -> float | None:

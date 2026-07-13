@@ -4371,10 +4371,6 @@ def _infer_trial_n_time(trial_specs: Any, minimum: int) -> int:
     return minimum
 
 
-def _is_replicate_array(leaf: Any, n_replicates: int) -> bool:
-    return eqx.is_array(leaf) and leaf.ndim >= 1 and leaf.shape[0] == n_replicates
-
-
 def _sign_label(sign: int) -> str:
     return "pos" if sign > 0 else "neg"
 

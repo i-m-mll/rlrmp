@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Any
 
-import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.tree as jt
@@ -15,6 +14,7 @@ import numpy as np
 
 from rlrmp.analysis.math.summary_stats import summary_stats
 from rlrmp.eval.checkpoint_selection import ReplicateCheckpointSelection
+from rlrmp.eval.replicates import is_replicate_array
 from rlrmp.model.feedback_descriptors import (
     DESCRIPTOR_PAYLOAD_KEY,
     resolve_controller_feedback_view_from_gru_input,
@@ -515,13 +515,9 @@ def _jacobian_sample_times(
 
 def _select_replicate_tree(tree: Any, replicate: int, n_replicates: int) -> Any:
     return jt.map(
-        lambda leaf: leaf[replicate] if _is_replicate_array(leaf, n_replicates) else leaf,
+        lambda leaf: leaf[replicate] if is_replicate_array(leaf, n_replicates) else leaf,
         tree,
     )
-
-
-def _is_replicate_array(leaf: Any, n_replicates: int) -> bool:
-    return eqx.is_array(leaf) and leaf.ndim >= 1 and leaf.shape[0] == n_replicates
 
 
 def _sigmoid(x: Any) -> Any:

@@ -17,6 +17,7 @@ from feedbax.config.namespace import TreeNamespace
 from pydantic import BaseModel, ConfigDict, Field
 
 from rlrmp.io import update_marked_section
+from rlrmp.mappings import as_mapping as _mapping
 from rlrmp.paths import REPO_ROOT
 from rlrmp.runtime.params_models import register_params_model
 from rlrmp.runtime.spec_migrations import (
@@ -346,7 +347,3 @@ def _format_metric(value: float | None) -> str:
     if value is None:
         return ""
     return f"{value:.6g}"
-
-
-def _mapping(value: Any) -> Mapping[str, Any]:
-    return value if isinstance(value, Mapping) else {}

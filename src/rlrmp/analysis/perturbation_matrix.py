@@ -1,4 +1,4 @@
-"""Typed perturbation-bank science over manifest-canonical evaluation rows."""
+"""Typed perturbation-matrix science over manifest-canonical evaluation rows."""
 
 from __future__ import annotations
 
@@ -64,9 +64,7 @@ def perturbation_bank_matrix_payload(
             "calibration_level": calibration_level,
             "calibration_reach": calibration_reach,
             "feedback_scale_manifest_path": (
-                None
-                if feedback_scale_manifest_path is None
-                else str(feedback_scale_manifest_path)
+                None if feedback_scale_manifest_path is None else str(feedback_scale_manifest_path)
             ),
             "preferred_checkpoint_manifest_path": (
                 None
@@ -82,8 +80,7 @@ def perturbation_bank_matrix_payload(
     )
     matrix["base"]["training_run_ids"] = list(run_ids)
     matrix["base"]["inputs"] = [
-        {"kind": "TrainingRunManifest", "id": run_id, "role": "training_run"}
-        for run_id in run_ids
+        {"kind": "TrainingRunManifest", "id": run_id, "role": "training_run"} for run_id in run_ids
     ]
     return json.loads(json.dumps(matrix))
 

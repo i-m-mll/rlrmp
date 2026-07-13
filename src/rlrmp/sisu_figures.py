@@ -8,6 +8,7 @@ from typing import Any
 from feedbax.contracts.figures import FigureSpec
 
 from rlrmp.figures import standard_matrix_profile_spec
+from rlrmp.mappings import as_mapping as _mapping
 
 
 SISU_FIGURE_PAYLOAD_SCHEMA_ID = "rlrmp.figure_data.sisu_spectrum"
@@ -114,10 +115,6 @@ def _reference_series(value: Any) -> dict[str, Any]:
             "upper": [y + delta for y, delta in zip(mean, spread, strict=True)],
         },
     }
-
-
-def _mapping(value: Any) -> Mapping[str, Any]:
-    return value if isinstance(value, Mapping) else {}
 
 
 __all__ = [

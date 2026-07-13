@@ -11,6 +11,11 @@ import jax.numpy as jnp
 import numpy as np
 from jaxtyping import Array, Float
 
+from rlrmp.analysis.json_values import (
+    json_float as _json_float,
+    json_float_or_none as _json_float_or_none,
+)
+from rlrmp.mappings import as_mapping as _mapping
 from rlrmp.train.closed_loop_finite_adversary import AFFINE_POLICY, LINEAR_NO_BIAS_POLICY
 
 PER_TRIAL_LINEAR_NO_BIAS_POLICY = "per_trial_linear_no_bias"
@@ -862,24 +867,3 @@ def _norm(value: jnp.ndarray) -> jnp.ndarray:
 
 def _normalize(value: jnp.ndarray) -> jnp.ndarray:
     return value / jnp.maximum(_norm(value), jnp.asarray(1e-30, dtype=value.dtype))
-
-
-def _mapping(value: Any) -> Mapping[str, Any]:
-    if isinstance(value, Mapping):
-        return value
-    return {}
-
-
-def _json_float(value: float) -> float | str:
-    value = float(value)
-    if math.isinf(value):
-        return "inf" if value > 0 else "-inf"
-    if math.isnan(value):
-        return "nan"
-    return value
-
-
-def _json_float_or_none(value: float | None) -> float | str | None:
-    if value is None:
-        return None
-    return _json_float(value)

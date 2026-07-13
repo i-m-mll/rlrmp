@@ -18,6 +18,7 @@ from feedbax.analysis.types import AnalysisInputData
 from feedbax.config.namespace import TreeNamespace
 
 from rlrmp.io import read_json, update_marked_section
+from rlrmp.mappings import as_mapping as _mapping
 from rlrmp.paths import REPO_ROOT
 
 TRAINING_DIAGNOSTICS_ANALYSIS_TYPE = "rlrmp.training_diagnostics_summary"
@@ -438,10 +439,6 @@ def _json_scalar(value: Any) -> float | int | bool:
     if isinstance(scalar, np.generic):
         scalar = scalar.item()
     return scalar
-
-
-def _mapping(value: Any) -> Mapping[str, Any]:
-    return value if isinstance(value, Mapping) else {}
 
 
 def _format_latest_metric(latest: Mapping[str, Any], name: str) -> str:

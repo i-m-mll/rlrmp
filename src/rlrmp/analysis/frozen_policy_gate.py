@@ -19,6 +19,10 @@ from rlrmp.analysis.frozen_adversary_audit import (
     realized_epsilon_energy,
     shared_policy_energy_metric_blocks,
 )
+from rlrmp.analysis.json_values import (
+    json_float as _json_float,
+    json_float_or_none as _json_float_or_none,
+)
 
 DIRECT_EPSILON_MECHANISM = "direct_epsilon"
 FrozenGateMechanism = Literal["direct_epsilon", "linear_no_bias", "affine"]
@@ -300,21 +304,6 @@ def validate_direct_hvp_lambda_source(
         "used_as_lambda_criterion": True,
         "per_substrate_beta_mapping_available": bool(payload.get("rows")),
     }
-
-
-def _json_float(value: float) -> float | str:
-    value = float(value)
-    if math.isinf(value):
-        return "inf" if value > 0 else "-inf"
-    if math.isnan(value):
-        return "nan"
-    return value
-
-
-def _json_float_or_none(value: float | None) -> float | str | None:
-    if value is None:
-        return None
-    return _json_float(value)
 
 
 def _dict(value: Any) -> dict[str, Any]:
