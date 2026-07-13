@@ -3,268 +3,295 @@
 This packet audits the owner-selected engineering-smoke families under
 [issue:509368b]: [issue:2cb6a58] (M1, force-state observability by robust
 training) and [issue:4eb51ee] (A1, mixed certificate modes across evaluation
-lenses). It separates authored-road conformance, smoke plausibility, and
-scientific evidence. The current packet is an audit-by-construction result:
-static authoring exposed real road gaps before any invalid matrix, bypass, or
-training run was created.
+lenses). It separates road conformance, early-training plausibility, and
+scientific evidence. Every run described here was local and non-billable.
 
-## Verdict
+## Current verdict
 
 | Claim | M1 | A1 |
 |---|---|---|
-| Static packet accurately describes the selected family | pass | pass |
-| Dependency pin and ordered-lowerer imports | pass | pass |
-| Current road can author and execute the selected family | blocked | blocked |
-| Local 100-batch smoke plausibility | blocked, not run | blocked, not run |
-| Scientific evidence | not established | not established |
+| Frozen authored matrix | pass: four rows | pass: six rows |
+| Portable authored-matrix sidecar | pass | pass |
+| Local stop-50/resume-100 training | pass for all four rows | **blocked; not started** |
+| Downstream evaluation/analysis/figure/report | blocked by partitioned road gaps | **blocked by preflight gaps** |
+| Early-training plausibility | finite losses and movement only; incomplete downstream criteria | not observed |
+| Scientific evidence | none | none |
 
-No hypothesis is answered. No model was trained, no checkpoint was written, and
-no evaluation, analysis, figure, or report manifest was generated. The blocker
-finding is itself road-conformance evidence; it is not smoke or neuroscience
-evidence.
+No hypothesis is answered. M1 proves that the governed four-row training and
+checkpoint lifecycle can execute locally; it does not establish convergence,
+robustness, or an effect of force-state observability. A1 has not trained at all.
+Its block is deliberate: training before the evaluation and figure producers are
+executable would spend compute without producing the frozen acceptance packet.
 
-## Revision and environment snapshot
+## Revision and dependency snapshot
+
+The 509 worktree was clean before this documentation-only update.
 
 | Item | Identity |
 |---|---|
-| Authoring baseline | `bd5292565ea56148734384ef8ee3393dce73832b` |
-| M1 packet commit | `4a86e53cb043a483592bf7e0e7c6e938323ee01c` |
-| A1 packet commit | `d5f96d8ff6d631abf67cb15579cffb42423ed4f0` |
-| Pin integration commit | `6d74a6d81a929f060319dcb1c1582f40e3ae7ee0` |
-| Feature merge commit | `03ceacbeb40902bf5620f05cbde9ccd7f9b3ffe0` |
-| Protected Feedbax `develop` | `e7f3ef1eb0b631bb475407b900b54c6256135fca` |
-| Feedbax feature parent | `fc819ff0cd73c7550fb300b35f3ff8e6159213f9` |
-| `uv.lock` SHA-256 before the feature merge | `1c5e08022cd1eb54f32a84c01afb22638d63ee6dada161915a78fbd8b50b45e4` |
-| Host | macOS Darwin 25.5.0, arm64, Apple M4 Pro |
-| Tool/runtime observed by targeted tests | `uv 0.9.27`; Python 3.13.5; pytest 9.0.3 |
-| Execution tier | local only, non-billable |
+| Experiment-authoring baseline | `bd5292565ea56148734384ef8ee3393dce73832b` |
+| Current RLRMP feature head | `9dc3c5dba81560635961dc3a309783e412b27e6e` |
+| A1 reproducibility commit / merge | `093fb567` / `45999cc8` |
+| Portable-sidecar commit / merge | `46dbf51d` / `07282d2c` |
+| Current custody-restoration head | `9dc3c5db` |
+| Protected and pinned Feedbax `develop` | `060d65d285969ec11e4a284712913550c462ba18` |
+| Exact Feedbax dependency used by accepted M1 runs | `a86f6b8685d5ce6a2761d26a814b65528b9dee1a` |
+| Current clean signed Feedbax staging head | `257573ea7642b6570d12afac8a71ee913256e93a` |
+| Implemented staging merges after accepted runs | `6e0352ab` ([issue:7e4cf6b]); `c2932138` ([issue:ca2f937]); `257573ea` ([issue:d81a868]) |
+| `uv.lock` SHA-256 | `1c5e08022cd1eb54f32a84c01afb22638d63ee6dada161915a78fbd8b50b45e4` |
+| Runtime | Python 3.13.5; local macOS arm64 |
+| Execution policy | one seed (`42`), `n_batches=100`, local only, non-billable |
 
-The Feedbax auth request was [issue:bcf5d8a]/[issue:427cffa] delivery
-`d63e7780`, completed successfully with signed merge `e7f3ef1e`. The tracked
-`ci/feedbax-ref.toml` and local Feedbax `develop` checkout both resolved to that
-merge before dependency-sensitive tests ran. `fc819ff0` is recorded only as the
-feature parent, never as the protected dependency identity.
+The protected pin remains the published dependency identity. Staging `a86f6b86`
+is the exact dependency used for the accepted M1 runs. The live clean signed
+staging head has since advanced through the staged-bundle CLI merge `6e0352ab`,
+resolved-evaluation-inputs merge `c2932138`, and checkpoint resolver merge
+`257573ea`. The current staging head is `257573ea7642b6570d12afac8a71ee913256e93a`.
+Neither staging SHA is represented as the protected pin.
 
-## Frozen row and path identities
+## Frozen authored identities and portable custody
 
-### M1: force-state observability
-
-The intended compact matrix is blocked and therefore has no honest content
-hash, planned-run ID, or resolved override path. All four identities are frozen
-without placeholder digests:
-
-| Row | Force state | Training | Seed | Batches | Matrix/run identity |
-|---|---|---|---:|---:|---|
-| `force_visible__nominal_seed42_smoke100` | visible | nominal | 42 | 100 | `blocked_not_generated` |
-| `force_hidden__nominal_seed42_smoke100` | hidden | nominal | 42 | 100 | `blocked_not_generated` |
-| `force_visible__broad_pgd_seed42_smoke100` | visible | broad-epsilon PGD | 42 | 100 | `blocked_not_generated` |
-| `force_hidden__broad_pgd_seed42_smoke100` | hidden | broad-epsilon PGD | 42 | 100 | `blocked_not_generated` |
-
-The conceptual axes are `force_filter_feedback` and
-`broad_epsilon_pgd_training`. They do not yet have valid executable
-`TrainingRunSpec` pointers because the matrix road patches an already-lowered
-spec. [issue:5816bf0] owns governed per-row authoring-intent re-lowering.
-
-### A1: mixed certificate modes
-
-Tracked intent: `results/4eb51ee/runs/cohort.intent.json`.
-
-| Row | Architecture | Certificate mode | Training | Seed | Base identity |
-|---|---|---|---|---:|---|
-| `sg_nominal_s42` | static-gain linear | `static_gain` | nominal | 42 | `a1.static_gain_linear.matched.v1` |
-| `sg_robust_s42` | static-gain linear | `static_gain` | broad-epsilon PGD | 42 | `a1.static_gain_linear.matched.v1` |
-| `alr_nominal_s42` | linear recurrent | `augmented_linear` | nominal | 42 | `a1.augmented_linear_recurrent.matched.v1` |
-| `alr_robust_s42` | linear recurrent | `augmented_linear` | broad-epsilon PGD | 42 | `a1.augmented_linear_recurrent.matched.v1` |
-| `gru_nominal_s42` | GRU | `empirical_nonlinear` | nominal | 42 | `a1.gru.matched.v1` |
-| `gru_robust_s42` | GRU | `empirical_nonlinear` | broad-epsilon PGD | 42 | `a1.gru.matched.v1` |
-
-The intent contains 24 concrete RFC 6901 pointers covering three architecture
-values, three certificate-mode values, six base IDs, six training distributions,
-and six seeds. Independent review resolved all 24 to non-null values. Executable
-`TrainingRunSpec` override pointers remain explicitly null with status
-`blocked_not_resolved` under [issue:427d0d8]; no schema or hash is invented.
-
-The four evaluation-only lenses are `nominal_clean`, `riccati_epsilon`,
-`process_noise`, and `held_out_validation`. They are not training axes.
-
-## Tracked file identities
-
-These are revision-pinned Git blob IDs followed by SHA-256 of the committed
-bytes.
-
-| File | Git blob | SHA-256 |
+| Family | Matrix SHA-256 and artifact ID | Sidecar URI |
 |---|---|---|
-| `results/2cb6a58/README.md` | `ccb9b4b5be70f5075f641ce558dfaa188789abef` | `eca1fac1a09c6df8cf5fd4f78311cba60eca991677b14c8a8d5b7a9abb113f41` |
-| `results/2cb6a58/RUN_PLAN.md` | `f025747d0b895f15267b929231240bb48d5e7fc7` | `f5afba943d61698fec70f7d4b4a2ce97ec94e41280133e18c979289c02f3c927` |
-| `results/2cb6a58/notes/static_authoring_gap.md` | `126726e0d2e1a9f5216b65a2a52d94fe4d43e0d5` | `cb0f93f7dd697d8062b121ea752737a517304bcd36b80d7acd929e3eb212ad55` |
-| `results/4eb51ee/README.md` | `b8dab54a974ef7dcceafa688620f0fc5f5c096a1` | `1b37bade484ad34036018f06d29b23008f87cbfa4fc39d1c0dc59edfd70396bd` |
-| `results/4eb51ee/RUN_PLAN.md` | `5582623f374f6e17cdea77077fed861725d83e9e` | `86d060efe13b9ba6585eaf09c3e1416e33404b1cbe9d85189090b5f6988f5dc0` |
-| `results/4eb51ee/runs/cohort.intent.json` | `35633373a61d123c8d7c79d54410a67de39132da` | `8e061879f59d9a12d2d77e9cc6ca3e73dd97effd624cdd2cbc9683b67cfd6ce1` |
-| `results/4eb51ee/analysis/cross_lens/spec.json` | `0672c58ad6266333563691c0dd627af31083f7fc` | `230073780755b23e0b5daa37094e642ebca2ba59fd7afd57f6de59d947c98201` |
+| M1 | `547efe4d07e86f941c307a8a95ada987666935742310e2faa19a504cfeb9a1f5` | `repo://results/2cb6a58/runs/matrix.json` |
+| A1 | `78108ca2286af701583e5c4eb87a92736820b5c9260129637722c61831a9e52f` | `repo://results/4eb51ee/runs/matrix.json` |
 
-## Stage evidence
+[issue:238eaea] made the tracked A1 authoring document reproduce the frozen
+matrix byte-for-byte. [issue:e093cd9] made governed sidecars checkout-independent,
+materializable, and hash-verifiable. Public cold emission reproduced both hashes
+without hand-normalization. The A1 analysis intent remains
+`7ada9db0fc412e9cd19b0e8a77308e7d295151c08cf05ee3fb0c54c02cbf62b6`.
 
-| Stage | M1 | A1 | Evidence or blocker |
+## M1 training and custody evidence
+
+All four rows completed an accepted batch-50 stop followed by strict resume to
+batch 100. Each stop and resume conformance record reports `overall=pass`.
+
+| Row | Final run ID | Stop run set | Resume run set | Batch-100 loss | Latest checkpoint ref |
+|---|---|---|---|---:|---|
+| `force_visible__nominal_seed42_smoke100` | `feedbax-training-run:13ba53f325a05f24be910385774c1872` | `2026-07-13-6bae06ab` | `2026-07-13-b5e80253` | `23244.3765625` | `tx-3868327ebce5417aa8eeb169cb6d2cc8` |
+| `force_hidden__nominal_seed42_smoke100` | `feedbax-training-run:97c76892178bd32eadcc8eefb834bfd6` | `2026-07-13-1a170b75` | `2026-07-13-1ac1bcee` | `22282.5359375` | `tx-44f070e42cce42afb488669e95465c84` |
+| `force_visible__broad_pgd_seed42_smoke100` | `feedbax-training-run:99ef061bf8b05f8761db7483e75a2512` | `2026-07-13-7afcafb8` | `2026-07-13-bd90c6fc` | `28446.34140625` | `tx-41d81f97bb8447f097f906d0a9f094d9` |
+| `force_hidden__broad_pgd_seed42_smoke100` | `feedbax-training-run:6ad196b423dec55afbf1816bc012c76d` | `2026-07-13-3d2417d7` | `2026-07-13-43c9cd35` | `32210.2875` | `tx-4f269ed689754c039cb4c2f4e44a095c` |
+
+The standard custody roots are:
+
+- `_artifacts/orchestration/<run-set>/assembly-request.json`, `bundle.json`,
+  `conformance.json`, row events, manifests, registration, and sentinels;
+- `_artifacts/2cb6a58/runs/<row>/latest.json`; and
+- `_artifacts/2cb6a58/runs/<row>/transactions/<transaction>/manifest.json`
+  with content-addressed model, optimizer, PRNG, and completed-batch slots.
+
+For the accepted visible-nominal stop, the batch-50 transaction is
+`tx-c29c9b098f364575a970f0f23ba889bf`; its checkpoint manifest SHA-256 is
+`fe9eb894513e0d5c680c539a8875924bfcdff53beb3b8ea16faaa6a0294e0443`.
+
+The finite final losses are weak engineering evidence only. The frozen endpoint,
+action-energy, cached-evaluation, and report criteria remain unmeasured, so the M1
+plausibility verdict is partial and the scientific verdict remains none.
+
+## A1 preflight and exact block
+
+A1 authoring and lowering pass for all six frozen identities:
+
+| Rows | Architecture | Certificate mode | Training distributions |
 |---|---|---|---|
-| Static JSON/Markdown authoring | pass | pass | Independent reviewer accepted both packets. |
-| Feedbax protected pin | pass | pass | `ci/feedbax-ref.toml` and local `develop` resolve to `e7f3ef1e`. |
-| Ordered science lowerers | pass | pass | Targeted lowering tests passed after the pin merge. |
-| Executable training matrix | blocked | blocked | [issue:5816bf0] for M1; [issue:427d0d8] for A1 linear rows. |
-| Grouped heterogeneous certificate adapter | not required | blocked | Remaining narrow [issue:e6a32b8] delta and robust training-distribution vocabulary. Low-level three-mode components already landed via `7d0a77a0`. |
-| Mode-aware report renderer | existing | existing | Landed via [issue:8583faa], commits `3b4d710f` and `7d701a0e`; [issue:9c342ba] reconciliation is non-blocking. |
-| KPI input/report tracking | blocked | blocked | [issue:fddd87a]; required JSON filenames are ignored by the role whitelist. |
-| Training and checkpoint/resume | blocked | blocked | Platform road blockers above are not integrated. |
-| Evaluations and analysis | blocked | blocked | No valid training manifests exist. |
-| Figures and reports | blocked | blocked | No analysis manifest exists. |
-| Scientific interpretation | not established | not established | One-seed, 100-batch smoke is never scientific evidence. |
+| `sg_nominal_s42`, `sg_robust_s42` | static-gain linear | `static_gain` | nominal, broad-epsilon PGD |
+| `alr_nominal_s42`, `alr_robust_s42` | linear recurrent | `augmented_linear` | nominal, broad-epsilon PGD |
+| `gru_nominal_s42`, `gru_robust_s42` | GRU | `empirical_nonlinear` | nominal, broad-epsilon PGD |
 
-## Manifest, artifact, and custody inventory
+Training remains **BLOCKED** because the acceptance graph is not executable:
 
-Every required runtime record is explicit rather than omitted:
+1. `analysis/cross_lens/spec.json` is a project intent, not a Feedbax
+   `AnalysisBundleSpec` or `FigureSpec`. Its grouped stage currently requests
+   `include_bundle_inputs=true`, but `rlrmp.certificate.standard` accepts only
+   `EvaluationRunManifest` parents.
+2. None of the four named evaluation routes emits the canonical cached
+   `standard_certificate_rows` payload. Existing grouped-adapter tests inject that
+   payload and therefore do not prove production evaluation.
+3. Only the augmented-linear component provider is registered. Static-gain and
+   empirical-nonlinear producers are absent, and the augmented route still needs
+   governed same-basis reference evidence and verified checkpoint lineage.
+4. No executable certificate-agreement `FigureSpec`/template consumes the grouped
+   analysis while preserving reason-coded `not_applicable` cells.
+5. The mode-aware report renderer is present and custody-routed, but it cannot run
+   until a real `AnalysisRunManifest` exists.
 
-| Record | M1 expected | A1 expected | Current ref/hash/custody status |
-|---|---:|---:|---|
-| Authored matrix/spec | 1 | architecture-specific matrices/bases plus the tracked cohort intent | M1 `blocked_not_generated`; A1 executable bases `blocked_not_resolved` |
-| `TrainingRunManifest` | 4 | 6 | `blocked_not_generated`; no custody ref |
-| `EvaluationRunManifest` | stock perturbation/feedback stages | 24 (six rows by four lenses) | `blocked_not_generated`; no custody ref |
-| `AnalysisRunManifest` | grouped standard outputs | 1 heterogeneous certificate analysis | `blocked_not_generated`; no custody ref |
-| `FigureManifest` | response-norm figure(s) | 1 certificate-agreement figure | `blocked_not_generated`; no custody ref |
-| Report manifest/render | GRU post-run and certificate reports | 1 certificate report | `blocked_not_generated`; no `report_render` custody ref |
-| Checkpoint lineage | four batch-50 to batch-100 resumes | six batch-50 to batch-100 resumes | `not_run`; no transaction or digest |
+Therefore there are no A1 `TrainingRunManifest`, `EvaluationRunManifest`,
+`AnalysisRunManifest`, `FigureManifest`, report render, checkpoint, loss, or
+plausibility measurements. This absence is `blocked_not_generated`, not a
+scientific negative result.
 
-Absence is a blocker, not `not_applicable`. `not_applicable` is reserved for
-structurally invalid certificate components. In A1, GRU global linear transition,
-quadratic value, and Bellman-Hessian components are reason-coded
-`not_applicable`; augmented-linear rows must use the full plant-plus-recurrent
-basis and may not fall back to plant-state static gain.
+## Exact issue partitions
 
-## Forbidden-surface proof and escape inventory
+Completed authoring/custody prerequisites:
 
-The independent review compared both child packets with authoring baseline
-`bd529256`. The child commits contain only seven files under
-`results/2cb6a58/**` and `results/4eb51ee/**`. They contain no changes to:
+- [issue:238eaea] — reproduce the frozen A1 matrix from tracked authoring;
+- [issue:e093cd9] — portable authored-matrix sidecars.
 
-- `src/rlrmp/train/training_configs.py`;
-- `src/rlrmp/train/run_spec_authoring.py`;
-- `src/rlrmp/train/config_materialization.py`;
-- any compiler, materializer, registry, callback, source, test, or script; or
-- `_artifacts`, the shared `.venv`, dependency locks, or pins.
+Implemented platform prerequisites on current Feedbax staging:
 
-Current escape-hatch count is zero for both children. Explicitly refused pressure:
+- [issue:7e4cf6b] — staged bundle execution through the analysis CLI, merged as
+  `6e0352ab`;
+- [issue:ca2f937] — resolved `ParentRef` inputs exposed to registered evaluation
+  recipes, merged at `c2932138`.
+- [issue:d81a868] — checkpoint-custody `ParentRef` decoding for evaluation,
+  merged at `257573ea` (`done`).
 
-| Refused escape | Count |
-|---|---:|
-| Inline or materialized matrix base | 0 |
-| Legacy payload mode | 0 |
-| Fresh-start or checkpoint-parity skip | 0 |
-| Compiled-field patch forest | 0 |
-| GRU-to-static certificate coercion | 0 |
-| Plant-state fallback for augmented recurrence | 0 |
-| Manual manifest normalization/join | 0 |
-| Direct durable write | 0 |
-| Result-local plot or rollout-rerunning analysis | 0 |
-| Forced Git add of ignored KPI records | 0 |
+A1 downstream partition:
 
-## KPI evidence
+- [issue:0be2b69] — production `standard_certificate_rows` from real evaluation
+  manifests (`blocked`);
+- [issue:6fa0431] — executable cross-lens bundle and certificate figure
+  (`blocked`);
+- [issue:0d6c2ae] — governed augmented-state reference evidence (`in_progress`).
 
-The current blocked packets support `c2=c3=c4=c5=0`: the diff has no registry
-record, callback, escape invocation, script, or control flow. These counts apply
-only to the blocked child packets. Future road work under [issue:5816bf0],
-[issue:427d0d8], or [issue:e6a32b8] remains separately attributable and must not
-silently preserve a zero cost in the final cross-family verdict.
+M1 downstream partition:
+
+- [issue:deadff5] — carry post-run selectors and RLRMP run identity into native
+  training manifests (`in_progress`);
+- [issue:37d13e1] — executable GRU post-run manifest graph (`in_progress`);
+- [issue:639e30f] — native checkpoint transaction custody in model-driven
+  evaluations (`in_progress`);
+- [issue:8776106] — typed native training diagnostics in post-run analysis
+  (`in_progress`);
+- [issue:986a0bf] — exact orchestration-manifest indexing for bundle `ParentRef`s
+  (open; worker status `none`);
+- [issue:2412353] — preserve conformance and checkpoint custody in mapped run
+  evidence.
+
+These are bounded platform units. Their LOC, registrations, callbacks, and control
+flow are not charged to the experiment-authoring KPI as if they were authored
+inside M1 or A1.
+
+## Manifest and stage inventory
+
+| Stage or record | M1 | A1 |
+|---|---|---|
+| Governed matrix and portable sidecar | pass | pass |
+| Batch-50 checkpoint and strict resume | pass, four rows | not run |
+| Native training manifest | present in each accepted M1 run set; downstream selectors/indexing still partitioned | not generated |
+| Evaluation manifests | blocked by M1 post-run/evaluation partitions | 24 required; not generated |
+| Grouped analysis manifest | not generated | not generated |
+| Figure manifest/render | not generated | not generated |
+| Custody report render | not generated | not generated |
+
+For A1, `not_applicable` remains valid only for structurally undefined certificate
+components, such as a global linear transition/value/Bellman certificate for a GRU.
+It must not conceal an absent producer, reference, manifest, or custody object.
+
+## KPI c1-c5 and bypass inventory
+
+The revision-pinned KPI records report:
 
 | KPI | M1 | A1 |
-|---|---|---|
-| Authored production/spec LOC | unavailable: no valid matrix | pending tool run over the two committed JSON specs |
-| c1 | unavailable: no valid matrix | expected `100` distinct JSON keys; independently recounted |
-| c2 registry entries | 0 | 0 for current packet |
-| c3 callbacks | 0 | 0 |
-| c4 escapes | 0 | 0 |
-| c5 script control flow | 0 | 0 |
-| Revision-pinned report | blocked | blocked |
+|---|---:|---:|
+| Authored production/spec LOC | 107 | 302 |
+| Generated matrix LOC | 1 | 1 |
+| c1 distinct authored keys | 60 | 127 |
+| c2 new registry entries | 0 | 0 |
+| c3 authored callbacks | 0 | 0 |
+| c4 escape-hatch invocations | 0 | 0 |
+| c5 non-boilerplate control flow | 0 | 0 |
+| KPI revision | `9866740fb1fd21f12a05e8c7e0219c595b1facfd` | `7f3b503c3f02c0efeea957aa3265ae8c6d1886eb` |
 
-Canonical `marginal_cost_input.json` drafts exist locally but are ignored by the
-current role whitelist and are intentionally not force-added. Their SHA-256 values
-at audit time were `885284e0ecddafe41e6abf1cb1316a55d783f8536462fa8559245bbef5b09dce`
-(M1) and `8ba030bcb9ce1091623c593539898fca72c7067480a22d26835ed2d8262179df`
-(A1). [issue:fddd87a] must make the required input and report normally trackable;
-then `scripts/experiment_kpi.py` must run against the final child revision.
+The zero counts describe the experiment-authored surfaces, not the separately
+attributed road repairs. Bypass inventory is zero: no inline/materialized base,
+legacy payload mode, callback, compiler patch, compiled-field patch forest,
+synthetic source checkpoint, alternate executor, parity skip, manual manifest join,
+GRU-to-static coercion, plant-state fallback for augmented recurrence, direct durable
+write, result-local plot, cloud launch, extra seed, tuning, or extra-batch research
+run was accepted.
 
-## Frozen smoke plausibility and raw measurements
+## Forbidden-diff proof
 
-The protocol is one seed (`42`), exactly 100 batches, local-only, with a standard
-checkpoint after batch 50 and strict resume to batch 100. The following criteria
-were frozen before results:
-
-- all total/per-term losses, states, actions, and endpoint errors are finite;
-- final-window median loss is no more than 1.25 times the first-window median;
-- M1 records whether any later 10-batch window improves at least 5% and whether
-  at least 50% of evaluation trials finish closer to target than they start;
-- A1 records a finite nominal-clean median endpoint error no greater than 0.20 m;
-- action energy is finite and non-zero, with raw min/median/max/non-zero fraction;
-- checkpoint transaction/content digests exist, completed batches are monotonic,
-  and resume continues at the predicted next batch without identity drift; and
-- every required manifest and custody reference agrees on row, spec, execution,
-  architecture, certificate mode, training distribution, and lens.
-
-All raw measurements are currently `not_run`. A future failure does not authorize
-extra batches, seeds, tuning, or scientific interpretation.
-
-## Commands and results
-
-Executed from the issue-linked `wt` worktree:
+Baseline `bd529256` is the experiment-authoring comparison point. The experiment
+paths are confined to `results/2cb6a58/**`, `results/4eb51ee/**`, and this
+`results/509368b/**` audit. The broader branch necessarily contains `src/`,
+`scripts/`, tests, pin, and policy changes, but those are merged, issue-linked
+bounded repairs rather than hidden experiment-family edits. Review must therefore:
 
 ```text
-git merge --no-ff --no-edit integration/7f532e3-conformance
-scripts/dev_tests.sh tests/test_feedbax_ref_pin.py tests/test_science_lowering.py tests/test_training_spec_storage_adoption.py
+git diff --name-only bd529256..HEAD -- results/2cb6a58 results/4eb51ee results/509368b
+git log --first-parent --oneline bd529256..HEAD
+git show --stat <owning-repair-commit>
 ```
 
-Result: merge commit `03ceacbe`; `21 passed` in 4.33 seconds. The lowering tests
-emitted float64-to-float32 warnings under the default JAX x64-disabled setting;
-there were no test failures. No RLRMP full suite ran.
+The first command establishes experiment ownership; the latter two attribute every
+non-result change to its repair issue. A global claim that the branch has no code
+changes would be false. Neither family added an experiment-local callback, registry
+entry, compiler edit, or private writer.
 
-Static review also used `jq empty`, RFC 6901 pointer resolution, `sha256sum`, Git
-blob lookup, `git diff --check`, issue reports/links, and forbidden-path diff scans.
+## Commands and reproducible evidence
 
-Commands intentionally not defined or run yet:
+The commands below define the exact issue staging checkout without publishing a
+user-specific absolute path:
 
-- matrix validation/emission for M1, because no governed matrix can exist before
-  [issue:5816bf0];
-- architecture-specific A1 matrix emission, because content-pinned linear bases do
-  not exist before [issue:427d0d8];
-- heterogeneous analysis execution, because the narrow [issue:e6a32b8] adapter
-  delta is not integrated; and
-- training, checkpoint/resume, evaluation, analysis, figures, reports, KPI reports,
-  and the serialized full suite.
+```text
+FEEDBAX_STAGING="$HOME/Main/10 Projects/10 PhD/20 Feedbax/feedbax/worktrees/integration__509368b-feedbax-staging"
+```
 
-The final audit must record exact command argument vectors only after those paths
-are governed; inventing commands now would be another bypass.
+M1 governed authoring used the generic matrix emitter:
+
+```text
+PYTHONPATH="$PWD/src:$FEEDBAX_STAGING" uv run --no-sync python scripts/emit_training_run_matrix.py \
+  results/2cb6a58/runs/matrix.intent.json \
+  --output results/2cb6a58/runs/matrix.json
+```
+
+A1 used its public heterogeneous authoring entry point, not the generic emitter:
+
+```text
+PYTHONPATH="$PWD/src:$FEEDBAX_STAGING" uv run --no-sync python \
+  scripts/emit_heterogeneous_training_matrix.py \
+  --base-intent results/4eb51ee/runs/base.intent.json \
+  --matrix-authoring results/4eb51ee/runs/matrix.authoring.json \
+  --issue 4eb51ee \
+  --output results/4eb51ee/runs/matrix.json
+```
+
+Both families then used:
+
+```text
+PYTHONPATH="$PWD/src:$FEEDBAX_STAGING" uv run --no-sync python scripts/launch_training.py validate \
+  results/<issue>/runs/matrix.json
+PYTHONPATH="$PWD/src:$FEEDBAX_STAGING" uv run --no-sync python scripts/launch_training.py dry-run \
+  results/<issue>/runs/matrix.json
+```
+
+Each accepted M1 lifecycle used the frozen row with local driver, stop control at
+50, then strict resume to 100 against reviewed Feedbax staging `a86f6b86`. The
+durable `assembly-request.json`, row `launch-packet.json`, events, conformance,
+registration, and checkpoint manifests under the run-set IDs above are the exact
+machine-readable command/environment evidence. No A1 execute command was run after
+the preflight block. No RLRMP full suite, cloud, push, or protected auth ran in this
+lane.
 
 ## Independent reproduction and falsification checklist
 
-1. Resolve every linked issue and verify blocker commits are ancestors of this
-   branch before generating matrices or artifacts.
-2. Confirm `ci/feedbax-ref.toml`, protected Feedbax `develop`, and the local editable
-   checkout all resolve to the same protected SHA.
-3. Run `jq empty` on every JSON; resolve all 24 A1 RFC 6901 pointers and require
-   non-null results.
-4. Recompute committed Git blob IDs and SHA-256 values from the named revisions.
-5. Require content-pinned authored bases and real planned run IDs/hashes; reject
-   placeholders, inline bases, or historical fixture/runtime inputs.
-6. Diff from `bd529256` and require zero experiment-lane edits to forbidden
-   compiler/materializer/registry/callback/script surfaces.
-7. Reconcile c1 from recursive JSON keys and independently substantiate c2-c5 from
-   registry, callback, escape, and control-flow diffs. Attribute platform-gap cost
-   to the owning gap issue.
-8. Require four M1 and six A1 training manifests. For A1 require 24 evaluation
-   manifests, then grouped analysis, figure, and report identities with materialized
-   custody refs.
-9. Require strict batch-50 checkpoint lineage and batch-100 resume continuity. Fail
-   on a fresh restart, duplicated/missing boundary step, or identity drift.
-10. Fail A1 if a lens becomes a training axis, a structural absence lacks a reason,
-    a GRU is coerced to static gain, or augmented recurrence falls back to plant
-    state.
-11. Fail road conformance on any direct write, manual join, result-local plot,
-    rollout rerun, untracked durable output, or unaccounted registry/callback/escape.
-12. Keep the verdicts separate: road conformance, smoke plausibility, and scientific
-    evidence. The scientific verdict remains `not_established` for this smoke.
+1. Verify branch head `9dc3c5db`, protected pin `060d65d`, accepted-run staging
+   `a86f6b86`, and current staging `257573ea`; do not conflate these identities.
+2. Recompute M1/A1 matrix SHA-256 values and resolve each `repo://` sidecar from a
+   different checkout; require byte hashes to match.
+3. Re-run cold public emission and require exact M1/A1 matrix bytes, not merely
+   semantically equivalent JSON.
+4. Validate the four M1 and six A1 rows, seed 42, 100 batches, and declared axes.
+5. For each accepted M1 stop/resume run set, require `overall=pass`, one batch-50
+   cancelled stop, strict continuation to 100, consistent run identity, and
+   materializable checkpoint slots. For visible nominal require stop set
+   `2026-07-13-6bae06ab`, transaction `tx-c29c9b...`, and manifest SHA
+   `fe9eb894...`.
+6. Recompute M1 final losses from typed diagnostics; do not infer convergence from
+   four finite endpoints.
+7. Confirm A1 has no training artifacts and reproduce each of the five downstream
+   preflight failures above before authorizing training.
+8. Require 24 A1 evaluation manifests with canonical `standard_certificate_rows`,
+   then one grouped analysis, figure, and custody report. Reject injected rows.
+9. Reconcile KPI inputs against their pinned revisions and independently inspect
+   c2-c5 plus the zero-entry bypass inventory.
+10. Diff experiment paths from `bd529256`, then attribute every non-result branch
+    change to its issue-linked bounded repair.
+11. Fail conformance on any fresh restart, manual join, private writer, missing
+    reason for structural `not_applicable`, or untracked durable result.
+12. Keep verdicts separate. Road conformance can pass while plausibility remains
+    partial and scientific evidence remains none.
