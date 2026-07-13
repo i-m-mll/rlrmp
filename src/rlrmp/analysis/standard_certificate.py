@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass, field
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 import jax.numpy as jnp
 import numpy as np
@@ -22,25 +23,33 @@ from rlrmp.analysis.bridge_results import (
     BridgeCertificateMode,
     BridgeAnalysisResult,
     BridgeRunSpec,
+    BridgeTrainingDistribution,
     make_bridge_run_id,
 )
 from rlrmp.paths import REPO_ROOT
+from rlrmp.runtime.spec_migrations import (
+    STANDARD_CERTIFICATES_KIND,
+    STANDARD_CERTIFICATES_SCHEMA_ID,
+    STANDARD_CERTIFICATES_SCHEMA_VERSION,
+)
 
 
 BEHAVIORAL_ACTION_SIDECAR = "behavioral_action_sidecar"
 DETERMINISTIC_AUDIT_SIDECAR = "deterministic_exact_l2_and_gamma_sidecar"
 GAIN_DIAGNOSTIC_SIDECAR = "gain_diagnostic_sidecar"
 ROLLOUT_BEHAVIOR_SIDECAR = "rollout_behavior_sidecar"
+STANDARD_CERTIFICATE_EVALUATION_STATE_KEY = "standard_certificate_rows"
+STANDARD_CERTIFICATE_FORMAT = STANDARD_CERTIFICATES_SCHEMA_VERSION
 
 
 @dataclass(frozen=True)
 class StandardCertificateRowRequest:
     """In-memory request for one standard-certificate row.
 
-    ``component_kwargs`` is deliberately not part of the serialized manifest.
-    It contains arrays and metadata passed through to
-    :func:`build_standard_certificate_components`, which remains the umbrella
-    standard-certificate entry point for all modes.
+    ``component_kwargs`` is deliberately not part of the emitted analysis row.
+    It is a cached evaluation-state input containing arrays and metadata passed
+    through to :func:`build_standard_certificate_components`, which remains the
+    umbrella standard-certificate entry point for all modes.
     """
 
     spec: BridgeRunSpec
@@ -69,6 +78,181 @@ def build_standard_certificate_manifest(
         artifacts=request.artifacts,
         certificate_components=components,
     )
+
+
+def materialize_evaluation_standard_certificate_rows(
+    evaluation_rows: Sequence[
+        tuple[str, Sequence[StandardCertificateRowRequest | Mapping[str, Any]]]
+    ],
+    *,
+    issue_id: str,
+) -> dict[str, Any]:
+    """Materialize heterogeneous cached evaluation requests into one payload.
+
+    Each tuple identifies the source ``EvaluationRunManifest`` and its cached
+    standard-certificate requests. The adapter deliberately requires explicit
+    certificate mode and evaluation lens metadata: heterogeneous grouped runs
+    must not infer either scientific axis from controller class or lane names.
+
+    Args:
+        evaluation_rows: Manifest IDs paired with canonical cached row requests.
+        issue_id: Issue that owns the grouped analysis materialization.
+
+    Returns:
+        A JSON-compatible standard-certificate payload containing all rows.
+
+    Raises:
+        ValueError: If the grouped inputs are empty or row metadata conflicts.
+        TypeError: If an evaluation cache contains malformed row requests.
+    """
+
+    if not evaluation_rows:
+        raise ValueError("standard certificate analysis requires evaluation manifests")
+    rows: list[BridgeAnalysisResult] = []
+    dependencies: list[dict[str, Any]] = []
+    seen_run_ids: set[str] = set()
+    for manifest_id, requests in evaluation_rows:
+        if not requests:
+            raise ValueError(
+                f"evaluation manifest {manifest_id!r} has no standard certificate rows"
+            )
+        dependencies.append({"manifest_id": manifest_id, "n_rows": len(requests)})
+        for request_payload in requests:
+            request = standard_certificate_request_from_payload(request_payload)
+            normalized = _validated_grouped_request(request, manifest_id=manifest_id)
+            if normalized.spec.run_id in seen_run_ids:
+                raise ValueError(
+                    f"duplicate standard certificate run_id {normalized.spec.run_id!r}"
+                )
+            seen_run_ids.add(normalized.spec.run_id)
+            rows.append(build_standard_certificate_manifest(normalized))
+    return {
+        "kind": STANDARD_CERTIFICATES_KIND,
+        "schema_id": STANDARD_CERTIFICATES_SCHEMA_ID,
+        "schema_version": STANDARD_CERTIFICATES_SCHEMA_VERSION,
+        "format": STANDARD_CERTIFICATE_FORMAT,
+        "issue": issue_id,
+        "evaluation_manifest_dependencies": dependencies,
+        "rows": [row.to_payload() for row in rows],
+        "summary": materialization_summary(rows),
+    }
+
+
+def standard_certificate_request_from_payload(
+    payload: StandardCertificateRowRequest | Mapping[str, Any],
+) -> StandardCertificateRowRequest:
+    """Decode the canonical cached evaluation-state row contract."""
+
+    if isinstance(payload, StandardCertificateRowRequest):
+        return payload
+    if not isinstance(payload, Mapping):
+        raise TypeError("standard certificate row request must be a mapping")
+    required = {"spec", "architecture", "status", "certificate_mode", "component_kwargs"}
+    missing = sorted(required.difference(payload))
+    if missing:
+        raise ValueError(f"standard certificate row request is missing fields {missing}")
+    unknown = sorted(set(payload).difference(required | {"metrics", "artifacts"}))
+    if unknown:
+        raise ValueError(f"standard certificate row request has unknown fields {unknown}")
+    spec_payload = payload["spec"]
+    if not isinstance(spec_payload, Mapping):
+        raise TypeError("standard certificate row request spec must be a mapping")
+    component_kwargs = payload["component_kwargs"]
+    metrics = payload.get("metrics", {})
+    artifacts = payload.get("artifacts", {})
+    if not isinstance(component_kwargs, Mapping):
+        raise TypeError("standard certificate component_kwargs must be a mapping")
+    if not isinstance(metrics, Mapping):
+        raise TypeError("standard certificate metrics must be a mapping")
+    if not isinstance(artifacts, Mapping):
+        raise TypeError("standard certificate artifacts must be a mapping")
+    try:
+        spec = BridgeRunSpec(**dict(spec_payload))
+    except TypeError as exc:
+        raise ValueError("invalid standard certificate BridgeRunSpec payload") from exc
+    if spec.training_distribution not in get_args(BridgeTrainingDistribution):
+        raise ValueError(
+            f"standard certificate row {spec.run_id!r} has unsupported training "
+            f"distribution {spec.training_distribution!r}"
+        )
+    return StandardCertificateRowRequest(
+        spec=spec,
+        architecture=payload["architecture"],
+        status=str(payload["status"]),
+        certificate_mode=payload["certificate_mode"],
+        component_kwargs=dict(component_kwargs),
+        metrics=dict(metrics),
+        artifacts={str(key): str(value) for key, value in artifacts.items()},
+    )
+
+
+def _validated_grouped_request(
+    request: StandardCertificateRowRequest,
+    *,
+    manifest_id: str,
+) -> StandardCertificateRowRequest:
+    if request.architecture not in get_args(BridgeArchitecture):
+        raise ValueError(
+            f"standard certificate row {request.spec.run_id!r} has unsupported "
+            f"architecture {request.architecture!r}"
+        )
+    if request.spec.architecture != request.architecture:
+        raise ValueError(
+            f"standard certificate row {request.spec.run_id!r} architecture "
+            f"{request.spec.architecture!r} conflicts with adapter architecture "
+            f"{request.architecture!r}"
+        )
+    if request.certificate_mode is None:
+        raise ValueError(
+            f"standard certificate row {request.spec.run_id!r} requires an explicit "
+            "certificate_mode"
+        )
+    if request.certificate_mode not in get_args(BridgeCertificateMode):
+        raise ValueError(
+            f"standard certificate row {request.spec.run_id!r} has unsupported "
+            f"certificate mode {request.certificate_mode!r}"
+        )
+    expected_architectures = {
+        "static_gain": {
+            "free_time_varying",
+            "time_constrained_free_gain",
+            "reference",
+        },
+        "augmented_linear": {"linear_recurrence"},
+        "empirical_nonlinear": {"gru"},
+    }
+    if request.architecture not in expected_architectures[request.certificate_mode]:
+        raise ValueError(
+            f"standard certificate row {request.spec.run_id!r} mode "
+            f"{request.certificate_mode!r} is incompatible with architecture "
+            f"{request.architecture!r}"
+        )
+    if request.spec.training_distribution not in get_args(BridgeTrainingDistribution):
+        raise ValueError(
+            f"standard certificate row {request.spec.run_id!r} has unsupported training "
+            f"distribution {request.spec.training_distribution!r}"
+        )
+    parameters = dict(request.spec.parameters)
+    declared_mode = parameters.get("certificate_mode")
+    if declared_mode not in (None, request.certificate_mode):
+        raise ValueError(
+            f"standard certificate row {request.spec.run_id!r} certificate mode "
+            f"{declared_mode!r} conflicts with adapter mode {request.certificate_mode!r}"
+        )
+    evaluation_lens = parameters.get("evaluation_lens")
+    if not isinstance(evaluation_lens, str) or not evaluation_lens.strip():
+        raise ValueError(
+            f"standard certificate row {request.spec.run_id!r} requires "
+            "spec.parameters.evaluation_lens"
+        )
+    parameters.update(
+        {
+            "certificate_mode": request.certificate_mode,
+            "evaluation_lens": evaluation_lens,
+            "source_evaluation_manifest_id": manifest_id,
+        }
+    )
+    return replace(request, spec=replace(request.spec, parameters=parameters))
 
 
 def component_by_name(
@@ -411,6 +595,8 @@ def _fit_metrics(fit: dict[str, Any]) -> dict[str, Any]:
 
 
 __all__ = [
+    "STANDARD_CERTIFICATE_EVALUATION_STATE_KEY",
+    "STANDARD_CERTIFICATE_FORMAT",
     "StandardCertificateRowRequest",
     "build_standard_certificate_manifest",
     "component_by_name",
@@ -418,5 +604,7 @@ __all__ = [
     "deterministic_output_feedback_rows",
     "deterministic_standard_rows_from_manifest_entries",
     "materialization_summary",
+    "materialize_evaluation_standard_certificate_rows",
     "repo_relative",
+    "standard_certificate_request_from_payload",
 ]

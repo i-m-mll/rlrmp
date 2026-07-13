@@ -525,7 +525,7 @@ def _component_value(
 ) -> Any:
     component = _mapping(components.get(name))
     if component.get("status") != "available":
-        return component["status"]
+        return component.get("status", "missing")
     summary = _mapping(component.get("summary"))
     for key in keys:
         if summary.get(key) is not None:
