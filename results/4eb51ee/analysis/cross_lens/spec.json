@@ -1,0 +1,87 @@
+{
+  "schema_id": "rlrmp.experiment.cross_architecture_certificate_bundle_intent",
+  "schema_version": "rlrmp.experiment.cross_architecture_certificate_bundle_intent.v1",
+  "issue": "4eb51ee",
+  "status": "ready_but_downstream_blocked_by_fresh_matrix_execution",
+  "execution_blocker_issue": "52bacb3",
+  "landed_low_level_contract": {
+    "issue": "e6a32b8",
+    "commit": "7d0a77a0",
+    "available_modes": ["static_gain", "augmented_linear", "empirical_nonlinear"],
+    "explicit_not_applicable": true
+  },
+  "inputs": {
+    "manifest_kind": "TrainingRunManifest",
+    "row_ids": [
+      "sg_nominal_s42",
+      "sg_robust_s42",
+      "alr_nominal_s42",
+      "alr_robust_s42",
+      "gru_nominal_s42",
+      "gru_robust_s42"
+    ]
+  },
+  "evaluation_stages": [
+    {"name": "nominal_clean", "candidate_evaluation_type": "rlrmp.eval.gru_diagnostics", "output": "EvaluationRunManifest", "lens_role": "evaluation_only", "adapter_status": "requires_manifest_native_cross_architecture_adapter"},
+    {"name": "riccati_epsilon", "candidate_evaluation_type": "rlrmp.eval.perturbation_response_bank", "output": "EvaluationRunManifest", "lens_role": "evaluation_only", "adapter_status": "requires_manifest_native_cross_architecture_adapter"},
+    {"name": "process_noise", "candidate_evaluation_type": "rlrmp.eval.perturbation_response_bank", "output": "EvaluationRunManifest", "lens_role": "evaluation_only", "adapter_status": "requires_manifest_native_cross_architecture_adapter"},
+    {"name": "held_out_validation", "candidate_evaluation_type": "rlrmp.eval.center_out_ensemble", "output": "EvaluationRunManifest", "lens_role": "evaluation_only", "adapter_status": "requires_manifest_native_cross_architecture_adapter"}
+  ],
+  "analysis_stage": {
+    "name": "native_mode_standard_certificate",
+    "mode": "grouped",
+    "depends_on": ["nominal_clean", "riccati_epsilon", "process_noise", "held_out_validation"],
+    "include_bundle_inputs": true,
+    "required_output": "AnalysisRunManifest",
+    "required_artifact_role": "rlrmp-bridge-standard-certificate",
+    "registered_analysis_type": "rlrmp.certificate.standard",
+    "blocker_issue": null,
+    "blocker": null
+  },
+  "certificate_semantics": {
+    "static_gain": {
+      "basis": "controller_action_state",
+      "required_components": ["state_weighted_action_mismatch", "closed_loop_transition_mismatch", "value_policy_gap", "bellman_hessian_residual"]
+    },
+    "augmented_linear": {
+      "basis": "plant_state_plus_recurrent_state",
+      "required_components": ["state_weighted_action_mismatch", "closed_loop_transition_mismatch", "value_policy_gap", "bellman_hessian_residual", "aggregate_action_energy_mismatch", "mean_timewise_action_mismatch_ratio"],
+      "invalid_fallback": "plant_state_static_gain"
+    },
+    "empirical_nonlinear": {
+      "basis": "empirical_rollout_and_response_maps",
+      "required_components": ["state_weighted_action_mismatch", "aggregate_action_energy_mismatch", "mean_timewise_action_mismatch_ratio"],
+      "not_applicable_components": {
+        "closed_loop_transition_mismatch": "No global linear closed-loop transition is defined for the GRU.",
+        "value_policy_gap": "No global quadratic value matrix is defined for the GRU.",
+        "bellman_hessian_residual": "No global linear gain/Bellman-Hessian certificate is defined for the GRU."
+      }
+    }
+  },
+  "figure_stage": {
+    "name": "certificate_agreement",
+    "required_output": "FigureManifest",
+    "render_role": "figure_render",
+    "facets": ["architecture", "certificate_mode", "training_distribution", "evaluation_lens"],
+    "missingness_display": "reason_coded_not_applicable_cells"
+  },
+  "report_stage": {
+    "name": "bridge_certificate_report",
+    "report_type": "rlrmp.report.bridge_certificate_notes",
+    "schema_id": "rlrmp.report.bridge_certificate_notes.params",
+    "schema_version": "rlrmp.report.bridge_certificate_notes.params.v1",
+    "required_outputs": ["ReportManifest", "report_render", "rlrmp-bridge-certificate-report-render"],
+    "custody": "feedbax_content_addressed",
+    "owner_issue": "9c342ba",
+    "renderer_status": "landed_via_8583faa_commits_3b4d710f_7d701a0e",
+    "remaining_owner_work": "mixed_three_mode_renderer_test_and_stale_open_reconciliation_non_blocking"
+  },
+  "expected_counts": {
+    "TrainingRunManifest": 6,
+    "EvaluationRunManifest": 24,
+    "AnalysisRunManifest": 1,
+    "FigureManifest": 1,
+    "ReportManifest": 1
+  },
+  "outcome_label": "non_scientific_engineering_smoke"
+}

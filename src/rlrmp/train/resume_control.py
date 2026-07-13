@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -13,6 +13,7 @@ from feedbax.training import load_checkpoint_custody_documents
 
 
 LAUNCH_CONTINUATION_PREFIX = "LAUNCH_CONTINUATION"
+
 
 @dataclass(frozen=True)
 class LaunchContinuation:
@@ -53,9 +54,8 @@ def completed_batches_from_latest(latest_path: Path) -> int:
     manifest_completed_batches = manifest.completed_training_batches
     completed_batches = manifest_completed_batches
     continuation = manifest.metadata.get("checkpoint_continuation")
-    if (
-        manifest.metadata.get("checkpoint_continuation_applied") is True
-        and isinstance(continuation, dict)
+    if manifest.metadata.get("checkpoint_continuation_applied") is True and isinstance(
+        continuation, dict
     ):
         source_completed = continuation.get("source_completed_batches")
         if isinstance(source_completed, int) and not isinstance(source_completed, bool):
@@ -146,6 +146,29 @@ def emit_launch_continuation(
     logger.info(line)
 
 
+def target_training_batches(run_spec: TrainingRunSpec) -> int:
+    """Return one unambiguous batch horizon from the governed method payload."""
+
+    payload = getattr(run_spec.method_payload, "payload", run_spec.method_payload)
+    if not isinstance(payload, Mapping):
+        raise ValueError("selected row method payload is not a typed mapping")
+    config = payload.get("config")
+    candidates: list[int] = []
+    for owner in (payload, config if isinstance(config, Mapping) else {}):
+        for key in ("n_train_batches", "n_batches"):
+            value = owner.get(key)
+            if value is None:
+                continue
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ValueError(f"selected row declares invalid {key}")
+            candidates.append(value)
+    if not candidates:
+        raise ValueError("selected row does not declare a positive typed batch horizon")
+    if len(set(candidates)) != 1:
+        raise ValueError(f"selected row declares conflicting batch horizons: {candidates}")
+    return candidates[0]
+
+
 def attach_cs_supervised_checkpoint_continuation(
     training_spec: TrainingRunSpec,
     continuation: LaunchContinuation,
@@ -202,4 +225,17 @@ def declare_cs_supervised_checkpoint_continuation(
     checkpoint_progress = training_spec.checkpoint_progress.model_copy(
         update={"continuation": request}
     )
-    return training_spec.model_copy(update={"checkpoint_progress": checkpoint_progress})
+    # This declaration knows the completed batch total but not the restored
+    # optimizer schedule count. Drop fresh-only contexts so preflight fails
+    # closed until the resume path supplies both truthful values.
+    metadata = {
+        key: value
+        for key, value in training_spec.metadata.items()
+        if key not in {"resume_context", "optimizer_build_context"}
+    }
+    return training_spec.model_copy(
+        update={
+            "checkpoint_progress": checkpoint_progress,
+            "metadata": metadata,
+        }
+    )

@@ -40,6 +40,7 @@ from feedbax.training.checkpoint_custody import (
     write_checkpoint_transaction,
 )
 from feedbax.training.executor import execute_training_run_spec
+from feedbax.training.phase_executor import InMemoryCheckpointStore, PhaseProgramExecutor
 
 from rlrmp.train.executor.adapters import (
     ChunkKernelAdapter,
@@ -48,6 +49,8 @@ from rlrmp.train.executor.adapters import (
 )
 from rlrmp.train.executor.equivalence import (
     TOY_BARRIER,
+    TOY_KERNEL_REF,
+    TOY_STOP_PREDICATE_REF,
     _toy_executor,
     _toy_initial_slots,
     _toy_program,
@@ -62,10 +65,13 @@ from rlrmp.train.executor.slots import (
     HISTORY_CHUNK_BYTES,
     MODEL,
     OPTIMIZER,
+    PRNG,
     TRAIN_LOSS,
     artifact_sink_specs,
     checkpoint_slot_specs,
+    supervised_state_slots,
 )
+from rlrmp.train.orchestrated_row import _batch_limit_probe
 from rlrmp.train.cs_nominal_gru import (
     GradientDiagnosticsState,
     UpdateDiagnosticsState,
@@ -219,6 +225,73 @@ def test_toy_equivalence_harness_reports_fixed_seed_and_resume_equivalence() -> 
     assert resumed.loss_series[0] == resumed.loss_series[1]
 
 
+def test_fast_two_chunk_stop_checkpoints_at_50_then_resumes_to_100() -> None:
+    payload = _Payload(n_train_batches=100)
+    progress = {"completed_batches": 0}
+    stop_requested = False
+
+    def fast_chunk(runtime, payload, slots, coordinate):
+        del runtime, payload, coordinate
+        completed = int(slots[COMPLETED_BATCHES]) + 50
+        progress["completed_batches"] = completed
+        return {
+            MODEL: slots[MODEL] + 1,
+            OPTIMIZER: slots[OPTIMIZER],
+            COMPLETED_BATCHES: completed,
+            TRAIN_LOSS: float(100 - completed),
+        }
+
+    adapter = ChunkKernelAdapter(
+        chunk_fn=fast_chunk,
+        reads=(MODEL, OPTIMIZER, PRNG, COMPLETED_BATCHES),
+        writes=(MODEL, OPTIMIZER, PRNG, COMPLETED_BATCHES, TRAIN_LOSS),
+        metric_slots=(TRAIN_LOSS,),
+        prng_slot=PRNG,
+    )
+    checkpoint_store = InMemoryCheckpointStore()
+    executor = PhaseProgramExecutor(
+        _toy_program(),
+        {TOY_KERNEL_REF: adapter.to_kernel(payload)},
+        guard_predicates={TOY_STOP_PREDICATE_REF: make_stop_predicate(payload)},
+        checkpoint_store=checkpoint_store,
+        state_slots=supervised_state_slots(),
+    )
+    runtime = RlrmpRuntime(
+        completed_batches_reader=lambda: progress["completed_batches"],
+    )
+    probe = _batch_limit_probe(
+        50,
+        kernel_context={RLRMP_RUNTIME_CONTEXT_KEY: runtime},
+    )
+    assert probe is not None
+
+    def observe_progress(coordinate):
+        nonlocal stop_requested
+        stop_requested = probe(coordinate) is not None
+
+    stopped = executor.run(
+        _toy_initial_slots(seed=42),
+        run_id="fast-two-chunk",
+        context={RLRMP_RUNTIME_CONTEXT_KEY: runtime},
+        progress_callback=observe_progress,
+        stop_after_next_barrier=lambda _barrier: stop_requested,
+    )
+
+    assert stopped.slots[COMPLETED_BATCHES] == 50
+    assert len(stopped.checkpoint_visits) == 1
+    assert stopped.checkpoint_visits[0].coordinate.program_step == 1
+
+    resumed = executor.run(
+        stopped.slots,
+        run_id="fast-two-chunk",
+        resume_from_barrier=TOY_BARRIER,
+        context={RLRMP_RUNTIME_CONTEXT_KEY: RlrmpRuntime()},
+    )
+
+    assert resumed.slots[COMPLETED_BATCHES] == 100
+    assert len([item for item in resumed.progress if item.phase == "train_chunk"]) == 1
+
+
 def test_resume_structural_abi_rejects_resized_diagnostics_buffer(tmp_path: Path) -> None:
     run_spec = _training_run_spec(tmp_path)
     program = _toy_program()
@@ -286,8 +359,6 @@ def test_cs_supervised_resume_transform_preserves_horizon_for_feedbax_declaratio
     assert optimizer["update"].update_norm.shape == (2,)
     assert optimizer["gradient"].gradient_clipped.tolist() == [True, False]
     assert loaded.slots[TRAIN_LOSS] == 0.0
-
-
 
 
 def _training_run_spec(tmp_path: Path) -> TrainingRunSpec:

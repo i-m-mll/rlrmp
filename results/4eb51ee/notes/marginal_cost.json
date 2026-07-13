@@ -1,0 +1,28 @@
+{
+  "authored_production_loc": 302,
+  "authored_spec_loc": 302,
+  "c1_distinct_authored_keys": 127,
+  "c2_new_registry_entries": 0,
+  "c3_authored_callbacks": 0,
+  "c4_escape_hatch_invocations": 0,
+  "c5_non_boilerplate_control_flow": 0,
+  "experiment_issue": "4eb51ee",
+  "generated_materialization_loc": 1,
+  "paths": {
+    "authored_production": [
+      "results/4eb51ee/runs/cohort.intent.json",
+      "results/4eb51ee/runs/base.intent.json",
+      "results/4eb51ee/analysis/cross_lens/spec.json"
+    ],
+    "authored_specs": [
+      "results/4eb51ee/runs/cohort.intent.json",
+      "results/4eb51ee/runs/base.intent.json",
+      "results/4eb51ee/analysis/cross_lens/spec.json"
+    ],
+    "generated_materializations": [
+      "results/4eb51ee/runs/matrix.json"
+    ]
+  },
+  "revision": "7f3b503c3f02c0efeea957aa3265ae8c6d1886eb",
+  "schema_version": 1
+}
