@@ -11,10 +11,21 @@ from typing import Any
 import pytest
 from feedbax.contracts.run_matrix import TrainingRunMatrixSpec
 from feedbax.contracts.spec_storage import training_spec_canonical_bytes
+from feedbax.contracts.training import TrainingRunSpec
+from rlrmp.runtime.training_run_specs import register_rlrmp_cs_supervised_method
+from rlrmp.train.adaptive_epsilon_native import (
+    ensure_adaptive_epsilon_training_method_registered,
+)
 from rlrmp.train.heterogeneous_training_matrix import (
     ARCHITECTURES,
     COMPACT_ROW_OVERRIDE_PATHS,
     DISTRIBUTIONS,
+    GRU_CONTROLLER_ARCHITECTURE,
+    GRU_KERNEL_OWNER,
+    GRU_NATIVE_METHOD,
+    GRU_RUNNER,
+    TrainingDistribution,
+    author_gru_training_base,
     author_training_run_matrix,
 )
 from rlrmp.train.training_configs import CsNominalGruConfig
@@ -179,3 +190,49 @@ def test_current_generic_lowerer_dependency_is_explicit() -> None:
 
 def test_no_expanded_generated_specs_are_retained_before_governed_storage() -> None:
     assert list(RUNS_DIR.glob("*.training.json")) == []
+
+
+@pytest.mark.parametrize("training_distribution", ["nominal", "broad_epsilon_pgd"])
+def test_gru_conversion_normalizes_adaptive_epsilon_source_metadata(
+    training_distribution: TrainingDistribution,
+) -> None:
+    ensure_adaptive_epsilon_training_method_registered()
+    register_rlrmp_cs_supervised_method()
+    source = TrainingRunSpec.model_validate(
+        json.loads(
+            (REPO_ROOT / "results/c6c5997/runs/flat_3e-5-epsilon-ramp.json").read_text(
+                encoding="utf-8"
+            )
+        )["feedbax_training_run_spec"]
+    )
+    assert source.method_ref.key == "rlrmp/adaptive_epsilon_curriculum/v1"
+    assert source.metadata["native_method"] == "rlrmp/adaptive_epsilon_curriculum/v1"
+    assert source.worker_execution.metadata["kernel_owner"] == (
+        "rlrmp.train.adaptive_epsilon_native"
+    )
+
+    authored = author_gru_training_base(
+        source,
+        training_distribution=training_distribution,
+    )
+
+    assert authored.method_ref.key == GRU_NATIVE_METHOD
+    assert authored.metadata["architecture"] == GRU_CONTROLLER_ARCHITECTURE
+    assert authored.worker_execution.metadata["kernel_owner"] == GRU_KERNEL_OWNER
+    assert authored.worker_execution.metadata["native_executor"] == (
+        "feedbax.training.executor.execute_training_run_spec"
+    )
+    for metadata in (
+        authored.metadata,
+        authored.graph.metadata,
+        authored.method_payload.metadata,
+        authored.method_extensions.metadata,
+        authored.worker_execution.metadata,
+    ):
+        assert metadata["controller_architecture"] == GRU_CONTROLLER_ARCHITECTURE
+        assert metadata["native_method"] == GRU_NATIVE_METHOD
+        assert metadata["runner"] == GRU_RUNNER
+    assert authored.method_payload.payload["config"]["adaptive_epsilon_curriculum"] is False
+    assert authored.method_payload.payload["config"]["controller_architecture"] == (
+        GRU_CONTROLLER_ARCHITECTURE
+    )

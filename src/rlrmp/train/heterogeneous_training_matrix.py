@@ -23,8 +23,13 @@ from rlrmp.runtime.training_run_specs import (
 TrainingArchitecture = Literal["gru", "time_constrained_free_gain", "linear_recurrence"]
 TrainingDistribution = Literal["nominal", "broad_epsilon_pgd"]
 
+GRU_CONTROLLER_ARCHITECTURE = "gru"
+GRU_KERNEL_OWNER = "rlrmp.train.cs_nominal_gru"
+GRU_NATIVE_METHOD = "rlrmp/cs_supervised/v1"
+GRU_RUNNER = "rlrmp.train.orchestrated_row"
+
 ARCHITECTURES: tuple[TrainingArchitecture, ...] = (
-    "gru",
+    GRU_CONTROLLER_ARCHITECTURE,
     "time_constrained_free_gain",
     "linear_recurrence",
 )
@@ -53,7 +58,7 @@ def author_gru_training_base(
     robust_enabled = training_distribution == "broad_epsilon_pgd"
     config.update(
         {
-            "controller_architecture": "gru",
+            "controller_architecture": GRU_CONTROLLER_ARCHITECTURE,
             "broad_epsilon_pgd_training": robust_enabled,
             "adaptive_epsilon_curriculum": False,
             "policy_adversary_training": False,
@@ -94,15 +99,37 @@ def author_gru_training_base(
         payload=payload,
         metadata={
             **base.method_payload.metadata,
-            "controller_architecture": "gru",
+            "controller_architecture": GRU_CONTROLLER_ARCHITECTURE,
+            "native_method": GRU_NATIVE_METHOD,
+            "runner": GRU_RUNNER,
             "training_distribution": training_distribution,
         },
     )
     method_contract = cs_supervised_method_contract()
     return base.model_copy(
         update={
+            "graph": base.graph.model_copy(
+                update={
+                    "metadata": {
+                        **base.graph.metadata,
+                        "controller_architecture": GRU_CONTROLLER_ARCHITECTURE,
+                        "native_method": GRU_NATIVE_METHOD,
+                        "runner": GRU_RUNNER,
+                    }
+                }
+            ),
             "method_ref": cs_supervised_method_ref(),
             "method_payload": method_payload,
+            "method_extensions": base.method_extensions.model_copy(
+                update={
+                    "metadata": {
+                        **base.method_extensions.metadata,
+                        "controller_architecture": GRU_CONTROLLER_ARCHITECTURE,
+                        "native_method": GRU_NATIVE_METHOD,
+                        "runner": GRU_RUNNER,
+                    }
+                }
+            ),
             "worker_execution": base.worker_execution.model_copy(
                 update={
                     "method_contract": method_contract,
@@ -110,18 +137,22 @@ def author_gru_training_base(
                     "metadata": {
                         **base.worker_execution.metadata,
                         "native_executor": "feedbax.training.executor.execute_training_run_spec",
-                        "controller_architecture": "gru",
+                        "kernel_owner": GRU_KERNEL_OWNER,
+                        "controller_architecture": GRU_CONTROLLER_ARCHITECTURE,
+                        "native_method": GRU_NATIVE_METHOD,
+                        "runner": GRU_RUNNER,
                     },
                 }
             ),
             "metadata": {
                 **base.metadata,
-                "architecture": "gru",
-                "controller_architecture": "gru",
+                "architecture": GRU_CONTROLLER_ARCHITECTURE,
+                "controller_architecture": GRU_CONTROLLER_ARCHITECTURE,
                 "certificate_mode": "empirical_nonlinear",
                 "training_distribution": "broad_epsilon" if robust_enabled else "nominal",
                 "training_method_distribution": training_distribution,
-                "native_method": "rlrmp/cs_supervised/v1",
+                "native_method": GRU_NATIVE_METHOD,
+                "runner": GRU_RUNNER,
                 "serialize_do_not_rederive": True,
             },
         }
@@ -208,6 +239,10 @@ __all__ = [
     "ARCHITECTURES",
     "COMPACT_ROW_OVERRIDE_PATHS",
     "DISTRIBUTIONS",
+    "GRU_CONTROLLER_ARCHITECTURE",
+    "GRU_KERNEL_OWNER",
+    "GRU_NATIVE_METHOD",
+    "GRU_RUNNER",
     "TrainingArchitecture",
     "TrainingDistribution",
     "author_gru_training_base",

@@ -16,6 +16,9 @@ from rlrmp.runtime.checkpoint_fork_gate import register_rlrmp_training_methods
 from rlrmp.train.linear_recurrent_native import (
     LINEAR_RECURRENT_ARCHITECTURE,
     LINEAR_RECURRENT_CERTIFICATE_MODE,
+    LINEAR_RECURRENT_KERNEL_OWNER,
+    LINEAR_RECURRENT_NATIVE_METHOD,
+    LINEAR_RECURRENT_RUNNER,
     author_linear_recurrent_training_base_from_canonical,
     linear_recurrent_architecture_metadata,
 )
@@ -106,6 +109,34 @@ def test_linear_recurrent_nominal_and_robust_bases_share_identity_contracts() ->
     assert nominal.method_payload.payload["config"]["allow_fresh_start"] is True
     assert training_spec_sha256(nominal.model_dump(mode="json", exclude_none=True)) != (
         training_spec_sha256(robust.model_dump(mode="json", exclude_none=True))
+    )
+
+
+def test_adaptive_epsilon_source_metadata_is_normalized_to_cs_supervised() -> None:
+    base = _canonical_base()
+    assert base.metadata["native_method"] == "rlrmp/adaptive_epsilon_curriculum/v1"
+    assert base.worker_execution.metadata["kernel_owner"] == ("rlrmp.train.adaptive_epsilon_native")
+    assert base.method_extensions.metadata["runner"] == "rlrmp.train.cs_nominal_gru"
+
+    authored = author_linear_recurrent_training_base_from_canonical(base)
+
+    assert authored.method_ref.key == LINEAR_RECURRENT_NATIVE_METHOD
+    assert authored.metadata["native_method"] == LINEAR_RECURRENT_NATIVE_METHOD
+    assert authored.metadata["runner"] == LINEAR_RECURRENT_RUNNER
+    assert authored.metadata["architecture"] == LINEAR_RECURRENT_ARCHITECTURE
+    for metadata in (
+        authored.method_payload.metadata,
+        authored.graph.metadata,
+        authored.method_extensions.metadata,
+        authored.worker_execution.metadata,
+    ):
+        assert metadata["native_method"] == LINEAR_RECURRENT_NATIVE_METHOD
+        assert metadata["runner"] == LINEAR_RECURRENT_RUNNER
+        assert metadata["architecture"] == LINEAR_RECURRENT_ARCHITECTURE
+        assert metadata["controller_architecture"] == LINEAR_RECURRENT_ARCHITECTURE
+    assert authored.worker_execution.metadata["kernel_owner"] == (LINEAR_RECURRENT_KERNEL_OWNER)
+    assert authored.worker_execution.metadata["native_executor"] == (
+        "feedbax.training.executor.execute_training_run_spec"
     )
 
 

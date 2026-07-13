@@ -19,6 +19,9 @@ from rlrmp.runtime.training_run_specs import (
 LINEAR_RECURRENT_ARCHITECTURE = "linear_recurrence"
 LINEAR_RECURRENT_CERTIFICATE_MODE = "augmented_linear"
 LINEAR_RECURRENT_HIDDEN_TYPE = "VanillaRNN"
+LINEAR_RECURRENT_KERNEL_OWNER = "rlrmp.train.cs_nominal_gru"
+LINEAR_RECURRENT_NATIVE_METHOD = "rlrmp/cs_supervised/v1"
+LINEAR_RECURRENT_RUNNER = "rlrmp.train.orchestrated_row"
 LINEAR_RECURRENT_TRAINING_DISTRIBUTIONS = ("nominal", "broad_epsilon_pgd")
 
 _COMPONENT_INPUTS = {
@@ -169,6 +172,8 @@ def author_linear_recurrent_training_base(
             **base.method_payload.metadata,
             "architecture": LINEAR_RECURRENT_ARCHITECTURE,
             "controller_architecture": LINEAR_RECURRENT_ARCHITECTURE,
+            "native_method": LINEAR_RECURRENT_NATIVE_METHOD,
+            "runner": LINEAR_RECURRENT_RUNNER,
             "training_distribution": training_distribution,
         },
     )
@@ -181,6 +186,8 @@ def author_linear_recurrent_training_base(
                 "architecture": LINEAR_RECURRENT_ARCHITECTURE,
                 "controller_architecture": LINEAR_RECURRENT_ARCHITECTURE,
                 "certificate_mode": LINEAR_RECURRENT_CERTIFICATE_MODE,
+                "native_method": LINEAR_RECURRENT_NATIVE_METHOD,
+                "runner": LINEAR_RECURRENT_RUNNER,
             },
         }
     )
@@ -198,9 +205,10 @@ def author_linear_recurrent_training_base(
                 update={
                     "metadata": {
                         **base.method_extensions.metadata,
-                        "runner": "rlrmp.train.orchestrated_row",
+                        "runner": LINEAR_RECURRENT_RUNNER,
                         "architecture": LINEAR_RECURRENT_ARCHITECTURE,
                         "controller_architecture": LINEAR_RECURRENT_ARCHITECTURE,
+                        "native_method": LINEAR_RECURRENT_NATIVE_METHOD,
                     }
                 }
             ),
@@ -214,8 +222,11 @@ def author_linear_recurrent_training_base(
                     "metadata": {
                         **base.worker_execution.metadata,
                         "native_executor": ("feedbax.training.executor.execute_training_run_spec"),
+                        "kernel_owner": LINEAR_RECURRENT_KERNEL_OWNER,
                         "architecture": LINEAR_RECURRENT_ARCHITECTURE,
                         "controller_architecture": LINEAR_RECURRENT_ARCHITECTURE,
+                        "native_method": LINEAR_RECURRENT_NATIVE_METHOD,
+                        "runner": LINEAR_RECURRENT_RUNNER,
                     },
                 }
             ),
@@ -239,7 +250,8 @@ def author_linear_recurrent_training_base(
                 },
                 "architecture": LINEAR_RECURRENT_ARCHITECTURE,
                 "controller_architecture": LINEAR_RECURRENT_ARCHITECTURE,
-                "native_method": method_ref.key,
+                "native_method": LINEAR_RECURRENT_NATIVE_METHOD,
+                "runner": LINEAR_RECURRENT_RUNNER,
                 "training_distribution": ("broad_epsilon" if robust_enabled else "nominal"),
                 "training_method_distribution": training_distribution,
                 "certificate_mode": LINEAR_RECURRENT_CERTIFICATE_MODE,
@@ -313,9 +325,7 @@ def linear_recurrent_architecture_metadata(spec: TrainingRunSpec) -> dict[str, A
         "architecture": LINEAR_RECURRENT_ARCHITECTURE,
         "training_distribution": spec.metadata["training_distribution"],
         "certificate_mode": LINEAR_RECURRENT_CERTIFICATE_MODE,
-        "component_provider": dict(spec.metadata["certificate_contract"])[
-            "component_provider"
-        ],
+        "component_provider": dict(spec.metadata["certificate_contract"])["component_provider"],
         "component_input_contract": dict(spec.metadata["certificate_contract"])["component_inputs"],
     }
 
@@ -349,6 +359,9 @@ __all__ = [
     "LINEAR_RECURRENT_ARCHITECTURE",
     "LINEAR_RECURRENT_CERTIFICATE_MODE",
     "LINEAR_RECURRENT_HIDDEN_TYPE",
+    "LINEAR_RECURRENT_KERNEL_OWNER",
+    "LINEAR_RECURRENT_NATIVE_METHOD",
+    "LINEAR_RECURRENT_RUNNER",
     "LINEAR_RECURRENT_TRAINING_DISTRIBUTIONS",
     "author_linear_recurrent_training_base",
     "author_linear_recurrent_training_base_from_canonical",
