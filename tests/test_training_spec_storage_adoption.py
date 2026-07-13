@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 
 import pytest
 from feedbax.contracts.run_matrix import TrainingRunMatrixSpec
@@ -32,6 +33,33 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PRE_MIGRATION_MATRIX_COMMIT = "edfb3d358565393e58b79a6a26eccbaf406acde0"
 PRE_3CD018B_COMPACTION_COMMIT = "bce3e4df18f2bdcc71febfabaa925a4c1c16a40f"
 REQUIRE_LOCAL_3CD018B_CUSTODY = "RLRMP_REQUIRE_LOCAL_3CD018B_CUSTODY"
+
+
+def _cold_emitter_environment(tmp_path: Path) -> dict[str, str]:
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = os.pathsep.join(
+        (str(REPO_ROOT / "src"), environment.get("PYTHONPATH", ""))
+    )
+    environment["PYTHONPYCACHEPREFIX"] = str(tmp_path / "pycache")
+    environment["XDG_CACHE_HOME"] = str(tmp_path / "cache")
+    environment["JAX_COMPILATION_CACHE_DIR"] = str(tmp_path / "jax-cache")
+    environment["FEEDBAX_JAX_COMPILATION_CACHE_DIR"] = str(tmp_path / "jax-cache")
+    return environment
+
+
+def _run_emitter_cold(
+    *args: str,
+    cwd: Path,
+    tmp_path: Path,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts/emit_training_run_matrix.py"), *args],
+        cwd=cwd,
+        env=_cold_emitter_environment(tmp_path),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -250,6 +278,74 @@ def test_rlrmp_emitter_writes_intent_snapshot_and_capsule(tmp_path: Path) -> Non
     assert Path(result.snapshot_artifact.uri).is_file()
     assert Path(result.capsule_artifact.uri).is_file()
     assert result.capsule.resolved_root_hash == result.resolved_root_hash
+
+
+def test_rlrmp_emitter_help_cold_process_reaches_argument_parser(tmp_path: Path) -> None:
+    completed = _run_emitter_cold("--help", cwd=tmp_path, tmp_path=tmp_path)
+
+    assert completed.returncode == 0, completed.stderr
+    assert "usage: emit_training_run_matrix.py" in completed.stdout
+    assert "Authored matrix JSON to emit." in completed.stdout
+    assert "--output OUTPUT" in completed.stdout
+
+
+def test_rlrmp_emitter_cold_process_writes_governed_storage(tmp_path: Path) -> None:
+    legacy_run = json.loads(
+        (REPO_ROOT / "results/c6c5997/runs/flat_3e-5-epsilon-ramp.json").read_text(encoding="utf-8")
+    )
+    snapshot = build_resolved_semantics_snapshot(legacy_run["feedbax_training_run_spec"])
+    base_path = tmp_path / "base.json"
+    base_path.write_text(json.dumps(snapshot), encoding="utf-8")
+    source_path = tmp_path / "matrix.intent.json"
+    source_path.write_text(
+        json.dumps(
+            TrainingRunMatrixSpec.model_validate(
+                {
+                    "name": "cold storage test",
+                    "base": {
+                        "kind": "resolved_output",
+                        "ref": base_path.name,
+                        "resolved_root_hash": snapshot["root_hash"],
+                    },
+                    "rows": [{"row_id": "flat-3e-5", "seed": 42}],
+                }
+            ).model_dump(mode="json", exclude_none=True)
+        ),
+        encoding="utf-8",
+    )
+    dependency_lock = tmp_path / "uv.lock"
+    dependency_lock.write_bytes((REPO_ROOT / "uv.lock").read_bytes())
+    output_path = tmp_path / "results/matrix.json"
+    custody_root = tmp_path / "custody"
+
+    completed = _run_emitter_cold(
+        str(source_path),
+        "--output",
+        str(output_path),
+        "--repo-root",
+        str(tmp_path),
+        "--custody-root",
+        str(custody_root),
+        "--dependency-lock",
+        str(dependency_lock),
+        "--materializer-commit",
+        "a" * 40,
+        cwd=tmp_path,
+        tmp_path=tmp_path,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(completed.stdout)
+    assert output_path.is_file()
+    assert output_path.with_suffix(".json.artifact.json").is_file()
+    snapshot_artifact = Path(result["storage"]["snapshot_artifact"]["uri"])
+    capsule_artifact = Path(result["storage"]["capsule_artifact"]["uri"])
+    assert snapshot_artifact.is_file()
+    assert capsule_artifact.is_file()
+    assert snapshot_artifact.is_relative_to(custody_root)
+    assert capsule_artifact.is_relative_to(custody_root)
+    assert result["storage"]["capsule"]["materializer_commit"] == "a" * 40
+    assert result["authored_artifact"]["uri"] == str(output_path)
 
 
 def test_migration_preserves_exact_pre_migration_inline_semantics(tmp_path: Path) -> None:
