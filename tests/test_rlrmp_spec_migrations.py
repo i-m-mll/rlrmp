@@ -312,11 +312,7 @@ def test_representative_historical_artifacts_load_or_reject_by_policy() -> None:
 
     evaluation_manifest = load_rlrmp_spec_payload(
         GRU_EVALUATION_DIAGNOSTICS_KIND,
-        REPO_ROOT
-        / "results"
-        / "0203d1f"
-        / "notes"
-        / "gru_evaluation_diagnostics_validation_selected.json",
+        REPO_ROOT / "tests/fixtures/legacy_payloads/gru_evaluation_diagnostics.json",
     )
     assert evaluation_manifest.target_version == GRU_EVALUATION_DIAGNOSTICS_SCHEMA_VERSION
     assert evaluation_manifest.payload["scope"] == "post_hoc_evaluation_non_certificate_diagnostics"
@@ -450,13 +446,7 @@ def test_unsupported_semantic_feedbax_training_run_spec_fails_explicitly() -> No
 
 
 def test_checked_in_current_gru_diagnostics_can_be_schema_stamped() -> None:
-    path = (
-        REPO_ROOT
-        / "results"
-        / "0203d1f"
-        / "notes"
-        / "gru_evaluation_diagnostics_validation_selected.json"
-    )
+    path = REPO_ROOT / "tests/fixtures/legacy_payloads/gru_evaluation_diagnostics.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
     stamped = stamp_current_schema(GRU_EVALUATION_DIAGNOSTICS_KIND, payload)
 

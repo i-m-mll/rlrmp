@@ -3,25 +3,16 @@
   "schema_version": "feedbax.spec.evaluation_run_matrix.v1",
   "base": {
     "evaluation_type": "rlrmp.eval.perturbation_response_bank",
-    "training_run_ids": [
-      "lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64",
-      "lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64"
-    ],
-    "inputs": [
-      {"kind": "TrainingRunManifest", "id": "lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64", "role": "training_run"},
-      {"kind": "TrainingRunManifest", "id": "lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64", "role": "training_run"}
-    ],
+    "training_run_ids": [],
+    "inputs": [],
     "params": {
-      "source_experiment": "5f70333",
-      "run_ids": [
-        "lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64",
-        "lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64"
-      ],
+      "source_experiment": "",
+      "run_ids": [],
       "n_rollout_trials": 8,
       "bank_mode": "raw",
       "bank_params": {"mode": "raw", "families": ["initial_position_offset"]},
       "checkpoint_selection_mode": "sparse_history",
-      "metadata": {"default_source_experiment": "5f70333", "custody": "EvaluationRunManifest"}
+      "metadata": {"source_binding": "caller_specialized", "custody": "EvaluationRunManifest"}
     }
   },
   "rows": [
