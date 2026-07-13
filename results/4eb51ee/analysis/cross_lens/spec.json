@@ -2,7 +2,8 @@
   "schema_id": "rlrmp.experiment.cross_architecture_certificate_bundle_intent",
   "schema_version": "rlrmp.experiment.cross_architecture_certificate_bundle_intent.v1",
   "issue": "4eb51ee",
-  "status": "blocked_pending_427d0d8_training_bases_and_manifest_native_grouped_adapter",
+  "status": "ready_but_downstream_blocked_by_fresh_matrix_execution",
+  "execution_blocker_issue": "52bacb3",
   "landed_low_level_contract": {
     "issue": "e6a32b8",
     "commit": "7d0a77a0",
@@ -33,9 +34,9 @@
     "include_bundle_inputs": true,
     "required_output": "AnalysisRunManifest",
     "required_artifact_role": "rlrmp-bridge-standard-certificate",
-    "registered_analysis_type": null,
-    "blocker_issue": "e6a32b8",
-    "blocker": "Issue e6a32b8 still needs a registered grouped adapter that consumes heterogeneous EvaluationRunManifests while preserving architecture, certificate mode, training distribution, and lens, plus a robust/broad-epsilon BridgeTrainingDistribution value. Its low-level three-mode certificate components are already landed at 7d0a77a0. Extend the owning manifest-native contract; do not call low-level helpers from a result-local script or hand-normalize rows."
+    "registered_analysis_type": "rlrmp.certificate.standard",
+    "blocker_issue": null,
+    "blocker": null
   },
   "certificate_semantics": {
     "static_gain": {

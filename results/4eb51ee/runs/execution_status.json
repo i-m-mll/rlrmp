@@ -1,0 +1,77 @@
+{
+  "schema_id": "rlrmp.experiment.engineering_smoke_execution_status",
+  "schema_version": "rlrmp.experiment.engineering_smoke_execution_status.v1",
+  "issue": "4eb51ee",
+  "evidence_class": "non_scientific_engineering_smoke",
+  "status": "blocked_before_first_training_batch",
+  "blocker_issue": "52bacb3",
+  "artifact_sidecar_gap_issue": "e093cd9",
+  "dependency": {
+    "rlrmp_commit": "bb21a426f46efa9b1867ec398072c82dbbb832c6",
+    "feedbax_develop": "060d65d285969ec11e4a284712913550c462ba18",
+    "feedbax_pin_guard": "passed_by_parent_before_lane_dispatch"
+  },
+  "authored_identity": {
+    "base_path": "results/4eb51ee/runs/base.intent.json",
+    "base_file_sha256": "5762d5b2451b36024b641775e4daca6ef5a591617847994a6883bb40fabab889",
+    "base_canonical_content_hash": "f737ba6943b929066fe282ec6efefbee3241664abf725faa3ae674a9857639f0",
+    "matrix_path": "results/4eb51ee/runs/matrix.json",
+    "matrix_sha256": "78108ca2286af701583e5c4eb87a92736820b5c9260129637722c61831a9e52f",
+    "matrix_artifact_id": "authored-matrix:sha256:78108ca2286af701583e5c4eb87a92736820b5c9260129637722c61831a9e52f",
+    "matrix_artifact_sidecar": "not_tracked_emitter_produced_nonportable_absolute_uri",
+    "intent_hash": "06dc6e233fb1936404702060f18d51d0abc2e760e81de80da715af9767420ebb",
+    "resolved_root_hash": "8e846a1d5113a88c39b4827fcc4bf9b8c2bd1b0854c5a630b6454e59d38c6891",
+    "execution_hash": "620362cc534e6aaefb542671bc36138db512cd9e216344afa2986114edfb0568",
+    "dependency_lock_digest": "1c5e08022cd1eb54f32a84c01afb22638d63ee6dada161915a78fbd8b50b45e4",
+    "resolved_snapshot_custody": "_artifacts/4eb51ee/spec-storage/spec-storage/sha256/c2/c2595323ce297547a9030d070d4ff2e822e4440c84d17faaea52d0c3ac7c6be9.json",
+    "execution_capsule_custody": "_artifacts/4eb51ee/spec-storage/spec-storage/sha256/4a/4aad7c19605496bf7d4c95297ae94ae729a10495b6a9c455f71a84bfbcb305a5.json"
+  },
+  "rows": [
+    {"row_id": "sg_nominal_s42", "seed": 42, "run_id": "feedbax-training-run:f18a701b300875129dd838f468af0d1e", "training_spec_sha256": "89f0767dc6fc4a4551226a3be4ed75d24c0b94ea1da49491032d2c7020ceb82b", "status": "blocked_not_started"},
+    {"row_id": "sg_robust_s42", "seed": 42, "run_id": "feedbax-training-run:57ef95470d5012c932a9bb1a2eff8571", "training_spec_sha256": "21c45d017c55b8df134fd0ff7df18f1f6dc5008fbeec2f619031290409a24cc7", "status": "blocked_not_started"},
+    {"row_id": "alr_nominal_s42", "seed": 42, "run_id": "feedbax-training-run:4398bbd2601b7405a014549bef77fcbb", "training_spec_sha256": "b5e322d88c3da8043dc49dd21b0e5487e11f08f1d830c9e141ca1fa09240c829", "status": "blocked_not_started"},
+    {"row_id": "alr_robust_s42", "seed": 42, "run_id": "feedbax-training-run:c9caa7defb006a95bc19e9ffb83557e3", "training_spec_sha256": "b777295cafc089cdbda880e057493f3ef1ce116b7d12aa6674b695b847451a3c", "status": "blocked_not_started"},
+    {"row_id": "gru_nominal_s42", "seed": 42, "run_id": "feedbax-training-run:e9cf7ab04550daccc5abe32f73d9b301", "training_spec_sha256": "5d1dcafdfec3960f3a08a6c6e06412f48812e2a0998a27aca17076f4e37c0039", "status": "blocked_not_started"},
+    {"row_id": "gru_robust_s42", "seed": 42, "run_id": "feedbax-training-run:2012771c9847dd05783ce01fd0b1d88a", "training_spec_sha256": "90a9349b9b96e22a4480e838290262411b3ca4fcb71a8465113f65d563e2a2ec", "status": "blocked_not_started"}
+  ],
+  "attempt": {
+    "row_id": "sg_nominal_s42",
+    "stop_after_batches": 50,
+    "log_path": "_artifacts/4eb51ee/logs/sg_nominal_s42-stop50.log",
+    "log_sha256": "9eb2934d3b82245359a4fd7d340c46f9b2894496c25a82c7b80783118110ca28",
+    "batch_lines": 0,
+    "error_type": "ValueError",
+    "error": "execute requires one common source checkpoint transaction",
+    "error_location": "src/rlrmp/train/launch.py:373",
+    "classification": "pre_training_orchestration_blocker"
+  },
+  "targeted_checks": [
+    {
+      "command": "scripts/dev_tests.sh tests/test_heterogeneous_training_matrix.py tests/analysis/test_report_recipes.py::test_bridge_report_round_trips_three_certificate_modes",
+      "result": "passed",
+      "tests": 9,
+      "scope": "six-row compact authoring/storage contract plus independent three-mode analysis/report round trip; no training"
+    },
+    {
+      "command": "scripts/dev_tests.sh tests/test_paths.py::test_experiment_marginal_cost_kpi_record_is_committable",
+      "result": "passed",
+      "tests": 2,
+      "scope": "required child KPI input/report paths are trackable; no training"
+    }
+  ],
+  "stages": {
+    "compact_authoring": "passed",
+    "registered_row_lowering": "passed_all_six_rows",
+    "governed_spec_storage": "passed",
+    "matrix_validation": "passed",
+    "training": "blocked_before_first_batch",
+    "checkpoint_resume": "blocked_downstream",
+    "evaluation_24_manifests": "blocked_downstream",
+    "heterogeneous_standard_certificate_analysis": "blocked_downstream",
+    "figure_manifest": "blocked_downstream",
+    "custody_report": "blocked_downstream",
+    "plausibility_measurements": "not_observed"
+  },
+  "bypass_inventory": [],
+  "scientific_verdict": "no_scientific_evidence"
+}

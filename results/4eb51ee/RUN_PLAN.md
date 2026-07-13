@@ -1,5 +1,10 @@
 # Frozen local engineering-smoke protocol
 
+Execution update: the dependency and authoring gates below are satisfied on RLRMP
+`bb21a426` with Feedbax `060d65d`. The exact six-row matrix lowered and validated, but
+the first local row was blocked before batch 1 by the fresh-matrix orchestration
+precondition recorded in `runs/execution_status.json`. The frozen protocol is unchanged.
+
 This protocol is frozen before execution. Every result must be labelled **non-scientific
 engineering smoke**. It may establish road conformance and initial plausibility only; it
 must not be used to claim that the cross-architecture hypothesis is answered.
