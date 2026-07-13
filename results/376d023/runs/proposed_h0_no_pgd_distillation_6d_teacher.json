@@ -1,7 +1,7 @@
 {
   "base_issue": "020a65b",
   "base_run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
-  "base_run_spec": "results/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64.json",
+  "base_run_spec": "results/a378b34/runtime/h0_no_pgd_base_hps.json",
   "certificate_and_eval_gates": [
     "clean action match on original, seen, and held-out target bins",
     "perturbation-response match under calibrated initial-state, sensory, process/load, and command-input perturbations",
@@ -70,7 +70,7 @@
     "optimizer": {
       "constant_lr_iterations": 500,
       "cosine_annealing_alpha": 0.01,
-      "final_learning_rate": 3e-05,
+      "final_learning_rate": 0.00003,
       "gradient_clip_kind": "global_norm",
       "gradient_clip_norm": 5.0,
       "learning_rate_0": 0.003,
@@ -102,7 +102,7 @@
       "weight_decay": 0.0
     },
     "stochastic_preset": {
-      "additive_motor_noise_std": 1e-05,
+      "additive_motor_noise_std": 0.00001,
       "name": "cs2019-rollout",
       "plant_process_force_noise_std": 0.03162277660168379,
       "projection_notes": {
@@ -117,7 +117,7 @@
       "source_contract": {
         "additive_motor_covariance": "input_image_state_covariance_B_B_T",
         "contract": "cs_released_stochastic_v1",
-        "motor_covariance_scale": 1e-10,
+        "motor_covariance_scale": 1E-10,
         "motor_covariance_shape": [
           48,
           48
@@ -130,14 +130,14 @@
         ],
         "process_noise": "separate_output_feedback_process_covariance",
         "sensory_covariance_diag": [
-          2.2956841138659323e-05,
-          2.2956841138659323e-05,
-          2.2956841138659323e-05,
-          2.2956841138659323e-05,
-          2.2956841138659323e-05,
-          2.2956841138659323e-05,
-          2.2956841138659323e-05,
-          2.2956841138659323e-05
+          0.000022956841138659323,
+          0.000022956841138659323,
+          0.000022956841138659323,
+          0.000022956841138659323,
+          0.000022956841138659323,
+          0.000022956841138659323,
+          0.000022956841138659323,
+          0.000022956841138659323
         ],
         "sensory_noise_scale": 1.0,
         "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
@@ -963,5 +963,6 @@
     "primary_teacher": "6D output-feedback H-infinity analytical",
     "teacher_manifest": "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers_manifest.json",
     "teacher_package": "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers.npz"
-  }
+  },
+  "base_runtime_disposition": "Promoted exact HPS bytes into the a378b34 runtime-owned contract before legacy stock deletion."
 }

@@ -67,6 +67,15 @@ expected_collection_pattern = "tests/test_archived_graph_recipe_conversion.py::"
 minimum_non_skipped = 4
 
 [[families]]
+name = "tracked_results_reference_integrity"
+owner = "2c06960"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_tracked_results_reference_integrity.py::"
+minimum_non_skipped = 3
+negative_canary = "tests/test_tracked_results_reference_integrity.py::test_missing_result_reference_negative_canary"
+
+[[families]]
 name = "retired_id_scan"
 owner = "7811e47"
 status = "live"
