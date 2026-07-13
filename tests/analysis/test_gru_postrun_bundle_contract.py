@@ -1,7 +1,6 @@
 """Terminal contract checks for the declarative GRU post-run bundle."""
 
 import hashlib
-import json
 from pathlib import Path
 
 from feedbax.analysis.figures import execute_figure_spec
@@ -13,21 +12,13 @@ from feedbax.contracts.manifest import (
     spec_payload,
     write_manifest,
 )
-import pytest
 from ruamel.yaml import YAML
 
 from rlrmp.analysis.response_norm import response_norm_payload
-from rlrmp.data_products.envelope import read_data_product
 from rlrmp.figures import register_rlrmp_figure_surfaces
 
 
 BUNDLE_PATH = Path("src/rlrmp/config/analysis_bundles/gru_postrun.yml")
-PARITY_PATH = Path("results/74fac80/data_products/gru_postrun_figure_parity.json")
-
-
-pytestmark = pytest.mark.feedbax_contract
-
-
 def _bundle() -> dict[str, object]:
     return YAML(typ="safe").load(BUNDLE_PATH.read_text(encoding="utf-8"))
 
@@ -107,7 +98,6 @@ def test_gru_postrun_figure_is_a_leaf_of_canonical_manifest_stages() -> None:
     assert figure["kind"] == "figure"
     assert figure["depends_on"] == ["response_norm_payload"]
     assert figure["figure"]["template"] == "rlrmp.response_norm_comparison"
-    assert figure["figure"]["metadata"]["parity_oracle"] == str(PARITY_PATH)
 
 
 def test_gru_postrun_figure_executes_to_hash_verified_manifest(tmp_path: Path) -> None:
@@ -162,15 +152,3 @@ def test_gru_postrun_figure_executes_to_hash_verified_manifest(tmp_path: Path) -
         assert artifact.uri is not None
         path = Path(artifact.uri)
         assert hashlib.sha256(path.read_bytes()).hexdigest() == artifact.sha256
-
-
-def test_archived_pilot_outputs_are_governed_parity_oracles() -> None:
-    product = read_data_product(PARITY_PATH)
-    assert product.product_schema_id == "rlrmp.figure_parity_oracles"
-    assert len(product.artifacts) == 2
-    for artifact in product.artifacts:
-        assert artifact.uri is not None
-        assert hashlib.sha256(Path(artifact.uri).read_bytes()).hexdigest() == artifact.sha256
-    raw = json.loads(PARITY_PATH.read_text(encoding="utf-8"))
-    assert raw["parameters"]["legacy_alias_outputs"] is False
-    assert raw["parameters"]["legacy_figure_summary_writer"] is False

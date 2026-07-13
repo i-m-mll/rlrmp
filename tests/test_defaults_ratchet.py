@@ -2,10 +2,11 @@
 
 This freezes the current inventory of ``.get("key", literal_default)`` and
 ``getattr(obj, "key", literal_default)`` sites in schema-owning runtime,
-evaluation, analysis, model, training, and benchmark modules. Retiring a site is
-ceremony-free: stale allowlist entries do not fail this test. Adding a new site
-fails unless ``ci/defaults-ratchet-allowlist.toml`` is deliberately updated to
-name the owning ledger issue.
+evaluation, analysis, model, training, and benchmark modules. The shrink plan in
+``results/4b55b85/notes/defaults_ratchet_shrink_plan.md`` requires remediation
+lanes to delete entries when they fix the source sites. Adding a new site fails
+unless ``ci/defaults-ratchet-allowlist.toml`` is deliberately updated to name
+the owning ledger issue; completed migration surfaces cannot be re-allowlisted.
 """
 
 from __future__ import annotations
@@ -47,6 +48,7 @@ REQUIRED_AUTHORING_SCAN_TARGETS = (
     "src/rlrmp/train/run_spec_authoring.py",
     "src/rlrmp/train/training_configs.py",
 )
+INTENT_PURGE_BASELINE = "d461adba"
 LEGACY_OUTPUT_SURFACES = (
     "src/rlrmp/model/feedbax_graph.py",
     "src/rlrmp/train/config_materialization.py",
@@ -162,6 +164,20 @@ def test_training_authoring_files_stay_in_scanner_scope_and_have_no_fallbacks() 
     paths = [REPO_ROOT / target for target in REQUIRED_AUTHORING_SCAN_TARGETS]
 
     assert scan_default_fallback_sites_in_paths(paths, repo_root=REPO_ROOT) == []
+
+
+def test_completed_intent_purge_surfaces_cannot_be_reallowlisted() -> None:
+    allowlist = _load_allowlist()
+    reallowlisted = sorted(
+        entry
+        for entry in allowlist["default_fallback_sites"]
+        if entry.get("path") in REQUIRED_AUTHORING_SCAN_TARGETS
+    )
+
+    assert not reallowlisted, (
+        f"Intent-purge baseline {INTENT_PURGE_BASELINE} removed fallback sites from "
+        f"the authored training surfaces; do not re-allowlist them: {reallowlisted}"
+    )
 
 
 def test_current_authoring_surfaces_do_not_emit_legacy_labeled_fields() -> None:

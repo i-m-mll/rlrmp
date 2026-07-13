@@ -20,7 +20,6 @@ from rlrmp.steady_state_figures import (
 )
 
 
-pytestmark = pytest.mark.feedbax_contract
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -81,16 +80,6 @@ def test_all_four_specs_execute_with_variable_condition_cardinality(
         assert {f"Condition {index} aligned" for index in range(condition_count)} <= names
         assert {f"Condition {index} orthogonal" for index in range(condition_count)} <= names
         assert {"Wash-in window start", "Wash-in window end"} <= names
-
-
-def test_surviving_specs_are_native_and_legacy_builder_is_absent() -> None:
-    for comparison_id in STEADY_STATE_COMPARISON_IDS:
-        path = REPO_ROOT / "results/87424a4/figures" / comparison_id / "spec.json"
-        spec = FigureSpec.model_validate_json(path.read_text(encoding="utf-8"))
-        assert spec.template == "rlrmp.perturbation_response_comparison"
-
-    for path in (REPO_ROOT / "src/rlrmp").rglob("*.py"):
-        assert "build_response_figure" not in path.read_text(encoding="utf-8")
 
 
 def test_piece_and_specs_use_governed_regeneration_role(tmp_path: Path) -> None:

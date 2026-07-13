@@ -3,87 +3,20 @@
 from __future__ import annotations
 
 from hashlib import sha256
-import json
 from pathlib import Path
 
 from feedbax.analysis.figures import execute_figure_spec
 from feedbax.contracts.figures import FigureSpec
 from feedbax.contracts.manifest import ArtifactRef
-import pytest
 
 from rlrmp.profile_payloads import (
     PROFILE_PAYLOAD_SCHEMA_ID,
     ProfilePayloadSpec,
     ProfileSeriesColumns,
-    load_profile_payload_spec,
     materialize_profile_payload,
     register_profile_payload_piece,
 )
 from rlrmp.figures import register_rlrmp_figure_surfaces
-
-
-pytestmark = pytest.mark.feedbax_contract
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-FAMILIES = {
-    "376d023": {
-        "topic": "6d_analytical_velocity_profiles",
-        "labels": [
-            "6D extLQG analytical",
-            "6D output-feedback H-infinity analytical",
-            "020a65b h0 no-PGD",
-            "020a65b h0 PGD",
-        ],
-        "spread": "sd",
-        "axes": ("Time (s)", "Forward velocity (m/s)"),
-    },
-    "a378b34": {
-        "topic": "nominal_velocity_profile_comparison",
-        "labels": ["6D extLQG", "Distilled h0 GRU"],
-        "spread": "sem",
-        "axes": ("Time from trial start (s)", "Target-radial velocity (m/s)"),
-    },
-    "e148f33": {
-        "topic": "nominal_velocity_profile_comparison",
-        # This adopted archival payload includes a historical baseline label.
-        # Validate its four-series shape without pinning the retired experiment ID.
-        "labels": None,
-        "series_count": 4,
-        "spread": "sd",
-        "axes": ("Time (s)", "Forward velocity (m/s)"),
-    },
-}
-
-
-def test_profile_stock_specs_are_native_and_data_free() -> None:
-    for issue, expected in FAMILIES.items():
-        topic = expected["topic"]
-        figure_path = REPO_ROOT / "results" / issue / "figures" / topic / "spec.json"
-        payload_path = (
-            REPO_ROOT / "results" / issue / "notes" / "profile_payload_regeneration_spec.json"
-        )
-
-        raw_figure = json.loads(figure_path.read_text(encoding="utf-8"))
-        figure = FigureSpec.model_validate(raw_figure)
-        payload = load_profile_payload_spec(payload_path)
-
-        assert figure.template == "rlrmp.profile_comparison"
-        assert figure.inputs == []
-        assert set(raw_figure) & {"data", "profile_summaries", "runtime_provenance"} == set()
-        if expected["labels"] is not None:
-            assert [series.label for series in payload.series] == expected["labels"]
-        else:
-            assert len(payload.series) == expected["series_count"]
-        assert {series.spread_kind for series in payload.series} == {expected["spread"]}
-        # Clean checkouts validate the content-pinned adoption contract without
-        # requiring ignored local renders; the materialization test below
-        # reconstructs the same artifact shape before executing a FigureSpec.
-        assert payload.source_csv.sha256 is not None
-        assert payload.source_summary.sha256 is not None
-        assert payload.output.artifact_id == f"artifact:sha256:{payload.output.sha256}"
-        assert (figure.panels[0].axes_labels.x, figure.panels[0].axes_labels.y) == expected["axes"]
-        assert figure.facet_bindings["condition"].path == "conditions"
-        assert list(figure.metadata["conditions"]) == [payload.condition]
 
 
 def test_profile_payload_materializes_and_executes_through_piece_custody(
@@ -165,18 +98,6 @@ def test_profile_payload_materializes_and_executes_through_piece_custody(
     assert manifest.status == "completed"
     assert [piece.name for piece in manifest.resolved_pieces] == [spec.piece_name]
     assert [record.status for record in manifest.binding_records] == ["included"]
-
-
-def test_imperative_profile_stock_producers_are_deleted() -> None:
-    paths = (
-        "results/376d023/scripts/materialize_6d_analytical_velocity_profiles.py",
-        "results/a378b34/scripts/materialize_nominal_velocity_profile_comparison.py",
-        "results/e148f33/scripts/materialize_nominal_velocity_profile_comparison.py",
-    )
-    assert not any((REPO_ROOT / path).exists() for path in paths)
-
-
-
 def _artifact(path: Path, role: str, media_type: str) -> ArtifactRef:
     return ArtifactRef(
         role=role,

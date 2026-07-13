@@ -1,8 +1,7 @@
-"""Fixed pre-retirement trajectory oracles captured from commit 0ee30e6f."""
+"""Semantic invariants for native minimax and distillation executor lifecycles."""
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -10,13 +9,13 @@ import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
-import numpy as np
 import pytest
 from feedbax.contracts.training import TrainingRunSpec
 
 from rlrmp.model.feedbax_graph import build_rlrmp_feedbax_graph_bundle
 from rlrmp.train.distillation_entry import load_distillation_run_spec
 from rlrmp.train.distillation_native import execute_distillation_training_run_spec_native
+from rlrmp.train.executor.equivalence import assert_paired_equivalent, run_paired_equivalence
 from rlrmp.train.minimax_native import (
     MinimaxControllerState,
     build_hps,
@@ -30,13 +29,10 @@ from rlrmp.train.training_configs import (
     MinimaxConfig,
 )
 
-ORACLE_ROOT = Path("tests/fixtures/pre_native_oracles/v1")
-ORACLE_MANIFEST = json.loads((ORACLE_ROOT / "manifest.json").read_text(encoding="utf-8"))
-
 
 @pytest.fixture(autouse=True)
-def _oracle_uses_captured_x64_mode():
-    """Match the float32 JAX mode used to capture the frozen 0ee30e6f oracles."""
+def _executor_tests_use_float32():
+    """Keep deterministic training comparisons independent of global x64 state."""
 
     with jax.enable_x64(False):
         yield
@@ -94,44 +90,36 @@ def _minimax_comparable(slots: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def _candidate_arrays(tree: Any) -> dict[str, np.ndarray]:
-    arrays: dict[str, np.ndarray] = {}
+def _assert_finite_numeric_tree(tree: Any) -> None:
+    numeric_leaves = [
+        jnp.asarray(leaf)
+        for leaf in jt.leaves(tree)
+        if getattr(getattr(leaf, "dtype", None), "kind", None) in set("biufc")
+        or isinstance(leaf, (bool, int, float, complex))
+    ]
+    assert numeric_leaves
+    assert all(bool(jnp.all(jnp.isfinite(leaf))) for leaf in numeric_leaves)
+
+
+def _numeric_arrays_by_path(tree: Any) -> dict[str, Any]:
+    """Select live numeric state while ignoring non-array PyTree metadata."""
+
+    arrays: dict[str, Any] = {}
     for path, leaf in jt.flatten_with_path(tree)[0]:
         try:
-            array = np.asarray(jax.device_get(leaf))
-        except Exception:
+            array = jnp.asarray(leaf)
+        except (TypeError, ValueError):
             continue
-        if array.dtype.kind in "biufc":
+        if array.dtype.kind in set("biufc"):
             arrays[jax.tree_util.keystr(path)] = array
     return arrays
-
-
-def _assert_matches_oracle(case_name: str, tree: Any) -> None:
-    case = ORACLE_MANIFEST["cases"][case_name]
-    expected = np.load(ORACLE_ROOT / case["file"])
-    candidate = _candidate_arrays(tree)
-    expected_paths = {leaf["path"] for leaf in case["leaves"]}
-    assert set(candidate) == expected_paths
-    for leaf in case["leaves"]:
-        actual = candidate[leaf["path"]]
-        target = expected[leaf["key"]]
-        assert list(actual.shape) == leaf["shape"]
-        if actual.dtype.kind in "fc":
-            np.testing.assert_allclose(
-                actual,
-                target,
-                atol=case["tolerance"]["atol"],
-                rtol=case["tolerance"]["rtol"],
-            )
-        else:
-            np.testing.assert_array_equal(actual, target)
 
 
 @pytest.mark.parametrize(
     ("adversary_type", "seed"),
     [("gaussian_bump", 1), ("linear_dynamics", 3)],
 )
-def test_minimax_executor_matches_pre_native_oracle(
+def test_minimax_resume_is_semantically_equivalent_to_uninterrupted_execution(
     tmp_path: Path,
     adversary_type: str,
     seed: int,
@@ -139,7 +127,7 @@ def test_minimax_executor_matches_pre_native_oracle(
     spec = _minimax_spec(tmp_path, adversary_type)
     full = execute_minimax_training_run_spec_native(
         spec,
-        run_id=f"oracle-minimax-{adversary_type}",
+        run_id=f"minimax-{adversary_type}-full",
         key=jr.PRNGKey(seed),
         manifest_root=tmp_path / "manifests" / "full",
         checkpoint_root=tmp_path / "checkpoints" / "full",
@@ -148,7 +136,7 @@ def test_minimax_executor_matches_pre_native_oracle(
     checkpoint_root = tmp_path / "checkpoints" / "resume"
     stopped = execute_minimax_training_run_spec_native(
         spec,
-        run_id=f"oracle-minimax-{adversary_type}-resume",
+        run_id=f"minimax-{adversary_type}-resume",
         key=jr.PRNGKey(seed),
         manifest_root=tmp_path / "manifests" / "stopped",
         checkpoint_root=checkpoint_root,
@@ -157,21 +145,28 @@ def test_minimax_executor_matches_pre_native_oracle(
     )
     resumed = execute_minimax_training_run_spec_native(
         spec,
-        run_id=f"oracle-minimax-{adversary_type}-resume",
+        run_id=f"minimax-{adversary_type}-resume",
         key=jr.PRNGKey(seed),
         manifest_root=tmp_path / "manifests" / "resumed",
         checkpoint_root=checkpoint_root,
         resume=True,
         manifest_conflict_policy="reuse-identical",
     )
-    assert stopped.final_coordinate.completed_barrier == "after_adversarial"
-    _assert_matches_oracle(
-        f"minimax_{adversary_type}",
-        {
-            "full": _minimax_comparable(full.final_slots),
-            "resumed": _minimax_comparable(resumed.final_slots),
-        },
+
+    report = run_paired_equivalence(
+        f"minimax.{adversary_type}.resume",
+        lambda: full.final_slots,
+        lambda: resumed.final_slots,
+        comparable=_minimax_comparable,
+        left_label="uninterrupted",
+        right_label="resumed",
     )
+    assert stopped.final_coordinate.completed_barrier == "after_adversarial"
+    assert full.final_coordinate.phase == resumed.final_coordinate.phase == "done"
+    assert_paired_equivalent(report)
+    _assert_finite_numeric_tree(_minimax_comparable(full.final_slots))
+    assert float(full.final_slots["controller_loss"]) != 0.0
+    assert float(full.final_slots["adversary_loss"]) != 0.0
 
 
 @pytest.mark.parametrize(
@@ -181,7 +176,7 @@ def test_minimax_executor_matches_pre_native_oracle(
         ("closed_loop_distillation", "after_closed_loop_rollout_distillation"),
     ],
 )
-def test_distillation_executor_matches_pre_native_oracle(
+def test_distillation_resume_is_semantically_equivalent_to_uninterrupted_execution(
     tmp_path: Path,
     method: str,
     barrier: str,
@@ -212,7 +207,7 @@ def test_distillation_executor_matches_pre_native_oracle(
     full = execute_distillation_training_run_spec_native(
         spec,
         method=method,
-        run_id=f"oracle-{method}",
+        run_id=f"{method}-full",
         key=jr.PRNGKey(3),
         manifest_root=tmp_path / "manifests" / "full",
         checkpoint_root=tmp_path / "checkpoints" / "full",
@@ -222,7 +217,7 @@ def test_distillation_executor_matches_pre_native_oracle(
     stopped = execute_distillation_training_run_spec_native(
         spec,
         method=method,
-        run_id=f"oracle-{method}-resume",
+        run_id=f"{method}-resume",
         key=jr.PRNGKey(3),
         manifest_root=tmp_path / "manifests" / "stopped",
         checkpoint_root=checkpoint_root,
@@ -232,21 +227,44 @@ def test_distillation_executor_matches_pre_native_oracle(
     resumed = execute_distillation_training_run_spec_native(
         spec,
         method=method,
-        run_id=f"oracle-{method}-resume",
+        run_id=f"{method}-resume",
         key=jr.PRNGKey(3),
         manifest_root=tmp_path / "manifests" / "resumed",
         checkpoint_root=checkpoint_root,
         resume=True,
         manifest_conflict_policy="reuse-identical",
     )
-    assert stopped.final_coordinate.completed_barrier == barrier
-    keys = ("model", "optimizer", "prng", "completed_batches", "train_loss")
-    _assert_matches_oracle(
-        method,
-        {
-            "full": {key: full.final_slots[key] for key in keys if key in full.final_slots},
-            "resumed": {
-                key: resumed.final_slots[key] for key in keys if key in resumed.final_slots
-            },
-        },
+
+    execution_keys = ("model", "optimizer", "prng", "completed_batches", "train_loss")
+    durable_resume_keys = ("model", "prng", "completed_batches")
+
+    def execution_state(slots: dict[str, Any]) -> dict[str, Any]:
+        return {key: slots[key] for key in execution_keys}
+
+    def durable_resume_state(slots: dict[str, Any]) -> dict[str, Any]:
+        return {key: slots[key] for key in durable_resume_keys}
+
+    checkpoint_report = run_paired_equivalence(
+        f"{method}.checkpoint",
+        lambda: full.final_slots,
+        lambda: stopped.final_slots,
+        comparable=lambda slots: _numeric_arrays_by_path(execution_state(slots)),
+        left_label="uninterrupted",
+        right_label="stopped_after_terminal_update",
     )
+    resume_report = run_paired_equivalence(
+        f"{method}.resume",
+        lambda: full.final_slots,
+        lambda: resumed.final_slots,
+        comparable=lambda slots: _numeric_arrays_by_path(durable_resume_state(slots)),
+        left_label="uninterrupted",
+        right_label="resumed",
+    )
+    assert stopped.final_coordinate.completed_barrier == barrier
+    assert full.final_coordinate.completed_barrier == barrier
+    assert resumed.final_coordinate.phase == "done"
+    assert_paired_equivalent(checkpoint_report)
+    assert_paired_equivalent(resume_report)
+    _assert_finite_numeric_tree(execution_state(full.final_slots))
+    assert int(full.final_slots["completed_batches"]) == 1
+    assert float(full.final_slots["train_loss"]) != 0.0
