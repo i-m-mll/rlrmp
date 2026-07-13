@@ -72,6 +72,15 @@ minimum_non_skipped = 5
 negative_canary = "tests/test_retired_component_id_scan.py::test_scan_negative_canary_flags_unconfined_active_emission"
 
 [[families]]
+name = "retired_results_script_imports"
+owner = "81c150f"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_retired_results_script_imports.py::"
+minimum_non_skipped = 2
+negative_canary = "tests/test_retired_results_script_imports.py::test_retired_import_negative_canary_flags_direct_and_submodule_imports"
+
+[[families]]
 name = "descriptor_conformance_canary"
 owner = "7811e47"
 status = "live"
