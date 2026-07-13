@@ -46,12 +46,8 @@ def _write_training_run(
         validation_loss__total=np.array([[4.0], [3.0], [2.0]]),
         pgd_broad_epsilon_diagnostic_sampled=np.array([False, True, True]),
         pgd_broad_epsilon_inner_objective_improvement=np.array([[np.nan], [0.5], [0.75]]),
-        pgd_broad_epsilon_inner_objective_final_endpoint_gap=np.array(
-            [[np.nan], [0.0], [0.0]]
-        ),
-        pgd_broad_epsilon_epsilon_norm_radius_ratio_mean=np.array(
-            [[np.nan], [0.5], [0.75]]
-        ),
+        pgd_broad_epsilon_inner_objective_final_endpoint_gap=np.array([[np.nan], [0.0], [0.0]]),
+        pgd_broad_epsilon_epsilon_norm_radius_ratio_mean=np.array([[np.nan], [0.5], [0.75]]),
     )
     (run_dir / "training_diagnostics.json").write_text(
         json.dumps({"completed_batches": 3}) + "\n",
@@ -226,11 +222,19 @@ def test_training_diagnostics_bundle_executes_manifest_backed_summary(
     roles = {artifact.role for artifact in manifest.artifacts}
     assert roles == {"analysis_notes", "training_diagnostics_summary_json"}
 
-    json_path = fake_repo_root / "results" / "training_diagnostics" / "notes" / (
-        "training_diagnostics_summary.json"
+    json_path = (
+        fake_repo_root
+        / "results"
+        / "training_diagnostics"
+        / "notes"
+        / ("training_diagnostics_summary.json")
     )
-    markdown_path = fake_repo_root / "results" / "training_diagnostics" / "notes" / (
-        "training_diagnostics_summary.md"
+    markdown_path = (
+        fake_repo_root
+        / "results"
+        / "training_diagnostics"
+        / "notes"
+        / ("training_diagnostics_summary.md")
     )
     assert json_path.exists()
     assert markdown_path.exists()
@@ -291,8 +295,8 @@ def test_training_diagnostics_analysis_accepts_experiment_hash_routing(
     )
     fake_repo_root = tmp_path / "repo"
     monkeypatch.setattr(td, "REPO_ROOT", fake_repo_root)
-    notes_path = fake_repo_root / "results" / "0e3223d" / "notes" / (
-        "training_diagnostics_summary.md"
+    notes_path = (
+        fake_repo_root / "results" / "0e3223d" / "notes" / ("training_diagnostics_summary.md")
     )
     notes_path.parent.mkdir(parents=True)
     notes_path.write_text("# Handwritten context\n\nKeep me.\n", encoding="utf-8")
@@ -320,8 +324,8 @@ def test_training_diagnostics_analysis_accepts_experiment_hash_routing(
         fig_dump_formats=("json",),
     )
 
-    json_path = fake_repo_root / "results" / "0e3223d" / "notes" / (
-        "training_diagnostics_summary.json"
+    json_path = (
+        fake_repo_root / "results" / "0e3223d" / "notes" / ("training_diagnostics_summary.json")
     )
     assert json_path.exists()
     assert notes_path.read_text(encoding="utf-8").startswith("# Handwritten context")
@@ -484,9 +488,7 @@ def test_training_diagnostics_rejects_ambiguous_artifact_roles(
         )
         index = 0 if duplicate_kind == "legacy_npz" else 2
         duplicate_role = (
-            "training_diagnostics_npz"
-            if duplicate_kind == "legacy_npz"
-            else "training_summary"
+            "training_diagnostics_npz" if duplicate_kind == "legacy_npz" else "training_summary"
         )
         duplicate = manifest.artifacts[index].model_copy(update={"role": duplicate_role})
     manifest = manifest.model_copy(update={"artifacts": [*manifest.artifacts, duplicate]})
@@ -527,9 +529,7 @@ def test_native_training_diagnostics_zero_progress_has_no_latest_batch(
     artifact = manifest.artifacts[0].model_copy(
         update={"sha256": sha256(payload).hexdigest(), "size_bytes": len(payload)}
     )
-    manifest = manifest.model_copy(
-        update={"completed_batches": 0, "artifacts": [artifact]}
-    )
+    manifest = manifest.model_copy(update={"completed_batches": 0, "artifacts": [artifact]})
     resolved = ResolvedAnalysisInput(
         ref=ParentRef(kind="TrainingRunManifest", id=manifest.id, role="training_run"),
         manifest=manifest,

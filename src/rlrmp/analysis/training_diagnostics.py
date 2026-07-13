@@ -106,10 +106,7 @@ def training_diagnostics_recipe(
 ) -> AnalysisRecipeResult:
     """Build a manifest-backed training diagnostics summary analysis."""
     params = dict(spec.params)
-    summaries = [
-        _summary_for_input(resolved, root=root)
-        for resolved in inputs
-    ]
+    summaries = [_summary_for_input(resolved, root=root) for resolved in inputs]
     analysis = TrainingDiagnosticsSummaryAnalysis(
         variant="training_diagnostics_summary",
         cache_result=True,
@@ -225,9 +222,7 @@ def _read_legacy_companion(path: Path, *, label: str) -> Mapping[str, Any]:
         or not isinstance(completed_batches, int)
         or completed_batches < 0
     ):
-        raise ValueError(
-            f"Legacy {label} completed_batches must be a non-negative integer: {path}"
-        )
+        raise ValueError(f"Legacy {label} completed_batches must be a non-negative integer: {path}")
     stopped = payload.get("stopped_early_for_checkpoint_gate")
     if stopped is not None and not isinstance(stopped, bool):
         raise ValueError(
@@ -293,8 +288,7 @@ def _summary_for_input(
     manifest = resolved.manifest
     if not isinstance(manifest, TrainingRunManifest):
         raise TypeError(
-            f"Expected TrainingRunManifest {resolved.ref.id!r}, got "
-            f"{type(manifest).__name__}"
+            f"Expected TrainingRunManifest {resolved.ref.id!r}, got {type(manifest).__name__}"
         )
 
     native_artifact = _unique_artifact(manifest, roles=("training_diagnostics",))
@@ -391,8 +385,7 @@ def _summarize_native_diagnostics(
     payload_sha256 = sha256(payload).hexdigest()
     if artifact.sha256 is None:
         raise ValueError(
-            f"Native training diagnostics artifact for {manifest.id!r} is missing "
-            "required sha256"
+            f"Native training diagnostics artifact for {manifest.id!r} is missing required sha256"
         )
     if artifact.sha256 != payload_sha256:
         raise ValueError(
@@ -444,9 +437,7 @@ def _validate_native_diagnostics_binding(
             f"manifest={manifest.status!r}"
         )
     if manifest.completed_batches is None:
-        raise ValueError(
-            "Native training diagnostics require parent manifest completed_batches"
-        )
+        raise ValueError("Native training diagnostics require parent manifest completed_batches")
     if diagnostics.completed_batches != manifest.completed_batches:
         raise ValueError(
             "Native training diagnostics completed_batches does not match parent manifest: "
