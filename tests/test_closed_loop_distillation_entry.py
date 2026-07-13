@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+from pathlib import Path
 
 import jax.numpy as jnp
 import pytest
@@ -15,8 +16,18 @@ from rlrmp.train.distillation_native import closed_loop_kernel
 from rlrmp.train.training_configs import ClosedLoopDistillationConfig
 
 
+CLOSED_LOOP_SPEC_FIXTURE = Path(
+    "tests/fixtures/legacy_payloads/closed_loop_distillation_run_spec.json"
+)
+
+
 def test_closed_loop_typed_config_loads_and_refreshes_tracked_native_spec() -> None:
-    config = ClosedLoopDistillationConfig(n_batches=3, batch_size=2, n_replicates=1)
+    config = ClosedLoopDistillationConfig(
+        run_spec=CLOSED_LOOP_SPEC_FIXTURE,
+        n_batches=3,
+        batch_size=2,
+        n_replicates=1,
+    )
     spec = load_distillation_run_spec(config, method="closed_loop_distillation")
 
     assert spec["student_contract"]["n_train_batches"] == 3
@@ -24,6 +35,14 @@ def test_closed_loop_typed_config_loads_and_refreshes_tracked_native_spec() -> N
     assert spec["student_contract"]["n_replicates"] == 1
     assert spec["training_entry"]["module"] == "rlrmp.train.distillation_entry"
     assert spec["schema_version"] == "rlrmp.closed_loop_distillation.training_entry.v2"
+
+
+def test_closed_loop_requires_explicit_tracked_run_spec() -> None:
+    with pytest.raises(ValueError, match="requires an explicit tracked run_spec"):
+        load_distillation_run_spec(
+            ClosedLoopDistillationConfig(),
+            method="closed_loop_distillation",
+        )
 
 
 def test_closed_loop_reference_math_remains_a_distinct_kernel() -> None:
@@ -45,7 +64,10 @@ def test_closed_loop_reference_math_remains_a_distinct_kernel() -> None:
 
 
 def test_closed_loop_full_train_requires_both_confirmation_flags() -> None:
-    config = ClosedLoopDistillationConfig(full_train=True)
+    config = ClosedLoopDistillationConfig(
+        run_spec=CLOSED_LOOP_SPEC_FIXTURE,
+        full_train=True,
+    )
 
     with pytest.raises(PermissionError, match="requires both"):
         run_distillation_config(config, method="closed_loop_distillation")
