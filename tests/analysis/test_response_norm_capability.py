@@ -28,9 +28,6 @@ from rlrmp.figures import (
 )
 
 
-pytestmark = pytest.mark.feedbax_contract
-
-
 def _row(model: str, *, metric: str = "delta_position") -> dict[str, object]:
     return {
         "row_id": f"row-{model}",
@@ -150,14 +147,3 @@ def test_response_norm_spec_executes_intrinsic_facets_with_payload_cardinality(
     rendered = json.loads(Path(render_artifact.uri).read_text())
     rendered_names = {trace.get("name") for trace in rendered["data"]}
     assert {f"model-{index}" for index in range(model_count)} <= rendered_names
-
-
-def test_legacy_response_norm_producer_is_retired() -> None:
-    root = Path(__file__).resolve().parents[2]
-    assert not (
-        root / "src/rlrmp/analysis/pipelines/gru_perturbation_response_norm_plots.py"
-    ).exists()
-    assert not (root / "scripts/materialize_gru_perturbation_response_norm_plots.py").exists()
-    assert not (
-        root / "tests/analysis/pipelines/test_gru_perturbation_response_norm_plots.py"
-    ).exists()

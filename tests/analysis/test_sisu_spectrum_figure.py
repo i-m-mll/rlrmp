@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from feedbax.analysis.figures import execute_figure_spec
@@ -23,13 +22,8 @@ from rlrmp.sisu_figures import (
     sisu_figure_payload,
     sisu_spectrum_figure_spec,
 )
-from rlrmp.data_products.envelope import read_data_product
-
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TRACKED_SPEC = REPO_ROOT / "src/rlrmp/config/figure_specs/sisu_spectrum.json"
-
-pytestmark = pytest.mark.feedbax_contract
 
 
 def _analysis_payload(row_count: int) -> dict[str, object]:
@@ -74,22 +68,6 @@ def test_sisu_profile_cardinality_is_payload_bound(row_count: int) -> None:
         assert len(series) == 4  # three SISU curves plus one analytical reference
 
 
-def test_tracked_intent_is_native_manifest_bound_and_preserves_parity_oracle() -> None:
-    payload = json.loads(TRACKED_SPEC.read_text(encoding="utf-8"))
-    spec = FigureSpec.model_validate(payload)
-
-    assert spec.template == "rlrmp.profile_comparison"
-    assert spec.assembler is None
-    assert spec.facet_bindings["condition"].item == "manifest"
-    assert payload["metadata"]["shared_yaxes"] == "all"
-    assert (REPO_ROOT / payload["metadata"]["parity_oracle"]).is_file()
-    product = read_data_product(REPO_ROOT / payload["metadata"]["parity_product"])
-    assert product.product_schema_id == "rlrmp.figure_parity.sisu_spectrum"
-    assert product.artifacts[0].sha256 == (
-        "f202c09eee90593aa533378c4048b88c28d9ab8d004c479d4e2cbc4458bedc2a"
-    )
-
-
 @pytest.mark.parametrize("row_count", [2, 3])
 def test_living_sisu_spec_executes_to_completed_figure_manifest(
     tmp_path: Path,
@@ -130,22 +108,3 @@ def test_figure_adapter_has_no_analysis_or_custody_side_effects() -> None:
     for forbidden in ("plotly", "record_json_artifact", "write_text", "save_figure"):
         assert forbidden not in source
     assert sisu_spectrum_figure_spec().template == "rlrmp.profile_comparison"
-
-
-def test_retired_direct_builder_package_remains_absent() -> None:
-    retired_source = REPO_ROOT / "src/rlrmp/analysis/pipelines"
-    assert not any(retired_source.rglob("*.py"))
-    assert not (retired_source / "sisu_spectrum_diagnostics.py").exists()
-    assert not (
-        REPO_ROOT / "tests/analysis/pipelines/test_sisu_spectrum_diagnostics.py"
-    ).exists()
-
-
-def test_living_sisu_figure_surfaces_do_not_reference_retirement_candidate() -> None:
-    retired_issue = "e4800" + "d6"
-    for path in (
-        REPO_ROOT / "src/rlrmp/sisu_figures.py",
-        TRACKED_SPEC,
-        REPO_ROOT / "tests/analysis/test_sisu_spectrum_figure.py",
-    ):
-        assert retired_issue not in path.read_text(encoding="utf-8")

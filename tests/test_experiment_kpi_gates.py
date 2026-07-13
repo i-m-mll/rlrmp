@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 import re
 import subprocess
@@ -82,6 +83,19 @@ def test_materialization_gate_recurses_into_inline_envelopes() -> None:
         "outer": [{"inner": {"graph": {"inline": {"payload": "x" * 20_000}}}}]
     }
     assert materialization_reasons(payload) == ["expanded_inline_envelope"]
+
+
+def test_materialization_gate_accepts_compact_graph_document_but_rejects_inline_copy() -> None:
+    graph_path = REPO_ROOT / "results/ef9c882/runs/base.graph.json"
+    graph = json.loads(graph_path.read_text(encoding="utf-8"))
+
+    assert graph["schema_id"] == "feedbax.spec.graph"
+    assert graph["schema_version"] == "feedbax.spec.graph.v4"
+    assert graph_path.stat().st_size >= tracked_materialization_gate.MIN_EXPANDED_ENVELOPE_BYTES
+    assert materialization_reasons(graph, byte_size=graph_path.stat().st_size) == []
+    assert materialization_reasons({"graph": {"inline": graph}}) == [
+        "expanded_inline_envelope"
+    ]
 
 
 def test_materialization_gate_uses_bytes_not_newlines() -> None:

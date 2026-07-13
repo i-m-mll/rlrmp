@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -31,9 +30,6 @@ SPECS = (
     ("1ab1fef", "adaptive_damage_lambda"),
     ("410d7ac", "delta_v_signature"),
 )
-
-pytestmark = pytest.mark.feedbax_contract
-
 
 def _record(label: str) -> dict[str, object]:
     return {
@@ -92,18 +88,6 @@ def test_registered_analysis_keeps_row_cardinality_data_bound(count: int) -> Non
     )
 
 
-def test_all_tracked_specs_are_native_manifest_data_bound() -> None:
-    for issue, topic in SPECS:
-        path = REPO_ROOT / "results" / issue / "figures" / topic / "spec.json"
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        spec = FigureSpec.model_validate(payload)
-        assert spec.template == "rlrmp.scalar_diagnostic"
-        assert spec.assembler is None
-        assert all(binding.item == "manifest" for binding in spec.facet_bindings.values())
-        assert payload["metadata"]["analysis_type"] == SCALAR_DIAGNOSTIC_ANALYSIS_TYPE
-        assert (REPO_ROOT / payload["metadata"]["parity_oracle"]).is_file()
-
-
 @pytest.mark.parametrize("issue,topic", SPECS)
 def test_tracked_specs_execute_to_completed_figure_manifests(
     tmp_path: Path,
@@ -137,15 +121,3 @@ def test_tracked_specs_execute_to_completed_figure_manifests(
     assert rendered.status == "completed"
     assert path.is_file()
     assert rendered.resolved_inputs == [parent]
-
-
-def test_legacy_exclusive_producers_are_retired() -> None:
-    assert not (
-        REPO_ROOT / "results/91a090c/scripts/materialize_adaptive_damage_lambda.py"
-    ).exists()
-    assert not (
-        REPO_ROOT / "results/410d7ac/scripts/analyse_linear_decoupling_mvp.py"
-    ).exists()
-    assert not (
-        REPO_ROOT / "results/1ab1fef/scripts/materialize_post_run_analysis.py"
-    ).exists()

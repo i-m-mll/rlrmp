@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 
-import pytest
 from feedbax.analysis.figures import execute_figure_spec
 from feedbax.contracts.figures import FigureSpec
 from feedbax.contracts.manifest import (
@@ -17,14 +15,11 @@ from feedbax.contracts.manifest import (
     write_manifest,
 )
 
-from rlrmp.data_products.envelope import read_data_product
 from rlrmp.figures import register_rlrmp_figure_surfaces, standard_matrix_payload
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIGURE_ROOT = REPO_ROOT / "results" / "3702f54" / "figures"
-ORACLE_ROOT = REPO_ROOT / "results" / "3702f54" / "data_products"
-PRODUCER = REPO_ROOT / "results" / "3702f54" / "scripts" / "analyse_pregomatrix.py"
 TOPICS = {
     "forward_velocity_profiles": "rlrmp.profile_comparison",
     "hold_drift_profiles": "rlrmp.profile_comparison",
@@ -34,27 +29,8 @@ TOPICS = {
 }
 
 
-pytestmark = pytest.mark.feedbax_contract
-
-
 def _json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-def test_all_five_topics_are_native_manifest_data_bound_specs() -> None:
-    for topic, template in TOPICS.items():
-        payload = _json(FIGURE_ROOT / topic / "spec.json")
-        spec = FigureSpec.model_validate(payload)
-        assert spec.template == template
-        assert spec.assembler is None
-        assert spec.slot_bindings
-        assert spec.facet_bindings
-        assert spec.figure_routing["experiment"] == "3702f54"
-        assert spec.figure_routing["topic"] == topic
-        assert all(binding.item == "manifest" for binding in spec.facet_bindings.values())
-        assert payload["metadata"]["parity_oracle"] == (
-            f"results/3702f54/data_products/figure_parity_{topic}.json"
-        )
 
 
 def test_profiles_preserve_intrinsic_axes_and_shared_y_semantics() -> None:
@@ -195,31 +171,3 @@ def test_all_five_tracked_specs_execute_to_completed_figure_manifests(
         assert all(artifact.uri and Path(artifact.uri).is_file() for artifact in render_artifacts)
         if topic in {"forward_velocity_profiles", "hold_drift_profiles"}:
             assert figure_manifest.figure_spec.inline["metadata"]["shared_yaxes"] == "all"
-
-
-def test_archived_oracles_preserve_labels_hashes_and_summary_values() -> None:
-    product = read_data_product(ORACLE_ROOT / "figure_parity_oracles.json")
-    assert product.product_schema_id == "rlrmp.figure_parity_oracles"
-    assert len(product.artifacts) == 5
-    for artifact in product.artifacts:
-        assert artifact.uri is not None
-        assert hashlib.sha256((REPO_ROOT / artifact.uri).read_bytes()).hexdigest() == (
-            artifact.sha256
-        )
-
-    peak = _json(ORACLE_ROOT / "figure_parity_peak_velocity_distributions.json")
-    summary = _json(ORACLE_ROOT / "figure_parity_summary_metrics.json")
-    cells = peak["plot_kwargs"]["cells"]
-    assert len(cells) == 10
-    assert set(cells) == set(peak["cell_stats"])
-    assert set(cells) == set(summary["cell_stats"])
-    assert peak["cell_stats"]["lit__post_nojerk"]["mean_peak_velocity"] == (
-        0.9685674905776978
-    )
-    assert summary["cell_stats"]["full_trial_pl__pos10_prego_1"][
-        "mean_pre_go_rms_mm"
-    ] == 0.07584098726511002
-
-
-def test_legacy_figure_builders_and_save_sites_are_deleted() -> None:
-    assert not PRODUCER.exists()

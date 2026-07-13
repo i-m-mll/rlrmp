@@ -114,6 +114,9 @@ def materialization_reasons(payload: Any, *, byte_size: int | None = None) -> li
     ):
         reasons.append("expanded_run_envelope")
 
+    # Standalone ``feedbax.spec.graph`` documents are compact authored graph
+    # inputs. Only embedding their full payload under an inline graph/base
+    # container is a tracked materialization.
     if any(
         isinstance(obj.get(container), dict)
         and "inline" in obj[container]
