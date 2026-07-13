@@ -114,21 +114,21 @@ def test_gru_manifest_keeps_same_coordinate_rows_not_applicable() -> None:
         candidate_actions=candidate,
         reference_actions=reference,
         action_weight=np.broadcast_to(np.eye(2), (3, 2, 2)),
-        source_issue_id="3b2af27",
+        source_issue_id="abc1234",
     )
     row = manifest.to_payload()
     by_name = _components(row)
 
     assert row["spec"]["architecture"] == "gru"
     assert row["spec"]["parameters"]["certificate_mode"] == "empirical_nonlinear"
-    assert row["spec"]["parameters"]["source_issue"] == "3b2af27"
+    assert row["spec"]["parameters"]["source_issue"] == "abc1234"
     assert by_name[STATE_WEIGHTED_ACTION_MISMATCH]["status"] == "available"
     assert by_name[STATE_WEIGHTED_ACTION_MISMATCH]["summary"]["aggregate_mismatch_ratio"] == 1.0
     assert by_name[CLOSED_LOOP_TRANSITION_MISMATCH]["status"] == "not_applicable"
     assert by_name[VALUE_POLICY_GAP]["status"] == "not_applicable"
     assert by_name[BELLMAN_HESSIAN_RESIDUAL]["status"] == "not_applicable"
     assert by_name[OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH]["status"] == "missing"
-    assert "3b2af27" in by_name[OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH]["reason"]
+    assert "abc1234" in by_name[OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH]["reason"]
     assert "4D-to-8D" in by_name[OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH]["reason"]
 
     diagnostic = failure_diagnostic_from_standard_row(row, source_group="cs_stochastic_gru")

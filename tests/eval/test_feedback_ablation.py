@@ -356,7 +356,7 @@ def test_per_replicate_command_penalty_metrics_accepts_jax_arrays() -> None:
 def test_markdown_renders_not_available_rows() -> None:
     manifest = {
         "issue": "57ab156",
-        "source_experiment": "aacb9ed",
+        "source_experiment": "abc1234",
         "scope": "test",
         "checkpoint_policy": "validation_selected_per_replicate",
         "runs": {
