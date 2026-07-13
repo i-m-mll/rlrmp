@@ -588,9 +588,7 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
         "broad_epsilon_pgd_budget_schedule": str(
             broad_pgd_schedule.get("mode", broad_pgd.get("budget_schedule_mode", "fixed"))
         ),
-        "broad_epsilon_pgd_fixed_radius_15cm": broad_pgd_config.get(
-            "fixed_l2_radius_15cm"
-        ),
+        "broad_epsilon_pgd_fixed_radius_15cm": broad_pgd_config.get("fixed_l2_radius_15cm"),
         "broad_epsilon_pgd_fixed_radius_source": broad_pgd_config.get(
             "fixed_radius_source",
         ),
@@ -908,7 +906,7 @@ def build_cs_supervised_native_initial_slots(
     key_init, key_train, _key_adversary = split_initial_keys(key)
     pair = setup_task_model_pair(hps, key=key_init)
     optimizer = _build_optimizer(hps)
-    where_train = _where_train()[0]
+    where_train = _where_train(hps)[0]
     template_state = _initial_training_state(
         model=pair.model,
         trainer=optimizer,
@@ -1383,9 +1381,7 @@ def verify_resume_from_context(context: RunSpecExecutionContext) -> dict[str, An
         expected_slots=initial_slots,
         resume_slot_transform=resume_slot_transform,
         continuation_request=training_spec.checkpoint_progress.continuation,
-        allow_new_lineage_override=(
-            training_spec.checkpoint_progress.continuation is not None
-        ),
+        allow_new_lineage_override=(training_spec.checkpoint_progress.continuation is not None),
     )
     return {
         "verified_resume": True,
@@ -2162,9 +2158,11 @@ def make_delayed_cosine_schedule(
     )
 
 
-def _where_train() -> dict[int, Callable[[Any], tuple[Any, ...]]]:
+def _where_train(hps: TreeNamespace | None = None) -> dict[int, Callable[[Any], tuple[Any, ...]]]:
     def where_train_fn(model):
         net = model.nodes["net"]
+        if getattr(hps, "hidden_type", None) == "static_linear":
+            return (net.gain,)
         return staged_network_trainable_parts(net)
 
     return {0: where_train_fn}
