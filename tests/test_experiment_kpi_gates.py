@@ -34,49 +34,103 @@ MATERIALIZATION_GATE_SPEC.loader.exec_module(tracked_materialization_gate)
 measure = experiment_kpi.measure
 materialization_reasons = tracked_materialization_gate.materialization_reasons
 scan_tracked = tracked_materialization_gate.scan_tracked
+MAX_TRACKED_JSON_BYTES = tracked_materialization_gate.MAX_TRACKED_JSON_BYTES
 
 
 pytestmark = pytest.mark.feedbax_contract
 ALLOWLIST = REPO_ROOT / "ci" / "tracked-materialization-allowlist.toml"
 
 
-def test_tracked_materializations_are_explicitly_grandfathered() -> None:
+def test_materialization_inventory_is_exactly_grandfathered() -> None:
     allowed = {
         entry["path"]
         for entry in tomllib.loads(ALLOWLIST.read_text(encoding="utf-8"))["violations"]
     }
     found = scan_tracked()
-    assert "results/c6c5997/runs/matrix.json" not in found
-    assert "results/ef9c882/runs/matrix.json" not in found
-    assert (
-        "results/3cd018b/runs/ramp3500_to1000/feedbax_training_run_spec.json"
-        not in found
-    )
-    assert allowed == set()
-    assert not set(found) - allowed, (
-        "New tracked expanded/resolved spec materializations: "
-        f"{sorted(set(found) - allowed)}. Store a compact authored ref/spec instead; "
-        "grandfather only historical violations with an owning migration issue."
+    assert "results/3cd018b/runs/const1000.json" in found
+    assert "results/ef9c882/runs/hold__force_filter.json" in found
+    assert found["results/ef9c882/runs/matrix.json"] == [
+        "absolute_filesystem_path_in_spec"
+    ]
+    assert allowed == set(found), (
+        "Tracked materialization allowlist drifted. Remove stale entries when files are "
+        "remediated, and add no new entry without an owning migration issue or keep rationale. "
+        f"Only detected: {sorted(set(found) - allowed)}; only allowed: "
+        f"{sorted(allowed - set(found))}."
     )
 
 
 def test_materialization_gate_negative_canary_rejects_semantic_patterns() -> None:
-    expanded = {"schema_id": "feedbax.spec.training_run_matrix", "base": {"inline": {}}}
-    expanded["base"]["inline"] = {f"field_{i}": i for i in range(100)}
-    assert materialization_reasons(expanded) == ["large_run_matrix_base_inline"]
-
-    resolved = {
-        "schema_id": "feedbax.spec.training_run",
-        "graph": {"inline": {f"node_{i}": {"type": "Node"} for i in range(50)}},
+    expanded = {
+        "wrapper": {
+            "rlrmp_run_spec": {
+                "schema_id": "rlrmp.spec.training_run",
+                "payload": "x" * 20_000,
+            },
+            "nested": {"graph": {"inline": {"payload": "x" * 20_000}}},
+        }
     }
-    assert materialization_reasons(resolved) == ["resolved_training_run_graph_inline"]
+    assert materialization_reasons(expanded) == [
+        "expanded_run_envelope",
+        "expanded_inline_envelope",
+    ]
+
+
+def test_materialization_gate_recurses_into_inline_envelopes() -> None:
+    payload = {
+        "outer": [{"inner": {"graph": {"inline": {"payload": "x" * 20_000}}}}]
+    }
+    assert materialization_reasons(payload) == ["expanded_inline_envelope"]
+
+
+def test_materialization_gate_uses_bytes_not_newlines() -> None:
+    payload = ["single-line payload"]
+    assert materialization_reasons(payload, byte_size=MAX_TRACKED_JSON_BYTES + 1) == [
+        "oversized_json_payload"
+    ]
+
+
+@pytest.mark.parametrize("path", ["/Users/example/run", r"C:\\runs\\example"])
+def test_materialization_gate_rejects_absolute_spec_override_values(path: str) -> None:
+    payload = {
+        "schema_id": "feedbax.spec.training_run_matrix",
+        "rows": [{"overrides": [{"path": "checkpoint_root", "value": path}]}],
+    }
+    assert materialization_reasons(payload) == ["absolute_filesystem_path_in_spec"]
+
+
+def test_materialization_scan_covers_nested_tracked_json_and_skips_invalid_json(
+    tmp_path: Path,
+) -> None:
+    nested = tmp_path / "results" / "abcdef0" / "runs" / "nested" / "run.json"
+    nested.parent.mkdir(parents=True)
+    nested.write_text('{"schema_id":"feedbax.spec.run","root":"/tmp/run"}')
+    invalid = nested.with_name("invalid.json")
+    invalid.write_text("not-json")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "results"], cwd=tmp_path, check=True)
+
+    assert scan_tracked(tmp_path) == {
+        "results/abcdef0/runs/nested/run.json": ["absolute_filesystem_path_in_spec"]
+    }
 
 
 def test_materialization_allowlist_has_owner_and_rationale() -> None:
     entries = tomllib.loads(ALLOWLIST.read_text(encoding="utf-8"))["violations"]
+    assert len({entry["path"] for entry in entries}) == len(entries)
+    retained_roles = {
+        "retained analysis/evidence document",
+        "retained governed analysis data product",
+        "retained historical analysis/evidence document",
+        "retained legacy authored/execution run document",
+    }
     for entry in entries:
         assert re.fullmatch(r"[0-9a-f]{7}", entry["owner"])
         assert entry["reason"].strip()
+        if entry["owner"] not in {"dd7234e", "ee7a6f4"}:
+            assert entry["reason"].startswith("Keep rationale:")
+            assert any(role in entry["reason"] for role in retained_roles)
+            assert "no current sibling migration owns removal" in entry["reason"]
 
 
 def test_experiment_kpi_is_revision_pinned_and_deterministic(tmp_path: Path) -> None:
