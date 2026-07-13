@@ -2,7 +2,7 @@
 
 Tracking issue: `2cb6a58`
 
-Status: **authored and emitted; blocked before batch 1 by fresh-start orchestration**.
+Status: **authored, emitted, and assembled; blocked before batch 1 by typed schedule preflight**.
 The protocol remains frozen and every outcome is non-scientific engineering-smoke
 evidence; no hypothesis is answered by this protocol.
 
@@ -97,11 +97,11 @@ substitute for a required manifest or `report_render` artifact.
 ## Gate before execution can resume
 
 Protected Feedbax `060d65d285969ec11e4a284712913550c462ba18` is pinned, the
-pin guard passes, and the governed row re-lowering route is integrated. Validation,
-lowering, dry-run identity generation, and custody emission pass. Execution can
-resume only after the registered orchestration request path distinguishes fresh
-matrices from continuations: fresh matrices must not require a nonexistent source
-checkpoint transaction, while continuations must keep their immutable-input gate.
-[issue:52bacb3] owns that correction and structurally blocks this experiment.
+pin guard passes, and the governed row re-lowering plus fresh-matrix routes are
+integrated. Validation, lowering, dry-run identity generation, custody emission,
+and assembly pass. Execution can resume only after schedule realization consumes a
+typed optimizer declaration for the registered C&S method shape without weakening
+preflight or adding an RLRMP workaround. [issue:ebd5d02] owns that correction and
+structurally blocks this experiment; [issue:52bacb3] is the repaired predecessor.
 
 The full RLRMP suite remains parent-serialized and is forbidden in this child lane.
