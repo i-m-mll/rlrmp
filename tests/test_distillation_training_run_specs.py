@@ -22,6 +22,9 @@ from rlrmp.train.training_configs import (
 )
 
 GUIDED_SPEC_FIXTURE = Path("tests/fixtures/legacy_payloads/guided_distillation_run_spec.json")
+CLOSED_LOOP_SPEC_FIXTURE = Path(
+    "tests/fixtures/legacy_payloads/closed_loop_distillation_run_spec.json"
+)
 
 
 def _canonical_json(value: object) -> str:
@@ -33,7 +36,7 @@ def _canonical_json(value: object) -> str:
     [
         (GUIDED_SPEC_FIXTURE, "guided_distillation"),
         (
-            Path("results/a378b34/runs/h0_extlqg_6d_closed_loop_distillation.json"),
+            CLOSED_LOOP_SPEC_FIXTURE,
             "closed_loop_distillation",
         ),
     ],
@@ -70,7 +73,7 @@ def test_distillation_payload_golden_fixture_matches_current_native_refs() -> No
         method="guided_distillation",
     )
     closed = load_distillation_run_spec(
-        ClosedLoopDistillationConfig(),
+        ClosedLoopDistillationConfig(run_spec=CLOSED_LOOP_SPEC_FIXTURE),
         method="closed_loop_distillation",
     )
     guided_payload = TrainingRunSpec.model_validate(
@@ -105,7 +108,7 @@ def test_distillation_payload_versions_advance_with_native_callable_paths() -> N
         ),
         (
             "closed_loop_distillation",
-            ClosedLoopDistillationConfig(),
+            ClosedLoopDistillationConfig(run_spec=CLOSED_LOOP_SPEC_FIXTURE),
             "rlrmp.spec.training_method.closed_loop_distillation_payload.v1",
         ),
     ],

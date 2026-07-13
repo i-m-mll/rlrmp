@@ -100,8 +100,18 @@ def test_ef9c882_matrix_is_compact_and_preserves_historical_base(tmp_path: Path)
     matrix = load_matrix(temporary_matrix_path)
     register_rlrmp_training_methods()
     materialized = materialize_run_matrix(matrix, repo_root=tmp_path)
+    original_materialized = materialize_run_matrix(
+        TrainingRunMatrixSpec.model_validate(original),
+        repo_root=REPO_ROOT,
+    )
     assert [row.row_id for row in materialized.rows] == [
         row["row_id"] for row in original["rows"]
+    ]
+    # Resolved-snapshot canonicalization normalizes signed zero to zero. That
+    # advances exact planned-manifest IDs, but the scientific row payloads are
+    # value-equal to the pre-conversion inline materialization.
+    assert [row.payload for row in materialized.rows] == [
+        row.payload for row in original_materialized.rows
     ]
 
 
