@@ -11,9 +11,6 @@ from typing import Any
 import pytest
 from feedbax.contracts.run_matrix import TrainingRunMatrixSpec
 from feedbax.contracts.spec_storage import training_spec_canonical_bytes
-from feedbax.contracts.training import TrainingRunSpec
-
-from rlrmp.runtime.checkpoint_fork_gate import register_rlrmp_training_methods
 from rlrmp.train.heterogeneous_training_matrix import (
     ARCHITECTURES,
     COMPACT_ROW_OVERRIDE_PATHS,
@@ -180,26 +177,5 @@ def test_current_generic_lowerer_dependency_is_explicit() -> None:
             module.require_heterogeneous_row_lowering_contract()
 
 
-def test_complete_content_pinned_bases_are_retained_with_disjoint_roots() -> None:
-    register_rlrmp_training_methods()
-    retained = sorted(RUNS_DIR.glob("*.training.json"))
-    assert [path.name for path in retained] == sorted(
-        f"{architecture}.{distribution}.training.json"
-        for architecture in ARCHITECTURES
-        for distribution in DISTRIBUTIONS
-    )
-
-    artifact_roots: set[str] = set()
-    manifest_roots: set[str] = set()
-    for path in retained:
-        spec = TrainingRunSpec.model_validate_json(path.read_text(encoding="utf-8"))
-        row_id = path.name.removesuffix(".training.json")
-        assert spec.metadata["row_id"] == row_id
-        assert spec.metadata["execution_start"] == "fresh"
-        assert spec.checkpoint_progress.continuation is None
-        assert spec.checkpoint_progress.resume_from is None
-        artifact_roots.add(spec.artifacts.artifact_root)
-        manifest_roots.add(spec.artifacts.manifest_root)
-
-    assert len(artifact_roots) == len(retained)
-    assert len(manifest_roots) == len(retained)
+def test_no_expanded_generated_specs_are_retained_before_governed_storage() -> None:
+    assert list(RUNS_DIR.glob("*.training.json")) == []

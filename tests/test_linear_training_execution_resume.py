@@ -290,9 +290,10 @@ def test_registered_linear_rows_emit_standard_manifest_and_resume_exactly(
         assert cell.params["use_bias"] is False
         assert readout.params["use_bias"] is False
         assert contract["augmented_state_basis"] == [
-            "controller_visible_target_relative_coupled_state",
-            "hidden_state",
+            "controller_visible_target_relative_post_step_coupled_state",
+            "previous_step_hidden_state",
         ]
+        assert contract["state_history_timing"] == "feedbax_post_step_history_pair"
         assert contract["static_gain_coercion"] == "forbidden"
         components = contract["component_inputs"]
         assert components["augmented_states"]["source"] == (

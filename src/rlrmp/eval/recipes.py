@@ -217,6 +217,20 @@ _PARAMS_MODEL_BY_RECIPE = {
 def register_rlrmp_evaluation_recipes(*, replace: bool = True) -> None:
     """Register rlrmp's manifest-canonical evaluation recipes."""
 
+    from rlrmp.analysis.standard_certificate import (
+        register_standard_certificate_component_provider,
+    )
+    from rlrmp.eval.linear_recurrent_certificate import (
+        LINEAR_RECURRENT_AUGMENTED_PROVIDER,
+        linear_recurrent_augmented_component_kwargs,
+    )
+
+    register_standard_certificate_component_provider(
+        LINEAR_RECURRENT_AUGMENTED_PROVIDER,
+        linear_recurrent_augmented_component_kwargs,
+        replace=replace,
+    )
+
     for recipe_name, model_class in _PARAMS_MODEL_BY_RECIPE.items():
         register_params_model(recipe_name, model_class, replace=replace)
     from rlrmp.eval.perturbation_bank import (

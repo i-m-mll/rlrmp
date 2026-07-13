@@ -131,13 +131,14 @@ def test_linear_recurrent_handoff_uses_exact_standard_certificate_vocabulary() -
     contract = authored.metadata["certificate_contract"]
     assert contract["static_gain_coercion"] == "forbidden"
     assert contract["augmented_state_basis"] == [
-        "controller_visible_target_relative_coupled_state",
-        "hidden_state",
+        "controller_visible_target_relative_post_step_coupled_state",
+        "previous_step_hidden_state",
     ]
+    assert contract["state_history_timing"] == "feedbax_post_step_history_pair"
     assert contract["recurrence"] == "zero_bias_leaky_identity_activation"
-    assert "alpha * cell.weight_ih" in contract["component_inputs"]["candidate_transition"][
-        "construction"
-    ]
+    construction = contract["component_inputs"]["candidate_transition"]["construction"]
+    assert "A_target_relative + B @ K_x" in construction
+    assert "alpha * cell.weight_ih" in construction
 
 
 def test_linear_recurrent_runtime_uses_zero_bias_identity_cell() -> None:

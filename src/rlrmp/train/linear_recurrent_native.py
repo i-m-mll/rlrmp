@@ -25,14 +25,22 @@ _COMPONENT_INPUTS = {
     "augmented_states": {
         "source": "EvaluationRunManifest.cached_states",
         "construction": (
-            "concatenate(controller_visible_target_relative_coupled_state, states.net.hidden)"
+            "concatenate(controller_visible_target_relative_post_step_coupled_state, "
+            "previous_step_hidden_state)"
         ),
-        "basis": ["controller_visible_target_relative_coupled_state", "hidden_state"],
+        "basis": [
+            "controller_visible_target_relative_post_step_coupled_state",
+            "previous_step_hidden_state",
+        ],
+        "state_history_timing": "feedbax_post_step_history_pair",
         "layout": "batch_time_state",
     },
     "candidate_augmented_action_sensitivity": {
         "source": "trained_controller_graph",
-        "construction": "[zeros(action, plant_state), readout.weight]",
+        "construction": (
+            "[readout.weight @ alpha * cell.weight_ih @ observation_map, "
+            "readout.weight @ ((1 - alpha) * I + alpha * cell.weight_hh)]"
+        ),
         "layout": "time_action_augmented_state",
     },
     "reference_augmented_action_sensitivity": {
@@ -44,9 +52,13 @@ _COMPONENT_INPUTS = {
     "candidate_transition": {
         "source": "trained_controller_graph_plus_mechanics",
         "construction": (
-            "[[A_target_relative, B @ readout.weight], "
+            "[[A_target_relative + B @ K_x, B @ K_h], "
             "[alpha * cell.weight_ih @ target_relative_observation_map, "
-            "(1 - alpha) * I + alpha * cell.weight_hh]]; alpha=cell.dt/cell.tau"
+            "(1 - alpha) * I + alpha * cell.weight_hh]]; "
+            "K_x=readout.weight @ alpha * cell.weight_ih @ "
+            "target_relative_observation_map; "
+            "K_h=readout.weight @ ((1 - alpha) * I + alpha * cell.weight_hh); "
+            "alpha=cell.dt/cell.tau"
         ),
         "layout": "time_augmented_state_augmented_state",
     },
@@ -235,9 +247,10 @@ def author_linear_recurrent_training_base(
                     "architecture": LINEAR_RECURRENT_ARCHITECTURE,
                     "mode": LINEAR_RECURRENT_CERTIFICATE_MODE,
                     "augmented_state_basis": [
-                        "controller_visible_target_relative_coupled_state",
-                        "hidden_state",
+                        "controller_visible_target_relative_post_step_coupled_state",
+                        "previous_step_hidden_state",
                     ],
+                    "state_history_timing": "feedbax_post_step_history_pair",
                     "affine_terms": "forbidden",
                     "cell_bias": "absent",
                     "readout_bias": "absent",

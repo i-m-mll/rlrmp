@@ -6,7 +6,7 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, get_args
+from typing import Any, Callable, get_args
 
 import jax.numpy as jnp
 import numpy as np
@@ -40,6 +40,23 @@ GAIN_DIAGNOSTIC_SIDECAR = "gain_diagnostic_sidecar"
 ROLLOUT_BEHAVIOR_SIDECAR = "rollout_behavior_sidecar"
 STANDARD_CERTIFICATE_EVALUATION_STATE_KEY = "standard_certificate_rows"
 STANDARD_CERTIFICATE_FORMAT = STANDARD_CERTIFICATES_SCHEMA_VERSION
+StandardCertificateComponentProvider = Callable[[Mapping[str, Any]], dict[str, Any]]
+_COMPONENT_PROVIDERS: dict[str, StandardCertificateComponentProvider] = {}
+
+
+def register_standard_certificate_component_provider(
+    name: str,
+    provider: StandardCertificateComponentProvider,
+    *,
+    replace: bool = False,
+) -> None:
+    """Register an evaluation-side numeric component provider."""
+
+    if not name or name != name.strip():
+        raise ValueError("standard certificate component provider name must be non-empty")
+    if name in _COMPONENT_PROVIDERS and not replace:
+        raise ValueError(f"standard certificate component provider {name!r} already registered")
+    _COMPONENT_PROVIDERS[name] = provider
 
 
 @dataclass(frozen=True)
@@ -118,7 +135,10 @@ def materialize_evaluation_standard_certificate_rows(
             )
         dependencies.append({"manifest_id": manifest_id, "n_rows": len(requests)})
         for request_payload in requests:
-            request = standard_certificate_request_from_payload(request_payload)
+            request = standard_certificate_request_from_payload(
+                request_payload,
+                expected_evaluation_manifest_id=str(manifest_id),
+            )
             normalized = _validated_grouped_request(request, manifest_id=manifest_id)
             if normalized.spec.run_id in seen_run_ids:
                 raise ValueError(
@@ -140,6 +160,8 @@ def materialize_evaluation_standard_certificate_rows(
 
 def standard_certificate_request_from_payload(
     payload: StandardCertificateRowRequest | Mapping[str, Any],
+    *,
+    expected_evaluation_manifest_id: str | None = None,
 ) -> StandardCertificateRowRequest:
     """Decode the canonical cached evaluation-state row contract."""
 
@@ -147,17 +169,34 @@ def standard_certificate_request_from_payload(
         return payload
     if not isinstance(payload, Mapping):
         raise TypeError("standard certificate row request must be a mapping")
-    required = {"spec", "architecture", "status", "certificate_mode", "component_kwargs"}
+    required = {"spec", "architecture", "status", "certificate_mode"}
     missing = sorted(required.difference(payload))
     if missing:
         raise ValueError(f"standard certificate row request is missing fields {missing}")
-    unknown = sorted(set(payload).difference(required | {"metrics", "artifacts"}))
+    component_sources = {"component_kwargs", "component_provider"}.intersection(payload)
+    if len(component_sources) != 1:
+        raise ValueError(
+            "standard certificate row request requires exactly one of "
+            "component_kwargs or component_provider"
+        )
+    unknown = sorted(
+        set(payload).difference(
+            required | {"component_kwargs", "component_provider", "metrics", "artifacts"}
+        )
+    )
     if unknown:
         raise ValueError(f"standard certificate row request has unknown fields {unknown}")
     spec_payload = payload["spec"]
     if not isinstance(spec_payload, Mapping):
         raise TypeError("standard certificate row request spec must be a mapping")
-    component_kwargs = payload["component_kwargs"]
+    component_kwargs = (
+        _component_kwargs_from_provider(
+            payload["component_provider"],
+            expected_evaluation_manifest_id=expected_evaluation_manifest_id,
+        )
+        if "component_provider" in payload
+        else payload["component_kwargs"]
+    )
     metrics = payload.get("metrics", {})
     artifacts = payload.get("artifacts", {})
     if not isinstance(component_kwargs, Mapping):
@@ -184,6 +223,42 @@ def standard_certificate_request_from_payload(
         metrics=dict(metrics),
         artifacts={str(key): str(value) for key, value in artifacts.items()},
     )
+
+
+def _component_kwargs_from_provider(
+    payload: Any,
+    *,
+    expected_evaluation_manifest_id: str | None,
+) -> dict[str, Any]:
+    if not isinstance(payload, Mapping):
+        raise TypeError("standard certificate component_provider must be a mapping")
+    unknown = sorted(set(payload).difference({"name", "inputs"}))
+    if unknown:
+        raise ValueError(f"standard certificate component_provider has unknown fields {unknown}")
+    name = payload.get("name")
+    inputs = payload.get("inputs")
+    if not isinstance(name, str) or not name:
+        raise ValueError("standard certificate component_provider requires a name")
+    if not isinstance(inputs, Mapping):
+        raise ValueError("standard certificate component_provider requires mapping inputs")
+    if expected_evaluation_manifest_id is not None:
+        provenance = inputs.get("provenance")
+        provider_manifest_id = (
+            provenance.get("evaluation_manifest_id") if isinstance(provenance, Mapping) else None
+        )
+        if provider_manifest_id != expected_evaluation_manifest_id:
+            raise ValueError(
+                "standard certificate component provider evaluation_manifest_id "
+                f"{provider_manifest_id!r} conflicts with grouped dependency "
+                f"{expected_evaluation_manifest_id!r}"
+            )
+    provider = _COMPONENT_PROVIDERS.get(name)
+    if provider is None:
+        raise ValueError(f"standard certificate component provider {name!r} is not registered")
+    component_kwargs = provider(inputs)
+    if not isinstance(component_kwargs, dict):
+        raise TypeError(f"standard certificate component provider {name!r} must return a dict")
+    return component_kwargs
 
 
 def _validated_grouped_request(
@@ -605,6 +680,7 @@ __all__ = [
     "deterministic_standard_rows_from_manifest_entries",
     "materialization_summary",
     "materialize_evaluation_standard_certificate_rows",
+    "register_standard_certificate_component_provider",
     "repo_relative",
     "standard_certificate_request_from_payload",
 ]
