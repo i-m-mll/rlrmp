@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -144,6 +144,29 @@ def emit_launch_continuation(
     line = continuation.format_line()
     print(line, flush=True)
     logger.info(line)
+
+
+def target_training_batches(run_spec: TrainingRunSpec) -> int:
+    """Return one unambiguous batch horizon from the governed method payload."""
+
+    payload = getattr(run_spec.method_payload, "payload", run_spec.method_payload)
+    if not isinstance(payload, Mapping):
+        raise ValueError("selected row method payload is not a typed mapping")
+    config = payload.get("config")
+    candidates: list[int] = []
+    for owner in (payload, config if isinstance(config, Mapping) else {}):
+        for key in ("n_train_batches", "n_batches"):
+            value = owner.get(key)
+            if value is None:
+                continue
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ValueError(f"selected row declares invalid {key}")
+            candidates.append(value)
+    if not candidates:
+        raise ValueError("selected row does not declare a positive typed batch horizon")
+    if len(set(candidates)) != 1:
+        raise ValueError(f"selected row declares conflicting batch horizons: {candidates}")
+    return candidates[0]
 
 
 def attach_cs_supervised_checkpoint_continuation(

@@ -222,24 +222,226 @@ def test_fork_orchestration_request_rejects_missing_checkpoint_manifest(tmp_path
         launch.build_orchestration_request(authored, row=None, driver="local")
 
 
-def test_execute_controls_keep_fresh_and_fork_resume_semantics_distinct(tmp_path: Path) -> None:
+def test_execute_controls_keep_same_row_and_fork_resume_semantics_distinct(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fresh = _emitted_launch(tmp_path)
-    launch._validate_execute_controls(  # type: ignore[attr-defined]
-        fresh, launch.LaunchRuntimeControls()
-    )
-    with pytest.raises(ValueError, match="must match the authored continuation envelope"):
+    assert (
         launch._validate_execute_controls(  # type: ignore[attr-defined]
-            fresh, launch.LaunchRuntimeControls(resume=True)
+            fresh, launch.LaunchRuntimeControls()
         )
+        == {}
+    )
+    binding = {
+        "only": {
+            "checkpoint_root": str(tmp_path / "row"),
+            "transaction_id": "tx-1",
+            "manifest_sha256": "a" * 64,
+        }
+    }
+    calls: list[tuple[object, str | None, Path | None]] = []
+
+    def same_row(
+        authored: object,
+        *,
+        row: str | None,
+        checkpoint_root: Path | None,
+    ) -> dict[str, dict[str, str]]:
+        calls.append((authored, row, checkpoint_root))
+        return binding
+
+    monkeypatch.setattr(launch, "_operational_same_row_resume_bindings", same_row)
+    assert (
+        launch._validate_execute_controls(  # type: ignore[attr-defined]
+            fresh,
+            launch.LaunchRuntimeControls(resume=True),
+            row="only",
+        )
+        == binding
+    )
+    assert calls == [(fresh, "only", None)]
 
     forked = _emitted_launch(tmp_path, fork=True)
     with pytest.raises(ValueError, match="must match the authored continuation envelope"):
         launch._validate_execute_controls(  # type: ignore[attr-defined]
             forked, launch.LaunchRuntimeControls()
         )
-    launch._validate_execute_controls(  # type: ignore[attr-defined]
-        forked, launch.LaunchRuntimeControls(resume=True)
+    assert (
+        launch._validate_execute_controls(  # type: ignore[attr-defined]
+            forked, launch.LaunchRuntimeControls(resume=True)
+        )
+        == {}
     )
+
+
+def test_operational_same_row_resume_requires_one_exact_selected_row(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authored = _emitted_launch(tmp_path)
+    rows = (
+        launch.LaunchRow("a", "run-a", object()),
+        launch.LaunchRow("b", "run-b", object()),
+    )
+    monkeypatch.setattr(launch, "compile_authored_training_intent", lambda _launch: rows)
+
+    with pytest.raises(ValueError, match="requires exactly one selected row"):
+        launch._operational_same_row_resume_bindings(  # type: ignore[attr-defined]
+            authored,
+            row=None,
+            checkpoint_root=None,
+        )
+
+
+def test_operational_same_row_resume_pins_public_typed_custody(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import feedbax.training as feedbax_training
+    import feedbax.training.checkpoint_custody as checkpoint_custody
+
+    authored = _emitted_launch(tmp_path)
+    checkpoint_root = tmp_path / "row-custody"
+    run_id = "feedbax-training-run:exact-row"
+    transaction_id = "tx-exact"
+    digest = "a" * 64
+    phase_program = object()
+    run_spec = SimpleNamespace(
+        method_ref=SimpleNamespace(key="rlrmp/cs_supervised/v1"),
+        method_payload=SimpleNamespace(payload={"n_train_batches": 100}),
+        artifacts=SimpleNamespace(artifact_root=str(checkpoint_root)),
+        worker_execution=SimpleNamespace(
+            method_contract=SimpleNamespace(phase_program=phase_program)
+        ),
+    )
+    row = launch.LaunchRow("only", run_id, run_spec)
+    prepared = launch._PreparedExecution(  # type: ignore[attr-defined]
+        initial_slots={"model": object()},
+        kernel_context=object(),
+        loss_service=object(),
+        resume_slot_transform=object(),
+    )
+    monkeypatch.setattr(launch, "compile_authored_training_intent", lambda _launch: (row,))
+    monkeypatch.setattr(launch, "_prepare_execution", lambda *_args, **_kwargs: prepared)
+    loaded = SimpleNamespace(
+        manifest=SimpleNamespace(
+            transaction_id=transaction_id,
+            run_id=run_id,
+            completed_training_batches=50,
+        )
+    )
+    latest = SimpleNamespace(
+        run_id=run_id,
+        transaction_id=transaction_id,
+        manifest_sha256=digest,
+    )
+    documents = SimpleNamespace(
+        latest_pointer=SimpleNamespace(document=latest),
+        manifest=SimpleNamespace(document=loaded.manifest),
+    )
+    load_calls: list[tuple[Path, dict[str, object]]] = []
+
+    def load_latest(root: Path, **kwargs: object) -> object:
+        load_calls.append((root, kwargs))
+        return loaded
+
+    monkeypatch.setattr(checkpoint_custody, "load_latest_checkpoint", load_latest)
+    monkeypatch.setattr(
+        feedbax_training,
+        "load_checkpoint_custody_documents",
+        lambda root: documents,
+    )
+
+    binding = launch._operational_same_row_resume_bindings(  # type: ignore[attr-defined]
+        authored,
+        row="only",
+        checkpoint_root=None,
+    )
+
+    assert binding == {
+        "only": {
+            "checkpoint_root": str(checkpoint_root),
+            "transaction_id": transaction_id,
+            "manifest_sha256": digest,
+        }
+    }
+    assert load_calls == [
+        (
+            checkpoint_root,
+            {
+                "expected_run_spec": run_spec,
+                "expected_phase_program": phase_program,
+                "expected_slots": prepared.initial_slots,
+                "resume_slot_transform": prepared.resume_slot_transform,
+                "continuation_request": None,
+                "allow_new_lineage_override": False,
+            },
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    ("run_id", "completed", "message"),
+    [
+        ("feedbax-training-run:other", 50, "run identity does not match"),
+        ("feedbax-training-run:exact-row", 100, "already complete"),
+    ],
+)
+def test_operational_same_row_resume_rejects_wrong_identity_or_complete_custody(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    run_id: str,
+    completed: int,
+    message: str,
+) -> None:
+    import feedbax.training as feedbax_training
+    import feedbax.training.checkpoint_custody as checkpoint_custody
+
+    authored = _emitted_launch(tmp_path)
+    expected_run_id = "feedbax-training-run:exact-row"
+    run_spec = SimpleNamespace(
+        method_ref=SimpleNamespace(key="rlrmp/cs_supervised/v1"),
+        method_payload=SimpleNamespace(payload={"n_train_batches": 100}),
+        artifacts=SimpleNamespace(artifact_root=str(tmp_path / "custody")),
+        worker_execution=SimpleNamespace(method_contract=SimpleNamespace(phase_program=object())),
+    )
+    row = launch.LaunchRow("only", expected_run_id, run_spec)
+    prepared = launch._PreparedExecution(  # type: ignore[attr-defined]
+        initial_slots={"model": object()},
+        kernel_context=object(),
+        loss_service=object(),
+        resume_slot_transform=object(),
+    )
+    manifest = SimpleNamespace(
+        transaction_id="tx-exact",
+        run_id=run_id,
+        completed_training_batches=completed,
+    )
+    monkeypatch.setattr(launch, "compile_authored_training_intent", lambda _launch: (row,))
+    monkeypatch.setattr(launch, "_prepare_execution", lambda *_args, **_kwargs: prepared)
+    monkeypatch.setattr(
+        checkpoint_custody,
+        "load_latest_checkpoint",
+        lambda *_args, **_kwargs: SimpleNamespace(manifest=manifest),
+    )
+    monkeypatch.setattr(
+        feedbax_training,
+        "load_checkpoint_custody_documents",
+        lambda _root: SimpleNamespace(
+            latest_pointer=SimpleNamespace(
+                document=SimpleNamespace(run_id=run_id, manifest_sha256="a" * 64)
+            ),
+            manifest=SimpleNamespace(document=manifest),
+        ),
+    )
+
+    with pytest.raises(ValueError, match=message):
+        launch._operational_same_row_resume_bindings(  # type: ignore[attr-defined]
+            authored,
+            row="only",
+            checkpoint_root=None,
+        )
 
 
 @pytest.mark.parametrize(
@@ -300,7 +502,11 @@ def test_execute_hands_selected_operational_stop_to_typed_conformance_inputs(
     request = object()
     context = object()
     registry = object()
-    monkeypatch.setattr(launch, "_validate_execute_controls", lambda *_args: None)
+    monkeypatch.setattr(
+        launch,
+        "_validate_execute_controls",
+        lambda *_args, **_kwargs: {},
+    )
     monkeypatch.setattr(
         launch,
         "build_orchestration_request",

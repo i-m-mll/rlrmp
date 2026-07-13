@@ -28,6 +28,7 @@ def local_driver_for_bundle(
     resume: bool = False,
     fork_record_path: Path | None = None,
     fork_record_sha256: str | None = None,
+    same_row_resume_bindings: Mapping[str, Mapping[str, str]] | None = None,
     stop_after_batches: int | None = None,
 ) -> LocalOrchestrationDriver:
     """Materialize local row packets and return the stock local driver."""
@@ -41,9 +42,17 @@ def local_driver_for_bundle(
                 row,
                 row_dir=row_dir,
                 resume=resume,
-                checkpoint_root=_target_checkpoint_root(fork_record_path, row.row_id),
+                checkpoint_root=_resume_checkpoint_root(
+                    fork_record_path,
+                    same_row_resume_bindings,
+                    row.row_id,
+                ),
                 fork_record_path=fork_record_path,
                 fork_record_sha256=fork_record_sha256,
+                same_row_resume_binding=_same_row_binding(
+                    same_row_resume_bindings,
+                    row.row_id,
+                ),
                 stop_after_batches=stop_after_batches,
             ),
         )
@@ -61,6 +70,7 @@ class RlrmpRunPodDriver:
         resume: bool = False,
         fork_record_path: Path | None = None,
         fork_record_sha256: str | None = None,
+        same_row_resume_bindings: Mapping[str, Mapping[str, str]] | None = None,
         stop_after_batches: int | None = None,
     ) -> None:
         self.stock = RunPodOrchestrationDriver(config=config, transport=transport)
@@ -68,6 +78,7 @@ class RlrmpRunPodDriver:
         self.resume = resume
         self.fork_record_path = fork_record_path
         self.fork_record_sha256 = fork_record_sha256
+        self.same_row_resume_bindings = same_row_resume_bindings
         self.stop_after_batches = stop_after_batches
         self.poll_interval_seconds = self.stock.poll_interval_seconds
 
@@ -83,8 +94,11 @@ class RlrmpRunPodDriver:
             local_dir.mkdir(parents=True, exist_ok=True)
             remote_row = f"{remote_run}/rows/{row.row_id}"
             remote_checkpoint = None
+            same_row_binding = _same_row_binding(self.same_row_resume_bindings, row.row_id)
             if self.resume:
                 binding = _target_binding(self.fork_record_path, row.row_id)
+                if binding is None:
+                    binding = same_row_binding
                 target_root = Path(str(binding["checkpoint_root"])) if binding else None
                 if target_root is None:
                     raise ValueError("RunPod resume requires a fork target binding")
@@ -109,6 +123,10 @@ class RlrmpRunPodDriver:
                 checkpoint_root=Path(remote_checkpoint) if remote_checkpoint else None,
                 fork_record_path=(Path(remote_fork_record) if remote_fork_record else None),
                 fork_record_sha256=self.fork_record_sha256,
+                same_row_resume_binding=_remote_same_row_binding(
+                    same_row_binding,
+                    remote_checkpoint=remote_checkpoint,
+                ),
                 stop_after_batches=self.stop_after_batches,
             )
             rewritten = _stage_identity_artifacts(self.stock, packet, local_dir, remote_row)
@@ -155,6 +173,7 @@ def _packet_for_row(
     fork_record_path: Path | None,
     fork_record_sha256: str | None,
     stop_after_batches: int | None,
+    same_row_resume_binding: Mapping[str, str] | None = None,
 ) -> RowLaunchPacket:
     payload_ref = row.execution.payload
     if payload_ref.uri is None:
@@ -172,6 +191,7 @@ def _packet_for_row(
         staged_checkpoint_root=str(checkpoint_root) if checkpoint_root is not None else None,
         fork_record_path=str(fork_record_path) if fork_record_path is not None else None,
         fork_record_sha256=fork_record_sha256,
+        same_row_resume_binding=same_row_resume_binding,
         resume=resume,
         stop_after_batches=stop_after_batches,
         native_training_diagnostics=native_diagnostics,
@@ -205,6 +225,42 @@ def _write_packet(path: Path, packet: RowLaunchPacket) -> None:
 def _target_checkpoint_root(record_path: Path | None, row_id: str) -> Path | None:
     binding = _target_binding(record_path, row_id)
     return None if binding is None else Path(str(binding["checkpoint_root"]))
+
+
+def _resume_checkpoint_root(
+    record_path: Path | None,
+    same_row_bindings: Mapping[str, Mapping[str, str]] | None,
+    row_id: str,
+) -> Path | None:
+    target = _target_checkpoint_root(record_path, row_id)
+    if target is not None:
+        return target
+    binding = _same_row_binding(same_row_bindings, row_id)
+    return None if binding is None else Path(binding["checkpoint_root"])
+
+
+def _same_row_binding(
+    bindings: Mapping[str, Mapping[str, str]] | None,
+    row_id: str,
+) -> Mapping[str, str] | None:
+    if not bindings:
+        return None
+    binding = bindings.get(row_id)
+    if binding is None:
+        raise ValueError(f"same-row resume binding has no target for row {row_id!r}")
+    return binding
+
+
+def _remote_same_row_binding(
+    binding: Mapping[str, str] | None,
+    *,
+    remote_checkpoint: str | None,
+) -> Mapping[str, str] | None:
+    if binding is None:
+        return None
+    if remote_checkpoint is None:
+        raise ValueError("remote same-row resume requires staged checkpoint custody")
+    return {**binding, "checkpoint_root": remote_checkpoint}
 
 
 def _target_binding(record_path: Path | None, row_id: str) -> Mapping[str, Any] | None:
