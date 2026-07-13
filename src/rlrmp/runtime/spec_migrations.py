@@ -129,6 +129,10 @@ STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_ID = "rlrmp.standard_matrix_evaluation.params
 STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION = "rlrmp.standard_matrix_evaluation.params.v2"
 STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION_V1 = "rlrmp.standard_matrix_evaluation.params.v1"
 
+TRAINING_AUTHORING_INTENT_KIND = "RLRMPTrainingAuthoringIntent"
+TRAINING_AUTHORING_INTENT_SCHEMA_ID = "rlrmp.spec.training_authoring_intent"
+TRAINING_AUTHORING_INTENT_SCHEMA_VERSION = f"{TRAINING_AUTHORING_INTENT_SCHEMA_ID}.v1"
+
 RUN_SPEC_KIND = "RLRMPRunSpec"
 RUN_SPEC_SCHEMA_ID = "rlrmp.run_spec"
 RUN_SPEC_SCHEMA_VERSION = "rlrmp.run_spec.v2"
@@ -615,6 +619,26 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             ),
         ),
         _family(
+            TRAINING_AUTHORING_INTENT_KIND,
+            TRAINING_AUTHORING_INTENT_SCHEMA_ID,
+            TRAINING_AUTHORING_INTENT_SCHEMA_VERSION,
+            emitted_by=(
+                "rlrmp.train.heterogeneous_training_matrix",
+                "rlrmp training-matrix emitters",
+            ),
+            consumed_by=(
+                "rlrmp.train.matrix_lowering",
+                "Feedbax TrainingRunMatrixSpec authored-intent storage",
+            ),
+            description="Compact governed RLRMP training-matrix authored intent.",
+            rejected_old_versions=("rlrmp.spec.training_authoring_intent.v0",),
+            notes=(
+                "The current compact authoring contract is accepted without migration. "
+                "Older intent versions must be regenerated or gain an explicit semantic "
+                "migration before per-row lowering."
+            ),
+        ),
+        _family(
             RUN_SPEC_KIND,
             RUN_SPEC_SCHEMA_ID,
             RUN_SPEC_SCHEMA_VERSION,
@@ -781,6 +805,9 @@ __all__ = [
     "STANDARD_CERTIFICATES_KIND",
     "STANDARD_CERTIFICATES_SCHEMA_ID",
     "STANDARD_CERTIFICATES_SCHEMA_VERSION",
+    "TRAINING_AUTHORING_INTENT_KIND",
+    "TRAINING_AUTHORING_INTENT_SCHEMA_ID",
+    "TRAINING_AUTHORING_INTENT_SCHEMA_VERSION",
     "WORST_CASE_EPSILON_EVAL_PARAMS_KIND",
     "WORST_CASE_EPSILON_EVAL_PARAMS_SCHEMA_ID",
     "WORST_CASE_EPSILON_EVAL_PARAMS_SCHEMA_VERSION",

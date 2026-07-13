@@ -7,9 +7,18 @@ from typing import Any
 
 from feedbax.contracts.run_matrix import TRAINING_RUN_MATRIX_SPEC_SCHEMA_ID
 from feedbax.orchestration import CompiledRunSet, RowLaunchSpec
+from feedbax.training.diagnostics import (
+    NativeTrainingDiagnosticsInput,
+    ScheduleContextDiagnostic,
+)
 from feedbax.training.spec_storage import (
     TrainingRunIdentityAdapter,
     compile_training_run_matrix,
+)
+
+from rlrmp.train.matrix_materialization import (
+    rlrmp_training_row_lowerer,
+    validate_rlrmp_training_payload,
 )
 
 
@@ -28,11 +37,14 @@ class RlrmpOrchestratedLaunchCompiler:
         run_set_id: str,
         context: Any,
     ) -> CompiledRunSet:
+        lowerer = rlrmp_training_row_lowerer(authored, repo_root=context.repo_root)
         compiled = compile_training_run_matrix(
             authored,
             run_set_id=run_set_id,
             context=context,
             allow_inline_base=False,
+            row_validator=(validate_rlrmp_training_payload if lowerer is not None else None),
+            row_lowerer=lowerer,
         )
         selection = request.metadata.get("row_selection", {})
         selected_ids = (
@@ -46,21 +58,9 @@ class RlrmpOrchestratedLaunchCompiler:
         for row in compiled.rows:
             if selected_ids and row.row_id not in selected_ids:
                 continue
-            payload = dict(row.payload)
-            metadata = dict(payload.get("metadata") or {})
-            if isinstance(row.resolved_semantics.get("seed"), int):
-                metadata["seed"] = row.resolved_semantics["seed"]
-            continuation_context = _continuation_context(authored, payload)
-            if continuation_context is not None:
-                metadata["resume_context"] = continuation_context
-                metadata["optimizer_build_context"] = _optimizer_build_context(
-                    payload, continuation_context
-                )
-            payload["metadata"] = metadata
             rows.append(
                 row.model_copy(
                     update={
-                        "payload": payload,
                         "launch": RowLaunchSpec(
                             command=[
                                 "uv",
@@ -78,6 +78,17 @@ class RlrmpOrchestratedLaunchCompiler:
                                 "training_summary.json",
                             ],
                             payload_routing={"kind": "rlrmp-row-launch-packet-v1"},
+                            metadata={
+                                "native_training_diagnostics": _native_training_diagnostics(
+                                    authored,
+                                    row.payload,
+                                    run_set_id=run_set_id,
+                                    row_id=row.row_id,
+                                    seed=row.provenance.seed
+                                    if row.provenance is not None
+                                    else None,
+                                ).model_dump(mode="json", exclude_none=True)
+                            },
                         ),
                     }
                 )
@@ -93,6 +104,37 @@ def register_orchestrated_training_compiler(registry: Any) -> None:
         compiler_version=COMPILER_VERSION,
         compiler=RlrmpOrchestratedLaunchCompiler(),
         identity_adapter=TrainingRunIdentityAdapter(),
+    )
+
+
+def _native_training_diagnostics(
+    authored: Mapping[str, Any],
+    payload: Mapping[str, Any],
+    *,
+    run_set_id: str,
+    row_id: str,
+    seed: int | None,
+) -> NativeTrainingDiagnosticsInput:
+    """Build typed diagnostic inputs without mutating scientific payloads."""
+
+    continuation_context = _continuation_context(authored, payload)
+    resume_context = (
+        ScheduleContextDiagnostic.model_validate(continuation_context)
+        if continuation_context is not None
+        else None
+    )
+    optimizer_context = (
+        ScheduleContextDiagnostic.model_validate(
+            _optimizer_build_context(payload, continuation_context)
+        )
+        if continuation_context is not None
+        else None
+    )
+    return NativeTrainingDiagnosticsInput(
+        seeds=[] if seed is None else [seed],
+        resume_context=resume_context,
+        optimizer_build_context=optimizer_context,
+        metadata={"run_set_id": run_set_id, "row_id": row_id},
     )
 
 

@@ -21,7 +21,6 @@ from feedbax.contracts.training import (
 from feedbax.training.run_matrix import (
     ForkParityError,
     fork_matrix_checkpoints,
-    materialize_run_matrix,
 )
 from feedbax.training import load_checkpoint_custody_documents
 
@@ -37,6 +36,7 @@ from rlrmp.train.adaptive_epsilon_native import (
 from rlrmp.train.minimax_native import (
     ensure_minimax_training_method_registered,
 )
+from rlrmp.train.matrix_materialization import materialize_rlrmp_training_matrix
 
 
 _TASK_IDENTITY_METADATA_KEY = "rlrmp_task_identity"
@@ -104,10 +104,9 @@ def fork_checkpoints_with_parity(
     register_rlrmp_training_methods()
     matrix = load_matrix(matrix_path)
     resolved_repo_root = Path.cwd() if repo_root is None else repo_root
-    materialized = materialize_run_matrix(
+    materialized = materialize_rlrmp_training_matrix(
         matrix,
         repo_root=resolved_repo_root,
-        method_registry=DEFAULT_TRAINING_METHOD_REGISTRY,
     )
     _validate_fork_prelaunch_contracts(matrix, materialized, repo_root=resolved_repo_root)
     ratio_setpoint = _ratio_setpoint_prelaunch_report(matrix)

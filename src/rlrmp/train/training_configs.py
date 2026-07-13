@@ -2534,6 +2534,12 @@ class CsNominalGruConfig(BaseModel):
     spec_dir: str | None = training_preset_value("CsNominalGruConfig", "spec_dir")
     issue: str
     seed: int = training_preset_value("CsNominalGruConfig", "seed")
+    controller_architecture: Literal[
+        "gru",
+        "time_constrained_free_gain",
+        "linear_recurrence",
+        "static_linear",
+    ] = training_preset_value("CsNominalGruConfig", "controller_architecture")
 
     n_train_batches: int = Field(training_preset_value("CsNominalGruConfig", "n_train_batches"), ge=0)
     batch_size: int = Field(training_preset_value("CsNominalGruConfig", "batch_size"), gt=0)
