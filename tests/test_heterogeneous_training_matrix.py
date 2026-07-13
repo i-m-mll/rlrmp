@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -34,6 +35,7 @@ from rlrmp.train.training_configs import CsNominalGruConfig
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = REPO_ROOT / "scripts/emit_heterogeneous_training_matrix.py"
 RUNS_DIR = REPO_ROOT / "results/427d0d8/runs"
+A1_RUNS_DIR = REPO_ROOT / "results/4eb51ee/runs"
 FORBIDDEN_EXPANDED_PATHS = {
     "graph",
     "task",
@@ -120,6 +122,31 @@ def test_rows_patch_only_typed_architecture_distribution_and_routes(tmp_path: Pa
         )
         assert overrides["config.output_dir"] == f"_artifacts/427d0d8/runs/{row.row_id}"
         assert overrides["config.spec_dir"] == f"results/427d0d8/runs/{row.row_id}"
+
+
+def test_tracked_a1_authoring_reproduces_frozen_matrix_bytes() -> None:
+    base_path = A1_RUNS_DIR / "base.intent.json"
+    base_intent = json.loads(base_path.read_text(encoding="utf-8"))
+    matrix_authoring = json.loads(
+        (A1_RUNS_DIR / "matrix.authoring.json").read_text(encoding="utf-8")
+    )
+
+    matrix = author_training_run_matrix(
+        base_intent,
+        issue="4eb51ee",
+        base_ref=base_path,
+        repo_root=REPO_ROOT,
+        matrix_authoring=matrix_authoring,
+    )
+    emitted = (
+        training_spec_canonical_bytes(matrix.model_dump(mode="json", exclude_none=True)) + b"\n"
+    )
+    frozen = (A1_RUNS_DIR / "matrix.json").read_bytes()
+
+    assert emitted == frozen
+    assert hashlib.sha256(emitted).hexdigest() == (
+        "78108ca2286af701583e5c4eb87a92736820b5c9260129637722c61831a9e52f"
+    )
 
 
 def test_matrix_authoring_rejects_a_base_without_architecture_contract(

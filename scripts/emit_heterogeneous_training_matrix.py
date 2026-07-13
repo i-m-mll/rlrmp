@@ -59,16 +59,23 @@ def emit_heterogeneous_training_matrix(
     custody_root: Path,
     dependency_lock_path: Path,
     materializer_commit: str,
+    matrix_authoring_path: Path | None = None,
 ) -> Any:
     """Route compact authoring through RLRMP's three-layer storage entry point."""
 
     require_heterogeneous_row_lowering_contract()
     base_intent = json.loads(base_intent_path.read_text(encoding="utf-8"))
+    matrix_authoring = (
+        None
+        if matrix_authoring_path is None
+        else json.loads(matrix_authoring_path.read_text(encoding="utf-8"))
+    )
     matrix = author_training_run_matrix(
         base_intent,
         issue=issue,
         base_ref=base_intent_path,
         repo_root=repo_root,
+        matrix_authoring=matrix_authoring,
     )
     return emit_rlrmp_training_run_spec_storage(
         matrix,
@@ -89,6 +96,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--custody-root", type=Path, default=Path("_artifacts"))
     parser.add_argument("--dependency-lock", type=Path, default=Path("uv.lock"))
     parser.add_argument("--materializer-commit")
+    parser.add_argument(
+        "--matrix-authoring",
+        type=Path,
+        help="Optional tracked explicit row identity/order/seed authoring document.",
+    )
     return parser.parse_args(argv)
 
 
@@ -106,6 +118,15 @@ def main(argv: list[str] | None = None) -> int:
         args.dependency_lock
         if args.dependency_lock.is_absolute()
         else repo_root / args.dependency_lock
+    )
+    matrix_authoring = (
+        None
+        if args.matrix_authoring is None
+        else (
+            args.matrix_authoring
+            if args.matrix_authoring.is_absolute()
+            else repo_root / args.matrix_authoring
+        )
     )
     commit = (
         args.materializer_commit
@@ -125,6 +146,7 @@ def main(argv: list[str] | None = None) -> int:
         custody_root=custody_root,
         dependency_lock_path=dependency_lock,
         materializer_commit=commit,
+        matrix_authoring_path=matrix_authoring,
     )
     print(result.model_dump_json(indent=2))
     return 0

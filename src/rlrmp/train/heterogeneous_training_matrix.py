@@ -167,6 +167,7 @@ def author_training_run_matrix(
     issue: str,
     base_ref: Path,
     repo_root: Path,
+    matrix_authoring: Mapping[str, Any] | None = None,
 ) -> TrainingRunMatrixSpec:
     """Author six compact rows for the generic RLRMP row-lowering contract.
 
@@ -179,45 +180,99 @@ def author_training_run_matrix(
     if not isinstance(config, Mapping) or "controller_architecture" not in config:
         raise ValueError("compact heterogeneous base requires typed config.controller_architecture")
     relative_ref = base_ref.resolve().relative_to(repo_root.resolve())
+    if matrix_authoring is None:
+        row_coordinates = [
+            {
+                "row_id": f"{architecture}.{distribution}",
+                "controller_architecture": architecture,
+                "training_distribution": distribution,
+            }
+            for architecture in ARCHITECTURES
+            for distribution in DISTRIBUTIONS
+        ]
+        name = "Canonical C&S architecture by training-distribution matrix"
+        matrix_metadata: dict[str, Any] = {}
+    else:
+        if matrix_authoring.get("schema_id") != (
+            "rlrmp.spec.heterogeneous_training_matrix_authoring"
+        ) or matrix_authoring.get("schema_version") != (
+            "rlrmp.spec.heterogeneous_training_matrix_authoring.v1"
+        ):
+            raise ValueError("unsupported heterogeneous matrix-authoring schema")
+        if matrix_authoring.get("issue") != issue:
+            raise ValueError("matrix-authoring issue must match the emitted matrix issue")
+        authored_rows = matrix_authoring.get("rows")
+        if not isinstance(authored_rows, list) or not authored_rows:
+            raise ValueError("matrix-authoring rows must be a non-empty list")
+        row_coordinates = authored_rows
+        name = str(matrix_authoring.get("name") or "")
+        if not name:
+            raise ValueError("matrix-authoring name must be non-empty")
+        raw_metadata = matrix_authoring.get("metadata", {})
+        if not isinstance(raw_metadata, Mapping):
+            raise ValueError("matrix-authoring metadata must be an object")
+        matrix_metadata = dict(raw_metadata)
+
     rows: list[MatrixRow] = []
-    for architecture in ARCHITECTURES:
-        for distribution in DISTRIBUTIONS:
-            row_id = f"{architecture}.{distribution}"
-            artifact_root = f"_artifacts/{issue}/runs/{row_id}"
-            tracked_spec_dir = f"results/{issue}/runs/{row_id}"
-            rows.append(
-                MatrixRow(
-                    row_id=row_id,
-                    overrides=[
-                        OverridePatch(
-                            op="replace",
-                            path="config.controller_architecture",
-                            value=architecture,
-                        ),
-                        OverridePatch(
-                            op="replace",
-                            path="config.broad_epsilon_pgd_training",
-                            value=distribution == "broad_epsilon_pgd",
-                        ),
-                        OverridePatch(
-                            op="replace",
-                            path="config.output_dir",
-                            value=artifact_root,
-                        ),
-                        OverridePatch(
-                            op="replace",
-                            path="config.spec_dir",
-                            value=tracked_spec_dir,
-                        ),
-                    ],
-                    metadata={
-                        "controller_architecture": architecture,
-                        "training_distribution": distribution,
-                    },
-                )
+    seen_row_ids: set[str] = set()
+    for coordinate in row_coordinates:
+        if not isinstance(coordinate, Mapping):
+            raise ValueError("matrix-authoring rows must be objects")
+        row_id = str(coordinate.get("row_id") or "")
+        architecture = coordinate.get("controller_architecture")
+        distribution = coordinate.get("training_distribution")
+        if not row_id or row_id in seen_row_ids:
+            raise ValueError("matrix-authoring row IDs must be non-empty and unique")
+        if architecture not in ARCHITECTURES:
+            raise ValueError(f"unsupported training architecture {architecture!r}")
+        if distribution not in DISTRIBUTIONS:
+            raise ValueError(f"unsupported training distribution {distribution!r}")
+        seen_row_ids.add(row_id)
+        artifact_root = f"_artifacts/{issue}/runs/{row_id}"
+        tracked_spec_dir = f"results/{issue}/runs/{row_id}"
+        row_metadata: dict[str, Any] = {
+            "controller_architecture": architecture,
+            "training_distribution": distribution,
+        }
+        seed = coordinate.get("seed")
+        if matrix_authoring is not None:
+            if not isinstance(seed, int):
+                raise ValueError(f"matrix-authoring row {row_id!r} requires an integer seed")
+            raw_row_metadata = coordinate.get("metadata", {})
+            if not isinstance(raw_row_metadata, Mapping):
+                raise ValueError(f"matrix-authoring row {row_id!r} metadata must be an object")
+            row_metadata.update(raw_row_metadata)
+        rows.append(
+            MatrixRow(
+                row_id=row_id,
+                seed=seed,
+                overrides=[
+                    OverridePatch(
+                        op="replace",
+                        path="config.controller_architecture",
+                        value=architecture,
+                    ),
+                    OverridePatch(
+                        op="replace",
+                        path="config.broad_epsilon_pgd_training",
+                        value=distribution == "broad_epsilon_pgd",
+                    ),
+                    OverridePatch(
+                        op="replace",
+                        path="config.output_dir",
+                        value=artifact_root,
+                    ),
+                    OverridePatch(
+                        op="replace",
+                        path="config.spec_dir",
+                        value=tracked_spec_dir,
+                    ),
+                ],
+                metadata=row_metadata,
             )
+        )
     return TrainingRunMatrixSpec(
-        name="Canonical C&S architecture by training-distribution matrix",
+        name=name,
         issue=issue,
         base={
             "kind": "authored_intent",
@@ -233,6 +288,7 @@ def author_training_run_matrix(
             "expanded_payload_patching": False,
             "experiment_local_callbacks": False,
             "compiler_edits": False,
+            **matrix_metadata,
         },
     )
 
