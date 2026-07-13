@@ -116,7 +116,11 @@ def test_registered_capability_lowerers_compose_in_spec_order(
             "objective.partial_force_filter",
             "nn_output",
         ),
-        (CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE, "objective.full_qrf", "net.output^T R_t net.output"),
+        (
+            CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+            "objective.full_qrf",
+            "net.output^T R_t net.output",
+        ),
     ],
 )
 def test_registered_objective_lowerers_own_loss_and_fidelity_together(
@@ -144,8 +148,7 @@ def test_science_lowerer_registry_records_capability_owners() -> None:
     assert owners["target_relative"] == "rlrmp.train.cs_perturbation_training"
     assert owners["delayed_reach"] == "rlrmp.train.delayed_reach"
     assert {
-        lowerer_id: item.lowerer.__module__
-        for lowerer_id, item in registrations.items()
+        lowerer_id: item.lowerer.__module__ for lowerer_id, item in registrations.items()
     } == owners
 
 
