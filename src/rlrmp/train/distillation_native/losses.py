@@ -41,16 +41,6 @@ class DistillationLossWeights:
 class CSH0DistillationConfig:
     """C&S h0 GRU distillation contract for the first 6D teacher row."""
 
-    issue: str = "c314267"
-    experiment_issue: str = "9727d79"
-    base_issue: str = "020a65b"
-    base_run_id: str = (
-        "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64"
-    )
-    teacher_issue: str = "376d023"
-    primary_teacher: str = "6d_output_feedback_hinf"
-    diagnostic_teacher: str = "6d_output_feedback_extlqg"
-    teacher_package: str = "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers.npz"
     feedback_basis: str = "target_relative_delayed_feedback_plus_force_filter"
     action_basis: str = "controller_command_history"
     hidden_state_supervision: bool = False

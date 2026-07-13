@@ -47,6 +47,7 @@ pytestmark = pytest.mark.feedbax_contract
 
 def _args(**overrides):
     base = {
+        "output_dir": "_artifacts/test/model_export",
         "n_warmup_batches": 10,
         "n_adversary_batches": 20,
         "controller_lr": 0.01,

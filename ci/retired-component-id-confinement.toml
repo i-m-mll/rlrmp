@@ -71,13 +71,6 @@ note = "ComponentMigration source_type entries mapping retired IDs onto Feedbax-
 
 [[python_scope]]
 path = "src/rlrmp/model/feedbax_graph.py"
-qualname = "_graph_bundle_metadata"
-owner = "e23874f"
-category = "manifest_legacy_aliases"
-note = "Manifest component_policy.legacy_component_aliases documents retired IDs; active types are the native feedbax_component_types list."
-
-[[python_scope]]
-path = "src/rlrmp/model/feedbax_graph.py"
 qualname = "_runtime_linear_controller_params"
 owner = "e23874f"
 category = "legacy_serialization"

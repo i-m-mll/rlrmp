@@ -62,6 +62,7 @@ def _args(**overrides):
         "loss_update_ratio": 0.3,
         "hidden_type": "gru",
         "sisu_gating": "additive",
+        "output_dir": "_artifacts/test/runs/feedbax_graph_specs",
     }
     base.update(overrides)
     return argparse.Namespace(**base)
@@ -113,6 +114,32 @@ def test_available_rlrmp_graph_specs_round_trip_through_feedbax_contract(
     assert round_tripped.metadata.version == "1.0.0"
     assert bundle.to_run_metadata()["schema_version"] == SCHEMA_VERSION
     assert bundle.manifest["schema_version"] == SCHEMA_VERSION
+
+
+def test_current_graph_bundle_does_not_author_legacy_labeled_fields() -> None:
+    hps = _hps()
+    bundle = build_rlrmp_feedbax_graph_bundle(
+        hps,
+        task=build_task_base(hps),
+        n_extra_inputs=1,
+        hidden_type=hps.hidden_type,
+        sisu_gating=hps.sisu_gating,
+    )
+
+    def legacy_keys(value):
+        if isinstance(value, dict):
+            hits = []
+            for key, child in value.items():
+                if key.startswith("legacy_"):
+                    hits.append(key)
+                hits.extend(legacy_keys(child))
+            return hits
+        if isinstance(value, list):
+            return [key for child in value for key in legacy_keys(child)]
+        return []
+
+    assert legacy_keys(bundle.manifest) == []
+    assert legacy_keys(bundle.to_run_metadata()) == []
 
 
 def test_rlrmp_graph_contract_versions_pin_feedbax_manifest_schema() -> None:

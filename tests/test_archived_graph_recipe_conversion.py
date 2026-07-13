@@ -11,6 +11,7 @@ import pytest
 from feedbax.component_registry import ComponentRegistry
 from feedbax.contracts.graph import GraphSpec
 from feedbax.contracts.graphs.serialization import spec_to_graph
+from feedbax.contracts.migrations import UnsupportedSpecVersion
 from feedbax.runtime.graph import Graph
 
 from rlrmp.runtime.run_specs import (
@@ -180,6 +181,14 @@ def test_every_converted_recipe_loads_with_plain_feedbax_spec_to_graph() -> None
         loaded += 1
 
     assert loaded == conversion["converted_count"] == 36
+
+
+def test_live_graph_migration_rejects_unregistered_schema_alias() -> None:
+    payload = _load_json(next(CONVERTED_DIR.glob("*.graph.json")))
+    payload["schema_version"] = "feedbax.spec.graph.v1"
+
+    with pytest.raises(UnsupportedSpecVersion, match="feedbax.spec.graph.v1"):
+        migrate_feedbax_graph_payload(payload)
 
 
 def test_run_specs_allowlists_are_legacy_archive_confinement_lists() -> None:

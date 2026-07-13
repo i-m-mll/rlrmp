@@ -148,6 +148,7 @@ class TestDynamicsMatrixPerturbIntegration:
     @staticmethod
     def _single_replicate_pair():
         args = SimpleNamespace(
+            output_dir="_artifacts/test/linear_dynamics",
             n_warmup_batches=1,
             n_adversary_batches=1,
             controller_lr=1e-4,

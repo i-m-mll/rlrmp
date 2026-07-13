@@ -85,6 +85,7 @@ def test_streaming_minimax_eval_uses_public_prepared_trial() -> None:
 
 def test_multiplicative_minimax_adversarial_selector_includes_sisu_alpha() -> None:
     args = argparse.Namespace(
+        output_dir="_artifacts/test/minimax_public_api",
         n_warmup_batches=10,
         n_adversary_batches=20,
         controller_lr=0.01,
@@ -109,6 +110,7 @@ def test_multiplicative_minimax_adversarial_selector_includes_sisu_alpha() -> No
 
 def test_linear_tracker_minimax_selector_uses_affine_gain_and_feedforward() -> None:
     args = argparse.Namespace(
+        output_dir="_artifacts/test/minimax_public_api",
         n_warmup_batches=10,
         n_adversary_batches=20,
         controller_lr=0.01,

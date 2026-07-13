@@ -13,6 +13,7 @@ import jax.random as jr
 import jax.tree as jt
 from feedbax.contracts.training import DEFAULT_TRAINING_METHOD_REGISTRY, TrainingRunSpec
 from feedbax.training import ExecutionPreparationRequest
+from rlrmp.data_products.broad_epsilon import load_pgd_radius_source
 
 from rlrmp.train.cs_nominal_gru import (
     CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
@@ -23,7 +24,6 @@ from rlrmp.train.cs_nominal_gru import (
     build_hps,
     write_run_spec,
 )
-from rlrmp.train.cs_perturbation_training import HISTORICAL_020A65B_PGD_RADIUS_15CM
 from rlrmp.train.executor.equivalence import assert_paired_equivalent, run_paired_equivalence
 from rlrmp.train.executor.adapters import RLRMP_RUNTIME_CONTEXT_KEY
 from rlrmp.train.execution_preparation import prepare_policy_adversary
@@ -46,6 +46,10 @@ from rlrmp.train.policy_adversary_native import (
     build_policy_adversary_native_initial_slots,
     ensure_policy_adversary_training_method_registered,
     execute_policy_adversary_training_run_spec_native,
+)
+
+HISTORICAL_020A65B_PGD_RADIUS_15CM = float(
+    load_pgd_radius_source("effective_020a65b_pgd_training_radius")["l2_radius_15cm"]
 )
 
 
@@ -169,7 +173,9 @@ def _policy_adversary_training_spec(tmp_path: Path) -> TrainingRunSpec:
 
 
 def _policy_adversary_args(**overrides: Any) -> argparse.Namespace:
-    args = _config_namespace(CsNominalGruConfig())
+    args = _config_namespace(
+        CsNominalGruConfig(issue="test", output_dir="_artifacts/test/runs/test")
+    )
     defaults = {
         "n_train_batches": 2,
         "batch_size": 1,

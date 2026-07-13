@@ -41,6 +41,7 @@ EXPECTED_MODULE_FUNCTIONS = {
     "rlrmp.data_products.broad_epsilon": {
         "broad_epsilon_data_product_requirement",
         "load_broad_epsilon_anchors",
+        "load_pgd_radius_source",
     },
     "rlrmp.data_products.registry": {
         "register_data_product_identity",

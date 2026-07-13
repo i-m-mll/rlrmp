@@ -651,7 +651,9 @@ def _adaptive_epsilon_training_spec(
 
 
 def _adaptive_epsilon_args(**overrides: Any) -> argparse.Namespace:
-    args = _config_namespace(CsNominalGruConfig())
+    args = _config_namespace(
+        CsNominalGruConfig(issue="test", output_dir="_artifacts/test/runs/test")
+    )
     defaults = {
         "n_train_batches": 2,
         "batch_size": 1,

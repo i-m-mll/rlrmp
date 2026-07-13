@@ -381,7 +381,9 @@ def _adaptive_continuation_spec(
 ) -> TrainingRunSpec:
     """Build a minimal real adaptive row through RLRMP's normal authoring path."""
 
-    args = _config_namespace(CsNominalGruConfig())
+    args = _config_namespace(
+        CsNominalGruConfig(issue="test", output_dir="_artifacts/test/runs/test")
+    )
     values = {
         "n_train_batches": target_total_batches,
         "batch_size": 1,

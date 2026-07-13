@@ -284,13 +284,17 @@ def test_allowlist_entries_exist_and_have_rationales() -> None:
 
 def test_curated_allowlist_groups_are_sorted_and_disjoint() -> None:
     groups = (
-        data_in_code._CD137D8_CONFIG_TIER_ALLOWLIST,
-        data_in_code._OWNING_SCHEMA_DEFAULT_ALLOWLIST,
-        data_in_code._PURPOSE_CONSTANT_ALLOWLIST,
+        data_in_code._TRAINING_STRUCTURAL_ALLOWLIST,
+        data_in_code._TYPED_SCHEMA_ALLOWLIST,
+        data_in_code._DIAGNOSTIC_THRESHOLD_ALLOWLIST,
     )
 
-    assert all(tuple(sorted(group)) == group for group in groups)
+    assert all(isinstance(group, dict) for group in groups)
+    assert all(tuple(sorted(group)) == tuple(group) for group in groups)
     assert sum(map(len, groups)) == len(set().union(*map(set, groups)))
+    rationales = [rationale for group in groups for rationale in group.values()]
+    assert len(rationales) == len(set(rationales))
+    assert all(len(rationale.strip()) >= 80 for rationale in rationales)
 
 
 def test_live_tree_matches_committed_baseline() -> None:

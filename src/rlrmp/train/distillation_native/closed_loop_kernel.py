@@ -23,8 +23,9 @@ from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 from feedbax.objectives.loss import AbstractLoss, TermTree
 from rlrmp.model.trainable import staged_network_trainable_parts
 
-TEACHER_ISSUE_ID = "376d023"
 DEFAULT_TEACHER_GAINS_KEY = "extlqg_controller_gains"
+
+
 @dataclass(frozen=True)
 class ClosedLoopLossWeights:
     """Weights for pure closed-loop extLQG distillation components."""
@@ -66,8 +67,8 @@ class ExtLQGClosedLoopReference(eqx.Module):
         package_path = Path(path)
         if not package_path.is_file():
             raise FileNotFoundError(
-                f"Teacher package not found at {package_path}. Sync or materialize "
-                f"[issue:{TEACHER_ISSUE_ID}] before training a378b34."
+                f"Teacher package not found at {package_path}. Materialize the teacher "
+                "artifact declared by the tracked run spec before training."
             )
         arrays = np.load(package_path)
         required = ("plant_A", "plant_B", "observation_matrix", teacher_gains_key)

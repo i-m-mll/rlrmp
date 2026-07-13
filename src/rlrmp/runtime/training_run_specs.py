@@ -752,8 +752,13 @@ def cs_supervised_method_payload(
     # in the governed payload so plugin preparation can build non-JSON slots.
     from rlrmp.train.executor.cs_supervised import _args_values_from_run_spec
 
+    boundary_run_spec = {
+        **run_spec,
+        "artifact_output_dir": str(output_dir),
+        "spec_dir": str(spec_dir),
+    }
     payload = CsSupervisedMethodPayload(
-        config=_args_values_from_run_spec(run_spec),
+        config=_args_values_from_run_spec(boundary_run_spec),
         training_mode=str(_required_recording_field(run_spec, "training_summary.training_mode")),
         n_train_batches=int(
             _required_recording_field(run_spec, "training_summary.n_train_batches")

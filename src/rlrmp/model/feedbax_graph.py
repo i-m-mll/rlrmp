@@ -136,7 +136,6 @@ class RLRMPFeedbaxGraphBundle:
             "graph_export_status": "unavailable" if graph_spec_path is None else "available",
             "execution_backend": EXECUTION_BACKEND,
             "component_policy": self.manifest["component_policy"],
-            "legacy_loader": self.manifest["legacy_loader"],
         }
         descriptors = self.manifest.get("controller_feedback_descriptors")
         if descriptors is not None:
@@ -735,14 +734,6 @@ def _graph_bundle_metadata(
             "rlrmp_component_types": [
                 "DynamicsMatrixPerturb",
             ],
-            "legacy_component_aliases": [
-                "RLRMPLinearController",
-                "RLRMPLinearTrackerController",
-                "RLRMPPointMass",
-                "RLRMPFeedbackChannels",
-                "RLRMPMotorChannel",
-                "RLRMPPlantProcessForceNoise",
-            ],
             "note": (
                 "Generic point-mass mechanics, feedback, stochastic channel, and "
                 "recurrent controller nodes use Feedbax-native component types. GRU "
@@ -755,10 +746,6 @@ def _graph_bundle_metadata(
                 "adding graph nodes. SISU is an RLRMP task input, not a Feedbax "
                 "network port."
             ),
-        },
-        "legacy_loader": {
-            "setup_function": "rlrmp.train.task_model.setup_task_model_pair",
-            "checkpoint_format": "jax_cookbook.save/load_with_hyperparameters",
         },
         "task_spec": task_spec,
         "loss_spec": loss_spec,
