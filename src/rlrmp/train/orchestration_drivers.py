@@ -189,6 +189,16 @@ def _packet_for_row(
         completed_batches = same_row_resume_binding.get("completed_batches")
         if isinstance(completed_batches, bool) or not isinstance(completed_batches, int):
             raise ValueError("same-row resume binding lacks typed completed-batch progress")
+        resumed_lr_trace = [
+            sample for sample in native_diagnostics.lr_trace if sample.step >= completed_batches
+        ]
+        distinct_resumed_steps = {sample.step for sample in resumed_lr_trace}
+        if len(distinct_resumed_steps) < 3:
+            raise ValueError(
+                "same-row resume requires at least three governed learning-rate samples "
+                f"at or after completed_batches={completed_batches}; "
+                f"found {len(distinct_resumed_steps)} distinct steps"
+            )
         schedule_context = ScheduleContextDiagnostic(
             schedule_origin_step=0,
             current_step=completed_batches,
@@ -196,6 +206,7 @@ def _packet_for_row(
         )
         native_diagnostics = native_diagnostics.model_copy(
             update={
+                "lr_trace": resumed_lr_trace,
                 "resume_context": schedule_context,
                 "optimizer_build_context": schedule_context,
             }
