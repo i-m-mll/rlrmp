@@ -6,6 +6,8 @@ import argparse
 import hashlib
 import json
 import os
+import time
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -14,10 +16,14 @@ from pydantic import BaseModel, ConfigDict, Field
 from feedbax.contracts.training import TrainingRunSpec
 from feedbax.orchestration import ExecutionIdentityEnvelope
 from feedbax.orchestration.events import RunEventEmitter
+from feedbax.training.interruption import CancellationDecision
 from feedbax.training.diagnostics import (
     NativeExecutionProducerContext,
     NativeTrainingDiagnosticsInput,
 )
+
+from rlrmp.train.executor.adapters import RLRMP_RUNTIME_CONTEXT_KEY
+from rlrmp.train.executor.initial_slots import RlrmpRuntime
 
 
 class RowLaunchPacket(BaseModel):
@@ -90,7 +96,10 @@ def execute_packet(packet: RowLaunchPacket) -> Path:
         resume=packet.resume,
         resume_slot_transform=preparation.resume_slot_transform,
         run_event_emitter=emitter,
-        cancellation_probe=_batch_limit_probe(packet.stop_after_batches),
+        cancellation_probe=_batch_limit_probe(
+            packet.stop_after_batches,
+            kernel_context=preparation.kernel_context,
+        ),
         execution_context=execution_context,
     )
     _write_json(
@@ -161,15 +170,34 @@ def _verify_staged_checkpoint(packet: RowLaunchPacket) -> None:
         raise ValueError("staged fork target provenance does not chain to envelope source")
 
 
-def _batch_limit_probe(limit: int | None) -> Any:
+def _batch_limit_probe(
+    limit: int | None,
+    *,
+    kernel_context: Mapping[str, Any],
+) -> Callable[[Any], CancellationDecision | None] | None:
     if limit is None:
         return None
-    seen = 0
+    runtime = kernel_context.get(RLRMP_RUNTIME_CONTEXT_KEY)
+    if not isinstance(runtime, RlrmpRuntime):
+        raise RuntimeError(
+            "stop-after-batches requires an RLRMP runtime with authoritative "
+            "completed-batch progress"
+        )
+    if runtime.completed_batches_reader is None:
+        raise RuntimeError(
+            "stop-after-batches requires authoritative completed-batch progress; "
+            "the prepared RLRMP runtime does not expose it"
+        )
 
-    def probe(_coordinate: Any) -> str | None:
-        nonlocal seen
-        seen += 1
-        return "stop" if seen >= limit else None
+    def probe(_coordinate: Any) -> CancellationDecision | None:
+        completed_batches = runtime.read_completed_batches()
+        if completed_batches < limit:
+            return None
+        return CancellationDecision(
+            action="stop",
+            source="non_interactive",
+            requested_at_unix_seconds=time.time(),
+        )
 
     return probe
 
