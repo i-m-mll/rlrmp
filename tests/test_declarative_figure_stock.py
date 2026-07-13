@@ -54,9 +54,11 @@ class FigureStockFact:
 def test_figure_stock_inventory_is_non_vacuous_and_classified() -> None:
     facts = _scan_figure_stock()
 
-    assert len(facts) == 73, "terminal figure-stock count changed without reconciliation"
+    # The tagged stock retirement removed 20 archival subjects while leaving
+    # the complete 50-spec native surface and three parity oracles intact.
+    assert len(facts) == 53, "terminal figure-stock count changed without reconciliation"
     assert sum(fact.role == "native" for fact in facts) == 50
-    assert sum(fact.role == "archival" for fact in facts) == 23
+    assert sum(fact.role == "archival" for fact in facts) == 3
     assert not any(fact.role == "legacy_living" for fact in facts)
     adjudication = _load_json(ADJUDICATION_PATH)
     archived_paths = sorted(fact.path for fact in facts if fact.role == "archival")
@@ -64,9 +66,9 @@ def test_figure_stock_inventory_is_non_vacuous_and_classified() -> None:
         adjudication["archived_specs"]
     )
     assert adjudication["archived_specs"] == archived_paths
-    assert any("perturbation_response_norms" in fact.path for fact in facts), (
-        "response-norm figure capability fell out of the governed stock"
-    )
+    # All response-norm stock subjects retired in b6b5502. The living
+    # response-norm capability remains guarded by the dedicated
+    # response_norm_capability contract family, not by an archival path here.
     assert {fact.role for fact in facts} <= {"native", "legacy_living", "archival"}
 
 
