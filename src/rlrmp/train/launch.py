@@ -165,7 +165,12 @@ def execute_authored_training_intent(
     runpod_profile: Path | None = None,
 ) -> Any:
     """Execute through Feedbax's persisted ASSEMBLE-to-REGISTER lifecycle."""
-    from feedbax.orchestration import StageEngine, build_core_check_registry
+    from feedbax.orchestration import (
+        AuthorizedBatchStop,
+        RowConformanceRuntimeInputs,
+        StageEngine,
+        build_core_check_registry,
+    )
 
     active_controls = controls or LaunchRuntimeControls()
     _validate_execute_controls(launch, active_controls)
@@ -188,8 +193,31 @@ def execute_authored_training_intent(
         registry=registry,
         driver_factory=driver_factory,
         conformance_registry=build_core_check_registry(),
+        row_conformance_inputs=(
+            {
+                row_id: RowConformanceRuntimeInputs(
+                    authorized_batch_stop=AuthorizedBatchStop(
+                        stop_after_batches=active_controls.stop_after_batches
+                    )
+                )
+                for row_id in _selected_authored_row_ids(launch, row=row)
+            }
+            if active_controls.stop_after_batches is not None
+            else {}
+        ),
     )
     return engine.run()
+
+
+def _selected_authored_row_ids(launch: AuthoredLaunch, *, row: str | None) -> tuple[str, ...]:
+    """Return row IDs selected by the authored request without recompiling it."""
+
+    available = tuple(item.row_id for item in launch.document.rows)
+    if row is None:
+        return available
+    if row not in available:
+        raise ValueError(f"unknown row selector {row!r}; available rows: {', '.join(available)}")
+    return (row,)
 
 
 def orchestration_driver_for_bundle(
