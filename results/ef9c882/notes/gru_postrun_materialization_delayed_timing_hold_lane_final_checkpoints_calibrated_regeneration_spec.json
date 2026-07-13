@@ -11,19 +11,23 @@
   },
   "inputs": [
     {
-      "logical_name": "results/ef9c882/runs/hold__force_filter.json",
+      "logical_name": "results/ef9c882/runs/matrix.json",
       "media_type": "application/json",
       "metadata": {
         "exists": true,
         "kind": "file",
-        "sha256": "d3b9af871ced2c2e4a0b90f698040747bce89cb7b0efafce86902c16ffb66dc3",
-        "size_bytes": 328137
+        "sha256": "997b0a3788da047df48ea50af18189160e6b57bfed68cbc55aa83f87ddc895c2",
+        "size_bytes": 45213,
+        "row_ids": [
+          "hold__force_filter",
+          "hold__start_pos_zero_vel"
+        ]
       },
-      "role": "run_spec",
-      "sha256": "d3b9af871ced2c2e4a0b90f698040747bce89cb7b0efafce86902c16ffb66dc3",
-      "size_bytes": 328137,
+      "role": "run_matrix",
+      "sha256": "997b0a3788da047df48ea50af18189160e6b57bfed68cbc55aa83f87ddc895c2",
+      "size_bytes": 45213,
       "storage_backend": "feedbax-local",
-      "uri": "repo://results/ef9c882/runs/hold__force_filter.json"
+      "uri": "repo://results/ef9c882/runs/matrix.json"
     },
     {
       "logical_name": "_artifacts/ef9c882/runs/hold__force_filter",
@@ -40,21 +44,6 @@
       "role": "run_artifact_dir",
       "storage_backend": "feedbax-local",
       "uri": "repo://_artifacts/ef9c882/runs/hold__force_filter"
-    },
-    {
-      "logical_name": "results/ef9c882/runs/hold__start_pos_zero_vel.json",
-      "media_type": "application/json",
-      "metadata": {
-        "exists": true,
-        "kind": "file",
-        "sha256": "8cd1f4194f4700efd023b56caa88e363c635216e3ea310cfa96e5a8fd5f8cd37",
-        "size_bytes": 328393
-      },
-      "role": "run_spec",
-      "sha256": "8cd1f4194f4700efd023b56caa88e363c635216e3ea310cfa96e5a8fd5f8cd37",
-      "size_bytes": 328393,
-      "storage_backend": "feedbax-local",
-      "uri": "repo://results/ef9c882/runs/hold__start_pos_zero_vel.json"
     },
     {
       "logical_name": "_artifacts/ef9c882/runs/hold__start_pos_zero_vel",
@@ -261,8 +250,7 @@
     },
     "parents": [],
     "source_branch": "feature/ef9c882-pre-go-hold-penalties",
-    "source_commit": "306b65ebc134b9d1f8d601b409c15a8852439383",
-    "source_repo": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__ef9c882-pre-go-hold-penalties"
+    "source_commit": "306b65ebc134b9d1f8d601b409c15a8852439383"
   },
   "schema_id": "feedbax.spec.regeneration",
   "schema_version": "feedbax.spec.regeneration.v1",

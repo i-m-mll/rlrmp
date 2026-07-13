@@ -244,7 +244,7 @@
     {
       "arrays": [],
       "artifacts": {
-        "run_spec": "results/ef9c882/runs/hold__force_filter.json",
+        "run_spec": "results/ef9c882/runs/matrix.json#row=hold__force_filter",
         "trained_model": "_artifacts/ef9c882/runs/hold__force_filter/trained_model.eqx",
         "training_summary": "_artifacts/ef9c882/runs/hold__force_filter/training_summary.json"
       },
@@ -605,7 +605,7 @@
     {
       "arrays": [],
       "artifacts": {
-        "run_spec": "results/ef9c882/runs/hold__start_pos_zero_vel.json",
+        "run_spec": "results/ef9c882/runs/matrix.json#row=hold__start_pos_zero_vel",
         "trained_model": "_artifacts/ef9c882/runs/hold__start_pos_zero_vel/trained_model.eqx",
         "training_summary": "_artifacts/ef9c882/runs/hold__start_pos_zero_vel/training_summary.json"
       },
@@ -973,8 +973,8 @@
   },
   "source_issue": "ef9c882",
   "source_manifests": {
-    "hold__force_filter": "results/ef9c882/runs/hold__force_filter.json",
-    "hold__start_pos_zero_vel": "results/ef9c882/runs/hold__start_pos_zero_vel.json"
+    "hold__force_filter": "results/ef9c882/runs/matrix.json#row=hold__force_filter",
+    "hold__start_pos_zero_vel": "results/ef9c882/runs/matrix.json#row=hold__start_pos_zero_vel"
   },
   "summary": {
     "blockers": [
