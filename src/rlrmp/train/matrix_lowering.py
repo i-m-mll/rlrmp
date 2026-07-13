@@ -16,6 +16,7 @@ from feedbax.contracts.training import TrainingRunSpec
 from feedbax.config.namespace import TreeNamespace
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from rlrmp.paths import portable_repo_path
 from rlrmp.runtime.spec_migrations import (
     TRAINING_AUTHORING_INTENT_KIND,
     TRAINING_AUTHORING_INTENT_SCHEMA_ID,
@@ -23,6 +24,8 @@ from rlrmp.runtime.spec_migrations import (
     accept_rlrmp_spec_payload,
 )
 from rlrmp.runtime.training_run_specs import (
+    FEEDBAX_TRAINING_RUN_SPEC_KEY,
+    RLRMP_RUN_SPEC_PAYLOAD_KEY,
     attach_composed_training_specs,
     feedbax_training_run_spec_from_payload,
 )
@@ -38,13 +41,19 @@ from rlrmp.train.run_spec_authoring import (
     derive_spec_dir,
 )
 from rlrmp.train.science_lowering import lower_training_science
+from rlrmp.train.native_manifest import (
+    RLRMP_NATIVE_MANIFEST_COMPANION_KEY,
+    NativeManifestTrainingDiagnostics,
+    RlrmpNativeManifestCompanion,
+    RlrmpNativeManifestMetadata,
+)
 from rlrmp.train.training_configs import CsNominalGruConfig
 
 
 RLRMP_TRAINING_AUTHORING_INTENT_SCHEMA_ID = TRAINING_AUTHORING_INTENT_SCHEMA_ID
 RLRMP_TRAINING_AUTHORING_INTENT_SCHEMA_VERSION = TRAINING_AUTHORING_INTENT_SCHEMA_VERSION
 RLRMP_TRAINING_ROW_LOWERER_ID = "rlrmp.train.cs_nominal_gru.authoring"
-RLRMP_TRAINING_ROW_LOWERER_VERSION = "v1"
+RLRMP_TRAINING_ROW_LOWERER_VERSION = "v2"
 RLRMP_SCIENCE_LOWERER_VERSION = "v1"
 RLRMP_TRAINING_ARCHITECTURE_CONTRACT = "rlrmp.heterogeneous_cs_architecture.v1"
 RLRMP_TRAINING_ARCHITECTURES = (
@@ -207,6 +216,33 @@ def lower_rlrmp_training_row(row: AuthoredTrainingRow) -> TrainingRowLoweringRes
         canonical_spec,
         architecture=architecture,
         training_distribution=_training_distribution(config),
+    )
+    generic_execution_payload = execution_spec.model_dump(mode="json", exclude_none=True)
+    rlrmp_run_spec = {
+        **composed[RLRMP_RUN_SPEC_PAYLOAD_KEY],
+        FEEDBAX_TRAINING_RUN_SPEC_KEY: generic_execution_payload,
+    }
+    diagnostics = rlrmp_run_spec.get("training_diagnostics")
+    if not isinstance(diagnostics, Mapping):
+        raise ValueError("lowered RLRMPRunSpec lacks training_diagnostics metadata")
+    diagnostics_enabled = bool(diagnostics.get("enabled"))
+    companion = RlrmpNativeManifestCompanion(
+        training_spec_payload=rlrmp_run_spec,
+        training_spec_payload_ref=portable_repo_path(spec_dir.with_suffix(".json")),
+        manifest_metadata=RlrmpNativeManifestMetadata(
+            training_diagnostics=NativeManifestTrainingDiagnostics(enabled=diagnostics_enabled),
+            gru_postrun_candidate=(architecture == "gru" and diagnostics_enabled),
+        ),
+    )
+    execution_spec = execution_spec.model_copy(
+        update={
+            "metadata": {
+                **execution_spec.metadata,
+                RLRMP_NATIVE_MANIFEST_COMPANION_KEY: companion.model_dump(
+                    mode="json", exclude_none=True
+                ),
+            }
+        }
     )
     return TrainingRowLoweringResult(
         execution_payload=execution_spec.model_dump(mode="json", exclude_none=True),

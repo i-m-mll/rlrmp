@@ -10,6 +10,13 @@ from typing import Any
 
 import pytest
 
+import rlrmp
+from feedbax.analysis.bundles import (
+    load_analysis_bundle,
+    predicate_matches_manifest,
+)
+from feedbax.config import ExperimentRegistry
+from feedbax.contracts.manifest import load_manifest
 from feedbax.contracts.run_matrix import RowLowererIdentity, TrainingRowProvenance
 from feedbax.contracts.spec_storage import training_run_execution_hash
 from feedbax.contracts.training import DEFAULT_TRAINING_METHOD_REGISTRY
@@ -48,6 +55,19 @@ from rlrmp.train.orchestrated_row import (
 )
 from rlrmp.train.executor.adapters import RLRMP_RUNTIME_CONTEXT_KEY
 from rlrmp.train.executor.initial_slots import RlrmpRuntime
+from rlrmp.train.fixture_orchestration import (
+    fixture_training_run_spec,
+    register_fixture_method,
+)
+from rlrmp.runtime.run_specs import resolve_run_record
+from rlrmp.runtime.spec_migrations import RUN_SPEC_KIND, accept_rlrmp_spec_payload
+from rlrmp.runtime.training_run_specs import FEEDBAX_TRAINING_RUN_SPEC_KEY
+from rlrmp.train.native_manifest import (
+    RLRMP_NATIVE_MANIFEST_COMPANION_KEY,
+    NativeManifestTrainingDiagnostics,
+    RlrmpNativeManifestCompanion,
+    RlrmpNativeManifestMetadata,
+)
 
 
 def _envelope(
@@ -119,6 +139,100 @@ def test_row_packet_rejects_payload_digest_mismatch(tmp_path: Path) -> None:
     path.write_text(packet.model_dump_json(), encoding="utf-8")
     with pytest.raises(ValueError, match="payload digest"):
         load_packet(path)
+
+
+def test_row_packet_rejects_legacy_v2_with_regeneration_instruction(
+    tmp_path: Path,
+) -> None:
+    payload = {"schema_id": "example", "schema_version": "example.v1"}
+    packet = RowLaunchPacket(
+        run_set_id="set",
+        row_id="row",
+        envelope=_envelope(payload),
+        payload=payload,
+        row_dir=str(tmp_path),
+    ).model_dump(mode="json")
+    packet["schema_version"] = "rlrmp.orchestrated_row_packet.v2"
+
+    with pytest.raises(ValueError, match="v2.*must be regenerated"):
+        RowLaunchPacket.model_validate(packet)
+
+
+def test_rlrmp_training_packet_rejects_missing_native_manifest_companion(
+    tmp_path: Path,
+) -> None:
+    source = json.loads(
+        (
+            Path(__file__).resolve().parents[1] / "results/c6c5997/runs/flat_3e-5-epsilon-ramp.json"
+        ).read_text(encoding="utf-8")
+    )
+    payload = source["feedbax_training_run_spec"]
+
+    with pytest.raises(
+        ValueError,
+        match="requires a digest-bound native-manifest companion.*forbidden",
+    ):
+        RowLaunchPacket(
+            run_set_id="set",
+            row_id="row",
+            envelope=_envelope(payload, planned_run_id="feedbax-training-run:planned"),
+            payload=payload,
+            row_dir=str(tmp_path / "row"),
+        )
+
+
+def test_row_packet_rejects_generic_spec_mismatched_from_nested_lineage(
+    tmp_path: Path,
+) -> None:
+    source = json.loads(
+        (
+            Path(__file__).resolve().parents[1] / "results/c6c5997/runs/flat_3e-5-epsilon-ramp.json"
+        ).read_text(encoding="utf-8")
+    )
+    generic_a = source[FEEDBAX_TRAINING_RUN_SPEC_KEY]
+    generic_b = {
+        **generic_a,
+        "metadata": {**generic_a["metadata"], "lineage_variant": "nested-b"},
+    }
+    canonical_rlrmp_payload = accept_rlrmp_spec_payload(
+        RUN_SPEC_KIND,
+        source["rlrmp_run_spec"],
+        source_version=source["rlrmp_run_spec"].get("schema_version"),
+    ).payload
+    companion = RlrmpNativeManifestCompanion(
+        training_spec_payload={
+            **canonical_rlrmp_payload,
+            FEEDBAX_TRAINING_RUN_SPEC_KEY: generic_b,
+        },
+        training_spec_payload_ref="results/c6c5997/runs/flat_3e-5-epsilon-ramp.json",
+        manifest_metadata=RlrmpNativeManifestMetadata(
+            training_diagnostics=NativeManifestTrainingDiagnostics(enabled=True),
+            gru_postrun_candidate=True,
+        ),
+    )
+    packet_payload = {
+        **generic_a,
+        "metadata": {
+            **generic_a["metadata"],
+            RLRMP_NATIVE_MANIFEST_COMPANION_KEY: companion.model_dump(mode="json"),
+        },
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=r"/payload generic TrainingRunSpec.*feedbax_training_run_spec",
+    ):
+        RowLaunchPacket(
+            run_set_id="set",
+            row_id="row",
+            envelope=_envelope(
+                packet_payload,
+                planned_run_id="feedbax-training-run:planned",
+            ),
+            payload=packet_payload,
+            row_dir=str(tmp_path / "row"),
+            native_manifest_companion=companion,
+        )
 
 
 def test_packet_builds_typed_native_context_with_exact_planned_identity(
@@ -324,6 +438,30 @@ def test_execute_packet_uses_native_manifest_and_diagnostics_once(
         ).read_text(encoding="utf-8")
     )
     payload = source["feedbax_training_run_spec"]
+    canonical_rlrmp_payload = accept_rlrmp_spec_payload(
+        RUN_SPEC_KIND,
+        source["rlrmp_run_spec"],
+        source_version=source["rlrmp_run_spec"].get("schema_version"),
+    ).payload
+    rlrmp_payload = {
+        **canonical_rlrmp_payload,
+        FEEDBAX_TRAINING_RUN_SPEC_KEY: payload,
+    }
+    companion = RlrmpNativeManifestCompanion(
+        training_spec_payload=rlrmp_payload,
+        training_spec_payload_ref="results/c6c5997/runs/flat_3e-5-epsilon-ramp.json",
+        manifest_metadata=RlrmpNativeManifestMetadata(
+            training_diagnostics=NativeManifestTrainingDiagnostics(enabled=True),
+            gru_postrun_candidate=True,
+        ),
+    )
+    payload = {
+        **payload,
+        "metadata": {
+            **payload["metadata"],
+            RLRMP_NATIVE_MANIFEST_COMPANION_KEY: companion.model_dump(mode="json"),
+        },
+    }
     planned_run_id = "feedbax-training-run:planned"
     row_dir = tmp_path / "row"
     packet = RowLaunchPacket(
@@ -333,6 +471,7 @@ def test_execute_packet_uses_native_manifest_and_diagnostics_once(
         payload=payload,
         row_dir=str(row_dir),
         native_training_diagnostics=NativeTrainingDiagnosticsInput(seeds=[7]),
+        native_manifest_companion=companion,
     )
     preparation = SimpleNamespace(
         initial_slots={"model": object()},
@@ -376,6 +515,23 @@ def test_execute_packet_uses_native_manifest_and_diagnostics_once(
     assert result == native_manifest
     assert len(calls) == 1
     assert calls[0]["run_id"] == planned_run_id
+    assert calls[0]["training_spec_payload"] == rlrmp_payload
+    assert calls[0]["training_spec_payload_kind"] == "RLRMPRunSpec"
+    assert calls[0]["training_spec_payload_schema_id"] == "rlrmp.run_spec"
+    assert calls[0]["training_spec_payload_schema_version"] == "rlrmp.run_spec.v2"
+    assert calls[0]["training_spec_payload_ref"] == (
+        "results/c6c5997/runs/flat_3e-5-epsilon-ramp.json"
+    )
+    assert calls[0]["registry"] is DEFAULT_TRAINING_METHOD_REGISTRY
+    projection = calls[0]["manifest_metadata_projection"]
+    assert (
+        projection.source_payload_sha256
+        == companion.manifest_metadata_projection().source_payload_sha256
+    )
+    assert projection.values == {
+        "training_diagnostics": {"enabled": True},
+        "gru_postrun_candidate": True,
+    }
     context = calls[0]["execution_context"]
     assert isinstance(context, NativeExecutionProducerContext)
     assert context.execution.row_provenance is not None
@@ -389,6 +545,73 @@ def test_execute_packet_uses_native_manifest_and_diagnostics_once(
         "run_set_id": "set",
         "status": "completed",
     }
+
+
+def test_native_manifest_selectors_and_run_record_lineage(tmp_path: Path) -> None:
+    """One tiny native run remains selectable and model-lineage resolvable."""
+
+    exp = "deadff5"
+    run = "fixture__native"
+    repo = tmp_path / "repo"
+    source = json.loads(
+        (
+            Path(__file__).resolve().parents[1] / "results/c6c5997/runs/flat_3e-5-epsilon-ramp.json"
+        ).read_text(encoding="utf-8")
+    )
+    register_fixture_method()
+    generic_spec = fixture_training_run_spec(n_batches=1)
+    canonical_rlrmp_payload = accept_rlrmp_spec_payload(
+        RUN_SPEC_KIND,
+        source["rlrmp_run_spec"],
+        source_version=source["rlrmp_run_spec"].get("schema_version"),
+    ).payload
+    rlrmp_payload = {
+        **canonical_rlrmp_payload,
+        "issue": exp,
+        "run": run,
+        FEEDBAX_TRAINING_RUN_SPEC_KEY: generic_spec.model_dump(mode="json", exclude_none=True),
+    }
+    companion = RlrmpNativeManifestCompanion(
+        training_spec_payload=rlrmp_payload,
+        training_spec_payload_ref=f"results/{exp}/runs/{run}.json",
+        manifest_metadata=RlrmpNativeManifestMetadata(
+            training_diagnostics=NativeManifestTrainingDiagnostics(enabled=True),
+            gru_postrun_candidate=True,
+        ),
+    )
+    rlrmp.register_feedbax_training_methods(DEFAULT_TRAINING_METHOD_REGISTRY)
+
+    result = executor_module.execute_training_run_spec(
+        generic_spec,
+        run_id=run,
+        initial_slots={
+            "model": 0,
+            "optimizer": {"count": 1},
+            "prng": [0, 1],
+            "batch_counter": 0,
+        },
+        manifest_root=repo / "_artifacts/feedbax_runs",
+        checkpoint_root=repo / "_artifacts" / exp / "runs" / run / "checkpoints",
+        registry=DEFAULT_TRAINING_METHOD_REGISTRY,
+        manifest_metadata_projection=companion.manifest_metadata_projection(),
+        **companion.external_training_payload_kwargs(),
+    )
+    manifest = load_manifest(result.manifest_path)
+    registry = ExperimentRegistry()
+    rlrmp.register_experiment_package(registry)
+    diagnostics_bundle = load_analysis_bundle("rlrmp/training_diagnostics", registry=registry)
+    gru_bundle = load_analysis_bundle("rlrmp/gru_postrun", registry=registry)
+
+    assert manifest.status == "completed"
+    assert manifest.id.endswith(run)
+    assert manifest.training_spec is not None
+    assert manifest.training_spec.kind == RUN_SPEC_KIND
+    assert manifest.training_spec.inline == rlrmp_payload
+    assert manifest.metadata["gru_postrun_candidate"] is True
+    assert manifest.checkpoint_custody
+    assert predicate_matches_manifest(diagnostics_bundle.predicate, manifest)
+    assert predicate_matches_manifest(gru_bundle.predicate, manifest)
+    assert resolve_run_record(exp, run, repo_root=repo) == rlrmp_payload
 
 
 def test_batch_limit_probe_uses_completed_batches_not_probe_calls() -> None:

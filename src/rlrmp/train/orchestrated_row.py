@@ -9,11 +9,11 @@ import os
 import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from feedbax.contracts.training import TrainingRunSpec
+from feedbax.contracts.training import DEFAULT_TRAINING_METHOD_REGISTRY, TrainingRunSpec
 from feedbax.orchestration import ExecutionIdentityEnvelope
 from feedbax.orchestration.events import RunEventEmitter
 from feedbax.training.interruption import CancellationDecision
@@ -24,7 +24,14 @@ from feedbax.training.diagnostics import (
 
 from rlrmp.train.executor.adapters import RLRMP_RUNTIME_CONTEXT_KEY
 from rlrmp.train.executor.initial_slots import RlrmpRuntime
+from rlrmp.train.native_manifest import (
+    RLRMP_NATIVE_MANIFEST_COMPANION_KEY,
+    RlrmpNativeManifestCompanion,
+)
 from rlrmp.train.resume_control import target_training_batches
+from rlrmp.runtime.training_run_specs import (
+    feedbax_training_run_spec_from_rlrmp_record,
+)
 
 
 class SameRowResumeBinding(BaseModel):
@@ -41,7 +48,7 @@ class RowLaunchPacket(BaseModel):
     """Canonical, transport-safe inputs for one row process."""
 
     model_config = ConfigDict(extra="forbid")
-    schema_version: str = "rlrmp.orchestrated_row_packet.v2"
+    schema_version: Literal["rlrmp.orchestrated_row_packet.v3"] = "rlrmp.orchestrated_row_packet.v3"
     run_set_id: str
     row_id: str
     envelope: ExecutionIdentityEnvelope
@@ -56,6 +63,66 @@ class RowLaunchPacket(BaseModel):
     native_training_diagnostics: NativeTrainingDiagnosticsInput = Field(
         default_factory=NativeTrainingDiagnosticsInput
     )
+    native_manifest_companion: RlrmpNativeManifestCompanion | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_legacy_v2_packet(cls, data: Any) -> Any:
+        if (
+            isinstance(data, Mapping)
+            and data.get("schema_version") == "rlrmp.orchestrated_row_packet.v2"
+        ):
+            raise ValueError(
+                "legacy orchestrated row packet v2 lacks the required native-manifest "
+                "companion wire contract and must be regenerated"
+            )
+        return data
+
+    @model_validator(mode="after")
+    def _validate_native_manifest_companion(self) -> "RowLaunchPacket":
+        metadata = self.payload.get("metadata")
+        embedded = (
+            metadata.get(RLRMP_NATIVE_MANIFEST_COMPANION_KEY)
+            if isinstance(metadata, Mapping)
+            else None
+        )
+        if embedded is None:
+            if self.native_manifest_companion is not None:
+                raise ValueError(
+                    "row packet native-manifest companion is absent from execution payload"
+                )
+            if self.payload.get("schema_id") == "feedbax.spec.training_run":
+                raise ValueError(
+                    "RLRMP Feedbax training row requires a digest-bound native-manifest "
+                    "companion; generic legacy manifest emission is forbidden"
+                )
+            return self
+        validated = RlrmpNativeManifestCompanion.model_validate(embedded)
+        if self.native_manifest_companion is None:
+            raise ValueError(
+                "row packet execution payload companion was not carried into the packet"
+            )
+        if validated != self.native_manifest_companion:
+            raise ValueError(
+                "row packet native-manifest companion does not match execution payload"
+            )
+        execution_payload = dict(self.payload)
+        execution_metadata = dict(metadata)
+        execution_metadata.pop(RLRMP_NATIVE_MANIFEST_COMPANION_KEY)
+        execution_payload["metadata"] = execution_metadata
+        actual_generic = TrainingRunSpec.model_validate(execution_payload).model_dump(
+            mode="json", exclude_none=True
+        )
+        nested_generic = feedbax_training_run_spec_from_rlrmp_record(
+            validated.training_spec_payload
+        ).model_dump(mode="json", exclude_none=True)
+        if actual_generic != nested_generic:
+            raise ValueError(
+                "/payload generic TrainingRunSpec does not match "
+                "/native_manifest_companion/training_spec_payload/"
+                "feedbax_training_run_spec"
+            )
+        return self
 
 
 def load_packet(path: Path) -> RowLaunchPacket:
@@ -75,10 +142,12 @@ def execute_packet(packet: RowLaunchPacket) -> Path:
     )
     from feedbax.training.executor import execute_training_run_spec
 
+    from rlrmp import register_feedbax_training_methods
     from rlrmp.runtime.checkpoint_fork_gate import register_rlrmp_training_methods
     from rlrmp.train.execution_preparation import register_execution_preparations
 
     register_rlrmp_training_methods()
+    register_feedbax_training_methods(DEFAULT_TRAINING_METHOD_REGISTRY)
     register_execution_preparations(DEFAULT_EXECUTION_PREPARATION_PROVIDER_REGISTRY)
     run_spec = TrainingRunSpec.model_validate(packet.payload)
     execution_context = _native_execution_context(packet)
@@ -105,6 +174,16 @@ def execute_packet(packet: RowLaunchPacket) -> Path:
     row_dir = Path(packet.row_dir)
     row_dir.mkdir(parents=True, exist_ok=True)
     emitter = RunEventEmitter.from_env()
+    external_payload_kwargs = (
+        packet.native_manifest_companion.external_training_payload_kwargs()
+        if packet.native_manifest_companion is not None
+        else {}
+    )
+    manifest_metadata_projection = (
+        packet.native_manifest_companion.manifest_metadata_projection()
+        if packet.native_manifest_companion is not None
+        else None
+    )
     result = execute_training_run_spec(
         run_spec,
         run_id=planned_run_id,
@@ -113,6 +192,7 @@ def execute_packet(packet: RowLaunchPacket) -> Path:
         loss_service=preparation.loss_service,
         manifest_root=row_dir / "feedbax-manifests",
         checkpoint_root=packet.staged_checkpoint_root,
+        registry=DEFAULT_TRAINING_METHOD_REGISTRY,
         resume=packet.resume,
         resume_slot_transform=preparation.resume_slot_transform,
         run_event_emitter=emitter,
@@ -121,6 +201,8 @@ def execute_packet(packet: RowLaunchPacket) -> Path:
             kernel_context=preparation.kernel_context,
         ),
         execution_context=execution_context,
+        manifest_metadata_projection=manifest_metadata_projection,
+        **external_payload_kwargs,
     )
     _write_json(
         row_dir / "training_summary.json",

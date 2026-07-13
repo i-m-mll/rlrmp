@@ -23,6 +23,10 @@ from feedbax.training.diagnostics import (
 )
 
 from rlrmp.train.orchestrated_row import RowLaunchPacket
+from rlrmp.train.native_manifest import (
+    RLRMP_NATIVE_MANIFEST_COMPANION_KEY,
+    RlrmpNativeManifestCompanion,
+)
 
 
 def local_driver_for_bundle(
@@ -182,6 +186,21 @@ def _packet_for_row(
     if payload_ref.uri is None:
         raise ValueError(f"row {row.row_id!r} payload is not materialized")
     payload = json.loads(Path(payload_ref.uri).read_text(encoding="utf-8"))
+    payload_metadata = payload.get("metadata")
+    companion_payload = (
+        payload_metadata.get(RLRMP_NATIVE_MANIFEST_COMPANION_KEY)
+        if isinstance(payload_metadata, Mapping)
+        else None
+    )
+    companion = (
+        RlrmpNativeManifestCompanion.model_validate(companion_payload)
+        if companion_payload is not None
+        else None
+    )
+    if companion is None:
+        raise ValueError(
+            f"row {row.row_id!r} lacks the required digest-bound native-manifest companion"
+        )
     native_diagnostics = NativeTrainingDiagnosticsInput.model_validate(
         row.launch.metadata.get("native_training_diagnostics", {})
     )
@@ -224,6 +243,7 @@ def _packet_for_row(
         resume=resume,
         stop_after_batches=stop_after_batches,
         native_training_diagnostics=native_diagnostics,
+        native_manifest_companion=companion,
     )
 
 
