@@ -389,6 +389,7 @@ def build_orchestration_request(
         CheckpointTransactionInputResolver,
         checkpoint_transaction_locator,
     )
+    from rlrmp.runtime.spec_storage import resolve_authored_matrix_artifact
 
     if getattr(launch.document.base, "kind", None) == "inline":
         raise ValueError(
@@ -452,6 +453,10 @@ def build_orchestration_request(
     context = AssemblyContext(
         custody_root=launch.repo_root / "_artifacts" / "orchestration-custody",
         repo_root=launch.repo_root,
+        artifact_resolver=lambda ref: resolve_authored_matrix_artifact(
+            ref,
+            repo_root=launch.repo_root,
+        ),
         input_resolver=CheckpointTransactionInputResolver(),
         authored_ref=authored_ref,
     )

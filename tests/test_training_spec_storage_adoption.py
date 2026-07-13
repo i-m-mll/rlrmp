@@ -20,12 +20,15 @@ from feedbax.contracts.spec_storage import (
 )
 from feedbax.contracts.training import DEFAULT_TRAINING_METHOD_REGISTRY
 from feedbax.contracts.resolved_snapshot_decoder import decode_resolved_snapshot
+from feedbax.orchestration import SchemaArtifactRef
 from feedbax.training.run_matrix import materialize_adapted_run_matrix, materialize_run_matrix
 
 from rlrmp.runtime.checkpoint_fork_gate import load_matrix, register_rlrmp_training_methods
 from rlrmp.runtime.spec_storage import (
+    authored_matrix_repo_uri,
     emit_rlrmp_training_run_spec_storage,
     migrate_inline_training_run_matrix,
+    resolve_authored_matrix_artifact,
 )
 
 
@@ -131,12 +134,9 @@ def test_ef9c882_matrix_is_portable_and_resolves_from_tracked_authored_base(
     matrix = load_matrix(temporary_matrix_path)
     register_rlrmp_training_methods()
     materialized = materialize_run_matrix(matrix, repo_root=tmp_path)
-    assert [row.row_id for row in materialized.rows] == [
-        row["row_id"] for row in payload["rows"]
-    ]
+    assert [row.row_id for row in materialized.rows] == [row["row_id"] for row in payload["rows"]]
     assert all(
-        row.payload["artifacts"]["artifact_root"]
-        == f"_artifacts/ef9c882/runs/{row.row_id}"
+        row.payload["artifacts"]["artifact_root"] == f"_artifacts/ef9c882/runs/{row.row_id}"
         for row in materialized.rows
     )
 
@@ -166,10 +166,7 @@ def test_3cd018b_frozen_rows_use_compact_matrices_and_exact_envelope_snapshots(
                 [
                     "git",
                     "show",
-                    (
-                        f"{PRE_3CD018B_COMPACTION_COMMIT}:"
-                        f"results/3cd018b/runs/{row_id}.json"
-                    ),
+                    (f"{PRE_3CD018B_COMPACTION_COMMIT}:results/3cd018b/runs/{row_id}.json"),
                 ],
                 cwd=REPO_ROOT,
                 check=True,
@@ -184,10 +181,7 @@ def test_3cd018b_frozen_rows_use_compact_matrices_and_exact_envelope_snapshots(
         assert payload["base"] == {
             "kind": "resolved_output",
             "payload_path": "feedbax_training_run_spec",
-            "ref": (
-                f"_artifacts/spec-storage/sha256/{snapshot_digest[:2]}/"
-                f"{snapshot_digest}.json"
-            ),
+            "ref": (f"_artifacts/spec-storage/sha256/{snapshot_digest[:2]}/{snapshot_digest}.json"),
             "resolved_root_hash": snapshot["root_hash"],
             "symbolic_name": f"{row_id}.historical-envelope",
         }
@@ -239,9 +233,7 @@ def test_3cd018b_frozen_rows_use_compact_matrices_and_exact_envelope_snapshots(
         assert resolved_rows[0]["method_payload"]["schema_version"] == (
             "rlrmp.spec.training_method.adaptive_epsilon_curriculum_payload.v1"
         )
-        assert resolved_rows[0]["graph"]["inline"]["schema_version"] == (
-            "feedbax.spec.graph.v4"
-        )
+        assert resolved_rows[0]["graph"]["inline"]["schema_version"] == ("feedbax.spec.graph.v4")
 
     if require_local_custody:
         assert actual_custody_refs_verified == len(run_paths)
@@ -345,7 +337,82 @@ def test_rlrmp_emitter_cold_process_writes_governed_storage(tmp_path: Path) -> N
     assert snapshot_artifact.is_relative_to(custody_root)
     assert capsule_artifact.is_relative_to(custody_root)
     assert result["storage"]["capsule"]["materializer_commit"] == "a" * 40
-    assert result["authored_artifact"]["uri"] == str(output_path)
+    assert result["authored_artifact"]["uri"] == "repo://results/matrix.json"
+    ref = SchemaArtifactRef.model_validate(result["authored_artifact"])
+    assert (
+        sha256(resolve_authored_matrix_artifact(ref, repo_root=tmp_path)).hexdigest() == ref.sha256
+    )
+
+
+def test_authored_matrix_repo_uri_rejects_paths_outside_checkout(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+
+    with pytest.raises(ValueError, match="beneath repo_root"):
+        authored_matrix_repo_uri(tmp_path / "outside.json", repo_root=repo_root)
+
+
+def test_tracked_authored_matrix_sidecars_are_portable_and_hash_bound() -> None:
+    sidecars = sorted(REPO_ROOT.glob("results/*/runs/matrix.json.artifact.json"))
+
+    assert sidecars
+    for sidecar in sidecars:
+        ref = SchemaArtifactRef.model_validate_json(sidecar.read_text(encoding="utf-8"))
+        assert ref.artifact_id.startswith("authored-matrix:sha256:")
+        assert ref.uri is not None and ref.uri.startswith("repo://"), sidecar
+        assert sha256(resolve_authored_matrix_artifact(ref, repo_root=REPO_ROOT)).hexdigest() == (
+            ref.sha256
+        )
+
+
+@pytest.mark.parametrize(
+    ("issue", "expected_sha256"),
+    [
+        ("2cb6a58", "547efe4d07e86f941c307a8a95ada987666935742310e2faa19a504cfeb9a1f5"),
+        ("4eb51ee", "78108ca2286af701583e5c4eb87a92736820b5c9260129637722c61831a9e52f"),
+    ],
+)
+def test_smoke_matrices_cold_emit_portable_sidecars_without_identity_drift(
+    tmp_path: Path,
+    issue: str,
+    expected_sha256: str,
+) -> None:
+    relative_root = Path("results") / issue / "runs"
+    source_root = REPO_ROOT / relative_root
+    temporary_root = tmp_path / relative_root
+    temporary_root.mkdir(parents=True)
+    for name in ("matrix.json", "base.intent.json"):
+        (temporary_root / name).write_bytes((source_root / name).read_bytes())
+    dependency_lock = tmp_path / "uv.lock"
+    dependency_lock.write_bytes((REPO_ROOT / "uv.lock").read_bytes())
+    output_path = temporary_root / "emitted.json"
+
+    completed = _run_emitter_cold(
+        str(temporary_root / "matrix.json"),
+        "--output",
+        str(output_path),
+        "--repo-root",
+        str(tmp_path),
+        "--custody-root",
+        str(tmp_path / "custody" / issue),
+        "--dependency-lock",
+        str(dependency_lock),
+        "--materializer-commit",
+        "a" * 40,
+        cwd=tmp_path,
+        tmp_path=tmp_path,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert sha256(output_path.read_bytes()).hexdigest() == expected_sha256
+    assert sha256((source_root / "matrix.json").read_bytes()).hexdigest() == expected_sha256
+    ref = SchemaArtifactRef.model_validate_json(
+        output_path.with_suffix(".json.artifact.json").read_text(encoding="utf-8")
+    )
+    assert ref.uri == f"repo://{relative_root.as_posix()}/emitted.json"
+    assert (
+        sha256(resolve_authored_matrix_artifact(ref, repo_root=tmp_path)).hexdigest() == ref.sha256
+    )
 
 
 def test_migration_preserves_exact_pre_migration_inline_semantics(tmp_path: Path) -> None:

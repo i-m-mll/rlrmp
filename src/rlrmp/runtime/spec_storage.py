@@ -28,6 +28,45 @@ from rlrmp.train.matrix_materialization import (
 )
 
 
+REPO_ARTIFACT_URI_PREFIX = "repo://"
+
+
+def authored_matrix_repo_uri(authored_path: Path, *, repo_root: Path) -> str:
+    """Return the checkout-independent URI for a tracked authored matrix."""
+
+    root = repo_root.resolve()
+    try:
+        relative = authored_path.resolve().relative_to(root)
+    except ValueError as exc:
+        raise ValueError("authored matrix must be stored beneath repo_root") from exc
+    return f"{REPO_ARTIFACT_URI_PREFIX}{relative.as_posix()}"
+
+
+def resolve_authored_matrix_artifact(
+    ref: SchemaArtifactRef,
+    *,
+    repo_root: Path,
+) -> bytes:
+    """Materialize a portable authored-matrix ref for Feedbax digest checks.
+
+    Absolute URIs remain readable for historical sidecars, but new emission
+    always records a ``repo://`` URI through :func:`authored_matrix_repo_uri`.
+    """
+
+    if ref.uri is None:
+        raise ValueError(f"artifact {ref.artifact_id!r} has no materialization URI")
+    if ref.uri.startswith(REPO_ARTIFACT_URI_PREFIX):
+        relative = Path(ref.uri.removeprefix(REPO_ARTIFACT_URI_PREFIX))
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError(f"artifact {ref.artifact_id!r} has an invalid repo URI")
+        path = repo_root.resolve() / relative
+    else:
+        path = Path(ref.uri).expanduser()
+        if not path.is_absolute():
+            path = repo_root.resolve() / path
+    return path.read_bytes()
+
+
 class RlrmpTrainingSpecStorageResult(StrictModel):
     """Feedbax storage result plus the emitter-owned authored-document pin."""
 
@@ -82,7 +121,7 @@ def emit_rlrmp_training_run_spec_storage(
         schema_version=storage.capsule.relevant_schema_versions["training_run_matrix"],
         artifact_id=f"authored-matrix:sha256:{authored_digest}",
         sha256=authored_digest,
-        uri=str(authored_path.resolve()),
+        uri=authored_matrix_repo_uri(authored_path, repo_root=repo_root),
     )
     sidecar = authored_path.with_suffix(authored_path.suffix + ".artifact.json")
     sidecar.write_text(
