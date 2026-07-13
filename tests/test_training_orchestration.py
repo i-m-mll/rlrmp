@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -19,6 +20,7 @@ from feedbax.orchestration.conformance import (
     ConformanceRowArtifacts,
     check_checkpoint_cadence,
     check_completed_batches,
+    check_lr_trace,
 )
 
 from rlrmp.train.orchestration_compiler import (
@@ -190,6 +192,120 @@ def test_compiler_hands_resume_and_seed_context_to_native_diagnostics() -> None:
     assert diagnostics.resume_context.schedule_origin_step == 12_000
     assert diagnostics.optimizer_build_context == diagnostics.resume_context
     assert diagnostics.metadata == {"run_set_id": "run-set", "row_id": "continuation"}
+
+
+def test_fresh_cs_diagnostics_realize_delayed_cosine_lr_samples() -> None:
+    payload = _scheduled_cs_payload(kind="delayed_cosine")
+    diagnostics = _native_training_diagnostics(
+        {},
+        payload,
+        run_set_id="fresh-set",
+        row_id="fresh",
+        seed=42,
+    )
+
+    assert diagnostics.resume_context is not None
+    assert diagnostics.resume_context.model_dump() == {
+        "schedule_origin_step": 0,
+        "current_step": 0,
+        "optimizer_count_at_current_step": 0,
+    }
+    assert diagnostics.optimizer_build_context == diagnostics.resume_context
+    assert len(diagnostics.lr_trace) >= 3
+    assert diagnostics.lr_trace[0].step == 0
+    assert diagnostics.lr_trace[0].learning_rate == pytest.approx(1e-2)
+    assert diagnostics.lr_trace[-1].learning_rate < diagnostics.lr_trace[0].learning_rate
+    conformance = check_lr_trace(
+        ConformanceRowArtifacts(
+            row_id="fresh",
+            bundle_row_spec=payload,
+            training_diagnostics=diagnostics.model_dump(mode="json"),
+        )
+    )
+    assert conformance.status == "pass"
+
+
+def test_fresh_cs_diagnostics_realize_warmup_cosine_lr_samples() -> None:
+    diagnostics = _native_training_diagnostics(
+        {},
+        _scheduled_cs_payload(kind="warmup_cosine"),
+        run_set_id="fresh-set",
+        row_id="warmup",
+        seed=42,
+    )
+
+    samples = {sample.step: sample.learning_rate for sample in diagnostics.lr_trace}
+    assert len(samples) >= 3
+    assert samples[0] == pytest.approx(1e-3)
+    assert samples[10] == pytest.approx(1e-2)
+    assert samples[100] == pytest.approx(1e-3)
+
+
+def test_cs_diagnostics_preserve_restart_and_continue_schedule_clocks() -> None:
+    payload = _scheduled_cs_payload(kind="delayed_cosine")
+    restart = _native_training_diagnostics(
+        {
+            "fork": {"lr_continuation": "restart"},
+            "metadata": {"source_completed_training_batches": 20},
+        },
+        payload,
+        run_set_id="resume-set",
+        row_id="restart",
+        seed=42,
+    )
+    continued = _native_training_diagnostics(
+        {
+            "fork": {"lr_continuation": "continue"},
+            "metadata": {"source_completed_training_batches": 20},
+        },
+        payload,
+        run_set_id="resume-set",
+        row_id="continue",
+        seed=42,
+    )
+
+    assert restart.resume_context is not None
+    assert continued.resume_context is not None
+    assert restart.resume_context.schedule_origin_step == 20
+    assert continued.resume_context.schedule_origin_step == 0
+    assert restart.lr_trace[0].step == continued.lr_trace[0].step == 20
+    assert restart.lr_trace[0].learning_rate == pytest.approx(1e-2)
+    assert continued.lr_trace[0].learning_rate < restart.lr_trace[0].learning_rate
+
+
+def test_cs_diagnostics_reject_ambiguous_typed_optimizer() -> None:
+    payload = _scheduled_cs_payload(kind="delayed_cosine")
+    payload["method_payload"]["payload"]["controller_optimizer"]["params"]["learning_rate"] = 1e-2
+
+    with pytest.raises(ValueError, match="learning_rate must be omitted"):
+        _native_training_diagnostics(
+            {},
+            payload,
+            run_set_id="fresh-set",
+            row_id="invalid",
+            seed=42,
+        )
+
+
+def _scheduled_cs_payload(*, kind: str) -> dict[str, Any]:
+    return {
+        "method_payload": {
+            "payload": {
+                "controller_optimizer": {
+                    "type": "adamw",
+                    "params": {"weight_decay": 0.0},
+                    "lr_schedule": {
+                        "kind": kind,
+                        "learning_rate_0": 1e-2,
+                        "constant_lr_iterations": 10,
+                        "total_steps": 100,
+                        "warmup_init_fraction": 0.1,
+                        "cosine_annealing_alpha": 0.1,
+                    },
+                }
+            }
+        }
+    }
 
 
 @pytest.mark.skipif(not scheduled_preflight_capable(), reason=SCHEDULED_PREFLIGHT_SKIP_REASON)
