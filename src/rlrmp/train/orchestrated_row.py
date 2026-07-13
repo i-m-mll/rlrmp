@@ -9,18 +9,22 @@ import os
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from feedbax.contracts.training import TrainingRunSpec
 from feedbax.orchestration import ExecutionIdentityEnvelope
 from feedbax.orchestration.events import RunEventEmitter
+from feedbax.training.diagnostics import (
+    NativeExecutionProducerContext,
+    NativeTrainingDiagnosticsInput,
+)
 
 
 class RowLaunchPacket(BaseModel):
     """Canonical, transport-safe inputs for one row process."""
 
     model_config = ConfigDict(extra="forbid")
-    schema_version: str = "rlrmp.orchestrated_row_packet.v1"
+    schema_version: str = "rlrmp.orchestrated_row_packet.v2"
     run_set_id: str
     row_id: str
     envelope: ExecutionIdentityEnvelope
@@ -31,6 +35,9 @@ class RowLaunchPacket(BaseModel):
     fork_record_sha256: str | None = None
     resume: bool = False
     stop_after_batches: int | None = None
+    native_training_diagnostics: NativeTrainingDiagnosticsInput = Field(
+        default_factory=NativeTrainingDiagnosticsInput
+    )
 
 
 def load_packet(path: Path) -> RowLaunchPacket:
@@ -56,12 +63,16 @@ def execute_packet(packet: RowLaunchPacket) -> Path:
     register_rlrmp_training_methods()
     register_execution_preparations(DEFAULT_EXECUTION_PREPARATION_PROVIDER_REGISTRY)
     run_spec = TrainingRunSpec.model_validate(packet.payload)
+    execution_context = _native_execution_context(packet)
+    provenance = execution_context.execution.row_provenance
+    assert provenance is not None
+    planned_run_id = provenance.planned_run_id
     if packet.resume:
         _verify_staged_checkpoint(packet)
     preparation = DEFAULT_EXECUTION_PREPARATION_PROVIDER_REGISTRY.prepare(
         ExecutionPreparationRequest(
             run_spec=run_spec,
-            run_id=packet.row_id,
+            run_id=planned_run_id,
             resume=packet.resume,
         )
     )
@@ -70,7 +81,7 @@ def execute_packet(packet: RowLaunchPacket) -> Path:
     emitter = RunEventEmitter.from_env()
     result = execute_training_run_spec(
         run_spec,
-        run_id=packet.row_id,
+        run_id=planned_run_id,
         initial_slots=preparation.initial_slots,
         kernel_context=preparation.kernel_context,
         loss_service=preparation.loss_service,
@@ -80,41 +91,34 @@ def execute_packet(packet: RowLaunchPacket) -> Path:
         resume_slot_transform=preparation.resume_slot_transform,
         run_event_emitter=emitter,
         cancellation_probe=_batch_limit_probe(packet.stop_after_batches),
+        execution_context=execution_context,
     )
-    environment_fingerprint = os.environ.get("FEEDBAX_ENV_FINGERPRINT", "unknown")
-    manifest = result.manifest.model_copy(
-        update={
-            "run_set_id": packet.run_set_id,
-            "intent_hash": packet.envelope.authored_intent.intent_hash,
-            "resolved_semantics_root_hash": packet.envelope.resolved_snapshot.root_hash,
-            "execution_hash": packet.envelope.execution_capsule.execution_hash,
-            "input_data_identities": [
-                item.model_dump(mode="json", exclude_none=True)
-                for item in packet.envelope.immutable_inputs
-            ],
-            "metadata": {
-                **result.manifest.metadata,
-                "environment_fingerprint": environment_fingerprint,
-            },
-        }
-    )
-    manifest_path = row_dir / "manifest.json"
-    _write_json(manifest_path, manifest.model_dump(mode="json", exclude_none=True))
-    diagnostics = _training_diagnostics(packet, result)
-    _write_json(row_dir / "training-diagnostics.json", diagnostics)
     _write_json(
         row_dir / "training_summary.json",
         {
             "run_set_id": packet.run_set_id,
             "row_id": packet.row_id,
             "status": result.status,
-            "completed_batches": diagnostics["completed_batches"],
-            "metrics": dict(manifest.summary_metrics),
+            "completed_batches": result.diagnostics.completed_batches,
+            "metrics": dict(result.manifest.summary_metrics),
         },
     )
     if emitter is not None:
         emitter.close()
-    return manifest_path
+    return result.manifest_path
+
+
+def _native_execution_context(packet: RowLaunchPacket) -> NativeExecutionProducerContext:
+    """Bind the assembly envelope to the exact native row producer."""
+
+    if packet.envelope.row_provenance is None:
+        raise ValueError("orchestrated RLRMP row requires TrainingRowProvenance")
+    return NativeExecutionProducerContext(
+        execution=packet.envelope,
+        environment_fingerprint=os.environ.get("FEEDBAX_ENV_FINGERPRINT", "unknown"),
+        collection_root=packet.row_dir,
+        diagnostics=packet.native_training_diagnostics,
+    )
 
 
 def _verify_staged_checkpoint(packet: RowLaunchPacket) -> None:
@@ -155,98 +159,6 @@ def _verify_staged_checkpoint(packet: RowLaunchPacket) -> None:
     )
     if parent != source_transaction:
         raise ValueError("staged fork target provenance does not chain to envelope source")
-
-
-def _training_diagnostics(packet: RowLaunchPacket, result: Any) -> dict[str, Any]:
-    payload = packet.payload
-    metadata = dict(payload.get("metadata") or {})
-    continuation = payload.get("checkpoint_progress", {}).get("continuation") or {}
-    segment_completed = int(
-        continuation.get(
-            "additional_batches",
-            payload.get(
-                "n_batches",
-                payload.get("training_config", {}).get(
-                    "n_batches", payload.get("training", {}).get("n_batches", 0)
-                ),
-            ),
-        )
-    )
-    absolute_completed = int(payload.get("training_config", {}).get("n_batches", segment_completed))
-    checkpoint_interval = int(
-        payload.get(
-            "checkpoint_interval",
-            payload.get("checkpoint_progress", {}).get(
-                "checkpoint_interval",
-                payload.get("training", {}).get("checkpoint_interval", 0),
-            ),
-        )
-        or segment_completed
-        or 1
-    )
-    source = int(metadata.get("resume_context", {}).get("current_step", 0))
-    checkpoints = list(range(checkpoint_interval, segment_completed + 1, checkpoint_interval))
-    segment_program_steps = list(range(1, len(result.checkpoint_writes) + 1))
-    custody_program_steps = _custody_checkpoint_program_steps(result.checkpoint_writes)
-    diagnostics = {
-        "completed_batches": absolute_completed,
-        "segment_completed_batches": segment_completed,
-        "checkpoint_coordinates": checkpoints,
-        "segment_checkpoint_program_steps": segment_program_steps,
-        "absolute_completed_batches": [source + item for item in checkpoints],
-        "resume_context": metadata.get("resume_context", {}),
-        "optimizer_build_context": metadata.get("optimizer_build_context", {}),
-        "lr_trace": _lr_trace(payload, metadata),
-        "seeds": _diagnostic_seeds(payload, metadata),
-    }
-    if custody_program_steps is not None:
-        diagnostics["custody_checkpoint_program_steps"] = custody_program_steps
-    return diagnostics
-
-
-def _custody_checkpoint_program_steps(writes: Any) -> list[int] | None:
-    """Read authoritative ordinals from checkpoint transaction manifests."""
-    steps = []
-    for write in writes:
-        manifest = getattr(write, "manifest", None)
-        coordinate = getattr(manifest, "completed_coordinate", None)
-        step = getattr(coordinate, "program_step", None)
-        if isinstance(step, bool) or not isinstance(step, int):
-            return None
-        steps.append(step)
-    return steps
-
-
-def _diagnostic_seeds(payload: dict[str, Any], metadata: dict[str, Any]) -> Any:
-    """Preserve the authored seed shape consumed by Feedbax conformance."""
-    if "seeds" in payload:
-        return payload["seeds"]
-    if "seeds" in metadata:
-        return metadata["seeds"]
-    return metadata.get("seed", payload.get("seed", 0))
-
-
-def _lr_trace(payload: dict[str, Any], metadata: dict[str, Any]) -> dict[str, float]:
-    optimizer = payload.get("method_payload", {}).get("payload", {}).get("controller_optimizer")
-    if not isinstance(optimizer, dict) or optimizer.get("lr_schedule") is None:
-        return {}
-    from feedbax.contracts.training import OptimizerSpec
-    from feedbax.orchestration.schedule_eval import (
-        evaluate_schedule_samples,
-        require_schedule_context,
-        schedule_sample_steps,
-    )
-
-    context = require_schedule_context(
-        metadata.get("optimizer_build_context", {}), label="optimizer_build_context"
-    )
-    spec = OptimizerSpec.model_validate(optimizer)
-    return {
-        str(step): value
-        for step, value in evaluate_schedule_samples(
-            spec, context, schedule_sample_steps(spec, context)
-        ).items()
-    }
 
 
 def _batch_limit_probe(limit: int | None) -> Any:

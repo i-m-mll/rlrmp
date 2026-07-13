@@ -22,6 +22,10 @@ from feedbax.orchestration import SchemaArtifactRef
 from feedbax.contracts.manifest import StrictModel, sha256_file
 
 from rlrmp.runtime.checkpoint_fork_gate import register_rlrmp_training_methods
+from rlrmp.train.matrix_materialization import (
+    rlrmp_training_row_lowerer,
+    validate_rlrmp_training_payload,
+)
 
 
 class RlrmpTrainingSpecStorageResult(StrictModel):
@@ -57,6 +61,7 @@ def emit_rlrmp_training_run_spec_storage(
     """
 
     register_rlrmp_training_methods()
+    lowerer = rlrmp_training_row_lowerer(authored, repo_root=repo_root)
     storage = emit_training_run_spec_storage(
         authored,
         repo_root=repo_root,
@@ -66,6 +71,8 @@ def emit_rlrmp_training_run_spec_storage(
         dependency_lock_path=dependency_lock_path,
         input_data_identities=input_data_identities,
         environment_digest=environment_digest,
+        row_validator=(validate_rlrmp_training_payload if lowerer is not None else None),
+        row_lowerer=lowerer,
     )
     authored_digest = sha256_file(authored_path)
     authored_artifact = SchemaArtifactRef(
