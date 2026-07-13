@@ -2,7 +2,7 @@
 
 Tracking issue: `2cb6a58`
 
-Status: **authored, emitted, and assembled; blocked before batch 1 by typed schedule preflight**.
+Status: **authored, emitted, preflighted, and provisioned; blocked before batch 1 by local environment fingerprinting**.
 The protocol remains frozen and every outcome is non-scientific engineering-smoke
 evidence; no hypothesis is answered by this protocol.
 
@@ -97,11 +97,12 @@ substitute for a required manifest or `report_render` artifact.
 ## Gate before execution can resume
 
 Protected Feedbax `060d65d285969ec11e4a284712913550c462ba18` is pinned, the
-pin guard passes, and the governed row re-lowering plus fresh-matrix routes are
-integrated. Validation, lowering, dry-run identity generation, custody emission,
-and assembly pass. Execution can resume only after schedule realization consumes a
-typed optimizer declaration for the registered C&S method shape without weakening
-preflight or adding an RLRMP workaround. [issue:ebd5d02] owns that correction and
-structurally blocks this experiment; [issue:52bacb3] is the repaired predecessor.
+pin guard passes, and the governed row re-lowering, fresh-matrix, and typed-optimizer
+routes are integrated. Validation, lowering, dry-run identity generation, custody
+emission, assembly, preflight, and provisioning pass. Execution can resume only
+after the Feedbax local driver fingerprints a uv-managed interpreter without
+assuming that `pip` is importable, while preserving deterministic provenance and
+fail-closed behavior. [issue:feedbax/0e257d0] owns that correction; [issue:ebd5d02]
+and [issue:52bacb3] are repaired predecessors.
 
 The full RLRMP suite remains parent-serialized and is forbidden in this child lane.

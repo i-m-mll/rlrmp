@@ -11,10 +11,10 @@ scientific claim.
 - **Paved-road authoring and emission:** pass. The compact content-pinned base,
   exact four-row matrix, registered science/architecture lowerers, resolved
   semantics, and execution capsule all validate and materialize.
-- **Local execution:** blocked before batch 1. After the fresh-matrix repair,
-  governed assembly succeeds but Feedbax orchestration rejects the row at
-  `schedule-realization` because the inline run spec exposes no optimizer at a
-  supported typed path.
+- **Local execution:** blocked before batch 1. After the typed-optimizer repair,
+  assembly, preflight, and provisioning succeed, but the local driver fails
+  `REALIZE_ENV` because the uv-managed interpreter has no `pip` module for its
+  hard-coded `python -m pip freeze` fingerprint step.
 - **Initial-training plausibility:** not run. No loss, state, action, endpoint,
   checkpoint, or resume measurement exists.
 - **Scientific evidence:** none.
@@ -27,7 +27,7 @@ was used.
 
 | Item | Identity |
 |---|---|
-| RLRMP materializer commit | `29e29730683b3d2efc7b3681a354e3f16fb19f29` |
+| RLRMP materializer commit | `b1b28c396fe4651c47157255ddb88e80d23c1ac3` |
 | Protected/pinned Feedbax develop | `060d65d285969ec11e4a284712913550c462ba18` |
 | `uv.lock` SHA-256 | `1c5e08022cd1eb54f32a84c01afb22638d63ee6dada161915a78fbd8b50b45e4` |
 | Python | `3.13.5` |
@@ -82,22 +82,24 @@ All commands ran from the issue-linked `wt` worktree with
 | schema validation | `uv run --no-sync python scripts/launch_training.py validate results/2cb6a58/runs/matrix.intent.json` | pass |
 | deterministic planning | `uv run --no-sync python scripts/launch_training.py dry-run results/2cb6a58/runs/matrix.intent.json` | pass: four exact row/run IDs |
 | governed emission | `uv run --no-sync python scripts/emit_training_run_matrix.py results/2cb6a58/runs/matrix.intent.json --output results/2cb6a58/runs/matrix.json --custody-root _artifacts/2cb6a58/spec-storage` | pass |
-| post-repair sidecar emission | same governed emitter, recorded in `_artifacts/2cb6a58/spec-emission-after-repair.json` | pass; matrix SHA unchanged |
-| first half of first row | `uv run --no-sync python scripts/launch_training.py execute results/2cb6a58/runs/matrix.json --row force_visible__nominal_seed42_smoke100 --stop-after-batches 50 --driver local` | exit 1; blocked in preflight before batch 1 |
+| post-repair sidecar emission | same governed emitter, recorded in `_artifacts/2cb6a58/spec-emission-after-b1b28c39.json` | pass; matrix SHA before/after `547efe4d…a1f5` |
+| first half of first row | `uv run --no-sync python scripts/launch_training.py execute results/2cb6a58/runs/matrix.json --row force_visible__nominal_seed42_smoke100 --stop-after-batches 50 --driver local` | exit 1; blocked in `REALIZE_ENV` before batch 1 |
 
-The execution command creates orchestration run set `2026-07-13-396081aa`,
-completes `ASSEMBLE`, passes manifest-payload normalization, and then raises:
+The execution command creates orchestration run set `2026-07-13-fc1d6231`,
+completes `ASSEMBLE`, `PREFLIGHT`, and `PROVISION`, and then raises:
 
 ```text
-feedbax.orchestration.stages.PreflightFailed: preflight failed: schedule-realization
+subprocess.CalledProcessError: Command ['<worktree>/.venv/bin/python3', '-m',
+'pip', 'freeze'] returned non-zero exit status 1.
 ```
 
-The failing check reports
-`force_visible__nominal_seed42_smoke100: inline run_spec contains no optimizer at a supported typed path`
-with observed schedule list `[]`. The row remains `pending` with no start time;
-`LAUNCH`, `REGISTER`, and `COLLECT` each have zero attempts. The run-set contains
-only `assembly-request.json`, `bundle.json`, `launch-packet.json`, and `state.json`.
-No `BATCH` record, runtime checkpoint, or manifest was produced.
+The bounded direct diagnostic through the same uv runtime reports
+`<worktree>/.venv/bin/python3: No module named pip` and exits 1. Run-set stage
+attempts are `ASSEMBLE=1`, `PREFLIGHT=1`, `PROVISION=1`, `REALIZE_ENV=3`, and
+`TEARDOWN=1`; launch and all later stages remain unattempted. The row remains
+`pending` with no PID, start time, event, or output. No `BATCH` record, runtime
+checkpoint, or manifest was produced. The local sidecar SHA-256 is
+`375feeefe15720a0a54a8d1a7fcca82cb1991ec24a5627bbf558362fe8bf6c25`.
 
 ## Required products and raw plausibility measurements
 
@@ -141,12 +143,13 @@ and `c5=0`.
 
 ## Gap and reproduction checklist
 
-The earlier fresh-matrix blocker [issue:52bacb3] is repaired and integrated. A new
-duplicate search found no issue covering the typed-optimizer preflight mismatch.
-[issue:ebd5d02], **Schedule preflight rejects C&S run specs without a typed optimizer
-path**, now owns the exact correction and structurally blocks this experiment and
-[issue:509368b]; it is related to the broader optimizer-contract adoption in
-[issue:f6d6a35].
+The fresh-matrix blocker [issue:52bacb3] and typed-optimizer blocker
+[issue:ebd5d02] are repaired and integrated. A cross-repo duplicate search found no
+issue covering the pip-less local-runtime fingerprint failure.
+[issue:feedbax/0e257d0], **Local environment fingerprint requires pip inside
+uv-managed runtimes**, owns the exact correction and structurally blocks this
+experiment and [issue:509368b]. Sibling [issue:4eb51ee] is related because it is
+held and unattempted on the same local-driver path.
 
 An independent reviewer can reproduce or falsify this packet by:
 
@@ -158,8 +161,8 @@ An independent reviewer can reproduce or falsify this packet by:
 6. decoding the resolved snapshot and checking 4D/6D feedback, nominal/PGD mode,
    100 batches, interval 50, and the listed lowerers for every row;
 7. rerunning the governed emission and comparing the storage identities;
-8. rerunning the single local execute command and confirming `schedule-realization`
-   fails with an empty observed schedule before any batch/checkpoint/manifest write;
+8. rerunning the single local execute command and confirming `REALIZE_ENV` fails
+   after three attempts because `pip` is absent, before any batch/checkpoint/manifest write;
 9. confirming no child-owned training artifact directory contains batch output;
 10. diffing against baseline `bd529256` and verifying no `src/`, `scripts/`,
     `tests/`, compiler, registry, dependency, or shared-environment file changed;
