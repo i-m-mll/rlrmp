@@ -134,3 +134,37 @@ def test_assembly_custodies_lowered_payload_and_exact_row_provenance(
         "row_id": "science-row",
         "run_set_id": "run-set-native-provenance",
     }
+
+    resumed_packet = _packet_for_row(
+        bundle,
+        row,
+        row_dir=tmp_path / "resumed-row",
+        resume=True,
+        checkpoint_root=tmp_path / "checkpoint-custody",
+        fork_record_path=None,
+        fork_record_sha256=None,
+        stop_after_batches=None,
+        same_row_resume_binding={
+            "checkpoint_root": str(tmp_path / "checkpoint-custody"),
+            "transaction_id": "tx-pinned",
+            "manifest_sha256": "a" * 64,
+            "completed_batches": 50,
+        },
+    )
+    expected_context = {
+        "schedule_origin_step": 0,
+        "current_step": 50,
+        "optimizer_count_at_current_step": 50,
+    }
+    assert resumed_packet.native_training_diagnostics.resume_context is not None
+    assert resumed_packet.native_training_diagnostics.resume_context.model_dump() == (
+        expected_context
+    )
+    assert resumed_packet.native_training_diagnostics.optimizer_build_context is not None
+    assert resumed_packet.native_training_diagnostics.optimizer_build_context.model_dump() == (
+        expected_context
+    )
+    assert (
+        resumed_packet.native_training_diagnostics.lr_trace
+        == packet.native_training_diagnostics.lr_trace
+    )

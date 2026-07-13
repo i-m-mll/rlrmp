@@ -179,6 +179,7 @@ def test_same_row_packet_revalidates_pinned_public_custody(
             "checkpoint_root": str(checkpoint_root),
             "transaction_id": transaction_id,
             "manifest_sha256": digest,
+            "completed_batches": 50,
         },
         resume=True,
     )
@@ -253,6 +254,21 @@ def test_same_row_packet_revalidates_pinned_public_custody(
             planned_run_id=run_id,
         )
 
+    stale_progress = packet.model_copy(
+        update={
+            "same_row_resume_binding": packet.same_row_resume_binding.model_copy(
+                update={"completed_batches": 49}
+            )
+        }
+    )
+    with pytest.raises(ValueError, match="completed-batch binding changed"):
+        _verify_same_row_checkpoint(
+            stale_progress,
+            run_spec=run_spec,  # type: ignore[arg-type]
+            preparation=preparation,
+            planned_run_id=run_id,
+        )
+
 
 def test_resume_transport_distinguishes_absent_and_incomplete_same_row_bindings(
     tmp_path: Path,
@@ -286,6 +302,7 @@ def test_resume_transport_distinguishes_absent_and_incomplete_same_row_bindings(
         "checkpoint_root": str(tmp_path / "local-custody"),
         "transaction_id": "tx-pinned",
         "manifest_sha256": "a" * 64,
+        "completed_batches": 50,
     }
     remote_root = "/workspace/run/inputs/row/checkpoint"
     assert _remote_same_row_binding(

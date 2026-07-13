@@ -17,7 +17,10 @@ from feedbax.orchestration.drivers.runpod import (
     RunPodOrchestrationDriver,
     RunPodTransport,
 )
-from feedbax.training.diagnostics import NativeTrainingDiagnosticsInput
+from feedbax.training.diagnostics import (
+    NativeTrainingDiagnosticsInput,
+    ScheduleContextDiagnostic,
+)
 
 from rlrmp.train.orchestrated_row import RowLaunchPacket
 
@@ -28,7 +31,7 @@ def local_driver_for_bundle(
     resume: bool = False,
     fork_record_path: Path | None = None,
     fork_record_sha256: str | None = None,
-    same_row_resume_bindings: Mapping[str, Mapping[str, str]] | None = None,
+    same_row_resume_bindings: Mapping[str, Mapping[str, str | int]] | None = None,
     stop_after_batches: int | None = None,
 ) -> LocalOrchestrationDriver:
     """Materialize local row packets and return the stock local driver."""
@@ -70,7 +73,7 @@ class RlrmpRunPodDriver:
         resume: bool = False,
         fork_record_path: Path | None = None,
         fork_record_sha256: str | None = None,
-        same_row_resume_bindings: Mapping[str, Mapping[str, str]] | None = None,
+        same_row_resume_bindings: Mapping[str, Mapping[str, str | int]] | None = None,
         stop_after_batches: int | None = None,
     ) -> None:
         self.stock = RunPodOrchestrationDriver(config=config, transport=transport)
@@ -173,7 +176,7 @@ def _packet_for_row(
     fork_record_path: Path | None,
     fork_record_sha256: str | None,
     stop_after_batches: int | None,
-    same_row_resume_binding: Mapping[str, str] | None = None,
+    same_row_resume_binding: Mapping[str, str | int] | None = None,
 ) -> RowLaunchPacket:
     payload_ref = row.execution.payload
     if payload_ref.uri is None:
@@ -182,6 +185,21 @@ def _packet_for_row(
     native_diagnostics = NativeTrainingDiagnosticsInput.model_validate(
         row.launch.metadata.get("native_training_diagnostics", {})
     )
+    if same_row_resume_binding is not None:
+        completed_batches = same_row_resume_binding.get("completed_batches")
+        if isinstance(completed_batches, bool) or not isinstance(completed_batches, int):
+            raise ValueError("same-row resume binding lacks typed completed-batch progress")
+        schedule_context = ScheduleContextDiagnostic(
+            schedule_origin_step=0,
+            current_step=completed_batches,
+            optimizer_count_at_current_step=completed_batches,
+        )
+        native_diagnostics = native_diagnostics.model_copy(
+            update={
+                "resume_context": schedule_context,
+                "optimizer_build_context": schedule_context,
+            }
+        )
     return RowLaunchPacket(
         run_set_id=bundle.run_set_id,
         row_id=row.row_id,
@@ -229,20 +247,20 @@ def _target_checkpoint_root(record_path: Path | None, row_id: str) -> Path | Non
 
 def _resume_checkpoint_root(
     record_path: Path | None,
-    same_row_bindings: Mapping[str, Mapping[str, str]] | None,
+    same_row_bindings: Mapping[str, Mapping[str, str | int]] | None,
     row_id: str,
 ) -> Path | None:
     target = _target_checkpoint_root(record_path, row_id)
     if target is not None:
         return target
     binding = _same_row_binding(same_row_bindings, row_id)
-    return None if binding is None else Path(binding["checkpoint_root"])
+    return None if binding is None else Path(str(binding["checkpoint_root"]))
 
 
 def _same_row_binding(
-    bindings: Mapping[str, Mapping[str, str]] | None,
+    bindings: Mapping[str, Mapping[str, str | int]] | None,
     row_id: str,
-) -> Mapping[str, str] | None:
+) -> Mapping[str, str | int] | None:
     if not bindings:
         return None
     binding = bindings.get(row_id)
@@ -252,10 +270,10 @@ def _same_row_binding(
 
 
 def _remote_same_row_binding(
-    binding: Mapping[str, str] | None,
+    binding: Mapping[str, str | int] | None,
     *,
     remote_checkpoint: str | None,
-) -> Mapping[str, str] | None:
+) -> Mapping[str, str | int] | None:
     if binding is None:
         return None
     if remote_checkpoint is None:

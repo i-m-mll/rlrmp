@@ -34,6 +34,7 @@ class SameRowResumeBinding(BaseModel):
     checkpoint_root: str = Field(min_length=1)
     transaction_id: str = Field(min_length=1)
     manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    completed_batches: int = Field(ge=0)
 
 
 class RowLaunchPacket(BaseModel):
@@ -236,6 +237,10 @@ def _verify_same_row_checkpoint(
     target = target_training_batches(run_spec)
     if completed is None or completed < 0:
         raise ValueError("same-row resume checkpoint lacks valid completed-training progress")
+    if completed != binding.completed_batches:
+        raise ValueError(
+            "same-row resume completed-batch binding changed after launch authorization"
+        )
     if completed >= target:
         raise ValueError(
             "same-row resume checkpoint is already complete: "
