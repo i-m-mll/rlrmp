@@ -99,6 +99,16 @@ def test_data_lint_flags_the_two_named_generated_tables() -> None:
 
 
 @pytest.mark.feedbax_contract
+def test_signed_high_precision_tables_remain_detectable() -> None:
+    findings = scan_source(
+        "VALUES = (-0.123456789, -0.234567891, -0.345678912, -0.456789123)",
+        "example/signed_values.py",
+    )
+
+    assert [finding.name for finding in findings] == ["VALUES"]
+
+
+@pytest.mark.feedbax_contract
 def test_data_lint_ignores_dimensions_tolerances_and_labels() -> None:
     findings = scan_source(_IGNORED_SNIPPET, "example/conventions.py")
     assert findings == [], [f.name for f in findings]

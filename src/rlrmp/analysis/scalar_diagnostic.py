@@ -16,6 +16,8 @@ from feedbax.analysis.specs import (
 from feedbax.analysis.types import AnalysisInputData
 from feedbax.config.namespace import TreeNamespace
 
+from rlrmp.mappings import as_mapping as _mapping
+
 
 SCALAR_DIAGNOSTIC_ANALYSIS_TYPE = "rlrmp.scalar_diagnostic_payload"
 SCALAR_DIAGNOSTIC_PAYLOAD_ROLE = "scalar_diagnostic_figure_payload"
@@ -118,10 +120,6 @@ def scalar_diagnostic_recipe(
 
 
 scalar_diagnostic_recipe.EVAL_DEPENDENCIES = ("rlrmp.eval.center_out_ensemble",)
-
-
-def _mapping(value: Any) -> Mapping[str, Any]:
-    return value if isinstance(value, Mapping) else {}
 
 
 def _jsonable(value: Any) -> Any:

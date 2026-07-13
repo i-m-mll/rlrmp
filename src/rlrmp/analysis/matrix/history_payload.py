@@ -16,6 +16,8 @@ from feedbax.analysis.specs import (
 from feedbax.analysis.types import AnalysisInputData
 from feedbax.config.namespace import TreeNamespace
 
+from rlrmp.mappings import as_mapping as _mapping
+
 
 HISTORY_PAYLOAD_ANALYSIS_TYPE = "rlrmp.history_payload"
 HISTORY_PAYLOAD_ROLE = "history_figure_payload"
@@ -136,10 +138,6 @@ def _normalise_history(history: Mapping[str, Any], *, label: str) -> dict[str, A
         "annotations": _jsonable(history.get("annotations", [])),
         "summary": _jsonable(history.get("summary", {})),
     }
-
-
-def _mapping(value: Any) -> Mapping[str, Any]:
-    return value if isinstance(value, Mapping) else {}
 
 
 def _jsonable(value: Any) -> Any:

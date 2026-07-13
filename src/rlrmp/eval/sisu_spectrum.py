@@ -24,6 +24,7 @@ from rlrmp.eval.trial_inputs import (
     resolve_evaluation_run_inputs as resolve_run_inputs,
 )
 from rlrmp.eval.kinematics import initial_effector_velocity
+from rlrmp.eval.replicates import is_replicate_array
 from rlrmp.paths import REPO_ROOT
 from rlrmp.runtime.run_spec_access import require_run_dt, require_run_seed
 from rlrmp.train.task_model import setup_task_model_pair
@@ -161,7 +162,7 @@ def evaluate_sisu_profiles(
         initial_velocity = initial_effector_velocity(base_trials)
         model_arrays, model_other = eqx.partition(
             model,
-            lambda leaf: _is_replicate_array(leaf, n_replicates),
+            lambda leaf: is_replicate_array(leaf, n_replicates),
         )
         dt = require_run_dt(run.run_spec, hps, source=run.run_spec_path)
         curves: list[SisuCurve] = []
@@ -241,10 +242,6 @@ def _target_final_position(trial_specs: Any) -> np.ndarray:
         return np.asarray(trial_specs.inputs["effector_target"].pos[..., -1, :], dtype=np.float64)
     target_spec = trial_specs.targets["mechanics.effector.pos"]
     return np.asarray(target_spec.value[..., -1, :], dtype=np.float64)
-
-
-def _is_replicate_array(leaf: Any, n_replicates: int) -> bool:
-    return eqx.is_array(leaf) and leaf.ndim >= 1 and leaf.shape[0] == n_replicates
 
 
 __all__ = [

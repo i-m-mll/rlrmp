@@ -17,6 +17,7 @@ from pathlib import Path
 import re
 
 from rlrmp.data_products import lint as empirical_lint
+from rlrmp.data_products.ast_walk import walk_numeric_nodes
 
 __all__ = [
     "BASELINE_RELPATH",
@@ -919,7 +920,7 @@ def _is_default_bundle_dict(node: ast.Dict) -> bool:
     string_keys = list(_dict_string_keys(node))
     if len(string_keys) < 3:
         return False
-    numeric_values = sum(1 for child in ast.walk(node) if _is_numeric_constant(child))
+    numeric_values = sum(1 for _child in walk_numeric_nodes(node, is_numeric=_is_numeric_constant))
     if numeric_values < 2:
         return False
     return any(_hp_name_matches(key) for key in string_keys)

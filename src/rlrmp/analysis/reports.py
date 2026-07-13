@@ -21,6 +21,7 @@ from feedbax.contracts.manifest import (
 )
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from rlrmp.mappings import as_mapping as _mapping
 from rlrmp.runtime.params_models import params_model_for, register_params_model
 from rlrmp.runtime.spec_migrations import (
     BRIDGE_CERTIFICATE_REPORT_PARAMS_KIND,
@@ -539,10 +540,6 @@ def _markdown_table(columns: Sequence[str], rows: Sequence[Sequence[str]] | Any)
     ]
     lines.extend("| " + " | ".join(_escape_cell(value) for value in row) + " |" for row in rows)
     return lines
-
-
-def _mapping(value: Any) -> Mapping[str, Any]:
-    return value if isinstance(value, Mapping) else {}
 
 
 def _fmt(value: Any) -> str:

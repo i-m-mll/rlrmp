@@ -57,6 +57,7 @@ from rlrmp.analysis.standard_certificate import (
     materialization_summary,
     repo_relative,
 )
+from rlrmp.eval.replicates import is_replicate_array
 from rlrmp.io import read_json
 from rlrmp.paths import REPO_ROOT, resolve_run_artifact_path, run_spec_path
 from rlrmp.runtime.spec_migrations import (
@@ -552,11 +553,11 @@ def evaluate_gru_clean_actions(
     n_trials = _trial_count(trial_specs)
     model_arrays, model_other = eqx.partition(
         clean_model,
-        lambda leaf: _is_replicate_array(leaf, n_replicates),
+        lambda leaf: is_replicate_array(leaf, n_replicates),
     )
     stochastic_model_arrays, stochastic_model_other = eqx.partition(
         model,
-        lambda leaf: _is_replicate_array(leaf, n_replicates),
+        lambda leaf: is_replicate_array(leaf, n_replicates),
     )
 
     def eval_one_replicate(model_array_leaves: Any, key: Any) -> Any:
@@ -1034,10 +1035,6 @@ def _disable_channel_noise(leaf: Any) -> Any:
 
 def _zero_channel_noise(_key: Any, output: Any) -> Any:
     return jnp.zeros_like(output)
-
-
-def _is_replicate_array(leaf: Any, n_replicates: int) -> bool:
-    return eqx.is_array(leaf) and leaf.ndim >= 1 and leaf.shape[0] == n_replicates
 
 
 def _trial_count(trial_specs: Any) -> int:

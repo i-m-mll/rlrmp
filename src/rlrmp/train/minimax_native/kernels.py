@@ -943,10 +943,6 @@ def _get_trainable(model: Any) -> Any:
         if getattr(net, "feedforward", None) is not None:
             return model.get_node_attrs("net", "gain", "feedforward")
         return model.get_node_attrs("net", "gain")
-    if cls_name == "LinearController":
-        return model.get_node_attrs("net", "K")
-    if cls_name == "LinearTrackerController":
-        return model.get_node_attrs("net", "K", "u_ff")
     return staged_network_trainable_parts(net)
 
 
@@ -957,10 +953,6 @@ def _trainable_where(model: Any) -> Any:
         if getattr(net, "feedforward", None) is not None:
             return lambda candidate: candidate.get_node_attrs("net", "gain", "feedforward")
         return lambda candidate: candidate.get_node_attrs("net", "gain")
-    if cls_name == "LinearController":
-        return lambda candidate: candidate.get_node_attrs("net", "K")
-    if cls_name == "LinearTrackerController":
-        return lambda candidate: candidate.get_node_attrs("net", "K", "u_ff")
     return lambda candidate: staged_network_trainable_parts(candidate.get_node("net"))
 
 

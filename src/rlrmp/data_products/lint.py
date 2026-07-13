@@ -31,6 +31,8 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 
+from rlrmp.data_products.ast_walk import walk_numeric_nodes
+
 __all__ = [
     "ALLOWLIST",
     "DESIGNATED_SCIENCE_DATA_LITERAL_RELPATHS",
@@ -114,18 +116,31 @@ def significant_figures(value: float) -> int:
 
 
 def _float_leaves(node: ast.AST) -> list[float]:
-    leaves: list[float] = []
-    for child in ast.walk(node):
-        if isinstance(child, ast.Constant) and isinstance(child.value, float):
-            leaves.append(child.value)
-        elif (
-            isinstance(child, ast.UnaryOp)
-            and isinstance(child.op, ast.USub)
-            and isinstance(child.operand, ast.Constant)
-            and isinstance(child.operand.value, float)
-        ):
-            leaves.append(-child.operand.value)
-    return leaves
+    return [_float_value(child) for child in walk_numeric_nodes(node, is_numeric=_is_float_node)]
+
+
+def _is_float_node(node: ast.AST) -> bool:
+    if isinstance(node, ast.Constant):
+        return isinstance(node.value, float)
+    return (
+        isinstance(node, ast.UnaryOp)
+        and isinstance(node.op, ast.USub)
+        and isinstance(node.operand, ast.Constant)
+        and isinstance(node.operand.value, float)
+    )
+
+
+def _float_value(node: ast.AST) -> float:
+    if isinstance(node, ast.Constant) and isinstance(node.value, float):
+        return node.value
+    if (
+        isinstance(node, ast.UnaryOp)
+        and isinstance(node.op, ast.USub)
+        and isinstance(node.operand, ast.Constant)
+        and isinstance(node.operand.value, float)
+    ):
+        return -node.operand.value
+    raise TypeError(f"not a float AST node: {type(node).__name__}")
 
 
 def _assignment_targets_and_value(

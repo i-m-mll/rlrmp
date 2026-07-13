@@ -158,26 +158,6 @@ def register_rlrmp_graph_components(component_registry: Any | None = None) -> An
         output_prototype_fn=_simple_staged_network_output_prototype,
         provenance="rlrmp",
     )
-    registry.register_component_type(
-        "RLRMPLinearController",
-        _build_linear_controller,
-        category="RLRMP",
-        description="RLRMP linear regulator controller.",
-        input_ports=["input", "feedback"],
-        output_ports=["output", "hidden"],
-        output_prototype_fn=_linear_controller_output_prototype,
-        provenance="rlrmp",
-    )
-    registry.register_component_type(
-        "RLRMPLinearTrackerController",
-        _build_linear_tracker_controller,
-        category="RLRMP",
-        description="RLRMP linear tracker controller.",
-        input_ports=["input", "feedback"],
-        output_ports=["output", "hidden"],
-        output_prototype_fn=_linear_controller_output_prototype,
-        provenance="rlrmp",
-    )
     _install_parameter_aware_recurrent_builders(registry)
     register_rlrmp_graph_migration_pack(registry)
     return registry
@@ -500,15 +480,6 @@ def _simple_staged_network_output_prototype(
     return {"output": output, "hidden": hidden}
 
 
-def _linear_controller_output_prototype(
-    params: dict[str, Any],
-    inputs: dict[str, Any],
-) -> dict[str, Any]:
-    del inputs
-    controls = int(params.get("n_controls", 2))
-    return {"output": jnp.zeros(controls), "hidden": jnp.zeros(1)}
-
-
 def install_simple_feedback_runtime_hooks(graph: Graph) -> Graph:
     """Install SimpleFeedback-compatible state view and consistency hooks."""
 
@@ -571,31 +542,6 @@ def _build_simple_staged_network(params: dict[str, Any]) -> SimpleStagedNetwork:
         sisu_gating=str(params.get("sisu_gating", "additive")),
         dtype=jnp.dtype(params.get("trainable_dtype", jnp.float32)),
         key=key,
-    )
-
-
-def _build_linear_controller(params: dict[str, Any]):
-    from rlrmp.controllers.linear import LinearController
-
-    return LinearController(
-        n_steps=int(params["n_steps"]),
-        n_controls=int(params.get("n_controls", 2)),
-        n_states=int(params.get("n_states", 4)),
-        K_init_scale=float(params.get("K_init_scale", 0.0) or 0.0),
-        key=_key_from_params(params),
-    )
-
-
-def _build_linear_tracker_controller(params: dict[str, Any]):
-    from rlrmp.controllers.linear import LinearTrackerController
-
-    return LinearTrackerController(
-        n_steps=int(params["n_steps"]),
-        n_controls=int(params.get("n_controls", 2)),
-        n_states=int(params.get("n_states", 4)),
-        K_init_scale=float(params.get("K_init_scale", 0.0) or 0.0),
-        u_ff_init_scale=float(params.get("u_ff_init_scale", 0.0) or 0.0),
-        key=_key_from_params(params),
     )
 
 
@@ -736,8 +682,6 @@ def _graph_bundle_metadata(
                 "DynamicsMatrixPerturb",
             ],
             "legacy_component_aliases": [
-                "RLRMPLinearController",
-                "RLRMPLinearTrackerController",
                 "RLRMPPointMass",
                 "RLRMPFeedbackChannels",
                 "RLRMPMotorChannel",
@@ -1299,15 +1243,6 @@ def graph_spec_from_model(
                 input_ports=list(component.input_ports),
                 output_ports=list(component.output_ports),
             )
-        else:
-            linear_params = _runtime_linear_controller_params(component)
-            if linear_params is not None:
-                nodes[name] = ComponentSpec(
-                    type=linear_params.pop("component_type"),
-                    params=linear_params,
-                    input_ports=list(component.input_ports),
-                    output_ports=list(component.output_ports),
-                )
     for name in drop_subgraphs:
         subgraphs.pop(name, None)
     return graph_spec.model_copy(update={"nodes": nodes, "subgraphs": subgraphs or None})
@@ -1467,25 +1402,6 @@ def _representative_runtime_graph(
                 init,
             )
     return representative
-
-
-def _runtime_linear_controller_params(component: Any) -> dict[str, Any] | None:
-    from rlrmp.controllers.linear import LinearController, LinearTrackerController
-
-    if isinstance(component, LinearTrackerController):
-        component_type = "RLRMPLinearTrackerController"
-    elif isinstance(component, LinearController):
-        component_type = "RLRMPLinearController"
-    else:
-        return None
-    return {
-        "component_type": component_type,
-        "n_steps": int(component.n_steps),
-        "n_controls": int(component.n_controls),
-        "n_states": int(component.n_states),
-        "target_source": "input.task.effector_target.pos",
-        "feedback_order": controller_feedback_order_labels(),
-    }
 
 
 def graph_spec_payload(graph_spec: GraphSpec) -> dict[str, Any]:
