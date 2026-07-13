@@ -78,6 +78,7 @@ def _feedback_quality_parity_payload(payload: dict) -> dict:
 
 
 def _unregister_declarative_recipes() -> None:
+    unregister_analysis_recipe(dm.STANDARD_CERTIFICATE_ANALYSIS_TYPE)
     unregister_analysis_recipe(dm.GRU_STANDARD_ANALYSIS_TYPE)
     unregister_analysis_recipe(dm.FEEDBACK_ABLATION_ANALYSIS_TYPE)
     unregister_analysis_recipe(dm.GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE)
@@ -353,9 +354,47 @@ def test_declarative_recipes_use_feedbax_context_materializers() -> None:
     )
 
 
+def test_standard_certificate_grouped_spec_preserves_all_evaluation_parents() -> None:
+    refs = [
+        ParentRef(
+            kind="EvaluationRunManifest",
+            id="eval-static",
+            role="standard_certificate_rows",
+        ),
+        ParentRef(
+            kind="EvaluationRunManifest",
+            id="eval-recurrent",
+            role="standard_certificate_rows",
+        ),
+    ]
+
+    spec = dm.standard_certificate_spec(
+        evaluation_manifest_refs=refs,
+        issue_id="e6a32b8",
+    )
+
+    assert spec.analysis_type == dm.STANDARD_CERTIFICATE_ANALYSIS_TYPE
+    assert spec.inputs == refs
+    assert spec.params == {
+        "schema_id": None,
+        "schema_version": None,
+        "issue_id": "e6a32b8",
+    }
+    assert dm.StandardCertificateAnalysisParams.model_validate({}).issue_id == "e6a32b8"
+    with pytest.raises(ValidationError):
+        dm.StandardCertificateAnalysisParams.model_validate({"unknown": True})
+
+
 def test_diagnostic_bank_recipes_register_params_models_and_eval_dependencies() -> None:
     rlrmp.register_experiment_package(ExperimentRegistry())
 
+    assert params_model_for(dm.STANDARD_CERTIFICATE_ANALYSIS_TYPE) is (
+        dm.StandardCertificateAnalysisParams
+    )
+    assert dm.BRIDGE_STANDARD_ANALYSIS_TYPE == dm.STANDARD_CERTIFICATE_ANALYSIS_TYPE
+    assert dm.EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE[dm.STANDARD_CERTIFICATE_ANALYSIS_TYPE] == (
+        "evaluation_run",
+    )
     assert params_model_for(dm.FEEDBACK_ABLATION_ANALYSIS_TYPE) is (
         dm.FeedbackAblationAnalysisParams
     )

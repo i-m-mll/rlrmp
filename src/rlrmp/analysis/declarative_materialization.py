@@ -45,6 +45,11 @@ from rlrmp.analysis.gru_standard_certificate import (
     RUN_IDS,
     materialize_gru_standard_result_from_evaluation_states,
 )
+from rlrmp.analysis.standard_certificate import (
+    STANDARD_CERTIFICATE_EVALUATION_STATE_KEY,
+    StandardCertificateRowRequest,
+    materialize_evaluation_standard_certificate_rows,
+)
 from rlrmp.eval.feedback_ablation import (
     FEEDBACK_ABLATION_ANALYSIS_TYPE,
     FeedbackAblationAnalysisParams,
@@ -126,6 +131,7 @@ from rlrmp.runtime.spec_migrations import (
 
 
 GRU_STANDARD_ANALYSIS_TYPE = "rlrmp.certificate.gru_standard"
+STANDARD_CERTIFICATE_ANALYSIS_TYPE = "rlrmp.certificate.standard"
 GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE = "rlrmp.diagnostic.gru_evaluation"
 DEFAULT_OUTPUT_TAG = "validation_selected"
 PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE = "rlrmp.perturbation_class_response"
@@ -136,9 +142,10 @@ FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE = "rlrmp.feedback_quality_lens"
 OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE = (
     "rlrmp.output_feedback_bridge.rollout_recovery"
 )
-BRIDGE_STANDARD_ANALYSIS_TYPE = GRU_STANDARD_ANALYSIS_TYPE
+BRIDGE_STANDARD_ANALYSIS_TYPE = STANDARD_CERTIFICATE_ANALYSIS_TYPE
 
 EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE = {
+    STANDARD_CERTIFICATE_ANALYSIS_TYPE: ("evaluation_run",),
     GRU_STANDARD_ANALYSIS_TYPE: (CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,),
     FEEDBACK_ABLATION_ANALYSIS_TYPE: (FEEDBACK_ABLATION_EVALUATION_TYPE,),
     GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE: (GRU_DIAGNOSTICS_EVALUATION_TYPE,),
@@ -275,6 +282,17 @@ class RecurrentJacobianAnalysisParams(BaseModel):
     include_finite_difference: bool = False
     finite_difference_epsilon: float = Field(1e-4, gt=0.0)
     finite_difference_batch_size: int | None = Field(128, ge=1)
+
+
+class StandardCertificateAnalysisParams(BaseModel):
+    """Params for grouped heterogeneous standard-certificate analysis."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_id: str | None = None
+    schema_version: str | None = None
+    issue_id: str = "e6a32b8"
+
 
 class PerturbationClassResponseAnalysisParams(BaseModel):
     """Params for one perturbation-family response analysis leaf."""
@@ -487,6 +505,11 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
     """Register rlrmp certificate/diagnostic analysis recipes with Feedbax."""
 
     register_params_model(
+        STANDARD_CERTIFICATE_ANALYSIS_TYPE,
+        StandardCertificateAnalysisParams,
+        replace=True,
+    )
+    register_params_model(
         POLICY_DIAGNOSTICS_ANALYSIS_TYPE,
         PolicyDiagnosticsAnalysisParams,
         replace=True,
@@ -550,6 +573,11 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
         OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE,
         OutputFeedbackRolloutRecoveryParams,
         replace=True,
+    )
+    register_analysis_recipe(
+        STANDARD_CERTIFICATE_ANALYSIS_TYPE,
+        standard_certificate_recipe,
+        replace=replace,
     )
     register_analysis_recipe(
         GRU_STANDARD_ANALYSIS_TYPE,
@@ -656,6 +684,27 @@ def gru_standard_certificate_spec(
     return AnalysisRunSpec(
         analysis_type=GRU_STANDARD_ANALYSIS_TYPE,
         inputs=inputs,
+        params=params,
+    )
+
+
+def standard_certificate_spec(
+    *,
+    evaluation_manifest_refs: Sequence[ParentRef],
+    issue_id: str = "e6a32b8",
+) -> AnalysisRunSpec:
+    """Return a grouped spec over heterogeneous evaluation manifests."""
+
+    refs = list(evaluation_manifest_refs)
+    if not refs:
+        raise ValueError("standard certificate spec requires evaluation manifest refs")
+    for ref in refs:
+        if ref.kind != "EvaluationRunManifest":
+            raise ValueError("standard certificate inputs must all be EvaluationRunManifest refs")
+    params = StandardCertificateAnalysisParams(issue_id=issue_id).model_dump(mode="json")
+    return AnalysisRunSpec(
+        analysis_type=STANDARD_CERTIFICATE_ANALYSIS_TYPE,
+        inputs=refs,
         params=params,
     )
 
@@ -1029,6 +1078,33 @@ def gru_standard_certificate_recipe(
     )
 
 
+def standard_certificate_recipe(
+    spec: AnalysisRunSpec,
+    _root: Path,
+    inputs: Sequence[Any],
+) -> AnalysisRecipeResult:
+    """Build a grouped standard-certificate recipe from evaluation caches."""
+
+    params = StandardCertificateAnalysisParams.model_validate(spec.params)
+    evaluation_inputs = _evaluation_inputs(inputs)
+    if len(evaluation_inputs) != len(inputs) or not evaluation_inputs:
+        raise ValueError(
+            "standard certificate analysis requires only EvaluationRunManifest inputs"
+        )
+    return _manifest_recipe(
+        analysis_name="standard_certificate",
+        materializer=lambda context, data: _materialize_standard_certificates(
+            context,
+            params,
+            evaluation_inputs=_evaluation_inputs_from_analysis_data(data),
+        ),
+        artifact_role="rlrmp-bridge-standard-certificate",
+        logical_name="standard_certificates.json",
+        schema_boundary="rlrmp-owned heterogeneous BridgeAnalysisResult payload",
+        data=_analysis_data_from_evaluation_inputs(evaluation_inputs),
+    )
+
+
 def gru_evaluation_diagnostics_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
@@ -1315,6 +1391,46 @@ def _materialize_gru_standard(
                 evaluation_input
             ),
         }
+    )
+
+
+def _materialize_standard_certificates(
+    context: AnalysisRunContext,
+    params: StandardCertificateAnalysisParams,
+    *,
+    evaluation_inputs: Sequence[_AnalysisEvaluationInput],
+) -> MaterializationResult:
+    evaluation_rows: list[
+        tuple[str, list[StandardCertificateRowRequest | Mapping[str, Any]]]
+    ] = []
+    for resolved in evaluation_inputs:
+        ref = resolved.ref
+        manifest_id = None if ref is None else ref.id
+        if manifest_id in (None, ""):
+            raise ValueError("standard certificate evaluation input lacks a manifest id")
+        states = _resolved_input_states(resolved)
+        if states is None:
+            raise ValueError(
+                f"EvaluationRunManifest {manifest_id!r} lacks cached evaluation states"
+            )
+        cached_rows = states.get(STANDARD_CERTIFICATE_EVALUATION_STATE_KEY)
+        if not isinstance(cached_rows, Sequence) or isinstance(cached_rows, (str, bytes)):
+            raise ValueError(
+                f"EvaluationRunManifest {manifest_id!r} requires cached state "
+                f"{STANDARD_CERTIFICATE_EVALUATION_STATE_KEY!r}"
+            )
+        evaluation_rows.append((str(manifest_id), list(cached_rows)))
+    payload = materialize_evaluation_standard_certificate_rows(
+        evaluation_rows,
+        issue_id=params.issue_id,
+    )
+    payload["declarative_analysis"] = _declarative_metadata(context)
+    return MaterializationResult(
+        payload=_json_ready(payload),
+        payload_metadata={
+            "analysis_type": STANDARD_CERTIFICATE_ANALYSIS_TYPE,
+            "evaluation_manifest_count": len(evaluation_inputs),
+        },
     )
 
 
@@ -2751,6 +2867,29 @@ def _analysis_data_from_evaluation_input(evaluation_input: Any | None) -> Analys
     )
 
 
+def _analysis_data_from_evaluation_inputs(
+    evaluation_inputs: Sequence[Any],
+) -> AnalysisInputData:
+    evaluations = []
+    for resolved in evaluation_inputs:
+        ref = getattr(resolved, "ref", None)
+        path = _resolved_input_path(resolved)
+        evaluations.append(
+            {
+                "states": _resolved_input_states(resolved),
+                "manifest_id": getattr(ref, "id", None),
+                "manifest_path": None if path is None else str(path),
+            }
+        )
+    return AnalysisInputData(
+        models={},
+        tasks={},
+        states={"evaluations": evaluations},
+        hps={},
+        extras=TreeNamespace(),
+    )
+
+
 def _rollout_recovery_result_from_analysis_data(
     data: AnalysisInputData,
 ) -> RolloutRecoveryResult:
@@ -2778,12 +2917,47 @@ def _evaluation_input_from_analysis_data(data: AnalysisInputData) -> _AnalysisEv
     )
 
 
+def _evaluation_inputs_from_analysis_data(
+    data: AnalysisInputData,
+) -> tuple[_AnalysisEvaluationInput, ...]:
+    evaluations = data.states.get("evaluations")
+    if not isinstance(evaluations, Sequence) or isinstance(evaluations, (str, bytes)):
+        return ()
+    resolved = []
+    for evaluation in evaluations:
+        if not isinstance(evaluation, Mapping):
+            raise TypeError("grouped evaluation analysis data entries must be mappings")
+        manifest_id = evaluation.get("manifest_id")
+        path = evaluation.get("manifest_path")
+        states = evaluation.get("states")
+        resolved.append(
+            _AnalysisEvaluationInput(
+                states=states if isinstance(states, Mapping) else None,
+                path=Path(path) if path not in (None, "") else None,
+                ref=(
+                    ParentRef(kind="EvaluationRunManifest", id=str(manifest_id))
+                    if manifest_id not in (None, "")
+                    else None
+                ),
+            )
+        )
+    return tuple(resolved)
+
+
 def _primary_evaluation_input(inputs: Sequence[Any]) -> Any | None:
     for resolved in inputs:
         ref = getattr(resolved, "ref", None)
         if getattr(ref, "kind", None) == "EvaluationRunManifest":
             return resolved
     return None
+
+
+def _evaluation_inputs(inputs: Sequence[Any]) -> tuple[Any, ...]:
+    return tuple(
+        resolved
+        for resolved in inputs
+        if getattr(getattr(resolved, "ref", None), "kind", None) == "EvaluationRunManifest"
+    )
 
 
 def _primary_feedback_quality_component_input(
@@ -3178,6 +3352,8 @@ __all__ = [
     "ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE",
     "SISU_SPECTRUM_ANALYSIS_TYPE",
     "SISU_SPECTRUM_EVALUATION_TYPE",
+    "STANDARD_CERTIFICATE_ANALYSIS_TYPE",
+    "StandardCertificateAnalysisParams",
     "feedback_quality_lens_recipe",
     "feedback_quality_lens_spec",
     "gru_evaluation_diagnostics_spec",
@@ -3197,4 +3373,6 @@ __all__ = [
     "robustness_phenotype_spec",
     "sisu_spectrum_evaluation_spec",
     "sisu_spectrum_spec",
+    "standard_certificate_recipe",
+    "standard_certificate_spec",
 ]
