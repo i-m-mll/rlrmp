@@ -179,8 +179,17 @@ name = "experiment_kpi_gates"
 owner = "49dc66d"
 status = "live"
 marker = "feedbax_contract"
-expected_collection_pattern = "tests/test_experiment_kpi_gates.py::"
-minimum_non_skipped = 5
+expected_collection_pattern = "tests/test_experiment_kpi_gates.py::test_experiment_kpi"
+minimum_non_skipped = 2
+negative_canary = "tests/test_experiment_kpi_gates.py::test_experiment_kpi_rejects_spec_outside_authored_inventory"
+
+[[families]]
+name = "tracked_materialization_gate"
+owner = "94878f1"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_experiment_kpi_gates.py::test_materialization"
+minimum_non_skipped = 7
 negative_canary = "tests/test_experiment_kpi_gates.py::test_materialization_gate_negative_canary_rejects_semantic_patterns"
 
 [[families]]

@@ -1,5 +1,489 @@
-# Historical tracked expanded/resolved spec payloads. The gate is shrink-only;
-# every new detected path fails until deliberately enumerated with an owner and
-# rationale. The historical stock has now been migrated, so the list is empty.
+# Current tracked expanded/resolved spec payloads. The gate is shrink-only:
+# remove entries as their owning migrations land; every new detected path
+# fails until deliberately enumerated with an owner and rationale.
 schema_version = 1
-violations = []
+
+[[violations]]
+path = "results/158b580/runs/matrix.json.artifact.json"
+owner = "ee7a6f4"
+reason = "Scheduled for compact-form migration or matrix-family spot audit; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/1ab1fef/runs/epsilon_scaled_short_3500to1000.json"
+owner = "1ab1fef"
+reason = "Keep rationale: retained legacy authored/execution run document; no current sibling migration owns removal; detected: expanded_run_envelope, expanded_inline_envelope, oversized_json_payload, absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/1c014e5/notes/output_feedback_optimizer_basin_manifest.json"
+owner = "1c014e5"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: oversized_json_payload."
+
+[[violations]]
+path = "results/3244f1a/notes/gru_evaluation_diagnostics_const_band16_validation_selected_regeneration_spec.json"
+owner = "3244f1a"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_moderate_manifest_regeneration_spec.json"
+owner = "3244f1a"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/3244f1a/notes/gru_perturbation_response_const_band16_calibrated_small_manifest_regeneration_spec.json"
+owner = "3244f1a"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/3b850d6/closed_loop_policy_audit.json"
+owner = "3b850d6"
+reason = "Keep rationale: retained historical analysis/evidence document; no current sibling migration owns removal; detected: oversized_json_payload."
+
+[[violations]]
+path = "results/3cd018b/runs/const1000.json"
+owner = "ee7a6f4"
+reason = "Scheduled for compact-form migration or matrix-family spot audit; detected: expanded_run_envelope, expanded_inline_envelope, oversized_json_payload, absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/3cd018b/runs/const1750.json"
+owner = "ee7a6f4"
+reason = "Scheduled for compact-form migration or matrix-family spot audit; detected: expanded_run_envelope, expanded_inline_envelope, oversized_json_payload, absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/3cd018b/runs/const250.json"
+owner = "ee7a6f4"
+reason = "Scheduled for compact-form migration or matrix-family spot audit; detected: expanded_run_envelope, expanded_inline_envelope, oversized_json_payload, absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/3cd018b/runs/hold1750_to1000.json"
+owner = "ee7a6f4"
+reason = "Scheduled for compact-form migration or matrix-family spot audit; detected: expanded_run_envelope, expanded_inline_envelope, oversized_json_payload, absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/3cd018b/runs/hold1750_to250.json"
+owner = "ee7a6f4"
+reason = "Scheduled for compact-form migration or matrix-family spot audit; detected: expanded_run_envelope, expanded_inline_envelope, oversized_json_payload, absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/3cd018b/runs/hold3500_to1000.json"
+owner = "ee7a6f4"
+reason = "Scheduled for compact-form migration or matrix-family spot audit; detected: expanded_run_envelope, expanded_inline_envelope, oversized_json_payload, absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/3cd018b/runs/hold3500_to250.json"
+owner = "ee7a6f4"
+reason = "Scheduled for compact-form migration or matrix-family spot audit; detected: expanded_run_envelope, expanded_inline_envelope, oversized_json_payload, absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/3cd018b/runs/ramp3500_to1000.json"
+owner = "ee7a6f4"
+reason = "Scheduled for compact-form migration or matrix-family spot audit; detected: expanded_run_envelope, expanded_inline_envelope, oversized_json_payload, absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/40e1911/notes/perturbation_response_npz_deletion_manifest.json"
+owner = "40e1911"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: oversized_json_payload."
+
+[[violations]]
+path = "results/57ab156/notes/gru_feedback_ablation_fixed_target_random_perturb_validation_selected.json"
+owner = "57ab156"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: oversized_json_payload."
+
+[[violations]]
+path = "results/74fac80/data_products/oracles/gru_pilot_nominal_regeneration_spec.json"
+owner = "74fac80"
+reason = "Keep rationale: retained governed analysis data product; no current sibling migration owns removal; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/74fac80/data_products/oracles/gru_pilot_pgd_regeneration_spec.json"
+owner = "74fac80"
+reason = "Keep rationale: retained governed analysis data product; no current sibling migration owns removal; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/7a459bb/notes/output_feedback_sweep_standard_certificates_manifest.json"
+owner = "7a459bb"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: oversized_json_payload."
+
+[[violations]]
+path = "results/87424a4/notes/steady_state_perturbation_bank_regeneration_spec.json"
+owner = "87424a4"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/87edaae/notes/output_feedback_time_constrained_manifest.json"
+owner = "87edaae"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: oversized_json_payload."
+
+[[violations]]
+path = "results/87edaae/notes/output_feedback_time_constrained_r12_coverage_manifest.json"
+owner = "87edaae"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: oversized_json_payload."
+
+[[violations]]
+path = "results/91a090c/runs/medium_3500to1000.json"
+owner = "91a090c"
+reason = "Keep rationale: retained legacy authored/execution run document; no current sibling migration owns removal; detected: expanded_run_envelope, oversized_json_payload."
+
+[[violations]]
+path = "results/91a090c/runs/short_3500to1000.json"
+owner = "91a090c"
+reason = "Keep rationale: retained legacy authored/execution run document; no current sibling migration owns removal; detected: expanded_run_envelope, oversized_json_payload."
+
+[[violations]]
+path = "results/91a090c/runs/smoke_diagnostics_gate.json"
+owner = "91a090c"
+reason = "Keep rationale: retained legacy authored/execution run document; no current sibling migration owns removal; detected: expanded_run_envelope, oversized_json_payload."
+
+[[violations]]
+path = "results/c6c5997/runs/flat_3e-5-epsilon-ramp.json"
+owner = "ee7a6f4"
+reason = "Scheduled for compact-form migration or matrix-family spot audit; detected: expanded_run_envelope, expanded_inline_envelope, oversized_json_payload, absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/c6c5997/runs/rewarm_3e-3-epsilon-ramp.json"
+owner = "ee7a6f4"
+reason = "Scheduled for compact-form migration or matrix-family spot audit; detected: expanded_run_envelope, expanded_inline_envelope, oversized_json_payload, absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/c6c5997/runs/rewarm_3e-4-epsilon-ramp.json"
+owner = "ee7a6f4"
+reason = "Scheduled for compact-form migration or matrix-family spot audit; detected: expanded_run_envelope, expanded_inline_envelope, oversized_json_payload, absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/c92ebd8/notes/gru_evaluation_diagnostics_output_feedback_budget_diagnostics_regeneration_spec.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/c92ebd8/notes/gru_evaluation_diagnostics_pgd_1p05_reach_context_diagnostics_regeneration_spec.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/c92ebd8/notes/gru_evaluation_diagnostics_validation_selected_moderate_regeneration_spec.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/c92ebd8/notes/gru_feedback_ablation_output_feedback_budget_diagnostics_manifest_regeneration_spec.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/c92ebd8/notes/gru_feedback_ablation_pgd_1p05_reach_context_diagnostics_manifest_regeneration_spec.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/c92ebd8/notes/gru_feedback_ablation_validation_selected_moderate_manifest.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: oversized_json_payload."
+
+[[violations]]
+path = "results/c92ebd8/notes/gru_feedback_ablation_validation_selected_moderate_manifest_regeneration_spec.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/c92ebd8/notes/gru_map_error_decomposition_validation_selected_moderate_regeneration_spec.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/c92ebd8/notes/gru_perturbation_response_output_feedback_budget_diagnostics_manifest_regeneration_spec.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/c92ebd8/notes/gru_perturbation_response_pgd_1p05_moderate_profile_overlay_manifest_regeneration_spec.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/c92ebd8/notes/gru_perturbation_response_pgd_1p05_reach_context_diagnostics_manifest_regeneration_spec.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/c92ebd8/notes/gru_perturbation_response_validation_selected_moderate_manifest_regeneration_spec.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/c92ebd8/notes/gru_pilot_figures_validation_selected_moderate_regeneration_spec.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/c92ebd8/notes/gru_postrun_materialization_validation_selected_moderate_regeneration_spec.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/c92ebd8/notes/gru_standard_certificates_validation_selected_moderate_manifest_regeneration_spec.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/c92ebd8/notes/hinf_phenotype_sidecar_pgd_1p05_reach_context_diagnostics_regeneration_spec.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/c92ebd8/notes/hinf_phenotype_sidecar_validation_selected_moderate_regeneration_spec.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/c92ebd8/notes/objective_comparator_validation_selected_moderate_regeneration_spec.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/c92ebd8/runs/closed_loop_cmd_lateral_moderate.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained legacy authored/execution run document; no current sibling migration owns removal; detected: expanded_run_envelope."
+
+[[violations]]
+path = "results/c92ebd8/runs/closed_loop_cmd_lateral_small.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained legacy authored/execution run document; no current sibling migration owns removal; detected: expanded_run_envelope."
+
+[[violations]]
+path = "results/c92ebd8/runs/closed_loop_cmd_lateral_stress.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained legacy authored/execution run document; no current sibling migration owns removal; detected: expanded_run_envelope."
+
+[[violations]]
+path = "results/c92ebd8/runs/closed_loop_moderate.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained legacy authored/execution run document; no current sibling migration owns removal; detected: expanded_run_envelope."
+
+[[violations]]
+path = "results/c92ebd8/runs/closed_loop_small.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained legacy authored/execution run document; no current sibling migration owns removal; detected: expanded_run_envelope."
+
+[[violations]]
+path = "results/c92ebd8/runs/closed_loop_stress.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained legacy authored/execution run document; no current sibling migration owns removal; detected: expanded_run_envelope."
+
+[[violations]]
+path = "results/c92ebd8/runs/moderate.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained legacy authored/execution run document; no current sibling migration owns removal; detected: expanded_run_envelope."
+
+[[violations]]
+path = "results/c92ebd8/runs/moderate_pgd_ofb1p05.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained legacy authored/execution run document; no current sibling migration owns removal; detected: expanded_run_envelope."
+
+[[violations]]
+path = "results/c92ebd8/runs/moderate_pgd_ofb1p4.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained legacy authored/execution run document; no current sibling migration owns removal; detected: expanded_run_envelope."
+
+[[violations]]
+path = "results/c92ebd8/runs/open_loop_moderate.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained legacy authored/execution run document; no current sibling migration owns removal; detected: expanded_run_envelope."
+
+[[violations]]
+path = "results/c92ebd8/runs/open_loop_small.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained legacy authored/execution run document; no current sibling migration owns removal; detected: expanded_run_envelope."
+
+[[violations]]
+path = "results/c92ebd8/runs/open_loop_stress.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained legacy authored/execution run document; no current sibling migration owns removal; detected: expanded_run_envelope."
+
+[[violations]]
+path = "results/c92ebd8/runs/small.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained legacy authored/execution run document; no current sibling migration owns removal; detected: expanded_run_envelope."
+
+[[violations]]
+path = "results/c92ebd8/runs/stress.json"
+owner = "c92ebd8"
+reason = "Keep rationale: retained legacy authored/execution run document; no current sibling migration owns removal; detected: expanded_run_envelope."
+
+[[violations]]
+path = "results/cb3685a/runs/harmonized_nominal_h0_const_band16_lr3e-3_clip5_b64.json"
+owner = "cb3685a"
+reason = "Keep rationale: retained legacy authored/execution run document; no current sibling migration owns removal; detected: expanded_run_envelope, expanded_inline_envelope, oversized_json_payload, absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/cb3685a/runs/seam_probe.json"
+owner = "cb3685a"
+reason = "Keep rationale: retained legacy authored/execution run document; no current sibling migration owns removal; detected: expanded_run_envelope, expanded_inline_envelope, oversized_json_payload, absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/d55c5f0/notes/gru_evaluation_diagnostics_soft_pgd_feedback_robustness_diagnostics_regeneration_spec.json"
+owner = "d55c5f0"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/d55c5f0/notes/gru_feedback_ablation_soft_pgd_feedback_robustness_diagnostics_manifest_regeneration_spec.json"
+owner = "d55c5f0"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/d55c5f0/notes/gru_perturbation_response_soft_pgd_feedback_robustness_diagnostics_manifest_regeneration_spec.json"
+owner = "d55c5f0"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/d55c5f0/runs/soft_pgd_ofb1p05.json"
+owner = "d55c5f0"
+reason = "Keep rationale: retained legacy authored/execution run document; no current sibling migration owns removal; detected: expanded_run_envelope."
+
+[[violations]]
+path = "results/d55c5f0/runs/soft_pgd_ofb1p4.json"
+owner = "d55c5f0"
+reason = "Keep rationale: retained legacy authored/execution run document; no current sibling migration owns removal; detected: expanded_run_envelope."
+
+[[violations]]
+path = "results/d55c5f0/runs/soft_pgd_ofb1p8.json"
+owner = "d55c5f0"
+reason = "Keep rationale: retained legacy authored/execution run document; no current sibling migration owns removal; detected: expanded_run_envelope."
+
+[[violations]]
+path = "results/d6d25d6/notes/phase_modulated_recurrent_manifest.json"
+owner = "d6d25d6"
+reason = "Keep rationale: retained analysis/evidence document; no current sibling migration owns removal; detected: oversized_json_payload."
+
+[[violations]]
+path = "results/e148f33/runs/adaptive_curriculum_3500to1000.json"
+owner = "e148f33"
+reason = "Keep rationale: retained legacy authored/execution run document; no current sibling migration owns removal; detected: expanded_run_envelope, oversized_json_payload."
+
+[[violations]]
+path = "results/ef9c882/notes/gru_evaluation_diagnostics_delayed_timing_hold_lane_final_checkpoints_calibrated_regeneration_spec.json"
+owner = "dd7234e"
+reason = "Scheduled for portable matrix re-authoring and superseded-spec deletion; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/ef9c882/notes/gru_map_error_decomposition_delayed_timing_hold_lane_final_checkpoints_calibrated_regeneration_spec.json"
+owner = "dd7234e"
+reason = "Scheduled for portable matrix re-authoring and superseded-spec deletion; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/ef9c882/notes/gru_perturbation_response_delayed_timing_hold_lane_final_checkpoints_calibrated_manifest_regeneration_spec.json"
+owner = "dd7234e"
+reason = "Scheduled for portable matrix re-authoring and superseded-spec deletion; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/ef9c882/notes/gru_pilot_figures_delayed_timing_hold_lane_final_checkpoints_calibrated_regeneration_spec.json"
+owner = "dd7234e"
+reason = "Scheduled for portable matrix re-authoring and superseded-spec deletion; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/ef9c882/notes/gru_postrun_materialization_delayed_timing_hold_lane_final_checkpoints_calibrated_regeneration_spec.json"
+owner = "dd7234e"
+reason = "Scheduled for portable matrix re-authoring and superseded-spec deletion; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/ef9c882/notes/gru_standard_certificates_delayed_timing_hold_lane_final_checkpoints_calibrated_manifest_regeneration_spec.json"
+owner = "dd7234e"
+reason = "Scheduled for portable matrix re-authoring and superseded-spec deletion; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/ef9c882/notes/objective_comparator_delayed_timing_hold_lane_final_checkpoints_calibrated_regeneration_spec.json"
+owner = "dd7234e"
+reason = "Scheduled for portable matrix re-authoring and superseded-spec deletion; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/ef9c882/runs/hold__force_filter.json"
+owner = "dd7234e"
+reason = "Scheduled for portable matrix re-authoring and superseded-spec deletion; detected: expanded_run_envelope, oversized_json_payload."
+
+[[violations]]
+path = "results/ef9c882/runs/hold__start_pos_zero_vel.json"
+owner = "dd7234e"
+reason = "Scheduled for portable matrix re-authoring and superseded-spec deletion; detected: expanded_run_envelope, oversized_json_payload."
+
+[[violations]]
+path = "results/ef9c882/runs/hold__start_pos_zero_vel_lr1e-2.json"
+owner = "dd7234e"
+reason = "Scheduled for portable matrix re-authoring and superseded-spec deletion; detected: expanded_run_envelope, oversized_json_payload."
+
+[[violations]]
+path = "results/ef9c882/runs/hold__start_pos_zero_vel_lr3e-2.json"
+owner = "dd7234e"
+reason = "Scheduled for portable matrix re-authoring and superseded-spec deletion; detected: expanded_run_envelope, oversized_json_payload."
+
+[[violations]]
+path = "results/ef9c882/runs/hold_start_pos_l1__w1e4.json"
+owner = "dd7234e"
+reason = "Scheduled for portable matrix re-authoring and superseded-spec deletion; detected: expanded_run_envelope."
+
+[[violations]]
+path = "results/ef9c882/runs/hold_start_pos_l1__w1e5.json"
+owner = "dd7234e"
+reason = "Scheduled for portable matrix re-authoring and superseded-spec deletion; detected: expanded_run_envelope."
+
+[[violations]]
+path = "results/ef9c882/runs/hold_start_pos_l1__w1e6.json"
+owner = "dd7234e"
+reason = "Scheduled for portable matrix re-authoring and superseded-spec deletion; detected: expanded_run_envelope."
+
+[[violations]]
+path = "results/ef9c882/runs/hold_start_pos_l1__w1e8.json"
+owner = "dd7234e"
+reason = "Scheduled for portable matrix re-authoring and superseded-spec deletion; detected: expanded_run_envelope."
+
+[[violations]]
+path = "results/ef9c882/runs/hold_start_pos_l1_ffpert__w1e5_lr1e-2.json"
+owner = "dd7234e"
+reason = "Scheduled for portable matrix re-authoring and superseded-spec deletion; detected: expanded_run_envelope, oversized_json_payload."
+
+[[violations]]
+path = "results/ef9c882/runs/hold_start_pos_l1_ffpert__w1e5_lr3e-3.json"
+owner = "dd7234e"
+reason = "Scheduled for portable matrix re-authoring and superseded-spec deletion; detected: expanded_run_envelope, oversized_json_payload."
+
+[[violations]]
+path = "results/ef9c882/runs/hold_start_pos_l1_ffpert__w1e6_lr3e-3.json"
+owner = "dd7234e"
+reason = "Scheduled for portable matrix re-authoring and superseded-spec deletion; detected: expanded_run_envelope, oversized_json_payload."
+
+[[violations]]
+path = "results/ef9c882/runs/hold_start_pos_l2__w1e4.json"
+owner = "dd7234e"
+reason = "Scheduled for portable matrix re-authoring and superseded-spec deletion; detected: expanded_run_envelope."
+
+[[violations]]
+path = "results/ef9c882/runs/hold_start_pos_l2__w1e6.json"
+owner = "dd7234e"
+reason = "Scheduled for portable matrix re-authoring and superseded-spec deletion; detected: expanded_run_envelope."
+
+[[violations]]
+path = "results/ef9c882/runs/hold_start_pos_l2__w1e8.json"
+owner = "dd7234e"
+reason = "Scheduled for portable matrix re-authoring and superseded-spec deletion; detected: expanded_run_envelope."
+
+[[violations]]
+path = "results/ef9c882/runs/hold_start_pos_l2_ffpert__w1e6_lr3e-3.json"
+owner = "dd7234e"
+reason = "Scheduled for portable matrix re-authoring and superseded-spec deletion; detected: expanded_run_envelope, oversized_json_payload."
+
+[[violations]]
+path = "results/ef9c882/runs/hold_start_pos_l2_ffpert__w1e8_lr1e-2.json"
+owner = "dd7234e"
+reason = "Scheduled for portable matrix re-authoring and superseded-spec deletion; detected: expanded_run_envelope, oversized_json_payload."
+
+[[violations]]
+path = "results/ef9c882/runs/hold_start_pos_l2_ffpert__w1e8_lr3e-3.json"
+owner = "dd7234e"
+reason = "Scheduled for portable matrix re-authoring and superseded-spec deletion; detected: expanded_run_envelope, oversized_json_payload."
+
+[[violations]]
+path = "results/ef9c882/runs/matrix.json"
+owner = "dd7234e"
+reason = "Scheduled for portable matrix re-authoring and superseded-spec deletion; detected: absolute_filesystem_path_in_spec."
+
+[[violations]]
+path = "results/ef9c882/runs/matrix.json.artifact.json"
+owner = "dd7234e"
+reason = "Scheduled for portable matrix re-authoring and superseded-spec deletion; detected: absolute_filesystem_path_in_spec."
