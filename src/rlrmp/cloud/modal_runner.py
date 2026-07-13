@@ -28,7 +28,6 @@ from rlrmp.paths import REPO_ROOT, run_artifact_dir, run_spec_dir
 from rlrmp.runtime.parameter_presets import ModalRunnerPreset, load_runtime_preset
 
 APP_NAME = "rlrmp-cs-stochastic-gru"
-DEFAULT_EXPERIMENT = "30f2313"
 DEFAULT_RUN = "cs_stochastic_gru__no_hidden_penalty"
 REGULARIZED_RUN = "cs_stochastic_gru__hidden_penalty"
 DEFAULT_STOCHASTIC_PRESET = "cs2019-rollout"
@@ -76,7 +75,7 @@ CommandKind = Literal["dry-run", "local-smoke", "modal-smoke", "modal-run", "mod
 class NominalGruRunConfig:
     """Command-level configuration for the stochastic GRU run."""
 
-    experiment: str = DEFAULT_EXPERIMENT
+    experiment: str | None = None
     run: str = DEFAULT_RUN
     authored_document: str | None = None
     row: str | None = None
@@ -139,17 +138,41 @@ class NominalGruRunConfig:
     schedule_total_batches: int = 1000
     confirm_billable_launch: bool = False
 
+    def resolved_experiment(self) -> str:
+        """Return the explicit issue key or derive it from the authored matrix path."""
+
+        if self.experiment:
+            return self.experiment
+        if self.authored_document:
+            parts = Path(self.authored_document).parts
+            try:
+                results_index = parts.index("results")
+            except ValueError:
+                pass
+            else:
+                if len(parts) > results_index + 2 and parts[results_index + 1]:
+                    return parts[results_index + 1]
+        raise ValueError(
+            "experiment is required unless --document has the form results/<issue>/runs/<file>"
+        )
+
     def local_artifact_dir(self) -> Path:
-        return run_artifact_dir(self.experiment, self.run)
+        return run_artifact_dir(self.resolved_experiment(), self.run)
 
     def local_spec_dir(self) -> Path:
-        return run_spec_dir(self.experiment, self.run)
+        return run_spec_dir(self.resolved_experiment(), self.run)
 
     def remote_artifact_dir(self) -> Path:
-        return MODAL_VOLUME_MOUNT / "_artifacts" / self.experiment / "runs" / self.run
+        return (
+            MODAL_VOLUME_MOUNT
+            / "_artifacts"
+            / self.resolved_experiment()
+            / "runs"
+            / self.run
+        )
 
     def remote_spec_dir(self) -> Path:
-        return MODAL_VOLUME_MOUNT / "results" / self.experiment / "runs" / self.run
+        return MODAL_VOLUME_MOUNT / "results" / self.resolved_experiment() / "runs" / self.run
 
     def remote_repo_dir(self) -> Path:
         if self.mode == "pinned":
@@ -494,7 +517,7 @@ def modal_volume_sync_command(config: NominalGruRunConfig) -> list[str]:
         "python",
         "scripts/sync_modal_run_artifacts.py",
         "--issue",
-        config.experiment,
+        config.resolved_experiment(),
         "--run",
         config.run,
     ]
@@ -641,7 +664,10 @@ def build_parser() -> argparse.ArgumentParser:
             "has been explicitly approved."
         ),
     )
-    parser.add_argument("--experiment", default=DEFAULT_EXPERIMENT)
+    parser.add_argument(
+        "--experiment",
+        help="Issue key for packing/provenance paths; inferred from --document when possible.",
+    )
     parser.add_argument("--run", default=DEFAULT_RUN)
     parser.add_argument(
         "--document",

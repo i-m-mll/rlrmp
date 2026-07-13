@@ -47,8 +47,12 @@ def test_tracked_materializations_are_explicitly_grandfathered() -> None:
     }
     found = scan_tracked()
     assert "results/c6c5997/runs/matrix.json" not in found
-    assert "results/ef9c882/runs/matrix.json" in found
-    assert "large_run_matrix_base_inline" in found["results/ef9c882/runs/matrix.json"]
+    assert "results/ef9c882/runs/matrix.json" not in found
+    assert (
+        "results/3cd018b/runs/ramp3500_to1000/feedbax_training_run_spec.json"
+        not in found
+    )
+    assert allowed == set()
     assert not set(found) - allowed, (
         "New tracked expanded/resolved spec materializations: "
         f"{sorted(set(found) - allowed)}. Store a compact authored ref/spec instead; "

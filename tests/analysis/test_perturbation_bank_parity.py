@@ -55,7 +55,8 @@ def test_governed_evaluation_matrix_materializes_role_addressed_family_rows() ->
         "sensory_feedback",
         "target_stream",
     ]
-    assert matrix.base.params["source_experiment"] == "5f70333"
+    assert matrix.base.params["source_experiment"] == ""
+    assert matrix.base.params["metadata"]["source_binding"] == "caller_specialized"
     assert matrix.base.params["metadata"]["custody"] == "EvaluationRunManifest"
     assert all(
         row.payload.evaluation_type == "rlrmp.eval.perturbation_response_bank" for row in rows

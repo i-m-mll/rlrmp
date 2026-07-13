@@ -170,7 +170,7 @@ def test_sidecar_reads_sisu_perturbation_comparison_schema() -> None:
     run_id = "delayed_sisu_spectrum__raw"
     sources = {
         "evaluation_diagnostics": _source(
-            "results/7c1f7ed/notes/gru_eval.json",
+            "results/abc1234/notes/gru_eval.json",
             {
                 "schema_version": "rlrmp.gru_evaluation_diagnostics.v1",
                 "runs": {
@@ -188,10 +188,10 @@ def test_sidecar_reads_sisu_perturbation_comparison_schema() -> None:
             },
         ),
         "perturbation_response": _source(
-            "results/7c1f7ed/notes/sisu_perturbation.json",
+            "results/abc1234/notes/sisu_perturbation.json",
             {
                 "schema_version": "rlrmp.sisu_perturbation_class_comparison.v1",
-                "issue": "7c1f7ed",
+                "issue": "abc1234",
                 "runs": {
                     run_id: {
                         "label": "raw",

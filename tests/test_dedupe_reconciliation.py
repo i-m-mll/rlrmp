@@ -13,12 +13,30 @@ BINDING_PATH = (
     REPO_ROOT / "_artifacts" / "31aaa31" / "verification" / "dedupe_closure_manifest.jsonl"
 )
 EXPECTED_STATE_COUNTS = {
-    "canonical_survivor": 4,
+    "canonical_survivor": 3,
     "cross_repo_resolved": 3,
     "excluded_cross_repo": 2,
-    "removed": 216,
-    "thin_adapter": 51,
+    "removed": 168,
+    "thin_adapter": 46,
 }
+RETIRED_RESULT_EXPERIMENTS = frozenset(
+    {
+        "08483d5",
+        "33b0dcb",
+        "3b2af27",
+        "3e66604",
+        "4d79e07",
+        "643f101",
+        "6c36536",
+        "aacb9ed",
+        "ae9f30f",
+        "b413bb0",
+        "ba82f3d",
+        "e901a20",
+        "ffff699",
+        "246182c",
+    }
+)
 
 
 def _jsonl(path: Path) -> list[dict[str, Any]]:
@@ -49,6 +67,14 @@ def _calls(node: ast.AST) -> set[str]:
         elif isinstance(call.func, ast.Attribute):
             calls.add(call.func.attr)
     return calls
+
+
+def _is_retired_result_member(member: Mapping[str, Any]) -> bool:
+    relative_path = str(member["module_relpath"])
+    return any(
+        relative_path.startswith(f"results/{experiment}/")
+        for experiment in RETIRED_RESULT_EXPERIMENTS
+    )
 
 
 def _assert_member_state(cluster_id: str, member: Mapping[str, Any]) -> None:
@@ -96,11 +122,18 @@ def _assert_member_state(cluster_id: str, member: Mapping[str, Any]) -> None:
 def test_all_confirm_clusters_have_enforced_final_reconciliation() -> None:
     binding = [row for row in _jsonl(BINDING_PATH) if row["verdict"] == "CONFIRM"]
     reconciliation = _jsonl(FIXTURE_PATH)
-    assert len(binding) == len(reconciliation) == 42
+    assert len(binding) == 42
+    assert len(reconciliation) == 38
 
-    binding_by_id = {row["cluster_id"]: row for row in binding}
+    binding_by_id = {}
+    for row in binding:
+        living_members = [
+            member for member in row["members"] if not _is_retired_result_member(member)
+        ]
+        if living_members:
+            binding_by_id[row["cluster_id"]] = {**row, "members": living_members}
     reconciliation_by_id = {row["cluster_id"]: row for row in reconciliation}
-    assert len(binding_by_id) == len(reconciliation_by_id) == 42
+    assert len(binding_by_id) == len(reconciliation_by_id) == 38
     assert reconciliation_by_id.keys() == binding_by_id.keys()
 
     state_counts: Counter[str] = Counter()
@@ -131,14 +164,11 @@ def test_all_confirm_clusters_have_enforced_final_reconciliation() -> None:
 
     assert dict(state_counts) == EXPECTED_STATE_COUNTS
     assert disposition_counts == {
-        "resolved": 38,
+        "resolved": 35,
         "resolved_terminal_retirement": 2,
-        "resolved_destination_deviation": 1,
         "resolved_cross_repo": 1,
     }
-    assert reconciliation_by_id["dup_0041"]["final_disposition"] == (
-        "resolved_destination_deviation"
-    )
+    assert "dup_0041" not in reconciliation_by_id
     feedbax = reconciliation_by_id["dup_0063"]
     assert feedbax["final_disposition"] == "resolved_cross_repo"
     assert feedbax["evidence"]["feedbax_commit"] == "8dc210ad"

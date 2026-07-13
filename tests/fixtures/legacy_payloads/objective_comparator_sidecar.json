@@ -1,0 +1,454 @@
+{
+  "schema_version": "rlrmp.objective_comparator_sidecar.v4",
+  "scope": "validation-selected checkpoints for C&S GRU runs: lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64, lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64",
+  "rows": [
+    {
+      "best_logged_to_extlqg_deterministic_ratio": 0.9974993565760255,
+      "checkpoint_policy": "validation_selected_per_replicate",
+      "comparability": {
+        "not_a_checkpoint_selection_input": true,
+        "reason": "run spec declares the full analytical Q/R/Q_f objective; the available scalar comparison is against the deterministic extLQG initial-state term only",
+        "status": "comparable_deterministic_full_qrf"
+      },
+      "extlqg_comparable_lens": "extlqg_deterministic_initial_state_full_qrf",
+      "extlqg_deterministic_full_qrf": 4368.510655149214,
+      "extlqg_total_expected_cost": 12201.42433801687,
+      "gru_mean_best_logged_validation_full_qrf": 4357.586567706852,
+      "gru_mean_selected_validation_full_qrf": 4367.301186181068,
+      "gru_realized_lens": "gru_validation_selected_realized_full_qrf",
+      "n_replicates": 5,
+      "per_term_realized_scoring": {
+        "lens": "realized_full_qrf_per_term_validation",
+        "reason": "validation checkpoint manifests currently expose scalar full-QRF objectives, not running-state, terminal-state, command, force/filter, and disturbance-integrator contributions",
+        "status": "not_implemented",
+        "terms": [
+          "running_state_q",
+          "terminal_state_q_f",
+          "command_r",
+          "force_filter_state",
+          "disturbance_integrator_state"
+        ]
+      },
+      "run_id": "lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64",
+      "same_noise_bank_monte_carlo": {
+        "lens": "same_noise_bank_monte_carlo_full_qrf",
+        "reason": "same-noise-bank extLQG-vs-GRU realized comparison was not materialized; the available tracked source only contains validation-selected GRU realized full-QRF scalars and the analytical extLQG expected-cost decomposition",
+        "required_for_available": [
+          "shared initial-condition bank",
+          "shared process/sensory/motor noise draws",
+          "extLQG realized full-Q/R/Q_f scorer on that bank",
+          "GRU realized full-Q/R/Q_f scorer on the same bank"
+        ],
+        "status": "not_implemented"
+      },
+      "selected_checkpoints": [
+        {
+          "best_logged_validation_batch": 9501,
+          "best_logged_validation_objective": 4356.860255788786,
+          "checkpoint_batches": 11000,
+          "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
+          "final_validation_objective": 4385.942006784504,
+          "final_vs_selected_validation_degradation": 23.61601836297359,
+          "replicate": 0,
+          "scoring_validation_log_batch": 11000,
+          "scoring_validation_objective": 4362.32598842153,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 9801,
+          "best_logged_validation_objective": 4343.43260005535,
+          "checkpoint_batches": 11000,
+          "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
+          "final_validation_objective": 4444.367228147713,
+          "final_vs_selected_validation_degradation": 81.72364946070411,
+          "replicate": 1,
+          "scoring_validation_log_batch": 11000,
+          "scoring_validation_objective": 4362.643578687009,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10801,
+          "best_logged_validation_objective": 4372.994182542099,
+          "checkpoint_batches": 10500,
+          "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0010500",
+          "final_validation_objective": 4429.602884698525,
+          "final_vs_selected_validation_degradation": 33.6592653505586,
+          "replicate": 2,
+          "scoring_validation_log_batch": 10500,
+          "scoring_validation_objective": 4395.943619347966,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11901,
+          "best_logged_validation_objective": 4364.581422595764,
+          "checkpoint_batches": 11500,
+          "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0011500",
+          "final_validation_objective": 4425.661560233828,
+          "final_vs_selected_validation_degradation": 60.13319333725758,
+          "replicate": 3,
+          "scoring_validation_log_batch": 11500,
+          "scoring_validation_objective": 4365.52836689657,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11000,
+          "best_logged_validation_objective": 4350.064377552265,
+          "checkpoint_batches": 11000,
+          "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
+          "final_validation_objective": 4408.760131815548,
+          "final_vs_selected_validation_degradation": 58.69575426328356,
+          "replicate": 4,
+          "scoring_validation_log_batch": 11000,
+          "scoring_validation_objective": 4350.064377552265,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "selected_to_extlqg_deterministic_ratio": 0.999723139288508,
+      "selected_to_extlqg_total_ratio_not_apples_to_apples": 0.35793371865394014,
+      "shared_rollout_comparator": {
+        "checkpoint_policy": "validation_selected_per_replicate",
+        "checkpoint_selection": [
+          {
+            "best_logged_validation_batch": 9501,
+            "best_logged_validation_objective": 4356.860255788786,
+            "checkpoint_batches": 11000,
+            "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
+            "final_validation_objective": 4385.942006784504,
+            "final_vs_selected_validation_degradation": 23.61601836297359,
+            "replicate": 0,
+            "scoring_validation_log_batch": 11000,
+            "scoring_validation_objective": 4362.32598842153,
+            "selection_source": "sparse_history_fallback"
+          },
+          {
+            "best_logged_validation_batch": 9801,
+            "best_logged_validation_objective": 4343.43260005535,
+            "checkpoint_batches": 11000,
+            "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
+            "final_validation_objective": 4444.367228147713,
+            "final_vs_selected_validation_degradation": 81.72364946070411,
+            "replicate": 1,
+            "scoring_validation_log_batch": 11000,
+            "scoring_validation_objective": 4362.643578687009,
+            "selection_source": "sparse_history_fallback"
+          },
+          {
+            "best_logged_validation_batch": 10801,
+            "best_logged_validation_objective": 4372.994182542099,
+            "checkpoint_batches": 10500,
+            "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0010500",
+            "final_validation_objective": 4429.602884698525,
+            "final_vs_selected_validation_degradation": 33.6592653505586,
+            "replicate": 2,
+            "scoring_validation_log_batch": 10500,
+            "scoring_validation_objective": 4395.943619347966,
+            "selection_source": "sparse_history_fallback"
+          },
+          {
+            "best_logged_validation_batch": 11901,
+            "best_logged_validation_objective": 4364.581422595764,
+            "checkpoint_batches": 11500,
+            "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0011500",
+            "final_validation_objective": 4425.661560233828,
+            "final_vs_selected_validation_degradation": 60.13319333725758,
+            "replicate": 3,
+            "scoring_validation_log_batch": 11500,
+            "scoring_validation_objective": 4365.52836689657,
+            "selection_source": "sparse_history_fallback"
+          },
+          {
+            "best_logged_validation_batch": 11000,
+            "best_logged_validation_objective": 4350.064377552265,
+            "checkpoint_batches": 11000,
+            "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
+            "final_validation_objective": 4408.760131815548,
+            "final_vs_selected_validation_degradation": 58.69575426328356,
+            "replicate": 4,
+            "scoring_validation_log_batch": 11000,
+            "scoring_validation_objective": 4350.064377552265,
+            "selection_source": "sparse_history_fallback"
+          }
+        ],
+        "extlqg_cost": {
+          "basis": {
+            "command_key": "states.net.output or extLQG u_command",
+            "schedule_source": "rlrmp.analysis.cs_game_card.build_canonical_game",
+            "state_key": "states.mechanics.vector",
+            "state_transform": "subtract TARGET_POS from each physical delay block x/y",
+            "term_split": "coordinate masks over each 8D delay block"
+          },
+          "command_r": {
+            "count": 32,
+            "max": 10596.467536101352,
+            "mean": 4285.236886667077,
+            "min": 109.70004305645278,
+            "p50": 4375.6095385672,
+            "p95": 8970.147599869424,
+            "shape": [
+              32
+            ],
+            "std": 2593.011738203478
+          },
+          "disturbance_integrator_state": {
+            "count": 32,
+            "max": 4.445927273148498,
+            "mean": 1.7068662403806971,
+            "min": 0.08011199997419001,
+            "p50": 1.4284868976309415,
+            "p95": 3.967243227221356,
+            "shape": [
+              32
+            ],
+            "std": 1.2535403103677203
+          },
+          "force_filter_state": {
+            "count": 32,
+            "max": 4331.943299090095,
+            "mean": 1769.2042860312695,
+            "min": 45.21956160332849,
+            "p50": 1787.8404991470773,
+            "p95": 3688.160011482913,
+            "shape": [
+              32
+            ],
+            "std": 1062.679787080339
+          },
+          "lens": "shared_rollout_realized_full_qrf",
+          "running_state_q": {
+            "count": 32,
+            "max": 187148.4915157612,
+            "mean": 170473.55218822148,
+            "min": 154353.49161704673,
+            "p50": 170838.44240332016,
+            "p95": 181623.93499748033,
+            "shape": [
+              32
+            ],
+            "std": 7630.551018157183
+          },
+          "status": "available",
+          "term_sum_delta": {
+            "count": 32,
+            "max": 0.0,
+            "mean": 0.0,
+            "min": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "std": 0.0
+          },
+          "terminal_state_q_f": {
+            "count": 32,
+            "max": 19537.15367012322,
+            "mean": 18656.77871784751,
+            "min": 17617.784206096327,
+            "p50": 18674.393770075087,
+            "p95": 19263.967038520772,
+            "shape": [
+              32
+            ],
+            "std": 453.7082180166038
+          },
+          "total": {
+            "count": 32,
+            "max": 221618.3982612337,
+            "mean": 195186.4789450077,
+            "min": 172196.44418313596,
+            "p50": 195756.3730217638,
+            "p95": 213536.18080167923,
+            "shape": [
+              32
+            ],
+            "std": 11639.314160624846
+          }
+        },
+        "gru_cost": {
+          "basis": {
+            "command_key": "states.net.output or extLQG u_command",
+            "schedule_source": "rlrmp.analysis.cs_game_card.build_canonical_game",
+            "state_key": "states.mechanics.vector",
+            "state_transform": "subtract TARGET_POS from each physical delay block x/y",
+            "term_split": "coordinate masks over each 8D delay block"
+          },
+          "command_r": {
+            "count": 160,
+            "max": 2672.8817195890697,
+            "mean": 1961.2548256569185,
+            "min": 1486.4175466557394,
+            "p50": 1952.1190437095847,
+            "p95": 2295.238489689548,
+            "shape": [
+              5,
+              32
+            ],
+            "std": 204.0770553063794
+          },
+          "disturbance_integrator_state": {
+            "count": 160,
+            "max": 4.445927273148498,
+            "mean": 1.7068662403806971,
+            "min": 0.08011199997419001,
+            "p50": 1.4284868976309415,
+            "p95": 4.342240157841463,
+            "shape": [
+              5,
+              32
+            ],
+            "std": 1.2535403103677203
+          },
+          "force_filter_state": {
+            "count": 160,
+            "max": 1233.3689452651927,
+            "mean": 868.8536559697868,
+            "min": 632.8804522087107,
+            "p50": 868.8199172589249,
+            "p95": 1089.0671327460527,
+            "shape": [
+              5,
+              32
+            ],
+            "std": 114.75787707600013
+          },
+          "lens": "shared_rollout_realized_full_qrf",
+          "running_state_q": {
+            "count": 160,
+            "max": 646203.4785494645,
+            "mean": 276283.3181538541,
+            "min": 11128.225342531494,
+            "p50": 294122.7539257712,
+            "p95": 583245.4741249332,
+            "shape": [
+              5,
+              32
+            ],
+            "std": 152062.32065638047
+          },
+          "status": "available",
+          "term_sum_delta": {
+            "count": 160,
+            "max": 0.0,
+            "mean": 0.0,
+            "min": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "std": 0.0
+          },
+          "terminal_state_q_f": {
+            "count": 160,
+            "max": 67028.49833772755,
+            "mean": 28364.109773154596,
+            "min": 995.100651728122,
+            "p50": 29687.567890723767,
+            "p95": 59686.5311458897,
+            "shape": [
+              5,
+              32
+            ],
+            "std": 15684.809278732375
+          },
+          "total": {
+            "count": 160,
+            "max": 716346.4588853958,
+            "mean": 307479.2432748758,
+            "min": 15061.017344757016,
+            "p50": 326501.3615760432,
+            "p95": 646328.6631354246,
+            "shape": [
+              5,
+              32
+            ],
+            "std": 167793.26058925627
+          }
+        },
+        "gru_vs_extlqg": {
+          "status": "available",
+          "terms": {
+            "command_r": {
+              "delta_mean": -2323.9820610101583,
+              "extlqg_mean": 4285.236886667077,
+              "gru_mean": 1961.2548256569185,
+              "ratio_to_extlqg": 0.457677108063522
+            },
+            "disturbance_integrator_state": {
+              "delta_mean": 0.0,
+              "extlqg_mean": 1.7068662403806971,
+              "gru_mean": 1.7068662403806971,
+              "ratio_to_extlqg": 1.0
+            },
+            "force_filter_state": {
+              "delta_mean": -900.3506300614827,
+              "extlqg_mean": 1769.2042860312695,
+              "gru_mean": 868.8536559697868,
+              "ratio_to_extlqg": 0.49109854799121283
+            },
+            "running_state_q": {
+              "delta_mean": 105809.76596563263,
+              "extlqg_mean": 170473.55218822148,
+              "gru_mean": 276283.3181538541,
+              "ratio_to_extlqg": 1.6206814171901989
+            },
+            "terminal_state_q_f": {
+              "delta_mean": 9707.331055307088,
+              "extlqg_mean": 18656.77871784751,
+              "gru_mean": 28364.109773154596,
+              "ratio_to_extlqg": 1.5203112071014075
+            },
+            "total": {
+              "delta_mean": 112292.7643298681,
+              "extlqg_mean": 195186.4789450077,
+              "gru_mean": 307479.2432748758,
+              "ratio_to_extlqg": 1.5753101594783403
+            }
+          }
+        },
+        "n_replicates": 5,
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "status": "available"
+      },
+      "training_objective": {
+        "full_qrf_lens": {
+          "active_terms": [
+            "control_r",
+            "state_running_q",
+            "terminal_q_f"
+          ],
+          "disturbance_integrator_state_cost": "included_via_Q_entries_6_7_each_delay_block",
+          "force_filter_state_cost": "included_via_Q_entries_4_5_each_delay_block",
+          "matrix_shapes": {
+            "Q": [
+              60,
+              48,
+              48
+            ],
+            "Q_f": [
+              48,
+              48
+            ],
+            "R": [
+              60,
+              2,
+              2
+            ]
+          },
+          "state_basis": {
+            "coordinate_transform": "absolute Feedbax position entries are converted to target-centred analytical coordinates before applying Q_t and Q_f",
+            "delay_blocks": 6,
+            "dimension": 48,
+            "physical_block_size": 8,
+            "state_key": "states.mechanics.vector"
+          },
+          "status": "available",
+          "time_indexing": {
+            "horizon_steps": 60,
+            "running_state": "trial init plus rollout states[:-1], paired with commands",
+            "terminal_state": "rollout states[-1]"
+          }
+        },
+        "loss_objective": "full_analytical_qrf",
+        "objective_profile": "full_analytical_qrf",
+        "run_spec_path": "results/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/run.json",
+        "status": "available"
+      }
+    }
+  ],
+  "standard_split_bank_comparator": null
+}

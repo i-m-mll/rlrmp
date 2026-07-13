@@ -19,15 +19,7 @@ from rlrmp.runtime.training_run_specs import (
 
 TRACKED_CLEAN_DISTILLATION_SPECS = (
     (
-        Path("results/9727d79/runs/h0_extlqg_6d_standard_graph_distillation.json"),
-        "guided_distillation",
-    ),
-    (
-        Path("results/9727d79/runs/h0_hinf_6d_guided_distillation.json"),
-        "guided_distillation",
-    ),
-    (
-        Path("results/9727d79/runs/h0_hinf_6d_standard_graph_distillation.json"),
+        Path("tests/fixtures/legacy_payloads/guided_distillation_run_spec.json"),
         "guided_distillation",
     ),
 )
@@ -51,7 +43,7 @@ def _complete_closed_loop_spec() -> dict[str, Any]:
 
 
 def _complete_guided_spec() -> dict[str, Any]:
-    return _read_json(Path("results/9727d79/runs/h0_hinf_6d_guided_distillation.json"))
+    return _read_json(Path("tests/fixtures/legacy_payloads/guided_distillation_run_spec.json"))
 
 
 def _complete_cs_spec() -> dict[str, Any]:
@@ -319,5 +311,7 @@ def test_tracked_training_config_adapter_corpus_census() -> None:
             clean_paths.append(path)
 
     assert NEWLY_TRACKED_CLEAN_SPECS <= set(clean_paths)
-    assert len(clean_paths) == 81
+    # Issue b6b5502 removed 29 adapter-readable run specs with the tagged
+    # pre-three-layer experiment stock. Keep the surviving corpus pinned.
+    assert len(clean_paths) == 52
     assert fail_closed == EXPECTED_TRACKED_FAIL_CLOSED

@@ -10,9 +10,21 @@ from rlrmp.train.distillation_entry import load_distillation_run_spec
 from rlrmp.train.distillation_native import guided_kernel
 from rlrmp.train.training_configs import GuidedDistillationConfig
 
+GUIDED_SPEC_FIXTURE = "tests/fixtures/legacy_payloads/guided_distillation_run_spec.json"
+
+
+def test_guided_config_requires_explicit_run_spec() -> None:
+    with pytest.raises(ValueError, match="explicit tracked run_spec"):
+        load_distillation_run_spec(GuidedDistillationConfig(), method="guided_distillation")
+
 
 def test_guided_typed_config_loads_and_refreshes_tracked_native_spec() -> None:
-    config = GuidedDistillationConfig(n_batches=3, batch_size=2, n_replicates=1)
+    config = GuidedDistillationConfig(
+        run_spec=GUIDED_SPEC_FIXTURE,
+        n_batches=3,
+        batch_size=2,
+        n_replicates=1,
+    )
     spec = load_distillation_run_spec(config, method="guided_distillation")
 
     assert spec["n_train_batches"] == 3
@@ -31,7 +43,7 @@ def test_guided_typed_config_loads_and_refreshes_tracked_native_spec() -> None:
 
 def test_guided_forcing_schedule_remains_method_specific() -> None:
     spec = load_distillation_run_spec(
-        GuidedDistillationConfig(),
+        GuidedDistillationConfig(run_spec=GUIDED_SPEC_FIXTURE),
         method="guided_distillation",
     )
     assert guided_kernel.forcing_fraction_for_batch(spec, 0) == pytest.approx(0.0)
