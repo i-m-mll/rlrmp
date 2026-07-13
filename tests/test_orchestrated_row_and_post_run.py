@@ -5,10 +5,14 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
+from feedbax.contracts.run_matrix import RowLowererIdentity, TrainingRowProvenance
 from feedbax.contracts.spec_storage import training_run_execution_hash
+from feedbax.contracts.training import DEFAULT_TRAINING_METHOD_REGISTRY
 from feedbax.orchestration.bundle import (
     AuthoredIntentRef,
     ExecutionCapsuleRef,
@@ -18,16 +22,47 @@ from feedbax.orchestration.bundle import (
     ResolvedSnapshotRef,
     SchemaArtifactRef,
 )
+from feedbax.training import DEFAULT_EXECUTION_PREPARATION_PROVIDER_REGISTRY
+from feedbax.training.diagnostics import (
+    NativeExecutionProducerContext,
+    NativeTrainingDiagnosticsInput,
+    ScheduleContextDiagnostic,
+)
+import feedbax.training.executor as executor_module
 
 from rlrmp.train.orchestrated_post_run import map_registered_run_set
-from rlrmp.train.orchestrated_row import RowLaunchPacket, _verify_staged_checkpoint, load_packet
+from rlrmp.train.orchestrated_row import (
+    RowLaunchPacket,
+    _native_execution_context,
+    _verify_staged_checkpoint,
+    execute_packet,
+    load_packet,
+)
 
 
-def _envelope(payload: dict[str, object]) -> ExecutionIdentityEnvelope:
+def _envelope(
+    payload: dict[str, object],
+    *,
+    planned_run_id: str | None = None,
+) -> ExecutionIdentityEnvelope:
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     payload_digest = hashlib.sha256(canonical).hexdigest()
     root = "1" * 64
     execution = training_run_execution_hash(root, [])
+    provenance = (
+        TrainingRowProvenance(
+            row_id="row",
+            row_index=0,
+            planned_run_id=planned_run_id,
+            authored_payload_hash="6" * 64,
+            lowered_execution_payload_hash=payload_digest,
+            seed=7,
+            axis_coordinates={"run_id": planned_run_id},
+            lowerer_identities=[RowLowererIdentity(lowerer_id="rlrmp.test", lowerer_version="v1")],
+        )
+        if planned_run_id is not None
+        else None
+    )
     return ExecutionIdentityEnvelope(
         payload=SchemaArtifactRef(
             schema_id=str(payload["schema_id"]),
@@ -57,6 +92,7 @@ def _envelope(payload: dict[str, object]) -> ExecutionIdentityEnvelope:
             execution_hash=execution,
         ),
         immutable_inputs=[],
+        row_provenance=provenance,
     )
 
 
@@ -73,6 +109,118 @@ def test_row_packet_rejects_payload_digest_mismatch(tmp_path: Path) -> None:
     path.write_text(packet.model_dump_json(), encoding="utf-8")
     with pytest.raises(ValueError, match="payload digest"):
         load_packet(path)
+
+
+def test_packet_builds_typed_native_context_with_exact_planned_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = {"schema_id": "example", "schema_version": "example.v1"}
+    planned_run_id = "feedbax-training-run:planned"
+    diagnostics = NativeTrainingDiagnosticsInput(
+        seeds=[7],
+        resume_context=ScheduleContextDiagnostic(
+            schedule_origin_step=10,
+            current_step=10,
+            optimizer_count_at_current_step=0,
+        ),
+        metadata={"run_set_id": "set", "row_id": "row"},
+    )
+    packet = RowLaunchPacket(
+        run_set_id="set",
+        row_id="row",
+        envelope=_envelope(payload, planned_run_id=planned_run_id),
+        payload=payload,
+        row_dir=str(tmp_path / "row"),
+        native_training_diagnostics=diagnostics,
+    )
+    monkeypatch.setenv("FEEDBAX_ENV_FINGERPRINT", "environment:test")
+
+    context = _native_execution_context(packet)
+
+    assert isinstance(context, NativeExecutionProducerContext)
+    assert context.execution.row_provenance is not None
+    assert context.execution.row_provenance.planned_run_id == planned_run_id
+    assert context.environment_fingerprint == "environment:test"
+    assert context.collection_root == str(tmp_path / "row")
+    assert context.diagnostics == diagnostics
+
+
+def test_execute_packet_uses_native_manifest_and_diagnostics_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = json.loads(
+        (
+            Path(__file__).resolve().parents[1] / "results/c6c5997/runs/flat_3e-5-epsilon-ramp.json"
+        ).read_text(encoding="utf-8")
+    )
+    payload = source["feedbax_training_run_spec"]
+    planned_run_id = "feedbax-training-run:planned"
+    row_dir = tmp_path / "row"
+    packet = RowLaunchPacket(
+        run_set_id="set",
+        row_id="row",
+        envelope=_envelope(payload, planned_run_id=planned_run_id),
+        payload=payload,
+        row_dir=str(row_dir),
+        native_training_diagnostics=NativeTrainingDiagnosticsInput(seeds=[7]),
+    )
+    preparation = SimpleNamespace(
+        initial_slots={"model": object()},
+        kernel_context={"runtime": object()},
+        loss_service=object(),
+        resume_slot_transform=object(),
+    )
+    monkeypatch.setattr(
+        DEFAULT_TRAINING_METHOD_REGISTRY,
+        "_registrations",
+        dict(DEFAULT_TRAINING_METHOD_REGISTRY._registrations),
+    )
+    monkeypatch.setattr(
+        DEFAULT_EXECUTION_PREPARATION_PROVIDER_REGISTRY,
+        "_registrations",
+        dict(DEFAULT_EXECUTION_PREPARATION_PROVIDER_REGISTRY._registrations),
+    )
+    monkeypatch.setattr(
+        DEFAULT_EXECUTION_PREPARATION_PROVIDER_REGISTRY,
+        "prepare",
+        lambda _request: preparation,
+    )
+    calls: list[dict[str, Any]] = []
+    native_manifest = row_dir / "manifest.json"
+
+    def execute_native(_spec: object, **kwargs: Any) -> object:
+        calls.append(kwargs)
+        native_manifest.parent.mkdir(parents=True, exist_ok=True)
+        native_manifest.write_text('{"native":true}\n', encoding="utf-8")
+        return SimpleNamespace(
+            manifest=SimpleNamespace(summary_metrics={"loss": 1.25}),
+            manifest_path=native_manifest,
+            diagnostics=SimpleNamespace(completed_batches=12),
+            status="completed",
+        )
+
+    monkeypatch.setattr(executor_module, "execute_training_run_spec", execute_native)
+
+    result = execute_packet(packet)
+
+    assert result == native_manifest
+    assert len(calls) == 1
+    assert calls[0]["run_id"] == planned_run_id
+    context = calls[0]["execution_context"]
+    assert isinstance(context, NativeExecutionProducerContext)
+    assert context.execution.row_provenance is not None
+    assert context.execution.row_provenance.planned_run_id == planned_run_id
+    assert json.loads(native_manifest.read_text(encoding="utf-8")) == {"native": True}
+    assert not (row_dir / "feedbax-manifests" / "manifests" / "training_runs").exists()
+    assert json.loads((row_dir / "training_summary.json").read_text(encoding="utf-8")) == {
+        "completed_batches": 12,
+        "metrics": {"loss": 1.25},
+        "row_id": "row",
+        "run_set_id": "set",
+        "status": "completed",
+    }
 
 
 def test_resume_packet_verifies_fork_target_lineage_to_envelope_source(

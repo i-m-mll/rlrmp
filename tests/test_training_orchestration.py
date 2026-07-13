@@ -19,13 +19,13 @@ from feedbax.orchestration.conformance import (
     ConformanceRowArtifacts,
     check_checkpoint_cadence,
     check_completed_batches,
-    check_seeds,
 )
 
 from rlrmp.train.orchestration_compiler import (
     COMPILER_ID,
     COMPILER_VERSION,
     RlrmpOrchestratedLaunchCompiler,
+    _native_training_diagnostics,
     register_orchestrated_training_compiler,
 )
 from rlrmp.train.orchestration_inputs import (
@@ -38,7 +38,6 @@ from rlrmp.train.orchestration_capabilities import (
     scheduled_certify_capable,
     scheduled_preflight_capable,
 )
-from rlrmp.train.orchestrated_row import _training_diagnostics
 
 
 def test_compiler_registration_and_runnable_execution_binding(
@@ -55,13 +54,26 @@ def test_compiler_registration_and_runnable_execution_binding(
             )
         ]
     )
+    compile_calls: list[dict[str, object]] = []
+    lowerer = object()
+
+    def compile_matrix(*_args: object, **kwargs: object) -> CompiledRunSet:
+        compile_calls.append(kwargs)
+        return stock
+
     monkeypatch.setattr(
-        "rlrmp.train.orchestration_compiler.compile_training_run_matrix",
-        lambda *args, **kwargs: stock,
+        "rlrmp.train.orchestration_compiler.compile_training_run_matrix", compile_matrix
+    )
+    monkeypatch.setattr(
+        "rlrmp.train.orchestration_compiler.rlrmp_training_row_lowerer",
+        lambda *_args, **_kwargs: lowerer,
     )
     request = SimpleNamespace(metadata={"row_selection": {"row_ids": ["a"]}})
     compiled = RlrmpOrchestratedLaunchCompiler().compile(
-        request, authored={}, run_set_id="set", context=object()
+        request,
+        authored={},
+        run_set_id="set",
+        context=SimpleNamespace(repo_root=Path.cwd()),
     )
     row = compiled.rows[0]
     assert row.launch.command == [
@@ -80,6 +92,13 @@ def test_compiler_registration_and_runnable_execution_binding(
         "training_summary.json",
     ]
     assert "resume" not in row.payload
+    assert row.payload is stock.rows[0].payload
+    assert compile_calls[0]["row_lowerer"] is lowerer
+    assert compile_calls[0]["row_validator"] is not None
+    assert row.launch.metadata["native_training_diagnostics"]["metadata"] == {
+        "row_id": "a",
+        "run_set_id": "set",
+    }
     registry = AssemblyCompilerRegistry()
     register_orchestrated_training_compiler(registry)
     assert COMPILER_ID == "rlrmp.orchestrated_launch"
@@ -142,7 +161,11 @@ def test_locked_segment_projection_passes_completed_and_cadence_checks() -> None
     assert min(map(int, diagnostics["lr_trace"])) >= 12000
 
 
-def test_real_entrypoint_diagnostics_pass_absolute_batches_and_scalar_seed_checks() -> None:
+def test_compiler_hands_resume_and_seed_context_to_native_diagnostics() -> None:
+    authored = {
+        "fork": {"lr_continuation": "restart"},
+        "metadata": {"source_completed_training_batches": 12_000},
+    }
     payload = {
         "training_config": {"n_batches": 12_200},
         "checkpoint_progress": {
@@ -152,48 +175,21 @@ def test_real_entrypoint_diagnostics_pass_absolute_batches_and_scalar_seed_check
                 "additional_batches": 200,
             },
         },
-        "metadata": {
-            "seed": 42,
-            "resume_context": {
-                "schedule_origin_step": 12_000,
-                "current_step": 12_000,
-                "optimizer_count_at_current_step": 0,
-            },
-            "optimizer_build_context": {
-                "schedule_origin_step": 12_000,
-                "current_step": 12_000,
-                "optimizer_count_at_current_step": 0,
-            },
-        },
     }
-    writes = [
-        SimpleNamespace(
-            manifest=SimpleNamespace(
-                completed_coordinate=SimpleNamespace(program_step=program_step)
-            )
-        )
-        for program_step in (25, 26)
-    ]
-    diagnostics = _training_diagnostics(
-        SimpleNamespace(payload=payload),
-        SimpleNamespace(checkpoint_writes=writes),
-    )
-    row = ConformanceRowArtifacts(
+    diagnostics = _native_training_diagnostics(
+        authored,
+        payload,
+        run_set_id="run-set",
         row_id="continuation",
-        bundle_row_spec=payload,
-        training_diagnostics=diagnostics,
+        seed=42,
     )
 
-    assert diagnostics["completed_batches"] == 12_200
-    assert diagnostics["segment_completed_batches"] == 200
-    assert diagnostics["checkpoint_coordinates"] == [100, 200]
-    assert diagnostics["absolute_completed_batches"] == [12_100, 12_200]
-    assert diagnostics["segment_checkpoint_program_steps"] == [1, 2]
-    assert diagnostics["custody_checkpoint_program_steps"] == [25, 26]
-    assert diagnostics["seeds"] == 42
-    assert "raw_checkpoint_program_steps" not in diagnostics
-    assert check_completed_batches(row).status == "pass"
-    assert check_seeds(row).status == "pass"
+    assert diagnostics.seeds == [42]
+    assert diagnostics.resume_context is not None
+    assert diagnostics.resume_context.current_step == 12_000
+    assert diagnostics.resume_context.schedule_origin_step == 12_000
+    assert diagnostics.optimizer_build_context == diagnostics.resume_context
+    assert diagnostics.metadata == {"run_set_id": "run-set", "row_id": "continuation"}
 
 
 @pytest.mark.skipif(not scheduled_preflight_capable(), reason=SCHEDULED_PREFLIGHT_SKIP_REASON)

@@ -17,6 +17,7 @@ from feedbax.orchestration.drivers.runpod import (
     RunPodOrchestrationDriver,
     RunPodTransport,
 )
+from feedbax.training.diagnostics import NativeTrainingDiagnosticsInput
 
 from rlrmp.train.orchestrated_row import RowLaunchPacket
 
@@ -159,6 +160,9 @@ def _packet_for_row(
     if payload_ref.uri is None:
         raise ValueError(f"row {row.row_id!r} payload is not materialized")
     payload = json.loads(Path(payload_ref.uri).read_text(encoding="utf-8"))
+    native_diagnostics = NativeTrainingDiagnosticsInput.model_validate(
+        row.launch.metadata.get("native_training_diagnostics", {})
+    )
     return RowLaunchPacket(
         run_set_id=bundle.run_set_id,
         row_id=row.row_id,
@@ -170,6 +174,7 @@ def _packet_for_row(
         fork_record_sha256=fork_record_sha256,
         resume=resume,
         stop_after_batches=stop_after_batches,
+        native_training_diagnostics=native_diagnostics,
     )
 
 

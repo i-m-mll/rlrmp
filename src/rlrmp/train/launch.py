@@ -123,9 +123,12 @@ def compile_authored_training_intent(launch: AuthoredLaunch) -> tuple[LaunchRow,
     """Compile an authored matrix through Feedbax's registered compiler."""
 
     _register_runtime()
-    from feedbax.training.run_matrix import materialize_run_matrix
+    from rlrmp.train.matrix_materialization import materialize_rlrmp_training_matrix
 
-    materialized = materialize_run_matrix(launch.document, repo_root=launch.repo_root)
+    materialized = materialize_rlrmp_training_matrix(
+        launch.document,
+        repo_root=launch.repo_root,
+    )
     unresolved = [row.row_id for row in materialized.rows if row.spec is None]
     if unresolved:
         raise ValueError(
