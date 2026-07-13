@@ -24,6 +24,16 @@ from feedbax.training.diagnostics import (
 
 from rlrmp.train.executor.adapters import RLRMP_RUNTIME_CONTEXT_KEY
 from rlrmp.train.executor.initial_slots import RlrmpRuntime
+from rlrmp.train.resume_control import target_training_batches
+
+
+class SameRowResumeBinding(BaseModel):
+    """Transaction-pinned custody authorization for operational row recovery."""
+
+    model_config = ConfigDict(extra="forbid")
+    checkpoint_root: str = Field(min_length=1)
+    transaction_id: str = Field(min_length=1)
+    manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class RowLaunchPacket(BaseModel):
@@ -39,6 +49,7 @@ class RowLaunchPacket(BaseModel):
     staged_checkpoint_root: str | None = None
     fork_record_path: str | None = None
     fork_record_sha256: str | None = None
+    same_row_resume_binding: SameRowResumeBinding | None = None
     resume: bool = False
     stop_after_batches: int | None = None
     native_training_diagnostics: NativeTrainingDiagnosticsInput = Field(
@@ -73,8 +84,6 @@ def execute_packet(packet: RowLaunchPacket) -> Path:
     provenance = execution_context.execution.row_provenance
     assert provenance is not None
     planned_run_id = provenance.planned_run_id
-    if packet.resume:
-        _verify_staged_checkpoint(packet)
     preparation = DEFAULT_EXECUTION_PREPARATION_PROVIDER_REGISTRY.prepare(
         ExecutionPreparationRequest(
             run_spec=run_spec,
@@ -82,6 +91,16 @@ def execute_packet(packet: RowLaunchPacket) -> Path:
             resume=packet.resume,
         )
     )
+    if packet.resume:
+        if packet.same_row_resume_binding is not None:
+            _verify_same_row_checkpoint(
+                packet,
+                run_spec=run_spec,
+                preparation=preparation,
+                planned_run_id=planned_run_id,
+            )
+        else:
+            _verify_staged_checkpoint(packet)
     row_dir = Path(packet.row_dir)
     row_dir.mkdir(parents=True, exist_ok=True)
     emitter = RunEventEmitter.from_env()
@@ -168,6 +187,60 @@ def _verify_staged_checkpoint(packet: RowLaunchPacket) -> None:
     )
     if parent != source_transaction:
         raise ValueError("staged fork target provenance does not chain to envelope source")
+
+
+def _verify_same_row_checkpoint(
+    packet: RowLaunchPacket,
+    *,
+    run_spec: TrainingRunSpec,
+    preparation: Any,
+    planned_run_id: str,
+) -> None:
+    """Revalidate a transaction-pinned operational resume before execution."""
+
+    if packet.staged_checkpoint_root is None:
+        raise ValueError("same-row resume requires a staged checkpoint root")
+    if packet.envelope.immutable_inputs:
+        raise ValueError("same-row resume cannot carry authored immutable checkpoint inputs")
+    if packet.fork_record_path is not None or packet.fork_record_sha256 is not None:
+        raise ValueError("same-row resume cannot carry a fork gate record")
+    binding = packet.same_row_resume_binding
+    assert binding is not None
+    root = Path(packet.staged_checkpoint_root).resolve()
+    if Path(binding.checkpoint_root).resolve() != root:
+        raise ValueError("same-row resume binding checkpoint root does not match staged custody")
+
+    from feedbax.training import load_checkpoint_custody_documents
+    from feedbax.training.checkpoint_custody import load_latest_checkpoint
+
+    loaded = load_latest_checkpoint(
+        root,
+        expected_run_spec=run_spec,
+        expected_phase_program=run_spec.worker_execution.method_contract.phase_program,
+        expected_slots=preparation.initial_slots,
+        resume_slot_transform=preparation.resume_slot_transform,
+        continuation_request=None,
+        allow_new_lineage_override=False,
+    )
+    documents = load_checkpoint_custody_documents(root)
+    latest = documents.latest_pointer.document
+    if loaded.manifest.transaction_id != binding.transaction_id:
+        raise ValueError("same-row resume transaction changed after launch authorization")
+    if latest.manifest_sha256 != binding.manifest_sha256:
+        raise ValueError("same-row resume manifest changed after launch authorization")
+    if documents.manifest.document.transaction_id != loaded.manifest.transaction_id:
+        raise ValueError("same-row resume custody changed during typed validation")
+    if loaded.manifest.run_id != planned_run_id or latest.run_id != planned_run_id:
+        raise ValueError("same-row resume checkpoint run identity does not match row provenance")
+    completed = loaded.manifest.completed_training_batches
+    target = target_training_batches(run_spec)
+    if completed is None or completed < 0:
+        raise ValueError("same-row resume checkpoint lacks valid completed-training progress")
+    if completed >= target:
+        raise ValueError(
+            "same-row resume checkpoint is already complete: "
+            f"completed_batches={completed} target_batches={target}"
+        )
 
 
 def _batch_limit_probe(

@@ -31,11 +31,17 @@ from feedbax.training.diagnostics import (
 from feedbax.contracts.worker import ProgressCoordinate
 import feedbax.training.executor as executor_module
 
+from rlrmp.train.orchestration_drivers import (
+    _remote_same_row_binding,
+    _resume_checkpoint_root,
+    _same_row_binding,
+)
 from rlrmp.train.orchestrated_post_run import map_registered_run_set
 from rlrmp.train.orchestrated_row import (
     RowLaunchPacket,
     _batch_limit_probe,
     _native_execution_context,
+    _verify_same_row_checkpoint,
     _verify_staged_checkpoint,
     execute_packet,
     load_packet,
@@ -148,6 +154,147 @@ def test_packet_builds_typed_native_context_with_exact_planned_identity(
     assert context.environment_fingerprint == "environment:test"
     assert context.collection_root == str(tmp_path / "row")
     assert context.diagnostics == diagnostics
+
+
+def test_same_row_packet_revalidates_pinned_public_custody(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import feedbax.training as feedbax_training
+    import feedbax.training.checkpoint_custody as checkpoint_custody
+
+    payload = {"schema_id": "example", "schema_version": "example.v1"}
+    run_id = "feedbax-training-run:planned"
+    transaction_id = "tx-pinned"
+    digest = "a" * 64
+    checkpoint_root = tmp_path / "custody"
+    packet = RowLaunchPacket(
+        run_set_id="set",
+        row_id="row",
+        envelope=_envelope(payload, planned_run_id=run_id),
+        payload=payload,
+        row_dir=str(tmp_path / "row"),
+        staged_checkpoint_root=str(checkpoint_root),
+        same_row_resume_binding={
+            "checkpoint_root": str(checkpoint_root),
+            "transaction_id": transaction_id,
+            "manifest_sha256": digest,
+        },
+        resume=True,
+    )
+    phase_program = object()
+    run_spec = SimpleNamespace(
+        method_payload=SimpleNamespace(payload={"n_train_batches": 100}),
+        worker_execution=SimpleNamespace(
+            method_contract=SimpleNamespace(phase_program=phase_program)
+        ),
+    )
+    preparation = SimpleNamespace(
+        initial_slots={"model": object()},
+        resume_slot_transform=object(),
+    )
+    manifest = SimpleNamespace(
+        transaction_id=transaction_id,
+        run_id=run_id,
+        completed_training_batches=50,
+    )
+    calls: list[tuple[Path, dict[str, object]]] = []
+
+    def load_latest(root: Path, **kwargs: object) -> object:
+        calls.append((root, kwargs))
+        return SimpleNamespace(manifest=manifest)
+
+    monkeypatch.setattr(checkpoint_custody, "load_latest_checkpoint", load_latest)
+    monkeypatch.setattr(
+        feedbax_training,
+        "load_checkpoint_custody_documents",
+        lambda _root: SimpleNamespace(
+            latest_pointer=SimpleNamespace(
+                document=SimpleNamespace(run_id=run_id, manifest_sha256=digest)
+            ),
+            manifest=SimpleNamespace(document=manifest),
+        ),
+    )
+
+    _verify_same_row_checkpoint(
+        packet,
+        run_spec=run_spec,  # type: ignore[arg-type]
+        preparation=preparation,
+        planned_run_id=run_id,
+    )
+
+    assert calls == [
+        (
+            checkpoint_root,
+            {
+                "expected_run_spec": run_spec,
+                "expected_phase_program": phase_program,
+                "expected_slots": preparation.initial_slots,
+                "resume_slot_transform": preparation.resume_slot_transform,
+                "continuation_request": None,
+                "allow_new_lineage_override": False,
+            },
+        )
+    ]
+
+    assert packet.same_row_resume_binding is not None
+    stale = packet.model_copy(
+        update={
+            "same_row_resume_binding": packet.same_row_resume_binding.model_copy(
+                update={"manifest_sha256": "b" * 64}
+            )
+        }
+    )
+    with pytest.raises(ValueError, match="manifest changed after launch authorization"):
+        _verify_same_row_checkpoint(
+            stale,
+            run_spec=run_spec,  # type: ignore[arg-type]
+            preparation=preparation,
+            planned_run_id=run_id,
+        )
+
+
+def test_resume_transport_distinguishes_absent_and_incomplete_same_row_bindings(
+    tmp_path: Path,
+) -> None:
+    row_id = "row"
+    target_root = tmp_path / "fork-target"
+    fork_record = tmp_path / "fork.json"
+    fork_record.write_text(
+        json.dumps(
+            {
+                "targets": [
+                    {
+                        "row_id": row_id,
+                        "checkpoint_root": str(target_root),
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    # Fresh local and RunPod paths carry no same-row binding.
+    assert _same_row_binding({}, row_id) is None
+    assert _resume_checkpoint_root(None, {}, row_id) is None
+    assert _remote_same_row_binding(None, remote_checkpoint=None) is None
+
+    # Authored fork custody remains selected by its fork record.
+    assert _resume_checkpoint_root(fork_record, {}, row_id) == target_root
+
+    local_binding = {
+        "checkpoint_root": str(tmp_path / "local-custody"),
+        "transaction_id": "tx-pinned",
+        "manifest_sha256": "a" * 64,
+    }
+    remote_root = "/workspace/run/inputs/row/checkpoint"
+    assert _remote_same_row_binding(
+        local_binding,
+        remote_checkpoint=remote_root,
+    ) == {**local_binding, "checkpoint_root": remote_root}
+
+    with pytest.raises(ValueError, match="has no target"):
+        _same_row_binding({"other": local_binding}, row_id)
 
 
 def test_execute_packet_uses_native_manifest_and_diagnostics_once(

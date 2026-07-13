@@ -51,6 +51,7 @@ from rlrmp.train.resume_control import (
     declare_cs_supervised_checkpoint_continuation,
     emit_launch_continuation,
     resolve_launch_continuation,
+    target_training_batches,
 )
 from rlrmp.train.training_configs import MinimaxConfig
 from rlrmp.runtime.training_run_specs import (
@@ -177,6 +178,23 @@ def test_resume_without_latest_json_is_hard_error(tmp_path: Path) -> None:
             allow_fresh_start=False,
             stop_target_batches=12_500,
         )
+
+
+def test_target_training_batches_requires_one_typed_horizon() -> None:
+    run_spec = SimpleNamespace(
+        method_payload=SimpleNamespace(
+            payload={"n_train_batches": 100, "config": {"n_train_batches": 100}}
+        )
+    )
+    assert target_training_batches(run_spec) == 100
+
+    conflicting = SimpleNamespace(
+        method_payload=SimpleNamespace(
+            payload={"n_train_batches": 100, "config": {"n_batches": 50}}
+        )
+    )
+    with pytest.raises(ValueError, match="conflicting batch horizons"):
+        target_training_batches(conflicting)
 
 
 def test_allow_fresh_start_override_emits_fresh_summary(
