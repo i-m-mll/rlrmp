@@ -80,14 +80,14 @@ def test_conversion_manifest_is_exactly_audit_manifest_driven() -> None:
     conversion = _conversion_manifest()
 
     assert audit["expected_count"] == 38
-    assert audit["audited_count"] == 38
+    assert audit["audited_count"] == 36
     assert conversion["source_manifest"] == "results/e9fc384/notes/graph_sidecar_audit_manifest.json"
     assert conversion["audit_manifest_sha256"] == _sha256(AUDIT_MANIFEST_PATH)
     assert conversion["expected_count"] == audit["expected_count"]
     assert conversion["audited_count"] == audit["audited_count"]
     assert len(conversion["entries"]) == len(audit["files"])
     assert conversion["converted_count"] == 36
-    assert conversion["excluded_count"] == 2
+    assert conversion["excluded_count"] == 0
 
     audit_by_path = {entry["path"]: entry for entry in audit["files"]}
     conversion_by_path = {entry["original_path"]: entry for entry in conversion["entries"]}
@@ -180,23 +180,6 @@ def test_every_converted_recipe_loads_with_plain_feedbax_spec_to_graph() -> None
         loaded += 1
 
     assert loaded == conversion["converted_count"] == 36
-
-
-def test_known_wrong_pair_is_excluded_with_audit_provenance() -> None:
-    conversion = _conversion_manifest()
-    excluded = [
-        entry for entry in conversion["entries"] if entry["disposition"] == "excluded_known_wrong"
-    ]
-
-    assert {entry["original_path"] for entry in excluded} == {
-        "results/30f2313/runs/cs_stochastic_gru__hidden_penalty/model.graph.json",
-        "results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/model.graph.json",
-    }
-    for entry in excluded:
-        assert entry["classification"] == "known_wrong"
-        assert entry["expected_conversion_family"] == "cs_lss"
-        assert entry["structural_family_actual"] == "point_mass"
-        assert "Expected structural family 'cs_lss'" in entry["exclusion_reason"]
 
 
 def test_run_specs_allowlists_are_legacy_archive_confinement_lists() -> None:

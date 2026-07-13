@@ -6,21 +6,4 @@
 
 schema_version = 1
 owner = "81c150f"
-
-[[exceptions]]
-path = "results/08483d5/scripts/run_cap_free_direct_epsilon_adaptive_replay.py"
-namespaces = ["rlrmp.analysis.pipelines"]
-owner = "34699b2"
-reason = "Delete-candidate replay script retained only until issue 34699b2 removes the pre-three-layer materialized stock."
-
-[[exceptions]]
-path = "results/08483d5/scripts/run_cap_free_direct_epsilon_conservative_replay.py"
-namespaces = ["rlrmp.analysis.pipelines"]
-owner = "34699b2"
-reason = "Delete-candidate replay script retained only until issue 34699b2 removes the pre-three-layer materialized stock."
-
-[[exceptions]]
-path = "results/33b0dcb/scripts/evaluate_target_support_generalization.py"
-namespaces = ["rlrmp.analysis.pipelines"]
-owner = "34699b2"
-reason = "Delete-candidate evaluation script retained only until issue 34699b2 removes the pre-three-layer materialized stock."
+exceptions = []
