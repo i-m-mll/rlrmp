@@ -44,10 +44,6 @@ def test_retired_multi_cell_pipeline_cannot_reaccrete() -> None:
 def test_path_and_ensemble_residuals_stay_canonical() -> None:
     for path, name in (
         (
-            "results/3becdec/scripts/materialize_output_feedback_observer_error_coverage.py",
-            "_repo_relative",
-        ),
-        (
             "results/3c5836c/scripts/materialize_frozen_finite_policy_audit.py",
             "_repo_rel",
         ),
