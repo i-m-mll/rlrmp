@@ -103,13 +103,13 @@ from rlrmp.train.task_model import (
 )
 from rlrmp.model.trainable import staged_network_trainable_parts
 from rlrmp.train.training_configs import (
-    ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
     CS_CONTROL_SCALE,
     CS_POSITION_SCALE,
     CS_VELOCITY_SCALE,
     CsNominalGruConfig,
     DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW,
 )
+from rlrmp.train.science_vocabulary import AdaptiveEpsilonControllerMode
 from rlrmp.train.executor.checkpoints import (
     ADAPTIVE_EPSILON_ZERO_ADVERSARY_STOP_REASON,
     SCHEMA_VERSION,
@@ -650,7 +650,7 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
         "adaptive_epsilon_controller_training_mode": str(
             adaptive_epsilon.get(
                 "controller_training_mode",
-                ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+                AdaptiveEpsilonControllerMode.LOSS_BLEND,
             )
         ),
         "adaptive_epsilon_damage_start": float(

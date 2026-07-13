@@ -44,8 +44,6 @@ from rlrmp.train.adaptive_epsilon_native import (
     optimizer_count_at_current_step,
 )
 from rlrmp.train.cs_nominal_gru import (
-    ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER,
-    ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
     AdaptiveEpsilonState,
     BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
     CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
@@ -61,6 +59,7 @@ from rlrmp.train.cs_nominal_gru import (
     CsNominalGruConfig,
     write_run_spec,
 )
+from rlrmp.train.science_vocabulary import AdaptiveEpsilonControllerMode
 from rlrmp.train.executor.equivalence import assert_paired_equivalent, run_paired_equivalence
 from rlrmp.train.executor.adapters import RLRMP_RUNTIME_CONTEXT_KEY
 from rlrmp.train.execution_preparation import prepare_adaptive_epsilon
@@ -81,8 +80,8 @@ from rlrmp.train.executor.slots import (
 @pytest.mark.parametrize(
     "controller_mode",
     [
-        ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
-        ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER,
+        AdaptiveEpsilonControllerMode.LOSS_BLEND,
+        AdaptiveEpsilonControllerMode.EPSILON_SCALED_OUTER,
     ],
 )
 def test_adaptive_epsilon_run_spec_uses_native_method(
@@ -121,7 +120,7 @@ def test_adaptive_epsilon_run_spec_uses_native_method(
 def test_adaptive_epsilon_execution_preparation_builds_runtime_inputs(tmp_path: Path) -> None:
     spec = _adaptive_epsilon_training_spec(
         tmp_path,
-        controller_mode=ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+        controller_mode=AdaptiveEpsilonControllerMode.LOSS_BLEND,
     )
 
     prepared = prepare_adaptive_epsilon(ExecutionPreparationRequest(run_spec=spec, resume=True))
@@ -139,7 +138,7 @@ def test_adaptive_epsilon_execution_preparation_uses_segment_local_history_templ
 ) -> None:
     spec = _adaptive_epsilon_training_spec(
         tmp_path,
-        controller_mode=ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+        controller_mode=AdaptiveEpsilonControllerMode.LOSS_BLEND,
         n_train_batches=16_500,
         n_replicates=5,
     )
@@ -175,7 +174,7 @@ def test_adaptive_epsilon_rejects_old_absolute_setpoint_payload(
 ) -> None:
     spec = _adaptive_epsilon_training_spec(
         tmp_path,
-        controller_mode=ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+        controller_mode=AdaptiveEpsilonControllerMode.LOSS_BLEND,
     )
     method_payload = spec.method_payload.model_dump(mode="json", exclude_none=True)
     method_payload["schema_version"] = (
@@ -199,7 +198,7 @@ def test_adaptive_epsilon_payload_requires_ratio_setpoint_basis() -> None:
             config={"adaptive_epsilon_curriculum": True},
             n_train_batches=1,
             chunk_batches=1,
-            controller_training_mode=ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+            controller_training_mode=AdaptiveEpsilonControllerMode.LOSS_BLEND,
             damage_schedule={
                 "kind": "linear_ramp_then_cosine_anneal",
                 "start": 1.0,
@@ -298,7 +297,7 @@ def test_adaptive_epsilon_continuation_declares_segment_length(
 ) -> None:
     spec = _adaptive_epsilon_training_spec(
         tmp_path,
-        controller_mode=ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER,
+        controller_mode=AdaptiveEpsilonControllerMode.EPSILON_SCALED_OUTER,
     )
     payload = DEFAULT_TRAINING_METHOD_REGISTRY.validate_payload(
         spec.method_ref,
@@ -344,7 +343,7 @@ def test_adaptive_epsilon_runtime_consumes_declared_constant_lr(
 ) -> None:
     spec = _adaptive_epsilon_training_spec(
         tmp_path,
-        controller_mode=ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+        controller_mode=AdaptiveEpsilonControllerMode.LOSS_BLEND,
     )
     constant_optimizer = OptimizerSpec(
         type="adamw",
@@ -403,7 +402,7 @@ def test_adaptive_epsilon_runtime_shifts_restored_count_for_restart_vs_continue(
 ) -> None:
     spec = _adaptive_epsilon_training_spec(
         tmp_path,
-        controller_mode=ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+        controller_mode=AdaptiveEpsilonControllerMode.LOSS_BLEND,
         n_train_batches=6,
     )
     optimizer = OptimizerSpec(
@@ -438,7 +437,7 @@ def test_adaptive_epsilon_executor_rejects_outer_recipe_mapping(tmp_path: Path) 
 
     spec = _adaptive_epsilon_training_spec(
         tmp_path,
-        controller_mode=ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+        controller_mode=AdaptiveEpsilonControllerMode.LOSS_BLEND,
     )
     payload = DEFAULT_TRAINING_METHOD_REGISTRY.validate_payload(
         spec.method_ref,
@@ -466,7 +465,7 @@ def test_adaptive_epsilon_restart_realized_optimizer_matches_rewarm_points(
 
     spec = _adaptive_epsilon_training_spec(
         tmp_path,
-        controller_mode=ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+        controller_mode=AdaptiveEpsilonControllerMode.LOSS_BLEND,
         n_train_batches=16_500,
     )
     optimizer = OptimizerSpec(
@@ -525,7 +524,7 @@ def test_adaptive_epsilon_native_executor_emits_batch_progress(
 ) -> None:
     spec = _adaptive_epsilon_training_spec(
         tmp_path,
-        controller_mode=ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+        controller_mode=AdaptiveEpsilonControllerMode.LOSS_BLEND,
         n_train_batches=2,
     )
     spec = _with_payload_config(spec, disable_progress=False, quiet_progress=False)
@@ -550,8 +549,8 @@ def test_adaptive_epsilon_native_executor_emits_batch_progress(
 @pytest.mark.parametrize(
     "controller_mode",
     [
-        ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
-        ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER,
+        AdaptiveEpsilonControllerMode.LOSS_BLEND,
+        AdaptiveEpsilonControllerMode.EPSILON_SCALED_OUTER,
     ],
 )
 def test_adaptive_epsilon_native_executor_matches_driver_chunk_loop(
@@ -590,7 +589,7 @@ def test_adaptive_epsilon_native_executor_resume_matches_uninterrupted(
 ) -> None:
     spec = _adaptive_epsilon_training_spec(
         tmp_path,
-        controller_mode=ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER,
+        controller_mode=AdaptiveEpsilonControllerMode.EPSILON_SCALED_OUTER,
     )
     key = jr.PRNGKey(1)
     _, template_runtime = _legacy_adaptive_epsilon_chunk_loop(spec, key=key)

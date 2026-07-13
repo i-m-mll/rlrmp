@@ -59,15 +59,12 @@ import rlrmp.train.cs_nominal_gru as cs_nominal_gru
 import rlrmp.train.cs_perturbation_training as cs_perturbation_training
 import rlrmp.train.executor.cs_supervised as cs_supervised_executor
 from rlrmp.train.cs_nominal_gru import (
-    ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER,
-    ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
     AdaptiveEpsilonState,
     CS_DELAYED_REACH_TASK_TYPE,
     CsNominalGruConfig,
     DEFAULT_DELAYED_P_CATCH_TRIAL,
     DEFAULT_STOCHASTIC_PRESET,
     DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON,
-    DELAYED_REACH_TRAINING_MODE,
     GradientDiagnosticsState,
     SCHEMA_VERSION,
     TrainingState,
@@ -121,9 +118,6 @@ from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE,
     BROAD_EPSILON_PGD_PROJECTED_GRADIENT_ASCENT,
     BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
-    BROAD_EPSILON_PGD_TRAINING_MODE,
-    BROAD_EPSILON_TRAINING_MODE,
-    CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE,
     CLOSED_LOOP_SENSORY_CALIBRATION_REGIME,
     CLOSED_LOOP_SENSORY_COMMAND_LATERAL_CALIBRATION_REGIME,
     DEFAULT_PGD_SISU_EXACT_ZERO_MASS,
@@ -132,11 +126,9 @@ from rlrmp.train.cs_perturbation_training import (
     AFFINE_POLICY,
     LINEAR_NO_BIAS_POLICY,
     MILD_COMBINED_FAMILIES,
-    PERTURBATION_TRAINING_MODE,
     POLICY_ADVERSARY_MEMORYLESS_MLP,
     POLICY_ADVERSARY_ENERGY_MODE,
     POLICY_ADVERSARY_PLAIN_MODE,
-    POLICY_ADVERSARY_TRAINING_MODE,
     OPEN_LOOP_ALL_CALIBRATION_REGIME,
     TARGET_SUPPORT_CONST_REACH_M,
     TARGET_SUPPORT_DENSE_N_DIRECTIONS,
@@ -147,7 +139,6 @@ from rlrmp.train.cs_perturbation_training import (
     TARGET_SUPPORT_PROFILE_CONST_DENSE_ALL,
     TARGET_SUPPORT_PROFILE_CONST_SPARSE8,
     TARGET_SUPPORT_SPARSE_N_DIRECTIONS,
-    TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
     VALIDATION_BINS,
     BroadFullStateEpsilonTrainingConfig,
     BroadFullStateEpsilonTrainingTaskAdapter,
@@ -185,6 +176,10 @@ from rlrmp.train.cs_perturbation_training import (
     target_relative_target_support_config,
     target_relative_validation_manifest,
     validation_bin_manifest,
+)
+from rlrmp.train.science_vocabulary import (
+    AdaptiveEpsilonControllerMode,
+    ScienceMode,
 )
 
 from rlrmp.train.executor.equivalence import assert_paired_equivalent, run_paired_equivalence
@@ -557,7 +552,7 @@ def test_pgd_broad_epsilon_hps_declares_inner_maximizer() -> None:
     cfg = PgdFullStateEpsilonTrainingConfig.from_payload(hps.broad_epsilon_pgd_training)
 
     assert cfg.enabled is True
-    assert hps.broad_epsilon_pgd_training.mode == BROAD_EPSILON_PGD_TRAINING_MODE
+    assert hps.broad_epsilon_pgd_training.mode == ScienceMode.BROAD_EPSILON_PGD
     assert hps.broad_epsilon_pgd_training.inner_maximizer.n_steps == 4
     assert (
         hps.broad_epsilon_pgd_training.inner_maximizer.differentiated_through_outer_update is False
@@ -763,7 +758,7 @@ def test_adaptive_epsilon_curriculum_hps_contract() -> None:
 
     cfg = hps.adaptive_epsilon_curriculum
     assert cfg.enabled is True
-    assert cfg.controller_training_mode == ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND
+    assert cfg.controller_training_mode == AdaptiveEpsilonControllerMode.LOSS_BLEND
     assert cfg.damage_schedule.peak == pytest.approx(3500.0)
     assert cfg.damage_schedule.final == pytest.approx(1000.0)
     assert cfg.damage_schedule.ramp_batches == 2500
@@ -797,7 +792,7 @@ def test_adaptive_epsilon_run_spec_replay_preserves_curriculum(tmp_path: Path) -
         broad_epsilon_pgd_energy_lambda=2.5,
         adaptive_epsilon_curriculum=True,
         adaptive_epsilon_controller_training_mode=(
-            ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER
+            AdaptiveEpsilonControllerMode.EPSILON_SCALED_OUTER
         ),
         adaptive_epsilon_damage_peak=3500.0,
         adaptive_epsilon_damage_final=1000.0,
@@ -824,7 +819,7 @@ def test_adaptive_epsilon_run_spec_replay_preserves_curriculum(tmp_path: Path) -
     assert replay_args.adaptive_epsilon_curriculum is True
     assert (
         replay_args.adaptive_epsilon_controller_training_mode
-        == ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER
+        == AdaptiveEpsilonControllerMode.EPSILON_SCALED_OUTER
     )
     assert replay_args.adaptive_epsilon_damage_peak == pytest.approx(3500.0)
     assert replay_args.adaptive_epsilon_damage_final == pytest.approx(1000.0)
@@ -856,14 +851,14 @@ def test_adaptive_epsilon_scaled_outer_training_hps_contract() -> None:
             broad_epsilon_pgd_energy_lambda=2.5,
             adaptive_epsilon_curriculum=True,
             adaptive_epsilon_controller_training_mode=(
-                ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER
+                AdaptiveEpsilonControllerMode.EPSILON_SCALED_OUTER
             ),
             target_relative_multitarget=True,
         )
     )
 
     cfg = hps.adaptive_epsilon_curriculum
-    assert cfg.controller_training_mode == ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER
+    assert cfg.controller_training_mode == AdaptiveEpsilonControllerMode.EPSILON_SCALED_OUTER
     assert (
         cfg.outer_adversarial_weight.applies_to
         == "optimized_direct_epsilon_channel_scale_for_controller_rollout"
@@ -2421,7 +2416,7 @@ def test_policy_adversary_hps_declares_memoryless_policy_and_excludes_pgd() -> N
     assert cfg.epsilon_dim == 8
     assert cfg.state_feature_dim == 48
     assert cfg.reference_l2_radius == pytest.approx(HISTORICAL_020A65B_PGD_RADIUS_15CM)
-    assert hps.policy_adversary_training.mode == POLICY_ADVERSARY_TRAINING_MODE
+    assert hps.policy_adversary_training.mode == ScienceMode.POLICY_ADVERSARY
     assert hps.policy_adversary_training.policy_class == POLICY_ADVERSARY_MEMORYLESS_MLP
     assert hps.policy_adversary_training.policy.kind == POLICY_ADVERSARY_MEMORYLESS_MLP
     assert hps.policy_adversary_training.objective.formal_certificate is False
@@ -3710,7 +3705,7 @@ def test_calibrated_timing_sampler_uses_family_timing_bins() -> None:
     assert _nonzero_pulse_starts(sensory).issubset(controller_visible_starts)
     assert not _nonzero_pulse_starts(delayed)
     assert _max_nonzero_pulse_width(sensory) <= 5
-    assert hps.perturbation_training.mode == CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE
+    assert hps.perturbation_training.mode == ScienceMode.PERTURBATION_CALIBRATED
 
 
 def test_calibrated_movement_age_timing_preserves_undelayed_starts() -> None:
@@ -4029,8 +4024,8 @@ def test_calibrated_timing_run_spec_exposes_family_timing_bins(tmp_path: Path) -
     hps_config = payload["hps"]["perturbation_training"]
     timing = hps_config["timing_bins"]["family_timing_bins"]
 
-    assert payload["training_summary"]["training_mode"] == PERTURBATION_TRAINING_MODE
-    assert training["mode"] == CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE
+    assert payload["training_summary"]["training_mode"] == ScienceMode.PERTURBATION
+    assert training["mode"] == ScienceMode.PERTURBATION_CALIBRATED
     assert training["mixture"]["calibrated_timing"] is True
     assert training["mixture"]["physical_level"] == "moderate"
     assert hps_config["physical_level_fraction_of_reach"] == 0.10
@@ -4939,7 +4934,7 @@ def test_delayed_reach_run_spec_declares_task_and_movement_pgd_mask(tmp_path: Pa
 
     assert payload["issue"] == "6c36536"
     assert payload["delayed_reach"]["enabled"] is True
-    assert payload["delayed_reach"]["mode"] == DELAYED_REACH_TRAINING_MODE
+    assert payload["delayed_reach"]["mode"] == ScienceMode.DELAYED_REACH
     assert payload["delayed_reach"]["catch_trials"]["p_catch_trial"] == pytest.approx(
         DEFAULT_DELAYED_P_CATCH_TRIAL
     )
@@ -4961,7 +4956,7 @@ def test_delayed_reach_run_spec_declares_task_and_movement_pgd_mask(tmp_path: Pa
     assert payload["loss_summary"]["time_indexing"]["stage_schedule"] == (
         "movement_age_from_go_cue"
     )
-    assert DELAYED_REACH_TRAINING_MODE in payload["training_summary"]["training_mode"]
+    assert ScienceMode.DELAYED_REACH in payload["training_summary"]["training_mode"]
 
 
 def test_delayed_reach_trial_type_normalized_run_spec_metadata(tmp_path: Path) -> None:
@@ -5159,7 +5154,7 @@ def test_broad_epsilon_run_spec_exposes_budget_contract(tmp_path: Path) -> None:
     payload = json.loads(Path(result["run_spec_path"]).read_text())
     broad = payload["hps"]["broad_epsilon_training"]
 
-    assert BROAD_EPSILON_TRAINING_MODE in payload["training_summary"]["training_mode"]
+    assert ScienceMode.BROAD_EPSILON in payload["training_summary"]["training_mode"]
     assert broad["enabled"] is True
     assert broad["budget_contract"]["gamma_factor"] == pytest.approx(1.4)
     assert broad["budget_contract"]["effective_l2_radius_15cm"] == pytest.approx(
@@ -5244,7 +5239,7 @@ def _native_method_run_spec_payload(tmp_path: Path, method_ref: str) -> dict[str
                 broad_epsilon_pgd_energy_lambda=2.5,
                 adaptive_epsilon_curriculum=True,
                 adaptive_epsilon_controller_training_mode=(
-                    ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER
+                    AdaptiveEpsilonControllerMode.EPSILON_SCALED_OUTER
                 ),
                 adaptive_epsilon_damage_peak=3500.0,
                 adaptive_epsilon_damage_final=1000.0,
@@ -6219,7 +6214,7 @@ def test_target_relative_h0_full_training_smoke_emits_diagnostics(tmp_path: Path
     assert run_spec_path == spec_dir.with_suffix(".json")
     assert not (spec_dir / "run.json").exists()
     assert run_spec["training_summary"]["training_mode"] == (
-        f"{TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE}+{PERTURBATION_TRAINING_MODE}"
+        f"{ScienceMode.TARGET_RELATIVE_H0}+{ScienceMode.PERTURBATION}"
     )
     assert run_spec["model_summary"]["initial_hidden_encoder"]["enabled"] is True
     assert summary["training_diagnostics"]["enabled"] is True
@@ -6778,7 +6773,7 @@ def test_pgd_broad_epsilon_full_training_emits_inner_diagnostics(
     assert any("adv_objective=" in line for line in checkpoint_lines)
     assert run_spec_path == spec_dir.with_suffix(".json")
     assert not (spec_dir / "run.json").exists()
-    assert BROAD_EPSILON_PGD_TRAINING_MODE in run_spec["training_summary"]["training_mode"]
+    assert ScienceMode.BROAD_EPSILON_PGD in run_spec["training_summary"]["training_mode"]
     assert run_spec["hps"]["broad_epsilon_pgd_training"]["inner_maximizer"]["n_steps"] == 1
     assert "pgd_broad_epsilon_inner_objective_before" in diagnostics_manifest["arrays"]
     assert "pgd_broad_epsilon_inner_objective_after" in diagnostics_manifest["arrays"]
@@ -6845,7 +6840,7 @@ def test_adaptive_epsilon_scaled_outer_full_training_emits_explicit_diagnostics(
         broad_epsilon_pgd_energy_lambda=1.0,
         adaptive_epsilon_curriculum=True,
         adaptive_epsilon_controller_training_mode=(
-            ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER
+            AdaptiveEpsilonControllerMode.EPSILON_SCALED_OUTER
         ),
         adaptive_epsilon_update_interval_batches=1,
         adaptive_epsilon_outer_weight_start=0.25,
@@ -6869,7 +6864,7 @@ def test_adaptive_epsilon_scaled_outer_full_training_emits_explicit_diagnostics(
     diagnostics_manifest = json.loads((output_dir / "training_diagnostics.json").read_text())
 
     cfg = run_spec["hps"]["adaptive_epsilon_curriculum"]
-    assert cfg["controller_training_mode"] == ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER
+    assert cfg["controller_training_mode"] == AdaptiveEpsilonControllerMode.EPSILON_SCALED_OUTER
     assert (
         cfg["outer_adversarial_weight"]["applies_to"]
         == "optimized_direct_epsilon_channel_scale_for_controller_rollout"

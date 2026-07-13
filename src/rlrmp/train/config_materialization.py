@@ -50,24 +50,21 @@ from rlrmp.train.cs_perturbation_training import (
     validation_bin_manifest,
 )
 from rlrmp.train.training_configs import (
-    ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
     BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
     BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM,
     BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
-    BROAD_EPSILON_PGD_TRAINING_MODE,
-    BROAD_EPSILON_TRAINING_MODE,
     DEFAULT_TARGET_SUPPORT_PROFILE,
-    PERTURBATION_TRAINING_MODE,
     POLICY_ADVERSARY_MEMORYLESS_MLP,
     POLICY_ADVERSARY_PLAIN_MODE,
-    POLICY_ADVERSARY_TRAINING_MODE,
-    TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
-    TARGET_RELATIVE_MULTITARGET_TRAINING_MODE,
     BroadFullStateEpsilonTrainingConfig,
     FixedTargetPerturbationTrainingConfig,
     PgdFullStateEpsilonTrainingConfig,
     PolicyFullStateEpsilonTrainingConfig,
     target_relative_target_support_config,
+)
+from rlrmp.train.science_vocabulary import (
+    AdaptiveEpsilonControllerMode,
+    ScienceMode,
 )
 from rlrmp.train.task_model import (
     CS_LSS_PLANT_BACKEND,
@@ -91,20 +88,11 @@ CS_DELAYED_REACH_TASK_TYPE = "delayed_reach"
 CS_DELAYED_REACH_TASK_PRESET = "delayed_center_out"
 
 
-DELAYED_REACH_TRAINING_MODE = "delayed_reach_target_visible_go_cue"
-
 DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON = "flat_after_canonical_horizon"
 
 DELAYED_MOVEMENT_COST_TAIL_MODES = (
     DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW,
     DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON,
-)
-
-ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER = "epsilon_scaled_outer_training"
-
-ADAPTIVE_EPSILON_TRAINING_MODES = (
-    ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
-    ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER,
 )
 
 DEFAULT_STOCHASTIC_PRESET = str(CsNominalGruConfig.model_fields["stochastic_preset"].default)
@@ -242,7 +230,7 @@ def _delayed_reach_contract_from_args(
         return {"enabled": False}
     return {
         "enabled": True,
-        "mode": DELAYED_REACH_TRAINING_MODE,
+        "mode": ScienceMode.DELAYED_REACH,
         "task_type": CS_DELAYED_REACH_TASK_TYPE,
         "task_preset": CS_DELAYED_REACH_TASK_PRESET,
         "target_visibility": "visible_from_trial_start",
@@ -824,7 +812,7 @@ def _adaptive_epsilon_curriculum_config_from_args(args: argparse.Namespace) -> d
         getattr(
             args,
             "adaptive_epsilon_controller_training_mode",
-            ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+            AdaptiveEpsilonControllerMode.LOSS_BLEND,
         )
     )
     cfg = {
@@ -875,7 +863,7 @@ def _adaptive_epsilon_curriculum_config_from_args(args: argparse.Namespace) -> d
             "ramp_batches": int(args.adaptive_epsilon_outer_weight_ramp_batches),
             "applies_to": (
                 "optimized_direct_epsilon_loss_only"
-                if controller_training_mode == ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND
+                if controller_training_mode == AdaptiveEpsilonControllerMode.LOSS_BLEND
                 else "optimized_direct_epsilon_channel_scale_for_controller_rollout"
             ),
             "perturbation_bank_policy": "orthogonal_unweighted_by_outer_adversarial_weight",
@@ -883,10 +871,11 @@ def _adaptive_epsilon_curriculum_config_from_args(args: argparse.Namespace) -> d
     }
     if not enabled:
         return cfg
-    if controller_training_mode not in ADAPTIVE_EPSILON_TRAINING_MODES:
+    allowed_controller_modes = tuple(mode.value for mode in AdaptiveEpsilonControllerMode)
+    if controller_training_mode not in allowed_controller_modes:
         raise ValueError(
             "Adaptive epsilon controller training mode must be one of "
-            f"{', '.join(ADAPTIVE_EPSILON_TRAINING_MODES)}."
+            f"{', '.join(allowed_controller_modes)}."
         )
     damage = cfg["damage_schedule"]
     if damage["ramp_batches"] < 0 or damage["anneal_batches"] < 0:
@@ -931,8 +920,6 @@ def _adaptive_epsilon_curriculum_config_from_args(args: argparse.Namespace) -> d
 
 
 __all__ = [
-    "ADAPTIVE_EPSILON_TRAINING_MODES",
-    "ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER",
     "CS_DELAYED_REACH_TASK_PRESET",
     "CS_DELAYED_REACH_TASK_TYPE",
     "CS_FEEDBAX_N_STEPS",
@@ -941,7 +928,6 @@ __all__ = [
     "DEFAULT_STOCHASTIC_PRESET",
     "DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON",
     "DELAYED_MOVEMENT_COST_TAIL_MODES",
-    "DELAYED_REACH_TRAINING_MODE",
     "StochasticPreset",
     "_adaptive_epsilon_curriculum_config_from_args",
     "_apply_smoke_overrides",

@@ -68,6 +68,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from rlrmp.model.feedback_descriptors import DESCRIPTOR_PAYLOAD_KEY
 from rlrmp.model.feedbax_graph import graph_spec_payload
 from rlrmp.paths import portable_repo_path
+from rlrmp.train.science_vocabulary import AdaptiveEpsilonControllerMode
 from rlrmp.train.executor.adapters import ChunkKernelAdapter, RLRMP_RUNTIME_CONTEXT_KEY
 from rlrmp.train.executor.guards import make_stop_predicate
 from rlrmp.train.executor.initial_slots import RlrmpRuntime, split_initial_keys
@@ -670,8 +671,6 @@ def _adaptive_epsilon_train_step(
     controller_training_mode: str,
 ) -> tuple[Any, Any, Any, Any, Any, dict[str, jnp.ndarray]]:
     from rlrmp.train.cs_nominal_gru import (
-        ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER,
-        ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
         _apply_trial_spec_initial_state,
         _eval_trial_specs_for_training,
         _sample_adaptive_epsilon_training_batch,
@@ -813,9 +812,9 @@ def _adaptive_epsilon_train_step(
         diagnostics.update({f"inner_{name}": value for name, value in inner_diagnostics.items()})
         return applied_losses.total, (applied_losses, diagnostics)
 
-    if controller_training_mode == ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND:
+    if controller_training_mode == AdaptiveEpsilonControllerMode.LOSS_BLEND:
         loss_fn = paired_loss
-    elif controller_training_mode == ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER:
+    elif controller_training_mode == AdaptiveEpsilonControllerMode.EPSILON_SCALED_OUTER:
         loss_fn = epsilon_scaled_outer_loss
     else:
         raise ValueError(

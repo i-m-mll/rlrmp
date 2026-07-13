@@ -58,13 +58,13 @@ from rlrmp.train.adaptive_epsilon_native import (
     attach_adaptive_epsilon_checkpoint_continuation,
 )
 from rlrmp.train.cs_nominal_gru import (
-    ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER,
     BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
     CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
     CsNominalGruConfig,
     _config_namespace,
     write_run_spec,
 )
+from rlrmp.train.science_vocabulary import AdaptiveEpsilonControllerMode
 
 
 def _training_run_payload(
@@ -414,7 +414,7 @@ def _adaptive_continuation_spec(
         "adaptive_epsilon_outer_weight_final": 0.25,
         "adaptive_epsilon_outer_weight_ramp_batches": 0,
         "adaptive_epsilon_controller_training_mode": (
-            ADAPTIVE_EPSILON_TRAINING_MODE_EPSILON_SCALED_OUTER
+            AdaptiveEpsilonControllerMode.EPSILON_SCALED_OUTER
         ),
         "loss_objective": CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
         "output_dir": str(tmp_path / "bulk"),

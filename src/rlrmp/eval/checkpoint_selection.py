@@ -32,8 +32,8 @@ from rlrmp.train.cs_nominal_gru import (
     CS_STAGE_COUNT,
     DEFAULT_DELAYED_GO_CUE_MAX_STEP,
     DEFAULT_DELAYED_GO_CUE_MIN_STEP,
-    DELAYED_REACH_TRAINING_MODE,
 )
+from rlrmp.train.science_vocabulary import ScienceMode
 from rlrmp.analysis.data_products import load_analysis_parameter_preset
 from rlrmp.train.cs_perturbation_training import (
     TargetRelativeMultiTargetTrainingConfig,
@@ -223,7 +223,7 @@ class DelayedReachEvalBankSpec:
             "target_angles_rad": [float(row["target_angle_rad"]) for row in target_geometry],
             "source_trial_indices": [int(row["source_trial_index"]) for row in target_geometry],
             "task": {
-                "mode": DELAYED_REACH_TRAINING_MODE,
+                "mode": ScienceMode.DELAYED_REACH,
                 "task_type": CS_DELAYED_REACH_TASK_TYPE,
                 "task_preset": CS_DELAYED_REACH_TASK_PRESET,
                 "reach_length_m": float(self.reach_length_m),
