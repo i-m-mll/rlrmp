@@ -1,31 +1,36 @@
 # Frozen local engineering-smoke protocol
 
-Execution update: the dependency and authoring gates below are satisfied on RLRMP
-`bb21a426` with Feedbax `060d65d`. The exact six-row matrix lowered and validated, but
-the first local row was blocked before batch 1 by the fresh-matrix orchestration
-precondition recorded in `runs/execution_status.json`. The frozen protocol is unchanged.
+Tracking issue: [issue:4eb51ee]
 
-This protocol is frozen before execution. Every result must be labelled **non-scientific
-engineering smoke**. It may establish road conformance and initial plausibility only; it
-must not be used to claim that the cross-architecture hypothesis is answered.
+Status: **training blocked after successful authoring preflight**. The exact
+six-row matrix and portable sidecar are ready, but the downstream evaluation and
+figure road cannot yet produce the frozen acceptance packet. No A1 training is
+authorized while that block remains.
 
-## Gate and execution boundary
+Every eventual result is **non-scientific engineering smoke**. One seed and 100
+batches may establish road conformance and weak initial plausibility only. They
+cannot answer the cross-architecture certificate question.
 
-- Local hardware only; no cloud, pod, Modal, or other billable execution.
-- One seed (`42`) and exactly `100` training batches where a row requires training.
-- Do not import RLRMP/Feedbax, emit matrices, train, or write custody artifacts until the
-  ordered lowerer is on protected Feedbax `develop` and `ci/feedbax-ref.toml` pins that
-  resulting SHA.
-- Do not execute until issue `427d0d8` supplies content-pinned canonical training bases
-  for the static-linear and linear-recurrent paths and the dependency-gated matched GRU
-  base is emitted through its existing authoring road. Inline bases, legacy payload modes, fresh-start/parity skips,
-  private writes, manual manifest joins, and hand-normalized certificate rows are not
-  substitutes.
-- Do not execute grouped analysis until a registered manifest-native adapter consumes
-  heterogeneous `EvaluationRunManifest` rows without losing architecture, certificate
-  mode, nominal-versus-robust distribution, or evaluation lens. Its distribution contract
-  must represent robust/broad-epsilon rather than squeezing it into the current narrower
-  `BridgeTrainingDistribution` vocabulary.
+## Frozen identities and boundary
+
+- RLRMP authoring branch head at consolidation: `9dc3c5db`.
+- Protected/pinned Feedbax: `060d65d285969ec11e4a284712913550c462ba18`.
+- Exact accepted-run Feedbax staging: `a86f6b8685d5ce6a2761d26a814b65528b9dee1a`.
+- Current clean signed Feedbax staging:
+  `257573ea7642b6570d12afac8a71ee913256e93a`, including [issue:7e4cf6b]
+  merge `6e0352ab`, [issue:ca2f937] merge `c2932138`, and [issue:d81a868]
+  checkpoint-resolver merge `257573ea`.
+- Matrix SHA-256: `78108ca2286af701583e5c4eb87a92736820b5c9260129637722c61831a9e52f`.
+- Sidecar: `repo://results/4eb51ee/runs/matrix.json`, with the same SHA-256.
+- Analysis-intent SHA-256:
+  `7ada9db0fc412e9cd19b0e8a77308e7d295151c08cf05ee3fb0c54c02cbf62b6`.
+
+[issue:238eaea] proved that tracked authoring reproduces the frozen matrix bytes.
+[issue:e093cd9] made the sidecar checkout-independent and hash-verifiable. Neither
+completion authorizes training by itself.
+
+Local hardware only; no cloud, pod, Modal, push, protected auth, extra seed,
+expanded batch budget, tuning, or full-suite run is part of this protocol.
 
 ## Minimum cohort
 
@@ -38,59 +43,89 @@ must not be used to claim that the cross-architecture hypothesis is answered.
 | `gru_nominal_s42` | GRU | `empirical_nonlinear` | nominal | 100 | 42 |
 | `gru_robust_s42` | GRU | `empirical_nonlinear` | broad-epsilon PGD | 100 | 42 |
 
-The plant, task, loss, optimizer, batch size, reach support, disturbance budget, and seed
-must be identical except where the architecture or nominal/robust training distribution
-requires a declared difference. Evaluation lenses are not training axes.
+Evaluation lenses remain separate from training axes:
+`nominal_clean`, `riccati_epsilon`, `process_noise`, and
+`held_out_validation`.
 
-## Checkpoint and resume
+## Current preflight block
 
-Each trainable row must checkpoint after batch 50, stop cleanly, resume from that
-checkpoint, and finish at batch 100. The resumed execution must retain the authored,
-resolved, and execution identities and record checkpoint lineage in its
-`TrainingRunManifest`. A fresh start after the stop is a failure, not an acceptable smoke
-shortcut.
+Training must remain held until all of the following are integrated and reviewed:
 
-## Evaluation and standard outputs
+1. [issue:0d6c2ae] supplies governed same-basis augmented-state reference action,
+   transition, value, and Bellman evidence.
+2. [issue:0be2b69] emits canonical `standard_certificate_rows` from real
+   `TrainingRunManifest`/`EvaluationRunManifest` lineage for static-gain,
+   augmented-linear, and empirical-nonlinear rows.
+3. [issue:6fa0431] replaces the descriptive cross-lens intent with an executable
+   `AnalysisBundleSpec` and certificate-agreement `FigureSpec`.
 
-Each of the six completed rows is evaluated through four distinct cached-evaluation
-stages: `nominal_clean`, `riccati_epsilon`, `process_noise`, and `held_out_validation`.
-This yields 24 `EvaluationRunManifest` records. The grouped certificate analysis must
-consume those manifests without rerunning rollouts and produce an `AnalysisRunManifest`,
-declarative `FigureManifest`, and Feedbax-custody `ReportManifest`/report render.
+[issue:7e4cf6b] staged-bundle CLI execution and [issue:ca2f937] resolved
+evaluation inputs are implemented on current staging. [issue:d81a868] is also
+implemented and `done` at signed merge `257573ea`; none is an active blocker.
+Live worker states are `in_progress` for [issue:0d6c2ae], and `blocked` for
+[issue:0be2b69] and [issue:6fa0431].
 
-The low-level certificate components landed with `e6a32b8` core (`7d0a77a0`) and remain
-native to each row:
+The grouped certificate adapter and mode-aware report renderer already exist. The
+missing pieces are production inputs and executable bundle/figure wiring. Tests that
+inject `standard_certificate_rows` prove the consumer, not this experiment road.
 
-- `static_gain`: action, transition, value, and Bellman components are required when the
-  canonical static model supplies their inputs.
-- `augmented_linear`: action sensitivity, transition, value, and Bellman components use
-  the augmented state `[plant_state; recurrent_state]`; plant-state fallback is forbidden.
-- `empirical_nonlinear`: action/response evidence is required, while a global linear
-  transition, value gap, and Bellman-Hessian residual are explicitly `not_applicable`
-  unless a separately governed local-linear certificate is declared.
+The grouped analysis must receive exactly 24 `EvaluationRunManifest` parents and
+must not include direct training bundle inputs. Static and empirical producers must
+be registered; augmented-linear lineage and reference identities must be governed,
+not caller assertions. The figure must preserve architecture, mode, training
+distribution, lens, and reason-coded `not_applicable` cells.
+
+## Checkpoint, evaluation, and outputs after the gate opens
+
+Each row must stop after batch 50 through the standard control, materialize a
+complete checkpoint transaction, then resume strictly to batch 100 without a fresh
+restart or identity drift.
+
+Each completed row then produces four cached evaluations, for 24 total
+`EvaluationRunManifest` records. One grouped certificate analysis consumes those
+manifests without rerunning rollouts and produces:
+
+- one `AnalysisRunManifest`;
+- one declarative certificate-agreement `FigureManifest` and render; and
+- one Feedbax-custody bridge-certificate report manifest/render.
+
+`static_gain` and `augmented_linear` components fail closed when their canonical
+inputs are absent. `augmented_linear` uses the plant-plus-recurrent basis and never
+falls back to plant-state gain. `empirical_nonlinear` may mark global linear
+transition/value/Bellman components `not_applicable` only with an explicit structural
+reason.
 
 ## Frozen plausibility checks
 
-Record raw values before assigning a pass/fail status.
+Record raw values before assigning a result:
 
-1. Every logged train and validation loss is finite; every row reaches batch 100.
-2. The median total loss over batches 91-100 is no greater than 1.25 times the median over
-   batches 1-10. This is a permissive divergence screen, not a convergence claim.
-3. The final nominal-clean median endpoint error is finite and no greater than `0.20 m`;
-   the final action sequence contains no NaN or infinity.
-4. The batch-50 checkpoint is materialized, loadable through the standard resume route,
-   and its resumed lineage is present in the training manifest.
-5. All required manifests and custody-routed reports exist, materialize, and agree on row,
-   spec, execution, architecture, certificate-mode, training-distribution, and lens
-   identities.
-6. Every structurally invalid component is `not_applicable` with a reason. `missing` is a
-   failure when the component is valid and its canonical inputs should exist.
+1. all train/validation losses, states, actions, and endpoint errors are finite;
+2. median loss over batches 91-100 is at most 1.25 times batches 1-10;
+3. nominal-clean median endpoint error is finite and at most `0.20 m`;
+4. action energy is finite and non-zero, with min/median/max/non-zero fraction;
+5. checkpoint and resume identities agree at the batch-50 boundary; and
+6. all required manifests and custody references agree on row, spec, execution,
+   architecture, mode, training distribution, and lens.
 
-A smoke pass says only that the paved road executed coherently and showed non-catastrophic
-early behavior. It is not evidence of convergence, architecture agreement, robustness,
-or any neuroscience conclusion.
+A failed check remains visible and does not authorize more compute. No A1 check has
+yet been observed, because no A1 training has run.
 
-The custody-routed certificate report renderer is already landed (`8583faa`, commits
-`3b4d710f` and `7d701a0e`). Remaining `9c342ba` mixed-mode test/documentation and
-stale-open reconciliation are verification/hygiene work, not an execution blocker for
-this packet once the grouped adapter emits the standard structured rows.
+## Reproduction before release
+
+Verify the protected pin and staging identity separately; reproduce the exact matrix
+and portable sidecar through the public heterogeneous emitter:
+
+```text
+FEEDBAX_STAGING="$HOME/Main/10 Projects/10 PhD/20 Feedbax/feedbax/worktrees/integration__509368b-feedbax-staging"
+PYTHONPATH="$PWD/src:$FEEDBAX_STAGING" uv run --no-sync python \
+  scripts/emit_heterogeneous_training_matrix.py \
+  --base-intent results/4eb51ee/runs/base.intent.json \
+  --matrix-authoring results/4eb51ee/runs/matrix.authoring.json \
+  --issue 4eb51ee \
+  --output results/4eb51ee/runs/matrix.json
+```
+
+Then run targeted validation/dry-run;
+then prove the four issue partitions above are integrated. Only after those checks
+may the lane replay the frozen local stop-50/resume-100 lifecycle. The RLRMP full
+suite remains parent-serialized and outside this experiment lane.
