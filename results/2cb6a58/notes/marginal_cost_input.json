@@ -1,0 +1,21 @@
+{
+  "experiment_issue": "2cb6a58",
+  "authored_production_paths": [
+    "results/2cb6a58/runs/base.intent.json",
+    "results/2cb6a58/runs/matrix.intent.json"
+  ],
+  "authored_spec_paths": [
+    "results/2cb6a58/runs/base.intent.json",
+    "results/2cb6a58/runs/matrix.intent.json"
+  ],
+  "generated_materialization_paths": [
+    "results/2cb6a58/runs/matrix.json"
+  ],
+  "c1_extra_concepts": [],
+  "concepts": {
+    "c2_new_registry_entries": 0,
+    "c3_authored_callbacks": 0,
+    "c4_escape_hatch_invocations": 0,
+    "c5_non_boilerplate_control_flow": 0
+  }
+}
