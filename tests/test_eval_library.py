@@ -80,6 +80,7 @@ def test_build_hps_minimax_signature_matches():
     from rlrmp.train.minimax_native import build_hps
 
     args = argparse.Namespace(
+        output_dir="_artifacts/test/eval_library_minimax",
         n_warmup_batches=10,
         n_adversary_batches=20,
         controller_lr=0.01,

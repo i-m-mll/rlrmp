@@ -7,6 +7,7 @@ from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+import re
 from typing import Any
 
 
@@ -18,10 +19,119 @@ SCAN_TARGETS = (
     "src/rlrmp/train/cs_perturbation_training.py",
     "src/rlrmp/benchmarks/packing.py",
     "src/rlrmp/model/",
+    "src/rlrmp/train/config_materialization.py",
     "src/rlrmp/train/distillation_entry.py",
     "src/rlrmp/train/distillation_native/closed_loop_kernel.py",
+    "src/rlrmp/train/run_spec_authoring.py",
+    "src/rlrmp/train/training_configs.py",
     "src/rlrmp/eval/minimax_io.py",
 )
+
+ISSUE_ID_PATTERN = re.compile(
+    r"(?<![0-9a-f])(?=[0-9a-f]{0,6}[0-9])[0-9a-f]{7}(?![0-9a-f])",
+    re.IGNORECASE,
+)
+
+
+@dataclass(frozen=True, order=True)
+class AuthoredIdentityDefaultSite:
+    """A seven-hex authored identity embedded in a Python default surface."""
+
+    path: str
+    qualname: str
+    identity: str
+    lineno: int
+
+
+def scan_authored_identity_defaults(repo_root: Path) -> list[AuthoredIdentityDefaultSite]:
+    """Reject issue/experiment identities authored as defaults under ``train``."""
+
+    root = repo_root / "src/rlrmp/train"
+    findings: list[AuthoredIdentityDefaultSite] = []
+    for path in sorted(root.rglob("*.py")):
+        relpath = path.relative_to(repo_root).as_posix()
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        findings.extend(_AuthoredIdentityDefaultVisitor(relpath).scan(tree))
+    return sorted(findings)
+
+
+class _AuthoredIdentityDefaultVisitor(ast.NodeVisitor):
+    """Collect identity literals only from assignment and argument defaults."""
+
+    def __init__(self, relpath: str) -> None:
+        self.relpath = relpath
+        self.scope: list[str] = []
+        self.scope_kinds: list[str] = []
+        self.findings: list[AuthoredIdentityDefaultSite] = []
+
+    def scan(self, tree: ast.AST) -> list[AuthoredIdentityDefaultSite]:
+        self.visit(tree)
+        return self.findings
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self.scope.append(node.name)
+        self.scope_kinds.append("class")
+        self.generic_visit(node)
+        self.scope_kinds.pop()
+        self.scope.pop()
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._scan_function_defaults(node)
+        self.scope.append(node.name)
+        self.scope_kinds.append("function")
+        self.generic_visit(node)
+        self.scope_kinds.pop()
+        self.scope.pop()
+
+    visit_AsyncFunctionDef = visit_FunctionDef
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        if "function" not in self.scope_kinds:
+            names = [target.id for target in node.targets if isinstance(target, ast.Name)]
+            name = names[0] if len(names) == 1 else "<assignment>"
+            if self.scope_kinds or _is_default_assignment_name(name) or isinstance(
+                node.value, ast.Constant
+            ):
+                self._record(node.value, name)
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if "function" not in self.scope_kinds and node.value is not None:
+            name = node.target.id if isinstance(node.target, ast.Name) else "<assignment>"
+            if self.scope_kinds or _is_default_assignment_name(name) or isinstance(
+                node.value, ast.Constant
+            ):
+                self._record(node.value, name)
+        self.generic_visit(node)
+
+    def _scan_function_defaults(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        positional = [*node.args.posonlyargs, *node.args.args]
+        defaulted = positional[-len(node.args.defaults) :] if node.args.defaults else []
+        for argument, default in zip(defaulted, node.args.defaults, strict=True):
+            self._record(default, f"{node.name}.{argument.arg}")
+        for argument, default in zip(node.args.kwonlyargs, node.args.kw_defaults, strict=True):
+            if default is not None:
+                self._record(default, f"{node.name}.{argument.arg}")
+
+    def _record(self, value: ast.AST, name: str) -> None:
+        for child in ast.walk(value):
+            if not isinstance(child, ast.Constant) or not isinstance(child.value, str):
+                continue
+            for match in ISSUE_ID_PATTERN.finditer(child.value):
+                qualname = ".".join((*self.scope, name))
+                self.findings.append(
+                    AuthoredIdentityDefaultSite(
+                        path=self.relpath,
+                        qualname=qualname,
+                        identity=match.group(0),
+                        lineno=child.lineno,
+                    )
+                )
+
+
+def _is_default_assignment_name(name: str) -> bool:
+    tokens = name.upper().split("_")
+    return "DEFAULT" in tokens or "PROFILE" in tokens
 
 
 @dataclass(frozen=True, order=True)

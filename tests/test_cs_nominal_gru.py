@@ -106,6 +106,7 @@ from rlrmp.runtime.training_run_specs import (
     hydrate_compact_run_spec_envelope,
 )
 from rlrmp.runtime.run_specs import validate_nominal_gru_run_spec_file
+from rlrmp.data_products.broad_epsilon import load_pgd_radius_source
 from rlrmp.train.executor.slots import (
     ADAPTIVE_EPSILON_CURRICULUM_METHOD_REF,
     CS_SUPERVISED_METHOD_REF,
@@ -127,7 +128,6 @@ from rlrmp.train.cs_perturbation_training import (
     CLOSED_LOOP_SENSORY_COMMAND_LATERAL_CALIBRATION_REGIME,
     DEFAULT_PGD_SISU_EXACT_ZERO_MASS,
     DEFAULT_PGD_SISU_LEVELS,
-    HISTORICAL_020A65B_PGD_RADIUS_15CM,
     GRAPH_ADAPTER_SPECS,
     AFFINE_POLICY,
     LINEAR_NO_BIAS_POLICY,
@@ -186,6 +186,7 @@ from rlrmp.train.cs_perturbation_training import (
     target_relative_validation_manifest,
     validation_bin_manifest,
 )
+
 from rlrmp.train.executor.equivalence import assert_paired_equivalent, run_paired_equivalence
 from rlrmp.train.task_model import (
     CS_LSS_PLANT_BACKEND,
@@ -202,9 +203,23 @@ from rlrmp.train.closed_loop_finite_adversary import (
     FINITE_POLICY_GAINS_INPUT,
 )
 
+HISTORICAL_020A65B_PGD_RADIUS_15CM = float(
+    load_pgd_radius_source("effective_020a65b_pgd_training_radius")["l2_radius_15cm"]
+)
+
+
+def _canonical_pgd_payload(**overrides: object) -> dict[str, object]:
+    """Build the canonical config envelope consumed by PGD runtime boundaries."""
+
+    config = PgdFullStateEpsilonTrainingConfig.model_validate(overrides)
+    return {"config": config.model_dump(mode="python")}
+
 
 def _args(**overrides) -> argparse.Namespace:
-    values = CsNominalGruConfig().model_dump(mode="python")
+    values = CsNominalGruConfig(
+        issue="test",
+        output_dir="_artifacts/test/runs/test",
+    ).model_dump(mode="python")
     values.update(compact_run_spec=False, verify_resume_only=False)
     values.update(overrides)
     return argparse.Namespace(**values)
@@ -373,6 +388,11 @@ print(json.dumps(stochastic_preset("cs2019-rollout").summary(), sort_keys=True))
 def test_cs_nominal_gru_config_rejects_extra_fields() -> None:
     with pytest.raises(ValidationError):
         CsNominalGruConfig.model_validate({"seed": 42, "unknown_field": True})
+
+
+def test_run_spec_execution_requires_explicit_artifact_output_dir() -> None:
+    with pytest.raises(ValueError, match="must declare a non-empty artifact_output_dir"):
+        cs_nominal_gru._args_values_from_run_spec({"issue": "b2562ad", "hps": {}})
 
 
 def test_build_hps_accepts_legacy_namespace_extras_and_validates_canonical_fields() -> None:
@@ -545,52 +565,27 @@ def test_pgd_broad_epsilon_hps_declares_inner_maximizer() -> None:
     assert hps.broad_epsilon_training.enabled is False
 
 
-def test_pgd_broad_epsilon_hps_parser_consumes_nested_fields_and_ignores_retired_flat_keys(
-) -> None:
-    nested = TreeNamespace(
+def test_pgd_broad_epsilon_hps_parser_requires_canonical_config_snapshot() -> None:
+    authored = PgdFullStateEpsilonTrainingConfig(
         enabled=True,
         level="strong",
         budget_scale=1.5,
         reach_length_scaling=False,
-        inner_maximizer=TreeNamespace(
-            n_steps=9,
-            step_size_fraction_of_l2_radius=0.125,
-            initialization="zero",
-        ),
+        n_steps=9,
+        step_size_fraction=0.125,
     )
-    retired_flat = TreeNamespace(
-        enabled=True,
-        level="moderate",
-        n_steps=7,
-        step_size_fraction=0.375,
-        init="random",
-    )
-    nested_dict = {
-        "enabled": True,
-        "level": "strong",
-        "inner_maximizer": {
-            "n_steps": 11,
-            "step_size_fraction_of_l2_radius": 0.2,
-            "init": "zero",
-        },
-    }
 
-    parsed_nested = PgdFullStateEpsilonTrainingConfig.from_payload(nested)
-    parsed_retired_flat = PgdFullStateEpsilonTrainingConfig.from_payload(retired_flat)
-    parsed_dict = PgdFullStateEpsilonTrainingConfig.from_payload(nested_dict)
-    defaults = PgdFullStateEpsilonTrainingConfig()
+    parsed = PgdFullStateEpsilonTrainingConfig.from_payload(authored.to_hps_dict())
 
-    assert parsed_nested.level == "strong"
-    assert parsed_nested.n_steps == 9
-    assert parsed_nested.step_size_fraction == pytest.approx(0.125)
-    assert parsed_nested.budget_scale == pytest.approx(1.5)
-    assert parsed_nested.reach_length_scaling is False
-    assert parsed_retired_flat.n_steps == defaults.n_steps
-    assert parsed_retired_flat.step_size_fraction == defaults.step_size_fraction
-    assert parsed_retired_flat.init == defaults.init
-    assert parsed_dict.n_steps == 11
-    assert parsed_dict.step_size_fraction == pytest.approx(0.2)
-
+    assert parsed == authored
+    with pytest.raises(ValueError, match="[Ee]xtra inputs are not permitted"):
+        PgdFullStateEpsilonTrainingConfig.from_payload(
+            TreeNamespace(
+                enabled=True,
+                level="strong",
+                inner_maximizer=TreeNamespace(n_steps=9),
+            )
+        )
 
 def test_pgd_sisu_budget_schedule_metadata_and_parser_round_trip() -> None:
     cfg = PgdFullStateEpsilonTrainingConfig(
@@ -887,7 +882,7 @@ def test_adaptive_epsilon_curriculum_requires_soft_direct_pgd() -> None:
                 broad_epsilon_pgd_objective=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
                 broad_epsilon_pgd_energy_lambda=1.0,
                 broad_epsilon_pgd_safety_cap_15cm=1.0,
-                broad_epsilon_pgd_safety_cap_source="unit_test_cap",
+                broad_epsilon_pgd_safety_cap_source="effective_020a65b_pgd_training_radius",
                 adaptive_epsilon_curriculum=True,
                 target_relative_multitarget=True,
             )
@@ -1571,7 +1566,7 @@ def test_pgd_inner_optimizer_metadata_and_parser_round_trip() -> None:
         objective_kind=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
         energy_lambda=3.0,
         safety_cap_l2_radius_15cm=1.0,
-        safety_cap_source="unit_test_cap",
+        safety_cap_source="effective_020a65b_pgd_training_radius",
         inner_optimizer_method=BROAD_EPSILON_PGD_ADAM,
         adam_learning_rate=1e-3,
         adam_b1=0.8,
@@ -1793,7 +1788,7 @@ def test_live_finite_pgd_run_spec_replays_adam_inner_optimizer(
         broad_epsilon_pgd_objective=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
         broad_epsilon_pgd_energy_lambda=10.0,
         broad_epsilon_pgd_safety_cap_15cm=1.0,
-        broad_epsilon_pgd_safety_cap_source="unit_test_cap",
+        broad_epsilon_pgd_safety_cap_source="effective_020a65b_pgd_training_radius",
     )
 
     result = write_run_spec(args)
@@ -1982,7 +1977,7 @@ def test_finite_pgd_inner_maximizer_installs_policy_inputs_before_rollout() -> N
         objective_kind=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
         energy_lambda=1.0,
         safety_cap_l2_radius_15cm=1.0,
-        safety_cap_source="unit_test_cap",
+        safety_cap_source="effective_020a65b_pgd_training_radius",
     )
     trial_specs = TaskTrialSpec(
         inits=WhereDict({"mechanics.vector": jnp.zeros((1, 4), dtype=jnp.float32)}),
@@ -2046,7 +2041,7 @@ def test_finite_adam_inner_maximizer_uses_live_policy_inputs() -> None:
         objective_kind=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
         energy_lambda=1e-6,
         safety_cap_l2_radius_15cm=1.0,
-        safety_cap_source="unit_test_cap",
+        safety_cap_source="effective_020a65b_pgd_training_radius",
         inner_optimizer_method=BROAD_EPSILON_PGD_ADAM,
         adam_learning_rate=1e-2,
     )
@@ -2242,7 +2237,7 @@ def test_finite_pgd_public_routing_matches_finite_core_equivalence() -> None:
         objective_kind=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
         energy_lambda=1e-6,
         safety_cap_l2_radius_15cm=1.0,
-        safety_cap_source="unit_test_cap",
+        safety_cap_source="effective_020a65b_pgd_training_radius",
         inner_optimizer_method=BROAD_EPSILON_PGD_ADAM,
         adam_learning_rate=1e-2,
     )
@@ -2485,10 +2480,10 @@ def test_policy_adversary_training_requires_explicit_radius_and_source() -> None
 def test_policy_adversary_historical_spec_with_explicit_radius_and_source_parses() -> None:
     parsed = PolicyFullStateEpsilonTrainingConfig.from_payload(
         {
-            "enabled": True,
-            "budget_contract": {
-                "effective_l2_radius_15cm": HISTORICAL_020A65B_PGD_RADIUS_15CM,
-                "budget_source": {"key": "effective_020a65b_pgd_training_radius"},
+            "config": {
+                "enabled": True,
+                "reference_l2_radius_15cm": HISTORICAL_020A65B_PGD_RADIUS_15CM,
+                "budget_source": "effective_020a65b_pgd_training_radius",
             },
         }
     )
@@ -2609,7 +2604,7 @@ def test_policy_adversary_projection_reports_radius_energy_and_boundary() -> Non
         epsilon_dim=2,
         state_feature_dim=4,
         reference_l2_radius_15cm=2.0,
-        budget_source="unit_test_radius",
+        budget_source="effective_020a65b_pgd_training_radius",
         reach_length_scaling=False,
     )
     trial_specs = TaskTrialSpec(
@@ -2671,7 +2666,7 @@ def test_policy_adversary_controller_prestep_detaches_projected_epsilon() -> Non
         width=2,
         depth=0,
         reference_l2_radius_15cm=10.0,
-        budget_source="unit_test_radius",
+        budget_source="effective_020a65b_pgd_training_radius",
         reach_length_scaling=False,
     )
     policy = make_memoryless_policy_adversary(cfg, key=jr.PRNGKey(0))
@@ -3128,7 +3123,7 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     assert not (spec_dir / "model.graph.json").exists()
     assert payload["schema_version"] == "rlrmp.cs_stochastic_gru.v1"
     assert COMPACT_RUN_SPEC_KEY not in payload
-    assert payload["issue"] == "30f2313"
+    assert payload["issue"] == args.issue
     assert payload["model_summary"]["hidden_size"] == 4
     assert payload["model_summary"]["controller_kind"] == "gru"
     assert payload["model_summary"]["plant_backend"] == CS_LSS_PLANT_BACKEND
@@ -5628,88 +5623,49 @@ def test_33b0dcb_target_support_profiles() -> None:
         assert not set(config.seen_targets_m).intersection(set(config.held_out_targets_m))
 
 
-def test_target_hps_without_profile_normalizes_to_band16_default() -> None:
+def test_target_hps_without_profile_uses_governed_class_preset() -> None:
     config = TargetRelativeMultiTargetTrainingConfig.from_payload(
-        TreeNamespace(
-            enabled=True,
-            force_filter_feedback=True,
-            target_distribution=TreeNamespace(),
-        )
+        {"config": {"enabled": True, "force_filter_feedback": True}}
     )
 
-    assert config.target_support_profile == TARGET_SUPPORT_PROFILE_CONST_BAND16
-    assert len(config.seen_targets_m) == 56
-    assert len(config.held_out_targets_m) == 16
-    assert config.seen_amplitudes_m == (TARGET_SUPPORT_CONST_REACH_M,)
-    assert config.held_out_amplitudes_m == (TARGET_SUPPORT_CONST_REACH_M,)
+    assert config.target_support_profile == TARGET_SUPPORT_PROFILE_020A65B
+    assert config.seen_amplitudes_m == (0.10, 0.15)
+    assert config.held_out_amplitudes_m == (0.12, 0.18)
 
 
-def test_target_hps_normalization_consumes_nested_fields_and_ignores_retired_flat_keys() -> None:
-    cases = {
-        "nested_old": TreeNamespace(
+def test_target_hps_rejects_retired_nested_distribution_alias() -> None:
+    with pytest.raises(ValueError, match="target_distribution"):
+        TargetRelativeMultiTargetTrainingConfig.from_payload(
+            TreeNamespace(
+                enabled=True,
+                force_filter_feedback=True,
+                target_distribution=TreeNamespace(),
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    "config",
+    (
+        FixedTargetPerturbationTrainingConfig(enabled=True),
+        TargetRelativeMultiTargetTrainingConfig(enabled=True),
+        BroadFullStateEpsilonTrainingConfig(enabled=True),
+        PgdFullStateEpsilonTrainingConfig(enabled=True),
+        PolicyFullStateEpsilonTrainingConfig(
             enabled=True,
-            force_filter_feedback=TreeNamespace(enabled=True),
-            target_distribution=TreeNamespace(
-                target_support_profile=TARGET_SUPPORT_PROFILE_020A65B,
-                seen_directions_deg=(0.0, 90.0),
-                held_out_directions_deg=(180.0,),
-                seen_amplitudes_m=(0.15,),
-                held_out_amplitudes_m=(0.2,),
-                original_target_anchor_m=(0.15, 0.0),
-                support_metadata={"source": "nested"},
-            ),
+            reference_l2_radius_15cm=HISTORICAL_020A65B_PGD_RADIUS_15CM,
+            budget_source="effective_020a65b_pgd_training_radius",
         ),
-        "retired_top_level_ignored": TreeNamespace(
-            enabled=True,
-            force_filter_feedback=False,
-            target_support_profile=TARGET_SUPPORT_PROFILE_CONST_SPARSE8,
-            seen_directions_deg=(0.0, 180.0),
-            held_out_directions_deg=(90.0, 270.0),
-            seen_amplitudes_m=(0.15,),
-            held_out_amplitudes_m=(0.12,),
-            original_target_anchor_m=(0.15, 0.0),
-            support_metadata={"source": "top"},
-            target_distribution=TreeNamespace(
-                target_support_profile=TARGET_SUPPORT_PROFILE_020A65B,
-                seen_directions_deg=(0.0, 45.0),
-                held_out_directions_deg=(135.0,),
-                seen_amplitudes_m=(0.15,),
-                held_out_amplitudes_m=(0.18,),
-                original_target_anchor_m=(0.15, 0.0),
-                support_metadata={"source": "nested_wins"},
-            ),
-        ),
-    }
+    ),
+)
+def test_frozen_rendered_training_payloads_migrate_without_authored_defaults(config) -> None:
+    payload = config.to_hps_dict()
+    payload.pop("config")
 
-    frozen_outputs = {
-        "nested_old": {
-            "enabled": True,
-            "force_filter_feedback": True,
-            "target_support_profile": TARGET_SUPPORT_PROFILE_020A65B,
-            "seen_directions_deg": (0.0, 90.0),
-            "held_out_directions_deg": (180.0,),
-            "seen_amplitudes_m": (0.15,),
-            "held_out_amplitudes_m": (0.2,),
-            "original_target_anchor_m": (0.15, 0.0),
-            "support_metadata": (("source", "nested"),),
-        },
-        "retired_top_level_ignored": {
-            "enabled": True,
-            "force_filter_feedback": False,
-            "target_support_profile": TARGET_SUPPORT_PROFILE_020A65B,
-            "seen_directions_deg": (0.0, 45.0),
-            "held_out_directions_deg": (135.0,),
-            "seen_amplitudes_m": (0.15,),
-            "held_out_amplitudes_m": (0.18,),
-            "original_target_anchor_m": (0.15, 0.0),
-            "support_metadata": (("source", "nested_wins"),),
-        },
-    }
+    migrated_payload = type(config).from_payload(payload).to_hps_dict()
+    migrated_payload.pop("config")
 
-    assert {
-        name: TargetRelativeMultiTargetTrainingConfig.from_payload(case).model_dump(mode="python")
-        for name, case in cases.items()
-    } == frozen_outputs
+    assert migrated_payload == payload
 
 
 def test_resume_training_diagnostics_stitches_replicate_major_current_chunk(
@@ -6468,20 +6424,15 @@ def test_pgd_soft_energy_objective_penalizes_epsilon_energy() -> None:
         trial_specs=trial_specs,
         loss_func=LinearLoss(),
         keys_model=None,
-        config={
-            "enabled": True,
-            "reach_length_scaling": False,
-            "budget_contract": {
-                "effective_l2_radius_15cm": 1.0,
-                "budget_source": {"key": "unit_test_fixed_radius"},
-            },
-            "budget_schedule": {"mode": "fixed"},
-            "inner_maximizer": {
-                "n_steps": 1,
-                "step_size_fraction_of_l2_radius": 1.0,
-            },
-            "epsilon_dim": 1,
-        },
+        config=_canonical_pgd_payload(
+            enabled=True,
+            reach_length_scaling=False,
+            fixed_l2_radius_15cm=1.0,
+            fixed_radius_source="unit_test_fixed_radius",
+            n_steps=1,
+            step_size_fraction=1.0,
+            epsilon_dim=1,
+        ),
         return_diagnostics=True,
     )
     soft_updated, soft_diagnostics = run_broad_epsilon_pgd_inner_maximizer(
@@ -6490,23 +6441,17 @@ def test_pgd_soft_energy_objective_penalizes_epsilon_energy() -> None:
         trial_specs=trial_specs,
         loss_func=LinearLoss(),
         keys_model=None,
-        config={
-            "enabled": True,
-            "reach_length_scaling": False,
-            "objective": {
-                "kind": BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
-                "lambda": 10.0,
-            },
-            "safety_cap": {
-                "l2_radius_15cm": 1.0,
-                "source": {"key": "unit_test_cap"},
-            },
-            "inner_maximizer": {
-                "n_steps": 1,
-                "step_size_fraction_of_l2_radius": 1.0,
-            },
-            "epsilon_dim": 1,
-        },
+        config=_canonical_pgd_payload(
+            enabled=True,
+            reach_length_scaling=False,
+            objective_kind=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+            energy_lambda=10.0,
+            safety_cap_l2_radius_15cm=1.0,
+            safety_cap_source="effective_020a65b_pgd_training_radius",
+            n_steps=1,
+            step_size_fraction=1.0,
+            epsilon_dim=1,
+        ),
         return_diagnostics=True,
     )
 
@@ -6571,19 +6516,15 @@ def test_pgd_cap_free_soft_energy_direct_epsilon_does_not_project(
         trial_specs=trial_specs,
         loss_func=LinearLoss(),
         keys_model=None,
-        config={
-            "enabled": True,
-            "reach_length_scaling": False,
-            "objective": {
-                "kind": BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
-                "lambda": 0.1,
-            },
-            "inner_maximizer": {
-                "n_steps": 1,
-                "step_size_fraction_of_l2_radius": 1.0,
-            },
-            "epsilon_dim": 1,
-        },
+        config=_canonical_pgd_payload(
+            enabled=True,
+            reach_length_scaling=False,
+            objective_kind=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+            energy_lambda=0.1,
+            n_steps=1,
+            step_size_fraction=1.0,
+            epsilon_dim=1,
+        ),
         return_diagnostics=True,
     )
 
@@ -6623,19 +6564,15 @@ def test_pgd_cap_free_soft_energy_lambda_override_is_jittable() -> None:
         inputs={"epsilon": jnp.zeros((1, 1, 1), dtype=jnp.float32)},
         timeline=TrialTimeline(n_steps=1),
     )
-    config = {
-        "enabled": True,
-        "reach_length_scaling": False,
-        "objective": {
-            "kind": BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
-            "lambda": 10.0,
-        },
-        "inner_maximizer": {
-            "n_steps": 1,
-            "step_size_fraction_of_l2_radius": 1.0,
-        },
-        "epsilon_dim": 1,
-    }
+    config = _canonical_pgd_payload(
+        enabled=True,
+        reach_length_scaling=False,
+        objective_kind=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+        energy_lambda=10.0,
+        n_steps=1,
+        step_size_fraction=1.0,
+        epsilon_dim=1,
+    )
 
     def run_with_override(lambda_value):
         updated, diagnostics = run_broad_epsilon_pgd_inner_maximizer(
@@ -6695,16 +6632,13 @@ def test_pgd_soft_energy_lambda_override_rejects_non_direct_soft_modes() -> None
             trial_specs=trial_specs,
             loss_func=None,
             keys_model=None,
-            config={
-                "enabled": True,
-                "reach_length_scaling": False,
-                "budget_contract": {
-                    "effective_l2_radius_15cm": 1.0,
-                    "budget_source": {"key": "unit_test_fixed_radius"},
-                },
-                "budget_schedule": {"mode": "fixed"},
-                "epsilon_dim": 1,
-            },
+            config=_canonical_pgd_payload(
+                enabled=True,
+                reach_length_scaling=False,
+                fixed_l2_radius_15cm=1.0,
+                fixed_radius_source="unit_test_fixed_radius",
+                epsilon_dim=1,
+            ),
             soft_energy_lambda_override=jnp.asarray(1.0, dtype=jnp.float32),
         )
 
@@ -6715,23 +6649,16 @@ def test_pgd_soft_energy_lambda_override_rejects_non_direct_soft_modes() -> None
             trial_specs=trial_specs,
             loss_func=None,
             keys_model=None,
-            config={
-                "enabled": True,
-                "mechanism": {
-                    "name": LINEAR_NO_BIAS_POLICY,
-                    "policy_class": LINEAR_NO_BIAS_POLICY,
-                },
-                "reach_length_scaling": False,
-                "objective": {
-                    "kind": BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
-                    "lambda": 1.0,
-                },
-                "safety_cap": {
-                    "l2_radius_15cm": 1.0,
-                    "source": {"key": "unit_test_cap"},
-                },
-                "epsilon_dim": 1,
-            },
+            config=_canonical_pgd_payload(
+                enabled=True,
+                adversary_mechanism=LINEAR_NO_BIAS_POLICY,
+                reach_length_scaling=False,
+                objective_kind=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+                energy_lambda=1.0,
+                safety_cap_l2_radius_15cm=1.0,
+                safety_cap_source="effective_020a65b_pgd_training_radius",
+                epsilon_dim=1,
+            ),
             soft_energy_lambda_override=jnp.asarray(1.0, dtype=jnp.float32),
         )
 
@@ -6767,23 +6694,17 @@ def test_pgd_soft_energy_objective_is_batch_size_invariant() -> None:
             trial_specs=trial_specs,
             loss_func=MeanLinearLoss(),
             keys_model=None,
-            config={
-                "enabled": True,
-                "reach_length_scaling": False,
-                "objective": {
-                    "kind": BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
-                    "lambda": 0.1,
-                },
-                "safety_cap": {
-                    "l2_radius_15cm": 1.0,
-                    "source": {"key": "unit_test_cap"},
-                },
-                "inner_maximizer": {
-                    "n_steps": 1,
-                    "step_size_fraction_of_l2_radius": 1.0,
-                },
-                "epsilon_dim": 1,
-            },
+            config=_canonical_pgd_payload(
+                enabled=True,
+                reach_length_scaling=False,
+                objective_kind=BROAD_EPSILON_PGD_SOFT_ENERGY_OBJECTIVE,
+                energy_lambda=0.1,
+                safety_cap_l2_radius_15cm=1.0,
+                safety_cap_source="effective_020a65b_pgd_training_radius",
+                n_steps=1,
+                step_size_fraction=1.0,
+                epsilon_dim=1,
+            ),
             return_diagnostics=True,
         )
 

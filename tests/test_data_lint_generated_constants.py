@@ -151,8 +151,8 @@ def test_data_lint_allowlist_entries_exist_and_carry_rationale() -> None:
         assert isinstance(rationale, str) and len(rationale.strip()) >= 40, (
             f"allowlist entry {key} lacks a substantive rationale"
         )
-    # The one adopted PGD radius-source table is the expected allowlisted case.
-    assert "src/rlrmp/train/training_configs.py::PGD_SISU_MAX_RADIUS_SOURCES" in ALLOWLIST
+    # Adopted PGD radius sources now live in the governed broad-epsilon product.
+    assert ALLOWLIST == {}
 
 
 @pytest.mark.feedbax_contract

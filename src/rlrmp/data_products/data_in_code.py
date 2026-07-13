@@ -230,103 +230,165 @@ def _empirical_allowlist() -> dict[str, str]:
     }
 
 
-_CD137D8_CONFIG_TIER_ALLOWLIST = (
-    "src/rlrmp/train/config_materialization.py::CS_REGULARIZED_NN_HIDDEN::hp_constant",
-    "src/rlrmp/train/config_materialization.py::CS_STAGE_COUNT::hp_constant",
-    "src/rlrmp/train/config_materialization.py::build_hps::default_bundle",
-    "src/rlrmp/train/minimax_native/method.py::_build_hps_from_config::default_bundle",
-    "src/rlrmp/train/standard.py::_LOSS_WEIGHT_OVERRIDES::hp_constant",
-    "src/rlrmp/train/standard.py::_base_hps::default_bundle",
-    "src/rlrmp/train/standard.py::_loss_cfg::default_bundle",
-    "src/rlrmp/train/training_configs.py::AMPLITUDE_LEVELS::hp_constant",
-    "src/rlrmp/train/training_configs.py::BROAD_EPSILON_REFERENCE_REACH_M::hp_constant",
-    "src/rlrmp/train/training_configs.py::CS_CONTROL_SCALE::hp_constant",
-    "src/rlrmp/train/training_configs.py::CS_POSITION_SCALE::hp_constant",
-    "src/rlrmp/train/training_configs.py::CS_VELOCITY_SCALE::hp_constant",
-    "src/rlrmp/train/training_configs.py::DEFAULT_HELD_OUT_TARGET_AMPLITUDES_M::hp_constant",
-    "src/rlrmp/train/training_configs.py::DEFAULT_HELD_OUT_TARGET_DIRECTIONS_DEG::hp_constant",
-    "src/rlrmp/train/training_configs.py::DEFAULT_PGD_SISU_EXACT_ZERO_MASS::hp_constant",
-    "src/rlrmp/train/training_configs.py::DEFAULT_PGD_SISU_LEVELS::hp_constant",
-    "src/rlrmp/train/training_configs.py::DEFAULT_SEEN_TARGET_AMPLITUDES_M::hp_constant",
-    "src/rlrmp/train/training_configs.py::DEFAULT_SEEN_TARGET_DIRECTIONS_DEG::hp_constant",
-    "src/rlrmp/train/training_configs.py::HISTORICAL_020A65B_PGD_RADIUS_15CM::hp_constant",
-    "src/rlrmp/train/training_configs.py::ORIGINAL_TARGET_ANCHOR_M::hp_constant",
-    "src/rlrmp/train/training_configs.py::PGD_SISU_MAX_RADIUS_SOURCES::hp_constant",
-    "src/rlrmp/train/training_configs.py::RAW_STRONG_GAMMA_1P05_RADIUS_15CM::hp_constant",
-    "src/rlrmp/train/training_configs.py::TARGET_SUPPORT_BAND16_HELD_OUT_DIRECTIONS::hp_constant",
-    "src/rlrmp/train/training_configs.py::TARGET_SUPPORT_BAND36_HELD_OUT_DIRECTIONS::hp_constant",
-    "src/rlrmp/train/training_configs.py::TARGET_SUPPORT_BAND8_HELD_OUT_DIRECTIONS::hp_constant",
-    "src/rlrmp/train/training_configs.py::TARGET_SUPPORT_BAND_CENTERS_DEG::hp_constant",
-    "src/rlrmp/train/training_configs.py::TARGET_SUPPORT_CONST_REACH_M::hp_constant",
-    "src/rlrmp/train/training_configs.py::TARGET_SUPPORT_DENSE_N_DIRECTIONS::hp_constant",
-    "src/rlrmp/train/training_configs.py::TARGET_SUPPORT_SPARSE_N_DIRECTIONS::hp_constant",
-)
+_TRAINING_STRUCTURAL_ALLOWLIST = {
+    "src/rlrmp/train/config_materialization.py::CS_REGULARIZED_NN_HIDDEN::hp_constant": (
+        "The value fixes the width of the C&S regularized-network comparator, whose architecture "
+        "requires an equal hidden width at every stage."
+    ),
+    "src/rlrmp/train/config_materialization.py::CS_STAGE_COUNT::hp_constant": (
+        "The value is the invariant number of control stages in the published C&S task, used to "
+        "check task-shape consistency rather than select an experiment."
+    ),
+    "src/rlrmp/train/config_materialization.py::build_hps::default_bundle": (
+        "This builder translates a fully validated CsNominalGruConfig into the complete runtime "
+        "namespace; its literals are structural representation fields, not a selectable run row."
+    ),
+    "src/rlrmp/train/minimax_native/method.py::_build_hps_from_config::default_bundle": (
+        "The minimax adapter expands an already validated method config into the runtime namespace "
+        "required by the registered executor; it does not choose experiment identity or schedule."
+    ),
+    "src/rlrmp/train/standard.py::_LOSS_WEIGHT_OVERRIDES::hp_constant": (
+        "These keys are the explicit loss-field patch map for the registered standard method; values "
+        "come from the authored method config at execution time."
+    ),
+    "src/rlrmp/train/standard.py::_base_hps::default_bundle": (
+        "The standard-method adapter constructs the runtime shape from a validated TrainingRunSpec; "
+        "the detected literals identify required structural subtrees."
+    ),
+    "src/rlrmp/train/standard.py::_loss_cfg::default_bundle": (
+        "This mapping names the supported loss slots and their disabled structural state before "
+        "authored TrainingRunSpec values are applied."
+    ),
+    "src/rlrmp/train/training_configs.py::CS_CONTROL_SCALE::hp_constant": (
+        "This is the analytical coordinate scale fixed by the C&S model definition and is not a "
+        "tunable training-run default."
+    ),
+    "src/rlrmp/train/training_configs.py::CS_POSITION_SCALE::hp_constant": (
+        "This is the analytical position-coordinate scale fixed by the C&S model definition, used "
+        "only to map authored values into canonical units."
+    ),
+    "src/rlrmp/train/training_configs.py::CS_VELOCITY_SCALE::hp_constant": (
+        "This is the analytical velocity-coordinate scale fixed by the C&S model definition, not a "
+        "run-specific velocity target."
+    ),
+}
 
-_OWNING_SCHEMA_DEFAULT_ALLOWLIST = (
-    "src/rlrmp/analysis/map_error_decomposition.py::MapErrorDecompositionParams::default_bundle",
-    "src/rlrmp/analysis/math/adversary_equivalence.py::OpenLoopOptimizationConfig::default_bundle",
-    "src/rlrmp/analysis/math/cs_released_simulation.py::CSReleasedStochasticNoiseConfig::default_bundle",
-    "src/rlrmp/analysis/math/hinf_riccati.py::CostSpec::default_bundle",
-    "src/rlrmp/analysis/math/linear_equivalence_certificate.py::CertificateConfig::default_bundle",
-    "src/rlrmp/analysis/math/linear_round_trip.py::LinearOptimizationConfig::default_bundle",
-    "src/rlrmp/analysis/math/linear_round_trip.py::TeacherFitConfig::default_bundle",
-    "src/rlrmp/analysis/math/output_feedback.py::OutputFeedbackConfig::default_bundle",
-    "src/rlrmp/analysis/robustness_margin.py::RobustnessMarginParams::default_bundle",
-    "src/rlrmp/analysis/sisu_spectrum.py::SisuRobustificationAnalysisParams::default_bundle",
-    "src/rlrmp/analysis/worst_case_epsilon.py::WorstCaseEpsilonAnalysisParams::default_bundle",
-    "src/rlrmp/cloud/modal_runner.py::NominalGruRunConfig::default_bundle",
-    "src/rlrmp/eval/checkpoint_selection.py::DelayedReachEvalBankSpec::default_bundle",
-    "src/rlrmp/eval/output_feedback_rollout_recovery.py::EigenspectrumCoverageConfig::default_bundle",
-    "src/rlrmp/eval/output_feedback_rollout_recovery.py::ObserverErrorCoverageConfig::default_bundle",
-    "src/rlrmp/eval/output_feedback_rollout_recovery.py::RolloutRecoveryCondition::default_bundle",
-    "src/rlrmp/eval/recipes.py::BroadEpsilonEvalParams::default_bundle",
-    "src/rlrmp/eval/recipes.py::WorstCaseEpsilonEvalParams::default_bundle",
-    "src/rlrmp/eval/steady_state.py::SteadyStatePerturbationBankConfig::default_bundle",
-    "src/rlrmp/model/stochastic_runtime.py::StochasticRuntimeConfig::default_bundle",
-    "src/rlrmp/train/distillation_native/closed_loop_kernel.py::ClosedLoopLossWeights::default_bundle",
-    "src/rlrmp/train/distillation_native/losses.py::CSH0DistillationConfig::default_bundle",
-    "src/rlrmp/train/distillation_native/losses.py::DistillationLossWeights::default_bundle",
-    "src/rlrmp/train/executor/checkpoints.py::AdaptiveEpsilonState::default_bundle",
-    "src/rlrmp/train/training_configs.py::BroadFullStateEpsilonTrainingConfig::default_bundle",
-    "src/rlrmp/train/training_configs.py::ClosedLoopDistillationConfig::default_bundle",
-    "src/rlrmp/train/training_configs.py::CsNominalGruConfig::default_bundle",
-    "src/rlrmp/train/training_configs.py::FixedTargetPerturbationTrainingConfig::default_bundle",
-    "src/rlrmp/train/training_configs.py::GuidedDistillationConfig::default_bundle",
-    "src/rlrmp/train/training_configs.py::MinimaxConfig::default_bundle",
-    "src/rlrmp/train/training_configs.py::PgdFullStateEpsilonTrainingConfig::default_bundle",
-    "src/rlrmp/train/training_configs.py::PolicyFullStateEpsilonTrainingConfig::default_bundle",
-    "src/rlrmp/train/training_configs.py::TargetRelativeMultiTargetTrainingConfig::default_bundle",
-)
+_TYPED_SCHEMA_ALLOWLIST = {
+    "src/rlrmp/analysis/map_error_decomposition.py::MapErrorDecompositionParams::default_bundle": (
+        "MapErrorDecompositionParams is the registered analysis schema; these defaults define its "
+        "optional decomposition controls and are serialized with each analysis spec."
+    ),
+    "src/rlrmp/analysis/math/adversary_equivalence.py::OpenLoopOptimizationConfig::default_bundle": (
+        "OpenLoopOptimizationConfig is the typed numerical-solver contract for adversary equivalence; "
+        "the values are solver policy, not hidden experiment rows."
+    ),
+    "src/rlrmp/analysis/math/cs_released_simulation.py::CSReleasedStochasticNoiseConfig::default_bundle": (
+        "CSReleasedStochasticNoiseConfig owns the released-simulation noise schema and distinguishes "
+        "explicit disabled channels from absent historical metadata."
+    ),
+    "src/rlrmp/analysis/math/hinf_riccati.py::CostSpec::default_bundle": (
+        "CostSpec is the typed analytical cost-geometry schema; its defaults define canonical matrix "
+        "construction rather than a training experiment instance."
+    ),
+    "src/rlrmp/analysis/math/linear_equivalence_certificate.py::CertificateConfig::default_bundle": (
+        "CertificateConfig owns tolerances and sampling policy for the registered equivalence "
+        "certificate, so every emitted certificate records these values."
+    ),
+    "src/rlrmp/analysis/math/linear_round_trip.py::LinearOptimizationConfig::default_bundle": (
+        "LinearOptimizationConfig is the explicit optimization-policy schema for round-trip fitting; "
+        "its fields are persisted in the analysis configuration."
+    ),
+    "src/rlrmp/analysis/math/linear_round_trip.py::TeacherFitConfig::default_bundle": (
+        "TeacherFitConfig owns the typed teacher-fit procedure and records its initialization and "
+        "stopping choices with the fit result."
+    ),
+    "src/rlrmp/analysis/math/output_feedback.py::OutputFeedbackConfig::default_bundle": (
+        "OutputFeedbackConfig is the canonical typed contract for observer/controller synthesis and "
+        "keeps its numerical conventions local to that analytical routine."
+    ),
+    "src/rlrmp/analysis/robustness_margin.py::RobustnessMarginParams::default_bundle": (
+        "RobustnessMarginParams is the registered recipe schema; its search bounds and tolerances are "
+        "part of each authored analysis spec."
+    ),
+    "src/rlrmp/analysis/sisu_spectrum.py::SisuRobustificationAnalysisParams::default_bundle": (
+        "SisuRobustificationAnalysisParams is the registered spectrum-analysis schema and persists "
+        "its binning and classification controls in the recipe."
+    ),
+    "src/rlrmp/analysis/worst_case_epsilon.py::WorstCaseEpsilonAnalysisParams::default_bundle": (
+        "WorstCaseEpsilonAnalysisParams owns the registered analysis search contract; its solver "
+        "settings are serialized rather than inferred from a training run."
+    ),
+    "src/rlrmp/cloud/modal_runner.py::NominalGruRunConfig::default_bundle": (
+        "NominalGruRunConfig is the cloud transport schema for one submitted job; these values govern "
+        "runner lifecycle and are not scientific training intent."
+    ),
+    "src/rlrmp/eval/checkpoint_selection.py::DelayedReachEvalBankSpec::default_bundle": (
+        "DelayedReachEvalBankSpec is the typed evaluation-bank contract; its defaults define bank "
+        "composition and are captured in the evaluation manifest."
+    ),
+    "src/rlrmp/eval/output_feedback_rollout_recovery.py::EigenspectrumCoverageConfig::default_bundle": (
+        "EigenspectrumCoverageConfig owns the eigenspectrum diagnostic grid and tolerances for the "
+        "registered rollout-recovery analysis."
+    ),
+    "src/rlrmp/eval/output_feedback_rollout_recovery.py::ObserverErrorCoverageConfig::default_bundle": (
+        "ObserverErrorCoverageConfig owns the observer-error coverage diagnostic and records its "
+        "threshold policy with the evaluation result."
+    ),
+    "src/rlrmp/eval/output_feedback_rollout_recovery.py::RolloutRecoveryCondition::default_bundle": (
+        "RolloutRecoveryCondition is the typed condition-row schema; its defaults describe missing "
+        "optional perturbations rather than selecting a hidden evaluation suite."
+    ),
+    "src/rlrmp/eval/recipes.py::BroadEpsilonEvalParams::default_bundle": (
+        "BroadEpsilonEvalParams is the registered evaluation recipe schema and serializes its rollout "
+        "and budget controls into the evaluation manifest."
+    ),
+    "src/rlrmp/eval/recipes.py::WorstCaseEpsilonEvalParams::default_bundle": (
+        "WorstCaseEpsilonEvalParams is the registered worst-case evaluation schema; its search policy "
+        "is an explicit recipe field, not a module-level experiment row."
+    ),
+    "src/rlrmp/eval/steady_state.py::SteadyStatePerturbationBankConfig::default_bundle": (
+        "SteadyStatePerturbationBankConfig owns the typed steady-state bank construction policy and "
+        "persists it with the resulting evaluation product."
+    ),
+    "src/rlrmp/model/stochastic_runtime.py::StochasticRuntimeConfig::default_bundle": (
+        "StochasticRuntimeConfig is the model-level noise contract; zero values mean explicitly "
+        "disabled channels and are serialized in graph/runtime metadata."
+    ),
+    "src/rlrmp/train/distillation_native/closed_loop_kernel.py::ClosedLoopLossWeights::default_bundle": (
+        "ClosedLoopLossWeights is the typed loss-geometry schema for the distillation kernel; zero "
+        "weights explicitly disable optional terms."
+    ),
+    "src/rlrmp/train/distillation_native/losses.py::CSH0DistillationConfig::default_bundle": (
+        "CSH0DistillationConfig now contains only structural optionality for H0 distillation; teacher "
+        "identity and artifact locations are required authored inputs."
+    ),
+    "src/rlrmp/train/distillation_native/losses.py::DistillationLossWeights::default_bundle": (
+        "DistillationLossWeights is the typed objective schema and uses explicit zero weights to "
+        "disable optional loss components."
+    ),
+    "src/rlrmp/train/executor/checkpoints.py::AdaptiveEpsilonState::default_bundle": (
+        "AdaptiveEpsilonState is a persisted executor-state schema; its defaults represent the initial "
+        "state before any adaptive update, not authored experiment settings."
+    ),
+}
 
-_PURPOSE_CONSTANT_ALLOWLIST = (
-    "src/rlrmp/analysis/sisu_spectrum.py::LOW_SISU_ENDPOINT_REACH_THRESHOLD_M::hp_constant",
-    "src/rlrmp/analysis/sisu_spectrum.py::LOW_SISU_PEAK_SPEED_THRESHOLD_M_S::hp_constant",
-)
+_DIAGNOSTIC_THRESHOLD_ALLOWLIST = {
+    "src/rlrmp/analysis/sisu_spectrum.py::LOW_SISU_ENDPOINT_REACH_THRESHOLD_M::hp_constant": (
+        "This threshold classifies an already computed endpoint-reach diagnostic as low SISU; it is "
+        "not used to configure training or evaluation rollouts."
+    ),
+    "src/rlrmp/analysis/sisu_spectrum.py::LOW_SISU_PEAK_SPEED_THRESHOLD_M_S::hp_constant": (
+        "This threshold classifies an already computed peak-speed diagnostic as low SISU; it does not "
+        "alter run generation or analysis sampling."
+    ),
+}
 
 
 DATA_IN_CODE_ALLOWLIST: dict[str, str] = {
     **_empirical_allowlist(),
-    **{
-        key: (
-            "Canonical config or config-materialization surface established by issue cd137d8; "
-            "the values are named training conventions owned by the unified typed schema."
-        )
-        for key in _CD137D8_CONFIG_TIER_ALLOWLIST
-    },
-    **{
-        key: (
-            "The typed config or params class is already the owning schema-default surface; "
-            "the detector reports its field defaults because the schema is colocated with its consumer."
-        )
-        for key in _OWNING_SCHEMA_DEFAULT_ALLOWLIST
-    },
-    **{
-        key: (
-            "This value is a diagnostic classification threshold, not a run or evaluation "
-            "parameter; the audited inventory independently classified it as a legitimate constant."
-        )
-        for key in _PURPOSE_CONSTANT_ALLOWLIST
-    },
+    **_TRAINING_STRUCTURAL_ALLOWLIST,
+    **_TYPED_SCHEMA_ALLOWLIST,
+    **_DIAGNOSTIC_THRESHOLD_ALLOWLIST,
     ("src/rlrmp/cloud/modal_runner.py::DEFAULT_TRAIN_TIMEOUT_SECONDS::hp_constant"): (
         "Operational cloud job timeout rather than a scientific run parameter; it remains a "
         "runner safety bound and is intentionally separate from the governed training spec."

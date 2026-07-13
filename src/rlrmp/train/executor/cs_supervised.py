@@ -109,7 +109,6 @@ from rlrmp.train.training_configs import (
     CS_VELOCITY_SCALE,
     CsNominalGruConfig,
     DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW,
-    ISSUE_ID,
 )
 from rlrmp.train.executor.checkpoints import (
     ADAPTIVE_EPSILON_ZERO_ADVERSARY_STOP_REASON,
@@ -126,8 +125,6 @@ from rlrmp.train.executor.checkpoints import (
 logger = logging.getLogger(__name__)
 
 VolumeCommit = Callable[[], None]
-
-DEFAULT_OUTPUT_DIR = str(CsNominalGruConfig.model_fields["output_dir"].default)
 
 DEFAULT_CHECKPOINT_INTERVAL_BATCHES = int(
     CsNominalGruConfig.model_fields["checkpoint_interval_batches"].default
@@ -395,6 +392,7 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
     perturbation = _dict_value(hps, "perturbation_training")
     broad = _dict_value(hps, "broad_epsilon_training")
     broad_pgd = _dict_value(hps, "broad_epsilon_pgd_training")
+    broad_pgd_config = _dict_value(broad_pgd, "config")
     policy_adversary = _dict_value(hps, "policy_adversary_training")
     policy_payload = _dict_value(policy_adversary, "policy")
     policy_optimizer = _dict_value(policy_adversary, "inner_optimizer")
@@ -404,8 +402,6 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
     broad_pgd_schedule = _dict_value(broad_pgd, "budget_schedule")
     broad_pgd_conditioning = _dict_value(broad_pgd_schedule, "conditioning_scalar")
     broad_pgd_max_radius_source = _dict_value(broad_pgd_schedule, "max_radius_source")
-    broad_pgd_budget = _dict_value(broad_pgd, "budget_contract")
-    broad_pgd_budget_source = _dict_value(broad_pgd_budget, "budget_source")
     broad_pgd_objective = _dict_value(broad_pgd, "objective")
     broad_pgd_mechanism = _dict_value(broad_pgd, "mechanism")
     broad_pgd_safety_cap = _dict_value(broad_pgd, "safety_cap")
@@ -423,10 +419,16 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
     population = _dict_value(model, "population_structure")
     pgd_inner = _dict_value(broad_pgd, "inner_maximizer")
 
+    artifact_output_dir = run_spec.get("artifact_output_dir")
+    if not isinstance(artifact_output_dir, str) or not artifact_output_dir.strip():
+        raise ValueError(
+            "current C&S training run specs must declare a non-empty artifact_output_dir"
+        )
+
     values = {
-        "output_dir": str(run_spec.get("artifact_output_dir", DEFAULT_OUTPUT_DIR)),
+        "output_dir": artifact_output_dir,
         "spec_dir": str(run_spec.get("spec_dir")) if run_spec.get("spec_dir") else None,
-        "issue": str(run_spec.get("issue", ISSUE_ID)),
+        "issue": str(run_spec["issue"]),
         "seed": int(run_spec.get("seed", 42)),
         "n_train_batches": int(
             run_spec.get("n_train_batches", hps.get("n_batches_condition", 12000))
@@ -586,13 +588,11 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
         "broad_epsilon_pgd_budget_schedule": str(
             broad_pgd_schedule.get("mode", broad_pgd.get("budget_schedule_mode", "fixed"))
         ),
-        "broad_epsilon_pgd_fixed_radius_15cm": broad_pgd_budget.get(
-            "effective_l2_radius_15cm",
-            broad_pgd.get("fixed_l2_radius_15cm"),
+        "broad_epsilon_pgd_fixed_radius_15cm": broad_pgd_config.get(
+            "fixed_l2_radius_15cm"
         ),
-        "broad_epsilon_pgd_fixed_radius_source": broad_pgd_budget_source.get(
-            "key",
-            broad_pgd.get("fixed_radius_source"),
+        "broad_epsilon_pgd_fixed_radius_source": broad_pgd_config.get(
+            "fixed_radius_source",
         ),
         "broad_epsilon_pgd_objective": str(
             broad_pgd_objective.get(
@@ -2703,7 +2703,6 @@ __all__ = [
     "DEFAULT_DELAYED_GO_CUE_MAX_STEP",
     "DEFAULT_DELAYED_GO_CUE_MIN_STEP",
     "DEFAULT_DELAYED_P_CATCH_TRIAL",
-    "DEFAULT_OUTPUT_DIR",
     "GradientDiagnosticsState",
     "RunSpecExecutionContext",
     "UpdateDiagnosticsState",

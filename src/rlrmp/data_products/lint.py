@@ -79,16 +79,7 @@ SCIENCE_DATA_LITERAL_NAME_HINTS = (
 # Allowlist of module-level container literals that carry high-precision float
 # tables but are intentionally kept as source constants with explicit provenance.
 # Keys are ``"<repo-relative-path>::<name>"``; values are the required rationale.
-ALLOWLIST: dict[str, str] = {
-    "src/rlrmp/train/training_configs.py::PGD_SISU_MAX_RADIUS_SOURCES": (
-        "Adopted-run-derived analytical / historical PGD radius sources. Each entry "
-        "carries inline source_issue/source_note/source_kind provenance (a7dad8a "
-        "strong analytical anchor, c92ebd8 output-feedback rollout budgets, 020a65b "
-        "historical replay radius). These are explicitly documented adopted anchors, "
-        "not silently baked generated data, so they are allowlisted-with-rationale "
-        "rather than migrated to a governed product (ea6ccb4)."
-    ),
-}
+ALLOWLIST: dict[str, str] = {}
 
 
 @dataclass(frozen=True)

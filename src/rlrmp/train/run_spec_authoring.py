@@ -85,7 +85,6 @@ from rlrmp.train.training_configs import (
     BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM,
     BROAD_EPSILON_PGD_TRAINING_MODE,
     BROAD_EPSILON_TRAINING_MODE,
-    LEGACY_PERTURBATION_TRAINING_MODE,
     PERTURBATION_TRAINING_MODE,
     POLICY_ADVERSARY_MEMORYLESS_MLP,
     POLICY_ADVERSARY_TRAINING_MODE,
@@ -123,6 +122,8 @@ TRAINING_DIAGNOSTICS_MANIFEST = "training_diagnostics.json"
 # avoid serializing that extension's fields a second time at the recipe root.
 MAX_TRACKED_RUN_SPEC_BYTES = 500 * 1024
 COMPACT_RUN_SPEC_KEY = "compact_run_spec"
+UNKNOWN_PACKAGE_VERSION = "unknown"
+
 
 def _config_default(field_name: str) -> Any:
     """Return the canonical model default for one config field."""
@@ -179,7 +180,7 @@ def _run_spec_path_for_write(*, output_dir: Path, spec_dir: Path, explicit_spec_
 
 
 def _delayed_reach_enabled(hps: TreeNamespace) -> bool:
-    return bool(getattr(getattr(hps, "delayed_reach", None), "enabled", False))
+    return bool(hps.delayed_reach.enabled)
 
 
 def build_game_card_provenance() -> dict[str, Any]:
@@ -242,7 +243,7 @@ def build_loss_game_card_provenance(hps: TreeNamespace) -> dict[str, Any]:
     """Return game-card provenance with objective-specific loss notes."""
 
     card = build_game_card_provenance()
-    no_integrator_state = bool(getattr(hps.model, "no_integrator_state", False))
+    no_integrator_state = bool(hps.model.no_integrator_state)
     if no_integrator_state:
         card["canonical_builder"] = "build_no_integrator_game"
         card["comparator_variant"] = {
@@ -253,12 +254,12 @@ def build_loss_game_card_provenance(hps: TreeNamespace) -> dict[str, Any]:
         }
         card["plant"] = {
             **card["plant"],
-            "state_dim": int(getattr(hps.model, "state_dim", 36)),
-            "disturbance_dim": int(getattr(hps.model, "physical_state_dim", 6)),
-            "physical_state_dim": int(getattr(hps.model, "physical_state_dim", 6)),
+            "state_dim": int(hps.model.state_dim),
+            "disturbance_dim": int(hps.model.physical_state_dim),
+            "physical_state_dim": int(hps.model.physical_state_dim),
             "bw_shape": [
-                int(getattr(hps.model, "state_dim", 36)),
-                int(getattr(hps.model, "physical_state_dim", 6)),
+                int(hps.model.state_dim),
+                int(hps.model.physical_state_dim),
             ],
             "bw_contract": "top physical 6x6 block is identity; lag rows are zero",
         }
@@ -316,9 +317,9 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
     exact_lss = plant_backend == CS_LSS_PLANT_BACKEND
     h0 = _initial_hidden_encoder_metadata(hps)
     delayed_reach = _delayed_reach_enabled(hps)
-    physical_state_dim = int(getattr(hps.model, "physical_state_dim", 8))
-    state_dim = int(getattr(hps.model, "state_dim", 48))
-    no_integrator_state = bool(getattr(hps.model, "no_integrator_state", False))
+    physical_state_dim = int(hps.model.physical_state_dim)
+    state_dim = int(hps.model.state_dim)
+    no_integrator_state = bool(hps.model.no_integrator_state)
     go_cue_dim = 1 if delayed_reach else 0
     sisu_condition_input = _sisu_conditioned_pgd_input_key(hps)
     sisu_condition_dim = 1 if sisu_condition_input is not None else 0
@@ -341,7 +342,7 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
         "hidden_size": int(hps.model.hidden_size),
         "n_replicates": int(hps.model.n_replicates),
         "trainable": staged_network_trainable_paths(
-            sisu_gating=str(getattr(hps, "sisu_gating", "additive")),
+            sisu_gating=str(hps.sisu_gating),
             initial_hidden_encoder=bool(h0["enabled"]),
         ),
         "initial_hidden_encoder": h0,
@@ -465,7 +466,7 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "controller_kind": "gru",
         "plant_backend": str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND)),
         "trainable": staged_network_trainable_paths(
-            sisu_gating=str(getattr(hps, "sisu_gating", "additive")),
+            sisu_gating=str(hps.sisu_gating),
             initial_hidden_encoder=_initial_hidden_encoder_enabled(hps),
         ),
         "method": str(hps.method),
@@ -509,10 +510,6 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
                 f"{GRAPH_PLANT_INTERVENOR_NODE} is present only as an inactive legacy "
                 "GraphSpec compatibility component; no robust/minimax adversary is scheduled."
             ),
-        },
-        "legacy_loader": {
-            "setup_function": "rlrmp.train.task_model.setup_task_model_pair",
-            "checkpoint_format": "jax_cookbook.save/load_with_hyperparameters",
         },
         "task_spec": task_spec,
         "loss_spec": loss_spec,
@@ -601,10 +598,10 @@ def build_run_spec(
     training_distribution = _training_distribution_metadata(hps)
     validation_bins = _validation_bins_metadata(hps)
     calibration_consumed = _perturbation_training_enabled(hps) and bool(
-        getattr(hps.perturbation_training, "calibrated_timing", False)
+        hps.perturbation_training.calibrated_timing
     )
-    broad_epsilon_consumed = bool(getattr(hps.broad_epsilon_training, "enabled", False)) or bool(
-        getattr(hps.broad_epsilon_pgd_training, "enabled", False)
+    broad_epsilon_consumed = bool(hps.broad_epsilon_training.enabled) or bool(
+        hps.broad_epsilon_pgd_training.enabled
     )
     consumed_data_identities = consumed_calibration_budget_identities(
         calibration_consumed=calibration_consumed,
@@ -686,8 +683,8 @@ def build_run_spec(
 def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
     """Write, or dry-run, the stochastic C&S GRU spec artifacts."""
 
-    compact_run_spec = bool(getattr(args, "compact_run_spec", False))
     args = _config_namespace(args)
+    compact_run_spec = bool(args.compact_run_spec)
     args = _apply_smoke_overrides(args)
     args = _config_namespace(args)
     output_dir = Path(args.output_dir)
@@ -809,15 +806,15 @@ def _optimizer_metadata(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _perturbation_training_enabled(hps: TreeNamespace) -> bool:
-    return bool(getattr(hps.perturbation_training, "enabled", False))
+    return bool(hps.perturbation_training.enabled)
 
 
 def _target_relative_multitarget_enabled(hps: TreeNamespace) -> bool:
-    return bool(getattr(hps.target_relative_multitarget, "enabled", False))
+    return bool(hps.target_relative_multitarget.enabled)
 
 
 def _initial_hidden_encoder_enabled(hps: TreeNamespace) -> bool:
-    return bool(getattr(hps.model, "initial_hidden_encoder", False))
+    return bool(hps.model.initial_hidden_encoder)
 
 
 def _initial_hidden_encoder_metadata(hps: TreeNamespace) -> dict[str, Any]:
@@ -833,15 +830,15 @@ def _initial_hidden_encoder_metadata(hps: TreeNamespace) -> dict[str, Any]:
 
 
 def _broad_epsilon_training_enabled(hps: TreeNamespace) -> bool:
-    return bool(getattr(getattr(hps, "broad_epsilon_training", None), "enabled", False))
+    return bool(hps.broad_epsilon_training.enabled)
 
 
 def _broad_epsilon_pgd_training_enabled(hps: TreeNamespace) -> bool:
-    return bool(getattr(getattr(hps, "broad_epsilon_pgd_training", None), "enabled", False))
+    return bool(hps.broad_epsilon_pgd_training.enabled)
 
 
 def _policy_adversary_training_enabled(hps: TreeNamespace) -> bool:
-    return bool(getattr(getattr(hps, "policy_adversary_training", None), "enabled", False))
+    return bool(hps.policy_adversary_training.enabled)
 
 
 def _policy_adversary_policy_class(hps: TreeNamespace) -> str:
@@ -853,8 +850,7 @@ def _policy_adversary_policy_class(hps: TreeNamespace) -> str:
 
 
 def _broad_epsilon_pgd_mechanism(hps: TreeNamespace) -> str:
-    pgd = getattr(hps, "broad_epsilon_pgd_training", None)
-    return str(getattr(pgd, "adversary_mechanism", BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM))
+    return str(hps.broad_epsilon_pgd_training.adversary_mechanism)
 
 
 def _broad_epsilon_pgd_finite_policy_inputs(hps: TreeNamespace) -> list[str]:
@@ -864,10 +860,8 @@ def _broad_epsilon_pgd_finite_policy_inputs(hps: TreeNamespace) -> list[str]:
     if mechanism == BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM:
         return []
     keys = [FINITE_POLICY_GAINS_INPUT]
-    mechanism_payload = getattr(getattr(hps, "broad_epsilon_pgd_training", None), "mechanism", None)
-    has_bias = bool(
-        getattr(getattr(mechanism_payload, "required_policy_contract", None), "has_bias", False)
-    )
+    mechanism_payload = hps.broad_epsilon_pgd_training.mechanism
+    has_bias = bool(mechanism_payload.required_policy_contract.has_bias)
     if has_bias:
         keys.append(FINITE_POLICY_BIAS_INPUT)
     return keys
@@ -934,7 +928,7 @@ def _training_mode(hps: TreeNamespace) -> str:
 
 def _controller_feedback_basis(hps: TreeNamespace) -> str:
     if _target_relative_multitarget_enabled(hps):
-        if bool(getattr(hps.target_relative_multitarget, "force_filter_feedback", False)):
+        if bool(hps.target_relative_multitarget.force_filter_feedback):
             return "target_relative_delayed_feedback_plus_force_filter"
         return "target_relative_delayed_feedback"
     return "raw_delayed_position_velocity"
@@ -944,7 +938,7 @@ def _controller_feedback_dim(hps: TreeNamespace) -> int:
     if _target_relative_multitarget_enabled(hps):
         return (
             6
-            if bool(getattr(hps.target_relative_multitarget, "force_filter_feedback", False))
+            if bool(hps.target_relative_multitarget.force_filter_feedback)
             else 4
         )
     return 4
@@ -980,7 +974,7 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
                 "broad_full_state_epsilon_pgd_training": (_broad_epsilon_pgd_training_enabled(hps)),
                 "policy_adversary_training": _policy_adversary_training_enabled(hps),
                 "force_filter_feedback": bool(
-                    getattr(target_config, "force_filter_feedback", False)
+                    target_config.force_filter_feedback
                 ),
             },
             "fixed_target_only": False,
@@ -1029,7 +1023,7 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
             "adversarial_phase": _adversarial_phase(hps),
         }
     if (
-        not bool(getattr(config, "enabled", False))
+        not bool(config.enabled)
         and not _broad_epsilon_training_enabled(hps)
         and not _broad_epsilon_pgd_training_enabled(hps)
         and not _policy_adversary_training_enabled(hps)
@@ -1040,8 +1034,7 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
             "target_stream": "not_consumed",
         }
     return {
-        "mode": str(getattr(config, "mode", PERTURBATION_TRAINING_MODE)),
-        "legacy_mode": LEGACY_PERTURBATION_TRAINING_MODE,
+        "mode": str(config.mode),
         "fixed_target_only": True,
         "target_stream": {
             "status": "not_consumed",
@@ -1057,15 +1050,13 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
             "combined_amplitude_scale": float(config.combined_amplitude_scale),
             "sampling": (
                 "prng_driven_signed_random_axes_components_calibrated_timing_levels"
-                if bool(getattr(config, "calibrated_timing", False))
+                if bool(config.calibrated_timing)
                 else "prng_driven_signed_random_axes_components_timings_levels"
             ),
-            "calibrated_timing": bool(getattr(config, "calibrated_timing", False)),
-            "movement_age_timing": bool(getattr(config, "movement_age_timing", False)),
-            "physical_level": str(getattr(config, "physical_level", "moderate")),
-            "physical_level_fraction_of_reach": float(
-                getattr(config, "physical_level_fraction_of_reach", 0.10)
-            ),
+            "calibrated_timing": bool(config.calibrated_timing),
+            "movement_age_timing": bool(config.movement_age_timing),
+            "physical_level": str(config.physical_level),
+            "physical_level_fraction_of_reach": float(config.physical_level_fraction_of_reach),
         },
         "mild_combined_families": ["initial_position", "command_input"],
         "single_family_bins": list(config.single_family_bins),
@@ -1241,8 +1232,8 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
 
 
 def _sisu_conditioned_pgd_input_key(hps: TreeNamespace) -> str | None:
-    pgd = getattr(hps, "broad_epsilon_pgd_training", None)
-    if not bool(getattr(pgd, "enabled", False)):
+    pgd = hps.broad_epsilon_pgd_training
+    if not bool(pgd.enabled):
         return None
     pgd_schedule = getattr(pgd, "budget_schedule", None)
     pgd_schedule_mode = (
@@ -1256,7 +1247,7 @@ def _sisu_conditioned_pgd_input_key(hps: TreeNamespace) -> str | None:
     pgd_condition_input = (
         getattr(pgd_conditioning, "input_key", None)
         if pgd_conditioning is not None
-        else getattr(pgd, "sisu_condition_input", "auto")
+        else pgd.sisu_condition_input
     )
     if str(pgd_condition_input) == "auto":
         return "sisu" if _delayed_reach_enabled(hps) else "input"
@@ -1264,22 +1255,22 @@ def _sisu_conditioned_pgd_input_key(hps: TreeNamespace) -> str | None:
 
 
 def _delayed_pre_go_auxiliary_terms_metadata(hps: TreeNamespace) -> dict[str, Any]:
-    weights = getattr(hps.loss, "weights", TreeNamespace())
-    start_pos_norm = str(getattr(hps.loss, "delayed_pre_go_start_pos_hold_norm", "l2"))
+    weights = hps.loss.weights
+    start_pos_norm = str(hps.loss.delayed_pre_go_start_pos_hold_norm)
     terms = {
         "delayed_pre_go_force_filter_hold": {
-            "scale": float(getattr(weights, "delayed_pre_go_force_filter_hold", 0.0)),
+            "scale": float(weights.delayed_pre_go_force_filter_hold),
             "state_key": "states.mechanics.vector delay blocks[..., 4:6]",
             "target": "zero_force_filter_state",
         },
         "delayed_pre_go_start_pos_hold": {
-            "scale": float(getattr(weights, "delayed_pre_go_start_pos_hold", 0.0)),
+            "scale": float(weights.delayed_pre_go_start_pos_hold),
             "state_key": "states.mechanics.effector.pos",
             "target": "trial_specs.inits['mechanics.vector'][..., :2]",
             "norm": start_pos_norm,
         },
         "delayed_pre_go_zero_vel_hold": {
-            "scale": float(getattr(weights, "delayed_pre_go_zero_vel_hold", 0.0)),
+            "scale": float(weights.delayed_pre_go_zero_vel_hold),
             "state_key": "states.mechanics.effector.vel",
             "target": "zero_velocity",
         },
@@ -1319,7 +1310,7 @@ def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
     )
     cs_fact_t = "((movement_age + 1) / 60)^6, capped at 1" if delayed_reach else "((t + 1) / T)^6"
     if objective == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE:
-        no_integrator_state = bool(getattr(hps.model, "no_integrator_state", False))
+        no_integrator_state = bool(hps.model.no_integrator_state)
         _plant, schedule = (
             build_no_integrator_game() if no_integrator_state else build_canonical_game()
         )
@@ -1338,7 +1329,7 @@ def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
             "objective_kind": "finite_horizon_quadratic",
             "grouped_reduction_implementation": (
                 "rlrmp_bridge_pending_feedbax_69d8d76"
-                if bool(trial_type_normalization.get("enabled", False))
+                if bool(trial_type_normalization["enabled"])
                 else "not_enabled"
             ),
             "source_module": (
@@ -1762,7 +1753,11 @@ def _get_runtime_metadata() -> dict[str, Any]:
     try:
         import feedbax
 
-        metadata["feedbax_version"] = getattr(feedbax, "__version__", "unknown")
+        metadata["feedbax_version"] = getattr(
+            feedbax,
+            "__version__",
+            UNKNOWN_PACKAGE_VERSION,
+        )
     except ImportError:
         metadata["feedbax_version"] = "unavailable"
     return metadata
@@ -1776,7 +1771,7 @@ def _get_dependency_metadata() -> dict[str, Any]:
     for package in ("feedbax", "jax_cookbook", "modal"):
         try:
             module = __import__(package)
-            metadata[package] = getattr(module, "__version__", "unknown")
+            metadata[package] = getattr(module, "__version__", UNKNOWN_PACKAGE_VERSION)
         except ImportError:
             metadata[package] = "unavailable"
     return metadata

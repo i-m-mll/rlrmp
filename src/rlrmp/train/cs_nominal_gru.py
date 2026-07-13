@@ -44,7 +44,6 @@ from rlrmp.train.executor.cs_supervised import (
     DEFAULT_DELAYED_GO_CUE_MAX_STEP,
     DEFAULT_DELAYED_GO_CUE_MIN_STEP,
     DEFAULT_DELAYED_P_CATCH_TRIAL,
-    DEFAULT_OUTPUT_DIR,
     GradientDiagnosticsState,
     RunSpecExecutionContext,
     UpdateDiagnosticsState,
@@ -178,7 +177,6 @@ from rlrmp.train.config_materialization import (
     DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON,
     DELAYED_MOVEMENT_COST_TAIL_MODES,
     DELAYED_REACH_TRAINING_MODE,
-    LEGACY_CS_DELAYED_REACH_TASK_TYPE,
     StochasticPreset,
     _adaptive_epsilon_curriculum_config_from_args,
     _apply_smoke_overrides,
@@ -311,7 +309,6 @@ from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_TRAINING_MODE,
     BROAD_EPSILON_TRAINING_MODE,
     DEFAULT_TARGET_SUPPORT_PROFILE,
-    LEGACY_PERTURBATION_TRAINING_MODE,
     PERTURBATION_TRAINING_MODE,
     POLICY_ADVERSARY_MEMORYLESS_MLP,
     POLICY_ADVERSARY_PLAIN_MODE,
@@ -352,7 +349,6 @@ from rlrmp.train.training_configs import (
     CS_VELOCITY_SCALE,
     CsNominalGruConfig,
     DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW,
-    ISSUE_ID,
 )
 from rlrmp.train.executor.checkpoints import (
     ADAPTIVE_EPSILON_ZERO_ADVERSARY_GAIN_TOLERANCE,
@@ -371,9 +367,6 @@ from rlrmp.train.executor.checkpoints import (
     save_training_checkpoint,
 )
 
-
-DEFAULT_EXPERIMENT = ISSUE_ID
-DEFAULT_RUN = "cs_stochastic_gru__no_hidden_penalty"
 
 CS_NOMINAL_GRU_PARAMS_REF = "rlrmp.train.cs_nominal_gru"
 

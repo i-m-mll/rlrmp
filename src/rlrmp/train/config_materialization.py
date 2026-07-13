@@ -57,7 +57,6 @@ from rlrmp.train.training_configs import (
     BROAD_EPSILON_PGD_TRAINING_MODE,
     BROAD_EPSILON_TRAINING_MODE,
     DEFAULT_TARGET_SUPPORT_PROFILE,
-    LEGACY_PERTURBATION_TRAINING_MODE,
     PERTURBATION_TRAINING_MODE,
     POLICY_ADVERSARY_MEMORYLESS_MLP,
     POLICY_ADVERSARY_PLAIN_MODE,
@@ -91,7 +90,6 @@ CS_DELAYED_REACH_TASK_TYPE = "delayed_reach"
 
 CS_DELAYED_REACH_TASK_PRESET = "delayed_center_out"
 
-LEGACY_CS_DELAYED_REACH_TASK_TYPE = "cs_delayed_center_out_reach"
 
 DELAYED_REACH_TRAINING_MODE = "delayed_reach_target_visible_go_cue"
 
@@ -133,7 +131,9 @@ def _config_namespace(
     args: argparse.Namespace | Mapping[str, Any] | CsNominalGruConfig,
 ) -> argparse.Namespace:
     config = cs_nominal_gru_config_from_args(args)
-    return argparse.Namespace(**config.model_dump(mode="python"))
+    values = config.model_dump(mode="python")
+    values["compact_run_spec"] = config.compact_run_spec
+    return argparse.Namespace(**values)
 
 
 @dataclass(frozen=True)
@@ -245,7 +245,6 @@ def _delayed_reach_contract_from_args(
         "mode": DELAYED_REACH_TRAINING_MODE,
         "task_type": CS_DELAYED_REACH_TASK_TYPE,
         "task_preset": CS_DELAYED_REACH_TASK_PRESET,
-        "legacy_task_type": LEGACY_CS_DELAYED_REACH_TASK_TYPE,
         "target_visibility": "visible_from_trial_start",
         "target_on_input": "not_used_target_always_visible",
         "go_cue_input": {
@@ -790,7 +789,7 @@ def _apply_smoke_overrides(args: argparse.Namespace) -> argparse.Namespace:
 
 
 def _training_diagnostics_enabled(args: argparse.Namespace) -> bool:
-    return bool(getattr(args, "training_diagnostics", True))
+    return bool(args.training_diagnostics)
 
 
 def _initial_hidden_encoder_config(
@@ -820,7 +819,7 @@ def _initial_hidden_encoder_config(
 
 
 def _adaptive_epsilon_curriculum_config_from_args(args: argparse.Namespace) -> dict[str, Any]:
-    enabled = bool(getattr(args, "adaptive_epsilon_curriculum", False))
+    enabled = bool(args.adaptive_epsilon_curriculum)
     controller_training_mode = str(
         getattr(
             args,
@@ -943,7 +942,6 @@ __all__ = [
     "DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON",
     "DELAYED_MOVEMENT_COST_TAIL_MODES",
     "DELAYED_REACH_TRAINING_MODE",
-    "LEGACY_CS_DELAYED_REACH_TASK_TYPE",
     "StochasticPreset",
     "_adaptive_epsilon_curriculum_config_from_args",
     "_apply_smoke_overrides",

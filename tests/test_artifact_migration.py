@@ -91,7 +91,9 @@ def test_manifest_parent_preserves_exactly_one_error_behavior() -> None:
 
 
 def test_frozen_minimax_defaults_only_diverge_on_allowlisted_keys() -> None:
-    live_defaults = MinimaxConfig().model_dump(mode="python")
+    live_defaults = MinimaxConfig(
+        output_dir="_artifacts/test/runs/minimax"
+    ).model_dump(mode="python")
     assert _DEFAULT_MINIMAX_ARGS.keys() == live_defaults.keys()
 
     for key in sorted(_DEFAULT_MINIMAX_ARGS):
