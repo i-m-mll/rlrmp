@@ -30,6 +30,13 @@ from rlrmp.data_products.calibration import (
 from rlrmp.model.feedbax_channel_adapters import (
     additive_channel_payload_dim,
 )
+from rlrmp.train.science_vocabulary import ScienceMode
+
+
+def lower_science_mode(hps: Any) -> ScienceMode | None:
+    """Lower fixed-target perturbation capability into its run-spec mode."""
+
+    return ScienceMode.PERTURBATION if bool(hps.perturbation_training.enabled) else None
 
 
 def apply_training_perturbation_mixture(

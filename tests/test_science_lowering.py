@@ -12,7 +12,13 @@ from rlrmp.loss import (
     CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
 )
 from rlrmp.train.config_materialization import build_hps
-from rlrmp.train.science_lowering import SCIENCE_LOWERERS, lower_training_science
+from rlrmp.train import science_lowering
+from rlrmp.train.science_lowering import (
+    MODE_LOWERERS,
+    lower_training_fidelity,
+    lower_training_mode,
+    lower_training_science,
+)
 from rlrmp.train.science_vocabulary import ScienceMode
 from rlrmp.train.training_configs import CsNominalGruConfig
 
@@ -129,16 +135,31 @@ def test_registered_objective_lowerers_own_loss_and_fidelity_together(
 
 
 def test_science_lowerer_registry_records_capability_owners() -> None:
-    owners = {
-        registration.lowerer_id: registration.owner
-        for registration in SCIENCE_LOWERERS.registrations()
-    }
+    registrations = {item.lowerer_id: item for item in MODE_LOWERERS.registrations()}
+    owners = {lowerer_id: item.owner for lowerer_id, item in registrations.items()}
 
     assert owners["perturbation"] == "rlrmp.train.fixed_target_perturbation_training"
     assert owners["broad_epsilon"] == "rlrmp.train.broad_epsilon_training"
     assert owners["policy_adversary"] == "rlrmp.train.policy_adversary_native"
-    assert owners["target_relative"] == "rlrmp.train.target_relative"
+    assert owners["target_relative"] == "rlrmp.train.cs_perturbation_training"
     assert owners["delayed_reach"] == "rlrmp.train.delayed_reach"
+    assert {
+        lowerer_id: item.lowerer.__module__
+        for lowerer_id, item in registrations.items()
+    } == owners
+
+
+def test_mode_and_fidelity_only_lowering_never_build_full_game(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_if_called():
+        raise AssertionError("full analytical game construction is loss-only")
+
+    monkeypatch.setattr(science_lowering, "build_canonical_game", fail_if_called)
+    hps = _hps(loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE)
+
+    assert lower_training_mode(hps).training_mode == ScienceMode.NOMINAL
+    assert lower_training_fidelity(hps)["loss_objective"] == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
 
 
 def test_retired_switch_functions_and_mode_constant_family_cannot_return() -> None:

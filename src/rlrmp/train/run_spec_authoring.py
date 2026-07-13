@@ -98,7 +98,9 @@ from rlrmp.train.training_configs import (
 )
 from rlrmp.train.science_lowering import (
     delayed_pre_go_auxiliary_terms as _delayed_pre_go_auxiliary_terms_metadata,
-    lower_training_science,
+    lower_training_fidelity,
+    lower_training_loss,
+    lower_training_mode,
 )
 from rlrmp.train.executor.checkpoints import (
     SCHEMA_VERSION,
@@ -452,7 +454,7 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         intervention_type="FixedField",
     )
     task_spec = _task_spec(hps)
-    loss_spec = lower_training_science(hps).loss_spec
+    loss_spec = lower_training_loss(hps)
     training_spec = {
         "dt": float(hps.dt),
         "batch_size": int(hps.batch_size),
@@ -603,10 +605,10 @@ def build_run_spec(
     )
     delayed_reach = _plain(hps.delayed_reach)
     model_summary = build_model_structure_summary(hps)
-    science = lower_training_science(hps)
+    mode = lower_training_mode(hps)
     training_summary = {
         **graph_bundle.training_spec,
-        "training_mode": science.training_mode,
+        "training_mode": mode.training_mode,
         "n_train_batches": int(args.n_train_batches),
         "n_adversary_batches": 0,
         "n_policy_adversary_ascent_steps_per_controller_step": (
@@ -651,7 +653,7 @@ def build_run_spec(
         "checkpointing": _checkpoint_metadata(args, output_dir),
         "training_diagnostics": _training_diagnostics_metadata(args, output_dir),
         "loss_objective": str(hps.loss.objective),
-        "fidelity_status": science.fidelity_status,
+        "fidelity_status": lower_training_fidelity(hps),
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
         "game_card": build_loss_game_card_provenance(hps),
         "model_summary": model_summary,
@@ -926,7 +928,7 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
         target_payload = target_config.target_distribution
         h0 = _initial_hidden_encoder_metadata(hps)
         return {
-            "mode": lower_training_science(hps).training_mode,
+            "mode": lower_training_mode(hps).training_mode,
             "training_axes": {
                 "target_relative_multitarget": True,
                 "delayed_reach": _delayed_reach_enabled(hps),
