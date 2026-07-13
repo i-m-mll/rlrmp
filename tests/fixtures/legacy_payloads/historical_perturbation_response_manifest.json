@@ -1,0 +1,21 @@
+{
+  "schema_version": "rlrmp.gru_perturbation_bank.v3",
+  "scope": "controller_independent_perturbation_response",
+  "bulk_detail_manifest": {
+    "contains": [
+      "runs.*.perturbations",
+      "runs.*.robust_response_summary",
+      "runs.*.raw_rollout_payloads"
+    ],
+    "custody": "local_only_ignored_artifact",
+    "path": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+    "schema_version": "rlrmp.gru_perturbation_bank.bulk_detail.v1"
+  },
+  "runs": {
+    "target_relative_multitarget_fullqrf_warmcos__broad_moderate_cal_moderate_lr1e-3_clip5_b64": {
+      "perturbation_rows_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "robust_response_summary_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "raw_rollout_payloads_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json"
+    }
+  }
+}

@@ -41,6 +41,22 @@ def test_modal_training_command_requires_authored_document() -> None:
         modal_runner.build_training_command(modal_runner.NominalGruRunConfig(), remote=True)
 
 
+def test_modal_paths_derive_experiment_from_authored_document() -> None:
+    config = modal_runner.NominalGruRunConfig(
+        authored_document="results/19d6acd/runs/matrix.json"
+    )
+
+    assert config.resolved_experiment() == "19d6acd"
+    assert config.local_artifact_dir().relative_to(Path.cwd()) == (
+        Path("_artifacts/19d6acd/runs") / config.run
+    )
+
+
+def test_modal_paths_require_explicit_or_authored_experiment() -> None:
+    with pytest.raises(ValueError, match="experiment is required"):
+        modal_runner.NominalGruRunConfig().local_artifact_dir()
+
+
 def test_modal_document_must_be_part_of_embedded_repo(tmp_path: Path) -> None:
     config = modal_runner.NominalGruRunConfig(authored_document=str(tmp_path / "matrix.json"))
 
@@ -124,6 +140,8 @@ def test_packing_command_retains_only_operational_cli_controls() -> None:
     args = modal_runner.build_parser().parse_args(
         [
             "modal-packing-smoke",
+            "--experiment",
+            "packing-benchmark",
             "--n-workers",
             "2",
             "--packing-jax-platform",

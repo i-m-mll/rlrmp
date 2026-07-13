@@ -14,17 +14,13 @@ STEADY_STATE_SUMMARY = (
     REPO_ROOT / "results/87424a4/notes/steady_state_perturbation_bank_summary.json"
 )
 PERTURBATION_RESPONSE_MANIFEST = (
-    REPO_ROOT
-    / "results/020a65b/notes/"
-    / "gru_perturbation_response_h0_pgd_bank_two_rows_validation_selected_manifest.json"
+    REPO_ROOT / "tests/fixtures/legacy_payloads/active_perturbation_response_manifest.json"
 )
 HISTORICAL_PERTURBATION_RESPONSE_MANIFEST = (
-    REPO_ROOT
-    / "results/b8aa38e/notes/"
-    / "gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_manifest.json"
+    REPO_ROOT / "tests/fixtures/legacy_payloads/historical_perturbation_response_manifest.json"
 )
 OBJECTIVE_COMPARATOR_SIDECAR = (
-    REPO_ROOT / "results/5f70333/notes/objective_comparator_fullqrf_validation_selected.json"
+    REPO_ROOT / "tests/fixtures/legacy_payloads/objective_comparator_sidecar.json"
 )
 
 SCALAR_PROFILE_KEYS = frozenset({"objective_profile"})
