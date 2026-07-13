@@ -1,6 +1,6 @@
 {
-  "audit_manifest_sha256": "bc0a783f81fc9d94fb092b9e5aa6c56ec4625b83a84883c7f514d88d3532b51f",
-  "audited_count": 38,
+  "audit_manifest_sha256": "e759f4608e9061169de08fe06dad529979e199302c397544fc19ba713a0f82e7",
+  "audited_count": 36,
   "conversion_policy": {
     "dimension_source": "issue ae15851 archived point-mass task contract",
     "external_input_size": 7,
@@ -11,60 +11,6 @@
   },
   "converted_count": 36,
   "entries": [
-    {
-      "classification": "known_wrong",
-      "classification_reason": "Expected structural family 'cs_lss' but inspected structure encodes 'point_mass' (node types: ['Channel', 'FirstOrderFilter', 'FixedField', 'PointMass', 'RLRMPFeedbackChannels', 'RLRMPPlantProcessForceNoise', 'RLRMPSimpleStagedNetwork']).",
-      "controller_kind": "gru",
-      "conversion_candidate_key": {
-        "audited_fixture_hash": "936d0081ed1d57ff2cbc98f550b42b6bcbd5ecad69cd8b0b105611345a4e1e62",
-        "metadata_version": "rlrmp.feedbax_graph.v1",
-        "retired_type": [
-          "Channel",
-          "FirstOrderFilter",
-          "FixedField",
-          "PointMass",
-          "RLRMPFeedbackChannels",
-          "RLRMPPlantProcessForceNoise",
-          "RLRMPSimpleStagedNetwork"
-        ],
-        "structural_predicate": "point_mass_filter_channel_family_present"
-      },
-      "converted_path": null,
-      "disposition": "excluded_known_wrong",
-      "exclusion_reason": "Expected structural family 'cs_lss' but inspected structure encodes 'point_mass' (node types: ['Channel', 'FirstOrderFilter', 'FixedField', 'PointMass', 'RLRMPFeedbackChannels', 'RLRMPPlantProcessForceNoise', 'RLRMPSimpleStagedNetwork']).",
-      "expected_conversion_family": "cs_lss",
-      "original_path": "results/30f2313/runs/cs_stochastic_gru__hidden_penalty/model.graph.json",
-      "original_sha256": "936d0081ed1d57ff2cbc98f550b42b6bcbd5ecad69cd8b0b105611345a4e1e62",
-      "structural_family_actual": "point_mass",
-      "structural_subfamily_actual": "point_mass_gru"
-    },
-    {
-      "classification": "known_wrong",
-      "classification_reason": "Expected structural family 'cs_lss' but inspected structure encodes 'point_mass' (node types: ['Channel', 'FirstOrderFilter', 'FixedField', 'PointMass', 'RLRMPFeedbackChannels', 'RLRMPPlantProcessForceNoise', 'RLRMPSimpleStagedNetwork']).",
-      "controller_kind": "gru",
-      "conversion_candidate_key": {
-        "audited_fixture_hash": "936d0081ed1d57ff2cbc98f550b42b6bcbd5ecad69cd8b0b105611345a4e1e62",
-        "metadata_version": "rlrmp.feedbax_graph.v1",
-        "retired_type": [
-          "Channel",
-          "FirstOrderFilter",
-          "FixedField",
-          "PointMass",
-          "RLRMPFeedbackChannels",
-          "RLRMPPlantProcessForceNoise",
-          "RLRMPSimpleStagedNetwork"
-        ],
-        "structural_predicate": "point_mass_filter_channel_family_present"
-      },
-      "converted_path": null,
-      "disposition": "excluded_known_wrong",
-      "exclusion_reason": "Expected structural family 'cs_lss' but inspected structure encodes 'point_mass' (node types: ['Channel', 'FirstOrderFilter', 'FixedField', 'PointMass', 'RLRMPFeedbackChannels', 'RLRMPPlantProcessForceNoise', 'RLRMPSimpleStagedNetwork']).",
-      "expected_conversion_family": "cs_lss",
-      "original_path": "results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/model.graph.json",
-      "original_sha256": "936d0081ed1d57ff2cbc98f550b42b6bcbd5ecad69cd8b0b105611345a4e1e62",
-      "structural_family_actual": "point_mass",
-      "structural_subfamily_actual": "point_mass_gru"
-    },
     {
       "classification": "clean",
       "classification_reason": "Inspected structure matches the expected 'point_mass' family.",
@@ -1038,7 +984,7 @@
       "structural_subfamily_actual": "point_mass_gru"
     }
   ],
-  "excluded_count": 2,
+  "excluded_count": 0,
   "expected_count": 38,
   "schema_version": 1,
   "source_manifest": "results/e9fc384/notes/graph_sidecar_audit_manifest.json"

@@ -731,7 +731,16 @@ Do not add directory-name patterns (`runpod/`, `modal/`, `coreweave/`, `tpu/`, `
 
 ### Legacy paths
 
-Pre-migration directories under `results/` (e.g. the legacy `results/2ef67ca/models/<name>/config.json` block and the four top-level `centerout_*_pert1/` dirs prior to the f485c26 reorg) keep their existing internal structure (legacy `config.json`, no `run.json`). They are housed under the legacy-archive hash dir `2ef67ca`. Future agents touching these dirs may opportunistically migrate them.
+The pre-three-layer materialized experiment stock from `020a65b` through the
+July 2026 architecture boundary was removed from HEAD by issue `b6b5502` after
+its live dependencies were extracted or retired. Its exact pre-deletion state
+is preserved by the annotated tag `legacy-spec-stock-2026-07`; do not restore
+those directories as runtime inputs or authoring examples.
+
+The older pre-`020a65b` archive remains intentionally separate from that
+retirement decision. In particular, `results/2ef67ca/models/<name>/config.json`
+and the four historical `centerout_*_pert1/` directories retain their legacy
+layout for provenance only. New work must not copy or extend that structure.
 
 Out-of-scope for f485c26 (tracked separately on `e75ddd7`): the `1_general.assets/` and `2_general.assets/` PNG dumps at the top of `results/`, and the `1_general.md` / `2_general.md` / `2_training-methods.md` notebook narratives that embed them. These stay at `results/` top level until the asset-strip lands.
 
