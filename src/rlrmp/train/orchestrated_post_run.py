@@ -346,6 +346,11 @@ def _validate_execution_checkpoint_ref(
     binding: str,
     label: str,
 ) -> None:
+    allowed_metadata = {"manifest_sha256", "checkpoint_custody_binding"}
+    unexpected_metadata = set(ref.metadata) - allowed_metadata
+    if unexpected_metadata:
+        unexpected = ", ".join(sorted(unexpected_metadata))
+        raise ValueError(f"{label} has nonportable metadata: {unexpected}")
     if ref.kind != "TrainingCheckpointTransactionManifest":
         raise ValueError(f"{label} kind must be TrainingCheckpointTransactionManifest")
     if ref.role != "training_checkpoint_custody":
@@ -488,6 +493,25 @@ def _preflight_historical_checkpoint_authority(
     certificate_row = conformance.rows.get(source.stop_row_id)
     if certificate_row is None or any(check.status != "pass" for check in certificate_row.checks):
         raise ValueError("stop conformance exact row is not passing")
+    completed_batches_checks = [
+        check for check in certificate_row.checks if check.check_id == "completed_batches"
+    ]
+    if len(completed_batches_checks) != 1:
+        raise ValueError("stop conformance has no unique completed_batches manifest observation")
+    observed_manifest = completed_batches_checks[0].observed
+    if not isinstance(observed_manifest, Mapping):
+        raise ValueError("stop conformance completed_batches observation is not an object")
+    if (
+        observed_manifest.get("manifest_id") != stop_manifest.id
+        or observed_manifest.get("diagnostics_manifest_id") != stop_manifest.id
+        or observed_manifest.get("manifest_status") != stop_manifest.status
+        or observed_manifest.get("diagnostics_terminal_status") != stop_manifest.status
+        or observed_manifest.get("manifest_completed_batches") != stop_manifest.completed_batches
+        or observed_manifest.get("diagnostics_completed_batches") != stop_manifest.completed_batches
+    ):
+        raise ValueError(
+            "stop conformance observed manifest facts do not match stop TrainingRunManifest"
+        )
 
     _validate_execution_checkpoint_ref(
         source.stop_checkpoint_ref,

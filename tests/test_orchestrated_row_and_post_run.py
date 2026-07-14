@@ -1980,3 +1980,94 @@ def test_historical_checkpoint_authority_rejects_nonportable_checkpoint_uri(
             checkpoint_execution_context=context,
         )
     assert not provider_root.exists() or not any(provider_root.rglob("*"))
+
+
+@pytest.mark.parametrize(
+    ("metadata_key", "metadata_value"),
+    [
+        ("custody_root_uri", "/absolute/checkpoint/root"),
+        ("checkpoint_root", "../../retained-checkpoints"),
+        ("manifest_path", "/absolute/transactions/manifest.json"),
+        ("unknown", "otherwise-benign"),
+    ],
+)
+def test_historical_checkpoint_authority_rejects_nonportable_checkpoint_metadata(
+    tmp_path: Path,
+    metadata_key: str,
+    metadata_value: str,
+) -> None:
+    resume_run_set, authority, context, _checkpoint_root = _real_m1_historical_authority(tmp_path)
+    metadata = {**authority.stop_checkpoint_ref.metadata, metadata_key: metadata_value}
+    authority = authority.model_copy(
+        update={
+            "stop_checkpoint_ref": authority.stop_checkpoint_ref.model_copy(
+                update={"metadata": metadata}
+            )
+        }
+    )
+    provider_root = tmp_path / "immutable-provider"
+
+    with pytest.raises(ValueError, match=rf"nonportable metadata: {metadata_key}"):
+        map_registered_run_set(
+            resume_run_set,
+            repo_root=tmp_path,
+            issue="2412353",
+            run_prefix="m1",
+            immutable_artifact_root=provider_root,
+            historical_checkpoint_authorities=[authority],
+            checkpoint_execution_context=context,
+        )
+
+    assert not provider_root.exists() or not any(provider_root.rglob("*"))
+
+
+@pytest.mark.parametrize(
+    ("observed_key", "drifted_value"),
+    [
+        ("manifest_id", "feedbax-training-run:wrong-manifest"),
+        ("diagnostics_manifest_id", "feedbax-training-run:wrong-diagnostics"),
+        ("manifest_status", "completed"),
+        ("diagnostics_terminal_status", "completed"),
+        ("manifest_completed_batches", 49),
+        ("diagnostics_completed_batches", 49),
+    ],
+)
+def test_historical_checkpoint_authority_rejects_certificate_manifest_fact_drift(
+    tmp_path: Path,
+    observed_key: str,
+    drifted_value: str | int,
+) -> None:
+    resume_run_set, authority, context, _checkpoint_root = _real_m1_historical_authority(tmp_path)
+    conformance = json.loads(authority.stop_conformance_path.read_text(encoding="utf-8"))
+    checks = conformance["rows"][authority.stop_row_id]["checks"]
+    completed_batches = next(check for check in checks if check["check_id"] == "completed_batches")
+    completed_batches["observed"][observed_key] = drifted_value
+    authority.stop_conformance_path.write_text(json.dumps(conformance), encoding="utf-8")
+    conformance_raw = authority.stop_conformance_path.read_bytes()
+    registration = json.loads(authority.stop_registration_path.read_text(encoding="utf-8"))
+    registration["certificate_sha256"] = hashlib.sha256(conformance_raw).hexdigest()
+    authority.stop_registration_path.write_text(json.dumps(registration), encoding="utf-8")
+    authority = authority.model_copy(
+        update={
+            "stop_registration_sha256": hashlib.sha256(
+                authority.stop_registration_path.read_bytes()
+            ).hexdigest(),
+            "stop_registration_size_bytes": authority.stop_registration_path.stat().st_size,
+            "stop_conformance_sha256": hashlib.sha256(conformance_raw).hexdigest(),
+            "stop_conformance_size_bytes": len(conformance_raw),
+        }
+    )
+    provider_root = tmp_path / "immutable-provider"
+
+    with pytest.raises(ValueError, match="observed manifest facts"):
+        map_registered_run_set(
+            resume_run_set,
+            repo_root=tmp_path,
+            issue="2412353",
+            run_prefix="m1",
+            immutable_artifact_root=provider_root,
+            historical_checkpoint_authorities=[authority],
+            checkpoint_execution_context=context,
+        )
+
+    assert not provider_root.exists() or not any(provider_root.rglob("*"))
