@@ -30,11 +30,20 @@ symbols = [
 [[canonical_homes]]
 module = "feedbax.analysis"
 symbols = [
+  "STAGED_EXACT_PARENTS_SCHEMA_ID",
+  "STAGED_EXACT_PARENTS_SCHEMA_VERSION",
+  "StagedExactParentEntry",
+  "StagedExactParents",
   "EvaluationRunMatrixSpec",
   "GraphControllerAdapter",
   "graph_controller",
   "materialize_evaluation_run_matrix",
+  "resolve_evaluation_inputs",
 ]
+
+[[canonical_homes]]
+module = "feedbax.persistence"
+symbols = ["ImmutableArtifactBlobProvider"]
 
 [[canonical_homes]]
 module = "feedbax.contracts"
@@ -395,6 +404,7 @@ symbols = [
   "RowLaunchSpec",
   "RunAssemblyRequest",
   "RunBundle",
+  "RunConformanceCertificate",
   "RunRowSpec",
   "RunSetState",
   "SchemaArtifactRef",
