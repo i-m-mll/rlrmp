@@ -6,12 +6,15 @@ import hashlib
 import json
 import shutil
 import tempfile
-from collections.abc import Mapping
-from pathlib import Path
+from collections.abc import Mapping, Sequence
+from pathlib import Path, PurePosixPath
+from typing import Literal
 from urllib.parse import unquote, urlparse
 
+from feedbax.analysis import StagedExecutionContext
+from feedbax.contracts import StagedCheckpointCustodySpec
 from feedbax.contracts.checkpoints import CheckpointTransactionManifest
-from feedbax.contracts.manifest import ArtifactRef, TrainingRunManifest
+from feedbax.contracts.manifest import ArtifactRef, ParentRef, TrainingRunManifest
 from feedbax.orchestration.conformance import RunConformanceCertificate
 from feedbax.persistence import (
     ImmutableArtifactBlobProvider,
@@ -23,6 +26,55 @@ from feedbax.training.diagnostics import (
     TRAINING_DIAGNOSTICS_SCHEMA_ID,
     TRAINING_DIAGNOSTICS_SCHEMA_VERSION,
 )
+from pydantic import BaseModel, ConfigDict
+
+
+class HistoricalCheckpointAuthoritySource(BaseModel):
+    """Exact source documents and portable checkpoint refs for one stopped segment."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    mapped_row_id: str
+    stop_run_set_id: str
+    stop_row_id: str
+    stop_training_manifest_path: Path
+    stop_training_manifest_sha256: str
+    stop_training_manifest_size_bytes: int
+    stop_registration_path: Path
+    stop_registration_sha256: str
+    stop_registration_size_bytes: int
+    stop_conformance_path: Path
+    stop_conformance_sha256: str
+    stop_conformance_size_bytes: int
+    stop_checkpoint_ref: ParentRef
+    resume_checkpoint_ref: ParentRef
+    checkpoint_custody_binding: str
+
+
+class MappedHistoricalCheckpointAuthority(BaseModel):
+    """Root-free, independently resolvable authority for one historical resume."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_id: Literal["rlrmp.evidence.historical_checkpoint_authority"] = (
+        "rlrmp.evidence.historical_checkpoint_authority"
+    )
+    schema_version: Literal["rlrmp.evidence.historical_checkpoint_authority.v1"] = (
+        "rlrmp.evidence.historical_checkpoint_authority.v1"
+    )
+    mapped_row_id: str
+    stop_run_set_id: str
+    stop_row_id: str
+    planned_run_id: str
+    stop_training_manifest_artifact_ref: ArtifactRef
+    stop_registration_artifact_ref: ArtifactRef
+    stop_conformance_artifact_ref: ArtifactRef
+    stop_checkpoint_ref: ParentRef
+    resume_checkpoint_ref: ParentRef
+    checkpoint_custody_binding: str
+    checkpoint_custody_spec: StagedCheckpointCustodySpec
+    stop_completed_batches: int
+    resume_completed_batches: int
 
 
 def _sha256(data: bytes) -> str:
@@ -185,102 +237,35 @@ def _explicit_local_path(uri: str, *, context: str) -> Path:
 
 def _checkpoint_lineage_evidence(
     manifest: TrainingRunManifest,
+    *,
+    allow_incomplete_refs: bool = False,
 ) -> list[tuple[bytes, CheckpointTransactionManifest, str]]:
-    """Verify exact transaction manifests and return them parent before child."""
+    """Verify only explicitly materialized transaction refs declared by the manifest."""
     if not manifest.checkpoint_custody:
         raise ValueError("TrainingRunManifest has no checkpoint custody evidence")
-    declared_raw: dict[str, bytes] = {}
-    declared_paths: dict[str, Path | None] = {}
-    declared_hashes: dict[str, str] = {}
-    relationships: dict[str, str] = {}
+    evidence: list[tuple[bytes, CheckpointTransactionManifest, str]] = []
+    seen: set[str] = set()
     for ref in manifest.checkpoint_custody:
         transaction_id = getattr(ref, "id", None)
         if ref.kind != "TrainingCheckpointTransactionManifest" or not isinstance(
             transaction_id, str
         ):
             raise ValueError("TrainingRunManifest checkpoint custody requires manifest refs")
-        ref_payload = ref.model_dump(mode="json", exclude_none=True)
-        raw, path = _resolve_ref_bytes(
-            ref_payload,
+        if transaction_id in seen:
+            raise ValueError(f"duplicate checkpoint transaction {transaction_id!r}")
+        seen.add(transaction_id)
+        digest = ref.metadata.get("manifest_sha256")
+        if ref.uri is None or not isinstance(digest, str):
+            if allow_incomplete_refs:
+                continue
+            raise ValueError(
+                f"checkpoint transaction {transaction_id!r} has no explicit materialization"
+            )
+        raw, _path = _resolve_ref_bytes(
+            ref.model_dump(mode="json", exclude_none=True),
             context=f"checkpoint transaction {transaction_id!r}",
         )
-        declared_raw[transaction_id] = raw
-        declared_paths[transaction_id] = path
-        digest = ref.metadata.get("manifest_sha256")
-        if isinstance(digest, str):
-            declared_hashes[transaction_id] = digest
-        relationships.setdefault(transaction_id, "parent")
-
-    loaded: dict[str, tuple[bytes, CheckpointTransactionManifest]] = {}
-
-    def load(transaction_id: str, *, child: CheckpointTransactionManifest | None = None) -> None:
-        if transaction_id in loaded:
-            return
-        raw = declared_raw.get(transaction_id)
-        path = declared_paths.get(transaction_id)
-        expected_hash = declared_hashes.get(transaction_id)
-        relationship = relationships.get(transaction_id, "parent")
-        if raw is None and child is not None:
-            lineage = next(
-                (item for item in child.parent_lineage if item.transaction_id == transaction_id),
-                None,
-            )
-            if lineage is not None:
-                relationship = lineage.relationship
-                relationships[transaction_id] = relationship
-                manifest_ref = lineage.manifest
-                if manifest_ref is not None:
-                    ref_payload = manifest_ref.model_dump(mode="json", exclude_none=True)
-                    digest = getattr(manifest_ref, "sha256", None) or manifest_ref.metadata.get(
-                        "manifest_sha256"
-                    )
-                    if isinstance(digest, str):
-                        expected_hash = digest
-                    if manifest_ref.uri:
-                        raw, path = _resolve_ref_bytes(
-                            ref_payload,
-                            context=f"checkpoint lineage parent {transaction_id!r}",
-                        )
-                lineage_digest = lineage.metadata.get("manifest_sha256")
-                if isinstance(lineage_digest, str):
-                    expected_hash = lineage_digest
-            source = child.fork_provenance.source if child.fork_provenance is not None else None
-            if source is not None and source.transaction_id == transaction_id:
-                expected_hash = source.manifest_sha256
-                relationships[transaction_id] = "new_lineage_override"
-                relationship = "new_lineage_override"
-                source_uri = source.metadata.get("manifest_uri")
-                custody_root_uri = source.metadata.get("custody_root_uri")
-                if raw is None and isinstance(source_uri, str):
-                    raw, path = _resolve_ref_bytes(
-                        {"uri": source_uri},
-                        context=f"fork source transaction {transaction_id!r}",
-                    )
-                elif (
-                    raw is None
-                    and isinstance(custody_root_uri, str)
-                    and source.manifest_relative_path
-                ):
-                    uri = custody_root_uri.rstrip("/") + "/" + source.manifest_relative_path
-                    raw, path = _resolve_ref_bytes(
-                        {"uri": uri},
-                        context=f"fork source transaction {transaction_id!r}",
-                    )
-            if raw is None and expected_hash is not None:
-                child_path = declared_paths.get(child.transaction_id)
-                if child_path is not None:
-                    sibling = child_path.parent.parent / transaction_id / "manifest.json"
-                    if sibling.is_file():
-                        raw, path = sibling.read_bytes(), sibling
-            relationship = relationships.get(transaction_id, relationship)
-        if raw is None:
-            raise ValueError(
-                f"checkpoint lineage parent {transaction_id!r} has no explicit materialization"
-            )
-        digest = _sha256(raw)
-        if expected_hash is None:
-            raise ValueError(f"checkpoint transaction {transaction_id!r} has no declared hash")
-        if digest != expected_hash:
+        if _sha256(raw) != digest:
             raise ValueError(f"checkpoint transaction {transaction_id!r} manifest hash mismatch")
         try:
             transaction = CheckpointTransactionManifest.model_validate_json(raw)
@@ -291,66 +276,27 @@ def _checkpoint_lineage_evidence(
         if transaction.transaction_id != transaction_id:
             raise ValueError(f"checkpoint transaction {transaction_id!r} resolved wrong id")
         if transaction.run_id != manifest.job_id:
-            source = child.fork_provenance.source if child and child.fork_provenance else None
-            if (
-                source is None
-                or source.transaction_id != transaction_id
-                or source.run_id != transaction.run_id
-            ):
-                raise ValueError(f"checkpoint transaction {transaction_id!r} run identity mismatch")
-        loaded[transaction_id] = (raw, transaction)
-        declared_raw.setdefault(transaction_id, raw)
-        declared_paths.setdefault(transaction_id, path)
-        declared_hashes.setdefault(transaction_id, digest)
-        relationships.setdefault(transaction_id, relationship)
-        parent_id = transaction.segment_lineage.parent_transaction_id
-        if parent_id is not None:
-            fork_source = (
-                transaction.fork_provenance.source
-                if transaction.fork_provenance is not None
-                else None
-            )
-            if fork_source is not None and fork_source.transaction_id == parent_id:
-                relationships[parent_id] = "new_lineage_override"
-                declared_hashes.setdefault(parent_id, fork_source.manifest_sha256)
-            load(parent_id, child=transaction)
-            parent = loaded[parent_id][1]
-            if fork_source is not None and fork_source.transaction_id == parent_id:
-                if fork_source.run_id != parent.run_id:
-                    raise ValueError(f"fork source transaction {parent_id!r} run identity mismatch")
-                if (
-                    fork_source.transaction_root_sha256
-                    != parent.content_integrity_digest.transaction_root_sha256
-                ):
-                    raise ValueError(f"fork source transaction {parent_id!r} root hash mismatch")
-            parent_end = (
-                parent.segment_lineage.start_batch + parent.segment_lineage.segment_batch_count
-            )
-            if transaction.segment_lineage.start_batch != parent_end:
-                raise ValueError(f"checkpoint lineage offset discontinuity at {transaction_id!r}")
-
-    for transaction_id in tuple(declared_raw):
-        load(transaction_id)
-
-    ordered: list[str] = []
+            raise ValueError(f"checkpoint transaction {transaction_id!r} run identity mismatch")
+        evidence.append((raw, transaction, "declared"))
+    transactions = {transaction.transaction_id: transaction for _, transaction, _ in evidence}
     visiting: set[str] = set()
+    visited: set[str] = set()
 
     def visit(transaction_id: str) -> None:
-        if transaction_id in ordered:
+        if transaction_id in visited:
             return
         if transaction_id in visiting:
             raise ValueError(f"checkpoint lineage contains cycle at {transaction_id!r}")
         visiting.add(transaction_id)
-        parent_id = loaded[transaction_id][1].segment_lineage.parent_transaction_id
-        if parent_id is not None:
+        parent_id = transactions[transaction_id].segment_lineage.parent_transaction_id
+        if parent_id in transactions:
             visit(parent_id)
         visiting.remove(transaction_id)
-        ordered.append(transaction_id)
+        visited.add(transaction_id)
 
-    for transaction_id in declared_raw:
+    for transaction_id in transactions:
         visit(transaction_id)
-
-    return [(loaded[item][0], loaded[item][1], relationships[item]) for item in ordered]
+    return evidence
 
 
 def _store_checkpoint_lineage(
@@ -392,6 +338,243 @@ def _store_checkpoint_lineage(
             }
         )
     return refs
+
+
+def _validate_execution_checkpoint_ref(
+    ref: ParentRef,
+    *,
+    binding: str,
+    label: str,
+) -> None:
+    if ref.kind != "TrainingCheckpointTransactionManifest":
+        raise ValueError(f"{label} kind must be TrainingCheckpointTransactionManifest")
+    if ref.role != "training_checkpoint_custody":
+        raise ValueError(f"{label} role must be training_checkpoint_custody")
+    if ref.metadata.get("checkpoint_custody_binding") != binding:
+        raise ValueError(f"{label} checkpoint_custody_binding mismatch")
+    digest = ref.metadata.get("manifest_sha256")
+    if not isinstance(digest, str) or len(digest) != 64:
+        raise ValueError(f"{label} has no exact manifest_sha256")
+    if not isinstance(ref.uri, str):
+        raise ValueError(f"{label} has no root-relative execution URI")
+    uri = PurePosixPath(ref.uri)
+    expected = PurePosixPath("transactions") / ref.id / "manifest.json"
+    if uri.is_absolute() or ".." in uri.parts or uri != expected:
+        raise ValueError(f"{label} must use exact root-relative URI {expected}")
+
+
+def _matching_checkpoint_identity(
+    source_ref: ParentRef,
+    execution_ref: ParentRef,
+    *,
+    label: str,
+) -> None:
+    if source_ref.kind != execution_ref.kind or source_ref.id != execution_ref.id:
+        raise ValueError(f"{label} source and execution ref identity mismatch")
+    if source_ref.role != execution_ref.role:
+        raise ValueError(f"{label} source and execution ref role mismatch")
+    if source_ref.metadata.get("manifest_sha256") != execution_ref.metadata.get("manifest_sha256"):
+        raise ValueError(f"{label} source and execution ref manifest_sha256 mismatch")
+
+
+def _validate_expected_document_bytes(
+    raw: bytes,
+    *,
+    expected_sha256: str,
+    expected_size_bytes: int,
+    label: str,
+) -> None:
+    if len(raw) != expected_size_bytes:
+        raise ValueError(f"{label} expected size_bytes mismatch")
+    if _sha256(raw) != expected_sha256:
+        raise ValueError(f"{label} expected sha256 mismatch")
+
+
+def _preflight_historical_checkpoint_authority(
+    source: HistoricalCheckpointAuthoritySource,
+    *,
+    resume_manifest: TrainingRunManifest,
+    checkpoint_execution_context: StagedExecutionContext,
+) -> dict[str, object]:
+    """Bind exact stopped-run documents to two contained, resolver-authenticated refs."""
+    for path, label in (
+        (source.stop_training_manifest_path, "stop TrainingRunManifest"),
+        (source.stop_registration_path, "stop registration"),
+        (source.stop_conformance_path, "stop conformance certificate"),
+    ):
+        if not path.is_absolute() or not path.is_file():
+            raise ValueError(f"{label} path must be an explicit absolute regular file")
+
+    stop_manifest_raw = source.stop_training_manifest_path.read_bytes()
+    registration_raw = source.stop_registration_path.read_bytes()
+    conformance_raw = source.stop_conformance_path.read_bytes()
+    _validate_expected_document_bytes(
+        stop_manifest_raw,
+        expected_sha256=source.stop_training_manifest_sha256,
+        expected_size_bytes=source.stop_training_manifest_size_bytes,
+        label="stop TrainingRunManifest",
+    )
+    _validate_expected_document_bytes(
+        registration_raw,
+        expected_sha256=source.stop_registration_sha256,
+        expected_size_bytes=source.stop_registration_size_bytes,
+        label="stop registration",
+    )
+    _validate_expected_document_bytes(
+        conformance_raw,
+        expected_sha256=source.stop_conformance_sha256,
+        expected_size_bytes=source.stop_conformance_size_bytes,
+        label="stop conformance certificate",
+    )
+    try:
+        stop_manifest = TrainingRunManifest.model_validate_json(stop_manifest_raw)
+    except Exception as exc:
+        raise ValueError("stop TrainingRunManifest is invalid") from exc
+    if stop_manifest.status != "cancelled":
+        raise ValueError("historical checkpoint authority requires cancelled stop manifest")
+    stop_provenance = stop_manifest.metadata.get("training_row_provenance")
+    if not isinstance(stop_provenance, Mapping):
+        raise ValueError("stop TrainingRunManifest has no training_row_provenance")
+    planned_run_id = stop_provenance.get("planned_run_id")
+    if stop_provenance.get("row_id") != source.stop_row_id:
+        raise ValueError("stop TrainingRunManifest row identity mismatch")
+    if (
+        not isinstance(planned_run_id, str)
+        or stop_manifest.id != planned_run_id
+        or stop_manifest.job_id != planned_run_id
+    ):
+        raise ValueError("stop TrainingRunManifest planned run identity mismatch")
+    resume_provenance = resume_manifest.metadata.get("training_row_provenance")
+    if not isinstance(resume_provenance, Mapping):
+        raise ValueError("resume TrainingRunManifest has no training_row_provenance")
+    if (
+        resume_provenance.get("row_id") != source.mapped_row_id
+        or resume_provenance.get("planned_run_id") != planned_run_id
+        or resume_manifest.id != planned_run_id
+        or resume_manifest.job_id != planned_run_id
+    ):
+        raise ValueError("stop and resume TrainingRunManifest identity mismatch")
+
+    try:
+        registration = json.loads(registration_raw)
+        conformance_payload = json.loads(conformance_raw)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("stop authority document is not valid JSON") from exc
+    if not isinstance(registration, dict) or not isinstance(conformance_payload, dict):
+        raise ValueError("stop authority documents must be JSON objects")
+    if registration.get("run_set_id") != source.stop_run_set_id:
+        raise ValueError("stop registration run_set_id mismatch")
+    if registration.get("status") != "stopped":
+        raise ValueError("historical checkpoint authority requires stopped registration")
+    row_outcomes = registration.get("row_outcomes")
+    if (
+        not isinstance(row_outcomes, Mapping)
+        or not isinstance(row_outcomes.get(source.stop_row_id), Mapping)
+        or row_outcomes[source.stop_row_id].get("status") != "stopped"  # type: ignore[union-attr]
+    ):
+        raise ValueError("stop registration exact row is not stopped")
+    try:
+        conformance = RunConformanceCertificate.model_validate(conformance_payload)
+    except Exception as exc:
+        raise ValueError("stop conformance certificate is invalid") from exc
+    certificate_sha256 = _sha256(conformance_raw)
+    if (
+        conformance.run_set_id != source.stop_run_set_id
+        or conformance.overall != "pass"
+        or registration.get("certificate_overall") != "pass"
+        or registration.get("certificate_sha256") != certificate_sha256
+    ):
+        raise ValueError("stop registration and passing certificate are not exactly bound")
+    certificate_row = conformance.rows.get(source.stop_row_id)
+    if certificate_row is None or any(check.status != "pass" for check in certificate_row.checks):
+        raise ValueError("stop conformance exact row is not passing")
+
+    _validate_execution_checkpoint_ref(
+        source.stop_checkpoint_ref,
+        binding=source.checkpoint_custody_binding,
+        label="stop checkpoint ref",
+    )
+    _validate_execution_checkpoint_ref(
+        source.resume_checkpoint_ref,
+        binding=source.checkpoint_custody_binding,
+        label="resume checkpoint ref",
+    )
+    if len(stop_manifest.checkpoint_custody) != 1 or len(resume_manifest.checkpoint_custody) != 1:
+        raise ValueError(
+            "historical authority requires exact singular stop and resume checkpoint refs"
+        )
+    _matching_checkpoint_identity(
+        stop_manifest.checkpoint_custody[0],
+        source.stop_checkpoint_ref,
+        label="stop checkpoint",
+    )
+    _matching_checkpoint_identity(
+        resume_manifest.checkpoint_custody[0],
+        source.resume_checkpoint_ref,
+        label="resume checkpoint",
+    )
+
+    stop_resolved = checkpoint_execution_context.resolve_checkpoint_custody_ref(
+        source.stop_checkpoint_ref,
+        binding_name=source.checkpoint_custody_binding,
+        slot_names=None,
+    )
+    resume_resolved = checkpoint_execution_context.resolve_checkpoint_custody_ref(
+        source.resume_checkpoint_ref,
+        binding_name=source.checkpoint_custody_binding,
+        slot_names=None,
+    )
+    if stop_resolved.parent_ref != source.stop_checkpoint_ref:
+        raise ValueError("stop checkpoint resolver changed the exact ParentRef")
+    if resume_resolved.parent_ref != source.resume_checkpoint_ref:
+        raise ValueError("resume checkpoint resolver changed the exact ParentRef")
+    stop_transaction = stop_resolved.manifest
+    resume_transaction = resume_resolved.manifest
+    required_slots = {"model", "optimizer", "prng", "completed_batches"}
+    if not required_slots.issubset(stop_resolved.slots):
+        raise ValueError("stop checkpoint is missing required execution slots")
+    if not required_slots.issubset(resume_resolved.slots):
+        raise ValueError("resume checkpoint is missing required execution slots")
+    if stop_transaction.run_id != planned_run_id or resume_transaction.run_id != planned_run_id:
+        raise ValueError("historical checkpoint transaction run identity mismatch")
+    if resume_transaction.segment_lineage.parent_transaction_id != stop_transaction.transaction_id:
+        raise ValueError("resume checkpoint does not name the exact stop transaction parent")
+    stop_completed = stop_transaction.completed_training_batches
+    resume_completed = resume_transaction.completed_training_batches
+    if stop_completed is None or resume_completed is None:
+        raise ValueError("historical checkpoint transaction has no completed batch authority")
+    if (
+        stop_transaction.segment_lineage.start_batch
+        + stop_transaction.segment_lineage.segment_batch_count
+        != stop_completed
+    ):
+        raise ValueError("stop checkpoint segment offset is inconsistent")
+    if resume_transaction.segment_lineage.start_batch != stop_completed:
+        raise ValueError("resume checkpoint start batch does not continue the stop transaction")
+    if (
+        resume_transaction.segment_lineage.start_batch
+        + resume_transaction.segment_lineage.segment_batch_count
+        != resume_completed
+    ):
+        raise ValueError("resume checkpoint segment offset is inconsistent")
+    if stop_manifest.completed_batches != stop_completed:
+        raise ValueError("stop manifest and checkpoint completed batches mismatch")
+    if resume_manifest.completed_batches != resume_completed:
+        raise ValueError("resume manifest and checkpoint completed batches mismatch")
+    if stop_resolved.slots["completed_batches"] != stop_completed:
+        raise ValueError("stop checkpoint decoded completed_batches mismatch")
+    if resume_resolved.slots["completed_batches"] != resume_completed:
+        raise ValueError("resume checkpoint decoded completed_batches mismatch")
+    return {
+        "source": source,
+        "planned_run_id": planned_run_id,
+        "stop_manifest_raw": stop_manifest_raw,
+        "registration_raw": registration_raw,
+        "conformance_raw": conformance_raw,
+        "certificate_sha256": certificate_sha256,
+        "stop_completed_batches": stop_completed,
+        "resume_completed_batches": resume_completed,
+    }
 
 
 def _directory_bytes_equal(left: Path, right: Path) -> bool:
@@ -447,6 +630,10 @@ def map_registered_run_set(
     immutable_artifact_blob_provider_spec: (
         ImmutableArtifactBlobProviderSpec | Mapping[str, object] | None
     ) = None,
+    historical_checkpoint_authorities: Sequence[
+        HistoricalCheckpointAuthoritySource | Mapping[str, object]
+    ] = (),
+    checkpoint_execution_context: StagedExecutionContext | None = None,
 ) -> tuple[Path, ...]:
     """Idempotently materialize REGISTERed rows for ``post_run.sh``."""
     registration_raw, registration = _read_json_object(
@@ -479,6 +666,18 @@ def map_registered_run_set(
         provider_spec,
         explicit_root=immutable_artifact_root,
     )
+    authority_by_row: dict[str, HistoricalCheckpointAuthoritySource] = {}
+    for authority_payload in historical_checkpoint_authorities:
+        authority = HistoricalCheckpointAuthoritySource.model_validate(authority_payload)
+        if authority.mapped_row_id in authority_by_row:
+            raise ValueError(
+                f"duplicate historical checkpoint authority for {authority.mapped_row_id!r}"
+            )
+        authority_by_row[authority.mapped_row_id] = authority
+    if authority_by_row and checkpoint_execution_context is None:
+        raise ValueError(
+            "historical checkpoint authorities require an explicit checkpoint_execution_context"
+        )
     prepared: list[dict[str, object]] = []
     # Validate every row and authoritative source byte before publishing mapped files.
     for row in bundle["rows"]:
@@ -508,22 +707,34 @@ def map_registered_run_set(
             raise ValueError(
                 f"collected row {row_id!r} diagnostics differ from authoritative artifact"
             )
-        prepared.append(
-            {
-                "row_id": row_id,
-                "execution_hash": execution_hash,
-                "source": source,
-                "manifest": manifest,
-                "manifest_raw": manifest_raw,
-                "manifest_metadata": manifest_metadata,
-                "diagnostics_source_ref": diagnostics_source_ref,
-                "diagnostics": diagnostics,
-                "diagnostics_raw": diagnostics_raw,
-                "checkpoint_evidence": _checkpoint_lineage_evidence(
-                    manifest,
-                ),
-            }
-        )
+        authority = authority_by_row.pop(row_id, None)
+        item: dict[str, object] = {
+            "row_id": row_id,
+            "execution_hash": execution_hash,
+            "source": source,
+            "manifest": manifest,
+            "manifest_raw": manifest_raw,
+            "manifest_metadata": manifest_metadata,
+            "diagnostics_source_ref": diagnostics_source_ref,
+            "diagnostics": diagnostics,
+            "diagnostics_raw": diagnostics_raw,
+            "checkpoint_evidence": _checkpoint_lineage_evidence(
+                manifest,
+                allow_incomplete_refs=authority is not None,
+            ),
+        }
+        if authority is not None:
+            assert checkpoint_execution_context is not None
+            item["historical_checkpoint_authority"] = _preflight_historical_checkpoint_authority(
+                authority,
+                resume_manifest=manifest,
+                checkpoint_execution_context=checkpoint_execution_context,
+            )
+        prepared.append(item)
+
+    if authority_by_row:
+        unknown = ", ".join(sorted(authority_by_row))
+        raise ValueError(f"historical checkpoint authority names unmapped rows: {unknown}")
 
     for item in prepared:
         manifest = item["manifest"]
@@ -580,6 +791,68 @@ def map_registered_run_set(
         if provider.get_bytes(mapped_diagnostics_ref) != diagnostics_raw:
             raise ValueError("training diagnostics provider did not preserve exact bytes")
         item["diagnostics_ref"] = mapped_diagnostics_ref.model_dump(mode="json", exclude_none=True)
+        historical = item.get("historical_checkpoint_authority")
+        if historical is not None:
+            if not isinstance(historical, Mapping):
+                raise TypeError("prepared historical checkpoint authority has unexpected type")
+            authority_source = historical["source"]
+            if not isinstance(authority_source, HistoricalCheckpointAuthoritySource):
+                raise TypeError("prepared historical checkpoint authority source is invalid")
+            authority_metadata = {
+                "mapped_row_id": authority_source.mapped_row_id,
+                "stop_run_set_id": authority_source.stop_run_set_id,
+                "stop_row_id": authority_source.stop_row_id,
+                "planned_run_id": historical["planned_run_id"],
+            }
+            stop_manifest_artifact = provider.store_bytes(
+                historical["stop_manifest_raw"],  # type: ignore[arg-type]
+                role="historical_stop_training_run_manifest",
+                logical_name="manifest.json",
+                media_type="application/json",
+                metadata=authority_metadata,
+            )
+            stop_registration_artifact = provider.store_bytes(
+                historical["registration_raw"],  # type: ignore[arg-type]
+                role="historical_stop_registration",
+                logical_name="registration.json",
+                media_type="application/json",
+                metadata={**authority_metadata, "status": "stopped"},
+            )
+            stop_conformance_artifact = provider.store_bytes(
+                historical["conformance_raw"],  # type: ignore[arg-type]
+                role="historical_stop_conformance_certificate",
+                logical_name="conformance.json",
+                media_type="application/json",
+                metadata={
+                    **authority_metadata,
+                    "overall": "pass",
+                    "certificate_sha256": historical["certificate_sha256"],
+                },
+            )
+            for ref, raw, label in (
+                (stop_manifest_artifact, historical["stop_manifest_raw"], "stop manifest"),
+                (stop_registration_artifact, historical["registration_raw"], "stop registration"),
+                (stop_conformance_artifact, historical["conformance_raw"], "stop conformance"),
+            ):
+                if provider.get_bytes(ref) != raw:
+                    raise ValueError(f"historical {label} provider did not preserve exact bytes")
+            item["mapped_historical_checkpoint_authority"] = MappedHistoricalCheckpointAuthority(
+                mapped_row_id=authority_source.mapped_row_id,
+                stop_run_set_id=authority_source.stop_run_set_id,
+                stop_row_id=authority_source.stop_row_id,
+                planned_run_id=str(historical["planned_run_id"]),
+                stop_training_manifest_artifact_ref=stop_manifest_artifact,
+                stop_registration_artifact_ref=stop_registration_artifact,
+                stop_conformance_artifact_ref=stop_conformance_artifact,
+                stop_checkpoint_ref=authority_source.stop_checkpoint_ref,
+                resume_checkpoint_ref=authority_source.resume_checkpoint_ref,
+                checkpoint_custody_binding=authority_source.checkpoint_custody_binding,
+                checkpoint_custody_spec=StagedCheckpointCustodySpec(
+                    backend="feedbax-checkpoint-transaction-tree"
+                ),
+                stop_completed_batches=int(historical["stop_completed_batches"]),
+                resume_completed_batches=int(historical["resume_completed_batches"]),
+            )
 
     issue_root = repo_root / "_artifacts" / issue
     final_targets = [issue_root / "runs" / f"{run_prefix}__{item['row_id']}" for item in prepared]
@@ -645,6 +918,13 @@ def map_registered_run_set(
                 "checkpoint_lineage_refs": checkpoint_refs,
                 "reviewer_convenience_paths": reviewer_convenience_paths,
             }
+            mapped_authority = item.get("mapped_historical_checkpoint_authority")
+            if mapped_authority is not None:
+                if not isinstance(mapped_authority, MappedHistoricalCheckpointAuthority):
+                    raise TypeError("mapped historical checkpoint authority has unexpected type")
+                recipe["historical_checkpoint_authority"] = mapped_authority.model_dump(
+                    mode="json", exclude_none=True
+                )
             recipe_path = staged_target / "run.json"
             encoded = json.dumps(recipe, indent=2, sort_keys=True) + "\n"
             recipe_path.write_text(encoded, encoding="utf-8")
@@ -659,4 +939,8 @@ def map_registered_run_set(
     return outputs
 
 
-__all__ = ["map_registered_run_set"]
+__all__ = [
+    "HistoricalCheckpointAuthoritySource",
+    "MappedHistoricalCheckpointAuthority",
+    "map_registered_run_set",
+]

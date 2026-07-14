@@ -12,11 +12,16 @@ from typing import Any
 import pytest
 
 import rlrmp
+from feedbax.analysis import (
+    StagedCheckpointCustodyRootBinding,
+    resolve_staged_execution_context,
+)
 from feedbax.analysis.bundles import (
     load_analysis_bundle,
     predicate_matches_manifest,
 )
 from feedbax.config import ExperimentRegistry
+from feedbax.contracts import StagedCheckpointCustodySpec, StagedExecutionDescriptor
 from feedbax.contracts.manifest import load_manifest
 from feedbax.contracts.run_matrix import RowLowererIdentity, TrainingRowProvenance
 from feedbax.contracts.checkpoints import CheckpointTransactionManifest
@@ -32,6 +37,7 @@ from feedbax.orchestration.bundle import (
     ResolvedSnapshotRef,
     SchemaArtifactRef,
 )
+from feedbax.orchestration.conformance import RunConformanceCertificate
 from feedbax.training import DEFAULT_EXECUTION_PREPARATION_PROVIDER_REGISTRY
 from feedbax.training.diagnostics import (
     TRAINING_DIAGNOSTICS_SCHEMA_ID,
@@ -54,7 +60,11 @@ from rlrmp.train.orchestration_drivers import (
     _resume_checkpoint_root,
     _same_row_binding,
 )
-from rlrmp.train.orchestrated_post_run import map_registered_run_set
+from rlrmp.train.orchestrated_post_run import (
+    HistoricalCheckpointAuthoritySource,
+    MappedHistoricalCheckpointAuthority,
+    map_registered_run_set,
+)
 from rlrmp.train.orchestrated_row import (
     RowLaunchPacket,
     _batch_limit_probe,
@@ -1047,10 +1057,7 @@ def test_completed_registration_maps_idempotently(tmp_path: Path) -> None:
     )
     assert str(provider_root) not in json.dumps(recipe)
     provider = open_immutable_artifact_blob_provider(provider_spec, explicit_root=provider_root)
-    assert [ref["transaction_id"] for ref in recipe["checkpoint_lineage_refs"]] == [
-        "tx-root",
-        "tx-terminal",
-    ]
+    assert [ref["transaction_id"] for ref in recipe["checkpoint_lineage_refs"]] == ["tx-terminal"]
     assert all(
         ref["uri"].startswith("artifact://sha256/") for ref in recipe["checkpoint_lineage_refs"]
     )
@@ -1103,39 +1110,17 @@ def test_completed_registration_maps_idempotently(tmp_path: Path) -> None:
     for key in ("registration_artifact_ref", "conformance_artifact_ref"):
         ref = ArtifactRef.model_validate(recipe[key])
         assert hashlib.sha256(provider.get_bytes(ref)).hexdigest() == ref.sha256
-    # Reconstruct from the terminal ref by following the stored manifests'
-    # actual parent declarations, rather than trusting mapper list order.
+    # Legacy v3 evidence stores only refs explicitly declared by this manifest;
+    # historical traversal requires the strict root-free authority field.
     refs_by_id = {ref["transaction_id"]: ref for ref in recipe["checkpoint_lineage_refs"]}
-    current_id = "tx-terminal"
-    reversed_lineage: list[dict[str, object]] = []
-    while True:
-        ref = refs_by_id[current_id]
-        raw = provider.get_bytes(ref["uri"], size_bytes=ref["size_bytes"])
-        assert hashlib.sha256(raw).hexdigest() == ref["sha256"]
-        transaction = CheckpointTransactionManifest.model_validate_json(raw)
-        assert transaction.transaction_id == current_id
-        assert transaction.run_id == "run-a"
-        assert ref["relationship"] == "parent"
-        reversed_lineage.append(
-            {
-                "id": current_id,
-                "start": transaction.segment_lineage.start_batch,
-                "count": transaction.segment_lineage.segment_batch_count,
-                "completed": transaction.completed_training_batches,
-            }
-        )
-        parent_id = transaction.segment_lineage.parent_transaction_id
-        if parent_id is None:
-            break
-        current_id = parent_id
-    lineage = list(reversed(reversed_lineage))
-    assert [item["id"] for item in lineage] == ["tx-root", "tx-terminal"]
-    assert lineage[0]["start"] == 0
-    assert lineage[0]["completed"] == lineage[0]["start"] + lineage[0]["count"]
-    assert lineage[1]["start"] == lineage[0]["start"] + lineage[0]["count"]
-    assert lineage[1]["completed"] == lineage[1]["start"] + lineage[1]["count"]
+    ref = refs_by_id["tx-terminal"]
+    raw = provider.get_bytes(ref["uri"], size_bytes=ref["size_bytes"])
+    transaction = CheckpointTransactionManifest.model_validate_json(raw)
+    assert transaction.transaction_id == "tx-terminal"
+    assert transaction.run_id == "run-a"
+    assert ref["relationship"] == "declared"
     provider_objects = list((provider_root / "artifacts/sha256").glob("*/*"))
-    assert len([path for path in provider_objects if path.is_file()]) == 6
+    assert len([path for path in provider_objects if path.is_file()]) == 5
     assert not any("slot" in path.name for path in provider_objects)
 
 
@@ -1587,14 +1572,15 @@ def test_completed_registration_mapping_rejects_checkpoint_tampering(tmp_path: P
 
     run_set, _durable_manifest, manifest_refs = _mapped_run_set_fixture(tmp_path / "missing")
     (tmp_path / "missing/checkpoint-custody/transactions/tx-root/manifest.json").unlink()
-    with pytest.raises(ValueError, match="not materialized"):
-        map_registered_run_set(
-            run_set,
-            repo_root=tmp_path / "missing",
-            issue="158b580",
-            run_prefix="parity",
-            immutable_artifact_root=tmp_path / "missing/immutable-provider",
-        )
+    (recipe_path,) = map_registered_run_set(
+        run_set,
+        repo_root=tmp_path / "missing",
+        issue="158b580",
+        run_prefix="parity",
+        immutable_artifact_root=tmp_path / "missing/immutable-provider",
+    )
+    recipe = json.loads(recipe_path.read_text(encoding="utf-8"))
+    assert [ref["transaction_id"] for ref in recipe["checkpoint_lineage_refs"]] == ["tx-terminal"]
 
 
 def test_completed_registration_rejects_relative_checkpoint_ref_before_publication(
@@ -1743,8 +1729,8 @@ def test_completed_registration_mapping_resolves_cross_root_fork_parent(tmp_path
         immutable_artifact_root=tmp_path / "immutable-provider",
     )
     recipe = json.loads(recipe_path.read_text(encoding="utf-8"))
-    assert recipe["checkpoint_lineage_refs"][0]["transaction_id"] == "tx-root"
-    assert recipe["checkpoint_lineage_refs"][0]["relationship"] == "new_lineage_override"
+    assert recipe["checkpoint_lineage_refs"][0]["transaction_id"] == "tx-terminal"
+    assert recipe["checkpoint_lineage_refs"][0]["relationship"] == "declared"
 
     registration = json.loads((run_set / "registration.json").read_text(encoding="utf-8"))
     registration["status"] = "failed"
@@ -1757,3 +1743,240 @@ def test_completed_registration_mapping_resolves_cross_root_fork_parent(tmp_path
             run_prefix="parity",
             immutable_artifact_root=tmp_path / "immutable-provider",
         )
+
+
+def _real_m1_historical_authority(
+    tmp_path: Path,
+) -> tuple[Path, HistoricalCheckpointAuthoritySource, Any, Path]:
+    repo_root = Path(__file__).resolve().parents[1]
+    stop_source = repo_root / "_artifacts/orchestration/2026-07-13-6bae06ab"
+    resume_source = repo_root / "_artifacts/orchestration/2026-07-13-b5e80253"
+    stop_copy = tmp_path / "source-stop"
+    resume_copy = tmp_path / "source-resume"
+    shutil.copytree(stop_source, stop_copy)
+    shutil.copytree(resume_source, resume_copy)
+    row_id = "force_visible__nominal_seed42_smoke100"
+    stop_manifest_path = stop_copy / "collected" / row_id / "manifest.json"
+    resume_manifest_path = resume_copy / "collected" / row_id / "manifest.json"
+    stop_manifest = TrainingRunManifest.model_validate_json(stop_manifest_path.read_bytes())
+    resume_manifest = TrainingRunManifest.model_validate_json(resume_manifest_path.read_bytes())
+    binding = "m1-checkpoints"
+
+    def execution_ref(source_ref: ParentRef) -> ParentRef:
+        return ParentRef(
+            kind=source_ref.kind,
+            id=source_ref.id,
+            role=source_ref.role,
+            uri=f"transactions/{source_ref.id}/manifest.json",
+            metadata={
+                "manifest_sha256": source_ref.metadata["manifest_sha256"],
+                "checkpoint_custody_binding": binding,
+            },
+        )
+
+    checkpoint_root = (repo_root / "_artifacts/2cb6a58/runs" / row_id).resolve()
+    descriptor = StagedExecutionDescriptor(
+        schema_id="feedbax.spec.staged_execution",
+        schema_version="feedbax.spec.staged_execution.v1",
+        artifact_providers={},
+        checkpoint_custody={
+            binding: StagedCheckpointCustodySpec(backend="feedbax-checkpoint-transaction-tree")
+        },
+    )
+    context = resolve_staged_execution_context(
+        descriptor,
+        checkpoint_custody_bindings=[
+            StagedCheckpointCustodyRootBinding(name=binding, root=checkpoint_root)
+        ],
+    )
+    authority = HistoricalCheckpointAuthoritySource(
+        mapped_row_id=row_id,
+        stop_run_set_id="2026-07-13-6bae06ab",
+        stop_row_id=row_id,
+        stop_training_manifest_path=stop_manifest_path,
+        stop_training_manifest_sha256=hashlib.sha256(stop_manifest_path.read_bytes()).hexdigest(),
+        stop_training_manifest_size_bytes=stop_manifest_path.stat().st_size,
+        stop_registration_path=stop_copy / "registration.json",
+        stop_registration_sha256=hashlib.sha256(
+            (stop_copy / "registration.json").read_bytes()
+        ).hexdigest(),
+        stop_registration_size_bytes=(stop_copy / "registration.json").stat().st_size,
+        stop_conformance_path=stop_copy / "conformance.json",
+        stop_conformance_sha256=hashlib.sha256(
+            (stop_copy / "conformance.json").read_bytes()
+        ).hexdigest(),
+        stop_conformance_size_bytes=(stop_copy / "conformance.json").stat().st_size,
+        stop_checkpoint_ref=execution_ref(stop_manifest.checkpoint_custody[0]),
+        resume_checkpoint_ref=execution_ref(resume_manifest.checkpoint_custody[0]),
+        checkpoint_custody_binding=binding,
+    )
+    return resume_copy, authority, context, checkpoint_root
+
+
+def test_historical_checkpoint_authority_survives_run_set_deletion(tmp_path: Path) -> None:
+    resume_run_set, authority, context, checkpoint_root = _real_m1_historical_authority(tmp_path)
+    provider_root = tmp_path / "immutable-provider"
+    outputs = map_registered_run_set(
+        resume_run_set,
+        repo_root=tmp_path,
+        issue="2412353",
+        run_prefix="m1",
+        immutable_artifact_root=provider_root,
+        historical_checkpoint_authorities=[authority],
+        checkpoint_execution_context=context,
+    )
+    recipe = json.loads(outputs[0].read_text(encoding="utf-8"))
+    mapped = MappedHistoricalCheckpointAuthority.model_validate(
+        recipe["historical_checkpoint_authority"]
+    )
+    assert mapped.stop_completed_batches == 50
+    assert mapped.resume_completed_batches == 100
+    assert mapped.stop_checkpoint_ref.id == "tx-c29c9b098f364575a970f0f23ba889bf"
+    assert mapped.resume_checkpoint_ref.id == "tx-3868327ebce5417aa8eeb169cb6d2cc8"
+    assert mapped.resume_checkpoint_ref.metadata["checkpoint_custody_binding"] == (
+        mapped.checkpoint_custody_binding
+    )
+    encoded = json.dumps(recipe["historical_checkpoint_authority"], sort_keys=True)
+    assert str(checkpoint_root) not in encoded
+    assert "source-stop" not in encoded
+    assert "slots" not in recipe["historical_checkpoint_authority"]
+    assert [ref["transaction_id"] for ref in recipe["checkpoint_lineage_refs"]] == [
+        mapped.resume_checkpoint_ref.id
+    ]
+
+    shutil.rmtree(resume_run_set)
+    shutil.rmtree(authority.stop_training_manifest_path.parents[2])
+    provider = open_immutable_artifact_blob_provider(
+        ImmutableArtifactBlobProviderSpec(), explicit_root=provider_root
+    )
+    assert (
+        TrainingRunManifest.model_validate_json(
+            provider.get_bytes(mapped.stop_training_manifest_artifact_ref)
+        ).status
+        == "cancelled"
+    )
+    assert json.loads(provider.get_bytes(mapped.stop_registration_artifact_ref))["status"] == (
+        "stopped"
+    )
+    assert (
+        RunConformanceCertificate.model_validate_json(
+            provider.get_bytes(mapped.stop_conformance_artifact_ref)
+        ).overall
+        == "pass"
+    )
+    stop_resolved = context.resolve_checkpoint_custody_ref(
+        mapped.stop_checkpoint_ref, slot_names=None
+    )
+    resume_resolved = context.resolve_checkpoint_custody_ref(
+        mapped.resume_checkpoint_ref, slot_names=None
+    )
+    assert stop_resolved.parent_ref == mapped.stop_checkpoint_ref
+    assert resume_resolved.parent_ref == mapped.resume_checkpoint_ref
+    assert stop_resolved.manifest.transaction_id == "tx-c29c9b098f364575a970f0f23ba889bf"
+    assert resume_resolved.manifest.transaction_id == "tx-3868327ebce5417aa8eeb169cb6d2cc8"
+    assert stop_resolved.slots["completed_batches"] == 50
+    assert resume_resolved.slots["completed_batches"] == 100
+    assert {"model", "optimizer", "prng", "completed_batches"}.issubset(stop_resolved.slots)
+    assert {"model", "optimizer", "prng", "completed_batches"}.issubset(resume_resolved.slots)
+    assert resume_resolved.manifest.segment_lineage.parent_transaction_id == (
+        stop_resolved.manifest.transaction_id
+    )
+    assert resume_resolved.manifest.parent_lineage[0].manifest is not None
+    assert resume_resolved.manifest.parent_lineage[0].manifest.uri is None
+    assert "manifest_sha256" not in resume_resolved.manifest.parent_lineage[0].manifest.metadata
+
+    drifted = mapped.model_dump(mode="json")
+    drifted["schema_version"] = "rlrmp.evidence.historical_checkpoint_authority.v2"
+    with pytest.raises(ValueError, match="schema_version"):
+        MappedHistoricalCheckpointAuthority.model_validate(drifted)
+
+
+def test_historical_checkpoint_authority_final_preflight_failure_has_no_cas_effects(
+    tmp_path: Path,
+) -> None:
+    resume_run_set, authority, context, _checkpoint_root = _real_m1_historical_authority(tmp_path)
+    registration = json.loads(authority.stop_registration_path.read_text(encoding="utf-8"))
+    registration["row_outcomes"][authority.stop_row_id]["status"] = "completed"
+    authority.stop_registration_path.write_text(json.dumps(registration), encoding="utf-8")
+    authority = authority.model_copy(
+        update={
+            "stop_registration_sha256": hashlib.sha256(
+                authority.stop_registration_path.read_bytes()
+            ).hexdigest(),
+            "stop_registration_size_bytes": authority.stop_registration_path.stat().st_size,
+        }
+    )
+    provider_root = tmp_path / "immutable-provider"
+
+    with pytest.raises(ValueError, match="exact row is not stopped"):
+        map_registered_run_set(
+            resume_run_set,
+            repo_root=tmp_path,
+            issue="2412353",
+            run_prefix="m1",
+            immutable_artifact_root=provider_root,
+            historical_checkpoint_authorities=[authority],
+            checkpoint_execution_context=context,
+        )
+
+    assert not provider_root.exists() or not any(provider_root.rglob("*"))
+
+
+@pytest.mark.parametrize(
+    ("path_field", "label"),
+    [
+        ("stop_training_manifest_path", "stop TrainingRunManifest"),
+        ("stop_registration_path", "stop registration"),
+        ("stop_conformance_path", "stop conformance certificate"),
+    ],
+)
+def test_historical_checkpoint_authority_rejects_unpinned_document_mutation(
+    tmp_path: Path,
+    path_field: str,
+    label: str,
+) -> None:
+    resume_run_set, authority, context, _checkpoint_root = _real_m1_historical_authority(tmp_path)
+    path = getattr(authority, path_field)
+    path.write_bytes(path.read_bytes() + b" ")
+    provider_root = tmp_path / "immutable-provider"
+
+    with pytest.raises(ValueError, match=rf"{label} expected size_bytes mismatch"):
+        map_registered_run_set(
+            resume_run_set,
+            repo_root=tmp_path,
+            issue="2412353",
+            run_prefix="m1",
+            immutable_artifact_root=provider_root,
+            historical_checkpoint_authorities=[authority],
+            checkpoint_execution_context=context,
+        )
+
+    assert not provider_root.exists() or not any(provider_root.rglob("*"))
+
+
+@pytest.mark.parametrize(
+    "uri",
+    ["/tmp/transactions/tx/manifest.json", "transactions/../tx/manifest.json"],
+)
+def test_historical_checkpoint_authority_rejects_nonportable_checkpoint_uri(
+    tmp_path: Path,
+    uri: str,
+) -> None:
+    resume_run_set, authority, context, _checkpoint_root = _real_m1_historical_authority(tmp_path)
+    authority = authority.model_copy(
+        update={
+            "stop_checkpoint_ref": authority.stop_checkpoint_ref.model_copy(update={"uri": uri})
+        }
+    )
+    provider_root = tmp_path / "immutable-provider"
+    with pytest.raises(ValueError, match="root-relative URI"):
+        map_registered_run_set(
+            resume_run_set,
+            repo_root=tmp_path,
+            issue="2412353",
+            run_prefix="m1",
+            immutable_artifact_root=provider_root,
+            historical_checkpoint_authorities=[authority],
+            checkpoint_execution_context=context,
+        )
+    assert not provider_root.exists() or not any(provider_root.rglob("*"))
