@@ -84,6 +84,32 @@ def test_committable(path: str) -> None:
     assert_committable(path)
 
 
+# --- Required experiment marginal-cost KPI records are tracked ------------
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "results/abcdef0/notes/marginal_cost_input.json",
+        "results/abcdef0/notes/marginal_cost.json",
+    ],
+)
+def test_experiment_marginal_cost_kpi_record_is_committable(path: str) -> None:
+    assert_committable(path)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "results/abcdef0/notes/arbitrary.json",
+        "results/abcdef0/nested/notes/marginal_cost_input.json",
+        "results/abcdef0/nested/notes/marginal_cost.json",
+    ],
+)
+def test_experiment_note_json_outside_kpi_whitelist_is_ignored(path: str) -> None:
+    assert_ignored(path)
+
+
 # --- Bulk artifacts and unknown kinds under `results/` are ignored --------
 
 

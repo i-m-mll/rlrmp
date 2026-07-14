@@ -7,8 +7,6 @@ from rlrmp.train.config_materialization import (
     CS_FEEDBAX_N_STEPS,
     CS_REGULARIZED_NN_HIDDEN,
     CS_STAGE_COUNT,
-    DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON,
-    DELAYED_REACH_TRAINING_MODE,
     _apply_smoke_overrides,
     _config_namespace,
     _initial_hidden_encoder_config,
@@ -80,17 +78,9 @@ from rlrmp.train.cs_perturbation_training import (
     validation_bin_manifest,
 )
 from rlrmp.train.training_configs import (
-    ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
     BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
     BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM,
-    BROAD_EPSILON_PGD_TRAINING_MODE,
-    BROAD_EPSILON_TRAINING_MODE,
-    LEGACY_PERTURBATION_TRAINING_MODE,
-    PERTURBATION_TRAINING_MODE,
     POLICY_ADVERSARY_MEMORYLESS_MLP,
-    POLICY_ADVERSARY_TRAINING_MODE,
-    TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
-    TARGET_RELATIVE_MULTITARGET_TRAINING_MODE,
     PolicyFullStateEpsilonTrainingConfig,
     target_relative_target_support_config,
 )
@@ -105,7 +95,12 @@ from rlrmp.train.training_configs import (
     CS_POSITION_SCALE,
     CS_VELOCITY_SCALE,
     CsNominalGruConfig,
-    DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW,
+)
+from rlrmp.train.science_lowering import (
+    delayed_pre_go_auxiliary_terms as _delayed_pre_go_auxiliary_terms_metadata,
+    lower_training_fidelity,
+    lower_training_loss,
+    lower_training_mode,
 )
 from rlrmp.train.executor.checkpoints import (
     SCHEMA_VERSION,
@@ -123,6 +118,8 @@ TRAINING_DIAGNOSTICS_MANIFEST = "training_diagnostics.json"
 # avoid serializing that extension's fields a second time at the recipe root.
 MAX_TRACKED_RUN_SPEC_BYTES = 500 * 1024
 COMPACT_RUN_SPEC_KEY = "compact_run_spec"
+UNKNOWN_PACKAGE_VERSION = "unknown"
+
 
 def _config_default(field_name: str) -> Any:
     """Return the canonical model default for one config field."""
@@ -179,7 +176,7 @@ def _run_spec_path_for_write(*, output_dir: Path, spec_dir: Path, explicit_spec_
 
 
 def _delayed_reach_enabled(hps: TreeNamespace) -> bool:
-    return bool(getattr(getattr(hps, "delayed_reach", None), "enabled", False))
+    return bool(hps.delayed_reach.enabled)
 
 
 def build_game_card_provenance() -> dict[str, Any]:
@@ -242,7 +239,7 @@ def build_loss_game_card_provenance(hps: TreeNamespace) -> dict[str, Any]:
     """Return game-card provenance with objective-specific loss notes."""
 
     card = build_game_card_provenance()
-    no_integrator_state = bool(getattr(hps.model, "no_integrator_state", False))
+    no_integrator_state = bool(hps.model.no_integrator_state)
     if no_integrator_state:
         card["canonical_builder"] = "build_no_integrator_game"
         card["comparator_variant"] = {
@@ -253,12 +250,12 @@ def build_loss_game_card_provenance(hps: TreeNamespace) -> dict[str, Any]:
         }
         card["plant"] = {
             **card["plant"],
-            "state_dim": int(getattr(hps.model, "state_dim", 36)),
-            "disturbance_dim": int(getattr(hps.model, "physical_state_dim", 6)),
-            "physical_state_dim": int(getattr(hps.model, "physical_state_dim", 6)),
+            "state_dim": int(hps.model.state_dim),
+            "disturbance_dim": int(hps.model.physical_state_dim),
+            "physical_state_dim": int(hps.model.physical_state_dim),
             "bw_shape": [
-                int(getattr(hps.model, "state_dim", 36)),
-                int(getattr(hps.model, "physical_state_dim", 6)),
+                int(hps.model.state_dim),
+                int(hps.model.physical_state_dim),
             ],
             "bw_contract": "top physical 6x6 block is identity; lag rows are zero",
         }
@@ -316,9 +313,9 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
     exact_lss = plant_backend == CS_LSS_PLANT_BACKEND
     h0 = _initial_hidden_encoder_metadata(hps)
     delayed_reach = _delayed_reach_enabled(hps)
-    physical_state_dim = int(getattr(hps.model, "physical_state_dim", 8))
-    state_dim = int(getattr(hps.model, "state_dim", 48))
-    no_integrator_state = bool(getattr(hps.model, "no_integrator_state", False))
+    physical_state_dim = int(hps.model.physical_state_dim)
+    state_dim = int(hps.model.state_dim)
+    no_integrator_state = bool(hps.model.no_integrator_state)
     go_cue_dim = 1 if delayed_reach else 0
     sisu_condition_input = _sisu_conditioned_pgd_input_key(hps)
     sisu_condition_dim = 1 if sisu_condition_input is not None else 0
@@ -341,7 +338,7 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
         "hidden_size": int(hps.model.hidden_size),
         "n_replicates": int(hps.model.n_replicates),
         "trainable": staged_network_trainable_paths(
-            sisu_gating=str(getattr(hps, "sisu_gating", "additive")),
+            sisu_gating=str(hps.sisu_gating),
             initial_hidden_encoder=bool(h0["enabled"]),
         ),
         "initial_hidden_encoder": h0,
@@ -457,7 +454,7 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         intervention_type="FixedField",
     )
     task_spec = _task_spec(hps)
-    loss_spec = _loss_spec(hps)
+    loss_spec = lower_training_loss(hps)
     training_spec = {
         "dt": float(hps.dt),
         "batch_size": int(hps.batch_size),
@@ -465,7 +462,7 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "controller_kind": "gru",
         "plant_backend": str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND)),
         "trainable": staged_network_trainable_paths(
-            sisu_gating=str(getattr(hps, "sisu_gating", "additive")),
+            sisu_gating=str(hps.sisu_gating),
             initial_hidden_encoder=_initial_hidden_encoder_enabled(hps),
         ),
         "method": str(hps.method),
@@ -509,10 +506,6 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
                 f"{GRAPH_PLANT_INTERVENOR_NODE} is present only as an inactive legacy "
                 "GraphSpec compatibility component; no robust/minimax adversary is scheduled."
             ),
-        },
-        "legacy_loader": {
-            "setup_function": "rlrmp.train.task_model.setup_task_model_pair",
-            "checkpoint_format": "jax_cookbook.save/load_with_hyperparameters",
         },
         "task_spec": task_spec,
         "loss_spec": loss_spec,
@@ -601,10 +594,10 @@ def build_run_spec(
     training_distribution = _training_distribution_metadata(hps)
     validation_bins = _validation_bins_metadata(hps)
     calibration_consumed = _perturbation_training_enabled(hps) and bool(
-        getattr(hps.perturbation_training, "calibrated_timing", False)
+        hps.perturbation_training.calibrated_timing
     )
-    broad_epsilon_consumed = bool(getattr(hps.broad_epsilon_training, "enabled", False)) or bool(
-        getattr(hps.broad_epsilon_pgd_training, "enabled", False)
+    broad_epsilon_consumed = bool(hps.broad_epsilon_training.enabled) or bool(
+        hps.broad_epsilon_pgd_training.enabled
     )
     consumed_data_identities = consumed_calibration_budget_identities(
         calibration_consumed=calibration_consumed,
@@ -612,9 +605,10 @@ def build_run_spec(
     )
     delayed_reach = _plain(hps.delayed_reach)
     model_summary = build_model_structure_summary(hps)
+    mode = lower_training_mode(hps)
     training_summary = {
         **graph_bundle.training_spec,
-        "training_mode": _training_mode(hps),
+        "training_mode": mode.training_mode,
         "n_train_batches": int(args.n_train_batches),
         "n_adversary_batches": 0,
         "n_policy_adversary_ascent_steps_per_controller_step": (
@@ -659,7 +653,7 @@ def build_run_spec(
         "checkpointing": _checkpoint_metadata(args, output_dir),
         "training_diagnostics": _training_diagnostics_metadata(args, output_dir),
         "loss_objective": str(hps.loss.objective),
-        "fidelity_status": _fidelity_status(hps),
+        "fidelity_status": lower_training_fidelity(hps),
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
         "game_card": build_loss_game_card_provenance(hps),
         "model_summary": model_summary,
@@ -686,8 +680,8 @@ def build_run_spec(
 def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
     """Write, or dry-run, the stochastic C&S GRU spec artifacts."""
 
-    compact_run_spec = bool(getattr(args, "compact_run_spec", False))
     args = _config_namespace(args)
+    compact_run_spec = bool(args.compact_run_spec)
     args = _apply_smoke_overrides(args)
     args = _config_namespace(args)
     output_dir = Path(args.output_dir)
@@ -809,15 +803,15 @@ def _optimizer_metadata(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _perturbation_training_enabled(hps: TreeNamespace) -> bool:
-    return bool(getattr(hps.perturbation_training, "enabled", False))
+    return bool(hps.perturbation_training.enabled)
 
 
 def _target_relative_multitarget_enabled(hps: TreeNamespace) -> bool:
-    return bool(getattr(hps.target_relative_multitarget, "enabled", False))
+    return bool(hps.target_relative_multitarget.enabled)
 
 
 def _initial_hidden_encoder_enabled(hps: TreeNamespace) -> bool:
-    return bool(getattr(hps.model, "initial_hidden_encoder", False))
+    return bool(hps.model.initial_hidden_encoder)
 
 
 def _initial_hidden_encoder_metadata(hps: TreeNamespace) -> dict[str, Any]:
@@ -833,15 +827,15 @@ def _initial_hidden_encoder_metadata(hps: TreeNamespace) -> dict[str, Any]:
 
 
 def _broad_epsilon_training_enabled(hps: TreeNamespace) -> bool:
-    return bool(getattr(getattr(hps, "broad_epsilon_training", None), "enabled", False))
+    return bool(hps.broad_epsilon_training.enabled)
 
 
 def _broad_epsilon_pgd_training_enabled(hps: TreeNamespace) -> bool:
-    return bool(getattr(getattr(hps, "broad_epsilon_pgd_training", None), "enabled", False))
+    return bool(hps.broad_epsilon_pgd_training.enabled)
 
 
 def _policy_adversary_training_enabled(hps: TreeNamespace) -> bool:
-    return bool(getattr(getattr(hps, "policy_adversary_training", None), "enabled", False))
+    return bool(hps.policy_adversary_training.enabled)
 
 
 def _policy_adversary_policy_class(hps: TreeNamespace) -> str:
@@ -853,8 +847,7 @@ def _policy_adversary_policy_class(hps: TreeNamespace) -> str:
 
 
 def _broad_epsilon_pgd_mechanism(hps: TreeNamespace) -> str:
-    pgd = getattr(hps, "broad_epsilon_pgd_training", None)
-    return str(getattr(pgd, "adversary_mechanism", BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM))
+    return str(hps.broad_epsilon_pgd_training.adversary_mechanism)
 
 
 def _broad_epsilon_pgd_finite_policy_inputs(hps: TreeNamespace) -> list[str]:
@@ -864,10 +857,8 @@ def _broad_epsilon_pgd_finite_policy_inputs(hps: TreeNamespace) -> list[str]:
     if mechanism == BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM:
         return []
     keys = [FINITE_POLICY_GAINS_INPUT]
-    mechanism_payload = getattr(getattr(hps, "broad_epsilon_pgd_training", None), "mechanism", None)
-    has_bias = bool(
-        getattr(getattr(mechanism_payload, "required_policy_contract", None), "has_bias", False)
-    )
+    mechanism_payload = hps.broad_epsilon_pgd_training.mechanism
+    has_bias = bool(mechanism_payload.required_policy_contract.has_bias)
     if has_bias:
         keys.append(FINITE_POLICY_BIAS_INPUT)
     return keys
@@ -899,42 +890,9 @@ def _nominal_only(hps: TreeNamespace) -> bool:
     )
 
 
-def _training_mode(hps: TreeNamespace) -> str:
-    if _target_relative_multitarget_enabled(hps):
-        parts = [
-            (
-                TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE
-                if _initial_hidden_encoder_enabled(hps)
-                else TARGET_RELATIVE_MULTITARGET_TRAINING_MODE
-            )
-        ]
-        if _broad_epsilon_training_enabled(hps):
-            parts.append(BROAD_EPSILON_TRAINING_MODE)
-        if _broad_epsilon_pgd_training_enabled(hps):
-            parts.append(BROAD_EPSILON_PGD_TRAINING_MODE)
-        if _policy_adversary_training_enabled(hps):
-            parts.append(POLICY_ADVERSARY_TRAINING_MODE)
-        if _perturbation_training_enabled(hps):
-            parts.append(PERTURBATION_TRAINING_MODE)
-        if _delayed_reach_enabled(hps):
-            parts.insert(0, DELAYED_REACH_TRAINING_MODE)
-        return "+".join(parts)
-    if _perturbation_training_enabled(hps):
-        parts = [PERTURBATION_TRAINING_MODE]
-    else:
-        parts = []
-    if _broad_epsilon_training_enabled(hps):
-        parts.append(BROAD_EPSILON_TRAINING_MODE)
-    if _broad_epsilon_pgd_training_enabled(hps):
-        parts.append(BROAD_EPSILON_PGD_TRAINING_MODE)
-    if _policy_adversary_training_enabled(hps):
-        parts.append(POLICY_ADVERSARY_TRAINING_MODE)
-    return "+".join(parts) if parts else "nominal"
-
-
 def _controller_feedback_basis(hps: TreeNamespace) -> str:
     if _target_relative_multitarget_enabled(hps):
-        if bool(getattr(hps.target_relative_multitarget, "force_filter_feedback", False)):
+        if bool(hps.target_relative_multitarget.force_filter_feedback):
             return "target_relative_delayed_feedback_plus_force_filter"
         return "target_relative_delayed_feedback"
     return "raw_delayed_position_velocity"
@@ -944,7 +902,7 @@ def _controller_feedback_dim(hps: TreeNamespace) -> int:
     if _target_relative_multitarget_enabled(hps):
         return (
             6
-            if bool(getattr(hps.target_relative_multitarget, "force_filter_feedback", False))
+            if bool(hps.target_relative_multitarget.force_filter_feedback)
             else 4
         )
     return 4
@@ -970,7 +928,7 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
         target_payload = target_config.target_distribution
         h0 = _initial_hidden_encoder_metadata(hps)
         return {
-            "mode": _training_mode(hps),
+            "mode": lower_training_mode(hps).training_mode,
             "training_axes": {
                 "target_relative_multitarget": True,
                 "delayed_reach": _delayed_reach_enabled(hps),
@@ -980,7 +938,7 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
                 "broad_full_state_epsilon_pgd_training": (_broad_epsilon_pgd_training_enabled(hps)),
                 "policy_adversary_training": _policy_adversary_training_enabled(hps),
                 "force_filter_feedback": bool(
-                    getattr(target_config, "force_filter_feedback", False)
+                    target_config.force_filter_feedback
                 ),
             },
             "fixed_target_only": False,
@@ -1029,7 +987,7 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
             "adversarial_phase": _adversarial_phase(hps),
         }
     if (
-        not bool(getattr(config, "enabled", False))
+        not bool(config.enabled)
         and not _broad_epsilon_training_enabled(hps)
         and not _broad_epsilon_pgd_training_enabled(hps)
         and not _policy_adversary_training_enabled(hps)
@@ -1040,8 +998,7 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
             "target_stream": "not_consumed",
         }
     return {
-        "mode": str(getattr(config, "mode", PERTURBATION_TRAINING_MODE)),
-        "legacy_mode": LEGACY_PERTURBATION_TRAINING_MODE,
+        "mode": str(config.mode),
         "fixed_target_only": True,
         "target_stream": {
             "status": "not_consumed",
@@ -1057,15 +1014,13 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
             "combined_amplitude_scale": float(config.combined_amplitude_scale),
             "sampling": (
                 "prng_driven_signed_random_axes_components_calibrated_timing_levels"
-                if bool(getattr(config, "calibrated_timing", False))
+                if bool(config.calibrated_timing)
                 else "prng_driven_signed_random_axes_components_timings_levels"
             ),
-            "calibrated_timing": bool(getattr(config, "calibrated_timing", False)),
-            "movement_age_timing": bool(getattr(config, "movement_age_timing", False)),
-            "physical_level": str(getattr(config, "physical_level", "moderate")),
-            "physical_level_fraction_of_reach": float(
-                getattr(config, "physical_level_fraction_of_reach", 0.10)
-            ),
+            "calibrated_timing": bool(config.calibrated_timing),
+            "movement_age_timing": bool(config.movement_age_timing),
+            "physical_level": str(config.physical_level),
+            "physical_level_fraction_of_reach": float(config.physical_level_fraction_of_reach),
         },
         "mild_combined_families": ["initial_position", "command_input"],
         "single_family_bins": list(config.single_family_bins),
@@ -1241,8 +1196,8 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
 
 
 def _sisu_conditioned_pgd_input_key(hps: TreeNamespace) -> str | None:
-    pgd = getattr(hps, "broad_epsilon_pgd_training", None)
-    if not bool(getattr(pgd, "enabled", False)):
+    pgd = hps.broad_epsilon_pgd_training
+    if not bool(pgd.enabled):
         return None
     pgd_schedule = getattr(pgd, "budget_schedule", None)
     pgd_schedule_mode = (
@@ -1256,483 +1211,11 @@ def _sisu_conditioned_pgd_input_key(hps: TreeNamespace) -> str | None:
     pgd_condition_input = (
         getattr(pgd_conditioning, "input_key", None)
         if pgd_conditioning is not None
-        else getattr(pgd, "sisu_condition_input", "auto")
+        else pgd.sisu_condition_input
     )
     if str(pgd_condition_input) == "auto":
         return "sisu" if _delayed_reach_enabled(hps) else "input"
     return str(pgd_condition_input)
-
-
-def _delayed_pre_go_auxiliary_terms_metadata(hps: TreeNamespace) -> dict[str, Any]:
-    weights = getattr(hps.loss, "weights", TreeNamespace())
-    start_pos_norm = str(getattr(hps.loss, "delayed_pre_go_start_pos_hold_norm", "l2"))
-    terms = {
-        "delayed_pre_go_force_filter_hold": {
-            "scale": float(getattr(weights, "delayed_pre_go_force_filter_hold", 0.0)),
-            "state_key": "states.mechanics.vector delay blocks[..., 4:6]",
-            "target": "zero_force_filter_state",
-        },
-        "delayed_pre_go_start_pos_hold": {
-            "scale": float(getattr(weights, "delayed_pre_go_start_pos_hold", 0.0)),
-            "state_key": "states.mechanics.effector.pos",
-            "target": "trial_specs.inits['mechanics.vector'][..., :2]",
-            "norm": start_pos_norm,
-        },
-        "delayed_pre_go_zero_vel_hold": {
-            "scale": float(getattr(weights, "delayed_pre_go_zero_vel_hold", 0.0)),
-            "state_key": "states.mechanics.effector.vel",
-            "target": "zero_velocity",
-        },
-    }
-    active = {name: meta for name, meta in terms.items() if meta["scale"] != 0.0}
-    return {
-        "scope": "prep_epoch_only" if _delayed_reach_enabled(hps) else "inactive",
-        "epoch_indices": [0] if _delayed_reach_enabled(hps) else [],
-        "movement_window_qrf_comparator": "unchanged",
-        "terms": terms,
-        "active_terms": active,
-    }
-
-
-def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
-    objective = str(getattr(hps.loss, "objective", CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE))
-    delayed_reach = _delayed_reach_enabled(hps)
-    cs_time_indexing = (
-        {
-            "stage_schedule": "movement_age_from_go_cue",
-            "movement_epoch_source": "trial_specs.timeline.epoch_bounds[-2:]",
-            "prep_target_directed_movement_loss": "zero",
-            "canonical_movement_horizon_steps": CS_STAGE_COUNT,
-            "cost_tail_mode": str(hps.loss.delayed_movement_cost_tail_mode),
-            "post_horizon_tail": (
-                "zero_weight_after_canonical_horizon"
-                if str(hps.loss.delayed_movement_cost_tail_mode)
-                == DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW
-                else "hold_terminal_running_qr_weights_flat_to_trial_end"
-            ),
-        }
-        if delayed_reach
-        else {
-            "stage_schedule": "trial_age_full_simple_reach",
-            "canonical_movement_horizon_steps": CS_STAGE_COUNT,
-        }
-    )
-    cs_fact_t = "((movement_age + 1) / 60)^6, capped at 1" if delayed_reach else "((t + 1) / T)^6"
-    if objective == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE:
-        no_integrator_state = bool(getattr(hps.model, "no_integrator_state", False))
-        _plant, schedule = (
-            build_no_integrator_game() if no_integrator_state else build_canonical_game()
-        )
-        physical_state_dim = 6 if no_integrator_state else 8
-        q_diag = jnp.diag(schedule.Q[0])
-        qf_diag = jnp.diag(schedule.Q_f)
-        trial_type_normalization = _plain(
-            getattr(hps.loss, "delayed_trial_type_normalization", {"enabled": False})
-        )
-        return {
-            "weights": _plain(hps.loss.weights),
-            "delayed_pre_go_auxiliary_terms": _delayed_pre_go_auxiliary_terms_metadata(hps),
-            "delayed_trial_type_normalization": trial_type_normalization,
-            "delayed_reach": _plain(hps.delayed_reach),
-            "objective_profile": CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
-            "objective_kind": "finite_horizon_quadratic",
-            "grouped_reduction_implementation": (
-                "rlrmp_bridge_pending_feedbax_69d8d76"
-                if bool(trial_type_normalization.get("enabled", False))
-                else "not_enabled"
-            ),
-            "source_module": (
-                "rlrmp.analysis.math.cs_game_card.build_no_integrator_game"
-                if no_integrator_state
-                else "rlrmp.analysis.math.cs_game_card.build_canonical_game"
-            ),
-            "comparator_variant": "no_integrator_state" if no_integrator_state else None,
-            "state_basis": {
-                "state_key": "states.mechanics.vector",
-                "dimension": int(schedule.Q.shape[-1]),
-                "physical_block_size": physical_state_dim,
-                "delay_blocks": int(schedule.Q.shape[-1] // physical_state_dim),
-                "coordinate_transform": (
-                    "absolute Feedbax position entries are converted to target-centred "
-                    "analytical coordinates before applying Q_t and Q_f"
-                ),
-            },
-            "time_indexing": {
-                "running_state": (
-                    "state before each movement command from sampled go cue"
-                    if delayed_reach
-                    else "trial init plus rollout states[:-1], paired with commands"
-                ),
-                "terminal_state": (
-                    (
-                        "final rollout state after the variable post-horizon tail"
-                        if str(hps.loss.delayed_movement_cost_tail_mode)
-                        == DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON
-                        else "state after 60 movement commands from sampled go cue"
-                    )
-                    if delayed_reach
-                    else "rollout states[-1]"
-                ),
-                "horizon_steps": int(schedule.T),
-                **cs_time_indexing,
-            },
-            "matrix_shapes": {
-                "Q": list(schedule.Q.shape),
-                "R": list(schedule.R.shape),
-                "Q_f": list(schedule.Q_f.shape),
-            },
-            "active_cs_terms": {
-                "state_running_q": {
-                    "term": "mechanics.vector^T Q_t mechanics.vector",
-                    "source": "canonical delay-augmented C&S schedule.Q",
-                    "initial_diag_first_block": [float(x) for x in q_diag[:8].tolist()],
-                },
-                "control_r": {
-                    "term": "net.output^T R_t net.output",
-                    "source": (
-                        "canonical C&S schedule.R on intended controller command "
-                        "before efferent/motor-channel noise"
-                    ),
-                    "diag": [float(x) for x in jnp.diag(schedule.R[0]).tolist()],
-                },
-                "terminal_q_f": {
-                    "term": "mechanics.vector_T^T Q_f mechanics.vector_T",
-                    "source": "canonical delay-augmented C&S schedule.Q_f",
-                    "diag_first_block": [float(x) for x in qf_diag[:8].tolist()],
-                },
-            },
-            "force_filter_state_cost": "included_via_Q_entries_4_5_each_delay_block",
-            "disturbance_integrator_state_cost": "included_via_Q_entries_6_7_each_delay_block",
-            "hidden_regularizer": {
-                "term": "not_in_full_analytical_qrf_loss",
-                "configured_weight": float(hps.loss.weights.nn_hidden),
-            },
-        }
-    if objective == CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE:
-        return {
-            "weights": _plain(hps.loss.weights),
-            "delayed_pre_go_auxiliary_terms": _delayed_pre_go_auxiliary_terms_metadata(hps),
-            "delayed_reach": _plain(hps.delayed_reach),
-            "effector_pos_late": _plain(hps.loss.effector_pos_late),
-            "effector_vel_late": _plain(hps.loss.effector_vel_late),
-            "effector_pos_running_schedule": str(hps.loss.effector_pos_running_schedule),
-            "objective_profile": CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
-            "objective_kind": "partial_feedbax_ablation",
-            "hypothesis": (
-                "historical partial position/velocity terms plus intended-command "
-                "control cost and LSS force/filter state cost"
-            ),
-            "active_cs_terms": {
-                "stage_position": {
-                    "term": "effector_pos_running",
-                    "scale": float(hps.loss.weights.effector_pos_running),
-                    "fact_t": cs_fact_t,
-                },
-                "stage_velocity": {
-                    "term": "effector_vel_running",
-                    "scale": float(hps.loss.weights.effector_vel_running),
-                    "fact_t": cs_fact_t,
-                },
-                "control": {
-                    "term": "nn_output",
-                    "state_key": "states.net.output",
-                    "scale": float(hps.loss.weights.nn_output),
-                    "equivalent_R": "I_2 on intended controller command before noise",
-                },
-                "force_filter": {
-                    "term": "mechanics_force_filter",
-                    "state_key": "states.mechanics.vector delay blocks[..., 4:6]",
-                    "scale": float(hps.loss.weights.mechanics_force_filter),
-                    "basis": "force/filter coordinates from every 8D physical delay block",
-                },
-                "terminal_position": {
-                    "term": "effector_terminal_pos",
-                    "scale": float(hps.loss.weights.effector_terminal_pos),
-                },
-                "terminal_velocity": {
-                    "term": "effector_terminal_vel",
-                    "scale": float(hps.loss.weights.effector_terminal_vel),
-                },
-            },
-            "force_filter_state_cost": "included_as_partial_ablation_running_term",
-            "disturbance_integrator_state_cost": "omitted_in_this_ablation",
-            "hidden_regularizer": {
-                "term": "nn_hidden",
-                "scale": float(hps.loss.weights.nn_hidden),
-                "exact_fidelity_default": 0.0,
-                "regularized_pair_scale": CS_REGULARIZED_NN_HIDDEN,
-            },
-            "simple_reach_position_loss_contract": (
-                "effector_pos_running compares mechanics.effector.pos to the SimpleReaches "
-                "same-coordinate target sequence over every transition, using the configured "
-                "C&S Eq. 15 power-law discount when requested."
-            ),
-            "effector_hold_pos_schedule": str(hps.loss.effector_hold_pos_schedule),
-            "position_powerlaw_power": float(hps.loss.position_powerlaw_power),
-            "movement_ramp_shape": str(hps.loss.movement_ramp_shape),
-            "movement_ramp_duration_steps": int(hps.loss.movement_ramp_duration_steps),
-            "movement_ramp_power": float(hps.loss.movement_ramp_power),
-            "time_indexing": cs_time_indexing,
-        }
-
-    return {
-        "weights": _plain(hps.loss.weights),
-        "delayed_pre_go_auxiliary_terms": _delayed_pre_go_auxiliary_terms_metadata(hps),
-        "delayed_reach": _plain(hps.delayed_reach),
-        "effector_pos_late": _plain(hps.loss.effector_pos_late),
-        "effector_vel_late": _plain(hps.loss.effector_vel_late),
-        "effector_pos_running_schedule": str(hps.loss.effector_pos_running_schedule),
-        "objective_profile": CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
-        "active_cs_terms": {
-            "stage_position": {
-                "term": "effector_pos_running",
-                "scale": float(hps.loss.weights.effector_pos_running),
-                "fact_t": cs_fact_t,
-            },
-            "stage_velocity": {
-                "term": "effector_vel_running",
-                "scale": float(hps.loss.weights.effector_vel_running),
-                "fact_t": cs_fact_t,
-            },
-            "control": {
-                "term": "nn_output",
-                "scale": float(hps.loss.weights.nn_output),
-                "equivalent_R": "I_2 on efferent output",
-            },
-            "terminal_position": {
-                "term": "effector_terminal_pos",
-                "scale": float(hps.loss.weights.effector_terminal_pos),
-            },
-            "terminal_velocity": {
-                "term": "effector_terminal_vel",
-                "scale": float(hps.loss.weights.effector_terminal_vel),
-            },
-        },
-        "force_filter_state_cost": "not_available",
-        "force_filter_state_cost_note": (
-            "No force/filter-state quadratic term is synthesized because this "
-            "nominal Feedbax loss path has no clean C&S physical force/integrator "
-            "state target exposed through the task state contract."
-        ),
-        "hidden_regularizer": {
-            "term": "nn_hidden",
-            "scale": float(hps.loss.weights.nn_hidden),
-            "exact_fidelity_default": 0.0,
-            "regularized_pair_scale": CS_REGULARIZED_NN_HIDDEN,
-        },
-        "simple_reach_position_loss_contract": (
-            "effector_pos_running compares mechanics.effector.pos to the SimpleReaches "
-            "same-coordinate target sequence over every transition, using the configured "
-            "C&S Eq. 15 power-law discount when requested."
-        ),
-        "effector_hold_pos_schedule": str(hps.loss.effector_hold_pos_schedule),
-        "position_powerlaw_power": float(hps.loss.position_powerlaw_power),
-        "movement_ramp_shape": str(hps.loss.movement_ramp_shape),
-        "movement_ramp_duration_steps": int(hps.loss.movement_ramp_duration_steps),
-        "movement_ramp_power": float(hps.loss.movement_ramp_power),
-        "time_indexing": cs_time_indexing,
-    }
-
-
-def _fidelity_status(hps: TreeNamespace) -> dict[str, Any]:
-    nn_hidden = float(hps.loss.weights.nn_hidden)
-    no_extra_regularizer = nn_hidden == 0.0
-    plant_backend = str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND))
-    exact_lss = plant_backend == CS_LSS_PLANT_BACKEND
-    objective = str(getattr(hps.loss, "objective", CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE))
-    if objective == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE:
-        return {
-            "objective": "cs_fidelity_stochastic_rollout",
-            "loss_objective": objective,
-            "exact_fidelity": False,
-            "exact_objective_terms": exact_lss,
-            "exact_objective_terms_scope": (
-                "true for the implemented training scalar when plant_backend='cs_lss': "
-                "the loss evaluates canonical C&S delay-augmented Q_t, R_t, and Q_f "
-                "on the exposed LinearStateSpace state and command history"
-            ),
-            "objective_fidelity": {
-                "implemented_terms": [
-                    "delay_augmented_state_running_Q_t",
-                    "command_running_R_t",
-                    "delay_augmented_terminal_Q_f",
-                ],
-                "omitted_terms": [] if exact_lss else ["cs_lss_state_unavailable"],
-                "extra_terms": [],
-                "selection_policy": (
-                    "rollout validation loss uses the same full analytical Q/R/Q_f "
-                    "training scalar; analytical action and I/O metrics remain audit-only"
-                ),
-            },
-            "exact_stochastic_rollout": False,
-            "exact_stochastic_noise_sources": exact_lss,
-            "exact_plant_matrices": exact_lss,
-            "plant_backend": plant_backend,
-            "temporary_stochastic_bridge": (
-                "temporary RLRMP LSS wrapper implements sensory Channel, additive and "
-                "signal-dependent motor Channel, and sampled physical-process mechanics.epsilon; "
-                "future Feedbax acausal/ODE plant support should subsume this wrapper"
-                if exact_lss
-                else None
-            ),
-            "stochastic_preset": str(hps.model.stochastic_preset),
-            "stochastic_projection": (
-                "Feedbax GRU rollout uses C&S-shaped sensory, command, signal-dependent, "
-                "and plant/load force noise channels without feeding the 48D "
-                "delay-augmented analytical state to the GRU."
-            ),
-            "regularized_pair": False,
-            "regularizer": "none",
-            "nn_hidden": nn_hidden,
-            "certificate_lens": "input_output_map_certificate",
-            "same_coordinate_gain_certificate": False,
-        }
-    if objective == CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE:
-        extra_terms = (
-            []
-            if no_extra_regularizer
-            else [
-                {
-                    "term": "nn_hidden",
-                    "scale": nn_hidden,
-                    "status": "auxiliary_regularizer_not_in_analytical_objective",
-                }
-            ]
-        )
-        return {
-            "objective": "cs_fidelity_stochastic_rollout",
-            "loss_objective": objective,
-            "exact_fidelity": False,
-            "exact_objective_terms": False,
-            "exact_objective_terms_scope": (
-                "ablation only: old partial position/velocity terms are kept, "
-                "control is moved to intended net.output, and running force/filter "
-                "state cost is added; this is not the full Q/R/Q_f objective"
-            ),
-            "objective_fidelity": {
-                "implemented_terms": [
-                    "running_position_cs_eq15_power6",
-                    "terminal_position",
-                    "running_velocity_cs_eq15_power6",
-                    "terminal_velocity",
-                    "intended_command_quadratic_net_output",
-                    "running_force_filter_state_cost",
-                ],
-                "omitted_terms": [
-                    {
-                        "term": "disturbance_integrator_state_cost",
-                        "analytical_role": (
-                            "unit-weight disturbance-integrator state cost in the C&S 8D schedule"
-                        ),
-                        "status": "intentionally_omitted_for_force_filter_ablation",
-                    },
-                    {
-                        "term": "terminal_force_filter_and_integrator_Q_f",
-                        "analytical_role": "terminal full-state Q_f costs",
-                        "status": "not_synthesized_in_partial_ablation",
-                    },
-                ],
-                "extra_terms": extra_terms,
-                "selection_policy": (
-                    "rollout validation loss only; analytical action and I/O metrics are audit-only"
-                ),
-            },
-            "exact_stochastic_rollout": False,
-            "exact_stochastic_noise_sources": exact_lss,
-            "exact_plant_matrices": exact_lss,
-            "plant_backend": plant_backend,
-            "temporary_stochastic_bridge": (
-                "temporary RLRMP LSS wrapper implements sensory Channel, additive and "
-                "signal-dependent motor Channel, and sampled physical-process mechanics.epsilon; "
-                "future Feedbax acausal/ODE plant support should subsume this wrapper"
-                if exact_lss
-                else None
-            ),
-            "stochastic_preset": str(hps.model.stochastic_preset),
-            "stochastic_projection": (
-                "Feedbax GRU rollout uses C&S-shaped sensory, command, signal-dependent, "
-                "and plant/load force noise channels without feeding the 48D "
-                "delay-augmented analytical state to the GRU."
-            ),
-            "regularized_pair": not no_extra_regularizer,
-            "regularizer": "none" if no_extra_regularizer else "nn_hidden",
-            "nn_hidden": nn_hidden,
-            "certificate_lens": "input_output_map_certificate",
-            "same_coordinate_gain_certificate": False,
-            "analytical_delay_augmented_state_input": False,
-        }
-    omitted_terms = [
-        {
-            "term": "force_filter_state_cost",
-            "analytical_role": "unit-weight force/filter state cost in the C&S 8D schedule",
-            "status": "not_synthesized_in_feedbax_gru_loss",
-        },
-        {
-            "term": "disturbance_integrator_state_cost",
-            "analytical_role": (
-                "unit-weight disturbance-integrator state cost in the C&S 8D schedule"
-            ),
-            "status": "not_synthesized_in_feedbax_gru_loss",
-        },
-    ]
-    extra_terms = (
-        []
-        if no_extra_regularizer
-        else [
-            {
-                "term": "nn_hidden",
-                "scale": nn_hidden,
-                "status": "auxiliary_regularizer_not_in_analytical_objective",
-            }
-        ]
-    )
-    return {
-        "objective": "cs_fidelity_stochastic_rollout",
-        "loss_objective": objective,
-        "exact_fidelity": False,
-        "exact_objective_terms": False,
-        "exact_objective_terms_scope": (
-            "false because force/filter-state and disturbance-integrator state costs from "
-            "the analytical C&S schedule are omitted from the current Feedbax GRU loss contract"
-        ),
-        "objective_fidelity": {
-            "implemented_terms": [
-                "running_position_cs_eq15_power6",
-                "terminal_position",
-                "running_velocity_cs_eq15_power6",
-                "terminal_velocity",
-                "command_quadratic_nn_output",
-            ],
-            "omitted_terms": omitted_terms,
-            "extra_terms": extra_terms,
-            "selection_policy": (
-                "rollout validation loss only; analytical action and I/O metrics are audit-only"
-            ),
-        },
-        "exact_stochastic_rollout": False,
-        "exact_stochastic_noise_sources": exact_lss,
-        "exact_plant_matrices": exact_lss,
-        "plant_backend": plant_backend,
-        "temporary_stochastic_bridge": (
-            "temporary RLRMP LSS wrapper implements sensory Channel, additive and "
-            "signal-dependent motor Channel, and sampled physical-process mechanics.epsilon; "
-            "future Feedbax acausal/ODE plant support should subsume this wrapper"
-            if exact_lss
-            else None
-        ),
-        "stochastic_preset": str(hps.model.stochastic_preset),
-        "stochastic_projection": (
-            "Feedbax GRU rollout uses C&S-shaped sensory, command, signal-dependent, "
-            "and plant/load force noise channels without feeding the 48D "
-            "delay-augmented analytical state to the GRU."
-        ),
-        "regularized_pair": not no_extra_regularizer,
-        "regularizer": "none" if no_extra_regularizer else "nn_hidden",
-        "nn_hidden": nn_hidden,
-        "certificate_lens": "input_output_map_certificate",
-        "same_coordinate_gain_certificate": False,
-        "analytical_delay_augmented_state_input": False,
-    }
 
 
 def _get_git_metadata() -> dict[str, Any]:
@@ -1762,7 +1245,11 @@ def _get_runtime_metadata() -> dict[str, Any]:
     try:
         import feedbax
 
-        metadata["feedbax_version"] = getattr(feedbax, "__version__", "unknown")
+        metadata["feedbax_version"] = getattr(
+            feedbax,
+            "__version__",
+            UNKNOWN_PACKAGE_VERSION,
+        )
     except ImportError:
         metadata["feedbax_version"] = "unavailable"
     return metadata
@@ -1776,7 +1263,7 @@ def _get_dependency_metadata() -> dict[str, Any]:
     for package in ("feedbax", "jax_cookbook", "modal"):
         try:
             module = __import__(package)
-            metadata[package] = getattr(module, "__version__", "unknown")
+            metadata[package] = getattr(module, "__version__", UNKNOWN_PACKAGE_VERSION)
         except ImportError:
             metadata[package] = "unavailable"
     return metadata
@@ -1874,7 +1361,6 @@ __all__ = [
     "_controller_feedback_dim",
     "_delayed_pre_go_auxiliary_terms_metadata",
     "_delayed_reach_enabled",
-    "_fidelity_status",
     "_get_dependency_metadata",
     "_get_git_metadata",
     "_get_gpu_metadata",
@@ -1882,7 +1368,6 @@ __all__ = [
     "_initial_hidden_encoder_enabled",
     "_initial_hidden_encoder_metadata",
     "_json_dumps",
-    "_loss_spec",
     "_nominal_only",
     "_optimizer_metadata",
     "_perturbation_training_enabled",
@@ -1897,7 +1382,6 @@ __all__ = [
     "_task_spec",
     "_training_diagnostics_metadata",
     "_training_distribution_metadata",
-    "_training_mode",
     "_validation_bins_metadata",
     "_write_graph_bundle_for_backend",
     "build_game_card_provenance",

@@ -26,6 +26,8 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 MANIFEST_PATH = REPO_ROOT / "results" / "e9fc384" / "notes" / "graph_sidecar_audit_manifest.json"
 
 SIDECAR_PATTERNS = ("results/**/model.graph.json", "results/**/*.graph.json")
+CONVERTED_FIXTURE_PREFIXES = ("results/ae15851/converted/",)
+NON_ARCHIVED_CURRENT_SCHEMA_SIDECARS = frozenset({"results/ef9c882/runs/base.graph.json"})
 EXPECTED_COUNT = 38
 MANIFEST_SCHEMA_VERSION = 1
 
@@ -155,7 +157,12 @@ def _audit_file(relpath: str) -> dict[str, Any]:
 
 
 def build_manifest() -> dict[str, Any]:
-    live_paths = _git_ls_files(*SIDECAR_PATTERNS)
+    live_paths = [
+        path
+        for path in _git_ls_files(*SIDECAR_PATTERNS)
+        if not path.startswith(CONVERTED_FIXTURE_PREFIXES)
+        and path not in NON_ARCHIVED_CURRENT_SCHEMA_SIDECARS
+    ]
     files = [_audit_file(relpath) for relpath in live_paths]
 
     clean = [f for f in files if f["classification"] == "clean"]

@@ -57,7 +57,9 @@ class WriteSite:
 def test_analysis_write_scan_is_non_vacuous() -> None:
     sites = _scan_analysis_tree()
     assert sites, "analysis durable-write scan found zero sites; scan scope is broken"
-    assert any(site.path.startswith("src/rlrmp/analysis/math/") for site in sites)
+    assert any(
+        site.path == "src/rlrmp/analysis/training_diagnostics.py" for site in sites
+    )
     assert not list((REPO_ROOT / "src/rlrmp/analysis/pipelines").glob("*.py"))
     # Figure renders now route through Feedbax custody. The final direct
     # ``write_html`` analysis site was the retired response-norm producer, so

@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import argparse
-import ast
 import json
 from pathlib import Path
-from types import SimpleNamespace
 
 import equinox as eqx
 import jax.numpy as jnp
@@ -44,7 +42,6 @@ from rlrmp.model.feedbax_graph import (
 from rlrmp.intervention_compat import (
     LINEAR_DYNAMICS_ADVERSARY_COMPONENT_PARAMETER_TARGET,
 )
-from rlrmp.controllers.linear import LinearController, LinearTrackerController
 from rlrmp.train.task_model import build_task_base, setup_task_model_pair
 from rlrmp.model.stochastic_runtime import PLANT_PROCESS_FORCE_NOISE_LABEL
 from rlrmp.train.minimax_native import build_hps
@@ -62,6 +59,7 @@ def _args(**overrides):
         "loss_update_ratio": 0.3,
         "hidden_type": "gru",
         "sisu_gating": "additive",
+        "output_dir": "_artifacts/test/runs/feedbax_graph_specs",
     }
     base.update(overrides)
     return argparse.Namespace(**base)
@@ -113,6 +111,32 @@ def test_available_rlrmp_graph_specs_round_trip_through_feedbax_contract(
     assert round_tripped.metadata.version == "1.0.0"
     assert bundle.to_run_metadata()["schema_version"] == SCHEMA_VERSION
     assert bundle.manifest["schema_version"] == SCHEMA_VERSION
+
+
+def test_current_graph_bundle_does_not_author_legacy_labeled_fields() -> None:
+    hps = _hps()
+    bundle = build_rlrmp_feedbax_graph_bundle(
+        hps,
+        task=build_task_base(hps),
+        n_extra_inputs=1,
+        hidden_type=hps.hidden_type,
+        sisu_gating=hps.sisu_gating,
+    )
+
+    def legacy_keys(value):
+        if isinstance(value, dict):
+            hits = []
+            for key, child in value.items():
+                if key.startswith("legacy_"):
+                    hits.append(key)
+                hits.extend(legacy_keys(child))
+            return hits
+        if isinstance(value, list):
+            return [key for child in value for key in legacy_keys(child)]
+        return []
+
+    assert legacy_keys(bundle.manifest) == []
+    assert legacy_keys(bundle.to_run_metadata()) == []
 
 
 def test_rlrmp_graph_contract_versions_pin_feedbax_manifest_schema() -> None:
@@ -439,7 +463,7 @@ def test_graph_spec_serializes_explicit_stochastic_runtime_contract() -> None:
     assert (PLANT_PROCESS_FORCE_NOISE_LABEL, "output", "mechanics", "force") in force_edges
 
 
-def _linear_controller_fixed_inputs():
+def _affine_controller_fixed_inputs():
     gain = jnp.asarray(
         [
             [
@@ -455,60 +479,21 @@ def _linear_controller_fixed_inputs():
         jnp.asarray([0.1, 0.3], dtype=jnp.float32),
         jnp.asarray([0.5, -0.4], dtype=jnp.float32),
     )
-    input_value = {
-        "task": SimpleNamespace(
-            effector_target=SimpleNamespace(pos=target),
-        )
-    }
     reference = jnp.concatenate([target, jnp.zeros(2, dtype=target.dtype)])
     feedback_vector = jnp.concatenate(feedback)
-    return gain, feedforward, input_value, feedback, reference, feedback_vector
+    return gain, feedforward, reference, feedback_vector
 
 
-def _with_float32_network_state(controller):
-    init_state = type(controller._initial_state)(
-        input=jnp.zeros(0),
-        hidden=jnp.zeros((1,), dtype=jnp.float32),
-        output=jnp.zeros(controller.n_controls, dtype=jnp.float32),
-        encoding=None,
-    )
-    object.__setattr__(controller, "_initial_state", init_state)
-    object.__setattr__(controller.state_index, "init", init_state)
-    return controller
-
-
-def test_affine_linear_controller_sign_convention_matches_rlrmp_forms() -> None:
-    gain, feedforward, input_value, feedback, reference, feedback_vector = (
-        _linear_controller_fixed_inputs()
-    )
-
-    regulator = _with_float32_network_state(LinearController(n_steps=1, key=jr.PRNGKey(0)))
-    tracker = _with_float32_network_state(LinearTrackerController(n_steps=1, key=jr.PRNGKey(0)))
-    regulator = eqx.tree_at(lambda controller: controller.K, regulator, gain)
-    tracker = eqx.tree_at(
-        lambda controller: (controller.K, controller.u_ff),
-        tracker,
-        (gain, feedforward),
-    )
+def test_affine_linear_controllers_use_target_relative_feedback() -> None:
+    gain, feedforward, reference, feedback_vector = _affine_controller_fixed_inputs()
     affine_regulator = AffineFeedbackController(gain=gain)
     affine_tracker = AffineFeedbackController(gain=gain, feedforward=feedforward)
 
-    legacy_inputs = {"input": input_value, "feedback": feedback}
     affine_inputs = {"feedback": feedback_vector, "reference": reference}
 
-    legacy_regulator_output, _ = regulator(
-        legacy_inputs,
-        init_state_from_component(regulator),
-        key=jr.PRNGKey(1),
-    )
     affine_regulator_output, _ = affine_regulator(
         affine_inputs,
         init_state_from_component(affine_regulator),
-        key=jr.PRNGKey(1),
-    )
-    legacy_tracker_output, _ = tracker(
-        legacy_inputs,
-        init_state_from_component(tracker),
         key=jr.PRNGKey(1),
     )
     affine_tracker_output, _ = affine_tracker(
@@ -518,26 +503,14 @@ def test_affine_linear_controller_sign_convention_matches_rlrmp_forms() -> None:
     )
 
     assert jnp.allclose(
-        legacy_regulator_output["output"],
+        affine_regulator_output["command"],
         jnp.asarray([1.375, 0.075], dtype=jnp.float32),
         rtol=0.0,
         atol=1e-6,
     )
     assert jnp.allclose(
-        affine_regulator_output["command"],
-        legacy_regulator_output["output"],
-        rtol=0.0,
-        atol=1e-6,
-    )
-    assert jnp.allclose(
-        legacy_tracker_output["output"],
-        jnp.asarray([1.575, -0.025], dtype=jnp.float32),
-        rtol=0.0,
-        atol=1e-6,
-    )
-    assert jnp.allclose(
         affine_tracker_output["command"],
-        legacy_tracker_output["output"],
+        jnp.asarray([1.575, -0.025], dtype=jnp.float32),
         rtol=0.0,
         atol=1e-6,
     )
@@ -704,49 +677,27 @@ def test_rlrmp_registry_uses_feedbax_intervention_builders() -> None:
         assert meta.output_prototype_fn is not None
 
 
-def test_point_mass_builder_does_not_bypass_feedbax_extension_points() -> None:
-    source_path = Path("src/rlrmp/model/feedbax_graph.py")
-    tree = ast.parse(source_path.read_text(encoding="utf-8"))
-    violations: list[str] = []
-
-    for node in ast.walk(tree):
-        if _is_object_setattr_call(node):
-            field_name = _constant_string_arg(node, 1)
-            if field_name in {"activation", "state_view_fn", "state_consistency_fn", "marker"}:
-                violations.append(
-                    f"{source_path}:{node.lineno}: object.__setattr__ writes {field_name!r}"
-                )
-        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
-            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            for target in targets:
-                if isinstance(target, ast.Attribute) and target.attr in {
-                    "marker",
-                    "output_prototype_fn",
-                }:
-                    violations.append(
-                        f"{source_path}:{target.lineno}: assignment writes {target.attr!r}"
-                    )
-
-    assert violations == []
-
-
-def _is_object_setattr_call(node: ast.AST) -> bool:
-    return (
-        isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "__setattr__"
-        and isinstance(node.func.value, ast.Name)
-        and node.func.value.id == "object"
+def test_rlrmp_registry_uses_native_affine_controller_after_alias_retirement() -> None:
+    registry = register_rlrmp_graph_components(
+        ComponentRegistry(load_user_components=False, discover_plugins=False)
     )
 
+    names = set(registry.names())
+    assert names.isdisjoint({"RLRMPLinearController", "RLRMPLinearTrackerController"})
 
-def _constant_string_arg(node: ast.Call, index: int) -> str | None:
-    if len(node.args) <= index:
-        return None
-    arg = node.args[index]
-    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-        return arg.value
-    return None
+    definition = registry.get("AffineFeedbackController")
+    assert definition is not None
+    assert definition.provenance == "feedbax"
+    controller = definition.builder(
+        {
+            "gain": [[[1.0, 0.0], [0.0, 1.0]]],
+            "feedforward": [[0.25, -0.5]],
+        }
+    )
+    assert isinstance(controller, AffineFeedbackController)
+    assert controller.gain.shape == (1, 2, 2)
+    assert controller.feedforward is not None
+    assert controller.feedforward.shape == (1, 2)
 
 
 def test_dynamics_matrix_perturb_spec_preserves_delta_a_contract() -> None:

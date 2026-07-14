@@ -10,15 +10,19 @@ import tempfile
 from typing import Any
 
 import equinox as eqx
+from feedbax.analysis import StagedExecutionContext
 import jax.numpy as jnp
 from numpy import savez_compressed as _savez_compressed
 from feedbax.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts
-from feedbax.analysis.context import AnalysisArtifactFile, AnalysisRunContext
+from feedbax.analysis.context import AnalysisRunContext
 from feedbax.analysis.materialization import (
     AnalysisArtifactGroup,
+    ContextMaterializer,
     ExistingAnalysisArtifact,
     MaterializationResult,
+    directory_artifact_group,
     materialization_metadata,
+    read_json_payload,
 )
 from feedbax.analysis.specs import AnalysisRecipeResult, register_analysis_recipe
 from feedbax.contracts.expressions import (
@@ -41,6 +45,11 @@ from rlrmp.analysis.gru_standard_certificate import (
     MATERIALIZER_ISSUE_ID,
     RUN_IDS,
     materialize_gru_standard_result_from_evaluation_states,
+)
+from rlrmp.analysis.standard_certificate import (
+    STANDARD_CERTIFICATE_EVALUATION_STATE_KEY,
+    StandardCertificateRowRequest,
+    materialize_evaluation_standard_certificate_rows,
 )
 from rlrmp.eval.feedback_ablation import (
     FEEDBACK_ABLATION_ANALYSIS_TYPE,
@@ -123,6 +132,7 @@ from rlrmp.runtime.spec_migrations import (
 
 
 GRU_STANDARD_ANALYSIS_TYPE = "rlrmp.certificate.gru_standard"
+STANDARD_CERTIFICATE_ANALYSIS_TYPE = "rlrmp.certificate.standard"
 GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE = "rlrmp.diagnostic.gru_evaluation"
 DEFAULT_OUTPUT_TAG = "validation_selected"
 PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE = "rlrmp.perturbation_class_response"
@@ -133,9 +143,10 @@ FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE = "rlrmp.feedback_quality_lens"
 OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE = (
     "rlrmp.output_feedback_bridge.rollout_recovery"
 )
-BRIDGE_STANDARD_ANALYSIS_TYPE = GRU_STANDARD_ANALYSIS_TYPE
+BRIDGE_STANDARD_ANALYSIS_TYPE = STANDARD_CERTIFICATE_ANALYSIS_TYPE
 
 EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE = {
+    STANDARD_CERTIFICATE_ANALYSIS_TYPE: ("evaluation_run",),
     GRU_STANDARD_ANALYSIS_TYPE: (CENTER_OUT_ENSEMBLE_EVALUATION_TYPE,),
     FEEDBACK_ABLATION_ANALYSIS_TYPE: (FEEDBACK_ABLATION_EVALUATION_TYPE,),
     GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE: (GRU_DIAGNOSTICS_EVALUATION_TYPE,),
@@ -273,6 +284,17 @@ class RecurrentJacobianAnalysisParams(BaseModel):
     finite_difference_epsilon: float = Field(1e-4, gt=0.0)
     finite_difference_batch_size: int | None = Field(128, ge=1)
 
+
+class StandardCertificateAnalysisParams(BaseModel):
+    """Params for grouped heterogeneous standard-certificate analysis."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_id: str | None = None
+    schema_version: str | None = None
+    issue_id: str = "e6a32b8"
+
+
 class PerturbationClassResponseAnalysisParams(BaseModel):
     """Params for one perturbation-family response analysis leaf."""
 
@@ -311,80 +333,6 @@ class OutputFeedbackRolloutRecoveryParams(BaseModel):
     manifest_output: str | None = None
     artifact_output: str | None = None
     repo_root: str | None = None
-
-
-class RLRMPManifestAnalysis(AbstractAnalysis):
-    """Context-aware rlrmp analysis node that records Feedbax-owned artifacts."""
-
-    materializer: Callable[[AnalysisRunContext, AnalysisInputData], Any | MaterializationResult] = (
-        eqx.field(kw_only=True, static=True)
-    )
-    artifact_role: str = eqx.field(kw_only=True, static=True)
-    logical_name: str = eqx.field(kw_only=True, static=True)
-    schema_boundary: str | None = eqx.field(default=None, static=True)
-    metadata: dict[str, Any] = eqx.field(default_factory=dict, static=True)
-
-    @property
-    def _field_params(self) -> dict[str, Any]:
-        return {
-            "artifact_role": self.artifact_role,
-            "logical_name": self.logical_name,
-            "schema_boundary": self.schema_boundary,
-            "metadata": self.metadata,
-        }
-
-    def compute(self, data: AnalysisInputData, **kwargs: Any) -> dict[str, Any]:
-        del data, kwargs
-        return {
-            "status": "pending_context_artifact_emission",
-            "artifact_role": self.artifact_role,
-            "logical_name": self.logical_name,
-        }
-
-    def emit_artifacts(
-        self,
-        context: AnalysisRunContext,
-        data: AnalysisInputData,
-        *,
-        result: Mapping[str, Any],
-        **kwargs: Any,
-    ) -> Any:
-        del result, kwargs
-        materialized = self.materializer(context, data)
-        if not isinstance(materialized, MaterializationResult):
-            materialized = MaterializationResult(payload=materialized)
-        payload = materialized.payload
-        metadata = {**self.metadata, **materialized.payload_metadata}
-        if self.schema_boundary is not None:
-            metadata.setdefault("schema_boundary", self.schema_boundary)
-
-        context.record_artifact_refs_from_value(payload)
-        payload_ref = context.record_json_artifact(
-            payload,
-            role=self.artifact_role,
-            logical_name=self.logical_name,
-            metadata=metadata,
-        )
-        context.record_artifact_refs([payload_ref, *materialized.artifact_refs])
-        for artifact in materialized.existing_artifacts:
-            context.record_artifact(
-                artifact.path,
-                role=artifact.role,
-                logical_name=artifact.logical_name,
-                media_type=artifact.media_type,
-                metadata=artifact.metadata,
-                group_id=artifact.group_id,
-                group_role=artifact.group_role,
-                group_metadata=artifact.group_metadata,
-            )
-        for group in materialized.artifact_groups:
-            context.record_artifact_group(
-                group_id=group.group_id,
-                members=group.members,
-                metadata=group.metadata,
-            )
-        context.record_regeneration_specs(materialized.regeneration_specs)
-        return payload
 
 
 class PerturbationClassResponseAnalysis(AbstractAnalysis):
@@ -558,6 +506,11 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
     """Register rlrmp certificate/diagnostic analysis recipes with Feedbax."""
 
     register_params_model(
+        STANDARD_CERTIFICATE_ANALYSIS_TYPE,
+        StandardCertificateAnalysisParams,
+        replace=True,
+    )
+    register_params_model(
         POLICY_DIAGNOSTICS_ANALYSIS_TYPE,
         PolicyDiagnosticsAnalysisParams,
         replace=True,
@@ -621,6 +574,11 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
         OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE,
         OutputFeedbackRolloutRecoveryParams,
         replace=True,
+    )
+    register_analysis_recipe(
+        STANDARD_CERTIFICATE_ANALYSIS_TYPE,
+        standard_certificate_recipe,
+        replace=replace,
     )
     register_analysis_recipe(
         GRU_STANDARD_ANALYSIS_TYPE,
@@ -727,6 +685,27 @@ def gru_standard_certificate_spec(
     return AnalysisRunSpec(
         analysis_type=GRU_STANDARD_ANALYSIS_TYPE,
         inputs=inputs,
+        params=params,
+    )
+
+
+def standard_certificate_spec(
+    *,
+    evaluation_manifest_refs: Sequence[ParentRef],
+    issue_id: str = "e6a32b8",
+) -> AnalysisRunSpec:
+    """Return a grouped spec over heterogeneous evaluation manifests."""
+
+    refs = list(evaluation_manifest_refs)
+    if not refs:
+        raise ValueError("standard certificate spec requires evaluation manifest refs")
+    for ref in refs:
+        if ref.kind != "EvaluationRunManifest":
+            raise ValueError("standard certificate inputs must all be EvaluationRunManifest refs")
+    params = StandardCertificateAnalysisParams(issue_id=issue_id).model_dump(mode="json")
+    return AnalysisRunSpec(
+        analysis_type=STANDARD_CERTIFICATE_ANALYSIS_TYPE,
+        inputs=refs,
         params=params,
     )
 
@@ -1066,8 +1045,9 @@ def _manifest_recipe(
 
     return _recipe_result(
         analysis_name,
-        RLRMPManifestAnalysis(
+        ContextMaterializer(
             materializer=materializer,
+            materializer_input="context_and_data",
             artifact_role=artifact_role,
             logical_name=logical_name,
             schema_boundary=schema_boundary,
@@ -1080,6 +1060,7 @@ def gru_standard_certificate_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
     inputs: Sequence[Any],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build the declarative GRU standard-certificate recipe."""
 
@@ -1099,10 +1080,39 @@ def gru_standard_certificate_recipe(
     )
 
 
+def standard_certificate_recipe(
+    spec: AnalysisRunSpec,
+    _root: Path,
+    inputs: Sequence[Any],
+    _execution_context: StagedExecutionContext,
+) -> AnalysisRecipeResult:
+    """Build a grouped standard-certificate recipe from evaluation caches."""
+
+    params = StandardCertificateAnalysisParams.model_validate(spec.params)
+    evaluation_inputs = _evaluation_inputs(inputs)
+    if len(evaluation_inputs) != len(inputs) or not evaluation_inputs:
+        raise ValueError(
+            "standard certificate analysis requires only EvaluationRunManifest inputs"
+        )
+    return _manifest_recipe(
+        analysis_name="standard_certificate",
+        materializer=lambda context, data: _materialize_standard_certificates(
+            context,
+            params,
+            evaluation_inputs=_evaluation_inputs_from_analysis_data(data),
+        ),
+        artifact_role="rlrmp-bridge-standard-certificate",
+        logical_name="standard_certificates.json",
+        schema_boundary="rlrmp-owned heterogeneous BridgeAnalysisResult payload",
+        data=_analysis_data_from_evaluation_inputs(evaluation_inputs),
+    )
+
+
 def gru_evaluation_diagnostics_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
     inputs: Sequence[Any],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build the declarative GRU rollout-diagnostics recipe."""
 
@@ -1126,6 +1136,7 @@ def perturbation_class_response_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
     inputs: Sequence[Any],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build one perturbation-family response analysis from shared eval states."""
 
@@ -1151,6 +1162,7 @@ def perturbation_bank_aggregate_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
     inputs: Sequence[Any],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build an aggregate perturbation bank from class-response leaf products."""
 
@@ -1173,6 +1185,7 @@ def policy_diagnostics_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
     inputs: Sequence[Any],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build controller-local policy diagnostic-bank analysis from eval states."""
 
@@ -1198,6 +1211,7 @@ def recurrent_jacobian_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
     inputs: Sequence[Any],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build staged recurrent Jacobian diagnostic-bank analysis from eval states."""
 
@@ -1221,13 +1235,17 @@ def recurrent_jacobian_recipe(
 
 def _feedback_quality_component_recipe(
     component_name: str,
-) -> Callable[[AnalysisRunSpec, Path, Sequence[Any]], AnalysisRecipeResult]:
+) -> Callable[
+    [AnalysisRunSpec, Path, Sequence[Any], StagedExecutionContext],
+    AnalysisRecipeResult,
+]:
     """Return the registered recipe for one feedback-quality component leaf."""
 
     def _recipe(
         spec: AnalysisRunSpec,
         _root: Path,
         inputs: Sequence[Any],
+        _execution_context: StagedExecutionContext,
     ) -> AnalysisRecipeResult:
         params = dict(spec.params)
         resolved_run_ids = _feedback_quality_run_ids_from_params_or_inputs(params, inputs)
@@ -1235,7 +1253,7 @@ def _feedback_quality_component_recipe(
         repo_root = _repo_root_from_params(params)
         evaluation_input = _primary_feedback_quality_component_input(component_name, inputs)
         registration = _feedback_quality_component_registrations()[component_name]
-        analysis = RLRMPManifestAnalysis(
+        analysis = ContextMaterializer(
             materializer=lambda context, data: _materialize_feedback_quality_component(
                 context,
                 data,
@@ -1246,6 +1264,7 @@ def _feedback_quality_component_recipe(
                 evaluation_input=_evaluation_input_from_analysis_data(data),
                 repo_root=repo_root,
             ),
+            materializer_input="context_and_data",
             artifact_role=registration.artifact_role,
             logical_name=registration.logical_name,
             schema_boundary="rlrmp-owned feedback-quality component status payload",
@@ -1273,6 +1292,7 @@ def feedback_quality_feedback_ablation_recipe(
     spec: AnalysisRunSpec,
     root: Path,
     inputs: Sequence[Any],
+    execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Route feedback-ablation alias inputs to the appropriate contract path."""
 
@@ -1280,14 +1300,20 @@ def feedback_quality_feedback_ablation_recipe(
         resolved.ref.kind == "EvaluationRunManifest" or resolved.states is not None
         for resolved in inputs
     ):
-        return feedback_ablation_recipe(spec, root, inputs)
-    return _feedback_quality_component_recipe("feedback_ablation")(spec, root, inputs)
+        return feedback_ablation_recipe(spec, root, inputs, execution_context)
+    return _feedback_quality_component_recipe("feedback_ablation")(
+        spec,
+        root,
+        inputs,
+        execution_context,
+    )
 
 
 def output_feedback_rollout_recovery_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
     inputs: Sequence[Any],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build rollout-recovery analysis from governed evaluation states."""
 
@@ -1325,6 +1351,7 @@ def feedback_quality_lens_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
     inputs: Sequence[Any],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build the declarative feedback-control quality lens recipe."""
 
@@ -1384,6 +1411,46 @@ def _materialize_gru_standard(
                 evaluation_input
             ),
         }
+    )
+
+
+def _materialize_standard_certificates(
+    context: AnalysisRunContext,
+    params: StandardCertificateAnalysisParams,
+    *,
+    evaluation_inputs: Sequence[_AnalysisEvaluationInput],
+) -> MaterializationResult:
+    evaluation_rows: list[
+        tuple[str, list[StandardCertificateRowRequest | Mapping[str, Any]]]
+    ] = []
+    for resolved in evaluation_inputs:
+        ref = resolved.ref
+        manifest_id = None if ref is None else ref.id
+        if manifest_id in (None, ""):
+            raise ValueError("standard certificate evaluation input lacks a manifest id")
+        states = _resolved_input_states(resolved)
+        if states is None:
+            raise ValueError(
+                f"EvaluationRunManifest {manifest_id!r} lacks cached evaluation states"
+            )
+        cached_rows = states.get(STANDARD_CERTIFICATE_EVALUATION_STATE_KEY)
+        if not isinstance(cached_rows, Sequence) or isinstance(cached_rows, (str, bytes)):
+            raise ValueError(
+                f"EvaluationRunManifest {manifest_id!r} requires cached state "
+                f"{STANDARD_CERTIFICATE_EVALUATION_STATE_KEY!r}"
+            )
+        evaluation_rows.append((str(manifest_id), list(cached_rows)))
+    payload = materialize_evaluation_standard_certificate_rows(
+        evaluation_rows,
+        issue_id=params.issue_id,
+    )
+    payload["declarative_analysis"] = _declarative_metadata(context)
+    return MaterializationResult(
+        payload=_json_ready(payload),
+        payload_metadata={
+            "analysis_type": STANDARD_CERTIFICATE_ANALYSIS_TYPE,
+            "evaluation_manifest_count": len(evaluation_inputs),
+        },
     )
 
 
@@ -2319,7 +2386,7 @@ def _feedback_quality_component_outputs_from_inputs(
                 raise ValueError(
                     f"Feedback-quality component {registration.name!r} lacks artifact URI"
                 )
-            outputs[registration.name] = _read_json_payload(Path(artifact.uri))
+            outputs[registration.name] = read_json_payload(Path(artifact.uri))
     missing = sorted(set(FEEDBACK_QUALITY_COMPONENT_NAMES).difference(outputs))
     if missing:
         raise ValueError(f"Feedback-quality aggregate missing component payloads: {missing}")
@@ -2667,7 +2734,7 @@ def _load_perturbation_class_product(resolved: Any) -> dict[str, Any]:
             continue
         if artifact.uri is None:
             raise ValueError("perturbation class response artifact lacks uri")
-        payload = _read_json_payload(Path(artifact.uri))
+        payload = read_json_payload(Path(artifact.uri))
         if payload.get("schema_id") != PERTURBATION_CLASS_RESPONSE_SCHEMA_ID:
             raise ValueError(
                 "perturbation class response artifact has wrong schema_id "
@@ -2820,6 +2887,29 @@ def _analysis_data_from_evaluation_input(evaluation_input: Any | None) -> Analys
     )
 
 
+def _analysis_data_from_evaluation_inputs(
+    evaluation_inputs: Sequence[Any],
+) -> AnalysisInputData:
+    evaluations = []
+    for resolved in evaluation_inputs:
+        ref = getattr(resolved, "ref", None)
+        path = _resolved_input_path(resolved)
+        evaluations.append(
+            {
+                "states": _resolved_input_states(resolved),
+                "manifest_id": getattr(ref, "id", None),
+                "manifest_path": None if path is None else str(path),
+            }
+        )
+    return AnalysisInputData(
+        models={},
+        tasks={},
+        states={"evaluations": evaluations},
+        hps={},
+        extras=TreeNamespace(),
+    )
+
+
 def _rollout_recovery_result_from_analysis_data(
     data: AnalysisInputData,
 ) -> RolloutRecoveryResult:
@@ -2847,12 +2937,47 @@ def _evaluation_input_from_analysis_data(data: AnalysisInputData) -> _AnalysisEv
     )
 
 
+def _evaluation_inputs_from_analysis_data(
+    data: AnalysisInputData,
+) -> tuple[_AnalysisEvaluationInput, ...]:
+    evaluations = data.states.get("evaluations")
+    if not isinstance(evaluations, Sequence) or isinstance(evaluations, (str, bytes)):
+        return ()
+    resolved = []
+    for evaluation in evaluations:
+        if not isinstance(evaluation, Mapping):
+            raise TypeError("grouped evaluation analysis data entries must be mappings")
+        manifest_id = evaluation.get("manifest_id")
+        path = evaluation.get("manifest_path")
+        states = evaluation.get("states")
+        resolved.append(
+            _AnalysisEvaluationInput(
+                states=states if isinstance(states, Mapping) else None,
+                path=Path(path) if path not in (None, "") else None,
+                ref=(
+                    ParentRef(kind="EvaluationRunManifest", id=str(manifest_id))
+                    if manifest_id not in (None, "")
+                    else None
+                ),
+            )
+        )
+    return tuple(resolved)
+
+
 def _primary_evaluation_input(inputs: Sequence[Any]) -> Any | None:
     for resolved in inputs:
         ref = getattr(resolved, "ref", None)
         if getattr(ref, "kind", None) == "EvaluationRunManifest":
             return resolved
     return None
+
+
+def _evaluation_inputs(inputs: Sequence[Any]) -> tuple[Any, ...]:
+    return tuple(
+        resolved
+        for resolved in inputs
+        if getattr(getattr(resolved, "ref", None), "kind", None) == "EvaluationRunManifest"
+    )
 
 
 def _primary_feedback_quality_component_input(
@@ -3162,12 +3287,18 @@ def _feedback_quality_component_output(
     groups: list[AnalysisArtifactGroup] = []
     for directory, role, group_id, member_role in component.get("groups", ()):
         groups.extend(
-            _directory_artifact_group(
+            directory_artifact_group(
                 directory,
                 role=role,
                 group_id=group_id,
-                member_role=member_role,
-                repo_root=repo_root,
+                group_role=member_role,
+                logical_name_root=repo_root,
+                metadata_for=lambda item: {
+                    "repo_relative_path": portable_repo_path(item, repo_root=repo_root)
+                },
+                group_metadata={
+                    "schema_boundary": "rlrmp-owned feedback-quality diagnostic payload"
+                },
             )
         )
 
@@ -3191,113 +3322,6 @@ def _component_paths(component: Mapping[str, Any]) -> dict[str, Path]:
             for index, group in enumerate(value):
                 paths[f"group_{index}"] = group[0]
     return paths
-
-
-def _bulk_artifact_groups(
-    manifest: Mapping[str, Any],
-    *,
-    group_id: str,
-    repo_root: Path,
-) -> tuple[AnalysisArtifactGroup, ...]:
-    members: list[AnalysisArtifactFile] = []
-    for run_id, run_payload in manifest.get("runs", {}).items():
-        if not isinstance(run_payload, Mapping):
-            continue
-        bulk_arrays = run_payload.get("bulk_arrays")
-        if not isinstance(bulk_arrays, Mapping):
-            continue
-        raw_path = bulk_arrays.get("path")
-        if raw_path is None:
-            continue
-        path = _optional_path(raw_path, repo_root=repo_root)
-        if path is None or not path.exists():
-            continue
-        members.append(
-            AnalysisArtifactFile(
-                path=path,
-                role="rlrmp-gru-evaluation-diagnostics-bulk",
-                logical_name=f"bulk/{run_id}.npz",
-                metadata={"run_id": str(run_id)},
-                group_role="rollout_arrays",
-            )
-        )
-    if not members:
-        return ()
-    return (
-        AnalysisArtifactGroup(
-            group_id=group_id,
-            members=tuple(members),
-            metadata={"schema_boundary": "rlrmp-owned GRU diagnostic payload"},
-        ),
-    )
-
-
-def _single_file_artifact_group(
-    path: Path,
-    *,
-    role: str,
-    logical_name: str,
-    group_id: str,
-    member_role: str,
-    repo_root: Path,
-) -> tuple[AnalysisArtifactGroup, ...]:
-    if not path.exists():
-        return ()
-    return (
-        AnalysisArtifactGroup(
-            group_id=group_id,
-            members=(
-                AnalysisArtifactFile(
-                    path=path,
-                    role=role,
-                    logical_name=logical_name,
-                    metadata={
-                        "repo_relative_path": portable_repo_path(path, repo_root=repo_root)
-                    },
-                    group_role=member_role,
-                ),
-            ),
-            metadata={"schema_boundary": "rlrmp-owned output-feedback bridge diagnostic payload"},
-        ),
-    )
-
-
-def _directory_artifact_group(
-    path: Path,
-    *,
-    role: str,
-    group_id: str,
-    member_role: str,
-    repo_root: Path,
-) -> tuple[AnalysisArtifactGroup, ...]:
-    if not path.exists():
-        return ()
-    files = sorted(item for item in path.rglob("*") if item.is_file())
-    if not files:
-        return ()
-    members = tuple(
-        AnalysisArtifactFile(
-            path=item,
-            role=role,
-            logical_name=portable_repo_path(item, repo_root=repo_root),
-            metadata={"repo_relative_path": portable_repo_path(item, repo_root=repo_root)},
-            group_role=member_role,
-        )
-        for item in files
-    )
-    return (
-        AnalysisArtifactGroup(
-            group_id=group_id,
-            members=members,
-            metadata={"schema_boundary": "rlrmp-owned feedback-quality diagnostic payload"},
-        ),
-    )
-
-
-def _read_json_payload(path: Path) -> dict[str, Any]:
-    import json
-
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _declarative_metadata(context: AnalysisRunContext) -> dict[str, Any]:
@@ -3348,6 +3372,8 @@ __all__ = [
     "ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE",
     "SISU_SPECTRUM_ANALYSIS_TYPE",
     "SISU_SPECTRUM_EVALUATION_TYPE",
+    "STANDARD_CERTIFICATE_ANALYSIS_TYPE",
+    "StandardCertificateAnalysisParams",
     "feedback_quality_lens_recipe",
     "feedback_quality_lens_spec",
     "gru_evaluation_diagnostics_spec",
@@ -3367,4 +3393,6 @@ __all__ = [
     "robustness_phenotype_spec",
     "sisu_spectrum_evaluation_spec",
     "sisu_spectrum_spec",
+    "standard_certificate_recipe",
+    "standard_certificate_spec",
 ]

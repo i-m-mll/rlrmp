@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from feedbax.analysis import StagedExecutionContext
 from feedbax.analysis.analysis import AbstractAnalysis
 from feedbax.analysis.context import AnalysisRunContext
 from feedbax.analysis.specs import AnalysisRecipeResult, ResolvedAnalysisInput, register_analysis_recipe
@@ -976,6 +977,7 @@ def robustness_phenotype_recipe(
     spec: Any,
     _root: Any,
     inputs: Sequence[ResolvedAnalysisInput],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build phenotype evidence directly from resolved parent manifests."""
 

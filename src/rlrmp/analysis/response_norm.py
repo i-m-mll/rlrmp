@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 import equinox as eqx
+from feedbax.analysis import StagedExecutionContext
 from feedbax.analysis.analysis import AbstractAnalysis
 from feedbax.analysis.context import AnalysisRunContext
 from feedbax.analysis.specs import (
@@ -127,6 +128,7 @@ def response_norm_recipe(
     spec: AnalysisRunSpec,
     _root: Any,
     inputs: Sequence[ResolvedAnalysisInput],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build response-norm analysis from upstream manifest-owned states."""
     params = ResponseNormAnalysisParams.model_validate(spec.params)

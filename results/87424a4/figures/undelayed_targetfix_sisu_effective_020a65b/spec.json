@@ -1,6 +1,6 @@
 {
   "schema_id": "feedbax.spec.figure",
-  "schema_version": "feedbax.spec.figure.v1",
+  "schema_version": "feedbax.spec.figure.v2",
   "name": "87424a4-undelayed-targetfix-sisu-effective-020a65b",
   "template": "rlrmp.perturbation_response_comparison",
   "slot_bindings": {"responses": {"name": "steady-state-responses", "constructor": "rlrmp.perturbation_response_traces", "piece": "rlrmp.steady_state_87424a4.undelayed_targetfix_sisu_effective_020a65b", "data": {"output": {"item": "output"}, "plant_row": {"item": "plant_row"}}}},

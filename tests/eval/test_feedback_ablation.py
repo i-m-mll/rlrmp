@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import jax.numpy as jnp
 import jax.random as jr
 from jax import Array as JaxArray
 import numpy as np
+import pytest
 from feedbax import TaskTrialSpec
+from feedbax.analysis.evaluation import execute_evaluation_run_spec
+from feedbax.analysis.evaluation import EvaluationRecipeExecutionError
+from feedbax.contracts.manifest import EvaluationRunSpec, ParentRef
 from feedbax.runtime.graph import Wire
 from feedbax.runtime.state import CartesianState
 
@@ -30,6 +35,7 @@ from rlrmp.eval.feedback_ablation import (
     feedback_ablation_evaluation_spec,
     feedback_ablation_spec,
 )
+from rlrmp.eval.recipes import register_rlrmp_evaluation_recipes
 from rlrmp.eval.perturbation_bank import default_cs_perturbation_bank
 from rlrmp.model.cs_lss_gru import build_cs_lss_gru_graph
 
@@ -62,14 +68,14 @@ def test_standard_modes_and_bins_are_json_serializable() -> None:
     }
 
 
-def test_registered_specs_require_explicit_source_and_manifest_parent() -> None:
+def test_registered_legacy_spec_omits_native_parent_authority() -> None:
     evaluation = feedback_ablation_evaluation_spec(
         source_experiment="source-exp",
         run_ids=("run-a",),
     )
     assert evaluation.params["source_experiment"] == "source-exp"
-    assert evaluation.inputs[0].kind == "TrainingRunManifest"
-    assert evaluation.inputs[0].id == "run-a"
+    assert evaluation.params["run_ids"] == ["run-a"]
+    assert evaluation.inputs == []
 
     analysis = feedback_ablation_spec(
         evaluation_manifest_id="eval-a",
@@ -77,6 +83,151 @@ def test_registered_specs_require_explicit_source_and_manifest_parent() -> None:
     )
     assert analysis.inputs[0].kind == "EvaluationRunManifest"
     assert analysis.inputs[0].id == "eval-a"
+
+
+def test_registered_native_spec_omits_legacy_selectors(tmp_path: Path) -> None:
+    evaluation = feedback_ablation_evaluation_spec(
+        training_run_ref=ParentRef(
+            kind="TrainingRunManifest",
+            id="run-a",
+            role="training_run",
+        ),
+        checkpoint_custody_root=tmp_path / "checkpoints",
+    )
+
+    assert evaluation.training_run_ids == []
+    assert evaluation.inputs[0].id == "run-a"
+    assert "source_experiment" not in evaluation.params
+    assert "run_ids" not in evaluation.params
+    assert evaluation.params["checkpoint_custody_root"] == str(tmp_path / "checkpoints")
+
+
+def test_feedback_builder_rejects_mixed_authority_without_manual_input_edits(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ValueError, match="cannot mix training_run_ref with legacy"):
+        feedback_ablation_evaluation_spec(
+            training_run_ref=ParentRef(
+                kind="TrainingRunManifest",
+                id="run-a",
+                role="training_run",
+            ),
+            checkpoint_custody_root=tmp_path / "checkpoints",
+            source_experiment="legacy",
+            run_ids=("run-a",),
+        )
+
+
+def test_feedback_native_builder_rejects_legacy_preferred_checkpoint_authority(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ValueError, match="cannot declare legacy preferred_checkpoint"):
+        feedback_ablation_evaluation_spec(
+            training_run_ref=ParentRef(
+                kind="TrainingRunManifest",
+                id="run-a",
+                role="training_run",
+            ),
+            checkpoint_custody_root=tmp_path / "checkpoints",
+            preferred_checkpoint_manifest_path=tmp_path / "legacy-selection.json",
+        )
+
+
+def test_historical_v2_mixed_authority_fails_at_recipe_before_evaluators(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    register_rlrmp_evaluation_recipes()
+    monkeypatch.setattr(
+        "rlrmp.eval.recipes._native_model_projection",
+        lambda *_args, **_kwargs: pytest.fail("native evaluator ran before ambiguity rejection"),
+    )
+    monkeypatch.setattr(
+        "rlrmp.eval.recipes.evaluate_feedback_ablation_runs",
+        lambda *_args, **_kwargs: pytest.fail("legacy evaluator ran before ambiguity rejection"),
+    )
+    historical = EvaluationRunSpec(
+        evaluation_type="rlrmp.eval.feedback_ablation",
+        training_run_ids=["run-a"],
+        inputs=[
+            ParentRef(
+                kind="TrainingRunManifest",
+                id="run-a",
+                role="training_run",
+            )
+        ],
+        params={
+            "schema_id": "rlrmp.eval.feedback_ablation.params",
+            "schema_version": "rlrmp.eval.feedback_ablation.params.v2",
+            "source_experiment": "legacy",
+            "run_ids": ["run-a"],
+        },
+    )
+
+    with pytest.raises(EvaluationRecipeExecutionError) as excinfo:
+        execute_evaluation_run_spec(historical, root=tmp_path, force=True)
+
+    assert "cannot mix exact native parents with legacy" in str(excinfo.value.__cause__)
+
+
+def test_feedback_builder_legacy_output_executes_registered_recipe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    register_rlrmp_evaluation_recipes()
+    monkeypatch.setattr(
+        "rlrmp.eval.recipes.evaluate_feedback_ablation_runs",
+        lambda _params, **_kwargs: {"runs": {"run-a": {"ablations": []}}},
+    )
+    monkeypatch.setattr(
+        "rlrmp.eval.recipes._native_model_projection",
+        lambda *_args, **_kwargs: pytest.fail("legacy builder output selected native authority"),
+    )
+    spec = feedback_ablation_evaluation_spec(
+        source_experiment="legacy",
+        run_ids=("run-a",),
+    )
+
+    manifest, _path = execute_evaluation_run_spec(spec, root=tmp_path, force=True)
+
+    assert manifest.status == "completed"
+    assert manifest.input_training_runs == []
+
+
+def test_feedback_builder_native_output_executes_registered_recipe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    register_rlrmp_evaluation_recipes()
+    projection = object()
+    monkeypatch.setattr(
+        "rlrmp.eval.recipes._native_model_projection",
+        lambda *_args, **_kwargs: projection,
+    )
+    monkeypatch.setattr(
+        "rlrmp.eval.recipes.evaluate_projected_feedback_ablation_run",
+        lambda candidate, _params: {
+            "runs": {"run-a": {"ablations": []}},
+            "projection_matches": candidate is projection,
+        },
+    )
+    monkeypatch.setattr(
+        "rlrmp.eval.recipes.evaluate_feedback_ablation_runs",
+        lambda *_args, **_kwargs: pytest.fail("native builder output selected legacy authority"),
+    )
+    spec = feedback_ablation_evaluation_spec(
+        training_run_ref=ParentRef(
+            kind="TrainingRunManifest",
+            id="run-a",
+            role="training_run",
+        ),
+        checkpoint_custody_root=tmp_path / "checkpoints",
+    )
+
+    manifest, _path = execute_evaluation_run_spec(spec, root=tmp_path, force=True)
+
+    assert manifest.status == "completed"
+    assert manifest.input_training_runs == spec.inputs
 
 
 def test_selected_feedback_ablation_bins_exist_in_current_bank() -> None:

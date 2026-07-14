@@ -54,6 +54,17 @@ from rlrmp.train.fixture_orchestration import (
     fixture_training_run_spec,
     register_fixture_method,
 )
+from rlrmp.runtime.spec_migrations import RUN_SPEC_SCHEMA_VERSION
+from rlrmp.runtime.training_run_specs import (
+    FEEDBAX_TRAINING_RUN_SPEC_KEY,
+    feedbax_training_run_spec_from_rlrmp_record,
+)
+from rlrmp.train.native_manifest import (
+    RLRMP_NATIVE_MANIFEST_COMPANION_KEY,
+    NativeManifestTrainingDiagnostics,
+    RlrmpNativeManifestCompanion,
+    RlrmpNativeManifestMetadata,
+)
 from rlrmp.train.orchestration_drivers import RlrmpRunPodDriver
 
 
@@ -201,7 +212,7 @@ class _FixtureCompiler:
         context: AssemblyContext,
     ) -> CompiledRunSet:
         del request, authored, run_set_id, context
-        payload = fixture_training_run_spec().model_dump(mode="json", exclude_none=True)
+        payload = _fixture_execution_payload()
         return CompiledRunSet(
             rows=[
                 CompiledExecutionRow(
@@ -489,10 +500,7 @@ def _bundle(tmp_path: Path) -> tuple[RunBundle, Path, Path]:
         identifier=f"checkpoint-transaction:{source_transaction}",
         digest=ImmutableInputDigest(value=_sha256(source_manifest)),
     )
-    payload = {
-        "schema_id": "feedbax.spec.training_run",
-        "schema_version": "feedbax.spec.training_run.v1",
-    }
+    payload = _fixture_execution_payload()
     payload_path = _write_identity(tmp_path, "payload", payload)
     authored_path = _write_identity(tmp_path, "authored", {"kind": "authored"})
     resolved_path = _write_identity(tmp_path, "resolved", {"kind": "resolved"})
@@ -504,8 +512,8 @@ def _bundle(tmp_path: Path) -> tuple[RunBundle, Path, Path]:
     envelope = ExecutionIdentityEnvelope(
         payload=_schema_ref(
             payload_path,
-            schema_id="feedbax.spec.training_run",
-            schema_version="feedbax.spec.training_run.v1",
+            schema_id=str(payload["schema_id"]),
+            schema_version=str(payload["schema_version"]),
         ),
         authored_intent=AuthoredIntentRef(
             **_schema_ref(authored_path).model_dump(), intent_hash="1" * 64
@@ -558,6 +566,38 @@ def _write_identity(tmp_path: Path, name: str, value: dict[str, Any]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(training_spec_canonical_bytes(value))
     return path
+
+
+def _fixture_execution_payload() -> dict[str, Any]:
+    register_fixture_method()
+    raw_payload = fixture_training_run_spec().model_dump(mode="json", exclude_none=True)
+    rlrmp_run_spec = {
+        "schema_version": RUN_SPEC_SCHEMA_VERSION,
+        "model_summary": {"controller_kind": "fixture"},
+        "training_diagnostics": {"enabled": False},
+        FEEDBAX_TRAINING_RUN_SPEC_KEY: raw_payload,
+    }
+    payload = feedbax_training_run_spec_from_rlrmp_record(rlrmp_run_spec).model_dump(
+        mode="json", exclude_none=True
+    )
+    rlrmp_run_spec[FEEDBAX_TRAINING_RUN_SPEC_KEY] = payload
+    companion = RlrmpNativeManifestCompanion(
+        training_spec_payload=rlrmp_run_spec,
+        training_spec_payload_ref="results/509368b/runs/runpod-fixture.json",
+        manifest_metadata=RlrmpNativeManifestMetadata(
+            training_diagnostics=NativeManifestTrainingDiagnostics(enabled=False),
+            gru_postrun_candidate=False,
+        ),
+    )
+    return {
+        **payload,
+        "metadata": {
+            **payload["metadata"],
+            RLRMP_NATIVE_MANIFEST_COMPANION_KEY: companion.model_dump(
+                mode="json", exclude_none=True
+            ),
+        },
+    }
 
 
 def _schema_ref(

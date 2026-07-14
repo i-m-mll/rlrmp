@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from feedbax.analysis import StagedExecutionContext
 from feedbax.analysis.analysis import AbstractAnalysis
 from feedbax.analysis.context import AnalysisRunContext
 from feedbax.analysis.specs import (
@@ -15,6 +16,8 @@ from feedbax.analysis.specs import (
 )
 from feedbax.analysis.types import AnalysisInputData
 from feedbax.config.namespace import TreeNamespace
+
+from rlrmp.mappings import as_mapping as _mapping
 
 
 HISTORY_PAYLOAD_ANALYSIS_TYPE = "rlrmp.history_payload"
@@ -68,6 +71,7 @@ def history_payload_recipe(
     spec: Any,
     _root: Path,
     inputs: Sequence[ResolvedAnalysisInput],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build history facets from resolved evaluation-manifest states.
 
@@ -136,10 +140,6 @@ def _normalise_history(history: Mapping[str, Any], *, label: str) -> dict[str, A
         "annotations": _jsonable(history.get("annotations", [])),
         "summary": _jsonable(history.get("summary", {})),
     }
-
-
-def _mapping(value: Any) -> Mapping[str, Any]:
-    return value if isinstance(value, Mapping) else {}
 
 
 def _jsonable(value: Any) -> Any:

@@ -55,6 +55,8 @@ def build_parser() -> argparse.ArgumentParser:
     post_run.add_argument("--repo-root", type=Path, default=Path.cwd())
     post_run.add_argument("--issue", required=True)
     post_run.add_argument("--run-prefix", required=True)
+    post_run.add_argument("--immutable-artifact-root", type=Path, required=True)
+    post_run.add_argument("--immutable-artifact-provider-spec", type=Path)
     return parser
 
 
@@ -63,13 +65,23 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     args = build_parser().parse_args(argv)
     if args.command == "map-post-run":
+        from feedbax.persistence import ImmutableArtifactBlobProviderSpec
+
         from rlrmp.train.orchestrated_post_run import map_registered_run_set
+
+        provider_spec = ImmutableArtifactBlobProviderSpec()
+        if args.immutable_artifact_provider_spec is not None:
+            provider_spec = ImmutableArtifactBlobProviderSpec.model_validate_json(
+                args.immutable_artifact_provider_spec.read_bytes()
+            )
 
         outputs = map_registered_run_set(
             args.run_set_dir,
             repo_root=args.repo_root,
             issue=args.issue,
             run_prefix=args.run_prefix,
+            immutable_artifact_root=args.immutable_artifact_root,
+            immutable_artifact_blob_provider_spec=provider_spec,
         )
         print(json.dumps([str(path) for path in outputs]))
         return 0

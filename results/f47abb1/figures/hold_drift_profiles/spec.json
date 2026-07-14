@@ -1,6 +1,6 @@
 {
   "schema_id": "feedbax.spec.figure",
-  "schema_version": "feedbax.spec.figure.v1",
+  "schema_version": "feedbax.spec.figure.v2",
   "name": "f47abb1-hold-drift-profiles",
   "template": "rlrmp.profile_comparison",
   "slot_bindings": {"profiles": {"name": "profiles", "constructor": "rlrmp.profile_series", "data": {"cell": {"item": "facet_values", "path": "condition"}, "profile_key": "hold_drift"}}},

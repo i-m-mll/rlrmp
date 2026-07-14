@@ -20,6 +20,7 @@ from rlrmp.train.minimax_native import build_hps
 
 def _args(**overrides):
     base = {
+        "output_dir": "_artifacts/test/stochastic_runtime",
         "n_warmup_batches": 1,
         "n_adversary_batches": 1,
         "controller_lr": 0.01,

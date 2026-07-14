@@ -2,14 +2,16 @@
 
 This freezes the current inventory of ``.get("key", literal_default)`` and
 ``getattr(obj, "key", literal_default)`` sites in schema-owning runtime,
-evaluation, analysis, model, training, and benchmark modules. Retiring a site is
-ceremony-free: stale allowlist entries do not fail this test. Adding a new site
-fails unless ``ci/defaults-ratchet-allowlist.toml`` is deliberately updated to
-name the owning ledger issue.
+evaluation, analysis, model, training, and benchmark modules. The shrink plan in
+``results/4b55b85/notes/defaults_ratchet_shrink_plan.md`` requires remediation
+lanes to delete entries when they fix the source sites. Adding a new site fails
+unless ``ci/defaults-ratchet-allowlist.toml`` is deliberately updated to name
+the owning ledger issue; completed migration surfaces cannot be re-allowlisted.
 """
 
 from __future__ import annotations
 
+import ast
 from collections import Counter
 from pathlib import Path
 import re
@@ -23,6 +25,7 @@ from feedbax.plugins.registry import ExperimentRegistry
 from pydantic import BaseModel
 
 from rlrmp.runtime.defaults_scan import (
+    SCAN_TARGETS,
     DefaultFallbackSite,
     DefaultValueDriftException,
     count_default_fallback_sites,
@@ -30,6 +33,7 @@ from rlrmp.runtime.defaults_scan import (
     scan_default_fallback_site_instances,
     scan_default_fallback_sites,
     scan_default_fallback_sites_in_paths,
+    scan_authored_identity_defaults,
 )
 from rlrmp.runtime.params_models import params_model_for, registered_params_models
 
@@ -39,6 +43,17 @@ pytestmark = pytest.mark.feedbax_contract
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ALLOWLIST_PATH = REPO_ROOT / "ci" / "defaults-ratchet-allowlist.toml"
 CANARY_PATH = REPO_ROOT / "tests" / "fixtures" / "defaults_scan_canary.py"
+REQUIRED_AUTHORING_SCAN_TARGETS = (
+    "src/rlrmp/train/config_materialization.py",
+    "src/rlrmp/train/run_spec_authoring.py",
+    "src/rlrmp/train/training_configs.py",
+)
+INTENT_PURGE_BASELINE = "d461adba"
+LEGACY_OUTPUT_SURFACES = (
+    "src/rlrmp/model/feedbax_graph.py",
+    "src/rlrmp/train/config_materialization.py",
+    "src/rlrmp/train/run_spec_authoring.py",
+)
 
 VALUE_DRIFT_EXCEPTIONS: tuple[DefaultValueDriftException, ...] = (
     DefaultValueDriftException(
@@ -144,6 +159,46 @@ def test_default_fallback_sites_match_allowlist() -> None:
     assert found, "Default-fallback scan found zero sites; scan scope may be broken"
 
 
+def test_training_authoring_files_stay_in_scanner_scope_and_have_no_fallbacks() -> None:
+    assert all(target in SCAN_TARGETS for target in REQUIRED_AUTHORING_SCAN_TARGETS)
+    paths = [REPO_ROOT / target for target in REQUIRED_AUTHORING_SCAN_TARGETS]
+
+    assert scan_default_fallback_sites_in_paths(paths, repo_root=REPO_ROOT) == []
+
+
+def test_completed_intent_purge_surfaces_cannot_be_reallowlisted() -> None:
+    allowlist = _load_allowlist()
+    reallowlisted = sorted(
+        entry
+        for entry in allowlist["default_fallback_sites"]
+        if entry.get("path") in REQUIRED_AUTHORING_SCAN_TARGETS
+    )
+
+    assert not reallowlisted, (
+        f"Intent-purge baseline {INTENT_PURGE_BASELINE} removed fallback sites from "
+        f"the authored training surfaces; do not re-allowlist them: {reallowlisted}"
+    )
+
+
+def test_current_authoring_surfaces_do_not_emit_legacy_labeled_fields() -> None:
+    found: list[str] = []
+    for relpath in LEGACY_OUTPUT_SURFACES:
+        tree = ast.parse((REPO_ROOT / relpath).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Dict):
+                continue
+            for key in node.keys:
+                if (
+                    not isinstance(key, ast.Constant)
+                    or not isinstance(key.value, str)
+                    or not key.value.startswith("legacy_")
+                ):
+                    continue
+                found.append(f"{relpath}:{key.lineno}:{key.value}")
+
+    assert found == []
+
+
 def test_default_fallback_allowlist_entries_carry_owner_and_count() -> None:
     allowlist = _load_allowlist()
 
@@ -187,7 +242,6 @@ def test_defaults_scanner_negative_canary_detects_out_of_schema_default() -> Non
     found = count_default_fallback_sites(
         scan_default_fallback_sites_in_paths([CANARY_PATH], repo_root=REPO_ROOT)
     )
-
     assert (
         found[
             DefaultFallbackSite(
@@ -198,6 +252,31 @@ def test_defaults_scanner_negative_canary_detects_out_of_schema_default() -> Non
         ]
         == 1
     )
+
+
+def test_training_defaults_do_not_embed_authored_issue_identities() -> None:
+    assert scan_authored_identity_defaults(REPO_ROOT) == []
+
+
+def test_authored_identity_default_scanner_detects_assignment_and_argument_paths(
+    tmp_path: Path,
+) -> None:
+    train_dir = tmp_path / "src/rlrmp/train"
+    train_dir.mkdir(parents=True)
+    (train_dir / "example.py").write_text(
+        "DEFAULT_OUTPUT = '_artifacts/a1b2c3d/runs/default'\n"
+        "class Config:\n"
+        "    output = 'results/1a2b3c4/runs/default.json'\n"
+        "def build(path='results/abc1234/runs/default.json'):\n"
+        "    return path\n",
+        encoding="utf-8",
+    )
+
+    assert {site.identity for site in scan_authored_identity_defaults(tmp_path)} == {
+        "a1b2c3d",
+        "1a2b3c4",
+        "abc1234",
+    }
 
 
 def test_registered_eval_and_report_recipes_have_params_models() -> None:

@@ -255,6 +255,9 @@ results/**
 !results/**/notes/*manifest.json
 # Small tracked calibration tables:
 !results/**/notes/*calibration_table.json
+# Required per-experiment marginal-cost KPI records:
+!results/*/notes/marginal_cost_input.json
+!results/*/notes/marginal_cost.json
 # Analysis regeneration specs / backfill indexes:
 !results/**/notes/*regeneration_spec.json
 !results/**/notes/diagnostic_regeneration_specs*.json

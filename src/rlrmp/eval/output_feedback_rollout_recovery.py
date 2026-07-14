@@ -12,6 +12,7 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 import scipy.optimize as scipy_opt
+from feedbax.analysis import StagedExecutionContext
 from feedbax.analysis.evaluation import EvaluationRecipeResult, register_evaluation_recipe
 from feedbax.contracts.manifest import EvaluationRunSpec
 from jaxtyping import Array, Float
@@ -1743,6 +1744,7 @@ def output_feedback_rollout_recovery_evaluation_recipe(
     run_spec: EvaluationRunSpec,
     _root: Path,
     _states_path: Path,
+    _execution_context: StagedExecutionContext,
 ) -> EvaluationRecipeResult:
     """Fit analytical rollout-recovery rows for an evaluation manifest."""
 

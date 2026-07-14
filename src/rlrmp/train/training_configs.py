@@ -25,6 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from rlrmp.data_products.broad_epsilon import (
     load_broad_epsilon_anchors,
+    load_pgd_radius_source,
 )
 from rlrmp.data_products.calibration import (
     CALIBRATION_PRODUCT_RELPATH,
@@ -50,6 +51,12 @@ from rlrmp.train.closed_loop_finite_adversary import (
     FINITE_POLICY_GAINS_INPUT,
     LINEAR_NO_BIAS_POLICY,
 )
+from rlrmp.train.science_vocabulary import (
+    AdaptiveEpsilonControllerMode,
+    ScienceMode,
+)
+from rlrmp.train.training_presets import load_training_presets, training_preset_value
+from rlrmp.train.training_payload_migrations import migrate_frozen_rendered_training_payload
 
 
 class CsPerturbationTrainingConfig(BaseModel):
@@ -68,26 +75,10 @@ class CsPerturbationTrainingConfig(BaseModel):
 
     @classmethod
     def from_payload(cls, payload: Any) -> Any:
-        """Validate a flat config or normalize a historical serialized payload."""
+        """Validate the canonical authored config embedded in a runtime payload."""
 
         return validate_training_config(cls, payload)
 
-
-PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_randomized"
-
-CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_calibrated_timing"
-
-LEGACY_PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_generalized"
-
-TARGET_RELATIVE_MULTITARGET_TRAINING_MODE = "target_relative_multitarget_static"
-
-TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE = "target_relative_multitarget_static_h0"
-
-BROAD_EPSILON_TRAINING_MODE = "broad_full_state_epsilon_l2"
-
-BROAD_EPSILON_PGD_TRAINING_MODE = "broad_full_state_epsilon_pgd_l2"
-
-POLICY_ADVERSARY_TRAINING_MODE = "broad_full_state_epsilon_policy_l2"
 
 FIXED_TARGET_PERTURBATION_PARAMS_REF = "rlrmp.train.fixed_target_perturbation_training.v1"
 
@@ -141,32 +132,50 @@ BROAD_EPSILON_PGD_INNER_OPTIMIZER_METHODS: tuple[str, ...] = (
     BROAD_EPSILON_PGD_ADAM,
 )
 
-DEFAULT_PGD_SISU_LEVELS: tuple[float, ...] = (0.0, 0.25, 0.5, 0.75, 1.0)
+_TRAINING_AUTHORING_PRESETS = load_training_presets()
+_PGD_SISU_PRESET = _TRAINING_AUTHORING_PRESETS["pgd_sisu"]
+_TARGET_SUPPORT_PRESET = _TRAINING_AUTHORING_PRESETS["target_support"]
 
-DEFAULT_PGD_SISU_EXACT_ZERO_MASS = 0.30
+DEFAULT_PGD_SISU_LEVELS: tuple[float, ...] = tuple(_PGD_SISU_PRESET["levels"])
 
-RAW_STRONG_GAMMA_1P05_RADIUS_15CM = 0.0023284905801002004
+DEFAULT_PGD_SISU_EXACT_ZERO_MASS = float(_PGD_SISU_PRESET["exact_zero_mass"])
 
-HISTORICAL_020A65B_PGD_RADIUS_15CM = 0.004545500088363065
+HISTORICAL_020A65B_PGD_RADIUS_15CM = float(
+    load_pgd_radius_source("effective_020a65b_pgd_training_radius")["l2_radius_15cm"]
+)
 
 MILD_COMBINED_FAMILIES: tuple["PerturbationBin", ...] = (
     "initial_position",
     "command_input",
 )
 
-AMPLITUDE_LEVELS: tuple[float, ...] = (0.5, 1.0)
+AMPLITUDE_LEVELS: tuple[float, ...] = tuple(
+    training_preset_value("shared", "amplitude_levels")
+)
 
-ORIGINAL_TARGET_ANCHOR_M: tuple[float, float] = (0.15, 0.0)
+ORIGINAL_TARGET_ANCHOR_M: tuple[float, float] = tuple(
+    _TARGET_SUPPORT_PRESET["original_target_anchor_m"]
+)
 
-DEFAULT_SEEN_TARGET_DIRECTIONS_DEG: tuple[float, ...] = (0.0, 60.0, 120.0, 180.0, 240.0, 300.0)
+DEFAULT_SEEN_TARGET_DIRECTIONS_DEG: tuple[float, ...] = tuple(
+    _TARGET_SUPPORT_PRESET["seen_directions_deg"]
+)
 
-DEFAULT_HELD_OUT_TARGET_DIRECTIONS_DEG: tuple[float, ...] = (30.0, 150.0, 210.0, 330.0)
+DEFAULT_HELD_OUT_TARGET_DIRECTIONS_DEG: tuple[float, ...] = tuple(
+    _TARGET_SUPPORT_PRESET["held_out_directions_deg"]
+)
 
-DEFAULT_SEEN_TARGET_AMPLITUDES_M: tuple[float, ...] = (0.10, 0.15)
+DEFAULT_SEEN_TARGET_AMPLITUDES_M: tuple[float, ...] = tuple(
+    _TARGET_SUPPORT_PRESET["seen_amplitudes_m"]
+)
 
-DEFAULT_HELD_OUT_TARGET_AMPLITUDES_M: tuple[float, ...] = (0.12, 0.18)
+DEFAULT_HELD_OUT_TARGET_AMPLITUDES_M: tuple[float, ...] = tuple(
+    _TARGET_SUPPORT_PRESET["held_out_amplitudes_m"]
+)
 
-TARGET_SUPPORT_PROFILE_020A65B = "old_020a65b"
+TARGET_SUPPORT_PROFILE_020A65B = str(
+    training_preset_value("shared", "legacy_target_support_profile")
+)
 
 TARGET_SUPPORT_PROFILE_CONST_DENSE_ALL = "const_dense_all"
 
@@ -178,7 +187,7 @@ TARGET_SUPPORT_PROFILE_CONST_BAND16 = "const_band16"
 
 TARGET_SUPPORT_PROFILE_CONST_BAND36 = "const_band36"
 
-DEFAULT_TARGET_SUPPORT_PROFILE = TARGET_SUPPORT_PROFILE_CONST_BAND16
+DEFAULT_TARGET_SUPPORT_PROFILE = str(_TARGET_SUPPORT_PRESET["default_profile"])
 
 TARGET_SUPPORT_PROFILES: tuple[str, ...] = (
     TARGET_SUPPORT_PROFILE_020A65B,
@@ -189,19 +198,27 @@ TARGET_SUPPORT_PROFILES: tuple[str, ...] = (
     TARGET_SUPPORT_PROFILE_CONST_BAND36,
 )
 
-TARGET_SUPPORT_CONST_REACH_M = 0.15
+TARGET_SUPPORT_CONST_REACH_M = float(_TARGET_SUPPORT_PRESET["constant_reach_m"])
 
-TARGET_SUPPORT_DENSE_N_DIRECTIONS = 72
+TARGET_SUPPORT_DENSE_N_DIRECTIONS = int(_TARGET_SUPPORT_PRESET["dense_n_directions"])
 
-TARGET_SUPPORT_SPARSE_N_DIRECTIONS = 8
+TARGET_SUPPORT_SPARSE_N_DIRECTIONS = int(_TARGET_SUPPORT_PRESET["sparse_n_directions"])
 
-TARGET_SUPPORT_BAND_CENTERS_DEG: tuple[float, ...] = (45.0, 135.0, 225.0, 315.0)
+TARGET_SUPPORT_BAND_CENTERS_DEG: tuple[float, ...] = tuple(
+    _TARGET_SUPPORT_PRESET["band_centers_deg"]
+)
 
-TARGET_SUPPORT_BAND8_HELD_OUT_DIRECTIONS = 8
+TARGET_SUPPORT_BAND8_HELD_OUT_DIRECTIONS = int(
+    _TARGET_SUPPORT_PRESET["held_out_counts"][TARGET_SUPPORT_PROFILE_CONST_BAND8]
+)
 
-TARGET_SUPPORT_BAND16_HELD_OUT_DIRECTIONS = 16
+TARGET_SUPPORT_BAND16_HELD_OUT_DIRECTIONS = int(
+    _TARGET_SUPPORT_PRESET["held_out_counts"][TARGET_SUPPORT_PROFILE_CONST_BAND16]
+)
 
-TARGET_SUPPORT_BAND36_HELD_OUT_DIRECTIONS = 36
+TARGET_SUPPORT_BAND36_HELD_OUT_DIRECTIONS = int(
+    _TARGET_SUPPORT_PRESET["held_out_counts"][TARGET_SUPPORT_PROFILE_CONST_BAND36]
+)
 
 PerturbationBin = Literal[
     "nominal",
@@ -306,69 +323,20 @@ TIMING_LABELS_CONTROLLER_VISIBLE = tuple(
 
 BROAD_EPSILON_DIM = 8
 
-BROAD_EPSILON_REFERENCE_REACH_M = 0.15
-
-PGD_SISU_MAX_RADIUS_SOURCES: dict[str, dict[str, Any]] = {
-    "raw_strong_gamma_1p05_radius": {
-        "source_kind": "raw_analytical_gamma_anchor",
-        "source_issue": "a7dad8a",
-        "source_note": "results/a7dad8a/notes/adversary_equivalence_manifest.json",
-        "gamma_factor": 1.05,
-        "gamma_equivalent_analytical_anchor": True,
-        "description": "raw strong gamma-1.05 analytical radius",
-    },
-    "effective_020a65b_pgd_training_radius": {
-        "source_kind": "historical_replay_effective_pgd_training_radius",
-        "source_issue": "020a65b",
-        "source_note": "020a65b broad-epsilon PGD local training contract",
-        "gamma_equivalent_analytical_anchor": False,
-        "description": (
-            "historical 020a65b PGD replay radius; not a current default or "
-            "new gamma-equivalent analytical anchor"
-        ),
-    },
-    "ofb_6d_no_integrator_gamma_1p4_rollout_radius": {
-        "source_kind": "output_feedback_rollout_budget",
-        "source_issue": "c92ebd8",
-        "source_note": "6D no-integrator output-feedback robust-estimator rollout",
-        "gamma_factor": 1.4,
-        "gamma_star": 9166.831285473823,
-        "gamma": 12833.563799663352,
-        "epsilon_dim": 6,
-        "disturbance_energy": 2.0657128682206633e-05,
-        "gamma_equivalent_analytical_anchor": True,
-        "description": (
-            "6D no-integrator C&S output-feedback H-infinity rollout L2 radius for gamma_factor=1.4"
-        ),
-    },
-    "ofb_6d_no_integrator_gamma_1p05_rollout_radius": {
-        "source_kind": "output_feedback_rollout_budget",
-        "source_issue": "c92ebd8",
-        "source_note": "6D no-integrator output-feedback robust-estimator rollout",
-        "gamma_factor": 1.05,
-        "gamma_star": 9166.831285473823,
-        "gamma": 9625.172849747514,
-        "epsilon_dim": 6,
-        "disturbance_energy": 3.0671655167860113e-06,
-        "gamma_equivalent_analytical_anchor": True,
-        "description": (
-            "6D no-integrator C&S output-feedback H-infinity rollout L2 radius "
-            "for gamma_factor=1.05"
-        ),
-    },
-}
-
+BROAD_EPSILON_REFERENCE_REACH_M = float(
+    training_preset_value("shared", "broad_epsilon_reference_reach_m")
+)
 
 class BroadFullStateEpsilonTrainingConfig(CsPerturbationTrainingConfig):
     """Random full-state epsilon training lane for the C&S analytical game."""
 
-    enabled: bool = False
-    level: str = "moderate"
-    budget_scale: float = 1.0
-    reach_length_scaling: bool = True
-    nominal_reach_length_m: float = BROAD_EPSILON_REFERENCE_REACH_M
-    movement_epoch_only: bool = False
-    epsilon_dim: int = BROAD_EPSILON_DIM
+    enabled: bool = training_preset_value("BroadFullStateEpsilonTrainingConfig", "enabled")
+    level: str = training_preset_value("BroadFullStateEpsilonTrainingConfig", "level")
+    budget_scale: float = training_preset_value("BroadFullStateEpsilonTrainingConfig", "budget_scale")
+    reach_length_scaling: bool = training_preset_value("BroadFullStateEpsilonTrainingConfig", "reach_length_scaling")
+    nominal_reach_length_m: float = training_preset_value("BroadFullStateEpsilonTrainingConfig", "nominal_reach_length_m")
+    movement_epoch_only: bool = training_preset_value("BroadFullStateEpsilonTrainingConfig", "movement_epoch_only")
+    epsilon_dim: int = training_preset_value("BroadFullStateEpsilonTrainingConfig", "epsilon_dim")
 
     @model_validator(mode="after")
     def _validate_config(self) -> "BroadFullStateEpsilonTrainingConfig":
@@ -403,8 +371,9 @@ class BroadFullStateEpsilonTrainingConfig(CsPerturbationTrainingConfig):
 
         contract = self.level_contract
         return {
+            "config": self.model_dump(mode="python"),
             "enabled": self.enabled,
-            "mode": BROAD_EPSILON_TRAINING_MODE if self.enabled else "disabled",
+            "mode": ScienceMode.BROAD_EPSILON if self.enabled else "disabled",
             "level": self.level,
             "budget_scale": float(self.budget_scale),
             "reach_length_scaling": bool(self.reach_length_scaling),
@@ -447,38 +416,38 @@ class BroadFullStateEpsilonTrainingConfig(CsPerturbationTrainingConfig):
 class PgdFullStateEpsilonTrainingConfig(BroadFullStateEpsilonTrainingConfig):
     """Training-time PGD lane on the C&S full-state epsilon channel."""
 
-    enabled: bool = False
-    adversary_mechanism: str = BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM
-    level: str = "moderate"
-    budget_scale: float = 1.0
-    reach_length_scaling: bool = True
-    nominal_reach_length_m: float = BROAD_EPSILON_REFERENCE_REACH_M
-    n_steps: int = 3
-    step_size_fraction: float = 0.25
-    inner_optimizer_method: str = BROAD_EPSILON_PGD_PROJECTED_GRADIENT_ASCENT
-    adam_learning_rate: float = 3e-4
-    adam_b1: float = 0.9
-    adam_b2: float = 0.999
-    adam_eps: float = 1e-8
-    init: str = "zero"
-    movement_epoch_only: bool = False
-    epsilon_dim: int = BROAD_EPSILON_DIM
-    budget_schedule: str = BROAD_EPSILON_PGD_FIXED_BUDGET_SCHEDULE
-    sisu_levels: tuple[float, ...] = DEFAULT_PGD_SISU_LEVELS
-    sisu_exact_zero_mass: float = DEFAULT_PGD_SISU_EXACT_ZERO_MASS
-    sisu_condition_input: str = "auto"
-    sisu_max_l2_radius_15cm: float | None = None
-    sisu_max_radius_source: str | None = None
-    fixed_l2_radius_15cm: float | None = None
-    fixed_radius_source: str | None = None
-    objective_kind: str = BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE
-    energy_gamma_star: float | None = None
-    energy_gamma_factor: float | None = None
-    energy_gamma: float | None = None
-    energy_penalty_scale: float = 1.0
-    energy_lambda: float | None = None
-    safety_cap_l2_radius_15cm: float | None = None
-    safety_cap_source: str | None = None
+    enabled: bool = training_preset_value("PgdFullStateEpsilonTrainingConfig", "enabled")
+    adversary_mechanism: str = training_preset_value("PgdFullStateEpsilonTrainingConfig", "adversary_mechanism")
+    level: str = training_preset_value("PgdFullStateEpsilonTrainingConfig", "level")
+    budget_scale: float = training_preset_value("PgdFullStateEpsilonTrainingConfig", "budget_scale")
+    reach_length_scaling: bool = training_preset_value("PgdFullStateEpsilonTrainingConfig", "reach_length_scaling")
+    nominal_reach_length_m: float = training_preset_value("PgdFullStateEpsilonTrainingConfig", "nominal_reach_length_m")
+    n_steps: int = training_preset_value("PgdFullStateEpsilonTrainingConfig", "n_steps")
+    step_size_fraction: float = training_preset_value("PgdFullStateEpsilonTrainingConfig", "step_size_fraction")
+    inner_optimizer_method: str = training_preset_value("PgdFullStateEpsilonTrainingConfig", "inner_optimizer_method")
+    adam_learning_rate: float = training_preset_value("PgdFullStateEpsilonTrainingConfig", "adam_learning_rate")
+    adam_b1: float = training_preset_value("PgdFullStateEpsilonTrainingConfig", "adam_b1")
+    adam_b2: float = training_preset_value("PgdFullStateEpsilonTrainingConfig", "adam_b2")
+    adam_eps: float = training_preset_value("PgdFullStateEpsilonTrainingConfig", "adam_eps")
+    init: str = training_preset_value("PgdFullStateEpsilonTrainingConfig", "init")
+    movement_epoch_only: bool = training_preset_value("PgdFullStateEpsilonTrainingConfig", "movement_epoch_only")
+    epsilon_dim: int = training_preset_value("PgdFullStateEpsilonTrainingConfig", "epsilon_dim")
+    budget_schedule: str = training_preset_value("PgdFullStateEpsilonTrainingConfig", "budget_schedule")
+    sisu_levels: tuple[float, ...] = training_preset_value("PgdFullStateEpsilonTrainingConfig", "sisu_levels")
+    sisu_exact_zero_mass: float = training_preset_value("PgdFullStateEpsilonTrainingConfig", "sisu_exact_zero_mass")
+    sisu_condition_input: str = training_preset_value("PgdFullStateEpsilonTrainingConfig", "sisu_condition_input")
+    sisu_max_l2_radius_15cm: float | None = training_preset_value("PgdFullStateEpsilonTrainingConfig", "sisu_max_l2_radius_15cm")
+    sisu_max_radius_source: str | None = training_preset_value("PgdFullStateEpsilonTrainingConfig", "sisu_max_radius_source")
+    fixed_l2_radius_15cm: float | None = training_preset_value("PgdFullStateEpsilonTrainingConfig", "fixed_l2_radius_15cm")
+    fixed_radius_source: str | None = training_preset_value("PgdFullStateEpsilonTrainingConfig", "fixed_radius_source")
+    objective_kind: str = training_preset_value("PgdFullStateEpsilonTrainingConfig", "objective_kind")
+    energy_gamma_star: float | None = training_preset_value("PgdFullStateEpsilonTrainingConfig", "energy_gamma_star")
+    energy_gamma_factor: float | None = training_preset_value("PgdFullStateEpsilonTrainingConfig", "energy_gamma_factor")
+    energy_gamma: float | None = training_preset_value("PgdFullStateEpsilonTrainingConfig", "energy_gamma")
+    energy_penalty_scale: float = training_preset_value("PgdFullStateEpsilonTrainingConfig", "energy_penalty_scale")
+    energy_lambda: float | None = training_preset_value("PgdFullStateEpsilonTrainingConfig", "energy_lambda")
+    safety_cap_l2_radius_15cm: float | None = training_preset_value("PgdFullStateEpsilonTrainingConfig", "safety_cap_l2_radius_15cm")
+    safety_cap_source: str | None = training_preset_value("PgdFullStateEpsilonTrainingConfig", "safety_cap_source")
 
     @model_validator(mode="after")
     def _validate_config(self) -> "PgdFullStateEpsilonTrainingConfig":
@@ -629,8 +598,9 @@ class PgdFullStateEpsilonTrainingConfig(BroadFullStateEpsilonTrainingConfig):
         contract = self.level_contract
         budget_schedule = pgd_budget_schedule_contract(self)
         return {
+            "config": self.model_dump(mode="python"),
             "enabled": self.enabled,
-            "mode": BROAD_EPSILON_PGD_TRAINING_MODE if self.enabled else "disabled",
+            "mode": ScienceMode.BROAD_EPSILON_PGD if self.enabled else "disabled",
             "adversary_mechanism": self.adversary_mechanism,
             "level": self.level,
             "budget_scale": float(self.budget_scale),
@@ -705,21 +675,21 @@ class PgdFullStateEpsilonTrainingConfig(BroadFullStateEpsilonTrainingConfig):
 class PolicyFullStateEpsilonTrainingConfig(CsPerturbationTrainingConfig):
     """Learned policy lane on the C&S full-state epsilon channel."""
 
-    enabled: bool = False
-    policy_class: str = POLICY_ADVERSARY_MEMORYLESS_MLP
-    mode: str = POLICY_ADVERSARY_PLAIN_MODE
-    width: int = 64
-    depth: int = 2
-    n_steps: int = 5
-    learning_rate: float = 3e-4
-    energy_penalty_gamma: float = 1.0
-    reference_l2_radius_15cm: float | None = None
-    reach_length_scaling: bool = True
-    nominal_reach_length_m: float = BROAD_EPSILON_REFERENCE_REACH_M
-    movement_epoch_only: bool = False
-    epsilon_dim: int = BROAD_EPSILON_DIM
-    state_feature_dim: int = BROAD_EPSILON_DIM * 6
-    budget_source: str | None = None
+    enabled: bool = training_preset_value("PolicyFullStateEpsilonTrainingConfig", "enabled")
+    policy_class: str = training_preset_value("PolicyFullStateEpsilonTrainingConfig", "policy_class")
+    mode: str = training_preset_value("PolicyFullStateEpsilonTrainingConfig", "mode")
+    width: int = training_preset_value("PolicyFullStateEpsilonTrainingConfig", "width")
+    depth: int = training_preset_value("PolicyFullStateEpsilonTrainingConfig", "depth")
+    n_steps: int = training_preset_value("PolicyFullStateEpsilonTrainingConfig", "n_steps")
+    learning_rate: float = training_preset_value("PolicyFullStateEpsilonTrainingConfig", "learning_rate")
+    energy_penalty_gamma: float = training_preset_value("PolicyFullStateEpsilonTrainingConfig", "energy_penalty_gamma")
+    reference_l2_radius_15cm: float | None = training_preset_value("PolicyFullStateEpsilonTrainingConfig", "reference_l2_radius_15cm")
+    reach_length_scaling: bool = training_preset_value("PolicyFullStateEpsilonTrainingConfig", "reach_length_scaling")
+    nominal_reach_length_m: float = training_preset_value("PolicyFullStateEpsilonTrainingConfig", "nominal_reach_length_m")
+    movement_epoch_only: bool = training_preset_value("PolicyFullStateEpsilonTrainingConfig", "movement_epoch_only")
+    epsilon_dim: int = training_preset_value("PolicyFullStateEpsilonTrainingConfig", "epsilon_dim")
+    state_feature_dim: int = training_preset_value("PolicyFullStateEpsilonTrainingConfig", "state_feature_dim")
+    budget_source: str | None = training_preset_value("PolicyFullStateEpsilonTrainingConfig", "budget_source")
 
     @model_validator(mode="after")
     def _validate_config(self) -> "PolicyFullStateEpsilonTrainingConfig":
@@ -779,19 +749,13 @@ class PolicyFullStateEpsilonTrainingConfig(CsPerturbationTrainingConfig):
             if self.budget_source is None
             else {
                 "key": self.budget_source,
-                **PGD_SISU_MAX_RADIUS_SOURCES.get(
-                    self.budget_source,
-                    {
-                        "source_kind": "caller_declared",
-                        "gamma_equivalent_analytical_anchor": False,
-                        "description": self.budget_source,
-                    },
-                ),
+                **load_pgd_radius_source(self.budget_source),
             }
         )
         return {
+            "config": self.model_dump(mode="python"),
             "enabled": self.enabled,
-            "mode": POLICY_ADVERSARY_TRAINING_MODE if self.enabled else "disabled",
+            "mode": ScienceMode.POLICY_ADVERSARY if self.enabled else "disabled",
             "row_mode": self.mode,
             "policy_class": self.policy_class,
             "policy": policy,
@@ -1150,14 +1114,7 @@ def _pgd_sisu_max_radius_source(
     if source_key is not None:
         return {
             "key": source_key,
-            **PGD_SISU_MAX_RADIUS_SOURCES.get(
-                source_key,
-                {
-                    "source_kind": "caller_declared",
-                    "gamma_equivalent_analytical_anchor": False,
-                    "description": source_key,
-                },
-            ),
+            **load_pgd_radius_source(source_key),
         }
     return {
         "key": f"analytical_broad_epsilon_level:{config.level}",
@@ -1179,14 +1136,7 @@ def _pgd_fixed_radius_source(
     if source_key is not None:
         return {
             "key": source_key,
-            **PGD_SISU_MAX_RADIUS_SOURCES.get(
-                source_key,
-                {
-                    "source_kind": "caller_declared",
-                    "gamma_equivalent_analytical_anchor": False,
-                    "description": source_key,
-                },
-            ),
+            **load_pgd_radius_source(source_key),
         }
     return {
         "key": f"analytical_broad_epsilon_level:{config.level}",
@@ -1208,14 +1158,7 @@ def _pgd_safety_cap_source(
     if source_key is not None:
         return {
             "key": source_key,
-            **PGD_SISU_MAX_RADIUS_SOURCES.get(
-                source_key,
-                {
-                    "source_kind": "caller_declared",
-                    "gamma_equivalent_analytical_anchor": False,
-                    "description": source_key,
-                },
-            ),
+            **load_pgd_radius_source(source_key),
         }
     return {
         "key": "caller_declared_soft_pgd_safety_cap",
@@ -1339,25 +1282,25 @@ def _widen_controller_visible_adapter(
 class FixedTargetPerturbationTrainingConfig(CsPerturbationTrainingConfig):
     """Mixture and amplitudes for fixed-target C&S GRU perturbation training."""
 
-    enabled: bool = False
-    nominal_fraction: float = 0.45
-    single_fraction: float = 0.45
-    combined_fraction: float = 0.10
-    combined_amplitude_scale: float = 0.5
-    initial_position_offset_m: float = 0.01
-    initial_velocity_offset_m_s: float = 0.05
-    process_epsilon_scale: float = 0.01
-    command_input_pulse_n: float = 1.0
-    sensory_feedback_offset_m: float = 0.01
-    delayed_observation_offset_m: float = 0.01
-    pulse_start_step: int = 20
-    pulse_duration_steps: int = 5
-    calibrated_timing: bool = False
-    movement_age_timing: bool = False
-    physical_level: str = "moderate"
-    force_filter_feedback: bool = False
-    calibration_regime: TrainingCalibrationRegime = OPEN_LOOP_ALL_CALIBRATION_REGIME
-    closed_loop_calibration_table_path: str | None = None
+    enabled: bool = training_preset_value("FixedTargetPerturbationTrainingConfig", "enabled")
+    nominal_fraction: float = training_preset_value("FixedTargetPerturbationTrainingConfig", "nominal_fraction")
+    single_fraction: float = training_preset_value("FixedTargetPerturbationTrainingConfig", "single_fraction")
+    combined_fraction: float = training_preset_value("FixedTargetPerturbationTrainingConfig", "combined_fraction")
+    combined_amplitude_scale: float = training_preset_value("FixedTargetPerturbationTrainingConfig", "combined_amplitude_scale")
+    initial_position_offset_m: float = training_preset_value("FixedTargetPerturbationTrainingConfig", "initial_position_offset_m")
+    initial_velocity_offset_m_s: float = training_preset_value("FixedTargetPerturbationTrainingConfig", "initial_velocity_offset_m_s")
+    process_epsilon_scale: float = training_preset_value("FixedTargetPerturbationTrainingConfig", "process_epsilon_scale")
+    command_input_pulse_n: float = training_preset_value("FixedTargetPerturbationTrainingConfig", "command_input_pulse_n")
+    sensory_feedback_offset_m: float = training_preset_value("FixedTargetPerturbationTrainingConfig", "sensory_feedback_offset_m")
+    delayed_observation_offset_m: float = training_preset_value("FixedTargetPerturbationTrainingConfig", "delayed_observation_offset_m")
+    pulse_start_step: int = training_preset_value("FixedTargetPerturbationTrainingConfig", "pulse_start_step")
+    pulse_duration_steps: int = training_preset_value("FixedTargetPerturbationTrainingConfig", "pulse_duration_steps")
+    calibrated_timing: bool = training_preset_value("FixedTargetPerturbationTrainingConfig", "calibrated_timing")
+    movement_age_timing: bool = training_preset_value("FixedTargetPerturbationTrainingConfig", "movement_age_timing")
+    physical_level: str = training_preset_value("FixedTargetPerturbationTrainingConfig", "physical_level")
+    force_filter_feedback: bool = training_preset_value("FixedTargetPerturbationTrainingConfig", "force_filter_feedback")
+    calibration_regime: TrainingCalibrationRegime = training_preset_value("FixedTargetPerturbationTrainingConfig", "calibration_regime")
+    closed_loop_calibration_table_path: str | None = training_preset_value("FixedTargetPerturbationTrainingConfig", "closed_loop_calibration_table_path")
 
     @model_validator(mode="after")
     def _validate_config(self) -> "FixedTargetPerturbationTrainingConfig":
@@ -1403,16 +1346,16 @@ class FixedTargetPerturbationTrainingConfig(CsPerturbationTrainingConfig):
         if not self.enabled:
             return "nominal"
         if self.calibrated_timing:
-            return CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE
-        return PERTURBATION_TRAINING_MODE
+            return ScienceMode.PERTURBATION_CALIBRATED
+        return ScienceMode.PERTURBATION
 
     def to_hps_dict(self) -> dict[str, Any]:
         """Return the TreeNamespace-compatible config payload."""
 
         return {
+            "config": self.model_dump(mode="python"),
             "enabled": self.enabled,
             "mode": self.mode,
-            "legacy_mode": (LEGACY_PERTURBATION_TRAINING_MODE if self.enabled else None),
             "sampling": {
                 "kind": (
                     "prng_driven_calibrated_timing"
@@ -1572,14 +1515,14 @@ class FixedTargetPerturbationTrainingConfig(CsPerturbationTrainingConfig):
 class TargetRelativeMultiTargetTrainingConfig(CsPerturbationTrainingConfig):
     """Structured static-target distribution for target-relative GRU training."""
 
-    enabled: bool = False
-    force_filter_feedback: bool = False
-    target_support_profile: str = TARGET_SUPPORT_PROFILE_020A65B
-    seen_directions_deg: tuple[float, ...] = DEFAULT_SEEN_TARGET_DIRECTIONS_DEG
-    held_out_directions_deg: tuple[float, ...] = DEFAULT_HELD_OUT_TARGET_DIRECTIONS_DEG
-    seen_amplitudes_m: tuple[float, ...] = DEFAULT_SEEN_TARGET_AMPLITUDES_M
-    held_out_amplitudes_m: tuple[float, ...] = DEFAULT_HELD_OUT_TARGET_AMPLITUDES_M
-    original_target_anchor_m: tuple[float, float] = ORIGINAL_TARGET_ANCHOR_M
+    enabled: bool = training_preset_value("TargetRelativeMultiTargetTrainingConfig", "enabled")
+    force_filter_feedback: bool = training_preset_value("TargetRelativeMultiTargetTrainingConfig", "force_filter_feedback")
+    target_support_profile: str = training_preset_value("TargetRelativeMultiTargetTrainingConfig", "target_support_profile")
+    seen_directions_deg: tuple[float, ...] = training_preset_value("TargetRelativeMultiTargetTrainingConfig", "seen_directions_deg")
+    held_out_directions_deg: tuple[float, ...] = training_preset_value("TargetRelativeMultiTargetTrainingConfig", "held_out_directions_deg")
+    seen_amplitudes_m: tuple[float, ...] = training_preset_value("TargetRelativeMultiTargetTrainingConfig", "seen_amplitudes_m")
+    held_out_amplitudes_m: tuple[float, ...] = training_preset_value("TargetRelativeMultiTargetTrainingConfig", "held_out_amplitudes_m")
+    original_target_anchor_m: tuple[float, float] = training_preset_value("TargetRelativeMultiTargetTrainingConfig", "original_target_anchor_m")
     support_metadata: Any = Field(default_factory=tuple)
 
     @model_validator(mode="after")
@@ -1649,8 +1592,9 @@ class TargetRelativeMultiTargetTrainingConfig(CsPerturbationTrainingConfig):
         """Return the TreeNamespace-compatible config payload."""
 
         return {
+            "config": self.model_dump(mode="python"),
             "enabled": self.enabled,
-            "mode": (TARGET_RELATIVE_MULTITARGET_TRAINING_MODE if self.enabled else "disabled"),
+            "mode": ScienceMode.TARGET_RELATIVE if self.enabled else "disabled",
             "force_filter_feedback": self.force_filter_feedback,
             "force_filter_feedback_contract": force_filter_feedback_manifest(
                 self.force_filter_feedback
@@ -2332,7 +2276,7 @@ def _target_tuples(
 def _freeze_target_support_metadata(value: Any) -> tuple[tuple[str, Any], ...]:
     if value is None:
         return ()
-    if isinstance(value, tuple) and all(_is_metadata_pair(item) for item in value):
+    if isinstance(value, list | tuple) and all(_is_metadata_pair(item) for item in value):
         return tuple((str(key), _freeze_metadata_value(item_value)) for key, item_value in value)
     if isinstance(value, Mapping):
         return tuple(
@@ -2373,7 +2317,7 @@ def _metadata_value_to_json(value: Any) -> Any:
 
 
 def _is_metadata_pair(value: Any) -> bool:
-    return isinstance(value, tuple) and len(value) == 2 and isinstance(value[0], str)
+    return isinstance(value, list | tuple) and len(value) == 2 and isinstance(value[0], str)
 
 
 def _dedupe_targets(targets: tuple[tuple[float, float], ...]) -> tuple[tuple[float, float], ...]:
@@ -2388,8 +2332,6 @@ def _dedupe_targets(targets: tuple[tuple[float, float], ...]) -> tuple[tuple[flo
     return tuple(rows)
 
 
-ISSUE_ID = "30f2313"
-
 CS_POSITION_SCALE = 1e6
 
 CS_VELOCITY_SCALE = 1e5
@@ -2397,8 +2339,6 @@ CS_VELOCITY_SCALE = 1e5
 CS_CONTROL_SCALE = 1.0
 
 DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW = "canonical_window"
-
-ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND = "loss_blend"
 
 MINIMAX_PARAMS_REF = "rlrmp/minimax/v1"
 
@@ -2412,42 +2352,40 @@ class GuidedDistillationConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    run_id: str = "h0_extlqg_6d_standard_graph_distillation"
-    run_spec: str | None = None
-    run_spec_output: str | None = None
-    output_dir: str | None = None
-    teacher_package: str = "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers.npz"
-    teacher_manifest: str = (
-        "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers_manifest.json"
-    )
-    teacher_gains_key: str = "extlqg_controller_gains"
-    clean_action_weight: float = 1.0
-    perturbation_response_weight: float = 1.0
-    input_output_jvp_weight: float = 0.25
-    rollout_anchor_weight: float = 0.25
-    n_jvp_directions: int = Field(16, gt=0)
-    n_batches: int = Field(12000, gt=0)
-    batch_size: int = Field(64, gt=0)
-    n_replicates: int = Field(5, gt=0)
-    hidden_size: int = Field(180, gt=0)
-    horizon: int = Field(60, gt=0)
-    seed: int = 0
-    controller_lr: float = Field(3e-3, gt=0.0)
-    lr_warmup_batches: int = Field(500, ge=0)
-    lr_warmup_init_fraction: float = Field(0.1, ge=0.0)
-    lr_cosine_alpha: float = Field(0.01, ge=0.0)
-    gradient_clip_norm: float = Field(5.0, gt=0.0)
-    trainable_dtype: str = "float32"
-    population_mask_mode: str = "plain_all_ones"
-    log_step: int = Field(10, gt=0)
-    checkpoint: bool = True
-    checkpoint_interval_batches: int = Field(500, gt=0)
-    stop_after_batches: int | None = Field(None, gt=0)
-    smoke_loss: bool = False
-    smoke_train: bool = False
-    full_train: bool = False
-    resume: bool = False
-    dry_run: bool = False
+    run_id: str | None = training_preset_value("GuidedDistillationConfig", "run_id")
+    run_spec: str | None = training_preset_value("GuidedDistillationConfig", "run_spec")
+    run_spec_output: str | None = training_preset_value("GuidedDistillationConfig", "run_spec_output")
+    output_dir: str | None = training_preset_value("GuidedDistillationConfig", "output_dir")
+    teacher_package: str | None = training_preset_value("GuidedDistillationConfig", "teacher_package")
+    teacher_manifest: str | None = training_preset_value("GuidedDistillationConfig", "teacher_manifest")
+    teacher_gains_key: str | None = training_preset_value("GuidedDistillationConfig", "teacher_gains_key")
+    clean_action_weight: float = training_preset_value("GuidedDistillationConfig", "clean_action_weight")
+    perturbation_response_weight: float = training_preset_value("GuidedDistillationConfig", "perturbation_response_weight")
+    input_output_jvp_weight: float = training_preset_value("GuidedDistillationConfig", "input_output_jvp_weight")
+    rollout_anchor_weight: float = training_preset_value("GuidedDistillationConfig", "rollout_anchor_weight")
+    n_jvp_directions: int = Field(training_preset_value("GuidedDistillationConfig", "n_jvp_directions"), gt=0)
+    n_batches: int = Field(training_preset_value("GuidedDistillationConfig", "n_batches"), gt=0)
+    batch_size: int = Field(training_preset_value("GuidedDistillationConfig", "batch_size"), gt=0)
+    n_replicates: int = Field(training_preset_value("GuidedDistillationConfig", "n_replicates"), gt=0)
+    hidden_size: int = Field(training_preset_value("GuidedDistillationConfig", "hidden_size"), gt=0)
+    horizon: int = Field(training_preset_value("GuidedDistillationConfig", "horizon"), gt=0)
+    seed: int = training_preset_value("GuidedDistillationConfig", "seed")
+    controller_lr: float = Field(training_preset_value("GuidedDistillationConfig", "controller_lr"), gt=0.0)
+    lr_warmup_batches: int = Field(training_preset_value("GuidedDistillationConfig", "lr_warmup_batches"), ge=0)
+    lr_warmup_init_fraction: float = Field(training_preset_value("GuidedDistillationConfig", "lr_warmup_init_fraction"), ge=0.0)
+    lr_cosine_alpha: float = Field(training_preset_value("GuidedDistillationConfig", "lr_cosine_alpha"), ge=0.0)
+    gradient_clip_norm: float = Field(training_preset_value("GuidedDistillationConfig", "gradient_clip_norm"), gt=0.0)
+    trainable_dtype: str = training_preset_value("GuidedDistillationConfig", "trainable_dtype")
+    population_mask_mode: str = training_preset_value("GuidedDistillationConfig", "population_mask_mode")
+    log_step: int = Field(training_preset_value("GuidedDistillationConfig", "log_step"), gt=0)
+    checkpoint: bool = training_preset_value("GuidedDistillationConfig", "checkpoint")
+    checkpoint_interval_batches: int = Field(training_preset_value("GuidedDistillationConfig", "checkpoint_interval_batches"), gt=0)
+    stop_after_batches: int | None = Field(training_preset_value("GuidedDistillationConfig", "stop_after_batches"), gt=0)
+    smoke_loss: bool = training_preset_value("GuidedDistillationConfig", "smoke_loss")
+    smoke_train: bool = training_preset_value("GuidedDistillationConfig", "smoke_train")
+    full_train: bool = training_preset_value("GuidedDistillationConfig", "full_train")
+    resume: bool = training_preset_value("GuidedDistillationConfig", "resume")
+    dry_run: bool = training_preset_value("GuidedDistillationConfig", "dry_run")
 
 
 class ClosedLoopDistillationConfig(BaseModel):
@@ -2455,42 +2393,42 @@ class ClosedLoopDistillationConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    run_id: str = "h0_extlqg_6d_closed_loop_distillation"
-    run_spec: Path | None = None
-    run_spec_output: Path = Path("results/a378b34/runs/h0_extlqg_6d_closed_loop_distillation.json")
-    output_dir: str = "_artifacts/a378b34/runs/h0_extlqg_6d_closed_loop_distillation"
-    teacher_package: str = "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers.npz"
-    teacher_gains_key: str = "extlqg_controller_gains"
-    horizon: int = Field(60, gt=0)
-    seed: int = 0
-    n_replicates: int = Field(5, gt=0)
-    hidden_size: int = Field(180, gt=0)
-    batch_size: int = Field(64, gt=0)
-    n_batches: int = Field(12000, gt=0)
-    controller_lr: float = Field(3e-3, gt=0.0)
-    lr_warmup_batches: int = Field(500, ge=0)
-    lr_cosine_alpha: float = Field(0.01, ge=0.0)
-    gradient_clip_norm: float = Field(5.0, gt=0.0)
-    checkpoint_interval_batches: int = Field(500, gt=0)
-    trainable_dtype: str = "float32"
-    kinematics_trajectory_weight: float = 1.0
-    velocity_weight: float = 1.0
-    endpoint_weight: float = 0.0
-    settling_weight: float = 0.0
-    action_force_weight: float = 1.0
-    perturbation_response_weight: float = 1.0
-    input_output_jvp_weight: float = 0.25
-    task_rollout_loss_weight: float = 0.0
-    write_run_spec: bool = False
-    dry_run: bool = False
-    smoke_preflight: bool = False
-    smoke_train: bool = False
-    smoke_n_batches: int = Field(1, gt=0)
-    smoke_batch_size: int = Field(1, gt=0)
-    full_train: bool = False
-    confirm_full_train: bool = False
-    resume: bool = False
-    user_confirmed: bool = False
+    run_id: str | None = training_preset_value("ClosedLoopDistillationConfig", "run_id")
+    run_spec: Path | None = training_preset_value("ClosedLoopDistillationConfig", "run_spec")
+    run_spec_output: Path | None = training_preset_value("ClosedLoopDistillationConfig", "run_spec_output")
+    output_dir: str | None = training_preset_value("ClosedLoopDistillationConfig", "output_dir")
+    teacher_package: str | None = training_preset_value("ClosedLoopDistillationConfig", "teacher_package")
+    teacher_gains_key: str | None = training_preset_value("ClosedLoopDistillationConfig", "teacher_gains_key")
+    horizon: int = Field(training_preset_value("ClosedLoopDistillationConfig", "horizon"), gt=0)
+    seed: int = training_preset_value("ClosedLoopDistillationConfig", "seed")
+    n_replicates: int = Field(training_preset_value("ClosedLoopDistillationConfig", "n_replicates"), gt=0)
+    hidden_size: int = Field(training_preset_value("ClosedLoopDistillationConfig", "hidden_size"), gt=0)
+    batch_size: int = Field(training_preset_value("ClosedLoopDistillationConfig", "batch_size"), gt=0)
+    n_batches: int = Field(training_preset_value("ClosedLoopDistillationConfig", "n_batches"), gt=0)
+    controller_lr: float = Field(training_preset_value("ClosedLoopDistillationConfig", "controller_lr"), gt=0.0)
+    lr_warmup_batches: int = Field(training_preset_value("ClosedLoopDistillationConfig", "lr_warmup_batches"), ge=0)
+    lr_cosine_alpha: float = Field(training_preset_value("ClosedLoopDistillationConfig", "lr_cosine_alpha"), ge=0.0)
+    gradient_clip_norm: float = Field(training_preset_value("ClosedLoopDistillationConfig", "gradient_clip_norm"), gt=0.0)
+    checkpoint_interval_batches: int = Field(training_preset_value("ClosedLoopDistillationConfig", "checkpoint_interval_batches"), gt=0)
+    trainable_dtype: str = training_preset_value("ClosedLoopDistillationConfig", "trainable_dtype")
+    kinematics_trajectory_weight: float = training_preset_value("ClosedLoopDistillationConfig", "kinematics_trajectory_weight")
+    velocity_weight: float = training_preset_value("ClosedLoopDistillationConfig", "velocity_weight")
+    endpoint_weight: float = training_preset_value("ClosedLoopDistillationConfig", "endpoint_weight")
+    settling_weight: float = training_preset_value("ClosedLoopDistillationConfig", "settling_weight")
+    action_force_weight: float = training_preset_value("ClosedLoopDistillationConfig", "action_force_weight")
+    perturbation_response_weight: float = training_preset_value("ClosedLoopDistillationConfig", "perturbation_response_weight")
+    input_output_jvp_weight: float = training_preset_value("ClosedLoopDistillationConfig", "input_output_jvp_weight")
+    task_rollout_loss_weight: float = training_preset_value("ClosedLoopDistillationConfig", "task_rollout_loss_weight")
+    write_run_spec: bool = training_preset_value("ClosedLoopDistillationConfig", "write_run_spec")
+    dry_run: bool = training_preset_value("ClosedLoopDistillationConfig", "dry_run")
+    smoke_preflight: bool = training_preset_value("ClosedLoopDistillationConfig", "smoke_preflight")
+    smoke_train: bool = training_preset_value("ClosedLoopDistillationConfig", "smoke_train")
+    smoke_n_batches: int = Field(training_preset_value("ClosedLoopDistillationConfig", "smoke_n_batches"), gt=0)
+    smoke_batch_size: int = Field(training_preset_value("ClosedLoopDistillationConfig", "smoke_batch_size"), gt=0)
+    full_train: bool = training_preset_value("ClosedLoopDistillationConfig", "full_train")
+    confirm_full_train: bool = training_preset_value("ClosedLoopDistillationConfig", "confirm_full_train")
+    resume: bool = training_preset_value("ClosedLoopDistillationConfig", "resume")
+    user_confirmed: bool = training_preset_value("ClosedLoopDistillationConfig", "user_confirmed")
 
 
 class MinimaxConfig(BaseModel):
@@ -2498,66 +2436,66 @@ class MinimaxConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    n_warmup_batches: int = Field(2000, ge=0)
-    n_adversary_batches: int = Field(8000, ge=0)
-    n_adversary_steps: int = Field(5, gt=0)
-    batch_size: int = Field(250, gt=0)
-    adv_batch_size: int | None = None
-    n_replicates: int = Field(5, gt=0)
-    seed: int = 42
+    n_warmup_batches: int = Field(training_preset_value("MinimaxConfig", "n_warmup_batches"), ge=0)
+    n_adversary_batches: int = Field(training_preset_value("MinimaxConfig", "n_adversary_batches"), ge=0)
+    n_adversary_steps: int = Field(training_preset_value("MinimaxConfig", "n_adversary_steps"), gt=0)
+    batch_size: int = Field(training_preset_value("MinimaxConfig", "batch_size"), gt=0)
+    adv_batch_size: int | None = training_preset_value("MinimaxConfig", "adv_batch_size")
+    n_replicates: int = Field(training_preset_value("MinimaxConfig", "n_replicates"), gt=0)
+    seed: int = training_preset_value("MinimaxConfig", "seed")
 
-    controller_lr: float = 1e-4
-    adversary_lr: float = 3e-4
-    loss_update_enabled: bool = False
-    loss_update_ratio: float = 0.5
+    controller_lr: float = training_preset_value("MinimaxConfig", "controller_lr")
+    adversary_lr: float = training_preset_value("MinimaxConfig", "adversary_lr")
+    loss_update_enabled: bool = training_preset_value("MinimaxConfig", "loss_update_enabled")
+    loss_update_ratio: float = training_preset_value("MinimaxConfig", "loss_update_ratio")
 
-    adversary_type: Literal["gaussian_bump", "linear_dynamics"] = "gaussian_bump"
-    n_adversaries: int = Field(1, gt=0)
-    n_bumps: int = 3
-    force_max: float = 1.0
-    linear_dynamics_eta_max: float = 0.1
-    linear_dynamics_pgd_steps: int = 5
-    linear_dynamics_lr: float = 1e-2
+    adversary_type: Literal["gaussian_bump", "linear_dynamics"] = training_preset_value("MinimaxConfig", "adversary_type")
+    n_adversaries: int = Field(training_preset_value("MinimaxConfig", "n_adversaries"), gt=0)
+    n_bumps: int = training_preset_value("MinimaxConfig", "n_bumps")
+    force_max: float = training_preset_value("MinimaxConfig", "force_max")
+    linear_dynamics_eta_max: float = training_preset_value("MinimaxConfig", "linear_dynamics_eta_max")
+    linear_dynamics_pgd_steps: int = training_preset_value("MinimaxConfig", "linear_dynamics_pgd_steps")
+    linear_dynamics_lr: float = training_preset_value("MinimaxConfig", "linear_dynamics_lr")
 
-    hidden_type: Literal["gru", "vanilla_rnn", "linear", "linear_tracker"] = "gru"
-    sisu_gating: Literal["additive", "multiplicative"] = "additive"
+    hidden_type: Literal["gru", "vanilla_rnn", "linear", "linear_tracker"] = training_preset_value("MinimaxConfig", "hidden_type")
+    sisu_gating: Literal["additive", "multiplicative"] = training_preset_value("MinimaxConfig", "sisu_gating")
 
-    nn_output: float = 1e-5
-    nn_hidden: float = 1e-5
-    nn_hidden_derivative: float = 0.0
-    nn_output_jerk: float = 0.0
-    nn_output_pre_go: float = 0.0
-    nn_hidden_derivative_pre_go: float = 0.0
-    effector_hold_pos: float = 10.0
-    effector_hold_vel: float = 10.0
-    effector_final_vel: float = 0.0
-    effector_vel_late: float = 0.1
-    effector_pos_running: float = 1.0
-    effector_pos_late_weight: float = 0.5
-    effector_pos_late_final_scale: float = 2.0
-    effector_pos_late_start_step: int = 80
+    nn_output: float = training_preset_value("MinimaxConfig", "nn_output")
+    nn_hidden: float = training_preset_value("MinimaxConfig", "nn_hidden")
+    nn_hidden_derivative: float = training_preset_value("MinimaxConfig", "nn_hidden_derivative")
+    nn_output_jerk: float = training_preset_value("MinimaxConfig", "nn_output_jerk")
+    nn_output_pre_go: float = training_preset_value("MinimaxConfig", "nn_output_pre_go")
+    nn_hidden_derivative_pre_go: float = training_preset_value("MinimaxConfig", "nn_hidden_derivative_pre_go")
+    effector_hold_pos: float = training_preset_value("MinimaxConfig", "effector_hold_pos")
+    effector_hold_vel: float = training_preset_value("MinimaxConfig", "effector_hold_vel")
+    effector_final_vel: float = training_preset_value("MinimaxConfig", "effector_final_vel")
+    effector_vel_late: float = training_preset_value("MinimaxConfig", "effector_vel_late")
+    effector_pos_running: float = training_preset_value("MinimaxConfig", "effector_pos_running")
+    effector_pos_late_weight: float = training_preset_value("MinimaxConfig", "effector_pos_late_weight")
+    effector_pos_late_final_scale: float = training_preset_value("MinimaxConfig", "effector_pos_late_final_scale")
+    effector_pos_late_start_step: int = training_preset_value("MinimaxConfig", "effector_pos_late_start_step")
 
-    effector_pos_running_schedule: Literal["flat", "powerlaw", "movement_ramp"] = "flat"
-    effector_hold_pos_schedule: Literal["flat", "powerlaw"] = "flat"
-    position_powerlaw_power: float = 6.0
-    movement_ramp_shape: Literal["linear", "cosine", "power"] = "linear"
-    movement_ramp_duration_steps: int = 60
-    movement_ramp_power: float = 2.0
+    effector_pos_running_schedule: Literal["flat", "powerlaw", "movement_ramp"] = training_preset_value("MinimaxConfig", "effector_pos_running_schedule")
+    effector_hold_pos_schedule: Literal["flat", "powerlaw"] = training_preset_value("MinimaxConfig", "effector_hold_pos_schedule")
+    position_powerlaw_power: float = training_preset_value("MinimaxConfig", "position_powerlaw_power")
+    movement_ramp_shape: Literal["linear", "cosine", "power"] = training_preset_value("MinimaxConfig", "movement_ramp_shape")
+    movement_ramp_duration_steps: int = training_preset_value("MinimaxConfig", "movement_ramp_duration_steps")
+    movement_ramp_power: float = training_preset_value("MinimaxConfig", "movement_ramp_power")
 
-    p_catch_trial: float = 0.5
+    p_catch_trial: float = training_preset_value("MinimaxConfig", "p_catch_trial")
 
-    warmup_model: str | None = None
-    output_dir: str = "_artifacts/minimax/minimax_test"
-    spec_dir: str | None = None
-    jax_cache_dir: str | None = None
-    jax_explain_cache_misses: bool = False
-    allow_x64: bool = False
-    checkpoint: bool = False
-    checkpoint_every: int = 500
-    resume: bool = False
-    allow_fresh_start: bool = False
-    fused: bool = True
-    streaming_loss: bool = False
+    warmup_model: str | None = training_preset_value("MinimaxConfig", "warmup_model")
+    output_dir: str
+    spec_dir: str | None = training_preset_value("MinimaxConfig", "spec_dir")
+    jax_cache_dir: str | None = training_preset_value("MinimaxConfig", "jax_cache_dir")
+    jax_explain_cache_misses: bool = training_preset_value("MinimaxConfig", "jax_explain_cache_misses")
+    allow_x64: bool = training_preset_value("MinimaxConfig", "allow_x64")
+    checkpoint: bool = training_preset_value("MinimaxConfig", "checkpoint")
+    checkpoint_every: int = training_preset_value("MinimaxConfig", "checkpoint_every")
+    resume: bool = training_preset_value("MinimaxConfig", "resume")
+    allow_fresh_start: bool = training_preset_value("MinimaxConfig", "allow_fresh_start")
+    fused: bool = training_preset_value("MinimaxConfig", "fused")
+    streaming_loss: bool = training_preset_value("MinimaxConfig", "streaming_loss")
 
     @model_validator(mode="after")
     def _validate_config(self) -> "MinimaxConfig":
@@ -2590,74 +2528,77 @@ class CsNominalGruConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    run_spec: str | None = None
-    compact_run_spec: bool = Field(False, exclude=True)
-    output_dir: str = Field(f"_artifacts/{ISSUE_ID}/runs/cs_stochastic_gru__no_hidden_penalty")
-    spec_dir: str | None = None
-    issue: str = ISSUE_ID
-    seed: int = 42
+    run_spec: str | None = training_preset_value("CsNominalGruConfig", "run_spec")
+    compact_run_spec: bool = Field(training_preset_value("CsNominalGruConfig", "compact_run_spec"), exclude=True)
+    output_dir: str
+    spec_dir: str | None = training_preset_value("CsNominalGruConfig", "spec_dir")
+    issue: str
+    seed: int = training_preset_value("CsNominalGruConfig", "seed")
+    controller_architecture: Literal["gru"] = training_preset_value(
+        "CsNominalGruConfig", "controller_architecture"
+    )
 
-    n_train_batches: int = Field(12000, ge=0)
-    batch_size: int = Field(250, gt=0)
-    controller_lr: float = Field(1e-2, gt=0.0)
-    lr_warmup_batches: int = Field(0, ge=0)
-    lr_warmup_init_fraction: float = Field(0.1, ge=0.0)
-    lr_cosine_alpha: float = Field(1.0, ge=0.0)
-    gradient_clip_norm: float | None = None
-    n_replicates: int = Field(5, gt=0)
-    hidden_size: int = Field(180, gt=0)
+    n_train_batches: int = Field(training_preset_value("CsNominalGruConfig", "n_train_batches"), ge=0)
+    batch_size: int = Field(training_preset_value("CsNominalGruConfig", "batch_size"), gt=0)
+    controller_lr: float = Field(training_preset_value("CsNominalGruConfig", "controller_lr"), gt=0.0)
+    lr_warmup_batches: int = Field(training_preset_value("CsNominalGruConfig", "lr_warmup_batches"), ge=0)
+    lr_warmup_init_fraction: float = Field(training_preset_value("CsNominalGruConfig", "lr_warmup_init_fraction"), ge=0.0)
+    lr_cosine_alpha: float = Field(training_preset_value("CsNominalGruConfig", "lr_cosine_alpha"), ge=0.0)
+    gradient_clip_norm: float | None = training_preset_value("CsNominalGruConfig", "gradient_clip_norm")
+    n_replicates: int = Field(training_preset_value("CsNominalGruConfig", "n_replicates"), gt=0)
+    hidden_size: int = Field(training_preset_value("CsNominalGruConfig", "hidden_size"), gt=0)
 
-    plant_backend: Literal["cs_lss", "legacy_causal_simplefeedback"] = "cs_lss"
-    no_integrator_state: bool = False
-    stochastic_preset: Literal["cs2019-rollout"] = "cs2019-rollout"
-    target_m: float = 0.15
-    n_input_only: int = Field(0, ge=0)
-    n_readout_only: int = Field(0, ge=0)
-    n_recurrent_only: int = Field(0, ge=0)
+    plant_backend: Literal["cs_lss", "legacy_causal_simplefeedback"] = training_preset_value("CsNominalGruConfig", "plant_backend")
+    no_integrator_state: bool = training_preset_value("CsNominalGruConfig", "no_integrator_state")
+    stochastic_preset: Literal["cs2019-rollout"] = training_preset_value("CsNominalGruConfig", "stochastic_preset")
+    target_m: float = training_preset_value("CsNominalGruConfig", "target_m")
+    n_input_only: int = Field(training_preset_value("CsNominalGruConfig", "n_input_only"), ge=0)
+    n_readout_only: int = Field(training_preset_value("CsNominalGruConfig", "n_readout_only"), ge=0)
+    n_recurrent_only: int = Field(training_preset_value("CsNominalGruConfig", "n_recurrent_only"), ge=0)
 
-    effector_pos_running: float = CS_POSITION_SCALE
-    effector_vel_running: float = CS_VELOCITY_SCALE
-    effector_terminal_pos: float = CS_POSITION_SCALE
-    effector_terminal_vel: float = CS_VELOCITY_SCALE
-    effector_final_vel: float = 0.0
-    nn_output: float = CS_CONTROL_SCALE
-    nn_output_jerk: float = 0.0
-    nn_output_pre_go: float | None = None
-    delayed_pre_go_force_filter_hold: float = 0.0
-    delayed_pre_go_start_pos_hold: float = 0.0
-    delayed_pre_go_start_pos_hold_norm: Literal["l2", "l1"] = "l2"
-    delayed_pre_go_zero_vel_hold: float = 0.0
+    effector_pos_running: float = training_preset_value("CsNominalGruConfig", "effector_pos_running")
+    effector_vel_running: float = training_preset_value("CsNominalGruConfig", "effector_vel_running")
+    effector_terminal_pos: float = training_preset_value("CsNominalGruConfig", "effector_terminal_pos")
+    effector_terminal_vel: float = training_preset_value("CsNominalGruConfig", "effector_terminal_vel")
+    effector_final_vel: float = training_preset_value("CsNominalGruConfig", "effector_final_vel")
+    nn_output: float = training_preset_value("CsNominalGruConfig", "nn_output")
+    nn_output_jerk: float = training_preset_value("CsNominalGruConfig", "nn_output_jerk")
+    nn_output_pre_go: float | None = training_preset_value("CsNominalGruConfig", "nn_output_pre_go")
+    delayed_pre_go_force_filter_hold: float = training_preset_value("CsNominalGruConfig", "delayed_pre_go_force_filter_hold")
+    delayed_pre_go_start_pos_hold: float = training_preset_value("CsNominalGruConfig", "delayed_pre_go_start_pos_hold")
+    delayed_pre_go_start_pos_hold_norm: Literal["l2", "l1"] = training_preset_value("CsNominalGruConfig", "delayed_pre_go_start_pos_hold_norm")
+    delayed_pre_go_zero_vel_hold: float = training_preset_value("CsNominalGruConfig", "delayed_pre_go_zero_vel_hold")
     loss_objective: Literal[
         "partial_feedbax_terms",
         "partial_net_output_force_filter",
         "full_analytical_qrf",
-    ] = "partial_feedbax_terms"
-    regularized_fidelity: bool = False
+    ] = training_preset_value("CsNominalGruConfig", "loss_objective")
+    regularized_fidelity: bool = training_preset_value("CsNominalGruConfig", "regularized_fidelity")
 
-    perturbation_training: bool | None = None
-    perturbation_nominal_fraction: float = 0.45
-    perturbation_single_fraction: float = 0.45
-    perturbation_combined_fraction: float = 0.10
-    perturbation_combined_amplitude_scale: float = 0.5
-    perturbation_initial_position_offset_m: float = 0.01
-    perturbation_initial_velocity_offset_m_s: float = 0.05
-    perturbation_process_epsilon_scale: float = 0.01
-    perturbation_command_input_pulse_n: float = 1.0
-    perturbation_sensory_feedback_offset_m: float = 0.01
-    perturbation_delayed_observation_offset_m: float = 0.01
-    perturbation_pulse_start_step: int = 20
-    perturbation_pulse_duration_steps: int = 5
-    perturbation_calibrated_timing: bool | None = None
-    perturbation_movement_age_timing: bool | None = None
-    perturbation_physical_level: Literal["small", "moderate", "stress"] | None = None
+    perturbation_training: bool | None = training_preset_value("CsNominalGruConfig", "perturbation_training")
+    perturbation_nominal_fraction: float = training_preset_value("CsNominalGruConfig", "perturbation_nominal_fraction")
+    perturbation_single_fraction: float = training_preset_value("CsNominalGruConfig", "perturbation_single_fraction")
+    perturbation_combined_fraction: float = training_preset_value("CsNominalGruConfig", "perturbation_combined_fraction")
+    perturbation_combined_amplitude_scale: float = training_preset_value("CsNominalGruConfig", "perturbation_combined_amplitude_scale")
+    perturbation_initial_position_offset_m: float = training_preset_value("CsNominalGruConfig", "perturbation_initial_position_offset_m")
+    perturbation_initial_velocity_offset_m_s: float = training_preset_value("CsNominalGruConfig", "perturbation_initial_velocity_offset_m_s")
+    perturbation_process_epsilon_scale: float = training_preset_value("CsNominalGruConfig", "perturbation_process_epsilon_scale")
+    perturbation_command_input_pulse_n: float = training_preset_value("CsNominalGruConfig", "perturbation_command_input_pulse_n")
+    perturbation_sensory_feedback_offset_m: float = training_preset_value("CsNominalGruConfig", "perturbation_sensory_feedback_offset_m")
+    perturbation_delayed_observation_offset_m: float = training_preset_value("CsNominalGruConfig", "perturbation_delayed_observation_offset_m")
+    perturbation_pulse_start_step: int = training_preset_value("CsNominalGruConfig", "perturbation_pulse_start_step")
+    perturbation_pulse_duration_steps: int = training_preset_value("CsNominalGruConfig", "perturbation_pulse_duration_steps")
+    perturbation_calibrated_timing: bool | None = training_preset_value("CsNominalGruConfig", "perturbation_calibrated_timing")
+    perturbation_movement_age_timing: bool | None = training_preset_value("CsNominalGruConfig", "perturbation_movement_age_timing")
+    perturbation_physical_level: Literal["small", "moderate", "stress"] | None = training_preset_value("CsNominalGruConfig", "perturbation_physical_level")
     perturbation_calibration_regime: Literal[
         "open_loop_all",
         "closed_loop_sensory",
         "closed_loop_sensory_command_lateral",
-    ] = "open_loop_all"
-    perturbation_closed_loop_calibration_table: str | None = None
+    ] = training_preset_value("CsNominalGruConfig", "perturbation_calibration_regime")
+    perturbation_closed_loop_calibration_table: str | None = training_preset_value("CsNominalGruConfig", "perturbation_closed_loop_calibration_table")
 
-    target_relative_multitarget: bool = False
+    target_relative_multitarget: bool = training_preset_value("CsNominalGruConfig", "target_relative_multitarget")
     target_support_profile: Literal[
         "old_020a65b",
         "const_dense_all",
@@ -2665,108 +2606,108 @@ class CsNominalGruConfig(BaseModel):
         "const_band8",
         "const_band16",
         "const_band36",
-    ] = DEFAULT_TARGET_SUPPORT_PROFILE
-    delayed_reach: bool = False
-    delayed_reach_go_cue_min_step: int = 10
-    delayed_reach_go_cue_max_step: int = 30
-    delayed_reach_p_catch_trial: float = 0.5
+    ] = training_preset_value("CsNominalGruConfig", "target_support_profile")
+    delayed_reach: bool = training_preset_value("CsNominalGruConfig", "delayed_reach")
+    delayed_reach_go_cue_min_step: int = training_preset_value("CsNominalGruConfig", "delayed_reach_go_cue_min_step")
+    delayed_reach_go_cue_max_step: int = training_preset_value("CsNominalGruConfig", "delayed_reach_go_cue_max_step")
+    delayed_reach_p_catch_trial: float = training_preset_value("CsNominalGruConfig", "delayed_reach_p_catch_trial")
     delayed_movement_cost_tail_mode: Literal[
         "canonical_window",
         "flat_after_canonical_horizon",
-    ] = DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW
-    delayed_reach_trial_type_normalized_loss: bool = False
-    delayed_reach_no_catch_qrf_weight: float = 1.0
-    delayed_reach_catch_qrf_weight: float = 1.0
-    force_filter_feedback: bool | None = None
+    ] = training_preset_value("CsNominalGruConfig", "delayed_movement_cost_tail_mode")
+    delayed_reach_trial_type_normalized_loss: bool = training_preset_value("CsNominalGruConfig", "delayed_reach_trial_type_normalized_loss")
+    delayed_reach_no_catch_qrf_weight: float = training_preset_value("CsNominalGruConfig", "delayed_reach_no_catch_qrf_weight")
+    delayed_reach_catch_qrf_weight: float = training_preset_value("CsNominalGruConfig", "delayed_reach_catch_qrf_weight")
+    force_filter_feedback: bool | None = training_preset_value("CsNominalGruConfig", "force_filter_feedback")
 
-    broad_epsilon_training: bool = False
-    broad_epsilon_pgd_training: bool = False
-    broad_epsilon_level: Literal["moderate", "strong"] = "moderate"
-    broad_epsilon_budget_scale: float = 1.0
-    broad_epsilon_pgd_fixed_radius_15cm: float | None = None
-    broad_epsilon_pgd_fixed_radius_source: str | None = None
-    broad_epsilon_reach_scaling: bool = True
-    broad_epsilon_pgd_steps: int = Field(3, gt=0)
-    broad_epsilon_pgd_step_size_fraction: float = 0.25
+    broad_epsilon_training: bool = training_preset_value("CsNominalGruConfig", "broad_epsilon_training")
+    broad_epsilon_pgd_training: bool = training_preset_value("CsNominalGruConfig", "broad_epsilon_pgd_training")
+    broad_epsilon_level: Literal["moderate", "strong"] = training_preset_value("CsNominalGruConfig", "broad_epsilon_level")
+    broad_epsilon_budget_scale: float = training_preset_value("CsNominalGruConfig", "broad_epsilon_budget_scale")
+    broad_epsilon_pgd_fixed_radius_15cm: float | None = training_preset_value("CsNominalGruConfig", "broad_epsilon_pgd_fixed_radius_15cm")
+    broad_epsilon_pgd_fixed_radius_source: str | None = training_preset_value("CsNominalGruConfig", "broad_epsilon_pgd_fixed_radius_source")
+    broad_epsilon_reach_scaling: bool = training_preset_value("CsNominalGruConfig", "broad_epsilon_reach_scaling")
+    broad_epsilon_pgd_steps: int = Field(training_preset_value("CsNominalGruConfig", "broad_epsilon_pgd_steps"), gt=0)
+    broad_epsilon_pgd_step_size_fraction: float = training_preset_value("CsNominalGruConfig", "broad_epsilon_pgd_step_size_fraction")
     broad_epsilon_pgd_inner_optimizer_method: Literal[
         "projected_gradient_ascent",
         "adam",
-    ] = "projected_gradient_ascent"
-    broad_epsilon_pgd_adam_lr: float = 3e-4
-    broad_epsilon_pgd_adam_b1: float = 0.9
-    broad_epsilon_pgd_adam_b2: float = 0.999
-    broad_epsilon_pgd_adam_eps: float = 1e-8
+    ] = training_preset_value("CsNominalGruConfig", "broad_epsilon_pgd_inner_optimizer_method")
+    broad_epsilon_pgd_adam_lr: float = training_preset_value("CsNominalGruConfig", "broad_epsilon_pgd_adam_lr")
+    broad_epsilon_pgd_adam_b1: float = training_preset_value("CsNominalGruConfig", "broad_epsilon_pgd_adam_b1")
+    broad_epsilon_pgd_adam_b2: float = training_preset_value("CsNominalGruConfig", "broad_epsilon_pgd_adam_b2")
+    broad_epsilon_pgd_adam_eps: float = training_preset_value("CsNominalGruConfig", "broad_epsilon_pgd_adam_eps")
     broad_epsilon_pgd_mechanism: Literal[
         "direct_epsilon",
         "linear_no_bias",
         "affine",
-    ] = "direct_epsilon"
-    broad_epsilon_pgd_objective: Literal["hard_l2", "soft_energy"] = "hard_l2"
-    broad_epsilon_pgd_energy_gamma_star: float | None = None
-    broad_epsilon_pgd_energy_gamma_factor: float | None = None
-    broad_epsilon_pgd_energy_gamma: float | None = None
-    broad_epsilon_pgd_energy_penalty_scale: float = 1.0
-    broad_epsilon_pgd_energy_lambda: float | None = None
-    broad_epsilon_pgd_safety_cap_15cm: float | None = None
-    broad_epsilon_pgd_safety_cap_source: str | None = None
-    broad_epsilon_pgd_budget_schedule: Literal["fixed", "sisu_energy_fraction"] = "fixed"
-    broad_epsilon_pgd_sisu_condition_input: Literal["auto", "input", "sisu"] = "auto"
-    broad_epsilon_pgd_sisu_max_radius: float | None = None
-    broad_epsilon_pgd_sisu_max_radius_source: str | None = None
+    ] = training_preset_value("CsNominalGruConfig", "broad_epsilon_pgd_mechanism")
+    broad_epsilon_pgd_objective: Literal["hard_l2", "soft_energy"] = training_preset_value("CsNominalGruConfig", "broad_epsilon_pgd_objective")
+    broad_epsilon_pgd_energy_gamma_star: float | None = training_preset_value("CsNominalGruConfig", "broad_epsilon_pgd_energy_gamma_star")
+    broad_epsilon_pgd_energy_gamma_factor: float | None = training_preset_value("CsNominalGruConfig", "broad_epsilon_pgd_energy_gamma_factor")
+    broad_epsilon_pgd_energy_gamma: float | None = training_preset_value("CsNominalGruConfig", "broad_epsilon_pgd_energy_gamma")
+    broad_epsilon_pgd_energy_penalty_scale: float = training_preset_value("CsNominalGruConfig", "broad_epsilon_pgd_energy_penalty_scale")
+    broad_epsilon_pgd_energy_lambda: float | None = training_preset_value("CsNominalGruConfig", "broad_epsilon_pgd_energy_lambda")
+    broad_epsilon_pgd_safety_cap_15cm: float | None = training_preset_value("CsNominalGruConfig", "broad_epsilon_pgd_safety_cap_15cm")
+    broad_epsilon_pgd_safety_cap_source: str | None = training_preset_value("CsNominalGruConfig", "broad_epsilon_pgd_safety_cap_source")
+    broad_epsilon_pgd_budget_schedule: Literal["fixed", "sisu_energy_fraction"] = training_preset_value("CsNominalGruConfig", "broad_epsilon_pgd_budget_schedule")
+    broad_epsilon_pgd_sisu_condition_input: Literal["auto", "input", "sisu"] = training_preset_value("CsNominalGruConfig", "broad_epsilon_pgd_sisu_condition_input")
+    broad_epsilon_pgd_sisu_max_radius: float | None = training_preset_value("CsNominalGruConfig", "broad_epsilon_pgd_sisu_max_radius")
+    broad_epsilon_pgd_sisu_max_radius_source: str | None = training_preset_value("CsNominalGruConfig", "broad_epsilon_pgd_sisu_max_radius_source")
 
-    adaptive_epsilon_curriculum: bool = False
+    adaptive_epsilon_curriculum: bool = training_preset_value("CsNominalGruConfig", "adaptive_epsilon_curriculum")
     adaptive_epsilon_controller_training_mode: Literal[
         "loss_blend",
         "epsilon_scaled_outer_training",
-    ] = ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND
-    adaptive_epsilon_damage_start: float = 0.0
-    adaptive_epsilon_damage_peak: float = 3500.0
-    adaptive_epsilon_damage_final: float = 1000.0
-    adaptive_epsilon_damage_ramp_batches: int = 2500
-    adaptive_epsilon_damage_anneal_batches: int = 5000
-    adaptive_epsilon_update_interval_batches: int = 50
-    adaptive_epsilon_ema_alpha: float = 0.1
-    adaptive_epsilon_eta: float = 0.1
-    adaptive_epsilon_deadband_frac: float = 0.10
-    adaptive_epsilon_hysteresis_frac: float | None = None
-    adaptive_epsilon_freeze_during_application_ramp: bool = False
-    adaptive_epsilon_gain_normalization: bool = False
-    adaptive_epsilon_gain_ema_alpha: float = 0.2
-    adaptive_epsilon_gain_min: float = 0.25
-    adaptive_epsilon_gain_max: float = 8.0
-    adaptive_epsilon_lambda_min: float | None = None
-    adaptive_epsilon_lambda_max: float | None = None
-    adaptive_epsilon_max_log_step: float = 0.25
-    adaptive_epsilon_outer_weight_start: float = 0.0
-    adaptive_epsilon_outer_weight_final: float = 1.0
-    adaptive_epsilon_outer_weight_ramp_batches: int = 2500
+    ] = training_preset_value("CsNominalGruConfig", "adaptive_epsilon_controller_training_mode")
+    adaptive_epsilon_damage_start: float = training_preset_value("CsNominalGruConfig", "adaptive_epsilon_damage_start")
+    adaptive_epsilon_damage_peak: float = training_preset_value("CsNominalGruConfig", "adaptive_epsilon_damage_peak")
+    adaptive_epsilon_damage_final: float = training_preset_value("CsNominalGruConfig", "adaptive_epsilon_damage_final")
+    adaptive_epsilon_damage_ramp_batches: int = training_preset_value("CsNominalGruConfig", "adaptive_epsilon_damage_ramp_batches")
+    adaptive_epsilon_damage_anneal_batches: int = training_preset_value("CsNominalGruConfig", "adaptive_epsilon_damage_anneal_batches")
+    adaptive_epsilon_update_interval_batches: int = training_preset_value("CsNominalGruConfig", "adaptive_epsilon_update_interval_batches")
+    adaptive_epsilon_ema_alpha: float = training_preset_value("CsNominalGruConfig", "adaptive_epsilon_ema_alpha")
+    adaptive_epsilon_eta: float = training_preset_value("CsNominalGruConfig", "adaptive_epsilon_eta")
+    adaptive_epsilon_deadband_frac: float = training_preset_value("CsNominalGruConfig", "adaptive_epsilon_deadband_frac")
+    adaptive_epsilon_hysteresis_frac: float | None = training_preset_value("CsNominalGruConfig", "adaptive_epsilon_hysteresis_frac")
+    adaptive_epsilon_freeze_during_application_ramp: bool = training_preset_value("CsNominalGruConfig", "adaptive_epsilon_freeze_during_application_ramp")
+    adaptive_epsilon_gain_normalization: bool = training_preset_value("CsNominalGruConfig", "adaptive_epsilon_gain_normalization")
+    adaptive_epsilon_gain_ema_alpha: float = training_preset_value("CsNominalGruConfig", "adaptive_epsilon_gain_ema_alpha")
+    adaptive_epsilon_gain_min: float = training_preset_value("CsNominalGruConfig", "adaptive_epsilon_gain_min")
+    adaptive_epsilon_gain_max: float = training_preset_value("CsNominalGruConfig", "adaptive_epsilon_gain_max")
+    adaptive_epsilon_lambda_min: float | None = training_preset_value("CsNominalGruConfig", "adaptive_epsilon_lambda_min")
+    adaptive_epsilon_lambda_max: float | None = training_preset_value("CsNominalGruConfig", "adaptive_epsilon_lambda_max")
+    adaptive_epsilon_max_log_step: float = training_preset_value("CsNominalGruConfig", "adaptive_epsilon_max_log_step")
+    adaptive_epsilon_outer_weight_start: float = training_preset_value("CsNominalGruConfig", "adaptive_epsilon_outer_weight_start")
+    adaptive_epsilon_outer_weight_final: float = training_preset_value("CsNominalGruConfig", "adaptive_epsilon_outer_weight_final")
+    adaptive_epsilon_outer_weight_ramp_batches: int = training_preset_value("CsNominalGruConfig", "adaptive_epsilon_outer_weight_ramp_batches")
 
-    policy_adversary_training: bool = False
+    policy_adversary_training: bool = training_preset_value("CsNominalGruConfig", "policy_adversary_training")
     policy_adversary_policy_class: Literal["memoryless_mlp", "linear_no_bias", "affine"] = (
-        "memoryless_mlp"
+        training_preset_value("CsNominalGruConfig", "policy_adversary_policy_class")
     )
-    policy_adversary_mode: Literal["plain", "energy"] = "plain"
-    policy_adversary_width: int = Field(64, gt=0)
-    policy_adversary_depth: int = Field(2, ge=0)
-    policy_adversary_steps: int = Field(5, gt=0)
-    policy_adversary_lr: float = 3e-4
-    policy_adversary_energy_gamma: float = 1.0
-    policy_adversary_radius_15cm: float | None = None
-    policy_adversary_radius_source: str | None = None
+    policy_adversary_mode: Literal["plain", "energy"] = training_preset_value("CsNominalGruConfig", "policy_adversary_mode")
+    policy_adversary_width: int = Field(training_preset_value("CsNominalGruConfig", "policy_adversary_width"), gt=0)
+    policy_adversary_depth: int = Field(training_preset_value("CsNominalGruConfig", "policy_adversary_depth"), ge=0)
+    policy_adversary_steps: int = Field(training_preset_value("CsNominalGruConfig", "policy_adversary_steps"), gt=0)
+    policy_adversary_lr: float = training_preset_value("CsNominalGruConfig", "policy_adversary_lr")
+    policy_adversary_energy_gamma: float = training_preset_value("CsNominalGruConfig", "policy_adversary_energy_gamma")
+    policy_adversary_radius_15cm: float | None = training_preset_value("CsNominalGruConfig", "policy_adversary_radius_15cm")
+    policy_adversary_radius_source: str | None = training_preset_value("CsNominalGruConfig", "policy_adversary_radius_source")
 
-    initial_hidden_encoder: bool = False
-    smoke: bool = False
-    full_train: bool = False
-    resume: bool = False
-    allow_fresh_start: bool = False
-    stop_after_batches: int | None = None
-    training_diagnostics: bool = True
-    checkpoint_interval_batches: int = 500
-    log_step: int = 100
-    disable_progress: bool = False
-    quiet_progress: bool = True
-    allow_x64: bool = False
-    dry_run: bool = False
+    initial_hidden_encoder: bool = training_preset_value("CsNominalGruConfig", "initial_hidden_encoder")
+    smoke: bool = training_preset_value("CsNominalGruConfig", "smoke")
+    full_train: bool = training_preset_value("CsNominalGruConfig", "full_train")
+    resume: bool = training_preset_value("CsNominalGruConfig", "resume")
+    allow_fresh_start: bool = training_preset_value("CsNominalGruConfig", "allow_fresh_start")
+    stop_after_batches: int | None = training_preset_value("CsNominalGruConfig", "stop_after_batches")
+    training_diagnostics: bool = training_preset_value("CsNominalGruConfig", "training_diagnostics")
+    checkpoint_interval_batches: int = training_preset_value("CsNominalGruConfig", "checkpoint_interval_batches")
+    log_step: int = training_preset_value("CsNominalGruConfig", "log_step")
+    disable_progress: bool = training_preset_value("CsNominalGruConfig", "disable_progress")
+    quiet_progress: bool = training_preset_value("CsNominalGruConfig", "quiet_progress")
+    allow_x64: bool = training_preset_value("CsNominalGruConfig", "allow_x64")
+    dry_run: bool = training_preset_value("CsNominalGruConfig", "dry_run")
 
     @model_validator(mode="after")
     def _validate_config(self) -> "CsNominalGruConfig":
@@ -2783,42 +2724,28 @@ class CsNominalGruConfig(BaseModel):
         return self
 
 
-def _normalize_fixed_target_payload(config: Any) -> FixedTargetPerturbationTrainingConfig:
-    """Normalize historical fixed-target training metadata."""
+def validate_training_config(config_type: type[BaseModel], payload: Any) -> Any:
+    """Validate current authoring or read a frozen pre-canonical runtime payload."""
 
-    return FixedTargetPerturbationTrainingConfig(
-        enabled=bool(_payload_get(config, "enabled", False)),
-        nominal_fraction=float(_payload_get(config, "nominal_fraction", 0.45)),
-        single_fraction=float(_payload_get(config, "single_fraction", 0.45)),
-        combined_fraction=float(_payload_get(config, "combined_fraction", 0.10)),
-        combined_amplitude_scale=float(_payload_get(config, "combined_amplitude_scale", 0.5)),
-        initial_position_offset_m=float(_payload_get(config, "initial_position_offset_m", 0.01)),
-        initial_velocity_offset_m_s=float(
-            _payload_get(config, "initial_velocity_offset_m_s", 0.05)
-        ),
-        process_epsilon_scale=float(_payload_get(config, "process_epsilon_scale", 0.01)),
-        command_input_pulse_n=float(_payload_get(config, "command_input_pulse_n", 1.0)),
-        sensory_feedback_offset_m=float(
-            _payload_get(config, "sensory_feedback_offset_m", 0.01)
-        ),
-        delayed_observation_offset_m=float(
-            _payload_get(config, "delayed_observation_offset_m", 0.01)
-        ),
-        pulse_start_step=int(_payload_get(config, "pulse_start_step", 20)),
-        pulse_duration_steps=int(_payload_get(config, "pulse_duration_steps", 5)),
-        calibrated_timing=bool(_payload_get(config, "calibrated_timing", False)),
-        movement_age_timing=bool(_payload_get(config, "movement_age_timing", False)),
-        physical_level=str(_payload_get(config, "physical_level", "moderate")),
-        force_filter_feedback=bool(_payload_get(config, "force_filter_feedback", False)),
-        calibration_regime=str(
-            _payload_get(config, "calibration_regime", OPEN_LOOP_ALL_CALIBRATION_REGIME)
-        ),
-        closed_loop_calibration_table_path=_payload_get(
-            config,
-            "closed_loop_calibration_table_path",
-            None,
-        ),
-    )
+    if isinstance(payload, config_type):
+        return payload
+    raw = payload if isinstance(payload, Mapping) else vars(payload)
+    canonical = raw.get("config")
+    if canonical is None:
+        extra_keys = set(raw).difference(config_type.model_fields)
+        if extra_keys:
+            canonical = migrate_frozen_rendered_training_payload(
+                config_type.__name__,
+                raw,
+                field_names=frozenset(config_type.model_fields),
+            )
+            if canonical is None:
+                canonical = raw
+        else:
+            canonical = raw
+    if not isinstance(canonical, Mapping):
+        canonical = vars(canonical)
+    return config_type.model_validate(canonical)
 
 
 def target_relative_target_support_config(
@@ -2915,325 +2842,6 @@ def target_relative_target_support_config(
 
     profiles = ", ".join(TARGET_SUPPORT_PROFILES)
     raise ValueError(f"Unknown target support profile {profile!r}; expected one of {profiles}.")
-
-
-def _normalize_target_payload(config: Any) -> TargetRelativeMultiTargetTrainingConfig:
-    """Normalize an hps target-distribution payload to a dataclass."""
-
-    enabled = bool(_payload_get(config, "enabled", False))
-    force_filter_feedback = _payload_get(config, "force_filter_feedback", False)
-    if not isinstance(force_filter_feedback, bool):
-        force_filter_feedback = bool(_payload_get(force_filter_feedback, "enabled", False))
-    target_distribution = _payload_get(config, "target_distribution", None)
-
-    profile = str(
-        _payload_get(
-            target_distribution,
-            "target_support_profile",
-            DEFAULT_TARGET_SUPPORT_PROFILE,
-        )
-    )
-    default_config = target_relative_target_support_config(
-        profile=profile,
-        enabled=enabled,
-        force_filter_feedback=bool(force_filter_feedback),
-    )
-    return TargetRelativeMultiTargetTrainingConfig(
-        enabled=enabled,
-        force_filter_feedback=bool(force_filter_feedback),
-        target_support_profile=profile,
-        seen_directions_deg=tuple(
-            float(x)
-            for x in _payload_get(
-                target_distribution,
-                "seen_directions_deg",
-                default_config.seen_directions_deg,
-            )
-        ),
-        held_out_directions_deg=tuple(
-            float(x)
-            for x in _payload_get(
-                target_distribution,
-                "held_out_directions_deg",
-                default_config.held_out_directions_deg,
-            )
-        ),
-        seen_amplitudes_m=tuple(
-            float(x)
-            for x in _payload_get(
-                target_distribution,
-                "seen_amplitudes_m",
-                default_config.seen_amplitudes_m,
-            )
-        ),
-        held_out_amplitudes_m=tuple(
-            float(x)
-            for x in _payload_get(
-                target_distribution,
-                "held_out_amplitudes_m",
-                default_config.held_out_amplitudes_m,
-            )
-        ),
-        original_target_anchor_m=tuple(
-            float(x)
-            for x in _payload_get(
-                target_distribution,
-                "original_target_anchor_m",
-                default_config.original_target_anchor_m,
-            )
-        ),
-        support_metadata=_payload_get(
-            target_distribution,
-            "support_metadata",
-            default_config.support_metadata,
-        ),
-    )
-
-
-def _normalize_broad_epsilon_payload(config: Any) -> BroadFullStateEpsilonTrainingConfig:
-    """Normalize an hps broad-epsilon payload to a dataclass."""
-
-    return BroadFullStateEpsilonTrainingConfig(
-        enabled=bool(getattr(config, "enabled", False)),
-        level=str(getattr(config, "level", "moderate")),
-        budget_scale=float(getattr(config, "budget_scale", 1.0)),
-        reach_length_scaling=bool(getattr(config, "reach_length_scaling", True)),
-        nominal_reach_length_m=float(
-            getattr(config, "nominal_reach_length_m", BROAD_EPSILON_REFERENCE_REACH_M)
-        ),
-        movement_epoch_only=bool(getattr(config, "movement_epoch_only", False)),
-        epsilon_dim=int(getattr(config, "epsilon_dim", BROAD_EPSILON_DIM)),
-    )
-
-
-def _normalize_broad_epsilon_pgd_payload(config: Any) -> PgdFullStateEpsilonTrainingConfig:
-    """Normalize an hps PGD broad-epsilon payload to a dataclass."""
-
-    inner = _payload_get(config, "inner_maximizer", None)
-    mechanism = _payload_get(config, "mechanism", None)
-    schedule = _payload_get(config, "budget_schedule", None)
-    objective = _payload_get(config, "objective", None)
-    safety_cap = _payload_get(config, "safety_cap", None)
-    budget_schedule = str(
-        _payload_get(schedule, "mode", BROAD_EPSILON_PGD_FIXED_BUDGET_SCHEDULE)
-    )
-    budget_contract = _payload_get(config, "budget_contract", None)
-    budget_source = _payload_get(budget_contract, "budget_source", None)
-    fixed_l2_radius_15cm = (
-        None
-        if budget_schedule != BROAD_EPSILON_PGD_FIXED_BUDGET_SCHEDULE
-        else _optional_float(
-            _payload_get(budget_contract, "effective_l2_radius_15cm", None)
-        )
-    )
-    fixed_radius_source = (
-        None
-        if budget_schedule != BROAD_EPSILON_PGD_FIXED_BUDGET_SCHEDULE
-        else _optional_str(
-            _payload_get(budget_source, "key", None)
-        )
-    )
-    adam = _payload_get(inner, "adam", None)
-    return PgdFullStateEpsilonTrainingConfig(
-        enabled=bool(_payload_get(config, "enabled", False)),
-        adversary_mechanism=str(
-            _first_payload_value(
-                (mechanism, "name"),
-                (mechanism, "policy_class"),
-                default=BROAD_EPSILON_PGD_DIRECT_EPSILON_MECHANISM,
-            )
-        ),
-        level=str(_payload_get(config, "level", "moderate")),
-        budget_scale=float(_payload_get(config, "budget_scale", 1.0)),
-        reach_length_scaling=bool(_payload_get(config, "reach_length_scaling", True)),
-        nominal_reach_length_m=float(
-            _payload_get(config, "nominal_reach_length_m", BROAD_EPSILON_REFERENCE_REACH_M)
-        ),
-        n_steps=int(_payload_get(inner, "n_steps", 3)),
-        step_size_fraction=float(
-            _first_payload_value(
-                (inner, "step_size_fraction_of_l2_radius"),
-                (inner, "step_size_fraction"),
-                default=0.25,
-            )
-        ),
-        inner_optimizer_method=str(
-            _payload_get(inner, "method", BROAD_EPSILON_PGD_PROJECTED_GRADIENT_ASCENT)
-        ),
-        adam_learning_rate=float(
-            _first_payload_value(
-                (adam, "learning_rate"),
-                (inner, "learning_rate"),
-                default=3e-4,
-            )
-        ),
-        adam_b1=float(_payload_get(adam, "b1", 0.9)),
-        adam_b2=float(_payload_get(adam, "b2", 0.999)),
-        adam_eps=float(_payload_get(adam, "eps", 1e-8)),
-        init=str(
-            _first_payload_value(
-                (inner, "initialization"),
-                (inner, "init"),
-                default="zero",
-            )
-        ),
-        movement_epoch_only=bool(_payload_get(config, "movement_epoch_only", False)),
-        epsilon_dim=int(_payload_get(config, "epsilon_dim", BROAD_EPSILON_DIM)),
-        budget_schedule=budget_schedule,
-        sisu_levels=tuple(
-            float(x)
-            for x in _payload_get(
-                schedule,
-                "levels",
-                DEFAULT_PGD_SISU_LEVELS,
-            )
-        ),
-        sisu_exact_zero_mass=float(
-            _payload_get(schedule, "exact_zero_mass", DEFAULT_PGD_SISU_EXACT_ZERO_MASS)
-        ),
-        sisu_condition_input=str(
-            _first_payload_value(
-                (schedule, "conditioning_input"),
-                (_payload_get(schedule, "conditioning_scalar", None), "input_key"),
-                default="auto",
-            )
-        ),
-        sisu_max_l2_radius_15cm=_optional_float(
-            _payload_get(schedule, "max_l2_radius_15cm", None)
-        ),
-        sisu_max_radius_source=_optional_str(
-            _first_payload_value(
-                (schedule, "max_radius_source_key"),
-                (_payload_get(schedule, "max_radius_source", None), "key"),
-                default=None,
-            )
-        ),
-        fixed_l2_radius_15cm=fixed_l2_radius_15cm,
-        fixed_radius_source=fixed_radius_source,
-        objective_kind=str(
-            _payload_get(objective, "kind", BROAD_EPSILON_PGD_HARD_L2_OBJECTIVE)
-        ),
-        energy_gamma_star=_optional_float(
-            _payload_get(objective, "gamma_star", None)
-        ),
-        energy_gamma_factor=_optional_float(
-            _payload_get(objective, "gamma_factor", None)
-        ),
-        energy_gamma=_optional_float(
-            _payload_get(objective, "gamma", None)
-        ),
-        energy_penalty_scale=float(_payload_get(objective, "penalty_scale_c", 1.0)),
-        energy_lambda=_optional_float(
-            _payload_get(objective, "lambda", None)
-        ),
-        safety_cap_l2_radius_15cm=_optional_float(
-            _payload_get(safety_cap, "l2_radius_15cm", None)
-        ),
-        safety_cap_source=_optional_str(
-            _payload_get(_payload_get(safety_cap, "source", None), "key", None)
-        ),
-    )
-
-
-def _normalize_policy_adversary_payload(config: Any) -> PolicyFullStateEpsilonTrainingConfig:
-    """Normalize an hps policy-adversary payload to a dataclass."""
-
-    policy = _payload_get(config, "policy", None)
-    optimizer = _payload_get(config, "inner_optimizer", None)
-    objective = _payload_get(config, "objective", None)
-    budget = _payload_get(config, "budget_contract", None)
-    budget_source = _payload_get(budget, "budget_source", None)
-    policy_kind = str(_payload_get(policy, "kind", POLICY_ADVERSARY_MEMORYLESS_MLP))
-    if policy_kind == "closed_loop_finite_time_varying_epsilon_policy":
-        metadata = _payload_get(policy, "metadata", None)
-        policy_kind = str(_payload_get(metadata, "policy_class", LINEAR_NO_BIAS_POLICY))
-    return PolicyFullStateEpsilonTrainingConfig(
-        enabled=bool(_payload_get(config, "enabled", False)),
-        policy_class=policy_kind,
-        mode=str(
-            _payload_get(objective, "active", POLICY_ADVERSARY_PLAIN_MODE)
-        ),
-        width=int(_payload_get(policy, "width", 64)),
-        depth=int(_payload_get(policy, "depth", 2)),
-        n_steps=int(
-            _payload_get(optimizer, "n_ascent_steps_per_controller_step", 5)
-        ),
-        learning_rate=float(
-            _payload_get(optimizer, "learning_rate", 3e-4)
-        ),
-        energy_penalty_gamma=float(
-            _payload_get(objective, "energy_penalty_gamma", 1.0)
-        ),
-        reference_l2_radius_15cm=_optional_float(
-            _first_payload_value(
-                (budget, "effective_l2_radius_15cm"),
-                (budget, "active_max_l2_radius_15cm"),
-                default=None,
-            )
-        ),
-        reach_length_scaling=bool(_payload_get(config, "reach_length_scaling", True)),
-        nominal_reach_length_m=float(
-            _payload_get(config, "nominal_reach_length_m", BROAD_EPSILON_REFERENCE_REACH_M)
-        ),
-        movement_epoch_only=bool(_payload_get(config, "movement_epoch_only", False)),
-        epsilon_dim=int(_payload_get(policy, "output_dim", BROAD_EPSILON_DIM)),
-        state_feature_dim=int(_payload_get(policy, "state_feature_dim", BROAD_EPSILON_DIM * 6)),
-        budget_source=_optional_str(_payload_get(budget_source, "key", None)),
-    )
-
-
-_HISTORICAL_PAYLOAD_NORMALIZERS = {
-    FixedTargetPerturbationTrainingConfig: _normalize_fixed_target_payload,
-    TargetRelativeMultiTargetTrainingConfig: _normalize_target_payload,
-    BroadFullStateEpsilonTrainingConfig: _normalize_broad_epsilon_payload,
-    PgdFullStateEpsilonTrainingConfig: _normalize_broad_epsilon_pgd_payload,
-    PolicyFullStateEpsilonTrainingConfig: _normalize_policy_adversary_payload,
-}
-
-
-def validate_training_config(config_type: type[BaseModel], payload: Any) -> Any:
-    """Validate one canonical training config, normalizing historical metadata once."""
-
-    if isinstance(payload, config_type):
-        return payload
-    normalizer = _HISTORICAL_PAYLOAD_NORMALIZERS.get(config_type)
-    if normalizer is None:
-        raw = payload if isinstance(payload, Mapping) else vars(payload)
-        return config_type.model_validate(raw)
-    return normalizer(payload)
-
-
-_MISSING = object()
-
-
-def _payload_get(payload: Any, name: str, default: Any = _MISSING) -> Any:
-    if payload is None:
-        return default
-    if isinstance(payload, dict):
-        if name in payload:
-            return payload[name]
-        return default
-    return getattr(payload, name, default)
-
-
-def _first_payload_value(*candidates: tuple[Any, str], default: Any) -> Any:
-    for payload, name in candidates:
-        value = _payload_get(payload, name, _MISSING)
-        if value is not _MISSING:
-            return value
-    return default
-
-
-def _optional_float(value: Any) -> float | None:
-    if value is None:
-        return None
-    return float(value)
-
-
-def _optional_str(value: Any) -> str | None:
-    if value is None:
-        return None
-    return str(value)
 
 
 def _uniform_directions_deg(n_directions: int) -> tuple[float, ...]:

@@ -22,6 +22,7 @@ from rlrmp.runtime.spec_migrations import (
     accept_rlrmp_spec_payload,
     ensure_rlrmp_spec_families,
 )
+from rlrmp.train.science_vocabulary import ScienceMode
 from rlrmp.train.minimax_native import (
     validate_minimax_run_spec,
     validate_minimax_run_spec_file,
@@ -46,19 +47,7 @@ NOMINAL_GRU_LOSS_OBJECTIVES = frozenset(
         "full_analytical_qrf",
     }
 )
-NOMINAL_GRU_TRAINING_MODES = frozenset(
-    {
-        "nominal",
-        "fixed_target_perturbation_randomized",
-        "fixed_target_perturbation_generalized",
-        "broad_full_state_epsilon_l2",
-        "broad_full_state_epsilon_pgd_l2",
-        "broad_full_state_epsilon_policy_l2",
-        "target_relative_multitarget_static",
-        "target_relative_multitarget_static_h0",
-        "delayed_reach_target_visible_go_cue",
-    }
-)
+NOMINAL_GRU_SCIENCE_MODES = frozenset(mode.value for mode in ScienceMode)
 NOMINAL_GRU_REQUIRED_PROVENANCE_KEYS = frozenset(
     {
         "git",
@@ -165,6 +154,13 @@ def resolve_run_record(
             f"TrainingRunManifest has no training_spec for {exp}/{run}: {manifest_path}"
         )
     if training_spec.kind != RUN_SPEC_KIND:
+        if training_spec.kind == "TrainingRunSpec":
+            raise RunSpecValidationError(
+                "TrainingRunManifest contains a generic legacy TrainingRunSpec rather than "
+                f"canonical {RUN_SPEC_KIND} lineage for {exp}/{run}: {manifest_path}. "
+                "This immutable legacy record is intentionally excluded; run a new native "
+                "row instead of mutating or copying the completed manifest."
+            )
         raise RunSpecValidationError(
             f"TrainingRunManifest training_spec kind must be {RUN_SPEC_KIND!r}; "
             f"found {training_spec.kind!r} in {manifest_path}"
@@ -222,10 +218,10 @@ def validate_nominal_gru_run_spec(
     training_summary = _mapping(run_spec, "training_summary")
     training_mode = training_summary.get("training_mode")
     training_modes = str(training_mode).split("+") if training_mode is not None else []
-    if not training_modes or any(mode not in NOMINAL_GRU_TRAINING_MODES for mode in training_modes):
+    if not training_modes or any(mode not in NOMINAL_GRU_SCIENCE_MODES for mode in training_modes):
         raise RunSpecValidationError(
             "nominal GRU run spec must declare training_summary.training_mode as one of "
-            f"{sorted(NOMINAL_GRU_TRAINING_MODES)} or a '+'-joined composite; "
+            f"{sorted(NOMINAL_GRU_SCIENCE_MODES)} or a '+'-joined composite; "
             f"found {training_mode!r}"
         )
 
@@ -324,9 +320,7 @@ def _mapping(mapping: dict[str, Any], key: str) -> dict[str, Any]:
 def _is_cs_lss_run_spec(run_spec: dict[str, Any]) -> bool:
     return evaluate_expr(
         _CS_LSS_PLANT_BACKEND_EXPR,
-        ExpressionContext(
-            items={"run_spec": ContextItem(kind="run_spec", payload=run_spec)}
-        ),
+        ExpressionContext(items={"run_spec": ContextItem(kind="run_spec", payload=run_spec)}),
     )
 
 
@@ -477,8 +471,7 @@ def _select_preferred_training_manifest(
     completed = [
         item
         for item in materialized
-        if str(item[1].status).lower() == "completed"
-        and not _has_planned_only_summary(item[1])
+        if str(item[1].status).lower() == "completed" and not _has_planned_only_summary(item[1])
     ]
     if len(completed) == 1:
         return completed[0]
@@ -512,7 +505,7 @@ __all__ = [
     "NOMINAL_GRU_LOSS_OBJECTIVES",
     "NOMINAL_GRU_REQUIRED_PROVENANCE_KEYS",
     "NOMINAL_GRU_REQUIRED_TOP_LEVEL_KEYS",
-    "NOMINAL_GRU_TRAINING_MODES",
+    "NOMINAL_GRU_SCIENCE_MODES",
     "RunSpecValidationError",
     "run_spec_sidecar_dir",
     "resolve_run_record",

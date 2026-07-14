@@ -1,0 +1,86 @@
+{
+  "issue": "4eb51ee",
+  "metadata": {
+    "checkpoint_stop_batch": 50,
+    "evaluation_lenses": [
+      "nominal_clean",
+      "riccati_epsilon",
+      "process_noise",
+      "held_out_validation"
+    ],
+    "evidence_class": "non_scientific_engineering_smoke",
+    "n_batches": 100,
+    "seed": 42
+  },
+  "name": "A1 frozen native-certificate architecture by training-distribution engineering smoke",
+  "rows": [
+    {
+      "controller_architecture": "gru",
+      "metadata": {
+        "evidence_class": "non_scientific_engineering_smoke",
+        "frozen_row_id": "gru_nominal_s42",
+        "seed": 42
+      },
+      "row_id": "gru_nominal_s42",
+      "seed": 42,
+      "training_distribution": "nominal"
+    },
+    {
+      "controller_architecture": "gru",
+      "metadata": {
+        "evidence_class": "non_scientific_engineering_smoke",
+        "frozen_row_id": "gru_robust_s42",
+        "seed": 42
+      },
+      "row_id": "gru_robust_s42",
+      "seed": 42,
+      "training_distribution": "broad_epsilon_pgd"
+    },
+    {
+      "controller_architecture": "time_constrained_free_gain",
+      "metadata": {
+        "evidence_class": "non_scientific_engineering_smoke",
+        "frozen_row_id": "sg_nominal_s42",
+        "seed": 42
+      },
+      "row_id": "sg_nominal_s42",
+      "seed": 42,
+      "training_distribution": "nominal"
+    },
+    {
+      "controller_architecture": "time_constrained_free_gain",
+      "metadata": {
+        "evidence_class": "non_scientific_engineering_smoke",
+        "frozen_row_id": "sg_robust_s42",
+        "seed": 42
+      },
+      "row_id": "sg_robust_s42",
+      "seed": 42,
+      "training_distribution": "broad_epsilon_pgd"
+    },
+    {
+      "controller_architecture": "linear_recurrence",
+      "metadata": {
+        "evidence_class": "non_scientific_engineering_smoke",
+        "frozen_row_id": "alr_nominal_s42",
+        "seed": 42
+      },
+      "row_id": "alr_nominal_s42",
+      "seed": 42,
+      "training_distribution": "nominal"
+    },
+    {
+      "controller_architecture": "linear_recurrence",
+      "metadata": {
+        "evidence_class": "non_scientific_engineering_smoke",
+        "frozen_row_id": "alr_robust_s42",
+        "seed": 42
+      },
+      "row_id": "alr_robust_s42",
+      "seed": 42,
+      "training_distribution": "broad_epsilon_pgd"
+    }
+  ],
+  "schema_id": "rlrmp.spec.heterogeneous_training_matrix_authoring",
+  "schema_version": "rlrmp.spec.heterogeneous_training_matrix_authoring.v1"
+}

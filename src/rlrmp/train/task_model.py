@@ -349,6 +349,11 @@ def setup_task_model_pair(
         delayed_reach = _cs_delayed_reach_enabled(hps)
         sisu_conditioned_pgd = _sisu_conditioned_pgd_budget_enabled(hps)
         finite_epsilon_policy = _finite_epsilon_policy_mechanism(hps)
+        scalar_input_count = int(delayed_reach or not target_training.enabled)
+        if sisu_conditioned_pgd:
+            sisu_input_name = _sisu_conditioned_pgd_budget_input_name(hps)
+            if not (sisu_input_name == "input" and scalar_input_count > 0):
+                scalar_input_count += 1
         task = _add_cs_lss_task_inputs(
             _CsLssTaskAdapter(
                 task_base,

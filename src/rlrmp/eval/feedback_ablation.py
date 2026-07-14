@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Literal
 
 import equinox as eqx
@@ -13,6 +14,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 import numpy as np
+from feedbax.analysis import StagedExecutionContext
 from feedbax.analysis.analysis import AbstractAnalysis
 from feedbax.analysis.context import AnalysisRunContext
 from feedbax.analysis.specs import (
@@ -34,6 +36,7 @@ from rlrmp.eval.checkpoint_selection import (
     load_validation_selected_checkpoint_model,
 )
 from rlrmp.eval.gru_diagnostics import RolloutEvaluation
+from rlrmp.eval.model_slots import ModelSlotProjection
 from rlrmp.eval.rollout_states import CachedEvaluationStates
 from rlrmp.eval.perturbation_bank import (
     apply_perturbation_to_trial_specs,
@@ -41,6 +44,7 @@ from rlrmp.eval.perturbation_bank import (
     delta_full_qrf_cost_summary,
     full_qrf_cost_summary,
 )
+from rlrmp.eval.replicates import is_replicate_array
 from rlrmp.eval.trial_inputs import EvaluationRunInputs, repeat_single_validation_trial
 from rlrmp.analysis.gru_standard_certificate import normalize_gru_hps
 from rlrmp.model.feedback_descriptors import (
@@ -129,7 +133,7 @@ def evaluate_model_on_trial_specs(
     """Execute one feedback-ablation evaluation at the eval-layer boundary."""
 
     model_arrays, model_other = eqx.partition(
-        model, lambda leaf: _is_replicate_array(leaf, n_replicates)
+        model, lambda leaf: is_replicate_array(leaf, n_replicates)
     )
 
     def eval_one_replicate(model_array_leaves: Any, key: Any) -> Any:
@@ -243,6 +247,62 @@ def evaluate_feedback_ablation_runs(
         "evaluation_bins": evaluation_bins,
         "ablation_modes": list(default_ablation_modes()),
         "runs": runs,
+    }
+
+
+def evaluate_projected_feedback_ablation_run(
+    projection: ModelSlotProjection,
+    params: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Execute feedback ablation from one exact native model projection."""
+
+    bank_value = params.get("bank")
+    bank = (
+        dict(bank_value)
+        if isinstance(bank_value, Mapping)
+        else default_cs_perturbation_bank(
+            mode=str(params["bank_mode"]),
+            calibration_level=params.get("calibration_level"),
+            calibration_reach=params.get("calibration_reach"),
+            feedback_scale_manifest_path=None,
+        )
+    )
+    bins_value = params.get("evaluation_bins")
+    evaluation_bins = (
+        {str(key): value for key, value in bins_value.items()}
+        if isinstance(bins_value, Mapping)
+        else selected_feedback_ablation_bins_for_bank(
+            bank, preferred_level=str(params["feedback_selection_level"])
+        )
+    )
+    labels = params.get("labels")
+    label = (
+        str(labels[0]) if isinstance(labels, Sequence) and labels else projection.provenance.run_id
+    )
+    run = SimpleNamespace(label=label)
+    result = _execute_feedback_ablation_run(
+        run,
+        source_experiment=None,
+        n_rollout_trials=int(params["n_rollout_trials"]),
+        include_checkpoint_rescore=bool(params["include_checkpoint_rescore"]),
+        bank=bank,
+        evaluation_bins=evaluation_bins,
+        model_projection=projection,
+    )
+    return {
+        "source": "exact_training_manifest_parent",
+        "run_ids": [projection.provenance.training_manifest_id],
+        "labels": [label],
+        "scope": str(params["scope"]),
+        "bank_mode": str(params["bank_mode"]),
+        "bank": {
+            "bank_id": bank.get("bank_id"),
+            "calibration_metadata_hooks": bank.get("calibration_metadata_hooks"),
+            "n_perturbations": len(bank.get("perturbations", ())),
+        },
+        "evaluation_bins": evaluation_bins,
+        "ablation_modes": list(default_ablation_modes()),
+        "runs": {projection.provenance.training_manifest_id: result},
     }
 
 
@@ -371,6 +431,7 @@ def feedback_ablation_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
     inputs: Sequence[ResolvedAnalysisInput],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build the registered feedback-ablation analysis from evaluation manifests."""
 
@@ -459,8 +520,10 @@ def feedback_ablation_spec(
 
 def feedback_ablation_evaluation_spec(
     *,
-    source_experiment: str,
-    run_ids: Sequence[str] = DEFAULT_RUN_IDS,
+    training_run_ref: ParentRef | None = None,
+    checkpoint_custody_root: Path | str | None = None,
+    source_experiment: str | None = None,
+    run_ids: Sequence[str] | None = None,
     labels: Sequence[str] | None = None,
     scope: str = DEFAULT_SCOPE,
     n_rollout_trials: int = 4,
@@ -475,11 +538,47 @@ def feedback_ablation_evaluation_spec(
     bank: Mapping[str, Any] | None = None,
     evaluation_bins: Mapping[str, str | None] | None = None,
 ) -> EvaluationRunSpec:
-    """Return the canonical model-driven feedback-ablation evaluation spec."""
+    """Return one unambiguous native or legacy feedback-ablation evaluation spec."""
+
+    has_native_authority = training_run_ref is not None
+    has_legacy_authority = source_experiment is not None or run_ids is not None
+    if has_native_authority and has_legacy_authority:
+        raise ValueError(
+            "feedback-ablation spec cannot mix training_run_ref with legacy "
+            "source_experiment/run_ids selectors"
+        )
+    if has_native_authority:
+        if (
+            training_run_ref.kind != "TrainingRunManifest"
+            or training_run_ref.role != "training_run"
+        ):
+            raise ValueError(
+                "native feedback-ablation training_run_ref must be a "
+                "TrainingRunManifest/training_run ParentRef"
+            )
+        if checkpoint_custody_root is None:
+            raise ValueError("native feedback-ablation spec requires checkpoint_custody_root")
+        if preferred_checkpoint_manifest_path is not None:
+            raise ValueError(
+                "native feedback-ablation spec cannot declare legacy "
+                "preferred_checkpoint_manifest_path authority"
+            )
+        custody_root = Path(checkpoint_custody_root).expanduser()
+        if not custody_root.is_absolute():
+            raise ValueError("native feedback-ablation checkpoint_custody_root must be absolute")
+        selected_run_ids: list[str] = []
+        inputs = [training_run_ref]
+    else:
+        if checkpoint_custody_root is not None:
+            raise ValueError("legacy feedback-ablation spec cannot declare checkpoint_custody_root")
+        selected_run_ids = [str(run_id) for run_id in (run_ids or DEFAULT_RUN_IDS)]
+        if not source_experiment or not selected_run_ids:
+            raise ValueError(
+                "legacy feedback-ablation spec requires source_experiment and non-empty run_ids"
+            )
+        inputs = []
 
     params = {
-        "source_experiment": source_experiment,
-        "run_ids": [str(run_id) for run_id in run_ids],
         "labels": None if labels is None else [str(label) for label in labels],
         "scope": scope,
         "n_rollout_trials": n_rollout_trials,
@@ -504,18 +603,15 @@ def feedback_ablation_evaluation_spec(
             else {str(key): value for key, value in evaluation_bins.items()}
         ),
     }
+    if has_native_authority:
+        params["checkpoint_custody_root"] = str(custody_root)
+    else:
+        params["source_experiment"] = source_experiment
+        params["run_ids"] = selected_run_ids
     return EvaluationRunSpec(
         evaluation_type=FEEDBACK_ABLATION_EVALUATION_TYPE,
-        training_run_ids=[str(run_id) for run_id in run_ids],
-        inputs=[
-            ParentRef(
-                kind="TrainingRunManifest",
-                id=str(run_id),
-                role="training_run",
-                metadata={"rlrmp_experiment": source_experiment},
-            )
-            for run_id in run_ids
-        ],
+        training_run_ids=selected_run_ids,
+        inputs=inputs,
         params=stamp_current_schema(FEEDBACK_ABLATION_EVAL_PARAMS_KIND, params),
     )
 
@@ -1323,41 +1419,60 @@ def _effective_checkpoint_policy_from_manifest(
 def _execute_feedback_ablation_run(
     run: EvaluationRunInputs,
     *,
-    source_experiment: str,
+    source_experiment: str | None,
     n_rollout_trials: int,
     include_checkpoint_rescore: bool = True,
     bank: Mapping[str, Any] | None = None,
     evaluation_bins: Mapping[str, str | None] | None = None,
     preferred_checkpoint_manifest_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
+    model_projection: ModelSlotProjection | None = None,
 ) -> dict[str, Any]:
     """Evaluate one run for the registered feedback-ablation recipe."""
 
     if n_rollout_trials < 1:
         raise ValueError("n_rollout_trials must be at least 1")
-    hps = dict_to_namespace(normalize_gru_hps(run.run_spec["hps"]), to_type=TreeNamespace)
-    n_replicates = int(hps.model.n_replicates)
-    seed = require_run_seed(run.run_spec, source=run.run_spec_path)
-    pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
-    model, checkpoint_selection = load_validation_selected_checkpoint_model(
-        experiment=source_experiment,
-        run_id=run.run_id,
-        run_spec=run.run_spec,
-        preferred_manifest_path=preferred_checkpoint_manifest_path,
-        checkpoint_selection_mode=(
-            "fixed_bank_manifest"
-            if preferred_checkpoint_manifest_path is not None
-            else "sparse_history"
-        ),
-        repo_root=repo_root,
-    )
-    base_trial_specs = repeat_single_validation_trial(pair.task.validation_trials, n_rollout_trials)
+    if model_projection is None:
+        if source_experiment is None:
+            raise ValueError("legacy feedback-ablation evaluation requires source_experiment")
+        hps = dict_to_namespace(normalize_gru_hps(run.run_spec["hps"]), to_type=TreeNamespace)
+        n_replicates = int(hps.model.n_replicates)
+        seed = require_run_seed(run.run_spec, source=run.run_spec_path)
+        pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
+        model, checkpoint_selection = load_validation_selected_checkpoint_model(
+            experiment=source_experiment,
+            run_id=run.run_id,
+            run_spec=run.run_spec,
+            preferred_manifest_path=preferred_checkpoint_manifest_path,
+            checkpoint_selection_mode=(
+                "fixed_bank_manifest"
+                if preferred_checkpoint_manifest_path is not None
+                else "sparse_history"
+            ),
+            repo_root=repo_root,
+        )
+        task = pair.task
+        checkpoint_provenance = [
+            selection.to_json(repo_root=repo_root) for selection in checkpoint_selection
+        ]
+    else:
+        model = model_projection.model
+        task = model_projection.task
+        n_replicates = model_projection.n_replicates
+        checkpoint_selection = ()
+        checkpoint_provenance = [
+            {
+                "selection_mode": "exact_native_transaction",
+                **asdict(model_projection.provenance),
+            }
+        ]
+    base_trial_specs = repeat_single_validation_trial(task.validation_trials, n_rollout_trials)
     bank = bank or default_cs_perturbation_bank()
     perturbations = {str(row["perturbation_id"]): row for row in bank["perturbations"]}
     evaluation_bins = evaluation_bins or selected_feedback_ablation_bins_for_bank(bank)
     nominal = evaluate_model_on_trial_specs(
         model=model,
-        task=pair.task,
+        task=task,
         trial_specs=base_trial_specs,
         n_replicates=n_replicates,
         seed=0,
@@ -1392,7 +1507,7 @@ def _execute_feedback_ablation_run(
         else:
             baseline = evaluate_model_on_trial_specs(
                 model=bin_model,
-                task=pair.task,
+                task=task,
                 trial_specs=trial_specs,
                 n_replicates=n_replicates,
                 seed=0,
@@ -1447,7 +1562,7 @@ def _execute_feedback_ablation_run(
                 continue
             ablated = evaluate_model_on_trial_specs(
                 model=ablated_model,
-                task=pair.task,
+                task=task,
                 trial_specs=ablated_trial_specs,
                 n_replicates=n_replicates,
                 seed=0,
@@ -1471,11 +1586,7 @@ def _execute_feedback_ablation_run(
             )
     run_result = {
         "label": run.label,
-        "run_spec_path": _repo_relative(run.run_spec_path, repo_root=repo_root),
-        "artifact_dir": _repo_relative(run.artifact_dir, repo_root=repo_root),
-        "checkpoint_selection": [
-            selection.to_json(repo_root=repo_root) for selection in checkpoint_selection
-        ],
+        "checkpoint_selection": checkpoint_provenance,
         "n_replicates": n_replicates,
         "n_rollout_trials_per_replicate": n_rollout_trials,
         "n_time_steps": int(nominal.rollout.command.shape[2]),
@@ -1486,17 +1597,24 @@ def _execute_feedback_ablation_run(
         "feedback_pass_audit": summarize_feedback_pass_audit(rows),
         "ablations": rows,
     }
+    if model_projection is None:
+        run_result["run_spec_path"] = _repo_relative(run.run_spec_path, repo_root=repo_root)
+        run_result["artifact_dir"] = _repo_relative(run.artifact_dir, repo_root=repo_root)
+    else:
+        run_result["training_run_id"] = model_projection.provenance.training_manifest_id
     if include_checkpoint_rescore:
         run_result["feedback_checkpoint_rescore"] = feedback_checkpoint_rescore_audit_for_run(
             run=run,
             source_experiment=source_experiment,
-            pair=pair,
+            task=task,
             base_trial_specs=base_trial_specs,
             perturbations=perturbations,
             evaluation_bins=evaluation_bins,
             validation_checkpoint_selection=checkpoint_selection,
             n_replicates=n_replicates,
             repo_root=repo_root,
+            checkpoint_candidates=(model_projection,) if model_projection is not None else None,
+            model_template=model,
         )
     else:
         run_result["feedback_checkpoint_rescore"] = {
@@ -1511,45 +1629,67 @@ def feedback_checkpoint_rescore_audit_for_run(
     *,
     run: EvaluationRunInputs,
     source_experiment: str,
-    pair: Any,
+    task: Any,
     base_trial_specs: Any,
     perturbations: Mapping[str, Mapping[str, Any]],
     evaluation_bins: Mapping[str, str | None],
     validation_checkpoint_selection: Sequence[Any],
     n_replicates: int,
     repo_root: Path = REPO_ROOT,
+    checkpoint_candidates: Sequence[ModelSlotProjection] | None = None,
+    model_template: Any | None = None,
 ) -> dict[str, Any]:
     """Score every durable checkpoint on a declared feedback perturbation bank."""
 
     del source_experiment
-    checkpoint_batches = available_checkpoint_batches(run.artifact_dir)
-    if not checkpoint_batches:
-        return {
-            "status": "not_available",
-            "reason": f"no numbered checkpoints under {run.artifact_dir / 'checkpoints'}",
-            "selection_role": FEEDBACK_AUDIT_SELECTION_ROLE,
-        }
-
     scoring_rows = _feedback_scoring_perturbation_rows(
         perturbations,
         evaluation_bins=evaluation_bins,
     )
     scored_rows: list[dict[str, Any]] = []
-    for checkpoint_batch in checkpoint_batches:
-        checkpoint_path = checkpoint_path_for_batches(run.artifact_dir, checkpoint_batch)
-        model = eqx.tree_deserialise_leaves(checkpoint_path / "model.eqx", pair.model)
-        scored_rows.append(
-            _score_feedback_checkpoint_batch(
-                model=model,
-                task=pair.task,
-                trial_specs=base_trial_specs,
-                scoring_rows=scoring_rows,
-                checkpoint_batch=checkpoint_batch,
-                checkpoint_path=checkpoint_path,
-                n_replicates=n_replicates,
-                repo_root=repo_root,
+    if checkpoint_candidates is not None:
+        for candidate in checkpoint_candidates:
+            scored_rows.append(
+                _score_feedback_checkpoint_batch(
+                    model=candidate.model,
+                    task=candidate.task,
+                    trial_specs=base_trial_specs,
+                    scoring_rows=scoring_rows,
+                    checkpoint_batch=candidate.provenance.completed_batches,
+                    checkpoint_identity=asdict(candidate.provenance),
+                    n_replicates=n_replicates,
+                    repo_root=repo_root,
+                )
             )
-        )
+    else:
+        checkpoint_batches = available_checkpoint_batches(run.artifact_dir)
+        if not checkpoint_batches:
+            return {
+                "status": "not_available",
+                "reason": f"no numbered checkpoints under {run.artifact_dir / 'checkpoints'}",
+                "selection_role": FEEDBACK_AUDIT_SELECTION_ROLE,
+            }
+        for checkpoint_batch in checkpoint_batches:
+            checkpoint_path = checkpoint_path_for_batches(run.artifact_dir, checkpoint_batch)
+            if model_template is None:
+                raise ValueError("legacy feedback checkpoint rescore requires model_template")
+            model = eqx.tree_deserialise_leaves(checkpoint_path / "model.eqx", model_template)
+            scored_rows.append(
+                _score_feedback_checkpoint_batch(
+                    model=model,
+                    task=task,
+                    trial_specs=base_trial_specs,
+                    scoring_rows=scoring_rows,
+                    checkpoint_batch=checkpoint_batch,
+                    checkpoint_identity={
+                        "legacy_checkpoint_path": _repo_relative(
+                            checkpoint_path, repo_root=repo_root
+                        )
+                    },
+                    n_replicates=n_replicates,
+                    repo_root=repo_root,
+                )
+            )
 
     selected = []
     validation_by_replicate = {
@@ -1633,7 +1773,7 @@ def _score_feedback_checkpoint_batch(
     trial_specs: Any,
     scoring_rows: Sequence[Mapping[str, Any]],
     checkpoint_batch: int,
-    checkpoint_path: Path,
+    checkpoint_identity: Mapping[str, Any],
     n_replicates: int,
     repo_root: Path,
 ) -> dict[str, Any]:
@@ -1727,7 +1867,7 @@ def _score_feedback_checkpoint_batch(
         )
     return {
         "checkpoint_batches": int(checkpoint_batch),
-        "checkpoint_path": _repo_relative(checkpoint_path, repo_root=repo_root),
+        "checkpoint_identity": dict(checkpoint_identity),
         "selection_role": FEEDBACK_AUDIT_SELECTION_ROLE,
         "nominal_quality_gate": nominal_gate,
         "per_replicate_scores": per_replicate_scores,
@@ -2730,7 +2870,7 @@ def _select_replicate_trial_inputs(trial_specs: Any, replicate: int, n_replicate
 
 def _select_replicate_tree(tree: Any, replicate: int, n_replicates: int) -> Any:
     return jt.map(
-        lambda leaf: leaf[replicate] if _is_replicate_array(leaf, n_replicates) else leaf,
+        lambda leaf: leaf[replicate] if is_replicate_array(leaf, n_replicates) else leaf,
         tree,
     )
 
@@ -2745,10 +2885,6 @@ def _infer_batch_size(trial_specs: Any) -> int:
             if pos is not None:
                 return int(pos.shape[0])
     raise ValueError("could not infer trial batch size")
-
-
-def _is_replicate_array(leaf: Any, n_replicates: int) -> bool:
-    return eqx.is_array(leaf) and leaf.ndim >= 1 and leaf.shape[0] == n_replicates
 
 
 __all__ = [

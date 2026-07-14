@@ -8,7 +8,10 @@ from typing import Any
 
 import pytest
 
-from rlrmp.train.training_configs import FixedTargetPerturbationTrainingConfig
+from rlrmp.train.training_configs import (
+    FixedTargetPerturbationTrainingConfig,
+    PgdFullStateEpsilonTrainingConfig,
+)
 
 
 pytestmark = pytest.mark.feedbax_contract
@@ -88,6 +91,28 @@ def test_fixed_target_from_payload_accepts_dicts() -> None:
     assert config.nominal_fraction == 0.4
     assert config.single_fraction == 0.5
     assert config.pulse_start_step == 17
+
+
+def test_from_payload_accepts_canonical_snapshot_and_rejects_legacy_nested_shape() -> None:
+    authored = PgdFullStateEpsilonTrainingConfig(
+        enabled=True,
+        reach_length_scaling=False,
+        n_steps=9,
+    )
+
+    parsed = PgdFullStateEpsilonTrainingConfig.from_payload(authored.to_hps_dict())
+
+    assert parsed == authored
+    with pytest.raises(ValueError, match="[Ee]xtra inputs are not permitted"):
+        PgdFullStateEpsilonTrainingConfig.from_payload(
+            {
+                "enabled": True,
+                "inner_maximizer": {
+                    "n_steps": 9,
+                    "step_size_fraction_of_l2_radius": 0.25,
+                },
+            }
+        )
 
 
 def test_run_specs_do_not_use_retired_flat_training_config_keys() -> None:

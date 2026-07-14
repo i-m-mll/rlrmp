@@ -22,11 +22,11 @@ from rlrmp.paths import REPO_ROOT
 from rlrmp.runtime.run_spec_access import require_run_seed
 from rlrmp.train.cs_nominal_gru import _where_train
 from rlrmp.train.cs_perturbation_training import (
-    BROAD_EPSILON_TRAINING_MODE,
     BroadFullStateEpsilonTrainingTaskAdapter,
     FixedTargetPerturbationTrainingTaskAdapter,
     apply_training_perturbation_mixture,
 )
+from rlrmp.train.science_vocabulary import ScienceMode
 from rlrmp.train.task_model import setup_task_model_pair
 
 
@@ -433,7 +433,7 @@ def broad_epsilon_metadata(run_spec: Mapping[str, Any]) -> dict[str, Any]:
     """Return broad-epsilon settings without embedding experiment identities."""
 
     broad = dict(run_spec.get("hps", {}).get("broad_epsilon_training", {}) or {})
-    if broad.get("mode") == BROAD_EPSILON_TRAINING_MODE and "enabled" not in broad:
+    if broad.get("mode") == ScienceMode.BROAD_EPSILON and "enabled" not in broad:
         broad["enabled"] = True
     return broad
 

@@ -141,9 +141,12 @@ def _fixed_simple_reach_run_spec_paths() -> list[Path]:
 
 def test_tracked_fixed_simple_reach_run_specs_still_build() -> None:
     paths = _fixed_simple_reach_run_spec_paths()
-    # Twenty legacy fixed-reach subjects retired with issue b6b5502; validate
-    # every one of the 35 surviving tracked recipes rather than weakening the census.
-    assert len(paths) == 35
+    # Twenty legacy fixed-reach subjects retired with issue b6b5502. Issue
+    # ee7a6f4 moved eight 3cd018b envelopes into TrainingRunMatrixSpec documents;
+    # test_3cd018b_frozen_rows_use_compact_matrices_and_exact_envelope_snapshots
+    # exhaustively decodes and materializes them. Validate all 27 remaining flat
+    # fixed-reach recipes rather than mixing matrix execution into this collector.
+    assert len(paths) == 27
     for path in paths:
         payload = hydrate_compact_run_spec_envelope(
             json.loads(path.read_text(encoding="utf-8"))

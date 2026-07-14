@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from feedbax.analysis import StagedExecutionContext
 from feedbax.analysis.analysis import AbstractAnalysis
 from feedbax.analysis.context import AnalysisRunContext
 from feedbax.analysis.evaluation import EvaluationRecipeResult, register_evaluation_recipe
@@ -17,6 +18,7 @@ from feedbax.config.namespace import TreeNamespace
 from pydantic import BaseModel, ConfigDict, Field
 
 from rlrmp.io import update_marked_section
+from rlrmp.mappings import as_mapping as _mapping
 from rlrmp.paths import REPO_ROOT
 from rlrmp.runtime.params_models import register_params_model
 from rlrmp.runtime.spec_migrations import (
@@ -145,6 +147,7 @@ def standard_matrix_evaluation_recipe(
     run_spec: EvaluationRunSpec,
     _root: Path,
     _states_path: Path,
+    _execution_context: StagedExecutionContext,
 ) -> EvaluationRecipeResult:
     """Produce standard-matrix evaluation states from refs or explicit legacy payloads."""
     params = _accept_standard_matrix_params(run_spec.params)
@@ -193,6 +196,7 @@ def standard_matrix_recipe(
     spec,
     _root: Path,
     inputs: Sequence[ResolvedAnalysisInput],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build Feedbax analyses for one standard matrix bundle expansion."""
     params = dict(spec.params)
@@ -346,7 +350,3 @@ def _format_metric(value: float | None) -> str:
     if value is None:
         return ""
     return f"{value:.6g}"
-
-
-def _mapping(value: Any) -> Mapping[str, Any]:
-    return value if isinstance(value, Mapping) else {}

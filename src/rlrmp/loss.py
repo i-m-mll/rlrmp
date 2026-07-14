@@ -33,14 +33,11 @@ from rlrmp.analysis.math.cs_game_card import (
     build_no_integrator_game,
 )
 from rlrmp.loss_presets import load_loss_preset
-
-CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE = "full_analytical_qrf"
-CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE = "partial_net_output_force_filter"
-CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE = "partial_feedbax_terms"
-CS_LOSS_OBJECTIVES = (
+from rlrmp.loss_vocabulary import (
+    CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+    CS_LOSS_OBJECTIVES,
     CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
     CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
-    CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
 )
 
 

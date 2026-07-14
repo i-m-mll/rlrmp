@@ -193,69 +193,17 @@ when its provenance value is gone. The current inventory is
 
 ## Standard Certificate Presentation
 
-The prescriptions below are the presentation contract for Phase-3 bridge
-standard-certificate results. They are being migrated into the
-`rlrmp.report.bridge_certificate_notes` recipe so the table and annotations are
-rendered by construction (rlrmp `9c342ba`; a spec-governed template layer,
-feedbax `4d1558c`, is the longer-term home). Until that lands this section is the
-authority, and the rules here that no render can enforce — showing a table
-rather than prose when presenting results in conversation, recomputing rather
-than leaving components partial, and keeping evaluation lenses distinct from
-training axes — remain agent-facing regardless.
+`rlrmp.report.bridge_certificate_notes` owns the standard-certificate table,
+mode-aware component presentation, annotations, and failure-decomposition
+companion. Its rendered output is the presentation authority; do not recreate
+those rules in result-local scripts or prose.
 
-When presenting Phase 3 bridge standard-certificate results, show a table rather
-than only a prose summary. Include row identity, status, training distribution,
-evaluation lens, objective/cost ratio, state-weighted action mismatch, closed-loop
-transition mismatch, value gap, Bellman-Hessian residual, exact-L2/gamma
-sidecars, and raw gain mismatch as a diagnostic sidecar.
-
-Use superscript annotations below the table when state-weighted action mismatch
-and Bellman-Hessian residual are both shown. The standard annotation is:
-`<sup>1</sup> State-weighted action mismatch and Bellman-Hessian residual can
-match exactly when the Bellman action Hessian is a scalar multiple of the action
-cost geometry on that row. In that case they are the same evidence expressed
-through two certificate views; they diverge when downstream value geometry
-weights action directions differently.`
-
-Also annotate raw gain mismatch as diagnostic-only:
-`<sup>2</sup> Gain mismatch is a diagnostic sidecar, not the bridge gate. The
-gate is disturbance-relevant same-game behavior under the standard certificate
-components.`
-
-When a standard-certificate row fails, present the failure decomposition as the
-standard companion diagnostic rather than as a replacement certificate. The
-table should include row identity, classification, learned/reference objective,
-learned/reference gradient or projected-gradient where defined, learned-to-
-reference interpolation, and visited/weakly visited gain-error decomposition
-from the same state distribution used by the row. Keep annotations explicit that
-failure decomposition explains the failure but does not change the bridge gate.
-
-Do not leave standard components partial when they can be recomputed. If a
-compact manifest lacks fitted gains, trajectories, sampled states, or
-covariances, rerun the relevant deterministic or stochastic analysis to recover
-the full certificate inputs. Only use `missing` or `not_applicable` when the
-quantity is truly impossible or not meaningful for the architecture/evaluation
-lens. Evaluation lenses such as nominal-clean, Riccati-epsilon, process-noise,
-coverage-induced, and held-out validation are not training axes; keep them
-separate from optimal-vs-robust and coverage-vs-no-coverage training factors.
-
-Certificate mode is part of the row contract. Use `static_gain` only when the
-controller has a time-local gain over the action state used by the row. Use
-`augmented_linear` for linear recurrent rows only when the manifest supplies the
-augmented state, action sensitivity, and closed-loop transition over that state
-(for example `z_t = [x_t; h_t]`); then report action, transition, value, and
-Bellman components in the augmented-state basis. If those augmented inputs are
-absent, keep invalid static-gain transition/value/Bellman components explicit
-as `not_applicable` rather than silently falling back to plant-state gains. Use
-empirical/nonlinear reporting for GRU or other nonlinear recurrent rows unless a
-separate local-linear certificate is deliberately defined.
-
-When exact-L2/gamma sidecars improve but action/value/transition/reference-
-equivalence metrics still fail, label the failure
-`sidecar_improving_non_equivalent`. This label documents a useful sidecar trend;
-it is not a bridge pass and must be presented alongside the standard certificate
-components. Report aggregate action-energy mismatch (`R_u`) alongside the mean
-timewise action mismatch ratio for recurrent and augmented-state rows.
+When presenting standard-certificate results in conversation, show the rendered
+table rather than only a prose summary. Recompute available certificate inputs
+instead of leaving components partial when possible. Keep evaluation lenses
+(for example nominal-clean, Riccati-epsilon, process-noise, coverage-induced,
+and held-out validation) separate from training axes such as nominal versus
+robust or coverage versus no coverage.
 
 ## Plotting Conventions
 

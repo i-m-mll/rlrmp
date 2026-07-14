@@ -41,6 +41,7 @@ from feedbax.contracts.worker import (
     PhaseTransitionSpec,
     ResumeCoordinateSpec,
     StateSlotSpec,
+    TrainingBatchProgressSpec,
     UpdateKernelSpec,
     UpdateStepSpec,
     derive_consistency_predicate,
@@ -78,6 +79,13 @@ from rlrmp.train.executor.slots import (
     checkpoint_slot_specs,
     supervised_state_slots,
 )
+from rlrmp.train.science_vocabulary import ScienceMode
+
+
+def lower_science_mode(hps: Any) -> ScienceMode | None:
+    """Lower policy-adversary capability into its run-spec mode."""
+
+    return ScienceMode.POLICY_ADVERSARY if bool(hps.policy_adversary_training.enabled) else None
 
 POLICY_ADVERSARY_METHOD_PAYLOAD_SCHEMA_ID = (
     "rlrmp.spec.training_method.policy_adversary_supervised_payload"
@@ -419,6 +427,7 @@ def policy_adversary_method_contract() -> MethodContractSpec:
                 ),
             )
         ],
+        batch_progress=TrainingBatchProgressSpec(slot=COMPLETED_BATCHES),
         metadata={
             "phase_program_identity": "rlrmp.policy_adversary_supervised.chunked.v1",
             "checkpoint_barrier_policy": "after_each_policy_adversary_chunk",

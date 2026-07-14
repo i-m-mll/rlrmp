@@ -123,6 +123,7 @@ def minimax_checkpoint_slot_specs() -> list[CheckpointSlotSpec]:
         CheckpointSlotSpec(slot=ADVERSARY_POPULATION, axis="adversary_member"),
         CheckpointSlotSpec(slot=ADVERSARY_OPTIMIZER, axis="adversary_member"),
         CheckpointSlotSpec(slot=RNG),
+        CheckpointSlotSpec(slot=COMPLETED_BATCHES),
     ]
 
 

@@ -36,6 +36,7 @@ from rlrmp.train.executor.slots import (
     ADVERSARY_LOSS,
     ADVERSARY_OPTIMIZER,
     ADVERSARY_POPULATION,
+    COMPLETED_BATCHES,
     CONTROLLER,
     CONTROLLER_LOSS,
     CONTROLLER_OPTIMIZER,
@@ -247,6 +248,7 @@ def build_minimax_native_initial_slots(
             OBJECTIVE: None,
             CONTROLLER_LOSS: 0.0,
             ADVERSARY_LOSS: 0.0,
+            COMPLETED_BATCHES: jnp.asarray(0, dtype=jnp.int32),
         },
         RlrmpRuntime(components={"minimax": runtime}),
     )
@@ -283,8 +285,14 @@ def minimax_update_kernels(payload: Any) -> Mapping[str, UpdateKernel]:
     return {
         WARMUP_KERNEL_REF: ChunkKernelAdapter(
             chunk_fn=_warmup_controller_descent,
-            reads=(CONTROLLER, CONTROLLER_OPTIMIZER, RNG),
-            writes=(CONTROLLER, CONTROLLER_OPTIMIZER, RNG, CONTROLLER_LOSS),
+            reads=(CONTROLLER, CONTROLLER_OPTIMIZER, RNG, COMPLETED_BATCHES),
+            writes=(
+                CONTROLLER,
+                CONTROLLER_OPTIMIZER,
+                RNG,
+                COMPLETED_BATCHES,
+                CONTROLLER_LOSS,
+            ),
             metric_slots=(CONTROLLER_LOSS,),
             name="minimax warmup controller descent",
         ).to_kernel(payload),
@@ -304,8 +312,21 @@ def minimax_update_kernels(payload: Any) -> Mapping[str, UpdateKernel]:
         ).to_kernel(payload),
         OUTER_DESCENT_KERNEL_REF: ChunkKernelAdapter(
             chunk_fn=_outer_controller_descent,
-            reads=(CONTROLLER, CONTROLLER_OPTIMIZER, ADVERSARY_POPULATION, TRIAL_BATCH, RNG),
-            writes=(CONTROLLER, CONTROLLER_OPTIMIZER, RNG, CONTROLLER_LOSS),
+            reads=(
+                CONTROLLER,
+                CONTROLLER_OPTIMIZER,
+                ADVERSARY_POPULATION,
+                TRIAL_BATCH,
+                RNG,
+                COMPLETED_BATCHES,
+            ),
+            writes=(
+                CONTROLLER,
+                CONTROLLER_OPTIMIZER,
+                RNG,
+                COMPLETED_BATCHES,
+                CONTROLLER_LOSS,
+            ),
             metric_slots=(CONTROLLER_LOSS,),
             name="minimax outer controller descent",
         ).to_kernel(payload),
@@ -395,6 +416,10 @@ def _warmup_controller_descent(
         CONTROLLER: _controller_state_from_model(controller, minimax.controller_layout),
         CONTROLLER_OPTIMIZER: ctrl_opt_state,
         RNG: chunk_slots[RNG],
+        COMPLETED_BATCHES: jnp.asarray(
+            int(chunk_slots[COMPLETED_BATCHES]) + int(args.n_warmup_batches),
+            dtype=jnp.int32,
+        ),
         CONTROLLER_LOSS: controller_loss,
     }
 
@@ -480,6 +505,7 @@ def _outer_controller_descent(
             CONTROLLER: chunk_slots[CONTROLLER],
             CONTROLLER_OPTIMIZER: chunk_slots[CONTROLLER_OPTIMIZER],
             RNG: chunk_slots[RNG],
+            COMPLETED_BATCHES: chunk_slots[COMPLETED_BATCHES],
             CONTROLLER_LOSS: float(chunk_slots.get(CONTROLLER_LOSS, 0.0)),
         }
     adversary = chunk_slots[ADVERSARY_POPULATION][prepared.active_member_index]
@@ -495,6 +521,10 @@ def _outer_controller_descent(
         CONTROLLER: controller,
         CONTROLLER_OPTIMIZER: ctrl_opt_state,
         RNG: chunk_slots[RNG],
+        COMPLETED_BATCHES: jnp.asarray(
+            int(chunk_slots[COMPLETED_BATCHES]) + 1,
+            dtype=jnp.int32,
+        ),
         CONTROLLER_LOSS: _metric_mean(ctrl_loss_vals),
     }
 
@@ -943,10 +973,6 @@ def _get_trainable(model: Any) -> Any:
         if getattr(net, "feedforward", None) is not None:
             return model.get_node_attrs("net", "gain", "feedforward")
         return model.get_node_attrs("net", "gain")
-    if cls_name == "LinearController":
-        return model.get_node_attrs("net", "K")
-    if cls_name == "LinearTrackerController":
-        return model.get_node_attrs("net", "K", "u_ff")
     return staged_network_trainable_parts(net)
 
 
@@ -957,10 +983,6 @@ def _trainable_where(model: Any) -> Any:
         if getattr(net, "feedforward", None) is not None:
             return lambda candidate: candidate.get_node_attrs("net", "gain", "feedforward")
         return lambda candidate: candidate.get_node_attrs("net", "gain")
-    if cls_name == "LinearController":
-        return lambda candidate: candidate.get_node_attrs("net", "K")
-    if cls_name == "LinearTrackerController":
-        return lambda candidate: candidate.get_node_attrs("net", "K", "u_ff")
     return lambda candidate: staged_network_trainable_parts(candidate.get_node("net"))
 
 

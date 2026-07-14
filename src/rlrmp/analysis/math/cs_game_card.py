@@ -1,8 +1,4 @@
-"""Legacy scope note: `write_outputs` is a frozen writer/driver surface. The
-math core in this module, including `materialize_reference`, remains LIVE
-library code consumed by registered recipes.
-
-Materialize the C&S released-code-aligned H-infinity analytical game card.
+"""Materialize the C&S released-code-aligned H-infinity analytical game card.
 
 This module is intentionally narrow: it builds the canonical Phase 0 game for
 issue ``cb98e58`` / umbrella ``43e8728`` and computes the analytical reference
@@ -13,7 +9,6 @@ any simulator-side parity work begins.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -42,9 +37,6 @@ from rlrmp.analysis.math.rerun_metadata import (
     DEFAULT_LANE,
     build_rerun_metadata,
 )
-from rlrmp.paths import REPO_ROOT, mkdir_p
-
-
 ISSUE_ID = "cb98e58"
 UMBRELLA_ID = "43e8728"
 _ANALYSIS_PRESET = load_analysis_parameter_preset("cs_game_card").parameters
@@ -455,246 +447,6 @@ def reference_summary(
     }
 
 
-def _fmt(value: float, digits: int = 6) -> str:
-    return f"{value:.{digits}g}"
-
-
-def render_markdown(summary: dict[str, Any]) -> str:
-    """Render the tracked game-card note."""
-
-    frontier = summary["frontier"]
-    primary = next(row for row in frontier if row["factor"] == PRIMARY_GAMMA_FACTOR)
-    output_feedback = next(
-        row for row in frontier if row["factor"] == OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR
-    )
-    diagnostic = next(row for row in frontier if row["factor"] == DIAGNOSTIC_GAMMA_FACTOR)
-
-    rows = [
-        "| gamma factor | gamma | Delta-v fwd | peak fwd v | t_peak | "
-        "terminal error | closed-loop epsilon L2 |",
-        "|---:|---:|---:|---:|---:|---:|---:|",
-    ]
-    for row in frontier:
-        rows.append(
-            "| "
-            f"{row['factor']:.4g} | "
-            f"{_fmt(row['gamma'])} | "
-            f"{row['delta_v_percent']:+.4f}% | "
-            f"{row['hinf_peak_forward_velocity']:.6f} | "
-            f"{row['time_to_peak_step']} | "
-            f"{row['terminal_position_error_m']:.6g} | "
-            f"{row['closed_loop_epsilon_l2']:.6g} |"
-        )
-
-    return f"""# Phase 0 Analytical Game Card
-
-Issue: `{ISSUE_ID}`. Umbrella: `{UMBRELLA_ID}`.
-
-This note is the auditable C&S released-code-aligned H-infinity target for the
-first cs2019-to-RNN game-equivalence gate. It fixes the analytical game that
-later feedbax and trained-controller work must match.
-
-Rerun metadata:
-
-- Discretization: `{summary["rerun_metadata"]["discretization"]}`.
-- Lane: `{summary["rerun_metadata"]["lane"]}`.
-- Lane scope: {summary["rerun_metadata"]["lane_description"]}
-
-## Game Definition
-
-- Plant: `cs_faithful_pointmass()`.
-- Discretization: `{summary["plant"]["discretization"]}`. The canonical
-  released-code path is forward Euler; ZOH is a named sensitivity variant.
-- State: 8 physical states plus 5 full-state lag blocks, total `n = 48`.
-- Physical state order: `[px, py, vx, vy, fx, fy, eps_x_int, eps_y_int]`.
-- Delay state order: `[x_t, x_(t-1), x_(t-2), x_(t-3), x_(t-4), x_(t-5)]`,
-  each block using the physical state order above.
-- Disturbance channel: `B_w` has shape `(48, 8)`.
-- Contract: `B_w[:8, :] = I_8` and `B_w[8:, :] = 0`. The adversary perturbs
-  the current physical state only; it does not write directly into delay lags.
-- Dynamics convention: `z[t+1] = A_aug z[t] + B_aug u[t] + B_w epsilon[t]`.
-- Discrete epsilon convention: epsilon is added in the discrete update; no
-  extra `dt` factor is applied.
-- Task: hold-free 15 cm forward reach from `[0, 0]` to `[0.15, 0]`.
-- Horizon: 60 steps at `dt = 0.01 s` (`0.6 s` total).
-- Observation/information structure for the analytical target: full augmented
-  state feedback.
-
-## Cost Schedule
-
-The cost is C&S Eq. 15 on the physical 8-state schedule, distributed over the
-5-step delay chain with `apply_delay_distribution_to_schedule`.
-
-- Position diagonal: `fact_t * 1e6`.
-- Velocity diagonal: `fact_t * 1e5`.
-- Force and disturbance-integrator diagonals: `1.0`.
-- `fact_t = ((t + 1) / T)^6`, capped at `1`.
-- Control cost: `R_t = I_2`.
-
-This resolves the Phase 0 part of blocker `6ec6b19`: the first gate uses this
-fixed C&S schedule, not an alpha sweep.
-
-## Gamma And Epsilon
-
-- `gamma_star = {summary["gamma_star"]:.6f}`.
-- Full-state C&S speed-matching target: `gamma = 1.05 * gamma_star`, giving
-  Delta-v `{primary["delta_v_percent"]:+.4f}%`.
-- Output-feedback robustness diagnostics use
-  `gamma = {OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR:.4g} * gamma_star`, giving
-  full-state Delta-v `{output_feedback["delta_v_percent"]:+.4f}%` at the same
-  factor. This value is selected from the output-feedback gamma sweep on
-  `{OUTPUT_FEEDBACK_GAMMA_SELECTION_ISSUE_ID}` and must be updated there, not
-  by reusing the full-state speed-matching factor.
-- Conservative diagnostic point: `gamma = 1.5 * gamma_star`, giving
-  Delta-v `{diagnostic["delta_v_percent"]:+.4f}%`.
-
-Gamma is not an epsilon budget. It is the H-infinity attenuation/penalty
-parameter. If a full-state open-loop PGD adversary needs a budget, the
-game-card mapping for the full-state speed-matching target is:
-
-```text
-gamma_design = 1.05 * gamma_star
-E_train = sum_t ||epsilon_realized_t||_2^2
-```
-
-where `epsilon_realized_t` is the sequence generated by the Riccati
-state-dependent worst-case disturbance policy along the specified closed-loop
-trajectory. This provides a budget anchor for an open-loop surrogate; it does
-not prove the open-loop surrogate is equivalent to the closed-loop H-infinity
-game. This resolves the Phase 0 part of blocker `1ad3c16`.
-
-For the primary `1.05 * gamma_star` target:
-
-- `E_train = {primary["closed_loop_epsilon_energy"]:.8g}`.
-- `sqrt(E_train) = {primary["closed_loop_epsilon_l2"]:.8g}`.
-
-## Riccati Versus Open-Loop Adversary Objects
-
-The Riccati game defines a feedback disturbance policy:
-
-```text
-epsilon_t = F_t x_t
-F_t = (gamma^2 I - B_w^T P[t+1] B_w)^-1 B_w^T P[t+1] (A - B K_t)
-```
-
-An open-loop epsilon sequence is only a realization of this policy along a
-particular trajectory. Downstream PGD training may optimize an open-loop
-sequence with the same norm, but that sequence is not automatically the same
-formal object as the Riccati adversary. This resolves the Phase 0 definition
-needed by `020a65b`; simulator parity and adversary implementation still belong
-to later phases.
-
-## Analytical Frontier
-
-LQR baseline:
-
-- Peak forward velocity: `{summary["lqr"]["peak_forward_velocity"]:.6f} m/s`.
-- Time to peak: step `{summary["lqr"]["time_to_peak_step"]}`.
-- Terminal position error: `{summary["lqr"]["terminal_position_error_m"]:.6g} m`.
-
-{"\n".join(rows)}
-
-## Generated Bundle
-
-Regenerate with:
-
-```bash
-{summary["regeneration_command"]}
-```
-
-Tracked manifest:
-`results/{ISSUE_ID}/notes/analytical_game_card_manifest.json`.
-
-Bulk arrays:
-`_artifacts/{ISSUE_ID}/analytical_game_card/canonical_reference.npz`.
-
-The `.npz` bundle includes LQR and H-infinity gains, nominal trajectories,
-Riccati worst-case feedback policies `F_t`, epsilon sequences induced on the
-nominal trajectory, and epsilon sequences from the closed-loop Riccati
-worst-case rollout.
-"""
-
-
-def _npz_arrays(reference: GameCardReference) -> dict[str, np.ndarray]:
-    arrays: dict[str, np.ndarray] = {
-        "plant_A": np.asarray(reference.plant.A),
-        "plant_B": np.asarray(reference.plant.B),
-        "plant_Bw": np.asarray(reference.plant.Bw),
-        "schedule_Q": np.asarray(reference.schedule.Q),
-        "schedule_R": np.asarray(reference.schedule.R),
-        "schedule_Q_f": np.asarray(reference.schedule.Q_f),
-        "lqr_K": np.asarray(reference.lqr_solution.K),
-        "lqr_P": np.asarray(reference.lqr_solution.P),
-        "lqr_x_nominal": np.asarray(reference.lqr_rollout.x),
-        "lqr_u_nominal": np.asarray(reference.lqr_rollout.u),
-    }
-    for ref in reference.gamma_references:
-        key = _factor_key(ref.factor)
-        arrays[f"hinf_{key}_K"] = np.asarray(ref.solution.K)
-        arrays[f"hinf_{key}_P"] = np.asarray(ref.solution.P)
-        arrays[f"hinf_{key}_x_nominal"] = np.asarray(ref.nominal_rollout.x)
-        arrays[f"hinf_{key}_u_nominal"] = np.asarray(ref.nominal_rollout.u)
-        arrays[f"hinf_{key}_F_worst_policy"] = np.asarray(ref.worst_case_policy)
-        arrays[f"hinf_{key}_epsilon_on_nominal"] = np.asarray(ref.epsilon_on_nominal)
-        arrays[f"hinf_{key}_x_worst_case"] = np.asarray(ref.worst_case_rollout.x)
-        arrays[f"hinf_{key}_u_worst_case"] = np.asarray(ref.worst_case_rollout.u)
-        arrays[f"hinf_{key}_epsilon_worst_case"] = np.asarray(ref.worst_case_rollout.epsilon)
-    return arrays
-
-
-def write_outputs(
-    issue_id: str = ISSUE_ID,
-    *,
-    discretization: str = DEFAULT_DISCRETIZATION,
-    lane: str = DEFAULT_LANE,
-) -> dict[str, Any]:
-    """LEGACY (frozen 2026-07-03, issue 64d5f13).
-
-    This writer/driver is not contract-native: it predates the feedbax recipe,
-    bundle, and manifest contracts. It may not run without deliberate
-    realignment. Do not copy it as a pattern for new analyses. The
-    port-or-delete decision is deferred to the report-stage era (feedbax
-    132f98c) / publication.
-
-    Scoped legacy surface: `write_outputs`. The math core in this module is
-    LIVE library code consumed by registered recipes; this banner does not
-    apply to the math core.
-    """
-
-    reference = materialize_reference()
-    summary = reference_summary(reference, discretization=discretization, lane=lane)
-    results_dir = mkdir_p(REPO_ROOT / "results" / issue_id)
-    notes_dir = mkdir_p(results_dir / "notes")
-    artifact_dir = mkdir_p(REPO_ROOT / "_artifacts" / issue_id / "analytical_game_card")
-
-    readme = results_dir / "README.md"
-    if not readme.exists():
-        readme.write_text(
-            "Phase 0 analytical game-card artifacts for the cs2019-to-RNN "
-            "game-equivalence programme. See `notes/analytical_game_card.md` "
-            "for the tracked C&S released-code-aligned reference target.\n",
-            encoding="utf-8",
-        )
-
-    manifest_path = notes_dir / "analytical_game_card_manifest.json"
-    note_path = notes_dir / "analytical_game_card.md"
-    npz_path = artifact_dir / "canonical_reference.npz"
-
-    np.savez_compressed(npz_path, **_npz_arrays(reference))
-
-    manifest = {
-        **summary,
-        "tracked_note": f"results/{issue_id}/notes/analytical_game_card.md",
-        "artifact_npz": f"_artifacts/{issue_id}/analytical_game_card/canonical_reference.npz",
-        "artifact_npz_keys": sorted(_npz_arrays(reference).keys()),
-    }
-    manifest_path.write_text(
-        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
-    note_path.write_text(render_markdown(summary), encoding="utf-8")
-    return manifest
-
-
 __all__ = [
     "DEFAULT_GAMMA_FACTORS",
     "DIAGNOSTIC_GAMMA_FACTOR",
@@ -712,8 +464,6 @@ __all__ = [
     "build_zoh_sensitivity_game",
     "materialize_reference",
     "reference_summary",
-    "render_markdown",
     "riccati_worst_case_policy",
     "rollout_with_disturbance_policy",
-    "write_outputs",
 ]

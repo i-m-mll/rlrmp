@@ -1,0 +1,182 @@
+{
+  "schema_id": "rlrmp.experiment.cross_architecture_certificate_cohort",
+  "schema_version": "rlrmp.experiment.cross_architecture_certificate_cohort.v1",
+  "issue": "4eb51ee",
+  "status": "blocked_before_executable_matrix_authoring",
+  "scientific_question": "Do nominal-versus-robust conclusions agree across native certificate modes when task and evaluation conditions are matched?",
+  "evidence_class": "non_scientific_engineering_smoke",
+  "execution": {
+    "hardware": "local_only",
+    "seed": 42,
+    "n_batches": 100,
+    "checkpoint_stop_batch": 50,
+    "resume_target_batch": 100,
+    "cloud_authorized": false
+  },
+  "matched_contract": {
+    "plant": "cs_lss",
+    "task": "matched_center_out_reach",
+    "loss": "matched_finite_horizon_quadratic",
+    "optimizer": "matched_where_architecture_allows",
+    "target_support": "const_band16",
+    "robust_training": "broad_epsilon_pgd",
+    "evaluation_lenses_are_training_axes": false
+  },
+  "content_pins_inspected": [
+    {
+      "ref": "src/rlrmp/config/model_presets/cs_lss_gru.json",
+      "file_sha256": "7d5c9c4cad07e0f542e9ac8ad34a735aef19bb6e8ad6218681026cae0823850c",
+      "declared_content_sha256": "31a21447d5fecca38a43d51df5d953d6fcc4f27c381b2d7d161c693064758853",
+      "role": "gru_model_preset_only_not_a_training_run_base"
+    },
+    {
+      "ref": "src/rlrmp/config/training_presets/defaults.json",
+      "file_sha256": "98d3163ba76f9fdd2f8aef75c19a87365f64295c61a27dc482d2b1db6547a0bc",
+      "declared_content_sha256": "0c777ccf1e2f7c3b96091d1dcb4a409d3f6492288382bff5fbdd3d7e76cc7532",
+      "role": "training_defaults_only_not_an_architecture_specific_training_run_base"
+    },
+    {
+      "ref": "results/ef9c882/runs/base.training.json",
+      "file_sha256": "ade57ae86c0f25404bf80a3065d2eb79fa91d3c52308646c9f55f81c2f8c2182",
+      "canonical_matrix_pin": "6d633f4ccdf7aebbec77362c7eef81013f5005c3e287a3bbb92ce0ee68647d29",
+      "role": "historical_delayed_reach_gru_base_not_a_matched_cohort_base"
+    }
+  ],
+  "required_base_identities": [
+    {
+      "base_id": "a1.static_gain_linear.matched.v1",
+      "architecture": "static_gain_linear",
+      "certificate_mode": "static_gain",
+      "content_hash": null,
+      "status": "blocked_missing_canonical_content_pinned_training_run_base"
+    },
+    {
+      "base_id": "a1.augmented_linear_recurrent.matched.v1",
+      "architecture": "linear_recurrence",
+      "certificate_mode": "augmented_linear",
+      "content_hash": null,
+      "status": "blocked_missing_canonical_content_pinned_training_run_base"
+    },
+    {
+      "base_id": "a1.gru.matched.v1",
+      "architecture": "gru",
+      "certificate_mode": "empirical_nonlinear",
+      "content_hash": null,
+      "status": "deferred_by_ordered_lowerer_pin_gate_existing_gru_authoring_road"
+    }
+  ],
+  "rows": [
+    {"row_id": "sg_nominal_s42", "base_id": "a1.static_gain_linear.matched.v1", "training_distribution": "nominal", "seed": 42},
+    {"row_id": "sg_robust_s42", "base_id": "a1.static_gain_linear.matched.v1", "training_distribution": "broad_epsilon_pgd", "seed": 42},
+    {"row_id": "alr_nominal_s42", "base_id": "a1.augmented_linear_recurrent.matched.v1", "training_distribution": "nominal", "seed": 42},
+    {"row_id": "alr_robust_s42", "base_id": "a1.augmented_linear_recurrent.matched.v1", "training_distribution": "broad_epsilon_pgd", "seed": 42},
+    {"row_id": "gru_nominal_s42", "base_id": "a1.gru.matched.v1", "training_distribution": "nominal", "seed": 42},
+    {"row_id": "gru_robust_s42", "base_id": "a1.gru.matched.v1", "training_distribution": "broad_epsilon_pgd", "seed": 42}
+  ],
+  "variation_pointer_inventory": {
+    "pointer_syntax": "RFC 6901 JSON Pointer",
+    "compact_intent_coordinates": [
+      {
+        "axis": "architecture",
+        "status": "resolved_in_compact_intent",
+        "pointer_pattern": "/required_base_identities/{base_index}/architecture",
+        "concrete_pointers": [
+          "/required_base_identities/0/architecture",
+          "/required_base_identities/1/architecture",
+          "/required_base_identities/2/architecture"
+        ]
+      },
+      {
+        "axis": "certificate_mode",
+        "status": "resolved_in_compact_intent",
+        "pointer_pattern": "/required_base_identities/{base_index}/certificate_mode",
+        "concrete_pointers": [
+          "/required_base_identities/0/certificate_mode",
+          "/required_base_identities/1/certificate_mode",
+          "/required_base_identities/2/certificate_mode"
+        ]
+      },
+      {
+        "axis": "row_base_identity",
+        "status": "resolved_in_compact_intent",
+        "pointer_pattern": "/rows/{row_index}/base_id",
+        "concrete_pointers": [
+          "/rows/0/base_id",
+          "/rows/1/base_id",
+          "/rows/2/base_id",
+          "/rows/3/base_id",
+          "/rows/4/base_id",
+          "/rows/5/base_id"
+        ]
+      },
+      {
+        "axis": "training_distribution",
+        "status": "resolved_in_compact_intent",
+        "pointer_pattern": "/rows/{row_index}/training_distribution",
+        "concrete_pointers": [
+          "/rows/0/training_distribution",
+          "/rows/1/training_distribution",
+          "/rows/2/training_distribution",
+          "/rows/3/training_distribution",
+          "/rows/4/training_distribution",
+          "/rows/5/training_distribution"
+        ]
+      },
+      {
+        "axis": "seed",
+        "status": "resolved_in_compact_intent",
+        "pointer_pattern": "/rows/{row_index}/seed",
+        "concrete_pointers": [
+          "/rows/0/seed",
+          "/rows/1/seed",
+          "/rows/2/seed",
+          "/rows/3/seed",
+          "/rows/4/seed",
+          "/rows/5/seed"
+        ]
+      }
+    ],
+    "executable_training_run_spec_overrides": {
+      "status": "blocked_not_resolved",
+      "blocker_issue": "427d0d8",
+      "reason": "Canonical content-pinned TrainingRunSpec bases do not yet exist for the matched static-linear and augmented-linear rows, so executable override pointers cannot be resolved without inventing a schema.",
+      "required_axes": [
+        {
+          "axis": "architecture_and_certificate_mode",
+          "training_run_spec_override_pointer": null,
+          "status": "blocked_not_resolved"
+        },
+        {
+          "axis": "training_distribution",
+          "training_run_spec_override_pointer": null,
+          "status": "blocked_not_resolved"
+        },
+        {
+          "axis": "broad_epsilon_pgd_enabled",
+          "training_run_spec_override_pointer": null,
+          "status": "blocked_not_resolved"
+        },
+        {
+          "axis": "seed",
+          "training_run_spec_override_pointer": null,
+          "status": "blocked_not_resolved"
+        }
+      ]
+    }
+  },
+  "forbidden_substitutions": [
+    "inline_matrix_base",
+    "legacy_payload_mode",
+    "static_gain_coercion_for_recurrent_rows",
+    "plant_state_fallback_for_augmented_linear",
+    "hand_normalized_manifests",
+    "manual_manifest_join",
+    "direct_durable_write"
+  ],
+  "blocker": {
+    "issue": "427d0d8",
+    "title": "Add canonical matrix-authored static-linear and linear-recurrent training bases",
+    "scope": "Provide content-pinned TrainingRunSpec bases and registered execution paths for matched nominal and broad-epsilon-PGD static-linear and linear-recurrent controllers, including augmented-state outputs needed by standard certificates.",
+    "why_distinct": "Landed generalized low-level certificate components and the report renderer can consume native modes once standard manifests exist, but they do not create architecture-specific authored training identities or TrainingRunManifest-producing execution paths. Treating the linear rows as non-training references would remove the selected architecture-by-training-distribution comparison."
+  }
+}

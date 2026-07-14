@@ -6,24 +6,20 @@ import hashlib
 import json
 from pathlib import Path
 
+from feedbax.analysis import authenticated_manifest_ref
 from feedbax.analysis.figures import execute_figure_spec
 from feedbax.analysis.specs import AnalysisRunSpec
 from feedbax.contracts.figures import FigureSpec
 from feedbax.contracts.manifest import (
     AnalysisRunManifest,
-    ParentRef,
     spec_payload,
     write_manifest,
 )
-import pytest
-
-from rlrmp.data_products.envelope import read_data_product
 from rlrmp.figures import register_rlrmp_figure_surfaces, standard_matrix_payload
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIGURE_ROOT = REPO_ROOT / "results" / "b399efc" / "figures"
-ORACLE_ROOT = REPO_ROOT / "results" / "b399efc" / "data_products"
 TOPICS = {
     "forward_velocity_profiles": "rlrmp.profile_comparison",
     "hold_drift_profiles": "rlrmp.profile_comparison",
@@ -32,9 +28,6 @@ TOPICS = {
     "training_loss": "rlrmp.history_comparison",
     "training_loss_per_term": "rlrmp.history_comparison",
 }
-
-
-pytestmark = pytest.mark.feedbax_contract
 
 
 def _json(path: Path) -> dict:
@@ -73,22 +66,6 @@ def _representative_cell() -> dict:
     }
 
 
-def test_all_six_topics_are_native_manifest_data_bound_specs() -> None:
-    for topic, template in TOPICS.items():
-        payload = _json(FIGURE_ROOT / topic / "spec.json")
-        spec = FigureSpec.model_validate(payload)
-        assert spec.template == template
-        assert spec.assembler is None
-        assert spec.slot_bindings
-        assert spec.facet_bindings
-        assert spec.figure_routing["experiment"] == "b399efc"
-        assert spec.figure_routing["topic"] == topic
-        assert all(binding.item == "manifest" for binding in spec.facet_bindings.values())
-        assert payload["metadata"]["parity_oracle"] == (
-            f"results/b399efc/data_products/figure_parity_{topic}.json"
-        )
-
-
 def test_all_six_specs_execute_to_hash_verified_completed_manifests(tmp_path: Path) -> None:
     register_rlrmp_figure_surfaces()
     payload = standard_matrix_payload(
@@ -104,12 +81,8 @@ def test_all_six_specs_execute_to_hash_verified_completed_manifests(tmp_path: Pa
         ),
         metadata={"figure_payload": payload},
     )
-    write_manifest(analysis, root=tmp_path)
-    parent = ParentRef(
-        kind="AnalysisRunManifest",
-        id=analysis.id,
-        role="standard_matrix_payload",
-    )
+    analysis_path = write_manifest(analysis, root=tmp_path)
+    parent = authenticated_manifest_ref(analysis, analysis_path, "standard_matrix_payload")
 
     manifests = []
     for topic in TOPICS:
@@ -155,34 +128,3 @@ def test_summary_preserves_movement_ramp_metric_order() -> None:
         "mean_time_to_peak_steps",
         "mean_hold_drift_mm",
     ]
-
-
-def test_archived_structured_outputs_are_hash_verified_parity_oracles() -> None:
-    product = read_data_product(ORACLE_ROOT / "figure_parity_oracles.json")
-    assert product.product_schema_id == "rlrmp.figure_parity_oracles"
-    assert len(product.artifacts) == 6
-    for artifact in product.artifacts:
-        assert artifact.uri is not None
-        assert hashlib.sha256((REPO_ROOT / artifact.uri).read_bytes()).hexdigest() == (
-            artifact.sha256
-        )
-    summary = _json(ORACLE_ROOT / "figure_parity_summary_metrics.json")
-    loss = _json(ORACLE_ROOT / "figure_parity_training_loss.json")
-    assert summary["cell_stats"]["movement_ramp__power6"]["mean_peak_velocity"] == (
-        1.3973475694656372
-    )
-    assert loss["end_of_training_stats"]["movement_ramp__power6"]["final_mean"] == (
-        0.15093673765659332
-    )
-
-
-def test_imperative_standard_matrix_pipeline_is_fully_retired() -> None:
-    retired = (
-        "results/b399efc/scripts/analyse_movement_ramp_matrix.py",
-        "results/3702f54/scripts/analyse_pregomatrix.py",
-        "src/rlrmp/analysis/multi_cell_driver.py",
-    )
-    for relative in retired:
-        assert not (REPO_ROOT / relative).exists()
-    for source in REPO_ROOT.glob("results/**/*.py"):
-        assert "rlrmp.analysis.multi_cell_driver" not in source.read_text(encoding="utf-8")

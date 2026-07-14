@@ -60,7 +60,7 @@ path = "src/rlrmp/model/feedbax_graph.py"
 qualname = "register_rlrmp_graph_components"
 owner = "e23874f"
 category = "legacy_registration"
-note = "Registers executable builders for retired point-mass/linear component types so archived GraphSpecs still materialize."
+note = "Registers the frozen SimpleStagedNetwork reader; linear recipes were converted to native AffineFeedbackController specs."
 
 [[python_scope]]
 path = "src/rlrmp/model/feedbax_graph.py"
@@ -68,20 +68,6 @@ qualname = "register_rlrmp_graph_migration_pack"
 owner = "e23874f"
 category = "legacy_migration_pack"
 note = "ComponentMigration source_type entries mapping retired IDs onto Feedbax-native builders."
-
-[[python_scope]]
-path = "src/rlrmp/model/feedbax_graph.py"
-qualname = "_graph_bundle_metadata"
-owner = "e23874f"
-category = "manifest_legacy_aliases"
-note = "Manifest component_policy.legacy_component_aliases documents retired IDs; active types are the native feedbax_component_types list."
-
-[[python_scope]]
-path = "src/rlrmp/model/feedbax_graph.py"
-qualname = "_runtime_linear_controller_params"
-owner = "e23874f"
-category = "legacy_serialization"
-note = "Model->spec export path for historical LinearController/LinearTrackerController instances; native builders emit AffineFeedbackController."
 
 [[python_scope]]
 path = "src/rlrmp/model/feedbax_graph.py"

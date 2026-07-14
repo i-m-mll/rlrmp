@@ -19,7 +19,7 @@
     }
   ],
   "schema_id": "feedbax.spec.figure",
-  "schema_version": "feedbax.spec.figure.v1",
+  "schema_version": "feedbax.spec.figure.v2",
   "slot_bindings": {
     "profiles": {
       "constructor": "rlrmp.profile_series",

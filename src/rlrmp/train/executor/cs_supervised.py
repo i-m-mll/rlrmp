@@ -103,14 +103,13 @@ from rlrmp.train.task_model import (
 )
 from rlrmp.model.trainable import staged_network_trainable_parts
 from rlrmp.train.training_configs import (
-    ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
     CS_CONTROL_SCALE,
     CS_POSITION_SCALE,
     CS_VELOCITY_SCALE,
     CsNominalGruConfig,
     DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW,
-    ISSUE_ID,
 )
+from rlrmp.train.science_vocabulary import AdaptiveEpsilonControllerMode
 from rlrmp.train.executor.checkpoints import (
     ADAPTIVE_EPSILON_ZERO_ADVERSARY_STOP_REASON,
     SCHEMA_VERSION,
@@ -126,8 +125,6 @@ from rlrmp.train.executor.checkpoints import (
 logger = logging.getLogger(__name__)
 
 VolumeCommit = Callable[[], None]
-
-DEFAULT_OUTPUT_DIR = str(CsNominalGruConfig.model_fields["output_dir"].default)
 
 DEFAULT_CHECKPOINT_INTERVAL_BATCHES = int(
     CsNominalGruConfig.model_fields["checkpoint_interval_batches"].default
@@ -395,6 +392,7 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
     perturbation = _dict_value(hps, "perturbation_training")
     broad = _dict_value(hps, "broad_epsilon_training")
     broad_pgd = _dict_value(hps, "broad_epsilon_pgd_training")
+    broad_pgd_config = _dict_value(broad_pgd, "config")
     policy_adversary = _dict_value(hps, "policy_adversary_training")
     policy_payload = _dict_value(policy_adversary, "policy")
     policy_optimizer = _dict_value(policy_adversary, "inner_optimizer")
@@ -404,8 +402,6 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
     broad_pgd_schedule = _dict_value(broad_pgd, "budget_schedule")
     broad_pgd_conditioning = _dict_value(broad_pgd_schedule, "conditioning_scalar")
     broad_pgd_max_radius_source = _dict_value(broad_pgd_schedule, "max_radius_source")
-    broad_pgd_budget = _dict_value(broad_pgd, "budget_contract")
-    broad_pgd_budget_source = _dict_value(broad_pgd_budget, "budget_source")
     broad_pgd_objective = _dict_value(broad_pgd, "objective")
     broad_pgd_mechanism = _dict_value(broad_pgd, "mechanism")
     broad_pgd_safety_cap = _dict_value(broad_pgd, "safety_cap")
@@ -423,10 +419,16 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
     population = _dict_value(model, "population_structure")
     pgd_inner = _dict_value(broad_pgd, "inner_maximizer")
 
+    artifact_output_dir = run_spec.get("artifact_output_dir")
+    if not isinstance(artifact_output_dir, str) or not artifact_output_dir.strip():
+        raise ValueError(
+            "current C&S training run specs must declare a non-empty artifact_output_dir"
+        )
+
     values = {
-        "output_dir": str(run_spec.get("artifact_output_dir", DEFAULT_OUTPUT_DIR)),
+        "output_dir": artifact_output_dir,
         "spec_dir": str(run_spec.get("spec_dir")) if run_spec.get("spec_dir") else None,
-        "issue": str(run_spec.get("issue", ISSUE_ID)),
+        "issue": str(run_spec["issue"]),
         "seed": int(run_spec.get("seed", 42)),
         "n_train_batches": int(
             run_spec.get("n_train_batches", hps.get("n_batches_condition", 12000))
@@ -586,13 +588,9 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
         "broad_epsilon_pgd_budget_schedule": str(
             broad_pgd_schedule.get("mode", broad_pgd.get("budget_schedule_mode", "fixed"))
         ),
-        "broad_epsilon_pgd_fixed_radius_15cm": broad_pgd_budget.get(
-            "effective_l2_radius_15cm",
-            broad_pgd.get("fixed_l2_radius_15cm"),
-        ),
-        "broad_epsilon_pgd_fixed_radius_source": broad_pgd_budget_source.get(
-            "key",
-            broad_pgd.get("fixed_radius_source"),
+        "broad_epsilon_pgd_fixed_radius_15cm": broad_pgd_config.get("fixed_l2_radius_15cm"),
+        "broad_epsilon_pgd_fixed_radius_source": broad_pgd_config.get(
+            "fixed_radius_source",
         ),
         "broad_epsilon_pgd_objective": str(
             broad_pgd_objective.get(
@@ -650,7 +648,7 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
         "adaptive_epsilon_controller_training_mode": str(
             adaptive_epsilon.get(
                 "controller_training_mode",
-                ADAPTIVE_EPSILON_TRAINING_MODE_LOSS_BLEND,
+                AdaptiveEpsilonControllerMode.LOSS_BLEND,
             )
         ),
         "adaptive_epsilon_damage_start": float(
@@ -908,7 +906,7 @@ def build_cs_supervised_native_initial_slots(
     key_init, key_train, _key_adversary = split_initial_keys(key)
     pair = setup_task_model_pair(hps, key=key_init)
     optimizer = _build_optimizer(hps)
-    where_train = _where_train()[0]
+    where_train = _where_train(hps)[0]
     template_state = _initial_training_state(
         model=pair.model,
         trainer=optimizer,
@@ -975,6 +973,20 @@ def _execute_native_training_run_spec(
             emitter.close()
 
 
+def _feedbax_manifest_root() -> Path:
+    """Return the physical manifest-store authority passed to Feedbax.
+
+    Feature worktrees share ``_artifacts`` through a symlink. Feedbax secure
+    storage deliberately rejects symlinks in an authority path, so resolve the
+    configured shared root before crossing that boundary.
+    """
+
+    configured = Path(os.environ.get("FEEDBAX_RUNS_DIR", "_artifacts/feedbax_runs"))
+    if not configured.is_absolute():
+        configured = REPO_ROOT / configured
+    return configured.resolve()
+
+
 def _native_progress_logger() -> logging.Logger:
     """Return a per-run INFO logger whose stdout handler flushes each BATCH line."""
     progress_logger = logging.Logger(f"{__name__}.native_progress", level=logging.INFO)
@@ -1038,7 +1050,7 @@ def _run_cs_supervised_native_from_context(
         run_id=_cs_supervised_native_run_id(args, run_spec_path),
         initial_slots=initial_slots,
         kernel_context={RLRMP_RUNTIME_CONTEXT_KEY: runtime},
-        manifest_root=REPO_ROOT / "_artifacts" / "feedbax_runs",
+        manifest_root=_feedbax_manifest_root(),
         checkpoint_root=checkpoint_root,
         loss_service=CsSupervisedExternalObjectiveLossService(),
         training_spec_payload=run_spec.get(RLRMP_RUN_SPEC_PAYLOAD_KEY),
@@ -1383,9 +1395,7 @@ def verify_resume_from_context(context: RunSpecExecutionContext) -> dict[str, An
         expected_slots=initial_slots,
         resume_slot_transform=resume_slot_transform,
         continuation_request=training_spec.checkpoint_progress.continuation,
-        allow_new_lineage_override=(
-            training_spec.checkpoint_progress.continuation is not None
-        ),
+        allow_new_lineage_override=(training_spec.checkpoint_progress.continuation is not None),
     )
     return {
         "verified_resume": True,
@@ -1484,7 +1494,7 @@ def _run_adaptive_epsilon_native_from_context(
         run_id=_cs_supervised_native_run_id(args, run_spec_path),
         initial_slots=initial_slots,
         kernel_context={RLRMP_RUNTIME_CONTEXT_KEY: runtime},
-        manifest_root=REPO_ROOT / "_artifacts" / "feedbax_runs",
+        manifest_root=_feedbax_manifest_root(),
         checkpoint_root=checkpoint_root,
         loss_service=AdaptiveEpsilonExternalObjectiveLossService(),
         training_spec_payload=run_spec.get(RLRMP_RUN_SPEC_PAYLOAD_KEY),
@@ -1573,7 +1583,7 @@ def _run_policy_adversary_native_from_context(
         run_id=_cs_supervised_native_run_id(args, run_spec_path),
         initial_slots=initial_slots,
         kernel_context={RLRMP_RUNTIME_CONTEXT_KEY: runtime},
-        manifest_root=REPO_ROOT / "_artifacts" / "feedbax_runs",
+        manifest_root=_feedbax_manifest_root(),
         checkpoint_root=checkpoint_root,
         loss_service=PolicyAdversaryExternalObjectiveLossService(),
         training_spec_payload=run_spec.get(RLRMP_RUN_SPEC_PAYLOAD_KEY),
@@ -2162,7 +2172,9 @@ def make_delayed_cosine_schedule(
     )
 
 
-def _where_train() -> dict[int, Callable[[Any], tuple[Any, ...]]]:
+def _where_train(hps: TreeNamespace | None = None) -> dict[int, Callable[[Any], tuple[Any, ...]]]:
+    del hps
+
     def where_train_fn(model):
         net = model.nodes["net"]
         return staged_network_trainable_parts(net)
@@ -2703,7 +2715,6 @@ __all__ = [
     "DEFAULT_DELAYED_GO_CUE_MAX_STEP",
     "DEFAULT_DELAYED_GO_CUE_MIN_STEP",
     "DEFAULT_DELAYED_P_CATCH_TRIAL",
-    "DEFAULT_OUTPUT_DIR",
     "GradientDiagnosticsState",
     "RunSpecExecutionContext",
     "UpdateDiagnosticsState",

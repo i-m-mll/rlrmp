@@ -50,14 +50,18 @@ def load_distillation_run_spec(
     spec = json.loads(path.read_text(encoding="utf-8"))
     if method == "guided_distillation":
         assert isinstance(config, GuidedDistillationConfig)
-        spec["run_id"] = config.run_id
+        if config.run_id is not None:
+            spec["run_id"] = config.run_id
         spec["seed"] = config.seed
         spec["n_train_batches"] = config.n_batches
         spec["batch_size"] = config.batch_size
         spec["controller_lr"] = config.controller_lr
-        spec["teacher_contract"]["teacher_package"] = config.teacher_package
-        spec["teacher_contract"]["teacher_manifest"] = config.teacher_manifest
-        spec["teacher_bank"]["teacher_gains_key"] = config.teacher_gains_key
+        if config.teacher_package is not None:
+            spec["teacher_contract"]["teacher_package"] = config.teacher_package
+        if config.teacher_manifest is not None:
+            spec["teacher_contract"]["teacher_manifest"] = config.teacher_manifest
+        if config.teacher_gains_key is not None:
+            spec["teacher_bank"]["teacher_gains_key"] = config.teacher_gains_key
         weights = spec["distillation_surface"]["config"]["weights"]
         weights.update(
             clean_action=config.clean_action_weight,
@@ -92,10 +96,11 @@ def load_distillation_run_spec(
             lr_cosine_alpha=config.lr_cosine_alpha,
             gradient_clip_norm=config.gradient_clip_norm,
         )
-        output_dir = Path(config.output_dir or f"_artifacts/9727d79/runs/{config.run_id}")
+        output_dir = _authored_output_dir(spec, config.output_dir)
     else:
         assert isinstance(config, ClosedLoopDistillationConfig)
-        spec["run_id"] = config.run_id
+        if config.run_id is not None:
+            spec["run_id"] = config.run_id
         spec["seed"] = config.seed
         student = spec["student_contract"]
         student.update(
@@ -109,11 +114,11 @@ def load_distillation_run_spec(
             gradient_clip_norm=config.gradient_clip_norm,
             trainable_dtype=config.trainable_dtype,
         )
-        spec["teacher_contract"].update(
-            teacher_package=config.teacher_package,
-            teacher_gains_key=config.teacher_gains_key,
-            horizon=config.horizon,
-        )
+        if config.teacher_package is not None:
+            spec["teacher_contract"]["teacher_package"] = config.teacher_package
+        if config.teacher_gains_key is not None:
+            spec["teacher_contract"]["teacher_gains_key"] = config.teacher_gains_key
+        spec["teacher_contract"]["horizon"] = config.horizon
         spec["loss_surface"]["weights"].update(
             kinematics_trajectory=config.kinematics_trajectory_weight,
             velocity=config.velocity_weight,
@@ -124,7 +129,9 @@ def load_distillation_run_spec(
             directional_input_output_jvp=config.input_output_jvp_weight,
             task_qr_rollout=config.task_rollout_loss_weight,
         )
-        output_dir = Path(config.output_dir)
+        output_dir = _authored_output_dir(spec, config.output_dir)
+    if not spec.get("run_id"):
+        raise ValueError(f"tracked {method} run spec must declare run_id")
     spec = attach_distillation_training_specs(
         spec,
         method=method,
@@ -133,6 +140,15 @@ def load_distillation_run_spec(
     )
     validate_distillation_training_run_spec(spec, method=method)
     return spec
+
+
+def _authored_output_dir(spec: dict[str, Any], override: str | None) -> Path:
+    """Resolve output custody only from the authored spec or an explicit override."""
+
+    value = override or spec.get("artifact_output_dir")
+    if not value:
+        raise ValueError("tracked distillation run spec must declare artifact_output_dir")
+    return Path(str(value))
 
 
 def run_distillation_config(
@@ -156,7 +172,7 @@ def run_distillation_config(
     return execute_distillation_training_run_spec_native(
         spec,
         method=method,
-        run_id=config.run_id,
+        run_id=str(spec["run_id"]),
         resume=config.resume,
     )
 

@@ -19,6 +19,10 @@ by the issue spec. All 38 were audited; no additional patterns were needed.
 Issue `b6b5502` later retired the two known-wrong `30f2313` subjects with the
 tagged legacy stock, so the live guarded manifest now contains the 36 surviving
 clean sidecars while this narrative preserves the original audit disposition.
+Issue `dd7234e` subsequently added `results/ef9c882/runs/base.graph.json`, a
+native current-schema C&S graph rather than an archived conversion input. The
+builder and drift guard exclude that explicit path from this historical corpus
+and separately verify that it remains tracked and current-schema.
 
 Every one of the 38 sidecars:
 
@@ -151,12 +155,13 @@ and a `conversion_candidate_key` object
 `audited_fixture_hash`) matching the composite key the issue spec requires.
 
 `tests/test_graph_sidecar_audit_manifest.py` guards this manifest against
-drift: it fails on an empty manifest, a live `git ls-files` count that
-disagrees with the manifest's `audited_count`, any live sidecar path missing
+drift: it fails on an empty manifest, an in-scope `git ls-files` count that
+disagrees with the manifest's `audited_count`, any archived sidecar path missing
 from the manifest (or vice versa), any sha256 mismatch between the manifest
-and the live file, and any tracked sidecar not present in the manifest at all
-(the "unaudited new sidecar" case the issue spec's acceptance criteria
-require).
+and the live file, and any unexcluded tracked sidecar not present in the
+manifest at all (the "unaudited new sidecar" case the issue spec's acceptance
+criteria require). Explicit exclusions must remain tracked current-schema
+graphs, so they cannot silently become unaudited legacy inputs.
 
 ## Non-goals (explicitly out of scope for this audit)
 

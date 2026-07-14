@@ -136,7 +136,6 @@ class RLRMPFeedbaxGraphBundle:
             "graph_export_status": "unavailable" if graph_spec_path is None else "available",
             "execution_backend": EXECUTION_BACKEND,
             "component_policy": self.manifest["component_policy"],
-            "legacy_loader": self.manifest["legacy_loader"],
         }
         descriptors = self.manifest.get("controller_feedback_descriptors")
         if descriptors is not None:
@@ -156,26 +155,6 @@ def register_rlrmp_graph_components(component_registry: Any | None = None) -> An
         input_ports=["input", "feedback"],
         output_ports=["output", "hidden"],
         output_prototype_fn=_simple_staged_network_output_prototype,
-        provenance="rlrmp",
-    )
-    registry.register_component_type(
-        "RLRMPLinearController",
-        _build_linear_controller,
-        category="RLRMP",
-        description="RLRMP linear regulator controller.",
-        input_ports=["input", "feedback"],
-        output_ports=["output", "hidden"],
-        output_prototype_fn=_linear_controller_output_prototype,
-        provenance="rlrmp",
-    )
-    registry.register_component_type(
-        "RLRMPLinearTrackerController",
-        _build_linear_tracker_controller,
-        category="RLRMP",
-        description="RLRMP linear tracker controller.",
-        input_ports=["input", "feedback"],
-        output_ports=["output", "hidden"],
-        output_prototype_fn=_linear_controller_output_prototype,
         provenance="rlrmp",
     )
     _install_parameter_aware_recurrent_builders(registry)
@@ -500,15 +479,6 @@ def _simple_staged_network_output_prototype(
     return {"output": output, "hidden": hidden}
 
 
-def _linear_controller_output_prototype(
-    params: dict[str, Any],
-    inputs: dict[str, Any],
-) -> dict[str, Any]:
-    del inputs
-    controls = int(params.get("n_controls", 2))
-    return {"output": jnp.zeros(controls), "hidden": jnp.zeros(1)}
-
-
 def install_simple_feedback_runtime_hooks(graph: Graph) -> Graph:
     """Install SimpleFeedback-compatible state view and consistency hooks."""
 
@@ -574,31 +544,6 @@ def _build_simple_staged_network(params: dict[str, Any]) -> SimpleStagedNetwork:
     )
 
 
-def _build_linear_controller(params: dict[str, Any]):
-    from rlrmp.controllers.linear import LinearController
-
-    return LinearController(
-        n_steps=int(params["n_steps"]),
-        n_controls=int(params.get("n_controls", 2)),
-        n_states=int(params.get("n_states", 4)),
-        K_init_scale=float(params.get("K_init_scale", 0.0) or 0.0),
-        key=_key_from_params(params),
-    )
-
-
-def _build_linear_tracker_controller(params: dict[str, Any]):
-    from rlrmp.controllers.linear import LinearTrackerController
-
-    return LinearTrackerController(
-        n_steps=int(params["n_steps"]),
-        n_controls=int(params.get("n_controls", 2)),
-        n_states=int(params.get("n_states", 4)),
-        K_init_scale=float(params.get("K_init_scale", 0.0) or 0.0),
-        u_ff_init_scale=float(params.get("u_ff_init_scale", 0.0) or 0.0),
-        key=_key_from_params(params),
-    )
-
-
 def _key_from_params(params: dict[str, Any]):
     key_data = params.get("key")
     if key_data is not None:
@@ -611,10 +556,7 @@ def _component_key_param(key: Any | None, *, seed: Any | None = None) -> list[in
         return [int(value) for value in jnp.asarray(key).tolist()]
     if seed is not None:
         return [int(value) for value in jnp.asarray(jr.PRNGKey(int(seed))).tolist()]
-    return [
-        int(value)
-        for value in jnp.asarray(jr.PRNGKey(DEFAULT_GRAPH_COMPONENT_SEED)).tolist()
-    ]
+    return [int(value) for value in jnp.asarray(jr.PRNGKey(DEFAULT_GRAPH_COMPONENT_SEED)).tolist()]
 
 
 def _params_with_parent_key(params: Any, parent: dict[str, Any]) -> Any:
@@ -735,14 +677,6 @@ def _graph_bundle_metadata(
             "rlrmp_component_types": [
                 "DynamicsMatrixPerturb",
             ],
-            "legacy_component_aliases": [
-                "RLRMPLinearController",
-                "RLRMPLinearTrackerController",
-                "RLRMPPointMass",
-                "RLRMPFeedbackChannels",
-                "RLRMPMotorChannel",
-                "RLRMPPlantProcessForceNoise",
-            ],
             "note": (
                 "Generic point-mass mechanics, feedback, stochastic channel, and "
                 "recurrent controller nodes use Feedbax-native component types. GRU "
@@ -755,10 +689,6 @@ def _graph_bundle_metadata(
                 "adding graph nodes. SISU is an RLRMP task input, not a Feedbax "
                 "network port."
             ),
-        },
-        "legacy_loader": {
-            "setup_function": "rlrmp.train.task_model.setup_task_model_pair",
-            "checkpoint_format": "jax_cookbook.save/load_with_hyperparameters",
         },
         "task_spec": task_spec,
         "loss_spec": loss_spec,
@@ -1299,15 +1229,6 @@ def graph_spec_from_model(
                 input_ports=list(component.input_ports),
                 output_ports=list(component.output_ports),
             )
-        else:
-            linear_params = _runtime_linear_controller_params(component)
-            if linear_params is not None:
-                nodes[name] = ComponentSpec(
-                    type=linear_params.pop("component_type"),
-                    params=linear_params,
-                    input_ports=list(component.input_ports),
-                    output_ports=list(component.output_ports),
-                )
     for name in drop_subgraphs:
         subgraphs.pop(name, None)
     return graph_spec.model_copy(update={"nodes": nodes, "subgraphs": subgraphs or None})
@@ -1469,25 +1390,6 @@ def _representative_runtime_graph(
     return representative
 
 
-def _runtime_linear_controller_params(component: Any) -> dict[str, Any] | None:
-    from rlrmp.controllers.linear import LinearController, LinearTrackerController
-
-    if isinstance(component, LinearTrackerController):
-        component_type = "RLRMPLinearTrackerController"
-    elif isinstance(component, LinearController):
-        component_type = "RLRMPLinearController"
-    else:
-        return None
-    return {
-        "component_type": component_type,
-        "n_steps": int(component.n_steps),
-        "n_controls": int(component.n_controls),
-        "n_states": int(component.n_states),
-        "target_source": "input.task.effector_target.pos",
-        "feedback_order": controller_feedback_order_labels(),
-    }
-
-
 def graph_spec_payload(graph_spec: GraphSpec) -> dict[str, Any]:
     """Return a JSON-serializable GraphSpec payload."""
 
@@ -1509,12 +1411,18 @@ def write_graph_spec_bundle(bundle: RLRMPFeedbaxGraphBundle, spec_dir: Path) -> 
 
 def _controller_kind(hps: Any) -> str:
     hidden_type = getattr(hps, "hidden_type", None)
-    if isinstance(hidden_type, str) and hidden_type in {"linear", "linear_tracker"}:
+    if isinstance(hidden_type, str) and hidden_type in {
+        "linear",
+        "linear_tracker",
+        "static_linear",
+    }:
         return hidden_type
     name = getattr(hidden_type, "__name__", None)
     if name is None and hasattr(hidden_type, "func"):
         name = getattr(hidden_type.func, "__name__", None)
-    return "vanilla_rnn" if name == "VanillaRNNCell" else "gru"
+    if name in {"VanillaRNN", "VanillaRNNCell", "LeakyRNNCell"}:
+        return "linear_recurrence"
+    return "gru"
 
 
 def _controller_component_spec(
@@ -1594,8 +1502,9 @@ def _controller_component_spec(
         hidden_type_name=hidden_type_name,
     ):
         raise ValueError(
-            "Feedbax-native recurrent controller emission requires a resolved GRU input "
-            f"size and GRU hidden type; got controller_kind={controller_kind!r}, "
+            "Feedbax-native recurrent controller emission requires a resolved input size "
+            "and supported recurrent hidden type; "
+            f"got controller_kind={controller_kind!r}, "
             f"input_size={input_size!r}, hidden_type={hidden_type_name!r}."
         )
     return (
@@ -1646,7 +1555,19 @@ def native_recurrent_controller_subgraph(
 
     if sisu_gating not in {"additive", "multiplicative"}:
         raise ValueError(f"Unsupported sisu_gating {sisu_gating!r}.")
-    if hidden_type_name not in {"GRU", "GRUCell", "gru"}:
+    linear_recurrence = hidden_type_name in {
+        "VanillaRNN",
+        "VanillaRNNCell",
+        "LeakyRNNCell",
+    }
+    if hidden_type_name not in {
+        "GRU",
+        "GRUCell",
+        "gru",
+        "VanillaRNN",
+        "VanillaRNNCell",
+        "LeakyRNNCell",
+    }:
         raise ValueError(f"Unsupported Feedbax-native hidden_type {hidden_type_name!r}.")
     population_params = dict(population_params or {})
     if population_params and population_params.get("key") is None:
@@ -1661,7 +1582,7 @@ def native_recurrent_controller_subgraph(
         input_size=network_input_size,
         hidden_size=int(hidden_size),
         out_size=int(out_size),
-        cell_type="GRU",
+        cell_type="VanillaRNN" if linear_recurrence else "GRU",
         out_nonlinearity="identity",
         population_structure=population_structure,
         name="RLRMP recurrent controller",
@@ -1670,20 +1591,24 @@ def native_recurrent_controller_subgraph(
     graph = graph.model_copy(
         update={
             "nodes": _with_recurrent_leaf_params(
-                graph.nodes,
+                _with_identity_recurrence(graph.nodes) if linear_recurrence else graph.nodes,
                 key=key,
                 dtype=dtype,
             ),
             "metadata": GraphMetadata(
                 name="RLRMP recurrent controller",
                 description=(
-                    "Explicit graph wiring around ordinary Feedbax Mux, GRU, Linear, "
+                    "Explicit graph wiring around ordinary Feedbax Mux, recurrent, Linear, "
                     "ElementwiseAffineModulator, and parameter-constraint primitives."
                 ),
                 created_at="1970-01-01T00:00:00",
                 updated_at="1970-01-01T00:00:00",
                 version="1.0.0",
-                tags=["rlrmp", "feedbax", "gru"],
+                tags=[
+                    "rlrmp",
+                    "feedbax",
+                    "linear_recurrence" if linear_recurrence else "gru",
+                ],
             ),
         }
     )
@@ -1710,6 +1635,28 @@ def native_recurrent_controller_subgraph(
             dtype=dtype,
         )
     return graph
+
+
+def _with_identity_recurrence(
+    nodes: dict[str, ComponentSpec],
+) -> dict[str, ComponentSpec]:
+    """Declare the recurrent cell and readout as strictly linear maps."""
+
+    cell = nodes["cell"]
+    readout = nodes["readout"]
+    return {
+        **nodes,
+        "cell": cell.model_copy(
+            update={
+                "params": {
+                    **cell.params,
+                    "activation": "identity",
+                    "use_bias": False,
+                }
+            }
+        ),
+        "readout": readout.model_copy(update={"params": {**readout.params, "use_bias": False}}),
+    }
 
 
 def _with_recurrent_leaf_params(
@@ -1742,11 +1689,18 @@ def _requires_native_recurrent_controller_gap(
     input_size: int | None,
     hidden_type_name: str,
 ) -> bool:
-    if controller_kind != "gru":
+    if controller_kind not in {"gru", "linear_recurrence"}:
         return True
     if input_size is None:
         return True
-    if hidden_type_name not in {"GRU", "GRUCell", "gru"}:
+    if hidden_type_name not in {
+        "GRU",
+        "GRUCell",
+        "gru",
+        "VanillaRNN",
+        "VanillaRNNCell",
+        "LeakyRNNCell",
+    }:
         return True
     return False
 
@@ -2146,7 +2100,7 @@ def _retained_observables(
             "force",
         ),
     ]
-    if controller_kind in {"linear", "linear_tracker"}:
+    if controller_kind in {"linear", "linear_tracker", "static_linear"}:
         observables.append(_port_observable("net.output", "net", "command"))
     else:
         observables.extend(
@@ -2216,10 +2170,10 @@ def _loss_spec(hps: Any) -> dict[str, Any]:
 def _training_spec(hps: Any, *, controller_kind: str) -> dict[str, Any]:
     trainable = (
         ["nodes.net.gain"]
-        if controller_kind == "linear"
+        if controller_kind in {"linear", "static_linear"}
         else ["nodes.net.gain", "nodes.net.feedforward"]
     )
-    if controller_kind not in {"linear", "linear_tracker"}:
+    if controller_kind not in {"linear", "linear_tracker", "static_linear"}:
         trainable = staged_network_trainable_paths(
             sisu_gating=str(getattr(hps, "sisu_gating", "additive"))
         )

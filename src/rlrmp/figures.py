@@ -26,6 +26,8 @@ from feedbax.plot.constructors import (
     register_figure_template,
 )
 
+from rlrmp.mappings import as_mapping as _mapping
+
 STANDARD_MATRIX_PAYLOAD_ROLE = "standard_matrix_payload"
 STANDARD_MATRIX_PAYLOAD_SCHEMA_ID = "rlrmp.figure_data.standard_matrix"
 STANDARD_MATRIX_PAYLOAD_SCHEMA_VERSION = "rlrmp.figure_data.standard_matrix.v1"
@@ -1123,10 +1125,6 @@ def _metric_value(cell: Mapping[str, Any], metric: str) -> float | None:
     if metric in cell and isinstance(cell[metric], int | float):
         return float(cell[metric])
     return None
-
-
-def _mapping(value: Any) -> Mapping[str, Any]:
-    return value if isinstance(value, Mapping) else {}
 
 
 def _series(value: Any, *, default_len: int | None = None) -> list[float]:

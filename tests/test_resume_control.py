@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import shutil
@@ -11,7 +12,23 @@ from types import SimpleNamespace
 
 import jax
 import pytest
+from feedbax.contracts.graph import GraphSpec
+from feedbax.contracts.spec_storage import training_run_execution_hash
+from feedbax.contracts.training import TrainingRunSpec
 from feedbax.contracts.worker import ProgressCoordinate
+from feedbax.orchestration.bundle import (
+    AuthoredIntentRef,
+    BudgetPolicy,
+    EnvironmentDeclaration,
+    ExecutionCapsuleRef,
+    ExecutionIdentityEnvelope,
+    ResolvedSnapshotRef,
+    RunBundle,
+    RunRowSpec,
+    RowLaunchSpec,
+    SchemaArtifactRef,
+)
+from feedbax.orchestration.stages import run_preflight_checks
 from feedbax.training.checkpoint_custody import (
     CheckpointIntegrityError,
     write_checkpoint_transaction,
@@ -34,9 +51,14 @@ from rlrmp.train.resume_control import (
     declare_cs_supervised_checkpoint_continuation,
     emit_launch_continuation,
     resolve_launch_continuation,
+    target_training_batches,
 )
 from rlrmp.train.training_configs import MinimaxConfig
-from rlrmp.runtime.training_run_specs import feedbax_training_run_spec_from_payload
+from rlrmp.runtime.training_run_specs import (
+    build_feedbax_training_run_spec,
+    feedbax_training_run_spec_from_payload,
+    hydrate_compact_run_spec_envelope,
+)
 from rlrmp.runtime.checkpoint_custody import cs_custody_training_spec
 
 
@@ -44,6 +66,59 @@ def _baseline_recipe_path() -> Path:
     return (
         Path(__file__).resolve().parents[1]
         / "results/cb3685a/runs/harmonized_nominal_h0_const_band16_lr3e-3_clip5_b64.json"
+    )
+
+
+def _schedule_preflight_bundle(training_spec: TrainingRunSpec, tmp_path: Path) -> RunBundle:
+    payload = training_spec.model_dump(mode="json", exclude_none=True)
+    payload_bytes = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    payload_path = tmp_path / "continued-row.json"
+    payload_path.write_bytes(payload_bytes)
+    payload_hash = hashlib.sha256(payload_bytes).hexdigest()
+    resolved_root = "1" * 64
+    return RunBundle(
+        run_set_id="2026-07-13-ebd5d02-resume",
+        driver="local",
+        rows=[
+            RunRowSpec(
+                row_id="continued-cs-row",
+                execution=ExecutionIdentityEnvelope(
+                    payload=SchemaArtifactRef(
+                        schema_id=payload["schema_id"],
+                        schema_version=payload["schema_version"],
+                        artifact_id="test:continued-cs-row:payload",
+                        sha256=payload_hash,
+                        uri=str(payload_path),
+                    ),
+                    authored_intent=AuthoredIntentRef(
+                        schema_id="feedbax.spec.training_run_matrix",
+                        schema_version="feedbax.spec.training_run_matrix.v3",
+                        artifact_id="test:continued-cs-row:authored",
+                        sha256="2" * 64,
+                        intent_hash="3" * 64,
+                    ),
+                    resolved_snapshot=ResolvedSnapshotRef(
+                        schema_id="feedbax.spec.training_run_resolved_semantics",
+                        schema_version="feedbax.spec.training_run_resolved_semantics.v1",
+                        artifact_id="test:continued-cs-row:resolved",
+                        sha256="4" * 64,
+                        root_hash=resolved_root,
+                    ),
+                    execution_capsule=ExecutionCapsuleRef(
+                        schema_id="feedbax.manifest.training_run_execution_capsule",
+                        schema_version="feedbax.manifest.training_run_execution_capsule.v2",
+                        artifact_id="test:continued-cs-row:capsule",
+                        sha256="5" * 64,
+                        execution_hash=training_run_execution_hash(resolved_root, []),
+                    ),
+                    immutable_inputs=[],
+                ),
+                launch=RowLaunchSpec(command=["true"]),
+            )
+        ],
+        environment=EnvironmentDeclaration(python_version="3.13"),
+        budget=BudgetPolicy(max_wall_clock_seconds=10.0),
+        orchestration_root=str(tmp_path / "orchestration"),
     )
 
 
@@ -103,6 +178,23 @@ def test_resume_without_latest_json_is_hard_error(tmp_path: Path) -> None:
             allow_fresh_start=False,
             stop_target_batches=12_500,
         )
+
+
+def test_target_training_batches_requires_one_typed_horizon() -> None:
+    run_spec = SimpleNamespace(
+        method_payload=SimpleNamespace(
+            payload={"n_train_batches": 100, "config": {"n_train_batches": 100}}
+        )
+    )
+    assert target_training_batches(run_spec) == 100
+
+    conflicting = SimpleNamespace(
+        method_payload=SimpleNamespace(
+            payload={"n_train_batches": 100, "config": {"n_batches": 50}}
+        )
+    )
+    with pytest.raises(ValueError, match="conflicting batch horizons"):
+        target_training_batches(conflicting)
 
 
 def test_allow_fresh_start_override_emits_fresh_summary(
@@ -318,7 +410,9 @@ def test_cs_supervised_resume_registry_uses_attached_custody_contract() -> None:
     )
 
     registry = _cs_supervised_execution_registry(training_spec)
-    execution_contract = registry.resolve(training_spec.method_ref, path="/method_ref").contract_factory()
+    execution_contract = registry.resolve(
+        training_spec.method_ref, path="/method_ref"
+    ).contract_factory()
 
     assert execution_contract == training_spec.worker_execution.method_contract
     request = training_spec.checkpoint_progress.continuation
@@ -386,6 +480,40 @@ def test_stage2_authoring_declares_12000_to_16500_total_horizon() -> None:
     assert request.source_completed_batches == 12_000
     assert request.target_total == 16_500
     assert request.additional_batches == 4_500
+
+
+def test_continued_cs_row_drops_fresh_context_and_preflight_fails_closed(
+    tmp_path: Path,
+) -> None:
+    tracked = json.loads(_baseline_recipe_path().read_text(encoding="utf-8"))
+    embedded = feedbax_training_run_spec_from_payload(tracked)
+    run_spec = hydrate_compact_run_spec_envelope(tracked)
+    assert embedded.graph.inline is not None
+    training_spec = build_feedbax_training_run_spec(
+        run_spec,
+        graph_spec=GraphSpec.model_validate(embedded.graph.inline),
+        output_dir=tmp_path / "artifacts",
+        spec_dir=tmp_path / "spec",
+    )
+    assert training_spec.metadata["resume_context"]["current_step"] == 0
+    assert training_spec.metadata["optimizer_build_context"]["current_step"] == 0
+
+    attached = declare_cs_supervised_checkpoint_continuation(
+        training_spec,
+        source_completed_batches=12_000,
+        target_total_batches=12_200,
+    )
+
+    assert "resume_context" not in attached.metadata
+    assert "optimizer_build_context" not in attached.metadata
+    checks = {
+        check.name: check
+        for check in run_preflight_checks(_schedule_preflight_bundle(attached, tmp_path))
+    }
+    schedule_check = checks["schedule-realization"]
+    assert schedule_check.status == "fail"
+    assert "resume_context missing" in (schedule_check.detail or "")
+    assert schedule_check.observed == {"continued-cs-row": []}
 
 
 @pytest.mark.parametrize("loader_error", [None, ValueError("checkpoint binding mismatch")])
@@ -462,9 +590,7 @@ def test_launch_interface_exposes_checkpoint_only_resume_gate() -> None:
     assert execute_args.resume is True
     assert execute_args.allow_fresh_start is True
 
-    method = (
-        repo_root / "src/rlrmp/train/minimax_native/method.py"
-    ).read_text(encoding="utf-8")
+    method = (repo_root / "src/rlrmp/train/minimax_native/method.py").read_text(encoding="utf-8")
     resume = (repo_root / "src/rlrmp/train/minimax_resume.py").read_text(encoding="utf-8")
     assert "load_latest_checkpoint(" not in method
     assert "load_latest_checkpoint(" in resume

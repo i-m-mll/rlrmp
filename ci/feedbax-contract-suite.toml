@@ -1,9 +1,60 @@
 manifest_version = 1
 marker = "feedbax_contract"
+# Append-only name inventory: active families move to retired_families rather
+# than disappearing when their predicates become satisfied.
+family_history = [
+    "analysis_recipe_contract",
+    "graph_spec_contract",
+    "artifact_manifest_normalization",
+    "import_boundary",
+    "suite_manifest_meta",
+    "graph_sidecar_audit",
+    "converted_sidecar_loadability",
+    "tracked_results_reference_integrity",
+    "retired_id_scan",
+    "retired_results_script_imports",
+    "descriptor_conformance_canary",
+    "model_export_parity",
+    "descriptor_basis_hash",
+    "feedback_descriptor_scan",
+    "product_identity_hash",
+    "analysis_write_custody",
+    "analysis_eval_dependency",
+    "write_surface",
+    "reaccretion_ratchet",
+    "experiment_kpi_gates",
+    "tracked_materialization_gate",
+    "native_executor_deletion_gate",
+    "generated_data_constant_scan",
+    "data_in_code_scan",
+    "import_time_jax_config_scan",
+    "defaults_schema_ownership_scan",
+    "lane_b_terminal_gate",
+    "lane_c_terminal_gate",
+    "pipeline_contract_native",
+    "perturbation_bank_strangler",
+    "training_config_flat_key_scan",
+    "declarative_figure_stock",
+    "six_cell_figure_migration",
+    "declarative_profile_stock",
+    "delayed_profile_figure_contract",
+    "prego_figure_migration",
+    "response_norm_figure_contract",
+    "steady_state_figure_contract",
+    "literature_replication_figure_contract",
+    "scalar_diagnostic_figure_contract",
+    "movement_ramp_figure_contract",
+    "sisu_spectrum_figure_contract",
+    "gru_postrun_figure_contract",
+    "nominal_profile_figure_contract",
+    "moderate_calibrated_figure_contract",
+    "stabilization_response_figure_contract",
+]
 
 [[families]]
 name = "analysis_recipe_contract"
 owner = "419eed1"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/analysis/test_feedbax_analysis_module_contract.py::"
@@ -13,6 +64,7 @@ negative_canary = "tests/test_feedbax_contract_meta.py::test_analysis_recipe_neg
 [[families]]
 name = "graph_spec_contract"
 owner = "419eed1"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_feedbax_graph_specs.py::"
@@ -22,6 +74,7 @@ negative_canary = "tests/test_feedbax_contract_meta.py::test_version_pin_negativ
 [[families]]
 name = "artifact_manifest_normalization"
 owner = "419eed1"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_artifact_manifest_normalization_fixture.py::"
@@ -31,6 +84,7 @@ negative_canary = "tests/test_feedbax_contract_meta.py::test_manifest_fixture_ne
 [[families]]
 name = "import_boundary"
 owner = "419eed1"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_feedbax_import_boundary.py::"
@@ -40,15 +94,21 @@ negative_canary = "tests/test_feedbax_import_boundary.py::test_import_boundary_n
 [[families]]
 name = "suite_manifest_meta"
 owner = "419eed1"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_feedbax_contract_meta.py::"
 minimum_non_skipped = 7
-negative_canary = "tests/test_feedbax_contract_meta.py::test_suite_manifest_negative_canary_rejects_zero_live_family"
+negative_canary = [
+    "tests/test_feedbax_contract_meta.py::test_suite_manifest_negative_canary_rejects_zero_live_family",
+    "tests/test_feedbax_contract_meta.py::test_lifecycle_negative_canary_rejects_satisfied_registered_migration",
+    "tests/test_feedbax_contract_meta.py::test_lifecycle_negative_canary_rejects_silent_history_deletion",
+]
 
 [[families]]
 name = "graph_sidecar_audit"
 owner = "e9fc384"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_graph_sidecar_audit_manifest.py::"
@@ -59,6 +119,7 @@ minimum_non_skipped = 9
 [[families]]
 name = "converted_sidecar_loadability"
 owner = "ae15851"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_archived_graph_recipe_conversion.py::"
@@ -69,6 +130,7 @@ minimum_non_skipped = 4
 [[families]]
 name = "tracked_results_reference_integrity"
 owner = "2c06960"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_tracked_results_reference_integrity.py::"
@@ -78,6 +140,7 @@ negative_canary = "tests/test_tracked_results_reference_integrity.py::test_missi
 [[families]]
 name = "retired_id_scan"
 owner = "7811e47"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_retired_component_id_scan.py::"
@@ -87,6 +150,7 @@ negative_canary = "tests/test_retired_component_id_scan.py::test_scan_negative_c
 [[families]]
 name = "retired_results_script_imports"
 owner = "81c150f"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_retired_results_script_imports.py::"
@@ -96,6 +160,7 @@ negative_canary = "tests/test_retired_results_script_imports.py::test_retired_im
 [[families]]
 name = "descriptor_conformance_canary"
 owner = "7811e47"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_descriptor_conformance_canary.py::"
@@ -105,6 +170,7 @@ negative_canary = "tests/test_descriptor_conformance_canary.py::test_canary_nega
 [[families]]
 name = "model_export_parity"
 owner = "7811e47"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_model_export_parity.py::"
@@ -114,6 +180,7 @@ negative_canary = "tests/test_model_export_parity.py::test_export_parity_negativ
 [[families]]
 name = "descriptor_basis_hash"
 owner = "844acc6"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_controller_feedback_descriptors.py::"
@@ -122,6 +189,7 @@ minimum_non_skipped = 5
 [[families]]
 name = "feedback_descriptor_scan"
 owner = "259bd10"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_controller_feedback_descriptors.py::test_feedback_descriptor_ast_scan"
@@ -130,6 +198,7 @@ minimum_non_skipped = 2
 [[families]]
 name = "product_identity_hash"
 owner = "108b4d3"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_product_identity_hash.py::"
@@ -142,6 +211,7 @@ negative_canary = [
 [[families]]
 name = "analysis_write_custody"
 owner = "c223bb8"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_analysis_write_custody.py::"
@@ -151,6 +221,7 @@ negative_canary = "tests/test_analysis_write_custody.py::test_analysis_write_neg
 [[families]]
 name = "analysis_eval_dependency"
 owner = "10bdaa4"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_analysis_eval_dependency.py::"
@@ -160,6 +231,7 @@ negative_canary = "tests/test_analysis_eval_dependency.py::test_analysis_eval_de
 [[families]]
 name = "write_surface"
 owner = "f5d9695"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_write_surface_custody.py::"
@@ -169,6 +241,7 @@ negative_canary = "tests/test_write_surface_custody.py::test_write_surface_negat
 [[families]]
 name = "reaccretion_ratchet"
 owner = "9728133"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_reaccretion_ratchet.py::"
@@ -177,15 +250,27 @@ minimum_non_skipped = 5
 [[families]]
 name = "experiment_kpi_gates"
 owner = "49dc66d"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
-expected_collection_pattern = "tests/test_experiment_kpi_gates.py::"
-minimum_non_skipped = 5
+expected_collection_pattern = "tests/test_experiment_kpi_gates.py::test_experiment_kpi"
+minimum_non_skipped = 2
+negative_canary = "tests/test_experiment_kpi_gates.py::test_experiment_kpi_rejects_spec_outside_authored_inventory"
+
+[[families]]
+name = "tracked_materialization_gate"
+owner = "94878f1"
+lifecycle = "permanent"
+status = "live"
+marker = "feedbax_contract"
+expected_collection_pattern = "tests/test_experiment_kpi_gates.py::test_materialization"
+minimum_non_skipped = 7
 negative_canary = "tests/test_experiment_kpi_gates.py::test_materialization_gate_negative_canary_rejects_semantic_patterns"
 
 [[families]]
 name = "native_executor_deletion_gate"
 owner = "b13e0e4"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_native_executor_deletion_gate.py::"
@@ -197,6 +282,7 @@ negative_canary = "tests/test_native_executor_deletion_gate.py::test_native_exec
 [[families]]
 name = "generated_data_constant_scan"
 owner = "ea6ccb4"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_data_lint_generated_constants.py::"
@@ -206,6 +292,7 @@ negative_canary = "tests/test_data_lint_generated_constants.py::test_data_lint_f
 [[families]]
 name = "data_in_code_scan"
 owner = "caa3f1b"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_data_in_code_scan.py::"
@@ -218,6 +305,7 @@ negative_canary = [
 [[families]]
 name = "import_time_jax_config_scan"
 owner = "15178d7"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_import_time_jax_config.py::"
@@ -227,6 +315,7 @@ negative_canary = "tests/test_import_time_jax_config.py::test_import_lint_negati
 [[families]]
 name = "defaults_schema_ownership_scan"
 owner = "5b3aabe"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_defaults_ratchet.py::"
@@ -236,6 +325,7 @@ negative_canary = "tests/test_defaults_ratchet.py::test_defaults_scanner_negativ
 [[families]]
 name = "lane_b_terminal_gate"
 owner = "08bb6d4"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_lane_b_terminal_gate.py::"
@@ -245,6 +335,7 @@ negative_canary = "tests/test_lane_b_terminal_gate.py::test_minimax_dry_run_spec
 [[families]]
 name = "lane_c_terminal_gate"
 owner = "08bb6d4"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_lane_c_terminal_gate.py::"
@@ -253,6 +344,7 @@ minimum_non_skipped = 4
 [[families]]
 name = "pipeline_contract_native"
 owner = "ed225ef"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_pipeline_contract_native.py::"
@@ -265,6 +357,7 @@ negative_canary = [
 [[families]]
 name = "perturbation_bank_strangler"
 owner = "50f7b28"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/analysis/test_perturbation_bank_parity.py::"
@@ -273,6 +366,7 @@ minimum_non_skipped = 6
 [[families]]
 name = "training_config_flat_key_scan"
 owner = "ef8e1df"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_training_config_flat_legacy_keys.py::"
@@ -281,6 +375,7 @@ minimum_non_skipped = 2
 [[families]]
 name = "declarative_figure_stock"
 owner = "f6f38b6"
+lifecycle = "permanent"
 status = "live"
 marker = "feedbax_contract"
 expected_collection_pattern = "tests/test_declarative_figure_stock.py::"
@@ -291,163 +386,134 @@ negative_canary = [
     "tests/test_declarative_figure_stock.py::test_direct_assembly_negative_canary_rejects_plotly_materializer",
 ]
 
-[[families]]
+# Retired families remain recorded here so an active registration cannot disappear
+# silently. Their shared predicate is the terminal figure-stock condition: the
+# permanent successor is live and both legacy inventories are empty.
+[[retired_families]]
 name = "six_cell_figure_migration"
 owner = "d87fc74"
-status = "live"
-marker = "feedbax_contract"
-expected_collection_pattern = "tests/analysis/test_2bc_six_cell_figure_specs.py::"
-# Pin the complete parity, intrinsic-axis, payload, and deletion contract.
-minimum_non_skipped = 6
+lifecycle = "migration"
+status = "retired"
+retired_by = "4b55b85"
+successor = "declarative_figure_stock"
+exit_predicate = { kind = "toml_arrays_empty", path = "ci/legacy-figure-stock-allowlist.toml", keys = ["legacy_specs", "living_materializers"] }
 
-[[families]]
+[[retired_families]]
 name = "declarative_profile_stock"
 owner = "39bee20"
-status = "live"
-marker = "feedbax_contract"
-expected_collection_pattern = "tests/analysis/test_profile_stock_migration.py::"
-# Pin native execution, archived parity adoption, and terminal producer deletion.
-minimum_non_skipped = 3
+lifecycle = "migration"
+status = "retired"
+retired_by = "4b55b85"
+successor = "declarative_figure_stock"
+exit_predicate = { kind = "toml_arrays_empty", path = "ci/legacy-figure-stock-allowlist.toml", keys = ["legacy_specs", "living_materializers"] }
 
-[[families]]
+[[retired_families]]
 name = "delayed_profile_figure_contract"
 owner = "485c06e"
-status = "live"
-marker = "feedbax_contract"
-expected_collection_pattern = "tests/test_delayed_profile_figure_contract.py::"
-# Pin payload semantics, all three native intents, and terminal producer deletion.
-minimum_non_skipped = 5
-negative_canary = [
-    "tests/test_delayed_profile_figure_contract.py::test_registered_delayed_payload_owns_profile_facets_and_bands",
-]
+lifecycle = "migration"
+status = "retired"
+retired_by = "4b55b85"
+successor = "declarative_figure_stock"
+exit_predicate = { kind = "toml_arrays_empty", path = "ci/legacy-figure-stock-allowlist.toml", keys = ["legacy_specs", "living_materializers"] }
 
-[[families]]
+[[retired_families]]
 name = "prego_figure_migration"
 owner = "1e9304d"
-status = "live"
-marker = "feedbax_contract"
-expected_collection_pattern = "tests/analysis/test_3702f54_prego_figure_specs.py::"
-# Pin five native intents, real execution, archived parity, shared-y semantics, and deletion.
-minimum_non_skipped = 6
+lifecycle = "migration"
+status = "retired"
+retired_by = "4b55b85"
+successor = "declarative_figure_stock"
+exit_predicate = { kind = "toml_arrays_empty", path = "ci/legacy-figure-stock-allowlist.toml", keys = ["legacy_specs", "living_materializers"] }
 
-[[families]]
+[[retired_families]]
 name = "response_norm_figure_contract"
 owner = "5f85bf5"
-status = "live"
-marker = "feedbax_contract"
-expected_collection_pattern = "tests/analysis/test_response_norm_capability.py::"
-# Pin intrinsic/data-bound facets, custody payloads, and terminal legacy deletion.
-minimum_non_skipped = 7
-negative_canary = [
-    "tests/analysis/test_response_norm_capability.py::test_payload_distinguishes_intrinsic_and_data_bound_facets",
-]
+lifecycle = "migration"
+status = "retired"
+retired_by = "4b55b85"
+successor = "declarative_figure_stock"
+exit_predicate = { kind = "toml_arrays_empty", path = "ci/legacy-figure-stock-allowlist.toml", keys = ["legacy_specs", "living_materializers"] }
 
-[[families]]
+[[retired_families]]
 name = "steady_state_figure_contract"
 owner = "412b5d2"
-status = "live"
-marker = "feedbax_contract"
-expected_collection_pattern = "tests/analysis/test_steady_state_figure_migration.py::"
-# Pin all four real FigureSpec executions, variable cardinality, and helper retirement.
-minimum_non_skipped = 4
-negative_canary = [
-    "tests/analysis/test_steady_state_figure_migration.py::test_all_four_specs_execute_with_variable_condition_cardinality[2]",
-]
+lifecycle = "migration"
+status = "retired"
+retired_by = "4b55b85"
+successor = "declarative_figure_stock"
+exit_predicate = { kind = "toml_arrays_empty", path = "ci/legacy-figure-stock-allowlist.toml", keys = ["legacy_specs", "living_materializers"] }
 
-[[families]]
+[[retired_families]]
 name = "literature_replication_figure_contract"
 owner = "28876c1"
-status = "live"
-marker = "feedbax_contract"
-expected_collection_pattern = "tests/analysis/test_f47_literature_figure_specs.py::"
-# Pin all six native intents, one-payload facets, archived parity, and terminal deletion.
-minimum_non_skipped = 6
-negative_canary = [
-    "tests/analysis/test_f47_literature_figure_specs.py::test_one_standard_matrix_payload_owns_all_six_figure_facets",
-]
+lifecycle = "migration"
+status = "retired"
+retired_by = "4b55b85"
+successor = "declarative_figure_stock"
+exit_predicate = { kind = "toml_arrays_empty", path = "ci/legacy-figure-stock-allowlist.toml", keys = ["legacy_specs", "living_materializers"] }
 
-[[families]]
+[[retired_families]]
 name = "scalar_diagnostic_figure_contract"
 owner = "ae26a79"
-status = "live"
-marker = "feedbax_contract"
-expected_collection_pattern = "tests/analysis/test_scalar_diagnostic_figure_specs.py::"
-# Pin registered custody, 2-vs-3 data-bound cardinality, real execution, and deletion.
-minimum_non_skipped = 7
-negative_canary = [
-    "tests/analysis/test_scalar_diagnostic_figure_specs.py::test_registered_analysis_keeps_row_cardinality_data_bound[2]",
-]
+lifecycle = "migration"
+status = "retired"
+retired_by = "4b55b85"
+successor = "declarative_figure_stock"
+exit_predicate = { kind = "toml_arrays_empty", path = "ci/legacy-figure-stock-allowlist.toml", keys = ["legacy_specs", "living_materializers"] }
 
-[[families]]
+[[retired_families]]
 name = "movement_ramp_figure_contract"
 owner = "c9b1db0"
-status = "live"
-marker = "feedbax_contract"
-expected_collection_pattern = "tests/analysis/test_b399efc_movement_ramp_figure_specs.py::"
-# Pin all six real executions, archived parity, intrinsic axes, and terminal driver deletion.
-minimum_non_skipped = 6
-negative_canary = [
-    "tests/analysis/test_b399efc_movement_ramp_figure_specs.py::test_all_six_specs_execute_to_hash_verified_completed_manifests",
-]
+lifecycle = "migration"
+status = "retired"
+retired_by = "4b55b85"
+successor = "declarative_figure_stock"
+exit_predicate = { kind = "toml_arrays_empty", path = "ci/legacy-figure-stock-allowlist.toml", keys = ["legacy_specs", "living_materializers"] }
 
-[[families]]
+[[retired_families]]
 name = "sisu_spectrum_figure_contract"
 owner = "518aea3"
-status = "live"
-marker = "feedbax_contract"
-expected_collection_pattern = "tests/analysis/test_sisu_spectrum_figure.py::"
-# Pin manifest custody, 2-vs-3 payload cardinality, archived parity, and deletion.
-minimum_non_skipped = 7
-negative_canary = [
-    "tests/analysis/test_sisu_spectrum_figure.py::test_sisu_profile_cardinality_is_payload_bound[2]",
-]
+lifecycle = "migration"
+status = "retired"
+retired_by = "4b55b85"
+successor = "declarative_figure_stock"
+exit_predicate = { kind = "toml_arrays_empty", path = "ci/legacy-figure-stock-allowlist.toml", keys = ["legacy_specs", "living_materializers"] }
 
-[[families]]
+[[retired_families]]
 name = "gru_postrun_figure_contract"
 owner = "74fac80"
-status = "live"
-marker = "feedbax_contract"
-expected_collection_pattern = "tests/analysis/test_gru_postrun_bundle_contract.py::"
-# Pin canonical bundle leaves, real FigureManifest execution, parity, and terminal retirement.
-minimum_non_skipped = 7
-negative_canary = [
-    "tests/analysis/test_gru_postrun_bundle_contract.py::test_gru_postrun_figure_executes_to_hash_verified_manifest",
-]
+lifecycle = "migration"
+status = "retired"
+retired_by = "4b55b85"
+successor = "declarative_figure_stock"
+exit_predicate = { kind = "toml_arrays_empty", path = "ci/legacy-figure-stock-allowlist.toml", keys = ["legacy_specs", "living_materializers"] }
 
-[[families]]
+[[retired_families]]
 name = "nominal_profile_figure_contract"
 owner = "70fe304"
-status = "live"
-marker = "feedbax_contract"
-expected_collection_pattern = "tests/analysis/test_nominal_profile_figure_migration.py::"
-# Pin five native intents, 2-vs-3 replicate facets, hash-verified custody, and deletion.
-minimum_non_skipped = 5
-negative_canary = [
-    "tests/analysis/test_nominal_profile_figure_migration.py::test_all_specs_execute_with_payload_bound_replicates[2]",
-]
+lifecycle = "migration"
+status = "retired"
+retired_by = "4b55b85"
+successor = "declarative_figure_stock"
+exit_predicate = { kind = "toml_arrays_empty", path = "ci/legacy-figure-stock-allowlist.toml", keys = ["legacy_specs", "living_materializers"] }
 
-[[families]]
+[[retired_families]]
 name = "moderate_calibrated_figure_contract"
 owner = "a778c65"
-status = "live"
-marker = "feedbax_contract"
-expected_collection_pattern = "tests/analysis/test_moderate_calibrated_figure_migration.py::"
-# Pin five independent leaf specs, 2-vs-3 cardinality, parity custody, and deletion.
-minimum_non_skipped = 5
-negative_canary = [
-    "tests/analysis/test_moderate_calibrated_figure_migration.py::test_all_specs_real_execute_with_data_bound_cardinality[2]",
-]
+lifecycle = "migration"
+status = "retired"
+retired_by = "4b55b85"
+successor = "declarative_figure_stock"
+exit_predicate = { kind = "toml_arrays_empty", path = "ci/legacy-figure-stock-allowlist.toml", keys = ["legacy_specs", "living_materializers"] }
 
-[[families]]
+[[retired_families]]
 name = "stabilization_response_figure_contract"
 owner = "8c06ef4"
-status = "live"
-marker = "feedbax_contract"
-expected_collection_pattern = "tests/analysis/test_stabilization_response_figure_migration.py::"
-minimum_non_skipped = 5
-negative_canary = [
-    "tests/analysis/test_stabilization_response_figure_migration.py::test_all_specs_execute_with_payload_bound_conditions[2]",
-]
+lifecycle = "migration"
+status = "retired"
+retired_by = "4b55b85"
+successor = "declarative_figure_stock"
+exit_predicate = { kind = "toml_arrays_empty", path = "ci/legacy-figure-stock-allowlist.toml", keys = ["legacy_specs", "living_materializers"] }
 
 [pipeline_contract_native]
 allowlist = [

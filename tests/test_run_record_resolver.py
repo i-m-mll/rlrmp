@@ -130,16 +130,33 @@ def test_resolve_run_record_missing_manifest_reports_archive_only(tmp_path: Path
         resolve_run_record("731fdf7", "fixture__ok", repo_root=tmp_path / "repo")
 
 
+def test_resolve_run_record_excludes_immutable_generic_native_manifest(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    path = _write_manifest(repo)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["training_spec"]["kind"] = "TrainingRunSpec"
+    payload["training_spec"]["schema_id"] = "feedbax.spec.training_run"
+    payload["training_spec"]["schema_version"] = "feedbax.spec.training_run.v2"
+    payload["training_spec"]["inline"]["schema_id"] = "feedbax.spec.training_run"
+    payload["training_spec"]["inline"]["schema_version"] = "feedbax.spec.training_run.v2"
+    payload["training_spec"].pop("sha256", None)
+    payload["training_spec"].pop("source_sha256", None)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(
+        RunSpecValidationError,
+        match="generic legacy TrainingRunSpec.*immutable legacy record.*new native row",
+    ):
+        resolve_run_record("731fdf7", "fixture__ok", repo_root=repo)
+
+
 def test_resolve_run_record_same_id_same_payload_is_ok(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     primary = _write_manifest(repo)
     duplicate = (
-        repo
-        / "_artifacts"
-        / "731fdf7"
-        / "runs"
-        / "fixture__ok"
-        / "training_run_manifest.json"
+        repo / "_artifacts" / "731fdf7" / "runs" / "fixture__ok" / "training_run_manifest.json"
     )
     duplicate.parent.mkdir(parents=True)
     duplicate.write_text(primary.read_text(encoding="utf-8"), encoding="utf-8")
@@ -151,12 +168,7 @@ def test_resolve_run_record_same_id_different_content_fails(tmp_path: Path) -> N
     repo = tmp_path / "repo"
     primary = _write_manifest(repo)
     duplicate = (
-        repo
-        / "_artifacts"
-        / "731fdf7"
-        / "runs"
-        / "fixture__ok"
-        / "training_run_manifest.json"
+        repo / "_artifacts" / "731fdf7" / "runs" / "fixture__ok" / "training_run_manifest.json"
     )
     duplicate.parent.mkdir(parents=True)
     payload = json.loads(primary.read_text(encoding="utf-8"))

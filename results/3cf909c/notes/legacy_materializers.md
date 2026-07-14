@@ -5,6 +5,45 @@ They are retained for provenance and possible future porting, not as current
 patterns for new analysis work. The active Feedbax-backed output-feedback
 rollout-recovery spec runner is deliberately outside this list.
 
+## Writer-shell closure (2026-07-13, [issue:cd1fbf1])
+
+The frozen writer/driver dispositions in the six otherwise-live analytical
+modules are resolved by deletion. The solver and certificate mathematics stay
+in place; only direct materialization drivers, Markdown renderers, NPZ payload
+builders, and their now-unused support code were removed. The pre-deletion
+source is recoverable exactly from commit `084a35c7`.
+
+| Live module | Lines before | Lines after | Lines removed | Bytes before | Bytes after | Bytes removed | Disposition |
+|---|---:|---:|---:|---:|---:|---:|---|
+| `output_feedback.py` | 2,808 | 1,739 | 1,069 | 111,936 | 66,129 | 45,807 | Delete frozen phase drivers and writer support; preserve estimator, optimization, gamma-sweep, and Bellman math. |
+| `robust_bellman.py` | 2,234 | 1,822 | 412 | 85,951 | 68,191 | 17,760 | Delete direct Markdown and tracked-output writer; preserve robust Bellman analysis and fit math. |
+| `linear_round_trip.py` | 1,006 | 808 | 198 | 38,431 | 29,108 | 9,323 | Delete direct Markdown/NPZ/output shell; preserve training, audit, and result-summary math. |
+| `cs_game_card.py` | 719 | 469 | 250 | 26,962 | 16,942 | 10,020 | Delete direct Markdown/NPZ/output shell; preserve canonical game and reference math. |
+| `linear_equivalence_certificate.py` | 743 | 584 | 159 | 28,526 | 22,079 | 6,447 | Delete direct Markdown/NPZ/output shell; preserve certificate construction and summaries. |
+| `adversary_equivalence.py` | 660 | 488 | 172 | 24,231 | 17,067 | 7,164 | Delete direct Markdown/NPZ/output shell; preserve adversary optimization, comparison, and summaries. |
+| **Total** | **8,170** | **5,910** | **2,260** | **316,037** | **219,516** | **96,521** | Frozen writer/driver code removed from live math modules. |
+
+Counts use `wc -lc` on the six module files before and after this change.
+
+## Materializer-shell closure (2026-07-13, [issue:cd1fbf1])
+
+The generic materialization shell was upstreamed to public Feedbax APIs and
+removed from `src/rlrmp/analysis/declarative_materialization.py`.
+`RLRMPManifestAnalysis` and the four local wrappers
+`_bulk_artifact_groups`, `_single_file_artifact_group`,
+`_directory_artifact_group`, and `_read_json_payload` were deleted. Feedbax
+`ContextMaterializer` and the corresponding public artifact/JSON helpers were
+implemented under [issue:427cffa] in commits `3d5c01b7` and `f2377e65`; rlrmp
+pins the resulting Feedbax commit
+`f2377e659a70bb67b8a03a406dc49024b47bcef5`.
+
+| Live module | Lines before | Lines after | Lines removed | Bytes before | Bytes after | Bytes removed | Disposition |
+|---|---:|---:|---:|---:|---:|---:|---|
+| `declarative_materialization.py` | 3,370 | 3,200 | 170 | 123,232 | 117,729 | 5,503 | Remove the local generic shell and consume public Feedbax materialization APIs. |
+
+The upstream Feedbax commits must land before remote rlrmp CI can resolve and
+validate the pinned dependency.
+
 ## e901a20 legacy Equinox checkpoints
 
 Files: `src/rlrmp/eval/legacy_checkpoints.py` archival reader (deleted, see
@@ -59,21 +98,22 @@ recipe, bundle, and manifest contracts.
 Used by: [issue:cb98e58] (closed), with downstream open consumers in the bridge
 stack.
 
-Keep-signal: Keep as provenance for the canonical reference target and as a
-porting source if the report-stage manifest work needs to regenerate the old
-artifact shape.
+Keep-signal resolved: no live writer code is needed. The canonical reference
+math remains live, and Git history is the recovery source for the old artifact
+shape.
 
-Banner status: Scoped math-module pointer added; `write_outputs` has the
-legacy writer banner. The top-level script has the full module banner, while
-`materialize_reference` is explicitly left LIVE library code.
+Resolved 2026-07-13 under [issue:cd1fbf1]: deleted `_fmt`, `render_markdown`,
+`_npz_arrays`, and `write_outputs`; `materialize_reference` and the analytical
+game-card math remain live. Recover the exact deleted module block with
+`git show 084a35c7:src/rlrmp/analysis/math/cs_game_card.py`.
 
 Retired 2026-07-09 under [issue:e158a74]: the standalone entrypoint
 `scripts/materialize_analytical_game_card.py` was deleted. The last tree
 carrying the file is `acbdf8d7008a073b3fe9375b5b915288ac05183d`, tagged as
 `legacy/e158a74-standalone-materializers-retired`; recover with
 `git show legacy/e158a74-standalone-materializers-retired:scripts/materialize_analytical_game_card.py`.
-The `src/rlrmp/analysis/math/cs_game_card.py` math and writer provenance remain
-for historical context.
+The `src/rlrmp/analysis/math/cs_game_card.py` math remains live; writer
+provenance is available from the recovery pointers above.
 
 ## Adversary equivalence
 
@@ -88,19 +128,21 @@ kind of adversary the game-equivalence bridge was testing.
 Used by: [issue:a7dad8a] (closed), with downstream references from the open
 linear round-trip and bridge-certificate work.
 
-Keep-signal: Keep as historical evidence for the disturbance-object choice and
-as a source for any later report-native explanation of the same comparison.
+Keep-signal resolved: no live writer code is needed. The disturbance-object
+comparison math remains live, and Git history preserves the old report shape.
 
-Banner status: Scoped math-module pointer added; `write_outputs` has the
-legacy writer banner. The top-level script has the full module banner.
+Resolved 2026-07-13 under [issue:cd1fbf1]: deleted `render_markdown`,
+`_npz_arrays`, and `write_outputs`; adversary optimization and comparison math
+remain live. Recover the exact deleted module block with
+`git show 084a35c7:src/rlrmp/analysis/math/adversary_equivalence.py`.
 
 Retired 2026-07-09 under [issue:e158a74]: the standalone entrypoint
 `scripts/materialize_adversary_equivalence.py` was deleted. The last tree
 carrying the file is `acbdf8d7008a073b3fe9375b5b915288ac05183d`, tagged as
 `legacy/e158a74-standalone-materializers-retired`; recover with
 `git show legacy/e158a74-standalone-materializers-retired:scripts/materialize_adversary_equivalence.py`.
-The `src/rlrmp/analysis/math/adversary_equivalence.py` comparison logic and
-writer provenance remain for historical context.
+The `src/rlrmp/analysis/math/adversary_equivalence.py` comparison logic remains
+live; writer provenance is available from the recovery pointers above.
 
 ## Linear round trip
 
@@ -114,11 +156,14 @@ analysis recipe.
 
 Used by: [issue:6f5c79e] (open).
 
-Keep-signal: Keep while the open Phase 3 bridge work still uses the result as
-context for what the local linear objective did and did not establish.
+Keep-signal resolved: no live writer code is needed. The Phase 3 training and
+audit math remains live for bridge consumers, and Git history preserves the old
+report shape.
 
-Banner status: Scoped math-module pointer added; `write_outputs` has the
-legacy writer banner. The top-level script has the full module banner.
+Resolved 2026-07-13 under [issue:cd1fbf1]: deleted `render_markdown`,
+`_npz_arrays`, and `write_outputs`; round-trip training, audits, and result
+summaries remain live. Recover the exact deleted module block with
+`git show 084a35c7:src/rlrmp/analysis/math/linear_round_trip.py`.
 
 Retired 2026-07-09 under [issue:e158a74]: the standalone entrypoint
 `scripts/materialize_linear_round_trip.py` was deleted. The last tree carrying
@@ -140,12 +185,13 @@ and disturbance-relevant behavior.
 
 Used by: [issue:d01c35a] (open), consuming [issue:6f5c79e] (open).
 
-Keep-signal: Keep because open output-feedback and recurrent bridge rows still
-refer to the standard certificate semantics even though the writer itself is
-not contract-native.
+Keep-signal resolved: no live writer code is needed. The standard-certificate
+math and summaries remain live for output-feedback and recurrent bridge rows.
 
-Banner status: Scoped math-module pointer added; `write_outputs` has the
-legacy writer banner. The top-level script has the full module banner.
+Resolved 2026-07-13 under [issue:cd1fbf1]: deleted `render_markdown`,
+`_npz_arrays`, and `write_outputs`; certificate construction and result
+summaries remain live. Recover the exact deleted module block with
+`git show 084a35c7:src/rlrmp/analysis/math/linear_equivalence_certificate.py`.
 
 Retired 2026-07-09 under [issue:e158a74]: the standalone entrypoint
 `scripts/materialize_linear_equivalence_certificate.py` was deleted. The last
@@ -168,11 +214,15 @@ analysis custody.
 Used by: [issue:583d764] (open), with gamma-sweep context from
 [issue:97604a8] (open).
 
-Keep-signal: Keep as explanatory bridge evidence until the report-stage system
-can either port the diagnostic or make the old writer unnecessary.
+Keep-signal resolved: no live writer code is needed. The diagnostic analysis
+and fit math remains live; Git history preserves the old Markdown form.
 
-Banner status: Scoped math-module pointer added; `write_outputs` has the
-legacy writer banner. The top-level script has the full module banner.
+Resolved 2026-07-13 under [issue:cd1fbf1]: deleted `render_markdown` and
+`write_outputs`, and deleted the remaining frozen standalone caller
+`scripts/materialize_robust_bellman.py`; robust Bellman fit and analysis math
+remain live. Recover the exact deleted sources with
+`git show 084a35c7:src/rlrmp/analysis/math/robust_bellman.py` and
+`git show 084a35c7:scripts/materialize_robust_bellman.py`.
 
 ## Output-feedback analytical lane
 
@@ -187,13 +237,18 @@ direct materialization surfaces.
 Used by: [issue:83fc5b5] (open), with related historical work on
 [issue:60d105d] (closed) and [issue:4008843] (closed).
 
-Keep-signal: Keep because it captures the old operative gap between the C&S
-released-code information structure and the deterministic full-state bridge.
+Keep-signal resolved: no live writer or phase-driver code is needed. The
+output-feedback estimator/controller math remains live, and Git history
+preserves the old combined-lane artifact form.
 
-Banner status: Module pointer added; `analyze_phase0b_output_feedback`,
-`analyze_phase1_output_feedback`, `analyze_phase3_output_feedback`, and
-`write_outputs` carry scoped legacy banners. The top-level lane script has the
-full module banner, and the output-feedback math core is explicitly LIVE.
+Resolved 2026-07-13 under [issue:cd1fbf1]: deleted the three frozen
+`analyze_phase*` drivers, lane `result_summary`, Markdown/NPZ/output support,
+and the remaining frozen standalone caller
+`scripts/materialize_output_feedback_lane.py`. Estimator, controller,
+optimization, gamma-sweep, and Bellman math remain live. Recover the exact
+deleted sources with
+`git show 084a35c7:src/rlrmp/analysis/math/output_feedback.py` and
+`git show 084a35c7:scripts/materialize_output_feedback_lane.py`.
 
 ## Output-feedback gamma sweep
 
@@ -206,11 +261,15 @@ certificate-sidecar writer, not a current Feedbax analysis recipe.
 
 Used by: [issue:97604a8] (open).
 
-Keep-signal: Keep as provenance for why later output-feedback rows used their
-selected gamma factor.
+Keep-signal resolved: no live writer code is needed. The gamma-sweep
+computation remains live, and Git history preserves the old sidecar form.
 
-Banner status: `write_gamma_sweep_outputs` carries a scoped legacy banner in
-the math module. The top-level gamma-sweep script has the full module banner.
+Resolved 2026-07-13 under [issue:cd1fbf1]: deleted the gamma-sweep Markdown and
+direct output writer plus the remaining frozen standalone caller
+`scripts/materialize_output_feedback_gamma_sweep.py`; the gamma-sweep
+computation and serializable summary remain live. Recover the exact deleted
+sources with `git show 084a35c7:src/rlrmp/analysis/math/output_feedback.py` and
+`git show 084a35c7:scripts/materialize_output_feedback_gamma_sweep.py`.
 
 ## C&S stochastic Phase 1
 

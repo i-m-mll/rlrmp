@@ -1,0 +1,33 @@
+{
+  "schema_id": "rlrmp.spec.training_authoring_intent",
+  "schema_version": "rlrmp.spec.training_authoring_intent.v1",
+  "config": {
+    "issue": "4eb51ee",
+    "output_dir": "_artifacts/4eb51ee/runs/base",
+    "spec_dir": "results/4eb51ee/runs/base",
+    "seed": 42,
+    "controller_architecture": "gru",
+    "n_train_batches": 100,
+    "batch_size": 1,
+    "n_replicates": 1,
+    "hidden_size": 2,
+    "n_input_only": 0,
+    "n_readout_only": 0,
+    "n_recurrent_only": 0,
+    "target_relative_multitarget": true,
+    "target_support_profile": "const_band16",
+    "force_filter_feedback": true,
+    "broad_epsilon_pgd_training": false,
+    "broad_epsilon_pgd_steps": 1,
+    "checkpoint_interval_batches": 50,
+    "log_step": 1,
+    "allow_fresh_start": true,
+    "full_train": true,
+    "resume": false,
+    "training_diagnostics": true,
+    "disable_progress": false,
+    "quiet_progress": false,
+    "allow_x64": false,
+    "dry_run": false
+  }
+}

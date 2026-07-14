@@ -17,10 +17,13 @@ symbols = [
   "AbstractTask",
   "DelayedReachTaskInputs",
   "DelayedReaches",
+  "LowererRegistration",
+  "OrderedLowererRegistry",
   "SimpleReaches",
   "TaskTrialSpec",
   "TrialTimeline",
   "WhereDict",
+  "eval_ensemble_on_trials",
   "pos_only_states",
   "prepare_trial",
 ]
@@ -28,15 +31,36 @@ symbols = [
 [[canonical_homes]]
 module = "feedbax.analysis"
 symbols = [
+  "STAGED_EXACT_PARENTS_SCHEMA_ID",
+  "STAGED_EXACT_PARENTS_SCHEMA_VERSION",
+  "StagedExactParentEntry",
+  "StagedExactParents",
+  "StagedExecutionContext",
   "EvaluationRunMatrixSpec",
   "GraphControllerAdapter",
+  "ResolvedEvaluationInput",
   "graph_controller",
   "materialize_evaluation_run_matrix",
+  "resolve_evaluation_inputs",
+]
+
+[[canonical_homes]]
+module = "feedbax.persistence"
+symbols = [
+  "IMMUTABLE_ARTIFACT_BLOB_STORAGE_BACKEND",
+  "ImmutableArtifactBlobProvider",
+  "ImmutableArtifactBlobProviderSpec",
+  "open_immutable_artifact_blob_provider",
 ]
 
 [[canonical_homes]]
 module = "feedbax.contracts"
-symbols = ["MaterializedMatrixRow"]
+symbols = [
+  "MaterializedMatrixRow",
+  "StagedCheckpointCustodySpec",
+  "TrainingManifestMetadataProjection",
+  "TrainingManifestMetadataProjectionRegistration",
+]
 
 [[canonical_homes]]
 module = "feedbax.analysis.analysis"
@@ -65,7 +89,9 @@ symbols = [
   "ContextMaterializer",
   "ExistingAnalysisArtifact",
   "MaterializationResult",
+  "directory_artifact_group",
   "materialization_metadata",
+  "read_json_payload",
 ]
 
 [[canonical_homes]]
@@ -233,6 +259,7 @@ symbols = [
   "EvaluationRunSpec",
   "FileHashRef",
   "ModelArtifactManifest",
+  "OverridePatch",
   "ParentRef",
   "Provenance",
   "REGENERATION_SPEC_SCHEMA_VERSION",
@@ -274,7 +301,13 @@ symbols = [
 
 [[canonical_homes]]
 module = "feedbax.contracts.run_matrix"
-symbols = ["TrainingRunMatrixSpec"]
+symbols = [
+  "AuthoredTrainingRow",
+  "MatrixRow",
+  "RowLowererIdentity",
+  "TrainingRowLoweringResult",
+  "TrainingRunMatrixSpec",
+]
 
 [[canonical_homes]]
 module = "feedbax.contracts.run_matrix"
@@ -287,7 +320,11 @@ symbols = ["ManifestPredicate"]
 
 [[canonical_homes]]
 module = "feedbax.contracts.spec_storage"
-symbols = ["build_resolved_semantics_snapshot", "store_canonical_json_artifact"]
+symbols = [
+  "build_resolved_semantics_snapshot",
+  "store_canonical_json_artifact",
+  "training_spec_sha256",
+]
 
 [[canonical_homes]]
 module = "feedbax.contracts.spec_storage"
@@ -367,6 +404,7 @@ symbols = [
   "CheckpointContinuationRequest",
   "CheckpointForkBarrierMapping",
   "CheckpointSegmentLineage",
+  "CheckpointTransactionManifest",
 ]
 
 [[canonical_homes]]
@@ -379,6 +417,7 @@ symbols = [
   "AssemblyCompilerRegistry",
   "AssemblyContext",
   "AssemblyInputDeclaration",
+  "AuthorizedBatchStop",
   "BudgetPolicy",
   "CompiledRunSet",
   "CompilerIdentity",
@@ -391,8 +430,10 @@ symbols = [
   "RowLaunchSpec",
   "RunAssemblyRequest",
   "RunBundle",
+  "RunConformanceCertificate",
   "RunRowSpec",
   "RunSetState",
+  "RowConformanceRuntimeInputs",
   "SchemaArtifactRef",
   "StageEngine",
   "build_core_check_registry",
@@ -404,8 +445,13 @@ module = "feedbax.orchestration.events"
 symbols = ["RunEventEmitter"]
 
 [[canonical_homes]]
+module = "feedbax.orchestration.conformance"
+symbols = ["RunConformanceCertificate"]
+
+[[canonical_homes]]
 module = "feedbax.orchestration.schedule_eval"
 symbols = [
+  "ScheduleEvalContext",
   "evaluate_schedule_samples",
   "require_schedule_context",
   "schedule_sample_steps",
@@ -425,9 +471,13 @@ reason = "Issue 158b580 composes the RunPod driver and transport for canonical r
 module = "feedbax.training.run_matrix"
 symbols = [
   "ForkParityError",
+  "MaterializedRunMatrix",
+  "TrainingRowLowerer",
   "fork_matrix_checkpoints",
+  "materialize_adapted_run_matrix",
   "materialize_run_matrix",
   "render_spec_lock_table",
+  "resolve_base_payload_with_attribution",
 ]
 
 [[canonical_homes]]
@@ -493,6 +543,10 @@ symbols = ["DirectForceInput"]
 [[canonical_homes]]
 module = "feedbax.mechanics.skeleton.pointmass"
 symbols = ["PointMass"]
+
+[[canonical_homes]]
+module = "feedbax.models.support"
+symbols = ["identity_func"]
 
 [[canonical_homes]]
 module = "feedbax.models.feedback"
@@ -570,7 +624,7 @@ symbols = ["register_package_from_module_info"]
 
 [[canonical_homes]]
 module = "feedbax.runtime"
-symbols = ["align_state_indices_like"]
+symbols = ["AbstractModel", "align_state_indices_like"]
 
 [[canonical_homes]]
 module = "feedbax.runtime.batch"
@@ -631,6 +685,7 @@ symbols = [
 [[canonical_homes]]
 module = "feedbax.tasks"
 symbols = [
+  "AbstractTask",
   "extract_timeseries_params",
   "infer_n_steps",
   "prepare_inputs",
@@ -650,8 +705,28 @@ symbols = [
   "ExecutionPreparationRegistration",
   "ExecutionPreparationRequest",
   "ExecutionPreparationResult",
+  "ResolvedCheckpointTransaction",
+  "TrainingDiagnostics",
   "load_checkpoint_custody_documents",
+  "resolve_checkpoint_custody_ref",
+  "run_contract_binding",
+  "structural_abi_fingerprint",
 ]
+
+[[canonical_homes]]
+module = "feedbax.training.diagnostics"
+symbols = [
+  "LearningRateDiagnostic",
+  "NativeExecutionProducerContext",
+  "NativeTrainingDiagnosticsInput",
+  "ScheduleContextDiagnostic",
+  "TRAINING_DIAGNOSTICS_SCHEMA_ID",
+  "TRAINING_DIAGNOSTICS_SCHEMA_VERSION",
+]
+
+[[canonical_homes]]
+module = "feedbax.training.manifest_preflight"
+symbols = ["validate_training_run_spec"]
 
 [[canonical_homes]]
 module = "feedbax.training.spec_storage"

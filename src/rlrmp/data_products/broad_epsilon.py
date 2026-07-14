@@ -48,6 +48,7 @@ __all__ = [
     "BroadEpsilonAnchors",
     "broad_epsilon_data_product_requirement",
     "load_broad_epsilon_anchors",
+    "load_pgd_radius_source",
 ]
 
 BROAD_EPSILON_PRODUCT_SCHEMA_ID = "rlrmp.broad_epsilon_budget_anchors"
@@ -65,7 +66,7 @@ BROAD_EPSILON_REFERENCE_REACH_M: float
 
 # Pinned identity of the adopted budget-anchor product.
 BROAD_EPSILON_PRODUCT_IDENTITY_HASH = (
-    "4e5d319c4848ef19d25ddf9dc8d21a6230cc0d336c5f565fe1a0b63516332542"
+    "e52c4ad8a2cf701dd713032131c6c89f7143e398718af919b7a35b5549353590"
 )
 
 _CONTRACT_KEYS = (
@@ -85,6 +86,7 @@ class BroadEpsilonAnchors:
     """Loaded broad-epsilon budget anchors with product identity."""
 
     levels: dict[str, dict[str, Any]]
+    pgd_radius_sources: dict[str, dict[str, Any]]
     reference_reach_m: float
     product_identity_hash: str
 
@@ -188,9 +190,26 @@ def load_broad_epsilon_anchors() -> BroadEpsilonAnchors:
         levels[level] = _contract(persisted_levels[level])
     return BroadEpsilonAnchors(
         levels=levels,
+        pgd_radius_sources={
+            str(key): dict(value)
+            for key, value in product.parameters.get("pgd_radius_sources", {}).items()
+        },
         reference_reach_m=float(product.parameters["reference_reach_m"]),
         product_identity_hash=str(product.product_identity_hash),
     )
+
+
+def load_pgd_radius_source(source_key: str) -> dict[str, Any]:
+    """Load one adopted PGD-radius provenance record from the governed product."""
+
+    source = load_broad_epsilon_anchors().pgd_radius_sources.get(source_key)
+    if source is None:
+        raise DataProductError(
+            f"broad-epsilon product has no governed PGD radius source {source_key!r}",
+            kind="Missing",
+            mismatch_class="missing-radius-source",
+        )
+    return dict(source)
 
 
 def __getattr__(name: str) -> Any:

@@ -90,6 +90,7 @@ def _cs_run_spec() -> dict[str, object]:
     return {
         "schema_version": "rlrmp.test",
         "issue": "799fcb9",
+        "n_train_batches": 4,
         "training_summary": {
             "training_mode": "standard",
             "n_train_batches": 4,
@@ -130,7 +131,9 @@ def _minimax_training_spec() -> TrainingRunSpec:
         method_payload=MethodPayloadEnvelope(
             schema_id=MINIMAX_METHOD_PAYLOAD_SCHEMA_ID,
             schema_version=MINIMAX_METHOD_PAYLOAD_SCHEMA_VERSION,
-            payload=MinimaxMethodPayload(config=MinimaxConfig()).model_dump(mode="json"),
+            payload=MinimaxMethodPayload(
+                config=MinimaxConfig(output_dir="_artifacts/test/runs/minimax")
+            ).model_dump(mode="json"),
         ),
         worker_execution=WorkerExecutionSpec(
             method_contract=contract,

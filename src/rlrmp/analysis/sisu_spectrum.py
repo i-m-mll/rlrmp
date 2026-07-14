@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 import jax.random as jr
 import numpy as np
+from feedbax.analysis import StagedExecutionContext
 from feedbax.analysis.analysis import AbstractAnalysis
 from feedbax.analysis.context import AnalysisRunContext
 from feedbax.analysis.evaluation import EvaluationRecipeResult, register_evaluation_recipe
@@ -36,6 +37,7 @@ from rlrmp.analysis.math.output_feedback import (
     make_cs_output_feedback_initial_state,
 )
 from rlrmp.eval import sisu_spectrum as sisu_eval
+from rlrmp.mappings import as_mapping as _mapping
 from rlrmp.paths import REPO_ROOT
 
 
@@ -231,6 +233,7 @@ def sisu_spectrum_evaluation_recipe(
     run_spec: EvaluationRunSpec,
     _root: Path,
     _states_path: Path,
+    _execution_context: StagedExecutionContext,
 ) -> EvaluationRecipeResult:
     """Evaluate SISU velocity profiles for an evaluation manifest."""
 
@@ -278,6 +281,7 @@ def sisu_spectrum_recipe(
     spec,
     _root: Path,
     inputs: Sequence[ResolvedAnalysisInput],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build SISU-spectrum analyses from evaluation-manifest input states."""
 
@@ -307,6 +311,7 @@ def sisu_robustification_recipe(
     spec,
     _root: Path,
     inputs: Sequence[ResolvedAnalysisInput],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build the grouped comparison from paired cached evaluation summaries."""
 
@@ -767,10 +772,6 @@ def _response_summary(value: Mapping[str, Any]) -> Mapping[str, Any]:
     if not isinstance(response, Mapping):
         raise ValueError("cached SISU state has no robust response summary")
     return response
-
-
-def _mapping(value: Any) -> Mapping[str, Any]:
-    return value if isinstance(value, Mapping) else {}
 
 
 def _delta(high: float | None, low: float | None) -> float | None:

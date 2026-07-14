@@ -1,6 +1,6 @@
 {
   "schema_id": "feedbax.spec.figure",
-  "schema_version": "feedbax.spec.figure.v1",
+  "schema_version": "feedbax.spec.figure.v2",
   "name": "3702f54-peak-velocity-distributions",
   "template": "rlrmp.distribution_comparison",
   "slot_bindings": {

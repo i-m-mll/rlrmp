@@ -126,6 +126,7 @@ def _brute_force_toeplitz_svd(lin: TrajectoryLinearisation) -> float:
 
 def _minimax_args(**overrides) -> argparse.Namespace:
     base = {
+        "output_dir": "_artifacts/test/induced_gain",
         "n_warmup_batches": 1,
         "n_adversary_batches": 1,
         "controller_lr": 0.01,

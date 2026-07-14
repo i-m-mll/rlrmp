@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 import jax.random as jr
@@ -56,7 +57,11 @@ def _runtime_config(config: dict[str, Any]) -> tuple[Any, Any]:
     from rlrmp.train.config_materialization import _config_namespace, build_hps
 
     args = _config_namespace(config)
-    return args, build_hps(args)
+    hps = build_hps(args)
+    architecture = str(config.get("controller_architecture", "gru"))
+    if architecture != "gru":
+        raise ValueError(f"unsupported C&S controller_architecture {architecture!r}")
+    return args, hps
 
 
 def prepare_cs_supervised(request: ExecutionPreparationRequest) -> ExecutionPreparationResult:
@@ -76,7 +81,14 @@ def prepare_cs_supervised(request: ExecutionPreparationRequest) -> ExecutionPrep
     )
     return ExecutionPreparationResult(
         initial_slots=initial_slots,
-        kernel_context={RLRMP_RUNTIME_CONTEXT_KEY: runtime},
+        kernel_context={
+            RLRMP_RUNTIME_CONTEXT_KEY: replace(
+                runtime,
+                completed_batches_reader=lambda: int(
+                    runtime.component("cs_supervised").current_completed_batches
+                ),
+            )
+        },
         loss_service=CsSupervisedExternalObjectiveLossService(),
         resume_slot_transform=_cs_supervised_resume_slot_transform(),
     )
@@ -89,9 +101,7 @@ def prepare_adaptive_epsilon(request: ExecutionPreparationRequest) -> ExecutionP
     continuation = request.run_spec.checkpoint_progress.continuation
     if continuation is not None:
         if continuation.additional_batches is None:
-            raise ValueError(
-                "adaptive-epsilon continuation lacks required additional_batches"
-            )
+            raise ValueError("adaptive-epsilon continuation lacks required additional_batches")
         runtime_config["n_train_batches"] = continuation.additional_batches
     args, hps = _runtime_config(runtime_config)
     initial_slots, runtime = build_adaptive_epsilon_native_initial_slots(

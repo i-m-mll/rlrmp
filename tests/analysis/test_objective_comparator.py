@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 
 import pytest
+from feedbax.analysis import EMPTY_STAGED_EXECUTION_CONTEXT
 from feedbax.analysis.types import AnalysisInputData
 
 from rlrmp.analysis.objective_comparator import (
@@ -132,7 +133,10 @@ def test_analysis_consumes_cached_manifest_without_rollout_execution() -> None:
 def test_objective_recipe_declares_registered_gru_diagnostics_parent() -> None:
     assert objective_comparator_recipe.EVAL_DEPENDENCIES == (OBJECTIVE_TERMS_EVALUATION_TYPE,)
     result = objective_comparator_recipe(
-        SimpleNamespace(params={}), None, [SimpleNamespace(states=_cached())]
+        SimpleNamespace(params={}),
+        None,
+        [SimpleNamespace(states=_cached())],
+        EMPTY_STAGED_EXECUTION_CONTEXT,
     )
     assert set(result.analyses) == {"objective_comparator"}
 

@@ -11,6 +11,51 @@
   "rollout_policy": {},
   "parameters": {
     "reference_reach_m": 0.15,
+    "pgd_radius_sources": {
+      "raw_strong_gamma_1p05_radius": {
+        "source_kind": "raw_analytical_gamma_anchor",
+        "source_issue": "a7dad8a",
+        "source_note": "results/a7dad8a/notes/adversary_equivalence_manifest.json",
+        "gamma_factor": 1.05,
+        "l2_radius_15cm": 0.0023284905801002004,
+        "gamma_equivalent_analytical_anchor": true,
+        "description": "raw strong gamma-1.05 analytical radius"
+      },
+      "effective_020a65b_pgd_training_radius": {
+        "source_kind": "historical_replay_effective_pgd_training_radius",
+        "source_issue": "020a65b",
+        "source_note": "020a65b broad-epsilon PGD local training contract",
+        "l2_radius_15cm": 0.004545500088363065,
+        "gamma_equivalent_analytical_anchor": false,
+        "description": "historical replay PGD radius; not a current default or gamma-equivalent analytical anchor"
+      },
+      "ofb_6d_no_integrator_gamma_1p4_rollout_radius": {
+        "source_kind": "output_feedback_rollout_budget",
+        "source_issue": "c92ebd8",
+        "source_note": "6D no-integrator output-feedback robust-estimator rollout",
+        "gamma_factor": 1.4,
+        "gamma_star": 9166.831285473823,
+        "gamma": 12833.563799663352,
+        "epsilon_dim": 6,
+        "disturbance_energy": 0.000020657128682206633,
+        "l2_radius_15cm": 0.004545011406169036,
+        "gamma_equivalent_analytical_anchor": true,
+        "description": "6D no-integrator C&S output-feedback H-infinity rollout L2 radius for gamma_factor=1.4"
+      },
+      "ofb_6d_no_integrator_gamma_1p05_rollout_radius": {
+        "source_kind": "output_feedback_rollout_budget",
+        "source_issue": "c92ebd8",
+        "source_note": "6D no-integrator output-feedback robust-estimator rollout",
+        "gamma_factor": 1.05,
+        "gamma_star": 9166.831285473823,
+        "gamma": 9625.172849747514,
+        "epsilon_dim": 6,
+        "disturbance_energy": 3.0671655167860113e-6,
+        "l2_radius_15cm": 0.0017513324974923906,
+        "gamma_equivalent_analytical_anchor": true,
+        "description": "6D no-integrator C&S output-feedback H-infinity rollout L2 radius for gamma_factor=1.05"
+      }
+    },
     "levels": {
       "moderate": {
         "gamma_factor": 1.4,
@@ -74,7 +119,7 @@
     "adoption_mode": "read_analytical_frontier_entries"
   },
   "regeneration": [],
-  "product_identity_hash": "4e5d319c4848ef19d25ddf9dc8d21a6230cc0d336c5f565fe1a0b63516332542",
+  "product_identity_hash": "e52c4ad8a2cf701dd713032131c6c89f7143e398718af919b7a35b5549353590",
   "metadata": {
     "issue": "ea6ccb4",
     "note": "Broad-epsilon per-level closed-loop epsilon budgets adopted from analytical game-card / adversary-equivalence manifests."

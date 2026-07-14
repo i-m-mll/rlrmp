@@ -6,11 +6,11 @@ import json
 from pathlib import Path
 
 import pytest
+from feedbax.analysis import authenticated_manifest_ref
 from feedbax.analysis.figures import execute_figure_spec
 from feedbax.contracts.manifest import (
     AnalysisRunManifest,
     AnalysisRunSpec,
-    ParentRef,
     spec_payload,
     write_manifest,
 )
@@ -26,9 +26,6 @@ from rlrmp.figures import (
     register_rlrmp_figure_surfaces,
     response_norm_comparison_spec,
 )
-
-
-pytestmark = pytest.mark.feedbax_contract
 
 
 def _row(model: str, *, metric: str = "delta_position") -> dict[str, object]:
@@ -115,32 +112,23 @@ def test_response_norm_spec_executes_intrinsic_facets_with_payload_cardinality(
         status="completed",
         analysis_spec=spec_payload(
             "AnalysisRunSpec",
-            AnalysisRunSpec(analysis_type="rlrmp.response_norm_comparison").model_dump(
-                mode="json"
-            ),
+            AnalysisRunSpec(analysis_type="rlrmp.response_norm_comparison").model_dump(mode="json"),
         ),
         metadata={"figure_payload": payload},
     )
-    write_manifest(manifest, root=tmp_path)
-    spec = response_norm_comparison_spec(name=f"response-norm-{model_count}")
-    spec = spec.model_copy(
-        update={
-            "inputs": [
-                ParentRef(
-                    kind="AnalysisRunManifest",
-                    id=manifest.id,
-                    role="response_norm_analysis",
-                )
-            ]
-        }
+    manifest_path = write_manifest(manifest, root=tmp_path)
+    parent = authenticated_manifest_ref(
+        manifest,
+        manifest_path,
+        "response_norm_analysis",
     )
+    spec = response_norm_comparison_spec(name=f"response-norm-{model_count}")
+    spec = spec.model_copy(update={"inputs": [parent]})
 
     figure_manifest, _path = execute_figure_spec(spec, root=tmp_path)
 
     assert figure_manifest.status == "completed"
-    included = [
-        record for record in figure_manifest.binding_records if record.status == "included"
-    ]
+    included = [record for record in figure_manifest.binding_records if record.status == "included"]
     assert len(included) == 8  # two slots across four intrinsic facet combinations
     render_artifact = next(
         artifact
@@ -150,14 +138,3 @@ def test_response_norm_spec_executes_intrinsic_facets_with_payload_cardinality(
     rendered = json.loads(Path(render_artifact.uri).read_text())
     rendered_names = {trace.get("name") for trace in rendered["data"]}
     assert {f"model-{index}" for index in range(model_count)} <= rendered_names
-
-
-def test_legacy_response_norm_producer_is_retired() -> None:
-    root = Path(__file__).resolve().parents[2]
-    assert not (
-        root / "src/rlrmp/analysis/pipelines/gru_perturbation_response_norm_plots.py"
-    ).exists()
-    assert not (root / "scripts/materialize_gru_perturbation_response_norm_plots.py").exists()
-    assert not (
-        root / "tests/analysis/pipelines/test_gru_perturbation_response_norm_plots.py"
-    ).exists()

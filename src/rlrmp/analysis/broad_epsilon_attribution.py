@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from feedbax.analysis import StagedExecutionContext
 from feedbax.analysis.analysis import AbstractAnalysis
 from feedbax.analysis.specs import (
     AnalysisRecipeResult,
@@ -68,6 +69,7 @@ def broad_epsilon_attribution_recipe(
     spec,
     _root,
     inputs: Sequence[ResolvedAnalysisInput],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build attribution analysis from evaluation-manifest states only."""
 

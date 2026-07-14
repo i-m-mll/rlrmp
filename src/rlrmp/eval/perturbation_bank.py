@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -43,6 +43,7 @@ from rlrmp.eval.checkpoint_selection import (
 )
 from rlrmp.eval.rollout_states import CachedEvaluationStates
 from rlrmp.eval.gru_diagnostics import RolloutEvaluation
+from rlrmp.eval.model_slots import ModelSlotProjection
 from rlrmp.eval.trial_inputs import (
     EvaluationRunInputs as RunFigureInputs,
     repeat_single_validation_trial,
@@ -586,17 +587,12 @@ def _expand_calibrated_perturbation_bank(
         )
         for component in ("position", "velocity", "force_filter")
     }
-    rows = [
-        dict(row)
-        for row in raw_bank.get("perturbations", ())
-        if isinstance(row, Mapping)
-    ]
+    rows = [dict(row) for row in raw_bank.get("perturbations", ()) if isinstance(row, Mapping)]
     initial_rows = [row for row in rows if row.get("channel") == "initial_state"]
     remaining_rows = [
         row
         for row in rows
-        if row.get("channel") != "initial_state"
-        and row.get("family") != "target_stream_jump"
+        if row.get("channel") != "initial_state" and row.get("family") != "target_stream_jump"
     ]
     target_rows = [row for row in rows if row.get("family") == "target_stream_jump"]
     calibrated_rows = [
@@ -620,9 +616,7 @@ def _expand_calibrated_perturbation_bank(
         )
         for row in remaining_rows
     )
-    calibrated_rows.extend(
-        _calibrated_target_stream_row(row, reach=reach) for row in target_rows
-    )
+    calibrated_rows.extend(_calibrated_target_stream_row(row, reach=reach) for row in target_rows)
 
     bank = dict(raw_bank)
     bank.update(
@@ -641,9 +635,7 @@ def _expand_calibrated_perturbation_bank(
                     else _repo_relative(feedback_manifest_path, repo_root=REPO_ROOT)
                 ),
                 "controller_feedback_scales": {
-                    component: (
-                        None if scale is None else _feedback_scale_provenance(scale)
-                    )
+                    component: (None if scale is None else _feedback_scale_provenance(scale))
                     for component, scale in feedback_scales.items()
                 },
                 "source": (
@@ -706,8 +698,7 @@ def _calibrated_perturbation_row(
         start = int(row["timing"]["start_time_index"])
         row.update(
             perturbation_id=(
-                f"{family}__{level.name}__{timing_bin}_t{start}_"
-                f"{axis}_{_sign_label(sign)}"
+                f"{family}__{level.name}__{timing_bin}_t{start}_{axis}_{_sign_label(sign)}"
             ),
             amplitude=calibrated_amplitude_from_unit_sensitivity(
                 target_peak_delta_x_m=target_peak,
@@ -727,8 +718,7 @@ def _calibrated_perturbation_row(
                 "target_relative_axis_role": "tangential",
                 "target_relative_basis": "canonical_plus_x_reach",
                 "closest_graph_compatible_equivalent": (
-                    "post-controller command-input offset on "
-                    "efferent.output -> mechanics.force"
+                    "post-controller command-input offset on efferent.output -> mechanics.force"
                 ),
             }
         elif row.get("epsilon_component") == "force_state_y":
@@ -736,9 +726,7 @@ def _calibrated_perturbation_row(
                 "information_structure": "process_epsilon_current_physical_block",
                 "target_relative_axis_role": "tangential",
                 "target_relative_basis": "canonical_plus_x_reach",
-                "closest_graph_compatible_equivalent": (
-                    "process epsilon pulse on force-state y"
-                ),
+                "closest_graph_compatible_equivalent": ("process epsilon pulse on force-state y"),
             }
         else:
             row["channel_provenance"] = None
@@ -746,17 +734,11 @@ def _calibrated_perturbation_row(
         component = str(row.get("channel_provenance", {}).get("feedback_quantity"))
         scale = feedback_scales[component]
         if component == "position":
-            reference = float(
-                reach.reach_length_m if scale is None else scale["reference_scale"]
-            )
-            native_rule = (
-                "position_offset_m = reference_position_scale_m "
-                "* level_fraction_of_reach"
-            )
+            reference = float(reach.reach_length_m if scale is None else scale["reference_scale"])
+            native_rule = "position_offset_m = reference_position_scale_m * level_fraction_of_reach"
             scale_key = "reference_position_scale_m"
             description = (
-                "Native controller-visible position offset scaled as a fraction "
-                "of reach length."
+                "Native controller-visible position offset scaled as a fraction of reach length."
             )
         elif component == "velocity":
             reference = float(
@@ -764,10 +746,7 @@ def _calibrated_perturbation_row(
                 if scale is None
                 else scale["reference_scale"]
             )
-            native_rule = (
-                "velocity_offset_m_s = nominal_peak_speed_m_s "
-                "* level_fraction_of_reach"
-            )
+            native_rule = "velocity_offset_m_s = nominal_peak_speed_m_s * level_fraction_of_reach"
             scale_key = "nominal_peak_speed_m_s"
             description = (
                 "Native controller-visible velocity offset scaled as a fraction "
@@ -778,8 +757,7 @@ def _calibrated_perturbation_row(
                 raise ValueError("calibrated force/filter feedback rows require a scale")
             reference = float(scale["reference_scale"])
             native_rule = (
-                "force_filter_offset_N = reference_force_filter_scale_N "
-                "* level_fraction_of_reach"
+                "force_filter_offset_N = reference_force_filter_scale_N * level_fraction_of_reach"
             )
             scale_key = "reference_force_filter_scale_N"
             description = (
@@ -880,8 +858,7 @@ def _apply_perturbation_bank_params(
             if row.get("calibration_role") == params.calibration_role
             or (
                 isinstance(row.get("calibration_provenance"), Mapping)
-                and row["calibration_provenance"].get("calibration_role")
-                == params.calibration_role
+                and row["calibration_provenance"].get("calibration_role") == params.calibration_role
             )
         ]
     if not filtered:
@@ -1190,7 +1167,7 @@ def _initial_position_contract_manifest() -> dict[str, Any]:
 def evaluate_run_perturbation_bank(
     run: RunFigureInputs,
     *,
-    source_experiment: str,
+    source_experiment: str | None,
     bank: Mapping[str, Any],
     n_rollout_trials: int,
     evaluation_backend: PerturbationEvaluationBackend = "serial",
@@ -1199,27 +1176,45 @@ def evaluate_run_perturbation_bank(
     preferred_checkpoint_manifest_path: Path | None = None,
     checkpoint_selection_mode: CheckpointSelectionMode = "sparse_history",
     repo_root: Path = REPO_ROOT,
+    model_projection: ModelSlotProjection | None = None,
 ) -> dict[str, Any]:
-    """Evaluate one validation-selected GRU run on a perturbation bank."""
+    """Evaluate one exact native projection or one explicit legacy selected run."""
 
-    hps = dict_to_namespace(normalize_gru_hps(run.run_spec["hps"]), to_type=TreeNamespace)
-    n_replicates = int(hps.model.n_replicates)
-    seed = require_run_seed(run.run_spec, source=run.run_spec_path)
-    pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
-    model, checkpoint_selection = load_validation_selected_checkpoint_model(
-        experiment=source_experiment,
-        run_id=run.run_id,
-        run_spec=run.run_spec,
-        preferred_manifest_path=preferred_checkpoint_manifest_path,
-        checkpoint_selection_mode=checkpoint_selection_mode,
-        repo_root=repo_root,
-    )
-    base_trial_specs = repeat_single_validation_trial(pair.task.validation_trials, n_rollout_trials)
+    if model_projection is None:
+        if source_experiment is None:
+            raise ValueError("legacy perturbation evaluation requires source_experiment")
+        hps = dict_to_namespace(normalize_gru_hps(run.run_spec["hps"]), to_type=TreeNamespace)
+        n_replicates = int(hps.model.n_replicates)
+        seed = require_run_seed(run.run_spec, source=run.run_spec_path)
+        pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
+        model, checkpoint_selection = load_validation_selected_checkpoint_model(
+            experiment=source_experiment,
+            run_id=run.run_id,
+            run_spec=run.run_spec,
+            preferred_manifest_path=preferred_checkpoint_manifest_path,
+            checkpoint_selection_mode=checkpoint_selection_mode,
+            repo_root=repo_root,
+        )
+        task = pair.task
+        checkpoint_provenance: list[dict[str, Any]] = [
+            selection.to_json(repo_root=repo_root) for selection in checkpoint_selection
+        ]
+    else:
+        model = model_projection.model
+        task = model_projection.task
+        n_replicates = model_projection.n_replicates
+        checkpoint_provenance = [
+            {
+                "selection_mode": "exact_native_transaction",
+                **asdict(model_projection.provenance),
+            }
+        ]
+    base_trial_specs = repeat_single_validation_trial(task.validation_trials, n_rollout_trials)
     if trial_spec_transform is not None:
         base_trial_specs = trial_spec_transform(base_trial_specs)
     nominal_base_evaluation = _evaluate_model_rollout_product(
         model=model,
-        task=pair.task,
+        task=task,
         trial_specs=base_trial_specs,
         n_replicates=n_replicates,
         seed=0,
@@ -1280,7 +1275,7 @@ def evaluate_run_perturbation_bank(
         else:
             base_evaluation = _evaluate_model_rollout_product(
                 model=row_base_model,
-                task=pair.task,
+                task=task,
                 trial_specs=row_base_trial_specs,
                 n_replicates=n_replicates,
                 seed=0,
@@ -1288,7 +1283,7 @@ def evaluate_run_perturbation_bank(
             base_cost = full_qrf_cost_summary(base_evaluation, row_base_trial_specs)
         perturbed_evaluation = _evaluate_model_rollout_product(
             model=adapter.model if adapter.model is not None else model,
-            task=pair.task,
+            task=task,
             trial_specs=adapter.trial_specs,
             n_replicates=n_replicates,
             seed=0,
@@ -1307,13 +1302,9 @@ def evaluate_run_perturbation_bank(
             )
         )
 
-    return {
+    result = {
         "label": run.label,
-        "run_spec_path": _repo_relative(run.run_spec_path, repo_root=repo_root),
-        "artifact_dir": _repo_relative(run.artifact_dir, repo_root=repo_root),
-        "checkpoint_selection": [
-            selection.to_json(repo_root=repo_root) for selection in checkpoint_selection
-        ],
+        "checkpoint_selection": checkpoint_provenance,
         "n_replicates": int(base_evaluation.command.shape[0]),
         "n_rollout_trials_per_replicate": int(base_evaluation.command.shape[1]),
         "n_time_steps": int(base_evaluation.command.shape[2]),
@@ -1322,6 +1313,12 @@ def evaluate_run_perturbation_bank(
         "robust_response_summary": summarize_perturbation_bank(rows),
         "perturbations": rows,
     }
+    if model_projection is None:
+        result["run_spec_path"] = _repo_relative(run.run_spec_path, repo_root=repo_root)
+        result["artifact_dir"] = _repo_relative(run.artifact_dir, repo_root=repo_root)
+    else:
+        result["training_run_id"] = model_projection.provenance.training_manifest_id
+    return result
 
 
 def _paired_base_for_adapter(
@@ -4369,10 +4366,6 @@ def _infer_trial_n_time(trial_specs: Any, minimum: int) -> int:
         if shape is not None and len(shape) >= 2:
             return max(int(shape[-2]), minimum)
     return minimum
-
-
-def _is_replicate_array(leaf: Any, n_replicates: int) -> bool:
-    return eqx.is_array(leaf) and leaf.ndim >= 1 and leaf.shape[0] == n_replicates
 
 
 def _sign_label(sign: int) -> str:

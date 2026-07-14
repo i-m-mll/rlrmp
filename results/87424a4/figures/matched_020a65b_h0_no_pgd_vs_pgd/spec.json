@@ -1,6 +1,6 @@
 {
   "schema_id": "feedbax.spec.figure",
-  "schema_version": "feedbax.spec.figure.v1",
+  "schema_version": "feedbax.spec.figure.v2",
   "name": "87424a4-matched-020a65b-h0-no-pgd-vs-pgd",
   "template": "rlrmp.perturbation_response_comparison",
   "slot_bindings": {"responses": {"name": "steady-state-responses", "constructor": "rlrmp.perturbation_response_traces", "piece": "rlrmp.steady_state_87424a4.matched_020a65b_h0_no_pgd_vs_pgd", "data": {"output": {"item": "output"}, "plant_row": {"item": "plant_row"}}}},

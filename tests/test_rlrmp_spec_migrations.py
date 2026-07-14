@@ -5,7 +5,13 @@ from pathlib import Path
 
 import pytest
 from feedbax.contracts.manifest import TrainingRunManifest, load_manifest
-from feedbax.contracts.migrations import SpecSchemaRegistry, UnknownSpecFamily, UnsupportedSpecVersion
+from feedbax.contracts.migrations import (
+    SpecSchemaRegistry,
+    UnknownSpecFamily,
+    UnsupportedSpecVersion,
+)
+from feedbax.contracts.run_matrix import AuthoredTrainingRow, TrainingRunMatrixSpec
+from feedbax.contracts.spec_storage import training_spec_sha256
 from feedbax.contracts.training import TRAINING_RUN_SPEC_SCHEMA_VERSION
 
 from rlrmp.runtime.spec_migrations import (
@@ -25,6 +31,7 @@ from rlrmp.runtime.spec_migrations import (
     FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
     FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_ID,
     FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION,
+    FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION_V2,
     FEEDBACK_QUALITY_LENS_KIND,
     FEEDBACK_QUALITY_LENS_REPORT_PARAMS_KIND,
     FEEDBACK_QUALITY_LENS_REPORT_PARAMS_SCHEMA_ID,
@@ -73,6 +80,7 @@ from rlrmp.runtime.spec_migrations import (
     PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND,
     PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_ID,
     PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION,
+    PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION_V2,
     ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_KIND,
     ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_SCHEMA_ID,
     ROBUSTNESS_PHENOTYPE_REPORT_PARAMS_SCHEMA_VERSION,
@@ -86,6 +94,12 @@ from rlrmp.runtime.spec_migrations import (
     STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_ID,
     STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION,
     STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION_V1,
+    STANDARD_CERTIFICATES_KIND,
+    STANDARD_CERTIFICATES_SCHEMA_ID,
+    STANDARD_CERTIFICATES_SCHEMA_VERSION,
+    TRAINING_AUTHORING_INTENT_KIND,
+    TRAINING_AUTHORING_INTENT_SCHEMA_ID,
+    TRAINING_AUTHORING_INTENT_SCHEMA_VERSION,
     WORST_CASE_EPSILON_EVAL_PARAMS_KIND,
     WORST_CASE_EPSILON_EVAL_PARAMS_SCHEMA_ID,
     WORST_CASE_EPSILON_EVAL_PARAMS_SCHEMA_VERSION,
@@ -100,6 +114,8 @@ from rlrmp.runtime.training_run_specs import (
     feedbax_training_run_spec_from_payload,
 )
 from rlrmp.train.executor.slots import CS_SUPERVISED_METHOD_REF
+from rlrmp.train.matrix_lowering import lower_rlrmp_training_row
+from rlrmp.train.matrix_materialization import materialize_rlrmp_training_matrix
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -118,6 +134,11 @@ def test_rlrmp_spec_policy_registers_current_families_and_rejects_v0() -> None:
             CS_GRU_STANDARD_CERTIFICATES_SCHEMA_ID,
             CS_GRU_STANDARD_CERTIFICATES_SCHEMA_VERSION,
             ("rlrmp.cs_gru_standard_certificates.v0",),
+        ),
+        STANDARD_CERTIFICATES_KIND: (
+            STANDARD_CERTIFICATES_SCHEMA_ID,
+            STANDARD_CERTIFICATES_SCHEMA_VERSION,
+            ("rlrmp.standard_certificates.v0",),
         ),
         OBJECTIVE_COMPARATOR_SIDECAR_KIND: (
             OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_ID,
@@ -237,6 +258,11 @@ def test_rlrmp_spec_policy_registers_current_families_and_rejects_v0() -> None:
             STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION,
             (STANDARD_MATRIX_EVAL_PARAMS_SCHEMA_VERSION_V1,),
         ),
+        TRAINING_AUTHORING_INTENT_KIND: (
+            TRAINING_AUTHORING_INTENT_SCHEMA_ID,
+            TRAINING_AUTHORING_INTENT_SCHEMA_VERSION,
+            ("rlrmp.spec.training_authoring_intent.v0",),
+        ),
         RUN_SPEC_KIND: (
             RUN_SPEC_SCHEMA_ID,
             RUN_SPEC_SCHEMA_VERSION,
@@ -256,6 +282,16 @@ def test_rlrmp_spec_policy_registers_current_families_and_rejects_v0() -> None:
                 RUN_SPEC_SCHEMA_VERSION_V1,
                 RUN_SPEC_SCHEMA_VERSION_LEGACY_CS_GRU,
             }
+        elif kind == PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND:
+            assert family.policy.stance == "migrate"
+            assert family.policy.supported_old_versions == (
+                PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION_V2,
+            )
+        elif kind == FEEDBACK_ABLATION_EVAL_PARAMS_KIND:
+            assert family.policy.stance == "migrate"
+            assert family.policy.supported_old_versions == (
+                FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION_V2,
+            )
 
         result = registry.migrate(kind, {"schema_version": current_version})
         assert result.target_version == current_version
@@ -281,6 +317,84 @@ def test_stamp_current_schema_adds_identity_and_version() -> None:
     assert payload["issue"] == "unit"
 
 
+def test_perturbation_eval_params_v2_migrate_additively_to_v3() -> None:
+    result = accept_rlrmp_spec_payload(
+        PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND,
+        {
+            "schema_id": PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_ID,
+            "schema_version": PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION_V2,
+            "source_experiment": "legacy",
+        },
+    )
+
+    assert result.migrated
+    assert result.target_version == PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION
+    assert result.payload == {
+        "schema_id": PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_ID,
+        "schema_version": PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION,
+        "source_experiment": "legacy",
+        "checkpoint_custody_root": None,
+    }
+
+
+@pytest.mark.parametrize(
+    ("authority", "expected_keys"),
+    (
+        (
+            {"source_experiment": "legacy", "run_ids": ["run-a"]},
+            {"source_experiment", "run_ids"},
+        ),
+        ({"checkpoint_custody_root": "/trusted/checkpoints"}, {"checkpoint_custody_root"}),
+    ),
+)
+def test_feedback_eval_params_v2_migrate_only_unambiguous_authority(
+    authority: dict[str, object],
+    expected_keys: set[str],
+) -> None:
+    result = accept_rlrmp_spec_payload(
+        FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
+        {
+            "schema_id": FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_ID,
+            "schema_version": FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION_V2,
+            **authority,
+        },
+    )
+
+    assert result.migrated
+    assert result.target_version == FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION
+    assert expected_keys <= set(result.payload)
+    assert not ({"source_experiment", "run_ids", "checkpoint_custody_root"} - expected_keys) & set(
+        result.payload
+    )
+
+
+@pytest.mark.parametrize(
+    "authority",
+    (
+        {},
+        {"source_experiment": "legacy"},
+        {"run_ids": ["run-a"]},
+        {
+            "source_experiment": "legacy",
+            "run_ids": ["run-a"],
+            "checkpoint_custody_root": "/trusted/checkpoints",
+        },
+    ),
+)
+def test_feedback_eval_params_v2_reject_ambiguous_authority(
+    authority: dict[str, object],
+) -> None:
+    with pytest.raises(ValueError, match="re-author as either native exact-parent"):
+        accept_rlrmp_spec_payload(
+            FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
+            {
+                "schema_id": FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_ID,
+                "schema_version": FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION_V2,
+                **authority,
+            },
+        )
+
+
 def test_rlrmp_payload_acceptance_rejects_wrong_schema_identity() -> None:
     with pytest.raises(UnsupportedSpecVersion, match="schema identity"):
         accept_rlrmp_spec_payload(
@@ -290,6 +404,82 @@ def test_rlrmp_payload_acceptance_rejects_wrong_schema_identity() -> None:
                 "schema_version": GRU_EVALUATION_DIAGNOSTICS_SCHEMA_VERSION,
             },
         )
+
+
+def test_training_authoring_intent_accepts_only_governed_current_schema() -> None:
+    payload = {
+        "schema_id": TRAINING_AUTHORING_INTENT_SCHEMA_ID,
+        "schema_version": TRAINING_AUTHORING_INTENT_SCHEMA_VERSION,
+        "config": {"issue": "5816bf0", "output_dir": "/tmp/row"},
+    }
+
+    accepted = accept_rlrmp_spec_payload(TRAINING_AUTHORING_INTENT_KIND, payload)
+
+    assert not accepted.migrated
+    assert accepted.schema_id == TRAINING_AUTHORING_INTENT_SCHEMA_ID
+    assert accepted.target_version == TRAINING_AUTHORING_INTENT_SCHEMA_VERSION
+    assert accepted.payload == payload
+
+    with pytest.raises(UnsupportedSpecVersion, match="migration_intentionally_absent=yes"):
+        accept_rlrmp_spec_payload(
+            TRAINING_AUTHORING_INTENT_KIND,
+            {**payload, "schema_version": "rlrmp.spec.training_authoring_intent.v0"},
+        )
+
+    with pytest.raises(UnsupportedSpecVersion, match="schema identity"):
+        accept_rlrmp_spec_payload(
+            TRAINING_AUTHORING_INTENT_KIND,
+            {**payload, "schema_id": "rlrmp.spec.training_authoring_intent.other"},
+        )
+
+
+def test_training_row_lowerer_rejects_ungoverned_intent_version_before_modeling() -> None:
+    row = AuthoredTrainingRow(
+        row_id="row",
+        row_index=0,
+        payload={
+            "schema_id": TRAINING_AUTHORING_INTENT_SCHEMA_ID,
+            "schema_version": "rlrmp.spec.training_authoring_intent.v0",
+            "config": {"issue": "5816bf0", "output_dir": "/tmp/row"},
+        },
+        payload_hash="0" * 64,
+        axis_coordinates={},
+    )
+
+    with pytest.raises(UnsupportedSpecVersion, match="migration_intentionally_absent=yes"):
+        lower_rlrmp_training_row(row)
+
+
+def test_public_matrix_route_rejects_content_pinned_old_intent_by_family_policy(
+    tmp_path: Path,
+) -> None:
+    intent = {
+        "schema_id": TRAINING_AUTHORING_INTENT_SCHEMA_ID,
+        "schema_version": "rlrmp.spec.training_authoring_intent.v0",
+        "config": {"issue": "5816bf0", "output_dir": str(tmp_path / "row")},
+    }
+    intent_path = tmp_path / "intent-v0.json"
+    intent_path.write_text(json.dumps(intent, sort_keys=True) + "\n", encoding="utf-8")
+    matrix = TrainingRunMatrixSpec.model_validate(
+        {
+            "name": "old compact intent rejection",
+            "base": {
+                "kind": "authored_intent",
+                "ref": intent_path.name,
+                "content_hash": training_spec_sha256(intent),
+                "pin_algorithm": "canonical_json_v1",
+            },
+            "rows": [{"row_id": "old-intent", "seed": 7}],
+        }
+    )
+
+    with pytest.raises(UnsupportedSpecVersion) as excinfo:
+        materialize_rlrmp_training_matrix(matrix, repo_root=tmp_path)
+
+    message = str(excinfo.value)
+    assert f"family={TRAINING_AUTHORING_INTENT_KIND!r}" in message
+    assert f"schema_id={TRAINING_AUTHORING_INTENT_SCHEMA_ID!r}" in message
+    assert "migration_intentionally_absent=yes" in message
 
 
 def test_representative_historical_artifacts_load_or_reject_by_policy() -> None:
@@ -340,19 +530,14 @@ def test_representative_historical_artifacts_load_or_reject_by_policy() -> None:
 def test_historical_feedbax_training_run_spec_migrates_standard_supervised() -> None:
     payload = json.loads(
         (
-            REPO_ROOT
-            / "results"
-            / "1ab1fef"
-            / "runs"
-            / "epsilon_scaled_short_3500to1000.json"
+            REPO_ROOT / "results" / "1ab1fef" / "runs" / "epsilon_scaled_short_3500to1000.json"
         ).read_text(encoding="utf-8")
     )
     original = payload[FEEDBAX_TRAINING_RUN_SPEC_KEY]
     assert (
         f"{original['method_ref']['package']}/"
         f"{original['method_ref']['name']}/"
-        f"{original['method_ref']['version']}"
-        == LEGACY_FEEDBAX_STANDARD_SUPERVISED_METHOD_REF
+        f"{original['method_ref']['version']}" == LEGACY_FEEDBAX_STANDARD_SUPERVISED_METHOD_REF
     )
 
     training_spec = feedbax_training_run_spec_from_payload(payload)
@@ -391,11 +576,7 @@ def test_historical_feedbax_training_run_spec_migrates_standard_supervised() -> 
 def test_stripped_legacy_feedbax_training_run_spec_fails_closed() -> None:
     payload = json.loads(
         (
-            REPO_ROOT
-            / "results"
-            / "1ab1fef"
-            / "runs"
-            / "epsilon_scaled_short_3500to1000.json"
+            REPO_ROOT / "results" / "1ab1fef" / "runs" / "epsilon_scaled_short_3500to1000.json"
         ).read_text(encoding="utf-8")
     )
     feedbax_spec = dict(payload[FEEDBAX_TRAINING_RUN_SPEC_KEY])
@@ -421,11 +602,7 @@ def test_stripped_legacy_feedbax_training_run_spec_fails_closed() -> None:
 def test_unsupported_semantic_feedbax_training_run_spec_fails_explicitly() -> None:
     payload = json.loads(
         (
-            REPO_ROOT
-            / "results"
-            / "1ab1fef"
-            / "runs"
-            / "epsilon_scaled_short_3500to1000.json"
+            REPO_ROOT / "results" / "1ab1fef" / "runs" / "epsilon_scaled_short_3500to1000.json"
         ).read_text(encoding="utf-8")
     )
     feedbax_spec = dict(payload[FEEDBAX_TRAINING_RUN_SPEC_KEY])

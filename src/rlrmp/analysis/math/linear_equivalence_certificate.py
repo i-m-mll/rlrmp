@@ -1,8 +1,4 @@
-"""Legacy scope note: `write_outputs` is a frozen writer/driver surface. The
-math core in this module remains LIVE library code consumed by registered
-recipes.
-
-State-weighted Phase 3 linear equivalence certificate.
+"""State-weighted Phase 3 linear equivalence certificate.
 
 This module consumes the Phase 3 linear round-trip result and asks whether the
 objective-trained LQR controllers are equivalent to analytical LQR in the
@@ -11,14 +7,12 @@ state/action directions that matter for clean and disturbance-relevant behavior.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Any
 
 import jax
 import jax.numpy as jnp
 import jax.random as jr
-import numpy as np
 from jaxtyping import Array, Float
 
 from rlrmp.analysis.math.adversary_equivalence import rollout_arrays_with_open_loop_epsilon
@@ -39,7 +33,6 @@ from rlrmp.analysis.math.rerun_metadata import (
     build_rerun_metadata,
 )
 from rlrmp.analysis.math import require_jax_x64
-from rlrmp.paths import REPO_ROOT, mkdir_p
 
 ISSUE_ID = "d01c35a"
 PHASE3_ISSUE_ID = "6f5c79e"
@@ -577,156 +570,6 @@ def result_summary(
     }
 
 
-def render_markdown(summary: dict[str, Any]) -> str:
-    """Render the tracked certificate note."""
-
-    rows = [
-        "| controller | classification | objective ratio | clean cost ratio | held-out cost ratio | raw gain err | value gap train cov | final grad norm |",
-        "|---|---|---:|---:|---:|---:|---:|---:|",
-    ]
-    distribution_sections = []
-    for controller in summary["controllers"]:
-        rows.append(
-            "| "
-            f"`{controller['label']}` | "
-            f"`{controller['classification']}` | "
-            f"{controller['objective_ratio']:.6g} | "
-            f"{controller['clean_cost_ratio']:.6g} | "
-            f"{controller['heldout_cost_ratio']:.6g} | "
-            f"{controller['raw_gain_relative_error']:.6g} | "
-            f"{controller['value_gap_training_cov_ratio']:.6g} | "
-            f"{controller['final_gradient_norm']:.6g} |"
-        )
-        metric_rows = [
-            "| distribution | action rms delta/ref | action mismatch mean | transition rms delta/ref | transition mismatch mean | Bellman action mean | eff rank mean | parallel gain-error mean |",
-            "|---|---:|---:|---:|---:|---:|---:|---:|",
-        ]
-        for metric in controller["distribution_metrics"]:
-            metric_rows.append(
-                "| "
-                f"`{metric['label']}` | "
-                f"{metric['action_delta_rms']:.6g}/{metric['action_reference_rms']:.6g} | "
-                f"{metric['action_mismatch_ratio_mean']:.6g} | "
-                f"{metric['transition_delta_rms']:.6g}/{metric['transition_reference_rms']:.6g} | "
-                f"{metric['transition_mismatch_ratio_mean']:.6g} | "
-                f"{metric['bellman_action_mismatch_ratio_mean']:.6g} | "
-                f"{metric['mean_effective_rank']:.6g} | "
-                f"{metric['gain_error_parallel_fraction_mean']:.6g} |"
-            )
-        distribution_sections.append(f"### `{controller['label']}`\n\n" + "\n".join(metric_rows))
-
-    return f"""# State-Weighted Linear Equivalence Certificate
-
-Issue: `{summary["issue"]}`. Phase 3 issue: `{summary["phase3_issue"]}`.
-Umbrella: `{summary["umbrella"]}`.
-
-Rerun metadata:
-
-- Discretization: `{summary["rerun_metadata"]["discretization"]}`.
-- Lane: `{summary["rerun_metadata"]["lane"]}`.
-- Lane scope: {summary["rerun_metadata"]["lane_description"]}
-
-This note applies the GPT 5.5 Pro critique imported under `6f5c79e` by testing
-whether the objective-trained Phase 3 linear controllers are disturbance-
-relevant equivalents of analytical LQR, not merely clean canonical reach
-matches.
-
-## Status
-
-Overall status: `{summary["overall_status"]}`.
-
-{summary["interpretation"]}
-
-## Controller Summary
-
-{"\n".join(rows)}
-
-The held-out cost ratio compares each controller's held-out open-loop adversary
-audit cost to the analytical LQR held-out audit cost. Values above 1 indicate
-worse disturbance-relevant behavior under this audit.
-
-## Distribution Metrics
-
-Action mismatch is the R-weighted ratio of `(K_fit - K_ref)x` to `K_ref x`.
-Transition mismatch compares `(A - B K_fit)x` to `(A - B K_ref)x`. Bellman
-action mismatch uses `H_t = R_t + B^T P^*_(t+1) B`.
-
-{"\n\n".join(distribution_sections)}
-
-## Interpretation
-
-The certificate is designed to classify whether large raw gain error is
-harmless off-subspace mismatch, optimizer uncertainty, or disturbance-relevant
-non-equivalence. A controller that passes clean objective/behavior but fails
-held-out cost and adversary-state action/transition metrics should not unlock
-GRU same-game interpretation.
-"""
-
-
-def _npz_arrays(result: LinearEquivalenceCertificateResult) -> dict[str, np.ndarray]:
-    arrays: dict[str, np.ndarray] = {}
-    for controller in result.controllers:
-        arrays[f"{controller.label}_interpolation_objective_ratios"] = np.asarray(
-            controller.interpolation_objective_ratios
-        )
-    return arrays
-
-
-def write_outputs(
-    issue_id: str = ISSUE_ID,
-    *,
-    discretization: str = DEFAULT_DISCRETIZATION,
-    lane: str = DEFAULT_LANE,
-) -> dict[str, Any]:
-    """LEGACY (frozen 2026-07-03, issue 64d5f13).
-
-    This writer/driver is not contract-native: it predates the feedbax recipe,
-    bundle, and manifest contracts. It may not run without deliberate
-    realignment. Do not copy it as a pattern for new analyses. The
-    port-or-delete decision is deferred to the report-stage era (feedbax
-    132f98c) / publication.
-
-    Scoped legacy surface: `write_outputs`. The math core in this module is
-    LIVE library code consumed by registered recipes; this banner does not
-    apply to the math core.
-    """
-
-    require_jax_x64("linear equivalence certificate materialization")
-    result = run_linear_equivalence_certificate()
-    summary = result_summary(result, discretization=discretization, lane=lane)
-    results_dir = mkdir_p(REPO_ROOT / "results" / issue_id)
-    notes_dir = mkdir_p(results_dir / "notes")
-    artifact_dir = mkdir_p(REPO_ROOT / "_artifacts" / issue_id / "linear_equivalence_certificate")
-    readme = results_dir / "README.md"
-    if not readme.exists():
-        readme.write_text(
-            "State-weighted linear equivalence certificate for Phase 3. "
-            "See `notes/linear_equivalence_certificate.md`.\n",
-            encoding="utf-8",
-        )
-
-    arrays = _npz_arrays(result)
-    npz_path = artifact_dir / "linear_equivalence_certificate.npz"
-    np.savez_compressed(npz_path, **arrays)
-    summary["tracked_note"] = f"results/{issue_id}/notes/linear_equivalence_certificate.md"
-    summary["tracked_manifest"] = (
-        f"results/{issue_id}/notes/linear_equivalence_certificate_manifest.json"
-    )
-    summary["artifact_npz"] = (
-        f"_artifacts/{issue_id}/linear_equivalence_certificate/{npz_path.name}"
-    )
-    summary["artifact_npz_keys"] = sorted(arrays.keys())
-
-    note_path = notes_dir / "linear_equivalence_certificate.md"
-    manifest_path = notes_dir / "linear_equivalence_certificate_manifest.json"
-    note_path.write_text(render_markdown(summary), encoding="utf-8")
-    manifest_path.write_text(
-        json.dumps(summary, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    return summary
-
-
 __all__ = [
     "CertificateConfig",
     "ControllerCertificate",
@@ -736,8 +579,6 @@ __all__ = [
     "PHASE3_ISSUE_ID",
     "StateDistribution",
     "policy_evaluation_matrices",
-    "render_markdown",
     "result_summary",
     "run_linear_equivalence_certificate",
-    "write_outputs",
 ]
