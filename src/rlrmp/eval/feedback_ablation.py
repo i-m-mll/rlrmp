@@ -518,8 +518,10 @@ def feedback_ablation_spec(
 
 def feedback_ablation_evaluation_spec(
     *,
-    source_experiment: str,
-    run_ids: Sequence[str] = DEFAULT_RUN_IDS,
+    training_run_ref: ParentRef | None = None,
+    checkpoint_custody_root: Path | str | None = None,
+    source_experiment: str | None = None,
+    run_ids: Sequence[str] | None = None,
     labels: Sequence[str] | None = None,
     scope: str = DEFAULT_SCOPE,
     n_rollout_trials: int = 4,
@@ -534,11 +536,47 @@ def feedback_ablation_evaluation_spec(
     bank: Mapping[str, Any] | None = None,
     evaluation_bins: Mapping[str, str | None] | None = None,
 ) -> EvaluationRunSpec:
-    """Return the canonical model-driven feedback-ablation evaluation spec."""
+    """Return one unambiguous native or legacy feedback-ablation evaluation spec."""
+
+    has_native_authority = training_run_ref is not None
+    has_legacy_authority = source_experiment is not None or run_ids is not None
+    if has_native_authority and has_legacy_authority:
+        raise ValueError(
+            "feedback-ablation spec cannot mix training_run_ref with legacy "
+            "source_experiment/run_ids selectors"
+        )
+    if has_native_authority:
+        if (
+            training_run_ref.kind != "TrainingRunManifest"
+            or training_run_ref.role != "training_run"
+        ):
+            raise ValueError(
+                "native feedback-ablation training_run_ref must be a "
+                "TrainingRunManifest/training_run ParentRef"
+            )
+        if checkpoint_custody_root is None:
+            raise ValueError("native feedback-ablation spec requires checkpoint_custody_root")
+        if preferred_checkpoint_manifest_path is not None:
+            raise ValueError(
+                "native feedback-ablation spec cannot declare legacy "
+                "preferred_checkpoint_manifest_path authority"
+            )
+        custody_root = Path(checkpoint_custody_root).expanduser()
+        if not custody_root.is_absolute():
+            raise ValueError("native feedback-ablation checkpoint_custody_root must be absolute")
+        selected_run_ids: list[str] = []
+        inputs = [training_run_ref]
+    else:
+        if checkpoint_custody_root is not None:
+            raise ValueError("legacy feedback-ablation spec cannot declare checkpoint_custody_root")
+        selected_run_ids = [str(run_id) for run_id in (run_ids or DEFAULT_RUN_IDS)]
+        if not source_experiment or not selected_run_ids:
+            raise ValueError(
+                "legacy feedback-ablation spec requires source_experiment and non-empty run_ids"
+            )
+        inputs = []
 
     params = {
-        "source_experiment": source_experiment,
-        "run_ids": [str(run_id) for run_id in run_ids],
         "labels": None if labels is None else [str(label) for label in labels],
         "scope": scope,
         "n_rollout_trials": n_rollout_trials,
@@ -563,18 +601,15 @@ def feedback_ablation_evaluation_spec(
             else {str(key): value for key, value in evaluation_bins.items()}
         ),
     }
+    if has_native_authority:
+        params["checkpoint_custody_root"] = str(custody_root)
+    else:
+        params["source_experiment"] = source_experiment
+        params["run_ids"] = selected_run_ids
     return EvaluationRunSpec(
         evaluation_type=FEEDBACK_ABLATION_EVALUATION_TYPE,
-        training_run_ids=[str(run_id) for run_id in run_ids],
-        inputs=[
-            ParentRef(
-                kind="TrainingRunManifest",
-                id=str(run_id),
-                role="training_run",
-                metadata={"rlrmp_experiment": source_experiment},
-            )
-            for run_id in run_ids
-        ],
+        training_run_ids=selected_run_ids,
+        inputs=inputs,
         params=stamp_current_schema(FEEDBACK_ABLATION_EVAL_PARAMS_KIND, params),
     )
 

@@ -209,17 +209,17 @@ def ensure_rlrmp_spec_families(
                     if family.kind == PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND
                     else FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION_V2
                 )
+                if family.kind == PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND:
+                    migrate = _migrate_perturbation_response_eval_params_v2_to_v3
+                else:
+                    migrate = _migrate_feedback_ablation_eval_params_v2_to_v3
                 active_registry.register_migration(
                     family.kind,
                     SchemaMigration(
                         source_version=source_version,
                         target_version=family.current_version,
                         migration_id=f"{family.kind}-v2-to-v3",
-                        migrate=lambda payload, *, _family=family: _migrate_eval_params_v2_to_v3(
-                            payload,
-                            schema_id=_family.identity,
-                            schema_version=_family.current_version,
-                        ),
+                        migrate=migrate,
                         description=(
                             "Advance native model-driven evaluation params to the explicit "
                             "checkpoint custody-authority schema."
@@ -766,6 +766,43 @@ def _migrate_eval_params_v2_to_v3(
     migrated.setdefault("schema_id", schema_id)
     migrated["schema_version"] = schema_version
     migrated.setdefault("checkpoint_custody_root", None)
+    return migrated
+
+
+def _migrate_perturbation_response_eval_params_v2_to_v3(
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    return _migrate_eval_params_v2_to_v3(
+        payload,
+        schema_id=PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_ID,
+        schema_version=PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION,
+    )
+
+
+def _migrate_feedback_ablation_eval_params_v2_to_v3(
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Migrate only feedback-ablation params with one evident authority shape."""
+    has_source = bool(payload.get("source_experiment"))
+    has_run_ids = bool(payload.get("run_ids"))
+    has_checkpoint_root = bool(payload.get("checkpoint_custody_root"))
+    has_legacy = has_source and has_run_ids
+    partial_legacy = has_source != has_run_ids
+    if partial_legacy or has_legacy == has_checkpoint_root:
+        raise ValueError(
+            "feedback-ablation params.v2 authority is ambiguous: re-author as either "
+            "native exact-parent params with checkpoint_custody_root and no "
+            "source_experiment/run_ids, or legacy params with source_experiment/run_ids "
+            "and no checkpoint_custody_root"
+        )
+    migrated = dict(payload)
+    migrated.setdefault("schema_id", FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_ID)
+    migrated["schema_version"] = FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION
+    if has_checkpoint_root:
+        migrated.pop("source_experiment", None)
+        migrated.pop("run_ids", None)
+    else:
+        migrated.pop("checkpoint_custody_root", None)
     return migrated
 
 

@@ -317,46 +317,82 @@ def test_stamp_current_schema_adds_identity_and_version() -> None:
     assert payload["issue"] == "unit"
 
 
-@pytest.mark.parametrize(
-    ("kind", "schema_id", "source_version", "target_version"),
-    (
-        (
-            PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND,
-            PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_ID,
-            PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION_V2,
-            PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION,
-        ),
-        (
-            FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
-            FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_ID,
-            FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION_V2,
-            FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION,
-        ),
-    ),
-)
-def test_native_eval_params_v2_migrate_additively_to_v3(
-    kind: str,
-    schema_id: str,
-    source_version: str,
-    target_version: str,
-) -> None:
+def test_perturbation_eval_params_v2_migrate_additively_to_v3() -> None:
     result = accept_rlrmp_spec_payload(
-        kind,
+        PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_KIND,
         {
-            "schema_id": schema_id,
-            "schema_version": source_version,
+            "schema_id": PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_ID,
+            "schema_version": PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION_V2,
             "source_experiment": "legacy",
         },
     )
 
     assert result.migrated
-    assert result.target_version == target_version
+    assert result.target_version == PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION
     assert result.payload == {
-        "schema_id": schema_id,
-        "schema_version": target_version,
+        "schema_id": PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_ID,
+        "schema_version": PERTURBATION_RESPONSE_BANK_EVAL_PARAMS_SCHEMA_VERSION,
         "source_experiment": "legacy",
         "checkpoint_custody_root": None,
     }
+
+
+@pytest.mark.parametrize(
+    ("authority", "expected_keys"),
+    (
+        (
+            {"source_experiment": "legacy", "run_ids": ["run-a"]},
+            {"source_experiment", "run_ids"},
+        ),
+        ({"checkpoint_custody_root": "/trusted/checkpoints"}, {"checkpoint_custody_root"}),
+    ),
+)
+def test_feedback_eval_params_v2_migrate_only_unambiguous_authority(
+    authority: dict[str, object],
+    expected_keys: set[str],
+) -> None:
+    result = accept_rlrmp_spec_payload(
+        FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
+        {
+            "schema_id": FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_ID,
+            "schema_version": FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION_V2,
+            **authority,
+        },
+    )
+
+    assert result.migrated
+    assert result.target_version == FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION
+    assert expected_keys <= set(result.payload)
+    assert not ({"source_experiment", "run_ids", "checkpoint_custody_root"} - expected_keys) & set(
+        result.payload
+    )
+
+
+@pytest.mark.parametrize(
+    "authority",
+    (
+        {},
+        {"source_experiment": "legacy"},
+        {"run_ids": ["run-a"]},
+        {
+            "source_experiment": "legacy",
+            "run_ids": ["run-a"],
+            "checkpoint_custody_root": "/trusted/checkpoints",
+        },
+    ),
+)
+def test_feedback_eval_params_v2_reject_ambiguous_authority(
+    authority: dict[str, object],
+) -> None:
+    with pytest.raises(ValueError, match="re-author as either native exact-parent"):
+        accept_rlrmp_spec_payload(
+            FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
+            {
+                "schema_id": FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_ID,
+                "schema_version": FEEDBACK_ABLATION_EVAL_PARAMS_SCHEMA_VERSION_V2,
+                **authority,
+            },
+        )
 
 
 def test_rlrmp_payload_acceptance_rejects_wrong_schema_identity() -> None:
