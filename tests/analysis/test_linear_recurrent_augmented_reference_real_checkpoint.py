@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from feedbax.analysis import resolve_evaluation_inputs
+from feedbax.analysis import EMPTY_STAGED_EXECUTION_CONTEXT, resolve_evaluation_inputs
 from feedbax.analysis.evaluation import execute_evaluation_run_spec, load_evaluation_states
 from feedbax.contracts.manifest import EvaluationRunSpec, ParentRef
 from feedbax.contracts.training import TrainingRunSpec
@@ -282,6 +282,7 @@ def test_real_checkpoint_produces_same_basis_augmented_reference_evidence(
             ),
             analysis_root,
             tmp_path / "unused-states",
+            EMPTY_STAGED_EXECUTION_CONTEXT,
         )
         assert recipe_result.states == outcome
         assert recipe_result.metadata["reason_code"] == NON_NOMINAL_REASON_CODE

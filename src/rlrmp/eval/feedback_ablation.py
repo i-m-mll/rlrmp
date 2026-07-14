@@ -14,6 +14,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 import numpy as np
+from feedbax.analysis import StagedExecutionContext
 from feedbax.analysis.analysis import AbstractAnalysis
 from feedbax.analysis.context import AnalysisRunContext
 from feedbax.analysis.specs import (
@@ -430,6 +431,7 @@ def feedback_ablation_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
     inputs: Sequence[ResolvedAnalysisInput],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build the registered feedback-ablation analysis from evaluation manifests."""
 

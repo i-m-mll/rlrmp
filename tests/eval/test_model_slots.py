@@ -9,6 +9,7 @@ import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 import pytest
+from feedbax.analysis import EMPTY_STAGED_EXECUTION_CONTEXT
 from feedbax.contracts.manifest import EvaluationRunSpec, ParentRef
 from feedbax.contracts.manifest import TrainingRunManifest, canonical_json_bytes, sha256_bytes
 from feedbax.contracts.training import (
@@ -477,7 +478,12 @@ def test_feedback_recipe_native_seam_never_calls_legacy_evaluator(
         lambda *_args, **_kwargs: pytest.fail("legacy feedback evaluator was called"),
     )
 
-    result = recipes.feedback_ablation_recipe(run_spec, Path("/explicit-root"), Path("states"))
+    result = recipes.feedback_ablation_recipe(
+        run_spec,
+        Path("/explicit-root"),
+        Path("states"),
+        EMPTY_STAGED_EXECUTION_CONTEXT,
+    )
 
     assert result.states["candidate"] is projection
 
@@ -543,7 +549,12 @@ def test_feedback_recipe_rejects_mixed_native_and_legacy_authority(
     )
 
     with pytest.raises(ValueError, match="cannot mix exact native parents with legacy"):
-        recipes.feedback_ablation_recipe(run_spec, Path("/analysis-manifests"), Path("states"))
+        recipes.feedback_ablation_recipe(
+            run_spec,
+            Path("/analysis-manifests"),
+            Path("states"),
+            EMPTY_STAGED_EXECUTION_CONTEXT,
+        )
 
 
 def test_native_projection_requires_distinct_explicit_checkpoint_authority() -> None:

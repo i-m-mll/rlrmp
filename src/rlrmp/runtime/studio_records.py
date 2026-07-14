@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from feedbax.analysis import StagedExecutionContext
 from feedbax.analysis.evaluation import EvaluationRecipeResult, register_evaluation_recipe
 from feedbax.contracts.graph import (
     GraphMetadata,
@@ -325,7 +326,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-def _studio_default_eval_recipe(spec, _root: Path, _states_path: Path) -> EvaluationRecipeResult:
+def _studio_default_eval_recipe(
+    spec,
+    _root: Path,
+    _states_path: Path,
+    _execution_context: StagedExecutionContext,
+) -> EvaluationRecipeResult:
     cells = []
     for ref in spec.inputs:
         metrics = ref.metadata.get("summary_metrics", {})

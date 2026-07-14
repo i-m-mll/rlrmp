@@ -10,6 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Literal
 
+from feedbax.analysis import StagedExecutionContext
 from feedbax.analysis.evaluation import EvaluationRecipeResult, register_evaluation_recipe
 from feedbax.contracts.manifest import (
     EvaluationRunSpec,
@@ -302,6 +303,7 @@ def linear_recurrent_augmented_reference_recipe(
     run_spec: EvaluationRunSpec,
     root: Path,
     _states_path: Path,
+    _execution_context: StagedExecutionContext,
 ) -> EvaluationRecipeResult:
     """Produce exact same-basis evidence from public governed runtime authority."""
 
@@ -350,6 +352,7 @@ def center_out_ensemble_recipe(
     run_spec: EvaluationRunSpec,
     root: Path,
     _states_path: Path,
+    _execution_context: StagedExecutionContext,
 ) -> EvaluationRecipeResult:
     """Evaluate the shared center-out/delayed-reach ensemble recipe contract."""
 
@@ -395,6 +398,7 @@ def gru_diagnostics_recipe(
     run_spec: EvaluationRunSpec,
     _root: Path,
     _states_path: Path,
+    _execution_context: StagedExecutionContext,
 ) -> EvaluationRecipeResult:
     """Evaluate and cache behavior, feedback, gate, and Jacobian diagnostics."""
 
@@ -423,6 +427,7 @@ def perturbation_response_bank_recipe(
     run_spec: EvaluationRunSpec,
     root: Path,
     _states_path: Path,
+    _execution_context: StagedExecutionContext,
 ) -> EvaluationRecipeResult:
     """Evaluate a perturbation-response bank request."""
 
@@ -442,6 +447,7 @@ def feedback_ablation_recipe(
     run_spec: EvaluationRunSpec,
     root: Path,
     _states_path: Path,
+    _execution_context: StagedExecutionContext,
 ) -> EvaluationRecipeResult:
     """Evaluate intact-vs-ablated feedback rollout pairs."""
 
@@ -495,6 +501,7 @@ def worst_case_epsilon_recipe(
     run_spec: EvaluationRunSpec,
     _root: Path,
     _states_path: Path,
+    _execution_context: StagedExecutionContext,
 ) -> EvaluationRecipeResult:
     """Evaluate worst-case epsilon perturbation audits."""
 
@@ -527,6 +534,7 @@ def broad_epsilon_recipe(
     run_spec: EvaluationRunSpec,
     _root: Path,
     _states_path: Path,
+    _execution_context: StagedExecutionContext,
 ) -> EvaluationRecipeResult:
     """Cache paired active/zero rollout and differentiable-gradient records."""
 
@@ -558,6 +566,7 @@ def delayed_reach_bank_recipe(
     run_spec: EvaluationRunSpec,
     _root: Path,
     _states_path: Path,
+    _execution_context: StagedExecutionContext,
 ) -> EvaluationRecipeResult:
     """Evaluate delayed-reach checkpoint-selection banks."""
 

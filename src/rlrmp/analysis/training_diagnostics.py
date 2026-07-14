@@ -10,6 +10,7 @@ from typing import Any
 
 import numpy as np
 
+from feedbax.analysis import StagedExecutionContext
 from feedbax.analysis.analysis import AbstractAnalysis
 from feedbax.analysis.context import AnalysisRunContext
 from feedbax.analysis.specs import AnalysisRecipeResult, ResolvedAnalysisInput
@@ -108,6 +109,7 @@ def training_diagnostics_recipe(
     spec,
     root: Path,
     inputs: Sequence[ResolvedAnalysisInput],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build a manifest-backed training diagnostics summary analysis."""
     params = dict(spec.params)

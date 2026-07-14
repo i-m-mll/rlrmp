@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+from feedbax.analysis import EMPTY_STAGED_EXECUTION_CONTEXT
+
 from rlrmp.analysis.matrix.history_payload import (
     HISTORY_PAYLOAD_SCHEMA_VERSION,
     history_payload_recipe,
@@ -59,7 +61,12 @@ def test_registered_history_payload_keeps_facets_data_bound() -> None:
         },
     )
 
-    result = history_payload_recipe(spec, REPO_ROOT, [resolved])
+    result = history_payload_recipe(
+        spec,
+        REPO_ROOT,
+        [resolved],
+        EMPTY_STAGED_EXECUTION_CONTEXT,
+    )
     payload = result.analyses["history_payload"].compute(result.data)
 
     assert payload["schema_version"] == HISTORY_PAYLOAD_SCHEMA_VERSION

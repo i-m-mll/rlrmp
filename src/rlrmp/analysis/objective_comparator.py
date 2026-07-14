@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from feedbax.analysis import StagedExecutionContext
 from feedbax.analysis.analysis import AbstractAnalysis
 from feedbax.analysis.specs import AnalysisRecipeResult, ResolvedAnalysisInput, register_analysis_recipe
 from feedbax.analysis.types import AnalysisInputData
@@ -183,6 +184,7 @@ def objective_comparator_recipe(
     spec: Any,
     _root: Any,
     inputs: Sequence[ResolvedAnalysisInput],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build the comparator exclusively from evaluation-manifest states."""
 
