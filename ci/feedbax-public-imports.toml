@@ -35,6 +35,7 @@ symbols = [
   "STAGED_EXACT_PARENTS_SCHEMA_VERSION",
   "StagedExactParentEntry",
   "StagedExactParents",
+  "StagedExecutionContext",
   "EvaluationRunMatrixSpec",
   "GraphControllerAdapter",
   "ResolvedEvaluationInput",

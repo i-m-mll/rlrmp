@@ -9,6 +9,7 @@ from typing import Any, Literal
 import jax
 import jax.numpy as jnp
 import numpy as np
+from feedbax.analysis import StagedExecutionContext
 from feedbax.analysis.analysis import AbstractAnalysis
 from feedbax.analysis.specs import (
     AnalysisRecipeResult,
@@ -103,6 +104,7 @@ def worst_case_epsilon_recipe(
     spec,
     _root,
     inputs: Sequence[ResolvedAnalysisInput],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build a summary analysis without rerunning model rollouts."""
 

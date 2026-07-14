@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+from feedbax.analysis import EMPTY_STAGED_EXECUTION_CONTEXT
 from feedbax.analysis.figures import execute_figure_spec
 from feedbax.analysis.specs import AnalysisRunSpec
 from feedbax.contracts.figures import FigureSpec
@@ -78,7 +79,12 @@ def test_registered_analysis_keeps_row_cardinality_data_bound(count: int) -> Non
         },
     )
 
-    recipe = scalar_diagnostic_recipe(spec, REPO_ROOT, [resolved])
+    recipe = scalar_diagnostic_recipe(
+        spec,
+        REPO_ROOT,
+        [resolved],
+        EMPTY_STAGED_EXECUTION_CONTEXT,
+    )
     payload = recipe.analyses["scalar_diagnostic"].compute(recipe.data)
 
     assert len(payload["collections"]) == count

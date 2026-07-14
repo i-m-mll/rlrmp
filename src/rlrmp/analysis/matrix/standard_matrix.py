@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from feedbax.analysis import StagedExecutionContext
 from feedbax.analysis.analysis import AbstractAnalysis
 from feedbax.analysis.context import AnalysisRunContext
 from feedbax.analysis.evaluation import EvaluationRecipeResult, register_evaluation_recipe
@@ -146,6 +147,7 @@ def standard_matrix_evaluation_recipe(
     run_spec: EvaluationRunSpec,
     _root: Path,
     _states_path: Path,
+    _execution_context: StagedExecutionContext,
 ) -> EvaluationRecipeResult:
     """Produce standard-matrix evaluation states from refs or explicit legacy payloads."""
     params = _accept_standard_matrix_params(run_spec.params)
@@ -194,6 +196,7 @@ def standard_matrix_recipe(
     spec,
     _root: Path,
     inputs: Sequence[ResolvedAnalysisInput],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build Feedbax analyses for one standard matrix bundle expansion."""
     params = dict(spec.params)

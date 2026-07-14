@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 import jax.random as jr
 import numpy as np
+from feedbax.analysis import StagedExecutionContext
 from feedbax.analysis.analysis import AbstractAnalysis
 from feedbax.analysis.context import AnalysisRunContext
 from feedbax.analysis.evaluation import EvaluationRecipeResult, register_evaluation_recipe
@@ -232,6 +233,7 @@ def sisu_spectrum_evaluation_recipe(
     run_spec: EvaluationRunSpec,
     _root: Path,
     _states_path: Path,
+    _execution_context: StagedExecutionContext,
 ) -> EvaluationRecipeResult:
     """Evaluate SISU velocity profiles for an evaluation manifest."""
 
@@ -279,6 +281,7 @@ def sisu_spectrum_recipe(
     spec,
     _root: Path,
     inputs: Sequence[ResolvedAnalysisInput],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build SISU-spectrum analyses from evaluation-manifest input states."""
 
@@ -308,6 +311,7 @@ def sisu_robustification_recipe(
     spec,
     _root: Path,
     inputs: Sequence[ResolvedAnalysisInput],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build the grouped comparison from paired cached evaluation summaries."""
 

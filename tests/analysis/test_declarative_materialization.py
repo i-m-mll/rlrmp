@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import rlrmp
+from feedbax.analysis import EMPTY_STAGED_EXECUTION_CONTEXT
 from feedbax.analysis.analysis import AbstractAnalysis
 from feedbax.analysis.bundles import (
     execute_staged_analysis_bundle,
@@ -250,11 +251,13 @@ def test_declarative_recipes_use_feedbax_context_materializers() -> None:
         dm.gru_standard_certificate_spec(experiment="unitexp"),
         Path("."),
         (),
+        EMPTY_STAGED_EXECUTION_CONTEXT,
     )
     evaluation = dm.gru_evaluation_diagnostics_recipe(
         dm.gru_evaluation_diagnostics_spec(),
         Path("."),
         (),
+        EMPTY_STAGED_EXECUTION_CONTEXT,
     )
     from rlrmp.eval.output_feedback_rollout_recovery import RolloutRecoveryResult
 
@@ -288,6 +291,7 @@ def test_declarative_recipes_use_feedbax_context_materializers() -> None:
                 },
             )()
         ],
+        EMPTY_STAGED_EXECUTION_CONTEXT,
     )
 
     assert isinstance(standard.analyses["gru_standard_certificate"], AbstractAnalysis)
@@ -347,6 +351,7 @@ def test_declarative_recipes_use_feedbax_context_materializers() -> None:
                 },
             )()
         ],
+        EMPTY_STAGED_EXECUTION_CONTEXT,
     )
     assert isinstance(
         perturbation_leaf.analyses["command_input_pulse"],

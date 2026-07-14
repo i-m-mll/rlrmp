@@ -10,6 +10,7 @@ import tempfile
 from typing import Any
 
 import equinox as eqx
+from feedbax.analysis import StagedExecutionContext
 import jax.numpy as jnp
 from numpy import savez_compressed as _savez_compressed
 from feedbax.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts
@@ -1059,6 +1060,7 @@ def gru_standard_certificate_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
     inputs: Sequence[Any],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build the declarative GRU standard-certificate recipe."""
 
@@ -1082,6 +1084,7 @@ def standard_certificate_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
     inputs: Sequence[Any],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build a grouped standard-certificate recipe from evaluation caches."""
 
@@ -1109,6 +1112,7 @@ def gru_evaluation_diagnostics_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
     inputs: Sequence[Any],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build the declarative GRU rollout-diagnostics recipe."""
 
@@ -1132,6 +1136,7 @@ def perturbation_class_response_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
     inputs: Sequence[Any],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build one perturbation-family response analysis from shared eval states."""
 
@@ -1157,6 +1162,7 @@ def perturbation_bank_aggregate_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
     inputs: Sequence[Any],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build an aggregate perturbation bank from class-response leaf products."""
 
@@ -1179,6 +1185,7 @@ def policy_diagnostics_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
     inputs: Sequence[Any],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build controller-local policy diagnostic-bank analysis from eval states."""
 
@@ -1204,6 +1211,7 @@ def recurrent_jacobian_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
     inputs: Sequence[Any],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build staged recurrent Jacobian diagnostic-bank analysis from eval states."""
 
@@ -1227,13 +1235,17 @@ def recurrent_jacobian_recipe(
 
 def _feedback_quality_component_recipe(
     component_name: str,
-) -> Callable[[AnalysisRunSpec, Path, Sequence[Any]], AnalysisRecipeResult]:
+) -> Callable[
+    [AnalysisRunSpec, Path, Sequence[Any], StagedExecutionContext],
+    AnalysisRecipeResult,
+]:
     """Return the registered recipe for one feedback-quality component leaf."""
 
     def _recipe(
         spec: AnalysisRunSpec,
         _root: Path,
         inputs: Sequence[Any],
+        _execution_context: StagedExecutionContext,
     ) -> AnalysisRecipeResult:
         params = dict(spec.params)
         resolved_run_ids = _feedback_quality_run_ids_from_params_or_inputs(params, inputs)
@@ -1280,6 +1292,7 @@ def feedback_quality_feedback_ablation_recipe(
     spec: AnalysisRunSpec,
     root: Path,
     inputs: Sequence[Any],
+    execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Route feedback-ablation alias inputs to the appropriate contract path."""
 
@@ -1287,14 +1300,20 @@ def feedback_quality_feedback_ablation_recipe(
         resolved.ref.kind == "EvaluationRunManifest" or resolved.states is not None
         for resolved in inputs
     ):
-        return feedback_ablation_recipe(spec, root, inputs)
-    return _feedback_quality_component_recipe("feedback_ablation")(spec, root, inputs)
+        return feedback_ablation_recipe(spec, root, inputs, execution_context)
+    return _feedback_quality_component_recipe("feedback_ablation")(
+        spec,
+        root,
+        inputs,
+        execution_context,
+    )
 
 
 def output_feedback_rollout_recovery_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
     inputs: Sequence[Any],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build rollout-recovery analysis from governed evaluation states."""
 
@@ -1332,6 +1351,7 @@ def feedback_quality_lens_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
     inputs: Sequence[Any],
+    _execution_context: StagedExecutionContext,
 ) -> AnalysisRecipeResult:
     """Build the declarative feedback-control quality lens recipe."""
 
