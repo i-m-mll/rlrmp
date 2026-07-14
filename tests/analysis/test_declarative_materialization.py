@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import rlrmp
-from feedbax.analysis import EMPTY_STAGED_EXECUTION_CONTEXT
+from feedbax.analysis import EMPTY_STAGED_EXECUTION_CONTEXT, authenticated_manifest_ref
 from feedbax.analysis.analysis import AbstractAnalysis
 from feedbax.analysis.bundles import (
     execute_staged_analysis_bundle,
@@ -296,9 +296,7 @@ def test_declarative_recipes_use_feedbax_context_materializers() -> None:
 
     assert isinstance(standard.analyses["gru_standard_certificate"], AbstractAnalysis)
     assert isinstance(standard.analyses["gru_standard_certificate"], ContextMaterializer)
-    assert standard.analyses["gru_standard_certificate"].materializer_input == (
-        "context_and_data"
-    )
+    assert standard.analyses["gru_standard_certificate"].materializer_input == ("context_and_data")
     assert isinstance(evaluation.analyses["gru_evaluation_diagnostics"], AbstractAnalysis)
     assert isinstance(evaluation.analyses["gru_evaluation_diagnostics"], ContextMaterializer)
     assert evaluation.analyses["gru_evaluation_diagnostics"].materializer_input == (
@@ -421,12 +419,8 @@ def test_diagnostic_bank_recipes_register_params_models_and_eval_dependencies() 
     assert params_model_for(dm.PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE) is (
         dm.PerturbationBankAggregateAnalysisParams
     )
-    assert params_model_for(dm.OBJECTIVE_COMPARATOR_ANALYSIS_TYPE) is (
-        dm.ObjectiveComparatorParams
-    )
-    assert params_model_for(dm.ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE) is (
-        dm.RobustnessPhenotypeParams
-    )
+    assert params_model_for(dm.OBJECTIVE_COMPARATOR_ANALYSIS_TYPE) is (dm.ObjectiveComparatorParams)
+    assert params_model_for(dm.ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE) is (dm.RobustnessPhenotypeParams)
     assert params_model_for(PERTURBATION_BANK_PARAMS_TYPE) is PerturbationBankParams
     with pytest.raises(ValidationError):
         dm.PolicyDiagnosticsAnalysisParams.model_validate({"unknown": True})
@@ -441,24 +435,24 @@ def test_diagnostic_bank_recipes_register_params_models_and_eval_dependencies() 
             {"bank_params": {"mode": "raw"}},
             {"bank_params": {"mode": "calibrated"}},
         )
-    assert dm.EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE[
-        dm.FEEDBACK_ABLATION_ANALYSIS_TYPE
-    ] == (FEEDBACK_ABLATION_EVALUATION_TYPE,)
-    assert dm.EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE[
-        dm.POLICY_DIAGNOSTICS_ANALYSIS_TYPE
-    ] == ("evaluation_run",)
+    assert dm.EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE[dm.FEEDBACK_ABLATION_ANALYSIS_TYPE] == (
+        FEEDBACK_ABLATION_EVALUATION_TYPE,
+    )
+    assert dm.EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE[dm.POLICY_DIAGNOSTICS_ANALYSIS_TYPE] == (
+        "evaluation_run",
+    )
     assert dm.EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE[
         dm.FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["feedback_ablation"]
     ] == (FEEDBACK_ABLATION_EVALUATION_TYPE, "params.materialize_feedback_ablation")
-    assert dm.EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE[
-        dm.RECURRENT_JACOBIAN_ANALYSIS_TYPE
-    ] == ("evaluation_run",)
-    assert dm.EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE[
-        dm.OBJECTIVE_COMPARATOR_ANALYSIS_TYPE
-    ] == tuple(dm.objective_comparator_recipe.EVAL_DEPENDENCIES)
-    assert dm.EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE[
-        dm.ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE
-    ] == tuple(dm.robustness_phenotype_recipe.ANALYSIS_DEPENDENCIES)
+    assert dm.EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE[dm.RECURRENT_JACOBIAN_ANALYSIS_TYPE] == (
+        "evaluation_run",
+    )
+    assert dm.EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE[dm.OBJECTIVE_COMPARATOR_ANALYSIS_TYPE] == tuple(
+        dm.objective_comparator_recipe.EVAL_DEPENDENCIES
+    )
+    assert dm.EVAL_DEPENDENCIES_BY_ANALYSIS_TYPE[dm.ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE] == tuple(
+        dm.robustness_phenotype_recipe.ANALYSIS_DEPENDENCIES
+    )
 
 
 def test_feedback_ablation_recipe_consumes_cached_eval_states_and_records_custody(
@@ -513,7 +507,6 @@ def test_feedback_ablation_recipe_consumes_cached_eval_states_and_records_custod
     eval_manifest, eval_path = execute_evaluation_run_spec(
         EvaluationRunSpec(
             evaluation_type=FEEDBACK_ABLATION_EVALUATION_TYPE,
-            inputs=[_training_ref()],
             params=stamp_current_schema(
                 FEEDBACK_ABLATION_EVAL_PARAMS_KIND,
                 {
@@ -531,14 +524,7 @@ def test_feedback_ablation_recipe_consumes_cached_eval_states_and_records_custod
     analysis_manifest, _path = execute_analysis_run_spec(
         AnalysisRunSpec(
             analysis_type=dm.FEEDBACK_ABLATION_ANALYSIS_TYPE,
-            inputs=[
-                ParentRef(
-                    kind="EvaluationRunManifest",
-                    id=eval_manifest.id,
-                    role="evaluation_run",
-                    uri=str(eval_path),
-                )
-            ],
+            inputs=[authenticated_manifest_ref(eval_manifest, eval_path, "evaluation_run")],
             params={"experiment": "unit", "scope": "cached_eval_fixture"},
         ),
         root=tmp_path,
@@ -577,12 +563,11 @@ def test_feedback_ablation_recipe_consumes_cached_eval_states_and_records_custod
         component_manifest,
         "rlrmp-feedback-quality-feedback-ablation-status",
     )
-    assert component_payload["analysis_type"] == (
-        dm.FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["feedback_ablation"]
+    assert (
+        component_payload["analysis_type"]
+        == (dm.FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["feedback_ablation"])
     )
-    assert "rlrmp-feedback-quality-feedback-ablation-note" in _artifact_roles(
-        component_manifest
-    )
+    assert "rlrmp-feedback-quality-feedback-ablation-note" in _artifact_roles(component_manifest)
 
 
 def test_feedback_quality_feedback_ablation_training_alias_requires_registered_evaluation(
@@ -742,8 +727,9 @@ def test_feedback_quality_lens_bundle_resource_loads() -> None:
     assert bundle.name == "feedback_quality_lens"
     assert bundle.metadata["bundle_family"] == "rlrmp/feedback_quality_lens"
     stages = {stage.name: stage for stage in bundle.stages}
-    assert stages["evaluation_diagnostics"].analysis_type == (
-        dm.FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["evaluation_diagnostics"]
+    assert (
+        stages["evaluation_diagnostics"].analysis_type
+        == (dm.FEEDBACK_QUALITY_COMPONENT_ANALYSIS_TYPES["evaluation_diagnostics"])
     )
     assert stages["response_norm_plots"].depends_on_roles[0].stage == "perturbation_response"
     assert stages["response_norm_plots"].depends_on_roles[0].role == (
@@ -919,9 +905,7 @@ def test_feedback_quality_directory_group_preserves_rlrmp_artifact_metadata(
     assert len(groups) == 1
     group = groups[0]
     assert group.group_id == "feedback_quality_response_norm_figures"
-    assert group.metadata == {
-        "schema_boundary": "rlrmp-owned feedback-quality diagnostic payload"
-    }
+    assert group.metadata == {"schema_boundary": "rlrmp-owned feedback-quality diagnostic payload"}
     assert len(group.members) == 1
     member = group.members[0]
     assert member.path == figure_path
@@ -948,12 +932,9 @@ def test_gru_postrun_bundle_declares_perturbation_leaf_aggregate_stages() -> Non
     assert stages["perturbation_class_command_input_pulse"].analysis_type == (
         dm.PERTURBATION_CLASS_RESPONSE_ANALYSIS_TYPE
     )
-    assert stages["perturbation_class_command_input_pulse"].depends_on == [
-        "perturbation_bank_eval"
-    ]
+    assert stages["perturbation_class_command_input_pulse"].depends_on == ["perturbation_bank_eval"]
     assert (
-        stages["perturbation_class_command_input_pulse"].local_params["bank_params"]
-        == bank_params
+        stages["perturbation_class_command_input_pulse"].local_params["bank_params"] == bank_params
     )
     assert stages["perturbation_bank_aggregate"].analysis_type == (
         dm.PERTURBATION_BANK_AGGREGATE_ANALYSIS_TYPE
@@ -1042,8 +1023,7 @@ def test_perturbation_class_leaves_aggregate_to_legacy_bank_payload(
         "row-b",
     ]
     assert [
-        row["perturbation_id"]
-        for row in aggregate["runs"]["training-run-a"]["perturbations"]
+        row["perturbation_id"] for row in aggregate["runs"]["training-run-a"]["perturbations"]
     ] == ["row-a", "row-b"]
     assert aggregate["runs"]["training-run-a"]["status_counts"] == {
         "evaluated": 2,
@@ -1306,9 +1286,10 @@ def test_gru_evaluation_recipe_consumes_cached_states_without_legacy_artifacts(
         analysis_manifest, path = execute_analysis_run_spec(spec, root=tmp_path)
 
         payload = _artifact_payload(analysis_manifest, "rlrmp-gru-evaluation-diagnostics")
-        assert payload["runs"]["unit_run"]["behavior"] == cached_payload["runs"][
-            "unit_run"
-        ]["behavior"]
+        assert (
+            payload["runs"]["unit_run"]["behavior"]
+            == cached_payload["runs"]["unit_run"]["behavior"]
+        )
         assert "cached_states" not in payload["runs"]["unit_run"]
         assert _artifact_roles(analysis_manifest) == {"rlrmp-gru-evaluation-diagnostics"}
         assert payload["evaluation_manifest_dependency"]["manifest_id"] == eval_manifest.id

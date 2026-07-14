@@ -3,12 +3,12 @@
 import hashlib
 from pathlib import Path
 
+from feedbax.analysis import authenticated_manifest_ref
 from feedbax.analysis.figures import execute_figure_spec
 from feedbax.contracts.figures import FigureSpec
 from feedbax.contracts.manifest import (
     AnalysisRunManifest,
     AnalysisRunSpec,
-    ParentRef,
     spec_payload,
     write_manifest,
 )
@@ -19,6 +19,8 @@ from rlrmp.figures import register_rlrmp_figure_surfaces
 
 
 BUNDLE_PATH = Path("src/rlrmp/config/analysis_bundles/gru_postrun.yml")
+
+
 def _bundle() -> dict[str, object]:
     return YAML(typ="safe").load(BUNDLE_PATH.read_text(encoding="utf-8"))
 
@@ -60,11 +62,7 @@ def test_gru_postrun_reports_resolve_to_canonical_component_roles() -> None:
         assert report["depends_on"]
         assert "report_render" in {output["role"] for output in report["outputs"]}
 
-    roles = {
-        output["role"]
-        for stage in stages.values()
-        for output in stage.get("outputs", [])
-    }
+    roles = {output["role"] for stage in stages.values() for output in stage.get("outputs", [])}
     assert {
         "rlrmp-bridge-standard-certificate",
         "rlrmp-gru-perturbation-response-manifest",
@@ -125,17 +123,15 @@ def test_gru_postrun_figure_executes_to_hash_verified_manifest(tmp_path: Path) -
         status="completed",
         analysis_spec=spec_payload(
             "AnalysisRunSpec",
-            AnalysisRunSpec(analysis_type="rlrmp.response_norm_comparison").model_dump(
-                mode="json"
-            ),
+            AnalysisRunSpec(analysis_type="rlrmp.response_norm_comparison").model_dump(mode="json"),
         ),
         metadata={"figure_payload": response_norm_payload(rows)},
     )
-    write_manifest(manifest, root=tmp_path)
-    parent = ParentRef(
-        kind="AnalysisRunManifest",
-        id=manifest.id,
-        role="rlrmp-response-norm-comparison-payload",
+    source_manifest_path = write_manifest(manifest, root=tmp_path)
+    parent = authenticated_manifest_ref(
+        manifest,
+        source_manifest_path,
+        "rlrmp-response-norm-comparison-payload",
     )
     rendered, manifest_path = execute_figure_spec(
         figure.model_copy(update={"inputs": [parent]}),

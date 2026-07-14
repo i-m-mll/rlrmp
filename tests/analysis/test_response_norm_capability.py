@@ -6,11 +6,11 @@ import json
 from pathlib import Path
 
 import pytest
+from feedbax.analysis import authenticated_manifest_ref
 from feedbax.analysis.figures import execute_figure_spec
 from feedbax.contracts.manifest import (
     AnalysisRunManifest,
     AnalysisRunSpec,
-    ParentRef,
     spec_payload,
     write_manifest,
 )
@@ -112,32 +112,23 @@ def test_response_norm_spec_executes_intrinsic_facets_with_payload_cardinality(
         status="completed",
         analysis_spec=spec_payload(
             "AnalysisRunSpec",
-            AnalysisRunSpec(analysis_type="rlrmp.response_norm_comparison").model_dump(
-                mode="json"
-            ),
+            AnalysisRunSpec(analysis_type="rlrmp.response_norm_comparison").model_dump(mode="json"),
         ),
         metadata={"figure_payload": payload},
     )
-    write_manifest(manifest, root=tmp_path)
-    spec = response_norm_comparison_spec(name=f"response-norm-{model_count}")
-    spec = spec.model_copy(
-        update={
-            "inputs": [
-                ParentRef(
-                    kind="AnalysisRunManifest",
-                    id=manifest.id,
-                    role="response_norm_analysis",
-                )
-            ]
-        }
+    manifest_path = write_manifest(manifest, root=tmp_path)
+    parent = authenticated_manifest_ref(
+        manifest,
+        manifest_path,
+        "response_norm_analysis",
     )
+    spec = response_norm_comparison_spec(name=f"response-norm-{model_count}")
+    spec = spec.model_copy(update={"inputs": [parent]})
 
     figure_manifest, _path = execute_figure_spec(spec, root=tmp_path)
 
     assert figure_manifest.status == "completed"
-    included = [
-        record for record in figure_manifest.binding_records if record.status == "included"
-    ]
+    included = [record for record in figure_manifest.binding_records if record.status == "included"]
     assert len(included) == 8  # two slots across four intrinsic facet combinations
     render_artifact = next(
         artifact

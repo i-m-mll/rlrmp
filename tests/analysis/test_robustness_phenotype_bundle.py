@@ -6,12 +6,12 @@ import json
 from pathlib import Path
 
 import rlrmp
+from feedbax.analysis import resolve_manifest_input
 from feedbax.analysis.bundles import execute_staged_analysis_bundle, load_analysis_bundle
 from feedbax.contracts.manifest import (
     AnalysisRunManifest,
     AnalysisRunSpec,
     ArtifactRef,
-    load_manifest,
     spec_payload,
     write_manifest,
 )
@@ -60,9 +60,7 @@ def _write_gru_postrun_analysis_manifest(
                     "n_replicates": 2,
                     "gru_mean_selected_validation_full_qrf": 12.0,
                     "shared_rollout_comparator": {
-                        "gru_vs_extlqg": {
-                            "terms": {"total": {"ratio_to_extlqg": 1.25}}
-                        }
+                        "gru_vs_extlqg": {"terms": {"total": {"ratio_to_extlqg": 1.25}}}
                     },
                 }
             ],
@@ -157,7 +155,10 @@ def test_robustness_phenotype_bundle_executes_with_status_lineage(
     report_stage = stages["phenotype_report"]
     report_statuses = {output.role: output.status for output in report_stage.outputs}
     assert report_statuses["report_render"] == "materialized"
-    report_manifest = load_manifest(report_stage.manifest_refs[0].uri)
+    report_manifest = resolve_manifest_input(
+        report_stage.manifest_refs[0],
+        tmp_path / "feedbax_runs",
+    ).manifest
     render_artifact = next(
         artifact for artifact in report_manifest.artifacts if artifact.role == "report_render"
     )
@@ -172,7 +173,7 @@ def test_robustness_phenotype_bundle_executes_with_status_lineage(
     assert archive_stage.outputs[0].status == "skipped"
 
     manifest_ref = phenotype_stage.manifest_refs[0]
-    manifest = load_manifest(manifest_ref.uri)
+    manifest = resolve_manifest_input(manifest_ref, tmp_path / "feedbax_runs").manifest
     roles = {artifact.role for artifact in manifest.artifacts}
     assert roles == {"rlrmp-robustness-phenotype-sidecar"}
     payload_artifact = next(

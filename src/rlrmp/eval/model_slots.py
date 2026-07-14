@@ -75,6 +75,7 @@ class ModelSlotProjection:
     training_manifest_path: Path
     training_manifest_reference: str
     training_manifest_sha256: str
+    training_manifest_size_bytes: int
     run_spec_json: bytes
     n_replicates: int
     provenance: ModelSlotProvenance
@@ -98,6 +99,7 @@ class ModelSlotProjection:
             path=self.training_manifest_path,
             reference=self.training_manifest_reference,
             sha256=self.training_manifest_sha256,
+            size_bytes=self.training_manifest_size_bytes,
         )
 
 
@@ -171,6 +173,7 @@ def project_training_model_slot(
         training_manifest_path=resolved_input.path,
         training_manifest_reference=resolved_input.reference,
         training_manifest_sha256=resolved_input.sha256,
+        training_manifest_size_bytes=resolved_input.size_bytes,
         run_spec_json=canonical_json_bytes(run_spec),
         n_replicates=n_replicates,
         provenance=ModelSlotProvenance(

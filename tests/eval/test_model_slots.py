@@ -262,6 +262,7 @@ def test_completed_manifest_requires_completed_timestamp() -> None:
         path=Path("manifest.json"),
         reference="manifest.json",
         sha256="a" * 64,
+        size_bytes=0,
     )
 
     with pytest.raises(model_slots.ModelSlotProjectionError, match="completed_at"):
@@ -602,7 +603,7 @@ def test_terminal_checkpoint_resolves_only_under_explicit_custody_authority(
         kind="TrainingCheckpointTransactionManifest",
         id=written.manifest.transaction_id,
         role="training_checkpoint_custody",
-        uri=str(written.manifest_path),
+        uri=written.manifest_path.relative_to(checkpoint_root).as_posix(),
         metadata={"manifest_sha256": sha256_bytes(written.manifest_path.read_bytes())},
     )
     manifest = TrainingRunManifest(
@@ -664,6 +665,7 @@ def test_projection_identity_snapshots_are_independent_of_mutable_inputs() -> No
         training_manifest_path=Path("/manifests/training.json"),
         training_manifest_reference="training.json",
         training_manifest_sha256="a" * 64,
+        training_manifest_size_bytes=len(canonical_json_bytes(manifest)),
         run_spec_json=canonical_json_bytes(run_spec),
         n_replicates=1,
         provenance=provenance,

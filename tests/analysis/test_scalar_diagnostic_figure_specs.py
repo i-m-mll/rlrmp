@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from feedbax.analysis import EMPTY_STAGED_EXECUTION_CONTEXT
+from feedbax.analysis import EMPTY_STAGED_EXECUTION_CONTEXT, authenticated_manifest_ref
 from feedbax.analysis.figures import execute_figure_spec
 from feedbax.analysis.specs import AnalysisRunSpec
 from feedbax.contracts.figures import FigureSpec
@@ -31,6 +31,7 @@ SPECS = (
     ("1ab1fef", "adaptive_damage_lambda"),
     ("410d7ac", "delta_v_signature"),
 )
+
 
 def _record(label: str) -> dict[str, object]:
     return {
@@ -62,9 +63,7 @@ def test_registered_analysis_keeps_row_cardinality_data_bound(count: int) -> Non
         ref=ParentRef(kind="EvaluationRunManifest", id=f"eval-{count}", role="evaluation"),
         states={
             "scalar_diagnostic": {
-                "collections": {
-                    f"row-{index}": _record(f"Row {index}") for index in range(count)
-                },
+                "collections": {f"row-{index}": _record(f"Row {index}") for index in range(count)},
                 "headlines": {"row_count": count},
             }
         },
@@ -89,9 +88,7 @@ def test_registered_analysis_keeps_row_cardinality_data_bound(count: int) -> Non
 
     assert len(payload["collections"]) == count
     assert payload["headlines"]["row_count"] == count
-    assert payload["provenance"][f"eval-{count}"]["manifest_kind"] == (
-        "EvaluationRunManifest"
-    )
+    assert payload["provenance"][f"eval-{count}"]["manifest_kind"] == ("EvaluationRunManifest")
 
 
 @pytest.mark.parametrize("issue,topic", SPECS)
@@ -106,17 +103,15 @@ def test_tracked_specs_execute_to_completed_figure_manifests(
         status="completed",
         analysis_spec=spec_payload(
             "AnalysisRunSpec",
-            AnalysisRunSpec(analysis_type=SCALAR_DIAGNOSTIC_ANALYSIS_TYPE).model_dump(
-                mode="json"
-            ),
+            AnalysisRunSpec(analysis_type=SCALAR_DIAGNOSTIC_ANALYSIS_TYPE).model_dump(mode="json"),
         ),
         metadata={"figure_payload": _payload(2)},
     )
-    write_manifest(manifest, root=tmp_path)
+    manifest_path = write_manifest(manifest, root=tmp_path)
     tracked = FigureSpec.model_validate_json(
         (REPO_ROOT / "results" / issue / "figures" / topic / "spec.json").read_text()
     )
-    parent = ParentRef(kind="AnalysisRunManifest", id=manifest.id, role="analysis")
+    parent = authenticated_manifest_ref(manifest, manifest_path, "analysis")
 
     rendered, path = execute_figure_spec(
         tracked.model_copy(update={"inputs": [parent]}),

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from feedbax.analysis import authenticated_manifest_ref
 from feedbax.analysis.figures import execute_figure_spec
 from feedbax.analysis.specs import AnalysisRunSpec
 from feedbax.contracts.figures import FigureSpec
 from feedbax.contracts.manifest import (
     AnalysisRunManifest,
-    ParentRef,
     spec_payload,
     write_manifest,
 )
@@ -22,6 +22,7 @@ from rlrmp.sisu_figures import (
     sisu_figure_payload,
     sisu_spectrum_figure_spec,
 )
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TRACKED_SPEC = REPO_ROOT / "src/rlrmp/config/figure_specs/sisu_spectrum.json"
 
@@ -80,14 +81,12 @@ def test_living_sisu_spec_executes_to_completed_figure_manifest(
         status="completed",
         analysis_spec=spec_payload(
             "AnalysisRunSpec",
-            AnalysisRunSpec(analysis_type=SISU_SPECTRUM_ANALYSIS_TYPE).model_dump(
-                mode="json"
-            ),
+            AnalysisRunSpec(analysis_type=SISU_SPECTRUM_ANALYSIS_TYPE).model_dump(mode="json"),
         ),
         metadata={"figure_payload": payload},
     )
-    write_manifest(analysis, root=tmp_path)
-    parent = ParentRef(kind="AnalysisRunManifest", id=analysis.id, role="sisu_analysis")
+    analysis_path = write_manifest(analysis, root=tmp_path)
+    parent = authenticated_manifest_ref(analysis, analysis_path, "sisu_analysis")
     tracked = FigureSpec.model_validate_json(TRACKED_SPEC.read_text(encoding="utf-8"))
 
     manifest, manifest_path = execute_figure_spec(

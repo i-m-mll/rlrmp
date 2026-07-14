@@ -5,12 +5,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from feedbax.analysis import authenticated_manifest_ref
 from feedbax.analysis.figures import execute_figure_spec
 from feedbax.contracts.figures import FigureSpec
 from feedbax.contracts.manifest import (
     AnalysisRunManifest,
     AnalysisRunSpec,
-    ParentRef,
     spec_payload,
     write_manifest,
 )
@@ -137,35 +137,26 @@ def test_all_five_tracked_specs_execute_to_completed_figure_manifests(
         status="completed",
         analysis_spec=spec_payload(
             "AnalysisRunSpec",
-            AnalysisRunSpec(analysis_type="rlrmp.standard_matrix_payload").model_dump(
-                mode="json"
-            ),
+            AnalysisRunSpec(analysis_type="rlrmp.standard_matrix_payload").model_dump(mode="json"),
         ),
         metadata={"figure_payload": payload},
     )
-    write_manifest(analysis_manifest, root=tmp_path)
+    analysis_path = write_manifest(analysis_manifest, root=tmp_path)
+    parent = authenticated_manifest_ref(
+        analysis_manifest,
+        analysis_path,
+        "standard_matrix_payload",
+    )
 
     for topic in TOPICS:
         spec = FigureSpec.model_validate(_json(FIGURE_ROOT / topic / "spec.json"))
-        spec = spec.model_copy(
-            update={
-                "inputs": [
-                    ParentRef(
-                        kind="AnalysisRunManifest",
-                        id=analysis_manifest.id,
-                        role="standard_matrix_payload",
-                    )
-                ]
-            }
-        )
+        spec = spec.model_copy(update={"inputs": [parent]})
         figure_manifest, manifest_path = execute_figure_spec(spec, root=tmp_path)
 
         assert figure_manifest.status == "completed"
         assert manifest_path.is_file()
         render_artifacts = [
-            artifact
-            for artifact in figure_manifest.artifacts
-            if artifact.role == "figure_render"
+            artifact for artifact in figure_manifest.artifacts if artifact.role == "figure_render"
         ]
         assert render_artifacts
         assert all(artifact.uri and Path(artifact.uri).is_file() for artifact in render_artifacts)

@@ -973,6 +973,20 @@ def _execute_native_training_run_spec(
             emitter.close()
 
 
+def _feedbax_manifest_root() -> Path:
+    """Return the physical manifest-store authority passed to Feedbax.
+
+    Feature worktrees share ``_artifacts`` through a symlink. Feedbax secure
+    storage deliberately rejects symlinks in an authority path, so resolve the
+    configured shared root before crossing that boundary.
+    """
+
+    configured = Path(os.environ.get("FEEDBAX_RUNS_DIR", "_artifacts/feedbax_runs"))
+    if not configured.is_absolute():
+        configured = REPO_ROOT / configured
+    return configured.resolve()
+
+
 def _native_progress_logger() -> logging.Logger:
     """Return a per-run INFO logger whose stdout handler flushes each BATCH line."""
     progress_logger = logging.Logger(f"{__name__}.native_progress", level=logging.INFO)
@@ -1036,7 +1050,7 @@ def _run_cs_supervised_native_from_context(
         run_id=_cs_supervised_native_run_id(args, run_spec_path),
         initial_slots=initial_slots,
         kernel_context={RLRMP_RUNTIME_CONTEXT_KEY: runtime},
-        manifest_root=REPO_ROOT / "_artifacts" / "feedbax_runs",
+        manifest_root=_feedbax_manifest_root(),
         checkpoint_root=checkpoint_root,
         loss_service=CsSupervisedExternalObjectiveLossService(),
         training_spec_payload=run_spec.get(RLRMP_RUN_SPEC_PAYLOAD_KEY),
@@ -1480,7 +1494,7 @@ def _run_adaptive_epsilon_native_from_context(
         run_id=_cs_supervised_native_run_id(args, run_spec_path),
         initial_slots=initial_slots,
         kernel_context={RLRMP_RUNTIME_CONTEXT_KEY: runtime},
-        manifest_root=REPO_ROOT / "_artifacts" / "feedbax_runs",
+        manifest_root=_feedbax_manifest_root(),
         checkpoint_root=checkpoint_root,
         loss_service=AdaptiveEpsilonExternalObjectiveLossService(),
         training_spec_payload=run_spec.get(RLRMP_RUN_SPEC_PAYLOAD_KEY),
@@ -1569,7 +1583,7 @@ def _run_policy_adversary_native_from_context(
         run_id=_cs_supervised_native_run_id(args, run_spec_path),
         initial_slots=initial_slots,
         kernel_context={RLRMP_RUNTIME_CONTEXT_KEY: runtime},
-        manifest_root=REPO_ROOT / "_artifacts" / "feedbax_runs",
+        manifest_root=_feedbax_manifest_root(),
         checkpoint_root=checkpoint_root,
         loss_service=PolicyAdversaryExternalObjectiveLossService(),
         training_spec_payload=run_spec.get(RLRMP_RUN_SPEC_PAYLOAD_KEY),

@@ -5,10 +5,11 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+from feedbax.analysis import authenticated_manifest_ref
 from feedbax.analysis.figures import execute_figure_spec
 from feedbax.analysis.specs import AnalysisRunSpec
 from feedbax.contracts.figures import FigureSpec
-from feedbax.contracts.manifest import AnalysisRunManifest, ParentRef, spec_payload, write_manifest
+from feedbax.contracts.manifest import AnalysisRunManifest, spec_payload, write_manifest
 import pytest
 
 from rlrmp.figures import register_rlrmp_figure_surfaces
@@ -22,6 +23,8 @@ SPECS = (
     ("c92ebd8", "pgd_ofb_budget_moderate_nominal_velocity_profiles"),
     ("d55c5f0", "soft_pgd_nominal_velocity_profiles"),
 )
+
+
 def _figure_payload(row_count: int, replicate_count: int) -> dict[str, object]:
     facets = {}
     for row_index in range(row_count):
@@ -35,8 +38,18 @@ def _figure_payload(row_count: int, replicate_count: int) -> dict[str, object]:
         ]
         series.extend(
             [
-                {"label": "6D extLQG", "color": "#111827", "line_dash": "dash", "profile": {"time": [0.0, 0.01], "mean": [0.0, 0.15]}},
-                {"label": "6D output-feedback H-infinity", "color": "#dc2626", "line_dash": "dot", "profile": {"time": [0.0, 0.01], "mean": [0.0, 0.18]}},
+                {
+                    "label": "6D extLQG",
+                    "color": "#111827",
+                    "line_dash": "dash",
+                    "profile": {"time": [0.0, 0.01], "mean": [0.0, 0.15]},
+                },
+                {
+                    "label": "6D output-feedback H-infinity",
+                    "color": "#dc2626",
+                    "line_dash": "dot",
+                    "profile": {"time": [0.0, 0.01], "mean": [0.0, 0.18]},
+                },
             ]
         )
         facets[f"row-{row_index}"] = {
@@ -63,8 +76,8 @@ def test_all_specs_execute_with_payload_bound_replicates(
         ),
         metadata={"figure_payload": payload},
     )
-    write_manifest(analysis, root=tmp_path)
-    parent = ParentRef(kind="AnalysisRunManifest", id=analysis.id, role="profile_analysis")
+    analysis_path = write_manifest(analysis, root=tmp_path)
+    parent = authenticated_manifest_ref(analysis, analysis_path, "profile_analysis")
     for issue, topic in SPECS:
         tracked = FigureSpec.model_validate_json(
             (REPO_ROOT / "results" / issue / "figures" / topic / "spec.json").read_text()

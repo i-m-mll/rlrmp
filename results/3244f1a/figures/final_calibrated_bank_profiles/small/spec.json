@@ -1,6 +1,6 @@
 {
   "schema_id": "feedbax.spec.figure",
-  "schema_version": "feedbax.spec.figure.v1",
+  "schema_version": "feedbax.spec.figure.v2",
   "name": "calibrated-bank-small-profiles",
   "template": "rlrmp.response_norm_comparison",
   "slot_bindings": {

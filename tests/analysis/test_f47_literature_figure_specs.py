@@ -6,12 +6,12 @@ import hashlib
 import json
 from pathlib import Path
 
+from feedbax.analysis import authenticated_manifest_ref
 from feedbax.analysis.figures import execute_figure_spec
 from feedbax.analysis.specs import AnalysisRunSpec
 from feedbax.contracts.figures import FigureSpec
 from feedbax.contracts.manifest import (
     AnalysisRunManifest,
-    ParentRef,
     spec_payload,
     write_manifest,
 )
@@ -32,6 +32,8 @@ TOPICS = {
     "training_loss": "rlrmp.history_comparison",
     "training_loss_per_term": "rlrmp.history_comparison",
 }
+
+
 def _json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -72,12 +74,8 @@ def test_all_six_tracked_specs_execute_to_completed_figure_manifests(
         ),
         metadata={"figure_payload": payload},
     )
-    write_manifest(analysis, root=tmp_path)
-    parent = ParentRef(
-        kind="AnalysisRunManifest",
-        id=analysis.id,
-        role="standard_matrix_analysis",
-    )
+    analysis_path = write_manifest(analysis, root=tmp_path)
+    parent = authenticated_manifest_ref(analysis, analysis_path, "standard_matrix_analysis")
 
     manifests = []
     for topic in TOPICS:

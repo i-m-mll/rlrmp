@@ -1,6 +1,6 @@
 {
   "schema_id": "feedbax.spec.figure",
-  "schema_version": "feedbax.spec.figure.v1",
+  "schema_version": "feedbax.spec.figure.v2",
   "name": "b399efc-training-loss",
   "template": "rlrmp.history_comparison",
   "slot_bindings": {"series": {"name": "training-loss", "constructor": "rlrmp.line_series", "data": {"payload": {"item": "facet_values", "path": "condition"}}}},

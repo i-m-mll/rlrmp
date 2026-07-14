@@ -54,6 +54,7 @@ from rlrmp.train.cs_nominal_gru import (
 )
 from rlrmp.runtime.training_run_specs import feedbax_training_run_spec_from_payload
 from rlrmp.data_products.broad_epsilon import load_pgd_radius_source
+import rlrmp.train.executor.cs_supervised as cs_supervised_executor
 from rlrmp.train.executor.cs_supervised import build_execution_context_from_spec
 from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_ADAM,
@@ -133,6 +134,34 @@ def _args(**overrides) -> argparse.Namespace:
     values.update(compact_run_spec=False, verify_resume_only=False)
     values.update(overrides)
     return argparse.Namespace(**values)
+
+
+def test_feedbax_manifest_root_resolves_shared_artifacts_symlink(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shared_artifacts = tmp_path / "shared-artifacts"
+    shared_artifacts.mkdir()
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    (worktree / "_artifacts").symlink_to(shared_artifacts, target_is_directory=True)
+    monkeypatch.setattr(cs_supervised_executor, "REPO_ROOT", worktree)
+    monkeypatch.setenv(
+        "FEEDBAX_RUNS_DIR",
+        str(worktree / "_artifacts" / "feedbax_runs"),
+    )
+
+    assert cs_supervised_executor._feedbax_manifest_root() == (shared_artifacts / "feedbax_runs")
+
+
+@pytest.fixture
+def isolated_feedbax_manifest_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Path:
+    manifest_root = tmp_path / "feedbax-runs"
+    monkeypatch.setenv("FEEDBAX_RUNS_DIR", str(manifest_root))
+    return manifest_root
 
 
 def _where_train() -> dict[int, object]:
@@ -2595,7 +2624,10 @@ def test_spec_file_execution_context_uses_validated_payload(tmp_path: Path) -> N
     assert context.hps.model.hidden_size == 4
 
 
-def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Path) -> None:
+def test_full_training_smoke_writes_checkpoint_and_final_artifacts(
+    tmp_path: Path,
+    isolated_feedbax_manifest_root: Path,
+) -> None:
     output_dir = tmp_path / "bulk"
     spec_dir = tmp_path / "spec"
     args = _args(
@@ -2670,7 +2702,10 @@ def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Pat
     assert commits == 3
 
 
-def test_policy_adversary_full_training_uses_checkpoint_sized_chunks(tmp_path: Path) -> None:
+def test_policy_adversary_full_training_uses_checkpoint_sized_chunks(
+    tmp_path: Path,
+    isolated_feedbax_manifest_root: Path,
+) -> None:
     output_dir = tmp_path / "bulk"
     spec_dir = tmp_path / "spec"
     args = _args(
@@ -2725,6 +2760,7 @@ def test_policy_adversary_full_training_uses_checkpoint_sized_chunks(tmp_path: P
 
 def test_finite_affine_policy_adversary_full_training_persists_adam_state(
     tmp_path: Path,
+    isolated_feedbax_manifest_root: Path,
 ) -> None:
     output_dir = tmp_path / "bulk"
     spec_dir = tmp_path / "spec"
@@ -2780,7 +2816,10 @@ def test_finite_affine_policy_adversary_full_training_persists_adam_state(
     assert diagnostics_manifest["arrays"]["policy_adversary_diagnostic_sampled"]["shape"] == [2]
 
 
-def test_full_training_stop_after_batches_resumes_to_full_count(tmp_path: Path) -> None:
+def test_full_training_stop_after_batches_resumes_to_full_count(
+    tmp_path: Path,
+    isolated_feedbax_manifest_root: Path,
+) -> None:
     output_dir = tmp_path / "bulk"
     spec_dir = tmp_path / "spec"
     args = _args(
@@ -2878,7 +2917,10 @@ def test_full_training_stop_after_batches_resumes_to_full_count(tmp_path: Path) 
         assert np.isfinite(diagnostics["validation_loss__total"]).all()
 
 
-def test_cs_supervised_full_training_uses_native_executor(tmp_path: Path) -> None:
+def test_cs_supervised_full_training_uses_native_executor(
+    tmp_path: Path,
+    isolated_feedbax_manifest_root: Path,
+) -> None:
     native_dir = tmp_path / "native"
     common = dict(
         n_train_batches=2,
@@ -2921,7 +2963,10 @@ def test_cs_supervised_full_training_uses_native_executor(tmp_path: Path) -> Non
     assert Path(native_result["training_manifest_path"]).exists()
 
 
-def test_cs_supervised_native_same_length_resume_equivalence(tmp_path: Path) -> None:
+def test_cs_supervised_native_same_length_resume_equivalence(
+    tmp_path: Path,
+    isolated_feedbax_manifest_root: Path,
+) -> None:
     full_dir = tmp_path / "full"
     resumed_dir = tmp_path / "resumed"
     common = dict(

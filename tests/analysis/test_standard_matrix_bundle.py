@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 import rlrmp
+from feedbax.analysis import resolve_manifest_input
 from feedbax.analysis.bundles import (
     AnalysisBundleSpec,
     execute_staged_analysis_bundle,
@@ -21,7 +22,6 @@ from feedbax.contracts.manifest import (
     EvaluationRunSpec,
     FigureManifest,
     ParentRef,
-    load_manifest,
 )
 from feedbax.plugins.registry import ExperimentRegistry
 from feedbax.plot.constructors import get_figure_constructor, get_figure_template
@@ -49,8 +49,7 @@ def _load_standard_matrix_bundle(registry: ExperimentRegistry) -> AnalysisBundle
     )
 
 
-def test_standard_matrix_bundle_loads_expands_and_executes_lightweight_routed_path(
-) -> None:
+def test_standard_matrix_bundle_loads_expands_and_executes_lightweight_routed_path() -> None:
     registry = _registry()
     bundle = _load_standard_matrix_bundle(registry)
     assert not bundle.templates
@@ -173,7 +172,7 @@ def test_registered_standard_matrix_recipe_executes_profile_with_routing(
     assert forward_stage.status == "materialized"
     figure_ref = forward_stage.manifest_refs[0]
     assert figure_ref.kind == "FigureManifest"
-    figure_manifest = load_manifest(Path(figure_ref.uri))
+    figure_manifest = resolve_manifest_input(figure_ref, tmp_path).manifest
     assert isinstance(figure_manifest, FigureManifest)
     assert figure_manifest.status == "completed"
     assert figure_manifest.figure_spec.inline["template"] == "rlrmp.profile_comparison"
@@ -263,7 +262,10 @@ def test_standard_matrix_default_notes_path_is_repo_root_stable(
 ) -> None:
     monkeypatch.chdir(tmp_path)
 
-    assert _notes_path(
-        None,  # type: ignore[arg-type]
-        {"figure_routing": {"experiment": "5c302e2"}},
-    ) == REPO_ROOT / "results" / "5c302e2" / "notes" / "matrix_results.md"
+    assert (
+        _notes_path(
+            None,  # type: ignore[arg-type]
+            {"figure_routing": {"experiment": "5c302e2"}},
+        )
+        == REPO_ROOT / "results" / "5c302e2" / "notes" / "matrix_results.md"
+    )
