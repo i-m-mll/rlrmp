@@ -30,6 +30,10 @@ from feedbax.persistence import (
 )
 from feedbax.training import TrainingDiagnostics
 from rlrmp.analysis import training_diagnostics as td
+from rlrmp.train.orchestration_manifest_index import (
+    OrchestrationTrainingManifestMetadata,
+    OrchestrationTrainingManifestRef,
+)
 
 
 def _registry() -> ExperimentRegistry:
@@ -239,6 +243,151 @@ def _provider_backed_native_fixture(
     return manifest, manifest_path, diagnostics_path, mapped, provider
 
 
+def _historical_exact_parent_fixture(
+    tmp_path: Path,
+) -> tuple[
+    TrainingRunManifest,
+    Path,
+    ArtifactRef,
+    ParentRef,
+    ImmutableArtifactBlobProvider,
+]:
+    """Build an M1-shaped immutable parent whose archived manifest lacks run_set_id."""
+    transient = tmp_path / "transient-orchestration" / "collected" / "m1-row"
+    transient.mkdir(parents=True)
+    run_id = "m1-historical-planned-run"
+    diagnostics = TrainingDiagnostics(
+        manifest_id=run_id,
+        run_id=run_id,
+        terminal_status="completed",
+        completed_batches=100,
+        segment_completed_batches=100,
+        cumulative_completed_batches=100,
+        seeds=[0],
+        lr_trace=[{"step": 0, "learning_rate": 3e-4}, {"step": 100, "learning_rate": 1e-4}],
+        checkpoint_coordinates=[],
+        checkpoint_transactions=[],
+        metadata={"historical_family": "four-m1"},
+    )
+    diagnostics_bytes = (diagnostics.model_dump_json(indent=2) + "\n").encode()
+    diagnostics_path = transient / "training-diagnostics.json"
+    diagnostics_path.write_bytes(diagnostics_bytes)
+    diagnostics_sha = sha256(diagnostics_bytes).hexdigest()
+    authoritative = ArtifactRef(
+        role="training_diagnostics",
+        logical_name="training-diagnostics.json",
+        sha256=diagnostics_sha,
+        size_bytes=len(diagnostics_bytes),
+        uri=str(diagnostics_path),
+        media_type="application/json",
+        metadata={
+            "schema_id": td.NATIVE_DIAGNOSTICS_SCHEMA_ID,
+            "schema_version": td.NATIVE_DIAGNOSTICS_SCHEMA_VERSION,
+        },
+    )
+    manifest = TrainingRunManifest(
+        id=run_id,
+        job_id=run_id,
+        run_set_id=None,
+        status="completed",
+        completed_batches=100,
+        artifacts=[authoritative],
+        metadata={
+            "training_row_provenance": {
+                "schema_id": "feedbax.spec.training_row_provenance",
+                "schema_version": "feedbax.spec.training_row_provenance.v2",
+                "row_id": "m1-row",
+                "row_index": 0,
+                "planned_run_id": run_id,
+                "authored_payload_hash": "1" * 64,
+                "lowered_execution_payload_hash": "2" * 64,
+                "seed": 0,
+                "axis_coordinates": {"model": "m1"},
+                "overrides": [],
+                "lowerer_identities": [],
+            }
+        },
+    )
+    manifest_bytes = (manifest.model_dump_json(indent=2) + "\n").encode()
+    manifest_path = transient / "training-run-manifest.json"
+    manifest_path.write_bytes(manifest_bytes)
+
+    provider = open_immutable_artifact_blob_provider(
+        ImmutableArtifactBlobProviderSpec(),
+        explicit_root=tmp_path / "immutable-custody",
+    )
+    mapped = provider.store_bytes(
+        diagnostics_bytes,
+        role=authoritative.role,
+        logical_name=authoritative.logical_name,
+        media_type=authoritative.media_type,
+        metadata={
+            **authoritative.metadata,
+            "training_manifest_id": manifest.id,
+            "run_set_id": "historical-m1-run-set",
+            "row_id": "m1-row",
+            "planned_run_id": run_id,
+            "run_id": run_id,
+        },
+    )
+    manifest_custody = provider.store_bytes(
+        manifest_bytes,
+        role="training_run_manifest",
+        logical_name=manifest.id,
+        media_type="application/json",
+    )
+    exact_ref = OrchestrationTrainingManifestRef(
+        id=manifest.id,
+        uri=manifest_custody.uri,
+        metadata=OrchestrationTrainingManifestMetadata(
+            manifest_sha256=manifest_custody.sha256,
+            size_bytes=manifest_custody.size_bytes,
+            run_set_id="historical-m1-run-set",
+            row_id="m1-row",
+            certificate_sha256="3" * 64,
+            planned_run_id=run_id,
+        ),
+    ).to_parent_ref()
+    return manifest, manifest_path, mapped, exact_ref, provider
+
+
+def _manifest_artifact_for_ref(ref: ParentRef) -> ArtifactRef:
+    return ArtifactRef(
+        role="training_run_manifest",
+        logical_name=ref.id,
+        artifact_id=ref.uri,
+        sha256=ref.metadata["manifest_sha256"],
+        size_bytes=ref.metadata["size_bytes"],
+        media_type="application/json",
+        storage_backend="feedbax-local",
+        uri=ref.uri,
+    )
+
+
+def _rebind_exact_ref_to_manifest(
+    manifest: TrainingRunManifest,
+    ref: ParentRef,
+    provider: ImmutableArtifactBlobProvider,
+) -> ParentRef:
+    payload = (manifest.model_dump_json(indent=2) + "\n").encode()
+    stored = provider.store_bytes(
+        payload,
+        role="training_run_manifest",
+        logical_name=manifest.id,
+        media_type="application/json",
+    )
+    return ref.model_copy(
+        update={
+            "uri": stored.uri,
+            "metadata": {
+                **ref.metadata,
+                "manifest_sha256": stored.sha256,
+                "size_bytes": stored.size_bytes,
+            },
+        }
+    )
+
+
 def test_training_diagnostics_bundle_executes_manifest_backed_summary(
     tmp_path: Path,
     monkeypatch,
@@ -383,6 +532,254 @@ def test_provider_backed_diagnostics_survive_transient_run_set_deletion(
         mode="json", exclude_none=True
     )
     assert resolver_calls == [mapped, mapped]
+
+
+def test_historical_provider_backed_diagnostics_use_exact_parent_after_deletion(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    manifest, manifest_path, mapped, exact_ref, provider = _historical_exact_parent_fixture(
+        tmp_path
+    )
+    baseline = td._summarize_native_diagnostics(
+        manifest=manifest,
+        manifest_path=manifest_path,
+        artifact=manifest.artifacts[0],
+        root=tmp_path,
+    )
+    shutil.rmtree(tmp_path / "transient-orchestration")
+    assert not manifest_path.exists()
+    monkeypatch.setattr(
+        td,
+        "_artifact_path",
+        lambda *_args, **_kwargs: pytest.fail("exact provider path must not resolve paths"),
+    )
+    monkeypatch.setattr(
+        td,
+        "_resolve_repo_path",
+        lambda *_args, **_kwargs: pytest.fail("exact provider path must not resolve paths"),
+    )
+    resolver_calls: list[ArtifactRef] = []
+
+    def resolve(artifact: ArtifactRef) -> bytes:
+        resolver_calls.append(artifact)
+        return provider.get_bytes(artifact)
+
+    summary = td.summarize_provider_backed_training_diagnostics(
+        manifest=manifest,
+        manifest_path=manifest_path,
+        mapped_artifact=mapped,
+        bytes_resolver=resolve,
+        training_manifest_ref=exact_ref,
+    )
+
+    assert manifest.run_set_id is None
+    assert summary["training_diagnostics"] == baseline["training_diagnostics"]
+    assert [ref.role for ref in resolver_calls] == ["training_run_manifest", "training_diagnostics"]
+    assert [ref.uri for ref in resolver_calls] == [exact_ref.uri, mapped.uri]
+    assert all(ref.uri == f"artifact://sha256/{ref.sha256}" for ref in resolver_calls)
+
+
+def test_historical_provider_backed_diagnostics_require_exact_parent(
+    tmp_path: Path,
+) -> None:
+    manifest, manifest_path, mapped, _exact_ref, _provider = _historical_exact_parent_fixture(
+        tmp_path
+    )
+    with pytest.raises(ValueError, match="native run_set_id or an exact training manifest ref"):
+        td.summarize_provider_backed_training_diagnostics(
+            manifest=manifest,
+            manifest_path=manifest_path,
+            mapped_artifact=mapped,
+            bytes_resolver=lambda _artifact: pytest.fail("resolver must not be called"),
+        )
+
+
+def test_historical_exact_parent_requires_complete_status_and_pass_metadata(
+    tmp_path: Path,
+) -> None:
+    manifest, manifest_path, mapped, exact_ref, _provider = _historical_exact_parent_fixture(
+        tmp_path
+    )
+    metadata = dict(exact_ref.metadata)
+    metadata.pop("conformance_overall")
+    incomplete = exact_ref.model_copy(update={"metadata": metadata})
+    with pytest.raises(ValueError, match="complete authenticated metadata: conformance_overall"):
+        td.summarize_provider_backed_training_diagnostics(
+            manifest=manifest,
+            manifest_path=manifest_path,
+            mapped_artifact=mapped,
+            bytes_resolver=lambda _artifact: pytest.fail("resolver must not be called"),
+            training_manifest_ref=incomplete,
+        )
+
+
+@pytest.mark.parametrize(
+    ("drift", "match"),
+    [
+        ("kind", "TrainingRunManifest"),
+        ("role", "training_run"),
+        ("uri", "canonical payload identity"),
+        ("id", "identity must bind"),
+        ("manifest_sha256", "sha256 mismatch"),
+        ("size_bytes", "size mismatch"),
+        ("run_set_id", "run_set_id does not match parent manifest"),
+        ("row_id", "row_id disagrees with manifest provenance"),
+        ("planned_run_id", "identity must bind"),
+        ("manifest_status", "completed"),
+    ],
+)
+def test_historical_exact_parent_tamper_fails_before_diagnostics_resolution(
+    tmp_path: Path,
+    drift: str,
+    match: str,
+) -> None:
+    manifest, manifest_path, mapped, exact_ref, provider = _historical_exact_parent_fixture(
+        tmp_path
+    )
+    original_exact_ref = exact_ref
+    if drift in {"kind", "role", "uri", "id"}:
+        values = {
+            "kind": "OtherManifest",
+            "role": "other",
+            "uri": f"artifact://sha256/{'4' * 64}",
+            "id": "another-manifest",
+        }
+        exact_ref = exact_ref.model_copy(update={drift: values[drift]})
+    else:
+        metadata = dict(exact_ref.metadata)
+        values = {
+            "manifest_sha256": "4" * 64,
+            "size_bytes": metadata["size_bytes"] + 1,
+            "run_set_id": "wrong-run-set",
+            "row_id": "wrong-row",
+            "planned_run_id": "wrong-planned-run",
+            "manifest_status": "failed",
+        }
+        metadata[drift] = values[drift]
+        if drift == "manifest_sha256":
+            exact_ref = exact_ref.model_copy(
+                update={
+                    "uri": f"artifact://sha256/{values[drift]}",
+                    "metadata": metadata,
+                }
+            )
+        else:
+            exact_ref = exact_ref.model_copy(update={"metadata": metadata})
+    resolver_calls: list[ArtifactRef] = []
+
+    def resolve(artifact: ArtifactRef) -> bytes:
+        resolver_calls.append(artifact)
+        if artifact.role == "training_run_manifest":
+            # Return the authoritative bytes directly so ref hash/size checks remain local.
+            return provider.get_bytes(_manifest_artifact_for_ref(original_exact_ref))
+        return provider.get_bytes(artifact)
+
+    with pytest.raises(ValueError, match=match):
+        td.summarize_provider_backed_training_diagnostics(
+            manifest=manifest,
+            manifest_path=manifest_path,
+            mapped_artifact=mapped,
+            bytes_resolver=resolve,
+            training_manifest_ref=exact_ref,
+        )
+
+    assert mapped not in resolver_calls
+
+
+def test_historical_exact_parent_rejects_bytes_for_another_manifest(
+    tmp_path: Path,
+) -> None:
+    manifest, manifest_path, mapped, exact_ref, provider = _historical_exact_parent_fixture(
+        tmp_path
+    )
+    another_manifest = manifest.model_copy(
+        update={
+            "id": "another-manifest",
+            "job_id": "another-manifest",
+            "metadata": {
+                **manifest.metadata,
+                "training_row_provenance": {
+                    **manifest.metadata["training_row_provenance"],
+                    "planned_run_id": "another-manifest",
+                },
+            },
+        }
+    )
+    another_payload = (another_manifest.model_dump_json(indent=2) + "\n").encode()
+    another_stored = provider.store_bytes(
+        another_payload,
+        role="training_run_manifest",
+        logical_name=another_manifest.id,
+        media_type="application/json",
+    )
+    exact_ref = exact_ref.model_copy(
+        update={
+            "uri": another_stored.uri,
+            "metadata": {
+                **exact_ref.metadata,
+                "manifest_sha256": another_stored.sha256,
+                "size_bytes": another_stored.size_bytes,
+            },
+        }
+    )
+    resolver_calls: list[ArtifactRef] = []
+
+    def resolve(artifact: ArtifactRef) -> bytes:
+        resolver_calls.append(artifact)
+        return provider.get_bytes(artifact)
+
+    with pytest.raises(ValueError, match="another manifest"):
+        td.summarize_provider_backed_training_diagnostics(
+            manifest=manifest,
+            manifest_path=manifest_path,
+            mapped_artifact=mapped,
+            bytes_resolver=resolve,
+            training_manifest_ref=exact_ref,
+        )
+    assert mapped not in resolver_calls
+
+
+@pytest.mark.parametrize("drift", ["native_run_set", "job_id", "row_provenance"])
+def test_historical_exact_parent_rejects_manifest_identity_disagreement(
+    tmp_path: Path,
+    drift: str,
+) -> None:
+    manifest, manifest_path, mapped, exact_ref, provider = _historical_exact_parent_fixture(
+        tmp_path
+    )
+    if drift == "native_run_set":
+        manifest = manifest.model_copy(update={"run_set_id": "different-native-run-set"})
+    elif drift == "job_id":
+        manifest = manifest.model_copy(update={"job_id": "different-job"})
+    else:
+        manifest = manifest.model_copy(
+            update={
+                "metadata": {
+                    **manifest.metadata,
+                    "training_row_provenance": {
+                        **manifest.metadata["training_row_provenance"],
+                        "row_id": "different-row",
+                    },
+                }
+            }
+        )
+    exact_ref = _rebind_exact_ref_to_manifest(manifest, exact_ref, provider)
+    resolver_calls: list[ArtifactRef] = []
+
+    def resolve(artifact: ArtifactRef) -> bytes:
+        resolver_calls.append(artifact)
+        return provider.get_bytes(artifact)
+
+    with pytest.raises(ValueError, match="disagrees|identity must bind"):
+        td.summarize_provider_backed_training_diagnostics(
+            manifest=manifest,
+            manifest_path=manifest_path,
+            mapped_artifact=mapped,
+            bytes_resolver=resolve,
+            training_manifest_ref=exact_ref,
+        )
+    assert mapped not in resolver_calls
 
 
 @pytest.mark.parametrize(
