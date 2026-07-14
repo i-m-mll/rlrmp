@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -17,6 +17,7 @@ from feedbax.analysis.specs import register_analysis_recipe
 from feedbax.contracts.manifest import ArtifactRef, TrainingRunManifest
 from feedbax.analysis.types import AnalysisInputData
 from feedbax.config.namespace import TreeNamespace
+from feedbax.persistence import IMMUTABLE_ARTIFACT_BLOB_STORAGE_BACKEND
 from feedbax.training import TrainingDiagnostics
 
 from rlrmp.io import read_json, update_marked_section
@@ -27,6 +28,9 @@ TRAINING_DIAGNOSTICS_ANALYSIS_TYPE = "rlrmp.training_diagnostics_summary"
 TRAINING_DIAGNOSTICS_SCHEMA_VERSION = "rlrmp.training_diagnostics_summary.v1"
 NATIVE_DIAGNOSTICS_SCHEMA_ID = "feedbax.manifest.training_diagnostics"
 NATIVE_DIAGNOSTICS_SCHEMA_VERSION = "feedbax.manifest.training_diagnostics.v1"
+ARTIFACT_ID_PREFIX = "artifact://sha256/"
+
+ArtifactBytesResolver = Callable[[ArtifactRef], bytes]
 
 DEFAULT_METRICS = (
     "train_loss__total",
@@ -347,6 +351,62 @@ def _summarize_native_diagnostics(
     root: Path,
 ) -> dict[str, Any]:
     """Validate and summarize a native Feedbax ``TrainingDiagnostics`` artifact."""
+    _validate_native_artifact_contract(manifest, artifact)
+    diagnostics_path = _artifact_path(artifact, root=root)
+    if not diagnostics_path.is_file():
+        raise FileNotFoundError(
+            f"Native training diagnostics artifact does not exist: {diagnostics_path}"
+        )
+    payload = diagnostics_path.read_bytes()
+    return _summarize_native_diagnostics_payload(
+        manifest=manifest,
+        manifest_path=manifest_path,
+        artifact=artifact,
+        payload=payload,
+        output_dir=str(diagnostics_path.parent),
+    )
+
+
+def summarize_provider_backed_training_diagnostics(
+    *,
+    manifest: TrainingRunManifest,
+    manifest_path: Path | None,
+    mapped_artifact: ArtifactRef,
+    bytes_resolver: ArtifactBytesResolver,
+) -> dict[str, Any]:
+    """Summarize diagnostics resolved from explicit immutable artifact custody.
+
+    The manifest's diagnostics reference remains authoritative. ``mapped_artifact``
+    is only resolution evidence and must preserve that reference's material and
+    parent identity before the resolver is called.
+    """
+    artifact = _unique_artifact(manifest, roles=("training_diagnostics",))
+    if artifact is None:
+        raise ValueError(
+            f"Training manifest {manifest.id!r} has no typed training diagnostics artifact"
+        )
+    _validate_native_artifact_contract(manifest, artifact)
+    _validate_mapped_diagnostics_artifact(
+        manifest=manifest,
+        authoritative=artifact,
+        mapped=mapped_artifact,
+    )
+    payload = bytes_resolver(mapped_artifact)
+    if not isinstance(payload, bytes):
+        raise TypeError("Training diagnostics bytes resolver must return bytes")
+    return _summarize_native_diagnostics_payload(
+        manifest=manifest,
+        manifest_path=manifest_path,
+        artifact=artifact,
+        payload=payload,
+        output_dir=str(manifest_path.parent) if manifest_path is not None else "",
+    )
+
+
+def _validate_native_artifact_contract(
+    manifest: TrainingRunManifest,
+    artifact: ArtifactRef,
+) -> None:
     schema_id = artifact.metadata.get("schema_id")
     schema_version = artifact.metadata.get("schema_version")
     if artifact.media_type != "application/json":
@@ -365,28 +425,31 @@ def _summarize_native_diagnostics(
             f"schema_version {schema_version!r}; expected "
             f"{NATIVE_DIAGNOSTICS_SCHEMA_VERSION!r}"
         )
-
-    diagnostics_path = _artifact_path(artifact, root=root)
-    if not diagnostics_path.is_file():
-        raise FileNotFoundError(
-            f"Native training diagnostics artifact does not exist: {diagnostics_path}"
-        )
-    payload = diagnostics_path.read_bytes()
     if artifact.size_bytes is None:
         raise ValueError(
             f"Native training diagnostics artifact for {manifest.id!r} is missing "
             "required size_bytes"
         )
+    if artifact.sha256 is None:
+        raise ValueError(
+            f"Native training diagnostics artifact for {manifest.id!r} is missing required sha256"
+        )
+
+
+def _summarize_native_diagnostics_payload(
+    *,
+    manifest: TrainingRunManifest,
+    manifest_path: Path | None,
+    artifact: ArtifactRef,
+    payload: bytes,
+    output_dir: str,
+) -> dict[str, Any]:
     if artifact.size_bytes != len(payload):
         raise ValueError(
             f"Native training diagnostics size mismatch for {manifest.id!r}: "
             f"artifact={artifact.size_bytes}, actual={len(payload)}"
         )
     payload_sha256 = sha256(payload).hexdigest()
-    if artifact.sha256 is None:
-        raise ValueError(
-            f"Native training diagnostics artifact for {manifest.id!r} is missing required sha256"
-        )
     if artifact.sha256 != payload_sha256:
         raise ValueError(
             f"Native training diagnostics sha256 mismatch for {manifest.id!r}: "
@@ -398,7 +461,7 @@ def _summarize_native_diagnostics(
     return {
         "schema_version": TRAINING_DIAGNOSTICS_SCHEMA_VERSION,
         "source_format": "feedbax_training_diagnostics",
-        "output_dir": str(diagnostics_path.parent),
+        "output_dir": output_dir,
         "exists": True,
         "ok": True,
         "alerts": [],
@@ -414,6 +477,80 @@ def _summarize_native_diagnostics(
         "diagnostics_artifact": _artifact_identity(artifact),
         "training_diagnostics": diagnostics.model_dump(mode="json", exclude_none=True),
     }
+
+
+def _validate_mapped_diagnostics_artifact(
+    *,
+    manifest: TrainingRunManifest,
+    authoritative: ArtifactRef,
+    mapped: ArtifactRef,
+) -> None:
+    """Validate immutable resolution evidence without consulting either URI as a path."""
+    for field in ("role", "logical_name", "sha256", "size_bytes", "media_type"):
+        expected = getattr(authoritative, field)
+        actual = getattr(mapped, field)
+        if actual != expected:
+            raise ValueError(
+                f"Mapped training diagnostics {field} does not match authoritative artifact: "
+                f"mapped={actual!r}, authoritative={expected!r}"
+            )
+    for field in ("schema_id", "schema_version"):
+        expected = authoritative.metadata.get(field)
+        actual = mapped.metadata.get(field)
+        if actual != expected:
+            raise ValueError(
+                f"Mapped training diagnostics {field} does not match authoritative artifact: "
+                f"mapped={actual!r}, authoritative={expected!r}"
+            )
+
+    canonical_artifact_id = f"{ARTIFACT_ID_PREFIX}{authoritative.sha256}"
+    if authoritative.artifact_id is not None and mapped.artifact_id != authoritative.artifact_id:
+        raise ValueError(
+            "Mapped training diagnostics artifact_id does not match authoritative artifact: "
+            f"mapped={mapped.artifact_id!r}, authoritative={authoritative.artifact_id!r}"
+        )
+    if mapped.artifact_id != canonical_artifact_id:
+        raise ValueError(
+            "Mapped training diagnostics artifact_id must preserve canonical payload identity: "
+            f"mapped={mapped.artifact_id!r}, canonical={canonical_artifact_id!r}"
+        )
+    if mapped.uri != mapped.artifact_id:
+        raise ValueError("Mapped training diagnostics uri must equal its canonical artifact_id")
+    if mapped.storage_backend != IMMUTABLE_ARTIFACT_BLOB_STORAGE_BACKEND:
+        raise ValueError(
+            "Mapped training diagnostics storage_backend must be "
+            f"{IMMUTABLE_ARTIFACT_BLOB_STORAGE_BACKEND!r}"
+        )
+
+    row_provenance = manifest.metadata.get("training_row_provenance")
+    if not isinstance(row_provenance, Mapping):
+        raise ValueError(
+            "Provider-backed training diagnostics require parent manifest training_row_provenance"
+        )
+    expected_bindings = {
+        "training_manifest_id": manifest.id,
+        "run_set_id": manifest.run_set_id,
+        "row_id": row_provenance.get("row_id"),
+        "planned_run_id": row_provenance.get("planned_run_id"),
+        "run_id": manifest.job_id,
+    }
+    missing_authority = [
+        field
+        for field, value in expected_bindings.items()
+        if not isinstance(value, str) or not value
+    ]
+    if missing_authority:
+        raise ValueError(
+            "Provider-backed training diagnostics cannot bind mapped metadata because the "
+            "parent manifest lacks authoritative values for " + ", ".join(missing_authority)
+        )
+    for field, expected in expected_bindings.items():
+        actual = mapped.metadata.get(field)
+        if actual != expected:
+            raise ValueError(
+                f"Mapped training diagnostics {field} does not match parent manifest: "
+                f"mapped={actual!r}, manifest={expected!r}"
+            )
 
 
 def _validate_native_diagnostics_binding(

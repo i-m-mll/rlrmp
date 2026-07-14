@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from hashlib import sha256
 from pathlib import Path
 
@@ -22,6 +23,11 @@ from feedbax.contracts.manifest import (
     write_manifest,
 )
 from feedbax.plugins.registry import ExperimentRegistry
+from feedbax.persistence import (
+    ImmutableArtifactBlobProvider,
+    ImmutableArtifactBlobProviderSpec,
+    open_immutable_artifact_blob_provider,
+)
 from feedbax.training import TrainingDiagnostics
 from rlrmp.analysis import training_diagnostics as td
 
@@ -191,6 +197,48 @@ def _write_native_training_run(
     return manifest, path, diagnostics_path
 
 
+def _provider_backed_native_fixture(
+    tmp_path: Path,
+) -> tuple[TrainingRunManifest, Path, Path, ArtifactRef, ImmutableArtifactBlobProvider]:
+    root = tmp_path / "feedbax_runs"
+    manifest, manifest_path, diagnostics_path = _write_native_training_run(
+        root,
+        tmp_path / "transient-run-set" / "collected" / "row-a",
+    )
+    manifest = manifest.model_copy(
+        update={
+            "run_set_id": "run-set-a",
+            "artifacts": [manifest.artifacts[0].model_copy(update={"artifact_id": None})],
+            "metadata": {
+                "training_row_provenance": {
+                    "row_id": "row-a",
+                    "planned_run_id": manifest.job_id,
+                }
+            },
+        }
+    )
+    provider = open_immutable_artifact_blob_provider(
+        ImmutableArtifactBlobProviderSpec(),
+        explicit_root=tmp_path / "immutable-custody",
+    )
+    authoritative = manifest.artifacts[0]
+    mapped = provider.store_bytes(
+        diagnostics_path.read_bytes(),
+        role=authoritative.role,
+        logical_name=authoritative.logical_name,
+        media_type=authoritative.media_type,
+        metadata={
+            **authoritative.metadata,
+            "training_manifest_id": manifest.id,
+            "run_set_id": manifest.run_set_id,
+            "row_id": "row-a",
+            "planned_run_id": manifest.job_id,
+            "run_id": manifest.job_id,
+        },
+    )
+    return manifest, manifest_path, diagnostics_path, mapped, provider
+
+
 def test_training_diagnostics_bundle_executes_manifest_backed_summary(
     tmp_path: Path,
     monkeypatch,
@@ -281,6 +329,179 @@ def test_training_diagnostics_bundle_executes_manifest_backed_summary(
     assert summary["latest_batch_index"] == 10
     assert "| native-diagnostics-job | yes | 10 |" in markdown
     assert load_manifest(manifest_path).id == manifest.id
+
+
+def test_provider_backed_diagnostics_survive_transient_run_set_deletion(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    manifest, manifest_path, diagnostics_path, mapped, provider = _provider_backed_native_fixture(
+        tmp_path
+    )
+    assert manifest.artifacts[0].artifact_id is None
+    assert mapped.artifact_id == mapped.uri == f"artifact://sha256/{mapped.sha256}"
+    baseline_native = td._summarize_native_diagnostics(
+        manifest=manifest,
+        manifest_path=manifest_path,
+        artifact=manifest.artifacts[0],
+        root=tmp_path / "feedbax_runs",
+    )
+    resolver_calls: list[ArtifactRef] = []
+
+    def resolve(artifact: ArtifactRef) -> bytes:
+        resolver_calls.append(artifact)
+        return provider.get_bytes(artifact)
+
+    baseline = td.summarize_provider_backed_training_diagnostics(
+        manifest=manifest,
+        manifest_path=manifest_path,
+        mapped_artifact=mapped,
+        bytes_resolver=resolve,
+    )
+    shutil.rmtree(tmp_path / "transient-run-set")
+    assert not diagnostics_path.exists()
+    monkeypatch.setattr(
+        td,
+        "_artifact_path",
+        lambda *_args, **_kwargs: pytest.fail("provider path must not resolve artifact paths"),
+    )
+    monkeypatch.setattr(
+        td,
+        "_resolve_repo_path",
+        lambda *_args, **_kwargs: pytest.fail("provider path must not resolve repository paths"),
+    )
+    after_deletion = td.summarize_provider_backed_training_diagnostics(
+        manifest=manifest,
+        manifest_path=manifest_path,
+        mapped_artifact=mapped,
+        bytes_resolver=resolve,
+    )
+
+    assert after_deletion == baseline
+    assert after_deletion["training_diagnostics"] == baseline_native["training_diagnostics"]
+    assert after_deletion["diagnostics_artifact"] == manifest.artifacts[0].model_dump(
+        mode="json", exclude_none=True
+    )
+    assert resolver_calls == [mapped, mapped]
+
+
+@pytest.mark.parametrize(
+    ("drift", "match"),
+    [
+        ("role", "role does not match authoritative"),
+        ("logical_name", "logical_name does not match authoritative"),
+        ("sha256", "sha256 does not match authoritative"),
+        ("size_bytes", "size_bytes does not match authoritative"),
+        ("media_type", "media_type does not match authoritative"),
+        ("schema_id", "schema_id does not match authoritative"),
+        ("schema_version", "schema_version does not match authoritative"),
+        ("artifact_id", "artifact_id must preserve canonical payload identity"),
+        ("uri", "uri must equal its canonical artifact_id"),
+        ("storage_backend", "storage_backend must be"),
+        ("training_manifest_id", "training_manifest_id does not match parent manifest"),
+        ("run_set_id", "run_set_id does not match parent manifest"),
+        ("row_id", "row_id does not match parent manifest"),
+        ("planned_run_id", "planned_run_id does not match parent manifest"),
+        ("run_id", "run_id does not match parent manifest"),
+    ],
+)
+def test_provider_backed_diagnostics_reject_identity_drift_before_resolver(
+    tmp_path: Path,
+    drift: str,
+    match: str,
+) -> None:
+    manifest, manifest_path, _diagnostics_path, mapped, _provider = _provider_backed_native_fixture(
+        tmp_path
+    )
+    top_level_updates = {
+        "role": {"role": "other"},
+        "logical_name": {"logical_name": "other.json"},
+        "sha256": {"sha256": "0" * 64},
+        "size_bytes": {"size_bytes": mapped.size_bytes + 1},
+        "media_type": {"media_type": "application/octet-stream"},
+        "artifact_id": {"artifact_id": f"artifact://sha256/{'0' * 64}"},
+        "uri": {"uri": f"artifact://sha256/{'0' * 64}"},
+        "storage_backend": {"storage_backend": "other"},
+    }
+    if drift in top_level_updates:
+        mapped = mapped.model_copy(update=top_level_updates[drift])
+    else:
+        mapped = mapped.model_copy(update={"metadata": {**mapped.metadata, drift: "wrong"}})
+    resolver_calls: list[ArtifactRef] = []
+
+    with pytest.raises(ValueError, match=match):
+        td.summarize_provider_backed_training_diagnostics(
+            manifest=manifest,
+            manifest_path=manifest_path,
+            mapped_artifact=mapped,
+            bytes_resolver=lambda artifact: resolver_calls.append(artifact) or b"unused",
+        )
+
+    assert resolver_calls == []
+
+
+def test_provider_backed_diagnostics_preserve_authoritative_artifact_id(
+    tmp_path: Path,
+) -> None:
+    manifest, manifest_path, _diagnostics_path, mapped, provider = _provider_backed_native_fixture(
+        tmp_path
+    )
+    authoritative = manifest.artifacts[0].model_copy(update={"artifact_id": mapped.artifact_id})
+    manifest = manifest.model_copy(update={"artifacts": [authoritative]})
+
+    summary = td.summarize_provider_backed_training_diagnostics(
+        manifest=manifest,
+        manifest_path=manifest_path,
+        mapped_artifact=mapped,
+        bytes_resolver=provider.get_bytes,
+    )
+    assert summary["diagnostics_artifact"]["artifact_id"] == mapped.artifact_id
+
+    mismatched = mapped.model_copy(
+        update={
+            "artifact_id": f"artifact://sha256/{'0' * 64}",
+            "uri": f"artifact://sha256/{'0' * 64}",
+        }
+    )
+    with pytest.raises(ValueError, match="artifact_id does not match authoritative"):
+        td.summarize_provider_backed_training_diagnostics(
+            manifest=manifest,
+            manifest_path=manifest_path,
+            mapped_artifact=mismatched,
+            bytes_resolver=lambda _artifact: pytest.fail("resolver must not be called"),
+        )
+
+
+@pytest.mark.parametrize(
+    ("mode", "match"),
+    [
+        ("non_bytes", "must return bytes"),
+        ("wrong_size", "size mismatch"),
+        ("wrong_hash", "sha256 mismatch"),
+    ],
+)
+def test_provider_backed_diagnostics_reject_invalid_resolved_bytes(
+    tmp_path: Path,
+    mode: str,
+    match: str,
+) -> None:
+    manifest, manifest_path, _diagnostics_path, mapped, provider = _provider_backed_native_fixture(
+        tmp_path
+    )
+    payload = provider.get_bytes(mapped)
+    returned: object = {
+        "non_bytes": "not-bytes",
+        "wrong_size": payload + b"x",
+        "wrong_hash": bytes([payload[0] ^ 1]) + payload[1:],
+    }[mode]
+
+    with pytest.raises((TypeError, ValueError), match=match):
+        td.summarize_provider_backed_training_diagnostics(
+            manifest=manifest,
+            manifest_path=manifest_path,
+            mapped_artifact=mapped,
+            bytes_resolver=lambda _artifact: returned,  # type: ignore[return-value]
+        )
 
 
 def test_training_diagnostics_analysis_accepts_experiment_hash_routing(
